@@ -1,0 +1,119 @@
+# Disposable CI only: no production database, Stripe/Resend keys, customer mail or charges.
+# Canonical payment stack owned by PR #991, issue #1000, parent #983.
+name: payment acceptance (disposable PostgreSQL)
+on:
+  pull_request:
+    paths:
+      - .github/workflows/payment-acceptance.yml
+      - src/lib/billing/**
+      - src/lib/data-store/checkout-intents.ts
+      - src/lib/data-store/payment-outbox.ts
+      - src/lib/stripe-actions.ts
+      - src/lib/stripe-webhook.ts
+      - src/app/api/webhooks/stripe/**
+      - src/lib/email/resend.ts
+      - supabase/migrations/2027011000004*.sql
+      - tests/e2e/production-schema.sql
+permissions:
+  contents: read
+jobs:
+  payment-disposable-postgres:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      PGPASSWORD: postgres
+      BILLING_TEST_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/feeinsight_billing_test
+      PAYMENT_DELIVERY_TEST_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/feeinsight_billing_test_outbox
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: "22"
+          cache: npm
+      - name: Pin canonical Pinnacle and payment migration versions
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f supabase/migrations/20270110000040_fee_audience_integrity.sql
+          test -f supabase/migrations/20270110000041_pinnacle_audience_correction.sql
+          test -f supabase/migrations/20270110000042_pro_checkout_intents.sql
+          test -f supabase/migrations/20270110000043_payment_email_outbox.sql
+          test ! -e supabase/migrations/20270110000040_pro_checkout_intents.sql
+          test ! -e supabase/migrations/20270110000041_payment_email_outbox.sql
+      - name: Start local disposable PostgreSQL databases
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo systemctl start postgresql.service
+          sudo -u postgres psql -v ON_ERROR_STOP=1 <<'SQL'
+          ALTER USER postgres PASSWORD 'postgres';
+          DO $$
+          BEGIN
+            IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname='anon') THEN CREATE ROLE anon; END IF;
+            IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname='authenticated') THEN CREATE ROLE authenticated; END IF;
+            IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname='service_role') THEN CREATE ROLE service_role BYPASSRLS; END IF;
+          END $$;
+          SQL
+          for db in payment_release feeinsight_billing_test feeinsight_billing_test_outbox; do
+            sudo -u postgres createdb "$db"
+          done
+      - name: Load snapshot and assert Pinnacle 40 is present
+        shell: bash
+        run: |
+          set -euo pipefail
+          psql -h 127.0.0.1 -U postgres -d payment_release -v ON_ERROR_STOP=1 -f tests/e2e/production-schema.sql > /tmp/payment-schema.log
+          for spec in raw_fee_observations:fee_audience verified_fee_observations:fee_audience published_fee_records:fee_audience; do
+            IFS=: read -r table column <<< "$spec"
+            count="$(psql -h 127.0.0.1 -U postgres -d payment_release -Atqc "SELECT count(*) FROM information_schema.columns WHERE table_schema='public' AND table_name='$table' AND column_name='$column'")"
+            test "$count" = "1"
+          done
+      - name: Apply canonical Pinnacle 41 then payment 42 and 43 locally
+        shell: bash
+        run: |
+          set -euo pipefail
+          for file in \
+            supabase/migrations/20270110000041_pinnacle_audience_correction.sql \
+            supabase/migrations/20270110000042_pro_checkout_intents.sql \
+            supabase/migrations/20270110000043_payment_email_outbox.sql; do
+            echo "Applying $file to disposable payment_release"
+            psql -h 127.0.0.1 -U postgres -d payment_release -v ON_ERROR_STOP=1 -f "$file"
+          done
+      - name: Assert payment tables are private and properly indexed
+        shell: bash
+        run: |
+          set -euo pipefail
+          for table in pro_checkout_intents payment_email_outbox; do
+            test "$(psql -h 127.0.0.1 -U postgres -d payment_release -Atqc "SELECT (to_regclass('public.$table') IS NOT NULL)::int")" = "1"
+            test "$(psql -h 127.0.0.1 -U postgres -d payment_release -Atqc "SELECT relrowsecurity::int FROM pg_class WHERE oid='public.$table'::regclass")" = "1"
+            for role in anon authenticated; do
+              test "$(psql -h 127.0.0.1 -U postgres -d payment_release -Atqc "SELECT has_table_privilege('$role','public.$table','SELECT')::int")" = "0"
+            done
+            test "$(psql -h 127.0.0.1 -U postgres -d payment_release -Atqc "SELECT has_table_privilege('service_role','public.$table','SELECT,INSERT,UPDATE')::int")" = "1"
+          done
+          for index in pro_checkout_one_current_per_user payment_email_due payment_email_event; do
+            test "$(psql -h 127.0.0.1 -U postgres -d payment_release -Atqc "SELECT (to_regclass('public.$index') IS NOT NULL)::int")" = "1"
+          done
+      - name: Execute payment PostgreSQL tests and reject skipped coverage
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci --ignore-scripts --no-audit --no-fund
+          npx vitest run \
+            src/lib/billing/checkout.integration.test.ts \
+            src/lib/billing/payment-delivery.integration.test.ts \
+            --maxWorkers=1 --reporter=json --outputFile=/tmp/payment-vitest.json
+          node <<'NODE'
+          const fs = require("node:fs");
+          const result = JSON.parse(fs.readFileSync("/tmp/payment-vitest.json", "utf8"));
+          const passed = result.numPassedTests ?? 0;
+          const failed = result.numFailedTests ?? 0;
+          const skipped = result.numPendingTests ?? 0;
+          if (passed < 17 || failed !== 0 || skipped !== 0) {
+            throw new Error("Payment integration coverage did not all run: " + JSON.stringify({passed, failed, skipped}));
+          }
+          const summary = passed + " payment integration tests passed in disposable PostgreSQL; zero skipped. No Stripe/Resend calls or production changes.\n";
+          console.log(summary);
+          fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, summary);
+          NODE

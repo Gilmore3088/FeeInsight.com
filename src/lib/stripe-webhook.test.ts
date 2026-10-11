@@ -1,9 +1,9 @@
 import type Stripe from "stripe";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-
-const listSubscriptions = vi.fn();
-const retrievePaymentIntent = vi.fn();
+const { listSubscriptions, retrievePaymentIntent } = vi.hoisted(() => ({
+  listSubscriptions: vi.fn(), retrievePaymentIntent: vi.fn(),
+}));
 vi.mock("@/lib/stripe", () => ({
   getStripe: () => ({ subscriptions: { list: listSubscriptions }, paymentIntents: { retrieve: retrievePaymentIntent } }),
 }));
@@ -11,196 +11,141 @@ vi.mock("@/lib/stripe", () => ({
 import { applyStripeEvent, mapStripeStatus, recordStripeEvent } from "./stripe-webhook";
 
 const tx = vi.fn();
-const issued = () => tx.mock.calls.map((call) => (call[0] as TemplateStringsArray).join("?").replace(/\s+/g, " "));
-
+const issued = () => tx.mock.calls.map((call) => (call[0] as TemplateStringsArray).join("?").replace(/\s+/g, " ").trim());
+const updates = () => issued().filter((query) => query.includes("SET subscription_status"));
 function event(type: string, object: Record<string, unknown>): Stripe.Event {
   return { id: "evt_1", type, data: { object } } as unknown as Stripe.Event;
 }
+const subscriptionInvoice = { customer: "cus_1", parent: { type: "subscription_details", subscription_details: { subscription: "sub_1" } } };
+const live = (status: string) => ({ data: [{ id: "sub_current", status }], has_more: false });
+let linked: { id: number; email: string; display_name: string | null; subscription_status: string } | null = null;
 
 describe("mapStripeStatus", () => {
   it.each([
-    ["active", "active"],
-    ["trialing", "active"],
-    ["past_due", "past_due"],
-    ["unpaid", "past_due"],
-    ["paused", "past_due"],
-    ["canceled", "canceled"],
-    ["incomplete_expired", "canceled"],
-    ["incomplete", "none"],
-  ])("%s -> %s", (input, expected) => {
-    expect(mapStripeStatus(input)).toBe(expected);
-  });
+    ["active", "active"], ["trialing", "active"], ["past_due", "past_due"],
+    ["unpaid", "past_due"], ["paused", "past_due"], ["canceled", "canceled"],
+    ["incomplete_expired", "canceled"], ["incomplete", "none"],
+  ])("%s -> %s", (input, expected) => expect(mapStripeStatus(input)).toBe(expected));
 });
 
-describe("applyStripeEvent", () => {
+describe("subscription events reconcile authoritative customer state", () => {
   beforeEach(() => {
+    linked = null;
     tx.mockReset();
-    tx.mockResolvedValue([]);
+    tx.mockImplementation(async (strings: TemplateStringsArray) =>
+      strings.join("?").includes("RETURNING id, email, display_name, subscription_status") && linked ? [linked] : [],
+    );
     listSubscriptions.mockReset();
-    listSubscriptions.mockResolvedValue({ data: [] });
+    listSubscriptions.mockResolvedValue(live("active"));
   });
 
-  it("keeps Pro when the customer still pays on another subscription", async () => {
-    listSubscriptions.mockResolvedValue({ data: [{ id: "sub_old", status: "canceled" }, { id: "sub_new", status: "active" }] });
-    await applyStripeEvent(tx as never, event("customer.subscription.deleted", { id: "sub_old", customer: "cus_1" }));
-    await applyStripeEvent(tx as never, event("customer.subscription.updated", { id: "sub_old", customer: "cus_1", status: "canceled" }));
-    expect(listSubscriptions).toHaveBeenCalledWith({ customer: "cus_1", status: "all", limit: 20 });
-    expect(issued()).toEqual([]);
-  });
-
-  it("ends Pro when the only other subscription is the one that just ended", async () => {
-    listSubscriptions.mockResolvedValue({ data: [{ id: "sub_1", status: "active" }] });
-    await applyStripeEvent(tx as never, event("customer.subscription.deleted", { id: "sub_1", customer: "cus_1" }));
-    expect(issued()[0]).toContain("role = 'viewer'");
-  });
-
-  it("fails the event, so Stripe redelivers, when Stripe can't be asked", async () => {
-    listSubscriptions.mockRejectedValue(new Error("stripe down"));
-    await expect(applyStripeEvent(tx as never, event("customer.subscription.deleted", { id: "sub_1", customer: "cus_1" }))).rejects.toThrow();
-    expect(issued()).toEqual([]);
-  });
-
-  it("returns a cancelled subscriber to a free viewer", async () => {
-    await applyStripeEvent(tx as never, event("customer.subscription.deleted", { customer: "cus_1" }));
-    const [sql] = issued();
-    expect(sql).toContain("subscription_status = 'canceled', past_due_since = NULL, role = 'viewer'");
-    expect(sql).toContain("role IN ('viewer', 'premium')");
-  });
-
-  it("treats an update to canceled the same way", async () => {
-    await applyStripeEvent(tx as never, event("customer.subscription.updated", { customer: "cus_1", status: "canceled" }));
-    expect(issued()[0]).toContain("role = 'viewer'");
-  });
-
-  it("marks a paused subscription past due without touching the role", async () => {
-    await applyStripeEvent(tx as never, event("customer.subscription.updated", { customer: "cus_1", status: "paused" }));
-    const [sql] = issued();
-    expect(sql).toContain("SET subscription_status = ?");
-    expect(sql).not.toContain("role");
-    expect(tx.mock.calls[0][1]).toBe("past_due");
-  });
-
-  it("restores Pro when a subscription becomes active again", async () => {
+  it("does not let an older failed invoice undo payment recovery", async () => {
     await applyStripeEvent(tx as never, event("customer.subscription.updated", { customer: "cus_1", status: "active" }));
-    expect(issued()[0]).toContain("CASE WHEN role = 'viewer' THEN 'premium' ELSE role END");
+    await applyStripeEvent(tx as never, event("invoice.payment_failed", subscriptionInvoice));
+    expect(updates()).toHaveLength(2);
+    for (const query of updates()) expect(query).toContain("subscription_status = 'active'");
   });
 
-  it("activates checkout by the user id it was started for", async () => {
-    await applyStripeEvent(
-      tx as never,
-      event("checkout.session.completed", { mode: "subscription", customer: "cus_9", metadata: { user_id: "7", email: "a@b.com" } }),
-    );
-    const [sql] = issued();
-    expect(sql).toContain("WHERE id = ?");
-    expect(tx.mock.calls[0]).toContain(7);
+  it("does not let an older active snapshot resurrect a canceled account", async () => {
+    listSubscriptions.mockResolvedValue({ data: [], has_more: false });
+    await applyStripeEvent(tx as never, event("customer.subscription.deleted", { id: "sub_1", customer: "cus_1" }));
+    await applyStripeEvent(tx as never, event("customer.subscription.updated", { id: "sub_1", customer: "cus_1", status: "active" }));
+    expect(updates()).toHaveLength(2);
+    for (const query of updates()) expect(query).toContain("subscription_status = 'canceled'");
   });
 
-  it("activates a $0 checkout paid with a 100%-off code", async () => {
-    tx.mockResolvedValueOnce([{ id: 7, email: "a@b.com", display_name: null }]);
-    await applyStripeEvent(
-      tx as never,
-      event("checkout.session.completed", { mode: "subscription", payment_status: "no_payment_required", customer: "cus_9", metadata: { user_id: "7" } }),
-    );
-    const [sql] = issued();
-    expect(sql).toContain("role = 'premium'");
-    expect(tx.mock.calls[0]).toContain(7);
+  it("keeps access when any other current subscription is active", async () => {
+    listSubscriptions.mockResolvedValue({ data: [{ id: "sub_old", status: "canceled" }, { id: "sub_new", status: "active" }], has_more: false });
+    await applyStripeEvent(tx as never, event("customer.subscription.deleted", { id: "sub_old", customer: "cus_1" }));
+    expect(updates()[0]).toContain("subscription_status = 'active'");
   });
 
-  it("asks for one welcome email per newly activated subscriber", async () => {
-    tx.mockResolvedValueOnce([{ id: 7, email: "a@b.com", display_name: "Pat" }]);
-    const effects = await applyStripeEvent(
-      tx as never,
-      event("checkout.session.completed", { mode: "subscription", customer: "cus_9", metadata: { user_id: "7" } }),
-    );
-    expect(effects.welcome).toEqual([{ email: "a@b.com", name: "Pat" }]);
+  it("locks the customer before fetching the state, then writes within the caller's transaction", async () => {
+    const order: string[] = [];
+    tx.mockImplementation(async (strings: TemplateStringsArray) => { order.push(strings.join("?").includes("pg_advisory_xact_lock") ? "lock" : "write"); return []; });
+    listSubscriptions.mockImplementation(async () => { order.push("fetch"); return live("active"); });
+    await applyStripeEvent(tx as never, event("customer.subscription.updated", { customer: "cus_1", status: "canceled" }));
+    expect(order).toEqual(["lock", "fetch", "write"]);
+    expect(tx.mock.calls[0]).toContain("feeinsight:billing:cus_1");
   });
 
-  it("anchors the bank chosen at checkout, files its claim and grants the owner seat, without overwriting a choice", async () => {
-    tx.mockResolvedValueOnce([{ id: 7, email: "a@b.com", display_name: "Pat" }]);
-    await applyStripeEvent(
-      tx as never,
-      event("checkout.session.completed", { id: "cs_1", mode: "subscription", payment_status: "paid", customer: "cus_9", metadata: { user_id: "7", institution_id: "8109" } }),
-    );
-    const sql = issued();
-    expect(sql[1]).toContain("INSERT INTO hamilton_workspace_contexts");
-    expect(sql[1]).toContain("ON CONFLICT (user_id) DO NOTHING");
-    expect(sql[2]).toContain("UPDATE users u");
-    expect(sql[2]).toContain("u.institution_name IS NULL");
-    expect(sql[3]).toContain("INSERT INTO institution_claims");
-    expect(sql[3]).toContain("NOT EXISTS");
-    expect(tx.mock.calls[3]).toContain(8109);
-    expect(tx.mock.calls[3]).toContain("Filed at Pro checkout (cs_1).");
-    expect(sql[4]).toContain("INSERT INTO institution_workspace_memberships");
-    expect(sql[4]).toContain("'owner', 'active', 'claim', c.id");
-    expect(sql[4]).toContain("DO NOTHING");
+  it("fails without a state write when Stripe is unavailable so the transaction can roll back", async () => {
+    listSubscriptions.mockRejectedValue(new Error("stripe down"));
+    await expect(applyStripeEvent(tx as never, event("customer.subscription.deleted", { customer: "cus_1" }))).rejects.toThrow("stripe down");
+    expect(updates()).toEqual([]);
   });
 
-  it("anchors nothing when checkout named no institution", async () => {
-    tx.mockResolvedValueOnce([{ id: 7, email: "a@b.com", display_name: "Pat" }]);
-    await applyStripeEvent(
-      tx as never,
-      event("checkout.session.completed", { mode: "subscription", customer: "cus_9", metadata: { user_id: "7", organization: "other" } }),
-    );
-    expect(issued()).toHaveLength(1);
+  it.each(["active", "past_due", "canceled", "incomplete"])("never changes staff rows while reconciling %s", async (status) => {
+    listSubscriptions.mockResolvedValue(live(status));
+    await applyStripeEvent(tx as never, event("customer.subscription.updated", { customer: "cus_1", status }));
+    expect(updates()[0]).toContain("AND role IN ('viewer', 'premium')");
   });
 
-  it("waits for the money: an unpaid session grants nothing until async payment succeeds", async () => {
-    await applyStripeEvent(
-      tx as never,
-      event("checkout.session.completed", { mode: "subscription", payment_status: "unpaid", customer: "cus_9", metadata: { user_id: "7" } }),
-    );
-    expect(issued()).toHaveLength(0);
-    await applyStripeEvent(
-      tx as never,
-      event("checkout.session.async_payment_succeeded", { mode: "subscription", payment_status: "paid", customer: "cus_9", metadata: { user_id: "7" } }),
-    );
-    expect(issued()[0]).toContain("SET subscription_status = 'active'");
+  it("starts the grace period only on the first current payment failure", async () => {
+    listSubscriptions.mockResolvedValue(live("past_due"));
+    await applyStripeEvent(tx as never, event("invoice.payment_failed", subscriptionInvoice));
+    expect(updates()[0]).toContain("past_due_since = COALESCE(past_due_since, NOW())");
   });
 
-  it("sends no welcome for renewals or a checkout that activated nobody", async () => {
-    expect((await applyStripeEvent(tx as never, event("customer.subscription.updated", { customer: "cus_1", status: "active" }))).welcome).toEqual([]);
-    expect((await applyStripeEvent(tx as never, event("checkout.session.completed", { mode: "subscription", customer: "cus_9", metadata: { user_id: "7" } }))).welcome).toEqual([]);
+  it("reconciles invoice.paid to clear payment failure without requiring another event", async () => {
+    await applyStripeEvent(tx as never, event("invoice.paid", subscriptionInvoice));
+    expect(updates()[0]).toContain("past_due_since = NULL");
+    expect(updates()[0]).toContain("subscription_status = 'active'");
   });
 
-  it("falls back to the email for older sessions", async () => {
-    await applyStripeEvent(tx as never, event("checkout.session.completed", { mode: "subscription", customer: "cus_9", customer_email: "a@b.com" }));
-    expect(issued()[0]).toContain("WHERE (email = ? OR username = ?)");
-  });
-
-  it("never grants Pro for a one-time payment checkout", async () => {
-    await applyStripeEvent(
-      tx as never,
-      event("checkout.session.completed", { mode: "payment", customer: "cus_9", metadata: { user_id: "7" } }),
-    );
+  it("ignores unrelated one-time invoices, both paid and failed", async () => {
+    await applyStripeEvent(tx as never, event("invoice.payment_failed", { customer: "cus_1" }));
+    await applyStripeEvent(tx as never, event("invoice.paid", { customer: "cus_1" }));
     expect(tx).not.toHaveBeenCalled();
+    expect(listSubscriptions).not.toHaveBeenCalled();
   });
 
-  describe("payment grace window (past_due_since)", () => {
-    it("starts the window on the first failed payment and never resets it", async () => {
-      await applyStripeEvent(tx as never, event("invoice.payment_failed", { customer: "cus_1" }));
-      expect(issued()[0]).toContain("subscription_status = 'past_due', past_due_since = COALESCE(past_due_since, NOW())");
-    });
+  it("accepts the subscription reference in older invoice payloads", async () => {
+    await applyStripeEvent(tx as never, event("invoice.paid", { customer: "cus_1", subscription: "sub_old_api" }));
+    expect(updates()).toHaveLength(1);
+  });
 
-    it("starts it when a subscription update reports past due, and clears it otherwise", async () => {
-      await applyStripeEvent(tx as never, event("customer.subscription.updated", { customer: "cus_1", status: "past_due" }));
-      expect(issued()[0]).toContain("WHEN ? = 'past_due' THEN COALESCE(past_due_since, NOW()) ELSE NULL");
-    });
+  it("welcomes a newly activated checkout and anchors its institution", async () => {
+    linked = { id: 7, email: "a@b.com", display_name: "Pat", subscription_status: "none" };
+    const effects = await applyStripeEvent(tx as never, event("checkout.session.completed", {
+      id: "cs_1", mode: "subscription", payment_status: "paid", customer: "cus_1", metadata: { user_id: "7", institution_id: "8109" },
+    }));
+    expect(effects.welcome).toEqual([{ email: "a@b.com", name: "Pat" }]);
+    expect(issued().join("\n")).toContain("INSERT INTO institution_claims");
+    expect(issued().join("\n")).toContain("INSERT INTO institution_workspace_memberships");
+    expect(issued()[1]).toContain("stripe_customer_id IS NULL OR stripe_customer_id = ?");
+  });
 
-    it("clears it when Pro becomes active, by checkout or by update", async () => {
-      await applyStripeEvent(tx as never, event("customer.subscription.updated", { customer: "cus_1", status: "active" }));
-      await applyStripeEvent(
-        tx as never,
-        event("checkout.session.completed", { mode: "subscription", customer: "cus_9", metadata: { user_id: "7" } }),
-      );
-      for (const sql of issued().filter((text) => text.includes("UPDATE users"))) {
-        expect(sql).toContain("past_due_since = NULL");
-      }
-    });
+  it("does not re-send a welcome for an already active customer", async () => {
+    linked = { id: 7, email: "a@b.com", display_name: null, subscription_status: "active" };
+    const effects = await applyStripeEvent(tx as never, event("checkout.session.completed", { mode: "subscription", customer: "cus_1", metadata: { user_id: "7" } }));
+    expect(effects.welcome).toEqual([]);
+  });
 
-    it("clears it when the subscription ends", async () => {
-      await applyStripeEvent(tx as never, event("customer.subscription.deleted", { customer: "cus_1" }));
-      expect(issued()[0]).toContain("past_due_since = NULL");
-    });
+  it("does not reactivate or welcome a delayed checkout after cancellation", async () => {
+    linked = { id: 7, email: "a@b.com", display_name: null, subscription_status: "canceled" };
+    listSubscriptions.mockResolvedValue({ data: [], has_more: false });
+    const effects = await applyStripeEvent(tx as never, event("checkout.session.completed", { mode: "subscription", payment_status: "paid", customer: "cus_1", metadata: { user_id: "7" } }));
+    expect(effects.welcome).toEqual([]);
+    expect(updates()[0]).toContain("subscription_status = 'canceled'");
+  });
+
+  it("supports a paid zero-dollar subscription without a payment method", async () => {
+    linked = { id: 7, email: "a@b.com", display_name: null, subscription_status: "none" };
+    const effects = await applyStripeEvent(tx as never, event("checkout.session.completed", { mode: "subscription", payment_status: "no_payment_required", customer: "cus_1", metadata: { user_id: "7" } }));
+    expect(effects.welcome).toHaveLength(1);
+  });
+
+  it("uses legacy email linking without allowing replacement of a different customer", async () => {
+    await applyStripeEvent(tx as never, event("checkout.session.completed", { mode: "subscription", customer: "cus_1", customer_email: "a@b.com" }));
+    expect(issued()[1]).toContain("WHERE (email = ? OR username = ?)");
+    expect(issued()[1]).toContain("stripe_customer_id IS NULL OR stripe_customer_id = ?");
+  });
+
+  it("grants nothing for an unpaid subscription checkout or a one-time purchase", async () => {
+    await applyStripeEvent(tx as never, event("checkout.session.completed", { mode: "subscription", payment_status: "unpaid", customer: "cus_1" }));
+    await applyStripeEvent(tx as never, event("checkout.session.completed", { mode: "payment", payment_status: "paid", customer: "cus_1" }));
+    expect(tx).not.toHaveBeenCalled();
   });
 });
 

@@ -1,5 +1,6 @@
 "use server";
 
+import { createGuardedCheckout } from "@/lib/billing/checkout";
 import { getStripe } from "@/lib/stripe";
 import { getCurrentUser } from "@/lib/auth";
 import { ensureStripeCustomer } from "@/lib/stripe-customer";
@@ -98,7 +99,8 @@ export async function createCheckoutSession(input: ProCheckoutInput): Promise<Pr
   // Created here, not at registration, so a free signup never depends on Stripe.
   const customerId = await ensureStripeCustomer(user);
 
-  const session = await stripe.checkout.sessions.create({
+  try {
+    const result = await createGuardedCheckout(user.id, customerId, {
     mode: "subscription",
     line_items: [{ price: priceId, quantity: 1 }],
     customer: customerId,
@@ -129,7 +131,12 @@ export async function createCheckoutSession(input: ProCheckoutInput): Promise<Pr
     },
   });
 
-  return { url: session.url };
+    return "error" in result ? { url: null, error: result.error } : { url: result.url };
+  } catch {
+    // Ambiguous provider/database failures retain the reservation; never make a new key here.
+    console.error("[checkout] Could not confirm the persisted checkout attempt", { userId: user.id });
+    return { url: null, error: "We could not confirm checkout. Please retry from your account; do not submit a second payment." };
+  }
 }
 
 /**

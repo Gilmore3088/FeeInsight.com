@@ -134,6 +134,7 @@ async function deliverThroughResend(message: ResendMessage, failureLabel: string
       method: "POST",
       headers,
       body: JSON.stringify(body),
+      signal: AbortSignal.timeout(10_000),
     });
 
     const payload = await parseProviderResponse(response);
