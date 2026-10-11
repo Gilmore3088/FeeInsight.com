@@ -18,6 +18,7 @@ import {
 } from "@/lib/data-store/hamilton-workspace";
 import { getSavedAnalysisResponse, insertSavedAnalysis, updateSavedAnalysisResponse } from "@/lib/data-store/hamilton-analyses";
 import { normalizeCanonicalInstitutionId } from "./context-link";
+import { buildFeeResearchEvidence } from "./evidence-contract";
 import { writeStorylineMemo } from "./memo";
 import { analysisFocusFor, analysisTitle, storylineAnalysis, withMemo } from "./workspace/analysis-record";
 import { buildAskResponse, clarifyAgain, parseAsk, parseObjective, withSegmentDefault } from "./workspace/ask";
@@ -31,7 +32,7 @@ import { getServiceChargeIntensity, getServiceChargeIntensityTrend } from "@/lib
 import { peerPhrase } from "./answer-brief";
 import { resolveHamiltonInstitutionContext } from "./workspace-context";
 import type { StorylineMemoResult } from "./workspace/storyline-types";
-import { WORKSPACE_ENGINE_VERSION, type AskObjective, type AskResponse, type DecisionEventKind, type DecisionRecord, type MemoryFact } from "./workspace/types";
+import { WORKSPACE_ENGINE_VERSION, type AskObjective, type AskResponse, type DecisionEventKind, type DecisionRecord, type FeeResearch, type MemoryFact } from "./workspace/types";
 
 const OBJECTIVES: AskObjective[] = ["revenue", "customer_treatment", "competitive_position"];
 const MAX_QUESTION_CHARS = 1_000;
@@ -121,7 +122,13 @@ async function logEvents(
  * and can go into a report once, whichever screen asked it. Null when there is no storyline
  * or the save fails; the answer is still returned.
  */
-async function fileAnalysis(userId: number, institutionId: string | number, question: string, response: AskResponse): Promise<string | null> {
+async function fileAnalysis(
+  userId: number,
+  institutionId: string | number,
+  question: string,
+  response: AskResponse,
+  research: FeeResearch | null,
+): Promise<string | null> {
   const storyline = response.answer?.storyline;
   const canonical = normalizeCanonicalInstitutionId(institutionId);
   if (!storyline || !canonical) return null;
@@ -132,7 +139,11 @@ async function fileAnalysis(userId: number, institutionId: string | number, ques
       title: analysisTitle(storyline),
       analysisFocus: analysisFocusFor(storyline),
       prompt: question,
-      response: storylineAnalysis(storyline, WORKSPACE_ENGINE_VERSION),
+      response: storylineAnalysis(
+        storyline,
+        WORKSPACE_ENGINE_VERSION,
+        research ? buildFeeResearchEvidence(research) : null,
+      ),
     });
   } catch (error) {
     console.error("[hamilton-ask] saving the analysis failed", { institutionId: canonical, error });
@@ -240,7 +251,7 @@ export async function answerAsk(user: Asker, body: AskBody): Promise<AskResult> 
 
   const built = buildAskResponse({ question, intent, research, memory, objective: effectiveObjective, priorTested });
   const response = withDepth(built, schedule, why, research?.provenance.dataAsOf.fees ?? null);
-  const savedAnalysisId = await fileAnalysis(user.id, institution.id, question, response);
+  const savedAnalysisId = await fileAnalysis(user.id, institution.id, question, response, research);
   const shown = response.scenario;
   const scenarioEvents =
     response.kind === "scenario"
@@ -378,7 +389,8 @@ export async function answerAskMemo(user: Asker, body: AskBody): Promise<AskMemo
   const storyline = response.answer?.storyline;
   if (!storyline) return { status: 200, body: { status: "unavailable", reason: "There is no storyline to write up for this question." } };
 
-  const result = await writeStorylineMemo(storyline, question, { institutionId });
+  const factEvidence = buildFeeResearchEvidence(research);
+  const result = await writeStorylineMemo(storyline, question, { institutionId, factEvidence });
   let memoSaved = false;
   const savedId = typeof body.savedAnalysisId === "string" ? body.savedAnalysisId : null;
   if (result.status === "written" && savedId) {
@@ -395,7 +407,7 @@ export async function answerAskMemo(user: Asker, body: AskBody): Promise<AskMemo
     status: result.status === "written" ? "completed" : result.status === "withheld" ? "completed" : "failed",
     summary:
       result.status === "written"
-        ? `Memo written; ${result.memo.figureCheck.checked} figures traced to the storyline.`
+        ? `Memo written; ${result.memo.figureCheck.checked} figures numerically checked and ${result.memo.evidenceFactIds?.length ?? 0} structured evidence records referenced.`
         : `Memo ${result.status}: ${result.reason}`,
     userId: user.id,
     institutionId,

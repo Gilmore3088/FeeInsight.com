@@ -4,6 +4,7 @@
  */
 
 import { confidenceFromFigureCheck } from "../figure-check";
+import { structuredEvidenceConfidence, type EvidenceBoundAnalyzeResponse, type HamiltonEvidenceBundle } from "../evidence-contract";
 import type { AnalysisFocus } from "../navigation";
 import type { AnalyzeResponse } from "../types";
 import type { Storyline, StorylineKind, StorylineMemo } from "./storyline-types";
@@ -27,13 +28,14 @@ export function analysisTitle(storyline: Storyline): string {
 }
 
 /** The storyline as a saved analysis, before any model-written text. */
-export function storylineAnalysis(storyline: Storyline, engineVersion: string): AnalyzeResponse {
+export function storylineAnalysis(
+  storyline: Storyline,
+  engineVersion: string,
+  factEvidence?: HamiltonEvidenceBundle | null,
+): EvidenceBoundAnalyzeResponse {
   return {
     title: analysisTitle(storyline),
-    confidence: {
-      level: "high",
-      basis: ["Every figure comes from published fee schedules and regulatory filings; no model-written text."],
-    },
+    confidence: structuredEvidenceConfidence(factEvidence),
     hamiltonView: storyline.governingThought,
     whatThisMeans: [...storyline.situation, ...storyline.complication].map((f) => f.text).join(" "),
     whyItMatters: storyline.exhibits.map((e) => e.actionTitle),
@@ -41,11 +43,12 @@ export function storylineAnalysis(storyline: Storyline, engineVersion: string): 
     exploreFurther: storyline.watch.map((f) => f.text),
     storyline,
     engineVersion,
+    ...(factEvidence ? { factEvidence } : {}),
   };
 }
 
 /** The saved analysis once Hamilton's memo is written: the memo leads, the storyline stays. */
-export function withMemo(saved: AnalyzeResponse, memo: StorylineMemo): AnalyzeResponse {
+export function withMemo(saved: EvidenceBoundAnalyzeResponse, memo: StorylineMemo): EvidenceBoundAnalyzeResponse {
   return {
     ...saved,
     confidence: confidenceFromFigureCheck(memo.figureCheck),

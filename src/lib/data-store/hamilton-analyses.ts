@@ -6,6 +6,7 @@
 
 import { sql } from "./connection";
 import type { AnalyzeResponse } from "@/lib/hamilton/types";
+import { normalizeLegacyAnalyzeConfidence } from "@/lib/hamilton/evidence-contract";
 
 export async function insertSavedAnalysis(input: {
   userId: number;
@@ -42,5 +43,6 @@ export async function getSavedAnalysisResponse(userId: number, id: string): Prom
   `;
   const raw = rows[0]?.response_json;
   if (!raw) return null;
-  return typeof raw === "string" ? (JSON.parse(raw) as AnalyzeResponse) : raw;
+  const parsed = typeof raw === "string" ? (JSON.parse(raw) as AnalyzeResponse) : raw;
+  return normalizeLegacyAnalyzeConfidence(parsed);
 }

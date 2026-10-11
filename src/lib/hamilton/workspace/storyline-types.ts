@@ -156,6 +156,8 @@ export interface StorylineMemo {
   model: string;
   generatedAt: string;
   figureCheck: { checked: number; unmatched: string[] };
+  /** Structured evidence IDs explicitly referenced by newly generated memos. Older memos may omit this. */
+  evidenceFactIds?: string[];
 }
 
 export type StorylineMemoResult =

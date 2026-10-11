@@ -184,6 +184,14 @@ export interface InstitutionFeeRow {
   /** The page the schedule was found on, when it differs from the document. */
   sourceUrl: string | null;
   publishedAt: string | null;
+  /** Unmodified canonical charge basis, audience and source version; unknown stays unknown. */
+  frequency: string | null;
+  conditions: string | null;
+  feeAudience: "consumer" | "business" | "both" | "unknown";
+  audienceEvidence: string | null;
+  sourceContentHash: string | null;
+  sourceCrawledAt: string | null;
+  sourceLastCheckedAt: string | null;
   /** The Darwin event that verified the row against its document; null when not recorded. */
   verifiedByEventId: string | null;
 }
@@ -194,9 +202,15 @@ export interface InstitutionFeeRow {
  */
 export async function getInstitutionFeeRows(institutionId: number, category: string): Promise<InstitutionFeeRow[]> {
   const rows = await sql.unsafe(
-    `SELECT ef.id, ef.fee_name, ef.amount, ef.source_document_id, ef.document_url, ef.source_url,
-            ef.created_at, ef.verified_by_agent_event_id
+    `SELECT ef.id, ef.fee_name, ef.amount, ef.frequency, ef.conditions,
+            ef.fee_audience, ef.audience_evidence, ef.source_document_id,
+            COALESCE(doc.document_url, ef.document_url) AS document_url, ef.source_url,
+            ef.created_at, ef.verified_by_agent_event_id,
+            doc.content_hash AS source_content_hash, doc.crawled_at AS source_crawled_at,
+            doc.last_checked_at AS source_last_checked_at
        FROM published_fee_catalog ef
+       LEFT JOIN source_documents doc
+         ON doc.id = ef.source_document_id AND doc.institution_id = ef.institution_id
       WHERE ef.institution_id = $1
         AND ef.fee_category = $2
         AND ef.review_status = 'approved'
@@ -211,8 +225,17 @@ export async function getInstitutionFeeRows(institutionId: number, category: str
     document_url: string | null;
     source_url: string | null;
     created_at: Date | string | null;
+    frequency: string | null;
+    conditions: string | null;
+    fee_audience: string | null;
+    audience_evidence: string | null;
+    source_content_hash: string | null;
+    source_crawled_at: Date | string | null;
+    source_last_checked_at: Date | string | null;
     verified_by_agent_event_id: string | null;
   }[];
+  const timestamp = (date: Date | string | null): string | null =>
+    date instanceof Date ? date.toISOString() : date ? String(date) : null;
   return rows.map((r) => ({
     id: Number(r.id),
     feeName: r.fee_name,
@@ -220,7 +243,15 @@ export async function getInstitutionFeeRows(institutionId: number, category: str
     sourceDocumentId: r.source_document_id === null ? null : Number(r.source_document_id),
     documentUrl: r.document_url,
     sourceUrl: r.source_url,
-    publishedAt: r.created_at instanceof Date ? r.created_at.toISOString() : r.created_at ? String(r.created_at) : null,
+    publishedAt: timestamp(r.created_at),
+    frequency: r.frequency ?? null,
+    conditions: r.conditions ?? null,
+    feeAudience: r.fee_audience === "consumer" || r.fee_audience === "business" || r.fee_audience === "both"
+      ? r.fee_audience : "unknown",
+    audienceEvidence: r.audience_evidence ?? null,
+    sourceContentHash: r.source_content_hash ?? null,
+    sourceCrawledAt: timestamp(r.source_crawled_at),
+    sourceLastCheckedAt: timestamp(r.source_last_checked_at),
     verifiedByEventId: r.verified_by_agent_event_id ? String(r.verified_by_agent_event_id) : null,
   }));
 }
