@@ -31,7 +31,7 @@ export function LandingTrustStats({ summary, states }: LandingTrustStatsProps) {
   const maxVerified = Math.max(...states.map((s) => s.verified_institution_count), 1);
   return (
     <section aria-labelledby="where-we-track">
-      <div className="mx-auto max-w-page px-6 py-12 sm:py-16">
+      <div className="mx-auto max-w-page px-6 py-12 sm:py-14">
         <h2 id="where-we-track" className={H2}>
           Where we track fees
         </h2>
