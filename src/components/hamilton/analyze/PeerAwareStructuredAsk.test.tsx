@@ -201,7 +201,7 @@ describe("exact-list follow-ups within one Ask conversation", () => {
     await screen.findByText("Published NSF fees for 3 selected peers.");
     expect(within(screen.getByRole("table", { name: "Published NSF charges" })).getByText("$0")).toBeTruthy();
     expect(screen.getByText("Second separate fee")).toBeTruthy();
-    expect(screen.getByText("No published consumer NSF fee on file")).toBeTruthy();
+    expect(screen.getAllByText("No published consumer NSF fee on file")).toHaveLength(2);
     expect(fetcher).toHaveBeenCalledTimes(2);
     expect(fallback).not.toHaveBeenCalled();
     expect(screen.queryByText("Existing fee-answer path")).toBeNull();
