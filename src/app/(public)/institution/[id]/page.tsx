@@ -27,7 +27,6 @@ import { getInstitutionPeerRankCached, getPeerIndexCached } from "@/lib/data-sto
 import { ProNextStep } from "@/components/public/pro-next-step";
 import { InfoTip } from "@/components/public/info-tip";
 import { SITE_NAME } from "@/lib/constants";
-import { computeInstitutionRating, generateInterpretation } from "@/lib/institution-rating";
 import type { FeePublicationStatus } from "@/lib/institution-quality";
 import { buildPublicInstitutionProfileLinks } from "@/lib/institution-profile-links";
 import { formatAbsoluteDate, getPublicNationalIndex } from "@/lib/public-stats";
@@ -45,7 +44,7 @@ import {
 } from "./financial-history";
 import { FinancialProfileSection } from "./financial-profile-section";
 import { assetSizeToDollars, formatReportQuarter, selectFinancialsByQuarter } from "./financial-units";
-import { InstitutionMetricRow, InstitutionOfferBand } from "./institution-metrics";
+import { InstitutionMetricRow } from "./institution-metrics";
 import { MIN_VERIFIED_FEES_FOR_NARRATIVE, MIN_VERIFIED_FEES_FOR_OFFER } from "./profile-copy";
 import {
   buildLocationParts,
@@ -62,7 +61,7 @@ import {
 import { ProfileHeader } from "./profile-header";
 import { InstitutionJsonLd } from "./profile-jsonld";
 import { ProfileSidebar } from "./profile-sidebar";
-import { FeeProfileSummary, StatusNotice } from "./status-notice";
+import { StatusNotice } from "./status-notice";
 import { ThinProfilePanel } from "./thin-profile-panel";
 
 interface PageProps {
@@ -194,53 +193,7 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
 
   const nationalIndex =
     verifiedFees.length > 0 ? await getPublicNationalIndex().catch(fallbackTo("national index", [])) : [];
-  const rating = verifiedFees.length > 0 ? computeInstitutionRating(verifiedFees, nationalIndex) : null;
-  // Medians for the per-row comparison: the same verified-only index the rating uses, and
-  // only where enough institutions publish the fee for a median to mean something.
-  const nationalMedians = new Map<string, number | null>(
-    nationalIndex
-      .filter((entry) => entry.maturity_tier !== "insufficient")
-      .map((entry) => [entry.fee_category, entry.median_amount]),
-  );
-  const feeBenchmarks: FeeBenchmarks = {};
-  for (const entry of nationalIndex) {
-    if (entry.maturity_tier === "insufficient") continue;
-    if (entry.p25_amount == null || entry.median_amount == null || entry.p75_amount == null) continue;
-    feeBenchmarks[entry.fee_category] = {
-      p25: entry.p25_amount,
-      median: entry.median_amount,
-      p75: entry.p75_amount,
-    };
-  }
-  // Home-state medians for the second comparison line, under the same "enough institutions" rule.
-  const stateIndex =
-    verifiedFees.length > 0 && inst.state_code
-      ? await getPeerIndexCached({ state_code: inst.state_code }).catch(fallbackTo("state index", []))
-      : [];
-  const stateMedians: StateMedians | undefined =
-    stateIndex.length > 0 && inst.state_code && STATE_NAMES[inst.state_code]
-      ? {
-          place: STATE_NAMES[inst.state_code],
-          medians: new Map(
-            stateIndex
-              .filter((entry) => entry.maturity_tier !== "insufficient")
-              .map((entry) => [entry.fee_category, entry.median_amount]),
-          ),
-        }
-      : undefined;
-  const enoughForNarrative = verifiedFees.length >= MIN_VERIFIED_FEES_FOR_NARRATIVE;
-  const showNarrative = rating !== null && enoughForNarrative;
   const thinProfile = verifiedFees.length < MIN_VERIFIED_FEES_FOR_OFFER;
-  const headline = pickHeadlineFees(verifiedFees);
-  const interpretation =
-    showNarrative && rating
-      ? generateInterpretation({
-          rating,
-          feeCount: verifiedFees.length,
-          overdraftAmount: headline.overdraft,
-          charterType: inst.charter_type,
-        })
-      : null;
 
   // One row per quarter, one source; the KPI strip and Financial Context share the same figure.
   const normalizedFinancials = selectFinancialsByQuarter(financials).slice(0, FINANCIAL_HISTORY_QUARTERS);
@@ -353,6 +306,14 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
 
               {peerRank && !thinProfile && <PeerRankTeaser rank={peerRank} reportOfferHref={links.reportOfferHref} />}
 
+              <InstitutionMetricRow
+                headlineCategories={headlineCoverage?.get(instId) ?? null}
+                headlineTotal={HEADLINE_FEE_KEYS.length}
+                verifiedCount={verifiedCount}
+                underReviewCount={underReviewCount}
+                assetsDollars={assetsDollars}
+              />
+
               <FeeAlertControl
                 institutionId={instId}
                 institutionName={inst.institution_name}
@@ -366,25 +327,6 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
                 }}
               />
 
-              {/* Public profiles state facts (fee vs. national median), never an adjective verdict — the
-                  commissioned report carries the benchmark against a true peer set. */}
-              {showNarrative && rating && interpretation && (
-                <FeeProfileSummary
-                  rating={rating}
-                  interpretation={interpretation}
-                  overdraftAmount={headline.overdraft}
-                  factsOnly
-                />
-              )}
-
-              <InstitutionMetricRow
-                headlineCategories={headlineCoverage?.get(instId) ?? null}
-                headlineTotal={HEADLINE_FEE_KEYS.length}
-                verifiedCount={verifiedCount}
-                underReviewCount={underReviewCount}
-                assetsDollars={assetsDollars}
-              />
-
               {thinProfile ? (
                 <ThinProfilePanel
                   status={status}
@@ -393,35 +335,37 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
                   claimHref={links.claimHref}
                 />
               ) : (
-                <>
-                  <InstitutionOfferBand
-                    institutionName={inst.institution_name}
-                    reportOfferHref={links.reportOfferHref}
-                    correctSourceHref={links.correctSourceHref}
-                  />
-                  {!isPro && <ProNextStep />}
-                </>
+                !isPro && <ProNextStep />
               )}
 
-              <FinancialContext latest={latestFinancial} history={normalizedFinancials} />
-
-              {(isPro
-                ? financialSeries.length > 0 || Boolean(footprint || complaints || holdingCompany || regulatoryWatch)
-                : latestFinancial !== null) && (
-                <FinancialProfileSection
-                  isPro={isPro}
-                  points={financialSeries}
-                  peers={peerMedianPoints}
-                  insights={insights}
-                  charterLabel={charterLabel}
-                  footprint={footprint}
-                  complaints={complaints}
-                  holdingCompany={holdingCompany}
-                  enforcement={enforcement}
-                  regulatoryWatch={regulatoryWatch}
-                  exportHref={`/api/v1/institutions?id=${instId}&view=benchmark&format=csv`}
-                  institutionName={inst.institution_name}
-                />
+              {(latestFinancial !== null ||
+                (isPro && (financialSeries.length > 0 || Boolean(footprint || complaints || holdingCompany || regulatoryWatch)))) && (
+                <details className="rounded-2xl bg-white/70 p-5 ring-1 ring-[#E8E1D6]/80 shadow-[0_8px_32px_-12px_rgba(26,24,21,0.18)] sm:p-6">
+                  <summary className="cursor-pointer text-base font-semibold text-[#1A1815]">
+                    Financial and regulatory context
+                  </summary>
+                  <div className="mt-5 space-y-6">
+                    <FinancialContext latest={latestFinancial} history={normalizedFinancials} />
+                    {(isPro
+                      ? financialSeries.length > 0 || Boolean(footprint || complaints || holdingCompany || regulatoryWatch)
+                      : latestFinancial !== null) && (
+                      <FinancialProfileSection
+                        isPro={isPro}
+                        points={financialSeries}
+                        peers={peerMedianPoints}
+                        insights={insights}
+                        charterLabel={charterLabel}
+                        footprint={footprint}
+                        complaints={complaints}
+                        holdingCompany={holdingCompany}
+                        enforcement={enforcement}
+                        regulatoryWatch={regulatoryWatch}
+                        exportHref={`/api/v1/institutions?id=${instId}&view=benchmark&format=csv`}
+                        institutionName={inst.institution_name}
+                      />
+                    )}
+                  </div>
+                </details>
               )}
             </div>
 
@@ -430,7 +374,7 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
               links={links}
               isAuthenticated={Boolean(user)}
               showAddSource={needsSource}
-              showProCard={!thinProfile}
+              showProCard={false}
             />
           </div>
         </div>
