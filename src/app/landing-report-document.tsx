@@ -30,7 +30,7 @@ export function LandingReportDocument({ compact = false }: { compact?: boolean }
       pdfjs.GlobalWorkerOptions.workerSrc="/reports/pdf.worker.min.mjs";
       task=pdfjs.getDocument({url:SAMPLE_REPORT_PDF});
       return task.promise;
-    }).then(pdf=>{if(pdf&&!cancelled)setDocument(pdf);}).catch(()=>{if(!cancelled)setError("The PDF could not be displayed here. Open the report using the link below.");});
+    }).then(pdf=>{if(pdf&&!cancelled)setDocument(pdf);}).catch((cause: unknown)=>{if(!cancelled){console.error("Sample PDF loading failed", cause);setError(`The PDF could not be displayed here. ${cause instanceof Error ? cause.message : "Open the report using the link below."}`);}});
     return()=>{cancelled=true;void task?.destroy();};
   },[enabled]);
   useEffect(()=>{
