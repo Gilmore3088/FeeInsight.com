@@ -94,3 +94,9 @@ This preview standardizes the homepage hero, Bank Fee Index, banking-team sectio
 ## Preview trigger — national research hierarchy — 2026-10-11
 
 This preview adds a first-class National data & research section to /research and places National in the research navigation before state and Federal Reserve district analysis.
+
+
+## Preview trigger — research evidence library — 2026-10-11
+
+Base implementation head: `020fadba5ee6428da022dac4454c04dad830b97a`.
+This preview replaces the old research exhibit wall with the scoped Hamilton evidence-library design: United States / Florida / institution scope, research search, five evidence briefs, explicit fact / interpretation / unanswered-question framing, and governed Hamilton/report handoffs.
