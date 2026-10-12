@@ -5,6 +5,15 @@ Seeded 2026-10-05 from the project's working memory; earlier decisions were not 
 
 ## 2026-10-12
 
+**Quality checks run inside the pipeline, not on demand.** James, Oct 12: "I don't want to be
+responsible for calling all of these on demand; they need to be built into the process." The
+fee-quality skills (`fee-benchmarking` with new statistical checks, `data-quality-audit`,
+`audit-data`, `source-evidence-audit`, `report-reconciliation`, `fee-taxonomy-regression`,
+`adversarial-document-testing`) become deterministic Deming steps in the daily scoreboard run,
+a required step in the report job, or CI gates. They are built the way growth was built in (typed
+agent steps), never as scheduled Claude routines, and report to the scorecard with alerts on
+failure. Each skill stays as the written method. Tracked in #1063 (#1064–#1067).
+
 **Coverage target and benchmark threshold.** James, Oct 12. Under $10B, each state and size
 group (under $300M, $300M–$1B, $1–10B) is covered when it has 30 institutions with live fees, or
 75% of the group when it has fewer than 40. A benchmark shows from 10 institutions, marked
