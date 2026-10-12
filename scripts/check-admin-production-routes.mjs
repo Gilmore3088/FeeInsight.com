@@ -15,6 +15,8 @@ const requiredRoutes = [
   "/admin/customers/page",
   "/admin/publishing/page",
   "/admin/controls/page",
+  "/admin/work/page",
+  "/admin/growth/page",
   "/admin/agents/learning/page",
 ];
 

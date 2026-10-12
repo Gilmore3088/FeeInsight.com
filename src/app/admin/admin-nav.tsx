@@ -120,7 +120,7 @@ export function AdminNav({ badges }: { badges?: Record<string, number> }) {
   );
 }
 
-/** The side column. Left out for a one-screen room (Today) so its page gets the full width. */
+/** The side column. Left out for a one-screen room so its page gets the full width. */
 export function AdminSidebar({ badges, footer }: { badges?: Record<string, number>; footer?: ReactNode }) {
   const pathname = usePathname();
   if (roomForPath(pathname).pages.length < 2) return null;
@@ -140,7 +140,7 @@ function isLanding(pathname: string, roomHref: string): boolean {
 
 /**
  * The phone's only navigation, in the header. On a room's landing page it names the room and
- * opens a list of the six rooms; on a screen inside a room it is the way back to that room.
+ * opens a list of the seven rooms; on a screen inside a room it is the way back to that room.
  * Wider screens use the room tabs and the side menu instead.
  */
 export function AdminRoomMenu({ badges }: { badges?: Record<string, number> }) {

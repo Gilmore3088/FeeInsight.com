@@ -65,7 +65,7 @@ export default async function AgentsRoomPage() {
 
   return (
     <div className="space-y-8 pb-10">
-      <RoomHeader room="agents">
+      <RoomHeader room="pipeline">
         <Link href="/admin/live" prefetch={false} className="hidden text-xs font-semibold text-[var(--brand-primary)] md:inline">
           Watch banks move through the agents
         </Link>
