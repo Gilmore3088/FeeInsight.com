@@ -32,7 +32,9 @@ parties (#1089).
 each state's statutes and regulator pages, records each rule with its citation, link and date read,
 and an automatic check confirms every citation and quote. It is shown as a research summary, not
 legal advice, and James or a compliance contact checks a sample before it is first shown. It must be
-extremely tight; scope can expand later.
+extremely tight; scope can expand later. The Regulatory Wire, which already tracks federal and state
+agencies and bills, is part of this pipeline: a new state item sends that state's rules back for a
+re-check, and Hamilton's regulation answers cite it (#1090).
 
 **Quality checks run inside the pipeline, not on demand.** James, Oct 12: "I don't want to be
 responsible for calling all of these on demand; they need to be built into the process." The

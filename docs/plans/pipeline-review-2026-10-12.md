@@ -180,6 +180,7 @@ Cross-pipeline issues: X1 #1037 (gate before publishing), X2 #1038
 | Bayes (replay after rule changes) | | To review |
 | Learning core (L1–L3) | Plan L4 is #1039 | To review |
 | Growth, content and marketing | Parked with outreach | To review before marketing resumes |
+| Regulatory Wire (Magellan registry steps) | #1090: feeds state fee law and Hamilton's regulation answers | To review |
 
 James asked on 2026-10-12 that the newer agents (Deming, Bayes, the learning core, Growth) be
 reviewed too: what each does, where it sits in the pipeline, and what it costs. Measured the same
