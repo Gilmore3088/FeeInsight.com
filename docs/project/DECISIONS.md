@@ -5,6 +5,15 @@ Seeded 2026-10-05 from the project's working memory; earlier decisions were not 
 
 ## 2026-10-12
 
+**Publish sourced fees even when an institution has only one or two.** James, Oct 12: a fee is
+worth publishing if the document is sourced and we can link to it. This replaces the 3-fee
+minimum (`HAMILTON_PUBLISH_MIN_INSTITUTION_FEES` and the `published_fee_catalog` view), which
+holds about 1,235 institutions back (`docs/plans/rosetta-review-2026-10-12.md`). Thin
+institutions still pass the source and product-page checks first.
+
+**Pay to transcribe scanned PDFs.** James, Oct 12: yes to paid reads for scans that free OCR
+cannot read, inside the provider caps.
+
 **Foundation first, then Magellan, then Hamilton.** James, Oct 12: "lay the foundation of this new
 system first." Before any agent work, the repository is reset to how work runs now (#1047, PR
 #1046):
