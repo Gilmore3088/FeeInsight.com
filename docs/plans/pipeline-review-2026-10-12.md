@@ -169,9 +169,19 @@ Cross-pipeline issues: X1 #1037 (gate before publishing), X2 #1038
 | Agent | Review | Status |
 |---|---|---|
 | Magellan | `docs/plans/magellan-review-2026-10-12.md`, tracker #1027 | Written 2026-10-12 |
-| Hamilton | Existing tracker #975 stays its home | Next review |
 | Rosetta | `docs/plans/rosetta-review-2026-10-12.md`, tracker #1050 | Written 2026-10-12 |
-| Knox | | |
+| Hamilton (publisher) | `docs/plans/hamilton-review-2026-10-12.md`, tracker #975 (HR1–HR7, #1068–#1074) | Written 2026-10-12 |
+| Knox | | Next review |
 | Darwin | | |
 | State experts | | |
 | Atlas | | |
+| Deming (quality checks) | Tracker #1063 for building the fee-quality skills in | To review |
+| Bayes (replay after rule changes) | | To review |
+| Learning core (L1–L3) | Plan L4 is #1039 | To review |
+| Growth, content and marketing | Parked with outreach | To review before marketing resumes |
+
+James asked on 2026-10-12 that the newer agents (Deming, Bayes, the learning core, Growth) be
+reviewed too: what each does, where it sits in the pipeline, and what it costs. Measured the same
+day: none of them has any provider spend recorded in October (`ai_api_usage_events` shows spend
+only for Magellan, Knox, Rosetta, Darwin and Hamilton). Deming and Bayes run as deterministic
+Atlas steps in the daily scoreboard run. What they cost in server time is not yet measured.
