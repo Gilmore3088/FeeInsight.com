@@ -21,7 +21,7 @@ describe("competitive report consumer boundary", () => {
     const result = await getCustomReportMarketData(47);
     const query = state.queries.find((text) => text.includes("FROM published_fee_catalog c"));
     expect(query).toContain("c.source_document_id IS NOT NULL");
-    expect(query).toContain("c.fee_audience IN ('consumer', 'both')");
+    expect(query).toContain("c.fee_audience IN ('consumer', 'both', 'unknown')");
     expect(query).toContain("COALESCE(c.is_fee_cap, false) = false");
     expect(query).toContain("c.fee_name ~* r.inc AND c.fee_name !~* r.exc");
     expect(query).toContain("c.amount = 0 AND r.allow_zero");

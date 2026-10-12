@@ -25,7 +25,7 @@ describe("source-bound consumer peer baselines", () => {
     const [query, params] = unsafe.mock.calls[0] as [string, unknown[]];
     expect(params).toEqual(["TN"]);
     expect(query).toContain("c.source_document_id IS NOT NULL");
-    expect(query).toContain("c.fee_audience IN ('consumer', 'both')");
+    expect(query).toContain("c.fee_audience IN ('consumer', 'both', 'unknown')");
     expect(query).toContain("c.canonical_fee_key = 'overdraft' THEN MAX(c.amount)");
     expect(query).toContain("AND c.amount >= 0");
     expect(levels).toEqual([{
@@ -41,7 +41,7 @@ describe("source-bound consumer peer baselines", () => {
     const result = await computeWiderPeerLevels(db);
     const query = String(unsafe.mock.calls[0][0]);
     expect(query).toContain("c.source_document_id IS NOT NULL");
-    expect(query).toContain("c.fee_audience IN ('consumer', 'both')");
+    expect(query).toContain("c.fee_audience IN ('consumer', 'both', 'unknown')");
     expect(query).toContain("c.canonical_fee_key = 'overdraft' THEN MAX(c.amount)");
     expect(query).toContain("AND c.amount >= 0");
     expect(result.national).toEqual([]);

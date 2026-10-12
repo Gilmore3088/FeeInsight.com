@@ -86,13 +86,30 @@ describe("FeeScheduleTable", () => {
 });
 
 
-it.each(["business", "unknown"] as const)("shows %s scope without consumer median comparisons", (feeAudience) => {
-  render(<FeeScheduleTable fees={[fee({ feeAudience })]} disclosureUrl={null}
+it("shows business scope without personal median comparisons", () => {
+  render(<FeeScheduleTable fees={[fee({ feeAudience: "business" })]} disclosureUrl={null}
     medians={new Map([["overdraft", 30]])}
     benchmarks={{ overdraft: { p25: 25, median: 30, p75: 35 } }} />);
   expect(screen.queryByRole("link", { name: /national median/ })).toBeNull();
   expect(screen.queryByText(/Within the typical range/)).toBeNull();
-  expect(screen.getAllByText(feeAudience === "business" ? "Business accounts" : "Account audience not verified").length).toBeGreaterThan(0);
+  expect(screen.getAllByText("Business accounts").length).toBeGreaterThan(0);
+  expect(screen.queryByText(/treated as personal/)).toBeNull();
+});
+
+it("compares an unstated-audience fee as personal, with the asterisk and footnote", () => {
+  render(<FeeScheduleTable fees={[fee({ feeAudience: "unknown" })]} disclosureUrl={null}
+    medians={new Map([["overdraft", 30]])}
+    benchmarks={{ overdraft: { p25: 25, median: 30, p75: 35 } }} />);
+  expect(screen.getAllByRole("link", { name: /national median/ }).length).toBeGreaterThan(0);
+  expect(screen.getAllByText(/Audience not stated/).length).toBeGreaterThan(0);
+  expect(screen.getByText(/Audience not stated on the bank\u2019s schedule; treated as personal\. Fees may differ for business or commercial accounts\./)).toBeTruthy();
+});
+
+it("keeps a fee from a business-only schedule out of personal comparisons", () => {
+  render(<FeeScheduleTable fees={[fee({ feeAudience: "unknown", sourceUrl: "https://bank.example/business/fee-schedule.pdf" })]}
+    disclosureUrl={null} medians={new Map([["overdraft", 30]])}
+    benchmarks={{ overdraft: { p25: 25, median: 30, p75: 35 } }} />);
+  expect(screen.queryByRole("link", { name: /national median/ })).toBeNull();
 });
 
 it("labels an explicitly eliminated consumer fee instead of treating it as missing", () => {

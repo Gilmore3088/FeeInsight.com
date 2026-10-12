@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { FeeCategorySummary } from "@/lib/data-store/fees";
 import { formatCount } from "@/lib/public-stats";
+import { UnstatedAudienceFootnote, hasUnstatedAudience } from "@/components/unstated-audience";
 
 /** Everyday fees a consumer recognizes, with short labels that fit one phone line. */
 const STRIP_FEES: { category: string; label: string }[] = [
@@ -18,6 +19,8 @@ interface PriceRow {
   p25: number;
   p75: number;
   institutions: number;
+  /** A row with no stated audience is in the median (#1058): asterisk and footnote. */
+  unstated: boolean;
 }
 
 function formatUsd(value: number): string {
@@ -46,6 +49,7 @@ function buildRows(categories: FeeCategorySummary[]): PriceRow[] {
         p25: e.p25_amount,
         p75: e.p75_amount,
         institutions: e.institution_count,
+        unstated: hasUnstatedAudience(e),
       },
     ];
   });
@@ -113,6 +117,7 @@ export function LandingPriceStrip({
             How we calculate this →
           </Link>
         </div>
+        <UnstatedAudienceFootnote show={rows.some((row) => row.unstated)} className="mt-2" />
       </div>
     </section>
   );
@@ -128,7 +133,7 @@ function PriceRowLink({ row }: { row: PriceRow }) {
     <Link
       href={`/fees/${row.category}`}
       className="group flex items-center gap-4 py-3.5"
-      aria-label={`${row.label}: median ${formatUsd(row.median)} across ${formatCount(row.institutions)} institutions, most between ${formatUsd(row.p25)} and ${formatUsd(row.p75)}`}
+      aria-label={`${row.label}: median ${formatUsd(row.median)} across ${formatCount(row.institutions)} institutions, most between ${formatUsd(row.p25)} and ${formatUsd(row.p75)}${row.unstated ? " (includes fees whose audience is not stated, treated as personal)" : ""}`}
     >
       <div className="min-w-0 flex-1">
         <p className="text-[13px] text-[#5A5347] group-hover:text-[#1A1815]">{row.label}</p>
@@ -147,8 +152,9 @@ function PriceRowLink({ row }: { row: PriceRow }) {
           {formatUsd(row.p25)}–{formatUsd(row.p75)} · {formatCount(row.institutions)} institutions
         </p>
       </div>
-      <p aria-hidden="true" className="w-20 shrink-0 text-right text-2xl font-semibold tabular-nums text-[#1A1815]">
+      <p aria-hidden="true" className="min-w-20 shrink-0 text-right text-2xl font-semibold tabular-nums text-[#1A1815]">
         {formatUsd(row.median)}
+        {row.unstated && <span className="align-super text-sm font-normal">*</span>}
       </p>
     </Link>
   );

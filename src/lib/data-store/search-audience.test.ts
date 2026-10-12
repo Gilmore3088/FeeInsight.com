@@ -27,7 +27,7 @@ describe("institution directory fee focus audience boundary", () => {
     const query = state.queries[1];
     expect(query).toContain("LEFT JOIN LATERAL");
     expect(query).toContain("source_document_id IS NOT NULL");
-    expect(query).toContain("fee_audience IN ('consumer', 'both')");
+    expect(query).toContain("fee_audience IN ('consumer', 'both', 'unknown')");
     expect(query).toContain("ef.amount >= 0");
     expect(query).not.toContain("ef.amount > 0");
     expect(query).toContain("THEN MAX(ef.amount)");
@@ -75,7 +75,7 @@ describe("institution directory SQL category placeholders (#1012)", () => {
     expect(query).toContain("ef.fee_category = $" + feeParamIndex);
     expect(query).not.toMatch(/CASE WHEN \d+ = 'overdraft'/);
     expect(query).not.toMatch(/ef\.fee_category = \d+\b/);
-    expect(query).toContain("fee_audience IN ('consumer', 'both')");
+    expect(query).toContain("fee_audience IN ('consumer', 'both', 'unknown')");
     expect(query).toContain("ef.amount >= 0");
   });
 

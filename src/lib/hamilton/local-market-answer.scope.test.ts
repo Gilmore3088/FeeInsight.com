@@ -57,7 +57,7 @@ describe("local-market category propagation through the real service", () => {
     expect(mocks.market).toHaveBeenCalledWith(expect.objectContaining({ institutionId: 101, categories }));
     const ownFeeCall = mocks.sql.mock.calls.find(([strings]) => strings.join("?").includes("PERCENTILE_CONT"));
     expect(ownFeeCall?.[1]).toBe(101);
-    expect(String(ownFeeCall?.[2])).toContain("fee_audience IN ('consumer', 'both')");
+    expect(String(ownFeeCall?.[2])).toContain("fee_audience IN ('consumer', 'both', 'unknown')");
     expect(ownFeeCall?.[3]).toEqual(categories);
     expect(result?.categories).toEqual(categories);
     expect(result?.you.fees).toEqual({ money_order: 4, paper_statement: 0 });

@@ -30,7 +30,7 @@ describe("saved institution guide fee audience boundary", () => {
     expect(state.queries).toHaveLength(1);
     const query = state.queries[0];
     expect(query).toContain("ef.source_document_id IS NOT NULL");
-    expect(query).toContain("ef.fee_audience IN ('consumer', 'both')");
+    expect(query).toContain("ef.fee_audience IN ('consumer', 'both', 'unknown')");
     expect(query).toContain("ef.amount >= 0");
     expect(query).not.toContain("ef.amount > 0");
     expect(query).toContain("THEN MAX(ef.amount)");

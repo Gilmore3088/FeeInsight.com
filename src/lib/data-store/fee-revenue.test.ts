@@ -44,7 +44,7 @@ describe("fee revenue fee-population contract", () => {
     expect(raw).toContain("PERCENTILE_CONT(0.5)");
     expect(raw).toContain("HAVING COUNT(*) >= 3");
     const predicates = mock.unsafe.mock.calls.map((call) => String(call[0])).join("\n");
-    expect(predicates).toContain("fee_audience IN ('consumer', 'both')");
+    expect(predicates).toContain("fee_audience IN ('consumer', 'both', 'unknown')");
     expect(predicates).toContain("source_document_id IS NOT NULL");
   });
 });

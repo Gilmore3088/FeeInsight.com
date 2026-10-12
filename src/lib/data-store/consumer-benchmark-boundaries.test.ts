@@ -31,7 +31,7 @@ beforeEach(() => { state.queries.length = 0; state.sample = 4; });
 function requireConsumer(query: string | undefined) {
   expect(query).toBeDefined();
   expect(query).toContain("ef.source_document_id IS NOT NULL");
-  expect(query).toContain("ef.fee_audience IN ('consumer', 'both')");
+  expect(query).toContain("ef.fee_audience IN ('consumer', 'both', 'unknown')");
   expect(query).not.toContain("ef.amount > 0");
 }
 

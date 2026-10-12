@@ -20,7 +20,7 @@ describe("local consumer evidence", () => {
     expect(result?.competitors[0].market_deposits).toBeNull();
     const query = state.queries[1];
     expect(query).toContain("c.source_document_id IS NOT NULL");
-    expect(query).toContain("c.fee_audience IN ('consumer', 'both')");
+    expect(query).toContain("c.fee_audience IN ('consumer', 'both', 'unknown')");
     expect(query).toContain("THEN MAX(c.amount)");
     expect(query).toContain("c.amount >= 0");
     expect(query).not.toContain("c.amount > 0");
@@ -32,7 +32,7 @@ describe("local consumer evidence", () => {
     expect(query).toContain("c.like_for_like IS TRUE");
     expect(query).toContain("FROM published_fee_catalog nl");
     expect(query).toContain("nl.source_document_id IS NOT NULL");
-    expect(query).toContain("nl.fee_audience IN ('consumer', 'both')");
+    expect(query).toContain("nl.fee_audience IN ('consumer', 'both', 'unknown')");
     expect(query).toContain("previous.fee_audience = nl.fee_audience");
     expect(query).toContain("previous.quarantined_at IS NULL");
     expect(query).toContain("c.previous_fee_published_id");

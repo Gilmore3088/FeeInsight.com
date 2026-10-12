@@ -1,4 +1,5 @@
-import { isConsumerFee } from "@/lib/fee-audience";
+import { countsAsPersonal, isAudienceUnstated } from "@/lib/fee-audience";
+import { isBusinessOnlyLink } from "@/lib/agents/magellan/link-coverage";
 import { cache } from "react";
 import { getFeesByInstitution, getPublicInstitutionById } from "@/lib/data-store";
 import type { ExtractedFee } from "@/lib/data-store/types";
@@ -114,15 +115,18 @@ function pickAmount(
   exclude?: RegExp,
   require?: (fee: ExtractedFee) => boolean,
 ): number | null {
-  const match = fees.find(
+  const candidates = fees.filter(
     (fee) =>
       fee.fee_category === category &&
       fee.amount !== null &&
       fee.amount >= 0 &&
-      isConsumerFee(fee.fee_audience) &&
+      countsAsPersonal(fee.fee_audience) &&
+      !(fee.source_url && isBusinessOnlyLink(fee.source_url)) &&
       !(exclude && exclude.test(fee.fee_name)) &&
       (!require || require(fee)),
   );
+  // A fee the schedule states is personal wins over one whose audience is not stated.
+  const match = candidates.find((fee) => !isAudienceUnstated(fee.fee_audience)) ?? candidates[0];
   return match?.amount ?? null;
 }
 
