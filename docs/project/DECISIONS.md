@@ -5,11 +5,16 @@ Seeded 2026-10-05 from the project's working memory; earlier decisions were not 
 
 ## 2026-10-12
 
-**Publish sourced fees even when an institution has only one or two.** James, Oct 12: a fee is
-worth publishing if the document is sourced and we can link to it. This replaces the 3-fee
-minimum (`HAMILTON_PUBLISH_MIN_INSTITUTION_FEES` and the `published_fee_catalog` view), which
-holds about 1,235 institutions back (`docs/plans/rosetta-review-2026-10-12.md`). Thin
-institutions still pass the source and product-page checks first.
+**Thin results mean the wrong document, not a small fee schedule.** James, Oct 12: a real fee
+schedule (the disclosure Truth in Savings requires) lists far more than one or two fees, so an
+institution with only one or two fee types almost certainly has the wrong document: a checking
+product page, a savings page, a CRA file. The data agrees: of the 1,235 institutions held by the
+3-fee minimum, 1,041 sit on product or account pages by URL, and 496 have only a monthly
+maintenance fee (`docs/plans/rosetta-review-2026-10-12.md`). The 3-fee minimum stays. Those
+institutions go back to Magellan as priority targets for the real schedule, and a fee from a
+product page is never published as if it were the schedule. (James first said a sourced fee is
+worth publishing even when it is one of two; on seeing the documents he corrected it the same
+day.)
 
 **Pay to transcribe scanned PDFs.** James, Oct 12: yes to paid reads for scans that free OCR
 cannot read, inside the provider caps.

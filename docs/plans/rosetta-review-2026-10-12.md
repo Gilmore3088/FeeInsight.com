@@ -47,12 +47,25 @@ falls into exactly one of these:
 it has 3 distinct fee types live. The 71 "no reason" take-downs are most likely that view hiding
 banks that dropped below 3, not real take-downs; to be confirmed.
 
-James decided on 2026-10-12 that a fee is worth publishing when it is sourced and we can link to
-the source, even if the bank has only one or two. Changing the minimum is the single largest
-coverage gain found so far and costs nothing in provider spend. It needs care: a page with one
-or two fees is often a product page rather than a fee schedule (137 of the take-downs above), so
-thin institutions should pass the source check (`checkFeeAgainstSource`) and the product-page
-check before publishing, and be shown as a partial schedule.
+**These are the wrong documents, not small fee schedules (measured).** Of the 1,235
+institutions held by the minimum, 1,041 sit on a product or account page by URL
+(`/personal/checking`, `/personal-savings-and-cds`, `/overdraft-protection`), 3 on CRA files, and
+only 108 on a URL that names a fee schedule or disclosure. Their fees match product pages: 496
+have only a monthly maintenance fee, 96 a maintenance fee and a paper-statement fee, 71 a minimum
+balance and a maintenance fee. A real fee schedule lists far more. The 3-fee minimum is therefore
+doing its job and stays (James, 2026-10-12, `DECISIONS.md`).
+
+The gap is upstream: the fee-page check lets product pages through as the bank's fee document,
+and nothing sends a bank whose only document is a product page back to Magellan for the real
+schedule. Those 1,235 institutions are the cheapest coverage left: each has a working website,
+often a known platform, and a page one or two clicks from the schedule.
+
+## Does Rosetta need rewiring for Magellan's state-by-state order? (code)
+
+Mostly no. Rosetta reads inside each state lane after Magellan's fetch, newest documents first
+(`read.ts`, `ORDER BY crawled_at DESC`), so whatever order Magellan works in, Rosetta follows on
+the same run. Two changes do matter, and both are below: reject product pages at the fee-page
+check (R3), and hand thin institutions back to Magellan as priority targets (R1).
 
 ## What works
 
@@ -64,14 +77,10 @@ check before publishing, and be shown as a partial schedule.
 
 | # | Change | Owner agent |
 |---|---|---|
-| R1 #1051 | Publish institutions with 1–2 sourced fees, shown as a partial schedule, after source and product-page checks; change the publish gate and the catalog view together | Hamilton (+ migration) |
+| R1 #1051 | Send the 1,235 thin institutions back to Magellan as priority targets for the real fee schedule; keep the 3-fee minimum | Magellan (selection) |
 | R2 #1052 | Darwin skips some Knox output: 350 institutions with Knox fees and no Darwin result, 72 waiting over a week | Darwin |
 | R3 #1053 | Product pages pass as fee documents: 137 institutions' only fees were taken down as product-page fees; reject them at the fee-page check, before Knox | Rosetta (with Magellan #1033) |
 | R4 #1054 | Measure the batch review: show miss counts and remedy outcomes (131 `no_fees_found` institutions) on the scorecard | Rosetta (with #1040) |
 | R5 #1055 | Explain the 71 "no reason" take-downs and the 19 three-type institutions never published | Hamilton |
 | R6 #1056 | Scans: James approved paying to transcribe scanned PDFs; confirm the paid read covers every `needs_ocr` text and report it | Rosetta |
 
-## Open questions for James
-
-- How a partial schedule is shown publicly (a label, fewer comparisons) and whether 1-fee
-  institutions are indexed by search engines (#1043).
