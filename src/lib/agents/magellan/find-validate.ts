@@ -1,7 +1,8 @@
 import { crawlerUserAgent } from "@/lib/agents/crawler-identity";
 import { htmlToScoringText, isProductPageUrl, scoreFeePage, urlNamesFeePage } from "@/lib/agents/learning/fee-page";
 
-import { isArticleLink, isBusinessOnlyLink, isBusinessOnlyText, isErrorPageLink, isForeignHostLink, isSingleProductDisclosureLink, looksForeignSchedule } from "./link-coverage";
+import { isArticleLink, isBusinessOnlyLink, isBusinessOnlyText, isErrorPageLink, isForeignHostLink, isNonFeeDocumentLink, isSingleProductDisclosureLink, looksForeignSchedule } from "./link-coverage";
+import { unconfirmedDocumentHost } from "./other-bank-host";
 
 /**
  * The fee-page check every Magellan finder (free and paid) runs before a link is
@@ -71,6 +72,8 @@ export interface FeeCandidate {
   reasons: string[];
   /** The bank's own website: a foreign country domain on the same host is the bank's own. */
   websiteUrl?: string | null;
+  /** The bank's name, so a document on another host can show it is this bank's (#1033). */
+  institutionName?: string | null;
 }
 
 export type CandidateVerdict =
@@ -86,6 +89,8 @@ export type CandidateVerdict =
   | "error_page"
   | "article_page"
   | "single_product_disclosure"
+  | "non_fee_document"
+  | "unconfirmed_host"
   | "unreadable_pdf_weak_label"
   | "not_a_pdf"
   | "unsupported_type"
@@ -177,11 +182,37 @@ function rejected(verdict: CandidateVerdict, reason: string, status: number | nu
 
 /** Open a candidate and decide whether it is the bank's fee schedule. Throws only on network errors. */
 export async function validateFeeCandidate(candidate: FeeCandidate, fetchImpl: Fetcher): Promise<CandidateValidation> {
+  const validation = await checkFeeCandidate(candidate, fetchImpl);
+  return validation.ok ? confirmDocumentHost(candidate, validation) : validation;
+}
+
+/**
+ * An accepted document on a host that is not the bank's website must name the bank, or it is
+ * that host's schedule (#1033): Hamilton took down 836 such fees in the week to 2026-10-12,
+ * and the 128 from documents stored after its check began (Oct 9) were all found this way.
+ * Applies only when the finder passed the bank's website.
+ */
+function confirmDocumentHost(candidate: FeeCandidate, validation: CandidateValidation): CandidateValidation {
+  if (!candidate.websiteUrl) return validation;
+  const why = unconfirmedDocumentHost({
+    url: candidate.url,
+    websiteUrl: candidate.websiteUrl,
+    institutionName: candidate.institutionName,
+    text: validation.scoringText,
+  });
+  if (!why) return validation;
+  return { ...rejected("unconfirmed_host", `Candidate is on another host: ${why}`, validation.status, candidate.score), html: validation.html, scoringText: validation.scoringText };
+}
+
+async function checkFeeCandidate(candidate: FeeCandidate, fetchImpl: Fetcher): Promise<CandidateValidation> {
   if (isBusinessOnlyLink(candidate.url)) {
     return rejected("business_schedule", "Candidate address names a business-only schedule", null, candidate.score);
   }
   if (isErrorPageLink(candidate.url)) {
     return rejected("error_page", "Candidate address is the site's error page", null, candidate.score);
+  }
+  if (isNonFeeDocumentLink(candidate.url)) {
+    return rejected("non_fee_document", "Candidate is a CRA file, annual report, newsletter or flyer, not a fee schedule", null, candidate.score);
   }
   if (isArticleLink(candidate.url)) {
     return rejected("article_page", "Candidate is an article, blog post or news item, not a fee schedule", null, candidate.score);

@@ -79,6 +79,30 @@ export function isOtherSiteLink(url: string | null | undefined, website?: string
 }
 
 /**
+ * A document that is never a fee schedule (#1033): a Community Reinvestment Act public file,
+ * performance evaluation or disclosure statement, an annual report, a newsletter, an
+ * achievements piece or a flyer. Production, 2026-10-12: 109 current documents had such an
+ * address, 37 stored that week; the largest stored files were a 13.6 MB CRA public file and an
+ * 8.7 MB achievements flyer. An address that also names a fee, schedule or charge (Valley's
+ * "/cra/public-file/...Schedule of Fees...") is kept. Brochures are kept: several banks'
+ * services brochures are their fee list (21-24 live fees each).
+ */
+const NON_FEE_DOCUMENT_PATH = /(cra[-_ ]?public[-_ ]?file|community[-_ ]?reinvestment|performance[-_ ]?evaluation|cra[-_ ]?disclosure|\/cra\/|annual[-_ ]?report|newsletter|achievement|acheivement|flyer)/i;
+const FEE_WORDS_IN_PATH = /(fee|schedule|charge)/i;
+
+export function isNonFeeDocumentLink(url: string | null | undefined): boolean {
+  if (!url) return false;
+  let path: string;
+  try {
+    const parsed = new URL(url);
+    path = decodeURIComponent(parsed.pathname + parsed.search);
+  } catch {
+    return false;
+  }
+  return NON_FEE_DOCUMENT_PATH.test(path) && !FEE_WORDS_IN_PATH.test(path);
+}
+
+/**
  * True when the address is an article, blog post, news item or press release: a page
  * about fees in general ("common checking account fees to avoid", Space Coast CU; a 2021
  * Chase press release), whose amounts are national figures or old news, never the bank's

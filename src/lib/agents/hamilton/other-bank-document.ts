@@ -2,7 +2,7 @@ import { sql } from "@/lib/data-store/connection";
 import { invalidatePublicReadCache } from "@/lib/data-store/fee-cache";
 import { recordFeedback, type FeedbackRow } from "@/lib/agents/learning/feedback";
 import { secondLook } from "@/lib/agents/hamilton/second-look";
-import { hostSql, OTHER_BANK_HOST_CODE } from "@/lib/agents/magellan/other-bank-host";
+import { hostSql, OTHER_BANK_HOST_CODE, SHARED_CONTENT_HOST_PATTERN } from "@/lib/agents/magellan/other-bank-host";
 import { inSavepoint } from "@/lib/agents/savepoint";
 
 type SqlTag = typeof sql;
@@ -48,9 +48,8 @@ export const OTHER_BANK_DOCUMENT_ROLLBACK_LIMIT = 500;
 export const UNCONFIRMED_HOST_CHECK = "hamilton.unconfirmed_document_host";
 export const UNCONFIRMED_HOST_REASON = "unconfirmed_document_host";
 export const UNCONFIRMED_HOST_FLAG = "unconfirmed_document_host";
-/** File and site-builder hosts many banks use for their own documents. */
-export const SHARED_CONTENT_HOST_PATTERN =
-  "(cdn|static|assets|s3|amazonaws|cloudfront|filesusr|usrfiles|wsimg|hubspotusercontent|ctfassets|sanity[.]io|contentstack|sitecorecloud|digitaloceanspaces|filesafe|marketpath|q4cdn|homecu|kcmspreview|website-files|cms|squarespace|blob[.]core|googleusercontent|wixstatic|azureedge|akamai|storage|wpengine)";
+/** File and site-builder hosts many banks use for their own documents (shared with Magellan's link check). */
+export { SHARED_CONTENT_HOST_PATTERN };
 
 interface OtherBankFeeRow {
   fee_published_id: number | string;

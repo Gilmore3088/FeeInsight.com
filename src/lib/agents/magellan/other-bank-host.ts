@@ -28,6 +28,61 @@ export function urlHost(value: string | null | undefined): string | null {
   }
 }
 
+/** File and site-builder hosts many banks use for their own documents. */
+export const SHARED_CONTENT_HOST_PATTERN =
+  "(cdn|static|assets|s3|amazonaws|cloudfront|filesusr|usrfiles|wsimg|hubspotusercontent|ctfassets|sanity[.]io|contentstack|sitecorecloud|digitaloceanspaces|filesafe|marketpath|q4cdn|homecu|kcmspreview|website-files|cms|squarespace|blob[.]core|googleusercontent|wixstatic|azureedge|akamai|storage|wpengine)";
+const SHARED_CONTENT_HOST = new RegExp(SHARED_CONTENT_HOST_PATTERN);
+
+/** The name part of a host ("usffcu" in "usffcu.com"), as Hamilton's SQL reads it. */
+export function hostLabel(host: string): string {
+  const parts = host.split(".");
+  return parts[Math.max(parts.length - 2, 0)] ?? host;
+}
+
+/** A bank's name as Hamilton compares it: lower case, no "N.A."/"FSB" suffix, plain characters. */
+export function comparableBankName(name: string | null | undefined): string {
+  return (name ?? "")
+    .toLowerCase()
+    .replace(/,?\s+(national association|n\.a\.|ssb|fsb)\s*$/, "")
+    .replace(/[^a-z0-9&' -]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/** Does this text tie a document to the bank (its website, the website's name, or its own name)? */
+export function textNamesBank(text: string, bank: { websiteHost: string; institutionName?: string | null }): boolean {
+  const lower = text.toLowerCase().replace(/\s+/g, " ");
+  if (lower.includes(bank.websiteHost)) return true;
+  const label = hostLabel(bank.websiteHost);
+  if (label.length >= 4 && lower.includes(label)) return true;
+  const name = comparableBankName(bank.institutionName);
+  if (name.length < 6) return false;
+  return lower.includes(name) || lower.includes(name.replace(" federal credit union", " credit union"));
+}
+
+/**
+ * A document on a host that is neither the bank's website (or a subdomain), nor a shared file
+ * host, nor a host with the website's name (healthplusfcu.org and .com), and whose text does not
+ * name the bank: Hamilton's `unconfirmed_document_host` rule (hamilton/other-bank-document.ts),
+ * applied before the link is stored (#1033). Returns why, or null when the document may be kept.
+ * Another institution's own website is refused at `recordDiscoveryResult`, which can look it up.
+ */
+export function unconfirmedDocumentHost(input: {
+  url: string;
+  websiteUrl: string | null | undefined;
+  institutionName?: string | null;
+  text: string | null | undefined;
+}): string | null {
+  const host = urlHost(input.url);
+  const own = urlHost(input.websiteUrl);
+  if (!host || !own) return null;
+  if (host === own || host.endsWith(`.${own}`) || own.endsWith(`.${host}`)) return null;
+  if (SHARED_CONTENT_HOST.test(host)) return null;
+  if (hostLabel(host) === hostLabel(own)) return null;
+  if (input.text && textNamesBank(input.text, { websiteHost: own, institutionName: input.institutionName })) return null;
+  return `${host} is not the bank's website (${own}) and the document does not name the bank`;
+}
+
 /** SQL for the host of an address column, matching `urlHost`. */
 export function hostSql(column: string): string {
   return `regexp_replace(lower(substring(${column} from '^(?:[a-zA-Z][a-zA-Z0-9+.-]*://)?([^/:?#]+)')), '^www\\.', '')`;

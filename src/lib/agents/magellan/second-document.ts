@@ -728,7 +728,7 @@ async function searchBank(
     const entry: TrailEntry = { url: candidate.url, source: candidate.source, foundOn: candidate.foundOn, label: candidate.label, score: Math.round(candidate.score * 100) / 100, verdict: "" };
     trail.push(entry);
     try {
-      const validation = await validateFeeCandidate({ ...candidate, websiteUrl: site.toString() }, fetchImpl);
+      const validation = await validateFeeCandidate({ ...candidate, websiteUrl: site.toString(), institutionName: row.institution_name }, fetchImpl);
       entry.verdict = validation.verdict;
       if (validation.ok) {
         keep({
