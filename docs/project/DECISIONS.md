@@ -3,6 +3,13 @@
 Newest first. Each entry: date, what was decided, who, why, and what it means for the work.
 Seeded 2026-10-05 from the project's working memory; earlier decisions were not recorded here.
 
+## 2026-10-11
+
+**One-time WIP exception for the directory fix.** James, Oct 11 (`docs/project/BACKLOG.md`,
+issues #1012 and #984). Only PR #1017 could go over the three-PR correctness cap. The exception was
+limited to that PR, issue, branch and base, and expires 2026-10-14T00:00:00Z
+(`.github/backlog-policy.json`). Every other intake check still applied. The default cap stays at 3.
+
 ## 2026-10-10
 
 **Clean, merge-ready PRs have standing merge authorization across FeeInsight chats.** James,

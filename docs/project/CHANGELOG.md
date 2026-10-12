@@ -3,6 +3,21 @@
 Merged changes in plain language, newest day first (UTC). Written from `git log` on main.
 Started 2026-10-05; for anything earlier, see `git log`.
 
+## 2026-10-11
+**Accuracy and data quality**
+- Fee 92156 re-filed as a safe deposit box fee, and escheat fee 59791 hand-checked for takedown (#1020, port of #973).
+
+**Public site and Hamilton**
+- Hamilton H01 and H02: the researched institution stays separate from the account's own institution across Ask, saved answers and PDFs; peer lists carry dated assets and can be saved and reopened (#985).
+- Hamilton H06: saved storyline answers keep record-bound evidence, and figure-only checks no longer rate an answer high confidence (#995).
+- The public institution directory binds its fee-category filter correctly again, fixing a 22P02 error (#1017).
+
+**Revenue and leads**
+- Payment reliability: billing reconciliation, persisted checkout intents (migration 42) and a durable payment email outbox (migration 43) (#991).
+
+**Project and tooling**
+- Report templates and Atlas crew no longer import each other in a cycle (#1009); pipeline acceptance fails on missing-object errors instead of passing (#1015); run parameter parsing moves out of the agent ledger (#1013); Hamilton release evidence matrix and fixtures (#996); Checkpoints 2026-10-09 and 2026-10-10 (#1019).
+
 ## 2026-10-10
 **Accuracy and data quality**
 - Pinnacle fee audience integrity: consumer and business fees kept apart, with migrations 40 and 41 (#986); a source-reviewed second look for Pinnacle's duplicate overdraft rows (#998).
