@@ -5,6 +5,48 @@ Seeded 2026-10-05 from the project's working memory; earlier decisions were not 
 
 ## 2026-10-12
 
+**Quality checks run inside the pipeline, not on demand.** James, Oct 12: "I don't want to be
+responsible for calling all of these on demand; they need to be built into the process." The
+fee-quality skills (`fee-benchmarking` with new statistical checks, `data-quality-audit`,
+`audit-data`, `source-evidence-audit`, `report-reconciliation`, `fee-taxonomy-regression`,
+`adversarial-document-testing`) become deterministic Deming steps in the daily scoreboard run,
+a required step in the report job, or CI gates. They are built the way growth was built in (typed
+agent steps), never as scheduled Claude routines, and report to the scorecard with alerts on
+failure. Each skill stays as the written method. Tracked in #1063 (#1064–#1067).
+
+**Coverage target and benchmark threshold.** James, Oct 12. Under $10B, each state and size
+group (under $300M, $300M–$1B, $1–10B) is covered when it has 30 institutions with live fees, or
+75% of the group when it has fewer than 40. A benchmark shows from 10 institutions, marked
+"limited sample" below 30. Below 10 it falls back to the Federal Reserve district at the same
+size, then to the state across all sizes, matching the 10-institution peer minimum in the
+`fee-benchmarking` skill. Banks over $10B are compared nationally and by district, never by
+state. Why: with 8 institutions the 95% range around a median runs from roughly the cheapest
+bank to the priciest; at 30 it narrows to about the middle third; and covering most of a small
+group is close to a census. Measured the same day: 64 of 161 state and size groups under $10B
+meet the target, and about 524 more covered institutions would close the gap (75% in every group
+would need about 2,654). Only 6 states have 30 or more covered $1–10B institutions, while all 12
+districts do, so that tier leans on the district fallback. Full coverage stays the long-term goal
+for the consumer hub.
+
+**Publish benchmarks now; unlabeled fees count as consumer, marked with an asterisk.** James,
+Oct 12 (#1058): a fee with no clear personal-or-business signal is treated as consumer and shown
+with an asterisk and footnote beside its source link: "Audience not stated on the bank's
+schedule; treated as personal. Fees may differ for business or commercial accounts." The
+methodology page explains the rule. Knox works the backlog down from documents already stored,
+with no new searching (#1059), so the asterisked share should fall toward zero. Statistical
+significance across thousands of institutions matters more than perfection.
+
+**Business fees are published and labeled, not dropped.** James, Oct 12: some banks and credit
+unions are business-focused, so business and commercial fees (one value, `business`) stay visible
+on institution pages and in their own clearly labeled business comparisons. They are kept out of
+consumer medians only so the two are never mixed; every figure says which audience it covers.
+
+**Monthly account fees are compared on the entry-level account.** James, Oct 12 (#1060): plus the
+share of peers offering a free account; a free checking account counts on the consumer side.
+Long-term direction: a consumer-facing hub where someone shopping for a local bank compares every
+bank's fees in their state or county and asks Hamilton what a fee means. The data layer comes
+first.
+
 **Thin results mean the wrong document, not a small fee schedule.** James, Oct 12: a real fee
 schedule (the disclosure Truth in Savings requires) lists far more than one or two fees, so an
 institution with only one or two fee types almost certainly has the wrong document: a checking
