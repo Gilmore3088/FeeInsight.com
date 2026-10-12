@@ -69,6 +69,11 @@ export const DARWIN_VERIFY_STRATEGY = { strategy: "verify.rules", version: 3 } a
  * a guard bump re-checks `category_mismatch`; a row the check still fails is stamped and done.
  * Bump it when a source-check fix lands that should reach rejected rows. v1: 2026-10-09, after
  * Knox v62 (#861) taught the check wrapped leader names, per-wire lines and former-fee columns.
+ * v2: 2026-10-09 (a1119f26), after the check learned customer audience: a completed fee
+ * elimination scoped to one audience is read as that audience's $0, an NSF price on a schedule
+ * whose completed change statement does not name it is not the fee, a price that conflicts with
+ * the schedule's audience statement is not the fee, and an overdraft cushion or a per-day total
+ * is not a per-item overdraft or NSF price.
  */
 export const DARWIN_SOURCE_CHECK_VERSION = 2;
 /**
