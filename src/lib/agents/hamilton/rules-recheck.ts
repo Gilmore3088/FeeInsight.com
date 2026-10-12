@@ -498,6 +498,9 @@ export async function rollBackUnreproducedFees(
       if (exact && !row.pulled) namedLines.set(key, (namedLines.get(key) ?? new Set<string>()).add(exact));
     }
     const kept = new Set<LiveKnoxRow>();
+    // Lines held by a fee under an untidy name: which line it really is is a guess, so no
+    // takedown at that category and price comes back beside it (the rule before #978).
+    const guessed = new LineClaims();
     const ordered = newestFirst(liveRows);
     const singleAudienceFirst = [...ordered].sort((a, b) =>
       Number(audiencesOverlap(audienceOf(a), "consumer") && audiencesOverlap(audienceOf(a), "business"))
@@ -512,6 +515,7 @@ export async function rollBackUnreproducedFees(
           ?? null;
         if (claim && !claims.holds(line.key, claim, audience)) {
           claims.take(line.key, claim, audience);
+          if (!line.exact) guessed.take(line.key, claim, audience);
           kept.add(row);
         }
       }
@@ -566,7 +570,7 @@ export async function rollBackUnreproducedFees(
       // category and price is live or restored for an overlapping audience, as before #978.
       const named = lineOf.get(row)?.exact ?? null;
       if (named
-        ? claims.holds(key, named, audience) || restoredClaims.holds(restoreKey, named, audience)
+        ? claims.holds(key, named, audience) || guessed.holdsAny(key, audience) || restoredClaims.holds(restoreKey, named, audience)
         : claims.holdsAny(key, audience) || restoredClaims.holdsAny(restoreKey, audience)) continue;
       const line = named ?? rowNames(row)[0];
       fee.exactLine = named != null;

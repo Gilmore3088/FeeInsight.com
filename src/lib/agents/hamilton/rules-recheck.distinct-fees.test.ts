@@ -176,4 +176,21 @@ describe("rules re-check keeps distinct fees that share a category and price", (
     );
     expect((await run(db)).rollbacks.map((fee) => fee.feePublishedId)).toEqual([2]);
   });
+
+  it("should_not_restore_beside_a_live_fee_whose_line_is_only_guessed", async () => {
+    const lines = ["Stop Payment | $30.00", "Stop Payment - Online | $30.00"].join("\n");
+    const db = createDbMock(
+      [live(1, "stop_payment", "Stop Pmt Chg", "30.00"), live(2, "stop_payment", "Stop Payment - Online", "30.00", "unknown", true)],
+      lines,
+    );
+    db.mockImplementation(((strings: TemplateStringsArray) => {
+      const query = strings.join("?");
+      if (query.includes("FROM agent_source_texts")) return Promise.resolve([{ source_document_id: 9, text_hash: "abc", normalized_text: lines }]);
+      if (query.includes("RETURNING fp.fee_published_id")) return Promise.resolve([{ fee_published_id: 2, lineage_ref: 1002 }]);
+      return Promise.resolve([]);
+    }) as never);
+    const result = await run(db);
+    expect(result.rollbacks).toEqual([]);
+    expect(result.restores).toEqual([]);
+  });
 });
