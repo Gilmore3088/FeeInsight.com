@@ -170,7 +170,7 @@ Cross-pipeline issues: X1 #1037 (gate before publishing), X2 #1038
 |---|---|---|
 | Magellan | `docs/plans/magellan-review-2026-10-12.md`, tracker #1027 | Written 2026-10-12 |
 | Hamilton | Existing tracker #975 stays its home | Next review |
-| Rosetta | | |
+| Rosetta | `docs/plans/rosetta-review-2026-10-12.md`, tracker #1050 | Written 2026-10-12 |
 | Knox | | |
 | Darwin | | |
 | State experts | | |
