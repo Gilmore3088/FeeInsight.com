@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { CANONICAL_KEY_MAP } from "@/lib/fee-taxonomy";
 import { sql } from "./connection";
+import type { GoalScorecard } from "@/lib/agents/goal-scorecard";
 
 /**
  * The answer key: hand-checked fee documents and fees for ~60 institutions, the
@@ -636,6 +637,8 @@ export interface ScoreboardSnapshotRow {
   accuracy_score_run_id: number | null;
   freshness_median_days: number | null;
   freshness_live_fees: number | null;
+  /** The goal scorecard stored that day (`detail.goal`, #1040); null on older snapshots. */
+  goal: GoalScorecard | null;
 }
 
 const SNAPSHOT_NUMBER_COLUMNS = [
@@ -667,6 +670,8 @@ export async function listScoreboardSnapshots(days = 30, db: SqlTag = sql): Prom
     for (const column of SNAPSHOT_NUMBER_COLUMNS) {
       snapshot[column] = row[column] == null ? null : Number(row[column]);
     }
+    const detail = (typeof row.detail === "string" ? JSON.parse(row.detail) : row.detail) as { goal?: GoalScorecard } | null;
+    snapshot.goal = detail?.goal ?? null;
     return snapshot as unknown as ScoreboardSnapshotRow;
   });
 }
