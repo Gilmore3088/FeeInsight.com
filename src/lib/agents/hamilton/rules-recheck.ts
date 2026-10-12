@@ -481,8 +481,10 @@ export async function rollBackUnreproducedFees(
     // One document states each line once: when a re-extraction publishes the same line under
     // a better name ("Negative $25 or less" for "Negative or less"), the newest row stays and
     // older copies are rolled back. Distinct lines at the same category and price all stay.
-    // Rows named as one of the text's lines claim it first, newest first; a row under an older
-    // or untidy name then takes a line no row in this document is named as, if one is left.
+    // Rows named as one of the text's lines claim it first, newest first and a single audience
+    // before unknown or both; a row under an older or untidy name then takes a line no live row
+    // is named as, if one is left. A taken-down row never displaces a live one: it may fail its
+    // restore, and the line would be lost.
     const claims = new LineClaims();
     const lineOf = new Map<LiveKnoxRow, { key: string; lines: Set<string>; exact: string | null }>();
     const namedLines = new Map<string, Set<string>>();
@@ -493,12 +495,15 @@ export async function rollBackUnreproducedFees(
       const lines = linesFor(readsFrom(textFor(row)), key, lessonReadKey(row, amount));
       const exact = exactLine(row, lines);
       lineOf.set(row, { key, lines, exact });
-      if (exact) namedLines.set(key, (namedLines.get(key) ?? new Set<string>()).add(exact));
+      if (exact && !row.pulled) namedLines.set(key, (namedLines.get(key) ?? new Set<string>()).add(exact));
     }
     const kept = new Set<LiveKnoxRow>();
     const ordered = newestFirst(liveRows);
+    const singleAudienceFirst = [...ordered].sort((a, b) =>
+      Number(audiencesOverlap(audienceOf(a), "consumer") && audiencesOverlap(audienceOf(a), "business"))
+      - Number(audiencesOverlap(audienceOf(b), "consumer") && audiencesOverlap(audienceOf(b), "business")));
     for (const exactPass of [true, false]) {
-      for (const row of ordered) {
+      for (const row of singleAudienceFirst) {
         const line = lineOf.get(row);
         if (!line || kept.has(row) || line.lines.size === 0 || (line.exact != null) !== exactPass) continue;
         const audience = audienceOf(row);
@@ -696,7 +701,16 @@ export async function rollBackUnreproducedFees(
                   AND live.quarantined_at IS NULL
                   AND live.amount IS NOT DISTINCT FROM fp.amount
                   AND (NOT (fp.fee_published_id = ANY(${exactRestoreIds}::bigint[]))
-                       OR lower(live.fee_name) = lower(fp.fee_name))
+                       OR lower(live.fee_name) = lower(fp.fee_name)
+                       -- The name exception holds within one document; a differently named
+                       -- live fee read from another document may be the same fee.
+                       OR (SELECT fr.source_document_id FROM verified_fee_observations fv
+                             JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
+                            WHERE fv.fee_verified_id = live.lineage_ref)
+                          IS DISTINCT FROM
+                          (SELECT fr.source_document_id FROM verified_fee_observations fv
+                             JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
+                            WHERE fv.fee_verified_id = fp.lineage_ref))
              )
           RETURNING fp.fee_published_id, fp.lineage_ref, fp.institution_id
         `;

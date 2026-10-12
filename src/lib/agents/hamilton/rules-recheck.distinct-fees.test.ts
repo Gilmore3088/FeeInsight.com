@@ -134,7 +134,8 @@ describe("rules re-check keeps distinct fees that share a category and price", (
     expect((await run(db)).rollbacks.map((fee) => fee.feePublishedId)).toEqual([1]);
   });
 
-  it("should_not_let_an_untidy_copy_take_a_line_another_fee_is_named_as", async () => {
+  it("should_keep_a_live_untidy_fee_rather_than_displace_it_for_a_taken_down_one", async () => {
+    // The taken-down row might fail its restore; the line must not be lost meanwhile.
     const text = ["Stop Payment | $30.00", "Stop Payment - Online | $30.00"].join("\n");
     const db = createDbMock(
       [
@@ -147,14 +148,25 @@ describe("rules re-check keeps distinct fees that share a category and price", (
     db.mockImplementation(((strings: TemplateStringsArray) => {
       const query = strings.join("?");
       if (query.includes("FROM agent_source_texts")) return Promise.resolve([{ source_document_id: 9, text_hash: "abc", normalized_text: text }]);
-      if (query.includes("RETURNING fp.fee_published_id")) return Promise.resolve([{ fee_published_id: 2, lineage_ref: 1002 }]);
       if (query.includes("to_regclass('public.pipeline_feedback')")) return Promise.resolve([{ ready: true }]);
-      if (query.includes("FROM pipeline_feedback")) return Promise.resolve(firstLook([1]));
+      if (query.includes("FROM pipeline_feedback")) return Promise.resolve(firstLook([1, 3]));
       return Promise.resolve([]);
     }) as never);
     const result = await run(db);
-    expect(result.rollbacks.map((fee) => fee.feePublishedId)).toEqual([1]);
-    expect(result.restores.map((fee) => fee.feePublishedId)).toEqual([2]);
+    expect(result.rollbacks).toEqual([]);
+    expect(result.restores).toEqual([]);
+  });
+
+  it("should_keep_consumer_and_business_fees_when_an_unknown_copy_is_newest", async () => {
+    const db = createDbMock(
+      [
+        live(1, "stop_payment", "Stop Payment", "30.00", "consumer"),
+        live(2, "stop_payment", "Stop Payment", "30.00", "business"),
+        live(3, "stop_payment", "Stop Payment", "30.00", "unknown"),
+      ],
+      "Stop Payment | $30.00",
+    );
+    expect((await run(db)).rollbacks.map((fee) => fee.feePublishedId)).toEqual([3]);
   });
 
   it("should_keep_an_exactly_named_older_fee_over_a_newer_untidy_copy", async () => {
