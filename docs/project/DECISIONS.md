@@ -5,6 +5,20 @@ Seeded 2026-10-05 from the project's working memory; earlier decisions were not 
 
 ## 2026-10-12
 
+**Publish benchmarks now; unlabeled fees count as consumer, marked with an asterisk.** James,
+Oct 12 (#1058): a fee with no clear personal-or-business signal is treated as consumer unless its
+schedule is business-only, and is shown with an asterisk and a footnote ("audience not stated on
+the bank's schedule; treated as personal") beside its source link. Knox works the backlog down
+from documents already stored, with no new searching (#1059), so the asterisked share should fall
+toward zero. Statistical significance across thousands of institutions matters more than
+perfection.
+
+**Monthly account fees are compared on the entry-level account.** James, Oct 12 (#1060): plus the
+share of peers offering a free account; a free checking account counts on the consumer side.
+Long-term direction: a consumer-facing hub where someone shopping for a local bank compares every
+bank's fees in their state or county and asks Hamilton what a fee means. The data layer comes
+first.
+
 **Thin results mean the wrong document, not a small fee schedule.** James, Oct 12: a real fee
 schedule (the disclosure Truth in Savings requires) lists far more than one or two fees, so an
 institution with only one or two fee types almost certainly has the wrong document: a checking
