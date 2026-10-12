@@ -41,6 +41,19 @@ It runs as Atlas steps (agent `atlas`); it is deterministic and makes no model c
   (another bank's document to Magellan, a bad name to Knox). `eval_cases.label_provenance` has no
   value for an automated audit, so that needs a migration and James's decision (#1119).
 
+## Benchmark health check
+
+- `benchmark-health.ts` (`BENCHMARK_HEALTH_VERSION` v1): the `deming-benchmark-health` step in
+  Atlas's daily scoreboard run (#1064), the statistical checks in the fee-benchmarking skill.
+  For each national fee category it records the institutions behind the median and the 95% range
+  by order statistics. For each state × size group under $10B it records covered and total
+  institutions, coverage share, whether the group meets James's target (30, or 75% below 40),
+  the fallback level (state, Fed district at the same size, or the whole state), and a bias flag
+  when the covered banks' median assets are at least twice the uncovered ones'.
+- **Alarm:** a category that keeps less than 70% of its institutions since the previous check
+  (on the same `STATS_METHOD_VERSION`) is named in the step summary as an ALARM.
+- Read-only, deterministic, no model calls. It is pause-exempt like the other reporting steps.
+
 ## Boundaries
 
 - Deming never writes fee rows, flags or takedowns. It reads `pipeline_feedback` and the fee tiers.
@@ -56,3 +69,4 @@ fails a PR that changes one of these constants without updating its line here (#
 |---|---|---|---|
 | `FRESH_AUDIT_VERSION` | — | v3 | `deming/fresh-audit.ts` |
 | `DEMING_REGRESSION_VERSION` | — | v1 | `deming/regression.ts` |
+| `BENCHMARK_HEALTH_VERSION` | — | v1 | `deming/benchmark-health.ts` |

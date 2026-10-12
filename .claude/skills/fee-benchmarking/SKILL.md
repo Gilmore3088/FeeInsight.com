@@ -42,6 +42,30 @@ Apply these rules:
 ### Step 5: Generate Assessment
 Classify each fee into a pricing band based on peer percentile rank.
 
+## Statistical checks
+
+Apply these to every benchmark before it is shown or written up (James, 2026-10-12, #1028 and
+#1064). Deming runs the same checks every day (`src/lib/agents/deming/benchmark-health.ts`, the
+`deming-benchmark-health` step), so the numbers below can be read from that step's detail
+instead of recomputed.
+
+- **Sample size.** State the number of institutions behind every median: one value per
+  institution, as `src/lib/data-store/fee-stats.ts` computes it. Show a benchmark from 10
+  institutions; mark it "limited sample" below 30.
+- **Range around the median.** Give the 95% range by order statistics. With 10 institutions it
+  runs from the 2nd to the 9th lowest value; with 30, from the 10th to the 21st
+  (`medianRangeRanks`).
+- **Coverage share** of the group. Covering most of a small group is close to a census, so say so.
+- **Fallback level.** Use the state × size group from 10 covered institutions. Below that, use the
+  Federal Reserve district at the same size, then the whole state across all sizes. Name the level
+  used. Institutions over $10B are compared nationally and by district, never by state.
+- **Coverage bias.** Compare covered and uncovered institutions in the group on assets (and
+  charter type where it matters). Flag a group whose covered banks are clearly larger: Deming
+  flags median covered assets at 2× the uncovered ones or more.
+- **Collapse.** If a benchmark's institution count fell sharply since the last check (Deming
+  alarms below 70% of the previous count), stop and find out why before using it. The
+  2026-10-10 regression cut national medians to about 60 institutions.
+
 ## Output Template
 
 ### Fee Benchmark Scorecard: [Institution Name]
