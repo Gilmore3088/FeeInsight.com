@@ -87,7 +87,7 @@ export default async function CustomersRoomPage({ searchParams }: { searchParams
 
   return (
     <div className="space-y-8 pb-10">
-      <RoomHeader room="customers">
+      <RoomHeader room="hamilton">
         <Link href="/admin/leads" prefetch={false} className="text-xs font-semibold text-[var(--brand-primary)]">
           Every lead, with replies and email status
         </Link>

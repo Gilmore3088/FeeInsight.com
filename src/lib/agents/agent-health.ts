@@ -1,6 +1,6 @@
 import { sql } from "@/lib/data-store/connection";
 import { DARWIN_VERIFY_MAX_LIMIT, DARWIN_VERIFY_STRATEGY } from "./darwin/verify";
-import { KNOX_EXTRACT_STRATEGY } from "./knox/extract";
+import { KNOX_RULES_STRATEGY } from "./knox/specialists";
 import { SOURCE_CHECK_REASON, SOURCE_CHECK_RESTORE_PREFIX, SOURCE_CHECK_STRATEGY } from "./hamilton/source-check";
 
 /**
@@ -239,8 +239,8 @@ export async function readAtlasNumbers(db: SqlTag): Promise<HealthNumbers> {
              WHERE pa.stage = 'extract'
                AND pa.institution_id = adt.institution_id
                AND pa.input_fingerprint = adt.text_hash
-               AND pa.strategy = ${KNOX_EXTRACT_STRATEGY.strategy}
-               AND pa.strategy_version = ${KNOX_EXTRACT_STRATEGY.version}
+               AND pa.strategy = ${KNOX_RULES_STRATEGY.strategy}
+               AND pa.strategy_version = ${KNOX_RULES_STRATEGY.version}
           )
           AND EXISTS (
             SELECT 1 FROM agent_source_texts prior
@@ -394,16 +394,16 @@ export async function readKnoxNumbers(db: SqlTag): Promise<HealthNumbers> {
       (SELECT COUNT(*) FROM (
          SELECT 1 FROM pipeline_attempts
           WHERE stage = 'extract'
-            AND strategy = ${KNOX_EXTRACT_STRATEGY.strategy}
-            AND strategy_version = ${KNOX_EXTRACT_STRATEGY.version}
+            AND strategy = ${KNOX_RULES_STRATEGY.strategy}
+            AND strategy_version = ${KNOX_RULES_STRATEGY.version}
             AND created_at > NOW() - INTERVAL '24 hours'
           GROUP BY institution_id, input_fingerprint
        ) texts)::int AS texts_extracted,
       (SELECT COUNT(*) FROM (
          SELECT 1 FROM pipeline_attempts
           WHERE stage = 'extract'
-            AND strategy = ${KNOX_EXTRACT_STRATEGY.strategy}
-            AND strategy_version = ${KNOX_EXTRACT_STRATEGY.version}
+            AND strategy = ${KNOX_RULES_STRATEGY.strategy}
+            AND strategy_version = ${KNOX_RULES_STRATEGY.version}
             AND created_at > NOW() - INTERVAL '24 hours'
           GROUP BY institution_id, input_fingerprint
          HAVING COUNT(*) > 1

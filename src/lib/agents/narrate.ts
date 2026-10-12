@@ -241,6 +241,10 @@ function narrateFinished(
       const accuracy = typeof detail.accuracy === "number" ? `${(detail.accuracy * 100).toFixed(1)}%` : "too few to score";
       return `Deming audited ${count(n(detail, "sampled"), "live fee")} against the banks' own schedules: ${n(detail, "right")} of ${n(detail, "scorable")} right (${accuracy}), ${n(detail, "no_text")} with no stored text.`;
     }
+    case "deming-benchmark-health": {
+      const collapses = Array.isArray(detail.collapses) ? detail.collapses.length : 0;
+      return `Deming checked the benchmarks: ${n(detail, "groups_meeting_target")} of ${n(detail, "groups_total")} state and size groups meet the coverage target, ${collapses === 0 ? "no benchmark collapsed" : `ALARM: ${count(collapses, "benchmark")} lost a sharp share of its institutions`}.`;
+    }
     case "deming-regression": {
       if (detail.schema_ready === false) return "Deming read no test cases: the case store is not created yet.";
       const regressions = n(detail, "regressions");
@@ -585,6 +589,7 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   "bayes-replay-ledger": "atlas",
   "schedule-check": "atlas",
   "deming-fresh-audit": "atlas",
+  "deming-benchmark-health": "atlas",
   "deming-regression": "atlas",
   "scoreboard-snapshot": "atlas",
   "hamilton-answer-eval": "hamilton",

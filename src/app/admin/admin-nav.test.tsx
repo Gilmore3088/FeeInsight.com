@@ -28,15 +28,15 @@ afterEach(() => {
 });
 
 describe("AdminRoomTabs", () => {
-  it("lists the six rooms and marks the one you are in", () => {
+  it("lists the seven rooms and marks the one you are in", () => {
     render(<AdminRoomTabs badges={{ trustPending: 4 }} />);
     const nav = screen.getByRole("navigation", { name: "Admin rooms" });
     const links = within(nav).getAllByRole("link");
     expect(links.map((link) => link.textContent?.replace(/\d+/g, ""))).toEqual([
-      "Today", "Agents", "Data", "Customers", "Publishing", "Controls",
+      "Today", "Pipeline", "Your work", "Data", "Hamilton", "Growth", "Settings",
     ]);
-    expect(within(nav).getByRole("link", { name: /Agents/ })).toHaveAttribute("aria-current", "page");
-    expect(within(nav).getByRole("link", { name: /Data/ })).toHaveTextContent("4");
+    expect(within(nav).getByRole("link", { name: /Pipeline/ })).toHaveAttribute("aria-current", "page");
+    expect(within(nav).getByRole("link", { name: /Your work/ })).toHaveTextContent("4");
   });
 });
 
@@ -51,14 +51,14 @@ describe("AdminNav", () => {
   it("folds less-used screens under More, opened when you are on one", () => {
     navigationState.pathname = "/admin/agents";
     const { unmount } = render(<AdminNav />);
-    const closed = screen.getByText("More (8)").closest("details");
+    const closed = screen.getByText("More (7)").closest("details");
     expect(closed).not.toHaveAttribute("open");
-    expect(within(closed!).getByRole("link", { name: /Scoreboard/ })).toBeInTheDocument();
+    expect(within(closed!).getByRole("link", { name: /Lineage/ })).toBeInTheDocument();
     unmount();
 
     navigationState.pathname = "/admin/states";
     render(<AdminNav />);
-    expect(screen.getByText("More (8)").closest("details")).toHaveAttribute("open");
+    expect(screen.getByText("More (7)").closest("details")).toHaveAttribute("open");
   });
 
   it("follows you into another room", () => {
@@ -74,19 +74,19 @@ describe("AdminRoomMenu", () => {
     navigationState.pathname = "/admin/agents";
     render(<AdminRoomMenu badges={{ trustPending: 2 }} />);
     expect(screen.queryByRole("navigation", { name: "Choose a room" })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /Agents/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Pipeline/ }));
     const list = screen.getByRole("navigation", { name: "Choose a room" });
     expect(within(list).getAllByRole("link").map((link) => link.getAttribute("href"))).toEqual([
-      "/admin", "/admin/agents", "/admin/data", "/admin/customers", "/admin/publishing", "/admin/controls",
+      "/admin", "/admin/agents", "/admin/work", "/admin/data", "/admin/customers", "/admin/growth", "/admin/controls",
     ]);
-    expect(within(list).getByRole("link", { name: /Agents/ })).toHaveAttribute("aria-current", "page");
+    expect(within(list).getByRole("link", { name: /Pipeline/ })).toHaveAttribute("aria-current", "page");
     fireEvent.keyDown(window, { key: "Escape" });
     expect(screen.queryByRole("navigation", { name: "Choose a room" })).not.toBeInTheDocument();
   });
 
   it("is the way back to the room on a screen inside it", () => {
     render(<AdminRoomMenu />);
-    expect(screen.getByRole("link", { name: /Agents/ })).toHaveAttribute("href", "/admin/agents");
+    expect(screen.getByRole("link", { name: /Pipeline/ })).toHaveAttribute("href", "/admin/agents");
     expect(screen.queryByRole("button")).not.toBeInTheDocument();
   });
 });
@@ -95,18 +95,14 @@ describe("AdminRoomScreens", () => {
   it("lists the room's screens as cards, leaving agents to their own cards", () => {
     navigationState.pathname = "/admin/agents";
     render(<AdminRoomScreens />);
-    expect(screen.getByRole("link", { name: /Live board/ })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /State lanes/ })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Lineage/ })).toHaveAttribute("href", "/admin/agents/lineage");
     expect(screen.queryByRole("link", { name: /^Knox/ })).not.toBeInTheDocument();
   });
 
-  it("shows nothing off a room's landing page or in a one-screen room", () => {
-    const { container, unmount } = render(<AdminRoomScreens />);
+  it("shows nothing off a room's landing page", () => {
+    const { container } = render(<AdminRoomScreens />);
     expect(container).toBeEmptyDOMElement();
-    unmount();
-    navigationState.pathname = "/admin";
-    const second = render(<AdminRoomScreens />);
-    expect(second.container).toBeEmptyDOMElement();
   });
 });
 

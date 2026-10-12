@@ -63,7 +63,7 @@ export default async function ControlsRoomPage() {
 
   return (
     <div className="space-y-8 pb-10">
-      <RoomHeader room="controls">
+      <RoomHeader room="settings">
         <Link href="/admin/api-trust" prefetch={false} className="text-xs font-semibold text-[var(--brand-primary)]">
           Caps, blocked calls and route spend
         </Link>

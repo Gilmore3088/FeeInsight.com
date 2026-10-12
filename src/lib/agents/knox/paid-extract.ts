@@ -16,13 +16,13 @@ import {
 import {
   insertCandidate,
   insertHeldCandidate,
-  KNOX_EXTRACT_STRATEGY,
   KNOX_REEXTRACT_MAX_FEES,
   retireRowsFromOlderText,
   type KnoxTextRow,
 } from "@/lib/agents/knox/extract";
 import { amountsIn, confidenceFor, detectFrequency, MAX_REASONABLE_FEE_AMOUNT } from "@/lib/agents/knox/rules";
 import { namesALimit } from "@/lib/agents/knox/layout";
+import { KNOX_RULES_STRATEGY } from "@/lib/agents/knox/specialists";
 import { groundLineup, LINEUP_CATEGORY, type AccountLineup } from "@/lib/agents/knox/lineup";
 import { CANONICAL_KEY_MAP, DISPLAY_NAMES, FEE_FAMILIES } from "@/lib/fee-taxonomy";
 
@@ -223,8 +223,8 @@ export function paidExtractPrompt(text: string): string {
 
 async function selectPaidTexts(db: SqlTag, limit: number, stateCode?: string): Promise<PaidTextRow[]> {
   const params: Array<string | number> = [];
-  const strategy = `$${params.push(KNOX_EXTRACT_STRATEGY.strategy)}`;
-  const version = `$${params.push(KNOX_EXTRACT_STRATEGY.version)}`;
+  const strategy = `$${params.push(KNOX_RULES_STRATEGY.strategy)}`;
+  const version = `$${params.push(KNOX_RULES_STRATEGY.version)}`;
   const maxFees = `$${params.push(KNOX_REEXTRACT_MAX_FEES)}`;
   const paidStrategy = `$${params.push(KNOX_PAID_STRATEGY.strategy)}`;
   const minDollars = `$${params.push(PAID_MIN_PRICED_LINES)}`;

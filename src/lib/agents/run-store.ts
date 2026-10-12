@@ -78,6 +78,7 @@ import { runAnswerKeyScore, summarizeAnswerKeyScore } from "@/lib/agents/answer-
 import { runScoreboardSnapshot, summarizeScoreboard } from "@/lib/agents/scoreboard";
 import { runDemingRegression, summarizeDemingRegression, DEMING_REGRESSION_VERSION } from "@/lib/agents/deming/regression";
 import { freshAuditDetail, runFreshAudit, summarizeFreshAudit } from "@/lib/agents/deming/fresh-audit";
+import { benchmarkHealthDetail, runBenchmarkHealth, summarizeBenchmarkHealth } from "@/lib/agents/deming/benchmark-health";
 import { runBayesLedger, summarizeBayesLedger, BAYES_LEDGER_VERSION } from "@/lib/agents/bayes/ledger";
 import { runScheduleCheck, summarizeScheduleCheck, SCHEDULE_CHECK_VERSION } from "@/lib/agents/atlas/schedule-check";
 import { MARKET_SPREAD_WORKFLOW, runMarketSpread, summarizeMarketSpread } from "@/lib/agents/content/market-spread";
@@ -665,7 +666,6 @@ async function executeAgenticStep(
           held_for_review: extraction.heldForReview,
           replaced_older_rows: extraction.retiredOlderRows,
           retired_older_copy_rows: extraction.retiredOlderCopyRows,
-          skipped_known_inputs: extraction.skippedKnownInputs,
           outcomes: extraction.outcomes,
           learning_log: extraction.learning,
           lessons_loaded: extraction.lessonsLoaded,
@@ -1868,6 +1868,10 @@ async function executeAgenticStep(
     case "deming-fresh-audit": {
       const result = await runFreshAudit({ db: tx });
       return { status: "completed", summary: summarizeFreshAudit(result), detail: freshAuditDetail(result) };
+    }
+    case "deming-benchmark-health": {
+      const result = await runBenchmarkHealth({ db: tx });
+      return { status: "completed", summary: summarizeBenchmarkHealth(result), detail: benchmarkHealthDetail(result) };
     }
     case "schedule-check": {
       const result = await runScheduleCheck({ db: tx });
