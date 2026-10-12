@@ -5,6 +5,20 @@ Seeded 2026-10-05 from the project's working memory; earlier decisions were not 
 
 ## 2026-10-12
 
+**Coverage target and benchmark threshold.** James, Oct 12. Under $10B, each state and size
+group (under $300M, $300M–$1B, $1–10B) is covered when it has 30 institutions with live fees, or
+75% of the group when it has fewer than 40. A benchmark shows from 10 institutions, marked
+"limited sample" below 30. Below 10 it falls back to the Federal Reserve district at the same
+size, then to the state across all sizes, matching the 10-institution peer minimum in the
+`fee-benchmarking` skill. Banks over $10B are compared nationally and by district, never by
+state. Why: with 8 institutions the 95% range around a median runs from roughly the cheapest
+bank to the priciest; at 30 it narrows to about the middle third; and covering most of a small
+group is close to a census. Measured the same day: 64 of 161 state and size groups under $10B
+meet the target, and about 524 more covered institutions would close the gap (75% in every group
+would need about 2,654). Only 6 states have 30 or more covered $1–10B institutions, while all 12
+districts do, so that tier leans on the district fallback. Full coverage stays the long-term goal
+for the consumer hub.
+
 **Publish benchmarks now; unlabeled fees count as consumer, marked with an asterisk.** James,
 Oct 12 (#1058): a fee with no clear personal-or-business signal is treated as consumer and shown
 with an asterisk and footnote beside its source link: "Audience not stated on the bank's
