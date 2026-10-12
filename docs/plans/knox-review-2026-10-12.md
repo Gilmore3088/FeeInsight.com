@@ -134,4 +134,5 @@ disclosures and agreements; problem 3 adds the line-skip hazard), **#1060** (tie
 | K6 #1099 | Learn from missed fees, not only wrong ones: every answer-key miss becomes a labeled case replayed daily; repeats become rule fixes with a regression test |
 | K7 #1100 | Specialists for the weakest categories, starting with monthly maintenance (the account table: product, fee, balance to avoid it, waiver, tier) |
 | K8 #1101 | Pay once: paid-pass finds and shared website layouts become free templates, aliases and rules (Knox's part of #1039) |
+| K9 #1102 | Give held lines an owner: publish percentages and ranges instead of holding them, settle unclassified names once across banks, send untraced lines back to Rosetta, show the held pile on the scorecard |
 | K4 #1096 | Bring `knox/AGENTS.md` up to date and remove the dead router branch and the strategy alias |

@@ -13,8 +13,11 @@ regular job; a bank is re-checked only when its schedule changes.
 **Knox stays one agent; its specialists become separately measured skills.** James asked whether
 Knox should be split for focus (Oct 12). Recommendation recorded: keep one agent, but score each
 specialist (rules, tables, the fee families, paid pass, and the new ones in #1100) on the answer key
-on its own, so each can be improved independently. Deciding a document's type moves earlier, to
-Rosetta's read, so Magellan can act on it (#1094).
+on its own, so each can be improved independently. Deciding a document's type moves earlier: Magellan
+makes the first call when it finds the link (format: PDF, HTML, script-built page; and kind: fee
+schedule, disclosure, agreement, product page), Rosetta confirms it from the content, and a
+disagreement goes back to Magellan (James, Oct 12; #1094). Knox's held lines (about 38,000) get an
+owner and a way out (#1102).
 
 **Hamilton becomes the product only; publishing moves to its own internal agent.** James, Oct 12
 ("Yes split"), on the Hamilton product review (`docs/plans/hamilton-product-review-2026-10-12.md`).
