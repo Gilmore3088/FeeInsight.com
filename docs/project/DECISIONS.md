@@ -28,7 +28,9 @@ prose, rate reader; product pages go back to Magellan). Each step records the to
 **Rates and lending are in scope, if accurate.** James, Oct 12 (#1103): it puts Fee Insight in
 direct competition with rate-comparison sites. Percentage fees and lending fees come first, inside
 the fee product; interest rates (APY, APR) are a second data product with its own freshness rules,
-planned after the fee data layer meets its targets.
+planned after the fee data layer meets its targets. Order (James, Oct 12): savings, CDs, money
+market, auto, mortgage. Rates wait until the fee data layer is A+, and may become a standalone
+product and consumer-facing site.
 
 **Knox targets: 85% of fees found, 90% right.** James, Oct 12 (#1098). Measured on the answer key,
 counting only banks where the right document was read. Growing the answer key to about 200 banks is
