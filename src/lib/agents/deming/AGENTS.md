@@ -27,3 +27,13 @@ It runs as Atlas steps (agent `atlas`); it is deterministic and makes no model c
 - Deming never writes fee rows, flags or takedowns. It reads `pipeline_feedback` and the fee tiers.
 - A label comes from `takedown_confirmed`, a human, or the answer key; never from a model alone.
 - Holdout cases must never feed a rule or a prompt (PRD 7.3).
+
+## Current versions
+
+The version each rules or reader constant is at now. `scripts/ci-guards.sh guide-version-kill`
+fails a PR that changes one of these constants without updating its line here (#1109).
+
+| Constant | Strategy | Version | File |
+|---|---|---|---|
+| `FRESH_AUDIT_VERSION` | — | v3 | `deming/fresh-audit.ts` |
+| `DEMING_REGRESSION_VERSION` | — | v1 | `deming/regression.ts` |

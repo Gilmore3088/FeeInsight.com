@@ -29,3 +29,12 @@ entry with `count: null` and a `notCounted` reason.
   inside its own budgets and pause controls; Bayes only counts and reports.
 - A count that fails is reported in the step detail and not written as a check, so it never
   reads as a stalled queue.
+
+## Current versions
+
+The version each rules or reader constant is at now. `scripts/ci-guards.sh guide-version-kill`
+fails a PR that changes one of these constants without updating its line here (#1109).
+
+| Constant | Strategy | Version | File |
+|---|---|---|---|
+| `BAYES_LEDGER_VERSION` | — | v1 | `bayes/ledger.ts` |

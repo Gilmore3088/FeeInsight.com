@@ -122,3 +122,12 @@ Also recorded, without a rule: `laneRuns`, `backlogRuns`, `overdueLanes`, `queue
 step's selector changes, add or change the matching number here so the two can't drift apart
 unseen. Every agent has the same section in its own AGENTS.md; a new rule goes in that table and
 in `agent-health.ts` in the same PR.
+
+## Current versions
+
+The version each rules or reader constant is at now. `scripts/ci-guards.sh guide-version-kill`
+fails a PR that changes one of these constants without updating its line here (#1109).
+
+| Constant | Strategy | Version | File |
+|---|---|---|---|
+| `SCHEDULE_CHECK_VERSION` | — | v1 | `atlas/schedule-check.ts` |

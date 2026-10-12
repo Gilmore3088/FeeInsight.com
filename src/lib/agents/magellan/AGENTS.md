@@ -406,3 +406,39 @@ Change this table and `agent-health.ts` in the same PR.
 | No fee link fails the same way 3+ times a day | `repeatFailures` (fetch: 404, 403, 410, network, timeout, 5xx, 429) | 0 |
 
 Also recorded, without a rule: `stepsCompleted`, `spendUsd`, `banksSearched`, `linksFound`, `docsFetched`.
+
+## Current versions
+
+The version each rules or reader constant is at now. `scripts/ci-guards.sh guide-version-kill`
+fails a PR that changes one of these constants without updating its line here (#1109).
+
+| Constant | Strategy | Version | File |
+|---|---|---|---|
+| `BLOCKED_FETCH_STRATEGY` | `fetch.paid_web_fetch` | v2 | `magellan/blocked-fetch.ts` |
+| `BLOCKED_COMPANION_FETCH_STRATEGY` | `fetch.paid_web_fetch_companion` | v1 | `magellan/blocked-fetch.ts` |
+| `COMPANION_FETCH_STRATEGY` | `fetch.companion` | v1 | `magellan/companion-fetch.ts` |
+| `DISCOVERY_METHOD_VERSION` | — | v5 | `magellan/discovery.ts` |
+| `WEBSITE_REPAIR_STRATEGY` | `discover.website_repair` | v1 | `magellan/discovery.ts` |
+| `UPGRADE_SEARCH_VERSION` | — | v2 | `magellan/discovery.ts` |
+| `BUSINESS_SEARCH_VERSION` | — | v1 | `magellan/discovery.ts` |
+| `FRESHNESS_SEARCH_VERSION` | — | v1 | `magellan/discovery.ts` |
+| `MAGELLAN_FETCH_STRATEGY` | `fetch.http` | v2 | `magellan/fetch.ts` |
+| `OPERATOR_SCHEDULE_STRATEGY` | `discover.operator_schedule` | v1 | `magellan/operator-schedules.ts` |
+| `PAGE_CLASSIFIER_VERSION` | — | v2 | `magellan/page-classifier.ts` |
+| `PAID_FIND_STRATEGY` | `discover.paid_web_search` | v1 | `magellan/paid-find.ts` |
+| `PAID_PICK_STRATEGY` | `discover.paid_pick` | v1 | `magellan/paid-find.ts` |
+| `KEEP_REFUSED_ANSWER_STRATEGY` | `discover.keep_refused_answer` | v1 | `magellan/refused-answers.ts` |
+| `CENSUS_ACS_PARSER_VERSION` | — | v3 | `magellan/registry/census-acs.ts` |
+| `CFPB_PARSER_VERSION` | — | v4 | `magellan/registry/cfpb.ts` |
+| `ENFORCEMENT_MATCHER_VERSION` | — | v3 | `magellan/registry/enforcement.ts` |
+| `FDIC_UNIVERSE_PARSER_VERSION` | — | v2 | `magellan/registry/fdic-universe.ts` |
+| `FFIEC_OVERDRAFT_PARSER_VERSION` | — | v2 | `magellan/registry/ffiec-overdraft.ts` |
+| `NCUA_PARSER_VERSION` | — | v3 | `magellan/registry/ncua-financials.ts` |
+| `SEC_LINKS_PARSER_VERSION` | — | v2 | `magellan/registry/sec.ts` |
+| `STATE_BILLS_TAGGING_VERSION` | — | v5 | `magellan/registry/state-bills.ts` |
+| `STATE_ENFORCEMENT_PARSER_VERSION` | — | v5 | `magellan/registry/state-enforcement.ts` |
+| `STATE_NEWS_PARSER_VERSION` | — | v2 | `magellan/registry/state-reg-news.ts` |
+| `RESTORE_FEE_PAGE_VERSION` | — | v1 | `magellan/restore-fee-page.ts` |
+| `SCHEDULE_SEARCH_STRATEGY` | `discover.paid_schedule_search` | v1 | `magellan/schedule-search.ts` |
+| `SITE_SEARCH_STRATEGY` | `discover.site_search` | v1 | `magellan/second-document.ts` |
+| `WEBSITE_FIND_STRATEGY` | `discover.website_search` | v1 | `magellan/website-find.ts` |
