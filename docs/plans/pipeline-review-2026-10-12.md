@@ -155,7 +155,8 @@ PR at a time.
 
 ## Reviews
 
-Master tracker: #1026. Cross-pipeline issues: X1 #1037 (gate before publishing), X2 #1038
+Master tracker: #1026; its Now / Next / Later list sets the order of work. Foundation: #1047.
+Cross-pipeline issues: X1 #1037 (gate before publishing), X2 #1038
 (priority intake), X3 #1039 (plan L4), X4 #1040 (scorecard), X5 #1041 (storage), X6 #1042
 (state experts in admin), X7 #1043 (indexing decision), X8 #1044 (admin structure), X9 #1045
 (stale and duplicate code).
@@ -163,9 +164,9 @@ Master tracker: #1026. Cross-pipeline issues: X1 #1037 (gate before publishing),
 | Agent | Review | Status |
 |---|---|---|
 | Magellan | `docs/plans/magellan-review-2026-10-12.md`, tracker #1027 | Written 2026-10-12 |
-| Rosetta | | Next |
+| Hamilton | Existing tracker #975 stays its home | Next review |
+| Rosetta | | |
 | Knox | | |
 | Darwin | | |
-| Hamilton | | |
 | State experts | | |
 | Atlas | | |
