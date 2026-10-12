@@ -11,7 +11,7 @@ import { getVisibleCategoryCount } from "./access";
  * moment a category is added or retired — which is exactly how the site came to claim
  * "49 fee categories" against a taxonomy of 65. Describe the coverage, never count it.
  *
- * See docs/plans/guides-remediation-plan-2026-08-15.md, item E-5.
+ * See docs/archive/legacy-plans/2026-08/guides-remediation-plan-2026-08-15.md, item E-5.
  */
 
 const SRC = join(process.cwd(), "src");

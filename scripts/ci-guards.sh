@@ -395,7 +395,7 @@ active_doc_kill() {
 
 migration_history_kill() {
   local cutoff="20260813000200_provider_usage_agent_runs.sql"
-  # Historical migrations were archived on 2026-08-16 (docs/plans/supabase-migration-drift-resolution-2026-08-16.md);
+  # Historical migrations were archived on 2026-08-16 (docs/archive/legacy-plans/2026-08/supabase-migration-drift-resolution-2026-08-16.md);
   # the cutoff file now lives in the archive but the ledger contract it enforces still applies.
   local cutoff_path="supabase/migrations/$cutoff"
   if [[ ! -f "$cutoff_path" ]]; then

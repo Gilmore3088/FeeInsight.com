@@ -70,7 +70,7 @@ export function canAccessFullDistrict(user: User | null): boolean {
  *
  * Both figures derive from the taxonomy. The catalog is a curated subset that changes
  * as categories are added or retired, so no count is hardcoded here or advertised in
- * copy — see `docs/plans/guides-remediation-plan-2026-08-15.md`, item E-5.
+ * copy — see `docs/archive/legacy-plans/2026-08/guides-remediation-plan-2026-08-15.md`, item E-5.
  */
 export function getVisibleCategoryCount(user: User | null): number {
   return canAccessPremium(user) ? TAXONOMY_COUNT : getSpotlightCategories().length;
