@@ -62,6 +62,7 @@ the master tracker is #1026.
 | 11 | #1106 | PR template "Should move" line; 7-day did-it-work check | Template now; check after #1040 |
 | 12 | #1109, #1120 | CI guards: guides match version constants; Bayes manifests | — |
 | 13 | #1073, #1096, #1116 | Bring the Hamilton, Knox and Darwin guides up to date | — |
+| 13a | #1122 | Admin redesign: seven rooms replace about 57 screens (`docs/plans/admin-redesign-2026-10-12.md`); new screens below go into its rooms, never beside them | — |
 
 ## Phase 2: stop losing what we already have
 
