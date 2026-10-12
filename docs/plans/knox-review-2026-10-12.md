@@ -42,6 +42,24 @@ verifies (`src/lib/agents/knox/AGENTS.md`).
 - **Audience:** of rows written since Oct 10, 97.3% are `unknown`, 1.5% business, 1.0% consumer,
   0.2% both.
 
+## How good Knox is (measured, answer key, 2026-10-11)
+
+The answer key is 62 hand-checked banks, 2,321 fees, scored daily (`score-answer-key`).
+
+| Stage | Share of real fees found | Share of found fees that are right |
+|---|---|---|
+| Magellan (right document) | 71% of banks | |
+| Rosetta (read correctly) | 65% of banks | |
+| **Knox** | **65%** | **78%** |
+| Darwin | 59% | 87% |
+| Live | 56% | 89% |
+
+Knox finds about two in three real fees, and about one in five of what it finds is wrong;
+Darwin removes most of those but also loses some right ones. Part of Knox's misses are wrong or
+unread documents upstream. By category, the weakest large ones are monthly maintenance (43% found,
+71% right), lending fees (31%, 52%), account research (54%, 73%) and document copies (58%, 97%);
+the strongest are stop payment (82%, 100%), NSF (84%, 93%) and overdraft (77%, 98%).
+
 ## What works
 
 - Cost is in proportion: the paid pass runs only on texts the free readers clearly missed, and
@@ -112,4 +130,8 @@ disclosures and agreements; problem 3 adds the line-skip hazard), **#1060** (tie
 | K1 #1093 | Stop losing fees on a re-read: let the new read take over a retired row of the same fee, and restore the 1,646 retired free-pass fees that are not live (the restore changes production rows, so its PR says so) |
 | K2 #1094 | Give every document a type (fee schedule, Truth in Savings disclosure, account agreement, product page, other) and use it: compare yield against what that type should hold, stop re-reading product pages every version, and hand them to Magellan (#1051) |
 | K3 #1095 | One definition of a thin document and of expected fee count, shared by Knox, Rosetta and the playbook, counting only rows sent to Darwin, free and paid kept apart |
+| K5 #1098 | Targets on the answer key (proposed: 85% found where the right document was read, 90% right), misses split into upstream vs Knox's own, and the answer key grown from 62 to about 200 banks across states and sizes |
+| K6 #1099 | Learn from missed fees, not only wrong ones: every answer-key miss becomes a labeled case replayed daily; repeats become rule fixes with a regression test |
+| K7 #1100 | Specialists for the weakest categories, starting with monthly maintenance (the account table: product, fee, balance to avoid it, waiver, tier) |
+| K8 #1101 | Pay once: paid-pass finds and shared website layouts become free templates, aliases and rules (Knox's part of #1039) |
 | K4 #1096 | Bring `knox/AGENTS.md` up to date and remove the dead router branch and the strategy alias |
