@@ -96,8 +96,10 @@ and `detail.method_version`).
   no readable text (a scan) is accepted only on a strong fee label. Fee words are counted
   on the page's own content (menus, header and footer stripped). Below the fee-page bar
   (3 fee lines) HTML passes only when its address names the fee page, or its label is
-  strong and it lists a fee; an account or product page (`looksLikeProductPage`) is
-  rejected as `product_page` and belongs to the companion finder as an account page.
+  strong and it lists a fee; an account or product page (`looksLikeProductPage`, the shared
+  `isProductPageUrl` rule in `learning/fee-page.ts`) is rejected as `product_page` and belongs
+  to the companion finder as an account page. Since #1053 (fee-page check v2) a product
+  address is rejected even above the bar unless it lists 10+ fee lines or a schedule title.
   A business-only schedule (its address or its own heading names business/commercial and
   nothing names personal or consumer accounts) is rejected as `business_schedule`.
 - A found link on another institution's own website (`other-bank-host.ts`: its host is another

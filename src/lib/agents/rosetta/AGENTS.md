@@ -70,6 +70,10 @@ Rosetta owns source text normalization.
     them noise, TruStone's fee schedule among them) are reopened once each
     (`reopenUnreadablePdfTexts`, step detail `reopened_unreadable_pdfs`); a readable one
     is logged `rejected` and never checked again.
+  - The fee-page check (`learning/fee-page.ts`, v2) judges a bank's fee link, never a
+    companion account page, as a schedule: a product address listing fewer than 10 fee lines
+    and no schedule title is `wrong_document`, and the bank goes back to Magellan (#1053).
+    The backlog triage re-checks stored texts under v2; a text Knox pulled fees from is kept.
   - A JavaScript page (no text, or an app shell or a page whose link names the fee page,
     such as `/fees` or `fee-schedule`, whose text fails the fee-page check)
     tries embedded data (`__NEXT_DATA__`, JSON/ld+json scripts, Next flight chunks,

@@ -88,6 +88,16 @@ $0. It runs on every text Rosetta reads and on every HTML page discovery conside
 - Its URL goes into the profile's `rejected_source_urls`, and the institution is sent
   back to Magellan, unless `locked_by_correction` is set or a newer document exists.
 - Discovery never re-proposes a rejected URL.
+- Product pages (v2, #1053, 2026-10-12): a text offered as the bank's fee schedule (its fee
+  link, never a companion account page; `feeSchedule: true`) at a product address
+  (`isProductPageUrl`: an account or product area such as "/personal/checking" or
+  "/compare-accounts", naming no fee, schedule, disclosure, rates, cost, services, file or
+  legal page) that lists fewer than 10 fee lines (`PRODUCT_PAGE_MIN_FEE_LINES`) and has no
+  schedule title line is `wrong_document` with `productPage: true`. Calibrated on production:
+  the 13 product pages behind banks whose fees all came down listed 2-9 fee lines; product
+  addresses holding real fee lists listed 14-37. Fixtures:
+  `fixtures-product-pages-2026-10-12.json`. Magellan's link check (`looksLikeProductPage`)
+  and Hamilton's takedown (`isProductPage`, SQL `productPageUrlSql`) use the same address rule.
 
 **Backlog triage.** Each read step re-checks up to 100 earlier texts, with no
 download, under the strategy `read.page_check@<FEE_PAGE_CHECK_VERSION>`. It never
@@ -172,4 +182,4 @@ fails a PR that changes one of these constants without updating its line here (#
 
 | Constant | Strategy | Version | File |
 |---|---|---|---|
-| `FEE_PAGE_CHECK_VERSION` | — | v1 | `learning/fee-page.ts` |
+| `FEE_PAGE_CHECK_VERSION` | — | v2 | `learning/fee-page.ts` |

@@ -826,7 +826,8 @@ async function readCandidate(
     rows: SourceTableRow[],
     firstOutcome: AttemptOutcome | null = null,
   ) => {
-    const pageCheck = ctx.checkPage ? scoreFeePage(normalizedText, base.sourceUrl) : null;
+    // A companion account page is kept for its few fees; only the bank's fee link must be a schedule.
+    const pageCheck = ctx.checkPage ? scoreFeePage(normalizedText, base.sourceUrl, { feeSchedule: row.companion_source_id == null }) : null;
     const wrong = pageCheck?.verdict === "wrong_document";
     const followUp = base.followUps[base.followUps.length - 1];
     if (firstOutcome && followUp && wrong) followUp.outcome = "wrong_document";
@@ -1668,6 +1669,7 @@ async function triageEarlierTexts(
     text_hash: string | null;
     normalized_text: string;
     has_knox_fees: boolean;
+    companion: boolean;
   }>>(
     `
       SELECT adt.id AS text_id,
@@ -1676,6 +1678,7 @@ async function triageEarlierTexts(
              adt.source_url,
              adt.text_hash,
              adt.normalized_text,
+             (sdoc.companion_source_id IS NOT NULL) AS companion,
              EXISTS (
                -- Rows Knox only held for review do not prove this is a fee page.
                SELECT 1 FROM raw_fee_observations fr
@@ -1684,6 +1687,7 @@ async function triageEarlierTexts(
              ) AS has_knox_fees
         FROM agent_source_texts adt
         JOIN institution_sources inst ON inst.id = adt.institution_id
+        LEFT JOIN source_documents sdoc ON sdoc.id = adt.source_document_id
        WHERE adt.status = 'completed'
          AND adt.normalized_text IS NOT NULL
          ${filters.join("\n         ")}
@@ -1704,7 +1708,7 @@ async function triageEarlierTexts(
   let wrong = 0;
   let sentBack = 0;
   for (const row of rows) {
-    const score = scoreFeePage(row.normalized_text);
+    const score = scoreFeePage(row.normalized_text, row.source_url, { feeSchedule: !row.companion });
     const isWrong = score.verdict === "wrong_document" && !row.has_knox_fees;
     if (isWrong) {
       wrong += 1;
