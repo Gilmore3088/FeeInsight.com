@@ -174,16 +174,19 @@ Cross-pipeline issues: X1 #1037 (gate before publishing), X2 #1038
 | Hamilton (product) | `docs/plans/hamilton-product-review-2026-10-12.md`, tracker #975 (HP1–HP12, #1075–#1086); recommends moving the publisher to its own agent (#1075) | Written 2026-10-12 |
 | Knox | `docs/plans/knox-review-2026-10-12.md`, tracker #1092 (K1–K9, #1093–#1102) | Written 2026-10-12 |
 | Darwin | `docs/plans/darwin-review-2026-10-12.md`, tracker #1110 (D1–D6, #1111–#1116) | Written 2026-10-12 |
-| State experts | | Next review |
-| Atlas | | |
-| Deming (quality checks) | Tracker #1063 for building the fee-quality skills in | To review |
-| Bayes (replay after rule changes) | | To review |
-| Learning core (L1–L3) | Plan L4 is #1039 | To review |
-| Growth, content and marketing | Parked with outreach | To review before marketing resumes |
+| State experts | `docs/plans/support-agents-review-2026-10-12.md` (#1118) | Written 2026-10-12 |
+| Atlas | `docs/plans/support-agents-review-2026-10-12.md` (#1117) | Written 2026-10-12 |
+| Deming (quality checks) | Tracker #1063 for building the fee-quality skills in | Written 2026-10-12 (`support-agents-review-2026-10-12.md`, #1119) |
+| Bayes (replay after rule changes) | | Written 2026-10-12 (`support-agents-review-2026-10-12.md`, #1120) |
+| Learning core (L1–L3) | Plan L4 is #1039 | Written 2026-10-12 (`support-agents-review-2026-10-12.md`, #1105) |
+| Growth, content and marketing | Parked with outreach | Written 2026-10-12 (`support-agents-review-2026-10-12.md`, #1121) |
 | Regulatory Wire (Magellan registry steps) | #1090: feeds state fee law and Hamilton's regulation answers | To review |
 
 James asked on 2026-10-12 that the newer agents (Deming, Bayes, the learning core, Growth) be
 reviewed too: what each does, where it sits in the pipeline, and what it costs. Measured the same
 day: none of them has any provider spend recorded in October (`ai_api_usage_events` shows spend
 only for Magellan, Knox, Rosetta, Darwin and Hamilton). Deming and Bayes run as deterministic
-Atlas steps in the daily scoreboard run. What they cost in server time is not yet measured.
+Atlas steps in the daily scoreboard run. Server time in the 7 days to Oct 12: Atlas (with Deming,
+Bayes and the scoreboard) 0.1 hours, Growth 0.2 hours.
+
+**Build order:** `docs/plans/build-plan-2026-10-12.md`.
