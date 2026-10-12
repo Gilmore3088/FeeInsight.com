@@ -127,6 +127,32 @@ describe("Darwin agentic verification", () => {
     expect(JSON.stringify(db.mock.calls)).toContain("verified_unpublished");
   });
 
+  it("never selects rows the audience trigger would refuse (#1113)", async () => {
+    const db = createDbMock([]);
+    await runDarwinVerify({ runId: 101, db: asVerifyDb(db) });
+    const unsafeSql = db.unsafe.mock.calls.map((call) => String(call[0])).join("\n");
+    expect(unsafeSql).toContain("AND NOT (fr.outlier_flags ? 'audience_correction_required')");
+  });
+
+  it("holds a row the database refuses and still verifies the rest of the batch (#1113)", async () => {
+    const db = createDbMock([rawFee, { ...rawFee, fee_raw_id: 802, fee_name: "Courtesy overdraft fee", amount: "5.00" }]);
+    let inserts = 0;
+    const base = db.getMockImplementation() as (strings: TemplateStringsArray, ...values: unknown[]) => unknown;
+    db.mockImplementation((strings: TemplateStringsArray, ...values: unknown[]) => {
+      if (templateText(strings).includes("INSERT INTO verified_fee_observations") && inserts++ === 0) {
+        return Promise.reject(new Error("Source observation requires an audience correction"));
+      }
+      return base(strings, ...values);
+    });
+
+    const result = await runDarwinVerify({ runId: 101, db: asVerifyDb(db) });
+
+    expect(result.results.map((row) => [row.feeRawId, row.status, row.reasonCode, row.decision])).toEqual([
+      [801, "skipped", "insert_failed", "needs_review"],
+      [802, "verified", null, "verified"],
+    ]);
+  });
+
   it("keeps dry runs read-only while still reporting verified candidates", async () => {
     const db = createDbMock([rawFee]);
 
