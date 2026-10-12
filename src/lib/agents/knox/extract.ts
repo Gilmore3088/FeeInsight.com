@@ -22,15 +22,6 @@ import { recordHamiltonMonitorSignal } from "@/lib/hamilton/monitor-signals";
 
 type SqlTag = typeof sql;
 
-/**
- * The extractor recorded in the attempt log; bump the version when the rules change.
- * Version 2 (rules.ts): `$1500` parses as $1,500, specific categories win over monthly
- * maintenance, a later amount on a line is a fee only when words naming one precede it,
- * waived fees are kept, and $0, range, percentage and unrecognized priced lines are held
- * for review instead of dropped. Version 4: new phrasings, thresholds are never fees,
- * and the pass 2 specialists (specialists.ts) run with the rules on every document.
- */
-export const KNOX_EXTRACT_STRATEGY = KNOX_RULES_STRATEGY;
 /** Below this share of the institution's usual fee count, an extraction is `low_yield`. */
 const LOW_YIELD_RATIO = 0.5;
 
@@ -66,7 +57,7 @@ const LARGE_BANK_REREAD_ORDER = `CASE WHEN COALESCE(inst.asset_size, 0) >= ${KNO
             WHERE last_read.stage = 'extract'
               AND last_read.institution_id = adt.institution_id
               AND last_read.input_fingerprint = adt.text_hash
-              AND last_read.strategy = '${KNOX_EXTRACT_STRATEGY.strategy}'
+              AND last_read.strategy = '${KNOX_RULES_STRATEGY.strategy}'
          ) END ASC NULLS FIRST, `;
 
 /**
@@ -178,8 +169,6 @@ export interface RunKnoxExtractResult {
   retiredOlderRows: number;
   /** Unverified rows from an older copy of a page whose current copy Knox has read. */
   retiredOlderCopyRows: number;
-  /** Texts the router refused because this extractor version already failed on them. */
-  skippedKnownInputs: number;
   limit: number;
   dryRun: boolean;
   learning: boolean;
@@ -341,7 +330,7 @@ function textArtifactQuery(
                 WHERE recent.stage = 'extract'
                   AND recent.institution_id = adt.institution_id
                   AND recent.input_fingerprint = adt.text_hash
-                  AND recent.strategy = '${KNOX_EXTRACT_STRATEGY.strategy}'
+                  AND recent.strategy = '${KNOX_RULES_STRATEGY.strategy}'
                   AND recent.strategy_version >= ${staleParam}
              )
            )`;
@@ -366,7 +355,7 @@ function textArtifactQuery(
                 WHERE recent.stage = 'extract'
                   AND recent.institution_id = adt.institution_id
                   AND recent.input_fingerprint = adt.text_hash
-                  AND recent.strategy = '${KNOX_EXTRACT_STRATEGY.strategy}'
+                  AND recent.strategy = '${KNOX_RULES_STRATEGY.strategy}'
                   AND recent.strategy_version >= ${namedParam}
              )
            )`;
@@ -398,8 +387,8 @@ function textArtifactQuery(
            )`;
     }
     // Same text + same extractor version = same answer: never extract it twice.
-    const strategyParam = `$${params.push(KNOX_EXTRACT_STRATEGY.strategy)}`;
-    const versionParam = `$${params.push(KNOX_EXTRACT_STRATEGY.version)}`;
+    const strategyParam = `$${params.push(KNOX_RULES_STRATEGY.strategy)}`;
+    const versionParam = `$${params.push(KNOX_RULES_STRATEGY.version)}`;
     playbookColumns = `,
              profile.format,
              profile.best_strategy,
@@ -489,7 +478,7 @@ export async function countKnoxRereadsDue(db: SqlTag): Promise<KnoxRereadsDue> {
     ? [...new Set([...KNOX_PRIORITY_REREAD_IDS, ...(await loadMarketLeaderIds(db, { stateCode: null }).catch(() => []))])]
     : [];
   const { query, params } = textArtifactQuery(1_000_000, true, currentCopy, undefined, undefined, priorityIds, true);
-  const strategyParam = `$${params.push(KNOX_EXTRACT_STRATEGY.strategy)}`;
+  const strategyParam = `$${params.push(KNOX_RULES_STRATEGY.strategy)}`;
   const [row] = await db.unsafe<Array<{ due: number | string }>>(
     `
       SELECT COUNT(*) AS due
@@ -1011,20 +1000,19 @@ export async function runKnoxExtract(
   const layoutReads: Array<{ signature: string; priceLines: number; found: number }> = [];
 
   const results: KnoxExtractDocumentResult[] = [];
-  let skippedKnownInputs = 0;
   let retiredOlderRows = 0;
   for (const row of rows) {
     const playbook = playbookFromRow(row);
+    // The router is given one strategy, so it only says why (its reason goes in the attempt
+    // detail). It never skips here: a do-not-retry entry is written only with an attempt row
+    // for the same text and rules version (`recordAttempt`), and the selection above already
+    // leaves those texts out; without the attempt log the playbook columns are not selected.
     const decision = chooseStrategy({
       stage: "extract",
       playbook,
       fingerprint: row.text_hash,
-      candidates: [{ ...KNOX_EXTRACT_STRATEGY, costMicrousd: 0 }],
+      candidates: [{ ...KNOX_RULES_STRATEGY, costMicrousd: 0 }],
     });
-    if (decision.kind === "skip") {
-      skippedKnownInputs += 1;
-      continue;
-    }
 
     const startedAt = Date.now();
     const free = runFreeSpecialists(row.normalized_text);
@@ -1114,8 +1102,8 @@ export async function runKnoxExtract(
         institutionId: Number(row.institution_id),
         sourceDocumentId: Number(row.source_document_id),
         stage: "extract",
-        strategy: decision.strategy,
-        version: decision.version,
+        strategy: KNOX_RULES_STRATEGY.strategy,
+        version: KNOX_RULES_STRATEGY.version,
         fingerprint: row.text_hash,
         outcome: attemptOutcome,
         yieldCount: candidates.length,
@@ -1154,7 +1142,6 @@ export async function runKnoxExtract(
     heldForReview: results.reduce((total, result) => total + result.held.length, 0),
     retiredOlderRows,
     retiredOlderCopyRows,
-    skippedKnownInputs,
     limit,
     dryRun,
     learning,
