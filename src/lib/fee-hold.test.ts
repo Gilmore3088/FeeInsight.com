@@ -75,8 +75,8 @@ describe("admin fee hold", () => {
 
     expect(result).toEqual({ ok: true, feePublishedId: 117687, institutionId: 809 });
     const update = calls.find((call) => call.query.includes("UPDATE published_fee_records"));
-    expect(update?.query).toContain("quarantine_reason LIKE");
-    expect(update?.values).toContain(`${ADMIN_HOLD_PREFIX}%`);
+    expect(update?.query).toContain("left(fp.quarantine_reason");
+    expect(update?.values).toContain(ADMIN_HOLD_PREFIX);
     const logged = JSON.parse(String(calls.find((call) => call.query.includes("INSERT INTO pipeline_feedback"))?.values[0]))[0];
     expect(logged).toMatchObject({ kind: "admin_release", signal: "restored", evidence: { action: "release", reason: "Wrong category" } });
   });
@@ -93,6 +93,7 @@ describe("admin fee hold", () => {
       quarantined_at: new Date("2026-10-12T01:40:00Z"),
       quarantine_reason: `${ADMIN_HOLD_PREFIX} Wrong category`,
       held_by: "James",
+      closed_by_check: false,
     }]);
     expect(await getHeldFees(db, 809)).toEqual([{
       feePublishedId: 117687,
@@ -103,6 +104,7 @@ describe("admin fee hold", () => {
       heldAt: "2026-10-12T01:40:00.000Z",
       reason: "Wrong category",
       heldBy: "James",
+      closedByCheck: false,
     }]);
   });
 

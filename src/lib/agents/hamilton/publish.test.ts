@@ -38,7 +38,7 @@ function createDbMock(
       return Promise.resolve(priorPublishedRows.slice(0, 1).map((row) => ({ fee_published_id: row.fee_published_id })));
     }
     // No admin hold in these fixtures (publish.admin-hold.test.ts covers one).
-    if (text.includes("quarantine_reason LIKE")) return Promise.resolve([]);
+    if (text.includes("left(quarantine_reason")) return Promise.resolve([]);
     if (text.includes("FROM published_fee_records")) {
       return Promise.resolve(priorPublishedRows);
     }

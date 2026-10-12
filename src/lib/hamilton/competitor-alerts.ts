@@ -233,6 +233,7 @@ async function loadAgedChanges(competitorIds: number[], categories: string[], no
          -- The pair publish recorded (hamilton/change-pairing.ts), not one guessed by amount.
          WHERE fp.fee_published_id = c.new_fee_published_id
            AND fp.rolled_back_at IS NULL
+           AND fp.quarantined_at IS NULL
            AND fv.outlier_flags::text LIKE '%agentic_darwin_verified%'
       ) n ON TRUE
       LEFT JOIN LATERAL (
@@ -321,6 +322,7 @@ async function withdrawStaleAlerts(dryRun: boolean, institutionId: number | null
              WHEN c.id IS NULL THEN 'change record missing'
              WHEN c.like_for_like IS NOT TRUE THEN 'change is not like for like'
              WHEN n.fee_published_id IS NULL OR n.rolled_back_at IS NOT NULL THEN 'new price rolled back'
+             WHEN n.quarantined_at IS NOT NULL THEN 'new price is held'
              ELSE 'new price has a pending takedown'
            END AS reason
       FROM hamilton_signals s
@@ -334,6 +336,7 @@ async function withdrawStaleAlerts(dryRun: boolean, institutionId: number | null
          OR c.like_for_like IS NOT TRUE
          OR n.fee_published_id IS NULL
          OR n.rolled_back_at IS NOT NULL
+         OR n.quarantined_at IS NOT NULL
          OR EXISTS (SELECT 1 FROM pipeline_feedback pf WHERE pf.fee_published_id = n.fee_published_id AND pf.kind = 'takedown_pending')
        )
   `;

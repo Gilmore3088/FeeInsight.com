@@ -24,6 +24,8 @@ export interface HeldFee {
   heldAt: string;
   reason: string;
   heldBy: string | null;
+  /** An agent check also took the fee down; releasing the hold does not put it back live. */
+  closedByCheck: boolean;
 }
 
 /** The reason an operator typed, trimmed; null when too short or too long. Pure. */

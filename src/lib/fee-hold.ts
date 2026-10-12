@@ -98,7 +98,7 @@ export async function releasePublishedFee(
        WHERE fp.fee_published_id = ${feePublishedId}
          AND before.fee_published_id = fp.fee_published_id
          AND fp.quarantined_at IS NOT NULL
-         AND fp.quarantine_reason LIKE ${`${ADMIN_HOLD_PREFIX}%`}
+         AND left(fp.quarantine_reason, ${ADMIN_HOLD_PREFIX.length}) = ${ADMIN_HOLD_PREFIX}
       RETURNING fp.fee_published_id, fp.institution_id, fp.canonical_fee_key, fp.amount, fp.fee_name,
                 before.quarantine_reason
     `;
@@ -120,18 +120,18 @@ export async function getHeldFees(db: SqlTag, institutionId: number): Promise<He
     quarantined_at: Date | string;
     quarantine_reason: string;
     held_by: string | null;
+    closed_by_check: boolean;
   }[]>`
     SELECT fp.fee_published_id, fp.institution_id, fp.fee_name, fp.amount, fp.canonical_fee_key,
-           fp.quarantined_at, fp.quarantine_reason,
+           fp.quarantined_at, fp.quarantine_reason, fp.rolled_back_at IS NOT NULL AS closed_by_check,
            (SELECT pf.evidence->>'actor' FROM pipeline_feedback pf
              WHERE pf.check_name = ${FEE_HOLD_CHECK} AND pf.kind = 'admin_hold'
                AND pf.fee_published_id = fp.fee_published_id
              ORDER BY pf.created_at DESC LIMIT 1) AS held_by
       FROM published_fee_records fp
      WHERE fp.institution_id = ${institutionId}
-       AND fp.rolled_back_at IS NULL
        AND fp.quarantined_at IS NOT NULL
-       AND fp.quarantine_reason LIKE ${`${ADMIN_HOLD_PREFIX}%`}
+       AND left(fp.quarantine_reason, ${ADMIN_HOLD_PREFIX.length}) = ${ADMIN_HOLD_PREFIX}
      ORDER BY fp.quarantined_at DESC
   `;
   return rows.map((row) => ({
@@ -143,5 +143,6 @@ export async function getHeldFees(db: SqlTag, institutionId: number): Promise<He
     heldAt: row.quarantined_at instanceof Date ? row.quarantined_at.toISOString() : String(row.quarantined_at),
     reason: readHoldReason(row.quarantine_reason) ?? "",
     heldBy: row.held_by,
+    closedByCheck: Boolean(row.closed_by_check),
   }));
 }

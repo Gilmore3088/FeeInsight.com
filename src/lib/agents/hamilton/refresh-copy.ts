@@ -137,6 +137,9 @@ export async function refreshFeesFromCurrentCopy(
           JOIN source_documents sd ON sd.id = fr.source_document_id
           JOIN institution_sources inst ON inst.id = fp.institution_id
          WHERE fp.rolled_back_at IS NULL
+           -- A quarantined fee (an operator's hold, H03 #978) is not refreshed: closing it would
+           -- drop the hold and put a new copy live without a release.
+           AND fp.quarantined_at IS NULL
            AND sd.superseded_by_id IS NOT NULL
            AND sd.superseded_by_id <> sd.id
            AND (${options.institutionId ?? null}::bigint IS NULL OR fp.institution_id = ${options.institutionId ?? null}::bigint)

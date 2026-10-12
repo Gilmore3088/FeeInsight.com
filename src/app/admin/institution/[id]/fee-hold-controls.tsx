@@ -158,6 +158,7 @@ export function HeldFeesTable({ fees, canRelease }: { fees: HeldFee[]; canReleas
                 {fee.feeName}
                 <p className="mt-0.5 text-[11px] font-normal text-amber-800/80 dark:text-amber-300/80">
                   {fee.canonicalFeeKey.replace(/_/g, " ")} · {fee.reason}
+                  {fee.closedByCheck && " · Also taken down by a check; releasing keeps it down."}
                 </p>
               </td>
               <td className="text-right tabular-nums text-amber-900 line-through dark:text-amber-200">
