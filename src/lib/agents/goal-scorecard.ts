@@ -70,6 +70,27 @@ export interface WeeklyAccuracy {
   audits: number;
   latestAt: string | null;
   latestAccuracy: number | null;
+  /** 95% Wilson range around `accuracy` (200 fees gives about ±3–4 points); null with no percentage. */
+  range: { low: number; high: number } | null;
+  /** One dated row per audit in the window, newest first, kept with each daily snapshot (#1119). */
+  daily: FreshAuditDay[];
+  /** Misses per check across the window. */
+  misses: FreshAuditMisses;
+}
+
+export interface FreshAuditMisses {
+  amount: number;
+  category: number;
+  evidence: number;
+  notAFee: number;
+  name: number;
+}
+
+export interface FreshAuditDay extends FreshAuditMisses {
+  at: string;
+  right: number;
+  scorable: number;
+  accuracy: number | null;
 }
 
 export interface WrongAfterPublish {
@@ -209,10 +230,28 @@ export function summarizeWrongAfterPublish(rows: Array<{ reason: string | null; 
 }
 
 /** Pure: Deming's fresh-audit step details from the window, pooled. */
+/** 95% Wilson score interval for `right` of `n`; rounded to four places. */
+export function wilsonRange(right: number, n: number): { low: number; high: number } | null {
+  if (n <= 0) return null;
+  const z = 1.96;
+  const p = right / n;
+  const denominator = 1 + (z * z) / n;
+  const centre = p + (z * z) / (2 * n);
+  const margin = z * Math.sqrt((p * (1 - p)) / n + (z * z) / (4 * n * n));
+  const round = (value: number) => Math.round(Math.min(1, Math.max(0, value)) * 10_000) / 10_000;
+  return { low: round((centre - margin) / denominator), high: round((centre + margin) / denominator) };
+}
+
+const missCount = (value: unknown) => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+};
+
+/** Pure: Deming's fresh-audit step details from the window, pooled, with a dated row per audit. */
 export function poolFreshAudits(events: Array<{ at: string; detail: Record<string, unknown> | null }>): Omit<WeeklyAccuracy, "query"> {
   let right = 0;
   let scorable = 0;
-  let audits = 0;
+  const daily: FreshAuditDay[] = [];
   for (const event of events) {
     if (!event.detail || event.detail.readable === false) continue;
     const r = Number(event.detail.right);
@@ -220,17 +259,33 @@ export function poolFreshAudits(events: Array<{ at: string; detail: Record<strin
     if (!Number.isFinite(r) || !Number.isFinite(s) || s <= 0) continue;
     right += r;
     scorable += s;
-    audits += 1;
+    daily.push({
+      at: event.at,
+      right: r,
+      scorable: s,
+      accuracy: ratio(r, s),
+      amount: missCount(event.detail.amount_miss),
+      category: missCount(event.detail.category_miss),
+      evidence: missCount(event.detail.evidence_miss),
+      notAFee: missCount(event.detail.not_a_fee),
+      name: missCount(event.detail.name_miss),
+    });
   }
+  daily.sort((a, b) => b.at.localeCompare(a.at));
   const newest = [...events].sort((a, b) => b.at.localeCompare(a.at))[0];
   const latestAccuracy = newest?.detail?.accuracy == null ? null : Number(newest.detail.accuracy);
+  const enough = scorable >= FRESH_AUDIT_MIN_SCORABLE;
+  const sum = (key: keyof FreshAuditMisses) => daily.reduce((total, day) => total + day[key], 0);
   return {
-    accuracy: scorable >= FRESH_AUDIT_MIN_SCORABLE ? ratio(right, scorable) : null,
+    accuracy: enough ? ratio(right, scorable) : null,
     right,
     scorable,
-    audits,
+    audits: daily.length,
     latestAt: newest?.at ?? null,
     latestAccuracy: Number.isFinite(latestAccuracy) ? latestAccuracy : null,
+    range: enough ? wilsonRange(right, scorable) : null,
+    daily,
+    misses: { amount: sum("amount"), category: sum("category"), evidence: sum("evidence"), notAFee: sum("notAFee"), name: sum("name") },
   };
 }
 
@@ -460,7 +515,7 @@ export function goalBriefLines(goal: GoalScorecard): string[] {
   lines.push(!a ? "Accuracy: could not be read today."
     : a.accuracy == null
       ? `Accuracy: not enough audited fees in the last 7 days (${count(a.scorable)} scorable, ${a.audits} audits).`
-      : `Accuracy: ${pct(a.accuracy)} over the last 7 days (${count(a.right)} of ${count(a.scorable)} fees right, ${a.audits} Deming audits; target 95%).`);
+      : `Accuracy: ${pct(a.accuracy)} over the last 7 days${a.range ? ` (95% range ${pct(a.range.low)}–${pct(a.range.high)})` : ""}: ${count(a.right)} of ${count(a.scorable)} fees right, ${a.audits} Deming audits; target 95%.`);
   const w = goal.wrongAfterPublish;
   lines.push(w
     ? `Wrong after publish: ${pct(w.rate)} (${count(w.wrong)} of ${count(w.published)} fees published in the last 7 days taken down as errors).`

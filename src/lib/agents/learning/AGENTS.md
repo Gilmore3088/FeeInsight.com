@@ -164,3 +164,12 @@ until then.
 - The error-to-test loop and weekly retrospective (L5).
 - A unique `(institution_id, content_hash)` index after the dedupe workflow.
 - A `learning-contract-kill` CI guard.
+
+## Current versions
+
+The version each rules or reader constant is at now. `scripts/ci-guards.sh guide-version-kill`
+fails a PR that changes one of these constants without updating its line here (#1109).
+
+| Constant | Strategy | Version | File |
+|---|---|---|---|
+| `FEE_PAGE_CHECK_VERSION` | — | v1 | `learning/fee-page.ts` |

@@ -7,6 +7,7 @@ import {
   goalBriefLines,
   goalHeadline,
   poolFreshAudits,
+  wilsonRange,
   readGoalScorecard,
   reasonKey,
   summarizeCoverageCells,
@@ -71,15 +72,28 @@ describe("Deming accuracy over the week", () => {
   it("pools right and scorable fees across audits and dates the newest", () => {
     const pooled = poolFreshAudits([
       { at: "2026-10-11T06:00:00.000Z", detail: { right: 90, scorable: 100, accuracy: 0.9 } },
-      { at: "2026-10-12T06:00:00.000Z", detail: { right: 47, scorable: 50, accuracy: 0.94 } },
+      { at: "2026-10-12T06:00:00.000Z", detail: { right: 47, scorable: 50, accuracy: 0.94, amount_miss: 1, evidence_miss: 2 } },
       { at: "2026-10-10T06:00:00.000Z", detail: { readable: false } },
     ]);
     expect(pooled).toMatchObject({ right: 137, scorable: 150, audits: 2, latestAt: "2026-10-12T06:00:00.000Z", latestAccuracy: 0.94 });
     expect(pooled.accuracy).toBeCloseTo(137 / 150, 4);
+    expect(pooled.daily.map((day) => day.at)).toEqual(["2026-10-12T06:00:00.000Z", "2026-10-11T06:00:00.000Z"]);
+    expect(pooled.daily[0]).toMatchObject({ right: 47, scorable: 50, accuracy: 0.94, amount: 1, evidence: 2, name: 0 });
+    expect(pooled.misses).toEqual({ amount: 1, category: 0, evidence: 2, notAFee: 0, name: 0 });
+    expect(pooled.range!.low).toBeLessThan(pooled.accuracy!);
+    expect(pooled.range!.high).toBeGreaterThan(pooled.accuracy!);
+  });
+
+  it("puts a 95% range of about ±3–4 points around a 200-fee audit", () => {
+    const range = wilsonRange(184, 200)!;
+    expect(range.low).toBeCloseTo(0.874, 2);
+    expect(range.high).toBeCloseTo(0.950, 2);
+    expect(wilsonRange(0, 0)).toBeNull();
+    expect(wilsonRange(200, 200)!.high).toBe(1);
   });
 
   it("gives no percentage below the audit's minimum sample", () => {
-    expect(poolFreshAudits([{ at: "2026-10-12T00:00:00Z", detail: { right: 9, scorable: 10 } }]).accuracy).toBeNull();
+    expect(poolFreshAudits([{ at: "2026-10-12T00:00:00Z", detail: { right: 9, scorable: 10 } }])).toMatchObject({ accuracy: null, range: null });
     expect(poolFreshAudits([]).latestAt).toBeNull();
   });
 });
