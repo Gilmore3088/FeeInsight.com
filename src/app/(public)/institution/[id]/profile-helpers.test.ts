@@ -252,7 +252,7 @@ describe("buildLocationParts", () => {
 });
 
 
-it("headlines consumer zero rather than a business or unknown NSF price", () => {
+it("headlines a stated consumer price over an unknown one, and never a business price", () => {
   const row = { id: 1, institution_id: 47, fee_name: "NSF", fee_category: "nsf", amount: 30,
     frequency: null, conditions: null, review_status: "approved" } as ExtractedFee;
   expect(pickHeadlineFees([
@@ -260,5 +260,7 @@ it("headlines consumer zero rather than a business or unknown NSF price", () => 
     { ...row, id: 2, amount: 38, fee_audience: "unknown" },
     { ...row, id: 3, amount: 0, fee_audience: "consumer", fee_treatment: "eliminated" },
   ]).nsf).toBe(0);
-  expect(pickHeadlineFees([{ ...row, fee_audience: "unknown" }]).nsf).toBeNull();
+  // Unknown is treated as personal when nothing better is stated (#1058); business never is.
+  expect(pickHeadlineFees([{ ...row, fee_audience: "unknown" }]).nsf).toBe(30);
+  expect(pickHeadlineFees([{ ...row, fee_audience: "business" }]).nsf).toBeNull();
 });

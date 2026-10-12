@@ -141,8 +141,9 @@ describe("business-only sources (rule 6)", () => {
 });
 
 
-it("requires a verified consumer audience at the SQL boundary and keeps real zeros", () => {
-  expect(STATS_ROW_FILTER).toContain("ef.fee_audience IN ('consumer', 'both')");
+it("counts unknown audience as personal, never business, and keeps real zeros", () => {
+  expect(STATS_ROW_FILTER).not.toContain("'business'");
+  expect(STATS_ROW_FILTER).toContain("ef.fee_audience IN ('consumer', 'both', 'unknown')");
   expect(STATS_ROW_FILTER).not.toContain("ef.amount > 0");
   expect(valuePerInstitution([{ institution_id: 47, amount: 0, fee_category: "nsf" }]).get(47)).toBe(0);
 });
@@ -164,10 +165,10 @@ it("does not turn blank, negative or non-finite observations into evidence", () 
     bank_count: 5, cu_count: 0, median_amount: 10, min_amount: 0 });
 });
 
-it("shares the same consumer boundary across SQL aliases without filtering out zero", () => {
+it("shares the same audience boundary across SQL aliases without filtering out zero", () => {
   const predicate = statsRowFilter("c");
   expect(predicate).toContain("c.source_document_id IS NOT NULL");
-  expect(predicate).toContain("c.fee_audience IN ('consumer', 'both')");
+  expect(predicate).toContain("c.fee_audience IN ('consumer', 'both', 'unknown')");
   expect(predicate).not.toContain("ef.");
   expect(predicate).not.toContain("amount > 0");
   expect(predicate).not.toContain("amount IS NOT NULL"); // rate rows have a separate value column

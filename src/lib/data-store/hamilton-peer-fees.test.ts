@@ -19,7 +19,7 @@ describe("exact selected published fee evidence", () => {
     expect(result[0].documentUrl).toBe("https://bank.example/fee-schedule");
     expect(result[0].sourceUrl).toBeNull();
     const [statement, params] = vi.mocked(db.unsafe).mock.calls[0];
-    expect(statement).toContain("fee_audience IN ('consumer', 'both')");
+    expect(statement).toContain("fee_audience IN ('consumer', 'both', 'unknown')");
     expect(statement).toContain("source_document_id IS NOT NULL");
     expect(params).toEqual([[303], "nsf"]);
   });

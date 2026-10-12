@@ -10,6 +10,7 @@ import { canAccessAllCategories } from "@/lib/access";
 import { UpgradeGate } from "@/components/upgrade-gate";
 import { CatalogSidebar } from "./catalog-sidebar";
 import { FamilySection, money } from "./family-section";
+import { UnstatedAudienceFootnote, UnstatedAudienceMark, hasUnstatedAudience } from "@/components/unstated-audience";
 
 // No live number in the title: counts come from the shared public snapshot in the body.
 export const metadata: Metadata = {
@@ -119,6 +120,7 @@ export default async function FeeCatalogPage() {
             </p>
             <p className="mt-2 text-[28px] font-light tracking-tight text-[#1A1815] tabular-nums" style={SERIF}>
               {money(fee.median_amount)}
+              <UnstatedAudienceMark show={fee.median_amount !== null && hasUnstatedAudience(fee)} />
             </p>
             <p className="mt-1 text-[11px] tabular-nums text-[#6B6255]">
               Typical {money(fee.p25_amount)} &ndash; {money(fee.p75_amount)}
@@ -137,6 +139,7 @@ export default async function FeeCatalogPage() {
         {summary.refreshedOn ? `Updated ${summary.refreshedOn}. ` : ""}
         Full min–max by category is in the tables below.
       </p>
+      <UnstatedAudienceFootnote show={spotlightFees.some((fee) => fee.median_amount !== null && hasUnstatedAudience(fee))} className="mt-1" />
       {!showAll && gatedCount > 0 && (
         <p className="mt-3 rounded-lg border border-[#E8DFD1] bg-[#FAF7F2] px-4 py-2.5 text-[13px] text-[#5A5347]">
           <span className="font-semibold text-[#1A1815]">Free:</span> national benchmarks for the{" "}

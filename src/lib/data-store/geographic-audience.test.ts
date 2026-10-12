@@ -26,7 +26,7 @@ beforeEach(() => {
 
 function expectConsumerBoundary(query: string) {
   expect(query).toContain("source_document_id IS NOT NULL");
-  expect(query).toContain("fee_audience IN ('consumer', 'both')");
+  expect(query).toContain("fee_audience IN ('consumer', 'both', 'unknown')");
   expect(query).toContain("amount >= 0");
   expect(query).not.toContain("amount > 0");
 }

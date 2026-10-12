@@ -1,4 +1,4 @@
-/** Customer audience is not an account product name. Unknown never means consumer. */
+/** Customer audience is not an account product name. Unknown is never labeled consumer. */
 export type FeeAudience = "consumer" | "business" | "both" | "unknown";
 export type FeeTreatment = "charged" | "no_charge" | "eliminated" | "unknown";
 
@@ -108,3 +108,22 @@ export function conflictsWithAudienceStatement(feeName: string, amount: number, 
 export function isConsumerFee(audience: FeeAudience | null | undefined): boolean {
   return audience === "consumer" || audience === "both";
 }
+
+/**
+ * Whether a fee enters personal (consumer) benchmarks: consumer, both, and unknown, which is
+ * treated as personal and marked with an asterisk (James, 2026-10-12, #1058). Business never
+ * does. Same audience rule as statsRowFilter (fee-stats.ts); the business-only address test
+ * is applied separately. isConsumerFee stays strict for checks that need a stated audience.
+ */
+export function countsAsPersonal(audience: FeeAudience | null | undefined): boolean {
+  return audience !== "business";
+}
+
+/** The fee's own schedule does not say who it applies to. */
+export function isAudienceUnstated(audience: FeeAudience | null | undefined): boolean {
+  return audience == null || audience === "unknown";
+}
+
+/** Footnote for the asterisk on any fee or benchmark an unknown-audience row contributes to. */
+export const UNSTATED_AUDIENCE_FOOTNOTE =
+  "Audience not stated on the bank\u2019s schedule; treated as personal. Fees may differ for business or commercial accounts.";

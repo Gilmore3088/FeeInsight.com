@@ -22,6 +22,12 @@ export interface FeeCategorySummary {
   bank_median_amount: number | null;
   /** Median among credit unions only; null below the minimum sample. */
   cu_median_amount: number | null;
+  /**
+   * Institutions in this benchmark with at least one row whose audience the schedule does
+   * not state (counted as personal, #1058). Above zero, pages mark the figure with an asterisk.
+   * Optional: a snapshot cached before this field existed reads as no asterisk.
+   */
+  unstated_audience_institution_count?: number;
 }
 
 export interface FeeInstance {
@@ -99,7 +105,7 @@ export function computeStats(amounts: number[]): {
 
 export async function getFeeCategorySummaries(): Promise<FeeCategorySummary[]> {
   const rows = await sql`
-    SELECT ef.fee_category, ef.amount, ef.institution_id, ct.charter_type
+    SELECT ef.fee_category, ef.amount, ef.institution_id, ct.charter_type, ef.fee_audience
     FROM published_fee_catalog ef
     JOIN institution_sources ct ON ef.institution_id = ct.id
     WHERE ef.fee_category IS NOT NULL
@@ -111,6 +117,7 @@ export async function getFeeCategorySummaries(): Promise<FeeCategorySummary[]> {
     amount: number | null;
     institution_id: number;
     charter_type: string;
+    fee_audience?: string | null;
   }[];
 
   // "Charge nothing" is stronger than "has a free tier": every usable price for
@@ -129,6 +136,15 @@ export async function getFeeCategorySummaries(): Promise<FeeCategorySummary[]> {
   }
   for (const [category, paid] of paidInstitutions) {
     for (const id of paid) zeroInstitutions.get(category)?.delete(id);
+  }
+
+  // Institutions whose value rests on at least one row with no stated audience.
+  const unstatedInstitutions = new Map<string, Set<number>>();
+  for (const row of rows) {
+    if (row.fee_audience != null && row.fee_audience !== "unknown") continue;
+    const set = unstatedInstitutions.get(row.fee_category) ?? new Set<number>();
+    set.add(Number(row.institution_id));
+    unstatedInstitutions.set(row.fee_category, set);
   }
 
   // Same rows, split by charter: no extra query for the bank vs credit union medians.
@@ -153,6 +169,7 @@ export async function getFeeCategorySummaries(): Promise<FeeCategorySummary[]> {
       zero_count: zeroInstitutions.get(category)?.size ?? 0,
       bank_median_amount: byCharter.get(`${category}|bank`)?.median_amount ?? null,
       cu_median_amount: byCharter.get(`${category}|credit_union`)?.median_amount ?? null,
+      unstated_audience_institution_count: unstatedInstitutions.get(category)?.size ?? 0,
     });
   }
 

@@ -18,7 +18,7 @@ beforeEach(() => { state.queries.length = 0; });
 function expectMoveBoundary(query: string) {
   expect(query).toContain("like_for_like IS TRUE");
   expect(query).toContain("FROM published_fee_catalog consumer_live");
-  expect(query).toContain("consumer_live.fee_audience IN ('consumer', 'both')");
+  expect(query).toContain("consumer_live.fee_audience IN ('consumer', 'both', 'unknown')");
   expect(query).toContain("consumer_previous.fee_audience = consumer_live.fee_audience");
   expect(query).toContain("consumer_previous.quarantined_at IS NULL");
   expect(query).toContain("previous_fee_published_id");
@@ -33,7 +33,7 @@ describe("public fee reader applicability", () => {
     expect(queries).toHaveLength(3);
     for (const query of queries) {
       expect(query).toContain("ef.source_document_id IS NOT NULL");
-      expect(query).toContain("ef.fee_audience IN ('consumer', 'both')");
+      expect(query).toContain("ef.fee_audience IN ('consumer', 'both', 'unknown')");
       expect(query).toContain("ef.amount >= 0");
       expect(query).not.toContain("ef.amount > 0");
     }
@@ -49,7 +49,7 @@ describe("public fee reader applicability", () => {
       expect(query).toContain("GROUP BY ef.institution_id, ct.institution_name");
       expect(query).toContain("THEN MAX(ef.amount)");
       expect(query).toContain("PERCENTILE_CONT(0.5)");
-      expect(query).toContain("ef.fee_audience IN ('consumer', 'both')");
+      expect(query).toContain("ef.fee_audience IN ('consumer', 'both', 'unknown')");
       expect(query).not.toContain("ef.amount > 0");
     }
   });

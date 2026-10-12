@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => ({
-  rows: [] as { fee_category: string; amount: number | string | null; institution_id: number; charter_type: string }[],
+  rows: [] as { fee_category: string; amount: number | string | null; institution_id: number; charter_type: string; fee_audience?: string }[],
   queries: [] as string[],
 }));
 vi.mock("./connection", () => {
@@ -49,7 +49,20 @@ describe("getFeeCategorySummaries charter medians", () => {
     expect(summaries.find((row) => row.fee_category === "overdraft")).toMatchObject({ zero_count: 1, institution_count: 2, median_amount: null });
     expect(summaries.find((row) => row.fee_category === "nsf")).toMatchObject({ zero_count: 1, institution_count: 1 });
     expect(state.queries[0]).toContain("ef.source_document_id IS NOT NULL");
-    expect(state.queries[0]).toContain("ef.fee_audience IN ('consumer', 'both')");
+    expect(state.queries[0]).toContain("ef.fee_audience IN ('consumer', 'both', 'unknown')");
     expect(state.queries[0]).toContain("ef.amount >= 0");
+  });
+
+  it("counts the institutions whose value rests on an unstated audience, for the asterisk", async () => {
+    state.rows.push(
+      { fee_category: "overdraft", amount: 30, institution_id: 1, charter_type: "bank", fee_audience: "consumer" },
+      { fee_category: "overdraft", amount: 32, institution_id: 2, charter_type: "bank", fee_audience: "unknown" },
+      { fee_category: "overdraft", amount: 34, institution_id: 2, charter_type: "bank", fee_audience: "unknown" },
+      { fee_category: "overdraft", amount: 31, institution_id: 3, charter_type: "bank", fee_audience: "both" },
+      { fee_category: "nsf", amount: 28, institution_id: 1, charter_type: "bank", fee_audience: "consumer" },
+    );
+    const summaries = await getFeeCategorySummaries();
+    expect(summaries.find((row) => row.fee_category === "overdraft")?.unstated_audience_institution_count).toBe(1);
+    expect(summaries.find((row) => row.fee_category === "nsf")?.unstated_audience_institution_count).toBe(0);
   });
 });

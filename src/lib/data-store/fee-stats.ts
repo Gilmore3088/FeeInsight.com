@@ -14,8 +14,12 @@
  * 4. Minimum sample: no median or percentile below MIN_INSTITUTIONS_FOR_MEDIAN
  *    institutions; "strong" needs STRONG_INSTITUTION_COUNT.
  * 5. Unknown charter types count as neither banks nor credit unions.
- * 6. Only explicitly consumer/both rows count; unknown is not a consumer default.
- *    Business-only schedules don't count: a fee read from a schedule whose address names
+ * 6. Consumer, both and unknown-audience rows count; business rows never do. Unknown
+ *    counts as personal (James, 2026-10-12, #1058): 99.7% of live fees had no stated
+ *    audience, and a consumer-only rule left national medians on about 60 institutions.
+ *    Pages mark a figure an unknown row contributes to with an asterisk
+ *    (UNSTATED_AUDIENCE_FOOTNOTE), and #1059 labels the rows. Business-only schedules
+ *    don't count either: a fee read from a schedule whose address names
  *    business, commercial, corporate or treasury accounts (and no consumer word) is a
  *    business price, not the consumer's. It stays on the bank's own page and is left out
  *    of medians, ranges and comparisons until a consumer schedule replaces it. Same
@@ -28,7 +32,7 @@ import { MIN_INSTITUTIONS_FOR_MEDIAN, STRONG_INSTITUTION_COUNT, maturityTier, ty
 
 export { MIN_INSTITUTIONS_FOR_MEDIAN, STRONG_INSTITUTION_COUNT, maturityTier, type MaturityTier };
 /** Bump when these rules change; fee_index_cache rows carry it and older ones are ignored. */
-export const STATS_METHOD_VERSION = 6;
+export const STATS_METHOD_VERSION = 7;
 
 /** SQL predicate: the row's source address names a business-only schedule (rule 6). */
 export function businessSourceSql(alias: string): string {
@@ -39,7 +43,7 @@ export function businessSourceSql(alias: string): string {
 /** Shared audience/source boundary for dollar and rate catalogs. Alias is code, not input. */
 export function statsRowFilter(alias = "ef"): string {
   if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(alias)) throw new Error("Invalid statistics table alias");
-  return `${alias}.source_document_id IS NOT NULL AND ${alias}.fee_audience IN ('consumer', 'both') AND NOT ${businessSourceSql(alias)}`;
+  return `${alias}.source_document_id IS NOT NULL AND ${alias}.fee_audience IN ('consumer', 'both', 'unknown') AND NOT ${businessSourceSql(alias)}`;
 }
 
 /** Compatibility predicate for readers using the conventional ef alias. */

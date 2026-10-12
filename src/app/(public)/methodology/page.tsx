@@ -141,7 +141,20 @@ export default async function MethodologyPage() {
           ]}
         />
 
-        {/* Section 6: Coverage and Limitations */}
+        {/* Section 6: Audience (#1058) */}
+        <Section
+          id="audience"
+          label="Personal and business fees"
+          title="Personal and business fees are compared separately"
+          body={[
+            "Banks often charge personal and business customers different prices for the same service. Our medians, ranges and comparisons describe personal accounts unless a figure says otherwise, so each fee is labeled by who it applies to.",
+            "The label comes from the bank's own schedule. A fee is labeled Business when its line names business or commercial accounts, or when the whole schedule is a business one: its web address names business, commercial, corporate or treasury accounts and no personal ones. A fee is labeled Consumer when its line names personal or consumer accounts.",
+            "Many schedules never say who a fee applies to. We count those fees as personal and mark every fee and figure they contribute to with an asterisk (*). The footnote beside it reads: \u201cAudience not stated on the bank\u2019s schedule; treated as personal. Fees may differ for business or commercial accounts.\u201d The link to the bank's schedule stays beside the fee, so you can check it yourself. We are labeling these fees from the schedules we already hold, and fewer figures will carry the asterisk as we do.",
+            "Business fees stay on the bank's own page, labeled Business, and never enter a personal median. Business comparisons will be published once enough institutions post business fees to compare.",
+          ]}
+        />
+
+        {/* Section 7: Coverage and Limitations */}
         <Section
           label="Coverage and Limitations"
           title="What our data covers — and what it does not"
@@ -168,9 +181,9 @@ export default async function MethodologyPage() {
 }
 
 // Internal section component — page-local only
-function Section({ label, title, body }: { label: string; title: string; body: string[] }) {
+function Section({ id, label, title, body }: { id?: string; label: string; title: string; body: string[] }) {
   return (
-    <section style={{ marginBottom: "48px" }}>
+    <section id={id} style={{ marginBottom: "48px", scrollMarginTop: "96px" }}>
       <p style={{ fontSize: "11px", textTransform: "uppercase", letterSpacing: "0.12em", color: "#A93D25", fontWeight: 700, marginBottom: "8px" }}>
         {label}
       </p>

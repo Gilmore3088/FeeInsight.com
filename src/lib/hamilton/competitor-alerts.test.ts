@@ -162,7 +162,7 @@ describe("runCompetitorAlerts", () => {
     expect(text).toContain("agentic_darwin_verified");
     expect(call).toContain("2026-10-07T00:00:00.000Z");
     const predicates = mocks.sql.unsafe.mock.calls.map((entry) => String(entry[0])).join("\n");
-    expect(predicates).toContain("consumer_live.fee_audience IN ('consumer', 'both')");
+    expect(predicates).toContain("consumer_live.fee_audience IN ('consumer', 'both', 'unknown')");
     expect(predicates).toContain("consumer_previous.fee_audience = consumer_live.fee_audience");
   });
 

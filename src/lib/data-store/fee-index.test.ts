@@ -186,6 +186,6 @@ describe("getDistrictFeeMedians audience boundary", () => {
     expect(db.unsafe).toHaveBeenCalledTimes(1);
     const predicate = String(db.unsafe.mock.calls[0][0]);
     expect(predicate).toContain("ef.source_document_id IS NOT NULL");
-    expect(predicate).toContain("ef.fee_audience IN ('consumer', 'both')");
+    expect(predicate).toContain("ef.fee_audience IN ('consumer', 'both', 'unknown')");
   });
 });

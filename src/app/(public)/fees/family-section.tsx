@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { FeeCategorySummary } from "@/lib/data-store";
 import { getDisplayName, FAMILY_COLORS } from "@/lib/fee-taxonomy";
 import { formatFeeAmount } from "@/lib/format";
+import { UnstatedAudienceFootnote, UnstatedAudienceMark, hasUnstatedAudience } from "@/components/unstated-audience";
 
 const EYEBROW = "text-[11px] font-bold uppercase tracking-[0.12em] text-[#6B6255]";
 const TH = `px-4 py-2.5 ${EYEBROW}`;
@@ -81,6 +82,7 @@ export function FamilySection({ familyName, cats }: { familyName: string; cats: 
           </table>
         </div>
       </div>
+      <UnstatedAudienceFootnote show={cats.some(hasUnstatedAudience)} className="mt-2" />
     </section>
   );
 }
@@ -109,6 +111,7 @@ function CategoryRow({ cat, barScale }: { cat: FeeCategorySummary; barScale: num
       </td>
       <td className="px-4 py-2.5 text-right tabular-nums font-semibold text-[#1A1815]">
         {money(cat.median_amount)}
+        <UnstatedAudienceMark show={cat.median_amount !== null && hasUnstatedAudience(cat)} />
       </td>
       <td className="hidden px-4 py-2.5 text-right tabular-nums text-[#6B6255] sm:table-cell">
         {money(cat.p25_amount)}

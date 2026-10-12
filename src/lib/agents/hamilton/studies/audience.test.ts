@@ -28,7 +28,7 @@ describe("Hamilton study fee audience boundaries", () => {
     expect(queries).toHaveLength(1);
     const query = queries[0];
     expect(query).toContain("f.source_document_id IS NOT NULL");
-    expect(query).toContain("f.fee_audience IN ('consumer', 'both')");
+    expect(query).toContain("f.fee_audience IN ('consumer', 'both', 'unknown')");
     expect(query).toContain("f.amount >= 0");
     expect(query).not.toContain("f.amount > 0");
     expect(query).toContain("THEN MAX(f.amount)");
@@ -43,7 +43,7 @@ describe("Hamilton study fee audience boundaries", () => {
     expect(queries).toHaveLength(1);
     const query = queries[0];
     expect(query).toContain("f.source_document_id IS NOT NULL");
-    expect(query).toContain("f.fee_audience IN ('consumer', 'both')");
+    expect(query).toContain("f.fee_audience IN ('consumer', 'both', 'unknown')");
     expect(query).toContain("f.amount > 0");
   });
 });

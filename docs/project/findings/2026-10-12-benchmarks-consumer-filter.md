@@ -13,10 +13,13 @@ Hamilton studies.
 **Cause:** A stricter rule went live before the data it depends on existed. Knox's classifier
 (`src/lib/fee-audience.ts`) only reads the fee's own line, so new rows stay mostly unknown too.
 
-**Fix:** Not yet. #1058 (James chose: count unknown as consumer unless the schedule is
-business-only, shown with an asterisk and footnote; business fees published and labeled
-separately), #1059 (Knox labels audience from document, section and line evidence, and
-relabels existing rows), #1062 (Personal and Business tabs on the institution page).
+**Fix:** #1058 (James chose option A). `statsRowFilter` counts `unknown` as personal again,
+keeps `business` rows and business-only schedules out, and `STATS_METHOD_VERSION` is 7, so
+version-6 cache rows are ignored. Pages mark a figure an unknown row contributes to with an
+asterisk and the footnote James approved, and the methodology page explains it. Still to come:
+#1059 (Knox labels audience from document, section and line evidence, and relabels existing
+rows), #1062 (Personal and Business tabs on the institution page), and the asterisk on the
+surfaces #1058's PR lists as not yet covered.
 
 **Lesson:** Before a rule narrows what counts, measure how much data passes it. A benchmark whose
 sample collapses should fail loudly on the scorecard (#1040), not quietly turn "insufficient".
