@@ -5,6 +5,14 @@ from the top: one issue, one branch, one PR, then the next. The reviews themselv
 `docs/plans/*-review-2026-10-12.md`; decisions are in `docs/project/DECISIONS.md` (2026-10-12);
 the master tracker is #1026.
 
+## Two rules that shape every item
+
+- **Classification belongs to Darwin** (DECISIONS, 2026-10-12): Knox suggests a category, audience
+  and tier with evidence; Darwin decides; Gutenberg publishes Darwin's decision with one final check;
+  Deming audits independently. Build #1059, #1069, #1102 and #1112 this way.
+- **Targets:** accuracy 95% on Deming's daily audit (weekly average); Knox 85% found and 90% right
+  on the answer key; coverage 30 per state and size group, or 75%.
+
 ## Rules for the builder
 
 1. **One issue at a time, in this order.** Skip an item only if it is blocked; say why on the issue

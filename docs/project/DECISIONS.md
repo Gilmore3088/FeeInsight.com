@@ -5,6 +5,20 @@ Seeded 2026-10-05 from the project's working memory; earlier decisions were not 
 
 ## 2026-10-12
 
+**Accuracy target: 95% on Deming's daily audit, averaged over a week.** James, Oct 12 (#1119). The
+audit draws 200 live fees a day and checks each against the bank's own schedule; it read 92.0% on
+Oct 11.
+
+**Darwin owns classification: Knox suggests, Darwin decides, Gutenberg asserts, Deming audits.**
+James asked which arrangement is most accurate (Oct 12); recommendation accepted. Knox finds the
+fee line and amount and suggests a category, audience and tier with its evidence. Darwin is the one
+authority on what a fee is (category, personal or business, tier, valid or not), using Knox's
+evidence, the fee-name library James labels, the page's headings and peer comparison. Gutenberg
+publishes only Darwin's decision, with one final check. Deming, independent of all three, audits
+live fees daily. Why: today the category is set or re-set in three places, which is why about 7,900
+fees a week are taken down within days of publishing; one decider means one place to fix, one
+score, and the auditor stays separate from the agent it grades. Affects #1059, #1069, #1102, #1112.
+
 **James's maintenance is one Sunday email, about an hour a week.** James, Oct 12 (#1104): the 25
 fee-name labels, approvals waiting, samples to check, the week's five scorecard numbers and anything
 stuck, built by a deterministic step, never a Claude routine. More than an hour rolls to next week.
