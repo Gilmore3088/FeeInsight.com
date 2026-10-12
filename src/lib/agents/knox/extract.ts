@@ -611,9 +611,13 @@ export async function insertCandidate(
   // monthly maintenance fee carries them.
   const applicability = feeApplicability(options.candidate.feeName, options.candidate.excerpt, options.candidate.amount);
   const lineup = options.candidate.canonicalHint === LINEUP_CATEGORY ? (options.candidate.lineup ?? null) : null;
-  // The dedupe index is (document, fee name, amount), so a line an older version held
-  // as unclassified or untraced would block this fee forever. Such a held row takes the
-  // traced read instead; any other existing row stays as it is.
+  // The dedupe index is (document, lowercased fee name, amount, audience), so an existing
+  // row would block this fee forever. Two kinds take the new read instead:
+  //   - a line an older version held as unclassified or untraced;
+  //   - a row an earlier read of this document retired on this re-read
+  //     (`superseded_by_reread`, never verified): the same fee read again goes back to
+  //     Darwin instead of staying retired (#1093; 1,646 free-pass fees were lost this way).
+  // Any other existing row stays as it is.
   const inserted = await db`
     INSERT INTO raw_fee_observations AS fr (
       institution_id,
@@ -666,13 +670,21 @@ export async function insertCandidate(
       min_balance_to_avoid = COALESCE(fr.min_balance_to_avoid, EXCLUDED.min_balance_to_avoid),
       min_opening_deposit = COALESCE(fr.min_opening_deposit, EXCLUDED.min_opening_deposit),
       waiver_text = COALESCE(fr.waiver_text, EXCLUDED.waiver_text),
-      outlier_flags = (COALESCE(fr.outlier_flags, '[]'::jsonb) - 'knox_review:unclassified' - 'knox_review:untraced')
+      outlier_flags = (COALESCE(fr.outlier_flags, '[]'::jsonb)
+                        - 'knox_review:unclassified' - 'knox_review:untraced' - 'superseded_by_reread')
                       || EXCLUDED.outlier_flags
-                      || '["knox_promoted_from_held"]'::jsonb
+                      || CASE WHEN fr.outlier_flags ? 'superseded_by_reread'
+                              THEN '["knox_reread_took_over"]'::jsonb
+                              ELSE '["knox_promoted_from_held"]'::jsonb END
      WHERE fr.source = 'knox'
-       -- A line held because the self-check could not trace it, now read and traced, is that fee.
-       AND (fr.outlier_flags ? 'knox_review:unclassified' OR fr.outlier_flags ? 'knox_review:untraced')
        AND NOT fr.outlier_flags ? 'needs_darwin_verification'
+       AND (
+         -- A line held because the self-check could not trace it, now read and traced, is that fee.
+         fr.outlier_flags ? 'knox_review:unclassified' OR fr.outlier_flags ? 'knox_review:untraced'
+         -- The same fee read again from a re-read of its document, retired before Darwin saw it.
+         OR (fr.outlier_flags ? 'superseded_by_reread'
+             AND NOT EXISTS (SELECT 1 FROM verified_fee_observations fv WHERE fv.fee_raw_id = fr.fee_raw_id))
+       )
     RETURNING fee_raw_id
   `;
   if (inserted.length === 0 && lineup) {
