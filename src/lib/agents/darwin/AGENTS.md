@@ -132,6 +132,13 @@ Darwin owns verification and classification.
   disagreements at key banks (Knox on 2); its misses mostly took a neighbouring row's
   price or a balance threshold as the fee
   (`/mnt/project-files/darwin/adjudicate-vs-answer-keys-2026-10-07.md`).
+- Paid calls only when they can act (#1111, 2026-10-12): `verify-paid` pays for the release
+  review only while `DARWIN_RELEASE_ACTS` is on, and for the adjudicator only while
+  `DARWIN_ADJUDICATE_SHADOW` is on (off: its verdicts never change a decision). With both off,
+  as now (releases paused 2026-10-08), the step makes no model call, spends $0 and says which
+  pass it skipped; the free verdict score still runs. In October the two passes had spent
+  $9.02 (812 calls) and $3.98 (778 calls) on verdicts that changed nothing. A capped
+  measurement run passes `measure: true` to make the calls anyway.
 - Verdict score (`verdict-score.ts`, runs at the end of `verify-paid`, no model call): the
   category review's and the release review's verdicts at answer-key institutions are scored
   against the hand-keyed schedules (`answer-key-fees.json`, compacted from the Knox

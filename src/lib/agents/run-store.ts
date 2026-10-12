@@ -515,11 +515,15 @@ async function executeAgenticStep(
         db: tx,
       });
       const dollars = (paid.costMicrousd / 1_000_000).toFixed(2);
+      // A pass switched off because its verdicts could not act (#1111) says so.
+      const skipped = paid.results.flatMap((entry) => (typeof entry.skipped === "string" ? [`${entry.pass}: ${entry.skipped}`] : []));
       return {
         status: "completed",
         summary: paid.budgetStopped && paid.processed === 0
           ? `Paid pass skipped: ${paid.budgetReason ?? "budget cap"}.`
-          : `Paid pass: ${paid.succeeded.toLocaleString()} of ${paid.processed.toLocaleString()} succeeded for $${dollars}${paid.budgetStopped ? `; then stopped: ${(paid.budgetReason ?? "a budget cap (which cap was not recorded)").replace(/\.$/, "")}` : ""}.`,
+          : paid.processed === 0 && skipped.length > 0
+            ? `Paid pass skipped, $0 spent (${skipped.join("; ")}).`
+            : `Paid pass: ${paid.succeeded.toLocaleString()} of ${paid.processed.toLocaleString()} succeeded for $${dollars}${paid.budgetStopped ? `; then stopped: ${(paid.budgetReason ?? "a budget cap (which cap was not recorded)").replace(/\.$/, "")}` : ""}.`,
         detail: {
           selected: paid.selected,
           processed: paid.processed,
