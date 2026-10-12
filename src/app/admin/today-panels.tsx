@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { NeedsYouItem } from "@/lib/console/needs-you";
 import type { SpendLine } from "@/lib/data-store/console-spend";
+import type { ScoreboardSnapshotRow } from "@/lib/data-store/answer-key";
 
 const SEVERITY_STRIPE: Record<NeedsYouItem["severity"], string> = {
   critical: "bg-red-500",
@@ -106,7 +107,7 @@ export function spendVitals(total: SpendLine | null): Vital[] {
 
 export function VitalsRow({ vitals }: { vitals: Vital[] }) {
   return (
-    <section aria-label="Vitals" className="grid grid-cols-3 gap-2 sm:gap-3">
+    <section aria-label="Vitals" className="grid grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-3 lg:grid-cols-5">
       {vitals.map((vital) => (
         <Link
           key={vital.label}
@@ -128,4 +129,46 @@ export function VitalsRow({ vitals }: { vitals: Vital[] }) {
       ))}
     </section>
   );
+}
+
+const pct = (value: number | null | undefined) => (value == null ? null : `${(value * 100).toFixed(1)}%`);
+
+/**
+ * Today's five numbers (admin redesign, #1122), each against its target and dated. Four come
+ * from the newest scorecard snapshot; spend is live. A number that could not be read says so.
+ */
+export function todayVitals(snapshot: ScoreboardSnapshotRow | null, spend: Vital): Vital[] {
+  const goal = snapshot?.goal ?? null;
+  const asOf = snapshot ? ` · scorecard ${snapshot.snapshot_date}` : "";
+  const missing = snapshot ? "Not in the newest scorecard." : "No scorecard snapshot yet.";
+  const accuracy = goal?.accuracy;
+  const cells = goal?.coverageCells;
+  const wrong = goal?.wrongAfterPublish;
+  return [
+    {
+      label: "Accuracy, 7 days",
+      value: pct(accuracy?.accuracy),
+      note: accuracy?.accuracy != null ? `target 95%, ${accuracy.scorable.toLocaleString("en-US")} fees audited${asOf}` : missing,
+      href: "/admin/scoreboard",
+    },
+    {
+      label: "Coverage groups",
+      value: cells ? `${cells.readyCells} of ${cells.totalCells}` : null,
+      note: cells ? `state × size groups at target${asOf}` : missing,
+      href: "/admin/scoreboard",
+    },
+    {
+      label: "Wrong after publish",
+      value: pct(wrong?.rate),
+      note: wrong?.rate != null ? `target under 1%, ${wrong.wrong.toLocaleString("en-US")} of ${wrong.published.toLocaleString("en-US")}${asOf}` : missing,
+      href: "/admin/scoreboard",
+    },
+    spend,
+    {
+      label: "Darwin backlog",
+      value: snapshot?.darwin_backlog == null ? null : snapshot.darwin_backlog.toLocaleString("en-US"),
+      note: snapshot?.darwin_backlog == null ? missing : `rows waiting for a verdict${asOf}`,
+      href: "/admin/darwin",
+    },
+  ];
 }
