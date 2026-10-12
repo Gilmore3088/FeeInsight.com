@@ -38,7 +38,8 @@
     { "path": "src/lib/custom-report/source-check.ts" },
     { "path": "src/lib/fee-change-columns.ts" },
     { "path": "src/lib/agents/hamilton/eval-verdicts.ts", "version_constant": "EVAL_VERDICT_VERSION" },
-    { "path": "src/lib/agents/rosetta/pdf-layout.ts", "version_constant": "PDF_LAYOUT_VERSION" },
+    { "path": "src/lib/agents/rosetta/pdf-layout.ts" },
+    { "path": "src/lib/agents/rosetta/reader-versions.ts", "version_constant": "PDF_LAYOUT_VERSION" },
     { "path": "src/lib/agents/rosetta/table-rows.ts" },
     { "path": "src/lib/agents/deming/checkers.ts" },
     { "path": "src/lib/agents/deming/severity.ts" }

@@ -20,7 +20,9 @@ import { CELL_SEPARATOR, extractHtmlDomText } from "./html-dom";
  * Magellan's paid finder instead.
  */
 
-export const ROSETTA_JS_FALLBACK_VERSION = 3;
+import { ROSETTA_JS_FALLBACK_VERSION } from "./reader-versions";
+// The number lives in reader-versions.ts (bump it there); the history stays above.
+export { ROSETTA_JS_FALLBACK_VERSION };
 export const JS_FALLBACK_STRATEGY = "read.js_fallback";
 /** Alternate URLs fetched per page, at most. */
 export const JS_FALLBACK_MAX_FETCHES = 4;

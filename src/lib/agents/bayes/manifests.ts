@@ -175,20 +175,13 @@ export interface RosettaVersions {
 }
 
 async function loadRosettaVersions(): Promise<RosettaVersions> {
-  const [{ ROSETTA_READ_VERSION }, { PDF_LAYOUT_VERSION }, { ROSETTA_OCR_VERSION }, { ROSETTA_JS_FALLBACK_VERSION }, { ROSETTA_TABLE_ROWS_VERSION }] =
-    await Promise.all([
-      import("@/lib/agents/rosetta/read"),
-      import("@/lib/agents/rosetta/pdf-layout"),
-      import("@/lib/agents/rosetta/ocr"),
-      import("@/lib/agents/rosetta/js-fallback"),
-      import("@/lib/agents/rosetta/table-rows"),
-    ]);
+  const versions = await import("@/lib/agents/rosetta/reader-versions");
   return {
-    read: ROSETTA_READ_VERSION,
-    pdfLayout: PDF_LAYOUT_VERSION,
-    ocr: ROSETTA_OCR_VERSION,
-    jsFallback: ROSETTA_JS_FALLBACK_VERSION,
-    tableRows: ROSETTA_TABLE_ROWS_VERSION,
+    read: versions.ROSETTA_READ_VERSION,
+    pdfLayout: versions.PDF_LAYOUT_VERSION,
+    ocr: versions.ROSETTA_OCR_VERSION,
+    jsFallback: versions.ROSETTA_JS_FALLBACK_VERSION,
+    tableRows: versions.ROSETTA_TABLE_ROWS_VERSION,
   };
 }
 
@@ -229,7 +222,7 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {};
 
 export async function loadManifests(): Promise<ReplayManifest[]> {
   const { REGISTRY_PARSER_VERSIONS } = await import("@/lib/agents/registry-scheduler");
-  // Rosetta's reader modules load PDF and OCR code, so their versions are read lazily too.
+  // From reader-versions.ts, which imports nothing: the readers themselves load PDF and OCR code.
   const rosetta = await loadRosettaVersions();
   const manifests: ReplayManifest[] = [
     {
