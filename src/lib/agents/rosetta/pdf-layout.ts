@@ -30,7 +30,9 @@ import { CELL_SEPARATOR } from "./html-dom";
  * columns column by column; a text an older layout read across the columns is read again
  * once (`INTERLEAVED_PROSE_CELLS_SQL` in read.ts).
  */
-export const PDF_LAYOUT_VERSION = 4;
+import { PDF_LAYOUT_VERSION } from "./reader-versions";
+// The number lives in reader-versions.ts (bump it there); the history stays above.
+export { PDF_LAYOUT_VERSION };
 
 export interface PdfTextItem {
   str: string;

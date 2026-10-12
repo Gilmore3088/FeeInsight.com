@@ -25,7 +25,9 @@ import { layoutPageText, type PdfTextItem } from "./pdf-layout";
  * falls back to the same files on cdn.jsdelivr.net, cached in the temp dir.
  */
 
-export const ROSETTA_OCR_VERSION = 2;
+import { ROSETTA_OCR_VERSION } from "./reader-versions";
+// The number lives in reader-versions.ts (bump it there); the history stays above.
+export { ROSETTA_OCR_VERSION };
 export const OCR_STRATEGY = "read.ocr_tesseract";
 /** Longer scans go to the paid pass; a 10-page schedule is a few seconds of OCR. */
 export const OCR_MAX_PAGES = 10;

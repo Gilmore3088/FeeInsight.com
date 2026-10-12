@@ -16,7 +16,9 @@ type SqlTag = typeof sql;
  * same as in the text. Rows of one table share `table` and appear in document order.
  */
 
-export const ROSETTA_TABLE_ROWS_VERSION = 1;
+import { ROSETTA_TABLE_ROWS_VERSION } from "./reader-versions";
+// The number lives in reader-versions.ts (bump it there); the history stays above.
+export { ROSETTA_TABLE_ROWS_VERSION };
 export const TABLE_ROWS_STRATEGY = "read.table_rows";
 /** Bounds the jsonb size; a fee schedule has a few hundred rows at most. */
 export const MAX_TABLE_ROWS = 2000;

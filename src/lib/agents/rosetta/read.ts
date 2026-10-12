@@ -392,7 +392,9 @@ export async function fetchWithTimeout(fetchImpl: Fetcher, url: string): Promise
  * JavaScript to the free fallbacks within the same read, and table rows are stored as
  * cells. Scans and JavaScript pages an older version gave up on are read once more.
  */
-export const ROSETTA_READ_VERSION = 3;
+import { ROSETTA_READ_VERSION } from "./reader-versions";
+// The number lives in reader-versions.ts (bump it there); the history stays above.
+export { ROSETTA_READ_VERSION };
 export const PAGE_CHECK_STRATEGY = "read.page_check";
 /**
  * Marks a rejected fee page Rosetta reopens for one more read (an attempt row, outcome

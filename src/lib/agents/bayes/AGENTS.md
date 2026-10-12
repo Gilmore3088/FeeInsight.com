@@ -21,7 +21,15 @@ deterministic and makes no model calls.
 
 A new version constant that makes an agent reprocess old records needs a manifest entry in the
 same PR. Count with the owner's own selection; when that selection is not shared yet, add the
-entry with `count: null` and a `notCounted` reason.
+entry with `count: null` and a `notCounted` reason. A version whose bump redoes nothing goes in
+`VERSIONS_WITHOUT_REPLAY` with the reason. `scripts/ci-guards.sh bayes-manifest-kill` (in
+`npm run guard:legacy`) fails a PR that adds or changes a Knox, Darwin, Hamilton, Magellan or
+Rosetta version constant that neither names (registry parsers count through
+`REGISTRY_PARSER_VERSIONS`).
+
+Rosetta's five reader versions and Darwin's `verify.rules` and `verify.peer_range` have
+manifests (#1120) that are not counted yet: the owners' re-read and re-verify selections are not
+shared as counts. They show as `not_counted` until a counter is added.
 
 ## Boundaries
 

@@ -227,11 +227,11 @@ fails a PR that changes one of these constants without updating its line here (#
 | Constant | Strategy | Version | File |
 |---|---|---|---|
 | `BATCH_REVIEW_VERSION` | — | v1 | `rosetta/batch-review.ts` |
-| `ROSETTA_JS_FALLBACK_VERSION` | — | v3 | `rosetta/js-fallback.ts` |
-| `ROSETTA_OCR_VERSION` | — | v2 | `rosetta/ocr.ts` |
+| `ROSETTA_JS_FALLBACK_VERSION` | — | v3 | `rosetta/reader-versions.ts` |
+| `ROSETTA_OCR_VERSION` | — | v2 | `rosetta/reader-versions.ts` |
 | `ROSETTA_PAID_READ_VERSION` | — | v1 | `rosetta/paid-read.ts` |
-| `PDF_LAYOUT_VERSION` | — | v4 | `rosetta/pdf-layout.ts` |
-| `ROSETTA_READ_VERSION` | — | v3 | `rosetta/read.ts` |
+| `PDF_LAYOUT_VERSION` | — | v4 | `rosetta/reader-versions.ts` |
+| `ROSETTA_READ_VERSION` | — | v3 | `rosetta/reader-versions.ts` |
 | `REOPEN_VERSION` | — | v1 | `rosetta/read.ts` |
-| `ROSETTA_TABLE_ROWS_VERSION` | — | v1 | `rosetta/table-rows.ts` |
+| `ROSETTA_TABLE_ROWS_VERSION` | — | v1 | `rosetta/reader-versions.ts` |
 | `TEXT_SURVIVAL_VERSION` | — | v1 | `rosetta/text-survival.ts` |

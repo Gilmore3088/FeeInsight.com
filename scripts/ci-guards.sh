@@ -41,6 +41,8 @@
 #                 Fail if post-agentic-decommission migrations reintroduce retired runtime concepts.
 #   financial-source-kill
 #                 Fail if src reads institution_financial_records without a source filter (ffiec rows use other units).
+#   bayes-manifest-kill
+#                 Fail if a PR changes a Knox, Darwin, Hamilton, Magellan or Rosetta version constant that no Bayes manifest names.
 #   guide-version-kill
 #                 Fail if an agent's rules or reader version constant is not stated, at its current version, in that agent's AGENTS.md.
 
@@ -691,6 +693,41 @@ findings_file_kill() {
   echo "findings-file-kill: OK (new findings are one file each in docs/project/findings/)"
 }
 
+bayes_manifest_kill() {
+  # A version that makes an agent redo old records needs a Bayes manifest in the same PR (#1120),
+  # so the ledger can count what the older version left behind. Compares the PR with its base:
+  # every version constant this PR adds or changes in an agent that owns reruns must be named in
+  # src/lib/agents/bayes/manifests.ts (a manifest, or VERSIONS_WITHOUT_REPLAY with the reason) or,
+  # for registry parsers, in REGISTRY_PARSER_VERSIONS (registry-scheduler.ts), which Bayes reads.
+  local base_ref="" missing="" checked=0 name
+  if [[ -n "${GITHUB_BASE_REF:-}" ]]; then
+    git fetch --no-tags --quiet --depth=1 origin "$GITHUB_BASE_REF" 2>/dev/null && base_ref="FETCH_HEAD"
+  elif git rev-parse --quiet --verify origin/main >/dev/null; then
+    base_ref="origin/main"
+  fi
+  if [[ -z "$base_ref" ]]; then
+    echo "bayes-manifest-kill: OK (no base branch to compare with; skipped)"
+    return 0
+  fi
+  while read -r name; do
+    [[ -n "$name" ]] || continue
+    checked=$((checked + 1))
+    grep -qw "$name" src/lib/agents/bayes/manifests.ts src/lib/agents/registry-scheduler.ts || missing+="${name}"$'\n'
+  done < <(
+    git diff "$base_ref" -- 'src/lib/agents/knox' 'src/lib/agents/darwin' 'src/lib/agents/hamilton' \
+        'src/lib/agents/magellan' 'src/lib/agents/rosetta' ':(exclude)*.test.ts' 2>/dev/null \
+      | grep -oE '^\+export const [A-Z0-9_]+ = (\{ strategy: "[^"]+", version: [0-9]+ \}( as const)?|[0-9]+);' \
+      | sed -E 's/^\+export const ([A-Z0-9_]+) = .*/\1/' \
+      | grep -E '(VERSION|STRATEGY)' | grep -vE '(BELOW|AFTER)_?VERSION' | sort -u || true
+  )
+  if [[ -n "$missing" ]]; then
+    echo "bayes-manifest-kill: name each changed version in src/lib/agents/bayes/manifests.ts (a manifest, or VERSIONS_WITHOUT_REPLAY with the reason):" >&2
+    printf '%s' "$missing" >&2
+    exit 1
+  fi
+  echo "bayes-manifest-kill: OK (${checked} changed version constants have a Bayes manifest)"
+}
+
 guide_version_kill() {
   # Every review on 2026-10-12 found a guide that had drifted from the code (#1109). Each
   # one-line version constant in an agent folder (`X_VERSION = 3` or
@@ -806,13 +843,14 @@ case "$SUBCOMMAND" in
   financial-source-kill) financial_source_kill ;;
   migration-version-kill) migration_version_kill ;;
   guide-version-kill) guide_version_kill ;;
+  bayes-manifest-kill) bayes_manifest_kill ;;
   "")
-    echo "Usage: $0 <sqlite-kill|modal-kill|legacy-kill|fee-read-model-kill|script-kill|config-kill|edge-function-kill|artifact-kill|provider-kill|prompt-kill|active-doc-kill|migration-history-kill|legacy-name-kill|source-read-model-kill|agent-source-contract-kill|fee-tier-contract-kill|catalog-contract-kill|legacy-data-contract-kill|brand-kill|sql-placeholder-kill|heading-wrap-kill|migration-version-kill|plausible-kill|financial-source-kill|findings-file-kill|guide-version-kill>" >&2
+    echo "Usage: $0 <sqlite-kill|modal-kill|legacy-kill|fee-read-model-kill|script-kill|config-kill|edge-function-kill|artifact-kill|provider-kill|prompt-kill|active-doc-kill|migration-history-kill|legacy-name-kill|source-read-model-kill|agent-source-contract-kill|fee-tier-contract-kill|catalog-contract-kill|legacy-data-contract-kill|brand-kill|sql-placeholder-kill|heading-wrap-kill|migration-version-kill|plausible-kill|financial-source-kill|findings-file-kill|guide-version-kill|bayes-manifest-kill>" >&2
     exit 2
     ;;
   *)
     echo "Unknown subcommand: $SUBCOMMAND" >&2
-    echo "Usage: $0 <sqlite-kill|modal-kill|legacy-kill|fee-read-model-kill|script-kill|config-kill|edge-function-kill|artifact-kill|provider-kill|prompt-kill|active-doc-kill|migration-history-kill|legacy-name-kill|source-read-model-kill|agent-source-contract-kill|fee-tier-contract-kill|catalog-contract-kill|legacy-data-contract-kill|brand-kill|sql-placeholder-kill|heading-wrap-kill|migration-version-kill|plausible-kill|financial-source-kill|findings-file-kill|guide-version-kill>" >&2
+    echo "Usage: $0 <sqlite-kill|modal-kill|legacy-kill|fee-read-model-kill|script-kill|config-kill|edge-function-kill|artifact-kill|provider-kill|prompt-kill|active-doc-kill|migration-history-kill|legacy-name-kill|source-read-model-kill|agent-source-contract-kill|fee-tier-contract-kill|catalog-contract-kill|legacy-data-contract-kill|brand-kill|sql-placeholder-kill|heading-wrap-kill|migration-version-kill|plausible-kill|financial-source-kill|findings-file-kill|guide-version-kill|bayes-manifest-kill>" >&2
     exit 2
     ;;
 esac
