@@ -22,6 +22,25 @@ It runs as Atlas steps (agent `atlas`); it is deterministic and makes no model c
   and `input->>'kind' = 'limit_guard'`; source-check cases carry whole documents, so prod's daily
   replay gates those.
 
+## Fresh audit (accuracy)
+
+- `fresh-audit.ts`: the `deming-fresh-audit` step in Atlas's daily run. It draws a seeded sample
+  of `FRESH_AUDIT_SAMPLE` (200) live dollar fees from `published_fee_catalog` and checks each one
+  against the bank's own stored schedule. A fee is right only when the amount (`traceLiveFee`, the
+  shared source check), the category (`checkFeeCategory`), the evidence (the bank's own schedule,
+  not an article or product page), the fee line ($0 rows must be priced lines) and the name all
+  hold. A fee with no stored text is unknown, never right or wrong. Below
+  `FRESH_AUDIT_MIN_SCORABLE` scorable fees there is no percentage. Read-only.
+- This is the accuracy measure `CLAUDE.md` defines. The target is 95%, averaged over a week.
+- The step's detail (counts per check, up to 50 misses, the seed and sample ids) is in its
+  `step.finished` event. `goal-scorecard.ts` pools the last 7 days of audits into the scorecard's
+  accuracy: right ÷ scorable, a 95% Wilson range (about ±3–4 points at 200 fees), misses per check,
+  and one dated row per audit. Each daily scoreboard snapshot stores this in `detail.goal.accuracy`,
+  so the dated results outlive the run history.
+- Misses are not yet written as `fresh_audit` eval cases, and not yet sent to their owners
+  (another bank's document to Magellan, a bad name to Knox). `eval_cases.label_provenance` has no
+  value for an automated audit, so that needs a migration and James's decision (#1119).
+
 ## Boundaries
 
 - Deming never writes fee rows, flags or takedowns. It reads `pipeline_feedback` and the fee tiers.
