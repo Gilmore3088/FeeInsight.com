@@ -1,4 +1,5 @@
 import type { FeeAudience } from "@/lib/fee-audience";
+import { ADMIN_HOLD_PREFIX } from "@/lib/fee-hold-rules";
 import { feePageKey } from "@/lib/agents/hamilton/page-key";
 import { sql } from "@/lib/data-store/connection";
 import { isRetiredCategory } from "@/lib/fee-fold";
@@ -552,6 +553,22 @@ export async function insertPublishedFee(
   // The publish gate is Darwin's verification, so its event id is the handshake id;
   // Hamilton no longer mints a stand-in id for an adversarial step that never ran.
   const publishEventId = options.row.verified_by_agent_event_id;
+  const feeName = publishedFeeName(options.row.fee_name, options.row.canonical_fee_key);
+  // An operator's hold (H03, #978) stays held: a re-read of the same page never publishes a
+  // fresh copy of the held fee under a new id.
+  const held = await db<{ fee_published_id: number | string }[]>`
+    SELECT fee_published_id
+      FROM published_fee_records
+     WHERE institution_id = ${institutionId}
+       AND canonical_fee_key = ${options.row.canonical_fee_key}
+       AND quarantined_at IS NOT NULL
+       AND quarantine_reason LIKE ${`${ADMIN_HOLD_PREFIX}%`}
+       AND rolled_back_at IS NULL
+       AND amount IS NOT DISTINCT FROM ${amount}
+       AND lower(fee_name) = lower(${feeName})
+     LIMIT 1
+  `;
+  if (held.length > 0) return null;
   const inserted = await db`
     INSERT INTO published_fee_records (
       lineage_ref,
@@ -585,7 +602,7 @@ export async function insertPublishedFee(
       ${options.row.raw_agent_event_id}::uuid,
       ${options.row.verified_by_agent_event_id}::uuid,
       ${publishEventId}::uuid,
-      ${publishedFeeName(options.row.fee_name, options.row.canonical_fee_key)},
+      ${feeName},
       ${amount},
       ${options.row.frequency},
       ${options.row.variant_type},
