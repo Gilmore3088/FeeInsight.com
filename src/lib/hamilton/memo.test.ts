@@ -11,7 +11,7 @@ vi.mock("@/lib/ai-provider", async (importOriginal) => ({
 }));
 vi.mock("@/lib/ai-provider-usage", () => ({ trackAnthropicRequest: vi.fn() }));
 
-import { memoPayload, parseMemo, writeStorylineMemo, type MemoClient } from "./memo";
+import { MEMO_ROUTE_ID, memoPayload, parseMemo, writeStorylineMemo, type MemoClient } from "./memo";
 import { HAMILTON_PAUSED_MESSAGE } from "./provider-paused";
 import { buildFeeResearchEvidence } from "./evidence-contract";
 import { buildFeeAnswer } from "./workspace/answer";
@@ -98,6 +98,18 @@ describe("storyline memo", () => {
     });
     expect(c.calls).toHaveLength(2);
     expect(c.calls[1]).toContain("$412 thousand");
+  });
+
+  it("reports every model call it made, retries included, for the Pro quota (#1080)", async () => {
+    const invented = good.replace("$209 thousand", "$412 thousand");
+    const usage = { calls: 0, inputTokens: 0, outputTokens: 0 };
+    await writeStorylineMemo(storyline, "q", { client: client(invented, good), usage });
+    expect(usage.calls).toBe(2);
+    const refused = { calls: 0, inputTokens: 0, outputTokens: 0 };
+    const blocked: MemoClient = { create: async () => { throw new Error("Provider budget exceeded"); } };
+    await writeStorylineMemo(storyline, "q", { client: blocked, usage: refused });
+    expect(refused.calls).toBe(0);
+    expect(MEMO_ROUTE_ID).toBe("api.hamilton.ask.memo");
   });
 
   it("names a reply cut off mid-JSON when it withholds", async () => {

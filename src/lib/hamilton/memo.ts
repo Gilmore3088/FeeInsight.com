@@ -25,8 +25,15 @@ import type { HamiltonIdentitySnapshot } from "./account-context";
 const MAX_TOKENS = 4_000;
 const REQUEST_TIMEOUT_MS = 90_000;
 const MAX_ATTEMPTS = 2;
-/** The Ask memo spends against the Hamilton chat route's budget. */
-export const MEMO_ROUTE_ID = "api.hamilton.chat";
+/** The Ask memo's own line in provider spend and its own budget row (#1080, #1125). */
+export const MEMO_ROUTE_ID = "api.hamilton.ask.memo";
+
+/** Model calls a memo made and their tokens, so the caller can count them in the Pro quota (#1080). */
+export interface MemoUsage {
+  calls: number;
+  inputTokens: number;
+  outputTokens: number;
+}
 
 const MEMO_INSTRUCTIONS = `You are writing the memo that sits on top of a Hamilton storyline for one bank or credit union.
 The storyline in DATA was built from verified fee schedules and regulatory filings. Write for two readers at once:
@@ -184,7 +191,7 @@ export interface MemoClient {
   create(input: { system: string; user: string; model: string }): Promise<string>;
 }
 
-function anthropicMemoClient(institutionId: number | null): MemoClient {
+function anthropicMemoClient(institutionId: number | null, usage?: MemoUsage): MemoClient {
   const client = getAnthropicMessagesClient("Hamilton storyline memo", "hamilton");
   return {
     async create({ system, user, model }) {
@@ -196,6 +203,10 @@ function anthropicMemoClient(institutionId: number | null): MemoClient {
             { timeout: REQUEST_TIMEOUT_MS },
           ),
       );
+      if (usage) {
+        usage.inputTokens += response.usage?.input_tokens ?? 0;
+        usage.outputTokens += response.usage?.output_tokens ?? 0;
+      }
       return extractAnthropicText(response);
     },
   };
@@ -211,6 +222,8 @@ export async function writeStorylineMemo(
     model?: string;
     now?: Date;
     factEvidence?: HamiltonEvidenceBundle | null;
+    /** Filled with every model call the memo makes, retries included. */
+    usage?: MemoUsage;
   } = {},
 ): Promise<StorylineMemoResult> {
   if (!options.client && !hasAnthropicApiKey("hamilton")) {
@@ -220,7 +233,7 @@ export async function writeStorylineMemo(
   const payload = memoPayload(storyline, options.factEvidence, options.identityContext);
   let client: MemoClient;
   try {
-    client = options.client ?? anthropicMemoClient(options.institutionId ?? null);
+    client = options.client ?? anthropicMemoClient(options.institutionId ?? null, options.usage);
   } catch (error) {
     return { status: "unavailable", reason: error instanceof Error ? error.message : String(error) };
   }
@@ -232,6 +245,8 @@ export async function writeStorylineMemo(
     let raw: string;
     try {
       raw = await client.create({ system, user, model });
+      // Counted once the call returns: a call the budget refused never reached the model.
+      if (options.usage) options.usage.calls += 1;
     } catch (error) {
       if (isProviderLimitError(error)) return { status: "unavailable", reason: HAMILTON_PAUSED_MESSAGE };
       const message = error instanceof Error ? error.message : String(error);
