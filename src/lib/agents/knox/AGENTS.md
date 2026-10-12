@@ -511,6 +511,12 @@ After the extract itself, each extract step runs these passes in order (`run-sto
   read: rows are marked `knox_superseded_would_promote:v<N>` and nothing goes to Darwin. Before
   this pass, the dedupe index kept the retired row and dropped the new text's identical read
   (Northern Trust's $25 overdraft, raw 457013, 9 Oct).
+  A second pass in the same step (`source: "free"`, #1093 step 2, approved by James 2026-10-12)
+  applies the same test to free-pass rows, 200 a pass: the rows a re-read retired before #1147
+  let a new read take its row back (1,626 at 361 banks on 12 Oct, 51 of them with no live fee).
+  Only one reader agrees here, so Darwin's free checks, the shared source check among them,
+  decide what goes live; the 9 Oct dry read of 17 free rows was 11 of 17 right against source.
+  The step's detail reports it as `superseded_free_recheck`.
 - `recheckHeldRates`: held percentage lines (below).
 - Batch review (`batch-review.ts`, below).
 
