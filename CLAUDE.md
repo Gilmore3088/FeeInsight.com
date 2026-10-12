@@ -15,8 +15,10 @@ expertise. Kept fully separate from the CSI day job.
 One builder at a time. Work starts from the Now list at the top of GitHub issue #1026 (pipeline
 review master tracker): one issue, one branch, one PR. Before starting, search open issues, PRs
 and `main` for the same outcome, and reuse or explicitly supersede what exists.
-- A review or plan adds at most five issues; smaller items are checklist lines in its tracker.
-  It also names the issues it closes or merges, so the list does not grow without end.
+- Every change a review finds is documented as its own issue under a tracker: one tracker per
+  agent, plus the Foundation tracker for infrastructure, documentation and process work that
+  belongs to no agent. A review also names the issues it closes or merges, so duplicates do not
+  pile up. The Now list in #1026 (at most three items) sets the order; it is not a cap on issues.
 - No scheduled Claude routines run for Fee Insight without James's say-so. A session ends when
   its issue's PR is open and green.
 - Words a visitor reads (pages, headlines, buttons, emails): use the `copywriting` and

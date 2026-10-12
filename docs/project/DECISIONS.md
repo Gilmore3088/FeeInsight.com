@@ -13,8 +13,11 @@ system first." Before any agent work, the repository is reset to how work runs n
 - the site-copy marketing skills are linked so sessions find them;
 - Vercel previews are built for every PR.
 
-To keep the work finite, a review adds at most five issues and names what it closes, and #1026
-holds at most three Now items. James spends about ten minutes a week re-ordering it.
+Every change a review finds is documented as its own issue, with no cap (James, Oct 12: "if
+Magellan has nine, we need to document all nine"). Work that belongs to no agent
+(infrastructure, documentation, process) has its own Foundation tracker. What keeps the work
+manageable is order, not a cap: #1026 holds at most three Now items, each review names the issues
+it closes, and James re-orders the list weekly (about ten minutes).
 
 **Review the pipeline one agent at a time before relying on it again.** James, Oct 12, in a
 Claude Code session. Each agent gets a written review with production measurements and a GitHub

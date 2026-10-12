@@ -6,8 +6,9 @@ This repository uses one agentic experience for data trust, validation, publishi
 
 One builder at a time, starting from the Now list in GitHub issue #1026: one issue, one branch,
 one PR. Search open issues, PRs and current main before building, and reuse or explicitly
-supersede what exists. A review adds at most five issues and names what it closes. Outreach is
-parked. Do not delete branches; unknown-age branches may hold unmerged work.
+supersede what exists. Every change a review finds is its own issue under a tracker (one per
+agent, plus the Foundation tracker for non-agent work), and the review names what it closes.
+Outreach is parked. Do not delete branches; unknown-age branches may hold unmerged work.
 James has standing approval for clean, merge-ready GitHub PRs to merge without another per-PR
 approval request. "Clean, merge-ready" means the exact current head is reviewed, required CI/checks
 are green, there is no merge conflict or unresolved blocking review, overlapping active owners are

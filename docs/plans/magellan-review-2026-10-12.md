@@ -126,10 +126,8 @@ hundred to a thousand of the missing institutions is a few hundred dollars, insi
 | M5 | #1032 | Escalation ladder and a "not published online" state, re-tried every 90–180 days | Code + migration |
 | M6 | #1033 | Stop wrong-bank and non-fee documents before they are stored (host check, CRA files, flyers) | Code |
 | M7 | #1034 | Check that Knox extracts fees from Truth in Savings disclosures and account agreements before M3 searches for them | Test |
-
-Two smaller items are checklist lines in #1027 instead of issues (at most five issues per review,
-#1047): lighter paid searches (was #1035, rides with M3), and correcting the stale budget notes
-and setting Magellan's build-out cap (was #1036, needs James).
+| M8 | #1035 | Lighter paid searches: fewer results read per search, measured before and after | Code |
+| M9 | #1036 | Correct the stale budget notes and confirm Magellan's cap for the build-out | Data, needs James |
 
 **Dependencies:** M1 before M2. M7 before M3. M4 and M5 together. The scorecard rebuild (master
 tracker) should land before the first wave, so the waves are measured.

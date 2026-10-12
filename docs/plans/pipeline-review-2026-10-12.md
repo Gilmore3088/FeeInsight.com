@@ -130,14 +130,16 @@ between (Rosetta, Knox, Darwin), the state experts and Atlas. Each review:
 1. Reads the agent's `AGENTS.md` and code, and the earlier plans, so nothing is rebuilt.
 2. Measures what it did on production: spend, yield, repeats, what it hands downstream.
 3. Writes `docs/plans/<agent>-review-YYYY-MM-DD.md`: facts, the expected run, and the changes.
-4. Opens one tracker issue for the agent, with at most five sub-issues; smaller items are
-   checklist lines in the tracker. It names the existing issues it closes or merges.
+4. Opens one tracker issue for the agent with every change as its own sub-issue, and names the
+   existing issues it closes or merges. Infrastructure, documentation and process work that
+   belongs to no agent goes under the Foundation tracker instead.
 
 Reviews are documentation and issues only. Code changes happen afterwards, one issue and one
 PR at a time.
 
 ## Keeping the work finite
 
+- Every needed change is documented as an issue; nothing is left only in a conversation.
 - #1026 starts with a **Now / Next / Later** list. Now holds at most three items, and nothing new
   starts until one closes. Each session starts from the top Now item.
 - Only work that serves the A+ data layer goes in Now or Next; the rest is Later.
@@ -155,7 +157,10 @@ PR at a time.
 
 ## Reviews
 
-Master tracker: #1026; its Now / Next / Later list sets the order of work. Foundation: #1047.
+Master tracker: #1026; its Now / Next / Later list sets the order of work. Foundation tracker
+(infrastructure, documentation and process work that belongs to no agent): #1048, with the
+foundation reset #1047, the scorecard #1040, storage #1041, the indexing decision #1043, admin
+structure #1044 and the code audit #1045.
 Cross-pipeline issues: X1 #1037 (gate before publishing), X2 #1038
 (priority intake), X3 #1039 (plan L4), X4 #1040 (scorecard), X5 #1041 (storage), X6 #1042
 (state experts in admin), X7 #1043 (indexing decision), X8 #1044 (admin structure), X9 #1045
