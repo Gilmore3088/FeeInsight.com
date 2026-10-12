@@ -283,3 +283,22 @@ Change this table and `agent-health.ts` in the same PR.
 | Fees Darwin passed survive the bank's own schedule | `sourceCheckTakedowns / published` (24 h) | ≤ 5% |
 
 Also recorded, without a rule: `stepsCompleted`, `spendUsd`, `decided`, `passed`.
+
+## Current versions
+
+The version each rules or reader constant is at now. `scripts/ci-guards.sh guide-version-kill`
+fails a PR that changes one of these constants without updating its line here (#1109).
+
+| Constant | Strategy | Version | File |
+|---|---|---|---|
+| `DARWIN_ADJUDICATE_STRATEGY` | `verify.adjudicate` | v2 | `darwin/adjudicate.ts` |
+| `DARWIN_CATEGORY_MODEL_STRATEGY` | `verify.category_model` | v1 | `darwin/category-model.ts` |
+| `DARWIN_PEER_STRATEGY` | `verify.peer_range` | v3 | `darwin/peer-checks.ts` |
+| `DARWIN_SECOND_SOURCE_STRATEGY` | `verify.second_source` | v2 | `darwin/peer-checks.ts` |
+| `DARWIN_RELEASE_STRATEGY` | `verify.release` | v4 | `darwin/release-held.ts` |
+| `DARWIN_SCHEDULE_REFILE_STRATEGY` | `verify.schedule_refile` | v1 | `darwin/schedule-refile.ts` |
+| `DARWIN_VERDICT_SCORE_STRATEGY` | `verify.verdict_score` | v1 | `darwin/verdict-score.ts` |
+| `DARWIN_RECHECK_STRATEGY` | `verify.recheck` | v2 | `darwin/verified-recheck.ts` |
+| `DARWIN_VERIFY_STRATEGY` | `verify.rules` | v3 | `darwin/verify.ts` |
+| `DARWIN_SOURCE_CHECK_VERSION` | — | v2 | `darwin/verify.ts` |
+| `DARWIN_BATCH_KEY_VERSION` | — | v4 | `darwin/verify.ts` |

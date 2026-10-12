@@ -41,6 +41,8 @@
 #                 Fail if post-agentic-decommission migrations reintroduce retired runtime concepts.
 #   financial-source-kill
 #                 Fail if src reads institution_financial_records without a source filter (ffiec rows use other units).
+#   guide-version-kill
+#                 Fail if an agent's rules or reader version constant is not stated, at its current version, in that agent's AGENTS.md.
 
 set -euo pipefail
 
@@ -689,6 +691,35 @@ findings_file_kill() {
   echo "findings-file-kill: OK (new findings are one file each in docs/project/findings/)"
 }
 
+guide_version_kill() {
+  # Every review on 2026-10-12 found a guide that had drifted from the code (#1109). Each
+  # one-line version constant in an agent folder (`X_VERSION = 3` or
+  # `X_STRATEGY = { strategy: "...", version: 3 }`) must appear in that agent's AGENTS.md
+  # on a line that names it and its current version ("`X_STRATEGY` ... v3").
+  local missing="" checked=0 dir agent guide name version
+  for dir in src/lib/agents/*/; do
+    agent=$(basename "$dir")
+    guide="${dir}AGENTS.md"
+    [[ -f "$guide" ]] || continue
+    while read -r name version; do
+      [[ -n "$name" ]] || continue
+      checked=$((checked + 1))
+      grep -qE "\`${name}\`.*\bv${version}([^0-9]|$)" "$guide" || missing+="${guide}: ${name} v${version}"$'\n'
+    done < <(
+      grep -rhoE --include='*.ts' --exclude='*.test.ts' \
+        '^export const [A-Z0-9_]+ = (\{ strategy: "[^"]+", version: [0-9]+ \}( as const)?|[0-9]+);' "$dir" 2>/dev/null \
+        | sed -E 's/^export const ([A-Z0-9_]+) = (\{ strategy: "[^"]+", version: ([0-9]+) \}( as const)?|([0-9]+));/\1 \3\5/' \
+        | grep -E '^[A-Z0-9_]*(VERSION|STRATEGY)[A-Z0-9_]* ' | grep -vE '(BELOW|AFTER)_?VERSION' || true
+    )
+  done
+  if [[ -n "$missing" ]]; then
+    echo "guide-version-kill: update the agent's AGENTS.md \"Current versions\" table for:" >&2
+    printf '%s' "$missing" >&2
+    exit 1
+  fi
+  echo "guide-version-kill: OK (${checked} version constants match their agent guides)"
+}
+
 heading_wrap_kill() {
   # Headings must never wrap one word onto its own line (James, 5 Oct 2026). The rule lives
   # once in the global stylesheet and once in the report template; per-page fixes drift.
@@ -774,13 +805,14 @@ case "$SUBCOMMAND" in
   plausible-kill) plausible_kill ;;
   financial-source-kill) financial_source_kill ;;
   migration-version-kill) migration_version_kill ;;
+  guide-version-kill) guide_version_kill ;;
   "")
-    echo "Usage: $0 <sqlite-kill|modal-kill|legacy-kill|fee-read-model-kill|script-kill|config-kill|edge-function-kill|artifact-kill|provider-kill|prompt-kill|active-doc-kill|migration-history-kill|legacy-name-kill|source-read-model-kill|agent-source-contract-kill|fee-tier-contract-kill|catalog-contract-kill|legacy-data-contract-kill|brand-kill|sql-placeholder-kill|heading-wrap-kill|migration-version-kill|plausible-kill|financial-source-kill|findings-file-kill>" >&2
+    echo "Usage: $0 <sqlite-kill|modal-kill|legacy-kill|fee-read-model-kill|script-kill|config-kill|edge-function-kill|artifact-kill|provider-kill|prompt-kill|active-doc-kill|migration-history-kill|legacy-name-kill|source-read-model-kill|agent-source-contract-kill|fee-tier-contract-kill|catalog-contract-kill|legacy-data-contract-kill|brand-kill|sql-placeholder-kill|heading-wrap-kill|migration-version-kill|plausible-kill|financial-source-kill|findings-file-kill|guide-version-kill>" >&2
     exit 2
     ;;
   *)
     echo "Unknown subcommand: $SUBCOMMAND" >&2
-    echo "Usage: $0 <sqlite-kill|modal-kill|legacy-kill|fee-read-model-kill|script-kill|config-kill|edge-function-kill|artifact-kill|provider-kill|prompt-kill|active-doc-kill|migration-history-kill|legacy-name-kill|source-read-model-kill|agent-source-contract-kill|fee-tier-contract-kill|catalog-contract-kill|legacy-data-contract-kill|brand-kill|sql-placeholder-kill|heading-wrap-kill|migration-version-kill|plausible-kill|financial-source-kill|findings-file-kill>" >&2
+    echo "Usage: $0 <sqlite-kill|modal-kill|legacy-kill|fee-read-model-kill|script-kill|config-kill|edge-function-kill|artifact-kill|provider-kill|prompt-kill|active-doc-kill|migration-history-kill|legacy-name-kill|source-read-model-kill|agent-source-contract-kill|fee-tier-contract-kill|catalog-contract-kill|legacy-data-contract-kill|brand-kill|sql-placeholder-kill|heading-wrap-kill|migration-version-kill|plausible-kill|financial-source-kill|findings-file-kill|guide-version-kill>" >&2
     exit 2
     ;;
 esac
