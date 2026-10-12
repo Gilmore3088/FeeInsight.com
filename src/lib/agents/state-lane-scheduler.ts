@@ -5,7 +5,8 @@ import type {
   AgentRunTriggerSource,
 } from "@/lib/agents/types";
 import { normalizeStateCode, syncStateLaneProfiles } from "./state-lane-memory";
-import { KNOX_EXTRACT_STRATEGY, KNOX_REEXTRACT_MAX_FEES } from "./knox/extract";
+import { KNOX_REEXTRACT_MAX_FEES } from "./knox/extract";
+import { KNOX_RULES_STRATEGY } from "./knox/specialists";
 import { REREAD_MAX_KNOX_FEES, ROSETTA_READ_VERSION } from "./rosetta/read";
 import { DARWIN_VERIFY_MAX_LIMIT, DARWIN_VERIFY_STRATEGY } from "./darwin/verify";
 import { HAMILTON_PUBLISH_MAX_LIMIT } from "./hamilton/publish";
@@ -331,8 +332,8 @@ export async function stateHasDocumentBacklog(stateCode: string): Promise<boolea
                   WHERE pa.stage = 'extract'
                     AND pa.institution_id = adt.institution_id
                     AND pa.input_fingerprint = adt.text_hash
-                    AND pa.strategy = ${KNOX_EXTRACT_STRATEGY.strategy}
-                    AND pa.strategy_version = ${KNOX_EXTRACT_STRATEGY.version}
+                    AND pa.strategy = ${KNOX_RULES_STRATEGY.strategy}
+                    AND pa.strategy_version = ${KNOX_RULES_STRATEGY.version}
                )
                -- Knox never extracts a text it already extracted under another document id
                -- (selectTextArtifacts). Without this, 1,506 such texts (2026-10-06) kept every

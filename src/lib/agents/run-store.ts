@@ -665,7 +665,6 @@ async function executeAgenticStep(
           held_for_review: extraction.heldForReview,
           replaced_older_rows: extraction.retiredOlderRows,
           retired_older_copy_rows: extraction.retiredOlderCopyRows,
-          skipped_known_inputs: extraction.skippedKnownInputs,
           outcomes: extraction.outcomes,
           learning_log: extraction.learning,
           lessons_loaded: extraction.lessonsLoaded,
