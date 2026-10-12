@@ -5,6 +5,14 @@ Seeded 2026-10-05 from the project's working memory; earlier decisions were not 
 
 ## 2026-10-12
 
+**Hamilton becomes the product only; publishing moves to its own internal agent.** James, Oct 12
+("Yes split"), on the Hamilton product review (`docs/plans/hamilton-product-review-2026-10-12.md`).
+A new deterministic agent takes Darwin-verified fees, decides which go live, and keeps the live
+catalog correct (duplicates, refreshes, take-downs, restores, re-checks, source checks). It is not
+merged into Darwin, so one agent checks and another publishes. Hamilton keeps Ask, memos, written
+answers, simulate, reports, studies, briefing, alerts, digest and decisions. Persisted `hamilton.*`
+check names stay as they are. Work order and steps: #1075. The new agent's name is still open.
+
 **Quality checks run inside the pipeline, not on demand.** James, Oct 12: "I don't want to be
 responsible for calling all of these on demand; they need to be built into the process." The
 fee-quality skills (`fee-benchmarking` with new statistical checks, `data-quality-audit`,
