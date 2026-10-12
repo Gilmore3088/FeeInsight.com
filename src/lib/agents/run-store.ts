@@ -1,7 +1,7 @@
 import { sql, withTransaction } from "@/lib/data-store/connection";
 import { mapEvent, mapRun, mapStep } from "./run-row-mappers";
 import { getExecutionBackend } from "@/lib/execution-backend";
-import { REPORT_REVIEW_STATES } from "@/lib/agents/atlas/report-review-states";
+import { reportReviewStates } from "@/lib/agents/atlas/report-review-states";
 import { runDarwinVerify } from "@/lib/agents/darwin/verify";
 import { runHamiltonCategoryGuard } from "@/lib/agents/hamilton/category-guard";
 import { collapsePublishedDuplicates } from "@/lib/agents/hamilton/duplicate-collapse";
@@ -3099,7 +3099,7 @@ export async function executeQueuedAgentRuns({
               ) = 'failed') DESC,
               -- A state whose report James is waiting to review (atlas/report-review-states.ts).
               (r.run_kind = 'workflow_lane'
-                AND upper(btrim(r.state_code)) = ANY(${[...REPORT_REVIEW_STATES]}::text[])) DESC,
+                AND upper(btrim(r.state_code)) = ANY(${reportReviewStates()}::text[])) DESC,
               (r.started_at < NOW() - INTERVAL '1 hour') DESC,
               COALESCE(lane.priority_score, 0) DESC,
               r.started_at ASC, r.id ASC

@@ -29,13 +29,11 @@ export interface PriorityStateResearchRequest {
   until: string;
 }
 
-export const PRIORITY_STATE_RESEARCH_REQUESTS: readonly PriorityStateResearchRequest[] = [
-  {
-    stateCode: "TN",
-    reason: "Tennessee coverage gap: 60 dead-end banks with a website and 45 checking-page links re-searched with discovery method 5",
-    until: "2026-10-10",
-  },
-];
+/**
+ * None open. Tennessee's request (60 dead-end banks and 45 checking-page links, method 5)
+ * ended 2026-10-10 and was removed (#1117).
+ */
+export const PRIORITY_STATE_RESEARCH_REQUESTS: readonly PriorityStateResearchRequest[] = [];
 
 export function stateResearchSteps(): AgentRunStepDefinition[] {
   return [
