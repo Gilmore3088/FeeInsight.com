@@ -5,6 +5,22 @@ Seeded 2026-10-05 from the project's working memory; earlier decisions were not 
 
 ## 2026-10-12
 
+**James labels 25 fee names a week; every label grows a lasting name library.** James, Oct 12
+(#1102). Names are grouped before they reach the queue (one row covers every variant of, say, an NSF
+fee), a label maps the whole group at every bank and every future read, and the library
+(`fee_name_aliases`, #1039) is versioned and never deleted. The queue shows the groups that cover the
+most fees first.
+
+**A document's type picks the tool at every stage.** James, Oct 12 (#1094). Magellan sets format and
+type; Rosetta picks the reader from it (layout reader, Tesseract OCR then paid transcription, browser
+fallback, table reader); Knox picks the extractor (tables and rules, account-table reader, agreement
+prose, rate reader; product pages go back to Magellan). Each step records the tool it used.
+
+**Rates and lending are in scope, if accurate.** James, Oct 12 (#1103): it puts Fee Insight in
+direct competition with rate-comparison sites. Percentage fees and lending fees come first, inside
+the fee product; interest rates (APY, APR) are a second data product with its own freshness rules,
+planned after the fee data layer meets its targets.
+
 **Knox targets: 85% of fees found, 90% right.** James, Oct 12 (#1098). Measured on the answer key,
 counting only banks where the right document was read. Growing the answer key to about 200 banks is
 a one-time batch: an agent prepares each bank, James confirms it. After that, checking is not a
