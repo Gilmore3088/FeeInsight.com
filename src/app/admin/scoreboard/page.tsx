@@ -230,9 +230,7 @@ const GOAL_CARDS: GoalCardSpec[] = [
     value: (goal) => goal.accuracy?.accuracy,
     format: share,
     unit: "of audited live fees right on amount, category, source, line and name (target 95%)",
-    detail: (goal) => goal.accuracy
-      ? `${n(goal.accuracy.right)} of ${n(goal.accuracy.scorable)} scorable fees over ${goal.accuracy.audits} Deming audits${goal.accuracy.latestAt ? `; latest ${goal.accuracy.latestAt.slice(0, 10)}${goal.accuracy.latestAccuracy == null ? "" : ` at ${percent(goal.accuracy.latestAccuracy)}`}` : "; no audit in the window"}.`
-      : "Could not be read.",
+    detail: (goal) => goal.accuracy ? <AccuracyDetail accuracy={goal.accuracy} /> : "Could not be read.",
   },
   {
     label: "Wrong after publish",
@@ -369,5 +367,30 @@ function SpendTable({ goal }: { goal: GoalScorecard }) {
       </table>
       <p className="mt-2 font-mono text-[10px] text-gray-400">query: {goal.spend?.query}</p>
     </div>
+  );
+}
+
+/** Range, misses per check and one dated line per audit (#1119); older snapshots lack the last three. */
+function AccuracyDetail({ accuracy }: { accuracy: NonNullable<GoalScorecard["accuracy"]> }) {
+  const misses = accuracy.misses;
+  return (
+    <>
+      {n(accuracy.right)} of {n(accuracy.scorable)} scorable fees over {accuracy.audits} Deming audits
+      {accuracy.range ? `; 95% range ${percent(accuracy.range.low)}–${percent(accuracy.range.high)}` : ""}.
+      {misses ? (
+        <span className="block">
+          Misses: amount {n(misses.amount)} · category {n(misses.category)} · not the bank&apos;s schedule {n(misses.evidence)} · not a fee line {n(misses.notAFee)} · bad name {n(misses.name)}
+        </span>
+      ) : null}
+      {accuracy.daily?.length ? (
+        <span className="block">
+          {accuracy.daily.map((day) => `${day.at.slice(0, 10)}: ${day.right}/${day.scorable}${day.accuracy == null ? "" : ` (${percent(day.accuracy)})`}`).join(" · ")}
+        </span>
+      ) : accuracy.latestAt ? (
+        <span className="block">Latest {accuracy.latestAt.slice(0, 10)}{accuracy.latestAccuracy == null ? "" : ` at ${percent(accuracy.latestAccuracy)}`}.</span>
+      ) : (
+        <span className="block">No audit in the window.</span>
+      )}
+    </>
   );
 }
