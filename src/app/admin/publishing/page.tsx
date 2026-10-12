@@ -14,7 +14,7 @@ import {
   emailEventTone,
   type EventTone,
 } from "@/lib/email/send-log-display";
-import { RoomHeader, Unreadable } from "../room-hub";
+import { ScreenHeader, Unreadable } from "../room-hub";
 
 const AUDIENCE_TONE: Record<Audience, string> = {
   Public: "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300",
@@ -44,11 +44,12 @@ export default async function PublishingRoomPage() {
 
   return (
     <div className="space-y-8 pb-10">
-      <RoomHeader room="publishing">
+      <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
+        <ScreenHeader title="What have we published, and is it current?" />
         <Link href="/admin/hamilton/reports" prefetch={false} className="text-xs font-semibold text-[var(--brand-primary)]">
           Generate and publish reports
         </Link>
-      </RoomHeader>
+      </div>
 
       {reports === null ? (
         <Unreadable what="Report history" />
