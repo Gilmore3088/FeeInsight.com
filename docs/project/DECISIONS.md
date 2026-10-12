@@ -6,12 +6,17 @@ Seeded 2026-10-05 from the project's working memory; earlier decisions were not 
 ## 2026-10-12
 
 **Publish benchmarks now; unlabeled fees count as consumer, marked with an asterisk.** James,
-Oct 12 (#1058): a fee with no clear personal-or-business signal is treated as consumer unless its
-schedule is business-only, and is shown with an asterisk and a footnote ("audience not stated on
-the bank's schedule; treated as personal") beside its source link. Knox works the backlog down
-from documents already stored, with no new searching (#1059), so the asterisked share should fall
-toward zero. Statistical significance across thousands of institutions matters more than
-perfection.
+Oct 12 (#1058): a fee with no clear personal-or-business signal is treated as consumer and shown
+with an asterisk and footnote beside its source link: "Audience not stated on the bank's
+schedule; treated as personal. Fees may differ for business or commercial accounts." The
+methodology page explains the rule. Knox works the backlog down from documents already stored,
+with no new searching (#1059), so the asterisked share should fall toward zero. Statistical
+significance across thousands of institutions matters more than perfection.
+
+**Business fees are published and labeled, not dropped.** James, Oct 12: some banks and credit
+unions are business-focused, so business and commercial fees (one value, `business`) stay visible
+on institution pages and in their own clearly labeled business comparisons. They are kept out of
+consumer medians only so the two are never mixed; every figure says which audience it covers.
 
 **Monthly account fees are compared on the entry-level account.** James, Oct 12 (#1060): plus the
 share of peers offering a free account; a free checking account counts on the consumer side.
