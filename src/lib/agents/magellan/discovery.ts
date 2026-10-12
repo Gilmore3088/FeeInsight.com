@@ -10,6 +10,8 @@ import {
 } from "@/lib/agents/state-lane-memory";
 import { documentVaultSchemaReady } from "@/lib/agents/document-vault";
 import { learningSchemaReady, recordAttempt } from "@/lib/agents/learning/attempts";
+import { loadPlaybook, type Playbook } from "@/lib/agents/learning/playbook";
+import { chooseStrategy } from "@/lib/agents/learning/router";
 import { orderByHints, stateExpertHints, type StateExpertHints } from "@/lib/agents/state-expert/memory";
 import type { AttemptOutcome } from "@/lib/agents/learning/outcomes";
 
@@ -19,6 +21,9 @@ import {
   FINDERS,
   findFromRejectedPages,
   finderOutcome,
+  guessedFinderOutcome,
+  isGuessedFinder,
+  prepareGuessedCandidates,
   FOUND_CODES,
   MIN_LINK_SCORE,
   pageLinks,
@@ -82,8 +87,10 @@ const DISCOVERY_METHOD = "magellan_agentic_discovery";
  * stored website is repaired first ("wwwbank.com", "www.bankcom").
  * 5: one product's disclosure is never the schedule, finders that fail two error reviews
  * in a row run last, and links to another country's schedule are refused (7 Oct 2026).
+ * 6: guessed paths honor learning memory for the same homepage and applicable paths;
+ * an absent guessed address is a miss, while transient requests remain retryable.
  */
-export const DISCOVERY_METHOD_VERSION = 5;
+export const DISCOVERY_METHOD_VERSION = 6;
 /** The website repair, logged as its own attempt when it changes the stored address. */
 export const WEBSITE_REPAIR_STRATEGY = { strategy: "discover.website_repair", version: 1 } as const;
 /**
@@ -330,6 +337,8 @@ export interface FinderRunSummary {
   outcome: AttemptOutcome;
   fetches: number;
   durationMs: number;
+  /** Guessed finders hash their actual path input as well as the homepage. */
+  fingerprint?: string | null;
   note?: string;
   trail: TrailEntry[];
 }
@@ -358,6 +367,8 @@ export interface CandidateDiscoveryResult {
   /** The stored website as repaired before the search, when it needed repair. */
   websiteRepair: WebsiteRepairSummary | null;
   finders: FinderRunSummary[];
+  /** Guessed specialists withheld by matching permanent learning memory. */
+  learningSkippedFinders?: FinderKey[];
   durationMs: number;
   /** The search continued from an earlier cut-off search (the state it started from). */
   resumedFrom: DiscoveryResume | null;
@@ -548,6 +559,8 @@ async function discoverForInstitution(
     pageClassifier?: PageClassifier | null;
     /** Specialist order for this bank's state (the state expert's ranking); default FINDER_ORDER. */
     finderOrder?: typeof FINDER_ORDER;
+    /** Only guessed paths use homepage-based memory; observed pages can change independently. */
+    playbook?: Playbook | null;
   },
 ): Promise<CandidateDiscoveryResult> {
   const startedAt = Date.now();
@@ -555,6 +568,7 @@ async function discoverForInstitution(
   const institutionName = String(row.institution_name);
   const stateCode = normalizeStateCode(row.state_code);
   const finders: FinderRunSummary[] = [];
+  const learningSkippedFinders: FinderKey[] = [];
   let attemptedUrls = 0;
   let movedTo: string | null = null;
   let platform: string | null = null;
@@ -583,6 +597,7 @@ async function discoverForInstitution(
     homepageBlocked,
     websiteRepair,
     finders,
+    learningSkippedFinders,
     durationMs: Date.now() - startedAt,
     resumedFrom,
     resume,
@@ -696,9 +711,37 @@ async function discoverForInstitution(
       if (Date.now() > options.deadline) return { found: null, ranOutOfTime: true, lastReason };
       const finderStarted = Date.now();
       let result: FinderResult;
+      let fingerprint: string | null | undefined;
+      let outcomeOverride: AttemptOutcome | undefined;
       try {
+        if (isGuessedFinder(key)) {
+          const candidates = await prepareGuessedCandidates(ctx, key);
+          // No platform, hints, or untried guesses is inapplicable rather than an attempt.
+          if (candidates.length === 0) {
+            completed.push(key);
+            continue;
+          }
+          fingerprint = sha256Text(JSON.stringify({
+            homepage: homepageHash,
+            site: urlIdentity(ctx.site.toString()),
+            paths: candidates.map((candidate) => urlIdentity(candidate.url)),
+          }));
+          if (options.playbook && chooseStrategy({
+            stage: "discover",
+            playbook: options.playbook,
+            fingerprint,
+            candidates: [{ ...FINDERS[key], costMicrousd: 0 }],
+          }).kind === "skip") {
+            learningSkippedFinders.push(key);
+            completed.push(key);
+            continue;
+          }
+        }
         result = await run(ctx);
       } catch (error) {
+        // A failed input preparation must never become permanent memory for that input.
+        fingerprint = null;
+        outcomeOverride = "parse_error";
         result = { found: null, trail: [], fetches: 0, ran: true, outOfTime: false, note: `error: ${error instanceof Error ? error.message : String(error)}` };
       }
       const logsHomepage = homepageRead && key === "homepageLinks";
@@ -713,9 +756,10 @@ async function discoverForInstitution(
       finders.push({
         key,
         ...FINDERS[key],
-        outcome: finderOutcome(result),
+        outcome: outcomeOverride ?? (isGuessedFinder(key) ? guessedFinderOutcome(result) : finderOutcome(result)),
         fetches: result.fetches,
         durationMs: Date.now() - finderStarted,
+        fingerprint,
         note: result.note,
         trail: result.trail.slice(0, MAX_TRAIL),
       });
@@ -1505,6 +1549,7 @@ async function recordFinderAttempts(
     platform: result.platform,
     // Countable: a search that went on past a homepage that blocked bots.
     homepage_blocked: result.homepageBlocked,
+    learning_skipped_finders: result.learningSkippedFinders ?? [],
     // An unfamiliar domain ending is left as is but flagged ("unfamiliar_tld_xyz").
     website_warnings: repairWebsiteUrl(row.website_url).warnings,
   };
@@ -1546,7 +1591,7 @@ async function recordFinderAttempts(
       strategy: result.code === "locked" ? FINDERS.knownLink.strategy : FINDERS.homepageLinks.strategy,
       version: result.code === "locked" ? FINDERS.knownLink.version : FINDERS.homepageLinks.version,
       fingerprint: result.homepageHash,
-      outcome: result.code === "locked" ? "ok" : result.code === "out_of_time" ? "timeout" : "invalid_url",
+      outcome: result.code === "locked" ? "ok" : result.code === "out_of_time" ? "timeout" : result.code === "no_website" ? "invalid_url" : "no_candidates",
       yieldCount: result.url ? 1 : 0,
       costMicrousd: 0,
       durationMs: result.durationMs,
@@ -1564,7 +1609,7 @@ async function recordFinderAttempts(
       stage: "discover",
       strategy: finder.strategy,
       version: finder.version,
-      fingerprint: result.homepageHash,
+      fingerprint: finder.fingerprint === undefined ? result.homepageHash : finder.fingerprint,
       outcome: finder.outcome,
       yieldCount: found ? 1 : 0,
       costMicrousd: 0,
@@ -1706,6 +1751,7 @@ export async function runMagellanDiscovery(
       fullBudget: bankStarted + INSTITUTION_BUDGET_MS <= bankDeadline,
       pageClassifier,
       finderOrder,
+      playbook: learning ? await loadPlaybook(db, institutionId) : null,
     });
     results.push(result);
     if (dryRun) continue;

@@ -393,6 +393,9 @@ export async function fetchWithTimeout(fetchImpl: Fetcher, url: string): Promise
  * cells. Scans and JavaScript pages an older version gave up on are read once more.
  */
 export const ROSETTA_READ_VERSION = 3;
+/** Obtaining bytes failed before any format-specific reader could run. */
+export const DOCUMENT_ACCESS_STRATEGY = "read.document_access";
+export const ROSETTA_DOCUMENT_ACCESS_VERSION = 1;
 export const PAGE_CHECK_STRATEGY = "read.page_check";
 /**
  * Marks a rejected fee page Rosetta reopens for one more read (an attempt row, outcome
@@ -763,7 +766,12 @@ async function readCandidate(
   });
 
   if (!sourceUrl) {
-    return finish({ status: "skipped", error: "Invalid or missing document_url", attemptOutcome: "invalid_url" });
+    return finish({
+      status: "skipped",
+      error: "Invalid or missing document_url",
+      attemptOutcome: "invalid_url",
+      strategy: DOCUMENT_ACCESS_STRATEGY,
+    });
   }
 
   const loaded = await loadDocumentBytes(
@@ -774,7 +782,7 @@ async function readCandidate(
   base.contentType = loaded.contentType;
   if (!loaded.ok) {
     base.documentType = documentTypeForFormat(detectFormat(null, loaded.contentType, loaded.finalUrl));
-    return finish({ status: "failed", error: loaded.error, attemptOutcome: loaded.outcome });
+    return finish({ status: "failed", error: loaded.error, attemptOutcome: loaded.outcome, strategy: DOCUMENT_ACCESS_STRATEGY });
   }
   const { bytes, finalUrl } = loaded;
   base.fromVault = loaded.fromVault;
@@ -1012,6 +1020,17 @@ async function selectCandidates(
     // Capture each placeholder as it is pushed: later pushes must not shift earlier ones.
     params.push(ROSETTA_READ_VERSION);
     const versionParam = `$${params.length}`;
+    params.push(DOCUMENT_ACCESS_STRATEGY);
+    const documentAccessParam = `$${params.length}`;
+    params.push(ROSETTA_DOCUMENT_ACCESS_VERSION);
+    const documentAccessVersionParam = `$${params.length}`;
+    // Access failures keep their own logging version while the reader version still
+    // determines when their permanent failure can be retried, as for historical keys.
+    const readerVersion = (alias: string) => `(CASE
+                       WHEN ${alias}.strategy = ${documentAccessParam}
+                         THEN COALESCE((${alias}.detail->>'reader_version')::int, 0)
+                       ELSE ${alias}.strategy_version
+                     END)`;
     params.push(PERMANENT_OUTCOMES);
     const permanentParam = `$${params.length}`;
     // Only an answer settles a re-read; a timeout or 5xx leaves it eligible next run.
@@ -1040,7 +1059,8 @@ async function selectCandidates(
                      AND current_read.strategy <> ALL(${auxiliaryParam}::text[])
                      AND current_read.institution_id = adt.institution_id
                      AND current_read.input_fingerprint = adt.source_hash
-                     AND current_read.strategy_version >= ${versionParam}
+                     AND ${readerVersion("current_read")} >= ${versionParam}
+                     AND (current_read.strategy <> ${documentAccessParam} OR current_read.strategy_version = ${documentAccessVersionParam})
                      AND current_read.outcome = ANY(${settledParam}::text[])
                 )`;
     // A scan or JavaScript page an older reader gave up on gets one read with the
@@ -1323,7 +1343,8 @@ async function selectCandidates(
               AND pa.strategy <> ALL(${auxiliaryParam}::text[])
               AND pa.institution_id = cr.institution_id
               AND pa.input_fingerprint = cr.content_hash
-              AND pa.strategy_version = ${versionParam}
+              AND ${readerVersion("pa")} = ${versionParam}
+              AND (pa.strategy <> ${documentAccessParam} OR pa.strategy_version = ${documentAccessVersionParam})
               AND pa.outcome = ANY(${permanentParam}::text[])
               -- A rejection made before the page was reopened no longer stands.
               AND pa.created_at > COALESCE(${reopenedAt("cr.institution_id", "cr.content_hash")}, '-infinity'::timestamptz)
@@ -2096,7 +2117,7 @@ export async function runRosettaRead(
           sourceDocumentId: result.sourceDocumentId,
           stage: "read",
           strategy: result.strategy ?? `read.${result.documentType ?? "unknown"}`,
-          version: ROSETTA_READ_VERSION,
+          version: result.strategy === DOCUMENT_ACCESS_STRATEGY ? ROSETTA_DOCUMENT_ACCESS_VERSION : ROSETTA_READ_VERSION,
           fingerprint: result.sourceHash,
           outcome: result.attemptOutcome,
           yieldCount: result.charCount,
@@ -2114,6 +2135,7 @@ export async function runRosettaRead(
             from_vault: result.fromVault,
             table_rows: result.tableRows,
             reader: result.reader,
+            reader_version: ROSETTA_READ_VERSION,
             pdf_layout: result.reader === PRIMARY_READERS.pdf ? PDF_LAYOUT_VERSION : undefined,
             reread: result.reread,
             escalation: result.escalation ?? null,
