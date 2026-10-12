@@ -218,3 +218,20 @@ Change this table and `agent-health.ts` in the same PR.
 | No document fails the same way 3+ times a day | `repeatFailures` (read: 404, 403, 410, network, timeout, 5xx, 429) | 0 |
 
 Also recorded, without a rule: `stepsCompleted`, `spendUsd`, `readOk`, `wrongDocument`, `readFailed`.
+
+## Current versions
+
+The version each rules or reader constant is at now. `scripts/ci-guards.sh guide-version-kill`
+fails a PR that changes one of these constants without updating its line here (#1109).
+
+| Constant | Strategy | Version | File |
+|---|---|---|---|
+| `BATCH_REVIEW_VERSION` | — | v1 | `rosetta/batch-review.ts` |
+| `ROSETTA_JS_FALLBACK_VERSION` | — | v3 | `rosetta/js-fallback.ts` |
+| `ROSETTA_OCR_VERSION` | — | v2 | `rosetta/ocr.ts` |
+| `ROSETTA_PAID_READ_VERSION` | — | v1 | `rosetta/paid-read.ts` |
+| `PDF_LAYOUT_VERSION` | — | v4 | `rosetta/pdf-layout.ts` |
+| `ROSETTA_READ_VERSION` | — | v3 | `rosetta/read.ts` |
+| `REOPEN_VERSION` | — | v1 | `rosetta/read.ts` |
+| `ROSETTA_TABLE_ROWS_VERSION` | — | v1 | `rosetta/table-rows.ts` |
+| `TEXT_SURVIVAL_VERSION` | — | v1 | `rosetta/text-survival.ts` |
