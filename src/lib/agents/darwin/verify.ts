@@ -103,7 +103,8 @@ export type DarwinReasonCode =
   | "category_lesson_pending"
   | "retired_category"
   | "conditional_zero"
-  | "name_rule";
+  | "name_rule"
+  | "insert_failed";
 
 /**
  * `rejected`: the row cannot become a verified fee as read. `needs_review`: the row may
@@ -129,6 +130,7 @@ export const DARWIN_REASON_TEXT: Readonly<Record<DarwinReasonCode, string>> = {
   retired_category: "Category retired by the top-50 fold and the name has no home in a live one; Hamilton never publishes it",
   conditional_zero: "A $0 fee whose own schedule line prices it ($0 if a condition is met, else a charge); the charge is the fee",
   name_rule: "The name or line fails a rule Hamilton would take the live fee down for",
+  insert_failed: "The database refused the verified row; held for review so the rest of the batch still runs",
 };
 
 const NONZERO_DOLLAR = /\$\s*(\d[\d,]*(?:\.\d{1,2})?)/g;
@@ -260,7 +262,7 @@ export function pendingCategoryLesson(canonicalFeeKey: string | null, feeName: s
 
 function decisionFor(code: DarwinReasonCode | null): DarwinDecision {
   if (code == null) return "verified";
-  if (code === "outside_envelope" || code === "peer_outlier" || code === "category_lesson_pending" || code === "conditional_zero") return "needs_review";
+  if (code === "outside_envelope" || code === "peer_outlier" || code === "category_lesson_pending" || code === "conditional_zero" || code === "insert_failed") return "needs_review";
   if (code === "duplicate_in_batch" || code === "duplicate_verified") return "duplicate";
   return "rejected";
 }
@@ -648,6 +650,8 @@ ${duplicateRecheck}
         JOIN institution_sources inst ON inst.id = fr.institution_id
        WHERE fr.source = 'knox'
          AND fr.outlier_flags ? 'needs_darwin_verification'
+         -- The audience trigger refuses these rows; selecting one would fail the step (#1113).
+         AND NOT (fr.outlier_flags ? 'audience_correction_required')
          ${filters.join("\n         ")}
          AND NOT EXISTS (
            SELECT 1
@@ -1067,16 +1071,22 @@ export async function runDarwinVerify(
         secondSource,
       };
     } else {
+      // One refused insert must not roll back the whole step (#1113): the insert runs in
+      // its own savepoint, and a failure holds only this row.
+      let insertFailed = false;
       const feeVerifiedId = dryRun
         ? null
-        : await insertVerifiedFee(db, {
+        : await inSavepoint(db, (scope) => insertVerifiedFee(scope, {
           runId: options.runId,
           row,
           canonicalFeeKey,
           secondSourceAgrees: secondSource?.verdict === "agrees",
+        })).catch(() => {
+          insertFailed = true;
+          return null;
         });
       const verified = Boolean(feeVerifiedId) || dryRun;
-      const code: DarwinReasonCode | null = verified ? null : "duplicate_verified";
+      const code: DarwinReasonCode | null = verified ? null : insertFailed ? "insert_failed" : "duplicate_verified";
       if (verified) verifiedInBatch.add(batchKey(row, canonicalFeeKey));
       result = {
         ...base,
