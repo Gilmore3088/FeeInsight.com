@@ -171,6 +171,7 @@ Cross-pipeline issues: X1 #1037 (gate before publishing), X2 #1038
 | Magellan | `docs/plans/magellan-review-2026-10-12.md`, tracker #1027 | Written 2026-10-12 |
 | Rosetta | `docs/plans/rosetta-review-2026-10-12.md`, tracker #1050 | Written 2026-10-12 |
 | Hamilton (publisher) | `docs/plans/hamilton-review-2026-10-12.md`, tracker #975 (HR1–HR7, #1068–#1074) | Written 2026-10-12 |
+| Hamilton (product) | `docs/plans/hamilton-product-review-2026-10-12.md`, tracker #975 (HP1–HP12, #1075–#1086); recommends moving the publisher to its own agent (#1075) | Written 2026-10-12 |
 | Knox | | Next review |
 | Darwin | | |
 | State experts | | |
