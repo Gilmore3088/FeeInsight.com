@@ -5,6 +5,37 @@ Seeded 2026-10-05 from the project's working memory; earlier decisions were not 
 
 ## 2026-10-12
 
+**Hamilton becomes the product only; publishing moves to its own internal agent.** James, Oct 12
+("Yes split"), on the Hamilton product review (`docs/plans/hamilton-product-review-2026-10-12.md`).
+A new deterministic agent takes Darwin-verified fees, decides which go live, and keeps the live
+catalog correct (duplicates, refreshes, take-downs, restores, re-checks, source checks). It is not
+merged into Darwin, so one agent checks and another publishes. Hamilton keeps Ask, memos, written
+answers, simulate, reports, studies, briefing, alerts, digest and decisions. Persisted `hamilton.*`
+check names stay as they are. Work order and steps: #1075. The new agent is named **Gutenberg**
+(James, Oct 12).
+
+**Studies on the Pro briefing: two now, three held.** James, Oct 12 (#1082). Fee dependence and
+inferred overdraft and NSF items paid are shown to Pro readers, each with a note on how it was
+calculated. Local income, market concentration and fee income vs prices stay off until reviewed:
+their effects are weak and a reader could take them as what a change would do.
+
+**Price-change modelling stays small, labeled and data-limited.** James, Oct 12 (#1085). Public
+data has the fee and the fee income (mostly overdraft and NSF), but not total items, paid versus
+returned items or pay ratios; some credit unions split lines in NCUA or state reporting. So this is
+not a main focus. Hamilton may show a rough high-to-low range for a change such as "drop the fee by
+$5", labeled as an estimate from the data we have, and say plainly that the range tightens with more
+data. The way to a better model is institutions submitting their own figures, kept private and never
+shared, used only to build the models, then triangulated with call reports, NCUA data and third
+parties (#1089).
+
+**State fee law: an agent drafts, a person checks a sample.** James, Oct 12 (#1086). An agent reads
+each state's statutes and regulator pages, records each rule with its citation, link and date read,
+and an automatic check confirms every citation and quote. It is shown as a research summary, not
+legal advice, and James or a compliance contact checks a sample before it is first shown. It must be
+extremely tight; scope can expand later. The Regulatory Wire, which already tracks federal and state
+agencies and bills, is part of this pipeline: a new state item sends that state's rules back for a
+re-check, and Hamilton's regulation answers cite it (#1090).
+
 **Quality checks run inside the pipeline, not on demand.** James, Oct 12: "I don't want to be
 responsible for calling all of these on demand; they need to be built into the process." The
 fee-quality skills (`fee-benchmarking` with new statistical checks, `data-quality-audit`,
