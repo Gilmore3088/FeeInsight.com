@@ -27,6 +27,33 @@ const funnel: PipelineFunnel = {
 };
 
 describe("buildDailyBrief", () => {
+  it("reports the goal numbers and never documents downloaded (#1040)", () => {
+    const goal = {
+      readAt: "2026-10-03T12:00:00Z",
+      windowDays: 7,
+      coverageCells: { query: "goal.coverage_cells", readyCells: 64, totalCells: 161, institutionsShort: 524, bySize: [] },
+      liveInstitutions: { query: "goal.live_institutions", live: 3858, addedThisWeek: 12 },
+      accuracy: null,
+      wrongAfterPublish: { query: "goal.wrong_after_publish_7d", published: 1000, wrong: 20, rate: 0.02, housekeeping: 300, topErrors: [] },
+      spend: { query: "goal.provider_spend_7d", weekUsd: 60, costPerNewInstitutionUsd: 5, byAgent: [] },
+      knoxPasses: null,
+      unstatedAudience: { query: "goal.unstated_audience", liveFees: 1000, unknownFees: 997, share: 0.997 },
+    };
+    const brief = buildDailyBrief({
+      health, funnel, goal, stepsByAgent: {}, feed24h: [],
+      previous: { funnel: { ...funnel, documentsFetched: 100 }, at: "2026-10-02T12:47:05Z" },
+      now: new Date("2026-10-03T12:47:00Z"),
+    });
+    const text = brief.lines.join("\n");
+    expect(text).not.toContain("documents downloaded");
+    expect(text).toContain("Coverage: 64 of 161 state and size groups under $10B meet the target; 524 more covered institutions would close the gap.");
+    expect(text).toContain("Institutions with live fees: 3,858, 12 added in the last 7 days.");
+    expect(text).toContain("Accuracy: could not be read today.");
+    expect(text).toContain("Wrong after publish: 2.0% (20 of 1,000");
+    expect(text).toContain("$5.00 per institution added");
+    expect(text).toContain("Audience not stated: 99.7% of live fees");
+  });
+
   it("summarizes runs, movement since the last brief, and what needs the owner", () => {
     const brief = buildDailyBrief({
       health,
