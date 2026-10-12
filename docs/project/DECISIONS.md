@@ -5,6 +5,15 @@ Seeded 2026-10-05 from the project's working memory; earlier decisions were not 
 
 ## 2026-10-12
 
+**James's maintenance is one Sunday email, about an hour a week.** James, Oct 12 (#1104): the 25
+fee-name labels, approvals waiting, samples to check, the week's five scorecard numbers and anything
+stuck, built by a deterministic step, never a Claude routine. More than an hour rolls to next week.
+
+**Every institution has one intelligence record that all agents read and write.** James, Oct 12
+(#1105): where its fees live (each document, its type and format, right or wrong and why), what
+worked, what went wrong, what people decided, and what its state expert knows. It grows the existing
+learning playbook, and a daily check flags a record that contradicts itself.
+
 **James labels 25 fee names a week; every label grows a lasting name library.** James, Oct 12
 (#1102). Names are grouped before they reach the queue (one row covers every variant of, say, an NSF
 fee), a label maps the whole group at every bank and every future read, and the library
