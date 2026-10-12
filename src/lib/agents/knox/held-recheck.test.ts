@@ -332,6 +332,30 @@ describe("lines a re-read retired, read again with today's rules (Northern Trust
     expect(JSON.stringify(marked.values)).toContain(supersededRecheckFlag());
   });
 
+  it("reads free-pass rows a re-read retired by the same test, and only free-pass rows (#1093 step 2)", async () => {
+    const free = { ...retired, conditions: retired.conditions.replace("Knox paid extraction", "Knox read a free fee"), outlier_flags: ["canonical_hint:overdraft", "superseded_by_reread"] };
+    const { db, calls } = createSupersededDb([free, elsewhere]);
+
+    const result = await recheckSupersededRows(db as never, { live: true, source: "free" });
+
+    expect(result).toMatchObject({ checked: 2, promoted: 1, notRead: 1, promotedIds: [457013], source: "free" });
+    const select = calls.find((call) => call.text.includes("SELECT fr.fee_raw_id"))!;
+    expect(select.text).toContain("::boolean");
+    expect(select.values).toContain("knox_paid_extraction");
+    expect(select.values).toContain(false);
+    expect(select.values).toContain(200);
+    const promote = calls.find((call) => call.text.includes("UPDATE raw_fee_observations fr"))!;
+    expect(JSON.stringify(promote.values)).toContain("needs_darwin_verification");
+  });
+
+  it("keeps reading only paid rows by default", async () => {
+    const { db, calls } = createSupersededDb([]);
+    await recheckSupersededRows(db as never, { live: true });
+    const select = calls.find((call) => call.text.includes("SELECT fr.fee_raw_id"))!;
+    expect(select.values).toContain(true);
+    expect(select.values).toContain(100);
+  });
+
   it("keeps a retired line back when the bank already has a live fee of that category at that price", async () => {
     const { db, calls } = createSupersededDb([{ ...retired, has_live_twin: true }]);
 

@@ -448,9 +448,20 @@ export async function recheckUntracedRows(
  * marked with what the pass would do (`knox_superseded_would_promote:vN`), and nothing goes to
  * Darwin. The paid-only dry read (9 Oct, all 43 rows) would have sent one row, Northern Trust's
  * $25 overdraft, and it matched the source line, so the switch is on.
+ *
+ * Free-pass rows (#1093 step 2, approved by James 2026-10-12): until #1147 a re-read of the
+ * same fee by the free team could not take its retired row back, so 1,626 free rows at 361
+ * banks were retired and not live (counted 2026-10-12; 51 of those banks had no live fee).
+ * Since #1147 a new read of the same fee takes its row back on insert, so the free pass
+ * applies the same test to the rows lost before it: today's free team must read the row's own
+ * name, amount and category in the document's current text, and the bank must have no live
+ * twin. A row that passes goes to Darwin, whose free checks (the shared source check among
+ * them) decide whether it goes live. The 9 Oct dry read of 17 free rows was 11 of 17 right
+ * against source, so Darwin is the gate here, not Knox.
  */
 export const SUPERSEDED_RECHECK_LIVE = true;
 export const SUPERSEDED_RECHECK_LIMIT = 100;
+export const SUPERSEDED_FREE_RECHECK_LIMIT = 200;
 export const SUPERSEDED_RECHECK_PROMOTED_FLAG = "knox_promoted_from_superseded";
 export const SUPERSEDED_RECHECK_SOURCE_FLAG = KNOX_PAID_FLAG;
 
@@ -480,19 +491,22 @@ export interface SupersededRecheckResult {
   promotedIds: number[];
   live: boolean;
   dryRun: boolean;
+  source: "paid" | "free";
 }
 
 export async function recheckSupersededRows(
   db: SqlTag,
-  options: { limit?: number; dryRun?: boolean; live?: boolean; institutionId?: number | null; stateCode?: string | null } = {},
+  options: { limit?: number; dryRun?: boolean; live?: boolean; institutionId?: number | null; stateCode?: string | null; source?: "paid" | "free" } = {},
 ): Promise<SupersededRecheckResult> {
-  const limit = Math.max(1, Math.min(Number(options.limit) || SUPERSEDED_RECHECK_LIMIT, 500));
+  const source = options.source ?? "paid";
+  const paid = source === "paid";
+  const limit = Math.max(1, Math.min(Number(options.limit) || (paid ? SUPERSEDED_RECHECK_LIMIT : SUPERSEDED_FREE_RECHECK_LIMIT), 500));
   const dryRun = Boolean(options.dryRun);
   const live = options.live ?? SUPERSEDED_RECHECK_LIVE;
   const flag = live ? supersededRecheckFlag() : supersededDryReadFlag();
   const institutionId = options.institutionId ?? null;
   const stateCode = options.stateCode?.trim().toUpperCase() || null;
-  const empty = { checked: 0, promoted: 0, liveTwin: 0, notRead: 0, promotedIds: [], live, dryRun };
+  const empty = { checked: 0, promoted: 0, liveTwin: 0, notRead: 0, promotedIds: [], live, dryRun, source };
   // Only a document's current copy can bring a line back (before the copy migration, none).
   if (!(await currentCopySchemaReady(db))) return empty;
   const rows = await db<Array<HeldRow & { document_text_id: number | string; text_hash: string; has_live_twin: boolean }>>`
@@ -518,7 +532,7 @@ export async function recheckSupersededRows(
       ) adt ON TRUE
      WHERE fr.source = 'knox'
        AND fr.outlier_flags ? 'superseded_by_reread'
-       AND fr.outlier_flags ? ${SUPERSEDED_RECHECK_SOURCE_FLAG}
+       AND (fr.outlier_flags ? ${SUPERSEDED_RECHECK_SOURCE_FLAG}) = ${paid}::boolean
        AND NOT fr.outlier_flags ? 'needs_darwin_verification'
        AND NOT fr.outlier_flags ? ${flag}
        AND NOT EXISTS (SELECT 1 FROM verified_fee_observations fv WHERE fv.fee_raw_id = fr.fee_raw_id)
@@ -601,6 +615,7 @@ export async function recheckSupersededRows(
     promotedIds: live ? promotedIds : wouldPromoteIds,
     live,
     dryRun,
+    source,
   };
 }
 
