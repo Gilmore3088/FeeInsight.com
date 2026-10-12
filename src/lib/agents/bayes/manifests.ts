@@ -5,6 +5,8 @@ import { CATEGORY_GUARD_VERSION } from "@/lib/fee-category-guard";
 import { FREQUENCY_FILL_VERSION } from "@/lib/agents/hamilton/frequency-fill";
 import { countCurrentCopyPairs, CURRENT_COPY_STRATEGY } from "@/lib/agents/hamilton/current-copy";
 import { countRetidyReplay, NAME_RETIDY_STRATEGY } from "@/lib/agents/knox/name-retidy";
+import { DARWIN_VERIFY_STRATEGY } from "@/lib/agents/darwin/verify";
+import { DARWIN_PEER_STRATEGY } from "@/lib/agents/darwin/peer-checks";
 
 type SqlTag = typeof sql;
 
@@ -164,8 +166,71 @@ export function retidyCount({ due, doneCurrent }: { due: number[]; doneCurrent: 
   return { affected: queued.size + done, done, queued: queued.size, exclusions: {} };
 }
 
+export interface RosettaVersions {
+  read: number;
+  pdfLayout: number;
+  ocr: number;
+  jsFallback: number;
+  tableRows: number;
+}
+
+async function loadRosettaVersions(): Promise<RosettaVersions> {
+  const [{ ROSETTA_READ_VERSION }, { PDF_LAYOUT_VERSION }, { ROSETTA_OCR_VERSION }, { ROSETTA_JS_FALLBACK_VERSION }, { ROSETTA_TABLE_ROWS_VERSION }] =
+    await Promise.all([
+      import("@/lib/agents/rosetta/read"),
+      import("@/lib/agents/rosetta/pdf-layout"),
+      import("@/lib/agents/rosetta/ocr"),
+      import("@/lib/agents/rosetta/js-fallback"),
+      import("@/lib/agents/rosetta/table-rows"),
+    ]);
+  return {
+    read: ROSETTA_READ_VERSION,
+    pdfLayout: PDF_LAYOUT_VERSION,
+    ocr: ROSETTA_OCR_VERSION,
+    jsFallback: ROSETTA_JS_FALLBACK_VERSION,
+    tableRows: ROSETTA_TABLE_ROWS_VERSION,
+  };
+}
+
+const ROSETTA_NOT_COUNTED = "Rosetta's re-read selection (rosetta/read.ts) is not shared as a count yet.";
+
+/**
+ * Rosetta's reader versions (#1120): ROSETTA_READ_VERSION, PDF_LAYOUT_VERSION, ROSETTA_OCR_VERSION,
+ * ROSETTA_JS_FALLBACK_VERSION and ROSETTA_TABLE_ROWS_VERSION. A new reader reaches a stored
+ * document only when Rosetta reads it again.
+ */
+export function rosettaReaderManifests(versions: RosettaVersions): ReplayManifest[] {
+  const reader = (key: string, strategy: string, version: number, affects: string): ReplayManifest => ({
+    key: `rosetta.${key}`,
+    owner: "rosetta",
+    stage: "read",
+    strategy,
+    version,
+    unit: "stored document text",
+    affects,
+    count: null,
+    notCounted: ROSETTA_NOT_COUNTED,
+  });
+  return [
+    reader("read", "read.page_check", versions.read, "Texts read from PDFs, HTML, plain text and Word files by an older reader."),
+    reader("pdf_layout", "read.pdf_layout", versions.pdfLayout, "PDF texts laid out by an older column and row layout."),
+    reader("ocr", "read.ocr_tesseract", versions.ocr, "Scanned PDFs read by an older OCR pass."),
+    reader("js_fallback", "read.js_fallback", versions.jsFallback, "JavaScript-built pages read by an older browser fallback."),
+    reader("table_rows", "read.table_rows", versions.tableRows, "Fee tables split into rows by an older table reader."),
+  ];
+}
+
+/**
+ * Version constants whose bump does not make an agent redo old records, so they need no
+ * manifest. `scripts/ci-guards.sh bayes-manifest-kill` accepts a changed constant named here or
+ * in a manifest above.
+ */
+export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {};
+
 export async function loadManifests(): Promise<ReplayManifest[]> {
   const { REGISTRY_PARSER_VERSIONS } = await import("@/lib/agents/registry-scheduler");
+  // Rosetta's reader modules load PDF and OCR code, so their versions are read lazily too.
+  const rosetta = await loadRosettaVersions();
   const manifests: ReplayManifest[] = [
     {
       key: "knox.rules",
@@ -217,6 +282,29 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
       unit: "institution",
       affects: "Live fee names Knox tidies in place.",
       count: countNameRetidy,
+    },
+    ...rosettaReaderManifests(rosetta),
+    {
+      key: "darwin.verify_rules",
+      owner: "darwin",
+      stage: "verify",
+      strategy: DARWIN_VERIFY_STRATEGY.strategy,
+      version: DARWIN_VERIFY_STRATEGY.version,
+      unit: "verified fee",
+      affects: "Fees Darwin verified under an older rules version; a rules fix reaches a fee only when Darwin verifies it again.",
+      count: null,
+      notCounted: "Darwin's re-verify selection (verified-recheck.ts) is not shared as a count yet.",
+    },
+    {
+      key: "darwin.peer_range",
+      owner: "darwin",
+      stage: "verify",
+      strategy: DARWIN_PEER_STRATEGY.strategy,
+      version: DARWIN_PEER_STRATEGY.version,
+      unit: "verified fee",
+      affects: "Fees whose peer-range check ran under an older version (state, tier and district peer levels).",
+      count: null,
+      notCounted: "Peer checks run with each verify; there is no shared selection of fees checked under an older peer version yet.",
     },
     {
       key: "darwin.envelopes",

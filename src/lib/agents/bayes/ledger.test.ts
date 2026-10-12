@@ -80,9 +80,15 @@ describe("current copy and retidy counts", () => {
     expect(retidyCount({ due: [], doneCurrent: [] })).toEqual({ affected: 0, done: 0, queued: 0, exclusions: {} });
   });
 
-  it("counts every change except Darwin's unversioned envelopes", async () => {
-    const uncounted = (await loadManifests()).filter((manifest) => !manifest.count).map((manifest) => manifest.key);
-    expect(uncounted).toEqual(["darwin.envelopes"]);
+  it("counts every change except those whose owner's selection is not shared yet (#1120)", async () => {
+    const manifests = await loadManifests();
+    const uncounted = manifests.filter((manifest) => !manifest.count).map((manifest) => manifest.key);
+    expect(uncounted).toEqual([
+      "rosetta.read", "rosetta.pdf_layout", "rosetta.ocr", "rosetta.js_fallback", "rosetta.table_rows",
+      "darwin.verify_rules", "darwin.peer_range", "darwin.envelopes",
+    ]);
+    // An uncounted change always says why, so it reads as not_counted, never as finished.
+    expect(manifests.filter((manifest) => !manifest.count).every((manifest) => Boolean(manifest.notCounted))).toBe(true);
   });
 });
 
