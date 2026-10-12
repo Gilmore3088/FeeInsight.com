@@ -5,6 +5,17 @@ Seeded 2026-10-05 from the project's working memory; earlier decisions were not 
 
 ## 2026-10-12
 
+**Knox targets: 85% of fees found, 90% right.** James, Oct 12 (#1098). Measured on the answer key,
+counting only banks where the right document was read. Growing the answer key to about 200 banks is
+a one-time batch: an agent prepares each bank, James confirms it. After that, checking is not a
+regular job; a bank is re-checked only when its schedule changes.
+
+**Knox stays one agent; its specialists become separately measured skills.** James asked whether
+Knox should be split for focus (Oct 12). Recommendation recorded: keep one agent, but score each
+specialist (rules, tables, the fee families, paid pass, and the new ones in #1100) on the answer key
+on its own, so each can be improved independently. Deciding a document's type moves earlier, to
+Rosetta's read, so Magellan can act on it (#1094).
+
 **Hamilton becomes the product only; publishing moves to its own internal agent.** James, Oct 12
 ("Yes split"), on the Hamilton product review (`docs/plans/hamilton-product-review-2026-10-12.md`).
 A new deterministic agent takes Darwin-verified fees, decides which go live, and keeps the live
