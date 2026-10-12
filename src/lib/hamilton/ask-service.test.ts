@@ -80,8 +80,11 @@ vi.mock("./memo", () => ({
   })),
 }));
 
+vi.mock("@/lib/research/history", () => ({ logUsage: vi.fn(async () => undefined) }));
+
 import { writeStorylineMemo } from "./memo";
-import { answerAsk, answerAskMemo } from "./ask-service";
+import { logUsage } from "@/lib/research/history";
+import { answerAsk, answerAskMemo, MEMO_USAGE_AGENT_ID } from "./ask-service";
 
 const user = { id: 7, display_name: "Pat", username: "pat" };
 
@@ -174,11 +177,33 @@ describe("H01 Structured Ask identity acceptance", () => {
     identityStore.research.mockClear();
     const result = await answerAskMemo(user, { institutionId: "2", question: "overdraft?", savedAnalysisId: "a1" });
     expect(result.status).toBe(200);
-    expect(writeStorylineMemo).toHaveBeenCalledWith(frozenStory, "overdraft?", { institutionId: 2, identityContext: saved.identityContext, factEvidence: store.analyses[0].response.factEvidence });
+    expect(writeStorylineMemo).toHaveBeenCalledWith(frozenStory, "overdraft?", { institutionId: 2, identityContext: saved.identityContext, factEvidence: store.analyses[0].response.factEvidence, usage: expect.any(Object) });
     expect((store.analyses[0].response as { factEvidence?: { facts: unknown[] } }).factEvidence?.facts.length).toBeGreaterThan(0);
     expect(identityStore.peers).not.toHaveBeenCalled();
     expect(identityStore.research).not.toHaveBeenCalled();
     expect(store.analyses[0].response.identityContext).toEqual(saved.identityContext);
+  });
+
+  it("counts each memo model call in the Pro quota (#1080)", async () => {
+    vi.mocked(logUsage).mockClear();
+    vi.mocked(writeStorylineMemo).mockImplementationOnce(async (_story, _question, options) => {
+      Object.assign(options!.usage!, { calls: 2, inputTokens: 3000, outputTokens: 900 });
+      return { status: "withheld", reason: "checks", problems: [] };
+    });
+    await answerAsk(user, { institutionId: "1", question: "overdraft?" });
+    await answerAskMemo(user, { institutionId: "1", question: "overdraft?", savedAnalysisId: "a1" });
+    expect(MEMO_USAGE_AGENT_ID.startsWith("hamilton")).toBe(true);
+    expect(vi.mocked(logUsage).mock.calls.map((call) => [call[0], call[2], call[3], call[4]])).toEqual([
+      [7, MEMO_USAGE_AGENT_ID, 3000, 900],
+      [7, MEMO_USAGE_AGENT_ID, 0, 0],
+    ]);
+  });
+
+  it("logs no usage when the memo made no model call", async () => {
+    vi.mocked(logUsage).mockClear();
+    await answerAsk(user, { institutionId: "1", question: "overdraft?" });
+    await answerAskMemo(user, { institutionId: "1", question: "overdraft?", savedAnalysisId: "a1" });
+    expect(logUsage).not.toHaveBeenCalled();
   });
 
   it("rejects a corrupt saved subject snapshot before paid writing", async () => {

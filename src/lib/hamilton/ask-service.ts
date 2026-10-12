@@ -19,7 +19,10 @@ import {
 import { getSavedAnalysisResponse, insertSavedAnalysis, updateSavedAnalysisResponse } from "@/lib/data-store/hamilton-analyses";
 import { normalizeCanonicalInstitutionId } from "./context-link";
 import { buildFeeResearchEvidence, type EvidenceBoundAnalyzeResponse, type HamiltonEvidenceBundle } from "./evidence-contract";
-import { writeStorylineMemo } from "./memo";
+import { writeStorylineMemo, type MemoUsage } from "./memo";
+import { estimateAnthropicCostMicrousd } from "@/lib/ai-provider-usage";
+import { getHamiltonModel } from "@/lib/ai-provider";
+import { logUsage } from "@/lib/research/history";
 import { analysisFocusFor, analysisTitle, storylineAnalysis, withMemo } from "./workspace/analysis-record";
 import { buildAskResponse, clarifyAgain, parseAsk, parseObjective, withSegmentDefault } from "./workspace/ask";
 import { proseFeeName } from "./workspace/names";
@@ -468,6 +471,27 @@ export interface AskMemoResult {
  * The written memo uses a saved answer's frozen storyline and identity. A fresh request
  * builds server evidence; neither path accepts identity or narrative claims from the browser.
  */
+/** Research-usage agent id for memos; the "hamilton" prefix counts them in the Pro quota (quota.ts). */
+export const MEMO_USAGE_AGENT_ID = "hamilton-memo";
+
+/**
+ * One research_usage row per memo model call, so memos count in the daily Pro quota like
+ * every other paid Hamilton answer (#1080). Tokens are the memo's total across its calls.
+ */
+async function recordMemoUsage(userId: number, usage: MemoUsage): Promise<void> {
+  if (usage.calls === 0) return;
+  const model = getHamiltonModel();
+  const totalCents = Math.round((estimateAnthropicCostMicrousd(model, { inputTokens: usage.inputTokens, outputTokens: usage.outputTokens }) ?? 0) / 10_000);
+  try {
+    for (let call = 0; call < usage.calls; call++) {
+      // The first row carries the memo's tokens and cost; any retry row counts the call only.
+      await logUsage(userId, null, MEMO_USAGE_AGENT_ID, call === 0 ? usage.inputTokens : 0, call === 0 ? usage.outputTokens : 0, call === 0 ? totalCents : 0);
+    }
+  } catch (error) {
+    console.error("[hamilton-ask-memo] recording usage failed", error);
+  }
+}
+
 export async function answerAskMemo(user: Asker, body: AskBody): Promise<AskMemoResult> {
   const account = await loadHamiltonAccountContext(user);
   const resolved = await resolveHamiltonInstitutionContext({
@@ -530,7 +554,9 @@ export async function answerAskMemo(user: Asker, body: AskBody): Promise<AskMemo
   }
   if (!storyline) return { status: 200, body: { status: "unavailable", reason: "There is no storyline to write up for this question." } };
 
-  const result = await writeStorylineMemo(storyline, question, { institutionId, identityContext: identity, factEvidence });
+  const usage: MemoUsage = { calls: 0, inputTokens: 0, outputTokens: 0 };
+  const result = await writeStorylineMemo(storyline, question, { institutionId, identityContext: identity, factEvidence, usage });
+  await recordMemoUsage(user.id, usage);
   let memoSaved = false;
   if (result.status === "written" && savedId && savedResponse) {
     try {

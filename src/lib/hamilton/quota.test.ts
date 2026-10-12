@@ -5,6 +5,7 @@ vi.mock("@/lib/data-store/connection", () => ({ sql: sqlMock }));
 
 import { checkProAiQuota, quotaExceededMessage } from "./quota";
 import type { User } from "@/lib/auth";
+import { HAMILTON_PAUSED_MESSAGE } from "./provider-paused";
 
 const pro = { id: 7, role: "premium", subscription_status: "active" } as User;
 
@@ -28,9 +29,16 @@ describe("checkProAiQuota", () => {
     expect(values).toEqual([7, "hamilton%"]);
   });
 
-  it("does not lock users out when the count cannot be read", async () => {
+  it("refuses a capped reader's paid call when the count cannot be read (#1080)", async () => {
     sqlMock.mockRejectedValueOnce(new Error("db down"));
-    expect((await checkProAiQuota(pro)).allowed).toBe(true);
+    const quota = await checkProAiQuota(pro);
+    expect(quota).toMatchObject({ allowed: false, unreadable: true, limit: 50 });
+    expect(quotaExceededMessage(quota)).toBe(HAMILTON_PAUSED_MESSAGE);
+  });
+
+  it("keeps a team seat holder allowed when the count cannot be read", async () => {
+    sqlMock.mockRejectedValueOnce(new Error("db down"));
+    expect((await checkProAiQuota({ ...pro, workspace_seat: true })).allowed).toBe(true);
   });
 
   it("never blocks a team seat holder, however many questions they asked today", async () => {
