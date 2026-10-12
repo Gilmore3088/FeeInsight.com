@@ -9,6 +9,7 @@ vi.mock("@/lib/ai-provider-usage", async (importOriginal) => ({
 import {
   adjudicatePrompt,
   adjudicationSource,
+  DARWIN_ADJUDICATE_SHADOW,
   DARWIN_ADJUDICATE_STRATEGY,
   parseVerdicts,
   qualifies,
@@ -16,6 +17,7 @@ import {
   verdictSide,
   type AdjudicationCandidate,
 } from "./adjudicate";
+import { DARWIN_RELEASE_ACTS } from "./release-held";
 
 type DbMock = ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
 
@@ -120,7 +122,7 @@ describe("Darwin layer 3 adjudicator", () => {
       ],
     }));
 
-    const result = await runDarwinAdjudicate({ runId: 5, stepId: 6, db: asDb(db), create });
+    const result = await runDarwinAdjudicate({ runId: 5, stepId: 6, db: asDb(db), create, measure: true });
 
     expect(create).toHaveBeenCalledTimes(1);
     expect(trackAnthropicRequest.mock.calls.at(-1)?.[0]).toMatchObject({ agent: "darwin", operation: "adjudicate" });
@@ -143,10 +145,24 @@ describe("Darwin layer 3 adjudicator", () => {
       throw error;
     });
 
-    const result = await runDarwinAdjudicate({ runId: 5, db: asDb(db), create });
+    const result = await runDarwinAdjudicate({ runId: 5, db: asDb(db), create, measure: true });
 
     expect(result).toMatchObject({ selected: 1, processed: 0, budgetStopped: true });
     expect(result.budgetReason).toContain("agent:darwin");
+    expect(attempts(db)).toHaveLength(0);
+  });
+
+  it("makes no paid call while releases are off and shadow verdicts are off (#1111)", async () => {
+    expect(DARWIN_RELEASE_ACTS).toBe(false);
+    expect(DARWIN_ADJUDICATE_SHADOW).toBe(false);
+    const db = createDbMock([row()]);
+    const create = vi.fn();
+
+    const result = await runDarwinAdjudicate({ runId: 5, stepId: 6, db: asDb(db), create });
+
+    expect(create).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ selected: 0, processed: 0, costMicrousd: 0, budgetStopped: false });
+    expect(result.results.filter((entry) => entry.skipped).map((entry) => entry.pass)).toEqual(["release_review", "adjudicate"]);
     expect(attempts(db)).toHaveLength(0);
   });
 
