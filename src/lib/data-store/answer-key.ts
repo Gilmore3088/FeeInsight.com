@@ -639,6 +639,8 @@ export interface ScoreboardSnapshotRow {
   freshness_live_fees: number | null;
   /** The goal scorecard stored that day (`detail.goal`, #1040); null on older snapshots. */
   goal: GoalScorecard | null;
+  /** Darwin's undecided rows from that day's agent health check (`detail.agent_health`); null when not recorded. */
+  darwin_backlog: number | null;
 }
 
 const SNAPSHOT_NUMBER_COLUMNS = [
@@ -670,8 +672,13 @@ export async function listScoreboardSnapshots(days = 30, db: SqlTag = sql): Prom
     for (const column of SNAPSHOT_NUMBER_COLUMNS) {
       snapshot[column] = row[column] == null ? null : Number(row[column]);
     }
-    const detail = (typeof row.detail === "string" ? JSON.parse(row.detail) : row.detail) as { goal?: GoalScorecard } | null;
+    const detail = (typeof row.detail === "string" ? JSON.parse(row.detail) : row.detail) as {
+      goal?: GoalScorecard;
+      agent_health?: { agents?: Array<{ agent?: string; numbers?: Record<string, unknown> }> };
+    } | null;
     snapshot.goal = detail?.goal ?? null;
+    const undecided = detail?.agent_health?.agents?.find((section) => section.agent === "darwin")?.numbers?.undecided;
+    snapshot.darwin_backlog = undecided == null || !Number.isFinite(Number(undecided)) ? null : Number(undecided);
     return snapshot as unknown as ScoreboardSnapshotRow;
   });
 }
