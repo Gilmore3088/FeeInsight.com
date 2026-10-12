@@ -3,6 +3,44 @@
 Newest first. Each entry: date, what was decided, who, why, and what it means for the work.
 Seeded 2026-10-05 from the project's working memory; earlier decisions were not recorded here.
 
+## 2026-10-12
+
+**Foundation first, then Magellan, then Hamilton.** James, Oct 12: "lay the foundation of this new
+system first." Before any agent work, the repository is reset to how work runs now (#1047, PR
+#1046):
+- one builder at a time, starting from the Now list in #1026;
+- the multi-agent coordination checks and workflows are removed, and `BACKLOG.md` is superseded;
+- the site-copy marketing skills are linked so sessions find them;
+- Vercel previews are built for every PR.
+
+Every change a review finds is documented as its own issue, with no cap (James, Oct 12: "if
+Magellan has nine, we need to document all nine"). Work that belongs to no agent
+(infrastructure, documentation, process) has its own Foundation tracker. What keeps the work
+manageable is order, not a cap: #1026 holds at most three Now items, each review names the issues
+it closes, and James re-orders the list weekly (about ten minutes).
+
+**Review the pipeline one agent at a time before relying on it again.** James, Oct 12, in a
+Claude Code session. Each agent gets a written review with production measurements and a GitHub
+tracker issue with one sub-issue per change, under one master tracker
+(`docs/plans/pipeline-review-2026-10-12.md`). Order: Magellan, Rosetta, Knox, Darwin, Hamilton,
+state experts, Atlas. Reviews are documents and issues; code follows one issue and one PR at a time.
+
+**Priority: data layer, then raw intelligence, then Hamilton.** James, Oct 12. The first customers
+are expected to be institutions under $10B at around $150 a month, so coverage is aimed at
+benchmark-ready counts in every state and asset tier, not at the largest banks alone.
+
+**Never abandon an institution that has not been found.** James, Oct 12. Search for a fee
+schedule, then a Truth in Savings disclosure or account agreement; if nothing is published online,
+re-try on a longer interval instead of every month. Once found, do not search again for about a
+quarter.
+
+**State experts stay code-driven but must be visible and improve.** James, Oct 12. They should
+own their state's coverage and show their memory and progress in admin.
+
+**Up-front build-out spend is accepted; recurring session spend is not.** James, Oct 12. He will
+spend $500–$1,000 or more to bring the database to an A+ level, but not $1,000 a week on Claude
+routines. Scheduled Claude routines for Fee Insight were paused the same day.
+
 ## 2026-10-11
 
 **One-time WIP exception for the directory fix.** James, Oct 11 (`docs/project/BACKLOG.md`,
