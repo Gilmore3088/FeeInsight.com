@@ -1,5 +1,5 @@
 import { crawlerUserAgent } from "@/lib/agents/crawler-identity";
-import { htmlToScoringText, scoreFeePage, urlNamesFeePage } from "@/lib/agents/learning/fee-page";
+import { htmlToScoringText, isProductPageUrl, scoreFeePage, urlNamesFeePage } from "@/lib/agents/learning/fee-page";
 
 import { isArticleLink, isBusinessOnlyLink, isBusinessOnlyText, isErrorPageLink, isForeignHostLink, isSingleProductDisclosureLink, looksForeignSchedule } from "./link-coverage";
 
@@ -47,21 +47,11 @@ const FEE_CONTENT_KEYWORDS = [
 /**
  * An account or product page ("/personal/checking", "/savings-accounts"): it may quote a
  * monthly fee or two, but it is not the bank's fee schedule. Such pages are kept as
- * companion account pages (`second-document.ts`), never as the bank's fee link.
+ * companion account pages (`second-document.ts`), never as the bank's fee link. The address
+ * rule is the one Rosetta and Hamilton use (`isProductPageUrl`, #1053).
  */
-const PRODUCT_PATH =
-  /\/[^?#]*(checking|savings|accounts?([/._?-]|$)|money-?market|certificates?|personal-banking|business-banking|deposit-products?|share-accounts?)/i;
-const FEE_NAMED_PATH = /(fee|schedule|charge|disclos|truth|pricing)/i;
-
 export function looksLikeProductPage(url: string): boolean {
-  let path: string;
-  try {
-    const parsed = new URL(url);
-    path = decodeURIComponent(parsed.pathname + parsed.search);
-  } catch {
-    return false;
-  }
-  return PRODUCT_PATH.test(path) && !FEE_NAMED_PATH.test(path) && !looksLikePdfUrl(url);
+  return isProductPageUrl(url);
 }
 
 /** Page text without its site navigation, header and footer, where fee words appear on every page. */
@@ -231,7 +221,10 @@ export async function validateFeeCandidate(candidate: FeeCandidate, fetchImpl: F
   if (looksForeignSchedule(mainText)) {
     return { ...rejected("foreign_schedule", "Candidate is another country's fee schedule (foreign currency)", response.status, candidate.score), html: rawBody, scoringText: mainText };
   }
-  const page = scoreFeePage(mainText, candidate.url);
+  const page = scoreFeePage(mainText, candidate.url, { feeSchedule: true });
+  if (page.productPage) {
+    return { ...rejected("product_page", `Candidate is an account or product page (${page.reason})`, response.status, candidate.score), html: rawBody, scoringText: mainText };
+  }
   if (page.verdict === "wrong_document") {
     return { ...rejected("not_fee_page", `Candidate page is not a fee schedule (${page.reason})`, response.status, candidate.score), html: rawBody, scoringText: mainText };
   }

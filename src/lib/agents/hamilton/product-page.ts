@@ -3,6 +3,7 @@ import { invalidatePublicReadCache } from "@/lib/data-store/fee-cache";
 import { recordFeedback, type FeedbackRow } from "@/lib/agents/learning/feedback";
 import { secondLook } from "@/lib/agents/hamilton/second-look";
 import { inSavepoint } from "@/lib/agents/savepoint";
+import { isProductPageUrl, productPageUrlSql } from "@/lib/agents/learning/fee-page";
 
 type SqlTag = typeof sql;
 
@@ -30,9 +31,6 @@ export const PRODUCT_PAGE_REASON = "product_page";
 export const PRODUCT_PAGE_FLAG = "product_page";
 export const PRODUCT_PAGE_ROLLBACK_LIMIT = 200;
 export const FREE_READ_PREFIX = "Knox read a free fee";
-const PRODUCT_WORDS = "(checking|savings|accounts?|personal|business|banking|products?|compare|services|rewards|kasasa|money-market|credit-cards?)";
-const NOT_PRODUCT_WORDS = "(schedule|disclosure|pricing|rates|fee|charges|\\.pdf|truth|assets/|files/|legal|terms|tos\\b|agreement|faq)";
-
 /** James's answer to the punch-list question: "You can take down the fees" (Oct 9). */
 export const PRODUCT_PAGE_TAKEDOWN_ON = true;
 
@@ -41,16 +39,13 @@ export function productPageTakedownEnabled(on: boolean = PRODUCT_PAGE_TAKEDOWN_O
   return on;
 }
 
-/** True for a page address in a product or account area that names no fee schedule. */
+/**
+ * True for a page address in a product or account area that names no fee schedule: the one
+ * rule Rosetta and Magellan also use (`isProductPageUrl`, learning/fee-page.ts, #1053).
+ */
 export function isProductPage(url: string | null | undefined): boolean {
-  if (!url) return false;
-  const path = url.replace(/^https?:\/\/[^/]+/i, "").toLowerCase();
-  return new RegExp(PRODUCT_WORDS, "i").test(path) && !new RegExp(NOT_PRODUCT_WORDS, "i").test(path);
+  return isProductPageUrl(url);
 }
-
-const PRODUCT_DOC_SQL = (column: string) =>
-  `(lower(regexp_replace(${column}, '^https?://[^/]+', '')) ~ '${PRODUCT_WORDS}'
-    AND lower(regexp_replace(${column}, '^https?://[^/]+', '')) !~ '${NOT_PRODUCT_WORDS.replace("tos\\b", "tos\\y")}')`;
 
 interface ProductFeeRow {
   fee_published_id: number | string;
@@ -112,7 +107,7 @@ export async function retireProductPageFees(
         WHERE fp.rolled_back_at IS NULL
           AND fp.amount = 0
           AND fr.conditions LIKE '${FREE_READ_PREFIX}%'
-          AND ${PRODUCT_DOC_SQL("sd.document_url")}
+          AND ${productPageUrlSql("sd.document_url")}
           ${options.institutionId ? "AND fp.institution_id = $1" : ""}
         ORDER BY fp.fee_published_id`,
       options.institutionId ? [options.institutionId] : [],

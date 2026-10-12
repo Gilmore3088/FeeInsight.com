@@ -17,10 +17,16 @@ export interface FeePageScore {
   dollarAmounts: number;
   rateTerms: number;
   reason: string;
+  /** Set when the text was rejected as an account or product page, not the fee schedule. */
+  productPage?: boolean;
 }
 
-/** Bump when the rules change, so earlier verdicts are re-checked. */
-export const FEE_PAGE_CHECK_VERSION = 1;
+/**
+ * Bump when the rules change, so earlier verdicts are re-checked.
+ * v2 (#1053, 2026-10-12): a bank's fee document at a product address with few fee lines is
+ * a product page (`productPageScore`).
+ */
+export const FEE_PAGE_CHECK_VERSION = 2;
 
 /** "$35", "$ 35", "$.50", "75¢", "50 cents". */
 const AMOUNT_SOURCE = String.raw`\$\s?\.?[0-9]|\b[0-9]+\s?(?:¢|cents?\b)`;
@@ -73,7 +79,68 @@ export function isArticleUrl(url: string | null | undefined): boolean {
   return ARTICLE_PATH.test(path) && !SCHEDULE_PATH.test(path.split("/").filter(Boolean).pop() ?? "");
 }
 
-export function scoreFeePage(text: string, url?: string | null): FeePageScore {
+/**
+ * The one product-page address rule (#1053), shared by Magellan's link check, Rosetta's read
+ * and Hamilton's takedown: a path in an account or product area ("/personal/checking",
+ * "/checking-accounts", "/business/business-checking", "/compare-accounts") that names no fee
+ * document, rates, services, file or legal page. Postgres sources: `\b` is `\y` there.
+ */
+export const PRODUCT_PATH_WORDS = "(checking|savings|accounts?|money-?market|certificates?|personal|business|banking|deposit-products?|share-accounts?|products?|compare|rewards|kasasa|credit-cards?)";
+export const NOT_PRODUCT_PATH_WORDS = "(fee|schedule|charge|disclos|truth|pricing|rates|cost|services|\\.pdf|assets/|files/|legal|terms|tos\\b|agreement|faq)";
+const PRODUCT_PATH_RE = new RegExp(PRODUCT_PATH_WORDS, "i");
+const NOT_PRODUCT_PATH_RE = new RegExp(NOT_PRODUCT_PATH_WORDS, "i");
+
+/** SQL: true when `column` holds a product-page address (same rule as `isProductPageUrl`). */
+export function productPageUrlSql(column: string): string {
+  const path = `lower(regexp_replace(${column}, '^https?://[^/]+', ''))`;
+  return `(${path} ~ '${PRODUCT_PATH_WORDS}' AND ${path} !~ '${NOT_PRODUCT_PATH_WORDS.replace("tos\\b", "tos\\y")}')`;
+}
+
+/** True for an address in an account or product area that names no fee document. */
+export function isProductPageUrl(url: string | null | undefined): boolean {
+  if (!url) return false;
+  let path = url.replace(/^[a-z]+:\/\/[^/]+/i, "").toLowerCase();
+  try {
+    path = decodeURIComponent(path);
+  } catch {
+    // keep the raw path
+  }
+  return PRODUCT_PATH_RE.test(path) && !NOT_PRODUCT_PATH_RE.test(path);
+}
+
+/**
+ * Fee lines a bank's fee document at a product address must list to count as its schedule.
+ * Production, 2026-10-12: the 13 product pages behind banks whose fees all came down listed
+ * 2-9 fee lines; 15 product-address pages that hold real fee lists listed 14-37 (the 9-line
+ * "cost-of-services" page is a services address, outside the rule).
+ */
+export const PRODUCT_PAGE_MIN_FEE_LINES = 10;
+const SCHEDULE_TITLE = /(schedule of (service )?(fees|charges)|fee schedule|schedule of charges|truth.in.savings|fees (and|&) charges|service fees)/i;
+
+/**
+ * A bank's fee document (never a companion account page) at a product address that lists
+ * fewer than 10 fee lines and no schedule title: an account page quoting a few fees, so
+ * Magellan should look again. Null when the rule does not apply.
+ */
+export function productPageScore(text: string, url: string | null | undefined, feeLines: number, dollarAmounts: number, rateTerms: number): FeePageScore | null {
+  if (!isProductPageUrl(url) || feeLines >= PRODUCT_PAGE_MIN_FEE_LINES) return null;
+  // A title is a short line of its own; "See fee schedule for details" in a footnote is not one.
+  if (text.slice(0, 6000).split("\n").some((line) => line.trim().length <= 60 && SCHEDULE_TITLE.test(line))) return null;
+  return {
+    verdict: "wrong_document",
+    feeLines,
+    dollarAmounts,
+    rateTerms,
+    productPage: true,
+    reason: `An account or product page (${feeLines} fee line${feeLines === 1 ? "" : "s"}, no schedule title), not the bank's fee schedule`,
+  };
+}
+
+/**
+ * `feeSchedule`: the text is offered as the bank's fee schedule (its fee link), not a
+ * companion account page, so the product-page rule applies.
+ */
+export function scoreFeePage(text: string, url?: string | null, options: { feeSchedule?: boolean } = {}): FeePageScore {
   const dollarAmounts = (text.match(DOLLAR) ?? []).length;
   const rateTerms = (text.match(RATE_TERM) ?? []).length;
   let feeLines = 0;
@@ -83,6 +150,11 @@ export function scoreFeePage(text: string, url?: string | null): FeePageScore {
 
   if (isArticleUrl(url)) {
     return { verdict: "wrong_document", feeLines, dollarAmounts, rateTerms, reason: "A news or investor article, not the bank's fee schedule" };
+  }
+
+  if (options.feeSchedule) {
+    const product = productPageScore(text, url, feeLines, dollarAmounts, rateTerms);
+    if (product) return product;
   }
 
   if (feeLines >= 3) {

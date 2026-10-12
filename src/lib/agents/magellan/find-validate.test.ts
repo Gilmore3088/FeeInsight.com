@@ -89,7 +89,8 @@ describe("Magellan fee-page check", () => {
   });
 
   it("still accepts a product address that lists the full fee schedule", async () => {
-    const html = `<html><body><h1>Checking accounts</h1><ul><li>Overdraft fee $32</li><li>NSF fee $30</li><li>Stop payment fee $25</li><li>Monthly service charge $8</li></ul></body></html>`;
+    const items = ["Overdraft fee $32", "NSF fee $30", "Stop payment fee $25", "Monthly service charge $8", "Wire transfer fee $25", "Cashier's check fee $10", "Statement copy fee $5", "Dormant account fee $5", "Account research fee $25", "Debit card replacement fee $5"];
+    const html = `<html><body><h1>Checking accounts</h1><ul>${items.map((item) => `<li>${item}</li>`).join("")}</ul></body></html>`;
     const result = await validateFeeCandidate(candidate("https://a.example/personal/checking", 0.6), serve(html, "text/html"));
     expect(result).toMatchObject({ ok: true, verdict: "accepted_html" });
   });
@@ -112,6 +113,17 @@ describe("Magellan fee-page check", () => {
     expect(looksLikeProductPage("https://a.example/personal/checking/fee-schedule")).toBe(false);
     expect(looksLikeProductPage("https://a.example/checking-disclosures.pdf")).toBe(false);
     expect(looksLikeProductPage("https://a.example/fees")).toBe(false);
+    expect(looksLikeProductPage("https://a.example/personal.html")).toBe(true);
+    expect(looksLikeProductPage("https://a.example/account-services")).toBe(false);
+  });
+
+  it("rejects a product page that lists a few fees as the bank's fee link (#1053)", async () => {
+    const lines = "<p>Monthly service charge $5.00</p><p>Overdraft fee $30.00</p><p>Paper statement fee $2.00</p><p>ATM fee $2.50</p>";
+    const html = `<html><body><main><h1>Personal Checking</h1>${lines}</main></body></html>`;
+    const result = await validateFeeCandidate(candidate("https://a.example/personal/checking", 0.9), serve(html, "text/html"));
+    expect(result).toMatchObject({ ok: false, verdict: "product_page" });
+    const schedule = `<html><body><main><h1>Schedule of Fees</h1>${lines}</main></body></html>`;
+    expect(await validateFeeCandidate(candidate("https://a.example/personal/checking", 0.9), serve(schedule, "text/html"))).toMatchObject({ ok: true });
   });
 });
 

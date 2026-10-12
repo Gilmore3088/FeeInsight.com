@@ -249,7 +249,9 @@ the detail.
     `article_page: #<document id>`.
 12. Product page (`product-page.ts`): a $0 benefit bullet Knox's free reader took from a
     product page, on its second look while `PRODUCT_PAGE_TAKEDOWN_ON` (on since 9 Oct),
-    `product_page: #<document id>`.
+    `product_page: #<document id>`. The address rule is the one Magellan and Rosetta use
+    (`isProductPageUrl`, `learning/fee-page.ts`, #1053): services, rates and cost pages are
+    no longer product pages.
 13. Cross-page conflict (`cross-page-conflict.ts`): one product priced differently on two
     current pages (or two editions of one document); the older one comes down on its second
     look, `cross_page_conflict: #<older doc> older than #<newer doc> (fee <id>)` (or `older
