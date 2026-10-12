@@ -100,6 +100,23 @@ hand-found link or paid-fetched document starts a new run even inside the retry 
   step records the order in its result as `finderOrder`); `hamilton/state-expert-summary.ts` gives the report engine
   the expert's summary. Darwin's peer check reads the peer levels.
 
+## Goal scorecard (#1040)
+
+`goal-scorecard.ts` runs with the daily scoreboard step and stores the goal numbers in
+`pipeline_scoreboard_snapshots.detail.goal`. `/admin/scoreboard` and the morning brief show the
+same numbers. Each number names its query (`GOAL_QUERIES`) and covers the trailing 7 days:
+- benchmark-ready state × size groups under $10B (30 live institutions, or 75% below 40);
+- institutions with live fees, and those added (live now, no live fee 7 days ago);
+- Deming's pooled accuracy;
+- wrong after publish (error take-downs ÷ fees first published, refresh copies and
+  housekeeping take-downs left out);
+- provider spend per agent against its cap, and per institution added;
+- Knox's free and paid passes (fees kept, documents, institutions, cost per fee, share at $0);
+- the share of live fees with no stated audience.
+
+A refresh or a rollback never counts as progress. A read that fails is stored as null and
+the brief says it could not be read.
+
 ## Daily health check (contract)
 
 `agent-health.ts` runs with the daily scoreboard step and stores Atlas's numbers in
