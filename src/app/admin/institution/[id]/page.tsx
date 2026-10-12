@@ -2,10 +2,13 @@ export const dynamic = "force-dynamic";
 
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { requireAuth } from "@/lib/auth";
+import { hasPermission, requireAuth } from "@/lib/auth";
+import { sql } from "@/lib/data-store/connection";
+import { getHeldFees, type HeldFee } from "@/lib/fee-hold";
 import { Breadcrumbs } from "@/components/breadcrumbs";
 import { formatAssets } from "@/lib/format";
 import { FeeTable } from "./fee-table";
+import { HeldFeesTable } from "./fee-hold-controls";
 import {
   getInstitution,
   getInstitutionFees,
@@ -32,7 +35,8 @@ export default async function InstitutionDetailPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  await requireAuth("view");
+  const user = await requireAuth("view");
+  const canHold = hasPermission(user, "approve");
   const { id } = await params;
   const institutionId = Number(id);
 
@@ -47,6 +51,7 @@ export default async function InstitutionDetailPage({
     peerRanking,
     financials,
     learnedNotes,
+    heldFees,
   ] =
     await Promise.all([
       getInstitution(institutionId),
@@ -57,6 +62,10 @@ export default async function InstitutionDetailPage({
       getInstitutionPeerRanking(institutionId),
       getFinancialsByInstitution(institutionId),
       getInstitutionLearnedNotes(institutionId),
+      getHeldFees(sql, institutionId).catch((error): HeldFee[] => {
+        console.error("[admin] held fees unavailable", { institutionId, error });
+        return [];
+      }),
     ]);
 
   if (!institution) notFound();
@@ -223,6 +232,18 @@ export default async function InstitutionDetailPage({
 
       {learnedNotes && <LearnedNotesPanel notes={learnedNotes} />}
 
+      {heldFees.length > 0 && (
+        <div className="admin-card overflow-hidden mb-8">
+          <div className="px-4 py-2.5 border-b border-gray-100 dark:border-white/[0.04]">
+            <h2 className="text-[11px] font-bold text-amber-600 uppercase tracking-[0.08em]">
+              Held Fees ({heldFees.length})
+            </h2>
+            <p className="mt-0.5 text-[11px] text-gray-500">Out of the public site, reports and Hamilton until released.</p>
+          </div>
+          <HeldFeesTable fees={heldFees} canRelease={canHold} />
+        </div>
+      )}
+
       {/* Published Fees */}
       <div className="admin-card overflow-hidden mb-8">
         <div className="px-4 py-2.5 border-b border-gray-100 dark:border-white/[0.04]">
@@ -231,7 +252,7 @@ export default async function InstitutionDetailPage({
           </h2>
         </div>
         {fees.length > 0 ? (
-          <FeeTable fees={fees} />
+          <FeeTable fees={fees} institutionName={institution.institution_name} canHold={canHold} />
         ) : (
           <div className="p-6 text-xs text-gray-400 text-center">
             No published fees yet. Set a fee schedule URL and run the agentic pipeline.

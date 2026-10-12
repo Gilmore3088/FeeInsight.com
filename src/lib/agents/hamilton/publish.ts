@@ -1,4 +1,5 @@
 import type { FeeAudience } from "@/lib/fee-audience";
+import { ADMIN_HOLD_PREFIX } from "@/lib/fee-hold-rules";
 import { feePageKey } from "@/lib/agents/hamilton/page-key";
 import { sql } from "@/lib/data-store/connection";
 import { isRetiredCategory } from "@/lib/fee-fold";
@@ -542,6 +543,8 @@ export async function insertPublishedFee(
     runId: number;
     batchId: string;
     row: VerifiedFeeRow;
+    /** Called when an operator's hold on the same fee line blocked this publish. */
+    onHeld?: (heldFeePublishedId: number) => void;
   },
 ): Promise<number | null> {
   const feeVerifiedId = Number(options.row.fee_verified_id);
@@ -552,6 +555,32 @@ export async function insertPublishedFee(
   // The publish gate is Darwin's verification, so its event id is the handshake id;
   // Hamilton no longer mints a stand-in id for an adversarial step that never ran.
   const publishEventId = options.row.verified_by_agent_event_id;
+  const feeName = publishedFeeName(options.row.fee_name, options.row.canonical_fee_key);
+  // An operator's hold (H03, #978) stays held: a re-read of the same page never publishes a
+  // fresh copy of the held line under a new id, even after an agent also closed the held row.
+  // The line is the institution, category, charge basis, variant, frequency, overlapping
+  // audience and the name with punctuation and case ignored.
+  const audience = options.row.fee_audience ?? "unknown";
+  const held = await db<{ fee_published_id: number | string }[]>`
+    SELECT fee_published_id
+      FROM published_fee_records
+     WHERE institution_id = ${institutionId}
+       AND canonical_fee_key = ${options.row.canonical_fee_key}
+       AND quarantined_at IS NOT NULL
+       AND left(quarantine_reason, ${ADMIN_HOLD_PREFIX.length}) = ${ADMIN_HOLD_PREFIX}
+       AND amount_kind = ${percent ? "percent" : "flat"}
+       AND amount IS NOT DISTINCT FROM ${amount}
+       AND rate_percent IS NOT DISTINCT FROM ${percent ? ratePercentOf(options.row) : null}
+       AND COALESCE(variant_type, '') = COALESCE(${options.row.variant_type}, '')
+       AND COALESCE(frequency, '') = COALESCE(${options.row.frequency}, '')
+       AND (fee_audience = ${audience} OR fee_audience IN ('unknown', 'both') OR ${audience} IN ('unknown', 'both'))
+       AND regexp_replace(lower(fee_name), '[^a-z0-9]+', '', 'g') = regexp_replace(lower(${feeName}), '[^a-z0-9]+', '', 'g')
+     LIMIT 1
+  `;
+  if (held.length > 0) {
+    options.onHeld?.(Number(held[0].fee_published_id));
+    return null;
+  }
   const inserted = await db`
     INSERT INTO published_fee_records (
       lineage_ref,
@@ -585,7 +614,7 @@ export async function insertPublishedFee(
       ${options.row.raw_agent_event_id}::uuid,
       ${options.row.verified_by_agent_event_id}::uuid,
       ${publishEventId}::uuid,
-      ${publishedFeeName(options.row.fee_name, options.row.canonical_fee_key)},
+      ${feeName},
       ${amount},
       ${options.row.frequency},
       ${options.row.variant_type},
@@ -1765,8 +1794,14 @@ export async function runHamiltonPublish(
     } else {
       // Insert and supersede succeed or fail together: never two live prices for one
       // fee, and never a closed row without its replacement.
+      let heldBy: number | null = null;
       const written = await inSavepoint(db, async (scope) => {
-        const feePublishedId = await insertPublishedFee(scope, { runId: options.runId, batchId, row });
+        const feePublishedId = await insertPublishedFee(scope, {
+          runId: options.runId,
+          batchId,
+          row,
+          onHeld: (heldId) => { heldBy = heldId; },
+        });
         if (!feePublishedId || !priorPublishedFee) {
           return { feePublishedId, superseded: false, changeRecorded: false };
         }
@@ -1782,7 +1817,7 @@ export async function runHamiltonPublish(
       result = {
         ...base,
         status: feePublishedId ? "published" : "skipped",
-        reason: feePublishedId ? null : "Duplicate published row",
+        reason: feePublishedId ? null : heldBy ? `Held by an operator (fee #${heldBy})` : "Duplicate published row",
         feePublishedId,
         ...(feePublishedId ? movementFor(priorPublishedFee, row) : NO_MOVEMENT),
         supersededFeePublishedId:
