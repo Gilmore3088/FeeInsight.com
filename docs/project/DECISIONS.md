@@ -5,6 +5,11 @@ Seeded 2026-10-05 from the project's working memory; earlier decisions were not 
 
 ## 2026-10-12
 
+**Darwin carries the backend value; Hamilton carries the business value.** James, Oct 12. Darwin's
+decisions are what make the data correct, so his rules, his held-fee queue and his audit score get
+first attention on the data side; Hamilton is what customers pay for, so his answers get first
+attention on the product side. Every other agent serves one of the two.
+
 **Accuracy target: 95% on Deming's daily audit, averaged over a week.** James, Oct 12 (#1119). The
 audit draws 200 live fees a day and checks each against the bank's own schedule; it read 92.0% on
 Oct 11.
