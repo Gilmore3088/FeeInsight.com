@@ -11,13 +11,20 @@ A bank/CU marketing or product manager pays ~$300 for a competitive fee report f
 their market. Why us: live verified fee data (`published_fee_catalog`) + banking domain
 expertise. Kept fully separate from the CSI day job.
 
-## Repository coordination
-Read `docs/project/BACKLOG.md` and GitHub issue #984 before coding. One canonical issue,
-one implementer, one implementation PR. Search existing open/closed PRs, branches and main;
-reuse or explicitly supersede work before starting another version. Respect the three-hour
-active-work protection, parked outreach and the per-area work-in-progress limit.
+## How work runs
+One builder at a time. Work starts from the Now list at the top of GitHub issue #1026 (pipeline
+review master tracker): one issue, one branch, one PR. Before starting, search open issues, PRs
+and `main` for the same outcome, and reuse or explicitly supersede what exists.
+- A review or plan adds at most five issues; smaller items are checklist lines in its tracker.
+  It also names the issues it closes or merges, so the list does not grow without end.
+- No scheduled Claude routines run for Fee Insight without James's say-so. A session ends when
+  its issue's PR is open and green.
+- Words a visitor reads (pages, headlines, buttons, emails): use the `copywriting` and
+  `copy-editing` skills, follow `growth-os/context/editorial-policy.md` (every number has a
+  source) and `.agents/product-marketing.md`, and add a short copy-review note to the PR.
+- Vercel builds a preview for every PR; check customer-facing changes there.
+- Outreach and marketing sends stay parked.
 No branch deletion, force-push or direct main push under a general cleanup instruction.
-The repository-maintenance workflows operate on GitHub records only; they are not app agents.
 
 ## Standing rules
 - Never fake logs, records or numbers. If a count or result isn't known, say so.
@@ -42,7 +49,8 @@ The repository-maintenance workflows operate on GitHub records only; they are no
   there is no fix yet). `docs/project/FINDINGS.md` holds entries through 2026-10-09 and takes no
   new ones; `scripts/ci-guards.sh findings-file-kill` enforces it.
 - When James makes a decision that changes how work is done, add it to `docs/project/DECISIONS.md`.
-- A daily routine writes the checkpoint and `docs/project/CHANGELOG.md` from merged PRs.
+- The checkpoint and `docs/project/CHANGELOG.md` come from merged PRs: written by the daily
+  routine when it is on, otherwise by the session at the end of a working day.
 - This file holds rules that stay true. Status and next steps go in a checkpoint, never here.
 
 ## Design

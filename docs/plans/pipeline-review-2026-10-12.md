@@ -120,16 +120,28 @@ Whether to index pages that carry real financial data is a decision for James.
 
 ## How the review runs
 
-One agent at a time, in pipeline order: Magellan, Rosetta, Knox, Darwin, Hamilton, then the
-state experts and Atlas. Each review:
+**Stage 0, the foundation (#1047), comes first.** The repository's instructions are reset to how
+work runs now, so every later session starts from the same, correct map.
+
+Then one agent at a time. Magellan was reviewed first and is built first, because it drives most
+of the pipeline's activity and paid spend. Hamilton is next in importance, then the agents in
+between (Rosetta, Knox, Darwin), the state experts and Atlas. Each review:
 
 1. Reads the agent's `AGENTS.md` and code, and the earlier plans, so nothing is rebuilt.
 2. Measures what it did on production: spend, yield, repeats, what it hands downstream.
 3. Writes `docs/plans/<agent>-review-YYYY-MM-DD.md`: facts, the expected run, and the changes.
-4. Opens one tracker issue for the agent, with one sub-issue per change, under the master issue.
+4. Opens one tracker issue for the agent, with at most five sub-issues; smaller items are
+   checklist lines in the tracker. It names the existing issues it closes or merges.
 
 Reviews are documentation and issues only. Code changes happen afterwards, one issue and one
 PR at a time.
+
+## Keeping the work finite
+
+- #1026 starts with a **Now / Next / Later** list. Now holds at most three items, and nothing new
+  starts until one closes. Each session starts from the top Now item.
+- Only work that serves the A+ data layer goes in Now or Next; the rest is Later.
+- James re-orders the list once a week (about ten minutes). That is the whole management job.
 
 ## Tracking in GitHub
 

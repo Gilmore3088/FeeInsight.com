@@ -5,6 +5,17 @@ Seeded 2026-10-05 from the project's working memory; earlier decisions were not 
 
 ## 2026-10-12
 
+**Foundation first, then Magellan, then Hamilton.** James, Oct 12: "lay the foundation of this new
+system first." Before any agent work, the repository is reset to how work runs now (#1047, PR
+#1046):
+- one builder at a time, starting from the Now list in #1026;
+- the multi-agent coordination checks and workflows are removed, and `BACKLOG.md` is superseded;
+- the site-copy marketing skills are linked so sessions find them;
+- Vercel previews are built for every PR.
+
+To keep the work finite, a review adds at most five issues and names what it closes, and #1026
+holds at most three Now items. James spends about ten minutes a week re-ordering it.
+
 **Review the pipeline one agent at a time before relying on it again.** James, Oct 12, in a
 Claude Code session. Each agent gets a written review with production measurements and a GitHub
 tracker issue with one sub-issue per change, under one master tracker
