@@ -50,7 +50,17 @@ Hamilton supports the decision; it does not make it.
   deliverable_draft, opinion and clarifying_question. A reply to Hamilton's question is
   sent back as `answer: {fieldKey, value}` and saved to memory. Each exchange is logged to
   the fee's open decision (question_asked, scenario_tested, answer_given); a remembered
-  objective holds until the reader gives another. No provider calls.
+  objective holds until the reader gives another. The Ask answer itself makes no provider
+  calls.
+- The written memo over that answer is a separate, paid route: `POST
+  /api/hamilton/ask/memo` (`answerAskMemo` in `ask-service.ts`, `hamilton/memo.ts`),
+  premium or admin only. It takes the same body as the Ask bar (plus an optional
+  `savedAnalysisId`) and rebuilds the storyline on the server, never from the browser. Each
+  memo model call logs one `research_usage` row (agent `hamilton-memo`), so memos count in
+  the daily Pro quota (`hamilton/quota.ts`). When that count cannot be read, the quota fails
+  closed: a capped reader makes no paid call; a team seat with no cap stays allowed. Memo
+  spend has its own route id and budget line, `api.hamilton.ask.memo` (`MEMO_ROUTE_ID`).
+  It returns `written`, `withheld` or `unavailable`, and logs a Pro request (`ask_memo`).
 - Every fee answer plays four roles (James, 2026-10-06): Inquisitive Economist, Rigorous
   Consultant, Artistic Data Engineer, Technical yet Clear Writer. `buildFeeAnswer`
   (`workspace/answer.ts`) returns `HamiltonAnswer {headline, claims, drivers, exhibit,
@@ -80,7 +90,8 @@ Hamilton supports the decision; it does not make it.
   `hamilton_decisions`, `hamilton_decision_events`, `hamilton_institution_memory` and
   `hamilton_uploads`. A client fact is never edited in place: a new value supersedes it
   (`superseded_at`), so the history of what the bank told Hamilton survives.
-- The workspace builders are deterministic and make no provider calls.
+- The workspace builders are deterministic and make no provider calls; the memo route
+  above is the paid exception.
 
 ## Audit trail (James, 2026-10-06 00:08 UTC)
 
@@ -142,7 +153,7 @@ Regulatory work needs a defensible position, so nothing Hamilton produces is a b
 - A fee-movement signal (which alerts watchers) carries only moves `confirmFeeChange` confirms against both pages' text: same page, same fee name, old text states the old price, new text states the new price and not the old. A re-read of the same edition or a new copy that pairs a fee with a neighbouring price is listed as `unconfirmed_movements` on the publication signal and alerts no one.
 - Use `recordHamiltonMonitorSignal` for Monitor writes so source metadata preserves `evidence_policy`, `provider_call_queued`, and lineage. Provider-originated competitor/movement signals must state an explicit evidence policy and cannot silently queue provider automation.
 
-## Publishing (publish.rules version 2)
+## Publishing (publish.rules version 3)
 
 - `hamilton/publish.ts` publishes only Darwin-verified rows (`agentic_darwin_verified`)
   with no blocking flag, a valid canonical key, a fee name, source lineage, Darwin's
@@ -200,6 +211,102 @@ Regulatory work needs a defensible position, so nothing Hamilton produces is a b
   as a real run, without writing.
 - A fee line the bank removed from a newer copy of its page comes down (Newer-copy
   check below).
+
+## Publish step order
+
+Every `publish`, `publish-index` and `publish-context` step (`src/lib/agents/run-store.ts`)
+takes the `agents.hamilton.publish` advisory lock, then runs these sweeps in this order in one
+transaction. A takedown is a soft rollback (`rolled_back_at`, batch `agentic-run-<run id>`
+unless named, the reason below); a dry run reports and writes nothing. Sections below give
+the detail.
+
+1. Outlier restore (`restoreOutliersNowInRange`, `outlier-rollback.ts`): brings back an
+   outlier takedown whose amount is inside today's range, unless the bank already shows that
+   fee at that amount. No reason written; it clears one.
+2. Off-taxonomy restore (`restoreFeesNowInTaxonomy`, `off-taxonomy-rollback.ts`): brings back
+   a takedown whose category is in the taxonomy today, on the same terms.
+3. Taxonomy fold (`taxonomy-fold.ts`): re-files fees under the 15 retired categories; one with
+   no home comes down on its second look, `taxonomy_fold:<reason>`.
+4. Outlier rollback (`outlier-rollback.ts`): a positive amount outside its category range,
+   `amount_outside_category_range`.
+5. Off-taxonomy rollback (`off-taxonomy-rollback.ts`): a category not in the fee taxonomy,
+   `category_outside_taxonomy`.
+6. Limit guard (`limit-guard.ts`): a transaction limit read as a price, on its second look,
+   `limit_as_fee:<reading>: <detail>`.
+7. Business schedule (`business-schedule.ts`): a business-schedule fee beside a live consumer
+   fee, on its second look, `business_schedule: consumer fee #<id>`.
+8. Same-line duplicates (`same-line-duplicates.ts`): a fee the 9 Oct same-line re-decide
+   published beside an older live line of itself, on its second look,
+   `same_line_duplicate: live fee #<id>`; it comes back when the older line is no longer live.
+9. Other bank's document (`other-bank-document.ts`): a fee from another institution's site,
+   on first look, `other_bank_document: <host>`; a host that does not name the bank, on its
+   second look, `unconfirmed_document_host: <host>`.
+10. Eval verdicts (`eval-verdicts.ts`): the complete-record eval's critical rows on first look,
+    `eval_critical:<verdict>`; the name rules learned from them (a rebate as an ATM fee, a
+    "no fee for" or waiver sentence as a $0 fee, and others) on their second look,
+    `not_a_fee:<rule>`.
+11. Article page (`article-page.ts`): a fee read from an article, on its second look,
+    `article_page: #<document id>`.
+12. Product page (`product-page.ts`): a $0 benefit bullet Knox's free reader took from a
+    product page, on its second look while `PRODUCT_PAGE_TAKEDOWN_ON` (on since 9 Oct),
+    `product_page: #<document id>`.
+13. Cross-page conflict (`cross-page-conflict.ts`): one product priced differently on two
+    current pages (or two editions of one document); the older one comes down on its second
+    look, `cross_page_conflict: #<older doc> older than #<newer doc> (fee <id>)` (or `older
+    edition of`).
+14. Category guard (`category-guard.ts`): a name that contradicts its category, up to 100 a
+    step, batch `category-guard-run-<run id>`, `category_guard:<code>: <reason>`; it also
+    re-files a live fee under the type its name names.
+15. Guard requeue (`guard-requeue.ts`): a verified row the guard rejected at publish and never
+    published is re-read once per guard version; one today's guard passes goes back to
+    verified (flag `category_guard_requeued:g<version>`). No rollback.
+16. Companion retire (`companion-retire.ts`): fees from companion pages Magellan retired as not
+    a consumer fee page, `companion_page_retired`.
+17. Duplicate collapse (`duplicate-collapse.ts`): exact repeats of a live row,
+    `duplicate of #<kept id>`.
+18. Frequency fill (`frequency-fill.ts`): sets a live fee's frequency from its own schedule row
+    (fills a blank, corrects or clears one read from another fee's row), logged to
+    `pipeline_feedback` (check `hamilton.frequency_fill`). No rollback.
+19. Newer-copy check (`newer-copy-retire.ts`): a fee line gone from a newer copy of its page,
+    `newer_copy_drops_fee:#<newer document id>` (`NEWER_COPY_RETIRE_LIVE` is true; false makes
+    it a shadow run).
+20. Identical copy (`moveRowsToIdenticalCopy`, `refresh-copy.ts`): when the current copy's
+    text is identical to the superseded one, the superseded copy's fee rows move to it. No fee
+    is published or taken down.
+21. Refresh copy (`refreshFeesFromCurrentCopy`, `refresh-copy.ts`): a live fee the current copy
+    states at the same amount moves to that copy; the old row closes as `refreshed by #<new
+    id>`.
+22. Current-copy check (`current-copy.ts`): a fee the current copy no longer states, on its
+    second look (confirmations off while `CURRENT_COPY_CONFIRM_LIVE` is false),
+    `not_on_current_copy:#<current document id>`.
+23. Rules re-check (`rules-recheck.ts`, state-lane or single-institution steps only): a Knox
+    fee today's rules no longer read from its text, on its second look,
+    `rules_recheck_unreproduced`; it also restores its own past takedowns.
+24. Name retidy (`retidyLiveFeeNames`, `knox/name-retidy.ts`): a run-on live name takes its
+    tidy name, up to 100 banks a step; the old name is a `name_retidied` feedback row. No
+    rollback.
+25. Account names (`account-names.ts`): a live "Monthly Service Fee" takes the account heading
+    above it, up to 40 banks a step (`name_account_added` feedback row). No rollback.
+26. Lineup correct (`correctStoredLineups`, `knox/lineup-correct.ts`): lineup values stored
+    before Knox v55 that came from a neighbouring account are corrected from the stored text,
+    up to 200 documents a step (`lineup_corrected` feedback row). No rollback.
+27. Restore re-check (`restore-recheck.ts`): fees an older re-check restored with no check get
+    the restore bar; one that fails comes down on its second look,
+    `rules_recheck_restore: <bar reason>`.
+28. Change pairing (`change-pairing.ts`): older `fee_change_records` get their two rows and
+    `like_for_like`, up to 500 a step. No rollback.
+29. Cross-page restore (`cross-page-restore.ts`): a fee another page's price superseded comes
+    back over the restore bar (flag `cross_page_supersede_restored`).
+30. Publish (`runHamiltonPublish`, `publish.ts`): the rules above; a prior live row at a new
+    price closes as `superseded by #<id>`.
+31. Source check (`takeDownUntraceableFees`, `source-check.ts`): up to 120 institutions,
+    `source_check_untraceable:<reason>`; restores earlier takedowns that now trace.
+32. Imported twins (`linkImportedFeesToTwins`, `source-check.ts`): an imported live fee with no
+    document is pointed at its twin row that has one, up to 100 a step. No rollback.
+33. Feedback sync (`syncPipelineFeedback`, `learning/feedback-sync.ts`): this step's takedowns
+    and restores go into the shared learning store.
+34. Index refresh (`refreshFeeIndexCache`): not on a dry run; forced when the step published,
+    took down or restored fees, folded or re-filed a category, or set a frequency.
 
 ## Newer-copy check
 
@@ -415,9 +522,13 @@ took down are re-checked with their institution and restored, with their verifie
 when they now trace (version 2 restored correct fees v1 took down from flattened lines). Each pass logs a
 `hamilton.source_check` event and one attempt per institution, folded into the bank's
 playbook (as are the rules re-check's), so its record shows how many of its fees survive
-Hamilton's checks beside how many Knox read. The hourly scheduler
-tick wakes sleeping state lanes that still have unchecked live fees (source check or
-rules re-check), so a new rule reaches every state within hours.
+Hamilton's checks beside how many Knox read. The scheduler tick
+(`/api/admin/agents/tick`, cron every 5 minutes in `vercel.json`) runs the nationwide lane
+sync once an hour, on the tick in the first 5 minutes of the hour
+(`shouldRunNationwideLaneSync`). That sync wakes sleeping state lanes that still have
+unchecked live fees (source check or rules re-check, `wakeLanesWithUncheckedLiveFees`), and a
+woken lane with backlog runs again every 60 minutes (`STATE_LANE_BACKLOG_RETRY_MINUTES`), so a
+new rule reaches every state within hours.
 
 ## Studies (James, 2026-10-07 05:03 UTC "Build it all")
 
@@ -439,8 +550,10 @@ institution in it (`src/lib/agents/hamilton/studies`). One run a day
 
 ## Marketing
 
-Hamilton also runs the monthly marketing loop (score, write, draft, send on approval).
-See `src/lib/agents/marketing/AGENTS.md`.
+Hamilton does not run the marketing loop. The monthly marketing steps (`marketing-score`,
+`marketing-write`, `marketing-states`, `marketing-send`) run as agent `growth`
+(`STEP_OWNER` in `src/lib/agents/narrate.ts`). See `src/lib/agents/growth/AGENTS.md`
+and `src/lib/agents/marketing/AGENTS.md`.
 
 ## Boundaries
 

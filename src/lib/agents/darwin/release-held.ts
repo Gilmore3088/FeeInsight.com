@@ -113,7 +113,6 @@ function amountOf(value: number | string | null): number | null {
   return Number.isFinite(parsed) ? Math.round(parsed * 100) / 100 : null;
 }
 
-/** Pure: the verdict for one held fee, given its stored schedule text and Darwin's category model. */
 /** Rows of the schedule on each side of the matched line that the review also reads. */
 export const SCHEDULE_CONTEXT_ROWS = 3;
 const SCHEDULE_CONTEXT_CHARS = 1200;
@@ -137,6 +136,7 @@ export function scheduleContext(text: string | null | undefined, line: string): 
   return context.slice(0, SCHEDULE_CONTEXT_CHARS);
 }
 
+/** Pure: the verdict for one held fee, given its stored schedule text and Darwin's category model. */
 export function releaseVerdict(
   row: Pick<HeldFeeRow, "fee_name" | "amount" | "held_reason" | "held_canonical_fee_key">,
   text: string | null | undefined,
@@ -473,6 +473,9 @@ export async function runDarwinReleaseHeld(options: {
     selected: rows.length,
     acted: acts,
     verdicts,
+    // This pass only sorts held fees. A `review` fee is released, if at all, by the paid release
+    // review in `verify-paid` (release-review.ts, its own `released` count), and only while
+    // DARWIN_RELEASE_ACTS is on; it has been off since 2026-10-08.
     released: 0,
     feedbackWritten: acts ? await recordDarwinFeedback(db, feedback) : null,
     decisions,
