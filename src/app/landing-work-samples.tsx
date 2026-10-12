@@ -12,7 +12,7 @@ export function LandingWorkSamples() {
         <LandingLeadAction offer="sample" />
       </div>
       <LandingProductVideo />
-      <p className="mt-3 text-xs text-[#6B6255]">24-second illustrative walkthrough using the actual sample report. Fictional institution and dated sample findings.</p>
+      <p className="mt-3 text-xs text-[#6B6255]">30-second illustrative walkthrough using the actual sample report. Fictional institution and dated sample findings.</p>
       <details className="mt-6"><summary className="min-h-11 cursor-pointer py-3 text-sm font-semibold text-[#A93D25]">Read the complete 10-page sample report</summary><div className="mt-3"><LandingReportDocument /></div></details>
     </div>
   </section>;
