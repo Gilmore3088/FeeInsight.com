@@ -151,7 +151,7 @@ describe("Hamilton monitor data", () => {
       status: "queued",
     });
     expect(sqlCalls.slice(1).every((call) => call.text.includes("ANY"))).toBe(true);
-    expect(sqlCalls[1].values).toEqual([["2945"], 20]);
+    expect(sqlCalls[1].values).toEqual([["2945"], ["darwin_verification_needs_review", "knox_extraction_needs_review"], 20]);
   });
 
   it("uses selected institution context when the watchlist is empty", async () => {
@@ -174,7 +174,7 @@ describe("Hamilton monitor data", () => {
       institutionIds: ["8109"],
       isScoped: true,
     });
-    expect(sqlCalls[1].values).toEqual([["8109"], 20]);
+    expect(sqlCalls[1].values).toEqual([["8109"], ["darwin_verification_needs_review", "knox_extraction_needs_review"], 20]);
   });
 
   it("shows no signals for legacy non-canonical watchlist values instead of a global sample", async () => {
