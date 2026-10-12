@@ -5,6 +5,66 @@ Seeded 2026-10-05 from the project's working memory; earlier decisions were not 
 
 ## 2026-10-12
 
+**Darwin carries the backend value; Hamilton carries the business value.** James, Oct 12. Darwin's
+decisions are what make the data correct, so his rules, his held-fee queue and his audit score get
+first attention on the data side; Hamilton is what customers pay for, so his answers get first
+attention on the product side. Every other agent serves one of the two.
+
+**Accuracy target: 95% on Deming's daily audit, averaged over a week.** James, Oct 12 (#1119). The
+audit draws 200 live fees a day and checks each against the bank's own schedule; it read 92.0% on
+Oct 11.
+
+**Darwin owns classification: Knox suggests, Darwin decides, Gutenberg asserts, Deming audits.**
+James asked which arrangement is most accurate (Oct 12); recommendation accepted. Knox finds the
+fee line and amount and suggests a category, audience and tier with its evidence. Darwin is the one
+authority on what a fee is (category, personal or business, tier, valid or not), using Knox's
+evidence, the fee-name library James labels, the page's headings and peer comparison. Gutenberg
+publishes only Darwin's decision, with one final check. Deming, independent of all three, audits
+live fees daily. Why: today the category is set or re-set in three places, which is why about 7,900
+fees a week are taken down within days of publishing; one decider means one place to fix, one
+score, and the auditor stays separate from the agent it grades. Affects #1059, #1069, #1102, #1112.
+
+**James's maintenance is one Sunday email, about an hour a week.** James, Oct 12 (#1104): the 25
+fee-name labels, approvals waiting, samples to check, the week's five scorecard numbers and anything
+stuck, built by a deterministic step, never a Claude routine. More than an hour rolls to next week.
+
+**Every institution has one intelligence record that all agents read and write.** James, Oct 12
+(#1105): where its fees live (each document, its type and format, right or wrong and why), what
+worked, what went wrong, what people decided, and what its state expert knows. It grows the existing
+learning playbook, and a daily check flags a record that contradicts itself.
+
+**James labels 25 fee names a week; every label grows a lasting name library.** James, Oct 12
+(#1102). Names are grouped before they reach the queue (one row covers every variant of, say, an NSF
+fee), a label maps the whole group at every bank and every future read, and the library
+(`fee_name_aliases`, #1039) is versioned and never deleted. The queue shows the groups that cover the
+most fees first.
+
+**A document's type picks the tool at every stage.** James, Oct 12 (#1094). Magellan sets format and
+type; Rosetta picks the reader from it (layout reader, Tesseract OCR then paid transcription, browser
+fallback, table reader); Knox picks the extractor (tables and rules, account-table reader, agreement
+prose, rate reader; product pages go back to Magellan). Each step records the tool it used.
+
+**Rates and lending are in scope, if accurate.** James, Oct 12 (#1103): it puts Fee Insight in
+direct competition with rate-comparison sites. Percentage fees and lending fees come first, inside
+the fee product; interest rates (APY, APR) are a second data product with its own freshness rules,
+planned after the fee data layer meets its targets. Order (James, Oct 12): savings, CDs, money
+market, auto, mortgage. Rates wait until the fee data layer is A+, and may become a standalone
+product and consumer-facing site.
+
+**Knox targets: 85% of fees found, 90% right.** James, Oct 12 (#1098). Measured on the answer key,
+counting only banks where the right document was read. Growing the answer key to about 200 banks is
+a one-time batch: an agent prepares each bank, James confirms it. After that, checking is not a
+regular job; a bank is re-checked only when its schedule changes.
+
+**Knox stays one agent; its specialists become separately measured skills.** James asked whether
+Knox should be split for focus (Oct 12). Recommendation recorded: keep one agent, but score each
+specialist (rules, tables, the fee families, paid pass, and the new ones in #1100) on the answer key
+on its own, so each can be improved independently. Deciding a document's type moves earlier: Magellan
+makes the first call when it finds the link (format: PDF, HTML, script-built page; and kind: fee
+schedule, disclosure, agreement, product page), Rosetta confirms it from the content, and a
+disagreement goes back to Magellan (James, Oct 12; #1094). Knox's held lines (about 38,000) get an
+owner and a way out (#1102).
+
 **Hamilton becomes the product only; publishing moves to its own internal agent.** James, Oct 12
 ("Yes split"), on the Hamilton product review (`docs/plans/hamilton-product-review-2026-10-12.md`).
 A new deterministic agent takes Darwin-verified fees, decides which go live, and keeps the live
