@@ -3,6 +3,15 @@
 Newest first. Each entry: date, what was decided, who, why, and what it means for the work.
 Seeded 2026-10-05 from the project's working memory; earlier decisions were not recorded here.
 
+## 2026-10-13
+
+**Up to three builders at once, one per lane.** James, Oct 13. Usage has room (about 7% of the
+4-hour window, 12% of the week), so the build plan runs in three lanes instead of one queue: data
+pipeline, Hamilton, and discovery plus technical SEO. Each lane owns its agents' code, so builders
+rarely touch the same files. The plan's order is kept within each lane; nothing moves between
+lanes without a note on #1026. Website layout waits for James's own design, so no lane takes
+layout or redesign work, and no lane opens a new copy preview while five are waiting for James.
+
 ## 2026-10-12
 
 **Darwin carries the backend value; Hamilton carries the business value.** James, Oct 12. Darwin's

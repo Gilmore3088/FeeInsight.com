@@ -5,6 +5,30 @@ from the top: one issue, one branch, one PR, then the next. The reviews themselv
 `docs/plans/*-review-2026-10-12.md`; decisions are in `docs/project/DECISIONS.md` (2026-10-12);
 the master tracker is #1026.
 
+## Lanes (from 2026-10-13)
+
+Up to three builders run at once, one per lane (DECISIONS, 2026-10-13). Each takes the first item
+in **its own lane** that is not done and not blocked, in the order of the phases below. A builder
+never takes another lane's item; if its lane is empty or every item is gated, it stops and leaves a
+status comment on #1026.
+
+| Lane | Owns (agents and code) | Items, in order |
+|---|---|---|
+| **A: Data pipeline** (the builder already running) | Rosetta, Knox, Darwin, Gutenberg and publishing, Deming, the learning core | Phases 2–4; Phase 3 except #1078's Hamilton side; Phase 5 except #1117 and #1028/#1029 |
+| **B: Hamilton** | `src/lib/hamilton/`, the Pro workspace, Hamilton's API routes, `src/lib/custom-report/` | Phase 6 in order: #1076, #1077, #1079, #981, #1084, #1066, #1090, then #1082 (copy preview). #1083, #1060 and #1062 wait where they need layout work (James's design) |
+| **C: Discovery and technical SEO** | Atlas, Magellan, the state experts, public-page metadata (titles, sitemap, JSON-LD) | Phase 7 (#1031, #1032, #1030, #1035; #1036 needs James), then #1117 steps 1–2, #1028/#1029; the technical-only items left in #1134's list (#1162–#1181) |
+
+**Working side by side:**
+- **Before merging:** merge the latest `main` into the branch and re-run the checks.
+- **Files another lane owns:** a change that must touch one (for example `src/lib/agents/types.ts`)
+  stays as small as it can.
+- **Migrations:** take the next free number when the PR is opened, and check it again before merging.
+  `migration-version-kill` refuses a duplicate.
+- **Checkpoint:** each lane writes its merge lines under its own heading (`## Lane A`, `## Lane B`,
+  `## Lane C`) in the day's checkpoint file.
+- **No layout or redesign work** until James's design is ready.
+- **No new copy preview** while five are waiting for James. Take the next non-copy item instead.
+
 ## Two rules that shape every item
 
 - **Classification belongs to Darwin** (DECISIONS, 2026-10-12): Knox suggests a category, audience
@@ -158,3 +182,14 @@ setup), the gated PRs above, the answer-key batch (#1098), and from #1104 on, th
 > open its PR, list it for James, and continue with the next item that does not depend on it. When
 > every remaining item is gated or blocked, or you reach the spend limit, stop and leave a status
 > comment on #1026 listing what merged, what is waiting for James, and what is next.
+
+### Starting prompt for a lane builder (B or C)
+
+> You are the **Lane B** (or **Lane C**) builder for Fee Insight in `Gilmore3088/FeeInsight.com`.
+> Read `CLAUDE.md`, the latest file in `docs/project/checkpoints/`, and
+> `docs/plans/build-plan-2026-10-12.md`, especially "Lanes" and "Rules for the builder". Take only
+> your lane's items, in order, and follow the same rules as the starting prompt above. Another
+> builder works the other lanes at the same time: merge the latest `main` into your branch before
+> merging, keep changes to files another lane owns as small as possible, and write your checkpoint
+> lines under your lane's heading. When your lane has nothing left that is not gated or blocked,
+> stop and leave a status comment on #1026.
