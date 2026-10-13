@@ -71,7 +71,7 @@ Hamilton supports the decision; it does not make it.
   question, evidenceLevel, provenance}`; `evaluateFourRoles` (`workspace/four-roles.ts`)
   checks an answer against all four, and the chat prompt carries `HAMILTON_ROLES`.
 - The answer eval on live data (`hamilton/answer-eval.ts`, step `hamilton-answer-eval`,
-  cron every two hours, `/api/admin/crew/answer-eval`) asks 14 quality-bar questions of a fresh spread
+  cron every two hours, `/api/admin/crew/answer-eval`) asks the quality-bar questions of a fresh spread
   of real banks and credit unions (two per charter and asset tier) through the Ask path,
   scores each with the quality bar and four-roles eval, and checks that a regulation answer
   names the institution's own regulator and a state question names its state. Read-only, no
@@ -81,6 +81,17 @@ Hamilton supports the decision; it does not make it.
   engine. `detail.pro` counts how many meet the bar and how many Hamilton still asks back on,
   and lists every one that falls short. A replayed answer about a fee the question did not
   ask about fails as "answers a different subject" (`offSubjectFailure`). Questions stay in our own database only.
+  It asks 15 questions (q26, the NSF regulation question, since #1079). Every answer is also
+  scored on correctness (`hamilton/answer-correctness.ts`, the `report-reconciliation` check for
+  one answer): the bank's own value and every peer, layer and local-competitor value is its
+  live value in `published_fee_catalog` under the statistics contract, each printed median and
+  quartile recomputes from those values within a cent, and every dollar figure in a sentence
+  sourced to the catalog is one of those values or the gap between two. `detail.correctness`
+  and `detail.pro.correctness` count checked and correct answers; the goal scorecard shows the
+  latest eval's form and correctness rates per path (`goal.hamilton_answer_eval_latest`). Not yet
+  checked: percentages and counts, and the whole-schedule overview's peer medians (accepted as
+  printed). The paid paths (written answer, memo, simulate, reports) are not sampled until James
+  sets a daily provider budget for it.
 - The bank's own numbers arrive by answer or upload. `POST /api/hamilton/uploads` reads a
   CSV or XLSX (fee income, item counts, waivers, affected accounts by GL line) and returns
   what was read; unmatched lines are listed, never guessed, and the file is not stored.
