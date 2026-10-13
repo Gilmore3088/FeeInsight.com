@@ -6,6 +6,7 @@ import { formatAdminDateTime } from "@/lib/admin-time";
 import { getKnoxStatus, type KnoxStatus } from "@/lib/data-store/knox-status";
 import { logReadFailure } from "@/lib/admin-read-failure";
 import { GoldStandardView } from "../verify/page";
+import { AgentFrame } from "../agent-frame";
 
 export const dynamic = "force-dynamic";
 
@@ -37,6 +38,7 @@ export default async function KnoxPage() {
           Label this week&apos;s contested fee names
         </Link>
       </header>
+      <AgentFrame agent="knox" />
 
       <div className="mb-7">
         <AgentHandoffStrip

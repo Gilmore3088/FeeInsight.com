@@ -3,6 +3,7 @@ import { AgentHandoffStrip } from "@/components/agent-console/agent-handoff-stri
 import { requireAuth } from "@/lib/auth";
 import { MagellanConsole } from "../coverage/components/magellan-console";
 import { fetchMagellanStatus } from "../coverage/actions";
+import { AgentFrame } from "../agent-frame";
 
 export const dynamic = "force-dynamic";
 
@@ -41,6 +42,7 @@ export default async function MagellanPage() {
           — the largest institutions with no live fees; paste a schedule link to run one next.
         </p>
       </header>
+      <AgentFrame agent="magellan" />
       <AgentHandoffStrip
         steps={[
           {
