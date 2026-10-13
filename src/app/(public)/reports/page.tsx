@@ -15,6 +15,7 @@ import { timeAgo } from "@/lib/format";
 import { TrackLink } from "@/components/track-link";
 import { CONTACT_EMAIL, REPORT_OFFER, SAMPLE_REPORT_LIVE, SITE_NAME } from "@/lib/constants";
 import { sampleReportAvailable } from "@/lib/custom-report/sample-report";
+import { ReportFaq } from "./report-faq";
 
 import { RequestReportForm } from "@/app/for-institutions/request-report-form";
 import { extractPositionMap, readSampleReportHtml } from "@/lib/hosted-reports";
@@ -314,7 +315,7 @@ export default async function ReportsPage({ searchParams }: PageProps) {
 
       {/* How it works */}
       <section className="mx-auto max-w-page px-6 pt-16">
-        <SectionHeading eyebrow="How it works" title="Three steps, and you don't lift a finger after the first." />
+        <SectionHeading eyebrow="How it works" title="Three steps from request to report." />
         <ol className="m-0 grid list-none gap-6 p-0 md:grid-cols-3">
           {STEPS.map((step, index) => (
             <li key={step.title} className="relative">
@@ -355,6 +356,8 @@ export default async function ReportsPage({ searchParams }: PageProps) {
           <RequestReportForm contactEmail={CONTACT_EMAIL} defaultSrc="reports-hub" />
         </div>
       </section>
+
+      <ReportFaq />
 
       {/* State reports, live from the index */}
       <section className="mx-auto max-w-page px-6 pt-20">
@@ -405,7 +408,8 @@ export default async function ReportsPage({ searchParams }: PageProps) {
         )}
       </section>
 
-      {/* Published research */}
+      {/* Published research: hidden while nothing is published (#1174), shown when filters or an outage explain an empty list. */}
+      {(hasReports || filtersActive || unavailable) && (
       <section className="mx-auto max-w-page px-6 pt-20" id="research">
         <SectionHeading eyebrow="Published research" title={`Research and analysis from ${SITE_NAME}`} />
         {showFilters && (
@@ -428,10 +432,11 @@ export default async function ReportsPage({ searchParams }: PageProps) {
               ? "The research catalog is temporarily unavailable. Try again shortly."
               : filtersActive
                 ? "No published reports match these filters."
-                : "No national or peer reports are published yet. They will appear here as they are released; the state reports above are live today."}
+                : "No national or peer reports are published yet."}
           </p>
         )}
       </section>
+      )}
 
       {/* Closing call to action */}
       <section className="mx-auto max-w-page px-6 pt-20">
