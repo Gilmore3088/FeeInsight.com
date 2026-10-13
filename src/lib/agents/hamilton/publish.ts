@@ -29,6 +29,7 @@ import { FREE_READ_PREFIX, isProductPage, productPageTakedownEnabled } from "@/l
 import { DARWIN_SCHEDULE_REFILED_FLAG } from "@/lib/agents/darwin/schedule-refile";
 import { priceInName, RULE_WHY, ruleFor } from "@/lib/agents/hamilton/eval-verdicts";
 import { feeKey, reproducibleFees, RULES_RECHECK_REASON } from "@/lib/agents/hamilton/rules-recheck";
+import { closedInstitutionSql } from "@/lib/agents/hamilton/closed-institution";
 
 type SqlTag = typeof sql;
 
@@ -307,7 +308,8 @@ async function selectVerifiedFees(
   stateCode?: string,
 ): Promise<VerifiedFeeRow[]> {
   const params: Array<number | string> = [limit];
-  const filters: string[] = [];
+  // An institution that no longer operates publishes nothing (#1200, `closed-institution.ts`).
+  const filters: string[] = [`AND NOT ${closedInstitutionSql("inst")}`];
   if (minInstitutionFees > 1) {
     // Rough cut in SQL so thin institutions' rows do not fill every batch and starve
     // the rest of the queue; the exact count (with every publish rule) runs after.

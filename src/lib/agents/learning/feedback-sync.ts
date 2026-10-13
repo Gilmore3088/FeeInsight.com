@@ -195,6 +195,8 @@ export async function syncPipelineFeedback(
          AND fp.rolled_back_reason NOT LIKE 'not_on_current_copy:%'
          -- Read right from an article page: the lesson is Magellan's (hamilton/article-page.ts).
          AND fp.rolled_back_reason NOT LIKE 'article_page:%'
+         -- The institution no longer operates: its fees were right when it did (closed-institution.ts).
+         AND fp.rolled_back_reason NOT LIKE 'closed_institution:%'
          AND NOT EXISTS (
            SELECT 1 FROM pipeline_feedback f
             WHERE f.dedupe_key = 'hamilton.takedown:pub:' || fp.fee_published_id || ':extract'

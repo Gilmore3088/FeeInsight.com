@@ -187,7 +187,7 @@ export function summarizeCoverageCells(rows: Array<{ size_group: string; total: 
 /**
  * Take-down reasons that are not errors: a refresh or newer copy replaced the fee, a duplicate
  * was collapsed, a rule re-check could not reproduce it under a changed rule, a category was
- * folded into another, or the page it came from was retired. Matched on the reason's key (the
+ * folded into another, the page it came from was retired, or the institution no longer operates. Matched on the reason's key (the
  * text before ":" or " #"). Every other reason counts as an error, so a new reason is never
  * hidden; the page lists the top errors so the split can be checked.
  */
@@ -202,6 +202,7 @@ export const HOUSEKEEPING_REASON_KEYS: ReadonlySet<string> = new Set([
   "rules_recheck_unreproduced",
   "rules_recheck_restore",
   "taxonomy_fold",
+  "closed_institution",
 ]);
 
 /** The reason's key: "source_check_untraceable:no_amount" → "source_check_untraceable", "refreshed by #9" → "refreshed by". */
