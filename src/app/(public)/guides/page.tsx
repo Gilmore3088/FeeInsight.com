@@ -28,7 +28,7 @@ import { COVERAGE_LABELS, getPublicSnapshot } from "@/lib/public-stats";
 
 const TITLE = "Consumer Guides — Understanding Bank Fees";
 const DESCRIPTION =
-  "Plain-language guides to bank and credit union fees, backed by live benchmark data. Overdraft, NSF, ATM, wire transfer and monthly maintenance fees explained. Free, and always will be.";
+  "Plain-language guides to bank and credit union fees, backed by live benchmark data. Overdraft, NSF, ATM, wire transfer and monthly maintenance fees explained.";
 
 export const metadata: Metadata = {
   title: TITLE,
@@ -237,8 +237,7 @@ export default async function GuidesIndexPage() {
           <span className="font-medium tabular-nums text-[#5A5347]">
             {summary.institutionsLabel}
           </span>{" "}
-          institutions with published fees (of {summary.monitoredLabel} monitored). Free to read, and
-          always will be.
+          institutions with published fees (of {summary.monitoredLabel} monitored).
         </p>
 
         <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-[#6B6255]">
