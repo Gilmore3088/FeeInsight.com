@@ -17,7 +17,7 @@ const label = (example: string, banks: number) => ({ name: example.toLowerCase()
 const base: SundayEmailInputs = {
   labels: [label("Zipper Bags", 25), label("Stop Payment Cancellation", 4)],
   answerKeyToCheck: 1,
-  dataRoom: { liveInstitutions: 3895, liveFees: 76548, liveRateFees: 808, closedInstitutionFees: 490, closedInstitutions: 22, cityAtLimit: 140 },
+  dataRoom: { liveInstitutions: 3895, liveFees: 76548, liveRateFees: 808, closedInstitutionFees: 490, closedInstitutions: 22, cityAtLimit: 140, proInstitutionsBelowMinimum: 0 },
   goal: null,
   stuck: [],
   now: SUNDAY,
