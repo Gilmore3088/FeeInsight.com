@@ -49,6 +49,20 @@ It runs as Atlas steps (agent `atlas`); it is deterministic and makes no model c
   The step's detail reports both counts (`audit_misses`), and either write that fails is reported
   there without stopping the audit.
 
+## Did the change work (#1106)
+
+- `change-outcomes.ts`: the `deming-change-outcomes` step, last in Atlas's daily scoreboard run.
+  Each PR that names a "Should move" number adds an entry to `should-move.json` (PR number, issue,
+  `metric`: a `pipeline_scoreboard_snapshots` column or a `detail.` path such as
+  `detail.goal.accuracy.accuracy`, `direction` up or down, optional `min_change`).
+- The first day the step sees an entry it writes a `change_outcomes` row with that day's value.
+  Seven days later it reads the first snapshot on or after that day and records the verdict:
+  `moved_as_expected`, `no_change` (moved less than `min_change`), `wrong_way`, or `unreadable`
+  (the scoreboard does not hold the number). The summary names each "no change" and "wrong way"
+  PR, to be explained or reverted (the Sunday email, #1104, lists them).
+- Migration 20270110000046 creates the table (approved by James 2026-10-12). Before it the step
+  reports that it skipped.
+
 ## Benchmark health check
 
 - `benchmark-health.ts` (`BENCHMARK_HEALTH_VERSION` v1): the `deming-benchmark-health` step in
