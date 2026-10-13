@@ -15,16 +15,19 @@ import type { AskResponse, Fact, FeePositionRow, SourceRef } from "./types";
 
 const WHY = /\b(?:why|what explains|what(?:'s| is) behind|what(?:'s| is) driving|driv(?:e|es|ing)|explain)\b/i;
 const INCOME = /\b(?:fee income|income|revenue|service charges?)\b/i;
-
-const LEVEL = /\b(?:compare[sd]?|comparison|level|against|versus|vs\.?|peers?|median|stack|stand)\b/i;
+/** Fee income as a share of revenue ("run a fee share below 4%"). */
+const FEE_SHARE = /\bfee (?:income )?share\b/i;
 
 /**
- * A question about where the bank's fee income stands against peers ("How does our service-charge
- * income compare with credit unions over $1 billion?"). Only for a question that names no fee: the
- * caller checks, since "our overdraft fee income against peers" is about that fee.
+ * A question about the bank's fee income: where it stands ("How does our service-charge income
+ * compare with credit unions over $1 billion?"), what a segment is doing with it ("What are $1B to
+ * $10B institutions doing around service fee income?") or its share of revenue. Only for a question
+ * that names no fee: the caller checks, since "our overdraft fee income against peers" is about
+ * that fee. Such a question is answered on income, never with one fee in its place (#1077).
  */
-export function asksIncomeLevel(question: string): boolean {
-  return INCOME.test(question.replace(/service-charge/gi, "service charge")) && LEVEL.test(question);
+export function asksIncome(question: string): boolean {
+  const text = question.replace(/service-charge/gi, "service charge");
+  return INCOME.test(text) || FEE_SHARE.test(text);
 }
 
 /** A question asking why the bank's fee income is where it is. */

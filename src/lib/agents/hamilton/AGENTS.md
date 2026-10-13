@@ -51,7 +51,11 @@ Hamilton supports the decision; it does not make it.
   sent back as `answer: {fieldKey, value}` and saved to memory. Each exchange is logged to
   the fee's open decision (question_asked, scenario_tested, answer_given); a remembered
   objective holds until the reader gives another. The Ask answer itself makes no provider
-  calls.
+  calls. What a question is about is read one way for the Ask bar, the memo and the answer
+  eval (`resolveAskIntent`, #1077): a fee it names (or the open decision's fee), else the
+  whole-schedule overview or the fee-income answer when it asks for one. A question that is
+  none of these keeps no fee: Hamilton never answers it for a fee the reader did not name (it
+  once answered such segment questions for overdraft).
 - The written memo over that answer is a separate, paid route: `POST
   /api/hamilton/ask/memo` (`answerAskMemo` in `ask-service.ts`, `hamilton/memo.ts`),
   premium or admin only. It takes the same body as the Ask bar (plus an optional
@@ -75,7 +79,8 @@ Hamilton supports the decision; it does not make it.
   It first replays the questions Pro readers really asked in the last 90 days (the `pro.ask`
   ledger keeps each question and short answer; saved analyses keep the rest) through today's
   engine. `detail.pro` counts how many meet the bar and how many Hamilton still asks back on,
-  and lists every one that falls short. Questions stay in our own database only.
+  and lists every one that falls short. A replayed answer about a fee the question did not
+  ask about fails as "answers a different subject" (`offSubjectFailure`). Questions stay in our own database only.
 - The bank's own numbers arrive by answer or upload. `POST /api/hamilton/uploads` reads a
   CSV or XLSX (fee income, item counts, waivers, affected accounts by GL line) and returns
   what was read; unmatched lines are listed, never guessed, and the file is not stored.

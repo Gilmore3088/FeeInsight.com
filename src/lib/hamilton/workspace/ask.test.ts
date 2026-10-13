@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  withSegmentDefault,
   buildAskResponse,
+  feeCategoriesIn,
   buildOpinion,
   clarifyAgain,
   institutionFactsFrom,
@@ -154,10 +154,20 @@ describe("the bank's figures and the opinion", () => {
   });
 });
 
-describe("withSegmentDefault", () => {
-  it("answers a segment question that names no fee for overdraft instead of asking back", () => {
-    expect(withSegmentDefault(parseAsk("talk to me about all institutison above 10billion")).feeCategory).toBe("overdraft");
-    expect(withSegmentDefault(parseAsk("How does our NSF fee compare with banks over $10 billion?")).feeCategory).toBe("nsf");
-    expect(withSegmentDefault(parseAsk("what changed this quarter")).feeCategory).toBeNull();
+describe("a question that names no fee (#1077)", () => {
+  it("is never given a fee: a segment question keeps no fee instead of overdraft", () => {
+    const intent = parseAsk("talk to me about all institutison above 10billion");
+    expect(intent.segment).not.toBeNull();
+    expect(intent.feeCategory).toBeNull();
+    expect(parseAsk("How does our NSF fee compare with banks over $10 billion?").feeCategory).toBe("nsf");
+    const res = buildAskResponse({ question: "talk to me about $5B and up in florida", intent: parseAsk("talk to me about $5B and up in florida"), research: null, memory: [] });
+    expect(res.kind).toBe("clarifying_question");
+    expect(res.pageChange).toEqual({ screen: "none" });
+  });
+
+  it("lists every fee a question names", () => {
+    expect(feeCategoriesIn("Which banks have both verified NSF and monthly maintenance rows?").sort()).toEqual(["monthly_maintenance", "nsf"]);
+    expect(feeCategoriesIn("talk to me about all 10B and up instititions for od fees")).toEqual(["overdraft"]);
+    expect(feeCategoriesIn("talk to me about all institutison above 10billion")).toEqual([]);
   });
 });
