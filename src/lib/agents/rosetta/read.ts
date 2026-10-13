@@ -1,4 +1,5 @@
 import { createHash } from "crypto";
+import { feesSentToDarwinSql, THIN_DOCUMENT_MAX_FEES } from "@/lib/agents/thin-document";
 
 import { sql, stripNulChars } from "@/lib/data-store/connection";
 import {
@@ -417,11 +418,11 @@ const SETTLED_READ_OUTCOMES: AttemptOutcome[] = ["ok", "ok_partial", "unchanged"
 /** Free OCR outcomes a newer OCR version may turn around: it read the page, but poorly. */
 const OCR_RETRY_OUTCOMES: AttemptOutcome[] = ["rejected", "empty"];
 /**
- * An older text with fewer Knox fees than this is read again with the current reader.
- * A real fee schedule lists far more; one or two fees usually means the table was
- * flattened and most rows were lost.
+ * An older text with fewer Knox fees sent to Darwin than this is read again with the current
+ * reader. A real fee schedule lists far more; one or two fees usually means the table was
+ * flattened and most rows were lost. The shared thin-document test (#1095).
  */
-export const REREAD_MAX_KNOX_FEES = 5;
+export const REREAD_MAX_KNOX_FEES = THIN_DOCUMENT_MAX_FEES;
 /**
  * A PDF text an older layout read across prose columns joins each line with its
  * neighbour columns' lines as " | " cells of running prose. This many such joins (a
@@ -1250,12 +1251,7 @@ async function selectCandidates(
               )
               OR (
                 adt.status = 'completed'
-                AND (
-                  SELECT COUNT(*) FROM raw_fee_observations fr
-                   WHERE fr.source = 'knox'
-                     AND fr.source_document_id = adt.source_document_id
-                     AND fr.outlier_flags ? 'needs_darwin_verification'
-                ) < ${rereadMaxParam}
+                AND ${feesSentToDarwinSql("adt.source_document_id")} < ${rereadMaxParam}
                 AND ${notSettledByCurrentReader}
               )
             )`;

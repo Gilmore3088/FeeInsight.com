@@ -324,6 +324,7 @@ export async function stateHasDocumentBacklog(stateCode: string): Promise<boolea
            AND upper(btrim(inst.state_code)) = ${stateCode}
            AND (
              (
+               -- The shared thin-document test (thin-document.ts, #1095): Knox rows sent to Darwin.
                (SELECT COUNT(*) FROM raw_fee_observations fr
                  WHERE fr.source = 'knox'
                    AND fr.source_document_id = adt.source_document_id) < ${KNOX_REEXTRACT_MAX_FEES}

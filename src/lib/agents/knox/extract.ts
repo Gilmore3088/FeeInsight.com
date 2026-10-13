@@ -1,4 +1,5 @@
 import { feeApplicability } from "@/lib/fee-audience";
+import { feesSentToDarwinSql, THIN_DOCUMENT_MAX_FEES } from "@/lib/agents/thin-document";
 import { createHash } from "crypto";
 
 import { sql } from "@/lib/data-store/connection";
@@ -26,12 +27,13 @@ type SqlTag = typeof sql;
 const LOW_YIELD_RATIO = 0.5;
 
 /**
- * A text Knox found fewer fees than this in is extracted again whenever the rules
- * version moves, so documents already on file are re-reviewed with each improvement.
- * Matches Rosetta's re-read threshold (REREAD_MAX_KNOX_FEES). The raw-row dedupe index
- * (document, fee name, amount) keeps fees found the first time from being inserted twice.
+ * A thin text (fewer fees sent to Darwin than this; held rows do not count) is extracted again
+ * whenever the rules version moves, so documents already on file are re-reviewed with each
+ * improvement. The shared thin-document test (#1095), the same one Rosetta's re-read uses. The
+ * raw-row dedupe index (document, fee name, amount) keeps fees found the first time from being
+ * inserted twice.
  */
-export const KNOX_REEXTRACT_MAX_FEES = 5;
+export const KNOX_REEXTRACT_MAX_FEES = THIN_DOCUMENT_MAX_FEES;
 /**
  * Banks at or above this size (thousands of dollars, as `institution_sources.asset_size`
  * stores it: $10B) have the current copy of each page re-read once per rules version,
@@ -265,12 +267,7 @@ function textArtifactQuery(
     // attempt-log filter below stops a second pass with the same version.
     params.push(KNOX_REEXTRACT_MAX_FEES);
     thinTextReextract = `
-           OR (
-             SELECT COUNT(*)
-               FROM raw_fee_observations thin
-              WHERE thin.source = 'knox'
-                AND thin.source_document_id = adt.source_document_id
-           ) < $${params.length}`;
+           OR ${feesSentToDarwinSql("adt.source_document_id")} < $${params.length}`;
     // Hamilton's rules re-check found fees today's rules read from this document that
     // are not live (an older version missed them): extract it again.
     const signatureParam = `$${params.push(knoxFreeSignature())}`;
