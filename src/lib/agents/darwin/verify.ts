@@ -11,7 +11,7 @@ import { CATEGORY_GUARD_VERSION, checkFeeCategory, refileCategory } from "@/lib/
 import { RETIRED_CATEGORIES } from "@/lib/fee-fold";
 import { RULE_WHY, ruleFor } from "@/lib/agents/hamilton/eval-verdicts";
 import { checkFeeAgainstSource, checkRateAgainstSource } from "@/lib/custom-report/source-check";
-import { settledFrequency } from "@/lib/fee-frequency";
+import { perEventFrequency, settledFrequency } from "@/lib/fee-frequency";
 import { excerptOf } from "@/lib/agents/hamilton/frequency-fill";
 import { PERCENT_FEE_RANGES, isPercentFee, percentFeeAllowed, ratePercentOf, type RateFields } from "@/lib/percent-fees";
 import { darwinFeedbackRows, recordDarwinFeedback } from "./feedback";
@@ -80,7 +80,8 @@ export const DARWIN_SOURCE_CHECK_VERSION = 2;
  * The verified row's frequency was settled from the fee's own schedule line (`settledFrequency`,
  * the same rule as Hamilton's frequency fill and Knox v52) because Knox's stated frequency
  * contradicted it or was never stated there: "$1.00 per withdrawal in excess of six per month"
- * read as monthly is charged per item (held excess-withdrawal rows, Oct 9).
+ * read as monthly is charged per item (held excess-withdrawal rows, Oct 9). Since #1196 an NSF fee
+ * never keeps a period (`perEventFrequency`): it takes its line's per-item wording or none.
  */
 export const FREQUENCY_SETTLED_FLAG = "darwin_frequency_settled";
 
@@ -691,7 +692,10 @@ export async function insertVerifiedFee(
   if (options.secondSourceAgrees) flags.push(SECOND_SOURCE_FLAG);
   if (options.extraFlags) flags.push(...options.extraFlags);
   const stated = options.row.frequency ?? null;
-  const frequency = amount == null ? stated : settledFrequency(excerptOf(options.row.conditions), amount, stated, options.canonicalFeeKey);
+  const line = excerptOf(options.row.conditions);
+  const settled = amount == null ? stated : settledFrequency(line, amount, stated, options.canonicalFeeKey);
+  // #1196: an NSF fee is charged per item; a period on one is a misread, so it is never verified.
+  const frequency = perEventFrequency(options.canonicalFeeKey, settled, line, amount);
   if (frequency !== stated) flags.push(FREQUENCY_SETTLED_FLAG);
   const inserted = await db`
     INSERT INTO verified_fee_observations (
