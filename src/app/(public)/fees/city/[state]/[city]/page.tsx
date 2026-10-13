@@ -34,9 +34,10 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   const { state, city } = await params;
   const stateName = STATE_NAMES[state.toUpperCase()];
   const cityName = titleCase(city);
-  if (!stateName) return { title: "Not Found" };
+  if (!stateName) notFound();
 
   const institutions = await loadCityInstitutions(cityName, state.toUpperCase());
+  if (institutions.length === 0) notFound();
   const indexable = institutions.length >= MIN_INDEXABLE_INSTITUTIONS;
 
   return {

@@ -31,7 +31,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   const { id } = await params;
   const districtId = parseInt(id, 10);
   const name = DISTRICT_NAMES[districtId];
-  if (!name) return { title: "District Not Found" };
+  if (!name) notFound();
 
   const title = `Federal Reserve District ${districtId} (${name}) - Fee Analysis`;
   const description = `Bank and credit union fee analysis for Federal Reserve District ${districtId} (${name}). District vs. national fee benchmarks with economic context from the Beige Book.`;

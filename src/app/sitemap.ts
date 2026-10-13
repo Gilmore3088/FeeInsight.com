@@ -214,17 +214,14 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     ),
   ];
 
-  // Consumer guides live at /guides/[slug]; professional guides at /guides/pro/[slug],
-  // where the body is gated. Both are indexable — the professional pages show title,
-  // description and an upgrade prompt — but the free ones carry the higher priority.
+  // Consumer guides live at /guides/[slug]. Professional guides (/guides/pro/[slug]) show
+  // crawlers only a title and an upgrade gate, so they are noindexed and left out.
   const allGuides = await loadGuides();
   const guidePages: Entry[] = [
     entry("/guides", undefined, "monthly", 0.7),
-    ...allGuides.map((g) =>
-      g.audience === "professional"
-        ? entry(`/guides/pro/${g.slug}`, toDate(g.reviewedAt, undefined), "monthly", 0.4)
-        : entry(`/guides/${g.slug}`, toDate(g.reviewedAt, undefined), "monthly", 0.7),
-    ),
+    ...allGuides
+      .filter((g) => g.audience !== "professional")
+      .map((g) => entry(`/guides/${g.slug}`, toDate(g.reviewedAt, undefined), "monthly", 0.7)),
   ];
 
   // Profiles with fewer than MIN_VERIFIED_FEES_FOR_OFFER verified fees are noindexed (thin), so

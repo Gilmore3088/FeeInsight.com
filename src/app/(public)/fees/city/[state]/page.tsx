@@ -14,7 +14,7 @@ interface PageProps {
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { state } = await params;
   const stateName = STATE_NAMES[state.toUpperCase()];
-  if (!stateName) return { title: "Not Found" };
+  if (!stateName) notFound();
 
   return {
     title: `Bank Fees by City in ${stateName} - Local Fee Comparison`,
