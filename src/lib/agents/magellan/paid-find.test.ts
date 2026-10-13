@@ -25,7 +25,7 @@ const banks = [
   { id: 3, institution_name: "Gamma Bank", city: "Barre", state_code: "VT", website_url: "https://gamma.example" },
 ];
 
-function createDb(rows = banks): DbMock {
+function createDb(rows: Array<(typeof banks)[number] & { paid_misses?: number }> = banks): DbMock {
   return vi.fn((strings: TemplateStringsArray) => {
     const text = templateText(strings);
     if (text.includes("learning_schema_ready")) return Promise.resolve([{ learning_schema_ready: true }]);
@@ -222,7 +222,7 @@ describe("escalation ladder (#1032)", () => {
     const db = createDb([
       { ...banks[0], paid_misses: 0 },
       { ...banks[1], paid_misses: 1 },
-    ] as typeof banks);
+    ]);
     const create = vi.fn().mockResolvedValue(answer({ url: null, confidence: 0 }));
     await runMagellanPaidFind({ runId: 2, stateCode: "VT", db: asDb(db), create, pick: false });
 
