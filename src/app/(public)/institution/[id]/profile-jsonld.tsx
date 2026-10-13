@@ -1,6 +1,9 @@
-import { SITE_URL } from "@/lib/constants";
+import { SITE_NAME, SITE_URL } from "@/lib/constants";
 
-/** FinancialService structured data for the public institution profile. */
+/**
+ * Structured data for the public institution profile: a page by Fee Insight about the bank, not
+ * the bank's own page (a FinancialService with the bank's name read as if the bank published it).
+ */
 export function InstitutionJsonLd({
   institutionId,
   institutionName,
@@ -14,13 +17,18 @@ export function InstitutionJsonLd({
 }) {
   const json = JSON.stringify({
     "@context": "https://schema.org",
-    "@type": "FinancialService",
-    name: institutionName,
+    "@type": "WebPage",
+    name: `${institutionName} fees`,
     description: `Published fees and fee schedule for ${institutionName}`,
     url: `${SITE_URL}/institution/${institutionId}`,
-    address: stateCode
-      ? { "@type": "PostalAddress", addressLocality: city ?? undefined, addressRegion: stateCode }
-      : undefined,
+    publisher: { "@type": "Organization", name: SITE_NAME, url: SITE_URL },
+    about: {
+      "@type": "BankOrCreditUnion",
+      name: institutionName,
+      address: stateCode
+        ? { "@type": "PostalAddress", addressLocality: city ?? undefined, addressRegion: stateCode }
+        : undefined,
+    },
   }).replace(/</g, "\\u003c");
 
   return <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: json }} />;

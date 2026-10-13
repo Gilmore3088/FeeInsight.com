@@ -12,7 +12,7 @@ import { getPublicNationalIndex, getPublicStatsSummary } from "@/lib/public-stat
 import { UpgradeGate } from "@/components/upgrade-gate";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
 import { LeadCapture } from "@/components/public/lead-capture";
-import { REPORT_OFFER, SITE_URL } from "@/lib/constants";
+import { REPORT_OFFER, SITE_NAME, SITE_URL } from "@/lib/constants";
 import { sampleReportAvailable } from "@/lib/custom-report/sample-report";
 import {
   getCitiesInStateCached,
@@ -238,6 +238,8 @@ export default async function StateReportPage({ params }: PageProps) {
             headline: `${stateName} Bank & Credit Union Fees`,
             description: `Fee benchmarks for banks and credit unions in ${stateName}, compared with national medians.`,
             url: `${SITE_URL}/research/state/${stateCode}`,
+            dateModified: asOf && !Number.isNaN(Date.parse(asOf)) ? new Date(asOf).toISOString() : undefined,
+            publisher: { "@type": "Organization", name: SITE_NAME, url: SITE_URL },
           }).replace(/</g, "\\u003c"),
         }}
       />

@@ -37,6 +37,8 @@ export const metadata: Metadata = {
   openGraph: {
     type: "website",
     siteName: "Fee Insight",
+    // Resolved against each page's own path, like the canonical above.
+    url: "./",
   },
   twitter: {
     card: "summary_large_image",
