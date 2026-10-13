@@ -794,3 +794,11 @@ check of 10 flagged conflicts finds at least 9 right. Fees priced per account (m
 minimum balance, paper statements) and categories that hold several items (safe deposit box sizes,
 account research, document copies) are not judged until the account or item is matched. Hamilton's
 $0 product-page benefit takedown (Oct 9) is unchanged.
+
+**SEO, copy and the website are builder work; Growth stays paused.** James, 2026-10-12 (#1134):
+"The biggest thing for me is SEO, and copy, and website." Growth OS stays paused (#1121); the
+public site is built by the builder from the review in `docs/plans/public-site-review-2026-10-13.md`.
+James, 2026-10-12 evening (builder loop, before leaving for the day): pure technical SEO (sitemap,
+metadata plumbing, structured data, no visible wording change) merges on green; copy and page
+changes wait as open PRs for him on the Vercel preview; no layout work until he says what his design
+updates cover.

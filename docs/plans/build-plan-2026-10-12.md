@@ -56,6 +56,7 @@ the master tracker is #1026.
 | # | Issue | What | Gate |
 |---|---|---|---|
 | 7 | #1058 | Benchmarks: count unlabeled fees as consumer with the asterisk and footnote James approved; methodology page | Customer-facing: James checks preview |
+| 7a | #1134 | Public site: SEO, copy and website. Review in `docs/plans/public-site-review-2026-10-13.md`; its build list is #1162–#1181, in that order | Pure technical SEO merges on green; copy and page changes wait for James on the preview; benchmark numbers wait on #1058 |
 | 8 | #1040 | Scorecard and daily email that measure the goal | — |
 | 9 | #1119 | Store Deming's daily audit as dated results; accuracy trend | Migration if a table is added |
 | 10 | #1064 | Benchmark health check: sample sizes, ranges, alarm on collapse | — |
