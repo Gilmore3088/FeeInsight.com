@@ -55,6 +55,8 @@ export async function collapsePublishedDuplicates(
   // transaction and one-time all mean "each time it happens", and an unstated (or "other")
   // frequency matches any stated one. Two copies of a line differing only that way are one
   // fee read from two documents (Extraco's "Early Account Closure (by customer)").
+  // The copy kept states its audience when one does (#1069: an "unknown" re-read closed the
+  // "business" copy of the same line, 140465 on Oct 13), then its frequency, then is newest.
   const duplicates = `
         SELECT ranked.fee_published_id, ranked.kept_fee_published_id
           FROM (
@@ -74,7 +76,7 @@ export async function collapsePublishedDuplicates(
                            fp.rate_percent,
                            lower(btrim(fp.fee_name))
             ),
-            line AS (part ORDER BY (fp.frequency IS NULL), fp.published_at DESC, fp.fee_published_id DESC)
+            line AS (part ORDER BY (COALESCE(fp.fee_audience, 'unknown') = 'unknown'), (fp.frequency IS NULL), fp.published_at DESC, fp.fee_published_id DESC)
           ) ranked
          WHERE ranked.copy_rank > 1
            AND (ranked.min_class IS NULL OR ranked.min_class = ranked.max_class)
