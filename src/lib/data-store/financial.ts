@@ -285,23 +285,38 @@ export interface CpiContext {
   allItems: { date: string; value: number; yoyPct: number } | null;
 }
 
+function isoDay(date: string | Date): string {
+  return date instanceof Date ? date.toISOString().slice(0, 10) : String(date).slice(0, 10);
+}
+
+/** "2026-08-01" → "2025-08-01". */
+export function yearEarlier(day: string): string {
+  return `${Number(day.slice(0, 4)) - 1}${day.slice(4)}`;
+}
+
 export async function getCpiContext(): Promise<CpiContext> {
   const BANK_FEES = CPI_BANK_SERVICES_SERIES;
   const ALL_ITEMS = "CUUR0000SA0";
 
-  async function getYoY(seriesId: string) {
+  // The year-ago figure is the same month a year earlier, matched by date: BLS published no
+  // October 2025 CPI, so counting back 13 rows compared Aug 2026 with Jul 2025 and showed +3.7%
+  // for all items where the 12-month change is +3.4% (#1175). `asOf` keeps all items on the
+  // bank series' month, which labels both figures.
+  async function getYoY(seriesId: string, asOf?: string) {
     const rows = await sql`
       SELECT observation_date, value
       FROM fed_economic_indicators
       WHERE series_id = ${seriesId}
+        AND (${asOf ?? null}::text IS NULL OR observation_date <= ${asOf ?? null}::text)
       ORDER BY observation_date DESC
-      LIMIT 13` as { observation_date: string; value: number }[];
-
-    if (rows.length < 13) return null;
+      LIMIT 25` as { observation_date: string; value: number }[];
 
     const latest = rows[0];
-    const yearAgo = rows[12];
-    const yoyPct = ((latest.value - yearAgo.value) / yearAgo.value) * 100;
+    if (!latest) return null;
+    const yearAgoDay = yearEarlier(isoDay(latest.observation_date));
+    const yearAgo = rows.find((row) => isoDay(row.observation_date) === yearAgoDay);
+    if (!yearAgo) return null;
+    const yoyPct = ((Number(latest.value) - Number(yearAgo.value)) / Number(yearAgo.value)) * 100;
 
     return {
       date: latest.observation_date,
@@ -310,9 +325,10 @@ export async function getCpiContext(): Promise<CpiContext> {
     };
   }
 
+  const bankFees = await getYoY(BANK_FEES);
   return {
-    bankFees: await getYoY(BANK_FEES),
-    allItems: await getYoY(ALL_ITEMS),
+    bankFees,
+    allItems: await getYoY(ALL_ITEMS, bankFees ? isoDay(bankFees.date) : undefined),
   };
 }
 
