@@ -245,19 +245,30 @@ and `detail.method_version`).
   the automation stop ends the step cleanly (`budgetStopped`); the unspent bank stays due.
   Report requesters go first, then the largest banks; $10B+ banks and requesters are
   picked from any state's paid step, not only their own.
-- Schedule search (`schedule-search.ts`, `discover.paid_schedule_search`), in the same paid
-  step: up to `SCHEDULE_SEARCH_PER_RUN` $10B+ banks, report requesters or market leaders
-  (top 15 in their state by deposits or fee income, `loadMarketLeaderIds` in
-  `src/lib/data-store/market-leaders.ts`), from any state, whose link is not the consumer
-  schedule (link coverage) or who are hidden (fewer than three live fee categories), off
-  the paid cooldown, requesters then leaders then largest first. If the ranking fails the lane runs
-  on size and requests alone. The model (web search) is told why the held page is not it; the
-  answer must be on the bank's domain, new to the bank, and pass the fee-page check. It is
-  stored as a `consumer_supplement` companion beside the link, so companion fetch, Rosetta
-  and Knox read it; the link and its live fees stay. A second lane takes up to
-  `HIDDEN_BANK_SEARCH_PER_RUN` banks of any size that the catalog hides (fewer than three
-  live fee categories) whose link is an account product page or prices no overdraft,
-  largest first. The bank's own domain includes its corporate domain (`onBankDomain`).
+- Schedule search (`schedule-search.ts`, `discover.paid_schedule_search`, version 2, #1030), in
+  the same paid step, from any state, off the paid cooldown, in two lanes:
+  - **Uncovered first:** up to `SCHEDULE_SEARCH_PER_RUN` institutions that hold a fee link but
+    have no live fee at all, whose oldest stored copy is at least `UNCOVERED_SETTLE_DAYS` old
+    (the free pipeline reads a new link first) and with no companion still waiting for its first
+    fetch. One search asks for the fee schedule, the Truth in Savings disclosure and the deposit
+    account agreement (`UNCOVERED_DOCUMENT_KINDS`); each answer that passes the checks is its own
+    `consumer_supplement` companion, its kind named in the companion's reason and the attempt's
+    `detail.documents`. Institutions with no fee link at all are the paid web search's
+    (above, with its disclosure rung).
+  - **Gap-fill, on its own cap:** up to `GAP_FILL_PER_RUN` banks with live fees whose link is not
+    the consumer schedule yet (link coverage): $10B+ banks, report requesters and market leaders
+    (top 15 in their state by deposits or fee income, `loadMarketLeaderIds` in
+    `src/lib/data-store/market-leaders.ts`) on any gap, or that are hidden (fewer than three live
+    categories); other banks when hidden with a product-page link or no overdraft price, or with
+    a business-only link the free business search missed. No gap-fill search once the lane has
+    spent `GAP_FILL_CAP_MICROUSD` ($10) in `GAP_FILL_CAP_DAYS` (30), counted from attempts with
+    `detail.lane = 'gap_fill'`, checked before each search.
+  Each lane ranks requesters, then priority names, then leaders, then largest first, until the
+  state experts' work lists (#1029) set the order. If the ranking fails the lanes run on size and
+  requests alone. The model (web search) is told why the held page is not it; every answer must
+  be on the bank's domain, new to the bank, and pass the fee-page check. It is stored beside the
+  link, so companion fetch, Rosetta and Knox read it; the link and its live fees stay. The bank's
+  own domain includes its corporate domain (`onBankDomain`).
 - Website search (`website-find.ts`, `discover.website_search`), in the same paid step after
   the banks: up to `WEBSITE_FIND_PER_RUN` institutions in the state with no `website_url`
   and no fee link, off the paid cooldown. The model (web search) names the official homepage;
@@ -467,6 +478,6 @@ fails a PR that changes one of these constants without updating its line here (#
 | `STATE_ENFORCEMENT_PARSER_VERSION` | — | v5 | `magellan/registry/state-enforcement.ts` |
 | `STATE_NEWS_PARSER_VERSION` | — | v2 | `magellan/registry/state-reg-news.ts` |
 | `RESTORE_FEE_PAGE_VERSION` | — | v1 | `magellan/restore-fee-page.ts` |
-| `SCHEDULE_SEARCH_STRATEGY` | `discover.paid_schedule_search` | v1 | `magellan/schedule-search.ts` |
+| `SCHEDULE_SEARCH_STRATEGY` | `discover.paid_schedule_search` | v2 | `magellan/schedule-search.ts` |
 | `SITE_SEARCH_STRATEGY` | `discover.site_search` | v1 | `magellan/second-document.ts` |
 | `WEBSITE_FIND_STRATEGY` | `discover.website_search` | v1 | `magellan/website-find.ts` |

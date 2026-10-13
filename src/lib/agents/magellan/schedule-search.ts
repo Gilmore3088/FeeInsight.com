@@ -29,27 +29,55 @@ type SqlTag = typeof sql;
 type Fetcher = typeof fetch;
 
 /**
- * The names buyers check first get a paid search for their consumer fee schedule when the
- * page we hold is not it (link-coverage.ts): a business-only schedule, a page with no
- * overdraft price (Wells Fargo's Clear Access summary, JPMorgan Chase's press release on
- * Oct 6), or a page that sends the reader to the account agreement. Banks over $10B and
- * report requesters only, largest first, a few per paid step, inside Magellan's paid caps.
+ * Magellan's paid schedule search, in two lanes (#1030).
  *
- * The answer must be on the bank's domain and pass the same fee-page check as every
- * finder. It is stored beside the bank's link as a companion document, so the bank keeps
- * its link and live fees; companion fetch, Rosetta and Knox read the new document next.
+ * **Uncovered first.** Institutions that hold a fee link but have no live fee at all: the free
+ * pipeline read what we hold and nothing went live. One search asks for all three documents a
+ * bank lists its fees in (the fee schedule, the Truth in Savings disclosure and the deposit
+ * account agreement), because small banks and credit unions often publish only the second or
+ * third. Each answer that passes the checks is stored as its own companion document. Before
+ * #1030, 272 of the 1,037 institutions searched in the 7 days to 2026-10-13 already had live
+ * fees, and 949 already had a stored document.
+ *
+ * **Gap-filling second, on its own small cap.** Banks with live fees whose page is not the
+ * consumer schedule yet (link-coverage.ts): a business-only schedule, a page with no overdraft
+ * price (Wells Fargo's Clear Access summary), a page that sends the reader to the account
+ * agreement, a stale copy, or fewer than three live categories. A few per step, and none once
+ * the lane has spent `GAP_FILL_CAP_MICROUSD` in the last `GAP_FILL_CAP_DAYS`.
+ *
+ * Every answer must be on the bank's domain, new to the bank, and pass the same fee-page check
+ * as every finder. It is stored beside the bank's link as a companion document, so the bank
+ * keeps its link and live fees; companion fetch, Rosetta and Knox read the new document next.
+ * Selection is national (requesters, market leaders, $10B+, then largest first) until the
+ * state experts' work lists (#1029) set the order.
  */
 
-export const SCHEDULE_SEARCH_STRATEGY = { strategy: "discover.paid_schedule_search", version: 1 } as const;
-/** Banks one paid step searches. Not tied to the step's state: these are national names. */
+export const SCHEDULE_SEARCH_STRATEGY = { strategy: "discover.paid_schedule_search", version: 2 } as const;
+/** Uncovered institutions (no live fee) one paid step searches. Not tied to the step's state. */
 export const SCHEDULE_SEARCH_PER_RUN = 10;
+/** Covered banks one paid step searches to fill a gap (the gap-fill lane). */
+export const GAP_FILL_PER_RUN = 3;
+/** The gap-fill lane's own cap: no gap-fill search once the lane spent this in `GAP_FILL_CAP_DAYS`. */
+export const GAP_FILL_CAP_MICROUSD = 10_000_000;
+export const GAP_FILL_CAP_DAYS = 30;
 /**
- * Banks of any size hidden from the index because we read fewer than three fees for them
- * (the catalog's 3-fee rule) and whose stored page is an account product page or prices no
- * overdraft: a product, rate or Truth-in-Savings page, not the schedule.
- * A few per paid step, largest first, beside the large-bank lane (Knox handoff, Oct 7).
+ * Days the bank's oldest stored copy must have before it counts as uncovered, so the free
+ * pipeline (Rosetta, Knox, Darwin) reads a new link before a paid search second-guesses it.
  */
-export const HIDDEN_BANK_SEARCH_PER_RUN = 10;
+export const UNCOVERED_SETTLE_DAYS = 3;
+
+export type ScheduleSearchLane = "uncovered" | "gap_fill";
+/** The three documents the uncovered lane asks for, in the order their answers are checked. */
+export const UNCOVERED_DOCUMENT_KINDS = ["fee_schedule", "truth_in_savings", "account_agreement"] as const;
+export type UncoveredDocumentKind = (typeof UNCOVERED_DOCUMENT_KINDS)[number];
+type DocumentKind = UncoveredDocumentKind | "consumer_schedule";
+const KIND_LABEL: Record<DocumentKind, string> = {
+  fee_schedule: "fee schedule",
+  truth_in_savings: "Truth in Savings disclosure",
+  account_agreement: "deposit account agreement",
+  consumer_schedule: "consumer fee schedule",
+};
+
 const WEB_SEARCH_MAX_USES = 3;
 const MAX_OUTPUT_TOKENS = 1024;
 const ANSWER_SCORE = 0.85;
@@ -69,6 +97,8 @@ export interface ScheduleSearchRow {
   requested: boolean | null;
   /** In its state's top 15 by deposits, service charge income or total income. */
   leader?: boolean | null;
+  /** No live fee at all: the uncovered lane. Otherwise the gap-fill lane. */
+  uncovered?: boolean | null;
   business_only: boolean | null;
   /** The free business search already looked for the consumer schedule. */
   business_searched?: boolean | null;
@@ -84,18 +114,28 @@ interface ScheduleAnswer {
   evidence?: unknown;
 }
 
+type UncoveredAnswer = Partial<Record<UncoveredDocumentKind, unknown>> & { evidence?: unknown };
+
 export interface ScheduleSearchResult {
   selected: number;
   processed: number;
+  /** Institutions with at least one document found. */
   found: number;
+  /** Companion documents stored (the uncovered lane can store up to three per institution). */
+  documents: number;
   costMicrousd: number;
   budgetStopped: boolean;
   budgetReason: string | null;
   results: Array<Record<string, unknown>>;
 }
 
+export function laneOf(row: Pick<ScheduleSearchRow, "uncovered">): ScheduleSearchLane {
+  return row.uncovered ? "uncovered" : "gap_fill";
+}
+
 /** Why the page we hold is not the schedule, in the prompt's words. */
 function whyNotIt(row: ScheduleSearchRow): string {
+  if (row.uncovered) return "we could read no fees from it";
   if (row.business_only) return "it is the business account schedule, not the personal one";
   if (row.refers_elsewhere) return "it refers to the deposit account agreement or another document for the fees";
   if (row.product_page) return "it is an account product page, not the fee schedule";
@@ -104,7 +144,44 @@ function whyNotIt(row: ScheduleSearchRow): string {
   return "it does not list the overdraft or NSF fee amount";
 }
 
+function bankLines(row: ScheduleSearchRow): string[] {
+  return [
+    `Bank: ${row.institution_name}`,
+    `Location: ${[row.city, row.state_code].filter(Boolean).join(", ") || "unknown"}`,
+    `Website: ${row.website_url}`,
+  ];
+}
+
+/** The uncovered lane's ask: every document that may list the bank's consumer fees. */
+export function uncoveredSearchPrompt(row: ScheduleSearchRow): string {
+  const site = websiteHost(row.website_url) ?? row.website_url;
+  return [
+    "We have no fee data for this bank yet. Find the URLs of the bank's consumer (personal) documents",
+    "that list deposit account fees with dollar amounts (overdraft, NSF / returned item, stop payment,",
+    "wires, monthly maintenance). Look for each of these three; smaller banks and credit unions often",
+    "publish only the second or third:",
+    "- fee_schedule: the fee schedule (\"Schedule of Fees\", \"Schedule of Charges\", \"Fee Schedule\", \"Consumer Fees\").",
+    "- truth_in_savings: the Truth in Savings disclosure (\"Truth in Savings\", \"Account Disclosures\",",
+    "  \"Deposit Account Disclosure\") that states account fees.",
+    "- account_agreement: the deposit account agreement (\"Deposit Account Agreement\", \"Membership Agreement\",",
+    "  \"Account Terms and Conditions\") with a fee section.",
+    "",
+    ...bankLines(row),
+    `We already have ${row.fee_schedule_url}, but ${whyNotIt(row)}. Find different documents.`,
+    "",
+    "Rules:",
+    `- Each URL must be on the bank's own domain (${site}, a subdomain of it, or its parent company's domain).`,
+    "- Not a business or commercial document, a rate sheet, a single CD disclosure, a press release, or a marketing page.",
+    "- Use null for any document you cannot find. Do not guess a URL you have not seen.",
+    "",
+    "Answer with JSON only:",
+    "{\"fee_schedule\": string | null, \"truth_in_savings\": string | null, \"account_agreement\": string | null, \"evidence\": \"one short sentence\"}",
+  ].join("\n");
+}
+
+/** The gap-fill lane's ask: the consumer schedule a covered bank's held page is not. */
 export function scheduleSearchPrompt(row: ScheduleSearchRow): string {
+  if (row.uncovered) return uncoveredSearchPrompt(row);
   const site = websiteHost(row.website_url) ?? row.website_url;
   return [
     "Find the URL of this bank's consumer (personal) fee schedule: the document, usually a PDF,",
@@ -114,9 +191,7 @@ export function scheduleSearchPrompt(row: ScheduleSearchRow): string {
     "\"Account Fee Schedule\", \"Consumer Fees\", \"Consumer Deposit Account Agreement\" or \"Truth in Savings",
     "Disclosure\". Large banks often publish it on their parent company's domain.",
     "",
-    `Bank: ${row.institution_name}`,
-    `Location: ${[row.city, row.state_code].filter(Boolean).join(", ") || "unknown"}`,
-    `Website: ${row.website_url}`,
+    ...bankLines(row),
     `We already have ${row.fee_schedule_url}, but ${whyNotIt(row)}. Find a different document.`,
     "",
     "Rules:",
@@ -129,15 +204,36 @@ export function scheduleSearchPrompt(row: ScheduleSearchRow): string {
   ].join("\n");
 }
 
+/** The URLs one answer proposes, by kind, in check order; repeats of one URL are checked once. */
+export function proposedDocuments(row: Pick<ScheduleSearchRow, "uncovered">, answer: unknown): Array<{ kind: DocumentKind; url: string }> {
+  if (!answer || typeof answer !== "object") return [];
+  const record = answer as Record<string, unknown>;
+  const asked: Array<[DocumentKind, unknown]> = row.uncovered
+    ? UNCOVERED_DOCUMENT_KINDS.map((kind) => [kind, record[kind]])
+    : [["consumer_schedule", record.url]];
+  const seen = new Set<string>();
+  const proposals: Array<{ kind: DocumentKind; url: string }> = [];
+  for (const [kind, value] of asked) {
+    const url = typeof value === "string" ? value.trim() : "";
+    if (!url || seen.has(urlIdentity(url))) continue;
+    seen.add(urlIdentity(url));
+    proposals.push({ kind, url });
+  }
+  return proposals;
+}
+
 /**
  * Two lanes, neither on the paid cooldown (`cooldowns.ts`):
- * - priority (up to `limit`): $10B+ banks, report requesters and each state's market
- *   leaders (`leaderIds`, top 15 by deposits or fee income) whose link is not the consumer
- *   schedule yet, or who are hidden for having fewer than three live fees;
- * - everyone else the catalog hides whose page is a product page or prices no overdraft
- *   (up to `hiddenLimit`).
+ * - uncovered (up to `limit`): no live fee at all, a held link whose first copy is at least
+ *   `UNCOVERED_SETTLE_DAYS` old, and no companion still waiting for its first fetch;
+ * - gap_fill (up to `gapLimit`): banks with live fees whose link is not the consumer schedule
+ *   yet. $10B+ banks, report requesters and each state's market leaders (`leaderIds`, top 15
+ *   by deposits or fee income) on any gap; others when the catalog hides them (fewer than
+ *   three live categories) and their page is a product page or prices no overdraft, or when
+ *   the link is business-only and the free business search missed.
+ * Each lane: requesters, then priority names, then leaders, then largest first.
  */
-async function selectRows(db: SqlTag, limit: number, hiddenLimit: number, leaderIds: number[]): Promise<ScheduleSearchRow[]> {
+async function selectRows(db: SqlTag, limit: number, gapLimit: number, leaderIds: number[]): Promise<ScheduleSearchRow[]> {
   return db<ScheduleSearchRow[]>`
     -- incomplete-link schedule search
     WITH live AS (
@@ -155,6 +251,19 @@ async function selectRows(db: SqlTag, limit: number, hiddenLimit: number, leader
                OR inst.id = ANY(${leaderIds}::bigint[])
                OR EXISTS (SELECT 1 FROM leads lead WHERE lead.quote_institution_id = inst.id)
              ) AS priority,
+             COALESCE(live.categories, 0) = 0 AS uncovered,
+             EXISTS (
+               SELECT 1 FROM source_documents settled
+                WHERE settled.institution_id = inst.id
+                  AND settled.crawled_at < NOW() - make_interval(days => ${UNCOVERED_SETTLE_DAYS}::int)
+             ) AS settled,
+             EXISTS (
+               SELECT 1 FROM institution_additional_sources waiting
+                WHERE waiting.institution_id = inst.id
+                  AND waiting.status = 'found'
+                  AND waiting.last_fetched_at IS NULL
+                  AND waiting.document_role <> 'business'
+             ) AS companion_waiting,
              COALESCE(live.categories, 0) < ${HIDDEN_BELOW_CATEGORIES} AS hidden,
              (lower(inst.fee_schedule_url) ~ ${PRODUCT_LINK_SQL} AND lower(inst.fee_schedule_url) !~ ${FEE_NAMED_LINK_SQL}) AS product_page,
              (
@@ -220,17 +329,32 @@ async function selectRows(db: SqlTag, limit: number, hiddenLimit: number, leader
     )
     , lanes AS (
       SELECT scoped.*,
-             row_number() OVER (PARTITION BY priority ORDER BY requested DESC, leader DESC, asset_size DESC NULLS LAST, id ASC) AS lane_rank
+             row_number() OVER (PARTITION BY uncovered ORDER BY requested DESC, priority DESC, leader DESC, asset_size DESC NULLS LAST, id ASC) AS lane_rank
         FROM scoped
-       WHERE (priority AND (business_only OR no_overdraft_price OR refers_elsewhere OR stale_copy OR hidden))
-          OR (NOT priority AND hidden AND (product_page OR no_overdraft_price))
-          -- Any bank whose link is a business-only schedule, once the free business search missed.
-          OR (NOT priority AND business_only AND business_searched)
+       WHERE (uncovered AND settled AND NOT companion_waiting)
+          OR (NOT uncovered AND priority AND (business_only OR no_overdraft_price OR refers_elsewhere OR stale_copy OR hidden))
+          OR (NOT uncovered AND hidden AND (product_page OR no_overdraft_price))
+          -- Any covered bank whose link is a business-only schedule, once the free business search missed.
+          OR (NOT uncovered AND business_only AND business_searched)
     )
     SELECT * FROM lanes
-     WHERE (priority AND lane_rank <= ${limit}) OR (NOT priority AND lane_rank <= ${hiddenLimit})
-     ORDER BY priority DESC, requested DESC, leader DESC, asset_size DESC NULLS LAST, id ASC
+     WHERE (uncovered AND lane_rank <= ${limit}) OR (NOT uncovered AND lane_rank <= ${gapLimit})
+     ORDER BY uncovered DESC, lane_rank ASC
   `;
+}
+
+/** What the gap-fill lane spent in the last `GAP_FILL_CAP_DAYS`. */
+async function gapFillSpent(db: SqlTag): Promise<number> {
+  const rows = await db<Array<{ spent: number | string | null }>>`
+    -- gap-fill lane spend
+    SELECT COALESCE(sum(pa.cost_microusd), 0)::bigint AS spent
+      FROM pipeline_attempts pa
+     WHERE pa.stage = 'discover'
+       AND pa.strategy = ${SCHEDULE_SEARCH_STRATEGY.strategy}
+       AND pa.detail->>'lane' = 'gap_fill'
+       AND pa.created_at >= NOW() - make_interval(days => ${GAP_FILL_CAP_DAYS}::int)
+  `;
+  return Number(rows?.[0]?.spent ?? 0) || 0;
 }
 
 /** Market leaders across every state; none (the lane falls back to size) if the ranking fails. */
@@ -258,11 +382,79 @@ function budgetStop(error: unknown): string | null {
   return null;
 }
 
+interface CheckedDocument {
+  kind: DocumentKind;
+  proposed_url: string;
+  outcome: AttemptOutcome;
+  url: string | null;
+  document_type: string | null;
+  verdict: string | null;
+  overdraft_price_seen: boolean | null;
+  reason: string;
+}
+
+/** One proposed URL through the domain, already-held and fee-page checks. */
+async function checkProposal(
+  proposal: { kind: DocumentKind; url: string },
+  row: ScheduleSearchRow,
+  known: Set<string>,
+  fetchImpl: Fetcher,
+): Promise<CheckedDocument> {
+  const { kind, url: proposed } = proposal;
+  const label = KIND_LABEL[kind];
+  const checked: CheckedDocument = {
+    kind, proposed_url: proposed, outcome: "rejected", url: null, document_type: null, verdict: null, overdraft_price_seen: null, reason: "",
+  };
+  if (!onBankDomain(proposed, row.website_url)) {
+    return { ...checked, outcome: "invalid_url", reason: `Answer (${label}) is not on the bank's domain: ${proposed}` };
+  }
+  if (known.has(urlIdentity(proposed))) {
+    return { ...checked, outcome: "rejected", reason: `Answer (${label}) is a document the bank already has: ${proposed}` };
+  }
+  try {
+    const validation = await validateFeeCandidate({ url: proposed, score: ANSWER_SCORE, reasons: [`paid schedule search: ${label}`] }, fetchImpl);
+    checked.verdict = validation.verdict;
+    if (validation.ok) {
+      return {
+        ...checked,
+        outcome: "ok",
+        url: proposed,
+        document_type: validation.documentType ?? (looksLikePdfUrl(proposed) ? "pdf" : "html"),
+        overdraft_price_seen: validation.scoringText ? hasOverdraftPrice(validation.scoringText) : null,
+        reason: `Paid schedule search (${label}): ${validation.reason}`,
+      };
+    }
+    if (validation.status === 403) {
+      // The bank's site refuses our fetcher: keep the answer for the paid fetch, as the
+      // paid web search does (paid-find.ts). Desert Financial's lost this way, 8 Oct 2026.
+      return {
+        ...checked,
+        outcome: "ok",
+        url: proposed,
+        document_type: looksLikePdfUrl(proposed) ? "pdf" : "html",
+        reason: `Paid schedule search (${label}); the bank's site refused our check (HTTP 403), kept for the paid fetch: ${proposed}`,
+      };
+    }
+    return {
+      ...checked,
+      outcome: validation.status != null && validation.status >= 400 ? classifyFetchFailure(validation.status) : "wrong_document",
+      reason: `Answer (${label}) failed the fee-page check (${validation.reason}): ${proposed}`,
+    };
+  } catch (error) {
+    return {
+      ...checked,
+      outcome: classifyFetchFailure(null, error),
+      reason: `Answer (${label}) could not be opened: ${error instanceof Error ? error.message : String(error)}`,
+    };
+  }
+}
+
 export async function runScheduleSearch(options: {
   runId: number;
   stepId?: number | null;
   limit?: number;
-  hiddenLimit?: number;
+  /** Gap-fill searches this step (at most `GAP_FILL_PER_RUN`). */
+  gapLimit?: number;
   /** Market leader ids; loaded from the shared ranking when left out. */
   leaderIds?: number[];
   dryRun?: boolean;
@@ -271,15 +463,21 @@ export async function runScheduleSearch(options: {
   fetchImpl?: Fetcher;
 }): Promise<ScheduleSearchResult> {
   const db = options.db ?? sql;
-  const result: ScheduleSearchResult = { selected: 0, processed: 0, found: 0, costMicrousd: 0, budgetStopped: false, budgetReason: null, results: [] };
+  const result: ScheduleSearchResult = {
+    selected: 0, processed: 0, found: 0, documents: 0, costMicrousd: 0, budgetStopped: false, budgetReason: null, results: [],
+  };
   const limit = Math.max(1, Math.min(Math.floor(Number(options.limit ?? SCHEDULE_SEARCH_PER_RUN)) || SCHEDULE_SEARCH_PER_RUN, SCHEDULE_SEARCH_PER_RUN));
+  const gapSpent = await gapFillSpent(db);
+  const requestedGap = Math.max(0, Math.min(Math.floor(Number(options.gapLimit ?? GAP_FILL_PER_RUN)) || 0, GAP_FILL_PER_RUN));
+  const gapLimit = gapSpent >= GAP_FILL_CAP_MICROUSD ? 0 : requestedGap;
   const leaderIds = options.leaderIds ?? (await leaderIdsOrNone(db));
-  const rows = await selectRows(db, limit, options.hiddenLimit ?? HIDDEN_BANK_SEARCH_PER_RUN, leaderIds);
+  const rows = await selectRows(db, limit, gapLimit, leaderIds);
   result.selected = rows.length;
   if (options.dryRun) {
     result.results = rows.map((row) => ({
       institution_id: Number(row.id),
       institution_name: row.institution_name,
+      lane: laneOf(row),
       would_search_schedule: true,
       why: whyNotIt(row),
     }));
@@ -288,17 +486,22 @@ export async function runScheduleSearch(options: {
 
   const fetchImpl = options.fetchImpl ?? fetch;
   const model = PAID_PASS_MODELS.find();
+  let gapSpentNow = gapSpent;
   for (const row of rows) {
     const institutionId = Number(row.id);
+    const lane = laneOf(row);
+    // The lane's cap is checked again before each search, so one step cannot run past it.
+    if (lane === "gap_fill" && gapSpentNow >= GAP_FILL_CAP_MICROUSD) {
+      result.results.push({ institution_id: institutionId, lane, outcome: "skipped", reason: "Gap-fill lane is at its cap", by: "schedule_search" });
+      continue;
+    }
     const startedAt = Date.now();
     let costMicrousd = 0;
     let outcome: AttemptOutcome;
     let reason: string;
-    let found: string | null = null;
-    let documentType: string | null = null;
-    let verdict: string | null = null;
-    let overdraftPrice: boolean | null = null;
-    let answer: ScheduleAnswer | null = null;
+    let evidence: string | null = null;
+    let proposals: Array<{ kind: DocumentKind; url: string }> = [];
+    const documents: CheckedDocument[] = [];
 
     try {
       const call = await paidModelCall({
@@ -306,7 +509,7 @@ export async function runScheduleSearch(options: {
         operation: "schedule_search",
         runId: options.runId,
         create: options.create,
-        metadata: { institution_id: institutionId, step_id: options.stepId ?? null },
+        metadata: { institution_id: institutionId, step_id: options.stepId ?? null, lane },
         params: {
           model,
           max_tokens: MAX_OUTPUT_TOKENS,
@@ -316,42 +519,26 @@ export async function runScheduleSearch(options: {
       });
       costMicrousd = call.costMicrousd;
       result.costMicrousd += costMicrousd;
-      answer = paidResponseJson<ScheduleAnswer>(call.message);
-      const proposed = typeof answer?.url === "string" ? answer.url.trim() : "";
-      if (!proposed) {
+      if (lane === "gap_fill") gapSpentNow += costMicrousd;
+      const answer = paidResponseJson<ScheduleAnswer | UncoveredAnswer>(call.message);
+      evidence = typeof answer?.evidence === "string" ? answer.evidence.slice(0, 300) : null;
+      proposals = proposedDocuments(row, answer);
+      if (proposals.length === 0) {
         outcome = "no_candidates";
-        reason = "Web search found no consumer fee schedule";
-      } else if (!onBankDomain(proposed, row.website_url)) {
-        outcome = "invalid_url";
-        reason = `Answer is not on the bank's domain: ${proposed}`;
-      } else if ((await knownUrls(db, institutionId, row.fee_schedule_url)).has(urlIdentity(proposed))) {
-        outcome = "rejected";
-        reason = `Answer is a document the bank already has: ${proposed}`;
+        reason = lane === "uncovered"
+          ? "Web search found no fee schedule, Truth in Savings disclosure or account agreement"
+          : "Web search found no consumer fee schedule";
       } else {
-        try {
-          const validation = await validateFeeCandidate({ url: proposed, score: ANSWER_SCORE, reasons: ["paid schedule search"] }, fetchImpl);
-          verdict = validation.verdict;
-          if (validation.ok) {
-            outcome = "ok";
-            found = proposed;
-            documentType = validation.documentType ?? (looksLikePdfUrl(proposed) ? "pdf" : "html");
-            overdraftPrice = validation.scoringText ? hasOverdraftPrice(validation.scoringText) : null;
-            reason = `Paid schedule search: ${validation.reason}`;
-          } else if (validation.status === 403) {
-            // The bank's site refuses our fetcher: keep the answer for the paid fetch, as the
-            // paid web search does (paid-find.ts). Desert Financial's lost this way, 8 Oct 2026.
-            outcome = "ok";
-            found = proposed;
-            documentType = looksLikePdfUrl(proposed) ? "pdf" : "html";
-            reason = `Paid schedule search; the bank's site refused our check (HTTP 403), kept for the paid fetch: ${proposed}`;
-          } else {
-            outcome = validation.status != null && validation.status >= 400 ? classifyFetchFailure(validation.status) : "wrong_document";
-            reason = `Answer failed the fee-page check (${validation.reason}): ${proposed}`;
-          }
-        } catch (error) {
-          outcome = classifyFetchFailure(null, error);
-          reason = `Answer could not be opened: ${error instanceof Error ? error.message : String(error)}`;
+        const known = await knownUrls(db, institutionId, row.fee_schedule_url);
+        for (const proposal of proposals) {
+          const checked = await checkProposal(proposal, row, known, fetchImpl);
+          documents.push(checked);
+          if (checked.url) known.add(urlIdentity(checked.url));
         }
+        const kept = documents.filter((document) => document.url);
+        // One find is a find; otherwise the first answer's outcome (the schedule's, when asked).
+        outcome = kept.length > 0 ? "ok" : documents[0].outcome;
+        reason = kept.length > 0 ? kept.map((document) => document.reason).join("; ") : documents[0].reason;
       }
     } catch (error) {
       const stopped = budgetStop(error);
@@ -365,17 +552,20 @@ export async function runScheduleSearch(options: {
     }
 
     result.processed += 1;
-    if (found) {
-      result.found += 1;
+    const kept = documents.filter((document): document is CheckedDocument & { url: string } => Boolean(document.url));
+    if (kept.length > 0) result.found += 1;
+    for (const document of kept) {
+      result.documents += 1;
       await db`
         INSERT INTO institution_additional_sources
           (institution_id, url, document_type, document_role, found_by_strategy, strategy_version, agent_run_id, reason)
         VALUES
-          (${institutionId}, ${found}, ${documentType}, 'consumer_supplement', ${SCHEDULE_SEARCH_STRATEGY.strategy},
-           ${SCHEDULE_SEARCH_STRATEGY.version}, ${options.runId}, ${reason})
+          (${institutionId}, ${document.url}, ${document.document_type}, 'consumer_supplement', ${SCHEDULE_SEARCH_STRATEGY.strategy},
+           ${SCHEDULE_SEARCH_STRATEGY.version}, ${options.runId}, ${document.reason})
         ON CONFLICT (institution_id, url) DO NOTHING
       `;
     }
+    const first = kept[0] ?? documents[0] ?? null;
     await recordAttempt(db, {
       institutionId,
       stage: "discover",
@@ -383,7 +573,7 @@ export async function runScheduleSearch(options: {
       version: SCHEDULE_SEARCH_STRATEGY.version,
       fingerprint: urlIdentity(row.fee_schedule_url),
       outcome,
-      yieldCount: found ? 1 : 0,
+      yieldCount: kept.length,
       costMicrousd,
       durationMs: Date.now() - startedAt,
       runId: options.runId,
@@ -391,18 +581,29 @@ export async function runScheduleSearch(options: {
       detail: {
         pass: 3,
         model,
-        url: found,
+        lane,
+        url: kept[0]?.url ?? null,
         held_link: row.fee_schedule_url,
         why_searched: whyNotIt(row),
-        proposed_url: typeof answer?.url === "string" ? answer.url : null,
-        evidence: typeof answer?.evidence === "string" ? answer.evidence.slice(0, 300) : null,
-        verdict,
-        document_type: documentType,
-        overdraft_price_seen: overdraftPrice,
+        proposed_url: proposals[0]?.url ?? null,
+        evidence,
+        verdict: first?.verdict ?? null,
+        document_type: kept[0]?.document_type ?? null,
+        overdraft_price_seen: kept[0]?.overdraft_price_seen ?? null,
+        documents,
         reason,
       },
     });
-    result.results.push({ institution_id: institutionId, outcome, url: found, cost_microusd: costMicrousd, reason, by: "schedule_search" });
+    result.results.push({
+      institution_id: institutionId,
+      lane,
+      outcome,
+      url: kept[0]?.url ?? null,
+      urls: kept.map((document) => ({ kind: document.kind, url: document.url })),
+      cost_microusd: costMicrousd,
+      reason,
+      by: "schedule_search",
+    });
   }
   return result;
 }
