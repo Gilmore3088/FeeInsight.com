@@ -31,9 +31,6 @@ export default function HamiltonLayout({
 }: {
   children: React.ReactNode;
 }) {
-  // Material Symbols stylesheet hoisted to root app/layout.tsx (was here, but
-  // Next.js 16 streaming emitted it after the body painted, breaking icons on
-  // first render — see audit C-1 2026-04-17).
   return (
     <Suspense fallback={<HamiltonPageSkeleton />}>
       <HamiltonLayoutInner>{children}</HamiltonLayoutInner>
