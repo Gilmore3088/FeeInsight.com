@@ -5,6 +5,7 @@ import { reportReviewStates } from "@/lib/agents/atlas/report-review-states";
 import { runDarwinVerify } from "@/lib/agents/darwin/verify";
 import { runHamiltonCategoryGuard } from "@/lib/agents/hamilton/category-guard";
 import { collapsePublishedDuplicates } from "@/lib/agents/hamilton/duplicate-collapse";
+import { retireClosedInstitutionFees } from "@/lib/agents/hamilton/closed-institution";
 import { fillBlankFrequencies, FREQUENCY_FILL_VERSION } from "@/lib/agents/hamilton/frequency-fill";
 import { restoreFeesNowInTaxonomy, rollBackOffTaxonomyFees } from "@/lib/agents/hamilton/off-taxonomy-rollback";
 import { foldRetiredCategories } from "@/lib/agents/hamilton/taxonomy-fold";
@@ -928,6 +929,13 @@ async function executeAgenticStep(
         dryRun: run.runKind === "dry_run",
         institutionId,
       });
+      // An institution that no longer operates keeps no live fee (#1200).
+      const closedInstitution = await retireClosedInstitutionFees(tx, {
+        runId: run.id,
+        batchId: `agentic-run-${run.id}`,
+        dryRun: run.runKind === "dry_run",
+        institutionId,
+      });
       // A fee read from an article (a blog post quoting a national average), not a schedule.
       const articlePage = await retireArticlePageFees(tx, {
         runId: run.id,
@@ -988,7 +996,7 @@ async function executeAgenticStep(
         stateCode,
       });
       const companionRollbacks = companionRetire.rollbacks;
-      const duplicateCollapses = await collapsePublishedDuplicates(tx, {
+      const earlyDuplicateCollapses = await collapsePublishedDuplicates(tx, {
         runId: run.id,
         batchId: `agentic-run-${run.id}`,
         dryRun: run.runKind === "dry_run",
@@ -1107,6 +1115,18 @@ async function executeAgenticStep(
         minInstitutionFees: numericRunParam(params, ["publish_min_institution_fees"]),
         db: tx,
       });
+      // #1069: a fee this step just published that repeats a live row (a new read that only
+      // fills its frequency or names its audience) is collapsed now, not on the state's next
+      // step: until then the catalog listed the fee twice (88 a day, about 40 hours, Oct 13).
+      const lateDuplicateCollapses = published.dryRun || published.publishedFees === 0
+        ? []
+        : await collapsePublishedDuplicates(tx, {
+            runId: run.id,
+            batchId: `agentic-run-${run.id}`,
+            dryRun: false,
+            institutionId,
+          });
+      const duplicateCollapses = [...earlyDuplicateCollapses, ...lateDuplicateCollapses];
       // Every live fee must be stated in the bank's own stored schedule: every publish
       // step source-checks a batch of institutions (its state's or institution's when it
       // has one, any state's otherwise) after publishing, so fees published in this step
@@ -1151,6 +1171,7 @@ async function executeAgenticStep(
               otherBank.rolledBack.length > 0 ||
               crossPageRestore.restored.length > 0 ||
               articlePage.rolledBack.length > 0 ||
+              closedInstitution.rolledBack.length > 0 ||
               productPage.rolledBack.length > 0 ||
               productPageConflict.rolledBack.length > 0 ||
               crossPage.rolledBack.length > 0 ||
@@ -1217,6 +1238,10 @@ async function executeAgenticStep(
       const restoreRecheckNote =
         restoreRecheck.failing.length > 0 || restoreRecheck.passing > 0
           ? ` Second look on ${restoreRecheck.unchecked.toLocaleString()} unchecked restore(s): ${restoreRecheck.passing.toLocaleString()} clear the restore bar, ${restoreRecheck.failing.length.toLocaleString()} fail it, ${restoreRecheck.rolledBack.length.toLocaleString()} ${published.dryRun ? "would be archived" : "archived"}.`
+          : "";
+      const closedNote =
+        closedInstitution.rolledBack.length > 0
+          ? ` ${published.dryRun ? "Would archive" : "Archived"} ${closedInstitution.rolledBack.length.toLocaleString()} live fee(s) of ${closedInstitution.institutions.toLocaleString()} institution(s) that no longer operate.`
           : "";
       const articleNote =
         articlePage.rolledBack.length > 0
@@ -1288,7 +1313,7 @@ async function executeAgenticStep(
           : "";
       return {
         status: "completed",
-        summary: `Hamilton published ${published.publishedFees.toLocaleString()} verified fee observations from ${published.processedVerifiedFees.toLocaleString()} selected rows (${published.skippedFees.toLocaleString()} skipped).${published.heldInstitutions.length > 0 ? ` Held ${published.heldFees.toLocaleString()} rows from ${published.heldInstitutions.length.toLocaleString()} institutions with fewer than ${published.minInstitutionFees} fees.` : ""}${outlierNote}${foldNote}${handRefileNote}${offTaxonomyNote}${limitNote}${businessNote}${sameLineNote}${otherBankNote}${evalVerdictNote}${articleNote}${productNote}${productConflictNote}${crossPageConflictNote}${categoryGuardNote}${guardRefileNote}${guardRequeueNote}${companionNote}${newerCopyNote}${refreshNote}${currentCopyNote}${nameRetidy.renames.length > 0 ? ` ${published.dryRun ? "Would tidy" : "Tidied"} ${nameRetidy.renames.length.toLocaleString()} run-on live fee name(s).` : ""}${accountNames.renames.length > 0 ? ` ${published.dryRun ? "Would name" : "Named"} ${accountNames.renames.length.toLocaleString()} generic live monthly fee(s) by their account.` : ""}${recheckNote}${restoreRecheckNote}${crossPageNote}${sourceNote}${duplicateNote}${frequencyNote}${indexRefresh?.refreshed ? ` Index refreshed: ${indexRefresh.categories} categories.` : ""}`,
+        summary: `Hamilton published ${published.publishedFees.toLocaleString()} verified fee observations from ${published.processedVerifiedFees.toLocaleString()} selected rows (${published.skippedFees.toLocaleString()} skipped).${published.heldInstitutions.length > 0 ? ` Held ${published.heldFees.toLocaleString()} rows from ${published.heldInstitutions.length.toLocaleString()} institutions with fewer than ${published.minInstitutionFees} fees.` : ""}${outlierNote}${foldNote}${handRefileNote}${offTaxonomyNote}${limitNote}${businessNote}${sameLineNote}${otherBankNote}${evalVerdictNote}${closedNote}${articleNote}${productNote}${productConflictNote}${crossPageConflictNote}${categoryGuardNote}${guardRefileNote}${guardRequeueNote}${companionNote}${newerCopyNote}${refreshNote}${currentCopyNote}${nameRetidy.renames.length > 0 ? ` ${published.dryRun ? "Would tidy" : "Tidied"} ${nameRetidy.renames.length.toLocaleString()} run-on live fee name(s).` : ""}${accountNames.renames.length > 0 ? ` ${published.dryRun ? "Would name" : "Named"} ${accountNames.renames.length.toLocaleString()} generic live monthly fee(s) by their account.` : ""}${recheckNote}${restoreRecheckNote}${crossPageNote}${sourceNote}${duplicateNote}${frequencyNote}${indexRefresh?.refreshed ? ` Index refreshed: ${indexRefresh.categories} categories.` : ""}`,
         detail: {
           selected_verified_fees: published.selectedVerifiedFees,
           processed_verified_fees: published.processedVerifiedFees,
@@ -1386,6 +1411,11 @@ async function executeAgenticStep(
             flagged: restoreRecheck.flagged,
             waiting: restoreRecheck.waiting,
             rolled_back: restoreRecheck.rolledBack.length,
+          },
+          closed_institution: {
+            live_fees: closedInstitution.liveFees,
+            institutions: closedInstitution.institutions,
+            rolled_back: closedInstitution.rolledBack.length,
           },
           article_page: {
             article_fees: articlePage.articleFees,

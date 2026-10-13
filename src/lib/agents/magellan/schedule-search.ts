@@ -6,6 +6,7 @@ import { loadMarketLeaderIds } from "@/lib/data-store/market-leaders";
 import { classifyFetchFailure, type AttemptOutcome } from "@/lib/agents/learning/outcomes";
 import { PAID_PASS_MODELS, paidModelCall, paidResponseJson, type PaidMessageCreator } from "@/lib/agents/paid-pass";
 
+import { FOUND_COOLDOWN_DAYS, MISS_COOLDOWN_DAYS } from "./cooldowns";
 import { looksLikePdfUrl, validateFeeCandidate } from "./find-validate";
 import { urlIdentity } from "./finders";
 import {
@@ -54,7 +55,7 @@ const MAX_OUTPUT_TOKENS = 1024;
 const ANSWER_SCORE = 0.85;
 const COVERAGE_TEXT_CHARS = 60_000;
 const TRANSIENT_OUTCOMES = ["network_error", "timeout", "http_5xx", "http_429", "budget_blocked"];
-/** Paid tries a bank gets in a month when every one ends in a timeout or refusal. */
+/** Paid tries a bank gets in MISS_COOLDOWN_DAYS when every one ends in a timeout or refusal. */
 export const MAX_TRANSIENT_TRIES = 3;
 
 export interface ScheduleSearchRow {
@@ -129,7 +130,7 @@ export function scheduleSearchPrompt(row: ScheduleSearchRow): string {
 }
 
 /**
- * Two lanes, neither searched this month:
+ * Two lanes, neither on the paid cooldown (`cooldowns.ts`):
  * - priority (up to `limit`): $10B+ banks, report requesters and each state's market
  *   leaders (`leaderIds`, top 15 by deposits or fee income) whose link is not the consumer
  *   schedule yet, or who are hidden for having fewer than three live fees;
@@ -196,14 +197,16 @@ async function selectRows(db: SqlTag, limit: number, hiddenLimit: number, leader
          AND COALESCE(profile.source_kind, 'unknown') <> 'offline'
          AND COALESCE(profile.read_strategy, '') <> 'manual_review'
          AND COALESCE(profile.locked_by_correction, false) = false
-         -- Searched this month: one real answer, or MAX_TRANSIENT_TRIES that timed out or
-         -- were refused (Morgan Stanley and Northern Trust timed out 35 times in 9 hours).
+         -- On cooldown (#1031): one real answer in the last FOUND_COOLDOWN_DAYS (a find) or
+         -- MISS_COOLDOWN_DAYS (a miss), or MAX_TRANSIENT_TRIES that timed out or were refused
+         -- in the last MISS_COOLDOWN_DAYS (Morgan Stanley and Northern Trust timed out 35
+         -- times in 9 hours).
          AND NOT EXISTS (
            SELECT 1 FROM pipeline_attempts pa
             WHERE pa.institution_id = inst.id
               AND pa.stage = 'discover'
               AND pa.strategy = ${SCHEDULE_SEARCH_STRATEGY.strategy}
-              AND pa.created_at >= date_trunc('month', NOW())
+              AND pa.created_at >= NOW() - make_interval(days => CASE WHEN pa.outcome = 'ok' THEN ${FOUND_COOLDOWN_DAYS}::int ELSE ${MISS_COOLDOWN_DAYS}::int END)
               AND pa.outcome <> ALL(${TRANSIENT_OUTCOMES})
          )
          AND (
@@ -211,7 +214,7 @@ async function selectRows(db: SqlTag, limit: number, hiddenLimit: number, leader
             WHERE pa.institution_id = inst.id
               AND pa.stage = 'discover'
               AND pa.strategy = ${SCHEDULE_SEARCH_STRATEGY.strategy}
-              AND pa.created_at >= date_trunc('month', NOW())
+              AND pa.created_at >= NOW() - make_interval(days => ${MISS_COOLDOWN_DAYS}::int)
               AND pa.outcome <> 'budget_blocked'
          ) < ${MAX_TRANSIENT_TRIES}
     )
