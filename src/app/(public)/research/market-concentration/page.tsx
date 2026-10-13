@@ -9,6 +9,8 @@ import { UpgradeGate } from "@/components/upgrade-gate";
 import { getMarketConcentrationCached } from "@/lib/data-store/public-cached-reads";
 
 export const metadata: Metadata = {
+  // Signed-out visitors, crawlers included, see only the upgrade gate: keep it out of the index.
+  robots: { index: false, follow: true },
   title: "Market Concentration & Bank Fees - HHI Analysis by Metro Area",
   description:
     "Do banks charge higher fees in concentrated markets? Analysis of deposit market concentration (HHI) across U.S. metro areas using FDIC Summary of Deposits data.",

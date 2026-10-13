@@ -87,10 +87,11 @@ function fallbackTo<T>(label: string, fallback: T) {
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { id } = await params;
   const instId = parseInt(id, 10);
-  if (Number.isNaN(instId)) return { title: "Institution Not Found" };
+  // notFound() here, before the page streams, so a missing institution answers 404, not 200.
+  if (Number.isNaN(instId)) notFound();
 
   const inst = await getPublicInstitutionForPage(instId);
-  if (!inst) return { title: "Institution Not Found" };
+  if (!inst) notFound();
 
   const fees = Number(inst.fee_count ?? 0) > 0 ? await getVisibleFeesForPage(instId) : [];
   const verifiedFees = fees.filter(isVerifiedFee);

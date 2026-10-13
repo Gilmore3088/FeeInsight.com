@@ -12,6 +12,8 @@ import { UpgradeGate } from "@/components/upgrade-gate";
 import { getFeeRevenueDataCached, getTierFeeRevenueSummaryCached, getCharterFeeRevenueSummaryCached } from "@/lib/data-store/public-cached-reads";
 
 export const metadata: Metadata = {
+  // Signed-out visitors, crawlers included, see only the upgrade gate: keep it out of the index.
+  robots: { index: false, follow: true },
   title: "Fee-to-Revenue Analysis - How Bank Fees Drive Income",
   description:
     "Original research correlating bank and credit union fee schedules with service charge income from call reports. Analysis by asset tier and charter type.",

@@ -5,6 +5,7 @@ import { MIN_INSTITUTIONS_FOR_MEDIAN } from "@/lib/data-store/maturity";
 import { SITE_URL } from "@/lib/constants";
 import { getSql } from "@/lib/data-store/connection";
 import sitemap from "./sitemap";
+import { loadGuides } from "@/lib/guides/source";
 import { MIN_VERIFIED_FEES_FOR_OFFER } from "./(public)/institution/[id]/profile-copy";
 
 vi.mock("@/lib/data-store", () => ({
@@ -116,5 +117,19 @@ describe("sitemap research articles", () => {
     vi.mocked(getSql).mockImplementation((() => tag) as never);
     const paths = await urls();
     expect(paths).toContain("/research/articles/overdraft-fees-by-state-2026-10");
+  });
+});
+
+describe("sitemap professional guides (#1165)", () => {
+  it("leaves out gated professional guides and keeps consumer guides", async () => {
+    vi.mocked(getPublicSnapshot).mockResolvedValue({ summary: {} as never, categories: [] as never });
+    vi.mocked(getStatesWithFeeData).mockResolvedValue([]);
+    vi.mocked(loadGuides).mockResolvedValueOnce([
+      { slug: "overdraft-fees", audience: "consumer", reviewedAt: "2026-10-01" },
+      { slug: "pricing-committee", audience: "professional", reviewedAt: "2026-10-01" },
+    ] as never);
+    const paths = await urls();
+    expect(paths).toContain("/guides/overdraft-fees");
+    expect(paths.some((path) => path.startsWith("/guides/pro/"))).toBe(false);
   });
 });
