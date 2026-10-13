@@ -3,14 +3,15 @@ import { CATEGORY_GUARD_VERSION, checkFeeCategory } from "@/lib/fee-category-gua
 import { SOURCE_CHECK_STRATEGY, traceLiveFee, type InstitutionText, type LiveFeeRow } from "@/lib/agents/hamilton/source-check";
 import { severityFor, type Severity } from "@/lib/agents/deming/severity";
 import { ARTICLE_PAGE_CHECK, isArticlePage } from "@/lib/agents/hamilton/article-page";
-import { PRODUCT_PAGE_CHECK, isProductPage } from "@/lib/agents/hamilton/product-page";
+import { PRODUCT_PAGE_CONFLICT_CHECK, productPageConflictSql } from "@/lib/agents/hamilton/product-page-conflict";
 import {
   OTHER_BANK_DOCUMENT_CHECK,
   UNCONFIRMED_HOST_CHECK,
   otherBankFeesSql,
   unconfirmedHostFeesSql,
 } from "@/lib/agents/hamilton/other-bank-document";
-import { nameIsFragment } from "@/lib/agents/darwin/release-review";
+import { nameHasCutShape } from "@/lib/agents/darwin/release-review";
+import { dropsCondition, isCutoffName, repairCutoffName } from "@/lib/agents/knox/name-retidy";
 import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
 
 type SqlTag = typeof sql;
@@ -30,7 +31,13 @@ type SqlTag = typeof sql;
  * sample (they are never pooled with dollars).
  */
 
-export const FRESH_AUDIT_VERSION = 3;
+/**
+ * v4 (2026-10-13, James): a fee from the bank's own product page is right unless its schedule
+ * prices the same fee differently (`productPageConflictSql`); before v4 every product-page fee
+ * was a miss. Also v4: a name that keeps its condition, as Hamilton's rename pass leaves it on
+ * purpose, is not a bad name (`nameQuality`).
+ */
+export const FRESH_AUDIT_VERSION = 4;
 export const FRESH_AUDIT_SAMPLE = 200;
 /** Below this many scorable fees the audit reports counts, not a percentage. */
 export const FRESH_AUDIT_MIN_SCORABLE = 30;
@@ -48,9 +55,11 @@ export interface FreshAuditEvidence {
   unconfirmedHost: Set<number>;
   /** A Hamilton second look (`takedown_pending`) is already open on the fee. */
   pending: Set<number>;
+  /** From a product page whose bank's schedule prices the same fee differently (v4). */
+  productPageConflict: Set<number>;
 }
 
-const NO_EVIDENCE: FreshAuditEvidence = { otherBank: new Set(), unconfirmedHost: new Set(), pending: new Set() };
+const NO_EVIDENCE: FreshAuditEvidence = { otherBank: new Set(), unconfirmedHost: new Set(), pending: new Set(), productPageConflict: new Set() };
 
 export interface FreshAuditMiss {
   feeId: number;
@@ -199,10 +208,26 @@ function zeroIsAPerk(fee: FreshAuditFee, text: string): boolean {
   return !check.ok || !ZERO_PRICE_TOKEN.test(check.sourceLine);
 }
 
-function nameQuality(name: string): string | null {
+/** A name that ends on a word cut from its sentence ("ATM A fee of"). */
+const TRAILING_CUT_WORD = /\b(?:of|to|from|for|at|is|and|or|with|by|a|an|the|per|than|below|above|up to|each)\s*$/i;
+/** A name that is a sentence from the schedule's prose ("If your scheduled payment ..."). */
+const PROSE_START = /^\s*(?:if|when|unless|because|in addition|you|we|our|your)\b/i;
+
+/**
+ * v4: a name that keeps its condition is a fee's name. Hamilton's rename pass keeps "Bill Pay
+ * Inactivity Fee (applies after 60 days of inactivity)" whole on purpose, since dropping the
+ * condition would lose what the fee is for (`dropsCondition`, UAT 2026-10-09). Before v4 the audit
+ * counted those as bad names (3 of the 7 on Oct 12). A name is bad when it carries a cut shape, when
+ * the rename pass could tidy it without losing a condition and has not, or when it is unchanged by
+ * the pass yet ends on a cut word or is a sentence of prose.
+ */
+export function nameQuality(name: string): string | null {
   if (JUNK_GLYPH.test(name)) return "junk_glyphs";
-  if (nameIsFragment(name)) return "name_fragment";
-  return null;
+  if (nameHasCutShape(name)) return "name_fragment";
+  if (!isCutoffName(name)) return null;
+  const repaired = repairCutoffName(name);
+  if (repaired !== name) return dropsCondition(name, repaired) ? null : "name_fragment";
+  return TRAILING_CUT_WORD.test(name.trim()) || PROSE_START.test(name) ? "name_fragment" : null;
 }
 
 /** The first evidence check the fee fails, or null when its document is the bank's own schedule. */
@@ -211,7 +236,7 @@ function evidenceFailure(fee: FreshAuditFee, evidence: FreshAuditEvidence): stri
   if (evidence.otherBank.has(id)) return OTHER_BANK_DOCUMENT_CHECK;
   if (evidence.unconfirmedHost.has(id)) return UNCONFIRMED_HOST_CHECK;
   if (isArticlePage(fee.document_url)) return ARTICLE_PAGE_CHECK;
-  if (isProductPage(fee.document_url)) return PRODUCT_PAGE_CHECK;
+  if (evidence.productPageConflict.has(id)) return PRODUCT_PAGE_CONFLICT_CHECK;
   return null;
 }
 
@@ -262,7 +287,7 @@ async function readEvidence(db: SqlTag, feeIds: number[]): Promise<FreshAuditEvi
   if (feeIds.length === 0) return NO_EVIDENCE;
   type HostRow = { fee_published_id: number | string; names_own_bank: boolean | string | null };
   const ownBank = (row: HostRow) => row.names_own_bank === true || row.names_own_bank === "t" || row.names_own_bank === "true";
-  const [other, unconfirmed, pending] = await Promise.all([
+  const [other, unconfirmed, pending, conflicts] = await Promise.all([
     db.unsafe<HostRow[]>(otherBankFeesSql("fees"), [feeIds]),
     db.unsafe<HostRow[]>(unconfirmedHostFeesSql("fees"), [feeIds]),
     db<{ fee_published_id: number | string }[]>`
@@ -278,9 +303,16 @@ async function readEvidence(db: SqlTag, feeIds: number[]): Promise<FreshAuditEvi
               AND later.created_at >= open.created_at
          )
     `,
+    db.unsafe<{ fee_published_id: number | string }[]>(productPageConflictSql("fees"), [feeIds]),
   ]);
   const ids = (rows: HostRow[]) => new Set(rows.filter((row) => !ownBank(row)).map((row) => Number(row.fee_published_id)));
-  return { otherBank: ids(other), unconfirmedHost: ids(unconfirmed), pending: new Set(pending.map((row) => Number(row.fee_published_id))) };
+  const sampled = new Set(feeIds);
+  return {
+    otherBank: ids(other),
+    unconfirmedHost: ids(unconfirmed),
+    pending: new Set(pending.map((row) => Number(row.fee_published_id))),
+    productPageConflict: new Set(conflicts.map((row) => Number(row.fee_published_id)).filter((id) => sampled.has(id))),
+  };
 }
 
 export function summarizeFreshAudit(result: FreshAuditResult): string {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { FRESH_AUDIT_MIN_SCORABLE, scoreFreshAudit, summarizeFreshAudit, type FreshAuditFee } from "./fresh-audit";
+import { FRESH_AUDIT_MIN_SCORABLE, nameQuality, scoreFreshAudit, summarizeFreshAudit, type FreshAuditFee } from "./fresh-audit";
 
 function fee(id: number, overrides: Partial<FreshAuditFee> = {}): FreshAuditFee {
   return {
@@ -41,7 +41,7 @@ describe("scoreFreshAudit", () => {
   });
 
   it("counts a stated fee from another bank's document as a critical evidence miss, pending when a second look is open", () => {
-    const evidence = { otherBank: new Set([4]), unconfirmedHost: new Set([5]), pending: new Set([5]) };
+    const evidence = { otherBank: new Set([4]), unconfirmedHost: new Set([5]), pending: new Set([5]), productPageConflict: new Set<number>() };
     const score = scoreFreshAudit([fee(4), fee(5), fee(6)], schedule, evidence);
     expect(score).toMatchObject({ scorable: 3, right: 1, evidenceMiss: 2, amountMiss: 0 });
     expect(score.misses.map((m) => [m.feeId, m.check, m.severity, m.pending])).toEqual([
@@ -57,6 +57,14 @@ describe("scoreFreshAudit", () => {
     );
     expect(score).toMatchObject({ right: 1, evidenceMiss: 1 });
     expect(score.misses[0]).toMatchObject({ feeId: 7, check: "hamilton.article_page", severity: "critical" });
+  });
+
+  it("counts a product-page fee as right unless the bank's schedule prices the same fee differently (v4, James 2026-10-13)", () => {
+    const productPage = { document_url: "https://bank.com/personal/checking" };
+    const evidence = { otherBank: new Set<number>(), unconfirmedHost: new Set<number>(), pending: new Set<number>(), productPageConflict: new Set([10]) };
+    const score = scoreFreshAudit([fee(9, productPage), fee(10, productPage)], schedule, evidence);
+    expect(score).toMatchObject({ right: 1, evidenceMiss: 1 });
+    expect(score.misses[0]).toMatchObject({ feeId: 10, check: "hamilton.product_page_conflict", severity: "major" });
   });
 
   // UAT, Oct 9: two of ten "right" rows were not right on the whole record (77845, 88402).
@@ -98,5 +106,30 @@ describe("summarizeFreshAudit", () => {
     expect(summarizeFreshAudit({ ...base, ...scoreFreshAudit(fees, schedule) })).toBe(
       "Deming audited 31 live fees (seed 2026-10-09): 30 of 30 right on amount, category, source, fee line and name (100.0%); 0 amount not supported, 0 category not supported, 0 not from the bank's own schedule, 0 not a fee line, 0 bad name; 1 with no stored text (unknown). Critical misses: 0.",
     );
+  });
+});
+
+describe("name quality v4: a name that keeps its condition is a fee's name", () => {
+  // Deming's Oct 10-12 name misses, read by hand.
+  it.each([
+    "Bill Pay Inactivity Fee (applies after 60 days of inactivity)",
+    "Stop Payments (includes billpay)",
+    "Dormant account fee (when balance is less than $50)",
+    "Cashier’s Checks: If taken in person",
+    "Legal Processing (Includes levy, writ, garnishment, subpoena and requests for information from law enforcement agencies)",
+    "Legal order to turn over your funds or property",
+  ])("keeps %s", (name) => {
+    expect(nameQuality(name)).toBeNull();
+  });
+
+  it.each([
+    "b A cash advance fee",
+    "Foreign ATM & Non-CO-OP Network ATM A fee of",
+    "ea. Notary service",
+    "available in your account, our payment of this transaction will result in an overdraft transaction. Because the transact",
+    "If your scheduled payment is not made within Ten (10) Days of your due date you will be assessed a 25.00 late charge.",
+    "thereafter",
+  ])("still fails %s", (name) => {
+    expect(nameQuality(name)).toBe("name_fragment");
   });
 });

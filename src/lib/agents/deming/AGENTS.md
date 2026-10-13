@@ -27,8 +27,11 @@ It runs as Atlas steps (agent `atlas`); it is deterministic and makes no model c
 - `fresh-audit.ts`: the `deming-fresh-audit` step in Atlas's daily run. It draws a seeded sample
   of `FRESH_AUDIT_SAMPLE` (200) live dollar fees from `published_fee_catalog` and checks each one
   against the bank's own stored schedule. A fee is right only when the amount (`traceLiveFee`, the
-  shared source check), the category (`checkFeeCategory`), the evidence (the bank's own schedule,
-  not an article or product page), the fee line ($0 rows must be priced lines) and the name all
+  shared source check), the category (`checkFeeCategory`), the evidence (the bank's own document,
+  not an article; a product-page fee only when the bank's schedule does not price the same fee
+  differently, v4, James 2026-10-13: `productPageConflictSql`); and v4 keeps a name that carries its
+  condition when Hamilton's rename pass leaves it whole on purpose, as in "Bill Pay Inactivity Fee
+  (applies after 60 days of inactivity)" (`nameQuality`), the fee line ($0 rows must be priced lines) and the name all
   hold. A fee with no stored text is unknown, never right or wrong. Below
   `FRESH_AUDIT_MIN_SCORABLE` scorable fees there is no percentage. The audit itself only reads.
 - This is the accuracy measure `CLAUDE.md` defines. The target is 95%, averaged over a week.
@@ -89,6 +92,6 @@ fails a PR that changes one of these constants without updating its line here (#
 
 | Constant | Strategy | Version | File |
 |---|---|---|---|
-| `FRESH_AUDIT_VERSION` | — | v3 | `deming/fresh-audit.ts` |
+| `FRESH_AUDIT_VERSION` | — | v4 | `deming/fresh-audit.ts` |
 | `DEMING_REGRESSION_VERSION` | — | v1 | `deming/regression.ts` |
 | `BENCHMARK_HEALTH_VERSION` | — | v1 | `deming/benchmark-health.ts` |

@@ -31,6 +31,7 @@ const MAJOR_CHECKS: ReadonlySet<string> = new Set([
   "hamilton.category_guard",
   "hamilton.current_copy",
   "hamilton.cross_page_conflict",
+  "hamilton.product_page_conflict",
 ]);
 
 const INFO_CHECKS: ReadonlySet<string> = new Set([
