@@ -1,5 +1,8 @@
 import { ROOMS, type RoomKey } from "@/lib/admin-rooms";
 import type { ReadFailure } from "@/lib/admin-read-failure";
+import Link from "next/link";
+import type { WorkPile } from "@/lib/admin-work-piles";
+import { formatAdminDateTime } from "@/lib/admin-time";
 import { AdminRoomScreens } from "./admin-nav";
 
 /** A room's landing header: its name and the question it answers, then (on a phone) its other screens. */
@@ -56,5 +59,29 @@ export function ScreenHeader({ title, lede }: { title: string; lede?: string }) 
       <h1 className="admin-display-title">{title}</h1>
       {lede ? <p className="admin-lede mt-1.5 max-w-3xl">{lede}</p> : null}
     </header>
+  );
+}
+
+/** A room's piles: size, oldest item when kept, and the way out. A pile whose read failed says so. */
+export function PileList({ piles }: { piles: WorkPile[] }) {
+  return (
+    <ul className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+      {piles.map((pile) => (
+        <li key={pile.key}>
+          <Link href={pile.href} prefetch={false} className="admin-card block space-y-2 p-4 hover:border-[var(--brand-primary)]">
+            <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">{pile.title}</p>
+            {pile.count != null ? (
+              <p className="text-2xl font-semibold tabular-nums text-gray-900 dark:text-gray-100">
+                {pile.count.toLocaleString()} <span className="text-xs font-normal text-gray-500">{pile.unit}</span>
+              </p>
+            ) : (
+              <p className="text-xs text-gray-500">{pile.note}</p>
+            )}
+            {pile.oldest ? <p className="text-xs text-gray-500">Oldest: {formatAdminDateTime(pile.oldest)}</p> : null}
+            <p className="text-xs text-gray-500">{pile.wayOut}</p>
+          </Link>
+        </li>
+      ))}
+    </ul>
   );
 }
