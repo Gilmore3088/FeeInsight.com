@@ -35,8 +35,9 @@ or PR. A failed check means the draft is not offered.
 - "Lower" and "higher"; never "cheapest", "worst", "gouging", "raise", "recommend",
   "maximize revenue".
 - Brand: Fee Insight publishes, the Bank Fee Index is the dataset, Hamilton is the Pro workspace.
-- Offers as in `.agents/product-marketing.md` section 4: never "from $300", no turnaround
-  promise on free reports, no booking links.
+- Offers as in `.agents/product-marketing.md` section 4: the report price is "From $300" from
+  `REPORT_OFFER.priceLabel`, never a fixed price; no turnaround promise on free reports; no booking
+  links.
 
 ## 4. Outside content
 

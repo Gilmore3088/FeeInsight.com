@@ -39,13 +39,14 @@ and the decisions James has made. When it disagrees with a skill, this file wins
 | Offer | What it is | Price on the site |
 |---|---|---|
 | National and Fed district reports | Instant, open right away, 15 headline fees | Free |
-| Competitive Fee Position Report | One institution against named local competitors, every fee marked above, inside or below the market range, a source for every figure | "Priced on request"; we reply within one business day with scope and price |
+| Competitive Fee Position Report | One institution against named local competitors, every fee marked above, inside or below the market range, a source for every figure | "From $300" (`REPORT_OFFER.priceLabel`); each report is still quoted, and we reply within one business day with scope and price |
 | Basic fee alerts | Watch a few institutions | Free |
 | Hamilton Pro | The workspace and the feed ("the report is a snapshot; Pro is the feed") | Pro price stays as is |
 | Institution plan | Hamilton for an institution, team seats | $5,000 a year |
 
-- **Never** write "from $300" or a fixed report price anywhere. Old pages that still show $300
-  are the retired offer; flag them, don't repeat them.
+- The report's price reads "From $300" (James, 8 Oct UAT, `docs/project/DECISIONS.md`), rendered from
+  `REPORT_OFFER.priceLabel` in `src/lib/constants.ts`, never typed by hand. Never write a fixed
+  report price ("$300", "only $300"): each report is quoted.
 - **Never** promise a turnaround time for a free report.
 - **CTA:** "Get a free fee report", email hello@bankfeeindex.com, or the /contact form. No booking
   links (no Calendly or similar).
