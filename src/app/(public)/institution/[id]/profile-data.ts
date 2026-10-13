@@ -151,6 +151,9 @@ export function pickHeadlineFees(verifiedFees: ExtractedFee[]): HeadlineFees {
   };
 }
 
+/** Search results cut a title near 60 characters; the root template adds " | Fee Insight" (14). */
+export const PROFILE_TITLE_MAX = 46;
+
 export function buildProfileTitle(institutionName: string, headline: HeadlineFees): string {
   const parts = [
     headline.overdraft !== null ? `Overdraft ${formatFeeAmount(headline.overdraft)}` : null,
@@ -158,7 +161,14 @@ export function buildProfileTitle(institutionName: string, headline: HeadlineFee
     headline.monthly !== null ? `Monthly ${formatFeeAmount(headline.monthly)}` : null,
   ].filter((part): part is string => Boolean(part));
   if (parts.length === 0) return `${institutionName} Fees and Fee Schedule`;
-  return `${institutionName} Fees: ${parts.join(", ")} (${new Date().getFullYear()})`;
+  // #1166 T9: fees come off the end, then the year, until the title fits; one fee always stays.
+  const year = ` (${new Date().getFullYear()})`;
+  let shown = parts;
+  while (shown.length > 1 && `${institutionName} Fees: ${shown.join(", ")}${year}`.length > PROFILE_TITLE_MAX) {
+    shown = shown.slice(0, -1);
+  }
+  const withYear = `${institutionName} Fees: ${shown.join(", ")}${year}`;
+  return withYear.length <= PROFILE_TITLE_MAX ? withYear : `${institutionName} Fees: ${shown.join(", ")}`;
 }
 
 /**

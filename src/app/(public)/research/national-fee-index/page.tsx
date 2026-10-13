@@ -23,9 +23,9 @@ import { canAccessPremium } from "@/lib/access";
 import { UpgradeGate } from "@/components/upgrade-gate";
 
 export const metadata: Metadata = {
-  title: "National Fee Index - US Bank & Credit Union Fee Benchmarks",
+  title: "National Fee Index: Bank and Credit Union Fees",
   description:
-    "The definitive national benchmark of bank and credit union fees. Median fees, percentiles, and institution counts across our full catalog of categories, from thousands of published fee schedules.",
+    "Median bank and credit union fees by category, with percentiles and institution counts, from thousands of published fee schedules.",
   keywords: [
     "national fee index",
     "bank fee benchmarks",
