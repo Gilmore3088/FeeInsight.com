@@ -988,7 +988,7 @@ async function executeAgenticStep(
         stateCode,
       });
       const companionRollbacks = companionRetire.rollbacks;
-      const duplicateCollapses = await collapsePublishedDuplicates(tx, {
+      const earlyDuplicateCollapses = await collapsePublishedDuplicates(tx, {
         runId: run.id,
         batchId: `agentic-run-${run.id}`,
         dryRun: run.runKind === "dry_run",
@@ -1107,6 +1107,18 @@ async function executeAgenticStep(
         minInstitutionFees: numericRunParam(params, ["publish_min_institution_fees"]),
         db: tx,
       });
+      // #1069: a fee this step just published that repeats a live row (a new read that only
+      // fills its frequency or names its audience) is collapsed now, not on the state's next
+      // step: until then the catalog listed the fee twice (88 a day, about 40 hours, Oct 13).
+      const lateDuplicateCollapses = published.dryRun || published.publishedFees === 0
+        ? []
+        : await collapsePublishedDuplicates(tx, {
+            runId: run.id,
+            batchId: `agentic-run-${run.id}`,
+            dryRun: false,
+            institutionId,
+          });
+      const duplicateCollapses = [...earlyDuplicateCollapses, ...lateDuplicateCollapses];
       // Every live fee must be stated in the bank's own stored schedule: every publish
       // step source-checks a batch of institutions (its state's or institution's when it
       // has one, any state's otherwise) after publishing, so fees published in this step
