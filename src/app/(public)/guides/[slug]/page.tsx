@@ -25,7 +25,6 @@ import {
   loadRelatedGuides,
 } from "@/lib/guides/source";
 import {
-  getCheapestAndMostExpensiveCached,
   getDataFreshnessCached,
   getFeeCategoryDetailCached,
 } from "@/lib/data-store/public-cached-reads";
@@ -40,7 +39,7 @@ import {
   type GuideBreakdowns,
 } from "@/components/public/guide-blocks";
 import { SavedInstitutionsPanel } from "@/components/public/saved-institutions-panel";
-import { SITE_URL } from "@/lib/constants";
+import { PRODUCT_NAME, SITE_URL } from "@/lib/constants";
 
 interface PageProps {
   params: Promise<{ slug: string }>;
@@ -119,7 +118,7 @@ export default async function GuidePage({ params }: PageProps) {
   const categories = guideCategories(guide);
 
   // National medians and counts from the shared public snapshot (same as the fee index).
-  const [{ summary, categories: allSummaries }, freshness, primaryDetail, extremes, related] =
+  const [{ summary, categories: allSummaries }, freshness, primaryDetail, related] =
     await Promise.all([
       getPublicSnapshot(),
       // The shared public cache, as the fee pages read it: a guide rebuilt after a takedown
@@ -127,7 +126,6 @@ export default async function GuidePage({ params }: PageProps) {
       // 190 freshness reads an hour against about 8 refreshes).
       getDataFreshnessCached(),
       getFeeCategoryDetailCached(guide.primaryCategory),
-      getCheapestAndMostExpensiveCached(guide.primaryCategory, 5),
       loadRelatedGuides(guide),
     ]);
 
@@ -170,7 +168,6 @@ export default async function GuidePage({ params }: PageProps) {
   // One value per institution, the same population as the median printed beside it.
   const primaryAmounts = primaryDetail.institution_values ?? [];
 
-  const { cheapest, mostExpensive } = extremes;
   const zeroFeeCount = primarySummary?.zero_count ?? 0;
 
   const spotlight = new Set(getSpotlightCategories());
@@ -279,8 +276,7 @@ export default async function GuidePage({ params }: PageProps) {
                     : `How does your bank compare on ${primaryNamePlain}?`}
                 </h2>
                 <p className="mt-1 text-[13px] text-[#6B6255]">
-                  Search the {summary.monitoredLabel} banks and credit
-                  unions we monitor and see your institution&rsquo;s published{" "}
+                  Find your bank or credit union and see its published{" "}
                   {primaryNamePlain} against the national median.
                 </p>
               </div>
@@ -362,7 +358,7 @@ export default async function GuidePage({ params }: PageProps) {
               {/* ── Attribution ── */}
               <footer className="mt-12 rounded-xl border border-[#E8DFD1]/70 bg-[#FAF7F2]/60 px-5 py-4 text-[12.5px] leading-relaxed text-[#6B6255]">
                 <p>
-                  Fee data from the Fee Insight National Fee Index, covering{" "}
+                  Fee data from the {PRODUCT_NAME}, covering{" "}
                   <span className="tabular-nums">
                     {primarySummary ? primarySummary.institution_count.toLocaleString() : summary.institutionsLabel}
                   </span>{" "}
@@ -549,57 +545,11 @@ export default async function GuidePage({ params }: PageProps) {
                 </div>
               )}
 
-              {cheapest.length > 0 && (
-                <div className="rounded-xl border border-emerald-200/60 bg-emerald-50/20 px-5 py-4">
-                  <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-emerald-700">
-                    Lowest {primaryName} Fees
-                  </p>
-                  {zeroFeeCount > 0 && (
-                    <p className="mt-1.5 text-[12px] text-emerald-800">
-                      <span className="font-bold tabular-nums">{zeroFeeCount}</span>{" "}
-                      institution{zeroFeeCount !== 1 ? "s" : ""} charge nothing
-                    </p>
-                  )}
-                  <div className="mt-3 space-y-1.5">
-                    {cheapest.map((f, i) => (
-                      <div
-                        key={f.id}
-                        className="flex items-center justify-between text-[12px]"
-                      >
-                        <span className="mr-2 truncate text-[#5A5347]">
-                          <span className="mr-1 tabular-nums text-[#6B6255]">{i + 1}.</span>
-                          {f.institution_name}
-                        </span>
-                        <span className="shrink-0 font-semibold tabular-nums text-emerald-800">
-                          {formatAmount(f.amount)}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {mostExpensive.length > 0 && (
-                <div className="rounded-xl border border-red-200/60 bg-red-50/20 px-5 py-4">
-                  <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-red-700">
-                    Highest {primaryName} Fees
-                  </p>
-                  <div className="mt-3 space-y-1.5">
-                    {mostExpensive.map((f, i) => (
-                      <div
-                        key={f.id}
-                        className="flex items-center justify-between text-[12px]"
-                      >
-                        <span className="mr-2 truncate text-[#5A5347]">
-                          <span className="mr-1 tabular-nums text-[#6B6255]">{i + 1}.</span>
-                          {f.institution_name}
-                        </span>
-                        <span className="shrink-0 font-semibold tabular-nums text-red-700">
-                          {formatAmount(f.amount)}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
+              {/* #1172: no institution is named outside a buyer's own report. */}
+              {zeroFeeCount > 0 && (
+                <div className="rounded-xl border border-[#E8DFD1] bg-white/80 px-5 py-4 text-[12px] text-[#5A5347]">
+                  <span className="font-bold tabular-nums">{zeroFeeCount}</span>{" "}
+                  institution{zeroFeeCount !== 1 ? "s" : ""} in our index charge nothing for {primaryNamePlain}.
                 </div>
               )}
 
