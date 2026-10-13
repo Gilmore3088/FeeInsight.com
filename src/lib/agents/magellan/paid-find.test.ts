@@ -8,6 +8,7 @@ vi.mock("@/lib/ai-provider-usage", async (importOriginal) => ({
 
 import { ProviderBudgetBlockedError } from "@/lib/api-hardening/budget";
 
+import { FOUND_COOLDOWN_DAYS, MISS_COOLDOWN_DAYS } from "./cooldowns";
 import { DISCOVERY_METHOD_VERSION } from "./discovery";
 import { onBankDomain, PAID_FIND_STRATEGY, PAID_PICK_STRATEGY, runMagellanPaidFind } from "./paid-find";
 
@@ -53,14 +54,17 @@ function attempts(db: DbMock) {
 }
 
 describe("Magellan paid find (pass 3)", () => {
-  it("selects only banks every free finder missed with the current method, once a month", async () => {
+  it("selects only banks every free finder missed with the current method, off the rolling cooldown", async () => {
     const db = createDb([]);
     await runMagellanPaidFind({ runId: 1, stateCode: "vt", db: asDb(db), create: vi.fn() });
     const select = db.mock.calls.find((call) => templateText(call[0]).includes("inst.city"))!;
     const text = templateText(select[0]);
     expect(text).toContain("inst.rescue_status = 'dead'");
     expect(text).toContain("pa.detail @>");
-    expect(text).toContain("date_trunc('month', NOW())");
+    expect(text).not.toContain("date_trunc('month'");
+    expect(text).toContain("pa.created_at >= NOW() - make_interval(days => CASE WHEN pa.outcome = 'ok' THEN");
+    expect(select).toContain(FOUND_COOLDOWN_DAYS);
+    expect(select).toContain(MISS_COOLDOWN_DAYS);
     expect(select).toContain(JSON.stringify({ method_version: DISCOVERY_METHOD_VERSION }));
     expect(select).toContain(PAID_FIND_STRATEGY.strategy);
     expect(select).toContain("VT");
