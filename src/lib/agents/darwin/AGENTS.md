@@ -52,6 +52,12 @@ Darwin owns verification and classification.
   readings of "free if you meet a condition, else $2.50-$6.95" lines, one a package list verified
   into the retired `estatement_fee` type. The same checks are Hamilton's publish-time rules, so a
   row that would come down after publishing now stops before it is verified.
+- A `conditional_zero` hold is settled by the next verify step (`conditional-zero-resolve.ts`,
+  #1115; James approved rules a-c, 2026-10-13), up to 200 a step, each as a `verify.rules` verdict:
+  (a) a duplicate when the same document has a priced verified fee in its category; (c) verified
+  at $0 (flag `darwin_conditional_zero_released`) when the bank's own schedule, not a product page,
+  prices it free on its own line with no other dollar figure, outside overdraft, NSF, monthly
+  maintenance and minimum balance; (b) otherwise rejected, for Knox's next read of the line.
 - `verify.recheck` (`verified-recheck.ts`, version 2, 2026-10-09) ends every learning verify step
   by reading up to 200 rows `verify.rules` v3 verified (the rows the `not_in_source` re-select
   verified first, then newest first), once each under `postSourceCheck`. A failing row that is
