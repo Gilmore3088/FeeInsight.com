@@ -43,6 +43,16 @@ export function dataRoomVitals(counts: DataRoomCounts | null): DataVital[] {
 export function dataRoomPiles(counts: DataRoomCounts | null): WorkPile[] {
   return [
     {
+      key: "pro-institutions-below-minimum",
+      title: "Pro institutions under 3 live fees",
+      href: "https://github.com/Gilmore3088/FeeInsight.com/issues/1078",
+      count: counts ? counts.proInstitutionsBelowMinimum : null,
+      unit: "Pro accounts' own institutions",
+      oldest: null,
+      wayOut: "Atlas gives each a direct read run, again every 24 hours until it has 3 live fees (#1078).",
+      ...(counts ? {} : { note: UNREADABLE }),
+    },
+    {
       key: "closed-institution-fees",
       title: "Live fees at closed institutions",
       href: "https://github.com/Gilmore3088/FeeInsight.com/issues/1200",
