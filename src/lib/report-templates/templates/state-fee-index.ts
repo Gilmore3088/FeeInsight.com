@@ -139,7 +139,7 @@ function everydaySection(data: StateReportData, label: string): string {
           rows,
         })
       : emptyNotice(
-          `Not enough ${data.stateName} institutions have verified everyday fees yet for a state median. Coverage grows with every monthly pass.`,
+          `Not enough ${data.stateName} institutions have verified everyday fees yet for a state median. Coverage grows as more schedules are read.`,
         );
   return reportSection(
     {

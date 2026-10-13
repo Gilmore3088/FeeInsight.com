@@ -57,7 +57,7 @@ export function StateHero(props: StateHeroProps) {
     { value: formatCount(verifiedInstitutions), label: "institutions with verified fees", note: `of ${formatCount(monitored)} we monitor in ${stateName}` },
     { value: formatCount(verifiedFees), label: "verified fees", note: "each traced to a published schedule" },
     { value: String(categoriesWithMedian), label: "fees with a state median", note: "at least 5 institutions each" },
-    { value: `${coverage}%`, label: "coverage", note: "of monitored institutions, growing monthly" },
+    { value: `${coverage}%`, label: "coverage", note: "of monitored institutions" },
   ];
 
   return (
@@ -197,8 +197,8 @@ export function StateBenchmarkBoard({ rows, stateCode, stateName, asOf }: { rows
         </div>
       ) : (
         <p className="mt-7 rounded-2xl border border-dashed border-[#D4C9BA] px-5 py-8 text-center text-[13px] text-[#6B6255]">
-          Not enough {stateName} institutions have verified everyday fees yet for a state median. Coverage grows with
-          every monthly pass.
+          Not enough {stateName} institutions have verified everyday fees yet for a state median. Coverage grows as more
+          schedules are read.
         </p>
       )}
       <ExhibitSource asOf={asOf}>
@@ -317,7 +317,7 @@ export function CoverageExhibit(props: {
         }
       >
         How many of the state&apos;s banks and credit unions have verified fees so far, and the cities with the most.
-        Coverage grows with every monthly pass.
+        Coverage grows as more schedules are read.
       </SectionHeading>
 
       <div className="mt-7 grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)]">

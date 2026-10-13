@@ -89,7 +89,7 @@ export default async function MethodologyPage() {
           body={[
             `Fee Insight draws its institution universe from two authoritative federal databases: the FDIC's BankFind Suite (which tracks every FDIC-insured bank, thrift, and savings institution) and the NCUA's Research & Data portal (which covers all federally chartered credit unions). Together, these sources provide accurate legal names, charter classifications, asset sizes, physical locations, and primary website URLs for roughly ${summary.monitoredLabel} active institutions.`,
             "We do not use purchased data lists, scraped directories, or self-reported feeds. Every institution in our index is traceable to a federal regulator record with a published institution ID. This is the foundation of our data quality commitment: our institution universe is authoritative before the first fee is collected.",
-            `As of the most recent index update, ${institutions} institutions have verified fee schedules in the Bank Fee Index, across ${summary.statesLabel} states. Coverage is skewed toward institutions with assets above $100 million, where fee schedules are most consistently published online. Institutions below $50 million in assets are included where fee schedules are publicly discoverable.`,
+            `As of the most recent index update, ${institutions} institutions have verified fee schedules in the Bank Fee Index, across ${summary.statesLabel} states.`,
           ]}
         />
 
@@ -101,7 +101,7 @@ export default async function MethodologyPage() {
             "Automated collection runs on a rolling calendar and stores the document, its URL and the date collected. Every fee in the index points back to that stored document, so a figure can always be checked against the schedule it came from.",
             "Finding the schedule comes first. Most institutions publish it at a predictable address (a fee schedule PDF, or a disclosures page); where they do not, we search the institution's own website. Large regional banks publish reliably; community banks and credit unions are more variable, and coverage is weakest where the schedule is not published online at all.",
             "We read HTML pages, plain-text documents and PDFs with selectable text. Scanned, image-only PDFs are set aside for separate handling rather than mixed into the general queue.",
-            "Institutions whose fees change often are rechecked more often. Every schedule is rechecked at least quarterly. When a stored document has not changed since the last visit, its fees are carried forward rather than re-read.",
+            "Schedules are rechecked on a rolling basis. When a stored document has not changed since the last visit, its fees are carried forward rather than re-read.",
           ]}
         />
 
@@ -159,7 +159,7 @@ export default async function MethodologyPage() {
           label="Coverage and Limitations"
           title="What our data covers — and what it does not"
           body={[
-            "The Bank Fee Index tracks published fee schedules, not actual fee revenue or transaction-level data. A published fee of $35 does not mean a given institution collected $35 for every overdraft — waiver programs, promotional rates, and negotiated terms affect realized fees. Our data reflects disclosed rates, which are the standard of comparison for regulatory purposes and consumer research.",
+            "The Bank Fee Index tracks published fee schedules, not actual fee revenue or transaction-level data. A published fee of $35 does not mean a given institution collected $35 for every overdraft — waiver programs, promotional rates, and negotiated terms affect realized fees. Our data reflects the fees institutions disclose.",
             "Our coverage is strongest for retail deposit account fees (maintenance, overdraft, NSF, wire, ATM) and weakest for business account fees, loan fees, and investment-account fees. Fee schedules for these product types are less consistently published in machine-readable formats.",
             "Geographic coverage is uneven: some states and Federal Reserve districts have far more institutions with published fees than others. Each state and district page shows its own institution count, and a benchmark is marked provisional or withheld when too few institutions report it.",
             "Source freshness varies by institution and schedule. Every fee carries the date its schedule was collected, so a figure can be judged by its age. A fee stays in the index until a newer copy of its schedule replaces it.",
