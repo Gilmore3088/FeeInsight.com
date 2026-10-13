@@ -15,6 +15,7 @@ import { getPipelineHealth } from "@/lib/pipeline-health";
 import { getLeads } from "@/lib/admin-queries";
 import { buildNeedsYou, needsYouHeadline } from "@/lib/console/needs-you";
 import { getSpendSummary } from "@/lib/data-store/console-spend";
+import { getCachedHoldGroups } from "@/lib/console/held-queue-cache";
 import { NeedsYouList, VitalsRow, spendVitals, todayVitals } from "./today-panels";
 
 const getCachedAtlasCommandCenter = unstable_cache(
@@ -54,7 +55,7 @@ const ELSEWHERE: Array<{ href: string; label: string }> = [
  */
 export default async function TodayPage() {
   await requireAuth("view");
-  const [center, health, snapshot, failureAlerts, spend, leads] = await Promise.all([
+  const [center, health, snapshot, failureAlerts, spend, leads, holds] = await Promise.all([
     getCachedAtlasCommandCenter(),
     getPipelineHealth().catch((error) => {
       console.error("Today pipeline health query failed", error);
@@ -70,11 +71,15 @@ export default async function TodayPage() {
       return null;
     }),
     getLeads(),
+    getCachedHoldGroups().catch((error) => {
+      console.error("Today held fees query failed", error);
+      return null;
+    }),
   ]);
   const problems = health
     ? pipelineHealthProblems(health)
     : ["Pipeline health could not be read; check the database connection."];
-  const needsYou = buildNeedsYou({ attention: center.attention, failureAlerts, leads });
+  const needsYou = buildNeedsYou({ attention: center.attention, failureAlerts, leads, holds });
   const vitals = todayVitals(snapshot, spendVitals(spend?.total ?? null)[0]);
   const today = new Date().toLocaleDateString("en-US", {
     weekday: "long",

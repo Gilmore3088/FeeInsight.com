@@ -1,6 +1,7 @@
 import type { AttentionItem } from "@/lib/admin-command-center";
 import type { FailureAlert } from "@/lib/agents/failure-alerts";
 import type { LeadRow } from "@/lib/admin-queries";
+import type { HoldGroup } from "@/lib/agents/darwin/held-queue";
 import { LEAD_STATUS_LABELS, isLeadStatus, leadDueAt, quoteFollowUpAt } from "@/lib/leads/lead-status";
 
 /**
@@ -81,16 +82,41 @@ function leadItem(lead: LeadRow, now: Date): NeedsYouItem | null {
   };
 }
 
+/**
+ * Age limits for Darwin's held fees (#1115 step 2): a reason with no way out is raised after a
+ * week; a reason with one after two weeks, since by then its way out is not keeping up.
+ */
+export const HOLD_AGE_LIMIT_DAYS = { noExit: 7, withExit: 14 } as const;
+
+function holdItem(group: HoldGroup, now: Date): NeedsYouItem | null {
+  if (!group.oldest || group.count === 0) return null;
+  const ageMs = now.getTime() - new Date(group.oldest).getTime();
+  const limit = group.hasExit ? HOLD_AGE_LIMIT_DAYS.withExit : HOLD_AGE_LIMIT_DAYS.noExit;
+  if (ageMs < limit * 86_400_000) return null;
+  return {
+    id: `hold:${group.cause}`,
+    severity: "warning",
+    area: "Agents",
+    title: `${group.count.toLocaleString("en-US")} fees held ${hoursLabel(ageMs)}: ${group.label}`,
+    detail: group.hasExit ? `Past its ${limit}-day limit; its way out is not keeping up. ${group.wayOut}` : `No way out yet; past its ${limit}-day limit.`,
+    href: "/admin/darwin",
+    action: "See held fees",
+  };
+}
+
 /** Pure: one ordered list from the stored sources. */
 export function buildNeedsYou({
   attention,
   failureAlerts,
   leads,
+  holds = [],
   now = new Date(),
 }: {
   attention: AttentionItem[];
   failureAlerts: FailureAlert[];
   leads: LeadRow[];
+  /** Darwin's held fees by reason; null or empty when not read. */
+  holds?: HoldGroup[] | null;
   now?: Date;
 }): NeedsYouItem[] {
   const items: NeedsYouItem[] = [];
@@ -122,6 +148,11 @@ export function buildNeedsYou({
 
   for (const lead of leads) {
     const item = leadItem(lead, now);
+    if (item) items.push(item);
+  }
+
+  for (const group of holds ?? []) {
+    const item = holdItem(group, now);
     if (item) items.push(item);
   }
 
