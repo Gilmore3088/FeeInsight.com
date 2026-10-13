@@ -7,6 +7,7 @@ import { sql } from "@/lib/data-store/connection";
 import { getHeldFees, type HeldFee } from "@/lib/fee-hold";
 import { Breadcrumbs } from "@/components/breadcrumbs";
 import { formatAssets } from "@/lib/format";
+import { notOnlineStatus, type NotOnlineStatus } from "@/lib/agents/magellan/escalation";
 import { FeeTable } from "./fee-table";
 import { HeldFeesTable } from "./fee-hold-controls";
 import {
@@ -52,6 +53,7 @@ export default async function InstitutionDetailPage({
     financials,
     learnedNotes,
     heldFees,
+    paidLadder,
   ] =
     await Promise.all([
       getInstitution(institutionId),
@@ -65,6 +67,10 @@ export default async function InstitutionDetailPage({
       getHeldFees(sql, institutionId).catch((error): HeldFee[] => {
         console.error("[admin] held fees unavailable", { institutionId, error });
         return [];
+      }),
+      notOnlineStatus(sql, institutionId).catch((error): NotOnlineStatus | null => {
+        console.error("[admin] paid search ladder unavailable", { institutionId, error });
+        return null;
       }),
     ]);
 
@@ -140,6 +146,11 @@ export default async function InstitutionDetailPage({
                 </span>
               )}
             </ProfileRow>
+            {!institution.fee_schedule_url && paidLadder && paidLadder.misses > 0 ? (
+              <ProfileRow label="Paid Search">
+                <PaidLadderSummary ladder={paidLadder} />
+              </ProfileRow>
+            ) : null}
             <ProfileRow label="Document Type">
               {institution.document_type ? (
                 <DocTypeBadge type={institution.document_type} />
@@ -934,6 +945,21 @@ function LearnedNotesPanel({ notes }: { notes: InstitutionLearnedNotes }) {
         </ul>
       </div>
     </div>
+  );
+}
+
+/** Magellan's escalation ladder (#1032): "not published online", or the next paid rung. */
+function PaidLadderSummary({ ladder }: { ladder: NotOnlineStatus }) {
+  const day = (value: string | null) => (value ? value.slice(0, 10) : "-");
+  const tried = ladder.methods.map((method) => method.strategy.replace(/^discover\./, "")).join(", ");
+  return (
+    <span className="text-gray-600 dark:text-gray-300">
+      {ladder.since
+        ? `Not published online since ${day(ladder.since)} (${ladder.misses} paid misses). `
+        : `${ladder.misses} paid miss${ladder.misses === 1 ? "" : "es"}; next rung: ${ladder.nextRung}. `}
+      Next paid try after {day(ladder.nextPaidTryAfter)}.
+      {tried ? <span className="block text-[11px] text-gray-400">Tried: {tried}</span> : null}
+    </span>
   );
 }
 

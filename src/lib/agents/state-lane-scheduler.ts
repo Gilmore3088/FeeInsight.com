@@ -15,6 +15,7 @@ import { SOURCE_CHECK_REASON, SOURCE_CHECK_RESTORE_PREFIX, SOURCE_CHECK_STRATEGY
 import { FOUND_COOLDOWN_DAYS, MISS_COOLDOWN_DAYS } from "./magellan/cooldowns";
 import { MAGELLAN_STALE_LINK_REFETCH_DAYS } from "./magellan/fetch";
 import { DISCOVERY_METHOD_VERSION } from "./magellan/discovery";
+import { NOT_ONLINE_AFTER_MISSES, NOT_ONLINE_RETRY_DAYS } from "./magellan/escalation";
 import { PAID_FIND_STRATEGY, PAID_PICK_STRATEGY, TRANSIENT_PAID_OUTCOMES } from "./magellan/paid-find";
 import { WEBSITE_FIND_STRATEGY } from "./magellan/website-find";
 import { loadMarketLeaderIds } from "@/lib/data-store/market-leaders";
@@ -855,6 +856,24 @@ export async function stateLaneCadence(stateCode: string): Promise<StateLaneCade
       WITH paid_due AS (
           SELECT inst.id FROM public.institution_sources inst
             LEFT JOIN public.institution_source_profiles profile ON profile.institution_id = inst.id
+            -- Escalation ladder (#1032; magellan/escalation.ts paidLadderSql).
+            LEFT JOIN LATERAL (
+              SELECT count(*)::int AS misses, max(pa.created_at) AS last_miss_at
+                FROM public.pipeline_attempts pa
+               WHERE pa.institution_id = inst.id
+                 AND pa.stage = 'discover'
+                 AND pa.strategy = ${PAID_FIND_STRATEGY.strategy}
+                 AND pa.outcome <> 'ok'
+                 AND pa.outcome <> ALL(${TRANSIENT_PAID_OUTCOMES}::text[])
+                 AND COALESCE(pa.detail->>'website_url', inst.website_url) = inst.website_url
+                 AND pa.created_at > COALESCE((
+                   SELECT max(found.created_at) FROM public.pipeline_attempts found
+                    WHERE found.institution_id = inst.id
+                      AND found.stage = 'discover'
+                      AND found.strategy = ${PAID_FIND_STRATEGY.strategy}
+                      AND found.outcome = 'ok'
+                 ), '-infinity'::timestamptz)
+            ) ladder ON true
            WHERE upper(btrim(inst.state_code)) = ${stateCode}
              AND COALESCE(inst.status, 'active') = 'active'
              AND NULLIF(btrim(inst.fee_schedule_url), '') IS NULL
@@ -863,6 +882,10 @@ export async function stateLaneCadence(stateCode: string): Promise<StateLaneCade
              AND COALESCE(profile.source_kind, 'unknown') <> 'offline'
              AND COALESCE(profile.read_strategy, '') <> 'manual_review'
              AND COALESCE(profile.locked_by_correction, false) = false
+             AND NOT (
+               ladder.misses >= ${NOT_ONLINE_AFTER_MISSES}
+               AND ladder.last_miss_at >= NOW() - make_interval(days => ${NOT_ONLINE_RETRY_DAYS}::int)
+             )
              AND EXISTS (
                SELECT 1 FROM public.pipeline_attempts pa
                 WHERE pa.institution_id = inst.id
