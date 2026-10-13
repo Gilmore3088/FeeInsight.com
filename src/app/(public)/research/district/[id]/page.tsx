@@ -20,7 +20,7 @@ import { formatAmount } from "@/lib/format";
 import { STATE_NAMES } from "@/lib/us-states";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
 import { DataFreshness } from "@/components/data-freshness";
-import { SITE_URL } from "@/lib/constants";
+import { SITE_NAME, SITE_URL } from "@/lib/constants";
 import { getPeerIndexCached, getDistrictStatsCached } from "@/lib/data-store/public-cached-reads";
 
 interface PageProps {
@@ -377,6 +377,7 @@ export default async function DistrictReportPage({ params }: PageProps) {
             headline: `${districtName} District Fee Analysis`,
             description: `Bank and credit union fee analysis for Federal Reserve District ${districtId}.`,
             url: `${SITE_URL}/research/district/${districtId}`,
+            publisher: { "@type": "Organization", name: SITE_NAME, url: SITE_URL },
           }).replace(/</g, "\\u003c"),
         }}
       />

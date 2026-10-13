@@ -37,6 +37,8 @@ export const metadata: Metadata = {
   openGraph: {
     type: "website",
     siteName: "Fee Insight",
+    // Resolved against each page's own path, like the canonical above.
+    url: "./",
   },
   twitter: {
     card: "summary_large_image",
@@ -55,17 +57,6 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <head>
-        {/* Material Symbols Outlined — used by /pro Hamilton screens for icons.
-            Hoisted here from Hamilton layout so the font is available on first
-            paint (was rendering as literal text "group_work", "download" etc.
-            because Next.js streamed the link after the body painted icons). */}
-        {/* eslint-disable-next-line @next/next/no-page-custom-font */}
-        <link
-          href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap"
-          rel="stylesheet"
-        />
-      </head>
       <body className={`${GeistSans.variable} ${GeistMono.variable} ${newsreader.variable} ${jetbrainsMono.variable} font-sans antialiased`}>
         {children}
         {/* Records a tracked-link visit (utm_ tags) once per session; no personal data. */}

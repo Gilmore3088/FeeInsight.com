@@ -1,4 +1,4 @@
-import { CONTACT_EMAIL, PRODUCT_NAME, SITE_NAME, SITE_URL } from "@/lib/constants";
+import { CONTACT_EMAIL, HAMILTON_CANONICAL, PRODUCT_NAME, REPORT_INCLUDES, REPORT_OFFER, SITE_NAME, SITE_URL } from "@/lib/constants";
 
 
 /**
@@ -25,17 +25,20 @@ export function buildLlmsTxt(base: string = SITE_URL): string {
     "",
     `- [Research hub](${link("/research")}): national, state and Federal Reserve district fee reports`,
     `- [National fee index](${link("/research/national-fee-index")})`,
-    `- [Fed districts](${link("/districts")})`,
+    `- [Fed districts](${link("/research#districts")})`,
     `- [Methodology](${link("/methodology")}): how fees are collected, checked and summarized`,
     "",
     "## For banks and credit unions",
     "",
-    `- [Benchmarking and fee reports](${link("/for-institutions")}): free national and district reports, and a paid report comparing one institution with named local competitors`,
-    `- [Pro plans](${link("/subscribe")}): the Hamilton workspace for fee and pricing teams`,
+    `- [${REPORT_OFFER.name}](${link("/reports")}): a paid report comparing one bank or credit union's published fees with named local competitors, quoted per institution. It contains:`,
+    ...REPORT_INCLUDES.map((item) => `  - ${item}`),
+    `- [Benchmarking and free reports](${link("/for-institutions")}): free national and Fed district fee reports`,
+    `- [Pro plans](${link("/subscribe")}): ${HAMILTON_CANONICAL}`,
     `- [API documentation](${link("/api-docs")})`,
     "",
     "## Contact",
     "",
+    `- [Contact form](${link("/contact")})`,
     `- ${CONTACT_EMAIL}`,
     "",
   ].join("\n");
