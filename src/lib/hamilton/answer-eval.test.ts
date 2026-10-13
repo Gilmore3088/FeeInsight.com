@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("@/lib/data-store/connection", () => ({ sql: {} }));
 vi.mock("./ask-service", () => ({ resolveAskIntent: vi.fn() }));
 
-import { EVAL_QUESTION_IDS, failureShape, liveDataFailures, offSubjectFailure, pickProQuestions, summarizeEval, summarizeProReplay, type EvalResult, type ProQuestionResult } from "./answer-eval";
+import { EVAL_QUESTION_IDS, failureShape, liveDataFailures, offSubjectFailure, pickProQuestions, summarizeCorrectness, summarizeEval, summarizeProReplay, type EvalResult, type ProQuestionResult } from "./answer-eval";
 import type { SqlTag } from "@/lib/agents/hamilton/studies/common";
 import { QUALITY_QUESTIONS } from "./workspace/quality-bar";
 import type { AskResponse } from "./workspace/types";
@@ -16,6 +16,26 @@ const fl = { id: 1, name: "Space Coast", stateCode: "FL", charterType: "credit_u
 describe("answer eval", () => {
   it("asks only questions on the quality bar", () => {
     for (const id of EVAL_QUESTION_IDS) expect(q(id)).toBeDefined();
+  });
+
+  it("asks both regulation questions, q26 included (#1079)", () => {
+    expect(EVAL_QUESTION_IDS).toContain("q25");
+    expect(EVAL_QUESTION_IDS).toContain("q26");
+    const regulators = { primaryRegulator: "NCUA", charterAgency: "NCUA", source: "ncua" };
+    expect(liveDataFailures(q("q26"), reply("Reg E applies."), fl, regulators)).toHaveLength(1);
+  });
+
+  it("counts correctness apart from form, leaving unchecked answers out of the rate (#1079)", () => {
+    const results: EvalResult[] = [
+      { institutionId: 1, questionId: "q04", question: "a", kind: "answer", failures: [], correctness: [] },
+      { institutionId: 2, questionId: "q04", question: "a", kind: "answer", failures: ["no peer count"], correctness: ["your fee: the answer uses $30, the catalog has $25"] },
+      { institutionId: 3, questionId: "q25", question: "b", kind: "answer", failures: [], correctness: null },
+    ];
+    const s = summarizeEval(results, 3, false);
+    expect(s.passed).toBe(2);
+    expect(s.path).toBe("free_ask");
+    expect(s.correctness).toMatchObject({ checked: 2, correct: 1, rate: 0.5, topFailures: [{ failure: "your fee: the answer uses # the catalog has #", count: 1 }] });
+    expect(summarizeCorrectness([{ correctness: null }]).rate).toBeNull();
   });
 
   it("fails a regulation answer that leaves out the institution's regulator", () => {

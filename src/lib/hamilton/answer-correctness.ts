@@ -1,0 +1,228 @@
+/**
+ * Correctness for Hamilton's answer eval (#1079): do the numbers in an answer tie back to the live
+ * fee catalog? The same reconciliation the `report-reconciliation` skill runs on a report, applied
+ * to one answer, deterministic and read-only (no model calls, no writes):
+ *
+ * 1. Rows: every fee value the answer is built on (the bank's own value, every peer, market-layer
+ *    and local-competitor value) is that institution's live value in `published_fee_catalog` under
+ *    the statistics contract (approved, sourced, consumer rows; one value per institution:
+ *    `valuePerInstitution`). A value with no live row, or a different live value, is a failure.
+ * 2. Statistics: each printed peer band and market-layer p25, median and p75 recomputes with the
+ *    contract (`summarizeFees`) from those members' live values, within one cent; the national
+ *    layer counts every live institution publishing the fee.
+ * 3. Figures: every dollar figure in a sentence the answer sources to `published_fee_catalog` is a
+ *    live-recomputed value from (1) and (2), or the gap between two of them, within the rounding
+ *    the figure is printed at, or a price the question itself named.
+ *
+ * Limits, stated so the rate is read for what it is: percentages and counts in the text are not
+ * yet checked; sentences sourced to other tables (call reports, fee changes, complaints) are out
+ * of scope; and the whole-schedule overview's peer medians are accepted as printed, because the
+ * overview does not carry its peer members (the bank's own value on each line is re-read live).
+ */
+
+import { getContractFeeRows, getFeeValuesForInstitutions } from "@/lib/data-store/fee-index";
+import { summarizeFees, valuePerInstitution, type StatsInputRow } from "@/lib/data-store/fee-stats";
+import { extractFigures } from "./figure-check";
+import type { ScheduleOverview } from "./workspace/schedule";
+import type { AskResponse, Fact, FeeResearch, PeerValue } from "./workspace/types";
+
+const FEE_TABLE = "published_fee_catalog";
+/** Recomputed statistics tie out within one cent (the skill's threshold). */
+const CENT = 0.0051;
+/** Untied figures listed per answer; the count beyond is summarized. */
+const MAX_LISTED = 6;
+/** The contract's minimum sample for a median (MIN_INSTITUTIONS_FOR_MEDIAN). */
+const MIN_FOR_MEDIAN = 5;
+
+/** Live values the answer is checked against, for the fees it covers. */
+export interface LiveFeeValues {
+  /** The answered fee's live rows nationally (the statistics contract's input). */
+  rows: StatsInputRow[];
+  /** The bank's own live value per fee, for the whole-schedule lines; absent when not read. */
+  ownByCategory?: Map<string, number>;
+}
+
+export interface CorrectnessResult {
+  /** False when the answer cites no catalog figure and is built on no fee research, or the catalog could not be read. */
+  checked: boolean;
+  /** Catalog-sourced dollar figures checked in the text. */
+  figures: number;
+  failures: string[];
+}
+
+const money = (n: number) => `$${Number.isInteger(n) ? n : n.toFixed(2)}`;
+const near = (a: number | null | undefined, b: number | null | undefined) =>
+  a === null || a === undefined || b === null || b === undefined ? (a ?? null) === (b ?? null) : Math.abs(a - b) <= CENT;
+
+/** Every sentence the answer sources to the live fee catalog. */
+export function catalogFacts(response: AskResponse): Fact[] {
+  const story = response.answer?.storyline;
+  const all: Fact[] = [
+    ...(response.facts ?? []),
+    ...(response.answer?.claims ?? []),
+    ...(response.answer?.drivers ?? []),
+    ...(story
+      ? [
+          ...story.situation,
+          ...story.complication,
+          ...story.lenses.finance,
+          ...story.lenses.market,
+          ...story.watch,
+          ...story.exhibits.flatMap((e) => (e.takeaway ? [e.takeaway] : [])),
+          ...(story.options ?? []).flatMap((o) => o.consequences),
+        ]
+      : []),
+  ];
+  return all.filter((f) => f.source?.table === FEE_TABLE);
+}
+
+/** Dollar figures the question itself gives ("what if we charged $35"): the reader's, not the catalog's. */
+export function questionFigures(question: string): number[] {
+  return extractFigures(question).filter((f) => f.kind === "usd").map((f) => f.value);
+}
+
+/** A printed figure ties when it is an anchor, a member's value, or the gap between two anchors. */
+export function ties(value: number, tolerance: number, anchors: number[], singles: number[]): boolean {
+  const hit = (v: number) => Math.abs(Math.abs(value) - Math.abs(v)) <= tolerance;
+  if (anchors.some(hit) || singles.some(hit)) return true;
+  for (const a of anchors) for (const b of anchors) if (a !== b && hit(a - b)) return true;
+  return false;
+}
+
+interface Group {
+  label: string;
+  members: PeerValue[];
+  printed?: { p25: number | null; median: number | null; p75: number | null };
+  /** True for the national layer: every live institution publishing the fee belongs to it. */
+  whole?: boolean;
+}
+
+function groupsOf(research: FeeResearch): Group[] {
+  const groups: Group[] = [
+    {
+      label: `peer group (${research.peerLabel})`,
+      members: research.peers,
+      printed: research.band && research.band.n >= MIN_FOR_MEDIAN ? research.band : undefined,
+    },
+  ];
+  for (const layer of research.layers) {
+    if (layer.members.length === 0) continue;
+    groups.push({ label: `${layer.label} layer`, members: layer.members, printed: layer, whole: layer.scope === "national" });
+  }
+  if (research.localCompetitors?.length) groups.push({ label: "local competitors", members: research.localCompetitors });
+  return groups;
+}
+
+/**
+ * Reconciles one answer against live values. `live` is null when the catalog could not be read:
+ * the answer is then left unchecked rather than called right or wrong.
+ */
+export function reconcileAnswer(input: {
+  question: string;
+  response: AskResponse;
+  research: FeeResearch | null;
+  schedule?: ScheduleOverview | null;
+  live: LiveFeeValues | null;
+}): CorrectnessResult {
+  const { question, response, research, schedule, live } = input;
+  const facts = catalogFacts(response);
+  if (!live || (!research && facts.length === 0)) return { checked: false, figures: 0, failures: [] };
+  const failures: string[] = [];
+  // Anchors: the bank's own values, recomputed statistics and the question's prices; a sentence may
+  // state one of them or the gap between two. Singles: each member's live value, stated as is.
+  const anchors: number[] = questionFigures(question);
+  const singles: number[] = [];
+
+  if (research) {
+    const values = valuePerInstitution(live.rows);
+    const own = values.get(research.institutionId) ?? null;
+    if (!near(research.current, own)) {
+      failures.push(
+        own === null
+          ? `your fee: the answer uses ${money(research.current!)}, and the catalog has no live row for it`
+          : `your fee: the answer uses ${research.current === null ? "none" : money(research.current)}, the catalog has ${money(own)}`,
+      );
+    }
+    if (own !== null) anchors.push(own);
+    for (const r of live.rows) {
+      if (Number(r.institution_id) === research.institutionId && Number.isFinite(Number(r.amount))) anchors.push(Number(r.amount));
+    }
+
+    for (const group of groupsOf(research)) {
+      let missing = 0;
+      let differ = 0;
+      const memberRows: StatsInputRow[] = [];
+      for (const m of group.members) {
+        const value = values.get(m.institutionId);
+        if (value === undefined) {
+          missing++;
+          continue;
+        }
+        if (!near(m.amount, value)) differ++;
+        singles.push(value);
+        memberRows.push({ institution_id: m.institutionId, amount: value, fee_category: research.feeCategory });
+      }
+      if (missing > 0) failures.push(`${group.label}: ${missing} of ${group.members.length} values have no live catalog row`);
+      if (differ > 0) failures.push(`${group.label}: ${differ} of ${group.members.length} values differ from the catalog`);
+      if (group.whole) {
+        const liveCount = [...values.keys()].filter((id) => id !== research.institutionId).length;
+        if (liveCount !== group.members.length) {
+          failures.push(`${group.label}: counts ${group.members.length} institutions, the catalog has ${liveCount} publishing this fee`);
+        }
+      }
+      const stats = summarizeFees(memberRows);
+      const recomputed = { p25: stats.p25_amount, median: stats.median_amount, p75: stats.p75_amount };
+      if (group.printed) {
+        const printed = group.printed;
+        const off = (["p25", "median", "p75"] as const).filter((k) => printed[k] !== null && !near(printed[k], recomputed[k]));
+        if (off.length > 0) failures.push(`${group.label}: ${off.join(", ")} do not recompute from the members' live values`);
+      }
+      anchors.push(...[stats.median_amount, stats.p25_amount, stats.p75_amount, stats.min_amount, stats.max_amount].filter((v): v is number => v !== null));
+    }
+  }
+
+  if (schedule) {
+    for (const row of schedule.positions) {
+      const own = live.ownByCategory?.get(row.feeCategory);
+      if (live.ownByCategory && !near(row.current, own ?? null)) {
+        failures.push(`${row.displayName}: the overview uses ${money(row.current)}, the catalog has ${own === undefined ? "no live row" : money(own)}`);
+      }
+      if (own !== undefined) anchors.push(own);
+      // Accepted as printed: the overview carries no peer members to recompute from.
+      anchors.push(row.peerMedian, ...(row.band ? [row.band.p25, row.band.p75] : []));
+    }
+  }
+
+  const usd = extractFigures(facts.map((f) => f.text).join("\n")).filter((f) => f.kind === "usd");
+  const untied = [...new Set(usd.filter((f) => !ties(f.value, f.tolerance, anchors, singles)).map((f) => f.raw))];
+  if (untied.length > 0) {
+    failures.push(`figures that tie to no live catalog value: ${untied.slice(0, MAX_LISTED).join(", ")}${untied.length > MAX_LISTED ? ` and ${untied.length - MAX_LISTED} more` : ""}`);
+  }
+  return { checked: true, figures: usd.length, failures };
+}
+
+export type LiveReader = (institutionId: number, research: FeeResearch | null, schedule?: ScheduleOverview | null) => Promise<LiveFeeValues | null>;
+
+/** Live reads for the eval, cached per fee for the whole run: one national read per fee. */
+export function liveCatalogReader(): LiveReader {
+  const byCategory = new Map<string, Promise<StatsInputRow[] | null>>();
+  const rowsFor = (category: string) => {
+    if (!byCategory.has(category)) {
+      byCategory.set(
+        category,
+        getContractFeeRows({ categories: [category] })
+          .then((rows) => rows.map((r) => ({ institution_id: r.institution_id, amount: r.amount, fee_category: r.fee_category, charter_type: r.charter_type })))
+          .catch(() => null),
+      );
+    }
+    return byCategory.get(category)!;
+  };
+  return async (institutionId, research, schedule) => {
+    const rows = research ? await rowsFor(research.feeCategory) : [];
+    if (rows === null) return null;
+    if (!schedule || schedule.positions.length === 0) return { rows };
+    const own = await getFeeValuesForInstitutions([institutionId], schedule.positions.map((p) => p.feeCategory)).catch(() => null);
+    if (!own) return null;
+    return { rows, ownByCategory: own.get(institutionId) ?? new Map() };
+  };
+}
