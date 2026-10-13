@@ -6,8 +6,9 @@ import { checkFeeCategory } from "@/lib/fee-category-guard";
 import { FREE_READ_PREFIX } from "@/lib/agents/hamilton/product-page";
 import {
   HAMILTON_PUBLISH_DEFAULT_MIN_CONFIDENCE,
+  coverageTier,
   feeValue,
-  insertPublishedFee,
+  normalizedConfidence,
   normalizedFeeName,
   publishSkipReason,
   type VerifiedFeeRow,
@@ -20,7 +21,7 @@ type SqlTag = typeof sql;
 // current-copy row to move to; at 300 a step the pass moved about 1,200 an hour.
 export const REFRESH_COPY_FEE_LIMIT = 1_000;
 export const REFRESH_COPY_REASON_PREFIX = "refreshed by #";
-export const REFRESH_COPY_STRATEGY = { strategy: "hamilton.refresh_copy", version: 1 } as const;
+export const REFRESH_COPY_STRATEGY = { strategy: "hamilton.refresh_copy", version: 2 } as const;
 
 /** One check per (live fee, current-copy row) pair. */
 export function refreshCopyFingerprint(feePublishedId: number | string, feeVerifiedId: number | string): string {
@@ -104,11 +105,12 @@ const EMPTY: RefreshCopyResult = { checked: 0, refreshed: 0, skipped: {}, sample
  * Hamilton repair: a live fee follows its page to the current copy. When Magellan fetches
  * a newer copy of a page (source_documents.superseded_by_id), Knox reads it and Darwin
  * verifies its rows, a line whose amount did not change is skipped by the publish rules
- * as "identical", so the live fee kept pointing at the superseded copy and its published
- * date never moved. Here each such fee is republished from the current copy's verified
- * row, and the old row is closed (`rolled_back_reason = 'refreshed by #<new id>'`). The
- * amount and name are unchanged, so no price change is recorded and no fee comes down
- * without its replacement. A dry run reports and changes nothing.
+ * as "identical", so the live fee kept pointing at the superseded copy. Here each such fee
+ * moves to the current copy in place (v2, #1068): its live row takes the current copy's
+ * verified row as its lineage, with that row's link, file and events, and keeps its id, name
+ * and published date. Before v2 a new row was written and the old one closed ("refreshed by
+ * #<new id>"), about 33,000 closures a week of bookkeeping that no visitor saw. The amount and
+ * name are unchanged, so no price change is recorded. A dry run reports and changes nothing.
  */
 export async function refreshFeesFromCurrentCopy(
   db: SqlTag,
@@ -209,22 +211,27 @@ export async function refreshFeesFromCurrentCopy(
     await inSavepoint(db, async (scope) => {
       for (const candidate of plan.refresh) {
         const priorId = Number(candidate.prior_fee_published_id);
-        // Insert and close succeed or fail together: never two live copies of one line,
-        // and never a closed line without its replacement.
-        const feePublishedId = await inSavepoint(scope, async (pair) => {
-          const inserted = await insertPublishedFee(pair, { runId: options.runId, batchId: options.batchId, row: candidate });
-          if (!inserted) return null;
-          const closed = await pair`
+        // The live row moves to the current copy in place (v2, #1068). The audience trigger
+        // takes the new lineage's audience; a row it refuses stays where it was.
+        const confidence = normalizedConfidence(candidate.extraction_confidence);
+        const feePublishedId = await inSavepoint(scope, async (move) => {
+          const moved = await move`
             UPDATE published_fee_records
-               SET rolled_back_at = NOW(),
-                   rolled_back_by_batch_id = ${options.batchId},
-                   rolled_back_reason = ${`${REFRESH_COPY_REASON_PREFIX}${inserted}`}
+               SET lineage_ref = ${Number(candidate.fee_verified_id)},
+                   source_url = ${candidate.source_url},
+                   document_r2_key = ${candidate.document_r2_key},
+                   extraction_confidence = ${confidence},
+                   coverage_tier = ${coverageTier(confidence)},
+                   agent_event_id = ${candidate.raw_agent_event_id}::uuid,
+                   verified_by_agent_event_id = ${candidate.verified_by_agent_event_id}::uuid,
+                   published_by_adversarial_event_id = ${candidate.verified_by_agent_event_id}::uuid
              WHERE fee_published_id = ${priorId}
                AND rolled_back_at IS NULL
+               AND quarantined_at IS NULL
             RETURNING fee_published_id
           `;
-          if (closed.length === 0) throw new Error(`live fee #${priorId} was already closed`);
-          return inserted;
+          if (moved.length === 0) throw new Error(`live fee #${priorId} was already closed or held`);
+          return priorId;
         }).catch((error) => {
           console.error("refreshFeesFromCurrentCopy pair failed:", error);
           return null;
@@ -251,6 +258,8 @@ export async function refreshFeesFromCurrentCopy(
             prior_fee_published_id: priorId,
             fee_verified_id: Number(candidate.fee_verified_id),
             fee_published_id: feePublishedId,
+            in_place: true,
+            prior_source_document_id: Number(candidate.prior_source_document_id),
             current_document_id: candidate.source_document_id == null ? null : Number(candidate.source_document_id),
           },
         });
@@ -280,7 +289,7 @@ export async function refreshFeesFromCurrentCopy(
         INSERT INTO agent_run_events (agent_run_id, event_type, status, message, detail)
         VALUES (
           ${options.runId}, 'hamilton.refresh_copy', 'completed',
-          ${`Moved ${refreshed} live fee(s) to the current copy of their page (same name and amount); ${plan.skipped.length} pair(s) left as they are`},
+          ${`Moved ${refreshed} live fee(s) to the current copy of their page in place (same name and amount); ${plan.skipped.length} pair(s) left as they are`},
           ${JSON.stringify({ batch_id: options.batchId, checked: candidates.length, refreshed, skipped, samples })}::jsonb
         )
       `;

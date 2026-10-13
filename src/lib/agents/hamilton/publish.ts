@@ -204,14 +204,14 @@ function normalizedAmount(value: number | string | null): number | null {
   return Math.round(parsed * 100) / 100;
 }
 
-function normalizedConfidence(value: number | string | null): number {
+export function normalizedConfidence(value: number | string | null): number {
   if (value == null || value === "") return 0;
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return 0;
   return Math.min(Math.max(parsed, 0), 1);
 }
 
-function coverageTier(confidence: number): "strong" | "provisional" {
+export function coverageTier(confidence: number): "strong" | "provisional" {
   return confidence >= 0.9 ? "strong" : "provisional";
 }
 
