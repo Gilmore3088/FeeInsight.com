@@ -225,7 +225,20 @@ and `detail.method_version`).
 - Pass 3 (`runMagellanPaidFind`): up to `PAID_PASS_ITEMS_PER_RUN` banks in the state
   that are `dead` after a search with the current method version and are off the paid
   cooldown: 90 days after a find, 30 days after a miss, counted from the try, not the
-  calendar month (`FOUND_COOLDOWN_DAYS`, `MISS_COOLDOWN_DAYS` in `cooldowns.ts`, #1031). One `paidModelCall` per bank (agent `magellan`, `PAID_PASS_MODELS.find()`,
+  calendar month (`FOUND_COOLDOWN_DAYS`, `MISS_COOLDOWN_DAYS` in `cooldowns.ts`, #1031).
+  The escalation ladder (`escalation.ts`, #1032) picks the ask: with no paid miss since
+  the last paid find, the fee schedule (rung `schedule`); after one, a Truth in Savings
+  disclosure, deposit account agreement or account terms that state fees (rung
+  `disclosure`). After `NOT_ONLINE_AFTER_MISSES` (2) misses on the same website the
+  institution is "not published online", dated by the last miss: no pick and no search
+  for `NOT_ONLINE_RETRY_DAYS` (120), then the rungs alternate again. The state comes from
+  `pipeline_attempts` (no column): misses count only since the last paid find and only on
+  the current website (`detail.website_url`, recorded on every paid search; older rows
+  count as the current site), so a new website restarts the ladder at once, and a found
+  or submitted fee link takes the institution off the paid list. Each attempt records
+  `detail.rung`. The institution's admin page shows its place on the ladder and the
+  methods tried; the state page and the state-expert step (`not_published_online`) count
+  "not published online" by size tier. One `paidModelCall` per bank (agent `magellan`, `PAID_PASS_MODELS.find()`,
   server `web_search` tool, max 3 uses) asks for the consumer fee schedule on the bank's
   own domain as JSON. The answer must be on the bank's domain and pass the same
   fee-page check before it is stored. Each try is logged with its cost. A budget cap or

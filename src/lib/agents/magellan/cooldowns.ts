@@ -26,6 +26,9 @@ export const FOUND_COOLDOWN_DAYS = 90;
 /** Days with no paid search after a paid try that found nothing. */
 export const MISS_COOLDOWN_DAYS = 30;
 
+/** Paid outcomes that do not count as a paid try or start a cooldown (nothing was learned). */
+export const TRANSIENT_PAID_OUTCOMES = ["network_error", "timeout", "http_5xx", "http_429", "budget_blocked"];
+
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 /** Cooldown length, in days, that one paid try's outcome starts. */

@@ -6,6 +6,8 @@ import { getAutomationControl } from "@/lib/automation-control";
 import { getExecutionBackendStatus } from "@/lib/execution-backend";
 import { formatAdminDateTime } from "@/lib/admin-time";
 import { Breadcrumbs } from "@/components/breadcrumbs";
+import { sql } from "@/lib/data-store/connection";
+import { notPublishedOnlineCounts, type NotOnlineTierCount } from "@/lib/agents/magellan/escalation";
 import {
   getStateInstitutions,
   getStateSummary,
@@ -90,7 +92,7 @@ export default async function StateDetailPage({
   const canCorrectSourceMemory = hasPermission(user, "approve");
   const canRunStateLane = hasPermission(user, "trigger_jobs");
 
-  const [summary, institutions, agentRuns, urlResolutionQueue, laneHealth, sourceMemory, publicFindings, automation, execution] = await Promise.all([
+  const [summary, institutions, agentRuns, urlResolutionQueue, laneHealth, sourceMemory, publicFindings, automation, execution, notOnline] = await Promise.all([
     getStateSummary(stateCode),
     getStateInstitutions(stateCode),
     getStateAgentRuns(stateCode),
@@ -100,6 +102,10 @@ export default async function StateDetailPage({
     getStatePublicDiscoveryFindings(stateCode),
     getAutomationControl(),
     Promise.resolve(getExecutionBackendStatus()),
+    notPublishedOnlineCounts(sql, stateCode).catch((error): NotOnlineTierCount[] => {
+      console.error("[admin] not-published-online counts unavailable", { stateCode, error });
+      return [];
+    }),
   ]);
   const activeLaneRun = agentRuns.find((run) => run.status === "queued" || run.status === "running");
   const stateLaneBlockedReason = !canRunStateLane
@@ -200,6 +206,10 @@ export default async function StateDetailPage({
                 ["Verified", laneHealth.publicFindings.verified],
                 ["Critical", laneHealth.publicFindings.critical],
               ]}
+            />
+            <LaneMiniSummary
+              title="Not Published Online"
+              items={notOnline.length > 0 ? notOnline.map((row): [string, number] => [row.tier, row.institutions]) : [["None", 0]]}
             />
           </div>
         )}

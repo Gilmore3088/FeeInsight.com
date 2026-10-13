@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/data-store/connection", () => ({ sql: {} }));
-vi.mock("./ask-service", () => ({ scheduleFor: vi.fn(), incomeWhyFor: vi.fn() }));
+vi.mock("./ask-service", () => ({ resolveAskIntent: vi.fn() }));
 
-import { EVAL_QUESTION_IDS, failureShape, liveDataFailures, pickProQuestions, summarizeEval, summarizeProReplay, type EvalResult, type ProQuestionResult } from "./answer-eval";
+import { EVAL_QUESTION_IDS, failureShape, liveDataFailures, offSubjectFailure, pickProQuestions, summarizeEval, summarizeProReplay, type EvalResult, type ProQuestionResult } from "./answer-eval";
 import type { SqlTag } from "@/lib/agents/hamilton/studies/common";
 import { QUALITY_QUESTIONS } from "./workspace/quality-bar";
 import type { AskResponse } from "./workspace/types";
@@ -86,5 +86,31 @@ describe("answer eval", () => {
     ]);
     expect(s).toMatchObject({ questions: 2, passed: 1, askedBack: 1, topFailures: [{ failure: 'asked back instead of answering: "…"', count: 1 }] });
     expect(s.failing.map((f) => f.question)).toEqual(["talk to me about all 10B and up instititions for od fees"]);
+  });
+});
+
+describe("off-subject answers (#1077)", () => {
+  const onFee = (feeCategory: string): AskResponse =>
+    ({ kind: "research", shortAnswer: "x", pageChange: { screen: "research", feeCategory } }) as unknown as AskResponse;
+  const askedBack = { kind: "clarifying_question", shortAnswer: "Which fee do you want to look at?", pageChange: { screen: "none" } } as unknown as AskResponse;
+
+  it("fails a fee put in place of a question that names none, as overdraft once was", () => {
+    // Real Pro questions from the 2026-10-13 replay, each answered with the overdraft fee.
+    for (const question of ["talk to me about all institutison above 10billion", "talki to me about institions in florida over 5b"]) {
+      expect(offSubjectFailure(question, onFee("overdraft"))).toBe("answers a different subject: the overdraft fee, which the question does not name");
+    }
+    expect(offSubjectFailure("talk to me about all institutison above 10billion", askedBack)).toBeNull();
+  });
+
+  it("fails a fee other than the ones the question names", () => {
+    expect(offSubjectFailure("How does our NSF fee compare?", onFee("overdraft"))).toBe("answers a different subject: the overdraft fee, not the fee asked about");
+    expect(offSubjectFailure("Which District 11 banks have both verified NSF and monthly maintenance rows?", onFee("monthly_maintenance"))).toBeNull();
+    expect(offSubjectFailure("talk to me about all 10B and up instititions for od fees", onFee("overdraft"))).toBeNull();
+  });
+
+  it("passes the fee furthest from its median under an every-fee or fee-income question", () => {
+    expect(offSubjectFailure("Which of our fees sit furthest from our peers, and by how much?", onFee("late_payment"))).toBeNull();
+    expect(offSubjectFailure("What are 1b - <10b institutions doing around service fee income", onFee("late_payment"))).toBeNull();
+    expect(offSubjectFailure("Which credit unions in the top 25 of the $1 billion to $10 billion tier run a fee share below 4%?", onFee("late_payment"))).toBeNull();
   });
 });
