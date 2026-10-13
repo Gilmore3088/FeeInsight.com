@@ -240,7 +240,7 @@ export async function getCityFeeAverages(city: string, stateCode: string): Promi
 export async function getCitiesInState(stateCode: string): Promise<CitySummary[]> {
   const upperState = stateCode.toUpperCase();
   const rows = await sql`
-    SELECT ct.city, ct.state_code,
+    SELECT (array_agg(ct.city ORDER BY (ct.city = UPPER(ct.city)), ct.city))[1] AS city, ct.state_code,
            COUNT(*) as institution_count,
            COUNT(DISTINCT CASE WHEN fc.fee_count > 0 THEN ct.id END) as with_fees
     FROM institution_sources ct
@@ -250,7 +250,7 @@ export async function getCitiesInState(stateCode: string): Promise<CitySummary[]
       GROUP BY institution_id
     ) fc ON ct.id = fc.institution_id
     WHERE ct.state_code = ${upperState} AND ct.city IS NOT NULL AND ct.city != ''
-    GROUP BY LOWER(ct.city), ct.city, ct.state_code
+    GROUP BY LOWER(ct.city), ct.state_code
     HAVING COUNT(DISTINCT CASE WHEN fc.fee_count > 0 THEN ct.id END) > 0
     ORDER BY COUNT(DISTINCT CASE WHEN fc.fee_count > 0 THEN ct.id END) DESC, COUNT(*) DESC
   ` as RawCitySummaryRow[];
@@ -273,13 +273,13 @@ export async function getTopCitiesByState(
       FROM published_fee_catalog WHERE review_status = 'approved'
       GROUP BY institution_id
     ), cities AS (
-      SELECT ct.city, ct.state_code,
+      SELECT (array_agg(ct.city ORDER BY (ct.city = UPPER(ct.city)), ct.city))[1] AS city, ct.state_code,
              COUNT(*) as institution_count,
              COUNT(DISTINCT CASE WHEN fc.fee_count > 0 THEN ct.id END) as with_fees
       FROM institution_sources ct
       LEFT JOIN fc ON ct.id = fc.institution_id
       WHERE ct.state_code IS NOT NULL AND ct.city IS NOT NULL AND ct.city != ''
-      GROUP BY LOWER(ct.city), ct.city, ct.state_code
+      GROUP BY LOWER(ct.city), ct.state_code
     ), ranked AS (
       SELECT *, ROW_NUMBER() OVER (
         PARTITION BY state_code ORDER BY with_fees DESC, institution_count DESC
@@ -299,11 +299,11 @@ export async function getTopCitiesByState(
 export async function getCityAutocomplete(query: string, limit: number = 10): Promise<{ city: string; state_code: string; count: number }[]> {
   const pattern = `${query}%`;
   return await sql`
-    SELECT ct.city, ct.state_code, COUNT(DISTINCT ct.id) as count
+    SELECT (array_agg(ct.city ORDER BY (ct.city = UPPER(ct.city)), ct.city))[1] AS city, ct.state_code, COUNT(DISTINCT ct.id) as count
     FROM institution_sources ct
     WHERE ct.city ILIKE ${pattern} AND ct.city IS NOT NULL
     AND ct.id IN (SELECT DISTINCT institution_id FROM published_fee_catalog WHERE review_status = 'approved')
-    GROUP BY LOWER(ct.city), ct.city, ct.state_code
+    GROUP BY LOWER(ct.city), ct.state_code
     ORDER BY count DESC
     LIMIT ${limit}
   ` as { city: string; state_code: string; count: number }[];
