@@ -852,3 +852,20 @@ describe("condition restores, batches 2 and 3", () => {
     expect(restoredName("Return Check (due to if due to your error)", "Return Check", "nsf")).toBeNull();
   });
 });
+
+describe("v18: a stray letter in front, and the lead-in to the price left on the end", () => {
+  it("repairs the shapes Deming's Oct 12 audit counted", () => {
+    expect(retidiedFeeName("b A cash advance fee", "cash_advance")).toBe("Cash advance fee");
+    expect(retidiedFeeName("Foreign ATM & Non-CO-OP Network ATM A fee of", "atm_non_network")).toBe("Foreign ATM & Non-CO-OP Network ATM");
+    expect(retidiedFeeName("Non-Sufficient Funds (NSF) Returned Item Fee: A service charge of", "nsf")).toBe("Non-Sufficient Funds (NSF) Returned Item Fee");
+    expect(retidiedFeeName("o Continuous Overdraft Accrual Charge (per business day after six business days)", "continuous_od")).toBe("Continuous Overdraft Accrual Charge");
+    expect(retidiedFeeName("Phone Cash Advance A fee of", "cash_advance")).toBe("Phone Cash Advance");
+  });
+
+  it("leaves an e- product name and a sentence to the rules before it", () => {
+    expect(retidiedFeeName("e Statement fee", "paper_statement")).not.toBe("Statement fee");
+    // A sentence keeps v17's reading: its last noun phrase is the fee.
+    expect(retidiedFeeName("Yes, the High Yield Checking account has a monthly fee of", "monthly_maintenance")).toBe("Monthly fee");
+    expect(retidiedFeeName("bona fide, but unreasonable cash advance fee. | plus a fee of", "cash_advance")).toBeNull();
+  });
+});
