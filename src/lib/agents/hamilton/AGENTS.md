@@ -282,8 +282,9 @@ the detail.
     text is identical to the superseded one, the superseded copy's fee rows move to it. No fee
     is published or taken down.
 21. Refresh copy (`refreshFeesFromCurrentCopy`, `refresh-copy.ts`): a live fee the current copy
-    states at the same amount moves to that copy; the old row closes as `refreshed by #<new
-    id>`.
+    states at the same amount moves to that copy in place (v2, #1068): the live row takes the
+    current copy's verified row as its lineage and keeps its id, name and published date. Before
+    v2 a new row was written and the old one closed as `refreshed by #<new id>`.
 22. Current-copy check (`current-copy.ts`): a fee the current copy no longer states, on its
     second look (confirmations off while `CURRENT_COPY_CONFIRM_LIVE` is false),
     `not_on_current_copy:#<current document id>`.
@@ -598,7 +599,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `GUARD_REQUEUE_STRATEGY` | `publish.guard_requeue` | v1 | `hamilton/guard-requeue.ts` |
 | `NEWER_COPY_STRATEGY` | `hamilton.newer_copy_check` | v1 | `hamilton/newer-copy-retire.ts` |
 | `HAMILTON_PUBLISH_STRATEGY` | `publish.rules` | v3 | `hamilton/publish.ts` |
-| `REFRESH_COPY_STRATEGY` | `hamilton.refresh_copy` | v1 | `hamilton/refresh-copy.ts` |
+| `REFRESH_COPY_STRATEGY` | `hamilton.refresh_copy` | v2 | `hamilton/refresh-copy.ts` |
 | `RULES_RECHECK_STRATEGY` | `hamilton.rules_recheck` | v4 | `hamilton/rules-recheck.ts` |
 | `SOURCE_CHECK_STRATEGY` | `hamilton.source_check` | v16 | `hamilton/source-check.ts` |
 | `FEE_DEPENDENCE_VERSION` | — | v1 | `hamilton/studies/fee-dependence.ts` |
