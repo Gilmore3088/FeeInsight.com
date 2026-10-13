@@ -3,7 +3,7 @@ import { CATEGORY_GUARD_VERSION, checkFeeCategory } from "@/lib/fee-category-gua
 import { SOURCE_CHECK_STRATEGY, traceLiveFee, type InstitutionText, type LiveFeeRow } from "@/lib/agents/hamilton/source-check";
 import { severityFor, type Severity } from "@/lib/agents/deming/severity";
 import { ARTICLE_PAGE_CHECK, isArticlePage } from "@/lib/agents/hamilton/article-page";
-import { PRODUCT_PAGE_CHECK, isProductPage } from "@/lib/agents/hamilton/product-page";
+import { PRODUCT_PAGE_CONFLICT_CHECK, productPageConflictSql } from "@/lib/agents/hamilton/product-page-conflict";
 import {
   OTHER_BANK_DOCUMENT_CHECK,
   UNCONFIRMED_HOST_CHECK,
@@ -29,7 +29,12 @@ type SqlTag = typeof sql;
  * never pooled with dollars).
  */
 
-export const FRESH_AUDIT_VERSION = 3;
+/**
+ * v4 (2026-10-13, James): a fee from the bank's own product page is right unless its schedule
+ * prices the same fee differently (`productPageConflictSql`); before v4 every product-page fee
+ * was a miss.
+ */
+export const FRESH_AUDIT_VERSION = 4;
 export const FRESH_AUDIT_SAMPLE = 200;
 /** Below this many scorable fees the audit reports counts, not a percentage. */
 export const FRESH_AUDIT_MIN_SCORABLE = 30;
@@ -47,9 +52,11 @@ export interface FreshAuditEvidence {
   unconfirmedHost: Set<number>;
   /** A Hamilton second look (`takedown_pending`) is already open on the fee. */
   pending: Set<number>;
+  /** From a product page whose bank's schedule prices the same fee differently (v4). */
+  productPageConflict: Set<number>;
 }
 
-const NO_EVIDENCE: FreshAuditEvidence = { otherBank: new Set(), unconfirmedHost: new Set(), pending: new Set() };
+const NO_EVIDENCE: FreshAuditEvidence = { otherBank: new Set(), unconfirmedHost: new Set(), pending: new Set(), productPageConflict: new Set() };
 
 export interface FreshAuditMiss {
   feeId: number;
@@ -204,7 +211,7 @@ function evidenceFailure(fee: FreshAuditFee, evidence: FreshAuditEvidence): stri
   if (evidence.otherBank.has(id)) return OTHER_BANK_DOCUMENT_CHECK;
   if (evidence.unconfirmedHost.has(id)) return UNCONFIRMED_HOST_CHECK;
   if (isArticlePage(fee.document_url)) return ARTICLE_PAGE_CHECK;
-  if (isProductPage(fee.document_url)) return PRODUCT_PAGE_CHECK;
+  if (evidence.productPageConflict.has(id)) return PRODUCT_PAGE_CONFLICT_CHECK;
   return null;
 }
 
@@ -255,7 +262,7 @@ async function readEvidence(db: SqlTag, feeIds: number[]): Promise<FreshAuditEvi
   if (feeIds.length === 0) return NO_EVIDENCE;
   type HostRow = { fee_published_id: number | string; names_own_bank: boolean | string | null };
   const ownBank = (row: HostRow) => row.names_own_bank === true || row.names_own_bank === "t" || row.names_own_bank === "true";
-  const [other, unconfirmed, pending] = await Promise.all([
+  const [other, unconfirmed, pending, conflicts] = await Promise.all([
     db.unsafe<HostRow[]>(otherBankFeesSql("fees"), [feeIds]),
     db.unsafe<HostRow[]>(unconfirmedHostFeesSql("fees"), [feeIds]),
     db<{ fee_published_id: number | string }[]>`
@@ -271,9 +278,16 @@ async function readEvidence(db: SqlTag, feeIds: number[]): Promise<FreshAuditEvi
               AND later.created_at >= open.created_at
          )
     `,
+    db.unsafe<{ fee_published_id: number | string }[]>(productPageConflictSql("fees"), [feeIds]),
   ]);
   const ids = (rows: HostRow[]) => new Set(rows.filter((row) => !ownBank(row)).map((row) => Number(row.fee_published_id)));
-  return { otherBank: ids(other), unconfirmedHost: ids(unconfirmed), pending: new Set(pending.map((row) => Number(row.fee_published_id))) };
+  const sampled = new Set(feeIds);
+  return {
+    otherBank: ids(other),
+    unconfirmedHost: ids(unconfirmed),
+    pending: new Set(pending.map((row) => Number(row.fee_published_id))),
+    productPageConflict: new Set(conflicts.map((row) => Number(row.fee_published_id)).filter((id) => sampled.has(id))),
+  };
 }
 
 export function summarizeFreshAudit(result: FreshAuditResult): string {

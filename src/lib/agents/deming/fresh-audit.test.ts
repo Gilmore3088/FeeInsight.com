@@ -41,7 +41,7 @@ describe("scoreFreshAudit", () => {
   });
 
   it("counts a stated fee from another bank's document as a critical evidence miss, pending when a second look is open", () => {
-    const evidence = { otherBank: new Set([4]), unconfirmedHost: new Set([5]), pending: new Set([5]) };
+    const evidence = { otherBank: new Set([4]), unconfirmedHost: new Set([5]), pending: new Set([5]), productPageConflict: new Set<number>() };
     const score = scoreFreshAudit([fee(4), fee(5), fee(6)], schedule, evidence);
     expect(score).toMatchObject({ scorable: 3, right: 1, evidenceMiss: 2, amountMiss: 0 });
     expect(score.misses.map((m) => [m.feeId, m.check, m.severity, m.pending])).toEqual([
@@ -57,6 +57,14 @@ describe("scoreFreshAudit", () => {
     );
     expect(score).toMatchObject({ right: 1, evidenceMiss: 1 });
     expect(score.misses[0]).toMatchObject({ feeId: 7, check: "hamilton.article_page", severity: "critical" });
+  });
+
+  it("counts a product-page fee as right unless the bank's schedule prices the same fee differently (v4, James 2026-10-13)", () => {
+    const productPage = { document_url: "https://bank.com/personal/checking" };
+    const evidence = { otherBank: new Set<number>(), unconfirmedHost: new Set<number>(), pending: new Set<number>(), productPageConflict: new Set([10]) };
+    const score = scoreFreshAudit([fee(9, productPage), fee(10, productPage)], schedule, evidence);
+    expect(score).toMatchObject({ right: 1, evidenceMiss: 1 });
+    expect(score.misses[0]).toMatchObject({ feeId: 10, check: "hamilton.product_page_conflict", severity: "major" });
   });
 
   // UAT, Oct 9: two of ten "right" rows were not right on the whole record (77845, 88402).

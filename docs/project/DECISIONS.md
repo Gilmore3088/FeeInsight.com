@@ -783,3 +783,14 @@ The takedown spot-check still applies first: the pass flags until UAT has hand-c
 rows it would take down and found at least 9 right, then the switch
 (`DARWIN_RECHECK_SAME_STEP_TAKEDOWN`) turns on by PR. Hamilton's other takedowns keep their 12-hour
 second look unless James says otherwise.
+
+**A fee from the bank's own checking or savings page counts, unless its schedule prices it
+differently.** James, 2026-10-13 (builder loop, answering the question on #1026): "Yes: a fee from
+the bank's own checking or savings page counts, unless the bank's fee schedule states a different
+price for the same fee. Then the schedule wins and the product-page fee comes down." Deming's audit
+(v4) counts a product-page fee as a miss only in that case. Hamilton's matching takedown
+(`hamilton.product_page_conflict`) starts off, logging first looks, and goes on by PR after a hand
+check of 10 flagged conflicts finds at least 9 right. Fees priced per account (monthly maintenance,
+minimum balance, paper statements) and categories that hold several items (safe deposit box sizes,
+account research, document copies) are not judged until the account or item is matched. Hamilton's
+$0 product-page benefit takedown (Oct 9) is unchanged.

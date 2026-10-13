@@ -252,6 +252,12 @@ the detail.
     `product_page: #<document id>`. The address rule is the one Magellan and Rosetta use
     (`isProductPageUrl`, `learning/fee-page.ts`, #1053): services, rates and cost pages are
     no longer product pages.
+12a. Product page against the schedule (`product-page-conflict.ts`, James 2026-10-13): a live
+    dollar fee from a product page whose bank's schedule documents list the same category only
+    at other prices; the schedule wins. Per-account and multi-item categories are left out
+    (`PER_ACCOUNT_CATEGORIES`). Off (`PRODUCT_PAGE_CONFLICT_LIVE`): first looks are logged and
+    nothing comes down until a hand check of 10 finds 9 right; then a PR turns it on and a
+    conflict comes down on its second look, `product_page_conflict: #<doc> at $x vs schedule $y`.
 13. Cross-page conflict (`cross-page-conflict.ts`): one product priced differently on two
     current pages (or two editions of one document); the older one comes down on its second
     look, `cross_page_conflict: #<older doc> older than #<newer doc> (fee <id>)` (or `older

@@ -52,6 +52,7 @@ import { runMagellanDiscovery } from "@/lib/agents/magellan/discovery";
 import { runMagellanFetch } from "@/lib/agents/magellan/fetch";
 import { reviewLinkBatches } from "@/lib/agents/magellan/batch-review";
 import { recordLinkOutcomes } from "@/lib/agents/magellan/outcomes";
+import { retireProductPageConflicts } from "@/lib/agents/hamilton/product-page-conflict";
 import { refreshPageClassifier } from "@/lib/agents/magellan/page-classifier";
 import { isRegistryStepKey, runRegistryStep } from "@/lib/agents/magellan/registry";
 import {
@@ -938,6 +939,14 @@ async function executeAgenticStep(
         dryRun: run.runKind === "dry_run",
         institutionId,
       });
+      // A product-page fee the bank's own schedule prices differently: the schedule wins
+      // (James, 2026-10-13). Off until a hand check of 10 conflicts finds 9 right; logs first looks.
+      const productPageConflict = await retireProductPageConflicts(tx, {
+        runId: run.id,
+        batchId: `agentic-run-${run.id}`,
+        dryRun: run.runKind === "dry_run",
+        institutionId,
+      });
       // One product priced differently on two current pages: the older page's price comes down.
       const crossPage = await retireCrossPageConflicts(tx, {
         runId: run.id,
@@ -1140,6 +1149,7 @@ async function executeAgenticStep(
               crossPageRestore.restored.length > 0 ||
               articlePage.rolledBack.length > 0 ||
               productPage.rolledBack.length > 0 ||
+              productPageConflict.rolledBack.length > 0 ||
               crossPage.rolledBack.length > 0 ||
               categoryGuardRollbacks > 0 ||
               categoryGuard.liveRefiledFees > 0 ||
@@ -1213,6 +1223,12 @@ async function executeAgenticStep(
         productPage.rolledBack.length > 0
           ? ` ${published.dryRun ? "Would archive" : "Archived"} ${productPage.rolledBack.length.toLocaleString()} $0 fee(s) read from a product page's benefits, not a fee schedule.`
           : "";
+      const productConflictNote =
+        productPageConflict.rolledBack.length > 0
+          ? ` ${published.dryRun ? "Would archive" : "Archived"} ${productPageConflict.rolledBack.length.toLocaleString()} product-page fee(s) the bank's own schedule prices differently.`
+          : productPageConflict.conflicts > 0 && !productPageConflict.live
+            ? ` Flagged ${productPageConflict.conflicts.toLocaleString()} product-page fee(s) the bank's own schedule prices differently (logged; the takedown is off until a hand check).`
+            : "";
       const crossPageConflictNote =
         crossPage.rolledBack.length > 0
           ? ` ${published.dryRun ? "Would archive" : "Archived"} ${crossPage.rolledBack.length.toLocaleString()} older price(s) for a product another current page prices differently.`
@@ -1269,7 +1285,7 @@ async function executeAgenticStep(
           : "";
       return {
         status: "completed",
-        summary: `Hamilton published ${published.publishedFees.toLocaleString()} verified fee observations from ${published.processedVerifiedFees.toLocaleString()} selected rows (${published.skippedFees.toLocaleString()} skipped).${published.heldInstitutions.length > 0 ? ` Held ${published.heldFees.toLocaleString()} rows from ${published.heldInstitutions.length.toLocaleString()} institutions with fewer than ${published.minInstitutionFees} fees.` : ""}${outlierNote}${foldNote}${handRefileNote}${offTaxonomyNote}${limitNote}${businessNote}${sameLineNote}${otherBankNote}${evalVerdictNote}${articleNote}${productNote}${crossPageConflictNote}${categoryGuardNote}${guardRefileNote}${guardRequeueNote}${companionNote}${newerCopyNote}${refreshNote}${currentCopyNote}${nameRetidy.renames.length > 0 ? ` ${published.dryRun ? "Would tidy" : "Tidied"} ${nameRetidy.renames.length.toLocaleString()} run-on live fee name(s).` : ""}${accountNames.renames.length > 0 ? ` ${published.dryRun ? "Would name" : "Named"} ${accountNames.renames.length.toLocaleString()} generic live monthly fee(s) by their account.` : ""}${recheckNote}${restoreRecheckNote}${crossPageNote}${sourceNote}${duplicateNote}${frequencyNote}${indexRefresh?.refreshed ? ` Index refreshed: ${indexRefresh.categories} categories.` : ""}`,
+        summary: `Hamilton published ${published.publishedFees.toLocaleString()} verified fee observations from ${published.processedVerifiedFees.toLocaleString()} selected rows (${published.skippedFees.toLocaleString()} skipped).${published.heldInstitutions.length > 0 ? ` Held ${published.heldFees.toLocaleString()} rows from ${published.heldInstitutions.length.toLocaleString()} institutions with fewer than ${published.minInstitutionFees} fees.` : ""}${outlierNote}${foldNote}${handRefileNote}${offTaxonomyNote}${limitNote}${businessNote}${sameLineNote}${otherBankNote}${evalVerdictNote}${articleNote}${productNote}${productConflictNote}${crossPageConflictNote}${categoryGuardNote}${guardRefileNote}${guardRequeueNote}${companionNote}${newerCopyNote}${refreshNote}${currentCopyNote}${nameRetidy.renames.length > 0 ? ` ${published.dryRun ? "Would tidy" : "Tidied"} ${nameRetidy.renames.length.toLocaleString()} run-on live fee name(s).` : ""}${accountNames.renames.length > 0 ? ` ${published.dryRun ? "Would name" : "Named"} ${accountNames.renames.length.toLocaleString()} generic live monthly fee(s) by their account.` : ""}${recheckNote}${restoreRecheckNote}${crossPageNote}${sourceNote}${duplicateNote}${frequencyNote}${indexRefresh?.refreshed ? ` Index refreshed: ${indexRefresh.categories} categories.` : ""}`,
         detail: {
           selected_verified_fees: published.selectedVerifiedFees,
           processed_verified_fees: published.processedVerifiedFees,
@@ -1380,6 +1396,13 @@ async function executeAgenticStep(
             flagged: crossPage.flagged,
             waiting: crossPage.waiting,
             rolled_back: crossPage.rolledBack.length,
+          },
+          product_page_conflict: {
+            live: productPageConflict.live,
+            conflicts: productPageConflict.conflicts,
+            flagged: productPageConflict.flagged,
+            waiting: productPageConflict.waiting,
+            rolled_back: productPageConflict.rolledBack.length,
           },
           product_page: {
             enabled: productPage.enabled,
