@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import Link from "next/link";
 import { Breadcrumbs } from "@/components/breadcrumbs";
 import { AgentHandoffStrip } from "@/components/agent-console/agent-handoff-strip";
@@ -7,6 +8,7 @@ import { getKnoxStatus, type KnoxStatus } from "@/lib/data-store/knox-status";
 import { logReadFailure } from "@/lib/admin-read-failure";
 import { GoldStandardView } from "../verify/page";
 import { AgentFrame } from "../agent-frame";
+import { KnoxHeldLines } from "./held-lines";
 
 export const dynamic = "force-dynamic";
 
@@ -39,6 +41,9 @@ export default async function KnoxPage() {
         </Link>
       </header>
       <AgentFrame agent="knox" />
+      <Suspense fallback={<div className="skeleton h-32 w-full" />}>
+        <KnoxHeldLines />
+      </Suspense>
 
       <div className="mb-7">
         <AgentHandoffStrip
