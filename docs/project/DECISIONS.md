@@ -5,6 +5,12 @@ Seeded 2026-10-05 from the project's working memory; earlier decisions were not 
 
 ## 2026-10-13
 
+**Supabase reads run without a prompt; writes still ask.** James, Oct 13. Builders were asking
+James to approve every read-only query. `.claude/settings.json` now allows the Supabase SQL and
+read tools, and keeps a prompt on migrations, branches, edge functions and project changes. The
+rule is unchanged: production data changes go through typed agent modules and a PR, never raw SQL
+from a session.
+
 **Darwin's audience is the one published (#1059, option 1).** James, Oct 13. Knox writes its audience
 suggestion and the evidence (the document's address or title, the section heading, or a general schedule
 with no business wording) without setting the published label. Darwin sets the audience on the verified

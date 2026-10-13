@@ -49,7 +49,7 @@ describe("Hamilton duplicate collapse", () => {
     expect(query).toContain("PARTITION BY fp.institution_id");
     expect(query).toContain("lower(btrim(fp.fee_name))");
     // A copy with a stated frequency is kept over one without, then the newest.
-    expect(query).toContain("ORDER BY (fp.frequency IS NULL), fp.published_at DESC, fp.fee_published_id DESC");
+    expect(query).toContain("ORDER BY (COALESCE(fp.fee_audience, 'unknown') = 'unknown'), (fp.frequency IS NULL), fp.published_at DESC, fp.fee_published_id DESC");
     // Frequency is not part of the line: "per item", "per occurrence" and unstated are one fee,
     // while two different stated frequencies keep both rows.
     expect(query).not.toContain("COALESCE(fp.frequency, '')");
