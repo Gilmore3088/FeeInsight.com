@@ -53,6 +53,7 @@ import { runMagellanFetch } from "@/lib/agents/magellan/fetch";
 import { reviewLinkBatches } from "@/lib/agents/magellan/batch-review";
 import { recordLinkOutcomes } from "@/lib/agents/magellan/outcomes";
 import { recordAuditMisses } from "@/lib/agents/deming/audit-misses";
+import { runChangeOutcomes, summarizeChangeOutcomes } from "@/lib/agents/deming/change-outcomes";
 import { refreshPageClassifier } from "@/lib/agents/magellan/page-classifier";
 import { isRegistryStepKey, runRegistryStep } from "@/lib/agents/magellan/registry";
 import {
@@ -1883,6 +1884,14 @@ async function executeAgenticStep(
         status: "completed",
         summary: `${summarizeFreshAudit(result)}${routed}`,
         detail: { ...freshAuditDetail(result), audit_misses: writes },
+      };
+    }
+    case "deming-change-outcomes": {
+      const result = await runChangeOutcomes({ db: tx, runId: run.id, dryRun: run.runKind === "dry_run" });
+      return {
+        status: "completed",
+        summary: summarizeChangeOutcomes(result),
+        detail: { ready: result.ready, entries: result.entries, started: result.started, pending: result.pending, judged: result.judged },
       };
     }
     case "deming-benchmark-health": {
