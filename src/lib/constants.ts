@@ -42,6 +42,8 @@ export const REPORT_OFFER = {
   nextStep: "We reply within one business day with scope and price",
   refreshLabel: "Quarterly refreshes on request",
 } as const;
+/** The report price inside a sentence ("a report from $300"), from the one label (#1176). */
+export const REPORT_PRICE_INLINE = `${REPORT_OFFER.priceLabel.charAt(0).toLowerCase()}${REPORT_OFFER.priceLabel.slice(1)}`;
 // The sample report page (/reports/sample-competitive-fee-position) is a live report rendered
 // from published data (src/lib/custom-report/sample-report.ts); links to it show whenever
 // sampleReportAvailable() is true. This flag gates only the OLD static sample
