@@ -29,7 +29,9 @@ It runs as Atlas steps (agent `atlas`); it is deterministic and makes no model c
   against the bank's own stored schedule. A fee is right only when the amount (`traceLiveFee`, the
   shared source check), the category (`checkFeeCategory`), the evidence (the bank's own document,
   not an article; a product-page fee only when the bank's schedule does not price the same fee
-  differently, v4, James 2026-10-13: `productPageConflictSql`), the fee line ($0 rows must be priced lines) and the name all
+  differently, v4, James 2026-10-13: `productPageConflictSql`); and v4 keeps a name that carries its
+  condition when Hamilton's rename pass leaves it whole on purpose, as in "Bill Pay Inactivity Fee
+  (applies after 60 days of inactivity)" (`nameQuality`), the fee line ($0 rows must be priced lines) and the name all
   hold. A fee with no stored text is unknown, never right or wrong. Below
   `FRESH_AUDIT_MIN_SCORABLE` scorable fees there is no percentage. Read-only.
 - This is the accuracy measure `CLAUDE.md` defines. The target is 95%, averaged over a week.

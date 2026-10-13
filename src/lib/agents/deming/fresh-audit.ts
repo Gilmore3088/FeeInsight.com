@@ -10,7 +10,8 @@ import {
   otherBankFeesSql,
   unconfirmedHostFeesSql,
 } from "@/lib/agents/hamilton/other-bank-document";
-import { nameIsFragment } from "@/lib/agents/darwin/release-review";
+import { nameHasCutShape } from "@/lib/agents/darwin/release-review";
+import { dropsCondition, isCutoffName, repairCutoffName } from "@/lib/agents/knox/name-retidy";
 import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
 
 type SqlTag = typeof sql;
@@ -32,7 +33,8 @@ type SqlTag = typeof sql;
 /**
  * v4 (2026-10-13, James): a fee from the bank's own product page is right unless its schedule
  * prices the same fee differently (`productPageConflictSql`); before v4 every product-page fee
- * was a miss.
+ * was a miss. Also v4: a name that keeps its condition, as Hamilton's rename pass leaves it on
+ * purpose, is not a bad name (`nameQuality`).
  */
 export const FRESH_AUDIT_VERSION = 4;
 export const FRESH_AUDIT_SAMPLE = 200;
@@ -199,10 +201,26 @@ function zeroIsAPerk(fee: FreshAuditFee, text: string): boolean {
   return !check.ok || !ZERO_PRICE_TOKEN.test(check.sourceLine);
 }
 
-function nameQuality(name: string): string | null {
+/** A name that ends on a word cut from its sentence ("ATM A fee of"). */
+const TRAILING_CUT_WORD = /\b(?:of|to|from|for|at|is|and|or|with|by|a|an|the|per|than|below|above|up to|each)\s*$/i;
+/** A name that is a sentence from the schedule's prose ("If your scheduled payment ..."). */
+const PROSE_START = /^\s*(?:if|when|unless|because|in addition|you|we|our|your)\b/i;
+
+/**
+ * v4: a name that keeps its condition is a fee's name. Hamilton's rename pass keeps "Bill Pay
+ * Inactivity Fee (applies after 60 days of inactivity)" whole on purpose, since dropping the
+ * condition would lose what the fee is for (`dropsCondition`, UAT 2026-10-09). Before v4 the audit
+ * counted those as bad names (3 of the 7 on Oct 12). A name is bad when it carries a cut shape, when
+ * the rename pass could tidy it without losing a condition and has not, or when it is unchanged by
+ * the pass yet ends on a cut word or is a sentence of prose.
+ */
+export function nameQuality(name: string): string | null {
   if (JUNK_GLYPH.test(name)) return "junk_glyphs";
-  if (nameIsFragment(name)) return "name_fragment";
-  return null;
+  if (nameHasCutShape(name)) return "name_fragment";
+  if (!isCutoffName(name)) return null;
+  const repaired = repairCutoffName(name);
+  if (repaired !== name) return dropsCondition(name, repaired) ? null : "name_fragment";
+  return TRAILING_CUT_WORD.test(name.trim()) || PROSE_START.test(name) ? "name_fragment" : null;
 }
 
 /** The first evidence check the fee fails, or null when its document is the bank's own schedule. */

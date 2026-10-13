@@ -156,7 +156,12 @@ const SENTENCE_START = /^\s*[a-z]/;
 const LOWERCASE_PRODUCT_NAME = /^\s*e-?(statement|banking|bill)/i;
 
 export function nameIsFragment(name: string): boolean {
-  if (NAME_FRAGMENT.test(name) || isCutoffName(name)) return true;
+  return nameHasCutShape(name) || isCutoffName(name);
+}
+
+/** The shapes of a name cut from its line, without the cut-off shapes the rename pass may repair. */
+export function nameHasCutShape(name: string): boolean {
+  if (NAME_FRAGMENT.test(name)) return true;
   return SENTENCE_START.test(name) && !LOWERCASE_PRODUCT_NAME.test(name);
 }
 

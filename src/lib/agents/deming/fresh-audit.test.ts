@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { FRESH_AUDIT_MIN_SCORABLE, scoreFreshAudit, summarizeFreshAudit, type FreshAuditFee } from "./fresh-audit";
+import { FRESH_AUDIT_MIN_SCORABLE, nameQuality, scoreFreshAudit, summarizeFreshAudit, type FreshAuditFee } from "./fresh-audit";
 
 function fee(id: number, overrides: Partial<FreshAuditFee> = {}): FreshAuditFee {
   return {
@@ -106,5 +106,30 @@ describe("summarizeFreshAudit", () => {
     expect(summarizeFreshAudit({ ...base, ...scoreFreshAudit(fees, schedule) })).toBe(
       "Deming audited 31 live fees (seed 2026-10-09): 30 of 30 right on amount, category, source, fee line and name (100.0%); 0 amount not supported, 0 category not supported, 0 not from the bank's own schedule, 0 not a fee line, 0 bad name; 1 with no stored text (unknown). Critical misses: 0.",
     );
+  });
+});
+
+describe("name quality v4: a name that keeps its condition is a fee's name", () => {
+  // Deming's Oct 10-12 name misses, read by hand.
+  it.each([
+    "Bill Pay Inactivity Fee (applies after 60 days of inactivity)",
+    "Stop Payments (includes billpay)",
+    "Dormant account fee (when balance is less than $50)",
+    "Cashier’s Checks: If taken in person",
+    "Legal Processing (Includes levy, writ, garnishment, subpoena and requests for information from law enforcement agencies)",
+    "Legal order to turn over your funds or property",
+  ])("keeps %s", (name) => {
+    expect(nameQuality(name)).toBeNull();
+  });
+
+  it.each([
+    "b A cash advance fee",
+    "Foreign ATM & Non-CO-OP Network ATM A fee of",
+    "ea. Notary service",
+    "available in your account, our payment of this transaction will result in an overdraft transaction. Because the transact",
+    "If your scheduled payment is not made within Ten (10) Days of your due date you will be assessed a 25.00 late charge.",
+    "thereafter",
+  ])("still fails %s", (name) => {
+    expect(nameQuality(name)).toBe("name_fragment");
   });
 });
