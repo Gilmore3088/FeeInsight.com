@@ -218,7 +218,11 @@ export function rosettaReaderManifests(versions: RosettaVersions): ReplayManifes
  * manifest. `scripts/ci-guards.sh bayes-manifest-kill` accepts a changed constant named here or
  * in a manifest above.
  */
-export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {};
+export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
+  // v2 (#1068) changes how a refresh is written (in place), not which fee moves; the stale fees
+  // it works through are picked by the same query every publish step, so there is nothing to replay.
+  REFRESH_COPY_STRATEGY: "Writes the same refresh in place; the next publish steps pick up every stale fee as before.",
+};
 
 export async function loadManifests(): Promise<ReplayManifest[]> {
   const { REGISTRY_PARSER_VERSIONS } = await import("@/lib/agents/registry-scheduler");
