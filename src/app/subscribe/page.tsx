@@ -33,8 +33,7 @@ import { StickyCta } from "./sticky-cta";
 import localFont from "next/font/local";
 import { ShowcasePillars, ShowcaseProvider, ShowcaseStage } from "./showcase";
 import { AnalyzeDemo, type AnalyzeScenario } from "./analyze-demo";
-import { MonitorPreview, ReportPreview, type MonitorChange } from "./example-panels";
-import { getFeeChangeEvents } from "@/lib/data-store/fee-changes";
+import { MonitorPreview, ReportPreview } from "./example-panels";
 import { TrackView } from "@/components/track-view";
 import { getProPricingInstitution } from "@/lib/data-store/pro-accounts";
 import { NON_INSTITUTION_TIER, PRO_TIERS, isProTier, proTier, tierForAssets, tierPriceLabel } from "@/lib/pro-tiers";
@@ -250,19 +249,6 @@ async function analyzeScenario(): Promise<AnalyzeScenario | null> {
   };
 }
 
-/** The Monitor example's rows: the newest like-for-like published fee changes. */
-async function monitorChanges(): Promise<MonitorChange[]> {
-  const events = await getFeeChangeEvents({ limit: 3 }).catch(() => []);
-  return events.map((e) => ({
-    id: e.id,
-    institution: e.institution_name,
-    feeLabel: categoryLabel(e.fee_category),
-    oldAmount: e.old_amount,
-    newAmount: e.new_amount,
-    changedAt: e.changed_at,
-  }));
-}
-
 function buildSubscribeReturnPath(options: {
   inviteMode: boolean;
   returnTo: string | null;
@@ -287,10 +273,9 @@ export default async function SubscribePage({
 }) {
   const user = await getCurrentUser();
   const params = await searchParams;
-  const [summary, wire, changes, scenario] = await Promise.all([
+  const [summary, wire, scenario] = await Promise.all([
     getPublicStatsSummary(),
     wirePreviewData(),
-    monitorChanges(),
     analyzeScenario(),
   ]);
   const returnTo = params.from ? sanitizeInternalRedirect(params.from, WELCOME_PATH) : null;
@@ -392,7 +377,6 @@ export default async function SubscribePage({
           <AnalyzeDemo key="analyze" scenario={scenario} />,
           <MonitorPreview
             key="monitor"
-            changes={changes}
             wire={wire.lead ? { source: wire.lead.source, title: wire.lead.title, detail: wire.lead.detail } : null}
           />,
           <ReportPreview key="report" />,

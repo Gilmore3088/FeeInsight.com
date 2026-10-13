@@ -631,17 +631,17 @@ export default async function GuidePage({ params }: PageProps) {
               {/* ── CTA: a consumer page offers the consumer something ── */}
               <div className="rounded-xl border border-[#E8DFD1] bg-white/80 px-5 py-5">
                   <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-[#A93D25]/60">
-                    Stay ahead of fee changes
+                    Follow this fee
                   </p>
                   <p
                     className="mt-2 text-[15px] font-medium text-[#1A1815]"
                     style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
                   >
-                    Get told when your bank raises this fee
+                    Get an email when your bank updates this fee
                   </p>
                   <p className="mt-1.5 text-[12px] leading-relaxed text-[#6B6255]">
-                    Free account. Save your institution and we&rsquo;ll email you when its{" "}
-                    {primaryNamePlain} changes.
+                    Free account. Save your institution and we&rsquo;ll email you when its published{" "}
+                    {primaryNamePlain} is updated.
                   </p>
                   <Link
                     href={`/register?intent=fee-alert&category=${guide.primaryCategory}`}
