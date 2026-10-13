@@ -267,6 +267,29 @@ export const PERIOD_FEE_KEYS: ReadonlySet<string> = new Set([
 ]);
 
 /**
+ * Categories charged once per event, never per period (#1196): a returned or unpaid item. A period
+ * on one of these is a neighbour's wording or a price split at its decimal point ("$35.00 per month
+ * Nonsufficient funds" read as "00 per month Nonsufficient funds", monthly).
+ */
+export const PER_EVENT_FEE_KEYS: ReadonlySet<string> = new Set(["nsf"]);
+
+/**
+ * A per-event fee keeps a per-event frequency or none: a stated period is replaced by the per-item
+ * reading of its own line when there is one, else cleared. Other categories pass through as they are.
+ */
+export function perEventFrequency(
+  canonicalKey: string | null | undefined,
+  frequency: string | null,
+  sourceLine: string | null | undefined,
+  amount: number | null,
+): string | null {
+  if (canonicalKey == null || !PER_EVENT_FEE_KEYS.has(canonicalKey)) return frequency;
+  if (frequency == null || frequencyFamily(frequency) === "per_item") return frequency;
+  const own = frequencyFromLine(sourceLine, amount);
+  return own && frequencyFamily(own) === "per_item" ? own : null;
+}
+
+/**
  * The frequency a fee should carry: what its own row states, else a stated frequency that was not
  * read from another fee's row. A per-item reading never replaces a period on a period category.
  */

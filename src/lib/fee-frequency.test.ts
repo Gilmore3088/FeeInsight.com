@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { borrowedFrequency, boxTableAnnualHeader, frequencyFamily, frequencyFromLine, settledFrequency, wordsAfterPrice } from "./fee-frequency";
+import { borrowedFrequency, boxTableAnnualHeader, frequencyFamily, frequencyFromLine, perEventFrequency, settledFrequency, wordsAfterPrice } from "./fee-frequency";
 
 describe("frequencyFromLine (live excerpts, Oct 8)", () => {
   it("reads the words right after the fee's own price", () => {
@@ -194,5 +194,21 @@ describe("boxTableAnnualHeader (v10, live documents Oct 9)", () => {
   it("needs the fee's own price on the line it finds", () => {
     expect(boxTableAnnualHeader("Box Size | Annual Rent\n3 x 5 | $25", "3 x 5 | $25", 30)).toBeNull();
     expect(boxTableAnnualHeader("Box Size | Annual Rent\n3 x 5 | $25", "5 x 5 | $40", 40)).toBeNull();
+  });
+});
+
+describe("perEventFrequency (#1196)", () => {
+  it("never leaves a period on an NSF fee", () => {
+    // Addition Financial: "$35.00 per month Nonsufficient funds" split at the decimal point.
+    expect(perEventFrequency("nsf", "monthly", "Monthly fee $10.00 per month Nonsufficient funds $35.00", 35)).toBeNull();
+    expect(perEventFrequency("nsf", "monthly", "Insufficient Funds (NSF) $25.00 each", 25)).toBe("per_item");
+    expect(perEventFrequency("nsf", "annual", null, 30)).toBeNull();
+  });
+
+  it("keeps a per-event frequency, a blank, and every other category as they are", () => {
+    expect(perEventFrequency("nsf", "per_item", "NSF $30.00 per month", 30)).toBe("per_item");
+    expect(perEventFrequency("nsf", null, "NSF $30.00", 30)).toBeNull();
+    expect(perEventFrequency("overdraft", "monthly", "Enhanced Overdraft Privilege Fee (per month) $5.00", 5)).toBe("monthly");
+    expect(perEventFrequency("monthly_maintenance", "monthly", "Monthly fee $10.00", 10)).toBe("monthly");
   });
 });
