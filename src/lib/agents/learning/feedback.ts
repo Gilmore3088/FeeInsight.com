@@ -104,10 +104,26 @@ export interface FeedbackRow {
 const WRITE_CHUNK = 500;
 
 /**
+ * One row per `dedupe_key`, the last one kept: Postgres refuses an upsert that touches the
+ * same key twice in one statement, which threw away every link judgement from Oct 7 to 12
+ * (one document behind both a bank's main link and a companion link, #1152). The last row
+ * is what the upsert would have kept.
+ */
+export function lastPerDedupeKey(rows: FeedbackRow[]): FeedbackRow[] {
+  const byKey = new Map<string, FeedbackRow>();
+  for (const row of rows) {
+    byKey.delete(row.dedupeKey);
+    byKey.set(row.dedupeKey, row);
+  }
+  return [...byKey.values()];
+}
+
+/**
  * Upserts judgements on `dedupe_key`: a re-judgement replaces the earlier row's signal,
  * kind, weight and evidence and keeps its `created_at`. Returns the rows written.
  */
-export async function recordFeedback(db: SqlTag, rows: FeedbackRow[]): Promise<number> {
+export async function recordFeedback(db: SqlTag, input: FeedbackRow[]): Promise<number> {
+  const rows = lastPerDedupeKey(input);
   let written = 0;
   for (let start = 0; start < rows.length; start += WRITE_CHUNK) {
     const chunk = rows.slice(start, start + WRITE_CHUNK).map((row) => ({
