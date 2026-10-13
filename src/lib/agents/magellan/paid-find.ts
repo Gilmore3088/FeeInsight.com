@@ -15,6 +15,7 @@ import {
   type PaidStepOptions,
 } from "@/lib/agents/paid-pass";
 
+import { FOUND_COOLDOWN_DAYS, MISS_COOLDOWN_DAYS } from "./cooldowns";
 import { DISCOVERY_METHOD_VERSION, recordDiscoveryResult, type CandidateDiscoveryResult } from "./discovery";
 import { runBlockedFetch } from "./blocked-fetch";
 import { fetchWithTimeout, looksLikePdfUrl, validateFeeCandidate } from "./find-validate";
@@ -28,7 +29,7 @@ type Fetcher = typeof fetch;
 /**
  * Pass 3 for Magellan: one paid web search per bank that every free finder missed.
  * Selects banks in the state whose last search with the current discovery method found
- * nothing and that have had no paid search this month, asks the model (with
+ * nothing and that are off the paid cooldown (`cooldowns.ts`), asks the model (with
  * Anthropic's server web_search tool) for the consumer fee schedule on the bank's own
  * domain, and stores the answer only after the same fee-page check the free finders
  * use. Every call is budget-checked and cost-logged by `paidModelCall`; a budget cap or
@@ -54,7 +55,7 @@ const MAX_OUTPUT_TOKENS = 1024;
 const PAID_ANSWER_SCORE = 0.85;
 /** An answer the bank's site refused to show us (HTTP 403): kept, unchecked, for the paid fetch. */
 const BLOCKED_ANSWER_CONFIDENCE = 0.75;
-/** Paid outcomes that do not count as this month's paid try (nothing was learned). */
+/** Paid outcomes that do not count as a paid try or start a cooldown (nothing was learned). */
 export const TRANSIENT_PAID_OUTCOMES = ["network_error", "timeout", "http_5xx", "http_429", "budget_blocked"];
 
 interface PaidFindRow {
@@ -64,7 +65,7 @@ interface PaidFindRow {
   state_code: string | null;
   website_url: string;
   profile_consecutive_failures?: number | string | null;
-  /** A paid web search already ran for this bank this month (only the pick is due). */
+  /** A paid web search for this bank is still on cooldown (only the pick is due). */
   web_searched?: boolean | null;
 }
 
@@ -93,7 +94,7 @@ async function selectBanks(db: typeof sql, stateCode: string | null, limit: numb
               WHERE pa.institution_id = inst.id
                 AND pa.stage = 'discover'
                 AND pa.strategy = ${PAID_FIND_STRATEGY.strategy}
-                AND pa.created_at >= date_trunc('month', NOW())
+                AND pa.created_at >= NOW() - make_interval(days => CASE WHEN pa.outcome = 'ok' THEN ${FOUND_COOLDOWN_DAYS}::int ELSE ${MISS_COOLDOWN_DAYS}::int END)
                 AND pa.outcome <> ALL(${TRANSIENT_PAID_OUTCOMES})
            ) AS web_searched
       FROM institution_sources inst
@@ -120,14 +121,15 @@ async function selectBanks(db: typeof sql, stateCode: string | null, limit: numb
             AND pa.stage = 'discover'
             AND pa.detail @> ${currentMethod}::jsonb
        )
-       -- Due when this month's pick or this month's web search has not run yet.
+       -- Due when the pick or the web search is off cooldown (#1031: 90 days after a find,
+       -- 30 after a miss, counted from the try).
        AND (
          NOT EXISTS (
            SELECT 1 FROM pipeline_attempts pa
             WHERE pa.institution_id = inst.id
               AND pa.stage = 'discover'
               AND pa.strategy = ${PAID_PICK_STRATEGY.strategy}
-              AND pa.created_at >= date_trunc('month', NOW())
+              AND pa.created_at >= NOW() - make_interval(days => CASE WHEN pa.outcome = 'ok' THEN ${FOUND_COOLDOWN_DAYS}::int ELSE ${MISS_COOLDOWN_DAYS}::int END)
               AND pa.outcome <> ALL(${TRANSIENT_PAID_OUTCOMES})
          )
          OR NOT EXISTS (
@@ -135,7 +137,7 @@ async function selectBanks(db: typeof sql, stateCode: string | null, limit: numb
             WHERE pa.institution_id = inst.id
               AND pa.stage = 'discover'
               AND pa.strategy = ${PAID_FIND_STRATEGY.strategy}
-              AND pa.created_at >= date_trunc('month', NOW())
+              AND pa.created_at >= NOW() - make_interval(days => CASE WHEN pa.outcome = 'ok' THEN ${FOUND_COOLDOWN_DAYS}::int ELSE ${MISS_COOLDOWN_DAYS}::int END)
               AND pa.outcome <> ALL(${TRANSIENT_PAID_OUTCOMES})
          )
        )
@@ -305,7 +307,7 @@ export async function runMagellanPaidFind(options: RunMagellanPaidFindOptions): 
         continue;
       }
       if (row.web_searched) {
-        // This month's web search already missed; the pick was the only new try.
+        // The web search missed within its cooldown; the pick was the only new try.
         result.processed += 1;
         result.failed += 1;
         result.results.push({ institution_id: institutionId, outcome: picked.outcome, url: null, cost_microusd: picked.costMicrousd, reason: picked.reason, by: "pick" });

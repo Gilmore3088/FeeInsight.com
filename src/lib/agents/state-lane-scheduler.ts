@@ -12,6 +12,7 @@ import { DARWIN_VERIFY_MAX_LIMIT, DARWIN_VERIFY_STRATEGY } from "./darwin/verify
 import { HAMILTON_PUBLISH_MAX_LIMIT } from "./hamilton/publish";
 import { knoxFreeSignature, RULES_RECHECK_STRATEGY } from "./hamilton/rules-recheck";
 import { SOURCE_CHECK_REASON, SOURCE_CHECK_RESTORE_PREFIX, SOURCE_CHECK_STRATEGY } from "./hamilton/source-check";
+import { FOUND_COOLDOWN_DAYS, MISS_COOLDOWN_DAYS } from "./magellan/cooldowns";
 import { MAGELLAN_STALE_LINK_REFETCH_DAYS } from "./magellan/fetch";
 import { DISCOVERY_METHOD_VERSION } from "./magellan/discovery";
 import { PAID_FIND_STRATEGY, PAID_PICK_STRATEGY, TRANSIENT_PAID_OUTCOMES } from "./magellan/paid-find";
@@ -68,10 +69,11 @@ export const FOCUS_STATE_LANE_PARAMS: Record<string, { discovery_limit: number; 
  * (`dead` / `needs_human`, which the quarterly re-check searches again). Counting dead ends
  * kept 23 states on daily paid passes that could never turn off; on this count alone 5 do.
  * A state also stays daily while Magellan's paid steps have at least DAILY_FULL_PASS_FIND_DUE
- * banks due this month (dead-end banks the paid find has not tried, `discover-paid`, plus
- * institutions with no website the website search has not tried), or while any market leader
- * is among them. Both are monthly per bank, so the rule turns off on its own, and the paid
- * caps still bound the spend. A state with fewer banks due runs weekly until they are tried.
+ * banks due (dead-end banks off the paid find's cooldown, `discover-paid`, plus institutions
+ * with no website off the website search's cooldown), or while any market leader is among
+ * them. Each paid try starts a 30-day (miss) or 90-day (find) cooldown (#1031,
+ * `magellan/cooldowns.ts`), so the rule turns off on its own, and the paid caps still bound
+ * the spend. A state with fewer banks due runs weekly until they are tried.
  * Daily for any bank due kept 36 of 55 states daily on Oct 7 (HI with 1 bank due); this rule
  * keeps 21.
  */
@@ -826,7 +828,7 @@ export interface StateLaneCadence {
   recheckDue: boolean;
   /** Focus state still missing many links: full passes are due daily, not monthly. */
   daily: boolean;
-  /** Some banks still due a paid find this month, too few for daily: full passes weekly. */
+  /** Some banks still due a paid find (off cooldown), too few for daily: full passes weekly. */
   weekly: boolean;
 }
 
@@ -849,7 +851,7 @@ export async function stateLaneCadence(stateCode: string): Promise<StateLaneCade
       leader_find_due: number;
     }[]>`
       -- Mirrors magellan/paid-find.ts selectBanks: dead-end banks the paid pick or paid
-      -- web search has not tried this month after every free finder ran.
+      -- web search has not tried within its cooldown after every free finder ran.
       WITH paid_due AS (
           SELECT inst.id FROM public.institution_sources inst
             LEFT JOIN public.institution_source_profiles profile ON profile.institution_id = inst.id
@@ -872,12 +874,12 @@ export async function stateLaneCadence(stateCode: string): Promise<StateLaneCade
                 WHERE pa.institution_id = inst.id
                   AND pa.stage = 'discover'
                   AND pa.strategy IN (${PAID_PICK_STRATEGY.strategy}, ${PAID_FIND_STRATEGY.strategy})
-                  AND pa.created_at >= date_trunc('month', NOW())
+                  AND pa.created_at >= NOW() - make_interval(days => CASE WHEN pa.outcome = 'ok' THEN ${FOUND_COOLDOWN_DAYS}::int ELSE ${MISS_COOLDOWN_DAYS}::int END)
                   AND pa.outcome <> ALL(${TRANSIENT_PAID_OUTCOMES}::text[])
              ) < 2
       ),
       -- Mirrors magellan/website-find.ts selectRows: institutions with no website the
-      -- website search has not tried this month.
+      -- website search has not tried within its cooldown.
       website_due AS (
           SELECT inst.id FROM public.institution_sources inst
             LEFT JOIN public.institution_source_profiles profile ON profile.institution_id = inst.id
@@ -892,7 +894,7 @@ export async function stateLaneCadence(stateCode: string): Promise<StateLaneCade
                 WHERE pa.institution_id = inst.id
                   AND pa.stage = 'discover'
                   AND pa.strategy = ${WEBSITE_FIND_STRATEGY.strategy}
-                  AND pa.created_at >= date_trunc('month', NOW())
+                  AND pa.created_at >= NOW() - make_interval(days => CASE WHEN pa.outcome = 'ok' THEN ${FOUND_COOLDOWN_DAYS}::int ELSE ${MISS_COOLDOWN_DAYS}::int END)
                   AND pa.outcome <> ALL(${TRANSIENT_PAID_OUTCOMES}::text[])
              )
       )
