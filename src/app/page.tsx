@@ -21,7 +21,7 @@ const HOME_TITLE = `${SITE_NAME} — Bank and credit union fees, traced to the s
 export const metadata: Metadata = {
   title: { absolute: HOME_TITLE },
   description:
-    "What does your bank charge? Look up overdraft, ATM, wire and monthly fees for U.S. banks and credit unions — every figure traced to the published schedule. Institutions: peer benchmarking, scenarios, and board-ready reports.",
+    "Look up overdraft, ATM, wire and monthly fees at U.S. banks and credit unions, each traced to its published schedule. Peer benchmarks for banking teams.",
   openGraph: {
     title: HOME_TITLE,
     description:
