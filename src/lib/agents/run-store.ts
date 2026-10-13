@@ -19,6 +19,7 @@ import { retireArticlePageFees } from "@/lib/agents/hamilton/article-page";
 import { retireProductPageFees } from "@/lib/agents/hamilton/product-page";
 import { retireCrossPageConflicts } from "@/lib/agents/hamilton/cross-page-conflict";
 import { recheckUncheckedRestores } from "@/lib/agents/hamilton/restore-recheck";
+import { restoreLostRecheckTakedowns } from "@/lib/agents/hamilton/lost-recheck-restore";
 import { restoreCrossPageSupersedes } from "@/lib/agents/hamilton/cross-page-restore";
 import { pairFeeChangeRecords } from "@/lib/agents/hamilton/change-pairing";
 import { rollBackRetiredCompanionFees } from "@/lib/agents/hamilton/companion-retire";
@@ -1086,6 +1087,14 @@ async function executeAgenticStep(
         dryRun: run.runKind === "dry_run",
         institutionId,
       });
+      // #1071: fees the re-check took down on Oct 5-11 (before #1022) that are not live again are
+      // judged once by the restore bar against their document's newest text; those that pass return.
+      const lostRestore = await restoreLostRecheckTakedowns(tx, {
+        runId: run.id,
+        batchId: `agentic-run-${run.id}`,
+        dryRun: run.runKind === "dry_run",
+        institutionId,
+      });
       // Recorded fee changes name their two rows and whether they compare one page with
       // itself, before the restore below reopens any superseded row.
       const changePairing = await pairFeeChangeRecords(tx, {
@@ -1186,6 +1195,7 @@ async function executeAgenticStep(
               recheckRollbacks > 0 ||
               recheckRestores > 0 ||
               restoreRecheck.rolledBack.length > 0 ||
+              lostRestore.restored > 0 ||
               sourceTakedowns > 0 ||
               (sourceCheck?.restored ?? 0) > 0,
           });
@@ -1230,6 +1240,10 @@ async function executeAgenticStep(
       const evalVerdictNote =
         evalVerdicts.rolledBack.length > 0
           ? ` ${published.dryRun ? "Would archive" : "Archived"} ${evalVerdicts.rolledBack.length.toLocaleString()} fee(s) the complete-record eval or a name rule found wrong.`
+          : "";
+      const lostRestoreNote =
+        lostRestore.candidates > 0
+          ? ` Judged ${lostRestore.candidates.toLocaleString()} lost re-check take-down(s) of Oct 5-11: ${lostRestore.passed.length.toLocaleString()} passed the restore bar (${published.dryRun ? "would restore" : `${lostRestore.restored.toLocaleString()} restored`}), ${lostRestore.failed.length.toLocaleString()} failed, ${lostRestore.skipped.length.toLocaleString()} skipped.`
           : "";
       const crossPageNote =
         crossPageRestore.restored.length > 0
@@ -1313,7 +1327,7 @@ async function executeAgenticStep(
           : "";
       return {
         status: "completed",
-        summary: `Hamilton published ${published.publishedFees.toLocaleString()} verified fee observations from ${published.processedVerifiedFees.toLocaleString()} selected rows (${published.skippedFees.toLocaleString()} skipped).${published.heldInstitutions.length > 0 ? ` Held ${published.heldFees.toLocaleString()} rows from ${published.heldInstitutions.length.toLocaleString()} institutions with fewer than ${published.minInstitutionFees} fees.` : ""}${outlierNote}${foldNote}${handRefileNote}${offTaxonomyNote}${limitNote}${businessNote}${sameLineNote}${otherBankNote}${evalVerdictNote}${closedNote}${articleNote}${productNote}${productConflictNote}${crossPageConflictNote}${categoryGuardNote}${guardRefileNote}${guardRequeueNote}${companionNote}${newerCopyNote}${refreshNote}${currentCopyNote}${nameRetidy.renames.length > 0 ? ` ${published.dryRun ? "Would tidy" : "Tidied"} ${nameRetidy.renames.length.toLocaleString()} run-on live fee name(s).` : ""}${accountNames.renames.length > 0 ? ` ${published.dryRun ? "Would name" : "Named"} ${accountNames.renames.length.toLocaleString()} generic live monthly fee(s) by their account.` : ""}${recheckNote}${restoreRecheckNote}${crossPageNote}${sourceNote}${duplicateNote}${frequencyNote}${indexRefresh?.refreshed ? ` Index refreshed: ${indexRefresh.categories} categories.` : ""}`,
+        summary: `Hamilton published ${published.publishedFees.toLocaleString()} verified fee observations from ${published.processedVerifiedFees.toLocaleString()} selected rows (${published.skippedFees.toLocaleString()} skipped).${published.heldInstitutions.length > 0 ? ` Held ${published.heldFees.toLocaleString()} rows from ${published.heldInstitutions.length.toLocaleString()} institutions with fewer than ${published.minInstitutionFees} fees.` : ""}${outlierNote}${foldNote}${handRefileNote}${offTaxonomyNote}${limitNote}${businessNote}${sameLineNote}${otherBankNote}${evalVerdictNote}${closedNote}${articleNote}${productNote}${productConflictNote}${crossPageConflictNote}${categoryGuardNote}${guardRefileNote}${guardRequeueNote}${companionNote}${newerCopyNote}${refreshNote}${currentCopyNote}${nameRetidy.renames.length > 0 ? ` ${published.dryRun ? "Would tidy" : "Tidied"} ${nameRetidy.renames.length.toLocaleString()} run-on live fee name(s).` : ""}${accountNames.renames.length > 0 ? ` ${published.dryRun ? "Would name" : "Named"} ${accountNames.renames.length.toLocaleString()} generic live monthly fee(s) by their account.` : ""}${recheckNote}${restoreRecheckNote}${lostRestoreNote}${crossPageNote}${sourceNote}${duplicateNote}${frequencyNote}${indexRefresh?.refreshed ? ` Index refreshed: ${indexRefresh.categories} categories.` : ""}`,
         detail: {
           selected_verified_fees: published.selectedVerifiedFees,
           processed_verified_fees: published.processedVerifiedFees,
@@ -1402,6 +1416,13 @@ async function executeAgenticStep(
             lists_both: changePairing.listsBoth,
             no_pair: changePairing.noPair,
             written: changePairing.written,
+          },
+          lost_recheck_restore: {
+            candidates: lostRestore.candidates,
+            passed: lostRestore.passed.length,
+            restored: lostRestore.restored,
+            failed: lostRestore.failed.length,
+            skipped: lostRestore.skipped.length,
           },
           restore_recheck: {
             unchecked: restoreRecheck.unchecked,
