@@ -12,8 +12,9 @@ their market. Why us: live verified fee data (`published_fee_catalog`) + banking
 expertise. Kept fully separate from the CSI day job.
 
 ## How work runs
-One builder at a time. Work starts from the Now list at the top of GitHub issue #1026 (pipeline
-review master tracker): one issue, one branch, one PR. Before starting, search open issues, PRs
+Up to three builders at once, one per lane in `docs/plans/build-plan-2026-10-12.md` ("Lanes");
+a builder takes only its own lane's items. Work starts from that plan and the Now list at the top
+of GitHub issue #1026 (pipeline review master tracker): one issue, one branch, one PR. Before starting, search open issues, PRs
 and `main` for the same outcome, and reuse or explicitly supersede what exists.
 - Every change a review finds is documented as its own issue under a tracker: one tracker per
   agent, plus the Foundation tracker for infrastructure, documentation and process work that
