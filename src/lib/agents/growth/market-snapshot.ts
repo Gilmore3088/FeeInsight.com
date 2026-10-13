@@ -1,3 +1,4 @@
+import { displayCity } from "@/lib/format";
 import { sql } from "@/lib/data-store/connection";
 import { MIN_INSTITUTIONS_FOR_MEDIAN, STATS_ROW_FILTER, valuePerInstitution } from "@/lib/data-store/fee-stats";
 import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
@@ -365,9 +366,4 @@ export function marketLabel(institution: Pick<SnapshotInstitution, "cbsaName" | 
   return "your market";
 }
 
-/** Some institution records carry the city in capitals ("LINCOLN"); show it as "Lincoln". */
-function cityName(city: string): string {
-  const trimmed = city.trim();
-  if (trimmed !== trimmed.toUpperCase()) return trimmed;
-  return trimmed.toLowerCase().replace(/(^|[\s\-'.])(\p{L})/gu, (_, lead: string, letter: string) => lead + letter.toUpperCase());
-}
+const cityName = displayCity;

@@ -76,7 +76,7 @@ export function CharterExhibit({
         title={`${place ? `${place} credit` : "Credit"} unions are lower on ${cuCheaper} of ${rows.length} ${place ? "fees" : "everyday fees"}`}
       >
         Median price at banks and at credit unions for each fee{place ? ` in ${place}` : ""}. The gap between the dots is
-        what switching charter would typically save or cost.
+        the difference between the two medians.
       </SectionHeading>
 
       <div className="mt-7 rounded-2xl border border-[#E8DFD1] bg-white p-5 sm:p-7">
@@ -118,9 +118,9 @@ export function CharterExhibit({
         <div className="mt-3 grid text-[10px] uppercase tracking-wider text-[#8A8072] sm:grid-cols-[200px_minmax(0,1fr)_170px] sm:gap-x-6">
           <span />
           <span className="flex justify-between">
-            <span>&larr; CUs cheaper (&minus;{AXIS_PCT}%)</span>
+            <span>&larr; CUs lower (&minus;{AXIS_PCT}%)</span>
             <span>bank median</span>
-            <span>CUs pricier (+{AXIS_PCT}%) &rarr;</span>
+            <span>CUs higher (+{AXIS_PCT}%) &rarr;</span>
           </span>
         </div>
         <p className="mt-4 text-[11px] text-[#8A8072]">Percent is the credit union median relative to the bank median. Gaps beyond {AXIS_PCT}% are pinned to the edge.</p>
