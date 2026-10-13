@@ -869,3 +869,27 @@ describe("v18: a stray letter in front, and the lead-in to the price left on the
     expect(retidiedFeeName("bona fide, but unreasonable cash advance fee. | plus a fee of", "cash_advance")).toBeNull();
   });
 });
+
+describe("v19: cut cents or a row number in front of the name (#1196)", () => {
+  it("repairs the live shapes", () => {
+    expect(retidiedFeeName("00 per month Nonsufficient funds", "nsf")).toBe("Nonsufficient funds");
+    expect(retidiedFeeName("00 Non-Sufficient Funds", "nsf")).toBe("Non-Sufficient Funds");
+    expect(retidiedFeeName("00 Monthly fee", "monthly_maintenance")).toBe("Monthly fee");
+    expect(retidiedFeeName("00 Lost key fee", "safe_deposit_box")).toBe("Lost key fee");
+    expect(retidiedFeeName("02 Payroll Accounts: Monthly fee for designated payroll-based accounts", "monthly_maintenance")).toBe(
+      "Payroll Accounts: Monthly fee for designated payroll-based accounts",
+    );
+    expect(retidiedFeeName("13 | Outgoing domestic wire transfer", "wire_domestic_outgoing")).toBe("Outgoing domestic wire transfer");
+    expect(retidiedFeeName("6 | Debit card replacement, per card", "card_replacement")).toBe("Debit card replacement, per card");
+  });
+
+  it("leaves a name that begins with its own number, and a box size", () => {
+    expect(retidiedFeeName("30 Day Late Charge", "late_payment")).toBeNull();
+    expect(retidiedFeeName("12 Months of Inactivity", "dormant_account")).toBeNull();
+    expect(retidiedFeeName("16 or More Bill Payments Per Month", "bill_pay")).toBeNull();
+    expect(retidiedFeeName("03 x 05", "safe_deposit_box")).toBeNull();
+    expect(isMessyName("00 Monthly fee")).toBe(true);
+    expect(isMessyName("14 | INSUFFICIENT FUNDS")).toBe(true);
+  });
+});
+
