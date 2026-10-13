@@ -107,8 +107,10 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
     // and a perks package (88787). An account that comes with the insurance stays (55988).
     // v60: a sweep service's monthly charge (Security Federal's "Sweep maintenance charge (per
     // month)" $38.95, a ZBA or sweep transfer, a business sweep checking account) is not it either.
+    // v61: a remote deposit capture service named as a product (Montecito's "CheckCapture
+    // Maintenance Fee" $40, 76519) is not it either (#1196).
     exclude:
-      /(\bsweep|\bid\s*theft|\bidentity\s+(theft|protect|monitor|restor)|^\s*accidental death|\binsurance plan\b|\bpackage monthly fee|otherwise,? a fee of\s*$|\bmerchant (capture|services?|processing|accounts?)\b|terminat|\boverdraft (privilege|courtesy)|paper (stmt|states|mailed)|\bstmt fee|is waived under|\|\s*na\s*\||transfer service charge|\bwire (manager|module)\b|\bmodule\b|treasury|cash management|\bapi\b|\bach\b|positive pay|paper mailed|cashier|^monthly fee \(per account\)|\batm\/debit card monthly fee|location|scanner|remote deposit|\brdc\b|lockbox|intrafi|\bics\b|^waiving\b|savings|money market|club|night deposit|safe deposit|box|(?<!\bcross[- ]?border (?:banking )?(?:bundles?|packages?|accounts?|banking) )annual|dormant|inactive|statement(?! cycle)|\bira\b|certificate|\bcd\b|loan|escheat|clos|research|excess|activity|withdrawal|saver|business|commercial|analysis|\bhsa\b|health|escrow|trust|address|fax|cop(y|ies)|(pos|pin[- ]based) transaction|for transactions|transaction service charge|earnings credit (is applied|available to offset))/i,
+      /(\bsweep|\bid\s*theft|\bidentity\s+(theft|protect|monitor|restor)|^\s*accidental death|\binsurance plan\b|\bpackage monthly fee|otherwise,? a fee of\s*$|\bmerchant (capture|services?|processing|accounts?)\b|terminat|\boverdraft (privilege|courtesy)|paper (stmt|states|mailed)|\bstmt fee|is waived under|\|\s*na\s*\||transfer service charge|\bwire (manager|module)\b|\bmodule\b|treasury|cash management|\bapi\b|\bach\b|positive pay|paper mailed|cashier|^monthly fee \(per account\)|\batm\/debit card monthly fee|location|scanner|remote deposit|\bcheck\s*capture\b|\brdc\b|lockbox|intrafi|\bics\b|^waiving\b|savings|money market|club|night deposit|safe deposit|box|(?<!\bcross[- ]?border (?:banking )?(?:bundles?|packages?|accounts?|banking) )annual|dormant|inactive|statement(?! cycle)|\bira\b|certificate|\bcd\b|loan|escheat|clos|research|excess|activity|withdrawal|saver|business|commercial|analysis|\bhsa\b|health|escrow|trust|address|fax|cop(y|ies)|(pos|pin[- ]based) transaction|for transactions|transaction service charge|earnings credit (is applied|available to offset))/i,
   },
   // "at least" is a balance or a statistic, and a short name ending in "fee on" is a
   // line cut mid-sentence ("Overdraft Fee on" $60), never the overdraft fee itself (v17).
@@ -404,7 +406,8 @@ export const GUARDED_CATEGORIES: readonly string[] = [...new Set([...Object.keys
 // v60: a night deposit bag, its key or a bag bundle is not a safe deposit box fee; a lost or
 // replaced bag or bag key is the night deposit fee (104666, 32631, 37193, 94606); a sweep
 // service's monthly charge is not monthly maintenance (95769).
-export const CATEGORY_GUARD_VERSION = 60;
+// v61: a remote deposit capture product ("CheckCapture Maintenance Fee", 76519) is not monthly maintenance (#1196).
+export const CATEGORY_GUARD_VERSION = 61;
 
 /**
  * Categories whose fee is usually a rate ("1% of the transaction"). A dollar amount filed

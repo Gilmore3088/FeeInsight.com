@@ -274,7 +274,11 @@ the detail.
     `duplicate of #<kept id>`.
 18. Frequency fill (`frequency-fill.ts`): sets a live fee's frequency from its own schedule row
     (fills a blank, corrects or clears one read from another fee's row), logged to
-    `pipeline_feedback` (check `hamilton.frequency_fill`). No rollback.
+    `pipeline_feedback` (check `hamilton.frequency_fill`). v11 (#1196): an NSF or overdraft fee
+    stored as monthly is checked against its own line (`perEventPeriodCheck`);
+    an overdraft program the bank sells by the month keeps its period, a period the fee's own
+    price states ("NSF | $23.00/Month") is held, `frequency_hold: <why>`, and any other period is
+    cleared. A hold is the only rollback; clearing `rolled_back_at` restores it.
 19. Newer-copy check (`newer-copy-retire.ts`): a fee line gone from a newer copy of its page,
     `newer_copy_drops_fee:#<newer document id>` (`NEWER_COPY_RETIRE_LIVE` is true; false makes
     it a shadow run).
@@ -595,7 +599,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `ACCOUNT_NAME_STRATEGY` | `hamilton.account_names` | v1 | `hamilton/account-names.ts` |
 | `CURRENT_COPY_STRATEGY` | `hamilton.current_copy_check` | v2 | `hamilton/current-copy.ts` |
 | `EVAL_VERDICT_VERSION` | — | v7 | `hamilton/eval-verdicts.ts` |
-| `FREQUENCY_FILL_VERSION` | — | v10 | `hamilton/frequency-fill.ts` |
+| `FREQUENCY_FILL_VERSION` | — | v11 | `hamilton/frequency-fill.ts` |
 | `GUARD_REQUEUE_STRATEGY` | `publish.guard_requeue` | v1 | `hamilton/guard-requeue.ts` |
 | `NEWER_COPY_STRATEGY` | `hamilton.newer_copy_check` | v1 | `hamilton/newer-copy-retire.ts` |
 | `HAMILTON_PUBLISH_STRATEGY` | `publish.rules` | v3 | `hamilton/publish.ts` |

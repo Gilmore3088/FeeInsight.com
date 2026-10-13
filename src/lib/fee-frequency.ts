@@ -321,3 +321,86 @@ export function frequencyFamily(frequency: string | null | undefined): string | 
   if (!frequency) return null;
   return ["per_item", "per_transaction", "per_occurrence", "one_time"].includes(frequency) ? "per_item" : frequency;
 }
+
+/** The fee categories whose stated period is re-checked against their own line (#1196). */
+export const PER_EVENT_PERIOD_KEYS: ReadonlySet<string> = new Set(["nsf", "overdraft"]);
+const STATED_PERIODS: ReadonlySet<string> = new Set(["monthly", "annual", "quarterly"]);
+/**
+ * The stored periods the check acts on. James approved monthly (#1026, Oct 13); 15 live NSF and
+ * overdraft fees stored as annual wait for his word.
+ */
+const CHECKED_PERIODS: ReadonlySet<string> = new Set(["monthly"]);
+/** An overdraft program sold by the month ("Enhanced Overdraft Privilege Fee (per month)", "Bounce Protection / $9 Monthly Fee"). */
+const OVERDRAFT_PROGRAM = /\b(relief|privilege|protection|courtesy pay|coverage|boost|advanced overdraft)\b/i;
+/** An account's own charge after the price ("/ $25 Monthly Maintenance Fee"), not an overdraft or NSF fee. */
+const ACCOUNT_CHARGE = /\b(maintenance|service (fee|charge))\b/i;
+/** A cell after the price that is only a period ("| $30.00 | Per Month"). */
+const PERIOD_CELL = /^\s*\(?\s*(per (month|year|quarter)|monthly|annual(ly)?|quarterly|yearly)\s*\)?\.?\s*$/i;
+/** A waiver is not the fee's period: "$25.00 (1 waived per year.)", "$25 will be waived per statement cycle". */
+const WAIVER = /\(\s*\d*\s*(?:is |are )?waived?\b[^)]*\)?|\b(?:will be |is |are )?waived?\b[^|$]*/gi;
+
+/**
+ * The period the words right after the fee's own price state ("NSF | $23.00/Month", "$30.00 |
+ * Per Month"), with allowances and waivers taken off. A period only in the fee's name or another
+ * cell ("Overdraft Fee 1 | $27.00 | 10x15 (per year)") is not read here.
+ */
+function periodAfterPrice(sourceLine: string, amount: number): { period: FilledFrequency | null; words: string } {
+  const line = sourceLine.replace(WAIVER, " ");
+  const readings = new Set<FilledFrequency | "none" | null>();
+  let words = "";
+  for (const match of line.matchAll(PRICE)) {
+    if (Math.abs(Number(match[1].replace(/,/g, "")) - amount) >= 0.005) continue;
+    const start = (match.index ?? 0) + match[0].length;
+    const cells = line.slice(start, start + 60).split(/[|;]/);
+    let own = cells[0].split(/\$\s?\.?\d/)[0];
+    if (own.trim() === "" && cells.length > 1 && PERIOD_CELL.test(cells[1])) own = cells[1];
+    words = `${words} ${own}`;
+    readings.add(statedFrequency(periodWords(withoutAllowance(own)) ?? ""));
+  }
+  const read = readings.size === 1 ? [...readings][0] : null;
+  return { period: read != null && read !== "none" && STATED_PERIODS.has(read) ? read : null, words };
+}
+
+export type PerEventPeriodCheck =
+  | { action: "keep"; frequency: string }
+  | { action: "correct"; frequency: string | null }
+  | { action: "hold"; reason: string };
+
+/**
+ * v11 (#1196): an NSF or overdraft fee stored as monthly, checked against its own schedule line.
+ * - An overdraft program the bank prices by the period keeps it when its own row states that
+ *   period and names the program ("Enhanced Overdraft Privilege Fee (per month) | $5.00").
+ * - When the words right after its price state a period otherwise, the line cannot say what the fee
+ *   is: an NSF fee is never charged by the month ("NSF | $23.00/Month", "$5.00/Month | Non-Sufficient
+ *   Funds"), a "per item" fee is not monthly too ("OVERDRAFT PAID, PER ITEM* $30.00 MONTHLY"), and an
+ *   account's maintenance fee is not an overdraft fee ("TD Overdraft Relief / $15 Monthly Maintenance
+ *   Fee"). Hold it.
+ * - Otherwise the period was a neighbour's wording ("Undeliverable Mail | $5.00 per month | Returned
+ *   ACH | $5.00 each") or an allowance ("$25.00 (1 waived per year.)"): the fee takes its own row's
+ *   per-item reading, else none.
+ * Null for other categories and stored frequencies. Pure.
+ */
+export function perEventPeriodCheck(
+  canonicalKey: string | null | undefined,
+  frequency: string | null | undefined,
+  sourceLine: string | null | undefined,
+  amount: number | null,
+  feeName: string | null | undefined,
+): PerEventPeriodCheck | null {
+  if (canonicalKey == null || !PER_EVENT_PERIOD_KEYS.has(canonicalKey)) return null;
+  if (frequency == null || !CHECKED_PERIODS.has(frequency)) return null;
+  if (!sourceLine || amount == null) return null;
+  const after = periodAfterPrice(sourceLine, amount);
+  const accountCharge = ACCOUNT_CHARGE.test(after.words);
+  const name = feeName ?? "";
+  if (canonicalKey === "overdraft" && !accountCharge && OVERDRAFT_PROGRAM.test(`${name} ${sourceLine}`) && !PER_ITEM_WORDING.test(name)) {
+    const own = frequencyFromLine(sourceLine.replace(WAIVER, " "), amount);
+    if (own != null && STATED_PERIODS.has(own)) return own === frequency ? { action: "keep", frequency } : { action: "correct", frequency: own };
+  }
+  if (after.period != null) {
+    const what = canonicalKey === "nsf" ? "an NSF fee" : "an overdraft fee";
+    return { action: "hold", reason: `${what} whose own line prices it ${after.period}${accountCharge ? " as an account charge" : ""}` };
+  }
+  const own = frequencyFromLine(sourceLine, amount);
+  return { action: "correct", frequency: own && frequencyFamily(own) === "per_item" ? own : null };
+}
