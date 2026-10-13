@@ -21,10 +21,25 @@ describe("answer eval", () => {
   it("fails a regulation answer that leaves out the institution's regulator", () => {
     const regulators = { primaryRegulator: "NCUA", charterAgency: "NCUA", source: "ncua" };
     expect(liveDataFailures(q("q25"), reply("Reg E applies to your $30 fee."), fl, regulators)).toEqual([
-      'does not name its regulator ("NCUA charters and supervises you as a federal credit union.")',
+      'does not name its regulator ("NCUA charters and supervises Space Coast as a federal credit union.")',
     ]);
     expect(liveDataFailures(q("q25"), reply("Reg E applies.", ["NCUA charters and supervises you as a federal credit union."]), fl, regulators)).toEqual([]);
     expect(liveDataFailures(q("q25"), reply("Reg E applies."), fl, null)).toEqual([]);
+  });
+
+  it("passes a regulation answer that names the regulator in the institution's own name (#1076)", () => {
+    // The 2026-10-13 06:51 eval failed q25 at 11 of 11 on this: the answer said "O'Bannon Banking
+    // Company's charter is from ...", while the check looked only for "Your charter is from ...".
+    const mo = { id: 2415, name: "O'Bannon Banking Company", stateCode: "MO", charterType: "bank", assetTier: "small" };
+    const regulators = { primaryRegulator: "FDIC", charterAgency: "State", source: "fdic" };
+    const named = "O'Bannon Banking Company's charter is from the Missouri Division of Finance, and the FDIC is O'Bannon Banking Company's primary federal regulator.";
+    const unnamed = "Your charter is from the Missouri Division of Finance, and the FDIC is your primary federal regulator.";
+    expect(liveDataFailures(q("q25"), reply("Reg E applies.", [named]), mo, regulators)).toEqual([]);
+    expect(liveDataFailures(q("q25"), reply("Reg E applies.", [unnamed]), mo, regulators)).toEqual([]);
+    expect(liveDataFailures(q("q25"), reply("Reg E applies.", ["The FDIC is a federal regulator."]), mo, regulators)).toEqual([`does not name its regulator ("${named}")`]);
+    const pnc = { id: 8, name: "PNC Bank, National Association", stateCode: "DE", charterType: "bank", assetTier: "large" };
+    const occ = { primaryRegulator: "OCC", charterAgency: "OCC", source: "fdic" };
+    expect(liveDataFailures(q("q25"), reply("Reg E applies.", ["The OCC charters and supervises PNC Bank, National Association as a national bank."]), pnc, occ)).toEqual([]);
   });
 
   it("fails a state question that does not name the state", () => {
