@@ -127,6 +127,7 @@ export const PAUSE_EXEMPT_STEP_KEYS: readonly string[] = [
   "deming-change-outcomes",
   "deming-fresh-audit",
   "deming-regression",
+  "deming-sunday-maintenance",
   "fee-alert-dispatch",
   "lead-watch",
   "pro-digest",

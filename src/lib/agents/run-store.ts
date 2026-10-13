@@ -70,6 +70,7 @@ import { runDarwinReleaseHeld } from "@/lib/agents/darwin/release-held";
 import { runDarwinScheduleRefile } from "@/lib/agents/darwin/schedule-refile";
 import { runDarwinAdjudicate } from "@/lib/agents/darwin/adjudicate";
 import { runDailyBrief } from "@/lib/agents/daily-brief";
+import { runSundayMaintenance, summarizeSundayMaintenance } from "@/lib/agents/deming/sunday-maintenance";
 import { runFeeAlertDispatch, summarizeFeeAlertDispatch } from "@/lib/agents/fee-alerts";
 import { runProDigest, summarizeProDigest } from "@/lib/agents/pro-digest";
 import { runProSeatCheck, summarizeProSeatCheck } from "@/lib/hamilton/pro-seat-check";
@@ -1915,6 +1916,23 @@ async function executeAgenticStep(
         status: "completed",
         summary: summarizeChangeOutcomes(result),
         detail: { ready: result.ready, entries: result.entries, started: result.started, pending: result.pending, judged: result.judged },
+      };
+    }
+    case "deming-sunday-maintenance": {
+      const result = await runSundayMaintenance({ db: tx, dryRun: run.runKind === "dry_run" });
+      return {
+        status: "completed",
+        summary: summarizeSundayMaintenance(result),
+        detail: {
+          ran: result.ran,
+          reason: result.reason,
+          delivery_status: result.deliveryStatus,
+          delivery_reason: result.deliveryReason,
+          subject: result.email?.subject ?? null,
+          minutes: result.email?.minutes ?? null,
+          rolled_over: result.email?.rolledOver ?? null,
+          lines: result.email?.lines ?? null,
+        },
       };
     }
     case "deming-benchmark-health": {
