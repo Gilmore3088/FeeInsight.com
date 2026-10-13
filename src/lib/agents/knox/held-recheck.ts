@@ -766,7 +766,9 @@ export async function recheckPromotedRows(
  * (`amount_kind` 'percent', amount NULL) with a clean name and goes to Darwin; the rest
  * are marked so they are not re-read until the rate rules change.
  */
-export const HELD_RATE_RECHECK_VERSION = 1;
+// v2 (#1102): a rate stated as a share of what it is charged on traces without the word "fee"
+// (`checkRateAgainstSource`), and check cashing and international ATM fees publish as rates.
+export const HELD_RATE_RECHECK_VERSION = 2;
 export const HELD_RATE_RECHECK_DEFAULT_LIMIT = 100;
 
 export function heldRateRecheckFlag(version: number = HELD_RATE_RECHECK_VERSION): string {
