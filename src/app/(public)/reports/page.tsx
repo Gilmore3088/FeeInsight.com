@@ -13,7 +13,7 @@ import { getSql } from "@/lib/data-store/connection";
 import type { PublishedReport, ReportType } from "@/lib/report-engine/types";
 import { timeAgo } from "@/lib/format";
 import { TrackLink } from "@/components/track-link";
-import { CONTACT_EMAIL, REPORT_OFFER, RESEARCH_IMPRINT, SAMPLE_REPORT_LIVE, SITE_NAME } from "@/lib/constants";
+import { CONTACT_EMAIL, REPORT_OFFER, SAMPLE_REPORT_LIVE, SITE_NAME } from "@/lib/constants";
 import { sampleReportAvailable } from "@/lib/custom-report/sample-report";
 
 import { RequestReportForm } from "@/app/for-institutions/request-report-form";
@@ -29,7 +29,7 @@ export const revalidate = 3600;
 
 export const metadata: Metadata = {
   title: "Fee Reports",
-  description: `See where your fees stand against the institutions you compete with. Free national and Fed district fee reports, the ${REPORT_OFFER.name}, live state fee reports, and published research from ${RESEARCH_IMPRINT}.`,
+  description: `See where your fees stand against your competitors: free national, Fed district and state fee reports, and the ${REPORT_OFFER.name}.`,
 };
 
 const SAMPLE_REPORT_HREF = "/reports/sample-competitive-fee-position";
