@@ -207,10 +207,26 @@ export async function getInstitutionFeeRows(institutionId: number, category: str
             COALESCE(doc.document_url, ef.document_url) AS document_url, ef.source_url,
             ef.created_at, ef.verified_by_agent_event_id,
             doc.content_hash AS source_content_hash, doc.crawled_at AS source_crawled_at,
-            doc.last_checked_at AS source_last_checked_at
+            GREATEST(doc.last_checked_at, same_text.checked_at) AS source_last_checked_at
        FROM published_fee_catalog ef
        LEFT JOIN source_documents doc
          ON doc.id = ef.source_document_id AND doc.institution_id = ef.institution_id
+       -- A later copy of the bank's page with the same text checks this fee too (#1200): Knox keys
+       -- its reads on the text, so the fee keeps the first copy's id when the page has not changed.
+       LEFT JOIN LATERAL (
+         SELECT MAX(GREATEST(twin.last_checked_at, twin.crawled_at)) AS checked_at
+           FROM agent_source_texts own_text
+           JOIN agent_source_texts twin_text
+             ON twin_text.institution_id = own_text.institution_id
+            AND twin_text.text_hash = own_text.text_hash
+            AND twin_text.status = 'completed'
+           JOIN source_documents twin
+             ON twin.id = twin_text.source_document_id
+            AND twin.institution_id = ef.institution_id
+            AND twin.id <> ef.source_document_id
+          WHERE own_text.source_document_id = ef.source_document_id
+            AND own_text.status = 'completed'
+       ) same_text ON true
       WHERE ef.institution_id = $1
         AND ef.fee_category = $2
         AND ef.review_status = 'approved'

@@ -35,6 +35,9 @@ describe("H06-T02/T03 canonical evidence lineage", () => {
     expect(query).toContain("FROM published_fee_catalog ef");
     expect(query).toContain("doc.id = ef.source_document_id AND doc.institution_id = ef.institution_id");
     expect(query).toContain("ef.review_status = 'approved'");
+    // #1200: a later copy with the same text counts as a check of this fee.
+    expect(query).toContain("twin_text.text_hash = own_text.text_hash");
+    expect(query).toContain("GREATEST(doc.last_checked_at, same_text.checked_at) AS source_last_checked_at");
     expect(params).toEqual([1001, "overdraft"]);
     expect(rows[0]).toMatchObject({
       amount: 0, feeAudience: "consumer", frequency: "per item",
