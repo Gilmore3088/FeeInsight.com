@@ -13,8 +13,11 @@ import { sql } from "@/lib/data-store/connection";
 import type { SqlTag } from "@/lib/agents/hamilton/studies/common";
 import { getInstitutionRegulators, type InstitutionRegulators } from "@/lib/data-store/regulators";
 import { STATE_NAMES } from "@/lib/us-states";
-import { incomeWhyFor, scheduleFor } from "./ask-service";
-import { buildAskResponse, parseAsk, withSegmentDefault } from "./workspace/ask";
+import { resolveAskIntent } from "./ask-service";
+import { buildAskResponse, feeCategoriesIn } from "./workspace/ask";
+import { proseFeeName } from "./workspace/names";
+import { asksWholeSchedule } from "./workspace/schedule";
+import { asksIncome, asksIncomeWhy } from "./workspace/why";
 import { QUALITY_QUESTIONS, scoreResponse, type QualityQuestion } from "./workspace/quality-bar";
 import { regulatorSentence } from "./workspace/regulators";
 import { getFeeResearch } from "./workspace/research";
@@ -92,14 +95,31 @@ export function liveDataFailures(
   return failures;
 }
 
+/** The one fee a response answers about, from the page it opens; null for a question asked back or saved. */
+function answeredFee(response: AskResponse): string | null {
+  return "feeCategory" in response.pageChange ? response.pageChange.feeCategory : null;
+}
+
+/**
+ * An answer about a different subject from the question (#1077). A question that names fees is
+ * answered for one of them; one that names none is answered for a fee only when it asked about
+ * every fee or about fee income (the fee furthest from its median is then the detail). Any
+ * other fee in the answer was put in the question's place, as overdraft once was.
+ */
+export function offSubjectFailure(question: string, response: AskResponse): string | null {
+  const answered = answeredFee(response);
+  if (!answered) return null;
+  const named = feeCategoriesIn(question);
+  if (named.length > 0) {
+    return named.includes(answered) ? null : `answers a different subject: the ${proseFeeName(answered)} fee, not the fee asked about`;
+  }
+  if (asksWholeSchedule(question) || asksIncome(question) || asksIncomeWhy(question)) return null;
+  return `answers a different subject: the ${proseFeeName(answered)} fee, which the question does not name`;
+}
+
 /** One question for one institution, through the Ask bar's engine path, with research cached per fee. */
 async function answer(institutionId: number, question: string, research: Map<string, Promise<FeeResearch | null>>): Promise<AskResponse> {
-  let intent = parseAsk(question);
-  const schedule = !intent.feeCategory ? await scheduleFor(institutionId, question, {}) : null;
-  if (schedule?.top) intent = { ...intent, feeCategory: schedule.top };
-  const why = await incomeWhyFor(institutionId, question, {});
-  if (!intent.feeCategory && why?.top) intent = { ...intent, feeCategory: why.top };
-  intent = withSegmentDefault(intent);
+  const { intent, schedule, why } = await resolveAskIntent(institutionId, question, {});
   let found: FeeResearch | null = null;
   if (intent.feeCategory) {
     const key = `${intent.feeCategory}|${intent.segment ? JSON.stringify(intent.segment) : ""}`;
@@ -214,7 +234,8 @@ export async function evaluateProQuestions(institutionId: number, questions: Pro
   for (const q of questions) {
     try {
       const response = await answer(institutionId, q.question, research);
-      const failures = scoreResponse({ id: "pro", question: q.question, intent: "a Pro reader's question" }, response).failures;
+      const offSubject = offSubjectFailure(q.question, response);
+      const failures = [...(offSubject ? [offSubject] : []), ...scoreResponse({ id: "pro", question: q.question, intent: "a Pro reader's question" }, response).failures];
       out.push({ institutionId, question: q.question, askedAt: q.askedAt, kind: response.kind, shortAnswer: response.shortAnswer, failures });
     } catch (error) {
       out.push({ institutionId, question: q.question, askedAt: q.askedAt, kind: "error", shortAnswer: "", failures: [`error: ${error instanceof Error ? error.message : String(error)}`] });
