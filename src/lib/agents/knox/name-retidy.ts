@@ -24,7 +24,7 @@ type SqlTag = typeof sql;
 const VERB_END =
   /\b(?:is|are|was|were|be|will|shall|may|can|incur|incurs|receive|receives|charges|charged|imposed|assessed|apply|applies|pay|pays|cost|costs|maintain|exceed|exceeds|lesser|greater|up|than|least|over|under|varies)$/i;
 const FEE_NOUN =
-  /\b(?:fees?|charges?|service|transfers?|wires?|checks?|cards?|statements?|overdrafts?|nsf|payments?|box|boxes|orders?|deposits?|withdrawals?|cop(?:y|ies)|research|address|items?|atms?|accounts?|drafts?|stop|fax|notary|photocop(?:y|ies)|printing|coins?|money|cashier'?s?|official|bill|replacement|closing|closure|inactivity|inactive|dormant|maintenance|balance|garnishments?|levy|levies|subpoenas?|returned|returns?|counter|temporary|starter|rush|express|expedited|delivery|ach|zelle|p2p|transactions?|reissue|key|drilling)\b/i;
+  /\b(?:fees?|charges?|service|transfers?|wires?|checks?|cards?|statements?|overdrafts?|nsf|payments?|box|boxes|orders?|deposits?|withdrawals?|cop(?:y|ies)|research|address|items?|atms?|accounts?|drafts?|stop|fax|notary|photocop(?:y|ies)|printing|coins?|money|cashier'?s?|official|bill|replacement|closing|closure|inactivity|inactive|dormant|maintenance|balance|garnishments?|levy|levies|subpoenas?|returned|returns?|counter|temporary|starter|rush|express|expedited|delivery|ach|zelle|p2p|transactions?|reissue|key|drilling|advances?)\b/i;
 const MAX_WORDS = 12;
 /** A cell that qualifies a price ("Per quarter (inactive ...)", "each request"), not a name. */
 const QUALIFIER_START = /^(?:per|each|a|an|the|\/|for|if|when|plus|includes?)\b/i;
@@ -39,6 +39,11 @@ const SENTENCE_BREAK = /[a-z]\.\s+[A-Z]/;
 const LEADING_PRICE_UNIT = /^\/\s*(?:per\s+)?(?:ea\.?|each|items?|mo\.?|month|yr\.?|year|quarter|day|hr\.?|hour|check|transaction|statement|cop(?:y|ies)|page)?(?=\s|$|[A-Z])[\s.;:,\-–—]*/;
 /** A clause about when a fee applies, not its name ("Active if Bill Pay or Zelle are used monthly"). */
 const CONDITION_CLAUSE = /\b(?:if|when|unless|otherwise|will be|are used|is used|for\s+\d)\b/i;
+
+/** v18: one lowercase letter left in front of a capitalised name, a list or footnote mark ("b A cash advance fee"); never "e" ("e Statement"). */
+const STRAY_LEAD_LETTER = /^[a-df-z]\s+(?=[A-Z])/;
+/** v18: the sentence that leads into the price, left after the name ("... Network ATM A fee of"). */
+const TRAILING_FEE_OF = /\s+(?:a|an|the)\s+(?:(?:monthly|service|annual)\s+)?(?:fee|charge)\s+(?:of|is)\s*$/i;
 
 /** A column header glued to the front of the name ("Fee Wire Transfer In", "Charge Stop Payment Fee"). */
 const LEADING_HEADER = /^(?:Fees?|Charge)\s+(?=[A-Z])(?!(?:Backs?|Off|Cards?|Schedule|Type|Description|Structure|Amount|Name|Above|Below|Per|Each|For|To|Of|If|When)\b)/;
@@ -77,6 +82,13 @@ export function repairCutoffName(name: string): string {
   if (repaired.split(/\s*\|\s*/).some((cell) => NOT_A_NAME.test(cell.trim()))) return repaired;
   // "+Returned Item Fee – per item returned": the bullet of a list read as part of the name.
   repaired = repaired.replace(/^\+{1,2}\s*/, "");
+  // v18: a stray list or footnote letter in front of the name ("b A cash advance fee").
+  repaired = repaired.replace(STRAY_LEAD_LETTER, "");
+  // v18: the lead-in to the price left after the name ("Foreign ATM ... ATM A fee of").
+  // Only when what is left reads as a name, not the sentence (",", "." or a verb): those go to
+  // the "fee of" sentence rule below ("Yes, the ... account has a monthly fee of" is "Monthly fee").
+  const leadless = repaired.replace(TRAILING_FEE_OF, "").replace(/[\s:;\-–—]+$/u, "").trim();
+  if (leadless !== repaired && FEE_NOUN.test(leadless) && !/[,.]/.test(leadless) && !sentenceShaped(leadless)) repaired = leadless;
   repaired = repaired.replace(TRAILING_HEADER_CELL, "").trim();
   // Joined cells: a cell that is a sentence or a condition is dropped when another names a fee
   // ("Stop Payment CU Check | Charged when the CU places a stop payment ...").
@@ -353,8 +365,11 @@ function fullyTidiedName(name: string, canonicalKey: string): string | null {
  * their page, all checked against their source line.
  * v16: a name that opens in lower case (`capitalisedName`).
  * v17: junk glyphs at a name's start or end, and zero-width spaces (`junkStrippedName`).
+ * v18: two cut-off shapes Deming's audit counted on Oct 12: a stray letter or unit left in front
+ * of the name ("b A cash advance fee", the "b" a footnote or list mark) and the start of the
+ * sentence that leads into the price left on the end ("Foreign ATM ... ATM A fee of").
  */
-export const NAME_RETIDY_STRATEGY = { strategy: "knox.name_retidy", version: 17 } as const;
+export const NAME_RETIDY_STRATEGY = { strategy: "knox.name_retidy", version: 18 } as const;
 export const NAME_RETIDY_KIND = "name_retidied";
 /**
  * Institutions the scan visits first after a version change, then the rest in id order. v9:
