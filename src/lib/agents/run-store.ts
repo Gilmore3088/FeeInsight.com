@@ -52,6 +52,7 @@ import { runMagellanDiscovery } from "@/lib/agents/magellan/discovery";
 import { runMagellanFetch } from "@/lib/agents/magellan/fetch";
 import { reviewLinkBatches } from "@/lib/agents/magellan/batch-review";
 import { recordLinkOutcomes } from "@/lib/agents/magellan/outcomes";
+import { recordAuditMisses } from "@/lib/agents/deming/audit-misses";
 import { refreshPageClassifier } from "@/lib/agents/magellan/page-classifier";
 import { isRegistryStepKey, runRegistryStep } from "@/lib/agents/magellan/registry";
 import {
@@ -1873,7 +1874,16 @@ async function executeAgenticStep(
     }
     case "deming-fresh-audit": {
       const result = await runFreshAudit({ db: tx });
-      return { status: "completed", summary: summarizeFreshAudit(result), detail: freshAuditDetail(result) };
+      // New misses become candidate test cases and go to their owners (#1119).
+      const writes = await recordAuditMisses(tx, result, { runId: run.id, dryRun: run.runKind === "dry_run" });
+      const routed = writes.cases + writes.feedback > 0
+        ? ` Saved ${writes.cases.toLocaleString()} new miss${writes.cases === 1 ? "" : "es"} as test cases and sent ${writes.feedback.toLocaleString()} to their owners.`
+        : "";
+      return {
+        status: "completed",
+        summary: `${summarizeFreshAudit(result)}${routed}`,
+        detail: { ...freshAuditDetail(result), audit_misses: writes },
+      };
     }
     case "deming-benchmark-health": {
       const result = await runBenchmarkHealth({ db: tx });

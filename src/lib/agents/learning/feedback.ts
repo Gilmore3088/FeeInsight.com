@@ -19,9 +19,10 @@ type SqlTag = typeof sql;
 export type FeedbackSignal = "wrong" | "right" | "missed" | "restored";
 /**
  * Who may judge an output. Mirrors `pipeline_feedback_reported_by_check`
- * (migration 20270110000024); a test keeps the two lists equal.
+ * (migrations 20270110000024 and 20270110000045, which adds `deming`); a test keeps the two
+ * lists equal.
  */
-export const FEEDBACK_REPORTERS = ["atlas", "magellan", "rosetta", "knox", "darwin", "hamilton", "growth", "human"] as const;
+export const FEEDBACK_REPORTERS = ["atlas", "magellan", "rosetta", "knox", "darwin", "hamilton", "growth", "human", "deming"] as const;
 export type FeedbackReporter = (typeof FEEDBACK_REPORTERS)[number];
 
 /**

@@ -1,19 +1,21 @@
-import { readFileSync } from "fs";
+import { readdirSync, readFileSync } from "fs";
 import { resolve } from "path";
 import { describe, expect, it, vi } from "vitest";
 
 import { FEEDBACK_REPORTERS, FEEDBACK_STAGES, recordFeedback } from "./feedback";
 
-const MIGRATION = readFileSync(
-  resolve(__dirname, "../../../../supabase/migrations/20270110000024_pipeline_feedback_growth.sql"),
-  "utf-8",
-);
+const MIGRATIONS_DIR = resolve(__dirname, "../../../../supabase/migrations");
 
-/** The quoted values inside the named constraint's `IN (...)` list. */
+/** The quoted values in the named constraint's `IN (...)` list, as the newest migration that sets it leaves it. */
 function checkList(constraint: string): string[] {
-  const match = MIGRATION.match(new RegExp(`ADD CONSTRAINT ${constraint}\\s+CHECK \\(\\w+ IN \\(([^)]*)\\)\\)`));
-  if (!match) throw new Error(`${constraint} not found in the migration`);
-  return [...match[1].matchAll(/'([^']+)'/g)].map((value) => value[1]);
+  let latest: string[] | null = null;
+  for (const file of readdirSync(MIGRATIONS_DIR).filter((name) => name.endsWith(".sql")).sort()) {
+    const text = readFileSync(resolve(MIGRATIONS_DIR, file), "utf-8");
+    const match = text.match(new RegExp(`ADD CONSTRAINT ${constraint}\\s+CHECK \\(\\w+ IN \\(([^)]*)\\)\\)`));
+    if (match) latest = [...match[1].matchAll(/'([^']+)'/g)].map((value) => value[1]);
+  }
+  if (!latest) throw new Error(`${constraint} not found in any migration`);
+  return latest;
 }
 
 describe("growth in the shared learning store", () => {
