@@ -1,5 +1,6 @@
 import { sql } from "@/lib/data-store/connection";
 import { loadMarketLeaderIds } from "@/lib/data-store/market-leaders";
+import { PRO_INSTITUTION_MIN_FEES } from "@/lib/data-store/data-room";
 import { currentDeploy, startAgentRun } from "@/lib/agents/run-store";
 import type { AgentRunStepDefinition } from "@/lib/agents/types";
 import { DARWIN_VERIFY_MAX_LIMIT } from "@/lib/agents/darwin/verify";
@@ -42,6 +43,8 @@ export const PRIORITY_RULES_REREAD_HOURS = 6;
 export const PRIORITY_FIXED_BREAK_RUNS = 3;
 /** $10B in assets; `asset_size` is in thousands. */
 export const PRIORITY_MIN_ASSETS_THOUSANDS = 10_000_000;
+/** A Pro account's own institution under this many live dollar fees gets a direct run (#1078). */
+export { PRO_INSTITUTION_MIN_FEES };
 
 export interface PriorityInstitutionRequest {
   institutionId: number;
@@ -180,7 +183,7 @@ export const PRIORITY_INSTITUTION_REQUESTS: readonly PriorityInstitutionRequest[
   ] as const).map(([institutionId, institutionName]) => ({ institutionId, institutionName, reason: REPORT_GAP_MISREAD })),
 ];
 
-export type PriorityTier = "hand_found" | "paid_fetched" | "requested" | "overdraft_gap";
+export type PriorityTier = "hand_found" | "paid_fetched" | "requested" | "overdraft_gap" | "pro_institution";
 /** A document the paid fetch stored this long ago or less, still unread, gets a direct run. */
 export const PAID_FETCH_READ_DAYS = 7;
 
@@ -200,6 +203,8 @@ export interface PriorityInstitutionRow {
 /**
  * Institutions due for a direct run, best first:
  *  1. a fee schedule found by hand (Magellan's operator list) not yet fetched;
+ *  1a. a Pro account's own institution (an active workspace membership) with fewer than
+ *     PRO_INSTITUTION_MIN_FEES live dollar fees (#1078); it runs again after PRIORITY_RETRY_HOURS;
  *  2. a document Magellan's paid fetch, or a hand-found schedule fetched in another
  *     state's lane, stored that no reader has read yet: the paid step
  *     fetches blocked links for banks in every state, and the read step of a state run reads
@@ -263,6 +268,13 @@ export async function selectPriorityInstitutions(
                     AND hand.status = 'found'
                     AND hand.last_fetched_at IS NULL
                ) THEN 1
+               WHEN EXISTS (
+                 SELECT 1 FROM institution_workspace_memberships pro
+                  WHERE pro.institution_id = inst.id
+                    AND pro.membership_status = 'active'
+               )
+                AND (SELECT COUNT(*) FROM published_fee_catalog own WHERE own.institution_id = inst.id)
+                    < ${PRO_INSTITUTION_MIN_FEES}::int THEN 5
                WHEN paid_new.paid_document_id IS NOT NULL THEN 4
                WHEN inst.id = ANY(${requested}::bigint[]) THEN 2
                WHEN (COALESCE(inst.asset_size, 0) >= ${PRIORITY_MIN_ASSETS_THOUSANDS}::bigint
@@ -390,12 +402,13 @@ export async function selectPriorityInstitutions(
        )
      -- A request whose current page this Knox version has not read goes before paid-fetched
      -- pages, which otherwise kept the two direct-run places full all morning (9 Oct).
-     ORDER BY CASE WHEN c.tier = 1 THEN 1 WHEN c.tier = 2 AND c.rules_unread THEN 2 WHEN c.tier = 4 THEN 3 WHEN c.tier = 2 THEN 4 ELSE 5 END ASC,
+     -- A Pro account's own institution comes right after a hand-found schedule (#1078).
+     ORDER BY CASE WHEN c.tier = 1 THEN 1 WHEN c.tier = 5 THEN 2 WHEN c.tier = 2 AND c.rules_unread THEN 3 WHEN c.tier = 4 THEN 4 WHEN c.tier = 2 THEN 5 ELSE 6 END ASC,
               CASE WHEN c.tier = 2 THEN array_position(${requested}::bigint[], c.id::bigint) END ASC NULLS LAST,
               COALESCE(c.asset_size, 0) DESC, c.id ASC
      LIMIT ${limit}::int
   `;
-  const tiers: Record<number, PriorityTier> = { 1: "hand_found", 2: "requested", 3: "overdraft_gap", 4: "paid_fetched" };
+  const tiers: Record<number, PriorityTier> = { 1: "hand_found", 2: "requested", 3: "overdraft_gap", 4: "paid_fetched", 5: "pro_institution" };
   return rows.map((row) => ({
     id: Number(row.id),
     institution_name: String(row.institution_name),
@@ -423,6 +436,7 @@ const TIER_REASON: Record<PriorityTier, string> = {
   paid_fetched: "document stored by the paid fetch or a hand-found link, not yet read",
   requested: "asked for by name",
   overdraft_gap: "$10B+ or market leader with no live overdraft fee",
+  pro_institution: `a Pro account's own institution with fewer than ${PRO_INSTITUTION_MIN_FEES} live fees`,
 };
 
 export interface SchedulePriorityInstitutionRunsResult {
