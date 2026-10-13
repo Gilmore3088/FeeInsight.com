@@ -210,6 +210,8 @@ export interface PlatformKnowledge {
 
 export interface SearchContext {
   institutionId: number;
+  /** The bank's name: a document on another host must name it (#1033). */
+  institutionName?: string | null;
   stateCode: string | null;
   site: URL;
   fetchImpl: Fetcher;
@@ -403,7 +405,7 @@ async function tryCandidates(ctx: SearchContext, result: FinderResult, candidate
     };
     result.trail.push(entry);
     try {
-      const validation = await validateFeeCandidate({ ...candidate, websiteUrl: ctx.site.toString() }, ctx.fetchImpl);
+      const validation = await validateFeeCandidate({ ...candidate, websiteUrl: ctx.site.toString(), institutionName: ctx.institutionName ?? null }, ctx.fetchImpl);
       entry.verdict = validation.verdict;
       if (ctx.pageClassifier && validation.scoringText) {
         entry.page_p = Math.round(classifyPage(ctx.pageClassifier, validation.scoringText, candidate.url) * 1000) / 1000;

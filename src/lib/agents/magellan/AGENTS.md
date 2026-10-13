@@ -100,6 +100,14 @@ and `detail.method_version`).
   `isProductPageUrl` rule in `learning/fee-page.ts`) is rejected as `product_page` and belongs
   to the companion finder as an account page. Since #1053 (fee-page check v2) a product
   address is rejected even above the bar unless it lists 10+ fee lines or a schedule title.
+  Since #1033 two more checks run in it. An address naming a CRA file, annual report,
+  newsletter, achievements piece or flyer, and no fee, schedule or charge, is rejected as
+  `non_fee_document` without downloading (`isNonFeeDocumentLink`; brochures pass, since several
+  are the bank's fee list). When the finder passes the bank's website (the crawl and the companion
+  finder do), an accepted document on another host must name the bank's website or name, or it
+  is rejected as `unconfirmed_host` (`unconfirmedDocumentHost` in `other-bank-host.ts`, the rule
+  Hamilton's `unconfirmed_document_host` takedown uses). See
+  `docs/project/findings/2026-10-12-wrong-host-documents.md`.
   A business-only schedule (its address or its own heading names business/commercial and
   nothing names personal or consumer accounts) is rejected as `business_schedule`.
 - A found link on another institution's own website (`other-bank-host.ts`: its host is another

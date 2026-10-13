@@ -176,3 +176,25 @@ describe("business-only schedules", () => {
     expect(combined.ok).toBe(true);
   });
 });
+
+describe("the bank's own documents only (#1033)", () => {
+  const html = "<html><body><main><h1>Schedule of Fees</h1><p>Overdraft fee $30.00</p><p>NSF fee $30.00</p><p>Stop payment fee $25.00</p><p>Wire transfer fee $20.00</p></main></body></html>";
+
+  it("refuses a fee page on another host that does not name the bank", async () => {
+    const result = await validateFeeCandidate({ url: "https://www.usfcu.com/schedule-of-fees", score: 0.9, reasons: [], websiteUrl: "http://www.usffcu.com", institutionName: "USF Federal Credit Union" }, serve(html, "text/html"));
+    expect(result).toMatchObject({ ok: false, verdict: "unconfirmed_host" });
+  });
+
+  it("keeps one that names the bank, and judges nothing without the bank's website", async () => {
+    const named = html.replace("<h1>Schedule of Fees</h1>", "<h1>USF Federal Credit Union Schedule of Fees</h1>");
+    expect(await validateFeeCandidate({ url: "https://www.usfcu.com/schedule-of-fees", score: 0.9, reasons: [], websiteUrl: "http://www.usffcu.com", institutionName: "USF Federal Credit Union" }, serve(named, "text/html"))).toMatchObject({ ok: true });
+    expect(await validateFeeCandidate({ url: "https://www.usfcu.com/schedule-of-fees", score: 0.9, reasons: [] }, serve(html, "text/html"))).toMatchObject({ ok: true });
+  });
+
+  it("refuses a CRA public file without opening it", async () => {
+    const fetchImpl = serve(html, "text/html");
+    const result = await validateFeeCandidate({ url: "https://bank.example/uploads/CRA-Public-File-2025.pdf", score: 0.9, reasons: [] }, fetchImpl);
+    expect(result).toMatchObject({ ok: false, verdict: "non_fee_document" });
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+});

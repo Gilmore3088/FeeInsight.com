@@ -631,6 +631,7 @@ async function discoverForInstitution(
 
   const ctx: SearchContext = {
     institutionId,
+    institutionName: row.institution_name,
     stateCode,
     site: baseUrl,
     fetchImpl: options.fetchImpl,

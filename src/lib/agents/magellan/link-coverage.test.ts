@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { hasOverdraftPrice, isArticleLink, isBusinessOnlyLink, isBusinessOnlyText, isErrorPageLink, isForeignHostLink, isOtherSiteLink, OTHER_SITE_LINK_SQL, isSingleProductDisclosureLink, isStaleDatedLink, looksForeignSchedule, refersElsewhere } from "./link-coverage";
+import { hasOverdraftPrice, isArticleLink, isBusinessOnlyLink, isBusinessOnlyText, isErrorPageLink, isForeignHostLink, isNonFeeDocumentLink, isOtherSiteLink, OTHER_SITE_LINK_SQL, isSingleProductDisclosureLink, isStaleDatedLink, looksForeignSchedule, refersElsewhere } from "./link-coverage";
 
 describe("is the stored page the consumer fee schedule?", () => {
   it("spots a business-only schedule by its address", () => {
@@ -153,5 +153,21 @@ describe("isOtherSiteLink", () => {
     expect(re.test("https://www.kbb.com/")).toBe(true);
     expect(re.test("https://www.govbank.com/fees")).toBe(false);
     expect(re.test("https://www.mylpl.com.bank/fees")).toBe(false);
+  });
+});
+
+describe("documents that are never a fee schedule (#1033)", () => {
+  it("names CRA files, annual reports, newsletters, achievement pieces and flyers", () => {
+    expect(isNonFeeDocumentLink("https://www.uvbank.net/wp-content/uploads/2025/05/CRA-Public-File-2025-Full-version_05072025.pdf")).toBe(true);
+    expect(isNonFeeDocumentLink("https://www.brooklyn.coop/wp-content/uploads/Acheivements-Flyer.pdf")).toBe(true);
+    expect(isNonFeeDocumentLink("https://www.cbeldon.com/wp-content/uploads/2025/01/Community-Reinvestment-Act-Performance-Evaluation-Public-Disclosure-.pdf")).toBe(true);
+    expect(isNonFeeDocumentLink("https://www.ctbi.com/Portals/CommunityTrustBank/PDFs/CRA/CRA_Disclosure_Statement_2019.pdf")).toBe(true);
+  });
+
+  it("keeps a fee document filed with them, and brochures, which often are the fee list", () => {
+    expect(isNonFeeDocumentLink("https://www.valley.com/content/dam/valley/pdfs/cra/public-file/NEW_AAYA-Schedule%20of%20Fees-Privacy%20Policy-ADA.pdf")).toBe(false);
+    expect(isNonFeeDocumentLink("https://www.firstfederalmiddletown.com/files/middletown-brochure.pdf")).toBe(false);
+    expect(isNonFeeDocumentLink("https://www.frontier-ok.com/assets/files/RFFHaN55/r/Bank+Services+Brochure+6-24-2026.pdf")).toBe(false);
+    expect(isNonFeeDocumentLink(null)).toBe(false);
   });
 });
