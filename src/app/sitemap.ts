@@ -33,16 +33,29 @@ const REPORTS_PRIORITY_WHILE_EMPTY = 0.5;
 type Entry = MetadataRoute.Sitemap[number];
 type ChangeFrequency = NonNullable<Entry["changeFrequency"]>;
 
+/** `lastModified` is left out when the page has no real change date: "now" on every rebuild teaches crawlers to ignore it. */
 function entry(
   path: string,
-  lastModified: Date,
+  lastModified: Date | undefined,
   changeFrequency: ChangeFrequency,
   priority: number,
 ): Entry {
-  return { url: `${BASE_URL}${path}`, lastModified, changeFrequency, priority };
+  return { url: `${BASE_URL}${path}`, ...(lastModified ? { lastModified } : {}), changeFrequency, priority };
 }
 
-function toDate(value: string | Date | null | undefined, fallback: Date): Date {
+/** One entry per URL, the first kept. Two stored spellings of a city once mapped to the same address. */
+function dedupeEntries(entries: Entry[]): Entry[] {
+  const seen = new Set<string>();
+  return entries.filter((item) => {
+    if (seen.has(item.url)) return false;
+    seen.add(item.url);
+    return true;
+  });
+}
+
+function toDate(value: string | Date | null | undefined, fallback: Date): Date;
+function toDate(value: string | Date | null | undefined, fallback: Date | undefined): Date | undefined;
+function toDate(value: string | Date | null | undefined, fallback: Date | undefined): Date | undefined {
   if (!value) return fallback;
   const d = value instanceof Date ? value : new Date(value);
   return Number.isNaN(d.getTime()) ? fallback : d;
@@ -152,26 +165,26 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     publishedReports.length > 0 ? REPORTS_PRIORITY_WITH_CONTENT : REPORTS_PRIORITY_WHILE_EMPTY;
 
   const staticPages: Entry[] = [
-    entry("", now, "daily", 1.0),
-    entry("/for-institutions", now, "weekly", 0.9),
-    entry("/subscribe", now, "monthly", 0.8),
-    entry("/about", now, "monthly", 0.7),
-    entry("/methodology", now, "monthly", 0.8),
+    entry("", dataUpdated, "daily", 1.0),
+    entry("/for-institutions", dataUpdated, "weekly", 0.9),
+    entry("/subscribe", undefined, "monthly", 0.8),
+    entry("/about", undefined, "monthly", 0.7),
+    entry("/methodology", undefined, "monthly", 0.8),
     entry("/institutions", dataUpdated, "weekly", 0.9),
     entry("/fees", dataUpdated, "weekly", 0.9),
     entry("/research", dataUpdated, "weekly", 0.7),
-    entry("/contact", now, "yearly", 0.5),
-    entry("/api-docs", now, "monthly", 0.5),
-    entry("/submit-fees", now, "monthly", 0.4),
-    entry("/privacy", now, "yearly", 0.3),
-    entry("/terms", now, "yearly", 0.3),
+    entry("/contact", undefined, "yearly", 0.5),
+    entry("/api-docs", undefined, "monthly", 0.5),
+    entry("/submit-fees", undefined, "monthly", 0.4),
+    entry("/privacy", undefined, "yearly", 0.3),
+    entry("/terms", undefined, "yearly", 0.3),
   ];
 
   // Individual report pages are noindex until they carry an on-page summary; the catalog
   // and the sample stay listed.
   const reportPages: Entry[] = [
-    entry("/reports", now, "weekly", reportsPriority),
-    ...((await sampleReportAvailable()) ? [entry(SAMPLE_REPORT_PATH, now, "monthly", 0.7)] : []),
+    entry("/reports", dataUpdated, "weekly", reportsPriority),
+    ...((await sampleReportAvailable()) ? [entry(SAMPLE_REPORT_PATH, dataUpdated, "monthly", 0.7)] : []),
   ];
 
   // Category and state pages below the median floor are noindexed (thin), so they stay out
@@ -195,9 +208,9 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
   const researchPages: Entry[] = [
     entry("/research/national-fee-index", dataUpdated, "weekly", 0.9),
-    entry("/research/data-sources", now, "monthly", 0.5),
+    entry("/research/data-sources", undefined, "monthly", 0.5),
     ...publishedArticles.map((a) =>
-      entry(`/research/articles/${a.slug}`, toDate(a.updated_at ?? a.published_at, now), "monthly", 0.7),
+      entry(`/research/articles/${a.slug}`, toDate(a.updated_at ?? a.published_at, undefined), "monthly", 0.7),
     ),
   ];
 
@@ -206,11 +219,11 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   // description and an upgrade prompt — but the free ones carry the higher priority.
   const allGuides = await loadGuides();
   const guidePages: Entry[] = [
-    entry("/guides", now, "monthly", 0.7),
+    entry("/guides", undefined, "monthly", 0.7),
     ...allGuides.map((g) =>
       g.audience === "professional"
-        ? entry(`/guides/pro/${g.slug}`, toDate(g.reviewedAt, now), "monthly", 0.4)
-        : entry(`/guides/${g.slug}`, toDate(g.reviewedAt, now), "monthly", 0.7),
+        ? entry(`/guides/pro/${g.slug}`, toDate(g.reviewedAt, undefined), "monthly", 0.4)
+        : entry(`/guides/${g.slug}`, toDate(g.reviewedAt, undefined), "monthly", 0.7),
     ),
   ];
 
@@ -227,7 +240,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
   const cityPages = dbAvailable ? await loadCityPages(dataUpdated) : [];
 
-  return [
+  return dedupeEntries([
     ...staticPages,
     ...reportPages,
     ...categoryPages,
@@ -238,5 +251,5 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     ...guidePages,
     ...stateCityDirPages,
     ...cityPages,
-  ];
+  ]);
 }

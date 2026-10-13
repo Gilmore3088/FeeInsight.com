@@ -41,6 +41,9 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 
   return {
     robots: { index: indexable, follow: true },
+    // One address per city: "little-rock" and "little%20rock" render the same page, and the
+    // sitemap and breadcrumbs use the encoded lowercase name.
+    alternates: { canonical: `/fees/city/${state.toLowerCase()}/${encodeURIComponent(cityName.toLowerCase())}` },
     title: `Bank Fees in ${cityName}, ${state.toUpperCase()} - Compare Local Fees`,
     description: `Compare bank and credit union fees in ${cityName}, ${stateName}. See overdraft fees, monthly maintenance charges, NSF fees, and more from local institutions.`,
     keywords: [
