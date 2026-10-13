@@ -33,16 +33,24 @@ It runs as Atlas steps (agent `atlas`); it is deterministic and makes no model c
   condition when Hamilton's rename pass leaves it whole on purpose, as in "Bill Pay Inactivity Fee
   (applies after 60 days of inactivity)" (`nameQuality`), the fee line ($0 rows must be priced lines) and the name all
   hold. A fee with no stored text is unknown, never right or wrong. Below
-  `FRESH_AUDIT_MIN_SCORABLE` scorable fees there is no percentage. Read-only.
+  `FRESH_AUDIT_MIN_SCORABLE` scorable fees there is no percentage. The audit itself only reads.
 - This is the accuracy measure `CLAUDE.md` defines. The target is 95%, averaged over a week.
 - The step's detail (counts per check, up to 50 misses, the seed and sample ids) is in its
   `step.finished` event. `goal-scorecard.ts` pools the last 7 days of audits into the scorecard's
   accuracy: right ÷ scorable, a 95% Wilson range (about ±3–4 points at 200 fees), misses per check,
   and one dated row per audit. Each daily scoreboard snapshot stores this in `detail.goal.accuracy`,
   so the dated results outlive the run history.
-- Misses are not yet written as `fresh_audit` eval cases, and not yet sent to their owners
-  (another bank's document to Magellan, a bad name to Knox). `eval_cases.label_provenance` has no
-  value for an automated audit, so that needs a migration and James's decision (#1119).
+- Each new miss (not one a Hamilton second look already holds) is kept and routed
+  (`audit-misses.ts`, #1119, approved by James 2026-10-12; migration 20270110000045):
+  - a `fresh_audit` eval case, `case_key` `fresh_audit:<fee_published_id>:<check>`, label
+    `deming_audit`, status `candidate`. An audit alone never confirms a label, so the case stays a
+    candidate until a person or a take-down confirms it; the regression replay never reads it;
+  - a `wrong` judgement of kind `audit_miss`, weight 0.5, reported by `deming`, for its owner:
+    another bank's document, an unconfirmed host, an article or a product page to Magellan (stage
+    discover); an unsupported amount or category, a perk read as a fee and a bad name to Knox
+    (stage extract).
+  The step's detail reports both counts (`audit_misses`), and either write that fails is reported
+  there without stopping the audit.
 
 ## Benchmark health check
 

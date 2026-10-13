@@ -26,8 +26,9 @@ type SqlTag = typeof sql;
  * Whole record (v3, after UAT scored 10 "right" rows 8/10): a $0 row must be a priced line, not
  * a perk ("Free checks" in a feature list), and the name must read as a fee's name (no glyph
  * junk, no cut sentence: Darwin's `nameIsFragment`).
- * Read-only; no writes, no flags, no model calls. Rate fees are not in this sample (they are
- * never pooled with dollars).
+ * The audit itself reads only; no flags, no model calls. Its misses are then saved as unconfirmed
+ * test cases and sent to their owners (`audit-misses.ts`, #1119). Rate fees are not in this
+ * sample (they are never pooled with dollars).
  */
 
 /**
@@ -62,6 +63,9 @@ const NO_EVIDENCE: FreshAuditEvidence = { otherBank: new Set(), unconfirmedHost:
 
 export interface FreshAuditMiss {
   feeId: number;
+  feePublishedId: number;
+  sourceDocumentId: number | null;
+  documentUrl: string | null;
   institutionId: number;
   canonicalFeeKey: string;
   feeName: string;
@@ -131,6 +135,9 @@ export function scoreFreshAudit(
     score.bySeverity[severity] += 1;
     score.misses.push({
       feeId: Number(fee.fee_id),
+      feePublishedId: Number(fee.fee_published_id),
+      sourceDocumentId: fee.source_document_id == null ? null : Number(fee.source_document_id),
+      documentUrl: fee.document_url ?? null,
       institutionId: Number(fee.institution_id),
       canonicalFeeKey: fee.canonical_fee_key,
       feeName: fee.fee_name,
