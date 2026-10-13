@@ -15,7 +15,15 @@ export interface DataRoomCounts {
   closedInstitutions: number;
   /** Institutions whose city is exactly 15 characters, the cut-off width (#1213); some are real names. */
   cityAtLimit: number;
+  /** Pro accounts' own institutions with fewer than PRO_INSTITUTION_MIN_FEES live dollar fees (#1078). */
+  proInstitutionsBelowMinimum: number;
 }
+
+/**
+ * A Pro account's own institution with fewer live dollar fees than this is a gap Atlas works first
+ * (#1078): 6 of 22 real Pro questions got "Hamilton has 0 of your published fees on file".
+ */
+export const PRO_INSTITUTION_MIN_FEES = 3;
 
 /** The Atlas source field width that cut city names ("Colorado Spring"). */
 export const CITY_CUT_WIDTH = 15;
@@ -34,7 +42,12 @@ export async function readDataRoomCounts(db: SqlTag = sql): Promise<DataRoomCoun
       (SELECT COUNT(*) FROM published_fee_rate_catalog)::int AS live_rate_fees,
       (SELECT COUNT(*) FROM closed)::int AS closed_fees,
       (SELECT COUNT(DISTINCT institution_id) FROM closed)::int AS closed_institutions,
-      (SELECT COUNT(*) FROM institution_sources WHERE length(btrim(city)) = ${CITY_CUT_WIDTH})::int AS city_at_limit
+      (SELECT COUNT(*) FROM institution_sources WHERE length(btrim(city)) = ${CITY_CUT_WIDTH})::int AS city_at_limit,
+      (SELECT COUNT(DISTINCT pro.institution_id)
+         FROM institution_workspace_memberships pro
+        WHERE pro.membership_status = 'active'
+          AND (SELECT COUNT(*) FROM published_fee_catalog own WHERE own.institution_id = pro.institution_id)
+              < ${PRO_INSTITUTION_MIN_FEES}::int)::int AS pro_below_minimum
   `;
   return {
     liveInstitutions: Number(row?.live_institutions ?? 0),
@@ -43,5 +56,6 @@ export async function readDataRoomCounts(db: SqlTag = sql): Promise<DataRoomCoun
     closedInstitutionFees: Number(row?.closed_fees ?? 0),
     closedInstitutions: Number(row?.closed_institutions ?? 0),
     cityAtLimit: Number(row?.city_at_limit ?? 0),
+    proInstitutionsBelowMinimum: Number(row?.pro_below_minimum ?? 0),
   };
 }

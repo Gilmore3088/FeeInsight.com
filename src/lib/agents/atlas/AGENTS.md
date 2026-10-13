@@ -40,7 +40,9 @@ until 19 Oct 2026; remove it sooner once its report is reviewed.
 ## Direct runs for one institution (`priority-institutions.ts`)
 
 Up to two at a time, free steps only (fetch, read, extract, verify, publish) for one bank, in
-this order: a schedule found by hand and not yet fetched; a document Magellan's paid fetch
+this order: a schedule found by hand and not yet fetched; a Pro account's own institution
+(an active `institution_workspace_memberships` row) with fewer than `PRO_INSTITUTION_MIN_FEES` (3)
+live dollar fees, again every 24 hours until it has them (#1078); a document Magellan's paid fetch
 stored that is still unread (the paid step fetches blocked links for banks in every state,
 while a state run reads only its own state, so these would wait for their state's lane); a
 bank asked for by name; a $10B+ bank or market leader with no live overdraft fee. A new

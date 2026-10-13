@@ -41,11 +41,12 @@ async function handleGET(request: NextRequest) {
       { key: "deming-benchmark-health", agent: "atlas", title: "Deming: check benchmark sample sizes, ranges and coverage, and alarm on a collapse" },
       { key: "scoreboard-snapshot", agent: "atlas", title: "Record the daily scoreboard" },
       { key: "deming-change-outcomes", agent: "atlas", title: "Deming: check whether each change moved the number it named, a week on" },
+      { key: "deming-sunday-maintenance", agent: "atlas", title: "Deming: on Sunday, write James's hour of maintenance tasks" },
     ],
   });
   const result = started.reused
     ? { runId: started.run.id, status: started.run.status, message: "Today's scoreboard already ran." }
-    : await executeAgentRun(started.run.id, { maxSteps: 6 });
+    : await executeAgentRun(started.run.id, { maxSteps: 7 });
   return NextResponse.json({ ok: true, runId: started.run.id, reused: started.reused, result });
 }
 
