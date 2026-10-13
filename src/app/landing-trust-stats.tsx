@@ -68,7 +68,7 @@ export function LandingTrustStats({ summary, states }: LandingTrustStatsProps) {
                     return (
                       <Link
                         key={state.id}
-                        href={`/institutions?state=${state.id}`}
+                        href={`/research/state/${state.id}`}
                         aria-label={label}
                         prefetch={false}
                       >
@@ -153,7 +153,7 @@ export function LandingTrustStats({ summary, states }: LandingTrustStatsProps) {
                     {topStates.map((s) => (
                       <li key={s.state_code}>
                         <Link
-                          href={`/institutions?state=${s.state_code}`}
+                          href={`/research/state/${s.state_code}`}
                           prefetch={false}
                           className="flex items-baseline justify-between gap-3 text-[13px] text-warm-900 hover:text-terra-dark"
                         >
