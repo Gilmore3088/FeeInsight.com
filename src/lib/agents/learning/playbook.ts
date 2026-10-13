@@ -87,6 +87,22 @@ function median(values: number[]): number | null {
   return sorted.length % 2 === 1 ? sorted[middle] : Math.round((sorted[middle - 1] + sorted[middle]) / 2);
 }
 
+/**
+ * The pass whose yield sets `expectedFeeCount`: Knox's free rules read of the whole document
+ * (`KNOX_RULES_STRATEGY`). Pass 2 specialists read one family each ("extract.family.wires"
+ * finds 1) and the paid pass reads only what the free pass missed, so neither is the document's
+ * fee count (#1095). Their yields stay in their own `strategyStats`.
+ */
+export const EXPECTATION_STRATEGY = { stage: "extract", strategy: "extract.rules" } as const;
+
+/** Median of the newest free-pass version's recent yields, or null when it has none. */
+export function freePassExpectation(strategyStats: Record<string, StrategyStats>): number | null {
+  const newest = Object.values(strategyStats)
+    .filter((stats) => stats.stage === EXPECTATION_STRATEGY.stage && stats.strategy === EXPECTATION_STRATEGY.strategy && stats.recentYields?.length > 0)
+    .sort((a, b) => b.version - a.version)[0];
+  return newest ? median(newest.recentYields) : null;
+}
+
 function successRate(stats: StrategyStats): number {
   return stats.attempts === 0 ? 0 : stats.successes / stats.attempts;
 }
@@ -154,7 +170,7 @@ export function applyAttempt(playbook: Playbook, attempt: AttemptFacts, now: Dat
     bestStrategy,
     strategyStats,
     doNotRetry,
-    expectedFeeCount: attempt.stage === "extract" && countsYield ? median(recentYields) : playbook.expectedFeeCount,
+    expectedFeeCount: freePassExpectation(strategyStats) ?? playbook.expectedFeeCount,
     costToDateMicrousd: playbook.costToDateMicrousd + Math.max(0, attempt.costMicrousd),
   };
 }
@@ -176,12 +192,16 @@ export function playbookFromRow(source: object | null | undefined): Playbook {
   if (!source) return EMPTY_PLAYBOOK;
   const row = source as Record<string, unknown>;
   const doNotRetry = parseJson<unknown>(row.do_not_retry, []);
+  const strategyStats = parseJson<Record<string, StrategyStats>>(row.strategy_stats, {});
+  const stored = row.expected_fee_count == null ? null : Number(row.expected_fee_count);
   return {
     format: (row.format as PlaybookFormat | null | undefined) ?? null,
     bestStrategy: parseJson(row.best_strategy, {}),
-    strategyStats: parseJson(row.strategy_stats, {}),
+    strategyStats,
     doNotRetry: Array.isArray(doNotRetry) ? (doNotRetry as DoNotRetryEntry[]) : [],
-    expectedFeeCount: row.expected_fee_count == null ? null : Number(row.expected_fee_count),
+    // A value stored before #1095 may come from a specialist's yield; the free pass's own
+    // yields win when the playbook has them.
+    expectedFeeCount: freePassExpectation(strategyStats) ?? stored,
     costToDateMicrousd: Number(row.cost_to_date_microusd ?? 0) || 0,
   };
 }

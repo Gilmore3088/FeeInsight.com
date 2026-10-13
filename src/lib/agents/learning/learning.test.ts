@@ -140,6 +140,31 @@ describe("applyAttempt", () => {
     expect(playbook.expectedFeeCount).toBe(30);
   });
 
+  it("takes the expected fee count from the free whole-document pass only (#1095)", () => {
+    let playbook = applyAttempt(EMPTY_PLAYBOOK, attempt({ yieldCount: 24 }), NOW);
+    // A pass 2 specialist reads one family; a paid pass reads what the free pass missed.
+    playbook = applyAttempt(playbook, attempt({ strategy: "extract.family.wires", yieldCount: 1, fingerprint: "hash-b" }), NOW);
+    playbook = applyAttempt(playbook, attempt({ strategy: "extract.paid", yieldCount: 3, fingerprint: "hash-c" }), NOW);
+    expect(playbook.expectedFeeCount).toBe(24);
+    expect(playbook.strategyStats[strategyKey("extract", "extract.paid", 1)].recentYields).toEqual([3]);
+    // A new free-pass version with no yields yet keeps the last version's expectation.
+    playbook = applyAttempt(playbook, attempt({ version: 2, outcome: "no_candidates", yieldCount: 0, fingerprint: "hash-d" }), NOW);
+    expect(playbook.expectedFeeCount).toBe(24);
+    playbook = applyAttempt(playbook, attempt({ version: 2, yieldCount: 30, fingerprint: "hash-e" }), NOW);
+    expect(playbook.expectedFeeCount).toBe(30);
+  });
+
+  it("corrects a stored expectation that a specialist set, from the free pass's own yields", () => {
+    const playbook = playbookFromRow({
+      strategy_stats: {
+        [strategyKey("extract", "extract.rules", 65)]: { stage: "extract", strategy: "extract.rules", version: 65, recentYields: [18, 20, 22] },
+        [strategyKey("extract", "extract.family.wires", 4)]: { stage: "extract", strategy: "extract.family.wires", version: 4, recentYields: [1] },
+      },
+      expected_fee_count: 1,
+    });
+    expect(playbook.expectedFeeCount).toBe(20);
+  });
+
   it("accumulates cost and caps the do-not-retry list", () => {
     let playbook = EMPTY_PLAYBOOK;
     for (let index = 0; index < 60; index += 1) {
