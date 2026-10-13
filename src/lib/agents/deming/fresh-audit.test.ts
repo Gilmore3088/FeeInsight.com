@@ -133,3 +133,14 @@ describe("name quality v4: a name that keeps its condition is a fee's name", () 
     expect(nameQuality(name)).toBe("name_fragment");
   });
 });
+
+describe("name quality v5: cut cents or a row number in front of the name (#1196)", () => {
+  it.each(["00 per month Nonsufficient funds", "00 Monthly fee", "14 | INSUFFICIENT FUNDS"])("fails %s", (name) => {
+    expect(nameQuality(name)).toBe("name_fragment");
+  });
+
+  it.each(["30 Day Late Charge", "12 Months of Inactivity", "03 x 05"])("keeps %s", (name) => {
+    expect(nameQuality(name)).toBeNull();
+  });
+});
+

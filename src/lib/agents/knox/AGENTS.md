@@ -719,7 +719,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `KNOX_LAYOUT_SIGNATURE_VERSION` | — | v1 | `knox/layout-signature.ts` |
 | `KNOX_LESSONS_VERSION` | — | v3 | `knox/lessons.ts` |
 | `LINEUP_CORRECT_STRATEGY` | `knox.lineup_correct` | v2 | `knox/lineup-correct.ts` |
-| `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v18 | `knox/name-retidy.ts` |
+| `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v19 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v2 | `knox/paid-extract.ts` |
 | `KNOX_RULES_STRATEGY` | `extract.rules` | v65 | `knox/specialists.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v6 | `knox/table-rows.ts` |

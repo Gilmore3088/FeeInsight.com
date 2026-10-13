@@ -40,6 +40,12 @@ const LEADING_PRICE_UNIT = /^\/\s*(?:per\s+)?(?:ea\.?|each|items?|mo\.?|month|yr
 /** A clause about when a fee applies, not its name ("Active if Bill Pay or Zelle are used monthly"). */
 const CONDITION_CLAUSE = /\b(?:if|when|unless|otherwise|will be|are used|is used|for\s+\d)\b/i;
 
+/** v19: the cents of a price cut at its decimal point, with the unit after it ("00 per month Nonsufficient funds"); not a box size ("03 x 05"). */
+const LEADING_CENTS = /^0\d\s+(?:per\s+(?:month|item|year|statement|check)\s+)?(?![xX]\s)(?=[A-Za-z])/;
+/** v19: a row number read as the first cell ("13 | Outgoing domestic wire transfer"). */
+const ROW_NUMBER_CELL = /^\d{1,2}\s*\|\s*(?=[A-Za-z])/;
+/** v19: "Nonsufficient funds" names the fee without a fee word; accepted only once a cut is repaired. */
+const NSF_NAME = /\b(?:non-?\s?|in)sufficient\s+funds?\b/i;
 /** v18: one lowercase letter left in front of a capitalised name, a list or footnote mark ("b A cash advance fee"); never "e" ("e Statement"). */
 const STRAY_LEAD_LETTER = /^[a-df-z]\s+(?=[A-Z])/;
 /** v18: the sentence that leads into the price, left after the name ("... Network ATM A fee of"). */
@@ -82,6 +88,8 @@ export function repairCutoffName(name: string): string {
   if (repaired.split(/\s*\|\s*/).some((cell) => NOT_A_NAME.test(cell.trim()))) return repaired;
   // "+Returned Item Fee – per item returned": the bullet of a list read as part of the name.
   repaired = repaired.replace(/^\+{1,2}\s*/, "");
+  // v19: the cents of the price, or a row number cell, left in front of the name.
+  repaired = repaired.replace(LEADING_CENTS, "").replace(ROW_NUMBER_CELL, "");
   // v18: a stray list or footnote letter in front of the name ("b A cash advance fee").
   repaired = repaired.replace(STRAY_LEAD_LETTER, "");
   // v18: the lead-in to the price left after the name ("Foreign ATM ... ATM A fee of").
@@ -221,7 +229,7 @@ export function withoutWaiverAdvice(name: string): string | null {
     }
   }
   current = current.replace(/[\s.,;:–-]+$/, "").trim();
-  if (!current || current === name.trim() || AVOID.test(current) || !FEE_NOUN.test(current) || !usableName(current)) return null;
+  if (!current || current === name.trim() || AVOID.test(current) || !(FEE_NOUN.test(current) || NSF_NAME.test(current)) || !usableName(current)) return null;
   if (current.split(/\s+/).length > MAX_WORDS || sentenceShaped(current) || VERB_END.test(current) || /\s(?:to|of|a|the)$/i.test(current)) return null;
   return current;
 }
@@ -275,7 +283,7 @@ export function retidiedFeeName(name: string, canonicalKey: string): string | nu
   // v6: cut-off shapes first, so the v1-v5 tidy reads the name the shape hid.
   const current = repairCutoffName(stored);
   if (current !== stored) {
-    if (sentenceShaped(current) || NOT_A_NAME.test(current) || !FEE_NOUN.test(current) || !usableName(current)) return null;
+    if (sentenceShaped(current) || NOT_A_NAME.test(current) || !(FEE_NOUN.test(current) || NSF_NAME.test(current)) || !usableName(current)) return null;
     if (current.split(/\s+/).length > MAX_WORDS || VERB_END.test(current) || /\s\d\s/.test(current) || /[.…]{3,}/.test(current)) return null;
     if (checkFeeCategory(canonicalKey, stored).ok && !checkFeeCategory(canonicalKey, current).ok) return null;
     const tidy = fullyTidiedName(current, canonicalKey) ?? repairNameShape(stripFootnoteMarks(current));
@@ -368,8 +376,12 @@ function fullyTidiedName(name: string, canonicalKey: string): string | null {
  * v18: two cut-off shapes Deming's audit counted on Oct 12: a stray letter or unit left in front
  * of the name ("b A cash advance fee", the "b" a footnote or list mark) and the start of the
  * sentence that leads into the price left on the end ("Foreign ATM ... ATM A fee of").
+ * v19 (#1196): the cents of the price before it, cut at the decimal point ("$35.00 per month
+ * Nonsufficient funds" read as "00 per month Nonsufficient funds"), and a row number read as a
+ * cell ("13 | Outgoing domestic wire transfer"). 44 live fees at 21 banks on 2026-10-13. A name
+ * that begins with its own number ("30 Day Late Charge", "12 Months of Inactivity") is left alone.
  */
-export const NAME_RETIDY_STRATEGY = { strategy: "knox.name_retidy", version: 18 } as const;
+export const NAME_RETIDY_STRATEGY = { strategy: "knox.name_retidy", version: 19 } as const;
 export const NAME_RETIDY_KIND = "name_retidied";
 /**
  * Institutions the scan visits first after a version change, then the rest in id order. v9:
@@ -1297,6 +1309,7 @@ export function retidyDueInstitutions(
                    OR fp.fee_name ~ '[\u019f\u014c\u01a9\u019e]'
                    OR fp.fee_name ~ '^[[:space:]]*\\([^()]*\\)[[:space:]]*(:|$)'
                    OR fp.fee_name ~ '^[a-z]'
+                   OR fp.fee_name ~ '^[[:space:]]*0[0-9][[:space:]]'
                    OR fp.fee_name ~ '[\u0332\u0372]'
                    OR fp.fee_name ~ '[\uE000-\uF8FF\u0080-\u009F\uFFFD\u200B-\u200D\u2060\uFEFF\u2666\u25CF\u25AA\u25A0\u27A2\u2219\u2663\u2022\u010B]'
                    OR fp.fee_name ~* '[[:space:]](below|under|than|over|above)[[:space:]]*$'
@@ -1563,7 +1576,8 @@ export function isMessyName(name: string): boolean {
 
 /** v16: a name the earlier versions left alone whose only flaw is how it opens (lower case, a list marker, an article). */
 function openerOnlyName(name: string): boolean {
-  return /^[a-z]/.test(name) || CAPITAL_LEAD.test(name.trim());
+  // v19: or the cents of the price in front ("00 Monthly fee").
+  return /^[a-z]/.test(name) || CAPITAL_LEAD.test(name.trim()) || /^\s*0\d\s/.test(name);
 }
 
 function messyBeforeV16(name: string): boolean {

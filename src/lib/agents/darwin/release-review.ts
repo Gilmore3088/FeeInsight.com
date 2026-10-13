@@ -87,6 +87,9 @@ type SqlTag = typeof sql;
 // cut-off shape (a list bullet "+", a glued column header, a sentence ending at its own price, a
 // condition clause, a dangling "up to" / "per"; Knox's `isCutoffName`) now stays held
 // (`name_fragment`); Knox's retidy v6 gives the live ones their tidy name.
+// #1196 (2026-10-13, no version change): a name opening on cut cents ("00 Monthly fee") or a
+// row-number cell ("14 | INSUFFICIENT FUNDS") is a `name_fragment` too. The check is free and
+// only holds more, so already-reviewed fees are not sent back to the paid review for it.
 export const DARWIN_RELEASE_REVIEW_STRATEGY = {
   strategy: "verify.release_review",
   version: 17,
@@ -150,7 +153,8 @@ const SMALL_NSF_AMOUNT = 10;
  * Counter Checks"), a sentence or bullet fragment ("charge for each one-time debit", "Fees: o A
  * Minimum Balance Fee", "(for each overdraft item"), or a table header kept ("Garnishment / Levy: Fee").
  */
-const NAME_FRAGMENT = /^\s*\/|^[^(]*\)\s*$|[.…]{3,}|(\.\s){3,}|^\s*\d+\s*\/|^\s*\(|^\s*[Ff]ees?:\s|\bo\s[A-Z]|:\s*[Ff]ee\s*$/;
+// #1196: the cents of a price cut at its decimal point ("00 Monthly fee") or a row number cell ("13 | ...").
+const NAME_FRAGMENT = /^\s*\/|^[^(]*\)\s*$|[.…]{3,}|(\.\s){3,}|^\s*\d+\s*\/|^\s*\(|^\s*[Ff]ees?:\s|\bo\s[A-Z]|:\s*[Ff]ee\s*$|^\s*0\d\s+(?![xX]\s)[A-Za-z]|^\s*\d{1,2}\s*\|/;
 /** A name that starts lowercase is a sentence cut from its line, unless it is a product spelled that way. */
 const SENTENCE_START = /^\s*[a-z]/;
 const LOWERCASE_PRODUCT_NAME = /^\s*e-?(statement|banking|bill)/i;

@@ -36,8 +36,10 @@ type SqlTag = typeof sql;
  * prices the same fee differently (`productPageConflictSql`); before v4 every product-page fee
  * was a miss. Also v4: a name that keeps its condition, as Hamilton's rename pass leaves it on
  * purpose, is not a bad name (`nameQuality`).
+ * v5 (#1196): a name that opens on a cut cents figure ("00 Monthly fee") or a table row number
+ * ("14 | Insufficient funds") is a cut name, through Darwin's `nameHasCutShape`.
  */
-export const FRESH_AUDIT_VERSION = 4;
+export const FRESH_AUDIT_VERSION = 5;
 export const FRESH_AUDIT_SAMPLE = 200;
 /** Below this many scorable fees the audit reports counts, not a percentage. */
 export const FRESH_AUDIT_MIN_SCORABLE = 30;
