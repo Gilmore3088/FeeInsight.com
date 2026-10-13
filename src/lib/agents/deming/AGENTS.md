@@ -55,6 +55,7 @@ It runs as Atlas steps (agent `atlas`); it is deterministic and makes no model c
 ## Did the change work (#1106)
 
 - `change-outcomes.ts`: the `deming-change-outcomes` step, last in Atlas's daily scoreboard run.
+- `sunday-maintenance.ts`: the `deming-sunday-maintenance` step, after it in the same run, Sundays (UTC) only: James's hour of tasks (labels, data decisions, answer-key banks), the week in numbers and anything stuck (#1104). It emails only while `SUNDAY_EMAIL_LIVE=true`; otherwise the run records the email it would send.
   Each PR that names a "Should move" number adds an entry to `should-move.json` (PR number, issue,
   `metric`: a `pipeline_scoreboard_snapshots` column or a `detail.` path such as
   `detail.goal.accuracy.accuracy`, `direction` up or down, optional `min_change`).
