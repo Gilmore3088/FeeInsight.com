@@ -1,4 +1,4 @@
-import { getAnthropicMessagesClient, type Anthropic } from "@/lib/ai-provider";
+import { getAnthropicMessagesClient, type Anthropic, type ProviderAgent } from "@/lib/ai-provider";
 import type { sql } from "@/lib/data-store/connection";
 import { estimateAnthropicCostMicrousd, trackAnthropicRequest, WEB_SEARCH_COST_MICROUSD } from "@/lib/ai-provider-usage";
 
@@ -13,7 +13,13 @@ export { WEB_SEARCH_COST_MICROUSD };
  * the step; it never stalls the state run.
  */
 
-export type PaidPassAgent = "magellan" | "rosetta" | "knox" | "darwin" | "hamilton" | "growth";
+/**
+ * The agent a call is logged and budgeted under (`agent:<name>` in api_budget_policies). `wire`
+ * is the Regulatory Wire's research notes: its own $25 a month policy (James, 2026-10-12, #1149),
+ * so a month's fetching cannot spend the summaries' budget or the other way round. It bills to
+ * Magellan's API key (`keyAgent`).
+ */
+export type PaidPassAgent = "magellan" | "rosetta" | "knox" | "darwin" | "hamilton" | "growth" | "wire";
 
 /** Models per paid job; override per environment. */
 export const PAID_PASS_MODELS = {
@@ -46,8 +52,11 @@ export async function paidModelCall({
   params,
   create,
   metadata,
+  keyAgent,
 }: {
   agent: PaidPassAgent;
+  /** The agent whose API key pays, when it is not `agent` (the Wire bills to Magellan's key). */
+  keyAgent?: ProviderAgent;
   operation: string;
   runId: number;
   params: MessageParams;
@@ -55,7 +64,8 @@ export async function paidModelCall({
   create?: PaidMessageCreator;
   metadata?: Record<string, unknown>;
 }): Promise<PaidCallResult> {
-  const send: PaidMessageCreator = create ?? ((body) => getAnthropicMessagesClient(`${agent} ${operation}`, agent).messages.create(body));
+  const billTo: ProviderAgent | undefined = keyAgent ?? (agent === "wire" ? "magellan" : agent);
+  const send: PaidMessageCreator = create ?? ((body) => getAnthropicMessagesClient(`${agent} ${operation}`, billTo).messages.create(body));
   const message = await trackAnthropicRequest(
     { model: params.model, agent, operation, agentRunId: runId, metadata },
     () => send(params),

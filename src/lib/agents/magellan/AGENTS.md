@@ -372,6 +372,10 @@ in `registry_ingest_partitions`, and keeps lineage (`source_url`, `agent_run_id`
 Steps never call a provider and stay out of `PROVIDER_STEP_KEYS`, with one exception:
 `registry-wire-research` (below) is a provider step, listed in `PROVIDER_STEP_KEYS`, so the
 global provider stop and the budget caps apply to it; it is off until `REG_WIRE_SUMMARIES_LIVE=true`.
+Its calls are logged and budgeted as agent `wire` (`agent:wire`: $25 a month, 30 calls and $1 a run,
+James 2026-10-12, #1149), so Magellan's fetching and the Wire never spend each other's budget; they
+still bill to Magellan's API key. When a cap stops it, the step summary names the cap and how many
+items wait.
 
 | Step | Partition | Writes |
 | --- | --- | --- |
