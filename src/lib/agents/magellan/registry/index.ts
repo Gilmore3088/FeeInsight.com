@@ -593,7 +593,10 @@ export const REGISTRY_SOURCES: RegistrySourceDefinition[] = [
       const usd = (r.costMicrousd / 1_000_000).toFixed(4);
       const would = r.items.filter((i) => i.outcome === "would_summarise").length;
       const notReached = r.items.filter((i) => i.outcome === "not_reached").length;
-      const stopped = r.budgetStopped ? ` A budget cap or the provider stop ended the step: ${r.budgetReason}.` : "";
+      const waiting = r.items.filter((i) => i.outcome === "budget_stopped").length;
+      const stopped = r.budgetStopped
+        ? ` A budget cap or the provider stop ended the step (${waiting} item${waiting === 1 ? "" : "s"} wait): ${r.budgetReason}.`
+        : "";
       return {
         summary: r.shadow || r.dryRun
           ? `Magellan picked ${r.selected} wire items without a research note and could read ${would} of them; ${r.unreadable} unreadable (${r.shadow ? "shadow mode: no model call, nothing stored" : "dry run"}).`
@@ -610,6 +613,7 @@ export const REGISTRY_SOURCES: RegistrySourceDefinition[] = [
           dates_dropped: r.datesDropped,
           budget_stopped: r.budgetStopped,
           budget_reason: r.budgetReason,
+          budget_waiting: r.items.filter((i) => i.outcome === "budget_stopped").length,
           cost_microusd: r.costMicrousd,
           items: r.items,
         },

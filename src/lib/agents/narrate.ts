@@ -509,7 +509,11 @@ function narrateRegistryStep(stepKey: string, detail: Detail): string | null {
       if (detail.shadow) {
         return `Picked ${count(n(detail, "selected"), "wire item")} for research notes and could read ${n(detail, "would_summarise")}; wrote none (shadow mode).`;
       }
-      return `Wrote ${count(n(detail, "written"), "Regulatory Wire research note")} from ${count(n(detail, "selected"), "item")}; ${n(detail, "unreadable")} unreadable, ${n(detail, "failed")} failed.`;
+      // "0 failed" hid a budget stop for a day (#1149): say which cap stopped it and what waits.
+      const stopped = detail.budget_stopped === true
+        ? ` Stopped by a budget cap with ${count(n(detail, "budget_waiting"), "item")} waiting: ${String(detail.budget_reason ?? "the cap was not recorded").replace(/\.$/, "")}.`
+        : "";
+      return `Wrote ${count(n(detail, "written"), "Regulatory Wire research note")} from ${count(n(detail, "selected"), "item")}; ${n(detail, "unreadable")} unreadable, ${n(detail, "failed")} failed.${stopped}`;
     }
     default:
       return null;

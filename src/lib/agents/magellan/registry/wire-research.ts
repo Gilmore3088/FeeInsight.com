@@ -43,7 +43,7 @@ export const WIRE_RESEARCH_PARTITION = "current";
 export const WIRE_RESEARCH_STEP_KEY = "registry-wire-research";
 export const WIRE_RESEARCH_REFRESH_HOURS = 12;
 export const DEFAULT_WIRE_RESEARCH_ITEMS = 20;
-/** Never more than Magellan's per-run call cap (30, api_budget_policies agent:magellan). */
+/** Never more than the Wire's per-run call cap (30, api_budget_policies agent:wire, #1149). */
 export const MAX_WIRE_RESEARCH_ITEMS = 30;
 /** Items older than this are left alone: the wire is read for what is new. */
 export const WIRE_RESEARCH_LOOKBACK_DAYS = 120;
@@ -465,7 +465,8 @@ export async function runRegistryWireResearch(
     let cost = 0;
     try {
       const call = await paidModelCall({
-        agent: "magellan",
+        agent: "wire",
+        keyAgent: "magellan",
         operation: "wire_research_summary",
         runId: runId ?? 0,
         create: options.create,

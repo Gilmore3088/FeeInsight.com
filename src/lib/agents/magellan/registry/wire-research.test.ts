@@ -109,7 +109,7 @@ describe("registry-wire-research gating", () => {
     const r = await runRegistryWireResearch({ runId: 7, db, live: true, candidates: [CANDIDATE], fetchPage, create });
     expect(create).toHaveBeenCalledTimes(1);
     expect(trackAnthropicRequest).toHaveBeenCalledWith(
-      expect.objectContaining({ agent: "magellan", operation: "wire_research_summary", agentRunId: 7 }),
+      expect.objectContaining({ agent: "wire", operation: "wire_research_summary", agentRunId: 7 }),
       expect.any(Function),
     );
     expect(r).toMatchObject({ shadow: false, written: 1, datesDropped: 1 });
