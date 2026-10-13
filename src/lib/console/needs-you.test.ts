@@ -119,3 +119,32 @@ describe("buildNeedsYou", () => {
     expect(buildNeedsYou({ attention: [], failureAlerts: [], leads, now })).toEqual([]);
   });
 });
+
+describe("buildNeedsYou: Darwin's held fees past their age limit (#1115 step 2)", () => {
+  const now = new Date("2026-10-20T00:00:00Z");
+  const group = (cause: string, oldest: string, hasExit: boolean, count = 74) => ({
+    cause, label: cause, count, oldest, example: null, wayOut: hasExit ? "Darwin's release pass." : "None yet.", hasExit,
+  });
+
+  it("raises a reason with no way out after 7 days, and one with a way out after 14", () => {
+    const items = buildNeedsYou({
+      attention: [],
+      failureAlerts: [],
+      leads: [],
+      now,
+      holds: [
+        group("conditional_zero", "2026-10-09T11:25:00Z", false),
+        group("outside_envelope", "2026-10-10T00:00:00Z", true, 3243),
+        group("peer_outlier", "2026-10-05T00:00:00Z", true, 2792),
+      ],
+    });
+    expect(items.map((item) => item.id)).toEqual(["hold:conditional_zero", "hold:peer_outlier"]);
+    expect(items[0]).toMatchObject({ severity: "warning", href: "/admin/darwin" });
+    expect(items[0].title).toBe("74 fees held 11 days: conditional_zero");
+  });
+
+  it("raises nothing inside the limit, or when the holds could not be read", () => {
+    expect(buildNeedsYou({ attention: [], failureAlerts: [], leads: [], now, holds: [group("conditional_zero", "2026-10-15T00:00:00Z", false)] })).toEqual([]);
+    expect(buildNeedsYou({ attention: [], failureAlerts: [], leads: [], now, holds: null })).toEqual([]);
+  });
+});

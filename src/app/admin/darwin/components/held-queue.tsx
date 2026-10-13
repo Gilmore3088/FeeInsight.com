@@ -1,11 +1,6 @@
-import { unstable_cache } from "next/cache";
-import { sql } from "@/lib/data-store/connection";
-import { readHoldGroups, type HoldGroup } from "@/lib/agents/darwin/held-queue";
+import type { HoldGroup } from "@/lib/agents/darwin/held-queue";
 import { formatAdminDateTime } from "@/lib/admin-time";
-
-// Holds move with each verify and release step (every few minutes); ten minutes old is fresh
-// enough, and the read takes about 3 s.
-const getCachedHoldGroups = unstable_cache(() => readHoldGroups(sql), ["admin", "darwin-held-queue"], { revalidate: 600 });
+import { getCachedHoldGroups } from "@/lib/console/held-queue-cache";
 
 /** Darwin's held fees by reason (#1115 step 1): count, oldest, an example and the way out. */
 export async function HeldQueue() {
