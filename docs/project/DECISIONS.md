@@ -5,6 +5,14 @@ Seeded 2026-10-05 from the project's working memory; earlier decisions were not 
 
 ## 2026-10-13
 
+**Darwin's audience is the one published (#1059, option 1).** James, Oct 13. Knox writes its audience
+suggestion and the evidence (the document's address or title, the section heading, or a general schedule
+with no business wording) without setting the published label. Darwin sets the audience on the verified
+row, and the published row takes Darwin's value. Today the trigger from
+`20270110000040_fee_audience_integrity.sql` copies Knox's raw label to every tier, so this needs a small
+migration, which goes to James. Relabelling existing fees is a production data change and also waits for
+James: business fees leave the personal benchmarks, so medians customers see can move.
+
 **Up to three builders at once, one per lane.** James, Oct 13. Usage has room (about 7% of the
 4-hour window, 12% of the week), so the build plan runs in three lanes instead of one queue: data
 pipeline, Hamilton, and discovery plus technical SEO. Each lane owns its agents' code, so builders
