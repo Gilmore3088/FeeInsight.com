@@ -67,7 +67,8 @@ function answerText(response: AskResponse): string {
 
 /**
  * The checks only live data can make. A regulation answer states who regulates this
- * institution when that is on file; a question about "our state" names the state.
+ * institution when that is on file, in the sentence the answer writes for it (with or without
+ * its name); a question about "our state" names the state.
  */
 export function liveDataFailures(
   item: QualityQuestion,
@@ -78,8 +79,11 @@ export function liveDataFailures(
   const failures: string[] = [];
   const text = answerText(response);
   if (REGULATION.has(item.id)) {
-    const sentence = regulatorSentence(regulators, institution.stateCode, institution.charterType);
-    if (sentence && !text.includes(sentence)) failures.push(`does not name its regulator ("${sentence}")`);
+    // The answer names the institution in this sentence (regulatoryFacts passes its name); the
+    // second-person form is the same sentence where no name is on hand. Either names the regulator.
+    const named = regulatorSentence(regulators, institution.stateCode, institution.charterType, institution.name);
+    const unnamed = regulatorSentence(regulators, institution.stateCode, institution.charterType);
+    if (named && !text.includes(named) && !(unnamed && text.includes(unnamed))) failures.push(`does not name its regulator ("${named}")`);
   }
   if (STATE.has(item.id) && institution.stateCode) {
     const state = STATE_NAMES[institution.stateCode] ?? institution.stateCode;
