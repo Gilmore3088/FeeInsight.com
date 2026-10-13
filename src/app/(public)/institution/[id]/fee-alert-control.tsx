@@ -67,11 +67,11 @@ export function FeeAlertControl({
   const headline =
     mode === "verify"
       ? `Get an email when ${institutionName}'s fees are verified`
-      : `Get an email when ${institutionName} changes ${focusLabel ? `its ${focusLabel.toLowerCase()}` : "a fee"}`;
+      : `Get an email when ${institutionName} updates ${focusLabel ? `its published ${focusLabel.toLowerCase()}` : "a published fee"}`;
   const body =
     mode === "verify"
       ? "We'll write once its fee schedule is verified, and again whenever a verified fee changes. Nothing else."
-      : "One email when a verified fee you follow changes. Nothing else unless you ask for it.";
+      : "One email when the schedule updates a verified fee you follow. Nothing else unless you ask for it.";
 
   function done(next: string[] | null) {
     setSaved(true);
