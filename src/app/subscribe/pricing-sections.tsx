@@ -89,7 +89,7 @@ function faqItems(summary: PublicStatsSummary) {
     },
     {
       question: "How often is the data refreshed?",
-      answer: `On a rolling calendar — every schedule is rechecked at least quarterly. ${summary.freshnessLabel}.`,
+      answer: `On a rolling calendar. ${summary.freshnessLabel}.`,
     },
   ];
 }

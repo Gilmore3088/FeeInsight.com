@@ -49,7 +49,7 @@ function buildRows(summary: Pick<PublicStatsSummary, "institutionsLabel" | "refr
     {
       option: SITE_NAME,
       coverage: `${summary.institutionsLabel} institutions with verified fees`,
-      refresh: `Rolling — every schedule rechecked at least quarterly${refreshed}`,
+      refresh: `Rolling${refreshed}`,
       sourceTraceable: "Every figure linked to its disclosure",
       peerGroupControl: "Yes — charter, asset tier, district",
       cost: "Free national and district reports",
