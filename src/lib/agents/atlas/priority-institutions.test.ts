@@ -17,6 +17,7 @@ import {
   PRIORITY_INSTITUTION_SOURCE,
   PRIORITY_MAX_ACTIVE,
   PRIORITY_RULES_REREAD_HOURS,
+  PRO_INSTITUTION_MIN_FEES,
   priorityInstitutionSteps,
   schedulePriorityInstitutionRuns,
   selectPriorityInstitutions,
@@ -100,7 +101,7 @@ describe("priority institutions", () => {
     const select = calls.find((call) => call.text.includes("WITH candidates"))!.text;
     expect(select).toContain("paid.strategy LIKE 'fetch.paid_web_fetch%'");
     expect(select).toContain("NOT EXISTS (SELECT 1 FROM agent_source_texts text WHERE text.source_document_id = doc.id)");
-    expect(select).toContain("CASE WHEN c.tier = 1 THEN 1 WHEN c.tier = 2 AND c.rules_unread THEN 2 WHEN c.tier = 4 THEN 3 WHEN c.tier = 2 THEN 4 ELSE 5 END");
+    expect(select).toContain("CASE WHEN c.tier = 1 THEN 1 WHEN c.tier = 5 THEN 2 WHEN c.tier = 2 AND c.rules_unread THEN 3 WHEN c.tier = 4 THEN 4 WHEN c.tier = 2 THEN 5 ELSE 6 END");
     expect(select).toContain("c.tier <> 4 OR c.paid_at IS NULL OR r.started_at >= c.paid_at");
     // A hand-found schedule fetched in another state's lane is unread work too (First United, 8 Oct).
     expect(select).toContain("JOIN source_documents hand_doc ON hand_doc.companion_source_id = hand.id");
@@ -109,6 +110,28 @@ describe("priority institutions", () => {
     expect(select).toContain("OR (inst.status = 'dormant' AND EXISTS (");
     // A request by name does not wait out the retry window of an earlier overdraft-gap run.
     expect(select).toContain("c.tier <> 2 OR r.params_json->>'tier' = 'requested'");
+  });
+
+  it("gives a Pro account's own institution under the fee minimum a direct run, right after hand-found schedules (#1078)", async () => {
+    const { db, calls } = createDb((text) => {
+      if (text.includes("COUNT(*)::int AS active")) return [{ active: 0 }];
+      return [{ id: 8109, institution_name: "Space Coast Federal Credit Union", state_code: "FL", tier: 5, hand_link_id: null, paid_document_id: null, rules_unread: true }];
+    });
+
+    const result = await schedulePriorityInstitutionRuns({ db, now: new Date("2026-10-13T11:00:00Z") });
+
+    expect(result.runs).toEqual([{ institutionId: 8109, runId: 9109, tier: "pro_institution" }]);
+    // Keyed by day, never by a rules version: it runs again after the 24-hour retry window.
+    expect(startAgentRunMock.mock.calls[0][0]).toMatchObject({
+      idempotencyKey: "atlas:priority:8109:2026-10-13",
+      params: { institution_id: 8109, tier: "pro_institution" },
+    });
+    const { text, values } = calls.find((call) => call.text.includes("WITH candidates"))!;
+    expect(text).toContain("FROM institution_workspace_memberships pro");
+    expect(text).toContain("pro.membership_status = 'active'");
+    expect(text.indexOf("FROM institution_workspace_memberships pro")).toBeLessThan(text.indexOf("paid_new.paid_document_id IS NOT NULL THEN 4"));
+    expect(values).toContain(PRO_INSTITUTION_MIN_FEES);
+    expect(PRO_INSTITUTION_MIN_FEES).toBe(3);
   });
 
   it("reruns a large bank with no live overdraft fee once per Knox rules version, keyed by the version", async () => {

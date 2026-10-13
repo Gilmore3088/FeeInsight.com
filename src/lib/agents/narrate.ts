@@ -251,6 +251,11 @@ function narrateFinished(
       const moved = judged.filter((row) => row.verdict === "moved_as_expected").length;
       return `Checked ${count(judged.length, "change")} a week after merge: ${moved} moved as expected; ${n(detail, "pending")} still within their week.`;
     }
+    case "deming-sunday-maintenance":
+      if (detail.ran === false) return "Not Sunday: no maintenance email this time.";
+      return detail.delivery_status === "sent"
+        ? `Emailed James the Sunday hour (${n(detail, "minutes")} minutes).`
+        : `Wrote the Sunday hour (${n(detail, "minutes")} minutes) but did not email it (${String(detail.delivery_reason ?? detail.delivery_status ?? "unknown")}).`;
     case "deming-regression": {
       if (detail.schema_ready === false) return "Deming read no test cases: the case store is not created yet.";
       const regressions = n(detail, "regressions");
@@ -601,6 +606,7 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   "deming-fresh-audit": "atlas",
   "deming-benchmark-health": "atlas",
   "deming-change-outcomes": "atlas",
+  "deming-sunday-maintenance": "atlas",
   "deming-regression": "atlas",
   "scoreboard-snapshot": "atlas",
   "hamilton-answer-eval": "hamilton",

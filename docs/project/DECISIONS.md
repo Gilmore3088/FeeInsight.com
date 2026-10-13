@@ -3,6 +3,29 @@
 Newest first. Each entry: date, what was decided, who, why, and what it means for the work.
 Seeded 2026-10-05 from the project's working memory; earlier decisions were not recorded here.
 
+## 2026-10-13
+
+**Supabase reads run without a prompt; writes still ask.** James, Oct 13. Builders were asking
+James to approve every read-only query. `.claude/settings.json` now allows the Supabase SQL and
+read tools, and keeps a prompt on migrations, branches, edge functions and project changes. The
+rule is unchanged: production data changes go through typed agent modules and a PR, never raw SQL
+from a session.
+
+**Darwin's audience is the one published (#1059, option 1).** James, Oct 13. Knox writes its audience
+suggestion and the evidence (the document's address or title, the section heading, or a general schedule
+with no business wording) without setting the published label. Darwin sets the audience on the verified
+row, and the published row takes Darwin's value. Today the trigger from
+`20270110000040_fee_audience_integrity.sql` copies Knox's raw label to every tier, so this needs a small
+migration, which goes to James. Relabelling existing fees is a production data change and also waits for
+James: business fees leave the personal benchmarks, so medians customers see can move.
+
+**Up to three builders at once, one per lane.** James, Oct 13. Usage has room (about 7% of the
+4-hour window, 12% of the week), so the build plan runs in three lanes instead of one queue: data
+pipeline, Hamilton, and discovery plus technical SEO. Each lane owns its agents' code, so builders
+rarely touch the same files. The plan's order is kept within each lane; nothing moves between
+lanes without a note on #1026. Website layout waits for James's own design, so no lane takes
+layout or redesign work, and no lane opens a new copy preview while five are waiting for James.
+
 ## 2026-10-12
 
 **Darwin carries the backend value; Hamilton carries the business value.** James, Oct 12. Darwin's
