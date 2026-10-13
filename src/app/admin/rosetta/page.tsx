@@ -3,6 +3,7 @@ import { AgentHandoffStrip } from "@/components/agent-console/agent-handoff-stri
 import { requireAuth } from "@/lib/auth";
 import { getRosettaStatus } from "@/lib/agents/rosetta/status";
 import { RosettaConsole } from "./rosetta-console";
+import { AgentFrame } from "../agent-frame";
 
 export const dynamic = "force-dynamic";
 
@@ -24,6 +25,7 @@ export default async function RosettaPage() {
           Reads fetched PDFs, HTML, and text sources into normalized artifacts that Knox can extract from.
         </p>
       </header>
+      <AgentFrame agent="rosetta" />
 
       <AgentHandoffStrip
         steps={[

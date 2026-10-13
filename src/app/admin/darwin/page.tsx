@@ -6,6 +6,7 @@ import type { DarwinStatus } from "./types";
 import { Breadcrumbs } from "@/components/breadcrumbs";
 import { AgentHandoffStrip } from "@/components/agent-console/agent-handoff-strip";
 import { requireAuth } from "@/lib/auth";
+import { AgentFrame } from "../agent-frame";
 
 export const dynamic = "force-dynamic";
 
@@ -30,6 +31,7 @@ export default async function DarwinPage() {
           Turns raw extracted fee rows into verified categories, amounts, and review-ready exceptions.
         </p>
       </header>
+      <AgentFrame agent="darwin" />
       <AgentHandoffStrip
         steps={[
           {

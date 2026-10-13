@@ -37,6 +37,7 @@ import { AtlasStateLaneDispatchPanel } from "../../atlas-state-lane-dispatch";
 import { AtlasTickControl } from "../../atlas-tick-control";
 import { AtlasWorkflowLauncher } from "../../atlas-workflow-launcher";
 import { CategoryGuardRepairControl } from "../../category-guard-repair-control";
+import { AgentFrame } from "../../agent-frame";
 
 function number(value: number): string {
   return value.toLocaleString("en-US");
@@ -404,6 +405,7 @@ export default async function AtlasCommandPage() {
           />
         </div>
       </header>
+      <AgentFrame agent="atlas" />
 
       {!execution.enabled && <ExecutionBackendBanner status={execution} />}
 
