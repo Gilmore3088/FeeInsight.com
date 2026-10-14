@@ -28,11 +28,11 @@ export const BUTTON_GREEN_ON_DARK = `${BUTTON_BASE} ${BUTTON_SIZE} bg-index-gree
 /** Text input on a light surface. */
 export const INPUT =
   "block min-h-11 w-full rounded-[4px] border border-index-line bg-white px-3 text-[15px] text-index-navy " +
-  "placeholder:text-index-muted focus:border-index-navy focus:outline-none focus-visible:outline-2";
-/** Text input on the navy band. */
+  "placeholder:text-index-muted focus:border-index-navy";
+/** Text input on the navy band; the page's green focus ring shows on top of the border. */
 export const INPUT_ON_DARK =
   "block min-h-11 w-full rounded-[4px] border border-white/30 bg-index-navy-soft px-3 text-[15px] text-white " +
-  "placeholder:text-index-muted-dark focus:border-index-green-bright focus:outline-none";
+  "placeholder:text-index-muted-dark focus:border-index-green-bright";
 
 export const LABEL = "block text-[14px] font-medium text-index-navy";
 export const LABEL_ON_DARK = "block text-[14px] font-medium text-white";
