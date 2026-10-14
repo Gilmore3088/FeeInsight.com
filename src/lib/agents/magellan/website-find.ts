@@ -6,6 +6,7 @@ import { recordAttempt } from "@/lib/agents/learning/attempts";
 import { classifyFetchFailure, type AttemptOutcome } from "@/lib/agents/learning/outcomes";
 import { normalizeStateCode } from "@/lib/agents/state-lane-memory";
 import { PAID_PASS_MODELS, paidModelCall, paidResponseJson, type PaidMessageCreator } from "@/lib/agents/paid-pass";
+import { loadGroupGaps, pickFromWorkLists, WORK_LIST_POOL, workListDetail, type GroupGaps, type WorkListPlacement } from "@/lib/agents/state-expert/work-list";
 
 import { FOUND_COOLDOWN_DAYS, MISS_COOLDOWN_DAYS } from "./cooldowns";
 import { fetchWithTimeout } from "./find-validate";
@@ -60,6 +61,11 @@ export interface WebsiteFindRow {
   state_code: string | null;
   charter_type: string | null;
   cert_number: string | number | null;
+  /** For the state experts' work lists (#1029). */
+  asset_size?: number | string | null;
+  requested?: boolean | null;
+  paying?: boolean | null;
+  work_list?: WorkListPlacement;
 }
 
 interface WebsiteAnswer {
@@ -165,9 +171,15 @@ export function websiteFindPrompt(row: WebsiteFindRow): string {
   ].join("\n");
 }
 
-async function selectRows(db: SqlTag, stateCode: string | null, limit: number): Promise<WebsiteFindRow[]> {
-  return db<WebsiteFindRow[]>`
-    SELECT inst.id, inst.institution_name, inst.city, inst.state_code, inst.charter_type, inst.cert_number
+/** Due institutions, ordered by the state experts' work lists (#1029); `limit` applies after. */
+async function selectRows(db: SqlTag, stateCode: string | null, limit: number, gaps: GroupGaps): Promise<WebsiteFindRow[]> {
+  const pool = await db<WebsiteFindRow[]>`
+    SELECT inst.id, inst.institution_name, inst.city, inst.state_code, inst.charter_type, inst.cert_number, inst.asset_size,
+           EXISTS (SELECT 1 FROM leads lead WHERE lead.quote_institution_id = inst.id) AS requested,
+           EXISTS (
+             SELECT 1 FROM institution_workspace_memberships pro
+              WHERE pro.institution_id = inst.id AND pro.membership_status = 'active'
+           ) AS paying
       FROM institution_sources inst
       LEFT JOIN institution_source_profiles profile ON profile.institution_id = inst.id
      WHERE COALESCE(inst.status, 'active') = 'active'
@@ -185,8 +197,9 @@ async function selectRows(db: SqlTag, stateCode: string | null, limit: number): 
             AND pa.outcome <> ALL(${TRANSIENT_OUTCOMES})
        )
      ORDER BY inst.asset_size DESC NULLS LAST, inst.id ASC
-     LIMIT ${limit}
+     LIMIT ${WORK_LIST_POOL}
   `;
+  return pickFromWorkLists(Array.isArray(pool) ? pool : [], gaps, limit);
 }
 
 /** Another active institution already uses this host as its website. */
@@ -223,16 +236,19 @@ export async function runWebsiteFind(options: {
   db?: SqlTag;
   create?: PaidMessageCreator;
   fetchImpl?: Fetcher;
+  /** Coverage gaps for the work lists; read here when left out. */
+  gaps?: GroupGaps;
 }): Promise<WebsiteFindResult> {
   const db = options.db ?? sql;
   const result: WebsiteFindResult = {
     selected: 0, processed: 0, saved: 0, needsHuman: 0, costMicrousd: 0, budgetStopped: false, budgetReason: null, results: [],
   };
   const limit = Math.max(1, Math.min(Math.floor(Number(options.limit ?? WEBSITE_FIND_PER_RUN)) || WEBSITE_FIND_PER_RUN, WEBSITE_FIND_PER_RUN));
-  const rows = await selectRows(db, normalizeStateCode(options.stateCode ?? undefined), limit);
+  const gaps = options.gaps ?? (await loadGroupGaps(db));
+  const rows = await selectRows(db, normalizeStateCode(options.stateCode ?? undefined), limit, gaps);
   result.selected = rows.length;
   if (options.dryRun) {
-    result.results = rows.map((row) => ({ institution_id: Number(row.id), institution_name: row.institution_name, would_search_website: true }));
+    result.results = rows.map((row) => ({ institution_id: Number(row.id), institution_name: row.institution_name, would_search_website: true, ...workListDetail(row.work_list) }));
     return result;
   }
 
@@ -267,7 +283,7 @@ export async function runWebsiteFind(options: {
         stepId: options.stepId ?? null,
         detail: { pass: 3, saved_website: null, candidate_url: null, needs_human: true, reason },
       });
-      result.results.push({ institution_id: institutionId, outcome: "rejected", website: null, candidate_url: null, cost_microusd: 0, reason, by: "website_search" });
+      result.results.push({ institution_id: institutionId, outcome: "rejected", website: null, candidate_url: null, cost_microusd: 0, reason, by: "website_search", ...workListDetail(row.work_list) });
       continue;
     }
 
@@ -380,7 +396,7 @@ export async function runWebsiteFind(options: {
         reason,
       },
     });
-    result.results.push({ institution_id: institutionId, outcome, website: saved, candidate_url: candidate, cost_microusd: costMicrousd, reason, by: "website_search" });
+    result.results.push({ institution_id: institutionId, outcome, website: saved, candidate_url: candidate, cost_microusd: costMicrousd, reason, by: "website_search", ...workListDetail(row.work_list) });
   }
   return result;
 }
