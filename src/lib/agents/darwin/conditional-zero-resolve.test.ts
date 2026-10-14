@@ -8,6 +8,8 @@ import {
 } from "./conditional-zero-resolve";
 
 const SCHEDULE = "https://bank.example/documents/Fee_Schedule_2025.pdf";
+/** The verdict when the source check traces the row's own excerpt in the newest text. */
+const verdictOn = (row: Parameters<typeof conditionalZeroVerdict>[0] & { conditions: string }) => conditionalZeroVerdict(row, row.conditions.split('excerpt="')[1].replace(/"$/, ""));
 const CHECKING = "https://bank.example/personal/checking";
 
 function held(id: number, key: string, name: string, line: string, url = SCHEDULE, twin = false) {
@@ -32,7 +34,7 @@ function held(id: number, key: string, name: string, line: string, url = SCHEDUL
 // Held rows on production, Oct 13 (#1115).
 describe("conditionalZeroVerdict", () => {
   it("(a) calls a $0 beside a priced verified fee in its category a duplicate", () => {
-    expect(conditionalZeroVerdict(held(1, "monthly_maintenance", "Monthly Service Fee", "Monthly Service Fee | $0 | $5 | $10", CHECKING, true)).decision).toBe("duplicate");
+    expect(verdictOn(held(1, "monthly_maintenance", "Monthly Service Fee", "Monthly Service Fee | $0 | $5 | $10", CHECKING, true)).decision).toBe("duplicate");
   });
 
   it.each([
@@ -41,15 +43,15 @@ describe("conditionalZeroVerdict", () => {
     ["notary_fee", "Notary Service", "if mailed | • Notary Service ..................................FREE"],
     ["notary_fee", "Notary for customer", "Notary for customer FREE"],
   ])("(c) verifies %s '%s' free on the bank's schedule", (key, name, line) => {
-    expect(conditionalZeroVerdict(held(2, key, name, line))).toEqual({ decision: "verified", reason: "conditional_zero_free_on_schedule" });
+    expect(verdictOn(held(2, key, name, line))).toEqual({ decision: "verified", reason: "conditional_zero_free_on_schedule" });
   });
 
   it("(b) rejects a product page's $0, a sentence, another dollar figure and an account feature", () => {
-    expect(conditionalZeroVerdict(held(3, "cashiers_check", "Official Checks", "No fee for Official Checks", CHECKING)).reason).toBe("conditional_zero_product_page");
-    expect(conditionalZeroVerdict(held(4, "document_reproduction", "Statement copies (per statement)", "Statement copies (per statement) - Online copies are FREE")).reason).toBe("conditional_zero_reread");
-    expect(conditionalZeroVerdict(held(5, "collection_item", "Foreign Check Deposit (below )", "Foreign Check Deposit (below $10,000) .................................FREE")).reason).toBe("conditional_zero_reread");
-    expect(conditionalZeroVerdict(held(6, "gift_card_purchase", "Gift Cards", "Gift Cards | $ 0.00 | value only; for amounts from $10.00 to $1,000.00 | -")).reason).toBe("conditional_zero_reread");
-    expect(conditionalZeroVerdict(held(7, "overdraft", "Courtesy Pay", "BluRIPPLE Checking Overdraft Paid by Courtesy Pay FREE")).reason).toBe("conditional_zero_reread");
+    expect(verdictOn(held(3, "cashiers_check", "Official Checks", "No fee for Official Checks", CHECKING)).reason).toBe("conditional_zero_product_page");
+    expect(verdictOn(held(4, "document_reproduction", "Statement copies (per statement)", "Statement copies (per statement) - Online copies are FREE")).reason).toBe("conditional_zero_reread");
+    expect(verdictOn(held(5, "collection_item", "Foreign Check Deposit (below )", "Foreign Check Deposit (below $10,000) .................................FREE")).reason).toBe("conditional_zero_reread");
+    expect(verdictOn(held(6, "gift_card_purchase", "Gift Cards", "Gift Cards | $ 0.00 | value only; for amounts from $10.00 to $1,000.00 | -")).reason).toBe("conditional_zero_reread");
+    expect(verdictOn(held(7, "overdraft", "Courtesy Pay", "BluRIPPLE Checking Overdraft Paid by Courtesy Pay FREE")).reason).toBe("conditional_zero_reread");
   });
 
   it("judges the traced schedule line, so a free-with-a-condition line is never verified at $0", () => {
@@ -58,8 +60,12 @@ describe("conditionalZeroVerdict", () => {
     expect(conditionalZeroVerdict(row, "Bill Pay: | Free").reason).toBe("conditional_zero_free_on_schedule");
   });
 
+  it("never verifies a $0 the schedule's newest text no longer states", () => {
+    expect(conditionalZeroVerdict(held(11, "bill_pay", "Bill Pay", "Bill Pay: | Free"), null).reason).toBe("conditional_zero_reread");
+  });
+
   it("never treats a row with no document address as the bank's schedule", () => {
-    expect(conditionalZeroVerdict({ ...held(10, "bill_pay", "Bill Pay", "Bill Pay: | Free"), document_url: null }).reason).toBe("conditional_zero_product_page");
+    expect(verdictOn({ ...held(10, "bill_pay", "Bill Pay", "Bill Pay: | Free"), document_url: null }).reason).toBe("conditional_zero_product_page");
   });
 
   it("reads a free word only as the line's own price", () => {
@@ -81,6 +87,9 @@ describe("runDarwinConditionalZeroResolve", () => {
     const db = vi.fn((strings: TemplateStringsArray) => {
       const text = strings.join("?");
       if (text.includes("learning_schema_ready")) return Promise.resolve([{ learning_schema_ready: true }]);
+      if (text.includes("FROM agent_source_texts")) {
+        return Promise.resolve([{ source_document_id: 9, normalized_text: "Fee Schedule\nBill Pay: | Free\nNo fee for Official Checks\nMonthly Service Fee | $0 | $5 | $10" }]);
+      }
       if (text.includes("INSERT INTO verified_fee_observations")) return Promise.resolve([{ fee_verified_id: 77 }]);
       return Promise.resolve([]);
     }) as unknown as Parameters<typeof runDarwinConditionalZeroResolve>[0]["db"] & ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };

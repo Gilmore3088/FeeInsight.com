@@ -33,7 +33,7 @@ type SqlTag = typeof sql;
  *   change (a newer read takes over the row, #1147): a $0 a product page states, or a line the
  *   rules misread ("Gift Cards | $ 0.00 | value only", "Online copies are FREE").
  * The line judged is the one the shared source check traces in the document's newest text, as
- * Darwin's hold used (`sourceLineFor`), else Knox's excerpt; it must not read as conditional
+ * Darwin's hold used (`sourceLineFor`); with no traced line (c) never holds. It must not read as conditional
  * (`conditionalZero`) either, so a "FREE with e-Statements ... $6.95 per Month" line is never verified
  * at $0 (review of b7b8eb90). Each verdict is a `verify.rules` attempt, so the row leaves the held
  * pile and is judged once.
@@ -68,14 +68,19 @@ export function freeOnItsOwnLine(line: string | null | undefined): boolean {
   return FREE_PRICE.test(text) && !FREE_IN_A_SENTENCE.test(text);
 }
 
-/** Rules a, c and b in that order; `line` is the traced schedule line, else Knox's excerpt. Pure. */
+/**
+ * Rules a, c and b in that order. `line` is the line the source check traces in the document's
+ * newest text, or null when it traces none: then (c) cannot hold, since the schedule's current
+ * text does not state the fee (review of 50574285). Pure.
+ */
 export function conditionalZeroVerdict(
   row: Pick<HeldZeroRow, "canonical_fee_key" | "fee_name" | "conditions" | "document_url" | "priced_twin">,
-  line: string | null = excerptOf(row.conditions),
+  line: string | null,
 ): ConditionalZeroVerdict {
   if (row.priced_twin) return { decision: "duplicate", reason: "conditional_zero_priced_twin" };
   if (!row.document_url || isProductPageUrl(row.document_url)) return { decision: "rejected", reason: "conditional_zero_product_page" };
-  const free = freeOnItsOwnLine(line)
+  const free = line != null
+    && freeOnItsOwnLine(line)
     && !conditionalZero(0, line, row.fee_name)
     && !ACCOUNT_FEATURE_KEYS.has(row.canonical_fee_key)
     && checkFeeCategory(row.canonical_fee_key, row.fee_name).ok;
@@ -151,7 +156,7 @@ export async function runDarwinConditionalZeroResolve(options: {
   }
   result.selected = rows.length;
   for (const row of rows) {
-    const line = sourceLineFor(row, texts, row.canonical_fee_key) ?? excerptOf(row.conditions);
+    const line = sourceLineFor(row, texts, row.canonical_fee_key);
     const verdict = conditionalZeroVerdict(row, line);
     result.verdicts[verdict.reason] = (result.verdicts[verdict.reason] ?? 0) + 1;
     if (dryRun) continue;
@@ -188,7 +193,7 @@ export async function runDarwinConditionalZeroResolve(options: {
             decision: verdict.decision === "verified" && feeVerifiedId == null ? "duplicate" : verdict.decision,
             reason_code: verdict.reason,
             reason: `#1115: ${verdict.reason}`,
-            source_line: line?.slice(0, 300),
+            source_line: (line ?? excerptOf(row.conditions))?.slice(0, 300),
           },
         });
         return feeVerifiedId;
