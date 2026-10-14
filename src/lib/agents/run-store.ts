@@ -52,6 +52,7 @@ import { recheckHeldRates, recheckHeldRows, recheckPromotedRows, recheckSupersed
 import { refreshFeeIndexCache } from "@/lib/data-store/fee-index";
 import { runMagellanDiscovery } from "@/lib/agents/magellan/discovery";
 import { runMagellanFetch } from "@/lib/agents/magellan/fetch";
+import { runAddressVariantFetch, type RunAddressVariantFetchResult } from "@/lib/agents/magellan/address-variant-fetch";
 import { reviewLinkBatches } from "@/lib/agents/magellan/batch-review";
 import { recordLinkOutcomes } from "@/lib/agents/magellan/outcomes";
 import { retireProductPageConflicts } from "@/lib/agents/hamilton/product-page-conflict";
@@ -460,10 +461,35 @@ async function executeAgenticStep(
         stateCode,
         newLinksOnly: params.new_links_only === true,
       });
+      // Fee links the plain fetch keeps failing to reach, tried at the bank's other
+      // spellings of the address (#1051). Free; a failure here never fails the step.
+      let addressVariants: RunAddressVariantFetchResult | null = null;
+      if (run.runKind !== "dry_run") {
+        try {
+          addressVariants = await runAddressVariantFetch({
+            db: sql,
+            fetchImpl: fetch,
+            runId: run.id,
+            stepId: step.id,
+            institutionId: numericRunParam(params, ["institution_id"]) ?? null,
+          });
+        } catch (error) {
+          console.error("Address variant fetch failed:", error);
+        }
+      }
       return {
         status: "completed",
         summary: `Magellan fetched ${fetched.succeeded.toLocaleString()} new source documents from ${fetched.processed.toLocaleString()} selected institutions (${fetched.unchanged.toLocaleString()} unchanged, ${fetched.failed.toLocaleString()} failed, ${fetched.skipped.toLocaleString()} skipped).`,
         detail: {
+          address_variants: addressVariants
+            ? {
+                selected: addressVariants.selected,
+                tried: addressVariants.tried,
+                recovered: addressVariants.recovered,
+                failed: addressVariants.failed,
+                results: addressVariants.results.slice(0, 10),
+              }
+            : null,
           selected_institutions: fetched.selected,
           processed_institutions: fetched.processed,
           fetched_documents: fetched.succeeded,
