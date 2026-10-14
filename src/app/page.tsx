@@ -3,29 +3,24 @@ export const dynamic = "force-dynamic";
 
 import type { Metadata } from "next";
 import { getPublicSnapshot } from "@/lib/public-stats";
-import type { InstitutionStateDirectorySummary } from "@/lib/data-store/search";
 import { CONTACT_EMAIL, LEGAL_ENTITY_NAME, PRODUCT_NAME, SITE_NAME, SITE_URL } from "@/lib/constants";
-import { LandingHero } from "./landing-hero";
-import { LandingPriceStrip } from "./landing-price-strip";
-import { LandingTrustStats } from "./landing-trust-stats";
-import { LandingBankOffer } from "./landing-bank-offer";
-import { sampleReportAvailable } from "@/lib/custom-report/sample-report";
+import { HomeHeader } from "@/components/home/home-header";
+import { HomeHero } from "@/components/home/home-hero";
+import { HomeStats } from "@/components/home/home-stats";
+import { HomeReport } from "@/components/home/home-report";
+import { HomeClosing } from "@/components/home/home-closing";
+import { HomeFooter } from "@/components/home/home-footer";
 
-import { ConsumerNav } from "@/components/consumer-nav";
-import { CustomerFooter } from "@/components/customer-footer";
-import { SearchModal } from "@/components/public/search-modal";
-import { getInstitutionStateDirectorySummariesCached } from "@/lib/data-store/public-cached-reads";
-
-const HOME_TITLE = `${SITE_NAME} — Bank and credit union fees, traced to the source`;
+const HOME_TITLE = `${SITE_NAME} — See where your fees sit against your competitors`;
 
 export const metadata: Metadata = {
   title: { absolute: HOME_TITLE },
   description:
-    "Look up overdraft, ATM, wire and monthly fees at U.S. banks and credit unions, each traced to its published schedule. Peer benchmarks for banking teams.",
+    "Published overdraft, ATM, wire and monthly fees for U.S. banks and credit unions, each read from the institution's own schedule and compared with named peers in your market.",
   openGraph: {
     title: HOME_TITLE,
     description:
-      "Look up overdraft, ATM, wire and monthly fees for U.S. banks and credit unions — every figure traced to the published schedule. Free lookup; peer benchmarking for banking teams.",
+      "Published fees for U.S. banks and credit unions, each read from the institution's own schedule and compared with named peers in your market.",
   },
 };
 
@@ -58,18 +53,17 @@ const WEBSITE_JSON_LD = {
   },
 };
 
+/**
+ * Homepage v2 in the Index look: header, hero with the walkthrough video, four live
+ * numbers, the sample report, the walkthrough form, footer. One headline and one
+ * sentence per section. The counts come from the shared public snapshot, so they match
+ * the fee index and research hub to the number.
+ */
 export default async function LandingPage() {
-  // Counts and medians come from one shared snapshot, so they match the fee index,
-  // research hub and directory to the number.
-  const [{ summary, categories }, stateCoverage, sampleLive] = await Promise.all([
-    getPublicSnapshot(),
-    // The coverage map is optional: a failed read hides it, not the page.
-    getInstitutionStateDirectorySummariesCached({}).catch((): InstitutionStateDirectorySummary[] => []),
-    sampleReportAvailable(),
-  ]);
+  const { summary } = await getPublicSnapshot();
 
   return (
-    <div className="min-h-screen bg-[#FAF7F2] consumer-brand">
+    <div className="index-look min-h-screen bg-white text-index-navy">
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(ORGANIZATION_JSON_LD) }}
@@ -78,15 +72,14 @@ export default async function LandingPage() {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(WEBSITE_JSON_LD) }}
       />
-      <ConsumerNav />
+      <HomeHeader />
       <main id="main-content">
-        <LandingHero institutionsLabel={summary.institutionsLabel} sampleLive={sampleLive} />
-        <LandingPriceStrip categories={categories} refreshedOn={summary.refreshedOn} />
-        <LandingBankOffer sampleLive={sampleLive} />
-        <LandingTrustStats summary={summary} states={stateCoverage} />
+        <HomeHero />
+        <HomeStats summary={summary} />
+        <HomeReport />
+        <HomeClosing />
       </main>
-      <CustomerFooter />
-      <SearchModal />
+      <HomeFooter />
     </div>
   );
 }

@@ -100,6 +100,19 @@
   --color-terra-text: #A93D25;   /* terracotta as text under 24px (5.8:1 on parchment) */
   --color-terra-dark: #A93D25;   /* hover state */
   --color-terra-soft: #FDF0ED;   /* tinted bg */
+
+  /* ─── Index look (homepage v2, Oct 2026) ───
+     Navy for words and primary buttons, white and cloud for surfaces, one signal green.
+     Contrast on white / cloud: navy 17.5 / 16.0, green 6.5 / 6.0, muted 7.4 / 6.8 (WCAG AA). */
+  --color-index-navy: #0e1a2b;        /* text, primary buttons, closing band */
+  --color-index-navy-soft: #16263c;   /* card surface on the navy band (white 15.3:1) */
+  --color-index-cloud: #f3f5f8;       /* alternate section background */
+  --color-index-line: #d9dee6;        /* borders and rules, never text */
+  --color-index-muted: #4a5668;       /* secondary text (7.4:1 on white) */
+  --color-index-muted-dark: #c5cdd8;  /* secondary text on navy (10.9:1) */
+  --color-index-green: #0b6b4f;       /* the one accent on light surfaces (6.5:1 on white) */
+  --color-index-green-dark: #085640;  /* accent hover on light surfaces */
+  --color-index-green-bright: #3ccf98;/* the accent on navy (8.8:1) */
 }
 
 :root {
@@ -326,6 +339,16 @@
   outline: 2px solid #C44B2E; /* terracotta, brand focus ring */
   outline-offset: 2px;
   border-radius: 3px;
+}
+
+/* The Index look (homepage v2) keeps the same 2px ring in its own colours: navy on light
+   surfaces, signal green on the navy band. Both pass 3:1 against their surface. */
+.index-look *:focus-visible {
+  outline-color: var(--color-index-navy);
+  border-radius: 4px;
+}
+.index-look .index-dark *:focus-visible {
+  outline-color: var(--color-index-green-bright);
 }
 
 /* The search box's own row is its focus mark; the ring drew a red box inside the dialog. */
