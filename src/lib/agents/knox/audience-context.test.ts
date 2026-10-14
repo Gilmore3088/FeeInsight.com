@@ -289,4 +289,11 @@ describe("Knox audience suggestion from context (#1059)", () => {
     const titled = ["BUSINESS FEE SCHEDULE", "Personal Checking Accounts", "Effective 2026", "Stop Payment $30.00"].join("\n");
     expect(suggest(null, titled, "Stop Payment", 30)).toMatchObject({ audience: "consumer", source: "section_heading" });
   });
+
+  it("reads \"Business/Non-Personal Accounts\" as a business section (#1059 holdout 4)", () => {
+    const lines = ["For Consumer/Personal Accounts", "Stop payment (Per order) $30.00", "For Business/Non-Personal Accounts", "Stop payment (Per order) $30.00"];
+    expect(hasBusinessFees(lines)).toBe(true);
+    // A schedule that also prices business items: the personal heading alone no longer decides.
+    expect(suggest(null, lines.join("\n"), "Stop payment (Per order)", 30)).toBeNull();
+  });
 });

@@ -35,9 +35,10 @@ const TITLE_CHARS = 300;
 
 /**
  * Words that name a product or a time, not who the fee is for: a corporate (official) check or
- * draft, a personal check, a business day, "close of business", a vendor's "Business Systems".
+ * draft, a personal check, a business day, "close of business", a vendor's "Business Systems",
+ * "non-personal" (with the slash before it, so "Business/Non-Personal Accounts" stays a heading).
  */
-const NOT_AN_AUDIENCE = /\bcorporate\s+(?:checks?|drafts?|bonds?|securities|and municipal)\b|\bpersonal\s+(?:checks?|identification|information)\b|\bbusiness\s+(?:days?|hours?|systems)\b|\b(?:close of|regular|normal|legitimate|conduct(?:ing)?|doing)\s+business\b|\bcredit union business only\b|\bnon-?(?:commercial|business|personal|consumer)\b|\b(?:commercial|business|consumer|personal)(?:\s+(?:state|national|federal|savings|community|county|city|first))*\s+(?:bank|savings bank|credit union|trust company|savings and loan)\b/gi;
+const NOT_AN_AUDIENCE = /\bcorporate\s+(?:checks?|drafts?|bonds?|securities|and municipal)\b|\bpersonal\s+(?:checks?|identification|information)\b|\bbusiness\s+(?:days?|hours?|systems)\b|\b(?:close of|regular|normal|legitimate|conduct(?:ing)?|doing)\s+business\b|\bcredit union business only\b|(?:\/\s*)?\bnon-?(?:commercial|business|personal|consumer)\b|\b(?:commercial|business|consumer|personal)(?:\s+(?:state|national|federal|savings|community|county|city|first))*\s+(?:bank|savings bank|credit union|trust company|savings and loan)\b/gi;
 const neutral = (text: string) => text.replace(NOT_AN_AUDIENCE, " ");
 
 function audienceOf(raw: string): ContextAudience | null {
