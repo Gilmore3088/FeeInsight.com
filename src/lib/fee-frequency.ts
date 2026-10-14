@@ -326,10 +326,16 @@ export function frequencyFamily(frequency: string | null | undefined): string | 
 export const PER_EVENT_PERIOD_KEYS: ReadonlySet<string> = new Set(["nsf", "overdraft"]);
 const STATED_PERIODS: ReadonlySet<string> = new Set(["monthly", "annual", "quarterly"]);
 /**
- * The stored periods the check acts on. James approved monthly (#1026, Oct 13); 15 live NSF and
- * overdraft fees stored as annual wait for his word.
+ * The stored periods the check acts on, by category. James approved monthly (#1026, Oct 13), and
+ * annual and daily for NSF (#1301, Oct 14: 10 live NSF fees stored as annual, 20 as daily). An
+ * overdraft fee stored as annual still waits for his word.
  */
-const CHECKED_PERIODS: ReadonlySet<string> = new Set(["monthly"]);
+const CHECKED_PERIODS: Readonly<Record<string, ReadonlySet<string>>> = {
+  nsf: new Set(["monthly", "annual", "daily"]),
+  overdraft: new Set(["monthly"]),
+};
+/** v12: a daily count or dollar cap on a per-item fee ("Max 4 per day", "max $180.00 daily", "not to exceed 5 fees charged per day"). */
+const DAILY_CAP = /\b(?:max(?:imum)?(?![a-z])|limit\b|up to\b|not to exceed\b)/i;
 /** An overdraft program sold by the month ("Enhanced Overdraft Privilege Fee (per month)", "Bounce Protection / $9 Monthly Fee"). */
 const OVERDRAFT_PROGRAM = /\b(relief|privilege|protection|courtesy pay|coverage|boost|advanced overdraft)\b/i;
 /** An account's own charge after the price ("/ $25 Monthly Maintenance Fee"), not an overdraft or NSF fee. */
@@ -368,6 +374,8 @@ export type PerEventPeriodCheck =
 
 /**
  * v11 (#1196): an NSF or overdraft fee stored as monthly, checked against its own schedule line.
+ * v12 (#1301): an NSF fee stored as annual is checked the same way, and one stored as daily keeps
+ * no period when its line states a daily cap, else is held.
  * - An overdraft program the bank prices by the period keeps it when its own row states that
  *   period and names the program ("Enhanced Overdraft Privilege Fee (per month) | $5.00").
  * - When the words right after its price state a period otherwise, the line cannot say what the fee
@@ -388,8 +396,16 @@ export function perEventPeriodCheck(
   feeName: string | null | undefined,
 ): PerEventPeriodCheck | null {
   if (canonicalKey == null || !PER_EVENT_PERIOD_KEYS.has(canonicalKey)) return null;
-  if (frequency == null || !CHECKED_PERIODS.has(frequency)) return null;
+  if (frequency == null || !CHECKED_PERIODS[canonicalKey]?.has(frequency)) return null;
   if (!sourceLine || amount == null) return null;
+  // v12 (#1301): an NSF fee stored as daily. A line that states a daily cap prices each item, so
+  // the fee takes its own row's per-item reading, else none; one that names no cap ("NSF/UCF Fee
+  // $30 Per Day", "Daily NSF Fee ... $5.00") may really be charged by the day, so a person looks.
+  if (frequency === "daily") {
+    if (!DAILY_CAP.test(sourceLine)) return { action: "hold", reason: "an NSF fee whose own line prices it daily with no daily cap" };
+    const own = frequencyFromLine(sourceLine, amount);
+    return { action: "correct", frequency: own && frequencyFamily(own) === "per_item" ? own : null };
+  }
   const after = periodAfterPrice(sourceLine, amount);
   const accountCharge = ACCOUNT_CHARGE.test(after.words);
   const name = feeName ?? "";
