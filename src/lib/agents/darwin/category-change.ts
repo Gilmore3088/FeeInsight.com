@@ -19,9 +19,10 @@ type SqlTag = typeof sql;
  *   `check_cashing`) looks like a category change and is not one (86 such rows, Oct 14);
  * - it is waiting for Darwin (`needs_darwin_verification`), is not verified, and has at least one
  *   `verify.rules` decision at the current version;
- * - no decision was made under the category Knox gives it today, either as Knox's own category
- *   (`knox_category`, recorded on every decision from this change) or as the category Darwin judged
- *   (`canonical_fee_key`, which is Knox's category after Darwin's own re-file).
+ * - no decision was made under the category Knox gives it today, and each decision was made under
+ *   an earlier Knox category: `knox_category` on the decision (recorded from this change on), or,
+ *   for older decisions, proof from the row's flags (`categoryChangedSinceDecision`). A decision
+ *   judged under an older Darwin re-file of today's category is not a Knox change (raw 132922).
  *
  * Every row that qualifies is judged by the same free checks as any other row, the shared source
  * check (`checkFeeAgainstSource`) among them; its new decision records today's category, so it is
@@ -136,23 +137,48 @@ export function hasCategoryChangeMarker(outlierFlags: unknown): boolean {
 }
 
 /**
- * True when no earlier decision was made under the category Knox gives the row today. A decision
- * counts as made under it when it recorded that category as Knox's, or judged the row under it or
- * under Darwin's own re-file of it (`refileCategory`), so a row Darwin re-filed is never re-judged
- * for its own re-file. With no earlier decision there is nothing to judge again.
+ * What the row's flags prove about Knox's category before today's. `knox_refiled_from:<old>` and
+ * `knox_stale_hint_repaired` are written when Knox's category changes on a row Darwin judged
+ * before the change (a retired row is never judged; a stale flag was the first one, the one
+ * Darwin read), so every decision recorded before `knox_category` existed was made under an
+ * earlier Knox category. On a plain take-over the old flags may be gone, so only a decision
+ * whose judged category is another `canonical_hint:` flag still on the row is proof.
+ */
+function earlierKnoxCategories(outlierFlags: unknown, categoryNow: string): { all: boolean; known: Set<string> } {
+  const flags = flagsOf(outlierFlags);
+  const known = new Set<string>();
+  for (const flag of flags) {
+    if (flag.startsWith(KNOX_REFILED_FROM_PREFIX)) known.add(flag.slice(KNOX_REFILED_FROM_PREFIX.length).trim());
+    if (flag.startsWith("canonical_hint:")) known.add(flag.slice("canonical_hint:".length).trim());
+  }
+  known.delete(categoryNow);
+  const all = flags.some((flag) => flag === "knox_stale_hint_repaired" || flag.startsWith(KNOX_REFILED_FROM_PREFIX));
+  return { all, known };
+}
+
+/**
+ * True when every earlier decision was made under an earlier Knox category and none under the one
+ * Knox gives the row today. A decision that recorded `knox_category` says which. One recorded
+ * before that needs proof from the row's flags (`earlierKnoxCategories`): without it, the decision
+ * may be Darwin's own re-file of today's category under an older guard (raw 132922, "Collection
+ * Items (plus any bank fees)" $20: Knox `collection_item`, judged `check_cashing`, while today's
+ * `refileCategory` keeps `collection_item`), and the row is left alone. A decision judged under
+ * today's category or today's re-file of it always ends it. No earlier decision, nothing to redo.
  */
 export function categoryChangedSinceDecision(
   categoryNow: string | null,
   feeName: string,
   decisions: readonly PriorDecision[],
+  outlierFlags: unknown = [],
 ): boolean {
   if (!categoryNow || decisions.length === 0) return false;
   const judgedNow = new Set([categoryNow, refileCategory(categoryNow, feeName)].filter(Boolean));
-  return decisions.every(
-    (decision) =>
-      decision.knox_category !== categoryNow &&
-      !(decision.canonical_fee_key != null && judgedNow.has(decision.canonical_fee_key)),
-  );
+  const earlier = earlierKnoxCategories(outlierFlags, categoryNow);
+  return decisions.every((decision) => {
+    if (decision.canonical_fee_key != null && judgedNow.has(decision.canonical_fee_key)) return false;
+    if (decision.knox_category) return decision.knox_category !== categoryNow;
+    return earlier.all || (decision.canonical_fee_key != null && earlier.known.has(decision.canonical_fee_key));
+  });
 }
 
 /** The candidates among selected rows, given the row's category today (Darwin's `canonicalHintFrom`). */
@@ -165,7 +191,7 @@ export function categoryChangeCandidates(
     if (!hasCategoryChangeMarker(row.outlier_flags)) continue;
     const decisions = parseAttempts(row.attempts);
     const category = categoryOf(row);
-    if (!category || !categoryChangedSinceDecision(category, row.fee_name, decisions)) continue;
+    if (!category || !categoryChangedSinceDecision(category, row.fee_name, decisions, row.outlier_flags)) continue;
     const refiledFrom = flagsOf(row.outlier_flags)
       .find((flag) => flag.startsWith(KNOX_REFILED_FROM_PREFIX))
       ?.slice(KNOX_REFILED_FROM_PREFIX.length) ?? null;

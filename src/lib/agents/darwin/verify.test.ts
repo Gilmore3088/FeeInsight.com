@@ -1,11 +1,21 @@
 import { CATEGORY_AMOUNT_ENVELOPES } from "./envelopes";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { conditionalZero, DARWIN_BATCH_KEY_VERSION, DARWIN_CATEGORY_HOLDS, DARWIN_SOURCE_CHECK_VERSION, DARWIN_VERIFY_STRATEGY, FREQUENCY_SETTLED_FLAG, pendingCategoryLesson, postSourceCheck, runDarwinVerify, statedInOwnSource, verificationReasonCode, type RawFeeRow } from "./verify";
+import { canonicalHintFrom, conditionalZero, DARWIN_BATCH_KEY_VERSION, DARWIN_CATEGORY_HOLDS, DARWIN_SOURCE_CHECK_VERSION, DARWIN_VERIFY_STRATEGY, FREQUENCY_SETTLED_FLAG, pendingCategoryLesson, postSourceCheck, runDarwinVerify, statedInOwnSource, verificationReasonCode, type RawFeeRow } from "./verify";
 import { CATEGORY_GUARD_VERSION, refileCategory } from "@/lib/fee-category-guard";
 import { DARWIN_PEER_STRATEGY, DARWIN_SECOND_SOURCE_STRATEGY, resetWiderPeerLevelCache, SECOND_SOURCE_FLAG } from "./peer-checks";
 import { learnedEnvelope, resetLearnedEnvelopeCache } from "./learned-envelopes";
 import { DARWIN_CATEGORY_MODEL_STRATEGY, resetCategoryModelCache } from "./category-model";
+import { categoryChangeCandidates, DARWIN_CATEGORY_CHANGE_REJUDGE_LIVE, type CategoryChangeRow, type PriorDecision } from "./category-change";
+
+// The #1295 switch ships off; tests turn it on through this getter.
+const categoryChangeSwitch = vi.hoisted(() => ({ on: false }));
+vi.mock("./category-change", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./category-change")>()),
+  get DARWIN_CATEGORY_CHANGE_REJUDGE_LIVE() {
+    return categoryChangeSwitch.on;
+  },
+}));
 
 type DbMock = ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
 
@@ -774,6 +784,135 @@ describe("Darwin agentic verification", () => {
         expect(result).toMatchObject({ verifiedFees: 1, secondSourceAgreements: 0, secondSourceDisagreements: 1 });
         expect(strategyAttempts(db, DARWIN_SECOND_SOURCE_STRATEGY.strategy)[0]).toEqual(expect.arrayContaining(["evidence_mismatch"]));
       });
+    });
+  });
+});
+
+/**
+ * #1295: a Knox category change is a reason to judge a row again. Rows and source lines are from
+ * production (read-only, Oct 14). Document 7699: raw 126752 was taken over under
+ * `wire_intl_outgoing` with the old `canonical_hint:overdraft` left first, and rejected as
+ * `category_mismatch` on every run from Oct 5 to Oct 14.
+ */
+describe("category change re-judge (#1295)", () => {
+  const DOC_7699 = [
+    "Copy of Corporate Check | $10.00",
+    "Wire Transfer - Domestic | $35.00",
+    "Wire Transfer - International | $45.00",
+    "Overdraft Transfer from Shares | $3.00 per transfer",
+  ].join("\n");
+  const WIRE_CONDITIONS =
+    "Knox deterministic extraction from Rosetta artifact #3981. canonical_hint=wire_intl_outgoing; calibrated_confidence=0.98; excerpt=\"Wire Transfer - International | $45.00\"";
+  const COLLECTION = "Collection Items (plus any bank fees)";
+  const overdraftRejections: PriorDecision[] = [{ canonical_fee_key: "overdraft", reason_code: "category_mismatch" }];
+  const row = (fee_raw_id: number, fee_name: string, outlier_flags: string[], attempts: PriorDecision[]): CategoryChangeRow => ({
+    fee_raw_id, institution_id: 7114, fee_name, amount: "45.00", outlier_flags, conditions: null, attempts,
+  });
+
+  it("ships switched off", () => {
+    expect(DARWIN_CATEGORY_CHANGE_REJUDGE_LIVE).toBe(false);
+  });
+
+  // Today's re-file keeps collection_item, so only the proof rule can leave raw 132922 alone.
+  it("raw 132922's check_cashing decision is not today's re-file of collection_item", () => {
+    expect(refileCategory("collection_item", COLLECTION)).toBe("collection_item");
+  });
+
+  it.each<[string, CategoryChangeRow, boolean]>([
+    ["126752 while the stale overdraft flag is first",
+      row(126752, "Wire Transfer - International", ["canonical_hint:overdraft", "needs_darwin_verification", "canonical_hint:wire_intl_outgoing", "knox_reread_took_over"], overdraftRejections), false],
+    ["126752 after Knox repairs the stale flag",
+      row(126752, "Wire Transfer - International", ["needs_darwin_verification", "canonical_hint:wire_intl_outgoing", "knox_reread_took_over", "knox_stale_hint_repaired"], overdraftRejections), true],
+    ["a take-over whose old flag is still on the row (proof from the flags)",
+      row(126753, "Wire Transfer - International", ["canonical_hint:wire_intl_outgoing", "canonical_hint:overdraft", "knox_reread_took_over"], overdraftRejections), true],
+    ["Oregonians CU \"Incoming Wires $10\" re-filed from nsf",
+      row(9001, "Incoming Wires", ["needs_darwin_verification", "canonical_hint:wire_domestic_incoming", "knox_refiled_from:nsf"], [{ canonical_fee_key: "nsf", reason_code: "category_mismatch" }]), true],
+    ["raw 132922: an older Darwin re-file on a plain take-over",
+      row(132922, COLLECTION, ["canonical_hint:collection_item", "canonical_hint:collection_item", "knox_reread_took_over"], [{ canonical_fee_key: "check_cashing", reason_code: "peer_outlier" }]), false],
+    ["no Knox marker",
+      row(9002, "Incoming Wires", ["needs_darwin_verification", "canonical_hint:wire_domestic_incoming"], [{ canonical_fee_key: "nsf", reason_code: "category_mismatch" }]), false],
+    ["already decided under today's category",
+      row(9003, "Incoming Wires", ["canonical_hint:wire_domestic_incoming", "knox_refiled_from:nsf"], [{ canonical_fee_key: "wire_domestic_incoming", knox_category: "wire_domestic_incoming", reason_code: "peer_outlier" }]), false],
+    ["a recorded knox_category that is today's, judged under a re-file",
+      row(9004, "Incoming Wires", ["canonical_hint:wire_domestic_incoming", "knox_reread_took_over"], [{ canonical_fee_key: "other_fee", knox_category: "wire_domestic_incoming", reason_code: "peer_outlier" }]), false],
+    ["no earlier decision",
+      row(9005, "Incoming Wires", ["canonical_hint:wire_domestic_incoming", "knox_refiled_from:nsf"], []), false],
+  ])("%s", (_label, input, qualifies) => {
+    expect(categoryChangeCandidates([input], canonicalHintFrom).length).toBe(qualifies ? 1 : 0);
+  });
+
+  describe("in runDarwinVerify", () => {
+    const wireRaw = {
+      fee_raw_id: 126752, institution_id: 7114, source_url: "https://cu.example/fees", document_r2_key: null,
+      extraction_confidence: "0.98", fee_name: "Wire Transfer - International", amount: "45.00", frequency: null,
+      fee_audience: "unknown", source_document_id: 7699, state_code: "OR", conditions: WIRE_CONDITIONS,
+      outlier_flags: ["needs_darwin_verification", "canonical_hint:wire_intl_outgoing", "knox_reread_took_over", "knox_stale_hint_repaired"],
+    };
+    // A re-filed price the schedule never states: the shared source check still decides.
+    const unstated = { ...wireRaw, fee_raw_id: 126799, amount: "12.00", conditions: "excerpt=\"Wire Transfer - International | $12.00\"" };
+
+    function rejudgeDb(): DbMock {
+      const db = vi.fn((strings: TemplateStringsArray) => {
+        const text = templateText(strings);
+        if (text.includes("learning_schema_ready")) return Promise.resolve([{ learning_schema_ready: true }]);
+        if (text.includes("superseded_by_id")) return Promise.resolve([{ ready: true }]);
+        if (text.includes("FROM agent_source_texts")) return Promise.resolve([{ source_document_id: 7699, normalized_text: DOC_7699 }]);
+        if (text.includes("INSERT INTO verified_fee_observations")) return Promise.resolve([{ fee_verified_id: 5100 }]);
+        return Promise.resolve([]);
+      }) as DbMock;
+      db.unsafe = vi.fn((query: string, params?: unknown[]) => {
+        if (query.includes("'knox_category'")) {
+          return Promise.resolve([wireRaw, unstated].map((raw) => ({ ...raw, attempts: overdraftRejections })));
+        }
+        const ids = (params ?? []).find(Array.isArray) as number[] | undefined;
+        return Promise.resolve(ids ? [wireRaw, unstated].filter((raw) => ids.includes(raw.fee_raw_id)) : []);
+      });
+      return db;
+    }
+
+    beforeEach(() => {
+      categoryChangeSwitch.on = false;
+    });
+
+    it.each([
+      ["off: counts and judges nothing", false, false, { live: false, candidates: 2, selected: 0 }, 0],
+      ["on: judges both again", true, false, { live: true, candidates: 2, selected: 2 }, 2],
+      ["dry run, switch on: counts and judges nothing", true, true, { live: false, candidates: 2, selected: 0 }, 0],
+    ])("%s", async (_label, on, dryRun, summary, processed) => {
+      categoryChangeSwitch.on = on;
+      const result = await runDarwinVerify({ runId: 9001, dryRun, db: asVerifyDb(rejudgeDb()) });
+      expect(result.categoryChange).toMatchObject(summary);
+      expect(result.processedRawFees).toBe(processed);
+    });
+
+    it("on, the same free checks decide and the decision records Knox's category", async () => {
+      categoryChangeSwitch.on = true;
+      const db = rejudgeDb();
+      const result = await runDarwinVerify({ runId: 9002, db: asVerifyDb(db) });
+
+      const byId = new Map(result.results.map((entry) => [entry.feeRawId, entry]));
+      expect(byId.get(126752)).toMatchObject({ status: "verified", canonicalFeeKey: "wire_intl_outgoing" });
+      expect(byId.get(126799)).toMatchObject({ status: "skipped", reasonCode: "not_in_source" });
+      const forced = db.unsafe.mock.calls.find((call) => Array.isArray((call[1] as unknown[] | undefined)?.[1]));
+      expect(String(forced?.[0])).toContain("fr.fee_raw_id = ANY($2::bigint[])");
+      expect(String(forced?.[0])).not.toContain("FROM pipeline_attempts pa");
+      const details = db.mock.calls
+        .filter((call) => templateText(call[0]).includes("INSERT INTO pipeline_attempts") && call.includes(DARWIN_VERIFY_STRATEGY.strategy))
+        .map((call) => JSON.parse(String(call.find((value) => typeof value === "string" && value.startsWith("{")))));
+      expect(details[0]).toMatchObject({ fee_raw_id: 126752, knox_category: "wire_intl_outgoing" });
+    });
+
+    it("a failed count stays inside a savepoint and the step goes on", async () => {
+      const db = rejudgeDb();
+      const savepoint = vi.fn((work: (scope: unknown) => Promise<unknown>) => work(db));
+      (db as unknown as { savepoint: typeof savepoint }).savepoint = savepoint;
+      db.unsafe.mockImplementation((query: string) =>
+        query.includes("'knox_category'") ? Promise.reject(new Error("statement timeout")) : Promise.resolve([]));
+
+      const result = await runDarwinVerify({ runId: 9003, db: asVerifyDb(db) });
+
+      expect(savepoint).toHaveBeenCalled();
+      expect(result.categoryChange).toBeNull();
     });
   });
 });

@@ -1019,12 +1019,14 @@ async function categoryChangeRejudge(
 ): Promise<{ rows: RawFeeRow[]; summary: CategoryChangeRejudgeSummary | null }> {
   const canRead = options.learning || (options.dryRun && (await learningSchemaReady(db)));
   if (!canRead) return { rows: [], summary: null };
-  const scanned = await selectCategoryChangeRows(db, {
+  // In a savepoint: a failed read (a timeout) would otherwise abort the run-ledger transaction
+  // and fail the whole verify step, `.catch` or not.
+  const scanned = await inSavepoint(db, (scope) => selectCategoryChangeRows(scope, {
     strategy: DARWIN_VERIFY_STRATEGY.strategy,
     version: DARWIN_VERIFY_STRATEGY.version,
     institutionId: options.institutionId,
     stateCode: options.stateCode,
-  }).catch((error) => {
+  })).catch((error) => {
     console.warn("[darwin] category change read failed", error instanceof Error ? error.message : error);
     return null;
   });
