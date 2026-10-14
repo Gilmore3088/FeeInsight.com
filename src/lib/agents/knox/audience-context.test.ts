@@ -319,4 +319,12 @@ describe("Knox audience suggestion from context (#1059)", () => {
     // A consumer schedule is unaffected.
     expect(suggest("https://bank.example/fee-schedule.pdf", "Fee Schedule\nStop Payment $30", "Stop Payment", 30)).toMatchObject({ audience: "consumer", source: "default_general_schedule" });
   });
+
+  it("keeps non-personal checks a product, not an audience (review of d31c9248)", () => {
+    const cu = ["Schedule of Fees", "Check Cashing - Non-Member (non-personal checks only) $5.00", "Stop Payment $30.00"].join("\n");
+    expect(suggest(null, cu, "Check Cashing - Non-Member (non-personal checks only)", 5)).toMatchObject({ audience: "consumer", source: "default_general_schedule" });
+    expect(suggest(null, cu, "Stop Payment", 30)).toMatchObject({ audience: "consumer", source: "default_general_schedule" });
+    expect(suggest(null, ["Fees", "Non-Personal Check Cashing $5.00"].join("\n"), "Non-Personal Check Cashing", 5)?.audience).not.toBe("business");
+    expect(suggest(null, ["Fees", "Copy of Non-Personal Information $5.00"].join("\n"), "Copy of Non-Personal Information", 5)?.audience).not.toBe("business");
+  });
 });

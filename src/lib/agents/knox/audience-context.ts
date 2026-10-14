@@ -43,8 +43,10 @@ const NOT_AN_AUDIENCE = /\bcorporate\s+(?:checks?|drafts?|bonds?|securities|and 
  * "Non-Personal Accounts" and "Non-Consumer" are a bank's words for business accounts: read as
  * "business", with any slash before them ("Business/Non-Personal Accounts" stays a heading).
  * Stripping them as no audience let such fees take the consumer default (#1059 holdout 5).
+ * "Non-personal checks", "identification", "information" and "data" are products, not accounts
+ * (check cashing for a consumer), so they stay no audience (review of d31c9248).
  */
-const NON_PERSONAL = /(?:\/\s*)?\bnon[- ]?(?:personal|consumer)\b/gi;
+const NON_PERSONAL = /(?:\/\s*)?\bnon[- ]?(?:personal|consumer)\b(?!\s+(?:checks?|identification|information|data)\b)/gi;
 const neutral = (text: string) => text.replace(NON_PERSONAL, " business").replace(NOT_AN_AUDIENCE, " ");
 
 function audienceOf(raw: string): ContextAudience | null {
