@@ -12,7 +12,7 @@ export function AskScene() {
     <div className="flex h-full flex-col gap-3">
       <div className="flex items-center gap-2 rounded-md border border-control-border bg-paper px-3 py-2 text-[13px] text-ink">
         <span className="text-ink-muted">Ask Hamilton</span>
-        <span className={styles.type} style={delay(150, { "--dur": "1100ms", "--steps": QUESTION.length })}>
+        <span className={styles.type} style={delay(150, { "--dur": "1800ms", "--steps": QUESTION.length })}>
           {QUESTION}
         </span>
       </div>

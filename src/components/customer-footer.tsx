@@ -14,13 +14,15 @@ export function CustomerFooter() {
         <div className="grid grid-cols-1 gap-10 sm:grid-cols-2 lg:grid-cols-[1fr_auto_auto_auto]  lg:gap-x-16">
           {/* Brand + email */}
           <div className="lg:pr-8">
-            <Link href="/" className="flex items-center gap-2 no-underline" aria-label={`${PRODUCT_NAME}, powered by ${SITE_NAME}: home`}>
-              <Logo mark="bank-fee-index-lockup" height={40} title="" />
+            <Link href="/" className="flex items-center gap-2 no-underline" aria-label={`${SITE_NAME} home`}>
+              <Logo mark="fee-insight-oneline" height={26} title="" />
             </Link>
-            <p className="mt-3 text-[12px] leading-relaxed text-ink-muted max-w-xs">
-              Home of the {PRODUCT_NAME} — U.S. bank and credit union fees
-              by district, state, size, and type. Published-source benchmarks
-              for consumers and banking teams.
+            <p className="mt-3 text-[14px] font-medium text-ink">
+              The home of the {PRODUCT_NAME} and Hamilton
+            </p>
+            <p className="mt-2 text-[12px] leading-relaxed text-ink-muted max-w-xs">
+              U.S. bank and credit union fees by district, state, size and type, each traced to the
+              institution&apos;s own published schedule.
             </p>
             <div className="mt-4">
               <EmailSignup />

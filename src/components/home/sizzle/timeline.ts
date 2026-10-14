@@ -1,7 +1,8 @@
 /**
- * The homepage sizzle: 20 seconds from the fee study by hand to the report Hamilton writes.
+ * The homepage sizzle: 35 seconds from the fee study by hand to the report Hamilton writes.
  * Storyboard: docs/design/site-v3/08-sizzle-and-copy.md (DRAPER with NORMAN, 2026-10-14).
- * The closing caption is James's own line.
+ * The closing caption is James's own line. James found 20 seconds too fast (2026-10-14), so each
+ * scene holds long enough to read its caption and watch the product work.
  */
 
 export type SceneKey = "collect" | "cost" | "index" | "markets" | "ask" | "report" | "done";
@@ -28,13 +29,13 @@ export const CHAPTERS: readonly { key: ChapterKey; label: string }[] = [
 ];
 
 export const SCENES: readonly Scene[] = [
-  { key: "collect", chapter: "old-way", startMs: 0, endMs: 2000, caption: "Fee studies start one PDF at a time.", example: false },
-  { key: "cost", chapter: "old-way", startMs: 2000, endMs: 3500, caption: "Then a spreadsheet, a deck, an invoice.", example: false },
-  { key: "index", chapter: "index", startMs: 3500, endMs: 7000, caption: "Fee Insight reads the published schedules for you.", example: false },
-  { key: "markets", chapter: "markets", startMs: 7000, endMs: 10500, caption: "Your fee, placed in every market around you.", example: true },
-  { key: "ask", chapter: "hamilton", startMs: 10500, endMs: 14000, caption: "Ask Hamilton. Each answer cites its source.", example: true },
-  { key: "report", chapter: "report", startMs: 14000, endMs: 17500, caption: "Add findings. Hamilton writes the report.", example: true },
-  { key: "done", chapter: "report", startMs: 17500, endMs: 20000, caption: "The fee study? Done. Created by Hamilton.", example: true },
+  { key: "collect", chapter: "old-way", startMs: 0, endMs: 3000, caption: "Fee studies start one PDF at a time.", example: false },
+  { key: "cost", chapter: "old-way", startMs: 3000, endMs: 5500, caption: "Then a spreadsheet, a deck, an invoice.", example: false },
+  { key: "index", chapter: "index", startMs: 5500, endMs: 11000, caption: "Fee Insight reads the published schedules for you.", example: false },
+  { key: "markets", chapter: "markets", startMs: 11000, endMs: 17000, caption: "Your fee, placed in every market around you.", example: true },
+  { key: "ask", chapter: "hamilton", startMs: 17000, endMs: 24000, caption: "Ask Hamilton. Each answer cites its source.", example: true },
+  { key: "report", chapter: "report", startMs: 24000, endMs: 30000, caption: "Add findings. Hamilton writes the report.", example: true },
+  { key: "done", chapter: "report", startMs: 30000, endMs: 35000, caption: "The fee study? Done. Created by Hamilton.", example: true },
 ];
 
 export const SIZZLE_MS = SCENES[SCENES.length - 1].endMs;
@@ -70,3 +71,6 @@ export const SIZZLE_TRANSCRIPT =
   "the report: a Peer Brief with your findings and their sources, ready to turn into a CEO one-pager, " +
   "a board memo or a pricing committee packet. The fee study? Done. Created by Hamilton. Scenes after " +
   "the Bank Fee Index use example figures.";
+
+/** Inner motion (each element's delay and duration) runs this much slower than the storyboard drafts. */
+export const MOTION_SCALE = 1.6;

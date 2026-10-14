@@ -1,9 +1,10 @@
 import type { CSSProperties } from "react";
 import styles from "./sizzle.module.css";
+import { MOTION_SCALE } from "./timeline";
 
 /** Inline style that delays an element's entrance by `ms`. */
 export function delay(ms: number, extra?: Record<string, string | number>): CSSProperties {
-  return { "--d": `${ms}ms`, ...extra } as CSSProperties;
+  return { "--d": `${Math.round(ms * MOTION_SCALE)}ms`, ...extra } as CSSProperties;
 }
 
 /** A grey placeholder line: the old way never shows real text or figures. */

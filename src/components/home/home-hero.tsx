@@ -8,7 +8,7 @@ const CHIP_CLASS =
   "rounded-full border border-border bg-surface-0 px-3 py-1.5 text-[13px] font-medium text-ink transition-colors duration-150 hover:bg-surface-200";
 
 /**
- * The hero: the promise, one search, and the 20-second sizzle under it (BetterAnalyst's
+ * The hero: the promise, one search, and the 35-second sizzle under it (BetterAnalyst's
  * page shape, James 2026-10-14). The search is the door fee owners and consumers share.
  */
 export function HomeHero({ data, sampleLive }: { data: HomeData; sampleLive: boolean }) {

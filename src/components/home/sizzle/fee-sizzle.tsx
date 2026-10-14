@@ -35,7 +35,7 @@ interface PlayState {
 }
 
 /**
- * The 20-second walk from the fee study by hand to the report Hamilton writes. The server
+ * The 35-second walk from the fee study by hand to the report Hamilton writes. The server
  * renders the rest frame (the poster); playback starts only when the frame is on screen,
  * never under reduced motion, stops after three plays, and stops for good when a reader
  * picks a chapter or presses pause.
@@ -109,7 +109,7 @@ export function FeeSizzle({ data }: { data: HomeData }) {
 
   return (
     <figure className="mx-auto grid w-full max-w-[1040px] gap-3 text-left">
-      <div ref={frameRef} className={frameClass} aria-describedby={TRANSCRIPT_ID} role="img" aria-label="A 20-second walk through Fee Insight">
+      <div ref={frameRef} className={frameClass} aria-describedby={TRANSCRIPT_ID} role="img" aria-label="A 35-second walk through Fee Insight">
         <div className={styles.chrome} aria-hidden="true">
           <i />
           <i />

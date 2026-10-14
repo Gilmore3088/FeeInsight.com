@@ -8,10 +8,11 @@ Seeded 2026-10-05 from the project's working memory; earlier decisions were not 
 **The Fee Insight design system is the site's brand; the header carries Fee Insight.** James, Oct 14.
 The package (Oxford Navy and brick on parchment, Geist, the box-plot I) lives in `src/brand/`,
 `public/brand/` and `Branding/fee-insight-design-system/`. The feeinsight.com header uses the Fee
-Insight one-line logo; Bank Fee Index's lockup goes on its data pages and the footer; Hamilton's
+Insight one-line logo; Bank Fee Index's lockup goes on its data pages; Hamilton's
 wordmark on /pro. This is the "James's own design" the layout hold waited for. It ships in staged
 PRs: the package first, then the public site, then Hamilton, admin, reports and email, each
-reviewed by James on the Vercel preview before merge.
+reviewed by James on the Vercel preview before merge. Later the same day James set the footer:
+the Fee Insight logo first, with "The home of the Bank Fee Index and Hamilton" beneath it.
 
 **Data quality comes before the Hamilton redesign.** James, Oct 14, after his quality gap audit:
 "The Hamilton redesign is not ready to go yet. I still think we need to focus on the data quality
