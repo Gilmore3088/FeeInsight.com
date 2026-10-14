@@ -18,7 +18,8 @@ retraced without asking Hamilton (see Audit trail).
    it prints from `published_fee_catalog` (rates from `published_fee_rate_catalog`) under
    the statistics contract (`report-engine/reconcile.ts`, #1066). A figure more than one
    cent or one institution off (a whole-scope total: more than 5 or 0.5%, whichever is
-   larger, with the drift recorded), printed with no live value, or a printed fee change that is
+   larger, with the drift recorded; the Pulse's 30-day "institutions added" count is not a
+   total and keeps the one-institution rule), printed with no live value, or a printed fee change that is
    no longer live fails the job, with each figure and why on `data_manifest.reconciliation`;
    Publish refuses a job without a reconciliation that tied out.
 3. **Industry expert and research assistant.** Answers questions about fees, regulation

@@ -196,6 +196,33 @@ describe("whole-scope totals", () => {
   });
 });
 
+describe("the Pulse's institutions added this month", () => {
+  // #1249: a 30-day window count, not a whole-scope total, so the one-institution rule.
+  const pulse = (added: number) =>
+    ({
+      changes: [],
+      coverage: { institutions_live: 4000, institutions_added_in_window: added, live_fees: 60_000 },
+      window_started_at: "2026-09-14T00:00:00.000Z",
+    }) as unknown as MonthlyPulsePayload;
+  const liveAdded = (added: number) =>
+    live([], { pulseCoverage: { institutions_live: 4000, institutions_added_in_window: added, live_fees: 60_000 } });
+
+  it("blocks a small month that moved by more than one institution", () => {
+    const result = reconcileFigures(pulsePrintedFigures(pulse(2)), liveAdded(7));
+    expect(result.findings).toEqual([
+      { id: "pulse.coverage.institutions_added_in_window", label: "Institutions added this month", printed: 2, live: 7, reason: "differs" },
+    ]);
+    expect(result.drift).toEqual([]);
+  });
+
+  it("allows one institution and records no drift", () => {
+    const result = reconcileFigures(pulsePrintedFigures(pulse(2)), liveAdded(3));
+    expect(result.ties_out).toBe(true);
+    expect(result.drift).toEqual([]);
+    expect(reconcileFigures(pulsePrintedFigures(pulse(2)), liveAdded(4)).ties_out).toBe(false);
+  });
+});
+
 describe("describeReconciliation and the Publish gate", () => {
   it("names the first figures that failed and how many more", () => {
     const printed = nationalPrintedFigures(nationalPayload);

@@ -239,12 +239,14 @@ and `detail.method_version`).
   `detail.rung`. The institution's admin page shows its place on the ladder and the
   methods tried; the state page and the state-expert step (`not_published_online`) count
   "not published online" by size tier. One `paidModelCall` per bank (agent `magellan`, `PAID_PASS_MODELS.find()`,
-  server `web_search` tool, max 3 uses) asks for the consumer fee schedule on the bank's
+  server `web_search` tool from `web-search-tool.ts`, #1035: a bank under $10B is searched on its own
+  website host only (`allowed_domains`), at most `OWN_SITE_MAX_USES` (2) searches; a $10B+ bank keeps
+  the open web and 3, as the schedule search does) asks for the consumer fee schedule on the bank's
   own domain as JSON. The answer must be on the bank's domain and pass the same
   fee-page check before it is stored. Each try is logged with its cost. A budget cap or
   the automation stop ends the step cleanly (`budgetStopped`); the unspent bank stays due.
-  Report requesters go first, then the largest banks; $10B+ banks and requesters are
-  picked from any state's paid step, not only their own.
+  $10B+ banks and requesters are picked from any state's paid step, not only their own.
+  Order: the state experts' work lists (#1029, below).
 - Schedule search (`schedule-search.ts`, `discover.paid_schedule_search`), in the same paid
   step: up to `SCHEDULE_SEARCH_PER_RUN` $10B+ banks, report requesters or market leaders
   (top 15 in their state by deposits or fee income, `loadMarketLeaderIds` in
@@ -256,8 +258,19 @@ and `detail.method_version`).
   stored as a `consumer_supplement` companion beside the link, so companion fetch, Rosetta
   and Knox read it; the link and its live fees stay. A second lane takes up to
   `HIDDEN_BANK_SEARCH_PER_RUN` banks of any size that the catalog hides (fewer than three
-  live fee categories) whose link is an account product page or prices no overdraft,
-  largest first. The bank's own domain includes its corporate domain (`onBankDomain`).
+  live fee categories) whose link is an account product page or prices no overdraft.
+  Each lane takes its cap from the work lists (#1029, below). The bank's own domain includes
+  its corporate domain (`onBankDomain`).
+- Work lists (#1029, `state-expert/work-list.ts`): the paid web search, the schedule search
+  (each lane) and the website search read up to `WORK_LIST_POOL` (2,000) due institutions,
+  then take their unchanged per-step cap in this order: report requesters and Pro accounts'
+  own institutions first; then one institution from each state's list in turn, the state with
+  the largest coverage gap under $10B first. A state's list puts its size groups furthest below
+  James's target first (`coverageGroupsSql`, the scorecard's own groups; short / target), and
+  within a group a website on file, then a known platform, then the larger institution.
+  Institutions over $10B share one national list that takes its turn, since they are compared
+  nationally, never by state. Each result entry records `work_list`, `work_group` and
+  `work_group_short`. If the gaps can't be read, the lists keep size order and still rotate.
 - Website search (`website-find.ts`, `discover.website_search`), in the same paid step after
   the banks: up to `WEBSITE_FIND_PER_RUN` institutions in the state with no `website_url`
   and no fee link, off the paid cooldown. The model (web search) names the official homepage;
@@ -266,7 +279,7 @@ and `detail.method_version`).
   city or its FDIC certificate / NCUA charter number. Saving resets the bank's search
   (`rescue_status = 'pending'`) so the free finders search the new site next. Anything
   else stays for a person: `detail.candidate_url`, `needs_human: true`. A one-word stored
-  name ("CALIFORNIA") is not searched.
+  name ("CALIFORNIA") is not searched. It runs at most 2 searches a call (#1035).
 
 ## Outcome ledger (`outcomes.ts`)
 

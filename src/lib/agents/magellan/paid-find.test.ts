@@ -89,7 +89,8 @@ describe("Magellan paid find (pass 3)", () => {
     expect(result).toMatchObject({ selected: 3, processed: 3, succeeded: 1, failed: 2, budgetStopped: false });
     expect(result.costMicrousd).toBeGreaterThan(0);
     const params = create.mock.calls[0][0];
-    expect(params.tools).toEqual([{ type: "web_search_20250305", name: "web_search", max_uses: 3 }]);
+    // A bank under $10B searches its own site only, twice at most (#1035).
+    expect(params.tools).toEqual([{ type: "web_search_20250305", name: "web_search", max_uses: 2, allowed_domains: ["alpha.example"] }]);
     expect(params.messages[0].content).toContain("Alpha Bank");
     expect(params.messages[0].content).toContain("Burlington, VT");
     expect(trackAnthropicRequest).toHaveBeenCalledWith(expect.objectContaining({ agent: "magellan", operation: "paid_find", agentRunId: 9 }), expect.any(Function));
@@ -235,5 +236,48 @@ describe("escalation ladder (#1032)", () => {
     expect(logged.map((attempt) => attempt.detail.rung)).toEqual(["schedule", "disclosure"]);
     expect(logged[1].detail.website_url).toBe("https://beta.example");
     expect(logged[1].outcome).toBe("no_candidates");
+  });
+});
+
+describe("state experts' work lists (#1029)", () => {
+  // Twelve large TX banks the old order (largest first) would put ahead of every VT bank.
+  const texas = Array.from({ length: 12 }, (_, index) => ({
+    id: 100 + index, institution_name: `Texas Bank ${index}`, city: "Austin", state_code: "TX",
+    website_url: `https://tx${index}.example`, asset_size: 9_000_000 - index * 1000,
+  }));
+  const vermont = [
+    { id: 200, institution_name: "Green Mountain Bank", city: "Barre", state_code: "VT", website_url: "https://gm.example", asset_size: 120_000 },
+    { id: 201, institution_name: "Lake Bank", city: "Burlington", state_code: "VT", website_url: "https://lake.example", asset_size: 90_000, requested: true },
+  ];
+
+  function workListDb() {
+    return vi.fn((strings: TemplateStringsArray) => {
+      const text = templateText(strings);
+      if (text.includes("learning_schema_ready")) return Promise.resolve([{ learning_schema_ready: true }]);
+      if (text.includes(") coverage_groups")) {
+        return Promise.resolve([
+          { state_code: "TX", size_group: "1b_10b", total: 60, covered: 10, target: 30, short: 20 },
+          { state_code: "VT", size_group: "under_300m", total: 12, covered: 5, target: 9, short: 4 },
+        ]);
+      }
+      if (text.includes("inst.charter_type")) return Promise.resolve([]);
+      if (text.includes("incomplete-link schedule search")) return Promise.resolve([]);
+      if (text.includes("inst.city")) return Promise.resolve([...texas, ...vermont]);
+      return Promise.resolve([]);
+    });
+  }
+
+  it("serves two states with different gaps in one run, a requester first, under the same cap", async () => {
+    const db = workListDb();
+    const result = await runMagellanPaidFind({ runId: 3, db: asDb(db), create: vi.fn(), dryRun: true });
+    const searched = result.results.filter((entry) => entry.would_search);
+    // The cap is unchanged: 10 of the 14 due banks.
+    expect(searched).toHaveLength(10);
+    expect(searched[0]).toMatchObject({ institution_id: 201, work_list: "requested_or_paying" });
+    expect(searched.slice(1, 3).map((entry) => entry.institution_id)).toEqual([100, 200]);
+    expect(searched[2]).toMatchObject({ work_list: "VT", work_group: "under_300m", work_group_short: 4 });
+    // The query reads a pool and the cap applies after the lists are ordered.
+    const select = db.mock.calls.find((call) => templateText(call[0]).includes("inst.city"))!;
+    expect(templateText(select[0])).toContain("institution_workspace_memberships");
   });
 });

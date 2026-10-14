@@ -7,12 +7,21 @@ import type { PrintedFigures } from "./reconcile";
 
 type Call = { text: string; values: unknown[] };
 
-function fakeDb(job: Record<string, unknown> | null, liveRows: Record<string, unknown>[] = []) {
+/**
+ * `raced`: the job left 'rendering' (a cancel, say) between the step's opening read and its
+ * write, so a write guarded by `status = 'rendering'` changes no row, and a later status read
+ * sees this status.
+ */
+function fakeDb(job: Record<string, unknown> | null, liveRows: Record<string, unknown>[] = [], raced?: string) {
   const calls: Call[] = [];
   const db = vi.fn(async (strings: TemplateStringsArray, ...values: unknown[]) => {
     const text = strings.join("?");
     calls.push({ text, values });
+    if (raced && text.includes("SELECT status FROM report_jobs")) return [{ status: raced }];
     if (text.includes("FROM report_jobs WHERE id")) return job ? [job] : [];
+    if (text.includes("UPDATE report_jobs") && text.includes("RETURNING id")) {
+      return raced && text.includes("AND status = 'rendering'") ? [] : [{ id: job?.id }];
+    }
     return [];
   }) as unknown as Record<string, unknown>;
   db.json = (value: unknown) => ({ json: value });
@@ -126,6 +135,125 @@ describe("report reconcile step", () => {
     await expect(runReportReconcileStep(db, "job-13", { load })).rejects.toThrow("Reconcile could not read live data: connection reset");
     const failed = calls.find((call) => call.text.includes("status = 'failed'"));
     expect(failed?.values).toEqual(["Reconcile could not read live data: connection reset", "job-13"]);
+  });
+
+  // #1249: a job is never left 'rendering' by an unexpected database error.
+  function throwingDb(job: Record<string, unknown>, fail: (text: string) => boolean) {
+    const { db: base, calls } = fakeDb(job, liveVt);
+    const db = vi.fn(async (strings: TemplateStringsArray, ...values: unknown[]) => {
+      const text = strings.join("?");
+      if (fail(text)) {
+        calls.push({ text, values });
+        throw new Error("statement timeout");
+      }
+      return (base as unknown as (s: TemplateStringsArray, ...v: unknown[]) => Promise<unknown>)(strings, ...values);
+    }) as unknown as Record<string, unknown>;
+    db.json = (value: unknown) => ({ json: value });
+    db.unsafe = (base as unknown as Record<string, unknown>).unsafe;
+    return { db: db as unknown as Parameters<typeof runReportRenderStep>[0], calls };
+  }
+  const renderingJob = { id: "job-14", report_type: "state_index", status: "rendering", params: null, artifact_key: "k", data_manifest: { printed: tiedFigure } };
+
+  it("fails the job and rethrows when the opening read of the job throws", async () => {
+    const { db, calls } = throwingDb(renderingJob, (text) => text.includes("SELECT id, report_type"));
+    await expect(runReportReconcileStep(db, "job-14")).rejects.toThrow("Reconcile could not read the report job: statement timeout");
+    const failed = calls.find((call) => call.text.includes("status = 'failed'"));
+    expect(failed?.text).toContain("AND status = 'rendering'");
+    expect(failed?.values).toEqual(["Reconcile could not read the report job: statement timeout", "job-14"]);
+  });
+
+  it("fails the job and rethrows when marking it complete throws", async () => {
+    const { db, calls } = throwingDb(renderingJob, (text) => text.includes("status = 'complete'"));
+    const load = vi.fn(async () => ({ feeRows: liveVt, rateRows: [], changeRows: [], pulseCoverage: null }));
+    await expect(runReportReconcileStep(db, "job-14", { load })).rejects.toThrow(
+      "Reconciled, but the report could not be marked complete: statement timeout",
+    );
+    const failed = calls.find((call) => call.text.includes("status = 'failed'"));
+    expect(failed?.text).toContain("AND status = 'rendering'");
+    expect(failed?.values).toEqual(["Reconciled, but the report could not be marked complete: statement timeout", "job-14"]);
+  });
+
+  it("still fails a blocked job when saving its findings throws", async () => {
+    const off = { ...tiedFigure, figures: [{ ...tiedFigure.figures[0], printed: 9 } as PrintedFigures["figures"][number]] };
+    const { db, calls } = throwingDb({ ...renderingJob, data_manifest: { printed: off } }, (text) => text.includes("data_manifest = ?"));
+    const load = vi.fn(async () => ({ feeRows: liveVt, rateRows: [], changeRows: [], pulseCoverage: null }));
+    await expect(runReportReconcileStep(db, "job-14", { load })).rejects.toThrow(/do not tie out/);
+    const fallback = calls.find((call) => call.text.includes("AND status = 'rendering'") && !call.text.includes("data_manifest"));
+    expect(fallback?.values[0]).toMatch(/do not tie out.*The findings could not be saved: statement timeout/);
+  });
+
+  it("throws the step's own error when the cleanup write fails too", async () => {
+    const { db } = throwingDb(renderingJob, (text) => text.includes("SELECT id, report_type") || text.includes("status = 'failed'"));
+    const log = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    await expect(runReportReconcileStep(db, "job-14")).rejects.toThrow("Reconcile could not read the report job: statement timeout");
+    expect(log).toHaveBeenCalled();
+    log.mockRestore();
+  });
+
+  // #1259: every write the reconcile step makes is guarded, so a cancel sent mid-step stands.
+  it("guards every reconcile write with status = 'rendering'", async () => {
+    const off = { ...tiedFigure, figures: [{ ...tiedFigure.figures[0], printed: 9 } as PrintedFigures["figures"][number]] };
+    const cases: Array<{ job: Record<string, unknown>; load?: () => Promise<never> }> = [
+      { job: { ...renderingJob } },
+      { job: { ...renderingJob, data_manifest: { printed: off } } },
+      { job: { ...renderingJob, data_manifest: null } },
+      { job: { ...renderingJob }, load: async () => Promise.reject(new Error("connection reset")) },
+    ];
+    for (const { job, load } of cases) {
+      const { db, calls } = fakeDb(job, liveVt);
+      await runReportReconcileStep(db, "job-14", load ? { load } : {}).catch(() => undefined);
+      const writes = calls.filter((call) => call.text.includes("UPDATE report_jobs"));
+      expect(writes.length).toBeGreaterThan(0);
+      for (const write of writes) expect(write.text).toContain("AND status = 'rendering'");
+    }
+  });
+
+  it("leaves a cancel sent during reconcile in place, and says so, when the figures tie out", async () => {
+    const { db, calls } = fakeDb(renderingJob, liveVt, "cancel_requested");
+    const result = await runReportReconcileStep(db, "job-14");
+    expect(result.status).toBe("skipped");
+    expect(result.summary).toMatch(/cancelled during reconciliation.*now cancel_requested\), so it was not marked complete/);
+    expect(result.detail).toMatchObject({ lost_race: true, report_status: "cancel_requested", ties_out: true });
+    const complete = calls.find((call) => call.text.includes("status = 'complete'"));
+    expect(complete?.text).toContain("AND status = 'rendering'");
+  });
+
+  it("leaves a cancel in place when the figures do not tie out", async () => {
+    const off = { ...tiedFigure, figures: [{ ...tiedFigure.figures[0], printed: 9 } as PrintedFigures["figures"][number]] };
+    const { db } = fakeDb({ ...renderingJob, data_manifest: { printed: off } }, liveVt, "cancelled");
+    const result = await runReportReconcileStep(db, "job-14");
+    expect(result.status).toBe("skipped");
+    expect(result.summary).toMatch(/now cancelled\), so it was not marked failed. Reconciliation blocked the report: 1 of 1 printed fee figures do not tie out/);
+  });
+
+  it("leaves a cancel in place when the live read fails", async () => {
+    const { db } = fakeDb(renderingJob, liveVt, "cancel_requested");
+    const load = vi.fn(async () => {
+      throw new Error("connection reset");
+    });
+    const result = await runReportReconcileStep(db, "job-14", { load });
+    expect(result.status).toBe("skipped");
+    expect(result.summary).toMatch(/not marked failed. Reconcile could not read live data: connection reset/);
+  });
+
+  it("throws, naming the status, when the job left rendering for anything but a cancel", async () => {
+    const { db } = fakeDb(renderingJob, liveVt, "failed");
+    await expect(runReportReconcileStep(db, "job-14")).rejects.toThrow(/it is now failed\), so it was not marked complete/);
+  });
+
+  it("throws the step's own reason, not the database error, when the failure write throws", async () => {
+    const log = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const noPrinted = throwingDb({ ...renderingJob, data_manifest: null }, (text) => text.includes("status = 'failed'"));
+    await expect(runReportReconcileStep(noPrinted.db, "job-14")).rejects.toThrow(/saved no printed figures to check/);
+    const liveDown = throwingDb(renderingJob, (text) => text.includes("status = 'failed'"));
+    const load = vi.fn(async () => {
+      throw new Error("connection reset");
+    });
+    await expect(runReportReconcileStep(liveDown.db, "job-14", { load })).rejects.toThrow(
+      "Reconcile could not read live data: connection reset",
+    );
+    expect(log).toHaveBeenCalledTimes(2);
+    log.mockRestore();
   });
 
   it("skips a job that was never rendered", async () => {

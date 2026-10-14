@@ -5,10 +5,12 @@ import { recordAttempt } from "@/lib/agents/learning/attempts";
 import { loadMarketLeaderIds } from "@/lib/data-store/market-leaders";
 import { classifyFetchFailure, type AttemptOutcome } from "@/lib/agents/learning/outcomes";
 import { PAID_PASS_MODELS, paidModelCall, paidResponseJson, type PaidMessageCreator } from "@/lib/agents/paid-pass";
+import { loadGroupGaps, pickFromWorkLists, WORK_LIST_POOL, workListDetail, type GroupGaps, type WorkListPlacement } from "@/lib/agents/state-expert/work-list";
 
 import { FOUND_COOLDOWN_DAYS, MISS_COOLDOWN_DAYS } from "./cooldowns";
 import { looksLikePdfUrl, validateFeeCandidate } from "./find-validate";
 import { urlIdentity } from "./finders";
+import { bankWebSearchTool } from "./web-search-tool";
 import {
   BUSINESS_PATH_SQL,
   CONSUMER_PATH_SQL,
@@ -77,6 +79,11 @@ export interface ScheduleSearchRow {
   stale_copy?: boolean | null;
   hidden?: boolean | null;
   product_page?: boolean | null;
+  /** A Pro account's own institution; its site platform (#1029 work lists). */
+  paying?: boolean | null;
+  platform?: string | null;
+  priority?: boolean | null;
+  work_list?: WorkListPlacement;
 }
 
 interface ScheduleAnswer {
@@ -136,9 +143,11 @@ export function scheduleSearchPrompt(row: ScheduleSearchRow): string {
  *   schedule yet, or who are hidden for having fewer than three live fees;
  * - everyone else the catalog hides whose page is a product page or prices no overdraft
  *   (up to `hiddenLimit`).
+ * Each lane reads up to WORK_LIST_POOL rows and takes its cap from the state experts' work
+ * lists (#1029): requesters and paying customers first, then one per state in turn.
  */
-async function selectRows(db: SqlTag, limit: number, hiddenLimit: number, leaderIds: number[]): Promise<ScheduleSearchRow[]> {
-  return db<ScheduleSearchRow[]>`
+async function selectRows(db: SqlTag, limit: number, hiddenLimit: number, leaderIds: number[], gaps: GroupGaps): Promise<ScheduleSearchRow[]> {
+  const pool = await db<ScheduleSearchRow[]>`
     -- incomplete-link schedule search
     WITH live AS (
       SELECT record.institution_id, count(DISTINCT record.canonical_fee_key)::int AS categories
@@ -149,6 +158,11 @@ async function selectRows(db: SqlTag, limit: number, hiddenLimit: number, leader
     scoped AS (
       SELECT inst.id, inst.institution_name, inst.city, inst.state_code, inst.website_url, inst.fee_schedule_url, inst.asset_size,
              EXISTS (SELECT 1 FROM leads lead WHERE lead.quote_institution_id = inst.id) AS requested,
+             EXISTS (
+               SELECT 1 FROM institution_workspace_memberships pro
+                WHERE pro.institution_id = inst.id AND pro.membership_status = 'active'
+             ) AS paying,
+             COALESCE(NULLIF(btrim(profile.platform), ''), NULLIF(btrim(inst.cms_platform), '')) AS platform,
              inst.id = ANY(${leaderIds}::bigint[]) AS leader,
              (
                inst.asset_size >= ${LARGE_BANK_ASSETS}
@@ -228,9 +242,14 @@ async function selectRows(db: SqlTag, limit: number, hiddenLimit: number, leader
           OR (NOT priority AND business_only AND business_searched)
     )
     SELECT * FROM lanes
-     WHERE (priority AND lane_rank <= ${limit}) OR (NOT priority AND lane_rank <= ${hiddenLimit})
+     WHERE lane_rank <= ${WORK_LIST_POOL}
      ORDER BY priority DESC, requested DESC, leader DESC, asset_size DESC NULLS LAST, id ASC
   `;
+  const rows = Array.isArray(pool) ? pool : [];
+  return [
+    ...pickFromWorkLists(rows.filter((row) => row.priority), gaps, limit),
+    ...pickFromWorkLists(rows.filter((row) => !row.priority), gaps, hiddenLimit),
+  ];
 }
 
 /** Market leaders across every state; none (the lane falls back to size) if the ranking fails. */
@@ -269,12 +288,15 @@ export async function runScheduleSearch(options: {
   db?: SqlTag;
   create?: PaidMessageCreator;
   fetchImpl?: Fetcher;
+  /** Coverage gaps for the work lists; read here when left out. */
+  gaps?: GroupGaps;
 }): Promise<ScheduleSearchResult> {
   const db = options.db ?? sql;
   const result: ScheduleSearchResult = { selected: 0, processed: 0, found: 0, costMicrousd: 0, budgetStopped: false, budgetReason: null, results: [] };
   const limit = Math.max(1, Math.min(Math.floor(Number(options.limit ?? SCHEDULE_SEARCH_PER_RUN)) || SCHEDULE_SEARCH_PER_RUN, SCHEDULE_SEARCH_PER_RUN));
   const leaderIds = options.leaderIds ?? (await leaderIdsOrNone(db));
-  const rows = await selectRows(db, limit, options.hiddenLimit ?? HIDDEN_BANK_SEARCH_PER_RUN, leaderIds);
+  const gaps = options.gaps ?? (await loadGroupGaps(db));
+  const rows = await selectRows(db, limit, options.hiddenLimit ?? HIDDEN_BANK_SEARCH_PER_RUN, leaderIds, gaps);
   result.selected = rows.length;
   if (options.dryRun) {
     result.results = rows.map((row) => ({
@@ -282,6 +304,7 @@ export async function runScheduleSearch(options: {
       institution_name: row.institution_name,
       would_search_schedule: true,
       why: whyNotIt(row),
+      ...workListDetail(row.work_list),
     }));
     return result;
   }
@@ -310,7 +333,7 @@ export async function runScheduleSearch(options: {
         params: {
           model,
           max_tokens: MAX_OUTPUT_TOKENS,
-          tools: [{ type: "web_search_20250305", name: "web_search", max_uses: WEB_SEARCH_MAX_USES }],
+          tools: [bankWebSearchTool(row, WEB_SEARCH_MAX_USES)],
           messages: [{ role: "user", content: scheduleSearchPrompt(row) }],
         },
       });
@@ -402,7 +425,7 @@ export async function runScheduleSearch(options: {
         reason,
       },
     });
-    result.results.push({ institution_id: institutionId, outcome, url: found, cost_microusd: costMicrousd, reason, by: "schedule_search" });
+    result.results.push({ institution_id: institutionId, outcome, url: found, cost_microusd: costMicrousd, reason, by: "schedule_search", ...workListDetail(row.work_list) });
   }
   return result;
 }
