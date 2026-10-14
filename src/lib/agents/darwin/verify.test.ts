@@ -560,14 +560,15 @@ describe("Darwin agentic verification", () => {
       expect(attempts[0]).toEqual(expect.arrayContaining([42, "verify", DARWIN_VERIFY_STRATEGY.strategy, "raw:801", "ok", 401, 12]));
       expect(attempts[1]).toEqual(expect.arrayContaining(["verify", "raw:802", "rejected"]));
 
-      const [query, params] = db.unsafe.mock.calls[0] as [string, unknown[]];
+      const [query] = db.unsafe.mock.calls[0] as [string, unknown[]];
       expect(query).toContain("FROM pipeline_attempts pa");
       expect(query).toContain("'raw:' || fr.fee_raw_id::text");
-      expect(params).toEqual(expect.arrayContaining([DARWIN_VERIFY_STRATEGY.strategy, DARWIN_VERIFY_STRATEGY.version]));
+      expect(query).toContain(`pa.strategy = '${DARWIN_VERIFY_STRATEGY.strategy}'`);
+      expect(query).toContain(`pa.strategy_version = ${DARWIN_VERIFY_STRATEGY.version}`);
       // A hold outside a hand-set envelope is re-checked once today's envelope takes the amount.
       expect(query).toContain("pa.detail->>'reason_code' = 'outside_envelope'");
       expect(query).toContain("->>'min')::numeric");
-      expect(params).toContain(JSON.stringify(CATEGORY_AMOUNT_ENVELOPES));
+      expect(query).toContain(`'${JSON.stringify(CATEGORY_AMOUNT_ENVELOPES)}'::jsonb`);
       expect(CATEGORY_AMOUNT_ENVELOPES.account_research).toEqual({ min: 1, max: 150 });
     });
 
@@ -602,9 +603,9 @@ describe("Darwin agentic verification", () => {
 
       await runDarwinVerify({ runId: 403, db: asVerifyDb(db) });
 
-      const [query, params] = db.unsafe.mock.calls[0] as [string, unknown[]];
+      const [query] = db.unsafe.mock.calls[0] as [string, unknown[]];
       expect(query).toMatch(/reason_code' IN \('category_mismatch', 'category_lesson_pending'\)[\s\S]*category_guard_version/);
-      expect(params).toEqual(expect.arrayContaining([CATEGORY_GUARD_VERSION]));
+      expect(query).toContain(`category_guard_version')::int, 0) < ${CATEGORY_GUARD_VERSION}`);
     });
 
     it("re-reads not_in_source rejections once after the source check changes", async () => {
@@ -612,9 +613,9 @@ describe("Darwin agentic verification", () => {
 
       await runDarwinVerify({ runId: 405, db: asVerifyDb(db) });
 
-      const [query, params] = db.unsafe.mock.calls[0] as [string, unknown[]];
+      const [query] = db.unsafe.mock.calls[0] as [string, unknown[]];
       expect(query).toMatch(/reason_code' = 'not_in_source'[\s\S]*COALESCE\(\(pa\.detail->>'source_check_version'\)::int, 0\) </);
-      expect(params).toEqual(expect.arrayContaining([DARWIN_SOURCE_CHECK_VERSION]));
+      expect(query).toContain(`source_check_version')::int, 0) < ${DARWIN_SOURCE_CHECK_VERSION}`);
     });
 
     it("re-checks old batch duplicates on a current copy that has no verified twin", async () => {
@@ -622,9 +623,9 @@ describe("Darwin agentic verification", () => {
 
       await runDarwinVerify({ runId: 404, db: asVerifyDb(db) });
 
-      const [query, params] = db.unsafe.mock.calls[0] as [string, unknown[]];
+      const [query] = db.unsafe.mock.calls[0] as [string, unknown[]];
       expect(query).toMatch(/reason_code' = 'duplicate_in_batch'[\s\S]*batch_key_version[\s\S]*superseded_by_id IS NULL[\s\S]*twin_raw.source_document_id = fr.source_document_id[\s\S]*twin_raw.conditions from 'excerpt=/);
-      expect(params).toEqual(expect.arrayContaining([DARWIN_BATCH_KEY_VERSION]));
+      expect(query).toContain(`batch_key_version')::int, 1) < ${DARWIN_BATCH_KEY_VERSION}`);
     });
 
     it("selects rows whose flags are stored as a real JSON array", async () => {

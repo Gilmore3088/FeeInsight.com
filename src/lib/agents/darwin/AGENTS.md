@@ -103,6 +103,11 @@ Darwin owns verification and classification.
 - Every decision is written to `pipeline_attempts` (stage `verify`, fingerprint
   `raw:<fee_raw_id>`) with `decision` and `reason_code`; a row decided under this rule
   version is never selected again, so skipped rows cannot starve the batch.
+- Which rows are due is one SQL test, `darwinDueSql` (`darwinStandingDecisionSql` for the
+  decision part) in `verify.ts`, read by the selection, the state-lane scheduler's backlog check
+  and the daily health check (#1052, 2026-10-14). Before, the scheduler and health counted only
+  rows with no decision, so a row due again after a guard bump in a state with nothing else to do
+  never woke a lane: 26 rows in Puerto Rico and Guam waited from Oct 9 and Oct 13.
 - Review signals carry `reason_counts` keyed by code, and the category range for
   `outside_envelope` rows.
 - A verified $0 row carries the `zero_fee` flag, which is what lets Hamilton publish it.
@@ -333,7 +338,8 @@ Change this table and `agent-health.ts` in the same PR.
 | Rule | Number | Holds when |
 |---|---|---|
 | Steps do not fail | `stepsFailed` (24 h) | 0 |
-| Darwin keeps up | `undecided` (Knox rows waiting for the current verify version) | ≤ 500 (`DARWIN_VERIFY_MAX_LIMIT`) |
+| Darwin keeps up | `undecided` (Knox rows the verify step would select now: never decided, or due again after a guard, source-check, envelope or batch-key change; `darwinDueSql` in `verify.ts`) | ≤ 500 (`DARWIN_VERIFY_MAX_LIMIT`) |
+| No week-old waits | `waitingOver7d` (rows sent to Darwin over 7 days ago and never decided at this rule version) | 0 (`DARWIN_MAX_FIRST_DECISION_DAYS`) |
 | Fees Darwin passed survive the bank's own schedule | `sourceCheckTakedowns / published` (24 h) | ≤ 5% |
 
 Also recorded, without a rule: `stepsCompleted`, `spendUsd`, `decided`, `passed`.
