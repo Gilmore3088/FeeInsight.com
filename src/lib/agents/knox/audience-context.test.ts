@@ -115,4 +115,22 @@ describe("Knox audience suggestion from context (#1059)", () => {
     expect(suggest(null, ["Personal Accounts", "Wire $1,500", "Business Accounts", "Wire $1,000"].join("\n"), "Wire", 1000)).toMatchObject({ audience: "business" });
     expect(suggest(null, ["Fees", "Stop Payment $30", "Business Services", "Lockbox $50"].join("\n"), "Stop Payment Fee", 30)).toMatchObject({ audience: "both", source: "mixed_schedule_unqualified" });
   });
+
+  it("treats a fee name over a rate line as a fee row, and short names as whole words (review of 62b31599)", () => {
+    for (const [name, price] of [
+      ["Business Checking Monthly Service Charge", "$10.00 per month if balance below $500"],
+      ["Business Checking Maintenance", "$10.00 per month*"],
+      ["Business Account Research", "$25.00 per hour, 1 hour minimum"],
+      ["Business Checking Paper Statement", "$5.00 per statement cycle"],
+    ]) {
+      const text = ["Personal Accounts", name, price, "Stop Payment", "$30.00", "Business Services", "Lockbox $50"].join("\n");
+      expect(suggest(null, text, "Stop Payment", 30)).toMatchObject({ audience: "consumer", evidence: "Personal Accounts" });
+    }
+    const rows = (business: string, fee: string) => ["Business Accounts", business, "Personal Accounts", `${fee} $30`].join("\n");
+    expect(suggest(null, rows("Wire Transfer $30", "NSF Fee"), "NSF Fee", 30)).toMatchObject({ audience: "consumer" });
+    expect(suggest(null, rows("Coin wrappers $2 each", "ACH Fee"), "ACH Fee", 30)).toMatchObject({ audience: "consumer" });
+    expect(suggest(null, rows("Wired funds $15", "Wire Fee"), "Wire Fee", 30)).toMatchObject({ audience: "consumer" });
+    expect(suggest(null, rows("Monthly Maintenance $30", "Monthly Fee"), "Monthly Fee", 30)).toMatchObject({ audience: "consumer" });
+    expect(suggest(null, rows("Night Deposit Service $30", "Service Charge"), "Service Charge", 30)).toMatchObject({ audience: "consumer" });
+  });
 });

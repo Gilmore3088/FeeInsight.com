@@ -82,20 +82,24 @@ const squash = (value: string) => value.toLowerCase().replace(/[^a-z0-9]+/g, " "
 
 /** The index of the fee's own line: the first line naming it (its first words) at its price. */
 export function feeLineIndex(lines: string[], feeName: string, amount: number | null): number {
-  // "Stop Payment Fee" is printed "Stop Payment $30": a trailing fee word is not part of the name.
-  const name = squash(feeName).replace(/(?: (?:service )?(?:fees?|charges?))+$/, "").split(" ").slice(0, 4).join(" ");
-  if (!name) return -1;
+  const full = squash(feeName).split(" ").slice(0, 4).join(" ");
+  // "Stop Payment Fee" is printed "Stop Payment $30": a trailing fee word is tried off only when
+  // the full name finds no line, and names match as whole words (never "nsf" in "transfer").
+  const stripped = squash(feeName).replace(/(?: (?:service )?(?:fees?|charges?))+$/, "").split(" ").slice(0, 4).join(" ");
   const price = amount == null ? null : priceToken(amount);
-  let nameOnly = -1;
-  for (let index = 0; index < lines.length; index += 1) {
-    const line = squash(lines[index]);
-    if (!line.includes(name)) continue;
-    // The next line's price counts only when the name line has none of its own, so a fee never
-    // takes the price of the row below it (review of cfe0873d).
-    if (price == null || price.test(lines[index]) || (!PRICED.test(lines[index]) && price.test(nextLine(lines, index) ?? ""))) return index;
-    if (nameOnly < 0) nameOnly = index;
+  for (const name of stripped && stripped !== full ? [full, stripped] : [full]) {
+    if (!name) continue;
+    let nameOnly = -1;
+    for (let index = 0; index < lines.length; index += 1) {
+      if (!` ${squash(lines[index])} `.includes(` ${name} `)) continue;
+      // The next line's price counts only when the name line has none of its own, so a fee never
+      // takes the price of the row below it (review of cfe0873d).
+      if (price == null || price.test(lines[index]) || (!PRICED.test(lines[index]) && price.test(nextLine(lines, index) ?? ""))) return index;
+      if (nameOnly < 0) nameOnly = index;
+    }
+    if (nameOnly >= 0) return nameOnly;
   }
-  return nameOnly;
+  return -1;
 }
 
 /**
@@ -121,10 +125,12 @@ function nextLine(lines: string[], index: number): string | null {
 }
 
 /**
- * A line that holds nothing but a price ("$10.00", "$ 5", "25.00 per item", "Free"); a line that
- * only starts with one ("$100 minimum opening deposit") is a description (review of cfe0873d).
+ * A fee's price line: a price followed by nothing, a parenthesis, a slash, an asterisk, a dash or
+ * a rate word ("$10.00", "$10.00 per month if balance below $500", "$5.00*", "Free"). A price
+ * followed by any other word ("$100 minimum opening deposit") is a description under a heading
+ * (reviews of cfe0873d and 62b31599).
  */
-const BARE_PRICE = /^\s*(?:\$\s*\d[\d,]*(?:\.\d{2})?|\d[\d,]*\.\d{2}|free|no charge|n\/c)\s*\*?\s*(?:(?:per|each|a|an)\s+\w+|each|\/\s*\w+)?\s*$/i;
+const BARE_PRICE = /^\s*(?:\$\s*\d[\d,]*(?:\.\d{2})?|\d[\d,]*\.\d{2}|free|no charge|n\/c)\s*\*?\s*(?:$|\(|\/|[-–]|(?:per|each|a|an|plus|monthly)\b)/i;
 
 /** A fee name whose price sits on the next line ("Personal Account Research" / "$25.00") heads nothing. */
 function namesAFee(lines: string[], index: number): boolean {
