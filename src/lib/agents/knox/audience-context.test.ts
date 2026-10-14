@@ -79,10 +79,13 @@ describe("Knox audience suggestion from context (#1059)", () => {
   });
 
   it("takes no title or heading from a fee name whose price is on the next line (review of 88e9dc21)", () => {
+    // Never a title or a heading. An audience-naming line over a price could be either a fee row
+    // or a section heading ("Business Fees" / "$35.00 Stop Payment"), so the fee below stays
+    // unknown (review of 24ad1339) rather than take that audience.
     const title = ["Fee Schedule", "Business Checking Monthly Service Charge", "$10.00", "Stop Payment", "$30.00"].join("\n");
-    expect(suggest(null, title, "Stop Payment", 30)).toMatchObject({ audience: "both", source: "mixed_schedule_unqualified" });
+    expect(suggest(null, title, "Stop Payment", 30)).toBeNull();
     const heading = ["Fees", "Personal Account Research", "$25.00", "Wire Transfer", "$20.00", "Business Services", "Lockbox $50"].join("\n");
-    expect(suggest(null, heading, "Wire Transfer", 20)).toMatchObject({ audience: "both", source: "mixed_schedule_unqualified" });
+    expect(suggest(null, heading, "Wire Transfer", 20)).toBeNull();
   });
 
   it("prefers the section above the fee to the page title, and two titles name neither", () => {
@@ -126,7 +129,8 @@ describe("Knox audience suggestion from context (#1059)", () => {
       ["Business Checking Paper Statement", "$5.00 per statement cycle"],
     ]) {
       const text = ["Personal Accounts", name, price, "Stop Payment", "$30.00", "Business Services", "Lockbox $50"].join("\n");
-      expect(suggest(null, text, "Stop Payment", 30)).toMatchObject({ audience: "consumer", evidence: "Personal Accounts" });
+      // Never business from the fee row; unknown, since the row could also be a heading.
+      expect(suggest(null, text, "Stop Payment", 30)).toBeNull();
     }
     const rows = (business: string, fee: string) => ["Business Accounts", business, "Personal Accounts", `${fee} $30`].join("\n");
     expect(suggest(null, rows("Wire Transfer $30", "NSF Fee"), "NSF Fee", 30)).toMatchObject({ audience: "consumer" });
@@ -142,10 +146,113 @@ describe("Knox audience suggestion from context (#1059)", () => {
     // A fee row priced on the next line, whatever follows the price, never heads the fees below.
     for (const price of ["$10.00 if balance below $500", "$10.00, waived with direct deposit", "$10.00 monthly", "$10.00 for paper statements"]) {
       const text = ["Personal Accounts", "Business Checking Maintenance", price, "Stop Payment", "$30.00", "Business Services", "Lockbox $50"].join("\n");
-      expect(suggest(null, text, "Stop Payment", 30)).toMatchObject({ audience: "consumer", evidence: "Personal Accounts" });
+      expect(suggest(null, text, "Stop Payment", 30)).toBeNull();
     }
     // A heading over a description line never hands the fee below to the heading further up.
     const heading = ["Personal Accounts", "Stop Payment $30", "Business Checking", "$15.00 monthly maintenance, waived with $1,500 balance", "NSF Fee $35"].join("\n");
     expect(suggest(null, heading, "NSF Fee", 35)).toBeNull();
+  });
+
+  it("never climbs past an audience line over a price, nor reads a title over one (review of 24ad1339)", () => {
+    for (const heading of ["Business Fees", "Business Deposit Accounts", "Business Account Fees", "Business Card Services"]) {
+      const text = ["Personal Accounts", "Stop Payment $30", heading, "$35.00 Stop Payment"].join("\n");
+      expect(suggest(null, text, "Stop Payment", 35)).toBeNull();
+    }
+    for (const [title, below] of [["Business Fee Schedule", "$5.00 Paper Statement"], ["Personal Fee Schedule", "Free online banking"], ["Business Schedule of Fees", "Free online banking"]]) {
+      expect(suggest(null, [title, below, "Stop Payment $30"].join("\n"), "Stop Payment", 30)).toBeNull();
+    }
+    // A fee row that names no audience is passed over, so the section heading above still holds.
+    expect(suggest(null, ["Business Accounts", "Lockbox", "$50.00", "Stop Payment $35"].join("\n"), "Stop Payment", 35)).toMatchObject({ audience: "business" });
+  });
+
+  it("takes no heading or title from a sentence that points to the business schedule (review of 153ca285)", () => {
+    const preamble = "These fees are effective January 1, 2026 and replace all earlier schedules. ".repeat(5);
+    const crossRef = ["Fee Schedule", preamble, "Monthly Maintenance $10", "Stop Payment $30", "Copies of the Business Schedule of Fees are available on request", "Overdraft Fee $35"].join("\n");
+    expect(suggest(null, crossRef, "Stop Payment", 30)).toMatchObject({ audience: "consumer", source: "default_general_schedule" });
+    expect(suggest(null, ["Fee Schedule", "Monthly Maintenance $10", "Stop Payment $30", "Commercial service charges are disclosed separately", "Overdraft $35"].join("\n"), "Stop Payment", 30)).toMatchObject({ audience: "consumer" });
+    for (const text of [
+      ["Fee Schedule", "Stop Payment $30", "Overdraft $35", "For business accounts, see the Business Fee Schedule."],
+      ["Fee Schedule", "Effective January 1, 2026", "Stop Payment $30", "Business service charges are listed separately."],
+    ]) {
+      expect(suggest(null, text.join("\n"), "Stop Payment", 30)).toMatchObject({ audience: "consumer", source: "default_general_schedule" });
+    }
+    // Above the fee, with no heading further up, such a sentence never makes the fee business.
+    for (const text of [
+      ["Fee Schedule", "Effective January 1, 2026", "For business accounts, see the Business Fee Schedule.", "Monthly Maintenance $10", "Stop Payment $30"],
+      ["Fee Schedule", "Monthly Maintenance $10", "Not for business accounts.", "Stop Payment $30"],
+      ["See the Business Schedule of Fees", "Fee Schedule", "Stop Payment $30"],
+    ]) {
+      expect(suggest(null, text.join("\n"), "Stop Payment", 30)).toMatchObject({ audience: "consumer", source: "default_general_schedule" });
+    }
+    // A fee row priced "Waived" or "Monthly $10.00" below never heads the fees under it.
+    for (const price of ["Waived", "Monthly $10.00"]) {
+      expect(suggest(null, ["Personal Accounts", "Business Checking Maintenance", price, "Stop Payment $30"].join("\n"), "Stop Payment", 30)).toBeNull();
+    }
+  });
+
+  it("keeps headings with a trailing period or colon, and never climbs past an audience sentence (review of bac3d3db)", () => {
+    const rows = (amount: number) => [`Wire $${amount}`, `Copies $${amount + 1}`, `Research $${amount + 2}`];
+    const under = (top: string, heading: string, amount: number) =>
+      [top, ...rows(10), heading, `Stop Payment $${amount}.00`].join("\n");
+    expect(suggest(null, under("Consumer Accounts", "BUSINESS ACCOUNTS.", 30), "Stop Payment", 30)).toMatchObject({ audience: "business" });
+    expect(suggest(null, under("Business Accounts", "PERSONAL ACCOUNTS.", 28), "Stop Payment", 28)).toMatchObject({ audience: "consumer" });
+    expect(suggest(null, under("Consumer Accounts", "Business Accounts:", 30), "Stop Payment", 30)).toMatchObject({ audience: "business" });
+    expect(suggest(null, under("Personal Accounts", "Business Accounts available at all branches", 30), "Stop Payment", 30)).toMatchObject({ audience: "business" });
+    for (const [top, heading] of [
+      ["Personal Accounts", "Business Accounts (not including non-profits)"],
+      ["Business Accounts", "Consumer Accounts – see fees below"],
+      ["Personal Checking", "Business Checking (not FDIC-insured sweep)"],
+      ["Personal Banking Services", "Commercial Services Not Listed Above"],
+    ]) {
+      expect(suggest(null, under(top, heading, 30), "Stop Payment", 30)).toBeNull();
+    }
+    // A business-only schedule whose title or heading ends in a period still prices business fees.
+    expect(suggest(null, ["BUSINESS FEE SCHEDULE.", "Effective January 1, 2026", "Stop Payment $30.00"].join("\n"), "Stop Payment", 30)).toMatchObject({ audience: "business" });
+    expect(suggest(null, ["BUSINESS ACCOUNTS.", "Stop Payment $30.00", "Overdraft $35.00"].join("\n"), "Stop Payment", 30)).toMatchObject({ audience: "business" });
+  });
+
+  it("keeps a prose line's period, so a note pointing to the business schedule heads nothing (review of 33d74156)", () => {
+    for (const note of [
+      "Business account fees are listed in our Business Fee Schedule.",
+      "Business accounts have their own fee schedule.",
+      "Business accounts are subject to different fees.",
+      "Business account fee schedules are available at any branch.",
+    ]) {
+      expect(suggest(null, ["Fee Schedule", note, "Stop Payment $30", "Overdraft $35"].join("\n"), "Stop Payment", 30)).toMatchObject({ audience: "consumer", source: "default_general_schedule" });
+    }
+    // Under a consumer heading, the note never wins over it.
+    expect(suggest(null, ["Personal Fee Schedule", "Business account fees are listed in our Business Fee Schedule.", "Stop Payment $30"].join("\n"), "Stop Payment", 30)?.audience).not.toBe("business");
+  });
+
+  it("reads a colon line as introducing its section, and never defaults past an audience sentence (review of a5bc3ec1)", () => {
+    for (const heading of [
+      "Business accounts:",
+      "Fees for business accounts:",
+      "Fees that apply to business accounts:",
+      "Business Checking Accounts with Analysis:",
+      "Business Accounts (fees per item):",
+      "BUSINESS ACCOUNTS ARE SUBJECT TO THE FOLLOWING FEES:",
+    ]) {
+      expect(suggest(null, ["Fee Schedule", heading, "Stop Payment $30", "Overdraft $35"].join("\n"), "Stop Payment", 30)).toMatchObject({ audience: "business", source: "section_heading" });
+    }
+    for (const heading of ["Business accounts.", "Business Accounts Are Subject to the Following Fees", "What Business Accounts Are Charged", "Business Checking Is Free"]) {
+      expect(suggest(null, ["Fee Schedule", heading, "Stop Payment $30", "Overdraft $35"].join("\n"), "Stop Payment", 30)?.audience).not.toBe("consumer");
+    }
+    const two = ["Fee Schedule", "Personal accounts:", "Stop Payment $30", "Business accounts:", "Stop Payment $35"].join("\n");
+    expect(suggest(null, two, "Stop Payment", 30)).toMatchObject({ audience: "consumer", source: "section_heading" });
+    expect(suggest(null, two, "Stop Payment", 35)).toMatchObject({ audience: "business", source: "section_heading" });
+  });
+
+  it("reads a line that points down to its fees as heading them (review of f125b445)", () => {
+    for (const line of [
+      "The fees listed below apply to business accounts.",
+      "Fees for business accounts are listed below:",
+      "These services are available to business accounts only.",
+      "Business accounts – see below:",
+    ]) {
+      expect(suggest(null, ["Fee Schedule", line, "Stop Payment $30", "Overdraft $35"].join("\n"), "Stop Payment", 30)?.audience).not.toBe("consumer");
+    }
+    // A true pointer in a consumer-only schedule keeps the consumer default.
+    expect(suggest(null, ["Fee Schedule", "Business accounts: see the Business Fee Schedule.", "Stop Payment $30"].join("\n"), "Stop Payment", 30)).toMatchObject({ audience: "consumer" });
   });
 });
