@@ -16,6 +16,7 @@ import { renderInline } from "./markdown";
 import { inferFeeCategory } from "@/lib/hamilton/infer-category";
 import { basketItemId } from "@/lib/hamilton/report-basket";
 import { HAMILTON_VERSION } from "@/lib/hamilton/voice";
+import { withConversationContext, type ConversationTurn } from "@/lib/hamilton/conversation-context";
 import { HAMILTON_PAUSED_MESSAGE, isHamiltonPausedText } from "@/lib/hamilton/provider-paused";
 import { STANDARD_METHOD, type AuditTrail } from "@/lib/hamilton/audit-trail";
 import { getDisplayName } from "@/lib/fee-taxonomy";
@@ -148,15 +149,6 @@ interface AnalyzeWorkspaceProps {
  * question as the heading, Hamilton's answer, why it matters, the evidence, where to look next
  * and how it was built. Hamilton shows evidence; it never recommends a price.
  */
-/**
- * Each Ask starts a fresh written answer, so a follow-up ("how does this compare nationally?")
- * carries the question before it; otherwise "this" has nothing to point at.
- */
-export function withEarlierQuestion(question: string, earlier: string): string {
-  if (!earlier || earlier === question) return question;
-  return `${question}\n\n(For context, my previous question was: "${earlier}")`;
-}
-
 /**
  * The Evidence rows ("- Label: Value — note") drawn as figure tiles in the shared exhibit frame;
  * a row with no value is a group heading. The figures are the answer's own, unchanged.
@@ -328,8 +320,10 @@ function AnalyzeConversationWorkspace({
   const currentLeadRef = useRef<string | null>(null);
   const answerHeadingRef = useRef<HTMLDivElement>(null);
   const lastPromptRef = useRef<string>("");
-  // The question before this one, so a follow-up's written answer knows what "this" refers to.
-  const previousPromptRef = useRef<string>("");
+  // The earlier turns of this conversation (question and one-line answer), so a follow-up's
+  // written answer knows what "this", "those" and "us" refer to. Kept in step with `thread`
+  // synchronously, so an answer sent right after an ask never reads a stale list.
+  const historyRef = useRef<ConversationTurn[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const active = useRef(true);
   const answerGeneration = useRef(0);
@@ -418,7 +412,7 @@ function AnalyzeConversationWorkspace({
   const answerInProse = useCallback(
     (question: string) => {
       if (!active.current || readOnlyReason || question !== lastPromptRef.current) return;
-      sendMessage({ text: withEarlierQuestion(question, previousPromptRef.current) });
+      sendMessage({ text: withConversationContext(question, historyRef.current) });
     },
     [sendMessage, readOnlyReason],
   );
@@ -429,10 +423,10 @@ function AnalyzeConversationWorkspace({
       if (!active.current || readOnlyReason || !trimmed || isLoading || engineBusy) return;
       answerGeneration.current += 1;
       if (lastPromptRef.current && lastPromptRef.current !== trimmed) {
-        previousPromptRef.current = lastPromptRef.current;
         // The answer just read moves up into the conversation, collapsed to its question and lead.
-        const earlier = lastPromptRef.current;
-        setThread((t) => [...t, { question: earlier, lead: currentLeadRef.current }]);
+        const earlier: ConversationTurn = { question: lastPromptRef.current, lead: currentLeadRef.current };
+        historyRef.current = [...historyRef.current, earlier];
+        setThread((t) => [...t, earlier]);
       }
       lastPromptRef.current = trimmed;
       setStartedAt(Date.now());
@@ -461,7 +455,7 @@ function AnalyzeConversationWorkspace({
     answerGeneration.current += 1;
     clearError();
     setThread([]);
-    previousPromptRef.current = "";
+    historyRef.current = [];
     lastPromptRef.current = "";
     setEngineBusy(false);
     setAskedQuestion(null);

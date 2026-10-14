@@ -86,16 +86,6 @@ describe("Ask Hamilton helpers", () => {
   });
 });
 
-describe("withEarlierQuestion", () => {
-  it("gives a follow-up the question before it, and leaves a first question alone", async () => {
-    const { withEarlierQuestion } = await import("./AnalyzeWorkspace");
-    expect(withEarlierQuestion("how does this compare nationally?", "")).toBe("how does this compare nationally?");
-    expect(withEarlierQuestion("how does this compare nationally?", "What is our overdraft fee against Florida peers?")).toContain(
-      'my previous question was: "What is our overdraft fee against Florida peers?"',
-    );
-  });
-});
-
 describe("AnalyzeWorkspace while a written answer is drafted", () => {
   beforeEach(() => {
     chat.messages = [];
