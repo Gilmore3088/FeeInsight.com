@@ -2,7 +2,7 @@ import type { sql } from "@/lib/data-store/connection";
 import { inSavepoint } from "@/lib/agents/savepoint";
 
 import { onBankDomain, websiteHost } from "./link-coverage";
-import { hostLabel, SHARED_CONTENT_HOST_PATTERN, unconfirmedDocumentHost, urlHost } from "./other-bank-host";
+import { hostLabel, SAME_NAME_MIN_CHARS, SHARED_CONTENT_HOST_PATTERN, unconfirmedDocumentHost, urlHost } from "./other-bank-host";
 import { MAX_SITE_DOMAINS, usableSearchHost } from "./web-search-tool";
 
 type SqlTag = typeof sql;
@@ -36,8 +36,6 @@ type SqlTag = typeof sql;
  */
 
 const SHARED_CONTENT_HOST = new RegExp(SHARED_CONTENT_HOST_PATTERN);
-/** Shortest website name that may match on name alone ("cinfed.org" and "cinfed.com"). */
-const SAME_NAME_MIN_CHARS = 6;
 /** The bank's own stored documents a `.bank` host with another name needs before it counts. */
 export const OTHER_NAME_MIN_DOCUMENTS = 2;
 

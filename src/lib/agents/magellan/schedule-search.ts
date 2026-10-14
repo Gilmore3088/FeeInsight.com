@@ -10,6 +10,7 @@ import { loadGroupGaps, pickFromWorkLists, WORK_LIST_POOL, workListDetail, type 
 import { FOUND_COOLDOWN_DAYS, MISS_COOLDOWN_DAYS } from "./cooldowns";
 import { looksLikePdfUrl, validateFeeCandidate } from "./find-validate";
 import { urlIdentity } from "./finders";
+import { loadSharedNameIds } from "./other-bank-host";
 import { blockedAnswerHostConfirmed, loadOwnHosts, onBankHosts } from "./own-hosts";
 import { domainRule, ownSiteDomains, webSearchToolFor } from "./web-search-tool";
 import {
@@ -64,6 +65,9 @@ export interface ScheduleSearchRow {
   id: number | string;
   institution_name: string;
   city: string | null;
+  cert_number?: string | null;
+  /** Another institution has this name (`loadSharedNameIds`). */
+  name_shared?: boolean;
   state_code: string | null;
   website_url: string;
   fee_schedule_url: string;
@@ -160,7 +164,7 @@ async function selectRows(db: SqlTag, limit: number, hiddenLimit: number, leader
        GROUP BY record.institution_id
     ),
     scoped AS (
-      SELECT inst.id, inst.institution_name, inst.city, inst.state_code, inst.website_url, inst.fee_schedule_url, inst.asset_size,
+      SELECT inst.id, inst.institution_name, inst.city, inst.cert_number, inst.state_code, inst.website_url, inst.fee_schedule_url, inst.asset_size,
              EXISTS (SELECT 1 FROM leads lead WHERE lead.quote_institution_id = inst.id) AS requested,
              EXISTS (
                SELECT 1 FROM institution_workspace_memberships pro
@@ -316,7 +320,9 @@ export async function runScheduleSearch(options: {
   const fetchImpl = options.fetchImpl ?? fetch;
   const model = PAID_PASS_MODELS.find();
   const ownHostsById = await loadOwnHosts(db, rows);
+  const sharedNames = await loadSharedNameIds(db, rows);
   for (const row of rows) {
+    row.name_shared = sharedNames.has(Number(row.id));
     const institutionId = Number(row.id);
     const ownHosts = ownHostsById.get(institutionId) ?? [];
     const siteDomains = ownSiteDomains(row, ownHosts);
@@ -362,7 +368,7 @@ export async function runScheduleSearch(options: {
           // With the bank's website and name, so an answer on another host must name the bank
           // (#1033's unconfirmed-host rule, find-validate.ts; #1251 review).
           const validation = await validateFeeCandidate(
-            { url: proposed, score: ANSWER_SCORE, reasons: ["paid schedule search"], websiteUrl: row.website_url, institutionName: row.institution_name },
+            { url: proposed, score: ANSWER_SCORE, reasons: ["paid schedule search"], websiteUrl: row.website_url, institutionName: row.institution_name, nameShared: row.name_shared, city: row.city, certNumber: row.cert_number },
             fetchImpl,
           );
           verdict = validation.verdict;
