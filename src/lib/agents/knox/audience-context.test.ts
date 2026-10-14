@@ -79,10 +79,13 @@ describe("Knox audience suggestion from context (#1059)", () => {
   });
 
   it("takes no title or heading from a fee name whose price is on the next line (review of 88e9dc21)", () => {
+    // Never a title or a heading. An audience-naming line over a price could be either a fee row
+    // or a section heading ("Business Fees" / "$35.00 Stop Payment"), so the fee below stays
+    // unknown (review of 24ad1339) rather than take that audience.
     const title = ["Fee Schedule", "Business Checking Monthly Service Charge", "$10.00", "Stop Payment", "$30.00"].join("\n");
-    expect(suggest(null, title, "Stop Payment", 30)).toMatchObject({ audience: "both", source: "mixed_schedule_unqualified" });
+    expect(suggest(null, title, "Stop Payment", 30)).toBeNull();
     const heading = ["Fees", "Personal Account Research", "$25.00", "Wire Transfer", "$20.00", "Business Services", "Lockbox $50"].join("\n");
-    expect(suggest(null, heading, "Wire Transfer", 20)).toMatchObject({ audience: "both", source: "mixed_schedule_unqualified" });
+    expect(suggest(null, heading, "Wire Transfer", 20)).toBeNull();
   });
 
   it("prefers the section above the fee to the page title, and two titles name neither", () => {
@@ -126,7 +129,8 @@ describe("Knox audience suggestion from context (#1059)", () => {
       ["Business Checking Paper Statement", "$5.00 per statement cycle"],
     ]) {
       const text = ["Personal Accounts", name, price, "Stop Payment", "$30.00", "Business Services", "Lockbox $50"].join("\n");
-      expect(suggest(null, text, "Stop Payment", 30)).toMatchObject({ audience: "consumer", evidence: "Personal Accounts" });
+      // Never business from the fee row; unknown, since the row could also be a heading.
+      expect(suggest(null, text, "Stop Payment", 30)).toBeNull();
     }
     const rows = (business: string, fee: string) => ["Business Accounts", business, "Personal Accounts", `${fee} $30`].join("\n");
     expect(suggest(null, rows("Wire Transfer $30", "NSF Fee"), "NSF Fee", 30)).toMatchObject({ audience: "consumer" });
@@ -142,10 +146,22 @@ describe("Knox audience suggestion from context (#1059)", () => {
     // A fee row priced on the next line, whatever follows the price, never heads the fees below.
     for (const price of ["$10.00 if balance below $500", "$10.00, waived with direct deposit", "$10.00 monthly", "$10.00 for paper statements"]) {
       const text = ["Personal Accounts", "Business Checking Maintenance", price, "Stop Payment", "$30.00", "Business Services", "Lockbox $50"].join("\n");
-      expect(suggest(null, text, "Stop Payment", 30)).toMatchObject({ audience: "consumer", evidence: "Personal Accounts" });
+      expect(suggest(null, text, "Stop Payment", 30)).toBeNull();
     }
     // A heading over a description line never hands the fee below to the heading further up.
     const heading = ["Personal Accounts", "Stop Payment $30", "Business Checking", "$15.00 monthly maintenance, waived with $1,500 balance", "NSF Fee $35"].join("\n");
     expect(suggest(null, heading, "NSF Fee", 35)).toBeNull();
+  });
+
+  it("never climbs past an audience line over a price, nor reads a title over one (review of 24ad1339)", () => {
+    for (const heading of ["Business Fees", "Business Deposit Accounts", "Business Account Fees", "Business Card Services"]) {
+      const text = ["Personal Accounts", "Stop Payment $30", heading, "$35.00 Stop Payment"].join("\n");
+      expect(suggest(null, text, "Stop Payment", 35)).toBeNull();
+    }
+    for (const [title, below] of [["Business Fee Schedule", "$5.00 Paper Statement"], ["Personal Fee Schedule", "Free online banking"], ["Business Schedule of Fees", "Free online banking"]]) {
+      expect(suggest(null, [title, below, "Stop Payment $30"].join("\n"), "Stop Payment", 30)).toBeNull();
+    }
+    // A fee row that names no audience is passed over, so the section heading above still holds.
+    expect(suggest(null, ["Business Accounts", "Lockbox", "$50.00", "Stop Payment $35"].join("\n"), "Stop Payment", 35)).toMatchObject({ audience: "business" });
   });
 });

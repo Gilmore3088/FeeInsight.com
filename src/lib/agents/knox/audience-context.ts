@@ -127,18 +127,9 @@ function nextLine(lines: string[], index: number): string | null {
 
 /** A line that starts with a price ("$10.00", "$15.00 monthly maintenance", "25.00 per item", "Free"). */
 const STARTS_WITH_PRICE = /^\s*(?:\$\s*\d|\d[\d,]*\.\d{2}\b|(?:free|no charge|n\/c)\b)/i;
-/** Words that name a fee, not a section ("Business Checking Maintenance", "Business Account Research"). */
-const FEE_WORD = /\b(?:fees?|charges?|maintenance|research|statements?|stop payments?|overdrafts?|nsf|wires?|transfers?|replacements?|cop(?:y|ies)|checks?|minimum|inactive|dormant|clos(?:ing|ure)|deposits?|withdrawals?|items?|orders?|cards?|reconciliation|levy|garnishment)\b/i;
-
-/**
- * What a short line directly above a price line is. With a fee word it is a fee row whose price
- * sits below it ("Business Checking Maintenance" / "$10.00 if balance below $500"). Without one it
- * may be a heading over a description ("Business Checking" / "$15.00 monthly maintenance") or a fee
- * row, and the text does not say which (reviews of 62b31599 and 8dd7af67).
- */
-function overAPrice(lines: string[], index: number): "fee_row" | "ambiguous" | null {
-  if (!STARTS_WITH_PRICE.test(nextLine(lines, index) ?? "")) return null;
-  return FEE_WORD.test(neutral(lines[index])) ? "fee_row" : "ambiguous";
+/** Whether the line sits directly above a line that starts with a price. */
+function overAPrice(lines: string[], index: number): boolean {
+  return STARTS_WITH_PRICE.test(nextLine(lines, index) ?? "");
 }
 
 /** A heading that lists its fees for every account ("Other Service Fees (apply to all accounts)"). */
@@ -164,16 +155,19 @@ export function sectionHeadingAudience(
       continue;
     }
     if (!isHeading(line) || trimmed.startsWith("(")) continue;
-    const above = overAPrice(lines, index);
-    if (above === "fee_row") continue;
+    // Any line that names an audience directly above a price line could head a section ("Business
+    // Fees" / "$35.00 Stop Payment") or be a fee priced below it ("Business Checking Maintenance" /
+    // "$10.00"): the fee below stays unknown rather than take a guessed audience, and the search
+    // never climbs past it to a heading further up (review of 24ad1339). A fee row that names no
+    // audience is skipped.
+    if (overAPrice(lines, index)) {
+      if (audienceOf(line)) return { ambiguous: trimmed };
+      continue;
+    }
     if (ALL_ACCOUNTS.test(line)) return { audience: "both", heading: trimmed };
     if (!SECTION_HEADING.test(line)) continue;
     const audience = audienceOf(line);
-    if (!audience) continue;
-    // An audience line over a price with no fee word could head a section or price a fee: the
-    // fee below stays unknown rather than take a guessed audience.
-    if (above === "ambiguous") return { ambiguous: trimmed };
-    return { audience, heading: trimmed };
+    if (audience) return { audience, heading: trimmed };
   }
   return null;
 }
@@ -214,6 +208,8 @@ export function suggestAudience(input: {
     }
   }
   const title = scheduleTitle(lines);
+  // A title over a price line could be the schedule's title or a fee row: no guess.
+  if (title && "ambiguous" in title) return null;
   if (title) return { audience: title.audience, source: "document_title", evidence: title.line };
   // A general schedule with no business fees is the consumer schedule (#1059 step 4).
   if (businessLine < 0) return { audience: "consumer", source: "default_general_schedule", evidence: "no business fees in the document" };
@@ -231,15 +227,17 @@ export function suggestAudience(input: {
  * title, and two titles naming different audiences (a plain-text menu listing "Personal Fee
  * Schedule" and "Business Fee Schedule") name neither.
  */
-function scheduleTitle(lines: string[]): { audience: ContextAudience; line: string } | null {
+function scheduleTitle(lines: string[]): { audience: ContextAudience; line: string } | { ambiguous: string } | null {
   const found: Array<{ audience: ContextAudience; line: string }> = [];
   let chars = 0;
   for (let index = 0; index < lines.length && chars < TITLE_CHARS; index += 1) {
     chars += lines[index].length + 1;
     const line = lines[index];
-    if (!isHeading(line) || overAPrice(lines, index) || !SCHEDULE_TITLE.test(line)) continue;
+    if (!isHeading(line) || !SCHEDULE_TITLE.test(line)) continue;
     const audience = audienceOf(line);
-    if (audience) found.push({ audience, line: line.trim() });
+    if (!audience) continue;
+    if (overAPrice(lines, index)) return { ambiguous: line.trim() };
+    found.push({ audience, line: line.trim() });
   }
   if (found.length === 0 || new Set(found.map((title) => title.audience)).size > 1) return null;
   return found[0];
@@ -260,7 +258,7 @@ export function businessFeeLine(lines: string[]): number {
     if (NOT_A_SECTION.test(line) || !BUSINESS_WORDS.test(neutral(line))) continue;
     if (PRICED.test(line) && line.trim().length <= MAX_FEE_ROW_CHARS) return index;
     // Only a business section heading owns the prices under it, not a lone menu word ("Business").
-    if (!isHeading(line, true) || !SECTION_HEADING.test(neutral(line))) continue;
+    if (!isHeading(line, true) || !(SECTION_HEADING.test(neutral(line)) || SCHEDULE_TITLE.test(neutral(line)))) continue;
     for (let below = index + 1; below < Math.min(lines.length, index + 1 + SECTION_REACH_LINES); below += 1) {
       // The next heading that names an audience ends this one ("Business Banking" then "Personal Banking").
       if (isHeading(lines[below]) && audienceOf(lines[below])) break;
