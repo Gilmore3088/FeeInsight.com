@@ -50,10 +50,21 @@ describe("Knox audience suggestion from context (#1059)", () => {
   });
 
   it("takes no section from a table row or a menu, but counts a business column", () => {
+    // A fee under a consumer | business column header sits in one column; the text does not say which.
     const table = ["CONSUMER CHECKING ACCOUNTS | BUSINESS ACCOUNTS", "Xplore Spend Account* | Xplore Business Savings", "Monthly Service Charge $5.00"].join("\n");
-    expect(suggest(null, table, "Monthly Service Charge", 5)).toMatchObject({ audience: "both", source: "mixed_schedule_unqualified" });
+    expect(suggest(null, table, "Monthly Service Charge", 5)).toBeNull();
     // A lone menu word ("Business") with prices under it is not a business section.
     expect(hasBusinessFees(["Business", "Checking", "Stop Payment $30"])).toBe(false);
     expect(suggest(null, ["close Business Banking menu", "Monthly fee $5"].join("\n"), "Monthly fee", 5)).toMatchObject({ source: "default_general_schedule" });
+  });
+
+  it("reads a one-fee qualifier as that fee's, and an all-accounts heading as both", () => {
+    // "(Personal Accounts)" qualifies the Deposited Return Items price above it, not the fees below.
+    const valdosta = ["Deposited Return Items", "(Business accounts)", "$10.00", "(Personal Accounts)", "$5.00", "Stop Payment", "$30.00"].join("\n");
+    expect(suggest(null, valdosta, "Stop Payment", 30)).toMatchObject({ audience: "both", source: "mixed_schedule_unqualified" });
+    const truity = ["Consumer Fees", "Other Service Fees (apply to all accounts)", "Stop Payment Fee $30.00", "Business Fees", "Business Savings Account Closing Fee $10.00"].join("\n");
+    expect(suggest(null, truity, "Stop Payment Fee", 30)).toMatchObject({ audience: "both", source: "section_heading" });
+    // With nothing priced for businesses, an all-accounts schedule is the consumer schedule.
+    expect(suggest(null, ["Fees Applicable to all accounts", "Stop Payment $30.00"].join("\n"), "Stop Payment", 30)).toMatchObject({ audience: "consumer", source: "default_general_schedule" });
   });
 });

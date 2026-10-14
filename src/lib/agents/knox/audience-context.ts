@@ -95,13 +95,33 @@ export function feeLineIndex(lines: string[], feeName: string, amount: number | 
   return nameOnly;
 }
 
-/** The nearest heading above the fee's line that names one audience. */
-export function sectionHeadingAudience(lines: string[], feeIndex: number): { audience: ContextAudience; heading: string } | null {
+/** A heading that lists its fees for every account ("Other Service Fees (apply to all accounts)"). */
+const ALL_ACCOUNTS = /\b(?:apply|applies)\s+to\s+all\s+accounts\b|\ball\s+accounts\b/i;
+
+/**
+ * The nearest heading above the fee's line that names one audience. Two outcomes end the search
+ * without one: a heading for all accounts (the fee is for both), and a column header whose cells
+ * name different audiences ("CONSUMER CHECKING ACCOUNTS | BUSINESS ACCOUNTS"), since the fee sits
+ * in one column and the text does not say which (`columns`). A parenthetical line ("(Personal
+ * Accounts)") qualifies the one fee it sits in, not the fees below it.
+ */
+export function sectionHeadingAudience(
+  lines: string[],
+  feeIndex: number,
+): { audience: ContextAudience; heading: string } | { columns: string } | null {
   for (let index = feeIndex - 1; index >= 0 && index >= feeIndex - HEADING_LOOKBACK_LINES; index -= 1) {
     const line = lines[index];
-    if (!isHeading(line) || !SECTION_HEADING.test(line)) continue;
+    const trimmed = line.trim();
+    if (isHeading(line, true) && trimmed.includes("|")) {
+      const cells = trimmed.split("|").map((cell) => audienceOf(cell)).filter(Boolean);
+      if (new Set(cells).size > 1) return { columns: trimmed };
+      continue;
+    }
+    if (!isHeading(line) || trimmed.startsWith("(")) continue;
+    if (ALL_ACCOUNTS.test(line)) return { audience: "both", heading: trimmed };
+    if (!SECTION_HEADING.test(line)) continue;
     const audience = audienceOf(line);
-    if (audience) return { audience, heading: line.trim() };
+    if (audience) return { audience, heading: trimmed };
   }
   return null;
 }
@@ -130,15 +150,20 @@ export function suggestAudience(input: {
   if (fromTitle && title) return { audience: fromTitle, source: "document_title", evidence: title.trim() };
   if (!text) return null;
   const lines = text.split("\n");
+  // A menu link ("Business Banking") is not business fees: only a business heading with priced
+  // lines under it, or a priced line that names business, is.
+  const businessLine = businessFeeLine(lines);
   const feeIndex = feeLineIndex(lines, input.feeName, input.amount);
   if (feeIndex >= 0) {
     const section = sectionHeadingAudience(lines, feeIndex);
-    if (section) return { audience: section.audience, source: "section_heading", evidence: section.heading };
+    // A fee in one of two audience columns stays unknown: the text does not say which column.
+    if (section && "columns" in section) return null;
+    // "All accounts" in a schedule that prices nothing for businesses is the consumer schedule.
+    if (section && !(section.audience === "both" && businessLine < 0)) {
+      return { audience: section.audience, source: "section_heading", evidence: section.heading };
+    }
   }
-  // A general schedule with no business fees is the consumer schedule (#1059 step 4). A menu link
-  // ("Business Banking") is not business fees: only a business heading with priced lines under
-  // it, or a priced line that names business, is.
-  const businessLine = businessFeeLine(lines);
+  // A general schedule with no business fees is the consumer schedule (#1059 step 4).
   if (businessLine < 0) return { audience: "consumer", source: "default_general_schedule", evidence: "no business fees in the document" };
   // A schedule that also prices business items, with nothing that limits this fee to one
   // audience (its name, a section above it), lists it for every account.
