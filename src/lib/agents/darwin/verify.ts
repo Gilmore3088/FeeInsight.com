@@ -17,6 +17,14 @@ import { excerptOf } from "@/lib/agents/hamilton/frequency-fill";
 import { PERCENT_FEE_RANGES, isPercentFee, percentFeeAllowed, ratePercentOf, type RateFields } from "@/lib/percent-fees";
 import { darwinFeedbackRows, recordDarwinFeedback } from "./feedback";
 import { recheckVerifiedFees, type VerifiedRecheckResult } from "./verified-recheck";
+import {
+  categoryChangeCandidates,
+  DARWIN_CATEGORY_CHANGE_LIMIT,
+  DARWIN_CATEGORY_CHANGE_REJUDGE_LIVE,
+  selectCategoryChangeRows,
+  summarizeCategoryChange,
+  type CategoryChangeRejudgeSummary,
+} from "./category-change";
 import { CANONICAL_KEY_MAP } from "@/lib/fee-taxonomy";
 import { recordHamiltonMonitorSignal } from "@/lib/hamilton/monitor-signals";
 import { inSavepoint } from "@/lib/agents/savepoint";
@@ -334,6 +342,8 @@ export interface RunDarwinVerifyResult {
   /** Skipped rows by reason code. */
   reasonCounts: Partial<Record<DarwinReasonCode, number>>;
   recheck: VerifiedRecheckResult | null;
+  /** #1295: rows whose Knox category changed since Darwin's decision; null without the learning log. */
+  categoryChange: CategoryChangeRejudgeSummary | null;
   /** Verified rows that are explicit $0 (free) fees. */
   zeroFeesVerified: number;
   /** Pass 2: rows held for review as far outside their state peers. */
@@ -379,7 +389,8 @@ function parseFlags(value: unknown): string[] {
   return [];
 }
 
-function canonicalHintFrom(row: Pick<RawFeeRow, "outlier_flags" | "conditions">): string | null {
+/** Knox's category for the row: its first `canonical_hint:` flag, else `canonical_hint=` in conditions. */
+export function canonicalHintFrom(row: Pick<RawFeeRow, "outlier_flags" | "conditions">): string | null {
   const fromFlag = parseFlags(row.outlier_flags)
     .find((flag) => flag.startsWith("canonical_hint:"))
     ?.slice("canonical_hint:".length)
@@ -548,9 +559,15 @@ async function selectRawFees(
   institutionId?: number,
   stateCode?: string,
   currentCopy = false,
+  /** Only these rows, with no decision filter: Knox changed their category (#1295). */
+  onlyIds?: readonly number[],
 ): Promise<RawFeeRow[]> {
-  const params: Array<number | string> = [limit];
+  const params: Array<number | string | number[]> = [limit];
   const filters: string[] = [];
+  if (onlyIds) {
+    params.push([...onlyIds]);
+    filters.push(`AND fr.fee_raw_id = ANY($${params.length}::bigint[])`);
+  }
   if (institutionId) {
     params.push(institutionId);
     filters.push(`AND fr.institution_id = $${params.length}`);
@@ -560,7 +577,7 @@ async function selectRawFees(
     params.push(normalizedState);
     filters.push(`AND upper(btrim(inst.state_code)) = $${params.length}`);
   }
-  if (learning) {
+  if (learning && !onlyIds) {
     // A row this rule version already rejected is never selected again, so rejected
     // rows cannot starve the batch.
     const strategyParam = `$${params.push(DARWIN_VERIFY_STRATEGY.strategy)}`;
@@ -984,6 +1001,48 @@ async function recordPassTwoAttempts(
   }
 }
 
+/**
+ * #1295: rows Knox re-filed under a category Darwin never judged them under (`category-change.ts`).
+ * Counted and sampled on every step that can read the learning log, a dry run included; handed
+ * to the batch only when `DARWIN_CATEGORY_CHANGE_REJUDGE_LIVE` is on and the step writes.
+ */
+async function categoryChangeRejudge(
+  db: SqlTag,
+  options: {
+    learning: boolean;
+    dryRun: boolean;
+    institutionId?: number;
+    stateCode?: string;
+    alreadySelected: ReadonlySet<number>;
+    currentCopy: boolean;
+  },
+): Promise<{ rows: RawFeeRow[]; summary: CategoryChangeRejudgeSummary | null }> {
+  const canRead = options.learning || (options.dryRun && (await learningSchemaReady(db)));
+  if (!canRead) return { rows: [], summary: null };
+  const scanned = await selectCategoryChangeRows(db, {
+    strategy: DARWIN_VERIFY_STRATEGY.strategy,
+    version: DARWIN_VERIFY_STRATEGY.version,
+    institutionId: options.institutionId,
+    stateCode: options.stateCode,
+  }).catch((error) => {
+    console.warn("[darwin] category change read failed", error instanceof Error ? error.message : error);
+    return null;
+  });
+  if (!scanned) return { rows: [], summary: null };
+  const candidates = categoryChangeCandidates(scanned, canonicalHintFrom);
+  const live = DARWIN_CATEGORY_CHANGE_REJUDGE_LIVE && options.learning;
+  const ids = live
+    ? candidates
+        .map((candidate) => candidate.feeRawId)
+        .filter((id) => !options.alreadySelected.has(id))
+        .slice(0, DARWIN_CATEGORY_CHANGE_LIMIT)
+    : [];
+  const rows = ids.length > 0
+    ? await selectRawFees(db, ids.length, options.learning, options.institutionId, options.stateCode, options.currentCopy, ids)
+    : [];
+  return { rows, summary: summarizeCategoryChange(candidates, scanned.length, rows.length, live) };
+}
+
 export async function runDarwinVerify(
   options: RunDarwinVerifyOptions,
 ): Promise<RunDarwinVerifyResult> {
@@ -992,7 +1051,18 @@ export async function runDarwinVerify(
   const dryRun = Boolean(options.dryRun);
   const learning = !dryRun && (await learningSchemaReady(db));
   const currentCopy = learning && (await currentCopySchemaReady(db));
-  const rows = await selectRawFees(db, limit, learning, options.institutionId, options.stateCode, currentCopy);
+  const selected = await selectRawFees(db, limit, learning, options.institutionId, options.stateCode, currentCopy);
+  // #1295: rows Knox re-filed under a category Darwin never judged them under. Read-only while
+  // the switch is off; on, they join this batch for a new decision under today's category.
+  const categoryChange = await categoryChangeRejudge(db, {
+    learning,
+    dryRun,
+    institutionId: options.institutionId,
+    stateCode: options.stateCode,
+    alreadySelected: new Set(selected.map((row) => Number(row.fee_raw_id))),
+    currentCopy,
+  });
+  const rows = categoryChange.rows.length > 0 ? [...selected, ...categoryChange.rows] : selected;
   const rowByRawFeeId = new Map(rows.map((row) => [Number(row.fee_raw_id), row]));
   const results: DarwinVerificationResult[] = [];
 
@@ -1139,6 +1209,8 @@ export async function runDarwinVerify(
           fee_raw_id: result.feeRawId,
           fee_verified_id: result.feeVerifiedId,
           canonical_fee_key: result.canonicalFeeKey,
+          // Knox's category as Darwin read it, so a later Knox re-file is a new decision (#1295).
+          knox_category: canonicalHintFrom(rowByRawFeeId.get(result.feeRawId) ?? { outlier_flags: null, conditions: null }),
           amount: result.amount,
           decision: result.decision,
           reason_code: result.reasonCode,
@@ -1196,6 +1268,7 @@ export async function runDarwinVerify(
     outcomes: learning ? countOutcomes(results.map(attemptOutcome)) : {},
     reasonCounts,
     recheck,
+    categoryChange: categoryChange.summary,
     zeroFeesVerified: results.filter((result) => result.status === "verified" && result.amount === 0).length,
     peerOutliers: results.filter((result) => result.reasonCode === "peer_outlier").length,
     peerFallbackChecks: results.filter((result) => result.peerCheck && result.peerCheck.scope !== "state").length,
