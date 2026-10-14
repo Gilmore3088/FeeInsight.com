@@ -86,6 +86,13 @@ hand-found link or paid-fetched document starts a new run even inside the retry 
   headline fees live adds `UNCOVERED_LEADER_PRIORITY` (50) to its home state's lane, since
   that lane finds its schedule. On 2026-10-07, 585 of 693 leaders were uncovered (ME, UT and
   WI had 19 each).
+- Coverage gap (2026-10-12 target, #1117): each covered institution the state's size groups
+  under $10B still need to reach James's target (30 live institutions per group, or 75% of a
+  group under 40) adds `COVERAGE_GAP_PRIORITY` (20). The groups come from `coverageGroupsSql`
+  in `goal-scorecard.ts`, the same query behind the scorecard's benchmark-ready groups, so the
+  gap a lane works on is the one the scorecard shows per state (now, 7 days ago, and the newly
+  live institutions that closed it). A state is at most 90 short (1,800), below report demand.
+  Institutions over $10B are compared nationally and by district, so they add nothing.
 - At most `MAX_ACTIVE_STATE_LANE_RUNS` (3) lane runs are queued or running at once. The
   executor finishes started runs first, then runs waiting over an hour, then the highest
   `priority_score`.
