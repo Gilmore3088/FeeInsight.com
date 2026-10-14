@@ -104,8 +104,10 @@ describe("Knox audience suggestion from context (#1059)", () => {
     const rows = ["Personal Accounts", "Stop Payment $30", "Wire Transfer $20", "Business Accounts", "Stop Payment $20"].join("\n");
     expect(suggest(null, rows, "Stop Payment", 20)).toMatchObject({ audience: "business", evidence: "Business Accounts" });
     const described = ["Fee Schedule", "Personal Accounts", "Stop Payment $30", "Business Accounts", "$100 minimum opening deposit", "Stop Payment $35"].join("\n");
-    expect(suggest(null, described, "Stop Payment", 35)).toMatchObject({ audience: "business", evidence: "Business Accounts" });
-    expect(suggest(null, ["Personal Accounts", "Stop Payment $30", "Business Checking", "Free checking for 12 months", "Stop Payment $35"].join("\n"), "Stop Payment", 35)).toMatchObject({ audience: "business" });
+    // A heading over a line that starts with a price could equally be a fee row priced below it:
+    // the fee stays unknown, never the Personal heading further up (reviews of cfe0873d, 8dd7af67).
+    expect(suggest(null, described, "Stop Payment", 35)).toBeNull();
+    expect(suggest(null, ["Personal Accounts", "Stop Payment $30", "Business Checking", "Free checking for 12 months", "Stop Payment $35"].join("\n"), "Stop Payment", 35)).toBeNull();
     for (const bank of ["Commercial State Bank of Wagner Fee Schedule", "Commercial National Bank Schedule of Fees", "First Commercial Bank Fee Schedule"]) {
       expect(suggest(null, [bank, "Stop Payment $30", "Overdraft $25"].join("\n"), "Stop Payment", 30)).toMatchObject({ audience: "consumer", source: "default_general_schedule" });
     }
@@ -132,5 +134,18 @@ describe("Knox audience suggestion from context (#1059)", () => {
     expect(suggest(null, rows("Wired funds $15", "Wire Fee"), "Wire Fee", 30)).toMatchObject({ audience: "consumer" });
     expect(suggest(null, rows("Monthly Maintenance $30", "Monthly Fee"), "Monthly Fee", 30)).toMatchObject({ audience: "consumer" });
     expect(suggest(null, rows("Night Deposit Service $30", "Service Charge"), "Service Charge", 30)).toMatchObject({ audience: "consumer" });
+  });
+
+  it("prefers a priced line under either name, and never guesses over a price line (review of 8dd7af67)", () => {
+    const waived = ["Business Accounts", "Stop payment fee waived for Premier Business Checking", "Personal Accounts", "Stop Payment $30.00"].join("\n");
+    expect(suggest(null, waived, "Stop Payment Fee", 30)).toMatchObject({ audience: "consumer", evidence: "Personal Accounts" });
+    // A fee row priced on the next line, whatever follows the price, never heads the fees below.
+    for (const price of ["$10.00 if balance below $500", "$10.00, waived with direct deposit", "$10.00 monthly", "$10.00 for paper statements"]) {
+      const text = ["Personal Accounts", "Business Checking Maintenance", price, "Stop Payment", "$30.00", "Business Services", "Lockbox $50"].join("\n");
+      expect(suggest(null, text, "Stop Payment", 30)).toMatchObject({ audience: "consumer", evidence: "Personal Accounts" });
+    }
+    // A heading over a description line never hands the fee below to the heading further up.
+    const heading = ["Personal Accounts", "Stop Payment $30", "Business Checking", "$15.00 monthly maintenance, waived with $1,500 balance", "NSF Fee $35"].join("\n");
+    expect(suggest(null, heading, "NSF Fee", 35)).toBeNull();
   });
 });

@@ -87,18 +87,19 @@ export function feeLineIndex(lines: string[], feeName: string, amount: number | 
   // the full name finds no line, and names match as whole words (never "nsf" in "transfer").
   const stripped = squash(feeName).replace(/(?: (?:service )?(?:fees?|charges?))+$/, "").split(" ").slice(0, 4).join(" ");
   const price = amount == null ? null : priceToken(amount);
-  for (const name of stripped && stripped !== full ? [full, stripped] : [full]) {
-    if (!name) continue;
-    let nameOnly = -1;
+  const names = [full, stripped].filter((name, index, all) => name && all.indexOf(name) === index);
+  const named = (index: number) => names.find((name) => ` ${squash(lines[index])} `.includes(` ${name} `));
+  // A line at the fee's price, under either name, beats a line that only names it ("Stop payment
+  // fee waived for Premier Business Checking"; review of 8dd7af67). The next line's price counts
+  // only when the name line has none of its own, so a fee never takes the row below's price.
+  const priced = (index: number) =>
+    price == null || price.test(lines[index]) || (!PRICED.test(lines[index]) && price.test(nextLine(lines, index) ?? ""));
+  for (const name of names) {
     for (let index = 0; index < lines.length; index += 1) {
-      if (!` ${squash(lines[index])} `.includes(` ${name} `)) continue;
-      // The next line's price counts only when the name line has none of its own, so a fee never
-      // takes the price of the row below it (review of cfe0873d).
-      if (price == null || price.test(lines[index]) || (!PRICED.test(lines[index]) && price.test(nextLine(lines, index) ?? ""))) return index;
-      if (nameOnly < 0) nameOnly = index;
+      if (` ${squash(lines[index])} `.includes(` ${name} `) && priced(index)) return index;
     }
-    if (nameOnly >= 0) return nameOnly;
   }
+  for (let index = 0; index < lines.length; index += 1) if (named(index)) return index;
   return -1;
 }
 
@@ -124,17 +125,20 @@ function nextLine(lines: string[], index: number): string | null {
   return null;
 }
 
-/**
- * A fee's price line: a price followed by nothing, a parenthesis, a slash, an asterisk, a dash or
- * a rate word ("$10.00", "$10.00 per month if balance below $500", "$5.00*", "Free"). A price
- * followed by any other word ("$100 minimum opening deposit") is a description under a heading
- * (reviews of cfe0873d and 62b31599).
- */
-const BARE_PRICE = /^\s*(?:\$\s*\d[\d,]*(?:\.\d{2})?|\d[\d,]*\.\d{2}|free|no charge|n\/c)\s*\*?\s*(?:$|\(|\/|[-–]|(?:per|each|a|an|plus|monthly)\b)/i;
+/** A line that starts with a price ("$10.00", "$15.00 monthly maintenance", "25.00 per item", "Free"). */
+const STARTS_WITH_PRICE = /^\s*(?:\$\s*\d|\d[\d,]*\.\d{2}\b|(?:free|no charge|n\/c)\b)/i;
+/** Words that name a fee, not a section ("Business Checking Maintenance", "Business Account Research"). */
+const FEE_WORD = /\b(?:fees?|charges?|maintenance|research|statements?|stop payments?|overdrafts?|nsf|wires?|transfers?|replacements?|cop(?:y|ies)|checks?|minimum|inactive|dormant|clos(?:ing|ure)|deposits?|withdrawals?|items?|orders?|cards?|reconciliation|levy|garnishment)\b/i;
 
-/** A fee name whose price sits on the next line ("Personal Account Research" / "$25.00") heads nothing. */
-function namesAFee(lines: string[], index: number): boolean {
-  return BARE_PRICE.test(nextLine(lines, index) ?? "");
+/**
+ * What a short line directly above a price line is. With a fee word it is a fee row whose price
+ * sits below it ("Business Checking Maintenance" / "$10.00 if balance below $500"). Without one it
+ * may be a heading over a description ("Business Checking" / "$15.00 monthly maintenance") or a fee
+ * row, and the text does not say which (reviews of 62b31599 and 8dd7af67).
+ */
+function overAPrice(lines: string[], index: number): "fee_row" | "ambiguous" | null {
+  if (!STARTS_WITH_PRICE.test(nextLine(lines, index) ?? "")) return null;
+  return FEE_WORD.test(neutral(lines[index])) ? "fee_row" : "ambiguous";
 }
 
 /** A heading that lists its fees for every account ("Other Service Fees (apply to all accounts)"). */
@@ -150,7 +154,7 @@ const ALL_ACCOUNTS = /\b(?:apply|applies)\s+to\s+all\s+accounts\b|\ball\s+accoun
 export function sectionHeadingAudience(
   lines: string[],
   feeIndex: number,
-): { audience: ContextAudience; heading: string } | { columns: string } | null {
+): { audience: ContextAudience; heading: string } | { columns: string } | { ambiguous: string } | null {
   for (let index = feeIndex - 1; index >= 0 && index >= feeIndex - HEADING_LOOKBACK_LINES; index -= 1) {
     const line = lines[index];
     const trimmed = line.trim();
@@ -159,11 +163,17 @@ export function sectionHeadingAudience(
       if (new Set(cells).size > 1) return { columns: trimmed };
       continue;
     }
-    if (!isHeading(line) || trimmed.startsWith("(") || namesAFee(lines, index)) continue;
+    if (!isHeading(line) || trimmed.startsWith("(")) continue;
+    const above = overAPrice(lines, index);
+    if (above === "fee_row") continue;
     if (ALL_ACCOUNTS.test(line)) return { audience: "both", heading: trimmed };
     if (!SECTION_HEADING.test(line)) continue;
     const audience = audienceOf(line);
-    if (audience) return { audience, heading: trimmed };
+    if (!audience) continue;
+    // An audience line over a price with no fee word could head a section or price a fee: the
+    // fee below stays unknown rather than take a guessed audience.
+    if (above === "ambiguous") return { ambiguous: trimmed };
+    return { audience, heading: trimmed };
   }
   return null;
 }
@@ -197,7 +207,7 @@ export function suggestAudience(input: {
   if (feeIndex >= 0) {
     const section = sectionHeadingAudience(lines, feeIndex);
     // A fee in one of two audience columns stays unknown: the text does not say which column.
-    if (section && "columns" in section) return null;
+    if (section && ("columns" in section || "ambiguous" in section)) return null;
     // "All accounts" in a schedule that prices nothing for businesses is the consumer schedule.
     if (section && !(section.audience === "both" && businessLine < 0)) {
       return { audience: section.audience, source: "section_heading", evidence: section.heading };
@@ -227,7 +237,7 @@ function scheduleTitle(lines: string[]): { audience: ContextAudience; line: stri
   for (let index = 0; index < lines.length && chars < TITLE_CHARS; index += 1) {
     chars += lines[index].length + 1;
     const line = lines[index];
-    if (!isHeading(line) || namesAFee(lines, index) || !SCHEDULE_TITLE.test(line)) continue;
+    if (!isHeading(line) || overAPrice(lines, index) || !SCHEDULE_TITLE.test(line)) continue;
     const audience = audienceOf(line);
     if (audience) found.push({ audience, line: line.trim() });
   }
