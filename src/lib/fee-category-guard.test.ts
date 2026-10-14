@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { amountEnvelopeFor } from "@/lib/agents/darwin/envelopes";
 
-import { checkFeeCategory, GUARDED_CATEGORIES, refileCategory } from "./fee-category-guard";
+import { checkFeeCategory, GUARDED_CATEGORIES, refileCategory, refileFromLine } from "./fee-category-guard";
 
 describe("checkFeeCategory", () => {
   it("passes keys it does not guard", () => {
@@ -1028,5 +1028,103 @@ describe("a remote deposit capture product filed as monthly maintenance (v61)", 
 
   it("keeps an account's own maintenance fee", () => {
     expect(checkFeeCategory("monthly_maintenance", "Checking Maintenance Fee").ok).toBe(true);
+  });
+});
+
+/** Knox's provenance note around a source line, as stored on the raw row. */
+function knoxNote(line: string): string {
+  return `Knox deterministic extraction from Rosetta artifact #1. canonical_hint=monthly_maintenance; text_hash=0; excerpt="${line}"`;
+}
+
+describe("activity charges filed as monthly maintenance (v62, #1100)", () => {
+  // Source lines of live monthly_maintenance fees (tuning set, Oct 14): each prices an activity.
+  it.each([
+    ["Service charge", 2, "Service charge of $2 per debit in excess of 6 withdrawals per quarter"],
+    [
+      "Service charge",
+      3,
+      "fee refund will be credited to your account on the last day of your statement cycle. | A service charge of $3.00 will be charged for each withdrawal in excess of six during",
+    ],
+    [
+      "Service charge fee",
+      2,
+      "A service charge fee of $2.00 will be charged for each debit transaction (withdrawal, transfer, or payment out of this account) in excess of six per quarter.",
+    ],
+    ["Per item service charge fee", 25, "A per item service charge fee of $25.00 will be charged for each transaction in excess of the above limitations."],
+    ["Maintenance fee", 5, "A maintenance fee of $5.00 per transaction will be charged if you make more than two withdrawals during a 12 month period."],
+    ["Service charge fee", 10, "A service charge fee of $10.00 will be charged for each debit transaction in excess of six during a month and no more than three of the six may be check/draft."],
+    ["Maintenance fee", 1, "A maintenance fee of $1 will be imposed for every debit transaction (withdrawal, check paid, automatic transfer or payment out of your account) over six per quarter"],
+  ])("re-files %s ($%d) to account research from its line", (name, amount, line) => {
+    const context = { amount, conditions: knoxNote(line) };
+    const verdict = checkFeeCategory("monthly_maintenance", name, context);
+    expect(verdict.ok).toBe(false);
+    expect(refileFromLine("monthly_maintenance", name, context)).toBe("account_research");
+  });
+
+  it.each([
+    ["Service charge", 5, "1A $5.00 service charge will be applied to each share transfer. Funds must be available in order to be transferred."],
+    ["Service charge", 10, "Should you need to withdraw the funds before October, you may leave your account open, but there is a $10.00 service charge each time you withdraw money"],
+  ])("fails %s ($%d), an activity charge with no limit, without re-filing it", (name, amount, line) => {
+    const context = { amount, conditions: knoxNote(line) };
+    expect(checkFeeCategory("monthly_maintenance", name, context).ok).toBe(false);
+    expect(refileFromLine("monthly_maintenance", name, context)).toBeNull();
+  });
+
+  // Same tuning set: the account's own fee, priced per period, with a per-check charge on top.
+  it.each([
+    ["NOW Account Checking Maintenance fee", 8, "A maintenance fee of $8.00 plus .50¢ per check will be imposed every statement cycle unless you maintain either a minimum daily balance of $750.00"],
+    ["Maintenance charge", 10, "If your balance drops below the required balance there is a maintenance charge of $10.00 per month and $.35 per debit."],
+    ["NOW Account Service charge", 10, "If the average falls below the requirement, a service charge of $10.00 and $.25 per check is assessed.*"],
+    ["low balance service charge plus cents per check", 10, "$10.00 low balance service charge plus $0.10 cents per check"],
+    ["Fees – A service charge", 5, "Fees – A service charge of $5.00 will be charged each statement cycle. See Additional Terms section for options to offset"],
+    ["Service charge fee", 10, "Additional Information Regarding Your Account: A service charge fee of $10.00 will be charged each calendar quarter"],
+    ["Monthly Fee", 5, "Monthly Transaction Fees: | $0.05 per item over 200, plus $5.00 monthly fee"],
+    ["Regular Checking Service Charge", 5, "Regular Checking Service Charge | $5.00 per month (age 18-59) $0.20 per check over 50 checks"],
+    ["Service charge + per debit item fee", 10, "$10 service charge + $0.10 per debit item fee"],
+    ["Monthly Service Charge", 30, "Monthly Service Charge ...................................................... $ 30.00 | Items Deposited (Per Item)"],
+    ["Basic Monthly Service Fee", 5, "Basic Monthly Service Fee | $5.00 | Insufficient Funds Returned | $32.00 per item"],
+    // A unit followed by a colon labels the next price.
+    ["Account fees: Monthly maintenance fee", 8, "Account fees: Monthly maintenance fee: $8.00 Per check: $0.20 Per deposited item: $0.07 Per deposit or credit: $0.25"],
+    ["Max Money Checking Monthly service charge", 8, "Max Money Checking | $8/month if balance falls below $2,500 $5/withdrawals over two (2)"],
+    ["Monthly Fee", 4.95, "Monthly Fee $4.95, plus $1.50 for each transaction over 5"],
+  ])("keeps %s ($%d), the account's periodic fee", (name, amount, line) => {
+    const context = { amount, conditions: knoxNote(line) };
+    expect(checkFeeCategory("monthly_maintenance", name, context)).toEqual({ ok: true });
+    expect(refileFromLine("monthly_maintenance", name, context)).toBeNull();
+  });
+
+  it("leaves a row with no excerpt or no amount to its name", () => {
+    expect(checkFeeCategory("monthly_maintenance", "Service charge", { amount: 3 }).ok).toBe(true);
+    expect(checkFeeCategory("monthly_maintenance", "Service charge", { conditions: knoxNote("$3.00 for each withdrawal over six") }).ok).toBe(true);
+  });
+
+  it("reads only monthly maintenance", () => {
+    const context = { amount: 2, conditions: knoxNote("Service charge of $2 per debit in excess of 6 withdrawals per quarter") };
+    expect(refileFromLine("account_research", "Service charge", context)).toBeNull();
+  });
+});
+
+describe("service charges for another service filed as monthly maintenance (v62, #1100)", () => {
+  // Live monthly_maintenance names, tuning set, Oct 14.
+  it.each([
+    "Stop & Reissue Service Charge",
+    "Claims/Payment Investigation Service Charge",
+    "General Service (Consumer) Other IRS Processing Service Charge",
+    "ATM Service Charge (WSB and AllPoint Network ATMs excluded)",
+    "Negative Balance Service Charge (after 20 calendar days of being overdrawn)",
+    "Per Item Service Charge",
+    "Service charge per transfer",
+  ])("takes %s out of monthly_maintenance", (name) => {
+    expect(checkFeeCategory("monthly_maintenance", name).ok).toBe(false);
+  });
+
+  it.each([
+    "Service charge + per debit item fee",
+    "low balance service charge plus cents per check",
+    "Cash Rewards/Super Checking monthly service fee (per month)",
+    "Monthly maintenance fee per statement cycle",
+    "Monthly Service Charge",
+  ])("keeps %s", (name) => {
+    expect(checkFeeCategory("monthly_maintenance", name).ok).toBe(true);
   });
 });

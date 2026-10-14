@@ -8,7 +8,7 @@ import { countOutcomes, type AttemptOutcome } from "@/lib/agents/learning/outcom
 import { normalizeStateCode } from "@/lib/agents/state-lane-memory";
 import { WHOLE_DOCUMENT_BATCH } from "@/lib/agents/document-batch";
 import { currentCopySchemaReady } from "@/lib/agents/magellan/current-copy";
-import { CATEGORY_GUARD_VERSION, checkFeeCategory, refileCategory } from "@/lib/fee-category-guard";
+import { CATEGORY_GUARD_VERSION, checkFeeCategory, refileCategory, refileFromLine } from "@/lib/fee-category-guard";
 import { RETIRED_CATEGORIES } from "@/lib/fee-fold";
 import { RULE_WHY, ruleFor } from "@/lib/agents/hamilton/eval-verdicts";
 import { checkFeeAgainstSource, checkRateAgainstSource } from "@/lib/custom-report/source-check";
@@ -1007,8 +1007,10 @@ export async function runDarwinVerify(
   // Pass 2 evidence, loaded once per batch: state peer levels and the banks' other
   // stored documents for the same fees.
   const peers = new PeerLevelCache(db);
-  // A row Knox filed under a neighbouring category is checked under the one its name says.
-  const categoryOf = (row: RawFeeRow) => refileCategory(canonicalHintFrom(row), row.fee_name);
+  // A row Knox filed under a neighbouring category is checked under the one its own source line
+  // (guard v62) or its name says.
+  const categoryOf = (row: RawFeeRow) =>
+    refileFromLine(canonicalHintFrom(row), row.fee_name, row) ?? refileCategory(canonicalHintFrom(row), row.fee_name);
   const hintedRows = rows.filter((row) => canonicalHintFrom(row) != null);
   const sourceCopies = await loadSourceCopies(
     db,

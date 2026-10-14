@@ -5,6 +5,7 @@ import {
   GUARDED_CATEGORIES,
   PLAIN_RETURNED_ITEM,
   refileCategory,
+  refileFromLine,
   type CategoryGuardCode,
 } from "@/lib/fee-category-guard";
 import { isRetiredCategory, splitLiveCategory, FOLD_RULES_VERSION } from "@/lib/fee-fold";
@@ -333,7 +334,11 @@ export function restoreTarget(
   if (hand) return hand;
   // Or the guard's own re-file rule names it: express card replacements kept coming back as
   // card_replacement and going down again (235, 12213, 29782, Oct 6-9); rush_card is their home.
-  const to = splitLiveCategory(row.canonical_fee_key, row.fee_name)?.to ?? restoreRefile(row.canonical_fee_key, row.fee_name);
+  // Or its own source line does (guard v62): an excess activity charge filed as monthly maintenance.
+  const to =
+    splitLiveCategory(row.canonical_fee_key, row.fee_name)?.to ??
+    restoreRefile(row.canonical_fee_key, row.fee_name) ??
+    refileFromLine(row.canonical_fee_key, row.fee_name, row);
   // A retired key is no home: Hamilton never publishes it.
   if (!to || to === row.canonical_fee_key || isRetiredCategory(to)) return null;
   const amount = normalizedAmount(row.amount) ?? 0;
