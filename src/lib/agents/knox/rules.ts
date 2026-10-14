@@ -1522,17 +1522,29 @@ const PRICE_UNIT_AFTER = /^\s*(?:\/\s*(?:statement|stmt|hr|hour|item|month|mo|sh
  * "00" cents always; other cents only when the text drops the point on "00" prices too and the
  * cents end their cell ("$2 50 each", "$4 95 |"), so a count after a price ("$5 10 items") stays.
  * Never a box size ("$5 10 x 10") or a longer number.
+ *
+ * #1305: two more shapes of the same price. A footnote star right after the cents ends them
+ * ("ATM Transactions (per item) | $1 50* after 8/mo", Members 1st 7517, read as $1), and the
+ * star stays a mark, never a digit. A point kept with a space after it ("Loan Skip A Pay Fee
+ * .... $29. 95/ea ch", Xplore 6636, read as $29) is the same dropped point. Each shape is
+ * counted on its own: ". 00" prices never vouch for "$2 50", which in a letter-spaced text is
+ * $250. Cents after ". " end their cell too, since a sentence can end on a price and go on
+ * with another number ("$500. 10-year draw period").
  */
-const DROPPED_POINT_ZERO = /\$(\s?)(\d{1,3}(?:,\d{3})+|\d{1,4}) (00)(?![\d.,])(?!\s*[x×]\s*\d)/g;
-const DROPPED_POINT_CENTS = /\$(\s?)(\d{1,3}(?:,\d{3})+|\d{1,4}) (\d{2})(?![\d.,])(?=\s*(?:$|\||\/|each\b|per\b|ea\b))/gim;
+const DROPPED_POINT_SHAPES = [" ", "\\. "].map((dropped) => ({
+  zero: new RegExp(String.raw`\$(\s?)(\d{1,3}(?:,\d{3})+|\d{1,4})${dropped}(00)(?![\d.,])(?!\s*[x×]\s*\d)`, "g"),
+  cents: new RegExp(String.raw`\$(\s?)(\d{1,3}(?:,\d{3})+|\d{1,4})${dropped}(\d{2})(?![\d.,])(?=[*†‡]|\s*(?:$|\||\/|each\b|per\b|ea\b))`, "gim"),
+}));
 const DROPPED_POINT_MIN = 3;
 
 export function withDroppedDecimalPoints(text: string): string {
-  const zeros = text.match(DROPPED_POINT_ZERO)?.length ?? 0;
-  if (zeros === 0) return text;
-  const restored = text.replace(DROPPED_POINT_ZERO, (_whole, gap: string, dollars: string, cents: string) => `$${gap}${dollars}.${cents}`);
-  if (zeros < DROPPED_POINT_MIN) return restored;
-  return restored.replace(DROPPED_POINT_CENTS, (_whole, gap: string, dollars: string, cents: string) => `$${gap}${dollars}.${cents}`);
+  const withPoint = (_whole: string, gap: string, dollars: string, cents: string) => `$${gap}${dollars}.${cents}`;
+  return DROPPED_POINT_SHAPES.reduce((current, shape) => {
+    const zeros = current.match(shape.zero)?.length ?? 0;
+    if (zeros === 0) return current;
+    const restored = current.replace(shape.zero, withPoint);
+    return zeros < DROPPED_POINT_MIN ? restored : restored.replace(shape.cents, withPoint);
+  }, text);
 }
 
 export function extractCandidatesFromText(input: string): ExtractionRulesResult {
