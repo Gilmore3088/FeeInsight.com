@@ -180,6 +180,10 @@ function narrateFinished(
       return n(detail, "frequency_fills") === 0
         ? `Checked ${count(n(detail, "frequency_fill_scanned"), "live fee")}; every frequency matches its schedule row.`
         : `Set the frequency of ${count(n(detail, "frequency_fills"), "live fee")} from its own schedule row.`;
+    case "audience-relabel":
+      return detail.dry_run === true
+        ? `Read ${count(n(detail, "fees"), "live fee")} verified as unknown; nothing relabelled (dry run).`
+        : `Gave ${count(n(detail, "relabeled"), "live fee")} Darwin's audience decision.`;
     case "public-discovery":
     case "public-audit":
       return `Checked ${count(n(detail, "processed_routes"), "Fee Insight page")} ${scope}; ${count(n(detail, "public_findings"), "issue")} found.`;
@@ -664,5 +668,6 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   "report-close": "hamilton",
   "category-guard": "hamilton",
   "frequency-fill": "hamilton",
+  "audience-relabel": "darwin",
   "public-diagnose": "hamilton",
 };
