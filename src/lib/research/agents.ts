@@ -169,6 +169,41 @@ export function buildSavedPeerSetPrompt(set: Pick<ActivePeerSet, "id" | "label" 
   return `\n\nSAVED PEER SET (the reader's default, id ${set.id}): "${name}". Filters: ${parts.length ? parts.join("; ") : "none (every institution)"}. When the reader says peers, use this group: pass these filters to queryFeeRevenueCorrelation(view='peers') and call the group by its name.`;
 }
 
+/** One step of a finished answer, as the AI SDK reports it: only its tool calls are read. */
+export interface AnswerStep {
+  toolCalls: readonly { toolName: string; input?: unknown }[];
+}
+
+const sortedNumbers = (values: readonly unknown[] | undefined) => [...(values ?? [])].map(Number).sort((a, b) => a - b).join(",");
+const sortedText = (values: readonly unknown[] | undefined) => [...(values ?? [])].map((v) => String(v).toUpperCase()).sort().join(",");
+
+/**
+ * True when a tool call in this answer used the saved peer set: the fee income peers view with
+ * exactly the set's filters. Only then is the set the answer's peer baseline (#1084); a figure
+ * from state, district, national or local-competitor tools never used it.
+ */
+export function savedPeerSetUsed(set: Pick<ActivePeerSet, "filters">, steps: readonly AnswerStep[] | undefined): boolean {
+  const f = set.filters;
+  const want = {
+    ids: sortedNumbers(f.institutionIds),
+    states: sortedText([...(f.states ?? []), ...(f.state_code ? [f.state_code] : [])]),
+    charter: f.charter_type ?? "",
+    tiers: sortedText(f.asset_tiers),
+    districts: sortedNumbers(f.fed_districts),
+  };
+  return (steps ?? []).some((step) => (step.toolCalls ?? []).some((call) => {
+    if (call.toolName !== "queryFeeRevenueCorrelation") return false;
+    const input = (call.input ?? {}) as Record<string, unknown>;
+    if (input.view !== "peers") return false;
+    const list = (value: unknown) => (Array.isArray(value) ? value : undefined);
+    return sortedNumbers(list(input.peer_institution_ids)) === want.ids
+      && sortedText(list(input.states)) === want.states
+      && String(input.charter_type ?? "") === want.charter
+      && sortedText(list(input.asset_tiers)) === want.tiers
+      && sortedNumbers(list(input.fed_districts)) === want.districts;
+  }));
+}
+
 const EXTERNAL_INTELLIGENCE_INSTRUCTION =
   "When your analysis benefits from external research, surveys, or industry reports, query external intelligence using queryNationalData(source='external', query='relevant terms'). When citing external intelligence in your response, always include inline attribution using the citation field from the result, formatted as [Source: Name, Date]. Treat external intelligence as supplementary context — internal fee data and Call Reports remain your primary evidence. Never fabricate external source citations; only cite sources returned by the tool.";
 

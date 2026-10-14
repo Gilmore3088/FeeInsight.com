@@ -32,8 +32,9 @@ describe("feeIncomeAgainstPeers", () => {
     expect("peers" in result && result.peers.map((p) => p.institution_id)).not.toContain(1);
   });
 
-  it("uses exactly the hand-picked peers of a saved set", () => {
-    const result = feeIncomeAgainstPeers(rows, 1, { institutionIds: [2, 3], states: ["TX"] });
+  it("uses only the hand-picked peers of a saved set, with its other filters too", () => {
+    expect(feeIncomeAgainstPeers(rows, 1, { institutionIds: [2, 3], states: ["TX"] })).toMatchObject({ peer_count: 0 });
+    const result = feeIncomeAgainstPeers(rows, 1, { institutionIds: [2, 3], states: ["MN"] });
     expect(result).toMatchObject({ peer_count: 2, peer_median_income_per_10k_assets: null });
     expect("message" in result && result.message).toContain("below 5 there is no median");
   });

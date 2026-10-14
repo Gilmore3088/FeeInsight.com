@@ -60,7 +60,7 @@ vi.mock("./tool-local-competitors", () => ({
 }));
 
 // Import after mocks
-import { buildSavedPeerSetPrompt, getHamilton } from "./agents";
+import { buildSavedPeerSetPrompt, getHamilton, savedPeerSetUsed } from "./agents";
 
 describe("getHamilton", () => {
   beforeEach(() => {
@@ -138,6 +138,20 @@ describe("getHamilton", () => {
     expect(prompt).toContain('asset_tiers: ["community_small"]');
     expect(prompt).toContain("fed_districts: [9]");
     expect(buildSavedPeerSetPrompt(null)).toContain("SAVED PEER SET: none");
+  });
+
+  it("savedPeerSetUsed: only a peers-view call with exactly the saved set's filters uses it", () => {
+    const set = { filters: { states: ["MN", "WI"], charter_type: "bank", asset_tiers: ["community_small"] } };
+    const call = (toolName: string, input: unknown) => [{ toolCalls: [{ toolName, input }] }];
+    const matching = { view: "peers", institution_id: 1, states: ["wi", "MN"], charter_type: "bank", asset_tiers: ["community_small"] };
+    expect(savedPeerSetUsed(set, call("queryFeeRevenueCorrelation", matching))).toBe(true);
+    expect(savedPeerSetUsed(set, call("queryFeeRevenueCorrelation", { ...matching, view: "by_tier" }))).toBe(false);
+    expect(savedPeerSetUsed(set, call("queryFeeRevenueCorrelation", { ...matching, states: ["TX"] }))).toBe(false);
+    expect(savedPeerSetUsed(set, call("queryFeeRevenueCorrelation", { ...matching, fed_districts: [9] }))).toBe(false);
+    expect(savedPeerSetUsed(set, call("queryStateData", { stateCode: "MN" }))).toBe(false);
+    expect(savedPeerSetUsed(set, [])).toBe(false);
+    expect(savedPeerSetUsed(set, undefined)).toBe(false);
+    expect(savedPeerSetUsed({ filters: { institutionIds: [12, 11] } }, call("queryFeeRevenueCorrelation", { view: "peers", institution_id: 1, peer_institution_ids: [11, 12] }))).toBe(true);
   });
 
   it("admin: returns the Hamilton model, all tools, maxSteps=4", async () => {

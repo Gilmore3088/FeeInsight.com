@@ -98,7 +98,8 @@ Hamilton supports the decision; it does not make it.
   `queryFeeRevenueCorrelation` (its `peers` view compares one institution's service charge
   income with a peer group's median on the same quarter and filer, `research/fee-income-peers.ts`),
   `queryDistrictData` and `queryStateData` (#1084). The reader's saved default peer set
-  (`getActivePeerSet`) is in its prompt, and the answer's identity snapshot records it.
+  (`getActivePeerSet`) is in its prompt; the answer's identity snapshot names it as the peer
+  baseline only when a tool call used it (the `peers` view with the set's filters).
 - The bank's own numbers arrive by answer or upload. `POST /api/hamilton/uploads` reads a
   CSV or XLSX (fee income, item counts, waivers, affected accounts by GL line) and returns
   what was read; unmatched lines are listed, never guessed, and the file is not stored.

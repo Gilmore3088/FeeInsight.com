@@ -111,6 +111,7 @@ vi.mock("@/lib/research/agents", () => ({
   buildAnalyzeModeSuffix: () => "",
   buildMonitorModeSuffix: () => "",
   buildSavedPeerSetPrompt: () => "",
+  savedPeerSetUsed: () => false,
 }));
 
 vi.mock("@/lib/hamilton/active-peer-set", () => ({

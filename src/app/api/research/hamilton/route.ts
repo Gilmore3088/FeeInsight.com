@@ -24,7 +24,7 @@ import {
 } from "@/lib/ai-provider";
 import { HAMILTON_PAUSED_MESSAGE } from "@/lib/hamilton/provider-paused";
 import { viewAsCustomerFromCookieHeader } from "@/lib/hamilton/view-as";
-import { getHamilton, buildAnalyzeModeSuffix, buildMonitorModeSuffix, buildSavedPeerSetPrompt, type HamiltonRole } from "@/lib/research/agents";
+import { getHamilton, buildAnalyzeModeSuffix, buildMonitorModeSuffix, buildSavedPeerSetPrompt, savedPeerSetUsed, type AnswerStep, type HamiltonRole } from "@/lib/research/agents";
 import { getActivePeerSet } from "@/lib/hamilton/active-peer-set";
 import { evaluateCitationDensity } from "@/lib/hamilton/citation-gate";
 import { getCurrentUser, type User } from "@/lib/auth";
@@ -184,10 +184,12 @@ async function handlePOST(request: Request) {
   // in the written answer means the group they chose (#1084). A failed read is no peer set.
   const homeId = enrichedContract.serverAccountContext.institution?.id;
   const peerSet = await getActivePeerSet({ userId: user.id, institutionId: homeId ?? institutionId }).catch(() => null);
-  const identityContext = accountIdentitySnapshot(institutionId, enrichedContract.serverAccountContext, {
+  // The saved set is the answer's peer baseline only when a tool call in this answer used it
+  // (the peers view with the set's filters); otherwise no current peer selection is substituted.
+  const identityFor = (steps: readonly AnswerStep[] | undefined) => accountIdentitySnapshot(institutionId, enrichedContract.serverAccountContext, {
     researchInstitutionName: subject?.institution_name ?? null,
     researchSelectionSource: requestedInstitutionId !== null ? "authenticated request" : institutionId !== null ? "linked account default" : "unscoped",
-    ...(peerSet
+    ...(peerSet && savedPeerSetUsed(peerSet, steps)
       ? { peerSetId: peerSet.id, peerBaselineLabel: peerSet.label, peerBaselineSource: "saved-peer-set", peerBaselineFallbackReason: null }
       : {
         peerBaselineLabel: null,
@@ -195,6 +197,7 @@ async function handlePOST(request: Request) {
         peerBaselineFallbackReason: "The written answer did not capture a named peer cohort. Its original figures remain unchanged; no current peer selection is substituted.",
       }),
   });
+  let identityContext = identityFor(undefined);
 
   const agent = await getHamilton(role);
 
@@ -339,7 +342,7 @@ async function handlePOST(request: Request) {
         status: "ok",
         text: result.text,
         metrics: gate.metrics,
-        identityContext,
+        identityContext: identityFor(result.steps),
       });
     }
 
@@ -364,6 +367,7 @@ async function handlePOST(request: Request) {
       maxOutputTokens: agent.maxTokens,
       stopWhen: stepCountIs(agent.maxSteps),
       onFinish: async ({ totalUsage, text, steps }) => {
+        identityContext = identityFor(steps);
         // The Analyze screen's answer is saved here, not only from the browser, so a closed
         // tab or a failed browser call never loses it.
         if (mode === "analyze" && text.trim()) {

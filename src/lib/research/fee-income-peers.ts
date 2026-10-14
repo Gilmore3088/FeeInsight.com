@@ -26,7 +26,8 @@ function median(values: number[]): number | null {
 }
 
 function matches(row: FeeRevenueCorrelation, filters: FeeIncomePeerFilters): boolean {
-  if (filters.institutionIds?.length) return filters.institutionIds.includes(row.institution_id);
+  // Hand-picked ids and the other filters both apply, as in the charts' peer readers.
+  if (filters.institutionIds?.length && !filters.institutionIds.includes(row.institution_id)) return false;
   if (filters.states?.length && !filters.states.includes((row.state_code ?? "").toUpperCase())) return false;
   if (filters.charterType && row.charter_type !== filters.charterType) return false;
   if (filters.assetTiers?.length && !filters.assetTiers.includes(row.asset_size_tier ?? "")) return false;
