@@ -296,4 +296,9 @@ describe("Knox audience suggestion from context (#1059)", () => {
     // A schedule that also prices business items: the personal heading alone no longer decides.
     expect(suggest(null, lines.join("\n"), "Stop payment (Per order)", 30)).toBeNull();
   });
+
+  it("never reads \"non-business\" in an address as business (review of 6905fab5)", () => {
+    expect(suggest("https://bank.example/fees/non-business/schedule.pdf", "Fee Schedule\nStop Payment $30", "Stop Payment")?.audience).not.toBe("business");
+    expect(suggest("https://bank.example/fees/non-personal/schedule.pdf", "Fee Schedule\nStop Payment $30", "Stop Payment")?.source).not.toBe("document_url");
+  });
 });
