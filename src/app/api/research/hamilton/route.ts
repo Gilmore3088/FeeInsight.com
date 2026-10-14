@@ -393,6 +393,9 @@ async function handlePOST(request: Request) {
                 analysisFocus: focus,
                 prompt,
                 response,
+                // A second request for the same question (double submit, Try again after a
+                // dropped stream) updates this row instead of adding a duplicate.
+                replaceRecentDuplicate: true,
               }));
             } catch (error) {
               console.error("[hamilton] saving the written answer failed", error);

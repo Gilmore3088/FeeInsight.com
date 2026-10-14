@@ -152,6 +152,8 @@ async function fileAnalysis(
         research ? buildFeeResearchEvidence(research) : null,
         response.identityContext,
       ),
+      // The same question asked twice in quick succession files one row, not two.
+      replaceRecentDuplicate: true,
     });
   } catch (error) {
     console.error("[hamilton-ask] saving the analysis failed", { institutionId: canonical, error });
