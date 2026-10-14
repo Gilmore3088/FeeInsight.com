@@ -37,6 +37,27 @@ Darwin owns verification and classification.
   once more. The hold list (`DARWIN_CATEGORY_HOLDS`) is empty. Its one entry, "Bond return items"
   $35 filed `nsf` (raw 246460, 2026-10-09), left when guard v58 learned that a returned bond or
   coupon filed as NSF is a returned deposited item.
+- A Knox category change is a reason to judge a row again (#1295, `category-change.ts`): new
+  category, new decision. A row qualifies only when Knox marked it as re-read (`knox_reread_took_over`,
+  `knox_stale_hint_repaired`, or `knox_refiled_from:<old>` from #1291), it waits for Darwin
+  unverified, no decision was judged under today's category or today's `refileCategory` of it, and
+  each decision was made under an earlier Knox category. A decision says so by its `knox_category`
+  (recorded from #1295 on). An older one needs proof from the row's flags: a `knox_refiled_from:`
+  or `knox_stale_hint_repaired` marker (written when Knox's category changes on a row Darwin had
+  judged), or a judged category that is another `canonical_hint:` flag still on the row. Without
+  proof the decision may be an older Darwin re-file of today's category, and the row is left
+  alone: raw 132922, "Collection Items (plus any bank fees)" $20, a plain take-over filed
+  `collection_item` and judged `check_cashing`, while today's re-file keeps `collection_item`.
+  The same free checks decide, the shared source check among them, and the new decision records
+  today's category, so a row is judged once per category. Switched off
+  (`DARWIN_CATEGORY_CHANGE_REJUDGE_LIVE = false`): each verify step, a dry run included, writes the
+  candidate count, their earlier reasons and a 25-row sample to `detail.category_change_rejudge`
+  and judges nothing; the read runs in a savepoint, so a failed count never fails the step. On, up
+  to 100 a step join the batch. Measured Oct 14 (after #1291 merged): 0 rows qualify; the SQL
+  selection reads 1 row (132922), which the proof rule leaves alone. The 8 take-over rows with a
+  stale first flag qualify once #1291's repair (inside its switched-off re-file pass) runs, and the
+  re-file pass adds its rows when it is on. The 216 rows #1093 step 2 sent back carry the category
+  they were rejected under, so this rule does not reach them.
 - `not_in_source` (2026-10-06) runs the same check Hamilton's live-fee source check runs, so a
   fee the bank's schedule does not state is stopped before it is verified instead of being
   published and then taken down. It joined version 3 without a bump: a bump re-selects every
