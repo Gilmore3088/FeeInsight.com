@@ -8,7 +8,7 @@ import { normalizeStateCode, syncStateLaneProfiles } from "./state-lane-memory";
 import { KNOX_REEXTRACT_MAX_FEES } from "./knox/extract";
 import { KNOX_RULES_STRATEGY } from "./knox/specialists";
 import { REREAD_MAX_KNOX_FEES, ROSETTA_READ_VERSION } from "./rosetta/read";
-import { DARWIN_VERIFY_MAX_LIMIT, DARWIN_VERIFY_STRATEGY } from "./darwin/verify";
+import { DARWIN_VERIFY_MAX_LIMIT, darwinDueSql } from "./darwin/verify";
 import { HAMILTON_PUBLISH_MAX_LIMIT } from "./hamilton/publish";
 import { knoxFreeSignature, RULES_RECHECK_STRATEGY } from "./hamilton/rules-recheck";
 import { SOURCE_CHECK_REASON, SOURCE_CHECK_RESTORE_PREFIX, SOURCE_CHECK_STRATEGY } from "./hamilton/source-check";
@@ -435,21 +435,14 @@ export async function stateHasDocumentBacklog(stateCode: string): Promise<boolea
            )
            AND (pending.evidence->>'flagged_at')::timestamptz > COALESCE(inst.last_crawl_at, '-infinity'::timestamptz)
       ) OR EXISTS (
-        -- Raw rows Darwin has not decided under the current rules (the rows its
-        -- verify step selects), so a large extraction drains hourly, not next month.
+        -- Raw rows Darwin's verify step selects now: never decided, or due again under
+        -- today's rules (#1052: a guard bump's re-checks never woke a quiet state's lane),
+        -- so a large extraction drains hourly, not next month.
         SELECT 1
           FROM raw_fee_observations fr
           JOIN institution_sources inst ON inst.id = fr.institution_id
-         WHERE fr.source = 'knox'
-           AND fr.outlier_flags ? 'needs_darwin_verification'
-           AND upper(btrim(inst.state_code)) = ${stateCode}
-           AND NOT EXISTS (SELECT 1 FROM verified_fee_observations fv WHERE fv.fee_raw_id = fr.fee_raw_id)
-           AND NOT EXISTS (
-             SELECT 1 FROM pipeline_attempts pa
-              WHERE pa.input_fingerprint = 'raw:' || fr.fee_raw_id::text
-                AND pa.strategy = ${DARWIN_VERIFY_STRATEGY.strategy}
-                AND pa.strategy_version = ${DARWIN_VERIFY_STRATEGY.version}
-           )
+         WHERE upper(btrim(inst.state_code)) = ${stateCode}
+           AND ${sql.unsafe(darwinDueSql())}
       ) AS backlog
     `;
     return Boolean(row?.backlog) || (await stateHasUncheckedLiveFees(stateCode));

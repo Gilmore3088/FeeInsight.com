@@ -6,6 +6,7 @@ import { htmlToScoringText, scoreFeePage } from "@/lib/agents/learning/fee-page"
 import { companionStreamsReady } from "@/lib/agents/companion-streams";
 
 import { fetchWithTimeout, looksLikePdfUrl, MAX_PDF_CHECK_BYTES, pdfCheckText, validateFeeCandidate } from "./find-validate";
+import { loadSharedNameIds } from "./other-bank-host";
 import {
   BUSINESS_PATH_SQL,
   CONSUMER_PATH_SQL,
@@ -465,6 +466,10 @@ export async function agreementListsFees(url: string, fetchImpl: Fetcher): Promi
 interface ThinBankRow {
   id: number | string;
   institution_name: string;
+  city?: string | null;
+  cert_number?: string | null;
+  /** Another institution has this name (`loadSharedNameIds`). */
+  name_shared?: boolean;
   state_code: string | null;
   website_url: string;
   fee_schedule_url: string;
@@ -552,7 +557,7 @@ async function selectThinBanks(
        GROUP BY c.institution_id
     ),
     scoped AS (
-      SELECT inst.id, inst.institution_name, inst.state_code, inst.website_url, inst.fee_schedule_url, inst.asset_size,
+      SELECT inst.id, inst.institution_name, inst.city, inst.cert_number, inst.state_code, inst.website_url, inst.fee_schedule_url, inst.asset_size,
              COALESCE(thin.categories, 0) AS categories,
              COALESCE(thin.has_monthly_fee, FALSE) AS has_monthly_fee,
              COALESCE(thin.has_overdraft, FALSE) AS has_overdraft,
@@ -602,7 +607,7 @@ async function selectThinBanks(
               AND pa.created_at > NOW() - make_interval(days => ${RECHECK_DAYS})
          )
     )
-    SELECT id, institution_name, state_code, website_url, fee_schedule_url, categories,
+    SELECT id, institution_name, city, cert_number, state_code, website_url, fee_schedule_url, categories,
            (business_only OR no_overdraft_price OR refers_elsewhere OR stale_copy) AS incomplete
       FROM scoped
      WHERE (NOT ${leaderOnly}::boolean OR NOT has_overdraft)
@@ -849,7 +854,10 @@ async function searchBank(
     const entry: TrailEntry = { url: candidate.url, source: candidate.source, foundOn: candidate.foundOn, label: candidate.label, score: Math.round(candidate.score * 100) / 100, verdict: "" };
     trail.push(entry);
     try {
-      const validation = await validateFeeCandidate({ ...candidate, websiteUrl: site.toString(), institutionName: row.institution_name }, fetchImpl);
+      const validation = await validateFeeCandidate(
+        { ...candidate, websiteUrl: site.toString(), institutionName: row.institution_name, nameShared: row.name_shared, city: row.city ?? null, certNumber: row.cert_number ?? null },
+        fetchImpl,
+      );
       entry.verdict = validation.verdict;
       if (validation.ok) {
         keep({
@@ -941,7 +949,9 @@ export async function runSecondDocumentFind(options: {
     rows.push(...(await selectThinBanks(db, null, limit - rows.length, { hiddenOnly: true, excludeIds: rows.map((row) => Number(row.id)) })));
   }
   const results: SecondDocumentResult[] = [];
+  const sharedNames = await loadSharedNameIds(db, rows, options.dryRun ? undefined : { runId: options.runId, stepId: options.stepId ?? null });
   for (const row of rows) {
+    row.name_shared = sharedNames.has(Number(row.id));
     if (Date.now() > options.deadline) break;
     const startedAt = Date.now();
     const institutionId = Number(row.id);

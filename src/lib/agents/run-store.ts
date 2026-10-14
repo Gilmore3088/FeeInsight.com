@@ -4,7 +4,7 @@ import { getExecutionBackend } from "@/lib/execution-backend";
 import { reportReviewStates } from "@/lib/agents/atlas/report-review-states";
 import { runDarwinVerify } from "@/lib/agents/darwin/verify";
 import { runHamiltonCategoryGuard } from "@/lib/agents/hamilton/category-guard";
-import { collapsePublishedDuplicates } from "@/lib/agents/hamilton/duplicate-collapse";
+import { collapseNearNameDuplicates, collapsePublishedDuplicates } from "@/lib/agents/hamilton/duplicate-collapse";
 import { retireClosedInstitutionFees } from "@/lib/agents/hamilton/closed-institution";
 import { fillBlankFrequencies, FREQUENCY_FILL_VERSION } from "@/lib/agents/hamilton/frequency-fill";
 import { restoreFeesNowInTaxonomy, rollBackOffTaxonomyFees } from "@/lib/agents/hamilton/off-taxonomy-rollback";
@@ -1052,6 +1052,15 @@ async function executeAgenticStep(
         dryRun: run.runKind === "dry_run",
         institutionId,
       });
+      // #1302: a live row that repeats another live line of its page under a near name ("Research
+      // fee" / "Account Research fee"), when the page prints one line. Shadow until
+      // NEAR_NAME_COLLAPSE_LIVE is turned on: it reports and changes nothing.
+      const nearNameCollapse = await collapseNearNameDuplicates(tx, {
+        runId: run.id,
+        batchId: `agentic-run-${run.id}`,
+        dryRun: run.runKind === "dry_run",
+        institutionId,
+      });
       // A live fee's frequency follows its own schedule row: a blank gets the one the row states
       // ("$6.00 each"), and one read from another fee's row is corrected or cleared.
       const frequencyFill = await fillBlankFrequencies(tx, {
@@ -1184,7 +1193,11 @@ async function executeAgenticStep(
             dryRun: false,
             institutionId,
           });
-      const duplicateCollapses = [...earlyDuplicateCollapses, ...lateDuplicateCollapses];
+      const duplicateCollapses = [
+        ...earlyDuplicateCollapses,
+        ...(nearNameCollapse.live ? nearNameCollapse.collapses : []),
+        ...lateDuplicateCollapses,
+      ];
       // Every live fee must be stated in the bank's own stored schedule: every publish
       // step source-checks a batch of institutions (its state's or institution's when it
       // has one, any state's otherwise) after publishing, so fees published in this step
@@ -1662,6 +1675,23 @@ async function executeAgenticStep(
             source_line: row.sourceLine.slice(0, 120),
           })),
           duplicate_collapses: duplicateCollapses.length,
+          near_name_collapse: {
+            live: nearNameCollapse.live,
+            documents: nearNameCollapse.documents,
+            pairs: nearNameCollapse.pairs,
+            apart_on_page: nearNameCollapse.apartOnPage,
+            not_printed: nearNameCollapse.notPrinted,
+            no_text: nearNameCollapse.noText,
+            [nearNameCollapse.live ? "closed" : "would_close"]: nearNameCollapse.collapses.length,
+            samples: nearNameCollapse.collapses.slice(0, 10).map((row) => ({
+              fee_published_id: row.feePublishedId,
+              fee_name: row.feeName,
+              kept_fee_published_id: row.keptFeePublishedId,
+              kept_fee_name: row.keptFeeName,
+              source_document_id: row.sourceDocumentId,
+              amount: row.amount,
+            })),
+          },
           duplicate_collapse_samples: duplicateCollapses.slice(0, 10).map((row) => ({
             fee_published_id: row.feePublishedId,
             kept_fee_published_id: row.keptFeePublishedId,
