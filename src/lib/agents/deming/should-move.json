@@ -10,6 +10,7 @@
     { "pr": 1252, "issue": 1117, "metric": "detail.goal.coverageCells.institutionsShort", "direction": "down", "min_change": 1, "note": "Atlas runs states with the largest coverage gap under $10B first" },
     { "pr": 1258, "issue": 1029, "metric": "detail.goal.coverageCells.institutionsShort", "direction": "down", "min_change": 1, "note": "Magellan's paid passes take institutions round-robin from the state experts' work lists, size groups furthest below target first" },
     { "pr": 1282, "issue": 1251, "metric": "detail.goal.liveInstitutions.live", "direction": "up", "min_change": 1, "note": "Magellan's site-limited paid searches also cover the bank's other own hosts (machiassavings.bank, cvb.bank) and accept answers there; only once paid discovery runs again" },
-    { "pr": 1293, "issue": 1051, "metric": "detail.goal.liveInstitutions.live", "direction": "up", "min_change": 1, "note": "Magellan checks the documents a disclosures index links to, and retries an unreachable fee link at the bank's other spellings of the address (free)" }
+    { "pr": 1293, "issue": 1051, "metric": "detail.goal.liveInstitutions.live", "direction": "up", "min_change": 1, "note": "Magellan checks the documents a disclosures index links to, and retries an unreachable fee link at the bank's other spellings of the address (free)" },
+    { "pr": 1298, "issue": 1287, "metric": "detail.goal.wrongAfterPublish.rate", "direction": "down", "min_change": 0.001, "note": "Magellan's bank-name check matches whole words, needs the city or cert for a shared name, and reads short same-name hosts" }
   ]
 }

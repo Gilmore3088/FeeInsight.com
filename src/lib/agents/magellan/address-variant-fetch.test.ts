@@ -114,6 +114,139 @@ describe("runAddressVariantFetch", () => {
     // Nothing writes to the bank's fetch state.
     expect((db as unknown as ReturnType<typeof vi.fn>).mock.calls).toHaveLength(1);
   });
+
+  // #1306: a spelling that answers 2xx is still refused, and the bank left alone, when the
+  // answer is not the document.
+  const failingBody = () =>
+    new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode("%PDF-1.7 "));
+        controller.error(new TypeError("terminated"));
+      },
+    });
+  // A body that never ends (1 MB at a time) and one that stops arriving; each counts when
+  // the reader cancels it.
+  let cancelledBodies = 0;
+  beforeEach(() => {
+    cancelledBodies = 0;
+  });
+  const endlessBody = () =>
+    new ReadableStream<Uint8Array>({
+      pull(controller) {
+        controller.enqueue(new Uint8Array(1024 * 1024));
+      },
+      cancel() {
+        cancelledBodies += 1;
+      },
+    });
+  const stalledBody = () =>
+    new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode("%PDF-1.7 "));
+      },
+      cancel() {
+        cancelledBodies += 1;
+      },
+    });
+  it.each<{
+    name: string;
+    answer: (url: string) => Response;
+    verdict: string;
+    outcome: string;
+    verdicts?: string[];
+    deadlineMs?: number;
+    cutOff?: boolean;
+  }>([
+    {
+      name: "a redirect to another site",
+      answer: () => withUrl(new Response("%PDF-1.7 fees", { status: 200, headers: { "content-type": "application/pdf" } }), "https://parked-domains.example/fees.pdf"),
+      verdict: "redirected_off_domain",
+      outcome: "wrong_document",
+    },
+    {
+      name: "a 200 HTML page for a PDF link",
+      answer: (url: string) => withUrl(new Response("<html><body>This domain is for sale</body></html>", { status: 200, headers: { "content-type": "text/html" } }), url),
+      verdict: "not_pdf",
+      outcome: "wrong_document",
+    },
+    {
+      name: "a PDF content type over an HTML body",
+      answer: (url: string) => withUrl(new Response("<html><body>catch-all</body></html>", { status: 200, headers: { "content-type": "application/pdf" } }), url),
+      verdict: "not_pdf",
+      outcome: "wrong_document",
+    },
+    {
+      name: "a body read that fails after the spelling answered",
+      answer: (url: string) => withUrl(new Response(failingBody(), { status: 200, headers: { "content-type": "application/pdf" } }), url),
+      verdict: "body_network_error",
+      outcome: "network_error",
+    },
+    {
+      name: "a body declared over the 15 MB cap",
+      answer: (url: string) => withUrl(new Response("%PDF-1.7 ", { status: 200, headers: { "content-type": "application/pdf", "content-length": String(20 * 1024 * 1024) } }), url),
+      verdict: "too_large",
+      outcome: "too_large",
+    },
+    {
+      name: "a body that runs past the 15 MB cap with no content-length",
+      answer: (url: string) => withUrl(new Response(endlessBody(), { status: 200, headers: { "content-type": "application/pdf" } }), url),
+      verdict: "too_large",
+      outcome: "too_large",
+      cutOff: true,
+    },
+    {
+      name: "a body that is still arriving when the time is up",
+      answer: (url: string) => withUrl(new Response(stalledBody(), { status: 200, headers: { "content-type": "application/pdf" } }), url),
+      verdict: "body_timeout",
+      deadlineMs: 50,
+      // The pass deadline has gone by, so no second spelling is asked.
+      verdicts: ["body_timeout"],
+      outcome: "timeout",
+      cutOff: true,
+    },
+  ])("refuses $name and leaves the bank's fetch address and failure count alone", async ({ answer, verdict, verdicts, outcome, deadlineMs, cutOff }) => {
+    const db = dbReturning([sdfcu]);
+    const signals: AbortSignal[] = [];
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.signal) signals.push(init.signal);
+      return answer(String(input));
+    });
+
+    const result = await runAddressVariantFetch({
+      db,
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      runId: 3,
+      deadline: deadlineMs ? Date.now() + deadlineMs : undefined,
+    });
+
+    // The request is aborted once the spelling is refused, so no download runs on.
+    expect(signals.length).toBe(fetchImpl.mock.calls.length);
+    expect(signals.every((signal) => signal.aborted)).toBe(true);
+    if (cutOff) expect(cancelledBodies).toBe(signals.length);
+
+    expect(result).toMatchObject({ tried: 1, recovered: 0, failed: 1 });
+    expect(result.results[0].url).toBeNull();
+    expect(fetchAndRecordLinkMock).not.toHaveBeenCalled();
+    const attempt = recordAttemptMock.mock.calls[0][1];
+    expect(attempt).toMatchObject({ strategy: "fetch.address_variant", outcome });
+    expect(attempt.detail.tries.map((entry: { verdict: string }) => entry.verdict)).toEqual(verdicts ?? [verdict, verdict]);
+    expect((db as unknown as ReturnType<typeof vi.fn>).mock.calls).toHaveLength(1);
+  });
+
+  it("hands the fetch path the body already read, at the final address", async () => {
+    const db = dbReturning([sdfcu]);
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL) =>
+      withUrl(new Response("%PDF-1.7 fees", { status: 200, headers: { "content-type": "application/octet-stream" } }), `${String(input)}?v=2`),
+    );
+    fetchAndRecordLinkMock.mockResolvedValue({ result: { outcome: "success", attemptOutcome: "ok" }, sourceDocumentId: 1, supersededCopies: 0 });
+
+    const result = await runAddressVariantFetch({ db, fetchImpl: fetchImpl as unknown as typeof fetch, runId: 3 });
+
+    expect(result).toMatchObject({ recovered: 1, failed: 0 });
+    const response: Response = await fetchAndRecordLinkMock.mock.calls[0][2]();
+    expect(response.url).toBe("http://www.sdfcu.org/sites/default/files/pdf/fees.pdf?v=2");
+    expect(await response.text()).toBe("%PDF-1.7 fees");
+  });
 });
 
 describe("selectUnreachableLinks", () => {

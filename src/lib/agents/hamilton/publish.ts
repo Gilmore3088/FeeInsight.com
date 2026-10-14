@@ -1022,6 +1022,39 @@ export function separateLines(row: VerifiedFeeRow, prior: PriorPublishedFeeRow):
   return !within(rowWords, priorWords) && !within(priorWords, rowWords);
 }
 
+/** A qualifier word printed before a line's name ("ACH", "Debit"): letters, no heading mark after it. */
+const QUALIFIER_WORD = /^[A-Za-z](?:[A-Za-z0-9&/'’-]*[A-Za-z0-9])?$/;
+
+/**
+ * Pure: one name is the other with one or two qualifier words in front ("ACH Insufficient Funds"
+ * and "Insufficient Funds", "ACH Stop Payment" and "Stop Payment", all $35 on doc 17371, 14 Oct).
+ * Every word of the shorter name is in the longer one, so `separateLines` reads them as one line;
+ * this only puts the pair to the page check (`linesApartOnPage`), which keeps them apart when the
+ * page prints the shorter name as a line of its own at the price, and as one line when the shorter
+ * name sits only inside the longer one. A carried-in heading ("Debit Cards: Stop Payment",
+ * "Wire Transfers - Outgoing: Outgoing Wire Fee") ends on a mark, and a filler or number
+ * ("An Overdraft Transfer", "00 Official check") qualifies nothing, so neither counts.
+ */
+export function qualifiedLines(row: VerifiedFeeRow, prior: PriorPublishedFeeRow): boolean {
+  if (!sameDocument(prior.source_document_id, row.source_document_id)) return false;
+  if (unclearName(row.fee_name) || unclearName(prior.fee_name)) return false;
+  return qualifies(row.fee_name ?? "", prior.fee_name ?? "") || qualifies(prior.fee_name ?? "", row.fee_name ?? "");
+}
+
+function qualifies(longer: string, shorter: string): boolean {
+  const core = pageWords(shorter).trim();
+  if (!core) return false;
+  const tokens = longer.trim().split(/\s+/);
+  for (let k = 1; k <= 2 && k < tokens.length; k += 1) {
+    const qualifier = tokens.slice(0, k);
+    const rest = tokens.slice(k);
+    if (!qualifier.every((word) => QUALIFIER_WORD.test(word))) return false;
+    if (!qualifier.some((word) => !FILLER_WORDS.has(word.toLowerCase()))) continue;
+    if (/^[A-Za-z0-9]/.test(rest[0]) && pageWords(rest.join(" ")).trim() === core) return true;
+  }
+  return false;
+}
+
 /** Text as words: lower case, every run of other characters one space, padded with spaces. */
 function pageWords(text: string): string {
   return ` ${text.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim()} `;
@@ -1094,7 +1127,8 @@ async function selectDocumentText(db: SqlTag, documentId: number | string | null
 
 /**
  * The live rows that are another line of this row's page at the same price: names that share no
- * reading (\`separateLines\`) printed apart on the page, each with the price (\`linesApartOnPage\`).
+ * reading (\`separateLines\`), or one name with a qualifier word in front of the other
+ * (\`qualifiedLines\`), printed apart on the page, each with the price (\`linesApartOnPage\`).
  * Source spot checks of 20 such rows, 9 Oct: words alone 13, 10 and 14 of 20; with the page check
  * see docs/project/findings/2026-10-09-identical-skip-ignored-name.md.
  */
@@ -1109,7 +1143,7 @@ function sameValueLines(row: VerifiedFeeRow, live: PriorPublishedFeeRow[]): { ca
   const value = feeValue(row);
   const sameValue = live.filter((prior) => feeValue(prior) === value);
   return {
-    candidates: sameValue.filter((prior) => separateLines(row, prior)),
+    candidates: sameValue.filter((prior) => separateLines(row, prior) || qualifiedLines(row, prior)),
     balanced: sameValue.filter((prior) => balanceThreshold(prior.fee_name) != null),
   };
 }

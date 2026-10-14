@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import fixture from "./__fixtures__/hard-documents.json";
 import {
   decidePriorFee,
+  linesApartOnPage,
   publishSkipReason,
   sameValueLinesApart,
   type PriorPublishedFeeRow,
@@ -154,6 +155,13 @@ describe(`hard-document gate (category guard v${CATEGORY_GUARD_VERSION})`, () =>
     it("has cases", () => expect(cases.length).toBeGreaterThanOrEqual(4));
     it.each(keys(cases))("%s", (_key, item) => {
       expect(samePriceDecision(item)).toBe("identical");
+    });
+  });
+
+  describe("the page check finds two printed lines for two fees and one for two reads", () => {
+    it.each(keys(hard.same_price))("%s", (_key, item) => {
+      const apart = linesApartOnPage(item.text, item.row.fee_name, item.prior.fee_name, item.amount);
+      expect(apart).toBe(item.family === "distinct_same_dollar");
     });
   });
 
