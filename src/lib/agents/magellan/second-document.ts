@@ -54,7 +54,11 @@ type Fetcher = typeof fetch;
  * time the step has left, and logs every bank it checks.
  */
 
-export const SECOND_DOCUMENT_FINDER = { strategy: "discover.second_document", version: 3 } as const;
+/**
+ * 4: a disclosures or agreements page (the bank's fee link or a hub page) has the documents
+ * it links to checked, whatever their link text says (#1051, Jonesboro State Bank).
+ */
+export const SECOND_DOCUMENT_FINDER = { strategy: "discover.second_document", version: 4 } as const;
 /** One `pipeline_attempts` row per site-search query, so each query's hit rate is visible. */
 export const SITE_SEARCH_STRATEGY = { strategy: "discover.site_search", version: 1 } as const;
 /** Live banks with fewer published fee categories than this are searched. */
@@ -172,9 +176,9 @@ function linkText(link: PageLink): string {
  */
 export function classifyCompanionLink(link: PageLink, site: URL, foundOn: string | null = null): CompanionCandidate | null {
   const lower = linkText(link);
-  if (BUSINESS.test(lower) || NOT_A_FEE_DOCUMENT.test(lower)) return null;
-  // A rates page ("Savings Rates", "/rates-fees/account-rates") lists rates, not fees.
-  if (/\brates?\b/.test(lower) && !/\b(fees?|charges?)\b/.test(lower.replace(/\brates? fees\b/g, ""))) return null;
+  // Business, loan and other non-deposit links; a rates page ("Savings Rates",
+  // "/rates-fees/account-rates") lists rates, not fees.
+  if (excludedLink(lower)) return null;
   let url: URL;
   try {
     url = new URL(link.url);
@@ -207,6 +211,88 @@ export function classifyCompanionLink(link: PageLink, site: URL, foundOn: string
     return { url: link.url, label: link.label, kind: "account_page", score: 0.75 + named + checking, reasons: [account[0]], foundOn, source };
   }
   return null;
+}
+
+/** A business, loan, rates or other non-deposit link: never a companion. */
+function excludedLink(lower: string): boolean {
+  if (BUSINESS.test(lower) || NOT_A_FEE_DOCUMENT.test(lower)) return true;
+  return /\brates?\b/.test(lower) && !/\b(fees?|charges?)\b/.test(lower.replace(/\brates? fees\b/g, ""));
+}
+
+/**
+ * A page whose address says it lists the bank's documents: "/agreements-and-disclosures",
+ * "/disclosures", "/forms-documents", "/legal". Its PDFs are often named by title alone
+ * ("Personal Accounts", "Important Information", "Download"), which the fee-document words
+ * above miss.
+ */
+const DOCUMENT_INDEX_PATH = /(disclos|agreements?|documents?|forms|legal)/i;
+/** An index lists several documents; one PDF link on a page does not make it an index. */
+export const INDEX_MIN_DOCUMENT_LINKS = 2;
+/** The same test in SQL, on a lowercased fee link, for ordering the banks searched. */
+const INDEX_LINK_SQL = "(disclos|agreement)";
+/** Index documents checked per bank, after the documents named as fee documents. */
+export const INDEX_DOCUMENTS_CHECKED = 4;
+/** Below a named fee document (0.8 and up), so those are opened first. */
+const INDEX_DOCUMENT_SCORE = 0.74;
+
+function isDocumentUrl(url: URL): boolean {
+  return looksLikePdfUrl(url.toString()) || /\.docx?$/i.test(url.pathname) || /\/(assets\/files|files|documents?|uploads|media|getContentAsset)\//i.test(url.pathname);
+}
+
+/** True when the page's address says it is a disclosures, agreements or documents page. */
+export function isDocumentIndexPage(pageUrl: string): boolean {
+  try {
+    const url = new URL(pageUrl);
+    let path = url.pathname;
+    try {
+      path = decodeURIComponent(path);
+    } catch {
+      // keep the raw path
+    }
+    return !isDocumentUrl(url) && DOCUMENT_INDEX_PATH.test(path);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The documents a disclosures index links to that the fee-document words do not pick up
+ * (#1051: Jonesboro State Bank's fee link is its "/agreements-and-disclosures" page, and Knox
+ * has no rows from it). Each one is opened and kept only when the shared fee-page check
+ * passes, like any fee document. Empty unless `pageUrl` is an index that links to at least
+ * INDEX_MIN_DOCUMENT_LINKS documents.
+ */
+export function disclosureIndexDocuments(pageUrl: string, links: PageLink[], site: URL, exclude: Set<string>): CompanionCandidate[] {
+  if (!isDocumentIndexPage(pageUrl)) return [];
+  const documents: PageLink[] = [];
+  const seen = new Set<string>();
+  for (const link of links) {
+    let url: URL;
+    try {
+      url = new URL(link.url);
+    } catch {
+      continue;
+    }
+    const identity = urlIdentity(link.url);
+    if (seen.has(identity) || !isDocumentUrl(url)) continue;
+    seen.add(identity);
+    documents.push(link);
+  }
+  if (documents.length < INDEX_MIN_DOCUMENT_LINKS) return [];
+  return documents
+    .filter((link) => !exclude.has(urlIdentity(link.url)))
+    .filter((link) => !excludedLink(linkText(link)) && !isForeignHostLink(link.url, site.toString()))
+    // Named fee documents and agreements are candidates through classifyCompanionLink already.
+    .filter((link) => classifyCompanionLink(link, site) == null)
+    .map((link): CompanionCandidate => ({
+      url: link.url,
+      label: link.label,
+      kind: "fee_document",
+      score: INDEX_DOCUMENT_SCORE,
+      reasons: ["disclosure_index"],
+      foundOn: pageUrl,
+      source: "hub_link",
+    }));
 }
 
 /** Candidate pages from a set of links, best first, minus pages already known. */
@@ -406,6 +492,8 @@ export interface SecondDocumentResult {
   fetches: number;
   pages: CompanionPage[];
   searches: SiteSearchResult[];
+  /** Documents opened because a disclosures index linked to them (#1051). */
+  indexDocumentsChecked: number;
 }
 
 /** One query on the bank's own site search. */
@@ -540,6 +628,11 @@ async function selectThinBanks(
      -- Report requesters and $10B+ banks first: the names buyers check.
      ORDER BY requested DESC,
               (asset_size >= ${LARGE_BANK_ASSETS}) IS TRUE DESC,
+              -- A hidden bank whose link is a disclosures page: the schedule is often one of
+              -- the documents it lists (#1051; 93 such banks with nothing live on 14 Oct 2026).
+              (categories < ${HIDDEN_BELOW_CATEGORIES}
+                AND lower(fee_schedule_url) ~ ${INDEX_LINK_SQL}
+                AND fee_schedule_url !~* '\\.pdf($|\\?)') DESC,
               (business_only OR no_overdraft_price OR refers_elsewhere OR stale_copy) DESC,
               -- Then banks one headline fee short of a full schedule, before thinner ones.
               (categories >= ${THIN_BANK_CATEGORY_LIMIT} AND (NOT has_monthly_fee OR NOT has_overdraft)) DESC,
@@ -610,6 +703,7 @@ async function searchBank(
     fetches,
     pages,
     searches: searchResults(),
+    indexDocumentsChecked: trail.filter((entry) => entry.source === "hub_link" && entry.verdict !== "").length,
     trail,
     ...fields,
   });
@@ -653,10 +747,16 @@ async function searchBank(
     return done({ outcome: classifyFetchFailure(status || null), reason: `Homepage ${trail[0]?.verdict ?? "failed"}` });
   }
   const links: PageLink[] = [...pageLinks(homepage, site)];
+  // Disclosures pages (the fee link or a hub) and the document links on each.
+  const indexPages: Array<{ url: string; links: PageLink[] }> = [];
   // The stored fee page often links to the account pages and the full schedule.
   if (!looksLikePdfUrl(row.fee_schedule_url) && Date.now() < deadline) {
     const feePage = await openHtml(row.fee_schedule_url, "known_link");
-    if (feePage) links.push(...pageLinks(feePage, site));
+    if (feePage) {
+      const feePageLinks = pageLinks(feePage, site);
+      links.push(...feePageLinks);
+      indexPages.push({ url: row.fee_schedule_url, links: feePageLinks });
+    }
   }
   // The site's own search (James found Triangle FCU's fees this way): "fee schedule" plus
   // fee and agreement wording, at most MAX_SEARCH_PAGES_PER_BANK result pages per bank.
@@ -679,12 +779,25 @@ async function searchBank(
   for (const hub of hubs) {
     if (Date.now() > deadline) break;
     const html = await openHtml(hub.url, "hub_page", hub.label);
-    if (html) links.push(...pageLinks(html, site));
+    if (html) {
+      const hubLinks = pageLinks(html, site);
+      links.push(...hubLinks);
+      indexPages.push({ url: hub.url, links: hubLinks });
+    }
   }
 
   const candidates = companionCandidates(links, site, exclude);
   const accountPages = candidates.filter((candidate) => candidate.kind === "account_page").slice(0, MAX_ACCOUNT_PAGES_CHECKED);
-  if (candidates.length === 0) return done({ outcome: "no_candidates", reason: "No account pages or fee documents linked" });
+  const indexSeen = new Set<string>();
+  const indexDocuments = indexPages
+    .flatMap((page) => disclosureIndexDocuments(page.url, page.links, site, exclude))
+    .filter((candidate) => {
+      const identity = urlIdentity(candidate.url);
+      if (indexSeen.has(identity)) return false;
+      indexSeen.add(identity);
+      return true;
+    });
+  if (candidates.length === 0 && indexDocuments.length === 0) return done({ outcome: "no_candidates", reason: "No account pages or fee documents linked" });
 
   const kept = new Set<string>();
   const keep = (page: CompanionPage) => {
@@ -717,9 +830,15 @@ async function searchBank(
   }
 
   const checked = new Set(accountPages.map((candidate) => urlIdentity(candidate.url)));
-  const documents = companionCandidates([...links, ...moreLinks], site, new Set([...exclude, ...checked]))
+  const named = companionCandidates([...links, ...moreLinks], site, new Set([...exclude, ...checked]))
     .filter((candidate) => candidate.kind === "fee_document")
     .slice(0, MAX_FEE_DOCUMENTS_CHECKED);
+  const namedIds = new Set(named.map((candidate) => urlIdentity(candidate.url)));
+  // Then the index's other documents, in their own slots so named fee documents never crowd them out.
+  const documents = [
+    ...named,
+    ...indexDocuments.filter((candidate) => !namedIds.has(urlIdentity(candidate.url)) && !checked.has(urlIdentity(candidate.url))).slice(0, INDEX_DOCUMENTS_CHECKED),
+  ];
   let rejectedAny = false;
   for (const candidate of documents) {
     if (Date.now() > deadline) break;
@@ -876,6 +995,7 @@ export async function runSecondDocumentFind(options: {
         published_categories: result.categories,
         reason: result.reason,
         pages_fetched: result.fetches,
+        index_documents_checked: result.indexDocumentsChecked,
         searches: result.searches.map((search) => ({ query: search.query, outcome: search.outcome, candidates: search.candidates, kept: search.kept })),
         trail: trail.slice(0, 40),
       },

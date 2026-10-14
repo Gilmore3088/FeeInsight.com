@@ -52,6 +52,7 @@ import { recheckHeldRates, recheckHeldRows, recheckPromotedRows, recheckSupersed
 import { refreshFeeIndexCache } from "@/lib/data-store/fee-index";
 import { runMagellanDiscovery } from "@/lib/agents/magellan/discovery";
 import { runMagellanFetch } from "@/lib/agents/magellan/fetch";
+import { runAddressVariantFetch, type RunAddressVariantFetchResult } from "@/lib/agents/magellan/address-variant-fetch";
 import { reviewLinkBatches } from "@/lib/agents/magellan/batch-review";
 import { recordLinkOutcomes } from "@/lib/agents/magellan/outcomes";
 import { retireProductPageConflicts } from "@/lib/agents/hamilton/product-page-conflict";
@@ -460,10 +461,35 @@ async function executeAgenticStep(
         stateCode,
         newLinksOnly: params.new_links_only === true,
       });
+      // Fee links the plain fetch keeps failing to reach, tried at the bank's other
+      // spellings of the address (#1051). Free; a failure here never fails the step.
+      let addressVariants: RunAddressVariantFetchResult | null = null;
+      if (run.runKind !== "dry_run") {
+        try {
+          addressVariants = await runAddressVariantFetch({
+            db: sql,
+            fetchImpl: fetch,
+            runId: run.id,
+            stepId: step.id,
+            institutionId: numericRunParam(params, ["institution_id"]) ?? null,
+          });
+        } catch (error) {
+          console.error("Address variant fetch failed:", error);
+        }
+      }
       return {
         status: "completed",
         summary: `Magellan fetched ${fetched.succeeded.toLocaleString()} new source documents from ${fetched.processed.toLocaleString()} selected institutions (${fetched.unchanged.toLocaleString()} unchanged, ${fetched.failed.toLocaleString()} failed, ${fetched.skipped.toLocaleString()} skipped).`,
         detail: {
+          address_variants: addressVariants
+            ? {
+                selected: addressVariants.selected,
+                tried: addressVariants.tried,
+                recovered: addressVariants.recovered,
+                failed: addressVariants.failed,
+                results: addressVariants.results.slice(0, 10),
+              }
+            : null,
           selected_institutions: fetched.selected,
           processed_institutions: fetched.processed,
           fetched_documents: fetched.succeeded,
@@ -766,7 +792,7 @@ async function executeAgenticStep(
       });
       return {
         status: "completed",
-        summary: `Darwin verified ${verification.verifiedFees.toLocaleString()} raw fee observations from ${verification.processedRawFees.toLocaleString()} selected rows (${verification.skippedFees.toLocaleString()} skipped).${conditionalZero.selected > 0 ? ` Settled ${conditionalZero.selected.toLocaleString()} conditional-$0 hold(s) (${conditionalZero.verified.toLocaleString()} verified free on the bank's schedule).` : ""}`,
+        summary: `Darwin verified ${verification.verifiedFees.toLocaleString()} raw fee observations from ${verification.processedRawFees.toLocaleString()} selected rows (${verification.skippedFees.toLocaleString()} skipped).${conditionalZero.selected > 0 ? ` Settled ${conditionalZero.selected.toLocaleString()} conditional-$0 hold(s) (${conditionalZero.verified.toLocaleString()} verified free on the bank's schedule).` : ""}${verification.categoryChange && verification.categoryChange.candidates > 0 ? ` ${verification.categoryChange.candidates.toLocaleString()} row(s) Knox re-filed since Darwin's decision ${verification.categoryChange.live ? `(${verification.categoryChange.selected.toLocaleString()} judged again under today's category)` : "(switch off: counted, not judged again)"}.` : ""}`,
         detail: {
           selected_raw_fees: verification.selectedRawFees,
           processed_raw_fees: verification.processedRawFees,
@@ -777,6 +803,8 @@ async function executeAgenticStep(
           peer_fallback_checks: verification.peerFallbackChecks,
           peer_fallback_outliers: verification.peerFallbackOutliers,
           learned_envelope_holds: verification.learnedEnvelopeHolds,
+          // #1295: rows Knox re-filed since Darwin's decision; a count and sample while the switch is off.
+          category_change_rejudge: verification.categoryChange,
           held_release: {
             selected: release.selected,
             acted: release.acted,

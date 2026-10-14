@@ -36,11 +36,19 @@ const TITLE_CHARS = 300;
 /**
  * Words that name a product or a time, not who the fee is for: a corporate (official) check or
  * draft, a personal check, a business day, "close of business", a vendor's "Business Systems",
- * "non-personal" or "non personal" (a URL path's hyphens become spaces), with the slash before it,
- * so "Business/Non-Personal Accounts" stays a heading.
+ * "non-business" or "non commercial" (a URL path's hyphens become spaces) with any slash before it,
+ * and "non-personal checks" or "non-consumer information" (products, as main read them).
  */
-const NOT_AN_AUDIENCE = /\bcorporate\s+(?:checks?|drafts?|bonds?|securities|and municipal)\b|\bpersonal\s+(?:checks?|identification|information)\b|\bbusiness\s+(?:days?|hours?|systems)\b|\b(?:close of|regular|normal|legitimate|conduct(?:ing)?|doing)\s+business\b|\bcredit union business only\b|(?:\/\s*)?\bnon[- ]?(?:commercial|business|personal|consumer)\b|\b(?:commercial|business|consumer|personal)(?:\s+(?:state|national|federal|savings|community|county|city|first))*\s+(?:bank|savings bank|credit union|trust company|savings and loan)\b/gi;
-const neutral = (text: string) => text.replace(NOT_AN_AUDIENCE, " ");
+const NOT_AN_AUDIENCE = /(?:\/\s*)?\bnon[- ]?(?:personal|consumer)\s+(?:checks?|identification|information|data)\b|\bcorporate\s+(?:checks?|drafts?|bonds?|securities|and municipal)\b|\bpersonal\s+(?:checks?|identification|information)\b|\bbusiness\s+(?:days?|hours?|systems)\b|\b(?:close of|regular|normal|legitimate|conduct(?:ing)?|doing)\s+business\b|\bcredit union business only\b|(?:\/\s*)?\bnon[- ]?(?:commercial|business)\b|\b(?:commercial|business|consumer|personal)(?:\s+(?:state|national|federal|savings|community|county|city|first))*\s+(?:bank|savings bank|credit union|trust company|savings and loan)\b/gi;
+/**
+ * "Non-Personal Accounts" and "Non-Consumer" are a bank's words for business accounts: read as
+ * "business", with any slash before them ("Business/Non-Personal Accounts" stays a heading).
+ * Stripping them as no audience let such fees take the consumer default (#1059 holdout 5).
+ * "Non-personal checks", "identification", "information" and "data" are products, not accounts
+ * (check cashing for a consumer), so they stay no audience (review of d31c9248).
+ */
+const NON_PERSONAL = /(?:\/\s*)?\bnon[- ]?(?:personal|consumer)\b(?!\s+(?:checks?|identification|information|data)\b)/gi;
+const neutral = (text: string) => text.replace(NON_PERSONAL, " business").replace(NOT_AN_AUDIENCE, " ");
 
 function audienceOf(raw: string): ContextAudience | null {
   const text = neutral(raw);
@@ -292,6 +300,10 @@ export function suggestAudience(input: {
   if (title && "ambiguous" in title) return null;
   if (title) return { audience: title.audience, source: "document_title", evidence: title.line };
   // A general schedule with no business fees is the consumer schedule (#1059 step 4).
+  // A business schedule's own wording near the top, even inside one long flattened line, or run
+  // together in the address ("ccufl_businessfeeschedule.pdf"), rules out the consumer default
+  // (#1059 holdout 5).
+  if (businessLine < 0 && businessScheduleWording(text, path)) return null;
   if (businessLine < 0) return { audience: "consumer", source: "default_general_schedule", evidence: "no business fees in the document" };
   // In a schedule that also prices business items, a fee whose own line is not found cannot be
   // shown to be unlimited, so it stays unknown.
@@ -351,4 +363,14 @@ export function businessFeeLine(lines: string[]): number {
 /** Whether the document prices anything for businesses. */
 export function hasBusinessFees(lines: string[]): boolean {
   return businessFeeLine(lines) >= 0;
+}
+
+/** Business or commercial schedule wording in the text's first characters or the address. */
+const BUSINESS_SCHEDULE_TEXT = /\b(?:business|commercial)\s+(?:(?:banking|deposit)\s+)?(?:fee schedule|schedule of (?:fees|charges)|fees and charges|service (?:charges|fees)|banking accounts|accounts? fee schedule)\b/i;
+const BUSINESS_SCHEDULE_PATH = /(?:business|commercial)\s*(?:fee|fees|schedule|service|banking)/i;
+function businessScheduleWording(text: string, path: string): boolean {
+  // A line that points elsewhere ("For business accounts, see the Business Fee Schedule.") names
+  // another document, not this one.
+  const top = text.slice(0, TITLE_CHARS).split("\n").filter((line) => !isPointer(line));
+  return top.some((line) => BUSINESS_SCHEDULE_TEXT.test(neutral(line))) || BUSINESS_SCHEDULE_PATH.test(neutral(path));
 }
