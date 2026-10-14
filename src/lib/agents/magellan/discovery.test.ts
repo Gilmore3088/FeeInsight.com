@@ -735,17 +735,22 @@ describe("Magellan agentic discovery", () => {
       expect(attempts(db).every((attempt) => attempt.detail.upgrade_search === UPGRADE_SEARCH_VERSION)).toBe(true);
     });
 
-    it("never accepts the product page it is replacing, even when it lists fees (#1326)", async () => {
+    it.each([
+      ["links the schedule too", '<a href="/personal/checking">Checking</a> <a href="/disclosures/fee-schedule">Fee Schedule</a>', "https://upbank.example/disclosures/fee-schedule"],
+      ["links only the product page (hub and crawl)", '<a href="/personal/checking">Checking</a>', null],
+    ])("never accepts the product page it is replacing, even when it lists fees: homepage %s (#1326)", async (_case, homepage, found) => {
       const db = upgradeDb();
       const fetchImpl = site({
         "https://upbank.example/personal/checking": () => response(FEE_TABLE),
-        "https://upbank.example/": () => response('<a href="/personal/checking">Checking</a> <a href="/disclosures/fee-schedule">Fee Schedule</a>'),
+        "https://upbank.example/": () => response(homepage),
         "https://upbank.example/disclosures/fee-schedule": () => response(FEE_TABLE),
       });
 
       const result = await runMagellanDiscovery({ runId: 124, db: asDiscoveryDb(db), fetchImpl, politeDelayMs: 0 });
 
-      expect(result.results[0]).toMatchObject({ outcome: "discovered", url: "https://upbank.example/disclosures/fee-schedule" });
+      if (found) expect(result.results[0]).toMatchObject({ outcome: "discovered", url: found });
+      else expect(result.results[0].url ?? null).not.toBe("https://upbank.example/personal/checking");
+      expect(attempts(db).some((attempt) => attempt.outcome === "ok" && String(attempt.detail.url ?? "").endsWith("/personal/checking"))).toBe(false);
       expect(attempts(db).some((attempt) => attempt.strategy === "discover.known_link")).toBe(false);
     });
 

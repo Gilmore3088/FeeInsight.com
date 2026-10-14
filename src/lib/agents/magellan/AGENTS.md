@@ -153,9 +153,9 @@ and `detail.method_version`).
   (`detail.upgrade_search`). A find replaces the link and keeps the old page as a
   companion `account_page`; a miss leaves the link and rescue state untouched.
   A re-search (upgrade, business or freshness) never accepts the link it is replacing, from
-  the known-link finder or any other; the page can still be opened as a hub (v3, #1326:
-  under v2 the known-link finder re-accepted the product page first in 1,492 of 1,690
-  searches, so the other finders never ran).
+  the known-link, hub, crawl or any other finder; the page can still be opened as a hub for
+  its links (v3, #1326: under v2, 1,406 of 1,745 searches stopped at the product page, the
+  known-link finder in 1,247 of its 1,428 finds and the site crawl in 148 of 182).
   Links to an article, blog post, news item or press release (`isArticleLink`, unless the
   path names a fee document such as "/articles/schedule-of-fees/") go to the same search,
   and a find does not keep the article as a companion. Every finder rejects such a

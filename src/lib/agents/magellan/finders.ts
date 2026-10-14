@@ -225,8 +225,8 @@ export interface SearchContext {
   tried: Set<string>;
   /**
    * A re-search (upgrade, business or freshness) looks for a page to replace the bank's
-   * current link: that link's identity is never accepted, by the known-link finder or any
-   * other (#1326). It can still be opened as a hub page.
+   * current link: that link's identity is never accepted, by the known-link finder, a hub
+   * page, the crawl or any candidate (#1326). It can still be opened for its links.
    */
   replacing?: Set<string>;
   homepageHtml: string;
@@ -687,7 +687,7 @@ export async function findViaHubPages(ctx: SearchContext): Promise<FinderResult>
     const html = await openPage(ctx, result, hub.url, entry);
     if (html == null) continue;
     // The hub itself may be the fee page.
-    if (!ctx.rejected.has(urlIdentity(hub.url)) && pageIsFeeSchedule(html)) {
+    if (!ctx.rejected.has(urlIdentity(hub.url)) && !ctx.replacing?.has(urlIdentity(hub.url)) && pageIsFeeSchedule(html)) {
       entry.verdict = "accepted_html";
       result.found = {
         url: hub.url,
@@ -786,7 +786,7 @@ export async function findBySiteCrawl(ctx: SearchContext): Promise<FinderResult>
     result.trail.push(entry);
     const html = await openPage(ctx, result, next.link.url, entry);
     if (html == null) continue;
-    if (pageIsFeeSchedule(html)) {
+    if (!ctx.replacing?.has(identity) && pageIsFeeSchedule(html)) {
       entry.verdict = "accepted_html";
       result.found = { url: next.link.url, documentType: "html", confidence: 0.84, reason: `Fee page found by crawling the site (depth ${next.depth})` };
       return result;

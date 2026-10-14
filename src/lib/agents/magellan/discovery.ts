@@ -97,9 +97,9 @@ const BLOCKED_HOMEPAGE_FINDERS = new Set<FinderKey>(["knownLink", "sitemap"]);
  * to search those banks again after a finder change.
  */
 // v2 (Oct 7): the finders learned big-bank names ("Schedule of Charges", "Consumer Fees").
-// v3 (Oct 14, #1326): the search no longer accepts the product page it is replacing. Under v2
-// the known-link finder re-accepted it first in 1,492 of 1,690 searches (1,451 banks), so the
-// other finders never ran and the bank counted as searched.
+// v3 (Oct 14, #1326): the search no longer accepts the product page it is replacing, from any
+// finder. Under v2, 1,406 of 1,745 searches stopped at it (the known-link finder in 1,247 of its
+// 1,428 finds, the site crawl in 148 of 182), so the bank counted as searched unchanged.
 export const UPGRADE_SEARCH_VERSION = 3;
 /**
  * Banks whose fee link is a business-only schedule (link-coverage.ts) get one search for the
@@ -128,8 +128,8 @@ export const FRESHNESS_RESERVED_SLOTS = 2;
  * A link is stale when the schedule's own "Effective ..." date, or (without one) a year
  * in its address, is STALE_AFTER_YEARS or more years before this year.
  */
-// v2 (Oct 14, #1326): the search no longer accepts the stale link it is replacing (v1 stopped
-// at it in 376 of 391 known-link finds).
+// v2 (Oct 14, #1326): the search no longer accepts the stale link it is replacing (398 of 491
+// v1 searches stopped at it; the known-link finder in 376 of its 391 finds).
 export const FRESHNESS_SEARCH_VERSION = 2;
 export const STALE_AFTER_YEARS = 3;
 /** "Effective January 1, 2022", "Effective Date: 01/01/2022" in a schedule's opening text. */
