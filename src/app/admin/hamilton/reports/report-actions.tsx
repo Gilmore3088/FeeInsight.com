@@ -1,6 +1,6 @@
 "use client";
 
-import { useTransition } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { ReportJob } from "@/lib/report-engine/types";
 import { cancelReport, publishReport, retryReport } from "../actions";
@@ -12,10 +12,13 @@ import { cancelReport, publishReport, retryReport } from "../actions";
 export function ReportActions({ job, title, isPublished }: { job: ReportJob; title: string; isPublished: boolean }) {
   const [pending, startTransition] = useTransition();
   const router = useRouter();
+  const [error, setError] = useState<string | null>(null);
 
-  function run(action: () => Promise<unknown>) {
+  function run(action: () => Promise<{ success: boolean; error?: string } | void>) {
     startTransition(async () => {
-      await action();
+      const result = await action();
+      // A refused action says why (e.g. Publish on a report whose figures did not reconcile).
+      setError(result && !result.success ? result.error ?? "The action failed." : null);
       router.refresh();
     });
   }
@@ -69,6 +72,8 @@ export function ReportActions({ job, title, isPublished }: { job: ReportJob; tit
           Retry
         </button>
       )}
+
+      {error && <span className="text-red-600 dark:text-red-400 text-[11px] basis-full">{error}</span>}
     </div>
   );
 }
