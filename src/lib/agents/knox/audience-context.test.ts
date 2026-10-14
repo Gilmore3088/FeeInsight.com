@@ -255,4 +255,26 @@ describe("Knox audience suggestion from context (#1059)", () => {
     // A true pointer in a consumer-only schedule keeps the consumer default.
     expect(suggest(null, ["Fee Schedule", "Business accounts: see the Business Fee Schedule.", "Stop Payment $30"].join("\n"), "Stop Payment", 30)).toMatchObject({ audience: "consumer" });
   });
+
+  it("calls a fee listed at the same price under a personal and a business heading both (#1059 holdout)", () => {
+    const text = ["Personal Checking Fees", "NSF / Returned Item Fee", "$32.00", "Stop Payment $30", "Business Accounts Fees", "NSF/Returned item Fee", "$32.00", "Stop Payment $35"].join("\n");
+    expect(suggest(null, text, "NSF / Returned Item Fee", 32)).toMatchObject({ audience: "both", source: "section_heading", evidence: "Personal Checking Fees / Business Accounts Fees" });
+    // The business section listed first decides the same way.
+    const businessFirst = ["Business Account Service Fees", "Chargeback $10", "Personal Account Service Fees", "Chargeback $10"].join("\n");
+    expect(suggest(null, businessFirst, "Chargeback", 10)).toMatchObject({ audience: "both", source: "section_heading" });
+    // A different price in each section keeps each fee in its own section.
+    expect(suggest(null, text, "Stop Payment", 30)).toMatchObject({ audience: "consumer", evidence: "Personal Checking Fees" });
+    expect(suggest(null, text, "Stop Payment", 35)).toMatchObject({ audience: "business", evidence: "Business Accounts Fees" });
+    // A business line that names its own product is another fee, not the same one listed twice.
+    const products = ["Consumer Fees", "Checking Account Fees", "Advantage Checking Account Service Charge | $20.00 per month", "Business Fees", "Business Checking Account Fees", "Business Advantage Checking Account Service Charge | $20.00 per month"].join("\n");
+    expect(suggest(null, products, "Advantage Checking Account Service Charge", 20)).toMatchObject({ audience: "consumer" });
+    // A second line in the same section is no second audience.
+    expect(suggest(null, ["Personal Accounts", "Stop Payment $30", "Stop Payment $30 (online)"].join("\n"), "Stop Payment", 30)).toMatchObject({ audience: "consumer" });
+  });
+
+  it("never reaches a business heading far up a page with blank lines between rows (#1059 holdout)", () => {
+    const rows = Array.from({ length: 20 }, (_, index) => `Service ${index}\n\n$${index + 1}.00\n\n\n\n`).join("\n");
+    const text = ["Business Services", "Lockbox $50", "", rows, "NSF Fee", "", "$30.00"].join("\n");
+    expect(suggest(null, text, "NSF Fee", 30)?.audience).not.toBe("business");
+  });
 });

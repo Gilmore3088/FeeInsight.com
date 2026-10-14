@@ -27,7 +27,12 @@ const CONSUMER_WORDS = /\b(?:personal|consumer|individuals?)\b/i;
 const BOTH_WORDS = /\b(?:personal|consumer)\b[^.\n]{0,20}\b(?:and|or|&|\/)\s*(?:small\s+)?(?:business|commercial)\b|\b(?:business|commercial)\b[^.\n]{0,20}\b(?:and|or|&|\/)\s*(?:personal|consumer)\b/i;
 /** A heading is a short line with no price: a section title, not a fee row. */
 const MAX_HEADING_CHARS = 80;
-/** How far above the fee's line a heading is looked for. */
+/**
+ * How far above the fee's line a heading is looked for. Lines, blank ones included: counting only
+ * lines with text reached a "Business Services" heading far up a web page and called its NSF and
+ * Courtesy Pay fees business (#1059 holdout, Oct 14), so a fee under a distant heading stays
+ * unqualified instead.
+ */
 const HEADING_LOOKBACK_LINES = 60;
 const TITLE_CHARS = 300;
 
@@ -83,14 +88,21 @@ function isHeading(line: string, columns = false): boolean {
 
 const squash = (value: string) => value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 
+/**
+ * The fee's names to look for, its first words: "Stop Payment Fee" is printed "Stop Payment $30",
+ * so a trailing fee word is tried off only when the full name finds no line. Names match as whole
+ * words (never "nsf" in "transfer").
+ */
+function feeNames(feeName: string): string[] {
+  const full = squash(feeName).split(" ").slice(0, 4).join(" ");
+  const stripped = squash(feeName).replace(/(?: (?:service )?(?:fees?|charges?))+$/, "").split(" ").slice(0, 4).join(" ");
+  return [full, stripped].filter((name, index, all) => name && all.indexOf(name) === index);
+}
+
 /** The index of the fee's own line: the first line naming it (its first words) at its price. */
 export function feeLineIndex(lines: string[], feeName: string, amount: number | null): number {
-  const full = squash(feeName).split(" ").slice(0, 4).join(" ");
-  // "Stop Payment Fee" is printed "Stop Payment $30": a trailing fee word is tried off only when
-  // the full name finds no line, and names match as whole words (never "nsf" in "transfer").
-  const stripped = squash(feeName).replace(/(?: (?:service )?(?:fees?|charges?))+$/, "").split(" ").slice(0, 4).join(" ");
   const price = amount == null ? null : priceToken(amount);
-  const names = [full, stripped].filter((name, index, all) => name && all.indexOf(name) === index);
+  const names = feeNames(feeName);
   const named = (index: number) => names.find((name) => ` ${squash(lines[index])} `.includes(` ${name} `));
   // A line at the fee's price, under either name, beats a line that only names it ("Stop payment
   // fee waived for Premier Business Checking"; review of 8dd7af67). The next line's price counts
@@ -104,6 +116,26 @@ export function feeLineIndex(lines: string[], feeName: string, amount: number | 
   }
   for (let index = 0; index < lines.length; index += 1) if (named(index)) return index;
   return -1;
+}
+
+/**
+ * Every line that names the fee at its price, under the first of its names that finds one. A
+ * schedule with a personal and a business section can list the same fee at the same price in both.
+ * Empty when the fee has no price or no priced line names it.
+ */
+export function pricedFeeLineIndexes(lines: string[], feeName: string, amount: number | null): number[] {
+  if (amount == null) return [];
+  const price = priceToken(amount);
+  const priced = (index: number) =>
+    price.test(lines[index]) || (!PRICED.test(lines[index]) && price.test(nextLine(lines, index) ?? ""));
+  for (const name of feeNames(feeName)) {
+    const found: number[] = [];
+    for (let index = 0; index < lines.length; index += 1) {
+      if (` ${squash(lines[index])} `.includes(` ${name} `) && priced(index)) found.push(index);
+    }
+    if (found.length > 0) return found;
+  }
+  return [];
 }
 
 /**
@@ -258,6 +290,19 @@ export function suggestAudience(input: {
     if (section && ("columns" in section || "ambiguous" in section)) return null;
     // "All accounts" in a schedule that prices nothing for businesses is the consumer schedule.
     if (section && !(section.audience === "both" && businessLine < 0)) {
+      // The same fee at the same price under a personal and a business heading is listed for
+      // both ("NSF $32" in Personal Checking Fees and again in Business Accounts Fees).
+      if (section.audience !== "both") {
+        for (const other of pricedFeeLineIndexes(lines, input.feeName, input.amount)) {
+          // A line that names its own audience is another product ("Business Advantage Checking
+          // Account Service Charge" beside "Advantage Checking Account Service Charge").
+          if (other === feeIndex || audienceOf(lines[other])) continue;
+          const there = sectionHeadingAudience(lines, other);
+          if (there && "audience" in there && there.audience !== "both" && there.audience !== section.audience) {
+            return { audience: "both", source: "section_heading", evidence: `${section.heading} / ${there.heading}` };
+          }
+        }
+      }
       return { audience: section.audience, source: "section_heading", evidence: section.heading };
     }
   }
