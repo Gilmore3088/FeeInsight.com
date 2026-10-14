@@ -57,8 +57,8 @@ export default async function InstitutionDetailPage({
   ] =
     await Promise.all([
       getInstitution(institutionId),
-      getInstitutionFees(institutionId),
-      getInstitutionFeeScheduleEvidence(institutionId),
+      getInstitutionFees(institutionId, { pipelineNotes: true }),
+      getInstitutionFeeScheduleEvidence(institutionId, { pipelineNotes: true }),
       getInstitutionCrawlHistory(institutionId),
       getInstitutionAgentResults(institutionId),
       getInstitutionPeerRanking(institutionId),
