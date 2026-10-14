@@ -9,6 +9,11 @@ describe("navItemsFor", () => {
     expect(labels).not.toContain("Monitor");
   });
 
+  it("shows the product, its reports and Hamilton to signed-out visitors", () => {
+    const labels = navItemsFor(null).map((i) => i.label);
+    expect(labels).toEqual(["Find your bank", "Bank Fee Index", "Market data", "Guides", "Reports", "Hamilton", "Pricing"]);
+  });
+
   it("keeps Pricing in the menu for signed-in free users, who are the people upgrading", () => {
     expect(navItemsFor({ signedIn: true }).map((i) => i.label)).toContain("Pricing");
     expect(navItemsFor(null).map((i) => i.label)).toContain("Pricing");

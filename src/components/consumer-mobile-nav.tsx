@@ -119,7 +119,7 @@ export function ConsumerMobileNav() {
                     <Link
                       href={REQUEST_REPORT_NAV.href}
                       onClick={close}
-                      className="mt-2 block rounded-md bg-brick px-3 py-2.5 text-center text-[14px] font-semibold text-white transition-colors hover:bg-brick-ink"
+                      className="mt-2 block rounded-md bg-ink px-3 py-2.5 text-center text-[14px] font-semibold text-on-ink transition-opacity hover:opacity-90"
                     >
                       {REQUEST_REPORT_NAV.label}
                     </Link>

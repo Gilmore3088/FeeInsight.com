@@ -48,7 +48,7 @@ export function NavAccount() {
       </Link>
       <Link
         href={REQUEST_REPORT_NAV.href}
-        className="inline-flex items-center rounded-md bg-brick px-3 py-1.5 text-[12px] font-semibold text-white transition-colors hover:bg-brick-ink"
+        className="inline-flex items-center rounded-md bg-ink px-3 py-1.5 text-[12px] font-semibold text-on-ink transition-opacity hover:opacity-90"
       >
         {REQUEST_REPORT_NAV.label}
       </Link>

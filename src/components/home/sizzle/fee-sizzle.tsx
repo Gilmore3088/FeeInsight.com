@@ -2,10 +2,13 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useReducedMotion } from "@/app/subscribe/showcase";
+import Link from "next/link";
 import type { HomeData } from "../home-data";
+import type { SampleStory } from "../sample-story";
 import { ExampleTag } from "./scene-parts";
 import { CollectScene, CostScene, IndexScene, MarketsScene } from "./scenes-data";
 import { AskScene, ReportScene } from "./scenes-hamilton";
+import { SampleAskScene, SampleCollectScene, SampleCostScene, SampleIndexScene, SampleMarketsScene, SampleReportScene } from "./scenes-sample";
 import styles from "./sizzle.module.css";
 import {
   CHAPTERS,
@@ -40,7 +43,7 @@ interface PlayState {
  * never under reduced motion, stops after three plays, and stops for good when a reader
  * picks a chapter or presses pause.
  */
-export function FeeSizzle({ data }: { data: HomeData }) {
+export function FeeSizzle({ data, sample }: { data: HomeData; sample: SampleStory | null }) {
   const reducedMotion = useReducedMotion();
   const [state, setState] = useState<PlayState>({ index: REST_SCENE_INDEX, playsDone: 0, playing: false, run: 0 });
   const frameRef = useRef<HTMLDivElement>(null);
@@ -114,8 +117,8 @@ export function FeeSizzle({ data }: { data: HomeData }) {
           <i />
           <i />
           <i />
-          <span className={styles.chromeTitle}>feeinsight.com</span>
-          {scene.example ? <span className={styles.example}><ExampleTag /></span> : null}
+          <span className={styles.chromeTitle}>{sample ? `Live sample · ${sample.name}` : "feeinsight.com"}</span>
+          {scene.example && !sample ? <span className={styles.example}><ExampleTag /></span> : null}
         </div>
         <p key={`c-${state.run}`} className={styles.caption} aria-hidden="true">
           {scene.caption}
@@ -126,7 +129,7 @@ export function FeeSizzle({ data }: { data: HomeData }) {
             className={canvasScale ? styles.canvas : styles.canvasNarrow}
             style={canvasScale ? { width: CANVAS_W, height: CANVAS_H, transform: `scale(${canvasScale})` } : undefined}
           >
-            <SceneBody sceneKey={scene.key} data={data} settled={atRest} />
+            <SceneBody sceneKey={scene.key} data={data} sample={sample} settled={atRest} />
           </div>
         </div>
       </div>
@@ -154,12 +157,19 @@ export function FeeSizzle({ data }: { data: HomeData }) {
           {state.playing ? "Pause" : atRest ? "Play" : "Resume"}
         </button>
       </figcaption>
-      <details className="text-[13px] text-ink-muted">
-        <summary className="cursor-pointer">Read the transcript</summary>
-        <p id={TRANSCRIPT_ID} className="mt-2 max-w-[70ch]">
-          {SIZZLE_TRANSCRIPT}
-        </p>
-      </details>
+      <div className="flex flex-wrap items-baseline justify-between gap-3 text-[13px] text-ink-muted">
+        <details>
+          <summary className="cursor-pointer">Read the transcript</summary>
+          <p id={TRANSCRIPT_ID} className="mt-2 max-w-[70ch]">
+            {sample ? SIZZLE_TRANSCRIPT.replace(/ Scenes after the Bank Fee Index use example figures\.$/, ` Every figure shown comes from the live sample report for ${sample.name}.`) : SIZZLE_TRANSCRIPT}
+          </p>
+        </details>
+        {sample ? (
+          <Link href="/reports/sample-competitive-fee-position" className="font-semibold text-ink underline underline-offset-4">
+            Read the full live sample report
+          </Link>
+        ) : null}
+      </div>
     </figure>
   );
 }
@@ -182,7 +192,27 @@ function useCanvasScale(): [(node: HTMLDivElement | null) => void, number | null
   return [measureStage, k];
 }
 
-function SceneBody({ sceneKey, data, settled }: { sceneKey: string; data: HomeData; settled: boolean }) {
+function SceneBody({ sceneKey, data, sample, settled }: { sceneKey: string; data: HomeData; sample: SampleStory | null; settled: boolean }) {
+  const nation = data.nationalFees.find((fee) => fee.key === (sample?.story.key ?? "overdraft"));
+  if (sample) {
+    switch (sceneKey) {
+      case "collect":
+        if (sample.competitors.some((c) => c.sourceLine)) return <SampleCollectScene sample={sample} />;
+        break;
+      case "cost":
+        if (sample.competitors.length > 0) return <SampleCostScene sample={sample} />;
+        break;
+      case "index":
+        return <SampleIndexScene data={data} sample={sample} />;
+      case "markets":
+        return <SampleMarketsScene sample={sample} nation={nation} />;
+      case "ask":
+        return <SampleAskScene sample={sample} />;
+      case "report":
+      case "done":
+        return <SampleReportScene sample={sample} settled={settled || sceneKey === "done"} />;
+    }
+  }
   switch (sceneKey) {
     case "collect":
       return <CollectScene />;

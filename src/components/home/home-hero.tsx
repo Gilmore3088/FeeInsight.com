@@ -2,6 +2,7 @@ import Link from "next/link";
 import { InstitutionSearchBar } from "@/app/(public)/institutions/search-bar";
 import { REPORT_PRICE_INLINE } from "@/lib/constants";
 import type { HomeData } from "./home-data";
+import type { SampleStory } from "./sample-story";
 import { FeeSizzle } from "./sizzle/fee-sizzle";
 
 const CHIP_CLASS =
@@ -11,7 +12,8 @@ const CHIP_CLASS =
  * The hero: the promise, one search, and the 35-second sizzle under it (BetterAnalyst's
  * page shape, James 2026-10-14). The search is the door fee owners and consumers share.
  */
-export function HomeHero({ data, sampleLive }: { data: HomeData; sampleLive: boolean }) {
+export function HomeHero({ data, sample }: { data: HomeData; sample: SampleStory | null }) {
+  const sampleLive = sample !== null;
   return (
     <section className="relative overflow-hidden border-b border-border bg-paper">
       <div aria-hidden="true" className="home-grid pointer-events-none absolute inset-0" />
@@ -68,7 +70,7 @@ export function HomeHero({ data, sampleLive }: { data: HomeData; sampleLive: boo
         </p>
 
         <div className="mt-14 w-full">
-          <FeeSizzle data={data} />
+          <FeeSizzle data={data} sample={sample} />
         </div>
       </div>
     </section>

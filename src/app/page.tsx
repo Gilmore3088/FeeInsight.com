@@ -4,10 +4,12 @@ export const dynamic = "force-dynamic";
 import type { Metadata } from "next";
 import { getPublicSnapshot } from "@/lib/public-stats";
 import { CONTACT_EMAIL, LEGAL_ENTITY_NAME, PRODUCT_NAME, SITE_NAME, SITE_URL } from "@/lib/constants";
-import { sampleReportAvailable } from "@/lib/custom-report/sample-report";
+import { loadSampleReport } from "@/lib/custom-report/sample-report";
+import { buildSampleStory } from "@/components/home/sample-story";
 import { buildHomeData } from "@/components/home/home-data";
 import { HomeHero } from "@/components/home/home-hero";
-import { EveryFeeSection, EveryMarketSection, OldWaySection, OneWorkspaceSection } from "@/components/home/home-pillars";
+import { EveryFeeSection, OneWorkspaceSection } from "@/components/home/home-pillars";
+import { DrilldownSection } from "@/components/home/home-drilldown";
 import { OperatingRecordSection, PricingPreviewSection } from "@/components/home/home-record-pricing";
 import { ClosingBand, FaqSection, homeFaq } from "@/components/home/home-faq-close";
 
@@ -60,7 +62,12 @@ const WEBSITE_JSON_LD = {
 export default async function LandingPage() {
   // Counts and medians come from one shared snapshot, so they match the fee index,
   // research hub and directory to the number.
-  const [snapshot, sampleLive] = await Promise.all([getPublicSnapshot(), sampleReportAvailable()]);
+  const [snapshot, sampleReport] = await Promise.all([
+    getPublicSnapshot(),
+    // The live sample is optional: without it the sizzle shows labelled example scenes.
+    loadSampleReport().catch(() => null),
+  ]);
+  const sample = buildSampleStory(sampleReport);
   const data = buildHomeData(snapshot);
   const faq = homeFaq(data);
   const faqJsonLd = {
@@ -86,10 +93,9 @@ export default async function LandingPage() {
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd) }} />
       <ConsumerNav />
       <main id="main-content">
-        <HomeHero data={data} sampleLive={sampleLive} />
-        <OldWaySection />
+        <HomeHero data={data} sample={sample} />
         <EveryFeeSection data={data} />
-        <EveryMarketSection data={data} />
+        <DrilldownSection data={data} sample={sample} />
         <OneWorkspaceSection />
         <OperatingRecordSection data={data} />
         <PricingPreviewSection />

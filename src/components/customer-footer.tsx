@@ -42,7 +42,7 @@ export function CustomerFooter() {
               </li>
               <li>
                 <Link href="/institutions" className={FOOTER_LINK_CLASS}>
-                  Find Your Institution
+                  Find your bank
                 </Link>
               </li>
               <li>
@@ -57,7 +57,7 @@ export function CustomerFooter() {
               </li>
               <li>
                 <Link href="/for-institutions" className={FOOTER_LINK_CLASS}>
-                  For Institutions
+                  Hamilton
                 </Link>
               </li>
               <li>

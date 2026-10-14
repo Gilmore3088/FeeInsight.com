@@ -5,11 +5,11 @@ import { formatFeeAmount } from "@/lib/format";
 import { STATE_CODES, STATE_NAMES } from "@/lib/us-states";
 import { STATE_TO_FIPS } from "@/lib/geo/state-fips";
 import { DistributionChart } from "@/components/public/distribution-chart";
-import { CountyPriceMap, type CountyDetail } from "@/components/public/county-price-map";
-import { countyFeatures } from "@/lib/geo/counties";
+import { CountyPriceMap } from "@/components/public/county-price-map";
+import { buildCountyPriceView } from "@/lib/county-price-view";
 import { getNationalIndexCached } from "@/lib/data-store/fee-index";
 import { getCountyFeeMapCached, getStateDemographicsCached } from "@/lib/data-store/public-cached-reads";
-import { countyPriceMap, PRICE_MAP_FILLS, PRICE_MAP_LEGEND, priceStep } from "@/lib/report-templates/base/state-charts";
+import { PRICE_MAP_FILLS, PRICE_MAP_LEGEND } from "@/lib/report-templates/base/state-charts";
 import {
   charterChecks,
   marketChecks,
@@ -64,33 +64,7 @@ export default async function PriceCheckPage({ searchParams }: PageProps) {
   const nationalEntry = national.find((entry) => entry.fee_category === fee) ?? null;
   const charters = prices && price !== null ? charterChecks(price, prices) : [];
   const markets = prices && price !== null ? marketChecks(price, prices) : [];
-  const countyValues = (countyMap?.counties ?? []).map((c) => ({ fips: c.fips, value: c.overdraft, deposits: c.deposits, covered_deposits: c.covered_deposits }));
-  const mapWide = check && fips && countyValues.length > 0 ? countyPriceMap(fips, countyValues, check.price) : null;
-  const mapNarrow = mapWide && check && fips ? countyPriceMap(fips, countyValues, check.price, { narrow: true }) : null;
-  // The legend counts every county the map draws, so counties with no branch in the deposit
-  // data (hatched on the map) are counted as having no fee yet.
-  const countySteps = [0, 0, 0, 0, 0];
-  let countiesWithout = 0;
-  const countyDetails: Record<string, CountyDetail> = {};
-  if (mapWide && check && fips) {
-    const rows = new Map((countyMap?.counties ?? []).map((c) => [c.fips, c]));
-    for (const f of countyFeatures().filter((x) => x.id.startsWith(fips))) {
-      const c = rows.get(f.id);
-      if (c?.overdraft == null) countiesWithout++;
-      else countySteps[priceStep(c.overdraft, check.price)]++;
-      countyDetails[f.id] = {
-        name: f.properties.name,
-        fee: c?.overdraft ?? null,
-        institutions: c?.institutions ?? 0,
-        deposits: c?.deposits ?? 0,
-        covered: c?.covered_deposits ?? 0,
-        top: [],
-      };
-    }
-    for (const i of countyMap?.institutions ?? []) {
-      countyDetails[i.fips]?.top.push({ id: i.institution_id, name: i.name, fee: i.fee, deposits: i.deposits });
-    }
-  }
+  const countyView = check && fips ? buildCountyPriceView(fips, countyMap, check.price) : null;
   const nationalMedian = nationalEntry?.median_amount != null && (nationalEntry.institution_count ?? 0) > 0 ? nationalEntry.median_amount : null;
   const income = demographics?.median_household_income ? Number(demographics.median_household_income) : null;
 
@@ -209,7 +183,7 @@ export default async function PriceCheckPage({ searchParams }: PageProps) {
             </div>
           </div>
 
-          {mapWide && (
+          {countyView && check && (
             <>
               <h3 className="font-bold mt-10 text-[1.1rem] text-ink" style={SERIF}>
                 {stateName} counties against {money(check.price)}
@@ -218,20 +192,20 @@ export default async function PriceCheckPage({ searchParams }: PageProps) {
                 {PRICE_MAP_LEGEND.map((label, i) => (
                   <span key={label} className="inline-flex items-center gap-1.5">
                     <span className="inline-block h-3 w-4 rounded-sm" style={{ background: PRICE_MAP_FILLS[i] }} />
-                    {label} <b className="tabular-nums text-ink">{countySteps[i]}</b>
+                    {label} <b className="tabular-nums text-ink">{countyView.steps[i]}</b>
                   </span>
                 ))}
-                {countiesWithout > 0 && (
+                {countyView.without > 0 && (
                   <span className="inline-flex items-center gap-1.5">
                     <span
                       className="inline-block h-3 w-4 rounded-sm border border-border"
                       style={{ background: "repeating-linear-gradient(45deg,#fff 0 2px,#ddd5c6 2px 4px)" }}
                     />
-                    No fee yet <b className="tabular-nums text-ink">{countiesWithout}</b>
+                    No fee yet <b className="tabular-nums text-ink">{countyView.without}</b>
                   </span>
                 )}
               </div>
-              <CountyPriceMap wide={mapWide} narrow={mapNarrow} details={countyDetails} price={check.price} feeNoun={FEE_NOUN[fee]} />
+              <CountyPriceMap wide={countyView.wide} narrow={countyView.narrow} details={countyView.details} price={check.price} feeNoun={FEE_NOUN[fee]} />
               <p className="mt-2 max-w-3xl text-[12px] text-ink-muted">
                 Each county shows the published {FEE_NOUN[fee]} of the institutions with branches there, weighted by their deposits (FDIC Summary of Deposits
                 {countyMap?.sod_year ? `, ${countyMap.sod_year}` : ""}). Fees of $0 are left out.
