@@ -13,6 +13,8 @@ vi.mock("./connection", () => {
 });
 
 import {
+  getCpiContext,
+  yearEarlier,
   getFinancialHistory,
   getFinancialStats,
   getFinancialsByInstitution,
@@ -326,3 +328,48 @@ describe("source filter (ffiec rows use other units)", () => {
     expectEveryReadFiltered();
   });
 });
+
+describe("getCpiContext (#1175)", () => {
+  beforeEach(() => resetMock(getMock()));
+
+  // Monthly rows newest first, with no October 2025 (BLS published none).
+  function series(latest: string, values: Record<string, number>) {
+    return Object.entries(values)
+      .filter(([day]) => day <= latest)
+      .sort(([a], [b]) => (a < b ? 1 : -1))
+      .map(([observation_date, value]) => ({ observation_date, value }));
+  }
+  const months = (from: number, to: number, year: number, base: number) =>
+    Object.fromEntries(Array.from({ length: to - from + 1 }, (_, i) => [`${year}-${String(from + i).padStart(2, "0")}-01`, base + i]));
+
+  it("compares the same month a year earlier, by date, and holds all items to the bank month", async () => {
+    const allItems = { ...months(7, 9, 2025, 323), ...months(11, 12, 2025, 326), ...months(1, 9, 2026, 330) };
+    delete (allItems as Record<string, number>)["2025-10-01"];
+    allItems["2025-08-01"] = 323.976;
+    allItems["2026-08-01"] = 334.98;
+    const bank = { "2025-08-01": 193.006, "2026-08-01": 190.234 };
+    getMock().mockImplementation((strings: unknown, ...params: unknown[]) => {
+      const text = templateText(strings);
+      if (!text.includes("fed_economic_indicators")) return Promise.resolve([]);
+      const [seriesId, asOf] = params as [string, string | null];
+      if (seriesId === "CUUR0000SA0") return Promise.resolve(series(asOf ?? "9999", allItems));
+      return Promise.resolve(series(asOf ?? "9999", bank));
+    });
+    const cpi = await getCpiContext();
+    expect(cpi.bankFees).toMatchObject({ date: "2026-08-01", yoyPct: -1.4 });
+    // Aug 2026 against Aug 2025: +3.4%, not the +3.7% that Jul 2025 gave.
+    expect(cpi.allItems).toMatchObject({ date: "2026-08-01", yoyPct: 3.4 });
+  });
+
+  it("says nothing when the year-ago month is missing", async () => {
+    getMock().mockImplementation(() => Promise.resolve([{ observation_date: "2026-08-01", value: 334.98 }]));
+    const cpi = await getCpiContext();
+    expect(cpi.bankFees).toBeNull();
+    expect(cpi.allItems).toBeNull();
+  });
+
+  it("steps back one year", () => {
+    expect(yearEarlier("2026-08-01")).toBe("2025-08-01");
+  });
+});
+

@@ -1020,3 +1020,13 @@ describe("sweep service charges filed as monthly maintenance (v60)", () => {
     expect(checkFeeCategory("monthly_maintenance", name).ok).toBe(false);
   });
 });
+
+describe("a remote deposit capture product filed as monthly maintenance (v61)", () => {
+  it.each(["CheckCapture Maintenance Fee", "Check Capture monthly fee"])("takes %s out of monthly_maintenance", (name) => {
+    expect(checkFeeCategory("monthly_maintenance", name).ok).toBe(false);
+  });
+
+  it("keeps an account's own maintenance fee", () => {
+    expect(checkFeeCategory("monthly_maintenance", "Checking Maintenance Fee").ok).toBe(true);
+  });
+});

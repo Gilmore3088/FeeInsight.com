@@ -529,7 +529,9 @@ It stays held when the line is an interest or dividend rate, says "up to", state
 rates, falls outside the category's range, or has no clean name. Names come from the category's
 own words ("A 1% Currency Conversion Fee will be assessed on" is "Currency Conversion Fee"). New
 texts get this in the extract pass; rows held before it are re-read by `recheckHeldRates`
-(`knox_rate_recheck:v1`, 100 per extract step).
+(`knox_rate_recheck:v2`, 100 per extract step). v2 (#1102): a rate stated as a share of what it
+charges ("1% of transaction amount") traces without the word "fee", and check cashing and
+international ATM fees publish as rates.
 
 ## Learning reader (`lessons.ts`)
 Each extract step reads lessons from the shared learning store (`pipeline_feedback`): a fee name
@@ -715,7 +717,7 @@ fails a PR that changes one of these constants without updating its line here (#
 |---|---|---|---|
 | `KNOX_BATCH_REVIEW_VERSION` | — | v1 | `knox/batch-review.ts` |
 | `KNOX_CALIBRATION_VERSION` | — | v2 | `knox/calibration.ts` |
-| `HELD_RATE_RECHECK_VERSION` | — | v1 | `knox/held-recheck.ts` |
+| `HELD_RATE_RECHECK_VERSION` | — | v2 | `knox/held-recheck.ts` |
 | `KNOX_LAYOUT_SIGNATURE_VERSION` | — | v1 | `knox/layout-signature.ts` |
 | `KNOX_LESSONS_VERSION` | — | v3 | `knox/lessons.ts` |
 | `LINEUP_CORRECT_STRATEGY` | `knox.lineup_correct` | v2 | `knox/lineup-correct.ts` |

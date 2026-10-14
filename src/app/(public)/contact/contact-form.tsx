@@ -4,9 +4,10 @@ import { useState, use } from "react";
 import { HoneypotField, honeypotValue } from "@/components/public/honeypot-field";
 import { LEAD_HONEYPOT_FIELD } from "@/lib/lead-capture";
 import { readFirstTouch } from "@/lib/marketing-touch";
+import { REPORT_OFFER, REPORT_PRICE_INLINE } from "@/lib/constants";
 
 const INQUIRY_TYPES = [
-  { value: "report", label: "Competitive Fee Position Report (from $300)" },
+  { value: "report", label: `${REPORT_OFFER.name} (${REPORT_PRICE_INLINE})` },
   { value: "enterprise", label: "Fee Insight Pro (seats, invoicing)" },
   { value: "billing", label: "Billing or my subscription" },
   { value: "advisory", label: "Fee Insight Advisory (custom work)" },

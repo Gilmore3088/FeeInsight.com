@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("@/lib/data-store/connection", () => ({ sql: vi.fn() }));
 
 import {
+  answerQualityFrom,
   coverageTarget,
   goalBriefLines,
   goalHeadline,
@@ -152,5 +153,39 @@ describe("readGoalScorecard", () => {
     expect(goal.accuracy).toBeNull();
     expect(goal.liveInstitutions?.live).toBe(3900);
     expect(goalBriefLines(goal)).toContain("Accuracy: could not be read today.");
+  });
+});
+
+describe("Hamilton answer quality (#1079)", () => {
+  // Invented counts for tests only.
+  const detail = {
+    answers: 140,
+    passed: 100,
+    timedOut: false,
+    correctness: { checked: 120, correct: 108 },
+    pro: { questions: 20, passed: 9, correctness: { checked: 10, correct: 10 } },
+  };
+
+  it("gives a dated form rate and correctness rate for each measured path, and names the paid paths it does not sample", () => {
+    const q = answerQualityFrom("2026-10-14T00:51:00.000Z", detail);
+    expect(q.at).toBe("2026-10-14T00:51:00.000Z");
+    expect(q.paths[0]).toMatchObject({ path: "free_ask", measured: true, answers: 140, formPassed: 100, formRate: 0.7143, checked: 120, correct: 108, correctRate: 0.9 });
+    expect(q.paths[1]).toMatchObject({ path: "pro_replay", formRate: 0.45, correctRate: 1 });
+    expect(q.paths.filter((p) => !p.measured).map((p) => p.path)).toEqual(["written_answer", "memo", "simulate", "report"]);
+  });
+
+  it("reads an eval from before the correctness check as form only", () => {
+    const q = answerQualityFrom("2026-10-13T20:51:34.000Z", { answers: 126, passed: 89, timedOut: true });
+    expect(q.paths[0]).toMatchObject({ formPassed: 89, checked: null, correctRate: null });
+    expect(q.timedOut).toBe(true);
+  });
+
+  it("reads the latest answer eval with the scorecard and puts it in the brief", async () => {
+    const { db } = fakeDb([[/hamilton-answer-eval/, [{ created_at: new Date("2026-10-14T00:51:00Z"), detail }]]]);
+    const goal = await readGoalScorecard(db);
+    expect(goal.answerQuality).toMatchObject({ query: "goal.hamilton_answer_eval_latest", at: "2026-10-14T00:51:00.000Z" });
+    expect(goalBriefLines(goal).at(-1)).toBe(
+      "Hamilton answers (eval of 2026-10-14 00:51 UTC): Free Ask, standard questions: form 71.4% (100 of 140), figures tie out 90.0% (108 of 120); Free Ask, Pro readers' questions: form 45.0% (9 of 20), figures tie out 100.0% (10 of 10). Paid paths not measured yet.",
+    );
   });
 });

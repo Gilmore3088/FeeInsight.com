@@ -58,3 +58,26 @@ describe("rateFeeFromHeld", () => {
     expect(rateFeeFromHeld(held("Fee", line, null), line)).toBe("category_not_published");
   });
 });
+
+describe("held rates a schedule row states without the word fee (#1102)", () => {
+  it.each([
+    ["card_foreign_txn", "Credit Card/Debit Card International Transaction", "Credit Card/Debit Card International Transaction | 1% of foreign transaction amount", 1],
+    ["card_foreign_txn", "ATM Cross-border", "ATM Cross-border | 1% of International Transactions | 1% of International Transactions", 1],
+    ["check_cashing", "Check Cashing", "Check Cashing | 1.00% of Amount", 1],
+    ["check_cashing", "Non-Member On Us Check Cashing Fee", "Non-Member On Us Check Cashing Fee | 1% of check", 1],
+    ["atm_international", "ATM / Debit Card International Transaction", "ATM / Debit Card International Transaction | 1% of transaction amount", 1],
+    ["coin_counting", "Loose Coin Counting (non-customer)", "Loose Coin Counting (non-customer) | 10% of total", 10],
+  ])("sends %s '%s' to Darwin", (hint, name, line, percent) => {
+    const text = `Fee Schedule\nWire Transfer | $25.00\n${line}`;
+    expect(rateFeeFromHeld(held(name, line, hint), text)).toMatchObject({ canonicalHint: hint, ratePercent: percent });
+  });
+
+  it("still holds a share of a balance, an interest rate and a card network's own assessment", () => {
+    const balance = "Savings | 1% of balance";
+    expect(typeof rateFeeFromHeld(held("Savings", balance, "monthly_maintenance"), balance)).toBe("string");
+    const dividend = "Share Certificate | 4.5% dividend on the balance";
+    expect(rateFeeFromHeld(held("Share Certificate", dividend, "check_cashing"), dividend)).toBe("interest_rate");
+    const network = "Issuer Cross-Border Assessment of 90 basis points (.9% of the transaction) on all cross-border";
+    expect(typeof rateFeeFromHeld(held("Issuer Cross-Border Assessment of 90 basis points (", network), network)).toBe("string");
+  });
+});

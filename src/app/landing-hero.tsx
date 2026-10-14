@@ -5,7 +5,7 @@ import { LandingResearchPicker } from "@/components/hamilton/landing/LandingRese
 import { useId, useState, type KeyboardEvent } from "react";
 import { InstitutionSearchBar } from "@/app/(public)/institutions/search-bar";
 import { TrackLink } from "@/components/track-link";
-import { PRODUCT_NAME, REPORT_OFFER } from "@/lib/constants";
+import { PRODUCT_NAME, REPORT_OFFER, REPORT_PRICE_INLINE } from "@/lib/constants";
 
 // Display form of the site domain for the "powered by" line under the product name.
 const SITE_DOMAIN_DISPLAY = "FeeInsight.com";
@@ -161,7 +161,7 @@ export function LandingHero({ institutionsLabel, sampleLive = false }: LandingHe
             <p className="text-pretty text-[16px] leading-relaxed text-[#1A1815]">
               See how your fees compare with your competitors&apos;, fee by fee, in a PDF you can
               take to your pricing committee. Start with a free national or Fed district report;
-              the report for your institution starts at $300.
+              the report for your institution is priced {REPORT_PRICE_INLINE}.
             </p>
             <div className="mt-4 flex flex-wrap items-center gap-3">
               <TrackLink

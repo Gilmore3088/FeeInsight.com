@@ -133,6 +133,18 @@ async function loadSeries(seriesIds: string[]): Promise<Map<string, IndicatorSer
   return out;
 }
 
+/**
+ * The Beige Book page's footer, stored with each section's text ("For more information about
+ * District economic conditions visit: … Back to Top … Last Update: October 15, 2025"), comes off
+ * before the text is shown (#1175).
+ */
+export function withoutBeigeBookFooter(text: string): string {
+  return text
+    .replace(/\s*For more information about District economic conditions visit:[\s\S]*$/i, "")
+    .replace(/\s*Back to Top[\s\S]*$/i, "")
+    .trim();
+}
+
 async function loadBeigeBook(district: number): Promise<BeigeBookContext | null> {
   const [sections, themes] = await Promise.all([getLatestBeigeBook(district), getBeigeBookThemes()]);
   if (sections.length === 0) return null;
@@ -141,8 +153,8 @@ async function loadBeigeBook(district: number): Promise<BeigeBookContext | null>
   return {
     release_date: summary.release_date,
     source_url: summary.source_url || null,
-    summary: summary.content_text,
-    banking: banking ? { section_name: banking.section_name, text: banking.content_text } : null,
+    summary: withoutBeigeBookFooter(summary.content_text),
+    banking: banking ? { section_name: banking.section_name, text: withoutBeigeBookFooter(banking.content_text) } : null,
     themes: themes
       .filter((t) => t.fed_district === district && t.release_code === summary.release_code)
       .map((t) => ({ category: t.theme_category, sentiment: t.sentiment, summary: t.summary })),

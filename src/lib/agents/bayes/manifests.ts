@@ -225,6 +225,9 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   // v2 (#1030) changes which institutions a paid search picks next (no live fee first) and what
   // it asks for; earlier searches are not redone, they age off the paid cooldown as before.
   SCHEDULE_SEARCH_STRATEGY: "A paid search: each institution becomes due again on the rolling cooldown, so there is nothing to replay.",
+  // v2 (#1102): the re-check's flag carries its version, so every held percentage line is read
+  // again by the extract steps themselves (100 a step); there is nothing to replay.
+  HELD_RATE_RECHECK_VERSION: "Its versioned flag makes the extract steps re-read every held percentage line under v2.",
 };
 
 export async function loadManifests(): Promise<ReplayManifest[]> {

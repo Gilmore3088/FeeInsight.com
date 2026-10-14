@@ -31,7 +31,7 @@ export async function generateMetadata(): Promise<Metadata> {
   return {
   title: "Methodology — How the Bank Fee Index works",
   description:
-    `Fee Insight collects published fee schedules from ${institutions} banks and credit unions on a rolling calendar, reads the fees, and holds anything uncertain for a person to check. Learn how our data is collected, categorized, and verified.`,
+    `How Fee Insight collects fee schedules from ${institutions} banks and credit unions, reads each fee, and holds anything uncertain for a person to check.`,
   alternates: {
     canonical: METHODOLOGY_URL,
   },
