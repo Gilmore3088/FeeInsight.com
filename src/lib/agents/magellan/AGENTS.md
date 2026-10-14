@@ -152,6 +152,10 @@ and `detail.method_version`).
   link is a product page are searched once per version for the real schedule
   (`detail.upgrade_search`). A find replaces the link and keeps the old page as a
   companion `account_page`; a miss leaves the link and rescue state untouched.
+  A re-search (upgrade, business or freshness) never accepts the link it is replacing, from
+  the known-link finder or any other; the page can still be opened as a hub (v3, #1326:
+  under v2 the known-link finder re-accepted the product page first in 1,492 of 1,690
+  searches, so the other finders never ran).
   Links to an article, blog post, news item or press release (`isArticleLink`, unless the
   path names a fee document such as "/articles/schedule-of-fees/") go to the same search,
   and a find does not keep the article as a companion. Every finder rejects such a
@@ -517,9 +521,9 @@ fails a PR that changes one of these constants without updating its line here (#
 | `COMPANION_FETCH_STRATEGY` | `fetch.companion` | v1 | `magellan/companion-fetch.ts` |
 | `DISCOVERY_METHOD_VERSION` | — | v5 | `magellan/discovery.ts` |
 | `WEBSITE_REPAIR_STRATEGY` | `discover.website_repair` | v1 | `magellan/discovery.ts` |
-| `UPGRADE_SEARCH_VERSION` | — | v2 | `magellan/discovery.ts` |
+| `UPGRADE_SEARCH_VERSION` | — | v3 | `magellan/discovery.ts` |
 | `BUSINESS_SEARCH_VERSION` | — | v1 | `magellan/discovery.ts` |
-| `FRESHNESS_SEARCH_VERSION` | — | v1 | `magellan/discovery.ts` |
+| `FRESHNESS_SEARCH_VERSION` | — | v2 | `magellan/discovery.ts` |
 | `MAGELLAN_FETCH_STRATEGY` | `fetch.http` | v2 | `magellan/fetch.ts` |
 | `OPERATOR_SCHEDULE_STRATEGY` | `discover.operator_schedule` | v1 | `magellan/operator-schedules.ts` |
 | `PAGE_CLASSIFIER_VERSION` | — | v2 | `magellan/page-classifier.ts` |

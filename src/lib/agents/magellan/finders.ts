@@ -223,6 +223,12 @@ export interface SearchContext {
   rejected: Set<string>;
   /** URL identities opened during this search. */
   tried: Set<string>;
+  /**
+   * A re-search (upgrade, business or freshness) looks for a page to replace the bank's
+   * current link: that link's identity is never accepted, by the known-link finder or any
+   * other (#1326). It can still be opened as a hub page.
+   */
+  replacing?: Set<string>;
   homepageHtml: string;
   homepageLinks: PageLink[];
   platform: string | null;
@@ -391,7 +397,7 @@ async function tryCandidates(ctx: SearchContext, result: FinderResult, candidate
   for (const candidate of candidates) {
     if (opened >= limit) break;
     const identity = urlIdentity(candidate.url);
-    if (ctx.rejected.has(identity) || ctx.tried.has(identity)) continue;
+    if (ctx.rejected.has(identity) || ctx.tried.has(identity) || ctx.replacing?.has(identity)) continue;
     if (outOfTime(ctx)) {
       result.outOfTime = true;
       return false;
@@ -530,7 +536,7 @@ export async function findFromRejectedPages(ctx: SearchContext): Promise<FinderR
 
 /** The link this bank had before (not a person's locked correction): is it still there? */
 export async function findKnownLink(ctx: SearchContext): Promise<FinderResult> {
-  if (!ctx.knownUrl || ctx.rejected.has(urlIdentity(ctx.knownUrl))) return emptyResult(false);
+  if (!ctx.knownUrl || ctx.rejected.has(urlIdentity(ctx.knownUrl)) || ctx.replacing?.has(urlIdentity(ctx.knownUrl))) return emptyResult(false);
   const result = emptyResult(true);
   const candidate = { ...scoreLink(ctx.knownUrl, "previously found link", "known_link"), score: 0.9 };
   await tryCandidates(ctx, result, [candidate], 1);

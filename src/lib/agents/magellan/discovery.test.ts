@@ -14,6 +14,7 @@ import {
   runMagellanDiscovery,
   type DiscoveryResume,
   UPGRADE_SEARCH_VERSION,
+  FRESHNESS_SEARCH_VERSION,
   UPGRADE_RESERVED_SLOTS,
 } from "./discovery";
 
@@ -734,6 +735,20 @@ describe("Magellan agentic discovery", () => {
       expect(attempts(db).every((attempt) => attempt.detail.upgrade_search === UPGRADE_SEARCH_VERSION)).toBe(true);
     });
 
+    it("never accepts the product page it is replacing, even when it lists fees (#1326)", async () => {
+      const db = upgradeDb();
+      const fetchImpl = site({
+        "https://upbank.example/personal/checking": () => response(FEE_TABLE),
+        "https://upbank.example/": () => response('<a href="/personal/checking">Checking</a> <a href="/disclosures/fee-schedule">Fee Schedule</a>'),
+        "https://upbank.example/disclosures/fee-schedule": () => response(FEE_TABLE),
+      });
+
+      const result = await runMagellanDiscovery({ runId: 124, db: asDiscoveryDb(db), fetchImpl, politeDelayMs: 0 });
+
+      expect(result.results[0]).toMatchObject({ outcome: "discovered", url: "https://upbank.example/disclosures/fee-schedule" });
+      expect(attempts(db).some((attempt) => attempt.strategy === "discover.known_link")).toBe(false);
+    });
+
     it("leaves the bank's link and rescue state alone when no schedule is found", async () => {
       const db = upgradeDb();
       const fetchImpl = site({
@@ -873,7 +888,7 @@ describe("Magellan agentic discovery", () => {
       const texts = db.mock.calls.map((call) => templateText(call[0]));
       expect(texts.some((text) => text.includes("UPDATE institution_sources"))).toBe(true);
       expect(texts.some((text) => text.includes("INSERT INTO institution_additional_sources"))).toBe(false);
-      expect(attempts(db).every((attempt) => attempt.detail.freshness_search === 1)).toBe(true);
+      expect(attempts(db).every((attempt) => attempt.detail.freshness_search === FRESHNESS_SEARCH_VERSION)).toBe(true);
       expect(attempts(db)[0].detail).toMatchObject({
         stale_link: "https://oldbank.example/docs/2021-fee-schedule.pdf",
         stale_reason: "address names 2021",
@@ -892,7 +907,7 @@ describe("Magellan agentic discovery", () => {
       const texts = db.mock.calls.map((call) => templateText(call[0]));
       expect(texts.some((text) => text.includes("UPDATE institution_sources"))).toBe(false);
       expect(attempts(db).length).toBeGreaterThan(0);
-      expect(attempts(db).every((attempt) => attempt.detail.freshness_search === 1)).toBe(true);
+      expect(attempts(db).every((attempt) => attempt.detail.freshness_search === FRESHNESS_SEARCH_VERSION)).toBe(true);
     });
   });
 

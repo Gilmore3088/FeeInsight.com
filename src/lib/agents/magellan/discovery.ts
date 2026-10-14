@@ -97,7 +97,10 @@ const BLOCKED_HOMEPAGE_FINDERS = new Set<FinderKey>(["knownLink", "sitemap"]);
  * to search those banks again after a finder change.
  */
 // v2 (Oct 7): the finders learned big-bank names ("Schedule of Charges", "Consumer Fees").
-export const UPGRADE_SEARCH_VERSION = 2;
+// v3 (Oct 14, #1326): the search no longer accepts the product page it is replacing. Under v2
+// the known-link finder re-accepted it first in 1,492 of 1,690 searches (1,451 banks), so the
+// other finders never ran and the bank counted as searched.
+export const UPGRADE_SEARCH_VERSION = 3;
 /**
  * Banks whose fee link is a business-only schedule (link-coverage.ts) get one search for the
  * consumer schedule per version (`detail.business_search`), before the product-page
@@ -125,7 +128,9 @@ export const FRESHNESS_RESERVED_SLOTS = 2;
  * A link is stale when the schedule's own "Effective ..." date, or (without one) a year
  * in its address, is STALE_AFTER_YEARS or more years before this year.
  */
-export const FRESHNESS_SEARCH_VERSION = 1;
+// v2 (Oct 14, #1326): the search no longer accepts the stale link it is replacing (v1 stopped
+// at it in 376 of 391 known-link finds).
+export const FRESHNESS_SEARCH_VERSION = 2;
 export const STALE_AFTER_YEARS = 3;
 /** "Effective January 1, 2022", "Effective Date: 01/01/2022" in a schedule's opening text. */
 const EFFECTIVE_YEAR_SQL = "(?i)effective(?:\\s+date)?[:\\s]+(?:[a-z]+\\.?\\s+\\d{1,2},?\\s+|\\d{1,2}/\\d{1,2}/)(20\\d{2})";
@@ -644,6 +649,9 @@ async function discoverForInstitution(
     fetchImpl: options.fetchImpl,
     rejected: options.rejectedUrls?.identities ?? new Set(),
     tried: new Set([urlIdentity(baseUrl.toString())]),
+    replacing: (row.upgrade || row.business || row.freshness) && row.fee_schedule_url
+      ? new Set([urlIdentity(row.fee_schedule_url)])
+      : undefined,
     homepageHtml: "",
     homepageLinks: [],
     platform: null,
