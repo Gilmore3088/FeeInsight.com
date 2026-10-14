@@ -239,7 +239,9 @@ and `detail.method_version`).
   `detail.rung`. The institution's admin page shows its place on the ladder and the
   methods tried; the state page and the state-expert step (`not_published_online`) count
   "not published online" by size tier. One `paidModelCall` per bank (agent `magellan`, `PAID_PASS_MODELS.find()`,
-  server `web_search` tool, max 3 uses) asks for the consumer fee schedule on the bank's
+  server `web_search` tool from `web-search-tool.ts`, #1035: a bank under $10B is searched on its own
+  website host only (`allowed_domains`), at most `OWN_SITE_MAX_USES` (2) searches; a $10B+ bank keeps
+  the open web and 3, as the schedule search does) asks for the consumer fee schedule on the bank's
   own domain as JSON. The answer must be on the bank's domain and pass the same
   fee-page check before it is stored. Each try is logged with its cost. A budget cap or
   the automation stop ends the step cleanly (`budgetStopped`); the unspent bank stays due.
@@ -266,7 +268,7 @@ and `detail.method_version`).
   city or its FDIC certificate / NCUA charter number. Saving resets the bank's search
   (`rescue_status = 'pending'`) so the free finders search the new site next. Anything
   else stays for a person: `detail.candidate_url`, `needs_human: true`. A one-word stored
-  name ("CALIFORNIA") is not searched.
+  name ("CALIFORNIA") is not searched. It runs at most 2 searches a call (#1035).
 
 ## Outcome ledger (`outcomes.ts`)
 

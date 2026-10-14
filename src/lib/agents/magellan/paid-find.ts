@@ -24,6 +24,7 @@ import { pageLinks, urlIdentity, type PageLink } from "./finders";
 import { LARGE_BANK_ASSETS, onBankDomain, websiteHost } from "./link-coverage";
 import { runScheduleSearch } from "./schedule-search";
 import { runWebsiteFind } from "./website-find";
+import { bankWebSearchTool } from "./web-search-tool";
 
 type Fetcher = typeof fetch;
 
@@ -64,6 +65,8 @@ interface PaidFindRow {
   city: string | null;
   state_code: string | null;
   website_url: string;
+  /** Thousands, as call reports. $10B+ banks search the open web (web-search-tool.ts). */
+  asset_size?: number | string | null;
   profile_consecutive_failures?: number | string | null;
   /** A paid web search for this bank is still on cooldown (only the pick is due). */
   web_searched?: boolean | null;
@@ -89,7 +92,7 @@ export interface RunMagellanPaidFindOptions extends PaidStepOptions {
 async function selectBanks(db: typeof sql, stateCode: string | null, limit: number): Promise<PaidFindRow[]> {
   const currentMethod = JSON.stringify({ method_version: DISCOVERY_METHOD_VERSION });
   return db<PaidFindRow[]>`
-    SELECT inst.id, inst.institution_name, inst.city, inst.state_code, inst.website_url,
+    SELECT inst.id, inst.institution_name, inst.city, inst.state_code, inst.website_url, inst.asset_size,
            profile.consecutive_failures AS profile_consecutive_failures,
            EXISTS (
              SELECT 1 FROM pipeline_attempts pa
@@ -372,7 +375,7 @@ export async function runMagellanPaidFind(options: RunMagellanPaidFindOptions): 
         params: {
           model,
           max_tokens: MAX_OUTPUT_TOKENS,
-          tools: [{ type: "web_search_20250305", name: "web_search", max_uses: WEB_SEARCH_MAX_USES }],
+          tools: [bankWebSearchTool(row, WEB_SEARCH_MAX_USES)],
           messages: [{ role: "user", content: paidFindPrompt(row, rung) }],
         },
       });
