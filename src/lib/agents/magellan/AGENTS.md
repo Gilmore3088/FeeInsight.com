@@ -356,10 +356,14 @@ State Department FCU's `https://www.sdfcu.org/.../fees.pdf` had failed with a ne
 since 3 Oct 2026 while its website is stored as `http://www.sdfcu.org`; Great Oaks Bank's link
 is on the bare domain and its site on `www.`. Plain GETs with Magellan's crawler identity: no
 provider and no budget, so the paid cap never holds it. Up to `ADDRESS_VARIANT_BANKS_PER_STEP`
-(3) banks a step within `ADDRESS_VARIANT_BUDGET_MS` (30 s), banks with no live fees first,
-each at most once per `ADDRESS_VARIANT_RETRY_DAYS` (7). The first spelling that answers 2xx
-(not a redirect to the homepage or an error page) is stored through `fetchAndRecordLink`
-(attempt strategy `fetch.address_variant`), which makes it the profile's fetch address; when
+(3) banks a step within `ADDRESS_VARIANT_BUDGET_MS` (30 s, which also cuts each request and
+body read), banks with no live fees first, each at most once per `ADDRESS_VARIANT_RETRY_DAYS`
+(7). The document means a 2xx whose final address after redirects is still on the bank's domain
+(`onBankDomain`) and is not the homepage or an error page, whose body was read in full, and,
+for a PDF link, whose bytes are a PDF: a parked domain's 200 HTML page is refused (#1306).
+A spelling that fails any of these, including a body read that fails after it answered, is a
+failed try, so it never becomes the fetch address or moves the failure count. The first
+spelling that answers with the document is stored through `fetchAndRecordLink` (attempt strategy `fetch.address_variant`), which makes it the profile's fetch address; when
 none answers, one attempt row lists each try and the bank's fetch state is left alone. A 403
 is a bot wall on every spelling and stays with the paid fetch below; a person's locked
 correction is never re-spelled. The `fetch` step's `address_variants` detail counts banks
