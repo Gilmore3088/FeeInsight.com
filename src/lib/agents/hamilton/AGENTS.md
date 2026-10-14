@@ -14,6 +14,12 @@ retraced without asking Hamilton (see Audit trail).
    catalog and the economic layers: the National Fee Index, state indexes, peer briefs
    and the Monthly Pulse (`src/lib/report-engine`, report types in `types.ts`). Reports
    are queued as `report_jobs` and live in `published_reports` once published.
+   Before a job is complete, the free `report-reconcile` step recomputes every fee figure
+   it prints from `published_fee_catalog` (rates from `published_fee_rate_catalog`) under
+   the statistics contract (`report-engine/reconcile.ts`, #1066). A figure more than one
+   cent or one institution off, printed with no live value, or a printed fee change that is
+   no longer live fails the job, with each figure and why on `data_manifest.reconciliation`;
+   Publish refuses a job without a reconciliation that tied out.
 3. **Industry expert and research assistant.** Answers questions about fees, regulation
    and the economy with cited facts, at every data layer the project holds: national,
    Fed district, regional, state, regulatory and institutional. Overdraft and NSF are

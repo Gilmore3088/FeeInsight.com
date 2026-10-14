@@ -109,7 +109,7 @@ import { laneRecheckParam, numericRunParam, stringRunParam } from "./run-params"
 export { laneRecheckParam } from "./run-params";
 import { runStateExpertStep } from "./state-expert/step";
 import { tallyByInstitution, type Sample } from "./flow-model";
-import { runReportCloseStep, runReportRenderStep } from "@/lib/report-engine/render-job";
+import { runReportCloseStep, runReportReconcileStep, runReportRenderStep } from "@/lib/report-engine/render-job";
 import type {
   AdminAgent,
   AgentRunEventSnapshot,
@@ -2160,6 +2160,8 @@ async function executeAgenticStep(
     }
     case "report-render":
       return runReportRenderStep(tx, stringRunParam(params, ["report_job_id"]));
+    case "report-reconcile":
+      return runReportReconcileStep(tx, stringRunParam(params, ["report_job_id"]));
     case "report-close":
       return runReportCloseStep(tx, stringRunParam(params, ["report_job_id"]));
     default:
@@ -3066,6 +3068,9 @@ export async function executeAgentRun(
         isProviderStep(step.stepKey) ||
         step.stepKey === "public-discovery" ||
         step.stepKey === "public-audit" ||
+        // A blocked report is marked failed and then the step throws; outside a
+        // transaction, so the job keeps its failed status and recorded findings.
+        step.stepKey === "report-reconcile" ||
         isRegistryStepKey(step.stepKey)
           ? await executeAgenticStep(sql, run, step)
           : await withTransaction((tx) => executeAgenticStep(tx, run, step));

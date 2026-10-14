@@ -1,22 +1,35 @@
 /**
  * The render step of a public report run (national_index, state_index, monthly_pulse).
  *
- * report-render: assembles the data, writes Hamilton's sections (paid model calls),
- * renders the report HTML, stores it in R2 and marks the report_jobs row complete.
- * report-close:  a free step after it; a job the render step did not finish (skipped by
- * the provider stop or budget, or failed) is marked failed with the reason, so a job
- * never sits "pending" behind a finished run.
+ * report-render:    assembles the data, writes Hamilton's sections (paid model calls),
+ *                   renders the report HTML, stores it in R2 and saves the fee figures it
+ *                   prints on the job (data_manifest.printed). The job stays 'rendering'.
+ * report-reconcile: free and deterministic (#1066). Recomputes every printed fee figure
+ *                   from live rows (reconcile.ts). Ties out: the job is complete. Any figure
+ *                   that does not: the job is failed, with each figure and why recorded on
+ *                   data_manifest.reconciliation and the first few in the job error.
+ * report-close:     a free step after them; a job the earlier steps did not finish
+ *                   (skipped by the provider stop or budget, or failed) is marked failed
+ *                   with the reason, so a job never sits "pending" behind a finished run.
  *
  * Failures throw, so the run ledger records the failed step with its reason.
  *
  * Publishing to the public catalog stays the admin's Publish button on
- * /admin/hamilton/reports: an AI-written public report gets a human look first.
+ * /admin/hamilton/reports, and it refuses a job without a reconciliation that tied out:
+ * an AI-written public report gets a human look first, and its numbers a machine check.
  */
 
 import { PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import type { sql as sqlTag } from "@/lib/data-store/connection";
 import { assembleAndRender } from "./assemble-and-render";
 import { isLegacyGeneratableReportType } from "./legacy-generation-policy";
+import {
+  describeReconciliation,
+  loadLiveFigures,
+  parseReportManifest,
+  reconcileFigures,
+  type ReportJobManifest,
+} from "./reconcile";
 import type { ReportJobStatus } from "./types";
 
 type SqlTag = typeof sqlTag;
@@ -122,7 +135,8 @@ export async function runReportRenderStep(
   }
 
   // assembleAndRender marks the job assembling, and failed (with the error) when it throws.
-  const html = await (deps.render ?? assembleAndRender)(job.report_type, jobParams(job), jobId);
+  const rendered = await (deps.render ?? assembleAndRender)(job.report_type, jobParams(job), jobId);
+  const html = rendered.html;
   await db`UPDATE report_jobs SET status = 'rendering', error = NULL WHERE id = ${jobId}`;
   const key = reportArtifactKey(job.report_type, jobId);
   try {
@@ -132,17 +146,86 @@ export async function runReportRenderStep(
     await db`UPDATE report_jobs SET status = 'failed', error = ${message} WHERE id = ${jobId}`;
     throw new Error(message);
   }
+  const manifest: ReportJobManifest = { ...(rendered.manifest ?? {}), printed: rendered.printed, reconciliation: null };
+  // Stays 'rendering': the reconcile step completes it, or fails it with the figures that differ.
   await db`
     UPDATE report_jobs
-       SET status = 'complete', artifact_key = ${key}, error = NULL, completed_at = NOW()
+       SET artifact_key = ${key}, data_manifest = ${db.json(JSON.parse(JSON.stringify(manifest)))}, error = NULL
      WHERE id = ${jobId}
   `;
   const title = REPORT_TITLES[job.report_type] ?? job.report_type;
   return {
     status: "completed",
-    summary: `Rendered the ${title} report (${Math.round(html.length / 1024).toLocaleString("en-US")} KB) and stored it; it is ready to publish from the reports page.`,
-    detail: { report_job_id: jobId, report_type: job.report_type, artifact_key: key, html_bytes: html.length },
+    summary: `Rendered the ${title} report (${Math.round(html.length / 1024).toLocaleString("en-US")} KB) and stored it; its ${(rendered.printed?.figures.length ?? 0).toLocaleString("en-US")} printed fee figures are reconciled next.`,
+    detail: {
+      report_job_id: jobId,
+      report_type: job.report_type,
+      artifact_key: key,
+      html_bytes: html.length,
+      printed_figures: rendered.printed?.figures.length ?? 0,
+    },
   };
+}
+
+export async function runReportReconcileStep(
+  db: SqlTag,
+  jobId: string | null | undefined,
+  deps: { now?: Date } = {},
+): Promise<ReportStepResult> {
+  if (!jobId) {
+    throw new Error("Report run has no report job id.");
+  }
+  const rows = await db<Array<ReportJobRow & { artifact_key: string | null; data_manifest: unknown }>>`
+    SELECT id, report_type, status, params, artifact_key, data_manifest FROM report_jobs WHERE id = ${jobId} LIMIT 1
+  `;
+  const job = rows[0];
+  if (!job) {
+    throw new Error(`Report job ${jobId} was not found.`);
+  }
+  if (job.status === "cancelled" || job.status === "cancel_requested") {
+    return { status: "skipped", summary: "Report job was cancelled before reconciling.", detail: { report_job_id: jobId } };
+  }
+  if (job.status !== "rendering" || !job.artifact_key) {
+    // complete, failed or never rendered: the close step reports a job left unfinished.
+    return {
+      status: "skipped",
+      summary: `Report job is ${job.status}; there is no rendered report to reconcile.`,
+      detail: { report_job_id: jobId, report_status: job.status },
+    };
+  }
+  const manifest = parseReportManifest(job.data_manifest) ?? {};
+  const printed = manifest.printed;
+  if (!printed || !Array.isArray(printed.figures)) {
+    const message = "Reconciliation blocked the report: the render step saved no printed figures to check.";
+    await db`UPDATE report_jobs SET status = 'failed', error = ${message} WHERE id = ${jobId}`;
+    throw new Error(message);
+  }
+
+  const live = await loadLiveFigures(db, printed);
+  const result = reconcileFigures(printed, live, deps.now);
+  const summary = describeReconciliation(result);
+  const saved = db.json(JSON.parse(JSON.stringify({ ...manifest, reconciliation: result })));
+  const detail = {
+    report_job_id: jobId,
+    report_type: job.report_type,
+    ties_out: result.ties_out,
+    figures_checked: result.figures_checked,
+    figures_tied: result.figures_tied,
+    finding_count: result.finding_count,
+    findings: result.findings.slice(0, 20),
+    unchecked: result.unchecked.length,
+  };
+  if (!result.ties_out) {
+    await db`UPDATE report_jobs SET status = 'failed', error = ${summary}, data_manifest = ${saved} WHERE id = ${jobId}`;
+    // Thrown so the run ledger shows the step failed, with which figures and why.
+    throw new Error(summary);
+  }
+  await db`
+    UPDATE report_jobs
+       SET status = 'complete', error = NULL, data_manifest = ${saved}, completed_at = NOW()
+     WHERE id = ${jobId}
+  `;
+  return { status: "completed", summary: `${summary} It is ready to publish from the reports page.`, detail };
 }
 
 export async function runReportCloseStep(db: SqlTag, jobId: string | null | undefined): Promise<ReportStepResult> {
@@ -160,7 +243,10 @@ export async function runReportCloseStep(db: SqlTag, jobId: string | null | unde
       detail: { report_job_id: jobId, report_status: job.status },
     };
   }
-  const reason = "Report was not rendered: the render step did not finish (paid steps paused or over budget).";
+  const reason =
+    job.status === "rendering"
+      ? "Report was rendered but not reconciled, so it cannot be published; retry the report."
+      : "Report was not rendered: the render step did not finish (paid steps paused or over budget).";
   await db`UPDATE report_jobs SET status = 'failed', error = ${reason} WHERE id = ${jobId}`;
   return { status: "completed", summary: reason, detail: { report_job_id: jobId, report_status: "failed" } };
 }
