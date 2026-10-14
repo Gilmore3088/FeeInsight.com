@@ -3182,3 +3182,6 @@ ALTER TABLE public.fee_change_records
   ADD COLUMN previous_fee_published_id bigint,
   ADD COLUMN new_fee_published_id bigint,
   ADD COLUMN like_for_like boolean;
+
+-- #1234 step 2: Knox's extraction note column, and both catalog views with it appended.
+\ir ../../supabase/migrations/20270110000048_raw_fee_extraction_note.sql
