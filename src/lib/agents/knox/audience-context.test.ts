@@ -299,6 +299,24 @@ describe("Knox audience suggestion from context (#1059)", () => {
 
   it("never reads \"non-business\" in an address as business (review of 6905fab5)", () => {
     expect(suggest("https://bank.example/fees/non-business/schedule.pdf", "Fee Schedule\nStop Payment $30", "Stop Payment")?.audience).not.toBe("business");
-    expect(suggest("https://bank.example/fees/non-personal/schedule.pdf", "Fee Schedule\nStop Payment $30", "Stop Payment")?.source).not.toBe("document_url");
+    // "Non-personal" is a bank's word for business accounts (#1059 holdout 5).
+    expect(suggest("https://bank.example/fees/non-personal/schedule.pdf", "Fee Schedule\nStop Payment $30", "Stop Payment")).toMatchObject({ audience: "business", source: "document_url" });
+  });
+
+  it("reads Non-Personal and Non-Consumer as business (#1059 holdout 5)", () => {
+    expect(suggest(null, ["Common Fee Schedule", "Overdraft Item Fee", "Personal Accounts $29.00 per item", "Return Item Fee: Non-Personal Accounts $32.00 per item"].join("\n"), "Return Item Fee: Non-Personal Accounts", 32)).toMatchObject({ audience: "business", source: "fee_name" });
+    expect(suggest(null, ["Fees", "Overdraft Paid Item Fee - Consumers: $25.00", "Overdraft Paid Item Fee - Non-Consumer: fee per item $30.00"].join("\n"), "Overdraft Paid Item Fee - Non-Consumer: fee per item", 30)).toMatchObject({ audience: "business", source: "fee_name" });
+    // A schedule whose only business wording is "non-personal" is not a general consumer schedule.
+    expect(suggest(null, ["Fee Schedule", "Basic Personal Checking $5.00", "Basic Non-Personal Checking $10.00", "Stop Payment $30.00"].join("\n"), "Stop Payment", 30)?.source).not.toBe("default_general_schedule");
+    // Non-business stays no audience.
+    expect(suggest(null, ["Fee Schedule", "Non-business days: none", "Stop Payment $30"].join("\n"), "Stop Payment", 30)).toMatchObject({ audience: "consumer", source: "default_general_schedule" });
+  });
+
+  it("never takes the consumer default for a business schedule flattened into one line or named in the address (#1059 holdout 5)", () => {
+    const flat = "BUSINESS SCHEDULE OF FEES AND CHARGES Community Credit Union Effective 2026 Stop Payment $30.00 Copy of Check $5.00 Fax Service $2.00 " + "x".repeat(200);
+    expect(suggest(null, flat, "Stop Payment", 30)?.audience).not.toBe("consumer");
+    expect(suggest("https://www.ccu.example/documents/ccufl_businessfeeschedule.pdf", "Fees\nStop Payment $30", "Stop Payment", 30)?.audience).not.toBe("consumer");
+    // A consumer schedule is unaffected.
+    expect(suggest("https://bank.example/fee-schedule.pdf", "Fee Schedule\nStop Payment $30", "Stop Payment", 30)).toMatchObject({ audience: "consumer", source: "default_general_schedule" });
   });
 });
