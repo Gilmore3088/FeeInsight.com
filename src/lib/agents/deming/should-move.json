@@ -9,6 +9,7 @@
     { "pr": 1202, "issue": 1196, "metric": "detail.goal.accuracy.accuracy", "direction": "up", "min_change": 0.001, "note": "Knox name retidy v19: cut cents (\"00 Monthly fee\") and row-number cells (\"13 | ...\") come off live names; Deming v5 counts the shape as a cut name" },
     { "pr": 1252, "issue": 1117, "metric": "detail.goal.coverageCells.institutionsShort", "direction": "down", "min_change": 1, "note": "Atlas runs states with the largest coverage gap under $10B first" },
     { "pr": 1258, "issue": 1029, "metric": "detail.goal.coverageCells.institutionsShort", "direction": "down", "min_change": 1, "note": "Magellan's paid passes take institutions round-robin from the state experts' work lists, size groups furthest below target first" },
-    { "pr": 1282, "issue": 1251, "metric": "detail.goal.liveInstitutions.live", "direction": "up", "min_change": 1, "note": "Magellan's site-limited paid searches also cover the bank's other own hosts (machiassavings.bank, cvb.bank) and accept answers there; only once paid discovery runs again" }
+    { "pr": 1282, "issue": 1251, "metric": "detail.goal.liveInstitutions.live", "direction": "up", "min_change": 1, "note": "Magellan's site-limited paid searches also cover the bank's other own hosts (machiassavings.bank, cvb.bank) and accept answers there; only once paid discovery runs again" },
+    { "pr": 1298, "issue": 1287, "metric": "detail.goal.wrongAfterPublish.rate", "direction": "down", "min_change": 0.001, "note": "Magellan's bank-name check matches whole words, needs the city or cert for a shared name, and reads short same-name hosts" }
   ]
 }
