@@ -688,12 +688,20 @@ describe("Darwin agentic verification", () => {
         expect(peer[0]).toEqual(expect.arrayContaining(["verify", "raw:801", "evidence_mismatch"]));
       });
 
-      it.each(["business", "unknown"] as const)("does not hold %s fee against consumer-only state peers", async (fee_audience) => {
-        const db = passTwoDb([{ ...vtFee, fee_audience, amount: "5.00" }]);
+      it("does not hold a business fee against consumer-only state peers", async () => {
+        const db = passTwoDb([{ ...vtFee, fee_audience: "business", amount: "5.00" }]);
         const result = await runDarwinVerify({ runId: 507, stateCode: "VT", db: asVerifyDb(db) });
         expect(result).toMatchObject({ verifiedFees: 1, peerOutliers: 0 });
         expect(result.results[0].peerCheck).toBeNull();
         expect(strategyAttempts(db, DARWIN_PEER_STRATEGY.strategy)).toHaveLength(0);
+      });
+
+      it("checks a fee Knox left unknown against consumer peers once Darwin decides it is consumer (#1059)", async () => {
+        // The fixture's document prices nothing for businesses, so Darwin decides consumer.
+        const db = passTwoDb([{ ...vtFee, fee_audience: "unknown", amount: "5.00" }]);
+        const result = await runDarwinVerify({ runId: 507, stateCode: "VT", db: asVerifyDb(db) });
+        expect(result.results[0].peerCheck).not.toBeNull();
+        expect(strategyAttempts(db, DARWIN_PEER_STRATEGY.strategy)).toHaveLength(1);
       });
 
       it("verifies a fee inside its peer range and logs the peer check as passed", async () => {

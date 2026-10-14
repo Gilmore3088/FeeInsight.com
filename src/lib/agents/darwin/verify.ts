@@ -1,5 +1,5 @@
 import { isConsumerFee, scopedFeeStatements, type FeeAudience } from "@/lib/fee-audience";
-import { darwinAudience } from "./audience";
+import { darwinAudience, type DarwinAudience } from "./audience";
 import { createHash } from "crypto";
 
 import { sql } from "@/lib/data-store/connection";
@@ -683,6 +683,8 @@ export async function insertVerifiedFee(
     extraFlags?: string[];
     /** The document's newest text, for Darwin's audience decision (#1059). */
     sourceText?: string | null;
+    /** A decision already made for this row; null means none (the raw row's audience stands). */
+    audience?: DarwinAudience | null;
   },
 ): Promise<number | null> {
   const feeRawId = Number(options.row.fee_raw_id);
@@ -701,7 +703,7 @@ export async function insertVerifiedFee(
   const frequency = perEventFrequency(options.canonicalFeeKey, settled, line, amount);
   if (frequency !== stated) flags.push(FREQUENCY_SETTLED_FLAG);
   // With no decision the trigger copies the raw row's audience, as before.
-  const audience = darwinAudience(options.row, amount, options.sourceText);
+  const audience = options.audience !== undefined ? options.audience : darwinAudience(options.row, amount, options.sourceText);
   const inserted = await db`
     INSERT INTO verified_fee_observations (
       fee_raw_id,
@@ -1017,7 +1019,12 @@ export async function runDarwinVerify(
     canonicalHintFrom,
   );
 
-  for (const row of rows) {
+  for (const knoxRow of rows) {
+    // Darwin's audience decision (#1059) is the audience every check below reads, and the one
+    // written: a consumer fee enters the consumer peer check, a business fee never does.
+    const sourceText = knoxRow.source_document_id == null ? null : sourceTexts.get(Number(knoxRow.source_document_id)) ?? null;
+    const audience = darwinAudience(knoxRow, isPercentFee(knoxRow) ? null : normalizedAmount(knoxRow.amount), sourceText);
+    const row: RawFeeRow = audience ? { ...knoxRow, fee_audience: audience.feeAudience } : knoxRow;
     const canonicalFeeKey = categoryOf(row);
     let reasonCode = verificationReasonCode(row, canonicalFeeKey, learnedEnvelopes);
     const categoryHold = reasonCode ? null : pendingCategoryLesson(canonicalFeeKey, row.fee_name);
@@ -1099,7 +1106,7 @@ export async function runDarwinVerify(
           row,
           canonicalFeeKey,
           secondSourceAgrees: secondSource?.verdict === "agrees",
-          sourceText: row.source_document_id == null ? null : sourceTexts.get(Number(row.source_document_id)) ?? null,
+          audience,
         })).catch(() => {
           insertFailed = true;
           return null;
@@ -1146,6 +1153,9 @@ export async function runDarwinVerify(
           category_guard_version: CATEGORY_GUARD_VERSION,
           source_check_version: DARWIN_SOURCE_CHECK_VERSION,
           batch_key_version: DARWIN_BATCH_KEY_VERSION,
+          // Darwin's audience decision (#1059), when it made one; else the raw row's stands.
+          fee_audience: row.fee_audience ?? "unknown",
+          audience_evidence: audience?.audienceEvidence,
           category_hold: categoryHold
             ? { filed_as: categoryHold.filedAs, should_be: categoryHold.shouldBe, since: categoryHold.since }
             : undefined,

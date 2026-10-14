@@ -93,9 +93,11 @@ Darwin owns verification and classification.
   (`knox/audience-context.ts`, via `darwin/audience.ts`), in this order: the schedule's address,
   its title, the section heading above the fee's line, a schedule that prices nothing for
   businesses (consumer), or a schedule that also prices business items and does not limit the
-  fee (both). The evidence is written as `darwin:<source>: <words>`. The audience trigger copies
-  the raw row's audience onto the verified row until migration 20270110000047 lets it keep a
-  `darwin:` decision, so until then this changes nothing that is written.
+  fee (both). The evidence is written as `darwin:<source>: <words>`, and migration
+  20270110000047 lets the audience trigger keep a `darwin:` decision on the verified row (every
+  other verified write still inherits the raw row's audience). The decision is the audience the
+  batch duplicate key, the consumer peer check and the second-source check read, and it is
+  recorded on the `verify.rules` attempt (`fee_audience`, `audience_evidence`).
 - Every decision is written to `pipeline_attempts` (stage `verify`, fingerprint
   `raw:<fee_raw_id>`) with `decision` and `reason_code`; a row decided under this rule
   version is never selected again, so skipped rows cannot starve the batch.
