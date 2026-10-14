@@ -8,6 +8,7 @@ import {
   type PriorPublishedFeeRow,
   type VerifiedFeeRow,
 } from "@/lib/agents/hamilton/publish";
+import { nearNameRepeats, type NearNameRow } from "@/lib/agents/hamilton/duplicate-collapse";
 import { isProductPage } from "@/lib/agents/hamilton/product-page";
 import { CATEGORY_GUARD_VERSION, checkFeeCategory } from "@/lib/fee-category-guard";
 import { TAXONOMY_COUNT } from "@/lib/fee-taxonomy";
@@ -56,11 +57,25 @@ interface DocumentCase {
   fee_name: string;
 }
 
+interface NearNameCase {
+  case_key: string;
+  source_document_id: number;
+  canonical_fee_key: string;
+  amount: string;
+  text_of?: string;
+  text?: string;
+  text_hash?: string;
+  rows: Array<Pick<NearNameRow, "fee_published_id" | "fee_name" | "frequency" | "fee_audience" | "published_at">>;
+  closed: number[];
+  kept: number | null;
+}
+
 interface HardDocuments {
   measured: { top_categories: Array<{ canonical_fee_key: string; wrong: number }> };
   same_price: SamePriceCase[];
   category: CategoryCase[];
   documents: DocumentCase[];
+  near_name: { cases: NearNameCase[] };
   known_misses: { same_price: SamePriceCase[]; category: CategoryCase[] };
 }
 
@@ -125,7 +140,7 @@ const keys = <T extends { case_key: string }>(cases: T[]): Array<[string, T]> =>
 
 describe(`hard-document gate (category guard v${CATEGORY_GUARD_VERSION})`, () => {
   it("cites a stored document for every case, once", () => {
-    const all = [...hard.same_price, ...hard.category, ...hard.documents, ...hard.known_misses.same_price, ...hard.known_misses.category];
+    const all = [...hard.same_price, ...hard.category, ...hard.documents, ...hard.near_name.cases, ...hard.known_misses.same_price, ...hard.known_misses.category];
     expect(new Set(all.map((item) => item.case_key)).size).toBe(all.length);
     for (const item of all) expect(Number.isInteger(item.source_document_id)).toBe(true);
     for (const item of [...hard.same_price, ...hard.category]) expect(item.text_hash).toMatch(/^[0-9a-f]{64}$/);
@@ -162,6 +177,17 @@ describe(`hard-document gate (category guard v${CATEGORY_GUARD_VERSION})`, () =>
     it.each(keys(hard.same_price))("%s", (_key, item) => {
       const apart = linesApartOnPage(item.text, item.row.fee_name, item.prior.fee_name, item.amount);
       expect(apart).toBe(item.family === "distinct_same_dollar");
+    });
+  });
+
+  describe("the duplicate collapse closes near-name reads of one printed line and keeps two printed lines", () => {
+    it.each(keys(hard.near_name.cases))("%s", (_key, item) => {
+      const text = item.text ?? hard.same_price.find((other) => other.case_key === item.text_of)?.text;
+      expect(text, "the case's text").toBeTruthy();
+      const rows = item.rows.map((row) => ({ ...row, institution_id: 1, source_document_id: item.source_document_id, canonical_fee_key: item.canonical_fee_key, variant_type: null, amount: item.amount }));
+      const { collapses } = nearNameRepeats(rows, new Map([[String(item.source_document_id), text ?? ""]]));
+      expect(collapses.map((row) => row.feePublishedId).sort()).toEqual([...item.closed].sort());
+      for (const row of collapses) expect(row.keptFeePublishedId).toBe(item.kept);
     });
   });
 

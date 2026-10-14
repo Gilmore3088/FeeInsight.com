@@ -404,6 +404,25 @@
       },
       "text": "e | $1.00 par value\nEarly closure (180 days) fee | $15.00\nLevy/Garnishment Processing fee per notification | $100.00\nAccount History fee | $2.00 each\nAccount Research fee | $25.00 per hour / 1-hour minimum\n\nCHECK FEES (waived for members 65 and older)\nMoney Order fee (limit of $1,000 per money order) | $3.00 each\nCashier's Check",
       "note": "\"Account\" in front of \"Research fee\" passes the qualifier rule, but the page prints \"Research fee\" only inside the one line \"Account Research fee | $25.00\", so the page check keeps the two reads one fee (#1303). Both reads are live today."
+    },
+    {
+      "case_key": "duplicate:13647:heading_over_qualified_line",
+      "family": "true_duplicate",
+      "canonical_fee_key": "monthly_maintenance",
+      "amount": "0.00",
+      "source_document_id": 13647,
+      "agent_source_text_id": 1114,
+      "text_hash": "8b97cdbe6d03f9b624fec8d0be0ad9a06c7aadffec345f99e3093f03d5ffe97a",
+      "row": {
+        "fee_published_id": 0,
+        "fee_name": "Business Checking"
+      },
+      "prior": {
+        "fee_published_id": 0,
+        "fee_name": "Small Business Checking"
+      },
+      "text": "Tier 5: $400k-$999,999.99 2.78% 2.82%\nTier 6: >$$1MM 3.26% 3.31%\nBusiness Checking\nSmall Business Checking $0 N/A No monthly fee; No minimum balance requirements\nBusiness Interest Checking $0\nTier 1: $0-$1499.99 0.00% Daily balance of $1,500 required to earn interest",
+      "note": "The #1314 review gap: the heading \"Business Checking\" prints directly above the qualified line \"Small Business Checking $0\", and the heading's only price comes after the longer name. So a read of the heading at $0 is that line, not a second fee. A constructed pair on a real page: neither row is a live fee (fee_published_id 0)."
     }
   ],
   "category": [
@@ -1098,6 +1117,159 @@
       "fee_published_id": 110636
     }
   ],
+  "near_name": {
+    "about": "Live rows of one document, category and amount under near names (#1302): a plural, punctuation, a trailing \"fee\", or one qualifier word in front. The duplicate collapse (nearNameRepeats) closes the copies the page prints as one line and keeps the copy named by `kept`; a pair the page prints as two lines at the price stays two fees. Rows are live fees as stored on 2026-10-14. `text_of` names the same_price case whose text the rows were read from.",
+    "cases": [
+      {
+        "case_key": "near:13385:account_research",
+        "source_document_id": 13385,
+        "canonical_fee_key": "account_research",
+        "amount": "25.00",
+        "text_of": "duplicate:13385:account_research",
+        "rows": [
+          {
+            "fee_published_id": 79471,
+            "fee_name": "Research fee",
+            "frequency": null,
+            "fee_audience": "unknown",
+            "published_at": "2026-10-07T08:46:25Z"
+          },
+          {
+            "fee_published_id": 138008,
+            "fee_name": "Account Research fee",
+            "frequency": null,
+            "fee_audience": "unknown",
+            "published_at": "2026-10-12T00:10:36Z"
+          }
+        ],
+        "closed": [
+          79471
+        ],
+        "kept": 138008,
+        "note": "One printed line, \"Account Research fee | $25.00\", read twice (#1303). The newer copy stays."
+      },
+      {
+        "case_key": "near:916:stop_payment",
+        "source_document_id": 916,
+        "canonical_fee_key": "stop_payment",
+        "amount": "32.00",
+        "text_of": "duplicate:916:stop_payment",
+        "rows": [
+          {
+            "fee_published_id": 12984,
+            "fee_name": "Stop Payment",
+            "frequency": "per_occurrence",
+            "fee_audience": "unknown",
+            "published_at": "2026-08-11T02:05:16Z"
+          },
+          {
+            "fee_published_id": 43276,
+            "fee_name": "Stop Payment ……………………………………………..……",
+            "frequency": null,
+            "fee_audience": "unknown",
+            "published_at": "2026-10-05T20:30:24Z"
+          }
+        ],
+        "closed": [
+          43276
+        ],
+        "kept": 12984,
+        "note": "One line, read once with its dot leader glued on. The copy that states its frequency stays."
+      },
+      {
+        "case_key": "near:2344:cashiers_check",
+        "source_document_id": 2344,
+        "canonical_fee_key": "cashiers_check",
+        "amount": "2.00",
+        "agent_source_text_id": 3878,
+        "text_hash": "812f257ddd49a3e3e183bd8ae05a8ad51cd17e7b9089714ba6d8a0b01a7997d8",
+        "text": "D (Verification of Deposit)……………...................................$20\nMonthly Service Fee….......................................................$10\nCashier’s Checks…..........................................................$2/each | Note: Applies to Basic business checking accounts and REset consumer\nNote: Limit of 3 checks issued per visit to teller window | checking accounts.",
+        "rows": [
+          {
+            "fee_published_id": 13013,
+            "fee_name": "Cashier's Checks",
+            "frequency": "per_occurrence",
+            "fee_audience": "unknown",
+            "published_at": "2026-08-11T02:05:27Z"
+          },
+          {
+            "fee_published_id": 128868,
+            "fee_name": "Cashier’s Checks",
+            "frequency": "per_item",
+            "fee_audience": "business",
+            "published_at": "2026-10-10T15:33:39Z"
+          },
+          {
+            "fee_published_id": 128896,
+            "fee_name": "Cashier’s Checks…",
+            "frequency": "per_item",
+            "fee_audience": "unknown",
+            "published_at": "2026-10-10T15:38:19Z"
+          }
+        ],
+        "closed": [
+          13013,
+          128896
+        ],
+        "kept": 128868,
+        "note": "Three reads of the one \"Cashier’s Checks ... $2/each\" line, which the page prints once. The copy that names its audience stays."
+      },
+      {
+        "case_key": "near:14695:stop_payment",
+        "source_document_id": 14695,
+        "canonical_fee_key": "stop_payment",
+        "amount": "35.00",
+        "agent_source_text_id": 2451,
+        "text_hash": "f4b04d6decf30f2fb41ede8ef9340a7f4ce4866d281b03357dbf844c2c2dfb23",
+        "text": "Stop Payments, each......................................................................$35\nSubpoena, Lev\n[...]\nStop Payment, each ......................................................................$35\nSubpoena, L",
+        "rows": [
+          {
+            "fee_published_id": 15612,
+            "fee_name": "Stop Payment",
+            "frequency": "per_item",
+            "fee_audience": "unknown",
+            "published_at": "2026-10-04T20:06:45Z"
+          },
+          {
+            "fee_published_id": 67590,
+            "fee_name": "Stop Payments",
+            "frequency": "per_item",
+            "fee_audience": "unknown",
+            "published_at": "2026-10-06T22:46:47Z"
+          }
+        ],
+        "closed": [],
+        "kept": null,
+        "note": "The document prints its schedule twice, about 8,000 characters apart: \"Stop Payments, each ... $35\" and \"Stop Payment, each ... $35\" (two excerpts joined by [...], dot leaders shortened). Two printed lines, so the collapse keeps both, as the publish check does (#1303). Whether the bank charges one fee or two is a person's call."
+      },
+      {
+        "case_key": "near:17371:stop_payment",
+        "source_document_id": 17371,
+        "canonical_fee_key": "stop_payment",
+        "amount": "35.00",
+        "text_of": "distinct:17371:stop_payment",
+        "rows": [
+          {
+            "fee_published_id": 6352,
+            "fee_name": "Stop Payment",
+            "frequency": "per_occurrence",
+            "fee_audience": "unknown",
+            "published_at": "2026-06-21T06:05:00Z"
+          },
+          {
+            "fee_published_id": 6363,
+            "fee_name": "ACH Stop Payment",
+            "frequency": "per_occurrence",
+            "fee_audience": "unknown",
+            "published_at": "2026-06-21T06:05:09Z"
+          }
+        ],
+        "closed": [],
+        "kept": null,
+        "note": "A one-word qualifier, but two printed lines in two tables (#1303), so both stay."
+      }
+    ]
+  },
   "known_misses": {
     "about": "Cases today's rules still get wrong. Each runs as an expected failure: when a rule starts getting one right, its test fails, and the case moves into the gate above.",
     "same_price": [],
