@@ -93,7 +93,8 @@ export async function assembleAndRender(
   const sql = getSql();
 
   // D-09: Mark job as assembling at entry
-  await sql`UPDATE report_jobs SET status = 'assembling' WHERE id = ${jobId}`;
+  // Only an open job is marked; a cancel stands, and the render step's guarded write sees it (#1266).
+  await sql`UPDATE report_jobs SET status = 'assembling' WHERE id = ${jobId} AND status IN ('pending','assembling','rendering')`;
 
   try {
     switch (reportType) {
@@ -463,7 +464,10 @@ export async function assembleAndRender(
     }
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
-    await sql`UPDATE report_jobs SET status = 'failed', error = ${message} WHERE id = ${jobId}`;
+    await sql`
+      UPDATE report_jobs SET status = 'failed', error = ${message}
+       WHERE id = ${jobId} AND status IN ('pending','assembling','rendering')
+    `;
     throw err;
   }
 }

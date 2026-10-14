@@ -7,6 +7,7 @@
 
 import { sql } from "@/lib/data-store/connection";
 import { toDateStr, safeJsonb } from "@/lib/pg-helpers";
+import { readerFeeConditions } from "@/lib/fee-conditions";
 import {
   classifyInstitutionQuality,
   getPublicInstitutionQualityLabel,
@@ -301,8 +302,22 @@ export async function getInstitution(
   }
 }
 
+/**
+ * Admin pages pass `{ pipelineNotes: true }` to see Knox's note in `conditions`; every other
+ * reader gets the bank's own condition text only (`readerFeeConditions`, #1234).
+ */
+export interface FeeConditionsReadOptions {
+  pipelineNotes?: boolean;
+}
+
+function conditionsFor(value: unknown, options: FeeConditionsReadOptions): string | null {
+  const text = value ? String(value) : null;
+  return options.pipelineNotes ? text : readerFeeConditions(text);
+}
+
 export async function getInstitutionFees(
   id: number,
+  options: FeeConditionsReadOptions = {},
 ): Promise<InstitutionFee[]> {
   try {
     const rows = await sql`
@@ -323,7 +338,7 @@ export async function getInstitutionFees(
       fee_name: String(r.fee_name),
       amount: r.amount != null ? Number(r.amount) : null,
       frequency: r.frequency ? String(r.frequency) : null,
-      conditions: r.conditions ? String(r.conditions) : null,
+      conditions: conditionsFor(r.conditions, options),
       extraction_confidence: r.extraction_confidence != null
         ? Number(r.extraction_confidence)
         : null,
@@ -347,6 +362,7 @@ export async function getInstitutionFees(
 
 export async function getInstitutionFeeScheduleEvidence(
   id: number,
+  options: FeeConditionsReadOptions = {},
 ): Promise<InstitutionFeeScheduleEvidence> {
   const empty: InstitutionFeeScheduleEvidence = {
     latest_document: null,
@@ -560,7 +576,7 @@ export async function getInstitutionFeeScheduleEvidence(
         fee_name: String(r.fee_name),
         amount: r.amount != null ? Number(r.amount) : null,
         frequency: r.frequency ? String(r.frequency) : null,
-        conditions: r.conditions ? String(r.conditions) : null,
+        conditions: conditionsFor(r.conditions, options),
         extraction_confidence: r.extraction_confidence != null
           ? Number(r.extraction_confidence)
           : null,

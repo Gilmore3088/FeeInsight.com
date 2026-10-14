@@ -108,7 +108,16 @@ export interface NcuaArchive {
   accounts: Map<string, Row>;
   /** Wanted account -> the files that carry it, so a mapping question can be answered from the run log. */
   accountFiles: Record<string, string[]>;
+  /**
+   * Raw rows of the "Credit Union Branch Information" file, empty when the zip has none.
+   * FOICU's CITY is cut at 15 characters ("Colorado Spring"); the branch file's
+   * PhysicalAddressCity is not, so the universe sync restores the name from it (#1213).
+   */
+  branchRows: Row[];
 }
+
+/** The branch file inside a 5300 zip (shared with `ncua-branches.ts`). */
+export const NCUA_BRANCH_FILE = /(^|\/)[^/]*branch[^/]*\.txt$/i;
 
 function isZeroOrBlank(value: string | undefined): boolean {
   return value === undefined || value === "" || Number(value) === 0;
@@ -118,15 +127,20 @@ const WANTED_ACCOUNTS = new Set<string>(Object.values(NCUA_ACCOUNTS));
 
 export function readNcuaArchive(zip: Uint8Array): NcuaArchive {
   const files = unzipSync(zip, {
-    filter: (file) => /(^|\/)(foicu|fs220[a-z0-9_]*)\.txt$/i.test(file.name),
+    filter: (file) => /(^|\/)(foicu|fs220[a-z0-9_]*)\.txt$/i.test(file.name) || NCUA_BRANCH_FILE.test(file.name),
   });
   let foicu: Row[] = [];
+  let branchRows: Row[] = [];
   const accounts = new Map<string, Row>();
   const accountFiles: Record<string, string[]> = {};
   for (const [name, bytes] of Object.entries(files).sort(([a], [b]) => a.localeCompare(b))) {
     const rows = parseCsv(strFromU8(bytes, true));
     if (/foicu\.txt$/i.test(name)) {
       foicu = rows;
+      continue;
+    }
+    if (NCUA_BRANCH_FILE.test(name)) {
+      if (branchRows.length === 0) branchRows = rows;
       continue;
     }
     const file = name.split("/").pop() ?? name;
@@ -147,7 +161,7 @@ export function readNcuaArchive(zip: Uint8Array): NcuaArchive {
       accounts.set(cu, merged);
     }
   }
-  return { foicu, accounts, accountFiles };
+  return { foicu, accounts, accountFiles, branchRows };
 }
 
 export async function fetchNcuaArchive(

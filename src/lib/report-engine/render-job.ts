@@ -12,6 +12,10 @@
  *                   (skipped by the provider stop or budget, or failed) is marked failed
  *                   with the reason, so a job never sits "pending" behind a finished run.
  *
+ * Every status write is guarded by the status it expects (#1259, #1266), so a cancel sent
+ * mid-step stands: the step is skipped and says so. Any other lost race is thrown, naming
+ * the status the job is in.
+ *
  * Failures throw, so the run ledger records the failed step with its reason.
  *
  * Publishing to the public catalog stays the admin's Publish button on
@@ -130,29 +134,47 @@ export async function runReportRenderStep(
   const store = deps.store === undefined ? getReportArtifactStore() : deps.store;
   if (!store) {
     const message = "Report storage is not configured (R2_ENDPOINT, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY).";
-    await db`UPDATE report_jobs SET status = 'failed', error = ${message} WHERE id = ${jobId}`;
+    const write = await failOpenJob(db, jobId, message);
+    if (write === "lost") return lostRace(db, jobId, "render", "failed", message, { report_job_id: jobId });
     throw new Error(message);
   }
 
-  // assembleAndRender marks the job assembling, and failed (with the error) when it throws.
+  // assembleAndRender marks the job assembling, and failed (with the error) when it throws;
+  // both writes leave a cancel in place (#1266).
   const rendered = await (deps.render ?? assembleAndRender)(job.report_type, jobParams(job), jobId);
   const html = rendered.html;
-  await db`UPDATE report_jobs SET status = 'rendering', error = NULL WHERE id = ${jobId}`;
+  const detail = { report_job_id: jobId, report_type: job.report_type };
+  // Only an open job moves on, so a cancel sent while Hamilton wrote the sections stands (#1266).
+  const started = await db<Array<{ id: string }>>`
+    UPDATE report_jobs SET status = 'rendering', error = NULL
+     WHERE id = ${jobId} AND status IN ('pending','assembling','rendering') RETURNING id
+  `;
+  if (started.length === 0) {
+    return lostRace(db, jobId, "render", "rendering", "The rendered report was not stored.", detail);
+  }
   const key = reportArtifactKey(job.report_type, jobId);
   try {
     await store.put(key, html, "text/html; charset=utf-8");
   } catch (error) {
-    const message = `Report rendered but could not be stored: ${error instanceof Error ? error.message : String(error)}`;
-    await db`UPDATE report_jobs SET status = 'failed', error = ${message} WHERE id = ${jobId}`;
-    throw new Error(message);
+    const message = `Report rendered but could not be stored: ${errorText(error)}`;
+    const write = await failRenderingJob(db, jobId, message);
+    if (write === "not_rendering") return lostRace(db, jobId, "render", "failed", message, detail);
+    throw new Error(message, { cause: error });
   }
   const manifest: ReportJobManifest = { ...(rendered.manifest ?? {}), printed: rendered.printed, reconciliation: null };
   // Stays 'rendering': the reconcile step completes it, or fails it with the figures that differ.
-  await db`
+  const saved = await db<Array<{ id: string }>>`
     UPDATE report_jobs
        SET artifact_key = ${key}, data_manifest = ${db.json(JSON.parse(JSON.stringify(manifest)))}, error = NULL
-     WHERE id = ${jobId}
+     WHERE id = ${jobId} AND status = 'rendering'
+     RETURNING id
   `;
+  if (saved.length === 0) {
+    return lostRace(db, jobId, "render", "rendered", "The stored report was not attached to the job.", {
+      ...detail,
+      artifact_key: key,
+    });
+  }
   const title = REPORT_TITLES[job.report_type] ?? job.report_type;
   return {
     status: "completed",
@@ -191,7 +213,25 @@ async function failRenderingJob(db: SqlTag, jobId: string, message: string): Pro
     `;
     return rows.length > 0 ? "written" : "not_rendering";
   } catch (error) {
-    console.error(`[report-reconcile] could not mark job ${jobId} failed:`, errorText(error));
+    console.error(`[report-job] could not mark job ${jobId} failed:`, errorText(error));
+    return "error";
+  }
+}
+
+/**
+ * Fail a job that is still open (pending, assembling or rendering), so a cancel is never
+ * overwritten (#1266). "lost" means the job was no longer open. Best effort, like
+ * failRenderingJob: a database error is logged and the caller throws its own reason.
+ */
+async function failOpenJob(db: SqlTag, jobId: string, message: string): Promise<"written" | "lost" | "error"> {
+  try {
+    const rows = await db<Array<{ id: string }>>`
+      UPDATE report_jobs SET status = 'failed', error = ${message}
+       WHERE id = ${jobId} AND status IN ('pending','assembling','rendering') RETURNING id
+    `;
+    return rows.length > 0 ? "written" : "lost";
+  } catch (error) {
+    console.error(`[report-job] could not mark job ${jobId} failed:`, errorText(error));
     return "error";
   }
 }
@@ -202,29 +242,42 @@ async function currentStatus(db: SqlTag, jobId: string): Promise<string | null> 
     const rows = await db<Array<{ status: string }>>`SELECT status FROM report_jobs WHERE id = ${jobId} LIMIT 1`;
     return rows[0]?.status ?? null;
   } catch (error) {
-    console.error(`[report-reconcile] could not read job ${jobId} status:`, errorText(error));
+    console.error(`[report-job] could not read job ${jobId} status:`, errorText(error));
     return null;
   }
 }
 
+type StepPhase = "render" | "reconcile" | "close";
+
+const PHASE_WORDS: Record<StepPhase, { left: string; cancelled: string }> = {
+  render: { left: "The job changed while it was rendered", cancelled: "Report job was cancelled during rendering." },
+  reconcile: {
+    left: "The job left rendering while it was reconciled",
+    cancelled: "Report job was cancelled during reconciliation.",
+  },
+  close: { left: "The job changed while it was closed", cancelled: "Report job was cancelled while it was closed." },
+};
+
 /**
- * The job left 'rendering' while it was reconciled, so the step's write changed nothing.
+ * The job's status changed while the step ran, so the step's guarded write changed nothing.
  * A cancel is the expected cause: the step is skipped and says so. Anything else is
- * unexpected and is thrown, so the run ledger shows it.
+ * unexpected and is thrown, naming the status, so the run ledger shows it.
  */
 async function lostRace(
   db: SqlTag,
   jobId: string,
-  wanted: "complete" | "failed",
+  phase: StepPhase,
+  wanted: string,
   reason: string,
   detail: Record<string, unknown>,
 ): Promise<ReportStepResult> {
   const now = await currentStatus(db, jobId);
-  const note = `The job left rendering while it was reconciled (it is now ${now ?? "unknown"}), so it was not marked ${wanted}.`;
+  const words = PHASE_WORDS[phase];
+  const note = `${words.left} (it is now ${now ?? "unknown"}), so it was not marked ${wanted}.`;
   if (now === "cancel_requested" || now === "cancelled") {
     return {
       status: "skipped",
-      summary: `Report job was cancelled during reconciliation. ${note} ${reason}`,
+      summary: `${words.cancelled} ${note} ${reason}`,
       detail: { ...detail, report_job_id: jobId, report_status: now, lost_race: true },
     };
   }
@@ -256,7 +309,7 @@ async function failReconcile(
   } else {
     write = await failRenderingJob(db, jobId, message);
   }
-  if (write === "not_rendering") return lostRace(db, jobId, "failed", message, options.detail ?? {});
+  if (write === "not_rendering") return lostRace(db, jobId, "reconcile", "failed", message, options.detail ?? {});
   throw options.cause === undefined ? new Error(message) : new Error(message, { cause: options.cause });
 }
 
@@ -339,7 +392,7 @@ export async function runReportReconcileStep(
     const message = `Reconciled, but the report could not be marked complete: ${errorText(error)}`;
     return failReconcile(db, jobId, message, { cause: error, detail });
   }
-  if (completed.length === 0) return lostRace(db, jobId, "complete", summary, detail);
+  if (completed.length === 0) return lostRace(db, jobId, "reconcile", "complete", summary, detail);
   return { status: "completed", summary: `${summary} It is ready to publish from the reports page.`, detail };
 }
 
@@ -358,10 +411,25 @@ export async function runReportCloseStep(db: SqlTag, jobId: string | null | unde
       detail: { report_job_id: jobId, report_status: job.status },
     };
   }
+  if (job.status === "cancel_requested") {
+    // A cancel the admin sent; cancelReport finishes it. Close never overwrites it (#1266).
+    return {
+      status: "completed",
+      summary: "Report job was cancelled; the cancel is left in place.",
+      detail: { report_job_id: jobId, report_status: job.status },
+    };
+  }
   const reason =
     job.status === "rendering"
       ? "Report was rendered but not reconciled, so it cannot be published; retry the report."
-      : "Report was not rendered: the render step did not finish (paid steps paused or over budget).";
-  await db`UPDATE report_jobs SET status = 'failed', error = ${reason} WHERE id = ${jobId}`;
+      : job.status === "assembling"
+        ? "Report was not rendered: the render step started but did not finish; retry the report."
+        : "Report was not rendered: the render step did not run (paid steps paused or over budget).";
+  // Only an open job is closed, so a cancel sent after the read above stands (#1266).
+  const closed = await db<Array<{ id: string }>>`
+    UPDATE report_jobs SET status = 'failed', error = ${reason}
+     WHERE id = ${jobId} AND status IN ('pending','assembling','rendering') RETURNING id
+  `;
+  if (closed.length === 0) return lostRace(db, jobId, "close", "failed", reason, { report_job_id: jobId });
   return { status: "completed", summary: reason, detail: { report_job_id: jobId, report_status: "failed" } };
 }

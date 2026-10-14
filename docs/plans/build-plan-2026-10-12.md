@@ -14,8 +14,8 @@ status comment on #1026.
 
 | Lane | Owns (agents and code) | Items, in order |
 |---|---|---|
-| **A: Data pipeline** (the builder already running) | Rosetta, Knox, Darwin, Gutenberg and publishing, Deming, the learning core | Phases 2–4; Phase 3 except #1078's Hamilton side; Phase 5 except #1117 and #1028/#1029 |
-| **B: Hamilton** | `src/lib/hamilton/`, the Pro workspace, Hamilton's API routes, `src/lib/custom-report/` | Phase 6 in order: #1076, #1077, #1079, #981, #1084, #1066, #1090, then #1082 (copy preview). #1083, #1060 and #1062 wait where they need layout work (James's design) |
+| **A: Data pipeline** (the builder already running) | Rosetta, Knox, Darwin, Gutenberg and publishing, Deming, the learning core | #1059 first (holdout, then the migration and relabel for James), then #1093, #1052, #1051 (recover lost fees); then Phases 2–4 and 5 as before, except #1100 (Lane B), #1117, #1028/#1029 and #1078's Hamilton side |
+| **B: Data quality, published fees** (Hamilton until 2026-10-14) | Published fee semantics at every customer reader: `conditions`, category and frequency fixes, publishing-quality tests | #1234 steps 1 and 3, #1100, #1196, #1067 (taken out of Parked). Then Hamilton correctness only (#1079, #981, #1066), never Hamilton UI or redesign |
 | **C: Discovery and technical SEO** | Atlas, Magellan, the state experts, public-page metadata (titles, sitemap, JSON-LD) | Phase 7 (#1031, #1032, #1030, #1035; #1036 needs James), then #1117 steps 1–2, #1028/#1029; the technical-only items left in #1134's list (#1162–#1181) |
 
 **Working side by side:**
@@ -28,6 +28,46 @@ status comment on #1026.
   `## Lane C`) in the day's checkpoint file.
 - **No layout or redesign work** until James's design is ready.
 - **No new copy preview** while five are waiting for James. Take the next non-copy item instead.
+
+## Data quality first (from 2026-10-14)
+
+James, 2026-10-14, after the quality gap audit (`FeeInsight_Quality_Gap_Audit_2026-10-14_v2`):
+"The Hamilton redesign is not ready to go yet. I still think we need to focus on the data quality
+and eventually we'll get to the redesign." Starting point (audit, 08:17 UTC Oct 14): dataset D+,
+pipeline C-; answer key 87.7% right and 57.4% found; audience unknown on 99.7% of live fees; Knox's
+internal note in `conditions` on 74,832 live fees; monthly maintenance 63.3% right and 47.3% found.
+
+**Order:**
+1. #1059: audience. A fresh, balanced holdout of fees from documents not used to tune the rules
+   (consumer, business, both, unknown), then the migration and relabel plan for James.
+2. #1234, #1100, #1196, #1067: what a published fee says. No internal notes in any customer
+   output; monthly maintenance category and frequency; tests that stop bad categories publishing.
+3. #1093, #1052, #1051: recover legitimate fees that were lost, and show recall rising on the
+   answer key without precision falling.
+
+**How a quality fix counts as done.** Merged code is only the first step:
+1. code merged, with a source-line test;
+2. a backfill or relabel plan with counts, a dry run, and rollback, sent to James (gated);
+3. after James runs it, a before/after reading of the same frozen set of rows;
+4. a check of the customer output (page, API, report).
+
+A PR that changes no stored row or customer output says "code ready; dataset grade unchanged."
+
+**Proof rules:**
+- Never tune and grade on the same sample; a holdout uses documents the rules were not built on.
+- Report "cannot determine" as its own count, never as a pass.
+- Keep a before/after quality ledger in the checkpoint: metric, before, after, date, source.
+- Keep legitimate business fees and account tiers. Fix labels; never delete real rows to move a
+  number.
+
+**Hamilton UI and redesign wait** until James says the design is ready: the redesign drafts #1011
+and #1242 stay as drafts, and #1083 waits. Phase 6's other items (#1076, #1077, #1084, #1090, #1082,
+#1060/#1062) have no lane for now and wait too. Hamilton PRs already open and out of draft (#1274,
+#1275 and the copy PRs) finish under the normal rules.
+
+**Baselines for the ledger.** Two readings of the `conditions` note exist: 75,101 of 76,848 live
+fees (#1234, Oct 13) and 74,832 (the audit, Oct 14 08:17 UTC). The ledger uses the audit's reading
+and counts as its baseline, and names the query and time for every later reading.
 
 ## Two rules that shape every item
 
@@ -46,9 +86,14 @@ status comment on #1026.
 3. **Every code PR** names the issue, says what it changes, how it was verified, and, from #1106 on,
    the one scorecard number it should move. Run `npm run guard:legacy`, lint, typecheck and the
    changed packages' tests before pushing.
-4. **Merge** only under the standing authorization in `CLAUDE.md`: exact head reviewed, CI green, no
+4. **Tests stay lean** (James, 2026-10-14: no test bloat). Extend the module's existing test file and
+   prefer one table-driven test over many near-identical cases. A new test file only for a new module.
+   Pin behaviour that matters (a reviewer's failing layout, a real source line), not every branch.
+   CI runs each test once (`.github/workflows/test.yml`); a new step must not re-run tests a job
+   already runs.
+5. **Merge** only under the standing authorization in `CLAUDE.md`: exact head reviewed, CI green, no
    conflict, no unresolved blocking review, and none of the gates below.
-5. **Gates: open the PR, do not merge, add it to James's list** when a PR:
+6. **Gates: open the PR, do not merge, add it to James's list** when a PR:
    - adds or changes a migration (`supabase/migrations/`), or changes production data (restores,
      relabels, releases, backfills);
    - switches on a paid provider or raises a budget;
@@ -56,11 +101,11 @@ status comment on #1026.
      `copywriting` and `copy-editing` skills, add a copy-review note, and leave it for James to see on
      the Vercel preview;
    - deletes branches, force-pushes, or touches permissions or security settings (never do these).
-6. **After each merge:** add one line to the day's checkpoint (`docs/project/checkpoints/`), what
+7. **After each merge:** add one line to the day's checkpoint (`docs/project/checkpoints/`), what
    merged and what it should move, so James wakes up to a readable summary.
-7. **Never:** push to `main`, use Firecrawl, add one-off data scripts, add scheduled Claude routines,
+8. **Never:** push to `main`, use Firecrawl, add one-off data scripts, add scheduled Claude routines,
    or fake a number. If a count is not known, say so.
-8. **A gated item does not stop the run.** Open its PR, list it for James, and continue with the next
+9. **A gated item does not stop the run.** Open its PR, list it for James, and continue with the next
    item that does not depend on it. Stop only when every remaining item is gated or blocked, or at the
    account's spend limit, and leave a short status comment on #1026.
 
@@ -162,7 +207,7 @@ big-bank search), #1036 (budget notes: needs James), #1034 (closes when #1094 la
 
 #1085 and #1089 (price-change modelling, private submissions), #1103 (interest rates, after the fee
 data is A+), #1086 (state fee law drafting), #1121 (Growth, until marketing resumes), #1039 L4 items
-not listed above, #1038, #1041, #1043, #1044, #1045, #1054, #1055, #1056, #1067.
+not listed above, #1038, #1041, #1043, #1044, #1045, #1054, #1055, #1056.
 
 ## James's own list
 

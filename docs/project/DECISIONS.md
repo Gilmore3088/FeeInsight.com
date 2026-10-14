@@ -5,6 +5,33 @@ Seeded 2026-10-05 from the project's working memory; earlier decisions were not 
 
 ## 2026-10-14
 
+**Data-quality approvals (James, Oct 14 evening, builder session).** Answering the "what do you
+need from me" list:
+- **#1059 audience: approved.** The gate is 0 opposite-audience errors on unseen holdouts (a business
+  fee called consumer or both, or a consumer fee called business); 95% exact agreement is the aim, not
+  the gate. Holdout 6 met the gate (0 of 225). The migration (verified tier keeps Darwin's audience)
+  and the relabel go ahead. The relabel runs as a Darwin step in the run ledger, with counts, a dry
+  run and a rollback, and leaves undecided fees unknown.
+- **#1283 guard v62: approved as written** (15 in-place re-files; the 12 flagged rows go through
+  Hamilton's second look).
+- **#1299, #1301, #1304 and #1310's 3 wrong amounts: approved.**
+- **#1234 step 2 (move Knox's note out of stored `conditions`): approved**, migration included.
+- **#1291's re-file restore pass: revalidate before it is switched on.**
+- **#1316's near-name collapse: validate first; once the check confirms it, it is approved.**
+- **Magellan's paid cap stays as it is.** Improve the data and Magellan's process with what is already
+  stored, so the work is better when paid discovery resumes.
+- **#1280: yes**, the answer-key scorer starts a new versioned series.
+- Not decided: the 216 step-2 rows from #1093, and the older items (#1275, #1274, the copy PRs,
+  #1238).
+
+**Data quality comes before the Hamilton redesign.** James, Oct 14, after his quality gap audit:
+"The Hamilton redesign is not ready to go yet. I still think we need to focus on the data quality
+and eventually we'll get to the redesign." Lane B moves from Hamilton to published-fee quality
+(#1234, #1100, #1196, #1067). Lane A takes #1059, then recall (#1093, #1052, #1051). Hamilton UI and
+redesign work waits. A quality fix counts only once stored rows or customer output change, measured
+before and after on the same rows. The order and proof rules are in
+`docs/plans/build-plan-2026-10-12.md` ("Data quality first").
+
 **"Reviewed" means a submitted review of the exact head SHA; CI also runs on main.** James, Oct 14,
 after an auditor found merged PRs with no submitted review and no CI run on main's merge commits.
 A PR merges under the standing authorization only when a separate reviewer agent (not the builder

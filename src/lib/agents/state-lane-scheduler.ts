@@ -8,7 +8,7 @@ import { normalizeStateCode, syncStateLaneProfiles } from "./state-lane-memory";
 import { KNOX_REEXTRACT_MAX_FEES } from "./knox/extract";
 import { KNOX_RULES_STRATEGY } from "./knox/specialists";
 import { REREAD_MAX_KNOX_FEES, ROSETTA_READ_VERSION } from "./rosetta/read";
-import { DARWIN_VERIFY_MAX_LIMIT, DARWIN_VERIFY_STRATEGY } from "./darwin/verify";
+import { DARWIN_VERIFY_MAX_LIMIT, darwinDueSql } from "./darwin/verify";
 import { HAMILTON_PUBLISH_MAX_LIMIT } from "./hamilton/publish";
 import { knoxFreeSignature, RULES_RECHECK_STRATEGY } from "./hamilton/rules-recheck";
 import { SOURCE_CHECK_REASON, SOURCE_CHECK_RESTORE_PREFIX, SOURCE_CHECK_STRATEGY } from "./hamilton/source-check";
@@ -240,6 +240,8 @@ export interface DueStateLaneScheduleResult {
   /** States whose failed lane was woken because the step that broke it works again. */
   recovered?: string[];
   failed: Array<{ stateCode: string; error: string }>;
+  /** The hourly priority refresh, on the ticks that run it; `error` set when it failed (#1264). */
+  priorities?: LanePriorityRefresh;
   results: Array<{
     stateCode: string;
     runId: number;
@@ -433,21 +435,14 @@ export async function stateHasDocumentBacklog(stateCode: string): Promise<boolea
            )
            AND (pending.evidence->>'flagged_at')::timestamptz > COALESCE(inst.last_crawl_at, '-infinity'::timestamptz)
       ) OR EXISTS (
-        -- Raw rows Darwin has not decided under the current rules (the rows its
-        -- verify step selects), so a large extraction drains hourly, not next month.
+        -- Raw rows Darwin's verify step selects now: never decided, or due again under
+        -- today's rules (#1052: a guard bump's re-checks never woke a quiet state's lane),
+        -- so a large extraction drains hourly, not next month.
         SELECT 1
           FROM raw_fee_observations fr
           JOIN institution_sources inst ON inst.id = fr.institution_id
-         WHERE fr.source = 'knox'
-           AND fr.outlier_flags ? 'needs_darwin_verification'
-           AND upper(btrim(inst.state_code)) = ${stateCode}
-           AND NOT EXISTS (SELECT 1 FROM verified_fee_observations fv WHERE fv.fee_raw_id = fr.fee_raw_id)
-           AND NOT EXISTS (
-             SELECT 1 FROM pipeline_attempts pa
-              WHERE pa.input_fingerprint = 'raw:' || fr.fee_raw_id::text
-                AND pa.strategy = ${DARWIN_VERIFY_STRATEGY.strategy}
-                AND pa.strategy_version = ${DARWIN_VERIFY_STRATEGY.version}
-           )
+         WHERE upper(btrim(inst.state_code)) = ${stateCode}
+           AND ${sql.unsafe(darwinDueSql())}
       ) AS backlog
     `;
     return Boolean(row?.backlog) || (await stateHasUncheckedLiveFees(stateCode));
@@ -690,7 +685,17 @@ export const UNCOVERED_LEADER_PRIORITY = 50;
  */
 export const COVERAGE_GAP_PRIORITY = 20;
 
-export async function refreshLanePriorities(): Promise<number> {
+/** What the hourly priority refresh did: lanes rescored, or why it could not run. */
+export interface LanePriorityRefresh {
+  updated: number;
+  /** Set when the refresh failed; every lane then keeps its previous score. */
+  error: string | null;
+}
+
+/** Event a failed priority refresh leaves on the lane runs the same tick starts (#1264). */
+export const LANE_PRIORITY_REFRESH_FAILED_EVENT = "lane.priorities_failed";
+
+export async function refreshLanePriorities(): Promise<LanePriorityRefresh> {
   try {
     const leaderIds = await loadMarketLeaderIds(sql);
     // postgres.js sends numbers untyped, so every number here carries a cast: an uncast
@@ -832,10 +837,47 @@ export async function refreshLanePriorities(): Promise<number> {
        WHERE lane.state_code = score.state_code
          AND lane.priority_score IS DISTINCT FROM score.priority
     `;
-    return updated.count;
+    return { updated: updated.count, error: null };
   } catch (error) {
     console.error("refreshLanePriorities failed:", error);
-    return 0;
+    return { updated: 0, error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+/**
+ * A failed refresh used to return 0 like a refresh with nothing to change, so a timeout left
+ * every score stale with no trace (#1264). It now goes on the ledger: an event on each lane
+ * run this tick starts (those runs were ordered by the stale scores), or, when the tick
+ * starts none, on the newest lane run. Best effort: a ledger write that fails is logged only.
+ */
+export async function recordLanePriorityRefreshFailure(error: string, runIds: number[]): Promise<number[]> {
+  try {
+    const message = `The hourly lane priority refresh failed, so every state lane kept its previous score this hour: ${error}`;
+    const detail = JSON.stringify({ error, step: "refreshLanePriorities", deploy: currentDeploy() });
+    const rows = await sql<{ agent_run_id: number }[]>`
+      WITH target AS (
+        SELECT run.id
+          FROM public.agent_runs run
+         WHERE run.id = ANY(${runIds}::int[])
+        UNION
+        SELECT newest.id
+          FROM (
+            SELECT id FROM public.agent_runs
+             WHERE run_kind = 'workflow_lane'
+             ORDER BY id DESC
+             LIMIT 1
+          ) newest
+         WHERE cardinality(${runIds}::int[]) = 0
+      )
+      INSERT INTO public.agent_run_events (agent_run_id, event_type, status, message, detail)
+      SELECT target.id, ${LANE_PRIORITY_REFRESH_FAILED_EVENT}, 'failed', ${message}, ${detail}::jsonb
+        FROM target
+      RETURNING agent_run_id
+    `;
+    return rows.map((row) => Number(row.agent_run_id));
+  } catch (ledgerError) {
+    console.error("recordLanePriorityRefreshFailure failed:", ledgerError);
+    return [];
   }
 }
 
@@ -1170,11 +1212,12 @@ export async function scheduleDueStateLaneRuns({
   now?: Date;
 } = {}): Promise<DueStateLaneScheduleResult> {
   const safeLimit = boundedLaneLimit(limit);
+  let priorities: LanePriorityRefresh | undefined;
   if (shouldRunNationwideLaneSync(now)) {
     await syncStateLaneProfiles(sql);
     await wakeLanesWithUncheckedLiveFees();
     await wakeLanesWithPendingSecondLooks();
-    await refreshLanePriorities();
+    priorities = await refreshLanePriorities();
   }
   // Every tick: a fixed break should rerun its failed lanes within minutes, not an hour.
   const recovered = await wakeLanesAfterRecovery();
@@ -1187,6 +1230,7 @@ export async function scheduleDueStateLaneRuns({
     failed: [],
     results: [],
     recovered,
+    ...(priorities ? { priorities } : {}),
   };
   let dueRows: Array<{ state_code: string }>;
   try {
@@ -1197,7 +1241,7 @@ export async function scheduleDueStateLaneRuns({
          AND status IN ('queued', 'running', 'cancel_requested')
     `;
     const slots = Math.min(safeLimit, MAX_ACTIVE_STATE_LANE_RUNS - Number(active?.runs ?? 0));
-    if (slots <= 0) return emptyResult;
+    if (slots <= 0) return await withPriorityFailureRecorded(emptyResult);
     dueRows = await withTransaction(async (tx) => tx<{ state_code: string }[]>`
       WITH due AS (
         SELECT state_code
@@ -1250,6 +1294,7 @@ export async function scheduleDueStateLaneRuns({
     failed: [],
     results: [],
     recovered,
+    ...(priorities ? { priorities } : {}),
   };
 
   for (const row of dueRows) {
@@ -1284,5 +1329,13 @@ export async function scheduleDueStateLaneRuns({
     }
   }
 
-  return output;
+  return await withPriorityFailureRecorded(output);
+}
+
+/** Puts a failed priority refresh on the ledger before the tick reports its schedule. */
+async function withPriorityFailureRecorded(result: DueStateLaneScheduleResult): Promise<DueStateLaneScheduleResult> {
+  if (!result.priorities?.error) return result;
+  const started = result.results.filter((row) => !row.reused).map((row) => row.runId);
+  await recordLanePriorityRefreshFailure(result.priorities.error, started);
+  return result;
 }

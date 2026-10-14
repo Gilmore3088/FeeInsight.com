@@ -212,6 +212,10 @@ export interface SearchContext {
   institutionId: number;
   /** The bank's name: a document on another host must name it (#1033). */
   institutionName?: string | null;
+  /** Another institution has the bank's name: it then needs the city or number too (#1287). */
+  nameShared?: boolean;
+  city?: string | null;
+  certNumber?: string | number | null;
   stateCode: string | null;
   site: URL;
   fetchImpl: Fetcher;
@@ -405,7 +409,7 @@ async function tryCandidates(ctx: SearchContext, result: FinderResult, candidate
     };
     result.trail.push(entry);
     try {
-      const validation = await validateFeeCandidate({ ...candidate, websiteUrl: ctx.site.toString(), institutionName: ctx.institutionName ?? null }, ctx.fetchImpl);
+      const validation = await validateFeeCandidate({ ...candidate, websiteUrl: ctx.site.toString(), institutionName: ctx.institutionName ?? null, nameShared: ctx.nameShared, city: ctx.city ?? null, certNumber: ctx.certNumber ?? null }, ctx.fetchImpl);
       entry.verdict = validation.verdict;
       if (ctx.pageClassifier && validation.scoringText) {
         entry.page_p = Math.round(classifyPage(ctx.pageClassifier, validation.scoringText, candidate.url) * 1000) / 1000;

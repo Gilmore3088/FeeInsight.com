@@ -37,6 +37,27 @@ Darwin owns verification and classification.
   once more. The hold list (`DARWIN_CATEGORY_HOLDS`) is empty. Its one entry, "Bond return items"
   $35 filed `nsf` (raw 246460, 2026-10-09), left when guard v58 learned that a returned bond or
   coupon filed as NSF is a returned deposited item.
+- A Knox category change is a reason to judge a row again (#1295, `category-change.ts`): new
+  category, new decision. A row qualifies only when Knox marked it as re-read (`knox_reread_took_over`,
+  `knox_stale_hint_repaired`, or `knox_refiled_from:<old>` from #1291), it waits for Darwin
+  unverified, no decision was judged under today's category or today's `refileCategory` of it, and
+  each decision was made under an earlier Knox category. A decision says so by its `knox_category`
+  (recorded from #1295 on). An older one needs proof from the row's flags: a `knox_refiled_from:`
+  or `knox_stale_hint_repaired` marker (written when Knox's category changes on a row Darwin had
+  judged), or a judged category that is another `canonical_hint:` flag still on the row. Without
+  proof the decision may be an older Darwin re-file of today's category, and the row is left
+  alone: raw 132922, "Collection Items (plus any bank fees)" $20, a plain take-over filed
+  `collection_item` and judged `check_cashing`, while today's re-file keeps `collection_item`.
+  The same free checks decide, the shared source check among them, and the new decision records
+  today's category, so a row is judged once per category. Switched off
+  (`DARWIN_CATEGORY_CHANGE_REJUDGE_LIVE = false`): each verify step, a dry run included, writes the
+  candidate count, their earlier reasons and a 25-row sample to `detail.category_change_rejudge`
+  and judges nothing; the read runs in a savepoint, so a failed count never fails the step. On, up
+  to 100 a step join the batch. Measured Oct 14 (after #1291 merged): 0 rows qualify; the SQL
+  selection reads 1 row (132922), which the proof rule leaves alone. The 8 take-over rows with a
+  stale first flag qualify once #1291's repair (inside its switched-off re-file pass) runs, and the
+  re-file pass adds its rows when it is on. The 216 rows #1093 step 2 sent back carry the category
+  they were rejected under, so this rule does not reach them.
 - `not_in_source` (2026-10-06) runs the same check Hamilton's live-fee source check runs, so a
   fee the bank's schedule does not state is stopped before it is verified instead of being
   published and then taken down. It joined version 3 without a bump: a bump re-selects every
@@ -91,16 +112,25 @@ Darwin owns verification and classification.
 - Darwin decides each verified fee's audience (#1059; James, Oct 13). A label Knox read on the
   fee's own line stands. A fee Knox left `unknown` takes Knox's context suggestion
   (`knox/audience-context.ts`, via `darwin/audience.ts`), in this order: the schedule's address,
-  its title, the section heading above the fee's line, a schedule that prices nothing for
-  businesses (consumer), or a schedule that also prices business items and does not limit the
-  fee (both). The evidence is written as `darwin:<source>: <words>`, and migration
-  20270110000047 lets the audience trigger keep a `darwin:` decision on the verified row (every
-  other verified write still inherits the raw row's audience). The decision is the audience the
-  batch duplicate key, the consumer peer check and the second-source check read, and it is
-  recorded on the `verify.rules` attempt (`fee_audience`, `audience_evidence`).
+  then the section heading above the fee's line, then its title, a schedule that prices nothing
+  for businesses (consumer), or a schedule that also prices business items and does not limit
+  the fee (both). In a schedule that also prices business items, a heading for all accounts
+  gives both, and a heading naming one audience leaves the fee `unknown` unless it is a business
+  heading under a business schedule title: on unseen schedules those headings agreed with a blind
+  reading on 14 of 36 fees (#1059, Oct 14). A business heading never takes the consumer default.
+  The evidence is written as `darwin:<source>: <words>`, and migration 20270110000047 lets the
+  audience trigger keep a `darwin:` decision on the verified row (every other verified write
+  still inherits the raw row's audience). The decision is the audience the batch duplicate key,
+  the consumer peer check and the second-source check read, and it is recorded on the
+  `verify.rules` attempt (`fee_audience`, `audience_evidence`).
 - Every decision is written to `pipeline_attempts` (stage `verify`, fingerprint
   `raw:<fee_raw_id>`) with `decision` and `reason_code`; a row decided under this rule
   version is never selected again, so skipped rows cannot starve the batch.
+- Which rows are due is one SQL test, `darwinDueSql` (`darwinStandingDecisionSql` for the
+  decision part) in `verify.ts`, read by the selection, the state-lane scheduler's backlog check
+  and the daily health check (#1052, 2026-10-14). Before, the scheduler and health counted only
+  rows with no decision, so a row due again after a guard bump in a state with nothing else to do
+  never woke a lane: 26 rows in Puerto Rico and Guam waited from Oct 9 and Oct 13.
 - Review signals carry `reason_counts` keyed by code, and the category range for
   `outside_envelope` rows.
 - A verified $0 row carries the `zero_fee` flag, which is what lets Hamilton publish it.
@@ -331,7 +361,8 @@ Change this table and `agent-health.ts` in the same PR.
 | Rule | Number | Holds when |
 |---|---|---|
 | Steps do not fail | `stepsFailed` (24 h) | 0 |
-| Darwin keeps up | `undecided` (Knox rows waiting for the current verify version) | ≤ 500 (`DARWIN_VERIFY_MAX_LIMIT`) |
+| Darwin keeps up | `undecided` (Knox rows the verify step would select now: never decided, or due again after a guard, source-check, envelope or batch-key change; `darwinDueSql` in `verify.ts`) | ≤ 500 (`DARWIN_VERIFY_MAX_LIMIT`) |
+| No week-old waits | `waitingOver7d` (rows sent to Darwin over 7 days ago and never decided at this rule version) | 0 (`DARWIN_MAX_FIRST_DECISION_DAYS`) |
 | Fees Darwin passed survive the bank's own schedule | `sourceCheckTakedowns / published` (24 h) | ≤ 5% |
 
 Also recorded, without a rule: `stepsCompleted`, `spendUsd`, `decided`, `passed`.
