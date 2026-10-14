@@ -347,6 +347,63 @@
       },
       "text": ".................................$50.00\nSmall Business Bill Pay (per cycle) ...............................................................................",
       "note": "One line, read once with and once without its note; both live on 2026-10-14 (frequencies other and monthly)."
+    },
+    {
+      "case_key": "distinct:17371:nsf",
+      "family": "distinct_same_dollar",
+      "canonical_fee_key": "nsf",
+      "amount": "35.00",
+      "source_document_id": 17371,
+      "agent_source_text_id": 12893,
+      "text_hash": "f3e4d2e20fcc3b30e1bf391dc6eb651404c675edea88fd6d4af379b7983bb441",
+      "row": {
+        "fee_published_id": 105155,
+        "fee_name": "ACH Insufficient Funds"
+      },
+      "prior": {
+        "fee_published_id": 1725,
+        "fee_name": "Insufficient Funds"
+      },
+      "text": "Insufficient Funds | $35.00\n\nInsufficient Funds Transfer from Share Account | $1.00\n\nReturned Check Fee | $35.00\n\nStop Payment | $35.00\n\nACH Category\n\nDescription | Fee\n\nACH Stop Payment | $35.00\n\nACH Insufficient Funds | $35.00\n\nInsufficient Funds Transfer from Share Account | $1.0\n\nShare Accounts",
+      "note": "\"ACH Insufficient Funds\" holds every word of \"Insufficient Funds\", so separateLines reads them as one line. The qualifier rule (qualifiedLines) puts the pair to the page check, which finds \"Insufficient Funds | $35.00\" printed apart from the ACH line (#1303)."
+    },
+    {
+      "case_key": "distinct:17371:stop_payment",
+      "family": "distinct_same_dollar",
+      "canonical_fee_key": "stop_payment",
+      "amount": "35.00",
+      "source_document_id": 17371,
+      "agent_source_text_id": 12893,
+      "text_hash": "f3e4d2e20fcc3b30e1bf391dc6eb651404c675edea88fd6d4af379b7983bb441",
+      "row": {
+        "fee_published_id": 6363,
+        "fee_name": "ACH Stop Payment"
+      },
+      "prior": {
+        "fee_published_id": 6352,
+        "fee_name": "Stop Payment"
+      },
+      "text": "t | $1.00\n\nReturned Check Fee | $35.00\n\nStop Payment | $35.00\n\nACH Category\n\nDescription | Fee\n\nACH Stop Payment | $35.00\n\nACH Insufficient Funds | $35.00\n\nInsufficient Funds Transfer from Sha",
+      "note": "The same shape: \"ACH Stop Payment | $35.00\" in the ACH table, \"Stop Payment | $35.00\" in the check-fee table (#1303)."
+    },
+    {
+      "case_key": "duplicate:13385:account_research",
+      "family": "true_duplicate",
+      "canonical_fee_key": "account_research",
+      "amount": "25.00",
+      "source_document_id": 13385,
+      "agent_source_text_id": 801,
+      "text_hash": "7727b0fa7873ea9db03870a98119c6650228e5874e5d949733dca5a127ff490c",
+      "row": {
+        "fee_published_id": 138008,
+        "fee_name": "Account Research fee"
+      },
+      "prior": {
+        "fee_published_id": 79471,
+        "fee_name": "Research fee"
+      },
+      "text": "e | $1.00 par value\nEarly closure (180 days) fee | $15.00\nLevy/Garnishment Processing fee per notification | $100.00\nAccount History fee | $2.00 each\nAccount Research fee | $25.00 per hour / 1-hour minimum\n\nCHECK FEES (waived for members 65 and older)\nMoney Order fee (limit of $1,000 per money order) | $3.00 each\nCashier's Check",
+      "note": "\"Account\" in front of \"Research fee\" passes the qualifier rule, but the page prints \"Research fee\" only inside the one line \"Account Research fee | $25.00\", so the page check keeps the two reads one fee (#1303). Both reads are live today."
     }
   ],
   "category": [
@@ -1043,46 +1100,7 @@
   ],
   "known_misses": {
     "about": "Cases today's rules still get wrong. Each runs as an expected failure: when a rule starts getting one right, its test fails, and the case moves into the gate above.",
-    "same_price": [
-      {
-        "case_key": "distinct:17371:nsf",
-        "family": "distinct_same_dollar",
-        "canonical_fee_key": "nsf",
-        "amount": "35.00",
-        "source_document_id": 17371,
-        "agent_source_text_id": 12893,
-        "text_hash": "f3e4d2e20fcc3b30e1bf391dc6eb651404c675edea88fd6d4af379b7983bb441",
-        "row": {
-          "fee_published_id": 105155,
-          "fee_name": "ACH Insufficient Funds"
-        },
-        "prior": {
-          "fee_published_id": 1725,
-          "fee_name": "Insufficient Funds"
-        },
-        "text": "Insufficient Funds | $35.00\n\nInsufficient Funds Transfer from Share Account | $1.00\n\nReturned Check Fee | $35.00\n\nStop Payment | $35.00\n\nACH Category\n\nDescription | Fee\n\nACH Stop Payment | $35.00\n\nACH Insufficient Funds | $35.00\n\nInsufficient Funds Transfer from Share Account | $1.0\n\nShare Accounts",
-        "note": "\"ACH Insufficient Funds\" holds every word of \"Insufficient Funds\", so separateLines reads them as one line. Both are live only because their frequencies differ (per_occurrence and none)."
-      },
-      {
-        "case_key": "distinct:17371:stop_payment",
-        "family": "distinct_same_dollar",
-        "canonical_fee_key": "stop_payment",
-        "amount": "35.00",
-        "source_document_id": 17371,
-        "agent_source_text_id": 12893,
-        "text_hash": "f3e4d2e20fcc3b30e1bf391dc6eb651404c675edea88fd6d4af379b7983bb441",
-        "row": {
-          "fee_published_id": 6363,
-          "fee_name": "ACH Stop Payment"
-        },
-        "prior": {
-          "fee_published_id": 6352,
-          "fee_name": "Stop Payment"
-        },
-        "text": "t | $1.00\n\nReturned Check Fee | $35.00\n\nStop Payment | $35.00\n\nACH Category\n\nDescription | Fee\n\nACH Stop Payment | $35.00\n\nACH Insufficient Funds | $35.00\n\nInsufficient Funds Transfer from Sha",
-        "note": "The same shape: the ACH line's name holds the check line's name."
-      }
-    ],
+    "same_price": [],
     "category": [
       {
         "case_key": "live:88513:bill_pay",
