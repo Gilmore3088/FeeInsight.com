@@ -552,6 +552,94 @@ function batchKey(row: RawFeeRow, canonicalFeeKey: string): string {
   ].join("|");
 }
 
+/** A SQL string literal; the inputs are this file's own constants, never user text. */
+function sqlLiteral(value: string): string {
+  return `'${value.replace(/'/g, "''")}'`;
+}
+
+/**
+ * SQL (raw row alias `fr`): a `verify.rules` decision under today's rule version still stands
+ * for this row. The selection, the state-lane scheduler and the daily health check all read
+ * this one test (#1052), so a row the verify step would select again always wakes a lane and
+ * always counts as waiting. Before, the scheduler and health counted only rows with no decision
+ * at all: a row due again after a guard bump in a state with nothing else to do (26 rows in
+ * Puerto Rico and Guam on 2026-10-14, the oldest due since Oct 9) waited for a lane that never
+ * came, and the backlog read 0.
+ *
+ * The constants are inlined so callers using either query form can embed it.
+ */
+export function darwinStandingDecisionSql(currentCopy = true): string {
+  const envelopes = `${sqlLiteral(JSON.stringify(CATEGORY_AMOUNT_ENVELOPES))}::jsonb`;
+  // A row held as an in-batch duplicate under an older key is re-checked once when it sits
+  // on the bank's current copy and nothing on that same document is verified as the same fee
+  // from the same source line (v3); a row with a verified twin on its own line stays a
+  // duplicate. Needs the current-copy column (source_documents.superseded_by_id).
+  const duplicateRecheck = currentCopy ? `
+              AND NOT (
+                pa.detail->>'reason_code' = 'duplicate_in_batch'
+                AND COALESCE((pa.detail->>'batch_key_version')::int, 1) < ${DARWIN_BATCH_KEY_VERSION}
+                AND EXISTS (
+                  SELECT 1 FROM source_documents sd
+                   WHERE sd.id = fr.source_document_id AND sd.superseded_by_id IS NULL
+                )
+                AND NOT EXISTS (
+                  SELECT 1
+                    FROM verified_fee_observations twin
+                    JOIN raw_fee_observations twin_raw ON twin_raw.fee_raw_id = twin.fee_raw_id
+                   WHERE twin_raw.source_document_id = fr.source_document_id
+                     AND twin.canonical_fee_key = pa.detail->>'canonical_fee_key'
+                     AND twin.amount IS NOT DISTINCT FROM fr.amount
+                     AND lower(regexp_replace(COALESCE(substring(twin_raw.conditions from 'excerpt="?(.*?)"?$'), ''), '\\s+', ' ', 'g'))
+                         = lower(regexp_replace(COALESCE(substring(fr.conditions from 'excerpt="?(.*?)"?$'), ''), '\\s+', ' ', 'g'))
+                )
+              )` : "";
+  // A row this rule version already decided is never selected again, so rejected rows cannot
+  // starve the batch. The exceptions are re-read once each:
+  // - a category rejection under an older guard version (CATEGORY_GUARD_VERSION), so a real fee
+  //   a rule wrongly rejected, or one a new re-file rule now places, is not lost; a row held for
+  //   a category lesson the guard has not learned yet (DARWIN_CATEGORY_HOLDS) takes the same path;
+  // - a `not_in_source` rejection under an older source-check version (DARWIN_SOURCE_CHECK_VERSION),
+  //   so a fix to the shared source check reaches the rows it was made for;
+  // - a hold outside a hand-set amount envelope that today's envelope takes (the account_research
+  //   floor went from $5 to $1 on 2026-10-09); learned envelopes move with the data and never re-select.
+  return `EXISTS (
+           SELECT 1
+             FROM pipeline_attempts pa
+            WHERE pa.input_fingerprint = 'raw:' || fr.fee_raw_id::text
+              AND pa.strategy = ${sqlLiteral(DARWIN_VERIFY_STRATEGY.strategy)}
+              AND pa.strategy_version = ${DARWIN_VERIFY_STRATEGY.version}
+              AND NOT (
+                pa.detail->>'reason_code' IN ('category_mismatch', 'category_lesson_pending')
+                AND COALESCE((pa.detail->>'category_guard_version')::int, 0) < ${CATEGORY_GUARD_VERSION}
+              )
+              AND NOT (
+                pa.detail->>'reason_code' = 'not_in_source'
+                AND COALESCE((pa.detail->>'source_check_version')::int, 0) < ${DARWIN_SOURCE_CHECK_VERSION}
+              )
+              AND NOT (
+                pa.detail->>'reason_code' = 'outside_envelope'
+                AND ${envelopes} ? (pa.detail->>'canonical_fee_key')
+                AND (pa.detail->>'amount')::numeric
+                    BETWEEN (${envelopes}->(pa.detail->>'canonical_fee_key')->>'min')::numeric
+                        AND (${envelopes}->(pa.detail->>'canonical_fee_key')->>'max')::numeric
+              )
+${duplicateRecheck}
+         )`;
+}
+
+/**
+ * SQL (raw row alias `fr`): a Knox row Darwin's verify step would select now, either never
+ * decided or due again under today's rules. Rows the audience trigger refuses are left out,
+ * as the selection leaves them out (#1113).
+ */
+export function darwinDueSql(currentCopy = true): string {
+  return `fr.source = 'knox'
+         AND fr.outlier_flags ? 'needs_darwin_verification'
+         AND NOT (fr.outlier_flags ? 'audience_correction_required')
+         AND NOT EXISTS (SELECT 1 FROM verified_fee_observations fv WHERE fv.fee_raw_id = fr.fee_raw_id)
+         AND NOT ${darwinStandingDecisionSql(currentCopy)}`;
+}
+
 async function selectRawFees(
   db: SqlTag,
   limit: number,
@@ -577,73 +665,7 @@ async function selectRawFees(
     params.push(normalizedState);
     filters.push(`AND upper(btrim(inst.state_code)) = $${params.length}`);
   }
-  if (learning && !onlyIds) {
-    // A row this rule version already rejected is never selected again, so rejected
-    // rows cannot starve the batch.
-    const strategyParam = `$${params.push(DARWIN_VERIFY_STRATEGY.strategy)}`;
-    const versionParam = `$${params.push(DARWIN_VERIFY_STRATEGY.version)}`;
-    // A category rejection under an older guard version is the exception: a guard change
-    // (CATEGORY_GUARD_VERSION) re-checks those rows once, so a real fee a rule wrongly
-    // rejected, or one a new re-file rule now places, is not lost. A row held for a category
-    // lesson the guard has not learned yet (DARWIN_CATEGORY_HOLDS) takes the same path.
-    const guardParam = `$${params.push(CATEGORY_GUARD_VERSION)}`;
-    // A `not_in_source` rejection under an older source-check version is re-read once
-    // (DARWIN_SOURCE_CHECK_VERSION), so a fix to the shared source check reaches the rows it
-    // was made for; a row the check still fails is stamped with today's version and rests.
-    const sourceCheckParam = `$${params.push(DARWIN_SOURCE_CHECK_VERSION)}`;
-    // A row held outside its category's hand-set amount envelope is re-checked once when
-    // today's envelope would take its amount (the account_research floor went from $5 to $1 on
-    // 2026-10-09 for the returned mail and fax fees pooled there), so an envelope change reaches
-    // the rows it was made for. Learned envelopes move with the data and never re-select.
-    const envelopesParam = `$${params.push(JSON.stringify(CATEGORY_AMOUNT_ENVELOPES))}`;
-    // A row held as an in-batch duplicate under an older key is re-checked once when it sits
-    // on the bank's current copy and nothing on that same document is verified as the same fee
-    // from the same source line (v3); a row with a verified twin on its own line stays a
-    // duplicate. Needs the current-copy column (source_documents.superseded_by_id).
-    const batchKeyParam = currentCopy ? `$${params.push(DARWIN_BATCH_KEY_VERSION)}` : null;
-    const duplicateRecheck = batchKeyParam ? `
-              AND NOT (
-                pa.detail->>'reason_code' = 'duplicate_in_batch'
-                AND COALESCE((pa.detail->>'batch_key_version')::int, 1) < ${batchKeyParam}
-                AND EXISTS (
-                  SELECT 1 FROM source_documents sd
-                   WHERE sd.id = fr.source_document_id AND sd.superseded_by_id IS NULL
-                )
-                AND NOT EXISTS (
-                  SELECT 1
-                    FROM verified_fee_observations twin
-                    JOIN raw_fee_observations twin_raw ON twin_raw.fee_raw_id = twin.fee_raw_id
-                   WHERE twin_raw.source_document_id = fr.source_document_id
-                     AND twin.canonical_fee_key = pa.detail->>'canonical_fee_key'
-                     AND twin.amount IS NOT DISTINCT FROM fr.amount
-                     AND lower(regexp_replace(COALESCE(substring(twin_raw.conditions from 'excerpt="?(.*?)"?$'), ''), '\\s+', ' ', 'g'))
-                         = lower(regexp_replace(COALESCE(substring(fr.conditions from 'excerpt="?(.*?)"?$'), ''), '\\s+', ' ', 'g'))
-                )
-              )` : "";
-    filters.push(`AND NOT EXISTS (
-           SELECT 1
-             FROM pipeline_attempts pa
-            WHERE pa.input_fingerprint = 'raw:' || fr.fee_raw_id::text
-              AND pa.strategy = ${strategyParam}
-              AND pa.strategy_version = ${versionParam}
-              AND NOT (
-                pa.detail->>'reason_code' IN ('category_mismatch', 'category_lesson_pending')
-                AND COALESCE((pa.detail->>'category_guard_version')::int, 0) < ${guardParam}
-              )
-              AND NOT (
-                pa.detail->>'reason_code' = 'not_in_source'
-                AND COALESCE((pa.detail->>'source_check_version')::int, 0) < ${sourceCheckParam}
-              )
-              AND NOT (
-                pa.detail->>'reason_code' = 'outside_envelope'
-                AND ${envelopesParam}::jsonb ? (pa.detail->>'canonical_fee_key')
-                AND (pa.detail->>'amount')::numeric
-                    BETWEEN (${envelopesParam}::jsonb->(pa.detail->>'canonical_fee_key')->>'min')::numeric
-                        AND (${envelopesParam}::jsonb->(pa.detail->>'canonical_fee_key')->>'max')::numeric
-              )
-${duplicateRecheck}
-         )`);
-  }
+  if (learning && !onlyIds) filters.push(`AND NOT ${darwinStandingDecisionSql(currentCopy)}`);
   return db.unsafe<RawFeeRow[]>(
     `
       WITH eligible AS (
