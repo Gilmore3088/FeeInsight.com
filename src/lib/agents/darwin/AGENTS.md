@@ -91,13 +91,15 @@ Darwin owns verification and classification.
 - Darwin decides each verified fee's audience (#1059; James, Oct 13). A label Knox read on the
   fee's own line stands. A fee Knox left `unknown` takes Knox's context suggestion
   (`knox/audience-context.ts`, via `darwin/audience.ts`), in this order: the schedule's address,
-  its title, a heading for all accounts, a schedule that prices nothing for businesses
-  (consumer), or a schedule that also prices business items and does not limit the fee (both).
-  In a schedule that also prices business items, a heading naming one audience leaves the fee
-  `unknown`: on unseen schedules those headings agreed with a blind reading on 14 of 36 fees
-  (#1059, Oct 14). The evidence is written as `darwin:<source>: <words>`. The audience trigger copies
-  the raw row's audience onto the verified row until migration 20270110000047 lets it keep a
-  `darwin:` decision, so until then this changes nothing that is written.
+  then the section heading above the fee's line, then its title, a schedule that prices nothing
+  for businesses (consumer), or a schedule that also prices business items and does not limit
+  the fee (both). In a schedule that also prices business items, a heading for all accounts
+  gives both, and a heading naming one audience leaves the fee `unknown` unless it is a business
+  heading under a business schedule title: on unseen schedules those headings agreed with a blind
+  reading on 14 of 36 fees (#1059, Oct 14). A business heading never takes the consumer default.
+  The evidence is written as `darwin:<source>: <words>`. The audience trigger copies the raw
+  row's audience onto the verified row until migration 20270110000047 lets it keep a `darwin:`
+  decision, so until then this changes nothing that is written.
 - Every decision is written to `pipeline_attempts` (stage `verify`, fingerprint
   `raw:<fee_raw_id>`) with `decision` and `reason_code`; a row decided under this rule
   version is never selected again, so skipped rows cannot starve the batch.

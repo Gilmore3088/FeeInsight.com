@@ -214,6 +214,7 @@ describe("Knox audience suggestion from context (#1059)", () => {
     // A business-only schedule whose title or heading ends in a period still prices business fees.
     expect(suggest(null, ["BUSINESS FEE SCHEDULE.", "Effective January 1, 2026", "Stop Payment $30.00"].join("\n"), "Stop Payment", 30)).toMatchObject({ audience: "business", source: "document_title" });
     expect(headingAbove(["BUSINESS ACCOUNTS.", "Stop Payment $30.00", "Overdraft $35.00"].join("\n"), "Stop Payment", 30)).toMatchObject({ audience: "business" });
+    expect(suggest(null, ["BUSINESS ACCOUNTS.", "Stop Payment $30.00", "Overdraft $35.00"].join("\n"), "Stop Payment", 30)?.audience).not.toBe("consumer");
   });
 
   it("keeps a prose line's period, so a note pointing to the business schedule heads nothing (review of 33d74156)", () => {
@@ -268,8 +269,8 @@ describe("Knox audience suggestion from context (#1059)", () => {
     // A web page whose checking table has a business column claims nothing listed below it.
     const page = ["Checking Accounts", "Business Checking", "$25.00 per month", "Member Service Fees", "Overdraft Privilege $35.00 per item", "Stop Payment $25.00 per item"].join("\n");
     expect(suggest(null, page, "Stop Payment", 25)?.audience).not.toBe("business");
-    // A heading still says nothing more than the default in a schedule with no business fees.
-    expect(suggest(null, ["Personal Accounts", "Stop Payment $30"].join("\n"), "Stop Payment", 30)).toMatchObject({ audience: "consumer", source: "default_general_schedule" });
+    // A personal heading in a schedule with no business fees still stands, as on main.
+    expect(suggest(null, ["Personal Accounts", "Stop Payment $30"].join("\n"), "Stop Payment", 30)).toMatchObject({ audience: "consumer", source: "section_heading" });
     // The fee's own name, the address and an all-accounts heading still decide.
     expect(suggest(null, mixed.replace("Overdraft Fee $35", "Business Overdraft Fee $35"), "Business Overdraft Fee", 35)).toMatchObject({ audience: "business", source: "fee_name" });
     expect(suggest("https://bank.example/business-fee-schedule.pdf", mixed, "Overdraft Fee", 35)).toMatchObject({ audience: "business", source: "document_url" });
@@ -280,5 +281,12 @@ describe("Knox audience suggestion from context (#1059)", () => {
   it("never defaults a fee under a business heading to consumer (#1059 holdout)", () => {
     const filler = Array.from({ length: 20 }, (_, index) => `Note ${index}`).join("\n");
     expect(suggest(null, ["Business Services", filler, "Dormant debit card $5"].join("\n"), "Dormant debit card", 5)?.audience).not.toBe("consumer");
+  });
+
+  it("keeps a personal heading in a schedule with no business fees ahead of any title (review of 7c4f3b25)", () => {
+    const menu = ["Home", "Business Fee Schedule", "About Us", "", "Personal Checking Accounts", "The charges below apply.", "Stop Payment $30.00", "Overdraft $35.00"].join("\n");
+    expect(suggest(null, menu, "Stop Payment", 30)).toMatchObject({ audience: "consumer", source: "section_heading" });
+    const titled = ["BUSINESS FEE SCHEDULE", "Personal Checking Accounts", "Effective 2026", "Stop Payment $30.00"].join("\n");
+    expect(suggest(null, titled, "Stop Payment", 30)).toMatchObject({ audience: "consumer", source: "section_heading" });
   });
 });

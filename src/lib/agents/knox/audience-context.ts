@@ -262,6 +262,12 @@ export function suggestAudience(input: {
     if (section && section.audience === "both" && businessLine >= 0) {
       return { audience: "both", source: "section_heading", evidence: section.heading };
     }
+    // A personal heading in a schedule that prices nothing for businesses stands, before any
+    // title: a menu line "Business Fee Schedule" is no reason to call it business (review of
+    // 7c4f3b25).
+    if (section && section.audience === "consumer" && businessLine < 0) {
+      return { audience: "consumer", source: "section_heading", evidence: section.heading };
+    }
     // A heading that names one audience does not decide on its own in a schedule that also prices
     // business items. On unseen schedules it agreed with a blind reading on 14 of 36 fees, and 10
     // went to the other audience: a distant "Business Checking" heading or column on a web page,
