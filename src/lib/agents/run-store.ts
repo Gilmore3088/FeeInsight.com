@@ -1999,6 +1999,12 @@ async function executeAgenticStep(
           schema_ready: result.schemaReady,
           score_run_id: result.scoreRunId,
           scorer_version: score?.scorerVersion ?? null,
+          series: (result.series ?? []).map((entry) => ({
+            scorer_version: entry.scorerVersion,
+            score_run_id: entry.scoreRunId,
+            precision: entry.score.overall.precision,
+            recall: entry.score.overall.recall,
+          })),
           banks_scored: score?.banksScored ?? 0,
           fees_expected: score?.feesExpected ?? 0,
           precision: score?.overall.precision ?? null,
