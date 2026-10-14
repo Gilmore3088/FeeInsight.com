@@ -32,8 +32,9 @@ vi.mock("@/lib/ai-provider-usage", () => ({
 }));
 vi.mock("@/lib/research/agents", () => ({
   getHamilton: async () => ({ systemPrompt: "Hamilton base.", model: "test-model", tools: {}, maxTokens: 100, maxSteps: 1 }),
-  buildAnalyzeModeSuffix: () => "", buildMonitorModeSuffix: () => "",
+  buildAnalyzeModeSuffix: () => "", buildMonitorModeSuffix: () => "", buildSavedPeerSetPrompt: () => "",
 }));
+vi.mock("@/lib/hamilton/active-peer-set", () => ({ getActivePeerSet: async () => null }));
 vi.mock("@/lib/research/skills", () => ({
   detectSkill: () => null, buildSkillInjection: () => "", buildSkillExecution: () => "", isSkillOptIn: () => false, findOfferedSkill: () => null,
 }));
