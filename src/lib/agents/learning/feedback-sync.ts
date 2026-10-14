@@ -190,6 +190,8 @@ export async function syncPipelineFeedback(
          -- A business-schedule fee was read right from the wrong page: the lesson is
          -- Magellan's (hamilton/business-schedule.ts writes it), not Knox's or Darwin's.
          AND fp.rolled_back_reason NOT LIKE 'business_schedule:%'
+         -- A frequency hold writes its own lesson about Knox's read (hamilton/frequency-fill.ts).
+         AND fp.rolled_back_reason NOT LIKE 'frequency_hold:%'
          -- The bank's current page no longer states the fee at that price: the copy Knox and
          -- Darwin read was right when read (hamilton/current-copy.ts).
          AND fp.rolled_back_reason NOT LIKE 'not_on_current_copy:%'

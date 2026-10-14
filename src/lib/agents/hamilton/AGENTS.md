@@ -71,7 +71,7 @@ Hamilton supports the decision; it does not make it.
   question, evidenceLevel, provenance}`; `evaluateFourRoles` (`workspace/four-roles.ts`)
   checks an answer against all four, and the chat prompt carries `HAMILTON_ROLES`.
 - The answer eval on live data (`hamilton/answer-eval.ts`, step `hamilton-answer-eval`,
-  cron every two hours, `/api/admin/crew/answer-eval`) asks 14 quality-bar questions of a fresh spread
+  cron every two hours, `/api/admin/crew/answer-eval`) asks the quality-bar questions of a fresh spread
   of real banks and credit unions (two per charter and asset tier) through the Ask path,
   scores each with the quality bar and four-roles eval, and checks that a regulation answer
   names the institution's own regulator and a state question names its state. Read-only, no
@@ -81,6 +81,17 @@ Hamilton supports the decision; it does not make it.
   engine. `detail.pro` counts how many meet the bar and how many Hamilton still asks back on,
   and lists every one that falls short. A replayed answer about a fee the question did not
   ask about fails as "answers a different subject" (`offSubjectFailure`). Questions stay in our own database only.
+  It asks 15 questions (q26, the NSF regulation question, since #1079). Every answer is also
+  scored on correctness (`hamilton/answer-correctness.ts`, the `report-reconciliation` check for
+  one answer): the bank's own value and every peer, layer and local-competitor value is its
+  live value in `published_fee_catalog` under the statistics contract, each printed median and
+  quartile recomputes from those values within a cent, and every dollar figure in a sentence
+  sourced to the catalog is one of those values or the gap between two. `detail.correctness`
+  and `detail.pro.correctness` count checked and correct answers; the goal scorecard shows the
+  latest eval's form and correctness rates per path (`goal.hamilton_answer_eval_latest`). Not yet
+  checked: percentages and counts, and the whole-schedule overview's peer medians (accepted as
+  printed). The paid paths (written answer, memo, simulate, reports) are not sampled until James
+  sets a daily provider budget for it.
 - The bank's own numbers arrive by answer or upload. `POST /api/hamilton/uploads` reads a
   CSV or XLSX (fee income, item counts, waivers, affected accounts by GL line) and returns
   what was read; unmatched lines are listed, never guessed, and the file is not stored.
@@ -279,7 +290,11 @@ the detail.
     `duplicate of #<kept id>`.
 18. Frequency fill (`frequency-fill.ts`): sets a live fee's frequency from its own schedule row
     (fills a blank, corrects or clears one read from another fee's row), logged to
-    `pipeline_feedback` (check `hamilton.frequency_fill`). No rollback.
+    `pipeline_feedback` (check `hamilton.frequency_fill`). v11 (#1196): an NSF or overdraft fee
+    stored as monthly is checked against its own line (`perEventPeriodCheck`);
+    an overdraft program the bank sells by the month keeps its period, a period the fee's own
+    price states ("NSF | $23.00/Month") is held, `frequency_hold: <why>`, and any other period is
+    cleared. A hold is the only rollback; clearing `rolled_back_at` restores it.
 19. Newer-copy check (`newer-copy-retire.ts`): a fee line gone from a newer copy of its page,
     `newer_copy_drops_fee:#<newer document id>` (`NEWER_COPY_RETIRE_LIVE` is true; false makes
     it a shadow run).
@@ -600,7 +615,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `ACCOUNT_NAME_STRATEGY` | `hamilton.account_names` | v1 | `hamilton/account-names.ts` |
 | `CURRENT_COPY_STRATEGY` | `hamilton.current_copy_check` | v2 | `hamilton/current-copy.ts` |
 | `EVAL_VERDICT_VERSION` | — | v7 | `hamilton/eval-verdicts.ts` |
-| `FREQUENCY_FILL_VERSION` | — | v10 | `hamilton/frequency-fill.ts` |
+| `FREQUENCY_FILL_VERSION` | — | v11 | `hamilton/frequency-fill.ts` |
 | `GUARD_REQUEUE_STRATEGY` | `publish.guard_requeue` | v1 | `hamilton/guard-requeue.ts` |
 | `NEWER_COPY_STRATEGY` | `hamilton.newer_copy_check` | v1 | `hamilton/newer-copy-retire.ts` |
 | `HAMILTON_PUBLISH_STRATEGY` | `publish.rules` | v3 | `hamilton/publish.ts` |

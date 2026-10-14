@@ -283,6 +283,25 @@ const GOAL_CARDS: GoalCardSpec[] = [
       ? `${n(goal.unstatedAudience.unknownFees)} of ${n(goal.unstatedAudience.liveFees)} live fees.`
       : "Could not be read.",
   },
+  {
+    label: "Hamilton answers that tie out",
+    query: "goal.hamilton_answer_eval_latest",
+    value: (goal) => goal.answerQuality?.paths.find((p) => p.path === "free_ask")?.correctRate,
+    format: share,
+    unit: "of free Ask answers whose fee figures tie to live catalog rows (latest answer eval)",
+    detail: (goal) => goal.answerQuality ? (
+      <>
+        Eval of {goal.answerQuality.at.slice(0, 16).replace("T", " ")} UTC{goal.answerQuality.timedOut ? ", stopped at its time budget" : ""}.
+        {goal.answerQuality.paths.map((p) => (
+          <span key={p.path} className="block">
+            {p.label}: {p.measured
+              ? `form ${share(p.formRate)} (${n(p.formPassed)} of ${n(p.answers)}), tie out ${p.checked == null ? "not checked" : `${share(p.correctRate)} (${n(p.correct)} of ${n(p.checked)})`}`
+              : "not measured yet"}
+          </span>
+        ))}
+      </>
+    ) : "No answer eval in the last 7 days.",
+  },
 ];
 
 /** The snapshot at least 7 days older than the latest, for the week-over-week change. */
