@@ -6,6 +6,7 @@
 import type { HamiltonPersistedContextSource } from "@/lib/hamilton/context-source";
 import type { Storyline, StorylineMemo } from "@/lib/hamilton/workspace/storyline-types";
 import type { HamiltonIdentitySnapshot } from "@/lib/hamilton/account-context";
+import type { SavedAnswerEvidence } from "@/lib/hamilton/answer-gate";
 
 export type SectionType =
   | "overview"
@@ -214,6 +215,8 @@ export interface AnalyzeResponse {
   storyline?: Storyline;
   memo?: StorylineMemo;
   engineVersion?: string;
+  /** The shared evidence gate's verdict on a written answer (#981); absent on answers saved before it. */
+  answerEvidence?: SavedAnswerEvidence;
   // NOTE: No recommendedPosition — screen boundary rule (ARCH-05)
 }
 

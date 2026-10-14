@@ -47,7 +47,8 @@ import {
 import { getRequestSubjectKey } from "@/lib/api-hardening/audit";
 import { trackFirstHamiltonUse } from "@/lib/analytics-server";
 import { cacheLatestMessage, cachedSystem, ledgerUsage } from "@/lib/research/tool-output";
-import { SAVED_ANALYSIS_ID_KEY, questionOnly, writtenAnswerResponse } from "@/lib/hamilton/answer-save";
+import { SAVED_ANALYSIS_ID_KEY, questionOnly, writtenAnswerCheck, writtenAnswerResponse } from "@/lib/hamilton/answer-save";
+import { HELD_ANSWER_MESSAGE } from "@/lib/hamilton/answer-gate";
 import { insertSavedAnalysis } from "@/lib/data-store/hamilton-analyses";
 import { normalizeCanonicalInstitutionId } from "@/lib/hamilton/context-link";
 import { withHamiltonAccountContext } from "@/lib/hamilton/account-context-store";
@@ -63,6 +64,12 @@ function estimateCostCents(model: string, inputTokens: number, outputTokens: num
 }
 
 const PRO_SCREEN_MODES = new Set(["analyze", "monitor"]);
+
+/** The evidence gate's verdict on a written answer, sent with it as message metadata (#981). */
+interface AnswerVerdict {
+  passed: boolean;
+  held: boolean;
+}
 
 async function handlePOST(request: Request) {
   // Resolve role from session
@@ -132,10 +139,10 @@ async function handlePOST(request: Request) {
   let mode: string | undefined;
   let analysisFocus: string | undefined;
   let institutionId: number | null = null;
-  // Opt-in citation-density gate. Default false preserves the streaming chat
-  // UX (useChat); callers that need a vetted report (report runner, export)
-  // set `gate_citations: true` and receive a buffered JSON response that can
-  // be `{ status: "ok" }` or `{ status: "refused", reason: "insufficient_citations" }`.
+  // Opt-in buffered path. Default false preserves the streaming chat UX (useChat);
+  // callers that need a vetted report (report runner, export) set `gate_citations: true`
+  // and receive a JSON response: `{ status: "ok" }`, or `{ status: "refused" }` with reason
+  // "insufficient_citations" or "evidence_check_failed" (the shared gate, answer-gate.ts).
   let gateCitations = false;
   const audience: HamiltonAudience = role;
   let contract: HamiltonRequestContract;
@@ -307,6 +314,18 @@ async function handlePOST(request: Request) {
         );
       }
 
+      // The same evidence gate a memo passes, against the tool outputs the model saw (#981).
+      const evidence = writtenAnswerCheck(
+        result.text ?? "",
+        (result.steps ?? []).flatMap((step) => step.toolResults.map((toolResult) => toolResult.output)),
+      );
+      if (!evidence.passed) {
+        return Response.json(
+          { status: "refused", reason: "evidence_check_failed", problems: evidence.problems, metrics: gate.metrics },
+          { status: 200 },
+        );
+      }
+
       return Response.json({
         status: "ok",
         text: result.text,
@@ -318,6 +337,13 @@ async function handlePOST(request: Request) {
     providerStartedAt = await guardProviderCall(providerContext);
     let resolveSaved: (id: string | null) => void = () => {};
     const savedId = new Promise<string | null>((resolve) => { resolveSaved = resolve; });
+    // A written answer passes the shared evidence gate when it finishes (#981). Once the held
+    // line is approved (HELD_ANSWER_MESSAGE), the answer is held until then and is never shown,
+    // or saved, when it fails; until that, a failing answer streams as before and the verdict
+    // is saved with it.
+    const holdsAnswers = mode === "analyze" && HELD_ANSWER_MESSAGE !== null;
+    let resolveVerdict: (verdict: AnswerVerdict | null) => void = () => {};
+    const verdict = new Promise<AnswerVerdict | null>((resolve) => { resolveVerdict = resolve; });
     const result = streamText({
       model: getAnthropicLanguageModel(agent.model, "hamilton"),
       // Tools and system are identical on every step, and each step re-sends the earlier
@@ -332,29 +358,36 @@ async function handlePOST(request: Request) {
         // The Analyze screen's answer is saved here, not only from the browser, so a closed
         // tab or a failed browser call never loses it.
         if (mode === "analyze" && text.trim()) {
+          const toolOutputs = steps.flatMap((step) => step.toolResults.map((result) => result.output));
+          const check = writtenAnswerCheck(text, toolOutputs);
+          const held = holdsAnswers && !check.passed;
+          resolveVerdict({ passed: check.passed, held });
           const response = {
-            ...writtenAnswerResponse(
-              text,
-              steps.flatMap((step) => step.toolResults.map((result) => result.output)),
-            ),
+            ...writtenAnswerResponse(text, toolOutputs, check),
             // Historical reference metadata only; never a future access grant.
             identityContext,
           };
           const prompt = questionOnly(lastUserText);
-          try {
-            resolveSaved(await insertSavedAnalysis({
-              userId: user.id,
-              institutionId: normalizeCanonicalInstitutionId(institutionId) ?? "",
-              title: response.title || prompt.slice(0, 60).trim(),
-              analysisFocus: focus,
-              prompt,
-              response,
-            }));
-          } catch (error) {
-            console.error("[hamilton] saving the written answer failed", error);
+          if (held) {
+            console.warn("[hamilton] written answer held by the evidence gate", check.problems);
             resolveSaved(null);
+          } else {
+            try {
+              resolveSaved(await insertSavedAnalysis({
+                userId: user.id,
+                institutionId: normalizeCanonicalInstitutionId(institutionId) ?? "",
+                title: response.title || prompt.slice(0, 60).trim(),
+                analysisFocus: focus,
+                prompt,
+                response,
+              }));
+            } catch (error) {
+              console.error("[hamilton] saving the written answer failed", error);
+              resolveSaved(null);
+            }
           }
         } else {
+          resolveVerdict(null);
           resolveSaved(null);
         }
         try {
@@ -384,8 +417,12 @@ async function handlePOST(request: Request) {
           // Non-critical — don't fail the response
         }
       },
-      onAbort: () => resolveSaved(null),
+      onAbort: () => {
+        resolveVerdict(null);
+        resolveSaved(null);
+      },
       onError: async ({ error }) => {
+        resolveVerdict(null);
         resolveSaved(null);
         providerFailed = true;
         await recordProviderUsage(providerContext, "failed", {}, {
@@ -402,13 +439,31 @@ async function handlePOST(request: Request) {
     return createUIMessageStreamResponse({
       stream: createUIMessageStream({
         execute: async ({ writer }) => {
-          // A provider refusal happens inside the stream, past the catch below: send the
-          // reader the paused line for a usage/billing limit, never the provider's text.
-          writer.merge(result.toUIMessageStream({
-            onError: (error) => (isProviderLimitError(error) ? HAMILTON_PAUSED_MESSAGE : "Hamilton couldn't finish this answer."),
-          }));
+          // A held answer waits for the gate. The result's stream replays from its start, so
+          // an answer that passes still reaches the reader whole.
+          const heldVerdict = holdsAnswers ? await verdict : null;
+          if (heldVerdict?.held && HELD_ANSWER_MESSAGE !== null) {
+            writer.write({ type: "start" });
+            writer.write({ type: "text-start", id: "held" });
+            writer.write({ type: "text-delta", id: "held", delta: HELD_ANSWER_MESSAGE });
+            writer.write({ type: "text-end", id: "held" });
+          } else {
+            // A provider refusal happens inside the stream, past the catch below: send the
+            // reader the paused line for a usage/billing limit, never the provider's text.
+            writer.merge(result.toUIMessageStream({
+              onError: (error) => (isProviderLimitError(error) ? HAMILTON_PAUSED_MESSAGE : "Hamilton couldn't finish this answer."),
+            }));
+          }
           const id = await savedId;
-          writer.write({ type: "message-metadata", messageMetadata: { ...(id ? { [SAVED_ANALYSIS_ID_KEY]: id } : {}), hamiltonIdentity: identityContext } });
+          const answerEvidence = heldVerdict ?? (await verdict);
+          writer.write({
+            type: "message-metadata",
+            messageMetadata: {
+              ...(id ? { [SAVED_ANALYSIS_ID_KEY]: id } : {}),
+              hamiltonIdentity: identityContext,
+              ...(answerEvidence ? { answerEvidence } : {}),
+            },
+          });
         },
       }),
     });
