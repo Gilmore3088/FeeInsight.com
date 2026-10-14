@@ -134,14 +134,22 @@ function nextLine(lines: string[], index: number): string | null {
  */
 const STARTS_WITH_PRICE = /^\s*(?:(?:monthly|per\s+(?:month|item)|each)\s*:?\s*)?(?:\$\s*\d|\d[\d,]*\.\d{2}\b|(?:free|no charge|n\/c|waived|none|n\/a)\b)/i;
 /**
- * A line written as a sentence: a question or exclamation mark, a semicolon, or a word that points
- * elsewhere or excludes ("see", "refer", "disclosed separately", "not"). One trailing period or
- * colon is a heading's punctuation ("BUSINESS ACCOUNTS.", "Business Accounts:"), not a sentence's
- * (review of bac3d3db).
+ * A line written as a sentence: end punctuation, or a word that points elsewhere, excludes or
+ * links a clause ("see", "refer", "disclosed separately", "not", "are", "have"). One trailing
+ * period or colon on a line set like a heading is the heading's own punctuation (reviews of
+ * bac3d3db and 33d74156).
  */
-const SENTENCE = /[!?;]\s*$|\b(?:see|refer|please|request|disclosed|separate(?:ly)?|not|contact|ask|call|visit)\b/i;
+const SENTENCE = /[.!?;:]\s*$|\b(?:see|refer|please|request|disclosed|separate(?:ly)?|not|contact|ask|call|visit|are|is|have|has)\b/i;
+/** Set like a heading: all capitals, or every word of four or more letters capitalized. */
+function headingCase(line: string): boolean {
+  const words = line.match(/[A-Za-z]{4,}/g) ?? [];
+  return !/[a-z]/.test(line) || (words.length > 0 && words.every((word) => /^[A-Z]/.test(word)));
+}
 function isSentence(line: string): boolean {
-  return SENTENCE.test(line.trim().replace(/[.:]\s*$/, ""));
+  const trimmed = line.trim();
+  // A heading's own trailing period or colon ("BUSINESS ACCOUNTS.", "Business Accounts:") is
+  // dropped; a prose line keeps its period and stays a sentence (review of 33d74156).
+  return SENTENCE.test(headingCase(trimmed) ? trimmed.replace(/[.:]\s*$/, "") : trimmed);
 }
 /** Whether the line sits directly above a line that starts with a price. */
 function overAPrice(lines: string[], index: number): boolean {
@@ -189,7 +197,7 @@ export function sectionHeadingAudience(
       if (audienceOf(line)) return { ambiguous: trimmed };
       continue;
     }
-    if (ALL_ACCOUNTS.test(line)) return sentenceAudience && sentenceAudience !== "both" ? { ambiguous: trimmed } : { audience: "both", heading: trimmed };
+    if (ALL_ACCOUNTS.test(line)) return sentenceAudience ? { ambiguous: trimmed } : { audience: "both", heading: trimmed };
     if (!SECTION_HEADING.test(line)) continue;
     const audience = audienceOf(line);
     if (!audience) continue;

@@ -210,4 +210,17 @@ describe("Knox audience suggestion from context (#1059)", () => {
     expect(suggest(null, ["BUSINESS FEE SCHEDULE.", "Effective January 1, 2026", "Stop Payment $30.00"].join("\n"), "Stop Payment", 30)).toMatchObject({ audience: "business" });
     expect(suggest(null, ["BUSINESS ACCOUNTS.", "Stop Payment $30.00", "Overdraft $35.00"].join("\n"), "Stop Payment", 30)).toMatchObject({ audience: "business" });
   });
+
+  it("keeps a prose line's period, so a note pointing to the business schedule heads nothing (review of 33d74156)", () => {
+    for (const note of [
+      "Business account fees are listed in our Business Fee Schedule.",
+      "Business accounts have their own fee schedule.",
+      "Business accounts are subject to different fees.",
+      "Business account fee schedules are available at any branch.",
+    ]) {
+      expect(suggest(null, ["Fee Schedule", note, "Stop Payment $30", "Overdraft $35"].join("\n"), "Stop Payment", 30)).toMatchObject({ audience: "consumer", source: "default_general_schedule" });
+    }
+    // Under a consumer heading, the note never wins over it.
+    expect(suggest(null, ["Personal Fee Schedule", "Business account fees are listed in our Business Fee Schedule.", "Stop Payment $30"].join("\n"), "Stop Payment", 30)?.audience).not.toBe("business");
+  });
 });
