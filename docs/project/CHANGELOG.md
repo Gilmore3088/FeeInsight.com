@@ -13,6 +13,7 @@ Started 2026-10-05; for anything earlier, see `git log`.
 
 **Discovery**
 - Magellan's bank-name check matches whole words and needs the city for a shared name (#1298); paid searches cover the bank's other own hosts and paid answers must name the bank (#1282); disclosure index pages have their documents checked, and unreachable links are retried at other spellings, on the bank's own domain only, real PDFs only, with a hard timeout and size cap (#1293, #1308, #1311).
+- On another bank's host, a cert number counts only next to FDIC/Cert/Charter/NCUA, and a name inside another bank's name counts as shared (#1315). New credit unions keep their full city instead of NCUA's 15-character cut (#1317).
 - The coverage-gaps query runs in 0.3 s instead of 3.9 s (#1277).
 
 **Project and tooling**
