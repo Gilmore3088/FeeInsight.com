@@ -1,61 +1,42 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useReducedMotion } from "@/app/subscribe/showcase";
 import Link from "next/link";
-import type { HomeData } from "../home-data";
+import { useReducedMotion } from "@/app/subscribe/showcase";
+import type { NationalFee } from "../home-data";
 import type { SampleStory } from "../sample-story";
-import { ExampleTag } from "./scene-parts";
-import { CollectScene, CostScene, IndexScene, MarketsScene } from "./scenes-data";
-import { AskScene, ReportScene } from "./scenes-hamilton";
-import { SampleAskScene, SampleCollectScene, SampleCostScene, SampleIndexScene, SampleMarketsScene, SampleReportScene } from "./scenes-sample";
-import styles from "./sizzle.module.css";
-import {
-  CHAPTERS,
-  REST_SCENE_INDEX,
-  SCENES,
-  SIZZLE_TRANSCRIPT,
-  firstSceneOf,
-  nextScene,
-  sceneDurationMs,
-  type ChapterKey,
-} from "./timeline";
+import { AskScene, IndexScene, MarketsScene, OldWayScene, ReportScene } from "./scenes";
+import { CLOCK_TICK_MS, REST_SCENE_INDEX, SCENES, SHOW_ALL, nextScene, sizzleTranscript } from "./timeline";
 
 const TRANSCRIPT_ID = "fee-sizzle-transcript";
-/** Scenes are drawn on a fixed canvas and scaled to the frame, so they fill it at any desktop width. */
-const CANVAS_W = 640;
-const CANVAS_H = 330;
-const MAX_SCALE = 1.6;
 /** How much of the frame must be on screen before the sizzle starts. */
-const IN_VIEW_RATIO = 0.4;
+const IN_VIEW_RATIO = 0.5;
 
 interface PlayState {
   index: number;
   playsDone: number;
   playing: boolean;
-  /** Bumped on every scene change so each scene's animations restart. */
-  run: number;
+  /** Milliseconds into the current scene; SHOW_ALL when paused, picked or at rest. */
+  t: number;
 }
 
+const REST: PlayState = { index: REST_SCENE_INDEX, playsDone: 0, playing: false, t: SHOW_ALL };
+
 /**
- * The 35-second walk from the fee study by hand to the report Hamilton writes. The server
- * renders the rest frame (the poster); playback starts only when the frame is on screen,
- * never under reduced motion, stops after three plays, and stops for good when a reader
- * picks a chapter or presses pause.
+ * The walk from the fee study by hand to the report Hamilton writes, on one clock. The server
+ * renders the finished last scene; playback starts once the frame is half on screen, never
+ * under reduced motion, plays twice at most, and stops when a reader pauses or picks a scene.
+ * A stopped scene always shows all its parts.
  */
-export function FeeSizzle({ data, sample }: { data: HomeData; sample: SampleStory | null }) {
+export function FeeSizzle({ sample, nation, footnote }: { sample: SampleStory; nation: NationalFee | undefined; footnote: string }) {
   const reducedMotion = useReducedMotion();
-  const [state, setState] = useState<PlayState>({ index: REST_SCENE_INDEX, playsDone: 0, playing: false, run: 0 });
+  const [state, setState] = useState<PlayState>(REST);
   const frameRef = useRef<HTMLDivElement>(null);
   const startedRef = useRef(false);
-  const remainingRef = useRef(0);
-  const sceneStartRef = useRef(0);
-  const [measureStage, canvasScale] = useCanvasScale();
 
-  const play = useCallback((index: number, playsDone: number) => {
-    remainingRef.current = sceneDurationMs(index);
-    sceneStartRef.current = Date.now();
-    setState((prev) => ({ index, playsDone, playing: true, run: prev.run + 1 }));
+  const playFrom = useCallback((index: number, playsDone: number) => {
+    startedRef.current = true;
+    setState({ index, playsDone, playing: true, t: 0 });
   }, []);
 
   useEffect(() => {
@@ -63,168 +44,128 @@ export function FeeSizzle({ data, sample }: { data: HomeData; sample: SampleStor
     if (reducedMotion || !frame || startedRef.current) return;
     const observer = new IntersectionObserver(
       ([entry]) => {
-        if (entry.intersectionRatio >= IN_VIEW_RATIO && !startedRef.current) {
-          startedRef.current = true;
-          play(0, 0);
-        }
+        if (entry.intersectionRatio >= IN_VIEW_RATIO && !startedRef.current) playFrom(0, 0);
       },
       { threshold: IN_VIEW_RATIO },
     );
     observer.observe(frame);
     return () => observer.disconnect();
-  }, [reducedMotion, play]);
+  }, [reducedMotion, playFrom]);
 
+  const { playing, index, playsDone } = state;
   useEffect(() => {
-    if (!state.playing) return;
-    const timer = window.setTimeout(() => {
-      const next = nextScene(state.index, state.playsDone);
-      if (next) play(next.index, next.playsDone);
-      else setState((prev) => ({ ...prev, playing: false }));
-    }, remainingRef.current);
-    sceneStartRef.current = Date.now();
-    return () => window.clearTimeout(timer);
-  }, [state.playing, state.index, state.playsDone, state.run, play]);
+    if (!playing) return;
+    const startedAt = Date.now();
+    const timer = window.setInterval(() => {
+      const t = Date.now() - startedAt;
+      if (t < SCENES[index].durationMs) {
+        setState((prev) => (prev.playing && prev.index === index ? { ...prev, t } : prev));
+        return;
+      }
+      window.clearInterval(timer);
+      const next = nextScene(index, playsDone);
+      setState(next ? { index: next.index, playsDone: next.playsDone, playing: true, t: 0 } : REST);
+    }, CLOCK_TICK_MS);
+    return () => window.clearInterval(timer);
+  }, [playing, index, playsDone]);
 
-  const pause = () => {
-    remainingRef.current = Math.max(0, remainingRef.current - (Date.now() - sceneStartRef.current));
-    setState((prev) => ({ ...prev, playing: false }));
-  };
-
-  const resume = () => {
-    if (state.index === REST_SCENE_INDEX && !state.playing) {
-      startedRef.current = true;
-      play(0, 0);
-      return;
-    }
-    setState((prev) => ({ ...prev, playing: true }));
-  };
-
-  const choose = (chapter: ChapterKey) => {
+  const pause = () => setState((prev) => ({ ...prev, playing: false, t: SHOW_ALL }));
+  const play = () => playFrom(index === REST_SCENE_INDEX ? 0 : index, 0);
+  const choose = (picked: number) => {
     startedRef.current = true;
-    const index = firstSceneOf(chapter);
-    remainingRef.current = sceneDurationMs(index);
-    setState((prev) => ({ index, playsDone: prev.playsDone, playing: false, run: prev.run + 1 }));
+    setState((prev) => ({ ...prev, index: picked, playing: false, t: SHOW_ALL }));
   };
 
-  const scene = SCENES[state.index];
-  const atRest = !state.playing && state.index === REST_SCENE_INDEX;
-  const frameClass = [styles.frame, state.playing ? "" : styles.paused, atRest || reducedMotion ? styles.still : ""].join(" ");
+  const scene = SCENES[index];
+  const t = reducedMotion ? SHOW_ALL : state.t;
 
   return (
     <figure className="mx-auto grid w-full max-w-[1040px] gap-3 text-left">
-      <div ref={frameRef} className={frameClass} aria-describedby={TRANSCRIPT_ID} role="img" aria-label="A 35-second walk through Fee Insight">
-        <div className={styles.chrome} aria-hidden="true">
-          <i />
-          <i />
-          <i />
-          <span className={styles.chromeTitle}>{sample ? `Live sample · ${sample.name}` : "feeinsight.com"}</span>
-          {scene.example && !sample ? <span className={styles.example}><ExampleTag /></span> : null}
+      <div
+        ref={frameRef}
+        role="img"
+        aria-label={`A short walk through Fee Insight, using the live sample report for ${sample.name}`}
+        aria-describedby={TRANSCRIPT_ID}
+        className="flex h-[480px] flex-col overflow-hidden rounded-xl border border-border bg-surface-0 shadow-fi-2 sm:h-[440px] lg:h-[470px]"
+      >
+        <div className="flex shrink-0 items-center gap-2 border-b border-border bg-surface-200 px-4 py-2.5" aria-hidden="true">
+          <span className="h-2 w-2 rounded-full bg-control-border/50" />
+          <span className="h-2 w-2 rounded-full bg-control-border/50" />
+          <span className="h-2 w-2 rounded-full bg-control-border/50" />
+          <span className="ml-2 truncate font-mono text-[12px] text-ink-muted">Live sample · {sample.name}</span>
         </div>
-        <p key={`c-${state.run}`} className={styles.caption} aria-hidden="true">
-          {scene.caption}
-        </p>
-        <div ref={measureStage} className={styles.stage} style={canvasScale ? { height: CANVAS_H * canvasScale } : undefined} aria-hidden="true">
-          <div
-            key={`s-${state.run}`}
-            className={canvasScale ? styles.canvas : styles.canvasNarrow}
-            style={canvasScale ? { width: CANVAS_W, height: CANVAS_H, transform: `scale(${canvasScale})` } : undefined}
-          >
-            <SceneBody sceneKey={scene.key} data={data} sample={sample} settled={atRest} />
+        <div key={index} className="flex min-h-0 flex-1 flex-col animate-in fade-in duration-700 motion-reduce:animate-none" aria-hidden="true">
+          <p className="shrink-0 px-5 pb-2 pt-5 text-[clamp(18px,2.4vw,24px)] font-bold leading-tight tracking-[-0.015em] text-ink sm:px-6">
+            {scene.caption}
+          </p>
+          <div className="min-h-0 flex-1 overflow-hidden px-5 pb-5 pt-2 sm:px-6">
+            <SceneBody sceneKey={scene.key} sample={sample} nation={nation} footnote={footnote} t={t} />
           </div>
         </div>
       </div>
       <figcaption className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap gap-1.5" role="group" aria-label="Chapters">
-          {CHAPTERS.map((chapter) => (
+        <div className="flex flex-wrap gap-1.5" role="group" aria-label="Scenes">
+          {SCENES.map((item, i) => (
             <button
-              key={chapter.key}
+              key={item.key}
               type="button"
-              onClick={() => choose(chapter.key)}
-              aria-pressed={scene.chapter === chapter.key}
-              className={`rounded-md px-3 py-1.5 text-[13px] font-semibold transition-colors duration-150 ${
-                scene.chapter === chapter.key ? "bg-ink text-on-ink" : "bg-surface-0 text-ink hover:bg-surface-200"
+              onClick={() => choose(i)}
+              aria-pressed={i === index}
+              className={`relative overflow-hidden rounded-md px-3 py-1.5 text-[13px] font-semibold transition-colors duration-200 ${
+                i === index ? "bg-ink text-on-ink" : "bg-surface-0 text-ink hover:bg-surface-200"
               }`}
             >
-              {chapter.label}
+              {item.label}
+              {i === index && playing ? (
+                <span
+                  aria-hidden="true"
+                  className="absolute bottom-0 left-0 h-0.5 bg-on-ink/60"
+                  style={{ width: `${Math.min(100, (state.t / item.durationMs) * 100)}%` }}
+                />
+              ) : null}
             </button>
           ))}
         </div>
         <button
           type="button"
-          onClick={state.playing ? pause : resume}
+          onClick={playing ? pause : play}
           className="rounded-md border border-control-border bg-surface-0 px-3 py-1.5 text-[13px] font-semibold text-ink hover:bg-surface-200"
         >
-          {state.playing ? "Pause" : atRest ? "Play" : "Resume"}
+          {playing ? "Pause" : "Play"}
         </button>
       </figcaption>
       <div className="flex flex-wrap items-baseline justify-between gap-3 text-[13px] text-ink-muted">
         <details>
           <summary className="cursor-pointer">Read the transcript</summary>
           <p id={TRANSCRIPT_ID} className="mt-2 max-w-[70ch]">
-            {sample ? SIZZLE_TRANSCRIPT.replace(/ Scenes after the Bank Fee Index use example figures\.$/, ` Every figure shown comes from the live sample report for ${sample.name}.`) : SIZZLE_TRANSCRIPT}
+            {sizzleTranscript(sample.name)}
           </p>
         </details>
-        {sample ? (
-          <Link href="/reports/sample-competitive-fee-position" className="font-semibold text-ink underline underline-offset-4">
-            Read the full live sample report
-          </Link>
-        ) : null}
+        <Link href="/reports/sample-competitive-fee-position" className="font-semibold text-ink underline underline-offset-4">
+          Read the full live sample report
+        </Link>
       </div>
     </figure>
   );
 }
 
-/** Scale for the scene canvas: null below the canvas width, where scenes lay out at their natural size. */
-function useCanvasScale(): [(node: HTMLDivElement | null) => void, number | null] {
-  const [k, setK] = useState<number | null>(null);
-  const observerRef = useRef<ResizeObserver | null>(null);
-  const measureStage = useCallback((node: HTMLDivElement | null) => {
-    observerRef.current?.disconnect();
-    if (!node) return;
-    const measure = () => {
-      const width = node.clientWidth;
-      setK(width >= CANVAS_W ? Math.min(width / CANVAS_W, MAX_SCALE) : null);
-    };
-    observerRef.current = new ResizeObserver(measure);
-    observerRef.current.observe(node);
-    measure();
-  }, []);
-  return [measureStage, k];
-}
-
-function SceneBody({ sceneKey, data, sample, settled }: { sceneKey: string; data: HomeData; sample: SampleStory | null; settled: boolean }) {
-  const nation = data.nationalFees.find((fee) => fee.key === (sample?.story.key ?? "overdraft"));
-  if (sample) {
-    switch (sceneKey) {
-      case "collect":
-        if (sample.competitors.some((c) => c.sourceLine)) return <SampleCollectScene sample={sample} />;
-        break;
-      case "cost":
-        if (sample.competitors.length > 0) return <SampleCostScene sample={sample} />;
-        break;
-      case "index":
-        return <SampleIndexScene data={data} sample={sample} />;
-      case "markets":
-        return <SampleMarketsScene sample={sample} nation={nation} />;
-      case "ask":
-        return <SampleAskScene sample={sample} />;
-      case "report":
-      case "done":
-        return <SampleReportScene sample={sample} settled={settled || sceneKey === "done"} />;
-    }
-  }
+function SceneBody({ sceneKey, sample, nation, footnote, t }: {
+  sceneKey: string;
+  sample: SampleStory;
+  nation: NationalFee | undefined;
+  footnote: string;
+  t: number;
+}) {
   switch (sceneKey) {
-    case "collect":
-      return <CollectScene />;
-    case "cost":
-      return <CostScene />;
+    case "old-way":
+      return <OldWayScene sample={sample} t={t} />;
     case "index":
-      return <IndexScene data={data} />;
+      return <IndexScene sample={sample} t={t} footnote={footnote} />;
     case "markets":
-      return <MarketsScene fee={data.nationalFees.find((fee) => fee.key === "overdraft")} />;
+      return <MarketsScene sample={sample} nation={nation} t={t} />;
     case "ask":
-      return <AskScene />;
+      return <AskScene sample={sample} t={t} />;
     default:
-      return <ReportScene settled={settled || sceneKey === "done"} />;
+      return <ReportScene sample={sample} t={t} />;
   }
 }

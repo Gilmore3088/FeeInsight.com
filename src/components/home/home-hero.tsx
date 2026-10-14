@@ -9,7 +9,7 @@ const CHIP_CLASS =
   "rounded-full border border-border bg-surface-0 px-3 py-1.5 text-[13px] font-medium text-ink transition-colors duration-150 hover:bg-surface-200";
 
 /**
- * The hero: the promise, one search, and the 35-second sizzle under it (BetterAnalyst's
+ * The hero: the promise, one search, and the sizzle under it (BetterAnalyst's
  * page shape, James 2026-10-14). The search is the door fee owners and consumers share.
  */
 export function HomeHero({ data, sample }: { data: HomeData; sample: SampleStory | null }) {
@@ -70,7 +70,13 @@ export function HomeHero({ data, sample }: { data: HomeData; sample: SampleStory
         </p>
 
         <div className="mt-14 w-full">
-          <FeeSizzle data={data} sample={sample} />
+          {sample ? (
+            <FeeSizzle
+              sample={sample}
+              nation={data.nationalFees.find((fee) => fee.key === sample.story.key)}
+              footnote={`Bank Fee Index · ${data.institutionsLabel} institutions · ${data.freshnessLabel}`}
+            />
+          ) : null}
         </div>
       </div>
     </section>
