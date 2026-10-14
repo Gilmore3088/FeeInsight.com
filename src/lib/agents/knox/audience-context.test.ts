@@ -67,4 +67,36 @@ describe("Knox audience suggestion from context (#1059)", () => {
     // With nothing priced for businesses, an all-accounts schedule is the consumer schedule.
     expect(suggest(null, ["Fees Applicable to all accounts", "Stop Payment $30.00"].join("\n"), "Stop Payment", 30)).toMatchObject({ audience: "consumer", source: "default_general_schedule" });
   });
+
+  it("matches a fee's price as a whole token (review of 88e9dc21)", () => {
+    const od = ["Personal Accounts", "Overdraft Fee $35", "Business Accounts", "Overdraft Fee $5"].join("\n");
+    expect(suggest(null, od, "Overdraft Fee", 5)).toMatchObject({ audience: "business", evidence: "Business Accounts" });
+    expect(suggest(null, od, "Overdraft Fee", 35)).toMatchObject({ audience: "consumer", evidence: "Personal Accounts" });
+    const coins = ["Personal Accounts", "Coin counting $10", "Business Accounts", "Coin counting $0"].join("\n");
+    expect(suggest(null, coins, "Coin counting", 0)).toMatchObject({ audience: "business" });
+    // A price on the line below the name counts as well.
+    expect(suggest(null, ["Personal Accounts", "Stop Payment", "$35.00", "Business Accounts", "Stop Payment", "$5.00"].join("\n"), "Stop Payment", 5)).toMatchObject({ audience: "business" });
+  });
+
+  it("takes no title or heading from a fee name whose price is on the next line (review of 88e9dc21)", () => {
+    const title = ["Fee Schedule", "Business Checking Monthly Service Charge", "$10.00", "Stop Payment", "$30.00"].join("\n");
+    expect(suggest(null, title, "Stop Payment", 30)).toMatchObject({ audience: "both", source: "mixed_schedule_unqualified" });
+    const heading = ["Fees", "Personal Account Research", "$25.00", "Wire Transfer", "$20.00", "Business Services", "Lockbox $50"].join("\n");
+    expect(suggest(null, heading, "Wire Transfer", 20)).toMatchObject({ audience: "both", source: "mixed_schedule_unqualified" });
+  });
+
+  it("prefers the section above the fee to the page title, and two titles name neither", () => {
+    const nav = ["Personal Fee Schedule", "Business Fee Schedule", "Business Accounts", "Lockbox $50", "Personal Accounts", "Stop Payment $30"].join("\n");
+    expect(suggest(null, nav, "Lockbox", 50)).toMatchObject({ audience: "business", source: "section_heading" });
+    expect(suggest(null, nav, "Stop Payment", 30)).toMatchObject({ audience: "consumer", source: "section_heading" });
+  });
+
+  it("keeps a bank-named heading, ignores bank names and non-commercial, and leaves an unfound line unknown", () => {
+    const named = ["Personal Accounts", "Stop Payment $30", "Business Banking at Bank of Clarke", "Stop Payment $35"].join("\n");
+    expect(suggest(null, named, "Stop Payment", 35)).toMatchObject({ audience: "business", source: "section_heading" });
+    expect(suggest(null, ["Commercial Bank of Ozark", "Fee Schedule", "Stop Payment $30"].join("\n"), "Stop Payment", 30)).toMatchObject({ source: "default_general_schedule" });
+    expect(suggest(null, ["Fee Schedule", "Non-commercial wire $15"].join("\n"), "Non-commercial wire", 15)).toMatchObject({ source: "default_general_schedule" });
+    // In a mixed schedule a fee whose line is not in the text stays unknown.
+    expect(suggest(null, ["Fees", "Stop Payment $30", "Business Services", "Lockbox $50"].join("\n"), "Wire Transfer", 20)).toBeNull();
+  });
 });

@@ -35,7 +35,7 @@ const TITLE_CHARS = 300;
  * Words that name a product or a time, not who the fee is for: a corporate (official) check or
  * draft, a personal check, a business day, "close of business", a vendor's "Business Systems".
  */
-const NOT_AN_AUDIENCE = /\bcorporate\s+(?:checks?|drafts?|bonds?|securities|and municipal)\b|\bpersonal\s+(?:checks?|identification|information)\b|\bbusiness\s+(?:days?|hours?|systems)\b|\b(?:close of|regular|normal|legitimate|conduct(?:ing)?|doing)\s+business\b|\bcredit union business only\b/gi;
+const NOT_AN_AUDIENCE = /\bcorporate\s+(?:checks?|drafts?|bonds?|securities|and municipal)\b|\bpersonal\s+(?:checks?|identification|information)\b|\bbusiness\s+(?:days?|hours?|systems)\b|\b(?:close of|regular|normal|legitimate|conduct(?:ing)?|doing)\s+business\b|\bcredit union business only\b|\bnon-?(?:commercial|business|personal|consumer)\b|\b(?:commercial|business|consumer|personal)\s+(?:bank|savings bank|credit union|federal credit union|trust)\b(?=\s+(?:of|and|&|,|\.|$))/gim;
 const neutral = (text: string) => text.replace(NOT_AN_AUDIENCE, " ");
 
 function audienceOf(raw: string): ContextAudience | null {
@@ -49,7 +49,7 @@ function audienceOf(raw: string): ContextAudience | null {
 }
 
 /** Menu items, links, sign-in prompts, bank names and "business days" name no audience. */
-const NOT_A_SECTION = /\[|\]\(|https?:|www\.|sign[ -]?in|log[ -]?in|enroll|apply now|business (?:days?|hours?)|bank of|credit union|federal savings|\bN\.?A\.?\b|\bmenu\b/i;
+const NOT_A_SECTION = /\[|\]\(|https?:|www\.|sign[ -]?in|log[ -]?in|enroll|apply now|business (?:days?|hours?)|\bN\.?A\.?\b|\bmenu\b/i;
 /**
  * A section heading names an audience with what the section holds ("Consumer Fees", "BUSINESS
  * ACCOUNTS", "Personal Checking", "Fees for Business Customers"), not a lone word from a menu.
@@ -84,15 +84,42 @@ const squash = (value: string) => value.toLowerCase().replace(/[^a-z0-9]+/g, " "
 export function feeLineIndex(lines: string[], feeName: string, amount: number | null): number {
   const name = squash(feeName).split(" ").slice(0, 4).join(" ");
   if (!name) return -1;
-  const price = amount == null ? null : amount.toFixed(2).replace(/\.00$/, "");
+  const price = amount == null ? null : priceToken(amount);
   let nameOnly = -1;
   for (let index = 0; index < lines.length; index += 1) {
     const line = squash(lines[index]);
     if (!line.includes(name)) continue;
-    if (price == null || lines[index].includes(price) || (lines[index + 1] ?? "").includes(price)) return index;
+    if (price == null || price.test(lines[index]) || price.test(nextLine(lines, index) ?? "")) return index;
     if (nameOnly < 0) nameOnly = index;
   }
   return nameOnly;
+}
+
+/**
+ * The fee's price as a whole token: "$5", "$ 5.00" or "5.00", never the 5 inside "$35" or the 0
+ * inside "$10" (review of 88e9dc21), nor a bare page number on a contents line ("........ 5").
+ */
+function priceToken(amount: number): RegExp {
+  const whole = Number.isInteger(amount);
+  const digits = (whole ? String(amount) : amount.toFixed(2)).replace(".", "\\.");
+  const cents = whole ? `${digits}(?:\\.00)?` : digits;
+  return new RegExp(String.raw`(?<![\d.,])\$\s*${cents}(?![\d.,]*\d)|(?<![\d.,$])${whole ? `${digits}\\.00` : digits}(?![\d])`);
+}
+
+/** The next non-empty line within two lines, or null. */
+function nextLine(lines: string[], index: number): string | null {
+  for (let below = index + 1; below < Math.min(lines.length, index + 3); below += 1) {
+    if (lines[below].trim()) return lines[below];
+  }
+  return null;
+}
+
+/** A bare price on its own line ("$10.00", "$ 5", "25.00 per item", "Free"). */
+const BARE_PRICE = /^\s*(?:\$\s*\d[\d,]*(?:\.\d{2})?|\d[\d,]*\.\d{2}|free|no charge|n\/c)\b/i;
+
+/** A fee name whose price sits on the next line ("Personal Account Research" / "$25.00") heads nothing. */
+function namesAFee(lines: string[], index: number): boolean {
+  return BARE_PRICE.test(nextLine(lines, index) ?? "");
 }
 
 /** A heading that lists its fees for every account ("Other Service Fees (apply to all accounts)"). */
@@ -112,12 +139,12 @@ export function sectionHeadingAudience(
   for (let index = feeIndex - 1; index >= 0 && index >= feeIndex - HEADING_LOOKBACK_LINES; index -= 1) {
     const line = lines[index];
     const trimmed = line.trim();
-    if (isHeading(line, true) && trimmed.includes("|")) {
+    if (trimmed.includes("|") && trimmed.length <= MAX_COLUMN_HEADER_CHARS && !PRICED.test(trimmed)) {
       const cells = trimmed.split("|").map((cell) => audienceOf(cell)).filter(Boolean);
       if (new Set(cells).size > 1) return { columns: trimmed };
       continue;
     }
-    if (!isHeading(line) || trimmed.startsWith("(")) continue;
+    if (!isHeading(line) || trimmed.startsWith("(") || namesAFee(lines, index)) continue;
     if (ALL_ACCOUNTS.test(line)) return { audience: "both", heading: trimmed };
     if (!SECTION_HEADING.test(line)) continue;
     const audience = audienceOf(line);
@@ -145,15 +172,13 @@ export function suggestAudience(input: {
   const fromUrl = path ? audienceOf(path) : null;
   if (fromUrl) return { audience: fromUrl, source: "document_url", evidence: input.documentUrl ?? "" };
   const text = input.text ?? "";
-  const title = text.slice(0, TITLE_CHARS).split("\n").find((line) => isHeading(line) && SCHEDULE_TITLE.test(line) && audienceOf(line));
-  const fromTitle = title ? audienceOf(title) : null;
-  if (fromTitle && title) return { audience: fromTitle, source: "document_title", evidence: title.trim() };
   if (!text) return null;
   const lines = text.split("\n");
   // A menu link ("Business Banking") is not business fees: only a business heading with priced
   // lines under it, or a priced line that names business, is.
   const businessLine = businessFeeLine(lines);
   const feeIndex = feeLineIndex(lines, input.feeName, input.amount);
+  // The section heading above the fee's own line is nearer evidence than the page's title.
   if (feeIndex >= 0) {
     const section = sectionHeadingAudience(lines, feeIndex);
     // A fee in one of two audience columns stays unknown: the text does not say which column.
@@ -163,16 +188,43 @@ export function suggestAudience(input: {
       return { audience: section.audience, source: "section_heading", evidence: section.heading };
     }
   }
+  const title = scheduleTitle(lines);
+  if (title) return { audience: title.audience, source: "document_title", evidence: title.line };
   // A general schedule with no business fees is the consumer schedule (#1059 step 4).
   if (businessLine < 0) return { audience: "consumer", source: "default_general_schedule", evidence: "no business fees in the document" };
-  // A schedule that also prices business items, with nothing that limits this fee to one
-  // audience (its name, a section above it), lists it for every account.
+  // In a schedule that also prices business items, a fee whose own line is not found cannot be
+  // shown to be unlimited, so it stays unknown.
+  if (feeIndex < 0) return null;
+  // Its line found, with nothing that limits it to one audience (its name, a section above
+  // it), the fee is listed for every account.
   return { audience: "both", source: "mixed_schedule_unqualified", evidence: lines[businessLine].trim().slice(0, 200) };
+}
+
+/**
+ * The schedule's own title in its first TITLE_CHARS characters ("Consumer Fee Schedule"). A fee
+ * row whose price is on the next line ("Business Checking Monthly Service Charge" / "$10.00") is no
+ * title, and two titles naming different audiences (a plain-text menu listing "Personal Fee
+ * Schedule" and "Business Fee Schedule") name neither.
+ */
+function scheduleTitle(lines: string[]): { audience: ContextAudience; line: string } | null {
+  const found: Array<{ audience: ContextAudience; line: string }> = [];
+  let chars = 0;
+  for (let index = 0; index < lines.length && chars < TITLE_CHARS; index += 1) {
+    chars += lines[index].length + 1;
+    const line = lines[index];
+    if (!isHeading(line) || namesAFee(lines, index) || !SCHEDULE_TITLE.test(line)) continue;
+    const audience = audienceOf(line);
+    if (audience) found.push({ audience, line: line.trim() });
+  }
+  if (found.length === 0 || new Set(found.map((title) => title.audience)).size > 1) return null;
+  return found[0];
 }
 
 const PRICED = /\$\s*\d|\b\d+\.\d{2}\b/;
 /** A priced fee row is short; a longer priced line is prose ("...built for the business economy, $250"). */
 const MAX_FEE_ROW_CHARS = 160;
+/** A column header row can be long ("CONSUMER CHECKING ACCOUNTS | ... | BUSINESS ACCOUNTS"). */
+const MAX_COLUMN_HEADER_CHARS = 400;
 /** Lines under a heading that still belong to it. */
 const SECTION_REACH_LINES = 15;
 
