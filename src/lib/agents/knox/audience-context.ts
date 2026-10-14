@@ -73,7 +73,7 @@ function isHeading(line: string, columns = false): boolean {
     trimmed.length <= (columns ? MAX_FEE_ROW_CHARS : MAX_HEADING_CHARS) &&
     // A sentence ("For business accounts, see the Business Fee Schedule.", "Not for business
     // accounts.") points elsewhere; it heads nothing (review of 153ca285).
-    !SENTENCE.test(trimmed) &&
+    !isSentence(trimmed) &&
     (columns || !trimmed.includes("|")) &&
     !/\$\s*\d/.test(trimmed) &&
     !/\d+\.\d{2}\b/.test(trimmed) &&
@@ -133,8 +133,16 @@ function nextLine(lines: string[], index: number): string | null {
  * "Waived", "Monthly $10.00").
  */
 const STARTS_WITH_PRICE = /^\s*(?:(?:monthly|per\s+(?:month|item)|each)\s*:?\s*)?(?:\$\s*\d|\d[\d,]*\.\d{2}\b|(?:free|no charge|n\/c|waived|none|n\/a)\b)/i;
-/** A line written as a sentence: end punctuation or a word that points elsewhere. */
-const SENTENCE = /[.!?;]\s*$|\b(?:see|refer|please|available|request|listed|disclosed|separate(?:ly)?|not|contact|ask|call|visit)\b/i;
+/**
+ * A line written as a sentence: a question or exclamation mark, a semicolon, or a word that points
+ * elsewhere or excludes ("see", "refer", "disclosed separately", "not"). One trailing period or
+ * colon is a heading's punctuation ("BUSINESS ACCOUNTS.", "Business Accounts:"), not a sentence's
+ * (review of bac3d3db).
+ */
+const SENTENCE = /[!?;]\s*$|\b(?:see|refer|please|request|disclosed|separate(?:ly)?|not|contact|ask|call|visit)\b/i;
+function isSentence(line: string): boolean {
+  return SENTENCE.test(line.trim().replace(/[.:]\s*$/, ""));
+}
 /** Whether the line sits directly above a line that starts with a price. */
 function overAPrice(lines: string[], index: number): boolean {
   return STARTS_WITH_PRICE.test(nextLine(lines, index) ?? "");
@@ -154,12 +162,21 @@ export function sectionHeadingAudience(
   lines: string[],
   feeIndex: number,
 ): { audience: ContextAudience; heading: string } | { columns: string } | { ambiguous: string } | null {
+  let sentenceAudience: ContextAudience | null = null;
   for (let index = feeIndex - 1; index >= 0 && index >= feeIndex - HEADING_LOOKBACK_LINES; index -= 1) {
     const line = lines[index];
     const trimmed = line.trim();
     if (trimmed.includes("|") && trimmed.length <= MAX_COLUMN_HEADER_CHARS && !PRICED.test(trimmed)) {
       const cells = trimmed.split("|").map((cell) => audienceOf(cell)).filter(Boolean);
       if (new Set(cells).size > 1) return { columns: trimmed };
+      continue;
+    }
+    // A sentence that names an audience ("Business Accounts (not including non-profits)", "For
+    // business accounts, see the Business Fee Schedule.") may head a section or point elsewhere.
+    // The search goes on, but a heading further up that names another audience leaves the fee
+    // unknown rather than take either (review of bac3d3db).
+    if (trimmed.length <= MAX_FEE_ROW_CHARS && !PRICED.test(trimmed) && isSentence(trimmed)) {
+      sentenceAudience ??= audienceOf(line);
       continue;
     }
     if (!isHeading(line) || trimmed.startsWith("(")) continue;
@@ -172,10 +189,12 @@ export function sectionHeadingAudience(
       if (audienceOf(line)) return { ambiguous: trimmed };
       continue;
     }
-    if (ALL_ACCOUNTS.test(line)) return { audience: "both", heading: trimmed };
+    if (ALL_ACCOUNTS.test(line)) return sentenceAudience && sentenceAudience !== "both" ? { ambiguous: trimmed } : { audience: "both", heading: trimmed };
     if (!SECTION_HEADING.test(line)) continue;
     const audience = audienceOf(line);
-    if (audience) return { audience, heading: trimmed };
+    if (!audience) continue;
+    if (sentenceAudience && sentenceAudience !== audience) return { ambiguous: trimmed };
+    return { audience, heading: trimmed };
   }
   return null;
 }

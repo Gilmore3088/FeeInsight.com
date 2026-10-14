@@ -171,9 +171,15 @@ describe("Knox audience suggestion from context (#1059)", () => {
     expect(suggest(null, crossRef, "Stop Payment", 30)).toMatchObject({ audience: "consumer", source: "default_general_schedule" });
     expect(suggest(null, ["Fee Schedule", "Monthly Maintenance $10", "Stop Payment $30", "Commercial service charges are disclosed separately", "Overdraft $35"].join("\n"), "Stop Payment", 30)).toMatchObject({ audience: "consumer" });
     for (const text of [
+      ["Fee Schedule", "Stop Payment $30", "Overdraft $35", "For business accounts, see the Business Fee Schedule."],
+      ["Fee Schedule", "Effective January 1, 2026", "Stop Payment $30", "Business service charges are listed separately."],
+    ]) {
+      expect(suggest(null, text.join("\n"), "Stop Payment", 30)).toMatchObject({ audience: "consumer", source: "default_general_schedule" });
+    }
+    // Above the fee, with no heading further up, such a sentence never makes the fee business.
+    for (const text of [
       ["Fee Schedule", "Effective January 1, 2026", "For business accounts, see the Business Fee Schedule.", "Monthly Maintenance $10", "Stop Payment $30"],
       ["Fee Schedule", "Monthly Maintenance $10", "Not for business accounts.", "Stop Payment $30"],
-      ["Fee Schedule", "Effective January 1, 2026", "Business service charges are listed separately.", "Stop Payment $30"],
       ["See the Business Schedule of Fees", "Fee Schedule", "Stop Payment $30"],
     ]) {
       expect(suggest(null, text.join("\n"), "Stop Payment", 30)).toMatchObject({ audience: "consumer", source: "default_general_schedule" });
@@ -182,5 +188,26 @@ describe("Knox audience suggestion from context (#1059)", () => {
     for (const price of ["Waived", "Monthly $10.00"]) {
       expect(suggest(null, ["Personal Accounts", "Business Checking Maintenance", price, "Stop Payment $30"].join("\n"), "Stop Payment", 30)).toBeNull();
     }
+  });
+
+  it("keeps headings with a trailing period or colon, and never climbs past an audience sentence (review of bac3d3db)", () => {
+    const rows = (amount: number) => [`Wire $${amount}`, `Copies $${amount + 1}`, `Research $${amount + 2}`];
+    const under = (top: string, heading: string, amount: number) =>
+      [top, ...rows(10), heading, `Stop Payment $${amount}.00`].join("\n");
+    expect(suggest(null, under("Consumer Accounts", "BUSINESS ACCOUNTS.", 30), "Stop Payment", 30)).toMatchObject({ audience: "business" });
+    expect(suggest(null, under("Business Accounts", "PERSONAL ACCOUNTS.", 28), "Stop Payment", 28)).toMatchObject({ audience: "consumer" });
+    expect(suggest(null, under("Consumer Accounts", "Business Accounts:", 30), "Stop Payment", 30)).toMatchObject({ audience: "business" });
+    expect(suggest(null, under("Personal Accounts", "Business Accounts available at all branches", 30), "Stop Payment", 30)).toMatchObject({ audience: "business" });
+    for (const [top, heading] of [
+      ["Personal Accounts", "Business Accounts (not including non-profits)"],
+      ["Business Accounts", "Consumer Accounts – see fees below"],
+      ["Personal Checking", "Business Checking (not FDIC-insured sweep)"],
+      ["Personal Banking Services", "Commercial Services Not Listed Above"],
+    ]) {
+      expect(suggest(null, under(top, heading, 30), "Stop Payment", 30)).toBeNull();
+    }
+    // A business-only schedule whose title or heading ends in a period still prices business fees.
+    expect(suggest(null, ["BUSINESS FEE SCHEDULE.", "Effective January 1, 2026", "Stop Payment $30.00"].join("\n"), "Stop Payment", 30)).toMatchObject({ audience: "business" });
+    expect(suggest(null, ["BUSINESS ACCOUNTS.", "Stop Payment $30.00", "Overdraft $35.00"].join("\n"), "Stop Payment", 30)).toMatchObject({ audience: "business" });
   });
 });
