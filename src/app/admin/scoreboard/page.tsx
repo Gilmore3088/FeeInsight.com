@@ -390,7 +390,6 @@ function SpendTable({ goal }: { goal: GoalScorecard }) {
   );
 }
 
-/** Range, misses per check and one dated line per audit (#1119); older snapshots lack the last three. */
 /** States with the largest gaps shown by name; Atlas runs these lanes first (#1117). */
 const STATE_GAPS_SHOWN = 12;
 
@@ -411,6 +410,7 @@ function StateGaps({ states }: { states: NonNullable<NonNullable<GoalScorecard["
   );
 }
 
+/** Range, misses per check and one dated line per audit (#1119); older snapshots lack the last three. */
 function AccuracyDetail({ accuracy }: { accuracy: NonNullable<GoalScorecard["accuracy"]> }) {
   const misses = accuracy.misses;
   return (

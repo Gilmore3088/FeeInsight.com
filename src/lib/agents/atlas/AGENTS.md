@@ -74,7 +74,9 @@ hand-found link or paid-fetched document starts a new run even inside the retry 
   for 30 days, newest live fee not source-checked, or a source-check takedown in the last 7
   days. Due lanes run highest score first; a lane overdue by `STATE_LANE_STARVATION_HOURS`
   (3) goes ahead of all, so quiet states still get turns. The tick launches
-  `STATE_LANE_LIMIT_PER_TICK` (3) lanes every 5 minutes.
+  `STATE_LANE_LIMIT_PER_TICK` (3) lanes every 5 minutes. A refresh that fails keeps every
+  lane's old score and says so: the tick's `priorities.error`, and a `lane.priorities_failed`
+  event on each lane run that tick starts (or the newest lane run when it starts none; #1264).
 - Report demand goes first (2026-10-06, funnel audit): a state gets
   `REPORT_REQUEST_PRIORITY` (2000) while an unpaid report request from the last 30 days names
   an institution there (`institution_id=` in `leads.use_case`) that fails James's report rule,
