@@ -634,7 +634,7 @@ describe("Darwin agentic verification", () => {
       await runDarwinVerify({ runId: 404, db: asVerifyDb(db) });
 
       const [query] = db.unsafe.mock.calls[0] as [string, unknown[]];
-      expect(query).toMatch(/reason_code' = 'duplicate_in_batch'[\s\S]*batch_key_version[\s\S]*superseded_by_id IS NULL[\s\S]*twin_raw.source_document_id = fr.source_document_id[\s\S]*twin_raw.conditions from 'excerpt=/);
+      expect(query).toMatch(/reason_code' = 'duplicate_in_batch'[\s\S]*batch_key_version[\s\S]*superseded_by_id IS NULL[\s\S]*twin_raw.source_document_id = fr.source_document_id[\s\S]*COALESCE\(twin_raw.extraction_note, twin_raw.conditions\) from 'excerpt=/);
       expect(query).toContain(`batch_key_version')::int, 1) < ${DARWIN_BATCH_KEY_VERSION}`);
     });
 

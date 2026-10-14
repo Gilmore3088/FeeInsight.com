@@ -589,8 +589,8 @@ export function darwinStandingDecisionSql(currentCopy = true): string {
                    WHERE twin_raw.source_document_id = fr.source_document_id
                      AND twin.canonical_fee_key = pa.detail->>'canonical_fee_key'
                      AND twin.amount IS NOT DISTINCT FROM fr.amount
-                     AND lower(regexp_replace(COALESCE(substring(twin_raw.conditions from 'excerpt="?(.*?)"?$'), ''), '\\s+', ' ', 'g'))
-                         = lower(regexp_replace(COALESCE(substring(fr.conditions from 'excerpt="?(.*?)"?$'), ''), '\\s+', ' ', 'g'))
+                     AND lower(regexp_replace(COALESCE(substring(COALESCE(twin_raw.extraction_note, twin_raw.conditions) from 'excerpt="?(.*?)"?$'), ''), '\\s+', ' ', 'g'))
+                         = lower(regexp_replace(COALESCE(substring(COALESCE(fr.extraction_note, fr.conditions) from 'excerpt="?(.*?)"?$'), ''), '\\s+', ' ', 'g'))
                 )
               )` : "";
   // A row this rule version already decided is never selected again, so rejected rows cannot
@@ -678,7 +678,7 @@ async function selectRawFees(
              fr.amount,
              fr.frequency,
              fr.outlier_flags,
-             fr.conditions,
+             COALESCE(fr.extraction_note, fr.conditions) AS conditions,
              fr.fee_audience,
              fr.amount_kind,
              fr.rate_percent,

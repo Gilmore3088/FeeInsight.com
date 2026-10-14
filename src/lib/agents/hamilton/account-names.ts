@@ -151,7 +151,7 @@ export async function nameLiveFeesByAccount(
     const ids = [...fingerprints.keys()];
     liveFees = await inSavepoint(db, (scope) => scope<AccountNameFee[]>`
       SELECT fp.fee_published_id, fp.lineage_ref, fv.fee_raw_id, fp.institution_id, fr.source, fr.source_document_id,
-             fp.canonical_fee_key, fp.fee_name, fp.amount, fp.amount_kind, fp.rate_percent, fr.conditions
+             fp.canonical_fee_key, fp.fee_name, fp.amount, fp.amount_kind, fp.rate_percent, COALESCE(fr.extraction_note, fr.conditions) AS conditions
         FROM published_fee_records fp
         JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
         JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id

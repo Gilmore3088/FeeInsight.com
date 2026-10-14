@@ -117,18 +117,18 @@ export async function fillBlankFrequencies(
   try {
     rows = await inSavepoint(db, (scope) => scope.unsafe<BlankFrequencyRow[]>(
       `SELECT fp.fee_published_id, fv.fee_verified_id, fr.fee_raw_id, fp.institution_id, fr.source_document_id,
-              fp.canonical_fee_key, fp.amount, fp.frequency, fr.conditions, fp.fee_name
+              fp.canonical_fee_key, fp.amount, fp.frequency, COALESCE(fr.extraction_note, fr.conditions) AS conditions, fp.fee_name
          FROM published_fee_records fp
          LEFT JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
          LEFT JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
         WHERE fp.rolled_back_at IS NULL
           AND fp.amount_kind = 'flat'
           AND fp.amount IS NOT NULL
-          AND fr.conditions LIKE '%excerpt=%'
+          AND COALESCE(fr.extraction_note, fr.conditions) LIKE '%excerpt=%'
           -- A blank is read only on a line with frequency wording; a stated frequency only on a
           -- line it may have been borrowed across.
-          AND ((fp.frequency IS NULL AND fr.conditions ~* '${CANDIDATE_WORDING}')
-               OR (fp.frequency IS NOT NULL AND fr.conditions ~ '${SHARED_LINE}')
+          AND ((fp.frequency IS NULL AND COALESCE(fr.extraction_note, fr.conditions) ~* '${CANDIDATE_WORDING}')
+               OR (fp.frequency IS NOT NULL AND COALESCE(fr.extraction_note, fr.conditions) ~ '${SHARED_LINE}')
                -- v4: a stated period on a per-event fee, which the line may never state.
                OR fp.frequency = 'daily'
                OR (fp.frequency IN ('monthly', 'annual', 'quarterly') AND fp.canonical_fee_key <> ALL(${PERIOD_KEYS_SQL})))
@@ -146,7 +146,7 @@ export async function fillBlankFrequencies(
   try {
     boxRows = await inSavepoint(db, (scope) => scope.unsafe<BlankFrequencyRow[]>(
       `SELECT fp.fee_published_id, fv.fee_verified_id, fr.fee_raw_id, fp.institution_id, fr.source_document_id,
-              fp.canonical_fee_key, fp.amount, fp.frequency, fr.conditions
+              fp.canonical_fee_key, fp.amount, fp.frequency, COALESCE(fr.extraction_note, fr.conditions) AS conditions
          FROM published_fee_records fp
          JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
          JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
@@ -157,7 +157,7 @@ export async function fillBlankFrequencies(
           AND fp.canonical_fee_key = 'safe_deposit_box'
           AND fp.fee_name ~* '^\\W*[0-9]{1,2}(\\.[0-9])?\\s*[x×]\\s*[0-9]{1,2}'
           AND fr.source_document_id IS NOT NULL
-          AND fr.conditions LIKE '%excerpt=%'
+          AND COALESCE(fr.extraction_note, fr.conditions) LIKE '%excerpt=%'
           ${options.institutionId ? "AND fp.institution_id = $1" : ""}
         ORDER BY fp.fee_published_id`,
       options.institutionId ? [options.institutionId] : [],
