@@ -3,7 +3,7 @@
 import { useRef, useState } from "react";
 import { trackEvent } from "@/lib/analytics";
 
-/** The 30-second walkthrough from the public-brand refresh, re-encoded without its audio track. */
+/** The 30-second walkthrough in the Index look, rendered from docs/design/homepage-v2/video. */
 export const WALKTHROUGH_VIDEO = {
   src: "/videos/hamilton-walkthrough.mp4",
   poster: "/videos/hamilton-walkthrough-poster.webp",

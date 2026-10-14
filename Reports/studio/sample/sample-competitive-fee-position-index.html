@@ -1,0 +1,615 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sample Competitive Fee Position Report</title>
+<style>
+  /* The Index look (Oct 2026): navy words, white and cloud surfaces, one signal green,
+     Geist for words and Geist Mono for every number. Same content as
+     sample-competitive-fee-position.html; only the look changes. Fonts: ../fonts (OFL). */
+  @font-face { font-family:"Geist"; font-weight:400; src:url("../fonts/Geist-Regular.woff2") format("woff2"); }
+  @font-face { font-family:"Geist"; font-weight:500; src:url("../fonts/Geist-Medium.woff2") format("woff2"); }
+  @font-face { font-family:"Geist"; font-weight:600; src:url("../fonts/Geist-SemiBold.woff2") format("woff2"); }
+  @font-face { font-family:"Geist"; font-weight:700; src:url("../fonts/Geist-Bold.woff2") format("woff2"); }
+  @font-face { font-family:"Geist Mono"; font-weight:400; src:url("../fonts/GeistMono-Regular.woff2") format("woff2"); }
+  @font-face { font-family:"Geist Mono"; font-weight:500; src:url("../fonts/GeistMono-Medium.woff2") format("woff2"); }
+  @font-face { font-family:"Geist Mono"; font-weight:600; src:url("../fonts/GeistMono-SemiBold.woff2") format("woff2"); }
+
+  :root {
+    --ink:#0e1a2b; --ink2:#16263c; --text2:#4a5668; --muted:#66718a;
+    --paper:#FFFFFF; --cream:#FFFFFF; --sand:#f3f5f8;
+    --navy:#0e1a2b; --navy-soft:#16263c; --navy-ghost:#e9edf3;
+    --green:#0b6b4f; --green-deep:#085640; --green-soft:#e6f4ee; --green-bright:#3ccf98;
+    --terra:var(--green); --terra-deep:var(--green-deep); --terra-soft:var(--green-soft); --terra-ghost:var(--navy-ghost);
+    --good:var(--green); --good-soft:var(--green-soft);
+    --line:#d9dee6; --line-light:#e9edf3; --line-dark:#0e1a2b;
+    --serif:"Geist","Helvetica Neue",Helvetica,Arial,sans-serif;
+    --sans:"Geist","Helvetica Neue",Helvetica,Arial,sans-serif;
+    --mono:"Geist Mono","SFMono-Regular",Menlo,Consolas,monospace;
+  }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  html { -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+  html, body { background:var(--paper); color:var(--ink);
+    font-family:var(--sans); font-size:9.8pt; line-height:1.55;
+    font-feature-settings:"kern","liga"; }
+
+  @page { size:Letter; margin:0.75in 0.85in 0.8in; }
+  @page bleed { margin:0; }
+  .page { page-break-after:always; }
+  .page:last-child { page-break-after:auto; }
+  .bleed { page:bleed; width:8.5in; height:11in; overflow:hidden; page-break-after:always; }
+
+  /* ---------- Type scale ---------- */
+  .kicker { font-family:var(--mono); font-size:7.2pt; font-weight:500; letter-spacing:0.16em;
+    text-transform:uppercase; color:var(--terra); }
+  h2 { font-family:var(--sans); font-size:22pt; font-weight:600; letter-spacing:-0.02em;
+    line-height:1.12; color:var(--ink); margin:6pt 0 0; }
+  h3 { font-family:var(--sans); font-size:12pt; font-weight:600; color:var(--ink); line-height:1.3; letter-spacing:-0.01em; }
+  p { margin:7pt 0; }
+  b { font-weight:600; }
+  .muted { color:var(--muted); }
+  .small { font-family:var(--sans); font-size:8pt; line-height:1.5; }
+  .mono { font-family:var(--mono); font-variant-numeric:tabular-nums; }
+  .lede { font-family:var(--sans); font-size:8.6pt; line-height:1.55; color:var(--text2);
+    max-width:5.4in; margin:10pt 0 0; }
+
+  /* Running head: section index + institution, above a heavy ink rule */
+  .runhead { display:flex; justify-content:space-between; align-items:baseline;
+    font-family:var(--mono); font-size:7pt; letter-spacing:0.14em; text-transform:uppercase;
+    color:var(--text2); padding-bottom:5pt; border-bottom:1.5pt solid var(--line-dark); margin-bottom:16pt; }
+  .runhead .sec { color:var(--terra); font-weight:600; }
+  .runhead .sec::before { content:"§ "; color:var(--muted); font-weight:400; }
+  .rule { border:none; border-top:1.5pt solid var(--terra); width:36pt; margin:10pt 0 14pt; }
+
+  /* Page foot */
+  .pagefoot { margin-top:16pt; padding-top:6pt; border-top:0.5pt solid var(--line);
+    font-family:var(--mono); font-size:6.6pt; letter-spacing:0.08em; text-transform:uppercase;
+    color:var(--muted); display:flex; justify-content:space-between;
+    page-break-inside:avoid; page-break-before:avoid; }
+
+  /* ---------- 1. Cover ---------- */
+  .cover { position:relative; background:var(--cream); color:var(--ink);
+    display:grid; grid-template-columns:0.9in 1fr; }
+  .cover .spine { background:var(--navy); position:relative; }
+  .cover .spine .vert { position:absolute; left:50%; bottom:0.9in; transform:translateX(-50%) rotate(180deg);
+    writing-mode:vertical-rl; font-family:var(--mono); font-size:7.4pt; letter-spacing:0.22em;
+    text-transform:uppercase; color:var(--cream); white-space:nowrap; font-weight:500; }
+  .cover .spine .vert b { color:var(--green-bright); font-weight:600; }
+  .cover .spine .mark { position:absolute; left:50%; top:0.85in; transform:translateX(-50%);
+    width:22pt; height:22pt; }
+  .cover .spine .mark svg { display:block; width:22pt; height:22pt; }
+  .cover .body { position:relative; padding:0.85in 0.85in 0.8in 0.75in; display:flex; flex-direction:column; }
+  .cover .topline { display:flex; justify-content:space-between; font-family:var(--mono);
+    font-size:7.2pt; letter-spacing:0.16em; text-transform:uppercase; color:var(--text2);
+    padding-bottom:8pt; border-bottom:1.5pt solid var(--line-dark); }
+  .cover .topline b { color:var(--terra); font-weight:600; }
+  .cover .title { margin-top:1.55in; }
+  .cover .title .series { font-family:var(--mono); font-size:7.4pt; letter-spacing:0.18em;
+    text-transform:uppercase; color:var(--terra); font-weight:500; margin-bottom:14pt; }
+  .cover h1 { font-family:var(--sans); font-size:46pt; font-weight:600; line-height:1; letter-spacing:-0.03em; color:var(--ink); }
+  .cover h1 em { font-style:normal; font-weight:400; color:var(--text2); }
+  .cover .for { margin-top:30pt; font-family:var(--sans); font-size:11pt; font-style:normal; font-weight:400; color:var(--text2); }
+  .cover .instname { display:block; font-style:normal; font-weight:600; font-size:24pt;
+    line-height:1.15; color:var(--ink); letter-spacing:-0.015em; margin-top:2pt; }
+  .cover .instmeta { margin-top:10pt; font-family:var(--mono); font-size:7.6pt; letter-spacing:0.06em;
+    color:var(--text2); text-transform:uppercase; }
+  .cover .instmeta i { font-style:normal; color:var(--muted); padding:0 5pt; }
+  .cover .cohortnote { margin-top:14pt; font-family:var(--sans); font-size:8pt; line-height:1.5;
+    color:var(--text2); max-width:5in; }
+  .cover .ghost { position:absolute; right:0.6in; bottom:1.6in; font-family:var(--serif);
+    font-family:var(--mono); font-size:150pt; font-weight:500; letter-spacing:-0.06em; line-height:1; color:var(--navy-ghost);
+    z-index:0; pointer-events:none; }
+  .cover .card { position:relative; z-index:1; margin-top:auto; display:grid;
+    grid-template-columns:1.25fr 1.5fr 1fr; border-top:1.5pt solid var(--line-dark); }
+  .cover .card > div { padding:11pt 12pt 0 0; border-right:0.5pt solid var(--line); margin-right:12pt; }
+  .cover .card > div:last-child { border-right:none; margin-right:0; }
+  .cover .card .lbl { font-family:var(--mono); font-size:6.6pt; letter-spacing:0.16em;
+    text-transform:uppercase; color:var(--muted); margin-bottom:5pt; }
+  .cover .card .val { font-family:var(--sans); font-size:10.5pt; font-weight:500; line-height:1.3; color:var(--ink); }
+  .cover .card .val.mono { font-family:var(--mono); font-size:9.5pt; font-weight:500; padding-top:2pt; }
+  .cover .card .big { font-family:var(--mono); font-size:30pt; font-weight:500; line-height:1; color:var(--green); letter-spacing:-0.03em; }
+  .cover .card .big small { display:block; font-family:var(--sans); font-size:7.5pt; color:var(--text2);
+    letter-spacing:0; margin-top:4pt; font-weight:400; }
+
+  /* ---------- 2. Executive findings ---------- */
+  .findings { counter-reset:finding; margin-top:2pt; border-bottom:0.5pt solid var(--line); }
+  .finding { counter-increment:finding; display:grid; grid-template-columns:0.32in 1.42in 1fr;
+    column-gap:14pt; padding:10pt 0 11pt; border-top:0.5pt solid var(--line); page-break-inside:avoid; }
+  .finding::before { content:counter(finding, decimal-leading-zero); font-family:var(--mono);
+    font-size:7.5pt; color:var(--muted); padding-top:8pt; letter-spacing:0.05em; }
+  .finding .num { font-family:var(--mono); font-size:17pt !important; font-weight:500; color:var(--ink);
+    line-height:1.05; letter-spacing:-0.02em; font-variant-numeric:tabular-nums; }
+  .finding .num small { display:block; font-family:var(--sans); font-size:7.4pt; font-weight:400;
+    color:var(--text2); margin-top:5pt; line-height:1.4; letter-spacing:0; }
+  .finding p { margin:0; font-size:9.6pt; line-height:1.55; color:var(--ink2); }
+  .finding p b { display:block; font-family:var(--sans); font-size:11pt; font-weight:600;
+    color:var(--ink); line-height:1.3; margin-bottom:3pt; }
+  .narrative { font-family:var(--sans); font-size:9.4pt; line-height:1.6; color:var(--ink2); }
+  .narrative p { margin:0 0 9pt; }
+  p.narrative { margin-top:12pt; }
+  .drop::first-letter { font-size:inherit; font-weight:inherit; float:none; padding:0; color:inherit; }
+
+  /* ---------- Tables (ledger) ---------- */
+  table { width:100%; border-collapse:collapse; font-family:var(--sans); font-size:8.3pt; }
+  thead { display:table-header-group; }
+  tr { page-break-inside:avoid; }
+  thead tr { border-bottom:1pt solid var(--line-dark); }
+  th { text-align:left; font-family:var(--mono); font-size:6.5pt; text-transform:uppercase;
+    letter-spacing:0.12em; color:var(--text2); font-weight:500; padding:0 6pt 5pt; vertical-align:bottom; }
+  td { padding:5pt 6pt; border-bottom:0.5pt solid var(--line-light); vertical-align:middle;
+    color:var(--ink); }
+  td.r, th.r { text-align:right; }
+  td.r { font-family:var(--mono); font-variant-numeric:tabular-nums; font-size:8.2pt; color:var(--ink2); white-space:nowrap; }
+  td.r b { color:var(--ink); font-weight:600; }
+  tbody tr:last-child td { border-bottom:0.5pt solid var(--line); }
+  th:first-child, td:first-child { padding-left:0; }
+  th:last-child, td:last-child { padding-right:0; }
+  /* "You" column carries a paper tint so the eye lands there first */
+  table.position td:nth-child(2), table.position th:nth-child(2) { background:var(--sand); }
+  table.position td:nth-child(7) { white-space:nowrap; }
+  table.position { table-layout:fixed; }
+  table.position th:nth-child(1) { width:1.78in; }
+  table.position th:nth-child(2) { width:0.62in; }
+  table.position th:nth-child(3), table.position th:nth-child(4), table.position th:nth-child(5) { width:0.56in; }
+  table.position th:nth-child(6) { width:0.42in; }
+  table.position th:nth-child(7) { width:1.3in; }
+  table.position th:nth-child(8) { width:0.9in; }
+  table.position td:nth-child(7) .small { white-space:normal; }
+  table.position .bar-wrap { width:52pt; }
+  table.position td.r { font-size:7.8pt; }
+  table.position .cat { white-space:nowrap; }
+  table.position td, table.position th { padding-left:4pt; padding-right:4pt; }
+  table.position td { padding-top:4pt; padding-bottom:4pt; }
+  table.position th:nth-child(2) { color:var(--ink); }
+
+  /* Percentile track with median tick */
+  .bar-wrap { position:relative; background:var(--line-light); height:5pt; width:84pt;
+    display:inline-block; vertical-align:middle; }
+  .bar-wrap::after { content:""; position:absolute; left:50%; top:-2.5pt; width:0.75pt; height:10pt;
+    background:var(--ink); opacity:0.55; }
+  .bar { background:var(--muted); height:5pt; }
+  .bar.hi { background:var(--navy); }
+  .bar.lo { background:var(--good); }
+  .bar-wrap + .small { font-family:var(--mono); font-size:7pt; margin-left:4pt; color:var(--text2); white-space:nowrap; }
+  .tag { font-family:var(--mono); font-size:6.3pt; font-weight:600; padding:1.5pt 5pt;
+    text-transform:uppercase; letter-spacing:0.1em; white-space:nowrap; border:0.75pt solid currentColor; }
+  .tag.above { color:#FFFFFF; background:var(--navy); border-color:var(--navy); }
+  .tag.below { color:var(--green-deep); background:var(--green-soft); }
+  .tag.gap { color:var(--muted); background:transparent; }
+  .feeline { display:block; font-size:6.8pt; color:var(--muted); margin-top:1pt; white-space:normal;
+    max-width:1.9in; line-height:1.3; }
+
+  /* ---------- 4. Callouts: two-column ledger entries ---------- */
+  .callouts { margin-top:4pt; }
+  .callout { display:grid; grid-template-columns:2.05in 1fr; column-gap:20pt;
+    padding:12pt 0 14pt; border-top:2pt solid var(--navy); margin-top:12pt; page-break-inside:avoid; }
+  .callout:first-child { margin-top:8pt; }
+  .callout.opportunity { border-top-color:var(--good); }
+  .callout h3 { grid-column:1; font-size:12.5pt; line-height:1.28; letter-spacing:-0.005em; }
+  .callout .stat { grid-column:1; font-family:var(--mono); font-size:7.2pt; line-height:1.6;
+    color:var(--text2); margin-top:6pt; letter-spacing:0.01em; }
+  .callout p { grid-column:2; grid-row:1 / span 2; margin:0; font-size:9.8pt; line-height:1.6; color:var(--ink2); }
+  .callout.opportunity h3 { color:var(--green-deep); }
+
+  /* ---------- 4b. Revenue lens ---------- */
+  .statgrid { display:grid; grid-template-columns:repeat(3,1fr); margin:12pt 0 0;
+    border-top:1.5pt solid var(--line-dark); border-left:0.5pt solid var(--line); }
+  .statcard { padding:9pt 11pt 10pt; border-right:0.5pt solid var(--line);
+    border-bottom:0.5pt solid var(--line); page-break-inside:avoid; min-height:0.78in; }
+  .statcard .lbl { font-family:var(--mono); font-size:6.5pt; letter-spacing:0.14em;
+    text-transform:uppercase; color:var(--text2); margin-bottom:7pt; }
+  .statcard .val { font-family:var(--mono); font-size:18pt; font-weight:500; color:var(--ink);
+    font-variant-numeric:tabular-nums; line-height:1; letter-spacing:-0.02em; }
+  .statcard .cmp { font-family:var(--sans); font-size:7.4pt; color:var(--text2); margin-top:6pt;
+    font-variant-numeric:tabular-nums; }
+  .statcard .cmp b { color:var(--ink); font-weight:600; }
+  h3.sub { margin-top:16pt; font-size:11.5pt; }
+  h3.sub + table { margin-top:8pt; }
+  .footnote { font-family:var(--sans); font-size:7.4pt; line-height:1.45; color:var(--muted); margin-top:9pt; }
+
+  /* ---------- 5. Peer table ---------- */
+  tr.self td { background:var(--sand); font-weight:600; border-bottom:1pt solid var(--line-dark); }
+  tr.self td:first-child { border-left:2.5pt solid var(--green); padding-left:6pt; }
+  tr.self td.r { color:var(--ink); }
+
+  /* ---------- 6. Methodology ---------- */
+  .method { font-family:var(--sans); font-size:8pt; line-height:1.55; color:var(--text2); }
+  .method ul { margin:6pt 0 0 0; list-style:none; }
+  .method li { padding:3pt 0; border-top:0.5pt solid var(--line-light); font-family:var(--mono);
+    font-size:7.2pt; word-break:break-all; }
+  .method li .muted { font-family:var(--sans); }
+  .method li:last-child { border-bottom:0.5pt solid var(--line-light); }
+
+  table.appendix th:first-child { width:2.75in; }
+  table.appendix td:first-child { font-size:8.2pt; }
+
+  /* ---------- 8. Back cover ---------- */
+  .back { background:var(--navy); color:#FFFFFF; padding:0.85in 0.95in 0.85in;
+    display:flex; flex-direction:column; }
+  .back .brandline { display:flex; justify-content:space-between; font-family:var(--mono);
+    font-size:7.2pt; letter-spacing:0.16em; text-transform:uppercase; color:#c5cdd8;
+    padding-bottom:8pt; border-bottom:1pt solid #2a3a52; }
+  .back .brandline b { color:var(--green-bright); font-weight:600; }
+  .back h2 { color:#FFFFFF; font-size:32pt; font-weight:600; line-height:1.08;
+    letter-spacing:-0.02em; margin-top:1.9in; max-width:5.4in; }
+  .back h2 em { font-style:normal; color:var(--green-bright); }
+  .back .sub { font-family:var(--sans); font-size:11pt; font-weight:400; line-height:1.55;
+    color:#c5cdd8; max-width:5in; margin-top:16pt; }
+  .back .cta { margin-top:auto; border-top:1.5pt solid var(--green-bright); padding-top:16pt;
+    display:grid; grid-template-columns:1fr 1fr; column-gap:28pt; }
+  .back .cta h4 { font-family:var(--sans); font-size:14pt; font-weight:600; color:#FFFFFF;
+    line-height:1.3; margin-bottom:6pt; }
+  .back .cta p { font-family:var(--sans); font-size:8.8pt; line-height:1.6; color:#c5cdd8; margin:0; }
+  .back .cta .mail { font-family:var(--mono); font-size:9.5pt; color:var(--green-bright); font-weight:500;
+    display:block; margin-top:8pt; letter-spacing:0.02em; text-decoration:none; }
+  .back .colophon { margin-top:26pt; padding-top:8pt; border-top:0.5pt solid #2a3a52;
+    font-family:var(--mono); font-size:6.6pt; letter-spacing:0.1em; text-transform:uppercase;
+    color:#8a94a6; display:flex; justify-content:space-between; }
+</style>
+</head>
+<body>
+
+<!-- 1. COVER -->
+<div class="bleed cover">
+  <div class="spine">
+    <div class="mark"><svg viewBox="0 0 24 24" fill="none" stroke="#3ccf98" stroke-width="1.5" aria-hidden="true"><rect x="4" y="13" width="4" height="8" rx="1"/><rect x="10" y="8" width="4" height="13" rx="1"/><rect x="16" y="3" width="4" height="18" rx="1"/></svg></div>
+    <div class="vert"><b>Fee Insight</b> &nbsp;·&nbsp; Bank Fee Index Series</div>
+  </div>
+  <div class="body">
+    <div class="topline"><span><b>Competitive Fee Position</b> &nbsp;·&nbsp; Report</span><span>Oct 3, 2026</span></div>
+    <div class="title">
+      <div class="series">Prepared exclusively for one institution</div>
+      <h1>Competitive<br>Fee <em>Position</em></h1>
+      <div class="for">Prepared for
+        <span class="instname">Sample Community Bank</span>
+      </div>
+      <div class="instmeta">San Francisco Fed district<i>·</i>Bank<i>·</i>Community bank, $300M–$1B</div>
+      <p class="cohortnote">Compared with 60 banks with $300M–$1B in assets nationwide that publish fee schedules in the Bank Fee Index. Each fee is compared only with the peers that publish it; lines with fewer than eight such peers are shown but not ranked.</p>
+    </div>
+    <div class="ghost">60</div>
+    <div class="card">
+      <div><div class="lbl">Peer cohort</div><div class="val">Community banks, $300M–$1B · nationwide</div></div>
+      <div><div class="lbl">Benchmarked against</div>
+        <div class="big">60<small>peer institutions with published fee schedules</small></div></div>
+      <div><div class="lbl">Source</div><div class="val mono">feeinsight.com</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- 2. EXECUTIVE SUMMARY -->
+<div class="page">
+  <div class="runhead"><span class="sec">01 · Executive summary</span><span>Sample Community Bank</span></div>
+  <div class="kicker">In brief</div>
+  <h2>Summary of findings</h2>
+  <hr class="rule">
+  <div class="findings">
+    <div class="finding"><div class="num" style="font-size:18pt">$18 vs $5<small>deposited-item return fee, yours vs peer median</small></div>
+   <p><b>Your deposited-item return fee is well above the market range.</b>At $18, it is 3.6× the $5 peer median and the highest of the 15 peers that publish it (middle half of the market: $5–$10). This fee falls on the depositor for a check someone else wrote, which makes it a frequent example in fee-fairness criticism.</p></div>
+<div class="finding"><div class="num" style="font-size:24pt">$8 vs $5<small>cashier's check fee, yours vs peer median</small></div>
+   <p><b>Your cashier's check fee is above the market range.</b>At $8, it is $3 above the $5 peer median and the 82nd percentile of 11 peers (middle half of the market: $5–$7). It is infrequent and mostly a perception item.</p></div>
+<div class="finding"><div class="num" style="font-size:24pt">5 of 8<small>comparable lines inside the market range</small></div>
+   <p><b>Most of your schedule is priced with the market.</b>Of the 8 fee lines where we found both your published amount and at least eight comparable peers, five sit between the peer 25th and 75th percentiles, two above and one below.</p></div>
+  </div>
+  <p class="narrative drop">Sample Community Bank is compared with 60 banks of similar size nationwide that publish fee schedules in the Bank Fee Index; a national set is used because fewer than 15 same-size peers in California have published data, so local competitors may price differently. Of 8 rankable lines, five sit inside the middle half of the market, two above it (deposited-item return fee and cashier's check fee), and one below it (outgoing international wire fee). We would suggest two steps, in order of value: (1) review the deposited-item return fee, which sits well above the market range; the peer median of $5 is the reference point; (2) check that the overdraft fee is published where customers can find it.</p>
+  <div class="pagefoot"><span>Competitive Fee Position — Sample Community Bank</span><span>Fee Insight</span></div>
+</div>
+
+<!-- 3. POSITION MAP -->
+<div class="page">
+  <div class="runhead"><span class="sec">02 · Competitive position</span><span>Sample Community Bank</span></div>
+  <div class="kicker">The position map</div>
+  <h2>Your published fees against the peer range</h2>
+  <hr class="rule">
+  <p class="lede">Compared with 60 banks with $300M–$1B in assets nationwide that publish fee schedules in the Bank Fee Index. Each fee is compared only with the peers that publish it; lines with fewer than eight such peers are shown but not ranked. Percentile = share of peers charging the same or less; the
+  tick marks the median. The line beneath each category is the published fee we used.</p>
+  <table class="position" style="margin-top:12pt">
+    <thead><tr>
+      <th>Fee</th><th class="r">You</th><th class="r">Peer P25</th><th class="r">Median</th>
+      <th class="r">P75</th><th class="r">Peers</th><th>Percentile</th><th></th>
+    </tr></thead>
+    <tbody>
+      <tr><td><span class="cat">Non-network ATM</span></td>
+    <td class="r"><b>—</b></td>
+    <td class="r">$1.25</td><td class="r">$2.13</td>
+    <td class="r">$4.31</td><td class="r muted">6</td>
+    <td><span class="small muted">listed under another label — see appendix</span></td><td></td></tr>
+<tr><td><span class="cat">Card replacement</span><span class="feeline">Debit card replacement</span></td>
+    <td class="r"><b>$10.00</b></td>
+    <td class="r">$5.00</td><td class="r">$7.50</td>
+    <td class="r">$10.00</td><td class="r muted">6</td>
+    <td><span class="small muted">fewer than 8 peers publish it</span></td><td><span class="tag gap">few peers</span></td></tr>
+<tr><td><span class="cat">Cashier's check</span><span class="feeline">Cashier's Checks (Customers)</span></td>
+    <td class="r"><b>$8.00</b></td>
+    <td class="r">$5.00</td><td class="r">$5.00</td>
+    <td class="r">$7.00</td><td class="r muted">11</td>
+    <td><div class="bar-wrap"><div class="bar hi" style="width:82%"></div></div><span class="small muted"> P82</span></td><td><span class="tag above">above range</span></td></tr>
+<tr><td><span class="cat">Deposited item return</span><span class="feeline">Returned deposited item</span></td>
+    <td class="r"><b>$18.00</b></td>
+    <td class="r">$5.00</td><td class="r">$5.00</td>
+    <td class="r">$10.00</td><td class="r muted">15</td>
+    <td><div class="bar-wrap"><div class="bar hi" style="width:100%"></div></div><span class="small muted"> P100</span></td><td><span class="tag above">2× median</span></td></tr>
+<tr><td><span class="cat">Monthly maintenance</span><span class="feeline">Service charge (NOW Account, minimum daily b… · $0 option</span></td>
+    <td class="r"><b>$10.00</b></td>
+    <td class="r">$3.00</td><td class="r">$7.50</td>
+    <td class="r">$15.00</td><td class="r muted">9</td>
+    <td><div class="bar-wrap"><div class="bar " style="width:67%"></div></div><span class="small muted"> P67</span></td><td></td></tr>
+<tr><td><span class="cat">NSF / returned item</span><span class="feeline">Insufficient Funds Fee (check, in-person wit…</span></td>
+    <td class="r"><b>$33.00</b></td>
+    <td class="r">$30.00</td><td class="r">$33.50</td>
+    <td class="r">$35.00</td><td class="r muted">18</td>
+    <td><div class="bar-wrap"><div class="bar " style="width:50%"></div></div><span class="small muted"> P50</span></td><td></td></tr>
+<tr><td><span class="cat">OD protection transfer</span></td>
+    <td class="r"><b>—</b></td>
+    <td class="r">$5.00</td><td class="r">$5.00</td>
+    <td class="r">$5.00</td><td class="r muted">2</td>
+    <td><span class="small muted">not in published schedule</span></td><td></td></tr>
+<tr><td><span class="cat">Overdraft</span></td>
+    <td class="r"><b>—</b></td>
+    <td class="r">$29.00</td><td class="r">$30.00</td>
+    <td class="r">$35.00</td><td class="r muted">17</td>
+    <td><span class="small muted">not in published schedule</span></td><td></td></tr>
+<tr><td><span class="cat">Paper statement</span></td>
+    <td class="r"><b>—</b></td>
+    <td class="r">$2.50</td><td class="r">$3.00</td>
+    <td class="r">$4.58</td><td class="r muted">7</td>
+    <td><span class="small muted">not in published schedule</span></td><td></td></tr>
+<tr><td><span class="cat">Stop payment</span><span class="feeline">Stop Payment charge</span></td>
+    <td class="r"><b>$30.00</b></td>
+    <td class="r">$28.00</td><td class="r">$30.00</td>
+    <td class="r">$31.25</td><td class="r muted">12</td>
+    <td><div class="bar-wrap"><div class="bar " style="width:75%"></div></div><span class="small muted"> P75</span></td><td></td></tr>
+<tr><td><span class="cat">Incoming domestic wire</span><span class="feeline">Wire Transfer - Domestic Incoming</span></td>
+    <td class="r"><b>$10.00</b></td>
+    <td class="r">$10.00</td><td class="r">$12.50</td>
+    <td class="r">$15.00</td><td class="r muted">10</td>
+    <td><div class="bar-wrap"><div class="bar " style="width:50%"></div></div><span class="small muted"> P50</span></td><td></td></tr>
+<tr><td><span class="cat">Outgoing domestic wire</span><span class="feeline">Wire Transfer - Domestic Outgoing</span></td>
+    <td class="r"><b>$25.00</b></td>
+    <td class="r">$15.00</td><td class="r">$20.00</td>
+    <td class="r">$25.00</td><td class="r muted">9</td>
+    <td><div class="bar-wrap"><div class="bar " style="width:78%"></div></div><span class="small muted"> P78</span></td><td></td></tr>
+<tr><td><span class="cat">Outgoing intl. wire</span><span class="feeline">Wire Transfer - International Outgoing</span></td>
+    <td class="r"><b>$40.00</b></td>
+    <td class="r">$46.25</td><td class="r">$50.00</td>
+    <td class="r">$61.25</td><td class="r muted">8</td>
+    <td><div class="bar-wrap"><div class="bar lo" style="width:25%"></div></div><span class="small muted"> P25</span></td><td><span class="tag below">below range</span></td></tr>
+    </tbody>
+  </table>
+  <div class="pagefoot"><span>Competitive Fee Position — Sample Community Bank</span><span>Fee Insight</span></div>
+</div>
+
+<!-- 4. CALLOUTS -->
+<div class="page">
+  <div class="runhead"><span class="sec">03 · What stands out</span><span>Sample Community Bank</span></div>
+  <div class="kicker">Line by line</div>
+  <h2>Lines that warrant attention</h2>
+  <hr class="rule">
+  <div class="callouts">
+    <div class="callout ">
+     <h3>Deposited-item return fee — $18</h3><div class="stat">Peer median $5 · middle half $5–$10 · range $3–$12 · 100th percentile · n=15</div><p>Published as “Returned deposited item.” At $18 it is 3.6× the $5 peer median. This fee falls on the depositor for a check someone else wrote, which makes it a frequent example in fee-fairness criticism. A penalty fee offers little service to differentiate on, so the peer median of $5 is the natural reference point.</p>
+   </div>
+<div class="callout ">
+     <h3>Cashier's check fee — $8</h3><div class="stat">Peer median $5 · middle half $5–$7 · range $3–$20 · 82nd percentile · n=11</div><p>Published as “Cashier's Checks (Customers).” At $8 it is $3 above the $5 peer median. It is infrequent and mostly a perception item. Holding the premium is reasonable if the service behind it is differentiated; otherwise the peer median of $5 is the reference point.</p>
+   </div>
+<div class="callout opportunity">
+     <h3>Outgoing international wire fee — $40</h3><div class="stat">Peer median $50 · middle half $46.25–$61.25 · 25th percentile · n=8</div><p>Published as “Wire Transfer - International Outgoing.” A customer-favorable price on a low-volume line. No action is indicated unless it is an old price that was never revisited, in which case the peer median of $50 is the reference point.</p>
+   </div>
+<div class="callout ">
+     <h3>Fees we could not find in your published schedule</h3><div class="stat">Overdraft fee: published by 17 peers (median $30)</div><p>Absence here means the line was not in the documents listed in § 06, not that you do not charge it. Regulators and comparison sites increasingly expect the full consumer fee schedule to be posted in one place.</p>
+   </div>
+  </div>
+  <div class="pagefoot"><span>Competitive Fee Position — Sample Community Bank</span><span>Fee Insight</span></div>
+</div>
+
+<!-- 4b. REVENUE LENS (Call Report data) -->
+<div class="page">
+  <div class="runhead"><span class="sec">04 · The revenue lens</span><span>Sample Community Bank</span></div>
+  <div class="kicker">Posted price vs. realized income</div>
+  <h2>Fee income in context</h2>
+  <hr class="rule">
+  <p class="lede">Public regulatory filings (FDIC Call Reports) set alongside your published
+  pricing. Income comparisons use same-charter, same-size institutions.</p>
+  <div class="statgrid">
+    <div class="statcard"><div class="lbl">Total assets</div><div class="val">$405.1M</div></div>
+<div class="statcard"><div class="lbl">Total deposits</div><div class="val">$357.1M</div></div>
+<div class="statcard"><div class="lbl">Employees</div><div class="val">58</div><div class="cmp">2 branches</div></div>
+<div class="statcard"><div class="lbl">Service-charge income</div><div class="val">$96,000</div><div class="cmp">0.5% of revenue</div></div>
+<div class="statcard"><div class="lbl">Fee-income intensity</div><div class="val">2.2 bps</div><div class="cmp">cohort median <b>1.7 bps</b> of assets</div></div>
+<div class="statcard"><div class="lbl">Return on assets</div><div class="val">1.01%</div><div class="cmp">cohort median <b>1.16%</b></div></div>
+  </div>
+  <h3 class="sub">Fee economics vs. your cohort</h3>
+  <table>
+    <thead><tr><th>Metric</th><th class="r">You</th><th class="r">P25</th>
+      <th class="r">Median</th><th class="r">P75</th><th>Position</th><th>Assessment</th></tr></thead>
+    <tbody><tr><td>Service-charge income</td><td class="r"><b>$96,000</b></td><td class="r">—</td>
+   <td class="r">$93,000</td><td class="r">—</td>
+   <td>—</td><td>In line</td></tr>
+<tr><td>Fee intensity (income / assets)</td><td class="r"><b>2.2 bps</b></td><td class="r">0.9 bps</td>
+   <td class="r">1.7 bps</td><td class="r">2.7 bps</td>
+   <td>P64</td><td>In line</td></tr>
+<tr><td>Fee dependency (share of noninterest income)</td><td class="r"><b>6.1%</b></td><td class="r">1.9%</td>
+   <td class="r">3.6%</td><td class="r">6.1%</td>
+   <td>P75</td><td>Higher share</td></tr>
+<tr><td>Fee income vs. net income</td><td class="r"><b>2.2%</b></td><td class="r">—</td>
+   <td class="r">1.4%</td><td class="r">—</td>
+   <td>—</td><td>Higher share</td></tr></tbody>
+  </table>
+  <p class="narrative" style="margin-top:10pt">Across the 8 lines we could rank, your posted prices average the 66th percentile of peers; service-charge income relative to assets sits at the 64th percentile of the same-size cohort. Both sit above the middle of the market, so fee income is a meaningful contributor and any repricing should be modeled against actual incidence first.</p>
+  <p class="small muted" style="margin-top:6pt">Fee-intensity trend (year-end filings): 2024: 2.8 bps → 2025: 2.2 bps · cohort median 1.7 bps.</p>
+  <p class="small muted" style="margin-top:6pt">Deposit footprint (FDIC Summary of Deposits, 2025): 2 branch locations across 1 county holding $367.0M in deposits.</p>
+  <p class="footnote">Financial figures as filed (Mar 31, 2026 snapshot; revenue from
+  Dec 31, 2025 full-year filing). Cohort medians computed across 1,427
+  same-charter, same-tier institutions' latest full-year filings.</p>
+  <div class="pagefoot"><span>Competitive Fee Position — Sample Community Bank</span><span>Fee Insight</span></div>
+</div>
+
+<!-- 5. PEER TABLE -->
+<div class="page">
+  <div class="runhead"><span class="sec">05 · The named comparison</span><span>Sample Community Bank</span></div>
+  <div class="kicker">Peer by peer</div>
+  <h2>How named peers price<br>the same lines</h2>
+  <hr class="rule">
+  <p class="lede">Peers from your comparison set, nearest first (same state, then the most
+  lines in common). All figures from each institution's published fee schedule; a dash means
+  the peer does not publish that line.</p>
+  <table style="margin-top:12pt">
+    <thead><tr><th>Institution</th><th class="r">NSF / returned item</th><th class="r">Monthly maintenance</th><th class="r">Deposited item return</th><th class="r">Stop payment</th><th class="r">Outgoing domestic wire</th></tr></thead>
+    <tbody>
+      <tr class="self"><td>Sample Community Bank <span class="small muted">(you)</span></td><td class="r">$33.00</td><td class="r">$10.00</td><td class="r">$18.00</td><td class="r">$30.00</td><td class="r">$25.00</td></tr>
+      <tr><td>Redwood Capital Bank <span class="small muted">(Eureka, CA)</span></td><td class="r">$35.00</td><td class="r">$5.00</td><td class="r">—</td><td class="r">$25.00</td><td class="r">$15.00</td></tr>
+<tr><td>Mega Bank <span class="small muted">(San Gabriel, CA)</span></td><td class="r">—</td><td class="r">—</td><td class="r">$10.00</td><td class="r">$15.00</td><td class="r">$10.00</td></tr>
+<tr><td>Kentland Bank <span class="small muted">(Kentland, IN)</span></td><td class="r">—</td><td class="r">—</td><td class="r">$10.00</td><td class="r">$30.00</td><td class="r">$25.00</td></tr>
+<tr><td>Gateway Bank <span class="small muted">(Mendota Heights, MN)</span></td><td class="r">$30.00</td><td class="r">$17.00</td><td class="r">—</td><td class="r">$30.00</td><td class="r">$25.00</td></tr>
+<tr><td>First Community Bank of Central Alabama <span class="small muted">(Wetumpka, AL)</span></td><td class="r">$33.00</td><td class="r">—</td><td class="r">—</td><td class="r">$30.00</td><td class="r">$20.00</td></tr>
+<tr><td>PB&amp;T Bank <span class="small muted">(Pueblo, CO)</span></td><td class="r">—</td><td class="r">—</td><td class="r">—</td><td class="r">$29.00</td><td class="r">$15.00</td></tr>
+<tr><td>First Bank <span class="small muted">(Burkburnett, TX)</span></td><td class="r">—</td><td class="r">—</td><td class="r">—</td><td class="r">$25.00</td><td class="r">$15.00</td></tr>
+<tr><td>American Community Bank of Indiana <span class="small muted">(Saint John, IN)</span></td><td class="r">$35.00</td><td class="r">—</td><td class="r">—</td><td class="r">$35.00</td><td class="r">$30.00</td></tr>
+    </tbody>
+  </table>
+  <div class="pagefoot"><span>Competitive Fee Position — Sample Community Bank</span><span>Fee Insight</span></div>
+</div>
+
+<!-- 6. CONTEXT + METHODOLOGY -->
+<div class="page">
+  <div class="runhead"><span class="sec">06 · Market context</span><span>Sample Community Bank</span></div>
+  <div class="kicker">Context and method</div>
+  <h2>Market context</h2>
+  <hr class="rule">
+  <div class="narrative"><p>Overdraft and returned-item fees have been the focus of regulatory and public attention since 2022, and many of the largest banks have reduced overdraft fees or eliminated NSF fees outright. Community institutions have moved more slowly and more unevenly, which is why the spread inside a peer set is often wider than the headline national averages suggest.</p><p>Fee schedules are also now public in a practical sense: they are collected, compared and summarized automatically. A customer or examiner comparing Sample Community Bank with its peers sees the same published lines this report uses, so the schedule is a positioning document as much as a pricing one.</p><p>How to use this report: § 02 shows every line against the peer range; § 03 explains the lines that sit outside it; § 05 names peers line by line. Ranked comparisons require at least eight peers publishing the same line. Where your institution offers several amounts for one category, the report uses the standard consumer charge described in the methodology below.</p></div>
+  <div class="method" style="margin-top:22pt">
+    <h3 class="sub" style="margin-top:0">Methodology &amp; data provenance</h3>
+    <p style="margin-top:6pt">Fee data is drawn from institutions' published fee schedules, collected and verified by the
+  Bank Fee Index pipeline and checked against each category's definition and a plausible price range. Peer cohort:
+  60 banks with $300M–$1B in assets nationwide. For each category the report uses one standard consumer charge per institution:
+  the generic line rather than a channel-specific variant (online, branch, business), the per-item amount for penalty
+  fees, and the lowest positive amount for monthly maintenance (entry checking); a $0 option is noted where one exists.
+  A line is marked <i>above range</i> when it exceeds the peer 75th percentile, <i>2× median</i> when it is at least
+  twice the peer median, and <i>below range</i> under the 25th percentile. Percentiles require at least eight peers
+  publishing the same line. Data pulled Oct 3, 2026. Published amounts may not reflect
+  account-specific waivers or negotiated pricing.</p>
+    <h3 class="sub" style="margin-top:14pt">Your source documents</h3>
+    <p style="margin-top:4pt">Every figure attributed to Sample Community Bank in this report
+    was extracted from your own published documents:</p>
+    <ul>
+      <li>1 published fee schedule document on the institution's website <span class="muted">(URL withheld in this sample)</span></li>
+    </ul>
+  </div>
+  <div class="pagefoot"><span>Competitive Fee Position — Sample Community Bank</span><span>Fee Insight</span></div>
+</div>
+
+<!-- 7. APPENDIX: FULL SCHEDULE -->
+<div class="page">
+  <div class="runhead"><span class="sec">07 · Appendix</span><span>Sample Community Bank</span></div>
+  <div class="kicker">The full ledger</div>
+  <h2>Your complete published fee schedule</h2>
+  <hr class="rule">
+  <p class="lede">Every distinct fee line the Bank Fee Index has extracted and verified from
+  Sample Community Bank's published documents (38 lines, as of Oct 3, 2026).
+  Category comparisons in § 02 use one standard line per category from this list.</p>
+  <table class="appendix" style="margin-top:12pt">
+    <thead><tr><th>Published fee line</th><th class="r">Amount</th><th>Frequency / terms</th></tr></thead>
+    <tbody>
+      <tr><td>ACH Origination</td><td class="r"><b>$20.00</b></td>
+    <td class="small muted">monthly · per statement cycle</td></tr>
+<tr><td>ATM withdrawal (exceeding four per month at non-network ATMs)</td><td class="r"><b>$1.00</b></td>
+    <td class="small muted">per occurrence</td></tr>
+<tr><td>Balancing and research</td><td class="r"><b>$25.00</b></td>
+    <td class="small muted">other · per hour</td></tr>
+<tr><td>Cashier's Checks (Customers)</td><td class="r"><b>$8.00</b></td>
+    <td class="small muted">per occurrence</td></tr>
+<tr><td>Cashier's Checks (Non-customer)</td><td class="r"><b>$10.00</b></td>
+    <td class="small muted">per occurrence</td></tr>
+<tr><td>Check Cashing (Customer, limited to collected funds items)</td><td class="r"><b>$0.00</b></td>
+    <td class="small muted">per occurrence</td></tr>
+<tr><td>Check Cashing (Non-customer with proper ID)</td><td class="r"><b>$5.00</b></td>
+    <td class="small muted">per occurrence</td></tr>
+<tr><td>Christmas Club Service charge</td><td class="r"><b>$0.00</b></td>
+    <td class="small muted">monthly</td></tr>
+<tr><td>Collection Items - Single item or item with documents</td><td class="r"><b>$25.00</b></td>
+    <td class="small muted">per occurrence · plus payee bank charges</td></tr>
+<tr><td>Copy of check(s)</td><td class="r"><b>$3.00</b></td>
+    <td class="small muted">per occurrence · per page</td></tr>
+<tr><td>Counter Checks</td><td class="r"><b>$0.33</b></td>
+    <td class="small muted">per occurrence · 3 for $1.00</td></tr>
+<tr><td>Debit card replacement</td><td class="r"><b>$10.00</b></td>
+    <td class="small muted">per occurrence</td></tr>
+<tr><td>Early Closure Fee</td><td class="r"><b>$10.00</b></td>
+    <td class="small muted">one-time · accounts closed within 6 months of opening</td></tr>
+<tr><td>Escheatment Fee (Dormant Accounts)</td><td class="r"><b>$2.00</b></td>
+    <td class="small muted">one-time</td></tr>
+<tr><td>Excess activity fee (Regular Savings, minimum daily balance below $500, after 3rd withdrawal in quarter)</td><td class="r"><b>$2.00</b></td>
+    <td class="small muted">per occurrence</td></tr>
+<tr><td>Foreign check/draft deposited</td><td class="r"><b>$10.00</b></td>
+    <td class="small muted">per occurrence</td></tr>
+<tr><td>Insufficient Funds Daily Cap</td><td class="r"><b>$198.00</b></td>
+    <td class="small muted">daily</td></tr>
+<tr><td>Insufficient Funds Fee (check, in-person withdrawal, debit card, electronic transaction)</td><td class="r"><b>$33.00</b></td>
+    <td class="small muted">per occurrence · maximum of 6 per day</td></tr>
+<tr><td>Legal Processing Fee</td><td class="r"><b>$100.00</b></td>
+    <td class="small muted">per occurrence · when Bank is served a notice of levy, attachment or similar legal process</td></tr>
+<tr><td>Night Deposit Annual Fee</td><td class="r"><b>$0.00</b></td>
+    <td class="small muted">annual</td></tr>
+<tr><td>Retirement Account Closing Fee</td><td class="r"><b>$25.00</b></td>
+    <td class="small muted">one-time</td></tr>
+<tr><td>Returned deposited item</td><td class="r"><b>$18.00</b></td>
+    <td class="small muted">per occurrence</td></tr>
+<tr><td>Safe Deposit Box Extra Key</td><td class="r"><b>$20.00</b></td>
+    <td class="small muted">per occurrence</td></tr>
+<tr><td>Seedling Account Excess activity fee (after 3rd withdrawal in quarter)</td><td class="r"><b>$2.00</b></td>
+    <td class="small muted">per occurrence</td></tr>
+<tr><td>Service charge (Money Market Savings, minimum daily balance $2,500)</td><td class="r"><b>$0.00</b></td>
+    <td class="small muted">monthly</td></tr>
+<tr><td>Service charge (Money Market Savings, minimum daily balance below $2,500)</td><td class="r"><b>$10.00</b></td>
+    <td class="small muted">monthly · eVue Statements discount: $2.00</td></tr>
+<tr><td>Service charge (NOW Account, minimum daily balance $1,000)</td><td class="r"><b>$0.00</b></td>
+    <td class="small muted">monthly</td></tr>
+<tr><td>Service charge (NOW Account, minimum daily balance below $1,000)</td><td class="r"><b>$10.00</b></td>
+    <td class="small muted">monthly</td></tr>
+<tr><td>Service charge (Regular Checking, minimum daily balance below $500 and average available balance below $1,500)</td><td class="r"><b>$7.00</b></td>
+    <td class="small muted">monthly</td></tr>
+<tr><td>Service charge (Regular Savings, minimum daily balance $500)</td><td class="r"><b>$0.00</b></td>
+    <td class="small muted">quarterly</td></tr>
+<tr><td>Service charge (Regular Savings, minimum daily balance below $500)</td><td class="r"><b>$5.00</b></td>
+    <td class="small muted">quarterly · eVue Statements discount: $2.00</td></tr>
+<tr><td>Statement copy</td><td class="r"><b>$5.00</b></td>
+    <td class="small muted">per occurrence</td></tr>
+<tr><td>Stop Payment charge</td><td class="r"><b>$30.00</b></td>
+    <td class="small muted">per occurrence</td></tr>
+<tr><td>Telephone Transfer</td><td class="r"><b>$5.00</b></td>
+    <td class="small muted">per occurrence</td></tr>
+<tr><td>Wire Transfer - Domestic Incoming</td><td class="r"><b>$10.00</b></td>
+    <td class="small muted">per occurrence</td></tr>
+<tr><td>Wire Transfer - Domestic Outgoing</td><td class="r"><b>$25.00</b></td>
+    <td class="small muted">per occurrence · plus payee bank charges</td></tr>
+<tr><td>Wire Transfer - International Incoming</td><td class="r"><b>$10.00</b></td>
+    <td class="small muted">per occurrence</td></tr>
+<tr><td>Wire Transfer - International Outgoing</td><td class="r"><b>$40.00</b></td>
+    <td class="small muted">per occurrence · plus payee bank charges</td></tr>
+    </tbody>
+  </table>
+  <div class="pagefoot"><span>Competitive Fee Position — Sample Community Bank</span><span>Fee Insight</span></div>
+</div>
+
+<!-- 8. BACK -->
+<div class="bleed back">
+  <div class="brandline"><span><b>Fee Insight</b> &nbsp;·&nbsp; Bank Fee Index Series</span><span>Oct 3, 2026</span></div>
+  <h2>About this <em>analysis</em></h2>
+  <p class="sub">Prepared by Fee Insight from published fee schedules and public regulatory filings. The Bank Fee Index
+  tracks the published fee schedules of U.S. banks and credit unions; every figure
+  in this report can be traced to a public document.</p>
+  <div class="cta">
+    <div>
+      <h4>Corrections and questions</h4>
+      <p>If a figure does not match your current schedule, send us the document and we will correct the index and
+      reissue the report.</p>
+    </div>
+    <div>
+      <h4>Contact</h4>
+      <span class="mail">hello@bankfeeindex.com</span>
+      <p style="margin-top:8pt">feeinsight.com · feeinsight.com/for-institutions</p>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

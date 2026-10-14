@@ -1,0 +1,282 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Hamilton walkthrough, Index look</title>
+<style>
+/* 30 seconds at 1920x1080. Everything is a pure function of time: render.mjs calls
+   window.seek(t) for each frame and screenshots the stage. Index look: navy words,
+   white and cloud surfaces, one signal green, Geist for words, Geist Mono for numbers. */
+@font-face{font-family:"Geist";font-weight:400;src:url("__FONTS__/Geist-Regular.woff2") format("woff2")}
+@font-face{font-family:"Geist";font-weight:500;src:url("__FONTS__/Geist-Medium.woff2") format("woff2")}
+@font-face{font-family:"Geist";font-weight:600;src:url("__FONTS__/Geist-SemiBold.woff2") format("woff2")}
+@font-face{font-family:"Geist Mono";font-weight:400;src:url("__FONTS__/GeistMono-Regular.woff2") format("woff2")}
+@font-face{font-family:"Geist Mono";font-weight:500;src:url("__FONTS__/GeistMono-Medium.woff2") format("woff2")}
+:root{--navy:#0e1a2b;--navy-soft:#16263c;--cloud:#f3f5f8;--line:#d9dee6;--muted:#4a5668;--green:#0b6b4f;--green-bright:#3ccf98}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{width:1920px;height:1080px;overflow:hidden;background:#fff;color:var(--navy);font-family:"Geist",sans-serif;-webkit-font-smoothing:antialiased}
+#stage{position:relative;width:1920px;height:1080px;overflow:hidden;background:#fff}
+.mono{font-family:"Geist Mono",monospace;font-variant-numeric:tabular-nums}
+.scene{position:absolute;inset:0;display:none}
+.scene.on{display:block}
+.chrome{position:absolute;left:96px;right:96px;top:48px;height:56px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line);z-index:50}
+.brand{display:flex;align-items:center;gap:14px;font-size:26px;font-weight:600;letter-spacing:-0.02em}
+.brand svg{width:28px;height:28px}
+.brand span{font-size:16px;font-weight:400;color:var(--muted);margin-left:4px}
+.step{font-family:"Geist Mono",monospace;font-size:15px;letter-spacing:.12em;text-transform:uppercase;color:var(--green)}
+.marker{position:absolute;left:96px;bottom:40px;font-family:"Geist Mono",monospace;font-size:15px;color:var(--muted);z-index:50}
+.progress{position:absolute;left:0;bottom:0;height:6px;width:1920px;background:var(--green);transform-origin:left;z-index:60}
+.overline{font-family:"Geist Mono",monospace;font-size:15px;letter-spacing:.12em;text-transform:uppercase;color:var(--green)}
+.card{position:absolute;background:#fff;border:1px solid var(--line);border-radius:8px;box-shadow:0 30px 60px -30px rgba(14,26,43,.35)}
+.cursor{position:absolute;width:30px;height:36px;z-index:70;left:0;top:0;filter:drop-shadow(0 2px 4px rgba(14,26,43,.35))}
+.ring{position:absolute;width:64px;height:64px;border:2px solid var(--green);border-radius:50%;z-index:65;margin:-32px 0 0 -32px}
+h1{font-size:56px;font-weight:600;line-height:1.1;letter-spacing:-0.025em;text-wrap:balance}
+p.lead{font-size:24px;line-height:1.5;color:var(--muted);margin-top:24px;text-wrap:pretty}
+.btn{display:inline-flex;align-items:center;justify-content:center;height:60px;padding:0 28px;border-radius:4px;font-size:22px;font-weight:500}
+.btn.green{background:var(--green);color:#fff}
+.btn.navy{background:var(--navy);color:#fff}
+.doc{position:absolute;overflow:hidden;background:#fff;border:1px solid var(--line);border-radius:4px;box-shadow:0 40px 70px -30px rgba(14,26,43,.45)}
+.doc img{display:block;width:100%}
+/* 1. Ask */
+#askcard{left:240px;top:240px;width:1440px;height:560px;padding:48px 56px}
+#askcard .ctx{font-family:"Geist Mono",monospace;font-size:16px;color:var(--muted);padding-bottom:24px;border-bottom:1px solid var(--line)}
+#askcard h2{font-size:40px;font-weight:600;letter-spacing:-0.02em;margin-top:36px}
+#askinput{position:absolute;left:56px;right:56px;top:240px;height:140px;border:1px solid var(--line);border-radius:4px;background:var(--cloud);padding:0 40px;display:flex;align-items:center}
+#typed{font-size:44px;letter-spacing:-0.02em;white-space:nowrap}
+#caret{display:inline-block;width:3px;height:52px;background:var(--navy);vertical-align:middle;margin-left:6px}
+#send{position:absolute;right:24px;top:36px;width:68px;height:68px;border-radius:4px;background:var(--navy);color:#fff;font-size:34px;display:flex;align-items:center;justify-content:center}
+#askcard .hint{position:absolute;left:56px;bottom:44px;font-size:20px;color:var(--muted)}
+/* 2. Answer */
+#anscard{left:160px;top:160px;width:1600px;height:740px;padding:44px 56px}
+#anscard .q{font-size:18px;color:var(--muted)}
+#anscard h1{font-size:50px;margin-top:10px;width:1000px}
+#chart{position:absolute;left:56px;top:270px;width:900px}
+.row{position:relative;height:96px;margin-top:22px}
+.row .lbl{font-size:22px}
+.row .track{position:absolute;left:0;top:44px;width:700px;height:34px;background:var(--cloud);border-radius:4px;overflow:hidden}
+.row .fill{position:absolute;left:0;top:0;height:34px;border-radius:4px;background:var(--navy);transform-origin:left}
+.row .fill.peer{background:var(--green)}
+.row .val{position:absolute;left:730px;top:32px;font-size:44px;font-weight:500;letter-spacing:-0.02em}
+#chart .note{font-family:"Geist Mono",monospace;font-size:15px;color:var(--muted);margin-top:24px}
+#interp{position:absolute;left:56px;top:600px;font-size:24px;line-height:1.45;color:var(--navy);width:900px}
+#fin{position:absolute;right:56px;top:130px;width:520px;height:440px;border:1px solid var(--line);background:var(--cloud);border-radius:8px;padding:36px}
+#fin h3{font-size:28px;font-weight:600;line-height:1.3;margin-top:16px;letter-spacing:-0.015em}
+#fin .ratio{display:flex;gap:20px;align-items:baseline;margin-top:30px}
+#fin .ratio strong{font-size:56px;font-weight:500;letter-spacing:-0.03em}
+#fin .ratio span{font-size:26px;color:var(--muted)}
+#fin p{font-size:19px;line-height:1.5;color:var(--muted);margin-top:16px}
+#fin .link{display:inline-block;margin-top:26px;font-size:20px;font-weight:500;color:var(--green);border-bottom:2px solid var(--green);padding-bottom:3px}
+#sources{position:absolute;right:56px;bottom:44px;display:flex;gap:10px}
+#sources span{font-family:"Geist Mono",monospace;font-size:14px;border:1px solid var(--line);border-radius:4px;padding:10px 14px;color:var(--muted)}
+/* 3. Evidence */
+.textcol{position:absolute;left:96px;top:260px;width:560px}
+.textcol .meta{font-family:"Geist Mono",monospace;font-size:17px;line-height:1.7;color:var(--muted);margin-top:32px}
+#findoc{left:760px;top:160px;width:1064px;height:760px}
+/* 4. Create */
+#createcard{left:160px;top:180px;width:1600px;height:680px;overflow:hidden}
+#createcard .thumb{position:absolute;left:56px;top:56px;width:420px;height:568px;overflow:hidden;border:1px solid var(--line);border-radius:4px;box-shadow:0 20px 40px -24px rgba(14,26,43,.4)}
+#createcard .thumb img{width:420px;display:block}
+#createcard .action{position:absolute;left:560px;top:96px;width:940px}
+#createbtn,#readybtn{position:absolute;left:560px;top:430px}
+/* 5. Cover */
+#stack{position:absolute;left:1040px;top:150px;width:720px;height:800px}
+.sheet{position:absolute;width:600px;height:776px;overflow:hidden;background:#fff;border:1px solid var(--line);border-radius:4px;box-shadow:0 40px 70px -30px rgba(14,26,43,.45);transform-origin:left center}
+.sheet img{width:600px;display:block}
+/* 6/7. Pages */
+#peerdoc,#sumdoc{left:760px;top:160px;width:1064px;height:760px}
+/* 8. Close */
+#close h1{position:absolute;left:96px;top:190px;width:1000px;font-size:64px}
+#close .cta{position:absolute;right:96px;top:220px}
+#strip{position:absolute;left:96px;right:96px;top:470px;display:flex;gap:16px}
+#strip .pg{width:157px}
+#strip .pg img{width:157px;display:block;border:1px solid var(--line);border-radius:4px;box-shadow:0 16px 30px -18px rgba(14,26,43,.45)}
+#strip .pg span{display:block;margin-top:12px;font-family:"Geist Mono",monospace;font-size:14px;color:var(--muted)}
+#close .lbl{position:absolute;left:96px;top:420px;font-family:"Geist Mono",monospace;font-size:15px;letter-spacing:.12em;text-transform:uppercase;color:var(--green)}
+</style>
+</head>
+<body>
+<div id="stage">
+  <div class="chrome">
+    <div class="brand"><svg viewBox="0 0 24 24" fill="none" stroke="#0b6b4f" stroke-width="1.75"><rect x="4" y="13" width="4" height="8" rx="1"/><rect x="10" y="8" width="4" height="13" rx="1"/><rect x="16" y="3" width="4" height="18" rx="1"/></svg>Hamilton<span>Fee Insight</span></div>
+    <div class="step" id="step">Ask Hamilton</div>
+  </div>
+  <div class="marker">Illustrative walkthrough · figures from the sample report · fictional institution</div>
+
+  <section id="ask" class="scene">
+    <div id="askcard" class="card">
+      <div class="ctx">Sample Community Bank &nbsp;·&nbsp; Community banks, $300M–$1B &nbsp;·&nbsp; 60 peers with published fee schedules</div>
+      <h2>Start with a question.</h2>
+      <div id="askinput"><div id="typed"><span id="chars"></span><span id="caret"></span></div><div id="send">↑</div></div>
+      <div class="hint">Published fees. Financial filings. Named peers.</div>
+    </div>
+  </section>
+
+  <section id="answer" class="scene">
+    <div id="anscard" class="card">
+      <div class="q">Which fees should we review first?</div>
+      <div class="overline" style="margin-top:28px">Hamilton's answer</div>
+      <h1>Start with the deposited-item return fee.</h1>
+      <div id="chart">
+        <div class="row"><div class="lbl">Sample Community Bank</div><div class="track"><div id="bar1" class="fill" style="width:700px"></div></div><div class="val mono" id="val1">$18</div></div>
+        <div class="row"><div class="lbl">Peer median</div><div class="track"><div id="bar2" class="fill peer" style="width:194px"></div></div><div class="val mono" id="val2">$5</div></div>
+        <div class="note">Published fees · 15 peers publish this fee · middle half of the market $5–$10 · Oct 3, 2026</div>
+      </div>
+      <div id="interp">At $18 it is the highest of the 15 peers that publish it. Review the terms and how often it is charged before choosing a price.</div>
+      <div id="fin">
+        <div class="overline">Financial context</div>
+        <h3>Fee income is a meaningful contributor.</h3>
+        <div class="ratio mono"><strong>2.2</strong><span>vs</span><strong>1.7</strong><span>bps</span></div>
+        <p>Fee-income intensity against the cohort median, in basis points of assets. FDIC Call Reports, Mar 31, 2026.</p>
+        <div class="link">View the evidence</div>
+      </div>
+      <div id="sources"><span>Published fees</span><span>Financial filings</span><span>Peers</span></div>
+    </div>
+  </section>
+
+  <section id="evidence" class="scene">
+    <div class="textcol">
+      <div class="overline">The revenue lens</div>
+      <h1 style="margin-top:20px">See what sits behind the answer.</h1>
+      <p class="lead">Financial context from the report, with its source and reporting dates.</p>
+      <div class="meta">FDIC Call Reports<br>Financials: Mar 31, 2026<br>Revenue: Dec 31, 2025</div>
+    </div>
+    <div id="findoc" class="doc"><img id="finimg" src="__ASSETS__/report-05.png" alt=""></div>
+  </section>
+
+  <section id="create" class="scene">
+    <div id="createcard" class="card">
+      <div class="thumb"><img src="__ASSETS__/report-02.png" alt=""></div>
+      <div class="action">
+        <div class="overline">Keep the context</div>
+        <h1 style="margin-top:20px">Bring the findings into a report.</h1>
+        <p class="lead">Your peer set, exhibits and sources travel with the analysis.</p>
+      </div>
+      <div id="createbtn" class="btn green">Create report</div>
+      <div id="readybtn" class="btn navy">Report ready</div>
+    </div>
+  </section>
+
+  <section id="cover" class="scene">
+    <div class="textcol" style="width:620px">
+      <div class="overline">Ready for the board</div>
+      <h1 style="margin-top:20px">Your research. Your report.</h1>
+      <p class="lead">Findings, comparisons and sources in one document.</p>
+    </div>
+    <div id="stack">
+      <div class="sheet" id="sh3" style="left:80px;top:40px"><img src="__ASSETS__/report-05.png" alt=""></div>
+      <div class="sheet" id="sh2" style="left:40px;top:20px"><img src="__ASSETS__/report-03.png" alt=""></div>
+      <div class="sheet" id="sh1" style="left:0;top:0"><img src="__ASSETS__/report-01.png" alt=""></div>
+    </div>
+  </section>
+
+  <section id="peers" class="scene">
+    <div class="textcol">
+      <div class="overline">The position map</div>
+      <h1 style="margin-top:20px">Every fee against the peer range.</h1>
+      <p class="lead">Peer medians, market ranges and coverage, line by line.</p>
+    </div>
+    <div id="peerdoc" class="doc"><img id="peerimg" src="__ASSETS__/report-03.png" alt=""></div>
+  </section>
+
+  <section id="summary" class="scene">
+    <div class="textcol">
+      <div class="overline">Executive summary</div>
+      <h1 style="margin-top:20px">A clear starting point for your team.</h1>
+      <p class="lead">Three findings, each with the figure behind it.</p>
+    </div>
+    <div id="sumdoc" class="doc"><img id="sumimg" src="__ASSETS__/report-02.png" alt=""></div>
+  </section>
+
+  <section id="close" class="scene">
+    <h1>See where your fees sit against your competitors.</h1>
+    <div class="cta btn green">Request a free walkthrough</div>
+    <div class="lbl">The 10-page sample report</div>
+    <div id="strip"></div>
+  </section>
+
+  <svg id="cursor" class="cursor" viewBox="0 0 32 38"><path d="M2 2L5 29L13 21L21 36L27 33L19 18L29 17Z" fill="#0e1a2b" stroke="#fff" stroke-width="2"/></svg>
+  <div id="ring" class="ring"></div>
+  <div id="progress" class="progress"></div>
+</div>
+<script>
+const Q = "Which fees should we review first?";
+const strip = document.getElementById("strip");
+for (let i = 1; i <= 10; i++) strip.insertAdjacentHTML("beforeend", `<div class="pg"><img src="__ASSETS__/report-${String(i).padStart(2,"0")}.png" alt=""><span>${String(i).padStart(2,"0")}</span></div>`);
+const $ = (id) => document.getElementById(id);
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const outCubic = (x) => 1 - Math.pow(1 - x, 3);
+const inOut = (x) => x < .5 ? 4*x*x*x : 1 - Math.pow(-2*x + 2, 3) / 2;
+/** Progress 0..1 of a tween that starts at s and lasts d, eased. */
+const tw = (t, s, d, ease = outCubic) => ease(clamp((t - s) / d, 0, 1));
+const lerp = (a, b, p) => a + (b - a) * p;
+const SCENES = [["ask",0,4.5,"Ask Hamilton"],["answer",4.5,7,"Explore the answer"],["evidence",11.5,4,"Follow the evidence"],["create",15.5,2.5,"Create your report"],["cover",18,3.5,"Competitive Fee Position"],["peers",21.5,3,"Sample report · position map"],["summary",24.5,2.5,"Sample report · executive summary"],["close",27,3,"Fee Insight"]];
+function place(el, x, y, extra = "") { el.style.transform = `translate(${x}px,${y}px) ${extra}`; }
+function fade(el, p, from, to) { const o = lerp(0, 1, p); el.style.opacity = o; el.style.transform = `translate(${lerp(from[0],to[0],p)}px,${lerp(from[1],to[1],p)}px) scale(${lerp(from[2],to[2],p)})`; }
+window.seek = function (t) {
+  let cur = SCENES[0];
+  for (const s of SCENES) if (t >= s[1]) cur = s;
+  for (const s of SCENES) $(s[0]).classList.toggle("on", s === cur);
+  $("step").textContent = cur[3];
+  $("progress").style.transform = `scaleX(${t / 30})`;
+  const cursor = $("cursor"), ring = $("ring");
+  cursor.style.opacity = 0; ring.style.opacity = 0;
+  if (cur[0] === "ask") {
+    fade($("askcard"), tw(t, 0.05, .65), [60, 26, .96], [0, 0, 1]);
+    const n = clamp(Math.floor((t - 0.9) / 0.085), 0, Q.length);
+    $("chars").textContent = Q.slice(0, n);
+    $("caret").style.opacity = (t < 0.65 || Math.floor(t * 4) % 2 === 0) ? 1 : 0;
+    if (t >= 3.35) { const p = tw(t, 3.35, .55, inOut); cursor.style.opacity = 1; place(cursor, lerp(1500, 1650, p), lerp(900, 560, p)); }
+    if (t >= 3.96) { const p = tw(t, 3.96, .4); ring.style.opacity = (1 - p) * .6; place(ring, 1672, 580, `scale(${lerp(.3, 1.8, p)})`); $("send").style.transform = `scale(${t < 4.08 ? .9 : 1})`; }
+  }
+  if (cur[0] === "answer") {
+    fade($("anscard"), tw(t, 4.5, .45), [0, 25, 1], [0, 0, 1]);
+    $("bar1").style.transform = `scaleX(${tw(t, 5.65, .8)})`;
+    $("bar2").style.transform = `scaleX(${tw(t, 6.05, .8)})`;
+    $("val1").style.opacity = tw(t, 6.1, .3); $("val2").style.opacity = tw(t, 6.5, .3);
+    $("interp").style.opacity = tw(t, 7.0, .5);
+    fade($("fin"), tw(t, 7.15, .65), [40, 0, 1], [0, 0, 1]);
+    if (t >= 10.5) { const p = tw(t, 10.5, .55, inOut); cursor.style.opacity = 1; place(cursor, lerp(1600, 1330, p), lerp(900, 640, p)); }
+    if (t >= 11.1) { const p = tw(t, 11.1, .4); ring.style.opacity = (1 - p) * .6; place(ring, 1345, 650, `scale(${lerp(.3, 1.8, p)})`); }
+  }
+  if (cur[0] === "evidence") {
+    fade($("findoc"), tw(t, 11.5, .55), [85, 0, .94], [0, 0, 1]);
+    $("finimg").style.transform = `translateY(${lerp(0, -210, tw(t, 12.4, 2.3, inOut))}px)`;
+    $("evidence").querySelector(".textcol").style.opacity = tw(t, 11.6, .5);
+  }
+  if (cur[0] === "create") {
+    fade($("createcard"), tw(t, 15.5, .45), [0, 18, .96], [0, 0, 1]);
+    const clicked = t >= 17.05;
+    $("createbtn").style.opacity = clicked ? 0 : 1; $("readybtn").style.opacity = clicked ? tw(t, 17.15, .2) : 0;
+    $("createbtn").style.transform = `scale(${t >= 16.7 && t < 16.85 ? .94 : 1})`;
+    if (t >= 15.7 && t < 17.4) { const p = tw(t, 15.7, .6, inOut); cursor.style.opacity = 1; place(cursor, lerp(1500, 790, p), lerp(900, 640, p)); }
+    if (t >= 16.7) { const p = tw(t, 16.7, .4); ring.style.opacity = (1 - p) * .6; place(ring, 800, 650, `scale(${lerp(.3, 1.8, p)})`); }
+  }
+  if (cur[0] === "cover") {
+    const p = tw(t, 18, .85);
+    const st = $("stack"); st.style.opacity = p;
+    const drift = tw(t, 19.35, 1.8, inOut);
+    st.style.transform = `translate(${lerp(160, 0, p) - 20 * drift}px,${lerp(35, 0, p)}px) rotate(${lerp(4, 0, p)}deg) scale(${lerp(.88, 1, p) + .03 * drift})`;
+    $("sh1").style.transform = `perspective(1400px) rotateY(${lerp(-22, 0, tw(t, 18.2, 1))}deg)`;
+    $("cover").querySelector(".textcol").style.opacity = tw(t, 18.1, .5);
+  }
+  if (cur[0] === "peers") {
+    fade($("peerdoc"), tw(t, 21.5, .45), [90, 0, 1], [0, 0, 1]);
+    $("peerimg").style.transform = `translateY(${lerp(-40, -380, tw(t, 21.8, 2.4, inOut))}px)`;
+    $("peers").querySelector(".textcol").style.opacity = tw(t, 21.6, .5);
+  }
+  if (cur[0] === "summary") {
+    fade($("sumdoc"), tw(t, 24.5, .5), [70, 0, 1], [0, 0, 1]);
+    $("sumimg").style.transform = `translateY(${lerp(-40, -200, tw(t, 24.8, 2.0, inOut))}px)`;
+    $("summary").querySelector(".textcol").style.opacity = tw(t, 24.6, .5);
+  }
+  if (cur[0] === "close") {
+    $("close").querySelector("h1").style.opacity = tw(t, 27, .5);
+    $("close").querySelector(".cta").style.opacity = tw(t, 27.3, .5);
+    $("close").querySelector(".lbl").style.opacity = tw(t, 27.1, .5);
+    [...strip.children].forEach((pg, i) => { const p = tw(t, 27.1 + i * .07, .45); pg.style.opacity = p; pg.style.transform = `translateY(${lerp(70, 0, p)}px) rotate(${lerp(3, 0, p)}deg)`; });
+  }
+};
+window.seek(0);
+</script>
+</body>
+</html>

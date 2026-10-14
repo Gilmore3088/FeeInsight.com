@@ -59,7 +59,7 @@ describe("homepage sample report form", () => {
     fireEvent.submit(screen.getByRole("form", { name: "Download the sample report" }));
     expect(await screen.findByRole("link", { name: "Download the sample PDF" })).toHaveAttribute(
       "href",
-      "/reports/illustrative-competitive-fee-position-2026-10-03.pdf",
+      "/reports/competitive-fee-position-sample.pdf",
     );
     const payload = JSON.parse(fetcher.mock.calls[0][1].body);
     expect(payload.source).toBe("contact_sample");

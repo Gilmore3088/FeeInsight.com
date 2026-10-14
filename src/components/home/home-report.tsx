@@ -4,9 +4,9 @@ import { SampleReportForm } from "./sample-report-form";
 import { SAMPLE_REPORT_PAGE_COUNT } from "./home-stats";
 
 /**
- * Pages 1 to 3 of public/reports/sample-competitive-fee-position.pdf, rendered with
+ * Pages 1 to 3 of public/reports/competitive-fee-position-sample.pdf, rendered with
  * pdftoppm at 150 dpi and saved at 1200px wide (AVIF first, WebP for every other browser).
- * Re-render them whenever the sample PDF changes.
+ * Re-render them whenever the sample PDF changes (docs/design/homepage-v2/README.md).
  */
 export const SAMPLE_PAGES = [
   { stem: "/reports/sample-preview/page-1", label: "Cover" },

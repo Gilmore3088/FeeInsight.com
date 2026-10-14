@@ -7,20 +7,22 @@ import { SAMPLE_REPORT_PDF_HREF } from "./sample-report-form";
 import { WALKTHROUGH_VIDEO } from "./hero-video";
 
 const PUBLIC = join(process.cwd(), "public");
-const SAMPLE_PDF = join(PUBLIC, "reports/sample-competitive-fee-position.pdf");
 /** The hero video must stay small enough to play on a phone connection. */
 const VIDEO_BYTE_LIMIT = 5 * 1024 * 1024;
 
 describe("homepage assets", () => {
-  it("states the sample report's real page count", async () => {
+  it("states the real page count of the PDF it offers", async () => {
     const { getDocumentProxy } = await import("unpdf");
-    const pdf = await getDocumentProxy(new Uint8Array(readFileSync(SAMPLE_PDF)));
+    const pdf = await getDocumentProxy(new Uint8Array(readFileSync(join(PUBLIC, SAMPLE_REPORT_PDF_HREF))));
     expect(pdf.numPages).toBe(SAMPLE_REPORT_PAGE_COUNT);
   });
 
-  it("offers the same bytes as the sample report for download", () => {
-    const served = readFileSync(join(PUBLIC, SAMPLE_REPORT_PDF_HREF));
-    expect(served.equals(readFileSync(SAMPLE_PDF))).toBe(true);
+  it("offers the sample for the same institution and date as the studio sample", async () => {
+    const { getDocumentProxy, extractText } = await import("unpdf");
+    const served = await extractText(await getDocumentProxy(new Uint8Array(readFileSync(join(PUBLIC, SAMPLE_REPORT_PDF_HREF)))), { mergePages: true });
+    expect(served.text).toContain("Sample Community Bank");
+    expect(served.text).toContain("Oct 3, 2026");
+    expect(served.text).toContain("$18 vs $5");
   });
 
   it("ships pages 1 to 3 of the sample as AVIF and WebP", () => {

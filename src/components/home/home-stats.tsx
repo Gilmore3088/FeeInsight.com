@@ -2,8 +2,8 @@ import { COVERAGE_LABELS, UNAVAILABLE_LABEL, type PublicStatsSummary } from "@/l
 import { CONTAINER } from "./look";
 
 /**
- * Pages in public/reports/sample-competitive-fee-position.pdf. sample-report-pages.test.ts
- * reads the PDF and fails when this number stops matching it.
+ * Pages in public/reports/competitive-fee-position-sample.pdf. home-assets.test.ts reads the
+ * PDF and fails when this number stops matching it.
  */
 export const SAMPLE_REPORT_PAGE_COUNT = 10;
 

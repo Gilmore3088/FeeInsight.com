@@ -7,8 +7,8 @@ import { LEAD_HONEYPOT_FIELD } from "@/lib/lead-capture";
 import { HoneypotField, honeypotValue } from "@/components/public/honeypot-field";
 import { BUTTON_GREEN, INPUT, LABEL } from "./look";
 
-/** The 10-page sample, the same bytes as public/reports/sample-competitive-fee-position.pdf. */
-export const SAMPLE_REPORT_PDF_HREF = "/reports/illustrative-competitive-fee-position-2026-10-03.pdf";
+/** The 10-page sample in the Index look, rendered from Reports/studio/sample/sample-competitive-fee-position-index.html. */
+export const SAMPLE_REPORT_PDF_HREF = "/reports/competitive-fee-position-sample.pdf";
 
 const LEADS_ENDPOINT = "/api/leads";
 /** A request row (contact_*), never a newsletter signup. */
