@@ -1,6 +1,8 @@
 /**
  * Knox's audience suggestion from the fee's context (#1059): the document's address and title,
- * the section heading above the fee's own line, or a general schedule with no business wording.
+ * a heading for all accounts, or a general schedule with no business wording. A heading naming
+ * one audience still blocks the defaults below it, but no longer decides on its own where the
+ * schedule also prices business items.
  * Pure; no model call. Knox suggests, Darwin decides (DECISIONS, 2026-10-12 and 2026-10-13): this
  * returns evidence for Darwin, never a published label on its own.
  */
@@ -251,14 +253,36 @@ export function suggestAudience(input: {
   // lines under it, or a priced line that names business, is.
   const businessLine = businessFeeLine(lines);
   const feeIndex = feeLineIndex(lines, input.feeName, input.amount);
-  // The section heading above the fee's own line is nearer evidence than the page's title.
   if (feeIndex >= 0) {
     const section = sectionHeadingAudience(lines, feeIndex);
     // A fee in one of two audience columns stays unknown: the text does not say which column.
     if (section && ("columns" in section || "ambiguous" in section)) return null;
-    // "All accounts" in a schedule that prices nothing for businesses is the consumer schedule.
-    if (section && !(section.audience === "both" && businessLine < 0)) {
-      return { audience: section.audience, source: "section_heading", evidence: section.heading };
+    // A heading for all accounts in a schedule that also prices business items lists the fee for
+    // both. With nothing priced for businesses, it is the consumer schedule (the default below).
+    if (section && section.audience === "both" && businessLine >= 0) {
+      return { audience: "both", source: "section_heading", evidence: section.heading };
+    }
+    // A personal heading in a schedule that prices nothing for businesses stands, before any
+    // title: a menu line "Business Fee Schedule" is no reason to call it business (review of
+    // 7c4f3b25).
+    if (section && section.audience === "consumer" && businessLine < 0) {
+      return { audience: "consumer", source: "section_heading", evidence: section.heading };
+    }
+    // A heading that names one audience does not decide on its own in a schedule that also prices
+    // business items. On unseen schedules it agreed with a blind reading on 14 of 36 fees, and 10
+    // went to the other audience: a distant "Business Checking" heading or column on a web page,
+    // or a two-column PDF read line by line, claims fees listed for every account (#1059 holdout,
+    // Oct 14). The fee stays unknown until a heading can be tied to its section.
+    // A business schedule's title over a business heading ("BUSINESS FEE SCHEDULE" over "Business
+    // Accounts") settles it. A personal title does not: in a schedule that also prices business
+    // items it is a section heading near the top ("PERSONAL CHECKING SERVICE CHARGE").
+    // A business heading never falls through to the consumer default, even when the schedule's
+    // business prices sit too far below it to count as business fees.
+    if (section && (businessLine >= 0 || section.audience === "business")) {
+      const title = scheduleTitle(lines);
+      return section.audience === "business" && title && "audience" in title && title.audience === "business"
+        ? { audience: "business", source: "document_title", evidence: title.line }
+        : null;
     }
   }
   const title = scheduleTitle(lines);
