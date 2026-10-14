@@ -481,6 +481,10 @@ Rules 65, #1196 (Oct 14, no version change, so no document is re-read for it):
   (`withDroppedDecimalPoints`): "00" cents always, other cents only when the text drops the point
   on "00" prices too and the cents end their cell. The cents no longer open the next fee's name
   ("00 per month Nonsufficient funds").
+- #1305, same function: cents followed by a footnote star end their price ("$1 50* after 8/mo"
+  is $1.50, the star never a digit), and a point kept with a space after it is the same dropped
+  point ("$29. 95/ea ch" is $29.95). Each shape is counted on its own, and cents after ". " must
+  end their cell, so "$500. 10-year draw period" and "below $100. 19 and over" stay two numbers.
 - On a line with two fees, the unit right after the first price ("per month", "/hr", "each") is
   that price's: the second fee's name and frequency are read from after it, and the second fee is
   not dropped as a repeat of the first price.
