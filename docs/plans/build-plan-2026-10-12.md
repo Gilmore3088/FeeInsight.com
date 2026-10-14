@@ -14,7 +14,7 @@ status comment on #1026.
 
 | Lane | Owns (agents and code) | Items, in order |
 |---|---|---|
-| **A: Data pipeline** (the builder already running) | Rosetta, Knox, Darwin, Gutenberg and publishing, Deming, the learning core | #1059 first (holdout, then the migration and relabel for James), then #1093, #1052, #1051 (recover lost fees); then Phases 2–4 and 5 as before, except #1117 and #1028/#1029 |
+| **A: Data pipeline** (the builder already running) | Rosetta, Knox, Darwin, Gutenberg and publishing, Deming, the learning core | #1059 first (holdout, then the migration and relabel for James), then #1093, #1052, #1051 (recover lost fees); then Phases 2–4 and 5 as before, except #1100 (Lane B), #1117, #1028/#1029 and #1078's Hamilton side |
 | **B: Data quality, published fees** (Hamilton until 2026-10-14) | Published fee semantics at every customer reader: `conditions`, category and frequency fixes, publishing-quality tests | #1234 steps 1 and 3, #1100, #1196, #1067 (taken out of Parked). Then Hamilton correctness only (#1079, #981, #1066), never Hamilton UI or redesign |
 | **C: Discovery and technical SEO** | Atlas, Magellan, the state experts, public-page metadata (titles, sitemap, JSON-LD) | Phase 7 (#1031, #1032, #1030, #1035; #1036 needs James), then #1117 steps 1–2, #1028/#1029; the technical-only items left in #1134's list (#1162–#1181) |
 
@@ -60,8 +60,14 @@ A PR that changes no stored row or customer output says "code ready; dataset gra
 - Keep legitimate business fees and account tiers. Fix labels; never delete real rows to move a
   number.
 
-**Hamilton UI and redesign wait** (#1011, #1242, #1083, the H07 visual work) until James says the
-design is ready. Hamilton PRs already open finish under the normal rules.
+**Hamilton UI and redesign wait** until James says the design is ready: the redesign drafts #1011
+and #1242 stay as drafts, and #1083 waits. Phase 6's other items (#1076, #1077, #1084, #1090, #1082,
+#1060/#1062) have no lane for now and wait too. Hamilton PRs already open and out of draft (#1274,
+#1275 and the copy PRs) finish under the normal rules.
+
+**Baselines for the ledger.** Two readings of the `conditions` note exist: 75,101 of 76,848 live
+fees (#1234, Oct 13) and 74,832 (the audit, Oct 14 08:17 UTC). The ledger uses the audit's reading
+and counts as its baseline, and names the query and time for every later reading.
 
 ## Two rules that shape every item
 
