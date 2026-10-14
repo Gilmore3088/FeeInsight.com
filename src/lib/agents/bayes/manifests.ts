@@ -225,6 +225,9 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   // v2 (#1102): the re-check's flag carries its version, so every held percentage line is read
   // again by the extract steps themselves (100 a step); there is nothing to replay.
   HELD_RATE_RECHECK_VERSION: "Its versioned flag makes the extract steps re-read every held percentage line under v2.",
+  // v1 (#1051): a new fetch route, not a changed rule. Its selector picks every unreachable fee
+  // link each fetch step (3 a step, once a week each), so the backlog is worked by the route itself.
+  ADDRESS_VARIANT_FETCH_STRATEGY: "A new free fetch route; every fetch step selects the unreachable links it works through, so there is nothing to replay.",
 };
 
 export async function loadManifests(): Promise<ReplayManifest[]> {
