@@ -5,7 +5,10 @@
  * make: a regulation answer names the institution's own regulator, and a state question
  * names its own state. It also replays the questions Pro readers really asked (kept in the Ask
  * ledger and saved analyses) through today's engine, so a question Hamilton could not answer
- * stays on the list until it can. Deterministic and read-only: nothing is saved and no model is called.
+ * stays on the list until it can. Each answer is scored twice: on form (the quality bar) and on
+ * correctness (#1079: its fee figures tie to live rows in published_fee_catalog under the
+ * statistics contract, `answer-correctness.ts`). Deterministic and read-only: nothing is saved and
+ * no model is called.
  * Server only.
  */
 
@@ -13,8 +16,12 @@ import { sql } from "@/lib/data-store/connection";
 import type { SqlTag } from "@/lib/agents/hamilton/studies/common";
 import { getInstitutionRegulators, type InstitutionRegulators } from "@/lib/data-store/regulators";
 import { STATE_NAMES } from "@/lib/us-states";
-import { incomeWhyFor, scheduleFor } from "./ask-service";
-import { buildAskResponse, parseAsk, withSegmentDefault } from "./workspace/ask";
+import { resolveAskIntent } from "./ask-service";
+import { buildAskResponse, feeCategoriesIn } from "./workspace/ask";
+import { proseFeeName } from "./workspace/names";
+import { asksWholeSchedule, type ScheduleOverview } from "./workspace/schedule";
+import { asksIncome, asksIncomeWhy } from "./workspace/why";
+import { liveCatalogReader, reconcileAnswer, type LiveReader } from "./answer-correctness";
 import { QUALITY_QUESTIONS, scoreResponse, type QualityQuestion } from "./workspace/quality-bar";
 import { regulatorSentence } from "./workspace/regulators";
 import { getFeeResearch } from "./workspace/research";
@@ -22,7 +29,7 @@ import { withDepth } from "./workspace/story-extras";
 import type { AskResponse, FeeResearch } from "./workspace/types";
 
 /** The questions asked of every institution: one per kind of ask, across six fees. */
-export const EVAL_QUESTION_IDS = ["q01", "q04", "q06", "q07", "q09", "q10", "q11", "q12", "q15", "q17", "q18", "q23", "q25", "q27"] as const;
+export const EVAL_QUESTION_IDS = ["q01", "q04", "q06", "q07", "q09", "q10", "q11", "q12", "q15", "q17", "q18", "q23", "q25", "q26", "q27", "q31", "q32"] as const;
 const REGULATION = new Set(["q25", "q26"]);
 const CONCURRENCY = 3;
 const STATE = new Set(["q17"]);
@@ -40,7 +47,10 @@ export interface EvalResult {
   questionId: string;
   question: string;
   kind: string;
+  /** Form failures: the quality bar and the live-data checks. */
   failures: string[];
+  /** Correctness failures (figures that do not tie to the live catalog); null when the answer could not be checked. */
+  correctness?: string[] | null;
 }
 
 /** Every line of the storyline the reader sees: its framing, both lenses, the exhibits and what to watch. */
@@ -67,7 +77,8 @@ function answerText(response: AskResponse): string {
 
 /**
  * The checks only live data can make. A regulation answer states who regulates this
- * institution when that is on file; a question about "our state" names the state.
+ * institution when that is on file, in the sentence the answer writes for it (with or without
+ * its name); a question about "our state" names the state.
  */
 export function liveDataFailures(
   item: QualityQuestion,
@@ -78,8 +89,11 @@ export function liveDataFailures(
   const failures: string[] = [];
   const text = answerText(response);
   if (REGULATION.has(item.id)) {
-    const sentence = regulatorSentence(regulators, institution.stateCode, institution.charterType);
-    if (sentence && !text.includes(sentence)) failures.push(`does not name its regulator ("${sentence}")`);
+    // The answer names the institution in this sentence (regulatoryFacts passes its name); the
+    // second-person form is the same sentence where no name is on hand. Either names the regulator.
+    const named = regulatorSentence(regulators, institution.stateCode, institution.charterType, institution.name);
+    const unnamed = regulatorSentence(regulators, institution.stateCode, institution.charterType);
+    if (named && !text.includes(named) && !(unnamed && text.includes(unnamed))) failures.push(`does not name its regulator ("${named}")`);
   }
   if (STATE.has(item.id) && institution.stateCode) {
     const state = STATE_NAMES[institution.stateCode] ?? institution.stateCode;
@@ -88,14 +102,37 @@ export function liveDataFailures(
   return failures;
 }
 
+/** The one fee a response answers about, from the page it opens; null for a question asked back or saved. */
+function answeredFee(response: AskResponse): string | null {
+  return "feeCategory" in response.pageChange ? response.pageChange.feeCategory : null;
+}
+
+/**
+ * An answer about a different subject from the question (#1077). A question that names fees is
+ * answered for one of them; one that names none is answered for a fee only when it asked about
+ * every fee or about fee income (the fee furthest from its median is then the detail). Any
+ * other fee in the answer was put in the question's place, as overdraft once was.
+ */
+export function offSubjectFailure(question: string, response: AskResponse): string | null {
+  const answered = answeredFee(response);
+  if (!answered) return null;
+  const named = feeCategoriesIn(question);
+  if (named.length > 0) {
+    return named.includes(answered) ? null : `answers a different subject: the ${proseFeeName(answered)} fee, not the fee asked about`;
+  }
+  if (asksWholeSchedule(question) || asksIncome(question) || asksIncomeWhy(question)) return null;
+  return `answers a different subject: the ${proseFeeName(answered)} fee, which the question does not name`;
+}
+
+interface Answered {
+  response: AskResponse;
+  research: FeeResearch | null;
+  schedule: ScheduleOverview | null;
+}
+
 /** One question for one institution, through the Ask bar's engine path, with research cached per fee. */
-async function answer(institutionId: number, question: string, research: Map<string, Promise<FeeResearch | null>>): Promise<AskResponse> {
-  let intent = parseAsk(question);
-  const schedule = !intent.feeCategory ? await scheduleFor(institutionId, question, {}) : null;
-  if (schedule?.top) intent = { ...intent, feeCategory: schedule.top };
-  const why = await incomeWhyFor(institutionId, question, {});
-  if (!intent.feeCategory && why?.top) intent = { ...intent, feeCategory: why.top };
-  intent = withSegmentDefault(intent);
+async function answer(institutionId: number, question: string, research: Map<string, Promise<FeeResearch | null>>): Promise<Answered> {
+  const { intent, schedule, why } = await resolveAskIntent(institutionId, question, {});
   let found: FeeResearch | null = null;
   if (intent.feeCategory) {
     const key = `${intent.feeCategory}|${intent.segment ? JSON.stringify(intent.segment) : ""}`;
@@ -103,20 +140,29 @@ async function answer(institutionId: number, question: string, research: Map<str
     found = await research.get(key)!;
   }
   const built = buildAskResponse({ question, intent, research: found, memory: [] });
-  return withDepth(built, schedule, why, found?.provenance.dataAsOf.fees ?? null);
+  return { response: withDepth(built, schedule, why, found?.provenance.dataAsOf.fees ?? null), research: found, schedule };
+}
+
+/** The answer's correctness failures against the live catalog; null when it could not be checked. */
+async function correctnessOf(institutionId: number, question: string, answered: Answered, live: LiveReader): Promise<string[] | null> {
+  const values = await live(institutionId, answered.research, answered.schedule).catch(() => null);
+  const result = reconcileAnswer({ question, response: answered.response, research: answered.research, schedule: answered.schedule, live: values });
+  return result.checked ? result.failures : null;
 }
 
 /** Everything one institution's questions fail on. */
-export async function evaluateInstitution(institution: EvalInstitution): Promise<EvalResult[]> {
+export async function evaluateInstitution(institution: EvalInstitution, live: LiveReader = liveCatalogReader()): Promise<EvalResult[]> {
   const regulators = await getInstitutionRegulators(institution.id).catch(() => null);
   const research = new Map<string, Promise<FeeResearch | null>>();
   const out: EvalResult[] = [];
   for (const id of EVAL_QUESTION_IDS) {
     const item = QUALITY_QUESTIONS.find((q) => q.id === id)!;
     try {
-      const response = await answer(institution.id, item.question, research);
+      const answered = await answer(institution.id, item.question, research);
+      const { response } = answered;
       const failures = [...scoreResponse(item, response).failures, ...liveDataFailures(item, response, institution, regulators)];
-      out.push({ institutionId: institution.id, questionId: id, question: item.question, kind: response.kind, failures });
+      const correctness = await correctnessOf(institution.id, item.question, answered, live);
+      out.push({ institutionId: institution.id, questionId: id, question: item.question, kind: response.kind, failures, correctness });
     } catch (error) {
       out.push({ institutionId: institution.id, questionId: id, question: item.question, kind: "error", failures: [`error: ${error instanceof Error ? error.message : String(error)}`] });
     }
@@ -201,17 +247,22 @@ export interface ProQuestionResult {
   kind: string;
   shortAnswer: string;
   failures: string[];
+  /** Correctness failures; null when the answer could not be checked. */
+  correctness?: string[] | null;
 }
 
 /** One institution's real questions through today's engine, scored by the same quality bar. */
-export async function evaluateProQuestions(institutionId: number, questions: ProQuestion[]): Promise<ProQuestionResult[]> {
+export async function evaluateProQuestions(institutionId: number, questions: ProQuestion[], live: LiveReader = liveCatalogReader()): Promise<ProQuestionResult[]> {
   const research = new Map<string, Promise<FeeResearch | null>>();
   const out: ProQuestionResult[] = [];
   for (const q of questions) {
     try {
-      const response = await answer(institutionId, q.question, research);
-      const failures = scoreResponse({ id: "pro", question: q.question, intent: "a Pro reader's question" }, response).failures;
-      out.push({ institutionId, question: q.question, askedAt: q.askedAt, kind: response.kind, shortAnswer: response.shortAnswer, failures });
+      const answered = await answer(institutionId, q.question, research);
+      const { response } = answered;
+      const correctness = await correctnessOf(institutionId, q.question, answered, live);
+      const offSubject = offSubjectFailure(q.question, response);
+      const failures = [...(offSubject ? [offSubject] : []), ...scoreResponse({ id: "pro", question: q.question, intent: "a Pro reader's question" }, response).failures];
+      out.push({ institutionId, question: q.question, askedAt: q.askedAt, kind: response.kind, shortAnswer: response.shortAnswer, failures, correctness });
     } catch (error) {
       out.push({ institutionId, question: q.question, askedAt: q.askedAt, kind: "error", shortAnswer: "", failures: [`error: ${error instanceof Error ? error.message : String(error)}`] });
     }
@@ -225,6 +276,8 @@ export interface ProReplaySummary {
   /** Questions Hamilton still answers with a question of its own. */
   askedBack: number;
   topFailures: Array<{ failure: string; count: number }>;
+  /** Whether the figures tie to the live catalog (#1079); `passed` above is the form pass. */
+  correctness: CorrectnessSummary;
   /** Every real question that falls short, so each becomes a fix. */
   failing: ProQuestionResult[];
 }
@@ -235,7 +288,29 @@ export function summarizeProReplay(results: ProQuestionResult[]): ProReplaySumma
     passed: results.filter((r) => r.failures.length === 0).length,
     askedBack: results.filter((r) => r.kind === "clarifying_question").length,
     topFailures: groupFailures(results),
-    failing: results.filter((r) => r.failures.length > 0),
+    correctness: summarizeCorrectness(results),
+    failing: results.filter((r) => r.failures.length > 0 || (r.correctness?.length ?? 0) > 0),
+  };
+}
+
+export interface CorrectnessSummary {
+  /** Answers whose figures could be checked against the live catalog. */
+  checked: number;
+  /** Checked answers whose every fee figure ties to a live row. */
+  correct: number;
+  /** correct / checked; null when none could be checked. */
+  rate: number | null;
+  topFailures: Array<{ failure: string; count: number }>;
+}
+
+export function summarizeCorrectness(results: Array<{ correctness?: string[] | null }>): CorrectnessSummary {
+  const checked = results.filter((r): r is { correctness: string[] } => Array.isArray(r.correctness));
+  const correct = checked.filter((r) => r.correctness.length === 0).length;
+  return {
+    checked: checked.length,
+    correct,
+    rate: checked.length > 0 ? Math.round((correct / checked.length) * 10_000) / 10_000 : null,
+    topFailures: groupFailures(checked.map((r) => ({ failures: r.correctness }))),
   };
 }
 
@@ -255,6 +330,10 @@ export interface AnswerEvalSummary {
   passed: number;
   /** Failure text (institution-specific values stripped) with how many answers hit it, most first. */
   topFailures: Array<{ failure: string; count: number }>;
+  /** Whether the figures tie to the live catalog (#1079); `passed` above is the form pass. */
+  correctness: CorrectnessSummary;
+  /** The path these answers came through: the free Ask engine. Paid paths are not sampled yet. */
+  path: "free_ask";
   /** Pass rate per question, weakest first. */
   byQuestion: Array<{ questionId: string; question: string; passed: number; total: number }>;
   failing: EvalResult[];
@@ -285,8 +364,10 @@ export function summarizeEval(results: EvalResult[], institutions: number, timed
     answers: results.length,
     passed: results.filter((r) => r.failures.length === 0).length,
     topFailures: groupFailures(results),
+    correctness: summarizeCorrectness(results),
+    path: "free_ask",
     byQuestion: [...byId.entries()].map(([questionId, q]) => ({ questionId, ...q })).sort((a, b) => a.passed / a.total - b.passed / b.total),
-    failing: results.filter((r) => r.failures.length > 0).slice(0, 60),
+    failing: results.filter((r) => r.failures.length > 0 || (r.correctness?.length ?? 0) > 0).slice(0, 60),
     timedOut,
   };
 }
@@ -302,6 +383,8 @@ export async function runAnswerEval({
   now = new Date(),
 }: { db?: SqlTag; perGroup?: number; budgetMs?: number; now?: Date } = {}): Promise<AnswerEvalSummary> {
   const started = Date.now();
+  // One live read per fee for the whole run, shared by the Pro replay and the sampled institutions.
+  const live = liveCatalogReader();
   const proQuestions = await pickProQuestions(db).catch(() => []);
   const byInstitution = new Map<number, ProQuestion[]>();
   for (const q of proQuestions) byInstitution.set(q.institutionId, [...(byInstitution.get(q.institutionId) ?? []), q]);
@@ -309,7 +392,7 @@ export async function runAnswerEval({
   const asked = [...byInstitution.entries()];
   for (let i = 0; i < asked.length; i += CONCURRENCY) {
     const batch = asked.slice(i, i + CONCURRENCY);
-    for (const rows of await Promise.all(batch.map(([id, qs]) => evaluateProQuestions(id, qs)))) proResults.push(...rows);
+    for (const rows of await Promise.all(batch.map(([id, qs]) => evaluateProQuestions(id, qs, live)))) proResults.push(...rows);
   }
 
   const institutions = await pickEvalInstitutions(db, perGroup, now.toISOString().slice(0, 10));
@@ -323,7 +406,7 @@ export async function runAnswerEval({
       break;
     }
     const batch = institutions.slice(i, i + CONCURRENCY);
-    for (const rows of await Promise.all(batch.map(evaluateInstitution))) results.push(...rows);
+    for (const rows of await Promise.all(batch.map((institution) => evaluateInstitution(institution, live)))) results.push(...rows);
     done += batch.length;
   }
   const summary = { ...summarizeEval(results, done, timedOut, institutions.length), institutionIds: institutions.slice(0, done).map((i) => i.id) };

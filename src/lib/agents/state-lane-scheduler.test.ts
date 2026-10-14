@@ -353,6 +353,15 @@ describe("state lane scheduler", () => {
     expect(query).toContain("step.step_key = 'state-expert'");
   });
 
+  it("does not count 'not published online' banks or a paid try still on cooldown as due (#1031, #1032)", async () => {
+    mockCadence({ fullThisMonth: true, recheckThisQuarter: true });
+    await stateLaneCadence("PA");
+    const query = sqlMock.mock.calls.map((call) => templateText(call[0])).find((text) => text.includes("full_this_month"));
+    expect(query).not.toContain("pa.created_at >= date_trunc('month'");
+    expect(query).toMatch(/AND NOT \(\s*ladder\.misses >=/);
+    expect(query).toContain("COALESCE(pa.detail->>'website_url', inst.website_url) = inst.website_url");
+  });
+
   it("falls back to a full pass without a re-check when the cadence check fails", async () => {
     sqlMock.mockRejectedValueOnce(new Error("boom"));
     const error = vi.spyOn(console, "error").mockImplementation(() => {});

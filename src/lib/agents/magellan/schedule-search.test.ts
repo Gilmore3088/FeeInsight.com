@@ -6,6 +6,7 @@ vi.mock("@/lib/ai-provider-usage", async (importOriginal) => ({
   trackAnthropicRequest: (context: unknown, request: () => PromiseLike<unknown>) => trackAnthropicRequest(context, request),
 }));
 
+import { FOUND_COOLDOWN_DAYS, MISS_COOLDOWN_DAYS } from "./cooldowns";
 import { runScheduleSearch, scheduleSearchPrompt, type ScheduleSearchRow, MAX_TRANSIENT_TRIES } from "./schedule-search";
 
 type DbMock = ReturnType<typeof vi.fn>;
@@ -127,11 +128,21 @@ describe("market leaders in the priority lane", () => {
 });
 
 describe("banks whose answer never opens", () => {
-  it("stops paying for a bank after a few timeouts in a month", async () => {
+  it("stops paying for a bank after a few timeouts in the miss cooldown", async () => {
     const db = createDb([]);
     await runScheduleSearch({ runId: 4, db: asDb(db), create: vi.fn(), leaderIds: [] });
     const call = db.mock.calls.find((c) => text(c[0]).includes("incomplete-link schedule search"));
     expect(text(call![0])).toMatch(/AND pa\.outcome <> 'budget_blocked'\s*\)\s*<\s*$/m);
     expect(call!.slice(1)).toContain(MAX_TRANSIENT_TRIES);
+  });
+
+  it("counts its cooldown from the last try, 90 days after a find and 30 after a miss (#1031)", async () => {
+    const db = createDb([]);
+    await runScheduleSearch({ runId: 4, db: asDb(db), create: vi.fn(), leaderIds: [] });
+    const call = db.mock.calls.find((c) => text(c[0]).includes("incomplete-link schedule search"));
+    expect(text(call![0])).not.toContain("date_trunc('month'");
+    expect(text(call![0])).toContain("CASE WHEN pa.outcome = 'ok' THEN");
+    expect(call!.slice(1)).toContain(FOUND_COOLDOWN_DAYS);
+    expect(call!.slice(1)).toContain(MISS_COOLDOWN_DAYS);
   });
 });

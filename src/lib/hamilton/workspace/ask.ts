@@ -133,14 +133,19 @@ export function parseAsk(question: string, fallbackCategory: string | null = nul
 }
 
 /**
- * A question about a segment ("all institutions above $10 billion") that names no fee is
- * answered for overdraft, the fee segments are most often compared on, instead of asking back;
- * the answer names the fee in its first line.
+ * Every fee a question names, by name or synonym ("both NSF and monthly maintenance" names two).
+ * The answer eval uses it to tell an answer about a fee the question asked for from one about a
+ * fee put in its place (#1077). A question that names no fee is never answered for a fee chosen
+ * for it: it gets the whole-schedule or income answer when it asks for one, otherwise Hamilton
+ * asks which fee.
  */
-export const SEGMENT_DEFAULT_FEE = "overdraft";
-
-export function withSegmentDefault(intent: AskIntent): AskIntent {
-  return !intent.feeCategory && intent.segment ? { ...intent, feeCategory: SEGMENT_DEFAULT_FEE } : intent;
+export function feeCategoriesIn(question: string): string[] {
+  const text = question.toLowerCase().replace(/[’`]/g, "'");
+  const out = new Set<string>();
+  for (const { category, phrase } of PHRASES) {
+    if (new RegExp(`(^|[^a-z])${escapeRe(phrase)}($|[^a-z])`).test(text)) out.add(category);
+  }
+  return [...out];
 }
 
 // ─── Questions Hamilton asks back ────────────────────────────────────────────

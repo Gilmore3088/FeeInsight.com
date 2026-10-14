@@ -88,7 +88,7 @@ and `detail.method_version`).
 | 2 | `discover.second_document` | `second-document.ts` (version 3, the companion finder), after the main loop, in the last 25 s each step keeps for it (`COMPANION_RESERVE_MS`; banks stop starting at 50 s): two of each step's six slots go first to a state top-10 bank from any state with no live overdraft fee (`LEADER_SLOTS`); then banks with fewer than 8 published fee categories (none counts), an HTML fee link and no monthly fee, no live monthly maintenance or overdraft item fee (often in a separate account disclosure), or a link that is not the consumer schedule yet (link coverage), get a search of the homepage, the fee page, up to 3 hub pages and the site's own search. Every deposit-account page that lists at least 3 fee lines (`ACCOUNT_PAGE_MIN_FEE_LINES`; pages with 1 or 2 gave live fees about 1 time in 10 on prod) (named after its account, e.g. "Freedom Checking"), every fee document (schedule, disclosure, courtesy pay policy, opaque `/assets/files/` PDFs; checked by the shared fee-page check) and every account, member, membership or deposit agreement (or terms and conditions) whose text lists at least 2 fee lines with a dollar amount (`AGREEMENT_MIN_FEE_LINES`) (role `consumer_supplement`, PDFs read up to 12 pages, at most 3 checked) is stored in `institution_additional_sources`, up to 8 per bank. Business, loan, HELOC and line-of-credit pages are skipped, and so are funds-availability notices, overdraft opt-in forms, Zelle terms, rates pages, calculators and join pages. Never replaces the fee link. Each bank at most monthly. Report requesters (`leads.quote_institution_id`) and $10B+ banks go first, then links that are not the schedule, then banks of 8+ categories missing maintenance or overdraft, then the fewest categories. Slots the state's own banks leave free go to hidden banks (fewer than 3 live categories, link a product page or no overdraft price) from any state, in the same order, so a state lane that has checked all its banks this month still works on the 3-fee-rule backlog. |
 | 2 | `discover.site_search` | Inside the companion finder: the bank's own site search (a GET search form on its homepage), at most 4 result pages per bank per run. "fee schedule" always runs; the other 3 rotate each recheck window through "account agreement", "schedule of fees", "member agreement", "truth in savings", "deposit agreement", "membership agreement". One attempt row per query (`detail.query`, `candidates`, `kept`; not folded into the playbook): `ok` when a page it found was kept, `rejected` when its hits were all dropped, `no_candidates` when it linked to nothing useful. |
 | 3 | `discover.paid_pick` | `paid-find.ts`: one model call, no tools, picks up to 3 of the homepage's links; each pick passes the fee-page check. Off with `MAGELLAN_PAID_PICK=off`. |
-| 3 | `discover.paid_web_search` | `paid-find.ts`, the `discover-paid` provider step (below); runs only when the pick found nothing, once a month per bank. |
+| 3 | `discover.paid_web_search` | `paid-find.ts`, the `discover-paid` provider step (below); runs only when the pick found nothing, then waits out the paid cooldown (90 days after a find, 30 after a miss; `cooldowns.ts`). |
 
 - Fee-page check (`find-validate.ts`), shared by every finder and the paid pass: HTML
   must pass `scoreFeePage` and not be a rates page; PDFs are downloaded (up to 8 MB)
@@ -223,8 +223,22 @@ and `detail.method_version`).
   `resumed_searches` counts resumed banks. Without the learning schema there is no
   resume, and two cut-offs make a miss as before.
 - Pass 3 (`runMagellanPaidFind`): up to `PAID_PASS_ITEMS_PER_RUN` banks in the state
-  that are `dead` after a search with the current method version and had no paid try
-  this month. One `paidModelCall` per bank (agent `magellan`, `PAID_PASS_MODELS.find()`,
+  that are `dead` after a search with the current method version and are off the paid
+  cooldown: 90 days after a find, 30 days after a miss, counted from the try, not the
+  calendar month (`FOUND_COOLDOWN_DAYS`, `MISS_COOLDOWN_DAYS` in `cooldowns.ts`, #1031).
+  The escalation ladder (`escalation.ts`, #1032) picks the ask: with no paid miss since
+  the last paid find, the fee schedule (rung `schedule`); after one, a Truth in Savings
+  disclosure, deposit account agreement or account terms that state fees (rung
+  `disclosure`). After `NOT_ONLINE_AFTER_MISSES` (2) misses on the same website the
+  institution is "not published online", dated by the last miss: no pick and no search
+  for `NOT_ONLINE_RETRY_DAYS` (120), then the rungs alternate again. The state comes from
+  `pipeline_attempts` (no column): misses count only since the last paid find and only on
+  the current website (`detail.website_url`, recorded on every paid search; older rows
+  count as the current site), so a new website restarts the ladder at once, and a found
+  or submitted fee link takes the institution off the paid list. Each attempt records
+  `detail.rung`. The institution's admin page shows its place on the ladder and the
+  methods tried; the state page and the state-expert step (`not_published_online`) count
+  "not published online" by size tier. One `paidModelCall` per bank (agent `magellan`, `PAID_PASS_MODELS.find()`,
   server `web_search` tool, max 3 uses) asks for the consumer fee schedule on the bank's
   own domain as JSON. The answer must be on the bank's domain and pass the same
   fee-page check before it is stored. Each try is logged with its cost. A budget cap or
@@ -235,8 +249,8 @@ and `detail.method_version`).
   step: up to `SCHEDULE_SEARCH_PER_RUN` $10B+ banks, report requesters or market leaders
   (top 15 in their state by deposits or fee income, `loadMarketLeaderIds` in
   `src/lib/data-store/market-leaders.ts`), from any state, whose link is not the consumer
-  schedule (link coverage) or who are hidden (fewer than three live fee categories), once a
-  month each, requesters then leaders then largest first. If the ranking fails the lane runs
+  schedule (link coverage) or who are hidden (fewer than three live fee categories), off
+  the paid cooldown, requesters then leaders then largest first. If the ranking fails the lane runs
   on size and requests alone. The model (web search) is told why the held page is not it; the
   answer must be on the bank's domain, new to the bank, and pass the fee-page check. It is
   stored as a `consumer_supplement` companion beside the link, so companion fetch, Rosetta
@@ -246,7 +260,7 @@ and `detail.method_version`).
   largest first. The bank's own domain includes its corporate domain (`onBankDomain`).
 - Website search (`website-find.ts`, `discover.website_search`), in the same paid step after
   the banks: up to `WEBSITE_FIND_PER_RUN` institutions in the state with no `website_url`
-  and no fee link, once a month each. The model (web search) names the official homepage;
+  and no fee link, off the paid cooldown. The model (web search) names the official homepage;
   it is saved only when it is not a directory, social, government or another institution's
   domain, and the homepage names the institution (every distinctive name word) plus its
   city or its FDIC certificate / NCUA charter number. Saving resets the bank's search

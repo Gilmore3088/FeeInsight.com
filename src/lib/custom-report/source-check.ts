@@ -907,7 +907,20 @@ function pricedPerAmount(row: string, amount: number): boolean {
  * A range's upper end ("the typical 2.5-3.5%") is not a rate the bank charges. */
 const RATE = /(?<![\d.]|\d\s?[-–]\s?)(\d{1,3}(?:\.\d{1,4})?)\s*(?:%|percent\b)/gi;
 const INTEREST_WORDS = /\b(apy|apr|annual percentage|interest|dividend|rate earned|yield)\b/i;
+/**
+ * A cash-back or rewards rate ("Earn 1% on all purchases") is paid to the customer, not charged
+ * (post-merge review of #1237). It only stops the share-of-base reading below: a row that names its
+ * fee ("Visa Rewards Card | Foreign Transaction Fee | 1% of each transaction") still traces.
+ */
+const REWARD_WORDS = /\b(earns?|earned|cash ?back|rewards?)\b/i;
 const RATE_FEE_WORDS = /\b(fees?|charges?|assessments?|assessed)\b/i;
+/**
+ * #1102: a rate stated as a share of what it is charged on ("1% of foreign transaction amount",
+ * "1.00% of Amount", "10% of total", "2% of each check presented") is the charge itself, on a
+ * schedule row that never says "fee". A share of a balance is left out: it reads like interest.
+ */
+// No balance anywhere in the base ("0.5% of the total balance", "1% of the average daily balance amount").
+const RATE_OF_BASE = /(?:%|\bpercent)\s*(?:of|on)\s+(?![^|.;]{0,40}\bbalances?\b)(?:the\s+|each\s+|all\s+|any\s+|total\s+)?(?:[a-z$]+\s+){0,3}?(transactions?|amount|checks?|coins?|total|value|purchases?|payments?|advances?|withdrawals?|items?)\b/i;
 
 /**
  * Pure: is this percentage fee stated in its source text? The rate's twin of
@@ -944,7 +957,7 @@ export function checkRateAgainstSource(
     // The fee word may come from a heading just above ("Coin Counting Fees" / "Coin
     // Counting | 10% of total"); interest wording is judged on the row itself.
     const context = lines.slice(Math.max(0, i - CATEGORY_LOOKBACK_LINES), i + 1).join(" ");
-    if (INTEREST_WORDS.test(row) || !RATE_FEE_WORDS.test(`${feeName} ${row} ${context}`)) {
+    if (INTEREST_WORDS.test(row) || !(RATE_FEE_WORDS.test(`${feeName} ${row} ${context}`) || (RATE_OF_BASE.test(row) && !REWARD_WORDS.test(row)))) {
       best = "amount_not_the_fee";
       continue;
     }

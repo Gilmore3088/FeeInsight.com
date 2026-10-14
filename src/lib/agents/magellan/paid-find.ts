@@ -15,6 +15,8 @@ import {
   type PaidStepOptions,
 } from "@/lib/agents/paid-pass";
 
+import { FOUND_COOLDOWN_DAYS, MISS_COOLDOWN_DAYS, TRANSIENT_PAID_OUTCOMES } from "./cooldowns";
+import { NOT_ONLINE_AFTER_MISSES, NOT_ONLINE_RETRY_DAYS, paidRung, type PaidRung } from "./escalation";
 import { DISCOVERY_METHOD_VERSION, recordDiscoveryResult, type CandidateDiscoveryResult } from "./discovery";
 import { runBlockedFetch } from "./blocked-fetch";
 import { fetchWithTimeout, looksLikePdfUrl, validateFeeCandidate } from "./find-validate";
@@ -28,7 +30,7 @@ type Fetcher = typeof fetch;
 /**
  * Pass 3 for Magellan: one paid web search per bank that every free finder missed.
  * Selects banks in the state whose last search with the current discovery method found
- * nothing and that have had no paid search this month, asks the model (with
+ * nothing and that are off the paid cooldown (`cooldowns.ts`), asks the model (with
  * Anthropic's server web_search tool) for the consumer fee schedule on the bank's own
  * domain, and stores the answer only after the same fee-page check the free finders
  * use. Every call is budget-checked and cost-logged by `paidModelCall`; a budget cap or
@@ -54,8 +56,7 @@ const MAX_OUTPUT_TOKENS = 1024;
 const PAID_ANSWER_SCORE = 0.85;
 /** An answer the bank's site refused to show us (HTTP 403): kept, unchecked, for the paid fetch. */
 const BLOCKED_ANSWER_CONFIDENCE = 0.75;
-/** Paid outcomes that do not count as this month's paid try (nothing was learned). */
-export const TRANSIENT_PAID_OUTCOMES = ["network_error", "timeout", "http_5xx", "http_429", "budget_blocked"];
+export { TRANSIENT_PAID_OUTCOMES };
 
 interface PaidFindRow {
   id: number | string;
@@ -64,8 +65,10 @@ interface PaidFindRow {
   state_code: string | null;
   website_url: string;
   profile_consecutive_failures?: number | string | null;
-  /** A paid web search already ran for this bank this month (only the pick is due). */
+  /** A paid web search for this bank is still on cooldown (only the pick is due). */
   web_searched?: boolean | null;
+  /** Paid web-search misses on this website since the last paid find (escalation.ts). */
+  paid_misses?: number | string | null;
 }
 
 interface PaidFindAnswer {
@@ -93,11 +96,31 @@ async function selectBanks(db: typeof sql, stateCode: string | null, limit: numb
               WHERE pa.institution_id = inst.id
                 AND pa.stage = 'discover'
                 AND pa.strategy = ${PAID_FIND_STRATEGY.strategy}
-                AND pa.created_at >= date_trunc('month', NOW())
+                AND pa.created_at >= NOW() - make_interval(days => CASE WHEN pa.outcome = 'ok' THEN ${FOUND_COOLDOWN_DAYS}::int ELSE ${MISS_COOLDOWN_DAYS}::int END)
                 AND pa.outcome <> ALL(${TRANSIENT_PAID_OUTCOMES})
-           ) AS web_searched
+           ) AS web_searched,
+           ladder.misses AS paid_misses
       FROM institution_sources inst
       LEFT JOIN institution_source_profiles profile ON profile.institution_id = inst.id
+      -- Escalation ladder (#1032; escalation.ts paidLadderSql): paid web-search misses on
+      -- this website since the last paid find.
+      LEFT JOIN LATERAL (
+        SELECT count(*)::int AS misses, max(pa.created_at) AS last_miss_at
+          FROM pipeline_attempts pa
+         WHERE pa.institution_id = inst.id
+           AND pa.stage = 'discover'
+           AND pa.strategy = ${PAID_FIND_STRATEGY.strategy}
+           AND pa.outcome <> 'ok'
+           AND pa.outcome <> ALL(${TRANSIENT_PAID_OUTCOMES}::text[])
+           AND COALESCE(pa.detail->>'website_url', inst.website_url) = inst.website_url
+           AND pa.created_at > COALESCE((
+             SELECT max(found.created_at) FROM pipeline_attempts found
+              WHERE found.institution_id = inst.id
+                AND found.stage = 'discover'
+                AND found.strategy = ${PAID_FIND_STRATEGY.strategy}
+                AND found.outcome = 'ok'
+           ), '-infinity'::timestamptz)
+      ) ladder ON true
      WHERE COALESCE(inst.status, 'active') = 'active'
        AND (inst.fee_schedule_url IS NULL OR btrim(inst.fee_schedule_url) = '')
        AND inst.website_url IS NOT NULL AND btrim(inst.website_url) <> ''
@@ -113,6 +136,12 @@ async function selectBanks(db: typeof sql, stateCode: string | null, limit: numb
        AND COALESCE(profile.source_kind, 'unknown') <> 'offline'
        AND COALESCE(profile.read_strategy, '') <> 'manual_review'
        AND COALESCE(profile.locked_by_correction, false) = false
+       -- "Not published online": NOT_ONLINE_AFTER_MISSES paid misses on this website, the
+       -- last within NOT_ONLINE_RETRY_DAYS. No paid try (pick or search) until the retry.
+       AND NOT (
+         ladder.misses >= ${NOT_ONLINE_AFTER_MISSES}
+         AND ladder.last_miss_at >= NOW() - make_interval(days => ${NOT_ONLINE_RETRY_DAYS}::int)
+       )
        -- Every free finder ran with the current method and none found a link.
        AND EXISTS (
          SELECT 1 FROM pipeline_attempts pa
@@ -120,14 +149,15 @@ async function selectBanks(db: typeof sql, stateCode: string | null, limit: numb
             AND pa.stage = 'discover'
             AND pa.detail @> ${currentMethod}::jsonb
        )
-       -- Due when this month's pick or this month's web search has not run yet.
+       -- Due when the pick or the web search is off cooldown (#1031: 90 days after a find,
+       -- 30 after a miss, counted from the try).
        AND (
          NOT EXISTS (
            SELECT 1 FROM pipeline_attempts pa
             WHERE pa.institution_id = inst.id
               AND pa.stage = 'discover'
               AND pa.strategy = ${PAID_PICK_STRATEGY.strategy}
-              AND pa.created_at >= date_trunc('month', NOW())
+              AND pa.created_at >= NOW() - make_interval(days => CASE WHEN pa.outcome = 'ok' THEN ${FOUND_COOLDOWN_DAYS}::int ELSE ${MISS_COOLDOWN_DAYS}::int END)
               AND pa.outcome <> ALL(${TRANSIENT_PAID_OUTCOMES})
          )
          OR NOT EXISTS (
@@ -135,7 +165,7 @@ async function selectBanks(db: typeof sql, stateCode: string | null, limit: numb
             WHERE pa.institution_id = inst.id
               AND pa.stage = 'discover'
               AND pa.strategy = ${PAID_FIND_STRATEGY.strategy}
-              AND pa.created_at >= date_trunc('month', NOW())
+              AND pa.created_at >= NOW() - make_interval(days => CASE WHEN pa.outcome = 'ok' THEN ${FOUND_COOLDOWN_DAYS}::int ELSE ${MISS_COOLDOWN_DAYS}::int END)
               AND pa.outcome <> ALL(${TRANSIENT_PAID_OUTCOMES})
          )
        )
@@ -148,15 +178,31 @@ async function selectBanks(db: typeof sql, stateCode: string | null, limit: numb
 
 export { onBankDomain };
 
-export function paidFindPrompt(row: Pick<PaidFindRow, "institution_name" | "city" | "state_code" | "website_url">): string {
+/** The disclosure rung's ask (#1032): where a bank that publishes no schedule lists its fees. */
+const DISCLOSURE_RUNG_ASK = [
+  "This bank publishes no separate fee schedule that a search could find. Find the URL of the",
+  "consumer document that lists its account fees instead: a Truth in Savings disclosure, a",
+  "deposit account agreement, membership or account terms, or a checking or savings account",
+  "disclosure that states service fees with dollar amounts (overdraft, NSF/returned item, stop",
+  "payment, wire transfer, monthly maintenance). It may sit on a disclosures, forms or documents",
+  "page, or on the parent company's domain.",
+];
+
+export function paidFindPrompt(
+  row: Pick<PaidFindRow, "institution_name" | "city" | "state_code" | "website_url">,
+  rung: PaidRung = "schedule",
+): string {
   const host = websiteHost(row.website_url) ?? row.website_url;
-  return [
+  const ask = rung === "disclosure" ? DISCLOSURE_RUNG_ASK : [
     "Find the URL of this bank's consumer fee schedule: the document (PDF or web page) that lists",
     "account service fees with dollar amounts, such as overdraft, NSF/returned item, stop payment,",
     "wire transfer, and monthly maintenance fees. It is often titled \"Schedule of Fees\",",
     "\"Fee Schedule\", \"Schedule of Charges\", \"Schedule of Service Charges\", \"Account Fee Schedule\",",
     "\"Consumer Fees\", \"Deposit Account Agreement\", or \"Truth in Savings / Fee Disclosure\". Large banks often",
     "publish it on their parent company's domain.",
+  ];
+  return [
+    ...ask,
     "",
     `Bank: ${row.institution_name}`,
     `Location: ${[row.city, row.state_code].filter(Boolean).join(", ") || "unknown"}`,
@@ -280,6 +326,7 @@ export async function runMagellanPaidFind(options: RunMagellanPaidFindOptions): 
     let confidence: number | null = null;
     let answer: PaidFindAnswer | null = null;
     let verdict: string | null = null;
+    const rung = paidRung(Number(row.paid_misses ?? 0));
 
     if (usePick) {
       const picked = await runPick(row, { ...options, fetchImpl, model, db });
@@ -305,7 +352,7 @@ export async function runMagellanPaidFind(options: RunMagellanPaidFindOptions): 
         continue;
       }
       if (row.web_searched) {
-        // This month's web search already missed; the pick was the only new try.
+        // The web search missed within its cooldown; the pick was the only new try.
         result.processed += 1;
         result.failed += 1;
         result.results.push({ institution_id: institutionId, outcome: picked.outcome, url: null, cost_microusd: picked.costMicrousd, reason: picked.reason, by: "pick" });
@@ -326,7 +373,7 @@ export async function runMagellanPaidFind(options: RunMagellanPaidFindOptions): 
           model,
           max_tokens: MAX_OUTPUT_TOKENS,
           tools: [{ type: "web_search_20250305", name: "web_search", max_uses: WEB_SEARCH_MAX_USES }],
-          messages: [{ role: "user", content: paidFindPrompt(row) }],
+          messages: [{ role: "user", content: paidFindPrompt(row, rung) }],
         },
       });
       costMicrousd = call.costMicrousd;
@@ -335,7 +382,7 @@ export async function runMagellanPaidFind(options: RunMagellanPaidFindOptions): 
       const proposed = typeof answer?.url === "string" ? answer.url.trim() : "";
       if (!proposed) {
         outcome = "no_candidates";
-        reason = "Web search found no fee schedule";
+        reason = rung === "disclosure" ? "Web search found no fee disclosure or account agreement" : "Web search found no fee schedule";
       } else if (!onBankDomain(proposed, row.website_url)) {
         outcome = "invalid_url";
         reason = `Answer is not on the bank's domain: ${proposed}`;
@@ -407,6 +454,9 @@ export async function runMagellanPaidFind(options: RunMagellanPaidFindOptions): 
       detail: {
         pass: 3,
         method_version: DISCOVERY_METHOD_VERSION,
+        // Escalation ladder (#1032): the rung asked, and the website the miss counts against.
+        rung,
+        website_url: row.website_url,
         model,
         url,
         proposed_url: typeof answer?.url === "string" ? answer.url : null,
@@ -417,7 +467,7 @@ export async function runMagellanPaidFind(options: RunMagellanPaidFindOptions): 
         reason,
       },
     });
-    result.results.push({ institution_id: institutionId, outcome, url, cost_microusd: costMicrousd, reason });
+    result.results.push({ institution_id: institutionId, outcome, url, cost_microusd: costMicrousd, reason, rung });
   }
   if (!result.budgetStopped) await addWebsiteFind(result, options, db);
   if (!result.budgetStopped) await addScheduleSearch(result, options, db);

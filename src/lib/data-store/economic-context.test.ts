@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("./connection", () => ({ sql: vi.fn() }));
 
-import { buildIndicatorSeries, fomcPolicyAction } from "./economic-context";
+import { buildIndicatorSeries, fomcPolicyAction, withoutBeigeBookFooter } from "./economic-context";
 
 describe("buildIndicatorSeries", () => {
   it("finds the year-ago point and returns history oldest first", () => {
@@ -45,5 +45,14 @@ describe("fomcPolicyAction", () => {
 
   it("returns null when the minutes have no decision sentence", () => {
     expect(fomcPolicyAction("Participants discussed the outlook. No action.")).toBeNull();
+  });
+});
+
+describe("withoutBeigeBookFooter (#1175)", () => {
+  it("drops the page footer stored with a section's text", () => {
+    const stored = "Credit quality stayed strong.\n\r\n\r\nFor more information about District economic conditions visit: https://www.philadelphiafed.org/regional-economy .\n\r\n\r\n\nBack to Top \r\n\r\nLast Update:\r\nOctober 15, 2025";
+    expect(withoutBeigeBookFooter(stored)).toBe("Credit quality stayed strong.");
+    expect(withoutBeigeBookFooter("Activity was flat.\n\nBack to Top \r\nLast Update:\r\nOctober 15, 2025")).toBe("Activity was flat.");
+    expect(withoutBeigeBookFooter("No footer here.")).toBe("No footer here.");
   });
 });

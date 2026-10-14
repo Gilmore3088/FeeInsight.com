@@ -225,8 +225,11 @@ function narrateFinished(
       const verb = detail.stored === true ? "Stored" : detail.already_current === true ? "Already had" : "Read";
       return `${verb} the ${String(detail.study_key ?? stepKey).replace(/_/g, " ")} study for ${String(detail.as_of ?? "this period")} (${count(n(detail, "n"), "observation")}).`;
     }
-    case "hamilton-answer-eval":
-      return `Asked Hamilton ${count(n(detail, "answers"), "question")} for ${count(n(detail, "institutions"), "institution")}; ${n(detail, "passed")} answers met the bar.`;
+    case "hamilton-answer-eval": {
+      const correctness = (detail.correctness ?? null) as Detail | null;
+      const tied = correctness ? ` ${n(correctness, "correct")} of ${n(correctness, "checked")} checked tie to the live catalog.` : "";
+      return `Asked Hamilton ${count(n(detail, "answers"), "question")} for ${count(n(detail, "institutions"), "institution")}; ${n(detail, "passed")} answers met the bar.${tied}`;
+    }
     case "schedule-check": {
       const missed = n(detail, "missed") + n(detail, "failed");
       return `Atlas checked every schedule against the route ledger: ${n(detail, "ran")} ran on time, ${missed === 0 ? "none missed or failed" : `${missed} missed or failed`}${n(detail, "unknown") > 0 ? `, ${n(detail, "unknown")} unknown` : ""}.`;
@@ -657,6 +660,7 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   "publish-index": "hamilton",
   "publish-context": "hamilton",
   "report-render": "hamilton",
+  "report-reconcile": "hamilton",
   "report-close": "hamilton",
   "category-guard": "hamilton",
   "frequency-fill": "hamilton",

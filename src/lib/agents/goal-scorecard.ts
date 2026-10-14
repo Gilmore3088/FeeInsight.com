@@ -43,6 +43,7 @@ export const GOAL_QUERIES = {
   spend: "goal.provider_spend_7d",
   knoxPasses: "goal.knox_passes_7d",
   unstatedAudience: "goal.unstated_audience",
+  answerQuality: "goal.hamilton_answer_eval_latest",
 } as const;
 
 export interface CoverageCells {
@@ -143,6 +144,81 @@ export interface UnstatedAudience {
   share: number | null;
 }
 
+/** One answer path's form pass rate and correctness rate from the latest answer eval (#1079). */
+export interface AnswerPathQuality {
+  path: "free_ask" | "pro_replay" | "written_answer" | "memo" | "simulate" | "report";
+  label: string;
+  /** False for a paid path the eval does not sample yet; its numbers are then null. */
+  measured: boolean;
+  answers: number | null;
+  /** Answers that meet the quality bar on form (a number, a source, a peer count, no advice). */
+  formPassed: number | null;
+  formRate: number | null;
+  /** Answers whose fee figures could be checked against the live catalog. */
+  checked: number | null;
+  /** Checked answers whose every fee figure ties to a live catalog row. */
+  correct: number | null;
+  correctRate: number | null;
+}
+
+export interface AnswerQuality {
+  query: string;
+  /** When the eval run finished (ISO): the date the rates are for. */
+  at: string;
+  timedOut: boolean;
+  paths: AnswerPathQuality[];
+}
+
+/** The paid paths, not sampled until a daily provider budget for the eval is set. */
+export const PAID_ANSWER_PATHS: Array<Pick<AnswerPathQuality, "path" | "label">> = [
+  { path: "written_answer", label: "Written answer (paid)" },
+  { path: "memo", label: "Memo (paid)" },
+  { path: "simulate", label: "Simulate (paid)" },
+  { path: "report", label: "Report (paid)" },
+];
+
+const correctnessOf = (value: unknown): { checked: number; correct: number } | null => {
+  if (!value || typeof value !== "object") return null;
+  const c = value as Record<string, unknown>;
+  return { checked: Number(c.checked ?? 0), correct: Number(c.correct ?? 0) };
+};
+
+/** The latest answer eval's detail as one row per path; an eval from before #1079 has no correctness. */
+export function answerQualityFrom(at: string, detail: Record<string, unknown>): Omit<AnswerQuality, "query"> {
+  const path = (
+    key: AnswerPathQuality["path"],
+    label: string,
+    answers: unknown,
+    passed: unknown,
+    correctness: unknown,
+  ): AnswerPathQuality => {
+    const total = Number(answers ?? 0);
+    const formPassed = Number(passed ?? 0);
+    const c = correctnessOf(correctness);
+    return {
+      path: key,
+      label,
+      measured: true,
+      answers: total,
+      formPassed,
+      formRate: ratio(formPassed, total),
+      checked: c?.checked ?? null,
+      correct: c?.correct ?? null,
+      correctRate: c ? ratio(c.correct, c.checked) : null,
+    };
+  };
+  const pro = (detail.pro ?? null) as Record<string, unknown> | null;
+  return {
+    at,
+    timedOut: detail.timedOut === true,
+    paths: [
+      path("free_ask", "Free Ask, standard questions", detail.answers, detail.passed, detail.correctness),
+      ...(pro ? [path("pro_replay", "Free Ask, Pro readers' questions", pro.questions, pro.passed, pro.correctness)] : []),
+      ...PAID_ANSWER_PATHS.map((p) => ({ ...p, measured: false, answers: null, formPassed: null, formRate: null, checked: null, correct: null, correctRate: null })),
+    ],
+  };
+}
+
 export interface GoalScorecard {
   readAt: string;
   windowDays: number;
@@ -154,6 +230,8 @@ export interface GoalScorecard {
   spend: GoalSpend | null;
   knoxPasses: KnoxPasses | null;
   unstatedAudience: UnstatedAudience | null;
+  /** Hamilton's answers: form and correctness per path (#1079); absent on snapshots from before it. */
+  answerQuality?: AnswerQuality | null;
 }
 
 const usd = (micro: unknown): number => Math.round(Number(micro ?? 0) / 10_000) / 100;
@@ -187,7 +265,7 @@ export function summarizeCoverageCells(rows: Array<{ size_group: string; total: 
 /**
  * Take-down reasons that are not errors: a refresh or newer copy replaced the fee, a duplicate
  * was collapsed, a rule re-check could not reproduce it under a changed rule, a category was
- * folded into another, or the page it came from was retired. Matched on the reason's key (the
+ * folded into another, the page it came from was retired, or the institution no longer operates. Matched on the reason's key (the
  * text before ":" or " #"). Every other reason counts as an error, so a new reason is never
  * hidden; the page lists the top errors so the split can be checked.
  */
@@ -202,6 +280,7 @@ export const HOUSEKEEPING_REASON_KEYS: ReadonlySet<string> = new Set([
   "rules_recheck_unreproduced",
   "rules_recheck_restore",
   "taxonomy_fold",
+  "closed_institution",
 ]);
 
 /** The reason's key: "source_check_untraceable:no_amount" → "source_check_untraceable", "refreshed by #9" → "refreshed by". */
@@ -456,6 +535,24 @@ async function readUnstatedAudience(db: SqlTag): Promise<UnstatedAudience> {
   return { query: GOAL_QUERIES.unstatedAudience, liveFees, unknownFees, share: ratio(unknownFees, liveFees) };
 }
 
+async function readAnswerQuality(db: SqlTag): Promise<AnswerQuality | null> {
+  const [row] = await db<Array<{ created_at: Date | string; detail: unknown }>>`
+    SELECT e.created_at, e.detail
+      FROM agent_run_events e
+      JOIN agent_run_steps s ON s.id = e.step_id
+     WHERE s.step_key = 'hamilton-answer-eval'
+       AND e.event_type = 'step.finished'
+       AND e.status = 'completed'
+       AND e.created_at >= NOW() - make_interval(days => ${GOAL_WINDOW_DAYS}::int)
+     ORDER BY e.created_at DESC
+     LIMIT 1
+  `;
+  if (!row) return null;
+  const at = row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at);
+  const detail = (typeof row.detail === "string" ? JSON.parse(row.detail) : row.detail) as Record<string, unknown> | null;
+  return detail ? { query: GOAL_QUERIES.answerQuality, ...answerQualityFrom(at, detail) } : null;
+}
+
 /** One read, in its own savepoint: a failure leaves that number null and the others standing. */
 async function guarded<T>(db: SqlTag, name: string, read: (scope: SqlTag) => Promise<T>): Promise<T | null> {
   return inSavepoint(db, read).catch((error) => {
@@ -474,6 +571,7 @@ export async function readGoalScorecard(db: SqlTag = sql, now = new Date()): Pro
   const knoxPasses = await guarded(db, GOAL_QUERIES.knoxPasses, (scope) =>
     readKnoxPasses(scope, spend?.byAgent.find((row) => row.agent === "knox")));
   const unstatedAudience = await guarded(db, GOAL_QUERIES.unstatedAudience, readUnstatedAudience);
+  const answerQuality = await guarded(db, GOAL_QUERIES.answerQuality, readAnswerQuality);
   return {
     readAt: now.toISOString(),
     windowDays: GOAL_WINDOW_DAYS,
@@ -484,6 +582,7 @@ export async function readGoalScorecard(db: SqlTag = sql, now = new Date()): Pro
     spend,
     knoxPasses: spend ? knoxPasses : null,
     unstatedAudience,
+    answerQuality,
   };
 }
 
@@ -530,5 +629,11 @@ export function goalBriefLines(goal: GoalScorecard): string[] {
   }
   const u = goal.unstatedAudience;
   if (u) lines.push(`Audience not stated: ${pct(u.share)} of live fees (${count(u.unknownFees)} of ${count(u.liveFees)}) carry the asterisk.`);
+  const q = goal.answerQuality;
+  if (q) {
+    const measured = q.paths.filter((p) => p.measured);
+    const parts = measured.map((p) => `${p.label}: form ${pct(p.formRate)} (${p.formPassed} of ${p.answers}), figures tie out ${p.checked == null ? "not checked" : `${pct(p.correctRate)} (${p.correct} of ${p.checked})`}`);
+    lines.push(`Hamilton answers (eval of ${q.at.slice(0, 16).replace("T", " ")} UTC${q.timedOut ? ", stopped at its time budget" : ""}): ${parts.join("; ")}. Paid paths not measured yet.`);
+  }
   return lines;
 }

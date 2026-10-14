@@ -96,3 +96,10 @@ export function formatDollarsInWords(amount: number): string {
   if (abs >= 1e3) return scaled(abs / 1e3, "thousand");
   return `${sign}$${Math.round(abs)}`;
 }
+
+/** Some institution records carry the city in capitals ("LINCOLN"); show it as "Lincoln". */
+export function displayCity(city: string): string {
+  const trimmed = city.trim();
+  if (trimmed !== trimmed.toUpperCase()) return trimmed;
+  return trimmed.toLowerCase().replace(/(^|[\s\-'.])(\p{L})/gu, (_, lead: string, letter: string) => lead + letter.toUpperCase());
+}

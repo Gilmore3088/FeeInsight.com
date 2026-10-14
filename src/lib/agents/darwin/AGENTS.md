@@ -52,6 +52,12 @@ Darwin owns verification and classification.
   readings of "free if you meet a condition, else $2.50-$6.95" lines, one a package list verified
   into the retired `estatement_fee` type. The same checks are Hamilton's publish-time rules, so a
   row that would come down after publishing now stops before it is verified.
+- A `conditional_zero` hold is settled by the next verify step (`conditional-zero-resolve.ts`,
+  #1115; James approved rules a-c, 2026-10-13), up to 200 a step, each as a `verify.rules` verdict:
+  (a) a duplicate when the same document has a priced verified fee in its category; (c) verified
+  at $0 (flag `darwin_conditional_zero_released`) when the bank's own schedule, not a product page,
+  prices it free on its own line with no other dollar figure, outside overdraft, NSF, monthly
+  maintenance and minimum balance; (b) otherwise rejected, for Knox's next read of the line.
 - `verify.recheck` (`verified-recheck.ts`, version 2, 2026-10-09) ends every learning verify step
   by reading up to 200 rows `verify.rules` v3 verified (the rows the `not_in_source` re-select
   verified first, then newest first), once each under `postSourceCheck`. A failing row that is
@@ -275,8 +281,8 @@ Darwin owns verification and classification.
 - Guard v35 (2026-10-08) accepts a per-item overdraft or NSF fee whose note states the daily cap: a dollar cap above the row's own price ("NSF Returned Item(s) Charge (NSF charge maximum of $100 per day)" $25, First State Bank of Rosemount), and a cap note that names the returned items sharing it ("Overdraft Fee ... (Consumer Accts: 5 max total OD or Returned Item fees daily)", BankIowa).
 - Guard v36 (2026-10-08) changes no rule: PRs 665 and 668 both shipped v35, so rows rejected between their deploys are re-checked under both.
 - Guard v42 (2026-10-08; v40 and v41 are Accuracy's, PR 682) files an NSF item marked paid after a dash or in brackets ("NSF Fee Charge - Paid (per item)", "Nonsufficient Funds Fee-Paid", "Insufficient Funds Charge (Check Paid, Per Item)") as the overdraft fee and re-files it there from NSF; "per non-paid item", "Paid from other ... account" and "We will not assess ..." stay out. "Overdraft Privilege Standard or Extended Coverage" names the program, not an extended overdraft fee.
-- The guard is at v60 (`CATEGORY_GUARD_VERSION` in `src/lib/fee-category-guard.ts`). The notes for
-  v43 to v60 are the version comments above that constant, not this guide; v58 is the bond-return
+- The guard is at v61 (`CATEGORY_GUARD_VERSION` in `src/lib/fee-category-guard.ts`). The notes for
+  v43 to v61 are the version comments above that constant, not this guide; v58 is the bond-return
   lesson above.
 - Learning store: every verify decision except duplicates and category rejects (the
   publish-step sync writes those) is written to `pipeline_feedback` as a judgement on

@@ -3,7 +3,34 @@
 Newest first. Each entry: date, what was decided, who, why, and what it means for the work.
 Seeded 2026-10-05 from the project's working memory; earlier decisions were not recorded here.
 
+## 2026-10-14
+
+**"Reviewed" means a submitted review of the exact head SHA; CI also runs on main.** James, Oct 14,
+after an auditor found merged PRs with no submitted review and no CI run on main's merge commits.
+A PR merges under the standing authorization only when a separate reviewer agent (not the builder
+that wrote it) has posted a submitted GitHub review of the PR's exact head SHA, naming that SHA,
+with a "no blockers" verdict, plus green CI on that SHA. A new push needs a new review. The reviews
+are COMMENT reviews, because the account that opens every PR can't approve its own. CI also runs on
+every push to main (`.github/workflows/test.yml`), and is never cancelled there, so each merge commit
+gets its own result. A red main run is fixed before other work. "Merged" or "deployed" is never
+called customer acceptance: signed-in, two-user, mobile, save-and-reopen and PDF checks are stated
+as untested until someone runs them.
+
 ## 2026-10-13
+
+**Supabase reads run without a prompt; writes still ask.** James, Oct 13. Builders were asking
+James to approve every read-only query. `.claude/settings.json` now allows the Supabase SQL and
+read tools, and keeps a prompt on migrations, branches, edge functions and project changes. The
+rule is unchanged: production data changes go through typed agent modules and a PR, never raw SQL
+from a session.
+
+**Darwin's audience is the one published (#1059, option 1).** James, Oct 13. Knox writes its audience
+suggestion and the evidence (the document's address or title, the section heading, or a general schedule
+with no business wording) without setting the published label. Darwin sets the audience on the verified
+row, and the published row takes Darwin's value. Today the trigger from
+`20270110000040_fee_audience_integrity.sql` copies Knox's raw label to every tier, so this needs a small
+migration, which goes to James. Relabelling existing fees is a production data change and also waits for
+James: business fees leave the personal benchmarks, so medians customers see can move.
 
 **Up to three builders at once, one per lane.** James, Oct 13. Usage has room (about 7% of the
 4-hour window, 12% of the week), so the build plan runs in three lanes instead of one queue: data

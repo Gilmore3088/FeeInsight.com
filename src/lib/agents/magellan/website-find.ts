@@ -7,6 +7,7 @@ import { classifyFetchFailure, type AttemptOutcome } from "@/lib/agents/learning
 import { normalizeStateCode } from "@/lib/agents/state-lane-memory";
 import { PAID_PASS_MODELS, paidModelCall, paidResponseJson, type PaidMessageCreator } from "@/lib/agents/paid-pass";
 
+import { FOUND_COOLDOWN_DAYS, MISS_COOLDOWN_DAYS } from "./cooldowns";
 import { fetchWithTimeout } from "./find-validate";
 
 type SqlTag = typeof sql;
@@ -30,7 +31,7 @@ export const WEBSITE_FIND_STRATEGY = { strategy: "discover.website_search", vers
 export const WEBSITE_FIND_PER_RUN = 5;
 const WEB_SEARCH_MAX_USES = 3;
 const MAX_OUTPUT_TOKENS = 512;
-/** Outcomes that do not count as this month's try (nothing was learned). */
+/** Outcomes that do not count as a try or start a cooldown (nothing was learned). */
 const TRANSIENT_OUTCOMES = ["network_error", "timeout", "http_5xx", "http_429", "budget_blocked"];
 
 /** Directories, social sites and regulators: never an institution's own website. */
@@ -175,7 +176,7 @@ async function selectRows(db: SqlTag, stateCode: string | null, limit: number): 
           WHERE pa.institution_id = inst.id
             AND pa.stage = 'discover'
             AND pa.strategy = ${WEBSITE_FIND_STRATEGY.strategy}
-            AND pa.created_at >= date_trunc('month', NOW())
+            AND pa.created_at >= NOW() - make_interval(days => CASE WHEN pa.outcome = 'ok' THEN ${FOUND_COOLDOWN_DAYS}::int ELSE ${MISS_COOLDOWN_DAYS}::int END)
             AND pa.outcome <> ALL(${TRANSIENT_OUTCOMES})
        )
      ORDER BY inst.asset_size DESC NULLS LAST, inst.id ASC

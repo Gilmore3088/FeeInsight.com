@@ -5,6 +5,7 @@ import { reportReviewStates } from "@/lib/agents/atlas/report-review-states";
 import { runDarwinVerify } from "@/lib/agents/darwin/verify";
 import { runHamiltonCategoryGuard } from "@/lib/agents/hamilton/category-guard";
 import { collapsePublishedDuplicates } from "@/lib/agents/hamilton/duplicate-collapse";
+import { retireClosedInstitutionFees } from "@/lib/agents/hamilton/closed-institution";
 import { fillBlankFrequencies, FREQUENCY_FILL_VERSION } from "@/lib/agents/hamilton/frequency-fill";
 import { restoreFeesNowInTaxonomy, rollBackOffTaxonomyFees } from "@/lib/agents/hamilton/off-taxonomy-rollback";
 import { foldRetiredCategories } from "@/lib/agents/hamilton/taxonomy-fold";
@@ -18,6 +19,7 @@ import { retireArticlePageFees } from "@/lib/agents/hamilton/article-page";
 import { retireProductPageFees } from "@/lib/agents/hamilton/product-page";
 import { retireCrossPageConflicts } from "@/lib/agents/hamilton/cross-page-conflict";
 import { recheckUncheckedRestores } from "@/lib/agents/hamilton/restore-recheck";
+import { restoreLostRecheckTakedowns } from "@/lib/agents/hamilton/lost-recheck-restore";
 import { restoreCrossPageSupersedes } from "@/lib/agents/hamilton/cross-page-restore";
 import { pairFeeChangeRecords } from "@/lib/agents/hamilton/change-pairing";
 import { rollBackRetiredCompanionFees } from "@/lib/agents/hamilton/companion-retire";
@@ -67,6 +69,7 @@ import { runRosettaPaidRead } from "@/lib/agents/rosetta/paid-read";
 import { runMagellanPaidFind } from "@/lib/agents/magellan/paid-find";
 import { runKnoxPaidExtract } from "@/lib/agents/knox/paid-extract";
 import { runDarwinReleaseHeld } from "@/lib/agents/darwin/release-held";
+import { runDarwinConditionalZeroResolve } from "@/lib/agents/darwin/conditional-zero-resolve";
 import { runDarwinScheduleRefile } from "@/lib/agents/darwin/schedule-refile";
 import { runDarwinAdjudicate } from "@/lib/agents/darwin/adjudicate";
 import { runDailyBrief } from "@/lib/agents/daily-brief";
@@ -108,7 +111,7 @@ import { laneRecheckParam, numericRunParam, stringRunParam } from "./run-params"
 export { laneRecheckParam } from "./run-params";
 import { runStateExpertStep } from "./state-expert/step";
 import { tallyByInstitution, type Sample } from "./flow-model";
-import { runReportCloseStep, runReportRenderStep } from "@/lib/report-engine/render-job";
+import { runReportCloseStep, runReportReconcileStep, runReportRenderStep } from "@/lib/report-engine/render-job";
 import type {
   AdminAgent,
   AgentRunEventSnapshot,
@@ -314,7 +317,7 @@ async function executeAgenticStep(
     const result = await runAnswerEval({ perGroup: Number(params.per_group) > 0 ? Number(params.per_group) : 1 });
     return {
       status: "completed",
-      summary: `Answered ${result.answers} questions for ${result.institutions} of ${result.planned} institutions; ${result.passed} met the bar.${result.pro ? ` Replayed ${result.pro.questions} Pro questions: ${result.pro.passed} met the bar, ${result.pro.askedBack} still asked back.` : ""}${result.timedOut ? " Stopped at the time budget." : ""}`,
+      summary: `Answered ${result.answers} questions for ${result.institutions} of ${result.planned} institutions; ${result.passed} met the bar; ${result.correctness.correct} of ${result.correctness.checked} checked tie to the live catalog.${result.pro ? ` Replayed ${result.pro.questions} Pro questions: ${result.pro.passed} met the bar, ${result.pro.correctness.correct} of ${result.pro.correctness.checked} checked tie to the catalog, ${result.pro.askedBack} still asked back.` : ""}${result.timedOut ? " Stopped at the time budget." : ""}`,
       detail: { ...result },
     };
   }
@@ -745,9 +748,18 @@ async function executeAgenticStep(
         institutionId: numericRunParam(params, ["institution_id"]),
         db: tx,
       });
+      // #1115: a $0 held as conditional is a duplicate of a priced twin, free on the bank's own
+      // schedule, or rejected for Knox's next read.
+      const conditionalZero = await runDarwinConditionalZeroResolve({
+        runId: run.id,
+        stepId: step.id,
+        dryRun: run.runKind === "dry_run",
+        institutionId: numericRunParam(params, ["institution_id"]),
+        db: tx,
+      });
       return {
         status: "completed",
-        summary: `Darwin verified ${verification.verifiedFees.toLocaleString()} raw fee observations from ${verification.processedRawFees.toLocaleString()} selected rows (${verification.skippedFees.toLocaleString()} skipped).`,
+        summary: `Darwin verified ${verification.verifiedFees.toLocaleString()} raw fee observations from ${verification.processedRawFees.toLocaleString()} selected rows (${verification.skippedFees.toLocaleString()} skipped).${conditionalZero.selected > 0 ? ` Settled ${conditionalZero.selected.toLocaleString()} conditional-$0 hold(s) (${conditionalZero.verified.toLocaleString()} verified free on the bank's schedule).` : ""}`,
         detail: {
           selected_raw_fees: verification.selectedRawFees,
           processed_raw_fees: verification.processedRawFees,
@@ -766,6 +778,7 @@ async function executeAgenticStep(
             feedback_written: release.feedbackWritten,
           },
           schedule_refile: { selected: scheduleRefile.selected, refiled: scheduleRefile.refiled },
+          conditional_zero: { selected: conditionalZero.selected, verdicts: conditionalZero.verdicts, verified: conditionalZero.verified },
           feedback_written: verification.feedbackWritten,
           reason_counts: verification.reasonCounts,
           outcomes: verification.outcomes,
@@ -928,6 +941,13 @@ async function executeAgenticStep(
         dryRun: run.runKind === "dry_run",
         institutionId,
       });
+      // An institution that no longer operates keeps no live fee (#1200).
+      const closedInstitution = await retireClosedInstitutionFees(tx, {
+        runId: run.id,
+        batchId: `agentic-run-${run.id}`,
+        dryRun: run.runKind === "dry_run",
+        institutionId,
+      });
       // A fee read from an article (a blog post quoting a national average), not a schedule.
       const articlePage = await retireArticlePageFees(tx, {
         runId: run.id,
@@ -988,7 +1008,7 @@ async function executeAgenticStep(
         stateCode,
       });
       const companionRollbacks = companionRetire.rollbacks;
-      const duplicateCollapses = await collapsePublishedDuplicates(tx, {
+      const earlyDuplicateCollapses = await collapsePublishedDuplicates(tx, {
         runId: run.id,
         batchId: `agentic-run-${run.id}`,
         dryRun: run.runKind === "dry_run",
@@ -1078,6 +1098,14 @@ async function executeAgenticStep(
         dryRun: run.runKind === "dry_run",
         institutionId,
       });
+      // #1071: fees the re-check took down on Oct 5-11 (before #1022) that are not live again are
+      // judged once by the restore bar against their document's newest text; those that pass return.
+      const lostRestore = await restoreLostRecheckTakedowns(tx, {
+        runId: run.id,
+        batchId: `agentic-run-${run.id}`,
+        dryRun: run.runKind === "dry_run",
+        institutionId,
+      });
       // Recorded fee changes name their two rows and whether they compare one page with
       // itself, before the restore below reopens any superseded row.
       const changePairing = await pairFeeChangeRecords(tx, {
@@ -1107,6 +1135,18 @@ async function executeAgenticStep(
         minInstitutionFees: numericRunParam(params, ["publish_min_institution_fees"]),
         db: tx,
       });
+      // #1069: a fee this step just published that repeats a live row (a new read that only
+      // fills its frequency or names its audience) is collapsed now, not on the state's next
+      // step: until then the catalog listed the fee twice (88 a day, about 40 hours, Oct 13).
+      const lateDuplicateCollapses = published.dryRun || published.publishedFees === 0
+        ? []
+        : await collapsePublishedDuplicates(tx, {
+            runId: run.id,
+            batchId: `agentic-run-${run.id}`,
+            dryRun: false,
+            institutionId,
+          });
+      const duplicateCollapses = [...earlyDuplicateCollapses, ...lateDuplicateCollapses];
       // Every live fee must be stated in the bank's own stored schedule: every publish
       // step source-checks a batch of institutions (its state's or institution's when it
       // has one, any state's otherwise) after publishing, so fees published in this step
@@ -1151,6 +1191,7 @@ async function executeAgenticStep(
               otherBank.rolledBack.length > 0 ||
               crossPageRestore.restored.length > 0 ||
               articlePage.rolledBack.length > 0 ||
+              closedInstitution.rolledBack.length > 0 ||
               productPage.rolledBack.length > 0 ||
               productPageConflict.rolledBack.length > 0 ||
               crossPage.rolledBack.length > 0 ||
@@ -1159,12 +1200,14 @@ async function executeAgenticStep(
               companionRollbacks.length > 0 ||
               duplicateCollapses.length > 0 ||
               frequencyFill.filled.length > 0 ||
+              frequencyFill.held.length > 0 ||
               newerCopyRetired > 0 ||
               newerCopyRestored > 0 ||
               currentCopy.takenDown.length > 0 ||
               recheckRollbacks > 0 ||
               recheckRestores > 0 ||
               restoreRecheck.rolledBack.length > 0 ||
+              lostRestore.restored > 0 ||
               sourceTakedowns > 0 ||
               (sourceCheck?.restored ?? 0) > 0,
           });
@@ -1210,6 +1253,10 @@ async function executeAgenticStep(
         evalVerdicts.rolledBack.length > 0
           ? ` ${published.dryRun ? "Would archive" : "Archived"} ${evalVerdicts.rolledBack.length.toLocaleString()} fee(s) the complete-record eval or a name rule found wrong.`
           : "";
+      const lostRestoreNote =
+        lostRestore.candidates > 0
+          ? ` Judged ${lostRestore.candidates.toLocaleString()} lost re-check take-down(s) of Oct 5-11: ${lostRestore.passed.length.toLocaleString()} passed the restore bar (${published.dryRun ? "would restore" : `${lostRestore.restored.toLocaleString()} restored`}), ${lostRestore.failed.length.toLocaleString()} failed, ${lostRestore.skipped.length.toLocaleString()} skipped.`
+          : "";
       const crossPageNote =
         crossPageRestore.restored.length > 0
           ? ` ${published.dryRun ? "Would restore" : "Restored"} ${crossPageRestore.restored.length.toLocaleString()} live fee(s) another page's price had superseded.`
@@ -1217,6 +1264,10 @@ async function executeAgenticStep(
       const restoreRecheckNote =
         restoreRecheck.failing.length > 0 || restoreRecheck.passing > 0
           ? ` Second look on ${restoreRecheck.unchecked.toLocaleString()} unchecked restore(s): ${restoreRecheck.passing.toLocaleString()} clear the restore bar, ${restoreRecheck.failing.length.toLocaleString()} fail it, ${restoreRecheck.rolledBack.length.toLocaleString()} ${published.dryRun ? "would be archived" : "archived"}.`
+          : "";
+      const closedNote =
+        closedInstitution.rolledBack.length > 0
+          ? ` ${published.dryRun ? "Would archive" : "Archived"} ${closedInstitution.rolledBack.length.toLocaleString()} live fee(s) of ${closedInstitution.institutions.toLocaleString()} institution(s) that no longer operate.`
           : "";
       const articleNote =
         articlePage.rolledBack.length > 0
@@ -1283,12 +1334,15 @@ async function executeAgenticStep(
           ? ` ${published.dryRun ? "Would close" : "Closed"} ${duplicateCollapses.length.toLocaleString()} duplicate live fee(s).`
           : "";
       const frequencyNote =
-        frequencyFill.filled.length > 0
+        (frequencyFill.filled.length > 0
           ? ` ${published.dryRun ? "Would set" : "Set"} the frequency of ${frequencyFill.filled.length.toLocaleString()} live fee(s) from their own schedule row (${frequencyFill.filled.filter((row) => row.from == null).length.toLocaleString()} blank).`
-          : "";
+          : "") +
+        (frequencyFill.held.length > 0
+          ? ` ${published.dryRun ? "Would hold" : "Held"} ${frequencyFill.held.length.toLocaleString()} live NSF or overdraft fee(s) whose own line prices them by the period.`
+          : "");
       return {
         status: "completed",
-        summary: `Hamilton published ${published.publishedFees.toLocaleString()} verified fee observations from ${published.processedVerifiedFees.toLocaleString()} selected rows (${published.skippedFees.toLocaleString()} skipped).${published.heldInstitutions.length > 0 ? ` Held ${published.heldFees.toLocaleString()} rows from ${published.heldInstitutions.length.toLocaleString()} institutions with fewer than ${published.minInstitutionFees} fees.` : ""}${outlierNote}${foldNote}${handRefileNote}${offTaxonomyNote}${limitNote}${businessNote}${sameLineNote}${otherBankNote}${evalVerdictNote}${articleNote}${productNote}${productConflictNote}${crossPageConflictNote}${categoryGuardNote}${guardRefileNote}${guardRequeueNote}${companionNote}${newerCopyNote}${refreshNote}${currentCopyNote}${nameRetidy.renames.length > 0 ? ` ${published.dryRun ? "Would tidy" : "Tidied"} ${nameRetidy.renames.length.toLocaleString()} run-on live fee name(s).` : ""}${accountNames.renames.length > 0 ? ` ${published.dryRun ? "Would name" : "Named"} ${accountNames.renames.length.toLocaleString()} generic live monthly fee(s) by their account.` : ""}${recheckNote}${restoreRecheckNote}${crossPageNote}${sourceNote}${duplicateNote}${frequencyNote}${indexRefresh?.refreshed ? ` Index refreshed: ${indexRefresh.categories} categories.` : ""}`,
+        summary: `Hamilton published ${published.publishedFees.toLocaleString()} verified fee observations from ${published.processedVerifiedFees.toLocaleString()} selected rows (${published.skippedFees.toLocaleString()} skipped).${published.heldInstitutions.length > 0 ? ` Held ${published.heldFees.toLocaleString()} rows from ${published.heldInstitutions.length.toLocaleString()} institutions with fewer than ${published.minInstitutionFees} fees.` : ""}${outlierNote}${foldNote}${handRefileNote}${offTaxonomyNote}${limitNote}${businessNote}${sameLineNote}${otherBankNote}${evalVerdictNote}${closedNote}${articleNote}${productNote}${productConflictNote}${crossPageConflictNote}${categoryGuardNote}${guardRefileNote}${guardRequeueNote}${companionNote}${newerCopyNote}${refreshNote}${currentCopyNote}${nameRetidy.renames.length > 0 ? ` ${published.dryRun ? "Would tidy" : "Tidied"} ${nameRetidy.renames.length.toLocaleString()} run-on live fee name(s).` : ""}${accountNames.renames.length > 0 ? ` ${published.dryRun ? "Would name" : "Named"} ${accountNames.renames.length.toLocaleString()} generic live monthly fee(s) by their account.` : ""}${recheckNote}${restoreRecheckNote}${lostRestoreNote}${crossPageNote}${sourceNote}${duplicateNote}${frequencyNote}${indexRefresh?.refreshed ? ` Index refreshed: ${indexRefresh.categories} categories.` : ""}`,
         detail: {
           selected_verified_fees: published.selectedVerifiedFees,
           processed_verified_fees: published.processedVerifiedFees,
@@ -1378,6 +1432,13 @@ async function executeAgenticStep(
             no_pair: changePairing.noPair,
             written: changePairing.written,
           },
+          lost_recheck_restore: {
+            candidates: lostRestore.candidates,
+            passed: lostRestore.passed.length,
+            restored: lostRestore.restored,
+            failed: lostRestore.failed.length,
+            skipped: lostRestore.skipped.length,
+          },
           restore_recheck: {
             unchecked: restoreRecheck.unchecked,
             without_text: restoreRecheck.withoutText,
@@ -1386,6 +1447,11 @@ async function executeAgenticStep(
             flagged: restoreRecheck.flagged,
             waiting: restoreRecheck.waiting,
             rolled_back: restoreRecheck.rolledBack.length,
+          },
+          closed_institution: {
+            live_fees: closedInstitution.liveFees,
+            institutions: closedInstitution.institutions,
+            rolled_back: closedInstitution.rolledBack.length,
           },
           article_page: {
             article_fees: articlePage.articleFees,
@@ -1549,6 +1615,7 @@ async function executeAgenticStep(
             reason: row.reason,
           })),
           frequency_fills: frequencyFill.filled.length,
+          frequency_holds: frequencyFill.held.length,
           frequency_fill_scanned: frequencyFill.scanned,
           frequency_fill_samples: frequencyFill.filled.slice(0, 10).map((row) => ({
             fee_published_id: row.feePublishedId,
@@ -1656,11 +1723,12 @@ async function executeAgenticStep(
       const cleared = fill.filled.filter((row) => row.frequency == null).length;
       return {
         status: "completed",
-        summary: `${fill.dryRun ? "Would set" : "Set"} the frequency of ${fill.filled.length.toLocaleString()} of ${fill.scanned.toLocaleString()} candidate live fees from their own schedule row (${blanks.toLocaleString()} blank, ${cleared.toLocaleString()} cleared).`,
+        summary: `${fill.dryRun ? "Would set" : "Set"} the frequency of ${fill.filled.length.toLocaleString()} of ${fill.scanned.toLocaleString()} candidate live fees from their own schedule row (${blanks.toLocaleString()} blank, ${cleared.toLocaleString()} cleared)${fill.held.length > 0 ? `, and ${fill.dryRun ? "would hold" : "held"} ${fill.held.length.toLocaleString()} whose own line prices them by the period` : ""}.`,
         detail: {
           frequency_fill_version: FREQUENCY_FILL_VERSION,
           frequency_fill_scanned: fill.scanned,
           frequency_fills: fill.filled.length,
+          frequency_holds: fill.held.length,
           frequency_filled_blank: blanks,
           frequency_cleared: cleared,
           dry_run: fill.dryRun,
@@ -2124,6 +2192,8 @@ async function executeAgenticStep(
     }
     case "report-render":
       return runReportRenderStep(tx, stringRunParam(params, ["report_job_id"]));
+    case "report-reconcile":
+      return runReportReconcileStep(tx, stringRunParam(params, ["report_job_id"]));
     case "report-close":
       return runReportCloseStep(tx, stringRunParam(params, ["report_job_id"]));
     default:
@@ -3030,6 +3100,9 @@ export async function executeAgentRun(
         isProviderStep(step.stepKey) ||
         step.stepKey === "public-discovery" ||
         step.stepKey === "public-audit" ||
+        // A blocked report is marked failed and then the step throws; outside a
+        // transaction, so the job keeps its failed status and recorded findings.
+        step.stepKey === "report-reconcile" ||
         isRegistryStepKey(step.stepKey)
           ? await executeAgenticStep(sql, run, step)
           : await withTransaction((tx) => executeAgenticStep(tx, run, step));

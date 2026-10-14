@@ -1,5 +1,5 @@
 import Link from "next/link";
-import type { GuideBlock, GuideSection } from "@/lib/guides";
+import type { GuideBlock, GuideSection, GuideSource } from "@/lib/guides";
 import { resolveTokens } from "@/lib/guides";
 import type { DimensionBreakdown, FeeCategorySummary } from "@/lib/data-store/fees";
 import { getDisplayName } from "@/lib/fee-taxonomy";
@@ -85,6 +85,24 @@ const CALLOUT_TONES = {
   },
 } as const;
 
+/** The rule or source a statement cites, after its text. */
+function SourceLink({ source }: { source?: GuideSource }) {
+  if (!source) return null;
+  return (
+    <>
+      {" "}
+      <a
+        href={source.url}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="whitespace-nowrap text-[12.5px] font-medium text-[#A93D25] underline underline-offset-2"
+      >
+        {source.label}
+      </a>
+    </>
+  );
+}
+
 function CalloutBlock({
   block,
   summaries,
@@ -104,6 +122,7 @@ function CalloutBlock({
       </p>
       <p className="mt-2 text-[14.5px] leading-[1.7] text-[#5A5347]">
         <Prose text={block.text} summaries={summaries} />
+        <SourceLink source={block.source} />
       </p>
     </aside>
   );
@@ -241,6 +260,7 @@ export function GuideBlockRenderer({
       return (
         <p className="mt-4 text-[15.5px] leading-[1.82] text-[#5A5347] first:mt-0">
           <Prose text={block.text} summaries={summaries} />
+          <SourceLink source={block.source} />
         </p>
       );
     case "list":
