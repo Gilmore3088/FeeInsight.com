@@ -27,16 +27,17 @@ const data: LocalMarketAnswer = {
 describe("LocalMarketView", () => {
   it("draws the market, the bank's cities and the fee grid against its own price", () => {
     const html = renderToStaticMarkup(<LocalMarketView data={data} />);
-    expect(html).toContain("2 institutions compete with you in the Testville, FL area");
-    expect(html).toContain("Test Credit Union (you)");
+    expect(html).toContain("2 institutions compete with Test Credit Union in the Testville, FL area");
+    expect(html).toContain("Test Credit Union (research subject)");
     expect(html).toContain("$2.0B");
     expect(html).toContain("20.0%");
-    expect(html).toContain("You have the most branches here (20); Test Bank A is next with 12");
-    expect(html).toContain("Of 2 competitors with an overdraft fee on file, 1 is higher than your $30 and 1 lower");
+    expect(html).toContain("Test Credit Union has the most branches here (20); Test Bank A is next with 12");
+    expect(html).toContain("Of 2 competitors with an overdraft fee on file, 1 is higher than Test Credit Union’s $30 and 1 lower");
     expect(html).toContain('class="rd-exhibit"');
     expect(html).toContain("Testville, FL");
-    expect(html).toContain('aria-label="higher than yours"');
-    expect(html).toContain('aria-label="lower than yours"');
+    expect(html).toContain('aria-label="higher than the research subject"');
+    expect(html).toContain('aria-label="lower than the research subject"');
     expect(html).not.toContain("NSF");
+    expect(html).not.toMatch(/\b(?:Your|your|with you|\(you\))\b/);
   });
 });

@@ -1,5 +1,6 @@
 import { sql } from "@/lib/data-store/connection";
 import { feePageKey } from "@/lib/agents/hamilton/page-key";
+import { sameSchedule } from "@/lib/agents/hamilton/schedule-edition";
 import { listsBothPrices, selectListedFeeLines, type ListedFeeLine } from "@/lib/agents/hamilton/publish";
 import { inSavepoint } from "@/lib/agents/savepoint";
 
@@ -15,7 +16,9 @@ type SqlTag = typeof sql;
  *   - the new row has the change's new amount, and the row it superseded ("superseded by #id")
  *     has the old amount;
  *   - like for like when both were read on the same page (`feePageKey`, the rule publish
- *     supersedes by) and neither document lists the fee at both prices (`listsBothPrices`);
+ *     supersedes by), or the new one is a newer dated edition of the same audience's schedule
+ *     on a moved page (`sameSchedule`), and neither document lists the fee at both prices
+ *     (`listsBothPrices`);
  *   - a change with no such pair is not like for like.
  * Readers count a change only when `like_for_like` is true. Nothing is deleted.
  */
@@ -32,6 +35,9 @@ export interface ChangePairRow {
   previous_url: string | null;
   new_document_id: number | string | null;
   previous_document_id: number | string | null;
+  /** The two schedules' texts, for a pair read on two pages (schedule-edition.ts). */
+  new_text?: string | null;
+  previous_text?: string | null;
 }
 
 export type ChangePairVerdict = "like_for_like" | "no_pair" | "cross_page" | "lists_both";
@@ -40,7 +46,9 @@ export type ChangePairVerdict = "like_for_like" | "no_pair" | "cross_page" | "li
 export function judgeChangePair(pair: ChangePairRow, lines: ListedFeeLine[]): ChangePairVerdict {
   if (pair.new_fee_published_id == null || pair.previous_fee_published_id == null) return "no_pair";
   const newPage = feePageKey(pair.new_url);
-  if (newPage == null || newPage !== feePageKey(pair.previous_url)) return "cross_page";
+  const samePage = newPage != null && newPage === feePageKey(pair.previous_url);
+  // Two pages are one schedule only as a newer dated edition for the same audience.
+  if (!samePage && sameSchedule({ oldUrl: pair.previous_url, newUrl: pair.new_url, oldText: pair.previous_text, newText: pair.new_text }) !== "new_edition") return "cross_page";
   const name = pair.fee_name ?? "";
   const listed = listsBothPrices(
     lines,
@@ -72,7 +80,13 @@ export async function pairFeeChangeRecords(
       `SELECT c.id AS change_id,
               p.new_fee_published_id, p.previous_fee_published_id, p.fee_name,
               c.new_amount, COALESCE(c.old_amount::float8, c.previous_amount) AS previous_amount,
-              p.new_url, p.previous_url, p.new_document_id, p.previous_document_id
+              p.new_url, p.previous_url, p.new_document_id, p.previous_document_id,
+              (SELECT t.normalized_text FROM agent_source_texts t
+                WHERE t.source_document_id = p.new_document_id AND t.status = 'completed'
+                ORDER BY t.id DESC LIMIT 1) AS new_text,
+              (SELECT t.normalized_text FROM agent_source_texts t
+                WHERE t.source_document_id = p.previous_document_id AND t.status = 'completed'
+                ORDER BY t.id DESC LIMIT 1) AS previous_text
          FROM fee_change_records c
          LEFT JOIN LATERAL (
            SELECT n.fee_published_id AS new_fee_published_id,

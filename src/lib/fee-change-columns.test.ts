@@ -45,3 +45,10 @@ describe("fee-change columns", () => {
     expect(found.some(([name, amount]) => name === "Money Orders" && amount === 2)).toBe(false);
   });
 });
+
+describe("former and new columns (Citizens Business Bank 124)", () => {
+  it("keeps a row's name and its new cell, whatever the former cell says", () => {
+    const guide = "SERVICES | FORMER FEES | NEW FEES\nCoin Counting Fee | $15.00 per loose bag | Not offered\nHold Mail | No charge | $20.00 per account/month";
+    expect(newestColumnText(guide)).toBe("SERVICES | FORMER FEES | NEW FEES\nCoin Counting Fee | Not offered\nHold Mail | $20.00 per account/month");
+  });
+});

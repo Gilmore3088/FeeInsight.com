@@ -70,6 +70,10 @@ Rosetta owns source text normalization.
     them noise, TruStone's fee schedule among them) are reopened once each
     (`reopenUnreadablePdfTexts`, step detail `reopened_unreadable_pdfs`); a readable one
     is logged `rejected` and never checked again.
+  - The fee-page check (`learning/fee-page.ts`, v2) judges a bank's fee link, never a
+    companion account page, as a schedule: a product address listing fewer than 10 fee lines
+    and no schedule title is `wrong_document`, and the bank goes back to Magellan (#1053).
+    The backlog triage re-checks stored texts under v2; a text Knox pulled fees from is kept.
   - A JavaScript page (no text, or an app shell or a page whose link names the fee page,
     such as `/fees` or `fee-schedule`, whose text fails the fee-page check)
     tries embedded data (`__NEXT_DATA__`, JSON/ld+json scripts, Next flight chunks,
@@ -218,3 +222,20 @@ Change this table and `agent-health.ts` in the same PR.
 | No document fails the same way 3+ times a day | `repeatFailures` (read: 404, 403, 410, network, timeout, 5xx, 429) | 0 |
 
 Also recorded, without a rule: `stepsCompleted`, `spendUsd`, `readOk`, `wrongDocument`, `readFailed`.
+
+## Current versions
+
+The version each rules or reader constant is at now. `scripts/ci-guards.sh guide-version-kill`
+fails a PR that changes one of these constants without updating its line here (#1109).
+
+| Constant | Strategy | Version | File |
+|---|---|---|---|
+| `BATCH_REVIEW_VERSION` | — | v1 | `rosetta/batch-review.ts` |
+| `ROSETTA_JS_FALLBACK_VERSION` | — | v3 | `rosetta/reader-versions.ts` |
+| `ROSETTA_OCR_VERSION` | — | v2 | `rosetta/reader-versions.ts` |
+| `ROSETTA_PAID_READ_VERSION` | — | v1 | `rosetta/paid-read.ts` |
+| `PDF_LAYOUT_VERSION` | — | v4 | `rosetta/reader-versions.ts` |
+| `ROSETTA_READ_VERSION` | — | v3 | `rosetta/reader-versions.ts` |
+| `REOPEN_VERSION` | — | v1 | `rosetta/read.ts` |
+| `ROSETTA_TABLE_ROWS_VERSION` | — | v1 | `rosetta/reader-versions.ts` |
+| `TEXT_SURVIVAL_VERSION` | — | v1 | `rosetta/text-survival.ts` |

@@ -20,7 +20,7 @@ import {
   statCardRow,
   footnote,
   escapeHtml,
-} from "../index";
+} from "../primitives";
 import { getDisplayName } from "@/lib/fee-taxonomy";
 import { formatAmount } from "@/lib/format";
 import { DISTRICT_NAMES } from "@/lib/fed-districts";
@@ -139,7 +139,7 @@ function everydaySection(data: StateReportData, label: string): string {
           rows,
         })
       : emptyNotice(
-          `Not enough ${data.stateName} institutions have verified everyday fees yet for a state median. Coverage grows with every monthly pass.`,
+          `Not enough ${data.stateName} institutions have verified everyday fees yet for a state median. Coverage grows as more schedules are read.`,
         );
   return reportSection(
     {

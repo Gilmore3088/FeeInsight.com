@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { stateExpertSummary } from "./state-expert-summary";
+import { PEER_AUDIENCE_POLICY_VERSION } from "@/lib/agents/state-expert/memory";
 
 type Db = NonNullable<Parameters<typeof stateExpertSummary>[1]>;
 
@@ -22,9 +23,9 @@ describe("Hamilton state expert summary", () => {
           platforms: [],
           strategies: {},
           peer_levels: [
-            { canonicalFeeKey: "overdraft", tier: "all", p25: 30, median: 32, p75: 34, count: 12 },
-            { canonicalFeeKey: "nsf", tier: "all", p25: 28, median: 30, p75: 33, count: 4 },
-            { canonicalFeeKey: "overdraft", tier: "community_mid", p25: 30, median: 32, p75: 34, count: 9 },
+            { canonicalFeeKey: "overdraft", tier: "all", p25: 30, median: 32, p75: 34, count: 12 , audiencePolicyVersion: PEER_AUDIENCE_POLICY_VERSION},
+            { canonicalFeeKey: "nsf", tier: "all", p25: 28, median: 30, p75: 33, count: 4 , audiencePolicyVersion: PEER_AUDIENCE_POLICY_VERSION},
+            { canonicalFeeKey: "overdraft", tier: "community_mid", p25: 30, median: 32, p75: 34, count: 9 , audiencePolicyVersion: PEER_AUDIENCE_POLICY_VERSION},
           ],
           institution_count: 20,
           published_fee_count: 150,

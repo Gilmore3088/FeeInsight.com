@@ -1,9 +1,10 @@
 import { sql } from "@/lib/data-store/connection";
-import { answerKeySchemaReady, scoreboardSchemaReady } from "@/lib/data-store/answer-key";
+import { ANSWER_KEY_SCORER_VERSION, answerKeySchemaReady, scoreboardSchemaReady } from "@/lib/data-store/answer-key";
 import { learningSchemaReady } from "@/lib/agents/learning/attempts";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import { readAgentHealth, summarizeAgentHealth, type AgentHealthReport } from "@/lib/agents/agent-health";
 import { getMarketReadiness, summarizeReportReady, type ReportReadyCount } from "@/lib/data-store/market-readiness";
+import { goalHeadline, readGoalScorecard, type GoalScorecard } from "@/lib/agents/goal-scorecard";
 
 /**
  * Atlas's daily scoreboard: six numbers that say whether the pipeline is getting
@@ -155,6 +156,7 @@ async function readAccuracy(db: SqlTag): Promise<ScoreboardNumbers["accuracy"]> 
   const [row] = await db`
     SELECT id, precision, recall, scored_at
       FROM answer_key_score_runs
+     WHERE scorer_version = ${ANSWER_KEY_SCORER_VERSION}
      ORDER BY scored_at DESC, id DESC
      LIMIT 1
   `;
@@ -240,6 +242,8 @@ export interface ScoreboardSnapshotResult {
   stored: boolean;
   /** Per-agent health check (agent-health.ts); null when it could not be read. */
   agentHealth?: AgentHealthReport | null;
+  /** The goal scorecard (#1040), stored in `detail.goal`. */
+  goal?: GoalScorecard | null;
 }
 
 /** Reads the six numbers and stores today's snapshot (one row per UTC day; reruns replace it). */
@@ -256,6 +260,11 @@ export async function runScoreboardSnapshot({
 }): Promise<ScoreboardSnapshotResult> {
   const snapshotDate = now.toISOString().slice(0, 10);
   const numbers = await readScoreboardNumbers(db);
+  // Each goal read has its own savepoint; a failed one is stored as null.
+  const goal = await readGoalScorecard(db, now).catch((error) => {
+    console.error("readGoalScorecard failed:", error);
+    return null;
+  });
   const schemaReady = await scoreboardSchemaReady(db);
   // The health check reads yesterday's snapshot, so it needs the scoreboard table too.
   const agentHealth = schemaReady
@@ -264,7 +273,7 @@ export async function runScoreboardSnapshot({
         return null;
       })
     : null;
-  if (!schemaReady || dryRun) return { schemaReady, snapshotDate, numbers, stored: false, agentHealth };
+  if (!schemaReady || dryRun) return { schemaReady, snapshotDate, numbers, stored: false, agentHealth, goal };
   await db`
     INSERT INTO pipeline_scoreboard_snapshots (
       snapshot_date, agent_run_id,
@@ -296,6 +305,7 @@ export async function runScoreboardSnapshot({
             }
           : {}),
         ...(agentHealth ? { agent_health: agentHealth } : {}),
+        ...(goal ? { goal } : {}),
       })}::jsonb
     )
     ON CONFLICT (snapshot_date) DO UPDATE SET
@@ -320,7 +330,7 @@ export async function runScoreboardSnapshot({
       detail = EXCLUDED.detail,
       updated_at = NOW()
   `;
-  return { schemaReady, snapshotDate, numbers, stored: true, agentHealth };
+  return { schemaReady, snapshotDate, numbers, stored: true, agentHealth, goal };
 }
 
 function pct(value: number | null | undefined): string {
@@ -348,5 +358,6 @@ export function summarizeScoreboard(result: ScoreboardSnapshotResult): string {
       ? `Atlas read the scoreboard (dry run, not stored)`
       : `Atlas read the scoreboard (not stored: the scoreboard migration is not applied yet)`;
   const health = result.agentHealth ? ` ${summarizeAgentHealth(result.agentHealth)}` : "";
-  return `${prefix}: ${parts.join(", ")}.${health}`;
+  const goal = result.goal ? ` Goal: ${goalHeadline(result.goal)}.` : "";
+  return `${prefix}: ${parts.join(", ")}.${goal}${health}`;
 }

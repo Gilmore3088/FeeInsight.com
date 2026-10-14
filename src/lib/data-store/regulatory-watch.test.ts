@@ -9,14 +9,35 @@ describe("regulatory watch", () => {
     expect(isConsumerLaw(null)).toBe(false);
   });
 
-  it("medians need three competitors", () => {
+  it("suppresses thin market medians and uses the same five-institution floor as benchmarks", () => {
     const medians = marketMediansFrom(new Map([
       [1, new Map([["overdraft", 30], ["nsf", 25]])],
       [2, new Map([["overdraft", 34]])],
       [3, new Map([["overdraft", 36]])],
+      [4, new Map([["overdraft", 38]])],
     ]));
-    expect(medians.get("overdraft")).toEqual({ median: 34, count: 3 });
+    expect(medians.get("overdraft")).toEqual({ median: null, count: 4 });
     expect(medians.get("nsf")).toEqual({ median: null, count: 1 });
+    medians.set("overdraft", marketMediansFrom(new Map([
+      [1, new Map([["overdraft", 30]])],
+      [2, new Map([["overdraft", 34]])],
+      [3, new Map([["overdraft", 36]])],
+      [4, new Map([["overdraft", 38]])],
+      [5, new Map([["overdraft", 40]])],
+    ])).get("overdraft")!);
+    expect(medians.get("overdraft")).toEqual({ median: 36, count: 5 });
+  });
+
+  it("includes genuine zero competitors while excluding invalid amounts from sample counts", () => {
+    const medians = marketMediansFrom(new Map([
+      [1, new Map([["nsf", 0], ["overdraft", NaN]])],
+      [2, new Map([["nsf", 0]])],
+      [3, new Map([["nsf", 0]])],
+      [4, new Map([["nsf", 30]])],
+      [5, new Map([["nsf", 40], ["overdraft", -5]])],
+    ]));
+    expect(medians.get("nsf")).toEqual({ median: 0, count: 5 });
+    expect(medians.has("overdraft")).toBe(false);
   });
 
   it("ties a rule to the fees it touches, and an all-fees rule to the largest three", () => {

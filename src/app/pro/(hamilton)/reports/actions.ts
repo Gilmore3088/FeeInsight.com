@@ -5,6 +5,10 @@ import { partnerReviewContext, reviewAnswerPage } from "@/lib/hamilton/partner-r
 import { getDisplayName } from "@/lib/fee-taxonomy";
 import { getCurrentUser } from "@/lib/auth";
 import { canAccessPremium } from "@/lib/access";
+import { loadHamiltonAccountContext } from "@/lib/hamilton/account-context-store";
+import { accountIdentitySnapshot } from "@/lib/hamilton/account-context";
+import { readHamiltonIdentitySnapshot } from "@/lib/hamilton/identity-display";
+import { loadAnalysisRecord } from "@/app/pro/(hamilton)/analyze/actions";
 import {
   getFeesByInstitution,
   getFinancialsByInstitution,
@@ -12,6 +16,7 @@ import {
 } from "@/lib/data-store";
 import { sql } from "@/lib/data-store/connection";
 import { MIN_INSTITUTIONS_FOR_MEDIAN } from "@/lib/data-store/fee-stats";
+import { getCategoryChargeBases } from "@/lib/data-store/fee-index";
 import {
   getInstitutionPeerRanking,
   getInstitutionRevenueTrend,
@@ -23,11 +28,12 @@ import { checkConsultantReportCap, reportCapMessage } from "@/lib/hamilton/repor
 import { recordProRequest } from "@/lib/agents/run-store";
 import { logUsage } from "@/lib/research/history";
 import { estimateAnthropicCostMicrousd } from "@/lib/ai-provider-usage";
-import { getHamiltonModel } from "@/lib/ai-provider";
+import { getHamiltonModel, isProviderLimitError } from "@/lib/ai-provider";
+import { HAMILTON_PAUSED_MESSAGE } from "@/lib/hamilton/provider-paused";
 import type { SectionInput } from "@/lib/hamilton/types";
 import {
   buildReportPeerCoveragePreview,
-  buildSelectedInstitutionFeeDeltas,
+  compareSelectedInstitutionFees,
   type ReportPeerCoveragePreview,
 } from "@/lib/hamilton/report-evidence";
 import { buildInsufficientEvidenceReport } from "@/lib/hamilton/report-readiness";
@@ -178,14 +184,18 @@ export async function previewReportPeerCoverage(
   const user = await getCurrentUser();
   if (!user) return { success: false, error: "Authentication required" };
   if (!canAccessPremium(user)) return { success: false, error: "Pro subscription required" };
+  if (!normalizeCanonicalInstitutionId(params.institutionId)) {
+    return { success: false, error: "Choose a research institution to check report coverage." };
+  }
 
   try {
-    const [selectedInstitution, selectedFees, selectedEvidence] = await Promise.all([
+    const [selectedInstitution, selectedFees, selectedEvidence, chargeBases] = await Promise.all([
       params.institutionId ? getInstitutionById(params.institutionId).catch(() => null) : null,
       params.institutionId ? getFeesByInstitution(params.institutionId).catch(() => []) : [],
       params.institutionId
         ? getInstitutionFeeScheduleEvidence(params.institutionId).catch(() => null)
         : null,
+      params.institutionId ? getCategoryChargeBases().catch(() => null) : null,
     ]);
 
     if (params.institutionId && !selectedInstitution) {
@@ -210,6 +220,7 @@ export async function previewReportPeerCoverage(
         hasSelectedInstitution: Boolean(selectedInstitution),
         selectedFees,
         indexEntries: peerIndex.entries,
+        chargeBases,
         evidencePolicy: params.evidencePolicy ?? "provisional-first",
         peerBaselineSource: peerIndex.source,
         peerBaselineLabel: peerIndex.label,
@@ -363,6 +374,30 @@ function getStrategicSectionType(
   }
 }
 
+/** Resolve saved Ask references with numeric-user scoping before using their historical identity. */
+async function authenticatedReportFindings(raw: unknown, institutionId: string | null) {
+  const findings = await Promise.all(sanitizeBasketItems(raw).map(async (item) => {
+    if (item.source === "Ask" && item.savedAnalysisId) {
+      const saved = await loadAnalysisRecord(item.savedAnalysisId);
+      if (!saved || typeof saved.responseJson.hamiltonView !== "string") return null;
+      const identity = readHamiltonIdentitySnapshot(saved.responseJson.identityContext);
+      return {
+        ...item,
+        // A saved-answer reference authenticates its original content as well as
+        // its identity; browser edits cannot relabel another institution's answer.
+        title: saved.responseJson.title,
+        detail: [saved.responseJson.hamiltonView, saved.responseJson.whatThisMeans].filter(Boolean).join(" "),
+        institutionId: saved.institutionId,
+        ...(identity ? { identityContext: identity } : { identityContext: undefined }),
+      };
+    }
+    // Browser metadata can identify a research selection but cannot establish who the
+    // account represented when a historic answer was generated.
+    return { ...item, identityContext: undefined };
+  }));
+  return basketItemsFor(findings.filter((item) => item !== null), institutionId);
+}
+
 /**
  * Generate a Hamilton report from a template and configuration.
  * Assembles fee data, calls generateSection() for key sections,
@@ -375,6 +410,9 @@ export async function generateReport(
   if (!user) return { success: false, error: "Authentication required" };
   // generateSection() below makes paid model calls: Pro only.
   if (!canAccessPremium(user)) return { success: false, error: "Pro subscription required" };
+  if (!normalizeCanonicalInstitutionId(params.institutionId)) {
+    return { success: false, error: "Choose a research institution before writing this report." };
+  }
 
   try {
     // 1. Fetch selected institution data as grounding for Hamilton
@@ -385,6 +423,8 @@ export async function generateReport(
       selectedRevenueTrend,
       selectedPeerRanking,
       selectedEvidence,
+      chargeBases,
+      accountContext,
     ] = await Promise.all([
       params.institutionId ? getInstitutionById(params.institutionId).catch(() => null) : null,
       params.institutionId ? getFeesByInstitution(params.institutionId).catch(() => []) : [],
@@ -393,7 +433,12 @@ export async function generateReport(
       params.institutionId ? getInstitutionRevenueTrend(params.institutionId).catch(() => []) : [],
       params.institutionId ? getInstitutionPeerRanking(params.institutionId).catch(() => null) : null,
       params.institutionId ? getInstitutionFeeScheduleEvidence(params.institutionId).catch(() => null) : null,
+      params.institutionId ? getCategoryChargeBases().catch(() => null) : null,
+      loadHamiltonAccountContext(user),
     ]);
+    if (params.institutionId && !selectedInstitution) {
+      return { success: false, error: "Selected institution not found" };
+    }
     const peerIndex = await resolveHamiltonPeerIndex({
       userId: user.id,
       peerSetId: params.peerSetId ?? null,
@@ -414,24 +459,29 @@ export async function generateReport(
         : allCategories.slice(0, 15);
 
     const institutionName =
-      selectedInstitution?.institution_name ??
-      params.selectedInstitutionName ??
-      user.institution_name ??
-      "Your Institution";
+      selectedInstitution?.institution_name ?? "Unscoped fee research";
     const reportTitle = `${TEMPLATE_TITLES[params.templateType]} - ${institutionName} - ${params.dateFrom} to ${params.dateTo}`;
     const period = `${params.dateFrom} to ${params.dateTo}`;
     const selectedVisibleFees = selectedFees.filter((fee) => fee.review_status !== "rejected");
     const selectedVerifiedFees = selectedVisibleFees.filter((fee) => fee.review_status === "approved");
     const selectedProvisionalFees = selectedVisibleFees.filter((fee) => fee.review_status !== "approved");
     const evidencePolicy = params.evidencePolicy ?? "provisional-first";
-    const addedFindings = basketItemsFor(
-      sanitizeBasketItems(params.addedFindings),
-      selectedInstitution ? String(selectedInstitution.id) : null,
+    const addedFindings = await authenticatedReportFindings(
+      params.addedFindings, selectedInstitution ? String(selectedInstitution.id) : null,
     );
     const selectedSourceContext = resolveReportSelectedSource(params);
-    const selectedFeeDeltas = buildSelectedInstitutionFeeDeltas({
+    const identityContext = accountIdentitySnapshot(selectedInstitution?.id ?? null, accountContext, {
+      researchInstitutionName: selectedInstitution?.institution_name ?? null,
+      researchSelectionSource: selectedSourceContext.selectedSourceLabel,
+      peerSetId: normalizeCanonicalInstitutionId(peerIndex.peerSetId) ? Number(peerIndex.peerSetId) : null,
+      peerBaselineLabel: peerIndex.label,
+      peerBaselineSource: peerIndex.source,
+      peerBaselineFallbackReason: peerIndex.fallbackReason,
+    });
+    const { deltas: selectedFeeDeltas, notLikeForLike } = compareSelectedInstitutionFees({
       selectedFees: selectedVisibleFees,
       indexEntries: indexData,
+      chargeBases,
       evidencePolicy,
     });
     const pipelineCounts = selectedEvidence?.pipeline_counts ?? null;
@@ -468,6 +518,7 @@ export async function generateReport(
             }
           : null,
       });
+      report.identityContext = identityContext;
       const artifactMetadata: ReportArtifactMetadata = {
         evidencePolicy: selectedFeeDeltas.length > 0 ? evidencePolicy : "source-diligence",
         selectedSource: selectedSourceContext.selectedSource,
@@ -522,6 +573,7 @@ export async function generateReport(
       selectedVisibleFees,
       selectedEvidence,
       selectedFeeDeltas,
+      notLikeForLike,
       peerIndex,
       selectedRevenueTrend,
       selectedPeerRanking,
@@ -720,13 +772,21 @@ export async function generateReport(
     // One retry per section, so a provider hiccup never discards (and re-bills) the
     // sections that worked.
     const verifiedSections: VerifiedSectionOutput[] = [];
+    // A usage or billing limit at the provider: no retry, and the reader is told it is paused.
+    let providerPaused = false;
     const generateWithRetry = async (input: SectionInput): Promise<VerifiedSectionOutput | null> => {
       try {
         return await generateVerifiedSection(input);
-      } catch {
+      } catch (firstError) {
+        if (isProviderLimitError(firstError)) {
+          providerPaused = true;
+          await recordReportOutcome("failed", `Section "${input.title}" refused: provider usage limit.`, verifiedSections);
+          return null;
+        }
         try {
           return await generateVerifiedSection(input);
-        } catch {
+        } catch (retryError) {
+          providerPaused = isProviderLimitError(retryError);
           await recordReportOutcome("failed", `Section "${input.title}" failed after a retry.`, verifiedSections);
           return null;
         }
@@ -734,7 +794,9 @@ export async function generateReport(
     };
     const sectionFailed = (input: SectionInput): GenerateReportResult => ({
       success: false,
-      error: `Hamilton couldn't write the ${input.title} section right now. Please try again in a minute.`,
+      error: providerPaused
+        ? HAMILTON_PAUSED_MESSAGE
+        : `Hamilton couldn't write the ${input.title} section right now. Please try again in a minute.`,
     });
 
     // The answer page comes first; the other two sections explain and stress-test
@@ -821,6 +883,7 @@ export async function generateReport(
     const tradeoffSection = parseTradeoffSection(recommendationSection.narrative);
     const report: ReportSummaryResponse = {
       title: reportTitle,
+      identityContext,
       ...(answer ? { answer: { ...answer, goal: params.clientGoal && params.clientGoal !== "balanced" ? reportGoal(params.clientGoal).label : null } } : {}),
       exhibits: [
         ...exhibitSet.exhibits,
@@ -854,7 +917,7 @@ export async function generateReport(
       },
     };
     if (addedFindings.length > 0) {
-      report.addedFindings = addedFindings.map((f) => ({ source: f.source, title: f.title, detail: f.detail }));
+      report.addedFindings = addedFindings.map((f) => ({ source: f.source, title: f.title, detail: f.detail, ...(f.identityContext ? { identityContext: f.identityContext } : {}) }));
     }
     const artifactQuality = validateHamiltonReportArtifact({
       report,
@@ -911,6 +974,7 @@ export async function generateReport(
     await recordReportOutcome("completed", `Report saved (${reportId}).`, verifiedSections, { report_id: reportId });
     return { success: true, reportId, report, artifactMetadata };
   } catch (err) {
+    if (isProviderLimitError(err)) return { success: false, error: HAMILTON_PAUSED_MESSAGE };
     const message = err instanceof Error ? err.message : String(err);
     return { success: false, error: `Report generation failed: ${message}` };
   }
@@ -1001,4 +1065,50 @@ export async function loadPublishedReport(reportId: string) {
       selectedFeeDeltaCount: Number(rows[0].selected_fee_delta_count ?? 0),
     },
   };
+}
+
+/** Explicitly confirmed landing selection; uses the same user-scoped report library/PDF workflow. */
+export async function saveLandingResearchReport(input: { research: unknown; confirmed: boolean }): Promise<{ success: true; reportId: string } | { success: false; error: string }> {
+  const user = await getCurrentUser();
+  if (!user || !canAccessPremium(user)) return { success: false, error: "Hamilton access required." };
+  if (input.confirmed !== true) return { success: false, error: "Confirm the selection before creating a report." };
+  try {
+    const { parseLandingResearch } = await import("@/lib/hamilton/landing-research-handoff");
+    const { buildLandingReport } = await import("@/lib/hamilton/landing-report");
+    const selection = parseLandingResearch(input.research);
+    if (selection.task !== "board_report") return { success: false, error: "Choose the board-report workflow." };
+    const result = selection.scope.kind === "local"
+      ? await (await import("@/lib/hamilton/local-market-answer")).getLocalMarketAnswer(selection.scope.institutionId, { categories: selection.categories, charter: selection.charter })
+      : await (await import("@/lib/hamilton/landing-geographic-research")).loadLandingGeographicResearch({ ...selection, task: "compare" });
+    if (!result) return { success: false, error: "No branch market is on file for this institution yet." };
+    const report = buildLandingReport(selection, result, new Date().toISOString());
+    const accountContext = await loadHamiltonAccountContext(user);
+    const researchInstitution = selection.scope.kind === "local" ? await getInstitutionById(selection.scope.institutionId) : null;
+    report.identityContext = accountIdentitySnapshot(selection.scope.kind === "local" ? selection.scope.institutionId : null, accountContext, {
+      researchInstitutionName: researchInstitution?.institution_name ?? null,
+      researchSelectionSource: "Explicitly confirmed landing research selection",
+      peerBaselineLabel: report.exhibits?.[0]?.subtitle ?? null,
+      peerBaselineSource: "published-fee-index",
+      peerBaselineFallbackReason: "No account institution or fallback cohort was substituted.",
+    });
+    const quality = validateHamiltonReportArtifact({ report, selectedInstitutionId: selection.scope.kind === "local" ? selection.scope.institutionId : null });
+    if (!quality.ok) return { success: false, error: quality.error };
+    const reportId = await saveHamiltonReport({
+      userId: user.id,
+      institutionId: selection.scope.kind === "local" ? String(selection.scope.institutionId) : "",
+      reportType: "landing_research", reportJson: report, evidencePolicy: "verified-only",
+      selectedSource: "url", selectedSourceLabel: "Landing research selection",
+      peerBaselineLabel: report.exhibits![0].subtitle,
+      peerFallbackReason: "Explicit landing selection; no fallback cohort or account institution was substituted.",
+    });
+    await recordProRequest({ operation: "report", title: report.title, status: "completed",
+      summary: "Saved explicitly confirmed published-fee research draft", userId: user.id,
+      institutionId: selection.scope.kind === "local" ? selection.scope.institutionId : null,
+      detail: { report_id: reportId, research: selection, provider_call_queued: false, evidence_policy: "verified-only" },
+    });
+    return { success: true, reportId };
+  } catch (error) {
+    console.error("[landing-report]", error);
+    return { success: false, error: "Could not save this research selection. Please retry." };
+  }
 }

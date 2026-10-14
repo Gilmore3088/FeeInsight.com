@@ -90,8 +90,8 @@ export function buildAuditTrail(input: {
   if (input.ownFeeRows.length > 0) {
     const latest = input.ownFeeRows.map((r) => r.publishedAt).filter(Boolean).sort().pop() ?? null;
     sources.push({
-      label: `Your ${input.feeName.toLowerCase()} fee`,
-      detail: `${input.ownFeeRows.length} published ${input.ownFeeRows.length === 1 ? "line" : "lines"} from your own fee schedule (listed below).`,
+      label: `Research institution ${input.feeName.toLowerCase()} fee`,
+      detail: `${input.ownFeeRows.length} published ${input.ownFeeRows.length === 1 ? "line" : "lines"} from the research institution's fee schedule (listed below).`,
       asOf: dateOnly(latest),
       href: input.ownFeeRows.map((r) => r.documentUrl ?? r.sourceUrl).find(Boolean) ?? null,
     });
@@ -101,7 +101,7 @@ export function buildAuditTrail(input: {
       label: "Local market",
       detail:
         input.local.basis === "hq_city"
-          ? `Institutions headquartered in ${input.local.places.join("; ")}. Your institution isn't in the FDIC Summary of Deposits, so the market is your headquarters city.`
+          ? `Institutions headquartered in ${input.local.places.join("; ")}. The research institution isn't in the FDIC Summary of Deposits, so the market uses its headquarters city.`
           : `Institutions with branches in ${input.local.places.join("; ")}, by deposits held there. FDIC Summary of Deposits.`,
       asOf: `June 30, ${input.local.sodYear}`,
       href: "https://www.fdic.gov/resources/data-tools/summary-of-deposits",
@@ -117,7 +117,7 @@ export function buildAuditTrail(input: {
   if (input.complaints) {
     sources.push({
       label: "Consumer complaints",
-      detail: "CFPB Consumer Complaint Database, matched to your institution.",
+      detail: "CFPB Consumer Complaint Database, matched to the research institution.",
       asOf: null,
       href: "https://www.consumerfinance.gov/data-research/consumer-complaints/",
     });
@@ -125,7 +125,7 @@ export function buildAuditTrail(input: {
 
   if (input.stateChanges) {
     sources.push({
-      label: "Fee changes in your state",
+      label: `Fee changes in ${input.stateChanges.state}`,
       detail: `Changes seen on published schedules in ${input.stateChanges.state}, last ${input.stateChanges.days} days. Bank Fee Index change records.`,
       asOf: dateOnly(input.stateChanges.asOf),
     });

@@ -73,6 +73,14 @@ describe("StructuredAsk", () => {
     expect(screen.getByText("The answer")).toBeTruthy();
   });
 
+  it("keeps the storyline and shows the paused line when the provider's usage limit is reached", async () => {
+    const { HAMILTON_PAUSED_MESSAGE } = await import("@/lib/hamilton/provider-paused");
+    mockFetch(withStoryline, { status: "unavailable", reason: HAMILTON_PAUSED_MESSAGE });
+    render(<StructuredAsk question="q" institutionId="8109" modelHrefFor={() => "/"} />);
+    await screen.findByText(HAMILTON_PAUSED_MESSAGE);
+    expect(screen.getByText("The answer")).toBeTruthy();
+  });
+
   it("hands a question with no storyline back to the page, and asks for no memo", async () => {
     const calls = mockFetch({ kind: "research", shortAnswer: "x", pageChange: { screen: "research", feeCategory: "overdraft" } }, {});
     const onNoStoryline = vi.fn();
@@ -190,7 +198,7 @@ describe("StructuredAsk", () => {
     const calls = mockFetch(market as never, {});
     const onNoStoryline = vi.fn();
     render(<StructuredAsk question="who are my local competitors and locations" institutionId="8109" modelHrefFor={() => "/"} onNoStoryline={onNoStoryline} />);
-    await screen.findByText("1 institution competes with you in the Testville, FL area");
+    await screen.findByText("1 institution competes with Test Credit Union in the Testville, FL area");
     expect(calls.map((c) => c.url)).toEqual(["/api/hamilton/ask/market"]);
     expect(onNoStoryline).not.toHaveBeenCalled();
   });

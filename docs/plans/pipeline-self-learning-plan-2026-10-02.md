@@ -1,5 +1,11 @@
 # Plan: a self-learning, fully logged fee pipeline that fixes every audit finding
 
+> **Status, 2026-10-12** (checked against `main` at `fdd21bd7`): L1 attempt log, L2 playbook,
+> L3 router and L5 (as Deming) are built. **L4 knowledge promotion is not**: none of its tables
+> exist. That work is issue #1039. Phase 2B submission intake is not built either (#1038). The
+> pipeline is now reviewed agent by agent under #1026 (`docs/plans/pipeline-review-2026-10-12.md`);
+> use that for current priorities and this file for the original design.
+
 ## Context
 
 The 2026-09-30 audit (`docs/audits/2026-09-30-data-pipeline-audit.md`) found these

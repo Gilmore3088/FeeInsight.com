@@ -6,6 +6,7 @@ vi.mock("@/lib/ai-provider-usage", async (importOriginal) => ({
   trackAnthropicRequest: (context: unknown, request: () => PromiseLike<unknown>) => trackAnthropicRequest(context, request),
 }));
 
+import { FOUND_COOLDOWN_DAYS, MISS_COOLDOWN_DAYS } from "./cooldowns";
 import { runScheduleSearch, scheduleSearchPrompt, type ScheduleSearchRow, MAX_TRANSIENT_TRIES } from "./schedule-search";
 
 type DbMock = ReturnType<typeof vi.fn>;
@@ -39,7 +40,8 @@ describe("paid schedule search for the largest banks", () => {
     // PR 314 shipped `btrim(...) <>` with its '' lost, and every paid discovery step failed.
     const db = createDb([]);
     await runScheduleSearch({ runId: 4, db: asDb(db), create: vi.fn() });
-    const statements = db.mock.calls.map((call) => (call[0] as unknown as string[]).join("$?"));
+    // Identifier calls (`db("priority")`) carry a plain string, not SQL text.
+    const statements = db.mock.calls.filter((call) => Array.isArray(call[0])).map((call) => (call[0] as unknown as string[]).join("$?"));
     expect(statements.some((sqlText) => sqlText.includes("incomplete-link schedule search"))).toBe(true);
     for (const sqlText of statements) {
       expect(sqlText).not.toMatch(/(<>|<=|>=|=|<|>)\s*(\n\s*(AND|OR|\))|$)/);
@@ -99,6 +101,53 @@ describe("paid schedule search for the largest banks", () => {
     expect(result.results[0]).toMatchObject({ would_search_schedule: true });
     expect(create).not.toHaveBeenCalled();
   });
+
+  it("keeps each lane's own cap, and cuts each lane's pool by requesters, then cells in turn (#1269)", async () => {
+    const lane = (priority: boolean, from: number) => Array.from({ length: 4 }, (_, index) => ({ ...wells, id: from + index, state_code: index % 2 ? "VT" : "TX", priority }));
+    const db = createDb([...lane(true, 100), ...lane(false, 200)]);
+    const result = await runScheduleSearch({ runId: 4, dryRun: true, limit: 3, hiddenLimit: 2, db: asDb(db), create: vi.fn() });
+    const ids = result.results.map((entry) => Number(entry.institution_id));
+    expect([ids.filter((id) => id < 200).length, ids.filter((id) => id >= 200).length]).toEqual([3, 2]);
+    const select = text(db.mock.calls.find((call) => text(call[0]).includes("incomplete-link schedule search"))![0]);
+    expect(select).toContain("PARTITION BY priority ORDER BY requested DESC, paying DESC, leader DESC, cell_rank ASC");
+  });
+
+  it("searches a small bank on its own sites only, and never sends it to a parent company's domain (#1251)", async () => {
+    const cashmere: ScheduleSearchRow = {
+      ...wells, id: 12, institution_name: "Cashmere Valley Bank", city: "Cashmere", state_code: "WA",
+      website_url: "https://www.cashmerevalleybank.com", fee_schedule_url: "https://www.cashmerevalleybank.com/checking", asset_size: "2300000",
+    };
+    const db = vi.fn((strings: TemplateStringsArray) => {
+      const sqlText = text(strings);
+      if (sqlText.includes("incomplete-link schedule search")) return Promise.resolve([cashmere]);
+      if (sqlText.includes("bank-owned document hosts")) return Promise.resolve([{ institution_id: 12, host: "cvb.bank", documents: 2 }]);
+      return Promise.resolve([]);
+    });
+    const create = vi.fn().mockResolvedValueOnce(answer({ url: "https://www.cvb.bank/personal-fee-schedule" }));
+    const named = SCHEDULE.replace("<h1>Consumer Account", "<p>Cashmere Valley Bank</p><h1>Consumer Account");
+    const result = await runScheduleSearch({ runId: 4, db: asDb(db), create, fetchImpl: serve(named) });
+
+    const params = create.mock.calls[0][0];
+    expect(params.tools[0].allowed_domains).toEqual(["cashmerevalleybank.com", "cvb.bank"]);
+    const prompt = String(params.messages[0].content);
+    expect(prompt).not.toContain("parent company");
+    expect(prompt).toContain("cashmerevalleybank.com or cvb.bank");
+    expect(result.results[0]).toMatchObject({ outcome: "ok", url: "https://www.cvb.bank/personal-fee-schedule" });
+    // A $10B+ bank keeps the open web and may still use a parent company's domain.
+    expect(scheduleSearchPrompt(wells)).toContain("parent company's domain");
+
+    // The same answer is refused when the document does not name the bank (#1033's rule, now
+    // applied to paid answers), and when the host refuses our check, since it can't be read.
+    const unnamed = vi.fn().mockResolvedValueOnce(answer({ url: "https://www.cvb.bank/personal-fee-schedule" }));
+    const r2 = await runScheduleSearch({ runId: 4, db: asDb(db), create: unnamed, fetchImpl: serve(SCHEDULE) });
+    expect(r2.results[0]).toMatchObject({ outcome: "wrong_document", url: null });
+    const refused = vi.fn().mockResolvedValueOnce(answer({ url: "https://www.cvb.bank/personal-fee-schedule.pdf" }));
+    const r3 = await runScheduleSearch({
+      runId: 4, db: asDb(db), create: refused, fetchImpl: vi.fn(async () => new Response("Forbidden", { status: 403, headers: { "content-type": "text/html" } })),
+    });
+    expect(r3.results[0]).toMatchObject({ url: null });
+    expect(r3.results[0].outcome).not.toBe("ok");
+  });
 });
 
 describe("market leaders in the priority lane", () => {
@@ -127,11 +176,21 @@ describe("market leaders in the priority lane", () => {
 });
 
 describe("banks whose answer never opens", () => {
-  it("stops paying for a bank after a few timeouts in a month", async () => {
+  it("stops paying for a bank after a few timeouts in the miss cooldown", async () => {
     const db = createDb([]);
     await runScheduleSearch({ runId: 4, db: asDb(db), create: vi.fn(), leaderIds: [] });
     const call = db.mock.calls.find((c) => text(c[0]).includes("incomplete-link schedule search"));
     expect(text(call![0])).toMatch(/AND pa\.outcome <> 'budget_blocked'\s*\)\s*<\s*$/m);
     expect(call!.slice(1)).toContain(MAX_TRANSIENT_TRIES);
+  });
+
+  it("counts its cooldown from the last try, 90 days after a find and 30 after a miss (#1031)", async () => {
+    const db = createDb([]);
+    await runScheduleSearch({ runId: 4, db: asDb(db), create: vi.fn(), leaderIds: [] });
+    const call = db.mock.calls.find((c) => text(c[0]).includes("incomplete-link schedule search"));
+    expect(text(call![0])).not.toContain("date_trunc('month'");
+    expect(text(call![0])).toContain("CASE WHEN pa.outcome = 'ok' THEN");
+    expect(call!.slice(1)).toContain(FOUND_COOLDOWN_DAYS);
+    expect(call!.slice(1)).toContain(MISS_COOLDOWN_DAYS);
   });
 });

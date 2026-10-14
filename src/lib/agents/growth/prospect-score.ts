@@ -89,19 +89,34 @@ export function scoreProspect(
 }
 
 /** The research problem the email names, by the addressee's role (plan section 1). */
-export function roleProblem(contact: { title: string | null; role: ContactRole }): { opening: string; useFor: string } {
+export function roleProblem(
+  contact: { title: string | null; role: ContactRole },
+  charterType: string | null = null,
+): { opening: string; useFor: string } {
   const title = contact.title ?? "";
+  // A credit union's buyers answer to a board, ALCO and a supervisory committee, and serve members.
+  const creditUnion = charterType === "credit_union";
   if (FINANCE_TITLE.test(title) || contact.role === "finance") {
-    return { opening: "Preparing a competitive fee review for management or the board", useFor: "your next pricing review" };
+    return creditUnion
+      ? { opening: "Preparing a competitive fee review for the board or ALCO", useFor: "your next ALCO or board review" }
+      : { opening: "Preparing a competitive fee review for management or the board", useFor: "your next pricing review" };
   }
   if (/\b(?:retail|deposits?|member)\b/i.test(title) || contact.role === "retail") {
-    return { opening: "Reviewing how competitors structure their deposit-account fees", useFor: "your deposit-account reviews" };
+    return creditUnion
+      ? { opening: "Reviewing how other credit unions and banks structure their deposit-account fees", useFor: "your member deposit-account reviews" }
+      : { opening: "Reviewing how competitors structure their deposit-account fees", useFor: "your deposit-account reviews" };
   }
   if (/\b(?:product|marketing|brand)\b/i.test(title) || contact.role === "marketing") {
-    return { opening: "Reviewing a checking product against what competitors publish", useFor: "your product reviews" };
+    return creditUnion
+      ? { opening: "Reviewing a member checking product against what other credit unions and banks publish", useFor: "your product reviews" }
+      : { opening: "Reviewing a checking product against what competitors publish", useFor: "your product reviews" };
   }
   if (contact.role === "compliance") {
-    return { opening: "Checking competitor fee figures used in internal analysis", useFor: "your internal analysis" };
+    return creditUnion
+      ? { opening: "Checking competitor fee figures used in internal analysis or supervisory committee reviews", useFor: "your internal analysis" }
+      : { opening: "Checking competitor fee figures used in internal analysis", useFor: "your internal analysis" };
   }
-  return { opening: "Keeping track of what competitors charge", useFor: "your team" };
+  return creditUnion
+    ? { opening: "Keeping track of what other credit unions and banks charge", useFor: "your board reporting" }
+    : { opening: "Keeping track of what competitors charge", useFor: "your team" };
 }

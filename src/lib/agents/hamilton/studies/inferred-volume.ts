@@ -1,4 +1,5 @@
 import { assetBand, peerGroupLabel, type Charter, type SqlTag } from "./common";
+import { statsRowFilter } from "@/lib/data-store/fee-stats";
 import { median, midRankPercentile, quartileOf, round } from "./stats";
 import type { Placement, StudyRecord } from "./store";
 
@@ -41,9 +42,10 @@ export async function readIncomeAndFees(db: SqlTag): Promise<IncomeFeeRow[]> {
   const rows = await db`
     WITH fees AS (
       SELECT institution_id, canonical_fee_key AS k, MIN(amount)::float8 AS lo, MAX(amount)::float8 AS hi
-        FROM published_fee_catalog
-       WHERE canonical_fee_key IN ('overdraft', 'nsf') AND amount > 0
-         AND COALESCE(is_fee_cap, false) = false AND COALESCE(amount_kind, 'dollar') <> 'rate'
+        FROM published_fee_catalog f
+       WHERE f.canonical_fee_key IN ('overdraft', 'nsf') AND f.amount > 0
+         AND ${db.unsafe(statsRowFilter("f"))}
+         AND COALESCE(f.is_fee_cap, false) = false AND COALESCE(f.amount_kind, 'dollar') <> 'rate'
        GROUP BY 1, 2
     ), both_fees AS (
       SELECT institution_id, MIN(lo) AS lo, MAX(hi) AS hi FROM fees GROUP BY 1

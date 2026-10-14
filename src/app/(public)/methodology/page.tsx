@@ -32,7 +32,7 @@ export async function generateMetadata(): Promise<Metadata> {
   return {
   title: "Methodology — How the Bank Fee Index works",
   description:
-    `Fee Insight collects published fee schedules from ${institutions} banks and credit unions on a rolling calendar, reads the fees, and holds anything uncertain for a person to check. Learn how our data is collected, categorized, and verified.`,
+    `How Fee Insight collects fee schedules from ${institutions} banks and credit unions, reads each fee, and holds anything uncertain for a person to check.`,
   alternates: {
     canonical: METHODOLOGY_URL,
   },
@@ -91,7 +91,7 @@ export default async function MethodologyPage() {
           body={[
             `Fee Insight draws its institution universe from two authoritative federal databases: the FDIC's BankFind Suite (which tracks every FDIC-insured bank, thrift, and savings institution) and the NCUA's Research & Data portal (which covers all federally chartered credit unions). Together, these sources provide accurate legal names, charter classifications, asset sizes, physical locations, and primary website URLs for roughly ${summary.monitoredLabel} active institutions.`,
             "We do not use purchased data lists, scraped directories, or self-reported feeds. Every institution in our index is traceable to a federal regulator record with a published institution ID. This is the foundation of our data quality commitment: our institution universe is authoritative before the first fee is collected.",
-            `As of the most recent index update, ${institutions} institutions have verified fee schedules in the Bank Fee Index, across ${summary.statesLabel} states. Coverage is skewed toward institutions with assets above $100 million, where fee schedules are most consistently published online. Institutions below $50 million in assets are included where fee schedules are publicly discoverable.`,
+            `As of the most recent index update, ${institutions} institutions have verified fee schedules in the Bank Fee Index, across ${summary.statesLabel} states.`,
           ]}
         />
 
@@ -103,7 +103,7 @@ export default async function MethodologyPage() {
             "Automated collection runs on a rolling calendar and stores the document, its URL and the date collected. Every fee in the index points back to that stored document, so a figure can always be checked against the schedule it came from.",
             "Finding the schedule comes first. Most institutions publish it at a predictable address (a fee schedule PDF, or a disclosures page); where they do not, we search the institution's own website. Large regional banks publish reliably; community banks and credit unions are more variable, and coverage is weakest where the schedule is not published online at all.",
             "We read HTML pages, plain-text documents and PDFs with selectable text. Scanned, image-only PDFs are set aside for separate handling rather than mixed into the general queue.",
-            "Institutions whose fees change often are rechecked more often. Every schedule is rechecked at least quarterly. When a stored document has not changed since the last visit, its fees are carried forward rather than re-read.",
+            "Schedules are rechecked on a rolling basis. When a stored document has not changed since the last visit, its fees are carried forward rather than re-read.",
           ]}
         />
 
@@ -147,17 +147,30 @@ export default async function MethodologyPage() {
         {measured && (
           <Section
             label="Measured"
-            title="Every live fee is checked against the bank's own schedule"
+            title="What our automated source checks measured"
             body={measured}
           />
         )}
 
-        {/* Section 6: Coverage and Limitations */}
+        {/* Section 6: Audience (#1058) */}
+        <Section
+          id="audience"
+          label="Personal and business fees"
+          title="Personal and business fees are compared separately"
+          body={[
+            "Banks often charge personal and business customers different prices for the same service. Our medians, ranges and comparisons describe personal accounts unless a figure says otherwise, so each fee is labeled by who it applies to.",
+            "The label comes from the bank's own schedule. A fee is labeled Business when its line names business or commercial accounts, or when the whole schedule is a business one: its web address names business, commercial, corporate or treasury accounts and no personal ones. A fee is labeled Consumer when its line names personal or consumer accounts.",
+            "Many schedules never say who a fee applies to. We count those fees as personal and mark every fee and figure they contribute to with an asterisk (*). The footnote beside it reads: \u201cAudience not stated on the bank\u2019s schedule; treated as personal. Fees may differ for business or commercial accounts.\u201d The link to the bank's schedule stays beside the fee, so you can check it yourself. We are labeling these fees from the schedules we already hold, and fewer figures will carry the asterisk as we do.",
+            "Business fees stay on the bank's own page, labeled Business, and never enter a personal median. Business comparisons will be published once enough institutions post business fees to compare.",
+          ]}
+        />
+
+        {/* Section 7: Coverage and Limitations */}
         <Section
           label="Coverage and Limitations"
           title="What our data covers — and what it does not"
           body={[
-            "The Bank Fee Index tracks published fee schedules, not actual fee revenue or transaction-level data. A published fee of $35 does not mean a given institution collected $35 for every overdraft — waiver programs, promotional rates, and negotiated terms affect realized fees. Our data reflects disclosed rates, which are the standard of comparison for regulatory purposes and consumer research.",
+            "The Bank Fee Index tracks published fee schedules, not actual fee revenue or transaction-level data. A published fee of $35 does not mean a given institution collected $35 for every overdraft — waiver programs, promotional rates, and negotiated terms affect realized fees. Our data reflects the fees institutions disclose.",
             "Our coverage is strongest for retail deposit account fees (maintenance, overdraft, NSF, wire, ATM) and weakest for business account fees, loan fees, and investment-account fees. Fee schedules for these product types are less consistently published in machine-readable formats.",
             "Geographic coverage is uneven: some states and Federal Reserve districts have far more institutions with published fees than others. Each state and district page shows its own institution count, and a benchmark is marked provisional or withheld when too few institutions report it.",
             "Source freshness varies by institution and schedule. Every fee carries the date its schedule was collected, so a figure can be judged by its age. A fee stays in the index until a newer copy of its schedule replaces it.",
@@ -179,9 +192,9 @@ export default async function MethodologyPage() {
 }
 
 // Internal section component — page-local only
-function Section({ label, title, body }: { label: string; title: string; body: string[] }) {
+function Section({ id, label, title, body }: { id?: string; label: string; title: string; body: string[] }) {
   return (
-    <section style={{ marginBottom: "48px" }}>
+    <section id={id} style={{ marginBottom: "48px", scrollMarginTop: "96px" }}>
       <p style={{ fontSize: "11px", textTransform: "uppercase", letterSpacing: "0.12em", color: "#A93D25", fontWeight: 700, marginBottom: "8px" }}>
         {label}
       </p>

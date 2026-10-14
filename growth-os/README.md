@@ -1,5 +1,11 @@
 # Fee Insight GrowthOS
 
+> **On hold, 2026-10-12.** Marketing is parked, and the "How it runs" section below (scheduled
+> Claude Code routines) is not to be switched on: scheduled routines on long sessions were the
+> main source of runaway Claude spend that week. The marketing skills are used instead during
+> normal site work; the site-copy ones are linked into `.claude/skills/` and `CLAUDE.md` says when
+> to use them. Any revival needs James's decision in `docs/project/DECISIONS.md`.
+
 The marketing team: one manager and eight specialists that find banks and credit unions who need
 fee benchmarking, earn their trust with sourced research, and turn interest into report requests
 and Pro customers. Proposed by James on 2026-10-08; built in weekly stages.

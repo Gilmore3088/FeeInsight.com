@@ -36,7 +36,7 @@ export function ReportHero({
 }) {
   return (
     <section className="relative overflow-hidden bg-[#1A1815] text-[#F5EFE6]">
-      <div className="relative mx-auto max-w-6xl px-4 pb-10 pt-10 sm:px-6 sm:pb-12 sm:pt-12">
+      <div className="relative mx-auto max-w-page px-4 pb-10 pt-10 sm:px-6 sm:pb-12 sm:pt-12">
         <p className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-[#E8A48F]">
           <span aria-hidden="true" className="h-px w-8 bg-[#E8A48F]/60" />
           {eyebrow}

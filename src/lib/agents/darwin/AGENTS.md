@@ -9,7 +9,7 @@ Darwin owns verification and classification.
 - Darwin may skip or challenge raw rows when canonical category, amount, duplicate, source lineage, or policy checks fail.
 - Darwin may emit Monitor signals for verified rows and verification-review states.
 
-## Current Implementation (2026-10-06, verify.rules version 3)
+## Current Implementation (2026-10-12, verify.rules version 3)
 
 `darwin/verify.ts` checks, in order, and records the first failure as a reason code:
 
@@ -19,32 +19,125 @@ Darwin owns verification and classification.
 | `missing_name` | a non-empty fee name | rejected |
 | `category_mismatch` | for the guarded categories, the fee name names its category and not a different fee (`src/lib/fee-category-guard.ts`); a name that names a neighbouring guarded category is re-filed there first (`refileCategory`) | rejected |
 | `missing_lineage` | a source URL or stored document key | rejected |
+| `percent_not_publishable` | a fee stated as a rate ("1.1% of the transaction") is filed under a category that publishes rates (`PERCENT_FEE_RANGES` in `src/lib/percent-fees.ts`: foreign transaction, cash advance, coin counting, late payment); elsewhere a rate is often an interest rate, not a fee. A rate that passes needs `rate_percent` and no dollar amount (else `invalid_amount`) and a rate inside that category's range (else `outside_envelope`), and its source check is `checkRateAgainstSource` | rejected |
 | `invalid_amount` | an amount; $0 only with Knox's `knox_review:zero` flag | rejected |
 | `outside_envelope` | a positive amount inside its category's range: hand-set (`envelopes.ts`), else learned (`learned-envelopes.ts`), else $0.01-$2,500 | needs_review |
 | `not_in_source` | the fee is stated in the stored text of the document Knox read it from (`checkFeeAgainstSource`, the shared accuracy check; a tiered price counts) | rejected |
 | `peer_outlier` | pass 2: not far outside the state's peer range (below); a district or national comparison never holds | needs_review |
 | `duplicate_in_batch` | the same fee line (institution, category, amount, frequency, stored document) already verified in this batch | duplicate |
 | `duplicate_verified` | the insert did not conflict with an existing verified row | duplicate |
+| `category_lesson_pending` | the fee name does not match a category lesson the shared guard has not learned yet (`DARWIN_CATEGORY_HOLDS` in `verify.ts`); Darwin never re-files a row itself, so the row waits for the guard | needs_review |
+| `retired_category` | after the source check: the category is not one the top-50 fold retired (`RETIRED_CATEGORIES` in `src/lib/fee-fold.ts`); Hamilton never publishes a retired type, so Darwin never verifies into one | rejected |
+| `conditional_zero` | after the source check: a $0 fee whose own schedule line (or Knox's excerpt) carries a non-zero price ("FREE with e-statements, else $6.95 per month"); the charge is the fee, so the $0 reading waits for a re-read | needs_review |
+| `name_rule` | after the source check: the name and line pass Hamilton's live-fee name rules (`ruleFor` in `hamilton/eval-verdicts.ts`: rebate, no-fee or waiver sentence, balance threshold, merchant payer, two fees on one line, rate bound, price in name); the rule and why are in the reason text | rejected |
+| `insert_failed` | the database accepted the verified row; a refused insert holds that row so the rest of the batch still runs (#1113) | needs_review |
 
 - Each decision records `category_guard_version`; when `CATEGORY_GUARD_VERSION` rises, rows rejected
-  as `category_mismatch` under an older guard are selected once more. No other decided row is.
+  as `category_mismatch` or held as `category_lesson_pending` under an older guard are selected
+  once more. The hold list (`DARWIN_CATEGORY_HOLDS`) is empty. Its one entry, "Bond return items"
+  $35 filed `nsf` (raw 246460, 2026-10-09), left when guard v58 learned that a returned bond or
+  coupon filed as NSF is a returned deposited item.
+- A Knox category change is a reason to judge a row again (#1295, `category-change.ts`): new
+  category, new decision. A row qualifies only when Knox marked it as re-read (`knox_reread_took_over`,
+  `knox_stale_hint_repaired`, or `knox_refiled_from:<old>` from #1291), it waits for Darwin
+  unverified, no decision was judged under today's category or today's `refileCategory` of it, and
+  each decision was made under an earlier Knox category. A decision says so by its `knox_category`
+  (recorded from #1295 on). An older one needs proof from the row's flags: a `knox_refiled_from:`
+  or `knox_stale_hint_repaired` marker (written when Knox's category changes on a row Darwin had
+  judged), or a judged category that is another `canonical_hint:` flag still on the row. Without
+  proof the decision may be an older Darwin re-file of today's category, and the row is left
+  alone: raw 132922, "Collection Items (plus any bank fees)" $20, a plain take-over filed
+  `collection_item` and judged `check_cashing`, while today's re-file keeps `collection_item`.
+  The same free checks decide, the shared source check among them, and the new decision records
+  today's category, so a row is judged once per category. Switched off
+  (`DARWIN_CATEGORY_CHANGE_REJUDGE_LIVE = false`): each verify step, a dry run included, writes the
+  candidate count, their earlier reasons and a 25-row sample to `detail.category_change_rejudge`
+  and judges nothing; the read runs in a savepoint, so a failed count never fails the step. On, up
+  to 100 a step join the batch. Measured Oct 14 (after #1291 merged): 0 rows qualify; the SQL
+  selection reads 1 row (132922), which the proof rule leaves alone. The 8 take-over rows with a
+  stale first flag qualify once #1291's repair (inside its switched-off re-file pass) runs, and the
+  re-file pass adds its rows when it is on. The 216 rows #1093 step 2 sent back carry the category
+  they were rejected under, so this rule does not reach them.
 - `not_in_source` (2026-10-06) runs the same check Hamilton's live-fee source check runs, so a
   fee the bank's schedule does not state is stopped before it is verified instead of being
   published and then taken down. It joined version 3 without a bump: a bump re-selects every
   decided row, and rows once held as `duplicate_in_batch` would be verified as second copies.
-- The in-batch duplicate key names the stored document (`DARWIN_BATCH_KEY_VERSION` 2,
-  2026-10-07). Version 1 named the URL, so a fee on a bank's current copy of a page was held
-  as a duplicate of the same fee on an older copy and never verified. A version 1 duplicate on
-  a current copy with no verified twin on that same document is selected once more.
+  Each decision also records `source_check_version` (`DARWIN_SOURCE_CHECK_VERSION`, 2026-10-09):
+  when it rises, `not_in_source` rejections stamped lower (or unstamped) are read once more, so a
+  fix to the shared source check reaches the rows it was made for. Before that a `not_in_source`
+  rejection was final; 1,126 rows at 499 banks were waiting on fixes already live (Northern Trust's
+  wrapped-name $25 overdraft, raw 457013, among them).
+- `retired_category`, `conditional_zero` and `name_rule` (2026-10-09, `postSourceCheck` in
+  `verify.ts`) run after the source check on the line it matched. UAT's hand check of the first
+  36 rows the `not_in_source` re-select verified found 16 of a random 20 right: three were $0
+  readings of "free if you meet a condition, else $2.50-$6.95" lines, one a package list verified
+  into the retired `estatement_fee` type. The same checks are Hamilton's publish-time rules, so a
+  row that would come down after publishing now stops before it is verified.
+- A `conditional_zero` hold is settled by the next verify step (`conditional-zero-resolve.ts`,
+  #1115; James approved rules a-c, 2026-10-13), up to 200 a step, each as a `verify.rules` verdict:
+  (a) a duplicate when the same document has a priced verified fee in its category; (c) verified
+  at $0 (flag `darwin_conditional_zero_released`) when the bank's own schedule, not a product page,
+  prices it free on its own line with no other dollar figure, outside overdraft, NSF, monthly
+  maintenance and minimum balance; (b) otherwise rejected, for Knox's next read of the line.
+- `verify.recheck` (`verified-recheck.ts`, version 2, 2026-10-09) ends every learning verify step
+  by reading up to 200 rows `verify.rules` v3 verified (the rows the `not_in_source` re-select
+  verified first, then newest first), once each under `postSourceCheck`. A failing row that is
+  not live is rejected with an `outlier_flags` entry `darwin_recheck:<code>[:<rule>]`; a live one
+  is archived in the same step (`published_fee_records` rolled back with that reason, batch
+  `darwin-recheck-<run>`, never deleted), the verified row rejected with the same flag and the
+  public read cache cleared, once `DARWIN_RECHECK_SAME_STEP_TAKEDOWN` is on (James, 11:55 UTC
+  2026-10-09: "stop waiting 12 hours. go"). While it is off (the default) the live row is flagged
+  `takedown_pending` through the shared second look (`darwin.verified_recheck`), which is the dry
+  read: the switch turns on by PR once UAT has hand-checked 10 flagged rows and found at least 9
+  right (version 1 scored 7 of 10 at 12:19 UTC; the three misses are below). A $0's conditional
+  price is read from the fee's own table cell (`ownSegment`) and, inside a cell that lists several
+  "Label: value" pairs, from the fee's own label; not from a neighbour's cell in the same row, the
+  other product columns of a comparison table ("Monthly fee | $0 | $5* | $0"), a non-member or
+  non-customer price ("$0 - Members $5 - Non-Members"), or the deposit that opens the account
+  ("$1 minimum opening requirement"). Version 2 also re-reads the rows version 1 rejected (flag
+  `darwin_recheck:*`): one that passes now is restored to verified with the flag removed; a live
+  row that passes now has its pending second-look flag cleared (`takedown_cleared`). Each row
+  records a `verify.recheck` attempt (fingerprint `verified:<fee_verified_id>`), so a row is read
+  once per recheck version and the pass never starves the batch. Never a hand UPDATE.
+- The in-batch duplicate key (`batchKey` in `verify.ts`, `DARWIN_BATCH_KEY_VERSION` v4) is the
+  institution, category, amount (or rate), frequency, stored document, the fee's own source line
+  and its audience. Version 1 named the URL, so a fee on a bank's current copy of a page was held
+  as a duplicate of the same fee on an older copy and never verified; version 2 (2026-10-07)
+  named the stored document. Version 3 added the source line, so two products' fees with one
+  price on one document (SCCU's money market and interest checking at $15/mo.) are two fees,
+  while one line read twice is still one. Version 4 (2026-10-09) added the fee's audience
+  (`fee_audience`, `unknown` when unset), so a consumer and a business fee are not duplicates of
+  each other. A duplicate recorded under an older key version on a current copy with no verified
+  twin on that same document is selected once more.
+- Darwin decides each verified fee's audience (#1059; James, Oct 13). A label Knox read on the
+  fee's own line stands. A fee Knox left `unknown` takes Knox's context suggestion
+  (`knox/audience-context.ts`, via `darwin/audience.ts`), in this order: the schedule's address,
+  then the section heading above the fee's line, then its title, a schedule that prices nothing
+  for businesses (consumer), or a schedule that also prices business items and does not limit
+  the fee (both). In a schedule that also prices business items, a heading for all accounts
+  gives both, and a heading naming one audience leaves the fee `unknown` unless it is a business
+  heading under a business schedule title: on unseen schedules those headings agreed with a blind
+  reading on 14 of 36 fees (#1059, Oct 14). A business heading never takes the consumer default.
+  The evidence is written as `darwin:<source>: <words>`. The audience trigger copies the raw
+  row's audience onto the verified row until migration 20270110000047 lets it keep a `darwin:`
+  decision, so until then this changes nothing that is written.
 - Every decision is written to `pipeline_attempts` (stage `verify`, fingerprint
   `raw:<fee_raw_id>`) with `decision` and `reason_code`; a row decided under this rule
   version is never selected again, so skipped rows cannot starve the batch.
+- Which rows are due is one SQL test, `darwinDueSql` (`darwinStandingDecisionSql` for the
+  decision part) in `verify.ts`, read by the selection, the state-lane scheduler's backlog check
+  and the daily health check (#1052, 2026-10-14). Before, the scheduler and health counted only
+  rows with no decision, so a row due again after a guard bump in a state with nothing else to do
+  never woke a lane: 26 rows in Puerto Rico and Guam waited from Oct 9 and Oct 13.
 - Review signals carry `reason_counts` keyed by code, and the category range for
   `outside_envelope` rows.
 - A verified $0 row carries the `zero_fee` flag, which is what lets Hamilton publish it.
 - Pass 2 (`peer-checks.ts`, free, rows the rules accept), each its own strategy in
   `pipeline_attempts` (stage `verify`, fingerprint `raw:<fee_raw_id>`):
-  - `verify.peer_range` v2: a positive amount below p25 / 3 or above p75 * 3 of its
+  - `verify.peer_range` v3: consumer fees only. The peer levels are consumer prices, so a fee
+    whose audience is not `consumer` or `both` (business or unknown) is not compared at all
+    (2026-10-09); its source check and second-source check still run. A positive consumer
+    amount below p25 / 3 or above p75 * 3 of its
     state peers (asset-size tier level when it has 8+ institutions, else the state-wide
     level) is held as `needs_review` with reason code `peer_outlier` and the range in
     the reason and in the review signal's `peer_outliers`. When the state has fewer than
@@ -57,10 +150,13 @@ Darwin owns verification and classification.
     `peer_fallback_checks`, `peer_fallback_outliers`. On the 24 hours to 2026-10-06
     13:30 UTC, 11,637 of 28,039 approvals had no state comparison; the fallback covers
     all but a handful, and about 1,500 of them sit outside the wider range.
-  - `verify.second_source` v1: the same fee in another stored document of the same
-    bank (an older copy or a sister document). Same amount: outcome `ok` and the
-    verified row gets the `second_source_agrees` flag. Different amount only:
-    `evidence_mismatch`, recorded as evidence, never blocking. Re-measured 2026-10-06
+  - `verify.second_source` v2: the same fee in another stored document of the same
+    bank (an older copy or a sister document) only when customer applicability is
+    compatible. Consumer rows accept consumer or both-audience corroboration; business
+    rows accept business or both; unknown rows do not receive second-source confidence.
+    A business-only fee can never corroborate a consumer fee. Same compatible amount:
+    outcome `ok` and the verified row gets the `second_source_agrees` flag. Different
+    compatible amount only: `evidence_mismatch`, recorded as evidence, never blocking. Re-measured 2026-10-06
     13:30 UTC: before the schedule check (`not_in_source`), published fees whose second
     copy disagreed were pulled within 8 hours at 22% (77 of 346) against 8.5% (571 of
     6,709) when it agreed; since, 1.9% (2 of 108) against 2.7% (5 of 183). The schedule
@@ -73,8 +169,8 @@ Darwin owns verification and classification.
   `evidence_mismatch` (disputed); it never changes the decision yet. Step detail:
   `category_model_disputes`. On the 43 Texas answer keys it disputed 20 of 61 wrong
   approvals and 16 of 268 right ones, and its guess matched the key for 14 of the 20.
-  Disputes are meant for the Claude adjudicator (layer 3), Darwin's only paid call,
-  billed to `ANTHROPIC_API_KEY_DARWIN`. The model also trains on the hand-checked
+  Disputes are meant for the Claude adjudicator (layer 3), one of Darwin's two paid passes
+  (the other is the release review, below), both billed to `ANTHROPIC_API_KEY_DARWIN`. The model also trains on the hand-checked
   answer-key fees in the shared learning store (`pipeline_feedback`, kind `answer_key`).
 - Layer 3, Claude adjudicator (`adjudicate.ts`, step `verify-paid`, a provider step after
   `classify`, shadow mode): `verify.adjudicate` v1 sends Claude only the fees the free
@@ -91,14 +187,27 @@ Darwin owns verification and classification.
   disagreements at key banks (Knox on 2); its misses mostly took a neighbouring row's
   price or a balance threshold as the fee
   (`/mnt/project-files/darwin/adjudicate-vs-answer-keys-2026-10-07.md`).
+- Paid calls only when they can act (#1111 step 1, PR #1126, 2026-10-12): `verify-paid` pays for the release
+  review only while `DARWIN_RELEASE_ACTS` is on, and for the adjudicator only while
+  `DARWIN_ADJUDICATE_SHADOW` is on (off: its verdicts never change a decision). With both off,
+  as now (releases paused 2026-10-08), the step makes no model call, spends $0 and says which
+  pass it skipped; the free verdict score still runs. In October the two passes had spent
+  $9.02 (812 calls) and $3.98 (778 calls) on verdicts that changed nothing. A capped
+  measurement run passes `measure: true` to make the calls anyway.
 - Verdict score (`verdict-score.ts`, runs at the end of `verify-paid`, no model call): the
   category review's and the release review's verdicts at answer-key institutions are scored
   against the hand-keyed schedules (`answer-key-fees.json`, compacted from the Knox
-  fixtures) in chunks of 20 decided verdicts. Each chunk is a `verify.verdict_score` attempt
+  fixtures) in chunks of 20 decided verdicts, per review and per prompt version; a version
+  below the newest one seen gets no more verdicts, so its open chunk is closed as a partial
+  chunk (`detail.partial`, read with `decided`; 2026-10-09, after the release review went v11
+  to v17 in a day and no version reached 20). Each chunk is a `verify.verdict_score` attempt
   (`detail.review`, `review_version`, `right`, `wrong`, `hit_rate`, `knox_right`, `misses`),
   outcome `ok` at 19/20 or better. Each miss is a `pipeline_feedback` row (kind
   `review_wrong`, check `darwin.verdict_score`), and both reviews read their own recent
-  misses for the categories in a batch as lessons. Coverage is small: about 5% of the
+  tuning-key misses for the categories in a batch as lessons. Holdout-key misses are recorded
+  at weight 0 (`lesson: false`) and never read back, so `detail.holdout.hit_rate` measures the
+  review on fees it was never corrected on (2026-10-09; before that, 29 holdout misses had
+  been fed back as lessons). Coverage is small: about 5% of the
   category review's verdicts and 15 release reviews (to 2026-10-07) fall at keyed banks.
 - Held fees (`release-held.ts`, after each verify step, up to 200 per step): every fee
   held as `outside_envelope` or `peer_outlier` is checked against the bank's stored schedule
@@ -159,17 +268,39 @@ Darwin owns verification and classification.
   v11 (2026-10-08): releases on (`DARWIN_RELEASE_ACTS`, James, "Turn on" at 02:16 UTC) after a
   hand check of 20 v10 passes had 19 right and 1 arguable. A passing fee becomes a verified row
   flagged `darwin_released_hold`, so the whole release can be found and rolled back. The bump
-  has every held fee judged again with release on.
-  v13 (2026-10-08): v12 released 198 fees by 10:08 UTC (130 live). A hand check of 20 live ones
-  found 18 right, 1 wrong ("/hr incl. reproduction", Legal Process Compliance $20/hr, released as
-  document reproduction) and 1 arguable (a $5 draft copy named "account research fee may apply)").
-  A name starting with "/" or ending in an unopened ")" now stays held (`name_fragment`).
+  has every held fee judged again with release on (paused again after v13, below).
   v12 (2026-10-08): v11 released 1,637 fees (219 live by 03:48 UTC). A hand check of 20 live ones
   found 18 right: "Monthly Fee $50.00" above "Night Deposit Bag $10.00" passed as the account's
   monthly fee and a $5 "Returned check fee" passed as NSF. A passing fee now stays held when the
   category guard rejects its name, when a bare "Monthly Fee" sits among a business service's rows,
   or when a plain returned check or item under $10 is filed as NSF (`releaseHoldReason`, attempt
-  detail `hold_reason`). Category guard v21 rejects business services' monthly fees (remote
+  detail `hold_reason`).
+  v13 (2026-10-08): v12 released 198 fees by 10:08 UTC (130 live). A hand check of 20 live ones
+  found 18 right, 1 wrong ("/hr incl. reproduction", Legal Process Compliance $20/hr, released as
+  document reproduction) and 1 arguable (a $5 draft copy named "account research fee may apply)").
+  A name starting with "/" or ending in an unopened ")" now stays held (`name_fragment`).
+  Releases off again (2026-10-08 21:30 UTC, James, "Pause" on the release card) after a hand
+  check of 20 released v13 fees scored 17 (the three misses v14 names): `DARWIN_RELEASE_ACTS` is false in `release-held.ts`, so the review
+  records verdicts only, and with #1111 step 1 (above) `verify-paid` does not pay for it at all
+  until releases are back on or a run passes `measure: true`. They stay off until a fixed
+  review's 20-fee check scores 19 or better. The review went on to v17 with releases off
+  (`DARWIN_RELEASE_REVIEW_STRATEGY` in `release-review.ts`):
+  v14 (2026-10-08): a hand check of 20 released v13 fees found a merchant's fee for a member's
+  NSF check released as NSF, a $5 "Overdraft Protection Fee" beside a $25 Courtesy Pay fee
+  released as overdraft, and an early-closure fee read as "$251 | 1" ($25, footnote 1); those
+  stay held (`charged_to_merchant`, `small_overdraft_protection`, `footnote_in_price`).
+  v15 (2026-10-08): James set the bar as the complete record, frequency included; a fee whose
+  frequency says the opposite of its schedule line stays held (`frequency_contradicts_line`;
+  "Excess activity charge - $5.00 each after 6" had been released as monthly).
+  v16 (2026-10-08): the first 200-fee complete-record eval found frequency blank on 48% of live
+  fees although the line said "each" or "per month", and 25 of 31 bad names were dot leaders,
+  footnotes, bullet text, table headers or two-column glue. A released fee takes its frequency
+  from the words after its own price when they point one way (`frequencyFromLine`), and those
+  name shapes stay held (`name_fragment`).
+  v17 (2026-10-09): names cut from a sentence or a table ("Inactive fee: This account may be
+  subject to an Inactive fee of") stay held when Knox's `isCutoffName` finds a cut-off shape
+  (`name_fragment`); Knox's retidy v6 gives the live ones their tidy name.
+  Category guard v21 rejects business services' monthly fees (remote
   deposit scanners, IntraFi/ICS, per-location fees) as monthly maintenance and deposited checks
   coming back as NSF, so Hamilton's category guard takes the live ones down after its second look.
   Guard v22 (2026-10-08) also fails a returned check or item under $10 filed as NSF when the same
@@ -181,13 +312,16 @@ Darwin owns verification and classification.
   Guard v24 (2026-10-08) rejects statement-copy and photocopy fees ("Statement Copy Fee",
   "Returned Item Photocopy", "Copy of ...") filed as overdraft or NSF, even under a section heading.
   Guard v29 (2026-10-08) accepts a per-item overdraft or courtesy pay fee whose own note counts the
-- Guard v29 also files "Insufficient Funds Charge (Paid)" (beside "(Returned)") as the overdraft fee, and re-files it there from NSF (WaFd).
   fees charged a day ("Overdraft Item Fee (Maximum of 5 Charged Per Day)"); a cap priced in the
   note or named outside it ("Overdraft Fee (maximum charge per day)", "Overdraft Daily Cap") stays out.
+- Guard v29 also files "Insufficient Funds Charge (Paid)" (beside "(Returned)") as the overdraft fee, and re-files it there from NSF (WaFd).
 - Guard v34 (2026-10-08; v31 and v33 went to the Accuracy rules in PRs 659 and 662) files paid and honored NSF items ("Paid nonsufficient funds (NSF)", "NSF Share Draft (Honored)", "Paid Consumer & Business NSF Items") as the overdraft fee, and re-files them there from NSF. One price for the paid and the returned item ("NSF Paid Item Fee/Returned Item Fee") counts as both, like "Returned item/overdraft".
 - Guard v35 (2026-10-08) accepts a per-item overdraft or NSF fee whose note states the daily cap: a dollar cap above the row's own price ("NSF Returned Item(s) Charge (NSF charge maximum of $100 per day)" $25, First State Bank of Rosemount), and a cap note that names the returned items sharing it ("Overdraft Fee ... (Consumer Accts: 5 max total OD or Returned Item fees daily)", BankIowa).
 - Guard v36 (2026-10-08) changes no rule: PRs 665 and 668 both shipped v35, so rows rejected between their deploys are re-checked under both.
 - Guard v42 (2026-10-08; v40 and v41 are Accuracy's, PR 682) files an NSF item marked paid after a dash or in brackets ("NSF Fee Charge - Paid (per item)", "Nonsufficient Funds Fee-Paid", "Insufficient Funds Charge (Check Paid, Per Item)") as the overdraft fee and re-files it there from NSF; "per non-paid item", "Paid from other ... account" and "We will not assess ..." stay out. "Overdraft Privilege Standard or Extended Coverage" names the program, not an extended overdraft fee.
+- The guard is at v61 (`CATEGORY_GUARD_VERSION` in `src/lib/fee-category-guard.ts`). The notes for
+  v43 to v61 are the version comments above that constant, not this guide; v58 is the bond-return
+  lesson above.
 - Learning store: every verify decision except duplicates and category rejects (the
   publish-step sync writes those) is written to `pipeline_feedback` as a judgement on
   Knox's read (`darwin/feedback.ts`; step detail `feedback_written`, null when skipped).
@@ -225,7 +359,28 @@ Change this table and `agent-health.ts` in the same PR.
 | Rule | Number | Holds when |
 |---|---|---|
 | Steps do not fail | `stepsFailed` (24 h) | 0 |
-| Darwin keeps up | `undecided` (Knox rows waiting for the current verify version) | ≤ 500 (`DARWIN_VERIFY_MAX_LIMIT`) |
+| Darwin keeps up | `undecided` (Knox rows the verify step would select now: never decided, or due again after a guard, source-check, envelope or batch-key change; `darwinDueSql` in `verify.ts`) | ≤ 500 (`DARWIN_VERIFY_MAX_LIMIT`) |
+| No week-old waits | `waitingOver7d` (rows sent to Darwin over 7 days ago and never decided at this rule version) | 0 (`DARWIN_MAX_FIRST_DECISION_DAYS`) |
 | Fees Darwin passed survive the bank's own schedule | `sourceCheckTakedowns / published` (24 h) | ≤ 5% |
 
 Also recorded, without a rule: `stepsCompleted`, `spendUsd`, `decided`, `passed`.
+
+## Current versions
+
+The version each rules or reader constant is at now. `scripts/ci-guards.sh guide-version-kill`
+fails a PR that changes one of these constants without updating its line here (#1109).
+
+| Constant | Strategy | Version | File |
+|---|---|---|---|
+| `DARWIN_ADJUDICATE_STRATEGY` | `verify.adjudicate` | v2 | `darwin/adjudicate.ts` |
+| `DARWIN_CATEGORY_MODEL_STRATEGY` | `verify.category_model` | v1 | `darwin/category-model.ts` |
+| `DARWIN_PEER_STRATEGY` | `verify.peer_range` | v3 | `darwin/peer-checks.ts` |
+| `DARWIN_SECOND_SOURCE_STRATEGY` | `verify.second_source` | v2 | `darwin/peer-checks.ts` |
+| `DARWIN_RELEASE_STRATEGY` | `verify.release` | v4 | `darwin/release-held.ts` |
+| `DARWIN_RELEASE_REVIEW_STRATEGY` | `verify.release_review` | v17 | `darwin/release-review.ts` |
+| `DARWIN_SCHEDULE_REFILE_STRATEGY` | `verify.schedule_refile` | v1 | `darwin/schedule-refile.ts` |
+| `DARWIN_VERDICT_SCORE_STRATEGY` | `verify.verdict_score` | v1 | `darwin/verdict-score.ts` |
+| `DARWIN_RECHECK_STRATEGY` | `verify.recheck` | v2 | `darwin/verified-recheck.ts` |
+| `DARWIN_VERIFY_STRATEGY` | `verify.rules` | v3 | `darwin/verify.ts` |
+| `DARWIN_SOURCE_CHECK_VERSION` | — | v2 | `darwin/verify.ts` |
+| `DARWIN_BATCH_KEY_VERSION` | — | v4 | `darwin/verify.ts` |

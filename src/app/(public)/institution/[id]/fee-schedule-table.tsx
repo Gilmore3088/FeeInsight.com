@@ -1,10 +1,15 @@
+import { countsAsPersonal, isAudienceUnstated, type FeeAudience, type FeeTreatment } from "@/lib/fee-audience";
+import { isBusinessOnlyLink } from "@/lib/agents/magellan/link-coverage";
 import Link from "next/link";
+import { UnstatedAudienceFootnote, UnstatedAudienceMark } from "@/components/unstated-audience";
 import { ExternalLink } from "lucide-react";
 import { FEE_FAMILIES, getFeeFamily } from "@/lib/fee-taxonomy";
 import { formatFeeAmount } from "@/lib/format";
 import { getFrequencyLabel } from "./enum-labels";
 
 export interface DisplayFee {
+  feeAudience?: FeeAudience;
+  feeTreatment?: FeeTreatment;
   id: string;
   feeName: string;
   feeCategory: string | null;
@@ -15,6 +20,29 @@ export interface DisplayFee {
   sourceUrl: string | null;
   /** A fee stated as a rate: "1.1%" and "of the transaction". Its amount is null. */
   rate?: { rate: string; detail: string | null } | null;
+}
+
+/**
+ * Scope stays visible on every row. A fee with no stated audience is treated as personal
+ * and carries the asterisk (#1058); business fees are labeled and never meet a personal median.
+ */
+function AudienceLabel({ fee }: { fee: DisplayFee }) {
+  const unstated = isAudienceUnstated(fee.feeAudience);
+  const label = fee.feeAudience === "consumer" ? "Consumer accounts"
+    : fee.feeAudience === "business" ? "Business accounts"
+    : fee.feeAudience === "both" ? "Consumer and business accounts" : "Audience not stated";
+  return (
+    <span className="block text-xs font-normal text-[#6B6255]">
+      {label}
+      <UnstatedAudienceMark show={unstated} />
+      {fee.feeTreatment === "eliminated" ? " · Fee eliminated" : ""}
+    </span>
+  );
+}
+
+/** Same boundary as the statistics (statsRowFilter): not business, not from a business-only schedule. */
+function comparesToPersonal(fee: DisplayFee): boolean {
+  return countsAsPersonal(fee.feeAudience) && !(fee.sourceUrl && isBusinessOnlyLink(fee.sourceUrl));
 }
 
 /** National 25th / 50th / 75th percentile for one fee category. */
@@ -41,7 +69,7 @@ const POSITION_TEXT: Record<Position, string> = {
 };
 
 function benchmarkFor(fee: DisplayFee, benchmarks: FeeBenchmarks | undefined): FeeBenchmark | null {
-  if (!benchmarks || fee.status !== "verified" || fee.amount === null || !fee.feeCategory) return null;
+  if (!comparesToPersonal(fee) || !benchmarks || fee.status !== "verified" || fee.amount === null || !fee.feeCategory) return null;
   return benchmarks[fee.feeCategory] ?? null;
 }
 
@@ -147,7 +175,7 @@ function MedianCell({
   medians: Map<string, number | null>;
   stateMedians?: StateMedians;
 }) {
-  if (fee.status !== "verified" || !fee.feeCategory) return <span className="text-xs text-[#6B6255]">&mdash;</span>;
+  if (!comparesToPersonal(fee) || fee.status !== "verified" || !fee.feeCategory) return <span className="text-xs text-[#6B6255]">&mdash;</span>;
   const delta = describeMedianDelta(fee.amount, medians.get(fee.feeCategory));
   const stateDelta = stateMedians
     ? describeMedianDelta(fee.amount, stateMedians.medians.get(fee.feeCategory), stateMedians.place)
@@ -329,6 +357,7 @@ export function FeeScheduleTable({
           </table>
         </div>
       </div>
+      <UnstatedAudienceFootnote show={fees.some((fee) => isAudienceUnstated(fee.feeAudience))} className="border-t border-[#F0EBE3] px-4 py-2" />
     </>
   );
 }
@@ -390,6 +419,7 @@ function FeeRow({
     >
       <td className="max-w-[320px] px-4 py-2.5 align-top">
         <span className="break-words font-medium text-[#1A1815]">{fee.feeName}</span>
+        <AudienceLabel fee={fee} />
         {showUnderReview && <UnderReviewChip />}
       </td>
       <td className="whitespace-nowrap px-4 py-2.5 text-right align-top text-base tabular-nums text-[#1A1815]" style={SERIF_STYLE}>
@@ -454,6 +484,7 @@ function FeeScheduleStack({
                   <div className="flex items-start justify-between gap-3">
                     <span className="min-w-0 break-words text-sm font-medium text-[#1A1815]">
                       {fee.feeName}
+                      <AudienceLabel fee={fee} />
                       {showUnderReview && <UnderReviewChip />}
                     </span>
                     <span className="flex shrink-0 flex-col items-end">

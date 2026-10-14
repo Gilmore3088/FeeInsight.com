@@ -13,6 +13,7 @@
  * point to.
  */
 
+import { conflictsWithAudienceStatement, scopedFeeStatements } from "@/lib/fee-audience";
 import { newestColumnText } from "@/lib/fee-change-columns";
 
 export type SourceCheckFailure =
@@ -164,8 +165,18 @@ function longLineParts(line: string): string[] {
   const parts = line.split(LONG_LINE_SPLIT);
   const cells = line.split("|").map((cell) => cell.trim());
   const title = cells.length === 2 ? cells[0].match(ROW_TITLE)?.[1] : undefined;
-  return title && PRICE_CELL.test(cells[1]) ? [...parts, `${title} | ${cells[1]}`] : parts;
+  if (title && PRICE_CELL.test(cells[1])) return [...parts, `${title} | ${cells[1]}`];
+  // A table row whose details column runs long ("| Overdraft (OD) - Paid Item | A fee may be
+  // charged ... | $17.00 | per item |", Arvest): split at its sentences, the name and the price
+  // land in different parts, so the row is also read without its long cells.
+  const filled = cells.filter(Boolean);
+  const short = filled.filter((cell) => cell.length <= TABLE_CELL_MAX_LENGTH);
+  if (filled.length >= 3 && short.length >= 2 && short.length < filled.length && short[0] === filled[0]) {
+    return [...parts, short.join(" | ")];
+  }
+  return parts;
 }
+const TABLE_CELL_MAX_LENGTH = 80;
 
 /** A fee card's name field ("Fee TypeCheckOK Fee", "Fee Name: Rush Order") and its price field ("Fee$5.00"). */
 const CARD_NAME = /^\s*fee\s*(?:type|name)\s*:?\s*(?=[A-Za-z])([^|]+)$/i;
@@ -225,14 +236,65 @@ export function stripPriceFootnoteMarks(text: string): string {
 }
 
 /** Document lines, with run-on lines (HTML flattened to one paragraph) split into sentences. */
+/**
+ * A dot-leader fee line whose name was wrapped over several lines carries only the name's tail
+ * ("debit card payments) ......... $25.00 per Occurrence", Northern Trust), and a tail that
+ * closes a parenthesis it never opened names no fee. Such a line takes back the price-less lines
+ * above it until the parenthesis opens, plus the one long line the name starts on ("Overdrafts
+ * Paid and Items Paid against Nonsufficient / Funds (includes ..."). It never reaches past a
+ * line with a price, a dot leader, a table cell or a finished sentence, nor more than five
+ * lines up; a tail whose parenthesis never opens is left as it was. Knox reads lines the same
+ * way (v62), so the fee it reads traces to the row this check reads.
+ */
+const WRAPPED_LEADER_PRICE = /\.{4,}\s*(?:\$\s?\d|\d+(?:\.\d+)?\s?%)/;
+const WRAPPED_NAME_MAX_LINES = 5;
+const WRAPPED_NAME_START_CHARS = 40;
+
+export function parenBalance(value: string): number {
+  return (value.match(/\(/g)?.length ?? 0) - (value.match(/\)/g)?.length ?? 0);
+}
+
+export function joinWrappedLeaderNames(lines: string[]): string[] {
+  const joined: string[] = [];
+  for (const line of lines) {
+    const leader = line.match(WRAPPED_LEADER_PRICE);
+    let balance = leader ? parenBalance(line.slice(0, leader.index)) : 0;
+    if (balance >= 0) {
+      joined.push(line);
+      continue;
+    }
+    const taken: string[] = [];
+    while (taken.length < WRAPPED_NAME_MAX_LINES) {
+      const above = joined.at(-1);
+      if (
+        above == null ||
+        !/[a-z]/i.test(above) ||
+        above.includes("|") ||
+        /\.{4,}|\$\s?\d|\d\s?%/.test(above) ||
+        /[.:;!?]\s*$/.test(above)
+      ) break;
+      const opened = balance >= 0;
+      if (opened && (above.length < WRAPPED_NAME_START_CHARS || /\)\s*$/.test(above))) break;
+      taken.unshift(joined.pop() as string);
+      balance += parenBalance(above);
+      if (opened) break;
+    }
+    if (balance >= 0 && taken.length > 0) joined.push([...taken, line].join(" "));
+    else joined.push(...taken, line);
+  }
+  return joined;
+}
+
 export function sourceLines(text: string): string[] {
   return joinLabeledFeeCards(
     regridRows(
-      text
-        .split(/\r?\n/)
-        .flatMap((line) => (line.length > LONG_LINE ? longLineParts(line) : [line]))
-        .map((line) => line.replace(/\s+/g, " ").trim())
-        .filter((line) => line.length > 0),
+      joinWrappedLeaderNames(
+        text
+          .split(/\r?\n/)
+          .flatMap((line) => (line.length > LONG_LINE ? longLineParts(line) : [line]))
+          .map((line) => line.replace(/\s+/g, " ").trim())
+          .filter((line) => line.length > 0),
+      ),
     ),
   ).filter((line) => line.length > 0);
 }
@@ -569,17 +631,6 @@ function cachedSourceLines(text: string): string[] {
 }
 
 /**
- * Lines of a source text that name a fee, for showing a reviewer where to look. This only
- * locates the name; it checks no amount or category (that is `checkFeeAgainstSource`).
- */
-export function linesNamingFee(text: string | null | undefined, feeName: string, limit = 3): string[] {
-  if (!text || !text.trim()) return [];
-  const stems = nameStems(feeName);
-  if (stems.length === 0) return [];
-  return cachedSourceLines(text).filter((line) => namesFee(line, stems)).slice(0, limit);
-}
-
-/**
  * A two-column page flattened row by row ("CHECK CASHING ... 15% | PROCESSING OF LEVIES**" /
  * "($15.00 Minimum) | IRS or Court-ordered Garnishments ... $100.00") interleaves two fee lists,
  * so a right-column name and its price sit on different rows of other fees. Each column is
@@ -657,6 +708,17 @@ function chargedOnceOverdrawnDays(row: string, amount: number, nextLine?: string
 }
 
 
+/** A cushion or a dollar total for a day is not a per-item overdraft/NSF price. */
+function policyAmount(row: string, amount: number): boolean {
+  const tokens = moneyTokens(row);
+  return tokens.some((token, index) => {
+    if (Math.abs(token.value - amount) >= 0.005) return false;
+    const before = row.slice(index === 0 ? 0 : tokens[index - 1].end, token.start);
+    return /\boverdraft cushion\b/i.test(before) ||
+      /\b(?:limited|maximum|total|cap)\b[^$]{0,75}\b(?:per|a|each) day\b[^$]{0,15}$/i.test(before);
+  });
+}
+
 export function checkFeeAgainstSource(
   text: string | null | undefined,
   feeName: string,
@@ -665,6 +727,16 @@ export function checkFeeAgainstSource(
   canonicalFeeKey?: string | null,
 ): SourceCheckResult {
   if (!text || !text.trim()) return { ok: false, reason: "no_source_text" };
+  // An explicitly eliminated fee is $0 even when the bank does not print a zero.
+  // Only the exact scoped name/amount pair derived from that completed statement passes.
+  const statements = scopedFeeStatements(text);
+  const scoped = statements.find((fee) =>
+    fee.feeName.toLowerCase() === feeName.toLowerCase() && fee.amount === amount &&
+    (canonicalFeeKey == null || canonicalFeeKey === fee.canonicalHint));
+  if (scoped) return { ok: true, sourceLine: scoped.excerpt };
+  if (statements.length > 0 && /\beliminated\b/i.test(feeName) && (canonicalFeeKey === "nsf" || /\b(?:nsf|non[- ]sufficient funds)\b/i.test(feeName))) {
+    return { ok: false, reason: "amount_not_the_fee" };
+  }
   if (gluedFootnotePrice(text, amount)) return { ok: false, reason: "amount_not_the_fee" };
   // A fee-change notice's earlier column is what the fee was ("Money Orders | $2.00 | $5.00"
   // under "Fee through | Fee as of"): only the newest column is read as the fee now.
@@ -674,11 +746,20 @@ export function checkFeeAgainstSource(
   let first: SourceCheckResult | null = null;
   for (const lines of pages) {
     const asPrice = checkAgainstLines(lines, feeName, amount, categoryPattern, false, perItem);
-    if (asPrice.ok) return asPrice;
+    if (asPrice.ok) {
+      if (conflictsWithAudienceStatement(feeName, amount, asPrice.sourceLine)) {
+        return { ok: false, reason: "amount_not_the_fee" };
+      }
+      return asPrice;
+    }
     first ??= asPrice;
     if (!asCap) continue;
     const cap = checkAgainstLines(lines, feeName, amount, categoryPattern, true);
     if (cap.ok) return cap;
+  }
+  if (first && !first.ok && first.reason === "tiered_fee" && statements.length > 0 &&
+      (canonicalFeeKey === "nsf" || /\bnsf\b/i.test(feeName))) {
+    return { ok: false, reason: "amount_not_the_fee" };
   }
   return first ?? { ok: false, reason: "no_source_text" };
 }
@@ -728,6 +809,10 @@ function checkAgainstLines(
       namesFee(`${headings.join(" ")} ${line}`, stems, stems.length);
     if (!namesFee(line, stems) && !underHeading) continue;
     let row = feeRow(lines, i);
+    if (perItem && policyAmount(row, rounded)) {
+      best = "amount_not_the_fee";
+      continue;
+    }
     let amountProblem = dailyCap
       ? statesDailyCap(row, rounded) ? null : "amount_not_the_fee"
       : statesAmount(row, rounded, stems);
@@ -822,7 +907,20 @@ function pricedPerAmount(row: string, amount: number): boolean {
  * A range's upper end ("the typical 2.5-3.5%") is not a rate the bank charges. */
 const RATE = /(?<![\d.]|\d\s?[-–]\s?)(\d{1,3}(?:\.\d{1,4})?)\s*(?:%|percent\b)/gi;
 const INTEREST_WORDS = /\b(apy|apr|annual percentage|interest|dividend|rate earned|yield)\b/i;
+/**
+ * A cash-back or rewards rate ("Earn 1% on all purchases") is paid to the customer, not charged
+ * (post-merge review of #1237). It only stops the share-of-base reading below: a row that names its
+ * fee ("Visa Rewards Card | Foreign Transaction Fee | 1% of each transaction") still traces.
+ */
+const REWARD_WORDS = /\b(earns?|earned|cash ?back|rewards?)\b/i;
 const RATE_FEE_WORDS = /\b(fees?|charges?|assessments?|assessed)\b/i;
+/**
+ * #1102: a rate stated as a share of what it is charged on ("1% of foreign transaction amount",
+ * "1.00% of Amount", "10% of total", "2% of each check presented") is the charge itself, on a
+ * schedule row that never says "fee". A share of a balance is left out: it reads like interest.
+ */
+// No balance anywhere in the base ("0.5% of the total balance", "1% of the average daily balance amount").
+const RATE_OF_BASE = /(?:%|\bpercent)\s*(?:of|on)\s+(?![^|.;]{0,40}\bbalances?\b)(?:the\s+|each\s+|all\s+|any\s+|total\s+)?(?:[a-z$]+\s+){0,3}?(transactions?|amount|checks?|coins?|total|value|purchases?|payments?|advances?|withdrawals?|items?)\b/i;
 
 /**
  * Pure: is this percentage fee stated in its source text? The rate's twin of
@@ -859,7 +957,7 @@ export function checkRateAgainstSource(
     // The fee word may come from a heading just above ("Coin Counting Fees" / "Coin
     // Counting | 10% of total"); interest wording is judged on the row itself.
     const context = lines.slice(Math.max(0, i - CATEGORY_LOOKBACK_LINES), i + 1).join(" ");
-    if (INTEREST_WORDS.test(row) || !RATE_FEE_WORDS.test(`${feeName} ${row} ${context}`)) {
+    if (INTEREST_WORDS.test(row) || !(RATE_FEE_WORDS.test(`${feeName} ${row} ${context}`) || (RATE_OF_BASE.test(row) && !REWARD_WORDS.test(row)))) {
       best = "amount_not_the_fee";
       continue;
     }

@@ -1,6 +1,8 @@
 import { sql } from "./connection";
+import { readerFeeConditions } from "../fee-conditions";
 import { dailyFeeLimitFor, type DailyFeeLimit } from "@/lib/fee-daily-limit";
 import { getFeeFamily, FEE_FAMILIES } from "@/lib/fee-taxonomy";
+import { frequencyFamily } from "@/lib/fee-frequency";
 import {
   MIN_INSTITUTIONS_FOR_MEDIAN,
   STATS_METHOD_VERSION,
@@ -60,6 +62,58 @@ async function loadNationalRows(db: typeof sql, approvedOnly = true): Promise<In
        AND ${statusFilter}
        AND ${STATS_ROW_FILTER}`
   ) as IndexRow[];
+}
+
+/**
+ * How peers charge a category: the most common charge basis among peer rows that state one
+ * (`frequencyFamily`: per item, monthly, annual...) and that basis's share of them.
+ */
+export interface CategoryChargeBasis {
+  fee_category: string;
+  family: string;
+  share: number;
+  stated_rows: number;
+}
+
+/**
+ * How peers charge each category: the most common stated charge basis (`frequencyFamily`)
+ * among rows that count toward statistics, and its share of the rows that state one. Pro
+ * compares a selected institution's fee only on that basis (report-evidence.ts). National,
+ * cached for an hour: a category's charge basis is a property of the fee, not of a peer set.
+ */
+const CHARGE_BASIS_CACHE_TTL_MS = 60 * 60 * 1000;
+let chargeBasisCache: { expiresAt: number; value: CategoryChargeBasis[] } | null = null;
+
+export async function getCategoryChargeBases(): Promise<CategoryChargeBasis[]> {
+  if (chargeBasisCache && chargeBasisCache.expiresAt > Date.now()) return chargeBasisCache.value;
+  const rows = await sql.unsafe(
+    `SELECT ef.fee_category, ef.frequency, count(*)::int AS n
+     FROM published_fee_catalog ef
+     WHERE ef.fee_category IS NOT NULL AND ef.frequency IS NOT NULL AND ${STATS_ROW_FILTER}
+     GROUP BY 1, 2`
+  ) as { fee_category: string; frequency: string; n: number }[];
+  const value = chargeBasesFromCounts(rows);
+  chargeBasisCache = { expiresAt: Date.now() + CHARGE_BASIS_CACHE_TTL_MS, value };
+  return value;
+}
+
+/** Fold (category, frequency, count) rows into each category's most common charge basis. */
+export function chargeBasesFromCounts(
+  rows: { fee_category: string; frequency: string; n: number | string }[],
+): CategoryChargeBasis[] {
+  const byCategory = new Map<string, Map<string, number>>();
+  for (const row of rows) {
+    const family = frequencyFamily(row.frequency);
+    if (!family) continue;
+    const families = byCategory.get(row.fee_category) ?? new Map<string, number>();
+    families.set(family, (families.get(family) ?? 0) + Number(row.n));
+    byCategory.set(row.fee_category, families);
+  }
+  return [...byCategory].map(([fee_category, families]) => {
+    const stated = [...families.values()].reduce((sum, n) => sum + n, 0);
+    const [family, n] = [...families].sort((a, b) => b[1] - a[1])[0];
+    return { fee_category, family, share: n / stated, stated_rows: stated };
+  });
 }
 
 export interface ContractFeeRow {
@@ -131,6 +185,14 @@ export interface InstitutionFeeRow {
   /** The page the schedule was found on, when it differs from the document. */
   sourceUrl: string | null;
   publishedAt: string | null;
+  /** Unmodified canonical charge basis, audience and source version; unknown stays unknown. */
+  frequency: string | null;
+  conditions: string | null;
+  feeAudience: "consumer" | "business" | "both" | "unknown";
+  audienceEvidence: string | null;
+  sourceContentHash: string | null;
+  sourceCrawledAt: string | null;
+  sourceLastCheckedAt: string | null;
   /** The Darwin event that verified the row against its document; null when not recorded. */
   verifiedByEventId: string | null;
 }
@@ -141,9 +203,31 @@ export interface InstitutionFeeRow {
  */
 export async function getInstitutionFeeRows(institutionId: number, category: string): Promise<InstitutionFeeRow[]> {
   const rows = await sql.unsafe(
-    `SELECT ef.id, ef.fee_name, ef.amount, ef.source_document_id, ef.document_url, ef.source_url,
-            ef.created_at, ef.verified_by_agent_event_id
+    `SELECT ef.id, ef.fee_name, ef.amount, ef.frequency, ef.conditions,
+            ef.fee_audience, ef.audience_evidence, ef.source_document_id,
+            COALESCE(doc.document_url, ef.document_url) AS document_url, ef.source_url,
+            ef.created_at, ef.verified_by_agent_event_id,
+            doc.content_hash AS source_content_hash, doc.crawled_at AS source_crawled_at,
+            GREATEST(doc.last_checked_at, same_text.checked_at) AS source_last_checked_at
        FROM published_fee_catalog ef
+       LEFT JOIN source_documents doc
+         ON doc.id = ef.source_document_id AND doc.institution_id = ef.institution_id
+       -- A later copy of the bank's page with the same text checks this fee too (#1200): Knox keys
+       -- its reads on the text, so the fee keeps the first copy's id when the page has not changed.
+       LEFT JOIN LATERAL (
+         SELECT MAX(GREATEST(twin.last_checked_at, twin.crawled_at)) AS checked_at
+           FROM agent_source_texts own_text
+           JOIN agent_source_texts twin_text
+             ON twin_text.institution_id = own_text.institution_id
+            AND twin_text.text_hash = own_text.text_hash
+            AND twin_text.status = 'completed'
+           JOIN source_documents twin
+             ON twin.id = twin_text.source_document_id
+            AND twin.institution_id = ef.institution_id
+            AND twin.id <> ef.source_document_id
+          WHERE own_text.source_document_id = ef.source_document_id
+            AND own_text.status = 'completed'
+       ) same_text ON true
       WHERE ef.institution_id = $1
         AND ef.fee_category = $2
         AND ef.review_status = 'approved'
@@ -158,8 +242,17 @@ export async function getInstitutionFeeRows(institutionId: number, category: str
     document_url: string | null;
     source_url: string | null;
     created_at: Date | string | null;
+    frequency: string | null;
+    conditions: string | null;
+    fee_audience: string | null;
+    audience_evidence: string | null;
+    source_content_hash: string | null;
+    source_crawled_at: Date | string | null;
+    source_last_checked_at: Date | string | null;
     verified_by_agent_event_id: string | null;
   }[];
+  const timestamp = (date: Date | string | null): string | null =>
+    date instanceof Date ? date.toISOString() : date ? String(date) : null;
   return rows.map((r) => ({
     id: Number(r.id),
     feeName: r.fee_name,
@@ -167,7 +260,15 @@ export async function getInstitutionFeeRows(institutionId: number, category: str
     sourceDocumentId: r.source_document_id === null ? null : Number(r.source_document_id),
     documentUrl: r.document_url,
     sourceUrl: r.source_url,
-    publishedAt: r.created_at instanceof Date ? r.created_at.toISOString() : r.created_at ? String(r.created_at) : null,
+    publishedAt: timestamp(r.created_at),
+    frequency: r.frequency ?? null,
+    conditions: readerFeeConditions(r.conditions),
+    feeAudience: r.fee_audience === "consumer" || r.fee_audience === "business" || r.fee_audience === "both"
+      ? r.fee_audience : "unknown",
+    audienceEvidence: r.audience_evidence ?? null,
+    sourceContentHash: r.source_content_hash ?? null,
+    sourceCrawledAt: timestamp(r.source_crawled_at),
+    sourceLastCheckedAt: timestamp(r.source_last_checked_at),
     verifiedByEventId: r.verified_by_agent_event_id ? String(r.verified_by_agent_event_id) : null,
   }));
 }
@@ -482,9 +583,10 @@ export async function getDistrictFeeMedians(
     JOIN institution_sources ct ON ef.institution_id = ct.id
     WHERE ct.fed_district = ${district}
       AND ef.review_status = 'approved'
-      AND ef.source_document_id IS NOT NULL
       AND ef.fee_category IS NOT NULL
       AND ef.amount IS NOT NULL
+      AND ef.amount >= 0
+      AND ${sql.unsafe(STATS_ROW_FILTER)}
   ` as { fee_category: string; amount: number | null; institution_id: number }[];
 
   return [...summarizeFeesBy(rows, (row) => row.fee_category).entries()]

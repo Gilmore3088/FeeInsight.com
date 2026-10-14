@@ -77,13 +77,19 @@ function Strip({
 export function FeeScorecard({
   rows,
   institutionId,
+  institutionName = "Research institution",
+  notCompared = [],
 }: {
   rows: readonly ScorecardRow[];
   institutionId: string | null;
+  institutionName?: string;
+  /** Categories whose peers charge them on more than one basis: shown, but not placed. */
+  notCompared?: readonly string[];
 }) {
+  const unlike = rows.filter((r) => notCompared.includes(r.feeCategory));
   const compared = rows.filter(
     (r): r is ScorecardRow & { band: NonNullable<ScorecardRow["band"]> } =>
-      r.band != null,
+      r.band != null && !notCompared.includes(r.feeCategory),
   );
   if (compared.length === 0) return null;
   const counts = { lower: 0, in_line: 0, higher: 0 } as Record<
@@ -91,13 +97,13 @@ export function FeeScorecard({
     number
   >;
   for (const r of compared) counts[peerStanding(r.current, r.band)] += 1;
-  const thin = rows.length - compared.length;
+  const thin = rows.length - compared.length - unlike.length;
 
   return (
     <section aria-labelledby="fee-scorecard" className="flex flex-col gap-3">
       <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
         <h2 id="fee-scorecard" className="text-lg font-semibold text-warm-900">
-          Your fees against peers
+          {institutionName}&apos;s fees against peers
         </h2>
         <p className="text-sm text-warm-700 [font-variant-numeric:tabular-nums]">
           {counts.lower} lower · {counts.in_line} in line · {counts.higher}{" "}
@@ -108,7 +114,7 @@ export function FeeScorecard({
       <div className="overflow-hidden rounded-lg border border-warm-300 bg-white">
         <div className="hidden grid-cols-[minmax(0,1.4fr)_5rem_minmax(0,2fr)_10rem] gap-4 border-b border-warm-200 px-4 py-2 text-xs font-medium text-warm-600 sm:grid">
           <span>Fee</span>
-          <span className="text-right">Yours</span>
+          <span className="text-right">Published</span>
           <span>Peer range (shaded: middle half; line: median)</span>
           <span>Where it sits</span>
         </div>
@@ -119,7 +125,7 @@ export function FeeScorecard({
               <li key={row.feeCategory}>
                 <Link
                   href={hrefWithInstitutionContext(
-                    `/pro/analyze?q=${encodeURIComponent(`How does our ${proseFeeName(row.feeCategory)} fee compare with peers?`)}&send=1`,
+                    `/pro/analyze?q=${encodeURIComponent(`How does ${institutionName}'s ${proseFeeName(row.feeCategory)} fee compare with peers?`)}&send=1`,
                     institutionId,
                   )}
                   className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-2 px-4 py-2.5 hover:bg-warm-50 sm:grid-cols-[minmax(0,1.4fr)_5rem_minmax(0,2fr)_10rem]"
@@ -155,6 +161,9 @@ export function FeeScorecard({
         middle half of what peers charge, higher means above it.
         {thin > 0
           ? ` ${thin} more ${thin === 1 ? "fee has" : "fees have"} too few peers publishing to compare.`
+          : ""}
+        {unlike.length > 0
+          ? ` Not compared: ${unlike.map((r) => `${name(r)} (${money(r.current)})`).join(", ")}. Peers charge ${unlike.length === 1 ? "this fee" : "these fees"} on more than one basis, so one median does not compare like for like.`
           : ""}
       </p>
     </section>

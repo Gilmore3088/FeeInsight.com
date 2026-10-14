@@ -1,7 +1,7 @@
 import Link from "next/link";
 import type { CitySummary } from "@/lib/data-store";
 import { getDisplayName } from "@/lib/fee-taxonomy";
-import { formatAmount } from "@/lib/format";
+import { displayCity, formatAmount } from "@/lib/format";
 import { formatCount } from "@/lib/public-stats";
 import { DISTRICT_NAMES } from "@/lib/fed-districts";
 import { STATE_NAMES } from "@/lib/us-states";
@@ -57,12 +57,12 @@ export function StateHero(props: StateHeroProps) {
     { value: formatCount(verifiedInstitutions), label: "institutions with verified fees", note: `of ${formatCount(monitored)} we monitor in ${stateName}` },
     { value: formatCount(verifiedFees), label: "verified fees", note: "each traced to a published schedule" },
     { value: String(categoriesWithMedian), label: "fees with a state median", note: "at least 5 institutions each" },
-    { value: `${coverage}%`, label: "coverage", note: "of monitored institutions, growing monthly" },
+    { value: `${coverage}%`, label: "coverage", note: "of monitored institutions" },
   ];
 
   return (
     <section className="relative overflow-hidden bg-[#1A1815] text-[#F5EFE6]">
-      <div className="relative mx-auto max-w-7xl px-4 pb-10 pt-8 sm:px-6 sm:pb-12 sm:pt-10">
+      <div className="relative mx-auto max-w-page px-4 pb-10 pt-8 sm:px-6 sm:pb-12 sm:pt-10">
         <nav aria-label="Breadcrumb" className="flex items-center gap-2 text-[12px] text-[#F5EFE6]/60 print:hidden">
           <Link href="/" className="hover:text-white">Home</Link>
           <span aria-hidden="true">/</span>
@@ -197,8 +197,8 @@ export function StateBenchmarkBoard({ rows, stateCode, stateName, asOf }: { rows
         </div>
       ) : (
         <p className="mt-7 rounded-2xl border border-dashed border-[#D4C9BA] px-5 py-8 text-center text-[13px] text-[#6B6255]">
-          Not enough {stateName} institutions have verified everyday fees yet for a state median. Coverage grows with
-          every monthly pass.
+          Not enough {stateName} institutions have verified everyday fees yet for a state median. Coverage grows as more
+          schedules are read.
         </p>
       )}
       <ExhibitSource asOf={asOf}>
@@ -259,9 +259,9 @@ export function PositionExhibit({ rows, stateName, asOf, gate }: { rows: StateCo
         <div className="mt-3 grid text-[10px] uppercase tracking-wider text-[#8A8072] sm:grid-cols-[210px_minmax(0,1fr)_180px] sm:gap-x-5">
           <span />
           <span className="flex justify-between">
-            <span>&larr; cheaper (&minus;{axis}%)</span>
+            <span>&larr; lower (&minus;{axis}%)</span>
             <span>national</span>
-            <span>pricier (+{axis}%) &rarr;</span>
+            <span>higher (+{axis}%) &rarr;</span>
           </span>
         </div>
       </div>
@@ -317,7 +317,7 @@ export function CoverageExhibit(props: {
         }
       >
         How many of the state&apos;s banks and credit unions have verified fees so far, and the cities with the most.
-        Coverage grows with every monthly pass.
+        Coverage grows as more schedules are read.
       </SectionHeading>
 
       <div className="mt-7 grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)]">
@@ -358,7 +358,7 @@ export function CoverageExhibit(props: {
                     className="group flex items-center gap-3 py-2 text-[13px]"
                   >
                     <span className="w-5 text-right text-[11px] font-bold tabular-nums text-[#C44B2E]">{i + 1}</span>
-                    <span className="min-w-0 flex-1 truncate font-medium text-[#1A1815] group-hover:text-[#A93D25]">{c.city}</span>
+                    <span className="min-w-0 flex-1 truncate font-medium text-[#1A1815] group-hover:text-[#A93D25]">{displayCity(c.city)}</span>
                     <span className="whitespace-nowrap text-[12px] tabular-nums text-[#6B6255]">
                       {c.with_fees} of {c.institution_count}
                     </span>

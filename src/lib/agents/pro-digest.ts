@@ -1,4 +1,5 @@
 import { sql } from "@/lib/data-store/connection";
+import { statsRowFilter } from "@/lib/data-store/fee-stats";
 import { isConfirmedMovement, withConfirmedMovements } from "./fee-movement-check";
 import { SITE_URL } from "@/lib/constants";
 import { getDisplayName } from "@/lib/fee-taxonomy";
@@ -17,6 +18,9 @@ import {
 } from "@/lib/email/subscription-token";
 import { isProEmailSendingEnabled, PRO_EMAILS_OFF_REASON } from "@/lib/email/pro-email-flag";
 import { maskEmail, type EmailPreview } from "@/lib/agents/fee-alerts";
+import { getWatchedStatesForUsers } from "@/lib/data-store/wire-watch";
+import { loadWireDigestInputs } from "@/lib/data-store/wire-digest";
+import { buildWireDigest, wireDigestHasItems, wireDigestLines, type WireDigest } from "@/lib/regulatory/wire-digest";
 
 /**
  * Atlas's Monday digest for Pro readers: one email per reader covering the week.
@@ -27,6 +31,11 @@ import { maskEmail, type EmailPreview } from "@/lib/agents/fee-alerts";
  *      peers charge less, against last Monday's snapshot.
  *   3. Their watched competitors: headline fees that changed or were first published
  *      since last Monday's snapshot.
+ *
+ * A reader who watches states on the Regulatory Wire also gets a Wire section (their states
+ * and the federal agencies, last 7 days) in the email they would get anyway. The section
+ * never makes an email on its own: a reader with nothing in the three sections above is
+ * still skipped. Its summaries were written earlier by stage 2's step; this run calls no model.
  *
  * Deterministic (no model). Dollar fees only: rates live in published_fee_rate_catalog
  * and are never pooled with these amounts. A reader with nothing in any section gets no
@@ -108,6 +117,8 @@ export interface ProDigest {
   districtMoves: MarketMove[];
   positionChanges: PositionChange[];
   competitorChanges: CompetitorChange[];
+  /** The reader's Regulatory Wire week, when they watch states. Rides along; never news by itself. */
+  wire?: WireDigest | null;
   /**
    * The reader's first digest for this institution: where it stands now, since there is no
    * earlier week to compare against. Without it a new reader's first Mondays are empty.
@@ -210,6 +221,7 @@ export function netMarketMoves(rows: MovementSignalRow[]): MarketMove[] {
     const movements = Array.isArray(json.movements) ? json.movements : [];
     for (const raw of movements as Array<Record<string, unknown>>) {
       const category = typeof raw.canonical_fee_key === "string" ? raw.canonical_fee_key : null;
+      if (raw.fee_audience !== "consumer" && raw.fee_audience !== "both") continue;
       const previousAmount = toNumberOrNull(raw.previous_amount);
       const newAmount = toNumberOrNull(raw.new_amount);
       if (!category || previousAmount === null || newAmount === null) continue;
@@ -388,6 +400,10 @@ export function buildProDigestEmail(
     for (const move of largestFirst(digest.districtMoves).slice(0, MAX_MOVES_LISTED)) lines.push(moveLine(move));
     lines.push("");
   }
+  if (digest.wire && wireDigestHasItems(digest.wire)) {
+    lines.push(...wireDigestLines(digest.wire, site));
+    lines.push("");
+  }
   lines.push(
     "Figures are published dollar fees from each institution's own fee schedule; percentage fees are left out.",
   );
@@ -489,11 +505,14 @@ interface FeeRow {
 async function loadHeadlineFees(states: string[], institutionIds: number[]): Promise<FeeRow[]> {
   if (states.length === 0 && institutionIds.length === 0) return [];
   return sql<FeeRow[]>`
-    SELECT c.institution_id, ct.institution_name, ct.state_code, c.fee_category, MIN(c.amount) AS amount
+    SELECT c.institution_id, ct.institution_name, ct.state_code, c.fee_category,
+           CASE WHEN c.fee_category = 'overdraft' THEN MAX(c.amount)
+                ELSE PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY c.amount) END AS amount
     FROM published_fee_catalog c
     JOIN institution_sources ct ON ct.id = c.institution_id
     WHERE c.review_status = 'approved'
-      AND c.amount IS NOT NULL
+      AND c.amount IS NOT NULL AND c.amount >= 0
+      AND ${sql.unsafe(statsRowFilter("c"))}
       AND c.amount_kind IS DISTINCT FROM 'percent'
       AND c.fee_category = ANY(${[...HEADLINE_FEE_KEYS]}::text[])
       AND (ct.state_code = ANY(${states}::text[]) OR c.institution_id = ANY(${institutionIds}::bigint[]))
@@ -520,6 +539,27 @@ async function saveSnapshot(userId: number, weekStart: string, snapshot: DigestS
     VALUES (${userId}, ${weekStart}::date, ${JSON.stringify(snapshot)}::jsonb)
     ON CONFLICT (user_id, week_start) DO UPDATE SET snapshot = EXCLUDED.snapshot, created_at = NOW()
   `;
+}
+
+/**
+ * Adds each reader's Regulatory Wire section (watched states plus federal, last 7 days) to
+ * digests that already have news. One read for every reader's states together. A failed
+ * read leaves the sections out; the digest itself goes on.
+ */
+async function attachWireSections(digests: ProDigest[], now: Date): Promise<void> {
+  if (digests.length === 0) return;
+  try {
+    const watched = await getWatchedStatesForUsers(digests.map((d) => d.reader.userId));
+    if (watched.size === 0) return;
+    const states = [...new Set([...watched.values()].flat())].sort();
+    const inputs = await loadWireDigestInputs(states, now);
+    for (const digest of digests) {
+      const mine = watched.get(digest.reader.userId);
+      if (mine && mine.length > 0) digest.wire = buildWireDigest({ states: mine, ...inputs, now });
+    }
+  } catch (error) {
+    console.error("[pro-digest] Regulatory Wire section skipped", error);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -612,6 +652,7 @@ export async function runProDigest({
   }
 
   const withNews = digests.filter(digestHasNews);
+  await attachWireSections(withNews, now);
   const sending = isProEmailSendingEnabled();
   const result: ProDigestResult = {
     dryRun,

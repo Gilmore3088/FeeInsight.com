@@ -8,7 +8,7 @@ import {
   ADMIN_ATLAS_DASHBOARD_REVALIDATE_SECONDS,
 } from "@/lib/admin-dashboard-cache";
 import { getAtlasCommandCenter } from "@/lib/admin-command-center";
-import { getCrewFeed, getCrewStatus } from "@/lib/agents/crew";
+import { getCrewFeed, getCrewStatus, unknownCrew } from "@/lib/agents/crew";
 import { getSpendSummary } from "@/lib/data-store/console-spend";
 import { getMarketingTeam } from "@/lib/data-store/marketing-team";
 import { EMPTY_PIPELINE_FUNNEL, getPipelineFunnel } from "@/lib/data-store/pipeline-funnel";
@@ -47,7 +47,7 @@ export default async function AgentsRoomPage() {
     }),
     getCrewStatus().catch((error) => {
       console.error("Agents room crew status failed", error);
-      return [];
+      return unknownCrew();
     }),
     getCrewFeed({ limit: 40 }).catch((error) => {
       console.error("Agents room crew feed failed", error);
@@ -65,7 +65,7 @@ export default async function AgentsRoomPage() {
 
   return (
     <div className="space-y-8 pb-10">
-      <RoomHeader room="agents">
+      <RoomHeader room="pipeline">
         <Link href="/admin/live" prefetch={false} className="hidden text-xs font-semibold text-[var(--brand-primary)] md:inline">
           Watch banks move through the agents
         </Link>

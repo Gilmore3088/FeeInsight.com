@@ -23,13 +23,11 @@ import { guideCategories, resolveTokensToText } from "@/lib/guides";
 import {
   loadGuide,
   loadRelatedGuides,
-  loadConsumerGuideSlugs,
 } from "@/lib/guides/source";
 import {
-  getFeeCategoryDetail,
-  getCheapestAndMostExpensive,
-  getDataFreshness,
-} from "@/lib/data-store";
+  getDataFreshnessCached,
+  getFeeCategoryDetailCached,
+} from "@/lib/data-store/public-cached-reads";
 import { getPublicSnapshot } from "@/lib/public-stats";
 import type { FeeCategorySummary } from "@/lib/data-store/fees";
 import { getDisplayName, getSpotlightCategories } from "@/lib/fee-taxonomy";
@@ -41,14 +39,20 @@ import {
   type GuideBreakdowns,
 } from "@/components/public/guide-blocks";
 import { SavedInstitutionsPanel } from "@/components/public/saved-institutions-panel";
-import { SITE_URL } from "@/lib/constants";
+import { PRODUCT_NAME, SITE_URL } from "@/lib/constants";
 
 interface PageProps {
   params: Promise<{ slug: string }>;
 }
 
+/**
+ * Nothing is prerendered at build time: each guide renders on its first request and is then
+ * served from cache. Every deploy, preview builds included, used to prerender all ten guides
+ * against the production database with a cold data cache: about 70 sidebar reads in 15
+ * minutes on Oct 9, ten per build.
+ */
 export async function generateStaticParams() {
-  return (await loadConsumerGuideSlugs()).map((slug) => ({ slug }));
+  return [];
 }
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
@@ -114,12 +118,14 @@ export default async function GuidePage({ params }: PageProps) {
   const categories = guideCategories(guide);
 
   // National medians and counts from the shared public snapshot (same as the fee index).
-  const [{ summary, categories: allSummaries }, freshness, primaryDetail, extremes, related] =
+  const [{ summary, categories: allSummaries }, freshness, primaryDetail, related] =
     await Promise.all([
       getPublicSnapshot(),
-      getDataFreshness(),
-      getFeeCategoryDetail(guide.primaryCategory),
-      getCheapestAndMostExpensive(guide.primaryCategory, 5),
+      // The shared public cache, as the fee pages read it: a guide rebuilt after a takedown
+      // reuses the reads the first page computed instead of running its own (Oct 9: about
+      // 190 freshness reads an hour against about 8 refreshes).
+      getDataFreshnessCached(),
+      getFeeCategoryDetailCached(guide.primaryCategory),
       loadRelatedGuides(guide),
     ]);
 
@@ -142,7 +148,7 @@ export default async function GuidePage({ params }: PageProps) {
     (c) => c !== guide.primaryCategory,
   );
   const extraDetails = await Promise.all(
-    extraCategories.map((c) => getFeeCategoryDetail(c)),
+    extraCategories.map((c) => getFeeCategoryDetailCached(c)),
   );
   if (comparisonCategories.has(guide.primaryCategory)) {
     breakdowns.set(guide.primaryCategory, {
@@ -162,7 +168,6 @@ export default async function GuidePage({ params }: PageProps) {
   // One value per institution, the same population as the median printed beside it.
   const primaryAmounts = primaryDetail.institution_values ?? [];
 
-  const { cheapest, mostExpensive } = extremes;
   const zeroFeeCount = primarySummary?.zero_count ?? 0;
 
   const spotlight = new Set(getSpotlightCategories());
@@ -174,7 +179,7 @@ export default async function GuidePage({ params }: PageProps) {
   const plain = (text: string) => resolveTokensToText(text, allSummaries);
 
   return (
-    <div className="mx-auto max-w-7xl px-6 py-14">
+    <div className="mx-auto max-w-page px-6 py-14">
       <BreadcrumbJsonLd
         items={[
           { name: "Home", href: "/" },
@@ -271,8 +276,7 @@ export default async function GuidePage({ params }: PageProps) {
                     : `How does your bank compare on ${primaryNamePlain}?`}
                 </h2>
                 <p className="mt-1 text-[13px] text-[#6B6255]">
-                  Search the {summary.monitoredLabel} banks and credit
-                  unions we monitor and see your institution&rsquo;s published{" "}
+                  Find your bank or credit union and see its published{" "}
                   {primaryNamePlain} against the national median.
                 </p>
               </div>
@@ -354,7 +358,7 @@ export default async function GuidePage({ params }: PageProps) {
               {/* ── Attribution ── */}
               <footer className="mt-12 rounded-xl border border-[#E8DFD1]/70 bg-[#FAF7F2]/60 px-5 py-4 text-[12.5px] leading-relaxed text-[#6B6255]">
                 <p>
-                  Fee data from the Fee Insight National Fee Index, covering{" "}
+                  Fee data from the {PRODUCT_NAME}, covering{" "}
                   <span className="tabular-nums">
                     {primarySummary ? primarySummary.institution_count.toLocaleString() : summary.institutionsLabel}
                   </span>{" "}
@@ -541,57 +545,11 @@ export default async function GuidePage({ params }: PageProps) {
                 </div>
               )}
 
-              {cheapest.length > 0 && (
-                <div className="rounded-xl border border-emerald-200/60 bg-emerald-50/20 px-5 py-4">
-                  <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-emerald-700">
-                    Lowest {primaryName} Fees
-                  </p>
-                  {zeroFeeCount > 0 && (
-                    <p className="mt-1.5 text-[12px] text-emerald-800">
-                      <span className="font-bold tabular-nums">{zeroFeeCount}</span>{" "}
-                      institution{zeroFeeCount !== 1 ? "s" : ""} charge nothing
-                    </p>
-                  )}
-                  <div className="mt-3 space-y-1.5">
-                    {cheapest.map((f, i) => (
-                      <div
-                        key={f.id}
-                        className="flex items-center justify-between text-[12px]"
-                      >
-                        <span className="mr-2 truncate text-[#5A5347]">
-                          <span className="mr-1 tabular-nums text-[#6B6255]">{i + 1}.</span>
-                          {f.institution_name}
-                        </span>
-                        <span className="shrink-0 font-semibold tabular-nums text-emerald-800">
-                          {formatAmount(f.amount)}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {mostExpensive.length > 0 && (
-                <div className="rounded-xl border border-red-200/60 bg-red-50/20 px-5 py-4">
-                  <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-red-700">
-                    Highest {primaryName} Fees
-                  </p>
-                  <div className="mt-3 space-y-1.5">
-                    {mostExpensive.map((f, i) => (
-                      <div
-                        key={f.id}
-                        className="flex items-center justify-between text-[12px]"
-                      >
-                        <span className="mr-2 truncate text-[#5A5347]">
-                          <span className="mr-1 tabular-nums text-[#6B6255]">{i + 1}.</span>
-                          {f.institution_name}
-                        </span>
-                        <span className="shrink-0 font-semibold tabular-nums text-red-700">
-                          {formatAmount(f.amount)}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
+              {/* #1172: no institution is named outside a buyer's own report. */}
+              {zeroFeeCount > 0 && (
+                <div className="rounded-xl border border-[#E8DFD1] bg-white/80 px-5 py-4 text-[12px] text-[#5A5347]">
+                  <span className="font-bold tabular-nums">{zeroFeeCount}</span>{" "}
+                  institution{zeroFeeCount !== 1 ? "s" : ""} in our index charge nothing for {primaryNamePlain}.
                 </div>
               )}
 
@@ -623,17 +581,17 @@ export default async function GuidePage({ params }: PageProps) {
               {/* ── CTA: a consumer page offers the consumer something ── */}
               <div className="rounded-xl border border-[#E8DFD1] bg-white/80 px-5 py-5">
                   <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-[#A93D25]/60">
-                    Stay ahead of fee changes
+                    Follow this fee
                   </p>
                   <p
                     className="mt-2 text-[15px] font-medium text-[#1A1815]"
                     style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
                   >
-                    Get told when your bank raises this fee
+                    Get an email when your bank updates this fee
                   </p>
                   <p className="mt-1.5 text-[12px] leading-relaxed text-[#6B6255]">
-                    Free account. Save your institution and we&rsquo;ll email you when its{" "}
-                    {primaryNamePlain} changes.
+                    Free account. Save your institution and we&rsquo;ll email you when its published{" "}
+                    {primaryNamePlain} is updated.
                   </p>
                   <Link
                     href={`/register?intent=fee-alert&category=${guide.primaryCategory}`}

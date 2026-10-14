@@ -1,5 +1,4 @@
-import fs from "fs";
-import path from "path";
+import { HAMILTON_DELIVERABLES } from "@/lib/hamilton/knowledge";
 
 export interface SkillInfo {
   id: string;
@@ -9,62 +8,18 @@ export interface SkillInfo {
   content: string;
 }
 
-const SKILLS_DIR = path.join(process.cwd(), ".claude", "skills");
-
-let skillsCache: SkillInfo[] | null = null;
-
-function parseSkillFrontmatter(content: string): {
-  name: string;
-  description: string;
-  triggers: string[];
-  body: string;
-} {
-  const match = content.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/);
-  if (!match) return { name: "", description: "", triggers: [], body: content };
-
-  const frontmatter = match[1];
-  const body = match[2];
-
-  const name = frontmatter.match(/^name:\s*(.+)$/m)?.[1]?.trim() || "";
-  const description = frontmatter.match(/^description:\s*(.+)$/m)?.[1]?.trim() || "";
-  const triggersRaw = frontmatter.match(/^triggers:\s*(.+)$/m)?.[1]?.trim() || "";
-  const triggers = triggersRaw
-    .split(",")
-    .map((t) => t.trim().toLowerCase())
-    .filter(Boolean);
-
-  return { name, description, triggers, body };
-}
-
+/**
+ * The deliverables an answer may offer come from Hamilton's fixed, versioned knowledge set
+ * (src/lib/hamilton/knowledge.ts), never from `.claude/skills` at runtime (#1081).
+ */
 function loadAllSkills(): SkillInfo[] {
-  if (skillsCache) return skillsCache;
-
-  const skills: SkillInfo[] = [];
-
-  if (!fs.existsSync(SKILLS_DIR)) return skills;
-
-  const dirs = fs.readdirSync(SKILLS_DIR, { withFileTypes: true });
-  for (const dir of dirs) {
-    if (!dir.isDirectory()) continue;
-    const skillMd = path.join(SKILLS_DIR, dir.name, "SKILL.md");
-    if (!fs.existsSync(skillMd)) continue;
-
-    const content = fs.readFileSync(skillMd, "utf-8");
-    const { name, description, triggers, body } = parseSkillFrontmatter(content);
-
-    if (!triggers.length) continue;
-
-    skills.push({
-      id: dir.name,
-      name: name || dir.name,
-      description,
-      triggers,
-      content: body,
-    });
-  }
-
-  skillsCache = skills;
-  return skills;
+  return HAMILTON_DELIVERABLES.map((deliverable) => ({
+    id: deliverable.id,
+    name: deliverable.name,
+    description: deliverable.description,
+    triggers: [...deliverable.triggers],
+    content: deliverable.framework,
+  }));
 }
 
 /**

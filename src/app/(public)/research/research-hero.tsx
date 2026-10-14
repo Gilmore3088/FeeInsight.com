@@ -47,7 +47,7 @@ export function ResearchHero({ summary, stateCount, hasDc, territoryCount }: Res
         })}
       </svg>
 
-      <div className="relative mx-auto max-w-7xl px-4 pb-10 pt-12 sm:px-6 sm:pb-12 sm:pt-16">
+      <div className="relative mx-auto max-w-page px-4 pb-10 pt-12 sm:px-6 sm:pb-12 sm:pt-16">
         <p className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-[#E8A48F]">
           <span aria-hidden="true" className="h-px w-8 bg-[#E8A48F]/60" />
           Research
@@ -106,7 +106,7 @@ export function ResearchSectionNav({
 } = {}) {
   return (
     <nav aria-label={label} className="print:hidden sticky top-14 z-30 border-b border-[#E8DFD1] bg-[#FAF7F2]/95 backdrop-blur">
-      <ul className="mx-auto flex max-w-7xl gap-1 overflow-x-auto px-4 py-2 sm:px-6">
+      <ul className="mx-auto flex max-w-page gap-1 overflow-x-auto px-4 py-2 sm:px-6">
         {sections.map((s) => (
           <li key={s.id} className="shrink-0">
             <a

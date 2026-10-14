@@ -25,6 +25,7 @@ import type {
 } from "./derived-analytics";
 import { getSql } from "./connection";
 import { unfilteredFinancialReads } from "./financial-sources.test-helper";
+import { STATS_ROW_FILTER } from "./fee-stats";
 
 type MockSql = ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
 
@@ -34,7 +35,7 @@ function getMock(): MockSql {
 
 function resetMock(mock: MockSql) {
   mock.mockReset();
-  mock.unsafe = vi.fn();
+  mock.unsafe = vi.fn((text: string) => text);
 }
 
 // ── Revenue Concentration (DERIVE-01) ────────────────────────────────────────
@@ -78,6 +79,23 @@ describe("RevenueConcentration", () => {
     expect(result.summary.prevalence_pct).toBeCloseTo(80, 1);
     expect(result.summary.total_fee_dollars).toBe(10000);
     expect(result.summary.total_institutions).toBe(100);
+    expect(getMock().unsafe).toHaveBeenCalledTimes(2);
+    expect(getMock().unsafe).toHaveBeenNthCalledWith(1, STATS_ROW_FILTER);
+    expect(getMock().unsafe).toHaveBeenNthCalledWith(2, STATS_ROW_FILTER);
+  });
+
+  it("keeps real zero-fee rows in prevalence while excluding business/unknown rows at SQL boundary", async () => {
+    getMock().mockResolvedValueOnce([
+      { fee_category: "nsf", total_fee_dollars: "0", institution_count: "5" },
+    ]);
+    getMock().mockResolvedValueOnce([{ total: "5" }]);
+
+    const result = await getRevenueConcentration(1);
+
+    expect(result.dollar_volume[0]).toMatchObject({ fee_category: "nsf", value: 0, pct_of_total: 0 });
+    expect(result.institution_prevalence[0]).toMatchObject({ fee_category: "nsf", value: 5, pct_of_total: 100 });
+    expect(result.summary.total_institutions).toBe(5);
+    expect(getMock().unsafe).toHaveBeenCalledWith(STATS_ROW_FILTER);
   });
 
   it("returns empty results when topN is 0", async () => {

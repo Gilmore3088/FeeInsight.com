@@ -1,8 +1,10 @@
+import { scopedFeeStatements, type FeeApplicability } from "@/lib/fee-audience";
 import { CELL_SEPARATOR } from "@/lib/agents/rosetta/html-dom";
 import { composableTail, passesDarwinChecks, titleTail } from "@/lib/agents/knox/layout";
 import type { AccountLineup } from "@/lib/agents/knox/lineup";
 import { CANONICAL_KEY_MAP } from "@/lib/fee-taxonomy";
-import { stripPriceFootnoteMarks } from "@/lib/custom-report/source-check";
+import { ATM_ADJUSTMENT, CHECKBOOK_RECONCILIATION, CROSS_BORDER_BUNDLE, FAX_SERVICE, PER_PAGE_COPY } from "@/lib/fee-fold";
+import { joinWrappedLeaderNames, parenBalance, stripPriceFootnoteMarks } from "@/lib/custom-report/source-check";
 import { newestColumnText } from "@/lib/fee-change-columns";
 
 /**
@@ -23,10 +25,11 @@ export const MAX_FEES_PER_DOCUMENT = 75;
 const MAX_HELD_PER_DOCUMENT = 40;
 const MAX_UNCLASSIFIED_PER_DOCUMENT = 10;
 const MAX_SEGMENT_CHARS = 280;
+const MAX_NAME_CHARS = 120;
 const MIN_SEGMENT_CHARS = 8;
 export const MAX_REASONABLE_FEE_AMOUNT = 2_500;
 
-export interface ExtractedFeeCandidate {
+export interface ExtractedFeeCandidate extends Partial<FeeApplicability> {
   feeName: string;
   amount: number;
   frequency: string | null;
@@ -44,7 +47,7 @@ export interface ExtractedFeeCandidate {
 /** `untraced`: a read whose name and price don't trace to one row of the text (Knox's self-check). */
 export type HeldShape = "zero" | "range" | "percentage" | "unclassified" | "untraced";
 
-export interface HeldFeeCandidate {
+export interface HeldFeeCandidate extends Partial<FeeApplicability> {
   shape: HeldShape;
   feeName: string;
   /** 0 for a free fee, the low end of a range, null for a percentage. */
@@ -84,8 +87,8 @@ interface FeePattern {
 /**
  * v26: the held groups James folded into existing categories (decision card, Oct 7 2026:
  * "Fold into existing"; anything beyond the ~50 tracked categories is not worth its own).
- * Each maps to the category the taxonomy already gives the fee (returned mail, fax and
- * excess-activity fees -> account research; collection items and foreign checks -> collection
+ * Each maps to the category the taxonomy already gives the fee (returned mail and
+ * excess-activity fees -> account research; fax -> document reproduction since Oct 9; collection items and foreign checks -> collection
  * items since Oct 8, check cashing before; loan cancellation, credit reports and UCC filings -> loan origination, as the keys
  * file them; loan refinancing and document fees -> other lending). Returned statements stay
  * held: the keys file them as paper statements, a featured fee they would skew. The hand-checked answer keys file these
@@ -94,6 +97,9 @@ interface FeePattern {
  * phone transfers, credit card and uncollected-funds fees have no right home and stay held.
  */
 export const FOLDED_PATTERNS: FeePattern[] = [
+  // A fax service is document reproduction since Oct 9 (one home for fax and copies, as the
+  // fold has it); fax as the way a wire, payoff or closing is sent stays below.
+  { key: "document_reproduction", pattern: FAX_SERVICE },
   {
     key: "account_research",
     pattern:
@@ -207,6 +213,8 @@ export const FEE_PATTERNS: FeePattern[] = [
     key: "atm_international",
     pattern: /\b(international|outside (?:the )?(?:U\.?S\.?|United States)).{0,30}\bATMs?\b|\bATMs?\b.{0,30}\b(international|outside (?:the )?(?:U\.?S\.?|United States))/i,
   },
+  // v59: a cross-border banking bundle or package is an account; its fee is the account's (`CROSS_BORDER_BUNDLE`).
+  { key: "monthly_maintenance", pattern: CROSS_BORDER_BUNDLE },
   // v21: plural "Foreign Transactions" (a bare "(international transactions)" is often a
   // neighbouring column's note), and the other names banks give the card's
   // currency fee ("International Point of Sale Fee", "Cross-Border", "International Service
@@ -215,6 +223,8 @@ export const FEE_PATTERNS: FeePattern[] = [
     key: "card_foreign_txn",
     pattern: /\b(foreign transactions?|international (?:transaction\b|purchases?|point of sale|pos|currency fee|service (?:assessment|fee))|currency conversion|cross[- ]border|(?:multi(?:ple)?|single)[- ]currency)\b/i,
   },
+  // v61: adjusting an ATM deposit or dispute is account research (`ATM_ADJUSTMENT`).
+  { key: "account_research", pattern: ATM_ADJUSTMENT },
   { key: "atm_non_network", pattern: /\b(ATM|non[-\s]?network|foreign ATM|out[-\s]?of[-\s]?network)\b/i },
   {
     key: "wire_intl_outgoing",
@@ -241,6 +251,8 @@ export const FEE_PATTERNS: FeePattern[] = [
   { key: "counter_check", pattern: /\b(counter|temporary|starter) checks?\b/i },
   // v16: "Checkbook Balancing" is account research, not check printing.
   { key: "account_research", pattern: /\bcheck ?book balanc\w*|\bbalanc\w* (?:your |a )?check ?book\b/i },
+  // v56: balancing or reconciling a checkbook is account research, not a check order (`CHECKBOOK_RECONCILIATION`).
+  { key: "account_research", pattern: new RegExp(String.raw`^(?=[\s\S]*\bcheck ?books?\b)[\s\S]*` + CHECKBOOK_RECONCILIATION.source, "i") },
   { key: "check_printing", pattern: /\b(check printing|checks order|order checks|check ?books?)\b/i },
   {
     key: "check_image",
@@ -289,6 +301,8 @@ export const FEE_PATTERNS: FeePattern[] = [
     pattern: /\b(early account closure|closed within|early closing)\b|\baccount clos(ed|ure|ing)\b.{0,40}\b(within|prior to|before|less than)\b|\bclub\b.{0,30}\bearly withdrawal\b/i,
   },
   { key: "dormant_account", pattern: /\b(dorman(?:t|cy)|inactiv(?:e|ity)|escheat\w*|abandoned)\b/i },
+  // v54: a copy charged by the page is document reproduction, even under research (`PER_PAGE_COPY`).
+  { key: "document_reproduction", pattern: PER_PAGE_COPY },
   { key: "account_research", pattern: /\b(account research|research fee|reconciliation|account balancing)\b/i },
   {
     key: "monthly_maintenance",
@@ -442,7 +456,7 @@ export function joinWrappedProse(lines: string[]): string[] {
 function candidateSegments(text: string): string[] {
   const seen = new Set<string>();
   const segments: string[] = [];
-  const lines = joinWrappedProse(text.split(/\n+/).map((line) => line.replace(/\s+/g, " ").trim()));
+  const lines = joinWrappedProse(joinWrappedLeaderNames(text.split(/\n+/).map((line) => line.replace(/\s+/g, " ").trim())));
   for (const rawLine of lines) {
     const line = rawLine.replace(/\s+/g, " ").trim();
     if (!line.includes("$") && !PERCENT_PATTERN.test(line) && !hasZeroCell(line)) continue;
@@ -616,8 +630,20 @@ export function confidenceFor(segment: string): number {
   return Math.min(confidence, 0.94);
 }
 
+/** v60: a parenthetical that states a threshold of the fee ("($10,000.01 and Over)", "(below $500)", "($25 minimum)"). */
+const THRESHOLD_PARENTHETICAL =
+  /\b(?:below|under|over|above|than|up to|exceed(?:s|ing)?|least|min(?:imum)?|max(?:imum)?|limit|greater|less|or more|and up)\b|[<>]/i;
+
 export function nameFrom(value: string): string {
-  return stripFootnoteMarks(normalizeSegment(value.replace(AMOUNT_PATTERN, " "))).slice(0, 120).trim();
+  // v60: a figure in a threshold parenthetical stays in the name; every other figure is the price.
+  const kept: string[] = [];
+  const masked = value.replace(/\([^()]*\$\s*\d[^()]*\)/g, (group) => {
+    if (!THRESHOLD_PARENTHETICAL.test(group.replace(AMOUNT_PATTERN, " "))) return group;
+    kept.push(group);
+    return `\u0000${kept.length - 1}\u0000`;
+  });
+  const stripped = masked.replace(AMOUNT_PATTERN, " ").replace(/\u0000(\d+)\u0000/g, (_, index: string) => kept[Number(index)]);
+  return stripFootnoteMarks(normalizeSegment(stripped)).slice(0, MAX_NAME_CHARS).trim();
 }
 
 /**
@@ -792,9 +818,34 @@ export function lowBalanceFeeFromProse(segment: string): ExtractedFeeCandidate |
  */
 const AVOID_FEE_OF = /\bto avoid (?:an?|the)\s+((?:[a-z]+[ -]){0,3}(?:fee|charge))\s+of\s+\$\s?(\d{1,3}(?:\.\d{1,2})?)(?![\d,])/i;
 
+/**
+ * v57: "Go green with eStatements to avoid $3 paper statement fee": the price comes first and
+ * the words after it name the fee the reader avoids.
+ */
+const AVOID_PRICE_FEE = /\bto avoid (?:an?\s+|the\s+)?\$\s?(\d{1,3}(?:\.\d{1,2})?)(?![\d,])\s+((?:[a-z]+[ -]){0,3}(?:fee|charge))s?\b/i;
+
+function avoidPriceFirst(segment: string): ExtractedFeeCandidate | null {
+  const match = segment.match(AVOID_PRICE_FEE);
+  if (!match) return null;
+  const words = normalizeSegment(match[2]);
+  const hint = classifyFeeText(words);
+  const amount = Number(match[1]);
+  const feeName = `${words.charAt(0).toUpperCase()}${words.slice(1)}`;
+  if (!hint || !(amount > 0) || !passesDarwinChecks(hint, feeName, amount)) return null;
+  return {
+    feeName,
+    amount,
+    frequency: detectFrequency(segment),
+    canonicalHint: hint,
+    confidence: confidenceFor(segment),
+    excerpt: segment,
+    waivable: true,
+  };
+}
+
 export function avoidFeeFromProse(segment: string): ExtractedFeeCandidate | null {
   const match = segment.match(AVOID_FEE_OF);
-  if (!match) return null;
+  if (!match) return avoidPriceFirst(segment);
   const words = normalizeSegment(match[1]);
   const hint = classifyFeeText(words);
   if (hint !== "minimum_balance" && hint !== "monthly_maintenance") return null;
@@ -966,6 +1017,20 @@ export function extractFromSegment(segment: string): ExtractionRulesResult {
       (priceFirst ? priceFirstHint(segment.slice(firstAmount.end, amounts[1]?.start ?? segment.length)) : null) ??
       (rowName && usableName(rowName) ? classifyFeeText(rowName) : null)
     : classifyFeeText(cells ? cells[0] : segment);
+  // v57: a markdown table row is named by its first cell when its details cell names nothing
+  // ("| Stop Payment Order | Initial order or a renewal | $30.00 | per item |", Arvest).
+  const titleCell = cells?.[0]?.replace(/^\|\s*/, "").trim() ?? "";
+  if (!hint && firstAmount && /^\s*\|/.test(segment) && (cells?.filter(Boolean).length ?? 0) >= 3 && !amountsIn(titleCell).length) {
+    hint = classifyFeeText(titleCell);
+  }
+  // v62: "Domestic Outgoing (client only) ........ $25.00 per wire" (Northern Trust) names its
+  // fee only together with the noun after the price; the name keeps that noun.
+  // The name must say which way the wire goes: "Domestic | $20.00 per wire" under an
+  // "Incoming" heading names no direction of its own.
+  const perWire = !hint && firstAmount != null && !priceFirst && usableName(name) &&
+    /\b(?:incoming|outgoing|inbound|outbound|send|sent|receive|received)\b/i.test(name) &&
+    /^\s*per\s+wire(?:\s+transfer)?\b/i.test(segment.slice(firstAmount.end)) && !/\bwires?\b/i.test(name);
+  if (perWire) hint = classifyFeeText(`${name} wire`);
 
   // A free fee, written as a "Free"/"No charge" cell or as $0.
   if (hint && cells && cells.length >= 2 && !firstAmount && cells.slice(1).some((cell) => ZERO_CELL.test(cell)) && !notAZeroPrice(hint, cells[0])) {
@@ -1080,6 +1145,11 @@ export function extractFromSegment(segment: string): ExtractionRulesResult {
   if (feeAmounts.length === 0) return result;
   const waivable = Number.isFinite(waiverAt);
   let feeName = usableName(nameFrom(segment.slice(0, feeAmounts[0].start))) ? nameFrom(segment.slice(0, feeAmounts[0].start)) : name;
+  if (perWire && !/\bwires?\b/i.test(feeName)) feeName = `${feeName} wire`;
+  // v62: a name cut at its length limit inside a parenthesis ("... Nonsufficient Funds (includes
+  // but not limited to overdrafts created by check, in-") is named by the words before it.
+  const cutParen = feeName.length >= MAX_NAME_CHARS - 2 && parenBalance(feeName) > 0 ? feeName.slice(0, feeName.lastIndexOf("(")).trim() : "";
+  if (usableName(cutParen)) feeName = cutParen;
   // v38: a threshold in a cell of its own ("Courtesy Pay | Over $5 | Per occurrence | $32")
   // stays in the name with its figure: "Courtesy Pay (over $5)".
   const thresholdCell = cells?.find((cell, index) => index > 0 && THRESHOLD_CELL.test(cell));
@@ -1160,7 +1230,12 @@ export function extractFromSegment(segment: string): ExtractionRulesResult {
   // the words just before it name one ("Stop payment $30; Wire, outgoing $25"); otherwise
   // it is a cap, a second account column, or a condition, and is ignored.
   feeAmounts.forEach((amount, index) => {
-    const between = index === 0 ? null : nameFrom(segment.slice(feeAmounts[index - 1].end, amount.start));
+    // #1196: the unit right after the earlier price is that price's ("Dormant accounts |
+    // $15.00 per month Nonsufficient funds | $35.00"), not the next fee's name or period.
+    const unitAfterPrevious = index === 0 ? null : segment.slice(feeAmounts[index - 1].end, amount.start).match(PRICE_UNIT_AFTER);
+    const ownStart = index === 0 ? 0 : feeAmounts[index - 1].end + (unitAfterPrevious?.[0].length ?? 0);
+    const between = index === 0 ? null : nameFrom(segment.slice(ownStart, amount.start));
+    const ownFrequency = unitAfterPrevious ? detectFrequency(segment.slice(ownStart)) : frequency;
     // v19: "$30.00 - fee assessed for each item paid1 Continuous Overdraft Fee ..... $5.00":
     // the lowercase words finish the earlier price's terms; the title that ends them is the name.
     const tail = between && /^[^A-Z]/.test(between) ? titleTail(between) : null;
@@ -1170,7 +1245,8 @@ export function extractFromSegment(segment: string): ExtractionRulesResult {
     // v22: "... you will be assessed a fee of $25.00 on the 7th day. This fee is in addition to
     // any Overdraft Fees assessed. | $25.00": the row's price cell repeats the price in its own cell.
     const priceCellAt = segment.lastIndexOf(CELL_SEPARATOR);
-    if (index > 0 && cells && amount.value === feeAmounts[index - 1].value && amount.start > priceCellAt &&
+    // #1196: not when the earlier price ends on its own unit ("$25.00/hr Wire message | $25.00").
+    if (index > 0 && !unitAfterPrevious && cells && amount.value === feeAmounts[index - 1].value && amount.start > priceCellAt &&
       PRICE_ONLY_CELL.test(cells.at(-1) ?? "") && segment.lastIndexOf(CELL_SEPARATOR, priceCellAt - 1) < feeAmounts[index - 1].start) return;
     const candidateName = index === 0 ? feeName : (chunk as string);
     const canonicalHint = index === 0 ? hint : (chunkHint as string);
@@ -1179,7 +1255,7 @@ export function extractFromSegment(segment: string): ExtractionRulesResult {
     result.candidates.push({
       feeName: candidateName,
       amount: amount.value,
-      frequency,
+      frequency: ownFrequency,
       canonicalHint,
       confidence: confidenceFor(segment),
       excerpt: segment,
@@ -1337,11 +1413,152 @@ export function centeredNamePrices(text: string): string[] {
   return joined;
 }
 
-export function extractCandidatesFromText(raw: string): ExtractionRulesResult {
+/**
+ * v63: a safe deposit box size and its rent printed in the next column ("Return Item Fee | 03 x
+ * 10….....$45", doc 20570, UAT Oct 9) is the box table's row, not the fee's price: the $45 went
+ * live as the return item fee (73956). The size cell starts its own line, so it reads as a box
+ * rent and the fee's own line carries no price.
+ */
+const GLUED_BOX_SIZE_CELL = /\s*\|\s*(\d{1,2}\s?[x×]\s?\d{1,2}(?![\d.])[\s.…_-]*\$\s?\d)/gi;
+/** Text before the cell that is the box table's own heading ("Safe Deposit Box Rental | 3 x 5 - $20"). */
+const BOX_HEADING = /\b(safe|safety|deposit|box(es)?|rental|rent|sizes?)\b/i;
+
+export function withBoxSizeCellsSplit(text: string): string {
+  return text
+    .split("\n")
+    .map((line) => line.replace(GLUED_BOX_SIZE_CELL, (match, cell: string, offset: number) =>
+      BOX_HEADING.test(line.slice(0, offset)) ? match : `\n${cell}`))
+    .join("\n");
+}
+
+/**
+ * v64: a box table printed sideways, a row of sizes over a row of prices ("... | 3x5 | 5x5 | 3x10
+ * | 5x10 | 10x10" over "... | $60 | $80 | $90 | $110 | $185", SCCU 8109). Knox read the first price
+ * as the neighbouring cell's fee and the rest not at all. Each size and the price under it become
+ * their own "size | price" line after the pair ("×" written as "x"); the cells before the run stay
+ * on their lines.
+ */
+const BOX_SIZE_ONLY_CELL = /^\d{1,2}(?:\.\d)?\s?[x×]\s?\d{1,2}(?:\s?[x×]\s?\d{1,2})?$/i;
+const BARE_PRICE_CELL = /^\$\s?\d[\d,]*(?:\.\d{2})?$/;
+const SIDEWAYS_BOX_MIN = 2;
+
+function trailingRun(cells: string[], test: (cell: string) => boolean): number {
+  let count = 0;
+  while (count < cells.length && test(cells[cells.length - 1 - count])) count += 1;
+  return count;
+}
+
+export function withSidewaysBoxTable(text: string): string {
+  const lines = text.split("\n");
+  const out: string[] = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    const sizes = lines[index].split("|").map((cell) => cell.trim());
+    // One blank line may sit between the two rows ("Size | 2 × 5 | ..." / "" / "Cost | $17.50 | ...").
+    const priceIndex = lines[index + 1]?.trim() === "" ? index + 2 : index + 1;
+    const prices = (lines[priceIndex] ?? "").split("|").map((cell) => cell.trim());
+    const run = trailingRun(sizes, (cell) => BOX_SIZE_ONLY_CELL.test(cell));
+    if (run < SIDEWAYS_BOX_MIN || trailingRun(prices, (cell) => BARE_PRICE_CELL.test(cell)) !== run) {
+      out.push(lines[index]);
+      continue;
+    }
+    const sizeLead = sizes.slice(0, sizes.length - run).filter(Boolean).join(" | ");
+    const priceLead = prices.slice(0, prices.length - run).filter(Boolean).join(" | ");
+    if (sizeLead) out.push(sizeLead);
+    if (priceLead) out.push(priceLead);
+    for (let cell = 0; cell < run; cell += 1) {
+      out.push(`${sizes[sizes.length - run + cell].replace(/\s?×\s?/g, " x ")} | ${prices[prices.length - run + cell]}`);
+    }
+    index = priceIndex;
+  }
+  return out.join("\n");
+}
+
+/**
+ * v62: a fee whose name carries a footnote mark ("Overdraft - Insufficient Funds / Uncollected2
+ * $40.00") is a business price when that footnote says so ("2 Created by check, ... Only
+ * applicable to business accounts. This fee is not charged to consumer accounts.", ConnectOne
+ * 135). Its line is left out, so the consumer page never shows it.
+ */
+const BUSINESS_ONLY_NOTE =
+  /\b(?:only (?:applicable|applies) to business(?: accounts?)?|not (?:charged|assessed) (?:to|on) (?:consumer|personal) accounts?)\b/i;
+const FOOTNOTE_LINE = /^\s*(\d{1,2})\s+[A-Z]/;
+const GLUED_MARK = /[a-z)](\d{1,2})(?=\s*(?:\||\$|\.{3,}|$))/gi;
+
+export function withoutBusinessOnlyFees(text: string): string {
+  if (!BUSINESS_ONLY_NOTE.test(text)) return text;
+  const lines = text.split("\n");
+  // A note may wrap onto the next line, unless that line is the next note.
+  const businessNote = (index: number) => {
+    const next = lines[index + 1] ?? "";
+    return BUSINESS_ONLY_NOTE.test(FOOTNOTE_LINE.test(next) ? lines[index] : `${lines[index]} ${next}`);
+  };
+  // A mark points at the first note with its number below the fee: a schedule whose pages each
+  // carry their own notes numbers them again from 1 (Ameris).
+  const noteBelow = (index: number, mark: string) => {
+    for (let below = index + 1; below < lines.length; below += 1) {
+      if (lines[below].match(FOOTNOTE_LINE)?.[1] === mark) return below;
+    }
+    return -1;
+  };
+  return lines
+    .filter((line, index) => {
+      if (FOOTNOTE_LINE.test(line)) return true;
+      return ![...line.matchAll(GLUED_MARK)].some((mark) => {
+        const note = noteBelow(index, mark[1]);
+        return note >= 0 && businessNote(note);
+      });
+    })
+    .join("\n");
+}
+
+/** #1196: a price's own unit right after it ("$15.00 per month", "$25.00/hr", "$5.00/statement", "$10.00 each"). */
+const PRICE_UNIT_AFTER = /^\s*(?:\/\s*(?:statement|stmt|hr|hour|item|month|mo|sheet|check|year|yr|day|page|copy|request)\b|per\s+(?:month|item|year|statement|check|hour|sheet|day|page|copy|request)\b|each\b|ea\b\.?)/i;
+
+/**
+ * #1196: a price whose decimal point the PDF text dropped ("Dormant accounts | $15 00 per
+ * month Nonsufficient funds | $35 00", Addition Financial 8629). Knox read "$15" as the price and
+ * gave the cents and their unit to the next fee ("00 per month Nonsufficient funds", monthly).
+ * The point goes back ("$15.00"), so the cents and "per month" stay with the dormant fee.
+ * "00" cents always; other cents only when the text drops the point on "00" prices too and the
+ * cents end their cell ("$2 50 each", "$4 95 |"), so a count after a price ("$5 10 items") stays.
+ * Never a box size ("$5 10 x 10") or a longer number.
+ *
+ * #1305: two more shapes of the same price. A footnote star right after the cents ends them
+ * ("ATM Transactions (per item) | $1 50* after 8/mo", Members 1st 7517, read as $1), and the
+ * star stays a mark, never a digit. A point kept with a space after it ("Loan Skip A Pay Fee
+ * .... $29. 95/ea ch", Xplore 6636, read as $29) is the same dropped point. Each shape is
+ * counted on its own: ". 00" prices never vouch for "$2 50", which in a letter-spaced text is
+ * $250. Cents after ". " end their cell too, since a sentence can end on a price and go on
+ * with another number ("$500. 10-year draw period").
+ */
+const DROPPED_POINT_SHAPES = [" ", "\\. "].map((dropped) => ({
+  zero: new RegExp(String.raw`\$(\s?)(\d{1,3}(?:,\d{3})+|\d{1,4})${dropped}(00)(?![\d.,])(?!\s*[x×]\s*\d)`, "g"),
+  cents: new RegExp(String.raw`\$(\s?)(\d{1,3}(?:,\d{3})+|\d{1,4})${dropped}(\d{2})(?![\d.,])(?=[*†‡]|\s*(?:$|\||\/|each\b|per\b|ea\b))`, "gim"),
+}));
+const DROPPED_POINT_MIN = 3;
+
+export function withDroppedDecimalPoints(text: string): string {
+  const withPoint = (_whole: string, gap: string, dollars: string, cents: string) => `$${gap}${dollars}.${cents}`;
+  return DROPPED_POINT_SHAPES.reduce((current, shape) => {
+    const zeros = current.match(shape.zero)?.length ?? 0;
+    if (zeros === 0) return current;
+    const restored = current.replace(shape.zero, withPoint);
+    return zeros < DROPPED_POINT_MIN ? restored : restored.replace(shape.cents, withPoint);
+  }, text);
+}
+
+export function extractCandidatesFromText(input: string): ExtractionRulesResult {
+  const raw = withDroppedDecimalPoints(input);
   // v48: a fee-change notice's row is read at its newest column ("Money Orders | $2.00 | $5.00").
-  const text = stripPriceFootnoteMarks(newestColumnText(raw));
+  const scoped = scopedFeeStatements(raw);
+  const handledLines = new Set(scoped.map((fee) => fee.excerpt));
+  const remaining = raw.split("\n").filter((line) => !handledLines.has(line.trim())).join("\n");
+  const text = withoutBusinessOnlyFees(stripPriceFootnoteMarks(newestColumnText(remaining)));
   const seen = new Set<string>();
-  const result: ExtractionRulesResult = { candidates: [], held: [] };
+  const result: ExtractionRulesResult = {
+    candidates: scoped.map((fee) => ({ ...fee, frequency: null, confidence: 0.98, waivable: false })),
+    held: [],
+  };
   const joinedLines = [...columnContinuations(text), ...wrappedNamePrices(text), ...centeredNamePrices(text)];
   const continued = joinedLines.flatMap((line) => extractFromSegment(line).candidates);
   for (const candidate of [...itemAmountTierFees(text), ...continued]) {

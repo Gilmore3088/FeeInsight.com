@@ -4,7 +4,25 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* Page shells are wide (max-w-page), so running text needs its own measure: about 75
+   characters a line (James, 2026-10-09). 34em is ~75 characters of the sans body face and
+   ~70 of the serif. It is unlayered so it also tightens paragraphs carrying a wider
+   max-w-* utility (max-w-2xl at 13px is ~100 characters); paragraphs with a tighter cap
+   (max-w-xs/sm, an arbitrary max-w-[...]) or truncation keep theirs. Centred paragraphs
+   stay centred. Admin is a working tool and keeps full-width text. */
+:where(main:not(.admin-content)) p:not([class*="max-w-xs"], [class*="max-w-sm"], [class*="max-w-["], [class*="truncate"]) {
+  max-width: 34em;
+}
+@layer base {
+  :where(main:not(.admin-content)) :where(p.text-center, .text-center > p) {
+    margin-inline: auto;
+  }
+}
+
 @theme inline {
+  /* Page shell width (max-w-page). Wide screens use the width for columns and exhibits;
+     running text keeps a readable measure through the main-prose rule below. */
+  --container-page: 100rem;
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;

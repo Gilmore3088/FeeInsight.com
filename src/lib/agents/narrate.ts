@@ -208,6 +208,7 @@ function narrateFinished(
     case "registry-state-bill-news":
     case "registry-enforcement":
     case "registry-state-enforcement":
+    case "registry-wire-research":
       return narrateRegistryStep(stepKey, detail);
     case "score-answer-key": {
       if (detail.schema_ready === false) return "Skipped the answer-key score (migration not applied yet).";
@@ -224,8 +225,45 @@ function narrateFinished(
       const verb = detail.stored === true ? "Stored" : detail.already_current === true ? "Already had" : "Read";
       return `${verb} the ${String(detail.study_key ?? stepKey).replace(/_/g, " ")} study for ${String(detail.as_of ?? "this period")} (${count(n(detail, "n"), "observation")}).`;
     }
-    case "hamilton-answer-eval":
-      return `Asked Hamilton ${count(n(detail, "answers"), "question")} for ${count(n(detail, "institutions"), "institution")}; ${n(detail, "passed")} answers met the bar.`;
+    case "hamilton-answer-eval": {
+      const correctness = (detail.correctness ?? null) as Detail | null;
+      const tied = correctness ? ` ${n(correctness, "correct")} of ${n(correctness, "checked")} checked tie to the live catalog.` : "";
+      return `Asked Hamilton ${count(n(detail, "answers"), "question")} for ${count(n(detail, "institutions"), "institution")}; ${n(detail, "passed")} answers met the bar.${tied}`;
+    }
+    case "schedule-check": {
+      const missed = n(detail, "missed") + n(detail, "failed");
+      return `Atlas checked every schedule against the route ledger: ${n(detail, "ran")} ran on time, ${missed === 0 ? "none missed or failed" : `${missed} missed or failed`}${n(detail, "unknown") > 0 ? `, ${n(detail, "unknown")} unknown` : ""}.`;
+    }
+    case "bayes-replay-ledger": {
+      if (detail.schema_ready === false) return "Bayes counted nothing: the replay ledger is not created yet.";
+      const stuck = n(detail, "stuck");
+      return `Bayes counted the reach of each rule change: ${n(detail, "closed")} closed, ${n(detail, "open")} open with ${count(n(detail, "queued_records"), "record")} queued${stuck > 0 ? `, ${stuck} stuck` : ""}.`;
+    }
+    case "deming-fresh-audit": {
+      if (detail.readable === false) return "Deming's fresh audit could not read the live fees; accuracy is unknown today.";
+      const accuracy = typeof detail.accuracy === "number" ? `${(detail.accuracy * 100).toFixed(1)}%` : "too few to score";
+      return `Deming audited ${count(n(detail, "sampled"), "live fee")} against the banks' own schedules: ${n(detail, "right")} of ${n(detail, "scorable")} right (${accuracy}), ${n(detail, "no_text")} with no stored text.`;
+    }
+    case "deming-benchmark-health": {
+      const collapses = Array.isArray(detail.collapses) ? detail.collapses.length : 0;
+      return `Deming checked the benchmarks: ${n(detail, "groups_meeting_target")} of ${n(detail, "groups_total")} state and size groups meet the coverage target, ${collapses === 0 ? "no benchmark collapsed" : `ALARM: ${count(collapses, "benchmark")} lost a sharp share of its institutions`}.`;
+    }
+    case "deming-change-outcomes": {
+      if (detail.ready === false) return "Skipped the 7-day change check (migration not applied yet).";
+      const judged = Array.isArray(detail.judged) ? (detail.judged as Array<{ verdict?: string }>) : [];
+      const moved = judged.filter((row) => row.verdict === "moved_as_expected").length;
+      return `Checked ${count(judged.length, "change")} a week after merge: ${moved} moved as expected; ${n(detail, "pending")} still within their week.`;
+    }
+    case "deming-sunday-maintenance":
+      if (detail.ran === false) return "Not Sunday: no maintenance email this time.";
+      return detail.delivery_status === "sent"
+        ? `Emailed James the Sunday hour (${n(detail, "minutes")} minutes).`
+        : `Wrote the Sunday hour (${n(detail, "minutes")} minutes) but did not email it (${String(detail.delivery_reason ?? detail.delivery_status ?? "unknown")}).`;
+    case "deming-regression": {
+      if (detail.schema_ready === false) return "Deming read no test cases: the case store is not created yet.";
+      const regressions = n(detail, "regressions");
+      return `Deming added ${count(n(detail, "promoted"), "confirmed mistake")} as test cases and replayed ${count(n(detail, "replayed"), "case")}: ${n(detail, "caught")} still caught, ${regressions === 0 ? "no regressions" : count(regressions, "regression")}.`;
+    }
     case "scoreboard-snapshot": {
       const coverage = (detail.coverage ?? {}) as Detail;
       const accuracy = (detail.accuracy ?? {}) as Detail;
@@ -262,6 +300,11 @@ function narrateFinished(
       const drafted = n(detail, "drafted");
       if (!drafted) return "Drafted no first emails; no prospect passed the contact and source checks.";
       return `Drafted ${count(drafted, "first email")} for James to audit and send himself.`;
+    }
+    case "growth-withdraw": {
+      const withdrawn = n(detail, "withdrawn");
+      if (!withdrawn) return "Withdrew no first emails; every unreviewed draft still qualifies.";
+      return `Withdrew ${count(withdrawn, "unreviewed first email")} that no longer qualified.`;
     }
     case "growth-learning": {
       if (detail.schemaReady === false) return "Wrote no report; the queue or outreach journey tables are not there yet.";
@@ -475,6 +518,17 @@ function narrateRegistryStep(stepKey: string, detail: Detail): string | null {
       const states = Array.isArray(detail.by_state) ? (detail.by_state as Array<{ pages?: number }>).filter((s) => (s.pages ?? 0) > 0).length : 0;
       return `Read ${count(states, "state banking department")} and refreshed ${count(n(detail, "upserted"), "state enforcement order")}.`;
     }
+    case "registry-wire-research": {
+      if (detail.schema_missing) return "Skipped Regulatory Wire research notes (migration not applied yet).";
+      if (detail.shadow) {
+        return `Picked ${count(n(detail, "selected"), "wire item")} for research notes and could read ${n(detail, "would_summarise")}; wrote none (shadow mode).`;
+      }
+      // "0 failed" hid a budget stop for a day (#1149): say which cap stopped it and what waits.
+      const stopped = detail.budget_stopped === true
+        ? ` Stopped by a budget cap with ${count(n(detail, "budget_waiting"), "item")} waiting: ${String(detail.budget_reason ?? "the cap was not recorded").replace(/\.$/, "")}.`
+        : "";
+      return `Wrote ${count(n(detail, "written"), "Regulatory Wire research note")} from ${count(n(detail, "selected"), "item")}; ${n(detail, "unreadable")} unreadable, ${n(detail, "failed")} failed.${stopped}`;
+    }
     default:
       return null;
   }
@@ -534,6 +588,7 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   "growth-contacts": "growth",
   "growth-contact-picks": "growth",
   "growth-outreach": "growth",
+  "growth-withdraw": "growth",
   "growth-learning": "growth",
   "growth-quote": "growth",
   "growth-plan": "growth",
@@ -549,6 +604,13 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   "marketing-send": "growth",
   "marketing-states": "growth",
   "score-answer-key": "atlas",
+  "bayes-replay-ledger": "atlas",
+  "schedule-check": "atlas",
+  "deming-fresh-audit": "atlas",
+  "deming-benchmark-health": "atlas",
+  "deming-change-outcomes": "atlas",
+  "deming-sunday-maintenance": "atlas",
+  "deming-regression": "atlas",
   "scoreboard-snapshot": "atlas",
   "hamilton-answer-eval": "hamilton",
   "study-fee-dependence": "hamilton",
@@ -584,6 +646,7 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   "registry-state-bill-news": "magellan",
   "registry-enforcement": "magellan",
   "registry-state-enforcement": "magellan",
+  "registry-wire-research": "magellan",
   read: "rosetta",
   "read-paid": "rosetta",
   extract: "knox",
@@ -597,6 +660,7 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   "publish-index": "hamilton",
   "publish-context": "hamilton",
   "report-render": "hamilton",
+  "report-reconcile": "hamilton",
   "report-close": "hamilton",
   "category-guard": "hamilton",
   "frequency-fill": "hamilton",

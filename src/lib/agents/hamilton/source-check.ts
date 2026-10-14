@@ -3,6 +3,8 @@ import { invalidatePublicReadCache } from "@/lib/data-store/fee-cache";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import { recordAttempt } from "@/lib/agents/learning/attempts";
 import { PENDING_KIND, SECOND_LOOK_MIN_MINUTES, secondLook } from "@/lib/agents/hamilton/second-look";
+import { excerptOf } from "@/lib/agents/hamilton/frequency-fill";
+import { nameIsFragment } from "@/lib/agents/darwin/release-review";
 import { checkFeeAgainstSource, checkRateAgainstSource, type SourceCheckFailure } from "@/lib/custom-report/source-check";
 import { isPercentFee, ratePercentOf, type RateFields } from "@/lib/percent-fees";
 
@@ -113,11 +115,17 @@ export interface LiveFeeRow extends RateFields {
   amount: number | string | null;
   /** Taken down by an earlier source check; restored if it now traces. */
   taken_down?: boolean | null;
+  /** The raw row's audit text; a Knox row carries the line it read as `excerpt="..."`. */
+  conditions?: string | null;
+  /** When Knox wrote the raw row (read the line). */
+  raw_created_at?: string | Date | null;
 }
 
 export interface InstitutionText {
   source_document_id: number | string;
   normalized_text: string;
+  /** When this text was last written; a re-read of the same document rewrites it. */
+  updated_at?: string | Date | null;
 }
 
 export type SourceVerdict =
@@ -155,6 +163,78 @@ export function traceLiveFee(fee: LiveFeeRow, texts: InstitutionText[]): SourceV
   return { kind: "untraceable", reason };
 }
 
+/**
+ * Takedown reasons a re-read of the same document can cause by itself: the new text no
+ * longer pairs the fee's name with its price (a PDF read column by column puts every name
+ * in one run and every amount in another).
+ */
+export const READER_LOSS_REASONS: ReadonlySet<string> = new Set(["name_not_in_text", "amount_not_the_fee"]);
+
+/**
+ * Off until UAT passes a 10-row check of the fees this would put back. While off, a fee
+ * already taken down whose line a re-read lost stays down; one still live stays live.
+ */
+export const READER_LOSS_RESTORES_ON = false;
+
+function timeOf(value: string | Date | null | undefined): number | null {
+  if (value == null) return null;
+  const time = new Date(value).getTime();
+  return Number.isFinite(time) ? time : null;
+}
+
+/**
+ * Pure: did a re-read of the fee's own document lose a line Knox really read? True when a
+ * Knox fee with a price fails its own document for a text reason, that document's text was
+ * rewritten after Knox read the fee, and the line Knox stored (`excerpt`) still states the
+ * fee under the same shared check. The document's bytes did not change (a changed schedule
+ * is a new document), so the failure is the reader's, not the fee's. Georgia United FCU's
+ * 20 fees (Stop Payment $32.00/Request, its box sizes) came down this way on Oct 9.
+ */
+export function readerLostLine(fee: LiveFeeRow, texts: InstitutionText[], reason: string): boolean {
+  if (fee.source !== "knox" || !READER_LOSS_REASONS.has(reason)) return false;
+  if (isPercentFee(fee) || fee.amount == null || !(Number(fee.amount) > 0)) return false;
+  const ownId = fee.source_document_id == null ? null : Number(fee.source_document_id);
+  const own = texts.find((text) => Number(text.source_document_id) === ownId);
+  const rewrittenAt = timeOf(own?.updated_at);
+  const readAt = timeOf(fee.raw_created_at);
+  if (!own || rewrittenAt == null || readAt == null || rewrittenAt <= readAt) return false;
+  const excerpt = excerptOf(fee.conditions);
+  if (!excerpt) return false;
+  // Knox joins the excerpt's lines with " / ". The name and its price must share one line:
+  // "Notary Service / $10 low balance fee" is the next fee's price, not the notary's.
+  return excerpt
+    .split(/\s+\/\s+/)
+    .some((line) => checkFeeAgainstSource(line, fee.fee_name, Number(fee.amount), ".", fee.canonical_fee_key).ok);
+}
+
+const GLUED_COLUMNS = /\s\|\s|\/.*\/|\s\/$/;
+const RESTORE_NAME_MAX_WORDS = 8;
+
+/**
+ * Pure: is this name fit to put back live? A re-read restore brings back the name Knox
+ * stored, so it must read as a fee name on its own: not a fragment or cut-off, starting with
+ * a capital or a digit, at most 8 words, with no glued column text. UAT's 10-row check of
+ * restores (Oct 9) failed "Mechanical Repair Coverage (MRC) Stop Payments Quoted Rate Check /
+ * ACH / Electronic Check", "Account Research/Reconciliation Fee Subpoena/Levy/Garnishment
+ * Research per Hour Lost" and "services Account Closing (within first 90 days) Does not apply
+ * to Youth Savings accounts" on their names alone.
+ */
+export function restorableName(name: string): boolean {
+  const trimmed = name.trim();
+  if (!/^[A-Z0-9"“]/.test(trimmed) || GLUED_COLUMNS.test(trimmed) || nameIsFragment(trimmed)) return false;
+  // A section heading glued on ("SAFE DEPOSIT BOX FEES x Box"), a perk ("Free Official Checks"
+  // at $7.50) or a unit ("Per Check Safe Deposit Box") is not the fee's own name.
+  if (/^(?:free|per)\b/i.test(trimmed) || /\bFEES\b/.test(trimmed)) return false;
+  // Two capitalised heading words ("SAFE DEPOSIT BOXES Auburn Hills"), a currency label
+  // ("USD Inactive Membership Fee") or a condition cut at its number ("transfer after 2").
+  if (/\b[A-Z]{3,}\s+[A-Z]{3,}\b/.test(trimmed) || /^USD\b/.test(trimmed) || /\b(?:after|over|under|first)\s+\d+$/i.test(trimmed)) return false;
+  const words = trimmed.toLowerCase().split(/\s+/);
+  // A word printed twice ("ATMs Non S&T ATM Transactions ATM Service Fees") is two cells joined.
+  const named = words.filter((word) => /[a-z]{2}/.test(word)).map((word) => word.replace(/s$/, ""));
+  if (new Set(named).size < named.length) return false;
+  return words.length <= RESTORE_NAME_MAX_WORDS;
+}
+
 export interface SourceCheckTakedown {
   feePublishedId: number;
   institutionId: number;
@@ -178,6 +258,8 @@ export interface SourceCheckResult {
   awaitingSecondLook: number;
   /** Passed after an earlier failure: their pending flag is cleared. */
   cleared: number;
+  /** Failed only because a re-read of their own document lost the line (`readerLostLine`): kept. */
+  readerLost: number;
 }
 
 const EMPTY_RESULT: SourceCheckResult = {
@@ -190,6 +272,7 @@ const EMPTY_RESULT: SourceCheckResult = {
   flagged: 0,
   awaitingSecondLook: 0,
   cleared: 0,
+  readerLost: 0,
 };
 const TAKEN_DOWN = `${SOURCE_CHECK_REASON}:%`;
 
@@ -285,7 +368,7 @@ export async function takeDownUntraceableFees(
     fees = await inSavepoint(db, (scope) => scope<LiveFeeRow[]>`
       SELECT fp.fee_published_id, fp.lineage_ref, fv.fee_raw_id, fp.institution_id, fr.source, fr.source_document_id,
              fp.canonical_fee_key, fp.fee_name, fp.amount, fp.amount_kind, fp.rate_percent,
-             fp.rolled_back_at IS NOT NULL AS taken_down
+             fp.rolled_back_at IS NOT NULL AS taken_down, fr.conditions, fr.created_at AS raw_created_at
         FROM published_fee_records fp
         JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
         JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
@@ -293,7 +376,7 @@ export async function takeDownUntraceableFees(
          AND fp.institution_id = ANY(${ids}::bigint[])
     `);
     texts = await inSavepoint(db, (scope) => scope<Array<InstitutionText & { institution_id: number | string }>>`
-      SELECT DISTINCT ON (source_document_id) institution_id, source_document_id, normalized_text
+      SELECT DISTINCT ON (source_document_id) institution_id, source_document_id, normalized_text, updated_at
         FROM agent_source_texts
        WHERE institution_id = ANY(${ids}::bigint[])
          AND status = 'completed'
@@ -324,7 +407,22 @@ export async function takeDownUntraceableFees(
   for (const fee of fees) {
     const institutionId = Number(fee.institution_id);
     const counts = perInstitution.get(institutionId)!;
-    const verdict = traceLiveFee(fee, textsByInstitution.get(institutionId) ?? []);
+    const institutionTexts = textsByInstitution.get(institutionId) ?? [];
+    const verdict = traceLiveFee(fee, institutionTexts);
+    const readerLost = verdict.kind === "untraceable" && readerLostLine(fee, institutionTexts, verdict.reason);
+    if (readerLost && !(fee.taken_down && !(READER_LOSS_RESTORES_ON && restorableName(fee.fee_name)))) {
+      // The re-read lost the line, not the bank: keep it live (or put it back once restores are on).
+      result.readerLost += 1;
+      counts.checked += 1;
+      result.liveFeesChecked += 1;
+      if (fee.taken_down) {
+        restores.push(Number(fee.fee_published_id));
+        counts.restored += 1;
+      } else {
+        passing.push(Number(fee.fee_published_id));
+      }
+      continue;
+    }
     if (fee.taken_down) {
       // Already down: restore it when it now traces, otherwise leave it down.
       if (verdict.kind === "untraceable") continue;
@@ -478,7 +576,7 @@ export async function takeDownUntraceableFees(
         INSERT INTO agent_run_events (agent_run_id, event_type, status, message, detail)
         VALUES (
           ${options.runId}, 'hamilton.source_check', 'completed',
-          ${`Source-checked ${result.liveFeesChecked} live fee(s) at ${result.institutionsChecked} institution(s): ${result.traced} traced, ${result.relinked} relinked to a stored schedule, ${result.takedowns.length} taken down after a second look, ${result.flagged} flagged for a second look, ${result.restored} restored`},
+          ${`Source-checked ${result.liveFeesChecked} live fee(s) at ${result.institutionsChecked} institution(s): ${result.traced} traced, ${result.relinked} relinked to a stored schedule, ${result.takedowns.length} taken down after a second look, ${result.flagged} flagged for a second look, ${result.restored} restored, ${result.readerLost} kept because a re-read lost their line`},
           ${JSON.stringify({
             batch_id: options.batchId,
             institutions_checked: result.institutionsChecked,
@@ -490,6 +588,8 @@ export async function takeDownUntraceableFees(
             flagged_for_second_look: result.flagged,
             awaiting_second_look: result.awaitingSecondLook,
             cleared_after_first_look: result.cleared,
+            reader_lost_line: result.readerLost,
+            reader_loss_restores_on: READER_LOSS_RESTORES_ON,
             samples: result.takedowns.slice(0, 20).map((row) => ({
               fee_published_id: row.feePublishedId,
               institution_id: row.institutionId,

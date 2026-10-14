@@ -11,12 +11,38 @@ A bank/CU marketing or product manager pays ~$300 for a competitive fee report f
 their market. Why us: live verified fee data (`published_fee_catalog`) + banking domain
 expertise. Kept fully separate from the CSI day job.
 
+## How work runs
+Up to three builders at once, one per lane in `docs/plans/build-plan-2026-10-12.md` ("Lanes");
+a builder takes only its own lane's items. Work starts from that plan and the Now list at the top
+of GitHub issue #1026 (pipeline review master tracker): one issue, one branch, one PR. Before starting, search open issues, PRs
+and `main` for the same outcome, and reuse or explicitly supersede what exists.
+- Every change a review finds is documented as its own issue under a tracker: one tracker per
+  agent, plus the Foundation tracker for infrastructure, documentation and process work that
+  belongs to no agent. A review also names the issues it closes or merges, so duplicates do not
+  pile up. The Now list in #1026 (at most three items) sets the order; it is not a cap on issues.
+- No scheduled Claude routines run for Fee Insight without James's say-so. A session ends when
+  its issue's PR is open and green.
+- Words a visitor reads (pages, headlines, buttons, emails): use the `copywriting` and
+  `copy-editing` skills, follow `growth-os/context/editorial-policy.md` (every number has a
+  source) and `.agents/product-marketing.md`, and add a short copy-review note to the PR.
+- Vercel builds a preview for every PR; check customer-facing changes there.
+- Outreach and marketing sends stay parked.
+No branch deletion, force-push or direct main push under a general cleanup instruction.
+
 ## Standing rules
 - Never fake logs, records or numbers. If a count or result isn't known, say so.
 - Accuracy means the share of live published fees whose amount and category match the
   bank's own current fee schedule. The one shared check is `checkFeeAgainstSource` in
   `src/lib/custom-report/source-check.ts`; use it rather than writing another.
-- Fix PRs may merge once CI is green. Redesigns and design work wait for James's review.
+- James has standing authorization for clean, merge-ready GitHub PRs to merge without another
+  per-PR approval request. Clean means the exact current head is reviewed, required CI/checks are
+  green, there is no conflict or unresolved blocking review, and overlapping owners/dependencies
+  are reconciled. This standing authorization does NOT by itself authorize database migrations or
+  production-data mutations, permissions/security-setting changes, paid-provider activation,
+  outreach sending, force-pushes, branch deletion, or another explicitly gated production action.
+  Stacked PRs with unresolved release/migration dependencies are not merge-ready. Record the merge
+  receipt and continue instead of waiting for another routine merge approval.
+
 
 ## Project memory
 `docs/project/` is the project's durable memory; `docs/project/README.md` explains it.
@@ -26,7 +52,8 @@ expertise. Kept fully separate from the CSI day job.
   there is no fix yet). `docs/project/FINDINGS.md` holds entries through 2026-10-09 and takes no
   new ones; `scripts/ci-guards.sh findings-file-kill` enforces it.
 - When James makes a decision that changes how work is done, add it to `docs/project/DECISIONS.md`.
-- A daily routine writes the checkpoint and `docs/project/CHANGELOG.md` from merged PRs.
+- The checkpoint and `docs/project/CHANGELOG.md` come from merged PRs: written by the daily
+  routine when it is on, otherwise by the session at the end of a working day.
 - This file holds rules that stay true. Status and next steps go in a checkpoint, never here.
 
 ## Design

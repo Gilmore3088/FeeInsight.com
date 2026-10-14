@@ -261,3 +261,154 @@ export async function loadMarketGapIds(
 }
 
 export const MARKET_GAP_PRIORITY = 100;
+
+export interface SellableMarket {
+  institutionId: number;
+  name: string;
+  stateCode: string | null;
+  /** The bank's own deposits across its branches, thousands of dollars (FDIC SOD). */
+  deposits: number;
+  /** Counties its branches sit in. */
+  counties: number;
+  /** Share (0-1) of competitor deposits in those counties held by competitors with live fees. */
+  share: number;
+  shareOverdraft: number;
+  /** Whether the bank's own fees are live, so a report can set them beside the market's. */
+  ownFeesLive: boolean;
+}
+
+export interface SellableMarkets {
+  sodYear: number;
+  /** Every bank at or above `minShare`; `rows` holds the largest `limit` of them. */
+  total: number;
+  rows: SellableMarket[];
+}
+
+/**
+ * Banks whose local market is already covered: competitors with live fees hold at least
+ * `minShare` of the competitor deposits in the bank's branch counties, so a competitive fee report
+ * for that market would show most of its competition. Largest banks first; `minDeposits` and
+ * `maxDeposits` (thousands, the bank's own SOD deposits) narrow it to a size band. Same market and
+ * exclusions as getNationalCompetitorCoverage; inactive banks are left out. A coverage share,
+ * not a judgment about any bank.
+ */
+export async function getSellableMarkets(
+  db: SqlTag = sql,
+  options: {
+    minShare?: number;
+    stateCode?: string | null;
+    limit?: number;
+    minDeposits?: number | null;
+    maxDeposits?: number | null;
+    /** Only these banks (any share when minShare is 0); the limit then covers them all. */
+    institutionIds?: number[] | null;
+  } = {},
+): Promise<SellableMarkets | null> {
+  const minShare = options.minShare ?? COVERED_SHARE;
+  const stateCode = options.stateCode ?? null;
+  const ids = options.institutionIds ? options.institutionIds.map(Number).filter(Number.isInteger) : null;
+  if (ids && ids.length === 0) return null;
+  const limit = ids ? ids.length : Math.min(Math.max(Math.floor(options.limit ?? 100), 1), 500);
+  const minDeposits = options.minDeposits ?? null;
+  const maxDeposits = options.maxDeposits ?? null;
+  const rows = await db<
+    Array<{
+      sod_year: number;
+      total: number | string;
+      institution_id: number | string;
+      institution_name: string;
+      state_code: string | null;
+      own_dep: number | string;
+      counties: number | string;
+      share: number | string;
+      share_od: number | string;
+      own_live: boolean;
+    }>
+  >`
+    -- sellable markets: banks whose competitors are mostly covered
+    WITH yr AS (SELECT max(year) AS year FROM institution_branch_deposits),
+    -- National online and branchless banks are no one's local competitor (branchless-banks.ts).
+    branchless AS (
+      SELECT b.institution_id
+        FROM institution_branch_deposits b, yr
+       WHERE b.year = yr.year AND b.institution_id IS NOT NULL
+       GROUP BY b.institution_id
+      HAVING COUNT(*) <= ${BRANCHLESS_MAX_OFFICES} AND SUM(b.deposits) >= ${BRANCHLESS_MIN_DEPOSITS}
+         AND MAX(b.deposits) >= ${BRANCHLESS_ONE_OFFICE_SHARE} * SUM(b.deposits)
+    ),
+    sod AS (
+      SELECT b.institution_id, b.county_fips, sum(COALESCE(b.deposits, 0))::numeric AS dep
+        FROM institution_branch_deposits b, yr
+       WHERE b.year = yr.year AND b.institution_id IS NOT NULL
+         AND b.institution_id NOT IN (SELECT institution_id FROM branchless)
+       GROUP BY 1, 2
+    ),
+    live AS (
+      SELECT institution_id, bool_or(canonical_fee_key = 'overdraft') AS od
+        FROM published_fee_catalog GROUP BY institution_id
+    ),
+    county AS (
+      SELECT s.county_fips, sum(s.dep) AS total,
+             COALESCE(sum(s.dep) FILTER (WHERE l.institution_id IS NOT NULL), 0) AS live_dep,
+             COALESCE(sum(s.dep) FILTER (WHERE l.od), 0) AS od_dep
+        FROM sod s LEFT JOIN live l USING (institution_id)
+       GROUP BY s.county_fips
+    ),
+    buyer AS (
+      SELECT b.institution_id,
+             sum(b.dep) AS own_dep,
+             count(*) AS counties,
+             bool_or(l.institution_id IS NOT NULL) AS own_live,
+             sum(c.total - b.dep) AS comp,
+             sum(c.live_dep - CASE WHEN l.institution_id IS NOT NULL THEN b.dep ELSE 0 END) AS comp_live,
+             sum(c.od_dep - CASE WHEN l.od THEN b.dep ELSE 0 END) AS comp_od
+        FROM sod b JOIN county c USING (county_fips) LEFT JOIN live l ON l.institution_id = b.institution_id
+       GROUP BY b.institution_id
+    ),
+    sellable AS (
+      SELECT bu.*, inst.institution_name, inst.state_code
+        FROM buyer bu
+        JOIN institution_sources inst ON inst.id = bu.institution_id
+       WHERE bu.comp > 0
+         AND bu.comp_live / bu.comp >= ${minShare}
+         AND COALESCE(inst.status, 'active') = 'active'
+         AND (${stateCode}::text IS NULL OR inst.state_code = ${stateCode}::text)
+         AND (${minDeposits}::numeric IS NULL OR bu.own_dep >= ${minDeposits}::numeric)
+         AND (${maxDeposits}::numeric IS NULL OR bu.own_dep < ${maxDeposits}::numeric)
+         AND (${ids}::bigint[] IS NULL OR bu.institution_id = ANY(${ids}::bigint[]))
+    )
+    SELECT (SELECT year FROM yr) AS sod_year, count(*) OVER () AS total,
+           s.institution_id, s.institution_name, s.state_code, s.own_dep, s.counties,
+           s.comp_live / s.comp AS share, s.comp_od / s.comp AS share_od, s.own_live
+      FROM sellable s
+     ORDER BY s.own_dep DESC, s.institution_id ASC
+     LIMIT ${limit}::int
+  `;
+  if (rows.length === 0) {
+    const [yr] = await db<Array<{ year: number | null }>>`SELECT max(year) AS year FROM institution_branch_deposits`;
+    return yr?.year == null ? null : { sodYear: Number(yr.year), total: 0, rows: [] };
+  }
+  return {
+    sodYear: Number(rows[0].sod_year),
+    total: Number(rows[0].total),
+    rows: rows.map((row) => ({
+      institutionId: Number(row.institution_id),
+      name: String(row.institution_name),
+      stateCode: row.state_code,
+      deposits: Number(row.own_dep),
+      counties: Number(row.counties),
+      share: Number(row.share),
+      shareOverdraft: Number(row.share_od),
+      ownFeesLive: Boolean(row.own_live),
+    })),
+  };
+}
+
+/**
+ * Each of these banks' market coverage (any share), for prospect lists. Banks with no SOD
+ * branches, credit unions and branchless banks have none and are absent from the map.
+ */
+export async function getBuyerCoverage(ids: number[], db: SqlTag = sql): Promise<Map<number, SellableMarket>> {
+  const found = await getSellableMarkets(db, { minShare: 0, institutionIds: ids });
+  return new Map((found?.rows ?? []).map((row) => [row.institutionId, row]));
+}

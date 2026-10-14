@@ -9,7 +9,7 @@ const FOOTER_HEADING_CLASS = "text-[11px] font-bold uppercase tracking-[0.12em] 
 export function CustomerFooter() {
   return (
     <footer className="border-t border-[#E8DFD1] bg-white/40">
-      <div className="mx-auto max-w-6xl px-6 py-12 lg:py-14">
+      <div className="mx-auto max-w-page px-6 py-12 lg:py-14">
         <div className="grid grid-cols-1 gap-10 sm:grid-cols-2 lg:grid-cols-[1fr_auto_auto_auto]  lg:gap-x-16">
           {/* Brand + email */}
           <div className="lg:pr-8">

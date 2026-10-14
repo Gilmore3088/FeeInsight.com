@@ -37,10 +37,16 @@ export type GuideStat =
   | "institutions"
   | "zero_count";
 
+/** Where a statement of law or fact comes from: shown as a link after the text (#1172). */
+export type GuideSource = {
+  label: string;
+  url: string;
+};
+
 export type GuideBlock =
-  | { type: "paragraph"; text: string }
+  | { type: "paragraph"; text: string; source?: GuideSource }
   | { type: "list"; ordered?: boolean; items: string[] }
-  | { type: "callout"; tone: "tip" | "warning" | "regulatory"; text: string }
+  | { type: "callout"; tone: "tip" | "warning" | "regulatory"; text: string; source?: GuideSource }
   | {
       /** A benchmarking table row set — thresholds are tokens, never literals. */
       type: "benchmark";

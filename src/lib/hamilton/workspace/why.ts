@@ -9,21 +9,25 @@
  * most filers. On a log scale the two parts add up exactly to the income gap.
  */
 
+import { subjectPossessive } from "./subject";
 import { formatFeeAmount } from "@/lib/format";
 import type { AskResponse, Fact, FeePositionRow, SourceRef } from "./types";
 
 const WHY = /\b(?:why|what explains|what(?:'s| is) behind|what(?:'s| is) driving|driv(?:e|es|ing)|explain)\b/i;
 const INCOME = /\b(?:fee income|income|revenue|service charges?)\b/i;
-
-const LEVEL = /\b(?:compare[sd]?|comparison|level|against|versus|vs\.?|peers?|median|stack|stand)\b/i;
+/** Fee income as a share of revenue ("run a fee share below 4%"). */
+const FEE_SHARE = /\bfee (?:income )?share\b/i;
 
 /**
- * A question about where the bank's fee income stands against peers ("How does our service-charge
- * income compare with credit unions over $1 billion?"). Only for a question that names no fee: the
- * caller checks, since "our overdraft fee income against peers" is about that fee.
+ * A question about the bank's fee income: where it stands ("How does our service-charge income
+ * compare with credit unions over $1 billion?"), what a segment is doing with it ("What are $1B to
+ * $10B institutions doing around service fee income?") or its share of revenue. Only for a question
+ * that names no fee: the caller checks, since "our overdraft fee income against peers" is about
+ * that fee. Such a question is answered on income, never with one fee in its place (#1077).
  */
-export function asksIncomeLevel(question: string): boolean {
-  return INCOME.test(question.replace(/service-charge/gi, "service charge")) && LEVEL.test(question);
+export function asksIncome(question: string): boolean {
+  const text = question.replace(/service-charge/gi, "service charge");
+  return INCOME.test(text) || FEE_SHARE.test(text);
 }
 
 /** A question asking why the bank's fee income is where it is. */
@@ -126,25 +130,26 @@ export interface IncomeExplanation {
 }
 
 /** The split in plain sentences: income against peers, then price against peers, then what price accounts for. */
-export function explainIncome(split: IncomeSplit): IncomeExplanation {
+export function explainIncome(split: IncomeSplit, subjectName?: string): IncomeExplanation {
+  const subject = { subjectName };
   const lines: string[] = [];
   const facts: Fact[] = [];
   const income =
     Math.abs(Math.log(1 + split.incomeGap)) < MATERIAL
       ? `That is about the median (${money(split.peerMedian)}) of ${split.peers.toLocaleString("en-US")} ${split.peerLabel}.`
       : `That is ${pct(split.incomeGap)} ${dir(split.incomeGap)} than the median (${money(split.peerMedian)}) of ${split.peers.toLocaleString("en-US")} ${split.peerLabel}.`;
-  const first = `Your deposit service charges came to ${money(split.own)} per $1,000 of deposits over the four quarters to ${quarterLabel(split.quarterEnd)}.`;
+  const first = `${subjectPossessive(subject)} deposit service charges came to ${money(split.own)} per $1,000 of deposits over the four quarters to ${quarterLabel(split.quarterEnd)}.`;
   lines.push(first, income);
   facts.push({ text: `${first} ${income}`, source: INCOME_SOURCE(split.quarterEnd), sampleSize: split.peers });
 
   if (split.priceGap === null) {
-    lines.push("None of your published fees has enough peers publishing it to measure the price part.");
+    lines.push(`None of ${subjectPossessive(subject, false)} published fees has enough peers publishing it to measure the price part.`);
     return { shortAnswer: lines.join(" "), facts };
   }
   const price =
     Math.abs(split.priceGap) < 0.01
-      ? `Across ${split.priceFees} fees with a peer comparison, your published prices sit at their peer medians on average.`
-      : `Across ${split.priceFees} fees with a peer comparison, your published prices sit ${pct(split.priceGap)} ${dir(split.priceGap)} than their peer medians on average.`;
+      ? `Across ${split.priceFees} fees with a peer comparison, ${subjectPossessive(subject, false)} published prices sit at their peer medians on average.`
+      : `Across ${split.priceFees} fees with a peer comparison, ${subjectPossessive(subject, false)} published prices sit ${pct(split.priceGap)} ${dir(split.priceGap)} than their peer medians on average.`;
   lines.push(price);
   facts.push({ text: price, source: FEES_SOURCE });
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { borrowedFrequency, frequencyFamily, frequencyFromLine, settledFrequency, wordsAfterPrice } from "./fee-frequency";
+import { borrowedFrequency, boxTableAnnualHeader, frequencyFamily, frequencyFromLine, perEventFrequency, settledFrequency, wordsAfterPrice } from "./fee-frequency";
 
 describe("frequencyFromLine (live excerpts, Oct 8)", () => {
   it("reads the words right after the fee's own price", () => {
@@ -125,5 +125,90 @@ describe("frequencyFromLine (live excerpts, Oct 8)", () => {
     // A label still ends the words before the next price, and a minimum is still another basis.
     expect(frequencyFromLine("Monthly maintenance fee: $8.00 Per check: $0.20", 8)).toBe("monthly");
     expect(frequencyFromLine("Research | $25.00 ($25.00 minimum)", 25)).toBeNull();
+  });
+
+  it("reads 'after 3 in a month' and 'exceeding two per month' as allowances (v7, Darwin's held rows)", () => {
+    expect(settledFrequency("| IRA Savings Excessive Withdrawal | $15 Each after 3 in a month |", 15, "monthly", "excess_withdrawal")).toBe("per_item");
+    expect(settledFrequency("A $1.00 excess withdrawal fee will be charged for each in-person debit transaction exceeding two per month.", 1, "monthly", "excess_withdrawal")).toBeNull();
+    expect(settledFrequency("Fax | $2.00/Page", 2, null, "account_research")).toBe("per_item");
+    expect(settledFrequency("Monthly Service Fee | $5.00 a month", 5, "monthly", "monthly_maintenance")).toBe("monthly");
+  });
+});
+
+describe("a rate basis in the fee's own name (v8, whole-record sample 2)", () => {
+  it("clears a flat frequency on a fee charged per hour", () => {
+    const line = "Account Balancing (per hour) / $35.00 Each";
+    expect(frequencyFromLine(line, 35)).toBeNull();
+    expect(settledFrequency(line, 35, "per_item", "account_research")).toBeNull();
+    expect(settledFrequency("Research ($10 min) /hr | $20.00 each", 20, "per_item", "account_research")).toBeNull();
+  });
+
+  it("keeps a period when the name only mentions a minimum balance", () => {
+    expect(frequencyFromLine("Minimum Balance Fee | $5.00 per month", 5)).toBe("monthly");
+    expect(settledFrequency("Classic Money Market Account (balance below $1,000) | $3.00/monthly", 3, "monthly", "minimum_balance")).toBe("monthly");
+    expect(frequencyFromLine("Copy of Share Draft (Check) Faxed | $6.00 each", 6)).toBe("per_item");
+  });
+});
+
+describe("an allowance written as a count per month (v9, 101933)", () => {
+  it("reads the fee as per item, not the free-fee row's monthly", () => {
+    const line = "Monthly service fee …………………… N/C | ATM transaction (each above 6/month)… $ 1.00 | *Depending on location";
+    expect(frequencyFromLine(line, 1)).toBe("per_item");
+    expect(settledFrequency(line, 1, "monthly", "atm_non_network")).toBe("per_item");
+    expect(frequencyFromLine("Monthly service fee | $5.00", 5)).toBe("monthly");
+  });
+});
+
+describe("boxTableAnnualHeader (v10, live documents Oct 9)", () => {
+  it("reads the annual column header over a box row (Altra 104006)", () => {
+    const text = [
+      "• Foreign Checks in U.S. dollars $1,000 & over | Box Size: | Annual Rental:",
+      "3 x 5 x 21 | $25",
+      "*Inactive Savings Account | 3 x 10 x 21 | $35",
+    ].join("\n");
+    expect(settledFrequency("3 x 5 x 21 | $25", 25, null, "safe_deposit_box")).toBeNull();
+    expect(boxTableAnnualHeader(text, "3 x 5 x 21 | $25", 25)).toBe("annual");
+    expect(boxTableAnnualHeader(text, "3 x 10 x 21 | $35", 35)).toBe("annual");
+  });
+
+  it("reads through glued neighbour columns that still carry box sizes (doc 7866)", () => {
+    const text = [
+      "Size | Annual Fee",
+      "Account Activity Printout . . . $1 | 3x5 . . . . $40",
+      "Account Research/Balancing . . . $25/hr | 5x5 . . . . $55",
+    ].join("\n");
+    expect(boxTableAnnualHeader(text, "Account Research/Balancing . . . $25/hr | 5x5 . . . . $55", 55)).toBe("annual");
+  });
+
+  it("leaves a box table with no period, or a monthly header, blank", () => {
+    expect(boxTableAnnualHeader("Safe Deposit Boxes:\n2 x 5 $20\n3 x 5 $30", "3 x 5 $30", 30)).toBeNull();
+    expect(boxTableAnnualHeader("Box Size | Monthly Rent\n3 x 5 | $5", "3 x 5 | $5", 5)).toBeNull();
+    expect(boxTableAnnualHeader("Box Size | Annual or Monthly Rent\n3 x 5 | $5", "3 x 5 | $5", 5)).toBeNull();
+  });
+
+  it("does not carry another fee's annual name down to a box table (doc 22340)", () => {
+    const text = ["Annual Fee | $10.00", "Termination Fee | $25.00", "Safe Deposit Boxes*", "3 x 5 | $50.00"].join("\n");
+    expect(boxTableAnnualHeader(text, "3 x 5 | $50.00", 50)).toBeNull();
+  });
+
+  it("needs the fee's own price on the line it finds", () => {
+    expect(boxTableAnnualHeader("Box Size | Annual Rent\n3 x 5 | $25", "3 x 5 | $25", 30)).toBeNull();
+    expect(boxTableAnnualHeader("Box Size | Annual Rent\n3 x 5 | $25", "5 x 5 | $40", 40)).toBeNull();
+  });
+});
+
+describe("perEventFrequency (#1196)", () => {
+  it("never leaves a period on an NSF fee", () => {
+    // Addition Financial: "$35.00 per month Nonsufficient funds" split at the decimal point.
+    expect(perEventFrequency("nsf", "monthly", "Monthly fee $10.00 per month Nonsufficient funds $35.00", 35)).toBeNull();
+    expect(perEventFrequency("nsf", "monthly", "Insufficient Funds (NSF) $25.00 each", 25)).toBe("per_item");
+    expect(perEventFrequency("nsf", "annual", null, 30)).toBeNull();
+  });
+
+  it("keeps a per-event frequency, a blank, and every other category as they are", () => {
+    expect(perEventFrequency("nsf", "per_item", "NSF $30.00 per month", 30)).toBe("per_item");
+    expect(perEventFrequency("nsf", null, "NSF $30.00", 30)).toBeNull();
+    expect(perEventFrequency("overdraft", "monthly", "Enhanced Overdraft Privilege Fee (per month) $5.00", 5)).toBe("monthly");
+    expect(perEventFrequency("monthly_maintenance", "monthly", "Monthly fee $10.00", 10)).toBe("monthly");
   });
 });

@@ -7,6 +7,7 @@ import {
   type BillStage,
 } from "@/lib/regulatory/open-states";
 import { recordRegistryPartition, type RegistryDb } from "./partitions";
+import { flagOn } from "./live-flag";
 
 /**
  * Magellan registry step: read bank and credit union fee bills from Open States into
@@ -46,11 +47,12 @@ const BATCH_IDLE_RETRY_HOURS = 24;
  * 2: groundwater "overdraft" is no longer an overdraft fee (2026-10-08).
  * 3: any "overdraft" in a water bill that never mentions banking is dropped (2026-10-08).
  * 4: overdraft and insufficient funds count only in a sentence about banking or fees (2026-10-08).
+ * 5: a fee or penalty sentence about taxes or a state agency no longer counts (NC HB 1164, 2026-10-09).
  */
-export const STATE_BILLS_TAGGING_VERSION = 4;
+export const STATE_BILLS_TAGGING_VERSION = 5;
 
 export function stateBillsLive(env: NodeJS.ProcessEnv = process.env): boolean {
-  return env.STATE_BILLS_TRACKER_LIVE === "true";
+  return flagOn(env.STATE_BILLS_TRACKER_LIVE);
 }
 
 export interface RegistryStateBillsResult {
@@ -148,15 +150,16 @@ export async function runRegistryStateBills(
         identifier, session, stage, stage_on
       )
       SELECT 'open_states', r.id, 'state_bill', r.title, r.state_code,
-             COALESCE(r.first_action_date, r.latest_action_date, CURRENT_DATE::text)::date, r.url,
+             COALESCE(r.introduced_date, r.first_action_date, r.latest_action_date, CURRENT_DATE::text)::date, r.url,
              ARRAY(SELECT jsonb_array_elements_text(r.topics)),
              r.identifier, r.session, r.stage, r.stage_date::date
         FROM jsonb_to_recordset(${payload}::jsonb) AS r(
           id text, state_code text, session text, identifier text, title text, url text,
-          first_action_date text, latest_action_date text, stage text, stage_date text, topics jsonb
+          first_action_date text, introduced_date text, latest_action_date text, stage text, stage_date text, topics jsonb
         )
       ON CONFLICT (source, external_id) DO UPDATE SET
         title = EXCLUDED.title,
+        published_on = EXCLUDED.published_on,
         url = EXCLUDED.url,
         topics = EXCLUDED.topics,
         stage = EXCLUDED.stage,

@@ -1,17 +1,22 @@
+import { feeApplicability } from "@/lib/fee-audience";
 import {
   extractCandidatesFromText,
   MAX_FEES_PER_DOCUMENT,
+  withBoxSizeCellsSplit,
+  withSidewaysBoxTable,
+  withoutBusinessOnlyFees,
   type ExtractedFeeCandidate,
   type ExtractionRulesResult,
   type HeldFeeCandidate,
 } from "@/lib/agents/knox/rules";
 import { FAMILY_EXPERTS, priceWindows, runFamilyExpert } from "@/lib/agents/knox/families";
+import { newestColumnText } from "@/lib/fee-change-columns";
 import { namesALimit, namesAWorkedExample, passesDarwinChecks, readsAMeasuredAmount, tidyFeeName } from "@/lib/agents/knox/layout";
 import { extractTableCandidates, KNOX_TABLE_STRATEGY } from "@/lib/agents/knox/table-rows";
 import { checkFeeAgainstSource, joinLabeledFeeCardText } from "@/lib/custom-report/source-check";
 import { rateFeeFromHeld, type RateFeeCandidate } from "@/lib/agents/knox/percent";
 import { contextFees, NO_LONGER_CHARGED } from "@/lib/agents/knox/context-names";
-import { settledFrequency } from "@/lib/fee-frequency";
+import { frequencyFromLine, settledFrequency } from "@/lib/fee-frequency";
 
 /**
  * Knox's free extraction team, run over one whole document. Pure.
@@ -41,7 +46,24 @@ import { settledFrequency } from "@/lib/fee-frequency";
 // v50: a personal per-item-paid row under an overdraft heading (context-names.ts).
 // v51: a monthly fee also takes the balance that avoids it, its waiver and the opening deposit from its account's lines.
 // v52: frequency settled by the fill's rule (`settledFrequency`), with fee-frequency v4 wording.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 52 } as const;
+// v53: a fax service is document reproduction, the fold's home for it (`FAX_SERVICE`).
+// v54: a copy charged by the page is document reproduction, even under research (`PER_PAGE_COPY`).
+// v55: a monthly fee's lineup is never read from a neighbour: the next account's fee line, another
+// account's clause of a one-line footnote, or a fee heading above "Money Market" (`lineup.ts`).
+// v56: balancing or reconciling a checkbook is account research (`CHECKBOOK_RECONCILIATION`).
+// v57: a long table row is traced by its short cells, and a name drops a details cell, an "N/A" cell
+// and a leading "Otherwise,"; "to avoid $3 paper statement fee" is named after its price (Arvest, Old National).
+// v59: a "Cross-Border Banking" bundle or package is an account, so its fee is the account's
+// maintenance fee, not the card's currency fee (`CROSS_BORDER_BUNDLE`; RBC, TD, BMO).
+// v60: a threshold parenthetical keeps its figure in the name ("Cashier's Checks ($10,000.01 and Over)"),
+// a "Name" column label is dropped, and "In addition to the ... Fee" keeps its words (`nameFrom`, `tidyFeeName`).
+// v61: adjusting an ATM deposit or dispute is account research, not a network ATM fee (`ATM_ADJUSTMENT`).
+// v62: a dot-leader line's name wrapped over lines above it is read whole (`joinWrappedLeaderNames`),
+// "Domestic Outgoing (client only) .... $25.00 per wire" is a wire, and one line read by two
+// specialists is one fee (Northern Trust).
+// v63: a box size glued after another fee's name starts its own line (doc 20570).
+// v64: a box table printed sideways, sizes over prices, is read one box per line (SCCU 8109).
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 65 } as const;
 
 export interface SpecialistRun {
   strategy: string;
@@ -83,7 +105,10 @@ function words(value: string): string {
  * "Overdraft fee, 2nd and subsequent items $35") are both kept.
  */
 export function sameFee(a: ExtractedFeeCandidate, b: ExtractedFeeCandidate): boolean {
-  if (a.canonicalHint !== b.canonicalHint || a.amount !== b.amount) return false;
+  if (a.canonicalHint !== b.canonicalHint || a.amount !== b.amount || a.feeAudience !== b.feeAudience) return false;
+  // v62: one source line read by two specialists is one fee, whatever each named it
+  // ("Domestic Incoming wire" and "Wire Transfers: Domestic Incoming", Northern Trust).
+  if (a.excerpt.trim() === b.excerpt.trim()) return true;
   const nameA = words(a.feeName);
   const nameB = words(b.feeName);
   if (nameA === nameB || words(a.excerpt).includes(nameB) || words(b.excerpt).includes(nameA)) return true;
@@ -94,6 +119,12 @@ export function sameFee(a: ExtractedFeeCandidate, b: ExtractedFeeCandidate): boo
 function tracesToSource(text: string, feeName: string, amount: number): boolean {
   const result = checkFeeAgainstSource(text, feeName, amount, ".");
   return result.ok || result.reason === "tiered_fee";
+}
+
+/** The self-check's verdict: whether the fee traces, and the row it traced to. */
+function selfCheck(text: string, feeName: string, amount: number, canonicalHint?: string): { traces: boolean; row: string | null } {
+  const result = checkFeeAgainstSource(text, feeName, amount, ".", canonicalHint);
+  return { traces: result.ok || result.reason === "tiered_fee", row: result.ok ? result.sourceLine : null };
 }
 
 function heldKey(held: HeldFeeCandidate): string {
@@ -112,7 +143,7 @@ export function closesUnopenedParen(name: string): boolean {
  */
 function withContextFees(text: string, read: ExtractionRulesResult): ExtractionRulesResult {
   return {
-    candidates: [...contextFees(text), ...read.candidates.filter((fee) => !NO_LONGER_CHARGED.test(fee.excerpt))],
+    candidates: [...contextFees(text), ...read.candidates.filter((fee) => fee.audienceEvidence != null || !NO_LONGER_CHARGED.test(fee.excerpt))],
     held: read.held.filter((row) => !NO_LONGER_CHARGED.test(row.excerpt)),
   };
 }
@@ -120,11 +151,15 @@ function withContextFees(text: string, read: ExtractionRulesResult): ExtractionR
 export function runFreeSpecialists(sourceText: string): FreeExtractionResult {
   // Labeled fee cards ("Fee TypeX" / ... / "Fee$5.00") are read as one row, as the shared
   // check reads them; the self-check still runs against the stored text.
-  const text = joinLabeledFeeCardText(sourceText);
+  // v62: a fee footnoted as business-only is no specialist's to read (`withoutBusinessOnlyFees`).
+  // v63: a safe deposit box size glued after a fee's name starts its own line (`withBoxSizeCellsSplit`).
+  // v64: a box table printed sideways, sizes over prices, becomes one line per box (`withSidewaysBoxTable`).
+  const text = withSidewaysBoxTable(withBoxSizeCellsSplit(withoutBusinessOnlyFees(joinLabeledFeeCardText(sourceText))));
   const windows = priceWindows(text);
   const specialists: Array<{ strategy: string; version: number; pass: 1 | 2; run: () => ExtractionRulesResult }> = [
     { ...KNOX_RULES_STRATEGY, pass: 1, run: () => withContextFees(text, extractCandidatesFromText(text)) },
-    { ...KNOX_TABLE_STRATEGY, pass: 2, run: () => extractTableCandidates(text) },
+    // v62: the table pass reads a fee-change table at its newest column too, as the self-check does.
+    { ...KNOX_TABLE_STRATEGY, pass: 2, run: () => extractTableCandidates(newestColumnText(text)) },
     ...FAMILY_EXPERTS.map((expert) => ({
       strategy: expert.strategy,
       version: expert.version,
@@ -155,8 +190,15 @@ export function runFreeSpecialists(sourceText: string): FreeExtractionResult {
       // v52: the same rule as Hamilton's frequency fill (`settledFrequency`), so a period the line
       // never states is dropped on a per-event fee and a per-item reading never lands on a period
       // category.
-      const frequency = settledFrequency(read.excerpt, read.amount, read.frequency, read.canonicalHint);
-      const candidate = { ...read, feeName: tidyFeeName(read.feeName), frequency };
+      // v57: a fee whose own row traces reads its frequency from that row, not from a window
+      // that stops at the price ("... four (4) OD fees per day ... | $17.00 | per item" is per item).
+      const feeName = tidyFeeName(read.feeName);
+      const checked = selfCheck(text, feeName, read.amount, read.canonicalHint);
+      const rowFrequency = checked.row ? frequencyFromLine(checked.row, read.amount) : null;
+      const frequency = rowFrequency
+        ? settledFrequency(checked.row, read.amount, rowFrequency, read.canonicalHint)
+        : settledFrequency(read.excerpt, read.amount, read.frequency, read.canonicalHint);
+      const candidate = { ...read, ...feeApplicability(feeName, read.excerpt, read.amount), feeName, frequency };
       // v28: a limit is not a price ("Zelle transfer limit | $1,000").
       if (namesALimit(candidate.feeName, candidate.canonicalHint)) continue;
       // v32: a name that closes a parenthesis it never opened ("SCCU for using a non-SCCU
@@ -166,7 +208,7 @@ export function runFreeSpecialists(sourceText: string): FreeExtractionResult {
       if (namesAWorkedExample(candidate.feeName)) continue;
       // v32: the figure after "is at least" or "Fee on (the)" is a balance or a transaction.
       if (readsAMeasuredAmount(text, candidate.feeName, candidate.amount)) continue;
-      if (!tracesToSource(text, candidate.feeName, candidate.amount)) {
+      if (!checked.traces) {
         selfCheckFailed += 1;
         untraced.push({
           shape: "untraced",
@@ -186,6 +228,7 @@ export function runFreeSpecialists(sourceText: string): FreeExtractionResult {
         ? candidates.some(
             (prior) =>
               prior.canonicalHint === candidate.canonicalHint &&
+              prior.feeAudience === candidate.feeAudience &&
               prior.amount === candidate.amount &&
               prior.feeName.toLowerCase() === candidate.feeName.toLowerCase(),
           )
@@ -226,7 +269,7 @@ export function runFreeSpecialists(sourceText: string): FreeExtractionResult {
   for (const candidate of [...candidates]) {
     const twin = candidate.canonicalHint === "nsf" ? "overdraft" : candidate.canonicalHint === "overdraft" ? "nsf" : null;
     if (!twin || !NSF_AND_OVERDRAFT.test(candidate.feeName)) continue;
-    if (candidates.some((prior) => prior.canonicalHint === twin && prior.amount === candidate.amount)) continue;
+    if (candidates.some((prior) => prior.canonicalHint === twin && prior.feeAudience === candidate.feeAudience && prior.amount === candidate.amount)) continue;
     if (candidates.length >= MAX_FEES_PER_DOCUMENT || !passesDarwinChecks(twin, candidate.feeName, candidate.amount)) continue;
     candidates.push({ ...candidate, canonicalHint: twin });
   }

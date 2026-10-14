@@ -1,3 +1,5 @@
+import { isConsumerFee, scopedFeeStatements, type FeeAudience } from "@/lib/fee-audience";
+import { darwinAudience } from "./audience";
 import { createHash } from "crypto";
 
 import { sql } from "@/lib/data-store/connection";
@@ -7,9 +9,22 @@ import { normalizeStateCode } from "@/lib/agents/state-lane-memory";
 import { WHOLE_DOCUMENT_BATCH } from "@/lib/agents/document-batch";
 import { currentCopySchemaReady } from "@/lib/agents/magellan/current-copy";
 import { CATEGORY_GUARD_VERSION, checkFeeCategory, refileCategory } from "@/lib/fee-category-guard";
+import { RETIRED_CATEGORIES } from "@/lib/fee-fold";
+import { RULE_WHY, ruleFor } from "@/lib/agents/hamilton/eval-verdicts";
 import { checkFeeAgainstSource, checkRateAgainstSource } from "@/lib/custom-report/source-check";
+import { perEventFrequency, settledFrequency } from "@/lib/fee-frequency";
+import { excerptOf } from "@/lib/agents/hamilton/frequency-fill";
 import { PERCENT_FEE_RANGES, isPercentFee, percentFeeAllowed, ratePercentOf, type RateFields } from "@/lib/percent-fees";
 import { darwinFeedbackRows, recordDarwinFeedback } from "./feedback";
+import { recheckVerifiedFees, type VerifiedRecheckResult } from "./verified-recheck";
+import {
+  categoryChangeCandidates,
+  DARWIN_CATEGORY_CHANGE_LIMIT,
+  DARWIN_CATEGORY_CHANGE_REJUDGE_LIVE,
+  selectCategoryChangeRows,
+  summarizeCategoryChange,
+  type CategoryChangeRejudgeSummary,
+} from "./category-change";
 import { CANONICAL_KEY_MAP } from "@/lib/fee-taxonomy";
 import { recordHamiltonMonitorSignal } from "@/lib/hamilton/monitor-signals";
 import { inSavepoint } from "@/lib/agents/savepoint";
@@ -25,6 +40,7 @@ import {
   isExplicitZeroFee,
   ZERO_FEE_RAW_FLAG,
   ZERO_FEE_VERIFIED_FLAG,
+  CATEGORY_AMOUNT_ENVELOPES,
 } from "./envelopes";
 import { darwinEnvelopeFor, loadLearnedEnvelopes, type LearnedEnvelope } from "./learned-envelopes";
 import {
@@ -53,6 +69,30 @@ type SqlTag = typeof sql;
 // re-selects every decided row, and rows once held back as `duplicate_in_batch` would
 // then be verified as second copies of an already verified fee (only `fee_raw_id` is unique).
 export const DARWIN_VERIFY_STRATEGY = { strategy: "verify.rules", version: 3 } as const;
+/**
+ * The source check (`checkFeeAgainstSource`, Accuracy's `src/lib/custom-report/source-check.ts`)
+ * as Darwin read it, recorded on every decision. A `not_in_source` rejection was final: the row
+ * was never read again, so a fee the check could not trace before a fix stayed rejected after it
+ * (1,126 rows at 499 banks by 2026-10-09, Northern Trust's wrapped-name $25 overdraft among them).
+ * Raising this number gives every `not_in_source` rejection stamped lower one more read, the way
+ * a guard bump re-checks `category_mismatch`; a row the check still fails is stamped and done.
+ * Bump it when a source-check fix lands that should reach rejected rows. v1: 2026-10-09, after
+ * Knox v62 (#861) taught the check wrapped leader names, per-wire lines and former-fee columns.
+ * v2: 2026-10-09 (a1119f26), after the check learned customer audience: a completed fee
+ * elimination scoped to one audience is read as that audience's $0, an NSF price on a schedule
+ * whose completed change statement does not name it is not the fee, a price that conflicts with
+ * the schedule's audience statement is not the fee, and an overdraft cushion or a per-day total
+ * is not a per-item overdraft or NSF price.
+ */
+export const DARWIN_SOURCE_CHECK_VERSION = 2;
+/**
+ * The verified row's frequency was settled from the fee's own schedule line (`settledFrequency`,
+ * the same rule as Hamilton's frequency fill and Knox v52) because Knox's stated frequency
+ * contradicted it or was never stated there: "$1.00 per withdrawal in excess of six per month"
+ * read as monthly is charged per item (held excess-withdrawal rows, Oct 9). Since #1196 an NSF fee
+ * never keeps a period (`perEventFrequency`): it takes its line's per-item wording or none.
+ */
+export const FREQUENCY_SETTLED_FLAG = "darwin_frequency_settled";
 
 export const DARWIN_VERIFY_DEFAULT_LIMIT = 100;
 export const DARWIN_VERIFY_MAX_LIMIT = 500;
@@ -74,7 +114,12 @@ export type DarwinReasonCode =
   | "peer_outlier"
   | "duplicate_in_batch"
   | "duplicate_verified"
-  | "percent_not_publishable";
+  | "percent_not_publishable"
+  | "category_lesson_pending"
+  | "retired_category"
+  | "conditional_zero"
+  | "name_rule"
+  | "insert_failed";
 
 /**
  * `rejected`: the row cannot become a verified fee as read. `needs_review`: the row may
@@ -96,16 +141,149 @@ export const DARWIN_REASON_TEXT: Readonly<Record<DarwinReasonCode, string>> = {
   duplicate_in_batch: "Same fee already verified in this batch",
   duplicate_verified: "Duplicate verified row",
   percent_not_publishable: "A rate in a category that does not publish rates (often an interest rate, not a fee)",
+  category_lesson_pending: "Fee name belongs to a category the guard does not place it in yet; held until the guard learns it",
+  retired_category: "Category retired by the top-50 fold and the name has no home in a live one; Hamilton never publishes it",
+  conditional_zero: "A $0 fee whose own schedule line prices it ($0 if a condition is met, else a charge); the charge is the fee",
+  name_rule: "The name or line fails a rule Hamilton would take the live fee down for",
+  insert_failed: "The database refused the verified row; held for review so the rest of the batch still runs",
 };
+
+const NONZERO_DOLLAR = /\$\s*(\d[\d,]*(?:\.\d{1,2})?)/g;
+const PRICE_CELL = /\$|\bfree\b|\bn\/c\b|\bno charge\b/i;
+// Words of a fee name that every fee shares; a cell has to carry one of the name's other words
+// before it is this fee's ("Garnish & Levy Fee" is not the "Notary Fee" cell).
+const GENERIC_NAME_WORDS = new Set(["fee", "fees", "charge", "charges", "service", "services", "per", "each", "item", "account", "acct", "occurrence"]);
+const NON_CUSTOMER = "non-?\\s?(?:members?|customers?|clients?|account\\s?holders?)";
+// "$5 - Non-Members", "Non-members $5", "$10 for non-customers": the other party's price, never this
+// customer's condition (UAT, 2026-10-09: Notary Fee "$0 - Members $5 - Non-Members" is a free fee).
+const NON_CUSTOMER_PRICE = new RegExp(`\\$\\s*\\d[\\d,]*(?:\\.\\d{1,2})?[^$|]{0,25}?${NON_CUSTOMER}|${NON_CUSTOMER}[^$|]{0,25}?\\$\\s*\\d[\\d,]*(?:\\.\\d{1,2})?`, "gi");
+// "$1 minimum opening requirement", "Minimum deposit to open: $25", "$50 minimum to open": the deposit
+// that opens the account, not a price the fee falls back to.
+const OPENING_DEPOSIT = /\$\s*\d[\d,]*(?:\.\d{1,2})?\s*(?:minimum\s+)?(?:opening|to\s+open|deposit\s+to\s+open)(?!\s*:)|(?:minimum\s+(?:deposit\s+)?to\s+open|minimum\s+opening\s+(?:deposit|balance|requirement)|opening\s+(?:deposit|requirement))[^$|]{0,20}?\$\s*\d[\d,]*(?:\.\d{1,2})?/gi;
+// A "Label:" inside a cell that lists several ("Monthly Service Charge: FREE Minimum Balance: $1.00"):
+// a run of capitalised words (lower-case fillers allowed) ending in a colon.
+const CELL_LABEL = /(?<=^|\s)(?:[A-Z][\w/&()*'-]*(?:\s(?:to|of|for|and|or|per|in|on|a|an|the))*\s){0,5}[A-Z][\w/&()*'-]*:\s/g;
+
+function nameTokens(feeName: string | null | undefined): string[] {
+  return (feeName ?? "").toLowerCase().match(/[a-z]{3,}/g) ?? [];
+}
+
+/** Index of the part that carries the most words of the fee name, -1 when none does. */
+function bestPart(parts: string[], tokens: string[]): number {
+  const specific = tokens.filter((token) => !GENERIC_NAME_WORDS.has(token));
+  let best = -1;
+  let bestScore = 0;
+  parts.forEach((part, index) => {
+    const lower = part.toLowerCase();
+    // A name with its own words needs one of them in the part; a generic word alone is not a match.
+    if (specific.length > 0 && !specific.some((token) => lower.includes(token))) return;
+    const score = tokens.filter((token) => lower.includes(token)).length;
+    if (score > bestScore) {
+      bestScore = score;
+      best = index;
+    }
+  });
+  return best;
+}
+
+function isPriceCell(cell: string | undefined): boolean {
+  return cell != null && PRICE_CELL.test(cell) && (cell.match(/[a-z]+/gi)?.length ?? 0) <= 4;
+}
+
+/**
+ * The part of a schedule line that belongs to this fee: on a table line (cells split by " | ")
+ * the cell that carries the most words of the fee name, plus the next cell when it reads as a
+ * price ("$6.95 per Month", "FREE") and is the only price cell that follows; a prose line is used
+ * whole. Keeps a neighbour's price in the same table row ("Monthly Maintenance | Free | Assisted
+ * Phone Transactions* | $3") from being read as this fee's. A row of a comparison table ("Monthly
+ * fee | $0 | $5* | $0") prices one fee per product column, so only the name cell is this fee's;
+ * inside a cell that lists several "Label: value" pairs, only the fee's own label and value count.
+ * Pure.
+ */
+export function ownSegment(line: string, feeName: string | null | undefined): string {
+  // Cells: table columns (" | "), items of a comma list ("FREE Debit Card, FREE Bill Pay, ... up to
+  // $10"), and dot-leader entries ("Garnish & Levy Fee ……… $25.00 per Item Research ……… $20.00").
+  const cells = line.split(/\s\|\s|,\s+|[.…]{3,}\s*/).filter((cell) => cell.trim().length > 0);
+  const tokens = nameTokens(feeName);
+  if (cells.length < 2) return bestPart(cells, tokens) < 0 ? "" : ownClause(line, tokens);
+  const best = bestPart(cells, tokens);
+  // No cell carries a word of the name: the line's prices cannot be this fee's.
+  if (best < 0) return "";
+  const next = cells[best + 1];
+  const comparisonRow = isPriceCell(next) && isPriceCell(cells[best + 2]);
+  const own = ownClause(cells[best], tokens);
+  return isPriceCell(next) && !comparisonRow ? `${own} | ${next}` : own;
+}
+
+/** The "Label: value" clause of a cell that names this fee, when the cell holds several. */
+function ownClause(cell: string, tokens: string[]): string {
+  const starts = [...cell.matchAll(CELL_LABEL)].map((match) => match.index).filter((index) => index > 0);
+  if (starts.length === 0) return cell;
+  const clauses = [0, ...starts].map((start, index, all) => cell.slice(start, all[index + 1]).trim()).filter((clause) => clause.length > 0);
+  if (clauses.length < 2) return cell;
+  const best = bestPart(clauses, tokens);
+  return best < 0 ? cell : clauses[best];
+}
+
+/**
+ * A $0 fee is conditional when its own part of the line (or its name) also prices it or names a
+ * balance band: "Monthly Fee: $0 with $100 minimum daily balance OR $2.50/month", "Bill Pay - FREE
+ * with E-Statements and Debit Card | $6.95 per Month", "Monthly fee for balance of $500 & over |
+ * FREE" (the $5 row is the line below). The customer who misses the condition pays the charge, so
+ * $0 is not the fee; the row is held, never verified as free (UAT, 2026-10-09: 3 of the 4 wrong
+ * rows in a 20-row check of the not_in_source re-select were $0 readings of priced fees). Not
+ * conditions (UAT 7/10 takedown check, 2026-10-09): a neighbour's price in the same table row,
+ * comma list or dot-leader run ("Monthly Maintenance | Free | Assisted Phone Transactions* | $3");
+ * the other columns of a comparison table ("Monthly fee | $0 | $5* | $0"); a non-member or
+ * non-customer price ("$0 - Members $5 - Non-Members"); another label in the same cell ("Monthly
+ * Service Charge: FREE Minimum Balance: $1.00 | Monthly Balance Fee: $7.50"); and the deposit that
+ * opens the account ("No monthly service fee and just $1 minimum opening requirement"). Pure.
+ */
+export function conditionalZero(amount: number | null, line: string | null | undefined, feeName: string | null | undefined): boolean {
+  if (amount !== 0) return false;
+  // In a completed audience-specific elimination, the other audience's old/new
+  // prices are not conditions on this consumer's $0. Exact source pairing only.
+  if (scopedFeeStatements(line ?? "").some((fee) =>
+    fee.amount === 0 && fee.feeTreatment === "eliminated" && fee.feeName.toLowerCase() === feeName?.toLowerCase())) return false;
+  const text = `${line ? ownSegment(line, feeName) : ""} ${feeName ?? ""}`.replace(NON_CUSTOMER_PRICE, " ").replace(OPENING_DEPOSIT, " ");
+  return [...text.matchAll(NONZERO_DOLLAR)].some((match) => Number(match[1].replace(/,/g, "")) > 0);
+}
+
+/**
+ * Category lessons Darwin knows before the shared guard does. The guard
+ * (`src/lib/fee-category-guard.ts`, Accuracy's) is the one place a name is matched to a
+ * category, so Darwin never re-files a row itself: a row whose filed category matches a
+ * lesson here is held as `category_lesson_pending` (needs_review, no verified row, so Hamilton
+ * cannot publish it) and comes back for one more read when `CATEGORY_GUARD_VERSION` rises,
+ * the same path a `category_mismatch` takes. Once the guard carries the lesson its re-file rule
+ * moves the row and the hold no longer matches; drop the entry here in the same change.
+ * 2026-10-09: "Bond return items" $35 (raw 246460) filed `nsf` passed the v57 guard; a returned
+ * bond or coupon is a returned deposited item (RDI), not a customer NSF.
+ */
+export const DARWIN_CATEGORY_HOLDS: ReadonlyArray<{
+  filedAs: string;
+  shouldBe: string;
+  when: RegExp;
+  since: string;
+}> = [
+  // The bond-return hold (2026-10-09) ended with guard v58, which re-files those rows.
+];
+
+/** The pending category lesson that holds this row, if any. */
+export function pendingCategoryLesson(canonicalFeeKey: string | null, feeName: string | null | undefined) {
+  if (!canonicalFeeKey || !feeName) return null;
+  return DARWIN_CATEGORY_HOLDS.find((hold) => hold.filedAs === canonicalFeeKey && hold.when.test(feeName)) ?? null;
+}
 
 function decisionFor(code: DarwinReasonCode | null): DarwinDecision {
   if (code == null) return "verified";
-  if (code === "outside_envelope" || code === "peer_outlier") return "needs_review";
+  if (code === "outside_envelope" || code === "peer_outlier" || code === "category_lesson_pending" || code === "conditional_zero" || code === "insert_failed") return "needs_review";
   if (code === "duplicate_in_batch" || code === "duplicate_verified") return "duplicate";
   return "rejected";
 }
 
 export interface RawFeeRow extends RateFields {
+  fee_audience?: FeeAudience;
   fee_raw_id: number | string;
   institution_id: number | string;
   source_url: string | null;
@@ -163,6 +341,9 @@ export interface RunDarwinVerifyResult {
   outcomes: Partial<Record<AttemptOutcome, number>>;
   /** Skipped rows by reason code. */
   reasonCounts: Partial<Record<DarwinReasonCode, number>>;
+  recheck: VerifiedRecheckResult | null;
+  /** #1295: rows whose Knox category changed since Darwin's decision; null without the learning log. */
+  categoryChange: CategoryChangeRejudgeSummary | null;
   /** Verified rows that are explicit $0 (free) fees. */
   zeroFeesVerified: number;
   /** Pass 2: rows held for review as far outside their state peers. */
@@ -208,7 +389,8 @@ function parseFlags(value: unknown): string[] {
   return [];
 }
 
-function canonicalHintFrom(row: Pick<RawFeeRow, "outlier_flags" | "conditions">): string | null {
+/** Knox's category for the row: its first `canonical_hint:` flag, else `canonical_hint=` in conditions. */
+export function canonicalHintFrom(row: Pick<RawFeeRow, "outlier_flags" | "conditions">): string | null {
   const fromFlag = parseFlags(row.outlier_flags)
     .find((flag) => flag.startsWith("canonical_hint:"))
     ?.slice("canonical_hint:".length)
@@ -232,7 +414,7 @@ function stableUuid(value: string): string {
   ].join("-");
 }
 
-function normalizedAmount(value: number | string | null): number | null {
+export function normalizedAmount(value: number | string | null): number | null {
   if (value == null || value === "") return null;
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return null;
@@ -291,6 +473,39 @@ export function statedInOwnSource(
   return result.ok || result.reason === "tiered_fee";
 }
 
+/** The schedule line the shared source check traced the fee to, or null when it did not. */
+export function sourceLineFor(
+  row: Pick<RawFeeRow, "fee_name" | "amount" | "source_document_id" | "amount_kind" | "rate_percent">,
+  texts: ReadonlyMap<number, string>,
+  canonicalFeeKey?: string | null,
+): string | null {
+  if (isPercentFee(row)) return null;
+  const amount = normalizedAmount(row.amount);
+  if (amount == null || row.source_document_id == null) return null;
+  const text = texts.get(Number(row.source_document_id));
+  if (!text) return null;
+  const result = checkFeeAgainstSource(text, row.fee_name, amount, ".", canonicalFeeKey);
+  return result.ok ? result.sourceLine : null;
+}
+
+/**
+ * The checks a verified row must still pass after the shared source check has traced it:
+ * a live category, not a conditional $0, and none of the name rules Hamilton takes a live fee
+ * down for (`ruleFor`), applied before the row is verified instead of after it is published.
+ * `line` is the traced schedule line, else Knox's excerpt. Pure.
+ */
+export function postSourceCheck(
+  canonicalFeeKey: string,
+  feeName: string,
+  amount: number | null,
+  line: string | null,
+): { code: "retired_category" | "conditional_zero" | "name_rule"; rule?: string } | null {
+  if (canonicalFeeKey in RETIRED_CATEGORIES) return { code: "retired_category" };
+  if (conditionalZero(amount, line, feeName)) return { code: "conditional_zero" };
+  const rule = ruleFor(canonicalFeeKey, feeName, amount, line);
+  return rule ? { code: "name_rule", rule } : null;
+}
+
 /** The newest completed text of each document, as Hamilton's source check reads it. */
 export async function loadSourceTexts(db: SqlTag, documentIds: number[]): Promise<Map<number, string>> {
   if (documentIds.length === 0) return new Map();
@@ -309,11 +524,19 @@ export async function loadSourceTexts(db: SqlTag, documentIds: number[]): Promis
  * Version of the in-batch duplicate key, recorded on each attempt. Version 1 keyed on the
  * source URL, so a fee on a bank's current copy of a page was held as a duplicate of the
  * same fee on an older copy at that URL, and only the older copy was ever verified.
- * Version 2 keys on the stored document.
+ * Version 2 keys on the stored document. Version 3 adds the fee's own source line, so two
+ * products' fees with one price on one document ("Money Market Savings Account (below $2,500) |
+ * $15/mo." and "Interest Checking (below $1,500) | $15/mo.", SCCU 8109) are two fees, while the
+ * same line read twice (two Knox runs of one document) is still one.
  */
-export const DARWIN_BATCH_KEY_VERSION = 2;
+export const DARWIN_BATCH_KEY_VERSION = 4;
 
-/** Same institution, category, amount, frequency and document: the same fee line. */
+/** The source line Knox read, spacing folded; empty when the row has none. */
+function sourceLineKey(conditions: string | null): string {
+  return (excerptOf(conditions) ?? "").replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+/** Same institution, category, amount, frequency, document and source line: the same fee line. */
 function batchKey(row: RawFeeRow, canonicalFeeKey: string): string {
   return [
     Number(row.institution_id),
@@ -324,46 +547,37 @@ function batchKey(row: RawFeeRow, canonicalFeeKey: string): string {
     row.source_document_id != null
       ? `doc:${Number(row.source_document_id)}`
       : (row.source_url ?? row.document_r2_key ?? "").trim(),
+    sourceLineKey(row.conditions),
+    row.fee_audience ?? "unknown",
   ].join("|");
 }
 
-async function selectRawFees(
-  db: SqlTag,
-  limit: number,
-  learning: boolean,
-  institutionId?: number,
-  stateCode?: string,
-  currentCopy = false,
-): Promise<RawFeeRow[]> {
-  const params: Array<number | string> = [limit];
-  const filters: string[] = [];
-  if (institutionId) {
-    params.push(institutionId);
-    filters.push(`AND fr.institution_id = $${params.length}`);
-  }
-  const normalizedState = normalizeStateCode(stateCode);
-  if (normalizedState) {
-    params.push(normalizedState);
-    filters.push(`AND upper(btrim(inst.state_code)) = $${params.length}`);
-  }
-  if (learning) {
-    // A row this rule version already rejected is never selected again, so rejected
-    // rows cannot starve the batch.
-    const strategyParam = `$${params.push(DARWIN_VERIFY_STRATEGY.strategy)}`;
-    const versionParam = `$${params.push(DARWIN_VERIFY_STRATEGY.version)}`;
-    // A category rejection under an older guard version is the exception: a guard change
-    // (CATEGORY_GUARD_VERSION) re-checks those rows once, so a real fee a rule wrongly
-    // rejected, or one a new re-file rule now places, is not lost.
-    const guardParam = `$${params.push(CATEGORY_GUARD_VERSION)}`;
-    // A row held as an in-batch duplicate under the old URL key is re-checked once when it
-    // sits on the bank's current copy and nothing on that same document is verified as the
-    // same fee; a row with a verified twin on its own document stays a duplicate. Needs the
-    // current-copy column (source_documents.superseded_by_id).
-    const batchKeyParam = currentCopy ? `$${params.push(DARWIN_BATCH_KEY_VERSION)}` : null;
-    const duplicateRecheck = batchKeyParam ? `
+/** A SQL string literal; the inputs are this file's own constants, never user text. */
+function sqlLiteral(value: string): string {
+  return `'${value.replace(/'/g, "''")}'`;
+}
+
+/**
+ * SQL (raw row alias `fr`): a `verify.rules` decision under today's rule version still stands
+ * for this row. The selection, the state-lane scheduler and the daily health check all read
+ * this one test (#1052), so a row the verify step would select again always wakes a lane and
+ * always counts as waiting. Before, the scheduler and health counted only rows with no decision
+ * at all: a row due again after a guard bump in a state with nothing else to do (26 rows in
+ * Puerto Rico and Guam on 2026-10-14, the oldest due since Oct 9) waited for a lane that never
+ * came, and the backlog read 0.
+ *
+ * The constants are inlined so callers using either query form can embed it.
+ */
+export function darwinStandingDecisionSql(currentCopy = true): string {
+  const envelopes = `${sqlLiteral(JSON.stringify(CATEGORY_AMOUNT_ENVELOPES))}::jsonb`;
+  // A row held as an in-batch duplicate under an older key is re-checked once when it sits
+  // on the bank's current copy and nothing on that same document is verified as the same fee
+  // from the same source line (v3); a row with a verified twin on its own line stays a
+  // duplicate. Needs the current-copy column (source_documents.superseded_by_id).
+  const duplicateRecheck = currentCopy ? `
               AND NOT (
                 pa.detail->>'reason_code' = 'duplicate_in_batch'
-                AND COALESCE((pa.detail->>'batch_key_version')::int, 1) < ${batchKeyParam}
+                AND COALESCE((pa.detail->>'batch_key_version')::int, 1) < ${DARWIN_BATCH_KEY_VERSION}
                 AND EXISTS (
                   SELECT 1 FROM source_documents sd
                    WHERE sd.id = fr.source_document_id AND sd.superseded_by_id IS NULL
@@ -375,21 +589,83 @@ async function selectRawFees(
                    WHERE twin_raw.source_document_id = fr.source_document_id
                      AND twin.canonical_fee_key = pa.detail->>'canonical_fee_key'
                      AND twin.amount IS NOT DISTINCT FROM fr.amount
+                     AND lower(regexp_replace(COALESCE(substring(twin_raw.conditions from 'excerpt="?(.*?)"?$'), ''), '\\s+', ' ', 'g'))
+                         = lower(regexp_replace(COALESCE(substring(fr.conditions from 'excerpt="?(.*?)"?$'), ''), '\\s+', ' ', 'g'))
                 )
               )` : "";
-    filters.push(`AND NOT EXISTS (
+  // A row this rule version already decided is never selected again, so rejected rows cannot
+  // starve the batch. The exceptions are re-read once each:
+  // - a category rejection under an older guard version (CATEGORY_GUARD_VERSION), so a real fee
+  //   a rule wrongly rejected, or one a new re-file rule now places, is not lost; a row held for
+  //   a category lesson the guard has not learned yet (DARWIN_CATEGORY_HOLDS) takes the same path;
+  // - a `not_in_source` rejection under an older source-check version (DARWIN_SOURCE_CHECK_VERSION),
+  //   so a fix to the shared source check reaches the rows it was made for;
+  // - a hold outside a hand-set amount envelope that today's envelope takes (the account_research
+  //   floor went from $5 to $1 on 2026-10-09); learned envelopes move with the data and never re-select.
+  return `EXISTS (
            SELECT 1
              FROM pipeline_attempts pa
             WHERE pa.input_fingerprint = 'raw:' || fr.fee_raw_id::text
-              AND pa.strategy = ${strategyParam}
-              AND pa.strategy_version = ${versionParam}
+              AND pa.strategy = ${sqlLiteral(DARWIN_VERIFY_STRATEGY.strategy)}
+              AND pa.strategy_version = ${DARWIN_VERIFY_STRATEGY.version}
               AND NOT (
-                pa.detail->>'reason_code' = 'category_mismatch'
-                AND COALESCE((pa.detail->>'category_guard_version')::int, 0) < ${guardParam}
+                pa.detail->>'reason_code' IN ('category_mismatch', 'category_lesson_pending')
+                AND COALESCE((pa.detail->>'category_guard_version')::int, 0) < ${CATEGORY_GUARD_VERSION}
+              )
+              AND NOT (
+                pa.detail->>'reason_code' = 'not_in_source'
+                AND COALESCE((pa.detail->>'source_check_version')::int, 0) < ${DARWIN_SOURCE_CHECK_VERSION}
+              )
+              AND NOT (
+                pa.detail->>'reason_code' = 'outside_envelope'
+                AND ${envelopes} ? (pa.detail->>'canonical_fee_key')
+                AND (pa.detail->>'amount')::numeric
+                    BETWEEN (${envelopes}->(pa.detail->>'canonical_fee_key')->>'min')::numeric
+                        AND (${envelopes}->(pa.detail->>'canonical_fee_key')->>'max')::numeric
               )
 ${duplicateRecheck}
-         )`);
+         )`;
+}
+
+/**
+ * SQL (raw row alias `fr`): a Knox row Darwin's verify step would select now, either never
+ * decided or due again under today's rules. Rows the audience trigger refuses are left out,
+ * as the selection leaves them out (#1113).
+ */
+export function darwinDueSql(currentCopy = true): string {
+  return `fr.source = 'knox'
+         AND fr.outlier_flags ? 'needs_darwin_verification'
+         AND NOT (fr.outlier_flags ? 'audience_correction_required')
+         AND NOT EXISTS (SELECT 1 FROM verified_fee_observations fv WHERE fv.fee_raw_id = fr.fee_raw_id)
+         AND NOT ${darwinStandingDecisionSql(currentCopy)}`;
+}
+
+async function selectRawFees(
+  db: SqlTag,
+  limit: number,
+  learning: boolean,
+  institutionId?: number,
+  stateCode?: string,
+  currentCopy = false,
+  /** Only these rows, with no decision filter: Knox changed their category (#1295). */
+  onlyIds?: readonly number[],
+): Promise<RawFeeRow[]> {
+  const params: Array<number | string | number[]> = [limit];
+  const filters: string[] = [];
+  if (onlyIds) {
+    params.push([...onlyIds]);
+    filters.push(`AND fr.fee_raw_id = ANY($${params.length}::bigint[])`);
   }
+  if (institutionId) {
+    params.push(institutionId);
+    filters.push(`AND fr.institution_id = $${params.length}`);
+  }
+  const normalizedState = normalizeStateCode(stateCode);
+  if (normalizedState) {
+    params.push(normalizedState);
+    filters.push(`AND upper(btrim(inst.state_code)) = $${params.length}`);
+  }
+  if (learning && !onlyIds) filters.push(`AND NOT ${darwinStandingDecisionSql(currentCopy)}`);
   return db.unsafe<RawFeeRow[]>(
     `
       WITH eligible AS (
@@ -403,6 +679,7 @@ ${duplicateRecheck}
              fr.frequency,
              fr.outlier_flags,
              fr.conditions,
+             fr.fee_audience,
              fr.amount_kind,
              fr.rate_percent,
              fr.rate_min_amount,
@@ -419,6 +696,8 @@ ${duplicateRecheck}
         JOIN institution_sources inst ON inst.id = fr.institution_id
        WHERE fr.source = 'knox'
          AND fr.outlier_flags ? 'needs_darwin_verification'
+         -- The audience trigger refuses these rows; selecting one would fail the step (#1113).
+         AND NOT (fr.outlier_flags ? 'audience_correction_required')
          ${filters.join("\n         ")}
          AND NOT EXISTS (
            SELECT 1
@@ -441,6 +720,8 @@ export async function insertVerifiedFee(
     canonicalFeeKey: string;
     secondSourceAgrees?: boolean;
     extraFlags?: string[];
+    /** The document's newest text, for Darwin's audience decision (#1059). */
+    sourceText?: string | null;
   },
 ): Promise<number | null> {
   const feeRawId = Number(options.row.fee_raw_id);
@@ -452,6 +733,14 @@ export async function insertVerifiedFee(
   if (amount === 0) flags.push(ZERO_FEE_VERIFIED_FLAG);
   if (options.secondSourceAgrees) flags.push(SECOND_SOURCE_FLAG);
   if (options.extraFlags) flags.push(...options.extraFlags);
+  const stated = options.row.frequency ?? null;
+  const line = excerptOf(options.row.conditions);
+  const settled = amount == null ? stated : settledFrequency(line, amount, stated, options.canonicalFeeKey);
+  // #1196: an NSF fee is charged per item; a period on one is a misread, so it is never verified.
+  const frequency = perEventFrequency(options.canonicalFeeKey, settled, line, amount);
+  if (frequency !== stated) flags.push(FREQUENCY_SETTLED_FLAG);
+  // With no decision the trigger copies the raw row's audience, as before.
+  const audience = darwinAudience(options.row, amount, options.sourceText);
   const inserted = await db`
     INSERT INTO verified_fee_observations (
       fee_raw_id,
@@ -471,7 +760,9 @@ export async function insertVerifiedFee(
       rate_percent,
       rate_min_amount,
       rate_max_amount,
-      rate_basis
+      rate_basis,
+      fee_audience,
+      audience_evidence
     )
     VALUES (
       ${feeRawId},
@@ -485,13 +776,15 @@ export async function insertVerifiedFee(
       ${eventId}::uuid,
       ${options.row.fee_name},
       ${amount},
-      ${options.row.frequency},
+      ${frequency},
       'verified',
       ${percent ? "percent" : "flat"},
       ${percent ? ratePercentOf(options.row) : null},
       ${percent ? options.row.rate_min_amount ?? null : null},
       ${percent ? options.row.rate_max_amount ?? null : null},
-      ${percent ? options.row.rate_basis ?? null : null}
+      ${percent ? options.row.rate_basis ?? null : null},
+      ${audience?.feeAudience ?? "unknown"},
+      ${audience?.audienceEvidence ?? null}
     )
     ON CONFLICT DO NOTHING
     RETURNING fee_verified_id
@@ -730,6 +1023,50 @@ async function recordPassTwoAttempts(
   }
 }
 
+/**
+ * #1295: rows Knox re-filed under a category Darwin never judged them under (`category-change.ts`).
+ * Counted and sampled on every step that can read the learning log, a dry run included; handed
+ * to the batch only when `DARWIN_CATEGORY_CHANGE_REJUDGE_LIVE` is on and the step writes.
+ */
+async function categoryChangeRejudge(
+  db: SqlTag,
+  options: {
+    learning: boolean;
+    dryRun: boolean;
+    institutionId?: number;
+    stateCode?: string;
+    alreadySelected: ReadonlySet<number>;
+    currentCopy: boolean;
+  },
+): Promise<{ rows: RawFeeRow[]; summary: CategoryChangeRejudgeSummary | null }> {
+  const canRead = options.learning || (options.dryRun && (await learningSchemaReady(db)));
+  if (!canRead) return { rows: [], summary: null };
+  // In a savepoint: a failed read (a timeout) would otherwise abort the run-ledger transaction
+  // and fail the whole verify step, `.catch` or not.
+  const scanned = await inSavepoint(db, (scope) => selectCategoryChangeRows(scope, {
+    strategy: DARWIN_VERIFY_STRATEGY.strategy,
+    version: DARWIN_VERIFY_STRATEGY.version,
+    institutionId: options.institutionId,
+    stateCode: options.stateCode,
+  })).catch((error) => {
+    console.warn("[darwin] category change read failed", error instanceof Error ? error.message : error);
+    return null;
+  });
+  if (!scanned) return { rows: [], summary: null };
+  const candidates = categoryChangeCandidates(scanned, canonicalHintFrom);
+  const live = DARWIN_CATEGORY_CHANGE_REJUDGE_LIVE && options.learning;
+  const ids = live
+    ? candidates
+        .map((candidate) => candidate.feeRawId)
+        .filter((id) => !options.alreadySelected.has(id))
+        .slice(0, DARWIN_CATEGORY_CHANGE_LIMIT)
+    : [];
+  const rows = ids.length > 0
+    ? await selectRawFees(db, ids.length, options.learning, options.institutionId, options.stateCode, options.currentCopy, ids)
+    : [];
+  return { rows, summary: summarizeCategoryChange(candidates, scanned.length, rows.length, live) };
+}
+
 export async function runDarwinVerify(
   options: RunDarwinVerifyOptions,
 ): Promise<RunDarwinVerifyResult> {
@@ -738,7 +1075,18 @@ export async function runDarwinVerify(
   const dryRun = Boolean(options.dryRun);
   const learning = !dryRun && (await learningSchemaReady(db));
   const currentCopy = learning && (await currentCopySchemaReady(db));
-  const rows = await selectRawFees(db, limit, learning, options.institutionId, options.stateCode, currentCopy);
+  const selected = await selectRawFees(db, limit, learning, options.institutionId, options.stateCode, currentCopy);
+  // #1295: rows Knox re-filed under a category Darwin never judged them under. Read-only while
+  // the switch is off; on, they join this batch for a new decision under today's category.
+  const categoryChange = await categoryChangeRejudge(db, {
+    learning,
+    dryRun,
+    institutionId: options.institutionId,
+    stateCode: options.stateCode,
+    alreadySelected: new Set(selected.map((row) => Number(row.fee_raw_id))),
+    currentCopy,
+  });
+  const rows = categoryChange.rows.length > 0 ? [...selected, ...categoryChange.rows] : selected;
   const rowByRawFeeId = new Map(rows.map((row) => [Number(row.fee_raw_id), row]));
   const results: DarwinVerificationResult[] = [];
 
@@ -766,7 +1114,14 @@ export async function runDarwinVerify(
   for (const row of rows) {
     const canonicalFeeKey = categoryOf(row);
     let reasonCode = verificationReasonCode(row, canonicalFeeKey, learnedEnvelopes);
+    const categoryHold = reasonCode ? null : pendingCategoryLesson(canonicalFeeKey, row.fee_name);
+    if (categoryHold) reasonCode = "category_lesson_pending";
     if (!reasonCode && !statedInOwnSource(row, sourceTexts, canonicalFeeKey)) reasonCode = "not_in_source";
+    // Traced to its line: the line must also price it as read, in a live category, under
+    // Hamilton's own name rules (2026-10-09: the re-select verified "$0 if condition" fees).
+    const sourceLine = reasonCode || !canonicalFeeKey ? null : sourceLineFor(row, sourceTexts, canonicalFeeKey) ?? excerptOf(row.conditions);
+    const postCheck = reasonCode || !canonicalFeeKey ? null : postSourceCheck(canonicalFeeKey, row.fee_name, normalizedAmount(row.amount), sourceLine);
+    if (postCheck) reasonCode = postCheck.code;
     if (!reasonCode && canonicalFeeKey && verifiedInBatch.has(batchKey(row, canonicalFeeKey))) {
       reasonCode = "duplicate_in_batch";
     }
@@ -782,16 +1137,20 @@ export async function runDarwinVerify(
     let peer: PeerCheckResult | null = null;
     let secondSource: SecondSourceResult | null = null;
     if (!reasonCode && canonicalFeeKey && base.amount != null) {
-      const stateCode = row.state_code ?? options.stateCode;
-      const levels = await peers.forState(stateCode);
-      peer = peerCheck(
-        levels,
-        canonicalFeeKey,
-        institutionTier(row.asset_size_tier, row.asset_size),
-        base.amount,
-        await peers.widerLevels(),
-        districtOfState(stateCode),
-      );
+      // A consumer baseline cannot hold a business or unknown-audience fee.
+      // Second-source evidence is separate and still runs for those rows.
+      if (isConsumerFee(row.fee_audience)) {
+        const stateCode = row.state_code ?? options.stateCode;
+        const levels = await peers.forState(stateCode);
+        peer = peerCheck(
+          levels,
+          canonicalFeeKey,
+          institutionTier(row.asset_size_tier, row.asset_size),
+          base.amount,
+          await peers.widerLevels(),
+          districtOfState(stateCode),
+        );
+      }
       secondSource = secondSourceCheck(
         {
           feeRawId: base.feeRawId,
@@ -799,6 +1158,7 @@ export async function runDarwinVerify(
           sourceDocumentId: row.source_document_id == null ? null : Number(row.source_document_id),
           canonicalFeeKey,
           amount: base.amount,
+          feeAudience: row.fee_audience ?? "unknown",
         },
         sourceCopies,
       );
@@ -815,22 +1175,31 @@ export async function runDarwinVerify(
         reasonCode: code,
         reason: code === "peer_outlier" && peer && base.amount != null
           ? `${DARWIN_REASON_TEXT[code]}: ${peerOutlierReason(peer, base.amount)}`
-          : DARWIN_REASON_TEXT[code],
+          : code === "name_rule" && postCheck?.rule
+            ? `${DARWIN_REASON_TEXT[code]}: ${postCheck.rule} (${RULE_WHY[postCheck.rule as keyof typeof RULE_WHY]})`
+            : DARWIN_REASON_TEXT[code],
         feeVerifiedId: null,
         peerCheck: peer,
         secondSource,
       };
     } else {
+      // One refused insert must not roll back the whole step (#1113): the insert runs in
+      // its own savepoint, and a failure holds only this row.
+      let insertFailed = false;
       const feeVerifiedId = dryRun
         ? null
-        : await insertVerifiedFee(db, {
+        : await inSavepoint(db, (scope) => insertVerifiedFee(scope, {
           runId: options.runId,
           row,
           canonicalFeeKey,
           secondSourceAgrees: secondSource?.verdict === "agrees",
+          sourceText: row.source_document_id == null ? null : sourceTexts.get(Number(row.source_document_id)) ?? null,
+        })).catch(() => {
+          insertFailed = true;
+          return null;
         });
       const verified = Boolean(feeVerifiedId) || dryRun;
-      const code: DarwinReasonCode | null = verified ? null : "duplicate_verified";
+      const code: DarwinReasonCode | null = verified ? null : insertFailed ? "insert_failed" : "duplicate_verified";
       if (verified) verifiedInBatch.add(batchKey(row, canonicalFeeKey));
       result = {
         ...base,
@@ -864,12 +1233,20 @@ export async function runDarwinVerify(
           fee_raw_id: result.feeRawId,
           fee_verified_id: result.feeVerifiedId,
           canonical_fee_key: result.canonicalFeeKey,
+          // Knox's category as Darwin read it, so a later Knox re-file is a new decision (#1295).
+          knox_category: canonicalHintFrom(rowByRawFeeId.get(result.feeRawId) ?? { outlier_flags: null, conditions: null }),
           amount: result.amount,
           decision: result.decision,
           reason_code: result.reasonCode,
           reason: result.reason,
           category_guard_version: CATEGORY_GUARD_VERSION,
+          source_check_version: DARWIN_SOURCE_CHECK_VERSION,
           batch_key_version: DARWIN_BATCH_KEY_VERSION,
+          category_hold: categoryHold
+            ? { filed_as: categoryHold.filedAs, should_be: categoryHold.shouldBe, since: categoryHold.since }
+            : undefined,
+          name_rule: postCheck?.rule,
+          source_line: postCheck && sourceLine ? sourceLine.slice(0, 300) : undefined,
           amount_envelope: result.reasonCode === "outside_envelope" && result.canonicalFeeKey
             ? darwinEnvelopeFor(result.canonicalFeeKey, learnedEnvelopes)
             : undefined,
@@ -896,6 +1273,14 @@ export async function runDarwinVerify(
     if (result.reasonCode) reasonCounts[result.reasonCode] = (reasonCounts[result.reasonCode] ?? 0) + 1;
   }
 
+  // Darwin's second look at rows it verified earlier under weaker checks (verified-recheck.ts).
+  const recheck = learning
+    ? await recheckVerifiedFees(db, { runId: options.runId, stepId: options.stepId ?? null }).catch((error) => {
+        console.warn("[darwin] verified recheck failed", error instanceof Error ? error.message : error);
+        return null;
+      })
+    : null;
+
   return {
     selectedRawFees: rows.length,
     processedRawFees: results.length,
@@ -906,6 +1291,8 @@ export async function runDarwinVerify(
     learning,
     outcomes: learning ? countOutcomes(results.map(attemptOutcome)) : {},
     reasonCounts,
+    recheck,
+    categoryChange: categoryChange.summary,
     zeroFeesVerified: results.filter((result) => result.status === "verified" && result.amount === 0).length,
     peerOutliers: results.filter((result) => result.reasonCode === "peer_outlier").length,
     peerFallbackChecks: results.filter((result) => result.peerCheck && result.peerCheck.scope !== "state").length,

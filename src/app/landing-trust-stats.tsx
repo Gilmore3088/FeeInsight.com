@@ -40,7 +40,7 @@ export function LandingTrustStats({ summary, states }: LandingTrustStatsProps) {
 
   return (
     <section className="border-t border-warm-300 bg-warm-150/60">
-      <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6 sm:py-10">
+      <div className="mx-auto max-w-page px-4 py-8 sm:px-6 sm:py-10">
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_260px] lg:items-center lg:gap-10">
           <div className="min-w-0">
             <h2 className="text-balance text-2xl font-normal text-warm-900 sm:text-3xl" style={SERIF_STYLE}>
@@ -68,7 +68,7 @@ export function LandingTrustStats({ summary, states }: LandingTrustStatsProps) {
                     return (
                       <Link
                         key={state.id}
-                        href={`/institutions?state=${state.id}`}
+                        href={`/research/state/${state.id}`}
                         aria-label={label}
                         prefetch={false}
                       >
@@ -153,7 +153,7 @@ export function LandingTrustStats({ summary, states }: LandingTrustStatsProps) {
                     {topStates.map((s) => (
                       <li key={s.state_code}>
                         <Link
-                          href={`/institutions?state=${s.state_code}`}
+                          href={`/research/state/${s.state_code}`}
                           prefetch={false}
                           className="flex items-baseline justify-between gap-3 text-[13px] text-warm-900 hover:text-terra-dark"
                         >

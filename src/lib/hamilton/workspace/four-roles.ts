@@ -49,7 +49,7 @@ const UNFORMATTED_UNITS = [
   { re: /(?<![$\d.,])0\.\d+(?![\d%])/, why: "share written as a decimal fraction" },
 ];
 
-function words(sentence: string): number {
+export function words(sentence: string): number {
   // A quotation is the source's words, not Hamilton's, so it does not count.
   // A lone "/" or "&" (as in "NSF / returned item") is punctuation, not a word.
   const own = sentence.replace(/"[^"]*"/g, "").trim();

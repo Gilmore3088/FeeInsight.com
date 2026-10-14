@@ -10,7 +10,7 @@ import { buildAuditTrail } from "@/lib/hamilton/audit-trail";
 import { defaultLayer, parseLayer } from "@/lib/hamilton/research-layers";
 import { modelScenario } from "@/lib/hamilton/fee-scenario";
 import { buildImplementationPlan } from "@/lib/hamilton/implementation-plan";
-import { defaultPrices, parseCount, parsePercent, parsePrices } from "@/lib/hamilton/model-params";
+import { defaultPrices, filedVolumeEstimate, parseCount, parsePercent, parsePrices } from "@/lib/hamilton/model-params";
 import { getHamiltonScenarioById } from "@/lib/hamilton/pro-tables";
 import { buildFeeAnswer } from "@/lib/hamilton/workspace/answer";
 import { institutionFactsFrom } from "@/lib/hamilton/workspace/ask";
@@ -42,6 +42,8 @@ interface PageProps {
     layer?: string;
     paid?: string;
     waiver?: string;
+    /** "filing" when the items figure is the working estimate from the bank's filing. */
+    est?: string;
     instId?: string;
     scenario?: string;
     scenario_id?: string;
@@ -77,6 +79,10 @@ export default async function ModelPage({ searchParams }: PageProps) {
   const savedFigures = institutionFactsFrom(memory, ws.fee);
   const paidItems = parseCount(params.paid) ?? savedFigures?.annualItems ?? null;
   const waiverRate = parsePercent(params.waiver) ?? savedFigures?.waiverRate ?? null;
+  // The working estimate from the bank's own filing, offered only; it applies when the reader picks it.
+  const revenueLine = ws.research?.revenueLine ?? null;
+  const filedEstimate = filedVolumeEstimate(revenueLine, current);
+  const fromFiling = params.est === "filing" && parseCount(params.paid) != null && revenueLine != null;
   const typed = parsePrices(params.prices);
   const prices = typed.length
     ? typed
@@ -102,6 +108,7 @@ export default async function ModelPage({ searchParams }: PageProps) {
     if (params.prices) q.set("prices", params.prices);
     if (params.paid) q.set("paid", params.paid);
     if (params.waiver) q.set("waiver", params.waiver);
+    if (fromFiling) q.set("est", "filing");
     for (const [k, v] of Object.entries(over)) q.set(k, v);
     return hrefWithInstitutionContext(`/pro/simulate?${q.toString()}`, instId);
   };
@@ -124,13 +131,17 @@ export default async function ModelPage({ searchParams }: PageProps) {
     extraAssumptions: [
       current != null ? `Today's price is your published ${ws.feeName.toLowerCase()} fee, ${fmtMoney(current)}.` : "No published price for you, so each change is measured from $0.",
       "Volume held steady at every price: Hamilton doesn't estimate how customers respond from public data.",
+      ...(fromFiling && revenueLine
+        ? [`Items a year are a working estimate: ${revenueLine.label}, four quarters to ${revenueLine.quarterEnd}, divided by today's price. It assumes every paid item was charged today's fee.`]
+        : []),
       "Notice periods follow Reg DD (banks) or NCUA Truth in Savings (credit unions) for consumer accounts.",
     ],
   });
   // Hamilton asks for one figure at a time: the volume first, then the waiver share.
   // The engine's market exhibit, drawn the same way as on My fees and in Ask.
   const positionExhibit = ws.research ? buildFeeAnswer(ws.research, { focus: "position" }).exhibit : null;
-  const evidenceLabel = (e: "market" | "institution") => (e === "institution" ? "Your figures" : "Market data only");
+  const evidenceLabel = (e: "market" | "institution") =>
+    e === "institution" ? (fromFiling ? "Estimate from your filing" : "Your figures") : "Market data only";
   const csvHref = hrefWithInstitutionContext(`/pro/research/peers?fee=${encodeURIComponent(ws.fee)}&layer=${layer.key}`, instId);
 
   const row = "border-b border-warm-200";
@@ -166,6 +177,7 @@ export default async function ModelPage({ searchParams }: PageProps) {
       <form id="your-figures" method="get" action="/pro/simulate" className="grid scroll-mt-24 gap-4 rounded-lg border border-warm-300 bg-warm-50 p-5 md:grid-cols-4">
         <input type="hidden" name="fee" value={ws.fee} />
         {instId ? <input type="hidden" name="instId" value={instId} /> : null}
+        {fromFiling ? <input type="hidden" name="est" value="filing" /> : null}
         <label className="flex flex-col gap-1 text-sm text-warm-800 md:col-span-2">
           Prices to test
           <input name="prices" defaultValue={prices.join(", ")} className={inputClass} placeholder="0, 25, 35" />
@@ -190,6 +202,16 @@ export default async function ModelPage({ searchParams }: PageProps) {
           Items you charge a year (your figure)
           <input id="paid" name="paid" inputMode="numeric" defaultValue={params.paid ?? (savedFigures?.annualItems != null ? String(savedFigures.annualItems) : "")} className={inputClass} placeholder="For example 14,500" />
           <span className="text-xs text-warm-600">Before waivers. Turns the per-1,000 figures into yearly fee income.</span>
+          {paidItems == null && filedEstimate != null && revenueLine ? (
+            <span className="text-xs text-warm-700">
+              No figure yet? Your filing gives a working estimate: {revenueLine.label}, {fmtMoney(Math.round(revenueLine.annualIncome))} over the four quarters to {revenueLine.quarterEnd}, divided by today&apos;s {fmtMoney(current ?? 0)} is about {filedEstimate.toLocaleString("en-US")} items.{" "}
+              <a href={hrefFor({ paid: String(filedEstimate), est: "filing" })} className="font-medium text-terra-text underline">
+                Use this estimate
+              </a>
+            </span>
+          ) : fromFiling ? (
+            <span className="text-xs text-warm-700">A working estimate from your filing, not a count. Type your own figure to replace it.</span>
+          ) : null}
         </label>
         <label className="flex flex-col gap-1 text-sm text-warm-800 md:col-span-2">
           Share you waive or refund, in percent (your figure)

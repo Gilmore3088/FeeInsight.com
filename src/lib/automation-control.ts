@@ -18,6 +18,9 @@ export const PROVIDER_CREDIT_ERROR_MARKERS = [
   "insufficient credits",
   "purchase credits",
   "plans & billing",
+  // The Console's monthly spend limit (2026-10-09 08:11 UTC: "You have reached your specified
+  // API usage limits. You will regain access on 2026-11-01"); a dead key until it is raised.
+  "reached your specified api usage limits",
 ] as const;
 
 export const PROVIDER_CREDIT_ERROR_PATTERNS = PROVIDER_CREDIT_ERROR_MARKERS.map((marker) => `%${marker}%`);

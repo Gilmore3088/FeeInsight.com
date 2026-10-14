@@ -1,3 +1,5 @@
+import { feeApplicability } from "@/lib/fee-audience";
+import { feesSentToDarwinSql, THIN_DOCUMENT_MAX_FEES } from "@/lib/agents/thin-document";
 import { createHash } from "crypto";
 
 import { sql } from "@/lib/data-store/connection";
@@ -21,25 +23,17 @@ import { recordHamiltonMonitorSignal } from "@/lib/hamilton/monitor-signals";
 
 type SqlTag = typeof sql;
 
-/**
- * The extractor recorded in the attempt log; bump the version when the rules change.
- * Version 2 (rules.ts): `$1500` parses as $1,500, specific categories win over monthly
- * maintenance, a later amount on a line is a fee only when words naming one precede it,
- * waived fees are kept, and $0, range, percentage and unrecognized priced lines are held
- * for review instead of dropped. Version 4: new phrasings, thresholds are never fees,
- * and the pass 2 specialists (specialists.ts) run with the rules on every document.
- */
-export const KNOX_EXTRACT_STRATEGY = KNOX_RULES_STRATEGY;
 /** Below this share of the institution's usual fee count, an extraction is `low_yield`. */
 const LOW_YIELD_RATIO = 0.5;
 
 /**
- * A text Knox found fewer fees than this in is extracted again whenever the rules
- * version moves, so documents already on file are re-reviewed with each improvement.
- * Matches Rosetta's re-read threshold (REREAD_MAX_KNOX_FEES). The raw-row dedupe index
- * (document, fee name, amount) keeps fees found the first time from being inserted twice.
+ * A thin text (fewer fees sent to Darwin than this; held rows do not count) is extracted again
+ * whenever the rules version moves, so documents already on file are re-reviewed with each
+ * improvement. The shared thin-document test (#1095), the same one Rosetta's re-read uses. The
+ * raw-row dedupe index (document, fee name, amount) keeps fees found the first time from being
+ * inserted twice.
  */
-export const KNOX_REEXTRACT_MAX_FEES = 5;
+export const KNOX_REEXTRACT_MAX_FEES = THIN_DOCUMENT_MAX_FEES;
 /**
  * Banks at or above this size (thousands of dollars, as `institution_sources.asset_size`
  * stores it: $10B) have the current copy of each page re-read once per rules version,
@@ -65,7 +59,7 @@ const LARGE_BANK_REREAD_ORDER = `CASE WHEN COALESCE(inst.asset_size, 0) >= ${KNO
             WHERE last_read.stage = 'extract'
               AND last_read.institution_id = adt.institution_id
               AND last_read.input_fingerprint = adt.text_hash
-              AND last_read.strategy = '${KNOX_EXTRACT_STRATEGY.strategy}'
+              AND last_read.strategy = '${KNOX_RULES_STRATEGY.strategy}'
          ) END ASC NULLS FIRST, `;
 
 /**
@@ -87,6 +81,8 @@ export const KNOX_LINEUP_READ_BELOW_VERSION = 51;
  * a priced line for the missing fee (report-ready thread, 2026-10-07), and Space Coast CU.
  */
 export const KNOX_PRIORITY_REREAD_IDS: readonly number[] = [
+  // Pinnacle: replace the quarantined unscoped observations through normal verification.
+  47,
   // In this order: S&T (most missing-fee leads), Space Coast, then First National Bank Alaska
   // (last read at v22, which missed its two outgoing wires; v32 reads both. 8 of 15 report fees).
   161, 8109, 281, 243, 337, 757, 1718, 1784, 1841, 2606, 3005, 51, 724, 927, 1779, 2279, 433, 1037, 1195, 278, 563, 565,
@@ -175,8 +171,6 @@ export interface RunKnoxExtractResult {
   retiredOlderRows: number;
   /** Unverified rows from an older copy of a page whose current copy Knox has read. */
   retiredOlderCopyRows: number;
-  /** Texts the router refused because this extractor version already failed on them. */
-  skippedKnownInputs: number;
   limit: number;
   dryRun: boolean;
   learning: boolean;
@@ -225,6 +219,20 @@ async function selectTextArtifacts(
   stateCode?: string,
   priorityIds: readonly number[] = [],
 ): Promise<TextArtifactRow[]> {
+  const { query, params } = textArtifactQuery(limit, learning, currentCopy, institutionId, stateCode, priorityIds);
+  return db.unsafe<TextArtifactRow[]>(query, params);
+}
+
+/** The due-text query Knox reads from, shared with Bayes's replay ledger (`countKnoxRereadsDue`). */
+function textArtifactQuery(
+  limit: number,
+  learning: boolean,
+  currentCopy: boolean,
+  institutionId?: number,
+  stateCode?: string,
+  priorityIds: readonly number[] = [],
+  forCount = false,
+): { query: string; params: Array<number | string> } {
   const params: Array<number | string> = [limit];
   const filters: string[] = [];
   if (institutionId) {
@@ -259,12 +267,7 @@ async function selectTextArtifacts(
     // attempt-log filter below stops a second pass with the same version.
     params.push(KNOX_REEXTRACT_MAX_FEES);
     thinTextReextract = `
-           OR (
-             SELECT COUNT(*)
-               FROM raw_fee_observations thin
-              WHERE thin.source = 'knox'
-                AND thin.source_document_id = adt.source_document_id
-           ) < $${params.length}`;
+           OR ${feesSentToDarwinSql("adt.source_document_id")} < $${params.length}`;
     // Hamilton's rules re-check found fees today's rules read from this document that
     // are not live (an older version missed them): extract it again.
     const signatureParam = `$${params.push(knoxFreeSignature())}`;
@@ -324,7 +327,7 @@ async function selectTextArtifacts(
                 WHERE recent.stage = 'extract'
                   AND recent.institution_id = adt.institution_id
                   AND recent.input_fingerprint = adt.text_hash
-                  AND recent.strategy = '${KNOX_EXTRACT_STRATEGY.strategy}'
+                  AND recent.strategy = '${KNOX_RULES_STRATEGY.strategy}'
                   AND recent.strategy_version >= ${staleParam}
              )
            )`;
@@ -349,7 +352,7 @@ async function selectTextArtifacts(
                 WHERE recent.stage = 'extract'
                   AND recent.institution_id = adt.institution_id
                   AND recent.input_fingerprint = adt.text_hash
-                  AND recent.strategy = '${KNOX_EXTRACT_STRATEGY.strategy}'
+                  AND recent.strategy = '${KNOX_RULES_STRATEGY.strategy}'
                   AND recent.strategy_version >= ${namedParam}
              )
            )`;
@@ -358,6 +361,10 @@ async function selectTextArtifacts(
     // again once per rules version, so a rules fix reaches it. asset_size is in thousands, so
     // the large-bank floor above misses most state leaders (2026-10-08: MVB, Starion, Stride,
     // Guaranty, Lighthouse and Arkansas FCU kept a v4-v36 read the v35-v38 fixes never reached).
+    // A run for one institution (a person asked for it by name) reads its current page once
+    // per rules version whether or not it has a live overdraft fee: SCCU (8109) and inst 8414
+    // kept v33 reads that the v63-v64 box-table fixes never reached, because both have one
+    // (2026-10-09).
     if (currentCopy && priorityIds.length > 0) {
       const leaderParam = `$${params.push(`{${priorityIds.join(",")}}`)}`;
       thinTextReextract += `
@@ -367,18 +374,18 @@ async function selectTextArtifacts(
                SELECT 1 FROM source_documents copy
                 WHERE copy.id = adt.source_document_id
                   AND copy.superseded_by_id IS NOT NULL
-             )
+             )${institutionId ? "" : `
              AND NOT EXISTS (
                SELECT 1 FROM published_fee_records live_overdraft
                 WHERE live_overdraft.institution_id = adt.institution_id
                   AND live_overdraft.canonical_fee_key = 'overdraft'
                   AND live_overdraft.rolled_back_at IS NULL
-             )
+             )`}
            )`;
     }
     // Same text + same extractor version = same answer: never extract it twice.
-    const strategyParam = `$${params.push(KNOX_EXTRACT_STRATEGY.strategy)}`;
-    const versionParam = `$${params.push(KNOX_EXTRACT_STRATEGY.version)}`;
+    const strategyParam = `$${params.push(KNOX_RULES_STRATEGY.strategy)}`;
+    const versionParam = `$${params.push(KNOX_RULES_STRATEGY.version)}`;
     playbookColumns = `,
              profile.format,
              profile.best_strategy,
@@ -397,8 +404,7 @@ async function selectTextArtifacts(
               AND pa.strategy_version = ${versionParam}
          )`);
   }
-  return db.unsafe<TextArtifactRow[]>(
-    `
+  const query = `
       SELECT adt.id AS document_text_id,
              adt.source_document_id,
              adt.institution_id,
@@ -447,11 +453,45 @@ async function selectTextArtifacts(
                    AND theirs.superseded_by_id IS NOT NULL
               )` : ""}
          )
-       ORDER BY ${learning && priorityIds.length > 0 ? `COALESCE(array_position($${params.push(`{${priorityIds.join(",")}}`)}::bigint[], adt.institution_id::bigint), 2147483647), ` : ""}${learning ? `(COALESCE(inst.asset_size, 0) >= ${KNOX_REREAD_ASSET_FLOOR}) DESC, ${LARGE_BANK_REREAD_ORDER}` : ""}adt.updated_at DESC, adt.id DESC
+       ${forCount ? "" : `ORDER BY ${learning && priorityIds.length > 0 ? `COALESCE(array_position($${params.push(`{${priorityIds.join(",")}}`)}::bigint[], adt.institution_id::bigint), 2147483647), ` : ""}${learning ? `(COALESCE(inst.asset_size, 0) >= ${KNOX_REREAD_ASSET_FLOOR}) DESC, ${LARGE_BANK_REREAD_ORDER}` : ""}adt.updated_at DESC, adt.id DESC`}
        LIMIT $1
+    `;
+  return { query, params };
+}
+
+export interface KnoxRereadsDue {
+  /** Current copies a past rules version read that Knox's own selection would read again now. */
+  due: number;
+}
+
+/**
+ * Bayes's count of Knox's replay queue: every current copy an older rules version read that the
+ * global extract step's own selection (thin text, $10B+ bank, missing fees, older copy still
+ * live, stale or unnamed read, priority bank) would pick up. Read-only.
+ */
+export async function countKnoxRereadsDue(db: SqlTag): Promise<KnoxRereadsDue> {
+  const currentCopy = await currentCopySchemaReady(db);
+  const priorityIds = currentCopy
+    ? [...new Set([...KNOX_PRIORITY_REREAD_IDS, ...(await loadMarketLeaderIds(db, { stateCode: null }).catch(() => []))])]
+    : [];
+  const { query, params } = textArtifactQuery(1_000_000, true, currentCopy, undefined, undefined, priorityIds, true);
+  const strategyParam = `$${params.push(KNOX_RULES_STRATEGY.strategy)}`;
+  const [row] = await db.unsafe<Array<{ due: number | string }>>(
+    `
+      SELECT COUNT(*) AS due
+        FROM (${query}) due_text
+        JOIN source_documents doc ON doc.id = due_text.source_document_id AND doc.superseded_by_id IS NULL
+       WHERE EXISTS (
+         SELECT 1 FROM pipeline_attempts pa
+          WHERE pa.stage = 'extract'
+            AND pa.institution_id = due_text.institution_id
+            AND pa.input_fingerprint = due_text.text_hash
+            AND pa.strategy = ${strategyParam}
+       )
     `,
     params,
   );
+  return { due: Number(row?.due ?? 0) };
 }
 
 /**
@@ -551,6 +591,9 @@ export async function insertCandidate(
   const flags = options.takenDownBy
     ? [TAKEN_DOWN_REVIEW_FLAG, takedownLessonFlag(options.takenDownBy), `canonical_hint:${options.candidate.canonicalHint}`]
     : ["needs_darwin_verification", `canonical_hint:${options.candidate.canonicalHint}`];
+  // Explicitly eliminated fees are real $0 observations, not missing data. Darwin's
+  // existing zero-fee verification gate still requires this evidence flag.
+  if (options.candidate.amount === 0) flags.push("knox_review:zero");
   if (options.candidate.waivable) flags.push("waivable");
   if (options.candidate.strategy && options.candidate.strategy !== KNOX_RULES_STRATEGY.strategy) {
     flags.push(`knox_specialist:${options.candidate.strategy}`);
@@ -563,10 +606,19 @@ export async function insertCandidate(
     `excerpt="${options.candidate.excerpt.slice(0, 180)}"`;
   // A checking account's lineup facts, already grounded in the text (`lineup.ts`); only a
   // monthly maintenance fee carries them.
+  const applicability = feeApplicability(options.candidate.feeName, options.candidate.excerpt, options.candidate.amount);
   const lineup = options.candidate.canonicalHint === LINEUP_CATEGORY ? (options.candidate.lineup ?? null) : null;
-  // The dedupe index is (document, fee name, amount), so a line an older version held
-  // as unclassified would block this fee forever. A held row with no category takes the
-  // category instead; any other existing row stays as it is.
+  // The dedupe index is (document, lowercased fee name, amount, audience), so an existing
+  // row would block this fee forever. Two kinds take the new read instead:
+  //   - a line an older version held as unclassified or untraced;
+  //   - a row an earlier read of this document retired on this re-read
+  //     (`superseded_by_reread`, never verified): the same fee read again goes back to
+  //     Darwin instead of staying retired (#1093; 1,646 free-pass fees were lost this way).
+  // Any other existing row stays as it is. A row taken over drops its old `canonical_hint:`
+  // flags: Darwin reads the first one (`canonicalHintFrom` in darwin/verify.ts), so a fee
+  // today's rules file under a new category was judged under the old one. 12 of the 54 rows
+  // re-reads took over by 14 Oct were ("Wire Transfer - International" $45 judged as an
+  // overdraft fee and rejected for category, #1093).
   const inserted = await db`
     INSERT INTO raw_fee_observations AS fr (
       institution_id,
@@ -584,7 +636,8 @@ export async function insertCandidate(
       product_name,
       min_balance_to_avoid,
       min_opening_deposit,
-      waiver_text
+      waiver_text,
+      fee_audience, audience_evidence, fee_treatment
     )
     VALUES (
       ${institutionId},
@@ -602,25 +655,41 @@ export async function insertCandidate(
       ${lineup?.productName ?? null},
       ${lineup?.minBalanceToAvoid ?? null},
       ${lineup?.minOpeningDeposit ?? null},
-      ${lineup?.waiverText ?? null}
+      ${lineup?.waiverText ?? null},
+      ${applicability.feeAudience}, ${applicability.audienceEvidence}, ${applicability.feeTreatment}
     )
-    ON CONFLICT (source_document_id, lower(fee_name), COALESCE(amount, '-1'::numeric))
+    ON CONFLICT (source_document_id, lower(fee_name), COALESCE(amount, '-1'::numeric), fee_audience)
       WHERE source = 'knox' AND source_document_id IS NOT NULL
     DO UPDATE SET
       extraction_confidence = EXCLUDED.extraction_confidence,
       agent_event_id = EXCLUDED.agent_event_id,
       frequency = COALESCE(fr.frequency, EXCLUDED.frequency),
       conditions = EXCLUDED.conditions,
+      audience_evidence = EXCLUDED.audience_evidence,
+      fee_treatment = EXCLUDED.fee_treatment,
       product_name = COALESCE(fr.product_name, EXCLUDED.product_name),
       min_balance_to_avoid = COALESCE(fr.min_balance_to_avoid, EXCLUDED.min_balance_to_avoid),
       min_opening_deposit = COALESCE(fr.min_opening_deposit, EXCLUDED.min_opening_deposit),
       waiver_text = COALESCE(fr.waiver_text, EXCLUDED.waiver_text),
-      outlier_flags = (COALESCE(fr.outlier_flags, '[]'::jsonb) - 'knox_review:unclassified')
+      outlier_flags = COALESCE((
+                        SELECT jsonb_agg(kept.flag ORDER BY kept.ord)
+                          FROM jsonb_array_elements(COALESCE(fr.outlier_flags, '[]'::jsonb)) WITH ORDINALITY AS kept(flag, ord)
+                         WHERE kept.flag #>> '{}' NOT IN ('knox_review:unclassified', 'knox_review:untraced', 'superseded_by_reread')
+                           AND kept.flag #>> '{}' NOT LIKE 'canonical_hint:%'
+                      ), '[]'::jsonb)
                       || EXCLUDED.outlier_flags
-                      || '["knox_promoted_from_held"]'::jsonb
+                      || CASE WHEN fr.outlier_flags ? 'superseded_by_reread'
+                              THEN '["knox_reread_took_over"]'::jsonb
+                              ELSE '["knox_promoted_from_held"]'::jsonb END
      WHERE fr.source = 'knox'
-       AND fr.outlier_flags ? 'knox_review:unclassified'
        AND NOT fr.outlier_flags ? 'needs_darwin_verification'
+       AND (
+         -- A line held because the self-check could not trace it, now read and traced, is that fee.
+         fr.outlier_flags ? 'knox_review:unclassified' OR fr.outlier_flags ? 'knox_review:untraced'
+         -- The same fee read again from a re-read of its document, retired before Darwin saw it.
+         OR (fr.outlier_flags ? 'superseded_by_reread'
+             AND NOT EXISTS (SELECT 1 FROM verified_fee_observations fv WHERE fv.fee_raw_id = fr.fee_raw_id))
+       )
     RETURNING fee_raw_id
   `;
   if (inserted.length === 0 && lineup) {
@@ -665,6 +734,7 @@ export async function insertHeldCandidate(
   const documentTextId = Number(options.row.document_text_id);
   const sourceDocumentId = Number(options.row.source_document_id);
   const { held } = options;
+  const applicability = feeApplicability(held.feeName, held.excerpt, held.amount);
   const agentEventId = stableUuid(
     `knox:held:${options.runId}:${documentTextId}:${sourceDocumentId}:${held.shape}:${held.feeName}:${held.amount}:${held.percent}`,
   );
@@ -692,7 +762,7 @@ export async function insertHeldCandidate(
       frequency,
       conditions,
       outlier_flags,
-      source
+      source, fee_audience, audience_evidence, fee_treatment
     )
     VALUES (
       ${Number(options.row.institution_id)},
@@ -706,7 +776,7 @@ export async function insertHeldCandidate(
       ${held.frequency},
       ${conditions},
       ${JSON.stringify(flags)}::jsonb,
-      'knox'
+      'knox', ${applicability.feeAudience}, ${applicability.audienceEvidence}, ${applicability.feeTreatment}
     )
     ON CONFLICT DO NOTHING
     RETURNING fee_raw_id
@@ -728,6 +798,7 @@ export async function insertRateCandidate(
   const documentTextId = Number(options.row.document_text_id);
   const sourceDocumentId = Number(options.row.source_document_id);
   const { rate } = options;
+  const applicability = feeApplicability(rate.feeName, rate.excerpt);
   const agentEventId = stableUuid(
     `knox:rate:${options.runId}:${documentTextId}:${sourceDocumentId}:${rate.canonicalHint}:${rate.feeName}:${rate.ratePercent}`,
   );
@@ -740,7 +811,8 @@ export async function insertRateCandidate(
     INSERT INTO raw_fee_observations (
       institution_id, source_document_id, document_r2_key, source_url, extraction_confidence,
       agent_event_id, fee_name, amount, frequency, conditions, outlier_flags, source,
-      amount_kind, rate_percent, rate_min_amount, rate_max_amount, rate_basis
+      amount_kind, rate_percent, rate_min_amount, rate_max_amount, rate_basis,
+      fee_audience, audience_evidence, fee_treatment
     )
     VALUES (
       ${Number(options.row.institution_id)},
@@ -759,7 +831,8 @@ export async function insertRateCandidate(
       ${rate.ratePercent},
       ${rate.rateMinAmount},
       ${rate.rateMaxAmount},
-      ${rate.rateBasis}
+      ${rate.rateBasis},
+      ${applicability.feeAudience}, ${applicability.audienceEvidence}, 'charged'
     )
     ON CONFLICT DO NOTHING
     RETURNING fee_raw_id
@@ -926,8 +999,8 @@ export async function runKnoxExtract(
   // The named priority banks (in list order), then market leaders, are read first while the
   // stale backlog lasts.
   // A run for one institution (Atlas's read-now runs) reads its current page again once per
-  // rules version while it has no live overdraft fee, so a rules fix reaches a requested bank
-  // without waiting for its state lane (2026-10-08: Marketing's outreach batch).
+  // rules version, so a rules fix reaches a requested bank without waiting for its state lane
+  // (2026-10-08: Marketing's outreach batch).
   const priorityIds = !(learning && currentCopy)
     ? []
     : options.institutionId
@@ -944,20 +1017,19 @@ export async function runKnoxExtract(
   const layoutReads: Array<{ signature: string; priceLines: number; found: number }> = [];
 
   const results: KnoxExtractDocumentResult[] = [];
-  let skippedKnownInputs = 0;
   let retiredOlderRows = 0;
   for (const row of rows) {
     const playbook = playbookFromRow(row);
+    // The router is given one strategy, so it only says why (its reason goes in the attempt
+    // detail). It never skips here: a do-not-retry entry is written only with an attempt row
+    // for the same text and rules version (`recordAttempt`), and the selection above already
+    // leaves those texts out; without the attempt log the playbook columns are not selected.
     const decision = chooseStrategy({
       stage: "extract",
       playbook,
       fingerprint: row.text_hash,
-      candidates: [{ ...KNOX_EXTRACT_STRATEGY, costMicrousd: 0 }],
+      candidates: [{ ...KNOX_RULES_STRATEGY, costMicrousd: 0 }],
     });
-    if (decision.kind === "skip") {
-      skippedKnownInputs += 1;
-      continue;
-    }
 
     const startedAt = Date.now();
     const free = runFreeSpecialists(row.normalized_text);
@@ -1047,8 +1119,8 @@ export async function runKnoxExtract(
         institutionId: Number(row.institution_id),
         sourceDocumentId: Number(row.source_document_id),
         stage: "extract",
-        strategy: decision.strategy,
-        version: decision.version,
+        strategy: KNOX_RULES_STRATEGY.strategy,
+        version: KNOX_RULES_STRATEGY.version,
         fingerprint: row.text_hash,
         outcome: attemptOutcome,
         yieldCount: candidates.length,
@@ -1087,7 +1159,6 @@ export async function runKnoxExtract(
     heldForReview: results.reduce((total, result) => total + result.held.length, 0),
     retiredOlderRows,
     retiredOlderCopyRows,
-    skippedKnownInputs,
     limit,
     dryRun,
     learning,

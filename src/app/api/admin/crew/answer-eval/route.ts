@@ -18,13 +18,15 @@ async function isAuthorized(request: NextRequest): Promise<boolean> {
 /**
  * Hamilton's answer eval on live data (cron, every two hours, a fresh sample each day): the quality bar's consultant questions
  * asked of a spread of real banks and credit unions, scored, as one visible run step.
- * `?per_group=3` asks more institutions per charter and asset tier. Read-only; no model calls.
+ * One institution per charter and asset tier (11 groups) fits the step's time budget after the
+ * Pro replay; two per group stopped at the budget after 6 to 12 of 22 (runs 3199, 3241).
+ * `?per_group=2` asks more institutions per charter and asset tier. Read-only; no model calls.
  */
 async function handleGET(request: NextRequest) {
   if (!(await isAuthorized(request))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  const perGroup = Math.min(5, Math.max(1, Number(request.nextUrl.searchParams.get("per_group")) || 2));
+  const perGroup = Math.min(5, Math.max(1, Number(request.nextUrl.searchParams.get("per_group")) || 1));
   const stamp = new Date().toISOString().slice(0, 13);
   const started = await startAgentRun({
     agent: "hamilton",

@@ -1,0 +1,1319 @@
+{
+  "about": "Hard documents (#1067): real source lines that every change to the taxonomy, the fold rules, the category guard or the publish-time same-line check must still read the same way. Replayed in CI by src/lib/agents/deming/hard-documents.test.ts, with no database and no model calls. Each case cites its stored document (source_documents.id) and the text it was read from: agent_source_texts.text_hash, plus agent_source_text_id where the excerpt was cut from that text, otherwise Knox's quoted excerpt of the line. Read from production, read-only, on 2026-10-14.",
+  "read_at": "2026-10-14T12:31:15Z",
+  "measured": {
+    "query": "goal.wrong_after_publish_7d (src/lib/agents/goal-scorecard.ts), split by canonical_fee_key and by reason key",
+    "window": "fees first published 2026-10-07 12:31 to 2026-10-14 12:31 UTC, refresh copies left out",
+    "published": 36568,
+    "wrong": 1132,
+    "top_categories": [
+      {
+        "canonical_fee_key": "monthly_maintenance",
+        "wrong": 167
+      },
+      {
+        "canonical_fee_key": "nsf",
+        "wrong": 123
+      },
+      {
+        "canonical_fee_key": "bill_pay",
+        "wrong": 73
+      },
+      {
+        "canonical_fee_key": "safe_deposit_box",
+        "wrong": 57
+      },
+      {
+        "canonical_fee_key": "overdraft",
+        "wrong": 53
+      }
+    ],
+    "top_reasons": [
+      {
+        "reason": "product_page",
+        "wrong": 308
+      },
+      {
+        "reason": "category_guard",
+        "wrong": 163
+      },
+      {
+        "reason": "source_check_untraceable",
+        "wrong": 157
+      },
+      {
+        "reason": "unconfirmed_document_host",
+        "wrong": 148
+      },
+      {
+        "reason": "business_schedule",
+        "wrong": 147
+      },
+      {
+        "reason": "other_bank_document",
+        "wrong": 146
+      }
+    ]
+  },
+  "same_price": [
+    {
+      "case_key": "distinct:2688:nsf",
+      "family": "distinct_same_dollar",
+      "canonical_fee_key": "nsf",
+      "amount": "30.00",
+      "source_document_id": 2688,
+      "agent_source_text_id": 7727,
+      "text_hash": "b9082066fd10d2da261f640b3bb450cd31dc6eb3b840592fb39376951da5360c",
+      "row": {
+        "fee_published_id": 49288,
+        "fee_name": "Non-Returned Item (NSF)"
+      },
+      "prior": {
+        "fee_published_id": 105129,
+        "fee_name": "Non-Sufficient Funds (NSF)"
+      },
+      "text": "th no charge) | $5.00 (each additional)\nNon-Returned Item (NSF) | $30.00\nNon-Sufficient Funds (NSF) | $30.00\nPrompt Pay | $10.00\nOverdraft Transfer | $5.00\nReturn Mail/Incorrect A"
+    },
+    {
+      "case_key": "distinct:29787:nsf",
+      "family": "distinct_same_dollar",
+      "canonical_fee_key": "nsf",
+      "amount": "30.00",
+      "source_document_id": 29787,
+      "agent_source_text_id": 27337,
+      "text_hash": "1950a0e7d0100706e177b0b9e73ba81122625493bcdf7b6c3e76a5a718360a59",
+      "row": {
+        "fee_published_id": 129549,
+        "fee_name": "ACH NSF Fee"
+      },
+      "prior": {
+        "fee_published_id": 129481,
+        "fee_name": "Nonsufficient Funds (NSF) Fee"
+      },
+      "text": "Deposit——————-$30.00\n\nShare Draft Fees\n\nNonsufficient Funds (NSF) Fee—————-$30.00 per item\n\nOverdraft Protection Transfer Fee———$4.00 per transfer\n\nOverdraft Privilege Fee————————-$30.00 per item\n\nStop Payment Fee——————————-$30.00 per item\n\nShare Draft Copy Fee—————————————$6.00\n\nShare Draft History Fee————————————$3.00\n\nTemporary Share Drafts Checks————————-$7.00\n\nNon-Member Check Cashing Fee———————–$7.00\n\nNon-Proprietary Debit/Credit Card Advance Fee—$3.00\n\nProprietary Debit/Credit Card Advance————–FREE\n\nOther Services Fee\n\nAccount Reconciling/ Research Fee———————$27.00 per hour\n\nACH NSF Fee——————–$30.00 per item\n\nACH Stop Payment Fee——–$30.00 per item\n\nBill Pay Standar"
+    },
+    {
+      "case_key": "distinct:15384:nsf",
+      "family": "distinct_same_dollar",
+      "canonical_fee_key": "nsf",
+      "amount": "32.00",
+      "source_document_id": 15384,
+      "agent_source_text_id": 2420,
+      "text_hash": "0706725a7c12709d41ef8cb030502a0296e2736e3d3e801ff17e0db7364527b1",
+      "row": {
+        "fee_published_id": 104833,
+        "fee_name": "Returned Check"
+      },
+      "prior": {
+        "fee_published_id": 23266,
+        "fee_name": "Non-Sufficient Funds/NSF (Check, Debit Card and ATM Card)"
+      },
+      "text": "0 months: Penalty of 365 days interest\n\nNon-Sufficient Funds/NSF (Check, Debit Card and ATM Card) | $32.00 per presentment\n\nReturned Check | $32.00 per presentment\n\nUncollected Funds | $32.00 per presentment\n\nNon-Membe"
+    },
+    {
+      "case_key": "distinct:3485:nsf",
+      "family": "distinct_same_dollar",
+      "canonical_fee_key": "nsf",
+      "amount": "32.00",
+      "source_document_id": 3485,
+      "agent_source_text_id": 7915,
+      "text_hash": "339e68c531ab52842cd1109ebbeaed17406903495e35ce62e142e9b2d5363e5a",
+      "row": {
+        "fee_published_id": 140562,
+        "fee_name": "Kiting Return Check fee, each item"
+      },
+      "prior": {
+        "fee_published_id": 44164,
+        "fee_name": "Non-Sufficient Funds Fee, each item"
+      },
+      "text": "n 3 months of Account opening | $ 10.00\nNon-Sufficient Funds Fee, each item | $ 32.00\nDiscretionary Courtesy Pay fees for overdraft items | $ 32.00\nUncollected/Reg. D Violation\n(Dishonored and returned check fee, each item) | $ 32.00\nKiting Return Check fee, each item | $ 32.00\nCheck Image Copy Fee | $ 3.00\nTemporary Checks (4 minimum) | $ 5.00/4"
+    },
+    {
+      "case_key": "distinct:6472:monthly_maintenance",
+      "family": "distinct_same_dollar",
+      "canonical_fee_key": "monthly_maintenance",
+      "amount": "5.00",
+      "source_document_id": 6472,
+      "agent_source_text_id": 4019,
+      "text_hash": "a1f3c7a496864f555709d4731dd2511618df5a362e60cbd5683b5522e73f6559",
+      "row": {
+        "fee_published_id": 134101,
+        "fee_name": "Enjoy! Rewards Checking monthly service fee"
+      },
+      "prior": {
+        "fee_published_id": 23868,
+        "fee_name": "Interest Checking monthly service fee (per month)"
+      },
+      "text": " unpaid, you may also be subject to a | Enjoy! Rewards Checking monthly service fee (per month) .................................$5.00\nseparate late payment fee in accordance with your loan agreement.) | (waived with direct deposit or one bill payment per month,\nand 10 debit card transactions posted within the month)\nWIRE TRANSFERS\nInterest Checking monthly service fee (per month).............................................$5.00\nIncoming wire................"
+    },
+    {
+      "case_key": "distinct:29668:safe_deposit_box",
+      "family": "distinct_same_dollar",
+      "canonical_fee_key": "safe_deposit_box",
+      "amount": "50.00",
+      "source_document_id": 29668,
+      "agent_source_text_id": 27210,
+      "text_hash": "a027a0c32982e9406b7737e8b6896c82e27fb1fa1ef5c4321596a60ca2b110a0",
+      "row": {
+        "fee_published_id": 110654,
+        "fee_name": "Lost Key"
+      },
+      "prior": {
+        "fee_published_id": 110636,
+        "fee_name": "Drilling Box and Change of Locks"
+      },
+      "text": "$105 | $84\n\nSize 10 x 15 | $140 | $112\n\nDrilling Box and Change of Locks | $50 per box, plus locksmith fee | $50 per box, plus locksmith fee\n\nLost Key | $50 per item | $50 per item\n\n*Effective Date: 3.1.2019. NCUA does not insure "
+    },
+    {
+      "case_key": "distinct:33260:safe_deposit_box",
+      "family": "distinct_same_dollar",
+      "canonical_fee_key": "safe_deposit_box",
+      "amount": "30.00",
+      "source_document_id": 33260,
+      "agent_source_text_id": 31303,
+      "text_hash": "9e331be0e8f75e87d328da643fa4e58038c31564b8b0a5fd4ae18b32c3931c0d",
+      "row": {
+        "fee_published_id": 124349,
+        "fee_name": "Lost Key"
+      },
+      "prior": {
+        "fee_published_id": 80532,
+        "fee_name": "10×5 inches"
+      },
+      "text": "5\n\n5×5 inches | $20\n\n10×3 inches | $25\n\n10×5 inches | $30\n\n10×10 inches | $40\n\nLost Key | $30\n\nDrill Box | $200\n\nAvailable only at main office.\n\nFees Updated:\n\nLocatio"
+    },
+    {
+      "case_key": "distinct:19918:overdraft",
+      "family": "distinct_same_dollar",
+      "canonical_fee_key": "overdraft",
+      "amount": "19.00",
+      "source_document_id": 19918,
+      "agent_source_text_id": 15722,
+      "text_hash": "f1b53d59a51475677bfdb6c9132fce6517fe6f721521d40f3ccd4139e2070c80",
+      "row": {
+        "fee_published_id": 122196,
+        "fee_name": "Courtesy Pay ACH Fee"
+      },
+      "prior": {
+        "fee_published_id": 107450,
+        "fee_name": "Overdrafts"
+      },
+      "text": "Ms**** | $1.50 | Courtesy Pay Fee | $19\nCourtesy Pay ACH Fee | $19\nOTHER FEES\nACH | Foreign Currency Order | $30\nSet Up | FREE | Special Requests | Priced\nChanges/Cancellations | $10 | accordingly\nOverdrafts | $19\nNSFs | $19\nCheck Collection / All Foreign (exchange fees may also apply) "
+    },
+    {
+      "case_key": "distinct:7715:atm_non_network",
+      "family": "distinct_same_dollar",
+      "canonical_fee_key": "atm_non_network",
+      "amount": "2.00",
+      "source_document_id": 7715,
+      "agent_source_text_id": 2004,
+      "text_hash": "ba6fb25c47df725a7dcee871863b46bff4aff18a3305240cd1f73bd4346f7a9e",
+      "row": {
+        "fee_published_id": 137888,
+        "fee_name": "Transfer at Foreign ATM"
+      },
+      "prior": {
+        "fee_published_id": 137887,
+        "fee_name": "Balance Inquiry at Foreign ATM"
+      },
+      "text": "t Union-owned or CO-OP Network ATM FREE\nBalance Inquiry at Foreign ATM $2 per inquiry\nDeposit at Foreign ATM $2 per deposit\nTransfer at Foreign ATM $2 per transfer\nWithdrawal at Foreign ATM (Assessed daily per withdrawal) $2 pe"
+    },
+    {
+      "case_key": "distinct:2245:stop_payment",
+      "family": "distinct_same_dollar",
+      "canonical_fee_key": "stop_payment",
+      "amount": "30.00",
+      "source_document_id": 2245,
+      "agent_source_text_id": 6092,
+      "text_hash": "9d306552023c02cbb65ca50cf1213888a9014d4248c9ec7dab3195a23d19a51a",
+      "row": {
+        "fee_published_id": 106185,
+        "fee_name": "Stop Payment on ACH"
+      },
+      "prior": {
+        "fee_published_id": 31938,
+        "fee_name": "Stop Payment on Check"
+      },
+      "text": "…………………………….……………………………………………... $30.00\nStop Payment on Check ………………………..………………………………………… $30.00\nStop Payment on ACH ……………………………………………………………………. $30.00\nStop Payment Online Bill Pay ………………………………………"
+    },
+    {
+      "case_key": "distinct:28481:stop_payment",
+      "family": "distinct_same_dollar",
+      "canonical_fee_key": "stop_payment",
+      "amount": "25.00",
+      "source_document_id": 28481,
+      "agent_source_text_id": 25845,
+      "text_hash": "5e82dce4ce27d2fab9cb98b9a7bd956192202b5c0563ba76651c12162f262357",
+      "row": {
+        "fee_published_id": 132505,
+        "fee_name": "Stop Payments – Check, other items"
+      },
+      "prior": {
+        "fee_published_id": 132504,
+        "fee_name": "Stop Payments – ACH Payments"
+      },
+      "text": " $5.00 each\n\nStop Payments\n\nItem | Fee\n\nStop Payments – ACH Payments | $25.00 each\n\nStop Payments – Check, other items | $25.00 each\n\nWire Transfers\n\nItem | Fee\n\nWire Transfer – Domestic | Incoming "
+    },
+    {
+      "case_key": "distinct:30291:stop_payment",
+      "family": "distinct_same_dollar",
+      "canonical_fee_key": "stop_payment",
+      "amount": "35.00",
+      "source_document_id": 30291,
+      "agent_source_text_id": 27897,
+      "text_hash": "b0dd203a19c6e055fcd6c94d3ba092a25fc348edc03fe7fc714274fb27c6ed37",
+      "row": {
+        "fee_published_id": 137911,
+        "fee_name": "Stop Payment Bill Pay"
+      },
+      "prior": {
+        "fee_published_id": 137910,
+        "fee_name": "Stop Payment Personal Checking"
+      },
+      "text": ".00 per Item (Maximum $175.00 per day)\n\nStop Payment Personal Checking | $35.00 per Item (over the counter or by phone) $25.00 per Check (self-initiated online – drafts only)\n\nStop Payment Bill Pay | $35.00\n\nE-Z Checking Fee | $4.95 if standard features are not chosen. Standar"
+    },
+    {
+      "case_key": "duplicate:14695:stop_payment",
+      "family": "true_duplicate",
+      "canonical_fee_key": "stop_payment",
+      "amount": "35.00",
+      "source_document_id": 14695,
+      "agent_source_text_id": 2451,
+      "text_hash": "f4b04d6decf30f2fb41ede8ef9340a7f4ce4866d281b03357dbf844c2c2dfb23",
+      "row": {
+        "fee_published_id": 67590,
+        "fee_name": "Stop Payments"
+      },
+      "prior": {
+        "fee_published_id": 15612,
+        "fee_name": "Stop Payment"
+      },
+      "text": "..........8\nquestion\naccount. The fin | Stop Payments................................................................................",
+      "note": "Both read from the one \"Stop Payments\" line (same offset in the text); both live on 2026-10-14."
+    },
+    {
+      "case_key": "duplicate:916:stop_payment",
+      "family": "true_duplicate",
+      "canonical_fee_key": "stop_payment",
+      "amount": "32.00",
+      "source_document_id": 916,
+      "agent_source_text_id": 6346,
+      "text_hash": "00f153614899d2db4724fe7b732170dc1630d485292febc42533efc2ac822fd3",
+      "row": {
+        "fee_published_id": 43276,
+        "fee_name": "Stop Payment ……………………………………………..……"
+      },
+      "prior": {
+        "fee_published_id": 12984,
+        "fee_name": "Stop Payment"
+      },
+      "text": "tem …………......…..…………………………...………….. $5\nStop Payment ……………………………………………..……......... $32 | OTHER FEES AND SERVICES\nUndeliverable Mail ……...…………………………......",
+      "note": "One line, read once with its dot leader glued on; both live on 2026-10-14 (frequencies per_occurrence and none)."
+    },
+    {
+      "case_key": "duplicate:29377:monthly_maintenance",
+      "family": "true_duplicate",
+      "canonical_fee_key": "monthly_maintenance",
+      "amount": "3.00",
+      "source_document_id": 29377,
+      "agent_source_text_id": 26851,
+      "text_hash": "f9b42ae6af26c8b35dd2ab806c354a535a0b681e7edb30652b00a077a24ce107",
+      "row": {
+        "fee_published_id": 135849,
+        "fee_name": "1Monthly service charge"
+      },
+      "prior": {
+        "fee_published_id": 135848,
+        "fee_name": "Monthly service charge"
+      },
+      "text": "le. See fee schedule for more details.\n\n1Monthly service charge of $3 will be imposed every quarterly statement cycle if the account falls belo",
+      "note": "One footnote sentence, read once with its footnote mark; both live on 2026-10-14 (frequencies monthly and quarterly)."
+    },
+    {
+      "case_key": "duplicate:675:bill_pay",
+      "family": "true_duplicate",
+      "canonical_fee_key": "bill_pay",
+      "amount": "8.95",
+      "source_document_id": 675,
+      "agent_source_text_id": 5539,
+      "text_hash": "baac8e718e4009f28361e9c715d4aae7d866b6adbc5c093743d6f291bfc51fd1",
+      "row": {
+        "fee_published_id": 33142,
+        "fee_name": "Small Business Bill Pay (per cycle)"
+      },
+      "prior": {
+        "fee_published_id": 12957,
+        "fee_name": "Small Business Bill Pay"
+      },
+      "text": ".................................$50.00\nSmall Business Bill Pay (per cycle) ...............................................................................",
+      "note": "One line, read once with and once without its note; both live on 2026-10-14 (frequencies other and monthly)."
+    },
+    {
+      "case_key": "distinct:17371:nsf",
+      "family": "distinct_same_dollar",
+      "canonical_fee_key": "nsf",
+      "amount": "35.00",
+      "source_document_id": 17371,
+      "agent_source_text_id": 12893,
+      "text_hash": "f3e4d2e20fcc3b30e1bf391dc6eb651404c675edea88fd6d4af379b7983bb441",
+      "row": {
+        "fee_published_id": 105155,
+        "fee_name": "ACH Insufficient Funds"
+      },
+      "prior": {
+        "fee_published_id": 1725,
+        "fee_name": "Insufficient Funds"
+      },
+      "text": "Insufficient Funds | $35.00\n\nInsufficient Funds Transfer from Share Account | $1.00\n\nReturned Check Fee | $35.00\n\nStop Payment | $35.00\n\nACH Category\n\nDescription | Fee\n\nACH Stop Payment | $35.00\n\nACH Insufficient Funds | $35.00\n\nInsufficient Funds Transfer from Share Account | $1.0\n\nShare Accounts",
+      "note": "\"ACH Insufficient Funds\" holds every word of \"Insufficient Funds\", so separateLines reads them as one line. The qualifier rule (qualifiedLines) puts the pair to the page check, which finds \"Insufficient Funds | $35.00\" printed apart from the ACH line (#1303)."
+    },
+    {
+      "case_key": "distinct:17371:stop_payment",
+      "family": "distinct_same_dollar",
+      "canonical_fee_key": "stop_payment",
+      "amount": "35.00",
+      "source_document_id": 17371,
+      "agent_source_text_id": 12893,
+      "text_hash": "f3e4d2e20fcc3b30e1bf391dc6eb651404c675edea88fd6d4af379b7983bb441",
+      "row": {
+        "fee_published_id": 6363,
+        "fee_name": "ACH Stop Payment"
+      },
+      "prior": {
+        "fee_published_id": 6352,
+        "fee_name": "Stop Payment"
+      },
+      "text": "t | $1.00\n\nReturned Check Fee | $35.00\n\nStop Payment | $35.00\n\nACH Category\n\nDescription | Fee\n\nACH Stop Payment | $35.00\n\nACH Insufficient Funds | $35.00\n\nInsufficient Funds Transfer from Sha",
+      "note": "The same shape: \"ACH Stop Payment | $35.00\" in the ACH table, \"Stop Payment | $35.00\" in the check-fee table (#1303)."
+    },
+    {
+      "case_key": "duplicate:13385:account_research",
+      "family": "true_duplicate",
+      "canonical_fee_key": "account_research",
+      "amount": "25.00",
+      "source_document_id": 13385,
+      "agent_source_text_id": 801,
+      "text_hash": "7727b0fa7873ea9db03870a98119c6650228e5874e5d949733dca5a127ff490c",
+      "row": {
+        "fee_published_id": 138008,
+        "fee_name": "Account Research fee"
+      },
+      "prior": {
+        "fee_published_id": 79471,
+        "fee_name": "Research fee"
+      },
+      "text": "e | $1.00 par value\nEarly closure (180 days) fee | $15.00\nLevy/Garnishment Processing fee per notification | $100.00\nAccount History fee | $2.00 each\nAccount Research fee | $25.00 per hour / 1-hour minimum\n\nCHECK FEES (waived for members 65 and older)\nMoney Order fee (limit of $1,000 per money order) | $3.00 each\nCashier's Check",
+      "note": "\"Account\" in front of \"Research fee\" passes the qualifier rule, but the page prints \"Research fee\" only inside the one line \"Account Research fee | $25.00\", so the page check keeps the two reads one fee (#1303). Both reads are live today."
+    },
+    {
+      "case_key": "duplicate:13647:heading_over_qualified_line",
+      "family": "true_duplicate",
+      "canonical_fee_key": "monthly_maintenance",
+      "amount": "0.00",
+      "source_document_id": 13647,
+      "agent_source_text_id": 1114,
+      "text_hash": "8b97cdbe6d03f9b624fec8d0be0ad9a06c7aadffec345f99e3093f03d5ffe97a",
+      "row": {
+        "fee_published_id": 0,
+        "fee_name": "Business Checking"
+      },
+      "prior": {
+        "fee_published_id": 0,
+        "fee_name": "Small Business Checking"
+      },
+      "text": "Tier 5: $400k-$999,999.99 2.78% 2.82%\nTier 6: >$$1MM 3.26% 3.31%\nBusiness Checking\nSmall Business Checking $0 N/A No monthly fee; No minimum balance requirements\nBusiness Interest Checking $0\nTier 1: $0-$1499.99 0.00% Daily balance of $1,500 required to earn interest",
+      "note": "The #1314 review gap: the heading \"Business Checking\" prints directly above the qualified line \"Small Business Checking $0\", and the heading's only price comes after the longer name. So a read of the heading at $0 is that line, not a second fee. A constructed pair on a real page: neither row is a live fee (fee_published_id 0)."
+    }
+  ],
+  "category": [
+    {
+      "case_key": "takedown:82687:monthly_maintenance",
+      "canonical_fee_key": "monthly_maintenance",
+      "fee_name": "API Service Monthly Fee (per account)",
+      "amount": "10.00",
+      "source_document_id": 7902,
+      "text_hash": "8374ba0d4e3411ca9354e1779caa4f4461b7f9aa25c5f0da7b73a7d8e5b67116",
+      "excerpt": "API Service Monthly Fee (per account) | $10",
+      "expected": "name_contradicts",
+      "fee_published_id": 82687
+    },
+    {
+      "case_key": "takedown:95769:monthly_maintenance",
+      "canonical_fee_key": "monthly_maintenance",
+      "fee_name": "Sweep maintenance charge (per month)",
+      "amount": "38.95",
+      "source_document_id": 316,
+      "text_hash": "6f3062eca464e1bd661fa7c0757ae2369f4f8904044f5246074127cd00518821",
+      "excerpt": "Sweep maintenance charge (per month) ....................................................................................................................... $38.95",
+      "expected": "name_contradicts",
+      "fee_published_id": 95769
+    },
+    {
+      "case_key": "takedown:88787:monthly_maintenance",
+      "canonical_fee_key": "monthly_maintenance",
+      "fee_name": "Perks Package Monthly Fee (waived with Ultra Checking)",
+      "amount": "3.95",
+      "source_document_id": 18174,
+      "text_hash": "1e61e5c196f9713c40cc8091291dec8559cef0376c13d9008cfefa94cf60eb1e",
+      "excerpt": "Perks Package Monthly Fee (waived with Ultra Checking) ................................................ $3.95",
+      "expected": "name_contradicts",
+      "fee_published_id": 88787
+    },
+    {
+      "case_key": "takedown:86973:monthly_maintenance",
+      "canonical_fee_key": "monthly_maintenance",
+      "fee_name": "Remote Deposit Capture Machine Rental (monthly fee)",
+      "amount": "15.00",
+      "source_document_id": 12895,
+      "text_hash": "10f43bbc3d211c515406eee9401a610ce6393c33ae0fc2c101a8e38767549a96",
+      "excerpt": "Remote Deposit Capture Machine Rental (monthly fee) | $15.00",
+      "expected": "name_contradicts",
+      "fee_published_id": 86973
+    },
+    {
+      "case_key": "takedown:85865:monthly_maintenance",
+      "canonical_fee_key": "monthly_maintenance",
+      "fee_name": "ACH Monthly Fee, per account",
+      "amount": "25.00",
+      "source_document_id": 21514,
+      "text_hash": "dae211fdc351a04fb9dc32a450fc9d0e01eac11e8091a71dccc054d852c1d830",
+      "excerpt": "ACH Monthly Fee, per account $25.00",
+      "expected": "name_contradicts",
+      "fee_published_id": 85865
+    },
+    {
+      "case_key": "takedown:86782:monthly_maintenance",
+      "canonical_fee_key": "monthly_maintenance",
+      "fee_name": "ID Theft Monthly Service Charge",
+      "amount": "1.25",
+      "source_document_id": 19311,
+      "text_hash": "2beedce3bd77bc2ba6da8f37e835dad1bd0802e00376a7eb45f6c5a25c2d0717",
+      "excerpt": "ID Theft Monthly Service Charge | $1.25",
+      "expected": "name_contradicts",
+      "fee_published_id": 86782
+    },
+    {
+      "case_key": "live:23868:monthly_maintenance",
+      "canonical_fee_key": "monthly_maintenance",
+      "fee_name": "Interest Checking monthly service fee (per month)",
+      "amount": "5.00",
+      "source_document_id": 6472,
+      "text_hash": "a1f3c7a496864f555709d4731dd2511618df5a362e60cbd5683b5522e73f6559",
+      "excerpt": "Interest Checking monthly service fee (per month).............................................$5.00",
+      "expected": "ok",
+      "fee_published_id": 23868
+    },
+    {
+      "case_key": "live:29125:monthly_maintenance",
+      "canonical_fee_key": "monthly_maintenance",
+      "fee_name": "Monthly Maintenance Fee",
+      "amount": "2.95",
+      "source_document_id": 15261,
+      "text_hash": "e2e5f54844839e06c7e81a4c999742517a7131387b016c726071d040e5140295",
+      "excerpt": "Monthly Maintenance Fee | $2.95 per month",
+      "expected": "ok",
+      "fee_published_id": 29125
+    },
+    {
+      "case_key": "live:26995:monthly_maintenance",
+      "canonical_fee_key": "monthly_maintenance",
+      "fee_name": "Fresh Start Checking Monthly Fee",
+      "amount": "12.00",
+      "source_document_id": 2781,
+      "text_hash": "df5fb963f8edc912894c9b9460dab6a6d83e0a2303d6b642b47e47e3bf70ffd2",
+      "excerpt": "Fresh Start Checking Monthly Fee $ 12.00",
+      "expected": "ok",
+      "fee_published_id": 26995
+    },
+    {
+      "case_key": "live:85484:monthly_maintenance",
+      "canonical_fee_key": "monthly_maintenance",
+      "fee_name": "Monthly maintenance fee",
+      "amount": "5.00",
+      "source_document_id": 19682,
+      "text_hash": "e8f2cc0d488369f7195461d687f1f358d98654f6f8200f8839bceee2ba096186",
+      "excerpt": "| Monthly maintenance fee: $5.00 - fee will be imposed each month the account falls below a $100.00 minimum daily balance during the statement cycle",
+      "expected": "ok",
+      "fee_published_id": 85484
+    },
+    {
+      "case_key": "live:123355:monthly_maintenance",
+      "canonical_fee_key": "monthly_maintenance",
+      "fee_name": "Monthly service charge",
+      "amount": "3.00",
+      "source_document_id": 26836,
+      "text_hash": "6011dee60087d2204c316236ce52e0666067ac1a539b2f6a64bcd102673cd475",
+      "excerpt": "Monthly service charge: $3.00",
+      "expected": "ok",
+      "fee_published_id": 123355
+    },
+    {
+      "case_key": "takedown:94562:nsf",
+      "canonical_fee_key": "nsf",
+      "fee_name": "Returned Item Fee",
+      "amount": "6.00",
+      "source_document_id": 16603,
+      "text_hash": "8589f53817dbb984e6b4751f7ece301c0f571572ae94fb5fa51ece8be4c7d01b",
+      "excerpt": "Returned Item Fee | $6.00/item",
+      "expected": "schedule_contradicts",
+      "fee_published_id": 94562,
+      "document_nsf_amount": "20.00"
+    },
+    {
+      "case_key": "takedown:125611:nsf",
+      "canonical_fee_key": "nsf",
+      "fee_name": "Returned Check Fee",
+      "amount": "20.00",
+      "source_document_id": 27566,
+      "text_hash": "d0b17c489083e122147822330242f8919587bab0fea1f650733fd22506f9f9bf",
+      "excerpt": "Returned Check Fee | $ 20.00 / item",
+      "expected": "schedule_contradicts",
+      "fee_published_id": 125611,
+      "document_nsf_amount": "25.00"
+    },
+    {
+      "case_key": "takedown:118170:nsf",
+      "canonical_fee_key": "nsf",
+      "fee_name": "Return Item Charge",
+      "amount": "7.00",
+      "source_document_id": 4493,
+      "text_hash": "40cb57002c8eeaedb6a3f71754112440213b745a777538c211b8cbac9e89db33",
+      "excerpt": "Return Item Charge | $7.00 per each",
+      "expected": "schedule_contradicts",
+      "fee_published_id": 118170,
+      "document_nsf_amount": "30.00"
+    },
+    {
+      "case_key": "takedown:104296:nsf",
+      "canonical_fee_key": "nsf",
+      "fee_name": "Returned Item",
+      "amount": "15.00",
+      "source_document_id": 23904,
+      "text_hash": "3cb1397513abc165d663b33541958ff6519c2e5d51c0f64015aca64724406c66",
+      "excerpt": "Returned Item .................................................................. $15.00",
+      "expected": "schedule_contradicts",
+      "fee_published_id": 104296,
+      "document_nsf_amount": "29.00"
+    },
+    {
+      "case_key": "takedown:141604:nsf",
+      "canonical_fee_key": "nsf",
+      "fee_name": "Return Check Fee",
+      "amount": "15.00",
+      "source_document_id": 32213,
+      "text_hash": "238a6056c5c4701b9c32a35fc091b8ce95ec63cf39f484602db9ab5fde627eb2",
+      "excerpt": "Return Check Fee $15.00",
+      "expected": "schedule_contradicts",
+      "fee_published_id": 141604,
+      "document_nsf_amount": "33.00"
+    },
+    {
+      "case_key": "live:110698:nsf",
+      "canonical_fee_key": "nsf",
+      "fee_name": "NSF Fee",
+      "amount": "32.00",
+      "source_document_id": 21604,
+      "text_hash": "e48e32d6923a2e7059daa86277305985f973707950b8a1a27e8debae388782d3",
+      "excerpt": "NSF Fee | $32.00/item",
+      "expected": "ok",
+      "fee_published_id": 110698,
+      "document_nsf_amount": "32.00"
+    },
+    {
+      "case_key": "live:129229:nsf",
+      "canonical_fee_key": "nsf",
+      "fee_name": "NSF (Item Returned)",
+      "amount": "25.00",
+      "source_document_id": 27564,
+      "text_hash": "ac2ffc56c79b480703da3ea475079e710cccf29a16b55c65e2199097ffce3432",
+      "excerpt": "NSF (Item Returned) | $25.00/Item",
+      "expected": "ok",
+      "fee_published_id": 129229
+    },
+    {
+      "case_key": "live:95725:nsf",
+      "canonical_fee_key": "nsf",
+      "fee_name": "NSF Returned Item Fee",
+      "amount": "30.00",
+      "source_document_id": 12637,
+      "text_hash": "46ce84cb9613f8c383d0641c38fdf60e0b6fb9646e5c54057a8d49cc0ec39e70",
+      "excerpt": "NSF Returned Item Fee: $30.00 per item",
+      "expected": "ok",
+      "fee_published_id": 95725
+    },
+    {
+      "case_key": "live:136715:nsf",
+      "canonical_fee_key": "nsf",
+      "fee_name": "ACH Drawn on Non-Sufficient or Uncollected Funds",
+      "amount": "35.00",
+      "source_document_id": 29655,
+      "text_hash": "6eab737b08487ffb0f496a90604e4fc5566db449b2c55784a0f4c9f6a2904d92",
+      "excerpt": "ACH Drawn on Non-Sufficient or Uncollected Funds.................................. $35.00 each",
+      "expected": "ok",
+      "fee_published_id": 136715
+    },
+    {
+      "case_key": "live:117626:nsf",
+      "canonical_fee_key": "nsf",
+      "fee_name": "Returned Item",
+      "amount": "25.00",
+      "source_document_id": 26801,
+      "text_hash": "e2afa240dcd912b61133edc387d6bb47c19769cf82315752c93361e0d3dcce46",
+      "excerpt": "Returned Item | $25.00 | Item",
+      "expected": "ok",
+      "fee_published_id": 117626,
+      "note": "No higher NSF price is known for this schedule here, so a plain returned item stays NSF."
+    },
+    {
+      "case_key": "takedown:104666:safe_deposit_box",
+      "canonical_fee_key": "safe_deposit_box",
+      "fee_name": "Deposit Bags & Night Deposit Drop Box: Disposable 9\" x 12\" bundle",
+      "amount": "15.00",
+      "source_document_id": 14562,
+      "text_hash": "5c79ffe26ddcdb2ae98555654843293e22399ea7deb0f011d03c202984b61692",
+      "excerpt": "Deposit Bags & Night Deposit Drop Box | Disposable 9\" x 12\" bundle | $ 15.00",
+      "expected": "name_contradicts",
+      "fee_published_id": 104666
+    },
+    {
+      "case_key": "takedown:86917:safe_deposit_box",
+      "canonical_fee_key": "safe_deposit_box",
+      "fee_name": "Plastic Deposit Bag Fee, per 100, 11”x15” (Business)",
+      "amount": "22.00",
+      "source_document_id": 7866,
+      "text_hash": "9f06c734522164ca2a434677c5d53af74fd1ab417bfdbd0ea3a353c7ff9036c5",
+      "excerpt": "Plastic Deposit Bag Fee, per 100, 11”x15” (Business) . . . . . $22",
+      "expected": "name_contradicts",
+      "fee_published_id": 86917
+    },
+    {
+      "case_key": "takedown:86168:safe_deposit_box",
+      "canonical_fee_key": "safe_deposit_box",
+      "fee_name": "Zipper with Lock (9\" X 16”)",
+      "amount": "20.00",
+      "source_document_id": 21553,
+      "text_hash": "b062b24951e565aa34996cf8288c406219d3dadc8ac2509f0d1c466a9065ad95",
+      "excerpt": "Zipper with Lock (9\" X 16”) ...................................................................................................... $20.00",
+      "expected": "name_contradicts",
+      "fee_published_id": 86168
+    },
+    {
+      "case_key": "live:105516:safe_deposit_box",
+      "canonical_fee_key": "safe_deposit_box",
+      "fee_name": "Safe Deposit Box Key Replacement",
+      "amount": "20.00",
+      "source_document_id": 24130,
+      "text_hash": "b7f82f0b0b9c868aea65982b01c73bb9706c7cf24fca79c36fa5154d0ee3611b",
+      "excerpt": "Safe Deposit Box Key Replacement $20.00",
+      "expected": "ok",
+      "fee_published_id": 105516
+    },
+    {
+      "case_key": "live:120104:safe_deposit_box",
+      "canonical_fee_key": "safe_deposit_box",
+      "fee_name": "Fee for 1 lost key",
+      "amount": "15.00",
+      "source_document_id": 26496,
+      "text_hash": "d436bc3a47831c5ed608e8f85a1e39d9eeb28c42ce35a88f76d3c68ab25069f1",
+      "excerpt": "Fee for 1 lost key | $15.00",
+      "expected": "ok",
+      "fee_published_id": 120104
+    },
+    {
+      "case_key": "live:89270:safe_deposit_box",
+      "canonical_fee_key": "safe_deposit_box",
+      "fee_name": "Safe Deposit Box - 3×5",
+      "amount": "20.00",
+      "source_document_id": 29907,
+      "text_hash": "98eb5129c444464cf9bbb439ab96e23dc6bdc529299e396bdd82d34ff33db012",
+      "excerpt": "Safe Deposit Box - 3×5 | $20.00 | yearly",
+      "expected": "ok",
+      "fee_published_id": 89270
+    },
+    {
+      "case_key": "live:130134:safe_deposit_box",
+      "canonical_fee_key": "safe_deposit_box",
+      "fee_name": "3\" x 5\" box",
+      "amount": "25.00",
+      "source_document_id": 27753,
+      "text_hash": "d075cf82a5eacf8529dc8705087b42e078866f6f4023614f077c848f482c3b96",
+      "excerpt": "3\" x 5\" box - $25.00 per year",
+      "expected": "ok",
+      "fee_published_id": 130134
+    },
+    {
+      "case_key": "live:110636:safe_deposit_box",
+      "canonical_fee_key": "safe_deposit_box",
+      "fee_name": "Drilling Box and Change of Locks",
+      "amount": "50.00",
+      "source_document_id": 29668,
+      "text_hash": "a027a0c32982e9406b7737e8b6896c82e27fb1fa1ef5c4321596a60ca2b110a0",
+      "excerpt": "Drilling Box and Change of Locks | $50 per box, plus locksmith fee | $50 per box, plus locksmith fee",
+      "expected": "ok",
+      "fee_published_id": 110636
+    },
+    {
+      "case_key": "takedown:92587:overdraft",
+      "canonical_fee_key": "overdraft",
+      "fee_name": "Overdraft Protection Fee",
+      "amount": "5.00",
+      "source_document_id": 17863,
+      "text_hash": "9b2b4a80fec5a7450d19102a4fe500bb1183162cbb8d704e87fe6c636ff32167",
+      "excerpt": "Overdraft Protection Fee | $5.00 each",
+      "expected": "name_contradicts",
+      "fee_published_id": 92587
+    },
+    {
+      "case_key": "takedown:93037:overdraft",
+      "canonical_fee_key": "overdraft",
+      "fee_name": "Overdraft Protection Charge",
+      "amount": "7.00",
+      "source_document_id": 16780,
+      "text_hash": "01efc71c29273b29f1ebffaec7b6271cdb5e6cc1a1b185e1cda8ff799dacbada",
+      "excerpt": "Overdraft Protection Charge ……………….….… $7.00",
+      "expected": "name_contradicts",
+      "fee_published_id": 93037
+    },
+    {
+      "case_key": "takedown:95933:overdraft",
+      "canonical_fee_key": "overdraft",
+      "fee_name": "Overdraft Protection Draw - Per Occurrence",
+      "amount": "10.00",
+      "source_document_id": 22346,
+      "text_hash": "569498fe6dc0ba8d4394c4da6288296bc11a0e3f91682c95dca252572ff1875a",
+      "excerpt": "Overdraft Protection Draw - Per Occurrence $10.00",
+      "expected": "name_contradicts",
+      "fee_published_id": 95933
+    },
+    {
+      "case_key": "takedown:97324:overdraft",
+      "canonical_fee_key": "overdraft",
+      "fee_name": "Hometown No Overdraft Checking",
+      "amount": "50.00",
+      "source_document_id": 22596,
+      "text_hash": "64f8fbf9cee3b5df9e9614c0f5dd76351653e3f841dcac360d887da0aeafd5e9",
+      "excerpt": "Hometown No Overdraft Checking | $50 | $5.95 | N/A | Complimentary VISA debit card",
+      "expected": "name_contradicts",
+      "fee_published_id": 97324
+    },
+    {
+      "case_key": "takedown:94372:od_protection_transfer",
+      "canonical_fee_key": "od_protection_transfer",
+      "fee_name": "Overdraft Protection",
+      "amount": "25.00",
+      "source_document_id": 21822,
+      "text_hash": "781fd8c2dc03f1506efc06f1d0f0a15ebe8f8a66a4429a3fad1fa3e2c6db3dc9",
+      "excerpt": "Overdraft Protection | $25.00/Item",
+      "expected": "name_contradicts",
+      "fee_published_id": 94372,
+      "note": "A per-item overdraft protection price is the overdraft fee itself, filed as a transfer's fee."
+    },
+    {
+      "case_key": "live:131926:overdraft",
+      "canonical_fee_key": "overdraft",
+      "fee_name": "Overdraft",
+      "amount": "30.00",
+      "source_document_id": 28297,
+      "text_hash": "590d96259f4766935b5a8a0735c612bc17ec71a27d7790eb272b7db22946c385",
+      "excerpt": "Overdraft | $30.00 per item",
+      "expected": "ok",
+      "fee_published_id": 131926
+    },
+    {
+      "case_key": "live:103060:overdraft",
+      "canonical_fee_key": "overdraft",
+      "fee_name": "Overdraft, check, ACH and other item",
+      "amount": "30.00",
+      "source_document_id": 25458,
+      "text_hash": "8ccfee1ce867b94946de12b887b5bf5b4cfd278a0a2f2f8ed955555c53010aed",
+      "excerpt": "Overdraft, check, ACH and other item | $30.00 per item",
+      "expected": "ok",
+      "fee_published_id": 103060
+    },
+    {
+      "case_key": "live:132921:overdraft",
+      "canonical_fee_key": "overdraft",
+      "fee_name": "Courtesy Pay (CPAY)",
+      "amount": "15.00",
+      "source_document_id": 28564,
+      "text_hash": "62c5481ed38b0a3f531e403653f4174e882f736f5c066c9da2136ee91b31b727",
+      "excerpt": "Courtesy Pay (CPAY) – $15.00 per item (payment of overdrafts, ACH items, Internet Bill Payer, debit card transactions, & ATM withdrawal items up to $500 including fees)",
+      "expected": "ok",
+      "fee_published_id": 132921
+    },
+    {
+      "case_key": "live:54024:bill_pay",
+      "canonical_fee_key": "bill_pay",
+      "fee_name": "Expedited Bill Payment - Next Day (each)",
+      "amount": "14.95",
+      "source_document_id": 6833,
+      "text_hash": "4b2f7a5ae7d65a754cf928454c81d62ffafdd367b4cd7525e7ca128b8d99c464",
+      "excerpt": "Expedited Bill Payment - Next Day (each) $14.95",
+      "expected": "ok",
+      "fee_published_id": 54024
+    },
+    {
+      "case_key": "live:81673:bill_pay",
+      "canonical_fee_key": "bill_pay",
+      "fee_name": "Bill Pay Same Day Payment",
+      "amount": "10.00",
+      "source_document_id": 13797,
+      "text_hash": "04cccdfd26dfe10dc1929326fe6d68ddfc36a061c09236e28b1c3c9986062387",
+      "excerpt": "Bill Pay Same Day Payment | $10.00",
+      "expected": "ok",
+      "fee_published_id": 81673
+    },
+    {
+      "case_key": "live:28712:bill_pay",
+      "canonical_fee_key": "bill_pay",
+      "fee_name": "Digital Banking Bill Pay Fee",
+      "amount": "0.50",
+      "source_document_id": 2129,
+      "text_hash": "bd5cafff27d2c79b18cb02c92f54012e7f3b4ebf59eb65da5b160836263e7250",
+      "excerpt": "Digital Banking Bill Pay Fee | $0.50 per bill pay – 15 free per billing cycle",
+      "expected": "ok",
+      "fee_published_id": 28712
+    },
+    {
+      "case_key": "live:70969:bill_pay",
+      "canonical_fee_key": "bill_pay",
+      "fee_name": "Online Bill Pay",
+      "amount": "0.00",
+      "source_document_id": 32628,
+      "text_hash": "83cc3434ad4af1d4caea905b14f26243b24760600bd35e9a6141956da48dba74",
+      "excerpt": "Online Bill Pay | Free",
+      "expected": "ok",
+      "fee_published_id": 70969
+    },
+    {
+      "case_key": "takedown:97284:atm_non_network",
+      "canonical_fee_key": "atm_non_network",
+      "fee_name": "ATM Balance Inquiry",
+      "amount": "0.00",
+      "source_document_id": 2793,
+      "text_hash": "850cb94d302bd9831a49975f94dbdf732ea75cca32aa5473140ca97a9c8aa834",
+      "excerpt": "ATM Balance Inquiry | Free",
+      "expected": "name_unsupported",
+      "fee_published_id": 97284
+    },
+    {
+      "case_key": "takedown:87236:atm_non_network",
+      "canonical_fee_key": "atm_non_network",
+      "fee_name": "ATM/Visa Check Card Reorder Fee",
+      "amount": "5.00",
+      "source_document_id": 19883,
+      "text_hash": "af6038cec1712cbc974f0e00cb129ac3d34e280d6983407bcfbaab009dacdc80",
+      "excerpt": "ATM/Visa Check Card Reorder Fee | $5.00 each",
+      "expected": "name_contradicts",
+      "fee_published_id": 87236
+    },
+    {
+      "case_key": "live:137887:atm_non_network",
+      "canonical_fee_key": "atm_non_network",
+      "fee_name": "Balance Inquiry at Foreign ATM",
+      "amount": "2.00",
+      "source_document_id": 7715,
+      "text_hash": "ba6fb25c47df725a7dcee871863b46bff4aff18a3305240cd1f73bd4346f7a9e",
+      "excerpt": "Balance Inquiry at Foreign ATM $2 per inquiry",
+      "expected": "ok",
+      "fee_published_id": 137887
+    }
+  ],
+  "documents": [
+    {
+      "case_key": "product_page:21626:bill_pay",
+      "family": "product_page",
+      "source_document_id": 21626,
+      "document_url": "https://www.kearnybank.com/personal-banking/checking",
+      "canonical_fee_key": "bill_pay",
+      "fee_name": "Bill Pay"
+    },
+    {
+      "case_key": "product_page:28262:bill_pay",
+      "family": "product_page",
+      "source_document_id": 28262,
+      "document_url": "https://dakotawestcu.com/personal-checking/",
+      "canonical_fee_key": "bill_pay",
+      "fee_name": "Bill Pay"
+    },
+    {
+      "case_key": "product_page:19719:bill_pay",
+      "family": "product_page",
+      "source_document_id": 19719,
+      "document_url": "https://www.clearmountain.bank/personal/checking/clear-checking",
+      "canonical_fee_key": "bill_pay",
+      "fee_name": "Online Bill Pay"
+    },
+    {
+      "case_key": "product_page:23055:bill_pay",
+      "family": "product_page",
+      "source_document_id": 23055,
+      "document_url": "https://www.nativeamericanbank.com/personal-banking/personal-checking-and-savings/",
+      "canonical_fee_key": "bill_pay",
+      "fee_name": "Free Bill Pay (Personal Checking)"
+    },
+    {
+      "case_key": "product_page:23594:bill_pay",
+      "family": "product_page",
+      "source_document_id": 23594,
+      "document_url": "https://www.nationalcapitalbank.bank/personal/checking",
+      "canonical_fee_key": "bill_pay",
+      "fee_name": "Online Banking with FREE eStatements and Bill Pay"
+    },
+    {
+      "case_key": "product_page:21801:cashiers_check",
+      "family": "product_page",
+      "source_document_id": 21801,
+      "document_url": "https://www.smbonline.com/personal/personal-checking",
+      "canonical_fee_key": "cashiers_check",
+      "fee_name": "Free cashier's checks"
+    },
+    {
+      "case_key": "product_page:14222:money_order",
+      "family": "product_page",
+      "source_document_id": 14222,
+      "document_url": "https://www.gcbank.com/personal/checking",
+      "canonical_fee_key": "money_order",
+      "fee_name": "Money Orders"
+    },
+    {
+      "case_key": "product_page:23332:monthly_maintenance",
+      "family": "product_page",
+      "source_document_id": 23332,
+      "document_url": "https://www.nsfcu.org/accounts/checking/compare-accounts.html",
+      "canonical_fee_key": "monthly_maintenance",
+      "fee_name": "Monthly Maintenance Fee"
+    },
+    {
+      "case_key": "product_page:23609:monthly_maintenance",
+      "family": "product_page",
+      "source_document_id": 23609,
+      "document_url": "https://www.sherwood.bank/personal/checking",
+      "canonical_fee_key": "monthly_maintenance",
+      "fee_name": "Monthly Service Fee"
+    },
+    {
+      "case_key": "product_page:21989:monthly_maintenance",
+      "family": "product_page",
+      "source_document_id": 21989,
+      "document_url": "https://www.marionstate.bank/personal-checking/",
+      "canonical_fee_key": "monthly_maintenance",
+      "fee_name": "Monthly Service Charge"
+    },
+    {
+      "case_key": "product_page:22079:monthly_maintenance",
+      "family": "product_page",
+      "source_document_id": 22079,
+      "document_url": "https://www.mainestatecu.org/checking-and-savings/checking/",
+      "canonical_fee_key": "monthly_maintenance",
+      "fee_name": "No monthly service fees"
+    },
+    {
+      "case_key": "product_page:21427:monthly_maintenance",
+      "family": "product_page",
+      "source_document_id": 21427,
+      "document_url": "https://parknationalbank.com/checking/",
+      "canonical_fee_key": "monthly_maintenance",
+      "fee_name": "Monthly service charge"
+    },
+    {
+      "case_key": "product_page:23824:safe_deposit_box",
+      "family": "product_page",
+      "source_document_id": 23824,
+      "document_url": "https://www.citizens-bank.com/personal-banking/personal-checking/",
+      "canonical_fee_key": "safe_deposit_box",
+      "fee_name": "First Year Rental of a 3”x 5” Safe Deposit Box"
+    },
+    {
+      "case_key": "product_page:18040:atm_non_network",
+      "family": "product_page",
+      "source_document_id": 18040,
+      "document_url": "https://www.golifestore.com/Personal/Checking/Accounts",
+      "canonical_fee_key": "atm_non_network",
+      "fee_name": "Non-LifeStore ATM withdrawals"
+    },
+    {
+      "case_key": "schedule:49:bill_pay",
+      "family": "fee_schedule",
+      "source_document_id": 49,
+      "document_url": "https://localfirstbank.com/app/uploads/2025/01/Fees_Sheet_Personal.pdf?x65689",
+      "canonical_fee_key": "bill_pay",
+      "fee_name": "Online Bill Payment"
+    },
+    {
+      "case_key": "schedule:32628:bill_pay",
+      "family": "fee_schedule",
+      "source_document_id": 32628,
+      "document_url": "https://www.thenbcbank.com/resources/fee-schedule",
+      "canonical_fee_key": "bill_pay",
+      "fee_name": "Online Bill Pay",
+      "fee_published_id": 70969
+    },
+    {
+      "case_key": "schedule:29218:bill_pay",
+      "family": "fee_schedule",
+      "source_document_id": 29218,
+      "document_url": "https://www.tlccu.org/assets/files/U24q48QA",
+      "canonical_fee_key": "bill_pay",
+      "fee_name": "Bill Payment",
+      "fee_published_id": 135360
+    },
+    {
+      "case_key": "schedule:13054:bill_pay",
+      "family": "fee_schedule",
+      "source_document_id": 13054,
+      "document_url": "https://www.intrepidcu.org/_/kcms-doc/1499/40825/fee-schedule.pdf",
+      "canonical_fee_key": "bill_pay",
+      "fee_name": "Online Bill Pay",
+      "fee_published_id": 77843
+    },
+    {
+      "case_key": "schedule:362:bill_pay",
+      "family": "fee_schedule",
+      "source_document_id": 362,
+      "document_url": "https://www.farmbureau.bank/FarmBureauBank/media/PDFs/Business-Deposit-Account-Fee-Schedule.pdf",
+      "canonical_fee_key": "bill_pay",
+      "fee_name": "Business Online Bill Pay - Business Essentials"
+    },
+    {
+      "case_key": "schedule:963:bill_pay",
+      "family": "fee_schedule",
+      "source_document_id": 963,
+      "document_url": "https://www.bediasbank.com/account-fees",
+      "canonical_fee_key": "bill_pay",
+      "fee_name": "Bill Pay Fee"
+    },
+    {
+      "case_key": "schedule:15:monthly_maintenance",
+      "family": "fee_schedule",
+      "source_document_id": 15,
+      "document_url": "https://www.truist.com/content/dam/truist-bank/us/en/documents/rates-fees/personal/truist-one-personal-deposit-accounts-fee-schedule.pdf",
+      "canonical_fee_key": "monthly_maintenance",
+      "fee_name": "Monthly Maintenance"
+    },
+    {
+      "case_key": "schedule:1806:monthly_maintenance",
+      "family": "fee_schedule",
+      "source_document_id": 1806,
+      "document_url": "https://www.sloveniansavings.com/fee-schedules/",
+      "canonical_fee_key": "monthly_maintenance",
+      "fee_name": "DDA Checking Account Monthly service charge (sc)"
+    },
+    {
+      "case_key": "schedule:516:cashiers_check",
+      "family": "fee_schedule",
+      "source_document_id": 516,
+      "document_url": "https://bankesb.com/personal-fee-schedule/",
+      "canonical_fee_key": "cashiers_check",
+      "fee_name": "Cashier’s/Treasurer’s Check"
+    },
+    {
+      "case_key": "schedule:29668:safe_deposit_box",
+      "family": "fee_schedule",
+      "source_document_id": 29668,
+      "document_url": "https://aplusfcu.org/fee-schedule",
+      "canonical_fee_key": "safe_deposit_box",
+      "fee_name": "Drilling Box and Change of Locks",
+      "fee_published_id": 110636
+    }
+  ],
+  "near_name": {
+    "about": "Live rows of one document, category and amount under near names (#1302): a plural, punctuation, a trailing \"fee\", or one qualifier word in front. The duplicate collapse (nearNameRepeats) closes the copies the page prints as one line and keeps the copy named by `kept`; a pair the page prints as two lines at the price stays two fees. Rows are live fees as stored on 2026-10-14. `text_of` names the same_price case whose text the rows were read from.",
+    "cases": [
+      {
+        "case_key": "near:13385:account_research",
+        "source_document_id": 13385,
+        "canonical_fee_key": "account_research",
+        "amount": "25.00",
+        "text_of": "duplicate:13385:account_research",
+        "rows": [
+          {
+            "fee_published_id": 79471,
+            "fee_name": "Research fee",
+            "frequency": null,
+            "fee_audience": "unknown",
+            "published_at": "2026-10-07T08:46:25Z"
+          },
+          {
+            "fee_published_id": 138008,
+            "fee_name": "Account Research fee",
+            "frequency": null,
+            "fee_audience": "unknown",
+            "published_at": "2026-10-12T00:10:36Z"
+          }
+        ],
+        "closed": [
+          79471
+        ],
+        "kept": 138008,
+        "note": "One printed line, \"Account Research fee | $25.00\", read twice (#1303). The newer copy stays."
+      },
+      {
+        "case_key": "near:916:stop_payment",
+        "source_document_id": 916,
+        "canonical_fee_key": "stop_payment",
+        "amount": "32.00",
+        "text_of": "duplicate:916:stop_payment",
+        "rows": [
+          {
+            "fee_published_id": 12984,
+            "fee_name": "Stop Payment",
+            "frequency": "per_occurrence",
+            "fee_audience": "unknown",
+            "published_at": "2026-08-11T02:05:16Z"
+          },
+          {
+            "fee_published_id": 43276,
+            "fee_name": "Stop Payment ……………………………………………..……",
+            "frequency": null,
+            "fee_audience": "unknown",
+            "published_at": "2026-10-05T20:30:24Z"
+          }
+        ],
+        "closed": [
+          43276
+        ],
+        "kept": 12984,
+        "note": "One line, read once with its dot leader glued on. The copy that states its frequency stays."
+      },
+      {
+        "case_key": "near:2344:cashiers_check",
+        "source_document_id": 2344,
+        "canonical_fee_key": "cashiers_check",
+        "amount": "2.00",
+        "agent_source_text_id": 3878,
+        "text_hash": "812f257ddd49a3e3e183bd8ae05a8ad51cd17e7b9089714ba6d8a0b01a7997d8",
+        "text": "D (Verification of Deposit)……………...................................$20\nMonthly Service Fee….......................................................$10\nCashier’s Checks…..........................................................$2/each | Note: Applies to Basic business checking accounts and REset consumer\nNote: Limit of 3 checks issued per visit to teller window | checking accounts.",
+        "rows": [
+          {
+            "fee_published_id": 13013,
+            "fee_name": "Cashier's Checks",
+            "frequency": "per_occurrence",
+            "fee_audience": "unknown",
+            "published_at": "2026-08-11T02:05:27Z"
+          },
+          {
+            "fee_published_id": 128868,
+            "fee_name": "Cashier’s Checks",
+            "frequency": "per_item",
+            "fee_audience": "business",
+            "published_at": "2026-10-10T15:33:39Z"
+          },
+          {
+            "fee_published_id": 128896,
+            "fee_name": "Cashier’s Checks…",
+            "frequency": "per_item",
+            "fee_audience": "unknown",
+            "published_at": "2026-10-10T15:38:19Z"
+          }
+        ],
+        "closed": [
+          13013,
+          128896
+        ],
+        "kept": 128868,
+        "note": "Three reads of the one \"Cashier’s Checks ... $2/each\" line, which the page prints once. The copy that names its audience stays."
+      },
+      {
+        "case_key": "near:14695:stop_payment",
+        "source_document_id": 14695,
+        "canonical_fee_key": "stop_payment",
+        "amount": "35.00",
+        "agent_source_text_id": 2451,
+        "text_hash": "f4b04d6decf30f2fb41ede8ef9340a7f4ce4866d281b03357dbf844c2c2dfb23",
+        "text": "Stop Payments, each......................................................................$35\nSubpoena, Lev\n[...]\nStop Payment, each ......................................................................$35\nSubpoena, L",
+        "rows": [
+          {
+            "fee_published_id": 15612,
+            "fee_name": "Stop Payment",
+            "frequency": "per_item",
+            "fee_audience": "unknown",
+            "published_at": "2026-10-04T20:06:45Z"
+          },
+          {
+            "fee_published_id": 67590,
+            "fee_name": "Stop Payments",
+            "frequency": "per_item",
+            "fee_audience": "unknown",
+            "published_at": "2026-10-06T22:46:47Z"
+          }
+        ],
+        "closed": [],
+        "kept": null,
+        "note": "The document prints its schedule twice, about 8,000 characters apart: \"Stop Payments, each ... $35\" and \"Stop Payment, each ... $35\" (two excerpts joined by [...], dot leaders shortened). Two printed lines, so the collapse keeps both, as the publish check does (#1303). Whether the bank charges one fee or two is a person's call."
+      },
+      {
+        "case_key": "near:17371:stop_payment",
+        "source_document_id": 17371,
+        "canonical_fee_key": "stop_payment",
+        "amount": "35.00",
+        "text_of": "distinct:17371:stop_payment",
+        "rows": [
+          {
+            "fee_published_id": 6352,
+            "fee_name": "Stop Payment",
+            "frequency": "per_occurrence",
+            "fee_audience": "unknown",
+            "published_at": "2026-06-21T06:05:00Z"
+          },
+          {
+            "fee_published_id": 6363,
+            "fee_name": "ACH Stop Payment",
+            "frequency": "per_occurrence",
+            "fee_audience": "unknown",
+            "published_at": "2026-06-21T06:05:09Z"
+          }
+        ],
+        "closed": [],
+        "kept": null,
+        "note": "A one-word qualifier, but two printed lines in two tables (#1303), so both stay."
+      },
+      {
+        "case_key": "near:23731:gift_card_purchase",
+        "source_document_id": 23731,
+        "canonical_fee_key": "gift_card_purchase",
+        "amount": "4.25",
+        "agent_source_text_id": 20802,
+        "text_hash": "3c55afd78804ba12b076b5b8d12bd53509161c2623daea13f8bdc6edd1745ac4",
+        "text": "SCHEDULE OF FEES FOR PERSONAL ACCOUNTS\nValley Visa® Debit Card Transaction Fees:\n• Transaction at a Valley ATM: NO CHARGE\n[...]\nCheck printing: prices vary depending on style ordered; fee will be applied directly to the account.\nVisa® Gift Cards, each: $4.25.\nLevy handling fee per occurrence (Satisfied): $125.\n[...]\nSCHEDULE OF FEES FOR BUSINESS ACCOUNTS\nValley Business Visa® Debit Card Transaction Fees:\n[...]\nCheck printing: prices vary depending on style ordered; fee will be applied directly to the account.\nVisa® Gift Cards, each: $4.25.\nLevy handling fee p",
+        "rows": [
+          {
+            "fee_published_id": 13188,
+            "fee_name": "Visa Gift Card",
+            "frequency": "per_occurrence",
+            "fee_audience": "unknown",
+            "published_at": "2026-08-12T15:32:58Z"
+          },
+          {
+            "fee_published_id": 103400,
+            "fee_name": "Visa® Gift Cards",
+            "frequency": "per_item",
+            "fee_audience": "unknown",
+            "published_at": "2026-10-09T07:16:13Z"
+          }
+        ],
+        "closed": [],
+        "kept": null,
+        "note": "Valley prints \"Visa® Gift Cards, each: $4.25.\" once under its personal schedule and once under its business schedule, about 2,000 characters apart (excerpts joined by [...]). Two fees, so the collapse keeps both. The one wrong pair in the 20-pair check (#1302 comment 6175724347)."
+      }
+    ]
+  },
+  "known_misses": {
+    "about": "Cases today's rules still get wrong. Each runs as an expected failure: when a rule starts getting one right, its test fails, and the case moves into the gate above.",
+    "same_price": [],
+    "category": [
+      {
+        "case_key": "live:88513:bill_pay",
+        "canonical_fee_key": "bill_pay",
+        "fee_name": "Check/ACH/Bill Pay Payment",
+        "amount": "32.00",
+        "source_document_id": 6200,
+        "text_hash": "63cb45eeea6d74276483de7de6949b5dace61014dc03ea66e032bcb5ca09370b",
+        "excerpt": "Courtesy Pay (Paid NSF) Check/ACH/Bill Pay Payment | $32.00/item",
+        "expected": "not_ok",
+        "fee_published_id": 88513,
+        "note": "Live on 2026-10-14 as bill pay. The line is the courtesy pay (paid NSF) fee on a check, ACH or bill payment: an overdraft fee."
+      }
+    ]
+  }
+}

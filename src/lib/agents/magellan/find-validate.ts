@@ -1,7 +1,8 @@
 import { crawlerUserAgent } from "@/lib/agents/crawler-identity";
-import { htmlToScoringText, scoreFeePage, urlNamesFeePage } from "@/lib/agents/learning/fee-page";
+import { htmlToScoringText, isProductPageUrl, scoreFeePage, urlNamesFeePage } from "@/lib/agents/learning/fee-page";
 
-import { isArticleLink, isBusinessOnlyLink, isBusinessOnlyText, isErrorPageLink, isForeignHostLink, isSingleProductDisclosureLink, looksForeignSchedule } from "./link-coverage";
+import { isArticleLink, isBusinessOnlyLink, isBusinessOnlyText, isErrorPageLink, isForeignHostLink, isNonFeeDocumentLink, isSingleProductDisclosureLink, looksForeignSchedule } from "./link-coverage";
+import { unconfirmedDocumentHost } from "./other-bank-host";
 
 /**
  * The fee-page check every Magellan finder (free and paid) runs before a link is
@@ -47,21 +48,11 @@ const FEE_CONTENT_KEYWORDS = [
 /**
  * An account or product page ("/personal/checking", "/savings-accounts"): it may quote a
  * monthly fee or two, but it is not the bank's fee schedule. Such pages are kept as
- * companion account pages (`second-document.ts`), never as the bank's fee link.
+ * companion account pages (`second-document.ts`), never as the bank's fee link. The address
+ * rule is the one Rosetta and Hamilton use (`isProductPageUrl`, #1053).
  */
-const PRODUCT_PATH =
-  /\/[^?#]*(checking|savings|accounts?([/._?-]|$)|money-?market|certificates?|personal-banking|business-banking|deposit-products?|share-accounts?)/i;
-const FEE_NAMED_PATH = /(fee|schedule|charge|disclos|truth|pricing)/i;
-
 export function looksLikeProductPage(url: string): boolean {
-  let path: string;
-  try {
-    const parsed = new URL(url);
-    path = decodeURIComponent(parsed.pathname + parsed.search);
-  } catch {
-    return false;
-  }
-  return PRODUCT_PATH.test(path) && !FEE_NAMED_PATH.test(path) && !looksLikePdfUrl(url);
+  return isProductPageUrl(url);
 }
 
 /** Page text without its site navigation, header and footer, where fee words appear on every page. */
@@ -81,6 +72,13 @@ export interface FeeCandidate {
   reasons: string[];
   /** The bank's own website: a foreign country domain on the same host is the bank's own. */
   websiteUrl?: string | null;
+  /** The bank's name, so a document on another host can show it is this bank's (#1033). */
+  institutionName?: string | null;
+  /** Another institution has the bank's name: it then needs the city or number too (#1287). */
+  nameShared?: boolean;
+  /** The bank's city and FDIC certificate / NCUA charter number. */
+  city?: string | null;
+  certNumber?: string | number | null;
 }
 
 export type CandidateVerdict =
@@ -96,6 +94,8 @@ export type CandidateVerdict =
   | "error_page"
   | "article_page"
   | "single_product_disclosure"
+  | "non_fee_document"
+  | "unconfirmed_host"
   | "unreadable_pdf_weak_label"
   | "not_a_pdf"
   | "unsupported_type"
@@ -116,12 +116,17 @@ export interface CandidateValidation {
   scoringText?: string | null;
 }
 
-export async function fetchWithTimeout(fetchImpl: Fetcher, url: string, timeoutMs = FIND_REQUEST_TIMEOUT_MS): Promise<Response> {
+/**
+ * A GET that gives up when the headers take longer than `timeoutMs`. The timer stops once the
+ * headers arrive; a caller that also bounds the body read passes its own `signal`, which
+ * aborts the whole request (body download included) whenever the caller aborts it.
+ */
+export async function fetchWithTimeout(fetchImpl: Fetcher, url: string, timeoutMs = FIND_REQUEST_TIMEOUT_MS, signal?: AbortSignal): Promise<Response> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
     return await fetchImpl(url, {
-      signal: controller.signal,
+      signal: signal ? AbortSignal.any([controller.signal, signal]) : controller.signal,
       redirect: "follow",
       headers: {
         "User-Agent": crawlerUserAgent("Magellan"),
@@ -187,11 +192,40 @@ function rejected(verdict: CandidateVerdict, reason: string, status: number | nu
 
 /** Open a candidate and decide whether it is the bank's fee schedule. Throws only on network errors. */
 export async function validateFeeCandidate(candidate: FeeCandidate, fetchImpl: Fetcher): Promise<CandidateValidation> {
+  const validation = await checkFeeCandidate(candidate, fetchImpl);
+  return validation.ok ? confirmDocumentHost(candidate, validation) : validation;
+}
+
+/**
+ * An accepted document on a host that is not the bank's website must name the bank, or it is
+ * that host's schedule (#1033): Hamilton took down 836 such fees in the week to 2026-10-12,
+ * and the 128 from documents stored after its check began (Oct 9) were all found this way.
+ * Applies only when the finder passed the bank's website.
+ */
+function confirmDocumentHost(candidate: FeeCandidate, validation: CandidateValidation): CandidateValidation {
+  if (!candidate.websiteUrl) return validation;
+  const why = unconfirmedDocumentHost({
+    url: candidate.url,
+    websiteUrl: candidate.websiteUrl,
+    institutionName: candidate.institutionName,
+    nameShared: candidate.nameShared,
+    city: candidate.city,
+    certNumber: candidate.certNumber,
+    text: validation.scoringText,
+  });
+  if (!why) return validation;
+  return { ...rejected("unconfirmed_host", `Candidate is on another host: ${why}`, validation.status, candidate.score), html: validation.html, scoringText: validation.scoringText };
+}
+
+async function checkFeeCandidate(candidate: FeeCandidate, fetchImpl: Fetcher): Promise<CandidateValidation> {
   if (isBusinessOnlyLink(candidate.url)) {
     return rejected("business_schedule", "Candidate address names a business-only schedule", null, candidate.score);
   }
   if (isErrorPageLink(candidate.url)) {
     return rejected("error_page", "Candidate address is the site's error page", null, candidate.score);
+  }
+  if (isNonFeeDocumentLink(candidate.url)) {
+    return rejected("non_fee_document", "Candidate is a CRA file, annual report, newsletter or flyer, not a fee schedule", null, candidate.score);
   }
   if (isArticleLink(candidate.url)) {
     return rejected("article_page", "Candidate is an article, blog post or news item, not a fee schedule", null, candidate.score);
@@ -231,7 +265,10 @@ export async function validateFeeCandidate(candidate: FeeCandidate, fetchImpl: F
   if (looksForeignSchedule(mainText)) {
     return { ...rejected("foreign_schedule", "Candidate is another country's fee schedule (foreign currency)", response.status, candidate.score), html: rawBody, scoringText: mainText };
   }
-  const page = scoreFeePage(mainText, candidate.url);
+  const page = scoreFeePage(mainText, candidate.url, { feeSchedule: true });
+  if (page.productPage) {
+    return { ...rejected("product_page", `Candidate is an account or product page (${page.reason})`, response.status, candidate.score), html: rawBody, scoringText: mainText };
+  }
   if (page.verdict === "wrong_document") {
     return { ...rejected("not_fee_page", `Candidate page is not a fee schedule (${page.reason})`, response.status, candidate.score), html: rawBody, scoringText: mainText };
   }

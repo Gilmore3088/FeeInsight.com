@@ -126,7 +126,7 @@ export default async function BenchmarkReportPage({ params }: PageProps) {
           freshnessLabel={summary.freshnessLabel}
         />
         <ResearchSectionNav sections={NATIONAL_SECTIONS} label="Report sections" />
-        <div className="mx-auto max-w-6xl space-y-20 px-4 py-14 sm:px-6">
+        <div className="mx-auto max-w-page space-y-20 px-4 py-14 sm:px-6">
           <KeyFindings findings={computeNationalFindings(rows, charterPairs)} asOf={asOf} />
           <BenchmarkBoard rows={rows} place="the U.S." areaLabel="US" omitted={omitted} asOf={asOf} />
           <CharterExhibit benchmarks={charterPairs} asOf={asOf} />
@@ -151,7 +151,7 @@ export default async function BenchmarkReportPage({ params }: PageProps) {
         freshnessLabel={summary.freshnessLabel}
       />
       <ResearchSectionNav sections={DISTRICT_SECTIONS} label="Report sections" />
-      <div className="mx-auto max-w-6xl space-y-20 px-4 py-14 sm:px-6">
+      <div className="mx-auto max-w-page space-y-20 px-4 py-14 sm:px-6">
         <KeyFindings findings={computeDistrictFindings(place, rows, charterPairs)} asOf={asOf} />
         <BenchmarkBoard rows={rows} place={`the ${place}`} areaLabel={`D${district}`} omitted={omitted} asOf={asOf} />
         <PositionExhibit rows={rows} stateName={place} asOf={asOf} />

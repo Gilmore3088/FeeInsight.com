@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
-import { DataFeedsPanel, daysBetween } from "./data-feeds-panel";
+import { DataFeedsPanel, daysBetween, feedGroup } from "./data-feeds-panel";
 import type { FeedFreshness } from "@/lib/data-store/feed-freshness";
 
 afterEach(() => cleanup());
@@ -57,5 +57,22 @@ describe("DataFeedsPanel", () => {
   it("counts whole days", () => {
     expect(daysBetween("2026-10-04T16:00:00.000Z", "2026-10-05T20:00:00.000Z")).toBe(1);
     expect(daysBetween(null, "2026-10-05T20:00:00.000Z")).toBeNull();
+  });
+});
+
+describe("feedGroup", () => {
+  it("sorts every registry feed on prod into a named section", () => {
+    // registry_ingest_partitions sources on prod, Oct 9 2026.
+    const prodSources = [
+      "beige-book", "census-acs", "cfpb", "enforcement", "fdic-financials", "fdic-sod", "fdic-universe",
+      "fed-publications", "federal-bills", "federal-register", "ffiec-overdraft", "fomc-minutes", "fred",
+      "irs-zip-income", "ncua-branch-geocode", "ncua-branches", "ncua-financials", "reg-news", "sec-filings",
+      "sec-links", "state-bill-news", "state-bills", "state-enforcement", "state-reg-news", "state-regulators",
+      "wire-research",
+    ];
+    expect(prodSources.filter((source) => feedGroup(source) === "other")).toEqual([]);
+    expect(feedGroup("state-bills")).toBe("state");
+    expect(feedGroup("fdic-universe")).toBe("national");
+    expect(feedGroup("something-new")).toBe("other");
   });
 });

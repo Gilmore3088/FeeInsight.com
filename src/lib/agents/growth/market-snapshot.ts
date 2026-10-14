@@ -1,8 +1,10 @@
+import { displayCity } from "@/lib/format";
 import { sql } from "@/lib/data-store/connection";
 import { MIN_INSTITUTIONS_FOR_MEDIAN, STATS_ROW_FILTER, valuePerInstitution } from "@/lib/data-store/fee-stats";
 import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
 import { median } from "@/lib/hamilton/fee-scenario";
 import { institutionDisplayName } from "@/lib/institution-display-name";
+import { readerFeeConditions } from "@/lib/fee-conditions";
 import { BRANCHLESS_MAX_OFFICES, BRANCHLESS_MIN_DEPOSITS, BRANCHLESS_ONE_OFFICE_SHARE } from "@/lib/data-store/branchless-banks";
 
 /**
@@ -72,6 +74,8 @@ export interface SnapshotFeeRow {
   /** When the schedule was last read, not its effective date. */
   read_at: string | Date | null;
   normalized_text: string | null;
+  /** The catalog's charge frequency ("monthly", "annual", "per_item"...), null when unknown. */
+  frequency?: string | null;
 }
 
 export interface SnapshotValue {
@@ -88,6 +92,11 @@ export interface SnapshotValue {
   notes: string[];
   /** The published rows behind the value, so a draft quoting it can be withdrawn if one is taken down. */
   publishedIds: number[];
+  /**
+   * The catalog's charge frequency shared by every row behind the value; null when any row's is
+   * unknown or they differ. Two values compare like for like only at the same frequency.
+   */
+  frequency: string | null;
 }
 
 export interface SnapshotFee {
@@ -106,20 +115,23 @@ function iso(value: string | Date | null): string | null {
   return value instanceof Date ? value.toISOString() : String(value);
 }
 
-/**
- * The pipeline writes its own provenance into `conditions` ("Knox deterministic extraction from
- * Rosetta artifact #11638. canonical_hint=...; text_hash=..."): that is not a condition of the fee.
- */
-const PIPELINE_NOTE = /\b(?:Knox|Rosetta artifact|canonical_hint|text_hash|calibrated_confidence|excerpt=)/i;
-
 function notesFor(rows: SnapshotFeeRow[]): string[] {
   const notes = new Set<string>();
   for (const row of rows) {
     if (row.account_product_type) notes.add(`Account: ${row.account_product_type}`);
-    if (row.conditions && !PIPELINE_NOTE.test(row.conditions)) notes.add(`Conditions: ${row.conditions}`);
+    // Knox's provenance note in `conditions` is not a condition of the fee (#1234).
+    const conditions = readerFeeConditions(row.conditions);
+    if (conditions) notes.add(`Conditions: ${conditions}`);
     if (row.waiver_text) notes.add(`Waived: ${row.waiver_text}`);
   }
   return [...notes];
+}
+
+/** The frequency every row carries, or null when one is unknown or they differ. */
+function sharedFrequency(rows: SnapshotFeeRow[]): string | null {
+  const frequencies = new Set(rows.map((row) => row.frequency ?? null));
+  const [only] = [...frequencies];
+  return frequencies.size === 1 && only ? only : null;
 }
 
 /** The schedule line the pipeline read this row from (`excerpt="..."` in its conditions), if stored. */
@@ -175,6 +187,7 @@ export function institutionValue(allRows: SnapshotFeeRow[]): SnapshotValue | nul
     readAt: iso(lead.read_at),
     notes: notesFor(checked),
     publishedIds: checked.map((row) => Number(row.fee_published_id)).filter((id) => Number.isInteger(id) && id > 0),
+    frequency: sharedFrequency(checked),
   };
 }
 
@@ -264,7 +277,7 @@ export async function loadSnapshotRows(db: SqlTag, institutionIds: number[], cat
   if (institutionIds.length === 0) return [];
   const rows = await db.unsafe(
     `SELECT ef.fee_published_id, ef.institution_id, ef.fee_category, ef.fee_name, ef.amount, ef.canonical_fee_key,
-            ef.conditions, ef.account_product_type, ef.waiver_text,
+            ef.conditions, ef.account_product_type, ef.waiver_text, ef.frequency,
             COALESCE(sd.document_url, ef.document_url, ef.source_url) AS document_url,
             COALESCE(sd.last_checked_at, sd.crawled_at) AS read_at,
             t.normalized_text
@@ -343,6 +356,11 @@ export function marketLabel(institution: Pick<SnapshotInstitution, "cbsaName" | 
     const state = states ? states.split("-")[0].trim() : null;
     return state ? `${names[0]}, ${state}` : names[0];
   }
-  if (institution.city) return institution.stateCode ? `${institution.city}, ${institution.stateCode}` : institution.city;
+  if (institution.city) {
+    const city = cityName(institution.city);
+    return institution.stateCode ? `${city}, ${institution.stateCode}` : city;
+  }
   return "your market";
 }
+
+const cityName = displayCity;

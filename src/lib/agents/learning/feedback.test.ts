@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { knoxStrategyFromFlags, recordFeedback, takedownCheck, takedownKind } from "./feedback";
+import { knoxStrategyFromFlags, lastPerDedupeKey, recordFeedback, takedownCheck, takedownKind } from "./feedback";
 import { relabelPerFeeTakedowns, syncPipelineFeedback, takedownFeedback } from "./feedback-sync";
 
 type Db = Parameters<typeof syncPipelineFeedback>[0];
@@ -162,6 +162,22 @@ describe("shared learning store", () => {
     expect(rows[5]).toMatchObject({ signal: "right", kind: "answer_key", reported_by: "knox", weight: 0.5 });
   });
 
+  it("logs a second restore of the same fee as its own run-keyed row", async () => {
+    const { db, calls } = mockDb([
+      ["to_regclass('public.pipeline_feedback')", [{ ready: true }]],
+      ["hamilton.restore:pub:", [{ fee_published_id: 12213, about_strategy: "extract.rules", institution_id: 6631, source_document_id: 18163, fee_raw_id: 50, fee_verified_id: 4472, canonical_fee_key: "rush_card", amount: "20", prior_restores: "1" }]],
+      ["INSERT INTO pipeline_feedback", [{ id: 1 }]],
+    ]);
+
+    await syncPipelineFeedback(db, { runId: 3380 });
+
+    const restoreRead = calls.find((call) => call.query.includes("hamilton.restore:pub:"));
+    expect(restoreRead?.query).toContain("t.created_at > r.created_at");
+    const insert = calls.find((call) => call.query.includes("INSERT INTO pipeline_feedback"));
+    const rows = JSON.parse(String(insert?.values[0]));
+    expect(rows.map((row: { dedupe_key: string }) => row.dedupe_key)).toContain("hamilton.restore:pub:12213:run:3380");
+  });
+
   it("only reads in a dry run", async () => {
     const { db, calls } = mockDb([
       ["to_regclass('public.pipeline_feedback')", [{ ready: true }]],
@@ -171,5 +187,21 @@ describe("shared learning store", () => {
     expect(result.takedowns).toBe(1);
     expect(result.written).toBe(0);
     expect(calls.some((call) => call.query.includes("INSERT"))).toBe(false);
+  });
+});
+
+describe("one row per dedupe key (#1152)", () => {
+  const row = (dedupeKey: string, kind: string) => ({ aboutStage: "discover", signal: "right", kind, reportedBy: "magellan", dedupeKey }) as Parameters<typeof recordFeedback>[1][number];
+
+  it("keeps the last row for a repeated key, in first-seen order otherwise", () => {
+    const rows = lastPerDedupeKey([row("a", "good"), row("b", "thin"), row("a", "dead")]);
+    expect(rows.map((r) => [r.dedupeKey, r.kind])).toEqual([["b", "thin"], ["a", "dead"]]);
+  });
+
+  it("never sends one key twice in a write", async () => {
+    const { db, calls } = mockDb([["INSERT INTO pipeline_feedback", [{ id: 1 }]]]);
+    await recordFeedback(db as never, [row("magellan.link_yield:doc:7", "good"), row("magellan.link_yield:doc:7", "thin")]);
+    const sent = JSON.parse(String(calls[0].values[0])) as Array<{ dedupe_key: string; kind: string }>;
+    expect(sent).toEqual([expect.objectContaining({ dedupe_key: "magellan.link_yield:doc:7", kind: "thin" })]);
   });
 });

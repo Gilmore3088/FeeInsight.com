@@ -20,6 +20,7 @@ export interface PlanWatchRow {
 export interface PlanWatchUnread {
   userId: number;
   name: string;
+  email: string | null;
   code: string;
 }
 
@@ -53,7 +54,7 @@ export async function getPlanWatchList(): Promise<PlanWatchList> {
         subscriptions = await stripe.subscriptions.list({ customer: user.stripeCustomerId, status: "active", limit: 1 });
       } catch (error) {
         console.error(`Plan watch: Stripe subscription read failed for user ${user.id}`, error);
-        unread.push({ userId: user.id, name: user.name, code: errorCode(error) });
+        unread.push({ userId: user.id, name: user.name, email: user.email, code: errorCode(error) });
         return null;
       }
       const metadata = subscriptions.data[0]?.metadata ?? {};

@@ -10,7 +10,9 @@ describe("isArticlePage", () => {
   it("names blog posts and stories, not schedules that sit under an article path", () => {
     expect(isArticlePage("https://www.sccu.com/articles/personal-finance/common-checking-account-fees-to-avoid")).toBe(true);
     expect(isArticlePage("https://www.ally.com/stories/spend/what-is-overdraft-protection/")).toBe(true);
+    expect(isArticlePage("https://www.citynational.com/post/overdraft-protection-how-to-prevent-fees-and-stay-financially-secure")).toBe(true);
     expect(isArticlePage("https://www.mtcfcu.org/articles/schedule-of-fees/")).toBe(false);
+    expect(isArticlePage("https://www.example.com/posts/fee-schedule/")).toBe(false);
     expect(isArticlePage("https://www.nstarcu.org/learn/fees")).toBe(false);
     expect(isArticlePage("http://www.ffcocu.org/resources/fee-schedule.html")).toBe(false);
     expect(isArticlePage(null)).toBe(false);

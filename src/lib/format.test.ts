@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  displayCity,
   formatDollarsInWords,
   formatAmount,
   formatAssets,
@@ -56,5 +57,14 @@ describe("formatDollarsInWords", () => {
     expect(formatDollarsInWords(3_000_000)).toBe("$3 million");
     expect(formatDollarsInWords(-15_500)).toBe("-$15.5 thousand");
     expect(formatDollarsInWords(640)).toBe("$640");
+  });
+});
+
+describe("displayCity (#1175)", () => {
+  it("title-cases a city stored in capitals and leaves mixed case alone", () => {
+    expect(displayCity("LONGVIEW")).toBe("Longview");
+    expect(displayCity("SAINT PAUL")).toBe("Saint Paul");
+    expect(displayCity("WINSTON-SALEM")).toBe("Winston-Salem");
+    expect(displayCity("McAllen")).toBe("McAllen");
   });
 });

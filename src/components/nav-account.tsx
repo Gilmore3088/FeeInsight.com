@@ -4,7 +4,9 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { HAMILTON_ACCOUNT_NAV, HAMILTON_REFERENCE_NAV } from "@/lib/hamilton/navigation";
 import { REQUEST_REPORT_NAV } from "./nav-items";
+import { SignOutForm } from "./sign-out-form";
 import { useSessionChrome, type SessionChrome } from "./use-session-chrome";
+import { useHamiltonNavigationHref } from "./hamilton/layout/hamilton-navigation-context";
 
 /**
  * The account corner of the consumer nav.
@@ -21,15 +23,18 @@ export function NavAccount() {
 
   if (session?.signedIn) {
     return (
-      <Link
-        href="/account"
-        className="flex items-center gap-2 text-[13px] font-medium text-[#6B6255] transition-colors hover:text-[#1A1815]"
-      >
-        <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#1A1815] text-[10px] font-bold text-white">
-          {session.initial ?? "U"}
-        </span>
-        <span className="hidden lg:inline">Account</span>
-      </Link>
+      <div className="flex items-center gap-4">
+        <Link
+          href="/account"
+          className="flex items-center gap-2 text-[13px] font-medium text-[#6B6255] transition-colors hover:text-[#1A1815]"
+        >
+          <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#1A1815] text-[10px] font-bold text-white">
+            {session.initial ?? "U"}
+          </span>
+          <span className="hidden lg:inline">Account</span>
+        </Link>
+        <SignOutForm buttonClassName="text-[13px] font-medium text-[#6B6255] transition-colors hover:text-[#1A1815]" />
+      </div>
     );
   }
 
@@ -59,6 +64,7 @@ const MENU_LINK = "block px-4 py-1.5 text-[13px] text-[#1A1815] no-underline hov
  * across the site and Pro (James, 2026-10-06), so the tabs stay four.
  */
 function ProAccountMenu({ session }: { session: SessionChrome }) {
+  const contextHref = useHamiltonNavigationHref();
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
 
@@ -95,7 +101,7 @@ function ProAccountMenu({ session }: { session: SessionChrome }) {
       {open ? (
         <div className="absolute right-0 top-full z-50 mt-3 w-60 rounded-lg border border-[#E0D7C9] bg-white py-1.5 shadow-lg shadow-[#1A1815]/10">
           {HAMILTON_ACCOUNT_NAV.map((item) => (
-            <Link key={item.href} href={item.href} className={MENU_LINK} onClick={() => setOpen(false)}>
+            <Link key={item.href} href={contextHref(item.href)} className={MENU_LINK} onClick={() => setOpen(false)}>
               {item.label}
             </Link>
           ))}
@@ -116,11 +122,7 @@ function ProAccountMenu({ session }: { session: SessionChrome }) {
             <Link href="/account" className={MENU_LINK} onClick={() => setOpen(false)}>
               Account and billing
             </Link>
-            <form action="/api/auth/logout" method="POST">
-              <button type="submit" className="w-full px-4 py-1.5 text-left text-[13px] text-[#5A5347] hover:bg-[#F5EFE6]">
-                Sign out
-              </button>
-            </form>
+            <SignOutForm buttonClassName="w-full px-4 py-1.5 text-left text-[13px] text-[#5A5347] hover:bg-[#F5EFE6]" />
           </div>
         </div>
       ) : null}

@@ -27,6 +27,9 @@ export interface CrewReply {
   speaker: string;
   lines: string[];
   links?: Array<{ label: string; href: string }>;
+  /** Only populated after a durable run has actually been created or reused. */
+  runId?: number;
+  runReused?: boolean;
   /** Present for write commands: what will happen if the operator confirms. */
   confirm?: { summary: string; commandText: string };
 }
@@ -187,10 +190,13 @@ export async function executeCrewWrite(command: CrewCommand, actor: string): Pro
           });
           return {
             speaker,
+            runId: result.run.id,
+            runReused: result.reused,
+            links: [{ label: `Track run #${result.run.id}`, href: `/admin/atlas/runs/${result.run.id}` }],
             lines: [
               result.reused
                 ? `${describeScope(command.scope)} is already running (run #${result.run.id}).`
-                : `Started ${describeScope(command.scope)} (run #${result.run.id}).`,
+                : `Queued ${describeScope(command.scope)} (run #${result.run.id}).`,
               ...pausedNote,
             ],
           };
@@ -205,21 +211,51 @@ export async function executeCrewWrite(command: CrewCommand, actor: string): Pro
           idempotencyKey: `crew:atlas:all:${minuteBucket()}`,
           steps: STATE_LANE_STEPS.filter((step) => !step.key.startsWith("public-")),
         });
-        return { speaker, lines: [`Started a full run across all states (run #${run.run.id}).`, ...pausedNote] };
+        return { speaker, runId: run.run.id, runReused: run.reused, links: [{ label: `Track run #${run.run.id}`, href: `/admin/atlas/runs/${run.run.id}` }], lines: [`Queued a full run across all states (run #${run.run.id}).`, ...pausedNote] };
       }
       const stateCode = command.scope.kind === "state" ? command.scope.stateCode : undefined;
+      const institutionId = command.scope.kind === "institution" ? command.scope.institutionId : undefined;
+      let institutionName: string | undefined;
+      if (institutionId !== undefined) {
+        if (command.agent !== "hamilton") {
+          return { speaker, lines: ["Institution-only publication is available through Hamilton."] };
+        }
+        const [institution] = await sql`
+          SELECT institution_name FROM institution_sources WHERE id = ${institutionId}
+        `;
+        if (!institution) return { speaker, lines: [`Institution #${institutionId} was not found. No run was created.`] };
+        institutionName = String(institution.institution_name);
+      }
+      const scopeName = institutionId !== undefined
+        ? `${institutionName} (#${institutionId})`
+        : stateCode ? stateCode : "all states";
       const run = await startAgentRun({
         agent: command.agent,
         kind: "manual_repair",
-        title: `Crew: ${speaker} ${stateCode ? `for ${stateCode}` : "for all states"}`,
+        title: `Crew: ${speaker} for ${scopeName}`,
         stateCode,
-        params: { source: "admin.crew_command", ...(stateCode ? { scope: "state", state_code: stateCode } : {}) },
+        params: {
+          source: "admin.crew_command",
+          ...(stateCode ? { scope: "state", state_code: stateCode } : {}),
+          ...(institutionId !== undefined ? { scope: "institution", institution_id: institutionId } : {}),
+        },
         triggeredBy: actor,
         triggerSource: "admin",
-        idempotencyKey: `crew:${command.agent}:${stateCode ?? "all"}:${minuteBucket()}`,
+        // Deduplicate active institution jobs, but permit a new one after completion.
+        idempotencyKey: institutionId !== undefined
+          ? `crew:${command.agent}:institution:${institutionId}:publish`
+          : `crew:${command.agent}:${stateCode ?? "all"}:${minuteBucket()}`,
         steps: AGENT_RUN_STEPS[command.agent].map((step) => ({ ...step, agent: command.agent })),
       });
-      return { speaker, lines: [`On it (run #${run.run.id}).`, ...pausedNote] };
+      return {
+        speaker,
+        runId: run.run.id,
+        runReused: run.reused,
+        links: [{ label: `Track run #${run.run.id}`, href: `/admin/atlas/runs/${run.run.id}` }],
+        lines: [run.reused
+          ? `Existing ${speaker} run #${run.run.id} for ${scopeName} reused.`
+          : `Queued ${speaker} for ${scopeName} (run #${run.run.id}).`, ...pausedNote],
+      };
     }
     case "retry": {
       const [failed] = await sql`
@@ -246,7 +282,7 @@ export async function executeCrewWrite(command: CrewCommand, actor: string): Pro
         idempotencyKey: `crew:retry:${failed.id}:${stepKey}`,
         steps: [{ key: stepKey, agent: command.agent, title: `Retry ${stepKey}` }],
       });
-      return { speaker, lines: [`Retrying "${stepKey}" from run #${failed.id} (new run #${run.run.id}).`] };
+      return { speaker, runId: run.run.id, runReused: run.reused, links: [{ label: `Track run #${run.run.id}`, href: `/admin/atlas/runs/${run.run.id}` }], lines: [`Queued retry of "${stepKey}" from run #${failed.id} (run #${run.run.id}).`] };
     }
     default:
       return answerCrewCommand(command, "");

@@ -6,7 +6,7 @@ vi.mock("@/lib/ai-provider-usage", async (importOriginal) => ({
   trackAnthropicRequest: (context: unknown, request: () => PromiseLike<unknown>) => trackAnthropicRequest(context, request),
 }));
 
-import { KNOX_EXTRACT_STRATEGY } from "./extract";
+import { KNOX_RULES_STRATEGY } from "./specialists";
 import {
   groundPaidRow,
   KNOX_PAID_FLAG,
@@ -197,7 +197,7 @@ describe("Knox paid extraction (pass 3)", () => {
     expect(query).toContain("pa.strategy_version");
     expect(query).toContain("free.yield_count <");
     expect(query).toContain("paid.strategy =");
-    expect(params).toEqual(expect.arrayContaining([KNOX_EXTRACT_STRATEGY.strategy, KNOX_EXTRACT_STRATEGY.version, KNOX_PAID_STRATEGY.strategy, "TX"]));
+    expect(params).toEqual(expect.arrayContaining([KNOX_RULES_STRATEGY.strategy, KNOX_RULES_STRATEGY.version, KNOX_PAID_STRATEGY.strategy, "TX"]));
   });
 
   it("writes a monthly fee's grounded lineup fields on its raw row", async () => {

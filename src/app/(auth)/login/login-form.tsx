@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { resetSessionChrome } from "@/components/use-session-chrome";
 import { loginAction } from "./actions";
 
 interface LoginFormProps {
@@ -23,6 +24,9 @@ export function LoginForm({ redirectTo, forgotPasswordHref }: LoginFormProps) {
     try {
       const result = await loginAction(formData, redirectTo);
       if (result.success && result.redirect) {
+        // The header cached "signed out" when /login loaded; re-read it so the next page
+        // shows Account and Sign out, not Sign in.
+        resetSessionChrome();
         router.push(result.redirect);
         return;
       }

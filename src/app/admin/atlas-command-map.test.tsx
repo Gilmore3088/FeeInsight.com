@@ -140,4 +140,26 @@ describe("AtlasCommandMap", () => {
     expect(screen.getByText("Waiting for updated provider key.")).toBeInTheDocument();
     expect(linkFor("Review safety stop")).toHaveAttribute("href", "#atlas-safety");
   });
+
+  it("shows unknown, not stopped, when the safety control cannot be read", () => {
+    render(
+      <AtlasCommandMap
+        center={center({
+          automation: {
+            enabled: false,
+            reason: "Automation control could not be read.",
+            changedBy: "system",
+            changedAt: null,
+            revision: 0,
+            unreadable: true,
+          },
+        } as unknown as Partial<AtlasCommandCenter>)}
+        stateLaneDispatch={dispatch()}
+      />,
+    );
+
+    expect(screen.getByText("Automation status unknown")).toBeInTheDocument();
+    expect(screen.queryByText("Automation stopped")).not.toBeInTheDocument();
+    expect(linkFor("Review safety control")).toHaveAttribute("href", "#atlas-safety");
+  });
 });

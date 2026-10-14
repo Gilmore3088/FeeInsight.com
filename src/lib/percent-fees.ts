@@ -22,6 +22,10 @@ export const PERCENT_FEE_RANGES: Readonly<Record<string, { min: number; max: num
   coin_counting: { min: 0.5, max: 20 },
   // "5% of the payment amount" on a late loan payment; held rows run 1% to 10%.
   late_payment: { min: 1, max: 10 },
+  // #1102: "Check Cashing | 1.00% of Amount" for a non-customer; held rows run 1% to 5%.
+  check_cashing: { min: 0.5, max: 10 },
+  // #1102: "ATM / Debit Card International Transaction | 1% of transaction amount"; held rows run 1% to 3%.
+  atm_international: { min: 0.1, max: 5 },
 };
 
 export interface RateFields {

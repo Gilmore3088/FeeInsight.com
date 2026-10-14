@@ -1,6 +1,9 @@
 import type { sql } from "@/lib/data-store/connection";
 
+import { notPublishedOnlineCounts, type NotOnlineTierCount } from "@/lib/agents/magellan/escalation";
+
 import { PEER_MIN_INSTITUTIONS, refreshStateMemory, ALL_TIERS } from "./memory";
+import { loadGroupGaps, stateGroupOrder } from "./work-list";
 
 type SqlTag = typeof sql;
 
@@ -41,6 +44,20 @@ export async function runStateExpertStep(options: {
     };
   }
 
+  // Magellan's "not published online" institutions by size tier (#1032), so the expert's
+  // coverage gaps separate "not found yet" from "not online". Read-only; skipped on error.
+  let notOnline: NotOnlineTierCount[] | null = null;
+  try {
+    notOnline = await notPublishedOnlineCounts(options.db, memory.stateCode);
+  } catch (error) {
+    console.error("state expert: not-published-online counts skipped:", error instanceof Error ? error.message : error);
+  }
+  const notOnlineTotal = notOnline?.reduce((sum, row) => sum + row.institutions, 0) ?? null;
+
+  // The state's work list (#1029): its size groups under $10B, furthest below the coverage
+  // target first. The paid passes take this state's institutions in this order.
+  const workListGroups = stateGroupOrder(await loadGroupGaps(options.db), memory.stateCode);
+
   const stateWide = memory.peerLevels.filter((level) => level.tier === ALL_TIERS);
   const feesWithPeers = stateWide.filter((level) => level.count >= PEER_MIN_INSTITUTIONS);
   const topFinder = memory.strategies.finder[0]?.strategy ?? null;
@@ -51,7 +68,8 @@ export async function runStateExpertStep(options: {
     summary:
       `${memory.expertName} refreshed the ${memory.stateCode} memory: ${memory.institutionCount.toLocaleString()} institutions, ` +
       `${memory.publishedFeeCount.toLocaleString()} published fees, peer levels for ${feesWithPeers.length.toLocaleString()} fee categories ` +
-      `with ${PEER_MIN_INSTITUTIONS}+ institutions${stored ? "" : " (memory not stored)"}.`,
+      `with ${PEER_MIN_INSTITUTIONS}+ institutions` +
+      `${notOnlineTotal ? `, ${notOnlineTotal.toLocaleString()} not published online` : ""}${stored ? "" : " (memory not stored)"}.`,
     detail: {
       state_code: memory.stateCode,
       expert_name: memory.expertName,
@@ -70,6 +88,9 @@ export async function runStateExpertStep(options: {
       peer_level_rows: memory.peerLevels.length,
       fee_categories_with_peers: feesWithPeers.length,
       peer_levels_sample: feesWithPeers.slice(0, 10),
+      not_published_online: notOnline,
+      not_published_online_total: notOnlineTotal,
+      work_list_groups: workListGroups,
       memory_stored: stored,
       dry_run: Boolean(options.dryRun),
       provider_call_queued: false,

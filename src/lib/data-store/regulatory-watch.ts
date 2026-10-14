@@ -10,6 +10,7 @@
 import { sql } from "./connection";
 import { getLocalMarketMembers } from "./custom-report-market";
 import { getFeeValuesForInstitutions, getInstitutionFeeValues } from "./fee-index";
+import { MIN_INSTITUTIONS_FOR_MEDIAN } from "./fee-stats";
 import { FEE_FAMILIES, getDisplayName } from "@/lib/fee-taxonomy";
 import { trackerStage, type TrackerStage } from "@/lib/regulatory/federal-register";
 import { isOpenAction } from "./registry-profile";
@@ -50,7 +51,7 @@ export interface WatchFeeTie {
   fee_category: string;
   display_name: string;
   amount: number;
-  /** Median of the market competitors that publish this fee; null with fewer than 3. */
+  /** Median of sourced consumer competitor fees; null below the shared minimum sample. */
   market_median: number | null;
   market_count: number;
 }
@@ -236,19 +237,22 @@ function median(values: number[]): number | null {
   return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
 }
 
-const MIN_MARKET_PEERS = 3;
+// Share the minimum-sample contract with the benchmark export and national index.
 
-/** Per category, the median across competitors that publish it (null below 3 of them). */
+/** Per category, one valid value per competitor; no median below the shared five-institution minimum. */
 export function marketMediansFrom(
   peerFees: ReadonlyMap<number, ReadonlyMap<string, number>>,
 ): Map<string, { median: number | null; count: number }> {
   const byCategory = new Map<string, number[]>();
   for (const fees of peerFees.values()) {
-    for (const [category, amount] of fees) byCategory.set(category, [...(byCategory.get(category) ?? []), amount]);
+    for (const [category, amount] of fees) {
+      if (!Number.isFinite(amount) || amount < 0) continue;
+      byCategory.set(category, [...(byCategory.get(category) ?? []), amount]);
+    }
   }
   const out = new Map<string, { median: number | null; count: number }>();
   for (const [category, values] of byCategory) {
-    const m = values.length >= MIN_MARKET_PEERS ? median(values) : null;
+    const m = values.length >= MIN_INSTITUTIONS_FOR_MEDIAN ? median(values) : null;
     out.set(category, { median: m === null ? null : Math.round(m * 100) / 100, count: values.length });
   }
   return out;

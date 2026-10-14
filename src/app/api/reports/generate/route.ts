@@ -24,6 +24,8 @@ import { checkFreshness } from '@/lib/report-engine/freshness';
 import { triggerReportJob } from '@/lib/report-agent-runs';
 import type { ReportType } from '@/lib/report-engine/types';
 import { matchesConfiguredCronSecret } from '@/lib/cron-secret';
+import { isProviderLimitError } from '@/lib/ai-provider';
+import { HAMILTON_PAUSED_MESSAGE } from '@/lib/hamilton/provider-paused';
 import {
   isLegacyGeneratableReportType,
   legacyReportTypeError,
@@ -136,7 +138,12 @@ async function handlePOST(request: Request) {
   );
   if (!trigger.success) {
     return NextResponse.json(
-      { error: trigger.error ?? 'Report worker failed to accept the job', jobId },
+      {
+        error: trigger.error && isProviderLimitError(trigger.error)
+          ? HAMILTON_PAUSED_MESSAGE
+          : trigger.error ?? 'Report worker failed to accept the job',
+        jobId,
+      },
       { status: 503 },
     );
   }

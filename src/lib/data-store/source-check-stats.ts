@@ -33,7 +33,7 @@ export async function readSourceCheckWeek(db: SqlTag = sql): Promise<SourceCheck
       { checks: string | null; matched: string | null; taken_down: string | null; through: string | null }[]
     >`
       SELECT SUM((detail->>'source_check_fees')::bigint)::text AS checks,
-             SUM((detail->>'source_check_traced')::bigint + (detail->>'source_check_relinked')::bigint)::text AS matched,
+             SUM(COALESCE((detail->>'source_check_traced')::bigint, 0) + COALESCE((detail->>'source_check_relinked')::bigint, 0))::text AS matched,
              SUM((detail->>'source_check_takedowns')::bigint)::text AS taken_down,
              MAX(created_at)::date::text AS through
       FROM agent_run_events
@@ -41,13 +41,32 @@ export async function readSourceCheckWeek(db: SqlTag = sql): Promise<SourceCheck
         AND created_at > now() - make_interval(days => ${SOURCE_CHECK_WINDOW_DAYS})
         AND detail ? 'source_check_fees'
         AND COALESCE(detail->>'dry_run', 'false') = 'false'`;
-    const checks = Number(row?.checks ?? 0);
-    if (!row?.through || !Number.isFinite(checks) || checks <= 0) return null;
-    return { checks, matched: Number(row.matched ?? 0), takenDown: Number(row.taken_down ?? 0), through: row.through };
+    if (!row?.through) return null;
+    const week = {
+      checks: Number(row.checks ?? 0),
+      matched: Number(row.matched ?? 0),
+      takenDown: Number(row.taken_down ?? 0),
+      through: row.through,
+    };
+    if (!isValidWeek(week)) {
+      console.error("[source-check-stats] counts are not a valid measurement; methodology shows no measured line", week);
+      return null;
+    }
+    return week;
   } catch (error) {
     console.error("[source-check-stats] read failed; methodology shows no measured line", error);
     return null;
   }
+}
+
+/**
+ * A week is shown only when its counts can be a real measurement: whole, non-negative numbers
+ * with at least one check and no more matches than checks. Anything else hides the section
+ * rather than printing a percentage built from bad data.
+ */
+export function isValidWeek(week: Pick<SourceCheckWeek, "checks" | "matched" | "takenDown">): boolean {
+  const whole = (value: number) => Number.isSafeInteger(value) && value >= 0;
+  return whole(week.checks) && whole(week.matched) && whole(week.takenDown) && week.checks > 0 && week.matched <= week.checks;
 }
 
 export const getSourceCheckWeek = cachedPublicRead("source-check-week", () => readSourceCheckWeek());
@@ -67,7 +86,7 @@ function longDate(iso: string): string {
  * measurement (nothing is shown rather than a stale or guessed figure).
  */
 export function sourceCheckParagraphs(week: SourceCheckWeek | null): string[] | null {
-  if (!week || week.checks <= 0) return null;
+  if (!week || !isValidWeek(week)) return null;
   const n = (value: number) => value.toLocaleString("en-US");
   return [
     `In the ${SOURCE_CHECK_WINDOW_DAYS} days through ${longDate(week.through)}, ${matchedPercent(week)}% of ${n(week.checks)} fee checks found the fee's name and amount stated in the bank's own published schedule. A fee is checked again whenever its schedule or the check changes, so a fee can be counted more than once.`,

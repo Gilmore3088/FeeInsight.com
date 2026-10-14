@@ -46,6 +46,13 @@ const BANKING_CONTEXT =
 
 const FEE_WORDS = /\b(fees?|charges?|penalt(y|ies))\b/i;
 
+/**
+ * Words that place a bill in tax or state agency payments. A bounced tax payment draws a state
+ * penalty, not a bank fee, so "Insufficient Funds for Taxes Penalty Modification" (NC HB 1164,
+ * prod 2026-10-09) is not a bank fee bill unless the sentence also names a bank or account holder.
+ */
+const GOVERNMENT_PAYMENT_CONTEXT = /\b(tax(es|ation|payers?)?|revenue|state agenc(y|ies))\b/i;
+
 /** The overdraft and insufficient funds terms that set the overdraft_nsf topic. */
 const OVERDRAFT_TERMS = /\b(overdraft\w*|non-?sufficient funds|insufficient funds|nsf|returned (check|item)s?)\b/gi;
 
@@ -53,7 +60,7 @@ const OVERDRAFT_TERMS = /\b(overdraft\w*|non-?sufficient funds|insufficient fund
  * The bill's text with non-banking overdraft and insufficient funds wording taken out. Known water
  * phrases always go. Then each sentence (the title is its own) keeps its overdraft or insufficient
  * funds terms only when that sentence names a bank, account holder or consumer, or names a fee or
- * charge without being about water. Budget language ("if insufficient funds are appropriated") and
+ * charge without being about water or tax payments. Budget language ("if insufficient funds are appropriated") and
  * groundwater "overdraft" fall out. Tagging v3 judged the whole text at once and kept CA AB 1520
  * ("Public resources: conservation.") on its 2026-10-08 20:27 UTC re-read, because a banking or
  * fee word somewhere else in its digest vouched for an unrelated sentence.
@@ -63,7 +70,8 @@ export function withoutWaterOverdraft(text: string): string {
   return stripped
     .split(/(?<=[.;:!?])\s+/)
     .map((sentence) =>
-      BANKING_CONTEXT.test(sentence) || (FEE_WORDS.test(sentence) && !WATER_CONTEXT.test(sentence))
+      BANKING_CONTEXT.test(sentence) ||
+      (FEE_WORDS.test(sentence) && !WATER_CONTEXT.test(sentence) && !GOVERNMENT_PAYMENT_CONTEXT.test(sentence))
         ? sentence
         : sentence.replace(OVERDRAFT_TERMS, " "),
     )
@@ -88,6 +96,8 @@ export interface StateBillItem {
   title: string;
   url: string;
   first_action_date: string | null;
+  /** The action Open States classifies as the introduction (a first reading), when there is one. */
+  introduced_date: string | null;
   latest_action_date: string | null;
   latest_action_description: string | null;
   stage: BillStage;
@@ -128,7 +138,10 @@ const day = (value: string | null | undefined): string | null => {
   return head && /^\d{4}-\d{2}-\d{2}$/.test(head) ? head : null;
 };
 
-/** Where a bill stands, from its action history (Open States action classifications). */
+/**
+ * Where a bill stands, from its action history (Open States action classifications). The date
+ * is the latest action at that stage, so a bill still in committee shows its newest committee step.
+ */
 export function billStage(actions: RawAction[]): { stage: BillStage; date: string | null } {
   const ordered = [...actions].sort((a, b) => String(a.date ?? "").localeCompare(String(b.date ?? "")));
   let stage: BillStage = "introduced";
@@ -153,12 +166,27 @@ export function billStage(actions: RawAction[]): { stage: BillStage; date: strin
       passedBy.add(action.organization?.classification ?? "unknown");
       stage = passedBy.size >= 2 ? "passed_legislature" : "passed_chamber";
       date = at;
-    } else if (stage === "introduced" && kinds.some((kind) => kind.startsWith("referral-committee") || kind.startsWith("committee-"))) {
+    } else if (
+      (stage === "introduced" || stage === "in_committee") &&
+      kinds.some((kind) => kind.startsWith("referral-committee") || kind.startsWith("committee-"))
+    ) {
+      // A later referral or committee action moves the date on: IL HB 4474 was referred to Rules
+      // on 2026-03-18 and to Financial Institutions on 2026-03-27, and the tracker kept 03-18.
       stage = "in_committee";
       date = at;
     }
   }
   return { stage, date };
+}
+
+/** The earliest action classified as an introduction; a filing date that comes before it is not the introduction. */
+export function introducedDate(actions: RawAction[]): string | null {
+  const dates = actions
+    .filter((action) => (action.classification ?? []).includes("introduction"))
+    .map((action) => day(action.date))
+    .filter((date): date is string => Boolean(date))
+    .sort();
+  return dates[0] ?? null;
 }
 
 function topicsFor(text: string): string[] {
@@ -185,6 +213,7 @@ export function parseOpenStatesBill(raw: RawBill, stateCode: string): StateBillI
     title: raw.title.slice(0, 500),
     url: raw.openstates_url,
     first_action_date: day(raw.first_action_date),
+    introduced_date: introducedDate(raw.actions ?? []),
     latest_action_date: day(raw.latest_action_date),
     latest_action_description: raw.latest_action_description ? raw.latest_action_description.slice(0, 500) : null,
     stage,

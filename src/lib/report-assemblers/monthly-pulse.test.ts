@@ -45,6 +45,28 @@ describe("confirmFeeChange", () => {
   it("drops prices read from two different pages", () => {
     expect(confirmFeeChange(row({ old_source_url: "https://nhfcu.org/business-fee-schedule.pdf" }))).toBeNull();
     expect(confirmFeeChange(row({ old_source_url: "https://www.nhfcu.org/fee-schedule.pdf#page=2" }))).not.toBeNull();
+    // A dated copy of the same page is the same page.
+    expect(confirmFeeChange(row({ old_source_url: "https://nhfcu.org/fee-schedule-oct-2024.pdf" }))).not.toBeNull();
+  });
+
+  it("confirms a newer dated edition on a moved page, and not two schedules dated alike", () => {
+    // UMassFive, Oct 7, 2026: the business fee page moved and a 2026 edition replaced the 2023 one.
+    const umass = {
+      institution_name: "UMassFive College Federal Credit Union",
+      fee_key: "garnishment_levy",
+      fee_name: "Levy Compliance",
+      old_fee_name: "Levy Compliance",
+      old_amount: 30,
+      new_amount: 40,
+      old_source_url: "https://umassfive.coop/business-fees",
+      source_url: "https://www.umassfive.coop/business/helpful-links/business-banking-fees-and-service-prices",
+      old_document_text: "Levy Compliance | $30.00\nWire Transfer - Incoming Domestic | $10.00\nFees Effective September 1, 2023",
+      new_document_text: "Levy Compliance | $40.00\nWire Transfer - Incoming Domestic | $10.00\nService Prices Effective January 1, 2026",
+    };
+    expect(confirmFeeChange(row(umass))).toMatchObject({ old_amount: 30, new_amount: 40, direction: "up" });
+    expect(
+      confirmFeeChange(row({ ...umass, new_document_text: umass.new_document_text.replace("January 1, 2026", "September 1, 2023") })),
+    ).toBeNull();
   });
 
   it("drops two different fees in one category", () => {

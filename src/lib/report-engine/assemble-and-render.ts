@@ -32,6 +32,20 @@ import { loadStateReportContext } from '@/lib/report-assemblers/developments';
 import { getStateVisualsData } from '@/lib/data-store/state-visuals';
 import { getStateEconomicContext } from '@/lib/data-store/economic-context';
 import type { ReportType } from '@/lib/report-engine/types';
+import {
+  nationalPrintedFigures,
+  pulsePrintedFigures,
+  statePrintedFigures,
+  type PrintedFigures,
+} from '@/lib/report-engine/reconcile';
+
+/** The rendered HTML and the fee figures it prints, for the reconciliation step (#1066). */
+export interface RenderedReport {
+  html: string;
+  printed: PrintedFigures | null;
+  /** The assembler's own audit trail, when it keeps one. */
+  manifest: Record<string, unknown> | null;
+}
 
 // ─── Fallback Narrative ────────────────────────────────────────────────────────
 
@@ -69,17 +83,18 @@ function validateAndWarn(
  * @param reportType - One of national_index | state_index | monthly_pulse | peer_brief
  * @param params - Report-specific parameters (state_code, charter_type, etc.)
  * @param jobId - report_jobs.id — used for status updates
- * @returns Complete HTML string ready for Playwright PDF conversion
+ * @returns The complete HTML and the fee figures it prints (reconciled before the job completes)
  */
 export async function assembleAndRender(
   reportType: ReportType,
   params: Record<string, unknown>,
   jobId: string,
-): Promise<string> {
+): Promise<RenderedReport> {
   const sql = getSql();
 
   // D-09: Mark job as assembling at entry
-  await sql`UPDATE report_jobs SET status = 'assembling' WHERE id = ${jobId}`;
+  // Only an open job is marked; a cancel stands, and the render step's guarded write sees it (#1266).
+  await sql`UPDATE report_jobs SET status = 'assembling' WHERE id = ${jobId} AND status IN ('pending','assembling','rendering')`;
 
   try {
     switch (reportType) {
@@ -283,7 +298,7 @@ export async function assembleAndRender(
           }
         }
 
-        return renderNationalQuarterlyReport({
+        const html = renderNationalQuarterlyReport({
           data: payload,
           regulatory,
           trends,
@@ -296,6 +311,7 @@ export async function assembleAndRender(
             future_strategy,
           },
         });
+        return { html, printed: nationalPrintedFigures(payload), manifest: { ...payload.manifest } };
       }
 
       case 'state_index': {
@@ -322,12 +338,13 @@ export async function assembleAndRender(
           optional('chart data', getStateVisualsData(stateCode)),
           optional('economy', getStateEconomicContext(stateCode, district)),
         ]);
-        return renderStateFeeIndexReport({
+        const html = renderStateFeeIndexReport({
           data,
           generatedAt: new Date().toISOString().slice(0, 10),
           context: { ...context, regulatory },
           visuals: { data: visualsData, economy },
         });
+        return { html, printed: statePrintedFigures(data), manifest: null };
       }
 
       case 'monthly_pulse': {
@@ -368,7 +385,8 @@ export async function assembleAndRender(
           );
         }
 
-        return renderMonthlyPulseReport({ data: payload, narratives: { pulse_overview } });
+        const html = renderMonthlyPulseReport({ data: payload, narratives: { pulse_overview } });
+        return { html, printed: pulsePrintedFigures(payload), manifest: { ...payload.manifest } };
       }
 
       case 'peer_brief': {
@@ -431,10 +449,12 @@ export async function assembleAndRender(
           validateAndWarn('featured_fees', featured_fees, featuredSection.data);
         }
 
-        return renderPeerCompetitiveReport({
+        // Not a report job type any more (legacy-generation-policy.ts); never reconciled here.
+        const html = renderPeerCompetitiveReport({
           data: payload.data,
           narratives: { executive_summary, featured_fees },
         });
+        return { html, printed: null, manifest: null };
       }
 
       default: {
@@ -444,7 +464,10 @@ export async function assembleAndRender(
     }
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
-    await sql`UPDATE report_jobs SET status = 'failed', error = ${message} WHERE id = ${jobId}`;
+    await sql`
+      UPDATE report_jobs SET status = 'failed', error = ${message}
+       WHERE id = ${jobId} AND status IN ('pending','assembling','rendering')
+    `;
     throw err;
   }
 }

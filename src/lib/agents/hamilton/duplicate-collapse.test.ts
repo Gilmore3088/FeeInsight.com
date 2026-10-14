@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { collapsePublishedDuplicates } from "./duplicate-collapse";
+import { collapseNearNameDuplicates, collapsePublishedDuplicates, NEAR_NAME_COLLAPSE_LIVE } from "./duplicate-collapse";
 
 type DbMock = ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
 
@@ -49,7 +49,7 @@ describe("Hamilton duplicate collapse", () => {
     expect(query).toContain("PARTITION BY fp.institution_id");
     expect(query).toContain("lower(btrim(fp.fee_name))");
     // A copy with a stated frequency is kept over one without, then the newest.
-    expect(query).toContain("ORDER BY (fp.frequency IS NULL), fp.published_at DESC, fp.fee_published_id DESC");
+    expect(query).toContain("ORDER BY (COALESCE(fp.fee_audience, 'unknown') = 'unknown'), (fp.frequency IS NULL), fp.published_at DESC, fp.fee_published_id DESC");
     // Frequency is not part of the line: "per item", "per occurrence" and unstated are one fee,
     // while two different stated frequencies keep both rows.
     expect(query).not.toContain("COALESCE(fp.frequency, '')");
@@ -87,5 +87,34 @@ describe("Hamilton duplicate collapse", () => {
       collapsePublishedDuplicates(asDb(db), { runId: 122, batchId: "agentic-run-122", dryRun: false }),
     ).resolves.toEqual([]);
     error.mockRestore();
+  });
+
+  it("near-name collapse: shadow by default writes nothing; switched on, closes the one-line read (#1302)", async () => {
+    const text = "Account History fee | $2.00 each\nAccount Research fee | $25.00 per hour / 1-hour minimum";
+    const rows = [
+      { fee_published_id: 79471, fee_name: "Research fee", published_at: "2026-10-07T08:46:25Z" },
+      { fee_published_id: 138008, fee_name: "Account Research fee", published_at: "2026-10-12T00:10:36Z" },
+    ].map((row) => ({ ...row, institution_id: 5103, source_document_id: 13385, canonical_fee_key: "account_research", variant_type: null, amount: "25.00", frequency: null, fee_audience: "unknown" }));
+    const run = (live?: boolean) => {
+      const db = createDbMock(rows);
+      db.mockImplementation((strings: TemplateStringsArray) =>
+        Promise.resolve(strings.join("").includes("agent_source_texts") ? [{ source_document_id: 13385, normalized_text: text }] : strings.join("").includes("UPDATE") ? [{ fee_published_id: 79471 }] : []),
+      );
+      return { db, result: collapseNearNameDuplicates(asDb(db), { runId: 130, batchId: "agentic-run-130", dryRun: false, live }) };
+    };
+
+    const shadow = run();
+    const reported = await shadow.result;
+    expect(NEAR_NAME_COLLAPSE_LIVE).toBe(false);
+    expect(reported).toMatchObject({ live: false, documents: 1, pairs: 1, apartOnPage: 0 });
+    expect(reported.collapses.map((row) => [row.feePublishedId, row.keptFeePublishedId])).toEqual([[79471, 138008]]);
+    expect(JSON.stringify(shadow.db.mock.calls)).not.toContain("UPDATE");
+
+    const switchedOn = run(true);
+    const closed = await switchedOn.result;
+    expect(closed.collapses).toHaveLength(1);
+    const calls = JSON.stringify(switchedOn.db.mock.calls);
+    expect(calls).toContain("UPDATE published_fee_records");
+    expect(calls).toContain("hamilton.near_name_duplicates_collapsed");
   });
 });

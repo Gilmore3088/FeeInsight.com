@@ -26,6 +26,14 @@ export const DARWIN_VERDICT_SCORE_STRATEGY = { strategy: "verify.verdict_score",
 export const SCORE_CHUNK = 20;
 export const REVIEW_MISS_KIND = "review_wrong";
 export const REVIEW_MISS_CHECK = "darwin.verdict_score";
+/**
+ * The answer-key set whose misses never become lessons. A `holdout` key was never used while
+ * writing rules, and a review that read its own holdout misses before the next call would score
+ * on fees it had already been corrected on, so the holdout hit rate would overstate how the
+ * review does on fees it has not seen. Holdout misses are still recorded (weight 0,
+ * `lesson: false`) so the measurement keeps every miss; only `loadReviewMisses` skips them.
+ */
+export const HOLDOUT_SET = "holdout";
 /** Attempts read per run while looking for verdicts at keyed institutions. */
 const SCAN_LIMIT = 5_000;
 const MISSES_PER_KEY = 3;
@@ -185,16 +193,22 @@ export interface ChunkScore {
   holdoutRight: number;
   holdoutWrong: number;
   misses: Array<{ verdict: StoredVerdict; scored: ScoredClaim; set: string }>;
+  /** Closed short because its review version was retired; `right + wrong` is under `size`. */
+  partial?: boolean;
 }
 
 /**
  * Pure: verdicts (in attempt order) cut into chunks of `size` decided verdicts. A chunk
- * that has not filled yet is left for the next run, so every chunk is the same size.
+ * that has not filled yet is left for the next run, so every chunk is the same size,
+ * unless `closeOpen` is set: then the open chunk is returned too, marked `partial`, for a
+ * review version that will get no more verdicts (the release review went v11 to v17 on
+ * 2026-10-08 and no version reached 20 keyed verdicts, so no chunk was ever recorded).
  */
 export function scoreChunks(
   verdicts: StoredVerdict[],
   keysByInstitution: Map<number, KeyText[]>,
   size = SCORE_CHUNK,
+  closeOpen = false,
 ): ChunkScore[] {
   const chunks: ChunkScore[] = [];
   let current: ChunkScore | null = null;
@@ -227,6 +241,7 @@ export function scoreChunks(
       current = null;
     }
   }
+  if (closeOpen && current && current.right + current.wrong > 0) chunks.push({ ...current, partial: true });
   return chunks;
 }
 
@@ -252,7 +267,7 @@ async function loadKeysByInstitution(db: SqlTag): Promise<Map<number, KeyText[]>
 }
 
 export interface VerdictScoreResult {
-  chunks: Array<{ review: string; version: number; right: number; wrong: number; unclear: number; knox_right: number; to_attempt_id: number }>;
+  chunks: Array<{ review: string; version: number; right: number; wrong: number; unclear: number; knox_right: number; to_attempt_id: number; partial: boolean }>;
   lessons: number;
 }
 
@@ -290,10 +305,13 @@ export async function runDarwinVerdictScore(
          LIMIT ${SCAN_LIMIT}::int
       `);
       const verdicts = rows.map(verdictFromRow).filter((verdict): verdict is StoredVerdict => verdict != null);
-      // Versions are scored apart, so a new prompt starts its own record.
-      const versions = [...new Set(verdicts.map((verdict) => verdict.version))];
+      // Versions are scored apart, so a new prompt starts its own record. A version below
+      // the newest one seen gets no more verdicts, so its open chunk is closed as partial.
+      const versions = [...new Set(verdicts.map((verdict) => verdict.version))].sort((a, b) => a - b);
+      const newest = versions[versions.length - 1];
       for (const version of versions) {
-        for (const chunk of scoreChunks(verdicts.filter((verdict) => verdict.version === version), keys)) {
+        const retired = version < newest;
+        for (const chunk of scoreChunks(verdicts.filter((verdict) => verdict.version === version), keys, SCORE_CHUNK, retired)) {
           await recordChunk(db, options, review, version, chunk);
           result.lessons += await recordMisses(db, options.runId, chunk);
           result.chunks.push({
@@ -304,6 +322,7 @@ export async function runDarwinVerdictScore(
             unclear: chunk.unclear,
             knox_right: chunk.knoxRight,
             to_attempt_id: chunk.toAttemptId,
+            partial: chunk.partial === true,
           });
         }
       }
@@ -343,12 +362,20 @@ async function recordChunk(
       from_attempt_id: chunk.fromAttemptId,
       to_attempt_id: chunk.toAttemptId,
       decided,
+      // A short chunk closed when its review version was retired; read its hit_rate with `decided`.
+      partial: chunk.partial === true,
       right: chunk.right,
       wrong: chunk.wrong,
       unclear: chunk.unclear,
       hit_rate: decided > 0 ? Math.round((chunk.right / decided) * 1000) / 1000 : null,
       knox_right: chunk.knoxRight,
-      holdout: { right: chunk.holdoutRight, wrong: chunk.holdoutWrong },
+      holdout: {
+        right: chunk.holdoutRight,
+        wrong: chunk.holdoutWrong,
+        hit_rate: chunk.holdoutRight + chunk.holdoutWrong > 0
+          ? Math.round((chunk.holdoutRight / (chunk.holdoutRight + chunk.holdoutWrong)) * 1000) / 1000
+          : null,
+      },
       misses: chunk.misses.map(({ verdict, scored, set }) => ({
         attempt_id: verdict.attemptId,
         fee_raw_id: verdict.feeRawId,
@@ -363,10 +390,13 @@ async function recordChunk(
   });
 }
 
-async function recordMisses(db: SqlTag, runId: number, chunk: ChunkScore): Promise<number> {
-  if (chunk.misses.length === 0) return 0;
-  if (!(await inSavepoint(db, (scope) => feedbackSchemaReady(scope)))) return 0;
-  const rows: FeedbackRow[] = chunk.misses.map(({ verdict, scored, set }) => ({
+/**
+ * Pure: the learning-store rows for a chunk's misses. A tuning miss is a lesson (weight 1);
+ * a holdout miss is kept for the record at weight 0 with `lesson: false`, and
+ * `loadReviewMisses` never reads it back into a prompt.
+ */
+export function missRows(chunk: ChunkScore, runId: number): FeedbackRow[] {
+  return chunk.misses.map(({ verdict, scored, set }) => ({
     aboutStage: "verify",
     aboutStrategy: verdict.strategy,
     aboutVersion: verdict.version,
@@ -380,17 +410,24 @@ async function recordMisses(db: SqlTag, runId: number, chunk: ChunkScore): Promi
     feeRawId: verdict.feeRawId,
     canonicalFeeKey: verdict.knoxKey,
     amount: verdict.amount,
+    weight: set === HOLDOUT_SET ? 0 : 1,
     evidence: {
       fee_name: verdict.feeName.slice(0, 160),
       said: verdict.claim.isFee ? verdict.claim.category ?? "none fits" : "not a fee",
       key_says: scored.keySays,
       key_line: scored.keyLine,
       answer_key_set: set,
+      lesson: set !== HOLDOUT_SET,
     },
     runId,
     dedupeKey: `${REVIEW_MISS_CHECK}:attempt:${verdict.attemptId}`,
   }));
-  return recordFeedback(db, rows);
+}
+
+async function recordMisses(db: SqlTag, runId: number, chunk: ChunkScore): Promise<number> {
+  if (chunk.misses.length === 0) return 0;
+  if (!(await inSavepoint(db, (scope) => feedbackSchemaReady(scope)))) return 0;
+  return recordFeedback(db, missRows(chunk, runId));
 }
 
 /** A past miss of a Darwin review, in the words its prompt uses. */
@@ -405,7 +442,8 @@ export interface ReviewMiss {
 
 /**
  * The most recent misses of one review on fees filed in these categories, newest first,
- * at most MISSES_PER_KEY per category. Empty when the store is missing or unreadable.
+ * at most MISSES_PER_KEY per category. Holdout-key misses are never read: they are the
+ * measurement, not the lesson (`HOLDOUT_SET`). Empty when the store is missing or unreadable.
  */
 export async function loadReviewMisses(db: SqlTag, review: ScoredReview, keys: string[]): Promise<ReviewMiss[]> {
   const unique = [...new Set(keys.filter(Boolean))];
@@ -426,6 +464,7 @@ export async function loadReviewMisses(db: SqlTag, review: ScoredReview, keys: s
              AND pf.check_name = ${REVIEW_MISS_CHECK}
              AND pf.about_strategy = ${review}
              AND pf.canonical_fee_key = ANY(${unique}::text[])
+             AND COALESCE(pf.evidence->>'answer_key_set', 'tuning') <> ${HOLDOUT_SET}
         ) ranked
        WHERE rank <= ${MISSES_PER_KEY}::int
     `);

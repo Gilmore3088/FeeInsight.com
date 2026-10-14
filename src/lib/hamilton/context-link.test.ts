@@ -22,6 +22,17 @@ describe("Hamilton context links", () => {
     expect(normalizeCanonicalInstitutionId("02945")).toBeNull();
   });
 
+  it("accepts only safely represented canonical decimal institution IDs", () => {
+    for (const value of [8109, "8109", " 8109 ", Number.MAX_SAFE_INTEGER]) {
+      expect(normalizeCanonicalInstitutionId(value)).toBe(String(value).trim());
+    }
+    for (const value of ["08109", "0x1", "8.109e3", "8109.0", Number.MAX_SAFE_INTEGER + 1, "9007199254740992"]) {
+      expect(isCanonicalInstitutionId(String(value))).toBe(false);
+      expect(normalizeCanonicalInstitutionId(value)).toBeNull();
+      expect(hrefWithInstitutionContext("/pro/reports", String(value))).toBe("/pro/reports");
+    }
+  });
+
   it("appends selected institution context to Pro links", () => {
     expect(hrefWithInstitutionContext("/pro/analyze", "2945")).toBe(
       "/pro/analyze?instId=2945",

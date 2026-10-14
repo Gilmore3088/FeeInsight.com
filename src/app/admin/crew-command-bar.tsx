@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useRef, useState, useTransition } from "react";
+import { triggerAgentRunExecution } from "@/lib/agents/client-execution";
 import type { CrewReply } from "@/lib/agents/crew-execute";
 import { askCrew, confirmCrewCommand } from "./crew-actions";
 
@@ -48,10 +49,27 @@ export function CrewCommandBar() {
     const commandText = exchange.reply.confirm.commandText;
     startTransition(async () => {
       const reply = await confirmCrewCommand(commandText);
+      if (reply.runId !== undefined) {
+        // The run already exists in the ledger; advance it using the normal
+        // authenticated endpoint, which still honors pipeline/provider controls.
+        triggerAgentRunExecution(reply.runId);
+        window.dispatchEvent(new CustomEvent("atlas:started", {
+          detail: {
+            runId: reply.runId,
+            title: exchange.said,
+            label: exchange.said,
+            agent: exchange.reply.speaker.toLowerCase(),
+            reused: reply.runReused ?? false,
+            startedAt: new Date().toISOString(),
+          },
+        }));
+      }
+      const succeeded = reply.runId !== undefined
+        || !reply.lines.some((line) => /something went wrong|unauthorized|not found/i.test(line));
       startTransition(() => {
         setHistory((previous) => [
           { id: ++nextId.current, said: `Confirmed: ${exchange.said}`, reply },
-          ...previous.map((item) => (item.id === exchange.id ? { ...item, confirmed: true } : item)),
+          ...previous.map((item) => (item.id === exchange.id ? { ...item, confirmed: succeeded } : item)),
         ].slice(0, 6));
       });
     });

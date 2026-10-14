@@ -9,13 +9,14 @@ import {
 } from "@/lib/admin-dashboard-cache";
 import { getAtlasCommandCenter } from "@/lib/admin-command-center";
 import { getFailureAlerts } from "@/lib/agents/failure-alerts";
-import { getPipelineFunnel } from "@/lib/data-store/pipeline-funnel";
+import { listScoreboardSnapshots, scoreboardSchemaReady, type ScoreboardSnapshotRow } from "@/lib/data-store/answer-key";
 import { pipelineHealthProblems } from "@/lib/job-health";
 import { getPipelineHealth } from "@/lib/pipeline-health";
 import { getLeads } from "@/lib/admin-queries";
 import { buildNeedsYou, needsYouHeadline } from "@/lib/console/needs-you";
 import { getSpendSummary } from "@/lib/data-store/console-spend";
-import { NeedsYouList, VitalsRow, spendVitals, type Vital } from "./today-panels";
+import { getCachedHoldGroups } from "@/lib/console/held-queue-cache";
+import { NeedsYouList, VitalsRow, spendVitals, todayVitals } from "./today-panels";
 
 const getCachedAtlasCommandCenter = unstable_cache(
   getAtlasCommandCenter,
@@ -26,13 +27,14 @@ const getCachedAtlasCommandCenter = unstable_cache(
   },
 );
 
-const getCachedPipelineFunnel = unstable_cache(
-  getPipelineFunnel,
-  ["admin", "atlas-pipeline-funnel"],
-  {
-    revalidate: ADMIN_ATLAS_DASHBOARD_REVALIDATE_SECONDS,
-    tags: [ADMIN_ATLAS_COMMAND_CENTER_CACHE_TAG],
+/** The newest scorecard snapshot (#1040): Atlas writes one a day, so ten minutes old is fresh. */
+const getCachedLatestSnapshot = unstable_cache(
+  async (): Promise<ScoreboardSnapshotRow | null> => {
+    if (!(await scoreboardSchemaReady())) return null;
+    return (await listScoreboardSnapshots(8)).at(-1) ?? null;
   },
+  ["admin", "today-scorecard"],
+  { revalidate: 600 },
 );
 
 // Spend moves with every paid call; a minute old is fresh enough for the home screen.
@@ -40,27 +42,27 @@ const getCachedSpendSummary = unstable_cache(getSpendSummary, ["admin", "console
 
 /** One tap to each place the rest of the console lives. */
 const ELSEWHERE: Array<{ href: string; label: string }> = [
-  { href: "/admin/agents", label: "Agents at work" },
-  { href: "/admin/data", label: "Data feeds" },
+  { href: "/admin/scoreboard", label: "Scorecard" },
+  { href: "/admin/agents", label: "Pipeline" },
   { href: "/admin/controls", label: "Spend and switches" },
 ];
 
 /**
- * Today: the console's home. What needs a person, then three numbers, nothing else.
- * The crew, pipeline funnel, data feeds and stop switches live in their rooms, one
- * tap away. Every item and number is read from a table; a value that could not be
+ * Today: the console's home. What needs a person, then five numbers against their targets
+ * (accuracy, coverage groups, wrong after publish, spend, Darwin backlog). The agents, data
+ * feeds and stop switches live in their rooms, one tap away. Every item and number is read from a table; a value that could not be
  * read says so.
  */
 export default async function TodayPage() {
   await requireAuth("view");
-  const [center, health, funnel, failureAlerts, spend, leads] = await Promise.all([
+  const [center, health, snapshot, failureAlerts, spend, leads, holds] = await Promise.all([
     getCachedAtlasCommandCenter(),
     getPipelineHealth().catch((error) => {
       console.error("Today pipeline health query failed", error);
       return null;
     }),
-    getCachedPipelineFunnel().catch((error) => {
-      console.error("Today pipeline funnel query failed", error);
+    getCachedLatestSnapshot().catch((error) => {
+      console.error("Today scorecard query failed", error);
       return null;
     }),
     getFailureAlerts(),
@@ -69,28 +71,16 @@ export default async function TodayPage() {
       return null;
     }),
     getLeads(),
+    getCachedHoldGroups().catch((error) => {
+      console.error("Today held fees query failed", error);
+      return null;
+    }),
   ]);
   const problems = health
     ? pipelineHealthProblems(health)
     : ["Pipeline health could not be read; check the database connection."];
-  const needsYou = buildNeedsYou({ attention: center.attention, failureAlerts, leads });
-  const vitals: Vital[] = [
-    {
-      label: "Live fees",
-      value: funnel ? funnel.publishedRows.toLocaleString("en-US") : null,
-      note: funnel
-        ? `at ${funnel.publishedInstitutions.toLocaleString("en-US")} institutions`
-        : "Could not read the published catalog.",
-      href: "/admin/data",
-    },
-    spendVitals(spend?.total ?? null)[0],
-    {
-      label: "Leads waiting",
-      value: String(needsYou.filter((item) => item.area === "Customers").length),
-      note: "requests owed a reply",
-      href: "/admin/customers",
-    },
-  ];
+  const needsYou = buildNeedsYou({ attention: center.attention, failureAlerts, leads, holds });
+  const vitals = todayVitals(snapshot, spendVitals(spend?.total ?? null)[0]);
   const today = new Date().toLocaleDateString("en-US", {
     weekday: "long",
     month: "long",

@@ -102,8 +102,10 @@ export function pageLines(html: string): string[] {
       .replace(/<(script|style|noscript|svg)\b[\s\S]*?<\/\1>/gi, " ")
       // A mail link becomes its address alone: its text ("Email Jane") is neither a name nor a title.
       .replace(/<a\b[^>]*href=["']mailto:([^"'?]+)[^"']*["'][^>]*>[\s\S]*?<\/a>/gi, (_m, address: string) => ` ${safeDecode(address)} `)
-      .replace(/<\/?(p|div|li|tr|td|th|h[1-6]|br|section|article|header|footer|ul|ol|dt|dd|figure|figcaption|strong|b|em)\b[^>]*>/gi, "\n")
-      .replace(/<[^>]+>/g, " "),
+      // Quoted attribute values may hold ">" (script in an Alpine or Vue attribute), so a tag
+      // ends at the first ">" outside quotes.
+      .replace(/<\/?(p|div|li|tr|td|th|h[1-6]|br|section|article|header|footer|ul|ol|dt|dd|figure|figcaption|strong|b|em)\b(?:"[^"]*"|'[^']*'|[^'">])*>/gi, "\n")
+      .replace(/<(?:"[^"]*"|'[^']*'|[^'">])+>/g, " "),
   );
   return text
     .split(/\n+/)
@@ -657,10 +659,27 @@ const ROLE_PRIORITY: Record<ContactRole, number> = {
 };
 const CONFIDENCE_PRIORITY: Record<ContactConfidence, number> = { high: 0, medium: 1, low: 2 };
 
+/** "Market President - Metro Market", "Regional President", "President - Western Region", "Community President". */
+const LOCAL_PRESIDENT =
+  /\b(?:market|regional|region|area|community|city|division|district)\s+president\b|\bpresident\b.*\b(?:market|region|area|division|district)\b/i;
+
+/**
+ * A market or regional president: the executive role comes from "president", but the job runs a
+ * lending office in one market and is a weak buyer for a fee report (Dieterich Bank's primary was
+ * "Market President - Metro Market", Oct 9). Ranked below every other decision-maker, so a
+ * marketing, product, deposit or retail title wins whenever one exists; still a fallback when
+ * none does. A title that also names marketing or retail keeps that role and isn't demoted.
+ */
+export function isLocalPresident(contact: Pick<ProspectContactRow, "title" | "role">): boolean {
+  if (contact.role !== "executive" || !contact.title) return false;
+  return LOCAL_PRESIDENT.test(contact.title.replace(VICE_PRESIDENT, " "));
+}
+
 /** One institution's contacts, best first; the first is the primary and the second the backup. */
 export function rankContacts<T extends Pick<ProspectContactRow, "kind" | "name" | "title" | "role" | "email">>(contacts: T[]): T[] {
   return [...contacts].sort(
     (a, b) =>
+      Number(isLocalPresident(a)) - Number(isLocalPresident(b)) ||
       CONFIDENCE_PRIORITY[contactConfidence(a)] - CONFIDENCE_PRIORITY[contactConfidence(b)] ||
       ROLE_PRIORITY[a.role] - ROLE_PRIORITY[b.role] ||
       a.email.localeCompare(b.email),
@@ -836,9 +855,12 @@ export function summarizeContactPicks(result: ContactPicksResult): string {
 /**
  * The contacts as a CSV. An institution whose rows are all ranked uses the stored confidence and
  * pick; one with any unranked row (before the backfill) is ranked here the same way.
+ * `coverage` (getBuyerCoverage) adds the share of each bank's local competitor deposits held by
+ * competitors with live fees, so a list can prefer buyers whose market report would be complete;
+ * blank for credit unions and banks with no branch data.
  */
-export function contactsCsv(rows: ProspectContactRow[]): string {
-  const header = ["institution_id", "institution_name", "charter_type", "state_code", "city", "assets_musd", "pick", "confidence", "name", "title", "role", "email", "kind", "source_url", "found_at"] as const;
+export function contactsCsv(rows: ProspectContactRow[], coverage: ReadonlyMap<number, { share: number; shareOverdraft: number }> = new Map()): string {
+  const header = ["institution_id", "institution_name", "charter_type", "state_code", "city", "assets_musd", "pick", "confidence", "name", "title", "role", "email", "kind", "source_url", "found_at", "market_coverage_pct", "market_coverage_overdraft_pct"] as const;
   const byInstitution = new Map<number, ProspectContactRow[]>();
   for (const row of rows) {
     const list = byInstitution.get(row.institution_id);
@@ -855,7 +877,13 @@ export function contactsCsv(rows: ProspectContactRow[]): string {
     ranked
       .sort((a, b) => (a.pick ? order[a.pick] : 2) - (b.pick ? order[b.pick] : 2) || position.get(a)! - position.get(b)!)
       .forEach((row) => {
-        const cells = { ...row, pick: row.pick ?? "" };
+        const market = coverage.get(row.institution_id);
+        const cells = {
+          ...row,
+          pick: row.pick ?? "",
+          market_coverage_pct: market ? Math.round(market.share * 100) : null,
+          market_coverage_overdraft_pct: market ? Math.round(market.shareOverdraft * 100) : null,
+        };
         lines.push(header.map((key) => csvCell(cells[key])).join(","));
       });
   }

@@ -30,12 +30,19 @@ fetch, read, extract, classify, publish. One run per state at a time, none while
 state's own lane is running (a queued lane does not count), and none once nothing is due (dead ends whose last search used
 an older discovery method, and product-page links not yet searched for the real schedule)
 or the request's `until` day has passed. Magellan's own selectors pick the banks, so a bank
-is never searched twice under one method. Tennessee is on it until 10 Oct 2026.
+is never searched twice under one method. No state is on it now; Tennessee's request ended
+10 Oct 2026 and was removed (#1117).
+
+A state on `REPORT_REVIEW_REQUESTS` (`report-review-states.ts`, a report James is waiting to
+review) runs its lane ahead of routine passes until the entry's `until` day. Tennessee is on it
+until 19 Oct 2026; remove it sooner once its report is reviewed.
 
 ## Direct runs for one institution (`priority-institutions.ts`)
 
 Up to two at a time, free steps only (fetch, read, extract, verify, publish) for one bank, in
-this order: a schedule found by hand and not yet fetched; a document Magellan's paid fetch
+this order: a schedule found by hand and not yet fetched; a Pro account's own institution
+(an active `institution_workspace_memberships` row) with fewer than `PRO_INSTITUTION_MIN_FEES` (3)
+live dollar fees, again every 24 hours until it has them (#1078); a document Magellan's paid fetch
 stored that is still unread (the paid step fetches blocked links for banks in every state,
 while a state run reads only its own state, so these would wait for their state's lane); a
 bank asked for by name; a $10B+ bank or market leader with no live overdraft fee. A new
@@ -67,7 +74,9 @@ hand-found link or paid-fetched document starts a new run even inside the retry 
   for 30 days, newest live fee not source-checked, or a source-check takedown in the last 7
   days. Due lanes run highest score first; a lane overdue by `STATE_LANE_STARVATION_HOURS`
   (3) goes ahead of all, so quiet states still get turns. The tick launches
-  `STATE_LANE_LIMIT_PER_TICK` (3) lanes every 5 minutes.
+  `STATE_LANE_LIMIT_PER_TICK` (3) lanes every 5 minutes. A refresh that fails keeps every
+  lane's old score and says so: the tick's `priorities.error`, and a `lane.priorities_failed`
+  event on each lane run that tick starts (or the newest lane run when it starts none; #1264).
 - Report demand goes first (2026-10-06, funnel audit): a state gets
   `REPORT_REQUEST_PRIORITY` (2000) while an unpaid report request from the last 30 days names
   an institution there (`institution_id=` in `leads.use_case`) that fails James's report rule,
@@ -79,6 +88,13 @@ hand-found link or paid-fetched document starts a new run even inside the retry 
   headline fees live adds `UNCOVERED_LEADER_PRIORITY` (50) to its home state's lane, since
   that lane finds its schedule. On 2026-10-07, 585 of 693 leaders were uncovered (ME, UT and
   WI had 19 each).
+- Coverage gap (2026-10-12 target, #1117): each covered institution the state's size groups
+  under $10B still need to reach James's target (30 live institutions per group, or 75% of a
+  group under 40) adds `COVERAGE_GAP_PRIORITY` (20). The groups come from `coverageGroupsSql`
+  in `goal-scorecard.ts`, the same query behind the scorecard's benchmark-ready groups, so the
+  gap a lane works on is the one the scorecard shows per state (now, 7 days ago, and the newly
+  live institutions that closed it). A state is at most 90 short (1,800), below report demand.
+  Institutions over $10B are compared nationally and by district, so they add nothing.
 - At most `MAX_ACTIVE_STATE_LANE_RUNS` (3) lane runs are queued or running at once. The
   executor finishes started runs first, then runs waiting over an hour, then the highest
   `priority_score`.
@@ -93,7 +109,27 @@ hand-found link or paid-fetched document starts a new run even inside the retry 
   order for the state (`finderOrderFromHints` in `magellan/discovery.ts`: specialists that
   found links there run first, ones tried 5+ times without a find run last; each discover
   step records the order in its result as `finderOrder`); `hamilton/state-expert-summary.ts` gives the report engine
-  the expert's summary. Darwin's peer check reads the peer levels.
+  the expert's summary. Darwin's peer check reads the peer levels. The step also records the
+  state's work list (`work_list_groups`, #1029): its size groups under $10B, furthest below
+  the coverage target first, the order Magellan's paid passes take its institutions in
+  (`state-expert/work-list.ts`; see Magellan's AGENTS.md).
+
+## Goal scorecard (#1040)
+
+`goal-scorecard.ts` runs with the daily scoreboard step and stores the goal numbers in
+`pipeline_scoreboard_snapshots.detail.goal`. `/admin/scoreboard` and the morning brief show the
+same numbers. Each number names its query (`GOAL_QUERIES`) and covers the trailing 7 days:
+- benchmark-ready state × size groups under $10B (30 live institutions, or 75% below 40);
+- institutions with live fees, and those added (live now, no live fee 7 days ago);
+- Deming's pooled accuracy;
+- wrong after publish (error take-downs ÷ fees first published, refresh copies and
+  housekeeping take-downs left out);
+- provider spend per agent against its cap, and per institution added;
+- Knox's free and paid passes (fees kept, documents, institutions, cost per fee, share at $0);
+- the share of live fees with no stated audience.
+
+A refresh or a rollback never counts as progress. A read that fails is stored as null and
+the brief says it could not be read.
 
 ## Daily health check (contract)
 
@@ -117,3 +153,12 @@ Also recorded, without a rule: `laneRuns`, `backlogRuns`, `overdueLanes`, `queue
 step's selector changes, add or change the matching number here so the two can't drift apart
 unseen. Every agent has the same section in its own AGENTS.md; a new rule goes in that table and
 in `agent-health.ts` in the same PR.
+
+## Current versions
+
+The version each rules or reader constant is at now. `scripts/ci-guards.sh guide-version-kill`
+fails a PR that changes one of these constants without updating its line here (#1109).
+
+| Constant | Strategy | Version | File |
+|---|---|---|---|
+| `SCHEDULE_CHECK_VERSION` | — | v1 | `atlas/schedule-check.ts` |

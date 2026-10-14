@@ -317,12 +317,13 @@ export const CANONICAL_KEY_MAP: Record<string, string> = {
   skipapayment: "late_payment",
   reinstatement: "late_payment",
   // --- Fax / research / admin variants ---
-  fax_fee: "account_research",
+  // A fax or a document copy is document reproduction (Oct 9: one home for fax and copies).
+  fax_fee: "document_reproduction",
   account_balancing_assistance: "account_research",
   account_balancing_assistance_per_hour: "account_research",
   balancing_assistance_fee: "account_research",
   inquiries_fee: "account_research",
-  document_copy: "account_research",
+  document_copy: "document_reproduction",
   more_fee: "account_research",
   less_fee: "account_research",
   // --- Early closure / club variants ---
@@ -388,9 +389,9 @@ export const CANONICAL_KEY_MAP: Record<string, string> = {
   charitable_donation: "account_research",
   operate_fee: "account_research",
   // --- Production Postgres audit (2026-04-10) ---
-  fax: "account_research",
-  fax_service: "account_research",
-  fax_services: "account_research",
+  fax: "document_reproduction",
+  fax_service: "document_reproduction",
+  fax_services: "document_reproduction",
   christmas_club_early_withdrawal: "early_closure",
   christmas_club_withdrawal_fee: "early_closure",
   skipapayment_fee: "late_payment",
@@ -398,7 +399,7 @@ export const CANONICAL_KEY_MAP: Record<string, string> = {
   zipper_bags: "night_deposit",
   membership_share: "monthly_maintenance",
   western_union: "wire_domestic_outgoing",
-  document_copy_fee: "account_research",
+  document_copy_fee: "document_reproduction",
   visa_travel_card: "card_replacement",
   loan_extension: "loan_origination",
   excessive_transaction_fee: "account_research",

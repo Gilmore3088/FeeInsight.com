@@ -1,10 +1,11 @@
 "use client";
 
 import Link from "next/link";
+import { LandingResearchPicker } from "@/components/hamilton/landing/LandingResearchPicker";
 import { useId, useState, type KeyboardEvent } from "react";
 import { InstitutionSearchBar } from "@/app/(public)/institutions/search-bar";
 import { TrackLink } from "@/components/track-link";
-import { PRODUCT_NAME, REPORT_OFFER } from "@/lib/constants";
+import { PRODUCT_NAME, REPORT_OFFER, REPORT_PRICE_INLINE } from "@/lib/constants";
 
 // Display form of the site domain for the "powered by" line under the product name.
 const SITE_DOMAIN_DISPLAY = "FeeInsight.com";
@@ -60,7 +61,7 @@ export function LandingHero({ institutionsLabel, sampleLive = false }: LandingHe
 
   return (
     <section className="border-b border-[#E0D7C9] bg-[#FAF7F2]">
-      <div className="mx-auto max-w-6xl px-4 pb-8 pt-8 sm:px-6 sm:pb-10 sm:pt-12 lg:pt-14">
+      <div className="mx-auto max-w-page px-4 pb-8 pt-8 sm:px-6 sm:pb-10 sm:pt-12 lg:pt-14">
         <div className="max-w-3xl">
           <h1
             className="text-[clamp(2.25rem,8vw,3.75rem)] font-normal leading-none tracking-[-0.01em] text-[#1A1815]"
@@ -132,7 +133,8 @@ export function LandingHero({ institutionsLabel, sampleLive = false }: LandingHe
             aria-labelledby={tabId("explore")}
             hidden={active !== "explore"}
           >
-            <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <LandingResearchPicker />
+            <ul className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               {EXPLORE_LINKS.map((link) => (
                 <li key={link.href}>
                   <Link
@@ -159,7 +161,7 @@ export function LandingHero({ institutionsLabel, sampleLive = false }: LandingHe
             <p className="text-pretty text-[16px] leading-relaxed text-[#1A1815]">
               See how your fees compare with your competitors&apos;, fee by fee, in a PDF you can
               take to your pricing committee. Start with a free national or Fed district report;
-              the report for your institution starts at $300.
+              the report for your institution is priced {REPORT_PRICE_INLINE}.
             </p>
             <div className="mt-4 flex flex-wrap items-center gap-3">
               <TrackLink

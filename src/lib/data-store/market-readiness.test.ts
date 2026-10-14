@@ -10,7 +10,10 @@ import {
   passesReportRule,
   summarizeReportReady,
   reportRulePeers,
+  reportRuleCheckFromCoverage,
+  reportRuleCheckFromRows,
   toMarketReadiness,
+  type HeadlineCoverageRow,
 } from "./market-readiness";
 
 describe("market readiness", () => {
@@ -92,5 +95,49 @@ describe("market readiness", () => {
         { rich: 15, ready: false },
       ]),
     ).toBe(39);
+  });
+});
+
+describe("report rule from coverage rows", () => {
+  const rich = RICH_MIN_CATEGORIES;
+  const subject = { id: 1, state_code: "CA", charter_type: "bank", fed_district: 12 };
+
+  it("counts rich same-charter peers by state and district, not the institution itself", () => {
+    const rows: HeadlineCoverageRow[] = [
+      [1, rich, "CA", "bank", 12],
+      [2, rich, "CA", "bank", 12],
+      [3, rich, "NV", "bank", 12],
+      [4, rich - 1, "CA", "bank", 12],
+      [5, rich, "CA", "credit_union", 12],
+      [6, rich, "TX", "bank", 11],
+    ];
+    const check = reportRuleCheckFromCoverage(subject, rows);
+    expect(check.ownCategories).toBe(rich);
+    expect(check.stateRichCompetitors).toBe(1);
+    expect(check.districtRichCompetitors).toBe(2);
+    expect(check.passes).toBe(false);
+  });
+
+  it("passes on enough rich state peers and reports no district without one", () => {
+    const rows: HeadlineCoverageRow[] = [[1, rich, "CA", "bank", null]];
+    for (let id = 2; id <= MIN_RICH_COMPETITORS + 1; id += 1) rows.push([id, rich, "CA", "bank", null]);
+    const check = reportRuleCheckFromCoverage({ ...subject, fed_district: null }, rows);
+    expect(check.districtRichCompetitors).toBeNull();
+    expect(check.stateRichCompetitors).toBe(MIN_RICH_COMPETITORS);
+    expect(check.peerScope).toBe("state");
+    expect(check.passes).toBe(true);
+  });
+
+  it("reads the subject from the rows and is null for an institution with no row", () => {
+    const rows: HeadlineCoverageRow[] = [
+      [1, rich, "CA", "bank", 12],
+      [2, rich, "CA", "bank", 12],
+    ];
+    expect(reportRuleCheckFromRows(1, rows)).toEqual(reportRuleCheckFromCoverage(subject, rows));
+    expect(reportRuleCheckFromRows(99, rows)).toBeNull();
+  });
+
+  it("gives an institution with no headline fees zero categories", () => {
+    expect(reportRuleCheckFromCoverage(subject, []).ownCategories).toBe(0);
   });
 });

@@ -58,3 +58,42 @@ describe("rateFeeFromHeld", () => {
     expect(rateFeeFromHeld(held("Fee", line, null), line)).toBe("category_not_published");
   });
 });
+
+describe("held rates a schedule row states without the word fee (#1102)", () => {
+  it.each([
+    ["card_foreign_txn", "Credit Card/Debit Card International Transaction", "Credit Card/Debit Card International Transaction | 1% of foreign transaction amount", 1],
+    ["card_foreign_txn", "ATM Cross-border", "ATM Cross-border | 1% of International Transactions | 1% of International Transactions", 1],
+    ["check_cashing", "Check Cashing", "Check Cashing | 1.00% of Amount", 1],
+    ["check_cashing", "Non-Member On Us Check Cashing Fee", "Non-Member On Us Check Cashing Fee | 1% of check", 1],
+    ["atm_international", "ATM / Debit Card International Transaction", "ATM / Debit Card International Transaction | 1% of transaction amount", 1],
+    ["coin_counting", "Loose Coin Counting (non-customer)", "Loose Coin Counting (non-customer) | 10% of total", 10],
+  ])("sends %s '%s' to Darwin", (hint, name, line, percent) => {
+    const text = `Fee Schedule\nWire Transfer | $25.00\n${line}`;
+    expect(rateFeeFromHeld(held(name, line, hint), text)).toMatchObject({ canonicalHint: hint, ratePercent: percent });
+  });
+
+  it("never reads a share of a balance or a rewards rate as a fee (post-merge review of #1237)", () => {
+    for (const line of ["Coin Counting | 0.5% of the total balance", "Coin Counting | 1% of the average daily balance amount", "Coin Counting | Earn 1% on all purchases"]) {
+      expect(typeof rateFeeFromHeld(held("Coin Counting", line, "coin_counting"), line)).toBe("string");
+    }
+  });
+
+  it("still traces a rewards card's named fee (review of 7b253470)", () => {
+    for (const [hint, name, line] of [
+      ["card_foreign_txn", "Foreign Transaction Fee", "Visa Rewards Card | Foreign Transaction Fee | 1% of each transaction"],
+      ["cash_advance", "Cash Advance Fee", "Cash Back Visa | Cash Advance Fee | 3% of each advance"],
+      ["card_foreign_txn", "Foreign Transaction Fee", "Foreign Transaction Fee 1% (earn points on purchases)"],
+    ] as const) {
+      expect(rateFeeFromHeld(held(name, line, hint), line)).toMatchObject({ canonicalHint: hint });
+    }
+  });
+
+  it("still holds a share of a balance, an interest rate and a card network's own assessment", () => {
+    const balance = "Savings | 1% of balance";
+    expect(typeof rateFeeFromHeld(held("Savings", balance, "monthly_maintenance"), balance)).toBe("string");
+    const dividend = "Share Certificate | 4.5% dividend on the balance";
+    expect(rateFeeFromHeld(held("Share Certificate", dividend, "check_cashing"), dividend)).toBe("interest_rate");
+    const network = "Issuer Cross-Border Assessment of 90 basis points (.9% of the transaction) on all cross-border";
+    expect(typeof rateFeeFromHeld(held("Issuer Cross-Border Assessment of 90 basis points (", network), network)).toBe("string");
+  });
+});

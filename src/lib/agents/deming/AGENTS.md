@@ -1,0 +1,107 @@
+# Deming Guide
+
+Deming is the quality and evaluation tooling of the Agentic OS PRD (section 7). It keeps the
+pipeline's confirmed mistakes as test cases and checks that the deployed rules still catch them.
+It runs as Atlas steps (agent `atlas`); it is deterministic and makes no model calls.
+
+## What it owns
+
+- `eval_cases` (migration `20270110000036`): one labeled example per row, in five datasets
+  (`golden`, `adversarial`, `regression`, `holdout`, `fresh_audit`). Today only `regression` is
+  written. A case's `input` is frozen at insert and never rewritten; cases are never deleted.
+- `severity.ts`: the critical / major / minor / info scale. An unknown check is `major`.
+- `checkers.ts`: offline replayers. Only checks with a pure rule (`hamilton.limit_guard`,
+  `hamilton.source_check`) replay; other cases stay `candidate` instead of passing a test that
+  never ran.
+- `regression.ts`: the `deming-regression` step in Atlas's daily scoreboard run
+  (`/api/admin/crew/scoreboard`). It turns every `takedown_confirmed` fee that is still down into a
+  case, replays every replayable case, retires a case whose fee was restored, and reports any
+  active case the rules no longer catch as a regression.
+- `__fixtures__/regression-cases.json` + `regression-gate.test.ts`: the CI gate. Every case must
+  still be caught with its expected reason. Refresh it from `eval_cases where status = 'active'`
+  and `input->>'kind' = 'limit_guard'`; source-check cases carry whole documents, so prod's daily
+  replay gates those.
+- `__fixtures__/hard-documents.json` + `hard-documents.test.ts`: the hard-document gate (#1067),
+  run in CI as `npm run test:quality-gates` with the taxonomy, fold and guard suites. Real source
+  lines, each cited by `source_document_id` and `text_hash`: two fees at one price on one page stay
+  two fees and two reads of one line collapse (`sameValueLinesApart` + `decidePriorFee`, the
+  publish step's own same-line check); a product page's $0 benefit list is held before release
+  (`publishSkipReason`); and the category guard keeps real fees and refuses wrong ones in the five
+  categories with the most wrong-after-publish takedowns (measured in the fixture's `measured`).
+  `known_misses` run as expected failures: a rule that starts getting one right fails the test, and
+  the case moves into the gate. Add a case from a stored line, never an invented one.
+
+## Fresh audit (accuracy)
+
+- `fresh-audit.ts`: the `deming-fresh-audit` step in Atlas's daily run. It draws a seeded sample
+  of `FRESH_AUDIT_SAMPLE` (200) live dollar fees from `published_fee_catalog` and checks each one
+  against the bank's own stored schedule. A fee is right only when the amount (`traceLiveFee`, the
+  shared source check), the category (`checkFeeCategory`), the evidence (the bank's own document,
+  not an article; a product-page fee only when the bank's schedule does not price the same fee
+  differently, v4, James 2026-10-13: `productPageConflictSql`); and v4 keeps a name that carries its
+  condition when Hamilton's rename pass leaves it whole on purpose, as in "Bill Pay Inactivity Fee
+  (applies after 60 days of inactivity)" (`nameQuality`), the fee line ($0 rows must be priced lines) and the name all
+  hold. A fee with no stored text is unknown, never right or wrong. Below
+  `FRESH_AUDIT_MIN_SCORABLE` scorable fees there is no percentage. The audit itself only reads.
+- This is the accuracy measure `CLAUDE.md` defines. The target is 95%, averaged over a week.
+- The step's detail (counts per check, up to 50 misses, the seed and sample ids) is in its
+  `step.finished` event. `goal-scorecard.ts` pools the last 7 days of audits into the scorecard's
+  accuracy: right ÷ scorable, a 95% Wilson range (about ±3–4 points at 200 fees), misses per check,
+  and one dated row per audit. Each daily scoreboard snapshot stores this in `detail.goal.accuracy`,
+  so the dated results outlive the run history.
+- Each new miss (not one a Hamilton second look already holds) is kept and routed
+  (`audit-misses.ts`, #1119, approved by James 2026-10-12; migration 20270110000045):
+  - a `fresh_audit` eval case, `case_key` `fresh_audit:<fee_published_id>:<check>`, label
+    `deming_audit`, status `candidate`. An audit alone never confirms a label, so the case stays a
+    candidate until a person or a take-down confirms it; the regression replay never reads it;
+  - a `wrong` judgement of kind `audit_miss`, weight 0.5, reported by `deming`, for its owner:
+    another bank's document, an unconfirmed host, an article or a product page to Magellan (stage
+    discover); an unsupported amount or category, a perk read as a fee and a bad name to Knox
+    (stage extract).
+  The step's detail reports both counts (`audit_misses`), and either write that fails is reported
+  there without stopping the audit.
+
+## Did the change work (#1106)
+
+- `change-outcomes.ts`: the `deming-change-outcomes` step, last in Atlas's daily scoreboard run.
+- `sunday-maintenance.ts`: the `deming-sunday-maintenance` step, after it in the same run, Sundays (UTC) only: James's hour of tasks (labels, data decisions, answer-key banks), the week in numbers and anything stuck (#1104). It emails only while `SUNDAY_EMAIL_LIVE=true`; otherwise the run records the email it would send.
+  Each PR that names a "Should move" number adds an entry to `should-move.json` (PR number, issue,
+  `metric`: a `pipeline_scoreboard_snapshots` column or a `detail.` path such as
+  `detail.goal.accuracy.accuracy`, `direction` up or down, optional `min_change`).
+- The first day the step sees an entry it writes a `change_outcomes` row with that day's value.
+  Seven days later it reads the first snapshot on or after that day and records the verdict:
+  `moved_as_expected`, `no_change` (moved less than `min_change`), `wrong_way`, or `unreadable`
+  (the scoreboard does not hold the number). The summary names each "no change" and "wrong way"
+  PR, to be explained or reverted (the Sunday email, #1104, lists them).
+- Migration 20270110000046 creates the table (approved by James 2026-10-12). Before it the step
+  reports that it skipped.
+
+## Benchmark health check
+
+- `benchmark-health.ts` (`BENCHMARK_HEALTH_VERSION` v1): the `deming-benchmark-health` step in
+  Atlas's daily scoreboard run (#1064), the statistical checks in the fee-benchmarking skill.
+  For each national fee category it records the institutions behind the median and the 95% range
+  by order statistics. For each state × size group under $10B it records covered and total
+  institutions, coverage share, whether the group meets James's target (30, or 75% below 40),
+  the fallback level (state, Fed district at the same size, or the whole state), and a bias flag
+  when the covered banks' median assets are at least twice the uncovered ones'.
+- **Alarm:** a category that keeps less than 70% of its institutions since the previous check
+  (on the same `STATS_METHOD_VERSION`) is named in the step summary as an ALARM.
+- Read-only, deterministic, no model calls. It is pause-exempt like the other reporting steps.
+
+## Boundaries
+
+- Deming never writes fee rows, flags or takedowns. It reads `pipeline_feedback` and the fee tiers.
+- A label comes from `takedown_confirmed`, a human, or the answer key; never from a model alone.
+- Holdout cases must never feed a rule or a prompt (PRD 7.3).
+
+## Current versions
+
+The version each rules or reader constant is at now. `scripts/ci-guards.sh guide-version-kill`
+fails a PR that changes one of these constants without updating its line here (#1109).
+
+| Constant | Strategy | Version | File |
+|---|---|---|---|
+| `FRESH_AUDIT_VERSION` | — | v5 | `deming/fresh-audit.ts` |
+| `DEMING_REGRESSION_VERSION` | — | v1 | `deming/regression.ts` |
+| `BENCHMARK_HEALTH_VERSION` | — | v1 | `deming/benchmark-health.ts` |

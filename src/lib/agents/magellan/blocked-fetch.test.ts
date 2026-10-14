@@ -129,7 +129,8 @@ describe("selectBlockedLinks", () => {
     const rows = await selectBlockedLinks(db, 3);
     expect(rows.map((row) => row.id)).toEqual([37]);
     expect(texts[0]).toContain("plain.outcome = 'http_403'");
-    expect(texts[0]).toContain("plain.outcome = 'timeout'");
+    // A refused connection (Centennial Bank) counts like a timeout.
+    expect(texts[0]).toContain("plain.outcome IN ('timeout', 'network_error')");
     expect(values[0]).toContain(BLOCKED_TIMEOUT_MIN_FAILURES);
   });
 });
@@ -156,6 +157,12 @@ describe("selectBlockedCompanions", () => {
     expect(texts[0]).toContain("'blocked_bot'");
     // A dormant bank's hand-found schedule is fetched too (Stock Yards); a closed charter's is not.
     expect(texts[0]).toContain("OR (inst.status = 'dormant' AND ias.found_by_strategy = 'discover.operator_schedule')");
+    // A hand-found page goes to the paid fetch after one timeout; others after two.
+    expect(texts[0]).toContain("WHEN plain.outcome = 'timeout' AND ias.found_by_strategy = ? THEN TRUE");
+    // A hand-found page Rosetta read blank as built by JavaScript (Arvest's bot challenge).
+    expect(texts[0].replace(/\s+/g, " ")).toContain(
+      "OR (ias.status = 'rejected' AND ias.found_by_strategy = ? AND lower(COALESCE(ias.reason, '')) ~ 'built by javascript')",
+    );
     // Hand-found pages jump the queue ahead of larger banks' pages.
     expect(texts[0]).toContain("ORDER BY (ias.found_by_strategy = ?) DESC NULLS LAST,");
     expect(await selectBlockedCompanions(db, 0)).toEqual([]);

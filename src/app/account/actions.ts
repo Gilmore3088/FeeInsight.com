@@ -1,13 +1,9 @@
 "use server";
 
-import { logout, getCurrentUser } from "@/lib/auth";
+import { getCurrentUser } from "@/lib/auth";
 import { sql } from "@/lib/data-store/connection";
 import { canAccessPremium } from "@/lib/access";
 import { adoptInstitution } from "@/lib/hamilton/adopt-institution";
-
-export async function logoutAction() {
-  await logout();
-}
 
 export async function updateProfile(formData: FormData): Promise<{
   success: boolean;

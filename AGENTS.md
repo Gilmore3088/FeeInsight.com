@@ -2,6 +2,23 @@
 
 This repository uses one agentic experience for data trust, validation, publishing, and analysis. Keep agent work tied to the TypeScript/Vercel runtime and the semantic Postgres tables. Do not reintroduce retired crawler workers, Modal paths, Supabase Edge Function product endpoints, or ad hoc scripts as runtime surfaces.
 
+## How work runs
+
+One builder at a time, starting from the Now list in GitHub issue #1026: one issue, one branch,
+one PR. Search open issues, PRs and current main before building, and reuse or explicitly
+supersede what exists. Every change a review finds is its own issue under a tracker (one per
+agent, plus the Foundation tracker for non-agent work), and the review names what it closes.
+Outreach is parked. Do not delete branches; unknown-age branches may hold unmerged work.
+James has standing approval for clean, merge-ready GitHub PRs to merge without another per-PR
+approval request. "Clean, merge-ready" means the exact current head is reviewed, required CI/checks
+are green, there is no merge conflict or unresolved blocking review, overlapping active owners are
+reconciled, and the PR does not cross a separately controlled boundary. Database migrations or
+production-data mutations, permission/security-setting changes, paid-provider activation, outreach
+sending, force-pushes, remote branch deletion, and other explicitly gated production actions still
+require their own authorization/evidence. A green branch that is stacked on an unresolved migration
+or release dependency is not merge-ready. Record the merge receipt and continue; do not ask James
+again merely because a routine code PR reached a clean merge-ready state.
+
 ## Current Runtime
 
 - Agent runs start in `agent_runs`, advance through `agent_run_steps`, and write `agent_run_events`.
@@ -10,7 +27,7 @@ This repository uses one agentic experience for data trust, validation, publishi
 - Manual advancement happens through `/api/admin/agents/runs/[id]/execute`.
 - Provider access must flow through `src/lib/ai-provider.ts` and usage/circuit accounting.
 - `src/lib/automation-control.ts` holds three controls. The `global` provider stop blocks provider steps (`PROVIDER_STEP_KEYS`, paid model calls) and provider calls; deterministic steps keep running. The `pipeline` control is the operator pause for deterministic steps; a paused run stays queued. The `marketing` control is the operator pause for Growth's steps (`MARKETING_STEP_KEYS`), which obey it instead of the pipeline pause; each pause leaves the other side's runs going. The Atlas emergency stop engages the provider stop and the pipeline pause.
-- The tick (`/api/admin/agents/tick`) first reaps steps stuck `running` (re-queue, then dead after 3 attempts), then schedules lanes and drains runs. It consults the cron provider budget policy only when a provider step is queued. With the pipeline paused it schedules no data runs but still drains Growth's runs; it does nothing only when both the pipeline and marketing are paused.
+- The tick (`/api/admin/agents/tick`) first reaps steps stuck `running` (re-queue, then dead after 3 attempts), then schedules lanes and drains runs. It consults the cron provider budget policy only when a provider step is queued. With the pipeline paused it schedules no data runs but still drains Growth's runs; it does nothing only when both the pipeline and marketing are paused. While marketing runs, it also queues Growth's daily `growth-withdraw` run when unreviewed outreach drafts no longer qualify (`src/lib/agents/growth/withdraw.ts`).
 - Every agent, marketing included, works through the run ledger: a run that writes, drafts or sends anything is an `agent_runs` row with visible steps and events. No marketing work runs outside it.
 - `/api/admin/job-health` is the external alerting endpoint: it returns 503 with plain-language problems when ticks stop succeeding, ticks are blocked, steps are stuck, lanes are overdue, or nothing has been published for a week.
 

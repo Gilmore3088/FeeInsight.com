@@ -27,8 +27,8 @@ export async function GoldStandardView({ embedded = false }: { embedded?: boolea
         </p>
       </div>}
 
-      <div className="admin-card overflow-hidden">
-        <table className="w-full text-sm">
+      <div className="admin-card overflow-x-auto">
+        <table className="w-full min-w-[720px] text-sm">
           <thead>
             <tr className="bg-gray-50/80 border-b border-gray-200">
               <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-gray-400 uppercase tracking-wider">

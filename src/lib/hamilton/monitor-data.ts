@@ -6,6 +6,7 @@
  */
 
 import { sql } from "@/lib/data-store/connection";
+import { INTERNAL_REVIEW_SIGNAL_TYPES, isCustomerSignal } from "@/lib/hamilton/customer-signals";
 import {
   getHamiltonInstitutionContext,
   type HamiltonSelectedInstitutionContext,
@@ -149,6 +150,8 @@ async function fetchSignalFeed(
             COALESCE((source_json ->> 'provider_call_queued')::boolean, false) AS provider_call_queued
           FROM hamilton_signals
           WHERE institution_id = ANY(${institutionIds}::text[])
+            AND NOT (source_json ? 'withdrawn_at')
+            AND NOT (signal_type = ANY(${INTERNAL_REVIEW_SIGNAL_TYPES as string[]}::text[]))
           ORDER BY created_at DESC
           LIMIT ${limit}
         `
@@ -164,10 +167,12 @@ async function fetchSignalFeed(
             source_json ->> 'evidence_policy' AS evidence_policy,
             COALESCE((source_json ->> 'provider_call_queued')::boolean, false) AS provider_call_queued
           FROM hamilton_signals
+          WHERE NOT (source_json ? 'withdrawn_at')
+            AND NOT (signal_type = ANY(${INTERNAL_REVIEW_SIGNAL_TYPES as string[]}::text[]))
           ORDER BY created_at DESC
           LIMIT ${limit}
         `;
-    return rows.map((r) => ({
+    return rows.filter((r) => isCustomerSignal(String(r.signal_type))).map((r) => ({
       id: String(r.id),
       institutionId: r.institution_id == null ? null : String(r.institution_id),
       signalType: String(r.signal_type),
@@ -282,6 +287,8 @@ async function fetchStatusMetrics(
             FROM hamilton_signals
             WHERE created_at >= ${cutoff}
               AND institution_id = ANY(${institutionIds}::text[])
+              AND NOT (source_json ? 'withdrawn_at')
+              AND NOT (signal_type = ANY(${INTERNAL_REVIEW_SIGNAL_TYPES as string[]}::text[]))
           `,
           sql`
             SELECT COUNT(*)::int AS count
@@ -298,6 +305,7 @@ async function fetchStatusMetrics(
             WHERE severity = 'high'
               AND created_at >= ${cutoff}
               AND institution_id = ANY(${institutionIds}::text[])
+              AND NOT (signal_type = ANY(${INTERNAL_REVIEW_SIGNAL_TYPES as string[]}::text[]))
           `,
         ])
       : await Promise.all([

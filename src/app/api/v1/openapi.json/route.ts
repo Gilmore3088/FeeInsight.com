@@ -223,6 +223,26 @@ const spec = {
               },
             },
           },
+          rate_fees: {
+            type: "array",
+            description:
+              "Fees stated as a rate of the transaction or balance rather than a dollar amount. Listed apart from fees and never included in dollar medians.",
+            items: {
+              type: "object",
+              properties: {
+                fee_name: { type: "string", example: "Foreign Transaction Fee" },
+                category: { type: "string", nullable: true, example: "foreign_transaction" },
+                rate_percent: { type: "number", example: 3 },
+                rate_min_amount: { type: "number", nullable: true, description: "Dollar floor, when the schedule states one." },
+                rate_max_amount: { type: "number", nullable: true, description: "Dollar cap, when the schedule states one." },
+                rate_basis: { type: "string", nullable: true, example: "transaction" },
+                rate_terms: { type: "string", example: "3% of the transaction" },
+                frequency: { type: "string", nullable: true },
+                conditions: { type: "string", nullable: true },
+                source_url: { type: "string", nullable: true },
+              },
+            },
+          },
           call_reports: {
             type: "array",
             description:

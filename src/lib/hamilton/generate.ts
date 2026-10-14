@@ -90,7 +90,7 @@ export async function generateSection(input: SectionInput): Promise<SectionOutpu
     );
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    throw new Error(`Hamilton section generation failed [type=${input.type}]: ${message}`);
+    throw new Error(`Hamilton section generation failed [type=${input.type}]: ${message}`, { cause: err });
   }
 
   const narrative = extractAnthropicText(response);

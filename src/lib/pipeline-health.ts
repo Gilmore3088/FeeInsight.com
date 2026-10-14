@@ -32,8 +32,13 @@ export async function getPipelineHealth(): Promise<PipelineHealth> {
         (SELECT COUNT(*)::int FROM agent_run_steps
           WHERE status = 'running'
             AND updated_at < NOW() - make_interval(mins => ${STALE_RUNNING_STEP_MINUTES})) AS stale_running_steps,
-        (SELECT COUNT(*)::int FROM agent_state_lanes
-          WHERE next_run_after < NOW() - INTERVAL '6 hours') AS overdue_state_lanes,
+        (SELECT COUNT(*)::int FROM agent_state_lanes lane
+          WHERE lane.next_run_after < NOW() - INTERVAL '6 hours'
+            -- A lane whose run is queued or running is being worked, not overdue (the
+            -- scheduler counts the same statuses as active).
+            AND NOT EXISTS (SELECT 1 FROM agent_runs run
+              WHERE run.id = lane.last_agent_run_id
+                AND run.status IN ('queued', 'running', 'cancel_requested'))) AS overdue_state_lanes,
         (SELECT MAX(published_at) FROM published_fee_records) AS last_published_at,
         (SELECT COUNT(*)::int FROM ai_api_usage_events
           WHERE status = 'failed'

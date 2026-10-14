@@ -8,6 +8,11 @@
 
 import { describe, it, expect, vi, beforeEach, beforeAll } from "vitest";
 
+// This suite exercises citation/provider gates, not membership storage.
+vi.mock("@/lib/hamilton/institution-membership", () => ({
+  getUserInstitutionMemberships: async () => [],
+}));
+
 // ─── Mocks (must be declared before importing the route) ──────────────────────
 
 const generateTextMock = vi.fn();
@@ -105,6 +110,12 @@ vi.mock("@/lib/research/agents", () => ({
   getHamilton: getHamiltonMock,
   buildAnalyzeModeSuffix: () => "",
   buildMonitorModeSuffix: () => "",
+  buildSavedPeerSetPrompt: () => "",
+  savedPeerSetUsed: () => false,
+}));
+
+vi.mock("@/lib/hamilton/active-peer-set", () => ({
+  getActivePeerSet: async () => null,
 }));
 
 import { getCurrentUser } from "@/lib/auth";
@@ -208,6 +219,7 @@ describe("POST /api/research/hamilton — citation gate", () => {
         "Beige Book commentary notes tightening consumer credit across 6 districts.",
         "Fifth Third Bank reports a $37 NSF fee per published fee records.",
       ].join("\n"),
+      steps: [{ toolResults: [{ output: { median: 35, fee: 34, change_pct: 3.6, p75: 38, rate: 5.3, amount: 37 } }] }],
       usage: { inputTokens: 100, outputTokens: 200 },
     });
 
@@ -222,6 +234,37 @@ describe("POST /api/research/hamilton — citation gate", () => {
     expect(body.status).toBe("ok");
     expect(body.text).toContain("published fee records");
     expect(body.metrics.citations).toBeGreaterThanOrEqual(5);
+  });
+
+  it("should_refuse_a_well_cited_report_whose_figures_or_wording_fail_the_evidence_gate", async () => {
+    generateTextMock.mockResolvedValue({
+      text: [
+        "## Findings",
+        "Per published fee records, the national median overdraft is $35 across 1,284 institutions.",
+        "JPMorgan Chase charges $34 for overdraft, per published fee records.",
+        "According to Call Reports, service charge revenue fell 3.6% year over year.",
+        "The 75th percentile sits at $38 per published fee records.",
+        "FRED series FEDFUNDS shows a 5.3% federal funds rate.",
+        "Beige Book commentary notes tightening consumer credit across 6 districts.",
+        "Fifth Third Bank reports a $41 NSF fee per published fee records, so you should lower the fee.",
+      ].join("\n"),
+      steps: [{ toolResults: [{ output: { median: 35, fee: 34, change_pct: 3.6, p75: 38, rate: 5.3 } }] }],
+      usage: { inputTokens: 100, outputTokens: 200 },
+    });
+
+    const { POST } = await import("./route");
+    const res = await POST(makeRequest({
+      messages: [{ role: "user", parts: [{ type: "text", text: "overdraft report" }] }],
+      gate_citations: true,
+    }));
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.status).toBe("refused");
+    expect(body.reason).toBe("evidence_check_failed");
+    expect(body.text).toBeUndefined();
+    expect(body.problems.join(" ")).toContain("$41");
+    expect(body.problems.join(" ")).toContain("advice");
   });
 
   it("should_answer_an_admin_on_the_analyze_screen_with_the_pro_prompt", async () => {

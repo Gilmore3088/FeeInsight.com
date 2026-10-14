@@ -10,6 +10,7 @@ import { getLeads } from "@/lib/admin-queries";
 import { buildNeedsYou, needsYouHeadline, type NeedsYouItem } from "@/lib/console/needs-you";
 import { getSpendSummary, type SpendSummary } from "@/lib/data-store/console-spend";
 import { getFailureAlerts } from "./failure-alerts";
+import { goalBriefLines, readGoalScorecard, type GoalScorecard } from "./goal-scorecard";
 
 /**
  * Atlas's morning brief: what ran, how the database moved since the last brief,
@@ -36,9 +37,10 @@ export function briefRecipients(env: Record<string, string | undefined> = proces
 
 const NEEDS_YOU_IN_EMAIL = 6;
 
+// "Documents downloaded" was an all-time count of distinct stored files, wrong pages
+// included (#1040); the goal lines below say what moved instead.
 const FUNNEL_LABELS: Array<[keyof PipelineFunnel, string]> = [
   ["withFeeUrl", "fee URLs"],
-  ["documentsFetched", "documents downloaded"],
   ["textsRead", "documents read"],
   ["rawExtracted", "fees extracted"],
   ["verified", "fees verified"],
@@ -78,6 +80,7 @@ export function buildDailyBrief({
   feed24h,
   needsYou,
   spend,
+  goal,
   now = new Date(),
 }: {
   health: PipelineHealth;
@@ -89,6 +92,8 @@ export function buildDailyBrief({
   /** When given, the brief leads with the console's Needs-you list. */
   needsYou?: NeedsYouItem[];
   spend?: SpendSummary | null;
+  /** The goal scorecard (#1040): the same numbers as /admin/scoreboard. */
+  goal?: GoalScorecard | null;
   now?: Date;
 }): DailyBrief {
   const problems = pipelineHealthProblems(health);
@@ -117,6 +122,10 @@ export function buildDailyBrief({
   lines.push(
     `Database: ${funnel.sourcedInstitutions.toLocaleString("en-US")} of ${funnel.institutions.toLocaleString("en-US")} institutions have sourced fees; ${funnel.withFeeUrl.toLocaleString("en-US")} have a fee URL.`,
   );
+
+  if (goal) {
+    lines.push(["The goal (last 7 days):", ...goalBriefLines(goal).map((line) => `- ${line}`)].join("\n"));
+  }
 
   if (spend) {
     const caps = spend.total.dailyCapUsd !== null ? ` of the $${spend.total.dailyCapUsd} daily cap` : "";
@@ -206,7 +215,7 @@ export interface DailyBriefResult {
 /** Gathers the numbers, writes the brief and emails it. Never throws on delivery. */
 export async function runDailyBrief({ dryRun = false }: { dryRun?: boolean } = {}): Promise<DailyBriefResult> {
   const now = new Date();
-  const [health, funnel, previous, stepsByAgent, feed, center, failureAlerts, leads, spend] = await Promise.all([
+  const [health, funnel, previous, stepsByAgent, feed, center, failureAlerts, leads, spend, goal] = await Promise.all([
     getPipelineHealth(),
     getPipelineFunnel(),
     previousBrief(now),
@@ -222,12 +231,16 @@ export async function runDailyBrief({ dryRun = false }: { dryRun?: boolean } = {
       console.error("Morning brief spend read failed", error);
       return null;
     }),
+    readGoalScorecard().catch((error) => {
+      console.error("Morning brief goal read failed", error);
+      return null;
+    }),
   ]);
   const since = now.getTime() - DAY_MS;
   const feed24h = feed.filter((item) => new Date(item.at).getTime() >= since);
   // Without Atlas's attention list the Needs-you count would be short, so the brief falls back to its older summary.
   const needsYou = center ? buildNeedsYou({ attention: center.attention, failureAlerts, leads, now }) : undefined;
-  const brief = buildDailyBrief({ health, funnel, previous, stepsByAgent, feed24h, needsYou, spend, now });
+  const brief = buildDailyBrief({ health, funnel, previous, stepsByAgent, feed24h, needsYou, spend, goal, now });
   const { to: recipient, cc } = briefRecipients();
   const from = getTransactionalFromAddress();
 

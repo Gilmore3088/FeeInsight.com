@@ -43,6 +43,8 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   return {
     title: guide.seoTitle,
     description: guide.description,
+    // Signed-out visitors, crawlers included, see only the title and the upgrade gate.
+    robots: { index: false, follow: true },
     alternates: { canonical: url },
     openGraph: {
       type: "article",

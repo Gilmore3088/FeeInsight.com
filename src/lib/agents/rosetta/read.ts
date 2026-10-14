@@ -1,4 +1,5 @@
 import { createHash } from "crypto";
+import { feesSentToDarwinSql, THIN_DOCUMENT_MAX_FEES } from "@/lib/agents/thin-document";
 
 import { sql, stripNulChars } from "@/lib/data-store/connection";
 import {
@@ -392,7 +393,9 @@ export async function fetchWithTimeout(fetchImpl: Fetcher, url: string): Promise
  * JavaScript to the free fallbacks within the same read, and table rows are stored as
  * cells. Scans and JavaScript pages an older version gave up on are read once more.
  */
-export const ROSETTA_READ_VERSION = 3;
+import { ROSETTA_READ_VERSION } from "./reader-versions";
+// The number lives in reader-versions.ts (bump it there); the history stays above.
+export { ROSETTA_READ_VERSION };
 export const PAGE_CHECK_STRATEGY = "read.page_check";
 /**
  * Marks a rejected fee page Rosetta reopens for one more read (an attempt row, outcome
@@ -415,11 +418,11 @@ const SETTLED_READ_OUTCOMES: AttemptOutcome[] = ["ok", "ok_partial", "unchanged"
 /** Free OCR outcomes a newer OCR version may turn around: it read the page, but poorly. */
 const OCR_RETRY_OUTCOMES: AttemptOutcome[] = ["rejected", "empty"];
 /**
- * An older text with fewer Knox fees than this is read again with the current reader.
- * A real fee schedule lists far more; one or two fees usually means the table was
- * flattened and most rows were lost.
+ * An older text with fewer Knox fees sent to Darwin than this is read again with the current
+ * reader. A real fee schedule lists far more; one or two fees usually means the table was
+ * flattened and most rows were lost. The shared thin-document test (#1095).
  */
-export const REREAD_MAX_KNOX_FEES = 5;
+export const REREAD_MAX_KNOX_FEES = THIN_DOCUMENT_MAX_FEES;
 /**
  * A PDF text an older layout read across prose columns joins each line with its
  * neighbour columns' lines as " | " cells of running prose. This many such joins (a
@@ -824,7 +827,8 @@ async function readCandidate(
     rows: SourceTableRow[],
     firstOutcome: AttemptOutcome | null = null,
   ) => {
-    const pageCheck = ctx.checkPage ? scoreFeePage(normalizedText, base.sourceUrl) : null;
+    // A companion account page is kept for its few fees; only the bank's fee link must be a schedule.
+    const pageCheck = ctx.checkPage ? scoreFeePage(normalizedText, base.sourceUrl, { feeSchedule: row.companion_source_id == null }) : null;
     const wrong = pageCheck?.verdict === "wrong_document";
     const followUp = base.followUps[base.followUps.length - 1];
     if (firstOutcome && followUp && wrong) followUp.outcome = "wrong_document";
@@ -1247,12 +1251,7 @@ async function selectCandidates(
               )
               OR (
                 adt.status = 'completed'
-                AND (
-                  SELECT COUNT(*) FROM raw_fee_observations fr
-                   WHERE fr.source = 'knox'
-                     AND fr.source_document_id = adt.source_document_id
-                     AND fr.outlier_flags ? 'needs_darwin_verification'
-                ) < ${rereadMaxParam}
+                AND ${feesSentToDarwinSql("adt.source_document_id")} < ${rereadMaxParam}
                 AND ${notSettledByCurrentReader}
               )
             )`;
@@ -1666,6 +1665,7 @@ async function triageEarlierTexts(
     text_hash: string | null;
     normalized_text: string;
     has_knox_fees: boolean;
+    companion: boolean;
   }>>(
     `
       SELECT adt.id AS text_id,
@@ -1674,6 +1674,7 @@ async function triageEarlierTexts(
              adt.source_url,
              adt.text_hash,
              adt.normalized_text,
+             (sdoc.companion_source_id IS NOT NULL) AS companion,
              EXISTS (
                -- Rows Knox only held for review do not prove this is a fee page.
                SELECT 1 FROM raw_fee_observations fr
@@ -1682,6 +1683,7 @@ async function triageEarlierTexts(
              ) AS has_knox_fees
         FROM agent_source_texts adt
         JOIN institution_sources inst ON inst.id = adt.institution_id
+        LEFT JOIN source_documents sdoc ON sdoc.id = adt.source_document_id
        WHERE adt.status = 'completed'
          AND adt.normalized_text IS NOT NULL
          ${filters.join("\n         ")}
@@ -1702,7 +1704,7 @@ async function triageEarlierTexts(
   let wrong = 0;
   let sentBack = 0;
   for (const row of rows) {
-    const score = scoreFeePage(row.normalized_text);
+    const score = scoreFeePage(row.normalized_text, row.source_url, { feeSchedule: !row.companion });
     const isWrong = score.verdict === "wrong_document" && !row.has_knox_fees;
     if (isWrong) {
       wrong += 1;

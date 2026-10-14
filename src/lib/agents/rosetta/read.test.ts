@@ -481,7 +481,7 @@ describe("Rosetta agentic read", () => {
       expect(query).toContain("current_read.outcome = ANY(");
       expect(query).toContain("fr.source_document_id = adt.source_document_id");
       expect(query).toContain("ORDER BY is_reread ASC");
-      expect(query).toMatch(/SELECT COUNT\(\*\) FROM raw_fee_observations fr[\s\S]*\) < \$\d+/);
+      expect(query).toMatch(/SELECT COUNT\(\*\) FROM raw_fee_observations thin_fr[\s\S]*needs_darwin_verification[\s\S]*\) < \$\d+/);
       expect(params).toContain(ROSETTA_READ_VERSION);
       expect(params).toContain(REREAD_MAX_KNOX_FEES);
     });

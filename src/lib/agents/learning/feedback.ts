@@ -19,9 +19,10 @@ type SqlTag = typeof sql;
 export type FeedbackSignal = "wrong" | "right" | "missed" | "restored";
 /**
  * Who may judge an output. Mirrors `pipeline_feedback_reported_by_check`
- * (migration 20270110000024); a test keeps the two lists equal.
+ * (migrations 20270110000024 and 20270110000045, which adds `deming`); a test keeps the two
+ * lists equal.
  */
-export const FEEDBACK_REPORTERS = ["atlas", "magellan", "rosetta", "knox", "darwin", "hamilton", "growth", "human"] as const;
+export const FEEDBACK_REPORTERS = ["atlas", "magellan", "rosetta", "knox", "darwin", "hamilton", "growth", "human", "deming"] as const;
 export type FeedbackReporter = (typeof FEEDBACK_REPORTERS)[number];
 
 /**
@@ -44,6 +45,9 @@ export type FeedbackStage = (typeof FEEDBACK_STAGES)[number];
  *     unresolved_fee_page, unread, batch_error_rate (one row per batch of reads)
  *   Extract level (Knox, `knox/batch-review.ts`): batch_miss, batch_error_rate (one row per
  *     batch of 500 Knox reads)
+ *   Second look (Hamilton, `hamilton/second-look.ts`): takedown_pending, takedown_confirmed,
+ *     takedown_cleared (a fee's current state, one row per fee and check) and the appended
+ *     audit trail flag_recorded, flag_cleared, flag_confirmed (one row per event, never rewritten)
  */
 export type FeedbackKind =
   | "wrong_category"
@@ -101,10 +105,26 @@ export interface FeedbackRow {
 const WRITE_CHUNK = 500;
 
 /**
+ * One row per `dedupe_key`, the last one kept: Postgres refuses an upsert that touches the
+ * same key twice in one statement, which threw away every link judgement from Oct 7 to 12
+ * (one document behind both a bank's main link and a companion link, #1152). The last row
+ * is what the upsert would have kept.
+ */
+export function lastPerDedupeKey(rows: FeedbackRow[]): FeedbackRow[] {
+  const byKey = new Map<string, FeedbackRow>();
+  for (const row of rows) {
+    byKey.delete(row.dedupeKey);
+    byKey.set(row.dedupeKey, row);
+  }
+  return [...byKey.values()];
+}
+
+/**
  * Upserts judgements on `dedupe_key`: a re-judgement replaces the earlier row's signal,
  * kind, weight and evidence and keeps its `created_at`. Returns the rows written.
  */
-export async function recordFeedback(db: SqlTag, rows: FeedbackRow[]): Promise<number> {
+export async function recordFeedback(db: SqlTag, input: FeedbackRow[]): Promise<number> {
+  const rows = lastPerDedupeKey(input);
   let written = 0;
   for (let start = 0; start < rows.length; start += WRITE_CHUNK) {
     const chunk = rows.slice(start, start + WRITE_CHUNK).map((row) => ({

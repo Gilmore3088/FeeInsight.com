@@ -19,6 +19,7 @@ import { SITE_NAME, SITE_URL } from "@/lib/constants";
 import { getCurrentUser } from "@/lib/auth";
 import { canAccessPremium } from "@/lib/access";
 import { UpgradeGate } from "@/components/upgrade-gate";
+import { UnstatedAudienceFootnote, UnstatedAudienceMark, hasUnstatedAudience } from "@/components/unstated-audience";
 import { getFeeCategoryDetailCached, getNationalRateStatsCached } from "@/lib/data-store/public-cached-reads";
 import { formatRatePercent, percentFeeAllowed } from "@/lib/percent-fees";
 import { benchmarkBasis, getPublicSnapshot } from "@/lib/public-stats";
@@ -139,12 +140,15 @@ export default async function FeeCategoryPage({ params }: PageProps) {
     max: national?.max_amount ?? null,
   };
 
+  // An asterisk when any institution in the benchmark has a row with no stated audience.
+  const unstatedAudience = stats.median !== null && hasUnstatedAudience(national);
+
   const familyMembers = family
     ? (FEE_FAMILIES[family] ?? []).filter((c) => c !== category)
     : [];
 
   return (
-    <div className="mx-auto max-w-7xl px-6 py-14">
+    <div className="mx-auto max-w-page px-6 py-14">
       <BreadcrumbJsonLd
         items={[
           { name: "Home", href: "/" },
@@ -217,10 +221,12 @@ export default async function FeeCategoryPage({ params }: PageProps) {
               style={SERIF}
             >
               {s.value}
+              <UnstatedAudienceMark show={unstatedAudience && s.label === "Median"} />
             </p>
           </div>
         ))}
       </div>
+      <UnstatedAudienceFootnote show={unstatedAudience} className="mt-2" />
 
       {showRates && rateStats && (
         <section className="mt-6 rounded-xl border border-[#E8DFD1]/80 bg-white/70 px-5 py-4">

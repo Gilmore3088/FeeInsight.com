@@ -1,10 +1,11 @@
 /**
- * The admin console's map: six rooms, each answering one question, and the
- * screens that live in each. The top bar lists the rooms; the side menu lists
- * the screens of the room you are in. Every admin page belongs to one room.
+ * The admin console's map (docs/plans/admin-redesign-2026-10-12.md, #1122): seven rooms, each
+ * answering one question, and the screens that live in each. The top bar lists the rooms; the
+ * side menu lists the screens of the room you are in. Every admin page belongs to one room and
+ * nothing appears in two.
  */
 
-export type RoomKey = "today" | "agents" | "data" | "customers" | "publishing" | "controls";
+export type RoomKey = "today" | "pipeline" | "work" | "data" | "hamilton" | "growth" | "settings";
 
 export interface RoomPage {
   href: string;
@@ -38,20 +39,21 @@ export const ROOMS: Room[] = [
   {
     key: "today",
     label: "Today",
-    question: "Is anything broken, and what needs me?",
+    question: "Is it healthy, and what needs me?",
     href: "/admin",
     pages: [
       { href: "/admin", label: "Needs you", role: "What needs you, three numbers", exact: true },
+      { href: "/admin/scoreboard", label: "Scorecard", role: "The goal, week by week", aliases: ["scoreboard", "accuracy", "coverage"] },
+      { href: "/admin/live", label: "Live board", role: "Banks moving through" },
     ],
   },
   {
-    key: "agents",
-    label: "Agents",
-    question: "Are the agents doing the right work at the right cost?",
+    key: "pipeline",
+    label: "Pipeline",
+    question: "How is each agent doing?",
     href: "/admin/agents",
     pages: [
-      { href: "/admin/agents", label: "Overview", role: "Pipeline and marketing agents", exact: true },
-      { href: "/admin/live", label: "Live board", role: "Banks moving through" },
+      { href: "/admin/agents", label: "Overview", role: "Every pipeline agent", exact: true },
       { href: "/admin/atlas/details", label: "Atlas", role: "Schedule and run controls", card: true },
       { href: "/admin/states", label: "State lanes", role: "State queues", more: true },
       { href: "/admin/magellan", label: "Magellan", role: "1 Find and fetch", activePrefixes: ["/admin/coverage"], card: true },
@@ -61,29 +63,26 @@ export const ROOMS: Room[] = [
         label: "Knox",
         role: "3 Extract",
         card: true,
-        badgeKey: "knoxPending",
         activePrefixes: ["/admin/review", "/admin/agents/knox"],
       },
       { href: "/admin/darwin", label: "Darwin", role: "4 Verify", card: true },
-      { href: "/admin/agents/marketing", label: "Marketing team", role: "Eight marketing agents", card: true },
       { href: "/admin/agents/learning", label: "Learning", role: "Which methods work", more: true },
       { href: "/admin/agents/health", label: "Health", role: "Done and failed, by day", more: true },
+      { href: "/admin/agents/quality", label: "Quality", role: "Regressions, replay and schedules", more: true },
       { href: "/admin/agents/lineage", label: "Lineage", role: "Trace a fee back", more: true },
       { href: "/admin/agents/replay", label: "Replay", role: "Trace a run", more: true },
       { href: "/admin/agents/messages", label: "Messages", role: "Agent to agent", more: true },
-      { href: "/admin/scoreboard", label: "Scoreboard", role: "Daily score", more: true },
     ],
   },
   {
-    key: "data",
-    label: "Data",
-    question: "How much is live, and how much of it is right?",
-    href: "/admin/data",
+    key: "work",
+    label: "Your work",
+    question: "What only you can do",
+    href: "/admin/work",
     pages: [
-      { href: "/admin/data", label: "Published data", role: "What is live", exact: true },
-      { href: "/admin/institutions", label: "Institutions", role: "Every bank and CU", activePrefixes: ["/admin/institution/"] },
-      { href: "/admin/fees/catalog", label: "Fee catalog", role: "Fees by category and segment", activePrefixes: ["/admin/fees"] },
-      { href: "/admin/market", label: "Local market", role: "One bank's competitors and fees" },
+      { href: "/admin/work", label: "Overview", role: "Everything waiting for you", exact: true },
+      { href: "/admin/verify", label: "Verify", role: "Fees to check by hand" },
+      { href: "/admin/answer-key", label: "Answer key", role: "Hand-checked truth" },
       {
         href: "/admin/quality",
         label: "Trust review",
@@ -91,8 +90,20 @@ export const ROOMS: Room[] = [
         badgeKey: "trustPending",
         activePrefixes: ["/admin/data-quality"],
       },
-      { href: "/admin/verify", label: "Verify", role: "Fees to check by hand" },
-      { href: "/admin/answer-key", label: "Answer key", role: "Hand-checked truth" },
+      { href: "/admin/customers/marketing", label: "Marketing approvals", role: "Monthly emails to approve" },
+      { href: "/admin/customers/content", label: "Content approvals", role: "Posts to approve" },
+    ],
+  },
+  {
+    key: "data",
+    label: "Data",
+    question: "What do we hold?",
+    href: "/admin/data",
+    pages: [
+      { href: "/admin/data", label: "Published data", role: "What is live", exact: true },
+      { href: "/admin/institutions", label: "Institutions", role: "Every bank and CU", activePrefixes: ["/admin/institution/"] },
+      { href: "/admin/fees/catalog", label: "Fee catalog", role: "Fees by category and segment", activePrefixes: ["/admin/fees"] },
+      { href: "/admin/market", label: "Local market", role: "One bank's competitors and fees" },
       { href: "/admin/peers", label: "Peers", role: "Peer groups", more: true },
       { href: "/admin/districts", label: "Districts", role: "Fed districts", more: true },
       { href: "/admin/index", label: "Index", role: "National index", activePrefixes: ["/admin/national"], more: true },
@@ -100,27 +111,14 @@ export const ROOMS: Room[] = [
     ],
   },
   {
-    key: "customers",
-    label: "Customers",
-    question: "Who asked, who got a reply, and who is close to paying?",
+    key: "hamilton",
+    label: "Hamilton",
+    question: "Is the product ready for a paying customer?",
     href: "/admin/customers",
     pages: [
       { href: "/admin/customers", label: "Overview", role: "Leads, Pro accounts", exact: true },
       { href: "/admin/leads", label: "Leads", role: "Every request", activePrefixes: ["/admin/hamilton/leads"] },
-      { href: "/admin/customers/marketing", label: "Marketing", role: "Monthly emails to approve" },
-      { href: "/admin/customers/content", label: "Content", role: "Posts to approve" },
-      { href: "/admin/growth", label: "Growth", role: "Marketing team approvals" },
-      { href: "/admin/api-keys", label: "API keys", role: "Invited partners", more: true },
-      { href: "/admin/hamilton/research/usage", label: "Hamilton usage", role: "Who asked Hamilton", activePrefixes: ["/admin/research/usage"], more: true },
-    ],
-  },
-  {
-    key: "publishing",
-    label: "Publishing",
-    question: "What have we published, and is it current?",
-    href: "/admin/publishing",
-    pages: [
-      { href: "/admin/publishing", label: "Overview", role: "Reports, briefs, updates", exact: true },
+      { href: "/admin/publishing", label: "Publishing", role: "Reports, briefs, updates" },
       { href: "/admin/hamilton/reports", label: "Reports", role: "National Index, Pulse, state" },
       { href: "/admin/hamilton/guides", label: "Guides", role: "Consumer guides" },
       {
@@ -129,6 +127,9 @@ export const ROOMS: Room[] = [
         role: "Research articles",
         activePrefixes: ["/admin/research/articles"],
       },
+      { href: "/admin/hamilton/chat", label: "Ask Hamilton", role: "Ask Hamilton", activePrefixes: ["/admin/hamilton/scout", "/admin/scout"] },
+      { href: "/admin/hamilton/research/usage", label: "Usage", role: "Who asked Hamilton", activePrefixes: ["/admin/research/usage"], more: true },
+      { href: "/admin/api-keys", label: "API keys", role: "Invited partners", more: true },
       {
         href: "/admin/hamilton/methodology",
         label: "Methodology",
@@ -136,7 +137,6 @@ export const ROOMS: Room[] = [
         more: true,
         activePrefixes: ["/admin/methodology"],
       },
-      { href: "/admin/hamilton/chat", label: "Hamilton", role: "Ask Hamilton", activePrefixes: ["/admin/hamilton/scout", "/admin/scout"] },
       {
         href: "/admin/hamilton/research",
         label: "Research agents",
@@ -147,14 +147,24 @@ export const ROOMS: Room[] = [
     ],
   },
   {
-    key: "controls",
-    label: "Controls",
+    key: "growth",
+    label: "Growth",
+    question: "What is marketing doing, and what waits for me?",
+    href: "/admin/growth",
+    pages: [
+      { href: "/admin/growth", label: "Board", role: "Plan, drafts and approvals", exact: true },
+      { href: "/admin/agents/marketing", label: "Marketing team", role: "Eight marketing agents" },
+    ],
+  },
+  {
+    key: "settings",
+    label: "Settings",
     question: "What are we spending, and how do I stop it?",
     href: "/admin/controls",
     pages: [
       {
         href: "/admin/controls",
-        label: "Overview",
+        label: "Controls",
         role: "Spend, switches, launch",
         exact: true,
         aliases: ["safety", "stop", "emergency stop", "provider stop", "pause", "pipeline pause", "resume", "budget", "caps"],
@@ -216,12 +226,13 @@ export function searchScreens(query: string, limit = 6): ScreenMatch[] {
       order += 1;
       if (scored.some((match) => match.href === page.href)) continue;
       const label = page.href === room.href ? room.label : page.label;
-      const name = label.toLowerCase();
-      const score = name === needle
+      // A room's landing page answers to the room's name and its own (Settings, Controls).
+      const names = [label.toLowerCase(), page.label.toLowerCase()];
+      const score = names.includes(needle)
         ? 0
-        : name.startsWith(needle)
+        : names.some((name) => name.startsWith(needle))
           ? 1
-          : name.includes(needle)
+          : names.some((name) => name.includes(needle))
             ? 2
             : `${page.label} ${page.role} ${room.label} ${(page.aliases ?? []).join(" ")}`.toLowerCase().includes(needle)
               ? 3

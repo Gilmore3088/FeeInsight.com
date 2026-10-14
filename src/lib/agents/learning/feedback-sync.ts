@@ -67,6 +67,7 @@ interface RestoreRow {
   fee_name?: string | null;
   taken_down_for?: string | null;
   restored_by?: string | null;
+  prior_restores?: number | string | null;
 }
 
 interface CategoryRejectRow {
@@ -189,11 +190,15 @@ export async function syncPipelineFeedback(
          -- A business-schedule fee was read right from the wrong page: the lesson is
          -- Magellan's (hamilton/business-schedule.ts writes it), not Knox's or Darwin's.
          AND fp.rolled_back_reason NOT LIKE 'business_schedule:%'
+         -- A frequency hold writes its own lesson about Knox's read (hamilton/frequency-fill.ts).
+         AND fp.rolled_back_reason NOT LIKE 'frequency_hold:%'
          -- The bank's current page no longer states the fee at that price: the copy Knox and
          -- Darwin read was right when read (hamilton/current-copy.ts).
          AND fp.rolled_back_reason NOT LIKE 'not_on_current_copy:%'
          -- Read right from an article page: the lesson is Magellan's (hamilton/article-page.ts).
          AND fp.rolled_back_reason NOT LIKE 'article_page:%'
+         -- The institution no longer operates: its fees were right when it did (closed-institution.ts).
+         AND fp.rolled_back_reason NOT LIKE 'closed_institution:%'
          AND NOT EXISTS (
            SELECT 1 FROM pipeline_feedback f
             WHERE f.dedupe_key = 'hamilton.takedown:pub:' || fp.fee_published_id || ':extract'
@@ -211,14 +216,26 @@ export async function syncPipelineFeedback(
                 FROM verified_fee_observations fv, jsonb_array_elements(COALESCE(fv.outlier_flags, '[]'::jsonb)) flag
                WHERE fv.fee_verified_id = f.fee_verified_id
                  AND flag #>> '{}' LIKE 'rules_recheck_restored:%'
-               LIMIT 1) AS restored_by
+               LIMIT 1) AS restored_by,
+             (SELECT COUNT(*) FROM pipeline_feedback pr
+               WHERE pr.fee_published_id = f.fee_published_id AND pr.kind = 'restored_after_takedown') AS prior_restores
         FROM pipeline_feedback f
         JOIN published_fee_records fp ON fp.fee_published_id = f.fee_published_id
        WHERE f.dedupe_key LIKE 'hamilton.takedown:pub:%:extract'
          AND fp.rolled_back_at IS NULL
+         -- Logged unless a takedown came after its last restore: 12213 was restored Oct 6, taken
+         -- down again by the guard Oct 9 and restored as rush_card, a second cycle.
          AND NOT EXISTS (
            SELECT 1 FROM pipeline_feedback r
-            WHERE r.dedupe_key = 'hamilton.restore:pub:' || f.fee_published_id
+            WHERE r.fee_published_id = f.fee_published_id
+              AND (r.dedupe_key = 'hamilton.restore:pub:' || f.fee_published_id
+                   OR r.dedupe_key LIKE 'hamilton.restore:pub:' || f.fee_published_id || ':%')
+              AND NOT EXISTS (
+                SELECT 1 FROM pipeline_feedback t
+                 WHERE t.fee_published_id = f.fee_published_id
+                   AND t.kind IN ('takedown_confirmed', 'flag_confirmed')
+                   AND t.created_at > r.created_at
+              )
          )
        ORDER BY f.fee_published_id
        LIMIT ${limit}
@@ -239,7 +256,10 @@ export async function syncPipelineFeedback(
         canonicalFeeKey: row.canonical_fee_key,
         amount: num(row.amount),
         runId: options.runId,
-        dedupeKey: `hamilton.restore:pub:${row.fee_published_id}`,
+        // A later cycle's restore is its own row, keyed to the run that logs it.
+        dedupeKey: Number(row.prior_restores ?? 0) > 0
+          ? `hamilton.restore:pub:${row.fee_published_id}:run:${options.runId}`
+          : `hamilton.restore:pub:${row.fee_published_id}`,
         // Why it came back and what took it down, so the readers learn which checks were
         // wrong and which fees today's rules miss ("rules_recheck_restored:restore_bar").
         evidence: {

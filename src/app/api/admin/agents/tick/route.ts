@@ -9,6 +9,7 @@ import {
 import { schedulePriorityInstitutionRuns } from "@/lib/agents/atlas/priority-institutions";
 import { schedulePriorityStateResearchRuns } from "@/lib/agents/atlas/priority-state-research";
 import { scheduleGuardCatchUpRun } from "@/lib/agents/hamilton/guard-catch-up";
+import { scheduleStaleOutreachWithdrawal } from "@/lib/agents/growth/withdraw";
 import { scheduleDueStateLaneRuns, STATE_LANE_LIMIT_PER_TICK } from "@/lib/agents/state-lane-scheduler";
 import { getMarketingControl, getPipelineControl } from "@/lib/automation-control";
 import { matchesConfiguredCronSecret } from "@/lib/cron-secret";
@@ -185,6 +186,16 @@ async function handleGET(request: NextRequest) {
       priorityStateResearch = { error: error instanceof Error ? error.message : String(error) };
     }
   }
+  // Unreviewed outreach drafts that no longer qualify are withdrawn by a one-step growth run
+  // (`growth-withdraw`), at most one a day and only when there is something to withdraw; it
+  // waits with growth's other steps while marketing is paused.
+  let staleOutreachWithdraw: Awaited<ReturnType<typeof scheduleStaleOutreachWithdrawal>> | { error: string } | null = null;
+  try {
+    staleOutreachWithdraw = await scheduleStaleOutreachWithdrawal({ marketingEnabled: marketing.enabled });
+  } catch (error) {
+    console.error("Stale outreach withdrawal scheduling failed:", error);
+    staleOutreachWithdraw = { error: error instanceof Error ? error.message : String(error) };
+  }
   const result = await executeQueuedAgentRuns({
     runLimit,
     maxStepsPerRun,
@@ -211,6 +222,7 @@ async function handleGET(request: NextRequest) {
     priorityInstitutions,
     priorityStateResearch,
     guardCatchUp,
+    staleOutreachWithdraw,
     ...result,
   });
 }

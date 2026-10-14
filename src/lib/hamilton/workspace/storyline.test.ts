@@ -171,6 +171,14 @@ describe("storyline", () => {
     expect([...lowest, ...highest].join(" ")).not.toMatch(/favou?r|against you|advantage/i);
   });
 
+  it("drops a long competitor name rather than run past a storyline line's 20 words", () => {
+    const base = research();
+    const local = base.localCompetitors!.map((c, i) => (i === 0 ? { ...c, institutionName: "Second Federal Savings and Loan Association of Philadelphia", amount: 40 } : c));
+    const long = { ...base, current: 0, localCompetitors: local };
+    const line = buildFeeAnswer(long).storyline!.lenses.market.map((f) => f.text)[0];
+    expect(line).toBe("None of the 3 local competitors charge less than your $0; the highest charges $40.");
+  });
+
   it("reads the exhibits for a market reader instead of repeating their titles", () => {
     for (const intent of [{}, { structure: true }, { focus: "trend" as const }]) {
       const story = buildFeeAnswer(research(), { story: intent }).storyline!;
@@ -264,12 +272,20 @@ describe("storyline: checking lineup", () => {
   it("sets the bank's accounts beside each peer's lineup for a monthly fee question", () => {
     const story = buildFeeAnswer(research({ feeCategory: "monthly_maintenance", lineup, structure: null })).storyline!;
     const piece = story.exhibits.find((e) => e.exhibit.kind === "structure_matrix" && e.exhibit.title.startsWith("Checking lineup"))!;
-    expect(piece.actionTitle).toBe("You publish 2 accounts with a monthly fee from $5; 2 of 6 peers publish an account with no monthly fee.");
+    expect(piece.actionTitle).toBe("Your lowest monthly fee is $5; 2 of 6 peers offer a no-fee account.");
     if (piece.exhibit.kind === "structure_matrix") {
       expect(piece.exhibit.rows[0]).toEqual({ name: "Example Valley Credit Union", own: true, cells: ["2", "$5", "$7.50", "No", "$1,500"] });
       expect(piece.exhibit.rows[1].cells).toEqual(["3", "$0", "$6", "Yes", null]);
       expect(piece.exhibit.rows).toHaveLength(7);
     }
+  });
+
+  it("leads with the bank's own no-fee account and keeps the note within the limit", () => {
+    const withFree = { ...lineup!, rows: lineup!.rows.map((r) => (r.own ? { ...r, summary: summary(7, 0, 5, true, null) } : r)) };
+    const story = buildFeeAnswer(research({ feeCategory: "monthly_maintenance", lineup: withFree, structure: null })).storyline!;
+    const piece = story.exhibits.find((e) => e.exhibit.kind === "structure_matrix" && e.exhibit.title.startsWith("Checking lineup"))!;
+    expect(piece.actionTitle).toBe("Your lineup includes a no-fee account; 2 of 6 peers offer a no-fee account.");
+    expect(piece.exhibit.note).toBe("A blank balance means the schedule states none.");
   });
 
   it("shows no lineup when the bank publishes none", () => {

@@ -1,6 +1,9 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
+
 import { describe, expect, it } from "vitest";
 
-import { htmlToScoringText, scoreFeePage, urlNamesFeePage } from "./fee-page";
+import { htmlToScoringText, isProductPageUrl, PRODUCT_PAGE_MIN_FEE_LINES, productPageUrlSql, scoreFeePage, urlNamesFeePage } from "./fee-page";
 
 const FEE_SCHEDULE = [
   "Schedule of Fees and Charges",
@@ -103,5 +106,47 @@ describe("urlNamesFeePage", () => {
     for (const url of ["https://www.bank.example/about-us", "https://www.bank.example/coffee-club", "https://www.bank.example/", null, "not a url"]) {
       expect(urlNamesFeePage(url), String(url)).toBe(false);
     }
+  });
+});
+
+describe("product pages offered as the bank's fee schedule (#1053)", () => {
+  const fixtures = JSON.parse(readFileSync(path.join(__dirname, "fixtures-product-pages-2026-10-12.json"), "utf8")) as {
+    cases: Array<{ document_id: number; url: string; expect: "product_page" | "kept"; text: string }>;
+  };
+
+  it.each(fixtures.cases.map((fixture) => [fixture.document_id, fixture.expect, fixture] as const))(
+    "document %s: %s",
+    (_id, expected, fixture) => {
+      const score = scoreFeePage(fixture.text, fixture.url, { feeSchedule: true });
+      expect(score.productPage ? "product_page" : "kept").toBe(expected);
+    },
+  );
+
+  it("leaves a companion account page alone", () => {
+    for (const fixture of fixtures.cases.filter((row) => row.expect === "product_page")) {
+      expect(scoreFeePage(fixture.text, fixture.url).productPage).toBeUndefined();
+    }
+  });
+
+  it("knows product addresses, and not fee, services, rates or file addresses", () => {
+    expect(isProductPageUrl("https://www.pnc.com/en/personal-banking/banking/checking/simple-checking.html")).toBe(true);
+    expect(isProductPageUrl("https://bank.example/business/business-checking")).toBe(true);
+    expect(isProductPageUrl("https://bank.example/personal.html")).toBe(true);
+    expect(isProductPageUrl("https://bank.example/personal/checking/fee-schedule")).toBe(false);
+    expect(isProductPageUrl("https://bank.example/Services/Account-Services")).toBe(false);
+    expect(isProductPageUrl("https://bank.example/personal-banking/additional-services/cost-of-services/")).toBe(false);
+    expect(isProductPageUrl("https://bank.example/savings-rates")).toBe(false);
+    expect(isProductPageUrl("https://bank.example/checking/disclosure.pdf")).toBe(false);
+    expect(isProductPageUrl(null)).toBe(false);
+  });
+
+  it("keeps a long fee list at a product address", () => {
+    const lines = Array.from({ length: PRODUCT_PAGE_MIN_FEE_LINES }, (_, i) => `Service ${i} fee $${i + 1}.00`).join("\n");
+    expect(scoreFeePage(lines, "https://bank.example/checking", { feeSchedule: true }).productPage).toBeUndefined();
+  });
+
+  it("writes the same rule for Postgres, with \\y for a word boundary", () => {
+    expect(productPageUrlSql("sd.document_url")).toContain("tos\\y");
+    expect(productPageUrlSql("sd.document_url")).not.toContain("tos\\b");
   });
 });

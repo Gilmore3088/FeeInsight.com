@@ -13,8 +13,9 @@ import { getSql } from "@/lib/data-store/connection";
 import type { PublishedReport, ReportType } from "@/lib/report-engine/types";
 import { timeAgo } from "@/lib/format";
 import { TrackLink } from "@/components/track-link";
-import { CONTACT_EMAIL, REPORT_OFFER, RESEARCH_IMPRINT, SAMPLE_REPORT_LIVE, SITE_NAME } from "@/lib/constants";
+import { CONTACT_EMAIL, REPORT_OFFER, SAMPLE_REPORT_LIVE, SITE_NAME } from "@/lib/constants";
 import { sampleReportAvailable } from "@/lib/custom-report/sample-report";
+import { ReportFaq } from "./report-faq";
 
 import { RequestReportForm } from "@/app/for-institutions/request-report-form";
 import { extractPositionMap, readSampleReportHtml } from "@/lib/hosted-reports";
@@ -29,7 +30,7 @@ export const revalidate = 3600;
 
 export const metadata: Metadata = {
   title: "Fee Reports",
-  description: `See where your fees stand against the institutions you compete with. Free national and Fed district fee reports, the ${REPORT_OFFER.name}, live state fee reports, and published research from ${RESEARCH_IMPRINT}.`,
+  description: `See where your fees stand against your competitors: free national, Fed district and state fee reports, and the ${REPORT_OFFER.name}.`,
 };
 
 const SAMPLE_REPORT_HREF = "/reports/sample-competitive-fee-position";
@@ -232,7 +233,7 @@ export default async function ReportsPage({ searchParams }: PageProps) {
     <div className="pb-24">
       {/* Hero: the report, with its real position map */}
       <section className="border-b border-[#E8DFD1] bg-[linear-gradient(180deg,#FBF7F1_0%,#FDFBF8_100%)]">
-        <div className="mx-auto grid max-w-6xl gap-10 px-6 pb-14 pt-14 lg:grid-cols-[minmax(0,1fr)_minmax(0,460px)] lg:items-center">
+        <div className="mx-auto grid max-w-page gap-10 px-6 pb-14 pt-14 lg:grid-cols-[minmax(0,1fr)_minmax(0,460px)] lg:items-center">
           <div>
             <p className="mb-3 text-[11px] font-bold uppercase tracking-[0.12em] text-[#A93D25]">
               {REPORT_OFFER.name}
@@ -297,7 +298,7 @@ export default async function ReportsPage({ searchParams }: PageProps) {
       </section>
 
       {/* What's inside */}
-      <section className="mx-auto max-w-6xl px-6 pt-16">
+      <section className="mx-auto max-w-page px-6 pt-16">
         <SectionHeading eyebrow="What's inside" title="Six sections, one PDF you can hand to your pricing committee." />
         <ol className="m-0 grid list-none gap-3 p-0 sm:grid-cols-2 lg:grid-cols-3">
           {REPORT_CONTENTS.map((item, index) => (
@@ -313,8 +314,8 @@ export default async function ReportsPage({ searchParams }: PageProps) {
       </section>
 
       {/* How it works */}
-      <section className="mx-auto max-w-6xl px-6 pt-16">
-        <SectionHeading eyebrow="How it works" title="Three steps, and you don't lift a finger after the first." />
+      <section className="mx-auto max-w-page px-6 pt-16">
+        <SectionHeading eyebrow="How it works" title="Three steps from request to report." />
         <ol className="m-0 grid list-none gap-6 p-0 md:grid-cols-3">
           {STEPS.map((step, index) => (
             <li key={step.title} className="relative">
@@ -332,7 +333,7 @@ export default async function ReportsPage({ searchParams }: PageProps) {
       </section>
 
       {/* Request form: the lead lands in the leads table (/admin/leads) */}
-      <section id="request" className="mx-auto max-w-6xl scroll-mt-20 px-6 pt-16">
+      <section id="request" className="mx-auto max-w-page scroll-mt-20 px-6 pt-16">
         <div className="grid gap-8 rounded-xl border border-[#E8DFD1] bg-[#FBF7F1] p-6 sm:p-8 lg:grid-cols-[minmax(0,1fr)_minmax(320px,440px)] lg:items-start">
           <div>
             <p className="mb-2 text-[11px] font-bold uppercase tracking-[0.12em] text-[#A93D25]">
@@ -356,8 +357,10 @@ export default async function ReportsPage({ searchParams }: PageProps) {
         </div>
       </section>
 
+      <ReportFaq />
+
       {/* State reports, live from the index */}
-      <section className="mx-auto max-w-6xl px-6 pt-20">
+      <section className="mx-auto max-w-page px-6 pt-20">
         <SectionHeading eyebrow="Free state fee reports" title="Every state, built live from verified fee schedules.">
           Each state report compares fees there with the national picture and shows how banks and
           credit unions differ.{" "}
@@ -405,8 +408,9 @@ export default async function ReportsPage({ searchParams }: PageProps) {
         )}
       </section>
 
-      {/* Published research */}
-      <section className="mx-auto max-w-6xl px-6 pt-20" id="research">
+      {/* Published research: hidden while nothing is published (#1174), shown when filters or an outage explain an empty list. */}
+      {(hasReports || filtersActive || unavailable) && (
+      <section className="mx-auto max-w-page px-6 pt-20" id="research">
         <SectionHeading eyebrow="Published research" title={`Research and analysis from ${SITE_NAME}`} />
         {showFilters && (
           <ReportFilters typeFilter={typeFilter} rawRange={rawRange} filtersActive={filtersActive} />
@@ -428,13 +432,14 @@ export default async function ReportsPage({ searchParams }: PageProps) {
               ? "The research catalog is temporarily unavailable. Try again shortly."
               : filtersActive
                 ? "No published reports match these filters."
-                : "No national or peer reports are published yet. They will appear here as they are released; the state reports above are live today."}
+                : "No national or peer reports are published yet."}
           </p>
         )}
       </section>
+      )}
 
       {/* Closing call to action */}
-      <section className="mx-auto max-w-6xl px-6 pt-20">
+      <section className="mx-auto max-w-page px-6 pt-20">
         <div className="flex flex-col items-start gap-5 rounded-xl bg-[#1A1815] px-7 py-8 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <p className="text-[24px] leading-snug text-white" style={SERIF}>

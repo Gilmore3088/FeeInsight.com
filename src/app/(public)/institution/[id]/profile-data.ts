@@ -1,3 +1,5 @@
+import { countsAsPersonal, isAudienceUnstated } from "@/lib/fee-audience";
+import { isBusinessOnlyLink } from "@/lib/agents/magellan/link-coverage";
 import { cache } from "react";
 import { getFeesByInstitution, getPublicInstitutionById } from "@/lib/data-store";
 import type { ExtractedFee } from "@/lib/data-store/types";
@@ -7,6 +9,7 @@ import { NON_PAID_ITEM_OVERDRAFT_PATTERN } from "@/lib/institution-rating";
 import type { DisplayFee } from "./fee-schedule-table";
 import { getRateFeesByInstitution, type RateFee } from "@/lib/data-store/rate-fees";
 import { rateDisplayParts } from "@/lib/percent-fees";
+import { feeDisplayName } from "@/lib/fee-display-name";
 
 export const getPublicInstitutionForPage = cache(getPublicInstitutionById);
 
@@ -36,6 +39,8 @@ export function toRateDisplayFees(fees: RateFee[]): DisplayFee[] {
   return fees.map((fee) => ({
     id: `rate-${fee.id}`,
     feeName: fee.fee_name,
+    feeAudience: fee.fee_audience ?? "unknown",
+    feeTreatment: fee.fee_treatment ?? "unknown",
     feeCategory: fee.fee_category,
     amount: null,
     frequency: fee.frequency,
@@ -53,7 +58,9 @@ export function isVerifiedFee(fee: ExtractedFee): boolean {
 export function toDisplayFees(fees: ExtractedFee[]): DisplayFee[] {
   return fees.map((fee) => ({
     id: `catalog-${fee.id}`,
-    feeName: fee.fee_name,
+    feeName: feeDisplayName(fee.fee_name, fee.fee_category),
+    feeAudience: fee.fee_audience ?? "unknown",
+    feeTreatment: fee.fee_treatment ?? "unknown",
     feeCategory: fee.fee_category ?? null,
     amount: fee.amount,
     frequency: fee.frequency,
@@ -72,7 +79,7 @@ export function toPipelineDisplayFees(evidence: InstitutionFeeScheduleEvidence |
     .filter((fee) => fee.review_status !== "rejected")
     .map((fee) => ({
       id: `verified-${fee.fee_verified_id}`,
-      feeName: fee.fee_name,
+      feeName: feeDisplayName(fee.fee_name, fee.canonical_fee_key),
       feeCategory: fee.canonical_fee_key,
       amount: fee.amount,
       frequency: fee.frequency,
@@ -108,14 +115,18 @@ function pickAmount(
   exclude?: RegExp,
   require?: (fee: ExtractedFee) => boolean,
 ): number | null {
-  const match = fees.find(
+  const candidates = fees.filter(
     (fee) =>
       fee.fee_category === category &&
       fee.amount !== null &&
-      fee.amount > 0 &&
+      fee.amount >= 0 &&
+      countsAsPersonal(fee.fee_audience) &&
+      !(fee.source_url && isBusinessOnlyLink(fee.source_url)) &&
       !(exclude && exclude.test(fee.fee_name)) &&
       (!require || require(fee)),
   );
+  // A fee the schedule states is personal wins over one whose audience is not stated.
+  const match = candidates.find((fee) => !isAudienceUnstated(fee.fee_audience)) ?? candidates[0];
   return match?.amount ?? null;
 }
 
@@ -140,6 +151,9 @@ export function pickHeadlineFees(verifiedFees: ExtractedFee[]): HeadlineFees {
   };
 }
 
+/** Search results cut a title near 60 characters; the root template adds " | Fee Insight" (14). */
+export const PROFILE_TITLE_MAX = 46;
+
 export function buildProfileTitle(institutionName: string, headline: HeadlineFees): string {
   const parts = [
     headline.overdraft !== null ? `Overdraft ${formatFeeAmount(headline.overdraft)}` : null,
@@ -147,7 +161,14 @@ export function buildProfileTitle(institutionName: string, headline: HeadlineFee
     headline.monthly !== null ? `Monthly ${formatFeeAmount(headline.monthly)}` : null,
   ].filter((part): part is string => Boolean(part));
   if (parts.length === 0) return `${institutionName} Fees and Fee Schedule`;
-  return `${institutionName} Fees: ${parts.join(", ")} (${new Date().getFullYear()})`;
+  // #1166 T9: fees come off the end, then the year, until the title fits; one fee always stays.
+  const year = ` (${new Date().getFullYear()})`;
+  let shown = parts;
+  while (shown.length > 1 && `${institutionName} Fees: ${shown.join(", ")}${year}`.length > PROFILE_TITLE_MAX) {
+    shown = shown.slice(0, -1);
+  }
+  const withYear = `${institutionName} Fees: ${shown.join(", ")}${year}`;
+  return withYear.length <= PROFILE_TITLE_MAX ? withYear : `${institutionName} Fees: ${shown.join(", ")}`;
 }
 
 /**

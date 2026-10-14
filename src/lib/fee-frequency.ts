@@ -26,7 +26,15 @@ const OTHER_BASIS = /(\bper (hour|dollar|hundred|thousand)\b|\bper\s*\$|\bhourly
  * ... after five (5) per month" are charged per item once the free ones are used.
  */
 // v5: a count beyond the allowance ("Debit Card Replacement (More than 2 per year) | $5").
-const ALLOWANCE = /\b(free|after|first|more than|over|in excess of|beyond)\b[^|$]{0,40}?\bper (month|statement cycle|cycle|year)\b/gi;
+// v9: "each above 6/month" (101933, Oct 9).
+const ALLOWANCE = /\b(free|after|first|more than|over|above|in excess of|beyond|exceeding)\b[^|$]{0,40}?(\b(per|in a|a|each) |\/\s?)(month|statement cycle|cycle|year)\b/gi;
+
+/**
+ * v8: a rate basis in the fee's own name ("Account Balancing (per hour) / $35.00 Each") makes the
+ * "Each" after the price a per-hour charge, not a flat one. Only rate words count: a name that
+ * mentions a minimum balance still takes its period.
+ */
+const NAME_BASIS = /\bper (hour|dollar|hundred|thousand)\b|\bper\s*\$|\bhourly\b|\/\s?(hr|hour)(?![a-z])/i;
 
 function withoutAllowance(text: string): string {
   return text.replace(ALLOWANCE, " ");
@@ -91,6 +99,7 @@ export function frequencyFromLine(sourceLine: string | null | undefined, amount:
   if (readings.size > 1) return null;
   const words = read[0];
   if (OTHER_BASIS.test(words)) return null;
+  if (namedBasis(sourceLine, amount)) return null;
   const after = statedFrequency(words);
   if (after !== "none") return after;
   // Nothing after the price: the fee's own name may carry it ("Lost Key (each) | $15.00",
@@ -100,6 +109,13 @@ export function frequencyFromLine(sourceLine: string | null | undefined, amount:
   if (before == null || OTHER_BASIS.test(before)) return null;
   const named = statedFrequency(before);
   return named === "none" ? null : named;
+}
+
+/** True when the fee's own name, before its price, states a rate basis such as per hour. */
+export function namedBasis(sourceLine: string | null | undefined, amount: number | null): boolean {
+  if (!sourceLine) return false;
+  const name = nameWords(sourceLine, amount);
+  return name != null && NAME_BASIS.test(name);
 }
 
 /** "each month" is a period, not an item: "a $15.00 service charge will be imposed each month". */
@@ -185,7 +201,8 @@ export function borrowedFrequency(sourceLine: string | null | undefined, amount:
   // the returned-deposit fee "daily".
   if (!wording.test(sourceLine)) return MISREAD_PERIOD[stated!]?.test(sourceLine) ?? false;
   const cells = sourceLine.split("|");
-  const priced = cells.map((cell) => feePrices(cell).length > 0);
+  // v9: a cell priced "N/C" or "Free" is another fee's row too ("Monthly service fee ... N/C | ATM ... $1.00").
+  const priced = cells.map((cell) => feePrices(cell).length > 0 || NO_CHARGE.test(cell));
   const own = cells
     .map((cell, index) => (feePrices(cell).some((price) => Math.abs(price - amount) < 0.005) ? index : -1))
     .filter((index) => index >= 0);
@@ -203,6 +220,43 @@ export function borrowedFrequency(sourceLine: string | null | undefined, amount:
   return cells.some((cell, index) => !ownCells.has(index) && priced[index] && wording.test(cell));
 }
 const PRICE_START = /\$\s?\.?\d/;
+const NO_CHARGE = /(^|[\s.…])(n\/c|no charge|free)\s*\*?\s*$/i;
+
+/** A safe deposit box named by its size ("3 x 5", "10x10x21", "5 x 10” box"). */
+export const BOX_SIZE_NAME = /^\W*\d{1,2}(?:\.\d)?\s*[x×]\s*\d{1,2}/i;
+const ANNUAL_HEADER_MAX = 40;
+const HEADER_LOOK_BACK = 12;
+/** A cell that starts with a box size, fractions included ("2 ½ x 5", "3x5 ....$40"). */
+const BOX_SIZE_CELL = /^\W*\d{1,2}(?:[.,]\d+)?\s*(?:[½¼¾]|\d\/\d)?\s*[x×]\s*\d/i;
+
+/**
+ * v10: the annual period a box table's column header gives its rows ("Box Size: | Annual Rental:"
+ * over "3 x 5 x 21 | $25", Altra 104006). The fee's own line is found in the document text, and the
+ * lines above it, up to 12, are read for the header: a short cell saying "annual", "per year" or
+ * "yearly" that prints no price and is not followed by a price cell (so "Annual Fee | $10.00" is a
+ * fee, not a header), on a line with no "monthly". Every priced line between the header and the fee
+ * must carry a box size, so a header above another table never reaches the box rows. Only annual is read: a box
+ * rent is charged by the year, and a "per month" cell near a box table is another product's ("$10
+ * per month ... if account balance is less than $100"). Null when the line is not found or no such
+ * header is above it. Pure.
+ */
+export function boxTableAnnualHeader(text: string, sourceLine: string, amount: number): "annual" | null {
+  const lines = text.split(/\r?\n/);
+  const target = sourceLine.replace(/\s+/g, " ").trim();
+  if (!target) return null;
+  const at = lines.findIndex((line) => line.replace(/\s+/g, " ").includes(target));
+  if (at < 0 || !feePrices(lines[at]).some((price) => Math.abs(price - amount) < 0.005)) return null;
+  for (let index = at - 1; index >= Math.max(0, at - HEADER_LOOK_BACK); index -= 1) {
+    const line = lines[index];
+    const cells = line.split("|").map((cell) => cell.trim());
+    const priced = cells.map((cell) => PRICE_START.test(cell));
+    const header = cells.some((cell, cellIndex) =>
+      cell.length > 0 && cell.length <= ANNUAL_HEADER_MAX && !priced[cellIndex] && !priced[cellIndex + 1] && STATED_WORDING.annual.test(cell));
+    if (header) return STATED_WORDING.monthly.test(line) ? null : "annual";
+    if (priced.some(Boolean) && !cells.some((cell) => BOX_SIZE_CELL.test(cell))) return null;
+  }
+  return null;
+}
 
 /**
  * Categories charged per period or per day. A per-item reading of one of these is a
@@ -211,6 +265,29 @@ const PRICE_START = /\$\s?\.?\d/;
 export const PERIOD_FEE_KEYS: ReadonlySet<string> = new Set([
   "monthly_maintenance", "minimum_balance", "dormant_account", "safe_deposit_box", "continuous_od", "paper_statement",
 ]);
+
+/**
+ * Categories charged once per event, never per period (#1196): a returned or unpaid item. A period
+ * on one of these is a neighbour's wording or a price split at its decimal point ("$35.00 per month
+ * Nonsufficient funds" read as "00 per month Nonsufficient funds", monthly).
+ */
+export const PER_EVENT_FEE_KEYS: ReadonlySet<string> = new Set(["nsf"]);
+
+/**
+ * A per-event fee keeps a per-event frequency or none: a stated period is replaced by the per-item
+ * reading of its own line when there is one, else cleared. Other categories pass through as they are.
+ */
+export function perEventFrequency(
+  canonicalKey: string | null | undefined,
+  frequency: string | null,
+  sourceLine: string | null | undefined,
+  amount: number | null,
+): string | null {
+  if (canonicalKey == null || !PER_EVENT_FEE_KEYS.has(canonicalKey)) return frequency;
+  if (frequency == null || frequencyFamily(frequency) === "per_item") return frequency;
+  const own = frequencyFromLine(sourceLine, amount);
+  return own && frequencyFamily(own) === "per_item" ? own : null;
+}
 
 /**
  * The frequency a fee should carry: what its own row states, else a stated frequency that was not
@@ -222,6 +299,8 @@ export function settledFrequency(
   stated: string | null | undefined,
   canonicalKey: string | null | undefined,
 ): string | null {
+  // v8: a fee charged per hour has no flat frequency, whatever was stated.
+  if (namedBasis(sourceLine, amount)) return null;
   const own = frequencyFromLine(sourceLine, amount);
   const periodCategory = canonicalKey != null && PERIOD_FEE_KEYS.has(canonicalKey);
   const ownUsable = own && !(frequencyFamily(own) === "per_item" && periodCategory) ? own : null;
@@ -241,4 +320,103 @@ export function settledFrequency(
 export function frequencyFamily(frequency: string | null | undefined): string | null {
   if (!frequency) return null;
   return ["per_item", "per_transaction", "per_occurrence", "one_time"].includes(frequency) ? "per_item" : frequency;
+}
+
+/** The fee categories whose stated period is re-checked against their own line (#1196). */
+export const PER_EVENT_PERIOD_KEYS: ReadonlySet<string> = new Set(["nsf", "overdraft"]);
+const STATED_PERIODS: ReadonlySet<string> = new Set(["monthly", "annual", "quarterly"]);
+/**
+ * The stored periods the check acts on, by category. James approved monthly (#1026, Oct 13), and
+ * annual and daily for NSF (#1301, Oct 14: 10 live NSF fees stored as annual, 20 as daily). An
+ * overdraft fee stored as annual still waits for his word.
+ */
+const CHECKED_PERIODS: Readonly<Record<string, ReadonlySet<string>>> = {
+  nsf: new Set(["monthly", "annual", "daily"]),
+  overdraft: new Set(["monthly"]),
+};
+/** v12: a daily count or dollar cap on a per-item fee ("Max 4 per day", "max $180.00 daily", "not to exceed 5 fees charged per day"). */
+const DAILY_CAP = /\b(?:max(?:imum)?(?![a-z])|limit\b|up to\b|not to exceed\b)/i;
+/** An overdraft program sold by the month ("Enhanced Overdraft Privilege Fee (per month)", "Bounce Protection / $9 Monthly Fee"). */
+const OVERDRAFT_PROGRAM = /\b(relief|privilege|protection|courtesy pay|coverage|boost|advanced overdraft)\b/i;
+/** An account's own charge after the price ("/ $25 Monthly Maintenance Fee"), not an overdraft or NSF fee. */
+const ACCOUNT_CHARGE = /\b(maintenance|service (fee|charge))\b/i;
+/** A cell after the price that is only a period ("| $30.00 | Per Month"). */
+const PERIOD_CELL = /^\s*\(?\s*(per (month|year|quarter)|monthly|annual(ly)?|quarterly|yearly)\s*\)?\.?\s*$/i;
+/** A waiver is not the fee's period: "$25.00 (1 waived per year.)", "$25 will be waived per statement cycle". */
+const WAIVER = /\(\s*\d*\s*(?:is |are )?waived?\b[^)]*\)?|\b(?:will be |is |are )?waived?\b[^|$]*/gi;
+
+/**
+ * The period the words right after the fee's own price state ("NSF | $23.00/Month", "$30.00 |
+ * Per Month"), with allowances and waivers taken off. A period only in the fee's name or another
+ * cell ("Overdraft Fee 1 | $27.00 | 10x15 (per year)") is not read here.
+ */
+function periodAfterPrice(sourceLine: string, amount: number): { period: FilledFrequency | null; words: string } {
+  const line = sourceLine.replace(WAIVER, " ");
+  const readings = new Set<FilledFrequency | "none" | null>();
+  let words = "";
+  for (const match of line.matchAll(PRICE)) {
+    if (Math.abs(Number(match[1].replace(/,/g, "")) - amount) >= 0.005) continue;
+    const start = (match.index ?? 0) + match[0].length;
+    const cells = line.slice(start, start + 60).split(/[|;]/);
+    let own = cells[0].split(/\$\s?\.?\d/)[0];
+    if (own.trim() === "" && cells.length > 1 && PERIOD_CELL.test(cells[1])) own = cells[1];
+    words = `${words} ${own}`;
+    readings.add(statedFrequency(periodWords(withoutAllowance(own)) ?? ""));
+  }
+  const read = readings.size === 1 ? [...readings][0] : null;
+  return { period: read != null && read !== "none" && STATED_PERIODS.has(read) ? read : null, words };
+}
+
+export type PerEventPeriodCheck =
+  | { action: "keep"; frequency: string }
+  | { action: "correct"; frequency: string | null }
+  | { action: "hold"; reason: string };
+
+/**
+ * v11 (#1196): an NSF or overdraft fee stored as monthly, checked against its own schedule line.
+ * v12 (#1301): an NSF fee stored as annual is checked the same way, and one stored as daily keeps
+ * no period when its line states a daily cap, else is held.
+ * - An overdraft program the bank prices by the period keeps it when its own row states that
+ *   period and names the program ("Enhanced Overdraft Privilege Fee (per month) | $5.00").
+ * - When the words right after its price state a period otherwise, the line cannot say what the fee
+ *   is: an NSF fee is never charged by the month ("NSF | $23.00/Month", "$5.00/Month | Non-Sufficient
+ *   Funds"), a "per item" fee is not monthly too ("OVERDRAFT PAID, PER ITEM* $30.00 MONTHLY"), and an
+ *   account's maintenance fee is not an overdraft fee ("TD Overdraft Relief / $15 Monthly Maintenance
+ *   Fee"). Hold it.
+ * - Otherwise the period was a neighbour's wording ("Undeliverable Mail | $5.00 per month | Returned
+ *   ACH | $5.00 each") or an allowance ("$25.00 (1 waived per year.)"): the fee takes its own row's
+ *   per-item reading, else none.
+ * Null for other categories and stored frequencies. Pure.
+ */
+export function perEventPeriodCheck(
+  canonicalKey: string | null | undefined,
+  frequency: string | null | undefined,
+  sourceLine: string | null | undefined,
+  amount: number | null,
+  feeName: string | null | undefined,
+): PerEventPeriodCheck | null {
+  if (canonicalKey == null || !PER_EVENT_PERIOD_KEYS.has(canonicalKey)) return null;
+  if (frequency == null || !CHECKED_PERIODS[canonicalKey]?.has(frequency)) return null;
+  if (!sourceLine || amount == null) return null;
+  // v12 (#1301): an NSF fee stored as daily. A line that states a daily cap prices each item, so
+  // the fee takes its own row's per-item reading, else none; one that names no cap ("NSF/UCF Fee
+  // $30 Per Day", "Daily NSF Fee ... $5.00") may really be charged by the day, so a person looks.
+  if (frequency === "daily") {
+    if (!DAILY_CAP.test(sourceLine)) return { action: "hold", reason: "an NSF fee whose own line prices it daily with no daily cap" };
+    const own = frequencyFromLine(sourceLine, amount);
+    return { action: "correct", frequency: own && frequencyFamily(own) === "per_item" ? own : null };
+  }
+  const after = periodAfterPrice(sourceLine, amount);
+  const accountCharge = ACCOUNT_CHARGE.test(after.words);
+  const name = feeName ?? "";
+  if (canonicalKey === "overdraft" && !accountCharge && OVERDRAFT_PROGRAM.test(`${name} ${sourceLine}`) && !PER_ITEM_WORDING.test(name)) {
+    const own = frequencyFromLine(sourceLine.replace(WAIVER, " "), amount);
+    if (own != null && STATED_PERIODS.has(own)) return own === frequency ? { action: "keep", frequency } : { action: "correct", frequency: own };
+  }
+  if (after.period != null) {
+    const what = canonicalKey === "nsf" ? "an NSF fee" : "an overdraft fee";
+    return { action: "hold", reason: `${what} whose own line prices it ${after.period}${accountCharge ? " as an account charge" : ""}` };
+  }
+  const own = frequencyFromLine(sourceLine, amount);
+  return { action: "correct", frequency: own && frequencyFamily(own) === "per_item" ? own : null };
 }

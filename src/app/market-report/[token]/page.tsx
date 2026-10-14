@@ -9,7 +9,9 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { ReportChrome, ReportChromeFooter } from "@/components/public/report-chrome";
 import { verifyReportToken } from "@/lib/custom-report/link";
+import { isReportRevoked } from "@/lib/data-store/report-payments";
 import { loadMarketReport } from "@/lib/custom-report/report-data";
+import { loadMarketCheckingLineup } from "@/lib/custom-report/checking-lineup-data";
 import { TrackView } from "@/components/track-view";
 import { getRevenueContextCached } from "@/lib/custom-report/revenue-context";
 import { getMarketBranchFootprintCached } from "@/lib/data-store/public-cached-reads";
@@ -44,6 +46,8 @@ export default async function MarketReportPage({ params }: PageProps) {
   const { token } = await params;
   const verified = verifyReportToken(token);
   if (!verified) notFound();
+  // A refunded report's link closes.
+  if (await isReportRevoked(verified.institutionId)) notFound();
 
   const report = await loadMarketReport(verified.institutionId);
   if (!report || !report.data.market) notFound();
@@ -54,6 +58,7 @@ export default async function MarketReportPage({ params }: PageProps) {
     ? await getMarketBranchFootprintCached(market.county_fips, market.sod_year).catch(() => null)
     : null;
   const revenue = await getRevenueContextCached(verified.institutionId).catch(() => null);
+  const lineup = analysis.readiness.ready ? await loadMarketCheckingLineup(verified.institutionId) : null;
 
   return (
     <div className="min-h-screen bg-[#FAF7F2]">
@@ -66,11 +71,12 @@ export default async function MarketReportPage({ params }: PageProps) {
         }}
       />
       <ReportChrome preparedFor={name} />
-      <main className="mx-auto max-w-6xl px-6 pb-24 pt-10">
+      <main className="mx-auto max-w-page px-6 pb-24 pt-10">
         <MarketReportBody
           report={report}
           revenue={revenue}
           branches={branches}
+          lineup={lineup}
           eyebrow="Competitive Fee Position Report"
           preparedOn={verified.issuedOn}
           contactHref={contactHref(name)}
@@ -98,7 +104,7 @@ export default async function MarketReportPage({ params }: PageProps) {
           }
         />
       </main>
-      <p className="mx-auto max-w-6xl px-6 pb-6 text-[12px] leading-relaxed text-[#6B6255]">
+      <p className="mx-auto max-w-page px-6 pb-6 text-[12px] leading-relaxed text-[#6B6255]">
         Compiled from each institution&apos;s published fee schedule. It is market information, not financial, legal
         or compliance advice; confirm current fees with the institution.
       </p>

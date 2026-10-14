@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { gunzipSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
 
-import { scoreAnswerKeys, type AnswerKeyDocument } from "./answer-key-gate";
+import { combineScores, scoreAnswerKeys, type AnswerKeyDocument, type GateScore } from "./answer-key-gate";
 
 /**
  * The same gate as the Texas one, on 38 fee schedules from CA, FL, GA, IL, MI, MN and NY
@@ -15,25 +15,39 @@ import { scoreAnswerKeys, type AnswerKeyDocument } from "./answer-key-gate";
 // Since v17 the gate counts only reads that pass Knox's self-check; main at v16 scored 659
 // right / 48 wrong on that basis. Floors raised to main at v29 (2026-10-07), and CA, GA, MN and
 // all to the top-50 fold (Oct 8: 724 right / 46 wrong, from 723 / 47).
+// Oct 9: Darwin's account_research envelope floor went from $5 to $1 (PR 803), so Knox reads 19
+// more sub-$5 lines; six fax and copy lines then scored wrong because the taxonomy filed fax
+// under account research while the keys file it under document reproduction. PR 809 moved fax
+// and copy fees to document reproduction, so five of the six read right; the one left is
+// "Account Research Copies (per page) | $2.00" (GA 1338), which the key files as a copy and the
+// taxonomy as research. Floors are today's counts on main with 809: 742 right / 43 wrong.
 const FLOORS: Record<string, { right: number; wrong: number }> = {
-  CA: { right: 130, wrong: 7 },
-  FL: { right: 102, wrong: 7 },
-  GA: { right: 150, wrong: 12 },
+  CA: { right: 133, wrong: 6 },
+  FL: { right: 107, wrong: 7 },
+  GA: { right: 156, wrong: 10 },
   // 88 since the top-50 fold (Oct 8): a "Travel Card Reload" at $4.95 now files as a gift card
   // at $4.95, the same (category, price) pair as that schedule's gift card, so two right reads count once.
-  IL: { right: 88, wrong: 7 },
-  MI: { right: 114, wrong: 0 },
+  IL: { right: 89, wrong: 7 },
+  MI: { right: 117, wrong: 0 },
   // 96 since collection items got their own type (Oct 8): the key files a "$20.00 for the first
   // item" line under check cashing, and Knox now reads that schedule's "Collection Item" $20
   // as a collection item, so one right read became one wrong one.
-  MN: { right: 96, wrong: 8 },
-  NY: { right: 40, wrong: 6 },
-  all: { right: 724, wrong: 46 },
+  MN: { right: 98, wrong: 8 },
+  NY: { right: 42, wrong: 5 },
+  all: { right: 742, wrong: 43 },
 };
 
 const fixture = JSON.parse(
   gunzipSync(readFileSync(join(process.cwd(), "src/lib/agents/knox/__fixtures__/state-answer-keys.json.gz"))).toString("utf8"),
 ) as { keys: Array<AnswerKeyDocument & { state: string }> };
+
+// Each document is scored once and the floors add the scores up: the total and its parts no
+// longer read the same texts twice.
+const scored = new Map<AnswerKeyDocument, GateScore>();
+const scoreOnce = (document: AnswerKeyDocument): GateScore => {
+  if (!scored.has(document)) scored.set(document, scoreAnswerKeys([document]));
+  return scored.get(document)!;
+};
 
 describe("Knox answer-key gate (seven states)", () => {
   it("covers every keyed fee schedule", () => {
@@ -44,7 +58,7 @@ describe("Knox answer-key gate (seven states)", () => {
     // The self-check traces every read against its text, so a whole fixture takes several seconds.
     it(`reads at least ${floor.right} right fees and at most ${floor.wrong} wrong ones (${state})`, () => {
       const documents = state === "all" ? fixture.keys : fixture.keys.filter((document) => document.state === state);
-      const score = scoreAnswerKeys(documents);
+      const score = combineScores(documents.map(scoreOnce));
       const wrong = score.categoryErrors + score.amountErrors;
       const summary =
         `${state}: ${score.right} right of ${score.reads} reads (precision ${(score.precision * 100).toFixed(1)}%), ` +

@@ -4,6 +4,9 @@ import { inSavepoint } from "@/lib/agents/savepoint";
 import { passesDarwinChecks } from "@/lib/agents/knox/layout";
 import { feedbackSchemaReady, recordFeedback, type FeedbackRow } from "@/lib/agents/learning/feedback";
 import { secondLook } from "@/lib/agents/hamilton/second-look";
+import { RULES_RECHECK_CHECK } from "@/lib/agents/hamilton/rules-recheck";
+import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
+import { checkFeeCategory } from "@/lib/fee-category-guard";
 import {
   FOLD_RULES_VERSION,
   RETIRED_CATEGORIES,
@@ -107,7 +110,7 @@ export function planFold(rows: FoldRow[], texts: Map<number, string>): FoldPlan 
     const name = row.fee_name ?? "";
     const documentId = row.source_document_id == null ? null : Number(row.source_document_id);
     const text = documentId == null ? null : texts.get(documentId) ?? null;
-    const context = needsContext(row.canonical_fee_key, name) ? foldContext(text, name) : null;
+    const context = needsContext(row.canonical_fee_key, name) ? foldContext(text, name, amountOf(row.amount)) : null;
     const split = splitLiveCategory(row.canonical_fee_key, name);
     const fold = foldRetiredCategory(row.canonical_fee_key, name, context) ?? split;
     if (!fold) continue;
@@ -253,6 +256,251 @@ function moveFeedback(move: FoldMove, runId: number): FeedbackRow {
   };
 }
 
+/**
+ * Live fees Knox filed under the wrong one of the 50 because it read a neighbouring cell as the
+ * name (Data inventory's retidy v15 left them for review, Oct 9). Each is re-filed in place under
+ * the page's own name for that line, with the old name and category logged; none is taken down.
+ * An entry whose `to` equals its `from` only renames the fee.
+ * Every name and price below traces to the stored schedule (`checkFeeAgainstSource`, 10/10).
+ */
+export interface HandRefile {
+  feePublishedId: number;
+  from: string;
+  amount: number;
+  to: string;
+  name: string;
+  /**
+   * The bad name the fee still carries. When set, the fee is also fixed if another check has
+   * already moved it under `to` with that name (96164: the guard's own hand re-file moves it to
+   * atm_non_network without renaming it).
+   */
+  oldName?: string;
+  why: string;
+}
+
+export const HAND_REFILES: readonly HandRefile[] = [
+  { feePublishedId: 40729, from: "garnishment_levy", amount: 38, to: "wire_intl_incoming", name: "International Outgoing/Incoming",
+    why: "inst 3210, doc 1009: Wire Transfer lines end \"International Outgoing/Incoming ... $38.00\"" },
+  { feePublishedId: 46537, from: "early_closure", amount: 15, to: "wire_domestic_incoming", name: "Wire Transfer Domestic (Incoming)",
+    why: "inst 7676, doc 16437: \"Wire Transfer / Domestic (Incoming) | $15.00\"" },
+  { feePublishedId: 46538, from: "early_closure", amount: 25, to: "wire_domestic_outgoing", name: "Wire Transfer Domestic (Outgoing)",
+    why: "inst 7676, doc 16437: \"Domestic (Outgoing) | $25.00\" under Wire Transfer" },
+  { feePublishedId: 54418, from: "bill_pay", amount: 30, to: "nsf", name: "NSF/Returned Item Fee",
+    why: "inst 7280, doc 6912: \"NSF/Returned Item Fee | (Per Presentment ...) | $30.00\"" },
+  { feePublishedId: 54427, from: "monthly_maintenance", amount: 5, to: "paper_statement", name: "Paper Statement",
+    why: "inst 7280, doc 6912: \"Paper Statement | (Monthly Fee. Over 55 Free) | $5.00\"" },
+  { feePublishedId: 76451, from: "monthly_maintenance", amount: 5, to: "minimum_balance", name: "Base Share balance below $25.00 (Monthly Fee)",
+    why: "inst 7318, doc 23139: \"Base Share balance below $25.00 (Monthly Fee) | $5.00\"" },
+  { feePublishedId: 92253, from: "account_research", amount: 5, to: "check_image",
+    name: "Copy of historical check clearing, official check or money order, per item (max 4 checks, 5+ Account research fee, min 1 hour)",
+    why: "inst 7622, doc 2468: \"Copy of historical check clearing, official check or money order, per item ... $5.00\"" },
+  { feePublishedId: 98520, from: "garnishment_levy", amount: 20, to: "wire_domestic_outgoing", name: "Wire Transfer Fee",
+    why: "inst 5075, doc 12163: \"Wire Transfer Fee | $20.00\" (international and incoming are separate lines)" },
+  { feePublishedId: 98696, from: "bill_pay", amount: 10, to: "cashiers_check", name: "Cashier's Check Member Fee",
+    why: "inst 8138, doc 12676: \"Cashier's Check (set up in Bill Pay only) / Member Fee | $10.00 per check\"" },
+  { feePublishedId: 104858, from: "account_research", amount: 10, to: "monthly_maintenance", name: "Cashback Checking Plus Account Monthly service charge",
+    why: "inst 7025, doc 2148: \"Cashback Checking Plus Account | $10.00 /month\"" },
+  // Data inventory's live "to avoid" names (Oct 9): the right price under the wrong type.
+  { feePublishedId: 56804, from: "monthly_maintenance", amount: 5, to: "paper_statement", name: "Monthly Service Fee per paper statement",
+    why: "inst 2210, doc 17169: \"To avoid a Monthly Service Fee of $5 per paper statement, you must enroll for E-Statements\"" },
+  { feePublishedId: 79217, from: "check_cashing", amount: 6, to: "collection_item", name: "Canadian/Foreign Check Handling Charge",
+    why: "inst 51, doc 19813: the next column's \"Canadian/Foreign Check Handling Charge | $6.00 per item\"" },
+  // Live names that start mid-sentence (Agentic OS's adversarial sample, Oct 9).
+  { feePublishedId: 28554, from: "atm_non_network", amount: 2, to: "account_research", name: "No contents (e.g. check) included in the ATM",
+    why: "inst 7913, doc 2195: an empty ATM deposit envelope, \"No contents (e.g. check) included in the ATM | $2/envelope\", an ATM adjustment" },
+  { feePublishedId: 37068, from: "safe_deposit_box", amount: 25, to: "account_research", name: "research fee",
+    why: "inst 6999, doc 7866: footnote \"Up to 5 copies, then $25/hr research fee\"" },
+  { feePublishedId: 44516, from: "minimum_balance", amount: 25, to: "account_research", name: "Excessive transaction fee",
+    why: "inst 161, doc 9080: \"Excessive transaction fee is $25/transaction\", an excess withdrawal fee" },
+  { feePublishedId: 91458, from: "atm_non_network", amount: 5, to: "monthly_maintenance", name: "monthly maintenance fee",
+    why: "inst 1349, doc 24074: \"*unlimited 1st National ATM access / $5.00 monthly maintenance fee\"" },
+  { feePublishedId: 95142, from: "money_order", amount: 10, to: "account_research", name: "Money Order Research Fee",
+    why: "inst 8581, doc 16111: \"Money Order Research Fee - $10.00/money order\" (Deming audit, run 3516)" },
+  // UAT's retidy v16 scoring (Oct 9): the right price under the wrong type.
+  { feePublishedId: 58050, from: "monthly_maintenance", amount: 2, to: "dormant_account", name: "Inactive account monthly fee",
+    why: "inst 849, doc 17455: \"Inactive Account (no activity for 365 days, balances under $50) - monthly fee | $2.00\"" },
+  { feePublishedId: 59464, from: "money_order", amount: 10, to: "stop_payment", name: "Stop Payment - Money Order",
+    why: "inst 1604, doc 735: under \"Stop Payment Fee:\", \"o Money Order | $10.00\"" },
+  // UAT's paid report snapshot (Oct 9): card re-issues filed as ATM fees.
+  { feePublishedId: 46752, from: "atm_non_network", amount: 4, to: "card_replacement", name: "Debit/ATM Card Reissuance",
+    why: "inst 6371, doc 3645: \"Debit/ATM Card Reissuance | $4.00 each\"" },
+  { feePublishedId: 16698, from: "atm_non_network", amount: 10, to: "card_replacement", name: "ATM/Check Card Re-issuance",
+    why: "inst 338, doc 14541: \"ATM/Check Card Re-issuance | $10 /each\" (a card replacement, not an ATM use fee)" },
+  // Broken-figure names (PR 961 dry read, Oct 9): Knox kept a neighbouring cell or a mis-encoded
+  // figure in the name. Each re-read against its stored text; the price is right.
+  { feePublishedId: 53034, from: "check_image", amount: 1, to: "counter_check", name: "Counter Draft (check) (limit 8per month)",
+    why: "inst 8511, doc 13054: \"Counter Draft (check) (limit 8per month) ... $1.00 each\"; \"Statement Copies\" was the line above" },
+  { feePublishedId: 56385, from: "monthly_maintenance", amount: 2, to: "night_deposit", name: "Night Depository Service Monthly Fee (earnings credit available)",
+    why: "inst 1445, doc 17118: under \"NIGHT DEPOSITORY SERVICE\", \"Monthly Fee (earnings credit available) | $2.00\"" },
+  // Renames in place: the price and category are right, the name carries a broken figure.
+  { feePublishedId: 21141, from: "account_research", amount: 5, to: "account_research", name: "Returned Statement Fee",
+    why: "inst 8138, doc 12676: \"Returned Statement Fee $5.00 per statement\"; the mailed statement fee before it was glued on" },
+  { feePublishedId: 77918, from: "account_research", amount: 5, to: "account_research", name: "Return Mail Fee (no forwarding)",
+    why: "inst 8511, doc 13054: \"Return Mail Fee (no forwarding) ... $5.00\"" },
+  { feePublishedId: 97560, from: "nsf", amount: 30, to: "nsf", name: "Non-Sufficient Funds",
+    why: "inst 6272, doc 8005: \"Non-Sufficient Funds ... $30/item\"; the ATM line before it was glued on" },
+  { feePublishedId: 98064, from: "dormant_account", amount: 5, to: "dormant_account", name: "Inactive Account",
+    why: "inst 8511, doc 13054: \"Inactive Account (after [months unreadable] of inactivity) ... $5.00/month\"" },  // UAT, Oct 9: real fees carrying a sentence fragment as their name, each under a pending
+  // takedown from another check. Named from their own line; the next check that reads them clears it.
+  { feePublishedId: 96164, from: "monthly_maintenance", amount: 2.5, to: "atm_non_network",
+    name: "Non-Westamerica ATM withdrawal (balance requirement not met)",
+    oldName: "balance requirement to avoid the monthly service charge is met. Otherwise, a fee of",
+    why: "Westamerica (250), doc 17065: \"Non-Westamerica ATM Withdrawals: ... Otherwise, a fee of $2.50 per posted withdrawal\"" },
+  { feePublishedId: 61848, from: "minimum_balance", amount: 2, to: "minimum_balance",
+    name: "Minimum balance fee (minimum daily balance of $5)",
+    oldName: "in your account to avoid a minimum balance fee of",
+    why: "inst 6026, doc 18314: \"You must maintain a minimum daily balance of $5 in your account to avoid a minimum balance fee of $2\"" },
+  { feePublishedId: 98747, from: "monthly_maintenance", amount: 15, to: "monthly_maintenance",
+    name: "Service charge (balance falls below $1,000.00)",
+    oldName: "Minimum balance to avoid imposition of fees - A service charge fee of",
+    why: "inst 2094, doc 22814: \"If your balance falls below $1,000.00 on any day ... we will impose a service charge fee of $15.00\"" },
+  // UAT, Oct 9: returned-check fees filed as nsf beside the schedule's own NSF line, which the
+  // guard's schedule_contradicts check takes down. A returned check is a deposited item return.
+  { feePublishedId: 107960, from: "nsf", amount: 25, to: "deposited_item_return", name: "Return Check Fee",
+    why: "inst 7815, doc 18733: \"Return Check Fee | $25.00\" (NSF Deposit Fee $30 is its own line)" },
+  { feePublishedId: 108035, from: "nsf", amount: 25, to: "deposited_item_return", name: "Returned Item",
+    why: "inst 5883, doc 19408: \"Returned Item | $25.00 Per Item\" below \"NSF | $25.00 Per Item\"" },
+  { feePublishedId: 108132, from: "nsf", amount: 30, to: "deposited_item_return", name: "Returned Check",
+    why: "inst 5902, doc 21925: \"Returned Check | $30.00 | each\"" },
+  // UAT's 13:41 sample (Oct 9): a box rental's late fee filed as a loan late fee.
+  { feePublishedId: 92156, from: "late_payment", amount: 10, to: "safe_deposit_box",
+    name: "Safe Deposit Box Late Payment Fee - if payment is not made within 60 days of due date",
+    why: "inst 1638, doc 22021: under \"Safe Deposit Boxes\", \"Late Payment Fee - if payment is not made within 60 days of due date, late fee will apply | $10.00\"" },
+];
+
+interface HandRow {
+  fee_published_id: number | string;
+  fee_verified_id: number | string;
+  institution_id: number | string;
+  source_document_id: number | string | null;
+  canonical_fee_key: string;
+  fee_name: string | null;
+  amount: number | string | null;
+}
+
+export interface HandMove {
+  refile: HandRefile;
+  feeVerifiedId: number;
+  institutionId: number;
+  sourceDocumentId: number | null;
+  oldName: string;
+  /** The category the fee is under now: `from`, or `to` when another check already moved it. */
+  currentKey: string;
+}
+
+/**
+ * The hand re-files that still apply: the fee is live, still under its old category at its
+ * listed price, and the new category accepts the new name. Pure.
+ */
+export function planHandRefiles(rows: HandRow[], refiles: readonly HandRefile[] = HAND_REFILES): HandMove[] {
+  const moves: HandMove[] = [];
+  for (const row of rows) {
+    const refile = refiles.find((entry) => entry.feePublishedId === Number(row.fee_published_id));
+    const amount = amountOf(row.amount);
+    if (!refile || amount == null || Math.abs(amount - refile.amount) >= 0.005) continue;
+    const movedUnfixed = refile.oldName != null && row.canonical_fee_key === refile.to && (row.fee_name ?? "") === refile.oldName;
+    if (row.canonical_fee_key !== refile.from && !movedUnfixed) continue;
+    // A rename in place (from == to) is done once the live name reads as listed.
+    if (refile.from === refile.to && (row.fee_name ?? "").trim() === refile.name) continue;
+    if (!passesDarwinChecks(refile.to, refile.name, amount)) continue;
+    moves.push({
+      refile,
+      feeVerifiedId: Number(row.fee_verified_id),
+      institutionId: Number(row.institution_id),
+      sourceDocumentId: row.source_document_id == null ? null : Number(row.source_document_id),
+      oldName: row.fee_name ?? "",
+      currentKey: row.canonical_fee_key,
+    });
+  }
+  return moves;
+}
+
+/**
+ * Hand-fixed fees that still carry the rules re-check's pending takedown from before their
+ * rename (61848, 98747, Oct 9): the re-check reads a document only now and then, so its own
+ * clear can come after the archive is due. A fee here passes the same test the re-check's second
+ * look applies (its name and price trace in its own text, and the category guard accepts the
+ * name), so the same second look clears it. A fee not yet fixed, or one that fails, is left alone.
+ */
+export function handFixedPassing(rows: HandRow[], texts: Map<number, string>, refiles: readonly HandRefile[] = HAND_REFILES): number[] {
+  const passing: number[] = [];
+  for (const row of rows) {
+    const refile = refiles.find((entry) => entry.feePublishedId === Number(row.fee_published_id));
+    const amount = amountOf(row.amount);
+    if (!refile || amount == null || row.canonical_fee_key !== refile.to || (row.fee_name ?? "").trim() !== refile.name) continue;
+    const text = row.source_document_id == null ? undefined : texts.get(Number(row.source_document_id));
+    if (!text) continue;
+    const traced = checkFeeAgainstSource(text, refile.name, amount, ".", refile.to);
+    if ((traced.ok || traced.reason === "tiered_fee") && checkFeeCategory(refile.to, refile.name).ok) passing.push(refile.feePublishedId);
+  }
+  return passing;
+}
+
+async function selectHandRows(db: SqlTag, institutionId?: number): Promise<HandRow[]> {
+  return db<HandRow[]>`
+    SELECT fp.fee_published_id, fp.lineage_ref AS fee_verified_id, fp.institution_id, fr.source_document_id,
+           fp.canonical_fee_key, fp.fee_name, fp.amount
+      FROM published_fee_records fp
+      LEFT JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
+      LEFT JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
+     WHERE fp.fee_published_id = ANY(${HAND_REFILES.map((refile) => refile.feePublishedId)}::bigint[])
+       AND fp.rolled_back_at IS NULL
+       AND (${institutionId ?? null}::bigint IS NULL OR fp.institution_id = ${institutionId ?? null}::bigint)
+  `;
+}
+
+async function applyHandMoves(db: SqlTag, moves: HandMove[], runId: number): Promise<number> {
+  if (moves.length === 0) return 0;
+  const updated = await db<{ fee_published_id: number | string }[]>`
+    UPDATE published_fee_records fp
+       SET canonical_fee_key = v.to_key, fee_name = v.new_name
+      FROM unnest(${moves.map((move) => move.refile.feePublishedId)}::bigint[], ${moves.map((move) => move.currentKey)}::text[],
+                  ${moves.map((move) => move.refile.to)}::text[], ${moves.map((move) => move.refile.name)}::text[])
+           AS v(fee_published_id, from_key, to_key, new_name)
+     WHERE fp.fee_published_id = v.fee_published_id
+       AND fp.canonical_fee_key = v.from_key
+       AND fp.rolled_back_at IS NULL
+    RETURNING fp.fee_published_id
+  `;
+  const done = new Set(updated.map((row) => Number(row.fee_published_id)));
+  const applied = moves.filter((move) => done.has(move.refile.feePublishedId));
+  if (applied.length === 0) return 0;
+  await db`
+    UPDATE verified_fee_observations fv
+       SET canonical_fee_key = v.to_key
+      FROM unnest(${applied.map((move) => move.feeVerifiedId)}::bigint[], ${applied.map((move) => move.currentKey)}::text[],
+                  ${applied.map((move) => move.refile.to)}::text[]) AS v(fee_verified_id, from_key, to_key)
+     WHERE fv.fee_verified_id = v.fee_verified_id
+       AND fv.canonical_fee_key = v.from_key
+  `;
+  if (await feedbackSchemaReady(db)) await recordFeedback(db, applied.map((move) => handFeedback(move, runId)));
+  return applied.length;
+}
+
+function handFeedback(move: HandMove, runId: number): FeedbackRow {
+  const { refile } = move;
+  return {
+    aboutStage: "publish",
+    aboutStrategy: TAXONOMY_FOLD_CHECK,
+    aboutVersion: FOLD_RULES_VERSION,
+    // Knox read a neighbouring cell as the name: a wrong read, logged with the page's own line.
+    signal: "wrong",
+    kind: TAXONOMY_FOLD_KIND,
+    reportedBy: "hamilton",
+    checkName: TAXONOMY_FOLD_CHECK,
+    institutionId: move.institutionId,
+    sourceDocumentId: move.sourceDocumentId,
+    feeVerifiedId: move.feeVerifiedId,
+    feePublishedId: refile.feePublishedId,
+    canonicalFeeKey: refile.to,
+    amount: refile.amount,
+    weight: 0,
+    evidence: { from: move.currentKey, to: refile.to, rule: "hand_refile", old_name: move.oldName, new_name: refile.name, why: refile.why },
+    runId,
+    dedupeKey: `${TAXONOMY_FOLD_CHECK}:hand:pub:${refile.feePublishedId}`,
+  };
+}
+
 async function rollBackNoHome(db: SqlTag, batchId: string, fees: FoldNoHome[]): Promise<number> {
   let rolledBack = 0;
   for (let start = 0; start < fees.length; start += WRITE_CHUNK) {
@@ -288,6 +536,10 @@ export interface TaxonomyFoldResult {
   noHomeHeld: number;
   unplacedVerified: number;
   feedbackRows: number;
+  /** Live fees re-filed by hand (`HAND_REFILES`); a dry run counts those it would move. */
+  handRefiled: number;
+  /** Hand-fixed fees whose rules re-check pending takedown was cleared (`handFixedPassing`). */
+  handFlagsCleared: number;
   dryRun: boolean;
   rulesVersion: number;
   /** A sample of the takedowns, for the step's detail. */
@@ -299,7 +551,7 @@ export async function foldRetiredCategories(
   db: SqlTag,
   options: { runId: number; dryRun: boolean; institutionId?: number },
 ): Promise<TaxonomyFoldResult> {
-  const empty: TaxonomyFoldResult = {
+  const base: TaxonomyFoldResult = {
     scanned: 0,
     moved: 0,
     movedLive: 0,
@@ -310,10 +562,35 @@ export async function foldRetiredCategories(
     noHomeHeld: 0,
     unplacedVerified: 0,
     feedbackRows: 0,
+    handRefiled: 0,
+    handFlagsCleared: 0,
     dryRun: options.dryRun,
     rulesVersion: FOLD_RULES_VERSION,
     noHomeSample: [],
   };
+  let handMoves: HandMove[] = [];
+  try {
+    handMoves = planHandRefiles(await inSavepoint(db, (scope) => selectHandRows(scope, options.institutionId)));
+  } catch (error) {
+    console.error("taxonomy fold hand re-file read failed:", error);
+  }
+  if (options.dryRun) base.handRefiled = handMoves.length;
+  else if (handMoves.length > 0) {
+    base.handRefiled = await inSavepoint(db, (scope) => applyHandMoves(scope, handMoves, options.runId));
+    if (base.handRefiled > 0) invalidatePublicReadCache();
+  }
+  try {
+    const handRows = await inSavepoint(db, (scope) => selectHandRows(scope, options.institutionId));
+    const handDocuments = [...new Set(handRows.filter((row) => row.source_document_id != null).map((row) => Number(row.source_document_id)))];
+    const passing = handFixedPassing(handRows, await inSavepoint(db, (scope) => loadTexts(scope, handDocuments)));
+    if (passing.length > 0) {
+      const look = await secondLook(db, { check: RULES_RECHECK_CHECK, runId: options.runId, failing: [], passing, dryRun: options.dryRun });
+      base.handFlagsCleared = look.cleared;
+      if (look.cleared > 0 && !options.dryRun) invalidatePublicReadCache();
+    }
+  } catch (error) {
+    console.error("taxonomy fold hand flag clear failed:", error);
+  }
   let rows: FoldRow[];
   let texts: Map<number, string>;
   try {
@@ -328,9 +605,9 @@ export async function foldRetiredCategories(
     texts = await inSavepoint(db, (scope) => loadTexts(scope, documents));
   } catch (error) {
     console.error("taxonomy fold read failed:", error);
-    return empty;
+    return base;
   }
-  if (rows.length === 0) return empty;
+  if (rows.length === 0) return base;
 
   const plan = planFold(rows, texts);
   const byRoute: Record<string, number> = {};
@@ -344,7 +621,7 @@ export async function foldRetiredCategories(
     dryRun: options.dryRun,
   });
   const result: TaxonomyFoldResult = {
-    ...empty,
+    ...base,
     scanned: rows.length,
     moved: plan.moves.length,
     movedLive: plan.moves.filter((move) => move.feePublishedId != null).length,

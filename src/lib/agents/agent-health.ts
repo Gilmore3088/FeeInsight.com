@@ -1,6 +1,6 @@
 import { sql } from "@/lib/data-store/connection";
-import { DARWIN_VERIFY_MAX_LIMIT, DARWIN_VERIFY_STRATEGY } from "./darwin/verify";
-import { KNOX_EXTRACT_STRATEGY } from "./knox/extract";
+import { DARWIN_VERIFY_MAX_LIMIT, DARWIN_VERIFY_STRATEGY, darwinDueSql } from "./darwin/verify";
+import { KNOX_RULES_STRATEGY } from "./knox/specialists";
 import { SOURCE_CHECK_REASON, SOURCE_CHECK_RESTORE_PREFIX, SOURCE_CHECK_STRATEGY } from "./hamilton/source-check";
 
 /**
@@ -239,8 +239,8 @@ export async function readAtlasNumbers(db: SqlTag): Promise<HealthNumbers> {
              WHERE pa.stage = 'extract'
                AND pa.institution_id = adt.institution_id
                AND pa.input_fingerprint = adt.text_hash
-               AND pa.strategy = ${KNOX_EXTRACT_STRATEGY.strategy}
-               AND pa.strategy_version = ${KNOX_EXTRACT_STRATEGY.version}
+               AND pa.strategy = ${KNOX_RULES_STRATEGY.strategy}
+               AND pa.strategy_version = ${KNOX_RULES_STRATEGY.version}
           )
           AND EXISTS (
             SELECT 1 FROM agent_source_texts prior
@@ -394,16 +394,16 @@ export async function readKnoxNumbers(db: SqlTag): Promise<HealthNumbers> {
       (SELECT COUNT(*) FROM (
          SELECT 1 FROM pipeline_attempts
           WHERE stage = 'extract'
-            AND strategy = ${KNOX_EXTRACT_STRATEGY.strategy}
-            AND strategy_version = ${KNOX_EXTRACT_STRATEGY.version}
+            AND strategy = ${KNOX_RULES_STRATEGY.strategy}
+            AND strategy_version = ${KNOX_RULES_STRATEGY.version}
             AND created_at > NOW() - INTERVAL '24 hours'
           GROUP BY institution_id, input_fingerprint
        ) texts)::int AS texts_extracted,
       (SELECT COUNT(*) FROM (
          SELECT 1 FROM pipeline_attempts
           WHERE stage = 'extract'
-            AND strategy = ${KNOX_EXTRACT_STRATEGY.strategy}
-            AND strategy_version = ${KNOX_EXTRACT_STRATEGY.version}
+            AND strategy = ${KNOX_RULES_STRATEGY.strategy}
+            AND strategy_version = ${KNOX_RULES_STRATEGY.version}
             AND created_at > NOW() - INTERVAL '24 hours'
           GROUP BY institution_id, input_fingerprint
          HAVING COUNT(*) > 1
@@ -447,35 +447,48 @@ export async function readDarwinNumbers(db: SqlTag): Promise<HealthNumbers> {
         WHERE stage = 'verify' AND strategy = ${DARWIN_VERIFY_STRATEGY.strategy}
           AND outcome = 'ok'
           AND created_at > NOW() - INTERVAL '24 hours')::int AS passed,
-      (SELECT COUNT(*)
-         FROM raw_fee_observations fr
-        WHERE fr.source = 'knox'
-          AND fr.outlier_flags ? 'needs_darwin_verification'
-          AND NOT EXISTS (SELECT 1 FROM verified_fee_observations fv WHERE fv.fee_raw_id = fr.fee_raw_id)
-          AND NOT EXISTS (
-            SELECT 1 FROM pipeline_attempts pa
-             WHERE pa.input_fingerprint = 'raw:' || fr.fee_raw_id::text
-               AND pa.strategy = ${DARWIN_VERIFY_STRATEGY.strategy}
-               AND pa.strategy_version = ${DARWIN_VERIFY_STRATEGY.version}
-          ))::int AS undecided,
+      -- The rows the verify step would select now (#1052): never decided, or due again
+      -- under today's rules (a guard, source-check, envelope or batch-key change).
+      due.undecided,
+      due.waiting_over_7d,
       (SELECT COUNT(*) FROM published_fee_records
         WHERE published_at > NOW() - INTERVAL '24 hours')::int AS published,
       (SELECT COUNT(*) FROM published_fee_records
         WHERE rolled_back_at > NOW() - INTERVAL '24 hours'
           AND rolled_back_reason LIKE ${`${SOURCE_CHECK_REASON}:%`})::int AS source_check_takedowns
+      FROM (
+        SELECT COUNT(*)::int AS undecided,
+               -- Sent to Darwin over 7 days ago and never decided at this rule version.
+               (COUNT(*) FILTER (
+                 WHERE fr.created_at < NOW() - make_interval(days => ${DARWIN_MAX_FIRST_DECISION_DAYS})
+                   AND NOT EXISTS (
+                     SELECT 1 FROM pipeline_attempts first
+                      WHERE first.input_fingerprint = 'raw:' || fr.fee_raw_id::text
+                        AND first.strategy = ${DARWIN_VERIFY_STRATEGY.strategy}
+                        AND first.strategy_version = ${DARWIN_VERIFY_STRATEGY.version}
+                   )
+               ))::int AS waiting_over_7d
+          FROM raw_fee_observations fr
+         WHERE ${db.unsafe(darwinDueSql())}
+      ) due
   `;
   return {
     ...common,
     decided: num(row?.decided),
     passed: num(row?.passed),
     undecided: num(row?.undecided),
+    waitingOver7d: num(row?.waiting_over_7d),
     published: num(row?.published),
     sourceCheckTakedowns: num(row?.source_check_takedowns),
   };
 }
 
+/** The audit's bar (#1052): no Knox row sent to Darwin waits longer for its first decision. */
+export const DARWIN_MAX_FIRST_DECISION_DAYS = 7;
+
 export function darwinRules(n: HealthNumbers): HealthRule[] {
   const undecided = num(n.undecided);
+  const waiting = num(n.waitingOver7d);
   const takedowns = num(n.sourceCheckTakedowns);
   const published = num(n.published);
   return [
@@ -485,6 +498,12 @@ export function darwinRules(n: HealthNumbers): HealthRule[] {
       label: `Darwin keeps up: no more than one step's worth (${DARWIN_VERIFY_MAX_LIMIT}) of rows undecided`,
       ok: undecided <= DARWIN_VERIFY_MAX_LIMIT,
       detail: `${undecided} undecided`,
+    },
+    {
+      key: "no_week_old_waits",
+      label: `No Knox row sent to Darwin waits more than ${DARWIN_MAX_FIRST_DECISION_DAYS} days for its first decision`,
+      ok: waiting === 0,
+      detail: `${waiting} waiting over ${DARWIN_MAX_FIRST_DECISION_DAYS} days`,
     },
     {
       key: "passed_fees_hold_up",

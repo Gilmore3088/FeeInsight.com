@@ -5,6 +5,8 @@
 
 import type { HamiltonPersistedContextSource } from "@/lib/hamilton/context-source";
 import type { Storyline, StorylineMemo } from "@/lib/hamilton/workspace/storyline-types";
+import type { HamiltonIdentitySnapshot } from "@/lib/hamilton/account-context";
+import type { SavedAnswerEvidence } from "@/lib/hamilton/answer-gate";
 
 export type SectionType =
   | "overview"
@@ -195,6 +197,7 @@ export interface ThesisInput {
 
 /** Analyze screen response — explores and explains, does NOT recommend (ARCH-05) */
 export interface AnalyzeResponse {
+  identityContext?: HamiltonIdentitySnapshot;
   title: string;
   confidence: {
     level: "high" | "medium" | "low";
@@ -212,6 +215,8 @@ export interface AnalyzeResponse {
   storyline?: Storyline;
   memo?: StorylineMemo;
   engineVersion?: string;
+  /** The shared evidence gate's verdict on a written answer (#981); absent on answers saved before it. */
+  answerEvidence?: SavedAnswerEvidence;
   // NOTE: No recommendedPosition — screen boundary rule (ARCH-05)
 }
 
@@ -273,6 +278,8 @@ export interface ReportSource {
 
 export interface ReportSummaryResponse {
   title: string;
+  /** Historical reference identity captured on the authenticated generation request. */
+  identityContext?: HamiltonIdentitySnapshot;
   /** Answer page: one-sentence headline and up to three decisions (reports since v4 voice). */
   answer?: { headline: string; decisions: ReportDecision[]; /** The client goal the decisions are ranked by, when one was chosen. */ goal?: string | null };
   exhibits?: ReportExhibit[];
@@ -286,7 +293,7 @@ export interface ReportSummaryResponse {
   recommendation: string;
   implementationNotes: string[];
   /** Findings and tests the reader added to the report basket, shown as written */
-  addedFindings?: Array<{ source: "Position" | "Ask" | "Test"; title: string; detail: string }>;
+  addedFindings?: Array<{ source: "Position" | "Ask" | "Test"; title: string; detail: string; identityContext?: HamiltonIdentitySnapshot }>;
   exportControls: {
     pdfEnabled: boolean;
     shareEnabled: boolean;

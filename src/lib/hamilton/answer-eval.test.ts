@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/data-store/connection", () => ({ sql: {} }));
-vi.mock("./ask-service", () => ({ scheduleFor: vi.fn(), incomeWhyFor: vi.fn() }));
+vi.mock("./ask-service", () => ({ resolveAskIntent: vi.fn() }));
 
-import { EVAL_QUESTION_IDS, failureShape, liveDataFailures, pickProQuestions, summarizeEval, summarizeProReplay, type EvalResult, type ProQuestionResult } from "./answer-eval";
+import { EVAL_QUESTION_IDS, failureShape, liveDataFailures, offSubjectFailure, pickProQuestions, summarizeCorrectness, summarizeEval, summarizeProReplay, type EvalResult, type ProQuestionResult } from "./answer-eval";
 import type { SqlTag } from "@/lib/agents/hamilton/studies/common";
 import { QUALITY_QUESTIONS } from "./workspace/quality-bar";
 import type { AskResponse } from "./workspace/types";
@@ -18,13 +18,48 @@ describe("answer eval", () => {
     for (const id of EVAL_QUESTION_IDS) expect(q(id)).toBeDefined();
   });
 
+  it("asks both regulation questions, q26 included (#1079)", () => {
+    expect(EVAL_QUESTION_IDS).toContain("q25");
+    expect(EVAL_QUESTION_IDS).toContain("q26");
+    const regulators = { primaryRegulator: "NCUA", charterAgency: "NCUA", source: "ncua" };
+    expect(liveDataFailures(q("q26"), reply("Reg E applies."), fl, regulators)).toHaveLength(1);
+  });
+
+  it("counts correctness apart from form, leaving unchecked answers out of the rate (#1079)", () => {
+    const results: EvalResult[] = [
+      { institutionId: 1, questionId: "q04", question: "a", kind: "answer", failures: [], correctness: [] },
+      { institutionId: 2, questionId: "q04", question: "a", kind: "answer", failures: ["no peer count"], correctness: ["your fee: the answer uses $30, the catalog has $25"] },
+      { institutionId: 3, questionId: "q25", question: "b", kind: "answer", failures: [], correctness: null },
+    ];
+    const s = summarizeEval(results, 3, false);
+    expect(s.passed).toBe(2);
+    expect(s.path).toBe("free_ask");
+    expect(s.correctness).toMatchObject({ checked: 2, correct: 1, rate: 0.5, topFailures: [{ failure: "your fee: the answer uses # the catalog has #", count: 1 }] });
+    expect(summarizeCorrectness([{ correctness: null }]).rate).toBeNull();
+  });
+
   it("fails a regulation answer that leaves out the institution's regulator", () => {
     const regulators = { primaryRegulator: "NCUA", charterAgency: "NCUA", source: "ncua" };
     expect(liveDataFailures(q("q25"), reply("Reg E applies to your $30 fee."), fl, regulators)).toEqual([
-      'does not name its regulator ("NCUA charters and supervises you as a federal credit union.")',
+      'does not name its regulator ("NCUA charters and supervises Space Coast as a federal credit union.")',
     ]);
     expect(liveDataFailures(q("q25"), reply("Reg E applies.", ["NCUA charters and supervises you as a federal credit union."]), fl, regulators)).toEqual([]);
     expect(liveDataFailures(q("q25"), reply("Reg E applies."), fl, null)).toEqual([]);
+  });
+
+  it("passes a regulation answer that names the regulator in the institution's own name (#1076)", () => {
+    // The 2026-10-13 06:51 eval failed q25 at 11 of 11 on this: the answer said "O'Bannon Banking
+    // Company's charter is from ...", while the check looked only for "Your charter is from ...".
+    const mo = { id: 2415, name: "O'Bannon Banking Company", stateCode: "MO", charterType: "bank", assetTier: "small" };
+    const regulators = { primaryRegulator: "FDIC", charterAgency: "State", source: "fdic" };
+    const named = "O'Bannon Banking Company's charter is from the Missouri Division of Finance, and the FDIC is O'Bannon Banking Company's primary federal regulator.";
+    const unnamed = "Your charter is from the Missouri Division of Finance, and the FDIC is your primary federal regulator.";
+    expect(liveDataFailures(q("q25"), reply("Reg E applies.", [named]), mo, regulators)).toEqual([]);
+    expect(liveDataFailures(q("q25"), reply("Reg E applies.", [unnamed]), mo, regulators)).toEqual([]);
+    expect(liveDataFailures(q("q25"), reply("Reg E applies.", ["The FDIC is a federal regulator."]), mo, regulators)).toEqual([`does not name its regulator ("${named}")`]);
+    const pnc = { id: 8, name: "PNC Bank, National Association", stateCode: "DE", charterType: "bank", assetTier: "large" };
+    const occ = { primaryRegulator: "OCC", charterAgency: "OCC", source: "fdic" };
+    expect(liveDataFailures(q("q25"), reply("Reg E applies.", ["The OCC charters and supervises PNC Bank, National Association as a national bank."]), pnc, occ)).toEqual([]);
   });
 
   it("fails a state question that does not name the state", () => {
@@ -44,6 +79,9 @@ describe("answer eval", () => {
     expect(s.topFailures).toEqual([{ failure: "does not name its state (…)", count: 2 }]);
     expect(s.byQuestion[0]).toMatchObject({ questionId: "q17", passed: 0, total: 2 });
     expect(failureShape('reads as advice: "you should lower"')).toBe('reads as advice: "…"');
+    // A run cut by the time budget says how many institutions it drew and how many it asked.
+    expect(summarizeEval(results, 2, true, 11)).toMatchObject({ institutions: 2, planned: 11, timedOut: true });
+    expect(s.planned).toBe(2);
   });
 
   it("replays readers' own questions, newest first, leaving out test asks", async () => {
@@ -68,5 +106,31 @@ describe("answer eval", () => {
     ]);
     expect(s).toMatchObject({ questions: 2, passed: 1, askedBack: 1, topFailures: [{ failure: 'asked back instead of answering: "…"', count: 1 }] });
     expect(s.failing.map((f) => f.question)).toEqual(["talk to me about all 10B and up instititions for od fees"]);
+  });
+});
+
+describe("off-subject answers (#1077)", () => {
+  const onFee = (feeCategory: string): AskResponse =>
+    ({ kind: "research", shortAnswer: "x", pageChange: { screen: "research", feeCategory } }) as unknown as AskResponse;
+  const askedBack = { kind: "clarifying_question", shortAnswer: "Which fee do you want to look at?", pageChange: { screen: "none" } } as unknown as AskResponse;
+
+  it("fails a fee put in place of a question that names none, as overdraft once was", () => {
+    // Real Pro questions from the 2026-10-13 replay, each answered with the overdraft fee.
+    for (const question of ["talk to me about all institutison above 10billion", "talki to me about institions in florida over 5b"]) {
+      expect(offSubjectFailure(question, onFee("overdraft"))).toBe("answers a different subject: the overdraft fee, which the question does not name");
+    }
+    expect(offSubjectFailure("talk to me about all institutison above 10billion", askedBack)).toBeNull();
+  });
+
+  it("fails a fee other than the ones the question names", () => {
+    expect(offSubjectFailure("How does our NSF fee compare?", onFee("overdraft"))).toBe("answers a different subject: the overdraft fee, not the fee asked about");
+    expect(offSubjectFailure("Which District 11 banks have both verified NSF and monthly maintenance rows?", onFee("monthly_maintenance"))).toBeNull();
+    expect(offSubjectFailure("talk to me about all 10B and up instititions for od fees", onFee("overdraft"))).toBeNull();
+  });
+
+  it("passes the fee furthest from its median under an every-fee or fee-income question", () => {
+    expect(offSubjectFailure("Which of our fees sit furthest from our peers, and by how much?", onFee("late_payment"))).toBeNull();
+    expect(offSubjectFailure("What are 1b - <10b institutions doing around service fee income", onFee("late_payment"))).toBeNull();
+    expect(offSubjectFailure("Which credit unions in the top 25 of the $1 billion to $10 billion tier run a fee share below 4%?", onFee("late_payment"))).toBeNull();
   });
 });

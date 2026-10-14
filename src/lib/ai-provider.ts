@@ -118,3 +118,68 @@ export function extractAnthropicText(response: { content?: unknown }): string {
     .map((block) => block.text)
     .join("");
 }
+
+/**
+ * Provider error text that means the account cannot be billed for more calls right now:
+ * a monthly usage limit, exhausted credits, or a billing quota. Retrying does not help
+ * until billing changes, so readers see Hamilton's "paused" line instead of an error.
+ */
+const PROVIDER_LIMIT_MARKERS = [
+  "usage limit",
+  "credit balance is too low",
+  "insufficient credits",
+  "purchase credits",
+  "plans & billing",
+  "insufficient_quota",
+  "exceeded your current quota",
+  "quota exceeded",
+] as const;
+
+function providerErrorTexts(err: unknown, depth = 0): string[] {
+  if (depth > 4 || err === null || err === undefined) return [];
+  if (typeof err === "string") return [err];
+  if (typeof err !== "object") return [String(err)];
+  const record = err as {
+    message?: unknown;
+    responseBody?: unknown;
+    error?: unknown;
+    cause?: unknown;
+    lastError?: unknown;
+    errors?: unknown;
+  };
+  const texts: string[] = [];
+  if (typeof record.message === "string") texts.push(record.message);
+  if (typeof record.responseBody === "string") texts.push(record.responseBody);
+  if (record.error && typeof record.error === "object") {
+    try {
+      texts.push(JSON.stringify(record.error));
+    } catch {
+      // Not serializable: skip it.
+    }
+  }
+  texts.push(...providerErrorTexts(record.cause, depth + 1));
+  texts.push(...providerErrorTexts(record.lastError, depth + 1));
+  if (Array.isArray(record.errors)) {
+    for (const inner of record.errors) texts.push(...providerErrorTexts(inner, depth + 1));
+  }
+  return texts;
+}
+
+function providerErrorStatus(err: unknown): number | null {
+  if (!err || typeof err !== "object") return null;
+  const record = err as { status?: unknown; statusCode?: unknown };
+  const status = typeof record.status === "number" ? record.status : record.statusCode;
+  return typeof status === "number" ? status : null;
+}
+
+/**
+ * True when the provider refused a call for a usage limit or billing: HTTP 402, or a
+ * usage-limit, credit or quota message (Anthropic sends its monthly usage limit as a 400).
+ * A plain rate limit is not one. Accepts an Error from the Anthropic SDK or the AI SDK
+ * (wrapped causes and retry errors included) or the error's message text.
+ */
+export function isProviderLimitError(err: unknown): boolean {
+  if (providerErrorStatus(err) === 402) return true;
+  const text = providerErrorTexts(err).join("\n").toLowerCase();
+  return PROVIDER_LIMIT_MARKERS.some((marker) => text.includes(marker));
+}

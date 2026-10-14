@@ -64,7 +64,7 @@ const SECONDARY_BUTTON =
 export function ProToolsSection() {
   return (
     <section id="pro" className="scroll-mt-16 border-b border-warm-200 bg-warm-100">
-      <div className="mx-auto max-w-6xl px-6 py-14">
+      <div className="mx-auto max-w-page px-6 py-14">
         <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#6B6255]">
           {SITE_NAME} Pro
         </p>

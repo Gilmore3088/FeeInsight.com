@@ -16,7 +16,7 @@ import { createHash } from "crypto";
 import { getSql } from "@/lib/data-store/connection";
 import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
 import { getDisplayName } from "@/lib/fee-taxonomy";
-import { urlIdentity } from "@/lib/agents/magellan/finders";
+import { sameSchedule } from "@/lib/agents/hamilton/schedule-edition";
 import type { DataManifest } from "@/lib/report-engine/types";
 
 export const PULSE_WINDOW_DAYS = 30;
@@ -24,6 +24,8 @@ export const PULSE_WINDOW_DAYS = 30;
 // ─── Exported Types ────────────────────────────────────────────────────────────
 
 export interface PulseChange {
+  /** institution_sources.id; absent on payloads saved before reconciliation (#1066). */
+  institution_id?: number;
   institution_name: string;
   state_code: string | null;
   charter_type: string | null;
@@ -47,6 +49,8 @@ export interface MonthlyPulsePayload {
   report_date: string;   // ISO date string
   period_label: string;  // e.g. "October 2026"
   window_start: string;  // ISO date, PULSE_WINDOW_DAYS before report_date
+  /** The exact window start the coverage counts used (ISO timestamp); absent on older payloads. */
+  window_started_at?: string;
   changes: PulseChange[];
   /** Recorded changes left out because the newest schedule does not bear them out. */
   changes_not_confirmed: number;
@@ -55,6 +59,7 @@ export interface MonthlyPulsePayload {
 }
 
 export interface RecordedChangeRow {
+  institution_id?: number | string | null;
   institution_name: string;
   state_code: string | null;
   charter_type: string | null;
@@ -104,7 +109,7 @@ export function sameEdition(a: string | null | undefined, b: string | null | und
 
 /**
  * Pure: did the bank change this fee? Yes only when the old and new prices sit on the
- * same fee line (same page, same name), the earlier schedule states the old price, and the newest
+ * same fee line (same schedule, same name), the earlier schedule states the old price, and the newest
  * schedule states the new price and no longer states the old one for that fee.
  * Two readings of the same edition (both texts state exactly the same dollar amounts) are
  * not a change: a PDF read twice can pair a fee with a neighbouring column's price. Nor is
@@ -116,9 +121,15 @@ export function confirmFeeChange(row: RecordedChangeRow): PulseChange | null {
   if (oldAmount == null || newAmount == null || !Number.isFinite(oldAmount) || !Number.isFinite(newAmount)) return null;
   if (oldAmount === newAmount || !row.fee_name || !row.new_document_text) return null;
   if (!row.old_fee_name || !sameFeeName(row.old_fee_name, row.fee_name)) return null;
-  // Same page: a price on a different schedule (business against consumer, another
-  // product's page) is a second fee line, not a change.
-  if (row.old_source_url && row.source_url && urlIdentity(row.old_source_url) !== urlIdentity(row.source_url)) return null;
+  // Same schedule: a price on a different schedule (business against consumer, another
+  // product's page) is a second fee line, not a change. A newer dated edition of the same
+  // audience's schedule on a moved page is the same schedule (schedule-edition.ts).
+  if (
+    row.old_source_url &&
+    row.source_url &&
+    !sameSchedule({ oldUrl: row.old_source_url, newUrl: row.source_url, oldText: row.old_document_text, newText: row.new_document_text })
+  )
+    return null;
   const newStated = checkFeeAgainstSource(row.new_document_text, row.fee_name, newAmount, ".");
   if (!newStated.ok) return null;
   if (!checkFeeAgainstSource(row.old_document_text, row.fee_name, oldAmount, ".").ok) return null;
@@ -127,7 +138,9 @@ export function confirmFeeChange(row: RecordedChangeRow): PulseChange | null {
   const oldStated = checkFeeAgainstSource(row.new_document_text, row.fee_name, oldAmount, ".");
   if (oldStated.ok || oldStated.reason === "tiered_fee") return null;
   const changedAt = row.changed_at instanceof Date ? row.changed_at.toISOString() : String(row.changed_at);
+  const institutionId = row.institution_id == null ? NaN : Number(row.institution_id);
   return {
+    ...(Number.isSafeInteger(institutionId) && institutionId > 0 ? { institution_id: institutionId } : {}),
     institution_name: row.institution_name,
     state_code: row.state_code,
     charter_type: row.charter_type,
@@ -156,9 +169,9 @@ const CHANGES_SQL = `
        AND c.change_type IN ('increase', 'increased', 'decrease', 'decreased')
        -- One schedule against an older copy of itself (hamilton/change-pairing.ts).
        AND c.like_for_like IS TRUE
-       AND EXISTS (SELECT 1 FROM published_fee_records nl WHERE nl.fee_published_id = c.new_fee_published_id AND nl.rolled_back_at IS NULL AND NOT EXISTS (SELECT 1 FROM pipeline_feedback pf WHERE pf.fee_published_id = nl.fee_published_id AND pf.kind = 'takedown_pending'))
+       AND EXISTS (SELECT 1 FROM published_fee_records nl WHERE nl.fee_published_id = c.new_fee_published_id AND nl.rolled_back_at IS NULL AND nl.quarantined_at IS NULL AND NOT EXISTS (SELECT 1 FROM pipeline_feedback pf WHERE pf.fee_published_id = nl.fee_published_id AND pf.kind = 'takedown_pending'))
   )
-  SELECT i.institution_name, i.state_code, i.charter_type, ch.fee_key, ch.old_amount, ch.new_amount, ch.changed_at,
+  SELECT ch.institution_id, i.institution_name, i.state_code, i.charter_type, ch.fee_key, ch.old_amount, ch.new_amount, ch.changed_at,
          n.fee_name, n.source_url, o.fee_name AS old_fee_name, o.source_url AS old_source_url,
          (SELECT t.normalized_text
             FROM agent_source_texts t
@@ -184,6 +197,7 @@ const CHANGES_SQL = `
          AND fp.canonical_fee_key = ch.fee_key
          AND fp.amount = ch.new_amount
          AND fp.rolled_back_at IS NULL
+         AND fp.quarantined_at IS NULL
        ORDER BY fp.published_at DESC
        LIMIT 1
     ) n ON true
@@ -202,7 +216,8 @@ const CHANGES_SQL = `
    ORDER BY ch.changed_at DESC
 `;
 
-const COVERAGE_SQL = `
+/** Live coverage since $1 (a window start); the report reconciliation re-runs it (#1066). */
+export const PULSE_COVERAGE_SQL = `
   WITH f AS (
     SELECT institution_id, MIN(created_at) AS first_at, COUNT(*) AS fees
       FROM published_fee_catalog
@@ -237,7 +252,7 @@ export async function assembleMonthlyPulse(now = new Date()): Promise<MonthlyPul
   const windowStart = new Date(now.getTime() - PULSE_WINDOW_DAYS * 24 * 60 * 60 * 1000).toISOString();
 
   const recorded = (await sql.unsafe(CHANGES_SQL, [windowStart, null])) as unknown as RecordedChangeRow[];
-  const coverageRows = (await sql.unsafe(COVERAGE_SQL, [windowStart])) as unknown as PulseCoverage[];
+  const coverageRows = (await sql.unsafe(PULSE_COVERAGE_SQL, [windowStart])) as unknown as PulseCoverage[];
 
   const changes = recorded
     .map(confirmFeeChange)
@@ -251,7 +266,7 @@ export async function assembleMonthlyPulse(now = new Date()): Promise<MonthlyPul
   const manifest: DataManifest = {
     queries: [
       { sql: CHANGES_SQL.trim(), row_count: recorded.length, executed_at: executedAt },
-      { sql: COVERAGE_SQL.trim(), row_count: coverageRows.length, executed_at: executedAt },
+      { sql: PULSE_COVERAGE_SQL.trim(), row_count: coverageRows.length, executed_at: executedAt },
     ],
     data_hash: createHash("sha256").update(JSON.stringify({ changes, coverage })).digest("hex"),
     pipeline_commit: process.env.VERCEL_GIT_COMMIT_SHA ?? "local",
@@ -261,6 +276,7 @@ export async function assembleMonthlyPulse(now = new Date()): Promise<MonthlyPul
     report_date: executedAt.split("T")[0],
     period_label: now.toLocaleDateString("en-US", { month: "long", year: "numeric", timeZone: "UTC" }),
     window_start: windowStart.split("T")[0],
+    window_started_at: windowStart,
     changes,
     changes_not_confirmed: recorded.length - changes.length,
     coverage,

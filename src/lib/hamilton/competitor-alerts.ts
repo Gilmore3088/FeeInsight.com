@@ -1,4 +1,6 @@
 import { sql } from "@/lib/data-store/connection";
+import { statsRowFilter } from "@/lib/data-store/fee-stats";
+import { consumerPriceMoveSql } from "@/lib/data-store/consumer-price-moves";
 import { getInstitutionById } from "@/lib/data-store/core";
 import { HEADLINE_FEE_KEYS } from "@/lib/data-store/market-readiness";
 import { FEE_MOVES_TRACKED_SINCE, getLocalMarketCompetitors } from "@/lib/data-store/local-market";
@@ -189,11 +191,14 @@ async function loadWorkspaceBanks(onlyInstitutionId: number | null): Promise<Wor
 
 async function loadOwnFees(institutionId: number): Promise<Record<string, number>> {
   const rows = await sql<{ fee_category: string; amount: number | string }[]>`
-    SELECT c.fee_category, MIN(c.amount) AS amount
+    SELECT c.fee_category,
+           CASE WHEN c.fee_category = 'overdraft' THEN MAX(c.amount)
+                ELSE PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY c.amount) END AS amount
       FROM published_fee_catalog c
      WHERE c.institution_id = ${institutionId}
        AND c.review_status = 'approved'
-       AND c.amount IS NOT NULL
+       AND c.amount IS NOT NULL AND c.amount >= 0
+       AND ${sql.unsafe(statsRowFilter("c"))}
        AND c.amount_kind IS DISTINCT FROM 'percent'
      GROUP BY c.fee_category
   `;
@@ -228,6 +233,7 @@ async function loadAgedChanges(competitorIds: number[], categories: string[], no
          -- The pair publish recorded (hamilton/change-pairing.ts), not one guessed by amount.
          WHERE fp.fee_published_id = c.new_fee_published_id
            AND fp.rolled_back_at IS NULL
+           AND fp.quarantined_at IS NULL
            AND fv.outlier_flags::text LIKE '%agentic_darwin_verified%'
       ) n ON TRUE
       LEFT JOIN LATERAL (
@@ -243,7 +249,7 @@ async function loadAgedChanges(competitorIds: number[], categories: string[], no
        AND c.detected_at <= ${agedBefore}::timestamptz
        -- One schedule against an older copy of itself (hamilton/change-pairing.ts).
        AND c.like_for_like IS TRUE
-       AND EXISTS (SELECT 1 FROM published_fee_records nl WHERE nl.fee_published_id = c.new_fee_published_id AND nl.rolled_back_at IS NULL AND NOT EXISTS (SELECT 1 FROM pipeline_feedback pf WHERE pf.fee_published_id = nl.fee_published_id AND pf.kind = 'takedown_pending'))
+       AND ${sql.unsafe(consumerPriceMoveSql("c"))}
        AND c.new_amount IS NOT NULL
        AND NOT EXISTS (
          SELECT 1 FROM pipeline_feedback f
@@ -302,6 +308,55 @@ async function raiseAlert(alert: CompetitorAlert, memberUserIds: number[]): Prom
 // Run
 // ---------------------------------------------------------------------------
 
+/**
+ * Takes back alerts whose change no longer stands: the change is no longer like for like, or
+ * its new price was rolled back or is waiting on a takedown (the second look after a misread,
+ * as with Jeanne D'Arc's old "through July 31" column on 8 Oct). The signal row stays, marked
+ * `withdrawn_at` and `withdrawn_reason` in its source_json, so the Monitor feeds skip it; its
+ * active member alerts are dismissed. Nothing is deleted.
+ */
+async function withdrawStaleAlerts(dryRun: boolean, institutionId: number | null): Promise<number> {
+  const stale = await sql<{ id: string; reason: string }[]>`
+    SELECT s.id::text AS id,
+           CASE
+             WHEN c.id IS NULL THEN 'change record missing'
+             WHEN c.like_for_like IS NOT TRUE THEN 'change is not like for like'
+             WHEN n.fee_published_id IS NULL OR n.rolled_back_at IS NOT NULL THEN 'new price rolled back'
+             WHEN n.quarantined_at IS NOT NULL THEN 'new price is held'
+             ELSE 'new price has a pending takedown'
+           END AS reason
+      FROM hamilton_signals s
+      LEFT JOIN fee_change_records c ON c.id = (s.source_json ->> 'fee_change_record_id')::bigint
+      LEFT JOIN published_fee_records n ON n.fee_published_id = c.new_fee_published_id
+     WHERE s.signal_type = ${COMPETITOR_CHANGE_SIGNAL}
+       AND NOT (s.source_json ? 'withdrawn_at')
+       AND (${institutionId}::text IS NULL OR s.institution_id = ${institutionId}::text)
+       AND (
+         c.id IS NULL
+         OR c.like_for_like IS NOT TRUE
+         OR n.fee_published_id IS NULL
+         OR n.rolled_back_at IS NOT NULL
+         OR n.quarantined_at IS NOT NULL
+         OR EXISTS (SELECT 1 FROM pipeline_feedback pf WHERE pf.fee_published_id = n.fee_published_id AND pf.kind = 'takedown_pending')
+       )
+  `;
+  if (dryRun || stale.length === 0) return stale.length;
+  const updates = JSON.stringify(stale.map((row) => ({ id: row.id, reason: row.reason })));
+  await sql`
+    UPDATE hamilton_signals s
+       SET source_json = s.source_json || jsonb_build_object('withdrawn_at', NOW(), 'withdrawn_reason', u.reason)
+      FROM jsonb_to_recordset(${updates}::jsonb) AS u(id uuid, reason text)
+     WHERE s.id = u.id
+  `;
+  await sql`
+    UPDATE hamilton_priority_alerts
+       SET status = 'dismissed'
+     WHERE status = 'active'
+       AND signal_id = ANY(${stale.map((row) => row.id)}::uuid[])
+  `;
+  return stale.length;
+}
+
 export interface CompetitorAlertsResult {
   dryRun: boolean;
   /** Institutions with an active workspace (or the one asked for). */
@@ -315,6 +370,8 @@ export interface CompetitorAlertsResult {
   alerts: number;
   /** Member alerts written (alerts x members). */
   memberAlerts: number;
+  /** Earlier alerts taken back because their change no longer stands. */
+  withdrawn: number;
   previews: Array<{ bank: string; title: string; body: string }>;
 }
 
@@ -333,6 +390,7 @@ export async function runCompetitorAlerts({
     alreadyShown: 0,
     alerts: 0,
     memberAlerts: 0,
+    withdrawn: 0,
     previews: [],
   };
   let banks = await loadWorkspaceBanks(institutionId);
@@ -385,16 +443,20 @@ export async function runCompetitorAlerts({
       }
     }
   }
+  result.withdrawn = await withdrawStaleAlerts(dryRun, institutionId);
   return result;
 }
 
 export function summarizeCompetitorAlerts(result: CompetitorAlertsResult): string {
   const lead = result.dryRun ? "Dry run: " : "";
-  if (result.banks === 0) return `${lead}No institution has an active workspace, so there are no competitor alerts to raise.`;
+  const withdrawn = result.withdrawn > 0
+    ? ` ${result.dryRun ? "Would withdraw" : "Withdrew"} ${result.withdrawn} earlier alert(s) whose change no longer stands.`
+    : "";
+  if (result.banks === 0) return `${lead}No institution has an active workspace, so there are no competitor alerts to raise.${withdrawn}`;
   const raised = result.dryRun ? "Would raise" : "Raised";
   return (
     `${lead}Checked ${result.competitorsChecked} local competitor(s) for ${result.banksWithMarket} of ${result.banks} institution(s); ` +
     `${result.agedChanges} recorded change(s) were past their 12-hour second look, ${result.notConfirmed} did not hold up against the schedules, ` +
-    `${result.alreadyShown} were already shown. ${raised} ${result.alerts} alert(s).`
+    `${result.alreadyShown} were already shown. ${raised} ${result.alerts} alert(s).${withdrawn}`
   );
 }

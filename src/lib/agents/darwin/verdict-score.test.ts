@@ -1,10 +1,13 @@
 import { readFileSync } from "node:fs";
 import { gunzipSync } from "node:zlib";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   ANSWER_KEY_TEXTS,
+  HOLDOUT_SET,
+  loadReviewMisses,
+  missRows,
   scoreChunks,
   scoreClaim,
   verdictFromRow,
@@ -65,6 +68,67 @@ describe("Darwin verdict score", () => {
     expect(chunks[0]).toMatchObject({ fromAttemptId: 1, toAttemptId: 2, right: 1, wrong: 1, knoxRight: 0, holdoutWrong: 1 });
     expect(chunks[0].misses[0].verdict.attemptId).toBe(2);
     expect(chunks[1]).toMatchObject({ fromAttemptId: 3, toAttemptId: 5, right: 2 });
+  });
+
+  it("closes a retired review version's open chunk as partial instead of waiting forever", () => {
+    // Release review v11 to v17 on 2026-10-08: 13 to 18 keyed verdicts per version, none reached 20.
+    const keys = new Map([[1, [{ tid: 9, set: "tuning", fees: rabun }]]]);
+    const verdict = (attemptId: number, category: string): StoredVerdict => ({
+      attemptId,
+      strategy: "verify.release_review",
+      version: 13,
+      institutionId: 1,
+      sourceDocumentId: null,
+      feeRawId: attemptId,
+      feeName: "Wire Transfer Fee – Outgoing",
+      amount: 20,
+      knoxKey: "wire_domestic_outgoing",
+      claim: { feeName: "Wire Transfer Fee – Outgoing", amount: 20, isFee: true, category },
+    });
+    const verdicts = [verdict(1, "wire_domestic_outgoing"), verdict(2, "wire_domestic_outgoing"), verdict(3, "wire_intl_outgoing")];
+    expect(scoreChunks(verdicts, keys, 20)).toHaveLength(0);
+    const closed = scoreChunks(verdicts, keys, 20, true);
+    expect(closed).toHaveLength(1);
+    expect(closed[0]).toMatchObject({ partial: true, fromAttemptId: 1, toAttemptId: 3, right: 2, wrong: 1 });
+    // Nothing decided, nothing to close.
+    expect(scoreChunks([{ ...verdict(4, "x"), institutionId: 2 }], keys, 20, true)).toHaveLength(0);
+  });
+
+  it("keeps holdout misses out of the lessons a review reads before its next call", async () => {
+    const verdict = (attemptId: number, institutionId: number): StoredVerdict => ({
+      attemptId,
+      strategy: "verify.adjudicate",
+      version: 2,
+      institutionId,
+      sourceDocumentId: null,
+      feeRawId: attemptId,
+      feeName: "Wire Transfer Fee – International Incoming",
+      amount: 20,
+      knoxKey: "wire_domestic_incoming",
+      claim: { feeName: "Wire Transfer Fee – International Incoming", amount: 20, isFee: true, category: "wire_domestic_incoming" },
+    });
+    const keys = new Map([
+      [1, [{ tid: 9, set: HOLDOUT_SET, fees: rabun }]],
+      [2, [{ tid: 10, set: "tuning", fees: rabun }]],
+    ]);
+    const [chunk] = scoreChunks([verdict(1, 1), verdict(2, 2)], keys, 2);
+    expect(chunk).toMatchObject({ wrong: 2, holdoutWrong: 1 });
+
+    const rows = missRows(chunk, 77);
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toMatchObject({ weight: 0, evidence: { answer_key_set: HOLDOUT_SET, lesson: false } });
+    expect(rows[1]).toMatchObject({ weight: 1, evidence: { answer_key_set: "tuning", lesson: true } });
+
+    const texts: string[] = [];
+    const db = vi.fn((strings: TemplateStringsArray) => {
+      const text = strings.join("?");
+      texts.push(text);
+      if (text.includes("to_regclass")) return Promise.resolve([{ ready: true }]);
+      return Promise.resolve([]);
+    });
+    await loadReviewMisses(db as unknown as Parameters<typeof loadReviewMisses>[0], "verify.adjudicate", ["wire_domestic_incoming"]);
+    const select = texts.find((text) => text.includes("FROM pipeline_feedback"));
+    expect(select).toContain("COALESCE(pf.evidence->>'answer_key_set', 'tuning') <> ?");
   });
 
   it("reads a release review's pass as a fee in its held category and skips a plain fail", () => {

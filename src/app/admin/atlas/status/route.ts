@@ -7,6 +7,7 @@ import {
   listAgentRuns,
 } from "@/lib/agents/run-store";
 import { getAgentRunVisibility } from "@/lib/agents/run-visibility";
+import { lastCompletedStepTitle } from "@/lib/agents/atlas/last-completed";
 import type {
   AgentRunEventSnapshot,
   AgentRunSnapshot,
@@ -50,7 +51,7 @@ async function mapRun(run: AgentRunSnapshot) {
     stdoutTail: null,
     pipelineRunId: null,
     pipelineStatus: null,
-    lastCompletedJob: run.currentStage,
+    lastCompletedJob: lastCompletedStepTitle(steps),
     stagesDone: run.progressCurrent,
     stagesTotal: run.progressTotal,
     pipelineError: null,

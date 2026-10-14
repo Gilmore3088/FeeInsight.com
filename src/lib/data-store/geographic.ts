@@ -1,4 +1,5 @@
 import { sql } from "./connection";
+import { statsRowFilter } from "./fee-stats";
 import {
   aggregateCityFeeAverages,
   type CityFeeAverage,
@@ -189,10 +190,22 @@ export async function getCityInstitutions(city: string, stateCode: string): Prom
   const rows = await sql`
     SELECT ct.id, ct.institution_name, ct.charter_type, ct.asset_size,
            COALESCE(fc.fee_count, 0) as fee_count,
-           (SELECT MIN(ef.amount) FROM published_fee_catalog ef WHERE ef.institution_id = ct.id AND ef.fee_category = 'overdraft' AND ef.review_status = 'approved') as overdraft,
-           (SELECT MIN(ef.amount) FROM published_fee_catalog ef WHERE ef.institution_id = ct.id AND ef.fee_category = 'monthly_maintenance' AND ef.review_status = 'approved') as monthly_maintenance,
-           (SELECT MIN(ef.amount) FROM published_fee_catalog ef WHERE ef.institution_id = ct.id AND ef.fee_category = 'nsf' AND ef.review_status = 'approved') as nsf,
-           (SELECT MIN(ef.amount) FROM published_fee_catalog ef WHERE ef.institution_id = ct.id AND ef.fee_category = 'atm_non_network' AND ef.review_status = 'approved') as atm_non_network
+           (SELECT MAX(ef.amount) FROM published_fee_catalog ef
+              WHERE ef.institution_id = ct.id AND ef.fee_category = 'overdraft'
+                AND ef.review_status = 'approved' AND ef.amount IS NOT NULL AND ef.amount >= 0
+                AND ${sql.unsafe(statsRowFilter("ef"))}) as overdraft,
+           (SELECT PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY ef.amount) FROM published_fee_catalog ef
+              WHERE ef.institution_id = ct.id AND ef.fee_category = 'monthly_maintenance'
+                AND ef.review_status = 'approved' AND ef.amount IS NOT NULL AND ef.amount >= 0
+                AND ${sql.unsafe(statsRowFilter("ef"))}) as monthly_maintenance,
+           (SELECT PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY ef.amount) FROM published_fee_catalog ef
+              WHERE ef.institution_id = ct.id AND ef.fee_category = 'nsf'
+                AND ef.review_status = 'approved' AND ef.amount IS NOT NULL AND ef.amount >= 0
+                AND ${sql.unsafe(statsRowFilter("ef"))}) as nsf,
+           (SELECT PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY ef.amount) FROM published_fee_catalog ef
+              WHERE ef.institution_id = ct.id AND ef.fee_category = 'atm_non_network'
+                AND ef.review_status = 'approved' AND ef.amount IS NOT NULL AND ef.amount >= 0
+                AND ${sql.unsafe(statsRowFilter("ef"))}) as atm_non_network
     FROM institution_sources ct
     LEFT JOIN (
       SELECT institution_id, COUNT(*) as fee_count
@@ -215,9 +228,10 @@ export async function getCityFeeAverages(city: string, stateCode: string): Promi
     JOIN institution_sources ct ON ef.institution_id = ct.id
     WHERE LOWER(ct.city) = LOWER(${city}) AND ct.state_code = ${upperState}
       AND ef.review_status = 'approved'
-      AND ef.source_document_id IS NOT NULL
       AND ef.amount IS NOT NULL
+      AND ef.amount >= 0
       AND ef.fee_category IS NOT NULL
+      AND ${sql.unsafe(statsRowFilter("ef"))}
   ` as CityInstitutionFeeRow[];
 
   return aggregateCityFeeAverages(rows);
@@ -226,7 +240,7 @@ export async function getCityFeeAverages(city: string, stateCode: string): Promi
 export async function getCitiesInState(stateCode: string): Promise<CitySummary[]> {
   const upperState = stateCode.toUpperCase();
   const rows = await sql`
-    SELECT ct.city, ct.state_code,
+    SELECT (array_agg(ct.city ORDER BY (ct.city = UPPER(ct.city)), ct.city))[1] AS city, ct.state_code,
            COUNT(*) as institution_count,
            COUNT(DISTINCT CASE WHEN fc.fee_count > 0 THEN ct.id END) as with_fees
     FROM institution_sources ct
@@ -236,7 +250,7 @@ export async function getCitiesInState(stateCode: string): Promise<CitySummary[]
       GROUP BY institution_id
     ) fc ON ct.id = fc.institution_id
     WHERE ct.state_code = ${upperState} AND ct.city IS NOT NULL AND ct.city != ''
-    GROUP BY LOWER(ct.city), ct.city, ct.state_code
+    GROUP BY LOWER(ct.city), ct.state_code
     HAVING COUNT(DISTINCT CASE WHEN fc.fee_count > 0 THEN ct.id END) > 0
     ORDER BY COUNT(DISTINCT CASE WHEN fc.fee_count > 0 THEN ct.id END) DESC, COUNT(*) DESC
   ` as RawCitySummaryRow[];
@@ -259,13 +273,13 @@ export async function getTopCitiesByState(
       FROM published_fee_catalog WHERE review_status = 'approved'
       GROUP BY institution_id
     ), cities AS (
-      SELECT ct.city, ct.state_code,
+      SELECT (array_agg(ct.city ORDER BY (ct.city = UPPER(ct.city)), ct.city))[1] AS city, ct.state_code,
              COUNT(*) as institution_count,
              COUNT(DISTINCT CASE WHEN fc.fee_count > 0 THEN ct.id END) as with_fees
       FROM institution_sources ct
       LEFT JOIN fc ON ct.id = fc.institution_id
       WHERE ct.state_code IS NOT NULL AND ct.city IS NOT NULL AND ct.city != ''
-      GROUP BY LOWER(ct.city), ct.city, ct.state_code
+      GROUP BY LOWER(ct.city), ct.state_code
     ), ranked AS (
       SELECT *, ROW_NUMBER() OVER (
         PARTITION BY state_code ORDER BY with_fees DESC, institution_count DESC
@@ -285,11 +299,11 @@ export async function getTopCitiesByState(
 export async function getCityAutocomplete(query: string, limit: number = 10): Promise<{ city: string; state_code: string; count: number }[]> {
   const pattern = `${query}%`;
   return await sql`
-    SELECT ct.city, ct.state_code, COUNT(DISTINCT ct.id) as count
+    SELECT (array_agg(ct.city ORDER BY (ct.city = UPPER(ct.city)), ct.city))[1] AS city, ct.state_code, COUNT(DISTINCT ct.id) as count
     FROM institution_sources ct
     WHERE ct.city ILIKE ${pattern} AND ct.city IS NOT NULL
     AND ct.id IN (SELECT DISTINCT institution_id FROM published_fee_catalog WHERE review_status = 'approved')
-    GROUP BY LOWER(ct.city), ct.city, ct.state_code
+    GROUP BY LOWER(ct.city), ct.state_code
     ORDER BY count DESC
     LIMIT ${limit}
   ` as { city: string; state_code: string; count: number }[];

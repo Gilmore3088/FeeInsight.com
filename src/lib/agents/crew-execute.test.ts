@@ -54,7 +54,9 @@ describe("executeCrewWrite", () => {
     mocks.startStateLaneRun.mockResolvedValue({ run: { id: 501 }, reused: false });
     const reply = await executeCrewWrite(parseCrewCommand("Atlas, run Georgia"), "owner");
     expect(mocks.startStateLaneRun).toHaveBeenCalledWith(expect.objectContaining({ stateCode: "GA", triggeredBy: "owner" }));
-    expect(reply.lines[0]).toBe("Started Georgia (run #501).");
+    expect(reply.lines[0]).toBe("Queued Georgia (run #501).");
+    expect(reply.runId).toBe(501);
+    expect(reply.links).toContainEqual({ label: "Track run #501", href: "/admin/atlas/runs/501" });
   });
 
   it("runs only the addressed worker's steps", async () => {
@@ -64,6 +66,48 @@ describe("executeCrewWrite", () => {
     expect(input.agent).toBe("magellan");
     expect(input.stateCode).toBe("TX");
     expect(input.steps.map((step: { key: string }) => step.key)).toEqual(["discover", "fetch"]);
+  });
+
+  it("queues only the selected bank's eligible verified fees with an auditable run ID", async () => {
+    mocks.sql.mockResolvedValue([{ institution_name: "Pinnacle Bank" }]);
+    mocks.startAgentRun.mockResolvedValue({ run: { id: 847 }, reused: false });
+    const reply = await executeCrewWrite(parseCrewCommand("Hamilton, publish institution 47"), "owner");
+    expect(mocks.startAgentRun).toHaveBeenCalledTimes(1);
+    expect(mocks.startAgentRun).toHaveBeenCalledWith(expect.objectContaining({
+      agent: "hamilton",
+      kind: "manual_repair",
+      params: { source: "admin.crew_command", scope: "institution", institution_id: 47 },
+      idempotencyKey: "crew:hamilton:institution:47:publish",
+      steps: [{ key: "publish", agent: "hamilton", title: "Publish verified fees" }],
+    }));
+    expect(reply.runId).toBe(847);
+    expect(reply.links).toContainEqual({ label: "Track run #847", href: "/admin/atlas/runs/847" });
+  });
+
+  it("reuses an active bank publish run rather than launching another", async () => {
+    mocks.sql.mockResolvedValue([{ institution_name: "Pinnacle Bank" }]);
+    mocks.startAgentRun.mockResolvedValue({ run: { id: 847 }, reused: true });
+    const reply = await executeCrewWrite(parseCrewCommand("Hamilton, publish institution 47"), "owner");
+    expect(reply.runId).toBe(847);
+    expect(reply.runReused).toBe(true);
+    expect(reply.lines[0]).toContain("reused");
+  });
+
+  it("never queues publication for an unknown institution", async () => {
+    mocks.sql.mockResolvedValue([]);
+    const reply = await executeCrewWrite(parseCrewCommand("Hamilton, publish institution 47"), "owner");
+    expect(reply.lines[0]).toContain("not found");
+    expect(reply.runId).toBeUndefined();
+    expect(mocks.startAgentRun).not.toHaveBeenCalled();
+  });
+
+  it("leaves a paused pipeline paused while allowing its run to be queued", async () => {
+    mocks.getPipelineControl.mockResolvedValue({ enabled: false });
+    mocks.sql.mockResolvedValue([{ institution_name: "Pinnacle Bank" }]);
+    mocks.startAgentRun.mockResolvedValue({ run: { id: 849 }, reused: false });
+    const reply = await executeCrewWrite(parseCrewCommand("Hamilton, publish institution 47"), "owner");
+    expect(reply.lines).toContain("Note: the pipeline is paused, so this waits until you resume.");
+    expect(mocks.setPipelineEnabled).not.toHaveBeenCalled();
   });
 
   it("pauses the pipeline control", async () => {

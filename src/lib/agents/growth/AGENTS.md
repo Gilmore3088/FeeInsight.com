@@ -14,8 +14,9 @@ writes fee data. James approved it on 2026-10-08 (`growth-os/BUILD-PLAN.md`, pha
 | Approved send | `/api/admin/marketing/approve` (James only, never cron) | `marketing-send` | `../marketing/AGENTS.md` |
 | Queue intake | `POST /api/admin/growth/intake` (cron secret or admin; never a cron) | `growth-intake` | below |
 | Weekly scores | `/api/admin/crew/growth-score`, Mondays 13:07 UTC | `growth-score` | below |
-| Prospect contacts (NIELSEN) | `/api/admin/crew/contacts?limit=60`, Mondays 12:37 UTC; CSV at `/api/admin/growth/contacts` (admins) | `growth-contacts`, `growth-contact-picks` | below |
+| Prospect contacts (NIELSEN) | `/api/admin/crew/contacts?limit=60`, daily 12:37 UTC; CSV at `/api/admin/growth/contacts` (admins) | `growth-contacts`, `growth-contact-picks` | below |
 | First-email drafts (CARNEGIE) | `/api/admin/crew/outreach?limit=25`, Mondays 14:07 UTC | `growth-outreach` | below |
+| Stale-draft withdrawal (CARNEGIE) | the agent tick (`/api/admin/agents/tick`), when there is something to withdraw, at most daily | `growth-withdraw` | below |
 | Quote drafts (CARNEGIE) | started when James marks a lead qualified on `/admin/leads` (never cron); also in the daily loop as a dry run | `growth-quote` | below |
 | What we learned (DRAPER) | `/api/admin/crew/learning`, Mondays 14:37 UTC | `growth-learning` | below |
 | Monday plan and proposals (DRAPER) | `/api/admin/crew/draper`; not scheduled yet (proposed Mondays 14:57 UTC, waiting on James) | `growth-proposals`, `growth-plan` | below |
@@ -37,7 +38,10 @@ sends: the contacts feed outreach drafts James sends himself. Rechecks after 30 
 Each contact has a confidence (`contactConfidence`): high for a named person with a title in a
 buying role, medium for a person's own address with a name or title, low for anything else or a
 shared mailbox. `rankContacts` orders an institution's contacts (confidence, then marketing,
-retail, executive, finance). `pickContacts` marks the first decision-maker in that order
+retail, executive, finance), with a market or regional president (`isLocalPresident`: "Market
+President - Metro Market", "President - Western Region") after every other contact, so a
+marketing, product, deposit or retail title wins when one exists; a market president stays the
+fallback when none does. `pickContacts` marks the first decision-maker in that order
 (`isDecisionMaker`, the rule outreach uses) as the institution's primary buyer contact and the
 second as backup; an institution with no decision-maker has neither.
 
@@ -63,7 +67,15 @@ the prospect's and offers a comparison; still no figures and no link. C (market 
 tier-A comparison (the prospect and at least 5 named local competitors all verify) as a range with
 the institutions at each end, and links to the snapshot at `/institution/<id>/market`; it is drafted
 only after that page is fetched and shows every name and amount (`checkOutreachDestination`),
-otherwise the prospect gets B. The snapshot compares everyday consumer fees (`SNAPSHOT_FEE_KEYS`;
+otherwise the prospect gets B. C leads only with a finding `quotableLead` accepts: the prospect
+charges something (never a $0 lead; the $0 fee stays on the page), and the prospect's value and
+every peer in the quoted range share the catalog's charge `frequency` (James: a fee is right only
+when the whole record matches, frequency included). Peers at another or unknown frequency are
+dropped from the range if 5+ verified remain (the audit names them); otherwise the next finding is
+tried. A value whose rows' frequency is unknown or mixed is not comparable. With no finding left
+the prospect gets B. No email
+body prints a row's schedule excerpt; excerpts appear only in the audit block, and the email gives
+names and amounts. The snapshot compares everyday consumer fees (`SNAPSHOT_FEE_KEYS`;
 no wire fees, never a non-customer price) with the open institutions in the prospect's CBSA, leaving out banks that gather deposits
 nationally from one office (FDIC Summary of Deposits: $3B+ through at most 4 offices, one holding
 90%+, e.g. Ally, SoFi, Schwab), and a value counts as verified only when every catalog row behind it passes `checkFeeAgainstSource`.
@@ -89,6 +101,26 @@ withdraws unreviewed drafts whose addressee fails that test, that were written u
 `OUTREACH_QUOTE_RULE`, or that quote a published row (the prospect's or a competitor's) that is no
 longer live or is marked `takedown_pending` (skipped by `carnegie` with the reason). Those
 institutions can be drafted again. Nothing sends.
+
+The same withdrawal also runs between Monday runs (`withdraw.ts`, Oct 9): every 5-minute agent
+tick counts unreviewed first emails and, when `withdrawNonBuyerDrafts` (dry run) finds any to take
+back, starts one growth run titled `Withdraw stale outreach drafts YYYY-MM-DD` with the single
+step `growth-withdraw` (idempotency key `growth:outreach-withdraw:YYYY-MM-DD`, at most one a
+day). The step runs `withdrawNonBuyerDrafts` itself; a tick with nothing to withdraw creates no
+run. It is a marketing step, so the marketing pause holds it and the tick queues none while
+marketing is paused. Free, no model calls.
+
+Credit unions (`charter_type` 'credit_union', Oct 9) get the same campaigns, rules and follow-ups
+in member wording (`isCreditUnion`): the email speaks of members' fees, never customers; frames
+the research for the board or ALCO (finance titles), the supervisory committee (compliance) or board
+reporting (executives) through `roleProblem(contact, charterType)`; and calls the local set
+"credit unions and banks" only when it holds both (`institutionKinds` says only what the set
+holds). Campaign B names one credit union and one bank when both verify; campaign C counts the
+verified local institutions behind its range and gives the figure the credit union publishes for
+members. The sign-off, footer, postal-address placeholder, one ask and no-pricing-advice rules are
+unchanged. Drafts store `charter_type`; follow-ups read it from the draft, or from
+`institution_sources` for older drafts. `OUTREACH_QUOTE_RULE` 4 marks this wording, so an
+unreviewed rule-3 draft is withdrawn and drafted again.
 
 ### Qualified leads and quote drafts (`quote.ts`, BUILD-PLAN 2.25)
 
@@ -219,8 +251,10 @@ a user on the property) and `GSC_SITE_URL` (default `sc-domain:feeinsight.com`).
 `search` is `{ measured: false, reason }`; a failed token exchange or query records its error
 message the same way. Neither fails the step, and nothing is estimated.
 
-James turned the weekly schedules on (15:33 UTC Oct 8): scores and prospect contacts run each
-Monday from `vercel.json`. Both are free steps; neither posts nor sends anything.
+James turned the weekly schedules on (15:33 UTC Oct 8): scores run each Monday from
+`vercel.json`. Prospect contacts moved to daily on Oct 9 so the outreach list can reach 25 to 40
+named buyers a week (about 1 site in 10 publishes a buyer email). Both are free steps; neither
+posts nor sends anything.
 
 ### Market brief (`sherlock.ts`)
 

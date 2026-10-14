@@ -1,65 +1,17 @@
 import type Stripe from "stripe";
 import type { sql as sqlClient } from "@/lib/data-store/connection";
-import type { User } from "@/lib/auth";
 import { REPORT_PAYMENT_KIND } from "@/lib/leads/report-payment";
 import { anchorPaidInstitution, paidInstitutionId } from "@/lib/pro-checkout-institution";
 import { getStripe } from "@/lib/stripe";
+import { isSubscriptionInvoice, lockBillingCustomer, mapSubscriptionStatus, reconcileSubscription, type SubscriptionState } from "@/lib/billing/subscription-state";
 
 type Tx = typeof sqlClient;
-export type SubscriptionStatus = User["subscription_status"];
-
-/**
- * Stripe subscription status to ours. A paused or unpaid subscription is past due (the
- * account still exists and can recover); canceled and expired are ended.
- */
-export function mapStripeStatus(stripeStatus: string): SubscriptionStatus {
-  switch (stripeStatus) {
-    case "active":
-    case "trialing":
-      return "active";
-    case "past_due":
-    case "unpaid":
-    case "paused":
-      return "past_due";
-    case "canceled":
-    case "incomplete_expired":
-      return "canceled";
-    default:
-      return "none";
-  }
-}
+export type SubscriptionStatus = SubscriptionState;
+export const mapStripeStatus = mapSubscriptionStatus;
 
 function customerIdOf(value: string | { id: string } | null | undefined): string | null {
   if (!value) return null;
   return typeof value === "string" ? value : value.id;
-}
-
-/**
- * Ends a subscription: status canceled and, for paying roles, back to a free viewer, so
- * the role never claims Pro after Pro has ended. Staff roles are never touched.
- */
-async function endSubscription(tx: Tx, customerId: string): Promise<void> {
-  await tx`
-    UPDATE users
-    SET subscription_status = 'canceled', past_due_since = NULL, role = 'viewer'
-    WHERE stripe_customer_id = ${customerId} AND role IN ('viewer', 'premium')
-  `;
-}
-
-/**
- * True when the customer still has another active or trialing subscription, so ending one
- * subscription (James moving a plan by starting a new one and cancelling the old) never
- * takes Pro away from someone who is still paying. A Stripe error throws, so the webhook
- * returns 500 and Stripe redelivers rather than ending Pro on a guess.
- */
-async function hasOtherLiveSubscription(customerId: string, endedId: string | undefined): Promise<boolean> {
-  const listed = await getStripe().subscriptions.list({ customer: customerId, status: "all", limit: 20 });
-  return listed.data.some((s) => s.id !== endedId && (s.status === "active" || s.status === "trialing"));
-}
-
-async function endSubscriptionUnlessAnother(tx: Tx, customerId: string, endedId: string | undefined): Promise<void> {
-  if (await hasOtherLiveSubscription(customerId, endedId)) return;
-  await endSubscription(tx, customerId);
 }
 
 /** A paid institution report request, for the emails sent after commit. */
@@ -81,6 +33,8 @@ export interface StripeEventEffects {
   reportPaid: ReportPaidEffect[];
   /** A second paid session for a request already paid: James refunds it in Stripe. */
   reportDuplicate: Array<{ leadId: number; cents: number; checkoutSessionId: string }>;
+  /** A paid request refunded in full: its report link is closed and James is told. */
+  reportRefunded: Array<{ leadId: number; name: string; email: string; cents: number; chargeId: string }>;
 }
 
 /**
@@ -104,7 +58,7 @@ export async function recordStripeEvent(tx: Tx, event: Stripe.Event): Promise<bo
  * reset by later failures) and clears whenever the subscription is active or ends.
  */
 export async function applyStripeEvent(tx: Tx, event: Stripe.Event): Promise<StripeEventEffects> {
-  const effects: StripeEventEffects = { welcome: [], reportPaid: [], reportDuplicate: [] };
+  const effects: StripeEventEffects = { welcome: [], reportPaid: [], reportDuplicate: [], reportRefunded: [] };
   await applyEvent(tx, event, effects);
   return effects;
 }
@@ -164,6 +118,38 @@ async function markReportPaid(
   }
 }
 
+/**
+ * The report request a charge paid for. Card checkout copies kind and lead_id onto the
+ * PaymentIntent (payment_intent_data.metadata); older charges are looked up there. A
+ * Stripe error throws, so the webhook returns 500 and Stripe redelivers.
+ */
+async function reportLeadIdForCharge(charge: Stripe.Charge): Promise<number | null> {
+  let metadata: Stripe.Metadata | null | undefined = charge.metadata;
+  if (metadata?.kind !== REPORT_PAYMENT_KIND && charge.payment_intent) {
+    const intent =
+      typeof charge.payment_intent === "string"
+        ? await getStripe().paymentIntents.retrieve(charge.payment_intent)
+        : charge.payment_intent;
+    metadata = intent.metadata;
+  }
+  if (metadata?.kind !== REPORT_PAYMENT_KIND) return null;
+  const leadId = Number(metadata.lead_id);
+  return Number.isSafeInteger(leadId) && leadId > 0 ? leadId : null;
+}
+
+/** A full refund of a paid report: the request reads Refunded and its link stops opening. */
+async function markReportRefunded(tx: Tx, charge: Stripe.Charge, leadId: number, effects: StripeEventEffects): Promise<void> {
+  const refunded = await tx<Array<{ id: string | number; name: string; email: string }>>`
+    UPDATE leads
+    SET refunded_at = NOW(), status = 'refunded'
+    WHERE id = ${leadId} AND paid_at IS NOT NULL AND refunded_at IS NULL
+    RETURNING id, name, email
+  `;
+  for (const lead of refunded) {
+    effects.reportRefunded.push({ leadId: Number(lead.id), name: lead.name, email: lead.email, cents: charge.amount_refunded, chargeId: charge.id });
+  }
+}
+
 async function applyEvent(tx: Tx, event: Stripe.Event, effects: StripeEventEffects): Promise<void> {
   switch (event.type) {
     case "checkout.session.completed":
@@ -183,27 +169,30 @@ async function applyEvent(tx: Tx, event: Stripe.Event, effects: StripeEventEffec
       // Pro starts when the money does: an unpaid session waits for async_payment_succeeded.
       if (session.payment_status === "unpaid") return;
 
-      // Prefer the user id checkout was started for; fall back to the email for sessions
-      // created before user ids were attached.
-      const activated = Number.isInteger(userId) && userId > 0
-        ? await tx<Array<{ id: number; email: string | null; display_name: string | null }>>`
-            UPDATE users
-            SET subscription_status = 'active', past_due_since = NULL, role = 'premium', stripe_customer_id = ${customerId}
-            WHERE id = ${userId} AND role NOT IN ('admin', 'analyst')
-            RETURNING id, email, display_name
+      // Link only the account checkout belongs to. An old checkout cannot replace a
+      // different customer id saved for the account since then.
+      await lockBillingCustomer(tx, customerId);
+      const linked = Number.isInteger(userId) && userId > 0
+        ? await tx<Array<{ id: number; email: string | null; display_name: string | null; subscription_status: SubscriptionStatus }>>`
+            UPDATE users SET stripe_customer_id = ${customerId}
+            WHERE id = ${userId} AND role IN ('viewer', 'premium')
+              AND (stripe_customer_id IS NULL OR stripe_customer_id = ${customerId})
+            RETURNING id, email, display_name, subscription_status
           `
         : email
-          ? await tx<Array<{ id: number; email: string | null; display_name: string | null }>>`
-              UPDATE users
-              SET subscription_status = 'active', past_due_since = NULL, role = 'premium', stripe_customer_id = ${customerId}
-              WHERE (email = ${email} OR username = ${email}) AND role NOT IN ('admin', 'analyst')
-              RETURNING id, email, display_name
+          ? await tx<Array<{ id: number; email: string | null; display_name: string | null; subscription_status: SubscriptionStatus }>>`
+              UPDATE users SET stripe_customer_id = ${customerId}
+              WHERE (email = ${email} OR username = ${email}) AND role IN ('viewer', 'premium')
+                AND (stripe_customer_id IS NULL OR stripe_customer_id = ${customerId})
+              RETURNING id, email, display_name, subscription_status
             `
           : [];
+      const status = await reconcileSubscription(tx, customerId);
+      if (status !== "active") return;
       const institutionId = paidInstitutionId(session.metadata);
-      for (const user of activated) {
+      for (const user of linked) {
         const to = user.email ?? email;
-        if (to) effects.welcome.push({ email: to, name: user.display_name ?? null });
+        if (to && user.subscription_status !== "active") effects.welcome.push({ email: to, name: user.display_name ?? null });
         if (institutionId) {
           await anchorPaidInstitution(tx, { userId: user.id, institutionId, note: `Filed at Pro checkout (${session.id}).` });
         }
@@ -211,49 +200,34 @@ async function applyEvent(tx: Tx, event: Stripe.Event, effects: StripeEventEffec
       return;
     }
 
-    case "customer.subscription.updated": {
+    case "customer.subscription.created":
+    case "customer.subscription.updated":
+    case "customer.subscription.deleted":
+    case "customer.subscription.paused":
+    case "customer.subscription.resumed": {
       const sub = event.data.object as Stripe.Subscription;
       const customerId = customerIdOf(sub.customer);
-      if (!customerId) return;
-      const status = mapStripeStatus(sub.status);
-      if (status === "canceled") {
-        await endSubscriptionUnlessAnother(tx, customerId, sub.id);
-        return;
-      }
-      // A paid subscription never accepts workspace invitations by email: a seat becomes
-      // active only through the signed invite link (/workspace-invite).
-      if (status === "active") {
-        await tx`
-          UPDATE users
-          SET subscription_status = 'active',
-              past_due_since = NULL,
-              role = CASE WHEN role = 'viewer' THEN 'premium' ELSE role END
-          WHERE stripe_customer_id = ${customerId}
-        `;
-      } else {
-        await tx`
-          UPDATE users
-          SET subscription_status = ${status},
-              past_due_since = CASE
-                WHEN ${status} = 'past_due' THEN COALESCE(past_due_since, NOW())
-                ELSE NULL
-              END
-          WHERE stripe_customer_id = ${customerId}
-        `;
-      }
-      return;
-    }
-
-    case "customer.subscription.deleted": {
-      const sub = event.data.object as Stripe.Subscription;
-      const customerId = customerIdOf(sub.customer);
-      if (customerId) await endSubscriptionUnlessAnother(tx, customerId, sub.id);
+      if (customerId) await reconcileSubscription(tx, customerId);
       return;
     }
 
     case "invoice.paid": {
       const invoice = event.data.object as Stripe.Invoice;
-      if (invoice.metadata?.kind === REPORT_PAYMENT_KIND) await applyReportInvoicePayment(tx, invoice, effects);
+      if (invoice.metadata?.kind === REPORT_PAYMENT_KIND) {
+        await applyReportInvoicePayment(tx, invoice, effects);
+      } else if (isSubscriptionInvoice(invoice)) {
+        const customerId = customerIdOf(invoice.customer);
+        if (customerId) await reconcileSubscription(tx, customerId);
+      }
+      return;
+    }
+
+    case "charge.refunded": {
+      const charge = event.data.object as Stripe.Charge;
+      // A partial refund leaves the report paid; only a full refund closes it.
+      if (!charge.refunded) return;
+      const leadId = await reportLeadIdForCharge(charge);
+      if (leadId) await markReportRefunded(tx, charge, leadId, effects);
       return;
     }
 
@@ -261,15 +235,9 @@ async function applyEvent(tx: Tx, event: Stripe.Event, effects: StripeEventEffec
       const invoice = event.data.object as Stripe.Invoice;
       // A report invoice is not a subscription; a failed bank transfer never touches Pro.
       if (invoice.metadata?.kind === REPORT_PAYMENT_KIND) return;
-      const customerId = customerIdOf(invoice.customer as string | { id: string } | null);
-      if (customerId) {
-        await tx`
-          UPDATE users
-          SET subscription_status = 'past_due',
-              past_due_since = COALESCE(past_due_since, NOW())
-          WHERE stripe_customer_id = ${customerId}
-        `;
-      }
+      if (!isSubscriptionInvoice(invoice)) return;
+      const customerId = customerIdOf(invoice.customer);
+      if (customerId) await reconcileSubscription(tx, customerId);
       return;
     }
   }

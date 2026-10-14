@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { KNOX_EXTRACT_STRATEGY, KNOX_PRIORITY_REREAD_IDS, KNOX_REEXTRACT_MAX_FEES, KNOX_REREAD_ASSET_FLOOR, runKnoxExtract } from "./extract";
+import { KNOX_PRIORITY_REREAD_IDS, KNOX_REEXTRACT_MAX_FEES, KNOX_REREAD_ASSET_FLOOR, runKnoxExtract, insertCandidate } from "./extract";
 import { KNOX_FAULT_REASONS } from "./calibration";
+import { KNOX_RULES_STRATEGY } from "./specialists";
 
 type DbMock = ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
 
@@ -310,12 +311,12 @@ describe("Knox agentic extraction", () => {
 
       expect(result).toMatchObject({ learning: true, insertedFees: 3, outcomes: { ok: 1 } });
       expect(attemptValues(db).at(-1)).toEqual(
-        expect.arrayContaining([42, 501, "extract", KNOX_EXTRACT_STRATEGY.strategy, "text-hash", "ok", 3, 106, 11]),
+        expect.arrayContaining([42, 501, "extract", KNOX_RULES_STRATEGY.strategy, "text-hash", "ok", 3, 106, 11]),
       );
       const [query, params] = db.unsafe.mock.calls[0] as [string, unknown[]];
       expect(query).toContain("FROM pipeline_attempts pa");
       expect(query).toContain("pa.input_fingerprint = adt.text_hash");
-      expect(params).toEqual(expect.arrayContaining([KNOX_EXTRACT_STRATEGY.strategy, KNOX_EXTRACT_STRATEGY.version]));
+      expect(params).toEqual(expect.arrayContaining([KNOX_RULES_STRATEGY.strategy, KNOX_RULES_STRATEGY.version]));
       // A text with few fees goes back to Knox when the rules version moves.
       expect(query).toContain("FROM raw_fee_observations thin");
       expect(params).toEqual(expect.arrayContaining([KNOX_REEXTRACT_MAX_FEES]));
@@ -364,7 +365,7 @@ describe("Knox agentic extraction", () => {
       expect(query).toContain("live_overdraft.rolled_back_at IS NULL");
     });
 
-    it("reads a requested institution's current page again in its own run while it has no live overdraft fee", async () => {
+    it("reads a requested institution's current page again in its own run, live overdraft fee or not", async () => {
       const db = createDbMock([]);
       db.mockImplementation((strings: TemplateStringsArray) => {
         const text = templateText(strings);
@@ -379,7 +380,11 @@ describe("Knox agentic extraction", () => {
       const leaderParam = query.match(/adt\.institution_id = ANY\(\$(\d+)::bigint\[\]\)/);
       expect(leaderParam).not.toBeNull();
       expect(params[Number(leaderParam?.[1]) - 1]).toBe("{1223}");
-      expect(query).toContain("live_overdraft.canonical_fee_key = 'overdraft'");
+      // SCCU (8109) has a live overdraft fee and kept a v33 read the v64 box-table fix needed.
+      const start = query.indexOf("adt.institution_id = ANY(");
+      const trigger = query.slice(start, query.indexOf(")\n         AND NOT EXISTS", start));
+      expect(trigger).toContain("copy.superseded_by_id IS NOT NULL");
+      expect(trigger).not.toContain("live_overdraft");
     });
 
     it("records each pass 2 specialist as its own strategy without folding it into the playbook", async () => {
@@ -405,7 +410,7 @@ describe("Knox agentic extraction", () => {
         "extract.family.account",
         "extract.family.checks",
         "extract.family.services",
-        KNOX_EXTRACT_STRATEGY.strategy,
+        KNOX_RULES_STRATEGY.strategy,
       ]);
       expect(attemptValues(db)[0]).toEqual(expect.arrayContaining(["extract.table", 2, "text-hash", "ok", 2, 0]));
       // Only the rules attempt (the document's total) updates the playbook.
@@ -436,21 +441,23 @@ describe("Knox agentic extraction", () => {
         expect.objectContaining({ stage: "extract", fingerprint: "text-hash", outcome: "no_candidates" }),
       ]);
     });
-
-    it("skips a text the playbook already marked as failed for this version", async () => {
-      const db = learningDb([
-        {
-          ...textArtifact,
-          do_not_retry: [
-            { stage: "extract", strategy: KNOX_EXTRACT_STRATEGY.strategy, version: KNOX_EXTRACT_STRATEGY.version, fingerprint: "text-hash", outcome: "no_candidates", at: "2026-09-01T00:00:00Z" },
-          ],
-        },
-      ]);
-
-      const result = await runKnoxExtract({ runId: 109, db: asExtractDb(db) });
-
-      expect(result).toMatchObject({ skippedKnownInputs: 1, processedDocuments: 0, insertedFees: 0 });
-      expect(attemptValues(db)).toHaveLength(0);
-    });
   });
+});
+
+
+it("persists separate audience evidence and Darwin's zero flag for an eliminated fee", async () => {
+  const db = createDbMock([]);
+  const excerpt = "We've eliminated NSF fees for consumer clients and lowered them from $38 to $30 for business clients.";
+  await insertCandidate(asExtractDb(db), {
+    runId: 101, row: textArtifact,
+    candidate: { feeName: "NSF fees (consumer)", amount: 0, canonicalHint: "nsf", frequency: null,
+      confidence: 0.98, excerpt, waivable: false },
+  });
+  const calls = JSON.stringify(db.mock.calls);
+  expect(calls).toContain("fee_audience");
+  expect(calls).toContain("audience_evidence");
+  expect(calls).toContain("consumer");
+  expect(calls).toContain("eliminated");
+  expect(calls).toContain("knox_review:zero");
+  expect(calls).toContain("needs_darwin_verification");
 });

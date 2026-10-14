@@ -20,7 +20,7 @@ async function caller(request: NextRequest): Promise<"schedule" | "admin" | null
 /**
  * NIELSEN's contact finder (src/lib/agents/growth/contacts.ts): reads up to `?limit=` prospect
  * websites for the executive addresses they publish. Free, no model calls, nothing sends.
- * Runs Mondays from vercel.json (James turned the weekly schedules on 15:33 UTC Oct 8). A second
+ * Runs daily from vercel.json (weekly from 15:33 UTC Oct 8, daily from Oct 9). A second
  * step, `growth-contact-picks`, re-ranks every saved contact and stores its role, confidence and
  * primary/backup pick (the first run backfills rows saved before those columns existed).
  */

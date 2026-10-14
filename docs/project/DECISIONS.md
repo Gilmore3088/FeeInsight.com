@@ -3,6 +3,282 @@
 Newest first. Each entry: date, what was decided, who, why, and what it means for the work.
 Seeded 2026-10-05 from the project's working memory; earlier decisions were not recorded here.
 
+## 2026-10-14
+
+**Data-quality approvals (James, Oct 14 evening, builder session).** Answering the "what do you
+need from me" list:
+- **#1059 audience: approved.** The gate is 0 opposite-audience errors on unseen holdouts (a business
+  fee called consumer or both, or a consumer fee called business); 95% exact agreement is the aim, not
+  the gate. Holdout 6 met the gate (0 of 225). The migration (verified tier keeps Darwin's audience)
+  and the relabel go ahead. The relabel runs as a Darwin step in the run ledger, with counts, a dry
+  run and a rollback, and leaves undecided fees unknown.
+- **#1283 guard v62: approved as written** (15 in-place re-files; the 12 flagged rows go through
+  Hamilton's second look).
+- **#1299, #1301, #1304 and #1310's 3 wrong amounts: approved.**
+- **#1234 step 2 (move Knox's note out of stored `conditions`): approved**, migration included.
+- **#1291's re-file restore pass: revalidate before it is switched on.**
+- **#1316's near-name collapse: validate first; once the check confirms it, it is approved.**
+- **Magellan's paid cap stays as it is.** Improve the data and Magellan's process with what is already
+  stored, so the work is better when paid discovery resumes.
+- **#1280: yes**, the answer-key scorer starts a new versioned series.
+- Not decided: the 216 step-2 rows from #1093, and the older items (#1275, #1274, the copy PRs,
+  #1238).
+
+**Data quality comes before the Hamilton redesign.** James, Oct 14, after his quality gap audit:
+"The Hamilton redesign is not ready to go yet. I still think we need to focus on the data quality
+and eventually we'll get to the redesign." Lane B moves from Hamilton to published-fee quality
+(#1234, #1100, #1196, #1067). Lane A takes #1059, then recall (#1093, #1052, #1051). Hamilton UI and
+redesign work waits. A quality fix counts only once stored rows or customer output change, measured
+before and after on the same rows. The order and proof rules are in
+`docs/plans/build-plan-2026-10-12.md` ("Data quality first").
+
+**"Reviewed" means a submitted review of the exact head SHA; CI also runs on main.** James, Oct 14,
+after an auditor found merged PRs with no submitted review and no CI run on main's merge commits.
+A PR merges under the standing authorization only when a separate reviewer agent (not the builder
+that wrote it) has posted a submitted GitHub review of the PR's exact head SHA, naming that SHA,
+with a "no blockers" verdict, plus green CI on that SHA. A new push needs a new review. The reviews
+are COMMENT reviews, because the account that opens every PR can't approve its own. CI also runs on
+every push to main (`.github/workflows/test.yml`), and is never cancelled there, so each merge commit
+gets its own result. A red main run is fixed before other work. "Merged" or "deployed" is never
+called customer acceptance: signed-in, two-user, mobile, save-and-reopen and PDF checks are stated
+as untested until someone runs them.
+
+## 2026-10-13
+
+**Supabase reads run without a prompt; writes still ask.** James, Oct 13. Builders were asking
+James to approve every read-only query. `.claude/settings.json` now allows the Supabase SQL and
+read tools, and keeps a prompt on migrations, branches, edge functions and project changes. The
+rule is unchanged: production data changes go through typed agent modules and a PR, never raw SQL
+from a session.
+
+**Darwin's audience is the one published (#1059, option 1).** James, Oct 13. Knox writes its audience
+suggestion and the evidence (the document's address or title, the section heading, or a general schedule
+with no business wording) without setting the published label. Darwin sets the audience on the verified
+row, and the published row takes Darwin's value. Today the trigger from
+`20270110000040_fee_audience_integrity.sql` copies Knox's raw label to every tier, so this needs a small
+migration, which goes to James. Relabelling existing fees is a production data change and also waits for
+James: business fees leave the personal benchmarks, so medians customers see can move.
+
+**Up to three builders at once, one per lane.** James, Oct 13. Usage has room (about 7% of the
+4-hour window, 12% of the week), so the build plan runs in three lanes instead of one queue: data
+pipeline, Hamilton, and discovery plus technical SEO. Each lane owns its agents' code, so builders
+rarely touch the same files. The plan's order is kept within each lane; nothing moves between
+lanes without a note on #1026. Website layout waits for James's own design, so no lane takes
+layout or redesign work, and no lane opens a new copy preview while five are waiting for James.
+
+## 2026-10-12
+
+**Darwin carries the backend value; Hamilton carries the business value.** James, Oct 12. Darwin's
+decisions are what make the data correct, so his rules, his held-fee queue and his audit score get
+first attention on the data side; Hamilton is what customers pay for, so his answers get first
+attention on the product side. Every other agent serves one of the two.
+
+**Accuracy target: 95% on Deming's daily audit, averaged over a week.** James, Oct 12 (#1119). The
+audit draws 200 live fees a day and checks each against the bank's own schedule; it read 92.0% on
+Oct 11.
+
+**Darwin owns classification: Knox suggests, Darwin decides, Gutenberg asserts, Deming audits.**
+James asked which arrangement is most accurate (Oct 12); recommendation accepted. Knox finds the
+fee line and amount and suggests a category, audience and tier with its evidence. Darwin is the one
+authority on what a fee is (category, personal or business, tier, valid or not), using Knox's
+evidence, the fee-name library James labels, the page's headings and peer comparison. Gutenberg
+publishes only Darwin's decision, with one final check. Deming, independent of all three, audits
+live fees daily. Why: today the category is set or re-set in three places, which is why about 7,900
+fees a week are taken down within days of publishing; one decider means one place to fix, one
+score, and the auditor stays separate from the agent it grades. Affects #1059, #1069, #1102, #1112.
+
+**James's maintenance is one Sunday email, about an hour a week.** James, Oct 12 (#1104): the 25
+fee-name labels, approvals waiting, samples to check, the week's five scorecard numbers and anything
+stuck, built by a deterministic step, never a Claude routine. More than an hour rolls to next week.
+
+**Every institution has one intelligence record that all agents read and write.** James, Oct 12
+(#1105): where its fees live (each document, its type and format, right or wrong and why), what
+worked, what went wrong, what people decided, and what its state expert knows. It grows the existing
+learning playbook, and a daily check flags a record that contradicts itself.
+
+**James labels 25 fee names a week; every label grows a lasting name library.** James, Oct 12
+(#1102). Names are grouped before they reach the queue (one row covers every variant of, say, an NSF
+fee), a label maps the whole group at every bank and every future read, and the library
+(`fee_name_aliases`, #1039) is versioned and never deleted. The queue shows the groups that cover the
+most fees first.
+
+**A document's type picks the tool at every stage.** James, Oct 12 (#1094). Magellan sets format and
+type; Rosetta picks the reader from it (layout reader, Tesseract OCR then paid transcription, browser
+fallback, table reader); Knox picks the extractor (tables and rules, account-table reader, agreement
+prose, rate reader; product pages go back to Magellan). Each step records the tool it used.
+
+**Rates and lending are in scope, if accurate.** James, Oct 12 (#1103): it puts Fee Insight in
+direct competition with rate-comparison sites. Percentage fees and lending fees come first, inside
+the fee product; interest rates (APY, APR) are a second data product with its own freshness rules,
+planned after the fee data layer meets its targets. Order (James, Oct 12): savings, CDs, money
+market, auto, mortgage. Rates wait until the fee data layer is A+, and may become a standalone
+product and consumer-facing site.
+
+**Knox targets: 85% of fees found, 90% right.** James, Oct 12 (#1098). Measured on the answer key,
+counting only banks where the right document was read. Growing the answer key to about 200 banks is
+a one-time batch: an agent prepares each bank, James confirms it. After that, checking is not a
+regular job; a bank is re-checked only when its schedule changes.
+
+**Knox stays one agent; its specialists become separately measured skills.** James asked whether
+Knox should be split for focus (Oct 12). Recommendation recorded: keep one agent, but score each
+specialist (rules, tables, the fee families, paid pass, and the new ones in #1100) on the answer key
+on its own, so each can be improved independently. Deciding a document's type moves earlier: Magellan
+makes the first call when it finds the link (format: PDF, HTML, script-built page; and kind: fee
+schedule, disclosure, agreement, product page), Rosetta confirms it from the content, and a
+disagreement goes back to Magellan (James, Oct 12; #1094). Knox's held lines (about 38,000) get an
+owner and a way out (#1102).
+
+**Hamilton becomes the product only; publishing moves to its own internal agent.** James, Oct 12
+("Yes split"), on the Hamilton product review (`docs/plans/hamilton-product-review-2026-10-12.md`).
+A new deterministic agent takes Darwin-verified fees, decides which go live, and keeps the live
+catalog correct (duplicates, refreshes, take-downs, restores, re-checks, source checks). It is not
+merged into Darwin, so one agent checks and another publishes. Hamilton keeps Ask, memos, written
+answers, simulate, reports, studies, briefing, alerts, digest and decisions. Persisted `hamilton.*`
+check names stay as they are. Work order and steps: #1075. The new agent is named **Gutenberg**
+(James, Oct 12).
+
+**Studies on the Pro briefing: two now, three held.** James, Oct 12 (#1082). Fee dependence and
+inferred overdraft and NSF items paid are shown to Pro readers, each with a note on how it was
+calculated. Local income, market concentration and fee income vs prices stay off until reviewed:
+their effects are weak and a reader could take them as what a change would do.
+
+**Price-change modelling stays small, labeled and data-limited.** James, Oct 12 (#1085). Public
+data has the fee and the fee income (mostly overdraft and NSF), but not total items, paid versus
+returned items or pay ratios; some credit unions split lines in NCUA or state reporting. So this is
+not a main focus. Hamilton may show a rough high-to-low range for a change such as "drop the fee by
+$5", labeled as an estimate from the data we have, and say plainly that the range tightens with more
+data. The way to a better model is institutions submitting their own figures, kept private and never
+shared, used only to build the models, then triangulated with call reports, NCUA data and third
+parties (#1089).
+
+**State fee law: an agent drafts, a person checks a sample.** James, Oct 12 (#1086). An agent reads
+each state's statutes and regulator pages, records each rule with its citation, link and date read,
+and an automatic check confirms every citation and quote. It is shown as a research summary, not
+legal advice, and James or a compliance contact checks a sample before it is first shown. It must be
+extremely tight; scope can expand later. The Regulatory Wire, which already tracks federal and state
+agencies and bills, is part of this pipeline: a new state item sends that state's rules back for a
+re-check, and Hamilton's regulation answers cite it (#1090).
+
+**Quality checks run inside the pipeline, not on demand.** James, Oct 12: "I don't want to be
+responsible for calling all of these on demand; they need to be built into the process." The
+fee-quality skills (`fee-benchmarking` with new statistical checks, `data-quality-audit`,
+`audit-data`, `source-evidence-audit`, `report-reconciliation`, `fee-taxonomy-regression`,
+`adversarial-document-testing`) become deterministic Deming steps in the daily scoreboard run,
+a required step in the report job, or CI gates. They are built the way growth was built in (typed
+agent steps), never as scheduled Claude routines, and report to the scorecard with alerts on
+failure. Each skill stays as the written method. Tracked in #1063 (#1064–#1067).
+
+**Coverage target and benchmark threshold.** James, Oct 12. Under $10B, each state and size
+group (under $300M, $300M–$1B, $1–10B) is covered when it has 30 institutions with live fees, or
+75% of the group when it has fewer than 40. A benchmark shows from 10 institutions, marked
+"limited sample" below 30. Below 10 it falls back to the Federal Reserve district at the same
+size, then to the state across all sizes, matching the 10-institution peer minimum in the
+`fee-benchmarking` skill. Banks over $10B are compared nationally and by district, never by
+state. Why: with 8 institutions the 95% range around a median runs from roughly the cheapest
+bank to the priciest; at 30 it narrows to about the middle third; and covering most of a small
+group is close to a census. Measured the same day: 64 of 161 state and size groups under $10B
+meet the target, and about 524 more covered institutions would close the gap (75% in every group
+would need about 2,654). Only 6 states have 30 or more covered $1–10B institutions, while all 12
+districts do, so that tier leans on the district fallback. Full coverage stays the long-term goal
+for the consumer hub.
+
+**Publish benchmarks now; unlabeled fees count as consumer, marked with an asterisk.** James,
+Oct 12 (#1058): a fee with no clear personal-or-business signal is treated as consumer and shown
+with an asterisk and footnote beside its source link: "Audience not stated on the bank's
+schedule; treated as personal. Fees may differ for business or commercial accounts." The
+methodology page explains the rule. Knox works the backlog down from documents already stored,
+with no new searching (#1059), so the asterisked share should fall toward zero. Statistical
+significance across thousands of institutions matters more than perfection.
+
+**Business fees are published and labeled, not dropped.** James, Oct 12: some banks and credit
+unions are business-focused, so business and commercial fees (one value, `business`) stay visible
+on institution pages and in their own clearly labeled business comparisons. They are kept out of
+consumer medians only so the two are never mixed; every figure says which audience it covers.
+
+**Monthly account fees are compared on the entry-level account.** James, Oct 12 (#1060): plus the
+share of peers offering a free account; a free checking account counts on the consumer side.
+Long-term direction: a consumer-facing hub where someone shopping for a local bank compares every
+bank's fees in their state or county and asks Hamilton what a fee means. The data layer comes
+first.
+
+**Thin results mean the wrong document, not a small fee schedule.** James, Oct 12: a real fee
+schedule (the disclosure Truth in Savings requires) lists far more than one or two fees, so an
+institution with only one or two fee types almost certainly has the wrong document: a checking
+product page, a savings page, a CRA file. The data agrees: of the 1,235 institutions held by the
+3-fee minimum, 1,041 sit on product or account pages by URL, and 496 have only a monthly
+maintenance fee (`docs/plans/rosetta-review-2026-10-12.md`). The 3-fee minimum stays. Those
+institutions go back to Magellan as priority targets for the real schedule, and a fee from a
+product page is never published as if it were the schedule. (James first said a sourced fee is
+worth publishing even when it is one of two; on seeing the documents he corrected it the same
+day.)
+
+**Pay to transcribe scanned PDFs.** James, Oct 12: yes to paid reads for scans that free OCR
+cannot read, inside the provider caps.
+
+**Foundation first, then Magellan, then Hamilton.** James, Oct 12: "lay the foundation of this new
+system first." Before any agent work, the repository is reset to how work runs now (#1047, PR
+#1046):
+- one builder at a time, starting from the Now list in #1026;
+- the multi-agent coordination checks and workflows are removed, and `BACKLOG.md` is superseded;
+- the site-copy marketing skills are linked so sessions find them;
+- Vercel previews are built for every PR.
+
+Every change a review finds is documented as its own issue, with no cap (James, Oct 12: "if
+Magellan has nine, we need to document all nine"). Work that belongs to no agent
+(infrastructure, documentation, process) has its own Foundation tracker. What keeps the work
+manageable is order, not a cap: #1026 holds at most three Now items, each review names the issues
+it closes, and James re-orders the list weekly (about ten minutes).
+
+**Review the pipeline one agent at a time before relying on it again.** James, Oct 12, in a
+Claude Code session. Each agent gets a written review with production measurements and a GitHub
+tracker issue with one sub-issue per change, under one master tracker
+(`docs/plans/pipeline-review-2026-10-12.md`). Order: Magellan, Rosetta, Knox, Darwin, Hamilton,
+state experts, Atlas. Reviews are documents and issues; code follows one issue and one PR at a time.
+
+**Priority: data layer, then raw intelligence, then Hamilton.** James, Oct 12. The first customers
+are expected to be institutions under $10B at around $150 a month, so coverage is aimed at
+benchmark-ready counts in every state and asset tier, not at the largest banks alone.
+
+**Never abandon an institution that has not been found.** James, Oct 12. Search for a fee
+schedule, then a Truth in Savings disclosure or account agreement; if nothing is published online,
+re-try on a longer interval instead of every month. Once found, do not search again for about a
+quarter.
+
+**State experts stay code-driven but must be visible and improve.** James, Oct 12. They should
+own their state's coverage and show their memory and progress in admin.
+
+**Up-front build-out spend is accepted; recurring session spend is not.** James, Oct 12. He will
+spend $500–$1,000 or more to bring the database to an A+ level, but not $1,000 a week on Claude
+routines. Scheduled Claude routines for Fee Insight were paused the same day.
+
+## 2026-10-11
+
+**One-time WIP exception for the directory fix.** James, Oct 11 (`docs/project/BACKLOG.md`,
+issues #1012 and #984). Only PR #1017 could go over the three-PR correctness cap. The exception was
+limited to that PR, issue, branch and base, and expires 2026-10-14T00:00:00Z
+(`.github/backlog-policy.json`). Every other intake check still applied. The default cap stays at 3.
+
+## 2026-10-10
+
+**Clean, merge-ready PRs have standing merge authorization across FeeInsight chats.** James,
+10 Oct 2026, told the GitHub workstreams that his authorization to merge clean, merge-ready work
+applies across all chats. A routine code PR no longer waits for another per-PR approval when its
+exact current head is reviewed, required checks are green, it is conflict-free, blocking reviews
+and active-owner overlaps are resolved, and no separate release dependency remains. This does not
+silently authorize database migrations or production-data changes, permission/security-setting
+changes, paid-provider activation, outreach sending, force-pushes, branch deletion, or other
+explicitly gated production actions. Those retain their own approval/evidence requirements.
+Merge receipts must still distinguish merged, deployed and production-verified states.
+
+## 2026-10-09
+
+**One queue, one implementation.** Recorded 2026-10-09 UTC in `docs/project/BACKLOG.md`, with
+control issue #984 and the checks in #987. Each piece of work has one canonical issue, one
+implementer and one draft PR. Every new PR carries an intake block (work item, owner, area, scope,
+duplicate search, overlap, verification, rollback). Each area has at most three open
+implementation PRs. Outreach and marketing are on hold. The priority order is correctness and data
+trust, then customer journeys and payments, then maintainability.
+
 ## 2026-10-08
 
 **No rollback; finish the work.** James, 22:44 UTC, Rollback thread: "i dont want rollback. i want
@@ -545,3 +821,47 @@ research efficiency (no figures, no link), B personalized research (names local 
 figures, no link), C one tier-A comparison with a link checked live. James approves every first
 email. This supersedes the 21:31 statewide fallback. The 21 single-fee drafts from run 3157 were held
 and are withdrawn by the next run. Plan: https://claude.ai/code/artifact/64c3e9d5-ac6c-431e-a96f-bf16acbf941c
+
+**The Knox decisions queue is retired; admin layout is not design work.** James, 06:50 UTC 9 Oct,
+Admin audit fixes thread: "Retire it" and "This is an admin audit so no customer is going to see the
+admin." The queue's screens, actions, badge and data-trust state are gone; old links land on
+/admin/knox. Its rows stay in agent_messages and knox_overrides (726 of 746 were from the August
+import, and an override could never publish because it needed a recent Darwin accept). Admin-only
+layout changes are fixes that merge on green; public, Pro and Hamilton screens still wait for his review.
+
+**Build the Agentic OS PRD tooling: Deming for quality, Bayes for replay and recovery.** James,
+08:15-08:16 UTC 9 Oct, Agentic OS PRD thread: "we clearly need the extra tooling the prd is asking
+for", then picked the names Deming (quality and evaluation) and Bayes (replay and recovery). Order:
+Deming's test-case store and takedown-to-regression gate, then Bayes's impact manifest and replay
+ledger, then Atlas's truthful status, then the PRD's in-house skills; outside skills are trialled
+one at a time and kept only with a measured benefit. Both start as deterministic Atlas steps with
+no paid model calls. PRD: /mnt/project-files/plans/agentic-os-prd-v1.md.
+
+**Darwin's recheck archives a failing live fee in the same step, no 12-hour second look.** James,
+11:55 UTC 9 Oct, Darwin thread: "stop waiting 12 hours. go", on the `verify.recheck` pass (#928)
+that re-reads verified rows under the retired-type, conditional-$0 and name-rule checks. A live
+record the recheck fails is rolled back at once with the reason (batch `darwin-recheck-<run>`),
+the verified row rejected with the same flag; nothing is deleted and a rollback is reversible.
+The takedown spot-check still applies first: the pass flags until UAT has hand-checked 10 of the
+rows it would take down and found at least 9 right, then the switch
+(`DARWIN_RECHECK_SAME_STEP_TAKEDOWN`) turns on by PR. Hamilton's other takedowns keep their 12-hour
+second look unless James says otherwise.
+
+**A fee from the bank's own checking or savings page counts, unless its schedule prices it
+differently.** James, 2026-10-13 (builder loop, answering the question on #1026): "Yes: a fee from
+the bank's own checking or savings page counts, unless the bank's fee schedule states a different
+price for the same fee. Then the schedule wins and the product-page fee comes down." Deming's audit
+(v4) counts a product-page fee as a miss only in that case. Hamilton's matching takedown
+(`hamilton.product_page_conflict`) starts off, logging first looks, and goes on by PR after a hand
+check of 10 flagged conflicts finds at least 9 right. Fees priced per account (monthly maintenance,
+minimum balance, paper statements) and categories that hold several items (safe deposit box sizes,
+account research, document copies) are not judged until the account or item is matched. Hamilton's
+$0 product-page benefit takedown (Oct 9) is unchanged.
+
+**SEO, copy and the website are builder work; Growth stays paused.** James, 2026-10-12 (#1134):
+"The biggest thing for me is SEO, and copy, and website." Growth OS stays paused (#1121); the
+public site is built by the builder from the review in `docs/plans/public-site-review-2026-10-13.md`.
+James, 2026-10-12 evening (builder loop, before leaving for the day): pure technical SEO (sitemap,
+metadata plumbing, structured data, no visible wording change) merges on green; copy and page
+changes wait as open PRs for him on the Vercel preview; no layout work until he says what his design
+updates cover.

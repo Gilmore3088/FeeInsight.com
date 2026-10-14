@@ -23,4 +23,11 @@ describe("buildLlmsTxt", () => {
   it("carries no counts, so it never goes stale", () => {
     expect(text).not.toMatch(/\d{2,}/);
   });
+
+  it("names the paid report and links Fed districts where they live now (#1167)", () => {
+    expect(text).toContain("[Competitive Fee Position Report](https://example.test/reports)");
+    expect(text).toContain("https://example.test/research#districts");
+    expect(text).not.toContain("https://example.test/districts");
+    expect(text).toContain("Hamilton is the Fee Insight Pro workspace");
+  });
 });

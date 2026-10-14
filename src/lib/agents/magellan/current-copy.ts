@@ -266,3 +266,102 @@ export async function supersedeSamePageCopies(
   `;
   return { live, copies: pairs.length, pairs };
 }
+
+export interface MovedHandFoundCopyResult {
+  /** Older hand-found copies now pointed at the copy of the bank's current hand-found link. */
+  copies: number;
+  pairs: Array<{ olderDocumentId: number; currentDocumentId: number }>;
+}
+
+/**
+ * A bank's hand-found schedule that moved to a new address. When OPERATOR_SCHEDULES swaps a
+ * bank's link for the same file at a new path on the same host (Regions, 9 Oct 2026:
+ * `/virtualDocuments/Checking-Pricing-Schedule.pdf` became
+ * `/-/media/pdfs/pricing-schedules/Checking-Pricing-Schedule.pdf`), the old link's copy stayed
+ * current beside the new one: 34 of Regions' live fees still cited the stale copy, and Darwin
+ * compared every new row against it. Here the old link's current copy points at the new
+ * link's current copy, as a newer copy of one page does, so Hamilton's refresh moves the
+ * fees the new copy restates and its current-copy check looks at the rest.
+ *
+ * Only hand-found links (`discover.operator_schedule`) of the same institution, the same host
+ * and the same file name pair, and only when the new link is the bank's current one and its
+ * copy has a readable text. Nothing is deleted and no fee is touched here.
+ */
+export async function supersedeMovedHandFoundCopies(
+  db: SqlTag,
+  options: {
+    runId: number;
+    strategy: string;
+    links: ReadonlyArray<{ institutionId: number; url: string }>;
+    institutionId?: number | null;
+  },
+): Promise<MovedHandFoundCopyResult> {
+  const empty: MovedHandFoundCopyResult = { copies: 0, pairs: [] };
+  const links = options.links.filter((link) => options.institutionId == null || link.institutionId === options.institutionId);
+  if (links.length === 0) return empty;
+  if (!(await currentCopySchemaReady(db))) return empty;
+  const rows = await db<Array<{ older_id: number | string; current_id: number | string }>>`
+    -- moved hand-found copies
+    WITH links AS (
+      SELECT * FROM unnest(${links.map((link) => link.institutionId)}::bigint[], ${links.map((link) => link.url)}::text[])
+        AS l(institution_id, url)
+    ),
+    newest AS (
+      SELECT DISTINCT ON (l.institution_id)
+             l.institution_id, ias.id AS companion_id, cur.id AS current_id,
+             substring(lower(ias.url) from ${PAGE_HOST_SQL}) AS host,
+             lower(substring(split_part(split_part(ias.url, '#', 1), '?', 1) from '/([^/]+)/*$')) AS leaf
+        FROM links l
+        JOIN institution_additional_sources ias
+          ON ias.institution_id = l.institution_id
+         AND ias.url = l.url
+         AND ias.found_by_strategy = ${options.strategy}
+        JOIN source_documents cur
+          ON cur.companion_source_id = ias.id
+         AND cur.status = 'success'
+         AND cur.duplicate_of_id IS NULL
+         AND cur.superseded_by_id IS NULL
+       WHERE EXISTS (
+         SELECT 1 FROM agent_source_texts readable
+          WHERE readable.source_document_id = cur.id
+            AND readable.status = 'completed'
+            AND readable.char_count >= ${THIN_COPY_MAX_CHARS}
+       )
+       ORDER BY l.institution_id, cur.crawled_at DESC NULLS LAST, cur.id DESC
+    )
+    SELECT older.id AS older_id, newest.current_id
+      FROM newest
+      JOIN institution_additional_sources old_link
+        ON old_link.institution_id = newest.institution_id
+       AND old_link.found_by_strategy = ${options.strategy}
+       AND old_link.id <> newest.companion_id
+       AND substring(lower(old_link.url) from ${PAGE_HOST_SQL}) = newest.host
+       AND lower(substring(split_part(split_part(old_link.url, '#', 1), '?', 1) from '/([^/]+)/*$')) = newest.leaf
+      JOIN source_documents older
+        ON older.companion_source_id = old_link.id
+       AND older.status = 'success'
+       AND older.duplicate_of_id IS NULL
+       AND older.superseded_by_id IS NULL
+     WHERE newest.leaf IS NOT NULL
+     ORDER BY older.id
+  `;
+  const pairs = rows.map((row) => ({ olderDocumentId: Number(row.older_id), currentDocumentId: Number(row.current_id) }));
+  if (pairs.length === 0) return empty;
+  await db`
+    UPDATE source_documents older
+       SET superseded_by_id = pair.current_id
+      FROM unnest(${pairs.map((pair) => pair.olderDocumentId)}::bigint[], ${pairs.map((pair) => pair.currentDocumentId)}::bigint[])
+           AS pair(older_id, current_id)
+     WHERE older.id = pair.older_id
+       AND older.superseded_by_id IS NULL
+  `;
+  await db`
+    INSERT INTO agent_run_events (agent_run_id, event_type, status, message, detail)
+    VALUES (
+      ${options.runId}, 'magellan.moved_hand_found_copies', 'completed',
+      ${`Superseded ${pairs.length} cop(ies) of a hand-found schedule that moved to a new address on the same site`},
+      ${JSON.stringify({ pairs: pairs.map((pair) => ({ older_document_id: pair.olderDocumentId, current_document_id: pair.currentDocumentId })) })}::jsonb
+    )
+  `;
+  return { copies: pairs.length, pairs };
+}

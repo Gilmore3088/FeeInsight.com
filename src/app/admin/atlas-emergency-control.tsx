@@ -49,7 +49,7 @@ export function AtlasEmergencyControl({
   const [stopReason, setStopReason] = useState("Potential runaway API activity");
   const [message, setMessage] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
-  const billingStop = /credit balance is too low|insufficient credits|purchase credits/i.test(reason ?? "");
+  const billingStop = /credit balance is too low|insufficient credits|purchase credits|reached your specified api usage limits|usage limit reached/i.test(reason ?? "");
   const [billingResolved, setBillingResolved] = useState(false);
   const resumeBlockedReason = billingStop && !billingResolved
     ? "Fix provider billing, then mark billing resolved before resuming."

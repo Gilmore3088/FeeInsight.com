@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { billStage, openStatesJurisdictionId, openStatesUrl, parseOpenStatesBill, STATE_BILL_JURISDICTIONS } from "./open-states";
+import { billStage, introducedDate, openStatesJurisdictionId, openStatesUrl, parseOpenStatesBill, STATE_BILL_JURISDICTIONS } from "./open-states";
 
 describe("Open States client", () => {
   it("covers the 50 states, DC and Puerto Rico", () => {
@@ -33,6 +33,23 @@ describe("Open States client", () => {
     ).toBe("passed_legislature");
     expect(billStage([{ date: "2026-05-01T00:00:00", classification: ["executive-signature"] }])).toEqual({ stage: "signed", date: "2026-05-01" });
     expect(billStage([{ date: "2026-05-01", classification: ["executive-veto"] }]).stage).toBe("vetoed");
+  });
+
+  it("moves a committee bill's date to its latest committee action (IL HB 4474, prod 2026-10-09)", () => {
+    const actions = [
+      { date: "2026-01-16", classification: ["filing"] },
+      { date: "2026-01-20", classification: ["introduction", "reading-1"] },
+      { date: "2026-03-18", classification: ["referral-committee"] },
+      { date: "2026-03-27", classification: ["referral-committee"] },
+    ];
+    expect(billStage(actions)).toEqual({ stage: "in_committee", date: "2026-03-27" });
+    // A later passage still wins over committee steps before it.
+    expect(billStage([...actions, { date: "2026-04-02", classification: ["passage"], organization: { classification: "lower" } }])).toEqual({
+      stage: "passed_chamber",
+      date: "2026-04-02",
+    });
+    expect(introducedDate(actions)).toBe("2026-01-20");
+    expect(introducedDate([{ date: "2026-01-16", classification: ["filing"] }])).toBeNull();
   });
 
   it("keeps bank fee bills and drops other junk fee bills", () => {
@@ -89,5 +106,17 @@ describe("Open States client", () => {
     );
     expect(ewa).toMatchObject({ topics: ["fees", "overdraft_nsf"] });
     expect(ewa?.match).toContain("overdraft");
+  });
+
+  it("does not read a bounced tax payment penalty as a bank fee (NC HB 1164, tagging v5)", () => {
+    const base = { id: "x", identifier: "HB 1164", openstates_url: "https://openstates.org/x" };
+    expect(parseOpenStatesBill({ ...base, title: "Insufficient Funds for Taxes Penalty Modification." }, "nc")).toBeNull();
+    expect(
+      parseOpenStatesBill({ ...base, title: "Revenue laws", abstracts: [{ abstract: "Lowers the penalty when a state agency receives a payment returned for insufficient funds." }] }, "nc"),
+    ).toBeNull();
+    // A bank fee sentence that also mentions taxes keeps its reading.
+    expect(
+      parseOpenStatesBill({ ...base, title: "Banks may not charge overdraft fees on tax refund deposits." }, "nc"),
+    ).toMatchObject({ topics: ["fees", "overdraft_nsf"] });
   });
 });

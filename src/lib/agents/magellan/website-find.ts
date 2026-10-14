@@ -6,8 +6,11 @@ import { recordAttempt } from "@/lib/agents/learning/attempts";
 import { classifyFetchFailure, type AttemptOutcome } from "@/lib/agents/learning/outcomes";
 import { normalizeStateCode } from "@/lib/agents/state-lane-memory";
 import { PAID_PASS_MODELS, paidModelCall, paidResponseJson, type PaidMessageCreator } from "@/lib/agents/paid-pass";
+import { loadGroupGaps, pickFromWorkLists, WORK_LIST_POOL, workListDetail, workListPoolRankSql, type GroupGaps, type WorkListPlacement } from "@/lib/agents/state-expert/work-list";
 
+import { FOUND_COOLDOWN_DAYS, MISS_COOLDOWN_DAYS } from "./cooldowns";
 import { fetchWithTimeout } from "./find-validate";
+import { webSearchTool } from "./web-search-tool";
 
 type SqlTag = typeof sql;
 type Fetcher = typeof fetch;
@@ -28,9 +31,13 @@ type Fetcher = typeof fetch;
 export const WEBSITE_FIND_STRATEGY = { strategy: "discover.website_search", version: 1 } as const;
 /** Institutions one paid step searches for a website. */
 export const WEBSITE_FIND_PER_RUN = 5;
-const WEB_SEARCH_MAX_USES = 3;
+/**
+ * Two searches, not three (#1035): 1 of the 52 website searches that used a third search in the
+ * 10 days to 2026-10-11 found a website, against 66 of 359 that stopped at one or two.
+ */
+const WEB_SEARCH_MAX_USES = 2;
 const MAX_OUTPUT_TOKENS = 512;
-/** Outcomes that do not count as this month's try (nothing was learned). */
+/** Outcomes that do not count as a try or start a cooldown (nothing was learned). */
 const TRANSIENT_OUTCOMES = ["network_error", "timeout", "http_5xx", "http_429", "budget_blocked"];
 
 /** Directories, social sites and regulators: never an institution's own website. */
@@ -54,6 +61,11 @@ export interface WebsiteFindRow {
   state_code: string | null;
   charter_type: string | null;
   cert_number: string | number | null;
+  /** For the state experts' work lists (#1029). */
+  asset_size?: number | string | null;
+  requested?: boolean | null;
+  paying?: boolean | null;
+  work_list?: WorkListPlacement;
 }
 
 interface WebsiteAnswer {
@@ -159,9 +171,15 @@ export function websiteFindPrompt(row: WebsiteFindRow): string {
   ].join("\n");
 }
 
-async function selectRows(db: SqlTag, stateCode: string | null, limit: number): Promise<WebsiteFindRow[]> {
-  return db<WebsiteFindRow[]>`
-    SELECT inst.id, inst.institution_name, inst.city, inst.state_code, inst.charter_type, inst.cert_number
+/** Due institutions, ordered by the state experts' work lists (#1029); `limit` applies after. */
+async function selectRows(db: SqlTag, stateCode: string | null, limit: number, gaps: GroupGaps): Promise<WebsiteFindRow[]> {
+  const pool = await db<WebsiteFindRow[]>`
+    SELECT inst.id, inst.institution_name, inst.city, inst.state_code, inst.charter_type, inst.cert_number, inst.asset_size,
+           EXISTS (SELECT 1 FROM leads lead WHERE lead.quote_institution_id = inst.id) AS requested,
+           EXISTS (
+             SELECT 1 FROM institution_workspace_memberships pro
+              WHERE pro.institution_id = inst.id AND pro.membership_status = 'active'
+           ) AS paying
       FROM institution_sources inst
       LEFT JOIN institution_source_profiles profile ON profile.institution_id = inst.id
      WHERE COALESCE(inst.status, 'active') = 'active'
@@ -175,12 +193,16 @@ async function selectRows(db: SqlTag, stateCode: string | null, limit: number): 
           WHERE pa.institution_id = inst.id
             AND pa.stage = 'discover'
             AND pa.strategy = ${WEBSITE_FIND_STRATEGY.strategy}
-            AND pa.created_at >= date_trunc('month', NOW())
+            AND pa.created_at >= NOW() - make_interval(days => CASE WHEN pa.outcome = 'ok' THEN ${FOUND_COOLDOWN_DAYS}::int ELSE ${MISS_COOLDOWN_DAYS}::int END)
             AND pa.outcome <> ALL(${TRANSIENT_OUTCOMES})
        )
-     ORDER BY inst.asset_size DESC NULLS LAST, inst.id ASC
-     LIMIT ${limit}
+     -- Requesters and paying customers first, then each work-list cell's first rows in turn (#1269).
+     ORDER BY requested DESC, paying DESC,
+              ${workListPoolRankSql(db, { state: "inst.state_code", assets: "inst.asset_size", id: "inst.id" })},
+              inst.asset_size DESC NULLS LAST, inst.id ASC
+     LIMIT ${WORK_LIST_POOL}
   `;
+  return pickFromWorkLists(Array.isArray(pool) ? pool : [], gaps, limit);
 }
 
 /** Another active institution already uses this host as its website. */
@@ -217,16 +239,19 @@ export async function runWebsiteFind(options: {
   db?: SqlTag;
   create?: PaidMessageCreator;
   fetchImpl?: Fetcher;
+  /** Coverage gaps for the work lists; read here when left out. */
+  gaps?: GroupGaps;
 }): Promise<WebsiteFindResult> {
   const db = options.db ?? sql;
   const result: WebsiteFindResult = {
     selected: 0, processed: 0, saved: 0, needsHuman: 0, costMicrousd: 0, budgetStopped: false, budgetReason: null, results: [],
   };
   const limit = Math.max(1, Math.min(Math.floor(Number(options.limit ?? WEBSITE_FIND_PER_RUN)) || WEBSITE_FIND_PER_RUN, WEBSITE_FIND_PER_RUN));
-  const rows = await selectRows(db, normalizeStateCode(options.stateCode ?? undefined), limit);
+  const gaps = options.gaps ?? (await loadGroupGaps(db));
+  const rows = await selectRows(db, normalizeStateCode(options.stateCode ?? undefined), limit, gaps);
   result.selected = rows.length;
   if (options.dryRun) {
-    result.results = rows.map((row) => ({ institution_id: Number(row.id), institution_name: row.institution_name, would_search_website: true }));
+    result.results = rows.map((row) => ({ institution_id: Number(row.id), institution_name: row.institution_name, would_search_website: true, ...workListDetail(row.work_list) }));
     return result;
   }
 
@@ -259,9 +284,9 @@ export async function runWebsiteFind(options: {
         durationMs: 0,
         runId: options.runId,
         stepId: options.stepId ?? null,
-        detail: { pass: 3, saved_website: null, candidate_url: null, needs_human: true, reason },
+        detail: { pass: 3, saved_website: null, candidate_url: null, needs_human: true, reason, ...workListDetail(row.work_list) },
       });
-      result.results.push({ institution_id: institutionId, outcome: "rejected", website: null, candidate_url: null, cost_microusd: 0, reason, by: "website_search" });
+      result.results.push({ institution_id: institutionId, outcome: "rejected", website: null, candidate_url: null, cost_microusd: 0, reason, by: "website_search", ...workListDetail(row.work_list) });
       continue;
     }
 
@@ -275,7 +300,7 @@ export async function runWebsiteFind(options: {
         params: {
           model,
           max_tokens: MAX_OUTPUT_TOKENS,
-          tools: [{ type: "web_search_20250305", name: "web_search", max_uses: WEB_SEARCH_MAX_USES }],
+          tools: [webSearchTool(WEB_SEARCH_MAX_USES)],
           messages: [{ role: "user", content: websiteFindPrompt(row) }],
         },
       });
@@ -372,9 +397,10 @@ export async function runWebsiteFind(options: {
         city_matched: check?.cityMatched ?? null,
         charter_matched: check?.charterMatched ?? null,
         reason,
+        ...workListDetail(row.work_list),
       },
     });
-    result.results.push({ institution_id: institutionId, outcome, website: saved, candidate_url: candidate, cost_microusd: costMicrousd, reason, by: "website_search" });
+    result.results.push({ institution_id: institutionId, outcome, website: saved, candidate_url: candidate, cost_microusd: costMicrousd, reason, by: "website_search", ...workListDetail(row.work_list) });
   }
   return result;
 }

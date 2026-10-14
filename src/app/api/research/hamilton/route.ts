@@ -19,10 +19,13 @@ import {
 import {
   getAnthropicLanguageModel,
   hasAnthropicApiKey,
+  isProviderLimitError,
   MISSING_ANTHROPIC_API_KEY_MESSAGE,
 } from "@/lib/ai-provider";
+import { HAMILTON_PAUSED_MESSAGE } from "@/lib/hamilton/provider-paused";
 import { viewAsCustomerFromCookieHeader } from "@/lib/hamilton/view-as";
-import { getHamilton, buildAnalyzeModeSuffix, buildMonitorModeSuffix, type HamiltonRole } from "@/lib/research/agents";
+import { getHamilton, buildAnalyzeModeSuffix, buildMonitorModeSuffix, buildSavedPeerSetPrompt, savedPeerSetUsed, type AnswerStep, type HamiltonRole } from "@/lib/research/agents";
+import { getActivePeerSet } from "@/lib/hamilton/active-peer-set";
 import { evaluateCitationDensity } from "@/lib/hamilton/citation-gate";
 import { getCurrentUser, type User } from "@/lib/auth";
 import { checkProAiQuota, quotaExceededMessage } from "@/lib/hamilton/quota";
@@ -45,9 +48,13 @@ import {
 import { getRequestSubjectKey } from "@/lib/api-hardening/audit";
 import { trackFirstHamiltonUse } from "@/lib/analytics-server";
 import { cacheLatestMessage, cachedSystem, ledgerUsage } from "@/lib/research/tool-output";
-import { SAVED_ANALYSIS_ID_KEY, questionOnly, writtenAnswerResponse } from "@/lib/hamilton/answer-save";
+import { SAVED_ANALYSIS_ID_KEY, questionOnly, writtenAnswerCheck, writtenAnswerResponse } from "@/lib/hamilton/answer-save";
+import { HELD_ANSWER_MESSAGE } from "@/lib/hamilton/answer-gate";
 import { insertSavedAnalysis } from "@/lib/data-store/hamilton-analyses";
 import { normalizeCanonicalInstitutionId } from "@/lib/hamilton/context-link";
+import { withHamiltonAccountContext } from "@/lib/hamilton/account-context-store";
+import { accountIdentitySnapshot } from "@/lib/hamilton/account-context";
+import { getInstitutionById } from "@/lib/data-store";
 
 export const maxDuration = 300;
 
@@ -58,6 +65,12 @@ function estimateCostCents(model: string, inputTokens: number, outputTokens: num
 }
 
 const PRO_SCREEN_MODES = new Set(["analyze", "monitor"]);
+
+/** The evidence gate's verdict on a written answer, sent with it as message metadata (#981). */
+interface AnswerVerdict {
+  passed: boolean;
+  held: boolean;
+}
 
 async function handlePOST(request: Request) {
   // Resolve role from session
@@ -127,10 +140,10 @@ async function handlePOST(request: Request) {
   let mode: string | undefined;
   let analysisFocus: string | undefined;
   let institutionId: number | null = null;
-  // Opt-in citation-density gate. Default false preserves the streaming chat
-  // UX (useChat); callers that need a vetted report (report runner, export)
-  // set `gate_citations: true` and receive a buffered JSON response that can
-  // be `{ status: "ok" }` or `{ status: "refused", reason: "insufficient_citations" }`.
+  // Opt-in buffered path. Default false preserves the streaming chat UX (useChat);
+  // callers that need a vetted report (report runner, export) set `gate_citations: true`
+  // and receive a JSON response: `{ status: "ok" }`, or `{ status: "refused" }` with reason
+  // "insufficient_citations" or "evidence_check_failed" (the shared gate, answer-gate.ts).
   let gateCitations = false;
   const audience: HamiltonAudience = role;
   let contract: HamiltonRequestContract;
@@ -160,6 +173,32 @@ async function handlePOST(request: Request) {
     return Response.json({ error: "Invalid request body" }, { status: 400 });
   }
 
+  // Account identity is read from this authenticated user's memberships, not the
+  // browser body, selected institution, or saved research preference.
+  const requestedInstitutionId = contract.institutionId;
+  const enrichedContract = await withHamiltonAccountContext(contract, user);
+  contract = enrichedContract;
+  institutionId = enrichedContract.institutionId;
+  const subject = institutionId === null ? null : await getInstitutionById(institutionId).catch(() => null);
+  // The reader's saved default peer set (the account workspace's, else their own), so "peers"
+  // in the written answer means the group they chose (#1084). A failed read is no peer set.
+  const homeId = enrichedContract.serverAccountContext.institution?.id;
+  const peerSet = await getActivePeerSet({ userId: user.id, institutionId: homeId ?? institutionId }).catch(() => null);
+  // The saved set is the answer's peer baseline only when a tool call in this answer used it
+  // (the peers view with the set's filters); otherwise no current peer selection is substituted.
+  const identityFor = (steps: readonly AnswerStep[] | undefined) => accountIdentitySnapshot(institutionId, enrichedContract.serverAccountContext, {
+    researchInstitutionName: subject?.institution_name ?? null,
+    researchSelectionSource: requestedInstitutionId !== null ? "authenticated request" : institutionId !== null ? "linked account default" : "unscoped",
+    ...(peerSet && savedPeerSetUsed(peerSet, steps)
+      ? { peerSetId: peerSet.id, peerBaselineLabel: peerSet.label, peerBaselineSource: "saved-peer-set", peerBaselineFallbackReason: null }
+      : {
+        peerBaselineLabel: null,
+        peerBaselineSource: null,
+        peerBaselineFallbackReason: "The written answer did not capture a named peer cohort. Its original figures remain unchanged; no current peer selection is substituted.",
+      }),
+  });
+  let identityContext = identityFor(undefined);
+
   const agent = await getHamilton(role);
 
   // Auto-detect and inject domain skill based on the user's latest message
@@ -172,6 +211,7 @@ async function handlePOST(request: Request) {
 
   let systemPrompt = agent.systemPrompt;
   systemPrompt += buildHamiltonRequestContractPrompt(contract);
+  systemPrompt += buildSavedPeerSetPrompt(peerSet);
 
   if (institutionId !== null) {
     const selectedInstitutionContext = await buildHamiltonInstitutionBriefing(contract);
@@ -180,23 +220,11 @@ async function handlePOST(request: Request) {
     }
     systemPrompt += selectedInstitutionContext;
   }
-
-  // Inject the authenticated user's institution context so Hamilton doesn't
-  // ask "what's your institution?" for every analysis (the screenshot showed
-  // the user as Space Coast FCU in the left rail but Hamilton requesting
-  // identification in the response). Only injected when we actually have it
-  // — for anonymous/public users this block is omitted, preserving the
-  // model's current generic-mode behavior.
-  // The person's own name is never an institution: with no institution on file, Hamilton asks.
-  if (institutionId === null && user && user.institution_name?.trim()) {
-    const inst = user.institution_name.trim();
-    const tier = user.asset_tier ? ` (asset tier ${user.asset_tier})` : "";
-    const charter = user.institution_type ? `, ${user.institution_type.replace(/_/g, " ")}` : "";
-    const district = user.fed_district ? `, Fed district ${user.fed_district}` : "";
-    const state = user.state_code ? `, ${user.state_code}` : "";
-    systemPrompt += `\n\nUSER INSTITUTION CONTEXT (do not ask the user to identify themselves — already known):
-- Institution: ${inst}${charter}${tier}${district}${state}
-- Use this institution as the implicit subject of any benchmarking, peer comparison, or positioning analysis unless the user names a different one.\n`;
+  if (homeId && homeId !== institutionId && /\b(us|our|ours|we)\b/i.test(lastUserText)) {
+    const homeBriefing = await buildHamiltonInstitutionBriefing({ ...contract, institutionId: homeId }, { contextRole: "account_evidence" }).catch(() => null);
+    systemPrompt += homeBriefing
+      ? `\nACCOUNT INSTITUTION EVIDENCE (${homeId}). This is the account/home institution for comparisons with us; the research subject remains ${institutionId ?? "unselected"}.\n${homeBriefing}\nEND ACCOUNT INSTITUTION EVIDENCE.\n`
+      : "\nAccount institution evidence could not be loaded. State that limitation; do not substitute research-subject or peer data for our institution.\n";
   }
 
   // Analyze mode: override output structure with structured analysis sections (ARCH-05)
@@ -298,16 +326,36 @@ async function handlePOST(request: Request) {
         );
       }
 
+      // The same evidence gate a memo passes, against the tool outputs the model saw (#981).
+      const evidence = writtenAnswerCheck(
+        result.text ?? "",
+        (result.steps ?? []).flatMap((step) => step.toolResults.map((toolResult) => toolResult.output)),
+      );
+      if (!evidence.passed) {
+        return Response.json(
+          { status: "refused", reason: "evidence_check_failed", problems: evidence.problems, metrics: gate.metrics },
+          { status: 200 },
+        );
+      }
+
       return Response.json({
         status: "ok",
         text: result.text,
         metrics: gate.metrics,
+        identityContext: identityFor(result.steps),
       });
     }
 
     providerStartedAt = await guardProviderCall(providerContext);
     let resolveSaved: (id: string | null) => void = () => {};
     const savedId = new Promise<string | null>((resolve) => { resolveSaved = resolve; });
+    // A written answer passes the shared evidence gate when it finishes (#981). Once the held
+    // line is approved (HELD_ANSWER_MESSAGE), the answer is held until then and is never shown,
+    // or saved, when it fails; until that, a failing answer streams as before and the verdict
+    // is saved with it.
+    const holdsAnswers = mode === "analyze" && HELD_ANSWER_MESSAGE !== null;
+    let resolveVerdict: (verdict: AnswerVerdict | null) => void = () => {};
+    const verdict = new Promise<AnswerVerdict | null>((resolve) => { resolveVerdict = resolve; });
     const result = streamText({
       model: getAnthropicLanguageModel(agent.model, "hamilton"),
       // Tools and system are identical on every step, and each step re-sends the earlier
@@ -319,28 +367,40 @@ async function handlePOST(request: Request) {
       maxOutputTokens: agent.maxTokens,
       stopWhen: stepCountIs(agent.maxSteps),
       onFinish: async ({ totalUsage, text, steps }) => {
+        identityContext = identityFor(steps);
         // The Analyze screen's answer is saved here, not only from the browser, so a closed
         // tab or a failed browser call never loses it.
         if (mode === "analyze" && text.trim()) {
-          const response = writtenAnswerResponse(
-            text,
-            steps.flatMap((step) => step.toolResults.map((result) => result.output)),
-          );
+          const toolOutputs = steps.flatMap((step) => step.toolResults.map((result) => result.output));
+          const check = writtenAnswerCheck(text, toolOutputs);
+          const held = holdsAnswers && !check.passed;
+          resolveVerdict({ passed: check.passed, held });
+          const response = {
+            ...writtenAnswerResponse(text, toolOutputs, check),
+            // Historical reference metadata only; never a future access grant.
+            identityContext,
+          };
           const prompt = questionOnly(lastUserText);
-          try {
-            resolveSaved(await insertSavedAnalysis({
-              userId: user.id,
-              institutionId: normalizeCanonicalInstitutionId(institutionId) ?? "",
-              title: response.title || prompt.slice(0, 60).trim(),
-              analysisFocus: focus,
-              prompt,
-              response,
-            }));
-          } catch (error) {
-            console.error("[hamilton] saving the written answer failed", error);
+          if (held) {
+            console.warn("[hamilton] written answer held by the evidence gate", check.problems);
             resolveSaved(null);
+          } else {
+            try {
+              resolveSaved(await insertSavedAnalysis({
+                userId: user.id,
+                institutionId: normalizeCanonicalInstitutionId(institutionId) ?? "",
+                title: response.title || prompt.slice(0, 60).trim(),
+                analysisFocus: focus,
+                prompt,
+                response,
+              }));
+            } catch (error) {
+              console.error("[hamilton] saving the written answer failed", error);
+              resolveSaved(null);
+            }
           }
         } else {
+          resolveVerdict(null);
           resolveSaved(null);
         }
         try {
@@ -370,8 +430,12 @@ async function handlePOST(request: Request) {
           // Non-critical — don't fail the response
         }
       },
-      onAbort: () => resolveSaved(null),
+      onAbort: () => {
+        resolveVerdict(null);
+        resolveSaved(null);
+      },
       onError: async ({ error }) => {
+        resolveVerdict(null);
         resolveSaved(null);
         providerFailed = true;
         await recordProviderUsage(providerContext, "failed", {}, {
@@ -388,9 +452,31 @@ async function handlePOST(request: Request) {
     return createUIMessageStreamResponse({
       stream: createUIMessageStream({
         execute: async ({ writer }) => {
-          writer.merge(result.toUIMessageStream());
+          // A held answer waits for the gate. The result's stream replays from its start, so
+          // an answer that passes still reaches the reader whole.
+          const heldVerdict = holdsAnswers ? await verdict : null;
+          if (heldVerdict?.held && HELD_ANSWER_MESSAGE !== null) {
+            writer.write({ type: "start" });
+            writer.write({ type: "text-start", id: "held" });
+            writer.write({ type: "text-delta", id: "held", delta: HELD_ANSWER_MESSAGE });
+            writer.write({ type: "text-end", id: "held" });
+          } else {
+            // A provider refusal happens inside the stream, past the catch below: send the
+            // reader the paused line for a usage/billing limit, never the provider's text.
+            writer.merge(result.toUIMessageStream({
+              onError: (error) => (isProviderLimitError(error) ? HAMILTON_PAUSED_MESSAGE : "Hamilton couldn't finish this answer."),
+            }));
+          }
           const id = await savedId;
-          if (id) writer.write({ type: "message-metadata", messageMetadata: { [SAVED_ANALYSIS_ID_KEY]: id } });
+          const answerEvidence = heldVerdict ?? (await verdict);
+          writer.write({
+            type: "message-metadata",
+            messageMetadata: {
+              ...(id ? { [SAVED_ANALYSIS_ID_KEY]: id } : {}),
+              hamiltonIdentity: identityContext,
+              ...(answerEvidence ? { answerEvidence } : {}),
+            },
+          });
         },
       }),
     });
@@ -404,6 +490,10 @@ async function handlePOST(request: Request) {
         latencyMs: Date.now() - providerStartedAt,
         error: message,
       });
+    }
+
+    if (isProviderLimitError(err)) {
+      return Response.json({ error: HAMILTON_PAUSED_MESSAGE, code: "provider_paused" }, { status: 503 });
     }
 
     if (

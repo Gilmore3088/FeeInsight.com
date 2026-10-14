@@ -46,7 +46,6 @@ const QUEUE_LABELS: Record<DataTrustQueueState, string> = {
   source_accepted_awaiting_validation: "Accepted",
   source_failed: "Failed source",
   extracted_rows_pending_classification: "Extracted",
-  knox_decisions_pending: "Knox",
   verified_public_ready: "Public ready",
 };
 
@@ -264,12 +263,14 @@ export default async function DataTrustWorkbench({
               )}
               <div className="min-w-0">
                 <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-                  {automation?.enabled ? "Automation enabled" : "Automation stopped"}
+                  {automation === null ? "Automation status unknown" : automation.enabled ? "Automation enabled" : "Automation stopped"}
                 </p>
                 <p className="mt-1 text-xs leading-relaxed text-gray-600 dark:text-gray-400">
                   {automation?.enabled
                     ? "Source acceptance still requires explicit operator launch before provider work starts."
-                    : automation?.reason ?? "Provider automation is held; accepted sources stay queued for manual or later validation."}
+                    : automation === null
+                      ? "The safety control could not be read, so provider work is held until it can be."
+                      : automation.reason ?? "Provider automation is held; accepted sources stay queued for manual or later validation."}
                 </p>
               </div>
             </div>
@@ -284,7 +285,6 @@ export default async function DataTrustWorkbench({
         <SummaryMetric label="Accepted sources" value={number(submissionCounts.accepted)} />
         <SummaryMetric label="Source needed" value={number(queue.counts.source_needed)} tone="warning" />
         <SummaryMetric label="Failed source" value={number(queue.counts.source_failed)} tone={queue.counts.source_failed > 0 ? "critical" : "default"} />
-        <SummaryMetric label="Knox pending" value={number(queue.counts.knox_decisions_pending)} tone={queue.counts.knox_decisions_pending > 0 ? "work" : "default"} />
         <SummaryMetric label="Public ready" value={number(queue.counts.verified_public_ready)} tone="ok" />
       </section>
 

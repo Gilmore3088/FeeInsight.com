@@ -1,6 +1,6 @@
 export default function Loading() {
   return (
-    <div className="mx-auto max-w-7xl px-6 py-14 animate-pulse">
+    <div className="mx-auto max-w-page px-6 py-14 animate-pulse">
       {/* Breadcrumb */}
       <div className="flex items-center gap-2 mb-8">
         <div className="h-3 w-10 rounded bg-[#E8DFD1]/60" />

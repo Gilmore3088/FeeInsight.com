@@ -1,4 +1,5 @@
 import type { sql } from "@/lib/data-store/connection";
+import { statsRowFilter } from "@/lib/data-store/fee-stats";
 
 export type SqlTag = typeof sql;
 
@@ -55,17 +56,20 @@ export interface InstitutionPrice {
 }
 
 /**
- * Each institution's live price for each study fee, from published_fee_catalog. An
- * institution with several amounts (account tiers) is represented by their median.
+ * Each institution's live consumer-applicable price for each study fee, from
+ * published_fee_catalog. Genuine $0 fees remain real prices. Overdraft uses the highest
+ * published tier; other categories use the institution median.
  */
 export async function readInstitutionPrices(db: SqlTag): Promise<InstitutionPrice[]> {
   const rows = await db`
     SELECT f.institution_id, s.charter_type, s.asset_size, f.canonical_fee_key,
-           percentile_cont(0.5) WITHIN GROUP (ORDER BY f.amount)::float8 AS amount
+           CASE WHEN f.canonical_fee_key = 'overdraft' THEN MAX(f.amount)::float8
+                ELSE percentile_cont(0.5) WITHIN GROUP (ORDER BY f.amount)::float8 END AS amount
       FROM published_fee_catalog f
       JOIN institution_sources s ON s.id = f.institution_id
      WHERE f.canonical_fee_key = ANY(${[...STUDY_FEES]}::text[])
-       AND f.amount > 0
+       AND f.amount IS NOT NULL AND f.amount >= 0
+       AND ${db.unsafe(statsRowFilter("f"))}
        AND COALESCE(f.is_fee_cap, false) = false
        AND COALESCE(f.amount_kind, 'dollar') <> 'rate'
        AND s.charter_type IN ('bank', 'credit_union')

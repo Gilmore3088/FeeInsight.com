@@ -32,6 +32,9 @@ import {
 import { buildFeeAnswer } from "@/lib/hamilton/workspace/answer";
 import { AnswerView } from "@/components/hamilton/memo/exhibit-view";
 import { LayerTabs } from "@/components/hamilton/memo/LayerTabs";
+import { CheckingLineupPanel } from "@/components/hamilton/memo/checking-lineup";
+import { loadMarketCheckingLineup } from "@/lib/custom-report/checking-lineup-data";
+import { LINEUP_CATEGORY } from "@/lib/agents/knox/lineup";
 
 export const metadata: Metadata = { title: "My fees" };
 
@@ -232,9 +235,11 @@ export default async function ResearchPage({ searchParams }: PageProps) {
 
   const research = ws.research;
   const national = research?.nationalIncomeSeries ?? [];
-  const [complaints, articles] = await Promise.all([
+  const [complaints, articles, lineup] = await Promise.all([
     inst ? getInstitutionComplaintProfile(inst.id).catch(() => null) : null,
     getArticles({ topic: OVERDRAFT_FAMILY.has(ws.fee) ? "overdraft" : "fees_pricing", limit: 5 }).catch(() => []),
+    // The checking lineup belongs to the monthly maintenance fee, the fee it is built from.
+    inst && ws.fee === LINEUP_CATEGORY ? loadMarketCheckingLineup(inst.id) : null,
   ]);
   const stateChanges = research?.recentChanges ?? [];
 
@@ -393,6 +398,15 @@ export default async function ResearchPage({ searchParams }: PageProps) {
           }))}
         />
       </MemoSection>
+
+      {inst && lineup ? (
+        <MemoSection
+          title="Your checking account lineup against your market"
+          note="Each consumer checking account with a monthly fee, beside your local competitors' (the same market as the Competitive Fee Position Report)."
+        >
+          <CheckingLineupPanel name={inst.name} lineup={lineup} />
+        </MemoSection>
+      ) : null}
 
       {inst?.stateCode && research ? (
         <MemoSection

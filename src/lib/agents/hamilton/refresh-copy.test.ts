@@ -92,6 +92,20 @@ describe("planRefreshes", () => {
     expect(plan.skipped[0]).toMatchObject({ reason: "publish_rule", detail: "Below publish confidence threshold" });
   });
 
+  it("never moves a product page's $0 benefit to its page's new copy (55986, Oct 9)", () => {
+    const benefit = { amount: "0.00", prior_amount: "0.00", free_read: true, document_url: "https://www.paccrest.com/personal-banking/" };
+    const plan = planRefreshes([candidate(benefit)]);
+    expect(plan.skipped[0]).toMatchObject({ reason: "publish_rule", detail: "Read from a product page's benefits, not a fee schedule" });
+  });
+
+  it("selects what the product-page rule reads", async () => {
+    const db = createDb([]);
+    await refreshFeesFromCurrentCopy(asDb(db), { runId: 1, batchId: "b", dryRun: true });
+    const text = db.mock.calls.map((call) => templateText(call[0])).join("\n");
+    expect(text).toContain("AS free_read");
+    expect(text).toContain("AS document_url");
+  });
+
   it("uses each live fee and each current-copy row once", () => {
     const plan = planRefreshes([
       candidate(),
@@ -104,19 +118,36 @@ describe("planRefreshes", () => {
 });
 
 describe("refreshFeesFromCurrentCopy", () => {
-  it("publishes the current copy's row and closes the old one as refreshed, with no price change", async () => {
+  it("moves the live fee to the current copy's row in place, with no new row, closure or price change (v2, #1068)", async () => {
     const db = createDb([candidate()]);
     const result = await refreshFeesFromCurrentCopy(asDb(db), { runId: 9, batchId: "agentic-run-9", dryRun: false });
     expect(result).toMatchObject({ checked: 1, refreshed: 1 });
-    expect(result.samples[0]).toMatchObject({ priorFeePublishedId: 501, feePublishedId: 7001 });
+    // The live fee keeps its id.
+    expect(result.samples[0]).toMatchObject({ priorFeePublishedId: 501, feePublishedId: 501 });
     const statements = writes(db);
-    expect(statements.some((text) => text.includes("INSERT INTO published_fee_records"))).toBe(true);
-    expect(statements.some((text) => text.includes("UPDATE published_fee_records"))).toBe(true);
+    expect(statements.some((text) => text.includes("INSERT INTO published_fee_records"))).toBe(false);
+    expect(statements.some((text) => text.includes("rolled_back_at = NOW()"))).toBe(false);
     expect(statements.some((text) => text.includes("fee_change_records"))).toBe(false);
-    const closeCall = db.mock.calls.find((call) => templateText(call[0]).includes("UPDATE published_fee_records"));
-    expect(closeCall).toContain(`${REFRESH_COPY_REASON_PREFIX}7001`);
+    const moveCall = db.mock.calls.find((call) => templateText(call[0]).includes("UPDATE published_fee_records"))!;
+    const moveText = templateText(moveCall[0]);
+    expect(moveText).toContain("SET lineage_ref = ");
+    expect(moveText).toContain("AND rolled_back_at IS NULL");
+    expect(moveText).toContain("AND quarantined_at IS NULL");
+    expect(moveCall).toContain(9801);
+    expect(moveCall).toContain(501);
+    expect(moveCall).not.toContain(`${REFRESH_COPY_REASON_PREFIX}501`);
     const attempt = db.mock.calls.find((call) => templateText(call[0]).includes("INSERT INTO pipeline_attempts"));
     expect(attempt).toContain(refreshCopyFingerprint(501, 9801));
+  });
+
+  it("leaves the fee where it was when its live row was closed or held meanwhile", async () => {
+    const db = vi.fn((strings: TemplateStringsArray) => {
+      const text = templateText(strings);
+      if (text.includes("WITH stale AS MATERIALIZED")) return Promise.resolve([candidate()]);
+      return Promise.resolve([]);
+    }) as unknown as DbMock;
+    const result = await refreshFeesFromCurrentCopy(asDb(db), { runId: 9, batchId: "agentic-run-9", dryRun: false });
+    expect(result).toMatchObject({ checked: 1, refreshed: 0 });
   });
 
   it("changes nothing in a dry run", async () => {

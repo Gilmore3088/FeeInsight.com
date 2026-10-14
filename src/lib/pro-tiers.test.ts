@@ -3,6 +3,8 @@ import {
   NON_INSTITUTION_TIER,
   PRO_ANNUAL_RANGE_LABEL,
   annualMonthsFree,
+  annualPerMonthLabel,
+  annualSavingsLabel,
   isProPlan,
   proPriceEnvVar,
   proPriceId,
@@ -57,5 +59,12 @@ describe("Pro tiers", () => {
     expect(isProPlan("annual")).toBe(true);
     expect(isProPlan("weekly")).toBe(false);
     expect(isProPlan(undefined)).toBe(false);
+  });
+
+  it("states the annual plan as a monthly figure and its saving", () => {
+    expect(annualPerMonthLabel("small")).toBe("$125");
+    expect(annualPerMonthLabel("large")).toBe("$416.67");
+    expect(annualSavingsLabel("small")).toBe("$300");
+    expect(annualSavingsLabel("mid")).toBe("$600");
   });
 });

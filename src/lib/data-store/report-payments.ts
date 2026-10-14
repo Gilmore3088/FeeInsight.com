@@ -20,6 +20,8 @@ export interface ReportPaymentLead {
   quoteInstitutionId: number | null;
   quoteSentAt: string | null;
   paidAt: string | null;
+  /** Set when Stripe refunded the payment in full (migration 20270110000039). */
+  refundedAt: string | null;
   checkoutSessionId: string | null;
 }
 
@@ -41,6 +43,7 @@ export function paymentFieldsOf(row: Record<string, unknown> | null | undefined)
     quoteInstitutionId: toPositiveInt(fields.quote_institution_id),
     quoteSentAt: toText(fields.quote_sent_at),
     paidAt: toText(fields.paid_at),
+    refundedAt: toText(fields.refunded_at),
     checkoutSessionId: toText(fields.stripe_checkout_session_id),
   };
 }
@@ -60,6 +63,26 @@ export async function getReportPaymentLead(leadId: number): Promise<ReportPaymen
     status: row.status || "new",
     ...paymentFieldsOf(row.fields),
   };
+}
+
+/**
+ * True when every paid report for this institution was refunded, so its private link must
+ * not open. Another buyer's unrefunded payment for the same institution keeps it open.
+ */
+export async function isReportRevoked(institutionId: number): Promise<boolean> {
+  const [row] = await sql<{ revoked: boolean }[]>`
+    SELECT EXISTS (
+             SELECT 1 FROM leads l
+              WHERE to_jsonb(l) ->> 'quote_institution_id' = ${String(institutionId)}
+                AND to_jsonb(l) ->> 'refunded_at' IS NOT NULL
+           )
+       AND NOT EXISTS (
+             SELECT 1 FROM leads l
+              WHERE to_jsonb(l) ->> 'quote_institution_id' = ${String(institutionId)}
+                AND to_jsonb(l) ->> 'paid_at' IS NOT NULL
+                AND to_jsonb(l) ->> 'refunded_at' IS NULL
+           ) AS revoked`;
+  return row?.revoked === true;
 }
 
 export async function getInstitutionLabel(institutionId: number): Promise<{ id: number; name: string; city: string | null; stateCode: string | null } | null> {

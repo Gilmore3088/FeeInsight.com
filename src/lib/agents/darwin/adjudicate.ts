@@ -17,7 +17,7 @@ import { CANONICAL_KEY_MAP, DISPLAY_NAMES, FEE_FAMILIES } from "@/lib/fee-taxono
 import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
 
 import { DARWIN_CATEGORY_MODEL_STRATEGY } from "./category-model";
-import { scheduleContext } from "./release-held";
+import { DARWIN_RELEASE_ACTS, scheduleContext } from "./release-held";
 import { runDarwinReleaseReview } from "./release-review";
 import { loadReviewMisses, runDarwinVerdictScore, type ReviewMiss } from "./verdict-score";
 import { loadSourceTexts, rawFeeFingerprint } from "./verify";
@@ -54,6 +54,12 @@ const NAME_PROBE_CHARS = 40;
 /** The model's probability for its own suggestion at or above which a reject qualifies. */
 export const CONFIDENT_SUGGESTION = 0.9;
 export const FEES_PER_CALL = 25;
+/**
+ * Pay for the adjudicator's shadow verdicts on every run. Off (#1111): its verdicts never
+ * change a decision, so the calls bought nothing ($3.98 for 778 in October). A run passed
+ * `measure: true` (a capped answer-key sample) still makes them.
+ */
+export const DARWIN_ADJUDICATE_SHADOW = false;
 const MAX_OUTPUT_TOKENS = 4_000;
 const TRANSIENT_OUTCOMES = ["timeout", "network_error", "http_429", "http_5xx", "budget_blocked"];
 const STOP_ERRORS = new Set(["ProviderBudgetBlockedError", "EmergencyStopActiveError", "ProviderCircuitOpenError"]);
@@ -292,8 +298,14 @@ function isStopError(error: unknown): boolean {
   return error instanceof Error && STOP_ERRORS.has(error.name);
 }
 
+/**
+ * `measure`: make the paid calls even though neither pass can act, for a capped
+ * measurement run. `releaseActs` overrides DARWIN_RELEASE_ACTS.
+ */
+type AdjudicateOptions = PaidStepOptions & { create?: PaidMessageCreator; measure?: boolean; releaseActs?: boolean };
+
 export async function runDarwinAdjudicate(
-  options: PaidStepOptions & { create?: PaidMessageCreator },
+  options: AdjudicateOptions,
 ): Promise<PaidPassResult> {
   const result = await reviewAndAdjudicate(options);
   if (options.dryRun) return result;
@@ -306,7 +318,7 @@ export async function runDarwinAdjudicate(
 }
 
 async function reviewAndAdjudicate(
-  options: PaidStepOptions & { create?: PaidMessageCreator },
+  options: AdjudicateOptions,
 ): Promise<PaidPassResult> {
   const db = options.db ?? sql;
   const dryRun = Boolean(options.dryRun);
@@ -314,22 +326,31 @@ async function reviewAndAdjudicate(
   let calls = Math.min(Math.max(Math.floor(Number(options.limit) || PAID_PASS_ITEMS_PER_RUN), 1), PAID_PASS_ITEMS_PER_RUN);
   if (!(await learningSchemaReady(db))) return result;
 
+  // Pay only for verdicts that can act (#1111). A dry run spends nothing, so it still lists both.
+  const releaseActs = options.releaseActs ?? DARWIN_RELEASE_ACTS;
+  const reviewPays = dryRun || releaseActs || Boolean(options.measure);
+  const adjudicatePays = dryRun || DARWIN_ADJUDICATE_SHADOW || Boolean(options.measure);
+  if (!reviewPays) result.results.push({ pass: "release_review", skipped: "releases are off, so a verdict would change nothing" });
+  if (!adjudicatePays) result.results.push({ pass: "adjudicate", skipped: "shadow verdicts are off; they never change a decision" });
+
   // Held fees waiting on their release review (release-review.ts) go first, from the same call budget.
-  const review = await runDarwinReleaseReview({ ...options, db, calls });
-  result.selected += review.selected;
-  result.processed += review.processed;
-  result.succeeded += review.succeeded;
-  result.failed += review.failed;
-  result.costMicrousd += review.costMicrousd;
-  result.results.push(...review.results.slice(0, 10).map((entry) => ({ ...entry, pass: "release_review" })));
-  if (review.calls > 0) result.results.push({ pass: "release_review", lessons: review.lessons });
-  if (review.budgetStopped) {
-    result.budgetStopped = true;
-    result.budgetReason = review.budgetReason;
-    return result;
+  if (reviewPays) {
+    const review = await runDarwinReleaseReview({ ...options, db, calls, acts: releaseActs });
+    result.selected += review.selected;
+    result.processed += review.processed;
+    result.succeeded += review.succeeded;
+    result.failed += review.failed;
+    result.costMicrousd += review.costMicrousd;
+    result.results.push(...review.results.slice(0, 10).map((entry) => ({ ...entry, pass: "release_review" })));
+    if (review.calls > 0) result.results.push({ pass: "release_review", lessons: review.lessons });
+    if (review.budgetStopped) {
+      result.budgetStopped = true;
+      result.budgetReason = review.budgetReason;
+      return result;
+    }
+    calls -= review.calls;
   }
-  calls -= review.calls;
-  if (calls <= 0) return result;
+  if (calls <= 0 || !adjudicatePays) return result;
 
   // Rejects are re-checked in code (the guard must accept the model's category), so scan extra.
   const candidates = (await selectCandidates(db, calls * FEES_PER_CALL * 2, options.stateCode))

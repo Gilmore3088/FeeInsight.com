@@ -138,9 +138,11 @@ export function OptionStanding({
 export function OptionScaleChart({
   points,
   scale,
+  researchInstitutionName,
 }: {
   points: OptionPoint[];
   scale: OptionScale;
+  researchInstitutionName?: string | null;
 }) {
   const priced = points.filter(
     (p): p is OptionPoint & { price: number } => p.price != null,
@@ -176,7 +178,7 @@ export function OptionScaleChart({
   return (
     <figure className="rounded-lg border border-warm-300 bg-white p-4">
       <figcaption className="mb-2 text-sm font-medium text-warm-900">
-        Where each option would put you
+        Where each option would position {researchInstitutionName ?? "the research institution"}
       </figcaption>
       <div className="relative" style={{ height: `${top + 46}px` }}>
         {groups.map(([price], i) => (

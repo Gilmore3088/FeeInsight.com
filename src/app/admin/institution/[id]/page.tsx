@@ -2,10 +2,14 @@ export const dynamic = "force-dynamic";
 
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { requireAuth } from "@/lib/auth";
+import { hasPermission, requireAuth } from "@/lib/auth";
+import { sql } from "@/lib/data-store/connection";
+import { getHeldFees, type HeldFee } from "@/lib/fee-hold";
 import { Breadcrumbs } from "@/components/breadcrumbs";
 import { formatAssets } from "@/lib/format";
+import { notOnlineStatus, type NotOnlineStatus } from "@/lib/agents/magellan/escalation";
 import { FeeTable } from "./fee-table";
+import { HeldFeesTable } from "./fee-hold-controls";
 import {
   getInstitution,
   getInstitutionFees,
@@ -32,7 +36,8 @@ export default async function InstitutionDetailPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  await requireAuth("view");
+  const user = await requireAuth("view");
+  const canHold = hasPermission(user, "approve");
   const { id } = await params;
   const institutionId = Number(id);
 
@@ -47,16 +52,26 @@ export default async function InstitutionDetailPage({
     peerRanking,
     financials,
     learnedNotes,
+    heldFees,
+    paidLadder,
   ] =
     await Promise.all([
       getInstitution(institutionId),
-      getInstitutionFees(institutionId),
-      getInstitutionFeeScheduleEvidence(institutionId),
+      getInstitutionFees(institutionId, { pipelineNotes: true }),
+      getInstitutionFeeScheduleEvidence(institutionId, { pipelineNotes: true }),
       getInstitutionCrawlHistory(institutionId),
       getInstitutionAgentResults(institutionId),
       getInstitutionPeerRanking(institutionId),
       getFinancialsByInstitution(institutionId),
       getInstitutionLearnedNotes(institutionId),
+      getHeldFees(sql, institutionId).catch((error): HeldFee[] => {
+        console.error("[admin] held fees unavailable", { institutionId, error });
+        return [];
+      }),
+      notOnlineStatus(sql, institutionId).catch((error): NotOnlineStatus | null => {
+        console.error("[admin] paid search ladder unavailable", { institutionId, error });
+        return null;
+      }),
     ]);
 
   if (!institution) notFound();
@@ -131,6 +146,11 @@ export default async function InstitutionDetailPage({
                 </span>
               )}
             </ProfileRow>
+            {!institution.fee_schedule_url && paidLadder && paidLadder.misses > 0 ? (
+              <ProfileRow label="Paid Search">
+                <PaidLadderSummary ladder={paidLadder} />
+              </ProfileRow>
+            ) : null}
             <ProfileRow label="Document Type">
               {institution.document_type ? (
                 <DocTypeBadge type={institution.document_type} />
@@ -223,6 +243,18 @@ export default async function InstitutionDetailPage({
 
       {learnedNotes && <LearnedNotesPanel notes={learnedNotes} />}
 
+      {heldFees.length > 0 && (
+        <div className="admin-card overflow-hidden mb-8">
+          <div className="px-4 py-2.5 border-b border-gray-100 dark:border-white/[0.04]">
+            <h2 className="text-[11px] font-bold text-amber-600 uppercase tracking-[0.08em]">
+              Held Fees ({heldFees.length})
+            </h2>
+            <p className="mt-0.5 text-[11px] text-gray-500">Out of the public site, reports and Hamilton until released.</p>
+          </div>
+          <HeldFeesTable fees={heldFees} canRelease={canHold} />
+        </div>
+      )}
+
       {/* Published Fees */}
       <div className="admin-card overflow-hidden mb-8">
         <div className="px-4 py-2.5 border-b border-gray-100 dark:border-white/[0.04]">
@@ -231,7 +263,7 @@ export default async function InstitutionDetailPage({
           </h2>
         </div>
         {fees.length > 0 ? (
-          <FeeTable fees={fees} />
+          <FeeTable fees={fees} institutionName={institution.institution_name} canHold={canHold} />
         ) : (
           <div className="p-6 text-xs text-gray-400 text-center">
             No published fees yet. Set a fee schedule URL and run the agentic pipeline.
@@ -913,6 +945,21 @@ function LearnedNotesPanel({ notes }: { notes: InstitutionLearnedNotes }) {
         </ul>
       </div>
     </div>
+  );
+}
+
+/** Magellan's escalation ladder (#1032): "not published online", or the next paid rung. */
+function PaidLadderSummary({ ladder }: { ladder: NotOnlineStatus }) {
+  const day = (value: string | null) => (value ? value.slice(0, 10) : "-");
+  const tried = ladder.methods.map((method) => method.strategy.replace(/^discover\./, "")).join(", ");
+  return (
+    <span className="text-gray-600 dark:text-gray-300">
+      {ladder.since
+        ? `Not published online since ${day(ladder.since)} (${ladder.misses} paid misses). `
+        : `${ladder.misses} paid miss${ladder.misses === 1 ? "" : "es"}; next rung: ${ladder.nextRung}. `}
+      Next paid try after {day(ladder.nextPaidTryAfter)}.
+      {tried ? <span className="block text-[11px] text-gray-400">Tried: {tried}</span> : null}
+    </span>
   );
 }
 

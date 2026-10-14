@@ -29,6 +29,13 @@ describe("sourceCheckParagraphs", () => {
     expect(sourceCheckParagraphs({ ...week, checks: 0 })).toBeNull();
   });
 
+  it("shows nothing when the counts cannot be a real measurement", () => {
+    expect(sourceCheckParagraphs({ ...week, matched: week.checks + 1 })).toBeNull();
+    expect(sourceCheckParagraphs({ ...week, takenDown: -1 })).toBeNull();
+    expect(sourceCheckParagraphs({ ...week, matched: Number.NaN })).toBeNull();
+    expect(sourceCheckParagraphs({ ...week, checks: Number.POSITIVE_INFINITY })).toBeNull();
+  });
+
   it("uses the singular for one takedown", () => {
     expect(sourceCheckParagraphs({ ...week, takenDown: 1 })![1]).toContain("1 fee was taken off");
   });
@@ -38,6 +45,12 @@ describe("readSourceCheckWeek", () => {
   it("reads the totals from the publish steps' events", async () => {
     const db = vi.fn(async () => [{ checks: "662747", matched: "659869", taken_down: "6542", through: "2026-10-09" }]);
     expect(await readSourceCheckWeek(db as never)).toEqual(week);
+  });
+
+  it("returns null rather than a percentage when matches exceed checks", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const bad = vi.fn(async () => [{ checks: "10", matched: "11", taken_down: "0", through: "2026-10-09" }]);
+    expect(await readSourceCheckWeek(bad as never)).toBeNull();
   });
 
   it("returns null when no check ran or the read fails", async () => {

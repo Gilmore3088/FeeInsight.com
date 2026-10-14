@@ -116,3 +116,13 @@ describe("narrateEvent", () => {
     expect(narrateEvent({ ...base, eventType: "step.started" })).toBeNull();
   });
 });
+
+describe("Regulatory Wire notes stopped by a budget (#1149)", () => {
+  it("names the cap and what waits instead of reading as 0 failed", () => {
+    const sentence = narrateStepFinished("registry-wire-research", {
+      selected: 20, written: 0, unreadable: 0, failed: 0, budget_stopped: true, budget_waiting: 6,
+      budget_reason: "Monthly cap agent:magellan: $150.02 used of $150.00; resets the 1st at 00:00 UTC.",
+    });
+    expect(sentence).toBe("Wrote 0 Regulatory Wire research notes from 20 items; 0 unreadable, 0 failed. Stopped by a budget cap with 6 items waiting: Monthly cap agent:magellan: $150.02 used of $150.00; resets the 1st at 00:00 UTC.");
+  });
+});

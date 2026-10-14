@@ -221,6 +221,60 @@ const EMPTY: CurrentCopyResult = {
 };
 
 /**
+ * Bayes's count for this strategy: every older/current document pair with a live fee the current
+ * copy does not restate, split into pairs checked at this version, pairs the check will pick up,
+ * and pairs it cannot read (no completed text on one side). Mirrors the selection in
+ * `secondLookFeesNotOnCurrentCopy`; change both together.
+ */
+export async function countCurrentCopyPairs(db: SqlTag): Promise<{ pairs: number; done: number; queued: number; noText: number }> {
+  const [row] = await db<Array<Record<string, number | string>>>`
+    WITH stale AS MATERIALIZED (
+      SELECT fp.canonical_fee_key, fp.amount, fp.rate_percent,
+             fr.source_document_id AS older_document_id, sd.superseded_by_id AS current_document_id
+        FROM published_fee_records fp
+        JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
+        JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
+        JOIN source_documents sd ON sd.id = fr.source_document_id
+       WHERE fp.rolled_back_at IS NULL
+         AND sd.superseded_by_id IS NOT NULL
+         AND sd.superseded_by_id <> sd.id
+    ), pairs AS (
+      SELECT s.older_document_id, s.current_document_id
+        FROM stale s
+       WHERE NOT EXISTS (
+         SELECT 1 FROM raw_fee_observations nr
+           JOIN verified_fee_observations nv ON nv.fee_raw_id = nr.fee_raw_id
+          WHERE nr.source_document_id = s.current_document_id
+            AND nv.canonical_fee_key = s.canonical_fee_key
+            AND nv.amount IS NOT DISTINCT FROM s.amount
+            AND nv.rate_percent IS NOT DISTINCT FROM s.rate_percent
+            AND nv.review_status IN ('verified', 'approved')
+       )
+       GROUP BY 1, 2
+    ), judged AS (
+      SELECT EXISTS (
+               SELECT 1 FROM pipeline_attempts pa
+                WHERE pa.stage = 'publish'
+                  AND pa.strategy = ${CURRENT_COPY_STRATEGY.strategy}
+                  AND pa.source_document_id = p.older_document_id
+                  AND pa.input_fingerprint = ${`v${CURRENT_COPY_STRATEGY.version}:`} || p.older_document_id::text || ':' || p.current_document_id::text
+             ) AS done,
+             EXISTS (SELECT 1 FROM agent_source_texts t WHERE t.source_document_id = p.current_document_id AND t.status = 'completed' AND t.normalized_text IS NOT NULL)
+               AND EXISTS (SELECT 1 FROM agent_source_texts t WHERE t.source_document_id = p.older_document_id AND t.status = 'completed' AND t.normalized_text IS NOT NULL)
+               AS has_text
+        FROM pairs p
+    )
+    SELECT COUNT(*) AS pairs,
+           COUNT(*) FILTER (WHERE done) AS done,
+           COUNT(*) FILTER (WHERE NOT done AND has_text) AS queued,
+           COUNT(*) FILTER (WHERE NOT done AND NOT has_text) AS no_text
+      FROM judged
+  `;
+  const n = (value: unknown) => Number(value ?? 0);
+  return { pairs: n(row?.pairs), done: n(row?.done), queued: n(row?.queued), noText: n(row?.no_text) };
+}
+
+/**
  * Runs the current-copy check for one publish step, after refresh-copy. A dry run reports
  * and writes nothing. Never blocks the step it runs in.
  */

@@ -13,7 +13,7 @@ Before editing account actions that touch Hamilton context or institution author
 ## Shared Rules
 
 - Preserve sanitized internal `from` paths through login, registration, Subscribe, checkout, Account, and Welcome so institution-specific Hamilton journeys resume after activation.
-- /account is a short settings page in plain language: plan and billing (with team seats), banks followed, Pro email switches, organization, sign-in. Hamilton tools, claims and workspace context live in Hamilton (`/pro/settings`), not here. "Open Hamilton" carries the selected `instId`.
+- /account is the signed-in home in plain language. The main column holds what the reader came for (Pro: Hamilton, reports, banks followed; free: banks followed, reports); a side column holds plan and billing (with team seats), Pro email switches, organization and sign-in. Sign out sits at the top. Hamilton tools, claims and workspace context live in Hamilton (`/pro/settings`), not here. "Open Hamilton" carries the selected `instId`.
 - `AccountView` is pure; `page.tsx` loads everything, so the view renders in tests without a database or Stripe.
 - Keep active institution authority separate from pending invitations, profile institution text, and public claim requests. Authority comes from active membership records scoped to numeric `users.id`.
 - Pending workspace invitations may help users activate or register, but they must not be treated as active authority until matched to an active Pro user.

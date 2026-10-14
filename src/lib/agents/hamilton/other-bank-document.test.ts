@@ -62,6 +62,8 @@ describe("retireOtherBankDocumentFees", () => {
     expect(text).toContain("o.host = d.host AND o.id <> l.institution_id");
     expect(text).toContain("fp.institution_id = $1");
     expect(otherBankFeesSql(false)).not.toContain("$1");
+    expect(otherBankFeesSql("fees")).toContain("fp.fee_published_id = ANY($1::bigint[])");
+    expect(unconfirmedHostFeesSql("fees")).toContain("fp.fee_published_id = ANY($1::bigint[])");
   });
 
   it("archives another bank's fee on the first run that sees it, with its first look logged (James, Oct 8)", async () => {

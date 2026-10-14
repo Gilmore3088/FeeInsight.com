@@ -14,6 +14,14 @@ retraced without asking Hamilton (see Audit trail).
    catalog and the economic layers: the National Fee Index, state indexes, peer briefs
    and the Monthly Pulse (`src/lib/report-engine`, report types in `types.ts`). Reports
    are queued as `report_jobs` and live in `published_reports` once published.
+   Before a job is complete, the free `report-reconcile` step recomputes every fee figure
+   it prints from `published_fee_catalog` (rates from `published_fee_rate_catalog`) under
+   the statistics contract (`report-engine/reconcile.ts`, #1066). A figure more than one
+   cent or one institution off (a whole-scope total: more than 5 or 0.5%, whichever is
+   larger, with the drift recorded; the Pulse's 30-day "institutions added" count is not a
+   total and keeps the one-institution rule), printed with no live value, or a printed fee change that is
+   no longer live fails the job, with each figure and why on `data_manifest.reconciliation`;
+   Publish refuses a job without a reconciliation that tied out.
 3. **Industry expert and research assistant.** Answers questions about fees, regulation
    and the economy with cited facts, at every data layer the project holds: national,
    Fed district, regional, state, regulatory and institutional. Overdraft and NSF are
@@ -50,14 +58,28 @@ Hamilton supports the decision; it does not make it.
   deliverable_draft, opinion and clarifying_question. A reply to Hamilton's question is
   sent back as `answer: {fieldKey, value}` and saved to memory. Each exchange is logged to
   the fee's open decision (question_asked, scenario_tested, answer_given); a remembered
-  objective holds until the reader gives another. No provider calls.
+  objective holds until the reader gives another. The Ask answer itself makes no provider
+  calls. What a question is about is read one way for the Ask bar, the memo and the answer
+  eval (`resolveAskIntent`, #1077): a fee it names (or the open decision's fee), else the
+  whole-schedule overview or the fee-income answer when it asks for one. A question that is
+  none of these keeps no fee: Hamilton never answers it for a fee the reader did not name (it
+  once answered such segment questions for overdraft).
+- The written memo over that answer is a separate, paid route: `POST
+  /api/hamilton/ask/memo` (`answerAskMemo` in `ask-service.ts`, `hamilton/memo.ts`),
+  premium or admin only. It takes the same body as the Ask bar (plus an optional
+  `savedAnalysisId`) and rebuilds the storyline on the server, never from the browser. Each
+  memo model call logs one `research_usage` row (agent `hamilton-memo`), so memos count in
+  the daily Pro quota (`hamilton/quota.ts`). When that count cannot be read, the quota fails
+  closed: a capped reader makes no paid call; a team seat with no cap stays allowed. Memo
+  spend has its own route id and budget line, `api.hamilton.ask.memo` (`MEMO_ROUTE_ID`).
+  It returns `written`, `withheld` or `unavailable`, and logs a Pro request (`ask_memo`).
 - Every fee answer plays four roles (James, 2026-10-06): Inquisitive Economist, Rigorous
   Consultant, Artistic Data Engineer, Technical yet Clear Writer. `buildFeeAnswer`
   (`workspace/answer.ts`) returns `HamiltonAnswer {headline, claims, drivers, exhibit,
   question, evidenceLevel, provenance}`; `evaluateFourRoles` (`workspace/four-roles.ts`)
   checks an answer against all four, and the chat prompt carries `HAMILTON_ROLES`.
 - The answer eval on live data (`hamilton/answer-eval.ts`, step `hamilton-answer-eval`,
-  cron every two hours, `/api/admin/crew/answer-eval`) asks 14 quality-bar questions of a fresh spread
+  cron every two hours, `/api/admin/crew/answer-eval`) asks the quality-bar questions of a fresh spread
   of real banks and credit unions (two per charter and asset tier) through the Ask path,
   scores each with the quality bar and four-roles eval, and checks that a regulation answer
   names the institution's own regulator and a state question names its state. Read-only, no
@@ -65,7 +87,27 @@ Hamilton supports the decision; it does not make it.
   It first replays the questions Pro readers really asked in the last 90 days (the `pro.ask`
   ledger keeps each question and short answer; saved analyses keep the rest) through today's
   engine. `detail.pro` counts how many meet the bar and how many Hamilton still asks back on,
-  and lists every one that falls short. Questions stay in our own database only.
+  and lists every one that falls short. A replayed answer about a fee the question did not
+  ask about fails as "answers a different subject" (`offSubjectFailure`). Questions stay in our own database only.
+  It asks 17 questions (q26, the NSF regulation question, since #1079; q31, fee income against
+  peers, and q32, what competitors in the county charge, since #1084). Every answer is also
+  scored on correctness (`hamilton/answer-correctness.ts`, the `report-reconciliation` check for
+  one answer): the bank's own value and every peer, layer and local-competitor value is its
+  live value in `published_fee_catalog` under the statistics contract, each printed median and
+  quartile recomputes from those values within a cent, and every dollar figure in a sentence
+  sourced to the catalog is one of those values or the gap between two. `detail.correctness`
+  and `detail.pro.correctness` count checked and correct answers; the goal scorecard shows the
+  latest eval's form and correctness rates per path (`goal.hamilton_answer_eval_latest`). Not yet
+  checked: percentages and counts, and the whole-schedule overview's peer medians (accepted as
+  printed). The paid paths (written answer, memo, simulate, reports) are not sampled until James
+  sets a daily provider budget for it.
+- The Pro written answer (`/api/research/hamilton`, tools in `research/agents.ts`) reads, among
+  its read-only tools, `getLocalCompetitors` (shared with chat, `research/tool-local-competitors.ts`),
+  `queryFeeRevenueCorrelation` (its `peers` view compares one institution's service charge
+  income with a peer group's median on the same quarter and filer, `research/fee-income-peers.ts`),
+  `queryDistrictData` and `queryStateData` (#1084). The reader's saved default peer set
+  (`getActivePeerSet`) is in its prompt; the answer's identity snapshot names it as the peer
+  baseline only when a tool call used it (the `peers` view with the set's filters).
 - The bank's own numbers arrive by answer or upload. `POST /api/hamilton/uploads` reads a
   CSV or XLSX (fee income, item counts, waivers, affected accounts by GL line) and returns
   what was read; unmatched lines are listed, never guessed, and the file is not stored.
@@ -80,7 +122,8 @@ Hamilton supports the decision; it does not make it.
   `hamilton_decisions`, `hamilton_decision_events`, `hamilton_institution_memory` and
   `hamilton_uploads`. A client fact is never edited in place: a new value supersedes it
   (`superseded_at`), so the history of what the bank told Hamilton survives.
-- The workspace builders are deterministic and make no provider calls.
+- The workspace builders are deterministic and make no provider calls; the memo route
+  above is the paid exception.
 
 ## Audit trail (James, 2026-10-06 00:08 UTC)
 
@@ -142,7 +185,7 @@ Regulatory work needs a defensible position, so nothing Hamilton produces is a b
 - A fee-movement signal (which alerts watchers) carries only moves `confirmFeeChange` confirms against both pages' text: same page, same fee name, old text states the old price, new text states the new price and not the old. A re-read of the same edition or a new copy that pairs a fee with a neighbouring price is listed as `unconfirmed_movements` on the publication signal and alerts no one.
 - Use `recordHamiltonMonitorSignal` for Monitor writes so source metadata preserves `evidence_policy`, `provider_call_queued`, and lineage. Provider-originated competitor/movement signals must state an explicit evidence policy and cannot silently queue provider automation.
 
-## Publishing (publish.rules version 2)
+## Publishing (publish.rules version 3)
 
 - `hamilton/publish.ts` publishes only Darwin-verified rows (`agentic_darwin_verified`)
   with no blocking flag, a valid canonical key, a fee name, source lineage, Darwin's
@@ -200,6 +243,125 @@ Regulatory work needs a defensible position, so nothing Hamilton produces is a b
   as a real run, without writing.
 - A fee line the bank removed from a newer copy of its page comes down (Newer-copy
   check below).
+
+## Publish step order
+
+Every `publish`, `publish-index` and `publish-context` step (`src/lib/agents/run-store.ts`)
+takes the `agents.hamilton.publish` advisory lock, then runs these sweeps in this order in one
+transaction. A takedown is a soft rollback (`rolled_back_at`, batch `agentic-run-<run id>`
+unless named, the reason below); a dry run reports and writes nothing. Sections below give
+the detail.
+
+1. Outlier restore (`restoreOutliersNowInRange`, `outlier-rollback.ts`): brings back an
+   outlier takedown whose amount is inside today's range, unless the bank already shows that
+   fee at that amount. No reason written; it clears one.
+2. Off-taxonomy restore (`restoreFeesNowInTaxonomy`, `off-taxonomy-rollback.ts`): brings back
+   a takedown whose category is in the taxonomy today, on the same terms.
+3. Taxonomy fold (`taxonomy-fold.ts`): re-files fees under the 15 retired categories; one with
+   no home comes down on its second look, `taxonomy_fold:<reason>`.
+4. Outlier rollback (`outlier-rollback.ts`): a positive amount outside its category range,
+   `amount_outside_category_range`.
+5. Off-taxonomy rollback (`off-taxonomy-rollback.ts`): a category not in the fee taxonomy,
+   `category_outside_taxonomy`.
+6. Limit guard (`limit-guard.ts`): a transaction limit read as a price, on its second look,
+   `limit_as_fee:<reading>: <detail>`.
+7. Business schedule (`business-schedule.ts`): a business-schedule fee beside a live consumer
+   fee, on its second look, `business_schedule: consumer fee #<id>`.
+8. Same-line duplicates (`same-line-duplicates.ts`): a fee the 9 Oct same-line re-decide
+   published beside an older live line of itself, on its second look,
+   `same_line_duplicate: live fee #<id>`; it comes back when the older line is no longer live.
+9. Other bank's document (`other-bank-document.ts`): a fee from another institution's site,
+   on first look, `other_bank_document: <host>`; a host that does not name the bank, on its
+   second look, `unconfirmed_document_host: <host>`.
+10. Eval verdicts (`eval-verdicts.ts`): the complete-record eval's critical rows on first look,
+    `eval_critical:<verdict>`; the name rules learned from them (a rebate as an ATM fee, a
+    "no fee for" or waiver sentence as a $0 fee, and others) on their second look,
+    `not_a_fee:<rule>`.
+11. Article page (`article-page.ts`): a fee read from an article, on its second look,
+    `article_page: #<document id>`.
+12. Product page (`product-page.ts`): a $0 benefit bullet Knox's free reader took from a
+    product page, on its second look while `PRODUCT_PAGE_TAKEDOWN_ON` (on since 9 Oct),
+    `product_page: #<document id>`. The address rule is the one Magellan and Rosetta use
+    (`isProductPageUrl`, `learning/fee-page.ts`, #1053): services, rates and cost pages are
+    no longer product pages.
+12a. Product page against the schedule (`product-page-conflict.ts`, James 2026-10-13): a live
+    dollar fee from a product page whose bank's schedule documents list the same category only
+    at other prices; the schedule wins. Per-account and multi-item categories are left out
+    (`PER_ACCOUNT_CATEGORIES`). Off (`PRODUCT_PAGE_CONFLICT_LIVE`): first looks are logged and
+    nothing comes down until a hand check of 10 finds 9 right; then a PR turns it on and a
+    conflict comes down on its second look, `product_page_conflict: #<doc> at $x vs schedule $y`.
+13. Cross-page conflict (`cross-page-conflict.ts`): one product priced differently on two
+    current pages (or two editions of one document); the older one comes down on its second
+    look, `cross_page_conflict: #<older doc> older than #<newer doc> (fee <id>)` (or `older
+    edition of`).
+14. Category guard (`category-guard.ts`): a name that contradicts its category, up to 100 a
+    step, batch `category-guard-run-<run id>`, `category_guard:<code>: <reason>`; it also
+    re-files a live fee under the type its name names.
+15. Guard requeue (`guard-requeue.ts`): a verified row the guard rejected at publish and never
+    published is re-read once per guard version; one today's guard passes goes back to
+    verified (flag `category_guard_requeued:g<version>`). No rollback.
+16. Companion retire (`companion-retire.ts`): fees from companion pages Magellan retired as not
+    a consumer fee page, `companion_page_retired`.
+17. Duplicate collapse (`duplicate-collapse.ts`): exact repeats of a live row,
+    `duplicate of #<kept id>`. Near-name repeats (#1302) are shadow only
+    (`NEAR_NAME_COLLAPSE_LIVE`): reported in step detail `near_name_collapse`, never closed;
+    switched on, `duplicate of #<kept id> (near name)`.
+18. Frequency fill (`frequency-fill.ts`): sets a live fee's frequency from its own schedule row
+    (fills a blank, corrects or clears one read from another fee's row), logged to
+    `pipeline_feedback` (check `hamilton.frequency_fill`). v11 (#1196): an NSF or overdraft fee
+    stored as monthly is checked against its own line (`perEventPeriodCheck`);
+    an overdraft program the bank sells by the month keeps its period, a period the fee's own
+    price states ("NSF | $23.00/Month") is held, `frequency_hold: <why>`, and any other period is
+    cleared. A hold is the only rollback; clearing `rolled_back_at` restores it. #1196 (Oct 14,
+    no version change): a blank NSF fee is never filled with a period (`perEventFrequency`), so
+    the fill no longer sets "monthly" that the v11 check clears on the next pass (5 live NSF fees
+    went round that loop on Oct 14). A stated annual or daily NSF period is left as it is.
+19. Newer-copy check (`newer-copy-retire.ts`): a fee line gone from a newer copy of its page,
+    `newer_copy_drops_fee:#<newer document id>` (`NEWER_COPY_RETIRE_LIVE` is true; false makes
+    it a shadow run).
+20. Identical copy (`moveRowsToIdenticalCopy`, `refresh-copy.ts`): when the current copy's
+    text is identical to the superseded one, the superseded copy's fee rows move to it. No fee
+    is published or taken down.
+21. Refresh copy (`refreshFeesFromCurrentCopy`, `refresh-copy.ts`): a live fee the current copy
+    states at the same amount moves to that copy in place (v2, #1068): the live row takes the
+    current copy's verified row as its lineage and keeps its id, name and published date. Before
+    v2 a new row was written and the old one closed as `refreshed by #<new id>`.
+22. Current-copy check (`current-copy.ts`): a fee the current copy no longer states, on its
+    second look (confirmations off while `CURRENT_COPY_CONFIRM_LIVE` is false),
+    `not_on_current_copy:#<current document id>`.
+23. Rules re-check (`rules-recheck.ts`, state-lane or single-institution steps only): a Knox
+    fee today's rules no longer read from its text, on its second look,
+    `rules_recheck_unreproduced`; it also restores its own past takedowns.
+24. Name retidy (`retidyLiveFeeNames`, `knox/name-retidy.ts`): a run-on live name takes its
+    tidy name, up to 100 banks a step; the old name is a `name_retidied` feedback row. No
+    rollback.
+25. Account names (`account-names.ts`): a live "Monthly Service Fee" takes the account heading
+    above it, up to 40 banks a step (`name_account_added` feedback row). No rollback.
+26. Lineup correct (`correctStoredLineups`, `knox/lineup-correct.ts`): lineup values stored
+    before Knox v55 that came from a neighbouring account are corrected from the stored text,
+    up to 200 documents a step (`lineup_corrected` feedback row). No rollback.
+27. Restore re-check (`restore-recheck.ts`): fees an older re-check restored with no check get
+    the restore bar; one that fails comes down on its second look,
+    `rules_recheck_restore: <bar reason>`. Then the lost re-check restore
+    (`lost-recheck-restore.ts`, #1071): a fee the re-check took down on Oct 5-11, before #1022,
+    with no live row at its institution, category and amount is judged once by the restore bar
+    on its document's newest text, up to 300 a step. One that passes comes back (flag
+    `rules_recheck_restored:lost_restore`) and its bank is due for the source check; one that
+    fails or has no text stays down. Every judged row is flagged `lost_recheck_restore_judged`.
+28. Change pairing (`change-pairing.ts`): older `fee_change_records` get their two rows and
+    `like_for_like`, up to 500 a step. No rollback.
+29. Cross-page restore (`cross-page-restore.ts`): a fee another page's price superseded comes
+    back over the restore bar (flag `cross_page_supersede_restored`).
+30. Publish (`runHamiltonPublish`, `publish.ts`): the rules above; a prior live row at a new
+    price closes as `superseded by #<id>`.
+31. Source check (`takeDownUntraceableFees`, `source-check.ts`): up to 120 institutions,
+    `source_check_untraceable:<reason>`; restores earlier takedowns that now trace.
+32. Imported twins (`linkImportedFeesToTwins`, `source-check.ts`): an imported live fee with no
+    document is pointed at its twin row that has one, up to 100 a step. No rollback.
+33. Feedback sync (`syncPipelineFeedback`, `learning/feedback-sync.ts`): this step's takedowns
+    and restores go into the shared learning store.
+34. Index refresh (`refreshFeeIndexCache`): not on a dry run; forced when the step published,
+    took down or restored fees, folded or re-filed a category, or set a frequency.
 
 ## Newer-copy check
 
@@ -321,6 +483,22 @@ name). The newest copy stays live; the others get `rolled_back_reason = 'duplica
 #<kept id>'`, the run's batch id, and a `hamilton.duplicates_collapsed` run event. Rows
 that differ in name or amount are separate fee lines and are left alone.
 
+**Near names (#1302).** Two live rows of one document, category, variant and amount whose names
+differ only by punctuation, case, a plural, a leading article or a trailing "fee" ("Stop
+Payment" / "Stop Payment ......", "Cashier's Check" / "Cashier’s Check"), or by one qualifier word
+in front ("Research fee" / "Account Research fee"), are one fee only when the page says so:
+`linesApartOnPage` must find no two printed lines at the price (the same check the publish step
+uses, #1303), and at least one name must be printed with the price. Frequencies and audiences
+must agree or be unstated. The copy kept states its audience, then its frequency, then is the
+one printed at the price, then is newest. Doc 14695 prints "Stop Payments, each ... $35" and
+"Stop Payment, each ... $35" in two copies of its schedule, so both stay. A fee the page prints
+once under its personal schedule heading and once under its business one stays two fees too
+(`printedInPersonalAndBusinessSchedules`; Valley's doc 23731, "Visa® Gift Cards, each: $4.25.").
+This sweep reads up to 25 documents' stored text per step and is shadow only until James turns
+`NEAR_NAME_COLLAPSE_LIVE` on: each step reports `near_name_collapse` (pairs, apart on page, not
+printed, no text, would close, samples) and changes no row. Rollback once on: clear
+`rolled_back_at` on rows whose `rolled_back_reason` ends in `(near name)`.
+
 ## Rules Re-check
 
 In state-lane (or single-institution) publish steps, `rules-recheck.ts` re-runs Knox's
@@ -415,9 +593,13 @@ took down are re-checked with their institution and restored, with their verifie
 when they now trace (version 2 restored correct fees v1 took down from flattened lines). Each pass logs a
 `hamilton.source_check` event and one attempt per institution, folded into the bank's
 playbook (as are the rules re-check's), so its record shows how many of its fees survive
-Hamilton's checks beside how many Knox read. The hourly scheduler
-tick wakes sleeping state lanes that still have unchecked live fees (source check or
-rules re-check), so a new rule reaches every state within hours.
+Hamilton's checks beside how many Knox read. The scheduler tick
+(`/api/admin/agents/tick`, cron every 5 minutes in `vercel.json`) runs the nationwide lane
+sync once an hour, on the tick in the first 5 minutes of the hour
+(`shouldRunNationwideLaneSync`). That sync wakes sleeping state lanes that still have
+unchecked live fees (source check or rules re-check, `wakeLanesWithUncheckedLiveFees`), and a
+woken lane with backlog runs again every 60 minutes (`STATE_LANE_BACKLOG_RETRY_MINUTES`), so a
+new rule reaches every state within hours.
 
 ## Studies (James, 2026-10-07 05:03 UTC "Build it all")
 
@@ -439,8 +621,10 @@ institution in it (`src/lib/agents/hamilton/studies`). One run a day
 
 ## Marketing
 
-Hamilton also runs the monthly marketing loop (score, write, draft, send on approval).
-See `src/lib/agents/marketing/AGENTS.md`.
+Hamilton does not run the marketing loop. The monthly marketing steps (`marketing-score`,
+`marketing-write`, `marketing-states`, `marketing-send`) run as agent `growth`
+(`STEP_OWNER` in `src/lib/agents/narrate.ts`). See `src/lib/agents/growth/AGENTS.md`
+and `src/lib/agents/marketing/AGENTS.md`.
 
 ## Boundaries
 
@@ -462,3 +646,24 @@ Change this table and `agent-health.ts` in the same PR.
 | Hamilton's spend stays inside its daily cap | `spendUsd` vs. `agent:hamilton` `hard_daily_microusd` | ≤ cap |
 
 Also recorded, without a rule: `stepsCompleted`, `liveFees`, `sourceChecks`, `banksNotSourceChecked` (banks whose newest live or source-check-taken-down fee the current source check has not seen).
+
+## Current versions
+
+The version each rules or reader constant is at now. `scripts/ci-guards.sh guide-version-kill`
+fails a PR that changes one of these constants without updating its line here (#1109).
+
+| Constant | Strategy | Version | File |
+|---|---|---|---|
+| `ACCOUNT_NAME_STRATEGY` | `hamilton.account_names` | v1 | `hamilton/account-names.ts` |
+| `CURRENT_COPY_STRATEGY` | `hamilton.current_copy_check` | v2 | `hamilton/current-copy.ts` |
+| `EVAL_VERDICT_VERSION` | — | v7 | `hamilton/eval-verdicts.ts` |
+| `FREQUENCY_FILL_VERSION` | — | v12 | `hamilton/frequency-fill.ts` |
+| `GUARD_REQUEUE_STRATEGY` | `publish.guard_requeue` | v1 | `hamilton/guard-requeue.ts` |
+| `NEWER_COPY_STRATEGY` | `hamilton.newer_copy_check` | v1 | `hamilton/newer-copy-retire.ts` |
+| `HAMILTON_PUBLISH_STRATEGY` | `publish.rules` | v3 | `hamilton/publish.ts` |
+| `REFRESH_COPY_STRATEGY` | `hamilton.refresh_copy` | v2 | `hamilton/refresh-copy.ts` |
+| `RULES_RECHECK_STRATEGY` | `hamilton.rules_recheck` | v4 | `hamilton/rules-recheck.ts` |
+| `SOURCE_CHECK_STRATEGY` | `hamilton.source_check` | v16 | `hamilton/source-check.ts` |
+| `FEE_DEPENDENCE_VERSION` | — | v1 | `hamilton/studies/fee-dependence.ts` |
+| `PRICE_STUDY_VERSION` | — | v1 | `hamilton/studies/index.ts` |
+| `INFERRED_VOLUME_VERSION` | — | v2 | `hamilton/studies/inferred-volume.ts` |

@@ -87,10 +87,11 @@ function fallbackTo<T>(label: string, fallback: T) {
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { id } = await params;
   const instId = parseInt(id, 10);
-  if (Number.isNaN(instId)) return { title: "Institution Not Found" };
+  // notFound() here, before the page streams, so a missing institution answers 404, not 200.
+  if (Number.isNaN(instId)) notFound();
 
   const inst = await getPublicInstitutionForPage(instId);
-  if (!inst) return { title: "Institution Not Found" };
+  if (!inst) notFound();
 
   const fees = Number(inst.fee_count ?? 0) > 0 ? await getVisibleFeesForPage(instId) : [];
   const verifiedFees = fees.filter(isVerifiedFee);
@@ -285,7 +286,7 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
       />
 
       <div className="min-h-screen bg-[#FAF7F2] text-[#1A1815]">
-        <div className="mx-auto max-w-6xl px-4 py-5 sm:px-6 sm:py-7">
+        <div className="mx-auto max-w-page px-4 py-5 sm:px-6 sm:py-7">
           <ProfileHeader
             name={inst.institution_name}
             status={status}

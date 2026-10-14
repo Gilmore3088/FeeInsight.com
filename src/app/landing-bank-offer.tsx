@@ -1,6 +1,6 @@
 import { TrackLink } from "@/components/track-link";
 import { RequestReportForm } from "@/app/for-institutions/request-report-form";
-import { CONTACT_EMAIL, REPORT_INCLUDES, REPORT_OFFER, SAMPLE_REPORT_LIVE } from "@/lib/constants";
+import { CONTACT_EMAIL, REPORT_INCLUDES, REPORT_OFFER, REPORT_PRICE_INLINE, SAMPLE_REPORT_LIVE } from "@/lib/constants";
 
 const SAMPLE_REPORT_HREF = "/reports/sample-competitive-fee-position";
 const SERIF_STYLE = { fontFamily: "var(--font-newsreader), Georgia, serif" } as const;
@@ -20,7 +20,7 @@ const NEXT_STEPS = [
 export function LandingBankOffer({ sampleLive = false }: { sampleLive?: boolean }) {
   return (
     <section id="for-banks" className="scroll-mt-16 border-b border-[#E0D7C9] bg-white">
-      <div className="mx-auto grid max-w-6xl gap-10 px-4 py-10 sm:px-6 sm:py-14 lg:grid-cols-[minmax(0,1.15fr)_minmax(320px,0.85fr)] lg:items-start">
+      <div className="mx-auto grid max-w-page gap-10 px-4 py-10 sm:px-6 sm:py-14 lg:grid-cols-[minmax(0,1.15fr)_minmax(320px,0.85fr)] lg:items-start">
         <div className="min-w-0">
           <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#A93D25]">
             For banks and credit unions
@@ -30,7 +30,7 @@ export function LandingBankOffer({ sampleLive = false }: { sampleLive?: boolean 
           </h2>
           <p className="mt-3 max-w-xl text-pretty text-[15px] leading-relaxed text-[#5A5347]">
             National and Fed district reports are free. The {REPORT_OFFER.name} for your
-            institution starts at $300: we read your fee schedule and your
+            institution is priced {REPORT_PRICE_INLINE}: we read your fee schedule and your
             competitors&apos;, then show where you stand.
           </p>
 

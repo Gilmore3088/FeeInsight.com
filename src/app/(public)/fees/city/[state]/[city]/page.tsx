@@ -2,8 +2,6 @@ export const dynamic = "force-dynamic";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { cache } from "react";
-import { getCityInstitutions } from "@/lib/data-store";
 import { getPublicNationalIndex } from "@/lib/public-stats";
 import { getDisplayName, isFeaturedFee } from "@/lib/fee-taxonomy";
 import { formatAmount, formatAssets } from "@/lib/format";
@@ -12,6 +10,7 @@ import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
 import { SITE_URL } from "@/lib/constants";
 import { ProNextStep } from "@/components/public/pro-next-step";
 import { getCityFeeAveragesCached } from "@/lib/data-store/public-cached-reads";
+import { loadCityInstitutions, titleCase } from "./city-lookup";
 
 interface PageProps {
   params: Promise<{ state: string; city: string }>;
@@ -20,27 +19,21 @@ interface PageProps {
 /** Cities with fewer verified institutions than this are thin pages: rendered, not indexed. */
 const MIN_INDEXABLE_INSTITUTIONS = 3;
 
-// Shared between generateMetadata and the page so the query runs once per request.
-const loadCityInstitutions = cache(getCityInstitutions);
-
-function titleCase(s: string): string {
-  return decodeURIComponent(s)
-    .split(/[-\s]+/)
-    .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
-    .join(" ");
-}
-
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { state, city } = await params;
   const stateName = STATE_NAMES[state.toUpperCase()];
   const cityName = titleCase(city);
-  if (!stateName) return { title: "Not Found" };
+  if (!stateName) notFound();
 
   const institutions = await loadCityInstitutions(cityName, state.toUpperCase());
+  if (institutions.length === 0) notFound();
   const indexable = institutions.length >= MIN_INDEXABLE_INSTITUTIONS;
 
   return {
     robots: { index: indexable, follow: true },
+    // One address per city: "little-rock" and "little%20rock" render the same page, and the
+    // sitemap and breadcrumbs use the encoded lowercase name.
+    alternates: { canonical: `/fees/city/${state.toLowerCase()}/${encodeURIComponent(cityName.toLowerCase())}` },
     title: `Bank Fees in ${cityName}, ${state.toUpperCase()} - Compare Local Fees`,
     description: `Compare bank and credit union fees in ${cityName}, ${stateName}. See overdraft fees, monthly maintenance charges, NSF fees, and more from local institutions.`,
     keywords: [
@@ -100,7 +93,7 @@ export default async function CityFeePage({ params }: PageProps) {
         ]}
       />
 
-      <div className="max-w-5xl mx-auto px-6 py-14">
+      <div className="max-w-page mx-auto px-6 py-14">
         {/* Breadcrumb */}
         <nav aria-label="Breadcrumb" className="flex items-center gap-2 text-[12px] text-[#6B6255] mb-6">
           <Link href="/fees" className="hover:text-[#1A1815] transition-colors">Fees</Link>

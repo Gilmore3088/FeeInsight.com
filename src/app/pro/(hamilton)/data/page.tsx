@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
 import { canAccessPremium } from "@/lib/access";
 import { searchInstitutions } from "@/lib/data-store/search";
-import { getPublicStats, getDataFreshness } from "@/lib/data-store";
+import { getDataFreshnessCached, getPublicStatsCached } from "@/lib/data-store/public-cached-reads";
 import { getStatesWithFeeData } from "@/lib/data-store";
 import { FDIC_TIER_LABELS } from "@/lib/fed-districts";
 import { STATE_NAMES } from "@/lib/us-states";
@@ -48,8 +48,8 @@ export default async function ProDataPage({ searchParams }: PageProps) {
   const page = Math.max(1, parseInt(params.page || "1", 10) || 1);
   const pageSize = 50;
 
-  const stats = await getPublicStats();
-  const freshness = await getDataFreshness();
+  const stats = await getPublicStatsCached();
+  const freshness = await getDataFreshnessCached();
   const statesData = await getStatesWithFeeData();
 
   const results = await searchInstitutions({

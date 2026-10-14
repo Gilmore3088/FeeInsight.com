@@ -1,6 +1,6 @@
 import { getSql } from "./connection";
 import { STATS_ROW_FILTER } from "./fee-stats";
-import { INTEREST_TIER, minBalanceFromExcerpt, productNameFromFeeName, readableProductName, readableWaiver, waiverFromExcerpt } from "@/lib/agents/knox/lineup";
+import { INTEREST_TIER, minBalanceFromExcerpt, productNameFromFeeName, readableProductName, waiverForDisplay, waiverFromExcerpt } from "@/lib/agents/knox/lineup";
 
 export { minBalanceFromExcerpt, productNameFromFeeName, waiverFromExcerpt };
 
@@ -38,6 +38,8 @@ export interface LineupAccount {
   waiverText: string | null;
   waiverSource: LineupFieldSource;
   feeName: string;
+  /** The schedule line the fee was read from, when the row kept one. */
+  sourceLine?: string | null;
 }
 
 export interface LineupSummary {
@@ -80,8 +82,8 @@ export function lineupAccountFromRow(row: LineupCatalogRow): LineupAccount | nul
   // A balance stored beside an interest-tier "waiver" is the rate tier, not the fee's waiver.
   const storedBalance = row.waiver_text && INTEREST_TIER.test(row.waiver_text) ? null : toNumber(row.min_balance_to_avoid);
   const derivedBalance = storedBalance === null && excerpt ? minBalanceFromExcerpt(excerpt) : null;
-  const storedWaiver = readableWaiver(row.waiver_text);
-  const derivedWaiver = storedWaiver || !excerpt ? null : waiverFromExcerpt(excerpt);
+  const storedWaiver = waiverForDisplay(row.waiver_text);
+  const derivedWaiver = storedWaiver || !excerpt ? null : waiverForDisplay(waiverFromExcerpt(excerpt));
 
   return {
     institutionId: Number(row.institution_id),
@@ -94,6 +96,7 @@ export function lineupAccountFromRow(row: LineupCatalogRow): LineupAccount | nul
     waiverText: storedWaiver ?? derivedWaiver,
     waiverSource: storedWaiver ? "stored" : derivedWaiver ? "derived" : null,
     feeName: row.fee_name,
+    sourceLine: excerpt || null,
   };
 }
 

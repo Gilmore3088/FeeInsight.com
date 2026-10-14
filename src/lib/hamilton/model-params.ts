@@ -36,3 +36,18 @@ export function defaultPrices(current: number | null, layerMedian: number | null
   if (current != null) out.push(current + 5);
   return [...new Set(out)].filter((p) => p !== current);
 }
+
+/**
+ * A working estimate of items charged a year from the bank's own filing: the filed income line
+ * for the fee divided by today's price. Only for a line that carries this fee alone (a credit
+ * union's overdraft or NSF line), never a bank's combined overdraft-and-NSF line. Assumes every
+ * paid item was charged today's fee; shown only when the reader asks for it.
+ */
+export function filedVolumeEstimate(
+  line: { annualIncome: number; combinedWith?: string } | null | undefined,
+  current: number | null,
+): number | null {
+  if (!line || line.combinedWith || current == null || current <= 0 || line.annualIncome <= 0) return null;
+  const items = line.annualIncome / current;
+  return items >= 10_000 ? Math.round(items / 1000) * 1000 : Math.round(items);
+}

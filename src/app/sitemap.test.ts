@@ -1,10 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { getInstitutionIdsWithFeeDates, getStatesWithFeeData } from "@/lib/data-store";
+import { getInstitutionIdsWithFeeDates, getStatesWithFeeData, getTopCitiesByState } from "@/lib/data-store";
 import { getPublicSnapshot } from "@/lib/public-stats";
 import { MIN_INSTITUTIONS_FOR_MEDIAN } from "@/lib/data-store/maturity";
 import { SITE_URL } from "@/lib/constants";
 import { getSql } from "@/lib/data-store/connection";
 import sitemap from "./sitemap";
+import { loadGuides } from "@/lib/guides/source";
 import { MIN_VERIFIED_FEES_FOR_OFFER } from "./(public)/institution/[id]/profile-copy";
 
 vi.mock("@/lib/data-store", () => ({
@@ -12,6 +13,7 @@ vi.mock("@/lib/data-store", () => ({
   getDataFreshness: vi.fn(() => Promise.resolve(null)),
   getInstitutionIdsWithFeeDates: vi.fn(() => Promise.resolve([])),
   getStatesWithFeeData: vi.fn(),
+  getTopCitiesByState: vi.fn(() => Promise.resolve([])),
 }));
 
 vi.mock("@/lib/public-stats", () => ({
@@ -116,5 +118,43 @@ describe("sitemap research articles", () => {
     vi.mocked(getSql).mockImplementation((() => tag) as never);
     const paths = await urls();
     expect(paths).toContain("/research/articles/overdraft-fees-by-state-2026-10");
+  });
+});
+
+describe("sitemap professional guides (#1165)", () => {
+  it("leaves out gated professional guides and keeps consumer guides", async () => {
+    vi.mocked(getPublicSnapshot).mockResolvedValue({ summary: {} as never, categories: [] as never });
+    vi.mocked(getStatesWithFeeData).mockResolvedValue([]);
+    vi.mocked(loadGuides).mockResolvedValueOnce([
+      { slug: "overdraft-fees", audience: "consumer", reviewedAt: "2026-10-01" },
+      { slug: "pricing-committee", audience: "professional", reviewedAt: "2026-10-01" },
+    ] as never);
+    const paths = await urls();
+    expect(paths).toContain("/guides/overdraft-fees");
+    expect(paths.some((path) => path.startsWith("/guides/pro/"))).toBe(false);
+  });
+});
+
+describe("sitemap duplicates and dates (#1163)", () => {
+  beforeEach(() => {
+    vi.mocked(getPublicSnapshot).mockResolvedValue({ summary: {} as never, categories: [] as never });
+    vi.mocked(getStatesWithFeeData).mockResolvedValue([]);
+  });
+
+  it("lists a city once when two stored spellings map to the same address", async () => {
+    vi.mocked(getTopCitiesByState).mockResolvedValueOnce([
+      { city: "Little Rock", state_code: "AR", institution_count: 9, with_fees: 6 },
+      { city: "LITTLE ROCK", state_code: "AR", institution_count: 2, with_fees: 3 },
+    ] as never);
+    const paths = await urls();
+    expect(paths.filter((path) => path === "/fees/city/ar/little%20rock")).toHaveLength(1);
+    expect(new Set(paths).size).toBe(paths.length);
+  });
+
+  it("gives static pages no lastmod instead of the time of the rebuild", async () => {
+    const entries = await sitemap();
+    const about = entries.find((item) => item.url === `${SITE_URL}/about`);
+    expect(about).toBeDefined();
+    expect(about?.lastModified).toBeUndefined();
   });
 });

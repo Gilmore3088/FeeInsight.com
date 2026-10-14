@@ -35,6 +35,17 @@ describe("Federal Register tracker parsing", () => {
     });
   });
 
+  it("keeps mortgage escrow and real estate lending rules off the fee topics", () => {
+    const occ = { ...proposed, agencies: [{ slug: "comptroller-of-the-currency", name: "Comptroller of the Currency" }], cfr_references: [] };
+    const escrow = (title: string) =>
+      parseFederalRegisterDocument({ ...occ, title, abstract: "The OCC addresses state laws on fees charged for escrow accounts." })!.topics;
+    expect(escrow("Preemption Determination: State Interest-on-Escrow Laws")).toEqual([]);
+    expect(escrow("Real Estate Lending Escrow Accounts")).toEqual([]);
+    expect(
+      parseFederalRegisterDocument({ ...occ, title: "National Bank Non-Interest Charges and Fees", abstract: null })!.topics,
+    ).toEqual(["fees"]);
+  });
+
   it("skips notices and documents missing a number, title, link or date", () => {
     expect(parseFederalRegisterDocument({ ...proposed, type: "Notice" })).toBeNull();
     expect(parseFederalRegisterDocument({ ...proposed, document_number: undefined })).toBeNull();

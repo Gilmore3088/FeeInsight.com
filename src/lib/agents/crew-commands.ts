@@ -7,7 +7,7 @@ import type { AdminAgent } from "./types";
  * Unknown input returns a `help` command that lists what the crew understands.
  */
 
-export type CrewScope = { kind: "state"; stateCode: string } | { kind: "all" } | { kind: "due" };
+export type CrewScope = { kind: "state"; stateCode: string } | { kind: "all" } | { kind: "due" } | { kind: "institution"; institutionId: number };
 
 export type CrewCommand =
   | { kind: "help"; agent: AdminAgent; reason?: string }
@@ -45,6 +45,7 @@ export const CREW_COMMAND_EXAMPLES = [
   "Atlas, run Georgia",
   "Atlas, run all due states",
   "Magellan, run Texas",
+  "Hamilton, publish institution 47",
   "Knox, retry failed",
   "pause / resume",
   "show First Credit Union",
@@ -67,6 +68,11 @@ function parseScope(text: string): CrewScope | null {
   }
   if (/^(all )?due( states)?$/.test(cleaned) || cleaned === "all due states" || cleaned === "what's due" || cleaned === "whats due") {
     return { kind: "due" };
+  }
+  const institutionMatch = cleaned.match(/^(?:institution|bank|fi)\s*#?\s*([1-9][0-9]*)$/i);
+  if (institutionMatch) {
+    const id = Number(institutionMatch[1]);
+    return Number.isSafeInteger(id) ? { kind: "institution", institutionId: id } : null;
   }
   const stateCode = parseState(text);
   return stateCode ? { kind: "state", stateCode } : null;
@@ -105,12 +111,15 @@ export function parseCrewCommand(input: string): CrewCommand {
       : { kind: "help", agent, reason: `I don't know the state "${isDone[1]}".` };
   }
 
-  const run = text.match(/^(run|refresh|crawl|work on|do)\b\s*(.*)$/i);
+  const run = text.match(/^(run|publish|refresh|crawl|work on|do)\b\s*(.*)$/i);
   if (run) {
     const scope = parseScope(run[2]);
+    if ((run[1].toLowerCase() === "publish" || scope?.kind === "institution") && agent !== "hamilton") {
+      return { kind: "help", agent, reason: "Use Hamilton, publish institution <ID> to publish one bank's verified fees." };
+    }
     return scope
       ? { kind: "run", agent, scope }
-      : { kind: "help", agent, reason: `I don't know what "${run[2]}" is. Try a state, "all due" or "all".` };
+      : { kind: "help", agent, reason: `I don't know what "${run[2]}" is. Try a state, an institution ID, "all due" or "all".` };
   }
 
   const show = text.match(/^(show|find|look up|lookup)\s+(.+)$/i);
@@ -136,6 +145,7 @@ export const AGENT_RUN_STEPS: Record<AdminAgent, Array<{ key: string; title: str
 
 export function describeScope(scope: CrewScope): string {
   if (scope.kind === "state") return STATE_NAMES[scope.stateCode] ?? scope.stateCode;
+  if (scope.kind === "institution") return `institution #${scope.institutionId}`;
   return scope.kind === "due" ? "all states that are due" : "all states";
 }
 
@@ -143,6 +153,9 @@ export function describeScope(scope: CrewScope): string {
 export function describeWrite(command: CrewCommand): string {
   switch (command.kind) {
     case "run":
+      if (command.scope.kind === "institution") {
+        return `Hamilton will publish eligible verified fees for institution #${command.scope.institutionId} through the normal audited pipeline. No fee checks are bypassed.`;
+      }
       if (command.agent === "atlas") {
         return command.scope.kind === "state"
           ? `Atlas will run the full pipeline for ${describeScope(command.scope)}.`

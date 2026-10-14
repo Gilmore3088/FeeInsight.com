@@ -16,16 +16,25 @@ Knox owns conservative raw fee extraction.
 - Emit aggregate Hamilton Monitor signals for inserted raw observations and no-candidate review states.
 - Keep rows provisional until Darwin verifies them.
 - Re-review thin documents: a text with fewer than 5 Knox fees (`KNOX_REEXTRACT_MAX_FEES`) is
-  extracted again each time `extract.rules` moves to a new version; the raw-row dedupe index
-  keeps fees found before from being inserted twice.
-- The rules live in `rules.ts` (`extract.rules`; bump `KNOX_EXTRACT_STRATEGY.version`
-  when they change). Patterns are ordered most specific first; monthly maintenance and
-  minimum balance come last. On a line, the first amount is the fee; a later amount is
-  another fee only when words naming one sit just before it.
-- Knox extracts each text once (keyed on `text_hash=` in `conditions`). When a Rosetta
-  re-read changes a document's text, Knox extracts the new text and retires the
+  extracted again each time `extract.rules` moves to a new version (see "When Knox reads a text
+  again" below); the raw-row dedupe index keeps fees found before from being inserted twice.
+- The rules live in `rules.ts` (`extract.rules`; bump `KNOX_RULES_STRATEGY.version` in
+  `specialists.ts` when they change, and add the version to the history below). Patterns are
+  ordered most specific first; monthly maintenance and minimum balance come last. On a line,
+  the first amount is the fee; a later amount is another fee only when words naming one sit
+  just before it.
+- Knox reads each text once per rules version: the extract step never picks a text that has an
+  `extract.rules` attempt at the current version for the same institution and text hash
+  (`pipeline_attempts`). A text whose document has no Knox row carrying its `text_hash=` (in
+  `conditions`) is read; a text read before is read again only for the reasons listed below.
+  When a Rosetta re-read changes a document's text, Knox extracts the new text and retires the
   unverified rows it took from the older text (`needs_darwin_verification` removed,
   `superseded_by_reread` added). Rows Darwin already verified are left alone.
+- The raw-row dedupe index is (document, lowercased name, amount, `fee_audience`)
+  (`raw_fee_observations_knox_agentic_dedup_idx`, migration
+  `20270110000040_fee_audience_integrity.sql`), so one document may hold the same name and price
+  once per audience. A traced read that meets a row of the same key held as `unclassified` or
+  `untraced` takes it over (`knox_promoted_from_held`); any other existing row is left as it is.
 - One document per page. When Magellan stores a newer copy of a page (`superseded_by_id`,
   `magellan/current-copy.ts`), Knox stops reading the older copy once the current copy has
   a text. Each extract step also retires up to 2,000 unverified rows from older copies
@@ -53,6 +62,35 @@ Knox owns conservative raw fee extraction.
   recognizes are stored with `knox_review:<shape>` (plus `amount_max:` / `percent:`) and
   without `needs_darwin_verification`, so Darwin never verifies them as exact amounts.
 
+## When Knox reads a text again
+
+The extract step (`textArtifactQuery` in `extract.ts`) picks texts that are completed and not
+already read at the current rules version. With the attempt log in place (not in a dry run), a
+text Knox has read before is picked again when any one of these holds:
+
+1. Thin: the document has fewer than 5 Knox rows (`KNOX_REEXTRACT_MAX_FEES`).
+2. Missing fees: Hamilton's rules re-check (`hamilton/rules-recheck.ts`) recorded fees today's free
+   team reads from this document that are not live (`missing_fees` above 0 under the current
+   `knoxFreeSignature()`).
+3. Large bank: the bank has $10B or more in assets (`KNOX_REREAD_ASSET_FLOOR`, `asset_size` in
+   thousands) and the document is a page's current copy.
+4. Older copy still live: an older copy of this page still carries a live fee.
+5. Stale read: the current copy has no `extract.rules` attempt at v26 or later
+   (`KNOX_STALE_READ_BELOW_VERSION`).
+6. Lineup gap: the current copy has a `monthly_maintenance` row with no account name, or with
+   neither the balance that avoids it nor its waiver, and no attempt at v51 or later
+   (`KNOX_LINEUP_READ_BELOW_VERSION`).
+7. Priority bank: the bank is in `KNOX_PRIORITY_REREAD_IDS` or is a state market leader, the
+   document is its current copy, and the bank has no live overdraft fee. A run for one institution
+   (Atlas's read-now runs) uses that institution alone as the list and drops the overdraft
+   condition.
+
+Triggers 4 to 7 need Magellan's current-copy columns (`currentCopySchemaReady`). Every pick still
+skips an older copy whose current copy has a text, and a text already read under another document
+id of the same bank (an older copy's rows never block the current copy). Bayes's replay ledger
+counts the current copies these triggers would pick with the same query (`countKnoxRereadsDue`,
+`countKnoxRules` in `bayes/manifests.ts`); a current copy that matches none keeps its older read.
+
 ## Rule-change gate
 
 `answer-key-gate.test.ts` scores the free team plus Darwin's rule checks (the set the rules
@@ -68,6 +106,8 @@ CA, FL, GA, IL, MI, MN and NY (`__fixtures__/state-answer-keys.json.gz`, never u
 rules), with a floor per state. Baseline at v12: 665 right of 724 reads (91.9%), 665 of 1,215 key
 fees found (54.7%); 56 of the 59 wrong reads are the right price under another category. At v14:
 677 of 736 (92.0%), 677 found (55.7%).
+
+## Rules versions (`extract.rules`)
 
 v14 added names the keys showed held as unclassified (account closing, reactivation, domestic
 wires without a direction, child support, legal orders, negative balance, audit confirmations,
@@ -112,37 +152,6 @@ supersede match and the rules re-check restore compare tidied names, so a line l
 an older untidy name is still the same line. In the 117-document live sample, untidy names
 fell from 136 to 3; gates and the dry run are unchanged.
 
-A new rules version also reaches lines older versions held. Knox does not extract a text twice,
-and the raw-row dedupe index (document, name, amount) stopped a categorized fee from replacing
-the held row, so a held line stayed held after the rules learned it. Now each extract step
-re-reads up to 300 held unclassified lines from the document's current text with today's rules
-(`held-recheck.ts`): a line priced at the same amount takes the category and goes to Darwin
-(`knox_promoted_from_held`); the rest get `knox_recheck:extract.rules:v<N>` and wait for the next
-version. A categorized insert that meets a held row takes it over the same way.
-Each re-read is logged in `pipeline_feedback` under `knox.held:raw:<id>` (the versions that read
-it and the outcome). A line still uncategorized after three versions is set aside
-(`knox_set_aside`), never deleted, and later versions keep re-reading it.
-
-v26 (rules 26) folds the held groups James chose to fold (decision card, Oct 7 2026) into the
-category the taxonomy already gives them (`FOLDED_PATTERNS`): returned mail, bad address, fax
-and excess withdrawals into account research; collection items and foreign checks into check
-cashing; loan cancellation, credit reports and UCC filings into loan origination; loan
-refinancing and document fees into other lending. The answer keys left these lines "unmapped",
-so the gate re-files them the same way. At v26: Texas 486 right of 500 reads; seven states 712
-of 759; no new wrong reads. Dry run on 13,383 held lines: 1,622 get a category (1,559 by the
-fold). Membership, phone transfer, credit card, uncollected funds and returned statement fees
-stay held.
-
-v30 (rules 30) narrows the fold after checking prod's first v26 pass (three extract runs, 01:51 to
-02:02 UTC Oct 7: 60 lines categorized, 527 set aside). Six of the 60 went to the wrong home: a
-collection fee on charged-off accounts and a collection phone call are debt collection, not a
-check sent for collection; a funds transfer requested by phone or fax is not a fax fee; a credit
-report to open an account is not a loan fee. Those lines now stay held. Each extract step also
-re-reads lines it promoted from held that Darwin has not verified (`recheckPromotedRows`): one
-today's rules no longer file under the same category goes back on hold, leaves Darwin's queue,
-and is logged as `wrong` (`knox.held_withdrawn:raw:<id>`), never deleted. Promoted lines Darwin
-already verified are Hamilton's rules re-check's to take down.
-
 v18 (rules 18) reads low-balance account rows and their prose. A checking account row priced
 monthly with a balance condition that the maintenance guard keeps out (money market) is the
 account's `minimum_balance` fee, named by the row's condition. A sentence that prices a fee
@@ -175,18 +184,7 @@ Foreign Transaction") as `atm_non_network`: it is what a customer pays at anothe
 a card's foreign transaction fee. "ATM/Debit Card International/Foreign Transaction Fee" and
 "Debit/ATM Foreign Transaction" name the card and are unchanged.
 
-Percentage fees (`percent.ts`). A held "1% of the transaction" line goes to Darwin as a rate fee
-(`amount_kind = 'percent'`, `rate_percent`, optional `rate_min_amount` / `rate_max_amount` /
-`rate_basis`, `amount` NULL, flag `knox_rate_fee`) only when its category publishes rates
-(`percentFeeAllowed` in `src/lib/percent-fees.ts`, the list Darwin applies) and the rate traces
-with the shared `checkRateAgainstSource`. A balance transfer rate is filed under cash_advance.
-It stays held when the line is an interest or dividend rate, says "up to", states two different
-rates, falls outside the category's range, or has no clean name. Names come from the category's
-own words ("A 1% Currency Conversion Fee will be assessed on" is "Currency Conversion Fee"). New
-texts get this in the extract pass; rows held before it are re-read by `recheckHeldRates`
-(`knox_rate_recheck:v1`, 100 per extract step).
-
-v21 (rules 21) reads more of those rate lines: the card's currency fee under its other names
+v21 (rules 21) reads more percentage-fee lines (see "Percentage fees" below): the card's currency fee under its other names
 ("Foreign Transactions", "International Point of Sale Fee", "Cross-Border Assessment",
 "International Service Assessment", "Multi currency"), coin counting under "Coin Counter",
 "Coin Machine", "Loose Coin" and "Count and roll coins", and a rate whose dollar minimum follows
@@ -224,6 +222,10 @@ Answer keys and the live dry run are unchanged from v22. The shared check accept
 same (name, amount) pairs as before across the answer-key and live texts (5,678 of every read
 name tried at every price in its document).
 
+v24 (rules 24, with category guard v13) keeps a loan's late fee out of the overdraft category and an
+"Int'l" wire out of the domestic ones. v23 was taken on main by the table-row headings, so this rule
+shipped as v24.
+
 v25 (rules 25) reads one-line PDF schedules, where a whole page of dot-leader rows is stored as one
 line ("Stop Payment………………. $35.00 Over $300 USD……. $40.00 Dormant Account Fee……. $7.00/Month").
 The shared check used to split that line after every period, including the last period of a dot
@@ -247,6 +249,16 @@ copies had last been read at rules v1 to v7, and none of the re-read triggers re
 current copies qualify. 211 of the 898 are read already, on a second document that holds the same
 text. Knox reads a text once, so their current copy has no rows of its own.
 
+v26 (rules 26) folds the held groups James chose to fold (decision card, Oct 7 2026) into the
+category the taxonomy already gives them (`FOLDED_PATTERNS`): returned mail, bad address, fax
+and excess withdrawals into account research; collection items and foreign checks into check
+cashing; loan cancellation, credit reports and UCC filings into loan origination; loan
+refinancing and document fees into other lending. The answer keys left these lines "unmapped",
+so the gate re-files them the same way. At v26: Texas 486 right of 500 reads; seven states 712
+of 759; no new wrong reads. Dry run on 13,383 held lines: 1,622 get a category (1,559 by the
+fold). Membership, phone transfer, credit card, uncollected funds and returned statement fees
+stay held.
+
 v27 (rules 27) reads two-column schedules where the right column's footnotes run beside a left-column
 heading ("Wire Transfer Fees | being returned NSF."). A two-cell line with no price, whose left cell
 looks like a heading and whose right cell opens lowercase or with a footnote number, now sets the
@@ -259,6 +271,297 @@ overdraft. Found on First National Bank Alaska (doc 19925), which was 2 headline
 report. Answer keys: Texas and held-out unchanged, seven states 713 right (712), the same 47 wrong.
 Live dry run: the same 1,412 of 1,437 kept. Across the 117 live-sample documents it adds 7 reads,
 each checked against its line, and moves one $2.50 transfer from NSF to overdraft protection.
+
+v28 (rules 28) never reads a limit as a price. A name that ends on a limit ("Zelle transfer limit",
+"Mobile Deposit Checks are limited to", "VISA Gift Cards: Maximum card load", "Cash Advance Fee
+(maximum", "Zelle (Daily Limits)") states the most a customer may move, not what they pay
+(`namesALimit` in `layout.ts`). A cap category keeps its cap ("Overdraft and NSF Daily Maximum"), a
+fee for going past a limit keeps its price ("Over Limit", "Limit Violation"), and a fee's own note
+keeps it a fee ("Mobile Deposit Fee (daily limits apply)"). The paid reader rejects the same rows
+(`limit_not_fee`). The shared check now also reads a price under a dollar written "$.50" or "75¢",
+and the paid reader counts those lines and skips an older copy of a page whose current copy has a
+text, as the free reader already did. A family expert names a fee after the previous fee's note
+("Check printing – (fee depends on style) Temporary check – $.20" is a temporary check). Answer
+keys: Texas 500 right (495), the same 15 wrong; held-out 48 right (47); seven states unchanged.
+Live dry run: 1,419 of 1,437 kept (1,418), nothing lost.
+
+v29 (rules 29) tidies names that ran on into their price. A short name loses the connector before
+the price ("Visa Lost/Stolen Replacement Card Fee of", "Non-Bank of America ATM Fee for",
+"Debit Card Replacement A fee of") and a leading article ("A minimum balance fee" becomes "Minimum
+balance fee"), and a "None" or "Free" cell between two names is the previous row's price, so the name
+starts after it (`tidyFeeName`). A sentence of more than eight words keeps its ending, because the
+category guard reads "required to avoid a minimum balance fee of" as a fee. Answer keys: Texas 501
+right (500), the same 15 wrong; held-out 49 right (48); seven states unchanged. Live dry run: 1,419
+of 1,437 kept, the same fees.
+
+v30 (rules 30) narrows the fold after checking prod's first v26 pass (three extract runs, 01:51 to
+02:02 UTC Oct 7: 60 lines categorized, 527 set aside). Six of the 60 went to the wrong home: a
+collection fee on charged-off accounts and a collection phone call are debt collection, not a
+check sent for collection; a funds transfer requested by phone or fax is not a fax fee; a credit
+report to open an account is not a loan fee. Those lines now stay held. Each extract step also
+re-reads lines it promoted from held that Darwin has not verified (`recheckPromotedRows`): one
+today's rules no longer file under the same category goes back on hold, leaves Darwin's queue,
+and is logged as `wrong` (`knox.held_withdrawn:raw:<id>`), never deleted. Promoted lines Darwin
+already verified are Hamilton's rules re-check's to take down.
+
+The same v30 also reads two more limit wordings as ceilings, not prices: a limit that "will increase
+to" a figure ("the Overdraft Privilege limit will increase to $1,500") and a limits row with a
+"($/#)" note ("Daily ATM Limits ($/#) $505"). Both reached raw rows from v29's first run on prod.
+Answer keys unchanged; live dry run: 1,419 of 1,437 kept, the same fees. This change (#350) merged
+after the fold change (#336) had already set the version to 30 and did not bump it again, so both
+read under v30.
+
+v31 (rules 31) reads a cap on what the bank pays back ("The maximum rebate per 12-month cycle $240",
+ATM surcharge rebates) as a limit, not a fee. It reached raw rows on v30's first prod run (03:21 UTC
+Oct 7), which otherwise showed none of v30's limit wordings and no dangling names in 362 reads.
+Answer keys unchanged; live dry run: 1,419 of 1,437 kept, the same fees.
+
+v32 (rules 32, from Space Coast CU's page, Oct 7):
+- "Incoming Wires" and "Outgoing Wires" read in the plural.
+- "(Outside U.S.)" is an international wire.
+- An account named with the balance it must keep ("Money Market Savings Account (below $2,500) | $15/mo.") is that account's low-balance fee.
+- When two fees' names share a row before one price ("Returned Check | Verification of Deposit | $20"), the price and the name are the nearest fee's.
+- A name that closes a parenthesis it never opened ("SCCU for using a non-SCCU ATM) | $60") is the end of a wrapped line, not a fee.
+- Answer keys: TX 503 right / 15 wrong (unchanged), 7 states 721 / 47 (was 719 / 47). Live dry run: 1,418 of 1,437 kept, the same as v31.
+- "... to avoid a minimum balance fee of $3.95" is read as the $3.95 fee, not the balance thresholds (Security First Bank of ND).
+- A price followed by "when performed at an ATM we do not own or operate" keeps that clause in its name. It is read only once the category guard accepts the name; today the guard refuses "Deposits/Withdrawals" as an ATM fee (Pathfinder).
+- "Account Link Overdraft Protection | $10" is an overdraft protection transfer, not an overdraft fee (Spencer Savings).
+- A figure from a worked example ("Example: Assume you establish a bill pay payment ... in the amount of $100") is not a fee. Hamilton's limit guard flags live ones as `worked_example` and takes them down after its second look (Northwest Bank's $100 bill pay, plus 2 more on Oct 7). Confirmed takedowns become Knox takedown lessons (PR 393).
+- Current pages last read before v26 are read again once (`KNOX_STALE_READ_BELOW_VERSION`; 5,474 pages at 4,265 banks on Oct 7). Market leaders and `KNOX_PRIORITY_REREAD_IDS` (report-gap banks, Space Coast) go first.
+- Not read yet, because the shared source check can't trace them: safe-deposit-box size grids (sizes on one row, prices on the next) and a price that wraps to the start of the next row ("Returned Check ... | $20" / "$30 | ...").
+
+v33 (rules 33) names overdraft fees from their section heading or a term defined above them; see
+"Fees named by page context" below.
+
+v34 (rules 34, from the $10B+ banks with no live overdraft fee, Oct 8):
+- "You still pay a fee of $35 per item for overdrawing your account, but ..." is the overdraft fee; a sentence fee's clause ends at ", but" / ", and" (Park National).
+- "Insufficient Funds Charge (Paid)" beside "(Returned)" is the overdraft fee (WaFd; guard v29 refiles it the same way).
+- A promoted held line whose stored name does not say its category ("You still pay") takes the name today's rules read.
+- "Per transaction" (and "transactions") is a unit cell, so "Overdraft Fee - Items Paid3 | Per transaction | $20.00" is the overdraft fee, not an unnamed price (Banc of California).
+- A change the bank says it already made ("We've lowered Overdraft Paid Item fees from $38 to $30") is today's price at the later figure. A change still to come ("will", "effective", "beginning") stays a held range (Pinnacle).
+- The held re-check also re-reads range lines that say a price was changed, and promotes one only at its stored amount (the lower end), so a raised price stays held.
+
+v35 (rules 35, from the state top-10 banks with no live overdraft fee, Oct 8):
+- A fee name that opens a note and wraps onto the next line or two, with its price alone below ("Overdraft Fee (per item, ... in person withdrawal," / "ATM withdrawal, ... per day.)" / "$36.00"), is that fee at that price, named by its first line (`wrappedNamePrices`, MVB). The shared source check reads the run-on note as a qualifier between the name and the price.
+
+v36 (rules 36, same lane, Oct 8):
+- A price printed between a two-line name's lines ("Overdraft Fee³ - All Checking and Savings Accounts" / "$33" / "(Including Money Markets)") is that fee at that price, when the line below only finishes the name's note (`centeredNamePrices`, Starion).
+- Footnote marks read onto a price alone on its line ("$334, 5" for "$33⁴,⁵") are dropped when they count up from the price's last digit and each is printed as a numbered footnote (`stripPriceFootnoteMarks` in `source-check.ts`, which Knox and the shared source check both apply). A single mark ("$331") stays: nothing tells it from a price.
+
+v37 (rules 37, same lane, Oct 8):
+- A sentence fee may say "a one-time fee of", "a per-item fee of" or "a flat fee of", and a cap after its clause (", not to exceed $180 per day") is cut from the name, not read as a second price in it ("We will charge you a one-time fee of $36 each time we pay an overdraft, not to exceed $180 per day", Guaranty).
+
+v38 (rules 38, same lane, Oct 8):
+- A threshold in a cell of its own ("Courtesy Pay | Over $5 | Per occurrence | $32", Lighthouse) no longer hides the fee's name from the classifier, and stays in the name with its figure ("Courtesy Pay (over $5)"), which is how the shared source check tells it from a tier.
+- "Privilege Pay" is an overdraft name, so one price for "NSF, Privilege Pay, & Uncollected Funds Fee" (Arkansas FCU) files as the overdraft fee, like "NSF/Overdraft".
+
+v39 (rules 39, from the $10B+ banks with no live overdraft fee, Oct 8):
+- "OD" and "O/D" followed by the fee's own word ("OD Privilege", "OD Fee-Item Paid", "Paid Item O/D Fee") name the overdraft fee. Before, such a line was read as no fee at all, not even held (GreenState's "OD Privilege* ... | $29.00/Item"). 29 banks' texts have such a line, 10 of them with no live overdraft fee.
+- "Continued OD Charge", "Consecutive Day OD Fee" and "Daily OD Fee" are the continuous overdraft charge, as the spelled-out names already were.
+- "NSF/OD Charges | $30" is the price for both the NSF and the overdraft item, like "NSF/Overdraft" (v27).
+- The held re-check takes $10B+ banks' held lines first, as Knox's re-reads do; a full pass over about 19,000 held lines takes about 12 hours at 300 a step.
+
+v40 (rules 40, from the state top-10 banks with no live overdraft fee, Oct 8):
+- "Paid Item Fee" is the overdraft fee ("We may charge you a Paid Item Fee of $30.00 if we pay an item that exceeds your Ledger Balance", Northeast Bank). A combined "NSF paid item fee/NSF returned item fee" stays with NSF.
+- A sentence that charges a fee by its own Title Case name ("We may charge you a Return Item Fee of $30.00") is named by that title, not by the sentence around it.
+
+v42 (rules 42, from Marketing's outreach batch, Oct 8; v41 is left for the Top 50 branch):
+- A paid NSF item is the overdraft fee: "Paid nonsufficient funds (NSF)" (Saco & Biddeford), "NSF Share Draft (Honored)" (Bluestone FCU), "Paid Consumer & Business NSF Items" (NIH FCU). A returned or unpaid one stays NSF.
+- A long name that ends in a note keeps its title: "Overdraft Fee* - each debit or check presentment paid (Consumer Accts: 5 max total OD or Returned Item fees daily)" was named "5 max total OD or Returned Item fees daily" and filed as NSF (BankIowa).
+- In a table row, a last text cell that only lists what an overdraft covers ("Checks (Share Drafts), Online Payments, & ACH", "For Debit Card Transactions including ATM, POS") does not name the price; the overdraft cell before it does (Los Angeles FCU).
+- A price row named only by its threshold ("Per Item greater than $10.01 | $30 per item") belongs to the priceless fee line just above it (NIH FCU).
+- A run for one institution (Atlas's read-now runs) reads its current page again once per rules version while it has no live overdraft fee, as state leaders' runs do since v40.
+
+v43 (rules 43, Oct 8):
+- One price for the paid and the returned NSF item ("NSF Paid Item Fee/Returned Item Fee (items over $10) | $32", Pinnacle Bank Wyoming) is the overdraft price too, like "NSF/Overdraft". Before, Knox filed it as NSF and both guards rejected it, so the fee went nowhere.
+
+v44 (rules 44, Oct 8):
+- Knox writes a fee's frequency on new reads with the shared reader (`src/lib/fee-frequency.ts`):
+  the words right after the fee's own price, or its name when nothing follows. Hamilton's publish
+  step fills blank live rows with the same reader.
+
+v45 (rules 45, Collection Items, Oct 8):
+- An item sent for collection, or a foreign or Canadian check or item handled for deposit ("Collection Item", "Items Sent for Collection", "Foreign Check Processing"), files as `collection_item`, not check cashing (James, Oct 8: "Own type"). Cashing a foreign check is still check cashing and a returned one is still a returned item. The pattern is `COLLECTION_ITEM` in `src/lib/fee-fold.ts`, shared with the category guard and Hamilton's fold step.
+
+v46 (rules 46, from Origin Bank's overdraft rows, Oct 8):
+- A paragraph wrapped across lines is read as its sentences: a line joins the one above when neither is a table row, the one above is at least 40 characters and ends mid-sentence, and the line starts in lower case. Read line by line, "we will charge you an overdrawn account fee of $10.00 on the 5th consecutive" was named by the line above it and filed as a $10 overdraft fee, and "overdrawn $5 / or less" lost the words that make $5 a threshold (Origin Bank, whose fragment-named overdraft rows were live).
+- After a general "fees and charges", a price is named by what follows "including": "Normal bank fees and charges, including returned item charge/overdraft item charge of $35.00" is "Returned item charge/overdraft item charge". "NSF for each presentment, including if the same item is presented" keeps its name.
+
+v47 (rules 47, Oct 8; merged with v48 in #696):
+- A fee's frequency comes from its own row first (`settledFrequency`): a period word that sits
+  only in another priced cell ("per year" on the row above "Reverse Stop Payment Request $20") no
+  longer sets it.
+
+v48 (rules 48, Oct 8):
+- A fee-change notice's row ("Fee through | Fee as of", "Money Orders | $2.00 | $5.00") is read at
+  its newest column (`newestColumnText`), and the shared source check reads it the same way, so
+  the old price no longer goes live (Jeanne D'Arc CU).
+
+v49 (rules 49, Oct 8):
+- A monthly fee with no account name takes it from its own name or the heading above it
+  (`lineup.ts`).
+
+v50 (rules 50, Oct 8):
+- A personal per-item-paid row under an overdraft heading; see "Fees named by page context" below.
+
+v51 (rules 51, Oct 8):
+- A monthly fee also takes the balance that avoids it, its waiver and the opening deposit from its
+  account's lines. Current copies with a monthly fee row missing them are read again once
+  (`KNOX_LINEUP_READ_BELOW_VERSION`, trigger 6 above).
+
+v52 (rules 52, Oct 8):
+- Frequency is settled by the frequency fill's rule (`settledFrequency`), with fee-frequency v4
+  wording.
+
+v53 (rules 53, Oct 8):
+- A fax service is document reproduction, the fold's home for it (`FAX_SERVICE`).
+
+v54 (rules 54, Oct 8):
+- A copy charged by the page is document reproduction, even under research (`PER_PAGE_COPY`).
+
+v55 (rules 55, Oct 8):
+- A monthly fee's lineup is never read from a neighbour: the next account's fee line, another
+  account's clause of a one-line footnote, or a fee heading above "Money Market" (`lineup.ts`).
+
+v56 (rules 56, Oct 8):
+- Balancing or reconciling a checkbook is account research (`CHECKBOOK_RECONCILIATION`).
+
+v57 (rules 57, Oct 8):
+- A long table row is traced by its short cells, and a name drops a details cell, an "N/A" cell
+  and a leading "Otherwise,"; "to avoid $3 paper statement fee" is named after its price (Arvest,
+  Old National).
+- A fee whose own row traces reads its frequency from that row, not from a window that stops at
+  the price ("... four (4) OD fees per day ... | $17.00 | per item" is per item).
+
+No rules release used v58: #843 moved the version from 57 to 59.
+
+v59 (rules 59, Oct 8):
+- A "Cross-Border Banking" bundle or package is an account, so its fee is the account's
+  maintenance fee, not the card's currency fee (`CROSS_BORDER_BUNDLE`; RBC, TD, BMO).
+
+v60 (rules 60, Oct 8):
+- A threshold parenthetical keeps its figure in the name ("Cashier's Checks ($10,000.01 and
+  Over)"), a "Name" column label is dropped, and "In addition to the ... Fee" keeps its words
+  (`nameFrom`, `tidyFeeName`).
+
+v61 (rules 61, Oct 8):
+- Adjusting an ATM deposit or dispute is account research, not a network ATM fee
+  (`ATM_ADJUSTMENT`).
+
+v62 (rules 62, Oct 9):
+- A dot-leader line's name wrapped over lines above it is read whole (`joinWrappedLeaderNames`),
+  "Domestic Outgoing (client only) .... $25.00 per wire" is a wire, and one source line read by two
+  specialists is one fee, whatever each named it (`sameFee`; Northern Trust).
+
+v63 (rules 63, Oct 9):
+- A safe deposit box size glued after another fee's name starts its own line (doc 20570).
+
+v64 (rules 64, Oct 9):
+- A box table printed sideways, sizes over prices, is read one box per line (SCCU 8109).
+
+v65 (rules 65, Oct 9, customer audience):
+- Every read carries a customer audience (`fee_audience`: consumer, business, both or unknown),
+  the words that show it (`audience_evidence`) and how the fee is treated (`fee_treatment`), from
+  `feeApplicability` in `src/lib/fee-audience.ts`. Only the fee's own name, or an excerpt with one
+  price or a completed price change, counts as evidence; unknown never means consumer.
+- A completed statement that NSF fees were eliminated for one audience, optionally with the price
+  changed for the other ("We've eliminated Non-sufficient Funds (NSF) Returned Item fees for
+  consumer clients and lowered them from $38 to $30 for business clients", Pinnacle), is read as
+  two NSF fees: $0 for the first audience and the new price for the second
+  (`scopedFeeStatements`). A notice still to come, or one with any other clause, is not split.
+- Two specialists' reads are the same fee only when their audience matches too, and a joined
+  NSF/overdraft price is filed under both categories per audience.
+- The held re-check does not promote a line from such a sentence (`recategorizeHeld`): one row
+  cannot become two audiences, so the document's re-read writes them. Pinnacle (47) heads
+  `KNOX_PRIORITY_REREAD_IDS` for that re-read.
+
+Rules 65, #1196 (Oct 14, no version change, so no document is re-read for it):
+- A price whose decimal point the PDF text dropped ("Dormant accounts | $15 00 per month
+  Nonsufficient funds | $35 00", Addition Financial) gets its point back before the line is read
+  (`withDroppedDecimalPoints`): "00" cents always, other cents only when the text drops the point
+  on "00" prices too and the cents end their cell. The cents no longer open the next fee's name
+  ("00 per month Nonsufficient funds").
+- #1305, same function: cents followed by a footnote star end their price ("$1 50* after 8/mo"
+  is $1.50, the star never a digit), and a point kept with a space after it is the same dropped
+  point ("$29. 95/ea ch" is $29.95). Each shape is counted on its own, and cents after ". " must
+  end their cell, so "$500. 10-year draw period" and "below $100. 19 and over" stay two numbers.
+- On a line with two fees, the unit right after the first price ("per month", "/hr", "each") is
+  that price's: the second fee's name and frequency are read from after it, and the second fee is
+  not dropped as a repeat of the first price.
+
+## Held lines and the re-checks after each extract
+
+A new rules version also reaches lines older versions held. Knox does not extract a text twice
+under one rules version, and the raw-row dedupe index (then document, name, amount; audience was
+added in v65) stopped a categorized fee from replacing the held row, so a held line stayed held
+after the rules learned it. Now each extract step re-reads up to 300 held unclassified lines
+from the document's current text with today's rules (`held-recheck.ts`): a line priced at the same amount takes the category and goes to Darwin
+(`knox_promoted_from_held`); the rest get `knox_recheck:extract.rules:v<N>` and wait for the next
+version. A categorized insert that meets a held row takes it over the same way.
+Each re-read is logged in `pipeline_feedback` under `knox.held:raw:<id>` (the versions that read
+it and the outcome). A line still uncategorized after three versions is set aside
+(`knox_set_aside`), never deleted, and later versions keep re-reading it.
+
+After the extract itself, each extract step runs these passes in order (`run-store.ts`):
+
+- `recheckPromotedRows`: lines promoted from held that Darwin has not verified go back on hold when
+  today's rules no longer file them under the same category (see v30).
+- `recheckHeldRows`: up to 300 held lines re-read with today's rules (above).
+- `recheckUntracedRows`: up to 100 rows held as `knox_review:untraced` (the self-check could not
+  trace them), $10B+ banks first, whose `text_hash` is a completed text of their document. Each text
+  is read again with today's free team. A row goes to Darwin (`needs_darwin_verification`,
+  `knox_promoted_from_untraced`) only when today's team reads a traced fee with the row's own name,
+  amount and category; the rest get `knox_untraced_recheck:extract.rules:v<N>` and wait for the
+  next version. Before this pass the dedupe index kept the held row in place of a later traced
+  read (Arvest's "Overdraft (OD) - Paid Item" $17, raw 449097, 9 Oct). Nothing is deleted.
+- `recheckSupersededRows`: up to 100 rows a re-read retired (`superseded_by_reread`) that Knox's paid
+  reader produced (`knox_paid_extraction`), on a page's current copy and not verified, across all
+  lanes. Each is read again from the document's newest completed text with today's free team. A row
+  goes back to Darwin (`knox_promoted_from_superseded`, its audit text taking the current text's
+  hash) only when today's team reads a traced fee with the row's own name, amount and category and
+  the bank has no live fee of that category at that price (a live twin, `published_fee_catalog`).
+  The rest get `knox_superseded_recheck:extract.rules:v<N>`. Paid rows only, so a row comes back
+  when two independent readers agree. `SUPERSEDED_RECHECK_LIVE` is on; set off, the pass is a dry
+  read: rows are marked `knox_superseded_would_promote:v<N>` and nothing goes to Darwin. Before
+  this pass, the dedupe index kept the retired row and dropped the new text's identical read
+  (Northern Trust's $25 overdraft, raw 457013, 9 Oct).
+  A second pass in the same step (`source: "free"`, #1093 step 2, approved by James 2026-10-12)
+  applies the same test to free-pass rows, 200 a pass: the rows a re-read retired before #1147
+  let a new read take its row back (1,626 at 361 banks on 12 Oct, 51 of them with no live fee).
+  Only one reader agrees here, so Darwin's free checks, the shared source check among them,
+  decide what goes live; the 9 Oct dry read of 17 free rows was 11 of 17 right against source.
+  The step's detail reports it as `superseded_free_recheck`.
+- `refileSupersededRows` (#1093, off until James approves, `SUPERSEDED_REFILE_LIVE`): a free-pass
+  row a re-read retired that today's free team reads with the same name and amount under another
+  category. The superseded re-check needs the old category, so it leaves these retired, and the
+  dedupe index kept the re-read from writing its own row (Oregonians CU's "Card Replacement" $10,
+  retired as atm_non_network, read today as card_replacement). On, the row goes to Darwin under
+  today's category (old `canonical_hint:` flags dropped, `knox_refiled_from:<old>` kept for
+  reversal), unless a live twin of today's category stands or Darwin already judged the row for
+  something other than its category (Darwin does not judge a row twice at one version). The pass
+  also repairs unverified rows a re-read took over whose first `canonical_hint:` flag is stale
+  (`knox_stale_hint_repaired`). Off, every extract step reads a read-only sample of 25 (a new
+  sample each hour) and a dry-run extract reads every candidate; neither writes. The step's
+  detail reports it as `superseded_refile`.
+- A re-read that takes over a row (`knox_reread_took_over`, `knox_promoted_from_held`) drops the
+  row's old `canonical_hint:` flags. Darwin reads the first such flag, so before this a fee today's
+  rules filed under a new category was judged under the old one: 12 of the 54 take-overs by 14 Oct
+  ("Wire Transfer - International" $45 judged as an overdraft fee).
+- `recheckHeldRates`: held percentage lines (below).
+- Batch review (`batch-review.ts`, below).
+
+Percentage fees (`percent.ts`). A held "1% of the transaction" line goes to Darwin as a rate fee
+(`amount_kind = 'percent'`, `rate_percent`, optional `rate_min_amount` / `rate_max_amount` /
+`rate_basis`, `amount` NULL, flag `knox_rate_fee`) only when its category publishes rates
+(`percentFeeAllowed` in `src/lib/percent-fees.ts`, the list Darwin applies) and the rate traces
+with the shared `checkRateAgainstSource`. A balance transfer rate is filed under cash_advance.
+It stays held when the line is an interest or dividend rate, says "up to", states two different
+rates, falls outside the category's range, or has no clean name. Names come from the category's
+own words ("A 1% Currency Conversion Fee will be assessed on" is "Currency Conversion Fee"). New
+texts get this in the extract pass; rows held before it are re-read by `recheckHeldRates`
+(`knox_rate_recheck:v2`, 100 per extract step). v2 (#1102): a rate stated as a share of what it
+charges ("1% of transaction amount") traces without the word "fee", and check cashing and
+international ATM fees publish as rates.
 
 ## Learning reader (`lessons.ts`)
 Each extract step reads lessons from the shared learning store (`pipeline_feedback`): a fee name
@@ -282,6 +585,29 @@ person, 25 at a time, most-judged first. A label is a `name_label` row in the st
 next extract Knox files that exact name under the labelled category from any other. "No category
 fits" only takes the name off the queue. A label that agrees with the rules stops a global
 lesson from moving the fee.
+
+Lessons v3 learn from restores. A fee Hamilton restored after a takedown (`restored_after_takedown`,
+from the second look or the restore bar) counts as verified under the category it came back with,
+and a takedown under that same category no longer counts against the name. A takedown under another
+category stands, since a fee taken down as a domestic wire and restored as an international wire
+confirms the lesson. Knox reads only the category kinds: `unreproduced`, `not_on_schedule`,
+`wrong_amount` and `threshold` say nothing about a category and are often restored. On prod (Oct 7)
+this adds 30 lessons (28 per-bank, mostly international wires and overdraft transfers) and drops none.
+
+Takedown lessons (`takedown-lessons.ts`). Knox reads Hamilton's second-look confirmations
+(`takedown_confirmed` from the source check, limit guard and business-schedule check) for fees
+still down with no live twin. When it reads the same bank, name and price again, usually from a
+new copy of the page, it writes the row held (`knox_review:taken_down`,
+`knox_lesson:taken_down:<check>`) and does not send it to Darwin. The row is kept, never dropped.
+First-look takedowns (`not_on_schedule`, `wrong_amount`, `threshold`, `unreproduced`) do not teach,
+because many are restored. The extract event carries `takedown_lessons_loaded` and `takedown_holds`.
+Before this, in the 48 hours to Oct 7 05:50 UTC, Knox re-read 208 taken-down fees, sent 49 back to
+Darwin, and 6 were published again.
+
+Live name tidy (`name-retidy.ts`, Oct 7): names Knox stored before it tidied reads ("Stop Payment |
+Item", "/mo. | Dormant Fee", "An overdraft fee of") are re-tidied on live rows, a batch of banks per
+publish step. A rename must keep the fee tracing in its own schedule and passing the category guard;
+the old name goes to `pipeline_feedback` (`name_retidied`, weight 0, so it never counts as a lesson).
 
 ## Batch review (`batch-review.ts`)
 
@@ -350,19 +676,28 @@ only on what the free team could not read.
     Pass 2 rows carry `knox_specialist:<strategy>`.
   - Each specialist is logged in `pipeline_attempts` as its own strategy, with
     `foldIntoPlaybook: false`. The team total is logged as `extract.rules`, which drives the
-    router and the re-extract gate.
-- Pass 3, paid (`extract-paid` step, `paid-extract.ts`, `extract.paid`). It selects up to
-  `PAID_PASS_ITEMS_PER_RUN` texts that have:
-  - at least 15 priced lines;
-  - fewer than 5 Knox fees after the current free version;
-  - no earlier paid attempt for the same `text_hash`.
+    re-extract gate and the paid pass's selection.
+- Pass 3, paid (`extract-paid` step, a provider step; `paid-extract.ts`, `extract.paid`). It runs
+  only on a text the free team has already read at the current rules version. It selects up to
+  `PAID_PASS_ITEMS_PER_RUN` texts whose latest `extract.rules` attempt at the current version, for
+  the same institution and text hash, found fewer than 5 fees (`KNOX_REEXTRACT_MAX_FEES`) and that:
+  - have at least 15 priced lines (`PAID_MIN_PRICED_LINES`, counted in SQL and again by
+    `pricedLineCount`);
+  - are not an older copy of a page whose current copy has a text;
+  - have no `extract.paid` attempt for the same text hash, except attempts that failed for a
+    temporary reason (`timeout`, `network_error`, `http_429`, `http_5xx`, `budget_blocked`), which
+    a later run tries again.
 
-  It makes one `paidModelCall` per document and keeps a returned row only when:
-  - its amount appears in the text, on its source line or next to its name;
-  - its canonical key exists.
+  It makes one `paidModelCall` per document and keeps a returned row only when (`groundPaidRow`):
+  - it has a name, a canonical key that exists and an amount from $0 to $2,500;
+  - it does not name a limit (`limit_not_fee`);
+  - its source line (with the amount on it), or its name and amount, appear in the text;
+  - the shared check (`checkFeeAgainstSource`) reads the amount as that fee.
 
-  Kept rows go in like rule rows, with `knox_paid_extraction` added. A budget, stop or
-  circuit error ends the pass cleanly, and each attempt records its cost.
+  Kept rows go in like rule rows, with `knox_paid_extraction` added; a $0 row is stored as a free
+  fee for Darwin. When a row is kept, the rows from the document's older text are retired first. A
+  budget, stop or circuit error ends the pass before the call and writes no attempt, so the text
+  stays eligible; any other call error records its outcome. Each attempt records its cost.
 
 ## Boundaries
 
@@ -380,127 +715,9 @@ Change this table and `agent-health.ts` in the same PR.
 | Rule | Number | Holds when |
 |---|---|---|
 | Steps do not fail | `stepsFailed` (24 h) | 0 |
-| Each text is extracted once per rules version | `repeatExtractions` (same institution and text hash, current `KNOX_EXTRACT_STRATEGY`, 24 h) | 0 |
+| Each text is extracted once per rules version | `repeatExtractions` (same institution and text hash, current `KNOX_RULES_STRATEGY`, 24 h) | 0 |
 
 Also recorded, without a rule: `stepsCompleted`, `spendUsd`, `rawExtracted`, `textsExtracted`, `evidenceMismatch`.
-
-v28 (rules 28) never reads a limit as a price. A name that ends on a limit ("Zelle transfer limit",
-"Mobile Deposit Checks are limited to", "VISA Gift Cards: Maximum card load", "Cash Advance Fee
-(maximum", "Zelle (Daily Limits)") states the most a customer may move, not what they pay
-(`namesALimit` in `layout.ts`). A cap category keeps its cap ("Overdraft and NSF Daily Maximum"), a
-fee for going past a limit keeps its price ("Over Limit", "Limit Violation"), and a fee's own note
-keeps it a fee ("Mobile Deposit Fee (daily limits apply)"). The paid reader rejects the same rows
-(`limit_not_fee`). The shared check now also reads a price under a dollar written "$.50" or "75¢",
-and the paid reader counts those lines and skips an older copy of a page whose current copy has a
-text, as the free reader already did. A family expert names a fee after the previous fee's note
-("Check printing – (fee depends on style) Temporary check – $.20" is a temporary check). Answer
-keys: Texas 500 right (495), the same 15 wrong; held-out 48 right (47); seven states unchanged.
-Live dry run: 1,419 of 1,437 kept (1,418), nothing lost.
-
-v29 (rules 29) tidies names that ran on into their price. A short name loses the connector before
-the price ("Visa Lost/Stolen Replacement Card Fee of", "Non-Bank of America ATM Fee for",
-"Debit Card Replacement A fee of") and a leading article ("A minimum balance fee" becomes "Minimum
-balance fee"), and a "None" or "Free" cell between two names is the previous row's price, so the name
-starts after it (`tidyFeeName`). A sentence of more than eight words keeps its ending, because the
-category guard reads "required to avoid a minimum balance fee of" as a fee. Answer keys: Texas 501
-right (500), the same 15 wrong; held-out 49 right (48); seven states unchanged. Live dry run: 1,419
-of 1,437 kept, the same fees.
-
-v30 (rules 30) reads two more limit wordings as ceilings, not prices: a limit that "will increase
-to" a figure ("the Overdraft Privilege limit will increase to $1,500") and a limits row with a
-"($/#)" note ("Daily ATM Limits ($/#) $505"). Both reached raw rows from v29's first run on prod.
-Answer keys unchanged; live dry run: 1,419 of 1,437 kept, the same fees.
-
-Lessons v3 learn from restores. A fee Hamilton restored after a takedown (`restored_after_takedown`,
-from the second look or the restore bar) counts as verified under the category it came back with,
-and a takedown under that same category no longer counts against the name. A takedown under another
-category stands, since a fee taken down as a domestic wire and restored as an international wire
-confirms the lesson. Knox reads only the category kinds: `unreproduced`, `not_on_schedule`,
-`wrong_amount` and `threshold` say nothing about a category and are often restored. On prod (Oct 7)
-this adds 30 lessons (28 per-bank, mostly international wires and overdraft transfers) and drops none.
-
-v31 (rules 31) reads a cap on what the bank pays back ("The maximum rebate per 12-month cycle $240",
-ATM surcharge rebates) as a limit, not a fee. It reached raw rows on v30's first prod run (03:21 UTC
-Oct 7), which otherwise showed none of v30's limit wordings and no dangling names in 362 reads.
-Answer keys unchanged; live dry run: 1,419 of 1,437 kept, the same fees.
-
-Takedown lessons (`takedown-lessons.ts`). Knox reads Hamilton's second-look confirmations
-(`takedown_confirmed` from the source check, limit guard and business-schedule check) for fees
-still down with no live twin. When it reads the same bank, name and price again, usually from a
-new copy of the page, it writes the row held (`knox_review:taken_down`,
-`knox_lesson:taken_down:<check>`) and does not send it to Darwin. The row is kept, never dropped.
-First-look takedowns (`not_on_schedule`, `wrong_amount`, `threshold`, `unreproduced`) do not teach,
-because many are restored. The extract event carries `takedown_lessons_loaded` and `takedown_holds`.
-Before this, in the 48 hours to Oct 7 05:50 UTC, Knox re-read 208 taken-down fees, sent 49 back to
-Darwin, and 6 were published again.
-
-Live name tidy (`name-retidy.ts`, Oct 7): names Knox stored before it tidied reads ("Stop Payment |
-Item", "/mo. | Dormant Fee", "An overdraft fee of") are re-tidied on live rows, a batch of banks per
-publish step. A rename must keep the fee tracing in its own schedule and passing the category guard;
-the old name goes to `pipeline_feedback` (`name_retidied`, weight 0, so it never counts as a lesson).
-
-v32 (rules 32, from Space Coast CU's page, Oct 7):
-- "Incoming Wires" and "Outgoing Wires" read in the plural.
-- "(Outside U.S.)" is an international wire.
-- An account named with the balance it must keep ("Money Market Savings Account (below $2,500) | $15/mo.") is that account's low-balance fee.
-- When two fees' names share a row before one price ("Returned Check | Verification of Deposit | $20"), the price and the name are the nearest fee's.
-- A name that closes a parenthesis it never opened ("SCCU for using a non-SCCU ATM) | $60") is the end of a wrapped line, not a fee.
-- Answer keys: TX 503 right / 15 wrong (unchanged), 7 states 721 / 47 (was 719 / 47). Live dry run: 1,418 of 1,437 kept, the same as v31.
-- "... to avoid a minimum balance fee of $3.95" is read as the $3.95 fee, not the balance thresholds (Security First Bank of ND).
-- A price followed by "when performed at an ATM we do not own or operate" keeps that clause in its name. It is read only once the category guard accepts the name; today the guard refuses "Deposits/Withdrawals" as an ATM fee (Pathfinder).
-- "Account Link Overdraft Protection | $10" is an overdraft protection transfer, not an overdraft fee (Spencer Savings).
-- A figure from a worked example ("Example: Assume you establish a bill pay payment ... in the amount of $100") is not a fee. Hamilton's limit guard flags live ones as `worked_example` and takes them down after its second look (Northwest Bank's $100 bill pay, plus 2 more on Oct 7). Confirmed takedowns become Knox takedown lessons (PR 393).
-- Current pages last read before v26 are read again once (`KNOX_STALE_READ_BELOW_VERSION`; 5,474 pages at 4,265 banks on Oct 7). Market leaders and `KNOX_PRIORITY_REREAD_IDS` (report-gap banks, Space Coast) go first.
-- Not read yet, because the shared source check can't trace them: safe-deposit-box size grids (sizes on one row, prices on the next) and a price that wraps to the start of the next row ("Returned Check ... | $20" / "$30 | ...").
-
-v34 (rules 34, from the $10B+ banks with no live overdraft fee, Oct 8):
-- "You still pay a fee of $35 per item for overdrawing your account, but ..." is the overdraft fee; a sentence fee's clause ends at ", but" / ", and" (Park National).
-- "Insufficient Funds Charge (Paid)" beside "(Returned)" is the overdraft fee (WaFd; guard v29 refiles it the same way).
-- A promoted held line whose stored name does not say its category ("You still pay") takes the name today's rules read.
-- "Per transaction" (and "transactions") is a unit cell, so "Overdraft Fee - Items Paid3 | Per transaction | $20.00" is the overdraft fee, not an unnamed price (Banc of California).
-- A change the bank says it already made ("We've lowered Overdraft Paid Item fees from $38 to $30") is today's price at the later figure. A change still to come ("will", "effective", "beginning") stays a held range (Pinnacle).
-- The held re-check also re-reads range lines that say a price was changed, and promotes one only at its stored amount (the lower end), so a raised price stays held.
-
-v35 (rules 35, from the state top-10 banks with no live overdraft fee, Oct 8):
-- A fee name that opens a note and wraps onto the next line or two, with its price alone below ("Overdraft Fee (per item, ... in person withdrawal," / "ATM withdrawal, ... per day.)" / "$36.00"), is that fee at that price, named by its first line (`wrappedNamePrices`, MVB). The shared source check reads the run-on note as a qualifier between the name and the price.
-
-v36 (rules 36, same lane, Oct 8):
-- A price printed between a two-line name's lines ("Overdraft Fee³ - All Checking and Savings Accounts" / "$33" / "(Including Money Markets)") is that fee at that price, when the line below only finishes the name's note (`centeredNamePrices`, Starion).
-- Footnote marks read onto a price alone on its line ("$334, 5" for "$33⁴,⁵") are dropped when they count up from the price's last digit and each is printed as a numbered footnote (`stripPriceFootnoteMarks` in `source-check.ts`, which Knox and the shared source check both apply). A single mark ("$331") stays: nothing tells it from a price.
-
-v37 (rules 37, same lane, Oct 8):
-- A sentence fee may say "a one-time fee of", "a per-item fee of" or "a flat fee of", and a cap after its clause (", not to exceed $180 per day") is cut from the name, not read as a second price in it ("We will charge you a one-time fee of $36 each time we pay an overdraft, not to exceed $180 per day", Guaranty).
-
-v38 (rules 38, same lane, Oct 8):
-- A threshold in a cell of its own ("Courtesy Pay | Over $5 | Per occurrence | $32", Lighthouse) no longer hides the fee's name from the classifier, and stays in the name with its figure ("Courtesy Pay (over $5)"), which is how the shared source check tells it from a tier.
-- "Privilege Pay" is an overdraft name, so one price for "NSF, Privilege Pay, & Uncollected Funds Fee" (Arkansas FCU) files as the overdraft fee, like "NSF/Overdraft".
-
-v39 (rules 39, from the $10B+ banks with no live overdraft fee, Oct 8):
-- "OD" and "O/D" followed by the fee's own word ("OD Privilege", "OD Fee-Item Paid", "Paid Item O/D Fee") name the overdraft fee. Before, such a line was read as no fee at all, not even held (GreenState's "OD Privilege* ... | $29.00/Item"). 29 banks' texts have such a line, 10 of them with no live overdraft fee.
-- "Continued OD Charge", "Consecutive Day OD Fee" and "Daily OD Fee" are the continuous overdraft charge, as the spelled-out names already were.
-- "NSF/OD Charges | $30" is the price for both the NSF and the overdraft item, like "NSF/Overdraft" (v27).
-- The held re-check takes $10B+ banks' held lines first, as Knox's re-reads do; a full pass over about 19,000 held lines takes about 12 hours at 300 a step.
-
-v40 (rules 40, from the state top-10 banks with no live overdraft fee, Oct 8):
-- "Paid Item Fee" is the overdraft fee ("We may charge you a Paid Item Fee of $30.00 if we pay an item that exceeds your Ledger Balance", Northeast Bank). A combined "NSF paid item fee/NSF returned item fee" stays with NSF.
-- A sentence that charges a fee by its own Title Case name ("We may charge you a Return Item Fee of $30.00") is named by that title, not by the sentence around it.
-
-v42 (rules 42, from Marketing's outreach batch, Oct 8; v41 is left for the Top 50 branch):
-- A paid NSF item is the overdraft fee: "Paid nonsufficient funds (NSF)" (Saco & Biddeford), "NSF Share Draft (Honored)" (Bluestone FCU), "Paid Consumer & Business NSF Items" (NIH FCU). A returned or unpaid one stays NSF.
-- A long name that ends in a note keeps its title: "Overdraft Fee* - each debit or check presentment paid (Consumer Accts: 5 max total OD or Returned Item fees daily)" was named "5 max total OD or Returned Item fees daily" and filed as NSF (BankIowa).
-- In a table row, a last text cell that only lists what an overdraft covers ("Checks (Share Drafts), Online Payments, & ACH", "For Debit Card Transactions including ATM, POS") does not name the price; the overdraft cell before it does (Los Angeles FCU).
-- A price row named only by its threshold ("Per Item greater than $10.01 | $30 per item") belongs to the priceless fee line just above it (NIH FCU).
-- A run for one institution (Atlas's read-now runs) reads its current page again once per rules version while it has no live overdraft fee, as state leaders' runs do since v40.
-
-v43 (rules 43, Oct 8):
-- One price for the paid and the returned NSF item ("NSF Paid Item Fee/Returned Item Fee (items over $10) | $32", Pinnacle Bank Wyoming) is the overdraft price too, like "NSF/Overdraft". Before, Knox filed it as NSF and both guards rejected it, so the fee went nowhere.
-
-v45 (rules 45, Collection Items, Oct 8):
-- An item sent for collection, or a foreign or Canadian check or item handled for deposit ("Collection Item", "Items Sent for Collection", "Foreign Check Processing"), files as `collection_item`, not check cashing (James, Oct 8: "Own type"). Cashing a foreign check is still check cashing and a returned one is still a returned item. The pattern is `COLLECTION_ITEM` in `src/lib/fee-fold.ts`, shared with the category guard and Hamilton's fold step.
-
-v46 (rules 46, from Origin Bank's overdraft rows, Oct 8):
-- A paragraph wrapped across lines is read as its sentences: a line joins the one above when neither is a table row, the one above is at least 40 characters and ends mid-sentence, and the line starts in lower case. Read line by line, "we will charge you an overdrawn account fee of $10.00 on the 5th consecutive" was named by the line above it and filed as a $10 overdraft fee, and "overdrawn $5 / or less" lost the words that make $5 a threshold (Origin Bank, whose fragment-named overdraft rows were live).
-- After a general "fees and charges", a price is named by what follows "including": "Normal bank fees and charges, including returned item charge/overdraft item charge of $35.00" is "Returned item charge/overdraft item charge". "NSF for each presentment, including if the same item is presented" keeps its name.
 
 ## Fees named by page context (`context-names.ts`, v33)
 
@@ -520,3 +737,22 @@ v46 (rules 46, from Origin Bank's overdraft rows, Oct 8):
   fee: "Overdraft - personal, per item paid" (a returned item is "NSF - personal, ..."). Footnote
   numbers after the heading ("(NSF)10, 12") are dropped. A business row, or one priced "paid or
   returned", is not read (Amerant Bank, a $10B bank with no live overdraft fee).
+
+## Current versions
+
+The version each rules or reader constant is at now. `scripts/ci-guards.sh guide-version-kill`
+fails a PR that changes one of these constants without updating its line here (#1109).
+
+| Constant | Strategy | Version | File |
+|---|---|---|---|
+| `KNOX_BATCH_REVIEW_VERSION` | — | v1 | `knox/batch-review.ts` |
+| `KNOX_CALIBRATION_VERSION` | — | v2 | `knox/calibration.ts` |
+| `HELD_RATE_RECHECK_VERSION` | — | v2 | `knox/held-recheck.ts` |
+| `KNOX_LAYOUT_SIGNATURE_VERSION` | — | v1 | `knox/layout-signature.ts` |
+| `KNOX_LESSONS_VERSION` | — | v3 | `knox/lessons.ts` |
+| `LINEUP_CORRECT_STRATEGY` | `knox.lineup_correct` | v2 | `knox/lineup-correct.ts` |
+| `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v19 | `knox/name-retidy.ts` |
+| `KNOX_PAID_STRATEGY` | `extract.paid` | v2 | `knox/paid-extract.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v65 | `knox/specialists.ts` |
+| `KNOX_TABLE_STRATEGY` | `extract.table` | v6 | `knox/table-rows.ts` |
+| `TAKEDOWN_LESSONS_VERSION` | — | v1 | `knox/takedown-lessons.ts` |

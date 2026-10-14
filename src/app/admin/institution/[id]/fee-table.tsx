@@ -1,7 +1,11 @@
 import type { InstitutionFee } from "@/lib/data-store/institution";
+import { HoldFeeButton } from "./fee-hold-controls";
 
 interface Props {
   fees: InstitutionFee[];
+  institutionName: string;
+  /** Show the Hold action: the viewer may hold fees. */
+  canHold: boolean;
 }
 
 function formatAmount(amount: number | null): string {
@@ -14,7 +18,7 @@ function confidenceLabel(confidence: number | null): string {
   return confidence === null ? "-" : `${Math.round(confidence * 100)}%`;
 }
 
-export function FeeTable({ fees }: Props) {
+export function FeeTable({ fees, institutionName, canHold }: Props) {
   const grouped = new Map<string, InstitutionFee[]>();
   fees.forEach((fee) => {
     const category = fee.fee_category || "other";
@@ -34,11 +38,18 @@ export function FeeTable({ fees }: Props) {
             <th className="text-center">Conf.</th>
             <th>Published</th>
             <th>Source</th>
+            {canHold && <th />}
           </tr>
         </thead>
         <tbody>
           {Array.from(grouped.entries()).map(([category, categoryFees]) => (
-            <FragmentRows key={category} category={category} fees={categoryFees} />
+            <FragmentRows
+              key={category}
+              category={category}
+              fees={categoryFees}
+              institutionName={institutionName}
+              canHold={canHold}
+            />
           ))}
         </tbody>
       </table>
@@ -49,15 +60,19 @@ export function FeeTable({ fees }: Props) {
 function FragmentRows({
   category,
   fees,
+  institutionName,
+  canHold,
 }: {
   category: string;
   fees: InstitutionFee[];
+  institutionName: string;
+  canHold: boolean;
 }) {
   return (
     <>
       <tr>
         <td
-          colSpan={7}
+          colSpan={canHold ? 8 : 7}
           className="bg-gray-50/80 py-1.5 text-[10px] font-bold uppercase tracking-[0.08em] text-gray-400 dark:bg-white/[0.03]"
         >
           {category.replace(/_/g, " ")}
@@ -108,6 +123,11 @@ function FragmentRows({
               <span className="text-gray-300">-</span>
             )}
           </td>
+          {canHold && (
+            <td className="text-right">
+              <HoldFeeButton feeId={fee.id} feeName={fee.fee_name} amount={fee.amount} institutionName={institutionName} />
+            </td>
+          )}
         </tr>
       ))}
     </>

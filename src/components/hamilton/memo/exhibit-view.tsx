@@ -14,7 +14,7 @@ export type AnswerSpec = Pick<HamiltonAnswer, "feeCategory" | "headline" | "clai
 
 export const EVIDENCE_LABELS: Record<AnswerSpec["evidenceLevel"], string> = {
   market: "Market data only",
-  working_estimate: "Working estimate from your filings",
+  working_estimate: "Working estimate from institution filings",
   institution: "Your own figures",
 };
 
@@ -91,7 +91,7 @@ export function ExhibitFrame({
 }) {
   const label = [number != null ? `Exhibit ${number}` : "Exhibit", topic].filter(Boolean).join(" · ");
   return (
-    <div className="rd">
+    <div className="rd w-full">
       <style href="report-design" precedence="medium">
         {REPORT_DESIGN_CSS}
       </style>

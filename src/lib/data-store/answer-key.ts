@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { CANONICAL_KEY_MAP } from "@/lib/fee-taxonomy";
 import { sql } from "./connection";
+import type { GoalScorecard } from "@/lib/agents/goal-scorecard";
 
 /**
  * The answer key: hand-checked fee documents and fees for ~60 institutions, the
@@ -38,6 +39,17 @@ import { sql } from "./connection";
  */
 
 type SqlTag = typeof sql;
+
+/**
+ * Answer-key scorer versions (#1280). Each run stores one `answer_key_score_runs` row
+ * per version, and every reader picks one series, so a rule change never splices two
+ * series into one trend. v2 scores the bank's link and the key's own documents; v1 (the
+ * bank's newest stored page, every document's fees) keeps running for its history.
+ */
+export const ANSWER_KEY_SCORER_VERSIONS = [1, 2] as const;
+export type AnswerKeyScorerVersion = (typeof ANSWER_KEY_SCORER_VERSIONS)[number];
+/** The series the scoreboard, the admin page and the goal read. */
+export const ANSWER_KEY_SCORER_VERSION: AnswerKeyScorerVersion = 2;
 
 export const ANSWER_KEY_DOCUMENT_TYPES = ["html", "text_pdf", "scanned_pdf", "js_page"] as const;
 export type AnswerKeyDocumentType = (typeof ANSWER_KEY_DOCUMENT_TYPES)[number];
@@ -485,7 +497,11 @@ const INSTITUTION_COLUMNS = `
 
 /** Per-institution scores from the newest score run, keyed by institution id. */
 async function latestBankScores(db: SqlTag): Promise<Map<number, AnswerKeyBankScore>> {
-  const [run] = await db`SELECT by_bank FROM answer_key_score_runs ORDER BY scored_at DESC, id DESC LIMIT 1`;
+  const [run] = await db`
+    SELECT by_bank FROM answer_key_score_runs
+     WHERE scorer_version = ${ANSWER_KEY_SCORER_VERSION}
+     ORDER BY scored_at DESC, id DESC LIMIT 1
+  `;
   const banks = Array.isArray(run?.by_bank) ? (run.by_bank as AnswerKeyBankScore[]) : [];
   return new Map(banks.map((bank) => [Number(bank.institution_id), bank]));
 }
@@ -582,6 +598,7 @@ export async function getConfirmedAnswerKey(db: SqlTag = sql): Promise<Confirmed
 export interface AnswerKeyScoreRunRow {
   id: number;
   agent_run_id: number | null;
+  scorer_version: number;
   scored_at: string;
   banks_scored: number;
   fees_expected: number;
@@ -592,11 +609,15 @@ export interface AnswerKeyScoreRunRow {
   by_document_type: Record<string, unknown>;
 }
 
-export async function getLatestAnswerKeyScoreRun(db: SqlTag = sql): Promise<AnswerKeyScoreRunRow | null> {
+export async function getLatestAnswerKeyScoreRun(
+  db: SqlTag = sql,
+  version: AnswerKeyScorerVersion = ANSWER_KEY_SCORER_VERSION,
+): Promise<AnswerKeyScoreRunRow | null> {
   const [row] = await db`
-    SELECT id, agent_run_id, scored_at, banks_scored, fees_expected, precision, recall,
+    SELECT id, agent_run_id, scorer_version, scored_at, banks_scored, fees_expected, precision, recall,
            by_stage, by_category, by_document_type
       FROM answer_key_score_runs
+     WHERE scorer_version = ${version}
      ORDER BY scored_at DESC, id DESC
      LIMIT 1
   `;
@@ -604,6 +625,7 @@ export async function getLatestAnswerKeyScoreRun(db: SqlTag = sql): Promise<Answ
   return {
     id: Number(row.id),
     agent_run_id: row.agent_run_id == null ? null : Number(row.agent_run_id),
+    scorer_version: Number(row.scorer_version),
     scored_at: toIso(row.scored_at) ?? "",
     banks_scored: Number(row.banks_scored),
     fees_expected: Number(row.fees_expected),
@@ -636,6 +658,10 @@ export interface ScoreboardSnapshotRow {
   accuracy_score_run_id: number | null;
   freshness_median_days: number | null;
   freshness_live_fees: number | null;
+  /** The goal scorecard stored that day (`detail.goal`, #1040); null on older snapshots. */
+  goal: GoalScorecard | null;
+  /** Darwin's undecided rows from that day's agent health check (`detail.agent_health`); null when not recorded. */
+  darwin_backlog: number | null;
 }
 
 const SNAPSHOT_NUMBER_COLUMNS = [
@@ -667,6 +693,13 @@ export async function listScoreboardSnapshots(days = 30, db: SqlTag = sql): Prom
     for (const column of SNAPSHOT_NUMBER_COLUMNS) {
       snapshot[column] = row[column] == null ? null : Number(row[column]);
     }
+    const detail = (typeof row.detail === "string" ? JSON.parse(row.detail) : row.detail) as {
+      goal?: GoalScorecard;
+      agent_health?: { agents?: Array<{ agent?: string; numbers?: Record<string, unknown> }> };
+    } | null;
+    snapshot.goal = detail?.goal ?? null;
+    const undecided = detail?.agent_health?.agents?.find((section) => section.agent === "darwin")?.numbers?.undecided;
+    snapshot.darwin_backlog = undecided == null || !Number.isFinite(Number(undecided)) ? null : Number(undecided);
     return snapshot as unknown as ScoreboardSnapshotRow;
   });
 }

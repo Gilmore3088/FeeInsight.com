@@ -44,10 +44,14 @@ export async function getMarketLeaders(options: MarketLeaderOptions = {}): Promi
   const stateCode = options.stateCode ? options.stateCode.trim().toUpperCase() : null;
   const rows = await db<MarketLeader[]>`
     -- market leaders by state
+    -- The latest year-end on file, read backward down the (report_date, source) index; max()
+    -- over every year-end row read the whole table (1.1 s of the 2.1 s, Oct 9).
     WITH income_year AS (
-      SELECT max(left(report_date::text, 4))::int AS year
+      SELECT left(report_date, 4)::int AS year
         FROM institution_financial_records
-       WHERE source IN ('fdic', 'ncua') AND report_date::text LIKE '%-12-31'
+       WHERE source IN ('fdic', 'ncua') AND report_date LIKE '%-12-31'
+       ORDER BY report_date DESC
+       LIMIT 1
     ),
     income AS (
       SELECT f.institution_id,
@@ -57,7 +61,8 @@ export async function getMarketLeaders(options: MarketLeaderOptions = {}): Promi
                   ELSE sum(f.total_revenue) END AS total_income
         FROM institution_financial_records f, income_year
        WHERE f.source IN ('fdic', 'ncua')
-         AND left(f.report_date::text, 4)::int = income_year.year
+         -- A range on the text date so the index bounds the year (report_date is 'YYYY-MM-DD').
+         AND f.report_date >= income_year.year::text AND f.report_date < (income_year.year + 1)::text
        GROUP BY f.institution_id, f.source
     ),
     branch_year AS (SELECT max(year) AS year FROM institution_branch_deposits),

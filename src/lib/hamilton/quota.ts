@@ -1,12 +1,13 @@
 import { sql } from "@/lib/data-store/connection";
 import { getResearchQueryLimit } from "@/lib/access";
 import type { User } from "@/lib/auth";
+import { HAMILTON_PAUSED_MESSAGE } from "./provider-paused";
 
 /**
  * Daily Hamilton AI quota, counted in Postgres (research_usage) so it holds across
  * every serverless instance. Each completed Analyze answer, Simulate interpretation,
  * admin chat turn and generated report logs one row; a report counts once even though
- * it makes several model calls. Limits come from getResearchQueryLimit (Pro 50/day; team
+ * it makes several model calls. Each Ask memo model call logs one row (#1080). Limits come from getResearchQueryLimit (Pro 50/day; team
  * seat holders, the institution owner included, have no daily cap). The shared provider
  * spend breaker applies to everyone either way.
  */
@@ -18,6 +19,8 @@ export interface ProAiQuota {
   used: number;
   limit: number;
   resetsAt: string;
+  /** The count could not be read; a capped reader is refused until it can be (#1080). */
+  unreadable?: boolean;
 }
 
 function nextUtcMidnight(now: Date): string {
@@ -39,12 +42,13 @@ export async function checkProAiQuota(user: User, now: Date = new Date()): Promi
     const used = Number(row?.used ?? 0);
     return { allowed: used < limit, used, limit, resetsAt };
   } catch {
-    // The quota is a cost guard, not an outage switch: if the count can't be read,
-    // the provider budget breaker still caps spend.
-    return { allowed: true, used: 0, limit, resetsAt };
+    // Fail closed (#1080): with no count, a capped reader makes no paid call. A reader with
+    // no daily cap (a team seat) is not limited by the count, so stays allowed.
+    return { allowed: !Number.isFinite(limit), used: 0, limit, resetsAt, unreadable: true };
   }
 }
 
 export function quotaExceededMessage(quota: ProAiQuota): string {
+  if (quota.unreadable) return HAMILTON_PAUSED_MESSAGE;
   return `You've used all ${quota.limit} Hamilton AI requests for today. The limit resets at midnight UTC.`;
 }

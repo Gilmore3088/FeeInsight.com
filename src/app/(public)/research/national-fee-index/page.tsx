@@ -23,9 +23,9 @@ import { canAccessPremium } from "@/lib/access";
 import { UpgradeGate } from "@/components/upgrade-gate";
 
 export const metadata: Metadata = {
-  title: "National Fee Index - US Bank & Credit Union Fee Benchmarks",
+  title: "National Fee Index: Bank and Credit Union Fees",
   description:
-    "The definitive national benchmark of bank and credit union fees. Median fees, percentiles, and institution counts across our full catalog of categories, from thousands of published fee schedules.",
+    "Median bank and credit union fees by category, with percentiles and institution counts, from thousands of published fee schedules.",
   keywords: [
     "national fee index",
     "bank fee benchmarks",
@@ -45,7 +45,7 @@ export default async function NationalFeeIndexPage() {
   const cpi = await getCpiContext();
   // The count of categories with published fees, the same figure the homepage, pricing and
   // institution pages show (not the taxonomy size, which includes categories with no data yet).
-  const { categoriesLabel } = await getPublicStatsSummary();
+  const { categoriesLabel, refreshedOn } = await getPublicStatsSummary();
   const sampleLive = await sampleReportAvailable();
 
   // Pro: full index. Free: the 15 headline categories, the same set the free report shows.
@@ -72,7 +72,7 @@ export default async function NationalFeeIndexPage() {
   );
 
   return (
-    <div className="mx-auto max-w-7xl px-6 py-14">
+    <div className="mx-auto max-w-page px-6 py-14">
       <BreadcrumbJsonLd
         items={[
           { name: "Home", href: "/" },
@@ -418,6 +418,11 @@ export default async function NationalFeeIndexPage() {
               "@type": "Organization",
               name: SITE_NAME,
             },
+            publisher: { "@type": "Organization", name: SITE_NAME, url: SITE_URL },
+            // #1166 T11: the terms page states how the data may be used; there is no open license.
+            license: `${SITE_URL}/terms`,
+            dateModified: refreshedOn && !Number.isNaN(Date.parse(refreshedOn)) ? new Date(refreshedOn).toISOString() : undefined,
+            variableMeasured: allIndex.map((entry) => getDisplayName(entry.fee_category)),
           }).replace(/</g, "\\u003c"),
         }}
       />

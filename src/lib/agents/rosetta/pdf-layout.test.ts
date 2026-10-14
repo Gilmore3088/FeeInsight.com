@@ -135,4 +135,40 @@ describe("Rosetta read.pdf_layout", () => {
     expect(text).not.toMatch(/practices\. To learn more, \|/);
     await pdf.destroy?.();
   });
+  it("reads a dot-leader fee list beside a table as its own column (layout v4)", async () => {
+    // Northern Trust's personal deposit schedule: read across, each list line became the last
+    // cell of an account-table row, and the overdraft line's name was spread over three rows.
+    const { getDocumentProxy } = await import("unpdf");
+    const bytes = readFileSync(join(__dirname, "test-fixtures", "northern-trust-fees.pdf"));
+    const pdf = await getDocumentProxy(new Uint8Array(bytes));
+    const pages: PdfTextItem[][] = [];
+    for (let number = 1; number <= pdf.numPages; number += 1) {
+      const content = await (await pdf.getPage(number)).getTextContent();
+      const items: PdfTextItem[] = [];
+      for (const entry of content.items) if ("str" in entry) items.push(entry);
+      pages.push(items);
+    }
+    const text = layoutDocumentText(pages);
+    expect(text).toContain(
+      "Overdrafts Paid and Items Paid against Nonsufficient\nFunds (includes but not limited to overdrafts\ncreated by check, in-person withdrawals\nat a teller or recurring electronic\ndebit card payments) ................................... $25.00 per Occurrence",
+    );
+    expect(text).toContain("\nCashier’s Checks");
+    expect(text).toContain("\nDomestic Outgoing (client only)..............................$25.00 per wire");
+    // The account table keeps its rows: name, minimum, balance to avoid, fee, cycle.
+    expect(text).toMatch(/Non-Interest Checking\s*\| \$25,000 combined minimum initial\s*\| Average collected balance of \$2,000\.00 or\s*\| \$15\.00\s*\| Monthly/);
+    // Page 2's leader lines are cells of the business table, not a list column: read across.
+    expect(text).toContain("Each debit transaction 9 ....");
+    expect(text).toMatch(/Checking \| initial deposit in all non- \| Fee for each debit transaction/);
+    await pdf.destroy?.();
+  });
+
+  it("keeps a two-column fee table whose names and leaders run to the price row by row", () => {
+    const items = [
+      item("Overdraft fee ..........", 72, 700, 200),
+      item("$35.00", 300, 700, 30),
+      item("Stop payment ..........", 72, 686, 200),
+      item("$30.00", 300, 686, 30),
+    ];
+    expect(layoutPageText(items)).toBe("Overdraft fee .......... | $35.00\nStop payment .......... | $30.00");
+  });
 });

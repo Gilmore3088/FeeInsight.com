@@ -1,11 +1,13 @@
 import { Suspense } from "react";
 import { DarwinConsole } from "./components/darwin-console";
 import { LoopPanels } from "./components/loop-panels";
+import { HeldQueue } from "./components/held-queue";
 import { fetchDarwinStatus } from "./actions";
 import type { DarwinStatus } from "./types";
 import { Breadcrumbs } from "@/components/breadcrumbs";
 import { AgentHandoffStrip } from "@/components/agent-console/agent-handoff-strip";
 import { requireAuth } from "@/lib/auth";
+import { AgentFrame } from "../agent-frame";
 
 export const dynamic = "force-dynamic";
 
@@ -30,6 +32,10 @@ export default async function DarwinPage() {
           Turns raw extracted fee rows into verified categories, amounts, and review-ready exceptions.
         </p>
       </header>
+      <AgentFrame agent="darwin" />
+      <Suspense fallback={<div className="skeleton h-32 w-full" />}>
+        <HeldQueue />
+      </Suspense>
       <AgentHandoffStrip
         steps={[
           {

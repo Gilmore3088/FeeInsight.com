@@ -1,4 +1,5 @@
 import { sql } from "./connection";
+import { statsRowFilter } from "./fee-stats";
 import {
   classifyInstitutionQuality,
   getFeePublicationStatus,
@@ -88,26 +89,41 @@ function searchQualityCte(scopeSql: string): string {
   WITH scope AS (
     ${scopeSql}
   ),
+  scope_catalog AS MATERIALIZED (
+    -- Read the catalog view once for the scope. The view rebuilds its whole-catalog
+    -- depth check on every reference, so the anti-join below used to recompute the
+    -- entire catalog for each state page; a published row always carries its
+    -- verified row's institution, so the scoped rows answer that check too.
+    SELECT institution_id, fee_verified_id, review_status
+    FROM published_fee_catalog
+    WHERE institution_id IN (SELECT id FROM scope)
+  ),
+  scope_verified AS MATERIALIZED (
+    -- Live verified rows for the scope, read once. A verified row always carries its
+    -- raw row's institution, so the raw anti-join below can check against these rows
+    -- instead of scanning every verified row in the country.
+    SELECT institution_id, fee_verified_id, fee_raw_id
+    FROM verified_fee_observations
+    WHERE review_status <> 'rejected'
+      AND institution_id IN (SELECT id FROM scope)
+  ),
   catalog_counts AS (
     SELECT
       institution_id,
       COUNT(*) FILTER (WHERE review_status = 'approved')::int AS published_fee_count,
       COUNT(*) FILTER (WHERE review_status <> 'approved' AND review_status <> 'rejected')::int AS catalog_provisional_fee_count,
       COUNT(*) FILTER (WHERE review_status <> 'rejected')::int AS visible_fee_count
-    FROM published_fee_catalog
-    WHERE institution_id IN (SELECT id FROM scope)
+    FROM scope_catalog
     GROUP BY institution_id
   ),
   verified_unpublished_counts AS (
     SELECT
       fv.institution_id,
       COUNT(*)::int AS verified_unpublished_fee_count
-    FROM verified_fee_observations fv
-    WHERE fv.review_status <> 'rejected'
-      AND fv.institution_id IN (SELECT id FROM scope)
-      AND NOT EXISTS (
+    FROM scope_verified fv
+    WHERE NOT EXISTS (
         SELECT 1
-        FROM published_fee_catalog pfc
+        FROM scope_catalog pfc
         WHERE pfc.fee_verified_id = fv.fee_verified_id
           AND pfc.review_status <> 'rejected'
       )
@@ -121,9 +137,8 @@ function searchQualityCte(scopeSql: string): string {
     WHERE fr.institution_id IN (SELECT id FROM scope)
       AND NOT EXISTS (
       SELECT 1
-      FROM verified_fee_observations fv
+      FROM scope_verified fv
       WHERE fv.fee_raw_id = fr.fee_raw_id
-        AND fv.review_status <> 'rejected'
     )
     GROUP BY fr.institution_id
   ),
@@ -254,14 +269,15 @@ export async function searchInstitutions(params: {
     paramIdx++;
     focusJoin = `
      LEFT JOIN LATERAL (
-       SELECT ef.amount
+       SELECT CASE WHEN $${paramIdx} = 'overdraft' THEN MAX(ef.amount)
+                   ELSE PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY ef.amount) END AS amount
        FROM published_fee_catalog ef
        WHERE ef.institution_id = ct.id
          AND ef.fee_category = $${paramIdx}
          AND ef.review_status = 'approved'
          AND ef.amount IS NOT NULL
-       ORDER BY ef.amount ASC
-       LIMIT 1
+         AND ef.amount >= 0
+         AND ${statsRowFilter("ef")}
      ) focus ON TRUE`;
     focusSelect = ",\n            focus.amount as focus_fee_amount";
     queryParams.push(focusCategory);

@@ -4,9 +4,8 @@
  * a large move in its service charge income, and where it sits in one of Hamilton's studies (kept
  * in the last place). Overdraft, Hamilton's flagship, always leads when the bank publishes it. Deterministic and neutral: it says what is unusual, never what to do.
  */
-import { STRONG_INSTITUTION_COUNT } from "@/lib/data-store/maturity";
 import { getDisplayName } from "@/lib/fee-taxonomy";
-import type { Briefing, FeeResearch, Observation } from "./workspace/types";
+import type { Briefing, Observation } from "./workspace/types";
 
 export interface AttentionItem {
   id: string;
@@ -29,8 +28,6 @@ export function money(amount: number): string {
 
 /** Overdraft is Hamilton's flagship: when the bank publishes it, it always leads the Briefing. */
 export const FLAGSHIP_FEE = "overdraft";
-
-const SMALL_GROUP_NOTE = "A small peer group, so read with care.";
 
 function plainText(text: string): string {
   return text.replace(/\s*\([A-Z]{2,6}\)/g, "");
@@ -66,39 +63,73 @@ function fromObservation(o: Observation): AttentionItem {
   };
 }
 
-/** Overdraft's place among its peers when the engine didn't flag it as unusual. */
-function overdraftItem(research: FeeResearch): AttentionItem | null {
-  if (research.current == null || !research.band) return null;
-  const current = research.current;
-  const amounts = research.peers.map((p) => p.amount);
-  const more = amounts.filter((a) => a > current + 0.005).length;
-  const less = amounts.filter((a) => a < current - 0.005).length;
-  const same = amounts.length - more - less;
-  const { median, p25, p75, n } = research.band;
-  return {
-    id: `position:${research.feeCategory}`,
-    feeCategory: research.feeCategory,
-    headline: `Your overdraft fee is ${money(current)}; the median of ${n} peers is ${money(median)}.`,
-    facts: [
-      `${research.peerLabel}: middle half ${money(p25)} to ${money(p75)}.`,
-      `${more} charge more, ${same} the same and ${less} less.`,
-    ],
-    note: n < STRONG_INSTITUTION_COUNT ? SMALL_GROUP_NOTE : null,
-  };
-}
+/** Studies that read better on their own page than as one of the month's few observations. */
+const OFF_BRIEFING = new Set(["study:inferred_items_paid"]);
 
+/**
+ * What stands out this month, at most three. Overdraft leads only when it is itself unusual: a fee
+ * at its peers' median is in the scorecard, not here. A fee whose peers charge it on mixed bases
+ * (per item and monthly, say) has no single median to stand out from, so it is left out; so is
+ * the inferred items-paid study, whose filing year runs behind the month.
+ */
 export function buildAttentionItems(
   briefing: Briefing | null,
-  overdraft: FeeResearch | null,
-  limit = 4,
+  options: { mixedBasis?: ReadonlySet<string>; limit?: number } = {},
 ): AttentionItem[] {
   if (!briefing) return [];
-  const flagged = briefing.observations.find((o) => o.feeCategory === FLAGSHIP_FEE && o.kind === "market_position");
-  const lead = flagged ? fromObservation(flagged) : overdraft ? overdraftItem(overdraft) : null;
-  const rest = briefing.observations.filter((o) => o !== flagged);
-  const items = [...(lead ? [lead] : []), ...rest.map(fromObservation)].slice(0, limit);
+  const limit = options.limit ?? 3;
+  const mixed = options.mixedBasis ?? new Set<string>();
+  const kept = briefing.observations.filter(
+    (o) =>
+      !OFF_BRIEFING.has(o.id) &&
+      !(o.kind === "market_position" && o.feeCategory != null && mixed.has(o.feeCategory)),
+  );
+  const flagged = kept.find((o) => o.feeCategory === FLAGSHIP_FEE && o.kind === "market_position");
+  const ordered = flagged ? [flagged, ...kept.filter((o) => o !== flagged)] : kept;
+  const items = ordered.map(fromObservation).slice(0, limit);
   // Every briefing places the bank in a study when it has one: it keeps the last place.
-  const study = rest.find((o) => o.kind === "study");
-  if (study && limit > 0 && !items.some((i) => i.id === study.id)) items.splice(Math.max(0, limit - 1), 1, fromObservation(study));
+  const study = kept.find((o) => o.kind === "study");
+  if (study && limit > 0 && !items.some((i) => i.id === study.id) && items.length === limit) {
+    items.splice(limit - 1, 1, fromObservation(study));
+  }
   return items;
+}
+
+/** The month at a glance: where the schedule sits, what moved in the market, and fee income. */
+export interface BriefingOverview {
+  feesCompared: number;
+  higher: number;
+  inLine: number;
+  lower: number;
+  /** Peer institutions behind the comparison. */
+  peerCount: number;
+  stateLabel: string | null;
+  /** Fees the bank charges that an institution in its state changed (confirmed changes), in the window. */
+  feesChangedNearby: number;
+  income: { latestTtm: number; yoyPct: number | null; quarterEnd: string; source: "fdic" | "ncua" } | null;
+}
+
+export function buildBriefingOverview(
+  briefing: Briefing,
+  stateLabel: string | null,
+  mixedBasis: ReadonlySet<string> = new Set(),
+): BriefingOverview {
+  const banded = briefing.positions.filter((p) => p.band && !mixedBasis.has(p.feeCategory));
+  const higher = banded.filter((p) => p.current > p.band!.p75).length;
+  const lower = banded.filter((p) => p.current < p.band!.p25).length;
+  const feesChangedNearby = briefing.observations.filter((o) => o.kind === "competitor_move").length;
+  const fin = briefing.institutionFinancials;
+  return {
+    feesCompared: banded.length,
+    higher,
+    inLine: banded.length - higher - lower,
+    lower,
+    peerCount: briefing.provenance.peerGroup?.n ?? 0,
+    stateLabel,
+    feesChangedNearby,
+    income:
+      fin && fin.latestTtm != null
+        ? { latestTtm: fin.latestTtm, yoyPct: fin.yoyPct, quarterEnd: fin.quarterEnd, source: fin.source }
+        : null,
+  };
 }

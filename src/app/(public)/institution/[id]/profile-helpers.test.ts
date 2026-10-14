@@ -8,7 +8,7 @@ import {
   normalizeFinancial,
   selectFinancialsByQuarter,
 } from "./financial-units";
-import { buildLocationParts, buildProfileTitle, pickHeadlineFees } from "./profile-data";
+import { buildLocationParts, buildProfileTitle, pickHeadlineFees, PROFILE_TITLE_MAX } from "./profile-data";
 import type { ExtractedFee } from "@/lib/data-store/types";
 
 const ncuaRecord = {
@@ -151,6 +151,7 @@ describe("headline fees", () => {
       id: 1,
       institution_id: 4802,
       fee_name: "Fee",
+      fee_audience: "consumer",
       fee_category: null,
       amount: 10,
       frequency: null,
@@ -183,9 +184,18 @@ describe("headline fees", () => {
 describe("profile title", () => {
   it("uses the top verified amounts when present", () => {
     const year = new Date().getFullYear();
-    expect(buildProfileTitle("Georgia Heritage FCU", { overdraft: 30, nsf: 33, monthly: 4.95 })).toBe(
-      `Georgia Heritage FCU Fees: Overdraft $30, NSF $33, Monthly $4.95 (${year})`,
+    expect(buildProfileTitle("Test Bank", { overdraft: 30, nsf: 33, monthly: 4.95 })).toBe(
+      `Test Bank Fees: Overdraft $30, NSF $33 (${year})`,
     );
+    // #1166 T9: a long name keeps the overdraft fee and drops the rest, then the year, to fit.
+    expect(buildProfileTitle("Georgia Heritage FCU", { overdraft: 30, nsf: 33, monthly: 4.95 })).toBe(
+      "Georgia Heritage FCU Fees: Overdraft $30",
+    );
+    expect(buildProfileTitle("Test Bank", { overdraft: null, nsf: 25, monthly: null })).toBe(`Test Bank Fees: NSF $25 (${year})`);
+    for (const name of ["Arvest Bank", "Georgia Heritage FCU", "First National Bank of Long Island"]) {
+      const title = buildProfileTitle(name, { overdraft: 30, nsf: 33, monthly: 4.95 });
+      expect(title.length <= PROFILE_TITLE_MAX || title === `${name} Fees: Overdraft $30`, title).toBe(true);
+    }
     expect(buildProfileTitle("Test Bank", { overdraft: null, nsf: null, monthly: null })).toBe(
       "Test Bank Fees and Fee Schedule",
     );
@@ -248,4 +258,18 @@ describe("buildLocationParts", () => {
     expect(buildLocationParts({ city: "Winston-Salem", stateCode: "NC", stateName: "North Carolina", hasApprovedFees: true })[0].href).toBeNull();
     expect(buildLocationParts({ city: null, stateCode: null, stateName: null, hasApprovedFees: true })).toEqual([]);
   });
+});
+
+
+it("headlines a stated consumer price over an unknown one, and never a business price", () => {
+  const row = { id: 1, institution_id: 47, fee_name: "NSF", fee_category: "nsf", amount: 30,
+    frequency: null, conditions: null, review_status: "approved" } as ExtractedFee;
+  expect(pickHeadlineFees([
+    { ...row, fee_audience: "business" },
+    { ...row, id: 2, amount: 38, fee_audience: "unknown" },
+    { ...row, id: 3, amount: 0, fee_audience: "consumer", fee_treatment: "eliminated" },
+  ]).nsf).toBe(0);
+  // Unknown is treated as personal when nothing better is stated (#1058); business never is.
+  expect(pickHeadlineFees([{ ...row, fee_audience: "unknown" }]).nsf).toBe(30);
+  expect(pickHeadlineFees([{ ...row, fee_audience: "business" }]).nsf).toBeNull();
 });

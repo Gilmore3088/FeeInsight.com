@@ -2,7 +2,7 @@ import { sql } from "@/lib/data-store/connection";
 import { invalidatePublicReadCache } from "@/lib/data-store/fee-cache";
 import { recordFeedback, type FeedbackRow } from "@/lib/agents/learning/feedback";
 import { secondLook } from "@/lib/agents/hamilton/second-look";
-import { hostSql, OTHER_BANK_HOST_CODE } from "@/lib/agents/magellan/other-bank-host";
+import { hostSql, OTHER_BANK_HOST_CODE, SHARED_CONTENT_HOST_PATTERN } from "@/lib/agents/magellan/other-bank-host";
 import { inSavepoint } from "@/lib/agents/savepoint";
 
 type SqlTag = typeof sql;
@@ -48,9 +48,8 @@ export const OTHER_BANK_DOCUMENT_ROLLBACK_LIMIT = 500;
 export const UNCONFIRMED_HOST_CHECK = "hamilton.unconfirmed_document_host";
 export const UNCONFIRMED_HOST_REASON = "unconfirmed_document_host";
 export const UNCONFIRMED_HOST_FLAG = "unconfirmed_document_host";
-/** File and site-builder hosts many banks use for their own documents. */
-export const SHARED_CONTENT_HOST_PATTERN =
-  "(cdn|static|assets|s3|amazonaws|cloudfront|filesusr|usrfiles|wsimg|hubspotusercontent|ctfassets|sanity[.]io|contentstack|sitecorecloud|digitaloceanspaces|filesafe|marketpath|q4cdn|homecu|kcmspreview|website-files|cms|squarespace|blob[.]core|googleusercontent|wixstatic|azureedge|akamai|storage|wpengine)";
+/** File and site-builder hosts many banks use for their own documents (shared with Magellan's link check). */
+export { SHARED_CONTENT_HOST_PATTERN };
 
 interface OtherBankFeeRow {
   fee_published_id: number | string;
@@ -102,8 +101,19 @@ function truthy(value: boolean | string | null | undefined): boolean {
   return value === true || String(value ?? "").toLowerCase() === "true" || value === "t";
 }
 
+/**
+ * Which live fees a host read covers: all (`false`), one institution (`true`, `$1` is its id),
+ * or a list of fees (`"fees"`, `$1` is a bigint[] of `fee_published_id`, Deming's fresh audit).
+ */
+export type HostReadScope = boolean | "fees";
+
+function scopeFilter(scope: HostReadScope): string {
+  if (scope === "fees") return "AND fp.fee_published_id = ANY($1::bigint[])";
+  return scope ? "AND fp.institution_id = $1" : "";
+}
+
 /** The live-fee read: every fee whose document is on another institution's own website. */
-export function otherBankFeesSql(byInstitution: boolean): string {
+export function otherBankFeesSql(scope: HostReadScope): string {
   // Hosts are worked out once per table (CTEs), then matched by equality: one host pattern per
   // row inside a join ran past a minute on prod.
   return `
@@ -114,7 +124,7 @@ export function otherBankFeesSql(byInstitution: boolean): string {
         JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
        WHERE fp.rolled_back_at IS NULL
          AND fr.source_document_id IS NOT NULL
-         ${byInstitution ? "AND fp.institution_id = $1" : ""}
+         ${scopeFilter(scope)}
     ),
     docs AS (
       SELECT sd.id, sd.document_url, ${hostSql("sd.document_url")} AS host
@@ -159,7 +169,7 @@ export function otherBankFeesSql(byInstitution: boolean): string {
  * institution's, and not a shared file host. `names_own_bank` is true when the text or a
  * person's correction ties the document to this bank, or the host shares the website's name.
  */
-export function unconfirmedHostFeesSql(byInstitution: boolean): string {
+export function unconfirmedHostFeesSql(scope: HostReadScope): string {
   const label = (host: string) =>
     `split_part(${host}, '.', greatest(array_length(string_to_array(${host}, '.'), 1) - 1, 1))`;
   return `
@@ -170,7 +180,7 @@ export function unconfirmedHostFeesSql(byInstitution: boolean): string {
         JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
        WHERE fp.rolled_back_at IS NULL
          AND fr.source_document_id IS NOT NULL
-         ${byInstitution ? "AND fp.institution_id = $1" : ""}
+         ${scopeFilter(scope)}
     ),
     docs AS (
       SELECT sd.id, sd.document_url, ${hostSql("sd.document_url")} AS host

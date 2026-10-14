@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { asksIncomeLevel, asksIncomeWhy, explainIncome, incomeSplit, priceIndex, withIncomeSplit } from "./why";
+import { asksIncome, asksIncomeWhy, explainIncome, incomeSplit, priceIndex, withIncomeSplit } from "./why";
 import type { FeePositionRow } from "./types";
 
 // Fixture rows for tests only; no figure here is live data.
@@ -28,10 +28,16 @@ describe("asksIncomeWhy", () => {
   });
 
   it("catches questions about where fee income stands against peers", () => {
-    expect(asksIncomeLevel("How does Space Coast's service-charge income compare with only credit unions over $1 billion?")).toBe(true);
-    expect(asksIncomeLevel("What is the income level on service charges for the peer group")).toBe(true);
-    expect(asksIncomeLevel("How has our overdraft fee income trended?")).toBe(false);
-    expect(asksIncomeLevel("How does our overdraft fee compare?")).toBe(false);
+    expect(asksIncome("How does Space Coast's service-charge income compare with only credit unions over $1 billion?")).toBe(true);
+    expect(asksIncome("What is the income level on service charges for the peer group")).toBe(true);
+    expect(asksIncome("How does our overdraft fee compare?")).toBe(false);
+  });
+
+  it("catches what a segment does with fee income and fee share, the questions Pro readers asked (#1077)", () => {
+    expect(asksIncome("What are 1b - <10b institutions doing around service fee income")).toBe(true);
+    expect(asksIncome("Which credit unions in the top 25 of the $1 billion to $10 billion tier run a fee share below 4%?")).toBe(true);
+    expect(asksIncome("talk to me about $5B and up in florida. fee pricing, revenue, complaints")).toBe(true);
+    expect(asksIncome("talk to me about all institutison above 10billion")).toBe(false);
   });
 });
 

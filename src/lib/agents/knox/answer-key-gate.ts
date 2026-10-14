@@ -53,6 +53,27 @@ function keyCategory(fee: AnswerKeyDocument["fees"][number], text: string): stri
   return foldRetiredCategory(fee.key, line, foldContext(text, line))?.to ?? fee.key;
 }
 
+/**
+ * Several scores added together, as if their documents had been scored at once. A gate that needs
+ * a total and its parts scores each document once and adds (the slow part is reading each text).
+ */
+export function combineScores(scores: GateScore[]): GateScore {
+  const total: GateScore = { documents: 0, reads: 0, right: 0, categoryErrors: 0, amountErrors: 0, expected: 0, found: 0, precision: 0, coverage: 0, errors: [] };
+  for (const score of scores) {
+    total.documents += score.documents;
+    total.reads += score.reads;
+    total.right += score.right;
+    total.categoryErrors += score.categoryErrors;
+    total.amountErrors += score.amountErrors;
+    total.expected += score.expected;
+    total.found += score.found;
+    total.errors.push(...score.errors);
+  }
+  total.precision = total.reads === 0 ? 0 : total.right / total.reads;
+  total.coverage = total.expected === 0 ? 0 : total.found / total.expected;
+  return total;
+}
+
 export function scoreAnswerKeys(documents: AnswerKeyDocument[]): GateScore {
   const score: GateScore = {
     documents: documents.length,

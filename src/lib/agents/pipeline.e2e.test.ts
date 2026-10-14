@@ -20,7 +20,7 @@ const FEE_TABLE = `
   <p>Effective January 1, 2026</p>
   <table>
     <tr><th>Service</th><th>Fee</th></tr>
-    <tr><td>Overdraft fee (per item)</td><td>$32.00</td></tr>
+    <tr><td>Overdraft fee (consumer accounts, per item)</td><td>$32.00</td></tr>
     <tr><td>Non-sufficient funds (NSF) fee</td><td>$30.00</td></tr>
     <tr><td>Monthly maintenance fee</td><td>$12.00</td></tr>
     <tr><td>Stop payment</td><td>$35.00</td></tr>
@@ -197,8 +197,22 @@ function stubFetch() {
 describe.skipIf(!E2E_DATABASE_URL)("pipeline end to end (state lane)", () => {
   let sql: typeof import("@/lib/data-store/connection").sql;
   const fetchMock = stubFetch();
+  const schemaErrors: Array<{ code: string; message: string }> = [];
+  let restoreErrorLog: (() => void) | undefined;
 
   beforeAll(async () => {
+    const originalError = console.error;
+    const errorLog = vi.spyOn(console, "error").mockImplementation((...args: unknown[]) => {
+      for (const value of args) {
+        if (!value || typeof value !== "object") continue;
+        const detail = value as { code?: unknown; message?: unknown };
+        if (detail.code === "42703" || detail.code === "42P01") {
+          schemaErrors.push({ code: detail.code, message: String(detail.message ?? "Missing database object") });
+        }
+      }
+      originalError(...args);
+    });
+    restoreErrorLog = () => errorLog.mockRestore();
     process.env.DATABASE_URL = E2E_DATABASE_URL;
     process.env.EXECUTION_BACKEND = "agentic_v1";
     vi.stubGlobal("fetch", fetchMock);
@@ -217,9 +231,9 @@ describe.skipIf(!E2E_DATABASE_URL)("pipeline end to end (state lane)", () => {
         ('Willow Test Bank', 'https://www.willow-test-bank.com/', 'https://www.willow-test-bank.com/fees', 'bank', 'Vermont', ${STATE}, 'Woodstock', 250000, 'E2E-7', 'e2e', 'active'),
         ('Aspen Test Bank', 'https://www.aspen-test-bank.com/', 'https://www.aspen-test-bank.com/fees', 'bank', 'Vermont', ${STATE}, 'Middlebury', 600000, 'E2E-8', 'e2e', 'active')
     `;
-    // Nine Vermont peers (community_mid) with overdraft already published at $28-$34,
-    // so the state expert has a peer level for Darwin's peer check. No website: the
-    // lane never tries to crawl them.
+    // Nine sourced consumer peers with three categories each. A single-category seed
+    // does not meet the catalog's minimum depth and cannot establish a peer baseline.
+    // No website: the lane never tries to crawl these already-published fixtures.
     await sql`
       WITH peers AS (
         INSERT INTO institution_sources
@@ -227,28 +241,53 @@ describe.skipIf(!E2E_DATABASE_URL)("pipeline end to end (state lane)", () => {
         SELECT 'Peer Test Bank ' || g, 'bank', 'Vermont', ${STATE}, 500000, 'e2e', 'active', 'dead'
           FROM generate_series(1, 9) g
         RETURNING id
+      ), documents AS (
+        INSERT INTO source_documents (institution_id, status, document_url)
+        SELECT id, 'success', 'https://peer.example/consumer-fees' FROM peers
+        RETURNING id, institution_id
       ), raw AS (
-        INSERT INTO raw_fee_observations (institution_id, agent_event_id, fee_name, amount, source, source_url)
-        SELECT id, gen_random_uuid(), 'Overdraft fee', 28 + (id % 7), 'manual_import', 'https://peer.example/fees'
-          FROM peers
-        RETURNING fee_raw_id, institution_id, amount
+        INSERT INTO raw_fee_observations
+          (institution_id, source_document_id, agent_event_id, fee_name, amount, source, source_url,
+           fee_audience, audience_evidence, fee_treatment)
+        SELECT d.institution_id, d.id, gen_random_uuid(), f.label,
+               CASE WHEN f.category = 'overdraft' THEN 28 + (d.institution_id % 7) ELSE f.amount END,
+               'manual_import', 'https://peer.example/consumer-fees', 'consumer',
+               'Consumer accounts: ' || f.label, 'charged'
+          FROM documents d
+          CROSS JOIN (VALUES ('overdraft','Overdraft fee',30),
+                             ('stop_payment','Stop payment',30),
+                             ('paper_statement','Paper statement',3)) f(category,label,amount)
+        RETURNING fee_raw_id, institution_id, amount, fee_name
       ), verified AS (
         INSERT INTO verified_fee_observations
           (fee_raw_id, institution_id, canonical_fee_key, verified_by_agent_event_id, fee_name, amount, source_url)
-        SELECT fee_raw_id, institution_id, 'overdraft', gen_random_uuid(), 'Overdraft fee', amount, 'https://peer.example/fees'
+        SELECT fee_raw_id, institution_id,
+               CASE fee_name WHEN 'Overdraft fee' THEN 'overdraft'
+                 WHEN 'Stop payment' THEN 'stop_payment' ELSE 'paper_statement' END,
+               gen_random_uuid(), fee_name, amount, 'https://peer.example/consumer-fees'
           FROM raw
-        RETURNING fee_verified_id, institution_id, amount
+        RETURNING fee_verified_id, institution_id, amount, fee_name, canonical_fee_key
       )
       INSERT INTO published_fee_records
         (lineage_ref, institution_id, canonical_fee_key, published_by_adversarial_event_id, fee_name, amount, source_url)
-      SELECT fee_verified_id, institution_id, 'overdraft', gen_random_uuid(), 'Overdraft fee', amount, 'https://peer.example/fees'
+      SELECT fee_verified_id, institution_id, canonical_fee_key, gen_random_uuid(), fee_name, amount,
+             'https://peer.example/consumer-fees'
         FROM verified
     `;
+    const [peerCoverage] = await sql`
+      SELECT count(*)::int AS fees, count(DISTINCT institution_id)::int AS institutions
+        FROM published_fee_catalog
+       WHERE source_url = 'https://peer.example/consumer-fees'
+         AND fee_audience = 'consumer' AND source_document_id IS NOT NULL
+    `;
+    expect(peerCoverage).toMatchObject({ fees: 27, institutions: 9 });
   });
 
   afterAll(async () => {
+    restoreErrorLog?.();
     vi.unstubAllGlobals();
     await sql?.end({ timeout: 1 });
+    expect(schemaErrors, "The pipeline logged missing database objects despite passing its result assertions").toEqual([]);
   });
 
   let laneRunId = 0;
@@ -345,8 +384,8 @@ describe.skipIf(!E2E_DATABASE_URL)("pipeline end to end (state lane)", () => {
       tries.filter((row) => row.institution_name === name).map((row) => [String(row.strategy), String(row.outcome)]);
     expect(triesFor("Maple Test Bank")).toEqual([
       ["discover.homepage_links", "no_candidates"],
-      ["discover.sitemap", "ok"],
-    ]);
+      ["discover.sitemap", "no_candidates"],
+    ].map(([strategy, outcome]) => [strategy, strategy === "discover.sitemap" ? "ok" : outcome]));
     expect(triesFor("Birch Test Bank")).toEqual([
       ["discover.homepage_links", "no_candidates"],
       ["discover.sitemap", "no_candidates"],
@@ -375,7 +414,7 @@ describe.skipIf(!E2E_DATABASE_URL)("pipeline end to end (state lane)", () => {
     expect(byName["Green Mountain Test Bank"].reader).toBe("read.html_dom");
     expect(greenRows.version).toBe(1);
     expect(greenRows.rows[0]).toMatchObject({ cells: ["Service", "Fee"], header: true, origin: "html_table" });
-    expect(greenRows.rows).toContainEqual({ table: 0, page: null, cells: ["Overdraft fee (per item)", "$32.00"], header: false, origin: "html_table" });
+    expect(greenRows.rows).toContainEqual({ table: 0, page: null, cells: ["Overdraft fee (consumer accounts, per item)", "$32.00"], header: false, origin: "html_table" });
     expect(greenRows.rows).toHaveLength(10);
     expect(byName["Otter Creek Test Bank"].reader).toBe("read.ocr_tesseract");
     const attempts = await sql`
@@ -500,8 +539,10 @@ describe.skipIf(!E2E_DATABASE_URL)("pipeline end to end (state lane)", () => {
 
     const [scoreRun] = await sql`
       SELECT precision, recall, by_stage, by_bank FROM answer_key_score_runs
-       WHERE agent_run_id = ${started.run.id}
+       WHERE agent_run_id = ${started.run.id} AND scorer_version = 2
     `;
+    const versions = await sql`SELECT scorer_version FROM answer_key_score_runs WHERE agent_run_id = ${started.run.id} ORDER BY scorer_version`;
+    expect(versions.map((row) => Number(row.scorer_version))).toEqual([1, 2]);
     expect(Number(scoreRun.precision)).toBe(1);
     expect(Number(scoreRun.recall)).toBe(1);
     const bankScore = (scoreRun.by_bank as Array<Record<string, unknown>>).find((row) => Number(row.institution_id) === institutionId);
