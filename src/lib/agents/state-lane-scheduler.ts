@@ -21,6 +21,7 @@ import { WEBSITE_FIND_STRATEGY } from "./magellan/website-find";
 import { loadMarketLeaderIds } from "@/lib/data-store/market-leaders";
 import { reportReviewStates } from "./atlas/report-review-states";
 import { HEADLINE_FEE_KEYS, MARKET_READY_MIN_RICH, RICH_MIN_CATEGORIES } from "@/lib/data-store/market-readiness";
+import { coverageGroupsSql } from "./goal-scorecard";
 
 /**
  * Documents a lane reads and extracts per run. Twice the agents' default, so a state's
@@ -665,8 +666,9 @@ export const STATE_LANE_STARVATION_HOURS = 3;
  * fails James's report rule gets REPORT_REQUEST_PRIORITY, and a state whose bank market is
  * within NEAR_READY_GAP rich banks of ready gets NEAR_READY_BANK_PRIORITY plus 10 per rich
  * bank, so the closest market runs first. A state in reportReviewStates() (a report
- * James is waiting to review) gets REPORT_REQUEST_PRIORITY too. This only moves when a state runs; what the
- * state's steps then work on is unchanged.
+ * James is waiting to review) gets REPORT_REQUEST_PRIORITY too. Each institution the state's
+ * size groups under $10B are short of the coverage target adds COVERAGE_GAP_PRIORITY (#1117).
+ * This only moves when a state runs; what the state's steps then work on is unchanged.
  */
 export const REPORT_REQUEST_DAYS = 30;
 export const REPORT_REQUEST_PRIORITY = 2000;
@@ -679,6 +681,14 @@ export const NEAR_READY_BANK_PRIORITY = 2000;
  * the largest 10 to 15 institutions in every state). 15 uncovered leaders add 750.
  */
 export const UNCOVERED_LEADER_PRIORITY = 50;
+/**
+ * James's coverage target (2026-10-12, #1028; #1117): each covered institution a state's
+ * size groups under $10B still need (30 per group, or 75% below 40; `coverageGroupsSql`, the
+ * same gap the goal scorecard shows) adds this much. A state is at most 90 short (three groups
+ * of 30), so the gap adds at most 1,800: it outranks open work and uncovered leaders and stays
+ * below report demand. Institutions over $10B are compared nationally, so they add nothing.
+ */
+export const COVERAGE_GAP_PRIORITY = 20;
 
 export async function refreshLanePriorities(): Promise<number> {
   try {
@@ -789,6 +799,11 @@ export async function refreshLanePriorities(): Promise<number> {
            AND COALESCE(coverage.categories, 0) < ${RICH_MIN_CATEGORIES}::int
          GROUP BY 1
       ),
+      coverage_gap AS (
+        SELECT state_code, SUM(short)::int AS short
+          FROM (${coverageGroupsSql(sql)}) coverage_groups
+         GROUP BY 1
+      ),
       score AS (
         SELECT lane.state_code,
                COALESCE(due_search.banks, 0) + COALESCE(stale.banks, 0)
@@ -798,7 +813,8 @@ export async function refreshLanePriorities(): Promise<number> {
                         THEN ${REPORT_REQUEST_PRIORITY}::int ELSE 0 END
                  + CASE WHEN near_ready.state_code IS NOT NULL
                         THEN ${NEAR_READY_BANK_PRIORITY}::int + 10 * near_ready.rich ELSE 0 END
-                 + ${UNCOVERED_LEADER_PRIORITY}::int * COALESCE(leaders.uncovered, 0) AS priority
+                 + ${UNCOVERED_LEADER_PRIORITY}::int * COALESCE(leaders.uncovered, 0)
+                 + ${COVERAGE_GAP_PRIORITY}::int * COALESCE(coverage_gap.short, 0) AS priority
           FROM public.agent_state_lanes lane
           LEFT JOIN due_search ON due_search.state_code = lane.state_code
           LEFT JOIN stale ON stale.state_code = lane.state_code
@@ -807,6 +823,7 @@ export async function refreshLanePriorities(): Promise<number> {
           LEFT JOIN requested ON requested.state_code = lane.state_code
           LEFT JOIN near_ready ON near_ready.state_code = lane.state_code
           LEFT JOIN leaders ON leaders.state_code = lane.state_code
+          LEFT JOIN coverage_gap ON coverage_gap.state_code = lane.state_code
       )
       UPDATE public.agent_state_lanes lane
          SET priority_score = score.priority,

@@ -32,6 +32,7 @@ import {
   MAX_ACTIVE_STATE_LANE_RUNS,
   STATE_LANE_STARVATION_HOURS,
   UNCOVERED_LEADER_PRIORITY,
+  COVERAGE_GAP_PRIORITY,
   DAILY_FULL_PASS_FIND_DUE,
   nextDayStart,
   nextMonthStart,
@@ -471,6 +472,23 @@ describe("state lane scheduler", () => {
     const call = sqlMock.mock.calls.find((entry) => templateText(entry[0]).includes("SET priority_score"));
     expect(templateText(call?.[0])).toContain("leaders AS");
     expect(call?.slice(1)).toEqual(expect.arrayContaining([[117, 281], UNCOVERED_LEADER_PRIORITY]));
+  });
+
+  it("adds each state's coverage gap under $10B, from the scorecard's own groups (#1117)", async () => {
+    sqlMock.mockImplementation(() => Promise.resolve(Object.assign([], { count: 0 })));
+    await refreshLanePriorities();
+    const call = sqlMock.mock.calls.find((entry) => templateText(entry[0]).includes("SET priority_score"));
+    const text = templateText(call?.[0]);
+    expect(text).toContain("coverage_gap AS");
+    expect(text).toContain("SUM(short)");
+    expect(text).toMatch(/\*\s+COALESCE\(coverage_gap\.short, 0\)/);
+    expect(call?.slice(1)).toEqual(expect.arrayContaining([COVERAGE_GAP_PRIORITY]));
+    // The shared groups query: under $10B only, with the seven-days-ago columns left off hourly.
+    const groups = sqlMock.mock.calls.map((entry) => templateText(entry[0])).find((t) => t.includes("AS covered_week_ago") && t.includes("institution_sources i"));
+    expect(groups).toContain("GREATEST(0, target - covered)");
+    expect(sqlMock.mock.calls.some((entry) => templateText(entry[0]).includes("fp.published_at <"))).toBe(false);
+    // At most 90 short (three groups of 30) stays below report demand.
+    expect(90 * COVERAGE_GAP_PRIORITY).toBeLessThan(REPORT_REQUEST_PRIORITY);
   });
 
   it("casts every number it sends, since an uncast $1 - $2 fails to plan", async () => {

@@ -53,6 +53,30 @@ export interface CoverageCells {
   /** Covered institutions still needed to bring every group to its target. */
   institutionsShort: number;
   bySize: Array<{ size: SizeGroupKey; label: string; readyCells: number; totalCells: number; institutionsShort: number }>;
+  /** Each state's gap (#1117), largest first: the same groups, summed per state. Absent on snapshots from before it. */
+  byState?: StateCoverageGap[];
+}
+
+export interface StateCoverageGap {
+  state: string;
+  readyCells: number;
+  totalCells: number;
+  /** Covered institutions the state's groups under $10B still need to reach their targets. */
+  institutionsShort: number;
+  /** The same gap seven days ago, from the institutions live then (group totals as of now). */
+  institutionsShortWeekAgo: number;
+  /** Institutions newly live this week in a group still short a week ago, capped at that group's gap. */
+  closingThisWeek: number;
+}
+
+/** One state × size group: institutions in it, covered now and seven days ago, and newly covered this week. */
+export interface CoverageGroupRow {
+  state_code?: string;
+  size_group: string;
+  total: number;
+  covered: number;
+  covered_week_ago?: number;
+  newly_covered?: number;
 }
 
 export interface LiveInstitutions {
@@ -246,12 +270,85 @@ export function coverageTarget(total: number): number {
   return COVERAGE_TARGET_INSTITUTIONS;
 }
 
+/** Covered institutions a group still needs to reach its target. */
+export function coverageShort(total: number, covered: number): number {
+  return Math.max(0, coverageTarget(total) - covered);
+}
+
+/**
+ * The state × size groups under $10B, one row each: state_code, size_group, total, covered,
+ * covered_week_ago, newly_covered, target and short. The one definition the scorecard and Atlas's lane
+ * priority (#1117) both read, so the gap a lane works on is the gap the page shows. Institutions
+ * over $10B are compared nationally and by district, never by state, so they are not here.
+ * `weekAgo` fills the seven-days-ago columns (zero otherwise); the hourly priority skips them.
+ */
+export function coverageGroupsSql(db: SqlTag, options: { weekAgo?: boolean } = {}) {
+  const liveWeekAgo = options.weekAgo
+    ? db`EXISTS (
+        SELECT 1 FROM public.published_fee_records fp
+         WHERE fp.institution_id = i.id
+           AND fp.published_at < NOW() - make_interval(days => ${GOAL_WINDOW_DAYS}::int)
+           AND (fp.rolled_back_at IS NULL OR fp.rolled_back_at >= NOW() - make_interval(days => ${GOAL_WINDOW_DAYS}::int))
+      )`
+    : db`FALSE`;
+  return db`
+    SELECT state_code, size_group, total, covered, covered_week_ago, newly_covered, target,
+           GREATEST(0, target - covered)::int AS short
+      FROM (
+        SELECT state_code, size_group,
+               COUNT(*)::int AS total,
+               (COUNT(*) FILTER (WHERE covered))::int AS covered,
+               (COUNT(*) FILTER (WHERE covered_week_ago))::int AS covered_week_ago,
+               (COUNT(*) FILTER (WHERE covered AND NOT covered_week_ago))::int AS newly_covered,
+               CASE WHEN COUNT(*) < ${COVERAGE_SMALL_GROUP_BELOW}::int
+                    THEN CEIL(COUNT(*) * ${COVERAGE_SMALL_GROUP_SHARE}::numeric)::int
+                    ELSE ${COVERAGE_TARGET_INSTITUTIONS}::int END AS target
+          FROM (
+            SELECT upper(btrim(i.state_code)) AS state_code,
+                   CASE WHEN i.asset_size < ${SIZE_GROUPS[0].maxThousands}::bigint THEN ${SIZE_GROUPS[0].key}::text
+                        WHEN i.asset_size < ${SIZE_GROUPS[1].maxThousands}::bigint THEN ${SIZE_GROUPS[1].key}::text
+                        ELSE ${SIZE_GROUPS[2].key}::text END AS size_group,
+                   (live.institution_id IS NOT NULL) AS covered,
+                   ${liveWeekAgo} AS covered_week_ago
+              FROM public.institution_sources i
+              LEFT JOIN (SELECT DISTINCT institution_id FROM public.published_fee_catalog) live
+                ON live.institution_id = i.id
+             WHERE COALESCE(i.status, 'active') = 'active'
+               AND NULLIF(btrim(i.state_code), '') IS NOT NULL
+               AND i.asset_size IS NOT NULL
+               AND i.asset_size < ${SIZE_GROUPS[2].maxThousands}::bigint
+          ) inst
+         GROUP BY 1, 2
+      ) coverage_group
+  `;
+}
+
+/** Pure: each state's groups summed into its gap, largest gap first. */
+export function summarizeStateGaps(rows: CoverageGroupRow[]): StateCoverageGap[] {
+  const byState = new Map<string, StateCoverageGap>();
+  for (const row of rows) {
+    if (!row.state_code || row.total <= 0) continue;
+    const state = byState.get(row.state_code) ?? {
+      state: row.state_code, readyCells: 0, totalCells: 0, institutionsShort: 0, institutionsShortWeekAgo: 0, closingThisWeek: 0,
+    };
+    const short = coverageShort(row.total, row.covered);
+    const shortWeekAgo = coverageShort(row.total, row.covered_week_ago ?? row.covered);
+    state.totalCells += 1;
+    if (short === 0) state.readyCells += 1;
+    state.institutionsShort += short;
+    state.institutionsShortWeekAgo += shortWeekAgo;
+    state.closingThisWeek += Math.min(row.newly_covered ?? 0, shortWeekAgo);
+    byState.set(row.state_code, state);
+  }
+  return [...byState.values()].sort((a, b) => b.institutionsShort - a.institutionsShort || a.state.localeCompare(b.state));
+}
+
 /** Pure: covered/total per state × size group into ready cells and the gap. */
-export function summarizeCoverageCells(rows: Array<{ size_group: string; total: number; covered: number }>): Omit<CoverageCells, "query"> {
+export function summarizeCoverageCells(rows: CoverageGroupRow[]): Omit<CoverageCells, "query"> {
   const bySize = SIZE_GROUPS.map((group) => {
     const cells = rows.filter((row) => row.size_group === group.key && row.total > 0);
-    const ready = cells.filter((row) => row.covered >= coverageTarget(row.total)).length;
-    const short = cells.reduce((sum, row) => sum + Math.max(0, coverageTarget(row.total) - row.covered), 0);
+    const ready = cells.filter((row) => coverageShort(row.total, row.covered) === 0).length;
+    const short = cells.reduce((sum, row) => sum + coverageShort(row.total, row.covered), 0);
     return { size: group.key, label: group.label, readyCells: ready, totalCells: cells.length, institutionsShort: short };
   });
   return {
@@ -259,6 +356,7 @@ export function summarizeCoverageCells(rows: Array<{ size_group: string; total: 
     totalCells: bySize.reduce((sum, row) => sum + row.totalCells, 0),
     institutionsShort: bySize.reduce((sum, row) => sum + row.institutionsShort, 0),
     bySize,
+    ...(rows.some((row) => row.state_code) ? { byState: summarizeStateGaps(rows) } : {}),
   };
 }
 
@@ -369,28 +467,20 @@ export function poolFreshAudits(events: Array<{ at: string; detail: Record<strin
 }
 
 async function readCoverageCells(db: SqlTag): Promise<CoverageCells> {
-  const rows = await db<Array<{ size_group: string; total: number | string; covered: number | string }>>`
-    WITH live AS (SELECT DISTINCT institution_id FROM published_fee_catalog),
-    inst AS (
-      SELECT i.state_code,
-             CASE WHEN i.asset_size < ${SIZE_GROUPS[0].maxThousands} THEN ${SIZE_GROUPS[0].key}
-                  WHEN i.asset_size < ${SIZE_GROUPS[1].maxThousands} THEN ${SIZE_GROUPS[1].key}
-                  ELSE ${SIZE_GROUPS[2].key} END AS size_group,
-             (live.institution_id IS NOT NULL) AS covered
-        FROM institution_sources i
-        LEFT JOIN live ON live.institution_id = i.id
-       WHERE COALESCE(i.status, 'active') = 'active'
-         AND NULLIF(btrim(i.state_code), '') IS NOT NULL
-         AND i.asset_size IS NOT NULL
-         AND i.asset_size < ${SIZE_GROUPS[2].maxThousands}
-    )
-    SELECT state_code, size_group, COUNT(*)::int AS total, (COUNT(*) FILTER (WHERE covered))::int AS covered
-      FROM inst
-     GROUP BY 1, 2
+  const rows = await db<Array<Record<string, number | string>>>`
+    SELECT state_code, size_group, total, covered, covered_week_ago, newly_covered
+      FROM (${coverageGroupsSql(db, { weekAgo: true })}) coverage_groups
   `;
   return {
     query: GOAL_QUERIES.coverageCells,
-    ...summarizeCoverageCells(rows.map((row) => ({ size_group: String(row.size_group), total: Number(row.total), covered: Number(row.covered) }))),
+    ...summarizeCoverageCells(rows.map((row) => ({
+      state_code: String(row.state_code),
+      size_group: String(row.size_group),
+      total: Number(row.total),
+      covered: Number(row.covered),
+      covered_week_ago: Number(row.covered_week_ago),
+      newly_covered: Number(row.newly_covered),
+    }))),
   };
 }
 
@@ -606,6 +696,10 @@ export function goalBriefLines(goal: GoalScorecard): string[] {
   lines.push(c
     ? `Coverage: ${c.readyCells} of ${c.totalCells} state and size groups under $10B meet the target; ${count(c.institutionsShort)} more covered institutions would close the gap.`
     : "Coverage: could not be read today.");
+  const gaps = c?.byState?.filter((state) => state.institutionsShort > 0).slice(0, 5) ?? [];
+  if (gaps.length > 0) {
+    lines.push(`Largest state gaps (institutions short now, 7 days ago): ${gaps.map((state) => `${state.state} ${count(state.institutionsShort)} (${count(state.institutionsShortWeekAgo)})`).join(", ")}.`);
+  }
   const live = goal.liveInstitutions;
   lines.push(live
     ? `Institutions with live fees: ${count(live.live)}, ${count(live.addedThisWeek)} added in the last 7 days.`
