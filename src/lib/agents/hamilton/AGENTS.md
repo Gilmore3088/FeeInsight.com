@@ -328,7 +328,12 @@ the detail.
     up to 200 documents a step (`lineup_corrected` feedback row). No rollback.
 27. Restore re-check (`restore-recheck.ts`): fees an older re-check restored with no check get
     the restore bar; one that fails comes down on its second look,
-    `rules_recheck_restore: <bar reason>`.
+    `rules_recheck_restore: <bar reason>`. Then the lost re-check restore
+    (`lost-recheck-restore.ts`, #1071): a fee the re-check took down on Oct 5-11, before #1022,
+    with no live row at its institution, category and amount is judged once by the restore bar
+    on its document's newest text, up to 300 a step. One that passes comes back (flag
+    `rules_recheck_restored:lost_restore`) and its bank is due for the source check; one that
+    fails or has no text stays down. Every judged row is flagged `lost_recheck_restore_judged`.
 28. Change pairing (`change-pairing.ts`): older `fee_change_records` get their two rows and
     `like_for_like`, up to 500 a step. No rollback.
 29. Cross-page restore (`cross-page-restore.ts`): a fee another page's price superseded comes
