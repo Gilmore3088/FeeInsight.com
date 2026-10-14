@@ -111,19 +111,26 @@ export function feeLineIndex(lines: string[], feeName: string, amount: number | 
   return -1;
 }
 
-const FIRST_PRICE = /\$\s*\d[\d,]*(?:\.\d{2})?|\b\d[\d,]*\.\d{2}\b/;
+/** A dollar price; a rate ("1.00%") is not one (review of 885ff8f1). */
+const FIRST_PRICE = /(?:\$\s*\d[\d,]*(?:\.\d{2})?|\b\d[\d,]*\.\d{2}\b)(?![\d.,]*\s*%)/;
+/** What may follow a price on a line of its own: a unit, nothing more ("$30.00", "$5.00 per item"). */
+const PRICE_UNIT_ONLY = /^\s*(?:(?:\/|per)\s*[a-z]+|each|monthly)?\s*$/i;
 
 /**
  * A fee row's label and its first price: the text before the line's first price and that price,
- * or the whole line and the first price on the next line. Null for a sentence or a long line.
+ * or the whole line and a price standing alone on the next line ("Stop Payment" / "$30.00"; never
+ * "$30.00 renewal (every 6 months)", another fee's row under a sub-heading). Null for a sentence
+ * or a long line.
  */
 function feeRow(lines: string[], index: number): { label: string; price: string } | null {
   const line = lines[index].trim();
   if (line.length > MAX_FEE_ROW_CHARS || isSentence(line)) return null;
   const own = FIRST_PRICE.exec(line);
   if (own) return { label: squash(line.slice(0, own.index)), price: own[0] };
-  const below = FIRST_PRICE.exec(nextLine(lines, index) ?? "");
-  return below && below.index === 0 ? { label: squash(line), price: below[0] } : null;
+  const next = nextLine(lines, index) ?? "";
+  const below = FIRST_PRICE.exec(next);
+  if (!below || next.slice(0, below.index).trim() || !PRICE_UNIT_ONLY.test(next.slice(below.index + below[0].length))) return null;
+  return { label: squash(line), price: below[0] };
 }
 
 /**
@@ -131,12 +138,16 @@ function feeRow(lines: string[], index: number): { label: string; price: string 
  * schedule with a personal and a business section can list one fee at one price in both. A line
  * whose label runs on ("Incoming Wire Transfer - International $15"), whose first price is another
  * fee's ("Stop Payment $25   Wire Transfer $30"), or that is a sentence ("Stop payment fees ($30)
- * waived for ...") is another row (review of d97858de).
+ * waived for ...") is another row (review of d97858de). The fee's own label must name the fee: a
+ * label that only names a category ("Checking | $10.00 | Monthly maintenance") is shared by
+ * different fees (review of 885ff8f1).
  */
-export function sameFeeRows(lines: string[], feeIndex: number, amount: number | null): number[] {
+export function sameFeeRows(lines: string[], feeIndex: number, feeName: string, amount: number | null): number[] {
   if (amount == null) return [];
   const own = feeRow(lines, feeIndex);
   if (!own || !own.label) return [];
+  const name = squash(feeName).replace(/(?: (?:service )?(?:fees?|charges?))+$/, "");
+  if (!name || !` ${own.label} `.includes(` ${name} `)) return [];
   const price = priceToken(amount);
   if (!price.test(own.price)) return [];
   const found: number[] = [];
@@ -303,7 +314,7 @@ export function suggestAudience(input: {
       // The same fee at the same price under a personal and a business heading is listed for
       // both ("NSF $32" in Personal Checking Fees and again in Business Accounts Fees).
       if (section.audience !== "both") {
-        for (const other of sameFeeRows(lines, feeIndex, input.amount)) {
+        for (const other of sameFeeRows(lines, feeIndex, input.feeName, input.amount)) {
           const there = sectionHeadingAudience(lines, other);
           if (there && "audience" in there && there.audience !== "both" && there.audience !== section.audience) {
             return { audience: "both", source: "section_heading", evidence: `${section.heading} / ${there.heading}` };

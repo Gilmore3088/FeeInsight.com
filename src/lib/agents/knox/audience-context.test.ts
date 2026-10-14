@@ -279,6 +279,15 @@ describe("Knox audience suggestion from context (#1059)", () => {
     expect(another(["Personal Accounts Fees", "Stop Payment $30", "Business Checking Accounts", "Premier Checking", "Monthly maintenance $25", "Stop payment fees ($30) waived for Premier Checking customers"], "Stop Payment", 30)).toBe("consumer");
     expect(another(["Personal Accounts Fees", "Stop Payment $30", "Business Accounts Fees", "Stop Payment $35", "Effective 1/1, the Stop Payment fee changes from $30 to $35"], "Stop Payment", 30)).toBe("consumer");
     expect(another(["Personal Accounts Fees", "Stop Payment $30", "Business Accounts Fees", "Online services include Bill Pay and Stop Payment", "Wire Transfer $30"], "Stop Payment", 30)).toBe("consumer");
+    // A next-line price that leads another fee's row, a rate, or a label that only names a
+    // category is no second listing either (review of 885ff8f1).
+    expect(another(["Business Accounts Fees", "Stop Payment", "$30.00", "Personal Accounts Fees", "Stop Payment", "$30.00 renewal (every 6 months)", "$25.00 per request"], "Stop Payment", 30)).toBe("business");
+    expect(another(["Business Accounts Fees", "Overdraft", "$30.00", "Personal Accounts Fees", "Overdraft", "$30.00 per day continuous overdraft after 5 days", "$25.00 per item"], "Overdraft", 30)).toBe("business");
+    expect(another(["Business Accounts Fees", "Foreign Transaction Fee $1.00", "Personal Accounts Fees", "Foreign Transaction Fee 1.00% of the transaction"], "Foreign Transaction Fee", 1)).toBe("business");
+    expect(another(["Business Accounts Fees", "Checking | $10.00 | Monthly maintenance", "Personal Accounts Fees", "Checking | $10.00 | Paper statement"], "Monthly maintenance", 10)).toBe("business");
+    expect(another(["Business Accounts Fees", "Wires | $15 | Incoming domestic", "Personal Accounts Fees", "Wires | $15 | Outgoing domestic"], "Incoming domestic", 15)).toBe("business");
+    // A next-line price with only a unit after it is still the same listing.
+    expect(another(["Personal Accounts Fees", "Stop Payment", "$30.00 per item", "Business Accounts Fees", "Stop Payment", "$30.00"], "Stop Payment", 30)).toBe("both");
     // The same row with its price on the next line, or in a pipe table, is the same listing.
     expect(another(["Personal Checking Fees", "Service Charge Fee | $2.00 per month", "Business Savings Account Fees", "Service Charge Fee | $2.00 per month"], "Service Charge Fee", 2)).toBe("both");
     // A second line in the same section is no second audience.
