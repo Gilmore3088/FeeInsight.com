@@ -10,7 +10,8 @@ import { loadGroupGaps, pickFromWorkLists, WORK_LIST_POOL, workListDetail, type 
 import { FOUND_COOLDOWN_DAYS, MISS_COOLDOWN_DAYS } from "./cooldowns";
 import { looksLikePdfUrl, validateFeeCandidate } from "./find-validate";
 import { urlIdentity } from "./finders";
-import { bankWebSearchTool } from "./web-search-tool";
+import { loadOwnHosts, onBankHosts } from "./own-hosts";
+import { domainRule, ownSiteDomains, webSearchToolFor } from "./web-search-tool";
 import {
   BUSINESS_PATH_SQL,
   CONSUMER_PATH_SQL,
@@ -19,7 +20,6 @@ import {
   hasOverdraftPrice,
   HIDDEN_BELOW_CATEGORIES,
   LARGE_BANK_ASSETS,
-  onBankDomain,
   OVERDRAFT_PRICE_SQL,
   PRODUCT_LINK_SQL,
   REFERS_ELSEWHERE_SQL,
@@ -111,7 +111,11 @@ function whyNotIt(row: ScheduleSearchRow): string {
   return "it does not list the overdraft or NSF fee amount";
 }
 
-export function scheduleSearchPrompt(row: ScheduleSearchRow): string {
+/**
+ * `siteDomains` are the sites the search is limited to (`ownSiteDomains`), or null for the open
+ * web; only an open-web search is told about a parent company's domain (#1251).
+ */
+export function scheduleSearchPrompt(row: ScheduleSearchRow, siteDomains: string[] | null = null): string {
   const site = websiteHost(row.website_url) ?? row.website_url;
   return [
     "Find the URL of this bank's consumer (personal) fee schedule: the document, usually a PDF,",
@@ -119,7 +123,7 @@ export function scheduleSearchPrompt(row: ScheduleSearchRow): string {
     "NSF / returned item fee, stop payment, wires and monthly maintenance. It may be titled",
     "\"Schedule of Fees\", \"Schedule of Charges\", \"Schedule of Service Charges\", \"Personal Fee Schedule\",",
     "\"Account Fee Schedule\", \"Consumer Fees\", \"Consumer Deposit Account Agreement\" or \"Truth in Savings",
-    "Disclosure\". Large banks often publish it on their parent company's domain.",
+    siteDomains ? "Disclosure\"." : "Disclosure\". Large banks often publish it on their parent company's domain.",
     "",
     `Bank: ${row.institution_name}`,
     `Location: ${[row.city, row.state_code].filter(Boolean).join(", ") || "unknown"}`,
@@ -127,7 +131,7 @@ export function scheduleSearchPrompt(row: ScheduleSearchRow): string {
     `We already have ${row.fee_schedule_url}, but ${whyNotIt(row)}. Find a different document.`,
     "",
     "Rules:",
-    `- The URL must be on the bank's own domain (${site}, a subdomain of it, or its parent company's domain).`,
+    domainRule(site, siteDomains),
     "- Not a business or commercial schedule, a rate sheet, a press release, or a marketing page.",
     "- If you cannot find it, answer with url null. Do not guess a URL you have not seen.",
     "",
@@ -311,8 +315,11 @@ export async function runScheduleSearch(options: {
 
   const fetchImpl = options.fetchImpl ?? fetch;
   const model = PAID_PASS_MODELS.find();
+  const ownHostsById = await loadOwnHosts(db, rows);
   for (const row of rows) {
     const institutionId = Number(row.id);
+    const ownHosts = ownHostsById.get(institutionId) ?? [];
+    const siteDomains = ownSiteDomains(row, ownHosts);
     const startedAt = Date.now();
     let costMicrousd = 0;
     let outcome: AttemptOutcome;
@@ -333,8 +340,8 @@ export async function runScheduleSearch(options: {
         params: {
           model,
           max_tokens: MAX_OUTPUT_TOKENS,
-          tools: [bankWebSearchTool(row, WEB_SEARCH_MAX_USES)],
-          messages: [{ role: "user", content: scheduleSearchPrompt(row) }],
+          tools: [webSearchToolFor(siteDomains, WEB_SEARCH_MAX_USES)],
+          messages: [{ role: "user", content: scheduleSearchPrompt(row, siteDomains) }],
         },
       });
       costMicrousd = call.costMicrousd;
@@ -344,7 +351,7 @@ export async function runScheduleSearch(options: {
       if (!proposed) {
         outcome = "no_candidates";
         reason = "Web search found no consumer fee schedule";
-      } else if (!onBankDomain(proposed, row.website_url)) {
+      } else if (!onBankHosts(proposed, row.website_url, ownHosts)) {
         outcome = "invalid_url";
         reason = `Answer is not on the bank's domain: ${proposed}`;
       } else if ((await knownUrls(db, institutionId, row.fee_schedule_url)).has(urlIdentity(proposed))) {
@@ -417,6 +424,8 @@ export async function runScheduleSearch(options: {
         url: found,
         held_link: row.fee_schedule_url,
         why_searched: whyNotIt(row),
+        search_domains: siteDomains,
+        own_hosts: ownHosts,
         proposed_url: typeof answer?.url === "string" ? answer.url : null,
         evidence: typeof answer?.evidence === "string" ? answer.evidence.slice(0, 300) : null,
         verdict,

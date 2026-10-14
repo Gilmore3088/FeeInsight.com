@@ -100,6 +100,30 @@ describe("paid schedule search for the largest banks", () => {
     expect(result.results[0]).toMatchObject({ would_search_schedule: true });
     expect(create).not.toHaveBeenCalled();
   });
+
+  it("searches a small bank on its own sites only, and never sends it to a parent company's domain (#1251)", async () => {
+    const cashmere: ScheduleSearchRow = {
+      ...wells, id: 12, institution_name: "Cashmere Valley Bank", city: "Cashmere", state_code: "WA",
+      website_url: "https://www.cashmerevalleybank.com", fee_schedule_url: "https://www.cashmerevalleybank.com/checking", asset_size: "2300000",
+    };
+    const db = vi.fn((strings: TemplateStringsArray) => {
+      const sqlText = text(strings);
+      if (sqlText.includes("incomplete-link schedule search")) return Promise.resolve([cashmere]);
+      if (sqlText.includes("bank-owned document hosts")) return Promise.resolve([{ institution_id: 12, host: "cvb.bank" }]);
+      return Promise.resolve([]);
+    });
+    const create = vi.fn().mockResolvedValueOnce(answer({ url: "https://www.cvb.bank/personal-fee-schedule" }));
+    const result = await runScheduleSearch({ runId: 4, db: asDb(db), create, fetchImpl: serve(SCHEDULE) });
+
+    const params = create.mock.calls[0][0];
+    expect(params.tools[0].allowed_domains).toEqual(["cashmerevalleybank.com", "cvb.bank"]);
+    const prompt = String(params.messages[0].content);
+    expect(prompt).not.toContain("parent company");
+    expect(prompt).toContain("cashmerevalleybank.com or cvb.bank");
+    expect(result.results[0]).toMatchObject({ outcome: "ok", url: "https://www.cvb.bank/personal-fee-schedule" });
+    // A $10B+ bank keeps the open web and may still use a parent company's domain.
+    expect(scheduleSearchPrompt(wells)).toContain("parent company's domain");
+  });
 });
 
 describe("market leaders in the priority lane", () => {

@@ -24,7 +24,8 @@ import { pageLinks, urlIdentity, type PageLink } from "./finders";
 import { LARGE_BANK_ASSETS, onBankDomain, websiteHost } from "./link-coverage";
 import { runScheduleSearch } from "./schedule-search";
 import { runWebsiteFind } from "./website-find";
-import { bankWebSearchTool } from "./web-search-tool";
+import { loadOwnHosts, onBankHosts } from "./own-hosts";
+import { domainRule, ownSiteDomains, webSearchToolFor } from "./web-search-tool";
 import { loadGroupGaps, pickFromWorkLists, WORK_LIST_POOL, workListDetail, type GroupGaps, type WorkListPlacement } from "@/lib/agents/state-expert/work-list";
 
 type Fetcher = typeof fetch;
@@ -66,7 +67,7 @@ interface PaidFindRow {
   city: string | null;
   state_code: string | null;
   website_url: string;
-  /** Thousands, as call reports. $10B+ banks search the open web (web-search-tool.ts). */
+  /** Thousands, as call reports. $10B+ banks, and banks with none on file, search the open web (web-search-tool.ts). */
   asset_size?: number | string | null;
   profile_consecutive_failures?: number | string | null;
   /** A paid web search for this bank is still on cooldown (only the pick is due). */
@@ -199,28 +200,40 @@ async function selectBanks(db: typeof sql, stateCode: string | null, limit: numb
 
 export { onBankDomain };
 
-/** The disclosure rung's ask (#1032): where a bank that publishes no schedule lists its fees. */
-const DISCLOSURE_RUNG_ASK = [
-  "This bank publishes no separate fee schedule that a search could find. Find the URL of the",
-  "consumer document that lists its account fees instead: a Truth in Savings disclosure, a",
-  "deposit account agreement, membership or account terms, or a checking or savings account",
-  "disclosure that states service fees with dollar amounts (overdraft, NSF/returned item, stop",
-  "payment, wire transfer, monthly maintenance). It may sit on a disclosures, forms or documents",
-  "page, or on the parent company's domain.",
-];
+/**
+ * The disclosure rung's ask (#1032): where a bank that publishes no schedule lists its fees.
+ * Only an open-web search is told about a parent company's domain (#1251).
+ */
+function disclosureRungAsk(openWeb: boolean): string[] {
+  return [
+    "This bank publishes no separate fee schedule that a search could find. Find the URL of the",
+    "consumer document that lists its account fees instead: a Truth in Savings disclosure, a",
+    "deposit account agreement, membership or account terms, or a checking or savings account",
+    "disclosure that states service fees with dollar amounts (overdraft, NSF/returned item, stop",
+    "payment, wire transfer, monthly maintenance). It may sit on a disclosures, forms or documents",
+    openWeb ? "page, or on the parent company's domain." : "page.",
+  ];
+}
 
+/**
+ * `siteDomains` are the sites the search is limited to (`ownSiteDomains`), or null for the open
+ * web. A site-limited search cannot reach a parent company's domain, so it is not offered one.
+ */
 export function paidFindPrompt(
   row: Pick<PaidFindRow, "institution_name" | "city" | "state_code" | "website_url">,
   rung: PaidRung = "schedule",
+  siteDomains: string[] | null = null,
 ): string {
   const host = websiteHost(row.website_url) ?? row.website_url;
-  const ask = rung === "disclosure" ? DISCLOSURE_RUNG_ASK : [
+  const ask = rung === "disclosure" ? disclosureRungAsk(!siteDomains) : [
     "Find the URL of this bank's consumer fee schedule: the document (PDF or web page) that lists",
     "account service fees with dollar amounts, such as overdraft, NSF/returned item, stop payment,",
     "wire transfer, and monthly maintenance fees. It is often titled \"Schedule of Fees\",",
     "\"Fee Schedule\", \"Schedule of Charges\", \"Schedule of Service Charges\", \"Account Fee Schedule\",",
-    "\"Consumer Fees\", \"Deposit Account Agreement\", or \"Truth in Savings / Fee Disclosure\". Large banks often",
-    "publish it on their parent company's domain.",
+    siteDomains
+      ? "\"Consumer Fees\", \"Deposit Account Agreement\", or \"Truth in Savings / Fee Disclosure\"."
+      : "\"Consumer Fees\", \"Deposit Account Agreement\", or \"Truth in Savings / Fee Disclosure\". Large banks often",
+    ...(siteDomains ? [] : ["publish it on their parent company's domain."]),
   ];
   return [
     ...ask,
@@ -230,7 +243,7 @@ export function paidFindPrompt(
     `Website: ${row.website_url}`,
     "",
     "Rules:",
-    `- The URL must be on the bank's own domain (${host}, a subdomain of it, or its parent company's domain).`,
+    domainRule(host, siteDomains),
     "- Do not return rate sheets, press releases, account agreements without fee amounts, or other sites.",
     "- If you cannot find it, answer with url null. Do not guess a URL you have not seen.",
     "",
@@ -338,8 +351,11 @@ export async function runMagellanPaidFind(options: RunMagellanPaidFindOptions): 
   const fetchImpl = options.fetchImpl ?? fetch;
   const model = PAID_PASS_MODELS.find();
   const usePick = options.pick ?? process.env.MAGELLAN_PAID_PICK?.trim().toLowerCase() !== "off";
+  const ownHostsById = await loadOwnHosts(db, rows);
   for (const row of rows) {
     const institutionId = Number(row.id);
+    const ownHosts = ownHostsById.get(institutionId) ?? [];
+    const siteDomains = ownSiteDomains(row, ownHosts);
     const startedAt = Date.now();
     let costMicrousd = 0;
     let outcome: AttemptOutcome;
@@ -395,8 +411,8 @@ export async function runMagellanPaidFind(options: RunMagellanPaidFindOptions): 
         params: {
           model,
           max_tokens: MAX_OUTPUT_TOKENS,
-          tools: [bankWebSearchTool(row, WEB_SEARCH_MAX_USES)],
-          messages: [{ role: "user", content: paidFindPrompt(row, rung) }],
+          tools: [webSearchToolFor(siteDomains, WEB_SEARCH_MAX_USES)],
+          messages: [{ role: "user", content: paidFindPrompt(row, rung, siteDomains) }],
         },
       });
       costMicrousd = call.costMicrousd;
@@ -406,7 +422,7 @@ export async function runMagellanPaidFind(options: RunMagellanPaidFindOptions): 
       if (!proposed) {
         outcome = "no_candidates";
         reason = rung === "disclosure" ? "Web search found no fee disclosure or account agreement" : "Web search found no fee schedule";
-      } else if (!onBankDomain(proposed, row.website_url)) {
+      } else if (!onBankHosts(proposed, row.website_url, ownHosts)) {
         outcome = "invalid_url";
         reason = `Answer is not on the bank's domain: ${proposed}`;
       } else {
@@ -480,6 +496,8 @@ export async function runMagellanPaidFind(options: RunMagellanPaidFindOptions): 
         // Escalation ladder (#1032): the rung asked, and the website the miss counts against.
         rung,
         website_url: row.website_url,
+        search_domains: siteDomains,
+        own_hosts: ownHosts,
         model,
         url,
         proposed_url: typeof answer?.url === "string" ? answer.url : null,
