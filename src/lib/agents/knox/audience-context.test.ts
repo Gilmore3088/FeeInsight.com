@@ -99,4 +99,20 @@ describe("Knox audience suggestion from context (#1059)", () => {
     // In a mixed schedule a fee whose line is not in the text stays unknown.
     expect(suggest(null, ["Fees", "Stop Payment $30", "Business Services", "Lockbox $50"].join("\n"), "Wire Transfer", 20)).toBeNull();
   });
+
+  it("never takes the next row's price, a description line or a bank's name (review of cfe0873d)", () => {
+    const rows = ["Personal Accounts", "Stop Payment $30", "Wire Transfer $20", "Business Accounts", "Stop Payment $20"].join("\n");
+    expect(suggest(null, rows, "Stop Payment", 20)).toMatchObject({ audience: "business", evidence: "Business Accounts" });
+    const described = ["Fee Schedule", "Personal Accounts", "Stop Payment $30", "Business Accounts", "$100 minimum opening deposit", "Stop Payment $35"].join("\n");
+    expect(suggest(null, described, "Stop Payment", 35)).toMatchObject({ audience: "business", evidence: "Business Accounts" });
+    expect(suggest(null, ["Personal Accounts", "Stop Payment $30", "Business Checking", "Free checking for 12 months", "Stop Payment $35"].join("\n"), "Stop Payment", 35)).toMatchObject({ audience: "business" });
+    for (const bank of ["Commercial State Bank of Wagner Fee Schedule", "Commercial National Bank Schedule of Fees", "First Commercial Bank Fee Schedule"]) {
+      expect(suggest(null, [bank, "Stop Payment $30", "Overdraft $25"].join("\n"), "Stop Payment", 30)).toMatchObject({ audience: "consumer", source: "default_general_schedule" });
+    }
+  });
+
+  it("reads thousands separators and a name printed without its fee word", () => {
+    expect(suggest(null, ["Personal Accounts", "Wire $1,500", "Business Accounts", "Wire $1,000"].join("\n"), "Wire", 1000)).toMatchObject({ audience: "business" });
+    expect(suggest(null, ["Fees", "Stop Payment $30", "Business Services", "Lockbox $50"].join("\n"), "Stop Payment Fee", 30)).toMatchObject({ audience: "both", source: "mixed_schedule_unqualified" });
+  });
 });

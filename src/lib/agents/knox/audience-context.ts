@@ -35,7 +35,7 @@ const TITLE_CHARS = 300;
  * Words that name a product or a time, not who the fee is for: a corporate (official) check or
  * draft, a personal check, a business day, "close of business", a vendor's "Business Systems".
  */
-const NOT_AN_AUDIENCE = /\bcorporate\s+(?:checks?|drafts?|bonds?|securities|and municipal)\b|\bpersonal\s+(?:checks?|identification|information)\b|\bbusiness\s+(?:days?|hours?|systems)\b|\b(?:close of|regular|normal|legitimate|conduct(?:ing)?|doing)\s+business\b|\bcredit union business only\b|\bnon-?(?:commercial|business|personal|consumer)\b|\b(?:commercial|business|consumer|personal)\s+(?:bank|savings bank|credit union|federal credit union|trust)\b(?=\s+(?:of|and|&|,|\.|$))/gim;
+const NOT_AN_AUDIENCE = /\bcorporate\s+(?:checks?|drafts?|bonds?|securities|and municipal)\b|\bpersonal\s+(?:checks?|identification|information)\b|\bbusiness\s+(?:days?|hours?|systems)\b|\b(?:close of|regular|normal|legitimate|conduct(?:ing)?|doing)\s+business\b|\bcredit union business only\b|\bnon-?(?:commercial|business|personal|consumer)\b|\b(?:commercial|business|consumer|personal)(?:\s+(?:state|national|federal|savings|community|county|city|first))*\s+(?:bank|savings bank|credit union|trust company|savings and loan)\b/gi;
 const neutral = (text: string) => text.replace(NOT_AN_AUDIENCE, " ");
 
 function audienceOf(raw: string): ContextAudience | null {
@@ -82,14 +82,17 @@ const squash = (value: string) => value.toLowerCase().replace(/[^a-z0-9]+/g, " "
 
 /** The index of the fee's own line: the first line naming it (its first words) at its price. */
 export function feeLineIndex(lines: string[], feeName: string, amount: number | null): number {
-  const name = squash(feeName).split(" ").slice(0, 4).join(" ");
+  // "Stop Payment Fee" is printed "Stop Payment $30": a trailing fee word is not part of the name.
+  const name = squash(feeName).replace(/(?: (?:service )?(?:fees?|charges?))+$/, "").split(" ").slice(0, 4).join(" ");
   if (!name) return -1;
   const price = amount == null ? null : priceToken(amount);
   let nameOnly = -1;
   for (let index = 0; index < lines.length; index += 1) {
     const line = squash(lines[index]);
     if (!line.includes(name)) continue;
-    if (price == null || price.test(lines[index]) || price.test(nextLine(lines, index) ?? "")) return index;
+    // The next line's price counts only when the name line has none of its own, so a fee never
+    // takes the price of the row below it (review of cfe0873d).
+    if (price == null || price.test(lines[index]) || (!PRICED.test(lines[index]) && price.test(nextLine(lines, index) ?? ""))) return index;
     if (nameOnly < 0) nameOnly = index;
   }
   return nameOnly;
@@ -101,7 +104,10 @@ export function feeLineIndex(lines: string[], feeName: string, amount: number | 
  */
 function priceToken(amount: number): RegExp {
   const whole = Number.isInteger(amount);
-  const digits = (whole ? String(amount) : amount.toFixed(2)).replace(".", "\\.");
+  const [units, fraction] = amount.toFixed(2).split(".");
+  // Thousands may be written with a separator ("$1,000").
+  const grouped = units.replace(/\B(?=(\d{3})+(?!\d))/g, ",").replace(/,/g, ",?");
+  const digits = whole ? grouped : `${grouped}\\.${fraction}`;
   const cents = whole ? `${digits}(?:\\.00)?` : digits;
   return new RegExp(String.raw`(?<![\d.,])\$\s*${cents}(?![\d.,]*\d)|(?<![\d.,$])${whole ? `${digits}\\.00` : digits}(?![\d])`);
 }
@@ -114,8 +120,11 @@ function nextLine(lines: string[], index: number): string | null {
   return null;
 }
 
-/** A bare price on its own line ("$10.00", "$ 5", "25.00 per item", "Free"). */
-const BARE_PRICE = /^\s*(?:\$\s*\d[\d,]*(?:\.\d{2})?|\d[\d,]*\.\d{2}|free|no charge|n\/c)\b/i;
+/**
+ * A line that holds nothing but a price ("$10.00", "$ 5", "25.00 per item", "Free"); a line that
+ * only starts with one ("$100 minimum opening deposit") is a description (review of cfe0873d).
+ */
+const BARE_PRICE = /^\s*(?:\$\s*\d[\d,]*(?:\.\d{2})?|\d[\d,]*\.\d{2}|free|no charge|n\/c)\s*\*?\s*(?:(?:per|each|a|an)\s+\w+|each|\/\s*\w+)?\s*$/i;
 
 /** A fee name whose price sits on the next line ("Personal Account Research" / "$25.00") heads nothing. */
 function namesAFee(lines: string[], index: number): boolean {
