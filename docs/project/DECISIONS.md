@@ -5,6 +5,14 @@ Seeded 2026-10-05 from the project's working memory; earlier decisions were not 
 
 ## 2026-10-14
 
+**Data quality comes before the Hamilton redesign.** James, Oct 14, after his quality gap audit:
+"The Hamilton redesign is not ready to go yet. I still think we need to focus on the data quality
+and eventually we'll get to the redesign." Lane B moves from Hamilton to published-fee quality
+(#1234, #1100, #1196, #1067). Lane A takes #1059, then recall (#1093, #1052, #1051). Hamilton UI and
+redesign work waits. A quality fix counts only once stored rows or customer output change, measured
+before and after on the same rows. The order and proof rules are in
+`docs/plans/build-plan-2026-10-12.md` ("Data quality first").
+
 **"Reviewed" means a submitted review of the exact head SHA; CI also runs on main.** James, Oct 14,
 after an auditor found merged PRs with no submitted review and no CI run on main's merge commits.
 A PR merges under the standing authorization only when a separate reviewer agent (not the builder
