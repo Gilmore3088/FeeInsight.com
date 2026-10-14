@@ -170,6 +170,7 @@ export async function runDarwinConditionalZeroResolve(options: {
             row,
             canonicalFeeKey: row.canonical_fee_key,
             extraFlags: [CONDITIONAL_ZERO_RELEASED_FLAG],
+            sourceText: row.source_document_id == null ? null : texts.get(Number(row.source_document_id)) ?? null,
           });
         }
         await recordAttempt(scope as SqlTag, {

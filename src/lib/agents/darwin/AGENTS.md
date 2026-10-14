@@ -88,6 +88,14 @@ Darwin owns verification and classification.
   (`fee_audience`, `unknown` when unset), so a consumer and a business fee are not duplicates of
   each other. A duplicate recorded under an older key version on a current copy with no verified
   twin on that same document is selected once more.
+- Darwin decides each verified fee's audience (#1059; James, Oct 13). A label Knox read on the
+  fee's own line stands. A fee Knox left `unknown` takes Knox's context suggestion
+  (`knox/audience-context.ts`, via `darwin/audience.ts`), in this order: the schedule's address,
+  its title, the section heading above the fee's line, a schedule that prices nothing for
+  businesses (consumer), or a schedule that also prices business items and does not limit the
+  fee (both). The evidence is written as `darwin:<source>: <words>`. The audience trigger copies
+  the raw row's audience onto the verified row until migration 20270110000047 lets it keep a
+  `darwin:` decision, so until then this changes nothing that is written.
 - Every decision is written to `pipeline_attempts` (stage `verify`, fingerprint
   `raw:<fee_raw_id>`) with `decision` and `reason_code`; a row decided under this rule
   version is never selected again, so skipped rows cannot starve the batch.

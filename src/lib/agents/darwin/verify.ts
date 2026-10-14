@@ -1,4 +1,5 @@
 import { isConsumerFee, scopedFeeStatements, type FeeAudience } from "@/lib/fee-audience";
+import { darwinAudience } from "./audience";
 import { createHash } from "crypto";
 
 import { sql } from "@/lib/data-store/connection";
@@ -680,6 +681,8 @@ export async function insertVerifiedFee(
     canonicalFeeKey: string;
     secondSourceAgrees?: boolean;
     extraFlags?: string[];
+    /** The document's newest text, for Darwin's audience decision (#1059). */
+    sourceText?: string | null;
   },
 ): Promise<number | null> {
   const feeRawId = Number(options.row.fee_raw_id);
@@ -697,6 +700,8 @@ export async function insertVerifiedFee(
   // #1196: an NSF fee is charged per item; a period on one is a misread, so it is never verified.
   const frequency = perEventFrequency(options.canonicalFeeKey, settled, line, amount);
   if (frequency !== stated) flags.push(FREQUENCY_SETTLED_FLAG);
+  // With no decision the trigger copies the raw row's audience, as before.
+  const audience = darwinAudience(options.row, amount, options.sourceText);
   const inserted = await db`
     INSERT INTO verified_fee_observations (
       fee_raw_id,
@@ -716,7 +721,9 @@ export async function insertVerifiedFee(
       rate_percent,
       rate_min_amount,
       rate_max_amount,
-      rate_basis
+      rate_basis,
+      fee_audience,
+      audience_evidence
     )
     VALUES (
       ${feeRawId},
@@ -736,7 +743,9 @@ export async function insertVerifiedFee(
       ${percent ? ratePercentOf(options.row) : null},
       ${percent ? options.row.rate_min_amount ?? null : null},
       ${percent ? options.row.rate_max_amount ?? null : null},
-      ${percent ? options.row.rate_basis ?? null : null}
+      ${percent ? options.row.rate_basis ?? null : null},
+      ${audience?.feeAudience ?? "unknown"},
+      ${audience?.audienceEvidence ?? null}
     )
     ON CONFLICT DO NOTHING
     RETURNING fee_verified_id
@@ -1090,6 +1099,7 @@ export async function runDarwinVerify(
           row,
           canonicalFeeKey,
           secondSourceAgrees: secondSource?.verdict === "agrees",
+          sourceText: row.source_document_id == null ? null : sourceTexts.get(Number(row.source_document_id)) ?? null,
         })).catch(() => {
           insertFailed = true;
           return null;
