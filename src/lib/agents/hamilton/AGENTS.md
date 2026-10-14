@@ -81,7 +81,8 @@ Hamilton supports the decision; it does not make it.
   engine. `detail.pro` counts how many meet the bar and how many Hamilton still asks back on,
   and lists every one that falls short. A replayed answer about a fee the question did not
   ask about fails as "answers a different subject" (`offSubjectFailure`). Questions stay in our own database only.
-  It asks 15 questions (q26, the NSF regulation question, since #1079). Every answer is also
+  It asks 17 questions (q26, the NSF regulation question, since #1079; q31, fee income against
+  peers, and q32, what competitors in the county charge, since #1084). Every answer is also
   scored on correctness (`hamilton/answer-correctness.ts`, the `report-reconciliation` check for
   one answer): the bank's own value and every peer, layer and local-competitor value is its
   live value in `published_fee_catalog` under the statistics contract, each printed median and
@@ -92,6 +93,13 @@ Hamilton supports the decision; it does not make it.
   checked: percentages and counts, and the whole-schedule overview's peer medians (accepted as
   printed). The paid paths (written answer, memo, simulate, reports) are not sampled until James
   sets a daily provider budget for it.
+- The Pro written answer (`/api/research/hamilton`, tools in `research/agents.ts`) reads, among
+  its read-only tools, `getLocalCompetitors` (shared with chat, `research/tool-local-competitors.ts`),
+  `queryFeeRevenueCorrelation` (its `peers` view compares one institution's service charge
+  income with a peer group's median on the same quarter and filer, `research/fee-income-peers.ts`),
+  `queryDistrictData` and `queryStateData` (#1084). The reader's saved default peer set
+  (`getActivePeerSet`) is in its prompt; the answer's identity snapshot names it as the peer
+  baseline only when a tool call used it (the `peers` view with the set's filters).
 - The bank's own numbers arrive by answer or upload. `POST /api/hamilton/uploads` reads a
   CSV or XLSX (fee income, item counts, waivers, affected accounts by GL line) and returns
   what was read; unmatched lines are listed, never guessed, and the file is not stored.

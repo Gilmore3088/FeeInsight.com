@@ -7,6 +7,12 @@ export interface FeeRevenueCorrelation {
   charter_type: string;
   state_code: string | null;
   asset_size_tier: string | null;
+  /** Fed district on file for the institution, when known. */
+  fed_district?: number | null;
+  /** The call report quarter these financials come from. */
+  report_date?: string | null;
+  /** fdic (quarterly income) or ncua (year-to-date income). */
+  financial_source?: string | null;
   total_assets: number | null;
   service_charge_income: number | null;
   fee_income_ratio: number | null;
@@ -23,6 +29,9 @@ export async function getFeeRevenueData(): Promise<FeeRevenueCorrelation[]> {
       ct.charter_type,
       ct.state_code,
       ct.asset_size_tier,
+      ct.fed_district,
+      ifin.report_date,
+      ifin.source AS financial_source,
       ifin.total_assets,
       ifin.service_charge_income,
       CASE WHEN ifin.total_assets > 0
@@ -59,13 +68,16 @@ export async function getFeeRevenueData(): Promise<FeeRevenueCorrelation[]> {
       )
       AND ifin.service_charge_income IS NOT NULL
     GROUP BY ct.id, ct.institution_name, ct.charter_type, ct.state_code,
-             ct.asset_size_tier, ifin.total_assets, ifin.service_charge_income,
+             ct.asset_size_tier, ct.fed_district, ifin.report_date, ifin.source,
+             ifin.total_assets, ifin.service_charge_income,
              ef.avg_fee, ef.fee_count
     ORDER BY ifin.total_assets DESC NULLS LAST
   ` as FeeRevenueCorrelation[];
 
   return rows.map((r) => ({
     ...r,
+    fed_district: r.fed_district === null || r.fed_district === undefined ? null : Number(r.fed_district),
+    report_date: r.report_date === null || r.report_date === undefined ? null : String(r.report_date).slice(0, 10),
     fee_income_ratio: r.fee_income_ratio !== null ? Number(r.fee_income_ratio) : null,
     avg_fee: Number(r.avg_fee),
     fee_count: Number(r.fee_count),

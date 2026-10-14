@@ -9,6 +9,7 @@ import {
   getCharterFeeRevenueSummary,
 } from "@/lib/data-store/fee-revenue";
 import { getStats } from "@/lib/data-store/core";
+import { feeIncomeAgainstPeers } from "./fee-income-peers";
 import { getCollectionHealth } from "@/lib/data-store/dashboard";
 import { sql } from "@/lib/data-store/connection";
 import { getKnoxReviewCounts } from "@/lib/data-store/knox-reviews";
@@ -96,10 +97,10 @@ export const queryStateData = tool({
 
 export const queryFeeRevenueCorrelation = tool({
   description:
-    "Returns correlation between published fee schedules and FDIC/NCUA service charge income. Views: institutions (per-institution), by_tier (asset tier summary), by_charter (bank vs CU). When: revenue dependency questions, fee-to-income analysis. Combine with: queryNationalData, queryNationalData(health) for ROA/efficiency context.",
+    "Returns correlation between published fee schedules and FDIC/NCUA service charge income. Views: peers (one institution's fee income against a peer group's median, same quarter and filer), institutions (per-institution), by_tier (asset tier summary), by_charter (bank vs CU). When: fee income compared with peers, revenue dependency questions, fee-to-income analysis. For peers, pass institution_id and the peer group's filters (the reader's saved peer set when there is one). Combine with: queryNationalData, queryNationalData(health) for ROA/efficiency context.",
   inputSchema: z.object({
     view: z
-      .enum(["institutions", "by_tier", "by_charter"])
+      .enum(["peers", "institutions", "by_tier", "by_charter"])
       .optional()
       .default("by_tier")
       .describe("Which view to return"),
@@ -108,8 +109,24 @@ export const queryFeeRevenueCorrelation = tool({
       .optional()
       .default(20)
       .describe("Max institutions to return (only for 'institutions' view)"),
+    institution_id: z.number().int().positive().optional().describe("The institution compared (required for 'peers')"),
+    peer_institution_ids: z.array(z.number().int().positive()).max(200).optional().describe("Exactly these peers (a hand-picked peer set)"),
+    states: z.array(z.string().length(2)).max(60).optional().describe("Peers in any of these states"),
+    charter_type: z.enum(["bank", "credit_union"]).optional().describe("Peers of this charter"),
+    asset_tiers: z.array(z.string()).max(10).optional().describe("Peers in any of these asset tiers"),
+    fed_districts: z.array(z.number().int().min(1).max(12)).max(12).optional().describe("Peers in any of these Fed districts"),
   }),
-  execute: async ({ view, limit }) => {
+  execute: async ({ view, limit, institution_id, peer_institution_ids, states, charter_type, asset_tiers, fed_districts }) => {
+    if (view === "peers") {
+      if (!institution_id) return { view: "peers", error: "Pass institution_id for the institution being compared." };
+      return feeIncomeAgainstPeers(await getFeeRevenueData(), institution_id, {
+        institutionIds: peer_institution_ids,
+        states: states?.map((state) => state.toUpperCase()),
+        charterType: charter_type,
+        assetTiers: asset_tiers,
+        fedDistricts: fed_districts,
+      });
+    }
     if (view === "institutions") {
       const data = await getFeeRevenueData();
       return {
