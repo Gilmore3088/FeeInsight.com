@@ -110,6 +110,11 @@ vi.mock("@/lib/research/agents", () => ({
   getHamilton: getHamiltonMock,
   buildAnalyzeModeSuffix: () => "",
   buildMonitorModeSuffix: () => "",
+  buildSavedPeerSetPrompt: () => "",
+}));
+
+vi.mock("@/lib/hamilton/active-peer-set", () => ({
+  getActivePeerSet: async () => null,
 }));
 
 import { getCurrentUser } from "@/lib/auth";

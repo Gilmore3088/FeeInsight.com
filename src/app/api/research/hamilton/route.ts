@@ -24,7 +24,8 @@ import {
 } from "@/lib/ai-provider";
 import { HAMILTON_PAUSED_MESSAGE } from "@/lib/hamilton/provider-paused";
 import { viewAsCustomerFromCookieHeader } from "@/lib/hamilton/view-as";
-import { getHamilton, buildAnalyzeModeSuffix, buildMonitorModeSuffix, type HamiltonRole } from "@/lib/research/agents";
+import { getHamilton, buildAnalyzeModeSuffix, buildMonitorModeSuffix, buildSavedPeerSetPrompt, type HamiltonRole } from "@/lib/research/agents";
+import { getActivePeerSet } from "@/lib/hamilton/active-peer-set";
 import { evaluateCitationDensity } from "@/lib/hamilton/citation-gate";
 import { getCurrentUser, type User } from "@/lib/auth";
 import { checkProAiQuota, quotaExceededMessage } from "@/lib/hamilton/quota";
@@ -172,12 +173,20 @@ async function handlePOST(request: Request) {
   contract = enrichedContract;
   institutionId = enrichedContract.institutionId;
   const subject = institutionId === null ? null : await getInstitutionById(institutionId).catch(() => null);
+  // The reader's saved default peer set (the account workspace's, else their own), so "peers"
+  // in the written answer means the group they chose (#1084). A failed read is no peer set.
+  const homeId = enrichedContract.serverAccountContext.institution?.id;
+  const peerSet = await getActivePeerSet({ userId: user.id, institutionId: homeId ?? institutionId }).catch(() => null);
   const identityContext = accountIdentitySnapshot(institutionId, enrichedContract.serverAccountContext, {
     researchInstitutionName: subject?.institution_name ?? null,
     researchSelectionSource: requestedInstitutionId !== null ? "authenticated request" : institutionId !== null ? "linked account default" : "unscoped",
-    peerBaselineLabel: null,
-    peerBaselineSource: null,
-    peerBaselineFallbackReason: "The written answer did not capture a named peer cohort. Its original figures remain unchanged; no current peer selection is substituted.",
+    ...(peerSet
+      ? { peerSetId: peerSet.id, peerBaselineLabel: peerSet.label, peerBaselineSource: "saved-peer-set", peerBaselineFallbackReason: null }
+      : {
+        peerBaselineLabel: null,
+        peerBaselineSource: null,
+        peerBaselineFallbackReason: "The written answer did not capture a named peer cohort. Its original figures remain unchanged; no current peer selection is substituted.",
+      }),
   });
 
   const agent = await getHamilton(role);
@@ -192,6 +201,7 @@ async function handlePOST(request: Request) {
 
   let systemPrompt = agent.systemPrompt;
   systemPrompt += buildHamiltonRequestContractPrompt(contract);
+  systemPrompt += buildSavedPeerSetPrompt(peerSet);
 
   if (institutionId !== null) {
     const selectedInstitutionContext = await buildHamiltonInstitutionBriefing(contract);
@@ -200,7 +210,6 @@ async function handlePOST(request: Request) {
     }
     systemPrompt += selectedInstitutionContext;
   }
-  const homeId = enrichedContract.serverAccountContext.institution?.id;
   if (homeId && homeId !== institutionId && /\b(us|our|ours|we)\b/i.test(lastUserText)) {
     const homeBriefing = await buildHamiltonInstitutionBriefing({ ...contract, institutionId: homeId }, { contextRole: "account_evidence" }).catch(() => null);
     systemPrompt += homeBriefing

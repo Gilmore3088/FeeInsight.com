@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   user: vi.fn(), members: vi.fn(), generate: vi.fn(), stream: vi.fn(), save: vi.fn(),
-  briefing: vi.fn(), guard: vi.fn(), metadata: vi.fn(),
+  briefing: vi.fn(), guard: vi.fn(), metadata: vi.fn(), peerSet: vi.fn(),
 }));
 vi.mock("@/lib/api-hardening/route-wrapper", () => ({ withApiRoutePolicy: (_id: string, _method: string, handler: unknown) => handler }));
 vi.mock("@/lib/api-hardening/audit", () => ({ getRequestSubjectKey: () => "synthetic-user" }));
@@ -27,7 +27,9 @@ vi.mock("@/lib/ai-provider-usage", () => ({
 vi.mock("@/lib/research/agents", () => ({
   getHamilton: async () => ({ systemPrompt: "Hamilton base.", model: "test-model", tools: {}, maxTokens: 100, maxSteps: 1 }),
   buildAnalyzeModeSuffix: () => "Analyze mode.", buildMonitorModeSuffix: () => "Monitor mode.",
+  buildSavedPeerSetPrompt: (set: { id: number } | null) => ` SAVED PEER SET ${set ? set.id : "none"}.`,
 }));
+vi.mock("@/lib/hamilton/active-peer-set", () => ({ getActivePeerSet: mocks.peerSet }));
 vi.mock("@/lib/research/skills", () => ({
   detectSkill: () => null, buildSkillInjection: () => "", buildSkillExecution: () => "", isSkillOptIn: () => false, findOfferedSkill: () => null,
 }));
@@ -60,6 +62,7 @@ beforeEach(() => {
   mocks.guard.mockReset().mockResolvedValue(Date.now());
   mocks.save.mockReset().mockResolvedValue("saved-1");
   mocks.metadata.mockReset();
+  mocks.peerSet.mockReset().mockResolvedValue(null);
   mocks.stream.mockReset().mockImplementation((options) => ({
     consumeStream: async () => options.onFinish({ totalUsage: { inputTokens: 1, outputTokens: 1 }, text: "Test streamed answer", steps: [] }),
     toUIMessageStream: () => ({}),
@@ -159,5 +162,19 @@ describe("live written-answer account/subject boundary", () => {
     mocks.briefing.mockResolvedValue(null);
     expect((await POST(request())).status).toBe(404);
     expect(mocks.generate).not.toHaveBeenCalled();
+  });
+  it("gives the written answer the reader's saved peer set and records it on the answer (#1084)", async () => {
+    mocks.peerSet.mockResolvedValue({ id: 55, name: "Synthetic peers", label: "Synthetic peers", filters: { institutionIds: [301, 302] } });
+    const response = await POST(request());
+    expect(mocks.peerSet).toHaveBeenCalledWith({ userId: 7, institutionId: 101 });
+    expect(mocks.generate.mock.calls[0][0].system).toContain("SAVED PEER SET 55.");
+    expect((await response.json()).identityContext).toMatchObject({ peerSetId: 55, peerBaselineLabel: "Synthetic peers", peerBaselineSource: "saved-peer-set", peerBaselineFallbackReason: null });
+  });
+  it("answers without a peer set when none is saved or the read fails", async () => {
+    mocks.peerSet.mockRejectedValue(new Error("synthetic peer set outage"));
+    const response = await POST(request());
+    expect(response.status).toBe(200);
+    expect(mocks.generate.mock.calls[0][0].system).toContain("SAVED PEER SET none.");
+    expect((await response.json()).identityContext.peerBaselineLabel).toBeNull();
   });
 });
