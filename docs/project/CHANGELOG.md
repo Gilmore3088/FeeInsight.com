@@ -18,7 +18,7 @@ Started 2026-10-05; for anything earlier, see `git log`.
 **Project and tooling**
 - CI: every test runs once in parallel jobs, about half the wait (#1300); a hard-document gate every taxonomy, guard or same-line change must pass (#1290); a merge needs a submitted review of its exact head (#1241).
 - Build plan: data quality before the Hamilton redesign (#1276).
-- Also merged today (earlier lanes): #1233, #1235, #1237, #1239, #1240, #1243, #1244, #1246, #1247, #1248, #1252, #1257, #1258, #1259/#1263, #1261, #1262, #1265, #1270, #1272.
+- Also merged today (earlier lanes): #1233, #1235, #1237, #1239, #1240, #1243, #1244, #1246, #1247, #1248, #1252, #1257, #1258, #1261, #1263, #1262, #1265, #1270, #1272.
 
 ## 2026-10-11
 **Accuracy and data quality**
