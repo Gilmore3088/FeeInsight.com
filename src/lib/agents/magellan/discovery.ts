@@ -1707,7 +1707,7 @@ export async function runMagellanDiscovery(
   // With the companion search on, banks stop early enough to leave it its reserve.
   const { stepDeadline, lastBankStart, bankDeadline } = discoveryTimeBudget(Date.now(), wantSecondDocuments);
   const results: CandidateDiscoveryResult[] = [];
-  const sharedNames = await loadSharedNameIds(db, rows);
+  const sharedNames = await loadSharedNameIds(db, rows, dryRun ? undefined : { runId: options.runId, stepId: options.stepId ?? null });
   for (const row of rows) {
     row.name_shared = sharedNames.has(Number(row.id));
     // Banks not reached this step stay due and are picked up by the next one.

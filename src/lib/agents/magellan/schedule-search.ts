@@ -320,7 +320,7 @@ export async function runScheduleSearch(options: {
   const fetchImpl = options.fetchImpl ?? fetch;
   const model = PAID_PASS_MODELS.find();
   const ownHostsById = await loadOwnHosts(db, rows);
-  const sharedNames = await loadSharedNameIds(db, rows);
+  const sharedNames = await loadSharedNameIds(db, rows, { runId: options.runId, stepId: options.stepId ?? null });
   for (const row of rows) {
     row.name_shared = sharedNames.has(Number(row.id));
     const institutionId = Number(row.id);
