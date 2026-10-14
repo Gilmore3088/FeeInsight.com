@@ -95,21 +95,28 @@ export function textNamesBank(text: string, bank: NamedBank): boolean {
 }
 
 /**
- * What may stand between "FDIC", "Cert", "Certificate", "Charter" or "NCUA" and the number:
- * "FDIC Certificate #175", "NCUA Charter No. 24051", "Cert. Number: 175".
+ * The words that label a certificate / charter number: "Cert", "Certificate" or "Charter", or a
+ * bare "FDIC" or "NCUA" only with "#", "No." or "Number" after it (#1320): "Member FDIC 175 Main
+ * Street" and "Member FDIC (175) 555-1212" are not cert 175. What may stand between the label and
+ * the number: "FDIC Certificate #175", "NCUA Charter No. 24051", "Cert. Number: 175".
  */
-const CERT_LABEL = "(?:fdic|ncua|cert(?:ificate)?|charter)";
+const CERT_LABEL = "(?:(?:fdic|ncua)[\\s:.()-]*(?:#|no\\b|number\\b|nbr\\b)|cert(?:ificate)?\\b|charter\\b)";
 const CERT_FILLER = "(?:[\\s#:.()-]|no\\b|number\\b|nbr\\b|id\\b|cert(?:ificate)?\\b|charter\\b)*";
+/**
+ * What may not follow the number: more digits or a decimal ("$1750", "175.00"), a term
+ * ("certificate: 175-day term", #1320) or the rest of a phone number ("(175) 555-1212", "175-2400").
+ */
+const CERT_END = "(?![0-9]|[.,][0-9]|\\s*-?\\s*(?:days?|months?)\\b|\\)?[\\s.-]*[0-9]{3}[\\s.-][0-9]{4}\\b|-[0-9]{4}\\b)";
 
 /**
  * Is the bank's FDIC certificate / NCUA charter number (3+ digits) in this lower-case text,
- * right after one of those words (#1309)? A bare number is no evidence: cert 175 is also
- * "$175.00", a phone number or a ZIP code.
+ * right after one of those labels (#1309, #1320)? A bare number is no evidence: cert 175 is also
+ * "$175.00", a phone number, a street number or a ZIP code.
  */
 export function textHasCertNumber(lower: string, certNumber: string | number | null | undefined): boolean {
   const cert = certNumber == null ? "" : String(certNumber).trim().replace(/^0+(?=\d)/, "");
   if (!/^\d{3,}$/.test(cert)) return false;
-  return new RegExp(`(^|[^a-z0-9])${CERT_LABEL}${CERT_FILLER}0*${cert}(?![0-9]|[.,][0-9])`).test(lower);
+  return new RegExp(`(^|[^a-z0-9])${CERT_LABEL}${CERT_FILLER}0*${cert}${CERT_END}`).test(lower);
 }
 
 /**
@@ -146,7 +153,8 @@ export interface SharedNameLedger {
  * The ids among `banks` whose name (`comparableBankName`) another institution also has, or
  * appears as whole words inside another institution's name ("american national bank" in
  * "first american national bank", #1309); the "credit union" form of a federal credit union's
- * name counts too, since `textNamesBank` accepts it. When the read fails, every bank is
+ * name counts too, either way round ("rivertown credit union" is shared with "rivertown federal
+ * credit union", #1320), since `textNamesBank` accepts it. When the read fails, every bank is
  * treated as shared (a name alone then never confirms a document) and, given a `ledger`, the
  * failure is written to the run's events.
  */
@@ -177,13 +185,22 @@ export async function loadSharedNameIds(
     const id = Number(bank.id);
     const name = comparableBankName(bank.institution_name);
     if (!name) continue;
-    const forms = [...new Set([name, name.replace(" federal credit union", " credit union")])];
+    const forms = creditUnionForms(name);
     const held = names.some(
-      (other) => other.id !== id && forms.some((form) => other.name === form || (form.length >= 6 && other.name.includes(form) && hasWords(other.name, form))),
+      (other) =>
+        other.id !== id &&
+        creditUnionForms(other.name).some((otherForm) =>
+          forms.some((form) => otherForm === form || (form.length >= 6 && otherForm.includes(form) && hasWords(otherForm, form))),
+        ),
     );
     if (held) shared.add(id);
   }
   return shared;
+}
+
+/** A name and, for a federal credit union, its short "credit union" form (`textNamesBank` reads both). */
+function creditUnionForms(name: string): string[] {
+  return [...new Set([name, name.replace(" federal credit union", " credit union")])];
 }
 
 async function recordSharedNamesUnread(db: SqlTag, ledger: SharedNameLedger, banks: number, error: unknown): Promise<void> {

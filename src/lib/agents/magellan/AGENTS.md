@@ -115,7 +115,10 @@ and `detail.method_version`).
   ("American National Bank" in "First American National Bank"); the number counts only right
   after "FDIC", "Cert", "Certificate", "Charter" or "NCUA", so "$175.00" is not cert 175; when
   the names cannot be read, every bank in the step is treated as shared and the run gets a
-  `magellan.shared_names_unread` event; and the companion finder runs the same check. A host
+  `magellan.shared_names_unread` event; and the companion finder runs the same check. Since #1320
+  "X Credit Union" is shared when "X Federal Credit Union" exists (either way round); a bare
+  "FDIC" or "NCUA" needs "#", "No." or "Number" before the number ("Member FDIC 175 Main Street"
+  is not cert 175), and a number followed by "-day" or the rest of a phone number never counts. A host
   with the website's name is trusted unread only when that name has 6+ characters
   (`SAME_NAME_MIN_CHARS`), so fnb.bank is read for fnb.com. The institution record holds no
   former names, so a renamed bank's new host still needs its current name in the text.
