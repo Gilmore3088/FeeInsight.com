@@ -245,9 +245,14 @@ and `detail.method_version`).
   own domain as JSON. The answer must be on the bank's domain and pass the same
   fee-page check before it is stored. Since #1251 (both paid searches): "its own website" also
   covers the bank's other own hosts (`own-hosts.ts`: a host of the bank's own stored documents that
-  no other institution uses and that has the website's name with another ending, 6+ characters, or
-  is a `.bank` domain; machiassavings.com and machiassavings.bank, cashmerevalleybank.com and
-  cvb.bank), up to 4 sites, and an answer on one of them is accepted. A bank with no asset size on
+  no other institution has documents on, that is not another institution's website or a
+  subdomain or parent of one, and that has the website's name with another ending, 6+ characters,
+  or is a `.bank` domain holding at least 2 of the bank's documents; machiassavings.com and
+  machiassavings.bank, cashmerevalleybank.com and cvb.bank), up to 4 sites, and an answer on one
+  of them passes the domain check. Both paid searches and the paid pick pass the bank's website
+  and name to `validateFeeCandidate`, so an answer on any other host must name the bank (#1033's
+  unconfirmed-host rule), and an answer whose host refused our check (HTTP 403) is kept unread only
+  on the website's own host, a subdomain, or a host with the website's name. A bank with no asset size on
   file, or whose website host the API may refuse (an IP address, a trailing dot, no dot) or is a
   third-party host (a bot check, a social page), searches the open web. Only an open-web search is
   told about a parent company's domain. The call's usage row records `web_search_domains`, and the

@@ -109,11 +109,12 @@ describe("paid schedule search for the largest banks", () => {
     const db = vi.fn((strings: TemplateStringsArray) => {
       const sqlText = text(strings);
       if (sqlText.includes("incomplete-link schedule search")) return Promise.resolve([cashmere]);
-      if (sqlText.includes("bank-owned document hosts")) return Promise.resolve([{ institution_id: 12, host: "cvb.bank" }]);
+      if (sqlText.includes("bank-owned document hosts")) return Promise.resolve([{ institution_id: 12, host: "cvb.bank", documents: 2 }]);
       return Promise.resolve([]);
     });
     const create = vi.fn().mockResolvedValueOnce(answer({ url: "https://www.cvb.bank/personal-fee-schedule" }));
-    const result = await runScheduleSearch({ runId: 4, db: asDb(db), create, fetchImpl: serve(SCHEDULE) });
+    const named = SCHEDULE.replace("<h1>Consumer Account", "<p>Cashmere Valley Bank</p><h1>Consumer Account");
+    const result = await runScheduleSearch({ runId: 4, db: asDb(db), create, fetchImpl: serve(named) });
 
     const params = create.mock.calls[0][0];
     expect(params.tools[0].allowed_domains).toEqual(["cashmerevalleybank.com", "cvb.bank"]);
@@ -123,6 +124,18 @@ describe("paid schedule search for the largest banks", () => {
     expect(result.results[0]).toMatchObject({ outcome: "ok", url: "https://www.cvb.bank/personal-fee-schedule" });
     // A $10B+ bank keeps the open web and may still use a parent company's domain.
     expect(scheduleSearchPrompt(wells)).toContain("parent company's domain");
+
+    // The same answer is refused when the document does not name the bank (#1033's rule, now
+    // applied to paid answers), and when the host refuses our check, since it can't be read.
+    const unnamed = vi.fn().mockResolvedValueOnce(answer({ url: "https://www.cvb.bank/personal-fee-schedule" }));
+    const r2 = await runScheduleSearch({ runId: 4, db: asDb(db), create: unnamed, fetchImpl: serve(SCHEDULE) });
+    expect(r2.results[0]).toMatchObject({ outcome: "wrong_document", url: null });
+    const refused = vi.fn().mockResolvedValueOnce(answer({ url: "https://www.cvb.bank/personal-fee-schedule.pdf" }));
+    const r3 = await runScheduleSearch({
+      runId: 4, db: asDb(db), create: refused, fetchImpl: vi.fn(async () => new Response("Forbidden", { status: 403, headers: { "content-type": "text/html" } })),
+    });
+    expect(r3.results[0]).toMatchObject({ url: null });
+    expect(r3.results[0].outcome).not.toBe("ok");
   });
 });
 

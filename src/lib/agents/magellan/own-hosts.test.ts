@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { bankOwnedHost, loadOwnHosts, onBankHosts } from "./own-hosts";
+import { bankOwnedHost, blockedAnswerHostConfirmed, loadOwnHosts, onBankHosts, OTHER_NAME_MIN_DOCUMENTS } from "./own-hosts";
 
 type DbMock = ReturnType<typeof vi.fn>;
 const text = (strings: TemplateStringsArray) => strings.join("?");
@@ -11,8 +11,25 @@ describe("a bank's other own hosts (#1251)", () => {
     // Pairs measured on production, 2026-10-14 (stored website -> host of a stored document).
     expect(bankOwnedHost("machiassavings.bank", "https://www.machiassavings.com")).toBe(true);
     expect(bankOwnedHost("healthplusfcu.org", "http://healthplusfcu.com")).toBe(true);
-    expect(bankOwnedHost("cvb.bank", "https://www.cashmerevalleybank.com")).toBe(true);
-    expect(bankOwnedHost("vallant.bank", "https://pinnaclebank.com")).toBe(true);
+    expect(bankOwnedHost("cvb.bank", "https://www.cashmerevalleybank.com", 2)).toBe(true);
+    expect(bankOwnedHost("vallant.bank", "https://pinnaclebank.com", 3)).toBe(true);
+  });
+
+  it("needs two of the bank's own documents on a .bank host with another name (review of #1282)", () => {
+    expect(OTHER_NAME_MIN_DOCUMENTS).toBe(2);
+    expect(bankOwnedHost("cvb.bank", "https://www.cashmerevalleybank.com")).toBe(false);
+    expect(bankOwnedHost("cvb.bank", "https://www.cashmerevalleybank.com", 1)).toBe(false);
+    // The same name needs no second document.
+    expect(bankOwnedHost("machiassavings.bank", "https://www.machiassavings.com", 1)).toBe(true);
+  });
+
+  it("keeps an unread (HTTP 403) answer only on the website's own host or name", () => {
+    const website = "https://www.machiassavings.com";
+    expect(blockedAnswerHostConfirmed("https://www.machiassavings.com/fees.pdf", website)).toBe(true);
+    expect(blockedAnswerHostConfirmed("https://online.machiassavings.com/fees.pdf", website)).toBe(true);
+    expect(blockedAnswerHostConfirmed("https://machiassavings.bank/fees.pdf", website)).toBe(true);
+    expect(blockedAnswerHostConfirmed("https://cvb.bank/fees.pdf", "https://www.cashmerevalleybank.com")).toBe(false);
+    expect(blockedAnswerHostConfirmed("https://cvb.bank/fees.pdf", null)).toBe(false);
   });
 
   it("refuses file hosts, short names, the website itself and unrelated domains", () => {
@@ -44,8 +61,9 @@ describe("a bank's other own hosts (#1251)", () => {
         { institution_id: 7, host: "machiassavings.bank" },
         { institution_id: 7, host: "machiassavings.com" },
         { institution_id: 7, host: "static1.squarespace.com" },
-        { institution_id: "8", host: "cvb.bank" },
+        { institution_id: "8", host: "cvb.bank", documents: 2 },
         { institution_id: 9, host: null },
+        { institution_id: 9, host: "lone.bank", documents: 1 },
       ]);
     });
     const hosts = await loadOwnHosts(asDb(db), [
@@ -54,6 +72,11 @@ describe("a bank's other own hosts (#1251)", () => {
       { id: 9, website_url: "https://nine.example" },
     ]);
     expect(db).toHaveBeenCalledTimes(1);
+    // Another institution's website, or a subdomain or parent of it, never counts.
+    const sqlText = text(db.mock.calls[0][0]);
+    expect(sqlText).toContain("other_site.host = own.host");
+    expect(sqlText).toContain("right(own.host, length(other_site.host) + 1) = '.' || other_site.host");
+    expect(sqlText).toContain("right(other_site.host, length(own.host) + 1) = '.' || own.host");
     expect(db.mock.calls[0][1]).toEqual([7, 8, 9]);
     expect(hosts.get(7)).toEqual(["machiassavings.bank"]);
     expect(hosts.get(8)).toEqual(["cvb.bank"]);

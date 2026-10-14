@@ -285,7 +285,7 @@ describe("state experts' work lists (#1029)", () => {
 describe("site-limited search follow-ups (#1251)", () => {
   const machias = { id: 41, institution_name: "Machias Savings Bank", city: "Machias", state_code: "ME", website_url: "https://www.machiassavings.com", asset_size: "2900000" };
 
-  function ownHostDb(rows: Array<Record<string, unknown>>, ownHosts: Array<{ institution_id: number; host: string }>): DbMock {
+  function ownHostDb(rows: Array<Record<string, unknown>>, ownHosts: Array<{ institution_id: number; host: string; documents?: number }>): DbMock {
     return vi.fn((strings: TemplateStringsArray) => {
       const text = templateText(strings);
       if (text.includes("learning_schema_ready")) return Promise.resolve([{ learning_schema_ready: true }]);
@@ -316,6 +316,22 @@ describe("site-limited search follow-ups (#1251)", () => {
     expect(logged.outcome).toBe("ok");
     expect(logged.detail.search_domains).toEqual(["machiassavings.com", "machiassavings.bank"]);
     expect(logged.detail.own_hosts).toEqual(["machiassavings.bank"]);
+  });
+
+  it("an answer on a .bank host with another name must name the bank, as every finder's must (#1033)", async () => {
+    const cashmere = { ...machias, id: 42, institution_name: "Cashmere Valley Bank", website_url: "https://www.cashmerevalleybank.com" };
+    const db = ownHostDb([cashmere], [{ institution_id: 42, host: "cvb.bank", documents: 2 }]);
+    const create = vi.fn().mockResolvedValueOnce(answer({ url: "https://cvb.bank/fees", confidence: 0.9 }));
+    const fetchImpl = vi.fn<(input: RequestInfo | URL) => Promise<Response>>(async () => new Response(FEE_TABLE, { headers: { "content-type": "text/html" } }));
+
+    const result = await runMagellanPaidFind({ runId: 5, stateCode: "ME", db: asDb(db), create, fetchImpl, pick: false });
+
+    expect(create.mock.calls[0][0].tools[0].allowed_domains).toEqual(["cashmerevalleybank.com", "cvb.bank"]);
+    expect(fetchImpl).toHaveBeenCalled();
+    expect(result).toMatchObject({ processed: 1, succeeded: 0 });
+    const [logged] = attempts(db);
+    expect(logged.outcome).toBe("wrong_document");
+    expect(logged.detail.verdict).toBe("unconfirmed_host");
   });
 
   it("without a known own host, an answer on another domain is still refused", async () => {

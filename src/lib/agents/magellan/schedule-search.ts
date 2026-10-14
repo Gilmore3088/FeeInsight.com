@@ -10,7 +10,7 @@ import { loadGroupGaps, pickFromWorkLists, WORK_LIST_POOL, workListDetail, type 
 import { FOUND_COOLDOWN_DAYS, MISS_COOLDOWN_DAYS } from "./cooldowns";
 import { looksLikePdfUrl, validateFeeCandidate } from "./find-validate";
 import { urlIdentity } from "./finders";
-import { loadOwnHosts, onBankHosts } from "./own-hosts";
+import { blockedAnswerHostConfirmed, loadOwnHosts, onBankHosts } from "./own-hosts";
 import { domainRule, ownSiteDomains, webSearchToolFor } from "./web-search-tool";
 import {
   BUSINESS_PATH_SQL,
@@ -359,7 +359,12 @@ export async function runScheduleSearch(options: {
         reason = `Answer is a document the bank already has: ${proposed}`;
       } else {
         try {
-          const validation = await validateFeeCandidate({ url: proposed, score: ANSWER_SCORE, reasons: ["paid schedule search"] }, fetchImpl);
+          // With the bank's website and name, so an answer on another host must name the bank
+          // (#1033's unconfirmed-host rule, find-validate.ts; #1251 review).
+          const validation = await validateFeeCandidate(
+            { url: proposed, score: ANSWER_SCORE, reasons: ["paid schedule search"], websiteUrl: row.website_url, institutionName: row.institution_name },
+            fetchImpl,
+          );
           verdict = validation.verdict;
           if (validation.ok) {
             outcome = "ok";
@@ -367,9 +372,10 @@ export async function runScheduleSearch(options: {
             documentType = validation.documentType ?? (looksLikePdfUrl(proposed) ? "pdf" : "html");
             overdraftPrice = validation.scoringText ? hasOverdraftPrice(validation.scoringText) : null;
             reason = `Paid schedule search: ${validation.reason}`;
-          } else if (validation.status === 403) {
+          } else if (validation.status === 403 && blockedAnswerHostConfirmed(proposed, row.website_url)) {
             // The bank's site refuses our fetcher: keep the answer for the paid fetch, as the
             // paid web search does (paid-find.ts). Desert Financial's lost this way, 8 Oct 2026.
+            // Only on the website's own host or name (#1251 review).
             outcome = "ok";
             found = proposed;
             documentType = looksLikePdfUrl(proposed) ? "pdf" : "html";

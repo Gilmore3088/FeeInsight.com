@@ -2,7 +2,7 @@ import type { sql } from "@/lib/data-store/connection";
 import { inSavepoint } from "@/lib/agents/savepoint";
 
 import { onBankDomain, websiteHost } from "./link-coverage";
-import { hostLabel, SHARED_CONTENT_HOST_PATTERN, urlHost } from "./other-bank-host";
+import { hostLabel, SHARED_CONTENT_HOST_PATTERN, unconfirmedDocumentHost, urlHost } from "./other-bank-host";
 import { MAX_SITE_DOMAINS, usableSearchHost } from "./web-search-tool";
 
 type SqlTag = typeof sql;
@@ -20,26 +20,49 @@ type SqlTag = typeof sql;
  *
  * A host counts only when all of these hold, so a file host or another bank's site never does:
  * - one of the bank's own documents was fetched from it (`source_documents`, status success);
- * - no other institution has a document on it, and it is no other institution's website;
+ * - no other institution has a document on it, and it is no other institution's website, nor
+ *   a subdomain or parent of one (review of #1282);
  * - it is not the website itself or a subdomain or parent of it, and not a shared file or site
  *   builder host (`SHARED_CONTENT_HOST_PATTERN`);
  * - it has the website's name with another ending (6+ characters: "machiassavings"), or it is a
- *   `.bank` domain, which only verified banks can register.
+ *   `.bank` domain, which only verified banks can register, with at least
+ *   `OTHER_NAME_MIN_DOCUMENTS` of the bank's own documents on it (a single stray document on
+ *   another bank's .bank site must not widen the search).
+ *
+ * Widening the search never widens what is stored: a paid answer on any host but the website
+ * must still name the bank (`validateFeeCandidate` with the website and name, #1033), and an
+ * answer the host refused to show us is kept unread only on the website's own host or name
+ * (`blockedAnswerHostConfirmed`).
  */
 
 const SHARED_CONTENT_HOST = new RegExp(SHARED_CONTENT_HOST_PATTERN);
 /** Shortest website name that may match on name alone ("cinfed.org" and "cinfed.com"). */
 const SAME_NAME_MIN_CHARS = 6;
+/** The bank's own stored documents a `.bank` host with another name needs before it counts. */
+export const OTHER_NAME_MIN_DOCUMENTS = 2;
 
-/** Pure: is `candidate` another host the bank with this website owns? */
-export function bankOwnedHost(candidate: string, website: string | null | undefined): boolean {
+/**
+ * Pure: is `candidate` another host the bank with this website owns? `documents` is how many
+ * of the bank's own stored documents came from it.
+ */
+export function bankOwnedHost(candidate: string, website: string | null | undefined, documents = 1): boolean {
   const own = website ? websiteHost(website) : null;
   if (!own || !usableSearchHost(candidate)) return false;
   if (candidate === own || candidate.endsWith(`.${own}`) || own.endsWith(`.${candidate}`)) return false;
   if (SHARED_CONTENT_HOST.test(candidate)) return false;
-  if (candidate.endsWith(".bank")) return true;
   const name = hostLabel(own);
-  return name.length >= SAME_NAME_MIN_CHARS && hostLabel(candidate) === name;
+  if (name.length >= SAME_NAME_MIN_CHARS && hostLabel(candidate) === name) return true;
+  return candidate.endsWith(".bank") && documents >= OTHER_NAME_MIN_DOCUMENTS;
+}
+
+/**
+ * Pure: may an answer whose host refused our check (HTTP 403) be kept unread? Only on the
+ * website's own host, a subdomain, a shared file host or a host with the website's name: the
+ * rules under which `unconfirmedDocumentHost` passes without reading the page.
+ */
+export function blockedAnswerHostConfirmed(url: string, website: string | null | undefined): boolean {
+  if (!website) return false;
+  return unconfirmedDocumentHost({ url, websiteUrl: website, text: null }) == null;
 }
 
 /** Is `url` on the bank's own domain (`onBankDomain`) or on one of its other own hosts? */
@@ -60,29 +83,37 @@ export async function loadOwnHosts(
   const hosts = new Map<number, string[]>();
   const ids = [...new Set(banks.map((bank) => Number(bank.id)).filter((id) => Number.isFinite(id)))];
   if (ids.length === 0) return hosts;
-  let rows: Array<{ institution_id: number | string; host: string | null }>;
+  let rows: Array<{ institution_id: number | string; host: string | null; documents?: number | string | null }>;
   try {
     // Inside a savepoint, so a failed read does not abort the step's transaction. The host
     // expression is `hostSql` (other-bank-host.ts), written out because a tagged query can't
     // splice SQL text.
-    rows = await inSavepoint(db, (scope) => scope<Array<{ institution_id: number | string; host: string | null }>>`
+    rows = await inSavepoint(db, (scope) => scope<Array<{ institution_id: number | string; host: string | null; documents?: number | string | null }>>`
       -- bank-owned document hosts
       WITH own AS (
-        SELECT DISTINCT doc.institution_id,
-               regexp_replace(lower(substring(doc.document_url from '^(?:[a-zA-Z][a-zA-Z0-9+.-]*://)?([^/:?#]+)')), '^www\\.', '') AS host
+        SELECT doc.institution_id,
+               regexp_replace(lower(substring(doc.document_url from '^(?:[a-zA-Z][a-zA-Z0-9+.-]*://)?([^/:?#]+)')), '^www\\.', '') AS host,
+               count(*)::int AS documents
           FROM source_documents doc
          WHERE doc.institution_id = ANY(${ids}::bigint[])
            AND doc.status = 'success'
            AND doc.document_url IS NOT NULL
+         GROUP BY 1, 2
       )
-      SELECT own.institution_id, own.host
+      SELECT own.institution_id, own.host, own.documents
         FROM own
        WHERE own.host IS NOT NULL
          AND NOT EXISTS (
-           SELECT 1 FROM institution_sources other
-            WHERE other.id <> own.institution_id
-              AND other.website_url IS NOT NULL
-              AND regexp_replace(lower(substring(other.website_url from '^(?:[a-zA-Z][a-zA-Z0-9+.-]*://)?([^/:?#]+)')), '^www\\.', '') = own.host
+           SELECT 1 FROM (
+             SELECT regexp_replace(lower(substring(other.website_url from '^(?:[a-zA-Z][a-zA-Z0-9+.-]*://)?([^/:?#]+)')), '^www\\.', '') AS host
+               FROM institution_sources other
+              WHERE other.id <> own.institution_id
+                AND other.website_url IS NOT NULL
+           ) other_site
+            -- Another institution's website, or a subdomain or parent of it.
+            WHERE other_site.host = own.host
+               OR right(own.host, length(other_site.host) + 1) = '.' || other_site.host
+               OR right(other_site.host, length(own.host) + 1) = '.' || own.host
          )
          AND NOT EXISTS (
            SELECT 1 FROM source_documents doc
@@ -98,7 +129,7 @@ export async function loadOwnHosts(
   for (const row of Array.isArray(rows) ? rows : []) {
     const id = Number(row.institution_id);
     const host = row.host?.trim().toLowerCase() ?? "";
-    if (!host || !bankOwnedHost(host, websites.get(id))) continue;
+    if (!host || !bankOwnedHost(host, websites.get(id), Number(row.documents ?? 1))) continue;
     const list = hosts.get(id) ?? [];
     if (!list.includes(host) && list.length < MAX_SITE_DOMAINS - 1) list.push(host);
     hosts.set(id, list.sort());

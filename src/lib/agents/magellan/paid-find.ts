@@ -24,7 +24,7 @@ import { pageLinks, urlIdentity, type PageLink } from "./finders";
 import { LARGE_BANK_ASSETS, onBankDomain, websiteHost } from "./link-coverage";
 import { runScheduleSearch } from "./schedule-search";
 import { runWebsiteFind } from "./website-find";
-import { loadOwnHosts, onBankHosts } from "./own-hosts";
+import { blockedAnswerHostConfirmed, loadOwnHosts, onBankHosts } from "./own-hosts";
 import { domainRule, ownSiteDomains, webSearchToolFor } from "./web-search-tool";
 import { loadGroupGaps, pickFromWorkLists, WORK_LIST_POOL, workListDetail, type GroupGaps, type WorkListPlacement } from "@/lib/agents/state-expert/work-list";
 
@@ -428,7 +428,12 @@ export async function runMagellanPaidFind(options: RunMagellanPaidFindOptions): 
       } else {
         // The same check the free finders use: a rates page or press release is never stored.
         try {
-          const validation = await validateFeeCandidate({ url: proposed, score: PAID_ANSWER_SCORE, reasons: ["paid web search"] }, fetchImpl);
+          // With the bank's website and name, so an answer on another host must name the bank
+          // (#1033's unconfirmed-host rule, find-validate.ts; #1251 review).
+          const validation = await validateFeeCandidate(
+            { url: proposed, score: PAID_ANSWER_SCORE, reasons: ["paid web search"], websiteUrl: row.website_url, institutionName: row.institution_name },
+            fetchImpl,
+          );
           verdict = validation.verdict;
           if (validation.ok) {
             outcome = "ok";
@@ -436,9 +441,11 @@ export async function runMagellanPaidFind(options: RunMagellanPaidFindOptions): 
             documentType = validation.documentType;
             confidence = validation.confidence;
             reason = `Paid web search: ${validation.reason}`;
-          } else if (validation.status === 403) {
+          } else if (validation.status === 403 && blockedAnswerHostConfirmed(proposed, row.website_url)) {
             // The bank's site refuses our fetcher (Huntington, KeyBank): keep the answer so
             // the paid fetch (blocked-fetch.ts) reads it; Rosetta then rules on the page.
+            // Only on the website's own host or name: an unread page elsewhere can't show it
+            // names the bank.
             outcome = "ok";
             url = proposed;
             documentType = looksLikePdfUrl(proposed) ? "pdf" : "html";
@@ -648,7 +655,10 @@ async function runPick(
       reason = pickedUrls.length === 0 ? "No homepage link looked like the fee schedule" : "Every picked link failed the fee-page check";
       for (const candidate of pickedUrls) {
         try {
-          const validation = await validateFeeCandidate({ url: candidate, score: PICK_ANSWER_SCORE, reasons: ["paid pick"] }, options.fetchImpl);
+          const validation = await validateFeeCandidate(
+            { url: candidate, score: PICK_ANSWER_SCORE, reasons: ["paid pick"], websiteUrl: row.website_url, institutionName: row.institution_name },
+            options.fetchImpl,
+          );
           verdicts.push({ url: candidate, verdict: validation.verdict });
           if (validation.ok) {
             outcome = "ok";
