@@ -52,10 +52,22 @@ describe("conditionalZeroVerdict", () => {
     expect(conditionalZeroVerdict(held(7, "overdraft", "Courtesy Pay", "BluRIPPLE Checking Overdraft Paid by Courtesy Pay FREE")).reason).toBe("conditional_zero_reread");
   });
 
+  it("judges the traced schedule line, so a free-with-a-condition line is never verified at $0", () => {
+    const row = held(8, "bill_pay", "Bill Pay", "Bill Pay: | Free");
+    expect(conditionalZeroVerdict(row, "Bill Pay - FREE with E-Statements and Debit Card | $6.95 per Month").reason).toBe("conditional_zero_reread");
+    expect(conditionalZeroVerdict(row, "Bill Pay: | Free").reason).toBe("conditional_zero_free_on_schedule");
+  });
+
+  it("never treats a row with no document address as the bank's schedule", () => {
+    expect(conditionalZeroVerdict({ ...held(10, "bill_pay", "Bill Pay", "Bill Pay: | Free"), document_url: null }).reason).toBe("conditional_zero_product_page");
+  });
+
   it("reads a free word only as the line's own price", () => {
     expect(freeOnItsOwnLine("Paper Statements | Personal: FREE")).toBe(true);
     expect(freeOnItsOwnLine("Loose Coins under $10.00 | N/C")).toBe(false);
     expect(freeOnItsOwnLine("*Bill Pay Service is FREE")).toBe(false);
+    expect(freeOnItsOwnLine("Bill Pay | 6.95 | Free")).toBe(false);
+    expect(freeOnItsOwnLine("Monthly Service Charge | None")).toBe(false);
   });
 });
 
