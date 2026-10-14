@@ -1236,5 +1236,26 @@ describe("Knox extract.rules: a dropped decimal point (#1196)", () => {
     expect(withDroppedDecimalPoints("Wire | $25.00")).toBe("Wire | $25.00");
     expect(withDroppedDecimalPoints("Limit $500 000")).toBe("Limit $500 000");
   });
+
+  // #1305: built on Members 1st (7517) doc 13851 and Xplore (6636) doc 12872; the other lines
+  // are from documents held back while building.
+  const MEMBERS_1ST = "Teller Check | $5 00/check\nMoney Orders | $2 00/item\nCounter Checks (per book of 8) | $10 00*\n";
+  const XPLORE = "Wire Fee Incoming ........ $12. 00\nIRA Annual Maintenance Fee........ $10. 00\nLegal Proc es s/ Tax Levy........ $50. 00\n";
+  it.each([
+    ["cents before a footnote star", `${MEMBERS_1ST}ATM Transactions (per item) | $1 50* after 8/mo`, "| $1.50* after 8/mo"],
+    ["a point kept with a space after it", `${XPLORE}Loan Skip A Pay Fee........ $29. 95/ea ch`, "$29.95/ea ch"],
+    ["a sentence that goes on with an age (institution 7143)", `${XPLORE}*Inactive 12 months, total shares below $100. 19 and over, no loans`, "$100. 19 and over"],
+    ["a sentence that goes on with a term (Numerica 8017)", `${XPLORE}costs paid by Numerica or $500. 10-year draw period`, "$500. 10-year"],
+    // ". 00" prices never vouch for the other shape: "$2 50" is a $250 balance (BCSB 4143).
+    ["a letter-spaced balance", `${XPLORE}$ 3. 00 m a intena nce fee if a ccount ba la nce fa lls below $2 50`, "below $2 50"],
+  ])("%s", (_shape, text, expected) => {
+    expect(withDroppedDecimalPoints(text)).toContain(expected);
+  });
+
+  it("reads the two #1305 prices with their cents", () => {
+    const fees = read(`${MEMBERS_1ST}ATM Transactions (per item) | $1 50* after 8/mo\n${XPLORE}Loan Skip A Pay Fee........ $29. 95/ea ch`);
+    expect(fees).toContainEqual(expect.arrayContaining(["ATM Transactions (per item)", 1.5]));
+    expect(fees).toContainEqual(expect.arrayContaining(["Loan Skip A Pay Fee", 29.95]));
+  });
 });
 
