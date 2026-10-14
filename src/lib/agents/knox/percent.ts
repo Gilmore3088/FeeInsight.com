@@ -51,6 +51,9 @@ const CATEGORY_CORE: Record<string, RegExp> = {
   cash_advance: /\b(?:cash advance|balance transfer)(?:\s*(?:and|&|or|\/)\s*(?:cash advance|balance transfer))?\b/i,
   coin_counting: /\b(?:coin (?:counting|processing|counter|machine|sorting|sorter)|loose coins?|count(?:ing)?(?: and roll)? coins?|coinstar)\b/i,
   late_payment: /\blate (?:payment|charge|fee)\b/i,
+  // #1102: the two categories that publish rates from v2 of the held-rate re-check.
+  check_cashing: /\bcheck cashing\b|\bcash(?:ing)? (?:a |of )?(?:checks?|items?)\b/i,
+  atm_international: /\b(?:international|foreign|cross[- ]border) (?:atm|withdrawals?)\b|\batm\b[^|]{0,30}\binternational\b/i,
 };
 /** Capitalized words that open a sentence or label a column, never part of a fee's name. */
 const NOT_A_NAME_WORD = /^(?:A|An|The|All|There|This|That|These|If|When|Type|Rate|Fee|Fees|Our|Your|We|You|It|Each|Any|In|For|On|Of|Possible|Further|Therefore)$/;
