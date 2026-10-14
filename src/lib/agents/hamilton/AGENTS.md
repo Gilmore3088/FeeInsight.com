@@ -74,7 +74,8 @@ Hamilton supports the decision; it does not make it.
   cron every two hours, `/api/admin/crew/answer-eval`) asks the quality-bar questions of a fresh spread
   of real banks and credit unions (two per charter and asset tier) through the Ask path,
   scores each with the quality bar and four-roles eval, and checks that a regulation answer
-  names the institution's own regulator and a state question names its state. Read-only, no
+  names the institution's own regulator, lists the Regulatory Wire's recent items for it when
+  the Wire holds any (`wireFailures`, #1090), and a state question names its state. Read-only, no
   provider calls; the step detail lists the weakest questions and the commonest failures.
   It first replays the questions Pro readers really asked in the last 90 days (the `pro.ask`
   ledger keeps each question and short answer; saved analyses keep the rest) through today's
@@ -114,6 +115,13 @@ Hamilton supports the decision; it does not make it.
   `hamilton_decisions`, `hamilton_decision_events`, `hamilton_institution_memory` and
   `hamilton_uploads`. A client fact is never edited in place: a new value supersedes it
   (`superseded_at`), so the history of what the bank told Hamilton survives.
+- A regulation answer reads the Regulatory Wire (`workspace/wire.ts`, #1090): federal rules
+  from the bank's own federal regulator and the CFPB whose tracker topics bear on the fee (last
+  365 days, or still open for comment), fee bills in its state (an action in the last two
+  years), consumer-law enforcement actions by its federal regulator or in its state (last three
+  years; state orders carry no subject on file, so they are left out), and its state
+  regulator's fee posts. One of each kind leads the storyline's watch list, each with its date
+  and link; all of them sit in the research page's regulation section. Nothing is interpreted.
 - The workspace builders are deterministic and make no provider calls; the memo route
   above is the paid exception.
 
