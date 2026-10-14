@@ -66,11 +66,27 @@ export async function paidModelCall({
 }): Promise<PaidCallResult> {
   const billTo: ProviderAgent | undefined = keyAgent ?? (agent === "wire" ? "magellan" : agent);
   const send: PaidMessageCreator = create ?? ((body) => getAnthropicMessagesClient(`${agent} ${operation}`, billTo).messages.create(body));
+  const searchSettings = webSearchSettings(params.tools);
   const message = await trackAnthropicRequest(
-    { model: params.model, agent, operation, agentRunId: runId, metadata },
+    { model: params.model, agent, operation, agentRunId: runId, metadata: searchSettings ? { ...metadata, ...searchSettings } : metadata },
     () => send(params),
   );
   return { message, costMicrousd: paidCallCostMicrousd(params.model, message) };
+}
+
+/**
+ * What a request's web search tool allowed, logged with the call so a search setting's cost and
+ * hit rate can be compared before and after it changes (#1035). Null without a web search tool.
+ */
+export function webSearchSettings(tools: unknown): { web_search_max_uses: number | null; web_search_own_site: boolean } | null {
+  if (!Array.isArray(tools)) return null;
+  const tool = tools.find((entry): entry is { name: string; max_uses?: number | null; allowed_domains?: string[] | null } =>
+    Boolean(entry) && typeof entry === "object" && (entry as { name?: unknown }).name === "web_search");
+  if (!tool) return null;
+  return {
+    web_search_max_uses: tool.max_uses ?? null,
+    web_search_own_site: Array.isArray(tool.allowed_domains) && tool.allowed_domains.length > 0,
+  };
 }
 
 /**

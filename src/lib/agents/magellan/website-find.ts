@@ -9,6 +9,7 @@ import { PAID_PASS_MODELS, paidModelCall, paidResponseJson, type PaidMessageCrea
 
 import { FOUND_COOLDOWN_DAYS, MISS_COOLDOWN_DAYS } from "./cooldowns";
 import { fetchWithTimeout } from "./find-validate";
+import { webSearchTool } from "./web-search-tool";
 
 type SqlTag = typeof sql;
 type Fetcher = typeof fetch;
@@ -29,7 +30,11 @@ type Fetcher = typeof fetch;
 export const WEBSITE_FIND_STRATEGY = { strategy: "discover.website_search", version: 1 } as const;
 /** Institutions one paid step searches for a website. */
 export const WEBSITE_FIND_PER_RUN = 5;
-const WEB_SEARCH_MAX_USES = 3;
+/**
+ * Two searches, not three (#1035): 1 of the 52 website searches that used a third search in the
+ * 10 days to 2026-10-11 found a website, against 66 of 359 that stopped at one or two.
+ */
+const WEB_SEARCH_MAX_USES = 2;
 const MAX_OUTPUT_TOKENS = 512;
 /** Outcomes that do not count as a try or start a cooldown (nothing was learned). */
 const TRANSIENT_OUTCOMES = ["network_error", "timeout", "http_5xx", "http_429", "budget_blocked"];
@@ -276,7 +281,7 @@ export async function runWebsiteFind(options: {
         params: {
           model,
           max_tokens: MAX_OUTPUT_TOKENS,
-          tools: [{ type: "web_search_20250305", name: "web_search", max_uses: WEB_SEARCH_MAX_USES }],
+          tools: [webSearchTool(WEB_SEARCH_MAX_USES)],
           messages: [{ role: "user", content: websiteFindPrompt(row) }],
         },
       });

@@ -89,7 +89,8 @@ describe("Magellan paid find (pass 3)", () => {
     expect(result).toMatchObject({ selected: 3, processed: 3, succeeded: 1, failed: 2, budgetStopped: false });
     expect(result.costMicrousd).toBeGreaterThan(0);
     const params = create.mock.calls[0][0];
-    expect(params.tools).toEqual([{ type: "web_search_20250305", name: "web_search", max_uses: 3 }]);
+    // A bank under $10B searches its own site only, twice at most (#1035).
+    expect(params.tools).toEqual([{ type: "web_search_20250305", name: "web_search", max_uses: 2, allowed_domains: ["alpha.example"] }]);
     expect(params.messages[0].content).toContain("Alpha Bank");
     expect(params.messages[0].content).toContain("Burlington, VT");
     expect(trackAnthropicRequest).toHaveBeenCalledWith(expect.objectContaining({ agent: "magellan", operation: "paid_find", agentRunId: 9 }), expect.any(Function));
