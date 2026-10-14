@@ -60,7 +60,7 @@ export interface AccountViewData {
   };
 }
 
-const SERIF = { fontFamily: "var(--font-newsreader), Georgia, serif" };
+const SERIF = { fontFamily: "var(--fi-font-sans)" };
 
 function longDate(date: Date): string {
   return date.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric", timeZone: "UTC" });
@@ -70,7 +70,7 @@ function Pill({ tone, children }: { tone: "green" | "amber" | "plain"; children:
   const tones = {
     green: "bg-emerald-50 text-emerald-700",
     amber: "bg-amber-50 text-amber-800",
-    plain: "bg-[#F3EDE4] text-[#5A5347]",
+    plain: "bg-[#F3EDE4] text-ink-soft",
   };
   return (
     <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[12px] font-semibold ${tones[tone]}`}>
@@ -88,18 +88,18 @@ function PlanCard({ plan, ended }: { plan: AccountPlan; ended: boolean }) {
         compact
         action={ended ? <Pill tone="amber">Pro ended</Pill> : <Pill tone="plain">Free</Pill>}
       >
-        <p className="text-[14px] leading-relaxed text-[#3D3830]">
+        <p className="text-[14px] leading-relaxed text-ink">
           {ended
             ? "Your Pro subscription has ended. The banks you follow and your fee alerts are kept."
             : "Following banks, fee alerts and the monthly brief are free."}
         </p>
-        <p className="mt-2 text-[14px] leading-relaxed text-[#3D3830]">
+        <p className="mt-2 text-[14px] leading-relaxed text-ink">
           Pro adds Hamilton: peer benchmarks, competitor tracking, reports and data downloads for up to 5 people
           at your organization. From ${plan.fromMonthlyUsd} a month.
         </p>
         <Link
           href="/subscribe?from=%2Faccount"
-          className="mt-4 inline-flex min-h-11 items-center rounded-md border border-[#D5CBBF] bg-[#FFFDF9] px-4 text-[14px] font-semibold text-[#1A1815] no-underline hover:border-[#1A1815]"
+          className="mt-4 inline-flex min-h-11 items-center rounded-md border border-border bg-surface-0 px-4 text-[14px] font-semibold text-ink no-underline hover:border-ink"
         >
           {ended ? "Restart Pro" : "See Pro plans"}
         </Link>
@@ -117,10 +117,10 @@ function PlanCard({ plan, ended }: { plan: AccountPlan; ended: boolean }) {
   return (
     <AccountCard id="plan" title="Fee Insight Pro" compact action={status}>
       {plan.access === "staff" && (
-        <p className="text-[14px] text-[#3D3830]">Staff access. Nothing to bill.</p>
+        <p className="text-[14px] text-ink">Staff access. Nothing to bill.</p>
       )}
       {plan.access === "seat" && (
-        <p className="text-[14px] text-[#3D3830]">
+        <p className="text-[14px] text-ink">
           You&rsquo;re on {plan.seatInstitutionName ? `${plan.seatInstitutionName}'s` : "a"} team plan. The person who
           bought it handles billing.
         </p>
@@ -129,36 +129,36 @@ function PlanCard({ plan, ended }: { plan: AccountPlan; ended: boolean }) {
         <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-[14px]">
           {billing?.tierLabel && (
             <>
-              <dt className="text-[#6B6255]">Plan</dt>
-              <dd className="text-[#1A1815]">{billing.tierLabel}</dd>
+              <dt className="text-ink-muted">Plan</dt>
+              <dd className="text-ink">{billing.tierLabel}</dd>
             </>
           )}
           {billing?.priceLabel && (
             <>
-              <dt className="text-[#6B6255]">Price</dt>
-              <dd className="text-[#1A1815]">{billing.priceLabel}</dd>
+              <dt className="text-ink-muted">Price</dt>
+              <dd className="text-ink">{billing.priceLabel}</dd>
             </>
           )}
           {billing?.periodEnd && (
             <>
-              <dt className="text-[#6B6255]">{billing.cancelsAtPeriodEnd ? "Ends" : "Renews"}</dt>
-              <dd className="text-[#1A1815]">{longDate(billing.periodEnd)}</dd>
+              <dt className="text-ink-muted">{billing.cancelsAtPeriodEnd ? "Ends" : "Renews"}</dt>
+              <dd className="text-ink">{longDate(billing.periodEnd)}</dd>
             </>
           )}
           {!billing && (
-            <dd className="col-span-2 text-[#6B6255]">Plan details are on the billing page.</dd>
+            <dd className="col-span-2 text-ink-muted">Plan details are on the billing page.</dd>
           )}
         </dl>
       )}
 
       {plan.team && (
-        <div className="mt-4 flex items-center justify-between gap-3 rounded-lg bg-[#FAF7F2] px-3 py-2.5">
-          <p className="min-w-0 text-[14px] text-[#1A1815]">
+        <div className="mt-4 flex items-center justify-between gap-3 rounded-lg bg-paper px-3 py-2.5">
+          <p className="min-w-0 text-[14px] text-ink">
             Team: {plan.team.used} of {plan.team.limit} seats used
           </p>
           <Link
             href="/pro/settings#workspace-access"
-            className="shrink-0 text-[14px] font-medium text-[#A93D25] hover:underline"
+            className="shrink-0 text-[14px] font-medium text-brick hover:underline"
           >
             Manage team
           </Link>
@@ -171,7 +171,7 @@ function PlanCard({ plan, ended }: { plan: AccountPlan; ended: boolean }) {
         </div>
       )}
       {plan.access === "subscription" && (
-        <p className="mt-3 text-[13px] text-[#6B6255]">
+        <p className="mt-3 text-[13px] text-ink-muted">
           Change your card, download invoices or cancel on the billing page.
         </p>
       )}
@@ -182,7 +182,7 @@ function PlanCard({ plan, ended }: { plan: AccountPlan; ended: boolean }) {
 function EmailsCard({ emails }: { emails: Record<AccountEmailKind, boolean> }) {
   return (
     <AccountCard id="emails" title="Emails" compact>
-      <div className="-my-3 divide-y divide-[#F0EBE3]">
+      <div className="-my-3 divide-y divide-surface-200">
         <EmailSwitch
           kind="watchlist_alerts"
           label="Competitor fee alerts"
@@ -207,27 +207,27 @@ function shortDate(value: string): string {
 function PaidReportList({ reports }: { reports: PaidReport[] }) {
   return (
     <div className="mt-4">
-      <p className="text-[12px] font-semibold uppercase tracking-[0.12em] text-[#6B6255]">Market reports you bought</p>
-      <ul className="mt-1 divide-y divide-[#F0EBE3]">
+      <p className="text-[12px] font-semibold uppercase tracking-[0.12em] text-ink-muted">Market reports you bought</p>
+      <ul className="mt-1 divide-y divide-surface-200">
         {reports.map((report) => (
           <li key={report.leadId} className="flex items-baseline justify-between gap-4 py-3">
             {report.href ? (
-              <Link href={report.href} className="min-w-0 text-[15px] font-medium text-[#1A1815] no-underline hover:text-[#A93D25]">
+              <Link href={report.href} className="min-w-0 text-[15px] font-medium text-ink no-underline hover:text-brick">
                 {report.institutionName} market report
               </Link>
             ) : (
-              <span className="min-w-0 text-[15px] font-medium text-[#1A1815]">
+              <span className="min-w-0 text-[15px] font-medium text-ink">
                 {report.institutionName} market report
               </span>
             )}
-            <span className="shrink-0 text-[12px] text-[#6B6255]">Bought {shortDate(report.paidAt)}</span>
+            <span className="shrink-0 text-[12px] text-ink-muted">Bought {shortDate(report.paidAt)}</span>
           </li>
         ))}
       </ul>
       {reports.some((report) => !report.href) && (
-        <p className="text-[13px] text-[#6B6255]">
+        <p className="text-[13px] text-ink-muted">
           For a report without a link, email{" "}
-          <a href={`mailto:${CONTACT_EMAIL}?subject=My%20market%20report`} className="text-[#A93D25] hover:underline">
+          <a href={`mailto:${CONTACT_EMAIL}?subject=My%20market%20report`} className="text-brick hover:underline">
             {CONTACT_EMAIL}
           </a>{" "}
           and we&rsquo;ll send it.
@@ -249,7 +249,7 @@ function ReportsCard({
   const bought = emailConfirmed ? (
     paidReports.length > 0 ? <PaidReportList reports={paidReports} /> : null
   ) : (
-    <p className="mt-4 text-[13px] text-[#6B6255]">
+    <p className="mt-4 text-[13px] text-ink-muted">
       Bought a market report? Confirm your email under Sign-in and it will show here.
     </p>
   );
@@ -257,10 +257,10 @@ function ReportsCard({
   if (reports === null) {
     return (
       <AccountCard id="reports" title="Your reports">
-        <p className="text-[14px] text-[#3D3830]">
+        <p className="text-[14px] text-ink">
           Free benchmark reports for the nation and each Fed district, ready to read now.
         </p>
-        <Link href="/reports" className="mt-3 inline-block text-[14px] font-medium text-[#A93D25] hover:underline">
+        <Link href="/reports" className="mt-3 inline-block text-[14px] font-medium text-brick hover:underline">
           Get a free report
         </Link>
         {bought}
@@ -274,7 +274,7 @@ function ReportsCard({
       title="Your reports"
       action={
         reports.length > 0 ? (
-          <Link href="/pro/reports" className="shrink-0 text-[14px] font-medium text-[#A93D25] hover:underline">
+          <Link href="/pro/reports" className="shrink-0 text-[14px] font-medium text-brick hover:underline">
             All reports
           </Link>
         ) : undefined
@@ -282,24 +282,24 @@ function ReportsCard({
     >
       {reports.length === 0 ? (
         <>
-          <p className="text-[14px] text-[#3D3830]">You haven&rsquo;t made a Hamilton report yet.</p>
+          <p className="text-[14px] text-ink">You haven&rsquo;t made a Hamilton report yet.</p>
           <Link
             href="/pro/reports/new"
-            className="mt-3 inline-flex min-h-11 items-center rounded-md border border-[#D5CBBF] bg-[#FFFDF9] px-4 text-[14px] font-medium text-[#1A1815] no-underline hover:border-[#1A1815]"
+            className="mt-3 inline-flex min-h-11 items-center rounded-md border border-border bg-surface-0 px-4 text-[14px] font-medium text-ink no-underline hover:border-ink"
           >
             Make a report
           </Link>
         </>
       ) : (
-        <ul className="-my-3 divide-y divide-[#F0EBE3]">
+        <ul className="-my-3 divide-y divide-surface-200">
           {reports.map((report) => (
             <li key={report.id}>
               <Link
                 href={report.href}
-                className="flex items-baseline justify-between gap-4 py-3 text-[#1A1815] no-underline hover:text-[#A93D25]"
+                className="flex items-baseline justify-between gap-4 py-3 text-ink no-underline hover:text-brick"
               >
                 <span className="min-w-0 text-[15px] font-medium">{report.title}</span>
-                <span className="shrink-0 text-[12px] text-[#6B6255]">{shortDate(report.createdAt)}</span>
+                <span className="shrink-0 text-[12px] text-ink-muted">{shortDate(report.createdAt)}</span>
               </Link>
             </li>
           ))}
@@ -313,8 +313,8 @@ function ReportsCard({
 /** Pro's first card: the way into Hamilton, the workspace a paying reader came for. */
 function HamiltonCard({ href }: { href: string }) {
   return (
-    <section aria-labelledby="hamilton-heading" className="rounded-xl bg-[#1A1815] p-6 text-white">
-      <h2 id="hamilton-heading" className="text-[22px] font-medium leading-tight" style={SERIF}>
+    <section aria-labelledby="hamilton-heading" className="rounded-xl bg-ink p-6 text-white">
+      <h2 id="hamilton-heading" className="text-[22px] font-bold leading-tight" style={SERIF}>
         Hamilton
       </h2>
       <p className="mt-2 max-w-md text-[14px] leading-relaxed text-[#D9D1C4]">
@@ -323,7 +323,7 @@ function HamiltonCard({ href }: { href: string }) {
       <div className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-3">
         <Link
           href={href}
-          className="inline-flex min-h-11 items-center rounded-md bg-[#C44B2E] px-5 text-[14px] font-semibold text-white no-underline hover:bg-[#A93D25]"
+          className="inline-flex min-h-11 items-center rounded-md bg-brick px-5 text-[14px] font-semibold text-white no-underline hover:bg-brick-ink"
         >
           Open Hamilton
         </Link>
@@ -343,22 +343,22 @@ function FeeScheduleReminder({ institution }: { institution: OwnInstitution }) {
       aria-labelledby="fee-schedule-heading"
       className="rounded-xl border border-[#E8C9B8] bg-[#FBF1EA] p-5"
     >
-      <h2 id="fee-schedule-heading" className="text-[15px] font-semibold text-[#1A1815]">
+      <h2 id="fee-schedule-heading" className="text-[15px] font-semibold text-ink">
         We don&rsquo;t have {institution.name}&rsquo;s fee schedule yet
       </h2>
-      <p className="mt-1 text-[14px] text-[#3D3830]">
+      <p className="mt-1 text-[14px] text-ink">
         Send us the link to it, or email us the PDF. Your bank page, benchmarks and reports start from it.
       </p>
       <div className="mt-3 flex flex-wrap gap-2">
         <Link
           href={submitHref}
-          className="inline-flex min-h-11 items-center rounded-md bg-[#C44B2E] px-4 text-[14px] font-semibold text-white no-underline hover:bg-[#A93D25]"
+          className="inline-flex min-h-11 items-center rounded-md bg-brick px-4 text-[14px] font-semibold text-white no-underline hover:bg-brick-ink"
         >
           Send the link
         </Link>
         <a
           href={mailHref}
-          className="inline-flex min-h-11 items-center rounded-md border border-[#D5CBBF] bg-[#FFFDF9] px-4 text-[14px] font-medium text-[#1A1815] no-underline hover:border-[#1A1815]"
+          className="inline-flex min-h-11 items-center rounded-md border border-border bg-surface-0 px-4 text-[14px] font-medium text-ink no-underline hover:border-ink"
         >
           Email it to us
         </a>
@@ -371,28 +371,28 @@ function SignInCard({ email, emailConfirmed }: { email: string; emailConfirmed: 
   return (
     <AccountCard id="sign-in" title="Sign-in" compact>
       <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-[14px]">
-        <dt className="text-[#6B6255]">Email</dt>
-        <dd className="min-w-0 break-words text-[#1A1815]">
+        <dt className="text-ink-muted">Email</dt>
+        <dd className="min-w-0 break-words text-ink">
           {email}{" "}
           {emailConfirmed ? <Pill tone="green">Confirmed</Pill> : <Pill tone="amber">Not confirmed</Pill>}
         </dd>
       </dl>
       {!emailConfirmed && (
-        <div className="mt-3 rounded-lg bg-[#FAF7F2] px-4 py-3">
-          <p className="text-[14px] text-[#3D3830]">
+        <div className="mt-3 rounded-lg bg-paper px-4 py-3">
+          <p className="text-[14px] text-ink">
             Confirm this address and reports you buy will show on this page. New accounts get the link by email when they sign up.
           </p>
           <ConfirmEmailButton />
         </div>
       )}
       <div className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-2">
-        <Link href="/forgot-password" className="text-[14px] font-medium text-[#A93D25] hover:underline">
+        <Link href="/forgot-password" className="text-[14px] font-medium text-brick hover:underline">
           Change password
         </Link>
       </div>
-      <p className="mt-4 text-[13px] text-[#6B6255]">
+      <p className="mt-4 text-[13px] text-ink-muted">
         Need help or want your account deleted? Email{" "}
-        <a href={`mailto:${CONTACT_EMAIL}?subject=My%20account`} className="text-[#A93D25] hover:underline">
+        <a href={`mailto:${CONTACT_EMAIL}?subject=My%20account`} className="text-brick hover:underline">
           {CONTACT_EMAIL}
         </a>
         .
@@ -414,13 +414,13 @@ export function AccountView({ data }: { data: AccountViewData }) {
   );
   return (
     <div className="mx-auto w-full max-w-page px-4 py-8 sm:px-6 sm:py-12">
-      <header className="mb-8 flex items-start justify-between gap-4 border-b border-[#E8DFD1] pb-6">
+      <header className="mb-8 flex items-start justify-between gap-4 border-b border-border pb-6">
         <div className="min-w-0">
-          <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-[#A93D25]">Account</p>
-          <h1 className="mt-1 text-[2rem] leading-[1.15] tracking-[-0.02em] text-[#1A1815]" style={SERIF}>
+          <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-brick">Account</p>
+          <h1 className="font-extrabold mt-1 text-[2rem] leading-[1.15] tracking-[-0.02em] text-ink" style={SERIF}>
             {data.heading}
           </h1>
-          <p className="mt-1 break-words text-[14px] text-[#6B6255]">{data.email}</p>
+          <p className="mt-1 break-words text-[14px] text-ink-muted">{data.email}</p>
         </div>
         <LogoutButton />
       </header>

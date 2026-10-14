@@ -1,5 +1,6 @@
 export const dynamic = "force-dynamic";
 import { getCurrentUser } from "@/lib/auth";
+import { Logo } from "@/brand/components";
 import { activateIfPaid } from "@/lib/subscription-activation";
 import { redirect } from "next/navigation";
 import { canAccessPremium } from "@/lib/access";
@@ -16,7 +17,6 @@ import { getInstitutionById } from "@/lib/data-store";
 import { getHamiltonWorkspaceContext } from "@/lib/hamilton/workspace-context";
 import { WelcomeSteps } from "./welcome-steps";
 import type { Metadata } from "next";
-import { SITE_NAME } from "@/lib/constants";
 import { TrackView } from "@/components/track-view";
 
 export const metadata: Metadata = {
@@ -92,18 +92,11 @@ export default async function WelcomePage({
   ]);
 
   return (
-    <div className="min-h-screen bg-[#FAF7F2]">
-      <header className="border-b border-[#E8DFD1] bg-[#FAF7F2]/95 backdrop-blur-sm">
+    <div className="min-h-screen bg-paper">
+      <header className="border-b border-border bg-paper/95 backdrop-blur-sm">
         <div className="mx-auto max-w-2xl px-4 flex items-center h-14">
-          <div className="flex items-center gap-2 text-[#1A1815]">
-            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" className="h-[18px] w-[18px] text-[#C44B2E]" stroke="currentColor" strokeWidth="1.5">
-              <rect x="4" y="13" width="4" height="8" rx="1" />
-              <rect x="10" y="8" width="4" height="13" rx="1" />
-              <rect x="16" y="3" width="4" height="18" rx="1" />
-            </svg>
-            <span className="text-[15px] font-medium tracking-tight" style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}>
-              {SITE_NAME}
-            </span>
+          <div className="flex items-center gap-2 text-ink">
+            <Logo mark="fee-insight-oneline" height={22} />
           </div>
         </div>
       </header>

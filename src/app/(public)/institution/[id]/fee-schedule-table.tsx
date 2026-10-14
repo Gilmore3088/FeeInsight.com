@@ -32,7 +32,7 @@ function AudienceLabel({ fee }: { fee: DisplayFee }) {
     : fee.feeAudience === "business" ? "Business accounts"
     : fee.feeAudience === "both" ? "Consumer and business accounts" : "Audience not stated";
   return (
-    <span className="block text-xs font-normal text-[#6B6255]">
+    <span className="block text-xs font-normal text-ink-muted">
       {label}
       <UnstatedAudienceMark show={unstated} />
       {fee.feeTreatment === "eliminated" ? " · Fee eliminated" : ""}
@@ -58,7 +58,7 @@ type Position = "below" | "within" | "above";
 
 const POSITION_DOT: Record<Position, string> = {
   below: "bg-emerald-600",
-  within: "bg-[#8A8072]",
+  within: "bg-ink-muted",
   above: "bg-amber-600",
 };
 
@@ -88,13 +88,13 @@ function FeePosition({ amount, benchmark }: { amount: number; benchmark: FeeBenc
     <span className="mt-1 inline-flex w-16 flex-col" title={description}>
       <span className="sr-only">{description}</span>
       <span aria-hidden="true" className="relative block h-2.5 w-16">
-        <span className="absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-[#E0D7C9]" />
+        <span className="absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-border" />
         <span
-          className="absolute top-1/2 h-1.5 -translate-y-1/2 rounded-full bg-[#E0D7C9]"
+          className="absolute top-1/2 h-1.5 -translate-y-1/2 rounded-full bg-border"
           style={{ left: pct(benchmark.p25), width: `calc(${pct(benchmark.p75)} - ${pct(benchmark.p25)})` }}
         />
         <span
-          className="absolute top-1/2 h-2.5 w-px -translate-y-1/2 bg-[#8A8072]"
+          className="absolute top-1/2 h-2.5 w-px -translate-y-1/2 bg-ink-muted"
           style={{ left: pct(benchmark.median) }}
         />
         <span
@@ -108,7 +108,7 @@ function FeePosition({ amount, benchmark }: { amount: number; benchmark: FeeBenc
 
 function PositionLegend() {
   return (
-    <p className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-[#F0EBE3] px-4 py-2 text-[11px] text-[#6B6255]">
+    <p className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-surface-200 px-4 py-2 text-[11px] text-ink-muted">
       <span>vs. U.S. typical range:</span>
       {(["below", "within", "above"] as const).map((position) => (
         <span key={position} className="inline-flex items-center gap-1">
@@ -162,7 +162,7 @@ export interface StateMedians {
 const DELTA_TONE: Record<MedianDelta["tone"], string> = {
   above: "text-red-700",
   below: "text-emerald-700",
-  at: "text-[#6B6255]",
+  at: "text-ink-muted",
 };
 
 /** Verified rows with a known category link to the national picture for that fee. */
@@ -175,12 +175,12 @@ function MedianCell({
   medians: Map<string, number | null>;
   stateMedians?: StateMedians;
 }) {
-  if (!comparesToPersonal(fee) || fee.status !== "verified" || !fee.feeCategory) return <span className="text-xs text-[#6B6255]">&mdash;</span>;
+  if (!comparesToPersonal(fee) || fee.status !== "verified" || !fee.feeCategory) return <span className="text-xs text-ink-muted">&mdash;</span>;
   const delta = describeMedianDelta(fee.amount, medians.get(fee.feeCategory));
   const stateDelta = stateMedians
     ? describeMedianDelta(fee.amount, stateMedians.medians.get(fee.feeCategory), stateMedians.place)
     : null;
-  if (!delta && !stateDelta) return <span className="text-xs text-[#6B6255]">&mdash;</span>;
+  if (!delta && !stateDelta) return <span className="text-xs text-ink-muted">&mdash;</span>;
   return (
     <>
       {delta && (
@@ -203,7 +203,7 @@ function RateValue({ rate }: { rate: NonNullable<DisplayFee["rate"]> }) {
     <>
       {rate.rate}
       {rate.detail && (
-        <span className="block max-w-[180px] whitespace-normal text-right font-sans text-xs text-[#6B6255]">{rate.detail}</span>
+        <span className="block max-w-[180px] whitespace-normal text-right font-sans text-xs text-ink-muted">{rate.detail}</span>
       )}
     </>
   );
@@ -266,16 +266,17 @@ function GroupBadge({ group }: { group: FeeGroup }) {
         {verified ? "Verified" : "Under review"}
       </span>
       {verified && group.provisionalCount > 0 && (
-        <span className="text-[11px] text-[#6B6255]">{group.provisionalCount} under review</span>
+        <span className="text-[11px] text-ink-muted">{group.provisionalCount} under review</span>
       )}
     </span>
   );
 }
 
-const HEADER_CELL = "px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.1em] text-[#6B6255]";
-const SERIF_STYLE = { fontFamily: "var(--font-newsreader), Georgia, serif" } as const;
+const HEADER_CELL = "px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.1em] text-ink-muted";
+const SERIF_STYLE = { fontFamily: "var(--fi-font-sans)" } as const;
+const MONO_FIGURE = { fontFamily: "var(--fi-font-mono)" } as const;
 
-const FOCUSED_ROW = "border-l-2 border-l-[#C44B2E] bg-[#C44B2E]/[0.035]";
+const FOCUSED_ROW = "border-l-2 border-l-brick bg-brick/[0.035]";
 
 /**
  * @param focusCategory The fee the reader came to compare (`?fee=`), highlighted and
@@ -315,13 +316,13 @@ export function FeeScheduleTable({
         benchmarks={benchmarks}
       />
       <div className="hidden sm:block">
-        <p className="border-b border-[#F0EBE3] px-4 py-1.5 text-xs text-[#6B6255] lg:hidden">
+        <p className="border-b border-surface-200 px-4 py-1.5 text-xs text-ink-muted lg:hidden">
           Swipe for source and notes &rarr;
         </p>
         <div className="table-scroll">
           <table className="w-full min-w-[720px] border-collapse text-left text-sm">
             <thead>
-              <tr className="border-b border-[#E0D7C9] bg-[#FDFBF8]">
+              <tr className="border-b border-border bg-surface-0">
                 <th scope="col" className={HEADER_CELL}>Fee</th>
                 <th scope="col" className={`${HEADER_CELL} text-right`}>Amount</th>
                 <th scope="col" className={HEADER_CELL}>{stateMedians ? "vs medians" : "vs national median"}</th>
@@ -331,11 +332,11 @@ export function FeeScheduleTable({
               </tr>
             </thead>
             {groups.map((group) => (
-              <tbody key={group.family} className="border-t border-[#E0D7C9]">
-                <tr className="bg-[#FAF7F2]">
+              <tbody key={group.family} className="border-t border-border">
+                <tr className="bg-paper">
                   <th scope="rowgroup" colSpan={6} className="px-4 py-2.5 text-left">
                     <div className="flex flex-wrap items-center justify-between gap-2">
-                      <span className="text-sm font-semibold text-[#1A1815]">{group.family}</span>
+                      <span className="text-sm font-semibold text-ink">{group.family}</span>
                       <GroupBadge group={group} />
                     </div>
                   </th>
@@ -357,7 +358,7 @@ export function FeeScheduleTable({
           </table>
         </div>
       </div>
-      <UnstatedAudienceFootnote show={fees.some((fee) => isAudienceUnstated(fee.feeAudience))} className="border-t border-[#F0EBE3] px-4 py-2" />
+      <UnstatedAudienceFootnote show={fees.some((fee) => isAudienceUnstated(fee.feeAudience))} className="border-t border-surface-200 px-4 py-2" />
     </>
   );
 }
@@ -375,13 +376,13 @@ function UnderReviewChip() {
  * general schedule, labelled as such so it never reads as the fee's exact source.
  */
 function SourceLink({ href, fallback = false }: { href: string | null; fallback?: boolean }) {
-  if (!href) return <span className="text-xs text-[#6B6255]">&mdash;</span>;
+  if (!href) return <span className="text-xs text-ink-muted">&mdash;</span>;
   return (
     <a
       href={href}
       target="_blank"
       rel="noopener noreferrer"
-      className="inline-flex items-center gap-1 text-xs font-semibold text-[#A93D25] hover:text-[#A93D25]"
+      className="inline-flex items-center gap-1 text-xs font-semibold text-brick hover:text-brick"
     >
       {fallback ? "Institution\u2019s schedule" : "Source"}
       <ExternalLink className="h-3 w-3" />
@@ -415,14 +416,14 @@ function FeeRow({
     <tr
       id={focused && fee.feeCategory ? `fee-${fee.feeCategory}` : undefined}
       data-fee-anchor={focused ? fee.feeCategory ?? undefined : undefined}
-      className={`fi-row-interaction scroll-mt-24 border-b border-[#F0EBE3] last:border-0 ${focused ? FOCUSED_ROW : ""}`}
+      className={`fi-row-interaction scroll-mt-24 border-b border-surface-200 last:border-0 ${focused ? FOCUSED_ROW : ""}`}
     >
       <td className="max-w-[320px] px-4 py-2.5 align-top">
-        <span className="break-words font-medium text-[#1A1815]">{fee.feeName}</span>
+        <span className="break-words font-medium text-ink">{fee.feeName}</span>
         <AudienceLabel fee={fee} />
         {showUnderReview && <UnderReviewChip />}
       </td>
-      <td className="whitespace-nowrap px-4 py-2.5 text-right align-top text-base tabular-nums text-[#1A1815]" style={SERIF_STYLE}>
+      <td className="font-semibold whitespace-nowrap px-4 py-2.5 text-right align-top text-base tabular-nums text-ink" style={MONO_FIGURE}>
         {fee.rate ? <RateValue rate={fee.rate} /> : amount ?? "\u2014"}
         {benchmark && fee.amount !== null && (
           <span className="flex justify-end">
@@ -433,8 +434,8 @@ function FeeRow({
       <td className="px-4 py-2.5 align-top">
         <MedianCell fee={fee} medians={medians} stateMedians={stateMedians} />
       </td>
-      <td className="whitespace-nowrap px-4 py-2.5 align-top text-[#5A5347]">{basis || "\u2014"}</td>
-      <td className="max-w-[280px] px-4 py-2.5 align-top text-xs leading-relaxed text-[#6B6255]">
+      <td className="whitespace-nowrap px-4 py-2.5 align-top text-ink-soft">{basis || "\u2014"}</td>
+      <td className="max-w-[280px] px-4 py-2.5 align-top text-xs leading-relaxed text-ink-muted">
         {fee.conditions ? <span className="break-words">{fee.conditions}</span> : "\u2014"}
       </td>
       <td className="whitespace-nowrap px-4 py-2.5 text-right align-top">
@@ -463,9 +464,9 @@ function FeeScheduleStack({
   return (
     <div className="sm:hidden">
       {groups.map((group) => (
-        <section key={group.family} className="border-t border-[#E0D7C9]">
-          <div className="flex flex-wrap items-center justify-between gap-2 bg-[#FAF7F2] px-4 py-2.5">
-            <span className="text-sm font-semibold text-[#1A1815]">{group.family}</span>
+        <section key={group.family} className="border-t border-border">
+          <div className="flex flex-wrap items-center justify-between gap-2 bg-paper px-4 py-2.5">
+            <span className="text-sm font-semibold text-ink">{group.family}</span>
             <GroupBadge group={group} />
           </div>
           <ul>
@@ -479,16 +480,16 @@ function FeeScheduleStack({
                 <li
                   key={fee.id}
                   data-fee-anchor={focused ? fee.feeCategory ?? undefined : undefined}
-                  className={`scroll-mt-24 border-b border-[#F0EBE3] px-4 py-2.5 last:border-0 ${focused ? FOCUSED_ROW : ""}`}
+                  className={`scroll-mt-24 border-b border-surface-200 px-4 py-2.5 last:border-0 ${focused ? FOCUSED_ROW : ""}`}
                 >
                   <div className="flex items-start justify-between gap-3">
-                    <span className="min-w-0 break-words text-sm font-medium text-[#1A1815]">
+                    <span className="min-w-0 break-words text-sm font-medium text-ink">
                       {fee.feeName}
                       <AudienceLabel fee={fee} />
                       {showUnderReview && <UnderReviewChip />}
                     </span>
                     <span className="flex shrink-0 flex-col items-end">
-                      <span className="text-base tabular-nums text-[#1A1815]" style={SERIF_STYLE}>
+                      <span className="font-semibold text-base tabular-nums text-ink" style={MONO_FIGURE}>
                         {fee.rate ? <RateValue rate={fee.rate} /> : formatFeeAmount(fee.amount) ?? "\u2014"}
                       </span>
                       {benchmark && fee.amount !== null && (
@@ -501,7 +502,7 @@ function FeeScheduleStack({
                       <MedianCell fee={fee} medians={medians} stateMedians={stateMedians} />
                     </p>
                   )}
-                  <p className="mt-1 text-xs leading-relaxed text-[#6B6255]">
+                  <p className="mt-1 text-xs leading-relaxed text-ink-muted">
                     {[basis || null, fee.conditions].filter(Boolean).join(" \u00b7 ")}
                     {(basis || fee.conditions) && sourceUrl ? " \u00b7 " : null}
                     {sourceUrl && <SourceLink href={sourceUrl} fallback={!fee.sourceUrl} />}

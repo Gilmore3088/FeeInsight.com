@@ -100,7 +100,7 @@ export default async function MarketingPage({ searchParams }: { searchParams: Pr
                           <p className="font-medium">{formatBrief(format)?.label ?? format}</p>
                           <p className="text-gray-600">Subjects tested: {campaign.subjects.map((s) => `“${s}”`).join(" vs ") || "see preview"}</p>
                           {campaign.previewUrl ? (
-                            <a className="text-[#C44B2E] underline" href={campaign.previewUrl} target="_blank" rel="noreferrer">Preview</a>
+                            <a className="text-brick underline" href={campaign.previewUrl} target="_blank" rel="noreferrer">Preview</a>
                           ) : null}
                         </li>
                       );
@@ -113,7 +113,7 @@ export default async function MarketingPage({ searchParams }: { searchParams: Pr
                         {editions.map((campaign) => {
                           const code = campaign.name.split(" · ")[2] ?? campaign.name;
                           return campaign.previewUrl ? (
-                            <a key={campaign.id} className="text-[#C44B2E] underline" href={campaign.previewUrl} target="_blank" rel="noreferrer">{code}</a>
+                            <a key={campaign.id} className="text-brick underline" href={campaign.previewUrl} target="_blank" rel="noreferrer">{code}</a>
                           ) : (
                             <span key={campaign.id}>{code}</span>
                           );
@@ -126,7 +126,7 @@ export default async function MarketingPage({ searchParams }: { searchParams: Pr
                     <button
                       type="submit"
                       disabled={!address}
-                      className="rounded-md bg-[#C44B2E] px-4 py-2 text-sm font-semibold text-white disabled:opacity-40"
+                      className="rounded-md bg-brick px-4 py-2 text-sm font-semibold text-white disabled:opacity-40"
                     >
                       Approve and send {month}
                     </button>

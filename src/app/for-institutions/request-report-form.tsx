@@ -43,10 +43,10 @@ const KNOWN_READER_NOTE =
 const GENERIC_ERROR = "We couldn't send that request. Please try again or email us directly.";
 
 const INPUT_CLASS =
-  "w-full rounded-md border border-[#D5CBBF] bg-white px-3 py-2 text-sm text-[#1A1815] " +
-  "placeholder:text-[#6B6255] focus:outline-none focus:ring-2 focus:ring-[#C44B2E] focus:border-transparent " +
-  "read-only:bg-[#F4EFE7] read-only:text-[#5A5347]";
-const LABEL_CLASS = "block text-sm font-medium text-[#1A1815] mb-1";
+  "w-full rounded-md border border-border bg-white px-3 py-2 text-sm text-ink " +
+  "placeholder:text-ink-muted focus:outline-none focus:ring-2 focus:ring-brick focus:border-transparent " +
+  "read-only:bg-surface-200 read-only:text-ink-soft";
+const LABEL_CLASS = "block text-sm font-medium text-ink mb-1";
 
 type Status = "idle" | "submitting" | "success" | "error";
 type ReportType = "national" | "district" | "institution";
@@ -252,7 +252,7 @@ function RequestReportFormInner({
   return (
     <form
       onSubmit={handleSubmit}
-      className="rounded-lg border border-[#E0D7C9] bg-[#FDFBF8] p-6 space-y-4"
+      className="rounded-lg border border-border bg-surface-0 p-6 space-y-4"
       aria-label="Request a fee report"
     >
       <HoneypotField />
@@ -273,8 +273,8 @@ function RequestReportFormInner({
               key={option.value}
               className={
                 "flex cursor-pointer items-start gap-3 rounded-md border px-3 py-2.5 text-sm " +
-                (option.paid ? "border-dashed bg-[#F4EFE7] " : "bg-white ") +
-                (reportType === option.value ? "border-[#C44B2E] ring-1 ring-[#C44B2E]" : "border-[#D5CBBF]")
+                (option.paid ? "border-dashed bg-surface-200 " : "bg-white ") +
+                (reportType === option.value ? "border-brick ring-1 ring-brick" : "border-border")
               }
             >
               <input
@@ -283,10 +283,10 @@ function RequestReportFormInner({
                 value={option.value}
                 checked={reportType === option.value}
                 onChange={() => setReportType(option.value)}
-                className="mt-1 accent-[#C44B2E]"
+                className="mt-1 accent-brick"
               />
               <span className="min-w-0 flex-1">
-                <span className={"flex items-center gap-2 font-medium " + (option.paid ? "text-[#5A5347]" : "text-[#1A1815]")}>
+                <span className={"flex items-center gap-2 font-medium " + (option.paid ? "text-ink-soft" : "text-ink")}>
                   {option.paid && <Lock className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />}
                   {option.title}
                   <span
@@ -298,14 +298,14 @@ function RequestReportFormInner({
                     {option.paid ? REPORT_OFFER.priceLabel : "Free, instant"}
                   </span>
                 </span>
-                <span className="mt-0.5 block text-[13px] text-[#6B6255]">{option.detail}</span>
+                <span className="mt-0.5 block text-[13px] text-ink-muted">{option.detail}</span>
               </span>
             </label>
           ))}
         </div>
-        <p className="mt-2 text-[13px] text-[#6B6255]">
+        <p className="mt-2 text-[13px] text-ink-muted">
           Want your own bank or credit union right now?{" "}
-          <Link href={OWN_INSTITUTION_HREF} className="font-medium text-[#A93D25] underline underline-offset-2">
+          <Link href={OWN_INSTITUTION_HREF} className="font-medium text-brick underline underline-offset-2">
             Look it up free
           </Link>{" "}
           to see its published fees against state and national medians.
@@ -337,18 +337,18 @@ function RequestReportFormInner({
       )}
 
       {!institution && readerEmail && (
-        <div className="rounded-md border border-[#E8DFD1] bg-[#FAF7F2] px-3 py-2 text-sm text-[#1A1815]">
+        <div className="rounded-md border border-border bg-paper px-3 py-2 text-sm text-ink">
           <p>
             Sending to <span className="font-medium">{readerEmail}</span>.{" "}
             <button
               type="button"
               onClick={() => setUseOtherEmail(true)}
-              className="text-xs font-medium text-[#6B6255] underline underline-offset-2 hover:text-[#1A1815]"
+              className="text-xs font-medium text-ink-muted underline underline-offset-2 hover:text-ink"
             >
               Use a different email
             </button>
           </p>
-          <p className="mt-1 text-xs text-[#5A5347]">{KNOWN_READER_NOTE}</p>
+          <p className="mt-1 text-xs text-ink-soft">{KNOWN_READER_NOTE}</p>
         </div>
       )}
 
@@ -366,7 +366,7 @@ function RequestReportFormInner({
             aria-describedby={fieldId("report-email-free-note")}
             className={INPUT_CLASS}
           />
-          <p id={fieldId("report-email-free-note")} className="mt-1 text-xs text-[#5A5347]">
+          <p id={fieldId("report-email-free-note")} className="mt-1 text-xs text-ink-soft">
             {FREE_EMAIL_NOTE}
           </p>
         </div>
@@ -383,7 +383,7 @@ function RequestReportFormInner({
               <button
                 type="button"
                 onClick={() => setInstitutionLocked(false)}
-                className="text-xs font-medium text-[#6B6255] underline underline-offset-2 hover:text-[#1A1815]"
+                className="text-xs font-medium text-ink-muted underline underline-offset-2 hover:text-ink"
               >
                 Change
               </button>
@@ -433,7 +433,7 @@ function RequestReportFormInner({
 
         <div>
           <label htmlFor={fieldId("report-role")} className={LABEL_CLASS}>
-            Role <span className="font-normal text-[#6B6255]">(optional)</span>
+            Role <span className="font-normal text-ink-muted">(optional)</span>
           </label>
           <input
             id={fieldId("report-role")}
@@ -448,7 +448,7 @@ function RequestReportFormInner({
         <div className="grid gap-4 sm:grid-cols-[minmax(0,10rem)_minmax(0,1fr)]">
           <div>
             <label htmlFor={fieldId("report-state")} className={LABEL_CLASS}>
-              State <span className="font-normal text-[#6B6255]">(optional)</span>
+              State <span className="font-normal text-ink-muted">(optional)</span>
             </label>
             <select
               id={fieldId("report-state")}
@@ -467,7 +467,7 @@ function RequestReportFormInner({
           </div>
           <div>
             <label htmlFor={fieldId("report-competitors")} className={LABEL_CLASS}>
-              Competitors to include <span className="font-normal text-[#6B6255]">(optional)</span>
+              Competitors to include <span className="font-normal text-ink-muted">(optional)</span>
             </label>
             <input
               id={fieldId("report-competitors")}
@@ -485,7 +485,7 @@ function RequestReportFormInner({
       <button
         type="submit"
         disabled={status === "submitting"}
-        className="w-full rounded-md bg-[#C44B2E] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#A93D25] disabled:cursor-not-allowed disabled:opacity-50 transition-colors"
+        className="w-full rounded-md bg-brick px-4 py-2.5 text-sm font-semibold text-white hover:bg-brick-ink disabled:cursor-not-allowed disabled:opacity-50 transition-colors"
       >
         {status === "submitting"
           ? "Sending…"
@@ -493,7 +493,7 @@ function RequestReportFormInner({
             ? "Request your institution report"
             : "Get the free report"}
       </button>
-      <p className="text-xs leading-relaxed text-[#6B6255]">
+      <p className="text-xs leading-relaxed text-ink-muted">
         {institution
           ? "A paid report. We reply within one business day with scope and price, and you pay by card once you agree to the quote."
           : "Free, no card. The report opens right away and the link comes by email."}{" "}
@@ -516,11 +516,11 @@ function RequestReportSuccess({
   return (
     <div
       role="status"
-      className="rounded-lg border border-[#E0D7C9] bg-[#FDFBF8] p-6 text-sm text-[#1A1815]"
+      className="rounded-lg border border-border bg-surface-0 p-6 text-sm text-ink"
     >
       <p className="font-semibold">{SUCCESS_HEADLINE}</p>
-      <p className="mt-2 text-[#5A5347]">{SUCCESS_PROMISE}</p>
-      <p className="mt-2 text-[#5A5347]">
+      <p className="mt-2 text-ink-soft">{SUCCESS_PROMISE}</p>
+      <p className="mt-2 text-ink-soft">
         {confirmationSent ? (
           CONFIRMATION_SENT
         ) : (
@@ -533,7 +533,7 @@ function RequestReportSuccess({
           </>
         )}
       </p>
-      <p className="mt-2 text-[#5A5347]">
+      <p className="mt-2 text-ink-soft">
         Questions in the meantime? Email{" "}
         <a href={`mailto:${contactEmail}`} className="font-medium underline underline-offset-2">
           {contactEmail}
@@ -568,17 +568,17 @@ function FreeReportSuccess({
   return (
     <div
       role="status"
-      className="rounded-lg border border-[#E0D7C9] bg-[#FDFBF8] p-6 text-sm text-[#1A1815]"
+      className="rounded-lg border border-border bg-surface-0 p-6 text-sm text-ink"
     >
       <p className="font-semibold">{FREE_SUCCESS_HEADLINE}</p>
-      <p className="mt-2 text-[#5A5347]">{confirmation === "sent" ? FREE_EMAIL_SENT : FREE_EMAIL_MISSING}</p>
+      <p className="mt-2 text-ink-soft">{confirmation === "sent" ? FREE_EMAIL_SENT : FREE_EMAIL_MISSING}</p>
       <Link
         href={benchmarkReportPath(scope)}
-        className="mt-4 inline-flex rounded-md bg-[#C44B2E] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#A93D25]"
+        className="mt-4 inline-flex rounded-md bg-brick px-4 py-2.5 text-sm font-semibold text-white hover:bg-brick-ink"
       >
         Open your report
       </Link>
-      <p className="mt-4 text-[#5A5347]">
+      <p className="mt-4 text-ink-soft">
         Want your own institution against named competitors?{" "}
         <Link href={requestHref} className="font-medium underline underline-offset-2">
           Request your institution report

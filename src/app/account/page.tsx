@@ -98,7 +98,7 @@ export default async function AccountPage({
     : { kind: "free", fromMonthlyUsd: Math.min(...PRO_TIERS.map((tier) => tier.monthlyUsd)) };
 
   return (
-    <div className="min-h-screen bg-[#FAF7F2]">
+    <div className="min-h-screen bg-paper">
       <ConsumerNav />
       <main id="main-content">
         <AccountView

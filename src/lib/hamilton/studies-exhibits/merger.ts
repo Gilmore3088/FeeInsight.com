@@ -42,7 +42,7 @@ export const BANK_COLORS = [CHART.terra, CHART.ink] as const;
 const r1 = (v: number): string => (Math.round(v * 10) / 10).toString();
 const MINUS = "−";
 /** Land on the footprint map: the brand paper tone, so the map reads apart from the white card. */
-const LAND = "#FAF7F2";
+const LAND = "#f3efe6";
 
 interface TextOpts {
   size?: number;

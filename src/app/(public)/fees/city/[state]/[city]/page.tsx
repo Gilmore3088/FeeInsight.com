@@ -95,29 +95,29 @@ export default async function CityFeePage({ params }: PageProps) {
 
       <div className="max-w-page mx-auto px-6 py-14">
         {/* Breadcrumb */}
-        <nav aria-label="Breadcrumb" className="flex items-center gap-2 text-[12px] text-[#6B6255] mb-6">
-          <Link href="/fees" className="hover:text-[#1A1815] transition-colors">Fees</Link>
-          <span className="text-[#D4C9BA]">/</span>
-          <Link href={`/fees/city/${stateCode.toLowerCase()}`} className="hover:text-[#1A1815] transition-colors">{stateName}</Link>
-          <span className="text-[#D4C9BA]">/</span>
-          <span className="text-[#5A5347]">{cityName}</span>
+        <nav aria-label="Breadcrumb" className="flex items-center gap-2 text-[12px] text-ink-muted mb-6">
+          <Link href="/fees" className="hover:text-ink transition-colors">Fees</Link>
+          <span className="text-border">/</span>
+          <Link href={`/fees/city/${stateCode.toLowerCase()}`} className="hover:text-ink transition-colors">{stateName}</Link>
+          <span className="text-border">/</span>
+          <span className="text-ink-soft">{cityName}</span>
         </nav>
 
         {/* Header */}
         <div className="flex items-center gap-2 mb-4">
-          <span className="h-px w-8 bg-[#C44B2E]/40" />
-          <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#A93D25]/60">
+          <span className="h-px w-8 bg-brick/40" />
+          <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-brick/60">
             Local Fee Comparison
           </span>
         </div>
 
         <h1
-          className="text-[1.75rem] sm:text-[2.25rem] leading-[1.12] tracking-[-0.02em] text-[#1A1815] mb-2"
-          style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
+          className="font-extrabold text-[1.75rem] sm:text-[2.25rem] leading-[1.12] tracking-[-0.02em] text-ink mb-2"
+          style={{ fontFamily: "var(--fi-font-sans)" }}
         >
           Bank Fees in {cityName}, {stateCode}
         </h1>
-        <p className="text-[14px] text-[#6B6255] mb-8">
+        <p className="text-[14px] text-ink-muted mb-8">
           {institutions.length} institution{institutions.length !== 1 ? "s" : ""} with fee data
           ({bankCount} bank{bankCount !== 1 ? "s" : ""}, {cuCount} credit union{cuCount !== 1 ? "s" : ""})
         </p>
@@ -125,11 +125,11 @@ export default async function CityFeePage({ params }: PageProps) {
         {/* Spotlight fee cards */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-10">
           {spotlightAverages.map((s) => (
-            <div key={s.category} className="rounded-xl border border-[#E8DFD1]/80 bg-white/70 backdrop-blur-sm px-4 py-3.5">
-              <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-[#6B6255] mb-1.5">{s.displayName}</p>
+            <div key={s.category} className="rounded-xl border border-border/80 bg-white/70 backdrop-blur-sm px-4 py-3.5">
+              <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted mb-1.5">{s.displayName}</p>
               <p
-                className="text-[22px] font-light tabular-nums text-[#1A1815]"
-                style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
+                className="text-[22px] font-semibold tabular-nums text-ink"
+                style={{ fontFamily: "var(--fi-font-mono)" }}
               >
                 {s.cityAvg !== null ? formatAmount(s.cityAvg) : "N/A"}
               </p>
@@ -138,7 +138,7 @@ export default async function CityFeePage({ params }: PageProps) {
                   {s.delta > 0 ? "+" : ""}{s.delta.toFixed(1)}% vs national
                 </p>
               )}
-              <p className="text-[10px] text-[#6B6255] mt-0.5">
+              <p className="text-[10px] text-ink-muted mt-0.5">
                 {s.institutionCount} institution{s.institutionCount !== 1 ? "s" : ""} reporting
               </p>
             </div>
@@ -146,11 +146,11 @@ export default async function CityFeePage({ params }: PageProps) {
         </div>
 
         {/* Institution table */}
-        <div className="rounded-xl border border-[#E8DFD1]/80 bg-white/70 backdrop-blur-sm overflow-hidden">
-          <div className="px-5 py-3 bg-[#FAF7F2]/60 border-b border-[#E8DFD1]/60">
+        <div className="rounded-xl border border-border/80 bg-white/70 backdrop-blur-sm overflow-hidden">
+          <div className="px-5 py-3 bg-paper/60 border-b border-border/60">
             <h2
-              className="text-[14px] font-medium text-[#1A1815]"
-              style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
+              className="text-[14px] font-bold text-ink"
+              style={{ fontFamily: "var(--fi-font-sans)" }}
             >
               Institutions in {cityName}
             </h2>
@@ -158,47 +158,47 @@ export default async function CityFeePage({ params }: PageProps) {
           <div className="overflow-x-auto">
             <table className="w-full min-w-[760px] text-sm">
               <thead>
-                <tr className="border-b border-[#E8DFD1]/40 bg-[#FAF7F2]/30">
-                  <th className="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-[0.1em] text-[#6B6255]">Institution</th>
-                  <th className="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-[0.1em] text-[#6B6255]">Type</th>
-                  <th className="px-4 py-2.5 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-[#6B6255]">Assets</th>
-                  <th className="px-4 py-2.5 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-[#6B6255]">Overdraft</th>
-                  <th className="px-4 py-2.5 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-[#6B6255]">Monthly Fee</th>
-                  <th className="px-4 py-2.5 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-[#6B6255]">NSF</th>
-                  <th className="px-4 py-2.5 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-[#6B6255]">ATM</th>
-                  <th className="px-4 py-2.5 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-[#6B6255]">Fees</th>
+                <tr className="border-b border-border/40 bg-paper/30">
+                  <th className="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted">Institution</th>
+                  <th className="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted">Type</th>
+                  <th className="px-4 py-2.5 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted">Assets</th>
+                  <th className="px-4 py-2.5 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted">Overdraft</th>
+                  <th className="px-4 py-2.5 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted">Monthly Fee</th>
+                  <th className="px-4 py-2.5 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted">NSF</th>
+                  <th className="px-4 py-2.5 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted">ATM</th>
+                  <th className="px-4 py-2.5 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted">Fees</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[#E8DFD1]/40">
+              <tbody className="divide-y divide-border/40">
                 {institutions.map((inst) => (
-                  <tr key={inst.id} className="hover:bg-[#FAF7F2]/60 transition-colors">
+                  <tr key={inst.id} className="hover:bg-paper/60 transition-colors">
                     <td className="px-4 py-2.5">
                       <Link
                         href={`/institution/${inst.id}`}
-                        className="block min-w-0 max-w-[260px] break-words font-medium text-[#1A1815] transition-colors hover:text-[#C44B2E]"
+                        className="block min-w-0 max-w-[260px] break-words font-medium text-ink transition-colors hover:text-brick"
                       >
                         {inst.institution_name}
                       </Link>
                     </td>
-                    <td className="px-4 py-2.5 text-[#6B6255]">
+                    <td className="px-4 py-2.5 text-ink-muted">
                       {inst.charter_type === "bank" ? "Bank" : "CU"}
                     </td>
-                    <td className="px-4 py-2.5 text-right tabular-nums text-[#6B6255]">
+                    <td className="px-4 py-2.5 text-right tabular-nums text-ink-muted">
                       {inst.asset_size ? formatAssets(inst.asset_size) : "-"}
                     </td>
-                    <td className="px-4 py-2.5 text-right tabular-nums text-[#1A1815]">
+                    <td className="px-4 py-2.5 text-right tabular-nums text-ink">
                       {formatAmount(inst.overdraft)}
                     </td>
-                    <td className="px-4 py-2.5 text-right tabular-nums text-[#1A1815]">
+                    <td className="px-4 py-2.5 text-right tabular-nums text-ink">
                       {formatAmount(inst.monthly_maintenance)}
                     </td>
-                    <td className="px-4 py-2.5 text-right tabular-nums text-[#1A1815]">
+                    <td className="px-4 py-2.5 text-right tabular-nums text-ink">
                       {formatAmount(inst.nsf)}
                     </td>
-                    <td className="px-4 py-2.5 text-right tabular-nums text-[#1A1815]">
+                    <td className="px-4 py-2.5 text-right tabular-nums text-ink">
                       {formatAmount(inst.atm_non_network)}
                     </td>
-                    <td className="px-4 py-2.5 text-right tabular-nums text-[#6B6255]">
+                    <td className="px-4 py-2.5 text-right tabular-nums text-ink-muted">
                       {inst.fee_count}
                     </td>
                   </tr>
@@ -210,11 +210,11 @@ export default async function CityFeePage({ params }: PageProps) {
 
         {/* City averages vs national */}
         {cityAverages.length > 0 && (
-          <div className="mt-10 rounded-xl border border-[#E8DFD1]/80 bg-white/70 backdrop-blur-sm overflow-hidden">
-            <div className="px-5 py-3 bg-[#FAF7F2]/60 border-b border-[#E8DFD1]/60">
+          <div className="mt-10 rounded-xl border border-border/80 bg-white/70 backdrop-blur-sm overflow-hidden">
+            <div className="px-5 py-3 bg-paper/60 border-b border-border/60">
               <h2
-                className="text-[14px] font-medium text-[#1A1815]"
-                style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
+                className="text-[14px] font-bold text-ink"
+                style={{ fontFamily: "var(--fi-font-sans)" }}
               >
                 Average Fees in {cityName} vs National
               </h2>
@@ -222,32 +222,32 @@ export default async function CityFeePage({ params }: PageProps) {
             <div className="overflow-x-auto">
               <table className="w-full min-w-[620px] text-sm">
                 <thead>
-                  <tr className="border-b border-[#E8DFD1]/40 bg-[#FAF7F2]/30">
-                    <th className="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-[0.1em] text-[#6B6255]">Fee Category</th>
-                    <th className="px-4 py-2.5 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-[#6B6255]">{cityName} Avg</th>
-                    <th className="px-4 py-2.5 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-[#6B6255]">National</th>
-                    <th className="px-4 py-2.5 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-[#6B6255]">Difference</th>
-                    <th className="px-4 py-2.5 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-[#6B6255]">Reporting</th>
+                  <tr className="border-b border-border/40 bg-paper/30">
+                    <th className="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted">Fee Category</th>
+                    <th className="px-4 py-2.5 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted">{cityName} Avg</th>
+                    <th className="px-4 py-2.5 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted">National</th>
+                    <th className="px-4 py-2.5 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted">Difference</th>
+                    <th className="px-4 py-2.5 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted">Reporting</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-[#E8DFD1]/40">
+                <tbody className="divide-y divide-border/40">
                   {cityAverages.filter((a) => isFeaturedFee(a.fee_category)).map((avg) => {
                     const natMedian = nationalMedians[avg.fee_category];
                     const delta = natMedian ? ((avg.median - natMedian) / natMedian) * 100 : null;
                     return (
-                      <tr key={avg.fee_category} className="hover:bg-[#FAF7F2]/60 transition-colors">
+                      <tr key={avg.fee_category} className="hover:bg-paper/60 transition-colors">
                         <td className="px-4 py-2.5">
                           <Link
                             href={`/fees/${avg.fee_category}`}
-                            className="font-medium text-[#1A1815] transition-colors hover:text-[#C44B2E]"
+                            className="font-medium text-ink transition-colors hover:text-brick"
                           >
                             {getDisplayName(avg.fee_category)}
                           </Link>
                         </td>
-                        <td className="px-4 py-2.5 text-right tabular-nums font-semibold text-[#1A1815]">
+                        <td className="px-4 py-2.5 text-right tabular-nums font-semibold text-ink">
                           {formatAmount(avg.median)}
                         </td>
-                        <td className="px-4 py-2.5 text-right tabular-nums text-[#6B6255]">
+                        <td className="px-4 py-2.5 text-right tabular-nums text-ink-muted">
                           {natMedian !== undefined ? formatAmount(natMedian) : "-"}
                         </td>
                         <td className="px-4 py-2.5 text-right tabular-nums">
@@ -257,7 +257,7 @@ export default async function CityFeePage({ params }: PageProps) {
                             </span>
                           ) : "-"}
                         </td>
-                        <td className="px-4 py-2.5 text-right tabular-nums text-[#6B6255]">
+                        <td className="px-4 py-2.5 text-right tabular-nums text-ink-muted">
                           {avg.institution_count}
                         </td>
                       </tr>
@@ -275,19 +275,19 @@ export default async function CityFeePage({ params }: PageProps) {
         <div className="mt-6 flex flex-wrap gap-3">
           <Link
             href={`/fees/city/${stateCode.toLowerCase()}`}
-            className="rounded-full border border-[#E8DFD1] px-4 py-1.5 text-[12px] font-medium text-[#5A5347] hover:border-[#C44B2E]/30 hover:text-[#A93D25] transition-colors no-underline"
+            className="rounded-full border border-border px-4 py-1.5 text-[12px] font-medium text-ink-soft hover:border-brick/30 hover:text-brick transition-colors no-underline"
           >
             More cities in {stateName}
           </Link>
           <Link
             href={`/research/state/${stateCode}`}
-            className="rounded-full border border-[#E8DFD1] px-4 py-1.5 text-[12px] font-medium text-[#5A5347] hover:border-[#C44B2E]/30 hover:text-[#A93D25] transition-colors no-underline"
+            className="rounded-full border border-border px-4 py-1.5 text-[12px] font-medium text-ink-soft hover:border-brick/30 hover:text-brick transition-colors no-underline"
           >
             {stateName} Fee Report
           </Link>
           <Link
             href="/fees"
-            className="rounded-full border border-[#E8DFD1] px-4 py-1.5 text-[12px] font-medium text-[#5A5347] hover:border-[#C44B2E]/30 hover:text-[#A93D25] transition-colors no-underline"
+            className="rounded-full border border-border px-4 py-1.5 text-[12px] font-medium text-ink-soft hover:border-brick/30 hover:text-brick transition-colors no-underline"
           >
             Bank Fee Index
           </Link>

@@ -3,7 +3,8 @@ import { DISTRICT_NAMES } from "@/lib/fed-districts";
 import { SectionHeading } from "../../research-hero";
 import { lastMonths, TrendChart, yoySeries, type TrendLine } from "./trend-chart";
 
-const SERIF = { fontFamily: "var(--font-newsreader), Georgia, serif" };
+const SERIF = { fontFamily: "var(--fi-font-sans)" };
+const MONO_FIGURE = { fontFamily: "var(--fi-font-mono)" } as const;
 
 const THEME_LABELS: Record<string, string> = {
   growth: "Growth",
@@ -168,21 +169,21 @@ function buildTiles(stateName: string, ctx: StateEconomicContext): Tile[] {
 }
 
 function sentimentClass(sentiment: string): string {
-  if (sentiment === "positive") return "bg-[#4F6B3A]/10 text-[#4F6B3A]";
-  if (sentiment === "negative") return "bg-[#C44B2E]/10 text-[#A93D25]";
-  return "bg-[#F1EBE1] text-[#6B6255]";
+  if (sentiment === "positive") return "bg-below-market/10 text-below-market";
+  if (sentiment === "negative") return "bg-brick/10 text-brick";
+  return "bg-surface-200 text-ink-muted";
 }
 
 function Passage({ text, sentences }: { text: string; sentences: number }) {
   const { lead, rest } = leadSentences(text, sentences);
-  if (!rest) return <p className="mt-2 text-[14px] leading-relaxed text-[#3D3830]">{lead}</p>;
+  if (!rest) return <p className="mt-2 text-[14px] leading-relaxed text-ink">{lead}</p>;
   return (
     <details className="group mt-2">
-      <summary className="cursor-pointer list-none text-[14px] leading-relaxed text-[#3D3830] [&::-webkit-details-marker]:hidden">
+      <summary className="cursor-pointer list-none text-[14px] leading-relaxed text-ink [&::-webkit-details-marker]:hidden">
         {lead}{" "}
-        <span className="whitespace-nowrap text-[12px] font-semibold text-[#A93D25] group-open:hidden print:hidden">Read more</span>
+        <span className="whitespace-nowrap text-[12px] font-semibold text-brick group-open:hidden print:hidden">Read more</span>
       </summary>
-      <p className="mt-2 text-[14px] leading-relaxed text-[#3D3830]">{rest}</p>
+      <p className="mt-2 text-[14px] leading-relaxed text-ink">{rest}</p>
     </details>
   );
 }
@@ -203,14 +204,14 @@ export function EconomyExhibit({ stateName, district, ctx }: { stateName: string
       {tiles.length > 0 && (
         <div className="mt-7 grid gap-4 md:grid-cols-2">
           {tiles.map((t) => (
-            <div key={t.key} className="flex flex-col rounded-2xl border border-[#E8DFD1] bg-white p-5">
-              <p className="text-[12px] font-semibold text-[#5A5347]">{t.label}</p>
-              <p className="mt-2 text-[2.25rem] font-semibold leading-none tabular-nums text-[#1A1815]" style={SERIF}>
+            <div key={t.key} className="flex flex-col rounded-2xl border border-border bg-white p-5">
+              <p className="text-[12px] font-semibold text-ink-soft">{t.label}</p>
+              <p className="mt-2 text-[2.25rem] font-semibold leading-none tabular-nums text-ink" style={MONO_FIGURE}>
                 {t.value}
               </p>
-              {t.change && <p className="mt-2 text-[12px] text-[#5A5347]">{t.change}</p>}
+              {t.change && <p className="mt-2 text-[12px] text-ink-soft">{t.change}</p>}
               <TrendChart lines={t.lines} format={t.format} label={t.chartLabel} />
-              <p className="mt-auto pt-2 text-[10px] uppercase tracking-wider text-[#8A8072]">
+              <p className="mt-auto pt-2 text-[10px] uppercase tracking-wider text-ink-muted">
                 {isStale(t.latest) ? `Latest published ${t.note}` : t.note}
               </p>
             </div>
@@ -221,8 +222,8 @@ export function EconomyExhibit({ stateName, district, ctx }: { stateName: string
       {(bb || ctx.regulatory.length > 0) && (
         <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
           {bb && (
-            <div className="rounded-2xl border border-[#E8DFD1] bg-white p-5 sm:p-6">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#6B6255]">
+            <div className="rounded-2xl border border-border bg-white p-5 sm:p-6">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-ink-muted">
                 {districtName} Fed Beige Book · {monthLabel(bb.release_date)}
               </p>
               {bb.themes.length > 0 && (
@@ -234,33 +235,33 @@ export function EconomyExhibit({ stateName, district, ctx }: { stateName: string
                   ))}
                 </div>
               )}
-              <p className="mt-4 text-[12px] font-semibold text-[#1A1815]">Economic activity</p>
+              <p className="mt-4 text-[12px] font-semibold text-ink">Economic activity</p>
               <Passage text={bb.summary} sentences={3} />
               {bb.banking && (
                 <>
-                  <p className="mt-4 text-[12px] font-semibold text-[#1A1815]">{bb.banking.section_name}</p>
+                  <p className="mt-4 text-[12px] font-semibold text-ink">{bb.banking.section_name}</p>
                   <Passage text={bb.banking.text} sentences={2} />
                 </>
               )}
               {bb.source_url && (
-                <a href={bb.source_url} target="_blank" rel="noopener noreferrer" className="mt-4 inline-block text-[12px] font-semibold text-[#A93D25] hover:underline print:hidden">
+                <a href={bb.source_url} target="_blank" rel="noopener noreferrer" className="mt-4 inline-block text-[12px] font-semibold text-brick hover:underline print:hidden">
                   Read the full district report at federalreserve.gov &rarr;
                 </a>
               )}
             </div>
           )}
           {ctx.regulatory.length > 0 && (
-            <div className="rounded-2xl border border-[#E8DFD1] bg-white p-5 sm:p-6">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#6B6255]">Regulatory watch</p>
-              <ul className="mt-2 divide-y divide-[#F1EBE1]">
+            <div className="rounded-2xl border border-border bg-white p-5 sm:p-6">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-ink-muted">Regulatory watch</p>
+              <ul className="mt-2 divide-y divide-surface-200">
                 {ctx.regulatory.map((item) => (
                   <li key={item.link} className="py-3">
-                    <p className="flex flex-wrap items-center gap-x-2 text-[10px] font-semibold uppercase tracking-wider text-[#8A8072]">
-                      <span className="rounded bg-[#1A1815] px-1.5 py-0.5 text-white">{item.source}</span>
+                    <p className="flex flex-wrap items-center gap-x-2 text-[10px] font-semibold uppercase tracking-wider text-ink-muted">
+                      <span className="rounded bg-ink px-1.5 py-0.5 text-white">{item.source}</span>
                       <span>{TOPIC_LABELS[item.topic] ?? item.topic}</span>
                       {item.published_at && <span>· {dayLabel(item.published_at)}</span>}
                     </p>
-                    <a href={item.link} target="_blank" rel="noopener noreferrer" className="mt-1 block text-[13px] font-medium leading-snug text-[#1A1815] hover:text-[#A93D25]">
+                    <a href={item.link} target="_blank" rel="noopener noreferrer" className="mt-1 block text-[13px] font-medium leading-snug text-ink hover:text-brick">
                       {item.title}
                     </a>
                   </li>
@@ -271,8 +272,8 @@ export function EconomyExhibit({ stateName, district, ctx }: { stateName: string
         </div>
       )}
 
-      <p className="mt-3 border-t border-[#E8DFD1] pt-2 text-[11px] leading-snug text-[#8A8072]">
-        <span className="font-semibold text-[#6B6255]">Source:</span> Bureau of Labor Statistics and Federal Reserve series via
+      <p className="mt-3 border-t border-border pt-2 text-[11px] leading-snug text-ink-muted">
+        <span className="font-semibold text-ink-muted">Source:</span> Bureau of Labor Statistics and Federal Reserve series via
         FRED; Federal Reserve Beige Book; FDIC, OCC, CFPB and Federal Reserve press releases. Shown as published; we add no
         estimates.
       </p>

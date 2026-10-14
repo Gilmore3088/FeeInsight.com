@@ -19,10 +19,10 @@ export function UnstatedAudienceMark({ show = true }: { show?: boolean }) {
 export function UnstatedAudienceFootnote({ show = true, className = "" }: { show?: boolean; className?: string }) {
   if (!show) return null;
   return (
-    <p className={`text-[11px] leading-relaxed text-[#6B6255] ${className}`}>
+    <p className={`text-[11px] leading-relaxed text-ink-muted ${className}`}>
       <span aria-hidden="true">* </span>
       {UNSTATED_AUDIENCE_FOOTNOTE}{" "}
-      <Link href="/methodology#audience" className="font-medium text-[#A93D25] hover:underline">
+      <Link href="/methodology#audience" className="font-medium text-brick hover:underline">
         How audience is decided
       </Link>
     </p>

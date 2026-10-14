@@ -4,6 +4,7 @@ import { NavLinks, ProBadge } from "./nav-links";
 import { ConsumerMobileNav } from "./consumer-mobile-nav";
 import { SearchTrigger } from "./search-trigger";
 import { SkipLink } from "./public/skip-link";
+import { Logo } from "@/brand/components";
 import { SITE_NAME } from "@/lib/constants";
 
 export { PUBLIC_NAV_ITEMS, PRO_NAV_ITEMS, REQUEST_REPORT_NAV } from "./nav-items";
@@ -19,23 +20,17 @@ export { PUBLIC_NAV_ITEMS, PRO_NAV_ITEMS, REQUEST_REPORT_NAV } from "./nav-items
  */
 export function ConsumerNav() {
   return (
-    <header className="sticky top-0 z-40 border-b border-[#E8DFD1] bg-[#FAF7F2]/95">
+    <header className="sticky top-0 z-40 border-b border-border bg-paper/95">
       <SkipLink />
       <div className="mx-auto max-w-page px-6">
         <div className="flex h-14 items-center justify-between">
           <div className="flex items-center gap-8">
             <Link
               href="/"
-              className="flex items-center gap-2 text-[#1A1815] no-underline"
+              className="flex items-center gap-2 text-ink no-underline"
               aria-label={`${SITE_NAME} home`}
             >
-              <BrandMark className="h-[18px] w-[18px] text-[#C44B2E]" />
-              <span
-                className="text-[15px] font-medium tracking-tight"
-                style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
-              >
-                {SITE_NAME}
-              </span>
+              <Logo mark="fee-insight-oneline" height={22} title="" />
               <ProBadge />
             </Link>
             <NavLinks />
@@ -50,22 +45,5 @@ export function ConsumerNav() {
         </div>
       </div>
     </header>
-  );
-}
-
-function BrandMark({ className }: { className: string }) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      className={className}
-      stroke="currentColor"
-      strokeWidth="1.5"
-      aria-hidden="true"
-    >
-      <rect x="4" y="13" width="4" height="8" rx="1" />
-      <rect x="10" y="8" width="4" height="13" rx="1" />
-      <rect x="16" y="3" width="4" height="18" rx="1" />
-    </svg>
   );
 }

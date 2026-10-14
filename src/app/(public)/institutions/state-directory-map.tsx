@@ -54,16 +54,16 @@ function getFill({
   active: boolean;
   hovered: boolean;
 }): string {
-  if (active) return "#1A1815";
-  if (hovered) return "#A93D25";
-  if (value <= 0) return "#EDE5D8";
+  if (active) return "#132338";
+  if (hovered) return "#b23a32";
+  if (value <= 0) return "#ebe5d9";
 
   const intensity = value / max;
-  if (intensity > 0.72) return "#C44B2E";
+  if (intensity > 0.72) return "#b23a32";
   if (intensity > 0.5) return "#D46F54";
   if (intensity > 0.28) return "#E8A08E";
-  if (intensity > 0.12) return "#F4C9BF";
-  return "#F8DDD6";
+  if (intensity > 0.12) return "#f1d5d0";
+  return "#f1d5d0";
 }
 
 function formatCount(value: number): string {
@@ -114,16 +114,16 @@ export function StateDirectoryMap({
     return (
       <section
         aria-label="Selected state"
-        className="fi-reveal fi-reveal-delay-1 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-[#D8CBB8] py-4"
+        className="fi-reveal fi-reveal-delay-1 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-border py-4"
       >
-        <p className="text-sm text-[#1A1815]">
+        <p className="text-sm text-ink">
           <span className="text-lg font-semibold tracking-tight">{stateName}</span>
-          <span className="ml-2 text-xs tabular-nums text-[#6B6255]">{formatStateCounts(selectedSummary ?? undefined)}</span>
+          <span className="ml-2 text-xs tabular-nums text-ink-muted">{formatStateCounts(selectedSummary ?? undefined)}</span>
         </p>
         <Link
           href={clearStateHref({ charterType, feeCategory })}
           prefetch={false}
-          className="text-sm font-semibold text-[#A93D25] underline-offset-2 hover:underline"
+          className="text-sm font-semibold text-brick underline-offset-2 hover:underline"
         >
           Change state
         </Link>
@@ -132,21 +132,21 @@ export function StateDirectoryMap({
   }
 
   return (
-    <section className="fi-reveal fi-reveal-delay-1 border-b border-[#D8CBB8] py-6">
+    <section className="fi-reveal fi-reveal-delay-1 border-b border-border py-6">
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_300px] lg:items-start">
         <div className="min-w-0">
           <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
             <div>
-              <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-[#6B6255]">
+              <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-ink-muted">
                 Browse by state
               </p>
-              <h2 className="mt-1 text-2xl font-semibold tracking-tight text-[#1A1815]">
+              <h2 className="mt-1 text-2xl font-semibold tracking-tight text-ink">
                 Choose a state to see its banks and credit unions.
               </h2>
             </div>
           </div>
 
-          <div className="hidden border border-[#E0D7C9] bg-[#FFFDF9] p-3 sm:block">
+          <div className="hidden border border-border bg-surface-0 p-3 sm:block">
             <svg
               viewBox="0 0 960 600"
               className="h-auto w-full"
@@ -172,7 +172,7 @@ export function StateDirectoryMap({
                         active,
                         hovered,
                       })}
-                      stroke={active ? "#1A1815" : "#FFFDF9"}
+                      stroke={active ? "#132338" : "#fbf9f4"}
                       strokeWidth={active ? 2.2 : 1.2}
                       className="cursor-pointer transition-[fill,stroke,filter] duration-150 hover:brightness-95 focus:outline-none"
                       onMouseEnter={() => setHoveredState(state.id)}
@@ -185,13 +185,13 @@ export function StateDirectoryMap({
               })}
             </svg>
 
-            <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-[#E0D7C9] pt-3 text-[11px] font-medium uppercase tracking-[0.12em] text-[#6B6255]">
+            <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-border pt-3 text-[11px] font-medium uppercase tracking-[0.12em] text-ink-muted">
               <span className="inline-flex items-center gap-1.5">
-                <span className="h-2.5 w-2.5 bg-[#F8DDD6]" />
+                <span className="h-2.5 w-2.5 bg-brick-tint" />
                 Fewer with fees
               </span>
               <span className="inline-flex items-center gap-1.5">
-                <span className="h-2.5 w-2.5 bg-[#C44B2E]" />
+                <span className="h-2.5 w-2.5 bg-brick" />
                 More with fees
               </span>
             </div>
@@ -204,12 +204,12 @@ export function StateDirectoryMap({
                   key={summary.state_code}
                   href={buildHref({ stateCode: summary.state_code, query, charterType, feeCategory })}
                   prefetch={false}
-                  className="flex min-h-12 items-center justify-between border border-[#E0D7C9] bg-[#FFFDF9] px-3 text-sm text-[#1A1815] transition-colors hover:border-[#C44B2E]"
+                  className="flex min-h-12 items-center justify-between border border-border bg-surface-0 px-3 text-sm text-ink transition-colors hover:border-brick"
                 >
                   <span className="font-semibold">
                     {STATE_NAMES[summary.state_code] ?? summary.state_code}
                   </span>
-                  <span className="flex items-center gap-2 text-xs tabular-nums text-[#5A5347]">
+                  <span className="flex items-center gap-2 text-xs tabular-nums text-ink-soft">
                     {formatStateCounts(summary)}
                     <ArrowRight className="h-3.5 w-3.5" />
                   </span>
@@ -219,16 +219,16 @@ export function StateDirectoryMap({
           </div>
         </div>
 
-        <aside className="hidden border-y border-[#E0D7C9] py-4 lg:block lg:border-l lg:border-y-0 lg:py-1 lg:pl-5">
-          <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-[#6B6255]">
+        <aside className="hidden border-y border-border py-4 lg:block lg:border-l lg:border-y-0 lg:py-1 lg:pl-5">
+          <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-ink-muted">
             {focusSummary ? "Selected state" : "Most with fees"}
           </p>
           {focusSummary ? (
             <>
-              <h3 className="mt-2 break-words text-xl font-semibold tracking-tight text-[#1A1815]">
+              <h3 className="mt-2 break-words text-xl font-semibold tracking-tight text-ink">
                 {STATE_NAMES[focusSummary.state_code] ?? focusSummary.state_code}
               </h3>
-              <p className="mt-2 text-sm leading-relaxed text-[#5A5347]">
+              <p className="mt-2 text-sm leading-relaxed text-ink-soft">
                 {formatStateCounts(focusSummary)}
               </p>
               <div className="mt-5 grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
@@ -241,7 +241,7 @@ export function StateDirectoryMap({
                 <Link
                   href={buildHref({ stateCode: focusSummary.state_code, query, charterType, feeCategory })}
                   prefetch={false}
-                  className="mt-5 inline-flex min-h-9 items-center gap-2 rounded-md bg-[#C44B2E] px-3 text-xs font-semibold text-white transition-colors hover:bg-[#A93D25]"
+                  className="mt-5 inline-flex min-h-9 items-center gap-2 rounded-md bg-brick px-3 text-xs font-semibold text-white transition-colors hover:bg-brick-ink"
                 >
                   View {STATE_NAMES[focusSummary.state_code] ?? focusSummary.state_code}
                   <ArrowRight className="h-3.5 w-3.5" />
@@ -255,12 +255,12 @@ export function StateDirectoryMap({
                   key={summary.state_code}
                   href={buildHref({ stateCode: summary.state_code, query, charterType, feeCategory })}
                   prefetch={false}
-                  className="group flex items-center justify-between gap-3 border-b border-[#E0D7C9] py-2 text-sm"
+                  className="group flex items-center justify-between gap-3 border-b border-border py-2 text-sm"
                 >
-                  <span className="font-medium text-[#1A1815] group-hover:text-[#C44B2E]">
+                  <span className="font-medium text-ink group-hover:text-brick">
                     {STATE_NAMES[summary.state_code] ?? summary.state_code}
                   </span>
-                  <span className="text-right text-xs tabular-nums text-[#6B6255]">
+                  <span className="text-right text-xs tabular-nums text-ink-muted">
                     {formatStateCounts(summary)}
                   </span>
                 </Link>
@@ -276,10 +276,10 @@ export function StateDirectoryMap({
 function SnapshotMetric({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#6B6255]">
+      <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-ink-muted">
         {label}
       </p>
-      <p className="mt-1 text-lg font-semibold tabular-nums text-[#1A1815]">
+      <p className="mt-1 text-lg font-semibold tabular-nums text-ink">
         {value}
       </p>
     </div>

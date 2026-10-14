@@ -57,7 +57,7 @@ const MODE_CARDS: ModeCard[] = [
 ];
 
 const PRIMARY_BUTTON =
-  "inline-flex items-center justify-center rounded-md bg-[#C44B2E] px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#A93D25]";
+  "inline-flex items-center justify-center rounded-md bg-brick px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-brick-ink";
 const SECONDARY_BUTTON =
   "inline-flex items-center justify-center rounded-md border border-warm-300 px-5 py-2.5 text-sm font-medium text-warm-900 transition-colors hover:border-warm-900";
 
@@ -65,12 +65,12 @@ export function ProToolsSection() {
   return (
     <section id="pro" className="scroll-mt-16 border-b border-warm-200 bg-warm-100">
       <div className="mx-auto max-w-page px-6 py-14">
-        <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#6B6255]">
+        <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-ink-muted">
           {SITE_NAME} Pro
         </p>
         <h2
-          className="mt-3 text-[28px] text-warm-900"
-          style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
+          className="font-bold mt-3 text-[28px] text-warm-900"
+          style={{ fontFamily: "var(--fi-font-sans)" }}
         >
           {PRO_SECTION_TITLE}
         </h2>

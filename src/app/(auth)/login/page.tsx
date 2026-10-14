@@ -1,5 +1,6 @@
 export const dynamic = "force-dynamic";
 import { getCurrentUser } from "@/lib/auth";
+import { Logo } from "@/brand/components";
 import { redirect } from "next/navigation";
 import { LoginForm } from "./login-form";
 import type { Metadata } from "next";
@@ -41,41 +42,34 @@ export default async function LoginPage({
   return (
     <div className="min-h-screen flex flex-col lg:flex-row">
       {/* Left panel - hidden on mobile */}
-      <div className="hidden lg:flex lg:w-1/2 relative bg-[#FAF7F2] flex-col justify-center items-center px-12">
+      <div className="hidden lg:flex lg:w-1/2 relative bg-paper flex-col justify-center items-center px-12">
         {/* Grid texture overlay */}
         <div
           className="absolute inset-0 opacity-[0.03]"
           style={{
             backgroundImage:
-              "linear-gradient(#1A1815 1px, transparent 1px), linear-gradient(90deg, #1A1815 1px, transparent 1px)",
+              "linear-gradient(#132338 1px, transparent 1px), linear-gradient(90deg, #132338 1px, transparent 1px)",
             backgroundSize: "40px 40px",
           }}
         />
 
         <div className="relative z-10 max-w-md">
           {/* Logo */}
-          <Link href="/" className="inline-flex items-center gap-2 text-[#1A1815] no-underline mb-10">
-            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" className="h-[18px] w-[18px] text-[#C44B2E]" stroke="currentColor" strokeWidth="1.5">
-              <rect x="4" y="13" width="4" height="8" rx="1" />
-              <rect x="10" y="8" width="4" height="13" rx="1" />
-              <rect x="16" y="3" width="4" height="18" rx="1" />
-            </svg>
-            <span className="text-[15px] font-medium tracking-tight" style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}>
-              {SITE_NAME}
-            </span>
+          <Link href="/" className="inline-flex items-center gap-2 text-ink no-underline mb-10">
+            <Logo mark="fee-insight-oneline" height={22} />
           </Link>
 
           {/* Accent line */}
-          <div className="w-10 h-[3px] bg-[#C44B2E] rounded-full mb-6" />
+          <div className="w-10 h-[3px] bg-brick rounded-full mb-6" />
 
           <p
-            className="text-3xl text-[#1A1815] tracking-tight leading-snug mb-10"
-            style={{ fontFamily: "var(--font-newsreader), Georgia, serif", fontStyle: "italic" }}
+            className="font-semibold text-3xl text-ink tracking-tight leading-snug mb-10"
+            style={{ fontFamily: "var(--fi-font-sans)", fontStyle: "italic" }}
           >
             Welcome back
           </p>
 
-          <p className="text-sm text-[#6B6255] leading-relaxed mb-10">
+          <p className="text-sm text-ink-muted leading-relaxed mb-10">
             Published fees for {summary.institutionsLabel} U.S. banks and credit unions: free
             lookup, plus peer benchmarks and competitive reports for banking teams.
           </p>
@@ -83,16 +77,16 @@ export default async function LoginPage({
           {/* Stats */}
           <div className="flex gap-8">
             <div>
-              <p className="text-lg font-bold text-[#1A1815] tabular-nums">{summary.institutionsLabel}</p>
-              <p className="text-[11px] text-[#6B6255] uppercase tracking-wider font-medium mt-0.5">Institutions</p>
+              <p className="text-lg font-bold text-ink tabular-nums">{summary.institutionsLabel}</p>
+              <p className="text-[11px] text-ink-muted uppercase tracking-wider font-medium mt-0.5">Institutions</p>
             </div>
             <div>
-              <p className="text-lg font-bold text-[#1A1815] tabular-nums">{summary.categoriesLabel}</p>
-              <p className="text-[11px] text-[#6B6255] uppercase tracking-wider font-medium mt-0.5">Fee categories</p>
+              <p className="text-lg font-bold text-ink tabular-nums">{summary.categoriesLabel}</p>
+              <p className="text-[11px] text-ink-muted uppercase tracking-wider font-medium mt-0.5">Fee categories</p>
             </div>
             <div>
-              <p className="text-lg font-bold text-[#1A1815] tabular-nums">{summary.statesLabel}</p>
-              <p className="text-[11px] text-[#6B6255] uppercase tracking-wider font-medium mt-0.5">States</p>
+              <p className="text-lg font-bold text-ink tabular-nums">{summary.statesLabel}</p>
+              <p className="text-[11px] text-ink-muted uppercase tracking-wider font-medium mt-0.5">States</p>
             </div>
           </div>
         </div>
@@ -103,42 +97,35 @@ export default async function LoginPage({
         <div className="w-full max-w-md">
           {/* Mobile logo */}
           <div className="text-center mb-8 lg:hidden">
-            <Link href="/" className="inline-flex items-center gap-2 text-[#1A1815] no-underline mb-4">
-              <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" className="h-[18px] w-[18px] text-[#C44B2E]" stroke="currentColor" strokeWidth="1.5">
-                <rect x="4" y="13" width="4" height="8" rx="1" />
-                <rect x="10" y="8" width="4" height="13" rx="1" />
-                <rect x="16" y="3" width="4" height="18" rx="1" />
-              </svg>
-              <span className="text-[15px] font-medium tracking-tight" style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}>
-                {SITE_NAME}
-              </span>
+            <Link href="/" className="inline-flex items-center gap-2 text-ink no-underline mb-4">
+              <Logo mark="fee-insight-oneline" height={22} />
             </Link>
           </div>
 
           <div className="lg:bg-white lg:rounded-xl lg:p-8">
             <h1
-              className="text-2xl font-bold tracking-tight text-[#1A1815] text-center mb-8"
-              style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
+              className="text-2xl font-extrabold tracking-tight text-ink text-center mb-8"
+              style={{ fontFamily: "var(--fi-font-sans)" }}
             >
               Sign in
             </h1>
             <LoginForm redirectTo={params.from || "/account"} forgotPasswordHref={FORGOT_PASSWORD_HREF} />
-            <p className="mt-4 text-center text-sm text-[#6B6255]">
+            <p className="mt-4 text-center text-sm text-ink-muted">
               Don&apos;t have an account?{" "}
-              <Link href={registerHref} className="text-[#1A1815] font-medium hover:underline">
+              <Link href={registerHref} className="text-ink font-medium hover:underline">
                 Create one
               </Link>
             </p>
             {proPlansHref && (
-              <p className="mt-2 text-center text-sm text-[#6B6255]">
+              <p className="mt-2 text-center text-sm text-ink-muted">
                 New to Pro?{" "}
-                <Link href={proPlansHref} className="text-[#A93D25] font-medium hover:underline">
+                <Link href={proPlansHref} className="text-brick font-medium hover:underline">
                   See plans and prices
                 </Link>
               </p>
             )}
             <p className="mt-6 text-center text-sm">
-              <Link href="/" className="text-[#6B6255] hover:text-[#1A1815] hover:underline">
+              <Link href="/" className="text-ink-muted hover:text-ink hover:underline">
                 ← Back to {SITE_NAME}
               </Link>
             </p>

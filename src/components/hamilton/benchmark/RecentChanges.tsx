@@ -72,7 +72,7 @@ export function RecentChanges({ alerts, signals, selectedInstitutionId = null }:
   return (
     <section aria-label="What changed" className="flex flex-col gap-3">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="text-xl text-warm-900 sm:text-2xl" style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}>
+        <h2 className="font-bold text-xl text-warm-900 sm:text-2xl" style={{ fontFamily: "var(--fi-font-sans)" }}>
           What changed
         </h2>
         <Link href={monitorHref} className="text-sm text-terra-text underline">

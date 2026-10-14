@@ -58,25 +58,25 @@ export default async function ConfirmEmailPage({
   const outcome = await confirm(await searchParams);
   const copy = COPY[outcome];
   return (
-    <div className="min-h-screen bg-[#FAF7F2]">
+    <div className="min-h-screen bg-paper">
       <ConsumerNav />
       <main id="main-content" className="mx-auto max-w-lg px-4 py-16 sm:px-6">
         <h1
-          className="text-[1.75rem] leading-[1.15] tracking-[-0.02em] text-[#1A1815]"
-          style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
+          className="font-extrabold text-[1.75rem] leading-[1.15] tracking-[-0.02em] text-ink"
+          style={{ fontFamily: "var(--fi-font-sans)" }}
         >
           {copy.title}
         </h1>
-        <p className="mt-3 text-[15px] leading-relaxed text-[#5A5347]">{copy.body}</p>
+        <p className="mt-3 text-[15px] leading-relaxed text-ink-soft">{copy.body}</p>
         <Link
           href="/account"
-          className="mt-6 inline-flex min-h-11 items-center rounded-md bg-[#C44B2E] px-5 text-[14px] font-semibold text-white no-underline hover:bg-[#A93D25]"
+          className="mt-6 inline-flex min-h-11 items-center rounded-md bg-brick px-5 text-[14px] font-semibold text-white no-underline hover:bg-brick-ink"
         >
           Go to your account
         </Link>
-        <p className="mt-6 text-[13px] text-[#6B6255]">
+        <p className="mt-6 text-[13px] text-ink-muted">
           Questions? Email{" "}
-          <a href={`mailto:${CONTACT_EMAIL}`} className="text-[#A93D25] hover:underline">
+          <a href={`mailto:${CONTACT_EMAIL}`} className="text-brick hover:underline">
             {CONTACT_EMAIL}
           </a>
           .

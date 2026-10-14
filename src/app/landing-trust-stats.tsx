@@ -13,17 +13,17 @@ const STATE_NAME = new Map(US_STATES.map((state) => [state.id, state.name]));
 
 const SOURCES = ["FDIC", "NCUA", "Federal Reserve", "Published fee schedules"];
 
-const SERIF_STYLE = { fontFamily: "var(--font-newsreader), Georgia, serif" } as const;
+const SERIF_STYLE = { fontFamily: "var(--fi-font-sans)" } as const;
 
 /** Same ramp as the institutions directory map, so coverage reads the same everywhere. */
 function coverageFill(verified: number, max: number): string {
-  if (verified <= 0) return "#EDE5D8";
+  if (verified <= 0) return "#ebe5d9";
   const intensity = verified / max;
-  if (intensity > 0.72) return "#C44B2E";
+  if (intensity > 0.72) return "#b23a32";
   if (intensity > 0.5) return "#D46F54";
   if (intensity > 0.28) return "#E8A08E";
-  if (intensity > 0.12) return "#F4C9BF";
-  return "#F8DDD6";
+  if (intensity > 0.12) return "#f1d5d0";
+  return "#f1d5d0";
 }
 
 /**
@@ -43,7 +43,7 @@ export function LandingTrustStats({ summary, states }: LandingTrustStatsProps) {
       <div className="mx-auto max-w-page px-4 py-8 sm:px-6 sm:py-10">
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_260px] lg:items-center lg:gap-10">
           <div className="min-w-0">
-            <h2 className="text-balance text-2xl font-normal text-warm-900 sm:text-3xl" style={SERIF_STYLE}>
+            <h2 className="text-balance text-2xl font-bold text-warm-900 sm:text-3xl" style={SERIF_STYLE}>
               Where we track fees
             </h2>
             {states.length > 0 && (
@@ -75,7 +75,7 @@ export function LandingTrustStats({ summary, states }: LandingTrustStatsProps) {
                         <path
                           d={state.d}
                           fill={coverageFill(verified, maxVerified)}
-                          stroke="#FAF7F2"
+                          stroke="#f3efe6"
                           strokeWidth={1.2}
                           className="cursor-pointer transition-[filter] duration-150 hover:brightness-90"
                         >
@@ -91,7 +91,7 @@ export function LandingTrustStats({ summary, states }: LandingTrustStatsProps) {
                 >
                   <span>Fewer</span>
                   <span className="flex">
-                    {["#F8DDD6", "#F4C9BF", "#E8A08E", "#D46F54", "#C44B2E"].map((c) => (
+                    {["#f1d5d0", "#f1d5d0", "#E8A08E", "#D46F54", "#b23a32"].map((c) => (
                       <span key={c} className="h-2 w-5" style={{ backgroundColor: c }} />
                     ))}
                   </span>

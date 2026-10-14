@@ -3,9 +3,10 @@ import type { FeeCategorySummary } from "@/lib/data-store";
 import { getDisplayName, FAMILY_COLORS } from "@/lib/fee-taxonomy";
 import { familySectionId, money } from "./family-section";
 
-const EYEBROW = "text-[11px] font-bold uppercase tracking-[0.12em] text-[#6B6255]";
-const SERIF = { fontFamily: "var(--font-newsreader), Georgia, serif" };
-const CARD = "rounded-xl border border-[#E8DFD1] bg-white/80 backdrop-blur-sm px-4 py-4";
+const EYEBROW = "text-[11px] font-bold uppercase tracking-[0.12em] text-ink-muted";
+const SERIF = { fontFamily: "var(--fi-font-sans)" };
+const MONO_FIGURE = { fontFamily: "var(--fi-font-mono)" } as const;
+const CARD = "rounded-xl border border-border bg-white/80 backdrop-blur-sm px-4 py-4";
 const MAX_KEY_BENCHMARKS = 6;
 
 const GO_DEEPER_LINKS = [
@@ -31,16 +32,16 @@ export function CatalogSidebar({ familyOrder, byFamily, spotlightFees, statesLab
           {familyOrder.map((familyName) => {
             const cats = byFamily.get(familyName);
             if (!cats || cats.length === 0) return null;
-            const colorBg = FAMILY_COLORS[familyName]?.dot ?? "bg-[#A09788]";
+            const colorBg = FAMILY_COLORS[familyName]?.dot ?? "bg-control-border";
             return (
               <a
                 key={familyName}
                 href={`#${familySectionId(familyName)}`}
-                className="group flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-[13px] text-[#6B6255] transition-colors hover:bg-[#FAF7F2] hover:text-[#1A1815]"
+                className="group flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-[13px] text-ink-muted transition-colors hover:bg-paper hover:text-ink"
               >
                 <span className={`inline-block h-2 w-2 rounded-full ${colorBg}`} />
                 {familyName}
-                <span className="ml-auto text-[11px] tabular-nums text-[#6B6255]">{cats.length}</span>
+                <span className="ml-auto text-[11px] tabular-nums text-ink-muted">{cats.length}</span>
               </a>
             );
           })}
@@ -48,19 +49,19 @@ export function CatalogSidebar({ familyOrder, byFamily, spotlightFees, statesLab
       </div>
 
       <div className={`${CARD} relative overflow-hidden`}>
-        <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-[#C44B2E]/30 to-transparent" />
-        <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#A93D25]">Key Benchmarks</p>
+        <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-brick/30 to-transparent" />
+        <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-brick">Key Benchmarks</p>
         <div className="mt-3 space-y-3">
           {spotlightFees.slice(0, MAX_KEY_BENCHMARKS).map((fee) => (
             <Link key={fee.fee_category} href={`/fees/${fee.fee_category}`} className="block group no-underline">
-              <span className="text-[11px] text-[#6B6255] group-hover:text-[#A93D25] transition-colors">
+              <span className="text-[11px] text-ink-muted group-hover:text-brick transition-colors">
                 {getDisplayName(fee.fee_category)}
               </span>
               <span className="flex items-baseline gap-1.5">
-                <span className="text-lg tabular-nums font-light text-[#1A1815]" style={SERIF}>
+                <span className="text-lg tabular-nums font-semibold text-ink" style={MONO_FIGURE}>
                   {money(fee.median_amount)}
                 </span>
-                <span className="text-[11px] text-[#6B6255]">median</span>
+                <span className="text-[11px] text-ink-muted">median</span>
               </span>
             </Link>
           ))}
@@ -74,26 +75,26 @@ export function CatalogSidebar({ familyOrder, byFamily, spotlightFees, statesLab
             <Link
               key={item.href}
               href={item.href}
-              className="flex items-center gap-1.5 text-[13px] text-[#6B6255] hover:text-[#A93D25] transition-colors"
+              className="flex items-center gap-1.5 text-[13px] text-ink-muted hover:text-brick transition-colors"
             >
-              <span className="h-1 w-1 rounded-full bg-[#D4C9BA] shrink-0" />
+              <span className="h-1 w-1 rounded-full bg-border shrink-0" />
               {item.label}
             </Link>
           ))}
         </div>
       </div>
 
-      <div className="rounded-xl border border-[#E8DFD1] bg-[#FAF7F2]/50 px-4 py-4">
+      <div className="rounded-xl border border-border bg-paper/50 px-4 py-4">
         <p className={EYEBROW}>Data Sources</p>
-        <ul className="mt-2 space-y-1 text-[12px] text-[#6B6255]">
+        <ul className="mt-2 space-y-1 text-[12px] text-ink-muted">
           <li>Published fee schedules</li>
           <li>FDIC Call Reports</li>
           <li>NCUA 5300 Reports</li>
           <li>Institution websites</li>
         </ul>
-        <div className="mt-3 border-t border-[#E8DFD1]/60 pt-2">
+        <div className="mt-3 border-t border-border/60 pt-2">
           <p className={EYEBROW}>Coverage</p>
-          <ul className="mt-1.5 space-y-1 text-[12px] text-[#6B6255]">
+          <ul className="mt-1.5 space-y-1 text-[12px] text-ink-muted">
             <li>Banks + Credit Unions</li>
             <li>All asset tiers</li>
             <li>All 12 Fed districts</li>

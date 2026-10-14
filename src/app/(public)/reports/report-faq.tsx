@@ -60,16 +60,16 @@ export function ReportFaq() {
   const items = reportFaqItems();
   return (
     <section aria-labelledby="report-faq-heading" className="mx-auto max-w-page px-6 pt-16">
-      <h2 id="report-faq-heading" className="mb-4 text-[22px] font-semibold tracking-tight text-[#1A1815]">
+      <h2 id="report-faq-heading" className="mb-4 text-[22px] font-semibold tracking-tight text-ink">
         Questions about the report
       </h2>
-      <div className="max-w-[800px] divide-y divide-[#E8E1D6] rounded-2xl border border-[#E8E1D6] bg-[#FAF7F2]">
+      <div className="max-w-[800px] divide-y divide-border rounded-2xl border border-border bg-paper">
         {items.map((item) => (
           <details key={item.question} className="group px-6 py-4">
-            <summary className="cursor-pointer list-none text-[14px] font-semibold text-[#1A1815] marker:content-none">
+            <summary className="cursor-pointer list-none text-[14px] font-semibold text-ink marker:content-none">
               {item.question}
             </summary>
-            <p className="mt-2 text-[14px] leading-relaxed text-[#3D3833]">{item.answer}</p>
+            <p className="mt-2 text-[14px] leading-relaxed text-ink">{item.answer}</p>
           </details>
         ))}
       </div>

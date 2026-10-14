@@ -8,18 +8,18 @@ import type { DistrictCoverage } from "@/lib/data-store/geographic";
 
 /** One warm accent per district (taxonomy family palette), no rainbow. */
 export const DISTRICT_COLORS: Record<number, string> = {
-  1: "#C44B2E",
+  1: "#b23a32",
   2: "#8C3A52",
   3: "#B8862B",
   4: "#6B4A6E",
   5: "#6E5B4E",
   6: "#5B7A78",
-  7: "#7A7F3F",
+  7: "#3b6350",
   8: "#C4A46A",
   9: "#A0522D",
-  10: "#A93D25",
-  11: "#8E2A17",
-  12: "#7A7062",
+  10: "#b23a32",
+  11: "#7f2620",
+  12: "#55606f",
 };
 
 const NUMBER = new Intl.NumberFormat("en-US");
@@ -29,7 +29,7 @@ export function DistrictBoard({ districts }: { districts: DistrictCoverage[] }) 
 
   return (
     <div className="grid gap-6 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]">
-      <div className="rounded-2xl border border-[#E8DFD1] bg-white p-3 sm:p-5">
+      <div className="rounded-2xl border border-border bg-white p-3 sm:p-5">
         <svg viewBox="0 0 960 600" className="h-auto w-full" role="img" aria-label="Map of the 12 Federal Reserve districts">
           {US_STATES.map((st) => {
             const d = STATE_TO_DISTRICT[st.id];
@@ -50,7 +50,7 @@ export function DistrictBoard({ districts }: { districts: DistrictCoverage[] }) 
             );
           })}
         </svg>
-        <p className="mt-2 text-center text-[11px] text-[#8A8072]">
+        <p className="mt-2 text-center text-[11px] text-ink-muted">
           States are shaded by their main district. Some states are split between two districts; the counts beside the
           map use each institution&apos;s own district.
         </p>
@@ -59,7 +59,7 @@ export function DistrictBoard({ districts }: { districts: DistrictCoverage[] }) 
       <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2">
         {districts.map((d) => {
           const coverage = d.monitored > 0 ? d.verified_institutions / d.monitored : 0;
-          const color = DISTRICT_COLORS[d.district] ?? "#7A7062";
+          const color = DISTRICT_COLORS[d.district] ?? "#55606f";
           return (
             <li key={d.district}>
               <Link
@@ -69,7 +69,7 @@ export function DistrictBoard({ districts }: { districts: DistrictCoverage[] }) 
                 onFocus={() => setActive(d.district)}
                 onBlur={() => setActive(null)}
                 className={`group block rounded-xl border bg-white px-4 py-3 transition-all hover:shadow-md ${
-                  active === d.district ? "border-[#1A1815]/30 shadow-md" : "border-[#E8DFD1]"
+                  active === d.district ? "border-ink/30 shadow-md" : "border-border"
                 }`}
               >
                 <div className="flex items-center gap-2">
@@ -79,15 +79,15 @@ export function DistrictBoard({ districts }: { districts: DistrictCoverage[] }) 
                   >
                     {d.district}
                   </span>
-                  <span className="truncate text-[13px] font-semibold text-[#1A1815] group-hover:text-[#A93D25]">
+                  <span className="truncate text-[13px] font-semibold text-ink group-hover:text-brick">
                     {DISTRICT_NAMES[d.district] ?? `District ${d.district}`}
                   </span>
-                  <span className="ml-auto text-[13px] font-semibold tabular-nums text-[#1A1815]">{Math.round(coverage * 100)}%</span>
+                  <span className="ml-auto text-[13px] font-semibold tabular-nums text-ink">{Math.round(coverage * 100)}%</span>
                 </div>
-                <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[#F1EBE1]">
+                <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-surface-200">
                   <div className="h-full rounded-full" style={{ width: `${coverage * 100}%`, background: color }} />
                 </div>
-                <p className="mt-1.5 flex justify-between gap-2 whitespace-nowrap text-[11px] tabular-nums text-[#6B6255]">
+                <p className="mt-1.5 flex justify-between gap-2 whitespace-nowrap text-[11px] tabular-nums text-ink-muted">
                   <span>{NUMBER.format(d.verified_institutions)} of {NUMBER.format(d.monitored)} institutions</span>
                   <span>{NUMBER.format(d.verified_fees)} fees</span>
                 </p>

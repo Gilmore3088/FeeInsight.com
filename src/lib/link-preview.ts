@@ -6,9 +6,11 @@ import { SITE_NAME } from "@/lib/constants";
  * LinkedIn, Slack or email shows this page's own title and summary. Next merges metadata
  * shallowly, so a page that sets `openGraph` replaces the root layout's: this keeps the
  * site name and type the layout sets. A page-level `openGraph` also drops the image the root
- * `src/app/opengraph-image.tsx` file adds (prod /research/state/TX had no og:image), so the
- * image is named here explicitly.
+ * `src/app/opengraph-image.png` file adds (prod /research/state/TX had no og:image), so the
+ * image is named here explicitly, by its stable public path.
  */
+const SHARE_IMAGE = "/brand/og/og-bank-fee-index.png";
+
 export function linkPreview({
   title,
   description,
@@ -26,8 +28,8 @@ export function linkPreview({
       title,
       description,
       url: path,
-      images: [{ url: "/opengraph-image", width: 1200, height: 630, alt: title }],
+      images: [{ url: SHARE_IMAGE, width: 1200, height: 630, alt: title }],
     },
-    twitter: { card: "summary_large_image", title, description, images: ["/twitter-image"] },
+    twitter: { card: "summary_large_image", title, description, images: [SHARE_IMAGE] },
   };
 }

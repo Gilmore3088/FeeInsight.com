@@ -75,7 +75,7 @@ function Glance({ items }: { items: { label: string; value: number; note: string
           <dt className={LABEL} style={SANS}>
             {item.label}
           </dt>
-          <dd className={`mt-1 text-[24px] leading-none [font-variant-numeric:tabular-nums] ${item.strong ? "text-[#A93D25]" : "text-warm-900"}`}>
+          <dd className={`mt-1 text-[24px] leading-none [font-variant-numeric:tabular-nums] ${item.strong ? "text-brick" : "text-warm-900"}`}>
             {item.value.toLocaleString()}
           </dd>
           <dd className="mt-1 text-[11px] text-warm-600">{item.note}</dd>
@@ -214,7 +214,7 @@ export function NewsFeed({
                               {article.source}
                             </span>
                             <span className="min-w-0 flex-1">
-                              <span className="block text-[14px] font-medium leading-snug text-warm-900 transition-colors group-hover:text-[#A93D25] sm:text-[15px]">
+                              <span className="block text-[14px] font-medium leading-snug text-warm-900 transition-colors group-hover:text-brick sm:text-[15px]">
                                 {article.title}
                               </span>
                               <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-warm-600">
@@ -229,9 +229,9 @@ export function NewsFeed({
                                   </>
                                 ) : null}
                                 {fees.length > 0 ? (
-                                  <span className="font-medium text-[#A93D25]">{fees.map((f) => FEE_TYPE_LABELS[f]).join(", ")}</span>
+                                  <span className="font-medium text-brick">{fees.map((f) => FEE_TYPE_LABELS[f]).join(", ")}</span>
                                 ) : FEE_TOPICS.has(article.topic) ? (
-                                  <span className="rounded-full border border-[#A93D25]/40 px-1.5 font-medium text-[#A93D25]">Fee-related</span>
+                                  <span className="rounded-full border border-brick/40 px-1.5 font-medium text-brick">Fee-related</span>
                                 ) : null}
                               </span>
                             </span>

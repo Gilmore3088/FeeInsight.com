@@ -25,11 +25,11 @@ export interface FeeAlertControlProps {
 }
 
 const INPUT =
-  "min-w-0 w-full rounded-md border border-[#D4C9BA] bg-white px-3 py-2 text-[14px] text-[#1A1815] placeholder:text-[#6B6255] focus:border-transparent focus:outline-none focus:ring-2 focus:ring-[#C44B2E]/30";
+  "min-w-0 w-full rounded-md border border-border bg-white px-3 py-2 text-[14px] text-ink placeholder:text-ink-muted focus:border-transparent focus:outline-none focus:ring-2 focus:ring-brick/30";
 const PRIMARY =
-  "inline-flex shrink-0 items-center justify-center whitespace-nowrap rounded-md bg-[#C44B2E] px-4 py-2 text-[13px] font-semibold text-white transition-colors hover:bg-[#A93D25] disabled:opacity-50";
+  "inline-flex shrink-0 items-center justify-center whitespace-nowrap rounded-md bg-brick px-4 py-2 text-[13px] font-semibold text-white transition-colors hover:bg-brick-ink disabled:opacity-50";
 const SECONDARY =
-  "inline-flex items-center rounded-md border border-[#D5CBBF] bg-white px-3 py-1.5 text-[12px] font-semibold text-[#1A1815] transition-colors hover:border-[#C44B2E] hover:text-[#A93D25] disabled:opacity-50";
+  "inline-flex items-center rounded-md border border-border bg-white px-3 py-1.5 text-[12px] font-semibold text-ink transition-colors hover:border-brick hover:text-brick disabled:opacity-50";
 
 /**
  * Save this bank or credit union and get an email when a fee you follow changes.
@@ -135,22 +135,22 @@ export function FeeAlertControl({
   return (
     <section
       aria-labelledby={`${ids}-heading`}
-      className="relative border border-[#E0D7C9] bg-white px-4 py-4 sm:px-5"
+      className="relative border border-border bg-white px-4 py-4 sm:px-5"
     >
-      <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#6B6255]">
+      <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-ink-muted">
         {saved ? "Saved" : "Fee change alerts"}
       </p>
 
       {saved ? (
         <>
-          <h2 id={`${ids}-heading`} className="mt-1 text-base font-semibold text-[#1A1815]">
+          <h2 id={`${ids}-heading`} className="mt-1 text-base font-semibold text-ink">
             You&rsquo;ll get an email when {institutionName} changes{" "}
             {categories === null ? "any fee" : categories.length === 1 ? `its ${label(categories[0]).toLowerCase()}` : "a fee you follow"}.
           </h2>
           {categories !== null && categories.length > 1 && (
             <ul className="mt-2 flex flex-wrap gap-1.5" aria-label="Fees you follow">
               {categories.map((category) => (
-                <li key={category} className="rounded-full border border-[#E0D7C9] bg-[#FAF7F2] px-2.5 py-0.5 text-[12px] text-[#5A5347]">
+                <li key={category} className="rounded-full border border-border bg-paper px-2.5 py-0.5 text-[12px] text-ink-soft">
                   {label(category)}
                 </li>
               ))}
@@ -167,14 +167,14 @@ export function FeeAlertControl({
                 Follow every fee
               </button>
             )}
-            <Link href="/account#alerts" className="text-[13px] font-medium text-[#A93D25] hover:underline">
+            <Link href="/account#alerts" className="text-[13px] font-medium text-brick hover:underline">
               Manage alerts
             </Link>
             <button
               type="button"
               disabled={pending}
               onClick={remove}
-              className="text-[13px] font-medium text-[#6B6255] hover:text-[#1A1815] hover:underline disabled:opacity-50"
+              className="text-[13px] font-medium text-ink-muted hover:text-ink hover:underline disabled:opacity-50"
             >
               Remove
             </button>
@@ -182,10 +182,10 @@ export function FeeAlertControl({
         </>
       ) : (
         <>
-          <h2 id={`${ids}-heading`} className="mt-1 text-base font-semibold text-[#1A1815]">
+          <h2 id={`${ids}-heading`} className="mt-1 text-base font-semibold text-ink">
             {headline}
           </h2>
-          <p className="mt-1 text-[13px] leading-relaxed text-[#5A5347]">{body}</p>
+          <p className="mt-1 text-[13px] leading-relaxed text-ink-soft">{body}</p>
 
           {signedIn ? (
             <button type="button" className={`${PRIMARY} mt-3`} disabled={pending} onClick={() => save(false)}>
@@ -242,9 +242,9 @@ export function FeeAlertControl({
                   />
                 </label>
               </div>
-              <p className="text-[12px] text-[#6B6255]">
+              <p className="text-[12px] text-ink-muted">
                 Already have an account?{" "}
-                <Link href={`/login?from=${encodeURIComponent(backHref)}`} className="font-medium text-[#1A1815] hover:underline">
+                <Link href={`/login?from=${encodeURIComponent(backHref)}`} className="font-medium text-ink hover:underline">
                   Sign in
                 </Link>
               </p>
@@ -268,9 +268,9 @@ export function FeeAlertControl({
       )}
 
       {secondaryLink && (
-        <p className="mt-3 border-t border-[#F0EBE3] pt-3 text-[12px] text-[#6B6255]">
+        <p className="mt-3 border-t border-surface-200 pt-3 text-[12px] text-ink-muted">
           Work at {institutionName}?{" "}
-          <Link href={secondaryLink.href} className="font-medium text-[#A93D25] hover:underline">
+          <Link href={secondaryLink.href} className="font-medium text-brick hover:underline">
             {secondaryLink.label}
           </Link>
         </p>

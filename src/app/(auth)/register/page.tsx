@@ -1,5 +1,6 @@
 export const dynamic = "force-dynamic";
 import { RegisterForm } from "./register-form";
+import { Logo } from "@/brand/components";
 import { getCurrentUser } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { resolvePostLoginRedirect } from "@/lib/safe-redirect";
@@ -53,43 +54,36 @@ export default async function RegisterPage({
   return (
     <div className="min-h-screen flex flex-col lg:flex-row">
       {/* Left panel - hidden on mobile */}
-      <div className="hidden lg:flex lg:w-1/2 relative bg-[#FAF7F2] flex-col justify-center items-center px-12">
+      <div className="hidden lg:flex lg:w-1/2 relative bg-paper flex-col justify-center items-center px-12">
         {/* Grid texture overlay */}
         <div
           className="absolute inset-0 opacity-[0.03]"
           style={{
             backgroundImage:
-              "linear-gradient(#1A1815 1px, transparent 1px), linear-gradient(90deg, #1A1815 1px, transparent 1px)",
+              "linear-gradient(#132338 1px, transparent 1px), linear-gradient(90deg, #132338 1px, transparent 1px)",
             backgroundSize: "40px 40px",
           }}
         />
 
         <div className="relative z-10 max-w-md">
           {/* Logo */}
-          <Link href="/" className="inline-flex items-center gap-2 text-[#1A1815] no-underline mb-10">
-            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" className="h-[18px] w-[18px] text-[#C44B2E]" stroke="currentColor" strokeWidth="1.5">
-              <rect x="4" y="13" width="4" height="8" rx="1" />
-              <rect x="10" y="8" width="4" height="13" rx="1" />
-              <rect x="16" y="3" width="4" height="18" rx="1" />
-            </svg>
-            <span className="text-[15px] font-medium tracking-tight" style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}>
-              {SITE_NAME}
-            </span>
+          <Link href="/" className="inline-flex items-center gap-2 text-ink no-underline mb-10">
+            <Logo mark="fee-insight-oneline" height={22} />
           </Link>
 
           {/* Accent line */}
-          <div className="w-10 h-[3px] bg-[#C44B2E] rounded-full mb-6" />
+          <div className="w-10 h-[3px] bg-brick rounded-full mb-6" />
 
           <p
-            className="text-3xl text-[#1A1815] tracking-tight leading-snug mb-3"
-            style={{ fontFamily: "var(--font-newsreader), Georgia, serif", fontStyle: "italic" }}
+            className="font-semibold text-3xl text-ink tracking-tight leading-snug mb-3"
+            style={{ fontFamily: "var(--fi-font-sans)", fontStyle: "italic" }}
           >
             {plan
               ? `Finish setting up ${SITE_NAME} Pro — ${PLAN_DISPLAY_NAME[plan]}, ${PLAN_TEAM_LABEL}`
               : "Create your free account"}
           </p>
 
-          <p className="text-sm text-[#6B6255] leading-relaxed mb-10">
+          <p className="text-sm text-ink-muted leading-relaxed mb-10">
             {plan
               ? "Create your account, then continue straight to checkout. Your plan is active as soon as payment clears."
               : feeLabel
@@ -104,7 +98,7 @@ export default async function RegisterPage({
                 <svg aria-hidden="true"
                   viewBox="0 0 20 20"
                   fill="currentColor"
-                  className="h-[18px] w-[18px] text-[#C44B2E] mt-0.5 shrink-0"
+                  className="h-[18px] w-[18px] text-brick mt-0.5 shrink-0"
                 >
                   <path
                     fillRule="evenodd"
@@ -112,7 +106,7 @@ export default async function RegisterPage({
                     clipRule="evenodd"
                   />
                 </svg>
-                <span className="text-sm text-[#1A1815]">{feature}</span>
+                <span className="text-sm text-ink">{feature}</span>
               </li>
             ))}
           </ul>
@@ -124,17 +118,10 @@ export default async function RegisterPage({
         <div className="w-full max-w-md">
           {/* Mobile header */}
           <div className="flex items-center justify-between mb-8 lg:hidden">
-            <Link href="/" className="inline-flex items-center gap-2 text-[#1A1815] no-underline">
-              <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" className="h-[18px] w-[18px] text-[#C44B2E]" stroke="currentColor" strokeWidth="1.5">
-                <rect x="4" y="13" width="4" height="8" rx="1" />
-                <rect x="10" y="8" width="4" height="13" rx="1" />
-                <rect x="16" y="3" width="4" height="18" rx="1" />
-              </svg>
-              <span className="text-[15px] font-medium tracking-tight" style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}>
-                {SITE_NAME}
-              </span>
+            <Link href="/" className="inline-flex items-center gap-2 text-ink no-underline">
+              <Logo mark="fee-insight-oneline" height={22} />
             </Link>
-            <Link href={loginHref} className="text-[13px] font-medium text-[#6B6255] hover:text-[#1A1815] transition-colors">
+            <Link href={loginHref} className="text-[13px] font-medium text-ink-muted hover:text-ink transition-colors">
               Sign in
             </Link>
           </div>
@@ -142,12 +129,12 @@ export default async function RegisterPage({
           <div className="lg:bg-white lg:rounded-xl lg:p-8">
             <div className="text-center mb-8">
               <h1
-                className="text-2xl font-normal tracking-tight text-[#1A1815]"
-                style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
+                className="text-2xl font-extrabold tracking-tight text-ink"
+                style={{ fontFamily: "var(--fi-font-sans)" }}
               >
                 {variant === "consumer" ? "Create a free account" : "Create your account"}
               </h1>
-              <p className="mt-2 text-sm text-[#6B6255]">
+              <p className="mt-2 text-sm text-ink-muted">
                 {plan
                   ? `Create your account, then continue to checkout for ${SITE_NAME} Pro — ${PLAN_DISPLAY_NAME[plan]}.`
                   : variant === "consumer"
@@ -158,14 +145,14 @@ export default async function RegisterPage({
               </p>
             </div>
             <RegisterForm redirectTo={destination} variant={variant} checkout={plan !== null} />
-            <p className="mt-4 text-center text-sm text-[#6B6255]">
+            <p className="mt-4 text-center text-sm text-ink-muted">
               Already have an account?{" "}
-              <Link href={loginHref} className="text-[#1A1815] font-medium hover:underline">
+              <Link href={loginHref} className="text-ink font-medium hover:underline">
                 Sign in
               </Link>
             </p>
             <p className="mt-6 text-center text-sm">
-              <Link href="/" className="text-[#6B6255] hover:text-[#1A1815] hover:underline">
+              <Link href="/" className="text-ink-muted hover:text-ink hover:underline">
                 ← Back to {SITE_NAME}
               </Link>
             </p>

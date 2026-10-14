@@ -4,7 +4,7 @@ import { getDisplayName, FAMILY_COLORS } from "@/lib/fee-taxonomy";
 import { formatFeeAmount } from "@/lib/format";
 import { UnstatedAudienceFootnote, UnstatedAudienceMark, hasUnstatedAudience } from "@/components/unstated-audience";
 
-const EYEBROW = "text-[11px] font-bold uppercase tracking-[0.12em] text-[#6B6255]";
+const EYEBROW = "text-[11px] font-bold uppercase tracking-[0.12em] text-ink-muted";
 const TH = `px-4 py-2.5 ${EYEBROW}`;
 const BAR_HEADROOM = 1.1;
 const BAR_MIN_WIDTH_PCT = 2;
@@ -31,7 +31,7 @@ function familyBarScale(cats: { p75_amount: number | null; max_amount: number | 
 
 export function FamilySection({ familyName, cats }: { familyName: string; cats: FeeCategorySummary[] }) {
   const colors = FAMILY_COLORS[familyName];
-  const colorBg = colors?.dot ?? "bg-[#A09788]";
+  const colorBg = colors?.dot ?? "bg-control-border";
   const sectionMedians = cats.map((c) => c.median_amount).filter((a): a is number => a !== null);
   const sectionAvgMedian =
     sectionMedians.length > 0 ? sectionMedians.reduce((a, b) => a + b, 0) / sectionMedians.length : null;
@@ -41,30 +41,30 @@ export function FamilySection({ familyName, cats }: { familyName: string; cats: 
   return (
     <section id={familySectionId(familyName)}>
       <div className="flex items-start justify-between gap-4">
-        <h2 className={`flex items-center gap-2 text-sm font-bold ${colors?.text ?? "text-[#5A5347]"}`}>
+        <h2 className={`flex items-center gap-2 text-sm font-bold ${colors?.text ?? "text-ink-soft"}`}>
           <span className={`inline-block h-3.5 w-1.5 rounded-full ${colorBg}`} />
           {familyName}
-          <span className="ml-1 text-[11px] font-medium text-[#6B6255]">({cats.length})</span>
+          <span className="ml-1 text-[11px] font-medium text-ink-muted">({cats.length})</span>
         </h2>
         {sectionAvgMedian !== null && (
-          <div className="hidden sm:flex items-center gap-4 text-[11px] text-[#6B6255]">
+          <div className="hidden sm:flex items-center gap-4 text-[11px] text-ink-muted">
             <span>
               Avg median:{" "}
-              <span className="font-medium text-[#5A5347] tabular-nums">{money(sectionAvgMedian)}</span>
+              <span className="font-medium text-ink-soft tabular-nums">{money(sectionAvgMedian)}</span>
             </span>
             <span>
               Highest:{" "}
-              <span className="font-medium text-[#5A5347] tabular-nums">{money(sectionMaxMedian)}</span>
+              <span className="font-medium text-ink-soft tabular-nums">{money(sectionMaxMedian)}</span>
             </span>
           </div>
         )}
       </div>
 
-      <div className="mt-3 overflow-hidden rounded-xl border border-[#E8DFD1]/80 bg-white/70 backdrop-blur-sm">
+      <div className="mt-3 overflow-hidden rounded-xl border border-border/80 bg-white/70 backdrop-blur-sm">
         <div className="table-scroll">
           <table className="w-full min-w-[560px] text-left text-sm">
             <thead>
-              <tr className="border-b border-[#E8DFD1]/60 bg-[#FAF7F2]/60">
+              <tr className="border-b border-border/60 bg-paper/60">
                 <th scope="col" className={TH}>Fee</th>
                 <th scope="col" className={`${TH} text-right`}>Median</th>
                 <th scope="col" className={`hidden ${TH} text-right sm:table-cell`}>P25</th>
@@ -74,7 +74,7 @@ export function FamilySection({ familyName, cats }: { familyName: string; cats: 
                 <th scope="col" className={`${TH} text-right`}>Inst.</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-[#E8DFD1]/40">
+            <tbody className="divide-y divide-border/40">
               {cats.map((cat) => (
                 <CategoryRow key={cat.fee_category} cat={cat} barScale={barScale} />
               ))}
@@ -100,43 +100,43 @@ function CategoryRow({ cat, barScale }: { cat: FeeCategorySummary; barScale: num
     : 0;
 
   return (
-    <tr className="group hover:bg-[#FAF7F2]/60 transition-colors">
+    <tr className="group hover:bg-paper/60 transition-colors">
       <td className="px-4 py-2.5">
         <Link
           href={`/fees/${cat.fee_category}`}
-          className="font-medium text-[#1A1815] group-hover:text-[#A93D25] transition-colors"
+          className="font-medium text-ink group-hover:text-brick transition-colors"
         >
           {getDisplayName(cat.fee_category)}
         </Link>
       </td>
-      <td className="px-4 py-2.5 text-right tabular-nums font-semibold text-[#1A1815]">
+      <td className="px-4 py-2.5 text-right tabular-nums font-semibold text-ink">
         {money(cat.median_amount)}
         <UnstatedAudienceMark show={cat.median_amount !== null && hasUnstatedAudience(cat)} />
       </td>
-      <td className="hidden px-4 py-2.5 text-right tabular-nums text-[#6B6255] sm:table-cell">
+      <td className="hidden px-4 py-2.5 text-right tabular-nums text-ink-muted sm:table-cell">
         {money(cat.p25_amount)}
       </td>
-      <td className="hidden px-4 py-2.5 text-right tabular-nums text-[#6B6255] sm:table-cell">
+      <td className="hidden px-4 py-2.5 text-right tabular-nums text-ink-muted sm:table-cell">
         {money(cat.p75_amount)}
       </td>
-      <td className="hidden px-4 py-2.5 text-right tabular-nums text-[#6B6255] text-[12px] md:table-cell">
+      <td className="hidden px-4 py-2.5 text-right tabular-nums text-ink-muted text-[12px] md:table-cell">
         {money(cat.min_amount ?? 0)} &ndash; {money(cat.max_amount ?? 0)}
       </td>
       <td className="px-4 py-2.5">
-        <div className="relative h-3 w-full min-w-[80px] rounded-full bg-[#E8DFD1]/40">
+        <div className="relative h-3 w-full min-w-[80px] rounded-full bg-border/40">
           <div
-            className="absolute top-0 h-3 rounded-full bg-[#D4C9BA]/70 group-hover:bg-[#C44B2E]/20 transition-colors"
+            className="absolute top-0 h-3 rounded-full bg-border/70 group-hover:bg-brick/20 transition-colors"
             style={{ left: `${barLeftPct}%`, width: `${barWidthPct}%` }}
           />
           {cat.median_amount !== null && (
             <div
-              className="absolute top-0 h-3 w-0.5 rounded-full bg-[#7A7062] group-hover:bg-[#C44B2E] transition-colors"
+              className="absolute top-0 h-3 w-0.5 rounded-full bg-ink-muted group-hover:bg-brick-ink transition-colors"
               style={{ left: `${medianPct}%` }}
             />
           )}
         </div>
       </td>
-      <td className="px-4 py-2.5 text-right tabular-nums text-[#6B6255]">
+      <td className="px-4 py-2.5 text-right tabular-nums text-ink-muted">
         {cat.institution_count.toLocaleString()}
       </td>
     </tr>

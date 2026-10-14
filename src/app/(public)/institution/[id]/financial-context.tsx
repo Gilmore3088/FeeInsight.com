@@ -27,16 +27,16 @@ export function FinancialContext({
   const asOf = latest ? formatReportQuarter(latest.reportDate) : null;
 
   return (
-    <section className="border border-[#E0D7C9] bg-white p-5">
+    <section className="border border-border bg-white p-5">
       <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#6B6255]">
+          <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-ink-muted">
             Financial Context
           </p>
-          <h2 className="text-lg font-semibold text-[#1A1815]">Size and fee revenue</h2>
+          <h2 className="text-lg font-semibold text-ink">Size and fee revenue</h2>
         </div>
         {latest && asOf && (
-          <p className="text-sm text-[#6B6255]">
+          <p className="text-sm text-ink-muted">
             Financials as of {asOf} · {sourceLabel(latest.source)}
           </p>
         )}
@@ -62,8 +62,8 @@ export function FinancialContext({
           </div>
 
           {history.length > 1 && latest.source !== "ncua" && (
-            <div className="mt-5 rounded-lg border border-[#E0D7C9] bg-[#FAF7F2] p-4">
-              <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#6B6255]">
+            <div className="mt-5 rounded-lg border border-border bg-paper p-4">
+              <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-ink-muted">
                 Service charge income by quarter
               </p>
               <div className="mt-3 space-y-2">
@@ -72,10 +72,10 @@ export function FinancialContext({
                     key={quarter.reportDate}
                     className="flex items-center justify-between gap-3 text-sm"
                   >
-                    <span className="font-medium text-[#1A1815]">
+                    <span className="font-medium text-ink">
                       {formatReportQuarter(quarter.reportDate)}
                     </span>
-                    <span className="tabular-nums text-[#5A5347]">
+                    <span className="tabular-nums text-ink-soft">
                       {formatCompactDollars(quarter.serviceChargeIncome)}
                     </span>
                   </div>
@@ -85,7 +85,7 @@ export function FinancialContext({
           )}
         </>
       ) : (
-        <p className="mt-4 rounded-lg border border-[#E0D7C9] bg-[#FAF7F2] p-4 text-sm text-[#6B6255]">
+        <p className="mt-4 rounded-lg border border-border bg-paper p-4 text-sm text-ink-muted">
           Financial context is not available for this institution in the current dataset.
         </p>
       )}

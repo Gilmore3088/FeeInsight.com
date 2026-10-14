@@ -67,17 +67,17 @@ export default async function MethodologyPage() {
       <div style={{ maxWidth: "760px", margin: "0 auto", padding: "64px 24px 96px" }}>
 
         {/* Header */}
-        <div style={{ borderBottom: "2px solid #1A1815", paddingBottom: "24px", marginBottom: "48px" }}>
-          <p style={{ fontSize: "11px", textTransform: "uppercase", letterSpacing: "0.12em", color: "#A93D25", fontWeight: 700, marginBottom: "12px" }}>
+        <div style={{ borderBottom: "2px solid #132338", paddingBottom: "24px", marginBottom: "48px" }}>
+          <p style={{ fontSize: "11px", textTransform: "uppercase", letterSpacing: "0.12em", color: "#b23a32", fontWeight: 700, marginBottom: "12px" }}>
             Research Methodology
           </p>
-          <h1 style={{ fontSize: "36px", fontWeight: 600, letterSpacing: "-0.02em", color: "#1A1815", marginBottom: "12px", fontFamily: "var(--font-newsreader), Georgia, serif", lineHeight: 1.2 }}>
+          <h1 style={{ fontSize: "36px", fontWeight: 600, letterSpacing: "-0.02em", color: "#132338", marginBottom: "12px", fontFamily: "var(--fi-font-sans)", lineHeight: 1.2 }}>
             How the Bank Fee Index works
           </h1>
-          <p style={{ fontSize: "16px", color: "#5A5347", lineHeight: 1.6, maxWidth: "600px" }}>
+          <p style={{ fontSize: "16px", color: "#354252", lineHeight: 1.6, maxWidth: "600px" }}>
             A transparent account of how we collect, classify, and verify fee data across {institutions} financial institutions — and what that means for the accuracy of our benchmarks.
           </p>
-          <p style={{ fontSize: "12px", color: "#7A7062", marginTop: "16px" }}>
+          <p style={{ fontSize: "12px", color: "#55606f", marginTop: "16px" }}>
             {RESEARCH_IMPRINT} &mdash; {summary.freshnessLabel}
           </p>
         </div>
@@ -167,11 +167,11 @@ export default async function MethodologyPage() {
         />
 
         {/* Footer */}
-        <div style={{ marginTop: "64px", paddingTop: "24px", borderTop: "1px solid #E8DFD1", fontSize: "12px", color: "#7A7062" }}>
+        <div style={{ marginTop: "64px", paddingTop: "24px", borderTop: "1px solid #ddd5c6", fontSize: "12px", color: "#55606f" }}>
           <p>{SITE_NAME} is independently operated. Our data collection methodology is designed to comply with the terms of service of the financial institutions we monitor. We collect only publicly disclosed fee information.</p>
           <p style={{ marginTop: "8px" }}>
             Questions about our methodology:{" "}
-            <a href={`mailto:${CONTACT_EMAIL}`} style={{ color: "#5A5347" }}>{CONTACT_EMAIL}</a>
+            <a href={`mailto:${CONTACT_EMAIL}`} style={{ color: "#354252" }}>{CONTACT_EMAIL}</a>
           </p>
         </div>
 
@@ -184,14 +184,14 @@ export default async function MethodologyPage() {
 function Section({ id, label, title, body }: { id?: string; label: string; title: string; body: string[] }) {
   return (
     <section id={id} style={{ marginBottom: "48px", scrollMarginTop: "96px" }}>
-      <p style={{ fontSize: "11px", textTransform: "uppercase", letterSpacing: "0.12em", color: "#A93D25", fontWeight: 700, marginBottom: "8px" }}>
+      <p style={{ fontSize: "11px", textTransform: "uppercase", letterSpacing: "0.12em", color: "#b23a32", fontWeight: 700, marginBottom: "8px" }}>
         {label}
       </p>
-      <h2 style={{ fontSize: "22px", fontWeight: 600, color: "#1A1815", marginBottom: "16px", fontFamily: "var(--font-newsreader), Georgia, serif", letterSpacing: "-0.01em", lineHeight: 1.3 }}>
+      <h2 style={{ fontSize: "22px", fontWeight: 600, color: "#132338", marginBottom: "16px", fontFamily: "var(--fi-font-sans)", letterSpacing: "-0.01em", lineHeight: 1.3 }}>
         {title}
       </h2>
       {body.map((paragraph, i) => (
-        <p key={i} style={{ fontSize: "15px", color: "#3D3830", lineHeight: 1.75, marginBottom: "16px" }}>
+        <p key={i} style={{ fontSize: "15px", color: "#132338", lineHeight: 1.75, marginBottom: "16px" }}>
           {paragraph}
         </p>
       ))}

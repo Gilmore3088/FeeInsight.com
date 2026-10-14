@@ -27,7 +27,7 @@ function DateCell({ label, value, active, now, empty = "Not set" }: { label: str
       <p className={`text-[9px] font-bold uppercase tracking-[0.08em] text-warm-600 md:hidden`} style={SANS}>
         {label}
       </p>
-      <p className={`text-[13px] [font-variant-numeric:tabular-nums] ${active ? "font-semibold text-[#A93D25]" : "text-warm-700"}`}>
+      <p className={`text-[13px] [font-variant-numeric:tabular-nums] ${active ? "font-semibold text-brick" : "text-warm-700"}`}>
         {d ? <time dateTime={d.iso}>{d.absolute}</time> : <span className="text-warm-500">{empty}</span>}
       </p>
     </div>
@@ -53,14 +53,14 @@ function RuleRow({ rule, now }: { rule: TrackedRuleView; now: Date }) {
               </span>
             ))}
           {rule.topics.map((topic) => (
-            <span key={topic} className="rounded-full border border-[#A93D25]/40 px-2 py-0.5 font-medium text-[#A93D25]">
+            <span key={topic} className="rounded-full border border-brick/40 px-2 py-0.5 font-medium text-brick">
               {RULE_TOPIC_LABELS[topic] ?? topic}
             </span>
           ))}
         </div>
         <h4 className="mt-1 text-[15px] font-medium leading-snug text-warm-900">
           {rule.url ? (
-            <a href={rule.url} target="_blank" rel="noopener noreferrer" className="text-warm-900 no-underline hover:text-[#A93D25]">
+            <a href={rule.url} target="_blank" rel="noopener noreferrer" className="text-warm-900 no-underline hover:text-brick">
               {rule.title}
             </a>
           ) : (
@@ -69,7 +69,7 @@ function RuleRow({ rule, now }: { rule: TrackedRuleView; now: Date }) {
         </h4>
         {rule.abstract || refs.length > 0 || published ? (
           <details className="group mt-1 text-[12px] text-warm-600">
-            <summary className="cursor-pointer list-none select-none text-[11px] font-medium text-warm-600 hover:text-[#A93D25] [&::-webkit-details-marker]:hidden">
+            <summary className="cursor-pointer list-none select-none text-[11px] font-medium text-warm-600 hover:text-brick [&::-webkit-details-marker]:hidden">
               <span className="group-open:hidden">Summary and references ▸</span>
               <span className="hidden group-open:inline">Hide ▾</span>
             </summary>
@@ -78,7 +78,7 @@ function RuleRow({ rule, now }: { rule: TrackedRuleView; now: Date }) {
               {published ? <span>Published <time dateTime={published.iso}>{published.absolute}</time></span> : null}
               {refs.length > 0 ? <span>{refs.join(" · ")}</span> : null}
               {rule.url ? (
-                <a href={rule.url} target="_blank" rel="noopener noreferrer" className="font-medium text-[#A93D25] no-underline hover:underline">
+                <a href={rule.url} target="_blank" rel="noopener noreferrer" className="font-medium text-brick no-underline hover:underline">
                   Federal Register document →
                 </a>
               ) : null}
@@ -97,7 +97,7 @@ function RuleRow({ rule, now }: { rule: TrackedRuleView; now: Date }) {
         <DateCell label="Takes effect" value={rule.effective_on} active={rule.stage === "final_not_yet_effective"} now={now} />
         <div className="min-w-0 self-start md:text-right">
           {deadline ? (
-            <span className="inline-block rounded-full bg-[#A93D25] px-2 py-0.5 text-[10px] font-semibold text-white" style={SANS}>
+            <span className="inline-block rounded-full bg-brick px-2 py-0.5 text-[10px] font-semibold text-white" style={SANS}>
               {deadline}
             </span>
           ) : (

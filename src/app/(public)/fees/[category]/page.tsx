@@ -29,8 +29,9 @@ interface PageProps {
   params: Promise<{ category: string }>;
 }
 
-const EYEBROW = "text-[11px] font-bold uppercase tracking-[0.12em] text-[#6B6255]";
-const SERIF = { fontFamily: "var(--font-newsreader), Georgia, serif" };
+const EYEBROW = "text-[11px] font-bold uppercase tracking-[0.12em] text-ink-muted";
+const SERIF = { fontFamily: "var(--fi-font-sans)" };
+const MONO_FIGURE = { fontFamily: "var(--fi-font-mono)" } as const;
 
 /** Thousands-separated dollars ("$5,000", "$2.50"); "-" when unavailable. */
 const money = (value: number | null | undefined) => formatFeeAmount(value) ?? "-";
@@ -75,11 +76,11 @@ function WarmTable({
   minWidth?: string;
 }) {
   return (
-    <div className="mt-3 overflow-hidden rounded-xl border border-[#E8DFD1]/80 bg-white/70 backdrop-blur-sm">
+    <div className="mt-3 overflow-hidden rounded-xl border border-border/80 bg-white/70 backdrop-blur-sm">
       <div className="table-scroll">
         <table className={`w-full text-left text-sm ${minWidth}`}>
           <thead>
-            <tr className="border-b border-[#E8DFD1]/60 bg-[#FAF7F2]/60">
+            <tr className="border-b border-border/60 bg-paper/60">
               {headers.map((h, i) => (
                 <th
                   key={h}
@@ -91,7 +92,7 @@ function WarmTable({
               ))}
             </tr>
           </thead>
-          <tbody className="divide-y divide-[#E8DFD1]/40">{children}</tbody>
+          <tbody className="divide-y divide-border/40">{children}</tbody>
         </table>
       </div>
     </div>
@@ -158,16 +159,16 @@ export default async function FeeCategoryPage({ params }: PageProps) {
       />
 
       {/* Breadcrumb */}
-      <nav aria-label="Breadcrumb" className="flex items-center gap-2 text-[12px] text-[#6B6255] mb-6">
-        <Link href="/" className="hover:text-[#1A1815] transition-colors">
+      <nav aria-label="Breadcrumb" className="flex items-center gap-2 text-[12px] text-ink-muted mb-6">
+        <Link href="/" className="hover:text-ink transition-colors">
           Home
         </Link>
-        <span className="text-[#D4C9BA]">/</span>
-        <Link href="/fees" className="hover:text-[#1A1815] transition-colors">
+        <span className="text-border">/</span>
+        <Link href="/fees" className="hover:text-ink transition-colors">
           Fee Index
         </Link>
-        <span className="text-[#D4C9BA]">/</span>
-        <span className="text-[#5A5347]">{name}</span>
+        <span className="text-border">/</span>
+        <span className="text-ink-soft">{name}</span>
       </nav>
 
       {/* Header */}
@@ -182,18 +183,18 @@ export default async function FeeCategoryPage({ params }: PageProps) {
       </div>
 
       <h1
-        className="mt-3 text-[1.75rem] sm:text-[2.25rem] leading-[1.12] tracking-[-0.02em] text-[#1A1815]"
+        className="font-extrabold mt-3 text-[1.75rem] sm:text-[2.25rem] leading-[1.12] tracking-[-0.02em] text-ink"
         style={SERIF}
       >
         {name} Fee
       </h1>
-      <p className="mt-2 text-[14px] text-[#5A5347]">
+      <p className="mt-2 text-[14px] text-ink-soft">
         {national ? benchmarkBasis(national, refreshedOn) : "Not enough published fees yet for a national benchmark."}
       </p>
-      <p className="mt-1 text-[12px] text-[#6B6255]">
+      <p className="mt-1 text-[12px] text-ink-muted">
         Each institution counts once. The median and percentiles are taken across institutions, from
         published fee schedules.{" "}
-        <Link href="/methodology" className="font-medium text-[#A93D25] hover:underline">
+        <Link href="/methodology" className="font-medium text-brick hover:underline">
           Methodology
         </Link>
       </p>
@@ -211,14 +212,14 @@ export default async function FeeCategoryPage({ params }: PageProps) {
         ].map((s) => (
           <div
             key={s.label}
-            className="rounded-xl border border-[#E8DFD1]/80 bg-white/70 backdrop-blur-sm px-4 py-3.5"
+            className="rounded-xl border border-border/80 bg-white/70 backdrop-blur-sm px-4 py-3.5"
           >
             <p className={EYEBROW}>
               {s.label}
             </p>
             <p
-              className="mt-1 text-[22px] font-light tabular-nums text-[#1A1815]"
-              style={SERIF}
+              className="mt-1 text-[22px] font-semibold tabular-nums text-ink"
+              style={MONO_FIGURE}
             >
               {s.value}
               <UnstatedAudienceMark show={unstatedAudience && s.label === "Median"} />
@@ -229,11 +230,11 @@ export default async function FeeCategoryPage({ params }: PageProps) {
       <UnstatedAudienceFootnote show={unstatedAudience} className="mt-2" />
 
       {showRates && rateStats && (
-        <section className="mt-6 rounded-xl border border-[#E8DFD1]/80 bg-white/70 px-5 py-4">
-          <h2 className="text-[16px] font-medium text-[#1A1815]" style={SERIF}>
+        <section className="mt-6 rounded-xl border border-border/80 bg-white/70 px-5 py-4">
+          <h2 className="text-[16px] font-bold text-ink" style={SERIF}>
             When stated as a rate
           </h2>
-          <p className="mt-1 text-[13px] text-[#5A5347]">
+          <p className="mt-1 text-[13px] text-ink-soft">
             {rateStats.institution_count.toLocaleString("en-US")} institutions state this fee as a percentage
             rather than a dollar amount. Those rates are summarized here on their own, never mixed into the
             dollar figures above.
@@ -252,7 +253,7 @@ export default async function FeeCategoryPage({ params }: PageProps) {
             ].map((s) => (
               <div key={s.label}>
                 <p className={EYEBROW}>{s.label}</p>
-                <p className="mt-1 text-[20px] font-light tabular-nums text-[#1A1815]" style={SERIF}>
+                <p className="mt-1 text-[20px] font-semibold tabular-nums text-ink" style={MONO_FIGURE}>
                   {s.value}
                 </p>
               </div>
@@ -264,12 +265,12 @@ export default async function FeeCategoryPage({ params }: PageProps) {
       {/* Distribution */}
       <section className="mt-10">
         <h2
-          className="text-[16px] font-medium text-[#1A1815]"
+          className="text-[16px] font-bold text-ink"
           style={SERIF}
         >
           Fee Distribution
         </h2>
-        <div className="mt-3 rounded-xl border border-[#E8DFD1]/80 bg-white/70 backdrop-blur-sm p-5">
+        <div className="mt-3 rounded-xl border border-border/80 bg-white/70 backdrop-blur-sm p-5">
           <DistributionChart
             values={institutionValues}
             median={stats.median}
@@ -279,12 +280,12 @@ export default async function FeeCategoryPage({ params }: PageProps) {
 
       {/* Guide to this fee — free for everyone */}
       {consumerGuides.length > 0 && (
-        <section className="mt-8 rounded-xl border border-[#E8DFD1] bg-white/70 px-5 py-4">
-          <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-[#C44B2E]/70">
+        <section className="mt-8 rounded-xl border border-border bg-white/70 px-5 py-4">
+          <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-brick/70">
             New to this fee?
           </p>
           <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2">
-            <p className="text-[14px] text-[#5A5347]">
+            <p className="text-[14px] text-ink-soft">
               Read the plain-language guide to {name.toLowerCase()} — what it is, who
               charges the most, and how to avoid it. Free to read.
             </p>
@@ -292,7 +293,7 @@ export default async function FeeCategoryPage({ params }: PageProps) {
               <Link
                 key={guide.slug}
                 href={`/guides/${guide.slug}`}
-                className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-[#E8DFD1] bg-[#FAF7F2] px-4 py-1.5 text-[12px] font-medium text-[#5A5347] no-underline transition-colors hover:border-[#C44B2E]/30 hover:text-[#A93D25]"
+                className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-border bg-paper px-4 py-1.5 text-[12px] font-medium text-ink-soft no-underline transition-colors hover:border-brick/30 hover:text-brick"
               >
                 {guide.title}
               </Link>
@@ -302,14 +303,14 @@ export default async function FeeCategoryPage({ params }: PageProps) {
       )}
 
       {/* The reader's own bank — the question every fee page is really being asked */}
-      <section className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#C44B2E]/15 bg-gradient-to-r from-[#FFFDF9] to-[#FAF7F2] px-5 py-4">
-        <p className="text-[14px] text-[#5A5347]">
-          See what <span className="font-medium text-[#1A1815]">your</span> bank charges for{" "}
+      <section className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-brick/15 bg-gradient-to-r from-surface-0 to-paper px-5 py-4">
+        <p className="text-[14px] text-ink-soft">
+          See what <span className="font-medium text-ink">your</span> bank charges for{" "}
           {name.replace(/\s*\([^)]*\)/g, "").toLowerCase()}, next to the national median.
         </p>
         <Link
           href={`/institutions?fee=${category}`}
-          className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-[#C44B2E] px-4 py-2 text-[12px] font-semibold text-white no-underline transition-colors hover:bg-[#A83D25]"
+          className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-brick px-4 py-2 text-[12px] font-semibold text-white no-underline transition-colors hover:bg-brick-ink"
         >
           Find your institution
         </Link>
@@ -319,7 +320,7 @@ export default async function FeeCategoryPage({ params }: PageProps) {
       {detail.by_fed_district.length > 0 && (
         <section className="mt-10">
           <h2
-            className="text-[16px] font-medium text-[#1A1815]"
+            className="text-[16px] font-bold text-ink"
             style={SERIF}
           >
             By Federal Reserve District
@@ -334,22 +335,22 @@ export default async function FeeCategoryPage({ params }: PageProps) {
               return (
                 <tr
                   key={row.dimension_value}
-                  className="hover:bg-[#FAF7F2]/60 transition-colors"
+                  className="hover:bg-paper/60 transition-colors"
                 >
-                  <td className="px-4 py-2.5 font-medium text-[#1A1815]">
+                  <td className="px-4 py-2.5 font-medium text-ink">
                     {distName}{" "}
-                    <span className="text-[#6B6255]">
+                    <span className="text-ink-muted">
                       ({row.dimension_value})
                     </span>
                   </td>
-                  <td className="px-4 py-2.5 text-right tabular-nums font-medium text-[#1A1815]">
+                  <td className="px-4 py-2.5 text-right tabular-nums font-medium text-ink">
                     {money(row.median_amount)}
                   </td>
-                  <td className="px-4 py-2.5 text-right tabular-nums text-[#6B6255]">
+                  <td className="px-4 py-2.5 text-right tabular-nums text-ink-muted">
                     {money(row.min_amount)} &ndash;{" "}
                     {money(row.max_amount)}
                   </td>
-                  <td className="px-4 py-2.5 text-right tabular-nums text-[#6B6255]">
+                  <td className="px-4 py-2.5 text-right tabular-nums text-ink-muted">
                     {row.count.toLocaleString()}
                   </td>
                 </tr>
@@ -364,19 +365,19 @@ export default async function FeeCategoryPage({ params }: PageProps) {
         <section className="mt-10">
           <div className="flex items-center gap-3 mb-4">
             <h2
-              className="text-[16px] font-medium text-[#1A1815]"
+              className="text-[16px] font-bold text-ink"
               style={SERIF}
             >
               Related Fees in {family}
             </h2>
-            <span className="h-px flex-1 bg-[#E8DFD1]" />
+            <span className="h-px flex-1 bg-border" />
           </div>
           <div className="flex flex-wrap gap-2">
             {familyMembers.map((cat) => (
               <Link
                 key={cat}
                 href={`/fees/${cat}`}
-                className="rounded-full border border-[#E8DFD1] px-3.5 py-1.5 text-[12px] font-medium text-[#5A5347] hover:border-[#C44B2E]/30 hover:text-[#A93D25] transition-colors no-underline"
+                className="rounded-full border border-border px-3.5 py-1.5 text-[12px] font-medium text-ink-soft hover:border-brick/30 hover:text-brick transition-colors no-underline"
               >
                 {getDisplayName(cat)}
               </Link>
@@ -386,11 +387,11 @@ export default async function FeeCategoryPage({ params }: PageProps) {
       )}
 
       {/* Methodology */}
-      <section className="mt-12 rounded-xl border border-[#E8DFD1] bg-[#FAF7F2]/50 p-6">
+      <section className="mt-12 rounded-xl border border-border bg-paper/50 p-6">
         <h3 className={EYEBROW}>
           Methodology
         </h3>
-        <p className="mt-2 text-[13px] leading-relaxed text-[#6B6255]">
+        <p className="mt-2 text-[13px] leading-relaxed text-ink-muted">
           Based on {entryCount.toLocaleString()} published fee entries from{" "}
           {institutionCount.toLocaleString()} US banks and credit unions, read from their published
           fee schedules. Fees the software is not sure about are held for a person to check and are
@@ -404,7 +405,7 @@ export default async function FeeCategoryPage({ params }: PageProps) {
       {isPro && detail.by_charter_type.length > 0 && (
         <section className="mt-10">
           <h2
-            className="text-[16px] font-medium text-[#1A1815]"
+            className="text-[16px] font-bold text-ink"
             style={SERIF}
           >
             Bank vs. Credit Union
@@ -413,19 +414,19 @@ export default async function FeeCategoryPage({ params }: PageProps) {
             {detail.by_charter_type.map((row) => (
               <tr
                 key={row.dimension_value}
-                className="hover:bg-[#FAF7F2]/60 transition-colors"
+                className="hover:bg-paper/60 transition-colors"
               >
-                <td className="px-4 py-2.5 font-medium text-[#1A1815]">
+                <td className="px-4 py-2.5 font-medium text-ink">
                   {row.dimension_value}
                 </td>
-                <td className="px-4 py-2.5 text-right tabular-nums font-medium text-[#1A1815]">
+                <td className="px-4 py-2.5 text-right tabular-nums font-medium text-ink">
                   {money(row.median_amount)}
                 </td>
-                <td className="px-4 py-2.5 text-right tabular-nums text-[#6B6255]">
+                <td className="px-4 py-2.5 text-right tabular-nums text-ink-muted">
                   {money(row.min_amount)} &ndash;{" "}
                   {money(row.max_amount)}
                 </td>
-                <td className="px-4 py-2.5 text-right tabular-nums text-[#6B6255]">
+                <td className="px-4 py-2.5 text-right tabular-nums text-ink-muted">
                   {row.count.toLocaleString()}
                 </td>
               </tr>
@@ -438,7 +439,7 @@ export default async function FeeCategoryPage({ params }: PageProps) {
       {isPro && detail.by_asset_tier.length > 0 && (
         <section className="mt-10">
           <h2
-            className="text-[16px] font-medium text-[#1A1815]"
+            className="text-[16px] font-bold text-ink"
             style={SERIF}
           >
             By Asset Tier
@@ -447,19 +448,19 @@ export default async function FeeCategoryPage({ params }: PageProps) {
             {detail.by_asset_tier.map((row) => (
               <tr
                 key={row.dimension_value}
-                className="hover:bg-[#FAF7F2]/60 transition-colors"
+                className="hover:bg-paper/60 transition-colors"
               >
-                <td className="px-4 py-2.5 font-medium text-[#1A1815]">
+                <td className="px-4 py-2.5 font-medium text-ink">
                   {FDIC_TIER_LABELS[row.dimension_value] ?? row.dimension_value}
                 </td>
-                <td className="px-4 py-2.5 text-right tabular-nums font-medium text-[#1A1815]">
+                <td className="px-4 py-2.5 text-right tabular-nums font-medium text-ink">
                   {money(row.median_amount)}
                 </td>
-                <td className="px-4 py-2.5 text-right tabular-nums text-[#6B6255]">
+                <td className="px-4 py-2.5 text-right tabular-nums text-ink-muted">
                   {money(row.min_amount)} &ndash;{" "}
                   {money(row.max_amount)}
                 </td>
-                <td className="px-4 py-2.5 text-right tabular-nums text-[#6B6255]">
+                <td className="px-4 py-2.5 text-right tabular-nums text-ink-muted">
                   {row.count.toLocaleString()}
                 </td>
               </tr>
@@ -472,11 +473,11 @@ export default async function FeeCategoryPage({ params }: PageProps) {
       {isPro && detail.by_state.length > 0 && (
         <section className="mt-10">
           <h2
-            className="text-[16px] font-medium text-[#1A1815]"
+            className="text-[16px] font-bold text-ink"
             style={SERIF}
           >
             By State
-            <span className="ml-2 text-[12px] font-normal text-[#6B6255]">
+            <span className="ml-2 text-[12px] font-normal text-ink-muted">
               Top {detail.by_state.length} by observation count
             </span>
           </h2>
@@ -484,21 +485,21 @@ export default async function FeeCategoryPage({ params }: PageProps) {
             {detail.by_state.map((row) => (
               <tr
                 key={row.dimension_value}
-                className="hover:bg-[#FAF7F2]/60 transition-colors"
+                className="hover:bg-paper/60 transition-colors"
               >
-                <td className="px-4 py-2.5 font-medium text-[#1A1815]">
+                <td className="px-4 py-2.5 font-medium text-ink">
                   {STATE_NAMES[row.dimension_value] ?? row.dimension_value}
-                  <span className="ml-1.5 text-[#6B6255]">
+                  <span className="ml-1.5 text-ink-muted">
                     ({row.dimension_value})
                   </span>
                 </td>
-                <td className="px-4 py-2.5 text-right tabular-nums font-medium text-[#1A1815]">
+                <td className="px-4 py-2.5 text-right tabular-nums font-medium text-ink">
                   {money(row.median_amount)}
                 </td>
-                <td className="px-4 py-2.5 text-right tabular-nums text-[#6B6255]">
+                <td className="px-4 py-2.5 text-right tabular-nums text-ink-muted">
                   {money(row.avg_amount)}
                 </td>
-                <td className="px-4 py-2.5 text-right tabular-nums text-[#6B6255]">
+                <td className="px-4 py-2.5 text-right tabular-nums text-ink-muted">
                   {row.count.toLocaleString()}
                 </td>
               </tr>

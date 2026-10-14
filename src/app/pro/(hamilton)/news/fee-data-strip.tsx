@@ -21,7 +21,7 @@ export function FeeDataStrip({ strip, example = false, now }: { strip: Strip; ex
         {strip.figures.map((figure) => (
           <div key={figure.category} className="grid grid-cols-1 gap-x-3 sm:grid-cols-[10rem_1fr]">
             <dt className="text-[12px] font-semibold text-warm-900">
-              <Link href={figure.href} className="no-underline hover:text-[#A93D25]">
+              <Link href={figure.href} className="no-underline hover:text-brick">
                 {figure.label}
               </Link>
             </dt>
@@ -49,7 +49,7 @@ export function FeeDataStrip({ strip, example = false, now }: { strip: Strip; ex
       <ul className="mt-2.5 flex flex-wrap gap-x-3 gap-y-1 text-[12px]">
         {strip.links.map((link) => (
           <li key={link.href}>
-            <Link href={link.href} className="font-semibold text-[#A93D25] no-underline underline-offset-2 hover:underline">
+            <Link href={link.href} className="font-semibold text-brick no-underline underline-offset-2 hover:underline">
               {link.label} →
             </Link>
           </li>
@@ -57,7 +57,7 @@ export function FeeDataStrip({ strip, example = false, now }: { strip: Strip; ex
       </ul>
 
       <p className="mt-2 border-t border-dashed border-warm-200 pt-2 text-[12px]">
-        <Link href={strip.scenario.href} className="font-semibold text-warm-900 underline decoration-warm-300 underline-offset-2 hover:text-[#A93D25]">
+        <Link href={strip.scenario.href} className="font-semibold text-warm-900 underline decoration-warm-300 underline-offset-2 hover:text-brick">
           {strip.scenario.label} →
         </Link>
         <span className="block text-[11px] text-warm-600 sm:ml-2 sm:inline">{strip.scenario.caption}</span>

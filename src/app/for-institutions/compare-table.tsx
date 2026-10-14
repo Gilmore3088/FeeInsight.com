@@ -69,12 +69,12 @@ export function CompareTableSection({
   return (
     <section className="bg-white border-b border-warm-200">
       <div className="mx-auto max-w-page px-6 py-14">
-        <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#6B6255]">
+        <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-ink-muted">
           How this compares
         </p>
         <h2
-          className="mt-3 text-warm-900 text-[28px]"
-          style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
+          className="font-bold mt-3 text-warm-900 text-[28px]"
+          style={{ fontFamily: "var(--fi-font-sans)" }}
         >
           Four ways to find out what competitors charge
         </h2>

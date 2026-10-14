@@ -81,7 +81,7 @@ export function JurisdictionField({
 
 function KindBadge({ item }: { item: StateWireItem }) {
   const base = "kind-badge shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider";
-  if (item.kind === "bill") return <span className={`${base} bg-[#C44B2E] text-white`}>Bill</span>;
+  if (item.kind === "bill") return <span className={`${base} bg-brick text-white`}>Bill</span>;
   if (item.kind === "regulator") return <span className={`${base} bg-warm-900 text-white`}>Regulator</span>;
   return (
     <span className={`${base} border border-dashed border-warm-500 bg-transparent text-warm-700`}>
@@ -104,7 +104,7 @@ export function BillStepper({ stage }: { stage: string | null }) {
             <li key={step} aria-current={current ? "step" : undefined} className="min-w-0">
               <span
                 aria-hidden="true"
-                className={`block h-1 rounded-full ${done ? (stopped ? "bg-warm-600" : "bg-[#C44B2E]") : "bg-warm-200"}`}
+                className={`block h-1 rounded-full ${done ? (stopped ? "bg-warm-600" : "bg-brick") : "bg-warm-200"}`}
               />
               <span
                 className={`mt-1 block text-[10px] leading-tight ${
@@ -160,7 +160,7 @@ function ItemRow({
 }) {
   const rail =
     item.kind === "bill"
-      ? "border-solid border-[#C44B2E]"
+      ? "border-solid border-brick"
       : item.kind === "regulator"
         ? "border-solid border-warm-800"
         : "border-dashed border-warm-400";
@@ -177,13 +177,13 @@ function ItemRow({
           <span className="font-semibold text-warm-700 [font-variant-numeric:tabular-nums]">{item.identifier}</span>
         ) : null}
         {fees.length > 0 ? (
-          <span className="font-semibold text-[#A93D25]">{fees.map((f) => FEE_TYPE_LABELS[f]).join(", ")}</span>
+          <span className="font-semibold text-brick">{fees.map((f) => FEE_TYPE_LABELS[f]).join(", ")}</span>
         ) : item.kind === "regulator" && item.fee_related ? (
-          <span className="font-semibold uppercase tracking-wider text-[#A93D25]">Fees</span>
+          <span className="font-semibold uppercase tracking-wider text-brick">Fees</span>
         ) : null}
       </p>
       <h3
-        className={`mt-1.5 text-[16px] font-medium leading-snug transition-colors group-hover:text-[#A93D25] sm:text-[17px] ${
+        className={`mt-1.5 text-[16px] font-medium leading-snug transition-colors group-hover:text-brick sm:text-[17px] ${
           item.kind === "press" ? "text-warm-700" : "text-warm-900"
         }`}
       >
@@ -276,8 +276,8 @@ function WatchToggle({ state, watch }: { state: string; watch: WireWatch }) {
         aria-pressed={watching}
         className={`rounded-lg border px-2.5 py-1 text-[12px] font-semibold transition-colors disabled:opacity-50 ${
           watching
-            ? "border-[#C44B2E] bg-[#C44B2E] text-white hover:bg-[#A93D25]"
-            : "border-warm-300 bg-white text-warm-900 hover:border-[#C44B2E] hover:text-[#A93D25]"
+            ? "border-brick bg-brick text-white hover:bg-brick-ink"
+            : "border-warm-300 bg-white text-warm-900 hover:border-brick hover:text-brick"
         }`}
       >
         {watching ? "★ Watching this state" : "☆ Watch this state"}
@@ -304,11 +304,11 @@ function MyStatesBar({ params, watch, now }: { params: WireParams; watch: WireWa
             <li key={code}>
               <Link
                 href={wireHref(params, { state: code, mine: false, page: 1 })}
-                className="inline-flex items-center gap-1.5 rounded-full border border-warm-200 bg-white px-2.5 py-1 text-[12px] font-medium text-warm-900 no-underline hover:border-[#C44B2E]"
+                className="inline-flex items-center gap-1.5 rounded-full border border-warm-200 bg-white px-2.5 py-1 text-[12px] font-medium text-warm-900 no-underline hover:border-brick"
               >
                 {stateName(code)}
                 {fresh > 0 ? (
-                  <span className="rounded-full bg-[#C44B2E] px-1.5 text-[10px] font-bold text-white [font-variant-numeric:tabular-nums]">
+                  <span className="rounded-full bg-brick px-1.5 text-[10px] font-bold text-white [font-variant-numeric:tabular-nums]">
                     {fresh} new
                   </span>
                 ) : null}
@@ -323,7 +323,7 @@ function MyStatesBar({ params, watch, now }: { params: WireParams; watch: WireWa
             ? `"New" counts items dated after your last visit to My states (${last}).`
             : "New-item counts start from this visit."}
         </span>
-        <Link href="/pro/news/digest" className="font-semibold text-[#A93D25] no-underline hover:underline">
+        <Link href="/pro/news/digest" className="font-semibold text-brick no-underline hover:underline">
           This week&apos;s Wire digest →
         </Link>
       </p>
@@ -401,7 +401,7 @@ export function StateWire({
               href={wireHref(params, { kind: k.key ?? undefined, page: 1 })}
               aria-current={active ? "true" : undefined}
               className={`-mb-px whitespace-nowrap border-b-2 px-2.5 py-1.5 font-medium no-underline transition-colors ${
-                active ? "border-[#C44B2E] text-warm-900" : "border-transparent text-warm-600 hover:text-warm-900"
+                active ? "border-brick text-warm-900" : "border-transparent text-warm-600 hover:text-warm-900"
               }`}
             >
               {k.label}

@@ -62,8 +62,8 @@ export async function UpgradeGate({
   const moreCount = count && count > 0 ? Math.min(count, summary.categories) : 0;
   if (compact) {
     return (
-      <div className="text-center py-6 px-4 border-t border-[#E8DFD1] bg-gradient-to-r from-[#FAF7F2] to-white">
-        <div className="text-sm text-[#6B6255]">
+      <div className="text-center py-6 px-4 border-t border-border bg-gradient-to-r from-paper to-white">
+        <div className="text-sm text-ink-muted">
           {moreCount ? `${moreCount} more available` : message || "Premium feature"}
           {" "}with {PRO_LABEL}
         </div>
@@ -71,7 +71,7 @@ export async function UpgradeGate({
           event="upgrade_click"
           eventProps={eventProps}
           href={pricingHref}
-          className="inline-block mt-2 text-sm font-bold text-[#A93D25] hover:underline"
+          className="inline-block mt-2 text-sm font-bold text-brick hover:underline"
         >
           See pricing &rarr;
         </TrackLink>
@@ -80,20 +80,20 @@ export async function UpgradeGate({
   }
 
   return (
-    <div className="bg-[#FFFDF9] border border-[#E8DFD1] rounded-xl p-6 text-center">
-      <div className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-[#FFF0ED] mb-3">
-        <svg viewBox="0 0 24 24" fill="none" className="w-5 h-5 text-[#C44B2E]" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
+    <div className="bg-surface-0 border border-border rounded-xl p-6 text-center">
+      <div className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-brick-tint mb-3">
+        <svg viewBox="0 0 24 24" fill="none" className="w-5 h-5 text-brick" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
           <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
           <path d="M7 11V7a5 5 0 0110 0v4" />
         </svg>
       </div>
       <h3
-        className="text-lg font-normal text-[#1A1815] mb-1"
-        style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
+        className="text-lg font-bold text-ink mb-1"
+        style={{ fontFamily: "var(--fi-font-sans)" }}
       >
         {message || "Unlock full access"}
       </h3>
-      <p className="text-sm text-[#6B6255] mb-4">
+      <p className="text-sm text-ink-muted mb-4">
         {locked
           ? locked
           : audience === "consumer"
@@ -102,14 +102,14 @@ export async function UpgradeGate({
           ? `${moreCount} more fee categories, peer benchmarks by charter, size and district, CSV exports, and the Hamilton workspace.`
           : `Unlock all ${summary.categoriesLabel} fee categories, peer benchmarks by charter, size and district, CSV exports, and the Hamilton workspace.`}
       </p>
-      <div className="text-[12px] text-[#6B6255] mt-2 mb-4">
+      <div className="text-[12px] text-ink-muted mt-2 mb-4">
         Based on {summary.observationsLabel} published fee entries from {summary.institutionsLabel} institutions
       </div>
       <TrackLink
         event="upgrade_click"
         eventProps={eventProps}
         href={pricingHref}
-        className="inline-flex items-center gap-1.5 rounded-md bg-[#C44B2E] px-5 py-2.5 text-sm font-medium text-white shadow-sm shadow-[#C44B2E]/15 hover:bg-[#A93D25] hover:shadow-md hover:shadow-[#C44B2E]/25 transition-all"
+        className="inline-flex items-center gap-1.5 rounded-md bg-brick px-5 py-2.5 text-sm font-medium text-white shadow-sm shadow-[#b23a32]/15 hover:bg-brick-ink hover:shadow-md hover:shadow-[#b23a32]/25 transition-all"
       >
         See pricing
         <svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4" aria-hidden="true">
@@ -123,7 +123,7 @@ export async function UpgradeGate({
 /** Lock icon badge for quick action tiles. */
 export function PremiumBadge() {
   return (
-    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-semibold bg-[#FFF0ED] text-[#A93D25] uppercase tracking-wider ml-1">
+    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-semibold bg-brick-tint text-brick uppercase tracking-wider ml-1">
       Pro
     </span>
   );

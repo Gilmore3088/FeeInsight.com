@@ -54,7 +54,7 @@ export function HamiltonAskDock({ selectedInstitutionId, navigationContext }: { 
           aria-expanded={false}
           className="flex items-center gap-2 rounded-full border border-warm-ink-700 bg-warm-ink-900 py-2 pl-3 pr-4 text-sm font-medium text-warm-ink-50 shadow-lg hover:bg-warm-ink-800"
         >
-          <span aria-hidden style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}>
+          <span aria-hidden style={{ fontFamily: "var(--fi-font-sans)" }}>
             H
           </span>
           Ask Hamilton
@@ -76,7 +76,7 @@ export function HamiltonAskDock({ selectedInstitutionId, navigationContext }: { 
         }}
         className="pointer-events-auto mx-auto flex max-w-3xl items-center gap-2 rounded-xl border border-warm-ink-700 bg-warm-ink-900 p-2 pl-4 shadow-2xl"
       >
-        <span aria-hidden className="text-sm text-warm-ink-50" style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}>
+        <span aria-hidden className="font-semibold text-sm text-warm-ink-50" style={{ fontFamily: "var(--fi-font-sans)" }}>
           H
         </span>
         <label htmlFor="hamilton-ask" className="sr-only">

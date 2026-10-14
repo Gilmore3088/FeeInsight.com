@@ -37,10 +37,10 @@ const SAMPLE_REPORT_HREF = "/reports/sample-competitive-fee-position";
 const REQUEST_HREF = "/reports?report=institution#request";
 
 const PRIMARY_BUTTON =
-  "inline-flex items-center rounded-md bg-[#C44B2E] px-4 py-2.5 text-sm font-semibold text-white no-underline transition-colors hover:bg-[#A93D25]";
+  "inline-flex items-center rounded-md bg-brick px-4 py-2.5 text-sm font-semibold text-white no-underline transition-colors hover:bg-brick-ink";
 const SECONDARY_BUTTON =
-  "inline-flex items-center rounded-md border border-[#D5CBBF] bg-white px-4 py-2.5 text-sm font-semibold text-[#1A1815] no-underline transition-colors hover:border-[#C44B2E] hover:text-[#A93D25]";
-const SERIF = { fontFamily: "var(--font-newsreader), Georgia, serif" } as const;
+  "inline-flex items-center rounded-md border border-border bg-white px-4 py-2.5 text-sm font-semibold text-ink no-underline transition-colors hover:border-brick hover:text-brick";
+const SERIF = { fontFamily: "var(--fi-font-sans)" } as const;
 
 const REPORT_CONTENTS = [
   {
@@ -163,11 +163,11 @@ const CHARTER_NOUN: Record<string, string> = { bank: "banks", credit_union: "cre
 function SectionHeading({ eyebrow, title, children }: { eyebrow: string; title: string; children?: React.ReactNode }) {
   return (
     <div className="mb-8 max-w-[640px]">
-      <p className="mb-2 text-[11px] font-bold uppercase tracking-[0.12em] text-[#A93D25]">{eyebrow}</p>
-      <h2 className="text-[28px] font-semibold leading-tight tracking-[-0.015em] text-[#1A1815]" style={SERIF}>
+      <p className="mb-2 text-[11px] font-bold uppercase tracking-[0.12em] text-brick">{eyebrow}</p>
+      <h2 className="text-[28px] font-bold leading-tight tracking-[-0.015em] text-ink" style={SERIF}>
         {title}
       </h2>
-      {children && <p className="mt-3 text-[15px] leading-relaxed text-[#5A5347]">{children}</p>}
+      {children && <p className="mt-3 text-[15px] leading-relaxed text-ink-soft">{children}</p>}
     </div>
   );
 }
@@ -175,23 +175,23 @@ function SectionHeading({ eyebrow, title, children }: { eyebrow: string; title: 
 function PublishedReportItem({ report }: { report: PublishedReport }) {
   const typeLabel = REPORT_TYPE_LABELS[report.report_type as ReportType] ?? report.report_type;
   return (
-    <li className="flex flex-col gap-2 border-b border-[#E0D7C9] py-6">
+    <li className="flex flex-col gap-2 border-b border-border py-6">
       <div className="flex flex-wrap items-center gap-2.5">
-        <span className="rounded bg-[#F5F0E8] px-2 py-0.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-[#5A5347]">
+        <span className="rounded bg-[#F5F0E8] px-2 py-0.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-soft">
           {typeLabel}
         </span>
-        <span className="text-[12px] text-[#6B6255]">{timeAgo(report.published_at)}</span>
+        <span className="text-[12px] text-ink-muted">{timeAgo(report.published_at)}</span>
       </div>
       <Link
         href={`/reports/${report.slug}`}
-        className="report-title-link text-[20px] font-semibold leading-snug tracking-[-0.01em] text-[#1A1815] no-underline"
-        style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
+        className="report-title-link text-[20px] font-semibold leading-snug tracking-[-0.01em] text-ink no-underline"
+        style={{ fontFamily: "var(--fi-font-sans)" }}
       >
         {report.title}
       </Link>
       <Link
         href={`/reports/${report.slug}`}
-        className="inline-flex items-center gap-1 text-[13px] font-medium text-[#A93D25] no-underline"
+        className="inline-flex items-center gap-1 text-[13px] font-medium text-brick no-underline"
       >
         Read report &rarr;
       </Link>
@@ -232,19 +232,19 @@ export default async function ReportsPage({ searchParams }: PageProps) {
   return (
     <div className="pb-24">
       {/* Hero: the report, with its real position map */}
-      <section className="border-b border-[#E8DFD1] bg-[linear-gradient(180deg,#FBF7F1_0%,#FDFBF8_100%)]">
+      <section className="border-b border-border bg-[linear-gradient(180deg,#FBF7F1_0%,#FDFBF8_100%)]">
         <div className="mx-auto grid max-w-page gap-10 px-6 pb-14 pt-14 lg:grid-cols-[minmax(0,1fr)_minmax(0,460px)] lg:items-center">
           <div>
-            <p className="mb-3 text-[11px] font-bold uppercase tracking-[0.12em] text-[#A93D25]">
+            <p className="mb-3 text-[11px] font-bold uppercase tracking-[0.12em] text-brick">
               {REPORT_OFFER.name}
             </p>
             <h1
-              className="text-[2.25rem] font-semibold leading-[1.1] tracking-[-0.02em] text-[#1A1815] sm:text-[2.75rem]"
+              className="text-[2.25rem] font-extrabold leading-[1.1] tracking-[-0.02em] text-ink sm:text-[2.75rem]"
               style={SERIF}
             >
               Know where your fees stand against your market.
             </h1>
-            <p className="mt-5 max-w-[540px] text-[16px] leading-relaxed text-[#5A5347]">
+            <p className="mt-5 max-w-[540px] text-[16px] leading-relaxed text-ink-soft">
               We put your published fees next to the banks and credit unions you compete with, line by
               line, and show where you are priced above, inside or below the market. Every number cites
               the fee schedule it came from.
@@ -264,20 +264,20 @@ export default async function ReportsPage({ searchParams }: PageProps) {
                 </Link>
               )}
             </div>
-            <dl className="mt-8 grid max-w-[520px] grid-cols-3 gap-4 border-t border-[#E8DFD1] pt-5">
+            <dl className="mt-8 grid max-w-[520px] grid-cols-3 gap-4 border-t border-border pt-5">
               <div>
-                <dt className="text-[11px] uppercase tracking-[0.1em] text-[#6B6255]">Price</dt>
-                <dd className="mt-1 text-[15px] font-semibold text-[#1A1815]">
+                <dt className="text-[11px] uppercase tracking-[0.1em] text-ink-muted">Price</dt>
+                <dd className="mt-1 text-[15px] font-semibold text-ink">
                   {REPORT_OFFER.priceLabel}
                 </dd>
               </div>
               <div>
-                <dt className="text-[11px] uppercase tracking-[0.1em] text-[#6B6255]">Next step</dt>
-                <dd className="mt-1 text-[15px] font-semibold text-[#1A1815]">Reply in 1 business day</dd>
+                <dt className="text-[11px] uppercase tracking-[0.1em] text-ink-muted">Next step</dt>
+                <dd className="mt-1 text-[15px] font-semibold text-ink">Reply in 1 business day</dd>
               </div>
               <div>
-                <dt className="text-[11px] uppercase tracking-[0.1em] text-[#6B6255]">Format</dt>
-                <dd className="mt-1 text-[15px] font-semibold text-[#1A1815]">Board-ready PDF</dd>
+                <dt className="text-[11px] uppercase tracking-[0.1em] text-ink-muted">Format</dt>
+                <dd className="mt-1 text-[15px] font-semibold text-ink">Board-ready PDF</dd>
               </div>
             </dl>
           </div>
@@ -285,10 +285,10 @@ export default async function ReportsPage({ searchParams }: PageProps) {
           {positionMap && positionMap.rows.length > 0 && (
             <div>
               <PositionPreview map={positionMap} />
-              <p className="mt-3 text-[12px] leading-relaxed text-[#6B6255]">
+              <p className="mt-3 text-[12px] leading-relaxed text-ink-muted">
                 Real figures from a report prepared for a ~$400M community bank; only the bank&apos;s name
                 is hidden.{" "}
-                <Link href={SAMPLE_REPORT_HREF} className="text-[#A93D25] underline-offset-2 hover:underline">
+                <Link href={SAMPLE_REPORT_HREF} className="text-brick underline-offset-2 hover:underline">
                   See the whole report
                 </Link>
               </p>
@@ -302,12 +302,12 @@ export default async function ReportsPage({ searchParams }: PageProps) {
         <SectionHeading eyebrow="What's inside" title="Six sections, one PDF you can hand to your pricing committee." />
         <ol className="m-0 grid list-none gap-3 p-0 sm:grid-cols-2 lg:grid-cols-3">
           {REPORT_CONTENTS.map((item, index) => (
-            <li key={item.title} className="rounded-lg border border-[#E8DFD1] bg-white p-5">
-              <span className="text-[13px] font-semibold tabular-nums text-[#C44B2E]">
+            <li key={item.title} className="rounded-lg border border-border bg-white p-5">
+              <span className="text-[13px] font-semibold tabular-nums text-brick">
                 {String(index + 1).padStart(2, "0")}
               </span>
-              <h3 className="mt-2 text-[16px] font-semibold text-[#1A1815]">{item.title}</h3>
-              <p className="mt-1.5 text-[14px] leading-relaxed text-[#5A5347]">{item.body}</p>
+              <h3 className="mt-2 text-[16px] font-semibold text-ink">{item.title}</h3>
+              <p className="mt-1.5 text-[14px] leading-relaxed text-ink-soft">{item.body}</p>
             </li>
           ))}
         </ol>
@@ -320,13 +320,13 @@ export default async function ReportsPage({ searchParams }: PageProps) {
           {STEPS.map((step, index) => (
             <li key={step.title} className="relative">
               <div className="flex items-center gap-3">
-                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#1A1815] text-[13px] font-semibold text-white">
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-ink text-[13px] font-semibold text-white">
                   {index + 1}
                 </span>
-                {index < STEPS.length - 1 && <span className="hidden h-px flex-1 bg-[#E0D7C9] md:block" />}
+                {index < STEPS.length - 1 && <span className="hidden h-px flex-1 bg-border md:block" />}
               </div>
-              <h3 className="mt-4 text-[16px] font-semibold text-[#1A1815]">{step.title}</h3>
-              <p className="mt-1.5 max-w-[320px] text-[14px] leading-relaxed text-[#5A5347]">{step.body}</p>
+              <h3 className="mt-4 text-[16px] font-semibold text-ink">{step.title}</h3>
+              <p className="mt-1.5 max-w-[320px] text-[14px] leading-relaxed text-ink-soft">{step.body}</p>
             </li>
           ))}
         </ol>
@@ -334,21 +334,21 @@ export default async function ReportsPage({ searchParams }: PageProps) {
 
       {/* Request form: the lead lands in the leads table (/admin/leads) */}
       <section id="request" className="mx-auto max-w-page scroll-mt-20 px-6 pt-16">
-        <div className="grid gap-8 rounded-xl border border-[#E8DFD1] bg-[#FBF7F1] p-6 sm:p-8 lg:grid-cols-[minmax(0,1fr)_minmax(320px,440px)] lg:items-start">
+        <div className="grid gap-8 rounded-xl border border-border bg-[#FBF7F1] p-6 sm:p-8 lg:grid-cols-[minmax(0,1fr)_minmax(320px,440px)] lg:items-start">
           <div>
-            <p className="mb-2 text-[11px] font-bold uppercase tracking-[0.12em] text-[#A93D25]">
+            <p className="mb-2 text-[11px] font-bold uppercase tracking-[0.12em] text-brick">
               Request your report
             </p>
-            <h2 className="text-[28px] font-semibold leading-tight tracking-[-0.015em] text-[#1A1815]" style={SERIF}>
+            <h2 className="text-[28px] font-bold leading-tight tracking-[-0.015em] text-ink" style={SERIF}>
               Tell us where to send it.
             </h2>
-            <p className="mt-3 max-w-[460px] text-[15px] leading-relaxed text-[#5A5347]">
+            <p className="mt-3 max-w-[460px] text-[15px] leading-relaxed text-ink-soft">
               Leave your institution and work email. {REPORT_OFFER.nextStep}, and we confirm your peer
               set before any work starts.
             </p>
-            <p className="mt-4 text-[13px] text-[#6B6255]">
+            <p className="mt-4 text-[13px] text-ink-muted">
               Prefer to write?{" "}
-              <Link href="/contact?source=report" className="text-[#A93D25] underline-offset-2 hover:underline">
+              <Link href="/contact?source=report" className="text-brick underline-offset-2 hover:underline">
                 Send us a message
               </Link>
             </p>
@@ -370,16 +370,16 @@ export default async function ReportsPage({ searchParams }: PageProps) {
         </SectionHeading>
         {stateCoverage ? (
           <>
-            <p className="mb-4 text-[13px] text-[#6B6255]">
-              <b className="font-semibold text-[#1A1815]">{coveredInstitutions.toLocaleString()}</b> institutions
-              with verified fees across <b className="font-semibold text-[#1A1815]">{coveredStateCount}</b> states
-              {dcCovered ? " plus DC" : ""} · <b className="font-semibold text-[#1A1815]">{coveredFees.toLocaleString()}</b> fee lines
+            <p className="mb-4 text-[13px] text-ink-muted">
+              <b className="font-semibold text-ink">{coveredInstitutions.toLocaleString()}</b> institutions
+              with verified fees across <b className="font-semibold text-ink">{coveredStateCount}</b> states
+              {dcCovered ? " plus DC" : ""} · <b className="font-semibold text-ink">{coveredFees.toLocaleString()}</b> fee lines
             </p>
             {readiness && (
-              <p className="mb-4 text-[13px] text-[#6B6255]">
+              <p className="mb-4 text-[13px] text-ink-muted">
                 {readyMarkets > 0 ? (
                   <>
-                    <b className="font-semibold text-[#1A1815]">{readyMarkets}</b> of {readiness.length} state
+                    <b className="font-semibold text-ink">{readyMarkets}</b> of {readiness.length} state
                     markets have enough complete fee schedules for a full local comparison today.
                   </>
                 ) : (
@@ -398,9 +398,9 @@ export default async function ReportsPage({ searchParams }: PageProps) {
             <StateReportGrid states={stateCoverage} readiness={readiness} />
           </>
         ) : (
-          <p className="rounded-lg border border-dashed border-[#D5CBBF] bg-[#FDFBF8] px-5 py-4 text-[14px] text-[#6B6255]">
+          <p className="rounded-lg border border-dashed border-border bg-surface-0 px-5 py-4 text-[14px] text-ink-muted">
             State coverage is temporarily unavailable. Try again shortly, or browse the{" "}
-            <Link href="/research" className="text-[#A93D25] underline-offset-2 hover:underline">
+            <Link href="/research" className="text-brick underline-offset-2 hover:underline">
               research hub
             </Link>
             .
@@ -422,12 +422,12 @@ export default async function ReportsPage({ searchParams }: PageProps) {
                 <PublishedReportItem key={report.id} report={report} />
               ))}
             </ul>
-            <p className="mt-6 text-[12px] text-[#6B6255]">
+            <p className="mt-6 text-[12px] text-ink-muted">
               Showing {reports.length} report{reports.length !== 1 ? "s" : ""}.
             </p>
           </>
         ) : (
-          <p className="max-w-[640px] text-[14px] leading-relaxed text-[#6B6255]">
+          <p className="max-w-[640px] text-[14px] leading-relaxed text-ink-muted">
             {unavailable
               ? "The research catalog is temporarily unavailable. Try again shortly."
               : filtersActive
@@ -440,9 +440,9 @@ export default async function ReportsPage({ searchParams }: PageProps) {
 
       {/* Closing call to action */}
       <section className="mx-auto max-w-page px-6 pt-20">
-        <div className="flex flex-col items-start gap-5 rounded-xl bg-[#1A1815] px-7 py-8 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col items-start gap-5 rounded-xl bg-ink px-7 py-8 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <p className="text-[24px] leading-snug text-white" style={SERIF}>
+            <p className="font-semibold text-[24px] leading-snug text-white" style={SERIF}>
               See your own fees against your market.
             </p>
             <p className="mt-1 text-[13px] text-[#C9BFB1]">
@@ -461,7 +461,7 @@ export default async function ReportsPage({ searchParams }: PageProps) {
             {sampleLive && (
               <Link
                 href={SAMPLE_REPORT_HREF}
-                className="inline-flex items-center rounded-md border border-[#5A5347] px-4 py-2.5 text-sm font-semibold text-white no-underline transition-colors hover:border-white"
+                className="inline-flex items-center rounded-md border border-ink-soft px-4 py-2.5 text-sm font-semibold text-white no-underline transition-colors hover:border-white"
               >
                 Read the sample
               </Link>
@@ -471,10 +471,10 @@ export default async function ReportsPage({ searchParams }: PageProps) {
       </section>
 
       <style>{`
-        .report-title-link:hover { color: #C44B2E; }
+        .report-title-link:hover { color: #b23a32; }
         .state-tile { transition: transform 120ms ease, box-shadow 120ms ease; }
-        .state-tile:hover { transform: translateY(-1px); box-shadow: 0 0 0 2px #1A1815; }
-        .state-tile:focus-visible { outline: 2px solid #1A1815; outline-offset: 2px; }
+        .state-tile:hover { transform: translateY(-1px); box-shadow: 0 0 0 2px #132338; }
+        .state-tile:focus-visible { outline: 2px solid #132338; outline-offset: 2px; }
       `}</style>
     </div>
   );

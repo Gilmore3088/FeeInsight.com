@@ -69,7 +69,7 @@ export default async function LandingPage() {
   ]);
 
   return (
-    <div className="min-h-screen bg-[#FAF7F2] consumer-brand">
+    <div className="min-h-screen bg-paper consumer-brand">
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(ORGANIZATION_JSON_LD) }}

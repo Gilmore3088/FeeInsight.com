@@ -14,13 +14,13 @@ function LockedPreview() {
     <div aria-hidden className="pointer-events-none select-none blur-[3px]">
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         {["Total assets", "Net income", "Return on assets", "Net charge-off rate"].map((label) => (
-          <div key={label} className="rounded-lg border border-[#E0D7C9] bg-white px-3 py-2.5">
-            <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-[#6B6255]">{label}</p>
-            <p className="mt-1 text-lg font-semibold text-[#1A1815]">— —</p>
+          <div key={label} className="rounded-lg border border-border bg-white px-3 py-2.5">
+            <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted">{label}</p>
+            <p className="mt-1 text-lg font-semibold text-ink">— —</p>
           </div>
         ))}
       </div>
-      <div className="mt-4 flex h-40 items-end gap-1.5 rounded-xl border border-[#E0D7C9] bg-white p-4">
+      <div className="mt-4 flex h-40 items-end gap-1.5 rounded-xl border border-border bg-white p-4">
         {bars.map((height, i) => (
           <div key={i} className="flex-1 rounded-t bg-[#2a78d6]/40" style={{ height: `${height}%` }} />
         ))}
@@ -71,16 +71,16 @@ export function FinancialProfileSection({
   const years = points.length > 0 ? Math.max(1, Math.round(points.length / 4)) : null;
 
   return (
-    <section className="border border-[#E0D7C9] bg-[#FFFDF9] p-5">
+    <section className="border border-border bg-surface-0 p-5">
       <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#6B6255]">
+          <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-ink-muted">
             Financial profile{!isPro && " · Pro"}
           </p>
-          <h2 className="text-lg font-semibold text-[#1A1815]">Performance from regulator filings</h2>
+          <h2 className="text-lg font-semibold text-ink">Performance from regulator filings</h2>
         </div>
         {isPro && years && (
-          <p className="text-sm text-[#6B6255]">
+          <p className="text-sm text-ink-muted">
             {points.length} quarters{years > 1 ? ` (~${years} years)` : ""} of call reports
           </p>
         )}

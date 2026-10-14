@@ -78,14 +78,14 @@ export function ContactForm({ searchParamsPromise }: ContactFormProps) {
   }
 
   const inputClasses =
-    "w-full rounded-xl border border-[#E8DFD1] bg-white px-4 py-2.5 text-[13px] text-[#1A1815] placeholder:text-[#6B6255] focus:outline-none focus:ring-2 focus:ring-[#C44B2E]/30 focus:border-transparent";
+    "w-full rounded-xl border border-border bg-white px-4 py-2.5 text-[13px] text-ink placeholder:text-ink-muted focus:outline-none focus:ring-2 focus:ring-brick/30 focus:border-transparent";
 
   return (
     <form onSubmit={handleSubmit} className="relative space-y-4">
       <HoneypotField />
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div>
-          <label htmlFor="name" className="block text-[11px] font-bold uppercase tracking-[0.1em] text-[#6B6255] mb-1.5">
+          <label htmlFor="name" className="block text-[11px] font-bold uppercase tracking-[0.1em] text-ink-muted mb-1.5">
             Name
           </label>
           <input
@@ -98,7 +98,7 @@ export function ContactForm({ searchParamsPromise }: ContactFormProps) {
           />
         </div>
         <div>
-          <label htmlFor="email" className="block text-[11px] font-bold uppercase tracking-[0.1em] text-[#6B6255] mb-1.5">
+          <label htmlFor="email" className="block text-[11px] font-bold uppercase tracking-[0.1em] text-ink-muted mb-1.5">
             Work email
           </label>
           <input
@@ -114,7 +114,7 @@ export function ContactForm({ searchParamsPromise }: ContactFormProps) {
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div>
-          <label htmlFor="company" className="block text-[11px] font-bold uppercase tracking-[0.1em] text-[#6B6255] mb-1.5">
+          <label htmlFor="company" className="block text-[11px] font-bold uppercase tracking-[0.1em] text-ink-muted mb-1.5">
             Company / Institution
           </label>
           <input
@@ -127,7 +127,7 @@ export function ContactForm({ searchParamsPromise }: ContactFormProps) {
           />
         </div>
         <div>
-          <label htmlFor="role" className="block text-[11px] font-bold uppercase tracking-[0.1em] text-[#6B6255] mb-1.5">
+          <label htmlFor="role" className="block text-[11px] font-bold uppercase tracking-[0.1em] text-ink-muted mb-1.5">
             Role
           </label>
           <input
@@ -141,7 +141,7 @@ export function ContactForm({ searchParamsPromise }: ContactFormProps) {
       </div>
 
       <div>
-        <label htmlFor="inquiry_type" className="block text-[11px] font-bold uppercase tracking-[0.1em] text-[#6B6255] mb-1.5">
+        <label htmlFor="inquiry_type" className="block text-[11px] font-bold uppercase tracking-[0.1em] text-ink-muted mb-1.5">
           Inquiry type
         </label>
         <select
@@ -159,7 +159,7 @@ export function ContactForm({ searchParamsPromise }: ContactFormProps) {
       </div>
 
       <div>
-        <label htmlFor="message" className="block text-[11px] font-bold uppercase tracking-[0.1em] text-[#6B6255] mb-1.5">
+        <label htmlFor="message" className="block text-[11px] font-bold uppercase tracking-[0.1em] text-ink-muted mb-1.5">
           Message
         </label>
         <textarea
@@ -180,7 +180,7 @@ export function ContactForm({ searchParamsPromise }: ContactFormProps) {
       <button
         type="submit"
         disabled={status === "loading"}
-        className="w-full rounded-xl bg-[#C44B2E] py-3 text-[14px] font-semibold text-white hover:bg-[#A83D25] transition-colors disabled:opacity-50"
+        className="w-full rounded-xl bg-brick py-3 text-[14px] font-semibold text-white hover:bg-brick-ink transition-colors disabled:opacity-50"
       >
         {status === "loading" ? "Sending..." : "Send message"}
       </button>

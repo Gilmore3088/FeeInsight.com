@@ -54,20 +54,20 @@ const CONTACT_HREF = "/contact?source=report";
 
 function ExpiredReport({ report }: { report: HostedReport }) {
   return (
-    <div className="min-h-screen bg-[#FAF7F2]">
+    <div className="min-h-screen bg-paper">
       <ReportChrome preparedFor={report.institution_name} />
       <main className="mx-auto max-w-2xl px-6 pb-24 pt-16">
         <TrackView event="hosted_report_view" eventProps={{ institution_id: report.institution_id, expired: true }} />
-        <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#A93D25]">
+        <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-brick">
           Competitive Fee Position Report
         </p>
         <h1
-          className="mt-2 text-[1.6rem] leading-tight tracking-[-0.02em] text-[#1A1815]"
-          style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
+          className="font-extrabold mt-2 text-[1.6rem] leading-tight tracking-[-0.02em] text-ink"
+          style={{ fontFamily: "var(--fi-font-sans)" }}
         >
           This report for {report.institution_name} has expired
         </h1>
-        <p className="mt-3 text-[15px] leading-relaxed text-[#5A5347]">
+        <p className="mt-3 text-[15px] leading-relaxed text-ink-soft">
           It was prepared on {formatReportDate(report.prepared_on)}, and fee schedules change. Request an
           updated report, built from the fee schedules published today.
         </p>
@@ -76,7 +76,7 @@ function ExpiredReport({ report }: { report: HostedReport }) {
             event="hosted_report_request"
             eventProps={{ placement: "hosted_report_expired", institution_id: report.institution_id }}
             href={hostedReportRequestHref(report, "hosted_report_expired")}
-            className="inline-flex items-center rounded-md bg-[#C44B2E] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#A93D25]"
+            className="inline-flex items-center rounded-md bg-brick px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-brick-ink"
           >
             Request an updated report
           </TrackLink>
@@ -84,7 +84,7 @@ function ExpiredReport({ report }: { report: HostedReport }) {
             event="contact_sales"
             eventProps={{ placement: "hosted_report_expired", institution_id: report.institution_id }}
             href={CONTACT_HREF}
-            className="inline-flex items-center rounded-md border border-[#D5CBBF] px-4 py-2.5 text-sm font-semibold text-[#1A1815] transition-colors hover:border-[#C44B2E] hover:text-[#A93D25]"
+            className="inline-flex items-center rounded-md border border-border px-4 py-2.5 text-sm font-semibold text-ink transition-colors hover:border-brick hover:text-brick"
           >
             Ask a question
           </TrackLink>
@@ -113,21 +113,21 @@ export default async function HostedReportPage({ params, searchParams }: PagePro
   const printHref = `/r/${report.token}/print`;
 
   return (
-    <div className="min-h-screen bg-[#FAF7F2]">
+    <div className="min-h-screen bg-paper">
       <ReportChrome preparedFor={report.institution_name} />
       <main className="mx-auto max-w-page px-6 pb-24 pt-10">
-        <section className="flex flex-col gap-5 rounded-xl border border-[#E0D7C9] bg-[#FDFBF8] p-6 md:flex-row md:items-center md:justify-between">
+        <section className="flex flex-col gap-5 rounded-xl border border-border bg-surface-0 p-6 md:flex-row md:items-center md:justify-between">
           <div>
-            <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#A93D25]">
+            <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-brick">
               Competitive Fee Position Report
             </p>
             <h1
-              className="mt-2 text-[1.5rem] leading-tight tracking-[-0.02em] text-[#1A1815] sm:text-[1.85rem]"
-              style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
+              className="font-extrabold mt-2 text-[1.5rem] leading-tight tracking-[-0.02em] text-ink sm:text-[1.85rem]"
+              style={{ fontFamily: "var(--fi-font-sans)" }}
             >
               Prepared for {report.institution_name} by {SITE_NAME} · {preparedOn}
             </h1>
-            <p className="mt-2 text-[14px] text-[#5A5347]">
+            <p className="mt-2 text-[14px] text-ink-soft">
               {REPORT_OFFER.refreshLabel} — your fee position against the same verified peer set.
             </p>
           </div>
@@ -136,7 +136,7 @@ export default async function HostedReportPage({ params, searchParams }: PagePro
               href={printHref}
               target="_blank"
               rel="noopener"
-              className="inline-flex items-center rounded-md bg-[#C44B2E] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#A93D25]"
+              className="inline-flex items-center rounded-md bg-brick px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-brick-ink"
             >
               Download PDF
             </a>
@@ -144,7 +144,7 @@ export default async function HostedReportPage({ params, searchParams }: PagePro
               event="contact_sales"
               eventProps={{ placement: "hosted_report", institution_id: report.institution_id }}
               href={CONTACT_HREF}
-              className="inline-flex items-center rounded-md border border-[#D5CBBF] px-4 py-2.5 text-sm font-semibold text-[#1A1815] transition-colors hover:border-[#C44B2E] hover:text-[#A93D25]"
+              className="inline-flex items-center rounded-md border border-border px-4 py-2.5 text-sm font-semibold text-ink transition-colors hover:border-brick hover:text-brick"
             >
               Ask a question
             </TrackLink>
@@ -163,10 +163,10 @@ export default async function HostedReportPage({ params, searchParams }: PagePro
           />
         </section>
 
-        <section className="mt-8 flex flex-col gap-4 rounded-xl border border-[#E0D7C9] bg-[#FDFBF8] p-6 md:flex-row md:items-center md:justify-between">
+        <section className="mt-8 flex flex-col gap-4 rounded-xl border border-border bg-surface-0 p-6 md:flex-row md:items-center md:justify-between">
           <div>
-            <h2 className="text-[1.1rem] font-semibold text-[#1A1815]">Keep this current</h2>
-            <p className="mt-1 text-[14px] text-[#5A5347]">
+            <h2 className="text-[1.1rem] font-semibold text-ink">Keep this current</h2>
+            <p className="mt-1 text-[14px] text-ink-soft">
               Ask us for a refreshed report against the same peer set as competitors change their
               fees. We reply with scope and price.
             </p>
@@ -175,13 +175,13 @@ export default async function HostedReportPage({ params, searchParams }: PagePro
             event="hosted_report_request"
             eventProps={{ placement: "hosted_report", institution_id: report.institution_id }}
             href={hostedReportRequestHref(report, "hosted_report")}
-            className="inline-flex shrink-0 items-center rounded-md bg-[#C44B2E] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#A93D25]"
+            className="inline-flex shrink-0 items-center rounded-md bg-brick px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-brick-ink"
           >
             Request a quarterly refresh
           </TrackLink>
         </section>
 
-        <p className="mt-6 text-[12px] leading-relaxed text-[#6B6255]">
+        <p className="mt-6 text-[12px] leading-relaxed text-ink-muted">
           This link was prepared for {report.institution_name} and is not listed publicly. It
           resolves until {formatReportDate(report.expires_on)}; after that it offers an
           updated report.

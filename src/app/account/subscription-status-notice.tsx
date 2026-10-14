@@ -32,14 +32,14 @@ export function SubscriptionStatusNotice({ user }: { user: Pick<User, "role" | "
 
   if (user.subscription_status === "canceled") {
     return (
-      <div role="status" className="mb-8 rounded-xl border border-[#E8DFD1] bg-white/70 p-5">
-        <p className="text-[14px] font-semibold text-[#1A1815]">Your {SITE_NAME} Pro subscription has ended.</p>
-        <p className="mt-1 text-[13px] text-[#6B6255]">
+      <div role="status" className="mb-8 rounded-xl border border-border bg-white/70 p-5">
+        <p className="text-[14px] font-semibold text-ink">Your {SITE_NAME} Pro subscription has ended.</p>
+        <p className="mt-1 text-[13px] text-ink-muted">
           Your saved institutions and fee alerts are kept. Restart Pro any time to get the Hamilton workspace back.
         </p>
         <Link
           href="/subscribe"
-          className="mt-3 inline-flex items-center rounded-md bg-[#C44B2E] px-4 py-2 text-[13px] font-semibold text-white hover:bg-[#A93D25]"
+          className="mt-3 inline-flex items-center rounded-md bg-brick px-4 py-2 text-[13px] font-semibold text-white hover:bg-brick-ink"
         >
           Restart Pro
         </Link>

@@ -27,9 +27,9 @@ interface PageProps {
 const DATE = new Intl.DateTimeFormat("en-US", { month: "long", day: "numeric", year: "numeric", timeZone: "UTC" });
 
 const PRIMARY_BUTTON =
-  "inline-flex items-center rounded-md bg-[#C44B2E] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#A93D25]";
+  "inline-flex items-center rounded-md bg-brick px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-brick-ink";
 const SECONDARY_BUTTON =
-  "inline-flex items-center rounded-md border border-[#D5CBBF] px-4 py-2.5 text-sm font-semibold text-[#1A1815] transition-colors hover:border-[#C44B2E] hover:text-[#A93D25]";
+  "inline-flex items-center rounded-md border border-border px-4 py-2.5 text-sm font-semibold text-ink transition-colors hover:border-brick hover:text-brick";
 
 export const metadata: Metadata = {
   title: "Competitive Fee Position Report",
@@ -61,7 +61,7 @@ export default async function MarketReportPage({ params }: PageProps) {
   const lineup = analysis.readiness.ready ? await loadMarketCheckingLineup(verified.institutionId) : null;
 
   return (
-    <div className="min-h-screen bg-[#FAF7F2]">
+    <div className="min-h-screen bg-paper">
       <TrackView
         event="market_report_view"
         eventProps={{
@@ -104,7 +104,7 @@ export default async function MarketReportPage({ params }: PageProps) {
           }
         />
       </main>
-      <p className="mx-auto max-w-page px-6 pb-6 text-[12px] leading-relaxed text-[#6B6255]">
+      <p className="mx-auto max-w-page px-6 pb-6 text-[12px] leading-relaxed text-ink-muted">
         Compiled from each institution&apos;s published fee schedule. It is market information, not financial, legal
         or compliance advice; confirm current fees with the institution.
       </p>

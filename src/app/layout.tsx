@@ -1,29 +1,10 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { GeistSans } from "geist/font/sans";
 import { GeistMono } from "geist/font/mono";
-import localFont from "next/font/local";
 import { Analytics } from "@vercel/analytics/next";
 import { SITE_URL } from "@/lib/constants";
 import { MarketingTouchRecorder } from "@/components/public/marketing-touch-recorder";
 import "./globals.css";
-
-// Keep the same families locally: Google's extensionless font URLs can break
-// next/font's production parser before a preview can be built.
-const newsreader = localFont({
-  src: [
-    { path: "../../public/fonts/newsreader-variable.ttf", weight: "300 600", style: "normal" },
-    { path: "../../public/fonts/newsreader-italic-variable.ttf", weight: "300 600", style: "italic" },
-  ],
-  adjustFontFallback: "Times New Roman",
-  variable: "--font-newsreader",
-  display: "swap",
-});
-
-const jetbrainsMono = localFont({
-  src: [{ path: "../../public/fonts/jetbrains-mono-variable.ttf", weight: "300 700", style: "normal" }],
-  variable: "--font-jetbrains",
-  display: "swap",
-});
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
@@ -50,6 +31,13 @@ export const metadata: Metadata = {
     : {}),
 };
 
+export const viewport: Viewport = {
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#f3efe6" },
+    { media: "(prefers-color-scheme: dark)", color: "#132338" },
+  ],
+};
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -57,7 +45,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={`${GeistSans.variable} ${GeistMono.variable} ${newsreader.variable} ${jetbrainsMono.variable} font-sans antialiased`}>
+      <body className={`${GeistSans.variable} ${GeistMono.variable} bg-paper text-ink font-sans antialiased`}>
         {children}
         {/* Records a tracked-link visit (utm_ tags) once per session; no personal data. */}
         <MarketingTouchRecorder />

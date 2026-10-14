@@ -413,7 +413,7 @@ export const CANONICAL_KEY_COUNT = Object.keys(CANONICAL_KEY_MAP).length;
 /**
  * Warm-family palette for fee families. One hue per family, all on the Fee
  * Insight parchment scale (no stock Tailwind blue/red/amber). Every text color
- * measures at least 7:1 on its own tint and on #FAF7F2, so chips and labels
+ * measures at least 7:1 on its own tint and on #f3efe6, so chips and labels
  * stay legible at 11-13px.
  */
 export interface FamilyColors {
@@ -430,10 +430,10 @@ export interface FamilyColors {
 export const FAMILY_COLORS: Record<string, FamilyColors> = {
   // terracotta
   "Account Maintenance": {
-    border: "border-l-[#C44B2E]",
-    dot: "bg-[#C44B2E]",
-    bg: "bg-[#FDF0ED]",
-    text: "text-[#8E2A17]",
+    border: "border-l-[#b23a32]",
+    dot: "bg-[#b23a32]",
+    bg: "bg-[#f1d5d0]",
+    text: "text-[#7f2620]",
   },
   // wine
   "Overdraft & NSF": {
@@ -461,7 +461,7 @@ export const FAMILY_COLORS: Record<string, FamilyColors> = {
     border: "border-l-[#7A6E5E]",
     dot: "bg-[#7A6E5E]",
     bg: "bg-[#F0ECE6]",
-    text: "text-[#4A4238]",
+    text: "text-[#354252]",
   },
   // teal-grey
   "Digital & Electronic": {
@@ -505,7 +505,7 @@ export function getFeeFamily(category: string): string | null {
 }
 
 export function getFamilyColor(family: string) {
-  return FAMILY_COLORS[family] ?? { border: "border-l-[#A09788]", dot: "bg-[#A09788]", bg: "bg-[#F5EFE6]", text: "text-[#5A5347]" };
+  return FAMILY_COLORS[family] ?? { border: "border-l-[#767c87]", dot: "bg-[#767c87]", bg: "bg-[#f3efe6]", text: "text-[#354252]" };
 }
 
 // --- Fee Tier System ---

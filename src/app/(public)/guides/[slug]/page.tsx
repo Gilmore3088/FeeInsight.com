@@ -190,63 +190,63 @@ export default async function GuidePage({ params }: PageProps) {
 
       <nav
         aria-label="Breadcrumb"
-        className="sticky top-14 z-30 -mx-6 mb-8 flex items-center gap-2 bg-[#FAF7F2]/95 px-6 py-2 text-[12px] text-[#6B6255] backdrop-blur-sm sm:static sm:mx-0 sm:bg-transparent sm:px-0 sm:py-0 sm:backdrop-blur-none"
+        className="sticky top-14 z-30 -mx-6 mb-8 flex items-center gap-2 bg-paper/95 px-6 py-2 text-[12px] text-ink-muted backdrop-blur-sm sm:static sm:mx-0 sm:bg-transparent sm:px-0 sm:py-0 sm:backdrop-blur-none"
       >
-        <Link href="/" className="transition-colors hover:text-[#1A1815]">
+        <Link href="/" className="transition-colors hover:text-ink">
           Home
         </Link>
-        <span className="text-[#D4C9BA]" aria-hidden="true">
+        <span className="text-border" aria-hidden="true">
           /
         </span>
-        <Link href="/guides" className="transition-colors hover:text-[#1A1815]">
+        <Link href="/guides" className="transition-colors hover:text-ink">
           Guides
         </Link>
-        <span className="text-[#D4C9BA]" aria-hidden="true">
+        <span className="text-border" aria-hidden="true">
           /
         </span>
-        <span className="truncate text-[#5A5347]">{guide.title}</span>
+        <span className="truncate text-ink-soft">{guide.title}</span>
       </nav>
 
       {/* ── HERO ── */}
       <div className="max-w-3xl">
         <div className="mb-4 flex items-center gap-2">
-          <span className="h-px w-8 bg-[#C44B2E]/40" aria-hidden="true" />
-          <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#A93D25]/60">
+          <span className="h-px w-8 bg-brick/40" aria-hidden="true" />
+          <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-brick/60">
             Consumer Guide
           </span>
         </div>
 
         <h1
-          className="text-[1.75rem] leading-[1.12] tracking-[-0.02em] text-[#1A1815] sm:text-[2.25rem]"
-          style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
+          className="font-extrabold text-[1.75rem] leading-[1.12] tracking-[-0.02em] text-ink sm:text-[2.25rem]"
+          style={{ fontFamily: "var(--fi-font-sans)" }}
         >
           {guide.title}
         </h1>
 
-        <p className="mt-4 text-[15px] leading-relaxed text-[#6B6255]">
+        <p className="mt-4 text-[15px] leading-relaxed text-ink-muted">
           {guide.description}
         </p>
 
-        <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-[#6B6255]">
+        <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-ink-muted">
           <span>{guide.author}</span>
           {reviewDate && (
             <>
-              <span className="h-3 w-px bg-[#D4C9BA]" aria-hidden="true" />
+              <span className="h-3 w-px bg-border" aria-hidden="true" />
               <span>Guide reviewed {reviewDate}</span>
             </>
           )}
           {crawlDate && (
             <>
-              <span className="h-3 w-px bg-[#D4C9BA]" aria-hidden="true" />
+              <span className="h-3 w-px bg-border" aria-hidden="true" />
               <span>Fee data updated {crawlDate}</span>
             </>
           )}
           {guide.methodologyHref && (
             <>
-              <span className="h-3 w-px bg-[#D4C9BA]" aria-hidden="true" />
+              <span className="h-3 w-px bg-border" aria-hidden="true" />
               <Link
                 href={guide.methodologyHref}
-                className="text-[#A93D25]/70 transition-colors hover:text-[#A93D25]"
+                className="text-brick/70 transition-colors hover:text-brick"
               >
                 Methodology
               </Link>
@@ -259,30 +259,30 @@ export default async function GuidePage({ params }: PageProps) {
           {/* ── CHECK YOUR OWN BANK ── */}
           <section
             aria-labelledby="check-your-bank-heading"
-            className="mt-8 rounded-xl border border-[#C44B2E]/15 bg-gradient-to-r from-[#FFFDF9] to-[#FAF7F2] px-6 py-5"
+            className="mt-8 rounded-xl border border-brick/15 bg-gradient-to-r from-surface-0 to-paper px-6 py-5"
           >
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-[#A93D25]/60">
+                <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-brick/60">
                   Check your own bank
                 </p>
                 <h2
                   id="check-your-bank-heading"
-                  className="mt-2 text-[17px] font-medium text-[#1A1815]"
-                  style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
+                  className="mt-2 text-[17px] font-bold text-ink"
+                  style={{ fontFamily: "var(--fi-font-sans)" }}
                 >
                   {primarySummary?.median_amount != null
                     ? `Does your bank charge more than ${formatAmount(primarySummary.median_amount)}?`
                     : `How does your bank compare on ${primaryNamePlain}?`}
                 </h2>
-                <p className="mt-1 text-[13px] text-[#6B6255]">
+                <p className="mt-1 text-[13px] text-ink-muted">
                   Find your bank or credit union and see its published{" "}
                   {primaryNamePlain} against the national median.
                 </p>
               </div>
               <Link
                 href={`/institutions?fee=${guide.primaryCategory}`}
-                className="shrink-0 rounded-full bg-[#C44B2E] px-5 py-2.5 text-[13px] font-semibold text-white no-underline transition-colors hover:bg-[#A83D25]"
+                className="shrink-0 rounded-full bg-brick px-5 py-2.5 text-[13px] font-semibold text-white no-underline transition-colors hover:bg-brick-ink"
               >
                 Find your institution
               </Link>
@@ -300,14 +300,14 @@ export default async function GuidePage({ params }: PageProps) {
           <div className="mt-5 flex flex-wrap items-center gap-3">
             <Link
               href="/fees"
-              className="inline-flex items-center gap-1.5 rounded-full border border-[#E8DFD1] bg-white/80 px-4 py-2 text-[12px] font-medium text-[#5A5347] no-underline transition-all hover:border-[#C44B2E]/30 hover:text-[#A93D25]"
+              className="inline-flex items-center gap-1.5 rounded-full border border-border bg-white/80 px-4 py-2 text-[12px] font-medium text-ink-soft no-underline transition-all hover:border-brick/30 hover:text-brick"
             >
               View the full fee index
               <Arrow />
             </Link>
             <Link
               href={`/fees/${guide.primaryCategory}`}
-              className="inline-flex items-center gap-1.5 rounded-full bg-[#C44B2E] px-4 py-2 text-[12px] font-medium text-white no-underline shadow-sm shadow-[#C44B2E]/15 transition-all hover:shadow-md hover:shadow-[#C44B2E]/25"
+              className="inline-flex items-center gap-1.5 rounded-full bg-brick px-4 py-2 text-[12px] font-medium text-white no-underline shadow-sm shadow-[#b23a32]/15 transition-all hover:shadow-md hover:shadow-[#b23a32]/25"
             >
               {primaryName} analysis
               <Arrow />
@@ -321,19 +321,19 @@ export default async function GuidePage({ params }: PageProps) {
                 <section aria-labelledby="distribution-heading" className="mb-12">
                   <h2
                     id="distribution-heading"
-                    className="text-[18px] font-medium tracking-[-0.01em] text-[#1A1815]"
-                    style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
+                    className="text-[18px] font-bold tracking-tight text-ink"
+                    style={{ fontFamily: "var(--fi-font-sans)" }}
                   >
                     {primaryName} Fee Distribution
                   </h2>
-                  <p className="mt-1.5 text-[13px] text-[#6B6255]">
+                  <p className="mt-1.5 text-[13px] text-ink-muted">
                     How {primaryAmounts.length.toLocaleString()} institutions price this
                     fee. National median:{" "}
-                    <span className="font-medium text-[#1A1815]">
+                    <span className="font-medium text-ink">
                       {formatAmount(primarySummary.median_amount)}
                     </span>
                   </p>
-                  <div className="mt-4 rounded-xl border border-[#E8DFD1]/80 bg-white/70 p-5 backdrop-blur-sm">
+                  <div className="mt-4 rounded-xl border border-border/80 bg-white/70 p-5 backdrop-blur-sm">
                     <DistributionChart
                       values={primaryAmounts}
                       median={primarySummary.median_amount}
@@ -356,7 +356,7 @@ export default async function GuidePage({ params }: PageProps) {
               </div>
 
               {/* ── Attribution ── */}
-              <footer className="mt-12 rounded-xl border border-[#E8DFD1]/70 bg-[#FAF7F2]/60 px-5 py-4 text-[12.5px] leading-relaxed text-[#6B6255]">
+              <footer className="mt-12 rounded-xl border border-border/70 bg-paper/60 px-5 py-4 text-[12.5px] leading-relaxed text-ink-muted">
                 <p>
                   Fee data from the {PRODUCT_NAME}, covering{" "}
                   <span className="tabular-nums">
@@ -367,7 +367,7 @@ export default async function GuidePage({ params }: PageProps) {
                   change fees without much notice — always check your own
                   institution&rsquo;s current schedule.
                 </p>
-                <p className="mt-2 text-[#6B6255]">
+                <p className="mt-2 text-ink-muted">
                   {guide.author}
                   {reviewDate && <> &middot; Last reviewed {reviewDate}</>}
                   {guide.methodologyHref && (
@@ -376,7 +376,7 @@ export default async function GuidePage({ params }: PageProps) {
                       &middot;{" "}
                       <Link
                         href={guide.methodologyHref}
-                        className="text-[#A93D25]/70 hover:text-[#A93D25]"
+                        className="text-brick/70 hover:text-brick"
                       >
                         Methodology
                       </Link>
@@ -390,12 +390,12 @@ export default async function GuidePage({ params }: PageProps) {
                 <div className="mb-5 flex items-center gap-3">
                   <h2
                     id="explore-heading"
-                    className="text-[16px] font-medium text-[#1A1815]"
-                    style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
+                    className="text-[16px] font-bold text-ink"
+                    style={{ fontFamily: "var(--fi-font-sans)" }}
                   >
                     Explore the Data
                   </h2>
-                  <span className="h-px flex-1 bg-[#E8DFD1]" aria-hidden="true" />
+                  <span className="h-px flex-1 bg-border" aria-hidden="true" />
                 </div>
                 <div className="grid gap-3 sm:grid-cols-2">
                   {relevantFees.map((fee) => {
@@ -404,9 +404,9 @@ export default async function GuidePage({ params }: PageProps) {
                       <Link
                         key={`deep-${fee.fee_category}`}
                         href={`/fees/${fee.fee_category}`}
-                        className="group flex items-start gap-3.5 rounded-xl border border-[#E8DFD1]/80 bg-white/70 px-5 py-4 no-underline transition-all duration-300 hover:border-[#C44B2E]/20 hover:shadow-md hover:shadow-[#C44B2E]/5"
+                        className="group flex items-start gap-3.5 rounded-xl border border-border/80 bg-white/70 px-5 py-4 no-underline transition-all duration-300 hover:border-brick/20 hover:shadow-md hover:shadow-[#b23a32]/5"
                       >
-                        <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#C44B2E]/8 text-[#C44B2E]">
+                        <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brick/8 text-brick">
                           <svg
                             className="h-4 w-4"
                             fill="none"
@@ -424,10 +424,10 @@ export default async function GuidePage({ params }: PageProps) {
                           </svg>
                         </div>
                         <div>
-                          <span className="text-[13px] font-medium text-[#1A1815] transition-colors group-hover:text-[#A93D25]">
+                          <span className="text-[13px] font-medium text-ink transition-colors group-hover:text-brick">
                             {getDisplayName(fee.fee_category)}
                           </span>
-                          <span className="block text-[11px] text-[#6B6255]">
+                          <span className="block text-[11px] text-ink-muted">
                             {open
                               ? "Distribution, breakdowns by charter, state and tier"
                               : "Distribution and national median — free"}
@@ -435,7 +435,7 @@ export default async function GuidePage({ params }: PageProps) {
                           {/* Stated about the destination, not the reader, so this page
                               renders the same HTML for everyone and can be cached. */}
                           {!open && (
-                            <span className="mt-1 inline-flex items-center gap-1 text-[10px] font-medium text-[#6B6255]">
+                            <span className="mt-1 inline-flex items-center gap-1 text-[10px] font-medium text-ink-muted">
                               <svg
                                 className="h-2.5 w-2.5"
                                 viewBox="0 0 24 24"
@@ -464,27 +464,27 @@ export default async function GuidePage({ params }: PageProps) {
                   <div className="mb-5 flex items-center gap-3">
                     <h2
                       id="related-heading"
-                      className="text-[16px] font-medium text-[#1A1815]"
-                      style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
+                      className="text-[16px] font-bold text-ink"
+                      style={{ fontFamily: "var(--fi-font-sans)" }}
                     >
                       Related Guides
                     </h2>
-                    <span className="h-px flex-1 bg-[#E8DFD1]" aria-hidden="true" />
+                    <span className="h-px flex-1 bg-border" aria-hidden="true" />
                   </div>
                   <div className="grid gap-3 sm:grid-cols-2">
                     {related.map((g) => (
                       <Link
                         key={g.slug}
                         href={`/guides/${g.slug}`}
-                        className="group rounded-xl border border-[#E8DFD1]/80 bg-white/70 px-5 py-4 no-underline transition-all duration-300 hover:border-[#C44B2E]/20 hover:shadow-md hover:shadow-[#C44B2E]/5"
+                        className="group rounded-xl border border-border/80 bg-white/70 px-5 py-4 no-underline transition-all duration-300 hover:border-brick/20 hover:shadow-md hover:shadow-[#b23a32]/5"
                       >
                         <span
-                          className="text-[14px] font-medium text-[#1A1815] transition-colors group-hover:text-[#A93D25]"
-                          style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
+                          className="text-[14px] font-semibold text-ink transition-colors group-hover:text-brick"
+                          style={{ fontFamily: "var(--fi-font-sans)" }}
                         >
                           {g.title}
                         </span>
-                        <span className="mt-1 line-clamp-2 block text-[12px] text-[#6B6255]">
+                        <span className="mt-1 line-clamp-2 block text-[12px] text-ink-muted">
                           {g.description}
                         </span>
                       </Link>
@@ -497,45 +497,45 @@ export default async function GuidePage({ params }: PageProps) {
             {/* ── SIDEBAR ── */}
             <aside className="space-y-5 xl:sticky xl:top-20 xl:self-start">
               {relevantFees.length > 0 && (
-                <div className="relative overflow-hidden rounded-xl border border-[#E8DFD1] bg-white/80 px-5 py-5 backdrop-blur-sm">
+                <div className="relative overflow-hidden rounded-xl border border-border bg-white/80 px-5 py-5 backdrop-blur-sm">
                   <div
-                    className="absolute left-0 right-0 top-0 h-[2px] bg-gradient-to-r from-transparent via-[#C44B2E]/30 to-transparent"
+                    className="absolute left-0 right-0 top-0 h-[2px] bg-gradient-to-r from-transparent via-brick/30 to-transparent"
                     aria-hidden="true"
                   />
-                  <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-[#A93D25]/60">
+                  <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-brick/60">
                     Live National Benchmarks
                   </p>
                   <div className="mt-4 space-y-4">
                     {relevantFees.map((fee) => (
                       <div
                         key={fee.fee_category}
-                        className="border-b border-[#E8DFD1]/60 pb-3.5 last:border-0 last:pb-0"
+                        className="border-b border-border/60 pb-3.5 last:border-0 last:pb-0"
                       >
                         <Link
                           href={`/fees/${fee.fee_category}`}
-                          className="text-[13px] font-medium text-[#1A1815] transition-colors hover:text-[#A93D25]"
-                          style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
+                          className="text-[13px] font-semibold text-ink transition-colors hover:text-brick"
+                          style={{ fontFamily: "var(--fi-font-sans)" }}
                         >
                           {getDisplayName(fee.fee_category)}
                         </Link>
                         <div className="mt-1.5 flex items-baseline gap-2">
                           <span
-                            className="text-[22px] font-light tracking-tight tabular-nums text-[#1A1815]"
+                            className="text-[22px] font-semibold tracking-tight tabular-nums text-ink"
                             style={{
-                              fontFamily: "var(--font-newsreader), Georgia, serif",
+                              fontFamily: "var(--fi-font-mono)",
                             }}
                           >
                             {formatAmount(fee.median_amount)}
                           </span>
-                          <span className="text-[10px] text-[#6B6255]">median</span>
+                          <span className="text-[10px] text-ink-muted">median</span>
                         </div>
-                        <div className="mt-1 text-[11px] tabular-nums text-[#6B6255]">
+                        <div className="mt-1 text-[11px] tabular-nums text-ink-muted">
                           P25: {formatAmount(fee.p25_amount)} &middot; P75:{" "}
                           {formatAmount(fee.p75_amount)}
                         </div>
                         <Link
                           href={`/fees/${fee.fee_category}`}
-                          className="mt-2 inline-block rounded-full border border-[#E8DFD1]/60 bg-[#FAF7F2] px-2.5 py-0.5 text-[10px] font-medium text-[#6B6255] no-underline transition-colors hover:border-[#C44B2E]/30 hover:text-[#A93D25]"
+                          className="mt-2 inline-block rounded-full border border-border/60 bg-paper px-2.5 py-0.5 text-[10px] font-medium text-ink-muted no-underline transition-colors hover:border-brick/30 hover:text-brick"
                         >
                           Full analysis
                         </Link>
@@ -547,7 +547,7 @@ export default async function GuidePage({ params }: PageProps) {
 
               {/* #1172: no institution is named outside a buyer's own report. */}
               {zeroFeeCount > 0 && (
-                <div className="rounded-xl border border-[#E8DFD1] bg-white/80 px-5 py-4 text-[12px] text-[#5A5347]">
+                <div className="rounded-xl border border-border bg-white/80 px-5 py-4 text-[12px] text-ink-soft">
                   <span className="font-bold tabular-nums">{zeroFeeCount}</span>{" "}
                   institution{zeroFeeCount !== 1 ? "s" : ""} in our index charge nothing for {primaryNamePlain}.
                 </div>
@@ -555,9 +555,9 @@ export default async function GuidePage({ params }: PageProps) {
 
               <nav
                 aria-label="Guide contents"
-                className="rounded-xl border border-[#E8DFD1] bg-white/80 px-5 py-4"
+                className="rounded-xl border border-border bg-white/80 px-5 py-4"
               >
-                <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-[#6B6255]">
+                <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-ink-muted">
                   In This Guide
                 </p>
                 <ul className="mt-3 space-y-2">
@@ -565,10 +565,10 @@ export default async function GuidePage({ params }: PageProps) {
                     <li key={section.id}>
                       <a
                         href={`#${section.id}`}
-                        className="flex items-center gap-2 text-[13px] text-[#6B6255] transition-colors hover:text-[#A93D25]"
+                        className="flex items-center gap-2 text-[13px] text-ink-muted transition-colors hover:text-brick"
                       >
                         <span
-                          className="h-1 w-1 shrink-0 rounded-full bg-[#D4C9BA]"
+                          className="h-1 w-1 shrink-0 rounded-full bg-border"
                           aria-hidden="true"
                         />
                         {section.heading}
@@ -579,30 +579,30 @@ export default async function GuidePage({ params }: PageProps) {
               </nav>
 
               {/* ── CTA: a consumer page offers the consumer something ── */}
-              <div className="rounded-xl border border-[#E8DFD1] bg-white/80 px-5 py-5">
-                  <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-[#A93D25]/60">
+              <div className="rounded-xl border border-border bg-white/80 px-5 py-5">
+                  <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-brick/60">
                     Follow this fee
                   </p>
                   <p
-                    className="mt-2 text-[15px] font-medium text-[#1A1815]"
-                    style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
+                    className="mt-2 text-[15px] font-semibold text-ink"
+                    style={{ fontFamily: "var(--fi-font-sans)" }}
                   >
                     Get an email when your bank updates this fee
                   </p>
-                  <p className="mt-1.5 text-[12px] leading-relaxed text-[#6B6255]">
+                  <p className="mt-1.5 text-[12px] leading-relaxed text-ink-muted">
                     Free account. Save your institution and we&rsquo;ll email you when its published{" "}
                     {primaryNamePlain} is updated.
                   </p>
                   <Link
                     href={`/register?intent=fee-alert&category=${guide.primaryCategory}`}
-                    className="mt-4 inline-flex items-center gap-1.5 rounded-full bg-[#1A1815] px-5 py-2 text-[12px] font-semibold text-white no-underline transition-all hover:bg-[#33302B]"
+                    className="mt-4 inline-flex items-center gap-1.5 rounded-full bg-ink px-5 py-2 text-[12px] font-semibold text-white no-underline transition-all hover:bg-[#33302B]"
                   >
                     Create a free account
                     <Arrow />
                   </Link>
-                  <p className="mt-3 text-[11px] text-[#6B6255]">
+                  <p className="mt-3 text-[11px] text-ink-muted">
                     Benchmarking for your institution?{" "}
-                    <Link href="/subscribe" className="text-[#A93D25]/80 hover:text-[#A93D25]">
+                    <Link href="/subscribe" className="text-brick/80 hover:text-brick">
                       See professional plans
                     </Link>
                   </p>

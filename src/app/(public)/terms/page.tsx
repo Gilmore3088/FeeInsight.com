@@ -11,26 +11,26 @@ export default function TermsPage() {
   return (
     <div className="mx-auto max-w-3xl px-6 py-14">
       <div className="flex items-center gap-2 mb-4">
-        <span className="h-px w-8 bg-[#C44B2E]/40" />
-        <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#A93D25]/60">
+        <span className="h-px w-8 bg-brick/40" />
+        <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-brick/60">
           Legal
         </span>
       </div>
 
       <h1
-        className="text-[1.75rem] sm:text-[2.25rem] leading-[1.12] tracking-[-0.02em] text-[#1A1815]"
-        style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
+        className="font-extrabold text-[1.75rem] sm:text-[2.25rem] leading-[1.12] tracking-[-0.02em] text-ink"
+        style={{ fontFamily: "var(--fi-font-sans)" }}
       >
         Terms of Service
       </h1>
-      <p className="mt-2 text-[13px] text-[#6B6255]">
+      <p className="mt-2 text-[13px] text-ink-muted">
         Last updated: October 8, 2026
       </p>
 
-      <div className="mt-8 space-y-6 text-[14px] leading-relaxed text-[#5A5347]">
+      <div className="mt-8 space-y-6 text-[14px] leading-relaxed text-ink-soft">
         <section>
-          <h2 className="text-[16px] font-medium text-[#1A1815] mb-2"
-            style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}>
+          <h2 className="text-[16px] font-bold text-ink mb-2"
+            style={{ fontFamily: "var(--fi-font-sans)" }}>
             1. Acceptance of Terms
           </h2>
           <p>
@@ -45,8 +45,8 @@ export default function TermsPage() {
         </section>
 
         <section>
-          <h2 className="text-[16px] font-medium text-[#1A1815] mb-2"
-            style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}>
+          <h2 className="text-[16px] font-bold text-ink mb-2"
+            style={{ fontFamily: "var(--fi-font-sans)" }}>
             2. Description of Service
           </h2>
           <p>
@@ -59,8 +59,8 @@ export default function TermsPage() {
         </section>
 
         <section>
-          <h2 className="text-[16px] font-medium text-[#1A1815] mb-2"
-            style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}>
+          <h2 className="text-[16px] font-bold text-ink mb-2"
+            style={{ fontFamily: "var(--fi-font-sans)" }}>
             3. Accounts and Registration
           </h2>
           <p>
@@ -72,8 +72,8 @@ export default function TermsPage() {
         </section>
 
         <section>
-          <h2 className="text-[16px] font-medium text-[#1A1815] mb-2"
-            style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}>
+          <h2 className="text-[16px] font-bold text-ink mb-2"
+            style={{ fontFamily: "var(--fi-font-sans)" }}>
             4. Subscriptions and Billing
           </h2>
           <ul className="list-disc pl-6 space-y-1.5">
@@ -113,8 +113,8 @@ export default function TermsPage() {
         </section>
 
         <section>
-          <h2 className="text-[16px] font-medium text-[#1A1815] mb-2"
-            style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}>
+          <h2 className="text-[16px] font-bold text-ink mb-2"
+            style={{ fontFamily: "var(--fi-font-sans)" }}>
             5. Commissioned Reports
           </h2>
           <ul className="list-disc pl-6 space-y-1.5">
@@ -139,8 +139,8 @@ export default function TermsPage() {
         </section>
 
         <section>
-          <h2 className="text-[16px] font-medium text-[#1A1815] mb-2"
-            style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}>
+          <h2 className="text-[16px] font-bold text-ink mb-2"
+            style={{ fontFamily: "var(--fi-font-sans)" }}>
             6. Data Usage and Licensing
           </h2>
           <p>
@@ -153,8 +153,8 @@ export default function TermsPage() {
         </section>
 
         <section>
-          <h2 className="text-[16px] font-medium text-[#1A1815] mb-2"
-            style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}>
+          <h2 className="text-[16px] font-bold text-ink mb-2"
+            style={{ fontFamily: "var(--fi-font-sans)" }}>
             7. API Usage
           </h2>
           <p>
@@ -167,8 +167,8 @@ export default function TermsPage() {
         </section>
 
         <section>
-          <h2 className="text-[16px] font-medium text-[#1A1815] mb-2"
-            style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}>
+          <h2 className="text-[16px] font-bold text-ink mb-2"
+            style={{ fontFamily: "var(--fi-font-sans)" }}>
             8. Data Accuracy
           </h2>
           <p>
@@ -182,8 +182,8 @@ export default function TermsPage() {
         </section>
 
         <section>
-          <h2 className="text-[16px] font-medium text-[#1A1815] mb-2"
-            style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}>
+          <h2 className="text-[16px] font-bold text-ink mb-2"
+            style={{ fontFamily: "var(--fi-font-sans)" }}>
             9. Not Financial Advice
           </h2>
           <p>
@@ -195,8 +195,8 @@ export default function TermsPage() {
         </section>
 
         <section>
-          <h2 className="text-[16px] font-medium text-[#1A1815] mb-2"
-            style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}>
+          <h2 className="text-[16px] font-bold text-ink mb-2"
+            style={{ fontFamily: "var(--fi-font-sans)" }}>
             10. Acceptable Use
           </h2>
           <p>You agree not to:</p>
@@ -210,8 +210,8 @@ export default function TermsPage() {
         </section>
 
         <section>
-          <h2 className="text-[16px] font-medium text-[#1A1815] mb-2"
-            style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}>
+          <h2 className="text-[16px] font-bold text-ink mb-2"
+            style={{ fontFamily: "var(--fi-font-sans)" }}>
             11. Limitation of Liability
           </h2>
           <p>
@@ -224,8 +224,8 @@ export default function TermsPage() {
         </section>
 
         <section>
-          <h2 className="text-[16px] font-medium text-[#1A1815] mb-2"
-            style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}>
+          <h2 className="text-[16px] font-bold text-ink mb-2"
+            style={{ fontFamily: "var(--fi-font-sans)" }}>
             12. Termination
           </h2>
           <p>
@@ -238,8 +238,8 @@ export default function TermsPage() {
         </section>
 
         <section>
-          <h2 className="text-[16px] font-medium text-[#1A1815] mb-2"
-            style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}>
+          <h2 className="text-[16px] font-bold text-ink mb-2"
+            style={{ fontFamily: "var(--fi-font-sans)" }}>
             13. Governing Law
           </h2>
           <p>
@@ -251,8 +251,8 @@ export default function TermsPage() {
         </section>
 
         <section>
-          <h2 className="text-[16px] font-medium text-[#1A1815] mb-2"
-            style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}>
+          <h2 className="text-[16px] font-bold text-ink mb-2"
+            style={{ fontFamily: "var(--fi-font-sans)" }}>
             14. Changes to Terms
           </h2>
           <p>
@@ -263,10 +263,10 @@ export default function TermsPage() {
           </p>
         </section>
 
-        <div className="pt-4 border-t border-[#E8DFD1]">
-          <p className="text-[13px] text-[#6B6255]">
+        <div className="pt-4 border-t border-border">
+          <p className="text-[13px] text-ink-muted">
             Questions about these terms? Contact us at{" "}
-            <a href={`mailto:${CONTACT_EMAIL}`} className="text-[#C44B2E] hover:underline">
+            <a href={`mailto:${CONTACT_EMAIL}`} className="text-brick hover:underline">
               {CONTACT_EMAIL}
             </a>
           </p>

@@ -26,14 +26,14 @@ export function NavAccount() {
       <div className="flex items-center gap-4">
         <Link
           href="/account"
-          className="flex items-center gap-2 text-[13px] font-medium text-[#6B6255] transition-colors hover:text-[#1A1815]"
+          className="flex items-center gap-2 text-[13px] font-medium text-ink-muted transition-colors hover:text-ink"
         >
-          <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#1A1815] text-[10px] font-bold text-white">
+          <span className="flex h-6 w-6 items-center justify-center rounded-full bg-ink text-[10px] font-bold text-white">
             {session.initial ?? "U"}
           </span>
           <span className="hidden lg:inline">Account</span>
         </Link>
-        <SignOutForm buttonClassName="text-[13px] font-medium text-[#6B6255] transition-colors hover:text-[#1A1815]" />
+        <SignOutForm buttonClassName="text-[13px] font-medium text-ink-muted transition-colors hover:text-ink" />
       </div>
     );
   }
@@ -42,13 +42,13 @@ export function NavAccount() {
     <>
       <Link
         href="/login"
-        className="mr-2 text-[13px] font-medium text-[#6B6255] transition-colors hover:text-[#1A1815]"
+        className="mr-2 text-[13px] font-medium text-ink-muted transition-colors hover:text-ink"
       >
         Sign in
       </Link>
       <Link
         href={REQUEST_REPORT_NAV.href}
-        className="inline-flex items-center rounded-md bg-[#C44B2E] px-3 py-1.5 text-[12px] font-semibold text-white transition-colors hover:bg-[#A93D25]"
+        className="inline-flex items-center rounded-md bg-brick px-3 py-1.5 text-[12px] font-semibold text-white transition-colors hover:bg-brick-ink"
       >
         {REQUEST_REPORT_NAV.label}
       </Link>
@@ -56,7 +56,7 @@ export function NavAccount() {
   );
 }
 
-const MENU_LINK = "block px-4 py-1.5 text-[13px] text-[#1A1815] no-underline hover:bg-[#F5EFE6]";
+const MENU_LINK = "block px-4 py-1.5 text-[13px] text-ink no-underline hover:bg-paper";
 
 /**
  * For Pro users the account corner holds everything outside Hamilton's four tabs: the bank and
@@ -91,21 +91,21 @@ function ProAccountMenu({ session }: { session: SessionChrome }) {
         aria-expanded={open}
         aria-haspopup="menu"
         onClick={() => setOpen((value) => !value)}
-        className="flex items-center gap-2 text-[13px] font-medium text-[#6B6255] transition-colors hover:text-[#1A1815]"
+        className="flex items-center gap-2 text-[13px] font-medium text-ink-muted transition-colors hover:text-ink"
       >
-        <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#1A1815] text-[10px] font-bold text-white">
+        <span className="flex h-6 w-6 items-center justify-center rounded-full bg-ink text-[10px] font-bold text-white">
           {session.initial ?? "U"}
         </span>
         <span className="hidden lg:inline">Account</span>
       </button>
       {open ? (
-        <div className="absolute right-0 top-full z-50 mt-3 w-60 rounded-lg border border-[#E0D7C9] bg-white py-1.5 shadow-lg shadow-[#1A1815]/10">
+        <div className="absolute right-0 top-full z-50 mt-3 w-60 rounded-lg border border-border bg-white py-1.5 shadow-lg shadow-[#132338]/10">
           {HAMILTON_ACCOUNT_NAV.map((item) => (
             <Link key={item.href} href={contextHref(item.href)} className={MENU_LINK} onClick={() => setOpen(false)}>
               {item.label}
             </Link>
           ))}
-          <p className="mt-1 border-t border-[#EDE5D8] px-4 pb-1 pt-2.5 text-[11px] uppercase tracking-[0.1em] text-[#6B6255]">
+          <p className="mt-1 border-t border-surface-200 px-4 pb-1 pt-2.5 text-[11px] uppercase tracking-[0.1em] text-ink-muted">
             Reference
           </p>
           {HAMILTON_REFERENCE_NAV.map((item) => (
@@ -113,7 +113,7 @@ function ProAccountMenu({ session }: { session: SessionChrome }) {
               {item.label}
             </Link>
           ))}
-          <div className="mt-1 border-t border-[#EDE5D8] pt-1">
+          <div className="mt-1 border-t border-surface-200 pt-1">
             {session.isStaff ? (
               <Link href="/admin" className={MENU_LINK} onClick={() => setOpen(false)}>
                 Admin
@@ -122,7 +122,7 @@ function ProAccountMenu({ session }: { session: SessionChrome }) {
             <Link href="/account" className={MENU_LINK} onClick={() => setOpen(false)}>
               Account and billing
             </Link>
-            <SignOutForm buttonClassName="w-full px-4 py-1.5 text-left text-[13px] text-[#5A5347] hover:bg-[#F5EFE6]" />
+            <SignOutForm buttonClassName="w-full px-4 py-1.5 text-left text-[13px] text-ink-soft hover:bg-paper" />
           </div>
         </div>
       ) : null}

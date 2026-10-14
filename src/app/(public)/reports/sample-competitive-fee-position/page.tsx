@@ -43,36 +43,36 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 const PRIMARY_BUTTON =
-  "inline-flex items-center rounded-md bg-[#C44B2E] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#A93D25]";
+  "inline-flex items-center rounded-md bg-brick px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-brick-ink";
 const SECONDARY_BUTTON =
-  "inline-flex items-center rounded-md border border-[#D5CBBF] px-4 py-2.5 text-sm font-semibold text-[#1A1815] transition-colors hover:border-[#C44B2E] hover:text-[#A93D25]";
+  "inline-flex items-center rounded-md border border-border px-4 py-2.5 text-sm font-semibold text-ink transition-colors hover:border-brick hover:text-brick";
 
 /** Shown while the sample is offline for a re-render, so no stale figures stay public. */
 function SampleComingSoon() {
   return (
     <div className="mx-auto max-w-3xl px-6 pb-24 pt-14">
-      <nav aria-label="Breadcrumb" className="mb-6 flex items-center gap-2 text-[12px] text-[#6B6255]">
-        <Link href="/reports" className="transition-colors hover:text-[#1A1815]">
+      <nav aria-label="Breadcrumb" className="mb-6 flex items-center gap-2 text-[12px] text-ink-muted">
+        <Link href="/reports" className="transition-colors hover:text-ink">
           Reports
         </Link>
-        <span className="text-[#D4C9BA]">/</span>
-        <span className="text-[#5A5347]">Sample</span>
+        <span className="text-border">/</span>
+        <span className="text-ink-soft">Sample</span>
       </nav>
-      <p className="mb-3 text-[11px] font-bold uppercase tracking-[0.12em] text-[#A93D25]">
+      <p className="mb-3 text-[11px] font-bold uppercase tracking-[0.12em] text-brick">
         Sample — {REPORT_OFFER.name}
       </p>
       <h1
-        className="text-[2rem] leading-[1.15] tracking-[-0.02em] text-[#1A1815] sm:text-[2.5rem]"
-        style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
+        className="font-extrabold text-[2rem] leading-[1.15] tracking-[-0.02em] text-ink sm:text-[2.5rem]"
+        style={{ fontFamily: "var(--fi-font-sans)" }}
       >
         A new sample report is on its way.
       </h1>
-      <p className="mt-4 text-[16px] leading-relaxed text-[#5A5347]">
+      <p className="mt-4 text-[16px] leading-relaxed text-ink-soft">
         We took the previous sample down while we rebuild it from current data, with every fee
         checked against the institution&apos;s own published schedule. It will be back here once that
         is done.
       </p>
-      <p className="mt-3 text-[16px] leading-relaxed text-[#5A5347]">
+      <p className="mt-3 text-[16px] leading-relaxed text-ink-soft">
         You can still request a report for your own institution. We confirm your peer set with you
         before anything is sent.
       </p>
@@ -89,9 +89,9 @@ function SampleComingSoon() {
           Browse the research
         </Link>
       </div>
-      <p className="mt-6 text-[13px] text-[#6B6255]">
+      <p className="mt-6 text-[13px] text-ink-muted">
         Questions:{" "}
-        <a href={`mailto:${CONTACT_EMAIL}`} className="text-[#5A5347] underline">
+        <a href={`mailto:${CONTACT_EMAIL}`} className="text-ink-soft underline">
           {CONTACT_EMAIL}
         </a>
       </p>
@@ -115,25 +115,25 @@ export default async function SampleReportPage() {
   return (
     <div className="mx-auto max-w-page px-6 pb-24 pt-14">
       <TrackView event="sample_report_view" eventProps={{ institution_id: report.data.subject.institution_id }} />
-      <nav aria-label="Breadcrumb" className="mb-6 flex items-center gap-2 text-[12px] text-[#6B6255]">
-        <Link href="/reports" className="transition-colors hover:text-[#1A1815]">
+      <nav aria-label="Breadcrumb" className="mb-6 flex items-center gap-2 text-[12px] text-ink-muted">
+        <Link href="/reports" className="transition-colors hover:text-ink">
           Reports
         </Link>
-        <span className="text-[#D4C9BA]">/</span>
-        <span className="text-[#5A5347]">Sample</span>
+        <span className="text-border">/</span>
+        <span className="text-ink-soft">Sample</span>
       </nav>
 
-      <header className="border-b border-[#E0D7C9] pb-8">
-        <p className="mb-3 text-[11px] font-bold uppercase tracking-[0.12em] text-[#A93D25]">
+      <header className="border-b border-border pb-8">
+        <p className="mb-3 text-[11px] font-bold uppercase tracking-[0.12em] text-brick">
           Sample — {REPORT_OFFER.name}
         </p>
         <h1
-          className="text-[2rem] leading-[1.15] tracking-[-0.02em] text-[#1A1815] sm:text-[2.5rem]"
-          style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
+          className="font-extrabold text-[2rem] leading-[1.15] tracking-[-0.02em] text-ink sm:text-[2.5rem]"
+          style={{ fontFamily: "var(--fi-font-sans)" }}
         >
           This is what your institution report looks like.
         </h1>
-        <p className="mt-4 max-w-[680px] text-[16px] leading-relaxed text-[#5A5347]">
+        <p className="mt-4 max-w-[680px] text-[16px] leading-relaxed text-ink-soft">
           Below is today&apos;s report for {name}, built from live data by the same code that builds yours. Every
           competitor amount links to the fee schedule it was read from, and every fee here is public on the
           institution&apos;s own site. Yours compares your institution against the competitors in your own market.
@@ -147,7 +147,7 @@ export default async function SampleReportPage() {
           >
             {REPORT_OFFER.institutionCtaLabel}
           </TrackLink>
-          <p className="text-[13px] text-[#6B6255]">{REPORT_OFFER_LINE}.</p>
+          <p className="text-[13px] text-ink-muted">{REPORT_OFFER_LINE}.</p>
         </div>
       </header>
 
@@ -180,14 +180,14 @@ export default async function SampleReportPage() {
         />
       </div>
 
-      <section className="mt-10 flex flex-col items-start gap-4 rounded-xl border border-[#E0D7C9] bg-[#FDFBF8] p-6 sm:flex-row sm:items-center sm:justify-between print:hidden">
+      <section className="mt-10 flex flex-col items-start gap-4 rounded-xl border border-border bg-surface-0 p-6 sm:flex-row sm:items-center sm:justify-between print:hidden">
         <div>
-          <p className="text-[20px] text-[#1A1815]" style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}>
+          <p className="font-semibold text-[20px] text-ink" style={{ fontFamily: "var(--fi-font-sans)" }}>
             Get this report for your institution.
           </p>
-          <p className="mt-1 text-[13px] text-[#6B6255]">
+          <p className="mt-1 text-[13px] text-ink-muted">
             {REPORT_OFFER_LINE}. {REPORT_OFFER.refreshLabel}. Questions:{" "}
-            <a href={`mailto:${CONTACT_EMAIL}`} className="text-[#5A5347] underline">
+            <a href={`mailto:${CONTACT_EMAIL}`} className="text-ink-soft underline">
               {CONTACT_EMAIL}
             </a>
           </p>

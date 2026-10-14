@@ -9,7 +9,7 @@ export async function DataFreshness() {
   if (!summary.refreshedOn) return null;
 
   return (
-    <p className="text-[11px] text-[#6B6255]">
+    <p className="text-[11px] text-ink-muted">
       Data refreshed {summary.refreshedOn} &middot; {summary.observationsLabel} published fee entries nationally
     </p>
   );

@@ -33,32 +33,32 @@ export const metadata: Metadata = {
 
 const HERO_BUTTON_BASE =
   "inline-flex items-center justify-center gap-2 rounded-md px-7 py-3.5 text-[15px] transition-colors";
-const PRIMARY_BUTTON = `${HERO_BUTTON_BASE} bg-[#C44B2E] font-bold text-white hover:bg-[#A93D25]`;
+const PRIMARY_BUTTON = `${HERO_BUTTON_BASE} bg-brick font-bold text-white hover:bg-brick-ink`;
 
 export default async function ForInstitutionsPage() {
   const [summary, sampleLive] = await Promise.all([getPublicStatsSummary(), sampleReportAvailable()]);
 
   return (
-    <div className="min-h-screen bg-[#FAF7F2]">
+    <div className="min-h-screen bg-paper">
       <ConsumerNav />
       <main id="main-content">
         <section className="bg-warm-900 relative overflow-hidden">
           <div className="mx-auto max-w-page px-6 pt-16 pb-14 lg:pt-20 lg:pb-16">
             <div className="max-w-2xl">
-              <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#D16A52]">
+              <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#e0716a]">
                 For banks and credit unions
               </span>
               <h1
-                className="mt-4 text-warm-150 leading-[1.1] tracking-[-0.02em]"
+                className="font-extrabold mt-4 text-warm-150 leading-[1.1] tracking-[-0.02em]"
                 style={{
-                  fontFamily: "var(--font-newsreader), Georgia, serif",
+                  fontFamily: "var(--fi-font-sans)",
                   fontSize: "clamp(28px, 5vw, 44px)",
                   fontWeight: 400,
                 }}
               >
                 Stop guessing what your competitors charge
               </h1>
-              <p className="mt-5 max-w-lg text-[16px] leading-relaxed text-[#D5CBBF]">
+              <p className="mt-5 max-w-lg text-[16px] leading-relaxed text-border">
                 Published fees for {summary.institutionsLabel} institutions across{" "}
                 {summary.categoriesLabel} fee categories — every figure traceable to the disclosure
                 it came from. Start with a free national or Fed district report, or run the workspace yourself.
@@ -97,7 +97,7 @@ export default async function ForInstitutionsPage() {
                   {sampleLive ? "What’s in the report" : `See ${SITE_NAME} Pro`}
                 </a>
               </div>
-              <p className="mt-4 text-[13px] text-[#D5CBBF]">National and Fed district reports, free and instant.</p>
+              <p className="mt-4 text-[13px] text-border">National and Fed district reports, free and instant.</p>
             </div>
           </div>
           <div className="pointer-events-none absolute right-0 top-0 h-full w-1/3 bg-gradient-to-l from-terra/[0.06] to-transparent" />
@@ -144,8 +144,8 @@ function AudienceSection() {
     <section className="bg-warm-100 border-b border-warm-200">
       <div className="mx-auto max-w-page px-6 py-14">
         <h2
-          className="text-center text-[28px] text-warm-900"
-          style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
+          className="font-bold text-center text-[28px] text-warm-900"
+          style={{ fontFamily: "var(--fi-font-sans)" }}
         >
           Built for the people who set the prices
         </h2>
@@ -168,12 +168,12 @@ function AdvisorySection() {
     <section className="bg-white border-b border-warm-200">
       <div className="mx-auto max-w-page px-6 py-14">
         <div className="max-w-3xl">
-          <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#6B6255]">
+          <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-ink-muted">
             {SITE_NAME} Advisory
           </p>
           <h2
-            className="mt-3 text-[28px] text-warm-900"
-            style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
+            className="font-bold mt-3 text-[28px] text-warm-900"
+            style={{ fontFamily: "var(--fi-font-sans)" }}
           >
             Need more than one report?
           </h2>
@@ -211,12 +211,12 @@ function FinalCtaSection({ sampleLive }: { sampleLive: boolean }) {
     <section className="bg-warm-900">
       <div className="mx-auto max-w-page px-6 py-14 text-center">
         <h2
-          className="text-[28px] text-warm-150"
-          style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
+          className="font-bold text-[28px] text-warm-150"
+          style={{ fontFamily: "var(--fi-font-sans)" }}
         >
           Ready to see where your fees stand?
         </h2>
-        <p className="mt-3 text-[15px] text-[#D5CBBF]">
+        <p className="mt-3 text-[15px] text-border">
           {sampleLive
             ? "Start with the sample, or request your own report today."
             : "Start with a free national or Fed district report, or ask us to quote your institution's own."}

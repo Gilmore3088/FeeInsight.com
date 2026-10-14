@@ -48,59 +48,59 @@ export default async function StateCityDirectory({ params }: PageProps) {
       />
 
       <div className="max-w-page mx-auto px-6 py-14">
-        <nav aria-label="Breadcrumb" className="flex items-center gap-2 text-[12px] text-[#6B6255] mb-6">
-          <Link href="/fees" className="hover:text-[#1A1815] transition-colors">Fees</Link>
-          <span className="text-[#D4C9BA]">/</span>
-          <span className="text-[#5A5347]">{stateName}</span>
+        <nav aria-label="Breadcrumb" className="flex items-center gap-2 text-[12px] text-ink-muted mb-6">
+          <Link href="/fees" className="hover:text-ink transition-colors">Fees</Link>
+          <span className="text-border">/</span>
+          <span className="text-ink-soft">{stateName}</span>
         </nav>
 
         <div className="flex items-center gap-2 mb-4">
-          <span className="h-px w-8 bg-[#C44B2E]/40" />
-          <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#A93D25]/60">
+          <span className="h-px w-8 bg-brick/40" />
+          <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-brick/60">
             City Directory
           </span>
         </div>
 
         <h1
-          className="text-[1.75rem] sm:text-[2.25rem] leading-[1.12] tracking-[-0.02em] text-[#1A1815] mb-2"
-          style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
+          className="font-extrabold text-[1.75rem] sm:text-[2.25rem] leading-[1.12] tracking-[-0.02em] text-ink mb-2"
+          style={{ fontFamily: "var(--fi-font-sans)" }}
         >
           Bank Fees by City in {stateName}
         </h1>
-        <p className="text-[14px] text-[#6B6255] mb-8">
+        <p className="text-[14px] text-ink-muted mb-8">
           {cities.length} cities with fee data from {cities.reduce((s, c) => s + c.with_fees, 0)} institutions
         </p>
 
         {cities.length === 0 ? (
-          <p className="text-[#6B6255] py-12 text-center">
+          <p className="text-ink-muted py-12 text-center">
             No fee data available for {stateName} yet. Check back soon.
           </p>
         ) : (
-          <div className="rounded-xl border border-[#E8DFD1]/80 bg-white/70 backdrop-blur-sm overflow-hidden">
+          <div className="rounded-xl border border-border/80 bg-white/70 backdrop-blur-sm overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full min-w-[520px] text-sm">
                 <thead>
-                  <tr className="border-b border-[#E8DFD1]/60 bg-[#FAF7F2]/60">
-                    <th className="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-[0.1em] text-[#6B6255]">City</th>
-                    <th className="px-4 py-2.5 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-[#6B6255]">Total Institutions</th>
-                    <th className="px-4 py-2.5 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-[#6B6255]">With Fee Data</th>
+                  <tr className="border-b border-border/60 bg-paper/60">
+                    <th className="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted">City</th>
+                    <th className="px-4 py-2.5 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted">Total Institutions</th>
+                    <th className="px-4 py-2.5 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted">With Fee Data</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-[#E8DFD1]/40">
+                <tbody className="divide-y divide-border/40">
                   {cities.map((c) => (
-                    <tr key={`${c.city}-${c.state_code}`} className="hover:bg-[#FAF7F2]/60 transition-colors">
+                    <tr key={`${c.city}-${c.state_code}`} className="hover:bg-paper/60 transition-colors">
                       <td className="px-4 py-2.5">
                         <Link
                           href={`/fees/city/${stateCode.toLowerCase()}/${encodeURIComponent(c.city.toLowerCase())}`}
-                          className="font-medium text-[#1A1815] hover:text-[#C44B2E] transition-colors"
+                          className="font-medium text-ink hover:text-brick transition-colors"
                         >
                           {c.city}
                         </Link>
                       </td>
-                      <td className="px-4 py-2.5 text-right tabular-nums text-[#6B6255]">
+                      <td className="px-4 py-2.5 text-right tabular-nums text-ink-muted">
                         {c.institution_count}
                       </td>
-                      <td className="px-4 py-2.5 text-right tabular-nums font-medium text-[#1A1815]">
+                      <td className="px-4 py-2.5 text-right tabular-nums font-medium text-ink">
                         {c.with_fees}
                       </td>
                     </tr>
@@ -114,13 +114,13 @@ export default async function StateCityDirectory({ params }: PageProps) {
         <div className="mt-6 flex flex-wrap gap-3">
           <Link
             href={`/research/state/${stateCode}`}
-            className="rounded-full border border-[#E8DFD1] px-4 py-1.5 text-[12px] font-medium text-[#5A5347] hover:border-[#C44B2E]/30 hover:text-[#A93D25] transition-colors no-underline"
+            className="rounded-full border border-border px-4 py-1.5 text-[12px] font-medium text-ink-soft hover:border-brick/30 hover:text-brick transition-colors no-underline"
           >
             {stateName} Fee Report
           </Link>
           <Link
             href="/fees"
-            className="rounded-full border border-[#E8DFD1] px-4 py-1.5 text-[12px] font-medium text-[#5A5347] hover:border-[#C44B2E]/30 hover:text-[#A93D25] transition-colors no-underline"
+            className="rounded-full border border-border px-4 py-1.5 text-[12px] font-medium text-ink-soft hover:border-brick/30 hover:text-brick transition-colors no-underline"
           >
             Bank Fee Index
           </Link>

@@ -151,14 +151,14 @@ export default async function InstitutionsPage({ searchParams }: PageProps) {
       {results.total > 0 && (
         <section className="fi-reveal fi-reveal-delay-2 pt-5">
           <div className="mb-4">
-            <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-[#6B6255]">
+            <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-ink-muted">
               {selectedStateName ? `${selectedStateName} directory` : "Search results"}
             </p>
-            <p className="mt-1 text-sm text-[#6B6255]">
+            <p className="mt-1 text-sm text-ink-muted">
               {results.total.toLocaleString("en-US")} institution{results.total !== 1 ? "s" : ""} found
               {query && (
                 <span>
-                  {" "}for <strong className="text-[#1A1815]">{query}</strong>
+                  {" "}for <strong className="text-ink">{query}</strong>
                 </span>
               )}
               . Institutions with published fees are listed first.
@@ -173,18 +173,18 @@ export default async function InstitutionsPage({ searchParams }: PageProps) {
 
       {results.total === 0 && (
         <div className="fi-reveal fi-reveal-delay-2 py-8 text-center">
-          <p className="text-sm text-[#6B6255]">
+          <p className="text-sm text-ink-muted">
             No institutions found. Try adjusting your search or filters.
           </p>
           <p className="mt-2 text-sm">
             <Link
               href={submitSourceHref}
-              className="font-semibold text-[#A93D25] underline-offset-2 hover:underline"
+              className="font-semibold text-brick underline-offset-2 hover:underline"
             >
               Can&apos;t find the institution? Send its fee schedule
             </Link>
           </p>
-          <p className="mx-auto mt-1 max-w-md text-xs leading-relaxed text-[#6B6255]">
+          <p className="mx-auto mt-1 max-w-md text-xs leading-relaxed text-ink-muted">
             A link to the published schedule is enough. Reviewers check it against the source before
             any fee is published.
           </p>
@@ -194,53 +194,53 @@ export default async function InstitutionsPage({ searchParams }: PageProps) {
   );
 
   return (
-    <div className="min-h-screen bg-[#FAF7F2] text-[#1A1815]">
+    <div className="min-h-screen bg-paper text-ink">
       <div className="mx-auto max-w-page px-4 py-7 sm:px-6 sm:py-9">
         {focus && (
-          <div className="fi-reveal mb-6 rounded-xl border border-[#C44B2E]/20 bg-white px-5 py-4">
-            <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-[#A93D25]/80">
+          <div className="fi-reveal mb-6 rounded-xl border border-brick/20 bg-white px-5 py-4">
+            <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-brick/80">
               Comparing {focus.label}
             </p>
-            <p className="mt-1.5 text-sm leading-relaxed text-[#5A5347]">
+            <p className="mt-1.5 text-sm leading-relaxed text-ink-soft">
               Search your institution below and its published {focus.label.toLowerCase()} appears
               alongside the national median
               {focus.median !== null && (
                 <>
                   {" "}
                   of{" "}
-                  <span className="font-semibold tabular-nums text-[#1A1815]">
+                  <span className="font-semibold tabular-nums text-ink">
                     {formatAmount(focus.median)}
                   </span>
                 </>
               )}
               .{" "}
-              <Link href={`/fees/${focus.category}`} className="font-medium text-[#A93D25] hover:underline">
+              <Link href={`/fees/${focus.category}`} className="font-medium text-brick hover:underline">
                 See the full {focus.label.toLowerCase()} analysis
               </Link>
             </p>
           </div>
         )}
         {/* `relative z-20` keeps the search dropdown above the sections that follow; see .fi-reveal. */}
-        <section className="fi-reveal relative z-20 border-b border-[#D8CBB8] pb-6">
+        <section className="fi-reveal relative z-20 border-b border-border pb-6">
           <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px] lg:items-end">
             <div className="min-w-0">
-              <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-[#6B6255]">
+              <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-ink-muted">
                 Institution Directory
               </p>
               <h1
-                className="mt-2 max-w-3xl text-4xl font-normal leading-[1.02] tracking-tight text-[#1A1815] sm:text-5xl"
-                style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
+                className="mt-2 max-w-3xl text-4xl font-extrabold leading-[1.02] tracking-tight text-ink sm:text-5xl"
+                style={{ fontFamily: "var(--fi-font-sans)" }}
               >
                 Find your bank or credit union.
               </h1>
               {/* With a state picked, the intro and statistics give way so the list sits higher. */}
               {!hasState && (
                 <>
-                  <p className="mt-3 max-w-2xl text-base leading-relaxed text-[#5A5347]">
+                  <p className="mt-3 max-w-2xl text-base leading-relaxed text-ink-soft">
                     Pick your state, then your bank or credit union, to see its published fees and
                     how they compare.
                   </p>
-                  <p className="mt-1 text-sm text-[#6B6255]">
+                  <p className="mt-1 text-sm text-ink-muted">
                     Published fees for {stats.institutionsLabel} institutions and growing.
                   </p>
                 </>
@@ -256,7 +256,7 @@ export default async function InstitutionsPage({ searchParams }: PageProps) {
             </div>
 
             {!hasState && (
-              <div className="grid grid-cols-3 divide-x divide-[#E0D7C9] border-y border-[#E0D7C9] bg-[#FDFBF8]">
+              <div className="grid grid-cols-3 divide-x divide-border border-y border-border bg-surface-0">
                 <DirectoryStat label="Institutions with published fees" value={stats.institutionsLabel} />
                 <DirectoryStat label="Published fees" value={stats.observationsLabel} />
                 <DirectoryStat label="Institutions monitored" value={stats.monitoredLabel} />
@@ -284,11 +284,11 @@ export default async function InstitutionsPage({ searchParams }: PageProps) {
 
         {!shouldShowResults && (
           <section className="fi-reveal fi-reveal-delay-2 py-6">
-            <div className="border-y border-[#E0D7C9] py-4">
-              <p className="text-sm font-semibold text-[#1A1815]">
+            <div className="border-y border-border py-4">
+              <p className="text-sm font-semibold text-ink">
                 Select a state to view institution profiles.
               </p>
-              <p className="mt-1 max-w-2xl text-sm leading-relaxed text-[#6B6255]">
+              <p className="mt-1 max-w-2xl text-sm leading-relaxed text-ink-muted">
                 Or search by name above to jump straight to an institution.
               </p>
             </div>
@@ -304,10 +304,10 @@ export default async function InstitutionsPage({ searchParams }: PageProps) {
 function DirectoryStat({ label, value }: { label: string; value: string }) {
   return (
     <div className="min-w-0 px-3 py-3">
-      <p className="text-[11px] font-bold uppercase leading-tight tracking-[0.1em] text-[#6B6255]">
+      <p className="text-[11px] font-bold uppercase leading-tight tracking-[0.1em] text-ink-muted">
         {label}
       </p>
-      <p className="mt-1 truncate text-base font-semibold tabular-nums text-[#1A1815]" title={value}>
+      <p className="mt-1 truncate text-base font-semibold tabular-nums text-ink" title={value}>
         {value}
       </p>
     </div>

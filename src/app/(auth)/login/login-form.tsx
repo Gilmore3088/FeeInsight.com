@@ -38,7 +38,7 @@ export function LoginForm({ redirectTo, forgotPasswordHref }: LoginFormProps) {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="bg-[#FFFDF9] rounded-lg border border-[#E8DFD1] shadow-sm p-6 space-y-4">
+    <form onSubmit={handleSubmit} className="bg-surface-0 rounded-lg border border-border shadow-sm p-6 space-y-4">
       {error && (
         <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">
           {error}
@@ -46,7 +46,7 @@ export function LoginForm({ redirectTo, forgotPasswordHref }: LoginFormProps) {
       )}
 
       <div>
-        <label htmlFor="username" className="block text-sm font-medium text-[#1A1815] mb-1">
+        <label htmlFor="username" className="block text-sm font-medium text-ink mb-1">
           Work email
         </label>
         <input
@@ -56,18 +56,18 @@ export function LoginForm({ redirectTo, forgotPasswordHref }: LoginFormProps) {
           inputMode="email"
           required
           autoComplete="username"
-          className="w-full rounded-md border border-[#D5CBBF] bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#C44B2E] focus:border-transparent"
+          className="w-full rounded-md border border-border bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brick focus:border-transparent"
         />
       </div>
 
       <div>
         <div className="mb-1 flex items-center justify-between">
-          <label htmlFor="password" className="block text-sm font-medium text-[#1A1815]">
+          <label htmlFor="password" className="block text-sm font-medium text-ink">
             Password
           </label>
           <a
             href={forgotPasswordHref}
-            className="text-xs font-medium text-[#6B6255] hover:text-[#1A1815] hover:underline"
+            className="text-xs font-medium text-ink-muted hover:text-ink hover:underline"
           >
             Forgot password?
           </a>
@@ -78,14 +78,14 @@ export function LoginForm({ redirectTo, forgotPasswordHref }: LoginFormProps) {
           type="password"
           required
           autoComplete="current-password"
-          className="w-full rounded-md border border-[#D5CBBF] bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#C44B2E] focus:border-transparent"
+          className="w-full rounded-md border border-border bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brick focus:border-transparent"
         />
       </div>
 
       <button
         type="submit"
         disabled={pending}
-        className="w-full rounded-md bg-[#C44B2E] px-4 py-2.5 text-sm font-medium text-white hover:bg-[#A83D25] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+        className="w-full rounded-md bg-brick px-4 py-2.5 text-sm font-medium text-white hover:bg-brick-ink disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
       >
         {pending ? "Signing in..." : "Sign in"}
       </button>

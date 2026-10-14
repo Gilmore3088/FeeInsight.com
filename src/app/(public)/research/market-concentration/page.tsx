@@ -85,18 +85,18 @@ export default async function MarketConcentrationPage() {
       />
 
       <div className="flex items-center gap-2 mb-4">
-        <span className="h-px w-8 bg-[#C44B2E]/40" />
-        <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#A93D25]/60">
+        <span className="h-px w-8 bg-brick/40" />
+        <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-brick/60">
           Original Research
         </span>
       </div>
       <h1
-        className="text-[1.75rem] sm:text-[2.25rem] leading-[1.12] tracking-[-0.02em] font-bold text-[#1A1815]"
-        style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
+        className="text-[1.75rem] sm:text-[2.25rem] leading-[1.12] tracking-[-0.02em] font-extrabold text-ink"
+        style={{ fontFamily: "var(--fi-font-sans)" }}
       >
         Market Concentration & Bank Fees
       </h1>
-      <p className="mt-2 max-w-2xl text-[14px] text-[#6B6255]">
+      <p className="mt-2 max-w-2xl text-[14px] text-ink-muted">
         Do banks charge higher fees in markets with less competition? This
         analysis measures deposit market concentration (HHI) across U.S. metro
         areas using FDIC Summary of Deposits data, identifying the most and
@@ -108,30 +108,30 @@ export default async function MarketConcentrationPage() {
 
       {/* Summary cards */}
       <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3">
-        <div className="rounded-xl border border-[#E8DFD1]/80 bg-white/70 backdrop-blur-sm px-4 py-3">
-          <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-[#6B6255]">
+        <div className="rounded-xl border border-border/80 bg-white/70 backdrop-blur-sm px-4 py-3">
+          <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted">
             Metro Areas Analyzed
           </p>
-          <p className="mt-1 text-lg font-bold tabular-nums text-[#1A1815]">
+          <p className="mt-1 text-lg font-bold tabular-nums text-ink">
             {totalMarkets > 0 ? totalMarkets.toLocaleString() : "Run ingest-sod first"}
           </p>
         </div>
-        <div className="rounded-xl border border-[#E8DFD1]/80 bg-white/70 backdrop-blur-sm px-4 py-3">
-          <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-[#6B6255]">
+        <div className="rounded-xl border border-border/80 bg-white/70 backdrop-blur-sm px-4 py-3">
+          <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted">
             Highly Concentrated
           </p>
-          <p className="mt-1 text-lg font-bold tabular-nums text-[#1A1815]">
+          <p className="mt-1 text-lg font-bold tabular-nums text-ink">
             {highlyConcentrated}
-            <span className="ml-1 text-xs font-normal text-[#6B6255]">
+            <span className="ml-1 text-xs font-normal text-ink-muted">
               HHI &ge; 2,500
             </span>
           </p>
         </div>
-        <div className="rounded-xl border border-[#E8DFD1]/80 bg-white/70 backdrop-blur-sm px-4 py-3">
-          <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-[#6B6255]">
+        <div className="rounded-xl border border-border/80 bg-white/70 backdrop-blur-sm px-4 py-3">
+          <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted">
             Avg HHI (Top 30)
           </p>
-          <p className="mt-1 text-lg font-bold tabular-nums text-[#1A1815]">
+          <p className="mt-1 text-lg font-bold tabular-nums text-ink">
             {avgHhi.toLocaleString()}
           </p>
         </div>
@@ -141,53 +141,53 @@ export default async function MarketConcentrationPage() {
       {mostConcentrated.length > 0 && (
         <section className="mt-8">
           <h2
-            className="text-sm font-bold text-[#1A1815]"
-            style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
+            className="text-sm font-bold text-ink"
+            style={{ fontFamily: "var(--fi-font-sans)" }}
           >
             Most Concentrated Banking Markets
           </h2>
-          <p className="mt-1 text-[13px] text-[#6B6255]">
+          <p className="mt-1 text-[13px] text-ink-muted">
             Metro areas with the highest HHI scores, indicating fewer competitors
             and greater deposit market power. DOJ considers HHI above 2,500 as
             highly concentrated.
           </p>
 
-          <div className="mt-3 overflow-hidden rounded-xl border border-[#E8DFD1]/80">
+          <div className="mt-3 overflow-hidden rounded-xl border border-border/80">
             <table className="w-full text-left text-sm">
               <thead>
-                <tr className="border-b border-[#E8DFD1]/60 bg-[#FAF7F2]/60">
-                  <th className="px-4 py-2 text-[10px] font-bold uppercase tracking-[0.1em] text-[#6B6255]">
+                <tr className="border-b border-border/60 bg-paper/60">
+                  <th className="px-4 py-2 text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted">
                     Metro Area
                   </th>
-                  <th className="px-4 py-2 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-[#6B6255]">
+                  <th className="px-4 py-2 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted">
                     HHI
                   </th>
-                  <th className="hidden px-4 py-2 text-center text-[10px] font-bold uppercase tracking-[0.1em] text-[#6B6255] sm:table-cell">
+                  <th className="hidden px-4 py-2 text-center text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted sm:table-cell">
                     Classification
                   </th>
-                  <th className="px-4 py-2 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-[#6B6255]">
+                  <th className="px-4 py-2 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted">
                     Banks
                   </th>
-                  <th className="hidden px-4 py-2 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-[#6B6255] sm:table-cell">
+                  <th className="hidden px-4 py-2 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted sm:table-cell">
                     Top 3 Share
                   </th>
-                  <th className="hidden px-4 py-2 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-[#6B6255] md:table-cell">
+                  <th className="hidden px-4 py-2 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted md:table-cell">
                     Total Deposits
                   </th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[#E8DFD1]/60">
+              <tbody className="divide-y divide-border/60">
                 {mostConcentrated.map((row) => {
                   const label = hhiLabel(row.hhi);
                   return (
                     <tr
                       key={row.msa_code}
-                      className="hover:bg-[#FAF7F2]/60 transition-colors"
+                      className="hover:bg-paper/60 transition-colors"
                     >
-                      <td className="px-4 py-2.5 font-medium text-[#1A1815]">
+                      <td className="px-4 py-2.5 font-medium text-ink">
                         {row.msa_name || `MSA ${row.msa_code}`}
                       </td>
-                      <td className="px-4 py-2.5 text-right tabular-nums font-semibold text-[#1A1815]">
+                      <td className="px-4 py-2.5 text-right tabular-nums font-semibold text-ink">
                         {row.hhi.toLocaleString()}
                       </td>
                       <td className="hidden px-4 py-2.5 text-center sm:table-cell">
@@ -197,13 +197,13 @@ export default async function MarketConcentrationPage() {
                           {label.text}
                         </span>
                       </td>
-                      <td className="px-4 py-2.5 text-right tabular-nums text-[#5A5347]">
+                      <td className="px-4 py-2.5 text-right tabular-nums text-ink-soft">
                         {row.institution_count}
                       </td>
-                      <td className="hidden px-4 py-2.5 text-right tabular-nums text-[#6B6255] sm:table-cell">
+                      <td className="hidden px-4 py-2.5 text-right tabular-nums text-ink-muted sm:table-cell">
                         {row.top3_share.toFixed(0)}%
                       </td>
-                      <td className="hidden px-4 py-2.5 text-right tabular-nums text-[#6B6255] md:table-cell">
+                      <td className="hidden px-4 py-2.5 text-right tabular-nums text-ink-muted md:table-cell">
                         {formatDeposits(row.total_deposits)}
                       </td>
                     </tr>
@@ -219,56 +219,56 @@ export default async function MarketConcentrationPage() {
       {leastConcentrated.length > 0 && (
         <section className="mt-8">
           <h2
-            className="text-sm font-bold text-[#1A1815]"
-            style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
+            className="text-sm font-bold text-ink"
+            style={{ fontFamily: "var(--fi-font-sans)" }}
           >
             Most Competitive Banking Markets
           </h2>
-          <p className="mt-1 text-[13px] text-[#6B6255]">
+          <p className="mt-1 text-[13px] text-ink-muted">
             Metro areas with the lowest HHI, indicating strong competition among
             many deposit-taking institutions.
           </p>
 
-          <div className="mt-3 overflow-hidden rounded-xl border border-[#E8DFD1]/80">
+          <div className="mt-3 overflow-hidden rounded-xl border border-border/80">
             <table className="w-full text-left text-sm">
               <thead>
-                <tr className="border-b border-[#E8DFD1]/60 bg-[#FAF7F2]/60">
-                  <th className="px-4 py-2 text-[10px] font-bold uppercase tracking-[0.1em] text-[#6B6255]">
+                <tr className="border-b border-border/60 bg-paper/60">
+                  <th className="px-4 py-2 text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted">
                     Metro Area
                   </th>
-                  <th className="px-4 py-2 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-[#6B6255]">
+                  <th className="px-4 py-2 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted">
                     HHI
                   </th>
-                  <th className="px-4 py-2 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-[#6B6255]">
+                  <th className="px-4 py-2 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted">
                     Banks
                   </th>
-                  <th className="hidden px-4 py-2 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-[#6B6255] sm:table-cell">
+                  <th className="hidden px-4 py-2 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted sm:table-cell">
                     Top 3 Share
                   </th>
-                  <th className="hidden px-4 py-2 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-[#6B6255] md:table-cell">
+                  <th className="hidden px-4 py-2 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted md:table-cell">
                     Total Deposits
                   </th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[#E8DFD1]/60">
+              <tbody className="divide-y divide-border/60">
                 {leastConcentrated.map((row) => (
                   <tr
                     key={row.msa_code}
-                    className="hover:bg-[#FAF7F2]/60 transition-colors"
+                    className="hover:bg-paper/60 transition-colors"
                   >
-                    <td className="px-4 py-2.5 font-medium text-[#1A1815]">
+                    <td className="px-4 py-2.5 font-medium text-ink">
                       {row.msa_name || `MSA ${row.msa_code}`}
                     </td>
                     <td className="px-4 py-2.5 text-right tabular-nums font-semibold text-emerald-700">
                       {row.hhi.toLocaleString()}
                     </td>
-                    <td className="px-4 py-2.5 text-right tabular-nums text-[#5A5347]">
+                    <td className="px-4 py-2.5 text-right tabular-nums text-ink-soft">
                       {row.institution_count}
                     </td>
-                    <td className="hidden px-4 py-2.5 text-right tabular-nums text-[#6B6255] sm:table-cell">
+                    <td className="hidden px-4 py-2.5 text-right tabular-nums text-ink-muted sm:table-cell">
                       {row.top3_share.toFixed(0)}%
                     </td>
-                    <td className="hidden px-4 py-2.5 text-right tabular-nums text-[#6B6255] md:table-cell">
+                    <td className="hidden px-4 py-2.5 text-right tabular-nums text-ink-muted md:table-cell">
                       {formatDeposits(row.total_deposits)}
                     </td>
                   </tr>
@@ -283,60 +283,60 @@ export default async function MarketConcentrationPage() {
       {largestMarkets.length > 0 && (
         <section className="mt-8">
           <h2
-            className="text-sm font-bold text-[#1A1815]"
-            style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
+            className="text-sm font-bold text-ink"
+            style={{ fontFamily: "var(--fi-font-sans)" }}
           >
             Largest Banking Markets by Deposits
           </h2>
-          <p className="mt-1 text-[13px] text-[#6B6255]">
+          <p className="mt-1 text-[13px] text-ink-muted">
             The biggest U.S. metro areas ranked by total deposit volume, with
             concentration metrics.
           </p>
 
-          <div className="mt-3 overflow-hidden rounded-xl border border-[#E8DFD1]/80">
+          <div className="mt-3 overflow-hidden rounded-xl border border-border/80">
             <table className="w-full text-left text-sm">
               <thead>
-                <tr className="border-b border-[#E8DFD1]/60 bg-[#FAF7F2]/60">
-                  <th className="px-4 py-2 text-[10px] font-bold uppercase tracking-[0.1em] text-[#6B6255]">
+                <tr className="border-b border-border/60 bg-paper/60">
+                  <th className="px-4 py-2 text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted">
                     Metro Area
                   </th>
-                  <th className="px-4 py-2 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-[#6B6255]">
+                  <th className="px-4 py-2 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted">
                     Total Deposits
                   </th>
-                  <th className="px-4 py-2 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-[#6B6255]">
+                  <th className="px-4 py-2 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted">
                     Banks
                   </th>
-                  <th className="px-4 py-2 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-[#6B6255]">
+                  <th className="px-4 py-2 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted">
                     HHI
                   </th>
-                  <th className="hidden px-4 py-2 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-[#6B6255] sm:table-cell">
+                  <th className="hidden px-4 py-2 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted sm:table-cell">
                     Top 3 Share
                   </th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[#E8DFD1]/60">
+              <tbody className="divide-y divide-border/60">
                 {largestMarkets.map((row) => {
                   const label = hhiLabel(row.hhi);
                   return (
                     <tr
                       key={row.msa_code}
-                      className="hover:bg-[#FAF7F2]/60 transition-colors"
+                      className="hover:bg-paper/60 transition-colors"
                     >
-                      <td className="px-4 py-2.5 font-medium text-[#1A1815]">
+                      <td className="px-4 py-2.5 font-medium text-ink">
                         {row.msa_name || `MSA ${row.msa_code}`}
                       </td>
-                      <td className="px-4 py-2.5 text-right tabular-nums font-medium text-[#1A1815]">
+                      <td className="px-4 py-2.5 text-right tabular-nums font-medium text-ink">
                         {formatDeposits(row.total_deposits)}
                       </td>
-                      <td className="px-4 py-2.5 text-right tabular-nums text-[#5A5347]">
+                      <td className="px-4 py-2.5 text-right tabular-nums text-ink-soft">
                         {row.institution_count}
                       </td>
-                      <td className="px-4 py-2.5 text-right tabular-nums text-[#5A5347]">
+                      <td className="px-4 py-2.5 text-right tabular-nums text-ink-soft">
                         <span className={label.color.split(" ")[0]}>
                           {row.hhi.toLocaleString()}
                         </span>
                       </td>
-                      <td className="hidden px-4 py-2.5 text-right tabular-nums text-[#6B6255] sm:table-cell">
+                      <td className="hidden px-4 py-2.5 text-right tabular-nums text-ink-muted sm:table-cell">
                         {row.top3_share.toFixed(0)}%
                       </td>
                     </tr>
@@ -350,11 +350,11 @@ export default async function MarketConcentrationPage() {
 
       {/* Empty state */}
       {mostConcentrated.length === 0 && (
-        <div className="mt-8 rounded-xl border border-[#E8DFD1] bg-[#FAF7F2]/50 px-6 py-10 text-center">
-          <p className="text-sm font-medium text-[#5A5347]">
+        <div className="mt-8 rounded-xl border border-border bg-paper/50 px-6 py-10 text-center">
+          <p className="text-sm font-medium text-ink-soft">
             No market concentration data available yet.
           </p>
-          <p className="mt-1 text-[13px] text-[#6B6255]">
+          <p className="mt-1 text-[13px] text-ink-muted">
             Start the Atlas data refresh from the admin console to populate branch deposit
             data and compute market HHI.
           </p>
@@ -362,11 +362,11 @@ export default async function MarketConcentrationPage() {
       )}
 
       {/* Methodology */}
-      <section className="mt-10 rounded-xl border border-[#E8DFD1] bg-[#FAF7F2]/50 px-5 py-4">
-        <h2 className="text-xs font-semibold uppercase tracking-wider text-[#6B6255]">
+      <section className="mt-10 rounded-xl border border-border bg-paper/50 px-5 py-4">
+        <h2 className="text-xs font-semibold uppercase tracking-wider text-ink-muted">
           Methodology
         </h2>
-        <p className="mt-2 text-[13px] leading-relaxed text-[#6B6255]">
+        <p className="mt-2 text-[13px] leading-relaxed text-ink-muted">
           Market concentration is measured using the Herfindahl-Hirschman Index
           (HHI), computed from FDIC Summary of Deposits (SOD) branch-level
           deposit data. HHI is the sum of squared deposit market shares for

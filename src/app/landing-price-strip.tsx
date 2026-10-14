@@ -72,22 +72,22 @@ export function LandingPriceStrip({
   if (rows.length === 0) return null;
 
   return (
-    <section className="border-b border-[#E0D7C9] bg-[#FDFBF8]">
+    <section className="border-b border-border bg-surface-0">
       <div className="mx-auto max-w-page px-4 py-8 sm:px-6 sm:py-10">
         <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-2">
           <div className="min-w-0">
             <h2
-              className="text-2xl font-normal text-[#1A1815] sm:text-3xl"
-              style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
+              className="text-2xl font-bold text-ink sm:text-3xl"
+              style={{ fontFamily: "var(--fi-font-sans)" }}
             >
               What banks charge
             </h2>
-            <p className="mt-1.5 max-w-2xl text-pretty text-[13px] leading-relaxed text-[#5A5347]">
+            <p className="mt-1.5 max-w-2xl text-pretty text-[13px] leading-relaxed text-ink-soft">
               The big number is the median: half of institutions charge more, half charge less. The
               shaded bar shows where the middle half of institutions fall.
             </p>
           </div>
-          <Link href="/fees" className="shrink-0 text-xs font-semibold text-[#A93D25] hover:text-[#8E2A17]">
+          <Link href="/fees" className="shrink-0 text-xs font-semibold text-brick hover:text-brick-ink">
             All fees →
           </Link>
         </div>
@@ -100,20 +100,20 @@ export function LandingPriceStrip({
           ))}
         </ul>
 
-        <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-[11px] text-[#6B6255]">
+        <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-[11px] text-ink-muted">
           <span className="inline-flex items-center gap-2">
-            <span aria-hidden="true" className="inline-block h-2.5 w-2.5 rounded-full bg-[#C44B2E]" />
+            <span aria-hidden="true" className="inline-block h-2.5 w-2.5 rounded-full bg-brick" />
             Median price
           </span>
           <span className="inline-flex items-center gap-2">
-            <span aria-hidden="true" className="inline-block h-1.5 w-5 rounded-full bg-[#C44B2E]/25" />
+            <span aria-hidden="true" className="inline-block h-1.5 w-5 rounded-full bg-brick/25" />
             Middle half of institutions
           </span>
           <span>
             One value per institution, from its published schedule
             {refreshedOn ? ` · updated ${refreshedOn}` : ""}
           </span>
-          <Link href="/methodology" className="font-semibold text-[#A93D25] hover:text-[#8E2A17]">
+          <Link href="/methodology" className="font-semibold text-brick hover:text-brick-ink">
             How we calculate this →
           </Link>
         </div>
@@ -136,23 +136,23 @@ function PriceRowLink({ row }: { row: PriceRow }) {
       aria-label={`${row.label}: median ${formatUsd(row.median)} across ${formatCount(row.institutions)} institutions, most between ${formatUsd(row.p25)} and ${formatUsd(row.p75)}${row.unstated ? " (includes fees whose audience is not stated, treated as personal)" : ""}`}
     >
       <div className="min-w-0 flex-1">
-        <p className="text-[13px] text-[#5A5347] group-hover:text-[#1A1815]">{row.label}</p>
+        <p className="text-[13px] text-ink-soft group-hover:text-ink">{row.label}</p>
         <div aria-hidden="true" className="relative mt-2 h-2.5">
-          <div className="absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-[#E0D7C9]" />
+          <div className="absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-border" />
           <div
-            className="absolute top-1/2 h-1.5 -translate-y-1/2 rounded-full bg-[#C44B2E]/25"
+            className="absolute top-1/2 h-1.5 -translate-y-1/2 rounded-full bg-brick/25"
             style={{ left: pct(row.p25), width: `calc(${pct(row.p75)} - ${pct(row.p25)})` }}
           />
           <div
-            className="absolute top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#C44B2E] ring-2 ring-[#FDFBF8]"
+            className="absolute top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-brick ring-2 ring-surface-0"
             style={{ left: pct(row.median) }}
           />
         </div>
-        <p aria-hidden="true" className="mt-1 text-[11px] tabular-nums text-[#6B6255]">
+        <p aria-hidden="true" className="mt-1 text-[11px] tabular-nums text-ink-muted">
           {formatUsd(row.p25)}–{formatUsd(row.p75)} · {formatCount(row.institutions)} institutions
         </p>
       </div>
-      <p aria-hidden="true" className="min-w-20 shrink-0 text-right text-2xl font-semibold tabular-nums text-[#1A1815]">
+      <p aria-hidden="true" className="min-w-20 shrink-0 text-right text-2xl font-semibold tabular-nums text-ink">
         {formatUsd(row.median)}
         {row.unstated && <span className="align-super text-sm font-normal">*</span>}
       </p>

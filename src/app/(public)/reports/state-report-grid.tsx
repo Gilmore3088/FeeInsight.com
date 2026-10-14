@@ -23,8 +23,8 @@ const EMPTY: Tone = { bg: "#F5F1EA", fg: "#B5AA9A", sub: "#C7BDAF" };
 function tileTone(share: number): Tone {
   if (share <= 0) return EMPTY;
   if (share >= 1) return { bg: "#7E2C1A", fg: "#FFFFFF", sub: "#F6D9CF" };
-  if (share > 0.5) return { bg: "#A93D25", fg: "#FFFFFF", sub: "#F6D9CF" };
-  if (share > 0.25) return { bg: "#C44B2E", fg: "#FFFFFF", sub: "#F8DED6" };
+  if (share > 0.5) return { bg: "#b23a32", fg: "#FFFFFF", sub: "#F6D9CF" };
+  if (share > 0.25) return { bg: "#b23a32", fg: "#FFFFFF", sub: "#F8DED6" };
   if (share > 0.1) return { bg: "#E39A84", fg: "#3A1A10", sub: "#5C2D1E" };
   return { bg: "#F6DCD3", fg: "#5C2D1E", sub: "#8A5444" };
 }

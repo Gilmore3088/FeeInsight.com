@@ -15,19 +15,19 @@ export default function ContactPage({
   return (
     <div className="mx-auto max-w-2xl px-6 py-14">
       <div className="flex items-center gap-2 mb-4">
-        <span className="h-px w-8 bg-[#C44B2E]/40" />
-        <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#A93D25]/60">
+        <span className="h-px w-8 bg-brick/40" />
+        <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-brick/60">
           Contact
         </span>
       </div>
 
       <h1
-        className="text-[1.75rem] sm:text-[2.25rem] leading-[1.12] tracking-[-0.02em] text-[#1A1815]"
-        style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
+        className="font-extrabold text-[1.75rem] sm:text-[2.25rem] leading-[1.12] tracking-[-0.02em] text-ink"
+        style={{ fontFamily: "var(--fi-font-sans)" }}
       >
         Get in touch
       </h1>
-      <p className="mt-2 text-[14px] text-[#6B6255]">
+      <p className="mt-2 text-[14px] text-ink-muted">
         Reports, Pro seats, Advisory work, data licensing, or general
         questions. We typically respond within one business day.
       </p>
@@ -36,13 +36,13 @@ export default function ContactPage({
         <ContactForm searchParamsPromise={searchParams} />
       </div>
 
-      <div className="mt-10 rounded-xl border border-[#E8DFD1] bg-[#FAF7F2]/50 px-6 py-5">
-        <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-[#6B6255] mb-2">
+      <div className="mt-10 rounded-xl border border-border bg-paper/50 px-6 py-5">
+        <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-ink-muted mb-2">
           Prefer email?
         </p>
-        <p className="text-[13px] text-[#6B6255]">
+        <p className="text-[13px] text-ink-muted">
           Reach us directly at{" "}
-          <a href={`mailto:${CONTACT_EMAIL}`} className="text-[#C44B2E] font-medium select-all">
+          <a href={`mailto:${CONTACT_EMAIL}`} className="text-brick font-medium select-all">
             {CONTACT_EMAIL}
           </a>
         </p>

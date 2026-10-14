@@ -8,7 +8,7 @@ import { useSessionChrome } from "./use-session-chrome";
 import { useHamiltonNavigationHref } from "./hamilton/layout/hamilton-navigation-context";
 
 const ITEM_CLASS =
-  "text-[13px] font-medium text-[#6B6255] transition-colors hover:text-[#1A1815] aria-[current=page]:text-[#1A1815]";
+  "text-[13px] font-medium text-ink-muted transition-colors hover:text-ink aria-[current=page]:text-ink";
 
 /**
  * Desktop nav items. A client island so the header can be rendered into static pages:
@@ -86,8 +86,8 @@ function ExploreMenu({ items, pathname }: { items: NavItem[]; pathname: string |
         aria-expanded={open}
         aria-controls={menuId}
         onClick={() => setOpen((value) => !value)}
-        className={`inline-flex items-center gap-1 text-[13px] font-medium transition-colors hover:text-[#1A1815] ${
-          inSection || open ? "text-[#1A1815]" : "text-[#6B6255]"
+        className={`inline-flex items-center gap-1 text-[13px] font-medium transition-colors hover:text-ink ${
+          inSection || open ? "text-ink" : "text-ink-muted"
         }`}
       >
         {EXPLORE_NAV_LABEL}
@@ -98,7 +98,7 @@ function ExploreMenu({ items, pathname }: { items: NavItem[]; pathname: string |
       <ul
         id={menuId}
         hidden={!open}
-        className="absolute left-0 top-full z-50 mt-3 w-56 rounded-lg border border-[#E0D7C9] bg-white p-1.5 shadow-lg shadow-[#1A1815]/10"
+        className="absolute left-0 top-full z-50 mt-3 w-56 rounded-lg border border-border bg-white p-1.5 shadow-lg shadow-[#132338]/10"
       >
         {items.map((item) => (
           <li key={item.href}>
@@ -106,7 +106,7 @@ function ExploreMenu({ items, pathname }: { items: NavItem[]; pathname: string |
               href={item.href}
               aria-current={isActivePath(pathname, item.href) ? "page" : undefined}
               onClick={() => setOpen(false)}
-              className="block rounded-md px-3 py-2 text-[13px] font-medium text-[#3D3830] hover:bg-[#FAF7F2] hover:text-[#1A1815] aria-[current=page]:text-[#A93D25]"
+              className="block rounded-md px-3 py-2 text-[13px] font-medium text-ink hover:bg-paper hover:text-ink aria-[current=page]:text-brick"
             >
               {item.label}
             </Link>
@@ -122,7 +122,7 @@ export function ProBadge() {
   const session = useSessionChrome();
   if (!session?.isPro) return null;
   return (
-    <span className="inline-flex items-center rounded bg-[#C44B2E]/10 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-[#A93D25]">
+    <span className="inline-flex items-center rounded bg-brick/10 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-brick">
       Pro
     </span>
   );

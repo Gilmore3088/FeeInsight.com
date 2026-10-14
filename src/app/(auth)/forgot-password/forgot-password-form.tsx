@@ -27,10 +27,10 @@ export function ForgotPasswordForm() {
   if (sent) {
     return (
       <div role="status" className={AUTH_FORM_CLASS}>
-        <p className="text-sm text-[#1A1815]">
+        <p className="text-sm text-ink">
           If that email has an account, a reset link is on its way. It works for one hour.
         </p>
-        <p className="text-sm text-[#6B6255]">Nothing after a few minutes? Check your spam folder, then try again.</p>
+        <p className="text-sm text-ink-muted">Nothing after a few minutes? Check your spam folder, then try again.</p>
       </div>
     );
   }
@@ -38,14 +38,14 @@ export function ForgotPasswordForm() {
   return (
     <form onSubmit={handleSubmit} className={`relative ${AUTH_FORM_CLASS}`}>
       <HoneypotField />
-      <p className="text-sm text-[#6B6255]">Enter the email you signed up with and we&apos;ll send a link to choose a new password.</p>
+      <p className="text-sm text-ink-muted">Enter the email you signed up with and we&apos;ll send a link to choose a new password.</p>
       {error && (
         <div role="alert" className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">
           {error}
         </div>
       )}
       <div>
-        <label htmlFor="email" className="block text-sm font-medium text-[#1A1815] mb-1">
+        <label htmlFor="email" className="block text-sm font-medium text-ink mb-1">
           Work email
         </label>
         <input id="email" name="email" type="email" required autoComplete="email" className={AUTH_INPUT_CLASS} />
