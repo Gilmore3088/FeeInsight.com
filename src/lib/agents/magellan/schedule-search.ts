@@ -9,6 +9,7 @@ import { PAID_PASS_MODELS, paidModelCall, paidResponseJson, type PaidMessageCrea
 import { FOUND_COOLDOWN_DAYS, MISS_COOLDOWN_DAYS } from "./cooldowns";
 import { looksLikePdfUrl, validateFeeCandidate } from "./find-validate";
 import { urlIdentity } from "./finders";
+import { bankWebSearchTool } from "./web-search-tool";
 import {
   BUSINESS_PATH_SQL,
   CONSUMER_PATH_SQL,
@@ -310,7 +311,7 @@ export async function runScheduleSearch(options: {
         params: {
           model,
           max_tokens: MAX_OUTPUT_TOKENS,
-          tools: [{ type: "web_search_20250305", name: "web_search", max_uses: WEB_SEARCH_MAX_USES }],
+          tools: [bankWebSearchTool(row, WEB_SEARCH_MAX_USES)],
           messages: [{ role: "user", content: scheduleSearchPrompt(row) }],
         },
       });
