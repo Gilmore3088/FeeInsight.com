@@ -32,7 +32,7 @@ function ask(question: string): AskResponse {
   return withDepth(response, overview, why, research?.provenance.dataAsOf.fees ?? null);
 }
 
-describe("Hamilton quality bar: 30 consultant questions", () => {
+describe("Hamilton quality bar: 32 consultant questions", () => {
   const score = summarize(QUALITY_QUESTIONS.map((item) => scoreResponse(item, ask(item.question))));
 
   it("fails an answer that judges the bank's position instead of saying lower or higher", () => {
@@ -40,8 +40,8 @@ describe("Hamilton quality bar: 30 consultant questions", () => {
     expect(scoreResponse(QUALITY_QUESTIONS[3], judged).failures).toContain('judges the position: "works in your favor"');
   });
 
-  it("has exactly 30 distinct questions", () => {
-    expect(new Set(QUALITY_QUESTIONS.map((q) => q.question)).size).toBe(30);
+  it("has exactly 32 distinct questions", () => {
+    expect(new Set(QUALITY_QUESTIONS.map((q) => q.question)).size).toBe(32);
   });
 
   it("answers every question to the bar", () => {

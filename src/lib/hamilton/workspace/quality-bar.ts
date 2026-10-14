@@ -1,5 +1,5 @@
 /**
- * Hamilton's quality bar: a fixed set of 30 questions a bank consultant gets asked, and
+ * Hamilton's quality bar: a fixed set of 32 questions a bank consultant gets asked, and
  * the checks every answer must pass. `quality-bar.test.ts` runs the whole set on every
  * engine change in CI and prints the score; a release cannot lower it.
  *
@@ -50,6 +50,8 @@ export const QUALITY_QUESTIONS: readonly QualityQuestion[] = [
   { id: "q28", question: "Summarize our overdraft position for the board.", intent: "board" },
   { id: "q29", question: "How does our overdraft fee compare with credit unions over $10B?", intent: "segment" },
   { id: "q30", question: "How does our overdraft fee compare with the largest 20 banks?", intent: "segment" },
+  { id: "q31", question: "How does our fee income compare with peers?", intent: "income" },
+  { id: "q32", question: "What are competitors in my county charging?", intent: "competitors" },
 ];
 
 /** Price position words that do not fit a bank audience. */

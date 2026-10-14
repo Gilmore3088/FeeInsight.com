@@ -6,6 +6,8 @@ import { getPublicStats } from "../data-store";
 import { sql } from "../data-store/connection";
 import { HAMILTON_SYSTEM_PROMPT } from "../hamilton/voice";
 import { withCompactResults } from "./tool-output";
+import { getLocalCompetitors } from "./tool-local-competitors";
+import type { ActivePeerSet } from "../hamilton/active-peer-set";
 
 export interface AgentConfig {
   id: string;
@@ -143,13 +145,77 @@ TONE: Direct, decisive, brief.`;
 const REGULATION_INSTRUCTION =
   "When analyzing fees subject to regulatory scrutiny — overdraft, NSF, monthly maintenance, junk fees — always check CFPB complaint data and Fed Content for enforcement signals before concluding. Use queryRegulatoryRisk for compliance, enforcement risk, or regulatory exposure questions. Flag institutions with above-median fees AND above-average complaint rates as potential compliance risks. Reference ROA, efficiency ratio, and deposit growth when answering fee revenue questions — the financial context makes fee analysis actionable.";
 
+const LOCAL_AND_PEER_INSTRUCTION =
+  "For who competes with an institution in its county or market, or what local competitors charge, call getLocalCompetitors(institution_id) and name the competitors and their prices before any state, peer or national figure. For how an institution's fee income compares with peers, call queryFeeRevenueCorrelation(view='peers', institution_id, and the peer group's filters); use the reader's saved peer set when one is given below, and state the quarter and the peer count it returns. Use queryDistrictData and queryStateData for district and state context.";
+
+/**
+ * The reader's saved default peer set, as the written answer sees it (#1084). Its filters are
+ * passed to the peer tools so "peers" means the group the reader chose. The name is the
+ * reader's own text: kept to one short line.
+ */
+export function buildSavedPeerSetPrompt(set: Pick<ActivePeerSet, "id" | "label" | "filters"> | null): string {
+  if (!set) {
+    return "\n\nSAVED PEER SET: none. The reader has not saved a default peer set; name the peer group each figure uses.";
+  }
+  const f = set.filters;
+  const name = set.label.replace(/[\r\n"]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 80);
+  const parts: string[] = [];
+  if (f.institutionIds?.length) parts.push(`peer_institution_ids: [${f.institutionIds.slice(0, 200).join(", ")}]`);
+  const states = [...(f.states ?? []), ...(f.state_code ? [f.state_code] : [])];
+  if (states.length) parts.push(`states: [${states.map((code) => `"${code}"`).join(", ")}]`);
+  if (f.charter_type) parts.push(`charter_type: "${f.charter_type}"`);
+  if (f.asset_tiers?.length) parts.push(`asset_tiers: [${f.asset_tiers.map((tier) => `"${tier}"`).join(", ")}]`);
+  if (f.fed_districts?.length) parts.push(`fed_districts: [${f.fed_districts.join(", ")}]`);
+  return `\n\nSAVED PEER SET (the reader's default, id ${set.id}): "${name}". Filters: ${parts.length ? parts.join("; ") : "none (every institution)"}. When the reader says peers, use this group: pass these filters to queryFeeRevenueCorrelation(view='peers') and call the group by its name.`;
+}
+
+/** One step of a finished answer, as the AI SDK reports it: only its tool calls are read. */
+export interface AnswerStep {
+  toolCalls: readonly { toolName: string; input?: unknown }[];
+}
+
+const sortedNumbers = (values: readonly unknown[] | undefined) => [...(values ?? [])].map(Number).sort((a, b) => a - b).join(",");
+const sortedText = (values: readonly unknown[] | undefined) => [...(values ?? [])].map((v) => String(v).toUpperCase()).sort().join(",");
+
+/**
+ * True when a tool call in this answer used the saved peer set: the fee income peers view with
+ * exactly the set's filters. Only then is the set the answer's peer baseline (#1084); a figure
+ * from state, district, national or local-competitor tools never used it.
+ */
+export function savedPeerSetUsed(set: Pick<ActivePeerSet, "filters">, steps: readonly AnswerStep[] | undefined): boolean {
+  const f = set.filters;
+  const want = {
+    ids: sortedNumbers(f.institutionIds),
+    states: sortedText([...(f.states ?? []), ...(f.state_code ? [f.state_code] : [])]),
+    charter: f.charter_type ?? "",
+    tiers: sortedText(f.asset_tiers),
+    districts: sortedNumbers(f.fed_districts),
+  };
+  return (steps ?? []).some((step) => (step.toolCalls ?? []).some((call) => {
+    if (call.toolName !== "queryFeeRevenueCorrelation") return false;
+    const input = (call.input ?? {}) as Record<string, unknown>;
+    if (input.view !== "peers") return false;
+    const list = (value: unknown) => (Array.isArray(value) ? value : undefined);
+    return sortedNumbers(list(input.peer_institution_ids)) === want.ids
+      && sortedText(list(input.states)) === want.states
+      && String(input.charter_type ?? "") === want.charter
+      && sortedText(list(input.asset_tiers)) === want.tiers
+      && sortedNumbers(list(input.fed_districts)) === want.districts;
+  }));
+}
+
 const EXTERNAL_INTELLIGENCE_INSTRUCTION =
   "When your analysis benefits from external research, surveys, or industry reports, query external intelligence using queryNationalData(source='external', query='relevant terms'). When citing external intelligence in your response, always include inline attribution using the citation field from the result, formatted as [Source: Name, Date]. Treat external intelligence as supplementary context — internal fee data and Call Reports remain your primary evidence. Never fabricate external source citations; only cite sources returned by the tool.";
 
 // Toolset definitions — curated to stay under 200K token context limit
 // queryNationalData (11 sources) replaces most individual data tools
 const consumerTools: ToolSet = withCompactResults({ ...publicTools });
+// Read-only: local competitors, fee income against peers, and district and state context (#1084).
 const chatInternalTools: ToolSet = {
+  getLocalCompetitors,
+  queryFeeRevenueCorrelation: internalTools.queryFeeRevenueCorrelation,
+  queryDistrictData: internalTools.queryDistrictData,
+  queryStateData: internalTools.queryStateData,
   queryNationalData: internalTools.queryNationalData,
   queryRegulatoryRisk: internalTools.queryRegulatoryRisk,
   queryOutliers: internalTools.queryOutliers,
@@ -232,7 +298,7 @@ export async function getHamilton(role: HamiltonRole): Promise<AgentConfig> {
     }
 
     case "pro": {
-      const systemPrompt = `${PRO_PREFIX}\n\n${dataStats}\n\n${REGULATION_INSTRUCTION}\n\n${EXTERNAL_INTELLIGENCE_INSTRUCTION}\n\n${HAMILTON_SYSTEM_PROMPT}`;
+      const systemPrompt = `${PRO_PREFIX}\n\n${dataStats}\n\n${REGULATION_INSTRUCTION}\n\n${LOCAL_AND_PEER_INSTRUCTION}\n\n${EXTERNAL_INTELLIGENCE_INSTRUCTION}\n\n${HAMILTON_SYSTEM_PROMPT}`;
       return {
         id: "hamilton",
         name: "Hamilton",
@@ -257,7 +323,7 @@ export async function getHamilton(role: HamiltonRole): Promise<AgentConfig> {
 
     case "admin": {
       const ops = await opsContext();
-      const systemPrompt = `${ADMIN_PREFIX}\n\n${dataStats}\n\n${REGULATION_INSTRUCTION}\n\n${EXTERNAL_INTELLIGENCE_INSTRUCTION}\n\nCRITICAL TOOL USAGE RULE: Make at most 2-3 tool calls total, then synthesize your findings into a complete response. Never call the same tool twice with the same parameters. If a tool returns empty or insufficient data, state what you found and what data was unavailable — do not retry.\n\n${HAMILTON_SYSTEM_PROMPT}${ops}`;
+      const systemPrompt = `${ADMIN_PREFIX}\n\n${dataStats}\n\n${REGULATION_INSTRUCTION}\n\n${LOCAL_AND_PEER_INSTRUCTION}\n\n${EXTERNAL_INTELLIGENCE_INSTRUCTION}\n\nCRITICAL TOOL USAGE RULE: Make at most 2-3 tool calls total, then synthesize your findings into a complete response. Never call the same tool twice with the same parameters. If a tool returns empty or insufficient data, state what you found and what data was unavailable — do not retry.\n\n${HAMILTON_SYSTEM_PROMPT}${ops}`;
       return {
         id: "hamilton",
         name: "Hamilton",

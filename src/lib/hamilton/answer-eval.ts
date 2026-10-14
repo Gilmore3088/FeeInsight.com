@@ -29,7 +29,7 @@ import { withDepth } from "./workspace/story-extras";
 import type { AskResponse, FeeResearch } from "./workspace/types";
 
 /** The questions asked of every institution: one per kind of ask, across six fees. */
-export const EVAL_QUESTION_IDS = ["q01", "q04", "q06", "q07", "q09", "q10", "q11", "q12", "q15", "q17", "q18", "q23", "q25", "q26", "q27"] as const;
+export const EVAL_QUESTION_IDS = ["q01", "q04", "q06", "q07", "q09", "q10", "q11", "q12", "q15", "q17", "q18", "q23", "q25", "q26", "q27", "q31", "q32"] as const;
 const REGULATION = new Set(["q25", "q26"]);
 const CONCURRENCY = 3;
 const STATE = new Set(["q17"]);
