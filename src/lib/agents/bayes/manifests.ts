@@ -222,6 +222,9 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   // v2 (#1068) changes how a refresh is written (in place), not which fee moves; the stale fees
   // it works through are picked by the same query every publish step, so there is nothing to replay.
   REFRESH_COPY_STRATEGY: "Writes the same refresh in place; the next publish steps pick up every stale fee as before.",
+  // v2 (#1102): the re-check's flag carries its version, so every held percentage line is read
+  // again by the extract steps themselves (100 a step); there is nothing to replay.
+  HELD_RATE_RECHECK_VERSION: "Its versioned flag makes the extract steps re-read every held percentage line under v2.",
 };
 
 export async function loadManifests(): Promise<ReplayManifest[]> {

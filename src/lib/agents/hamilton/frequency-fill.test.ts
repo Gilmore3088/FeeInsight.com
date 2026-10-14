@@ -8,7 +8,7 @@ function createDbMock(rows: Array<Record<string, unknown>>): DbMock {
   const db = vi.fn((strings: TemplateStringsArray, ...values: unknown[]) => {
     const text = strings.join("?");
     if (text.includes("UPDATE published_fee_records")) {
-      return Promise.resolve((values[0] as number[]).map((id) => ({ fee_published_id: id })));
+      return Promise.resolve((values.find(Array.isArray) as number[]).map((id) => ({ fee_published_id: id })));
     }
     return Promise.resolve([]);
   }) as unknown as DbMock;
@@ -64,6 +64,28 @@ describe("Hamilton frequency fill", () => {
       [1, "monthly", "per_item"],
       [2, "annual", null],
     ]);
+  });
+
+  it("holds an NSF fee its own price states monthly and clears a neighbour's period (v11, #1196)", async () => {
+    const nsf = (id: number, amount: string, excerpt: string, frequency: string, name: string) =>
+      ({ ...row(id, amount, excerpt, frequency), canonical_fee_key: "nsf", fee_name: name });
+    const overdraft = (id: number, amount: string, excerpt: string, name: string) =>
+      ({ ...row(id, amount, excerpt, "monthly"), canonical_fee_key: "overdraft", fee_name: name });
+    const db = createDbMock([
+      nsf(1, "23.00", "NSF | $23.00/Month", "monthly", "NSF"),
+      nsf(2, "5.00", "Undeliverable Mail | $5.00 per month | Returned ACH | $5.00 each", "monthly", "Returned ACH"),
+      overdraft(3, "5.00", "Enhanced Overdraft Privilege Fee (per month) | $5.00", "Enhanced Overdraft Privilege Fee (per month)"),
+    ]);
+    const result = await fillBlankFrequencies(asDb(db), { runId: 5, dryRun: false });
+    expect(result.held.map((fee) => [fee.feePublishedId, fee.reason])).toEqual([
+      [1, "frequency_hold: an NSF fee whose own line prices it monthly"],
+    ]);
+    expect(result.filled.map((fee) => [fee.feePublishedId, fee.from, fee.frequency])).toEqual([[2, "monthly", null]]);
+    const sqlText = db.mock.calls.map((call) => (call[0] as TemplateStringsArray).join("?")).join("\n");
+    expect(sqlText).toContain("rolled_back_reason = v.reason");
+    expect(sqlText).not.toContain("DELETE");
+    const feedback = db.mock.calls.find((call) => (call[0] as TemplateStringsArray).join("?").includes("INSERT INTO pipeline_feedback"));
+    expect(JSON.stringify(feedback)).toContain("frequency_held");
   });
 
   it("writes nothing on a dry run", async () => {
