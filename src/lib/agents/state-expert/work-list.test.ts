@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/data-store/connection", () => ({ sql: vi.fn() }));
 
-import { loadGroupGaps, NATIONAL_LIST, pickFromWorkLists, sizeGroupOf, stateGroupOrder, stateWorkLists, type GroupGaps } from "./work-list";
+import { loadGroupGaps, NATIONAL_LIST, pickFromWorkLists, sizeGroupOf, stateGroupOrder, stateWorkLists, workListLedger, workListPoolRankSql, type GroupGaps } from "./work-list";
 
 function gaps(entries: Array<[string, string, number, number]>): GroupGaps {
   // [state, group, total, covered]: target 30, or 75% of a group under 40 (#1028).
@@ -119,5 +119,26 @@ describe("state experts' work lists (#1029)", () => {
       : Promise.resolve([])));
     vi.spyOn(console, "error").mockImplementation(() => {});
     expect((await loadGroupGaps(failing as never)).size).toBe(0);
+  });
+
+  it("ranks the pool inside each state × size group cell, so the cut keeps every cell's first rows (#1269)", () => {
+    const db = vi.fn((strings: TemplateStringsArray | string, ...values: unknown[]) => ({ strings, values }));
+    const rank = workListPoolRankSql(db as never, { state: "state_code", assets: "asset_size", id: "id", within: "priority" }) as unknown as { strings: string[]; values: unknown[] };
+    expect(rank.strings.join("?")).toMatch(/row_number\(\) OVER \(\s+PARTITION BY \?\s+CASE WHEN \? >= \?::bigint/);
+    expect(rank.values).toEqual(expect.arrayContaining([NATIONAL_LIST, "under_300m", "300m_1b", "1b_10b", 300_000, 1_000_000, 10_000_000]));
+    expect(db).toHaveBeenCalledWith("priority");
+  });
+
+  it("keeps every work-list entry for the ledger and counts real tries in short groups (#1269)", () => {
+    const ledger = workListLedger([
+      { institution_id: 1, outcome: "ok", by: "pick" },
+      { institution_id: 2, outcome: "not_found", rung: "schedule", work_list: "VT", work_group: "under_300m", work_group_short: 4 },
+      { institution_id: 3, outcome: "budget_blocked", by: "schedule_search", work_list: "TX", work_group: "1b_10b", work_group_short: 20 },
+      { institution_id: 4, outcome: "ok", by: "website_search", work_list: "requested_or_paying", work_group: "300m_1b", work_group_short: 0 },
+      { institution_id: 5, would_search: true, work_list: "national", work_group: "over_10b", work_group_short: null },
+    ]);
+    expect(ledger.entries.map((entry) => [entry.institution_id, entry.by])).toEqual([[2, "web_search"], [3, "schedule_search"], [4, "website_search"], [5, null]]);
+    expect(ledger.entries[0]).toMatchObject({ rung: "schedule", work_list: "VT", work_group: "under_300m", work_group_short: 4 });
+    expect([ledger.tries, ledger.short_group_tries]).toEqual([2, 1]);
   });
 });

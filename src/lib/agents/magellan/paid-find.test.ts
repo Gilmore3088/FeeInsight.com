@@ -104,7 +104,8 @@ describe("Magellan paid find (pass 3)", () => {
       [3, "invalid_url"],
     ]);
     expect(logged.every((attempt) => attempt.strategy === PAID_FIND_STRATEGY.strategy && Number(attempt.cost) > 0)).toBe(true);
-    expect(logged[0].detail).toMatchObject({ pass: 3, url: "https://alpha.example/disclosures/fees" });
+    // The try records where the work list placed the bank (#1269), for the week-after check.
+    expect(logged[0].detail).toMatchObject({ pass: 3, url: "https://alpha.example/disclosures/fees", work_list: "VT", work_group: "under_300m" });
     const stored = db.mock.calls.filter((call) => templateText(call[0]).includes("UPDATE institution_sources"));
     expect(stored).toHaveLength(1);
     expect(stored[0]).toContain("https://alpha.example/disclosures/fees");
@@ -279,6 +280,9 @@ describe("state experts' work lists (#1029)", () => {
     // The query reads a pool and the cap applies after the lists are ordered.
     const select = db.mock.calls.find((call) => templateText(call[0]).includes("inst.city"))!;
     expect(templateText(select[0])).toContain("institution_workspace_memberships");
+    // The pool cut keeps requesters and paying customers, then each cell's first rows (#1269).
+    expect(templateText(select[0])).toMatch(/ORDER BY requested DESC, paying DESC,\s+,/);
+    expect(db.mock.calls.some((call) => templateText(call[0]).includes("PARTITION BY"))).toBe(true);
   });
 });
 

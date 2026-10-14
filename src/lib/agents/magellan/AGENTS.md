@@ -295,6 +295,12 @@ and `detail.method_version`).
   Institutions over $10B share one national list that takes its turn, since they are compared
   nationally, never by state. Each result entry records `work_list`, `work_group` and
   `work_group_short`. If the gaps can't be read, the lists keep size order and still rotate.
+  The pool is cut in this order (#1269, `workListPoolRankSql`): requesters, Pro accounts'
+  institutions (and, in the schedule search, market leaders), then each state × size group
+  cell's first institution, then each cell's second, so a cut drops the deepest rows of the
+  fullest cells, never a whole small-bank group. Each paid try's `pipeline_attempts.detail`
+  records the same three fields, and the `discover-paid` step keeps every work-list entry
+  under `work_lists` (with `tries` and `short_group_tries`), not only its 10 sample results.
 - Website search (`website-find.ts`, `discover.website_search`), in the same paid step after
   the banks: up to `WEBSITE_FIND_PER_RUN` institutions in the state with no `website_url`
   and no fee link, off the paid cooldown. The model (web search) names the official homepage;

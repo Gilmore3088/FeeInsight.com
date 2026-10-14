@@ -111,6 +111,7 @@ import { normalizeStateCode, syncStateLaneProfiles } from "./state-lane-memory";
 import { laneRecheckParam, numericRunParam, stringRunParam } from "./run-params";
 export { laneRecheckParam } from "./run-params";
 import { runStateExpertStep } from "./state-expert/step";
+import { workListLedger } from "./state-expert/work-list";
 import { tallyByInstitution, type Sample } from "./flow-model";
 import { runReportCloseStep, runReportReconcileStep, runReportRenderStep } from "@/lib/report-engine/render-job";
 import type {
@@ -568,6 +569,8 @@ async function executeAgenticStep(
           cost_microusd: paid.costMicrousd,
           dry_run: paid.dryRun,
           sample_results: paid.results.slice(0, 10),
+          // Every work-list entry, which the 10-entry sample usually cuts (#1269).
+          ...(step.stepKey === "discover-paid" ? { work_lists: workListLedger(paid.results) } : {}),
         },
       };
     }
