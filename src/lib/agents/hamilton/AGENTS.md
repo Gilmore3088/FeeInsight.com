@@ -491,8 +491,10 @@ in front ("Research fee" / "Account Research fee"), are one fee only when the pa
 uses, #1303), and at least one name must be printed with the price. Frequencies and audiences
 must agree or be unstated. The copy kept states its audience, then its frequency, then is the
 one printed at the price, then is newest. Doc 14695 prints "Stop Payments, each ... $35" and
-"Stop Payment, each ... $35" in two copies of its schedule, so both stay. This sweep reads up to
-25 documents' stored text per step and is shadow only until James turns
+"Stop Payment, each ... $35" in two copies of its schedule, so both stay. A fee the page prints
+once under its personal schedule heading and once under its business one stays two fees too
+(`printedInPersonalAndBusinessSchedules`; Valley's doc 23731, "Visa® Gift Cards, each: $4.25.").
+This sweep reads up to 25 documents' stored text per step and is shadow only until James turns
 `NEAR_NAME_COLLAPSE_LIVE` on: each step reports `near_name_collapse` (pairs, apart on page, not
 printed, no text, would close, samples) and changes no row. Rollback once on: clear
 `rolled_back_at` on rows whose `rolled_back_reason` ends in `(near name)`.
