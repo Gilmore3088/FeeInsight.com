@@ -72,6 +72,12 @@ describe("held rates a schedule row states without the word fee (#1102)", () => 
     expect(rateFeeFromHeld(held(name, line, hint), text)).toMatchObject({ canonicalHint: hint, ratePercent: percent });
   });
 
+  it("never reads a share of a balance or a rewards rate as a fee (post-merge review of #1237)", () => {
+    for (const line of ["Coin Counting | 0.5% of the total balance", "Coin Counting | 1% of the average daily balance amount", "Coin Counting | Earn 1% on all purchases"]) {
+      expect(typeof rateFeeFromHeld(held("Coin Counting", line, "coin_counting"), line)).toBe("string");
+    }
+  });
+
   it("still holds a share of a balance, an interest rate and a card network's own assessment", () => {
     const balance = "Savings | 1% of balance";
     expect(typeof rateFeeFromHeld(held("Savings", balance, "monthly_maintenance"), balance)).toBe("string");
