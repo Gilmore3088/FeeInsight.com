@@ -614,7 +614,11 @@ export async function insertCandidate(
   //   - a row an earlier read of this document retired on this re-read
   //     (`superseded_by_reread`, never verified): the same fee read again goes back to
   //     Darwin instead of staying retired (#1093; 1,646 free-pass fees were lost this way).
-  // Any other existing row stays as it is.
+  // Any other existing row stays as it is. A row taken over drops its old `canonical_hint:`
+  // flags: Darwin reads the first one (`canonicalHintFrom` in darwin/verify.ts), so a fee
+  // today's rules file under a new category was judged under the old one. 12 of the 54 rows
+  // re-reads took over by 14 Oct were ("Wire Transfer - International" $45 judged as an
+  // overdraft fee and rejected for category, #1093).
   const inserted = await db`
     INSERT INTO raw_fee_observations AS fr (
       institution_id,
@@ -667,8 +671,12 @@ export async function insertCandidate(
       min_balance_to_avoid = COALESCE(fr.min_balance_to_avoid, EXCLUDED.min_balance_to_avoid),
       min_opening_deposit = COALESCE(fr.min_opening_deposit, EXCLUDED.min_opening_deposit),
       waiver_text = COALESCE(fr.waiver_text, EXCLUDED.waiver_text),
-      outlier_flags = (COALESCE(fr.outlier_flags, '[]'::jsonb)
-                        - 'knox_review:unclassified' - 'knox_review:untraced' - 'superseded_by_reread')
+      outlier_flags = COALESCE((
+                        SELECT jsonb_agg(kept.flag ORDER BY kept.ord)
+                          FROM jsonb_array_elements(COALESCE(fr.outlier_flags, '[]'::jsonb)) WITH ORDINALITY AS kept(flag, ord)
+                         WHERE kept.flag #>> '{}' NOT IN ('knox_review:unclassified', 'knox_review:untraced', 'superseded_by_reread')
+                           AND kept.flag #>> '{}' NOT LIKE 'canonical_hint:%'
+                      ), '[]'::jsonb)
                       || EXCLUDED.outlier_flags
                       || CASE WHEN fr.outlier_flags ? 'superseded_by_reread'
                               THEN '["knox_reread_took_over"]'::jsonb

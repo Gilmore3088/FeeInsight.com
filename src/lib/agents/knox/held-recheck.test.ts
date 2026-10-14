@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { runFreeSpecialists } from "./specialists";
+
 import {
   HELD_SET_ASIDE_FLAG,
   heldExcerpt,
@@ -15,7 +17,13 @@ import {
   recheckPromotedRows,
   recheckSupersededRows,
   recheckUntracedRows,
+  refiledConditions,
+  refiledFlags,
+  refiledRead,
+  refileSupersededRows,
+  STALE_HINT_REPAIRED_FLAG,
   supersededConditions,
+  supersededRefileFlag,
   supersededDryReadFlag,
   supersededRecheckFlag,
   supersededWouldPromoteFlag,
@@ -387,5 +395,136 @@ describe("lines a re-read retired, read again with today's rules (Northern Trust
   it("gives the row the current text's hash so the next re-read keeps it", () => {
     expect(supersededConditions(retired.conditions, "1f6e", 20257)).toContain("text_hash=1f6e;");
     expect(supersededConditions(retired.conditions, "1f6e", 20257)).not.toContain("text_hash=27e2;");
+  });
+});
+
+describe("retired lines today's rules file under another category (#1093, Oregonians CU, document 13279)", () => {
+  // Lines from the stored text of Oregonians CU's schedule (agent_source_texts, document 13279),
+  // read 14 Oct. The rows below were retired by a re-read under the categories an older version gave.
+  const oregonians = [
+    "Dormant Account $10/month | Account Balance Requirements",
+    "Bad Address/Returned Mail $10 Business Money Market Service Charge $10/month",
+    "Up to one fee can be waived after the address is updated, if requested. | Charged monthly if balance falls below $5,000 during statement period.",
+    "Accounts & Services",
+    "Overdraft Transfers $10 | Cards & ATMs",
+    "First three per month are free. Card Replacement $10",
+    "Stop Payment $25 Card Rush Order Market Cost",
+    "Insufficient Funds",
+    "Foreign Deposit Items Over $300 $50 Returned Item $15",
+    "We can't accept foreign deposit items under $300. | Charged when a check, EFT or ACH item from another institution is",
+    "cashed or deposited into an account, then returned unpaid.",
+    "Incoming Wires $10",
+    "NSF Item Paid $20",
+  ].join("\n");
+  const retiredRow = (id: number, name: string, amount: string, hint: string) => ({
+    fee_raw_id: id,
+    institution_id: 8600,
+    source_document_id: 13279,
+    fee_name: name,
+    amount,
+    conditions: `Knox deterministic extraction from Rosetta artifact #9001. canonical_hint=${hint}; text_hash=a1d1; excerpt="${name} $${amount}"`,
+    outlier_flags: [`canonical_hint:${hint}`, "superseded_by_reread", supersededRecheckFlag()],
+    document_text_id: 9001,
+    text_hash: "be2f",
+    darwin_decided: false,
+  });
+  const cardReplacement = retiredRow(105836, "Card Replacement", "10.00", "atm_non_network");
+  const incomingWires = retiredRow(105838, "Incoming Wires", "10.00", "nsf");
+  const badAddress = retiredRow(105835, "Bad Address/Returned Mail", "10.00", "monthly_maintenance");
+  const foreignDeposit = retiredRow(105837, "Foreign Deposit Items Over", "300.00", "nsf");
+  const reads = () => runFreeSpecialists(oregonians).candidates;
+
+  it("finds today's category for a real fee read under the same name and amount", () => {
+    expect(refiledRead(cardReplacement, reads())?.canonicalHint).toBe("card_replacement");
+    expect(refiledRead(incomingWires, reads())?.canonicalHint).toBe("wire_domestic_incoming");
+    expect(refiledRead(badAddress, reads())?.canonicalHint).toBe("account_research");
+  });
+
+  it("does not bring back a threshold today's rules no longer read as a fee", () => {
+    expect(refiledRead(foreignDeposit, reads())).toBeNull();
+  });
+
+  it("leaves a row today's rules read under its own category to the superseded re-check", () => {
+    const read = reads().find((candidate) => candidate.feeName === "Overdraft Transfers");
+    expect(read).toBeDefined();
+    expect(refiledRead(retiredRow(118488, "Overdraft Transfers", "10.00", read!.canonicalHint), reads())).toBeNull();
+  });
+
+  it("files the row under today's category, keeps the old one for reversal, and drops the retired flag", () => {
+    const flags = refiledFlags(cardReplacement.outlier_flags, "card_replacement", "atm_non_network");
+    expect(flags[0]).toBe("needs_darwin_verification");
+    expect(flags.filter((flag) => flag.startsWith("canonical_hint:"))).toEqual(["canonical_hint:card_replacement"]);
+    expect(flags).toContain("knox_refiled_from:atm_non_network");
+    expect(flags).toContain("knox_promoted_from_superseded");
+    expect(flags).not.toContain("superseded_by_reread");
+    const audit = refiledConditions(cardReplacement.conditions, "card_replacement", "be2f", 9001);
+    expect(audit).toContain("canonical_hint=card_replacement;");
+    expect(audit).toContain("text_hash=be2f;");
+    expect(audit).not.toContain("atm_non_network");
+  });
+
+  function createRefileDb(rows: unknown[], twins: unknown[] = [], stale: unknown[] = []) {
+    const calls: Array<{ text: string; values: unknown[] }> = [];
+    const db = vi.fn(async (strings: unknown, ...values: unknown[]) => {
+      const text = templateText(strings);
+      calls.push({ text, values });
+      if (text.includes("information_schema.columns")) return [{ ready: true }];
+      if (text.includes("jsonb_build_array")) return stale;
+      if (text.includes("knox_reread_took_over")) return stale;
+      if (text.includes("darwin_decided")) return rows;
+      if (text.includes("SELECT id, normalized_text")) return [{ id: 9001, normalized_text: oregonians }];
+      if (text.includes("jsonb_to_recordset")) return twins;
+      if (text.includes("RETURNING fr.fee_raw_id")) return [{ fee_raw_id: values.find((value) => typeof value === "number") }];
+      return [];
+    });
+    return { db, calls };
+  }
+
+  it("reads a sample and writes nothing while the switch is off, a new sample each hour", async () => {
+    const counted = { ...cardReplacement, total: 1336, decided_total: 881, institutions: 317 };
+    const { db, calls } = createRefileDb([counted, incomingWires]);
+
+    const result = await refileSupersededRows(db as never, { now: new Date("2026-10-14T12:34:00Z") });
+
+    expect(result).toMatchObject({
+      live: false, dryRun: true, mode: "sample", candidates: 1336, candidateInstitutions: 317, candidatesDarwinDecided: 881,
+      checked: 2, refiled: 2,
+    });
+    const select = calls.find((call) => call.text.includes("darwin_decided"))!;
+    expect(select.values).toContain("2026-10-14T12");
+    expect(select.values).toContain(25);
+    expect(calls.some((call) => call.text.includes("UPDATE"))).toBe(false);
+  });
+
+  it("reports what it would do in a dry-run extract while off, and writes nothing", async () => {
+    const decided = { ...retiredRow(105900, "Statement Copy", "5.00", "paper_statement"), darwin_decided: true };
+    const { db, calls } = createRefileDb([cardReplacement, incomingWires, badAddress, foreignDeposit, decided], [], [{ fee_raw_id: 126752 }]);
+
+    const result = await refileSupersededRows(db as never, { dryRun: true });
+
+    expect(result).toMatchObject({ live: false, dryRun: true, checked: 5, refiled: 3, notRead: 1, darwinDecided: 1, liveTwin: 0, staleHintRows: 1, staleHintRepaired: 0 });
+    expect(result.sample.map((row) => `${row.fee_name}:${row.from}->${row.to}`)).toEqual([
+      "Card Replacement:atm_non_network->card_replacement",
+      "Incoming Wires:nsf->wire_domestic_incoming",
+      "Bad Address/Returned Mail:monthly_maintenance->account_research",
+    ]);
+    expect(calls.some((call) => call.text.includes("UPDATE"))).toBe(false);
+  });
+
+  it("re-files and marks rows when live, keeping back a fee whose new category already has a live twin", async () => {
+    const twin = [{ institution_id: 8600, fee_category: "card_replacement", amount: "10.00" }];
+    const { db, calls } = createRefileDb([cardReplacement, incomingWires], twin, [{ fee_raw_id: 126752 }]);
+
+    const result = await refileSupersededRows(db as never, { live: true });
+
+    expect(result).toMatchObject({ live: true, dryRun: false, checked: 2, refiled: 1, liveTwin: 1, refiledIds: [105838], staleHintRows: 1, staleHintRepaired: 1 });
+    const refile = calls.find((call) => call.text.includes("UPDATE raw_fee_observations fr") && call.values.includes(105838))!;
+    expect(JSON.stringify(refile.values)).toContain("canonical_hint:wire_domestic_incoming");
+    expect(JSON.stringify(refile.values)).toContain("knox_refiled_from:nsf");
+    const marked = calls.find((call) => call.text.includes("WHERE fee_raw_id = ANY") && !call.text.includes("jsonb_build_array"))!;
+    expect(marked.values).toContainEqual([105836, 105838]);
+    expect(JSON.stringify(marked.values)).toContain(supersededRefileFlag());
+    const repair = calls.find((call) => call.text.includes("jsonb_build_array"))!;
+    expect(JSON.stringify(repair.values)).toContain(STALE_HINT_REPAIRED_FLAG);
   });
 });

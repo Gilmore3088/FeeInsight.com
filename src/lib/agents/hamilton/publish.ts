@@ -93,7 +93,7 @@ export interface VerifiedFeeRow extends RateFields {
   free_read?: boolean | null;
 }
 
-interface PriorPublishedFeeRow extends RateFields {
+export interface PriorPublishedFeeRow extends RateFields {
   fee_published_id: number | string;
   amount: number | string | null;
   fee_name: string;
@@ -1099,13 +1099,29 @@ async function selectDocumentText(db: SqlTag, documentId: number | string | null
  * see docs/project/findings/2026-10-09-identical-skip-ignored-name.md.
  */
 async function linesApartFrom(db: SqlTag, row: VerifiedFeeRow, live: PriorPublishedFeeRow[]): Promise<Set<PriorPublishedFeeRow>> {
-  if (isPercentFee(row)) return new Set();
+  const { candidates, balanced } = sameValueLines(row, live);
+  if (candidates.length === 0 && balanced.length === 0) return new Set();
+  return sameValueLinesApart(row, live, await selectDocumentText(db, row.source_document_id));
+}
+
+function sameValueLines(row: VerifiedFeeRow, live: PriorPublishedFeeRow[]): { candidates: PriorPublishedFeeRow[]; balanced: PriorPublishedFeeRow[] } {
+  if (isPercentFee(row)) return { candidates: [], balanced: [] };
   const value = feeValue(row);
   const sameValue = live.filter((prior) => feeValue(prior) === value);
-  const candidates = sameValue.filter((prior) => separateLines(row, prior));
-  const balanced = sameValue.filter((prior) => balanceThreshold(prior.fee_name) != null);
-  if (candidates.length === 0 && balanced.length === 0) return new Set();
-  const text = await selectDocumentText(db, row.source_document_id);
+  return {
+    candidates: sameValue.filter((prior) => separateLines(row, prior)),
+    balanced: sameValue.filter((prior) => balanceThreshold(prior.fee_name) != null),
+  };
+}
+
+/**
+ * Pure: the live rows at this row's price that are another line of its page, given the current
+ * read of the row's document (`linesApartFrom` without the database read). The hard-document gate
+ * (`deming/hard-documents.test.ts`) replays stored source lines through it, so two fees at one
+ * price stay two fees and two reads of one line stay one.
+ */
+export function sameValueLinesApart(row: VerifiedFeeRow, live: PriorPublishedFeeRow[], text: string | null): Set<PriorPublishedFeeRow> {
+  const { candidates, balanced } = sameValueLines(row, live);
   const apart = new Set(balanced.filter((prior) => otherBalanceLine(row, prior, text)));
   if (!text) return apart;
   for (const prior of candidates) {
