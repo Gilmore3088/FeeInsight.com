@@ -242,4 +242,17 @@ describe("Knox audience suggestion from context (#1059)", () => {
     expect(suggest(null, two, "Stop Payment", 30)).toMatchObject({ audience: "consumer", source: "section_heading" });
     expect(suggest(null, two, "Stop Payment", 35)).toMatchObject({ audience: "business", source: "section_heading" });
   });
+
+  it("reads a line that points down to its fees as heading them (review of f125b445)", () => {
+    for (const line of [
+      "The fees listed below apply to business accounts.",
+      "Fees for business accounts are listed below:",
+      "These services are available to business accounts only.",
+      "Business accounts – see below:",
+    ]) {
+      expect(suggest(null, ["Fee Schedule", line, "Stop Payment $30", "Overdraft $35"].join("\n"), "Stop Payment", 30)?.audience).not.toBe("consumer");
+    }
+    // A true pointer in a consumer-only schedule keeps the consumer default.
+    expect(suggest(null, ["Fee Schedule", "Business accounts: see the Business Fee Schedule.", "Stop Payment $30"].join("\n"), "Stop Payment", 30)).toMatchObject({ audience: "consumer" });
+  });
 });

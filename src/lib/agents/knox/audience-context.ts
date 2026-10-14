@@ -147,8 +147,11 @@ function headingCase(line: string): boolean {
 }
 /** A line that points elsewhere or excludes ("see", "listed in our Business Fee Schedule", "their own fee schedule", "Not for business accounts."). */
 const POINTER = /\b(?:see|refer|please|request|listed|available|disclosed|separate(?:ly)?|contact|ask|call|visit|own|different|elsewhere|not)\b/i;
+/** Words that point down to the fees that follow ("The fees listed below apply to business accounts."). */
+const POINTS_DOWN = /\b(?:below|following|only|these|this section)\b/i;
 function isPointer(line: string): boolean {
-  return POINTER.test(line);
+  // A line that points down introduces the section under it, whatever else it says (review of f125b445).
+  return POINTER.test(line) && !POINTS_DOWN.test(line);
 }
 function isSentence(line: string): boolean {
   const trimmed = line.trim();
