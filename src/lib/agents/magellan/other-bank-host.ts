@@ -91,16 +91,35 @@ export function textNamesBank(text: string, bank: NamedBank): boolean {
   if (!hasWords(lower, name) && !hasWords(lower, name.replace(" federal credit union", " credit union"))) return false;
   if (!bank.nameShared) return true;
   const city = comparableBankName(bank.city);
-  const cert = bank.certNumber == null ? "" : String(bank.certNumber).trim();
-  return (city.length > 0 && hasWords(lower, city)) || (/^\d{3,}$/.test(cert) && new RegExp(`(^|[^0-9])${cert}([^0-9]|$)`).test(lower));
+  return (city.length > 0 && hasWords(lower, city)) || textHasCertNumber(lower, bank.certNumber);
+}
+
+/**
+ * What may stand between "FDIC", "Cert", "Certificate", "Charter" or "NCUA" and the number:
+ * "FDIC Certificate #175", "NCUA Charter No. 24051", "Cert. Number: 175".
+ */
+const CERT_LABEL = "(?:fdic|ncua|cert(?:ificate)?|charter)";
+const CERT_FILLER = "(?:[\\s#:.()-]|no\\b|number\\b|nbr\\b|id\\b|cert(?:ificate)?\\b|charter\\b)*";
+
+/**
+ * Is the bank's FDIC certificate / NCUA charter number (3+ digits) in this lower-case text,
+ * right after one of those words (#1309)? A bare number is no evidence: cert 175 is also
+ * "$175.00", a phone number or a ZIP code.
+ */
+export function textHasCertNumber(lower: string, certNumber: string | number | null | undefined): boolean {
+  const cert = certNumber == null ? "" : String(certNumber).trim().replace(/^0+(?=\d)/, "");
+  if (!/^\d{3,}$/.test(cert)) return false;
+  return new RegExp(`(^|[^a-z0-9])${CERT_LABEL}${CERT_FILLER}0*${cert}(?![0-9]|[.,][0-9])`).test(lower);
 }
 
 /**
  * A document on a host that is neither the bank's website (or a subdomain), nor a shared file
  * host, nor a host with the website's name (healthplusfcu.org and .com; 6+ characters, so
- * fnb.bank is not taken for fnb.com, #1287), and whose text does not name the bank: Hamilton's
- * `unconfirmed_document_host` rule (hamilton/other-bank-document.ts), applied before the link
- * is stored (#1033). Returns why, or null when the document may be kept.
+ * fnb.bank is not taken for fnb.com, #1287), and whose text does not name the bank. Applied
+ * before the link is stored (#1033), and stricter than Hamilton's takedown rule
+ * (`unconfirmed_document_host`, hamilton/other-bank-document.ts): whole words only, short
+ * same-name hosts are read, and a shared name needs the city or certificate number.
+ * Returns why, or null when the document may be kept.
  * Another institution's own website is refused at `recordDiscoveryResult`, which can look it up.
  */
 export function unconfirmedDocumentHost(
@@ -117,13 +136,24 @@ export function unconfirmedDocumentHost(
   return `${host} is not the bank's website (${own}) and the document does not name the bank`;
 }
 
+/** Where a failed shared-name read is recorded: the run (and step) that needed it. */
+export interface SharedNameLedger {
+  runId: number;
+  stepId?: number | null;
+}
+
 /**
- * The ids among `banks` whose name (`comparableBankName`) another institution also has. An
- * empty set when the read fails: names then count alone, as before #1287.
+ * The ids among `banks` whose name (`comparableBankName`) another institution also has, or
+ * appears as whole words inside another institution's name ("american national bank" in
+ * "first american national bank", #1309); the "credit union" form of a federal credit union's
+ * name counts too, since `textNamesBank` accepts it. When the read fails, every bank is
+ * treated as shared (a name alone then never confirms a document) and, given a `ledger`, the
+ * failure is written to the run's events.
  */
 export async function loadSharedNameIds(
   db: SqlTag,
   banks: ReadonlyArray<{ id: number | string; institution_name: string | null | undefined }>,
+  ledger?: SharedNameLedger,
 ): Promise<Set<number>> {
   const shared = new Set<number>();
   if (banks.length === 0) return shared;
@@ -133,23 +163,43 @@ export async function loadSharedNameIds(
       -- institution names for the shared-name check
       SELECT id, institution_name FROM institution_sources WHERE institution_name IS NOT NULL
     `);
-  } catch {
-    return shared;
+  } catch (error) {
+    console.error("loadSharedNameIds failed:", error);
+    if (ledger) await recordSharedNamesUnread(db, ledger, banks.length, error);
+    return new Set(banks.map((bank) => Number(bank.id)));
   }
-  const holders = new Map<string, Set<number>>();
+  const names: Array<{ id: number; name: string }> = [];
   for (const row of Array.isArray(rows) ? rows : []) {
     const name = comparableBankName(row.institution_name);
-    if (!name) continue;
-    const ids = holders.get(name) ?? new Set<number>();
-    ids.add(Number(row.id));
-    holders.set(name, ids);
+    if (name) names.push({ id: Number(row.id), name });
   }
   for (const bank of banks) {
     const id = Number(bank.id);
-    const ids = holders.get(comparableBankName(bank.institution_name));
-    if (ids && [...ids].some((other) => other !== id)) shared.add(id);
+    const name = comparableBankName(bank.institution_name);
+    if (!name) continue;
+    const forms = [...new Set([name, name.replace(" federal credit union", " credit union")])];
+    const held = names.some(
+      (other) => other.id !== id && forms.some((form) => other.name === form || (form.length >= 6 && other.name.includes(form) && hasWords(other.name, form))),
+    );
+    if (held) shared.add(id);
   }
   return shared;
+}
+
+async function recordSharedNamesUnread(db: SqlTag, ledger: SharedNameLedger, banks: number, error: unknown): Promise<void> {
+  const message = error instanceof Error ? error.message : String(error);
+  try {
+    await inSavepoint(db, (scope) => scope`
+      INSERT INTO agent_run_events (agent_run_id, step_id, event_type, status, message, detail)
+      VALUES (
+        ${ledger.runId}, ${ledger.stepId ?? null}, 'magellan.shared_names_unread', 'info',
+        ${`Could not read institution names for the shared-name check; all ${banks} bank(s) this step need their city or certificate number`},
+        ${JSON.stringify({ banks, error: message.slice(0, 500) })}::jsonb
+      )
+    `);
+  } catch (logError) {
+    console.error("recordSharedNamesUnread failed:", logError);
+  }
 }
 
 /** SQL for the host of an address column, matching `urlHost`. */

@@ -110,7 +110,12 @@ and `detail.method_version`).
   `docs/project/findings/2026-10-12-wrong-host-documents.md`. Since #1287 the website, its name
   and the bank's name must appear as whole words ("t bank" is not in "first bank"); a name
   another institution has (`loadSharedNameIds`: "Peoples Bank", "First National Bank") counts
-  only with the bank's city or FDIC certificate / NCUA charter number in the text; and a host
+  only with the bank's city or FDIC certificate / NCUA charter number in the text. Since #1309
+  a name is also shared when it sits as whole words inside another institution's name
+  ("American National Bank" in "First American National Bank"); the number counts only right
+  after "FDIC", "Cert", "Certificate", "Charter" or "NCUA", so "$175.00" is not cert 175; when
+  the names cannot be read, every bank in the step is treated as shared and the run gets a
+  `magellan.shared_names_unread` event; and the companion finder runs the same check. A host
   with the website's name is trusted unread only when that name has 6+ characters
   (`SAME_NAME_MIN_CHARS`), so fnb.bank is read for fnb.com. The institution record holds no
   former names, so a renamed bank's new host still needs its current name in the text.
