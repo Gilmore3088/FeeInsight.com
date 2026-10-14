@@ -1,4 +1,5 @@
 import type { sql } from "@/lib/data-store/connection";
+import { inSavepoint } from "@/lib/agents/savepoint";
 
 type SqlTag = typeof sql;
 
@@ -49,38 +50,106 @@ export function comparableBankName(name: string | null | undefined): string {
     .trim();
 }
 
-/** Does this text tie a document to the bank (its website, the website's name, or its own name)? */
-export function textNamesBank(text: string, bank: { websiteHost: string; institutionName?: string | null }): boolean {
+/** Shortest website name that may match on name alone ("cinfed.org" and "cinfed.com"). */
+export const SAME_NAME_MIN_CHARS = 6;
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/** Does `needle` appear in `text` as whole words ("t bank" is not in "first bank")? */
+function hasWords(text: string, needle: string): boolean {
+  return needle.length > 0 && new RegExp(`(^|[^a-z0-9])${escapeRegExp(needle)}($|[^a-z0-9])`).test(text);
+}
+
+/** The bank as a document on another host must name it. */
+export interface NamedBank {
+  websiteHost: string;
+  institutionName?: string | null;
+  /**
+   * Another institution has the same name ("Peoples Bank", "First National Bank",
+   * `loadSharedNameIds`): the name then counts only with the city or certificate number.
+   */
+  nameShared?: boolean;
+  city?: string | null;
+  /** FDIC certificate / NCUA charter number. */
+  certNumber?: string | number | null;
+}
+
+/**
+ * Does this text tie a document to the bank? Its website, the website's name (4+ characters)
+ * or its own name, each as whole words (#1287). A name another institution shares counts
+ * only with the bank's city or its certificate / charter number in the text too.
+ */
+export function textNamesBank(text: string, bank: NamedBank): boolean {
   const lower = text.toLowerCase().replace(/\s+/g, " ");
-  if (lower.includes(bank.websiteHost)) return true;
+  if (new RegExp(`(^|[^a-z0-9-])${escapeRegExp(bank.websiteHost)}($|[^a-z0-9-])`).test(lower)) return true;
   const label = hostLabel(bank.websiteHost);
-  if (label.length >= 4 && lower.includes(label)) return true;
+  if (label.length >= 4 && hasWords(lower, label)) return true;
   const name = comparableBankName(bank.institutionName);
   if (name.length < 6) return false;
-  return lower.includes(name) || lower.includes(name.replace(" federal credit union", " credit union"));
+  if (!hasWords(lower, name) && !hasWords(lower, name.replace(" federal credit union", " credit union"))) return false;
+  if (!bank.nameShared) return true;
+  const city = comparableBankName(bank.city);
+  const cert = bank.certNumber == null ? "" : String(bank.certNumber).trim();
+  return (city.length > 0 && hasWords(lower, city)) || (/^\d{3,}$/.test(cert) && new RegExp(`(^|[^0-9])${cert}([^0-9]|$)`).test(lower));
 }
 
 /**
  * A document on a host that is neither the bank's website (or a subdomain), nor a shared file
- * host, nor a host with the website's name (healthplusfcu.org and .com), and whose text does not
- * name the bank: Hamilton's `unconfirmed_document_host` rule (hamilton/other-bank-document.ts),
- * applied before the link is stored (#1033). Returns why, or null when the document may be kept.
+ * host, nor a host with the website's name (healthplusfcu.org and .com; 6+ characters, so
+ * fnb.bank is not taken for fnb.com, #1287), and whose text does not name the bank: Hamilton's
+ * `unconfirmed_document_host` rule (hamilton/other-bank-document.ts), applied before the link
+ * is stored (#1033). Returns why, or null when the document may be kept.
  * Another institution's own website is refused at `recordDiscoveryResult`, which can look it up.
  */
-export function unconfirmedDocumentHost(input: {
-  url: string;
-  websiteUrl: string | null | undefined;
-  institutionName?: string | null;
-  text: string | null | undefined;
-}): string | null {
+export function unconfirmedDocumentHost(
+  input: Omit<NamedBank, "websiteHost"> & { url: string; websiteUrl: string | null | undefined; text: string | null | undefined },
+): string | null {
   const host = urlHost(input.url);
   const own = urlHost(input.websiteUrl);
   if (!host || !own) return null;
   if (host === own || host.endsWith(`.${own}`) || own.endsWith(`.${host}`)) return null;
   if (SHARED_CONTENT_HOST.test(host)) return null;
-  if (hostLabel(host) === hostLabel(own)) return null;
-  if (input.text && textNamesBank(input.text, { websiteHost: own, institutionName: input.institutionName })) return null;
+  const label = hostLabel(own);
+  if (label.length >= SAME_NAME_MIN_CHARS && hostLabel(host) === label) return null;
+  if (input.text && textNamesBank(input.text, { ...input, websiteHost: own })) return null;
   return `${host} is not the bank's website (${own}) and the document does not name the bank`;
+}
+
+/**
+ * The ids among `banks` whose name (`comparableBankName`) another institution also has. An
+ * empty set when the read fails: names then count alone, as before #1287.
+ */
+export async function loadSharedNameIds(
+  db: SqlTag,
+  banks: ReadonlyArray<{ id: number | string; institution_name: string | null | undefined }>,
+): Promise<Set<number>> {
+  const shared = new Set<number>();
+  if (banks.length === 0) return shared;
+  let rows: Array<{ id: number | string; institution_name: string | null }>;
+  try {
+    rows = await inSavepoint(db, (scope) => scope<Array<{ id: number | string; institution_name: string | null }>>`
+      -- institution names for the shared-name check
+      SELECT id, institution_name FROM institution_sources WHERE institution_name IS NOT NULL
+    `);
+  } catch {
+    return shared;
+  }
+  const holders = new Map<string, Set<number>>();
+  for (const row of Array.isArray(rows) ? rows : []) {
+    const name = comparableBankName(row.institution_name);
+    if (!name) continue;
+    const ids = holders.get(name) ?? new Set<number>();
+    ids.add(Number(row.id));
+    holders.set(name, ids);
+  }
+  for (const bank of banks) {
+    const id = Number(bank.id);
+    const ids = holders.get(comparableBankName(bank.institution_name));
+    if (ids && [...ids].some((other) => other !== id)) shared.add(id);
+  }
+  return shared;
 }
 
 /** SQL for the host of an address column, matching `urlHost`. */

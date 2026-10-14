@@ -107,7 +107,13 @@ and `detail.method_version`).
   finder do), an accepted document on another host must name the bank's website or name, or it
   is rejected as `unconfirmed_host` (`unconfirmedDocumentHost` in `other-bank-host.ts`, the rule
   Hamilton's `unconfirmed_document_host` takedown uses). See
-  `docs/project/findings/2026-10-12-wrong-host-documents.md`.
+  `docs/project/findings/2026-10-12-wrong-host-documents.md`. Since #1287 the website, its name
+  and the bank's name must appear as whole words ("t bank" is not in "first bank"); a name
+  another institution has (`loadSharedNameIds`: "Peoples Bank", "First National Bank") counts
+  only with the bank's city or FDIC certificate / NCUA charter number in the text; and a host
+  with the website's name is trusted unread only when that name has 6+ characters
+  (`SAME_NAME_MIN_CHARS`), so fnb.bank is read for fnb.com. The institution record holds no
+  former names, so a renamed bank's new host still needs its current name in the text.
   A business-only schedule (its address or its own heading names business/commercial and
   nothing names personal or consumer accounts) is rejected as `business_schedule`.
 - A found link on another institution's own website (`other-bank-host.ts`: its host is another
