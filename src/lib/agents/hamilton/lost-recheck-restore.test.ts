@@ -70,6 +70,11 @@ describe("judgeLostTakedown", () => {
     expect(judgeLostTakedown(rows[2], categoryModel).outcome).toBe("failed");
   });
 
+  it("fails a fee the source check calls tiered, though the restore bar would let it through", () => {
+    const tiered = row(9, "overdraft", "Overdraft", "5.00", "Overdraft | Negative $25 or less | $5");
+    expect(judgeLostTakedown(tiered, categoryModel)).toEqual({ outcome: "failed", reason: "source_trace:tiered_fee" });
+  });
+
   it("skips a fee with no text or no amount", () => {
     expect(judgeLostTakedown(rows[4], categoryModel)).toEqual({ outcome: "skipped", reason: "no_text" });
     expect(judgeLostTakedown(rows[5], categoryModel)).toEqual({ outcome: "skipped", reason: "no_amount" });

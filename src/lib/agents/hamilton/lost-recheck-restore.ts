@@ -1,5 +1,6 @@
 import { sql } from "@/lib/data-store/connection";
 import { invalidatePublicReadCache } from "@/lib/data-store/fee-cache";
+import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
 import { loadCategoryModel, type CategoryModel } from "@/lib/agents/darwin/category-model";
 import { disputedRestoreVerdict } from "@/lib/agents/hamilton/restore-guard";
 import { RULES_RECHECK_REASON, RULES_RECHECK_RESTORED_FLAG } from "@/lib/agents/hamilton/rules-recheck";
@@ -12,12 +13,14 @@ type SqlTag = typeof sql;
 /**
  * #1071 (James approved on #1026, 2026-10-13): the rules re-check took down 6,938 live fees from
  * Oct 5 to Oct 11, before #1022 kept distinct fees that share a category and price. On Oct 13,
- * 2,849 of them had no live row at the same institution, category and amount; a hand sample of
+ * 2,872 of them had no live row at the same institution, category and amount; a hand sample of
  * 30 found about half were real fees and half rightly gone.
  *
  * Each such take-down is judged once against its document's newest text by the restore bar
  * (`disputedRestoreVerdict`: `checkFeeAgainstSource`, the category guard, Darwin's category
- * model, the price on its own row; hand-checked 19 of 20 right on 7 Oct). One that clears it
+ * model, the price on its own row; hand-checked 19 of 20 right on 7 Oct), and must pass
+ * `checkFeeAgainstSource` outright: the bar lets a `tiered_fee` trace through, James's approval
+ * does not (review of 6de109d8). One that clears both
  * comes back live (flag `rules_recheck_restored:lost_restore`) and its bank is marked due for
  * the source check. One that fails stays down. Either way its verified row is marked
  * `LOST_RESTORE_JUDGED_FLAG`, so it is judged once. One with no text, no amount or a category
@@ -75,6 +78,9 @@ export function judgeLostTakedown(
   if (amount == null || amount <= 0) return { outcome: "skipped", reason: "no_amount" };
   if (isRetiredCategory(row.canonical_fee_key)) return { outcome: "skipped", reason: "retired_category" };
   if (!row.newest_text) return { outcome: "skipped", reason: "no_text" };
+  // James approved restoring only rows that pass the shared source check, so its own verdict must be ok.
+  const traced = checkFeeAgainstSource(row.newest_text, row.fee_name, amount, ".", row.canonical_fee_key);
+  if (!traced.ok) return { outcome: "failed", reason: `source_trace:${traced.reason}` };
   const verdict = disputedRestoreVerdict(row.newest_text, { feeName: row.fee_name, amount, canonicalFeeKey: row.canonical_fee_key }, model);
   return verdict.restore ? { outcome: "passed", reason: "restore_bar" } : { outcome: "failed", reason: verdict.reason };
 }
@@ -200,6 +206,8 @@ export async function restoreLostRecheckTakedowns(
                    outlier_flags = (COALESCE(fv.outlier_flags, '[]'::jsonb) - ${RULES_RECHECK_REASON}::text)
                      || jsonb_build_array(${LOST_RESTORE_RESTORED_FLAG}::text)
              WHERE fv.fee_verified_id = ANY(${back.map((fee) => fee.feeVerifiedId)}::bigint[])
+               AND fv.review_status = 'rejected'
+               AND fv.outlier_flags ? ${RULES_RECHECK_REASON}
           `;
           await markRestoredForSourceCheck(scope, restored, { runId: options.runId, restoredBy: LOST_RESTORE_CHECK });
         }
