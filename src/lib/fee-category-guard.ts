@@ -767,20 +767,26 @@ function pairedPriceSlot(canonicalFeeKey: string, context: CategoryGuardContext 
  * v62 (#1100): the row's own price on its source line, followed by the unit it is charged per.
  * "Service charge of $2 per debit in excess of 6 withdrawals per quarter", "A service charge of
  * $3.00 will be charged for each withdrawal in excess of six", "$25.00/Item" and "a $10.00 service
- * charge each time you withdraw money" price an activity, not the account's monthly fee. A price
- * charged per month, statement cycle, quarter or fee period anywhere on the line is the periodic
- * fee, and a per-check charge the fee carries on top ("$10.00 per month and $.35 per debit", "$8.00
- * plus .50¢ per check") belongs to the other figure, so the text after the price stops at the
- * next price, cell, "plus", "and" or "&". Read from Knox's excerpt of the line; with no excerpt or
- * no amount the check does not apply.
+ * charge each time you withdraw money" price an activity, not the account's monthly fee. The first
+ * time the price appears on the line decides: a later copy of it in another cell prices another fee
+ * ("Monthly Maintenance Fee: $1.00 | ... | Check Image Fee : $1 per item"). Whichever comes first
+ * after the price wins: a month, statement cycle, quarter or fee period makes it the periodic fee
+ * ("$9 per item charge after 3 withdrawals per month" is the item charge). A per-check charge the
+ * fee carries on top ("$10.00 per month and $.35 per debit", "$8.00 plus .50¢ per check") belongs to
+ * the other figure, so the text after the price stops at the next price, cell, "plus", "and" or
+ * "&". Read from Knox's excerpt of the line; with no excerpt or no amount the check does not apply.
  */
 const ACTIVITY_UNIT = String.raw`(?:share\s+|debit\s+|posted\s+)?(?:debit|withdrawal|transaction|transfer|check|draft|item)s?\b(?!\s*:)`;
+/** Up to six words after the price; a word may sit in parentheses ("Service Charge (Per Check Charge)"). */
+const WORDS_AFTER_PRICE = String.raw`^\s*(?:[\w'’()-]+\s+){0,6}?\(?`;
 const ACTIVITY_AFTER_PRICE = new RegExp(
-  String.raw`^\s*(?:[\w'’-]+\s+){0,6}?(?:(?:for\s+)?(?:each|every|per)\s+${ACTIVITY_UNIT}|\/\s*${ACTIVITY_UNIT}|(?:each|every)\s+time\s+(?:you|a member)\s+(?:withdraw|make|transfer))`,
+  String.raw`${WORDS_AFTER_PRICE}(?:(?:for\s+)?(?:each|every|per)\s+${ACTIVITY_UNIT}|\/\s*${ACTIVITY_UNIT}|(?:each|every)\s+time\s+(?:you|a member)\s+(?:withdraw|make|transfer))`,
   "i",
 );
-const PERIOD_AFTER_PRICE =
-  /^\s*(?:[\w'’-]+\s+){0,6}?(?:(?:per|a|each|every|for each)\s+(?:calendar\s+|monthly\s+)?(?:month|statement|cycle|quarter|fee period|year)|monthly|quarterly|\/\s*(?:mo|month)\b)/i;
+const PERIOD_AFTER_PRICE = new RegExp(
+  String.raw`${WORDS_AFTER_PRICE}(?:(?:per|a|each|every|for each)\s+(?:calendar\s+|monthly\s+)?(?:month|statement|cycle|quarter|fee period|year)|monthly|quarterly|\/\s*(?:mo|month)\b)`,
+  "i",
+);
 /** Words that put a count limit on the activity: the excess withdrawal fee the top-50 fold files under account research. */
 const OVER_LIMIT = /\b(in excess of|over\s+(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten|twelve|fifteen|twenty)\b|after\s+(?:\d+|one|two|three|four|five|six|ten)\b|more than|exceed(?:s|ed|ing)?\b|limit(?:ation)?s?\b)/i;
 const ACTIVITY_REFILE_TO = "account_research";
@@ -804,20 +810,18 @@ function activityChargeOnLine(canonicalFeeKey: string, context: CategoryGuardCon
   const excerpt = context.conditions?.match(/\bexcerpt=([\s\S]*)$/)?.[1];
   if (!excerpt || !Number.isFinite(amount) || amount <= 0) return null;
   const line = plainQuotes(excerpt).replace(/^["\s]+|["\s]+$/g, "");
-  let activity: { tail: string; before: string } | null = null;
-  for (const match of line.matchAll(priceOnLine(amount))) {
-    const start = (match.index ?? 0) + match[0].length;
-    const tail = line.slice(start, start + 160).split(/\$|\||&|\+|\bplus\b|\band\b/i)[0];
-    if (PERIOD_AFTER_PRICE.test(tail)) return null;
-    if (!activity && ACTIVITY_AFTER_PRICE.test(tail)) {
-      activity = { tail, before: line.slice(Math.max(0, line.lastIndexOf("|", match.index ?? 0) + 1), match.index ?? 0) };
-    }
-  }
-  if (!activity) return null;
-  const unit = activity.tail.trim().split(/\s+/).slice(0, 8).join(" ");
+  const match = priceOnLine(amount).exec(line);
+  if (!match) return null;
+  const start = match.index + match[0].length;
+  const tail = line.slice(start, start + 160).split(/\$|\||&|\+|\bplus\b|\band\b/i)[0];
+  const activity = ACTIVITY_AFTER_PRICE.exec(tail);
+  const period = PERIOD_AFTER_PRICE.exec(tail);
+  if (!activity || (period && period[0].length <= activity[0].length)) return null;
+  const before = line.slice(line.lastIndexOf("|", match.index) + 1, match.index);
+  const unit = tail.trim().split(/\s+/).slice(0, 8).join(" ");
   return {
     reason: `the source line charges $${amount.toFixed(2)} ${unit}, an activity charge, not the account's monthly maintenance fee`,
-    overLimit: OVER_LIMIT.test(activity.tail) || OVER_LIMIT.test(activity.before),
+    overLimit: OVER_LIMIT.test(tail) || OVER_LIMIT.test(before),
   };
 }
 

@@ -1054,6 +1054,9 @@ describe("activity charges filed as monthly maintenance (v62, #1100)", () => {
     ["Maintenance fee", 5, "A maintenance fee of $5.00 per transaction will be charged if you make more than two withdrawals during a 12 month period."],
     ["Service charge fee", 10, "A service charge fee of $10.00 will be charged for each debit transaction in excess of six during a month and no more than three of the six may be check/draft."],
     ["Maintenance fee", 1, "A maintenance fee of $1 will be imposed for every debit transaction (withdrawal, check paid, automatic transfer or payment out of your account) over six per quarter"],
+    // First holdout's misses (Oct 14): the nearer unit wins, and a unit in parentheses counts.
+    ["per monthly fee if balance falls below", 9, "$3.00 per monthly fee if balance falls below $150, $9 per item charge after 3 withdrawals per month. ACH and ATM transactions are considered withdrawals."],
+    ["Service charge", 3, "The following additional terms apply to this account: $3.00 Service Charge (Per Check Charge) Assessed per item if over six (6) transactions per four (4) week period."],
   ])("re-files %s ($%d) to account research from its line", (name, amount, line) => {
     const context = { amount, conditions: knoxNote(line) };
     const verdict = checkFeeCategory("monthly_maintenance", name, context);
@@ -1087,6 +1090,8 @@ describe("activity charges filed as monthly maintenance (v62, #1100)", () => {
     ["Account fees: Monthly maintenance fee", 8, "Account fees: Monthly maintenance fee: $8.00 Per check: $0.20 Per deposited item: $0.07 Per deposit or credit: $0.25"],
     ["Max Money Checking Monthly service charge", 8, "Max Money Checking | $8/month if balance falls below $2,500 $5/withdrawals over two (2)"],
     ["Monthly Fee", 4.95, "Monthly Fee $4.95, plus $1.50 for each transaction over 5"],
+    // First holdout's false positive: the price's first appearance decides, not another cell's.
+    ["Fees: Monthly Maintenance Fee", 1, "Fees: Monthly Maintenance Fee: $1.00 | NSF Fee: $30.00 | Stop Payment Fee (checks): $10 | Check Image Fee : $1 per item"],
   ])("keeps %s ($%d), the account's periodic fee", (name, amount, line) => {
     const context = { amount, conditions: knoxNote(line) };
     expect(checkFeeCategory("monthly_maintenance", name, context)).toEqual({ ok: true });
