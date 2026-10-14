@@ -106,6 +106,14 @@ describe("restoreLostRecheckTakedowns (#1071)", () => {
     expect(written.some((call) => /\bDELETE\b/.test(call.text))).toBe(false);
   });
 
+  it("selects only the re-check's own rejected rows", async () => {
+    const db = createDb([]);
+    await restoreLostRecheckTakedowns(db, options);
+    const read = String((db as unknown as { unsafe: ReturnType<typeof vi.fn> }).unsafe.mock.calls[0][0]);
+    expect(read).toContain("fv.review_status = 'rejected'");
+    expect(read).toContain("fv.outlier_flags ? $1");
+  });
+
   it("writes nothing on a dry run", async () => {
     const db = createDb([1, 2]);
     const result = await restoreLostRecheckTakedowns(db, { ...options, dryRun: true });

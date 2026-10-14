@@ -108,6 +108,9 @@ export async function restoreLostRecheckTakedowns(
             AND fp.rolled_back_at >= $2::timestamptz
             AND fp.rolled_back_at < $3::timestamptz
             AND fp.quarantined_at IS NULL
+            -- Only the re-check's own rejected row: one rejected since for another reason stays down.
+            AND fv.review_status = 'rejected'
+            AND fv.outlier_flags ? $1
             AND NOT (COALESCE(fv.outlier_flags, '[]'::jsonb) ? $4)
             AND NOT EXISTS (
               SELECT 1 FROM published_fee_records live
