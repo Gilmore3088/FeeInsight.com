@@ -243,7 +243,20 @@ and `detail.method_version`).
   website host only (`allowed_domains`), at most `OWN_SITE_MAX_USES` (2) searches; a $10B+ bank keeps
   the open web and 3, as the schedule search does) asks for the consumer fee schedule on the bank's
   own domain as JSON. The answer must be on the bank's domain and pass the same
-  fee-page check before it is stored. Each try is logged with its cost. A budget cap or
+  fee-page check before it is stored. Since #1251 (both paid searches): "its own website" also
+  covers the bank's other own hosts (`own-hosts.ts`: a host of the bank's own stored documents that
+  no other institution has documents on, that is not another institution's website or a
+  subdomain or parent of one, and that has the website's name with another ending, 6+ characters,
+  or is a `.bank` domain holding at least 2 of the bank's documents; machiassavings.com and
+  machiassavings.bank, cashmerevalleybank.com and cvb.bank), up to 4 sites, and an answer on one
+  of them passes the domain check. Both paid searches and the paid pick pass the bank's website
+  and name to `validateFeeCandidate`, so an answer on any other host must name the bank (#1033's
+  unconfirmed-host rule), and an answer whose host refused our check (HTTP 403) is kept unread only
+  on the website's own host, a subdomain, or a host with the website's name. A bank with no asset size on
+  file, or whose website host the API may refuse (an IP address, a trailing dot, no dot) or is a
+  third-party host (a bot check, a social page), searches the open web. Only an open-web search is
+  told about a parent company's domain. The call's usage row records `web_search_domains`, and the
+  attempt records `detail.search_domains` and `detail.own_hosts`. Each try is logged with its cost. A budget cap or
   the automation stop ends the step cleanly (`budgetStopped`); the unspent bank stays due.
   $10B+ banks and requesters are picked from any state's paid step, not only their own.
   Order: the state experts' work lists (#1029, below).
