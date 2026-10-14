@@ -3,6 +3,7 @@ import { STATS_ROW_FILTER, summarizeFeesBy, valuePerInstitution, type StatsInput
 import { consumerPriceMoveSql } from "./consumer-price-moves";
 import type { FeeReview } from "./types";
 import { institutionDisplayName } from "@/lib/institution-display-name";
+import { readerFeeConditions } from "../fee-conditions";
 
 export interface FeeCategorySummary {
   fee_category: string;
@@ -290,6 +291,7 @@ export async function getFeeCategoryDetail(category: string): Promise<{
     id: Number(f.id),
     institution_id: Number(f.institution_id),
     amount: f.amount !== null ? Number(f.amount) : null,
+    conditions: readerFeeConditions(f.conditions),
     asset_size: f.asset_size !== null && f.asset_size !== undefined ? Number(f.asset_size) : null,
     extraction_confidence: Number(f.extraction_confidence ?? 0),
     source_document_id: f.source_document_id !== null ? Number(f.source_document_id) : null,
