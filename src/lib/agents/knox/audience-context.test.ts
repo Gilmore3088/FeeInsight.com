@@ -38,6 +38,22 @@ describe("Knox audience suggestion from context (#1059)", () => {
     // A business heading with prices under it is business fees, so no default.
     const mixed = ["Fees", "Stop Payment $30", "Business Services", "Lockbox $50"].join("\n");
     expect(hasBusinessFees(mixed.split("\n"))).toBe(true);
-    expect(suggest(null, mixed, "Stop Payment")).toBeNull();
+    // An unqualified fee in a schedule that also prices business items is listed for every account.
+    expect(suggest(null, mixed, "Stop Payment")).toMatchObject({ audience: "both", source: "mixed_schedule_unqualified", evidence: "Lockbox $50" });
+  });
+
+  it("never reads a product or a time as an audience", () => {
+    // A corporate check is the institution's official check; a personal check is a check type.
+    expect(suggest(null, "Fee Schedule\nCorporate Check Stop Payment $30", "Corporate Check Stop Payment")).toMatchObject({ source: "default_general_schedule" });
+    expect(suggest(null, "Fee Schedule\nRush Pay transaction (Next Business Day) $15", "Rush Pay transaction (Next Business Day)", 15)).toMatchObject({ source: "default_general_schedule" });
+    expect(hasBusinessFees(["Corporate Drafts (per item) | $3.00", "Copyright Oak Tree Business Systems, Inc.", "Stop Payment $30"])).toBe(false);
+  });
+
+  it("takes no section from a table row or a menu, but counts a business column", () => {
+    const table = ["CONSUMER CHECKING ACCOUNTS | BUSINESS ACCOUNTS", "Xplore Spend Account* | Xplore Business Savings", "Monthly Service Charge $5.00"].join("\n");
+    expect(suggest(null, table, "Monthly Service Charge", 5)).toMatchObject({ audience: "both", source: "mixed_schedule_unqualified" });
+    // A lone menu word ("Business") with prices under it is not a business section.
+    expect(hasBusinessFees(["Business", "Checking", "Stop Payment $30"])).toBe(false);
+    expect(suggest(null, ["close Business Banking menu", "Monthly fee $5"].join("\n"), "Monthly fee", 5)).toMatchObject({ source: "default_general_schedule" });
   });
 });

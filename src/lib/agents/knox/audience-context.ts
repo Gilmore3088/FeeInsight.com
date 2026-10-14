@@ -5,8 +5,14 @@
  * returns evidence for Darwin, never a published label on its own.
  */
 
-export type ContextAudience = "consumer" | "business";
-export type AudienceSource = "fee_name" | "document_url" | "document_title" | "section_heading" | "default_general_schedule";
+export type ContextAudience = "consumer" | "business" | "both";
+export type AudienceSource =
+  | "fee_name"
+  | "document_url"
+  | "document_title"
+  | "section_heading"
+  | "default_general_schedule"
+  | "mixed_schedule_unqualified";
 
 export interface AudienceSuggestion {
   audience: ContextAudience;
@@ -25,7 +31,15 @@ const MAX_HEADING_CHARS = 80;
 const HEADING_LOOKBACK_LINES = 60;
 const TITLE_CHARS = 300;
 
-function audienceOf(text: string): ContextAudience | null {
+/**
+ * Words that name a product or a time, not who the fee is for: a corporate (official) check or
+ * draft, a personal check, a business day, "close of business", a vendor's "Business Systems".
+ */
+const NOT_AN_AUDIENCE = /\bcorporate\s+(?:checks?|drafts?|bonds?|securities|and municipal)\b|\bpersonal\s+(?:checks?|identification|information)\b|\bbusiness\s+(?:days?|hours?|systems)\b|\b(?:close of|regular|normal|legitimate|conduct(?:ing)?|doing)\s+business\b|\bcredit union business only\b/gi;
+const neutral = (text: string) => text.replace(NOT_AN_AUDIENCE, " ");
+
+function audienceOf(raw: string): ContextAudience | null {
+  const text = neutral(raw);
   if (BOTH_WORDS.test(text)) return null;
   const business = BUSINESS_WORDS.test(text);
   const consumer = CONSUMER_WORDS.test(text);
@@ -35,7 +49,7 @@ function audienceOf(text: string): ContextAudience | null {
 }
 
 /** Menu items, links, sign-in prompts, bank names and "business days" name no audience. */
-const NOT_A_SECTION = /\[|\]\(|https?:|www\.|sign[ -]?in|log[ -]?in|enroll|apply now|business (?:days?|hours?)|bank of|credit union|federal savings|\bN\.?A\.?\b/i;
+const NOT_A_SECTION = /\[|\]\(|https?:|www\.|sign[ -]?in|log[ -]?in|enroll|apply now|business (?:days?|hours?)|bank of|credit union|federal savings|\bN\.?A\.?\b|\bmenu\b/i;
 /**
  * A section heading names an audience with what the section holds ("Consumer Fees", "BUSINESS
  * ACCOUNTS", "Personal Checking", "Fees for Business Customers"), not a lone word from a menu.
@@ -47,11 +61,17 @@ const SECTION_HEADING = new RegExp(
 /** A title names the schedule itself ("Consumer Fee Schedule", "Business Schedule of Fees"). */
 const SCHEDULE_TITLE = /\b(?:fee schedule|schedule of (?:fees|charges)|fees and charges|service charges?|fee disclosure)\b/i;
 
-function isHeading(line: string): boolean {
+/**
+ * A short line with no price. A table row ("Xplore Spend Account* | Xplore Business Savings")
+ * holds columns, not a section, so it never heads a fee; `columns` lets a column header still show
+ * that the document has a business column.
+ */
+function isHeading(line: string, columns = false): boolean {
   const trimmed = line.trim();
   return (
     trimmed.length > 0 &&
-    trimmed.length <= MAX_HEADING_CHARS &&
+    trimmed.length <= (columns ? MAX_FEE_ROW_CHARS : MAX_HEADING_CHARS) &&
+    (columns || !trimmed.includes("|")) &&
     !/\$\s*\d/.test(trimmed) &&
     !/\d+\.\d{2}\b/.test(trimmed) &&
     !NOT_A_SECTION.test(trimmed)
@@ -118,26 +138,37 @@ export function suggestAudience(input: {
   // A general schedule with no business fees is the consumer schedule (#1059 step 4). A menu link
   // ("Business Banking") is not business fees: only a business heading with priced lines under
   // it, or a priced line that names business, is.
-  if (!hasBusinessFees(lines)) return { audience: "consumer", source: "default_general_schedule", evidence: "no business fees in the document" };
-  return null;
+  const businessLine = businessFeeLine(lines);
+  if (businessLine < 0) return { audience: "consumer", source: "default_general_schedule", evidence: "no business fees in the document" };
+  // A schedule that also prices business items, with nothing that limits this fee to one
+  // audience (its name, a section above it), lists it for every account.
+  return { audience: "both", source: "mixed_schedule_unqualified", evidence: lines[businessLine].trim().slice(0, 200) };
 }
 
 const PRICED = /\$\s*\d|\b\d+\.\d{2}\b/;
+/** A priced fee row is short; a longer priced line is prose ("...built for the business economy, $250"). */
+const MAX_FEE_ROW_CHARS = 160;
 /** Lines under a heading that still belong to it. */
 const SECTION_REACH_LINES = 15;
 
-/** Whether the document prices anything for businesses. */
-export function hasBusinessFees(lines: string[]): boolean {
+/** The first line that prices something for businesses, or -1. */
+export function businessFeeLine(lines: string[]): number {
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index];
-    if (NOT_A_SECTION.test(line) || !BUSINESS_WORDS.test(line)) continue;
-    if (PRICED.test(line)) return true;
-    if (!isHeading(line)) continue;
+    if (NOT_A_SECTION.test(line) || !BUSINESS_WORDS.test(neutral(line))) continue;
+    if (PRICED.test(line) && line.trim().length <= MAX_FEE_ROW_CHARS) return index;
+    // Only a business section heading owns the prices under it, not a lone menu word ("Business").
+    if (!isHeading(line, true) || !SECTION_HEADING.test(neutral(line))) continue;
     for (let below = index + 1; below < Math.min(lines.length, index + 1 + SECTION_REACH_LINES); below += 1) {
       // The next heading that names an audience ends this one ("Business Banking" then "Personal Banking").
       if (isHeading(lines[below]) && audienceOf(lines[below])) break;
-      if (PRICED.test(lines[below]) && !NOT_A_SECTION.test(lines[below])) return true;
+      if (PRICED.test(lines[below]) && !NOT_A_SECTION.test(lines[below])) return below;
     }
   }
-  return false;
+  return -1;
+}
+
+/** Whether the document prices anything for businesses. */
+export function hasBusinessFees(lines: string[]): boolean {
+  return businessFeeLine(lines) >= 0;
 }
