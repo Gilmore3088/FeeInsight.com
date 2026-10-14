@@ -167,6 +167,24 @@ export async function runReportRenderStep(
   };
 }
 
+function errorText(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+/**
+ * Fail a job the reconcile step could not finish, so it never stays 'rendering' (#1249):
+ * the step's failure ends the run, and report-close, which would clean it up, never runs.
+ * Only a 'rendering' job is touched, so a cancel is never overwritten. Best effort: when the
+ * database itself is down this write fails too, and the caller's error is what is thrown.
+ */
+async function failRenderingJob(db: SqlTag, jobId: string, message: string): Promise<void> {
+  try {
+    await db`UPDATE report_jobs SET status = 'failed', error = ${message} WHERE id = ${jobId} AND status = 'rendering'`;
+  } catch (error) {
+    console.error(`[report-reconcile] could not mark job ${jobId} failed:`, errorText(error));
+  }
+}
+
 export async function runReportReconcileStep(
   db: SqlTag,
   jobId: string | null | undefined,
@@ -175,9 +193,16 @@ export async function runReportReconcileStep(
   if (!jobId) {
     throw new Error("Report run has no report job id.");
   }
-  const rows = await db<Array<ReportJobRow & { artifact_key: string | null; data_manifest: unknown }>>`
-    SELECT id, report_type, status, params, artifact_key, data_manifest FROM report_jobs WHERE id = ${jobId} LIMIT 1
-  `;
+  let rows: Array<ReportJobRow & { artifact_key: string | null; data_manifest: unknown }>;
+  try {
+    rows = await db<Array<ReportJobRow & { artifact_key: string | null; data_manifest: unknown }>>`
+      SELECT id, report_type, status, params, artifact_key, data_manifest FROM report_jobs WHERE id = ${jobId} LIMIT 1
+    `;
+  } catch (error) {
+    const message = `Reconcile could not read the report job: ${errorText(error)}`;
+    await failRenderingJob(db, jobId, message);
+    throw new Error(message, { cause: error });
+  }
   const job = rows[0];
   if (!job) {
     throw new Error(`Report job ${jobId} was not found.`);
@@ -206,7 +231,7 @@ export async function runReportReconcileStep(
     live = await (deps.load ?? loadLiveFigures)(db, printed);
   } catch (error) {
     // Never leave the job 'rendering': fail it with the reason so it can be retried.
-    const message = `Reconcile could not read live data: ${error instanceof Error ? error.message : String(error)}`;
+    const message = `Reconcile could not read live data: ${errorText(error)}`;
     await db`UPDATE report_jobs SET status = 'failed', error = ${message} WHERE id = ${jobId}`;
     throw new Error(message);
   }
@@ -225,15 +250,26 @@ export async function runReportReconcileStep(
     unchecked: result.unchecked.length,
   };
   if (!result.ties_out) {
-    await db`UPDATE report_jobs SET status = 'failed', error = ${summary}, data_manifest = ${saved} WHERE id = ${jobId}`;
+    try {
+      await db`UPDATE report_jobs SET status = 'failed', error = ${summary}, data_manifest = ${saved} WHERE id = ${jobId}`;
+    } catch (error) {
+      // The findings could not be saved; still fail the job, with the summary as its reason.
+      await failRenderingJob(db, jobId, `${summary} (The findings could not be saved: ${errorText(error)})`);
+    }
     // Thrown so the run ledger shows the step failed, with which figures and why.
     throw new Error(summary);
   }
-  await db`
-    UPDATE report_jobs
-       SET status = 'complete', error = NULL, data_manifest = ${saved}, completed_at = NOW()
-     WHERE id = ${jobId}
-  `;
+  try {
+    await db`
+      UPDATE report_jobs
+         SET status = 'complete', error = NULL, data_manifest = ${saved}, completed_at = NOW()
+       WHERE id = ${jobId}
+    `;
+  } catch (error) {
+    const message = `Reconciled, but the report could not be marked complete: ${errorText(error)}`;
+    await failRenderingJob(db, jobId, message);
+    throw new Error(message, { cause: error });
+  }
   return { status: "completed", summary: `${summary} It is ready to publish from the reports page.`, detail };
 }
 
