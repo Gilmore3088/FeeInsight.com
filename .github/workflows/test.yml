@@ -34,6 +34,10 @@ jobs:
         run: npm ci
       - name: Guard retired execution surfaces
         run: npm run guard:legacy
+      - name: Fee-quality gates (hard documents, taxonomy, category guard, confirmed takedowns)
+        # #1067: real source lines every taxonomy, fold, guard or same-line change must still read
+        # the same way (src/lib/agents/deming/__fixtures__/hard-documents.json). No database, no model calls.
+        run: npm run test:quality-gates
       - name: Run focused agentic tests
         run: npm run test:agentic
       - name: Typecheck
