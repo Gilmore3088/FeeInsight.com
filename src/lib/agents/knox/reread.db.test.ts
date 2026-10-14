@@ -63,6 +63,28 @@ describe.skipIf(!connection)("Knox re-read in isolated PostgreSQL", () => {
     expect(row.conditions).toContain("text_hash=new-hash;");
   });
 
+  it("files a re-read under today's category only, so Darwin does not judge it under the old one", async () => {
+    // Peoples National Bank of Kewanee (document 4506): "NSF Return/Paid Item Fee for Chkg. & Sav | $25.00"
+    // was read as nsf; today's rules read the same line as overdraft. Darwin reads the first
+    // canonical_hint flag, so the old flag must not survive the take-over.
+    const nsfLine = {
+      ...overdraft,
+      feeName: "NSF Return/Paid Item Fee for Chkg. & Sav",
+      amount: 25,
+      canonicalHint: "nsf",
+      excerpt: "NSF Return/Paid Item Fee for Chkg. & Sav | $25.00",
+    } as Parameters<typeof insertCandidate>[1]["candidate"];
+    await insertCandidate(db as unknown as Db, { runId: 1, row: firstRead, candidate: nsfLine });
+    await retireRowsFromOlderText(db as unknown as Db, reread);
+
+    expect(await insertCandidate(db as unknown as Db, { runId: 2, row: reread, candidate: { ...nsfLine, canonicalHint: "overdraft" } })).toBe(true);
+    const [row] = await flagsOf();
+    expect(row.flags.filter((flag) => flag.startsWith("canonical_hint:"))).toEqual(["canonical_hint:overdraft"]);
+    expect(row.flags).toContain("needs_darwin_verification");
+    expect(row.flags).toContain("knox_reread_took_over");
+    expect(row.conditions).toContain("canonical_hint=overdraft;");
+  });
+
   it("leaves a retired row alone once Darwin has a verified row for it", async () => {
     await insertCandidate(db as unknown as Db, { runId: 1, row: firstRead, candidate: overdraft });
     await retireRowsFromOlderText(db as unknown as Db, reread);

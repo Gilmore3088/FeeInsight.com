@@ -32,7 +32,7 @@ import {
 } from "./finders";
 import { LINK_YIELD_CHECK, LINK_YIELD_SLOTS, stepSlot } from "./outcomes";
 import { NO_CONSUMER_SCHEDULE_IDS } from "./operator-schedules";
-import { OTHER_BANK_HOST_CODE, otherInstitutionAtHost } from "./other-bank-host";
+import { loadSharedNameIds, OTHER_BANK_HOST_CODE, otherInstitutionAtHost } from "./other-bank-host";
 import { loadPageClassifier, type PageClassifier } from "./page-classifier";
 import { createPlatformLearner, type PlatformLearner } from "./platform-learning";
 import {
@@ -276,6 +276,10 @@ export function nextDiscoveryResume(
 interface DiscoveryCandidateRow {
   id: number | string;
   institution_name: string;
+  city?: string | null;
+  cert_number?: string | null;
+  /** Another institution has this name (`loadSharedNameIds`). */
+  name_shared?: boolean;
   state_code: string | null;
   website_url: string | null;
   asset_size: number | string | null;
@@ -632,6 +636,9 @@ async function discoverForInstitution(
   const ctx: SearchContext = {
     institutionId,
     institutionName: row.institution_name,
+    nameShared: row.name_shared,
+    city: row.city ?? null,
+    certNumber: row.cert_number ?? null,
     stateCode,
     site: baseUrl,
     fetchImpl: options.fetchImpl,
@@ -906,6 +913,8 @@ async function selectCandidates(
     WITH due AS (
     SELECT inst.id,
            inst.institution_name,
+           inst.city,
+           inst.cert_number,
            inst.state_code,
            inst.website_url,
            inst.asset_size,
@@ -1053,6 +1062,8 @@ async function selectNeverSearchedElsewhere(db: SqlTag, limit: number, stateCode
     -- never-searched banks in other states
     SELECT inst.id,
            inst.institution_name,
+           inst.city,
+           inst.cert_number,
            inst.state_code,
            inst.website_url,
            inst.asset_size,
@@ -1098,6 +1109,8 @@ async function selectUpgradeCandidates(db: SqlTag, limit: number, stateCode: str
     -- product-page upgrade search
     SELECT inst.id,
            inst.institution_name,
+           inst.city,
+           inst.cert_number,
            inst.state_code,
            inst.website_url,
            inst.asset_size,
@@ -1154,6 +1167,8 @@ async function selectBusinessCandidates(db: SqlTag, limit: number, stateCode: st
     -- business-only link search
     SELECT inst.id,
            inst.institution_name,
+           inst.city,
+           inst.cert_number,
            inst.state_code,
            inst.website_url,
            inst.asset_size,
@@ -1210,6 +1225,8 @@ async function selectStaleCandidates(
     WITH due AS (
       SELECT inst.id,
              inst.institution_name,
+             inst.city,
+             inst.cert_number,
              inst.state_code,
              inst.website_url,
              inst.asset_size,
@@ -1690,7 +1707,9 @@ export async function runMagellanDiscovery(
   // With the companion search on, banks stop early enough to leave it its reserve.
   const { stepDeadline, lastBankStart, bankDeadline } = discoveryTimeBudget(Date.now(), wantSecondDocuments);
   const results: CandidateDiscoveryResult[] = [];
+  const sharedNames = await loadSharedNameIds(db, rows, dryRun ? undefined : { runId: options.runId, stepId: options.stepId ?? null });
   for (const row of rows) {
+    row.name_shared = sharedNames.has(Number(row.id));
     // Banks not reached this step stay due and are picked up by the next one.
     if (Date.now() > lastBankStart) break;
     const institutionId = Number(row.id);

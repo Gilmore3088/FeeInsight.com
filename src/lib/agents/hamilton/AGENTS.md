@@ -303,14 +303,19 @@ the detail.
 16. Companion retire (`companion-retire.ts`): fees from companion pages Magellan retired as not
     a consumer fee page, `companion_page_retired`.
 17. Duplicate collapse (`duplicate-collapse.ts`): exact repeats of a live row,
-    `duplicate of #<kept id>`.
+    `duplicate of #<kept id>`. Near-name repeats (#1302) are shadow only
+    (`NEAR_NAME_COLLAPSE_LIVE`): reported in step detail `near_name_collapse`, never closed;
+    switched on, `duplicate of #<kept id> (near name)`.
 18. Frequency fill (`frequency-fill.ts`): sets a live fee's frequency from its own schedule row
     (fills a blank, corrects or clears one read from another fee's row), logged to
     `pipeline_feedback` (check `hamilton.frequency_fill`). v11 (#1196): an NSF or overdraft fee
     stored as monthly is checked against its own line (`perEventPeriodCheck`);
     an overdraft program the bank sells by the month keeps its period, a period the fee's own
     price states ("NSF | $23.00/Month") is held, `frequency_hold: <why>`, and any other period is
-    cleared. A hold is the only rollback; clearing `rolled_back_at` restores it.
+    cleared. A hold is the only rollback; clearing `rolled_back_at` restores it. #1196 (Oct 14,
+    no version change): a blank NSF fee is never filled with a period (`perEventFrequency`), so
+    the fill no longer sets "monthly" that the v11 check clears on the next pass (5 live NSF fees
+    went round that loop on Oct 14). A stated annual or daily NSF period is left as it is.
 19. Newer-copy check (`newer-copy-retire.ts`): a fee line gone from a newer copy of its page,
     `newer_copy_drops_fee:#<newer document id>` (`NEWER_COPY_RETIRE_LIVE` is true; false makes
     it a shadow run).
@@ -477,6 +482,20 @@ live row exactly (same institution, canonical key, variant, frequency, amount an
 name). The newest copy stays live; the others get `rolled_back_reason = 'duplicate of
 #<kept id>'`, the run's batch id, and a `hamilton.duplicates_collapsed` run event. Rows
 that differ in name or amount are separate fee lines and are left alone.
+
+**Near names (#1302).** Two live rows of one document, category, variant and amount whose names
+differ only by punctuation, case, a plural, a leading article or a trailing "fee" ("Stop
+Payment" / "Stop Payment ......", "Cashier's Check" / "Cashier’s Check"), or by one qualifier word
+in front ("Research fee" / "Account Research fee"), are one fee only when the page says so:
+`linesApartOnPage` must find no two printed lines at the price (the same check the publish step
+uses, #1303), and at least one name must be printed with the price. Frequencies and audiences
+must agree or be unstated. The copy kept states its audience, then its frequency, then is the
+one printed at the price, then is newest. Doc 14695 prints "Stop Payments, each ... $35" and
+"Stop Payment, each ... $35" in two copies of its schedule, so both stay. This sweep reads up to
+25 documents' stored text per step and is shadow only until James turns
+`NEAR_NAME_COLLAPSE_LIVE` on: each step reports `near_name_collapse` (pairs, apart on page, not
+printed, no text, would close, samples) and changes no row. Rollback once on: clear
+`rolled_back_at` on rows whose `rolled_back_reason` ends in `(near name)`.
 
 ## Rules Re-check
 

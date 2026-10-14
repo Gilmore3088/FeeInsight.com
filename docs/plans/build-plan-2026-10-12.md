@@ -86,9 +86,14 @@ and counts as its baseline, and names the query and time for every later reading
 3. **Every code PR** names the issue, says what it changes, how it was verified, and, from #1106 on,
    the one scorecard number it should move. Run `npm run guard:legacy`, lint, typecheck and the
    changed packages' tests before pushing.
-4. **Merge** only under the standing authorization in `CLAUDE.md`: exact head reviewed, CI green, no
+4. **Tests stay lean** (James, 2026-10-14: no test bloat). Extend the module's existing test file and
+   prefer one table-driven test over many near-identical cases. A new test file only for a new module.
+   Pin behaviour that matters (a reviewer's failing layout, a real source line), not every branch.
+   CI runs each test once (`.github/workflows/test.yml`); a new step must not re-run tests a job
+   already runs.
+5. **Merge** only under the standing authorization in `CLAUDE.md`: exact head reviewed, CI green, no
    conflict, no unresolved blocking review, and none of the gates below.
-5. **Gates: open the PR, do not merge, add it to James's list** when a PR:
+6. **Gates: open the PR, do not merge, add it to James's list** when a PR:
    - adds or changes a migration (`supabase/migrations/`), or changes production data (restores,
      relabels, releases, backfills);
    - switches on a paid provider or raises a budget;
@@ -96,11 +101,11 @@ and counts as its baseline, and names the query and time for every later reading
      `copywriting` and `copy-editing` skills, add a copy-review note, and leave it for James to see on
      the Vercel preview;
    - deletes branches, force-pushes, or touches permissions or security settings (never do these).
-6. **After each merge:** add one line to the day's checkpoint (`docs/project/checkpoints/`), what
+7. **After each merge:** add one line to the day's checkpoint (`docs/project/checkpoints/`), what
    merged and what it should move, so James wakes up to a readable summary.
-7. **Never:** push to `main`, use Firecrawl, add one-off data scripts, add scheduled Claude routines,
+8. **Never:** push to `main`, use Firecrawl, add one-off data scripts, add scheduled Claude routines,
    or fake a number. If a count is not known, say so.
-8. **A gated item does not stop the run.** Open its PR, list it for James, and continue with the next
+9. **A gated item does not stop the run.** Open its PR, list it for James, and continue with the next
    item that does not depend on it. Stop only when every remaining item is gated or blocked, or at the
    account's spend limit, and leave a short status comment on #1026.
 

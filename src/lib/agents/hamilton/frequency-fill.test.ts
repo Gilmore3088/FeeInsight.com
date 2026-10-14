@@ -88,6 +88,22 @@ describe("Hamilton frequency fill", () => {
     expect(JSON.stringify(feedback)).toContain("frequency_held");
   });
 
+  it("never fills a blank NSF fee with a period, so v11 does not clear it again (#1196)", async () => {
+    const nsf = (id: number, amount: string, excerpt: string, frequency: string | null, name: string) =>
+      ({ ...row(id, amount, excerpt, frequency), canonical_fee_key: "nsf", fee_name: name });
+    const db = createDbMock([
+      // Addition Financial 24188: filled monthly at 15:23 UTC on Oct 14 and cleared at 15:27, every pass.
+      nsf(1, "35.00", "Dormant accounts | $15 00 per month Nonsufficient funds | $35 00", null, "00 per month Nonsufficient funds"),
+      // Its own line's per-item wording still fills a blank.
+      nsf(2, "28.00", "NSF Item Returned | $28.00 per item", null, "NSF Item Returned"),
+      // A stated daily period is left as it was: it waits for James.
+      nsf(3, "30.00", "NSF/UCF Fee $30 Per Day", "daily", "NSF/UCF Fee"),
+    ]);
+    const result = await fillBlankFrequencies(asDb(db), { runId: 5, dryRun: true });
+    expect(result.filled.map((fee) => [fee.feePublishedId, fee.from, fee.frequency])).toEqual([[2, null, "per_item"]]);
+    expect(result.held).toEqual([]);
+  });
+
   it("writes nothing on a dry run", async () => {
     const db = createDbMock([row(1, "6.00", "Copy of Share Draft (Check) Faxed | $6.00 each")]);
     const result = await fillBlankFrequencies(asDb(db), { runId: 5, dryRun: true });

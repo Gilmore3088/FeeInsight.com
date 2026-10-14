@@ -475,6 +475,20 @@ v65 (rules 65, Oct 9, customer audience):
   cannot become two audiences, so the document's re-read writes them. Pinnacle (47) heads
   `KNOX_PRIORITY_REREAD_IDS` for that re-read.
 
+Rules 65, #1196 (Oct 14, no version change, so no document is re-read for it):
+- A price whose decimal point the PDF text dropped ("Dormant accounts | $15 00 per month
+  Nonsufficient funds | $35 00", Addition Financial) gets its point back before the line is read
+  (`withDroppedDecimalPoints`): "00" cents always, other cents only when the text drops the point
+  on "00" prices too and the cents end their cell. The cents no longer open the next fee's name
+  ("00 per month Nonsufficient funds").
+- #1305, same function: cents followed by a footnote star end their price ("$1 50* after 8/mo"
+  is $1.50, the star never a digit), and a point kept with a space after it is the same dropped
+  point ("$29. 95/ea ch" is $29.95). Each shape is counted on its own, and cents after ". " must
+  end their cell, so "$500. 10-year draw period" and "below $100. 19 and over" stay two numbers.
+- On a line with two fees, the unit right after the first price ("per month", "/hr", "each") is
+  that price's: the second fee's name and frequency are read from after it, and the second fee is
+  not dropped as a repeat of the first price.
+
 ## Held lines and the re-checks after each extract
 
 A new rules version also reaches lines older versions held. Knox does not extract a text twice
@@ -517,6 +531,22 @@ After the extract itself, each extract step runs these passes in order (`run-sto
   Only one reader agrees here, so Darwin's free checks, the shared source check among them,
   decide what goes live; the 9 Oct dry read of 17 free rows was 11 of 17 right against source.
   The step's detail reports it as `superseded_free_recheck`.
+- `refileSupersededRows` (#1093, off until James approves, `SUPERSEDED_REFILE_LIVE`): a free-pass
+  row a re-read retired that today's free team reads with the same name and amount under another
+  category. The superseded re-check needs the old category, so it leaves these retired, and the
+  dedupe index kept the re-read from writing its own row (Oregonians CU's "Card Replacement" $10,
+  retired as atm_non_network, read today as card_replacement). On, the row goes to Darwin under
+  today's category (old `canonical_hint:` flags dropped, `knox_refiled_from:<old>` kept for
+  reversal), unless a live twin of today's category stands or Darwin already judged the row for
+  something other than its category (Darwin does not judge a row twice at one version). The pass
+  also repairs unverified rows a re-read took over whose first `canonical_hint:` flag is stale
+  (`knox_stale_hint_repaired`). Off, every extract step reads a read-only sample of 25 (a new
+  sample each hour) and a dry-run extract reads every candidate; neither writes. The step's
+  detail reports it as `superseded_refile`.
+- A re-read that takes over a row (`knox_reread_took_over`, `knox_promoted_from_held`) drops the
+  row's old `canonical_hint:` flags. Darwin reads the first such flag, so before this a fee today's
+  rules filed under a new category was judged under the old one: 12 of the 54 take-overs by 14 Oct
+  ("Wire Transfer - International" $45 judged as an overdraft fee).
 - `recheckHeldRates`: held percentage lines (below).
 - Batch review (`batch-review.ts`, below).
 

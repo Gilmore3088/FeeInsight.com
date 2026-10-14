@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const { sqlMock, withTransactionMock, startAgentRunMock, syncStateLaneProfilesMock } = vi.hoisted(() => ({
-  sqlMock: vi.fn(),
+  // `sql.unsafe` fragments come back as their text, so a test can read them in the call's values.
+  sqlMock: Object.assign(vi.fn(), { unsafe: (text: string) => text }),
   withTransactionMock: vi.fn(),
   startAgentRunMock: vi.fn(),
   syncStateLaneProfilesMock: vi.fn(),
@@ -48,6 +49,8 @@ import {
   wakeLanesAfterRecovery,
   wakeLanesWithPendingSecondLooks,
 } from "./state-lane-scheduler";
+import { darwinDueSql } from "./darwin/verify";
+import { CATEGORY_GUARD_VERSION } from "@/lib/fee-category-guard";
 import { KNOX_EXTRACT_MAX_LIMIT } from "./knox/extract";
 import { ROSETTA_READ_MAX_LIMIT } from "./rosetta/read";
 
@@ -225,14 +228,14 @@ describe("state lane scheduler", () => {
     expect(query).toContain("prior.id <> adt.id");
   });
 
-  it("counts raw rows Darwin has not decided as backlog", async () => {
+  it("counts raw rows Darwin's verify step would select as backlog, re-checks after a guard bump included", async () => {
     mockCadence({ fullThisMonth: true, recheckThisQuarter: true, backlog: true });
 
-    await stateHasDocumentBacklog("PA");
+    await stateHasDocumentBacklog("GU");
 
-    const query = templateText(sqlMock.mock.calls[0][0]);
-    expect(query).toContain("needs_darwin_verification");
-    expect(query).toContain("FROM verified_fee_observations fv");
+    // #1052: the same test the selection runs, so Guam's 9 rows due under guard v61 wake its lane.
+    expect(sqlMock.mock.calls[0]).toContain(darwinDueSql());
+    expect(darwinDueSql()).toContain(`COALESCE((pa.detail->>'category_guard_version')::int, 0) < ${CATEGORY_GUARD_VERSION}`);
   });
 
   it("syncs every state's profiles only on the first tick of each hour", async () => {
