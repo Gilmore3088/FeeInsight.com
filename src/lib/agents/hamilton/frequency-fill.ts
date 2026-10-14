@@ -2,7 +2,7 @@ import { sql } from "@/lib/data-store/connection";
 import { invalidatePublicReadCache } from "@/lib/data-store/fee-cache";
 import { recordFeedback, type FeedbackRow } from "@/lib/agents/learning/feedback";
 import { inSavepoint } from "@/lib/agents/savepoint";
-import { boxTableAnnualHeader, perEventPeriodCheck, PERIOD_FEE_KEYS, settledFrequency } from "@/lib/fee-frequency";
+import { boxTableAnnualHeader, perEventFrequency, perEventPeriodCheck, PERIOD_FEE_KEYS, settledFrequency } from "@/lib/fee-frequency";
 
 type SqlTag = typeof sql;
 
@@ -230,7 +230,12 @@ export async function fillBlankFrequencies(
       });
       continue;
     }
-    const frequency = check ? check.frequency : settledFrequency(sourceLine, amount, stated, row.canonical_fee_key);
+    // #1196 (no version change): a blank NSF fee is never filled with a period. Before, the fill
+    // set Addition Financial's "Nonsufficient funds" (24188) to monthly from "$15 00 per month" on
+    // its line, and the v11 check cleared it on the next pass, over and over. A stated period
+    // other than monthly waits for James, so only a blank is read this way.
+    const settled = settledFrequency(sourceLine, amount, stated, row.canonical_fee_key);
+    const frequency = check ? check.frequency : stated == null ? perEventFrequency(row.canonical_fee_key, settled, sourceLine, amount) : settled;
     if (frequency === stated) continue;
     if (result.filled.length >= limit) break;
     result.filled.push({

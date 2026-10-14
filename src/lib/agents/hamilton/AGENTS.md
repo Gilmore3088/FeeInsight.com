@@ -310,7 +310,10 @@ the detail.
     stored as monthly is checked against its own line (`perEventPeriodCheck`);
     an overdraft program the bank sells by the month keeps its period, a period the fee's own
     price states ("NSF | $23.00/Month") is held, `frequency_hold: <why>`, and any other period is
-    cleared. A hold is the only rollback; clearing `rolled_back_at` restores it.
+    cleared. A hold is the only rollback; clearing `rolled_back_at` restores it. #1196 (Oct 14,
+    no version change): a blank NSF fee is never filled with a period (`perEventFrequency`), so
+    the fill no longer sets "monthly" that the v11 check clears on the next pass (5 live NSF fees
+    went round that loop on Oct 14). A stated annual or daily NSF period is left as it is.
 19. Newer-copy check (`newer-copy-retire.ts`): a fee line gone from a newer copy of its page,
     `newer_copy_drops_fee:#<newer document id>` (`NEWER_COPY_RETIRE_LIVE` is true; false makes
     it a shadow run).
