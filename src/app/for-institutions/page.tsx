@@ -125,7 +125,7 @@ const AUDIENCES = [
   {
     icon: Shield,
     title: "Pricing and finance",
-    body: "Annual pricing studies in hours, not months. Current peer comparison instead of last year's survey.",
+    body: "Current peer comparison instead of last year's survey.",
   },
   {
     icon: BarChart2,

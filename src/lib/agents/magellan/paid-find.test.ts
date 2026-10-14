@@ -10,6 +10,7 @@ import { ProviderBudgetBlockedError } from "@/lib/api-hardening/budget";
 
 import { FOUND_COOLDOWN_DAYS, MISS_COOLDOWN_DAYS } from "./cooldowns";
 import { DISCOVERY_METHOD_VERSION } from "./discovery";
+import { NOT_ONLINE_AFTER_MISSES, NOT_ONLINE_RETRY_DAYS } from "./escalation";
 import { onBankDomain, PAID_FIND_STRATEGY, PAID_PICK_STRATEGY, runMagellanPaidFind } from "./paid-find";
 
 type DbMock = ReturnType<typeof vi.fn>;
@@ -24,7 +25,7 @@ const banks = [
   { id: 3, institution_name: "Gamma Bank", city: "Barre", state_code: "VT", website_url: "https://gamma.example" },
 ];
 
-function createDb(rows = banks): DbMock {
+function createDb(rows: Array<(typeof banks)[number] & { paid_misses?: number }> = banks): DbMock {
   return vi.fn((strings: TemplateStringsArray) => {
     const text = templateText(strings);
     if (text.includes("learning_schema_ready")) return Promise.resolve([{ learning_schema_ready: true }]);
@@ -200,5 +201,39 @@ describe("Magellan paid find (pass 3)", () => {
       expect(create).toHaveBeenCalledTimes(1);
       expect(attempts(db).map((attempt) => attempt.strategy)).toEqual([PAID_PICK_STRATEGY.strategy]);
     });
+  });
+});
+
+describe("escalation ladder (#1032)", () => {
+  it("holds 'not published online' banks off the paid list until the retry, on the same website only", async () => {
+    const db = createDb([]);
+    await runMagellanPaidFind({ runId: 1, stateCode: "vt", db: asDb(db), create: vi.fn() });
+    const select = db.mock.calls.find((call) => templateText(call[0]).includes("inst.city"))!;
+    const text = templateText(select[0]);
+    expect(text).toContain("LEFT JOIN LATERAL");
+    expect(text).toContain("COALESCE(pa.detail->>'website_url', inst.website_url) = inst.website_url");
+    expect(text).toContain("found.outcome = 'ok'");
+    expect(text).toMatch(/AND NOT \(\s*ladder\.misses >=/);
+    expect(select).toContain(NOT_ONLINE_AFTER_MISSES);
+    expect(select).toContain(NOT_ONLINE_RETRY_DAYS);
+  });
+
+  it("asks for the fee schedule first and a disclosure or account agreement after one miss", async () => {
+    const db = createDb([
+      { ...banks[0], paid_misses: 0 },
+      { ...banks[1], paid_misses: 1 },
+    ]);
+    const create = vi.fn().mockResolvedValue(answer({ url: null, confidence: 0 }));
+    await runMagellanPaidFind({ runId: 2, stateCode: "VT", db: asDb(db), create, pick: false });
+
+    const prompts = create.mock.calls.map((call) => String(call[0].messages[0].content));
+    expect(prompts[0]).toContain("consumer fee schedule");
+    expect(prompts[1]).toContain("Truth in Savings disclosure");
+    expect(prompts[1]).toContain("Beta Bank");
+
+    const logged = attempts(db);
+    expect(logged.map((attempt) => attempt.detail.rung)).toEqual(["schedule", "disclosure"]);
+    expect(logged[1].detail.website_url).toBe("https://beta.example");
+    expect(logged[1].outcome).toBe("no_candidates");
   });
 });

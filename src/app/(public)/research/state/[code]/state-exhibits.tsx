@@ -1,7 +1,7 @@
 import Link from "next/link";
 import type { CitySummary } from "@/lib/data-store";
 import { getDisplayName } from "@/lib/fee-taxonomy";
-import { formatAmount } from "@/lib/format";
+import { displayCity, formatAmount } from "@/lib/format";
 import { formatCount } from "@/lib/public-stats";
 import { DISTRICT_NAMES } from "@/lib/fed-districts";
 import { STATE_NAMES } from "@/lib/us-states";
@@ -259,9 +259,9 @@ export function PositionExhibit({ rows, stateName, asOf, gate }: { rows: StateCo
         <div className="mt-3 grid text-[10px] uppercase tracking-wider text-[#8A8072] sm:grid-cols-[210px_minmax(0,1fr)_180px] sm:gap-x-5">
           <span />
           <span className="flex justify-between">
-            <span>&larr; cheaper (&minus;{axis}%)</span>
+            <span>&larr; lower (&minus;{axis}%)</span>
             <span>national</span>
-            <span>pricier (+{axis}%) &rarr;</span>
+            <span>higher (+{axis}%) &rarr;</span>
           </span>
         </div>
       </div>
@@ -358,7 +358,7 @@ export function CoverageExhibit(props: {
                     className="group flex items-center gap-3 py-2 text-[13px]"
                   >
                     <span className="w-5 text-right text-[11px] font-bold tabular-nums text-[#C44B2E]">{i + 1}</span>
-                    <span className="min-w-0 flex-1 truncate font-medium text-[#1A1815] group-hover:text-[#A93D25]">{c.city}</span>
+                    <span className="min-w-0 flex-1 truncate font-medium text-[#1A1815] group-hover:text-[#A93D25]">{displayCity(c.city)}</span>
                     <span className="whitespace-nowrap text-[12px] tabular-nums text-[#6B6255]">
                       {c.with_fees} of {c.institution_count}
                     </span>

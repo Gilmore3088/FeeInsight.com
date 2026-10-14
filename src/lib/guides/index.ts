@@ -15,6 +15,7 @@ export type {
   Guide,
   GuideSection,
   GuideBlock,
+  GuideSource,
   GuideAudience,
   GuideAccessTier,
   GuideStat,

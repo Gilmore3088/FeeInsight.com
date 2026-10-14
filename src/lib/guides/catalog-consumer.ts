@@ -97,7 +97,7 @@ export const CONSUMER_GUIDES: Guide[] = [
         blocks: [
           {
             type: "paragraph",
-            text: "Three patterns hold up consistently. Large national banks charge the most, and they also tend to have the highest daily caps, which means a bad week compounds faster. Credit unions charge less — not always dramatically less, but consistently, and they are more likely to cap the number of fees per day.",
+            text: "The chart below compares overdraft fees at banks and credit unions, from the published fee schedules in our index. Whether a bank caps the number of overdraft fees it charges in a day is stated in its fee schedule.",
           },
           {
             type: "paragraph",
@@ -123,8 +123,8 @@ export const CONSUMER_GUIDES: Guide[] = [
               "Opt out of debit card overdraft coverage. Federal rules mean your bank cannot charge you an overdraft fee on everyday debit card purchases or ATM withdrawals unless you opted in. If you opted in years ago and forgot, you can opt back out today. Your card is simply declined instead, at no cost.",
               "Turn on low-balance alerts. Most overdrafts are timing accidents, not spending problems. A text at $50 prevents most of them.",
               "Move your bills to just after payday. Two or three days of daylight between deposit and debit removes most of the risk.",
-              "Ask for a refund. Banks routinely waive a first overdraft fee for a customer in good standing. Ask once, politely, by phone. It works more often than people expect.",
-              "If it keeps happening, change banks. {{overdraft.zero_count}} institutions in our index charge nothing for an overdraft. Paying {{overdraft.median}} several times a year is a reason to move, not a fact of life.",
+              "Ask for a refund. If the fee was your first, or came from a timing mix-up, call your bank and ask whether it will refund it.",
+              "Compare your bank with others. {{overdraft.zero_count}} institutions in our index charge nothing for an overdraft.",
             ],
           },
         ],
@@ -141,6 +141,7 @@ export const CONSUMER_GUIDES: Guide[] = [
             type: "callout",
             tone: "regulatory",
             text: "Regulation E requires your bank to get your explicit permission — opting in — before it can charge overdraft fees on one-time debit card purchases and ATM withdrawals. If you never opted in, those transactions should be declined at no cost.",
+            source: { label: "12 CFR 1005.17", url: "https://www.ecfr.gov/current/title-12/chapter-X/part-1005/section-1005.17" },
           },
           {
             type: "paragraph",
@@ -148,11 +149,12 @@ export const CONSUMER_GUIDES: Guide[] = [
           },
           {
             type: "paragraph",
-            text: "Regulation DD, the Truth in Savings rule, requires your bank to disclose its fees in writing and to show total overdraft fees on your periodic statements, both for the statement period and year to date. That year-to-date figure is worth finding. Most people underestimate their annual total by a wide margin.",
+            text: "Regulation DD, the Truth in Savings rule, requires your bank to disclose its fees in writing and to show total overdraft fees on your periodic statements, both for the statement period and year to date. That year-to-date figure is worth finding.",
+            source: { label: "12 CFR 1030.11", url: "https://www.ecfr.gov/current/title-12/chapter-X/part-1030/section-1030.11" },
           },
           {
             type: "paragraph",
-            text: "The Consumer Financial Protection Bureau accepts complaints about overdraft practices, and overdraft is consistently among the most-complained-about consumer banking topics.",
+            text: "The Consumer Financial Protection Bureau accepts complaints about overdraft practices at consumerfinance.gov/complaint.",
           },
         ],
       },
@@ -171,7 +173,7 @@ export const CONSUMER_GUIDES: Guide[] = [
               { condition: "{{overdraft.p25}} or less", meaning: "Better than 75% of institutions" },
               { condition: "Around {{overdraft.median}}", meaning: "Right at the national median" },
               { condition: "More than {{overdraft.p75}}", meaning: "You pay more than 75% of the country" },
-              { condition: "More than {{overdraft.p75}}, no daily cap", meaning: "Worth switching over" },
+              { condition: "More than {{overdraft.p75}}, no daily cap", meaning: "You pay more than 75% of the country, with no daily limit" },
             ],
           },
           {
@@ -296,6 +298,7 @@ export const CONSUMER_GUIDES: Guide[] = [
           {
             type: "paragraph",
             text: "Regulation DD requires your bank to disclose the fee in writing before you open the account, and to total both overdraft and returned-item fees on your periodic statement for the period and year to date.",
+            source: { label: "12 CFR 1030.11", url: "https://www.ecfr.gov/current/title-12/chapter-X/part-1030/section-1030.11" },
           },
           {
             type: "paragraph",
@@ -442,6 +445,7 @@ export const CONSUMER_GUIDES: Guide[] = [
           {
             type: "paragraph",
             text: "That protection covers the machine owner's surcharge. It does not cover your own bank's out-of-network fee, which is disclosed in your account agreement under Regulation DD rather than at the point of withdrawal. This is precisely why the second fee catches people out — only one of the two has to be shown to you at the moment you decide.",
+            source: { label: "12 CFR part 1030", url: "https://www.ecfr.gov/current/title-12/chapter-X/part-1030" },
           },
           {
             type: "paragraph",
@@ -546,7 +550,7 @@ export const CONSUMER_GUIDES: Guide[] = [
         blocks: [
           {
             type: "paragraph",
-            text: "Credit unions are consistently cheaper on wires than banks, across all four directions. The gap is often meaningful rather than marginal.",
+            text: "The chart below compares outgoing domestic wire fees at banks and credit unions, from the published fee schedules in our index.",
           },
           {
             type: "paragraph",
@@ -591,6 +595,7 @@ export const CONSUMER_GUIDES: Guide[] = [
             type: "callout",
             tone: "regulatory",
             text: "For international transfers, the Remittance Transfer Rule under Regulation E requires your bank to disclose the exchange rate, all fees, and the exact amount the recipient will receive — before you pay. You also get a window, generally 30 minutes, to cancel.",
+            source: { label: "12 CFR 1005.31", url: "https://www.ecfr.gov/current/title-12/chapter-X/part-1005/section-1005.31" },
           },
           {
             type: "paragraph",
@@ -730,6 +735,7 @@ export const CONSUMER_GUIDES: Guide[] = [
             type: "callout",
             tone: "regulatory",
             text: "Regulation DD, the Truth in Savings rule, requires your bank to give you a written schedule of fees before you open an account, and to notify you in advance before increasing a fee or introducing a new one.",
+            source: { label: "12 CFR 1030.5", url: "https://www.ecfr.gov/current/title-12/chapter-X/part-1030/section-1030.5" },
           },
           {
             type: "paragraph",
@@ -884,6 +890,7 @@ export const CONSUMER_GUIDES: Guide[] = [
           {
             type: "paragraph",
             text: "For debit cards, Regulation E error resolution still applies abroad. If a foreign transaction is wrong or unauthorised, you have the same dispute rights you have at home, and the same deadlines for reporting it.",
+            source: { label: "12 CFR 1005.11", url: "https://www.ecfr.gov/current/title-12/chapter-X/part-1005/section-1005.11" },
           },
         ],
       },
@@ -986,11 +993,11 @@ export const CONSUMER_GUIDES: Guide[] = [
         blocks: [
           {
             type: "paragraph",
-            text: "Credit unions are consistently cheaper across check services, and often issue cashier's checks free to members. That single difference can be worth more than a year of monthly fee savings if you are buying a car or closing on a house.",
+            text: "The chart below compares cashier's check fees at banks and credit unions, from the published fee schedules in our index. Some institutions waive these fees for members or for certain accounts, so check the schedule for the account you hold.",
           },
           {
             type: "paragraph",
-            text: "Large national banks price these services at a premium, and are also the most likely to waive them for premium account holders — which means the list price and the price you actually pay can differ substantially depending on which account you hold.",
+            text: "To find your own price, open your bank's fee schedule and look for the service by name: cashier's check, money order, stop payment or counter check. The price is listed beside it. Some schedules list a different price for each account, so read the column for the account you have.",
           },
           {
             type: "comparison",
@@ -1038,6 +1045,7 @@ export const CONSUMER_GUIDES: Guide[] = [
           {
             type: "paragraph",
             text: "Regulation DD requires all of these fees to be disclosed in your account fee schedule before you open the account.",
+            source: { label: "12 CFR 1030.4", url: "https://www.ecfr.gov/current/title-12/chapter-X/part-1030/section-1030.4" },
           },
         ],
       },
@@ -1173,6 +1181,7 @@ export const CONSUMER_GUIDES: Guide[] = [
             type: "callout",
             tone: "regulatory",
             text: "Regulation E gives you error resolution rights on electronic transfers. Report an unauthorised or incorrect electronic transfer promptly and your bank must investigate, generally within ten business days, and correct genuine errors.",
+            source: { label: "12 CFR 1005.11", url: "https://www.ecfr.gov/current/title-12/chapter-X/part-1005/section-1005.11" },
           },
           {
             type: "paragraph",
@@ -1181,10 +1190,12 @@ export const CONSUMER_GUIDES: Guide[] = [
           {
             type: "paragraph",
             text: "There is an important gap. Regulation E protects you when money leaves your account without your authorisation. It offers much less when you were tricked into authorising the payment yourself — the common pattern in person-to-person payment scams. A payment you approved, even under false pretences, is treated differently from one you did not.",
+            source: { label: "12 CFR part 1005", url: "https://www.ecfr.gov/current/title-12/chapter-X/part-1005" },
           },
           {
             type: "paragraph",
             text: "Regulation E also requires advance notice before your bank imposes new electronic transfer fees or changes existing ones.",
+            source: { label: "12 CFR 1005.8", url: "https://www.ecfr.gov/current/title-12/chapter-X/part-1005/section-1005.8" },
           },
         ],
       },
@@ -1323,6 +1334,7 @@ export const CONSUMER_GUIDES: Guide[] = [
             type: "callout",
             tone: "regulatory",
             text: "Regulation DD requires dormancy and closure fees to be disclosed in your account fee schedule before you open the account, and requires advance notice before a fee is introduced or increased.",
+            source: { label: "12 CFR 1030.5", url: "https://www.ecfr.gov/current/title-12/chapter-X/part-1030/section-1030.5" },
           },
           {
             type: "paragraph",
@@ -1482,6 +1494,7 @@ export const CONSUMER_GUIDES: Guide[] = [
           {
             type: "paragraph",
             text: "Regulation DD requires the fee to be disclosed in your fee schedule, and advance notice before it increases.",
+            source: { label: "12 CFR 1030.5", url: "https://www.ecfr.gov/current/title-12/chapter-X/part-1030/section-1030.5" },
           },
         ],
       },
