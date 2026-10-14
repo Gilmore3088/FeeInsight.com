@@ -1407,3 +1407,12 @@ details[open] summary .expand-icon { transform: rotate(180deg); }
   .flow-dot, .flow-dot-down, .flow-card-new { animation: none !important; }
   .flow-dot, .flow-dot-down { display: none; }
 }
+
+/* Homepage hero ground: a faint grid, like squared research paper, fading out at the edges. */
+.home-grid {
+  background-image:
+    linear-gradient(to right, rgb(var(--fi-ink-rgb) / 0.05) 1px, transparent 1px),
+    linear-gradient(to bottom, rgb(var(--fi-ink-rgb) / 0.05) 1px, transparent 1px);
+  background-size: 48px 48px;
+  mask-image: radial-gradient(ellipse at 50% 30%, black 40%, transparent 80%);
+}

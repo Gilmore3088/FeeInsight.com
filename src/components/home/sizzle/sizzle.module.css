@@ -1,0 +1,158 @@
+/* The homepage sizzle. Motion is quick and functional (BRAND.md): elements arrive with a short
+   ease-out; each one waits for its --d delay. Pausing the player pauses every animation. */
+
+.frame {
+  position: relative;
+  width: 100%;
+  border: 1px solid var(--fi-border);
+  border-radius: var(--fi-radius-lg);
+  background: var(--fi-surface-0);
+  box-shadow: var(--fi-shadow-2);
+  overflow: hidden;
+  display: grid;
+  grid-template-rows: auto auto auto;
+}
+
+.paused * {
+  animation-play-state: paused !important;
+}
+
+.chrome {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--fi-border);
+  background: var(--fi-surface-200);
+}
+
+.chrome i {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--fi-control-border);
+  opacity: 0.5;
+}
+
+.chromeTitle {
+  margin-left: 8px;
+  font: 500 12px/16px var(--fi-font-mono);
+  color: var(--fi-muted);
+}
+
+.example {
+  margin-left: auto;
+}
+
+.caption {
+  padding: 18px 24px 6px;
+  font: 700 clamp(17px, 2.2vw, 24px) / 1.2 var(--fi-font-sans);
+  letter-spacing: -0.015em;
+  color: var(--fi-ink);
+  text-wrap: balance;
+  animation: rise 220ms ease-out both;
+}
+
+.stage {
+  position: relative;
+  overflow: hidden;
+}
+
+/* Desktop: a fixed canvas scaled to the frame (fee-sizzle.tsx sets the size and scale). */
+.canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  padding: 8px 20px 18px;
+  transform-origin: top left;
+}
+
+/* Phones: scenes lay out at their natural size. */
+.canvasNarrow {
+  min-height: 340px;
+  padding: 8px 16px 18px;
+}
+
+.in {
+  animation: rise 200ms ease-out both;
+  animation-delay: var(--d, 0ms);
+}
+
+.fade {
+  animation: fade 200ms ease-out both;
+  animation-delay: var(--d, 0ms);
+}
+
+.grow {
+  transform-origin: left center;
+  animation: grow 420ms ease-out both;
+  animation-delay: var(--d, 0ms);
+}
+
+.type {
+  display: inline-block;
+  overflow: hidden;
+  white-space: nowrap;
+  vertical-align: bottom;
+  animation: type var(--dur, 1200ms) steps(var(--steps, 40), end) both;
+  animation-delay: var(--d, 0ms);
+}
+
+.swapOut {
+  animation: out 160ms ease-out both;
+  animation-delay: var(--d, 0ms);
+}
+
+.drop {
+  animation: drop 260ms ease-out both;
+  animation-delay: var(--d, 0ms);
+}
+
+@keyframes rise {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes grow {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+
+@keyframes type {
+  from { max-width: 0; }
+  to { max-width: 100%; }
+}
+
+@keyframes out {
+  from { opacity: 1; }
+  to { opacity: 0; visibility: hidden; }
+}
+
+@keyframes drop {
+  from { opacity: 0; transform: translateY(-14px) scale(0.6); }
+  to { opacity: 1; transform: none; }
+}
+
+/* Rest frame and reduced motion: everything in place, nothing moving. */
+.still * {
+  animation: none !important;
+}
+
+.still .swapOut {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .frame * {
+    animation: none !important;
+  }
+
+  .frame .swapOut {
+    display: none;
+  }
+}

@@ -3,18 +3,17 @@ export const dynamic = "force-dynamic";
 
 import type { Metadata } from "next";
 import { getPublicSnapshot } from "@/lib/public-stats";
-import type { InstitutionStateDirectorySummary } from "@/lib/data-store/search";
 import { CONTACT_EMAIL, LEGAL_ENTITY_NAME, PRODUCT_NAME, SITE_NAME, SITE_URL } from "@/lib/constants";
-import { LandingHero } from "./landing-hero";
-import { LandingPriceStrip } from "./landing-price-strip";
-import { LandingTrustStats } from "./landing-trust-stats";
-import { LandingBankOffer } from "./landing-bank-offer";
 import { sampleReportAvailable } from "@/lib/custom-report/sample-report";
+import { buildHomeData } from "@/components/home/home-data";
+import { HomeHero } from "@/components/home/home-hero";
+import { EveryFeeSection, EveryMarketSection, OldWaySection, OneWorkspaceSection } from "@/components/home/home-pillars";
+import { OperatingRecordSection, PricingPreviewSection } from "@/components/home/home-record-pricing";
+import { ClosingBand, FaqSection, homeFaq } from "@/components/home/home-faq-close";
 
 import { ConsumerNav } from "@/components/consumer-nav";
 import { CustomerFooter } from "@/components/customer-footer";
 import { SearchModal } from "@/components/public/search-modal";
-import { getInstitutionStateDirectorySummariesCached } from "@/lib/data-store/public-cached-reads";
 
 const HOME_TITLE = `${SITE_NAME} — Bank and credit union fees, traced to the source`;
 
@@ -61,15 +60,21 @@ const WEBSITE_JSON_LD = {
 export default async function LandingPage() {
   // Counts and medians come from one shared snapshot, so they match the fee index,
   // research hub and directory to the number.
-  const [{ summary, categories }, stateCoverage, sampleLive] = await Promise.all([
-    getPublicSnapshot(),
-    // The coverage map is optional: a failed read hides it, not the page.
-    getInstitutionStateDirectorySummariesCached({}).catch((): InstitutionStateDirectorySummary[] => []),
-    sampleReportAvailable(),
-  ]);
+  const [snapshot, sampleLive] = await Promise.all([getPublicSnapshot(), sampleReportAvailable()]);
+  const data = buildHomeData(snapshot);
+  const faq = homeFaq(data);
+  const faqJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    mainEntity: faq.map((item) => ({
+      "@type": "Question",
+      name: item.question,
+      acceptedAnswer: { "@type": "Answer", text: item.answer },
+    })),
+  };
 
   return (
-    <div className="min-h-screen bg-paper consumer-brand">
+    <div className="min-h-screen bg-paper">
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(ORGANIZATION_JSON_LD) }}
@@ -78,12 +83,18 @@ export default async function LandingPage() {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(WEBSITE_JSON_LD) }}
       />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd) }} />
       <ConsumerNav />
       <main id="main-content">
-        <LandingHero institutionsLabel={summary.institutionsLabel} sampleLive={sampleLive} />
-        <LandingPriceStrip categories={categories} refreshedOn={summary.refreshedOn} />
-        <LandingBankOffer sampleLive={sampleLive} />
-        <LandingTrustStats summary={summary} states={stateCoverage} />
+        <HomeHero data={data} sampleLive={sampleLive} />
+        <OldWaySection />
+        <EveryFeeSection data={data} />
+        <EveryMarketSection data={data} />
+        <OneWorkspaceSection />
+        <OperatingRecordSection data={data} />
+        <PricingPreviewSection />
+        <FaqSection items={faq} />
+        <ClosingBand />
       </main>
       <CustomerFooter />
       <SearchModal />
