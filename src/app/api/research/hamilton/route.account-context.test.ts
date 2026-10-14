@@ -39,6 +39,7 @@ vi.mock("@/lib/research/tool-output", () => ({
 vi.mock("@/lib/hamilton/citation-gate", () => ({ evaluateCitationDensity: () => ({ status: "ok", metrics: {} }) }));
 vi.mock("@/lib/hamilton/answer-save", () => ({
   SAVED_ANALYSIS_ID_KEY: "savedAnalysisId", questionOnly: (text: string) => text,
+  writtenAnswerCheck: () => ({ passed: true, problems: [], figureCheck: { checked: 0, unmatched: [] } }),
   writtenAnswerResponse: (text: string) => ({ title: "Test answer", hamiltonView: text, confidence: { level: "medium", basis: [] }, whatThisMeans: "", whyItMatters: [], evidence: { metrics: [] }, exploreFurther: [] }),
 }));
 vi.mock("ai", () => ({
@@ -148,7 +149,7 @@ describe("live written-answer account/subject boundary", () => {
     expect(mocks.save.mock.calls[0][0].institutionId).toBe("202");
     const snapshot = mocks.save.mock.calls[0][0].response.identityContext;
     expect(snapshot).toMatchObject({ version: 1, researchInstitutionId: 202, researchInstitutionName: "Synthetic Subject 202", accountInstitutionId: 101, accountInstitutionName: "Synthetic Home CU", accountStatus: "identified" });
-    expect(mocks.metadata).toHaveBeenCalledWith({ type: "message-metadata", messageMetadata: { savedAnalysisId: "saved-1", hamiltonIdentity: snapshot } });
+    expect(mocks.metadata).toHaveBeenCalledWith({ type: "message-metadata", messageMetadata: { savedAnalysisId: "saved-1", hamiltonIdentity: snapshot, answerEvidence: { passed: true, held: false } } });
     expect(JSON.stringify(snapshot)).not.toContain("Profile Label");
   });
   it("keeps the provider circuit as a gate on streaming", async () => {

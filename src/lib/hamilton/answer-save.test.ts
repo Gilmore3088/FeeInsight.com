@@ -38,4 +38,9 @@ describe("writtenAnswerResponse", () => {
   it("marks confidence low when a figure is not in the data", () => {
     expect(writtenAnswerResponse(text, [{ fee: 35 }]).confidence.level).toBe("low");
   });
+
+  it("saves the evidence gate's verdict with the answer", () => {
+    expect(writtenAnswerResponse(text, [{ fee: 35, peer_median: 29 }]).answerEvidence).toEqual({ passed: true, problems: [] });
+    expect(writtenAnswerResponse(text, [{ fee: 35 }]).answerEvidence).toEqual({ passed: false, problems: ["These figures are not in DATA: $29."] });
+  });
 });
