@@ -145,10 +145,18 @@ function headingCase(line: string): boolean {
   const words = line.match(/[A-Za-z]{4,}/g) ?? [];
   return !/[a-z]/.test(line) || (words.length > 0 && words.every((word) => /^[A-Z]/.test(word)));
 }
+/** A line that points elsewhere or excludes ("see", "listed in our Business Fee Schedule", "their own fee schedule", "Not for business accounts."). */
+const POINTER = /\b(?:see|refer|please|request|listed|available|disclosed|separate(?:ly)?|contact|ask|call|visit|own|different|elsewhere|not)\b/i;
+function isPointer(line: string): boolean {
+  return POINTER.test(line);
+}
 function isSentence(line: string): boolean {
   const trimmed = line.trim();
-  // A heading's own trailing period or colon ("BUSINESS ACCOUNTS.", "Business Accounts:") is
-  // dropped; a prose line keeps its period and stays a sentence (review of 33d74156).
+  // A line ending in a colon introduces what follows ("Business accounts:", "BUSINESS ACCOUNTS ARE
+  // SUBJECT TO THE FOLLOWING FEES:") unless it points elsewhere (review of a5bc3ec1).
+  if (/:\s*$/.test(trimmed) && !isPointer(trimmed)) return false;
+  // A heading's own trailing period ("BUSINESS ACCOUNTS.") is dropped; a prose line keeps its
+  // period and stays a sentence (review of 33d74156).
   return SENTENCE.test(headingCase(trimmed) ? trimmed.replace(/[.:]\s*$/, "") : trimmed);
 }
 /** Whether the line sits directly above a line that starts with a price. */
@@ -171,6 +179,7 @@ export function sectionHeadingAudience(
   feeIndex: number,
 ): { audience: ContextAudience; heading: string } | { columns: string } | { ambiguous: string } | null {
   let sentenceAudience: ContextAudience | null = null;
+  let sentenceMayHead = false;
   for (let index = feeIndex - 1; index >= 0 && index >= feeIndex - HEADING_LOOKBACK_LINES; index -= 1) {
     const line = lines[index];
     const trimmed = line.trim();
@@ -184,7 +193,12 @@ export function sectionHeadingAudience(
     // The search goes on, but a heading further up that names another audience leaves the fee
     // unknown rather than take either (review of bac3d3db).
     if (trimmed.length <= MAX_FEE_ROW_CHARS && !PRICED.test(trimmed) && isSentence(trimmed)) {
-      sentenceAudience ??= audienceOf(line);
+      const named = audienceOf(line);
+      if (named) {
+        sentenceAudience ??= named;
+        // A sentence that does not point elsewhere may head the fees below it.
+        if (!isPointer(trimmed)) sentenceMayHead = true;
+      }
       continue;
     }
     if (!isHeading(line) || trimmed.startsWith("(")) continue;
@@ -204,7 +218,9 @@ export function sectionHeadingAudience(
     if (sentenceAudience && sentenceAudience !== audience) return { ambiguous: trimmed };
     return { audience, heading: trimmed };
   }
-  return null;
+  // An audience sentence that may head the fee ("Business accounts.", "What Business Accounts Are
+  // Charged") and no heading above to settle it: unknown, never the consumer default.
+  return sentenceMayHead && sentenceAudience ? { ambiguous: sentenceAudience } : null;
 }
 
 export function suggestAudience(input: {

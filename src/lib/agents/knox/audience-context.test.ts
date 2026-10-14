@@ -223,4 +223,23 @@ describe("Knox audience suggestion from context (#1059)", () => {
     // Under a consumer heading, the note never wins over it.
     expect(suggest(null, ["Personal Fee Schedule", "Business account fees are listed in our Business Fee Schedule.", "Stop Payment $30"].join("\n"), "Stop Payment", 30)?.audience).not.toBe("business");
   });
+
+  it("reads a colon line as introducing its section, and never defaults past an audience sentence (review of a5bc3ec1)", () => {
+    for (const heading of [
+      "Business accounts:",
+      "Fees for business accounts:",
+      "Fees that apply to business accounts:",
+      "Business Checking Accounts with Analysis:",
+      "Business Accounts (fees per item):",
+      "BUSINESS ACCOUNTS ARE SUBJECT TO THE FOLLOWING FEES:",
+    ]) {
+      expect(suggest(null, ["Fee Schedule", heading, "Stop Payment $30", "Overdraft $35"].join("\n"), "Stop Payment", 30)).toMatchObject({ audience: "business", source: "section_heading" });
+    }
+    for (const heading of ["Business accounts.", "Business Accounts Are Subject to the Following Fees", "What Business Accounts Are Charged", "Business Checking Is Free"]) {
+      expect(suggest(null, ["Fee Schedule", heading, "Stop Payment $30", "Overdraft $35"].join("\n"), "Stop Payment", 30)?.audience).not.toBe("consumer");
+    }
+    const two = ["Fee Schedule", "Personal accounts:", "Stop Payment $30", "Business accounts:", "Stop Payment $35"].join("\n");
+    expect(suggest(null, two, "Stop Payment", 30)).toMatchObject({ audience: "consumer", source: "section_heading" });
+    expect(suggest(null, two, "Stop Payment", 35)).toMatchObject({ audience: "business", source: "section_heading" });
+  });
 });
