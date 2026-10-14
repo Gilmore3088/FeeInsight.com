@@ -11,10 +11,10 @@
 import { getAnthropicMessagesClient, extractAnthropicText, getHamiltonModel, hasAnthropicApiKey, isProviderLimitError } from "@/lib/ai-provider";
 import { HAMILTON_PAUSED_MESSAGE } from "./provider-paused";
 import { trackAnthropicRequest } from "@/lib/ai-provider-usage";
-import { checkNarrativeFigures, extractFigures } from "./figure-check";
+import { extractFigures } from "./figure-check";
+import { checkAnswerEvidence } from "./answer-gate";
 import type { HamiltonEvidenceBundle } from "./evidence-contract";
 import { HAMILTON_VOICE } from "./voice";
-import { PIPELINE_TERMS, RECOMMENDATION } from "./workspace/four-roles";
 import type { Storyline, StorylineMemo, StorylineMemoResult } from "./workspace/storyline-types";
 import type { HamiltonIdentitySnapshot } from "./account-context";
 
@@ -63,8 +63,6 @@ Hard rules:
   price change from anything else. When DATA lists none, say the change history is still building.
 - Plain language, short sentences, no jargon, no internal system names.`;
 
-/** Price position is "lower" or "higher", never "cheapest". */
-const CHEAP_WORDING = /\bcheap(?:er|est)?\b/i;
 /** Phrases that treat a fee missing from the index as a fee the bank does not charge. */
 const NO_FEE_CLAIM = /\bno-[a-z]+ (?:position|claim|policy|stance)\b|\bno-fee\b|\bschedule shows no\b|\bcharges? no [a-z/ ]{0,30}fee\b/i;
 /** An opening sentence that leads with what the data lacks. */
@@ -148,9 +146,10 @@ export function parseMemo(raw: string): MemoDraft | null {
 /** What is wrong with a draft: untraced figures, advice, internal names. Empty when it passes. */
 export function memoProblems(draft: MemoDraft, payload: unknown): { problems: string[]; figureCheck: { checked: number; unmatched: string[] } } {
   const all = [draft.summary, draft.board, draft.market, ...draft.questions].join("\n");
-  const figureCheck = checkNarrativeFigures(all, payload);
-  const problems: string[] = [];
-  if (figureCheck.unmatched.length > 0) problems.push(`These figures are not in DATA: ${figureCheck.unmatched.join(", ")}.`);
+  // The shared gate every paid answer passes (answer-gate.ts); the checks below are the memo's own.
+  const shared = checkAnswerEvidence(all, payload);
+  const figureCheck = shared.figureCheck;
+  const problems: string[] = [...shared.problems];
   const evidence = (payload as { fact_evidence?: HamiltonEvidenceBundle } | null)?.fact_evidence;
   if (evidence) {
     const allowed = new Set([...evidence.facts, ...evidence.derivations].map((fact) => fact.id));
@@ -163,14 +162,8 @@ export function memoProblems(draft: MemoDraft, payload: unknown): { problems: st
       problems.push(`These evidence_fact_ids are not in DATA.fact_evidence: ${unknown.join(", ")}.`);
     }
   }
-  const advice = all.match(RECOMMENDATION);
-  if (advice) problems.push(`This reads as advice: "${advice[0]}". Lay out the paths without choosing.`);
-  const internal = all.match(PIPELINE_TERMS);
-  if (internal) problems.push(`Internal name in the text: "${internal[0]}".`);
   const noFee = ownFeeMissing(payload) ? all.match(NO_FEE_CLAIM) : null;
   if (noFee) problems.push(`"${noFee[0]}" reads as if the bank charges no fee. Its fee is not in the index yet; say that instead.`);
-  const cheap = all.match(CHEAP_WORDING);
-  if (cheap) problems.push(`"${cheap[0]}" is not house wording. Say "lower" or "higher" price.`);
   const opening = firstSentence(draft.summary).match(LIMIT_OPENING);
   if (opening) problems.push(`The summary opens with a limit ("${opening[0]}"). Open with what DATA shows; state the limit after.`);
   const identity = (payload as { identityContext?: HamiltonIdentitySnapshot } | null)?.identityContext;
