@@ -1180,6 +1180,7 @@ async function executeAgenticStep(
               companionRollbacks.length > 0 ||
               duplicateCollapses.length > 0 ||
               frequencyFill.filled.length > 0 ||
+              frequencyFill.held.length > 0 ||
               newerCopyRetired > 0 ||
               newerCopyRestored > 0 ||
               currentCopy.takenDown.length > 0 ||
@@ -1308,9 +1309,12 @@ async function executeAgenticStep(
           ? ` ${published.dryRun ? "Would close" : "Closed"} ${duplicateCollapses.length.toLocaleString()} duplicate live fee(s).`
           : "";
       const frequencyNote =
-        frequencyFill.filled.length > 0
+        (frequencyFill.filled.length > 0
           ? ` ${published.dryRun ? "Would set" : "Set"} the frequency of ${frequencyFill.filled.length.toLocaleString()} live fee(s) from their own schedule row (${frequencyFill.filled.filter((row) => row.from == null).length.toLocaleString()} blank).`
-          : "";
+          : "") +
+        (frequencyFill.held.length > 0
+          ? ` ${published.dryRun ? "Would hold" : "Held"} ${frequencyFill.held.length.toLocaleString()} live NSF or overdraft fee(s) whose own line prices them by the period.`
+          : "");
       return {
         status: "completed",
         summary: `Hamilton published ${published.publishedFees.toLocaleString()} verified fee observations from ${published.processedVerifiedFees.toLocaleString()} selected rows (${published.skippedFees.toLocaleString()} skipped).${published.heldInstitutions.length > 0 ? ` Held ${published.heldFees.toLocaleString()} rows from ${published.heldInstitutions.length.toLocaleString()} institutions with fewer than ${published.minInstitutionFees} fees.` : ""}${outlierNote}${foldNote}${handRefileNote}${offTaxonomyNote}${limitNote}${businessNote}${sameLineNote}${otherBankNote}${evalVerdictNote}${closedNote}${articleNote}${productNote}${productConflictNote}${crossPageConflictNote}${categoryGuardNote}${guardRefileNote}${guardRequeueNote}${companionNote}${newerCopyNote}${refreshNote}${currentCopyNote}${nameRetidy.renames.length > 0 ? ` ${published.dryRun ? "Would tidy" : "Tidied"} ${nameRetidy.renames.length.toLocaleString()} run-on live fee name(s).` : ""}${accountNames.renames.length > 0 ? ` ${published.dryRun ? "Would name" : "Named"} ${accountNames.renames.length.toLocaleString()} generic live monthly fee(s) by their account.` : ""}${recheckNote}${restoreRecheckNote}${crossPageNote}${sourceNote}${duplicateNote}${frequencyNote}${indexRefresh?.refreshed ? ` Index refreshed: ${indexRefresh.categories} categories.` : ""}`,
@@ -1579,6 +1583,7 @@ async function executeAgenticStep(
             reason: row.reason,
           })),
           frequency_fills: frequencyFill.filled.length,
+          frequency_holds: frequencyFill.held.length,
           frequency_fill_scanned: frequencyFill.scanned,
           frequency_fill_samples: frequencyFill.filled.slice(0, 10).map((row) => ({
             fee_published_id: row.feePublishedId,
@@ -1686,11 +1691,12 @@ async function executeAgenticStep(
       const cleared = fill.filled.filter((row) => row.frequency == null).length;
       return {
         status: "completed",
-        summary: `${fill.dryRun ? "Would set" : "Set"} the frequency of ${fill.filled.length.toLocaleString()} of ${fill.scanned.toLocaleString()} candidate live fees from their own schedule row (${blanks.toLocaleString()} blank, ${cleared.toLocaleString()} cleared).`,
+        summary: `${fill.dryRun ? "Would set" : "Set"} the frequency of ${fill.filled.length.toLocaleString()} of ${fill.scanned.toLocaleString()} candidate live fees from their own schedule row (${blanks.toLocaleString()} blank, ${cleared.toLocaleString()} cleared)${fill.held.length > 0 ? `, and ${fill.dryRun ? "would hold" : "held"} ${fill.held.length.toLocaleString()} whose own line prices them by the period` : ""}.`,
         detail: {
           frequency_fill_version: FREQUENCY_FILL_VERSION,
           frequency_fill_scanned: fill.scanned,
           frequency_fills: fill.filled.length,
+          frequency_holds: fill.held.length,
           frequency_filled_blank: blanks,
           frequency_cleared: cleared,
           dry_run: fill.dryRun,

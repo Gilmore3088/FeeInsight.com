@@ -2,7 +2,7 @@ import { sql } from "@/lib/data-store/connection";
 import { invalidatePublicReadCache } from "@/lib/data-store/fee-cache";
 import { recordFeedback, type FeedbackRow } from "@/lib/agents/learning/feedback";
 import { inSavepoint } from "@/lib/agents/savepoint";
-import { boxTableAnnualHeader, PERIOD_FEE_KEYS, settledFrequency } from "@/lib/fee-frequency";
+import { boxTableAnnualHeader, perEventPeriodCheck, PERIOD_FEE_KEYS, settledFrequency } from "@/lib/fee-frequency";
 
 type SqlTag = typeof sql;
 
@@ -36,7 +36,13 @@ export const FREQUENCY_FILL_CHECK = "hamilton.frequency_fill";
 // v9: "each above 6/month" is an allowance, and a cell priced "N/C" is another fee's row (101933).
 // v10: a box rent named by its size takes "annual" from its table's column header ("Box Size: |
 // Annual Rental:" over "3 x 5 x 21 | $25", Altra 104006; 1,466 live box-size rents were blank).
-export const FREQUENCY_FILL_VERSION = 10;
+// v11 (#1196): a live NSF or overdraft fee stored as monthly is checked against its own line
+// (`perEventPeriodCheck`): a period read from a neighbour is corrected or cleared, a period the fee's
+// own price states (an NSF fee "$23.00/Month", an account's "$25 Monthly Maintenance Fee") is held
+// (taken down with reason `frequency_hold:`), and an overdraft program priced by the month keeps it.
+export const FREQUENCY_FILL_VERSION = 11;
+/** The rolled_back_reason prefix of a fee the frequency fill holds (v11). */
+export const FREQUENCY_HOLD_REASON = "frequency_hold";
 /** Documents read per step for box-table headers; later steps take the rest. */
 export const BOX_HEADER_DOCUMENT_LIMIT = 300;
 export const FREQUENCY_FILL_LIMIT = 2_000;
@@ -56,6 +62,7 @@ interface BlankFrequencyRow {
   amount: number | string | null;
   frequency: string | null;
   conditions: string | null;
+  fee_name?: string | null;
 }
 
 export interface FrequencyFill {
@@ -73,9 +80,24 @@ export interface FrequencyFill {
   basis?: string;
 }
 
+/** v11: a live fee whose own line states a period it cannot carry, taken down for review. */
+export interface FrequencyHold {
+  feePublishedId: number;
+  feeVerifiedId: number | null;
+  feeRawId: number | null;
+  institutionId: number;
+  sourceDocumentId: number | null;
+  canonicalFeeKey: string;
+  amount: number;
+  frequency: string;
+  sourceLine: string;
+  reason: string;
+}
+
 export interface FrequencyFillResult {
   scanned: number;
   filled: FrequencyFill[];
+  held: FrequencyHold[];
   dryRun: boolean;
 }
 
@@ -90,12 +112,12 @@ export async function fillBlankFrequencies(
   options: { runId: number; dryRun: boolean; institutionId?: number; limit?: number },
 ): Promise<FrequencyFillResult> {
   const limit = Math.max(1, Math.min(options.limit ?? FREQUENCY_FILL_LIMIT, 10_000));
-  const result: FrequencyFillResult = { scanned: 0, filled: [], dryRun: options.dryRun };
+  const result: FrequencyFillResult = { scanned: 0, filled: [], held: [], dryRun: options.dryRun };
   let rows: BlankFrequencyRow[];
   try {
     rows = await inSavepoint(db, (scope) => scope.unsafe<BlankFrequencyRow[]>(
       `SELECT fp.fee_published_id, fv.fee_verified_id, fr.fee_raw_id, fp.institution_id, fr.source_document_id,
-              fp.canonical_fee_key, fp.amount, fp.frequency, fr.conditions
+              fp.canonical_fee_key, fp.amount, fp.frequency, fr.conditions, fp.fee_name
          FROM published_fee_records fp
          LEFT JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
          LEFT JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
@@ -190,7 +212,25 @@ export async function fillBlankFrequencies(
     const sourceLine = excerptOf(row.conditions);
     if (!sourceLine || !Number.isFinite(amount)) continue;
     const stated = row.frequency ?? null;
-    const frequency = settledFrequency(sourceLine, amount, stated, row.canonical_fee_key);
+    const check = perEventPeriodCheck(row.canonical_fee_key, stated, sourceLine, amount, row.fee_name);
+    if (check?.action === "keep") continue;
+    if (check?.action === "hold") {
+      if (result.held.length >= limit) continue;
+      result.held.push({
+        feePublishedId: Number(row.fee_published_id),
+        feeVerifiedId: num(row.fee_verified_id),
+        feeRawId: num(row.fee_raw_id),
+        institutionId: Number(row.institution_id),
+        sourceDocumentId: num(row.source_document_id),
+        canonicalFeeKey: row.canonical_fee_key,
+        amount,
+        frequency: stated!,
+        sourceLine: sourceLine.slice(0, 300),
+        reason: `${FREQUENCY_HOLD_REASON}: ${check.reason}`,
+      });
+      continue;
+    }
+    const frequency = check ? check.frequency : settledFrequency(sourceLine, amount, stated, row.canonical_fee_key);
     if (frequency === stated) continue;
     if (result.filled.length >= limit) break;
     result.filled.push({
@@ -207,6 +247,33 @@ export async function fillBlankFrequencies(
     });
   }
   if (options.dryRun) return result;
+
+  if (result.held.length > 0) {
+    try {
+      const held = result.held;
+      const rolledBack = await inSavepoint(db, async (scope) => {
+        const rows = await scope<{ fee_published_id: number | string }[]>`
+          UPDATE published_fee_records fp
+             SET rolled_back_at = NOW(),
+                 rolled_back_by_batch_id = ${`agentic-run-${options.runId}`},
+                 rolled_back_reason = v.reason
+            FROM unnest(${held.map((fee) => fee.feePublishedId)}::bigint[], ${held.map((fee) => fee.frequency)}::text[],
+                        ${held.map((fee) => fee.reason)}::text[])
+                 AS v(fee_published_id, frequency, reason)
+           WHERE fp.fee_published_id = v.fee_published_id
+             AND fp.frequency IS NOT DISTINCT FROM v.frequency
+             AND fp.rolled_back_at IS NULL
+             AND fp.quarantined_at IS NULL
+          RETURNING fp.fee_published_id
+        `;
+        return new Set(rows.map((row) => Number(row.fee_published_id)));
+      });
+      result.held = held.filter((fee) => rolledBack.has(fee.feePublishedId));
+    } catch (error) {
+      console.error("frequency hold failed:", error);
+      result.held = [];
+    }
+  }
 
   if (result.filled.length > 0) {
     try {
@@ -261,6 +328,26 @@ export async function fillBlankFrequencies(
     runId: options.runId,
     dedupeKey: fee.from == null ? `${FREQUENCY_FILL_CHECK}:fill:${fee.feePublishedId}` : `${FREQUENCY_FILL_CHECK}:fix:${fee.feePublishedId}:${fee.frequency ?? "none"}`,
   }));
+  for (const fee of result.held) {
+    lessons.push({
+      aboutStage: "extract",
+      signal: "wrong",
+      kind: "frequency_held",
+      reportedBy: "hamilton",
+      checkName: FREQUENCY_FILL_CHECK,
+      aboutVersion: FREQUENCY_FILL_VERSION,
+      institutionId: fee.institutionId,
+      sourceDocumentId: fee.sourceDocumentId,
+      feeRawId: fee.feeRawId,
+      feeVerifiedId: fee.feeVerifiedId,
+      feePublishedId: fee.feePublishedId,
+      canonicalFeeKey: fee.canonicalFeeKey,
+      amount: fee.amount,
+      evidence: { from: fee.frequency, held: true, reason: fee.reason, source_line: fee.sourceLine },
+      runId: options.runId,
+      dedupeKey: `${FREQUENCY_FILL_CHECK}:hold:${fee.feePublishedId}`,
+    });
+  }
   if (lessons.length > 0) {
     try {
       await inSavepoint(db, (scope) => recordFeedback(scope as SqlTag, lessons));
@@ -268,7 +355,7 @@ export async function fillBlankFrequencies(
       console.error("frequency fill feedback failed:", error);
     }
   }
-  if (result.filled.length > 0) invalidatePublicReadCache();
+  if (result.filled.length > 0 || result.held.length > 0) invalidatePublicReadCache();
   return result;
 }
 
