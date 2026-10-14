@@ -5,7 +5,7 @@ import { detectFormat } from "@/lib/agents/learning/format";
 import { classifyFetchFailure, type AttemptOutcome } from "@/lib/agents/learning/outcomes";
 
 import { fetchWithTimeout, looksLikePdfUrl } from "./find-validate";
-import { fetchAndRecordLink, MAGELLAN_FETCH_STRATEGY, redirectedToHomepage, type FetchCandidateRow } from "./fetch";
+import { fetchAndRecordLink, MAGELLAN_FETCH_STRATEGY, MAX_DOCUMENT_BYTES, redirectedToHomepage, type FetchCandidateRow } from "./fetch";
 import { isErrorPageLink, onBankDomain } from "./link-coverage";
 
 type SqlTag = typeof sql;
@@ -28,7 +28,8 @@ type Fetcher = typeof fetch;
  * final address after redirects is still on the bank's domain, the body was read in full,
  * and a PDF link answered with a PDF (a parked domain or catch-all page answers 200 HTML).
  * Anything else is a failed spelling, so the bank's fetch address and failure count stay as
- * the plain fetch left them.
+ * the plain fetch left them. So is a body past the 15 MB document cap (`too_large`), cut off
+ * while it is read.
  */
 export const ADDRESS_VARIANT_FETCH_STRATEGY = { strategy: "fetch.address_variant", version: 1 } as const;
 
@@ -290,26 +291,69 @@ type VariantCheck =
   | { response: Response; verdict: string }
   | { response: null; verdict: string; outcome: AttemptOutcome };
 
-/** Rejects after `ms`, so a body that trickles in cannot hold the pass past its deadline. */
-function withinTime<T>(work: Promise<T>, ms: number): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new Error("Body read timed out")), ms);
-  });
-  return Promise.race([work, timeout]).finally(() => clearTimeout(timer));
+/** The whole body, or word that it passed the cap (the stream is cancelled then). */
+type CappedRead = { bytes: Uint8Array<ArrayBuffer> } | { tooLarge: true };
+
+/**
+ * Reads the body up to `maxBytes`. Past the cap it stops and cancels the stream; when
+ * `signal` aborts (the request's time is up) the pending read is cancelled and this throws.
+ */
+async function readCapped(response: Response, maxBytes: number, signal: AbortSignal): Promise<CappedRead> {
+  const reader = response.body?.getReader();
+  if (!reader) return { bytes: new Uint8Array(0) };
+  const stop = () => void reader.cancel(signal.reason).catch(() => undefined);
+  if (signal.aborted) stop();
+  else signal.addEventListener("abort", stop, { once: true });
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (signal.aborted) throw signal.reason instanceof Error ? signal.reason : new Error("Body read timed out");
+      if (done) break;
+      total += value.byteLength;
+      if (total > maxBytes) {
+        await reader.cancel().catch(() => undefined);
+        return { tooLarge: true };
+      }
+      chunks.push(value);
+    }
+  } finally {
+    signal.removeEventListener("abort", stop);
+  }
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return { bytes };
 }
 
 /**
  * Asks one spelling for the document and returns it only when it is the document: a 2xx on
- * the bank's own domain, not the homepage or an error page, a body read in full, and a PDF
- * for a PDF link. The body is read here and handed on as a fresh response, so the normal
- * fetch path never sees a read that failed after the spelling answered.
+ * the bank's own domain, not the homepage or an error page, a body read in full within the
+ * time and the 15 MB document cap, and a PDF for a PDF link. The body is read here and
+ * handed on as a fresh response, so the normal fetch path never sees a read that failed, or
+ * a body too large to store, after the spelling answered. One timer bounds headers and body:
+ * when it fires, or the body passes the cap, the request is aborted, so the download stops.
  */
 async function checkVariant(fetchImpl: Fetcher, url: string, link: string, website: string, timeoutMs: number): Promise<VariantCheck> {
-  const startedAt = Date.now();
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(new Error("Body read timed out")), timeoutMs);
+  try {
+    return await checkVariantWithin(fetchImpl, url, link, website, timeoutMs, controller.signal);
+  } finally {
+    clearTimeout(timer);
+    // Nothing more is read from this request: the body was copied, refused or cut off.
+    controller.abort();
+  }
+}
+
+async function checkVariantWithin(fetchImpl: Fetcher, url: string, link: string, website: string, timeoutMs: number, signal: AbortSignal): Promise<VariantCheck> {
   let response: Response;
   try {
-    response = await fetchWithTimeout(fetchImpl, url, timeoutMs);
+    response = await fetchWithTimeout(fetchImpl, url, timeoutMs, signal);
   } catch (error) {
     const outcome = classifyFetchFailure(null, error);
     return { response: null, verdict: outcome, outcome };
@@ -325,22 +369,24 @@ async function checkVariant(fetchImpl: Fetcher, url: string, link: string, websi
   if (redirectedToHomepage(url, finalUrl) || isErrorPageLink(finalUrl)) return refuse("redirected_away", "wrong_document");
   // A redirect to another site would make that site the bank's fetch address.
   if (!onBankDomain(finalUrl, website)) return refuse("redirected_off_domain", "wrong_document");
+  // Too large to store: a failed spelling, so it never becomes the bank's fetch address.
+  if (Number(response.headers.get("content-length") ?? 0) > MAX_DOCUMENT_BYTES) return refuse("too_large", "too_large");
 
-  let buffer: ArrayBuffer;
+  let read: CappedRead;
   try {
-    const left = Math.max(1, timeoutMs - (Date.now() - startedAt));
-    buffer = await withinTime(response.arrayBuffer(), left);
+    read = await readCapped(response, MAX_DOCUMENT_BYTES, signal);
   } catch (error) {
-    await response.body?.cancel().catch(() => undefined);
     const outcome = classifyFetchFailure(null, error);
     return { response: null, verdict: `body_${outcome}`, outcome };
   }
-  if (buffer.byteLength === 0) return { response: null, verdict: "empty_body", outcome: "wrong_document" };
+  if ("tooLarge" in read) return { response: null, verdict: "too_large", outcome: "too_large" };
+  const { bytes } = read;
+  if (bytes.byteLength === 0) return { response: null, verdict: "empty_body", outcome: "wrong_document" };
   // A parked domain or catch-all page answers a .pdf link with 200 HTML.
-  if (looksLikePdfUrl(link) && detectFormat(new Uint8Array(buffer), response.headers.get("content-type"), finalUrl) !== "pdf") {
+  if (looksLikePdfUrl(link) && detectFormat(bytes, response.headers.get("content-type"), finalUrl) !== "pdf") {
     return { response: null, verdict: "not_pdf", outcome: "wrong_document" };
   }
-  const copy = new Response(buffer, { status: response.status, statusText: response.statusText, headers: response.headers });
+  const copy = new Response(bytes, { status: response.status, statusText: response.statusText, headers: response.headers });
   Object.defineProperty(copy, "url", { value: finalUrl });
   return { response: copy, verdict: `http_${response.status}` };
 }

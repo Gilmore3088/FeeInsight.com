@@ -223,9 +223,10 @@ function excludedLink(lower: string): boolean {
  * A page whose address says it lists the bank's documents: "/agreements-and-disclosures",
  * "/disclosures", "/forms-documents", "/legal". Its PDFs are often named by title alone
  * ("Personal Accounts", "Important Information", "Download"), which the fee-document words
- * above miss.
+ * above miss. Each word starts a path segment or a word in one, so "/platforms" is not
+ * a forms page (#1306).
  */
-const DOCUMENT_INDEX_PATH = /(disclos|agreements?|documents?|forms|legal)/i;
+const DOCUMENT_INDEX_PATH = /(?:^|[/\-_.])(disclos|agreements?|documents?|forms|legal)/i;
 /** An index lists several documents; one PDF link on a page does not make it an index. */
 export const INDEX_MIN_DOCUMENT_LINKS = 2;
 /** The same test in SQL, on a lowercased fee link, for ordering the banks searched. */
