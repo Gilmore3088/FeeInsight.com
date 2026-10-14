@@ -164,4 +164,23 @@ describe("Knox audience suggestion from context (#1059)", () => {
     // A fee row that names no audience is passed over, so the section heading above still holds.
     expect(suggest(null, ["Business Accounts", "Lockbox", "$50.00", "Stop Payment $35"].join("\n"), "Stop Payment", 35)).toMatchObject({ audience: "business" });
   });
+
+  it("takes no heading or title from a sentence that points to the business schedule (review of 153ca285)", () => {
+    const preamble = "These fees are effective January 1, 2026 and replace all earlier schedules. ".repeat(5);
+    const crossRef = ["Fee Schedule", preamble, "Monthly Maintenance $10", "Stop Payment $30", "Copies of the Business Schedule of Fees are available on request", "Overdraft Fee $35"].join("\n");
+    expect(suggest(null, crossRef, "Stop Payment", 30)).toMatchObject({ audience: "consumer", source: "default_general_schedule" });
+    expect(suggest(null, ["Fee Schedule", "Monthly Maintenance $10", "Stop Payment $30", "Commercial service charges are disclosed separately", "Overdraft $35"].join("\n"), "Stop Payment", 30)).toMatchObject({ audience: "consumer" });
+    for (const text of [
+      ["Fee Schedule", "Effective January 1, 2026", "For business accounts, see the Business Fee Schedule.", "Monthly Maintenance $10", "Stop Payment $30"],
+      ["Fee Schedule", "Monthly Maintenance $10", "Not for business accounts.", "Stop Payment $30"],
+      ["Fee Schedule", "Effective January 1, 2026", "Business service charges are listed separately.", "Stop Payment $30"],
+      ["See the Business Schedule of Fees", "Fee Schedule", "Stop Payment $30"],
+    ]) {
+      expect(suggest(null, text.join("\n"), "Stop Payment", 30)).toMatchObject({ audience: "consumer", source: "default_general_schedule" });
+    }
+    // A fee row priced "Waived" or "Monthly $10.00" below never heads the fees under it.
+    for (const price of ["Waived", "Monthly $10.00"]) {
+      expect(suggest(null, ["Personal Accounts", "Business Checking Maintenance", price, "Stop Payment $30"].join("\n"), "Stop Payment", 30)).toBeNull();
+    }
+  });
 });

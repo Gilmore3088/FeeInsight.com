@@ -71,6 +71,9 @@ function isHeading(line: string, columns = false): boolean {
   return (
     trimmed.length > 0 &&
     trimmed.length <= (columns ? MAX_FEE_ROW_CHARS : MAX_HEADING_CHARS) &&
+    // A sentence ("For business accounts, see the Business Fee Schedule.", "Not for business
+    // accounts.") points elsewhere; it heads nothing (review of 153ca285).
+    !SENTENCE.test(trimmed) &&
     (columns || !trimmed.includes("|")) &&
     !/\$\s*\d/.test(trimmed) &&
     !/\d+\.\d{2}\b/.test(trimmed) &&
@@ -125,8 +128,13 @@ function nextLine(lines: string[], index: number): string | null {
   return null;
 }
 
-/** A line that starts with a price ("$10.00", "$15.00 monthly maintenance", "25.00 per item", "Free"). */
-const STARTS_WITH_PRICE = /^\s*(?:\$\s*\d|\d[\d,]*\.\d{2}\b|(?:free|no charge|n\/c)\b)/i;
+/**
+ * A line that starts with a price ("$10.00", "$15.00 monthly maintenance", "25.00 per item", "Free",
+ * "Waived", "Monthly $10.00").
+ */
+const STARTS_WITH_PRICE = /^\s*(?:(?:monthly|per\s+(?:month|item)|each)\s*:?\s*)?(?:\$\s*\d|\d[\d,]*\.\d{2}\b|(?:free|no charge|n\/c|waived|none|n\/a)\b)/i;
+/** A line written as a sentence: end punctuation or a word that points elsewhere. */
+const SENTENCE = /[.!?;]\s*$|\b(?:see|refer|please|available|request|listed|disclosed|separate(?:ly)?|not|contact|ask|call|visit)\b/i;
 /** Whether the line sits directly above a line that starts with a price. */
 function overAPrice(lines: string[], index: number): boolean {
   return STARTS_WITH_PRICE.test(nextLine(lines, index) ?? "");
