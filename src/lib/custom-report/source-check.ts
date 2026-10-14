@@ -906,8 +906,13 @@ function pricedPerAmount(row: string, amount: number): boolean {
 /** A rate ("1.1%", "3 percent"), and wording that makes a rate interest rather than a fee.
  * A range's upper end ("the typical 2.5-3.5%") is not a rate the bank charges. */
 const RATE = /(?<![\d.]|\d\s?[-–]\s?)(\d{1,3}(?:\.\d{1,4})?)\s*(?:%|percent\b)/gi;
-// A cash-back or rewards rate ("Earn 1% on all purchases") is paid to the customer, not charged (post-merge review of #1237).
-const INTEREST_WORDS = /\b(apy|apr|annual percentage|interest|dividend|rate earned|yield|earns?|earned|cash ?back|rewards?)\b/i;
+const INTEREST_WORDS = /\b(apy|apr|annual percentage|interest|dividend|rate earned|yield)\b/i;
+/**
+ * A cash-back or rewards rate ("Earn 1% on all purchases") is paid to the customer, not charged
+ * (post-merge review of #1237). It only stops the share-of-base reading below: a row that names its
+ * fee ("Visa Rewards Card | Foreign Transaction Fee | 1% of each transaction") still traces.
+ */
+const REWARD_WORDS = /\b(earns?|earned|cash ?back|rewards?)\b/i;
 const RATE_FEE_WORDS = /\b(fees?|charges?|assessments?|assessed)\b/i;
 /**
  * #1102: a rate stated as a share of what it is charged on ("1% of foreign transaction amount",
@@ -952,7 +957,7 @@ export function checkRateAgainstSource(
     // The fee word may come from a heading just above ("Coin Counting Fees" / "Coin
     // Counting | 10% of total"); interest wording is judged on the row itself.
     const context = lines.slice(Math.max(0, i - CATEGORY_LOOKBACK_LINES), i + 1).join(" ");
-    if (INTEREST_WORDS.test(row) || !(RATE_FEE_WORDS.test(`${feeName} ${row} ${context}`) || RATE_OF_BASE.test(row))) {
+    if (INTEREST_WORDS.test(row) || !(RATE_FEE_WORDS.test(`${feeName} ${row} ${context}`) || (RATE_OF_BASE.test(row) && !REWARD_WORDS.test(row)))) {
       best = "amount_not_the_fee";
       continue;
     }
