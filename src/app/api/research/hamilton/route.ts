@@ -394,8 +394,10 @@ async function handlePOST(request: Request) {
                 prompt,
                 response,
                 // A second request for the same question (double submit, Try again after a
-                // dropped stream) updates this row instead of adding a duplicate.
-                replaceRecentDuplicate: true,
+                // dropped stream) updates this row instead of adding a duplicate. The match is on
+                // the full text answered, earlier turns included, so the same follow-up words in
+                // another conversation are saved as their own row.
+                replaceRecentDuplicate: { request: `written\n${focus}\n${lastUserText}` },
               }));
             } catch (error) {
               console.error("[hamilton] saving the written answer failed", error);
