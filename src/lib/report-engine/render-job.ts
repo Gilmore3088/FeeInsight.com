@@ -170,7 +170,7 @@ export async function runReportRenderStep(
 export async function runReportReconcileStep(
   db: SqlTag,
   jobId: string | null | undefined,
-  deps: { now?: Date } = {},
+  deps: { now?: Date; load?: typeof loadLiveFigures } = {},
 ): Promise<ReportStepResult> {
   if (!jobId) {
     throw new Error("Report run has no report job id.");
@@ -201,7 +201,15 @@ export async function runReportReconcileStep(
     throw new Error(message);
   }
 
-  const live = await loadLiveFigures(db, printed);
+  let live: Awaited<ReturnType<typeof loadLiveFigures>>;
+  try {
+    live = await (deps.load ?? loadLiveFigures)(db, printed);
+  } catch (error) {
+    // Never leave the job 'rendering': fail it with the reason so it can be retried.
+    const message = `Reconcile could not read live data: ${error instanceof Error ? error.message : String(error)}`;
+    await db`UPDATE report_jobs SET status = 'failed', error = ${message} WHERE id = ${jobId}`;
+    throw new Error(message);
+  }
   const result = reconcileFigures(printed, live, deps.now);
   const summary = describeReconciliation(result);
   const saved = db.json(JSON.parse(JSON.stringify({ ...manifest, reconciliation: result })));
@@ -213,6 +221,7 @@ export async function runReportReconcileStep(
     figures_tied: result.figures_tied,
     finding_count: result.finding_count,
     findings: result.findings.slice(0, 20),
+    drift: result.drift.slice(0, 20),
     unchecked: result.unchecked.length,
   };
   if (!result.ties_out) {

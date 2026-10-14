@@ -165,6 +165,37 @@ describe("reconcileFigures", () => {
   });
 });
 
+describe("whole-scope totals", () => {
+  const pulse = (live_fees: number) =>
+    ({
+      changes: [],
+      coverage: { institutions_live: 4000, institutions_added_in_window: 1, live_fees },
+      window_started_at: "2026-09-14T00:00:00.000Z",
+    }) as unknown as MonthlyPulsePayload;
+  const coverage = (live_fees: number) => live([], { pulseCoverage: { institutions_live: 4007, institutions_added_in_window: 1, live_fees } });
+
+  it("allow drift up to 0.5% or 5, whichever is larger, and record it", () => {
+    // 60,000 live fees: 0.5% is 300. 4,000 institutions: 0.5% is 20.
+    const result = reconcileFigures(pulsePrintedFigures(pulse(60_000)), coverage(60_250));
+    expect(result.ties_out).toBe(true);
+    expect(result.drift).toEqual([
+      { id: "pulse.coverage.institutions_live", label: "Institutions with live fees", printed: 4000, live: 4007, allowed: 20 },
+      { id: "pulse.coverage.live_fees", label: "Live fees", printed: 60_000, live: 60_250, allowed: 300 },
+    ]);
+  });
+
+  it("block a total that moved more than its allowance", () => {
+    const result = reconcileFigures(pulsePrintedFigures(pulse(60_000)), coverage(60_400));
+    expect(result.findings.map((f) => f.id)).toEqual(["pulse.coverage.live_fees"]);
+  });
+
+  it("allow at least 5 on a small total", () => {
+    const result = reconcileFigures(pulsePrintedFigures(pulse(100)), coverage(105));
+    expect(result.ties_out).toBe(true);
+    expect(reconcileFigures(pulsePrintedFigures(pulse(100)), coverage(106)).ties_out).toBe(false);
+  });
+});
+
 describe("describeReconciliation and the Publish gate", () => {
   it("names the first figures that failed and how many more", () => {
     const printed = nationalPrintedFigures(nationalPayload);

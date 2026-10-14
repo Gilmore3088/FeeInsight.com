@@ -17,7 +17,8 @@ retraced without asking Hamilton (see Audit trail).
    Before a job is complete, the free `report-reconcile` step recomputes every fee figure
    it prints from `published_fee_catalog` (rates from `published_fee_rate_catalog`) under
    the statistics contract (`report-engine/reconcile.ts`, #1066). A figure more than one
-   cent or one institution off, printed with no live value, or a printed fee change that is
+   cent or one institution off (a whole-scope total: more than 5 or 0.5%, whichever is
+   larger, with the drift recorded), printed with no live value, or a printed fee change that is
    no longer live fails the job, with each figure and why on `data_manifest.reconciliation`;
    Publish refuses a job without a reconciliation that tied out.
 3. **Industry expert and research assistant.** Answers questions about fees, regulation

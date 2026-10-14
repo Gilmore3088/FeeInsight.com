@@ -10,7 +10,8 @@
  * - A printed fee change ("now $X") must still be a live fee at that institution.
  *
  * Thresholds are the report-reconciliation skill's: a difference above one cent (one
- * hundredth of a point for a rate) or one institution is a finding, and so is a figure
+ * hundredth of a point for a rate) or one institution is a finding, except whole-scope
+ * totals, which may drift by the larger of 5 or 0.5% (TOTAL_DRIFT_*), and so is a figure
  * printed where the live data has none, or none printed where it has one. Any finding blocks
  * the report. Figures that come from other sources (Call Reports, FRED, the Beige Book,
  * agency releases) or are computed from the checked figures are listed as not checked, with
@@ -41,6 +42,20 @@ export const RECONCILE_VERSION = 1;
 export const AMOUNT_TOLERANCE = 0.01;
 export const RATE_TOLERANCE = 0.01;
 export const COUNT_TOLERANCE = 1;
+/**
+ * Whole-scope totals (all fees and institutions in the catalog, or in a state's catalog,
+ * across every category) may drift by the larger of TOTAL_DRIFT_MIN and TOTAL_DRIFT_SHARE
+ * of the printed value. Added for #1066, not part of the skill's original thresholds: the
+ * render takes minutes (paid model calls) and Hamilton publishes and takes fees down in that
+ * gap, so an exact total that was right when the report was assembled reads as off. Prices,
+ * medians and per-category counts keep the one-cent and one-institution rules.
+ */
+export const TOTAL_DRIFT_MIN = 5;
+export const TOTAL_DRIFT_SHARE = 0.005;
+
+export function totalDriftAllowed(printed: number): number {
+  return Math.max(TOTAL_DRIFT_MIN, Math.abs(printed) * TOTAL_DRIFT_SHARE);
+}
 /** Findings kept on the job record; the count is always the full number. */
 export const MAX_RECORDED_FINDINGS = 200;
 
@@ -98,6 +113,15 @@ export interface ReconciliationFinding {
   reason: FindingReason;
 }
 
+/** A whole-scope total that moved between assembly and reconciliation, within its allowance. */
+export interface ReconciliationDrift {
+  id: string;
+  label: string;
+  printed: number;
+  live: number;
+  allowed: number;
+}
+
 export interface ReconciliationResult {
   version: number;
   stats_method_version: number;
@@ -108,6 +132,8 @@ export interface ReconciliationResult {
   finding_count: number;
   /** At most MAX_RECORDED_FINDINGS; finding_count is the full number. */
   findings: ReconciliationFinding[];
+  /** Every whole-scope total whose live value differed but stayed within its allowance. */
+  drift: ReconciliationDrift[];
   unchecked: UncheckedSection[];
 }
 
@@ -495,6 +521,13 @@ export function reconcileFigures(printed: PrintedFigures, live: LiveData, now: D
   );
 
   const findings: ReconciliationFinding[] = [];
+  const drift: ReconciliationDrift[] = [];
+  const compareTotal = (figure: { id: string; label: string; printed: number }, live: number): ReconciliationFinding | null => {
+    const allowed = totalDriftAllowed(figure.printed);
+    const finding = compare(figure, figure.printed, live, allowed);
+    if (!finding && live !== figure.printed) drift.push({ id: figure.id, label: figure.label, printed: figure.printed, live, allowed });
+    return finding;
+  };
   for (const f of printed.figures) {
     let finding: ReconciliationFinding | null = null;
     switch (f.kind) {
@@ -512,12 +545,12 @@ export function reconcileFigures(printed: PrintedFigures, live: LiveData, now: D
       }
       case "coverage": {
         const rows = live.feeRows.filter((row) => inScope(row, f.scope));
-        finding = compare(f, f.printed, coverageValue(rows, f.statistic), COUNT_TOLERANCE);
+        finding = compareTotal(f, coverageValue(rows, f.statistic));
         break;
       }
       case "pulse_coverage":
         finding = live.pulseCoverage
-          ? compare(f, f.printed, live.pulseCoverage[f.statistic], COUNT_TOLERANCE)
+          ? compareTotal(f, live.pulseCoverage[f.statistic])
           : { id: f.id, label: f.label, printed: f.printed, live: null, reason: "cannot_check" };
         break;
       case "live_fee":
@@ -540,6 +573,7 @@ export function reconcileFigures(printed: PrintedFigures, live: LiveData, now: D
     figures_tied: printed.figures.length - findings.length,
     finding_count: findings.length,
     findings: findings.slice(0, MAX_RECORDED_FINDINGS),
+    drift,
     unchecked: printed.unchecked,
   };
 }

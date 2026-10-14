@@ -118,6 +118,16 @@ describe("report reconcile step", () => {
     expect(calls.some((call) => call.text.includes("status = 'failed'"))).toBe(true);
   });
 
+  it("fails the job, not leaves it rendering, when the live read throws", async () => {
+    const { db, calls } = fakeDb({ id: "job-13", report_type: "state_index", status: "rendering", params: null, artifact_key: "k", data_manifest: { printed: tiedFigure } });
+    const load = vi.fn(async () => {
+      throw new Error("connection reset");
+    });
+    await expect(runReportReconcileStep(db, "job-13", { load })).rejects.toThrow("Reconcile could not read live data: connection reset");
+    const failed = calls.find((call) => call.text.includes("status = 'failed'"));
+    expect(failed?.values).toEqual(["Reconcile could not read live data: connection reset", "job-13"]);
+  });
+
   it("skips a job that was never rendered", async () => {
     const { db, calls } = fakeDb({ id: "job-11", report_type: "national_index", status: "failed", params: null, artifact_key: null, data_manifest: null });
     const result = await runReportReconcileStep(db, "job-11");

@@ -67,7 +67,12 @@ State or national index report:
    Recompute each median with `summarizeFees` (`src/lib/data-store/fee-stats.ts`: one value per
    institution, sourced rows only, business-only schedules out, `STATS_METHOD_VERSION`).
 8. Compare each printed count and median; a difference above one cent or one institution is a
-   finding. Note the report's data date: a later live change is "moved", not "wrong".
+   finding. Whole-scope totals (all fees or institutions in the catalog, or in one state's
+   catalog, across every category) may drift by the larger of 5 or 0.5% of the printed value
+   before they are a finding (`TOTAL_DRIFT_*` in `reconcile.ts`, added for #1066): the report
+   job renders for minutes while Hamilton publishes and takes fees down, and the drift seen is
+   recorded on `data_manifest.reconciliation.drift`. Prices, medians and per-category counts
+   keep the one-cent and one-institution rules. Note the report's data date: a later live change is "moved", not "wrong".
 
 ## Output
 
