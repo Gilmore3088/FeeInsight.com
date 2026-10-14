@@ -16,6 +16,8 @@ const eslintConfig = defineConfig([
     "coverage/**",
     "test-results/**",
     "next-env.d.ts",
+    // Design system hand-off examples and reference files, not app code.
+    "Branding/**",
   ]),
 ]);
 
