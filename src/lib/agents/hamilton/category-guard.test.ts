@@ -125,6 +125,17 @@ describe("Hamilton category guard repair", () => {
     expect(restoreTarget({ ...row, canonical_fee_key: "card_replacement", fee_name: "Visa Check Card Replacement", amount: "10.00" })).toBe("card_replacement");
   });
 
+  it("re-files an excess activity charge filed as monthly maintenance from its own line, and leaves other activity charges (guard v62)", () => {
+    const note = (line: string) => `Knox deterministic extraction from Rosetta artifact #13538. canonical_hint=monthly_maintenance; excerpt="${line}"`;
+    const row = { canonical_fee_key: "monthly_maintenance", fee_name: "Service charge", document_nsf_amount: null };
+    // Live fee 60814's source line (Oct 14).
+    expect(restoreTarget({ ...row, amount: "2.00", conditions: note("Service charge of $2 per debit in excess of 6 withdrawals per quarter") })).toBe("account_research");
+    // Live fee 142257's line: a transfer charge has no one home, so it is not re-filed.
+    expect(restoreTarget({ ...row, amount: "5.00", conditions: note("1A $5.00 service charge will be applied to each share transfer.") })).toBeNull();
+    // The account's own fee with a per-check charge on top stays where it is.
+    expect(restoreTarget({ ...row, amount: "10.00", conditions: note("a service charge of $10.00 and $.25 per check is assessed.*") })).toBe("monthly_maintenance");
+  });
+
   it("brings a night deposit bag key back as a night deposit fee, and leaves bag supplies down (guard v60)", () => {
     const row = { conditions: null, document_nsf_amount: null };
     expect(restoreTarget({ ...row, canonical_fee_key: "safe_deposit_box", fee_name: "Depository Replacement Key", amount: "5.00" })).toBe("night_deposit");
