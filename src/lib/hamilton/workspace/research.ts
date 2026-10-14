@@ -51,6 +51,7 @@ import { studyObservations, withStudyPlace, type DependenceYear, type StudyPlace
 import { priceBands } from "./bands";
 import { regulatoryFacts } from "./regulators";
 import {
+  enforcementCode,
   statePostFacts,
   wireFacts,
   WIRE_ACTION_YEARS,
@@ -60,7 +61,7 @@ import {
   type WirePostRow,
   type WireRows,
 } from "./wire";
-import { isConsumerLaw } from "@/lib/data-store/regulatory-watch";
+import { CONSUMER_LAW_PG, isConsumerLaw } from "@/lib/data-store/regulatory-watch";
 import { STATE_BILL_STAGE_LABELS, toRegulatorPosts } from "@/lib/data-store/state-news";
 import { readableHeadline } from "@/lib/regulatory/state-news";
 import { enforcementAgencyLabel } from "@/lib/regulatory/state-enforcement";
@@ -407,12 +408,21 @@ const textList = (value: unknown): string[] => (Array.isArray(value) ? value.map
 
 /**
  * The Regulatory Wire rows a regulation answer can cite (#1090): federal rules with a fee topic,
- * the state's fee bills, consumer-law enforcement actions by the OCC or the Federal Reserve or
- * in the state, and the state regulator's fee posts. Each read fails to empty on its own.
+ * the state's fee bills, consumer-law enforcement actions by the bank's own federal regulator
+ * (OCC or Federal Reserve) or against an institution in its state, and the state regulator's
+ * fee posts. The regulator, the state and the consumer-law test are applied in SQL, so the row
+ * limit never cuts off the bank's own actions behind other banks' (#1254). Each read fails to
+ * empty on its own.
  */
-async function loadWire(stateCode: string | null, now = new Date()): Promise<WireRows & { posts: WirePostRow[] }> {
+export async function loadWire(
+  stateCode: string | null,
+  primaryRegulator: string | null,
+  now = new Date(),
+): Promise<WireRows & { posts: WirePostRow[] }> {
   const today = now.toISOString().slice(0, 10);
+  // A state code is upper-cased once here and compared upper case in SQL (party_state too).
   const state = stateCode ? stateCode.toUpperCase() : null;
+  const federal = enforcementCode(primaryRegulator);
   const actionSince = new Date(now);
   actionSince.setUTCFullYear(actionSince.getUTCFullYear() - WIRE_ACTION_YEARS);
   const empty = (label: string) => (error: unknown): Record<string, unknown>[] => {
@@ -442,13 +452,16 @@ async function loadWire(stateCode: string | null, now = new Date()): Promise<Wir
            ORDER BY COALESCE(stage_on, published_on) DESC NULLS LAST
            LIMIT 50`.catch(empty("bills"))
       : Promise.resolve([]),
-    sql`
-      SELECT agency, party_name, party_state, action_type, subject, start_date, document_url
-        FROM institution_enforcement_actions
-       WHERE start_date >= ${actionSince.toISOString().slice(0, 10)}::date
-         AND (agency IN ('OCC', 'FRB') OR party_state = ${state})
-       ORDER BY start_date DESC NULLS LAST, id DESC
-       LIMIT 500`.catch(empty("enforcement")),
+    federal || state
+      ? sql`
+          SELECT agency, party_name, party_state, action_type, subject, start_date, document_url
+            FROM institution_enforcement_actions
+           WHERE start_date >= ${actionSince.toISOString().slice(0, 10)}::date
+             AND (agency = ${federal} OR upper(party_state) = ${state})
+             AND subject ~* ${CONSUMER_LAW_PG}
+           ORDER BY start_date DESC NULLS LAST, id DESC
+           LIMIT 50`.catch(empty("enforcement"))
+      : Promise.resolve([]),
     state
       ? sql`
           SELECT source, title, link, published_at
@@ -488,7 +501,7 @@ async function loadWire(stateCode: string | null, now = new Date()): Promise<Wir
         agency: String(r.agency),
         agency_label: enforcementAgencyLabel(String(r.agency)),
         party_name: String(r.party_name),
-        party_state: r.party_state ? String(r.party_state) : null,
+        party_state: r.party_state ? String(r.party_state).toUpperCase() : null,
         action_type: r.action_type ? String(r.action_type) : null,
         start_date: isoDay(r.start_date),
         // The OCC export has no document links; its search page finds the order by name.
@@ -875,6 +888,8 @@ export async function getFeeResearch(
 ): Promise<FeeResearch | null> {
   const base = await loadBase(institutionId, [feeCategory], options);
   if (!base) return null;
+  // The Wire's enforcement read needs the bank's federal regulator, so it waits on this one read.
+  const regulatorRead = getInstitutionRegulators(institutionId).catch(() => null);
   const [changes, financialRows, articles, market, ownFeeRows, nationalIncomeSeries, economy, segment, rates, regulators, complaints, complaintBenchmark, wireRows] = await Promise.all([
     loadStateChanges(base.stateCode, feeCategory),
     loadServiceChargeRows(institutionId),
@@ -885,10 +900,10 @@ export async function getFeeResearch(
     loadEconomy(base.stateCode, base.fedDistrict),
     options.segment ? loadSegment(base, feeCategory, options.segment) : Promise.resolve(null),
     loadRates(institutionId, feeCategory, now.toISOString().slice(0, 10)),
-    getInstitutionRegulators(institutionId).catch(() => null),
+    regulatorRead,
     getInstitutionComplaintYears(institutionId).catch(() => []),
     getComplaintBenchmark(institutionId).catch(() => null),
-    loadWire(base.stateCode, now),
+    regulatorRead.then((r) => loadWire(base.stateCode, r?.primaryRegulator ?? null, now)),
   ]);
   const ownRows: OwnFeeRow[] = ownFeeRows;
   const wireScope = { feeCategory, stateCode: base.stateCode, primaryRegulator: regulators?.primaryRegulator ?? null, today: now };
