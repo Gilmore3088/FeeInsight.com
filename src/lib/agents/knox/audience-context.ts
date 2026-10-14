@@ -88,21 +88,14 @@ function isHeading(line: string, columns = false): boolean {
 
 const squash = (value: string) => value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 
-/**
- * The fee's names to look for, its first words: "Stop Payment Fee" is printed "Stop Payment $30",
- * so a trailing fee word is tried off only when the full name finds no line. Names match as whole
- * words (never "nsf" in "transfer").
- */
-function feeNames(feeName: string): string[] {
-  const full = squash(feeName).split(" ").slice(0, 4).join(" ");
-  const stripped = squash(feeName).replace(/(?: (?:service )?(?:fees?|charges?))+$/, "").split(" ").slice(0, 4).join(" ");
-  return [full, stripped].filter((name, index, all) => name && all.indexOf(name) === index);
-}
-
 /** The index of the fee's own line: the first line naming it (its first words) at its price. */
 export function feeLineIndex(lines: string[], feeName: string, amount: number | null): number {
+  const full = squash(feeName).split(" ").slice(0, 4).join(" ");
+  // "Stop Payment Fee" is printed "Stop Payment $30": a trailing fee word is tried off only when
+  // the full name finds no line, and names match as whole words (never "nsf" in "transfer").
+  const stripped = squash(feeName).replace(/(?: (?:service )?(?:fees?|charges?))+$/, "").split(" ").slice(0, 4).join(" ");
   const price = amount == null ? null : priceToken(amount);
-  const names = feeNames(feeName);
+  const names = [full, stripped].filter((name, index, all) => name && all.indexOf(name) === index);
   const named = (index: number) => names.find((name) => ` ${squash(lines[index])} `.includes(` ${name} `));
   // A line at the fee's price, under either name, beats a line that only names it ("Stop payment
   // fee waived for Premier Business Checking"; review of 8dd7af67). The next line's price counts
@@ -118,24 +111,41 @@ export function feeLineIndex(lines: string[], feeName: string, amount: number | 
   return -1;
 }
 
+const FIRST_PRICE = /\$\s*\d[\d,]*(?:\.\d{2})?|\b\d[\d,]*\.\d{2}\b/;
+
 /**
- * Every line that names the fee at its price, under the first of its names that finds one. A
- * schedule with a personal and a business section can list the same fee at the same price in both.
- * Empty when the fee has no price or no priced line names it.
+ * A fee row's label and its first price: the text before the line's first price and that price,
+ * or the whole line and the first price on the next line. Null for a sentence or a long line.
  */
-export function pricedFeeLineIndexes(lines: string[], feeName: string, amount: number | null): number[] {
+function feeRow(lines: string[], index: number): { label: string; price: string } | null {
+  const line = lines[index].trim();
+  if (line.length > MAX_FEE_ROW_CHARS || isSentence(line)) return null;
+  const own = FIRST_PRICE.exec(line);
+  if (own) return { label: squash(line.slice(0, own.index)), price: own[0] };
+  const below = FIRST_PRICE.exec(nextLine(lines, index) ?? "");
+  return below && below.index === 0 ? { label: squash(line), price: below[0] } : null;
+}
+
+/**
+ * Other lines that list the fee's own row again: the same label, with the fee's price first. A
+ * schedule with a personal and a business section can list one fee at one price in both. A line
+ * whose label runs on ("Incoming Wire Transfer - International $15"), whose first price is another
+ * fee's ("Stop Payment $25   Wire Transfer $30"), or that is a sentence ("Stop payment fees ($30)
+ * waived for ...") is another row (review of d97858de).
+ */
+export function sameFeeRows(lines: string[], feeIndex: number, amount: number | null): number[] {
   if (amount == null) return [];
+  const own = feeRow(lines, feeIndex);
+  if (!own || !own.label) return [];
   const price = priceToken(amount);
-  const priced = (index: number) =>
-    price.test(lines[index]) || (!PRICED.test(lines[index]) && price.test(nextLine(lines, index) ?? ""));
-  for (const name of feeNames(feeName)) {
-    const found: number[] = [];
-    for (let index = 0; index < lines.length; index += 1) {
-      if (` ${squash(lines[index])} `.includes(` ${name} `) && priced(index)) found.push(index);
-    }
-    if (found.length > 0) return found;
+  if (!price.test(own.price)) return [];
+  const found: number[] = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    if (index === feeIndex || !squash(lines[index]).startsWith(own.label)) continue;
+    const row = feeRow(lines, index);
+    if (row && row.label === own.label && price.test(row.price)) found.push(index);
   }
-  return [];
+  return found;
 }
 
 /**
@@ -293,10 +303,7 @@ export function suggestAudience(input: {
       // The same fee at the same price under a personal and a business heading is listed for
       // both ("NSF $32" in Personal Checking Fees and again in Business Accounts Fees).
       if (section.audience !== "both") {
-        for (const other of pricedFeeLineIndexes(lines, input.feeName, input.amount)) {
-          // A line that names its own audience is another product ("Business Advantage Checking
-          // Account Service Charge" beside "Advantage Checking Account Service Charge").
-          if (other === feeIndex || audienceOf(lines[other])) continue;
+        for (const other of sameFeeRows(lines, feeIndex, input.amount)) {
           const there = sectionHeadingAudience(lines, other);
           if (there && "audience" in there && there.audience !== "both" && there.audience !== section.audience) {
             return { audience: "both", source: "section_heading", evidence: `${section.heading} / ${there.heading}` };
