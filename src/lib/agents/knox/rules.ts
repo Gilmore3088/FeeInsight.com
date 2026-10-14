@@ -1230,7 +1230,12 @@ export function extractFromSegment(segment: string): ExtractionRulesResult {
   // the words just before it name one ("Stop payment $30; Wire, outgoing $25"); otherwise
   // it is a cap, a second account column, or a condition, and is ignored.
   feeAmounts.forEach((amount, index) => {
-    const between = index === 0 ? null : nameFrom(segment.slice(feeAmounts[index - 1].end, amount.start));
+    // #1196: the unit right after the earlier price is that price's ("Dormant accounts |
+    // $15.00 per month Nonsufficient funds | $35.00"), not the next fee's name or period.
+    const unitAfterPrevious = index === 0 ? null : segment.slice(feeAmounts[index - 1].end, amount.start).match(PRICE_UNIT_AFTER);
+    const ownStart = index === 0 ? 0 : feeAmounts[index - 1].end + (unitAfterPrevious?.[0].length ?? 0);
+    const between = index === 0 ? null : nameFrom(segment.slice(ownStart, amount.start));
+    const ownFrequency = unitAfterPrevious ? detectFrequency(segment.slice(ownStart)) : frequency;
     // v19: "$30.00 - fee assessed for each item paid1 Continuous Overdraft Fee ..... $5.00":
     // the lowercase words finish the earlier price's terms; the title that ends them is the name.
     const tail = between && /^[^A-Z]/.test(between) ? titleTail(between) : null;
@@ -1240,7 +1245,8 @@ export function extractFromSegment(segment: string): ExtractionRulesResult {
     // v22: "... you will be assessed a fee of $25.00 on the 7th day. This fee is in addition to
     // any Overdraft Fees assessed. | $25.00": the row's price cell repeats the price in its own cell.
     const priceCellAt = segment.lastIndexOf(CELL_SEPARATOR);
-    if (index > 0 && cells && amount.value === feeAmounts[index - 1].value && amount.start > priceCellAt &&
+    // #1196: not when the earlier price ends on its own unit ("$25.00/hr Wire message | $25.00").
+    if (index > 0 && !unitAfterPrevious && cells && amount.value === feeAmounts[index - 1].value && amount.start > priceCellAt &&
       PRICE_ONLY_CELL.test(cells.at(-1) ?? "") && segment.lastIndexOf(CELL_SEPARATOR, priceCellAt - 1) < feeAmounts[index - 1].start) return;
     const candidateName = index === 0 ? feeName : (chunk as string);
     const canonicalHint = index === 0 ? hint : (chunkHint as string);
@@ -1249,7 +1255,7 @@ export function extractFromSegment(segment: string): ExtractionRulesResult {
     result.candidates.push({
       feeName: candidateName,
       amount: amount.value,
-      frequency,
+      frequency: ownFrequency,
       canonicalHint,
       confidence: confidenceFor(segment),
       excerpt: segment,
@@ -1505,7 +1511,32 @@ export function withoutBusinessOnlyFees(text: string): string {
     .join("\n");
 }
 
-export function extractCandidatesFromText(raw: string): ExtractionRulesResult {
+/** #1196: a price's own unit right after it ("$15.00 per month", "$25.00/hr", "$5.00/statement", "$10.00 each"). */
+const PRICE_UNIT_AFTER = /^\s*(?:\/\s*(?:statement|stmt|hr|hour|item|month|mo|sheet|check|year|yr|day|page|copy|request)\b|per\s+(?:month|item|year|statement|check|hour|sheet|day|page|copy|request)\b|each\b|ea\b\.?)/i;
+
+/**
+ * #1196: a price whose decimal point the PDF text dropped ("Dormant accounts | $15 00 per
+ * month Nonsufficient funds | $35 00", Addition Financial 8629). Knox read "$15" as the price and
+ * gave the cents and their unit to the next fee ("00 per month Nonsufficient funds", monthly).
+ * The point goes back ("$15.00"), so the cents and "per month" stay with the dormant fee.
+ * "00" cents always; other cents only when the text drops the point on "00" prices too and the
+ * cents end their cell ("$2 50 each", "$4 95 |"), so a count after a price ("$5 10 items") stays.
+ * Never a box size ("$5 10 x 10") or a longer number.
+ */
+const DROPPED_POINT_ZERO = /\$(\s?)(\d{1,3}(?:,\d{3})+|\d{1,4}) (00)(?![\d.,])(?!\s*[x×]\s*\d)/g;
+const DROPPED_POINT_CENTS = /\$(\s?)(\d{1,3}(?:,\d{3})+|\d{1,4}) (\d{2})(?![\d.,])(?=\s*(?:$|\||\/|each\b|per\b|ea\b))/gim;
+const DROPPED_POINT_MIN = 3;
+
+export function withDroppedDecimalPoints(text: string): string {
+  const zeros = text.match(DROPPED_POINT_ZERO)?.length ?? 0;
+  if (zeros === 0) return text;
+  const restored = text.replace(DROPPED_POINT_ZERO, (_whole, gap: string, dollars: string, cents: string) => `$${gap}${dollars}.${cents}`);
+  if (zeros < DROPPED_POINT_MIN) return restored;
+  return restored.replace(DROPPED_POINT_CENTS, (_whole, gap: string, dollars: string, cents: string) => `$${gap}${dollars}.${cents}`);
+}
+
+export function extractCandidatesFromText(input: string): ExtractionRulesResult {
+  const raw = withDroppedDecimalPoints(input);
   // v48: a fee-change notice's row is read at its newest column ("Money Orders | $2.00 | $5.00").
   const scoped = scopedFeeStatements(raw);
   const handledLines = new Set(scoped.map((fee) => fee.excerpt));
