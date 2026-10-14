@@ -390,6 +390,9 @@ describe("Magellan companion finder: disclosure index pages (#1051)", () => {
     // #1306: the word must start a segment or a word in one.
     expect(isDocumentIndexPage("https://www.jonesboro.example/forms-documents")).toBe(true);
     expect(isDocumentIndexPage("https://www.jonesboro.example/digital-platforms")).toBe(false);
+    // Run-together names still count (209 stored addresses, Oct 14).
+    expect(isDocumentIndexPage("https://www.bank.example/ConsumerDisclosures")).toBe(true);
+    expect(isDocumentIndexPage("https://www.bank.example/AccountAgreements")).toBe(true);
     expect(disclosureIndexDocuments("https://www.jonesboro.example/personal/checking", links, site, new Set())).toEqual([]);
     expect(disclosureIndexDocuments(index, links.slice(0, 1), site, new Set())).toEqual([]);
     // A document already stored for the bank is not offered again.
