@@ -116,12 +116,17 @@ export interface CandidateValidation {
   scoringText?: string | null;
 }
 
-export async function fetchWithTimeout(fetchImpl: Fetcher, url: string, timeoutMs = FIND_REQUEST_TIMEOUT_MS): Promise<Response> {
+/**
+ * A GET that gives up when the headers take longer than `timeoutMs`. The timer stops once the
+ * headers arrive; a caller that also bounds the body read passes its own `signal`, which
+ * aborts the whole request (body download included) whenever the caller aborts it.
+ */
+export async function fetchWithTimeout(fetchImpl: Fetcher, url: string, timeoutMs = FIND_REQUEST_TIMEOUT_MS, signal?: AbortSignal): Promise<Response> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
     return await fetchImpl(url, {
-      signal: controller.signal,
+      signal: signal ? AbortSignal.any([controller.signal, signal]) : controller.signal,
       redirect: "follow",
       headers: {
         "User-Agent": crawlerUserAgent("Magellan"),

@@ -365,10 +365,12 @@ provider and no budget, so the paid cap never holds it. Up to `ADDRESS_VARIANT_B
 (3) banks a step within `ADDRESS_VARIANT_BUDGET_MS` (30 s, which also cuts each request and
 body read), banks with no live fees first, each at most once per `ADDRESS_VARIANT_RETRY_DAYS`
 (7). The document means a 2xx whose final address after redirects is still on the bank's domain
-(`onBankDomain`) and is not the homepage or an error page, whose body was read in full, and,
-for a PDF link, whose bytes are a PDF: a parked domain's 200 HTML page is refused (#1306).
-A spelling that fails any of these, including a body read that fails after it answered, is a
-failed try, so it never becomes the fetch address or moves the failure count. The first
+(`onBankDomain`) and is not the homepage or an error page, whose body was read in full within
+the 15 MB document cap (`MAX_DOCUMENT_BYTES`; past it the read stops, `too_large`), and, for a
+PDF link, whose bytes are a PDF: a parked domain's 200 HTML page is refused (#1306). One timer
+covers the headers and the body; when it fires, or the cap is passed, the request is aborted so
+the download stops too. A spelling that fails any of these, including a body read that fails
+after it answered, is a failed try, so it never becomes the fetch address or moves the failure count. The first
 spelling that answers with the document is stored through `fetchAndRecordLink` (attempt strategy `fetch.address_variant`), which makes it the profile's fetch address; when
 none answers, one attempt row lists each try and the bank's fetch state is left alone. A 403
 is a bot wall on every spelling and stays with the paid fetch below; a person's locked

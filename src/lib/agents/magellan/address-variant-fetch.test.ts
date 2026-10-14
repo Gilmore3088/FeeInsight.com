@@ -124,7 +124,39 @@ describe("runAddressVariantFetch", () => {
         controller.error(new TypeError("terminated"));
       },
     });
-  it.each([
+  // A body that never ends (1 MB at a time) and one that stops arriving; each counts when
+  // the reader cancels it.
+  let cancelledBodies = 0;
+  beforeEach(() => {
+    cancelledBodies = 0;
+  });
+  const endlessBody = () =>
+    new ReadableStream<Uint8Array>({
+      pull(controller) {
+        controller.enqueue(new Uint8Array(1024 * 1024));
+      },
+      cancel() {
+        cancelledBodies += 1;
+      },
+    });
+  const stalledBody = () =>
+    new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode("%PDF-1.7 "));
+      },
+      cancel() {
+        cancelledBodies += 1;
+      },
+    });
+  it.each<{
+    name: string;
+    answer: (url: string) => Response;
+    verdict: string;
+    outcome: string;
+    verdicts?: string[];
+    deadlineMs?: number;
+    cutOff?: boolean;
+  }>([
     {
       name: "a redirect to another site",
       answer: () => withUrl(new Response("%PDF-1.7 fees", { status: 200, headers: { "content-type": "application/pdf" } }), "https://parked-domains.example/fees.pdf"),
@@ -149,18 +181,55 @@ describe("runAddressVariantFetch", () => {
       verdict: "body_network_error",
       outcome: "network_error",
     },
-  ])("refuses $name and leaves the bank's fetch address and failure count alone", async ({ answer, verdict, outcome }) => {
+    {
+      name: "a body declared over the 15 MB cap",
+      answer: (url: string) => withUrl(new Response("%PDF-1.7 ", { status: 200, headers: { "content-type": "application/pdf", "content-length": String(20 * 1024 * 1024) } }), url),
+      verdict: "too_large",
+      outcome: "too_large",
+    },
+    {
+      name: "a body that runs past the 15 MB cap with no content-length",
+      answer: (url: string) => withUrl(new Response(endlessBody(), { status: 200, headers: { "content-type": "application/pdf" } }), url),
+      verdict: "too_large",
+      outcome: "too_large",
+      cutOff: true,
+    },
+    {
+      name: "a body that is still arriving when the time is up",
+      answer: (url: string) => withUrl(new Response(stalledBody(), { status: 200, headers: { "content-type": "application/pdf" } }), url),
+      verdict: "body_timeout",
+      deadlineMs: 50,
+      // The pass deadline has gone by, so no second spelling is asked.
+      verdicts: ["body_timeout"],
+      outcome: "timeout",
+      cutOff: true,
+    },
+  ])("refuses $name and leaves the bank's fetch address and failure count alone", async ({ answer, verdict, verdicts, outcome, deadlineMs, cutOff }) => {
     const db = dbReturning([sdfcu]);
-    const fetchImpl = vi.fn(async (input: RequestInfo | URL) => answer(String(input)));
+    const signals: AbortSignal[] = [];
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.signal) signals.push(init.signal);
+      return answer(String(input));
+    });
 
-    const result = await runAddressVariantFetch({ db, fetchImpl: fetchImpl as unknown as typeof fetch, runId: 3 });
+    const result = await runAddressVariantFetch({
+      db,
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      runId: 3,
+      deadline: deadlineMs ? Date.now() + deadlineMs : undefined,
+    });
+
+    // The request is aborted once the spelling is refused, so no download runs on.
+    expect(signals.length).toBe(fetchImpl.mock.calls.length);
+    expect(signals.every((signal) => signal.aborted)).toBe(true);
+    if (cutOff) expect(cancelledBodies).toBe(signals.length);
 
     expect(result).toMatchObject({ tried: 1, recovered: 0, failed: 1 });
     expect(result.results[0].url).toBeNull();
     expect(fetchAndRecordLinkMock).not.toHaveBeenCalled();
     const attempt = recordAttemptMock.mock.calls[0][1];
     expect(attempt).toMatchObject({ strategy: "fetch.address_variant", outcome });
-    expect(attempt.detail.tries.map((entry: { verdict: string }) => entry.verdict)).toEqual([verdict, verdict]);
+    expect(attempt.detail.tries.map((entry: { verdict: string }) => entry.verdict)).toEqual(verdicts ?? [verdict, verdict]);
     expect((db as unknown as ReturnType<typeof vi.fn>).mock.calls).toHaveLength(1);
   });
 
