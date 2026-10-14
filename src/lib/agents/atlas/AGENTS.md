@@ -107,7 +107,10 @@ hand-found link or paid-fetched document starts a new run even inside the retry 
   order for the state (`finderOrderFromHints` in `magellan/discovery.ts`: specialists that
   found links there run first, ones tried 5+ times without a find run last; each discover
   step records the order in its result as `finderOrder`); `hamilton/state-expert-summary.ts` gives the report engine
-  the expert's summary. Darwin's peer check reads the peer levels.
+  the expert's summary. Darwin's peer check reads the peer levels. The step also records the
+  state's work list (`work_list_groups`, #1029): its size groups under $10B, furthest below
+  the coverage target first, the order Magellan's paid passes take its institutions in
+  (`state-expert/work-list.ts`; see Magellan's AGENTS.md).
 
 ## Goal scorecard (#1040)
 

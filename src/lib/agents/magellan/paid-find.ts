@@ -25,6 +25,7 @@ import { LARGE_BANK_ASSETS, onBankDomain, websiteHost } from "./link-coverage";
 import { runScheduleSearch } from "./schedule-search";
 import { runWebsiteFind } from "./website-find";
 import { bankWebSearchTool } from "./web-search-tool";
+import { loadGroupGaps, pickFromWorkLists, WORK_LIST_POOL, workListDetail, type GroupGaps, type WorkListPlacement } from "@/lib/agents/state-expert/work-list";
 
 type Fetcher = typeof fetch;
 
@@ -72,6 +73,11 @@ interface PaidFindRow {
   web_searched?: boolean | null;
   /** Paid web-search misses on this website since the last paid find (escalation.ts). */
   paid_misses?: number | string | null;
+  /** A report lead names it; a Pro account's own institution; its site platform (#1029 work lists). */
+  requested?: boolean | null;
+  paying?: boolean | null;
+  platform?: string | null;
+  work_list?: WorkListPlacement;
 }
 
 interface PaidFindAnswer {
@@ -89,11 +95,22 @@ export interface RunMagellanPaidFindOptions extends PaidStepOptions {
   pick?: boolean;
 }
 
-async function selectBanks(db: typeof sql, stateCode: string | null, limit: number): Promise<PaidFindRow[]> {
+/**
+ * Due banks, ordered by the state experts' work lists (#1029): requesters and paying
+ * customers first, then one from each state's list in turn (`state-expert/work-list.ts`).
+ * The query reads up to WORK_LIST_POOL due banks; `limit` (the step's cap) applies after.
+ */
+async function selectBanks(db: typeof sql, stateCode: string | null, limit: number, gaps: GroupGaps): Promise<PaidFindRow[]> {
   const currentMethod = JSON.stringify({ method_version: DISCOVERY_METHOD_VERSION });
-  return db<PaidFindRow[]>`
+  const pool = await db<PaidFindRow[]>`
     SELECT inst.id, inst.institution_name, inst.city, inst.state_code, inst.website_url, inst.asset_size,
            profile.consecutive_failures AS profile_consecutive_failures,
+           EXISTS (SELECT 1 FROM leads lead WHERE lead.quote_institution_id = inst.id) AS requested,
+           EXISTS (
+             SELECT 1 FROM institution_workspace_memberships pro
+              WHERE pro.institution_id = inst.id AND pro.membership_status = 'active'
+           ) AS paying,
+           COALESCE(NULLIF(btrim(profile.platform), ''), NULLIF(btrim(inst.cms_platform), '')) AS platform,
            EXISTS (
              SELECT 1 FROM pipeline_attempts pa
               WHERE pa.institution_id = inst.id
@@ -172,11 +189,12 @@ async function selectBanks(db: typeof sql, stateCode: string | null, limit: numb
               AND pa.outcome <> ALL(${TRANSIENT_PAID_OUTCOMES})
          )
        )
-     -- Report requesters first, then the largest banks: the names buyers check.
+     -- Report requesters first, then the largest banks; the work lists reorder the rest.
      ORDER BY EXISTS (SELECT 1 FROM leads lead WHERE lead.quote_institution_id = inst.id) DESC,
               inst.asset_size DESC NULLS LAST, inst.id ASC
-     LIMIT ${limit}
+     LIMIT ${WORK_LIST_POOL}
   `;
+  return pickFromWorkLists(Array.isArray(pool) ? pool : [], gaps, limit);
 }
 
 export { onBankDomain };
@@ -301,12 +319,14 @@ export async function runMagellanPaidFind(options: RunMagellanPaidFindOptions): 
   if (!(await learningSchemaReady(db))) return result;
 
   const limit = Math.max(1, Math.min(Math.floor(Number(options.limit ?? PAID_PASS_ITEMS_PER_RUN)) || PAID_PASS_ITEMS_PER_RUN, PAID_PASS_ITEMS_PER_RUN));
-  const rows = await selectBanks(db, normalizeStateCode(options.stateCode), limit);
+  // The state experts' work lists (#1029) share one read of the coverage gaps.
+  const gaps = await loadGroupGaps(db);
+  const rows = await selectBanks(db, normalizeStateCode(options.stateCode), limit, gaps);
   result.selected = rows.length;
   if (dryRun) {
-    result.results = rows.map((row) => ({ institution_id: Number(row.id), institution_name: row.institution_name, would_search: true }));
-    await addWebsiteFind(result, options, db);
-    await addScheduleSearch(result, options, db);
+    result.results = rows.map((row) => ({ institution_id: Number(row.id), institution_name: row.institution_name, would_search: true, ...workListDetail(row.work_list) }));
+    await addWebsiteFind(result, options, db, gaps);
+    await addScheduleSearch(result, options, db, gaps);
     return result;
   }
 
@@ -351,14 +371,14 @@ export async function runMagellanPaidFind(options: RunMagellanPaidFindOptions): 
           method: "magellan_paid_pick",
           durationMs: Date.now() - startedAt,
         }));
-        result.results.push({ institution_id: institutionId, outcome: "ok", url: picked.url, cost_microusd: picked.costMicrousd, reason: picked.reason, by: "pick" });
+        result.results.push({ institution_id: institutionId, outcome: "ok", url: picked.url, cost_microusd: picked.costMicrousd, reason: picked.reason, by: "pick", ...workListDetail(row.work_list) });
         continue;
       }
       if (row.web_searched) {
         // The web search missed within its cooldown; the pick was the only new try.
         result.processed += 1;
         result.failed += 1;
-        result.results.push({ institution_id: institutionId, outcome: picked.outcome, url: null, cost_microusd: picked.costMicrousd, reason: picked.reason, by: "pick" });
+        result.results.push({ institution_id: institutionId, outcome: picked.outcome, url: null, cost_microusd: picked.costMicrousd, reason: picked.reason, by: "pick", ...workListDetail(row.work_list) });
         continue;
       }
     } else if (row.web_searched) {
@@ -470,10 +490,10 @@ export async function runMagellanPaidFind(options: RunMagellanPaidFindOptions): 
         reason,
       },
     });
-    result.results.push({ institution_id: institutionId, outcome, url, cost_microusd: costMicrousd, reason, rung });
+    result.results.push({ institution_id: institutionId, outcome, url, cost_microusd: costMicrousd, reason, rung, ...workListDetail(row.work_list) });
   }
-  if (!result.budgetStopped) await addWebsiteFind(result, options, db);
-  if (!result.budgetStopped) await addScheduleSearch(result, options, db);
+  if (!result.budgetStopped) await addWebsiteFind(result, options, db, gaps);
+  if (!result.budgetStopped) await addScheduleSearch(result, options, db, gaps);
   return result;
 }
 
@@ -506,8 +526,9 @@ async function addBlockedFetch(result: PaidPassResult, options: RunMagellanPaidF
  * $10B+ banks and report requesters whose page is not the consumer schedule get a paid
  * search for it in the same step (schedule-search.ts); the answer is kept as a companion.
  */
-async function addScheduleSearch(result: PaidPassResult, options: RunMagellanPaidFindOptions, db: typeof sql): Promise<void> {
+async function addScheduleSearch(result: PaidPassResult, options: RunMagellanPaidFindOptions, db: typeof sql, gaps: GroupGaps): Promise<void> {
   const searched = await runScheduleSearch({
+    gaps,
     runId: options.runId,
     stepId: options.stepId ?? null,
     dryRun: Boolean(options.dryRun),
@@ -531,8 +552,9 @@ async function addScheduleSearch(result: PaidPassResult, options: RunMagellanPai
  * Institutions with no website at all get a website search in the same paid step
  * (website-find.ts), so they reach the free finders on their next search.
  */
-async function addWebsiteFind(result: PaidPassResult, options: RunMagellanPaidFindOptions, db: typeof sql): Promise<void> {
+async function addWebsiteFind(result: PaidPassResult, options: RunMagellanPaidFindOptions, db: typeof sql, gaps: GroupGaps): Promise<void> {
   const found = await runWebsiteFind({
+    gaps,
     runId: options.runId,
     stepId: options.stepId ?? null,
     stateCode: options.stateCode ?? null,
