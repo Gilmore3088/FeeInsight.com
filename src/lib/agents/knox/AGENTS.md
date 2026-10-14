@@ -475,6 +475,16 @@ v65 (rules 65, Oct 9, customer audience):
   cannot become two audiences, so the document's re-read writes them. Pinnacle (47) heads
   `KNOX_PRIORITY_REREAD_IDS` for that re-read.
 
+Rules 65, #1196 (Oct 14, no version change, so no document is re-read for it):
+- A price whose decimal point the PDF text dropped ("Dormant accounts | $15 00 per month
+  Nonsufficient funds | $35 00", Addition Financial) gets its point back before the line is read
+  (`withDroppedDecimalPoints`): "00" cents always, other cents only when the text drops the point
+  on "00" prices too and the cents end their cell. The cents no longer open the next fee's name
+  ("00 per month Nonsufficient funds").
+- On a line with two fees, the unit right after the first price ("per month", "/hr", "each") is
+  that price's: the second fee's name and frequency are read from after it, and the second fee is
+  not dropped as a repeat of the first price.
+
 ## Held lines and the re-checks after each extract
 
 A new rules version also reaches lines older versions held. Knox does not extract a text twice

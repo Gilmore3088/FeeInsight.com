@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { amountsIn, classifyFeeText, nameFrom, joinWrappedProse, foldedCategory, classifyPatternKey, extractCandidatesFromText, extractFromSegment, notAZeroPrice, stripFootnoteMarks } from "./rules";
 import { runFreeSpecialists } from "./specialists";
 import { joinWrappedLeaderNames } from "@/lib/custom-report/source-check";
-import { withBoxSizeCellsSplit, withSidewaysBoxTable, withoutBusinessOnlyFees } from "./rules";
+import { withBoxSizeCellsSplit, withDroppedDecimalPoints, withSidewaysBoxTable, withoutBusinessOnlyFees } from "./rules";
 import { tidyFeeName } from "./layout";
 
 function fees(text: string): Array<[string, number, string]> {
@@ -1182,6 +1182,59 @@ describe("withSidewaysBoxTable (v64)", () => {
     expect(withSidewaysBoxTable(uneven)).toBe(uneven);
     const single = "Box | 3 x 5\nRent | $30.00";
     expect(withSidewaysBoxTable(single)).toBe(single);
+  });
+});
+
+// #1196: real source lines whose PDF text dropped the decimal point ("$15 00").
+describe("Knox extract.rules: a dropped decimal point (#1196)", () => {
+  const read = (text: string) =>
+    extractCandidatesFromText(text).candidates.map((fee) => [fee.feeName, fee.amount, fee.frequency, fee.canonicalHint]);
+  const cutCents = (fees: unknown[][]) => fees.filter(([name]) => /^\s*0\d[\s/]/.test(String(name)));
+
+  // Addition Financial (8629), docs 6231 and 13904: two columns on one line. Built on these lines.
+  const ADDITION_FINANCIAL = [
+    "Check orders | prices vary Courtesy Pay to cover overdraft | $35 00",
+    "Dormant accounts | $15 00 per month Nonsufficient funds | $35 00",
+    "Foreign Check Collection | $35 00 Overdraft protection transfer | $3 00",
+    "Research (reconciliation) fee at member’s request | $25 00/hr Wire message (non-domestic) | $25 00",
+  ].join("\n");
+
+  it("keeps the cents and their unit with the fee on their left", () => {
+    const fees = read(ADDITION_FINANCIAL);
+    expect(fees).toContainEqual(["Dormant accounts", 15, "monthly", "dormant_account"]);
+    // Was "00 per month Nonsufficient funds", $35, monthly.
+    expect(fees).toContainEqual(["Nonsufficient funds", 35, null, "nsf"]);
+    // Was "00 Overdraft protection transfer".
+    expect(fees).toContainEqual(["Overdraft protection transfer", 3, null, "od_protection_transfer"]);
+    // Was "00/hr Wire message (non-domestic)".
+    expect(fees).toContainEqual(["Wire message (non-domestic)", 25, null, "wire_intl_outgoing"]);
+    expect(cutCents(fees)).toEqual([]);
+  });
+
+  // HomeTrust (303), doc 8040: held back while building; checked once afterwards.
+  it("reads the held-back HomeTrust lines without cut cents", () => {
+    const fees = read(
+      [
+        "Minimum balance | $200 00 | - Everywhere Connect = first three transactions free",
+        "Monthly fee | $2 00 Account reconciliation/research, per hour | $25 00",
+        "SAFE DEPOSIT BOX FEES | Mailed paper statement fee, per month | $1 50",
+      ].join("\n"),
+    );
+    expect(fees.map(([name]) => name)).toContain("Account reconciliation/research, per hour");
+    expect(cutCents(fees)).toEqual([]);
+  });
+
+  it("puts the point back only where the text drops it", () => {
+    expect(withDroppedDecimalPoints("Stop payment | $30 00")).toBe("Stop payment | $30.00");
+    expect(withDroppedDecimalPoints("Opening deposit | $5,000 00 | maximum of 5")).toBe("Opening deposit | $5,000.00 | maximum of 5");
+    // Other cents only when the text drops the point on "00" prices too, and they end their cell.
+    expect(withDroppedDecimalPoints("Paper statement | $1 50")).toBe("Paper statement | $1 50");
+    expect(withDroppedDecimalPoints("A | $5 00\nB | $7 00\nC | $9 00\nPaper statement | $1 50")).toContain("Paper statement | $1.50");
+    expect(withDroppedDecimalPoints("A | $5 00\nB | $7 00\nC | $9 00\nFirst $5 10 items free")).toContain("First $5 10 items free");
+    // Never a box size, a price already written with its point, or a longer number.
+    expect(withDroppedDecimalPoints("Box | $5 00 x 10")).toBe("Box | $5 00 x 10");
+    expect(withDroppedDecimalPoints("Wire | $25.00")).toBe("Wire | $25.00");
+    expect(withDroppedDecimalPoints("Limit $500 000")).toBe("Limit $500 000");
   });
 });
 
