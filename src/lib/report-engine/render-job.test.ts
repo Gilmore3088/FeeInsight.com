@@ -128,6 +128,59 @@ describe("report reconcile step", () => {
     expect(failed?.values).toEqual(["Reconcile could not read live data: connection reset", "job-13"]);
   });
 
+  // #1249: a job is never left 'rendering' by an unexpected database error.
+  function throwingDb(job: Record<string, unknown>, fail: (text: string) => boolean) {
+    const { db: base, calls } = fakeDb(job, liveVt);
+    const db = vi.fn(async (strings: TemplateStringsArray, ...values: unknown[]) => {
+      const text = strings.join("?");
+      if (fail(text)) {
+        calls.push({ text, values });
+        throw new Error("statement timeout");
+      }
+      return (base as unknown as (s: TemplateStringsArray, ...v: unknown[]) => Promise<unknown>)(strings, ...values);
+    }) as unknown as Record<string, unknown>;
+    db.json = (value: unknown) => ({ json: value });
+    db.unsafe = (base as unknown as Record<string, unknown>).unsafe;
+    return { db: db as unknown as Parameters<typeof runReportRenderStep>[0], calls };
+  }
+  const renderingJob = { id: "job-14", report_type: "state_index", status: "rendering", params: null, artifact_key: "k", data_manifest: { printed: tiedFigure } };
+
+  it("fails the job and rethrows when the opening read of the job throws", async () => {
+    const { db, calls } = throwingDb(renderingJob, (text) => text.includes("SELECT id, report_type"));
+    await expect(runReportReconcileStep(db, "job-14")).rejects.toThrow("Reconcile could not read the report job: statement timeout");
+    const failed = calls.find((call) => call.text.includes("status = 'failed'"));
+    expect(failed?.text).toContain("AND status = 'rendering'");
+    expect(failed?.values).toEqual(["Reconcile could not read the report job: statement timeout", "job-14"]);
+  });
+
+  it("fails the job and rethrows when marking it complete throws", async () => {
+    const { db, calls } = throwingDb(renderingJob, (text) => text.includes("status = 'complete'"));
+    const load = vi.fn(async () => ({ feeRows: liveVt, rateRows: [], changeRows: [], pulseCoverage: null }));
+    await expect(runReportReconcileStep(db, "job-14", { load })).rejects.toThrow(
+      "Reconciled, but the report could not be marked complete: statement timeout",
+    );
+    const failed = calls.find((call) => call.text.includes("status = 'failed'"));
+    expect(failed?.text).toContain("AND status = 'rendering'");
+    expect(failed?.values).toEqual(["Reconciled, but the report could not be marked complete: statement timeout", "job-14"]);
+  });
+
+  it("still fails a blocked job when saving its findings throws", async () => {
+    const off = { ...tiedFigure, figures: [{ ...tiedFigure.figures[0], printed: 9 } as PrintedFigures["figures"][number]] };
+    const { db, calls } = throwingDb({ ...renderingJob, data_manifest: { printed: off } }, (text) => text.includes("data_manifest = ?"));
+    const load = vi.fn(async () => ({ feeRows: liveVt, rateRows: [], changeRows: [], pulseCoverage: null }));
+    await expect(runReportReconcileStep(db, "job-14", { load })).rejects.toThrow(/do not tie out/);
+    const fallback = calls.find((call) => call.text.includes("AND status = 'rendering'"));
+    expect(fallback?.values[0]).toMatch(/do not tie out.*The findings could not be saved: statement timeout/);
+  });
+
+  it("throws the step's own error when the cleanup write fails too", async () => {
+    const { db } = throwingDb(renderingJob, (text) => text.includes("SELECT id, report_type") || text.includes("status = 'failed'"));
+    const log = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    await expect(runReportReconcileStep(db, "job-14")).rejects.toThrow("Reconcile could not read the report job: statement timeout");
+    expect(log).toHaveBeenCalled();
+    log.mockRestore();
+  });
+
   it("skips a job that was never rendered", async () => {
     const { db, calls } = fakeDb({ id: "job-11", report_type: "national_index", status: "failed", params: null, artifact_key: null, data_manifest: null });
     const result = await runReportReconcileStep(db, "job-11");

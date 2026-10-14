@@ -19,6 +19,7 @@ import { generatePresignedUrl } from '@/lib/report-engine/presign';
 import type { ReportJob } from '@/lib/report-engine/types';
 import { isProviderLimitError } from '@/lib/ai-provider';
 import { HAMILTON_PAUSED_MESSAGE } from '@/lib/hamilton/provider-paused';
+import { reconciliationTiesOut } from '@/lib/report-engine/reconcile';
 
 export const dynamic = 'force-dynamic';
 
@@ -86,6 +87,10 @@ async function handleGET(
  * Auth: X-Internal-Secret header (same as assemble endpoint).
  *
  * Body: { status, artifact_key?, error? }
+ *
+ * `complete` is accepted only for a job whose saved reconciliation tied out (#1249): the
+ * report-reconcile step is what completes a report (#1066), and a complete job is
+ * downloadable, so this endpoint must not skip that check. Anything else gets a 409.
  */
 const VALID_STATUSES = new Set(['assembling', 'rendering', 'complete', 'failed']);
 
@@ -120,7 +125,21 @@ async function handlePATCH(
       ? 'failed'
       : 'running';
 
-  await withTransaction(async (tx) => {
+  const refusal = await withTransaction(async (tx): Promise<{ code: number; error: string } | null> => {
+    if (status === 'complete') {
+      const [job] = await tx<Array<{ data_manifest: unknown }>>`
+        SELECT data_manifest FROM report_jobs WHERE id = ${id} FOR UPDATE
+      `;
+      if (!job) return { code: 404, error: 'Report job not found' };
+      if (!reconciliationTiesOut(job.data_manifest)) {
+        return {
+          code: 409,
+          error:
+            'Report job has no reconciliation that tied out to live data, so it cannot be marked complete. ' +
+            'The report-reconcile step completes a report; retry the report to render and reconcile it.',
+        };
+      }
+    }
     if (isTerminal) {
       await tx`
         UPDATE report_jobs
@@ -154,8 +173,12 @@ async function handlePATCH(
            AND status IN ('queued', 'running')
       `;
     }
+    return null;
   });
 
+  if (refusal) {
+    return NextResponse.json({ error: refusal.error }, { status: refusal.code });
+  }
   return NextResponse.json({ ok: true });
 }
 
