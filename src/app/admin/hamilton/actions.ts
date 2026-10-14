@@ -7,6 +7,7 @@ import { cancelAgentRun } from "@/lib/agents/run-store";
 import { triggerReportJob } from "@/lib/report-agent-runs";
 import type { ReportType } from "@/lib/report-engine/types";
 import { assertLegacyGeneratableReportType } from "@/lib/report-engine/legacy-generation-policy";
+import { reconciliationTiesOut } from "@/lib/report-engine/reconcile";
 
 // Slug generation helper — title to URL-safe slug
 function generateSlug(title: string): string {
@@ -35,6 +36,18 @@ export async function publishReport(
 
   try {
     const sql = getSql();
+    // #1066: only a complete job whose printed fee figures tied out to live data publishes.
+    const [job] = await sql<Array<{ status: string; data_manifest: unknown }>>`
+      SELECT status, data_manifest FROM report_jobs WHERE id = ${jobId} LIMIT 1
+    `;
+    if (!job) return { success: false, error: "Report job not found." };
+    if (job.status !== "complete") return { success: false, error: `Report job is ${job.status}, not complete.` };
+    if (!reconciliationTiesOut(job.data_manifest)) {
+      return {
+        success: false,
+        error: "This report has no reconciliation that tied out to live data, so it cannot be published. Generate the report again to render and reconcile it.",
+      };
+    }
     const rows = await sql<Array<{ slug: string }>>`
       INSERT INTO published_reports (job_id, report_type, slug, title, is_public)
       VALUES (${jobId}, ${reportType}, ${slug}, ${title}, ${isPublic})

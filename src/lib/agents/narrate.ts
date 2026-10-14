@@ -660,6 +660,7 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   "publish-index": "hamilton",
   "publish-context": "hamilton",
   "report-render": "hamilton",
+  "report-reconcile": "hamilton",
   "report-close": "hamilton",
   "category-guard": "hamilton",
   "frequency-fill": "hamilton",

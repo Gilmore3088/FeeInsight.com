@@ -20,6 +20,13 @@ those rows. Report each mismatch with a severity from `src/lib/agents/deming/sev
 
 ## When to use
 
+Index report jobs (national, state, Monthly Pulse) already run steps 7-8 and the fee-change
+check on every job: the `report-reconcile` step (`src/lib/report-engine/reconcile.ts`, #1066)
+blocks a job whose printed figures do not tie out and records each one on
+`report_jobs.data_manifest.reconciliation`. Read that record first; use this skill for the
+competitive fee report, for a buyer's question, or for the sections that record lists as not
+checked.
+
 - Before a paid report link is sent, or before a state or national report is published.
 - When a buyer questions a figure.
 - After a guard or takedown run touched institutions in a report's market.
@@ -60,7 +67,12 @@ State or national index report:
    Recompute each median with `summarizeFees` (`src/lib/data-store/fee-stats.ts`: one value per
    institution, sourced rows only, business-only schedules out, `STATS_METHOD_VERSION`).
 8. Compare each printed count and median; a difference above one cent or one institution is a
-   finding. Note the report's data date: a later live change is "moved", not "wrong".
+   finding. Whole-scope totals (all fees or institutions in the catalog, or in one state's
+   catalog, across every category) may drift by the larger of 5 or 0.5% of the printed value
+   before they are a finding (`TOTAL_DRIFT_*` in `reconcile.ts`, added for #1066): the report
+   job renders for minutes while Hamilton publishes and takes fees down, and the drift seen is
+   recorded on `data_manifest.reconciliation.drift`. Prices, medians and per-category counts
+   keep the one-cent and one-institution rules. Note the report's data date: a later live change is "moved", not "wrong".
 
 ## Output
 

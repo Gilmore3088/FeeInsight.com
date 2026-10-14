@@ -41,12 +41,17 @@ export async function triggerReportJob(
         title: "Write and render the report",
       },
       {
+        key: "report-reconcile",
+        agent: "hamilton",
+        title: "Reconcile every printed fee figure with live data",
+      },
+      {
         key: "report-close",
         agent: "hamilton",
         title: "Close the report job",
       },
     ],
-    summary: "Hamilton report run accepted: render, store, then ready to publish from the reports page.",
+    summary: "Hamilton report run accepted: render, store, reconcile every printed fee figure, then ready to publish from the reports page.",
   });
   await sql`
     UPDATE report_jobs
