@@ -1,18 +1,24 @@
 name: tests
 
-# Runs on pull requests only: builders merge the latest main into a branch before merging, so the
-# PR run already tests what lands on main. Docs-only changes skip it. A newer push to the same PR
-# cancels the older run. Together these keep CI inside the plan's monthly Actions minutes.
+# Runs on pull requests and on every push to main (James, 2026-10-14): a PR run tests the PR's
+# head, and the main run tests the exact merge commit, since main can move after a PR's last run.
+# Docs-only changes skip it. A newer push to the same PR cancels the older run; main runs are never
+# cancelled, so every merge commit gets its own result.
 on:
   pull_request:
+    paths-ignore:
+      - "**/*.md"
+      - "docs/**"
+  push:
+    branches: [main]
     paths-ignore:
       - "**/*.md"
       - "docs/**"
   workflow_dispatch:
 
 concurrency:
-  group: tests-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  group: tests-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   app-tests:
