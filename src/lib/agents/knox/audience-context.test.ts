@@ -327,4 +327,11 @@ describe("Knox audience suggestion from context (#1059)", () => {
     expect(suggest(null, ["Fees", "Non-Personal Check Cashing $5.00"].join("\n"), "Non-Personal Check Cashing", 5)?.audience).not.toBe("business");
     expect(suggest(null, ["Fees", "Copy of Non-Personal Information $5.00"].join("\n"), "Copy of Non-Personal Information", 5)?.audience).not.toBe("business");
   });
+
+  it("strips non-consumer checks as no audience, so a business schedule's fee stays business (review of d71e6929)", () => {
+    expect(suggest(null, ["Business Fee Schedule", "Deposited Item Returned - Non-Consumer Checks $10.00"].join("\n"), "Deposited Item Returned - Non-Consumer Checks", 10)?.audience).not.toBe("consumer");
+    expect(suggest(null, ["Business Schedule of Fees", "Non-Consumer Information Request $5.00"].join("\n"), "Non-Consumer Information Request", 5)?.audience).not.toBe("consumer");
+    expect(suggest("https://bank.example/business/non-consumer-checks.pdf", "Fees\nStop Payment $30", "Stop Payment", 30)?.audience).not.toBe("consumer");
+    expect(suggest(null, ["Business Accounts", "Non-Personal Data Export $5.00", "Personal Accounts", "Stop Payment $30"].join("\n"), "Non-Personal Data Export", 5)?.audience).not.toBe("consumer");
+  });
 });
