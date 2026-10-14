@@ -40,7 +40,8 @@ describe("paid schedule search for the largest banks", () => {
     // PR 314 shipped `btrim(...) <>` with its '' lost, and every paid discovery step failed.
     const db = createDb([]);
     await runScheduleSearch({ runId: 4, db: asDb(db), create: vi.fn() });
-    const statements = db.mock.calls.map((call) => (call[0] as unknown as string[]).join("$?"));
+    // Identifier calls (`db("priority")`) carry a plain string, not SQL text.
+    const statements = db.mock.calls.filter((call) => Array.isArray(call[0])).map((call) => (call[0] as unknown as string[]).join("$?"));
     expect(statements.some((sqlText) => sqlText.includes("incomplete-link schedule search"))).toBe(true);
     for (const sqlText of statements) {
       expect(sqlText).not.toMatch(/(<>|<=|>=|=|<|>)\s*(\n\s*(AND|OR|\))|$)/);
@@ -99,6 +100,16 @@ describe("paid schedule search for the largest banks", () => {
     expect(result.selected).toBe(1);
     expect(result.results[0]).toMatchObject({ would_search_schedule: true });
     expect(create).not.toHaveBeenCalled();
+  });
+
+  it("keeps each lane's own cap, and cuts each lane's pool by requesters, then cells in turn (#1269)", async () => {
+    const lane = (priority: boolean, from: number) => Array.from({ length: 4 }, (_, index) => ({ ...wells, id: from + index, state_code: index % 2 ? "VT" : "TX", priority }));
+    const db = createDb([...lane(true, 100), ...lane(false, 200)]);
+    const result = await runScheduleSearch({ runId: 4, dryRun: true, limit: 3, hiddenLimit: 2, db: asDb(db), create: vi.fn() });
+    const ids = result.results.map((entry) => Number(entry.institution_id));
+    expect([ids.filter((id) => id < 200).length, ids.filter((id) => id >= 200).length]).toEqual([3, 2]);
+    const select = text(db.mock.calls.find((call) => text(call[0]).includes("incomplete-link schedule search"))![0]);
+    expect(select).toContain("PARTITION BY priority ORDER BY requested DESC, paying DESC, leader DESC, cell_rank ASC");
   });
 
   it("searches a small bank on its own sites only, and never sends it to a parent company's domain (#1251)", async () => {
