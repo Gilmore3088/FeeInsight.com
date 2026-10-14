@@ -171,18 +171,93 @@ function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+/** What a guarded write did: wrote the row, lost the race (the job is no longer 'rendering'), or errored. */
+type GuardedWrite = "written" | "not_rendering" | "error";
+
+type SavedManifest = ReturnType<SqlTag["json"]>;
+
 /**
  * Fail a job the reconcile step could not finish, so it never stays 'rendering' (#1249):
  * the step's failure ends the run, and report-close, which would clean it up, never runs.
- * Only a 'rendering' job is touched, so a cancel is never overwritten. Best effort: when the
- * database itself is down this write fails too, and the caller's error is what is thrown.
+ * Only a 'rendering' job is touched, so a cancel is never overwritten (#1259). Best effort:
+ * when the database itself is down this write fails too, and the caller's error is what is
+ * thrown.
  */
-async function failRenderingJob(db: SqlTag, jobId: string, message: string): Promise<void> {
+async function failRenderingJob(db: SqlTag, jobId: string, message: string): Promise<GuardedWrite> {
   try {
-    await db`UPDATE report_jobs SET status = 'failed', error = ${message} WHERE id = ${jobId} AND status = 'rendering'`;
+    const rows = await db<Array<{ id: string }>>`
+      UPDATE report_jobs SET status = 'failed', error = ${message}
+       WHERE id = ${jobId} AND status = 'rendering' RETURNING id
+    `;
+    return rows.length > 0 ? "written" : "not_rendering";
   } catch (error) {
     console.error(`[report-reconcile] could not mark job ${jobId} failed:`, errorText(error));
+    return "error";
   }
+}
+
+/** The job's status now, for a step that lost a race; null when it cannot be read. */
+async function currentStatus(db: SqlTag, jobId: string): Promise<string | null> {
+  try {
+    const rows = await db<Array<{ status: string }>>`SELECT status FROM report_jobs WHERE id = ${jobId} LIMIT 1`;
+    return rows[0]?.status ?? null;
+  } catch (error) {
+    console.error(`[report-reconcile] could not read job ${jobId} status:`, errorText(error));
+    return null;
+  }
+}
+
+/**
+ * The job left 'rendering' while it was reconciled, so the step's write changed nothing.
+ * A cancel is the expected cause: the step is skipped and says so. Anything else is
+ * unexpected and is thrown, so the run ledger shows it.
+ */
+async function lostRace(
+  db: SqlTag,
+  jobId: string,
+  wanted: "complete" | "failed",
+  reason: string,
+  detail: Record<string, unknown>,
+): Promise<ReportStepResult> {
+  const now = await currentStatus(db, jobId);
+  const note = `The job left rendering while it was reconciled (it is now ${now ?? "unknown"}), so it was not marked ${wanted}.`;
+  if (now === "cancel_requested" || now === "cancelled") {
+    return {
+      status: "skipped",
+      summary: `Report job was cancelled during reconciliation. ${note} ${reason}`,
+      detail: { ...detail, report_job_id: jobId, report_status: now, lost_race: true },
+    };
+  }
+  throw new Error(`${reason} ${note}`);
+}
+
+/**
+ * Fail the job with the step's reason and throw that reason (#1259): a failed write is
+ * logged, never thrown in its place. A job a cancel already took is a skip, not a failure.
+ */
+async function failReconcile(
+  db: SqlTag,
+  jobId: string,
+  message: string,
+  options: { manifest?: SavedManifest; detail?: Record<string, unknown>; cause?: unknown } = {},
+): Promise<ReportStepResult> {
+  let write: GuardedWrite;
+  if (options.manifest) {
+    try {
+      const rows = await db<Array<{ id: string }>>`
+        UPDATE report_jobs SET status = 'failed', error = ${message}, data_manifest = ${options.manifest}
+         WHERE id = ${jobId} AND status = 'rendering' RETURNING id
+      `;
+      write = rows.length > 0 ? "written" : "not_rendering";
+    } catch (error) {
+      // The findings could not be saved; still fail the job, with the reason.
+      write = await failRenderingJob(db, jobId, `${message} (The findings could not be saved: ${errorText(error)})`);
+    }
+  } else {
+    write = await failRenderingJob(db, jobId, message);
+  }
+  if (write === "not_rendering") return lostRace(db, jobId, "failed", message, options.detail ?? {});
+  throw options.cause === undefined ? new Error(message) : new Error(message, { cause: options.cause });
 }
 
 export async function runReportReconcileStep(
@@ -222,8 +297,7 @@ export async function runReportReconcileStep(
   const printed = manifest.printed;
   if (!printed || !Array.isArray(printed.figures)) {
     const message = "Reconciliation blocked the report: the render step saved no printed figures to check.";
-    await db`UPDATE report_jobs SET status = 'failed', error = ${message} WHERE id = ${jobId}`;
-    throw new Error(message);
+    return failReconcile(db, jobId, message);
   }
 
   let live: Awaited<ReturnType<typeof loadLiveFigures>>;
@@ -232,8 +306,7 @@ export async function runReportReconcileStep(
   } catch (error) {
     // Never leave the job 'rendering': fail it with the reason so it can be retried.
     const message = `Reconcile could not read live data: ${errorText(error)}`;
-    await db`UPDATE report_jobs SET status = 'failed', error = ${message} WHERE id = ${jobId}`;
-    throw new Error(message);
+    return failReconcile(db, jobId, message, { cause: error });
   }
   const result = reconcileFigures(printed, live, deps.now);
   const summary = describeReconciliation(result);
@@ -250,26 +323,23 @@ export async function runReportReconcileStep(
     unchecked: result.unchecked.length,
   };
   if (!result.ties_out) {
-    try {
-      await db`UPDATE report_jobs SET status = 'failed', error = ${summary}, data_manifest = ${saved} WHERE id = ${jobId}`;
-    } catch (error) {
-      // The findings could not be saved; still fail the job, with the summary as its reason.
-      await failRenderingJob(db, jobId, `${summary} (The findings could not be saved: ${errorText(error)})`);
-    }
     // Thrown so the run ledger shows the step failed, with which figures and why.
-    throw new Error(summary);
+    return failReconcile(db, jobId, summary, { manifest: saved, detail });
   }
+  let completed: Array<{ id: string }>;
   try {
-    await db`
+    // Only a job still 'rendering' completes, so a cancel sent during reconcile stands (#1259).
+    completed = await db<Array<{ id: string }>>`
       UPDATE report_jobs
          SET status = 'complete', error = NULL, data_manifest = ${saved}, completed_at = NOW()
-       WHERE id = ${jobId}
+       WHERE id = ${jobId} AND status = 'rendering'
+       RETURNING id
     `;
   } catch (error) {
     const message = `Reconciled, but the report could not be marked complete: ${errorText(error)}`;
-    await failRenderingJob(db, jobId, message);
-    throw new Error(message, { cause: error });
+    return failReconcile(db, jobId, message, { cause: error, detail });
   }
+  if (completed.length === 0) return lostRace(db, jobId, "complete", summary, detail);
   return { status: "completed", summary: `${summary} It is ready to publish from the reports page.`, detail };
 }
 

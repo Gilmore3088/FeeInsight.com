@@ -68,6 +68,20 @@ describe("PATCH /api/reports/[id]/status (#1249)", () => {
     expect(m.calls.some((call) => call.text.includes("SELECT data_manifest"))).toBe(false);
   });
 
+  // #1259: a failed PATCH without an artifact key keeps the saved one.
+  it("keeps the saved artifact key when a terminal PATCH sends none", async () => {
+    expect((await patch({ status: "failed", error: "boom" })).status).toBe(200);
+    const write = m.calls.find((call) => call.text.includes("UPDATE report_jobs"));
+    expect(write?.text).toMatch(/artifact_key = COALESCE\(\?, artifact_key\)/);
+    expect(write?.values[1]).toBeNull();
+  });
+
+  it("still writes a key a terminal PATCH sends", async () => {
+    expect((await patch({ status: "failed", artifact_key: "reports/x.html" })).status).toBe(200);
+    const write = m.calls.find((call) => call.text.includes("UPDATE report_jobs"));
+    expect(write?.values[1]).toBe("reports/x.html");
+  });
+
   it("rejects a missing secret", async () => {
     const response = await PATCH(new Request("https://example.invalid/x", { method: "PATCH", body: "{}" }), {
       params: Promise.resolve({ id: "job-1" }),

@@ -144,7 +144,9 @@ async function handlePATCH(
       await tx`
         UPDATE report_jobs
            SET status = ${status},
-               artifact_key = ${body.artifact_key ?? null},
+               -- A PATCH without a key keeps the saved one (#1259), so a 'failed' PATCH
+               -- never clears the key of a report that was already rendered.
+               artifact_key = COALESCE(${body.artifact_key ?? null}, artifact_key),
                error = ${body.error ?? null},
                completed_at = NOW()
          WHERE id = ${id}
