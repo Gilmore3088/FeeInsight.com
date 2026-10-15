@@ -964,3 +964,13 @@ shown to readers?": "Show quarterly changes"). The monthly briefing shows what c
 quarter's stored copy. Recording the option management chose (with its plan, dollar effect and
 watches) is removed from code, the ledger and the deliverables; the unused deliverables API went in
 #1393. The database columns stay, unread.
+
+**A Pro buyer's institution is linked by their business email, not by a claim.** James,
+2026-10-15 (#1405): "When you sign up for pro, you say what institution you are at, prove it with a
+real email (business email), and that's how we associate the data with Hamilton." There is no claim
+for the buyer to file. Pro checkout for a bank or credit union refuses a personal address (Gmail and
+the like); the owner seat is granted once the email is confirmed and its host is exactly the bank's
+website (`src/lib/pro-institution-link.ts`). Anything else waits for the admin check in the Data
+Trust queue while Pro works at once (James, 09:17 UTC, decision card "Hold or block a Pro buyer
+whose email doesn't match their bank?": "Hold for review"). Any Pro reader may still research any
+institution.

@@ -126,6 +126,17 @@ describe("createCheckoutSession", () => {
     );
   });
 
+  it("asks for a work email before Pro for a bank, but lets a consultant use any address (#1405)", async () => {
+    mocks.getCurrentUserMock.mockResolvedValue(user({ email: "pat@gmail.com" }));
+    const { createCheckoutSession } = await import("./stripe-actions");
+    const result = await createCheckoutSession({ plan: "annual", institutionId: 2945 });
+    expect(result.url).toBeNull();
+    expect(result.error).toContain("needs your work email");
+    expect(mocks.stripeCheckoutCreateMock).not.toHaveBeenCalled();
+    await createCheckoutSession({ plan: "annual", otherOrganization: true });
+    expect(mocks.stripeCheckoutCreateMock).toHaveBeenCalledTimes(1);
+  });
+
   it("refuses checkout until the buyer says who the plan covers", async () => {
     const { createCheckoutSession } = await import("./stripe-actions");
     await expect(createCheckoutSession({ plan: "annual" })).resolves.toEqual({ url: null, error: "Pick your bank or credit union first" });
