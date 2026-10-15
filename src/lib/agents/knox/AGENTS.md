@@ -545,8 +545,10 @@ Rules 65, #1196 (Oct 14, no version change, so no document is re-read for it):
   that price's: the second fee's name and frequency are read from after it, and the second fee is
   not dropped as a repeat of the first price.
 
-v67 (rules 67, Oct 15, #1334; v66 was held for the #1102 dropped-lines fix, which shipped as v68): no rule changes. The bump makes every current text due for one
-more read, so the dropped-decimal reads above (#1196, #1305) reach pages Knox read before them:
+v67 (rules 67, Oct 15, #1334; v66 was held for the #1102 dropped-lines fix, which shipped as v68): no rule changes. The bump does not re-read every text: as with
+v68, a text Knox read before is read again at the new version only when it fires one of the
+triggers in "When Knox reads a text again" above, so the dropped-decimal reads above (#1196,
+#1305) reach the pages Knox read before them that a trigger picks:
 "Loan Skip A Pay Fee .... $29. 95/ea ch" (Xplore, doc 12872) is read at $29.95 and "ATM
 Transactions (per item) | $1 50* after 8/mo" (Members 1st, docs 13851 and 32358) at $1.50, where
 the stored reads said $29 and $1. The source check reads those prices the same way
