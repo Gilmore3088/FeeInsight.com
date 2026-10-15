@@ -15,8 +15,10 @@
 -- lock_timeout: adding a column and replacing a view take an ACCESS EXCLUSIVE lock. If a publish
 -- transaction holds the table or a view, this fails after 20 seconds instead of queueing every
 -- read behind it; it can then be run again. The first deploy (01:03 UTC Oct 15) used 5 seconds and
--- was cancelled by a 6-10 second read on the table; nothing was applied
--- (docs/project/findings/2026-10-15-migration-lock-timeout.md).
+-- was cancelled because an open transaction held a lock on the table (the logs do not name the
+-- holder); nothing was applied (docs/project/findings/2026-10-15-migration-lock-timeout.md).
+-- Pipeline step transactions often stay open longer than 20 seconds, so apply this with the
+-- pipeline control paused.
 --
 -- Rollback (only after #1336's step rollback has put every note back in `conditions`, or before
 -- that step ever ran). CREATE OR REPLACE VIEW cannot drop a view column, so:
