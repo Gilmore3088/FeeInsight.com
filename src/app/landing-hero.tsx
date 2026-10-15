@@ -3,86 +3,53 @@ import { PRO_PLANS_NAV } from "@/components/nav-items";
 import { TrackLink } from "@/components/track-link";
 import { PRODUCT_NAME, SITE_NAME } from "@/lib/constants";
 import type { PublicStatsSummary } from "@/lib/public-stats";
-import {
-  Eyebrow,
-  InstitutionSearchForm,
-  NationalRange,
-  SAMPLE_REPORT_HREF,
-  SANS,
-  TEXT_LINK,
-  type RangeEntry,
-} from "./landing-shared";
+import { Eyebrow, InstitutionSearchForm, SANS, hasFigure } from "./landing-shared";
 
-interface LandingHeroProps {
-  summary: Pick<PublicStatsSummary, "institutionsLabel" | "freshnessLabel">;
-  /** The national overdraft row; null hides the chart rather than drawing a guess. */
-  overdraft: RangeEntry | null;
-  /** The live sample report exists today. */
-  sampleLive: boolean;
-}
+const CHIP = "inline-flex min-h-10 items-center rounded-full border border-border bg-surface-0 px-3.5 text-[13px] font-medium text-ink hover:border-ink";
 
-/** Site v3 brief 08 §B.3, laid out as brief 04 Direction A: the promise, then the search. */
-export function LandingHero({ summary, overdraft, sampleLive }: LandingHeroProps) {
-  const hasCount = /\d/.test(summary.institutionsLabel);
-  const chips = [
-    { href: "/fees/overdraft", label: "Overdraft fees nationwide" },
-    { href: "/research/national-fee-index", label: "National fee report" },
-    ...(sampleLive ? [{ href: SAMPLE_REPORT_HREF, label: "Sample competitive report" }] : []),
-  ];
-
+/**
+ * Brief 06 §4.3 item 1: parchment, centred, one column. The promise, one sentence, the
+ * search, live microcopy and three working chips. Nothing else; the sizzle sits below.
+ */
+export function LandingHero({ summary }: { summary: Pick<PublicStatsSummary, "institutionsLabel" | "freshnessLabel"> }) {
   return (
-    <section className="border-b border-border bg-paper">
-      <div className="mx-auto grid max-w-6xl gap-10 px-4 py-10 sm:px-6 sm:py-14 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)] lg:items-center lg:gap-14">
-        <div className="min-w-0">
-          <Eyebrow>The {PRODUCT_NAME}</Eyebrow>
-          <h1
-            className="mt-3 text-[clamp(2.1rem,7vw,3.25rem)] font-extrabold leading-[1.05] tracking-[-0.025em] text-ink"
-            style={SANS}
-          >
-            <span className="block">Know where your fees stand,</span>
-            <span className="block text-brick">with a source for every figure.</span>
-          </h1>
-          <p className="mt-5 text-[17px] leading-relaxed text-ink-soft sm:text-[18px]">
-            The {PRODUCT_NAME} reads the published fee schedules of U.S. banks and credit unions. See each
-            of your fees against your market, your state, your Fed district, your peer group and the
-            nation, then let Hamilton, the {SITE_NAME} Pro workspace, write it up.
-          </p>
+    <section className="bg-paper">
+      <div className="mx-auto max-w-4xl px-4 pb-10 pt-12 text-center sm:px-6 sm:pb-12 sm:pt-20">
+        <Eyebrow>The {PRODUCT_NAME}</Eyebrow>
+        <h1
+          className="mt-4 text-[2.6rem] !font-semibold leading-[1.02] !tracking-[-0.045em] text-ink sm:text-[4.25rem]"
+          style={SANS}
+        >
+          Know where your fees stand, with a source for every figure
+        </h1>
+        <p className="mx-auto mt-5 text-[17px] leading-relaxed text-ink-soft sm:text-[19px]">
+          Compare each fee with your market, state, Fed district, peer group and the nation in Hamilton, the{" "}
+          {SITE_NAME} Pro workspace.
+        </p>
 
-          <InstitutionSearchForm className="mt-7" />
-          <p className="mt-2 text-[13px] leading-5 text-ink-muted">
-            {hasCount ? `${summary.institutionsLabel} institutions with published fees · ` : ""}
-            {summary.freshnessLabel}. Free to search.
-          </p>
+        <InstitutionSearchForm id="hero-search" className="mx-auto mt-8 max-w-2xl [&_.fi-field]:max-w-none" />
+        <p className="mt-3 text-[13px] leading-5 text-ink-muted">
+          {hasFigure(summary.institutionsLabel) ? `${summary.institutionsLabel} institutions with published fees · ` : ""}
+          {summary.freshnessLabel}
+        </p>
 
-          <ul className="mt-5 flex flex-wrap gap-2" aria-label="Try one of these">
-            {chips.map((chip) => (
-              <li key={chip.href}>
-                <Link
-                  href={chip.href}
-                  className="inline-flex rounded-full border border-border bg-surface-0 px-3 py-1.5 text-[13px] font-medium text-ink hover:border-ink"
-                >
-                  {chip.label}
-                </Link>
-              </li>
-            ))}
-          </ul>
-
-          <div className="mt-6 space-y-2 text-[14px] leading-6 text-ink-soft">
-            <p>
-              Questions for Hamilton come with Pro.{" "}
-              <TrackLink event="upgrade_click" eventProps={{ placement: "home_hero" }} href={PRO_PLANS_NAV.href} className={TEXT_LINK}>
-                {PRO_PLANS_NAV.label}
-              </TrackLink>
-            </p>
-            <p>Checking your own bank&apos;s fees? Search the same index, free.</p>
-          </div>
-        </div>
-
-        {overdraft ? (
-          <div className="min-w-0 rounded-lg border border-border bg-surface-0 p-5 sm:p-6">
-            <NationalRange row={overdraft} freshnessLabel={summary.freshnessLabel} />
-          </div>
-        ) : null}
+        <ul className="mt-5 flex flex-wrap justify-center gap-2" aria-label="Or start here">
+          <li>
+            <Link href="/fees/overdraft" className={CHIP}>
+              Overdraft fees nationwide
+            </Link>
+          </li>
+          <li>
+            <Link href="/research/national-fee-index" className={CHIP}>
+              Read the national report
+            </Link>
+          </li>
+          <li>
+            <TrackLink event="upgrade_click" eventProps={{ placement: "home_hero" }} href={PRO_PLANS_NAV.href} className={CHIP}>
+              {PRO_PLANS_NAV.label}
+            </TrackLink>
+          </li>
+        </ul>
       </div>
     </section>
   );

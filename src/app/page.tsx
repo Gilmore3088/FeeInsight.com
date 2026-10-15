@@ -8,14 +8,16 @@ import { sampleReportAvailable } from "@/lib/custom-report/sample-report";
 import { ConsumerNav } from "@/components/consumer-nav";
 import { CustomerFooter } from "@/components/customer-footer";
 import { SearchModal } from "@/components/public/search-modal";
+import { getFeeCategoryDetailCached } from "@/lib/data-store/public-cached-reads";
 import { LandingHero } from "./landing-hero";
-import { LandingProof } from "./landing-proof";
-import { LandingEveryFee, LandingEveryMarket, LandingOneWorkspace } from "./landing-pillars";
-import { LandingFeePath, LandingFiveSources, LandingHowToStart } from "./landing-explainers";
+import { LandingSizzle } from "./landing-sizzle";
+import { LandingBeforeAfter } from "./landing-before-after";
+import { LandingPillars } from "./landing-pillars";
+import { LandingProvenance } from "./landing-provenance";
 import { LandingPricing } from "./landing-pricing";
 import { LandingFaq } from "./landing-faq";
 import { LandingClose } from "./landing-close";
-import { nationalRange } from "./landing-shared";
+import { buildHomeData } from "./landing-shared";
 
 // The buyer promise from site v3 brief 08 §B.3 (h1) and its subhead; no counts, so nothing goes stale.
 const HOME_TITLE = `Know where your fees stand, with a source for every figure | ${SITE_NAME}`;
@@ -63,9 +65,17 @@ const WEBSITE_JSON_LD = {
 
 export default async function LandingPage() {
   // Counts and the national ranges come from one shared snapshot, so they match the fee
-  // index, research hub and directory to the number.
-  const [{ summary, categories }, sampleLive] = await Promise.all([getPublicSnapshot(), sampleReportAvailable()]);
-  const overdraft = nationalRange(categories, "overdraft");
+  // index, research hub and directory to the number. The district medians are the cached
+  // read /fees/overdraft already makes; a failed read only hides the district rows.
+  const [{ summary, categories }, sampleLive, overdraftDetail] = await Promise.all([
+    getPublicSnapshot(),
+    sampleReportAvailable(),
+    getFeeCategoryDetailCached("overdraft").catch((error: unknown) => {
+      console.error("[home] overdraft district read failed; district rows hidden", error);
+      return null;
+    }),
+  ]);
+  const data = buildHomeData(summary, categories, overdraftDetail?.by_fed_district);
 
   return (
     <div className="min-h-screen overflow-x-clip bg-paper consumer-brand">
@@ -79,15 +89,12 @@ export default async function LandingPage() {
       />
       <ConsumerNav />
       <main id="main-content">
-        <LandingHero summary={summary} overdraft={overdraft} sampleLive={sampleLive} />
-        <LandingProof summary={summary} />
-        <LandingFiveSources />
-        <LandingEveryFee categories={categories} summary={summary} />
-        <LandingEveryMarket overdraft={overdraft} summary={summary} />
-        <LandingOneWorkspace />
-        <LandingFeePath summary={summary} />
+        <LandingHero summary={summary} />
+        <LandingSizzle data={data} />
+        <LandingBeforeAfter />
+        <LandingPillars data={data} />
+        <LandingProvenance summary={summary} />
         <LandingPricing />
-        <LandingHowToStart />
         <LandingFaq summary={summary} />
         <LandingClose />
       </main>
