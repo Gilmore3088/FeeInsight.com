@@ -402,16 +402,18 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
   },
   // v65: excess withdrawals and returned mail are their own types (James, Oct 15, #1398; nothing is
   // filed there until `RESEARCH_SPLIT_LIVE` is on). An excess withdrawal row is often named only
-  // "Service charge" with its limit on its own line (`refileFromLine`), so the name must say excess,
-  // withdrawal, transfer, transaction, debit, limit, Reg D or activity, or be a service charge or fee;
-  // and it must not name another fee: research, an IRA, returned mail, a copy, an ATM or a foreign or
+  // "Service charge" with its limit on its own line (`refileFromLine`), so the name must name excess
+  // withdrawals, transactions, transfers, debits or activity, a withdrawal limit, activity over or
+  // after a count, or Reg D, or be a bare (savings, money market or share) service charge or fee; a
+  // transaction, transfer or debit fee, a credit limit or a monthly or business service charge is
+  // not one. And it must not name another fee: research, an IRA, returned mail, a copy, an ATM or a foreign or
   // international charge, an early withdrawal penalty, an overdraft or NSF, a returned item, an
   // official check, a statement, a wire, a club, a certificate, a point-of-sale or teller charge, a
   // business account's item count, maintenance or a minimum balance, check printing or cashing, a
   // safe deposit box, a loan, a card, a collection, a subordination, escheatment or a legal fee.
   excess_withdrawal: {
     include:
-      /(excess|withdraw|transfers?\b|transactions?\b|\bdebits?\b|\blimits?\b|\breg(?:ulation)?\.?\s?d\b|\bactivity\b|\bservice\s+(?:charges?|fees?)\b)/i,
+      /(\bexcess(?:ive)?\s+(?:[\w/-]+\s+){0,2}?(?:withdrawals?|transactions?|transfers?|debits?|activity)\b|\bwithdrawal\s+limits?\b|\b(?:withdrawals?|transactions?|transfers?|debits?)\s+(?:in\s+excess|over\s+\d|beyond|after\s+\d)|\breg(?:ulation)?\.?\s?d\b|^\W*(?:(?:savings|money market|mmdas?|share)\s+(?:accounts?\s+)?)?service\s+(?:charges?|fees?)\b)/i,
     exclude:
       /(maintenance|minimum balance|printing|safe deposit|\bloans?\b|\bcards?\b|collection|subordinat|escheat|\blegal\b|check cashing|research|reconcil|\bira\b|\breturn(?:ed)?\s+(?:mail|statements?|items?|checks?|deposits?)\b|undeliver|\baddress|\bfax|\b(?:photo ?)?cop(?:y|ies)\b|\bwires?\b|stop pay|dorman|inactiv|\batms?\b|non[- ]?network|foreign|international|\bearly\b|penalt|overdraft|\bnsf\b|cashier|\bstatements?\b(?!\s+(?:savings|cycle|period))|\bclubs?\b|certificate|\bcds?\b|\bpos\b|teller|\bexcess(?:ive)?\s+(?:[\w/-]+\s+){0,2}items?\b|\bitems?\s+(?:over|in excess|after)\b|debit cards?)/i,
   },

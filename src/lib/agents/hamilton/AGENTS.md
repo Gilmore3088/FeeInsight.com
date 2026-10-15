@@ -714,12 +714,14 @@ counted as `noHomeHeld`. `refileCategory` applies the same rules to new reads, s
 keep hinting the retired keys. Publish skips a fee still under a retired key.
 
 The same step applies the live splits (`SPLIT_CATEGORIES`): fees in a live category whose name
-belongs to another type move there, under the same guard and range test. Fold v16 (James, Oct 15,
+belongs to another type move there, under the same guard and range test. Fold v17 (James, Oct 15,
 #1398: "Add both") gives excess withdrawals (`excess_withdrawal`) and returned mail
 (`returned_mail`) their own types, dark until `RESEARCH_SPLIT_LIVE` is on. While it is off,
 returned statements leaving paper statements, excess activity leaving other lending and the hand
-re-files (21141 and 77918 renamed in place, 44516) all still go to account research, and nothing
-moves out of it. Every step writes a dry run of the switched split to its detail,
+re-files (21141 and 77918 renamed in place, 44516) all still go to account research, the paper
+statement and e-statement rules match exactly as before (a "return to paper statements" charge
+still goes to account research), and nothing moves out of it. Once on, a return to paper
+statements charge is a paper statement fee, never returned mail. Every step writes a dry run of the switched split to its detail,
 `taxonomy_fold.pendingResearchSplit`: `wouldMove` and `wouldMoveLive`, `byRoute`
 (`account_research->excess_withdrawal`, `account_research->returned_mail`), the ones the new
 type's guard or range would refuse (`refused`, `refusedByRoute`, which stay research), and ten

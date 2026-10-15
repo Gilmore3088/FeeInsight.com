@@ -17,8 +17,10 @@
  * per-item charges, typically $5). The whole change is dark while this is off: the two types are
  * not in `FEE_FAMILIES`, and every rule that would file a fee there (the fold's splits and
  * e-statement rule, the category guard's line re-file, the hand re-files, the taxonomy aliases)
- * keeps filing it under account research, as before. Off, Hamilton's fold step only reports what
- * the research split would move (`pendingResearchSplit` in its detail). On, new reads file there,
+ * keeps filing it under account research, as before, and the fold's paper statement and e-statement
+ * rules match exactly as before (a "return to paper statements" charge included). Off, nothing
+ * moves: Hamilton's fold step only reports what the research split would move
+ * (`pendingResearchSplit` in its detail). On, new reads file there,
  * and live and verified fees under account research move by name (`EXCESS_WITHDRAWAL`,
  * `RETURNED_MAIL`; logged as `category_fold`, old category kept), each only when the new type's
  * guard and price range accept it. Off until James says go; turning it on is this one line (Knox's
@@ -29,6 +31,24 @@ export const RESEARCH_SPLIT_LIVE = false;
 /** The key a rule files under: the new type while `RESEARCH_SPLIT_LIVE` is on, account research while it is off. Pure. */
 export function researchSplitTarget(key: "excess_withdrawal" | "returned_mail", live: boolean = RESEARCH_SPLIT_LIVE): string {
   return live ? key : "account_research";
+}
+
+/** A "return to paper statements" charge: a paper statement fee, never returned mail, once the research split is on. */
+const RETURN_TO_PAPER = /\breturn(?:ing)?\s+to\s+paper/i;
+/** Main's e-statement return rule, unchanged while the research split is off. */
+const ESTATEMENT_RETURNED = /\breturn(?:ed)?\b|\bundeliverable\b|\b(?:incorrect|bad|invalid|wrong) e-?mail\b/i;
+
+/**
+ * The e-statement fold's return rules. Off, exactly main's one rule (a return, including a return to
+ * paper, goes to account research); on, a return to paper is a paper statement fee and any other
+ * return is returned mail. Pure.
+ */
+export function estatementReturnRules(live: boolean = RESEARCH_SPLIT_LIVE): { to: string; name: RegExp }[] {
+  if (!live) return [{ to: "account_research", name: ESTATEMENT_RETURNED }];
+  return [
+    { to: "paper_statement", name: RETURN_TO_PAPER },
+    { to: "returned_mail", name: new RegExp(String.raw`^(?![\s\S]*${RETURN_TO_PAPER.source})[\s\S]*(?:${ESTATEMENT_RETURNED.source})`, "i") },
+  ];
 }
 
 /** A fold rule: the fee goes to `to` (null: no home in the 50) when its text matches. */
@@ -106,19 +126,15 @@ export const RETIRED_CATEGORIES: Readonly<Record<string, RetiredCategory>> = {
     otherwise: null,
   },
   // A returned e-statement is returned mail (its own type once `RESEARCH_SPLIT_LIVE` is on; account
-  // research before), but a "return to paper statements" charge is a paper statement fee, never
-  // returned mail, whether or not the switch is on; a copy is a copy fee; a paper-and-electronic
+  // research before, a "return to paper statements" charge included, as on main); once on, a "return
+  // to paper statements" charge is a paper statement fee, never returned mail; a copy is a copy fee; a paper-and-electronic
   // charge is a paper statement; "Bill Pay (w/o ... e-statement)" is bill pay. A fee for the
   // e-statement itself, a free e-statement, and the waiver wording that names e-statements
   // have no home.
   estatement_fee: {
     family: "Account Maintenance",
     rules: [
-      { to: "paper_statement", name: /\breturn(?:ing)?\s+to\s+paper/i },
-      {
-        to: researchSplitTarget("returned_mail"),
-        name: /^(?![\s\S]*\breturn(?:ing)?\s+to\s+paper)[\s\S]*(?:\breturn(?:ed)?\b|\bundeliverable\b|\b(?:incorrect|bad|invalid|wrong) e-?mail\b)/i,
-      },
+      ...estatementReturnRules(),
       { to: "document_reproduction", name: /\bduplicate\b|\bcop(?:y|ies)\b|\breprints?\b/i },
       { to: "bill_pay", name: /^bill pay\b/i },
       { to: "paper_statement", name: /\bdual statement|\bboth (?:an? )?e-?statements? (?:&|and) paper\b|\bmultiple statements? \(mailable/i },
@@ -358,8 +374,13 @@ export const CROSS_BORDER_BUNDLE =
  */
 export const ATM_ADJUSTMENT = /^(?![\s\S]*\b(?:limits?|deposit\w*)\b)[\s\S]*\batm\b[\s\S]{0,20}\badjust(?:ment|ments|ed)?\b/i;
 
-/** A statement mailed back undelivered ("Returned Mailed Statement", "Return Statement Charge"), filed as returned mail. */
-const RETURNED_STATEMENT = /^(?![\s\S]*\breturn(?:ing)?\s+to\s+paper)[\s\S]*\breturn(?:ed)?\b[\s\S]*\b(?:mail|statement)/i;
+/**
+ * A statement mailed back undelivered ("Returned Mailed Statement", "Return Statement Charge"), filed
+ * as returned mail once the research split is on; then a "return to paper statements" charge stays a
+ * paper statement fee. Off, main's pattern, which sends that charge to account research too.
+ */
+const RETURNED_STATEMENT_OFF = /\breturn(?:ed)?\b[\s\S]*\b(?:mail|statement)/i;
+const RETURNED_STATEMENT = new RegExp(String.raw`^(?![\s\S]*${RETURN_TO_PAPER.source})[\s\S]*${RETURNED_STATEMENT_OFF.source}`, "i");
 
 export interface SplitCategory {
   to: string;
@@ -441,7 +462,11 @@ export function splitCategoriesFor(options: {
     },
     // A statement mailed back undelivered is returned mail (its own type once the research split is
     // on; account research before).
-    paper_statement: { to: researchSplitTarget("returned_mail", research), name: RETURNED_STATEMENT, sqlPattern: "return" },
+    paper_statement: {
+      to: researchSplitTarget("returned_mail", research),
+      name: research ? RETURNED_STATEMENT : RETURNED_STATEMENT_OFF,
+      sqlPattern: "return",
+    },
     // Excess savings or money market activity is an excess withdrawal fee (account research while the
     // research split is off), not a lending fee. A
     // subordination is legal process (James, Oct 15), moved only while `SUBORDINATION_REFILE_LIVE` is on.
@@ -507,8 +532,8 @@ export function splitLiveCategory(
 // v17: excess withdrawals and returned mail have their own types (James, Oct 15, #1398), dark until
 // `RESEARCH_SPLIT_LIVE` is on: then the paper statement, other lending and e-statement rules file
 // there and account research's split moves its excess withdrawal and returned mail fees there.
-// A "return to paper statements" charge is never returned mail: an e-statement one is a paper
-// statement fee, and a paper statement one stays there.
+// Once on, a "return to paper statements" charge is never returned mail: an e-statement one is a
+// paper statement fee, and a paper statement one stays there. Off, both match exactly as on main.
 export const FOLD_RULES_VERSION = 17;
 
 /** The retired categories that sat in these families. */

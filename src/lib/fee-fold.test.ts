@@ -19,6 +19,7 @@ import {
   researchSplitTarget,
   EXCESS_WITHDRAWAL,
   RETURNED_MAIL,
+  estatementReturnRules,
 } from "./fee-fold";
 
 const TAXONOMY = new Set(Object.values(FEE_FAMILIES).flat());
@@ -107,11 +108,10 @@ describe("top-50 fold", () => {
     expect(to("estatement_fee", "Returned eStatement due to incorrect email address")).toBe(RETURNED);
     expect(to("estatement_fee", "eStatement incorrect email address")).toBe(RETURNED);
     expect(to("estatement_fee", "~ Undeliverable E-Statement Fee (per statement)")).toBe(RETURNED);
-    // A charge for going back to paper statements is a paper statement fee, never returned mail,
-    // with the research split off or on.
-    expect(to("estatement_fee", "Fee to return to paper statements")).toBe("paper_statement");
-    expect(to("estatement_fee", "Returning to paper statements after e-Statement enrollment")).toBe("paper_statement");
-    expect(to("estatement_fee", "Return to Paper Statement")).toBe("paper_statement");
+    // A charge for going back to paper statements: as on main while the research split is off,
+    // a paper statement fee (never returned mail) once it is on.
+    expect(to("estatement_fee", "Fee to return to paper statements")).toBe(RESEARCH_SPLIT_LIVE ? "paper_statement" : "account_research");
+    expect(to("estatement_fee", "Return to Paper Statement")).toBe(RESEARCH_SPLIT_LIVE ? "paper_statement" : "account_research");
     expect(to("estatement_fee", "One-time duplicate e-statement")).toBe("document_reproduction");
     expect(to("estatement_fee", "Dual statement delivery (for having both eStatement & paper)")).toBe("paper_statement");
     expect(to("estatement_fee", "Free eStatements")).toBeNull();
@@ -249,7 +249,8 @@ describe("top-50 fold", () => {
       ["paper_statement", "Return Statement Charge", 5, RETURNED],
       ["paper_statement", "^ Return of Paper Statement Fee (Per statement)", 5, RETURNED],
       ["paper_statement", "Paper Statement Fee", 3, null],
-      ["paper_statement", "Return to paper statements fee", 3, null],
+      // As on main while the research split is off; a paper statement fee once it is on.
+      ["paper_statement", "Return to paper statements fee", 3, RESEARCH_SPLIT_LIVE ? null : "account_research"],
       ["account_research", "Fax (Outgoing)", 5, "document_reproduction"],
       ["account_research", "Copy of previous statement", 5, "document_reproduction"],
       ["account_research", "Fax, Photo, Imaged and Microfilm Copies", 6, "document_reproduction"],
@@ -393,12 +394,33 @@ describe("top-50 fold", () => {
     expect(off.other_lending_fee.to).toBe("account_research");
     expect(on.paper_statement.to).toBe("returned_mail");
     expect(on.other_lending_fee.to).toBe("excess_withdrawal");
-    // A return to paper statements stays a paper statement fee, off and on.
-    for (const name of ["Return to paper statements fee", "Returning to paper statements"]) {
-      expect([name, splitLiveCategory("paper_statement", name, off)?.to ?? null]).toEqual([name, null]);
-      expect([name, splitLiveCategory("paper_statement", name, on)?.to ?? null]).toEqual([name, null]);
-      expect([name, passesDarwinChecks("paper_statement", name, 3)]).toEqual([name, true]);
+    // Review B2: a return to paper statements matches exactly as on main while the switch is off
+    // (main's results, written out), and once on stays, or becomes, a paper statement fee.
+    const mainResults: [string, string, string | null, string | null][] = [
+      // [retired or split key, name, where main files it, where it goes once the switch is on]
+      ["estatement_fee", "Fee to return to paper statements", "account_research", "paper_statement"],
+      ["estatement_fee", "Return to Paper Statement", "account_research", "paper_statement"],
+      ["estatement_fee", "Return to paper", "account_research", "paper_statement"],
+      ["estatement_fee", "Returning to paper statements after e-Statement enrollment", null, "paper_statement"],
+      ["estatement_fee", "Returned eStatement due to incorrect email address", "account_research", "returned_mail"],
+      ["paper_statement", "Return to paper statements fee", "account_research", null],
+      ["paper_statement", "Returning to paper statements", null, null],
+      ["paper_statement", "Return to paper", null, null],
+      ["paper_statement", "Returned Mailed Statement", "account_research", "returned_mail"],
+    ];
+    for (const [key, name, main, onTo] of mainResults) {
+      if (key === "estatement_fee") {
+        const ruleTo = (live: boolean) => estatementReturnRules(live).find((rule) => rule.name.test(name))?.to ?? null;
+        // Off, main's rule; a name main's rule misses falls through to the same later rules as on main.
+        expect([name, ruleTo(false) ?? to(key, name) ?? null]).toEqual([name, main]);
+        expect([name, ruleTo(true)]).toEqual([name, onTo]);
+        if (!RESEARCH_SPLIT_LIVE) expect([name, to(key, name) ?? null]).toEqual([name, main]);
+      } else {
+        expect([name, splitLiveCategory(key, name, off)?.to ?? null]).toEqual([name, main]);
+        expect([name, splitLiveCategory(key, name, on)?.to ?? null]).toEqual([name, onTo]);
+      }
     }
+    expect(passesDarwinChecks("paper_statement", "Return to paper statements fee", 3)).toBe(true);
     expect(researchSplitTarget("returned_mail", false)).toBe("account_research");
     expect(researchSplitTarget("excess_withdrawal", true)).toBe("excess_withdrawal");
     expect(EXCESS_WITHDRAWAL.test("Service charge")).toBe(false);
