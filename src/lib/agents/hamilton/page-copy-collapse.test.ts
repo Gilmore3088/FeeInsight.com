@@ -74,8 +74,9 @@ describe("pageCopyRepeats (#1439)", () => {
     const found = pageCopyRepeats(rows, new Map([["100", business], ["200", `Personal ${TEXT}`]]));
     expect(found.otherDocument).toBe(1);
     expect(found.collapses).toHaveLength(0);
-    expect(pageCopyRepeats(rows, new Map([["100", letter], ["200", TEXT]])).otherDocument).toBe(1);
-    expect(found.collapses).toHaveLength(0);
+    const fromLetter = pageCopyRepeats(rows, new Map([["100", letter], ["200", TEXT]]));
+    expect(fromLetter.otherDocument).toBe(1);
+    expect(fromLetter.collapses).toHaveLength(0);
     expect(pageCopyRepeats(rows, new Map([["200", TEXT]])).otherDocument).toBe(1);
   });
 
@@ -105,5 +106,39 @@ describe("pageCopyRepeats (#1439)", () => {
     ];
     const found = pageCopyRepeats(rows, new Map([["100", july], ["200", january]]));
     expect(found.collapses).toEqual([expect.objectContaining({ feePublishedId: 2, keptFeePublishedId: 1 })]);
+  });
+
+  it("reads a navigation menu as no audience, and a schedule heading past the opening as one", () => {
+    const rows = [
+      row({ fee_published_id: 1, source_document_id: 100, document_url: "https://bank.com/fees" }),
+      row({ fee_published_id: 2, source_document_id: 200, document_url: "https://bank.com/fees?print=1", crawled_at: "2026-10-10" }),
+    ];
+    const rendered = `Skip to content Personal Business Commercial Lending About Us Corporate Office ${TEXT}`;
+    expect(pageCopyRepeats(rows, new Map([["100", rendered], ["200", TEXT]])).collapses).toHaveLength(1);
+    const late = (heading: string) => `First Bank 100 Main Street Member FDIC Equal Housing Lender ${"Lorem ipsum ".repeat(40)} ${heading} ${TEXT}`;
+    const apart = pageCopyRepeats(rows, new Map([["100", late("Business Account Fees")], ["200", late("Personal Account Fees")]]));
+    expect(apart.otherDocument).toBe(1);
+  });
+
+  it("reads prices whole and needs most of them shared", () => {
+    expect(sameScheduleText("Box $1000.00 Box $100.00", "Box $100.00 Box $1,000")).toBe(true);
+    expect(sameScheduleText("Box $1000.00", "Box $100.00")).toBe(false);
+    expect(sameScheduleText("Coin $.50 Wire $25", "Coin $0.50 Wire $25.00")).toBe(true);
+    // A "popular fees" page with 6 of a schedule's 10 prices is not a copy of it.
+    const all = Array.from({ length: 10 }, (_, i) => `Fee ${i} $${i + 1}.00`).join(" ");
+    const some = Array.from({ length: 6 }, (_, i) => `Fee ${i} $${i + 1}.00`).join(" ");
+    expect(sameScheduleText(all, some)).toBe(false);
+  });
+
+  it("orders by read date unless every copy states its edition, and ignores an announced future change", () => {
+    const undated = row({ fee_published_id: 1, source_document_id: 100, crawled_at: "2026-10-10" });
+    const dated = row({ fee_published_id: 2, source_document_id: 200, document_url: "https://bank.com/fee-schedule.pdf?v=2", crawled_at: "2026-08-05" });
+    const mixed = pageCopyRepeats([undated, dated], new Map([["100", TEXT], ["200", `Effective August 1, 2026 ${TEXT}`]]));
+    expect(mixed.collapses).toEqual([expect.objectContaining({ feePublishedId: 2, keptFeePublishedId: 1 })]);
+    const announced = pageCopyRepeats(
+      [row({ fee_published_id: 1, source_document_id: 100, crawled_at: "2026-10-10" }), row({ fee_published_id: 2, source_document_id: 200, document_url: "https://bank.com/fee-schedule.pdf?v=2", crawled_at: "2026-09-01" })],
+      new Map([["100", `Effective July 1, 2026 ${TEXT}`], ["200", `Effective June 1, 2026 ${TEXT} Fees change effective January 1, 2027`]]),
+    );
+    expect(announced.collapses).toEqual([expect.objectContaining({ feePublishedId: 2, keptFeePublishedId: 1 })]);
   });
 });

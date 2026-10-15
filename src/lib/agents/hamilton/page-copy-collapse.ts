@@ -50,9 +50,9 @@ export interface PageCopyResult {
   institutions: number;
   /** Rows paired with a copy of the same line from another document of the same page. */
   pairs: number;
-  /** Kept apart: the newest copy prints both names as their own lines at the price. */
+  /** Kept apart: the kept copy prints both names as their own lines at the price. */
   apartOnPage: number;
-  /** Kept: the newest copy has no stored text, or does not print the kept name at the price. */
+  /** Kept: the kept copy has no stored text, or does not print the kept name at the price. */
   unproven: number;
   /**
    * Kept: the two documents share a page key but not their prices ("?id=101" and "?id=202",
@@ -67,28 +67,41 @@ function sameLine(a: string | null, b: string | null): boolean {
   return (one !== "" && one === two) || nearNames(a, b);
 }
 
-const SAME_SCHEDULE_OVERLAP = 0.6;
-const PRICE = /\$\s?(\d{1,3}(?:,\d{3})*|\d+)(?:\.(\d{2}))?/g;
+const SAME_SCHEDULE_OVERLAP = 0.8;
+const PRICE = /\$\s?((?:\d{1,3}(?:,\d{3})+|\d+)?)(?:\.(\d{1,2}))?(?!\d)/g;
 
-/** The audience a schedule names in its address, else in its opening words; null when neither does. */
+const BUSINESS_WORD = "business|commercial|corporate|treasury";
+const CONSUMER_WORD = "consumer|personal|retail|individual";
+const scheduleHeading = (words: string) =>
+  new RegExp(` (?:(?:${words}) (?:banking )?(?:accounts? )?(?:fee schedule|schedule of fees|fees|service charges)|(?:fee schedule|schedule of fees|fees|service charges) for (?:${words}) (?:banking )?accounts?) `);
+const BUSINESS_HEADING = scheduleHeading(BUSINESS_WORD);
+const CONSUMER_HEADING = scheduleHeading(CONSUMER_WORD);
+
+/**
+ * The audience a schedule names: in its address path, else in a schedule heading anywhere in its
+ * text ("Business Account Fees", "Schedule of Fees for Personal Accounts"); null when it names
+ * none or both. A bare "Personal Business Commercial" navigation menu names none.
+ */
 function audienceOf(url: string | null, text: string): ScheduleAudience {
   const named = scheduleAudience(url);
   if (named) return named;
-  const opening = ` ${text.slice(0, 300).toLowerCase().replace(/[^a-z]+/g, " ")} `;
-  if (/ (?:business|commercial|corporate|treasury) /.test(opening)) return "business";
-  if (/ (?:consumer|personal|retail|individual) /.test(opening)) return "consumer";
-  return null;
+  const words = ` ${text.toLowerCase().replace(/[^a-z]+/g, " ")} `;
+  const [business, consumer] = [BUSINESS_HEADING.test(words), CONSUMER_HEADING.test(words)];
+  return business === consumer ? null : business ? "business" : "consumer";
 }
 
 function prices(text: string): Set<string> {
   const out = new Set<string>();
-  for (const m of text.matchAll(PRICE)) out.add(`${m[1].replace(/,/g, "")}.${m[2] ?? "00"}`);
+  for (const m of text.matchAll(PRICE)) {
+    if (!m[1] && !m[2]) continue;
+    out.add(`${Number(m[1].replace(/,/g, "") || 0)}.${(m[2] ?? "").padEnd(2, "0")}`);
+  }
   return out;
 }
 
 /**
  * Pure: do two stored texts read as copies of one schedule? They print mostly the same prices:
- * the distinct dollar amounts of each overlap at 0.6 or more (Jaccard). Prices survive what
+ * the distinct dollar amounts of each overlap at 0.8 or more (Jaccard). Prices survive what
  * wording does not: a two-column PDF read in another order (Dutch Point), a rendered page against
  * its structured data (IBC). A fee-change letter stored under the schedule's address prints only
  * the changed prices (JDCU), and stays apart.
@@ -141,18 +154,23 @@ export function pageCopyRepeats(rows: PageCopyRow[], texts: Map<string, string>)
     const key = [row.institution_id, page, row.canonical_fee_key, row.variant_type ?? "", Number(row.amount).toFixed(2)].join("|");
     groups.set(key, [...(groups.get(key) ?? []), row]);
   }
-  // The kept copy is the latest edition: the effective date its text states, else when it was read.
-  const editions = new Map<string, number>();
-  const time = (row: PageCopyRow) => {
+  // The kept copy is the latest edition: by the effective dates the texts state when every copy in
+  // the group states one, else by when each was read. A stated date after the read is a coming
+  // change the page announces, not its edition, and does not count.
+  const stated = new Map<string, number | null>();
+  const statedDate = (row: PageCopyRow) => {
     const id = String(row.source_document_id);
-    if (!editions.has(id)) {
-      const stated = effectiveDate(texts.get(id));
-      editions.set(id, new Date(stated ?? row.crawled_at ?? 0).getTime());
+    if (!stated.has(id)) {
+      const date = effectiveDate(texts.get(id));
+      const read = new Date(row.crawled_at ?? 0).getTime();
+      stated.set(id, date && new Date(date).getTime() <= read ? new Date(date).getTime() : null);
     }
-    return editions.get(id)!;
+    return stated.get(id)!;
   };
   for (const group of groups.values()) {
     if (new Set(group.map((row) => String(row.source_document_id))).size < 2) continue;
+    const byStated = group.every((row) => statedDate(row) != null);
+    const time = (row: PageCopyRow) => (byStated ? statedDate(row)! : new Date(row.crawled_at ?? 0).getTime());
     const ordered = [...group].sort((a, b) => time(b) - time(a) || Number(b.source_document_id) - Number(a.source_document_id) || Number(b.fee_published_id) - Number(a.fee_published_id));
     const kept: PageCopyRow[] = [];
     for (const row of ordered) {
@@ -200,7 +218,7 @@ export function pageCopyRepeats(rows: PageCopyRow[], texts: Map<string, string>)
 }
 
 /**
- * Close live rows that repeat a line of a newer copy of their page (`pageCopyRepeats`), up to
+ * Close live rows that repeat a line of the latest edition of their page (`pageCopyRepeats`), up to
  * `PAGE_COPY_COLLAPSE_INSTITUTIONS` institutions per step. While `PAGE_COPY_COLLAPSE_LIVE` is
  * false, or in a dry run, it reports and writes nothing. A closed row gets `duplicate of #<kept
  * id> (copy of the page)`; clearing `rolled_back_at` restores it.
@@ -296,7 +314,7 @@ export async function collapsePageCopies(
         INSERT INTO agent_run_events (agent_run_id, event_type, status, message, detail)
         VALUES (
           ${options.runId}, 'hamilton.page_copy_duplicates_collapsed', 'completed',
-          ${`Closed ${result.collapses.length} published fee(s) that repeated a line of a newer copy of their page`},
+          ${`Closed ${result.collapses.length} published fee(s) that repeated a line of the latest edition of their page`},
           ${JSON.stringify({ batch_id: options.batchId, collapsed: result.collapses.length, samples: result.collapses.slice(0, 20) })}::jsonb
         )
       `);

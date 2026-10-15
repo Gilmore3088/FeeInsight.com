@@ -608,17 +608,19 @@ on page, not printed, no text, would close, samples) and closes the repeats. Rol
 "%20", a mirror) is several documents, so a line of it went live once per copy.
 `page-copy-collapse.ts` groups live rows of one institution, category, variant and amount read from
 different documents of one page (`feePageKey`) under the same or a near name, and keeps the copy
-from the latest edition (the effective date its text states, else the newest read). That document's
-stored text must print the kept name at the price, and the two documents must print mostly the same
-prices (distinct dollar amounts overlapping at 0.6 or more, `sameScheduleText`), since `feePageKey`
-keys "?id=101" and "?id=202" alike; prices survive a two-column PDF read in another order, and a
-fee-change letter stored under the schedule's address stays apart. Two documents that name
-different audiences (in the address or the opening words) are never copies. A pair the kept text
-prints as two lines, or under both a personal and a business heading, stays two fees. Frequencies
-and audiences must agree or be unstated. Up to 25 institutions per step; each step reports
-`page_copy_collapse` (pairs, apart on page, unproven, other document, would close, samples).
-`PAGE_COPY_COLLAPSE_LIVE` stays off until James approves the dry-run counts. Rollback: clear
-`rolled_back_at` on rows whose reason ends in `(copy of the page)`.
+from the latest edition: by the effective dates the texts state when every copy in the group states
+one (a date after the read is an announced change and does not count), else by when each was read.
+The kept document's stored text must print the kept name at the price, and the two documents must
+print mostly the same prices (distinct dollar amounts overlapping at 0.8 or more,
+`sameScheduleText`), since `feePageKey` keys "?id=101" and "?id=202" alike. Prices survive a
+two-column PDF read in another order; a fee-change letter or a "popular fees" page stays apart. Two
+documents that name different audiences (in the URL path, or in a schedule heading such as
+"Business Account Fees" anywhere in the text; a navigation menu names none) are never copies. A
+pair the kept text prints as two lines, or under both a personal and a business heading, stays two
+fees. Frequencies and audiences must agree or be unstated. Up to 25 institutions per step; each
+step reports `page_copy_collapse` (pairs, apart on page, unproven, other document, would close,
+samples). `PAGE_COPY_COLLAPSE_LIVE` stays off until James approves the dry-run counts. Rollback:
+clear `rolled_back_at` on rows whose reason ends in `(copy of the page)`.
 
 **At publish (#1069 step 1, shadow).** Each row the publish step is about to publish is checked
 against its live copies with the exact collapse's own test (`exact-duplicate.ts`: institution,
