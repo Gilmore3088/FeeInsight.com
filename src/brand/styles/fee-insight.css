@@ -35,7 +35,17 @@
 .fi-range .med{stroke:var(--fi-ink);stroke-width:2}
 .fi-range .you{fill:var(--fi-brick);stroke:var(--fi-paper);stroke-width:2}
 .fi-range-axis{display:grid;grid-template-columns:minmax(120px,180px) 1fr 72px;gap:var(--fi-space-4);font:400 12px/16px var(--fi-font-mono);color:var(--fi-muted)}
-.fi-range-axis div:nth-child(2){display:flex;justify-content:space-between}
+.fi-range-axis div:nth-child(2){position:relative;height:16px}
+.fi-range-axis span{position:absolute;top:0;transform:translateX(-50%);white-space:nowrap}
+.fi-range-axis span:first-child{transform:none}
+.fi-range-axis span:last-child{transform:translateX(-100%)}
+/* Phones: the label takes its own line so the plot gets the full width, and only the end ticks show. */
+@media (max-width:479px){
+.fi-range,.fi-range-axis{grid-template-columns:1fr 64px;column-gap:var(--fi-space-3);row-gap:var(--fi-space-1)}
+.fi-range-label{grid-column:1/-1}
+.fi-range-axis>div:first-child{display:none}
+.fi-range-axis span:not(:first-child):not(:last-child){display:none}
+}
 /* StatCard */
 .fi-stat{background:var(--fi-surface-0);border:1px solid var(--fi-border);border-radius:var(--fi-radius-lg);padding:var(--fi-space-6);display:flex;flex-direction:column;gap:var(--fi-space-2);min-width:220px}
 .fi-stat-label{font:600 12px/16px var(--fi-font-sans);letter-spacing:.06em;text-transform:uppercase;color:var(--fi-muted)}

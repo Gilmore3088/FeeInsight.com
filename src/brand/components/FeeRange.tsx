@@ -38,12 +38,17 @@ export function FeeRange({ label, min, q1, median, q3, max, value, domain = [0, 
   );
 }
 
-/** Axis row to sit under a stack of FeeRange rows. */
-export function FeeRangeAxis({ ticks, format = (v: number) => `$${v}` }: { ticks: number[]; format?: (v: number) => string }) {
+/** Axis row to sit under a stack of FeeRange rows. Ticks sit at their value on the shared domain. */
+export function FeeRangeAxis({ ticks, domain, format = (v: number) => `$${v}` }: { ticks: number[]; domain?: [number, number]; format?: (v: number) => string }) {
+  const [lo, hi] = domain ?? [ticks[0], ticks[ticks.length - 1]];
   return (
     <div className="fi-range-axis" aria-hidden="true">
       <div />
-      <div>{ticks.map((t) => <span key={t}>{format(t)}</span>)}</div>
+      <div>
+        {ticks.map((t) => (
+          <span key={t} style={{ left: `${((t - lo) / (hi - lo)) * 100}%` }}>{format(t)}</span>
+        ))}
+      </div>
       <div />
     </div>
   );
