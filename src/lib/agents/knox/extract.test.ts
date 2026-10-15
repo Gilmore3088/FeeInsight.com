@@ -409,6 +409,8 @@ describe("Knox agentic extraction", () => {
       const strategies = attemptValues(db).map((values) => values[3]);
       expect(strategies).toEqual([
         "extract.table",
+        // #1100 gap 3: the account comparison table pass, logged as its own strategy too.
+        "extract.account_table",
         "extract.family.overdraft_nsf",
         "extract.family.wires",
         "extract.family.atm_card",

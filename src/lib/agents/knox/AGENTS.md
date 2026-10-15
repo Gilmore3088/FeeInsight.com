@@ -501,6 +501,38 @@ hand check found wrong, from their real lines.
   Transfer for\nOverdrafts - $2.00 per transfer", raw 112570). A bare "Overdrafts" priced per
   item is still the overdraft fee.
 
+v71 (#1100 gap 3, Oct 15): each checking product's monthly fee in an account comparison table, read by
+its column (`extract.account_table` v1, `account-table.ts`; see Extraction Passes).
+- "Monthly Service Fees | $0 | $5 | $10" under "Account | Great Checking | Better Checking | Best
+  Checking" is three monthly fees, named by product ("Better Checking Monthly Service Fees"). The
+  shared source check traces each with the same rule (`accountTableRow`); it can only turn a fail
+  into a pass.
+- Only checking columns, only the fee row, only under a header naming one product per price column.
+  The guard's exclusions are unchanged (James to decide, #1100).
+- Not read (#1438 review): a header one cell short whose first cell is a label ("Features | Simply
+  Checking | Rewards Checking" over a row with three prices), a header of buttons or repeated cells
+  ("Open Online | Open Account | Open Account"), a fee-change notice's dated columns ("fee through
+  12/31"), and a table that sets big banks' accounts beside others ("US Bank Smartly Checking").
+- In a cell, a balance or opening figure is skipped ("$25 minimum daily balance or $8" is $8), and so
+  are a discount and a $0 that holds only under a condition ("$0 with $500 balance / $12" is $12). A
+  cell with two fee figures left ("$7 + $0.40 per debit") is not read; the row's other cells still are.
+- The header is the topmost row in the run above the fee row that names a product in every price
+  column; a "Key Features" or "Best For" row is never the header ("No NSF Fees for overdrawing
+  Account" is not a product). A header one cell short is read only when its first cell is a product.
+  Cells that read as sentences, taglines or buttons are not products; MMDA and saver columns are left out.
+- The run of rows above the fee row ends at an earlier fee row, so a table stacked under another of
+  the same width keeps its own header; two product headers with different columns in one run are
+  not read.
+- Product names lose footnote marks, quotes, codes and arrows, and only an exact tagline or prose
+  after the account word ("CLASSIC CHECKING Most Popular", "Open a Basic Account" is "Basic
+  Account"). A tail that names an audience or variant stays ("Interest Checking for Ag", "Basic
+  Checking - Senior", any "for …" tail), and so do a product's own words and digits ("Open Road
+  Checking", "Tier3 Checking"). A table whose header names a business, commercial, ag or nonprofit
+  account is not read. The shared check's table fallback reads the newest fee-change column, as Knox does, and
+  passes only a consumer name the category guard files as monthly maintenance.
+- Answer keys: Texas 551 to 552 right (Texas Capital), 14 wrong unchanged; held out 54 / 4 unchanged;
+  seven states unchanged at 797 / 41.
+
 v70 (#1100, Oct 15): monthly maintenance and low-balance fees the account expert (`extract.family.account` v5) missed.
 - A low-balance charge with no fee word is the minimum balance fee when the price on its own line is
   charged by the period ("$5.00 per month", "/Month"): "Low balance $ 5.00 per month", "Savings
@@ -907,6 +939,18 @@ only on what the free team could not read.
     borrowed only by a bare direction or unit ("Wire Transfers" + "Incoming Domestic").
     `tableRowsFromText` is the only adapter over Rosetta's output (today the " | " cell
     lines in `normalized_text`); re-point it when Rosetta stores structured rows.
+  - `extract.account_table` (`account-table.ts`, #1100 gap 3): an account comparison table's
+    monthly fee row, one fee per product column ("Monthly Service Fees | $0 | $5 | $10" under
+    "Account | Great Checking | Better Checking | Best Checking"). Each read is named by its
+    column's product (`withAccountName`: "Better Checking Monthly Service Fees"), so it traces
+    to one cell. The rule lives in `custom-report/account-table.ts`, and the shared check traces
+    the same reads with it (`accountTableRow`, only for `monthly_maintenance` or no key, and only
+    after the normal check fails). It reads only checking columns (no savings, share, money
+    market, club, IRA, HSA or certificate column), only the fee row (never opening deposit or
+    balance rows), and only under a header row whose rows in between have the table's width. A
+    free cell is held as a $0 fee. A short header that opens on a label, a row of buttons or
+    repeated cells, dated fee-change columns and a comparison with big banks' accounts are not
+    read; a balance figure in a cell is skipped (v71 history).
   - `extract.family.<family>` (`families.ts`): one expert each for overdraft/NSF, wires,
     ATM/card, account maintenance/statements, checks, and the remaining services. They
     read price windows across a document, including PDFs flattened to one line: tiers
@@ -986,6 +1030,7 @@ fails a PR that changes one of these constants without updating its line here (#
 
 | Constant | Strategy | Version | File |
 |---|---|---|---|
+| `KNOX_ACCOUNT_TABLE_STRATEGY` | `extract.account_table` | v1 | `knox/account-table.ts` |
 | `KNOX_BATCH_REVIEW_VERSION` | — | v1 | `knox/batch-review.ts` |
 | `KNOX_CALIBRATION_VERSION` | — | v2 | `knox/calibration.ts` |
 | `HELD_RATE_RECHECK_VERSION` | — | v2 | `knox/held-recheck.ts` |
@@ -995,7 +1040,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `LINEUP_CORRECT_STRATEGY` | `knox.lineup_correct` | v2 | `knox/lineup-correct.ts` |
 | `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v19 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v2 | `knox/paid-extract.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v70 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v71 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v6 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v1 | `knox/takedown-lessons.ts` |
