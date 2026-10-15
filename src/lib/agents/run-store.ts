@@ -2254,7 +2254,7 @@ async function executeAgenticStep(
       return {
         status: "completed",
         summary: summarizeChangeOutcomes(result),
-        detail: { ready: result.ready, entries: result.entries, started: result.started, pending: result.pending, judged: result.judged },
+        detail: { ready: result.ready, entries: result.entries, started: result.started, pending: result.pending, judged: result.judged, hit_rate: result.hitRate },
       };
     }
     case "deming-sunday-maintenance": {
