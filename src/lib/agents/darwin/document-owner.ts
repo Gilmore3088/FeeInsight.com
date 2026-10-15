@@ -3,7 +3,7 @@ import { invalidatePublicReadCache } from "@/lib/data-store/fee-cache";
 import { recordAttempt } from "@/lib/agents/learning/attempts";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import { secondLook } from "@/lib/agents/hamilton/second-look";
-import { hostSql, textHasCertNumber } from "@/lib/agents/magellan/other-bank-host";
+import { hostSql, textHasCertNumber, urlHost } from "@/lib/agents/magellan/other-bank-host";
 import { STATE_NAMES } from "@/lib/us-states";
 
 import { loadSourceTexts } from "./verify";
@@ -19,39 +19,40 @@ type SqlTag = typeof sql;
  *   CU's, 1903 First National Bank, Oldham SD First National Bank, Fort Pierre SD's (52 live fees).
  * - Credit union website vendors serve one CU's document on every member domain:
  *   Healthplus FCU's (5009) schedule ("HEALTHPLUS | Fee Schedule") at
- *   `<cu-domain>/ezs3download/download/...` on six unrelated CUs (about 139 live rows), and
- *   Horizons North CU's (8416) at `5star.bank/_/kcms-doc/...` on 5Star Bank (37 live rows).
+ *   `<cu-domain>/ezs3download/download/...` on unrelated CUs, and Horizons North CU's (8416) at
+ *   `5star.bank/_/kcms-doc/...` on 5Star Bank.
  *
- * This re-check reads the document's own text. A live (institution, document) pair is in doubt
- * when its document is shared with another institution (the document's host is that
- * institution's stored website, that institution has live fees from the same address, or one of
- * its documents has the same `text_hash`), or sits on a vendor download path
- * (`VENDOR_DOCUMENT_PATH`; a path alone is no proof). For each such pair it asks which bank the
- * text names: the institutions it shares the document with, by name or by city with its state,
- * and every institution in the registry. Never by the website host, which is the thing in doubt.
- * A registry-only institution (not linked by host, address or text hash) counts toward a takedown
- * only under the header rule (`headerNamesInstitution`: a line among the first ten starts with its
- * full legal name, with "bank" or "credit union" in it, printed as a title, and no other
- * institution has that name). Ordinary words and partners ("Fees associated with", "most
- * popular", "processed through Bank of America", "Coin counting at Wells Fargo") give at most
- * `registry_named`, a review verdict that passes:
- * - `own_named`: the text names this bank (a name no other named institution shares, its city,
- *   or its FDIC certificate / NCUA charter number). Passes, also when it names another bank too
- *   (a co-branded or shared-service document).
- * - `sibling_shared`: the document is shared with a charter under the same holding company
- *   (#1441: IBC's five, Wells Fargo's three). Never taken down; counted once per document.
- * - `other_bank`: the text names exactly one other, unrelated institution and never this bank.
- *   The fee is that bank's.
- * - `shared_service`: it names two or more other unrelated institutions and not this bank (a
- *   shared-service or network document). Passes.
- * - `registry_named`: only the registry scan found another name, outside the header rule. Passes;
- *   recorded for review.
- * - `unproven` / `no_text`: nothing decides. Passes.
+ * A live (institution, document) pair is read when its document is linked to another institution
+ * (the document's host is that institution's stored website, that institution has live fees from
+ * the same address, or one of its documents has the same `text_hash`), or sits on a vendor
+ * download path (`VENDOR_DOCUMENT_PATH`; a path alone is no proof). Only linked institutions can
+ * take a fee down. The registry-wide name scan finds partners and ordinary words ("Fees
+ * associated with" -> Associated Bank, "Currency" -> Currency Bank, a title-cased "Wells Fargo
+ * Bank" correspondent on line 1), so an institution only it finds gives `registry_named`, a review
+ * verdict that passes. In order (the first that applies decides):
+ * - `no_text`.
+ * - `sibling_shared`: every linked institution shares this bank's holding company (#1441: IBC's
+ *   five, Wells Fargo's three). Never taken down; counted once per document.
+ * - `own_named`: the text names this bank: a name form no linked institution shares, its CU
+ *   acronym, its website (when that is not the document's host), its city, or its FDIC / NCUA
+ *   number. Passes, also when it names another bank (co-branded, shared-service).
+ * - Vendor copy: on a vendor path, the institution among this bank and those sharing the text
+ *   hash whose name the text prints owns it (one-word brands such as "healthplus" count inside
+ *   that small group only). This bank: `own_named`; another: `other_bank`.
+ * - Site: the document's host is exactly one unrelated linked institution's stored website and
+ *   not this bank's: `other_bank` naming it.
+ * - Linked institutions the text names (a name form, CU acronym, city with its state, or the
+ *   header rule `headerNamesInstitution`): one unrelated is `other_bank`, two or more
+ *   `shared_service`; a named sibling is `sibling_shared`.
+ * - `registry_named`, else `unproven`.
+ * A name form is two words or more: a one-word brand counts only next to the institution's
+ * city, since "currency", "customers", "direct", "popular" or "timberline" are fee words or other
+ * banks' names.
  *
  * Each pair is read once per version, mode and text hash (`documentOwnerFingerprint`), and a
- * step skips the scoped read when the last one found no pair and no text or live fee has arrived
- * since. With the takedown on, `other_bank` pairs are re-read under their own cap for the second
- * look, and pairs that pass clear their pending flags.
+ * step skips the scoped read when the last one selected no pair and no text or live fee has
+ * arrived since. With the takedown on, `other_bank` pairs are re-read under their own cap for the
+ * second look, and pairs that pass clear their pending flags.
  *
  * Shadow first (CLAUDE.md standing rule, DECISIONS 2026-10-15): with
  * `DARWIN_DOCUMENT_OWNER_TAKEDOWN` off, each learning verify step reads up to
@@ -86,11 +87,13 @@ export function isVendorDocumentPath(url: string | null | undefined): boolean {
 }
 
 /**
- * Names and brand stems that never identify one institution by themselves: boilerplate
- * ("Member FDIC") and single words every schedule uses ("Members Credit Union" -> "members").
+ * Names, brands and acronyms that never identify one institution: boilerplate ("Member FDIC"),
+ * type words, and words every schedule uses (prod, Oct 15: "currency", "customers", "applied",
+ * "direct", "method", "certified", "principal", "primary", "medallion", "surety", "options",
+ * "social security", "popular" each matched an institution's brand).
  */
 const GENERIC_NAMES = new Set([
-  "bank", "the bank", "credit union", "federal credit union", "savings bank", "state bank", "national bank",
+  "bank", "the bank", "credit union", "federal credit union", "fcu", "savings bank", "state bank", "national bank",
   "trust company", "member fdic", "federally insured by ncua", "equal housing lender", "community bank",
   "members", "member", "account", "accounts", "savings", "checking", "federal", "community", "national",
   "american", "united", "credit", "people", "peoples", "citizens", "farmers", "security", "service", "services",
@@ -101,11 +104,12 @@ const GENERIC_NAMES = new Set([
   "health", "medical", "postal", "police", "county", "valley", "mutual", "commerce", "merchants",
   "industrial", "insurance", "overdraft", "deposit", "deposits", "statement", "transfer", "business",
   "personal", "consumer", "online", "mobile", "digital", "first national", "first state", "first federal",
+  "currency", "customers", "applied", "direct", "method", "certified", "principal", "primary", "medallion",
+  "surety", "options", "social security", "popular", "first", "home", "state", "city",
 ]);
 const MIN_NAME_CHARS = 6;
 const MIN_CITY_CHARS = 3;
-/** Longest name form (in words) the n-gram index holds. */
-const MAX_FORM_WORDS = 10;
+const MIN_ACRONYM_CHARS = 4;
 
 export interface OwnerBank {
   id: number;
@@ -115,8 +119,22 @@ export interface OwnerBank {
   certNumber?: string | number | null;
   holdingCompanyRssd?: string | null;
   holdingCompanyName?: string | null;
+  /** The stored website's host ("hncu.org"). */
+  websiteHost?: string | null;
   /** Another institution's name contains this one's (`sharedNameIds`): it then counts only with its city. */
   nameShared?: boolean;
+}
+
+/** How a linked institution shares the document. */
+export interface DocumentLinks {
+  /** Its stored website is the document's host. */
+  hostIds?: number[];
+  /** One of its documents has the same text hash. */
+  hashIds?: number[];
+  /** The document's host. */
+  documentHost?: string | null;
+  /** The document is on a vendor download path. */
+  vendorPath?: boolean;
 }
 
 export type DocumentOwnerVerdict =
@@ -142,29 +160,78 @@ function hasWords(padded: string, words: string): boolean {
   return words.length > 0 && padded.includes(` ${words} `);
 }
 
-/**
- * The forms of a name the text may use: no "The" or "N.A.", the "credit union" and "FCU" short
- * forms, Saint/St, and the brand stem without "Federal Credit Union", "Credit Union", "FCU" or
- * "Bank" ("healthplus" for Healthplus Federal Credit Union). Generic forms are dropped.
- */
-export function ownerNameForms(name: string | null | undefined): string[] {
-  const base = ownerWords(name)
+/** A registry name without "The" or "N.A.". */
+function baseName(name: string | null | undefined): string {
+  return ownerWords(name)
     .replace(/^the /, "")
     .replace(/ (national association|n a|ssb|fsb|inc)$/, "");
+}
+
+/** The brand without "Federal Credit Union", "Credit Union", "FCU" or "Bank" ("healthplus"). */
+function brandOf(name: string | null | undefined): string {
+  return baseName(name).replace(/ (federal credit union|credit union|fcu|bank)$/, "");
+}
+
+/** The one-word brand, when it is long and not a common word; null otherwise. */
+export function oneWordBrand(name: string | null | undefined): string | null {
+  const brand = brandOf(name);
+  return !brand.includes(" ") && brand.length >= MIN_NAME_CHARS && !GENERIC_NAMES.has(brand) && brand !== baseName(name) ? brand : null;
+}
+
+/**
+ * The forms of a name the text may use, each two words or more: the name without "The" or
+ * "N.A.", the "credit union" and "FCU" short forms, Saint/St, the brand when it is two words or
+ * more ("horizons north"), and a one-word brand only next to the institution's city
+ * ("fort pierre timberline", "timberline fort pierre"). Generic forms are dropped.
+ */
+export function ownerNameForms(name: string | null | undefined, city?: string | null): string[] {
+  const base = baseName(name);
+  const brand = brandOf(name);
   const forms = [
     base,
     base.replace(/ federal credit union$/, " credit union"),
     base.replace(/ federal credit union$/, " fcu"),
     base.replace(/^saint /, "st "),
     base.replace(/^st /, "saint "),
-    base.replace(/ (federal credit union|credit union|fcu|bank)$/, ""),
   ];
-  return [...new Set(forms)].filter((form) => form.length >= MIN_NAME_CHARS && !GENERIC_NAMES.has(form));
+  if (brand !== base) {
+    if (brand.includes(" ")) forms.push(brand);
+    else {
+      const town = ownerWords(city);
+      if (town.length >= MIN_CITY_CHARS && brand.length > 0 && !GENERIC_NAMES.has(brand)) forms.push(`${town} ${brand}`, `${brand} ${town}`);
+    }
+  }
+  return [...new Set(forms)].filter((form) => form.length >= MIN_NAME_CHARS && form.includes(" ") && !GENERIC_NAMES.has(form));
+}
+
+/** Words of a name its acronym skips. */
+const TITLE_SMALL_WORDS = new Set(["of", "the", "and", "for", "at", "in", "&"]);
+
+/**
+ * A credit union's acronyms, four letters or more: "St. Mary's Federal Credit Union" is "smfcu"
+ * and "smcu". Read only for linked institutions and this bank, never registry-wide.
+ */
+export function creditUnionAcronyms(name: string | null | undefined): string[] {
+  const base = baseName(name);
+  if (!/ credit union$/.test(base)) return [];
+  const words = base.split(" ").filter((word) => !TITLE_SMALL_WORDS.has(word));
+  const full = words.map((word) => word[0]).join("");
+  const short = words.filter((word) => word !== "federal").map((word) => word[0]).join("");
+  return [...new Set([full, short])].filter((acronym) => acronym.length >= MIN_ACRONYM_CHARS && !GENERIC_NAMES.has(acronym));
 }
 
 /** Do two name lists overlap as whole words either way ("capital city bank" in "capital city bank group")? */
 function namesOverlap(a: string[], b: string[]): boolean {
   return a.some((x) => b.some((y) => hasWords(` ${x} `, y) || hasWords(` ${y} `, x)));
+}
+
+const HOLDING_SUFFIXES = new Set(["inc", "corp", "corporation", "co", "company", "incorporated", "ltd", "llc"]);
+
+/** A holding-company name as compared: "Wells Fargo & Company" and "WELLS FARGO & CO." are "wells fargo". */
+export function holdingCompanyKey(name: string | null | undefined): string {
+  const words = ownerWords(name).split(" ").filter((word) => word && word !== "&");
+  while (words.length > 1 && HOLDING_SUFFIXES.has(words[words.length - 1])) words.pop();
+  return words.join(" ");
 }
 
 /** Same holding company: the same RSSD, or the same holding-company name. */
@@ -175,8 +242,8 @@ export function sameHoldingCompany(a: OwnerBank, b: OwnerBank): boolean {
   };
   const ra = rssd(a.holdingCompanyRssd);
   if (ra && ra === rssd(b.holdingCompanyRssd)) return true;
-  const na = ownerWords(a.holdingCompanyName);
-  return na.length > 0 && na === ownerWords(b.holdingCompanyName);
+  const na = holdingCompanyKey(a.holdingCompanyName);
+  return na.length > 0 && na === holdingCompanyKey(b.holdingCompanyName);
 }
 
 function cityWords(bank: OwnerBank): string {
@@ -193,30 +260,30 @@ function namesCityAndState(padded: string, bank: OwnerBank): boolean {
   return hasWords(padded, `${city} ${code.toLowerCase()}`) || (stateName.length > 0 && hasWords(padded, `${city} ${stateName}`));
 }
 
-/** Every run of 1..MAX_FORM_WORDS words in the text, for whole-word name lookups. */
-function wordRuns(words: string[]): Set<string> {
-  const runs = new Set<string>();
-  for (let start = 0; start < words.length; start += 1) {
-    let run = "";
-    for (let length = 0; length < MAX_FORM_WORDS && start + length < words.length; length += 1) {
-      run = length === 0 ? words[start] : `${run} ${words[start + length]}`;
-      runs.add(run);
-    }
-  }
-  return runs;
+/** Does the lower-case text print this host as a whole token ("hncu.org")? */
+function printsHost(lowerText: string, host: string | null | undefined): boolean {
+  if (!host) return false;
+  return new RegExp(`(^|[^a-z0-9-])${host.replace(/[.]/g, "\\.")}($|[^a-z0-9-])`).test(lowerText);
 }
 
-/** The registry's names, indexed for a whole-word scan of a document's text. */
+/** The registry's names, indexed by each form's first two words for a whole-word scan of a text. */
 export interface NameDirectory {
   banks: Map<number, OwnerBank>;
   forms: Array<{ id: number; form: string }>;
+  byFirstPair: Map<string, Array<{ id: number; words: string[] }>>;
 }
 
 export function buildNameDirectory(banks: OwnerBank[]): NameDirectory {
-  return {
-    banks: new Map(banks.map((bank) => [bank.id, bank])),
-    forms: banks.flatMap((bank) => ownerNameForms(bank.name).map((form) => ({ id: bank.id, form }))),
-  };
+  const forms = banks.flatMap((bank) => ownerNameForms(bank.name, bank.city).map((form) => ({ id: bank.id, form })));
+  const byFirstPair = new Map<string, Array<{ id: number; words: string[] }>>();
+  for (const entry of forms) {
+    const words = entry.form.split(" ");
+    const key = `${words[0]} ${words[1]}`;
+    const list = byFirstPair.get(key);
+    if (list) list.push({ id: entry.id, words });
+    else byFirstPair.set(key, [{ id: entry.id, words }]);
+  }
+  return { banks: new Map(banks.map((bank) => [bank.id, bank])), forms, byFirstPair };
 }
 
 /** Pure: the ids among `ids` whose name (any form) appears as whole words in another institution's name form. */
@@ -225,26 +292,32 @@ export function sharedNameIds(directory: NameDirectory, ids: Iterable<number>): 
   for (const id of ids) {
     const bank = directory.banks.get(id);
     if (!bank) continue;
-    const forms = ownerNameForms(bank.name);
+    const forms = ownerNameForms(bank.name, bank.city);
     if (directory.forms.some((entry) => entry.id !== id && forms.some((form) => hasWords(` ${entry.form} `, form)))) shared.add(id);
   }
   return shared;
 }
 
-/** Pure: the institutions in `directory` whose name (any form) the text prints as whole words. */
+/**
+ * Pure: the institutions in `directory` whose name (any form) the text prints as whole words.
+ * One pass over the text: a form is compared only where its first two words stand together.
+ */
 export function institutionsNamedIn(text: string | null | undefined, directory: NameDirectory): number[] {
   const words = ownerWords(text).split(" ").filter(Boolean);
-  if (words.length === 0) return [];
-  const runs = wordRuns(words);
   const ids = new Set<number>();
-  for (const entry of directory.forms) if (runs.has(entry.form)) ids.add(entry.id);
+  for (let index = 0; index + 1 < words.length; index += 1) {
+    const entries = directory.byFirstPair.get(`${words[index]} ${words[index + 1]}`);
+    if (!entries) continue;
+    for (const entry of entries) {
+      if (ids.has(entry.id) || index + entry.words.length > words.length) continue;
+      if (entry.words.every((word, offset) => words[index + offset] === word)) ids.add(entry.id);
+    }
+  }
   return [...ids].sort((a, b) => a - b);
 }
 
 /** Non-empty lines of a document's top that the header rule reads. */
 export const HEADER_LINES = 10;
-/** Words a title prints in lower case ("Bank of America"). */
-const TITLE_SMALL_WORDS = new Set(["of", "the", "and", "for", "at", "in", "&"]);
 
 /**
  * An institution's full legal name as the header rule reads it: its registry name without "The" or
@@ -252,24 +325,23 @@ const TITLE_SMALL_WORDS = new Set(["of", "the", "and", "for", "at", "in", "&"]);
  * "bank of america"). Null for a name that does not qualify ("Popular", "Discover").
  */
 export function legalBankName(name: string | null | undefined): string | null {
-  const base = ownerWords(name)
-    .replace(/^the /, "")
-    .replace(/ (national association|n a|ssb|fsb|inc)$/, "");
+  const base = baseName(name);
   if (base.split(" ").length < 2 || !/(^| )(bank|credit union)( |$)/.test(base)) return null;
   return base;
 }
 
 /** A line with apostrophes dropped and other punctuation a space, case kept. */
 function caseWords(line: string): string {
-  return line.replace(/['\u2019\u2018`]/g, "").replace(/[^A-Za-z0-9&]+/g, " ").trim();
+  return line.replace(/['’‘`]/g, "").replace(/[^A-Za-z0-9&]+/g, " ").trim();
 }
 
 /**
- * The header rule for an institution only the registry scan found (#1455 review): one of the
- * document's first `HEADER_LINES` non-empty lines starts with its full legal name
- * (`legalBankName`), printed as a title (every word capitalised but "of", "the", "and"...).
- * "Horizons North Credit Union Fee Schedule" qualifies; "processed through Bank of America",
- * "Fees associated with" and "Coin counting at Wells Fargo" do not.
+ * The header rule (#1455 review), read for linked institutions only: one of the document's
+ * first `HEADER_LINES` non-empty lines starts with the institution's full legal name
+ * (`legalBankName`), printed as a title (every word capitalised but "of", "the", "and"...), and no
+ * other institution has that name. A registry-only
+ * institution is never read with it: a correspondent's title line ("Wells Fargo Bank", "Bank of
+ * America ATM Fees") is common on a bank's own schedule.
  */
 export function headerNamesInstitution(text: string | null | undefined, name: string | null | undefined): boolean {
   const legal = legalBankName(name);
@@ -282,63 +354,103 @@ export function headerNamesInstitution(text: string | null | undefined, name: st
 }
 
 /**
+ * Which of `group` owns a vendor-served copy: the one whose name form or acronym the text prints;
+ * failing that, the one whose one-word brand it prints. Inside the small group sharing one text
+ * hash a one-word brand ("HEALTHPLUS") is safe. Null unless exactly one qualifies.
+ */
+export function vendorCopyOwner(text: string, group: OwnerBank[]): OwnerBank | null {
+  const padded = ` ${ownerWords(text)} `;
+  const strict = group.filter((bank) =>
+    ownerNameForms(bank.name, bank.city).some((form) => hasWords(padded, form))
+    || creditUnionAcronyms(bank.name).some((acronym) => hasWords(padded, acronym)));
+  if (strict.length === 1) return strict[0];
+  if (strict.length > 1) return null;
+  const branded = group.filter((bank) => {
+    const brand = oneWordBrand(bank.name);
+    return brand != null && hasWords(padded, brand);
+  });
+  return branded.length === 1 ? branded[0] : null;
+}
+
+/**
  * Pure: which bank does this document's text name? `own` is the institution the fees are filed
- * under; `linked` the institutions it shares the document with (by host, address or text hash),
- * which may be named by name or by city and state; `found` the institutions the registry scan
- * found named in the text (`institutionsNamedIn`). A registry-only institution counts toward a
- * takedown only under the header rule (`headerNamesInstitution`) and when no other institution
- * has its name; otherwise it gives at most `registry_named`, a verdict for review that passes.
+ * under; `linked` the institutions it shares the document with (by host, address or text hash);
+ * `found` those the registry scan found named (`institutionsNamedIn`), which only ever give
+ * `registry_named`; `links` how the linked ones share it. Order: see the module note.
  */
 export function documentOwnerVerdict(
   text: string | null | undefined,
   own: OwnerBank,
   linked: OwnerBank[],
   found: OwnerBank[] = [],
+  links: DocumentLinks = {},
 ): DocumentOwnerVerdict {
   if (!text || !text.trim()) return { kind: "no_text" };
   const padded = ` ${ownerWords(text)} `;
-  const linkedOthers = linked.filter((other) => other.id !== own.id);
-  const linkedIds = new Set(linkedOthers.map((other) => other.id));
-  const registryOnly = found.filter((other) => other.id !== own.id && !linkedIds.has(other.id));
-  const headed = registryOnly.filter((other) => !other.nameShared && headerNamesInstitution(text, other.name));
-  const headedIds = new Set(headed.map((other) => other.id));
-  const pool = [...linkedOthers, ...headed];
-  const ownForms = ownerNameForms(own.name);
-  const formsOf = new Map(pool.map((other) => [other.id, ownerNameForms(other.name)] as const));
+  const lower = text.toLowerCase();
+  const pool = [...new Map(linked.filter((other) => other.id !== own.id).map((other) => [other.id, other])).values()];
+  const poolIds = new Set(pool.map((other) => other.id));
+  const siblings = pool.filter((other) => sameHoldingCompany(own, other));
+  const unrelated = pool.filter((other) => !sameHoldingCompany(own, other));
 
-  // This bank: a name no other institution in play shares, its city (with its state when one of
-  // them has the same city), or its certificate / charter number.
+  // Every institution the document is shared with is a sibling charter (#1441).
+  if (pool.length > 0 && unrelated.length === 0) return { kind: "sibling_shared", siblingIds: siblings.map((other) => other.id) };
+
+  // This bank: a name form or acronym no linked institution shares, its website (when the
+  // document is not on that host), its city (with its state when a linked one has the same
+  // city), or its certificate / charter number.
+  const ownForms = ownerNameForms(own.name, own.city);
+  const ownAcronyms = creditUnionAcronyms(own.name);
+  const formsOf = new Map(pool.map((other) => [other.id, ownerNameForms(other.name, other.city)] as const));
+  const acronymsOf = new Map(pool.map((other) => [other.id, creditUnionAcronyms(other.name)] as const));
   const ownDistinct = ownForms.filter((form) => !pool.some((other) => namesOverlap([form], formsOf.get(other.id)!)));
   const ownName = ownDistinct.find((form) => hasWords(padded, form));
   if (ownName) return { kind: "own_named", evidence: `name: ${ownName}` };
+  const ownAcronym = ownAcronyms.find((acronym) => !pool.some((other) => acronymsOf.get(other.id)!.includes(acronym)) && hasWords(padded, acronym));
+  if (ownAcronym) return { kind: "own_named", evidence: `acronym: ${ownAcronym}` };
+  if (own.websiteHost && own.websiteHost !== links.documentHost && printsHost(lower, own.websiteHost)) {
+    return { kind: "own_named", evidence: `website: ${own.websiteHost}` };
+  }
   const ownCity = cityWords(own);
   if (ownCity) {
     const cityShared = pool.some((other) => cityWords(other) === ownCity);
     if (cityShared ? namesCityAndState(padded, own) : hasWords(padded, ownCity)) return { kind: "own_named", evidence: `city: ${ownCity}` };
   }
-  if (textHasCertNumber(text.toLowerCase().replace(/\s+/g, " "), own.certNumber)) {
+  if (textHasCertNumber(lower.replace(/\s+/g, " "), own.certNumber)) {
     return { kind: "own_named", evidence: `certificate: ${own.certNumber}` };
   }
 
+  // A vendor-served copy belongs to whichever of this bank and the text-hash sharers it names.
+  const hashIds = new Set(links.hashIds ?? []);
+  if (links.vendorPath && pool.some((other) => hashIds.has(other.id))) {
+    const owner = vendorCopyOwner(text, [own, ...pool.filter((other) => hashIds.has(other.id))]);
+    if (owner?.id === own.id) return { kind: "own_named", evidence: "vendor copy: own name" };
+    if (owner && !sameHoldingCompany(own, owner)) return { kind: "other_bank", otherId: owner.id, evidence: "vendor copy: text hash" };
+  }
+
+  // The document sits on exactly one unrelated institution's own website, and not on this bank's.
+  const hostIds = new Set(links.hostIds ?? []);
+  if (links.documentHost && own.websiteHost !== links.documentHost) {
+    const hosts = unrelated.filter((other) => hostIds.has(other.id) && other.websiteHost === links.documentHost);
+    if (hosts.length === 1) return { kind: "other_bank", otherId: hosts[0].id, evidence: `site: ${links.documentHost}` };
+  }
+
   const named = (other: OwnerBank): string | null => {
-    if (headedIds.has(other.id)) {
-      const legal = legalBankName(other.name)!;
-      return namesOverlap([legal], ownForms) ? null : `header: ${legal}`;
-    }
     const forms = formsOf.get(other.id)!.filter((form) => !namesOverlap([form], ownForms));
     const name = forms.find((form) => hasWords(padded, form));
     const otherCity = cityWords(other);
     const cityHere = otherCity.length > 0 && otherCity !== ownCity && hasWords(padded, otherCity);
     if (name && (!other.nameShared || cityHere)) return `name: ${name}`;
+    const acronym = acronymsOf.get(other.id)!.find((value) => !ownAcronyms.includes(value) && hasWords(padded, value));
+    if (acronym) return `acronym: ${acronym}`;
+    const legal = legalBankName(other.name);
+    if (legal && !other.nameShared && !namesOverlap([legal], ownForms) && headerNamesInstitution(text, other.name)) return `header: ${legal}`;
     if (otherCity && otherCity !== ownCity && namesCityAndState(padded, other)) {
       return `city: ${otherCity} ${(other.stateCode ?? "").toLowerCase()}`;
     }
     return null;
   };
-
-  const siblings = pool.filter((other) => sameHoldingCompany(own, other));
-  const hits = pool.flatMap((other) => {
-    if (sameHoldingCompany(own, other)) return [];
+  const hits = unrelated.flatMap((other) => {
     const evidence = named(other);
     return evidence ? [{ id: other.id, evidence }] : [];
   });
@@ -348,20 +460,20 @@ export function documentOwnerVerdict(
   }
   if (hits.length === 1) return { kind: "other_bank", otherId: hits[0].id, evidence: hits[0].evidence };
   if (hits.length > 1) return { kind: "shared_service", otherIds: hits.map((hit) => hit.id) };
-  const mentioned = registryOnly.filter((other) => !headedIds.has(other.id) && !sameHoldingCompany(own, other));
+  const mentioned = found.filter((other) => other.id !== own.id && !poolIds.has(other.id) && !sameHoldingCompany(own, other));
   if (mentioned.length > 0) return { kind: "registry_named", otherIds: mentioned.map((other) => other.id) };
   return { kind: "unproven" };
 }
 
 /**
- * The live (institution, document) pairs in doubt: shared with another institution (the
+ * The live (institution, document) pairs in doubt: linked to another institution (the
  * document's host is its stored website, it has live fees from the same address, or one of its
  * documents has the same text hash), or on a vendor download path. Read-only. Hosts, addresses
- * and hashes are worked out once per table and joined by equality.
+ * and hashes are worked out once per table and joined by equality; every CTE is materialized.
  */
 function scopedPairsSql(): string {
   return `
-    WITH live AS (
+    WITH live AS MATERIALIZED (
       SELECT fp.fee_published_id, fp.institution_id, fr.source_document_id
         FROM published_fee_records fp
         JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
@@ -369,49 +481,52 @@ function scopedPairsSql(): string {
        WHERE fp.rolled_back_at IS NULL
          AND fr.source_document_id IS NOT NULL
     ),
-    pairs AS (
+    pairs AS MATERIALIZED (
       SELECT institution_id, source_document_id, count(DISTINCT fee_published_id)::int AS live_fees
         FROM live
        GROUP BY institution_id, source_document_id
     ),
-    placed AS (
+    placed AS MATERIALIZED (
       SELECT p.*, btrim(sd.document_url) AS document_url, ${hostSql("sd.document_url")} AS host
         FROM pairs p
         JOIN source_documents sd ON sd.id = p.source_document_id
        WHERE sd.document_url IS NOT NULL
     ),
-    sites AS (
+    sites AS MATERIALIZED (
       SELECT i.id, ${hostSql("i.website_url")} AS host
         FROM institution_sources i
        WHERE i.website_url IS NOT NULL
     ),
-    hashes AS (
+    hashes AS MATERIALIZED (
       SELECT DISTINCT ON (t.source_document_id) t.source_document_id, t.text_hash
         FROM agent_source_texts t
        WHERE t.source_document_id IN (SELECT source_document_id FROM pairs)
          AND t.status = 'completed' AND t.text_hash IS NOT NULL
        ORDER BY t.source_document_id, t.id DESC
     ),
-    links AS (
-      SELECT p.institution_id, p.source_document_id, s.id AS other_id
+    links AS MATERIALIZED (
+      SELECT p.institution_id, p.source_document_id, s.id AS other_id, 'host' AS via
         FROM placed p JOIN sites s ON s.host = p.host AND s.id <> p.institution_id
       UNION
-      SELECT p.institution_id, p.source_document_id, q.institution_id AS other_id
+      SELECT p.institution_id, p.source_document_id, q.institution_id AS other_id, 'url' AS via
         FROM placed p JOIN placed q ON q.document_url = p.document_url AND q.institution_id <> p.institution_id
       UNION
-      SELECT p.institution_id, p.source_document_id, t.institution_id AS other_id
+      SELECT p.institution_id, p.source_document_id, t.institution_id AS other_id, 'hash' AS via
         FROM placed p
         JOIN hashes h ON h.source_document_id = p.source_document_id
         JOIN agent_source_texts t ON t.text_hash = h.text_hash AND t.institution_id <> p.institution_id
     ),
-    shared AS (
-      SELECT p.institution_id, p.source_document_id, p.document_url, p.live_fees,
+    shared AS MATERIALIZED (
+      SELECT p.institution_id, p.source_document_id, p.document_url, p.host AS document_host, p.live_fees,
              COALESCE(h.text_hash, 'none') AS text_hash,
-             COALESCE(array_agg(DISTINCT l.other_id ORDER BY l.other_id) FILTER (WHERE l.other_id IS NOT NULL), '{}'::bigint[]) AS other_ids
+             (p.document_url ~* '${VENDOR_DOCUMENT_PATH}') AS vendor_path,
+             COALESCE(array_agg(DISTINCT l.other_id ORDER BY l.other_id) FILTER (WHERE l.other_id IS NOT NULL), '{}'::bigint[]) AS other_ids,
+             COALESCE(array_agg(DISTINCT l.other_id ORDER BY l.other_id) FILTER (WHERE l.via = 'host'), '{}'::bigint[]) AS host_ids,
+             COALESCE(array_agg(DISTINCT l.other_id ORDER BY l.other_id) FILTER (WHERE l.via = 'hash'), '{}'::bigint[]) AS hash_ids
         FROM placed p
         LEFT JOIN hashes h ON h.source_document_id = p.source_document_id
         LEFT JOIN links l ON l.institution_id = p.institution_id AND l.source_document_id = p.source_document_id
-       GROUP BY p.institution_id, p.source_document_id, p.document_url, p.live_fees, h.text_hash
+       GROUP BY p.institution_id, p.source_document_id, p.document_url, p.host, p.live_fees, h.text_hash
       HAVING count(l.other_id) > 0 OR p.document_url ~* '${VENDOR_DOCUMENT_PATH}'
     )`;
 }
@@ -440,16 +555,17 @@ export function documentOwnerPairsSql(): string {
         WHERE pa.input_fingerprint = ${fingerprint}
           AND pa.strategy = $2
           AND pa.strategy_version = $3${extra}`;
+  const columns = "s.institution_id, s.source_document_id, s.document_url, s.document_host, s.vendor_path, s.live_fees, s.other_ids, s.host_ids, s.hash_ids, s.text_hash";
   return `${scopedPairsSql()},
     fresh AS (
-      SELECT s.institution_id, s.source_document_id, s.document_url, s.live_fees, s.other_ids, s.text_hash, false AS reread
+      SELECT ${columns}, false AS reread
         FROM shared s
        WHERE NOT EXISTS (${attempts("")})
        ORDER BY s.live_fees DESC, s.institution_id, s.source_document_id
        LIMIT $4
     ),
     rereads AS (
-      SELECT s.institution_id, s.source_document_id, s.document_url, s.live_fees, s.other_ids, s.text_hash, true AS reread
+      SELECT ${columns}, true AS reread
         FROM shared s
        WHERE EXISTS (${attempts("\n          AND pa.outcome = 'evidence_mismatch'")})
          AND NOT EXISTS (${attempts("\n          AND pa.outcome = 'ok'")})
@@ -461,188 +577,294 @@ export function documentOwnerPairsSql(): string {
     SELECT * FROM rereads`;
 }
 
-/** SQL forms of `ownerWords` and `ownerNameForms`, so the count reads names as the pass does. */
+/** SQL form of `ownerWords`. */
 function wordsSql(expr: string): string {
   return `btrim(regexp_replace(regexp_replace(lower(COALESCE(${expr}, '')), '[''’‘\`]', '', 'g'), '[^a-z0-9&]+', ' ', 'g'))`;
 }
-function formsSql(nameExpr: string): string {
-  const base = `regexp_replace(regexp_replace(${wordsSql(nameExpr)}, '^the ', ''), ' (national association|n a|ssb|fsb|inc)$', '')`;
-  const generic = [...GENERIC_NAMES].map((name) => `'${name}'`).join(", ");
-  return `ARRAY(SELECT DISTINCT f FROM unnest(ARRAY[
-      ${base},
-      regexp_replace(${base}, ' federal credit union$', ' credit union'),
-      regexp_replace(${base}, ' federal credit union$', ' fcu'),
-      regexp_replace(${base}, '^saint ', 'st '),
-      regexp_replace(${base}, '^st ', 'saint '),
-      regexp_replace(${base}, ' (federal credit union|credit union|fcu|bank)$', '')
-    ]) f WHERE length(f) >= ${MIN_NAME_CHARS} AND f NOT IN (${generic}))`;
+function sqlList(values: Iterable<string>): string {
+  return [...values].map((value) => `'${value.replace(/'/g, "''")}'`).join(", ");
 }
 
 /**
  * Read-only SQL for James: the live fees the document-owner check would take down, the passes
  * by verdict, and the sibling-shared documents counted once (#1441). Every live fee is counted
- * once. It mirrors `documentOwnerVerdict`, header rule included, with one difference: it does
- * not read the FDIC certificate / NCUA charter number, so its `other_bank` count is an upper
- * bound of the pass's. `detail` lists each (institution, document) pair instead of the totals.
+ * once. It mirrors `documentOwnerVerdict` with one difference: it does not read the FDIC
+ * certificate / NCUA number, so its `other_bank` count is an upper bound of the pass's. Every CTE
+ * is materialized; the registry scan compares a name only where its first two words stand
+ * together in the text, and shared names join on word sequences. `detail` lists each
+ * (institution, document) pair instead of the totals.
  */
 export function documentOwnerCountSql(options: { detail?: boolean } = {}): string {
-  const states = Object.entries(STATE_NAMES)
-    .map(([code, name]) => `('${code}', '${ownerWords(name)}')`)
-    .join(", ");
-  const small = [...TITLE_SMALL_WORDS].map((word) => `'${word}'`).join(", ");
-  const legalBase = (nameExpr: string) =>
-    `regexp_replace(regexp_replace(${wordsSql(nameExpr)}, '^the ', ''), ' (national association|n a|ssb|fsb|inc)$', '')`;
-  // Whole words: both sides padded with spaces.
+  const states = Object.entries(STATE_NAMES).map(([code, name]) => `('${code}', '${ownerWords(name)}')`).join(", ");
+  const generic = sqlList(GENERIC_NAMES);
+  const small = sqlList(TITLE_SMALL_WORDS);
   const has = (padded: string, words: string) => `(length(${words}) > 0 AND strpos(${padded}, ' ' || ${words} || ' ') > 0)`;
   const overlap = (a: string, b: string) =>
     `EXISTS (SELECT 1 FROM unnest(${a}) x, unnest(${b}) y WHERE strpos(' ' || x || ' ', ' ' || y || ' ') > 0 OR strpos(' ' || y || ' ', ' ' || x || ' ') > 0)`;
   const cityState = (padded: string, alias: string) =>
     `(length(${alias}.city_w) >= ${MIN_CITY_CHARS} AND (${has(padded, `${alias}.city_w || ' ' || lower(${alias}.state_code)`)} OR ${has(padded, `${alias}.city_w || ' ' || ${alias}.state_w`)}))`;
   const sibling = (a: string, b: string) =>
-    `((${a}.hc_rssd <> '' AND ${a}.hc_rssd = ${b}.hc_rssd) OR (${a}.hc_name <> '' AND ${a}.hc_name = ${b}.hc_name))`;
-  // An institution in play `c` and its evidence, as `named` in `documentOwnerVerdict`: a linked
-  // one by name or city and state; a registry-only one (header rule) by its legal name.
-  const otherNamed = `(CASE WHEN c.linked THEN (
-      (EXISTS (SELECT 1 FROM unnest(c.forms) f
-                WHERE NOT ${overlap("ARRAY[f]", "own.forms")} AND ${has("j.padded", "f")})
-       AND (NOT c.name_shared
-            OR (length(c.city_w) >= ${MIN_CITY_CHARS} AND c.city_w <> own.city_w AND ${has("j.padded", "c.city_w")})))
-      OR (length(c.city_w) >= ${MIN_CITY_CHARS} AND c.city_w <> own.city_w AND ${cityState("j.padded", "c")})
-    ) ELSE NOT ${overlap("ARRAY[c.legal]", "own.forms")} END)`;
-  const inplay = (where: string) => `(SELECT b.*, ip.linked FROM inplay ip JOIN named_banks b ON b.id = ip.other_id
-                 WHERE ip.institution_id = j.institution_id AND ip.source_document_id = j.source_document_id AND ${where})`;
+    `((${a}.hc_rssd <> '' AND ${a}.hc_rssd = ${b}.hc_rssd) OR (${a}.hc_key <> '' AND ${a}.hc_key = ${b}.hc_key))`;
+  const printsHostSql = (host: string) =>
+    `(${host} <> '' AND tx.lower_text ~ ('(^|[^a-z0-9-])' || replace(${host}, '.', '[.]') || '($|[^a-z0-9-])'))`;
+  // A linked institution `c` the text names, as `named` in `documentOwnerVerdict` (`j` the pair, `own` its bank).
+  const otherNamed = `(
+      (EXISTS (SELECT 1 FROM unnest(c.forms) f WHERE NOT ${overlap("ARRAY[f]", "own.forms")} AND ${has("tx.padded", "f")})
+       AND (NOT c.name_shared OR (c.city_w <> own.city_w AND length(c.city_w) >= ${MIN_CITY_CHARS} AND ${has("tx.padded", "c.city_w")})))
+      OR EXISTS (SELECT 1 FROM unnest(c.acronyms) a WHERE NOT (a = ANY(own.acronyms)) AND ${has("tx.padded", "a")})
+      OR (c.legal IS NOT NULL AND NOT c.name_shared AND NOT ${overlap("ARRAY[c.legal]", "own.forms")}
+          AND EXISTS (SELECT 1 FROM headed hd WHERE hd.source_document_id = j.source_document_id AND hd.id = c.id))
+      OR (c.city_w <> own.city_w AND ${cityState("tx.padded", "c")})
+    )`;
+  const strictNamed = (alias: string) =>
+    `(EXISTS (SELECT 1 FROM unnest(${alias}.forms) f WHERE ${has("tx.padded", "f")}) OR EXISTS (SELECT 1 FROM unnest(${alias}.acronyms) a WHERE ${has("tx.padded", "a")}))`;
+  const brandNamed = (alias: string) => `(${alias}.brand IS NOT NULL AND ${has("tx.padded", `${alias}.brand`)})`;
+  // Rows of `pool_rows` for this pair (each pair's flags are worked out once, set-wise).
+  const poolOf = (where: string) =>
+    `(SELECT pr.* FROM pool_rows pr WHERE pr.institution_id = j.institution_id AND pr.source_document_id = j.source_document_id AND ${where})`;
+  const baseSql = (nameExpr: string) =>
+    `regexp_replace(regexp_replace(${wordsSql(nameExpr)}, '^the ', ''), ' (national association|n a|ssb|fsb|inc)$', '')`;
   return `-- Darwin document-owner check (#1455), read-only: live fees on a document whose text names another bank.
+-- JIT off: compiling this statement's ~1,000 expressions took 11 s on a 16-row test database.
+SET jit = off;
 ${scopedPairsSql()},
     states(code, state_w) AS (VALUES ${states}),
-    texts AS (
-      SELECT DISTINCT ON (source_document_id) source_document_id, normalized_text AS raw,
-             ' ' || ${wordsSql("normalized_text")} || ' ' AS padded
+    names AS MATERIALIZED (
+      SELECT i.id, i.state_code, ${baseSql("i.institution_name")} AS base, ${wordsSql("i.city")} AS city_raw,
+             ${hostSql("i.website_url")} AS website_host,
+             ltrim(btrim(COALESCE(i.holding_company_rssd, '')), '0') AS hc_rssd,
+             btrim(regexp_replace(regexp_replace(regexp_replace(${wordsSql("i.holding_company_name")}, '(^| )&( |$)', ' ', 'g'), ' +', ' ', 'g'),
+                   '( (inc|corp|corporation|co|company|incorporated|ltd|llc))+$', '')) AS hc_key,
+             COALESCE(st.state_w, '') AS state_w
+        FROM institution_sources i
+        LEFT JOIN states st ON st.code = upper(btrim(COALESCE(i.state_code, '')))
+       WHERE i.institution_name IS NOT NULL
+    ),
+    branded AS MATERIALIZED (
+      SELECT n.*, regexp_replace(n.base, ' (federal credit union|credit union|fcu|bank)$', '') AS brand_raw,
+             CASE WHEN length(n.city_raw) >= ${MIN_CITY_CHARS} THEN n.city_raw ELSE '' END AS city_w
+        FROM names n
+    ),
+    directory AS MATERIALIZED (
+      SELECT DISTINCT b.id, f.form, split_part(f.form, ' ', 1) || ' ' || split_part(f.form, ' ', 2) AS first_pair
+        FROM branded b,
+        LATERAL unnest(ARRAY[
+          b.base,
+          regexp_replace(b.base, ' federal credit union$', ' credit union'),
+          regexp_replace(b.base, ' federal credit union$', ' fcu'),
+          regexp_replace(b.base, '^saint ', 'st '),
+          regexp_replace(b.base, '^st ', 'saint '),
+          CASE WHEN b.brand_raw <> b.base AND b.brand_raw ~ ' ' THEN b.brand_raw END,
+          CASE WHEN b.brand_raw <> b.base AND b.brand_raw !~ ' ' AND b.brand_raw <> '' AND length(b.city_raw) >= ${MIN_CITY_CHARS} AND b.brand_raw NOT IN (${generic})
+               THEN b.city_raw || ' ' || b.brand_raw END,
+          CASE WHEN b.brand_raw <> b.base AND b.brand_raw !~ ' ' AND b.brand_raw <> '' AND length(b.city_raw) >= ${MIN_CITY_CHARS} AND b.brand_raw NOT IN (${generic})
+               THEN b.brand_raw || ' ' || b.city_raw END
+        ]) AS f(form)
+       WHERE f.form IS NOT NULL AND length(f.form) >= ${MIN_NAME_CHARS} AND f.form ~ ' ' AND f.form NOT IN (${generic})
+    ),
+    in_play AS MATERIALIZED (
+      SELECT institution_id AS id FROM shared UNION SELECT unnest(other_ids) FROM shared
+    ),
+    sequences AS MATERIALIZED (
+      SELECT DISTINCT d.id, array_to_string(w.a[i:k], ' ') AS seq
+        FROM directory d,
+        LATERAL (SELECT string_to_array(d.form, ' ') AS a) w,
+        LATERAL generate_series(1, array_length(w.a, 1)) AS i,
+        LATERAL generate_series(i + 1, array_length(w.a, 1)) AS k
+    ),
+    shared_names AS MATERIALIZED (
+      SELECT DISTINCT d.id
+        FROM directory d
+        JOIN sequences q ON q.seq = d.form AND q.id <> d.id
+       WHERE d.id IN (SELECT id FROM in_play)
+    ),
+    banks AS MATERIALIZED (
+      SELECT b.id, b.state_code, b.state_w, b.city_w, b.website_host, b.hc_rssd, b.hc_key,
+             COALESCE((SELECT array_agg(d.form) FROM directory d WHERE d.id = b.id), '{}') AS forms,
+             CASE WHEN b.base ~ ' credit union$' THEN ARRAY(
+               SELECT DISTINCT a FROM unnest(ARRAY[
+                 (SELECT string_agg(left(w, 1), '' ORDER BY n) FROM unnest(string_to_array(b.base, ' ')) WITH ORDINALITY AS u(w, n) WHERE w NOT IN (${small})),
+                 (SELECT string_agg(left(w, 1), '' ORDER BY n) FROM unnest(string_to_array(b.base, ' ')) WITH ORDINALITY AS u(w, n) WHERE w NOT IN (${small}) AND w <> 'federal')
+               ]) a WHERE length(a) >= ${MIN_ACRONYM_CHARS} AND a NOT IN (${generic})) ELSE '{}' END AS acronyms,
+             CASE WHEN b.base ~ ' ' AND b.base ~ '(^| )(bank|credit union)( |$)' THEN b.base END AS legal,
+             CASE WHEN b.brand_raw <> b.base AND b.brand_raw !~ ' ' AND length(b.brand_raw) >= ${MIN_NAME_CHARS} AND b.brand_raw NOT IN (${generic})
+                  THEN b.brand_raw END AS brand,
+             (b.id IN (SELECT id FROM shared_names)) AS name_shared
+        FROM branded b
+       WHERE b.id IN (SELECT id FROM in_play)
+    ),
+    -- One copy of each text, already reduced to what the checks read: the words, the lower-cased
+    -- text for printed websites, and the first lines for the header rule.
+    latest_texts AS MATERIALIZED (
+      SELECT DISTINCT ON (source_document_id) source_document_id, normalized_text AS raw
         FROM agent_source_texts
        WHERE source_document_id IN (SELECT source_document_id FROM shared)
          AND status = 'completed' AND normalized_text IS NOT NULL
        ORDER BY source_document_id, id DESC
     ),
-    directory AS (
-      SELECT i.id, f.form, split_part(f.form, ' ', 1) AS first_word
-        FROM institution_sources i, unnest(${formsSql("i.institution_name")}) AS f(form)
-       WHERE i.institution_name IS NOT NULL
+    texts AS MATERIALIZED (
+      SELECT l.source_document_id,
+             ' ' || ${wordsSql("l.raw")} || ' ' AS padded,
+             lower(l.raw) AS lower_text,
+             ARRAY(
+               SELECT y.line FROM (
+                 SELECT btrim(regexp_replace(regexp_replace(u.l, '[''’‘\`]', '', 'g'), '[^A-Za-z0-9&]+', ' ', 'g')) AS line, u.n
+                   FROM unnest(regexp_split_to_array(l.raw, E'\\r?\\n')) WITH ORDINALITY AS u(l, n)
+               ) y
+                WHERE y.line <> ''
+                ORDER BY y.n
+                LIMIT ${HEADER_LINES}
+             ) AS header
+        FROM latest_texts l
     ),
-    doc_words AS (
-      SELECT DISTINCT t.source_document_id, w.word
-        FROM texts t, regexp_split_to_table(btrim(t.padded), ' ') AS w(word)
+    first_pairs AS MATERIALIZED (
+      SELECT DISTINCT first_pair FROM directory
     ),
-    found AS (
-      SELECT DISTINCT dw.source_document_id, d.id
-        FROM doc_words dw
-        JOIN directory d ON d.first_word = dw.word
-        JOIN texts t ON t.source_document_id = dw.source_document_id
-       WHERE strpos(t.padded, ' ' || d.form || ' ') > 0
-    ),
-    header_lines AS (
-      SELECT t.source_document_id, x.line
+    -- Only the word pairs that open a registered name are kept, so this stays small on long documents.
+    doc_pairs AS MATERIALIZED (
+      SELECT DISTINCT t.source_document_id, x.w || ' ' || x.next_w AS first_pair
         FROM texts t,
         LATERAL (
-          SELECT y.line FROM (
-            SELECT btrim(regexp_replace(regexp_replace(u.l, '[''’‘\`]', '', 'g'), '[^A-Za-z0-9&]+', ' ', 'g')) AS line, u.n
-              FROM unnest(regexp_split_to_array(t.raw, E'\\r?\\n')) WITH ORDINALITY AS u(l, n)
-          ) y
-           WHERE y.line <> ''
-           ORDER BY y.n
-           LIMIT ${HEADER_LINES}
+          SELECT u.w, lead(u.w) OVER (ORDER BY u.n) AS next_w
+            FROM regexp_split_to_table(btrim(t.padded), ' ') WITH ORDINALITY AS u(w, n)
         ) x
+       WHERE x.next_w IS NOT NULL
+         AND x.w || ' ' || x.next_w IN (SELECT first_pair FROM first_pairs)
     ),
-    legal AS (
-      SELECT id, legal FROM (
-        SELECT i.id, ${legalBase("i.institution_name")} AS legal FROM institution_sources i WHERE i.institution_name IS NOT NULL
-      ) z
-       WHERE legal ~ ' ' AND legal ~ '(^| )(bank|credit union)( |$)'
+    candidates AS MATERIALIZED (
+      SELECT DISTINCT p.source_document_id, d.id, d.form
+        FROM doc_pairs p
+        JOIN directory d ON d.first_pair = p.first_pair
     ),
-    headed AS (
-      SELECT DISTINCT h.source_document_id, lg.id
+    found AS MATERIALIZED (
+      SELECT DISTINCT c.source_document_id, c.id
+        FROM candidates c
+        JOIN texts t ON t.source_document_id = c.source_document_id
+       WHERE strpos(t.padded, ' ' || c.form || ' ') > 0
+    ),
+    header_lines AS MATERIALIZED (
+      SELECT t.source_document_id, x.line
+        FROM texts t, unnest(t.header) AS x(line)
+    ),
+    headed AS MATERIALIZED (
+      SELECT DISTINCT h.source_document_id, b.id
         FROM header_lines h
-        JOIN legal lg ON split_part(lower(h.line), ' ', 1) = split_part(lg.legal, ' ', 1)
-       WHERE left(lower(h.line) || ' ', length(lg.legal) + 1) = lg.legal || ' '
+        JOIN shared s ON s.source_document_id = h.source_document_id
+        JOIN banks b ON b.id = ANY(s.other_ids) AND b.legal IS NOT NULL
+       WHERE left(lower(h.line) || ' ', length(b.legal) + 1) = b.legal || ' '
          AND NOT EXISTS (
-           SELECT 1 FROM regexp_split_to_table(left(h.line, length(lg.legal)), ' ') AS w(word)
+           SELECT 1 FROM regexp_split_to_table(left(h.line, length(b.legal)), ' ') AS w(word)
             WHERE w.word NOT IN (${small}) AND w.word !~ '^[A-Z0-9&]'
          )
     ),
-    linked AS (
-      SELECT DISTINCT s.institution_id, s.source_document_id, o.other_id
-        FROM shared s, unnest(s.other_ids) AS o(other_id)
-       WHERE o.other_id <> s.institution_id
-    ),
-    registry AS (
-      SELECT s.institution_id, s.source_document_id, f.id AS other_id, (hd.id IS NOT NULL) AS headed
-        FROM shared s
-        JOIN found f ON f.source_document_id = s.source_document_id
-        LEFT JOIN headed hd ON hd.source_document_id = s.source_document_id AND hd.id = f.id
-       WHERE f.id <> s.institution_id
-         AND NOT EXISTS (SELECT 1 FROM linked l WHERE l.institution_id = s.institution_id AND l.source_document_id = s.source_document_id AND l.other_id = f.id)
-    ),
-    banks AS (
-      SELECT i.id, i.state_code,
-             ${wordsSql("i.city")} AS city_w,
-             COALESCE(st.state_w, '') AS state_w,
-             ltrim(btrim(COALESCE(i.holding_company_rssd, '')), '0') AS hc_rssd,
-             ${wordsSql("i.holding_company_name")} AS hc_name,
-             ${formsSql("i.institution_name")} AS forms,
-             ${legalBase("i.institution_name")} AS legal
-        FROM institution_sources i
-        LEFT JOIN states st ON st.code = upper(btrim(COALESCE(i.state_code, '')))
-       WHERE i.id IN (SELECT institution_id FROM shared UNION SELECT other_id FROM linked UNION SELECT other_id FROM registry)
-    ),
-    named_banks AS (
-      SELECT b.*,
-             CASE WHEN b.id IN (SELECT other_id FROM linked UNION SELECT other_id FROM registry WHERE headed)
-                  THEN EXISTS (
-                    SELECT 1 FROM directory a, unnest(b.forms) y
-                     WHERE a.id <> b.id AND strpos(' ' || a.form || ' ', ' ' || y || ' ') > 0
-                  )
-                  ELSE false END AS name_shared
-        FROM banks b
-    ),
-    inplay AS (
-      SELECT institution_id, source_document_id, other_id, true AS linked FROM linked
-      UNION ALL
-      SELECT r.institution_id, r.source_document_id, r.other_id, false
-        FROM registry r JOIN named_banks b ON b.id = r.other_id
-       WHERE r.headed AND NOT b.name_shared
-    ),
-    judged0 AS (
-      SELECT s.institution_id, s.source_document_id, s.document_url, s.live_fees, s.other_ids, t.padded
+    judged0 AS MATERIALIZED (
+      SELECT s.*, (t.padded IS NOT NULL AND btrim(t.padded) <> '') AS has_text
         FROM shared s
         LEFT JOIN texts t ON t.source_document_id = s.source_document_id
     ),
-    judged AS (
-      SELECT j.institution_id, j.source_document_id, j.document_url, j.live_fees, j.other_ids,
-             CASE
-               WHEN j.padded IS NULL OR btrim(j.padded) = '' THEN 'no_text'
-               WHEN EXISTS (SELECT 1 FROM unnest(own.forms) f
-                             WHERE ${has("j.padded", "f")}
-                               AND NOT EXISTS (SELECT 1 FROM ${inplay(overlap("ARRAY[f]", "b.forms"))} c))
-                 THEN 'own_named'
-               WHEN length(own.city_w) >= ${MIN_CITY_CHARS} AND (
-                      CASE WHEN EXISTS (SELECT 1 FROM ${inplay("b.city_w = own.city_w")} c)
-                           THEN ${cityState("j.padded", "own")}
-                           ELSE ${has("j.padded", "own.city_w")} END)
-                 THEN 'own_named'
-               WHEN EXISTS (SELECT 1 FROM ${inplay(sibling("own", "b"))} c)
-                    AND (NOT EXISTS (SELECT 1 FROM ${inplay(`NOT ${sibling("own", "b")}`)} c WHERE ${otherNamed})
-                         OR EXISTS (SELECT 1 FROM ${inplay(sibling("own", "b"))} c WHERE ${otherNamed}))
-                 THEN 'sibling_shared'
-               ELSE CASE (SELECT count(*) FROM ${inplay(`NOT ${sibling("own", "b")}`)} c WHERE ${otherNamed})
-                      WHEN 0 THEN CASE WHEN EXISTS (
-                               SELECT 1 FROM registry r JOIN named_banks b ON b.id = r.other_id
-                                WHERE r.institution_id = j.institution_id AND r.source_document_id = j.source_document_id
-                                  AND NOT (r.headed AND NOT b.name_shared)
-                                  AND NOT ${sibling("own", "b")}
-                             ) THEN 'registry_named' ELSE 'unproven' END
-                      WHEN 1 THEN 'other_bank' ELSE 'shared_service' END
-             END AS verdict,
-             (SELECT min(c.id) FROM ${inplay(`NOT ${sibling("own", "b")}`)} c WHERE ${otherNamed}) AS named_other_id
+    -- One row per pair and linked institution, with every flag the verdict reads, worked out once.
+    pool_rows AS MATERIALIZED (
+      SELECT j.institution_id, j.source_document_id, c.id, c.forms, c.acronyms,
+             ${sibling("own", "c")} AS sib,
+             (c.city_w <> '' AND c.city_w = own.city_w) AS same_city,
+             (c.id = ANY(j.hash_ids)) AS via_hash,
+             (c.id = ANY(j.host_ids) AND c.website_host = j.document_host) AS site,
+             (tx.padded IS NOT NULL AND ${otherNamed}) AS named,
+             (tx.padded IS NOT NULL AND ${strictNamed("c")}) AS strict,
+             (tx.padded IS NOT NULL AND ${brandNamed("c")}) AS brand_named
         FROM judged0 j
-        JOIN named_banks own ON own.id = j.institution_id
+        LEFT JOIN texts tx ON tx.source_document_id = j.source_document_id
+        JOIN banks own ON own.id = j.institution_id
+        JOIN LATERAL unnest(j.other_ids) AS o(id) ON true
+        JOIN banks c ON c.id = o.id AND c.id <> j.institution_id
+    ),
+    own_flags AS MATERIALIZED (
+      SELECT j.institution_id, j.source_document_id,
+             EXISTS (SELECT 1 FROM unnest(own.forms) f WHERE ${has("tx.padded", "f")}
+                       AND NOT EXISTS (SELECT 1 FROM ${poolOf(overlap("ARRAY[f]", "pr.forms"))} c)) AS name_distinct,
+             EXISTS (SELECT 1 FROM unnest(own.acronyms) a WHERE ${has("tx.padded", "a")}
+                       AND NOT EXISTS (SELECT 1 FROM ${poolOf("a = ANY(pr.acronyms)")} c)) AS acronym_distinct,
+             (own.website_host IS DISTINCT FROM j.document_host AND ${printsHostSql("COALESCE(own.website_host, '')")}) AS website,
+             (length(own.city_w) >= ${MIN_CITY_CHARS} AND (
+                CASE WHEN EXISTS (SELECT 1 FROM ${poolOf("pr.same_city")} c)
+                     THEN ${cityState("tx.padded", "own")}
+                     ELSE ${has("tx.padded", "own.city_w")} END)) AS city,
+             ${strictNamed("own")} AS strict,
+             ${brandNamed("own")} AS brand_named,
+             own.website_host IS DISTINCT FROM j.document_host AS off_own_site
+        FROM judged0 j
+        JOIN texts tx ON tx.source_document_id = j.source_document_id
+        JOIN banks own ON own.id = j.institution_id
+       WHERE j.has_text
+    ),
+    pool_agg AS MATERIALIZED (
+      SELECT institution_id, source_document_id,
+             count(*) AS linked,
+             count(*) FILTER (WHERE NOT sib) AS unrelated,
+             count(*) FILTER (WHERE sib) AS siblings,
+             bool_or(sib AND named) AS sibling_named,
+             count(*) FILTER (WHERE NOT sib AND named) AS hits,
+             min(id) FILTER (WHERE NOT sib AND named) AS hit_id,
+             count(*) FILTER (WHERE NOT sib AND site) AS sites,
+             min(id) FILTER (WHERE NOT sib AND site) AS site_id,
+             count(*) FILTER (WHERE via_hash) AS hash_linked,
+             count(*) FILTER (WHERE via_hash AND strict) AS hash_strict,
+             min(id) FILTER (WHERE via_hash AND strict) AS hash_strict_id,
+             count(*) FILTER (WHERE via_hash AND brand_named) AS hash_brand,
+             min(id) FILTER (WHERE via_hash AND brand_named) AS hash_brand_id
+        FROM pool_rows
+       GROUP BY institution_id, source_document_id
+    ),
+    vendor AS MATERIALIZED (
+      SELECT j.institution_id, j.source_document_id,
+             CASE
+               WHEN f.strict::int + a.hash_strict = 1 THEN CASE WHEN f.strict THEN j.institution_id ELSE a.hash_strict_id END
+               WHEN f.strict::int + a.hash_strict = 0 AND f.brand_named::int + a.hash_brand = 1
+                 THEN CASE WHEN f.brand_named THEN j.institution_id ELSE a.hash_brand_id END
+             END AS owner_id
+        FROM judged0 j
+        JOIN own_flags f ON f.institution_id = j.institution_id AND f.source_document_id = j.source_document_id
+        JOIN pool_agg a ON a.institution_id = j.institution_id AND a.source_document_id = j.source_document_id
+       WHERE j.vendor_path AND a.hash_linked > 0
+    ),
+    registry_pairs AS MATERIALIZED (
+      SELECT DISTINCT s.institution_id, s.source_document_id
+        FROM shared s
+        JOIN found f ON f.source_document_id = s.source_document_id AND f.id <> s.institution_id AND NOT (f.id = ANY(s.other_ids))
+        JOIN names r ON r.id = f.id
+        JOIN names o ON o.id = s.institution_id
+       WHERE NOT ${sibling("o", "r")}
+    ),
+    judged AS MATERIALIZED (
+      SELECT j.institution_id, j.source_document_id, j.document_url, j.live_fees, j.other_ids, x.verdict,
+             CASE WHEN x.verdict = 'other_bank' THEN x.named_other_id END AS named_other_id
+        FROM judged0 j
+        LEFT JOIN own_flags f ON f.institution_id = j.institution_id AND f.source_document_id = j.source_document_id
+        LEFT JOIN pool_agg a ON a.institution_id = j.institution_id AND a.source_document_id = j.source_document_id
+        LEFT JOIN vendor v ON v.institution_id = j.institution_id AND v.source_document_id = j.source_document_id
+        LEFT JOIN banks vo ON vo.id = v.owner_id
+        LEFT JOIN banks own ON own.id = j.institution_id
+        CROSS JOIN LATERAL (
+          SELECT CASE
+                   WHEN NOT j.has_text THEN 'no_text'
+                   WHEN COALESCE(a.linked, 0) > 0 AND a.unrelated = 0 THEN 'sibling_shared'
+                   WHEN f.name_distinct OR f.acronym_distinct OR f.website OR f.city THEN 'own_named'
+                   WHEN v.owner_id = j.institution_id THEN 'own_named'
+                   WHEN v.owner_id IS NOT NULL AND NOT ${sibling("own", "vo")} THEN 'other_bank'
+                   WHEN f.off_own_site AND COALESCE(a.sites, 0) = 1 THEN 'other_bank'
+                   WHEN COALESCE(a.siblings, 0) > 0 AND (a.hits = 0 OR a.sibling_named) THEN 'sibling_shared'
+                   WHEN COALESCE(a.hits, 0) = 1 THEN 'other_bank'
+                   WHEN COALESCE(a.hits, 0) > 1 THEN 'shared_service'
+                   WHEN EXISTS (SELECT 1 FROM registry_pairs r WHERE r.institution_id = j.institution_id AND r.source_document_id = j.source_document_id)
+                     THEN 'registry_named'
+                   ELSE 'unproven'
+                 END AS verdict,
+                 CASE
+                   WHEN v.owner_id IS NOT NULL AND v.owner_id <> j.institution_id THEN v.owner_id
+                   WHEN f.off_own_site AND COALESCE(a.sites, 0) = 1 THEN a.site_id
+                   ELSE a.hit_id
+                 END AS named_other_id
+        ) x
     )
 ${options.detail
     ? `SELECT j.verdict, j.institution_id, i.institution_name, j.source_document_id, j.document_url, j.live_fees,
@@ -668,6 +890,10 @@ interface PairRow {
   document_url: string | null;
   live_fees: number | string;
   other_ids: Array<number | string> | null;
+  host_ids: Array<number | string> | null;
+  hash_ids: Array<number | string> | null;
+  document_host: string | null;
+  vendor_path: boolean | null;
   text_hash: string | null;
   reread: boolean | null;
 }
@@ -680,6 +906,7 @@ interface BankRow {
   cert_number: string | null;
   holding_company_rssd: string | null;
   holding_company_name: string | null;
+  website_url: string | null;
 }
 
 export interface DocumentOwnerFee {
@@ -693,8 +920,11 @@ export interface DocumentOwnerFee {
 
 export interface DocumentOwnerResult {
   live: boolean;
-  /** True when the step skipped the read: the last read found no pair and nothing new has arrived since. */
+  /** True when the step skipped the read: the last read selected no pair and nothing new has arrived since. */
   skipped: boolean;
+  /** Pairs the step selected; the skip keys on this, not on `pairs`. */
+  selected: number;
+  /** Pairs judged (a selected pair whose bank has no registry row is recorded `unproven`, not judged). */
   pairs: number;
   /** Of `pairs`, `other_bank` pairs read again for their second look (takedown on only). */
   rereads: number;
@@ -721,6 +951,7 @@ export function documentOwnerDetail(result: DocumentOwnerResult | null) {
     strategy: DOCUMENT_OWNER_STRATEGY,
     takedown_live: result.live,
     skipped: result.skipped,
+    selected: result.selected,
     pairs: result.pairs,
     rereads: result.rereads,
     verdicts: result.verdicts,
@@ -769,7 +1000,7 @@ async function readWatermark(db: SqlTag, live: boolean): Promise<{ now: Watermar
     `);
     const detail = last?.detail ?? null;
     const skip = detail != null
-      && Number(detail.pairs) === 0
+      && Number(detail.selected) === 0
       && now.textId != null && Number(detail.max_text_id) === now.textId
       && now.feeId != null && Number(detail.max_fee_id) === now.feeId;
     return { now, skip };
@@ -791,7 +1022,7 @@ export async function recheckDocumentOwners(
   const limit = Math.max(1, Math.min(options.limit ?? DOCUMENT_OWNER_PAIR_LIMIT, 500));
   const rereadLimit = live ? Math.max(0, Math.min(options.rereadLimit ?? DOCUMENT_OWNER_REREAD_LIMIT, 500)) : 0;
   const result: DocumentOwnerResult = {
-    live, skipped: false, pairs: 0, rereads: 0, verdicts: {}, siblingSharedDocuments: 0, wouldTakeDown: [],
+    live, skipped: false, selected: 0, pairs: 0, rereads: 0, verdicts: {}, siblingSharedDocuments: 0, wouldTakeDown: [],
     flagged: 0, waiting: 0, cleared: 0, takenDown: [],
   };
   const watermark = await readWatermark(db, live);
@@ -811,6 +1042,7 @@ export async function recheckDocumentOwners(
     return result;
   }
   pairs = Array.isArray(pairs) ? pairs : [];
+  result.selected = pairs.length;
 
   if (pairs.length > 0) {
     await judgePairs(db, options, live, pairs, result);
@@ -831,7 +1063,7 @@ async function judgePairs(
   try {
     bankRows = await inSavepoint(db, (scope) => scope<BankRow[]>`
       -- the registry for the document-owner name scan
-      SELECT id, institution_name, city, state_code, cert_number, holding_company_rssd, holding_company_name
+      SELECT id, institution_name, city, state_code, cert_number, holding_company_rssd, holding_company_name, website_url
         FROM institution_sources
        WHERE institution_name IS NOT NULL
     `);
@@ -848,6 +1080,7 @@ async function judgePairs(
     certNumber: row.cert_number,
     holdingCompanyRssd: row.holding_company_rssd,
     holdingCompanyName: row.holding_company_name,
+    websiteHost: urlHost(row.website_url),
   })));
   const sharedCache = new Map<number, boolean>();
   const withShared = (id: number): OwnerBank | null => {
@@ -864,7 +1097,6 @@ async function judgePairs(
     const institutionId = Number(pair.institution_id);
     const sourceDocumentId = Number(pair.source_document_id);
     const own = withShared(institutionId);
-    if (!own) continue;
     const text = texts.get(sourceDocumentId) ?? null;
     const linked = (pair.other_ids ?? []).map(Number).flatMap((id) => {
       const bank = withShared(id);
@@ -874,9 +1106,18 @@ async function judgePairs(
       const bank = id === institutionId ? null : withShared(id);
       return bank ? [bank] : [];
     });
-    const verdict = documentOwnerVerdict(text, own, linked, found);
+    const ids = (values: Array<number | string> | null) => (values ?? []).map(Number);
+    // A pair whose bank has no registry row (or no name) is recorded unproven, so it is not read again.
+    const verdict: DocumentOwnerVerdict = own
+      ? documentOwnerVerdict(text, own, linked, found, {
+          hostIds: ids(pair.host_ids),
+          hashIds: ids(pair.hash_ids),
+          documentHost: pair.document_host,
+          vendorPath: pair.vendor_path === true || isVendorDocumentPath(pair.document_url),
+        })
+      : { kind: "unproven" };
     const key = `${institutionId}:${sourceDocumentId}`;
-    result.pairs += 1;
+    if (own) result.pairs += 1;
     if (pair.reread === true) result.rereads += 1;
     result.verdicts[verdict.kind] = (result.verdicts[verdict.kind] ?? 0) + 1;
     if (verdict.kind === "sibling_shared") siblingDocuments.add(sourceDocumentId);
@@ -910,6 +1151,7 @@ async function judgePairs(
           evidence: "evidence" in verdict ? verdict.evidence : null,
           mode: live ? "live" : "shadow",
           reread: pair.reread === true,
+          no_registry_row: own == null,
         },
       }));
     } catch (error) {

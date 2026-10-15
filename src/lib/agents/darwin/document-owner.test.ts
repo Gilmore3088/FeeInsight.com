@@ -6,6 +6,7 @@ import {
   documentOwnerCountSql,
   documentOwnerFingerprint,
   documentOwnerPairsSql,
+  creditUnionAcronyms,
   documentOwnerVerdict,
   headerNamesInstitution,
   institutionsNamedIn,
@@ -105,7 +106,7 @@ describe("documentOwnerVerdict: no takedown", () => {
     expect(documentOwnerVerdict(text, zapata, [brownsville])).toMatchObject({ kind: "sibling_shared" });
   });
 
-  it("another bank's shared name without its city is not enough", () => {
+  it("another bank's shared name without its city is not enough, even as a title line", () => {
     const own: OwnerBank = { id: 915, name: "Rock Valley State Bank", city: "Rock Valley", stateCode: "IA" };
     const peoples: OwnerBank = { id: 505, name: "Peoples Bank", city: "Bellingham", stateCode: "WA", nameShared: true };
     expect(documentOwnerVerdict("Peoples Bank fee schedule", own, [peoples])).toEqual({ kind: "unproven" });
@@ -123,70 +124,124 @@ describe("documentOwnerVerdict: no takedown", () => {
   });
 });
 
-describe("vendor-served documents (coordinator finding, Oct 15)", () => {
-  const healthplus: OwnerBank = { id: 5009, name: "Healthplus Federal Credit Union", city: "Gulfport", stateCode: "MS" };
+describe("vendor-served documents and the prod dry run (Oct 15)", () => {
+  const healthplus: OwnerBank = { id: 5009, name: "Healthplus Federal Credit Union", city: "Gulfport", stateCode: "MS", websiteHost: "healthplusfcu.org" };
   const members: OwnerBank[] = [
-    { id: 4694, name: "Profinance Federal Credit Union", city: "Merrillville", stateCode: "IN" },
-    { id: 4728, name: "Onomea Federal Credit Union", city: "Hilo", stateCode: "HI" },
-    { id: 5233, name: "Lakehurst Naval Federal Credit Union", city: "Lakehurst", stateCode: "NJ" },
-    { id: 5733, name: "East Alabama Community Federal Credit Union", city: "Opelika", stateCode: "AL" },
-    { id: 5804, name: "Palace City Federal Credit Union", city: "Mitchell", stateCode: "SD" },
-    { id: 6045, name: "Meridian Mississippi ANG Federal Credit Union", city: "Meridian", stateCode: "MS" },
+    { id: 4694, name: "Profinance Federal Credit Union", city: "Merrillville", stateCode: "IN", websiteHost: "profinancefcu.com" },
+    { id: 5733, name: "East Alabama Community Federal Credit Union", city: "Opelika", stateCode: "AL", websiteHost: "eacfcu.org" },
+    { id: 5804, name: "Palace City Federal Credit Union", city: "Mitchell", stateCode: "SD", websiteHost: "palacecityfcu.org" },
+    { id: 6045, name: "Meridian Mississippi ANG Federal Credit Union", city: "Meridian", stateCode: "MS", websiteHost: "mmangfcu.org" },
+    { id: 5233, name: "Lakehurst Naval Federal Credit Union", city: "Lakehurst", stateCode: "NJ", websiteHost: "lnfcu.org" },
   ];
-  const horizons: OwnerBank = { id: 8416, name: "Horizons North Credit Union", city: "Northglenn", stateCode: "CO" };
-  const fiveStar: OwnerBank = { id: 2092, name: "5Star Bank", city: "Colorado Springs", stateCode: "CO" };
-  const directory = buildNameDirectory([healthplus, ...members, horizons, fiveStar, ukfcu, bluegrass]);
-  const HEALTHPLUS_TEXT = "HEALTHPLUS | Fee Schedule\nEffective January 1, 2026\nNSF / Returned item $30.00\nFederally insured by NCUA";
-  const HNCU_TEXT = "Horizons North Credit Union Fee Schedule\nOverdraft $30\nThank you for being a member.";
+  const onomea: OwnerBank = { id: 4728, name: "Onomea Federal Credit Union", city: "Hilo", stateCode: "HI", websiteHost: "onomeafcu.org" };
+  const lakehurst = members[4];
+  const horizons: OwnerBank = { id: 8416, name: "Horizons North Credit Union", city: "Northglenn", stateCode: "CO", websiteHost: "hncu.org" };
+  const fiveStar: OwnerBank = { id: 2092, name: "5Star Bank", city: "Colorado Springs", stateCode: "CO", websiteHost: "5star.bank" };
+  const currency: OwnerBank = { id: 2720, name: "Currency Bank", city: "Oak Grove", stateCode: "LA" };
+  const direct: OwnerBank = { id: 5355, name: "Direct Federal Credit Union", city: "Needham", stateCode: "MA" };
+  const westminster: OwnerBank = { id: 900, name: "Westminster Bank", city: "Westminster", stateCode: "CO" };
+  const directory = buildNameDirectory([healthplus, ...members, onomea, horizons, fiveStar, ukfcu, bluegrass, currency, direct, westminster]);
+  const HEALTHPLUS_TEXT = "HEALTHPLUS | Fee Schedule\nEffective January 1, 2026\nDirect deposit: free\nCurrency exchange $5\nNSF / Returned item $30.00\nFederally insured by NCUA";
+  const LAKEHURST_TEXT = "LAKEHURST NAVAL FEDERAL CREDIT UNION FEE SCHEDULE\nOverdraft $25\nCurrency order $5";
   const scan = (text: string, own: OwnerBank) =>
     institutionsNamedIn(text, directory).filter((id) => id !== own.id).map((id) => directory.banks.get(id)!);
+  const vendor = (own: OwnerBank, linked: OwnerBank[], url = "https://x.org/ezs3download/download/286194/1458976/") => ({
+    hashIds: linked.map((other) => other.id), hostIds: [], vendorPath: isVendorDocumentPath(url), documentHost: own.websiteHost,
+  });
 
-  it("the Healthplus header fires on every member domain linked to Healthplus by text hash", () => {
-    for (const own of members) {
-      expect(documentOwnerVerdict(HEALTHPLUS_TEXT, own, [healthplus], scan(HEALTHPLUS_TEXT, own))).toMatchObject({ kind: "other_bank", otherId: 5009 });
+  it("the Healthplus copy on each member domain names its owner through the text hash (stray 'direct', 'currency' ignored)", () => {
+    for (const own of members.slice(0, 4)) {
+      const linked = [healthplus, ...members.filter((other) => other.id !== own.id && other.id !== 5233)];
+      expect(documentOwnerVerdict(HEALTHPLUS_TEXT, own, linked, scan(HEALTHPLUS_TEXT, own), vendor(own, linked)))
+        .toMatchObject({ kind: "other_bank", otherId: 5009, evidence: "vendor copy: text hash" });
     }
   });
 
-  it("without the text-hash link, the brand alone is only for review (the header rule needs the legal name)", () => {
-    expect(documentOwnerVerdict(HEALTHPLUS_TEXT, members[0], [], scan(HEALTHPLUS_TEXT, members[0]))).toEqual({
-      kind: "registry_named", otherIds: [5009],
-    });
+  it("but Healthplus's own copy is its own", () => {
+    const linked = members.slice(0, 4);
+    expect(documentOwnerVerdict(HEALTHPLUS_TEXT, healthplus, linked, scan(HEALTHPLUS_TEXT, healthplus), vendor(healthplus, linked)))
+      .toEqual({ kind: "own_named", evidence: "vendor copy: own name" });
   });
 
-  it("but not on Healthplus itself", () => {
-    expect(documentOwnerVerdict(HEALTHPLUS_TEXT, healthplus, members.slice(0, 3), scan(HEALTHPLUS_TEXT, healthplus))).toEqual({
-      kind: "own_named", evidence: "name: healthplus",
-    });
+  it("without the text-hash link, the one-word brand is not a name", () => {
+    expect(ownerNameForms("Healthplus Federal Credit Union", "Gulfport")).not.toContain("healthplus");
+    expect(documentOwnerVerdict(HEALTHPLUS_TEXT, members[0], [], scan(HEALTHPLUS_TEXT, members[0]))).toEqual({ kind: "unproven" });
   });
 
-  it("Horizons North CU's schedule on 5Star Bank's kcms-doc path, found by name in the registry", () => {
-    expect(isVendorDocumentPath("https://5star.bank/_/kcms-doc/1264/97709/WEB_HNCU_Fee_Schedule_.pdf")).toBe(true);
-    expect(isVendorDocumentPath("https://bluegrasscfcu.org/ezs3download/download/286194/1458976/")).toBe(true);
-    expect(isVendorDocumentPath("https://5star.bank/fees.pdf")).toBe(false);
-    // Registry-only: its legal name opens the document as a title, so the header rule decides.
-    expect(documentOwnerVerdict(HNCU_TEXT, fiveStar, [], scan(HNCU_TEXT, fiveStar))).toEqual({
-      kind: "other_bank", otherId: 8416, evidence: "header: horizons north credit union",
-    });
-    // The same name lower down or in lower case is only for review.
-    for (const text of [
-      "Fee Schedule\nOverdraft $30\nWire fee $25\nStop payment $30\nATM fee $2\nCashier check $10\nMoney order $5\nCoin $1\nPaper statement $3\nDormant $5\nHorizons North Credit Union members pay no fee",
-      "horizons north credit union fee schedule\nOverdraft $30",
-    ]) {
-      expect(documentOwnerVerdict(text, fiveStar, [], scan(text, fiveStar))).toMatchObject({ kind: "registry_named" });
+  it("4728 Onomea and 5009 Healthplus documents that open with Lakehurst Naval FCU's name are Lakehurst's", () => {
+    for (const own of [onomea, healthplus]) {
+      expect(documentOwnerVerdict(LAKEHURST_TEXT, own, [lakehurst], scan(LAKEHURST_TEXT, own), vendor(own, [lakehurst])))
+        .toMatchObject({ kind: "other_bank", otherId: 5233 });
     }
+  });
+
+  it("2092 5Star's kcms-doc copy that opens HNCU.ORG: Horizons North only when linked", () => {
+    const text = "HNCU.ORG\nFee Schedule\nOverdraft $30\nWestminster branch hours\nCurrency $5\nDirect deposit free";
+    const url = "https://5star.bank/_/kcms-doc/1264/97709/WEB_HNCU_Fee_Schedule_.pdf";
+    expect(isVendorDocumentPath(url)).toBe(true);
+    // Linked by its text hash: its acronym names it.
+    expect(documentOwnerVerdict(text, fiveStar, [horizons], scan(text, fiveStar), vendor(fiveStar, [horizons], url)))
+      .toMatchObject({ kind: "other_bank", otherId: 8416 });
+    // Registry-only: never a takedown, and the common words find no one.
+    expect(scan(text, fiveStar)).toEqual([]);
+    expect(documentOwnerVerdict(text, fiveStar, [], scan(text, fiveStar), { vendorPath: true, documentHost: "5star.bank" })).toEqual({ kind: "unproven" });
   });
 
   it("a vendor path alone is no proof: a text that names no one stays", () => {
     const text = "Fee Schedule\nOverdraft $30\nMember FDIC. Equal Housing Lender.";
     expect(scan(text, fiveStar)).toEqual([]);
-    expect(documentOwnerVerdict(text, fiveStar, [], scan(text, fiveStar))).toEqual({ kind: "unproven" });
+    expect(documentOwnerVerdict(text, fiveStar, [], scan(text, fiveStar), { vendorPath: true })).toEqual({ kind: "unproven" });
   });
 
-  it("the registry scan reads whole words and brand stems, never boilerplate", () => {
-    expect(ownerNameForms("Healthplus Federal Credit Union")).toContain("healthplus");
+  it("one-word brands count only next to their city; common words never", () => {
+    expect(ownerNameForms("Currency Bank", "Oak Grove")).toEqual(["currency bank"]);
+    expect(ownerNameForms("Timberline Bank", "Fort Pierre")).toEqual(["timberline bank", "fort pierre timberline", "timberline fort pierre"]);
     expect(ownerNameForms("Members Credit Union")).toEqual(["members credit union"]);
-    expect(institutionsNamedIn("healthplusone savings", directory)).toEqual([]);
+    for (const word of ["currency", "customers", "applied", "direct", "method", "certified", "principal", "primary", "medallion", "surety", "options", "popular"]) {
+      expect(institutionsNamedIn(`${word} account ${word}`, buildNameDirectory([{ id: 1, name: `${word} Bank`, city: "Springfield" }]))).toEqual([]);
+    }
     expect(institutionsNamedIn("Member FDIC. Federally insured by NCUA. Equal Housing Lender.", directory)).toEqual([]);
+  });
+
+  it("5652 Timberline FCU's own schedule is its own, though Timberline Bank exists", () => {
+    const own: OwnerBank = { id: 5652, name: "Timberline Federal Credit Union", city: "Hayward", stateCode: "WI" };
+    const bank: OwnerBank = { id: 1270, name: "Timberline Bank", city: "Grants Pass", stateCode: "OR" };
+    const text = "Timberline Federal Credit Union\nFee Schedule\nOverdraft $25";
+    const dir = buildNameDirectory([own, bank]);
+    const found = institutionsNamedIn(text, dir).filter((id) => id !== own.id).map((id) => dir.banks.get(id)!);
+    expect(documentOwnerVerdict(text, own, [bank], found, { vendorPath: true, documentHost: "x.org" })).toMatchObject({ kind: "own_named" });
+  });
+
+  it("the site rule: on exactly one unrelated institution's own website, and not this bank's", () => {
+    const metrowest: OwnerBank = { id: 4884, name: "Metrowest Community Federal Credit Union", city: "Framingham", stateCode: "MA", websiteHost: "metrowestcu.org" };
+    const smcu: OwnerBank = { id: 8298, name: "St. Mary's Federal Credit Union", city: "Marlborough", stateCode: "MA", websiteHost: "stmaryscu.org" };
+    const text = "Fee Schedule\nNon-SMCU ATM withdrawal $2.00";
+    expect(documentOwnerVerdict(text, metrowest, [smcu], [], { hostIds: [8298], documentHost: "stmaryscu.org" }))
+      .toEqual({ kind: "other_bank", otherId: 8298, evidence: "site: stmaryscu.org" });
+    // The acronym names it when the link is the address or the text hash.
+    expect(documentOwnerVerdict(text, metrowest, [smcu], [], { documentHost: "firstbranchcms.com" }))
+      .toEqual({ kind: "other_bank", otherId: 8298, evidence: "acronym: smcu" });
+    expect(creditUnionAcronyms("St. Mary's Federal Credit Union")).toEqual(["smfcu", "smcu"]);
+    // St. Mary's own copy names itself by its acronym.
+    expect(documentOwnerVerdict(text, smcu, [metrowest], [], { documentHost: "firstbranchcms.com" })).toMatchObject({ kind: "own_named" });
+    // The seed stored the same website for both: the site alone decides nothing.
+    const seeded = { ...metrowest, websiteHost: "stmaryscu.org" };
+    expect(documentOwnerVerdict("Fee Schedule\nOverdraft $30", seeded, [smcu], [], { hostIds: [8298], documentHost: "stmaryscu.org" })).toEqual({ kind: "unproven" });
+  });
+
+  it("this bank's website printed in the text keeps the document (not when it is the document's host)", () => {
+    const own: OwnerBank = { id: 7, name: "Riverbend Community Bank", city: "Paducah", stateCode: "KY", websiteHost: "riverbend.bank" };
+    const other: OwnerBank = { id: 8, name: "Hostco Savings Bank", city: "Dover", stateCode: "DE", websiteHost: "hostco.com" };
+    expect(documentOwnerVerdict("Fees\nVisit riverbend.bank", own, [other], [], { hostIds: [8], documentHost: "hostco.com" }))
+      .toEqual({ kind: "own_named", evidence: "website: riverbend.bank" });
+  });
+
+  it("7353 Family First's copy that opens with Sunrise Family Credit Union's name, when linked", () => {
+    const own: OwnerBank = { id: 7353, name: "Family First Federal Credit Union", city: "Gadsden", stateCode: "AL" };
+    const sunrise: OwnerBank = { id: 7367, name: "Sunrise Family Credit Union", city: "Bay City", stateCode: "MI" };
+    const text = "Sunrise Family Credit Union\nSchedule of Fees\nOverdraft $28";
+    expect(documentOwnerVerdict(text, own, [sunrise], [], { hashIds: [7367], vendorPath: true })).toMatchObject({ kind: "other_bank", otherId: 7367 });
+    expect(documentOwnerVerdict(text, own, [], [sunrise], { vendorPath: true })).toEqual({ kind: "registry_named", otherIds: [7367] });
   });
 
   it("sibling charters on one shared text never fire: IBC's five and Wells Fargo's three (#1441)", () => {
@@ -265,6 +320,22 @@ describe("registry-only names never take a fee down (#1455 review)", () => {
     expect(headerNamesInstitution("bank of america fees", "Bank of America")).toBe(false);
     expect(headerNamesInstitution("Popular checking fees", "Popular")).toBe(false);
     expect(headerNamesInstitution("Discover Bank fees", "Discover")).toBe(false);
+  });
+
+  it("a title-cased correspondent on line 1 is only for review (O1)", () => {
+    const wells: OwnerBank = { id: 21, name: "Wells Fargo Bank, National Association", city: "Sioux Falls", stateCode: "SD" };
+    const usb: OwnerBank = { id: 20, name: "U.S. Bank National Association", city: "Cincinnati", stateCode: "OH" };
+    const boa: OwnerBank = { id: 19, name: "Bank of America, National Association", city: "Charlotte", stateCode: "NC" };
+    const discover: OwnerBank = { id: 17, name: "Discover Bank", city: "Greenwood", stateCode: "DE" };
+    for (const [text, bank] of [
+      ["Wells Fargo Bank\nFee Schedule", wells],
+      ["U.S. Bank\nFee Schedule", usb],
+      ["Bank of America ATM Fees\nOverdraft $30", boa],
+      ["Discover Bank Card Fees\nLate fee $40", discover],
+    ] as const) {
+      expect(headerNamesInstitution(text, bank.name)).toBe(true);
+      expect(documentOwnerVerdict(text, own, [], [bank])).toEqual({ kind: "registry_named", otherIds: [bank.id] });
+    }
   });
 
   it("a header name another institution shares is not enough", () => {
@@ -374,18 +445,42 @@ describe("recheckDocumentOwners (shadow)", () => {
   it("records an empty read with its watermark, and the next step skips while nothing is new", async () => {
     const empty = createDb([]);
     const first = await recheckDocumentOwners(empty, { runId: 77 });
-    expect(first).toMatchObject({ pairs: 0, skipped: false });
+    expect(first).toMatchObject({ selected: 0, pairs: 0, skipped: false });
     const event = JSON.stringify(empty.mock.calls.find((call) => templateText(call[0]).includes("INSERT INTO agent_run_events")));
     expect(event).toContain('\\"max_text_id\\":10');
     expect(templateText(empty.mock.calls.map((call) => call[0]))).not.toContain("INSERT INTO pipeline_attempts");
 
-    const next = createDb([], { pairs: 0, max_text_id: 10, max_fee_id: 20 });
+    const next = createDb([], { selected: 0, max_text_id: 10, max_fee_id: 20 });
     expect(await recheckDocumentOwners(next, { runId: 78 })).toMatchObject({ skipped: true, pairs: 0 });
     expect(next.unsafe).not.toHaveBeenCalled();
 
-    const moved = createDb([], { pairs: 0, max_text_id: 9, max_fee_id: 20 });
+    const moved = createDb([], { selected: 0, max_text_id: 9, max_fee_id: 20 });
     expect(await recheckDocumentOwners(moved, { runId: 79 })).toMatchObject({ skipped: false });
     expect(moved.unsafe).toHaveBeenCalled();
+  });
+});
+
+describe("recheckDocumentOwners: the skip keys on pairs selected (O3)", () => {
+  it("a pair whose bank has no registry row is recorded unproven, and the step does not look empty", async () => {
+    const db = createDb([
+      { institution_id: 99999, source_document_id: 17191, document_url: "https://ukcreditunion.org/x.pdf", live_fees: 2, other_ids: [6729], text_hash: "h1", reread: false },
+    ]);
+    const result = await recheckDocumentOwners(db, { runId: 81 });
+    expect(result).toMatchObject({ selected: 1, pairs: 0, verdicts: { unproven: 1 } });
+    const calls = JSON.stringify(db.mock.calls);
+    expect(calls).toContain("owner-shadow:99999:17191:h1");
+    expect(calls).toContain('\\"no_registry_row\\":true');
+    expect(calls).toContain('\\"selected\\":1');
+  });
+
+  it("a failed registry read still records the pairs selected, so the next step does not skip", async () => {
+    const db = createDb();
+    const query = db.getMockImplementation() as unknown as (strings: TemplateStringsArray, ...values: unknown[]) => unknown;
+    db.mockImplementation(((strings: TemplateStringsArray, ...values: unknown[]) =>
+      templateText(strings).includes("document-owner name scan") ? Promise.reject(new Error("boom")) : query(strings, ...values)) as never);
+    const result = await recheckDocumentOwners(db, { runId: 82 });
+    expect(result).toMatchObject({ selected: 3, pairs: 0 });
+    expect(JSON.stringify(db.mock.calls)).toContain('\\"selected\\":3');
   });
 });
 
