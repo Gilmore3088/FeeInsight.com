@@ -252,6 +252,8 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   // v2 (#1499): the wider sentence_end head, the generic/clause/service-list bars, no rename of an
   // opening-deposit line and a re-read request to Knox per sentence_end takedown; the same cursor
   // reads every live name again under v2, still in shadow.
+  // v3 (#1499): the if/when balance gate under $100, no rename with another price in the name,
+  // "(cont.)" dropped, "2FA" kept, and the sentence_end tail name; the cursor reads every name again.
   LIVE_FRAGMENT_STRATEGY: "Its cursor re-reads every live fee name each pass (2,000 a verify step); there is nothing to replay.",
   // v1 (#1455): a new shadow pass. Its selector reads every shared or vendor-path document pair not
   // yet read at v1 (25 a verify step), and documentOwnerCountSql counts the whole backlog read-only.

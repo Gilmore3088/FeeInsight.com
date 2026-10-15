@@ -59,9 +59,25 @@ const TRAILING_HEADER_CELL = /\s*\|\s*(?:[A-Za-z]{1,2}|fees?|charges?|amount|cos
 const trailingRange = (words: string) => new RegExp(String.raw`[\s\-–—|:,]*\b(?:${words})\s*$`, "i");
 /** The start of a range or unit left dangling after the name ("Late Fee | Up to", "NSF fee (ACH, ATM, or check) - per"). */
 const TRAILING_RANGE = trailingRange(String.raw`up\s+to|per|each`);
-/** A sentence that ends at its own price: "Our overdraft fee of", "Avoid the monthly service charge of". */
-const FEE_OF_SENTENCE =
-  /\b(?:a|an|the|our|your|this)\s+(?:(?:normal|standard|regular|usual|individual|applicable|current)\s+)?((?!(?:minimum|maximum|additional|same|following)\b)(?:(?!(?:a|an|the|for|of|to)\b)[A-Za-z'’\-]+\s+){1,4}(?:fees?|charges?))(?:\s+for\s+[A-Za-z\s\-]{1,40}?)?\s+(?:of|is|are|will be)\s*$/i;
+/**
+ * A sentence that ends at its own price: "Our overdraft fee of", "Avoid the monthly service charge
+ * of"; group 1 is the fee's name. `leads` are the words the name never opens on. Shared by Knox's
+ * cut-off repair (`FEE_OF_SENTENCE`) and Darwin's live tail name (`FEE_OF_SENTENCE_TAIL`, #1499).
+ * The "for ..." clause is greedy (it was lazy until #1499): the match is anchored at the end, so
+ * group 1 is the same either way, and Postgres reads a regex that mixes greedy and lazy
+ * quantifiers differently from JS (the count SQL runs the tail there).
+ */
+const feeOfSentence = (leads: string) =>
+  new RegExp(
+    String.raw`\b(?:a|an|the|our|your|this)\s+(?:(?:normal|standard|regular|usual|individual|applicable|current)\s+)?((?!(?:${leads})\b)(?:(?!(?:a|an|the|for|of|to)\b)[A-Za-z'’\-]+\s+){1,4}(?:fees?|charges?))(?:\s+for\s+[A-Za-z\s\-]{1,40})?\s+(?:of|is|are|will be)\s*$`,
+    "i",
+  );
+const FEE_OF_SENTENCE = feeOfSentence("minimum|maximum|additional|same|following");
+/**
+ * #1499: the live tail name. "a minimum fee of" is a minimum, but "a minimum balance fee of" is a
+ * fee, so "minimum" bars the name only right before the fee word.
+ */
+const FEE_OF_SENTENCE_TAIL = feeOfSentence(String.raw`minimum(?=\s+(?:fees?|charges?)\b)|maximum|additional|same|following`);
 /** The condition that follows a name on its line ("Service Charge if balance falls below"). */
 const CONDITION_TAIL = /\s+(?:(?:is|are)\s+)?(?:waived\s+)?(?:if|when|unless|otherwise|charged\s+(?:if|when))\b.*$/i;
 /** A unit left after a name once its condition is cut ("Service charge per month"). */
@@ -259,7 +275,13 @@ const GLUED_SENTENCE = new RegExp(
  * "2nd", "1099"); and a leading "To request " when a capitalised name follows ("To request
  * Overnight/2-day shipping of a debit card"). What is left must still pass every bar.
  */
-const GLUED_LEAD_STRIP = /^(?:\d{1,2}(?!(?:ST|ND|RD|TH|HRS?|HOURS?|DAYS?|MOS?|YRS?)\b)(?=[A-Z]{2}|A\s+[a-z])|To\s+request\s+(?=[A-Z0-9]))/;
+const GLUED_LEAD_STRIP = /^(?:(?:\d{2}(?=[A-Z]{2})|\d(?=[A-Z]{3}|[A-Z]{2}[^A-Z\s]))(?!(?:ST|ND|RD|TH|HRS?|HOURS?|DAYS?|MOS?|YRS?)\b)|\d{1,2}(?=A\s+[a-z])|To\s+request\s+(?=[A-Z0-9]))/;
+/**
+ * v3 (#1499): a "continued" mark is no part of a name ("Inactive Accounts Fee (cont.)"); dropped
+ * wherever it sits before the head is read. A single digit on exactly two capitals and a space
+ * ("2FA Token Fee") is a name, not a footnote, so the strip above leaves it.
+ */
+const GLUED_CONT_MARK = /\s*\((?:cont\.?|continued)\)/gi;
 /** Fee nouns and joining words: a head made only of these ("Fee Per Item") names no fee. */
 const GLUED_GENERIC_WORDS = ["fees?", "charges?", "items?", "per", "payments?", "each", "a", "an", "the", "of", "for", "and", "or", "services?", "transactions?", "first", "second", "third", "fourth", "fifth"];
 const GLUED_GENERIC_ONLY = new RegExp(String.raw`^(?:${GLUED_GENERIC_WORDS.join("|")})(?:\s+(?:${GLUED_GENERIC_WORDS.join("|")}))*$`, "i");
@@ -291,12 +313,42 @@ const GLUED_HEAD_BARS = [LIVE_PRONOUN, SENTENCE_VERB, CONDITION_CLAUSE, GLUED_GE
  * no such name. Pure; the caller decides whether the fee is renamed (amount, waiver wording).
  */
 export function gluedSentenceHead(name: string | null | undefined): string | null {
-  const current = (name ?? "").replace(/\s+/g, " ").trim().replace(GLUED_LEAD_STRIP, "");
+  return gluedSentenceSplit(name)?.head ?? null;
+}
+
+/**
+ * The name as the head is read from it: whitespace collapsed, "continued" marks dropped, then a
+ * glued footnote number or "To request" (`GLUED_LEAD_STRIP`).
+ */
+function gluedReadable(name: string | null | undefined): string {
+  return (name ?? "").replace(/\s+/g, " ").trim().replace(GLUED_CONT_MARK, "").trim().replace(GLUED_LEAD_STRIP, "");
+}
+
+/**
+ * v3 (#1499): `gluedSentenceHead` with the rest of the line after the head (its break included),
+ * so the caller can read the condition the head was split from ("if the balance falls below").
+ */
+export function gluedSentenceSplit(name: string | null | undefined): { head: string; rest: string } | null {
+  const current = gluedReadable(name);
   const match = current.match(GLUED_SENTENCE);
   if (!match) return null;
   const head = match[1];
   if (GLUED_HEAD_BARS.some((bar) => bar.test(head))) return null;
-  return head;
+  return { head, rest: current.slice(match[0].length) };
+}
+
+/**
+ * v3 (#1499): the fee a sentence ends on, for a `sentence_end` line with no head ("There will be a
+ * card replacement fee of" is "Card replacement fee"): Knox's fee-of-sentence phrase, under every
+ * head bar, with its first letter capitalised as Knox's cut-off repair writes it; the rest of the
+ * case is the source's. Null when the line ends on no such phrase or the phrase names no fee ("a
+ * service charge fee of").
+ */
+export function feeOfSentenceTail(name: string | null | undefined): string | null {
+  const current = (name ?? "").replace(/\s+/g, " ").trim();
+  const phrase = current.match(FEE_OF_SENTENCE_TAIL)?.[1]?.trim();
+  if (!phrase || GLUED_HEAD_BARS.some((bar) => bar.test(phrase))) return null;
+  return phrase.replace(/^[a-z]/, (letter) => letter.toUpperCase());
 }
 
 /** The regexes `liveFragmentName` and `gluedSentenceHead` use, for the record and the hand-off SQL. */
@@ -308,7 +360,9 @@ export const LIVE_FRAGMENT_REGEXES = {
   sentence_end_article: LIVE_SENTENCE_END_ARTICLE,
   pronoun: LIVE_PRONOUN,
   parenthetical: PARENTHETICAL,
+  glued_cont_mark: GLUED_CONT_MARK,
   glued_lead_strip: GLUED_LEAD_STRIP,
+  fee_of_sentence_tail: FEE_OF_SENTENCE_TAIL,
   glued_sentence: GLUED_SENTENCE,
   glued_head_bars: GLUED_HEAD_BARS,
 } as const;

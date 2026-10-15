@@ -257,6 +257,30 @@ Darwin owns verification and classification.
     Step detail `would_request_reread` (also in shadow) and `reread_requested` (written); a failed
     request never undoes the takedown. `liveFragmentCountSql()` applies the same strip, bars and
     deposit wording; its `takedown` / `fragment` / `sentence_end` row is the re-read count.
+  v3 (#1499, `LIVE_FRAGMENT_STRATEGY` v3, after a prod hand-check of v2: 40 of 43 renames right,
+  17 of 20 sampled `sentence_end` takedowns real fees; still in shadow):
+  - Threshold gate: a head split from an "if" or "when" condition (either case) is renamed only when
+    the condition is a balance condition (it names a balance and ends on below, under or less than)
+    and the amount is under $100 (`LIVE_FRAGMENT_BALANCE_CONDITION`, `LIVE_FRAGMENT_CONDITION_MAX`):
+    13 of 14 "X fee if the balance falls below" rows on prod were the fee. Any other condition
+    ("when overdrawn by more than" $5, "if more than" 6, "if inactive for more than" 12) is a
+    threshold: no rename, so the fee comes down and asks Knox to re-read.
+  - Another price in the name means no rename (`liveFragmentOtherPrice`): two "$N ... fee" phrases,
+    one whose figure is not the fee's amount, or any other dollar figure in a line that is not
+    about a balance ("a $35 Overdraft Fee ... or a $15 NSF Fee" $15, 133792; "A $20 NSF fee ...
+    $45 in NSF fees" $45, 55708). "below $500 ... a minimum balance fee of" $6 still renames.
+  - "(cont.)" / "(continued)" is dropped before the head is read ("Inactive Accounts Fee (cont.)").
+    A single digit on exactly two capitals and a space is a name ("2FA Token Fee"), not a footnote.
+  - Tail name (`rename` / `tail`): a `sentence_end` line with no head is renamed to the fee its
+    sentence ends on, with Knox's fee-of-sentence phrase (`feeOfSentenceTail`, the same regex
+    builder as Knox's `FEE_OF_SENTENCE`; "minimum" bars it only right before the fee word): "There
+    will be a card replacement fee of" $10 becomes "Card replacement fee", "... for a monthly paper
+    statement fee of" $3 "Monthly paper statement fee". First letter capitalised as Knox's cut-off
+    repair writes it, the rest as in the source. Every head bar applies ("a service charge fee of",
+    "a monthly fee of" give no name), as do the amount, waiver, deposit and other-price gates and
+    the category guard. A line whose head was refused by the threshold gate gets no tail.
+  Step detail `would_rename_by_via` ({head, tail}) and `rename_via` on each sample; the count SQL
+  reports tail renames as reason `rename_tail` under action `rename`.
 - Released-fee category re-check (`release-repair.ts`, the repair half of #1367; decision
   2026-10-15, "Darwin re-checks every live fee against today's rules"). Until PR #1468 the release
   check passed "." as the category pattern, so every fee the release published before then went live
@@ -703,7 +727,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `DARWIN_SCHEDULE_REFILE_STRATEGY` | `verify.schedule_refile` | v1 | `darwin/schedule-refile.ts` |
 | `DARWIN_VERDICT_SCORE_STRATEGY` | `verify.verdict_score` | v1 | `darwin/verdict-score.ts` |
 | `DARWIN_RECHECK_STRATEGY` | `verify.recheck` | v3 | `darwin/verified-recheck.ts` |
-| `LIVE_FRAGMENT_STRATEGY` | `darwin.live_fragment_check` | v2 | `darwin/live-fragment-check.ts` |
+| `LIVE_FRAGMENT_STRATEGY` | `darwin.live_fragment_check` | v3 | `darwin/live-fragment-check.ts` |
 | `DOCUMENT_OWNER_STRATEGY` | `verify.document_owner` | v1 | `darwin/document-owner.ts` |
 | `DARWIN_VERIFY_STRATEGY` | `verify.rules` | v3 | `darwin/verify.ts` |
 | `DARWIN_SOURCE_CHECK_VERSION` | — | v2 | `darwin/verify.ts` |
