@@ -642,6 +642,8 @@ async function readAnswerQuality(db: SqlTag): Promise<AnswerQuality | null> {
        AND e.event_type = 'step.finished'
        AND e.status = 'completed'
        AND e.created_at >= NOW() - make_interval(days => ${GOAL_WINDOW_DAYS}::int)
+       -- An eval stopped at its time budget before asking any institution measures nothing (run 5997).
+       AND NOT (e.detail ? 'institutions' AND (e.detail->>'institutions')::numeric = 0)
      ORDER BY e.created_at DESC
      LIMIT 1
   `;

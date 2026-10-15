@@ -5,6 +5,20 @@ Seeded 2026-10-05 from the project's working memory; earlier decisions were not 
 
 ## 2026-10-15
 
+**Batch similar fixes; push only when ready; merge `main` only when needed.** James, Oct 15, after
+the advisor counted 124 CI runs in 9½ hours (about 16 billed minutes each) against a $50 GitHub
+Actions budget. If the budget runs out, CI stops and no PR can merge. "One issue, one PR" becomes
+one outcome, one PR: a PR may close several issues of the same kind in the same agent or files, and
+rule changes that bump the same version go out together (each Knox bump re-reads thousands of
+texts and re-queues the priority banks, as v67 and v68 did on Oct 15). Never batch across lanes,
+gated with ungated, or a migration with unrelated code. A branch is pushed when its PR is ready for
+review, after the local checks. `main` is merged into a branch only for a conflict or a change the
+PR depends on (a version number, a shared check its gates use), and always for a PR that adds a
+migration, which re-runs `migration-version-kill` before merging (a clashing number shows no
+conflict); main's CI run tests each merge commit. A new push still needs a new review of its
+exact head (Oct 14). Rules: `CLAUDE.md` ("How work runs") and the build plan ("Rules for the
+builder", "Working side by side").
+
 **Hamilton's redesign starts now, built on #1011.** James, Oct 15, after opening
 /pro/research?fee=overdraft: "This is not the Hamilton experience I've been asking for", then "We
 already have the design base, the left nav" and "The images were just examples of rich dashboard".

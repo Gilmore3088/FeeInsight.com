@@ -493,6 +493,19 @@ hand check found wrong, from their real lines.
   Transfer for\nOverdrafts - $2.00 per transfer", raw 112570). A bare "Overdrafts" priced per
   item is still the overdraft fee.
 
+v69 (#1102, Oct 15): a price line with no name of its own takes its name from the heading above it.
+- A heading is a short line (up to four words, capitalized, no price or digit) that names a fee
+  ("Monthly service fee:") or the wire family ("Wire Transfers"). A singular "Fee" or "Charge"
+  heading counts only with a colon. It reaches four lines down, and the next priced line's glued
+  heading ("... $5.00 Stop Payments") replaces it.
+- The line under it is read only when nothing else read or held it, it has one price, ten words or
+  fewer, no rate, no sentence, no second labelled column, a label of four words or fewer without its
+  own colon, and passes the Darwin checks. Under a single-fee heading the label must be lowercase.
+- A heading is crossed, and names nothing more, once a row under it reads another kind of fee or
+  holds a self-named "... Fee" row it cannot classify.
+- Answer keys: Texas 537 to 545 right, 14 wrong unchanged; held out 53 / 4 unchanged; seven states
+  788 to 791 right (CA 137 to 140, MN 110 to 111), 41 wrong unchanged.
+
 v68 (#1102, Oct 15; held as v66 until #1334 took v67): priced lines with no "fee" or "charge" that Knox dropped without a record.
 On the 62-bank answer key (run 9), 333 of the 987 key fees missing from live data were lines in our
 stored text of the key document with no Knox row at that price; 240 of them had no fee word.
@@ -843,6 +856,6 @@ fails a PR that changes one of these constants without updating its line here (#
 | `LINEUP_CORRECT_STRATEGY` | `knox.lineup_correct` | v2 | `knox/lineup-correct.ts` |
 | `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v19 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v2 | `knox/paid-extract.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v68 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v69 | `knox/specialists.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v6 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v1 | `knox/takedown-lessons.ts` |

@@ -17,14 +17,20 @@ from the CSI day job.
 ## How work runs
 Up to three builders at once, one per lane in `docs/plans/build-plan-2026-10-12.md` ("Lanes");
 a builder takes only its own lane's items. Work starts from that plan and the Now list at the top
-of GitHub issue #1026 (pipeline review master tracker): one issue, one branch, one PR. Before starting, search open issues, PRs
+of GitHub issue #1026 (pipeline review master tracker): one outcome, one branch, one PR, with small
+related fixes batched into it (build plan, "Rules for the builder"). Before starting, search open issues, PRs
 and `main` for the same outcome, and reuse or explicitly supersede what exists.
+- CI runs cost GitHub Actions minutes. Push a branch only when its PR is ready for review and the
+  local checks pass. Merge `main` into a branch only for a conflict, a change it depends on (a
+  version number or a shared check its gates use), or a new migration: a PR that adds one always
+  merges `main` and re-runs `migration-version-kill` before merging, since a clashing number shows
+  no conflict.
 - Every change a review finds is documented as its own issue under a tracker: one tracker per
   agent, plus the Foundation tracker for infrastructure, documentation and process work that
   belongs to no agent. A review also names the issues it closes or merges, so duplicates do not
   pile up. The Now list in #1026 (at most three items) sets the order; it is not a cap on issues.
 - No scheduled Claude routines run for Fee Insight without James's say-so. A session ends when
-  its issue's PR is open and green.
+  its PR is open and green.
 - Words a visitor reads (pages, headlines, buttons, emails): use the `copywriting` and
   `copy-editing` skills, follow `growth-os/context/editorial-policy.md` (every number has a
   source) and `.agents/product-marketing.md`, and add a short copy-review note to the PR.
