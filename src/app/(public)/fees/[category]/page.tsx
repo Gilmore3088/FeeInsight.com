@@ -219,9 +219,10 @@ export default async function FeeCategoryPage({ params }: PageProps) {
                 <span className="font-mono text-[44px] font-semibold leading-none tabular-nums tracking-[-0.02em] text-ink sm:text-[52px]">
                   {money(median)}
                   {unstatedAudience && (
-                    <sup className="ml-0.5 align-top font-sans text-[20px] font-medium leading-none text-ink-muted">
+                    // Raised to the figure's cap height and set close, so it reads as a note mark.
+                    <span className="ml-0.5 inline-block -translate-y-[0.55em] font-sans text-[26px] font-medium leading-none text-ink-muted">
                       <UnstatedAudienceMark />
-                    </sup>
+                    </span>
                   )}
                 </span>
                 <span className="text-[15px] text-ink-muted">
