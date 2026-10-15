@@ -71,9 +71,9 @@ function ChangesSkeleton() {
 }
 
 /** The briefing against last quarter's stored copy (#1083); nothing when none is stored. */
-async function QuarterlyChangesFor({ institutionId }: { institutionId: number }) {
+async function QuarterlyChangesFor({ institutionId, pagePeerLabel }: { institutionId: number; pagePeerLabel: string }) {
   unstable_noStore();
-  return <QuarterlyChanges changes={await getQuarterlyChanges(institutionId)} />;
+  return <QuarterlyChanges changes={await getQuarterlyChanges(institutionId)} pagePeerLabel={pagePeerLabel} />;
 }
 
 /** Signals and alerts are fresh on every load (never cached). */
@@ -216,7 +216,7 @@ export async function InstitutionBriefing({
 
       {briefing ? (
         <Suspense fallback={<ChangesSkeleton />}>
-          <QuarterlyChangesFor institutionId={briefing.institutionId} />
+          <QuarterlyChangesFor institutionId={briefing.institutionId} pagePeerLabel={briefing.peerLabel} />
         </Suspense>
       ) : null}
 
