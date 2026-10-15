@@ -1693,6 +1693,22 @@ async function executeAgenticStep(
             source_line: row.sourceLine.slice(0, 120),
           })),
           duplicate_collapses: duplicateCollapses.length,
+          // #1069 step 1 (shadow while `live` is false): rows this step published that the exact
+          // duplicate collapse would close, and how many the step's own late collapse did close.
+          publish_duplicate_check: {
+            live: published.duplicateCheck.live,
+            with_live_copy: published.duplicateCheck.withLiveCopy,
+            would_refuse: published.duplicateCheck.wouldRefuse,
+            refused: published.duplicateCheck.refused,
+            would_replace: published.duplicateCheck.wouldReplace,
+            closed_by_late_collapse: published.results.filter(
+              (result) =>
+                result.exactDuplicate?.kind === "refuse" &&
+                result.feePublishedId != null &&
+                lateDuplicateCollapses.some((row) => row.feePublishedId === result.feePublishedId),
+            ).length,
+            samples: published.duplicateCheck.samples,
+          },
           near_name_collapse: {
             live: nearNameCollapse.live,
             documents: nearNameCollapse.documents,

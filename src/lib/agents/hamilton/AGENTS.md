@@ -533,6 +533,15 @@ This sweep reads up to 25 documents' stored text per step. James turned
 on page, not printed, no text, would close, samples) and closes the repeats. Rollback: clear
 `rolled_back_at` on rows whose `rolled_back_reason` ends in `(near name)`.
 
+**At publish (#1069 step 1, shadow).** Each row the publish step is about to publish is checked
+against its live copies with the exact collapse's own test (`exact-duplicate.ts`: institution,
+category, variant, value and name; frequency classes that agree; the copy kept states its
+audience, then its frequency, then is newest). A row the collapse would close is counted as
+`would_refuse`, and a row it would keep, closing the older copy, as `would_replace`. Both are
+reported in the step's `publish_duplicate_check`, with `closed_by_late_collapse` for agreement.
+While `PUBLISH_REFUSE_DUPLICATES_LIVE` is false nothing is refused; turning it on (skip reason
+`Exact duplicate of live fee #<id>`) needs James's OK.
+
 ## Rules Re-check
 
 In state-lane (or single-institution) publish steps, `rules-recheck.ts` re-runs Knox's
