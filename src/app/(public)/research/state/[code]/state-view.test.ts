@@ -80,24 +80,27 @@ describe("state board", () => {
     expect(charterHeadline(fees)).toBe("Credit unions are lower on 2 of 3 fees");
     expect(charterHeadline(fees.slice(2))).toBe("Banks are lower on 1 of 1 fee");
     expect(charterHeadline([])).toBeNull();
+    const tie = boardFees(comparisons.slice(0, 1), [entry("garnishment", 90)], [entry("garnishment", 90)], undefined);
+    expect(charterHeadline(tie)).toBe("Banks and credit unions charge the same on 1 fee");
   });
 
-  it("keeps three findings and ties each to a fee only when the board draws it", () => {
-    const fees = boardFees(comparisons, [], [], undefined);
+  it("keeps three findings, each with the figures behind it, tied to a fee the board draws", () => {
+    const fees = boardFees(comparisons, [entry("overdraft", 35)], [entry("overdraft", 30)], undefined);
     const findings = leadFindings(
       [
-        { key: "a", figure: "$40.00", headline: "a", detail: "", exhibit: "x", fee_category: "overdraft" },
-        { key: "b", figure: "+1%", headline: "b", detail: "", exhibit: "x", fee_category: "wire_domestic_incoming" },
-        { key: "c", figure: "3 of 5", headline: "c", detail: "", exhibit: "x" },
+        { key: "overdraft", figure: "$40.00", headline: "The typical overdraft fee", detail: "", exhibit: "benchmarks", fee_category: "overdraft" },
+        { key: "discount", figure: "−33%", headline: "NSF / Returned Item is the biggest discount", detail: "", exhibit: "position", fee_category: "nsf" },
+        { key: "charter-gap", figure: "$5", headline: "Credit unions charge less", detail: "", exhibit: "charters", fee_category: "overdraft" },
         { key: "d", figure: "$1", headline: "d", detail: "", exhibit: "x", fee_category: "nsf" },
       ],
       fees,
     );
-    expect(findings[0].figure).toBe("$40");
-    expect(findings.map((f) => [f.key, f.fee])).toEqual([
-      ["a", "overdraft"],
-      ["b", null],
-      ["c", null],
+    expect(findings).toEqual([
+      { key: "overdraft", figure: "$40", headline: "The typical overdraft fee", note: "$40 vs U.S. $30 · 20 institutions", fee: "overdraft" },
+      { key: "discount", figure: "−33%", headline: "NSF / returned item runs furthest below the U.S.", note: "$20 vs U.S. $30 · 30 institutions", fee: "nsf" },
+      { key: "charter-gap", figure: "$5", headline: "Credit unions charge less", note: "$30 at credit unions · $35 at banks", fee: "overdraft" },
     ]);
+    // A finding about a fee the board doesn't draw (or no fee at all) taps nothing.
+    expect(leadFindings([{ key: "t", figure: "3 of 5", headline: "t", detail: "", exhibit: "x" }], fees)[0]).toMatchObject({ fee: null, note: "" });
   });
 });

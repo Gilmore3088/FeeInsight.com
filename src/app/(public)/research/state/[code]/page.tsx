@@ -19,7 +19,7 @@ import { getStateFeeIndexesCached, getStateStatsCached } from "@/lib/data-store/
 import { MIN_INSTITUTIONS_FOR_MEDIAN } from "@/lib/data-store/maturity";
 import type { StateFeeIndexes } from "@/lib/data-store";
 import { buildCharterPairs, buildComparisons, computeStateFindings } from "@/lib/research-report/state-findings";
-import { DotLegend, LockedRows, VideoSlot, money } from "../../../fees/[category]/exhibits";
+import { DotLegend, LockedRows, VideoSlot } from "../../../fees/[category]/exhibits";
 import { StateHero } from "./state-exhibits";
 import { BoardChart, BoardRows, CharterRows, FindingButtons, StateBoard } from "./state-board";
 import { boardFees, charterFees, charterHeadline, leadFindings, splitForAccess } from "./state-view";
@@ -82,9 +82,8 @@ export default async function StateReportPage({ params }: PageProps) {
 
   // Every read is served from the public cache between publishes.
   const district = STATE_TO_DISTRICT[stateCode];
-  const [summary, stats, indexes, nationalIndex, sampleLive] = await Promise.all([
+  const [summary, indexes, nationalIndex, sampleLive] = await Promise.all([
     getPublicStatsSummary(),
-    getStateStatsCached(stateCode),
     getStateFeeIndexesCached(stateCode).catch(() => EMPTY_INDEXES),
     getPublicNationalIndex(),
     sampleReportAvailable().catch(() => false),
@@ -109,15 +108,16 @@ export default async function StateReportPage({ params }: PageProps) {
     charted,
   );
 
-  const overdraft = fees.find((f) => f.key === "overdraft");
-  const coverage = stats.institution_count > 0 ? Math.round((indexes.verified_institutions / stats.institution_count) * 100) : 0;
+  // Two counts and two market findings: what the state's fees do against the U.S., and the
+  // banks against credit unions split, each from the fees a visitor can read.
+  const againstUs = shown.filter((f) => f.us);
+  const aboveUs = againstUs.filter((f) => f.us && f.median > f.us.median * 1.01).length;
+  const cuLowerOn = paired.filter((f) => f.cu.median! < f.bank.median!).length;
   const figures = [
     { value: formatCount(indexes.verified_institutions), label: "Institutions with verified fees" },
-    overdraft
-      ? { value: money(overdraft.median), label: "Overdraft median" }
-      : { value: String(comparisons.length), label: "Fees with a state median" },
     { value: formatCount(indexes.verified_fees), label: "Verified fees" },
-    { value: `${coverage}%`, label: `Coverage of ${formatCount(stats.institution_count)} institutions` },
+    ...(againstUs.length > 0 ? [{ value: `${aboveUs} of ${againstUs.length}`, label: "Fees above the U.S. median" }] : []),
+    ...(paired.length > 0 ? [{ value: `${cuLowerOn} of ${paired.length}`, label: "Fees lower at credit unions" }] : []),
   ];
   const positions = (["below", "within", "above"] as const).filter((p) => shown.some((f) => f.position === p));
 
@@ -132,11 +132,16 @@ export default async function StateReportPage({ params }: PageProps) {
       />
 
       {/* 1. The state on the map, with four live figures. */}
-      <StateHero stateCode={stateCode} stateName={stateName} district={district} figures={figures} freshnessLabel={summary.freshnessLabel} />
+      <StateHero
+        stateCode={stateCode}
+        stateName={stateName}
+        district={district}
+        figures={figures}
+        freshnessLabel={summary.freshnessLabel}
+        video={<VideoSlot title={`${stateName}'s fees settling into the U.S. range`} />}
+      />
 
       <div className="mx-auto max-w-page space-y-10 px-4 py-8 sm:space-y-12 sm:px-6 sm:py-12">
-        <VideoSlot title={`${stateName}'s fees settling into the U.S. range`} />
-
         {charted.length > 0 ? (
           // 2-4 share one selection: a fee picked in a finding or a list redraws the chart.
           <StateBoard fees={charted} stateName={stateName}>
@@ -146,7 +151,7 @@ export default async function StateReportPage({ params }: PageProps) {
                 <h2 id="findings-heading" className="text-[20px] font-semibold tracking-[-0.02em] text-ink sm:text-[24px]">
                   What stands out
                 </h2>
-                <FindingButtons findings={findings.map(({ key, figure, headline, fee }) => ({ key, figure, headline, fee }))} />
+                <FindingButtons findings={findings} />
               </section>
             )}
 
@@ -166,7 +171,10 @@ export default async function StateReportPage({ params }: PageProps) {
                     />
                     {locked.length > LOCKED_SHOWN && (
                       <p className="border-t border-border py-2 text-[12px] text-ink-muted">
-                        Plus {locked.length - LOCKED_SHOWN} more {stateName} fees.
+                        Plus {locked.length - LOCKED_SHOWN} more {stateName} fees.{" "}
+                        <a href="#search-heading" className="font-medium text-ink underline decoration-border underline-offset-4 hover:decoration-ink">
+                          What Hamilton adds
+                        </a>
                       </p>
                     )}
                   </div>
@@ -174,7 +182,23 @@ export default async function StateReportPage({ params }: PageProps) {
               </div>
             </section>
 
-            {/* 4. Banks against credit unions. */}
+            {/* 4. The free state report, straight after the board it summarizes. */}
+            <LeadCapture
+              placement="state_benchmark"
+              className="print:hidden"
+              stateCode={stateCode}
+              eyebrow="Free report"
+              headline={`Get the free ${stateName} fee report`}
+              body={`The ${stateName} medians against the U.S., sent to you and updated as schedules are verified.`}
+              buttonLabel="Send it to me"
+              secondaryLink={
+                sampleLive
+                  ? { href: "/reports/sample-competitive-fee-position", label: `See the sample ${REPORT_OFFER.name}` }
+                  : { href: `/for-institutions?report=institution&src=state-${stateCode.toLowerCase()}#report`, label: REPORT_OFFER.institutionCtaLabel }
+              }
+            />
+
+            {/* 5. Banks against credit unions. */}
             {paired.length > 0 && (
               <section aria-labelledby="charter-heading" className="space-y-3">
                 <div>
@@ -202,22 +226,6 @@ export default async function StateReportPage({ params }: PageProps) {
             Not enough {stateName} institutions have verified fees yet for a state median.
           </p>
         )}
-
-        {/* 5. The free state report. */}
-        <LeadCapture
-          placement="state_benchmark"
-          className="print:hidden"
-          stateCode={stateCode}
-          eyebrow="Free report"
-          headline={`Get the free ${stateName} fee report`}
-          body={`The ${stateName} medians against the U.S., sent to you and updated as schedules are verified.`}
-          buttonLabel="Send it to me"
-          secondaryLink={
-            sampleLive
-              ? { href: "/reports/sample-competitive-fee-position", label: `See the sample ${REPORT_OFFER.name}` }
-              : { href: `/for-institutions?report=institution&src=state-${stateCode.toLowerCase()}#report`, label: REPORT_OFFER.institutionCtaLabel }
-          }
-        />
 
         {/* The reader's own institution, and Hamilton once. */}
         <section aria-labelledby="search-heading" className="rounded-2xl bg-paper px-4 py-5 ring-1 ring-border sm:px-6 print:hidden">

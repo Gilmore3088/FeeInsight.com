@@ -40,7 +40,7 @@ const nsf: BoardFee = {
 function renderBoard() {
   render(
     <StateBoard fees={[overdraft, nsf]} stateName="Ohio">
-      <FindingButtons findings={[{ key: "f", figure: "$15", headline: "NSF is lowest", fee: "nsf" }]} />
+      <FindingButtons findings={[{ key: "f", figure: "$15", headline: "NSF is lowest", note: "$15 vs U.S. $30 · 5 institutions", fee: "nsf" }]} />
       <BoardChart />
       <BoardRows fees={[overdraft, nsf]} ariaLabel="Fees" />
       <CharterRows fees={[{ ...overdraft, cu: { median: 22, institutions: 3 } }]} />
@@ -63,7 +63,7 @@ describe("state board", () => {
     expect(screen.getByText("Median of 4 Ohio banks. U.S. $30.")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /^Credit unions/ }));
     expect(screen.getByText("Too few credit unions for a median yet.")).toBeTruthy();
-    expect(screen.getByRole("button", { name: /^\$20 to \$24\.99: 2 institutions/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /^\$20 to \$24\.99: 2 credit unions/ })).toBeTruthy();
   });
 
   it("draws the fee picked in a finding or a list row", () => {
@@ -74,5 +74,12 @@ describe("state board", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /^Overdraft \(OD\): banks/ }));
     expect(screen.getByRole("heading", { name: "Overdraft (OD)" })).toBeTruthy();
+  });
+
+  it("opens a fee with no credit unions on everyone rather than an empty chart", () => {
+    renderBoard();
+    fireEvent.click(screen.getByRole("button", { name: /^Credit unions/ }));
+    fireEvent.click(screen.getByRole("button", { name: /NSF is lowest/ }));
+    expect(screen.getByText("Median of 5 Ohio institutions. U.S. $30.")).toBeTruthy();
   });
 });

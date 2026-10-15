@@ -3,7 +3,7 @@
 import { createContext, useCallback, useContext, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import { buildHistogram, type HistogramBin } from "@/components/public/distribution-chart";
 import { MARKET_ROW_GRID, MarketRowBody, marketScale, money } from "../../../fees/[category]/exhibits";
-import type { BoardFee } from "./state-view";
+import type { BoardFee, LeadFinding } from "./state-view";
 
 /**
  * The state page's one interactive exhibit. A fee picked anywhere on the page (a finding, a
@@ -35,6 +35,8 @@ function useBoard(): BoardState {
 
 const COUNT = new Intl.NumberFormat("en-US");
 
+const POSITION_WORD = { below: "below", within: "inside", above: "above" } as const;
+
 export function StateBoard({ fees, stateName, children }: { fees: BoardFee[]; stateName: string; children: ReactNode }) {
   const [feeKey, setFeeKey] = useState(fees[0]?.key ?? "");
   const [charter, setCharterState] = useState<Charter>(0);
@@ -45,6 +47,9 @@ export function StateBoard({ fees, stateName, children }: { fees: BoardFee[]; st
   const pickFee = useCallback((key: string) => {
     setFeeKey(key);
     setBin(null);
+    // A fee with no banks (or no credit unions) opens on everyone rather than an empty chart.
+    const next = fees.find((f) => f.key === key);
+    setCharterState((c) => (next && ((c === 1 && next.bank.institutions === 0) || (c === 2 && next.cu.institutions === 0)) ? 0 : c));
     // A fee picked far from the chart brings the chart into view, so the change is seen.
     const chart = chartRef.current;
     if (!chart) return;
@@ -53,7 +58,7 @@ export function StateBoard({ fees, stateName, children }: { fees: BoardFee[]; st
       const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
       chart.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "start" });
     }
-  }, []);
+  }, [fees]);
   const setCharter = useCallback((c: Charter) => {
     setCharterState(c);
     setBin(null);
@@ -116,6 +121,8 @@ export function BoardChart() {
   const labelEvery = Math.ceil(bins.length / 6);
   const picked = bin !== null ? bins[bin] : null;
   const who = charterWord(charter, stateName);
+  const noun = charter === 1 ? "banks" : charter === 2 ? "credit unions" : "institutions";
+  const usAt = fee.us ? x(fee.us.median) : 0;
 
   return (
     <div ref={chartRef} className="scroll-mt-20 rounded-2xl border border-border bg-surface-0 p-4 shadow-fi-1 sm:p-6">
@@ -146,7 +153,7 @@ export function BoardChart() {
         {picked && bin !== null ? (
           <>
             <p className="font-mono text-[22px] font-semibold tabular-nums leading-tight text-ink">
-              {COUNT.format(counts[bin])} institutions
+              {COUNT.format(counts[bin])} {noun}
             </p>
             <p className="text-[13px] text-ink-muted">
               charge {rangeLabel(picked)}: {shownCount ? Math.round((counts[bin] / shownCount) * 100) : 0}% of{" "}
@@ -169,15 +176,9 @@ export function BoardChart() {
         )}
       </div>
 
-      <div className="relative mt-4 h-40 sm:h-52">
-        {fee.us && (
-          <div
-            aria-hidden="true"
-            className="pointer-events-none absolute inset-y-0 rounded-sm bg-ink/[0.07]"
-            style={{ left: `${x(fee.us.p25)}%`, width: `${Math.max(x(fee.us.p75) - x(fee.us.p25), 0.8)}%` }}
-          />
-        )}
-        <div className="absolute inset-0 flex items-end gap-[3px]" role="group" aria-label={`${fee.name}: ${who} by fee amount`}>
+      {/* The top strip holds the U.S. median's label, so it never sits on a bar. */}
+      <div className="relative mt-3 h-44 sm:h-56">
+        <div className="absolute inset-x-0 bottom-0 top-6 flex items-end gap-[3px]" role="group" aria-label={`${fee.name}: ${who} by fee amount`}>
           {bins.map((b, i) => {
             const pressed = bin === i;
             return (
@@ -185,7 +186,7 @@ export function BoardChart() {
                 key={b.low}
                 type="button"
                 aria-pressed={pressed}
-                aria-label={`${rangeLabel(b)}: ${COUNT.format(counts[i])} institutions`}
+                aria-label={`${rangeLabel(b)}: ${COUNT.format(counts[i])} ${noun}`}
                 onClick={() => setBin(pressed ? null : i)}
                 className="group relative flex h-full min-w-0 flex-1 items-end focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink"
               >
@@ -200,13 +201,27 @@ export function BoardChart() {
           })}
         </div>
         {fee.us && (
-          <div className="pointer-events-none absolute inset-y-0 border-l-2 border-dashed border-ink" style={{ left: `${x(fee.us.median)}%` }} aria-hidden="true">
-            <span className="absolute -top-1 left-1.5 whitespace-nowrap rounded bg-surface-0/90 px-1 text-[12px] font-semibold text-ink">
+          <div className="pointer-events-none absolute inset-y-0 border-l-2 border-dashed border-ink" style={{ left: `${usAt}%` }} aria-hidden="true">
+            {/* The label sits on the open side of the line, so it never runs past the card. */}
+            <span
+              className={`absolute top-0 ${usAt > 60 ? "right-1.5" : "left-1.5"} whitespace-nowrap px-1 text-[12px] font-semibold leading-5 text-ink`}
+            >
               U.S. {money(fee.us.median)}
             </span>
           </div>
         )}
       </div>
+      {fee.us && (
+        // The U.S. middle half as the same pink band the fee list below uses, on the chart's own axis.
+        <div className="relative mt-1.5 h-3" aria-hidden="true">
+          <span className="absolute inset-x-0 top-1/2 border-t border-border" />
+          <span
+            className="absolute top-1/2 h-2.5 -translate-y-1/2 rounded-full bg-brick-tint"
+            style={{ left: `${x(fee.us.p25)}%`, width: `${Math.max(x(fee.us.p75) - x(fee.us.p25), 1)}%` }}
+          />
+          <span className="absolute top-0 h-3 w-[2px] bg-ink/60" style={{ left: `${usAt}%` }} />
+        </div>
+      )}
       <div className="mt-1 flex gap-[3px] text-[11px] text-ink-muted" aria-hidden="true">
         {bins.map((b, i) => (
           <span key={b.low} className="min-w-0 flex-1 overflow-visible whitespace-nowrap">
@@ -221,7 +236,7 @@ export function BoardChart() {
         </span>
         {fee.us && (
           <span className="inline-flex items-center gap-1.5">
-            <span aria-hidden="true" className="h-3 w-4 rounded-sm bg-ink/[0.12]" />
+            <span aria-hidden="true" className="h-2.5 w-5 rounded-full bg-brick-tint" />
             U.S. middle half
           </span>
         )}
@@ -246,6 +261,9 @@ export function BoardRows({ fees, ariaLabel }: { fees: BoardFee[]; ariaLabel: st
               type="button"
               aria-pressed={pressed}
               onClick={() => pickFee(f.key)}
+              aria-label={`${f.name}: ${money(f.median)} across ${COUNT.format(f.institutions)} institutions${
+                f.us && f.position ? `, ${POSITION_WORD[f.position]} the U.S. middle half; U.S. median ${money(f.us.median)}` : ""
+              }`}
               className={`${MARKET_ROW_GRID} -mx-2 w-[calc(100%+1rem)] rounded-lg px-2 text-left transition-colors hover:bg-paper focus-visible:outline-2 focus-visible:outline-ink ${
                 pressed ? "bg-paper ring-1 ring-ink/30" : ""
               }`}
@@ -270,7 +288,13 @@ export function BoardRows({ fees, ariaLabel }: { fees: BoardFee[]; ariaLabel: st
   );
 }
 
-/** Banks and credit unions side by side for each fee, on the fee's own scale. */
+/** Widest gap the bank and credit union rows draw, in percent; wider gaps sit at the edge. */
+const CHARTER_AXIS_PCT = 60;
+
+/**
+ * Banks and credit unions for each fee on one shared axis: the bank median on the centre line,
+ * the credit union dot at its percent difference, so a wide gap looks wide on every row.
+ */
 export function CharterRows({ fees }: { fees: BoardFee[] }) {
   const { fee: current, pickFee } = useBoard();
   return (
@@ -278,10 +302,9 @@ export function CharterRows({ fees }: { fees: BoardFee[] }) {
       {fees.map((f) => {
         const bank = f.bank.median!;
         const cu = f.cu.median!;
-        const lo = Math.min(bank, cu);
-        const hi = Math.max(bank, cu);
-        const pad = (hi - lo || hi || 1) * 0.35;
-        const at = (v: number) => `${((v - Math.max(0, lo - pad)) / (hi + pad - Math.max(0, lo - pad))) * 100}%`;
+        const gap = bank > 0 ? ((cu - bank) / bank) * 100 : cu > 0 ? CHARTER_AXIS_PCT : 0;
+        const at = 50 + (Math.max(-CHARTER_AXIS_PCT, Math.min(CHARTER_AXIS_PCT, gap)) / CHARTER_AXIS_PCT) * 50;
+        const rounded = Math.round(gap);
         const pressed = f.key === current.key;
         return (
           <li key={f.key}>
@@ -289,20 +312,26 @@ export function CharterRows({ fees }: { fees: BoardFee[] }) {
               type="button"
               aria-pressed={pressed}
               onClick={() => pickFee(f.key)}
-              aria-label={`${f.name}: banks ${money(bank)}, credit unions ${money(cu)}`}
+              aria-label={`${f.name}: banks ${money(bank)} across ${f.bank.institutions}, credit unions ${money(cu)} across ${f.cu.institutions}`}
               className={`grid w-[calc(100%+1rem)] -mx-2 grid-cols-[6.5rem_minmax(0,1fr)_3.5rem] items-center gap-3 rounded-lg px-2 py-2 text-left text-[14px] transition-colors hover:bg-paper focus-visible:outline-2 focus-visible:outline-ink sm:grid-cols-[10rem_minmax(0,1fr)_4.5rem] ${
                 pressed ? "bg-paper ring-1 ring-ink/30" : ""
               }`}
             >
-              <span className="min-w-0 leading-tight text-ink">{f.name}</span>
+              <span className="min-w-0 leading-tight text-ink">
+                {f.name}
+                <span className="block text-[11px] text-ink-muted">
+                  {rounded === 0 ? (cu === bank ? "Same" : "Under 1% apart") : `Credit unions ${rounded > 0 ? "+" : "−"}${Math.abs(rounded)}%`}
+                </span>
+              </span>
               <span className="relative h-5" aria-hidden="true">
                 <span className="absolute inset-x-0 top-1/2 border-t border-border" />
+                <span className="absolute inset-y-0 left-1/2 w-px bg-border" />
                 <span
                   className="absolute top-1/2 h-1 -translate-y-1/2 rounded-full bg-ink/20"
-                  style={{ left: at(lo), width: `calc(${at(hi)} - ${at(lo)})` }}
+                  style={{ left: `${Math.min(50, at)}%`, width: `${Math.abs(at - 50)}%` }}
                 />
-                <span className="absolute top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-ink ring-2 ring-surface-0" style={{ left: at(bank) }} />
-                <span className="absolute top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-brick ring-2 ring-surface-0" style={{ left: at(cu) }} />
+                <span className="absolute left-1/2 top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-ink ring-2 ring-surface-0" />
+                <span className="absolute top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-brick ring-2 ring-surface-0" style={{ left: `${at}%` }} />
               </span>
               <span className="text-right font-mono text-[13px] tabular-nums leading-tight">
                 <span className="block text-ink">{money(bank)}</span>
@@ -317,7 +346,7 @@ export function CharterRows({ fees }: { fees: BoardFee[] }) {
 }
 
 /** The lead findings; one about a fee draws that fee on the chart when tapped. */
-export function FindingButtons({ findings }: { findings: { key: string; figure: string; headline: string; fee: string | null }[] }) {
+export function FindingButtons({ findings }: { findings: LeadFinding[] }) {
   const { pickFee } = useBoard();
   return (
     <ol className="grid gap-2 sm:grid-cols-3">
@@ -326,6 +355,7 @@ export function FindingButtons({ findings }: { findings: { key: string; figure: 
           <>
             <span className="block font-mono text-[26px] font-semibold leading-none tabular-nums text-ink">{f.figure}</span>
             <span className="mt-1.5 block text-[14px] leading-snug text-ink">{f.headline}</span>
+            {f.note && <span className="mt-1 block font-mono text-[12px] tabular-nums text-ink-muted">{f.note}</span>}
           </>
         );
         return (

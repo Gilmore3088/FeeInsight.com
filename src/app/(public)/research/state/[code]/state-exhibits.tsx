@@ -27,9 +27,11 @@ interface StateHeroProps {
   stateCode: string;
   stateName: string;
   district: number | undefined;
-  /** The four live figures under the map, already formatted. */
+  /** The live figures under the heading, already formatted. */
   figures: { value: string; label: string }[];
   freshnessLabel: string;
+  /** The hero's clip slot, under the map. */
+  video?: React.ReactNode;
 }
 
 /**
@@ -51,7 +53,7 @@ function StateMap({ stateCode, district }: { stateCode: string; district: number
         return s.id === stateCode || !STATE_NAMES[s.id] ? (
           <g key={s.id}>{path}</g>
         ) : (
-          <Link key={s.id} href={`/research/state/${s.id}`} tabIndex={-1}>
+          <Link key={s.id} href={`/research/state/${s.id}`} tabIndex={-1} prefetch={false}>
             {path}
           </Link>
         );
@@ -60,7 +62,7 @@ function StateMap({ stateCode, district }: { stateCode: string; district: number
   );
 }
 
-export function StateHero({ stateCode, stateName, district, figures, freshnessLabel }: StateHeroProps) {
+export function StateHero({ stateCode, stateName, district, figures, freshnessLabel, video }: StateHeroProps) {
   return (
     <section className="bg-ink text-paper">
       <div className="mx-auto grid max-w-page gap-6 px-4 pb-8 pt-6 sm:px-6 sm:pb-12 sm:pt-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)] lg:items-center lg:gap-10">
@@ -97,8 +99,11 @@ export function StateHero({ stateCode, stateName, district, figures, freshnessLa
             <PrintButton className="font-semibold text-paper/80 underline decoration-white/30 underline-offset-4 hover:text-white print:hidden" />
           </p>
         </div>
-        <div className="-mx-1 lg:mx-0">
-          <StateMap stateCode={stateCode} district={district} />
+        <div className="space-y-4">
+          <div className="-mx-1 lg:mx-0">
+            <StateMap stateCode={stateCode} district={district} />
+          </div>
+          {video}
         </div>
       </div>
     </section>

@@ -2,7 +2,8 @@ import type { IndexEntry, StateInstitutionValue } from "@/lib/data-store/fee-ind
 import { getDisplayName, isFeaturedFee } from "@/lib/fee-taxonomy";
 import { BENCHMARK_KEYS } from "@/lib/research-report/benchmark-keys";
 import type { StateComparison } from "@/lib/research-report/state-findings";
-import type { Finding } from "@/lib/research-report/finding";
+import { lowerName, type Finding } from "@/lib/research-report/finding";
+import { formatFeeAmount } from "@/lib/format";
 
 export type Position = "below" | "within" | "above";
 
@@ -99,17 +100,50 @@ export function charterHeadline(fees: BoardFee[]): string | null {
   const cuLower = paired.filter((f) => f.cu.median! < f.bank.median!).length;
   const bankLower = paired.filter((f) => f.bank.median! < f.cu.median!).length;
   const of = `of ${paired.length} ${paired.length === 1 ? "fee" : "fees"}`;
+  if (cuLower === 0 && bankLower === 0) return `Banks and credit unions charge the same on ${paired.length} ${paired.length === 1 ? "fee" : "fees"}`;
   if (cuLower >= bankLower) return `Credit unions are lower on ${cuLower} ${of}`;
   return `Banks are lower on ${bankLower} ${of}`;
 }
 
-/** The three findings the page leads with, each tied to a fee on the board when it names one. */
-export function leadFindings(findings: Finding[], fees: BoardFee[]): (Finding & { fee: string | null })[] {
-  const onBoard = new Set(fees.map((f) => f.key));
-  return findings.slice(0, 3).map((f) => ({
-    ...f,
-    // Whole-dollar figures read as "$30", the way every other figure on the page does.
-    figure: f.figure.replace(/^\$(\d[\d,]*)\.00$/, "$$$1"),
-    fee: f.fee_category && onBoard.has(f.fee_category) ? f.fee_category : null,
-  }));
+const money = (n: number | null | undefined) => formatFeeAmount(n) ?? "-";
+const count = new Intl.NumberFormat("en-US");
+
+function sentenceCase(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+export interface LeadFinding {
+  key: string;
+  figure: string;
+  headline: string;
+  /** The figures behind the finding, one short line: "$20 vs U.S. $15 · 91 institutions". */
+  note: string;
+  /** The fee a tap draws on the chart, when the board draws it. */
+  fee: string | null;
+}
+
+/**
+ * The three findings the page leads with, each with the figures behind it and tied to a fee
+ * on the board when it names one. Fee names read in sentence case, the way the page's own
+ * headings do.
+ */
+export function leadFindings(findings: Finding[], fees: BoardFee[]): LeadFinding[] {
+  const byKey = new Map(fees.map((f) => [f.key, f]));
+  return findings.slice(0, 3).map((f) => {
+    const fee = f.fee_category ? (byKey.get(f.fee_category) ?? null) : null;
+    let headline = f.headline;
+    if (fee && f.key === "premium") headline = `${sentenceCase(lowerName(fee.key))} runs furthest above the U.S.`;
+    if (fee && f.key === "discount") headline = `${sentenceCase(lowerName(fee.key))} runs furthest below the U.S.`;
+    let note = "";
+    if (fee && f.exhibit === "charters") note = `${money(fee.cu.median)} at credit unions · ${money(fee.bank.median)} at banks`;
+    else if (fee) note = `${fee.us ? `${money(fee.median)} vs U.S. ${money(fee.us.median)} · ` : ""}${count.format(fee.institutions)} institutions`;
+    return {
+      key: f.key,
+      // Whole-dollar figures read as "$30", the way every other figure on the page does.
+      figure: f.figure.replace(/^\$(\d[\d,]*)\.00$/, "$$$1"),
+      headline,
+      note,
+      fee: fee ? fee.key : null,
+    };
+  });
 }
