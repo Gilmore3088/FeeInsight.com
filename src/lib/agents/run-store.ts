@@ -73,6 +73,7 @@ import { runRosettaPaidRead } from "@/lib/agents/rosetta/paid-read";
 import { runMagellanPaidFind } from "@/lib/agents/magellan/paid-find";
 import { runKnoxPaidExtract } from "@/lib/agents/knox/paid-extract";
 import { runDarwinReleaseHeld } from "@/lib/agents/darwin/release-held";
+import { releaseRecordedPasses } from "@/lib/agents/darwin/release-review";
 import { runDarwinConditionalZeroResolve } from "@/lib/agents/darwin/conditional-zero-resolve";
 import { runDarwinScheduleRefile } from "@/lib/agents/darwin/schedule-refile";
 import { runDarwinAdjudicate } from "@/lib/agents/darwin/adjudicate";
@@ -785,6 +786,9 @@ async function executeAgenticStep(
         stateCode,
         db: tx,
       });
+      // Fees the v17 review passed while the release did not act: released after today's free holds
+      // under their own switch (DARWIN_RECORDED_RELEASE_ACTS), after a ledger dry run; off, a count only.
+      const recordedRelease = await releaseRecordedPasses(tx, { runId: run.id, stepId: step.id, dryRun: run.runKind === "dry_run" });
       // A "returned check" Hamilton took off NSF beside the schedule's own NSF fee is filed as an RDI.
       const scheduleRefile = await runDarwinScheduleRefile({
         runId: run.id,
@@ -824,6 +828,7 @@ async function executeAgenticStep(
             released: release.released,
             feedback_written: release.feedbackWritten,
           },
+          recorded_pass_release: recordedRelease,
           schedule_refile: { selected: scheduleRefile.selected, refiled: scheduleRefile.refiled },
           conditional_zero: { selected: conditionalZero.selected, verdicts: conditionalZero.verdicts, verified: conditionalZero.verified },
           feedback_written: verification.feedbackWritten,
