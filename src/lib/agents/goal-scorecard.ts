@@ -281,6 +281,12 @@ export function coverageShort(total: number, covered: number): number {
  * priority (#1117) both read, so the gap a lane works on is the gap the page shows. Institutions
  * over $10B are compared nationally and by district, never by state, so they are not here.
  * `weekAgo` fills the seven-days-ago columns (zero otherwise); the hourly priority skips them.
+ *
+ * The live list is a MATERIALIZED CTE (#1264). Postgres estimates 43 institution rows where
+ * 8,331 pass the filter, so with the list as a plain subquery it nested-looped the catalog
+ * result against every institution: 25.3M rows discarded, 3.9 s hourly and 4.7 s with
+ * `weekAgo` on prod (2026-10-14). Materialized, the list is read once and hash-joined: 0.31 s
+ * and 0.49 s, the same 160 rows (md5 of both outputs equal, read in one snapshot).
  */
 export function coverageGroupsSql(db: SqlTag, options: { weekAgo?: boolean } = {}) {
   const liveWeekAgo = options.weekAgo
@@ -292,6 +298,9 @@ export function coverageGroupsSql(db: SqlTag, options: { weekAgo?: boolean } = {
       )`
     : db`FALSE`;
   return db`
+    WITH live AS MATERIALIZED (
+      SELECT DISTINCT institution_id FROM public.published_fee_catalog
+    )
     SELECT state_code, size_group, total, covered, covered_week_ago, newly_covered, target,
            GREATEST(0, target - covered)::int AS short
       FROM (
@@ -311,8 +320,7 @@ export function coverageGroupsSql(db: SqlTag, options: { weekAgo?: boolean } = {
                    (live.institution_id IS NOT NULL) AS covered,
                    ${liveWeekAgo} AS covered_week_ago
               FROM public.institution_sources i
-              LEFT JOIN (SELECT DISTINCT institution_id FROM public.published_fee_catalog) live
-                ON live.institution_id = i.id
+              LEFT JOIN live ON live.institution_id = i.id
              WHERE COALESCE(i.status, 'active') = 'active'
                AND NULLIF(btrim(i.state_code), '') IS NOT NULL
                AND i.asset_size IS NOT NULL

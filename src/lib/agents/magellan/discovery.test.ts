@@ -14,6 +14,7 @@ import {
   runMagellanDiscovery,
   type DiscoveryResume,
   UPGRADE_SEARCH_VERSION,
+  FRESHNESS_SEARCH_VERSION,
   UPGRADE_RESERVED_SLOTS,
 } from "./discovery";
 
@@ -158,8 +159,9 @@ describe("Magellan agentic discovery", () => {
     const result = await runMagellanDiscovery({ runId: 102, dryRun: true, db: asDiscoveryDb(db), fetchImpl });
 
     expect(result.discovered).toBe(1);
-    // Only reads: the market-leader ranking and the candidate list.
-    expect(db.mock.calls.map((call) => templateText(call[0])).filter((text) => !text.includes("market leaders by state") && !text.includes("market gaps:"))).toHaveLength(1);
+    // Only reads: the market-leader ranking, the shared-name read and the candidate list.
+    const reads = db.mock.calls.map((call) => templateText(call[0]));
+    expect(reads.filter((text) => !text.includes("market leaders by state") && !text.includes("market gaps:") && !text.includes("shared-name check"))).toHaveLength(1);
   });
 
   it("searches the state's market leaders first", async () => {
@@ -733,6 +735,25 @@ describe("Magellan agentic discovery", () => {
       expect(attempts(db).every((attempt) => attempt.detail.upgrade_search === UPGRADE_SEARCH_VERSION)).toBe(true);
     });
 
+    it.each([
+      ["links the schedule too", '<a href="/personal/checking">Checking</a> <a href="/disclosures/fee-schedule">Fee Schedule</a>', "https://upbank.example/disclosures/fee-schedule"],
+      ["links only the product page (hub and crawl)", '<a href="/personal/checking">Checking</a>', null],
+    ])("never accepts the product page it is replacing, even when it lists fees: homepage %s (#1326)", async (_case, homepage, found) => {
+      const db = upgradeDb();
+      const fetchImpl = site({
+        "https://upbank.example/personal/checking": () => response(FEE_TABLE),
+        "https://upbank.example/": () => response(homepage),
+        "https://upbank.example/disclosures/fee-schedule": () => response(FEE_TABLE),
+      });
+
+      const result = await runMagellanDiscovery({ runId: 124, db: asDiscoveryDb(db), fetchImpl, politeDelayMs: 0 });
+
+      if (found) expect(result.results[0]).toMatchObject({ outcome: "discovered", url: found });
+      else expect(result.results[0].url ?? null).not.toBe("https://upbank.example/personal/checking");
+      expect(attempts(db).some((attempt) => attempt.outcome === "ok" && String(attempt.detail.url ?? "").endsWith("/personal/checking"))).toBe(false);
+      expect(attempts(db).some((attempt) => attempt.strategy === "discover.known_link")).toBe(false);
+    });
+
     it("leaves the bank's link and rescue state alone when no schedule is found", async () => {
       const db = upgradeDb();
       const fetchImpl = site({
@@ -872,7 +893,7 @@ describe("Magellan agentic discovery", () => {
       const texts = db.mock.calls.map((call) => templateText(call[0]));
       expect(texts.some((text) => text.includes("UPDATE institution_sources"))).toBe(true);
       expect(texts.some((text) => text.includes("INSERT INTO institution_additional_sources"))).toBe(false);
-      expect(attempts(db).every((attempt) => attempt.detail.freshness_search === 1)).toBe(true);
+      expect(attempts(db).every((attempt) => attempt.detail.freshness_search === FRESHNESS_SEARCH_VERSION)).toBe(true);
       expect(attempts(db)[0].detail).toMatchObject({
         stale_link: "https://oldbank.example/docs/2021-fee-schedule.pdf",
         stale_reason: "address names 2021",
@@ -891,7 +912,7 @@ describe("Magellan agentic discovery", () => {
       const texts = db.mock.calls.map((call) => templateText(call[0]));
       expect(texts.some((text) => text.includes("UPDATE institution_sources"))).toBe(false);
       expect(attempts(db).length).toBeGreaterThan(0);
-      expect(attempts(db).every((attempt) => attempt.detail.freshness_search === 1)).toBe(true);
+      expect(attempts(db).every((attempt) => attempt.detail.freshness_search === FRESHNESS_SEARCH_VERSION)).toBe(true);
     });
   });
 

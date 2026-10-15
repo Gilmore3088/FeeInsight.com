@@ -2,7 +2,15 @@ import { sql } from "@/lib/data-store/connection";
 import { invalidatePublicReadCache } from "@/lib/data-store/fee-cache";
 import { recordFeedback, type FeedbackRow } from "@/lib/agents/learning/feedback";
 import { inSavepoint } from "@/lib/agents/savepoint";
-import { boxTableAnnualHeader, perEventPeriodCheck, PERIOD_FEE_KEYS, settledFrequency } from "@/lib/fee-frequency";
+import {
+  boxTableAnnualHeader,
+  continuousOverdraftPeriodCheck,
+  maintenanceMonthlyFill,
+  perEventFrequency,
+  perEventPeriodCheck,
+  PERIOD_FEE_KEYS,
+  settledFrequency,
+} from "@/lib/fee-frequency";
 
 type SqlTag = typeof sql;
 
@@ -40,7 +48,16 @@ export const FREQUENCY_FILL_CHECK = "hamilton.frequency_fill";
 // (`perEventPeriodCheck`): a period read from a neighbour is corrected or cleared, a period the fee's
 // own price states (an NSF fee "$23.00/Month", an account's "$25 Monthly Maintenance Fee") is held
 // (taken down with reason `frequency_hold:`), and an overdraft program priced by the month keeps it.
-export const FREQUENCY_FILL_VERSION = 11;
+// v12 (#1301): a live NSF fee stored as annual or daily is checked too: a period from a box-table
+// header, an allowance or a neighbour is cleared, and a daily price with no daily cap is held.
+// v13 (#1339): James's per-item rule (Oct 15) reaches overdraft and returned-item fees stored as
+// monthly, annual, quarterly or daily (a daily cap or a waiver is not the fee's frequency); a
+// continuous overdraft fee stored by the month or year takes daily when its own words say so; a
+// blank monthly-maintenance fee takes monthly only when its own name or line says month.
+// v14 (#1339): every value the fill writes is one its own per-event check keeps, so a v13 correction
+// is not written back on the next pass; feedback dedupe keys name the version, so a later version's
+// write is always logged; the excerpt is read from `extraction_note` when it is set (#1336).
+export const FREQUENCY_FILL_VERSION = 14;
 /** The rolled_back_reason prefix of a fee the frequency fill holds (v11). */
 export const FREQUENCY_HOLD_REASON = "frequency_hold";
 /** Documents read per step for box-table headers; later steps take the rest. */
@@ -117,21 +134,26 @@ export async function fillBlankFrequencies(
   try {
     rows = await inSavepoint(db, (scope) => scope.unsafe<BlankFrequencyRow[]>(
       `SELECT fp.fee_published_id, fv.fee_verified_id, fr.fee_raw_id, fp.institution_id, fr.source_document_id,
-              fp.canonical_fee_key, fp.amount, fp.frequency, fr.conditions, fp.fee_name
+              fp.canonical_fee_key, fp.amount, fp.frequency, COALESCE(fr.extraction_note, fr.conditions) AS conditions, fp.fee_name
          FROM published_fee_records fp
          LEFT JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
          LEFT JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
         WHERE fp.rolled_back_at IS NULL
           AND fp.amount_kind = 'flat'
           AND fp.amount IS NOT NULL
-          AND fr.conditions LIKE '%excerpt=%'
+          AND COALESCE(fr.extraction_note, fr.conditions) LIKE '%excerpt=%'
           -- A blank is read only on a line with frequency wording; a stated frequency only on a
           -- line it may have been borrowed across.
-          AND ((fp.frequency IS NULL AND fr.conditions ~* '${CANDIDATE_WORDING}')
-               OR (fp.frequency IS NOT NULL AND fr.conditions ~ '${SHARED_LINE}')
+          AND ((fp.frequency IS NULL AND COALESCE(fr.extraction_note, fr.conditions) ~* '${CANDIDATE_WORDING}')
+               OR (fp.frequency IS NOT NULL AND COALESCE(fr.extraction_note, fr.conditions) ~ '${SHARED_LINE}')
                -- v4: a stated period on a per-event fee, which the line may never state.
                OR fp.frequency = 'daily'
-               OR (fp.frequency IN ('monthly', 'annual', 'quarterly') AND fp.canonical_fee_key <> ALL(${PERIOD_KEYS_SQL})))
+               OR (fp.frequency IN ('monthly', 'annual', 'quarterly') AND fp.canonical_fee_key <> ALL(${PERIOD_KEYS_SQL}))
+               -- v13: a continuous overdraft fee stored by the period, and a blank maintenance fee
+               -- whose own name or line names a month or a statement cycle.
+               OR (fp.canonical_fee_key = 'continuous_od' AND fp.frequency IN ('monthly', 'annual', 'quarterly'))
+               OR (fp.frequency IS NULL AND fp.canonical_fee_key = 'monthly_maintenance'
+                   AND (fp.fee_name ILIKE '%month%' OR COALESCE(fr.extraction_note, fr.conditions) ~* 'excerpt=.*(month|statement cycle)')))
           ${options.institutionId ? "AND fp.institution_id = $1" : ""}
         ORDER BY fp.fee_published_id`,
       options.institutionId ? [options.institutionId] : [],
@@ -146,7 +168,7 @@ export async function fillBlankFrequencies(
   try {
     boxRows = await inSavepoint(db, (scope) => scope.unsafe<BlankFrequencyRow[]>(
       `SELECT fp.fee_published_id, fv.fee_verified_id, fr.fee_raw_id, fp.institution_id, fr.source_document_id,
-              fp.canonical_fee_key, fp.amount, fp.frequency, fr.conditions
+              fp.canonical_fee_key, fp.amount, fp.frequency, COALESCE(fr.extraction_note, fr.conditions) AS conditions
          FROM published_fee_records fp
          JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
          JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
@@ -157,7 +179,7 @@ export async function fillBlankFrequencies(
           AND fp.canonical_fee_key = 'safe_deposit_box'
           AND fp.fee_name ~* '^\\W*[0-9]{1,2}(\\.[0-9])?\\s*[x×]\\s*[0-9]{1,2}'
           AND fr.source_document_id IS NOT NULL
-          AND fr.conditions LIKE '%excerpt=%'
+          AND COALESCE(fr.extraction_note, fr.conditions) LIKE '%excerpt=%'
           ${options.institutionId ? "AND fp.institution_id = $1" : ""}
         ORDER BY fp.fee_published_id`,
       options.institutionId ? [options.institutionId] : [],
@@ -212,7 +234,8 @@ export async function fillBlankFrequencies(
     const sourceLine = excerptOf(row.conditions);
     if (!sourceLine || !Number.isFinite(amount)) continue;
     const stated = row.frequency ?? null;
-    const check = perEventPeriodCheck(row.canonical_fee_key, stated, sourceLine, amount, row.fee_name);
+    const check = perEventPeriodCheck(row.canonical_fee_key, stated, sourceLine, amount, row.fee_name)
+      ?? continuousOverdraftPeriodCheck(row.canonical_fee_key, stated, sourceLine, amount, row.fee_name);
     if (check?.action === "keep") continue;
     if (check?.action === "hold") {
       if (result.held.length >= limit) continue;
@@ -230,7 +253,32 @@ export async function fillBlankFrequencies(
       });
       continue;
     }
-    const frequency = check ? check.frequency : settledFrequency(sourceLine, amount, stated, row.canonical_fee_key);
+    // #1196 (no version change): a blank NSF fee is never filled with a period. Before, the fill
+    // set Addition Financial's "Nonsufficient funds" (24188) to monthly from "$15 00 per month" on
+    // its line, and the v11 check cleared it on the next pass, over and over. A stated period the
+    // check does not cover waits for James, so only a blank is read this way.
+    const settled = settledFrequency(sourceLine, amount, stated, row.canonical_fee_key);
+    let frequency = check
+      ? check.frequency
+      : stated == null
+        ? perEventFrequency(row.canonical_fee_key, settled, sourceLine, amount) ?? maintenanceMonthlyFill(row.canonical_fee_key, stated, sourceLine, amount, row.fee_name)
+        : settled;
+    // v13 (#1339): a blank is never filled with a period the check above would clear or hold on the
+    // next pass. Before, overdraft fees 79931, 130684 and 140170 went round that loop on every
+    // publish step: "Overdraft Trans. (After 3rd trans. per mo.) | $5.00" was filled monthly from its
+    // line, then cleared, then filled again (the feedback dedupe logged only the first round).
+    // v14 (#1339): the same holds for a stated frequency. A correction the check made ("Deposited
+    // Item Returned (per item) $10.00 Dormant Account Fee (per month)", 53797 monthly -> per_item)
+    // was read on the next pass by `settledFrequency`, which took "monthly" off the same line and
+    // wrote it back two minutes later (01:30 and 01:32 UTC, Oct 15; 53797, 65200, 76864, 103686,
+    // 128934 and 124039). Any value the fill writes must be one its own check keeps, so a correction
+    // is a fixed point: the next pass reads it and writes nothing. A value the check would hold
+    // leaves a stated frequency as it is and a blank blank.
+    if (frequency != null && frequency !== stated) {
+      const recheck = perEventPeriodCheck(row.canonical_fee_key, frequency, sourceLine, amount, row.fee_name)
+        ?? continuousOverdraftPeriodCheck(row.canonical_fee_key, frequency, sourceLine, amount, row.fee_name);
+      if (recheck && recheck.action !== "keep") frequency = recheck.action === "correct" ? recheck.frequency : stated;
+    }
     if (frequency === stated) continue;
     if (result.filled.length >= limit) break;
     result.filled.push({
@@ -326,7 +374,9 @@ export async function fillBlankFrequencies(
     amount: fee.amount,
     evidence: { from: fee.from, to: fee.frequency, source_line: fee.sourceLine, ...(fee.basis ? { basis: fee.basis } : {}) },
     runId: options.runId,
-    dedupeKey: fee.from == null ? `${FREQUENCY_FILL_CHECK}:fill:${fee.feePublishedId}` : `${FREQUENCY_FILL_CHECK}:fix:${fee.feePublishedId}:${fee.frequency ?? "none"}`,
+    dedupeKey: fee.from == null
+      ? `${FREQUENCY_FILL_CHECK}:v${FREQUENCY_FILL_VERSION}:fill:${fee.feePublishedId}`
+      : `${FREQUENCY_FILL_CHECK}:v${FREQUENCY_FILL_VERSION}:fix:${fee.feePublishedId}:${fee.from}:${fee.frequency ?? "none"}`,
   }));
   for (const fee of result.held) {
     lessons.push({
@@ -345,7 +395,7 @@ export async function fillBlankFrequencies(
       amount: fee.amount,
       evidence: { from: fee.frequency, held: true, reason: fee.reason, source_line: fee.sourceLine },
       runId: options.runId,
-      dedupeKey: `${FREQUENCY_FILL_CHECK}:hold:${fee.feePublishedId}`,
+      dedupeKey: `${FREQUENCY_FILL_CHECK}:v${FREQUENCY_FILL_VERSION}:hold:${fee.feePublishedId}`,
     });
   }
   if (lessons.length > 0) {

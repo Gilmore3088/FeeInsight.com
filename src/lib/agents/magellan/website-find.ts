@@ -6,7 +6,7 @@ import { recordAttempt } from "@/lib/agents/learning/attempts";
 import { classifyFetchFailure, type AttemptOutcome } from "@/lib/agents/learning/outcomes";
 import { normalizeStateCode } from "@/lib/agents/state-lane-memory";
 import { PAID_PASS_MODELS, paidModelCall, paidResponseJson, type PaidMessageCreator } from "@/lib/agents/paid-pass";
-import { loadGroupGaps, pickFromWorkLists, WORK_LIST_POOL, workListDetail, type GroupGaps, type WorkListPlacement } from "@/lib/agents/state-expert/work-list";
+import { loadGroupGaps, pickFromWorkLists, WORK_LIST_POOL, workListDetail, workListPoolRankSql, type GroupGaps, type WorkListPlacement } from "@/lib/agents/state-expert/work-list";
 
 import { FOUND_COOLDOWN_DAYS, MISS_COOLDOWN_DAYS } from "./cooldowns";
 import { fetchWithTimeout } from "./find-validate";
@@ -196,7 +196,10 @@ async function selectRows(db: SqlTag, stateCode: string | null, limit: number, g
             AND pa.created_at >= NOW() - make_interval(days => CASE WHEN pa.outcome = 'ok' THEN ${FOUND_COOLDOWN_DAYS}::int ELSE ${MISS_COOLDOWN_DAYS}::int END)
             AND pa.outcome <> ALL(${TRANSIENT_OUTCOMES})
        )
-     ORDER BY inst.asset_size DESC NULLS LAST, inst.id ASC
+     -- Requesters and paying customers first, then each work-list cell's first rows in turn (#1269).
+     ORDER BY requested DESC, paying DESC,
+              ${workListPoolRankSql(db, { state: "inst.state_code", assets: "inst.asset_size", id: "inst.id" })},
+              inst.asset_size DESC NULLS LAST, inst.id ASC
      LIMIT ${WORK_LIST_POOL}
   `;
   return pickFromWorkLists(Array.isArray(pool) ? pool : [], gaps, limit);
@@ -281,7 +284,7 @@ export async function runWebsiteFind(options: {
         durationMs: 0,
         runId: options.runId,
         stepId: options.stepId ?? null,
-        detail: { pass: 3, saved_website: null, candidate_url: null, needs_human: true, reason },
+        detail: { pass: 3, saved_website: null, candidate_url: null, needs_human: true, reason, ...workListDetail(row.work_list) },
       });
       result.results.push({ institution_id: institutionId, outcome: "rejected", website: null, candidate_url: null, cost_microusd: 0, reason, by: "website_search", ...workListDetail(row.work_list) });
       continue;
@@ -394,6 +397,7 @@ export async function runWebsiteFind(options: {
         city_matched: check?.cityMatched ?? null,
         charter_matched: check?.charterMatched ?? null,
         reason,
+        ...workListDetail(row.work_list),
       },
     });
     result.results.push({ institution_id: institutionId, outcome, website: saved, candidate_url: candidate, cost_microusd: costMicrousd, reason, by: "website_search", ...workListDetail(row.work_list) });

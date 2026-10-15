@@ -32,6 +32,11 @@ next catch-up would re-file or take down.
 
 ## Procedure
 
+CI runs the fixed part of this on every PR (`npm run test:quality-gates`, #1067): the suites in
+step 1 and the hard-document gate (`src/lib/agents/deming/hard-documents.test.ts`), real source
+lines in the categories with the most wrong-after-publish takedowns. A PR fails there when a known
+case changes category or is missed. The steps below add what CI cannot: answer keys and live impact.
+
 1. Shape: the taxonomy still has `TAXONOMY_COUNT` 50 base types and every guarded category is
    in it. Run `npx vitest run src/lib/fee-taxonomy.test.ts src/lib/fee-category-guard.test.ts
    src/lib/fee-fold.test.ts src/lib/agents/hamilton/category-guard.test.ts`. Any failure is a

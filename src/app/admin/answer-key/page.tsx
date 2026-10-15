@@ -147,7 +147,7 @@ export default async function AnswerKeyPage({
             </table>
           </div>
           <p className="text-xs text-gray-400">
-            Stage dots: Magellan, Rosetta, Knox, Darwin, Hamilton. Green is right, red is wrong or missing. Scores come from the latest Atlas score run{latest ? ` (${formatAdminDateTime(latest.scored_at)})` : ""}.
+            Stage dots: Magellan, Rosetta, Knox, Darwin, Hamilton. Green is right, red is wrong or missing. Scores come from the latest Atlas score run{latest ? ` (scorer v${latest.scorer_version}, ${formatAdminDateTime(latest.scored_at)})` : ""}.
           </p>
 
           <section className="admin-card space-y-3 p-4">
