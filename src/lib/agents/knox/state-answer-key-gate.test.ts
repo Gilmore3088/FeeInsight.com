@@ -21,20 +21,22 @@ import { combineScores, scoreAnswerKeys, type AnswerKeyDocument, type GateScore 
 // and copy fees to document reproduction, so five of the six read right; the one left is
 // "Account Research Copies (per page) | $2.00" (GA 1338), which the key files as a copy and the
 // taxonomy as research. Floors are today's counts on main with 809: 742 right / 43 wrong.
+// v66 (#1102, Oct 15): fee-schedule labels with no fee word took all from 744 right / 41 wrong to
+// 787 / 41 (no state lost a right read or gained a wrong one). Floors are those counts.
 const FLOORS: Record<string, { right: number; wrong: number }> = {
-  CA: { right: 133, wrong: 6 },
-  FL: { right: 107, wrong: 7 },
-  GA: { right: 156, wrong: 10 },
+  CA: { right: 137, wrong: 5 },
+  FL: { right: 116, wrong: 7 },
+  GA: { right: 161, wrong: 9 },
   // 88 since the top-50 fold (Oct 8): a "Travel Card Reload" at $4.95 now files as a gift card
   // at $4.95, the same (category, price) pair as that schedule's gift card, so two right reads count once.
-  IL: { right: 89, wrong: 7 },
-  MI: { right: 117, wrong: 0 },
+  IL: { right: 99, wrong: 7 },
+  MI: { right: 122, wrong: 0 },
   // 96 since collection items got their own type (Oct 8): the key files a "$20.00 for the first
   // item" line under check cashing, and Knox now reads that schedule's "Collection Item" $20
   // as a collection item, so one right read became one wrong one.
-  MN: { right: 98, wrong: 8 },
+  MN: { right: 110, wrong: 8 },
   NY: { right: 42, wrong: 5 },
-  all: { right: 742, wrong: 43 },
+  all: { right: 787, wrong: 41 },
 };
 
 const fixture = JSON.parse(

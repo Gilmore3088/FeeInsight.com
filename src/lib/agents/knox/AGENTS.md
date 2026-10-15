@@ -488,6 +488,43 @@ hand check found wrong, from their real lines.
   Transfer for\nOverdrafts - $2.00 per transfer", raw 112570). A bare "Overdrafts" priced per
   item is still the overdraft fee.
 
+v66 (#1102, Oct 15): priced lines with no "fee" or "charge" that Knox dropped without a record.
+On the 62-bank answer key, 434 key lines in our own stored text had no row and no fee word.
+- Name rules for fee-schedule labels seen at several banks, placed after every other rule so they
+  only claim lines nothing else names:
+  - account research: "Research (per hour)", "Record Research", "Account Reconcilement", "Balancing".
+    A bare "RESEARCH" heading cell is not one.
+  - notary acts ("notarization", "notarial"); a night drop.
+  - safe deposit boxes: "Duplicate Key", "Key Deposit / Replacement", "Box Inventory", a size after
+    the word that rents it ("Annual Rent Size 3×5"), sizes with prime marks ("03″x05″x22″"), and a
+    box size alone in its cell ("RESEARCH | 5 x 10 | $100").
+  - document reproduction: additional or duplicate statements, "Copy of ...". A copy of a title is
+    left out.
+  - deposit or account verification; a loan's due date change; sweep transfers and "OD protection
+    transaction" (overdraft protection transfer); "continuous negative balance"; "insufficient item".
+  - wider existing rules: "Rushed" and "plastic" cards, "CHECKCARD" and Visa card replacement,
+    "check images", "Bill-pay", "subpoenas", "legal proceedings", "check reorder".
+- Left out because the keys file them another way: account printouts (the seven-state keys leave
+  them unfiled), other skip-payment wordings (late fees in the keys; v5's "skip-a-pay" stays a lending
+  fee), and loan payments by phone or card (unfiled in the seven-state keys).
+- A "FREE" (or "None") cell in a row of account columns is one column's price. "Stop Payment | FREE
+  | $25 | $25" reads $25 and holds $0 (`zero`). The free cell no longer becomes the fee's name.
+- A `label | price` row (or `label | Free`) that no rule names is held as `unclassified` in a fee
+  schedule (one that names itself so, or where the rules read 5 or more fees) instead of dropped.
+  It is not held when its label is a balance, an opening deposit or minimum, a rate or yield, a
+  limit, loan size, example or total, or the figure is over $2,500 (`nonFeeReason`). These rows fill
+  the 10 unclassified places per document only after the lines that say "fee".
+- Every priced line no rule names that is neither read nor held is counted by reason
+  (`DroppedLineReason`): per document in the extract attempt's `dropped_lines`, and per step in the
+  extract step's `dropped_priced_lines`.
+- Gates: Texas 511 right / 14 wrong to 533 / 14 (held out 53 / 4, unchanged); seven states 744 / 41
+  to 787 / 41. No right read was lost and no wrong read was added in either gate. On the 62-bank key's
+  stored texts, the free team plus Darwin's rule checks found 1,308 of 2,321 key fees before and
+  1,385 after; the 69 new reads were all right (1,166 of 1,301 to 1,235 of 1,370).
+- Production dry run (Oct 15): the held re-check would categorize 492 more of the 27,771 held
+  unclassified lines (75 before); 458 of them pass Darwin's category guard, at 205 banks. On 120 random
+  current texts, re-reading added 17 reads (all matching their lines) and dropped none.
+
 Rules 65, #1196 (Oct 14, no version change, so no document is re-read for it):
 - A price whose decimal point the PDF text dropped ("Dormant accounts | $15 00 per month
   Nonsufficient funds | $35 00", Addition Financial) gets its point back before the line is read
@@ -786,6 +823,6 @@ fails a PR that changes one of these constants without updating its line here (#
 | `LINEUP_CORRECT_STRATEGY` | `knox.lineup_correct` | v2 | `knox/lineup-correct.ts` |
 | `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v19 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v2 | `knox/paid-extract.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v65 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v66 | `knox/specialists.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v6 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v1 | `knox/takedown-lessons.ts` |
