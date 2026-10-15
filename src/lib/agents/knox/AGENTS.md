@@ -475,6 +475,11 @@ v65 (rules 65, Oct 9, customer audience):
   cannot become two audiences, so the document's re-read writes them. Pinnacle (47) heads
   `KNOX_PRIORITY_REREAD_IDS` for that re-read.
 
+Rules 65, subordination (Oct 15, no version change): Knox reads a subordination fee as
+`legal_process` (James, Oct 15, reversing Oct 8; `fee-taxonomy.ts`). Hamilton's rules re-check
+counts that read as reproducing a live subordination still filed as `other_lending_fee` until the
+fold's switched re-file moves it, so no live fee comes down for the change.
+
 Rules 65, #1291 re-file check (Oct 14, no version change): three reads the re-file restore's
 hand check found wrong, from their real lines.
 - "Maximum Daily OD/NSF Fees $210 per day" is the overdraft daily cap, not a continuous
