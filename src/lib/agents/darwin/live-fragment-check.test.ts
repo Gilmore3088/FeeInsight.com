@@ -176,6 +176,8 @@ describe("Darwin live fragment re-check", () => {
     expect(JSON.stringify(db.mock.calls)).toContain("fragment name: pronoun (rename_duplicate)");
     const read = db.mock.calls.map(([strings]) => (strings as TemplateStringsArray).join("?")).find((text) => text.includes("lower(btrim(regexp_replace"));
     expect(read).toContain("fp.quarantined_at IS NULL");
+    // postgres.js sends the cooked template text: the regex must reach Postgres as \s+, not s+.
+    expect(read).toContain("regexp_replace(fp.fee_name, '\\s+', ' ', 'g')");
   });
 
   it("counts the duplicate in shadow and in a dry run too", async () => {
@@ -318,6 +320,8 @@ describe("live fragment switch-on rules (#1443)", () => {
     ["Wire Fee if you request", null],
     ["Account is charged a fee You will", null],
     // The reviewer's good heads.
+    ["Second Party Check Fee You will be charged", "Second Party Check Fee"],
+    ["First Check Order Fee. You will be charged", "First Check Order Fee"],
     ["ATM Fee You may be charged by the ATM owner", "ATM Fee"],
     ["Overdraft Fee per item. You will be charged", "Overdraft Fee per item"],
     ["Account Closing Fee If you close within 90 days", "Account Closing Fee"],
@@ -338,6 +342,7 @@ describe("live fragment switch-on rules (#1443)", () => {
     ["Every Item You will pay", null],
     ["2nd Item You will pay", null],
     ["Second Item You will pay", null],
+    ["Third Party Item You will pay", "Third Party Item"],
     ["Fee Per Item You will", null],
     ["Our Wire Fee You will pay", null],
     ["Wire Fee for our members You will", null],

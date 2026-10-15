@@ -284,7 +284,7 @@ async function liveNamesFor(db: SqlTag, rows: LiveFragmentRow[]): Promise<Set<st
        WHERE fp.rolled_back_at IS NULL
          AND fp.quarantined_at IS NULL
          AND fp.institution_id = ANY(${[...new Set(candidates.map((fee) => fee.institutionId))]}::bigint[])
-         AND lower(btrim(regexp_replace(fp.fee_name, '\s+', ' ', 'g'))) = ANY(${[...new Set(candidates.map((fee) => (fee.renameTo ?? "").toLowerCase()))]}::text[])
+         AND lower(btrim(regexp_replace(fp.fee_name, '\\s+', ' ', 'g'))) = ANY(${[...new Set(candidates.map((fee) => (fee.renameTo ?? "").toLowerCase()))]}::text[])
     `);
     return new Set(existing.map((row) => liveNameKey(row.institution_id, row.canonical_fee_key, row.amount, row.fee_name)));
   } catch (error) {
@@ -561,8 +561,13 @@ function postgresPattern(re: RegExp): string {
  * characters, which JS does not, so a name with accented letters next to a matched word can count
  * differently; and the SQL does not run the category guard on a rename (a cleaned name the guard
  * would refuse comes down in the step but counts as a rename here; the step's ledger is the exact
- * count). The trailing range's optional leading separators (`[\s\-–—|:,]*`) never change whether
- * it matches, so the SQL leaves them out.
+ * count). A third: the SQL does not re-check that the cleaned name is itself no fragment
+ * (`liveFragmentName(head)`), so a head that still reads as one counts as a rename here and comes
+ * down in the step. Its totals can also differ from the sum of the step's per-batch ledger totals:
+ * the step finds a duplicate rename only inside its batch of fees or against names already live,
+ * so two renames onto the same name in different batches are both renames in the ledger but one
+ * rename and one `rename_duplicate` here. The trailing range's optional leading separators
+ * (`[\s\-–—|:,]*`) never change whether it matches, so the SQL leaves them out.
  */
 export function liveFragmentCountSql(): string {
   const re = LIVE_FRAGMENT_REGEXES;

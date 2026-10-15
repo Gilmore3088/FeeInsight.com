@@ -200,8 +200,12 @@ const GLUED_SENTENCE_STARTS = [
 ];
 /** Words a head never holds, in any case: whose fee it is ("Checks Your order") is the sentence, not the name. */
 const GLUED_HEAD_PERSON = ["you", "your", "we", "our"].map(anyCase);
-/** A head never opens on an article, a quantifier or an ordinal ("A Fee", "Each Item", "2nd Item"). */
-const GLUED_HEAD_LEADS = ["a", "an", "any", "each", "every", "first", "second", "third", "fourth", "fifth"].map(anyCase).concat(String.raw`\d+(?:[Ss][Tt]|[Nn][Dd]|[Rr][Dd]|[Tt][Hh])`);
+/**
+ * A head never opens on an article, a quantifier or a numbered ordinal ("A Fee", "Each Item", "2nd
+ * Item"). A spelled ordinal can open a real name ("Second Party Check Fee", "First Check Order
+ * Fee"), so it bars a head only when the rest is fee nouns ("Second Item", in GLUED_GENERIC_WORDS).
+ */
+const GLUED_HEAD_LEADS = ["a", "an", "any", "each", "every"].map(anyCase).concat(String.raw`\d+(?:[Ss][Tt]|[Nn][Dd]|[Rr][Dd]|[Tt][Hh])`);
 /** One word of a head: no sentence or cell break in it, and never a sentence start or a person. */
 const GLUED_WORD = String.raw`(?!(?:${[...GLUED_SENTENCE_STARTS, ...GLUED_HEAD_PERSON].join("|")})\b)[^\s.:|;()]+`;
 const GLUED_HEAD_MAX_WORDS = 8;
@@ -217,7 +221,7 @@ const GLUED_SENTENCE = new RegExp(
   String.raw`^((?!(?:${GLUED_HEAD_LEADS.join("|")})\b)(?=[A-Z0-9])${GLUED_WORD}(?:\s+${GLUED_WORD}){0,${GLUED_HEAD_MAX_WORDS - 2}}\s+(?:${GLUED_HEAD_ENDINGS.join("|")}))(?:\s*[|:.;–—-]\s*|\s+)(?:${GLUED_SENTENCE_STARTS.join("|")})\b`,
 );
 /** Fee nouns and joining words: a head made only of these ("Fee Per Item") names no fee. */
-const GLUED_GENERIC_WORDS = ["fees?", "charges?", "items?", "per", "payments?", "each", "a", "an", "the", "of", "for", "and", "or", "services?", "transactions?"];
+const GLUED_GENERIC_WORDS = ["fees?", "charges?", "items?", "per", "payments?", "each", "a", "an", "the", "of", "for", "and", "or", "services?", "transactions?", "first", "second", "third", "fourth", "fifth"];
 const GLUED_GENERIC_ONLY = new RegExp(String.raw`^(?:${GLUED_GENERIC_WORDS.join("|")})(?:\s+(?:${GLUED_GENERIC_WORDS.join("|")}))*$`, "i");
 /** The head is no name when it is itself a sentence, a condition, or fee nouns alone. */
 const GLUED_HEAD_BARS = [LIVE_PRONOUN, SENTENCE_VERB, CONDITION_CLAUSE, GLUED_GENERIC_ONLY] as const;
