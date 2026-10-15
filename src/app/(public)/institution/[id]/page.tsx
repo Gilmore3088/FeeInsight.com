@@ -329,7 +329,8 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
           quarters: normalizedFinancials,
           ownSharePct: latestFinancial?.feeIncomeRatioPct ?? null,
           peerSharePct: freePeerMedians?.fee_income_ratio != null ? freePeerMedians.fee_income_ratio * 100 : null,
-          peerCount: freePeerMedians?.peer_count ?? null,
+          peerCount: freePeerMedians?.fee_income_peer_count ?? null,
+          sizeRange: segmentLabel?.split(", ")[1] ?? null,
           kind,
         }
       : null;
@@ -370,13 +371,12 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
           />
 
           <div className="space-y-8 sm:space-y-10">
-            <FindingsSection findings={findings} asOf={null} />
+            <FindingsSection findings={findings} asOf={null} kind={kind} />
 
             <HeadlineTable
               rows={headlineRows}
               stateCode={stateHasBands ? inst.state_code : null}
               stateLabel={stateHasBands ? marketLabel : null}
-              kind={kind}
             />
 
             {thinProfile && (
@@ -470,6 +470,7 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
               regulatorFacts={regulatorFacts}
               correctSourceHref={links.correctSourceHref}
               financialsAsOf={financialsAsOf}
+              financialsSource={latestFinancial?.source === "ncua" ? "NCUA" : "FDIC"}
             />
           </div>
         </div>

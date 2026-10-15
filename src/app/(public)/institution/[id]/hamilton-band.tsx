@@ -17,7 +17,10 @@ export interface HamiltonInsight {
   quarters: NormalizedFinancial[];
   ownSharePct: number | null;
   peerSharePct: number | null;
+  /** The peers behind peerSharePct. */
   peerCount: number | null;
+  /** "$1B to $10B": the asset tier the peers share. */
+  sizeRange: string | null;
   /** "credit union" or "bank". */
   kind: string;
 }
@@ -67,13 +70,13 @@ function InsightView({ insight, institutionName }: { insight: HamiltonInsight; i
         <>
           <p className="font-mono text-[34px] font-semibold leading-none tabular-nums text-ink">
             {pct(insight.ownSharePct as number)}
-            <span className="ml-2 align-middle text-[15px] font-normal text-ink-muted">vs {pct(insight.peerSharePct as number)} peers</span>
+            <span className="ml-2 align-middle font-sans text-[15px] font-normal text-ink-muted">vs {pct(insight.peerSharePct as number)} peer median</span>
           </p>
           <p className="mt-2 text-[15px] leading-snug text-ink">
             Service charges were {pct(insight.ownSharePct as number)} of {institutionName}&apos;s revenue
             {latest ? ` in ${formatReportQuarter(latest.reportDate)}` : ""}. The median for{" "}
-            {(insight.peerCount as number).toLocaleString("en-US")} {insight.kind === "bank" ? "banks" : "credit unions"} its size
-            was {pct(insight.peerSharePct as number)}.
+            {(insight.peerCount as number).toLocaleString("en-US")} {insight.kind === "bank" ? "banks" : "credit unions"}
+            {insight.sizeRange ? ` with ${insight.sizeRange} in assets` : " its size"} was {pct(insight.peerSharePct as number)}.
           </p>
         </>
       ) : (
@@ -104,7 +107,7 @@ function InsightView({ insight, institutionName }: { insight: HamiltonInsight; i
       {span && (
         <figcaption className="mt-3 text-[12px] text-ink-muted">
           From {sourceName}, {span}
-          {comparePeers ? ". Peers share its charter and asset tier." : "."}
+          {comparePeers ? ". Revenue is net interest income plus noninterest income." : "."}
         </figcaption>
       )}
     </figure>

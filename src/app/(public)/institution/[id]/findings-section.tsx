@@ -1,6 +1,6 @@
 import { ExternalLink } from "lucide-react";
 import type { Finding } from "./findings";
-import { MarketRange, rangeDomain, type Position } from "./market-position";
+import { Legend, MarketRange, rangeDomain, type Position } from "./market-position";
 
 const FIGURE_TONE: Record<Position, string> = {
   below: "text-below-market",
@@ -9,13 +9,16 @@ const FIGURE_TONE: Record<Position, string> = {
 };
 
 /** The page's lead: three sourced findings, each one difference, its comparison group and its source. */
-export function FindingsSection({ findings, asOf }: { findings: Finding[]; asOf: string | null }) {
+export function FindingsSection({ findings, asOf, kind }: { findings: Finding[]; asOf: string | null; kind: string }) {
   if (findings.length === 0) return null;
   return (
     <section aria-labelledby="findings-heading" className="space-y-3">
-      <h2 id="findings-heading" className="text-[13px] font-semibold uppercase tracking-[0.12em] text-ink-muted">
-        {findings.length === 1 ? "What stands out" : `${findings.length} things that stand out`}
-      </h2>
+      <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+        <h2 id="findings-heading" className="text-[13px] font-semibold uppercase tracking-[0.12em] text-ink-muted">
+          {findings.length === 1 ? "What stands out" : `${findings.length} things that stand out`}
+        </h2>
+        {findings.some((finding) => finding.bar) && <Legend kind={kind} />}
+      </div>
       <ol className="grid gap-3 lg:grid-cols-3">
         {findings.map((finding) => (
           <li key={finding.key} className="flex min-w-0 flex-col rounded-xl border border-border bg-surface-0 p-4 shadow-fi-1 sm:p-5">

@@ -5,10 +5,13 @@ export function ProfileFootnote({
   regulatorFacts,
   correctSourceHref,
   financialsAsOf,
+  financialsSource = "FDIC",
 }: {
   regulatorFacts: Array<{ label: string; value: string }>;
   correctSourceHref: string;
   financialsAsOf: string | null;
+  /** Whose call reports the financials come from. */
+  financialsSource?: "FDIC" | "NCUA";
 }) {
   return (
     <footer className="space-y-2 border-t border-border pt-6 text-[13px] text-ink-muted">
@@ -24,7 +27,7 @@ export function ProfileFootnote({
       )}
       <p>
         Fees from the institution&apos;s own published schedule
-        {financialsAsOf ? `; financials from FDIC and NCUA call reports, ${financialsAsOf}` : ""}.{" "}
+        {financialsAsOf ? `; financials from ${financialsSource} call reports, ${financialsAsOf}` : ""}.{" "}
         <Link href="/methodology" className="font-semibold text-ink underline decoration-border underline-offset-2 hover:decoration-ink">
           Methodology
         </Link>

@@ -105,7 +105,7 @@ export function MarketRange({
   );
 }
 
-function Legend({ kind }: { kind: string }) {
+export function Legend({ kind }: { kind: string }) {
   return (
     <p className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-ink-muted" aria-hidden="true">
       <span className="inline-flex items-center gap-1.5">
@@ -117,8 +117,12 @@ function Legend({ kind }: { kind: string }) {
         Median
       </span>
       <span className="inline-flex items-center gap-1.5">
-        <span className="h-2.5 w-2.5 rounded-full bg-in-range" />
-        This {kind}
+        <span className="inline-flex gap-0.5">
+          <span className="h-2.5 w-2.5 rounded-full bg-below-market" />
+          <span className="h-2.5 w-2.5 rounded-full bg-in-range" />
+          <span className="h-2.5 w-2.5 rounded-full bg-above-market" />
+        </span>
+        This {kind}: below, inside or above
       </span>
     </p>
   );
@@ -195,27 +199,21 @@ export function HeadlineTable({
   rows,
   stateCode,
   stateLabel,
-  kind,
 }: {
   rows: HeadlineRow[];
   /** "TX"; null when the state has too few institutions for a median. */
   stateCode: string | null;
   /** "Texas banks". */
   stateLabel: string | null;
-  /** "bank" or "credit union", for the legend. */
-  kind: string;
 }) {
   if (rows.length === 0) return null;
   const vs = stateCode ? `vs ${stateCode}` : "vs U.S.";
   const showNation = rows.some((row) => row.state && row.nation);
   return (
     <section aria-labelledby="headline-table-heading" className="space-y-3">
-      <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
-        <h2 id="headline-table-heading" className="text-[20px] font-semibold tracking-[-0.02em] text-ink sm:text-[24px]">
-          Its main fees against {stateLabel ?? "the U.S."}
-        </h2>
-        <Legend kind={kind} />
-      </div>
+      <h2 id="headline-table-heading" className="text-[20px] font-semibold tracking-[-0.02em] text-ink sm:text-[24px]">
+        Its main fees against {stateLabel ?? "the U.S."}
+      </h2>
       <div className="overflow-hidden rounded-xl border border-border bg-surface-0 shadow-fi-1">
         <div
           aria-hidden="true"

@@ -61,6 +61,7 @@ export function buildFindings(input: {
     return {
       row,
       band,
+      scope,
       group: scope === "state" ? `${n} ${stateGroup}` : `${n} U.S. institutions`,
       barLabel: scope === "state" ? (stateCode ?? "State") : "U.S.",
       diff,
@@ -75,15 +76,25 @@ export function buildFindings(input: {
   // The home market speaks first; a fee the state calls ordinary can still stand out nationally.
   const measured = [...inState, ...inNation.filter((m) => !inState.some((s) => s.row.category === m.row.category))];
 
-  const feeFinding = (m: Measure): Finding => ({
+  const feeFinding = (m: Measure): Finding => {
+    // A fee the state calls ordinary but the nation does not says both, so the card and the
+    // state table below it never seem to disagree.
+    const home = m.scope === "nation" ? inState.find((s) => s.row.category === m.row.category && s.position === "within") : undefined;
+    const lead = `Its ${plain(m.row.label)} fee`;
+    const text =
+      m.position === "within"
+        ? `${lead}, ${money(m.row.amount)}, sits inside the middle half of ${m.group}.`
+        : home
+          ? `${lead}, ${money(m.row.amount)}, is inside the middle half of ${home.group} but ${money(Math.abs(m.diff))} ${m.diff > 0 ? "above" : "below"} the ${money(m.band.median)} median of ${m.group}.`
+          : `${lead} is ${money(m.row.amount)}, ${money(Math.abs(m.diff))} ${m.diff > 0 ? "above" : "below"} the ${money(m.band.median)} median of ${m.group}.`;
+    return finding(m, text);
+  };
+  const finding = (m: Measure, text: string): Finding => ({
     key: `fee-${m.row.category}`,
     label: m.row.label,
     figure: m.position === "within" ? money(m.row.amount) : signed(m.diff),
     tone: m.position,
-    text:
-      m.position === "within"
-        ? `Its ${plain(m.row.label)} fee, ${money(m.row.amount)}, sits inside the middle half of ${m.group}.`
-        : `Its ${plain(m.row.label)} fee is ${money(m.row.amount)}, ${money(Math.abs(m.diff))} ${m.diff > 0 ? "above" : "below"} the ${money(m.band.median)} median of ${m.group}.`,
+    text,
     comparedWith: m.group,
     sourceUrl: m.row.sourceUrl,
     bar: { band: m.band, amount: m.row.amount, label: m.barLabel },
@@ -109,16 +120,26 @@ export function buildFindings(input: {
   for (const m of outside) if (!used.has(m.row.category) && findings.length < 2) take(feeFinding(m), m.row.category);
 
   if (peerRank && peerGroup) {
-    const line = peerRank.lines.find((l) => !used.has(l.key) && l.peers > 0 && l.own > 0) ?? null;
+    const toneOf = (l: (typeof peerRank.lines)[number]): Position => {
+      const share = (l.lower + l.same / 2) / l.peers;
+      return share < 0.25 ? "below" : share > 0.75 ? "above" : "within";
+    };
+    // A rank in the middle of its peers is not something that stands out.
+    const line = peerRank.lines.find((l) => !used.has(l.key) && l.peers > 0 && l.own > 0 && toneOf(l) !== "within") ?? null;
     if (line) {
-      const share = (line.lower + line.same / 2) / line.peers;
+      const tone = toneOf(line);
+      const fee = article(PEER_LABEL[line.key] ?? line.key);
+      const split = [`${line.higher} charge more than its ${money(line.own)}`, line.same > 0 ? `${line.same} the same` : null, `${line.lower} less`]
+        .filter(Boolean)
+        .join(", ")
+        .replace(/, ([^,]*)$/, " and $1");
       take(
         {
           key: `rank-${line.key}`,
           label: line.key === "overdraft" ? "Overdraft among peers" : "Maintenance among peers",
-          figure: `${line.higher} of ${line.peers}`,
-          tone: share < 0.25 ? "below" : share > 0.75 ? "above" : "within",
-          text: `Of ${line.peers} ${peerGroup} that publish ${article(PEER_LABEL[line.key] ?? line.key)} fee, ${line.higher} charge more than its ${money(line.own)} and ${line.lower} charge less.`,
+          figure: tone === "above" ? `Above ${line.lower}` : `Below ${line.higher}`,
+          tone,
+          text: `Of ${line.peers} ${peerGroup} that publish ${fee} fee, ${split}.`,
           comparedWith: `${line.peers} ${peerGroup}`,
           sourceUrl: null,
           bar: null,
