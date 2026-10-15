@@ -539,10 +539,10 @@ describe.skipIf(!E2E_DATABASE_URL)("pipeline end to end (state lane)", () => {
 
     const [scoreRun] = await sql`
       SELECT precision, recall, by_stage, by_bank FROM answer_key_score_runs
-       WHERE agent_run_id = ${started.run.id} AND scorer_version = 2
+       WHERE agent_run_id = ${started.run.id} AND scorer_version = 3
     `;
     const versions = await sql`SELECT scorer_version FROM answer_key_score_runs WHERE agent_run_id = ${started.run.id} ORDER BY scorer_version`;
-    expect(versions.map((row) => Number(row.scorer_version))).toEqual([1, 2]);
+    expect(versions.map((row) => Number(row.scorer_version))).toEqual([1, 2, 3]);
     expect(Number(scoreRun.precision)).toBe(1);
     expect(Number(scoreRun.recall)).toBe(1);
     const bankScore = (scoreRun.by_bank as Array<Record<string, unknown>>).find((row) => Number(row.institution_id) === institutionId);

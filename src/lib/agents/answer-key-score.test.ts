@@ -79,7 +79,7 @@ describe("rawCanonicalHint", () => {
 });
 
 describe("scoreAnswerKey", () => {
-  it.each([1, 2] as const)("scores a perfect pipeline at precision and recall 1 on every stage (v%i)", (version) => {
+  it.each([1, 2, 3] as const)("scores a perfect pipeline at precision and recall 1 on every stage (v%i)", (version) => {
     const score = scoreAnswerKey([ENTRY], new Map([[7, evidence()]]), version);
     expect(score.scorerVersion).toBe(version);
     expect(score.overall).toMatchObject({ precision: 1, recall: 1, expected: 4 });
@@ -153,6 +153,28 @@ describe("scoreAnswerKey", () => {
     expect(wrongLink.byStage.magellan).toMatchObject({ predicted: 1, correct: 0 });
   });
 
+  it("v3 counts a fee published as a rate only against a key fee keyed as varies, never a dollar amount", () => {
+    // safe_deposit_box is keyed as varies; the key's overdraft is $32, never a rate.
+    const bank = evidence({
+      hamilton: KEY_DOC_FEES.filter((fee) => fee.canonicalKey !== "safe_deposit_box"),
+      hamiltonRates: [
+        { canonicalKey: "safe_deposit_box", amount: null, ratePercent: 1.5, sourceDocumentId: 11 },
+        { canonicalKey: "safe_deposit_box", amount: null, ratePercent: 1.5, sourceDocumentId: 11 },
+        { canonicalKey: "overdraft", amount: null, ratePercent: 32, sourceDocumentId: 11 },
+      ],
+    });
+    const v2 = scoreAnswerKey([ENTRY], new Map([[7, bank]]), 2);
+    const v3 = scoreAnswerKey([ENTRY], new Map([[7, bank]]), 3);
+    expect(v2.overall).toMatchObject({ predicted: 3, correct: 3, matched: 3, recall: 0.75 });
+    expect(v2.banks[0].missing).toEqual(["safe_deposit_box"]);
+    // The repeated rate counts once; a 32% overdraft rate does not meet the $32 key fee.
+    expect(v3.overall).toMatchObject({ predicted: 5, correct: 4, matched: 4, recall: 1, precision: 0.8 });
+    expect(v3.banks[0].missing).toEqual([]);
+    expect(v3.banks[0].extra).toEqual(["overdraft 32%"]);
+    // Knox and Darwin are unchanged by the rate catalog.
+    expect(v3.byStage.knox).toEqual(v2.byStage.knox);
+  });
+
   it("scores a bank the pipeline never touched as zero recall", () => {
     const score = scoreAnswerKey([{ ...ENTRY, documentType: "scanned_pdf" }], new Map());
     expect(score.overall).toMatchObject({ recall: 0, precision: null });
@@ -166,10 +188,10 @@ describe("scoreAnswerKey", () => {
       schemaReady: true,
       scoreRunId: 2,
       score,
-      series: [{ scorerVersion: 1, scoreRunId: 1, score: v1 }, { scorerVersion: 2, scoreRunId: 2, score }],
+      series: [{ scorerVersion: 1, scoreRunId: 1, score: v1 }, { scorerVersion: 3, scoreRunId: 3, score }],
       dryRun: false,
     });
-    expect(summary).toContain("with scorer v2: precision 100.0%, recall 100.0%");
+    expect(summary).toContain("with scorer v3: precision 100.0%, recall 100.0%");
     expect(summary).toContain("Scorer v1: precision 100.0%, recall 100.0%.");
     expect(summarizeAnswerKeyScore({ schemaReady: false, scoreRunId: null, score: null, dryRun: false }))
       .toContain("not applied");

@@ -43,13 +43,15 @@ type SqlTag = typeof sql;
 /**
  * Answer-key scorer versions (#1280). Each run stores one `answer_key_score_runs` row
  * per version, and every reader picks one series, so a rule change never splices two
- * series into one trend. v2 scores the bank's link and the key's own documents; v1 (the
- * bank's newest stored page, every document's fees) keeps running for its history.
+ * series into one trend. v2 scores the bank's link and the key's own documents; v3 is v2 plus fees
+ * published as a rate (`published_fee_rate_catalog`), which can match a key fee keyed as
+ * "varies". v1 (the bank's newest stored page, every document's fees) and v2 keep running
+ * for their history.
  */
-export const ANSWER_KEY_SCORER_VERSIONS = [1, 2] as const;
+export const ANSWER_KEY_SCORER_VERSIONS = [1, 2, 3] as const;
 export type AnswerKeyScorerVersion = (typeof ANSWER_KEY_SCORER_VERSIONS)[number];
 /** The series the scoreboard, the admin page and the goal read. */
-export const ANSWER_KEY_SCORER_VERSION: AnswerKeyScorerVersion = 2;
+export const ANSWER_KEY_SCORER_VERSION: AnswerKeyScorerVersion = 3;
 
 export const ANSWER_KEY_DOCUMENT_TYPES = ["html", "text_pdf", "scanned_pdf", "js_page"] as const;
 export type AnswerKeyDocumentType = (typeof ANSWER_KEY_DOCUMENT_TYPES)[number];
