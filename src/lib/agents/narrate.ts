@@ -668,6 +668,7 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   "report-close": "hamilton",
   "category-guard": "hamilton",
   "frequency-fill": "hamilton",
+  "source-link-repair": "hamilton",
   "audience-relabel": "darwin",
   "public-diagnose": "hamilton",
 };

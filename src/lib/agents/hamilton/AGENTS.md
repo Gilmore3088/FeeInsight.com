@@ -192,6 +192,10 @@ Regulatory work needs a defensible position, so nothing Hamilton produces is a b
   verification event id, confidence at or above the threshold (0.8 by default), and an
   amount inside the category range in `darwin/envelopes.ts`. $0 is published only when
   Darwin flagged the row `zero_fee`.
+- Every published fee links to the bank's own document (#1342): a row with no source document,
+  or no http(s) link from its verified row or its document, is refused (`sourceLinkSkipReason`
+  in `hamilton/source-link.ts`). A stored file key alone is not a link. When the verified row has
+  no URL, the fee takes its document's (`publishSourceLink`); refresh-copy does the same.
 - `published_by_adversarial_event_id` holds Darwin's verification event id, the gate
   that actually ran.
 - One live price per fee: when the same institution, canonical key, variant and
@@ -580,6 +584,20 @@ after seeing the list of 248 (Oct 8, "drop them"); with it off they would stay l
 counted as `noHomeHeld`. `refileCategory` applies the same rules to new reads, so Knox can
 keep hinting the retired keys. Publish skips a fee still under a retired key.
 
+## Source Link Repair
+
+`hamilton/source-link.ts` (#1342), step `source-link-repair`, started by hand from Atlas details
+(dry run first; `runSourceLinkRepair`). Never runs on its own. A live fee with no source URL at
+any tier takes its own document's `document_url` when that document is the institution's and,
+when the fee carries a stored file key, the same file; the verified row takes it too. Any other
+is taken down with `rolled_back_reason = 'source_link_untraceable: <why>'`. Each change writes
+one `pipeline_feedback` row (check `hamilton.source_link`, kind `missing_lineage`, evidence
+`action`, `from`, `to`, `verified_filled`) in the same transaction, and a
+`hamilton.source_link_repair` run event. Reverse a fill by setting `source_url` back to NULL (and
+the verified row's when `verified_filled`); reverse a takedown by clearing `rolled_back_at`,
+`rolled_back_by_batch_id` and `rolled_back_reason`. The feedback sync skips these takedowns: the
+lesson is publish's, not Knox's read.
+
 ## Source Check
 
 Every live fee must be stated in the bank's own stored schedule. After publishing, every
@@ -671,6 +689,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `REFRESH_COPY_STRATEGY` | `hamilton.refresh_copy` | v2 | `hamilton/refresh-copy.ts` |
 | `RULES_RECHECK_STRATEGY` | `hamilton.rules_recheck` | v4 | `hamilton/rules-recheck.ts` |
 | `SOURCE_CHECK_STRATEGY` | `hamilton.source_check` | v16 | `hamilton/source-check.ts` |
+| `SOURCE_LINK_VERSION` | `hamilton.source_link` | v1 | `hamilton/source-link.ts` |
 | `FEE_DEPENDENCE_VERSION` | — | v1 | `hamilton/studies/fee-dependence.ts` |
 | `PRICE_STUDY_VERSION` | — | v1 | `hamilton/studies/index.ts` |
 | `INFERRED_VOLUME_VERSION` | — | v2 | `hamilton/studies/inferred-volume.ts` |
