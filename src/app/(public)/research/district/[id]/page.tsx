@@ -143,7 +143,7 @@ export default async function DistrictReportPage({ params }: PageProps) {
       />
 
       {/* 1. The district's states on the map, with four live figures. */}
-      <DistrictHero district={districtId} name={districtName} figures={figures} freshnessLabel={summary.freshnessLabel} />
+      <DistrictHero district={districtId} name={districtName} figures={figures} freshnessLabel={summary.freshnessLabel} reportHref={freeReportHref} />
 
       {/* 2. The video, in its own section under the hero. */}
       <StateVideo stateName={`the ${place}`} bars={posterBars} />
@@ -174,9 +174,14 @@ export default async function DistrictReportPage({ params }: PageProps) {
                     {locked.length > LOCKED_SHOWN && (
                       <p className="border-t border-border py-2 text-[12px] text-ink-muted">
                         Plus {locked.length - LOCKED_SHOWN} more {place} fees.{" "}
-                        <a href="#search-heading" className="font-medium text-ink underline decoration-border underline-offset-4 hover:decoration-ink">
-                          What Hamilton adds
-                        </a>
+                        <TrackLink
+                          event="upgrade_click"
+                          eventProps={{ placement: "district_locked_rows", district: districtId }}
+                          href={PRO_PLANS_NAV.href}
+                          className="font-medium text-ink underline decoration-border underline-offset-4 hover:decoration-ink"
+                        >
+                          See them in Hamilton
+                        </TrackLink>
                       </p>
                     )}
                   </div>
@@ -219,7 +224,7 @@ export default async function DistrictReportPage({ params }: PageProps) {
             <h2 id="free-report-heading" className={H2}>
               Get the free {place} report
             </h2>
-            <p className="mt-1 text-[14px] text-ink-muted">The headline fees for District {districtId} against the U.S., sent to you.</p>
+            <p className="mt-1 text-[14px] text-ink-muted">District {districtId}&apos;s headline fees against the U.S., in one PDF to share with your team.</p>
           </div>
           <TrackLink
             event="request_report_click"
@@ -242,7 +247,14 @@ export default async function DistrictReportPage({ params }: PageProps) {
                 {showFullDistrict && beigeSummary ? beigeSummary : firstSentence(beigeHeadline.text)}
               </blockquote>
               <figcaption className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-ink-muted">
-                <span>Federal Reserve Beige Book, {beigeHeadline.release_date}</span>
+                <a
+                  href="https://www.federalreserve.gov/monetarypolicy/beige-book-default.htm"
+                  className="underline decoration-border underline-offset-4 hover:text-ink"
+                  rel="noopener noreferrer"
+                  target="_blank"
+                >
+                  Federal Reserve Beige Book, {beigeHeadline.release_date}
+                </a>
                 {!showFullDistrict && (
                   <TrackLink
                     event="upgrade_click"
@@ -250,7 +262,7 @@ export default async function DistrictReportPage({ params }: PageProps) {
                     href={PRO_PLANS_NAV.href}
                     className="font-semibold text-ink underline decoration-border underline-offset-4 hover:decoration-ink"
                   >
-                    The full summary is in Hamilton
+                    Read it beside your fees in Hamilton
                   </TrackLink>
                 )}
               </figcaption>

@@ -2,7 +2,6 @@ import Link from "next/link";
 import { STATE_TO_DISTRICT } from "@/lib/fed-districts";
 import { US_STATES } from "@/lib/us-map-paths";
 import { STATE_NAMES } from "@/lib/us-states";
-import { PrintButton } from "../../print-button";
 
 /**
  * The country with the district's states lit. Each lit state links to its own report; the map
@@ -35,9 +34,11 @@ interface DistrictHeroProps {
   name: string;
   figures: { value: string; label: string }[];
   freshnessLabel: string;
+  /** The free district report's request form. */
+  reportHref: string;
 }
 
-export function DistrictHero({ district, name, figures, freshnessLabel }: DistrictHeroProps) {
+export function DistrictHero({ district, name, figures, freshnessLabel, reportHref }: DistrictHeroProps) {
   return (
     <section className="bg-ink text-paper">
       <div className="mx-auto grid max-w-page gap-6 px-4 pb-8 pt-6 sm:px-6 sm:pb-12 sm:pt-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)] lg:items-center lg:gap-10">
@@ -66,7 +67,9 @@ export function DistrictHero({ district, name, figures, freshnessLabel }: Distri
               <span aria-hidden="true" className="h-2 w-2 rounded-full bg-[#7fb59b]" />
               {freshnessLabel}
             </span>
-            <PrintButton className="font-semibold text-paper/80 underline decoration-white/30 underline-offset-4 hover:text-white print:hidden" />
+            <Link href={reportHref} className="font-semibold text-[#e0716a] hover:text-white print:hidden">
+              Get the free district report
+            </Link>
           </p>
         </div>
         <div className="-mx-1 lg:mx-0">
