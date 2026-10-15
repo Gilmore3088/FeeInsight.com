@@ -234,10 +234,13 @@ const GLUED_HEAD_ENDINGS = [
 ].map(anyCase);
 /** v2 (#1499): the endings a lower-case condition may follow ("Monthly maintenance fee if the balance falls below"). */
 const GLUED_FEE_ENDINGS = ["fees?", "charges?"].map(anyCase);
-/** The words a glued sentence opens with: a capitalised sentence start, or a lower-case "you", "we" or "will". */
+/**
+ * The words a glued sentence opens with: a capitalised sentence start, or a lower-case "you", "we" or "will".
+ * v5 (#1499): "THERE" in capitals too ("10NON-MEMBER LOAN APPLICATION FEE THERE IS A $10.00 ...", 109893).
+ */
 const GLUED_SENTENCE_STARTS = [
   "You", "YOU", "you", "Your", "YOUR", "your", "We", "WE", "we", "This", "THIS", "These", "If", "IF", "When", "WHEN",
-  "It", "There", "Our", "Any", "Each", "Will", "WILL", "will", "The", "THE", "Please", "Note",
+  "It", "There", "THERE", "Our", "Any", "Each", "Will", "WILL", "will", "The", "THE", "Please", "Note",
 ];
 /** v2 (#1499): the price's own lead-in opens the sentence ("... Garnishment Fee A fee of", "The fee", "the charge"). */
 const GLUED_FEE_LEAD = String.raw`(?:[Aa]n?|AN?|[Tt]he|THE)\s+(?:(?:${["monthly", "service", "annual"].map(anyCase).join("|")})\s+)?(?:${GLUED_FEE_ENDINGS.join("|")})`;

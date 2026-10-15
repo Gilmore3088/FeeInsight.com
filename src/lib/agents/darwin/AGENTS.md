@@ -220,7 +220,8 @@ Darwin owns verification and classification.
     the bank's other live names fails, the step renames nothing (`duplicate_check_failed`).
   - `trailing_range` comes down only when the name has waiver or discount wording or the amount
     is $0; otherwise it is `exempt` / `trailing_range_priced` (reported only).
-  - Everything else is a `takedown` / `fragment`.
+  - Everything else is a `takedown` / `fragment`, except (v5) a `sentence_end` line with no rename,
+    which is a `reread`: kept live, re-read request only (see v5 below).
   Step detail: `would_take_down`, `would_rename`, `exempt`, `exempt_by_reason`,
   `takedown_by_reason`, `by_pattern`, `by_action` (pattern counts per action),
   `samples_by_action` (up to 20 of each, with `rename_to`, `exempt_reason` or `takedown_reason`)
@@ -256,7 +257,9 @@ Darwin owns verification and classification.
     re-reads the line today; the row records the request until a Knox reader is built (#1499).
     Step detail `would_request_reread` (also in shadow) and `reread_requested` (written); a failed
     request never undoes the takedown. `liveFragmentCountSql()` applies the same strip, bars and
-    deposit wording; its `takedown` / `fragment` / `sentence_end` row is the re-read count.
+    deposit wording; its `takedown` / `fragment` / `sentence_end` row is the re-read count. (v5:
+    these fees are no longer taken down; they are `reread`, and the count SQL's `reread` row is the
+    re-read count.)
   v3 (#1499, `LIVE_FRAGMENT_STRATEGY` v3, after a prod hand-check of v2: 40 of 43 renames right,
   17 of 20 sampled `sentence_end` takedowns real fees; still in shadow):
   - Threshold gate: a head split from an "if" or "when" condition (either case) is renamed only when
@@ -309,7 +312,18 @@ Darwin owns verification and classification.
     "your" ("Allpoint network our ATM fee"); a tail word may hold "/" or be a parenthetical
     ("Return Item/Insufficient Funds Fee", "Consecutive days overdrawn (OD) fee").
   v5 (#1499, after a prod hand-check of v4: 101 of 105 renames right, 2 too generic, 2 wrong, 5
-  missed; still in shadow):
+  missed, and a prod check of v5: 125 of 127 checkable renames right, but 20 of 22 sampled
+  `sentence_end` takedowns real, correctly priced fees; still in shadow):
+  - Re-read, not takedown: a `sentence_end` line that gets no rename is never taken down. Its action
+    is `reread` (count SQL: action and reason `reread`): the fee stays live and, with the switch on,
+    the step only writes the `knox_reread_requested` row (evidence `kept_live: true`) so Knox can
+    rename it later (#1511). `pronoun` and `trailing_range` fragments and `rename_duplicate` still
+    come down. Step detail `would_reread` and `samples_by_action.reread`; `would_request_reread`
+    counts the same fees. A `sentence_end` line at $0 or with waiver wording (5314's "... reduce your
+    monthly fee to" $0) is a `reread` too.
+  - A capitalised "THERE" opens the glued sentence like "There" ("10NON-MEMBER LOAN APPLICATION FEE
+    THERE IS A $10.00 NON-MEMBER APPLICATION FEE ..." $10, 109893, renames to "NON-MEMBER LOAN
+    APPLICATION FEE").
   - "may therefore" anywhere is total wording: a stored name cut just after it ("... you may
     therefore", 55708) is a sum, never renamed.
   - Generic: a period and a fee word alone ("Per quarter charge", 64144; "Per month fee", "Per year
@@ -336,6 +350,12 @@ Darwin owns verification and classification.
     figures and neither the live row nor its verified row carries the source line (the raw row's
     `conditions` / `extraction_note` would take a new join), so the second price cannot be seen;
     the fixture asserts the rename as it is.
+  - Known and accepted: 125166, whose source line is "$3.00 per monthly fee if balance falls below
+    $150, $9 per item charge after 3 withdrawals", is renamed "Per monthly fee" at $9: the stored
+    name lost the figures, so the generic head passes the balance gate (with the figures in the name
+    the second price refuses it; both are fixtures). 64144 "Per quarter charge" renamed through the
+    generic balance-below route, and 110391's generic tail "monthly service charge" refused, are
+    accepted as they are.
   `liveFragmentCountSql()` mirrors each rule (`head_generic`, `generic_ok`, the figure gate on
   `readable`); JS-vs-SQL parity holds on every switch-on fixture.
 - Live hourly re-check (`hourly-frequency-check.ts`, #1456). About 802 live fees say in their name

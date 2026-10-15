@@ -51,7 +51,14 @@ type SqlTag = typeof sql;
  *   of the bank already has that name at the same price and category.
  * - `trailing_range` comes down only when the name has waiver or discount wording or the amount is
  *   $0 (the waived price); otherwise it is `exempt` `trailing_range_priced`, reported only.
- * - Everything else is a `takedown`, as before.
+ * - Everything else is a `takedown`, as before. v5: except a `sentence_end` line with no rename,
+ *   which is a `reread` (below).
+ *
+ * v5 (#1499, after a prod check of v5: 20 of 22 sampled `sentence_end` takedowns were real,
+ * correctly priced fees): a `sentence_end` line that gets no rename is never taken down. Its action
+ * is `reread`: the fee stays live and, with the switch on, the step only writes the
+ * `LIVE_FRAGMENT_REREAD_KIND` row asking Knox to read its line again (#1511). `pronoun` and
+ * `trailing_range` fragments and `rename_duplicate` still come down.
  *
  * v2 (#1499, after a prod hand-check of v1): the head is read wider for `sentence_end` names and
  * generic or clause heads are refused (see `gluedSentenceHead`); a name that speaks of a minimum or
@@ -101,7 +108,7 @@ export const LIVE_FRAGMENT_WAIVE_WORDING = /\b(?:waiv(?:e|ed|er|ers|es|ing)|disc
  */
 export const LIVE_FRAGMENT_OPENING_DEPOSIT = /\b(?:minimum|min|opening|initial)\s+(?:(?:opening|initial)\s+)?deposits?\b|\bdeposits?\s+to\s+open\b/i;
 /**
- * v2 (#1499): the `pipeline_feedback` kind a `sentence_end` takedown writes: Knox, read this fee's
+ * v2 (#1499): the `pipeline_feedback` kind a `sentence_end` takedown (v5: `reread`, the fee kept live) writes: Knox, read this fee's
  * source line again so the real fee can come back under a proper name. A request only: no Knox
  * pass reads this kind yet (darwin/AGENTS.md).
  */
@@ -180,7 +187,8 @@ export function liveFragmentOtherPrice(name: string, amount: number): boolean {
   return !LIVE_FRAGMENT_BALANCE_WORD.test(name) && [...unthresholded.matchAll(LIVE_FRAGMENT_DOLLAR)].some((match) => differs(match[1]));
 }
 
-export type LiveFragmentAction = "takedown" | "rename" | "exempt";
+/** v5 (#1499): `reread` keeps the fee live and asks Knox to re-read its line (a `sentence_end` line with no rename). */
+export type LiveFragmentAction = "takedown" | "rename" | "exempt" | "reread";
 export type LiveFragmentExemptReason = "parenthetical" | "trailing_range_priced";
 /** v3: how a rename found its name: the `head` the line opens with, or the fee its sentence ends on (`tail`). */
 export type LiveFragmentRenameVia = "head" | "tail";
@@ -222,8 +230,8 @@ export interface LiveFragmentSample {
 
 type PatternCounts = Record<LiveFragmentPattern, number>;
 const emptyPatterns = (): PatternCounts => ({ plus: 0, trailing_range: 0, sentence_end: 0, pronoun: 0 });
-const emptyByAction = (): Record<LiveFragmentAction, PatternCounts> => ({ takedown: emptyPatterns(), rename: emptyPatterns(), exempt: emptyPatterns() });
-const emptySamples = (): Record<LiveFragmentAction, LiveFragmentSample[]> => ({ takedown: [], rename: [], exempt: [] });
+const emptyByAction = (): Record<LiveFragmentAction, PatternCounts> => ({ takedown: emptyPatterns(), rename: emptyPatterns(), exempt: emptyPatterns(), reread: emptyPatterns() });
+const emptySamples = (): Record<LiveFragmentAction, LiveFragmentSample[]> => ({ takedown: [], rename: [], exempt: [], reread: [] });
 
 export interface LiveFragmentFindings {
   checked: number;
@@ -237,7 +245,9 @@ export interface LiveFragmentFindings {
   wouldRenameByVia: Record<LiveFragmentRenameVia, number>;
   /** Matches that stay live under their name (`exempt`). */
   exempt: number;
-  /** v2: takedowns that would ask Knox to re-read their source line (`sentence_end` fragments). */
+  /** v5: matches kept live that ask Knox to re-read their source line (`reread`: `sentence_end` lines with no rename). */
+  wouldReread: number;
+  /** v2: fees that would ask Knox to re-read their source line (v5: the `reread` matches). */
   wouldRequestReread: number;
   exemptByReason: Record<LiveFragmentExemptReason, number>;
   takedownByReason: Record<LiveFragmentTakedownReason, number>;
@@ -320,7 +330,8 @@ export function liveFragmentVerdict(
       if (guardOk) return { pattern, action: "rename", ...candidate };
     }
   }
-  return { pattern, action: "takedown" };
+  // v5 (#1499): a sentence_end line with no rename is usually a real fee Knox read badly: kept live, re-read.
+  return { pattern, action: pattern === "sentence_end" ? "reread" : "takedown" };
 }
 
 /**
@@ -369,7 +380,7 @@ export function findLiveFragments(rows: LiveFragmentRow[], liveNames: ReadonlySe
     byAction[action][verdict.pattern] += 1;
     if (verdict.exemptReason) exemptByReason[verdict.exemptReason] += 1;
     if (takedownReason) takedownByReason[takedownReason] += 1;
-    const rereadRequest = takedownReason === "fragment" && verdict.pattern === "sentence_end";
+    const rereadRequest = action === "reread";
     const sample: LiveFragmentSample = {
       feePublishedId: Number(row.fee_published_id),
       feeVerifiedId: num(row.fee_verified_id),
@@ -400,6 +411,7 @@ export function findLiveFragments(rows: LiveFragmentRow[], liveNames: ReadonlySe
       tail: matches.filter((fee) => fee.action === "rename" && fee.renameVia === "tail").length,
     },
     exempt: count("exempt"),
+    wouldReread: count("reread"),
     wouldRequestReread: matches.filter((fee) => fee.rereadRequest).length,
     exemptByReason,
     takedownByReason,
@@ -513,6 +525,7 @@ export async function recheckLiveFragmentNames(
   Object.assign(result, withoutMatches(all));
   const takedowns = matches.filter((fee) => fee.action === "takedown");
   const renameCandidates = matches.filter((fee) => fee.action === "rename");
+  const rereads = matches.filter((fee) => fee.action === "reread");
 
   if (live && !options.dryRun && takedowns.length > 0) {
     try {
@@ -625,10 +638,9 @@ export async function recheckLiveFragmentNames(
       }
     }
   }
-  if (result.takenDown.length > 0) {
-    // v2 (#1499): each `sentence_end` fragment taken down asks Knox to re-read its line.
-    const down = new Set(result.takenDown);
-    result.rereadRequested = await requestKnoxRereads(db, takedowns.filter((fee) => fee.rereadRequest && down.has(fee.feePublishedId)), options.runId);
+  if (live && !options.dryRun && rereads.length > 0) {
+    // v5 (#1499): each `sentence_end` line with no rename stays live and asks Knox to re-read it.
+    result.rereadRequested = await requestKnoxRereads(db, rereads, options.runId);
   }
   if (result.takenDown.length > 0 || result.renamed.length > 0) invalidatePublicReadCache();
 
@@ -639,7 +651,7 @@ export async function recheckLiveFragmentNames(
         INSERT INTO agent_run_events (agent_run_id, step_id, event_type, status, message, detail)
         VALUES (
           ${options.runId}, ${options.stepId ?? null}, ${LIVE_FRAGMENT_CHECK}, 'completed',
-          ${`Read ${result.checked} live fee name(s): ${result.matched} fragment shape(s), ${result.wouldTakeDown} takedown, ${result.wouldRename} rename, ${result.exempt} exempt; ${live ? `${result.takenDown.length} archived, ${result.renamed.length} renamed, ${result.rereadRequested.length} re-read request(s) to Knox` : "switch off, nothing written"}`},
+          ${`Read ${result.checked} live fee name(s): ${result.matched} fragment shape(s), ${result.wouldTakeDown} takedown, ${result.wouldRename} rename, ${result.wouldReread} kept for re-read, ${result.exempt} exempt; ${live ? `${result.takenDown.length} archived, ${result.renamed.length} renamed, ${result.rereadRequested.length} re-read request(s) to Knox (kept live)` : "switch off, nothing written"}`},
           ${JSON.stringify(liveFragmentDetail(result))}::jsonb
         )
       `);
@@ -654,7 +666,8 @@ export async function recheckLiveFragmentNames(
  * v2 (#1499): one `pipeline_feedback` row per `sentence_end` fragment taken down, asking Knox to
  * read its source line again (kind `LIVE_FRAGMENT_REREAD_KIND`, about Knox's extract, reported by
  * Darwin, one row per live fee). The raw row and its document come from the verified row the
- * live fee came from. Returns the fees written; a failure writes none and never undoes the takedown.
+ * live fee came from. Returns the fees written; a failure writes none. v5: the fees are the `reread`
+ * matches, kept live; nothing is taken down for them.
  */
 async function requestKnoxRereads(db: SqlTag, fees: LiveFragmentSample[], runId: number): Promise<number[]> {
   if (fees.length === 0) return [];
@@ -687,6 +700,7 @@ async function requestKnoxRereads(db: SqlTag, fees: LiveFragmentSample[], runId:
             request: "reread_source_line",
             fee_name: fee.feeName,
             reason: liveFragmentReason(fee.pattern, fee.takedownReason),
+            kept_live: true,
             strategy_version: LIVE_FRAGMENT_STRATEGY.version,
             consumer: "none yet: no Knox pass reads this kind (#1499)",
           },
@@ -719,7 +733,7 @@ function sampleDetail(fee: LiveFragmentSample) {
   };
 }
 
-/** The findings as ledger detail, split by action (takedown / rename / exempt) with samples of each. */
+/** The findings as ledger detail, split by action (takedown / rename / reread / exempt) with samples of each. */
 export function liveFragmentFindingsDetail(found: LiveFragmentFindings) {
   return {
     checked: found.checked,
@@ -728,6 +742,7 @@ export function liveFragmentFindingsDetail(found: LiveFragmentFindings) {
     would_rename: found.wouldRename,
     would_rename_by_via: found.wouldRenameByVia,
     exempt: found.exempt,
+    would_reread: found.wouldReread,
     would_request_reread: found.wouldRequestReread,
     exempt_by_reason: found.exemptByReason,
     takedown_by_reason: found.takedownByReason,
@@ -737,6 +752,7 @@ export function liveFragmentFindingsDetail(found: LiveFragmentFindings) {
       takedown: found.samplesByAction.takedown.map(sampleDetail),
       rename: found.samplesByAction.rename.map(sampleDetail),
       exempt: found.samplesByAction.exempt.map(sampleDetail),
+      reread: found.samplesByAction.reread.map(sampleDetail),
     },
     samples_rename_duplicate: found.renameDuplicateSamples.map(sampleDetail),
   };
@@ -788,8 +804,8 @@ function postgresPattern(re: RegExp): string {
  * re-check of the cleaned name is skipped for the tail too. v2 (#1499): the
  * glued footnote number or "To request" is dropped (`glued_lead_strip`) before the head is read,
  * the new head bars ride in `glued_head_bars` and the opening-deposit wording blocks a rename, all
- * from the same regexes; the re-read requests to Knox are the `takedown` / `fragment` /
- * `sentence_end` row (the step's `would_request_reread`). v5 (#1499): a generic head
+ * from the same regexes; the re-read requests to Knox are the `reread` / `reread` /
+ * `sentence_end` row (the step's `would_request_reread`; v5: kept live, not taken down). v5 (#1499): a generic head
  * (`glued_generic_bars`) renames only through `generic_ok` (an "if"/"when" balance condition under
  * $100 with no figure equal to the amount); otherwise the line may still take its tail. The figure
  * gate reads `readable` (footnote dropped) and skips a bare whole figure before a count noun.
@@ -863,6 +879,7 @@ export function liveFragmentCountSql(): string {
                   AND NOT COALESCE(figure_is_amount, false))) THEN 'rename'
     WHEN pattern IN ('pronoun', 'sentence_end') AND renamable AND generic_ok THEN 'rename'
     WHEN pattern = 'sentence_end' AND renamable AND NOT head_ok AND NOT generic_ok AND tail_ok AND NOT COALESCE(figure_is_amount, false) THEN 'rename_tail'
+    WHEN pattern = 'sentence_end' THEN 'reread'
     ELSE 'fragment'
   END AS first_reason,
   CASE WHEN head_ok OR generic_ok THEN head WHEN tail_ok THEN tail END AS rename_to
@@ -887,6 +904,7 @@ export function liveFragmentCountSql(): string {
   SELECT pattern, reason, CASE
     WHEN reason IN ('fragment', 'rename_duplicate') THEN 'takedown'
     WHEN reason IN ('rename', 'rename_tail') THEN 'rename'
+    WHEN reason = 'reread' THEN 'reread'
     ELSE 'exempt'
   END AS action
   FROM acted
