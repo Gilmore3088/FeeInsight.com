@@ -48,7 +48,7 @@ import { runStateEditions, summarizeStateEditions } from "@/lib/agents/marketing
 import { runHamiltonPublish } from "@/lib/agents/hamilton/publish";
 import { runGuideDraft } from "@/lib/agents/guides/draft";
 import { runKnoxExtract } from "@/lib/agents/knox/extract";
-import { recheckHeldRates, recheckHeldRows, recheckPromotedRows, recheckSupersededRows, recheckUntracedRows, refileSupersededRows } from "@/lib/agents/knox/held-recheck";
+import { previewHeldNameRules, recheckHeldRates, recheckHeldRows, recheckPromotedRows, recheckSupersededRows, recheckUntracedRows, refileSupersededRows } from "@/lib/agents/knox/held-recheck";
 import { refreshFeeIndexCache } from "@/lib/data-store/fee-index";
 import { runMagellanDiscovery } from "@/lib/agents/magellan/discovery";
 import { runMagellanFetch } from "@/lib/agents/magellan/fetch";
@@ -73,6 +73,7 @@ import { runDarwinReleaseHeld } from "@/lib/agents/darwin/release-held";
 import { runDarwinConditionalZeroResolve } from "@/lib/agents/darwin/conditional-zero-resolve";
 import { runDarwinScheduleRefile } from "@/lib/agents/darwin/schedule-refile";
 import { runDarwinAdjudicate } from "@/lib/agents/darwin/adjudicate";
+import { AUDIENCE_RELABEL_VERSION, runAudienceRelabel } from "@/lib/agents/darwin/audience-relabel";
 import { runDailyBrief } from "@/lib/agents/daily-brief";
 import { runSundayMaintenance, summarizeSundayMaintenance } from "@/lib/agents/deming/sunday-maintenance";
 import { runFeeAlertDispatch, summarizeFeeAlertDispatch } from "@/lib/agents/fee-alerts";
@@ -111,6 +112,7 @@ import { normalizeStateCode, syncStateLaneProfiles } from "./state-lane-memory";
 import { laneRecheckParam, numericRunParam, stringRunParam } from "./run-params";
 export { laneRecheckParam } from "./run-params";
 import { runStateExpertStep } from "./state-expert/step";
+import { workListLedger } from "./state-expert/work-list";
 import { tallyByInstitution, type Sample } from "./flow-model";
 import { runReportCloseStep, runReportReconcileStep, runReportRenderStep } from "@/lib/report-engine/render-job";
 import type {
@@ -568,6 +570,8 @@ async function executeAgenticStep(
           cost_microusd: paid.costMicrousd,
           dry_run: paid.dryRun,
           sample_results: paid.results.slice(0, 10),
+          // Every work-list entry, which the 10-entry sample usually cuts (#1269).
+          ...(step.stepKey === "discover-paid" ? { work_lists: workListLedger(paid.results) } : {}),
         },
       };
     }
@@ -686,6 +690,8 @@ async function executeAgenticStep(
         institutionId: numericRunParam(params, ["institution_id"]),
         stateCode,
       });
+      // Held unclassified lines the held-name rules would send to Darwin (#1102). Switch off: read only.
+      const heldNamePreview = await previewHeldNameRules(tx, { institutionId: numericRunParam(params, ["institution_id"]) });
       // Every 500 settled reads: the batch's error rate and its misses, written for learning.
       const batchReview = await reviewKnoxBatches(tx, { runId: run.id, dryRun: run.runKind === "dry_run" });
       const batchNote = batchReview.batches
@@ -693,7 +699,7 @@ async function executeAgenticStep(
         .join("");
       return {
         status: "completed",
-        summary: `Knox extracted ${extraction.insertedFees.toLocaleString()} raw fee observations and ${extraction.freeFees.toLocaleString()} free fees from ${extraction.processedDocuments.toLocaleString()} Rosetta text artifacts (${extraction.extractedFees.toLocaleString()} candidates, ${extraction.skippedFees.toLocaleString()} skipped). Re-read ${heldRecheck.checked.toLocaleString()} held lines with today's rules: ${heldRecheck.promoted.toLocaleString()} categorized and sent to Darwin, ${heldRecheck.setAside.toLocaleString()} set aside (kept, logged), ${promotionRecheck.withdrawn.toLocaleString()} earlier promotions put back on hold. Re-traced ${untracedRecheck.checked.toLocaleString()} untraced held lines: ${untracedRecheck.promoted.toLocaleString()} sent to Darwin. Re-read ${supersededRecheck.checked.toLocaleString()} lines a re-read retired: ${supersededRecheck.promoted.toLocaleString()} ${supersededRecheck.live ? "sent to Darwin" : "would go to Darwin (dry read)"}, ${supersededRecheck.liveTwin.toLocaleString()} kept back for a live twin. Re-read ${supersededFreeRecheck.checked.toLocaleString()} free lines a re-read retired: ${supersededFreeRecheck.promoted.toLocaleString()} ${supersededFreeRecheck.live ? "sent to Darwin" : "would go to Darwin (dry read)"}, ${supersededFreeRecheck.liveTwin.toLocaleString()} kept back for a live twin, ${supersededFreeRecheck.notRead.toLocaleString()} not read the same way today. Re-file of retired lines under today's category (${supersededRefile.mode === "live" ? "live" : supersededRefile.mode === "dry_run" ? "dry run, nothing written" : "switch off: a read-only sample, nothing written"}): ${supersededRefile.candidates.toLocaleString()} candidates at ${supersededRefile.candidateInstitutions.toLocaleString()} banks (${supersededRefile.candidatesDarwinDecided.toLocaleString()} already judged by Darwin, left retired); of ${supersededRefile.checked.toLocaleString()} read, ${supersededRefile.refiled.toLocaleString()} ${supersededRefile.dryRun ? "would go" : "sent"} to Darwin under today's category, ${supersededRefile.liveTwin.toLocaleString()} kept back for a live twin, ${supersededRefile.notRead.toLocaleString()} not read today; ${supersededRefile.staleHintRows.toLocaleString()} taken-over rows with a stale category flag${supersededRefile.dryRun ? "" : ` (${supersededRefile.staleHintRepaired.toLocaleString()} repaired)`}. Re-read ${rateRecheck.checked.toLocaleString()} held percentage fees: ${rateRecheck.promoted.toLocaleString()} sent to Darwin as rates.${batchNote}`,
+        summary: `Knox extracted ${extraction.insertedFees.toLocaleString()} raw fee observations and ${extraction.freeFees.toLocaleString()} free fees from ${extraction.processedDocuments.toLocaleString()} Rosetta text artifacts (${extraction.extractedFees.toLocaleString()} candidates, ${extraction.skippedFees.toLocaleString()} skipped). Re-read ${heldRecheck.checked.toLocaleString()} held lines with today's rules: ${heldRecheck.promoted.toLocaleString()} categorized and sent to Darwin, ${heldRecheck.setAside.toLocaleString()} set aside (kept, logged), ${promotionRecheck.withdrawn.toLocaleString()} earlier promotions put back on hold. Re-traced ${untracedRecheck.checked.toLocaleString()} untraced held lines: ${untracedRecheck.promoted.toLocaleString()} sent to Darwin. Re-read ${supersededRecheck.checked.toLocaleString()} lines a re-read retired: ${supersededRecheck.promoted.toLocaleString()} ${supersededRecheck.live ? "sent to Darwin" : "would go to Darwin (dry read)"}, ${supersededRecheck.liveTwin.toLocaleString()} kept back for a live twin. Re-read ${supersededFreeRecheck.checked.toLocaleString()} free lines a re-read retired: ${supersededFreeRecheck.promoted.toLocaleString()} ${supersededFreeRecheck.live ? "sent to Darwin" : "would go to Darwin (dry read)"}, ${supersededFreeRecheck.liveTwin.toLocaleString()} kept back for a live twin, ${supersededFreeRecheck.notRead.toLocaleString()} not read the same way today. Re-file of retired lines under today's category (${supersededRefile.mode === "live" ? "live" : supersededRefile.mode === "dry_run" ? "dry run, nothing written" : "switch off: a read-only sample, nothing written"}): ${supersededRefile.candidates.toLocaleString()} candidates at ${supersededRefile.candidateInstitutions.toLocaleString()} banks (${supersededRefile.candidatesDarwinDecided.toLocaleString()} already judged by Darwin, left retired); of ${supersededRefile.checked.toLocaleString()} read, ${supersededRefile.refiled.toLocaleString()} ${supersededRefile.dryRun ? "would go" : "sent"} to Darwin under today's category, ${supersededRefile.liveTwin.toLocaleString()} kept back for a live twin, ${supersededRefile.notRead.toLocaleString()} not read today; ${supersededRefile.staleHintRows.toLocaleString()} taken-over rows with a stale category flag${supersededRefile.dryRun ? "" : ` (${supersededRefile.staleHintRepaired.toLocaleString()} repaired)`}. Re-read ${rateRecheck.checked.toLocaleString()} held percentage fees: ${rateRecheck.promoted.toLocaleString()} sent to Darwin as rates.${heldNamePreview.live ? "" : ` Held-name rules (switch off, read only): ${heldNamePreview.passChecks.toLocaleString()} held lines would go to Darwin and pass its category and source checks, at ${heldNamePreview.institutions.toLocaleString()} banks (${heldNamePreview.wouldRelease.toLocaleString()} read under them, of ${heldNamePreview.candidates.toLocaleString()} candidates).`}${batchNote}`,
         detail: {
           held_recheck: heldRecheck,
           untraced_recheck: untracedRecheck,
@@ -702,6 +708,7 @@ async function executeAgenticStep(
           superseded_refile: supersededRefile,
           promotion_recheck: promotionRecheck,
           held_rate_recheck: rateRecheck,
+          held_name_preview: heldNamePreview,
           batch_review: batchReview,
           selected_text_artifacts: extraction.selectedDocuments,
           processed_text_artifacts: extraction.processedDocuments,
@@ -1776,6 +1783,44 @@ async function executeAgenticStep(
         },
       };
     }
+    case "audience-relabel": {
+      // Darwin's audience decision for live fees verified before migration 47 (#1059).
+      const relabel = await runAudienceRelabel(tx, {
+        runId: run.id,
+        dryRun: run.runKind === "dry_run",
+        institutionId: numericRunParam(params, ["institution_id"]),
+        // One bounded batch per step; the tick queues the next from `next_after_id` (audience-relabel-schedule.ts).
+        afterId: numericRunParam(params, ["after_id"]) ?? 0,
+        sampleKey: typeof params.day === "string" ? params.day : null,
+      });
+      const changed = relabel.relabeled + relabel.restored;
+      const indexRefresh = changed > 0 ? await refreshFeeIndexCache(tx, { runId: run.id, force: true }) : null;
+      const counts = Object.entries(relabel.byAudience).map(([audience, n]) => `${n.toLocaleString()} ${audience}`).join(", ");
+      return {
+        status: "completed",
+        summary: relabel.mode === "rollback"
+          ? `Darwin audience relabel rolled back: ${relabel.restored.toLocaleString()} fees back to their old audience${relabel.dryRun ? " (dry run, nothing written)" : ""}; ${relabel.remaining.toLocaleString()} recorded fees left.`
+          : `Darwin audience relabel${relabel.dryRun ? " (dry run, nothing written)" : ""}: ${relabel.fees.toLocaleString()} live fees verified as unknown on ${relabel.documents.toLocaleString()} documents; decisions ${counts || "none"}. ${relabel.dryRun ? "" : `${relabel.relabeled.toLocaleString()} written, ${relabel.publishedTouched.toLocaleString()} live rows updated.`} ${relabel.remaining.toLocaleString()} documents left${relabel.dryRun ? " outside this sample" : ""}.`.replace(/\s+/g, " ").trim(),
+        detail: {
+          audience_relabel_version: AUDIENCE_RELABEL_VERSION,
+          mode: relabel.mode,
+          dry_run: relabel.dryRun,
+          documents: relabel.documents,
+          fees: relabel.fees,
+          by_audience: relabel.byAudience,
+          by_source: relabel.bySource,
+          relabeled: relabel.relabeled,
+          published_touched: relabel.publishedTouched,
+          restored: relabel.restored,
+          after_id: numericRunParam(params, ["after_id"]) ?? 0,
+          next_after_id: relabel.nextAfterId,
+          remaining: relabel.remaining,
+          done: relabel.done,
+          index_refreshed: indexRefresh?.refreshed ?? false,
+          samples: relabel.samples,
+        },
+      };
+    }
     case "frequency-fill": {
       // The frequency half of a guard catch-up run (hamilton/guard-catch-up.ts): every live fee,
       // not one lane's, so a frequency fix reaches live rows on the tick after its deploy.
@@ -1996,6 +2041,12 @@ async function executeAgenticStep(
           schema_ready: result.schemaReady,
           score_run_id: result.scoreRunId,
           scorer_version: score?.scorerVersion ?? null,
+          series: (result.series ?? []).map((entry) => ({
+            scorer_version: entry.scorerVersion,
+            score_run_id: entry.scoreRunId,
+            precision: entry.score.overall.precision,
+            recall: entry.score.overall.recall,
+          })),
           banks_scored: score?.banksScored ?? 0,
           fees_expected: score?.feesExpected ?? 0,
           precision: score?.overall.precision ?? null,

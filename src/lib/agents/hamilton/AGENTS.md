@@ -491,8 +491,10 @@ in front ("Research fee" / "Account Research fee"), are one fee only when the pa
 uses, #1303), and at least one name must be printed with the price. Frequencies and audiences
 must agree or be unstated. The copy kept states its audience, then its frequency, then is the
 one printed at the price, then is newest. Doc 14695 prints "Stop Payments, each ... $35" and
-"Stop Payment, each ... $35" in two copies of its schedule, so both stay. This sweep reads up to
-25 documents' stored text per step and is shadow only until James turns
+"Stop Payment, each ... $35" in two copies of its schedule, so both stay. A fee the page prints
+once under its personal schedule heading and once under its business one stays two fees too
+(`printedInPersonalAndBusinessSchedules`; Valley's doc 23731, "Visa® Gift Cards, each: $4.25.").
+This sweep reads up to 25 documents' stored text per step and is shadow only until James turns
 `NEAR_NAME_COLLAPSE_LIVE` on: each step reports `near_name_collapse` (pairs, apart on page, not
 printed, no text, would close, samples) and changes no row. Rollback once on: clear
 `rolled_back_at` on rows whose `rolled_back_reason` ends in `(near name)`.
@@ -655,7 +657,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `ACCOUNT_NAME_STRATEGY` | `hamilton.account_names` | v1 | `hamilton/account-names.ts` |
 | `CURRENT_COPY_STRATEGY` | `hamilton.current_copy_check` | v2 | `hamilton/current-copy.ts` |
 | `EVAL_VERDICT_VERSION` | — | v7 | `hamilton/eval-verdicts.ts` |
-| `FREQUENCY_FILL_VERSION` | — | v11 | `hamilton/frequency-fill.ts` |
+| `FREQUENCY_FILL_VERSION` | — | v12 | `hamilton/frequency-fill.ts` |
 | `GUARD_REQUEUE_STRATEGY` | `publish.guard_requeue` | v1 | `hamilton/guard-requeue.ts` |
 | `NEWER_COPY_STRATEGY` | `hamilton.newer_copy_check` | v1 | `hamilton/newer-copy-retire.ts` |
 | `HAMILTON_PUBLISH_STRATEGY` | `publish.rules` | v3 | `hamilton/publish.ts` |

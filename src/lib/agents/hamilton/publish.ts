@@ -1123,6 +1123,34 @@ export function printedAtPrice(text: string, name: string, amount: number | stri
   return (pageReader(text, amount)?.places(name).length ?? 0) > 0;
 }
 
+/** A schedule heading that names whose accounts it prices ("SCHEDULE OF FEES FOR BUSINESS ACCOUNTS"). */
+const SCHEDULE_AUDIENCE_HEADING =
+  / (?:(?:schedule of fees|fee schedule|fees|charges) for (personal|consumer|individual|business|commercial)(?: banking)? accounts?|(?:schedule of fees|fee schedule) (personal|consumer|business|commercial)|(personal|consumer|business|commercial)(?: account)? (?:fee schedule|schedule of fees)) /g;
+
+/**
+ * Pure: does the page print any of these names at this price under both a personal and a business
+ * schedule heading? Each place counts under the nearest audience heading before it. Valley's doc
+ * 23731 prints "Visa® Gift Cards, each: $4.25." once under "SCHEDULE OF FEES FOR PERSONAL
+ * ACCOUNTS" and once under "SCHEDULE OF FEES FOR BUSINESS ACCOUNTS": two fees, not one (#1302).
+ */
+export function printedInPersonalAndBusinessSchedules(text: string, names: ReadonlyArray<string>, amount: number | string | null): boolean {
+  const reader = pageReader(text, amount);
+  if (!reader) return false;
+  const page = pageWords(text);
+  const headings = [...page.matchAll(SCHEDULE_AUDIENCE_HEADING)].map((match) => ({
+    at: match.index ?? 0,
+    business: /^(business|commercial)$/.test(match[1] ?? match[2] ?? match[3] ?? ""),
+  }));
+  const audiences = new Set<boolean>();
+  for (const name of names) {
+    for (const place of reader.places(name)) {
+      const heading = headings.filter((head) => head.at < place.start).pop();
+      if (heading) audiences.add(heading.business);
+    }
+  }
+  return audiences.size === 2;
+}
+
 type PagePlace = { start: number; end: number };
 
 /** Where a page prints a name (`printed`), and where it prints it with the price after it (`places`). */

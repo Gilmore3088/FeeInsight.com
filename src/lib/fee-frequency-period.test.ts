@@ -66,17 +66,34 @@ describe("perEventPeriodCheck on the live rows of Oct 13 (#1196)", () => {
     const check = perEventPeriodCheck(key, stated, line, amount, name);
     if (KEEP.has(id)) expect(check).toEqual({ action: "keep", frequency: stated });
     else if (HOLD.has(id)) expect(check?.action).toBe("hold");
-    else if (stated === "annual") expect(check).toBeNull();
+    else if (stated === "annual" && key === "overdraft") expect(check).toBeNull();
     else expect(check).toEqual({ action: "correct", frequency: null });
   });
 
-  it("checks the 35 stored as monthly: 5 kept, 10 held, 20 cleared; the 15 annual wait", () => {
+  it("checks the 35 stored as monthly (5 kept, 10 held, 20 cleared) and, from v12, the 10 NSF stored as annual (cleared); the 5 overdraft annual wait", () => {
     const checks = LIVE.map(([, key, name, amount, stated, line]) => perEventPeriodCheck(key, stated, line, amount, name)?.action ?? "none");
     expect(LIVE.filter((fee) => fee[4] === "monthly")).toHaveLength(35);
     expect(checks.filter((action) => action === "keep")).toHaveLength(5);
     expect(checks.filter((action) => action === "hold")).toHaveLength(10);
-    expect(checks.filter((action) => action === "correct")).toHaveLength(20);
-    expect(checks.filter((action) => action === "none")).toHaveLength(15);
+    expect(checks.filter((action) => action === "correct")).toHaveLength(30);
+    expect(checks.filter((action) => action === "none")).toHaveLength(5);
+  });
+});
+
+// v12 (#1301): live NSF fees stored as daily on Oct 14, by their own lines. A daily cap prices each
+// item, so the period goes; a daily price with no cap is held for a person.
+describe("perEventPeriodCheck on NSF fees stored as daily (#1301)", () => {
+  it.each([
+    ["NSF Returned Item Fee $30.00 (max $180.00 daily)", 30, "correct"], // 36057
+    ["InsufficientFunds (NSF) *Max4 per day | $32.00 Per ttem/Per", 32, "correct"], // 50906
+    ["9. NSF Fees: You will be assessed an NSF fee of $25 for items presented over $10, not to exceed 5 fees charged per day.", 25, "correct"], // 113638
+    ["Returned checks, each: $30.00 (No maximum per day)", 30, "correct"], // 135141
+    ["NSF/UCF Fee $30 Per Day", 30, "hold"], // 55006
+    ["Daily NSF Fee ...................................................................................................................... $5.00", 5, "hold"], // 93271
+    ["Returned Check/Item | $30.00 per day, per account", 30, "hold"], // 117212
+    ["(Per Day) | $10", 10, "hold"], // 67011
+  ])("%s", (line, amount, action) => {
+    expect(perEventPeriodCheck("nsf", "daily", line, amount, "NSF")?.action).toBe(action);
   });
 });
 
@@ -85,7 +102,7 @@ describe("perEventPeriodCheck", () => {
     expect(perEventPeriodCheck("monthly_maintenance", "monthly", "Maintenance | $5.00 per month", 5, "Maintenance")).toBeNull();
     expect(perEventPeriodCheck("nsf", "per_item", "NSF | $30.00 each", 30, "NSF")).toBeNull();
     expect(perEventPeriodCheck("nsf", null, "NSF | $30.00", 30, "NSF")).toBeNull();
-    expect(perEventPeriodCheck("nsf", "annual", "Bill Pay NSF Fee | $25.00 (1 waived per year.)", 25, "Bill Pay NSF Fee")).toBeNull();
+    expect(perEventPeriodCheck("overdraft", "annual", "Overdraft Fee | $25.00 (1 waived per year.)", 25, "Overdraft Fee")).toBeNull();
   });
 
   it("gives a cleared period the line's per-item reading", () => {
