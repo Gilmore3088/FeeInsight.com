@@ -28,7 +28,7 @@ export const MARKET_DATA_NAV = {
   href: "/research",
   description: "Your state, your Fed district and the nation",
 } as const;
-export const NATIONAL_INDEX_NAV = { label: "National fee index", href: "/research/national-fee-index" } as const;
+export const NATIONAL_INDEX_NAV = { label: `${PRODUCT_NAME}: national`, href: "/research/national-fee-index" } as const;
 export const HAMILTON_PAGE_NAV = {
   label: "Hamilton",
   href: "/for-institutions#hamilton",

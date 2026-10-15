@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { PRO_PLANS_NAV } from "@/components/nav-items";
+import { NATIONAL_INDEX_NAV, PRO_PLANS_NAV } from "@/components/nav-items";
 import { TrackLink } from "@/components/track-link";
 import { PRODUCT_NAME, SITE_NAME } from "@/lib/constants";
 import type { PublicStatsSummary } from "@/lib/public-stats";
@@ -51,8 +51,8 @@ export function LandingHero({ summary }: { summary: Pick<PublicStatsSummary, "in
             </Link>
           </li>
           <li>
-            <Link href="/research/national-fee-index" className={CHIP}>
-              Read the national report
+            <Link href={NATIONAL_INDEX_NAV.href} className={CHIP}>
+              {NATIONAL_INDEX_NAV.label}
             </Link>
           </li>
         </ul>
