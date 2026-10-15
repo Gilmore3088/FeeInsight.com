@@ -1968,13 +1968,14 @@ export async function runHamiltonPublish(
       // variant re-read ("per_item" to none), so the live line it was identical to no longer
       // matches the key above and it went live as a new fee beside it (104684 "Wire Transfers -
       // Outgoing: Outgoing Wire Fee" beside 23698 "Outgoing Wire Fee", 9 Oct). Its identical
-      // check reads every live line of the category on its own document; another document's
-      // line at the price is a different printed line ("Overdraft" $25 beside another
-      // document's "Debit Card Overdraft" $25, #1314), left to the older-document and supersede
-      // checks.
+      // check reads every live line of the category on its own document, and another
+      // document's line only under the same name (an older crawl of the same schedule: 72051
+      // "Loan Late Payment" $25 beside 6464 on Feb's copy). Another document's line under
+      // another name is a different printed line ("Overdraft" $25 beside another document's
+      // "Debit Card Overdraft" $25, #1314).
       if (row.same_line_reselect && decision.kind !== "identical") {
-        const wide = (await selectLivePublishedFees(db, row, { anyVariant: true })).filter((prior) =>
-          sameDocument(prior.source_document_id, row.source_document_id),
+        const wide = (await selectLivePublishedFees(db, row, { anyVariant: true })).filter(
+          (prior) => sameDocument(prior.source_document_id, row.source_document_id) || nameCore(prior.fee_name ?? "") === nameCore(row.fee_name ?? ""),
         );
         const wideApart = await linesApartFrom(db, row, wide);
         const wideDecision = decidePriorFee(row, wide, (prior) => wideApart.has(prior));
