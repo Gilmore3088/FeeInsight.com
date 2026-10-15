@@ -11,7 +11,7 @@ vi.mock("@/lib/hamilton/active-peer-set", () => ({ getActivePeerSet: mocks.peer 
 vi.mock("@/lib/data-store/fee-index", () => ({ getCategoryChargeBases: async () => [] }));
 vi.mock("@/lib/hamilton/home-data", () => ({ fetchHomeBriefingSignals: mocks.signals }));
 
-import HamiltonHomePage from "./page";
+import { InstitutionBriefing as HamiltonHomePage } from "./InstitutionBriefing";
 
 const subject = { id: 2945, name: "Space Coast Credit Union", stateCode: "FL" };
 const localResearch = JSON.stringify({ version: 1, task: "compare", scope: { kind: "local", institutionId: 2945 }, categories: ["overdraft"], charter: "all" });
