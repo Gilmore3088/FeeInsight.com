@@ -331,7 +331,7 @@ const STATED_PERIODS: ReadonlySet<string> = new Set(["monthly", "annual", "quart
  * and returned-item fees are charged per item, never by the month, year or day; a "max N per day"
  * is a daily cap and an "N waived per year" a waiver, neither the fee's frequency.
  */
-const CHECKED_PERIODS: Readonly<Record<string, ReadonlySet<string>>> = {
+export const CHECKED_PERIODS: Readonly<Record<string, ReadonlySet<string>>> = {
   nsf: new Set(["monthly", "annual", "daily"]),
   overdraft: new Set(["monthly", "annual", "quarterly", "daily"]),
   deposited_item_return: new Set(["monthly", "annual", "quarterly", "daily"]),
