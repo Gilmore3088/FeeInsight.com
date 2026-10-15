@@ -7,6 +7,7 @@ import { runHamiltonCategoryGuard } from "@/lib/agents/hamilton/category-guard";
 import { collapseNearNameDuplicates, collapsePublishedDuplicates } from "@/lib/agents/hamilton/duplicate-collapse";
 import { retireClosedInstitutionFees } from "@/lib/agents/hamilton/closed-institution";
 import { fillBlankFrequencies, FREQUENCY_FILL_VERSION } from "@/lib/agents/hamilton/frequency-fill";
+import { repairSourceLinks, SOURCE_LINK_VERSION } from "@/lib/agents/hamilton/source-link";
 import { restoreFeesNowInTaxonomy, rollBackOffTaxonomyFees } from "@/lib/agents/hamilton/off-taxonomy-rollback";
 import { foldRetiredCategories } from "@/lib/agents/hamilton/taxonomy-fold";
 import { rollBackLimitsPublishedAsFees } from "@/lib/agents/hamilton/limit-guard";
@@ -1810,6 +1811,45 @@ async function executeAgenticStep(
             amount: row.amount,
             from: row.from,
             to: row.frequency,
+          })),
+        },
+      };
+    }
+    case "source-link-repair": {
+      // Started by hand (admin, dry run first): live fees with no source link take their own
+      // document's URL or come down (hamilton/source-link.ts).
+      const repair = await repairSourceLinks(tx, {
+        runId: run.id,
+        batchId: `agentic-run-${run.id}`,
+        dryRun: run.runKind === "dry_run",
+        institutionId: numericRunParam(params, ["institution_id"]),
+        limit: numericRunParam(params, ["source_link_limit", "limit"]),
+      });
+      return {
+        status: "completed",
+        summary: `${repair.dryRun ? "Would link" : "Linked"} ${repair.fills.length.toLocaleString()} of ${repair.scanned.toLocaleString()} live fees with no source link to their own document, and ${repair.dryRun ? "would take down" : "took down"} ${repair.takedowns.length.toLocaleString()} with no traceable document.`,
+        detail: {
+          source_link_version: SOURCE_LINK_VERSION,
+          dry_run: repair.dryRun,
+          scanned: repair.scanned,
+          filled: repair.fills.length,
+          taken_down: repair.takedowns.length,
+          takedown_reasons: repair.takedowns.reduce<Record<string, number>>((counts, fee) => {
+            counts[fee.reason] = (counts[fee.reason] ?? 0) + 1;
+            return counts;
+          }, {}),
+          takedowns: repair.takedowns.map((fee) => ({
+            fee_published_id: fee.feePublishedId,
+            institution_id: fee.institutionId,
+            canonical_fee_key: fee.canonicalFeeKey,
+            amount: fee.amount,
+            reason: fee.reason,
+          })),
+          fill_samples: repair.fills.slice(0, 25).map((fee) => ({
+            fee_published_id: fee.feePublishedId,
+            institution_id: fee.institutionId,
+            source_document_id: fee.sourceDocumentId,
+            url: fee.url,
           })),
         },
       };
