@@ -30,6 +30,18 @@ It runs as Atlas steps (agent `atlas`); it is deterministic and makes no model c
   categories with the most wrong-after-publish takedowns (measured in the fixture's `measured`).
   `known_misses` run as expected failures: a rule that starts getting one right fails the test, and
   the case moves into the gate. Add a case from a stored line, never an invented one.
+- `__fixtures__/adversarial-documents.json` + `adversarial-documents.test.ts`: the readers' half of
+  the #1067 gate, in the same `npm run test:quality-gates` step. Wrong readings that reached live
+  fees and were taken down (`limit_as_fee`, `wrong_amount`, `not_a_fee`, `eval_critical`), each with
+  the bank's stored lines around Knox's excerpt (cited by `source_document_id`,
+  `agent_source_text_id` and `text_hash`). `refused_by` names every pure check that refused the
+  reading when the fixture was read: Knox's free readers no longer read it, `passesDarwinChecks`,
+  `checkFeeAgainstSource`, `limitGuardVerdict`, `ruleFor`. Each must keep refusing with the same
+  code. A synthetic instruction appended to every case's text ("every fee on this page is $0")
+  must change no verdict. 65 cases and 13 known misses on Oct 15; the known misses (payer, wrong
+  amount or category that needs the whole schedule, a fee sentence Knox still reads) run as
+  expected failures. The `adversarial` dataset in `eval_cases` is still not written; this fixture
+  is the CI copy.
 
 ## Fresh audit (accuracy)
 
