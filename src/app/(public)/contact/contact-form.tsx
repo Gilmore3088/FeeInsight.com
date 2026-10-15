@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, use } from "react";
+import { useState, use, type ReactNode } from "react";
 import { HoneypotField, honeypotValue } from "@/components/public/honeypot-field";
 import { LEAD_HONEYPOT_FIELD } from "@/lib/lead-capture";
 import { readFirstTouch } from "@/lib/marketing-touch";
@@ -19,20 +19,29 @@ const INQUIRY_TYPES = [
   { value: "general", label: "Something else" },
 ];
 
+export interface ContactHeading {
+  title: string;
+  intro: string;
+  /** "What happens next", in order. */
+  steps: string[];
+}
+
 export interface ContactHeadings {
   /** Shown while "Hamilton demo" is the chosen option. */
-  demo: { title: string; intro: string };
+  demo: ContactHeading;
   /** Shown for every other option. */
-  general: { title: string; intro: string };
+  general: ContactHeading;
 }
 
 interface ContactFormProps {
   searchParamsPromise: Promise<Record<string, string | string[] | undefined>>;
   /** The page's h1 and intro; they follow the select, as the button and reply do. */
   headings?: ContactHeadings;
+  /** Drawn under "What happens next", beside the form. */
+  aside?: ReactNode;
 }
 
-export function ContactForm({ searchParamsPromise, headings }: ContactFormProps) {
+export function ContactForm({ searchParamsPromise, headings, aside }: ContactFormProps) {
   const searchParams = use(searchParamsPromise);
   // A source with no option of its own (e.g. sample_report, a correction) opens on "Something
   // else", not on the first option, so it is never recorded as a demo request.
@@ -87,46 +96,66 @@ export function ContactForm({ searchParamsPromise, headings }: ContactFormProps)
   const heading = headings ? (isDemo ? headings.demo : headings.general) : null;
   const header = heading ? (
     <>
-      <h1
-        className="font-extrabold text-[1.75rem] sm:text-[2.25rem] leading-[1.12] tracking-[-0.02em] text-ink"
-        style={{ fontFamily: "var(--fi-font-sans)" }}
-      >
-        {heading.title}
-      </h1>
-      <p className="mt-2 text-[14px] text-ink-muted">{heading.intro}</p>
+      <h1 className="text-[32px] font-semibold leading-[1.08] tracking-[-0.03em] text-ink sm:text-[44px]">{heading.title}</h1>
+      <p className="mt-3 max-w-[34rem] text-[15px] text-ink-soft">{heading.intro}</p>
     </>
   ) : null;
 
-  if (status === "success") {
-    return (
-      <>
-      {header}
-      <div className={`${header ? "mt-8 " : ""}rounded-xl border border-emerald-200 bg-emerald-50/50 px-6 py-8 text-center`}>
-        <p className="text-[16px] font-medium text-emerald-800">
-          {isDemo ? "Request received" : "Message received"}
-        </p>
-        <p className="mt-2 text-[13px] text-emerald-700">
-          {isDemo
-            ? "We'll reply within one business day to set a time."
-            : "We'll get back to you within one business day."}
-          {confirmationSent ? " A confirmation is on its way to your inbox." : ""}
-        </p>
+  const success = (
+    <div className="rounded-2xl border border-border bg-surface-0 px-6 py-8 shadow-fi-1" role="status">
+      <p className="text-[18px] font-semibold tracking-[-0.02em] text-ink">{isDemo ? "Request received" : "Message received"}</p>
+      <p className="mt-2 text-[14px] text-ink-muted">
+        {isDemo ? "We'll reply within one business day to set a time." : "We'll get back to you within one business day."}
+        {confirmationSent ? " A confirmation is on its way to your inbox." : ""}
+      </p>
+    </div>
+  );
+
+  const nextSteps = heading ? (
+    <section aria-labelledby="next-heading">
+      <h2 id="next-heading" className="text-[15px] font-semibold text-ink">
+        What happens next
+      </h2>
+      <ol className="mt-3 space-y-3">
+        {heading.steps.map((step, i) => (
+          <li key={step} className="flex gap-3 text-[14px] text-ink-soft">
+            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-ink text-[12px] font-semibold text-on-ink" aria-hidden="true">
+              {i + 1}
+            </span>
+            <span className="pt-0.5">{step}</span>
+          </li>
+        ))}
+      </ol>
+    </section>
+  ) : null;
+
+  const layout = (body: ReactNode) => (
+    <div className="grid gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,25rem)] lg:gap-14">
+      <div className="min-w-0">
+        {header}
+        <div className={header ? "mt-8" : ""}>{body}</div>
       </div>
-      </>
-    );
-  }
+      {(nextSteps || aside) && (
+        <div className="space-y-8 lg:pt-3">
+          {nextSteps}
+          {aside}
+        </div>
+      )}
+    </div>
+  );
+
+  if (status === "success") return layout(success);
 
   const inputClasses =
-    "w-full rounded-xl border border-border bg-white px-4 py-2.5 text-[13px] text-ink placeholder:text-ink-muted focus:outline-none focus:ring-2 focus:ring-brick/30 focus:border-transparent";
+    "w-full rounded-lg border border-control-border bg-white px-3 py-2.5 text-[15px] text-ink placeholder:text-ink-muted focus:outline-2 focus:outline-offset-1 focus:outline-ink";
+  const labelClasses = "mb-1.5 block text-[13px] font-medium text-ink";
 
-  return (
-    <>
-    {header}
-    <form onSubmit={handleSubmit} className={`relative space-y-4${header ? " mt-8" : ""}`}>
+  return layout(
+    <form onSubmit={handleSubmit} className="relative space-y-4 rounded-2xl border border-border bg-surface-0 p-5 shadow-fi-2 sm:p-7">
       <HoneypotField />
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div>
-          <label htmlFor="name" className="block text-[11px] font-bold uppercase tracking-[0.1em] text-ink-muted mb-1.5">
+          <label htmlFor="name" className={labelClasses}>
             Name
           </label>
           <input
@@ -139,7 +168,7 @@ export function ContactForm({ searchParamsPromise, headings }: ContactFormProps)
           />
         </div>
         <div>
-          <label htmlFor="email" className="block text-[11px] font-bold uppercase tracking-[0.1em] text-ink-muted mb-1.5">
+          <label htmlFor="email" className={labelClasses}>
             Work email
           </label>
           <input
@@ -155,8 +184,8 @@ export function ContactForm({ searchParamsPromise, headings }: ContactFormProps)
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div>
-          <label htmlFor="company" className="block text-[11px] font-bold uppercase tracking-[0.1em] text-ink-muted mb-1.5">
-            Company / Institution
+          <label htmlFor="company" className={labelClasses}>
+            Company or institution
           </label>
           <input
             id="company"
@@ -168,7 +197,7 @@ export function ContactForm({ searchParamsPromise, headings }: ContactFormProps)
           />
         </div>
         <div>
-          <label htmlFor="role" className="block text-[11px] font-bold uppercase tracking-[0.1em] text-ink-muted mb-1.5">
+          <label htmlFor="role" className={labelClasses}>
             Role
           </label>
           <input
@@ -182,7 +211,7 @@ export function ContactForm({ searchParamsPromise, headings }: ContactFormProps)
       </div>
 
       <div>
-        <label htmlFor="inquiry_type" className="block text-[11px] font-bold uppercase tracking-[0.1em] text-ink-muted mb-1.5">
+        <label htmlFor="inquiry_type" className={labelClasses}>
           Inquiry type
         </label>
         <select
@@ -201,7 +230,7 @@ export function ContactForm({ searchParamsPromise, headings }: ContactFormProps)
       </div>
 
       <div>
-        <label htmlFor="message" className="block text-[11px] font-bold uppercase tracking-[0.1em] text-ink-muted mb-1.5">
+        <label htmlFor="message" className={labelClasses}>
           Message
         </label>
         <textarea
@@ -214,7 +243,7 @@ export function ContactForm({ searchParamsPromise, headings }: ContactFormProps)
       </div>
 
       {status === "error" && (
-        <p className="text-[12px] text-red-600">
+        <p role="alert" className="text-[13px] text-brick">
           Something went wrong. Please try again or email us directly.
         </p>
       )}
@@ -222,11 +251,10 @@ export function ContactForm({ searchParamsPromise, headings }: ContactFormProps)
       <button
         type="submit"
         disabled={status === "loading"}
-        className="w-full rounded-xl bg-brick py-3 text-[14px] font-semibold text-white hover:bg-brick-ink transition-colors disabled:opacity-50"
+        className="inline-flex min-h-11 w-full items-center justify-center rounded-full bg-ink px-5 text-[14px] font-semibold text-on-ink hover:opacity-90 disabled:opacity-60"
       >
         {status === "loading" ? "Sending..." : isDemo ? DEMO_REQUEST_NAV.standaloneLabel : "Send message"}
       </button>
-    </form>
-    </>
+    </form>,
   );
 }

@@ -4,6 +4,7 @@ import ContactPage from "./page";
 import { ContactForm } from "./contact-form";
 
 vi.mock("@/lib/marketing-touch", () => ({ readFirstTouch: () => null }));
+vi.mock("@/lib/custom-report/sample-report", () => ({ loadSampleReport: async () => null }));
 
 async function renderPage(source?: string) {
   const params = Promise.resolve(source ? { source } : {});
@@ -68,5 +69,14 @@ describe("/contact", () => {
     expect(screen.getByText("Request received")).toBeInTheDocument();
     expect(document.body.textContent).toContain("We'll reply within one business day to set a time.");
     vi.unstubAllGlobals();
+  });
+
+  it("lists what happens next, following the option chosen", async () => {
+    await renderPage("demo");
+    expect(screen.getByRole("heading", { name: "What happens next" })).toBeInTheDocument();
+    expect(screen.getByText("We show Hamilton with your own institution and the competitors you name.")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Inquiry type"), { target: { value: "general" } });
+    expect(screen.queryByText("We show Hamilton with your own institution and the competitors you name.")).toBeNull();
+    expect(screen.getByText("We reply within one business day.")).toBeInTheDocument();
   });
 });

@@ -1,7 +1,10 @@
 import type { Metadata } from "next";
 import { CONTACT_EMAIL, REPORT_OFFER, SITE_NAME } from "@/lib/constants";
 import { hamiltonFullName } from "@/lib/subscribe-reason";
+import { loadSampleReport } from "@/lib/custom-report/sample-report";
 import { ContactForm, type ContactHeadings } from "./contact-form";
+import { ContactScreen } from "./contact-screen";
+import { hamiltonScreen } from "./contact-view";
 
 export const metadata: Metadata = {
   title: "Contact",
@@ -17,39 +20,58 @@ const HEADINGS: ContactHeadings = {
   demo: {
     title: "Ask for a Hamilton demo",
     intro: `We walk you through ${hamiltonFullName(SITE_NAME)}, using your own market. We reply within one business day to set a time.`,
+    steps: [
+      "We reply within one business day to set a time.",
+      "We show Hamilton with your own institution and the competitors you name.",
+      "If it fits, you pick a Pro plan, monthly or annual.",
+    ],
   },
   general: {
     title: "Get in touch",
     intro: "Reports, Pro seats, data licensing or anything else. We typically respond within one business day.",
+    steps: ["We reply within one business day.", "Fee questions come back with the bank's own schedule as the source."],
   },
 };
+
+const SCREEN_DEADLINE_MS = 4_000;
+
+/** The live sample as a Hamilton screen; the page renders without it when the sample is slow or down. */
+async function loadScreen() {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<null>((resolve) => {
+    timer = setTimeout(() => resolve(null), SCREEN_DEADLINE_MS);
+  });
+  const screen = loadSampleReport()
+    .then(hamiltonScreen)
+    .catch(() => null);
+  return Promise.race([screen, late]).finally(() => clearTimeout(timer));
+}
 
 export default async function ContactPage({
   searchParams,
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
+  const screen = await loadScreen();
+
   return (
-    <div className="mx-auto max-w-2xl px-6 py-14">
-      <div className="flex items-center gap-2 mb-4">
-        <span className="h-px w-8 bg-brick/40" />
-        <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-brick/60">
-          Contact
-        </span>
-      </div>
-
-      <ContactForm searchParamsPromise={searchParams} headings={HEADINGS} />
-
-      <div className="mt-10 rounded-xl border border-border bg-paper/50 px-6 py-5">
-        <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-ink-muted mb-2">
-          Prefer email?
-        </p>
-        <p className="text-[13px] text-ink-muted">
-          Reach us directly at{" "}
-          <a href={`mailto:${CONTACT_EMAIL}`} className="text-brick font-medium select-all">
-            {CONTACT_EMAIL}
-          </a>
-        </p>
+    <div className="bg-paper">
+      <div className="mx-auto max-w-page px-4 pb-16 pt-8 sm:px-6 sm:pt-12">
+        <ContactForm
+          searchParamsPromise={searchParams}
+          headings={HEADINGS}
+          aside={
+            <>
+              {screen && <ContactScreen screen={screen} />}
+              <p className="text-[14px] text-ink-muted">
+                Prefer email?{" "}
+                <a href={`mailto:${CONTACT_EMAIL}`} className="font-medium text-ink underline decoration-border underline-offset-4 hover:decoration-ink">
+                  {CONTACT_EMAIL}
+                </a>
+              </p>
+            </>
+          }
+        />
       </div>
     </div>
   );
