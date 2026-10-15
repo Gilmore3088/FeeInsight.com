@@ -974,3 +974,9 @@ website (`src/lib/pro-institution-link.ts`). Anything else waits for the admin c
 Trust queue while Pro works at once (James, 09:17 UTC, decision card "Hold or block a Pro buyer
 whose email doesn't match their bank?": "Hold for review"). Any Pro reader may still research any
 institution.
+
+**The accuracy target is 99.5%.** James, 2026-10-15 ("99.5", in reply to the Audit thread on the
+#1026 targets). Accuracy is the share of a dated random sample of live fees whose amount and
+category match the bank's own document, measured by Deming's audits with `checkFeeAgainstSource`.
+The target replaces 95%; the daily grade states it and whether it is met (`ACCURACY_TARGET`,
+`src/lib/accuracy-target.ts`).

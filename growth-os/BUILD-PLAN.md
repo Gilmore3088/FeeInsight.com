@@ -95,7 +95,7 @@ James added these at 08:57 UTC on 2026-10-08 ("Yes all, just ensure cleanness on
 | 2.25 | Lead follow-up: every report request gets a quote draft or a reason it can't be quoted, shown in /admin/growth | Claude | 1.9 | No request older than one business day without a quote draft or reason |
 | 2.26 | Roll out James's pricing and packaging choices (report and Pro) across site, emails and Stripe | Claude, James decides prices | James's pricing calls | Every price on the site matches his choice |
 | 2.27 | Position the free Fee Pulse monthly email against Moebs's paid news product: signup placement and promotion | Claude | James's brief call | Signup on report and research pages |
-| 2.28 | Method and accuracy page: how fees are collected and checked, with the measured rate | Claude, preview to James | Accuracy 95% with human-checked keys | Page live with the current measured rate |
+| 2.28 | Method and accuracy page: how fees are collected and checked, with the measured rate | Claude, preview to James | Accuracy 99.5% with human-checked keys | Page live with the current measured rate |
 | 2.29 | Turn the live sample report on with a real, source-checked market | Claude, preview to James | 0.5 | Sample page live |
 | 2.30 | First case study after the first sale, with the buyer's written permission | Claude, James asks the buyer | First sale | Case study page live |
 | 2.31 | Comparison pages ("Moebs alternative", "RateWatch alternative") and one positioning line used across the site | ERNEST, preview to James | none | Pages live, neutral wording, every claim sourced |
