@@ -229,7 +229,10 @@ export type ReleaseHoldReason =
   | "charged_to_merchant"
   | "small_overdraft_protection"
   | "footnote_in_price"
-  | "frequency_contradicts_line";
+  | "frequency_contradicts_line"
+  | "business_activity_row"
+  | "frequency_word_disagrees"
+  | "glued_or_cut_name";
 
 /** True when the price was likely read with a footnote mark printed onto its last digit. */
 export function footnoteInPrice(amount: number | null, sourceLine: string, sourceContext: string | null | undefined): boolean {
@@ -275,7 +278,65 @@ export function releaseHoldReason({
   if (key === "nsf" && PLAIN_RETURNED_ITEM.test(name) && price != null && price < SMALL_NSF_AMOUNT) {
     return "small_returned_item";
   }
+  if (businessActivityRow(key, name, sourceContext)) return "business_activity_row";
+  if (frequencyWordDisagrees(name, row.frequency)) return "frequency_word_disagrees";
+  if (gluedOrCutName(name)) return "glued_or_cut_name";
   return null;
+}
+
+/**
+ * A hand check of 20 of the 421 fees the v17 review passed without acting found 19 right (Oct 15).
+ * The miss, and two shapes beside it in the same 421, now stay held. Free checks that only hold more.
+ */
+// A business account's per-activity row ("Per Each ATM Withdrawal $ .25" among "Per Each ACH Debit",
+// "Per Each POS Withdrawal" and an earnings-allowance note, raw 418400) is account activity, not the
+// fee its noun names.
+const PER_EACH_ROW = /^\W*per\s+each\b/i;
+const PER_EACH_ROWS = /\bper\s+each\b[\s\S]*\bper\s+each\b/i;
+const BUSINESS_ANALYSIS = /\b(?:earnings allowance|analysis|business|commercial|collected balance)\b/i;
+export function businessActivityRow(key: string, name: string, sourceContext: string | null | undefined): boolean {
+  if (key === "account_research" || !PER_EACH_ROW.test(name)) return false;
+  const context = sourceContext ?? "";
+  return PER_EACH_ROWS.test(context) || BUSINESS_ANALYSIS.test(context);
+}
+
+const PERIOD_FREQUENCY: ReadonlyArray<[RegExp, string]> = [
+  [/\b(?:annual(?:ly)?|yearly|per\s+year|a\s+year)\b/i, "annual"],
+  [/\b(?:quarterly|per\s+quarter)\b/i, "quarterly"],
+  [/\b(?:monthly|per\s+month|a\s+month)\b/i, "monthly"],
+  [/\b(?:daily|per\s+day)\b/i, "daily"],
+  [/\b(?:weekly|per\s+week)\b/i, "weekly"],
+];
+/** An allowance count: "(Over 3 per Year)", "(More than 6 ... per month)", "(8 permitted per month)". */
+const COUNT_PER_PERIOD = /\b(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten|twelve|eighteen)\b[^$|]{0,60}?\bper\s+(?:(?:monthly|quarterly|annual)\s+)?(?:year|quarter|month|statement|cycle|day|week)\b/i;
+
+function periodOf(text: string): string | null {
+  return PERIOD_FREQUENCY.find(([pattern]) => pattern.test(text))?.[1] ?? null;
+}
+
+/**
+ * The name's period word and the stored frequency disagree: the period inside an allowance count is
+ * the allowance's, so a fee stored at that period is wrong ("Over 3 per Year" stored annual); any
+ * other period word in the name must match a stated frequency ("Monthly Service Charge" stored per item).
+ */
+export function frequencyWordDisagrees(name: string, frequency: string | null | undefined): boolean {
+  if (!frequency) return false;
+  const count = COUNT_PER_PERIOD.exec(name);
+  if (count) return periodOf(count[0]) === frequency;
+  const period = periodOf(name);
+  return period != null && period !== frequency;
+}
+
+// A header glued to the front ("Account Fees: Excessive Withdrawal Fee", "Check cashing fee: 10x10"),
+// a column glued to the end ("Fax, per page: no", "Program Box Drilling: Fee Amount"), a direction
+// cell under another row's name ("Notary: Outgoing"), or a sentence cut off ("... in excess of 6 per
+// statement cycle. The", "... that exceeds 6 per", "5 free per month then").
+const GLUED_HEADER = /^[^:|]{0,40}\b(?:fees?|charges?|services?|schedule)\s*:\s*\S/i;
+const GLUED_COLUMN = /:\s*(?:no|yes|n\/a|fee amount|amount|outgoing|incoming|international|domestic)\s*$/i;
+const CUT_ENDING = /(?:\b(?:the|of|for|and|or|per|a|an|to|with|by|then|than|if|when|is|are|be|in|on|at|from|that|which)|[-:,(\/&])\s*$/i;
+export function gluedOrCutName(name: string): boolean {
+  const text = name.trim();
+  return GLUED_HEADER.test(text) || GLUED_COLUMN.test(text) || CUT_ENDING.test(text);
 }
 
 /** Names the taxonomy files under each category, so "fits" is judged by this index's own rules. */
@@ -735,6 +796,112 @@ export async function runDarwinReleaseReview(
         result.results.push({ fee_raw_id: feeRawId, passes, reason: verdict.reason });
       }
     }
+  }
+  return result;
+}
+
+/**
+ * The fees the v17 review passed while the release did not act (421 on Oct 15). `selectReviewCandidates`
+ * never picks a fee with a v17 attempt again, so turning `DARWIN_RELEASE_ACTS` on would not release
+ * them. This pass does, under the same switch: each recorded pass is checked again with today's free
+ * holds (`lineRefilesTo`, `premiumServiceMisfiled`, `releaseHoldReason`) before `releaseHeldFee`. Off,
+ * it only counts. Each fee it acts on is one `verify.release_recorded` attempt.
+ */
+export const DARWIN_RECORDED_RELEASE_STRATEGY = { strategy: "verify.release_recorded", version: 1 } as const;
+export const RECORDED_RELEASE_LIMIT = 500;
+
+export interface RecordedReleaseResult {
+  acts: boolean;
+  dryRun: boolean;
+  recordedPasses: number;
+  wouldRelease: number;
+  released: number;
+  held: Record<string, number>;
+  heldExamples: Array<{ feeRawId: number; feeName: string; amount: number | null; canonicalFeeKey: string; reason: string }>;
+}
+
+/** Why a recorded pass stays held today, or null when it would be released. Pure. */
+export function recordedPassHoldReason(candidate: ReleaseReviewCandidate): string | null {
+  const refilesTo = lineRefilesTo(candidate);
+  if (refilesTo) return `refiles_to:${refilesTo}`;
+  if (premiumServiceMisfiled(candidate)) return "premium_service";
+  return releaseHoldReason(candidate);
+}
+
+export async function releaseRecordedPasses(
+  db: SqlTag,
+  options: { runId: number; stepId?: number | null; dryRun?: boolean; acts?: boolean; limit?: number },
+): Promise<RecordedReleaseResult> {
+  const acts = Boolean(options.acts ?? DARWIN_RELEASE_ACTS) && !options.dryRun;
+  const result: RecordedReleaseResult = { acts, dryRun: !acts, recordedPasses: 0, wouldRelease: 0, released: 0, held: {}, heldExamples: [] };
+  if (!(await learningSchemaReady(db))) return result;
+  const rows = await db<CandidateRow[]>`
+    SELECT fr.fee_raw_id, fr.institution_id, fr.source_url, fr.document_r2_key, fr.extraction_confidence,
+           fr.fee_name, fr.amount, fr.frequency, fr.outlier_flags,
+           COALESCE(fr.extraction_note, fr.conditions) AS conditions,
+           inst.institution_name, fr.source_document_id, upper(btrim(inst.state_code)) AS state_code,
+           pa.detail->>'held_reason' AS held_reason,
+           pa.detail->>'canonical_fee_key' AS held_canonical_fee_key,
+           pa.detail->>'source_line' AS source_line,
+           pa.detail->>'source_context' AS source_context
+      FROM pipeline_attempts pa
+      JOIN raw_fee_observations fr ON fr.fee_raw_id = substring(pa.input_fingerprint from 5)::bigint
+      JOIN institution_sources inst ON inst.id = fr.institution_id
+     WHERE pa.stage = 'verify'
+       AND pa.strategy = ${DARWIN_RELEASE_REVIEW_STRATEGY.strategy}
+       AND pa.strategy_version = 17
+       AND pa.outcome = 'ok'
+       AND pa.detail->>'passes' = 'true'
+       AND COALESCE(pa.detail->>'acted', 'false') = 'false'
+       AND pa.detail->>'source_line' IS NOT NULL
+       AND NOT EXISTS (SELECT 1 FROM verified_fee_observations fv WHERE fv.fee_raw_id = fr.fee_raw_id)
+       AND NOT EXISTS (
+         SELECT 1 FROM pipeline_attempts done
+          WHERE done.input_fingerprint = pa.input_fingerprint
+            AND done.strategy = ${DARWIN_RECORDED_RELEASE_STRATEGY.strategy}
+            AND done.strategy_version = ${DARWIN_RECORDED_RELEASE_STRATEGY.version}
+       )
+     ORDER BY fr.fee_raw_id
+     LIMIT ${Math.max(1, options.limit ?? RECORDED_RELEASE_LIMIT)}
+  `;
+  result.recordedPasses = rows.length;
+  for (const { source_line, source_context, ...raw } of rows) {
+    const candidate: ReleaseReviewCandidate = { row: raw as HeldFeeRow, sourceLine: source_line, sourceContext: source_context };
+    const reason = recordedPassHoldReason(candidate);
+    const feeRawId = Number(raw.fee_raw_id);
+    if (reason) {
+      result.held[reason] = (result.held[reason] ?? 0) + 1;
+      if (result.heldExamples.length < 25) {
+        result.heldExamples.push({ feeRawId, feeName: raw.fee_name, amount: raw.amount == null ? null : Number(raw.amount), canonicalFeeKey: raw.held_canonical_fee_key, reason });
+      }
+    } else {
+      result.wouldRelease += 1;
+    }
+    if (!acts) continue;
+    let feeVerifiedId: number | null = null;
+    if (!reason) {
+      const price = raw.amount == null ? null : Number(raw.amount);
+      const lineFrequency = raw.frequency ? null : frequencyFromLine(source_line, price);
+      const row = lineFrequency ? { ...candidate.row, frequency: lineFrequency } : candidate.row;
+      feeVerifiedId = (await releaseHeldFee(db, { runId: options.runId, row, sourceLine: source_line })).feeVerifiedId;
+      if (feeVerifiedId != null) result.released += 1;
+    }
+    await recordAttempt(db, {
+      institutionId: Number(raw.institution_id),
+      sourceDocumentId: raw.source_document_id == null ? null : Number(raw.source_document_id),
+      stage: "verify",
+      strategy: DARWIN_RECORDED_RELEASE_STRATEGY.strategy,
+      version: DARWIN_RECORDED_RELEASE_STRATEGY.version,
+      fingerprint: rawFeeFingerprint(feeRawId),
+      runId: options.runId,
+      stepId: options.stepId ?? null,
+      foldIntoPlaybook: false,
+      outcome: reason ? "rejected" : "ok",
+      yieldCount: feeVerifiedId != null ? 1 : 0,
+      costMicrousd: 0,
+      durationMs: 0,
+      detail: { fee_raw_id: feeRawId, canonical_fee_key: raw.held_canonical_fee_key, hold_reason: reason, fee_verified_id: feeVerifiedId },
+    });
   }
   return result;
 }

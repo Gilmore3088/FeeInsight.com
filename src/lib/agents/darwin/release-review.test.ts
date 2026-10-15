@@ -17,7 +17,9 @@ import {
   releaseReviewPrompt,
   reviewPasses,
   premiumServiceMisfiled,
+  recordedPassHoldReason,
   releaseHoldReason,
+  releaseRecordedPasses,
   runDarwinReleaseReview,
 } from "./release-review";
 
@@ -374,5 +376,49 @@ describe("Darwin held-fee release review", () => {
     const result = await runDarwinReleaseReview({ runId: 5, dryRun: true, db: asDb(db), create: vi.fn(), calls: 1, stateCode: "UT" });
     expect(result.results.map((entry) => entry.fee_raw_id)).toEqual([1, 2]);
     expect(db.unsafe).toHaveBeenCalledTimes(2);
+  });
+});
+
+// Oct 15: a hand check of 20 of the 421 v17 passes recorded while the release did not act (19 right).
+describe("releasing the recorded v17 passes", () => {
+  const recorded = (feeName: string, key: string, frequency: string | null, sourceLine: string, sourceContext: string | null = null) => ({
+    row: row({ fee_name: feeName, held_canonical_fee_key: key, frequency }) as unknown as HeldFeeRow,
+    sourceLine,
+    sourceContext,
+  });
+
+  it.each([
+    // The hand check's miss (raw 418400): a business activity row filed as an out-of-network ATM fee.
+    [recorded("Per Each ATM Withdrawal", "atm_non_network", null, "Per Each ATM Withdrawal $ .25",
+      "Per Each ACH Debit $ .25\nPer Each POS Withdrawal $ .25\nPer Each ATM Withdrawal $ .25\nThe monthly average collected balance may earn an Earnings Allowance"), "business_activity_row"],
+    [recorded("Vacation Club Excessive Withdrawals (Over 3 per Year)", "account_research", "annual", "Vacation Club Excessive Withdrawals (Over 3 per Year) | $5.00"), "frequency_word_disagrees"],
+    [recorded("Monthly Service Charge, Minimum Bal", "monthly_maintenance", "per_item", "Monthly Service Charge, $1000 Minimum Bal. $25.00 Check Copy Fee, Each Check $7.50"), "frequency_word_disagrees"],
+    [recorded("Account Fees: Excessive Withdrawal Fee (Share Account)", "account_research", null, "Account Fees | Excessive Withdrawal Fee (Share Account) | $5.00 (at the 5th withdrawal in the same month)"), "glued_or_cut_name"],
+    [recorded("Notary: Outgoing", "notary_fee", "per_item", "This fee is charged by | Outgoing | $55.00 per item"), "glued_or_cut_name"],
+    [recorded("Savings Excessive Withdrawal - 5 free per month then", "account_research", "per_item", "Savings Excessive Withdrawal - 5 free per month then | $2.00 per withdrawal"), "glued_or_cut_name"],
+    // Released: the allowance's period agrees with a per-item price, and a real qualifier stays.
+    [recorded("Withdrawal Limit Fee charged for each withdrawal, transfer, and payment that exceeds 6 per monthly statement cycle", "account_research", "per_item", "$3 Withdrawal Limit Fee charged for each withdrawal, transfer, and payment that exceeds 6 per monthly statement cycle4"), null],
+    [recorded("Cashier's Checks: Non-Customer", "cashiers_check", null, "Cashier's Checks | Non-Customer $8.00"), null],
+    [recorded("Share Draft Reconciliation per month", "account_research", "monthly", "Share Draft Reconciliation per month | $5.00"), null],
+  ])("holds a recorded pass for its shape (%#)", (candidate, reason) => {
+    expect(recordedPassHoldReason(candidate)).toBe(reason);
+  });
+
+  it("is off: counts what it would release and hold, and writes nothing", async () => {
+    expect(DARWIN_RELEASE_ACTS).toBe(false);
+    const rows = [
+      row({ fee_raw_id: 418400, fee_name: "Per Each ATM Withdrawal", held_canonical_fee_key: "atm_non_network", amount: "0.25", source_line: "Per Each ATM Withdrawal $ .25", source_context: "Per Each ACH Debit $ .25\nPer Each ATM Withdrawal $ .25" }),
+      row({ fee_raw_id: 2 }),
+    ];
+    const db = vi.fn((strings: TemplateStringsArray) => {
+      const text = templateText(strings);
+      if (text.includes("learning_schema_ready")) return Promise.resolve([{ learning_schema_ready: true }]);
+      if (text.includes("verify.release_recorded") || text.includes("FROM pipeline_attempts pa")) return Promise.resolve(rows);
+      return Promise.resolve([]);
+    });
+    const result = await releaseRecordedPasses(db as never, { runId: 9 });
+    expect(result).toMatchObject({ acts: false, recordedPasses: 2, wouldRelease: 1, released: 0, held: { business_activity_row: 1 } });
+    expect(result.heldExamples[0]).toMatchObject({ feeRawId: 418400, reason: "business_activity_row" });
+    expect(db.mock.calls.some(([strings]) => /INSERT|UPDATE/.test(templateText(strings)))).toBe(false);
   });
 });

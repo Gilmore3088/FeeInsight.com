@@ -249,6 +249,20 @@ Darwin owns verification and classification.
   `darwin_released_hold` flag so the whole release can be found and rolled back.
   A state lane whose state has fewer held fees than its call budget fills the rest with the
   oldest held fees from any state (2026-10-07: Utah's lane had 1 while about 1,000 waited elsewhere).
+  Recorded passes (`releaseRecordedPasses`, strategy `verify.release_recorded`, each extract-free
+  `verify` step): the review never picks a fee with a v17 attempt again, so the 421 fees v17 passed
+  while the release did not act would stay held even with `DARWIN_RELEASE_ACTS` on. Under that
+  same switch this pass releases them after today's free holds. Three were added after a hand
+  check of 20 found 19 right (Oct 15), and they hold in the review too:
+  - `business_activity_row`: a business account's "Per Each ..." activity row filed outside
+    account research (raw 418400, "Per Each ATM Withdrawal" $0.25 filed as an out-of-network ATM
+    fee).
+  - `frequency_word_disagrees`: an allowance's period stored as the fee's ("Over 3 per Year"
+    stored annual), or a period word that contradicts a stated frequency.
+  - `glued_or_cut_name`: a glued header ("Account Fees: ..."), a glued column (": no", "Notary:
+    Outgoing") or a cut-off ending.
+  Off, the step detail (`recorded_pass_release`) counts what would release and what is held, and
+  nothing is written. On 15 Oct: 402 would release, 19 held.
   v1 released on the schedule check alone; its dry run on 2026-10-06 (1,997 of 4,128 held
   fees) had 12 of 20 hand-checked releases right. v2 adds the gates above. v3 (James chose
   "Reject only", 2026-10-06 16:49 UTC) acts on rejects (`DARWIN_RELEASE_REJECTS_ACT`): each
@@ -405,6 +419,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `DARWIN_PEER_STRATEGY` | `verify.peer_range` | v3 | `darwin/peer-checks.ts` |
 | `DARWIN_SECOND_SOURCE_STRATEGY` | `verify.second_source` | v2 | `darwin/peer-checks.ts` |
 | `DARWIN_RELEASE_STRATEGY` | `verify.release` | v4 | `darwin/release-held.ts` |
+| `DARWIN_RECORDED_RELEASE_STRATEGY` | `verify.release_recorded` | v1 | `darwin/release-review.ts` |
 | `DARWIN_RELEASE_REVIEW_STRATEGY` | `verify.release_review` | v17 | `darwin/release-review.ts` |
 | `DARWIN_SCHEDULE_REFILE_STRATEGY` | `verify.schedule_refile` | v1 | `darwin/schedule-refile.ts` |
 | `DARWIN_VERDICT_SCORE_STRATEGY` | `verify.verdict_score` | v1 | `darwin/verdict-score.ts` |
