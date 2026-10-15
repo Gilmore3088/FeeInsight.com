@@ -114,9 +114,9 @@ describe("the Ask response", () => {
     const res = ask("What would you do with our overdraft fee?", { objective: "competitive_position", priorTested: [25, 30, 35] });
     expect(res.kind).toBe("opinion");
     expect(res.opinion).toMatchObject({ assumedObjective: "competitive_position", scenariosCompared: [25, 30, 35] });
-    expect(res.shortAnswer).toMatch(/^If your objective is competitive position, \$30 was the strongest of the 3 prices you tested/);
-    expect(res.shortAnswer).toContain("The decision stays with you.");
-    expect(res.scenario?.tested).toBe(30);
+    expect(res.shortAnswer).toMatch(/^For competitive position, here is how the 3 prices you tested for the overdraft fee measure up\./);
+    expect(res.shortAnswer).toContain("Hamilton does not pick a price; the decision stays with you.");
+    expect(res.scenario?.tested).toBe(25);
   });
 
   it("asks for the bank's fee before modeling when its schedule has none, then uses the stated one", () => {
@@ -147,10 +147,15 @@ describe("the bank's figures and the opinion", () => {
     expect(facts).toMatchObject({ annualItems: 12_000, waiverRate: 0.08 });
   });
 
-  it("picks the lowest tested price for customer treatment and the top revenue for revenue", () => {
-    const scenarios = scenariosFor(overdraftResearch(), 32, [25, 35], null);
-    expect(buildOpinion(scenarios, "customer_treatment")?.chosen.tested).toBe(25);
-    expect(buildOpinion(scenarios, "revenue")?.chosen.tested).toBe(35);
+  it("measures every tested price against the objective and never picks one", () => {
+    const scenarios = scenariosFor(overdraftResearch(), 32, [35, 25], null);
+    for (const objective of ["customer_treatment", "revenue", "competitive_position"] as const) {
+      const opinion = buildOpinion(scenarios, objective)!;
+      expect(opinion.opinion).toContain("At $35:");
+      expect(opinion.opinion).toContain("At $25:");
+      expect(opinion.opinion).not.toMatch(/strongest|best|recommend|should/i);
+      expect(opinion.chosen.tested).toBe(35);
+    }
   });
 });
 

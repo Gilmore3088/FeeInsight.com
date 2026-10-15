@@ -33,19 +33,19 @@ beforeEach(() => {
 describe("H01 retained Hamilton shell navigation", () => {
   it("carries the canonical research subject on desktop links without adding it to reference pages", () => {
     render(<HamiltonShell {...seed}>Research body</HamiltonShell>);
-    const nav = within(screen.getByRole("navigation", { name: "Main navigation" }));
+    const nav = within(screen.getByRole("navigation", { name: "Hamilton workspace" }));
     expect(nav.getByRole("link", { name: "Reports" })).toHaveAttribute("href", "/pro/reports?instId=8109");
-    expect(nav.getByRole("link", { name: "My fees" })).toHaveAttribute("aria-current", "page");
-    expect(nav.getByRole("link", { name: "Regulatory Wire" })).toHaveAttribute("href", "/pro/news");
+    expect(nav.getByRole("link", { name: "Research" })).toHaveAttribute("aria-current", "page");
+    expect(nav.getByRole("link", { name: "Saved analyses" })).toHaveAttribute("href", "/pro/saved?instId=8109");
   });
 
   it("carries the same research subject through mobile tabs and account links", async () => {
     render(<HamiltonShell {...seed}>Research body</HamiltonShell>);
-    fireEvent.click(screen.getByRole("button", { name: "Open menu" }));
-    const nav = within(await screen.findByRole("navigation", { name: "Mobile navigation" }));
+    fireEvent.click(screen.getByRole("button", { name: "Open navigation" }));
+    const nav = within(await screen.findByRole("navigation", { name: "Hamilton workspace" }));
     expect(nav.getByRole("link", { name: "Reports" })).toHaveAttribute("href", "/pro/reports?instId=8109");
-    expect(nav.getByRole("link", { name: "My bank and data" })).toHaveAttribute("href", "/pro/settings?instId=8109");
-    expect(nav.getByRole("link", { name: "Institutions" })).toHaveAttribute("href", "/pro/data");
+    expect(screen.getByRole("link", { name: "Settings & account" })).toHaveAttribute("href", "/pro/settings?instId=8109");
+    expect(nav.getByRole("link", { name: "Ask Hamilton" })).toHaveAttribute("href", "/pro/analyze?instId=8109");
   });
 
   it("keeps encoded state research scope, categories and charter when switching into Reports", () => {
@@ -53,7 +53,7 @@ describe("H01 retained Hamilton shell navigation", () => {
     route.pathname = "/pro/analyze";
     route.search = new URLSearchParams({ research: encodeLandingResearch(selection) }).toString();
     render(<HamiltonShell {...seed}>State research</HamiltonShell>);
-    const nav = within(screen.getByRole("navigation", { name: "Main navigation" }));
+    const nav = within(screen.getByRole("navigation", { name: "Hamilton workspace" }));
     const href = nav.getByRole("link", { name: "Reports" }).getAttribute("href")!;
     const query = new URL(href, "https://example.test").searchParams;
     expect(JSON.parse(query.get("research")!)).toEqual({ ...selection, task: "board_report" });
@@ -66,9 +66,9 @@ describe("H01 retained Hamilton shell navigation", () => {
     route.search = "instId=1535";
     view.rerender(<HamiltonShell {...seed}>Addition body</HamiltonShell>);
     expect(screen.getByLabelText("Institution context").textContent).not.toContain(`Researching: ${homeName}`);
-    const nav = within(screen.getByRole("navigation", { name: "Main navigation" }));
-    await waitFor(() => expect(nav.getByRole("link", { name: "My fees" })).toHaveAttribute("href", "/pro/research?instId=1535"));
-    expect(screen.getByLabelText("Institution context").textContent).toContain(`Account institution: ${homeName}`);
+    const nav = within(screen.getByRole("navigation", { name: "Hamilton workspace" }));
+    await waitFor(() => expect(nav.getByRole("link", { name: "Research" })).toHaveAttribute("href", "/pro/intelligence?instId=1535"));
+    expect(screen.getByLabelText("Institution context").textContent).toContain(`Your institution: ${homeName}`);
   });
 
   it("ignores a late canonical response for A after the live URL changes to B", async () => {
@@ -81,14 +81,14 @@ describe("H01 retained Hamilton shell navigation", () => {
     const view = render(<HamiltonShell {...seed}>Initial</HamiltonShell>);
     route.pathname = "/pro/reports"; route.search = "instId=2945";
     view.rerender(<HamiltonShell {...seed}>A</HamiltonShell>);
-    expect(screen.getByRole("link", { name: "My fees" })).toHaveAttribute("href", "/pro/research?instId=2945");
+    expect(screen.getByRole("link", { name: "Research" })).toHaveAttribute("href", "/pro/intelligence?instId=2945");
     route.search = "instId=1535";
     view.rerender(<HamiltonShell {...seed}>B</HamiltonShell>);
     await act(async () => resolveB({ id: "1535", name: "Addition Financial Credit Union" }));
     await act(async () => resolveA({ id: "2945", name: "Delayed old A" }));
     expect(screen.getByLabelText("Institution context").textContent).toContain("Researching: Addition Financial Credit Union");
     expect(screen.getByLabelText("Institution context").textContent).not.toContain("Delayed old A");
-    expect(screen.getByRole("link", { name: "My fees" })).toHaveAttribute("href", "/pro/research?instId=1535");
+    expect(screen.getByRole("link", { name: "Research" })).toHaveAttribute("href", "/pro/intelligence?instId=1535");
   });
 
   it("freshly resolves a blank URL's saved preference and never reuses an old default seed on return", async () => {
@@ -100,7 +100,7 @@ describe("H01 retained Hamilton shell navigation", () => {
     view.rerender(<HamiltonShell {...initial}>Saved preference B</HamiltonShell>);
     await waitFor(() => expect(route.resolve).toHaveBeenCalledWith(null));
     await waitFor(() => expect(screen.getByLabelText("Institution context").textContent).toContain("Researching: Addition Financial Credit Union"));
-    expect(screen.getByRole("link", { name: "My fees" })).toHaveAttribute("href", "/pro/research?instId=1535");
+    expect(screen.getByRole("link", { name: "Research" })).toHaveAttribute("href", "/pro/intelligence?instId=1535");
     route.pathname = "/pro/research";
     view.rerender(<HamiltonShell {...initial}>Returned fresh default B</HamiltonShell>);
     await waitFor(() => expect(route.resolve).toHaveBeenCalledTimes(2));
@@ -149,14 +149,14 @@ describe("H01 retained Hamilton shell navigation", () => {
     if (search.startsWith("instId")) await waitFor(() => expect(screen.getByLabelText("Institution context").textContent).toContain("Research subject unavailable"));
     else expect(route.resolve).not.toHaveBeenCalled();
     expect(screen.getByLabelText("Institution context").textContent).not.toContain(`Researching: ${homeName}`);
-    expect(screen.getByRole("link", { name: "My fees" })).toHaveAttribute("href", search.startsWith("instId") ? "/pro/research?instId=999999" : "/pro/research");
+    expect(screen.getByRole("link", { name: "Research" })).toHaveAttribute("href", search.startsWith("instId") ? "/pro/intelligence?instId=999999" : "/pro/intelligence");
   });
 
   it("uses authorized saved report A as the shell subject despite a conflicting URL B", () => {
     route.pathname = "/pro/reports"; route.search = "report_id=saved-a&instId=1535";
     render(<HamiltonShell {...seed} initialRequestPath={`/pro/reports?${route.search}`}>Saved A</HamiltonShell>);
     expect(screen.getByLabelText("Institution context").textContent).toContain(`Researching: ${homeName}`);
-    expect(screen.getByRole("link", { name: "My fees" })).toHaveAttribute("href", "/pro/research?instId=8109");
+    expect(screen.getByRole("link", { name: "Research" })).toHaveAttribute("href", "/pro/intelligence?instId=8109");
     expect(route.resolve).not.toHaveBeenCalled();
   });
 
@@ -165,7 +165,7 @@ describe("H01 retained Hamilton shell navigation", () => {
     render(<HamiltonShell {...seed} initialRequestPath={`/pro/reports?${route.search}`} selectedInstitutionId={null}
       institutionContext={{ ...seed.institutionContext, name: "Saved artifact · research subject unavailable" }}>Unscoped</HamiltonShell>);
     expect(screen.getByLabelText("Institution context").textContent).toContain("Researching: Saved artifact · research subject unavailable");
-    expect(screen.getByRole("link", { name: "My fees" })).toHaveAttribute("href", "/pro/research");
+    expect(screen.getByRole("link", { name: "Research" })).toHaveAttribute("href", "/pro/intelligence");
     expect(route.resolve).not.toHaveBeenCalled();
   });
 });

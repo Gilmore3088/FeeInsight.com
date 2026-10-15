@@ -11,7 +11,7 @@ export interface HamiltonNavigationSelection {
   unresolved?: boolean;
 }
 
-const SUBJECT_PATHS = new Set(["/pro", "/pro/analyze", "/pro/research", "/pro/hamilton", "/pro/reports", "/pro/simulate", "/pro/monitor", "/pro/settings"]);
+const SUBJECT_PATHS = new Set(["/pro", "/pro/analyze", "/pro/research", "/pro/intelligence", "/pro/hamilton", "/pro/reports", "/pro/simulate", "/pro/monitor", "/pro/saved", "/pro/settings"]);
 const ARTIFACT_PARAMS = ["analysis", "report_id", "report", "scenario_id", "scenario"];
 
 export function isHamiltonSubjectPath(pathname: string): boolean {

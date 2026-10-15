@@ -135,7 +135,7 @@ describe("AnalyzeWorkspace identity boundaries", () => {
   it("uses subject-neutral starter prompts instead of claiming every institution is ours", () => {
     render(<AnalyzeWorkspace userId={7} institutionId="8109" selectedInstitution={bankB} />);
     expect(document.body.textContent).not.toContain("our overdraft");
-    expect(document.body.textContent).toContain("this institution's overdraft");
+    expect(screen.getByLabelText("Your question").getAttribute("placeholder")).toContain("this institution's overdraft");
   });
 
   it("starts a fresh ask after New question abandons an unresolved engine request", async () => {
@@ -146,14 +146,14 @@ describe("AnalyzeWorkspace identity boundaries", () => {
     })));
     render(<AnalyzeWorkspace userId={7} institutionId="2945" selectedInstitution={bankA} />);
     fireEvent.change(screen.getByRole("textbox"), { target: { value: "Compare overdraft" } });
-    fireEvent.click(screen.getByRole("button", { name: "Ask" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Ask( Hamilton)?$/ }));
     await waitFor(() => expect(pending).toHaveLength(1));
-    await waitFor(() => expect((screen.getByRole("button", { name: "Ask" }) as HTMLButtonElement).disabled).toBe(true));
+    await waitFor(() => expect((screen.getByRole("button", { name: /^Ask( Hamilton)?$/ }) as HTMLButtonElement).disabled).toBe(true));
 
     fireEvent.click(screen.getByRole("button", { name: "New question" }));
     fireEvent.change(screen.getByRole("textbox"), { target: { value: "Compare NSF" } });
-    expect((screen.getByRole("button", { name: "Ask" }) as HTMLButtonElement).disabled).toBe(false);
-    fireEvent.click(screen.getByRole("button", { name: "Ask" }));
+    expect((screen.getByRole("button", { name: /^Ask( Hamilton)?$/ }) as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(screen.getByRole("button", { name: /^Ask( Hamilton)?$/ }));
     await waitFor(() => expect(pending.map(request => request.question)).toEqual(["Compare overdraft", "Compare NSF"]));
 
     const response = (text: string) => new Response(JSON.stringify({

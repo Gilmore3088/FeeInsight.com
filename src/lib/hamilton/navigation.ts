@@ -18,6 +18,9 @@
  *   - 2026-10-06 James: too many tabs, and "a banker doesn't wake up wanting to model or watch".
  *     Four tabs in plain words; Watch folds into This month, Data and Admin into the account menu.
  *   - 2026-10-08 James: Regulatory Wire becomes a top nav item (HAMILTON_WIRE_NAV).
+ *   - 2026-10-15 James: build on #1011's unified workspace. Its left navigation
+ *     (HAMILTON_WORKSPACE_NAV) replaces the header tabs inside /pro; HAMILTON_NAV still drives the
+ *     site header for Pro users on public pages.
  */
 
 /** Base path for Hamilton screens. Change here if route group structure changes in Phase 40. */
@@ -30,6 +33,30 @@ export const HAMILTON_NAV = [
   { label: "Reports",     href: `${HAMILTON_BASE}/reports`  },
   { label: "Admin",       href: "/admin"                    },
 ] as const;
+
+/**
+ * The workspace's left navigation, from #1011 (James's Oct 11 unified-workspace design; README in
+ * docs/design/hamilton-rebuild/). Research is one destination whose lenses include the Regulatory
+ * Wire and the reference pages, so those paths light it up.
+ */
+export const HAMILTON_WORKSPACE_NAV = [
+  { label: "Overview",       href: `${HAMILTON_BASE}/hamilton`,     icon: "ChartNoAxesColumnIncreasing" },
+  { label: "Ask Hamilton",   href: `${HAMILTON_BASE}/analyze`,      icon: "MessageCircle" },
+  { label: "Research",       href: `${HAMILTON_BASE}/intelligence`, icon: "Search" },
+  { label: "Try a price",    href: `${HAMILTON_BASE}/simulate`,     icon: "Calculator" },
+  { label: "Reports",        href: `${HAMILTON_BASE}/reports`,      icon: "FileText" },
+  { label: "Monitor",        href: `${HAMILTON_BASE}/monitor`,      icon: "Activity" },
+  { label: "Saved analyses", href: `${HAMILTON_BASE}/saved`,        icon: "Bookmark" },
+  { label: "Admin",          href: "/admin",                        icon: "Settings" },
+] as const;
+
+const RESEARCH_PATHS = ["/pro/intelligence", "/pro/research", "/pro/data", "/pro/market", "/pro/categories", "/pro/districts", "/pro/news"];
+
+export function isWorkspaceNavActive(pathname: string | null, item: (typeof HAMILTON_WORKSPACE_NAV)[number]): boolean {
+  if (!pathname) return false;
+  if (item.label === "Research") return RESEARCH_PATHS.some(path => pathname === path || pathname.startsWith(`${path}/`));
+  return pathname === item.href || pathname.startsWith(`${item.href}/`);
+}
 
 /** Account menu: the bank and its data, and what changed, outside the four tabs. */
 export const HAMILTON_ACCOUNT_NAV = [
