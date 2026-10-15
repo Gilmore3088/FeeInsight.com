@@ -80,9 +80,10 @@ Darwin owns verification and classification.
   at $0 (flag `darwin_conditional_zero_released`) when the bank's own schedule, not a product page,
   prices it free on its own line with no other dollar figure, outside overdraft, NSF, monthly
   maintenance and minimum balance; (b) otherwise rejected, for Knox's next read of the line.
-- `verify.recheck` (`verified-recheck.ts`, version 2, 2026-10-09) ends every learning verify step
+- `verify.recheck` (`verified-recheck.ts`, version 3, 2026-10-15) ends every learning verify step
   by reading up to 200 rows `verify.rules` v3 verified (the rows the `not_in_source` re-select
-  verified first, then newest first), once each under `postSourceCheck`. A failing row that is
+  verified first, then newest first), once each under `postSourceCheck` and, from version 3, the
+  tier-perk test (`tier_perk_zero`, #1397). A failing row that is
   not live is rejected with an `outlier_flags` entry `darwin_recheck:<code>[:<rule>]`; a live one
   is archived in the same step (`published_fee_records` rolled back with that reason, batch
   `darwin-recheck-<run>`, never deleted), the verified row rejected with the same flag and the
@@ -466,7 +467,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `DARWIN_RELEASE_REVIEW_STRATEGY` | `verify.release_review` | v17 | `darwin/release-review.ts` |
 | `DARWIN_SCHEDULE_REFILE_STRATEGY` | `verify.schedule_refile` | v1 | `darwin/schedule-refile.ts` |
 | `DARWIN_VERDICT_SCORE_STRATEGY` | `verify.verdict_score` | v1 | `darwin/verdict-score.ts` |
-| `DARWIN_RECHECK_STRATEGY` | `verify.recheck` | v2 | `darwin/verified-recheck.ts` |
+| `DARWIN_RECHECK_STRATEGY` | `verify.recheck` | v3 | `darwin/verified-recheck.ts` |
 | `DARWIN_VERIFY_STRATEGY` | `verify.rules` | v3 | `darwin/verify.ts` |
 | `DARWIN_SOURCE_CHECK_VERSION` | — | v2 | `darwin/verify.ts` |
 | `DARWIN_BATCH_KEY_VERSION` | — | v4 | `darwin/verify.ts` |

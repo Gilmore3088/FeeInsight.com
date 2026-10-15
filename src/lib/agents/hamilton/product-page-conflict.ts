@@ -2,8 +2,9 @@ import { sql } from "@/lib/data-store/connection";
 import { invalidatePublicReadCache } from "@/lib/data-store/fee-cache";
 import { productPageUrlSql } from "@/lib/agents/learning/fee-page";
 import { recordFeedback, type FeedbackRow } from "@/lib/agents/learning/feedback";
-import { secondLook } from "@/lib/agents/hamilton/second-look";
+import { PENDING_KIND, secondLook } from "@/lib/agents/hamilton/second-look";
 import { inSavepoint } from "@/lib/agents/savepoint";
+import { TIER_NAME_SQL, TIER_PATH_SQL } from "@/lib/agents/darwin/tier-perk";
 
 type SqlTag = typeof sql;
 
@@ -20,6 +21,13 @@ type SqlTag = typeof sql;
  * Fees priced per account (monthly maintenance, minimum balance, paper statements) are left out:
  * a checking page's $14.95 beside a schedule's $7 may be two accounts, not one fee priced twice
  * (production sample, 2026-10-13). Judging those needs the account matched first.
+ *
+ * Only the bank's general schedule speaks for its price: a tier's own schedule (Frost's Premium
+ * Account, a private-banking or BankOn schedule) or a fee named for a tier's account is left off the
+ * schedule side, since its $0 is that tier's perk (#1397: Frost's $35 overdraft and $30 stop
+ * payment were flagged "vs schedule $0.00" against its Premium schedule and hidden). The address
+ * and name tests are Darwin's (`tier-perk.ts`). A pending flag this check no longer raises is
+ * cleared (`takedown_cleared`) on the next run.
  *
  * Live (`PRODUCT_PAGE_CONFLICT_LIVE`), a conflict comes down on its second look, 12 hours later (`second-look.ts`, check
  * `hamilton.product_page_conflict`), archived with `rolled_back_reason =
@@ -93,6 +101,8 @@ export function productPageConflictSql(scope: ConflictScope): string {
       SELECT institution_id, canonical_fee_key, array_agg(DISTINCT amount ORDER BY amount) AS amounts
         FROM priced
        WHERE NOT product
+         AND regexp_replace(COALESCE(document_url, ''), '^[a-z]+://[^/]+', '', 'i') !~* '${TIER_PATH_SQL}'
+         AND COALESCE(fee_name, '') !~* '${TIER_NAME_SQL}'
        GROUP BY institution_id, canonical_fee_key
     )
     SELECT p.fee_published_id, p.fee_verified_id, p.institution_id, p.source_document_id,
@@ -134,6 +144,8 @@ export interface ProductPageConflictResult {
   live: boolean;
   conflicts: number;
   flagged: number;
+  /** Pending flags cleared because the fee no longer conflicts. */
+  cleared: number;
   waiting: number;
   rolledBack: ProductPageConflict[];
   dryRun: boolean;
@@ -172,7 +184,7 @@ export async function retireProductPageConflicts(
   options: { runId: number; batchId: string; dryRun: boolean; institutionId?: number; limit?: number; live?: boolean },
 ): Promise<ProductPageConflictResult> {
   const limit = Math.max(1, Math.min(options.limit ?? PRODUCT_PAGE_CONFLICT_ROLLBACK_LIMIT, 2_000));
-  const result: ProductPageConflictResult = { live: options.live ?? PRODUCT_PAGE_CONFLICT_LIVE, conflicts: 0, flagged: 0, waiting: 0, rolledBack: [], dryRun: options.dryRun };
+  const result: ProductPageConflictResult = { live: options.live ?? PRODUCT_PAGE_CONFLICT_LIVE, conflicts: 0, flagged: 0, cleared: 0, waiting: 0, rolledBack: [], dryRun: options.dryRun };
   let rows: ConflictRow[];
   try {
     rows = await inSavepoint(db, (scope) =>
@@ -187,17 +199,35 @@ export async function retireProductPageConflicts(
   }
   const failing = rows.map(toConflict);
   result.conflicts = failing.length;
+  // Fees this check flagged earlier and no longer raises (a tier schedule's $0 no longer counts,
+  // #1397) pass now, so their pending flags clear.
+  let passing: number[] = [];
+  try {
+    const flagged = await inSavepoint(db, (scope) => scope<{ fee_published_id: number | string }[]>`
+      SELECT fee_published_id FROM pipeline_feedback
+       WHERE check_name = ${PRODUCT_PAGE_CONFLICT_CHECK}
+         AND kind = ${PENDING_KIND}
+         AND fee_published_id IS NOT NULL
+         AND (${options.institutionId ?? null}::bigint IS NULL OR institution_id = ${options.institutionId ?? null}::bigint)
+    `);
+    const failingIds = new Set(failing.map((fee) => fee.feePublishedId));
+    passing = flagged.map((row) => Number(row.fee_published_id)).filter((id) => !failingIds.has(id));
+  } catch (error) {
+    console.error("product page conflict pending-flag read failed:", error);
+  }
   const live = options.live ?? PRODUCT_PAGE_CONFLICT_LIVE;
   const look = await secondLook(db, {
     check: PRODUCT_PAGE_CONFLICT_CHECK,
     runId: options.runId,
     failing,
+    passing,
     dryRun: options.dryRun,
     // Off: first looks are logged and none confirms.
     ...(live ? {} : { minMinutes: Number.POSITIVE_INFINITY }),
   });
   result.flagged = look.flagged;
   result.waiting = look.waiting;
+  result.cleared = look.cleared;
   const confirmed = look.confirmed.slice(0, limit);
   if (options.dryRun) {
     result.rolledBack = confirmed;

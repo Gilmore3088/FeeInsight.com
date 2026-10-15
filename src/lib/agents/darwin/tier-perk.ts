@@ -8,16 +8,26 @@
  *
  * Only $0 is refused: a priced row on a premium schedule (the account's own $30 fee) is real.
  * A general schedule that lists a premium account among others is not a tier schedule: only its
- * address and its title (the opening lines before any price) are read. Pure.
+ * address and its title (the first line, before any figure) are read. Pure.
  */
-const TIER_WORDS = "premium|private|platinum|prestige|preferred|relationship|wealth|bank\\s?on";
-/** An address naming a tier's own fee page: "/truth-in-savings/premium-account-fees". */
-const TIER_PATH = new RegExp(`(?:^|[/_-])(?:${TIER_WORDS})(?:[_-](?:client|banking|account|checking))*[_-]?(?:account[_-])?(?:fees?|schedule|disclosure)`, "i");
+const TIER_WORDS = "premium|premier|private|platinum|prestige|preferred|relationship|wealth|bank[\\s_-]?on";
+const TIER_QUALIFIERS = "client|banking|account|checking|certified|services";
+/**
+ * An address naming a tier's own fee page: "/truth-in-savings/premium-account-fees",
+ * "/private-banking/fees", "/sites/wealth/fee_schedule.pdf". Also read by Hamilton's
+ * product-page conflict check in SQL (`TIER_PATH_SQL`), so it uses only syntax both engines share.
+ */
+const TIER_PATH_SOURCE = `(^|[/_-])(${TIER_WORDS})([/_-](${TIER_QUALIFIERS}))*[/_-]?(account[/_-])?(fees?|schedule|disclosures?)([^a-z]|$)`;
+const TIER_PATH = new RegExp(TIER_PATH_SOURCE, "i");
 /** A title naming a tier's own schedule: "The Frost Premium Account Schedule of Fees", "Private Banking Fee Schedule". */
-const TIER_TITLE = new RegExp(`\\b(?:${TIER_WORDS})\\b(?:\\s+(?:client|banking|account|checking|services))*\\s+(?:schedule|fee schedule|fees|rate and fee schedule)\\b`, "i");
+const TIER_TITLE = new RegExp(`\\b(?:${TIER_WORDS})\\b(?:\\s+(?:${TIER_QUALIFIERS}))*\\s+(?:schedule|fee schedule|fees|rate and fee schedule)\\b`, "i");
 /** A fee named for a tier's account: "BankOn Checking Account Overdraft Fee", "Private Client Stop Payment". */
-const TIER_NAME = new RegExp(`\\b(?:${TIER_WORDS})\\s+(?:client|banking|checking|account|plus)\\b`, "i");
-const TITLE_LINES = 3;
+const TIER_NAME_WORDS = `(${TIER_WORDS})\\s+(client|banking|checking|account|plus)`;
+const TIER_NAME = new RegExp(`\\b${TIER_NAME_WORDS}\\b`, "i");
+
+/** Postgres forms (`~*`) of the address and name tests, for Hamilton's product-page conflict check. */
+export const TIER_PATH_SQL = TIER_PATH_SOURCE;
+export const TIER_NAME_SQL = `\\y${TIER_NAME_WORDS}\\y`;
 
 function pathOf(url: string | null | undefined): string {
   if (!url) return "";
@@ -29,16 +39,16 @@ function pathOf(url: string | null | undefined): string {
   }
 }
 
-/** The document's title: its first few non-empty lines, up to the first price. */
+/**
+ * The document's title: its first non-empty line, cut at the first figure. Only the first line,
+ * since a general schedule's second line is often a section heading ("Preferred Checking Fees");
+ * cut at a figure, since PDF text often runs the title into the first row ("... Schedule of Fees
+ * Monthly fee $30").
+ */
 function titleOf(text: string | null | undefined): string {
-  const lines: string[] = [];
-  for (const raw of (text ?? "").split("\n")) {
-    const line = raw.trim();
-    if (!line) continue;
-    if (/\$\s*\d|\d+\.\d{2}\b/.test(line) || lines.length >= TITLE_LINES) break;
-    lines.push(line);
-  }
-  return lines.join(" ");
+  const first = (text ?? "").split("\n").map((line) => line.trim()).find(Boolean) ?? "";
+  const figure = first.search(/[$\d]/);
+  return figure < 0 ? first : first.slice(0, figure);
 }
 
 /** True when the document is one account tier's own fee schedule. */

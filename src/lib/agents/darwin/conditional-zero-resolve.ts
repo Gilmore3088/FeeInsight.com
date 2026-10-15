@@ -72,11 +72,13 @@ export function freeOnItsOwnLine(line: string | null | undefined): boolean {
 /**
  * Rules a, c and b in that order. `line` is the line the source check traces in the document's
  * newest text, or null when it traces none: then (c) cannot hold, since the schedule's current
- * text does not state the fee (review of 50574285). Pure.
+ * text does not state the fee (review of 50574285). `documentText` is that text, read for a tier
+ * schedule's title (#1397). Pure.
  */
 export function conditionalZeroVerdict(
   row: Pick<HeldZeroRow, "canonical_fee_key" | "fee_name" | "conditions" | "document_url" | "priced_twin">,
   line: string | null,
+  documentText: string | null = null,
 ): ConditionalZeroVerdict {
   if (row.priced_twin) return { decision: "duplicate", reason: "conditional_zero_priced_twin" };
   if (!row.document_url || isProductPageUrl(row.document_url)) return { decision: "rejected", reason: "conditional_zero_product_page" };
@@ -85,7 +87,7 @@ export function conditionalZeroVerdict(
     && !conditionalZero(0, line, row.fee_name)
     && !ACCOUNT_FEATURE_KEYS.has(row.canonical_fee_key)
     // #1397: free on a premium or private-banking schedule is that tier's perk, not the bank's price.
-    && !tierPerkZero(0, row.fee_name, row.document_url, null)
+    && !tierPerkZero(0, row.fee_name, row.document_url, documentText)
     && checkFeeCategory(row.canonical_fee_key, row.fee_name).ok;
   return free
     ? { decision: "verified", reason: "conditional_zero_free_on_schedule" }
@@ -160,7 +162,8 @@ export async function runDarwinConditionalZeroResolve(options: {
   result.selected = rows.length;
   for (const row of rows) {
     const line = sourceLineFor(row, texts, row.canonical_fee_key);
-    const verdict = conditionalZeroVerdict(row, line);
+    const documentText = row.source_document_id == null ? null : texts.get(Number(row.source_document_id)) ?? null;
+    const verdict = conditionalZeroVerdict(row, line, documentText);
     result.verdicts[verdict.reason] = (result.verdicts[verdict.reason] ?? 0) + 1;
     if (dryRun) continue;
     // One row's writes in a savepoint: a failed insert never fails the verify step it runs in.
