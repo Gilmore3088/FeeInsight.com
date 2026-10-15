@@ -37,6 +37,10 @@ export const metadata: Metadata = {
   ],
 };
 
+// Phones get tighter cells; sm and up keep the full padding.
+const CELL = "px-3 py-2.5 sm:px-4";
+const TH = "px-3 py-2 text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted sm:px-4";
+
 export default async function NationalFeeIndexPage() {
   const user = await getCurrentUser();
   const isPro = canAccessPremium(user);
@@ -286,41 +290,25 @@ export default async function NationalFeeIndexPage() {
               </h2>
               <div className="mt-3 overflow-hidden rounded-xl border border-border/80">
                 <div className="overflow-x-auto">
-                  <table className={`w-full text-left text-sm ${isPro ? "min-w-[760px]" : "min-w-[420px]"}`}>
+                  {/* On a phone the table is two columns (fee with its institution count beneath,
+                      then the median), so it fits a 360px screen with no sideways scroll. */}
+                  <table className={`w-full text-left text-sm ${isPro ? "sm:min-w-[760px]" : ""}`}>
                     <thead>
                       <tr className="border-b border-border/60 bg-paper/60">
-                        <th className="px-4 py-2 text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted">
-                          Fee Category
-                        </th>
-                        <th className="px-4 py-2 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted">
-                          Median
-                        </th>
+                        <th className={TH}>Fee category</th>
+                        <th className={`${TH} text-right`}>Median</th>
                         {isPro && (
                           <>
-                            <th className="hidden px-4 py-2 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted sm:table-cell">
-                              P25
-                            </th>
-                            <th className="hidden px-4 py-2 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted sm:table-cell">
-                              P75
-                            </th>
-                            <th className="px-4 py-2 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted">
-                              Range
-                            </th>
-                            <th className="px-4 py-2 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted">
-                              Banks
-                            </th>
-                            <th className="px-4 py-2 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted">
-                              CUs
-                            </th>
-                            <th className="hidden px-4 py-2 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted md:table-cell">
-                              Institutions
-                            </th>
+                            <th className={`hidden ${TH} text-right sm:table-cell`}>P25</th>
+                            <th className={`hidden ${TH} text-right sm:table-cell`}>P75</th>
+                            <th className={`hidden ${TH} text-right sm:table-cell`}>Range</th>
+                            <th className={`hidden ${TH} text-right sm:table-cell`}>Banks</th>
+                            <th className={`hidden ${TH} text-right sm:table-cell`}>CUs</th>
+                            <th className={`hidden ${TH} text-right md:table-cell`}>Institutions</th>
                           </>
                         )}
                         {!isPro && (
-                          <th className="px-4 py-2 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted">
-                            Institutions
-                          </th>
+                          <th className={`hidden ${TH} text-right sm:table-cell`}>Institutions</th>
                         )}
                       </tr>
                     </thead>
@@ -330,42 +318,45 @@ export default async function NationalFeeIndexPage() {
                           key={entry.fee_category}
                           className="hover:bg-paper/60 transition-colors"
                         >
-                          <td className="px-4 py-2.5">
+                          <td className={CELL}>
                             <Link
                               href={`/fees/${entry.fee_category}`}
                               className="font-medium text-ink hover:text-brick transition-colors"
                             >
                               {getDisplayName(entry.fee_category)}
                             </Link>
+                            <span className="mt-0.5 block text-[12px] text-ink-muted sm:hidden">
+                              <span className="tabular-nums">{entry.institution_count.toLocaleString()}</span> institutions
+                            </span>
                           </td>
-                          <td className="px-4 py-2.5 text-right tabular-nums font-medium text-ink">
+                          <td className={`${CELL} text-right align-top tabular-nums font-medium text-ink sm:align-middle`}>
                             {formatAmount(entry.median_amount)}
                           </td>
                           {isPro && (
                             <>
-                              <td className="hidden px-4 py-2.5 text-right tabular-nums text-ink-muted sm:table-cell">
+                              <td className={`hidden ${CELL} text-right tabular-nums text-ink-muted sm:table-cell`}>
                                 {formatAmount(entry.p25_amount)}
                               </td>
-                              <td className="hidden px-4 py-2.5 text-right tabular-nums text-ink-muted sm:table-cell">
+                              <td className={`hidden ${CELL} text-right tabular-nums text-ink-muted sm:table-cell`}>
                                 {formatAmount(entry.p75_amount)}
                               </td>
-                              <td className="px-4 py-2.5 text-right tabular-nums text-ink-muted">
+                              <td className={`hidden ${CELL} text-right tabular-nums text-ink-muted sm:table-cell`}>
                                 {formatAmount(entry.min_amount)} &ndash;{" "}
                                 {formatAmount(entry.max_amount)}
                               </td>
-                              <td className="px-4 py-2.5 text-right tabular-nums text-ink-muted">
+                              <td className={`hidden ${CELL} text-right tabular-nums text-ink-muted sm:table-cell`}>
                                 {entry.bank_count.toLocaleString()}
                               </td>
-                              <td className="px-4 py-2.5 text-right tabular-nums text-ink-muted">
+                              <td className={`hidden ${CELL} text-right tabular-nums text-ink-muted sm:table-cell`}>
                                 {entry.cu_count.toLocaleString()}
                               </td>
-                              <td className="hidden px-4 py-2.5 text-right tabular-nums text-ink-muted md:table-cell">
+                              <td className={`hidden ${CELL} text-right tabular-nums text-ink-muted md:table-cell`}>
                                 {entry.institution_count.toLocaleString()}
                               </td>
                             </>
                           )}
                           {!isPro && (
-                            <td className="px-4 py-2.5 text-right tabular-nums text-ink-muted">
+                            <td className={`hidden ${CELL} text-right tabular-nums text-ink-muted sm:table-cell`}>
                               {entry.institution_count.toLocaleString()}
                             </td>
                           )}

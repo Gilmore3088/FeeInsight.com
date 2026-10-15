@@ -812,6 +812,37 @@ export interface StateFeeIndexes {
   verified_cu_institutions: number;
   /** Fee rows that count toward statistics. */
   verified_fees: number;
+  /**
+   * Each institution's own value per category, by the same rule the medians above use, with
+   * its charter ("b" bank, "c" credit union), so a page can draw the state's spread for a fee.
+   * Absent on entries cached before it existed.
+   */
+  institution_values?: Record<string, StateInstitutionValue[]>;
+}
+
+export interface StateInstitutionValue {
+  v: number;
+  c: "b" | "c" | null;
+}
+
+/** One value per institution per category, under the statistics contract (valuePerInstitution). */
+export function stateInstitutionValues(rows: IndexRow[]): Record<string, StateInstitutionValue[]> {
+  const charterOf = new Map<number, StateInstitutionValue["c"]>();
+  const byCategory = new Map<string, IndexRow[]>();
+  for (const row of rows) {
+    const id = Number(row.institution_id);
+    if (!charterOf.has(id)) charterOf.set(id, row.charter_type === "bank" ? "b" : row.charter_type === "credit_union" ? "c" : null);
+    const group = byCategory.get(row.fee_category);
+    if (group) group.push(row);
+    else byCategory.set(row.fee_category, [row]);
+  }
+  const result: Record<string, StateInstitutionValue[]> = {};
+  for (const [category, group] of byCategory) {
+    result[category] = [...valuePerInstitution(group)]
+      .map(([id, v]) => ({ v, c: charterOf.get(id) ?? null }))
+      .sort((a, b) => a.v - b.v);
+  }
+  return result;
 }
 
 /** Summarize already-loaded state rows into the all/bank/credit union indexes and counts. */
@@ -827,6 +858,7 @@ export function buildStateFeeIndexes(rows: IndexRow[]): StateFeeIndexes {
     verified_bank_institutions: distinct(banks),
     verified_cu_institutions: distinct(cus),
     verified_fees: rows.length,
+    institution_values: stateInstitutionValues(rows),
   };
 }
 
