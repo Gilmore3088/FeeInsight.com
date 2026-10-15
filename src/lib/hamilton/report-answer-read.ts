@@ -137,6 +137,8 @@ export const liveReportComparison: ComparisonReader = async (prepared) => {
 };
 
 const near = (a: number, b: number) => Math.abs(a - b) < 0.005;
+/** The fee's name as a page writes it: "Overdraft (OD)" is matched as "overdraft" (#1414). */
+const plainName = (category: string) => getDisplayName(category).replace(/\s*\([A-Z]{2,6}\)$/, "").toLowerCase();
 
 /**
  * Correctness of an answer page: each verified fee the page names (by name or by the bank's amount)
@@ -152,7 +154,7 @@ export async function reconcileReportAnswer(
   const stated = extractFigures(narrative).filter((f) => f.kind === "usd").map((f) => f.value);
   const named = prepared.deltas.filter((d) =>
     d.evidence_tier === "verified"
-    && (lower.includes(getDisplayName(d.fee_category).toLowerCase()) || stated.some((v) => near(v, d.institution_amount))));
+    && (lower.includes(plainName(d.fee_category)) || stated.some((v) => near(v, d.institution_amount))));
   if (named.length === 0) return { checked: false, figures: 0, failures: [] };
   const fresh = await read(prepared);
   if (!fresh) return { checked: false, figures: 0, failures: [] };

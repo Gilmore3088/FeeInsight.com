@@ -39,7 +39,7 @@ vi.mock("@/lib/research/skills", () => ({
   detectSkill: () => null, buildSkillInjection: () => "", buildSkillExecution: () => "", isSkillOptIn: () => false, findOfferedSkill: () => null,
 }));
 vi.mock("@/lib/research/tool-output", () => ({
-  cachedSystem: (text: string) => text, cacheLatestMessage: (messages: unknown) => messages, ledgerUsage: () => ({}),
+  cachedSystem: (text: string) => text, cacheLatestMessage: (messages: unknown) => messages, ledgerUsage: () => ({}), trackerUsage: () => ({}),
 }));
 vi.mock("@/lib/hamilton/answer-gate", async () => {
   const actual = await vi.importActual<typeof import("@/lib/hamilton/answer-gate")>("@/lib/hamilton/answer-gate");

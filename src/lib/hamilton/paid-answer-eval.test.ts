@@ -18,7 +18,7 @@ vi.mock("./answer-eval", async (importOriginal) => ({ ...(await importOriginal<t
 // No report unless a test hands one in: the real preparation reads the database.
 vi.mock("./report-answer-read", async (importOriginal) => ({ ...(await importOriginal<typeof import("./report-answer-read")>()), prepareReportAnswer: async () => null }));
 
-const { orderCandidates, paidSamplesToday, runPaidAnswerEval, simulateInputFor, toolMoneyFigures, PAID_EVAL_RESERVATION } = await import("./paid-answer-eval");
+const { orderCandidates, paidSamplesToday, reserveSample, runPaidAnswerEval, simulateInputFor, toolMoneyFigures, PAID_EVAL_RESERVATION } = await import("./paid-answer-eval");
 
 const now = new Date("2026-10-16T15:17:00Z");
 const question = "How does our overdraft fee compare?";
@@ -90,7 +90,9 @@ function db(used: number, usedPaths: string[] = Array(used).fill("memo")) {
     queries.push(text);
     if (text.includes("INSERT INTO agent_run_events")) {
       const cap = Number(values.at(-1));
-      if (state.reserved >= cap) return [];
+      // The values end: ..., path, pathLimit, event type, day start, cap.
+      const [path, pathLimit] = [String(values.at(-5)), Number(values.at(-4))];
+      if (state.reserved >= cap || state.paths.filter((p) => p === path).length >= pathLimit) return [];
       state.reserved += 1;
       state.paths.push(String((JSON.parse(String(values.find((v) => typeof v === "string" && v.startsWith("{")))) as { path: string }).path));
       return [{ id: state.reserved }];
@@ -169,6 +171,28 @@ describe("Hamilton's paid answer eval (#1079)", () => {
     expect(today.slice(0, 2).map((c) => c.from)).toEqual(["pro", "pro"]);
     expect(today[0].question).not.toBe(tomorrow[0].question);
     expect(today[2].from).not.toBe(tomorrow[2].from);
+  });
+
+  it("refuses a second Simulate, written answer or report on the same day, and takes the day's lock first (#1414, #1418)", async () => {
+    const now = new Date("2026-10-15T12:00:00Z");
+    const day = db(1, ["simulate"]);
+    expect(await reserveSample(day.db, { runId: 1, subjectKey: "a", cap: 5, now, path: "simulate" })).toBe(false);
+    expect(await reserveSample(day.db, { runId: 1, subjectKey: "b", cap: 5, now, path: "written_answer" })).toBe(true);
+    expect(await reserveSample(day.db, { runId: 1, subjectKey: "c", cap: 5, now, path: "written_answer" })).toBe(false);
+    expect(await reserveSample(day.db, { runId: 1, subjectKey: "d", cap: 5, now })).toBe(true);
+    expect(day.state.paths).toEqual(["simulate", "written_answer", "memo"]);
+
+    // With a real client, the reservation runs in a transaction that takes the day's advisory lock first.
+    const order: string[] = [];
+    const tx = vi.fn(async (parts: TemplateStringsArray) => {
+      order.push(parts.join("?").includes("pg_advisory_xact_lock") ? "lock" : "insert");
+      return [{ id: 1 }];
+    });
+    const begin = vi.fn(async (fn: (t: typeof tx) => Promise<unknown>) => fn(tx));
+    const real = Object.assign(vi.fn(), { begin }) as unknown as Parameters<typeof reserveSample>[0];
+    expect(await reserveSample(real, { runId: 1, subjectKey: "e", cap: 5, now })).toBe(true);
+    expect(begin).toHaveBeenCalledTimes(1);
+    expect(order).toEqual(["lock", "insert"]);
   });
 
   it("reserves each sample before its model call, so memos the provider refused still count", async () => {

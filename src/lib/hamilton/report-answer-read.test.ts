@@ -83,5 +83,9 @@ describe("the report answer page for the paid eval (#1079)", () => {
     const gone = await reconcileReportAnswer(prepared, text, vi.fn(async () => []));
     expect(gone.failures[0]).toMatch(/a fresh read has no comparison for it/);
     expect(await reconcileReportAnswer(prepared, "Peers vary.", fresh(32))).toEqual({ checked: false, figures: 0, failures: [] });
+    // A page names "overdraft", not the display label "Overdraft (OD)", and states no amount (#1414).
+    const byName = await reconcileReportAnswer(prepared, "Its overdraft fee sits above peers.", fresh(29));
+    expect(byName).toMatchObject({ checked: true, figures: 1 });
+    expect(byName.failures).toEqual(["Overdraft (OD): the report uses $32.00, the catalog has $29.00"]);
   });
 });

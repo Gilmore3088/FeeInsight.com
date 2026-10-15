@@ -242,6 +242,19 @@ describe("Hamilton answer quality (#1079)", () => {
     expect(q.paths.filter((p) => !p.measured).map((p) => p.path)).toEqual(["written_answer", "simulate", "report"]);
   });
 
+  it("keeps each paid path's newest measured row when a later run sampled only memos (#1414)", () => {
+    const later = { at: "2026-10-15T18:00:00.000Z", detail: { paths: [{ path: "memo", answers: 2, passed: 2, correctness: { checked: 2, correct: 2 } }, { path: "simulate", answers: 0 }] } };
+    const earlier = { at: "2026-10-14T15:17:00.000Z", detail: { paths: [
+      { path: "memo", answers: 2, passed: 1, correctness: { checked: 1, correct: 0 } },
+      { path: "simulate", answers: 1, passed: 1, correctness: { checked: 1, correct: 1 } },
+    ] } };
+    const q = answerQualityFrom("2026-10-15T00:51:00.000Z", detail, [later, earlier]);
+    expect(q.paidAt).toBe("2026-10-15T18:00:00.000Z");
+    expect(q.paths.find((p) => p.path === "memo")).toMatchObject({ measured: true, formRate: 1, at: later.at });
+    expect(q.paths.find((p) => p.path === "simulate")).toMatchObject({ measured: true, answers: 1, correctRate: 1, at: earlier.at });
+    expect(q.paths.filter((p) => !p.measured).map((p) => p.path)).toEqual(["written_answer", "report"]);
+  });
+
   it("treats a paid run that wrote no memo as unmeasured", () => {
     const q = answerQualityFrom("2026-10-14T00:51:00.000Z", detail, { at: "2026-10-14T15:17:00.000Z", detail: { paths: [{ path: "memo", sampled: 0, answers: 0 }] } });
     expect(q.paidAt).toBeNull();
@@ -281,5 +294,19 @@ describe("Hamilton answer quality (#1079)", () => {
     expect(goalBriefLines(goal).at(-1)).toBe(
       "Hamilton answers (eval of 2026-10-14 00:51 UTC; paid sample of 2026-10-14 15:17 UTC): Free Ask, standard questions: form 71.4% (100 of 140), figures tie out 90.0% (108 of 120); Free Ask, Pro readers' questions: form 45.0% (9 of 20), figures tie out 100.0% (10 of 10); Memo (paid): form 80.0% (4 of 5), figures tie out 75.0% (3 of 4). Not measured yet: written answer, simulate, report.",
     );
+  });
+
+  it("dates a paid path measured on an earlier day than the newest sample (#1414)", async () => {
+    const { db } = fakeDb([
+      [/hamilton-answer-eval/, [{ created_at: new Date("2026-10-15T00:51:00Z"), detail }]],
+      [/hamilton-paid-answer-eval/, [
+        { created_at: new Date("2026-10-15T15:17:00Z"), detail: { paths: [{ path: "memo", answers: 1, passed: 1, correctness: { checked: 1, correct: 1 } }] } },
+        { created_at: new Date("2026-10-14T15:17:00Z"), detail: { paths: [{ path: "simulate", answers: 1, passed: 0, correctness: { checked: 0, correct: 0 } }] } },
+      ]],
+    ]);
+    const line = goalBriefLines(await readGoalScorecard(db)).at(-1)!;
+    expect(line).toContain("paid sample of 2026-10-15 15:17 UTC");
+    expect(line).toContain("Memo (paid): form 100.0%");
+    expect(line).toContain("Simulate (paid) (sample of 2026-10-14): form 0.0% (0 of 1)");
   });
 });
