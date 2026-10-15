@@ -52,7 +52,7 @@ export function EmailSignup() {
 
   if (status === "success") {
     return (
-      <p className={`text-[12px] ${emailSent ? "text-emerald-700" : "text-ink-soft"}`} role="status">
+      <p className="text-[13px] leading-snug text-warm-ink-50" role="status">
         {emailSent
           ? "Almost done: check your inbox and click the confirm link to start getting the monthly update."
           : `Saved, but the confirm email didn't go out. Write to ${CONTACT_EMAIL} and we'll add you.`}
@@ -60,25 +60,23 @@ export function EmailSignup() {
     );
   }
 
-  // Compact on purpose: the footer is one short band (James's review, 2026-10-15), so the form is
-  // one row (state, email, button) and its button stays outlined navy rather than a second brick
-  // action. James kept the state picker: a reader who picks a state gets its numbers too.
+  // Sits in the footer's navy band (James's review, 2026-10-15): one framed unit with a short line,
+  // the state picker James kept, then email and button. The button stays outlined so the page's own
+  // call to action is the only filled one.
+  const field =
+    "rounded-lg border border-warm-ink-700 bg-warm-ink-900 px-3 py-2 text-[13px] text-warm-ink-50 placeholder:text-warm-ink-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-warm-ink-50/60";
   return (
-    <form onSubmit={handleSubmit} className="relative flex flex-wrap items-center gap-x-3 gap-y-2">
+    <form onSubmit={handleSubmit} className="relative">
       <HoneypotField />
-      <label htmlFor="footer-newsletter-email" className="w-full text-[12px] font-semibold text-ink-soft sm:w-auto">
+      <label htmlFor="footer-newsletter-email" className="block text-[13px] font-semibold text-warm-ink-50">
         Monthly fee index update
       </label>
-      <div className="flex w-full flex-wrap gap-2 sm:w-auto sm:flex-nowrap">
-        <label htmlFor="footer-newsletter-state" className="sr-only">
-          Your state (optional)
-        </label>
-        <StateSelect
-          id="footer-newsletter-state"
-          value={state}
-          onChange={setState}
-          className="w-full rounded-lg border border-border bg-paper px-2 sm:w-[170px] py-1.5 text-[12px] text-ink focus:border-transparent focus:outline-none focus-visible:ring-2 focus-visible:ring-ink/40"
-        />
+      <p className="mt-0.5 text-[12px] text-warm-ink-300">One email a month. Pick a state to get its numbers too.</p>
+      <label htmlFor="footer-newsletter-state" className="sr-only">
+        Your state (optional)
+      </label>
+      <StateSelect id="footer-newsletter-state" value={state} onChange={setState} className={`mt-3 w-full ${field}`} />
+      <div className="mt-2 flex gap-2">
         <input
           id="footer-newsletter-email"
           type="email"
@@ -87,20 +85,20 @@ export function EmailSignup() {
           placeholder="you@company.com"
           autoComplete="email"
           required
-          className="min-w-0 flex-1 rounded-lg border sm:w-[200px] sm:flex-none border-border bg-paper px-3 py-1.5 text-[12px] text-ink placeholder:text-ink-muted focus:border-transparent focus:outline-none focus-visible:ring-2 focus-visible:ring-ink/40"
+          className={`min-w-0 flex-1 ${field}`}
         />
         <button
           type="submit"
           disabled={status === "loading"}
-          className="shrink-0 rounded-lg border border-ink px-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/40 focus-visible:ring-offset-1 py-1.5 text-[11px] font-semibold text-ink transition-colors hover:bg-ink hover:text-on-ink disabled:opacity-50"
+          className="shrink-0 rounded-lg border border-warm-ink-50 px-4 py-2 text-[12px] font-semibold text-warm-ink-50 transition-colors hover:bg-warm-ink-50 hover:text-warm-ink-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-warm-ink-50/60 disabled:opacity-50"
         >
           {status === "loading" ? "..." : "Subscribe"}
         </button>
       </div>
       {status === "error" && (
-        <span className="w-full text-[11px] text-red-600 lg:text-right" role="alert">
+        <p className="mt-2 text-[12px] text-red-300" role="alert">
           Something went wrong. Try again.
-        </span>
+        </p>
       )}
     </form>
   );
