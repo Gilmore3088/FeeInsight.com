@@ -199,16 +199,16 @@ export async function retireProductPageConflicts(
   }
   const failing = rows.map(toConflict);
   result.conflicts = failing.length;
-  // Fees this check flagged earlier and no longer raises (a tier schedule's $0 no longer counts,
+  // Live fees this check flagged earlier and no longer raises (a tier schedule's $0 no longer counts,
   // #1397) pass now, so their pending flags clear.
   let passing: number[] = [];
   try {
     const flagged = await inSavepoint(db, (scope) => scope<{ fee_published_id: number | string }[]>`
-      SELECT fee_published_id FROM pipeline_feedback
-       WHERE check_name = ${PRODUCT_PAGE_CONFLICT_CHECK}
-         AND kind = ${PENDING_KIND}
-         AND fee_published_id IS NOT NULL
-         AND (${options.institutionId ?? null}::bigint IS NULL OR institution_id = ${options.institutionId ?? null}::bigint)
+      SELECT pf.fee_published_id FROM pipeline_feedback pf
+        JOIN published_fee_records fp ON fp.fee_published_id = pf.fee_published_id AND fp.rolled_back_at IS NULL
+       WHERE pf.check_name = ${PRODUCT_PAGE_CONFLICT_CHECK}
+         AND pf.kind = ${PENDING_KIND}
+         AND (${options.institutionId ?? null}::bigint IS NULL OR fp.institution_id = ${options.institutionId ?? null}::bigint)
     `);
     const failingIds = new Set(failing.map((fee) => fee.feePublishedId));
     passing = flagged.map((row) => Number(row.fee_published_id)).filter((id) => !failingIds.has(id));

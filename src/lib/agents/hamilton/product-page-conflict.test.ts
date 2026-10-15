@@ -42,7 +42,7 @@ describe("product-page fees the schedule prices differently (James, 2026-10-13)"
         const text = parts.join("?");
         calls.push({ text, values });
         if (text.includes("SELECT fee_published_id, kind, evidence")) return [{ fee_published_id: 12264, kind: "takedown_pending", evidence: { flag_run_id: 6430, reason: "product_page_conflict: #5166 at $35.00 vs schedule $0.00" } }];
-        if (text.includes("FROM pipeline_feedback") && text.includes("check_name =")) return [{ fee_published_id: 12264 }];
+        if (text.includes("FROM pipeline_feedback pf")) return [{ fee_published_id: 12264 }];
         if (text.includes("to_regclass")) return [{ ready: true }];
         return [];
       }),
@@ -51,6 +51,11 @@ describe("product-page fees the schedule prices differently (James, 2026-10-13)"
     const result = await retireProductPageConflicts(db as never, { runId: 2, batchId: "b", dryRun: false });
     expect(result).toMatchObject({ conflicts: 0, cleared: 1, rolledBack: [] });
     expect(calls.some(({ text }) => text.includes("UPDATE published_fee_records"))).toBe(false);
+    // Only live fees, and only this bank's when the run covers one.
+    const read = calls.find(({ text }) => text.includes("FROM pipeline_feedback pf"))!;
+    expect(read.text).toContain("rolled_back_at IS NULL");
+    await retireProductPageConflicts(db as never, { runId: 3, batchId: "b", dryRun: false, institutionId: 49 });
+    expect(calls.filter(({ text }) => text.includes("FROM pipeline_feedback pf")).at(-1)!.values).toContain(49);
   });
 
   it("parses Postgres arrays either way and names both prices in the reason", () => {

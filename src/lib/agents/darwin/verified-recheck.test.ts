@@ -122,5 +122,9 @@ describe("Darwin verified re-check", () => {
 
     expect(DARWIN_RECHECK_STRATEGY.version).toBe(3);
     expect(result).toMatchObject({ checked: 3, passed: 1, flagged: 1, rejected: [{ feeVerifiedId: 130002, code: "tier_perk_zero" }] });
+    const rejects = db.mock.calls.filter((call) => templateText(call[0]).includes("UPDATE verified_fee_observations"));
+    expect(rejects).toHaveLength(1);
+    expect(rejects[0].slice(1)).toContain(JSON.stringify(["darwin_recheck:tier_perk_zero"]));
+    expect(rejects[0].slice(1)).toContain(130002);
   });
 });
