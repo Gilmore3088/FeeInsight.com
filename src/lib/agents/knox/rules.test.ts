@@ -1270,3 +1270,82 @@ describe("Knox extract.rules: a dropped decimal point (#1196)", () => {
   });
 });
 
+describe("Knox extract.rules v68: fee-schedule lines with no fee word (#1102)", () => {
+  it("files recurring service labels that say no fee or charge", () => {
+    const cases: Array<[string, string]> = [
+      ["Research (per hour) | $25.00", "account_research"],
+      ["Account Reconcilement | $15.00", "account_research"],
+      ["Notary Service | $5", "notary_fee"],
+      ["All notarial acts not provided for | $10.00/item", "notary_fee"],
+      ["Night Drop Bag & Keys | $22", "night_deposit"],
+      ["Duplicate Key | $50.00/box", "safe_deposit_box"],
+      ["Annual Rent Size 3×5 | $25.00", "safe_deposit_box"],
+      ["03″x05″x22″ | $20.00 per year", "safe_deposit_box"],
+      ["RESEARCH | 5 x 10 | $ 100.00", "safe_deposit_box"],
+      ["Additional Monthly Statements | $5.00", "document_reproduction"],
+      ["Copy of Sales Slip | $18", "document_reproduction"],
+      ["Rush Plastic Order (2-day) | $20", "rush_card"],
+      ["Visa CHECKCARD Replacement | $20.00", "card_replacement"],
+      ["Check Reorder without Reorder Form | $3.00", "check_printing"],
+      ["Subpoenas | $20 per order", "legal_process"],
+      ["Due Date Change | $25", "other_lending_fee"],
+      ["Sweep Transfers: $5", "od_protection_transfer"],
+    ];
+    for (const [line, category] of cases) {
+      expect(extractFromSegment(line).candidates.map((fee) => fee.canonicalHint), line).toEqual([category]);
+    }
+  });
+
+  it("leaves the wordings the keys file elsewhere alone", () => {
+    // A section heading, a copy of a title, a printout and a skipped loan payment in other words.
+    for (const line of ["RESEARCH | $30.00", "Filing for Certified Copy of Title | $30.00", "Account Activity Printout | $5.00", "Loan Skip Pay (restrictions apply) | $35"]) {
+      expect(extractFromSegment(line).candidates, line).toEqual([]);
+    }
+  });
+
+  it("never reads a transfer's increment as its price", () => {
+    for (const line of [
+      "Automatic transfers from savings to checking are made in increments of $50",
+      "Overdraft protection transfers from your savings account are made in increments of $100",
+    ]) {
+      expect(extractFromSegment(line).candidates.map((fee) => fee.amount), line).toEqual([]);
+    }
+    expect(extractFromSegment("Overdraft Protection Transfer | $10.00 (transfers made in increments of $100)").candidates.map((fee) => [fee.canonicalHint, fee.amount])).toEqual([["od_protection_transfer", 10]]);
+  });
+
+  it("never names a box size row by the unit after its price", () => {
+    // Red Wing CU (text 32117): "2×5 | $ 25/Year" was read as a box named "/Year".
+    for (const line of ["2×5 | $ 25/Year", "10×10 | $100/Year"]) {
+      expect(extractFromSegment(line).candidates.map((fee) => fee.feeName), line).not.toContain("/Year");
+    }
+    expect(extractFromSegment("2 x 5 | $ 45.00").candidates.map((fee) => [fee.feeName, fee.amount])).toEqual([["2 x 5", 45]]);
+  });
+
+  it("reads a row's priced columns beside a FREE column and holds the free one at $0", () => {
+    const found = extractFromSegment("Stop Payment | FREE | $25 | $25 | $25");
+    expect(found.candidates.map((fee) => [fee.feeName, fee.amount, fee.canonicalHint])).toEqual([["Stop Payment", 25, "stop_payment"]]);
+    expect(found.held.map((row) => [row.shape, row.amount, row.canonicalHint])).toEqual([["zero", 0, "stop_payment"]]);
+  });
+
+  it("holds a label-and-price row no rule names in a fee schedule, and counts every drop", () => {
+    const schedule = [
+      "Schedule of Fees",
+      "Medallion Signature Guarantee | $20.00",
+      "Coin Orders | Free",
+      "Minimum Balance to Open | $100.00",
+      "Annual Percentage Yield | $1.00",
+      "Some products may cost $5 more.",
+    ].join("\n");
+    const read = extractCandidatesFromText(schedule);
+    expect(read.held.map((row) => [row.shape, row.feeName, row.amount])).toEqual([
+      ["unclassified", "Medallion Signature Guarantee", 20],
+      ["unclassified", "Coin Orders", 0],
+    ]);
+    expect(read.dropped).toEqual({ opening_or_minimum: 1, rate_line: 1, no_fee_word_not_table_row: 1 });
+    // Not a fee schedule: the same row is counted, not held.
+    const loose = extractCandidatesFromText("Medallion Signature Guarantee | $20.00");
+    expect(loose.held).toEqual([]);
+    expect(loose.dropped).toEqual({ not_fee_schedule: 1 });
+  });
+});
+
