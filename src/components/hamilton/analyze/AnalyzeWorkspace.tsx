@@ -41,6 +41,13 @@ function extractTextFromMessage(message: { parts?: Array<{ type: string; text?: 
 }
 
 /** The data lookups Hamilton made for an answer, named in plain words ("tool-getPeerFees" -> "peer fees"). */
+/** The question names this institution: "Capital City Bank's ATM fee" names "Capital City Bank". */
+export function namesInstitution(question: string, name: string | null): boolean {
+  if (!name) return false;
+  const core = name.replace(/,?\s+(National Association|N\.A\.)$/i, "").trim().toLowerCase();
+  return core.length >= 3 && question.toLowerCase().includes(core);
+}
+
 export function lookupsUsed(parts: ReadonlyArray<MessagePart> | undefined): string[] {
   const names = new Set<string>();
   for (const p of parts ?? []) {
@@ -449,7 +456,8 @@ function AnalyzeConversationWorkspace({
       const trimmed = question.trim().slice(0, 500);
       if (!active.current || readOnlyReason || !trimmed || isLoading || engineBusy) return;
       // A question about a market, not this institution, opens the market brief (no provider call).
-      if (parseMarketQuestion(trimmed)) {
+      // One that names the institution being researched stays here, so the answer is about it.
+      if (parseMarketQuestion(trimmed) && !namesInstitution(trimmed, selectedInstitution?.name ?? null)) {
         window.location.assign(marketBriefHref(trimmed, institutionId));
         return;
       }
@@ -482,7 +490,7 @@ function AnalyzeConversationWorkspace({
       if (window.innerWidth < 640) textareaRef.current?.blur();
       window.scrollTo({ top: 0, behavior: "smooth" });
     },
-    [clearError, isLoading, engineBusy, readOnlyReason, setMessages, institutionId],
+    [clearError, isLoading, engineBusy, readOnlyReason, setMessages, institutionId, selectedInstitution?.name],
   );
 
   /** Starts over: no earlier answers, no carried context, the start screen. */
@@ -821,7 +829,11 @@ function AnalyzeConversationWorkspace({
 
       {answerIdentity && (shown || reopenedStory) ? (
         <aside aria-label="Saved answer institution context" className="text-sm text-warm-700">
-          {hamiltonIdentityLines(answerIdentity).map(line => <p key={line}>{line}</p>)}
+          {/* The record of whose answer this is stays one click away, below the header that already names the institution. */}
+          <details>
+            <summary className="cursor-pointer text-xs text-warm-600">Institution and peer group behind this answer</summary>
+            {hamiltonIdentityLines(answerIdentity).map(line => <p key={line}>{line}</p>)}
+          </details>
         </aside>
       ) : initialAnalysis && conversation === 0 && !askedQuestion ? (
         <p className="text-sm text-warm-600">Historical account and peer context was not recorded with this answer.</p>
