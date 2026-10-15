@@ -32,7 +32,7 @@ import {
 } from "./finders";
 import { LINK_YIELD_CHECK, LINK_YIELD_SLOTS, stepSlot } from "./outcomes";
 import { NO_CONSUMER_SCHEDULE_IDS } from "./operator-schedules";
-import { OTHER_BANK_HOST_CODE, otherInstitutionAtHost } from "./other-bank-host";
+import { loadSharedNameIds, OTHER_BANK_HOST_CODE, otherInstitutionAtHost } from "./other-bank-host";
 import { loadPageClassifier, type PageClassifier } from "./page-classifier";
 import { createPlatformLearner, type PlatformLearner } from "./platform-learning";
 import {
@@ -97,7 +97,10 @@ const BLOCKED_HOMEPAGE_FINDERS = new Set<FinderKey>(["knownLink", "sitemap"]);
  * to search those banks again after a finder change.
  */
 // v2 (Oct 7): the finders learned big-bank names ("Schedule of Charges", "Consumer Fees").
-export const UPGRADE_SEARCH_VERSION = 2;
+// v3 (Oct 14, #1326): the search no longer accepts the product page it is replacing, from any
+// finder. Under v2, 1,406 of 1,745 searches stopped at it (the known-link finder in 1,247 of its
+// 1,428 finds, the site crawl in 148 of 182), so the bank counted as searched unchanged.
+export const UPGRADE_SEARCH_VERSION = 3;
 /**
  * Banks whose fee link is a business-only schedule (link-coverage.ts) get one search for the
  * consumer schedule per version (`detail.business_search`), before the product-page
@@ -125,7 +128,9 @@ export const FRESHNESS_RESERVED_SLOTS = 2;
  * A link is stale when the schedule's own "Effective ..." date, or (without one) a year
  * in its address, is STALE_AFTER_YEARS or more years before this year.
  */
-export const FRESHNESS_SEARCH_VERSION = 1;
+// v2 (Oct 14, #1326): the search no longer accepts the stale link it is replacing (398 of 491
+// v1 searches stopped at it; the known-link finder in 376 of its 391 finds).
+export const FRESHNESS_SEARCH_VERSION = 2;
 export const STALE_AFTER_YEARS = 3;
 /** "Effective January 1, 2022", "Effective Date: 01/01/2022" in a schedule's opening text. */
 const EFFECTIVE_YEAR_SQL = "(?i)effective(?:\\s+date)?[:\\s]+(?:[a-z]+\\.?\\s+\\d{1,2},?\\s+|\\d{1,2}/\\d{1,2}/)(20\\d{2})";
@@ -276,6 +281,10 @@ export function nextDiscoveryResume(
 interface DiscoveryCandidateRow {
   id: number | string;
   institution_name: string;
+  city?: string | null;
+  cert_number?: string | null;
+  /** Another institution has this name (`loadSharedNameIds`). */
+  name_shared?: boolean;
   state_code: string | null;
   website_url: string | null;
   asset_size: number | string | null;
@@ -632,11 +641,17 @@ async function discoverForInstitution(
   const ctx: SearchContext = {
     institutionId,
     institutionName: row.institution_name,
+    nameShared: row.name_shared,
+    city: row.city ?? null,
+    certNumber: row.cert_number ?? null,
     stateCode,
     site: baseUrl,
     fetchImpl: options.fetchImpl,
     rejected: options.rejectedUrls?.identities ?? new Set(),
     tried: new Set([urlIdentity(baseUrl.toString())]),
+    replacing: (row.upgrade || row.business || row.freshness) && row.fee_schedule_url
+      ? new Set([urlIdentity(row.fee_schedule_url)])
+      : undefined,
     homepageHtml: "",
     homepageLinks: [],
     platform: null,
@@ -906,6 +921,8 @@ async function selectCandidates(
     WITH due AS (
     SELECT inst.id,
            inst.institution_name,
+           inst.city,
+           inst.cert_number,
            inst.state_code,
            inst.website_url,
            inst.asset_size,
@@ -1053,6 +1070,8 @@ async function selectNeverSearchedElsewhere(db: SqlTag, limit: number, stateCode
     -- never-searched banks in other states
     SELECT inst.id,
            inst.institution_name,
+           inst.city,
+           inst.cert_number,
            inst.state_code,
            inst.website_url,
            inst.asset_size,
@@ -1098,6 +1117,8 @@ async function selectUpgradeCandidates(db: SqlTag, limit: number, stateCode: str
     -- product-page upgrade search
     SELECT inst.id,
            inst.institution_name,
+           inst.city,
+           inst.cert_number,
            inst.state_code,
            inst.website_url,
            inst.asset_size,
@@ -1154,6 +1175,8 @@ async function selectBusinessCandidates(db: SqlTag, limit: number, stateCode: st
     -- business-only link search
     SELECT inst.id,
            inst.institution_name,
+           inst.city,
+           inst.cert_number,
            inst.state_code,
            inst.website_url,
            inst.asset_size,
@@ -1210,6 +1233,8 @@ async function selectStaleCandidates(
     WITH due AS (
       SELECT inst.id,
              inst.institution_name,
+             inst.city,
+             inst.cert_number,
              inst.state_code,
              inst.website_url,
              inst.asset_size,
@@ -1690,7 +1715,9 @@ export async function runMagellanDiscovery(
   // With the companion search on, banks stop early enough to leave it its reserve.
   const { stepDeadline, lastBankStart, bankDeadline } = discoveryTimeBudget(Date.now(), wantSecondDocuments);
   const results: CandidateDiscoveryResult[] = [];
+  const sharedNames = await loadSharedNameIds(db, rows, dryRun ? undefined : { runId: options.runId, stepId: options.stepId ?? null });
   for (const row of rows) {
+    row.name_shared = sharedNames.has(Number(row.id));
     // Banks not reached this step stay due and are picked up by the next one.
     if (Date.now() > lastBankStart) break;
     const institutionId = Number(row.id);

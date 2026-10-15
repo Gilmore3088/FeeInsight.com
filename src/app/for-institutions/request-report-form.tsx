@@ -25,6 +25,7 @@ const OWN_INSTITUTION_HREF = "/institutions";
 const DEFAULT_SRC = "for-institutions";
 const INSTITUTION_REPORT_HREF = "/for-institutions?report=institution#report";
 const SRC_PATTERN = /^[a-z0-9][a-z0-9_-]{0,39}$/i;
+const FALLBACK_ID_SUFFIX = "-fallback";
 
 const SUCCESS_HEADLINE = "Request received.";
 const SUCCESS_PROMISE = "The institution report is paid. We reply within one business day with scope and price.";
@@ -108,7 +109,9 @@ function toConfirmationStatus(body: LeadsResponse | null): ConfirmationStatus {
 
 export function RequestReportForm(props: RequestReportFormProps) {
   return (
-    <Suspense fallback={<RequestReportFormInner {...props} prefill={null} />}>
+    // React streams the fallback first and swaps in the loaded form, so the HTML carries both
+    // copies. The fallback's ids take a suffix so every id on the page stays unique (#1168).
+    <Suspense fallback={<RequestReportFormInner {...props} prefill={null} idSuffix={FALLBACK_ID_SUFFIX} />}>
       <RequestReportFormWithParams {...props} />
     </Suspense>
   );
@@ -126,7 +129,9 @@ function RequestReportFormInner({
   contactEmail,
   defaultSrc = DEFAULT_SRC,
   prefill,
-}: RequestReportFormProps & { prefill: Prefill | null }) {
+  idSuffix = "",
+}: RequestReportFormProps & { prefill: Prefill | null; idSuffix?: string }) {
+  const fieldId = (base: string) => base + idSuffix;
   const [status, setStatus] = useState<Status>("idle");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [confirmation, setConfirmation] = useState<ConfirmationStatus>("unknown");
@@ -309,11 +314,11 @@ function RequestReportFormInner({
 
       {reportType === "district" && (
         <div>
-          <label htmlFor="report-district" className={LABEL_CLASS}>
+          <label htmlFor={fieldId("report-district")} className={LABEL_CLASS}>
             Fed district
           </label>
           <select
-            id="report-district"
+            id={fieldId("report-district")}
             name="district"
             required
             defaultValue={prefill?.district ?? ""}
@@ -349,19 +354,19 @@ function RequestReportFormInner({
 
       {!institution && !readerEmail && (
         <div>
-          <label htmlFor="report-email-free" className={LABEL_CLASS}>
+          <label htmlFor={fieldId("report-email-free")} className={LABEL_CLASS}>
             Email
           </label>
           <input
-            id="report-email-free"
+            id={fieldId("report-email-free")}
             name="email"
             type="email"
             required
             autoComplete="email"
-            aria-describedby="report-email-free-note"
+            aria-describedby={fieldId("report-email-free-note")}
             className={INPUT_CLASS}
           />
-          <p id="report-email-free-note" className="mt-1 text-xs text-[#5A5347]">
+          <p id={fieldId("report-email-free-note")} className="mt-1 text-xs text-[#5A5347]">
             {FREE_EMAIL_NOTE}
           </p>
         </div>
@@ -371,7 +376,7 @@ function RequestReportFormInner({
         <>
         <div>
           <div className="mb-1 flex items-baseline justify-between gap-3">
-            <label htmlFor="report-institution" className={`${LABEL_CLASS} mb-0`}>
+            <label htmlFor={fieldId("report-institution")} className={`${LABEL_CLASS} mb-0`}>
               Institution
             </label>
             {institutionLocked && (
@@ -385,7 +390,7 @@ function RequestReportFormInner({
             )}
           </div>
           <InstitutionCombobox
-            id="report-institution"
+            id={fieldId("report-institution")}
             name="institution"
             readOnly={institutionLocked}
             defaultValue={prefill?.institutionName ?? ""}
@@ -399,11 +404,11 @@ function RequestReportFormInner({
 
         <div className="grid gap-4 sm:grid-cols-2">
           <div>
-            <label htmlFor="report-name" className={LABEL_CLASS}>
+            <label htmlFor={fieldId("report-name")} className={LABEL_CLASS}>
               Name
             </label>
             <input
-              id="report-name"
+              id={fieldId("report-name")}
               name="name"
               type="text"
               required
@@ -412,11 +417,11 @@ function RequestReportFormInner({
             />
           </div>
           <div>
-            <label htmlFor="report-email" className={LABEL_CLASS}>
+            <label htmlFor={fieldId("report-email")} className={LABEL_CLASS}>
               Work email
             </label>
             <input
-              id="report-email"
+              id={fieldId("report-email")}
               name="email"
               type="email"
               required
@@ -427,11 +432,11 @@ function RequestReportFormInner({
         </div>
 
         <div>
-          <label htmlFor="report-role" className={LABEL_CLASS}>
+          <label htmlFor={fieldId("report-role")} className={LABEL_CLASS}>
             Role <span className="font-normal text-[#6B6255]">(optional)</span>
           </label>
           <input
-            id="report-role"
+            id={fieldId("report-role")}
             name="role"
             type="text"
             autoComplete="organization-title"
@@ -442,11 +447,11 @@ function RequestReportFormInner({
 
         <div className="grid gap-4 sm:grid-cols-[minmax(0,10rem)_minmax(0,1fr)]">
           <div>
-            <label htmlFor="report-state" className={LABEL_CLASS}>
+            <label htmlFor={fieldId("report-state")} className={LABEL_CLASS}>
               State <span className="font-normal text-[#6B6255]">(optional)</span>
             </label>
             <select
-              id="report-state"
+              id={fieldId("report-state")}
               name="state"
               value={reportState}
               onChange={(event) => setReportState(event.target.value)}
@@ -461,11 +466,11 @@ function RequestReportFormInner({
             </select>
           </div>
           <div>
-            <label htmlFor="report-competitors" className={LABEL_CLASS}>
+            <label htmlFor={fieldId("report-competitors")} className={LABEL_CLASS}>
               Competitors to include <span className="font-normal text-[#6B6255]">(optional)</span>
             </label>
             <input
-              id="report-competitors"
+              id={fieldId("report-competitors")}
               name="competitors"
               type="text"
               maxLength={300}

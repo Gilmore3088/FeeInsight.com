@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { amountsIn, classifyFeeText, nameFrom, joinWrappedProse, foldedCategory, classifyPatternKey, extractCandidatesFromText, extractFromSegment, notAZeroPrice, stripFootnoteMarks } from "./rules";
 import { runFreeSpecialists } from "./specialists";
 import { joinWrappedLeaderNames } from "@/lib/custom-report/source-check";
-import { withBoxSizeCellsSplit, withSidewaysBoxTable, withoutBusinessOnlyFees } from "./rules";
+import { withBoxSizeCellsSplit, withDroppedDecimalPoints, withSidewaysBoxTable, withoutBusinessOnlyFees } from "./rules";
 import { tidyFeeName } from "./layout";
 
 function fees(text: string): Array<[string, number, string]> {
@@ -248,11 +248,22 @@ describe("Knox extract.rules", () => {
     ]);
   });
 
+  it("reads a bare Overdrafts priced per transfer as the covering share transfer (#1291, raw 112570)", () => {
+    const line = "Overdrafts - $2.00 per transfer for all members 19 years of age or older; (i) Stop Payment Order - $32.00 per order";
+    expect(extractFromSegment(line).candidates.map((c) => [c.amount, c.canonicalHint])).toEqual([[2, "od_protection_transfer"], [32, "stop_payment"]]);
+    expect(extractFromSegment("Overdrafts | $30.00 per item").candidates[0]?.canonicalHint).toBe("overdraft");
+  });
+
   // v4 fixtures: the most common priced lines v3 left unrecognized in a 150-text
   // production sample, each mapped to an existing canonical key.
   it.each([
     ["Courtesy Pay*", "overdraft"],
     ["Overdraft Transfer From Savings", "od_protection_transfer"],
+    // #1291 re-file check, real lines (raw 406368, 158607, 131332; Pinnacle's v43 shape stays).
+    ["Maximum Daily OD/NSF Fees", "od_daily_cap"],
+    ["Overdrafts Covered by Courtesy Transfer", "od_protection_transfer"],
+    ["NSF Return/Paid Item Fee for Chkg. & Sav", "nsf"],
+    ["NSF Paid Item Fee/Returned Item Fee (items over $10)", "overdraft"],
     ["Returned Checks Fee (Member Drawn)", "nsf"],
     ["Return Item Chrg (Return Item Charge)", "nsf"],
     ["Returned deposit", "deposited_item_return"],
@@ -1182,6 +1193,80 @@ describe("withSidewaysBoxTable (v64)", () => {
     expect(withSidewaysBoxTable(uneven)).toBe(uneven);
     const single = "Box | 3 x 5\nRent | $30.00";
     expect(withSidewaysBoxTable(single)).toBe(single);
+  });
+});
+
+// #1196: real source lines whose PDF text dropped the decimal point ("$15 00").
+describe("Knox extract.rules: a dropped decimal point (#1196)", () => {
+  const read = (text: string) =>
+    extractCandidatesFromText(text).candidates.map((fee) => [fee.feeName, fee.amount, fee.frequency, fee.canonicalHint]);
+  const cutCents = (fees: unknown[][]) => fees.filter(([name]) => /^\s*0\d[\s/]/.test(String(name)));
+
+  // Addition Financial (8629), docs 6231 and 13904: two columns on one line. Built on these lines.
+  const ADDITION_FINANCIAL = [
+    "Check orders | prices vary Courtesy Pay to cover overdraft | $35 00",
+    "Dormant accounts | $15 00 per month Nonsufficient funds | $35 00",
+    "Foreign Check Collection | $35 00 Overdraft protection transfer | $3 00",
+    "Research (reconciliation) fee at member’s request | $25 00/hr Wire message (non-domestic) | $25 00",
+  ].join("\n");
+
+  it("keeps the cents and their unit with the fee on their left", () => {
+    const fees = read(ADDITION_FINANCIAL);
+    expect(fees).toContainEqual(["Dormant accounts", 15, "monthly", "dormant_account"]);
+    // Was "00 per month Nonsufficient funds", $35, monthly.
+    expect(fees).toContainEqual(["Nonsufficient funds", 35, null, "nsf"]);
+    // Was "00 Overdraft protection transfer".
+    expect(fees).toContainEqual(["Overdraft protection transfer", 3, null, "od_protection_transfer"]);
+    // Was "00/hr Wire message (non-domestic)".
+    expect(fees).toContainEqual(["Wire message (non-domestic)", 25, null, "wire_intl_outgoing"]);
+    expect(cutCents(fees)).toEqual([]);
+  });
+
+  // HomeTrust (303), doc 8040: held back while building; checked once afterwards.
+  it("reads the held-back HomeTrust lines without cut cents", () => {
+    const fees = read(
+      [
+        "Minimum balance | $200 00 | - Everywhere Connect = first three transactions free",
+        "Monthly fee | $2 00 Account reconciliation/research, per hour | $25 00",
+        "SAFE DEPOSIT BOX FEES | Mailed paper statement fee, per month | $1 50",
+      ].join("\n"),
+    );
+    expect(fees.map(([name]) => name)).toContain("Account reconciliation/research, per hour");
+    expect(cutCents(fees)).toEqual([]);
+  });
+
+  it("puts the point back only where the text drops it", () => {
+    expect(withDroppedDecimalPoints("Stop payment | $30 00")).toBe("Stop payment | $30.00");
+    expect(withDroppedDecimalPoints("Opening deposit | $5,000 00 | maximum of 5")).toBe("Opening deposit | $5,000.00 | maximum of 5");
+    // Other cents only when the text drops the point on "00" prices too, and they end their cell.
+    expect(withDroppedDecimalPoints("Paper statement | $1 50")).toBe("Paper statement | $1 50");
+    expect(withDroppedDecimalPoints("A | $5 00\nB | $7 00\nC | $9 00\nPaper statement | $1 50")).toContain("Paper statement | $1.50");
+    expect(withDroppedDecimalPoints("A | $5 00\nB | $7 00\nC | $9 00\nFirst $5 10 items free")).toContain("First $5 10 items free");
+    // Never a box size, a price already written with its point, or a longer number.
+    expect(withDroppedDecimalPoints("Box | $5 00 x 10")).toBe("Box | $5 00 x 10");
+    expect(withDroppedDecimalPoints("Wire | $25.00")).toBe("Wire | $25.00");
+    expect(withDroppedDecimalPoints("Limit $500 000")).toBe("Limit $500 000");
+  });
+
+  // #1305: built on Members 1st (7517) doc 13851 and Xplore (6636) doc 12872; the other lines
+  // are from documents held back while building.
+  const MEMBERS_1ST = "Teller Check | $5 00/check\nMoney Orders | $2 00/item\nCounter Checks (per book of 8) | $10 00*\n";
+  const XPLORE = "Wire Fee Incoming ........ $12. 00\nIRA Annual Maintenance Fee........ $10. 00\nLegal Proc es s/ Tax Levy........ $50. 00\n";
+  it.each([
+    ["cents before a footnote star", `${MEMBERS_1ST}ATM Transactions (per item) | $1 50* after 8/mo`, "| $1.50* after 8/mo"],
+    ["a point kept with a space after it", `${XPLORE}Loan Skip A Pay Fee........ $29. 95/ea ch`, "$29.95/ea ch"],
+    ["a sentence that goes on with an age (institution 7143)", `${XPLORE}*Inactive 12 months, total shares below $100. 19 and over, no loans`, "$100. 19 and over"],
+    ["a sentence that goes on with a term (Numerica 8017)", `${XPLORE}costs paid by Numerica or $500. 10-year draw period`, "$500. 10-year"],
+    // ". 00" prices never vouch for the other shape: "$2 50" is a $250 balance (BCSB 4143).
+    ["a letter-spaced balance", `${XPLORE}$ 3. 00 m a intena nce fee if a ccount ba la nce fa lls below $2 50`, "below $2 50"],
+  ])("%s", (_shape, text, expected) => {
+    expect(withDroppedDecimalPoints(text)).toContain(expected);
+  });
+
+  it("reads the two #1305 prices with their cents", () => {
+    const fees = read(`${MEMBERS_1ST}ATM Transactions (per item) | $1 50* after 8/mo\n${XPLORE}Loan Skip A Pay Fee........ $29. 95/ea ch`);
+    expect(fees).toContainEqual(expect.arrayContaining(["ATM Transactions (per item)", 1.5]));
+    expect(fees).toContainEqual(expect.arrayContaining(["Loan Skip A Pay Fee", 29.95]));
   });
 });
 

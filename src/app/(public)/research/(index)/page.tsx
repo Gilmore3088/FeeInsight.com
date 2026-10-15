@@ -10,14 +10,14 @@ import {
   getResearchCoverageCached,
 } from "@/lib/data-store/public-cached-reads";
 import type { ArticleSummary } from "@/lib/data-store/articles";
-import { ResearchHero, ResearchSectionNav, SectionHeading } from "./research-hero";
-import { BenchmarkBoard, pickBenchmarks } from "./benchmark-board";
-import { StateExplorer } from "./state-explorer";
-import { DistrictBoard } from "./district-board";
-import { ResearchLibrary } from "./research-library";
-import { MethodFlow } from "./method-flow";
-import { CharterExhibit, ExhibitSource, KeyFindings } from "./exhibits";
-import { computeFindings } from "./findings";
+import { ResearchHero, ResearchSectionNav, SectionHeading } from "../research-hero";
+import { BenchmarkBoard, pickBenchmarks } from "../benchmark-board";
+import { StateExplorer } from "../state-explorer";
+import { DistrictBoard } from "../district-board";
+import { ResearchLibrary } from "../research-library";
+import { MethodFlow } from "../method-flow";
+import { CharterExhibit, ExhibitSource, KeyFindings } from "../exhibits";
+import { computeFindings } from "../findings";
 
 export const metadata: Metadata = {
   title: "Research - Bank & Credit Union Fee Analysis",

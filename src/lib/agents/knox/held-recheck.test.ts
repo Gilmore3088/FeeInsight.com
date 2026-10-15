@@ -1,7 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { runFreeSpecialists } from "./specialists";
+import { classifyFeeText, KNOX_HELD_NAME_RULES_LIVE } from "./rules";
+
 import {
   HELD_SET_ASIDE_FLAG,
+  heldNameRelease,
+  previewHeldNameRules,
   heldExcerpt,
   heldHint,
   heldConditions,
@@ -15,7 +20,13 @@ import {
   recheckPromotedRows,
   recheckSupersededRows,
   recheckUntracedRows,
+  refiledConditions,
+  refiledFlags,
+  refiledRead,
+  refileSupersededRows,
+  STALE_HINT_REPAIRED_FLAG,
   supersededConditions,
+  supersededRefileFlag,
   supersededDryReadFlag,
   supersededRecheckFlag,
   supersededWouldPromoteFlag,
@@ -387,5 +398,188 @@ describe("lines a re-read retired, read again with today's rules (Northern Trust
   it("gives the row the current text's hash so the next re-read keeps it", () => {
     expect(supersededConditions(retired.conditions, "1f6e", 20257)).toContain("text_hash=1f6e;");
     expect(supersededConditions(retired.conditions, "1f6e", 20257)).not.toContain("text_hash=27e2;");
+  });
+});
+
+describe("retired lines today's rules file under another category (#1093, Oregonians CU, document 13279)", () => {
+  // Lines from the stored text of Oregonians CU's schedule (agent_source_texts, document 13279),
+  // read 14 Oct. The rows below were retired by a re-read under the categories an older version gave.
+  const oregonians = [
+    "Dormant Account $10/month | Account Balance Requirements",
+    "Bad Address/Returned Mail $10 Business Money Market Service Charge $10/month",
+    "Up to one fee can be waived after the address is updated, if requested. | Charged monthly if balance falls below $5,000 during statement period.",
+    "Accounts & Services",
+    "Overdraft Transfers $10 | Cards & ATMs",
+    "First three per month are free. Card Replacement $10",
+    "Stop Payment $25 Card Rush Order Market Cost",
+    "Insufficient Funds",
+    "Foreign Deposit Items Over $300 $50 Returned Item $15",
+    "We can't accept foreign deposit items under $300. | Charged when a check, EFT or ACH item from another institution is",
+    "cashed or deposited into an account, then returned unpaid.",
+    "Incoming Wires $10",
+    "NSF Item Paid $20",
+  ].join("\n");
+  const retiredRow = (id: number, name: string, amount: string, hint: string) => ({
+    fee_raw_id: id,
+    institution_id: 8600,
+    source_document_id: 13279,
+    fee_name: name,
+    amount,
+    conditions: `Knox deterministic extraction from Rosetta artifact #9001. canonical_hint=${hint}; text_hash=a1d1; excerpt="${name} $${amount}"`,
+    outlier_flags: [`canonical_hint:${hint}`, "superseded_by_reread", supersededRecheckFlag()],
+    document_text_id: 9001,
+    text_hash: "be2f",
+    darwin_decided: false,
+  });
+  const cardReplacement = retiredRow(105836, "Card Replacement", "10.00", "atm_non_network");
+  const incomingWires = retiredRow(105838, "Incoming Wires", "10.00", "nsf");
+  const badAddress = retiredRow(105835, "Bad Address/Returned Mail", "10.00", "monthly_maintenance");
+  const foreignDeposit = retiredRow(105837, "Foreign Deposit Items Over", "300.00", "nsf");
+  const reads = () => runFreeSpecialists(oregonians).candidates;
+
+  it("finds today's category for a real fee read under the same name and amount", () => {
+    expect(refiledRead(cardReplacement, reads())?.canonicalHint).toBe("card_replacement");
+    expect(refiledRead(incomingWires, reads())?.canonicalHint).toBe("wire_domestic_incoming");
+    expect(refiledRead(badAddress, reads())?.canonicalHint).toBe("account_research");
+  });
+
+  it("does not bring back a threshold today's rules no longer read as a fee", () => {
+    expect(refiledRead(foreignDeposit, reads())).toBeNull();
+  });
+
+  it("leaves a row today's rules read under its own category to the superseded re-check", () => {
+    const read = reads().find((candidate) => candidate.feeName === "Overdraft Transfers");
+    expect(read).toBeDefined();
+    expect(refiledRead(retiredRow(118488, "Overdraft Transfers", "10.00", read!.canonicalHint), reads())).toBeNull();
+  });
+
+  it("files the row under today's category, keeps the old one for reversal, and drops the retired flag", () => {
+    const flags = refiledFlags(cardReplacement.outlier_flags, "card_replacement", "atm_non_network");
+    expect(flags[0]).toBe("needs_darwin_verification");
+    expect(flags.filter((flag) => flag.startsWith("canonical_hint:"))).toEqual(["canonical_hint:card_replacement"]);
+    expect(flags).toContain("knox_refiled_from:atm_non_network");
+    expect(flags).toContain("knox_promoted_from_superseded");
+    expect(flags).not.toContain("superseded_by_reread");
+    const audit = refiledConditions(cardReplacement.conditions, "card_replacement", "be2f", 9001);
+    expect(audit).toContain("canonical_hint=card_replacement;");
+    expect(audit).toContain("text_hash=be2f;");
+    expect(audit).not.toContain("atm_non_network");
+  });
+
+  function createRefileDb(rows: unknown[], twins: unknown[] = [], stale: unknown[] = []) {
+    const calls: Array<{ text: string; values: unknown[] }> = [];
+    const db = vi.fn(async (strings: unknown, ...values: unknown[]) => {
+      const text = templateText(strings);
+      calls.push({ text, values });
+      if (text.includes("information_schema.columns")) return [{ ready: true }];
+      if (text.includes("jsonb_build_array")) return stale;
+      if (text.includes("knox_reread_took_over")) return stale;
+      if (text.includes("darwin_decided")) return rows;
+      if (text.includes("SELECT id, normalized_text")) return [{ id: 9001, normalized_text: oregonians }];
+      if (text.includes("jsonb_to_recordset")) return twins;
+      if (text.includes("RETURNING fr.fee_raw_id")) return [{ fee_raw_id: values.find((value) => typeof value === "number") }];
+      return [];
+    });
+    return { db, calls };
+  }
+
+  it("reads a sample and writes nothing while the switch is off, a new sample each hour", async () => {
+    const counted = { ...cardReplacement, total: 1336, decided_total: 881, institutions: 317 };
+    const { db, calls } = createRefileDb([counted, incomingWires]);
+
+    const result = await refileSupersededRows(db as never, { now: new Date("2026-10-14T12:34:00Z") });
+
+    expect(result).toMatchObject({
+      live: false, dryRun: true, mode: "sample", candidates: 1336, candidateInstitutions: 317, candidatesDarwinDecided: 881,
+      checked: 2, refiled: 2,
+    });
+    const select = calls.find((call) => call.text.includes("darwin_decided"))!;
+    expect(select.values).toContain("2026-10-14T12");
+    expect(select.values).toContain(25);
+    expect(calls.some((call) => call.text.includes("UPDATE"))).toBe(false);
+  });
+
+  it("reports what it would do in a dry-run extract while off, and writes nothing", async () => {
+    const decided = { ...retiredRow(105900, "Statement Copy", "5.00", "paper_statement"), darwin_decided: true };
+    const { db, calls } = createRefileDb([cardReplacement, incomingWires, badAddress, foreignDeposit, decided], [], [{ fee_raw_id: 126752 }]);
+
+    const result = await refileSupersededRows(db as never, { dryRun: true });
+
+    expect(result).toMatchObject({ live: false, dryRun: true, checked: 5, refiled: 3, notRead: 1, darwinDecided: 1, liveTwin: 0, staleHintRows: 1, staleHintRepaired: 0 });
+    expect(result.sample.map((row) => `${row.fee_name}:${row.from}->${row.to}`)).toEqual([
+      "Card Replacement:atm_non_network->card_replacement",
+      "Incoming Wires:nsf->wire_domestic_incoming",
+      "Bad Address/Returned Mail:monthly_maintenance->account_research",
+    ]);
+    expect(calls.some((call) => call.text.includes("UPDATE"))).toBe(false);
+  });
+
+  it("re-files and marks rows when live, keeping back a fee whose new category already has a live twin", async () => {
+    const twin = [{ institution_id: 8600, fee_category: "card_replacement", amount: "10.00" }];
+    const { db, calls } = createRefileDb([cardReplacement, incomingWires], twin, [{ fee_raw_id: 126752 }]);
+
+    const result = await refileSupersededRows(db as never, { live: true });
+
+    expect(result).toMatchObject({ live: true, dryRun: false, checked: 2, refiled: 1, liveTwin: 1, refiledIds: [105838], staleHintRows: 1, staleHintRepaired: 1 });
+    const refile = calls.find((call) => call.text.includes("UPDATE raw_fee_observations fr") && call.values.includes(105838))!;
+    expect(JSON.stringify(refile.values)).toContain("canonical_hint:wire_domestic_incoming");
+    expect(JSON.stringify(refile.values)).toContain("knox_refiled_from:nsf");
+    const marked = calls.find((call) => call.text.includes("WHERE fee_raw_id = ANY") && !call.text.includes("jsonb_build_array"))!;
+    expect(marked.values).toContainEqual([105836, 105838]);
+    expect(JSON.stringify(marked.values)).toContain(supersededRefileFlag());
+    const repair = calls.find((call) => call.text.includes("jsonb_build_array"))!;
+    expect(JSON.stringify(repair.values)).toContain(STALE_HINT_REPAIRED_FLAG);
+  });
+});
+
+// #1102 (K9): production held lines (raw ids), read 14 Oct 2026.
+describe("held-name rules for unclassified held lines (#1102)", () => {
+  const held = (fee_raw_id: number, amount: string, fee_name: string, excerpt: string) => ({
+    fee_raw_id, amount, fee_name, conditions: conditions(excerpt), institution_id: 7, outlier_flags: ["knox_review:unclassified", HELD_SET_ASIDE_FLAG],
+  });
+  const stopPay = held(265119, "30.00", "Stop Pay Fee", "Stop Pay Fee | $30.00 per item");
+  const heloc = held(337301, "500.00", "Early closure fee", "Early closure fee of $500 may apply");
+
+  it.each([
+    [stopPay, "stop_payment"],
+    [held(653776, "95.00", "Deed of Trust Reconveyance Fee", "Deed of Trust Reconveyance Fee | $95.00"), "reconveyance"],
+    [held(295678, "5.00", "Early closure fee (90 days)", "Early closure fee (90 days) | $5.00"), "early_closure"],
+    [held(643931, "10.00", "Christmas Club Withdrawal Fee", "Christmas Club Withdrawal Fee | $10.00"), "early_closure"],
+    // Returned mail is account research (fee-fold.ts), tracing the new address too.
+    [held(163946, "3.00", "Returned Statement Fee", "Returned Statement Fee | $3 | per statement"), "account_research"],
+    [held(219557, "25.00", "Returned statements after 3, tracer fee", "Returned statements after 3, tracer fee | $25.00"), "account_research"],
+    [held(678207, "5.00", "Printed / Mailed Monthly Statement Fee", "Printed / Mailed Monthly Statement Fee | $5.00"), "paper_statement"],
+    [held(341058, "25.00", "IRA Early Closeout Fee", "IRA Early Closeout Fee . . . . . . . . $25"), "ira_termination"],
+    [held(227987, "100.00", "IRA Account Early Withdrawal Fee", "IRA Account Early Withdrawal Fee | $100.00 per withdrawal"), "ira_distribution"],
+    [held(472697, "95.00", "7″x10″ Rental", "7″x10″ Rental | $95.00 annual charge (Eldersburg Location Only)"), "safe_deposit_box"],
+    // A HELOC's early closure fee (Great Southern Bank) and a mortgage's 36-month one stay held.
+    [heloc, null],
+    [held(480501, "750.00", "If you terminate your account within 36 months of opening it, you will be required to pay an early closure fee of", "If you terminate your account within 36 months of opening it, you will be required to pay an early closure fee of $750 plus any mortgage and government taxes"), null],
+    [held(1, "350.00", "Early Closure Fee (Home Equities only)", "Early Closure Fee (Home Equities only) | $350.00 | First 2 years."), null],
+    // A club line that names no fee (the Texas key leaves it unmapped).
+    [held(3, "2.50", "Christmas Club (withdrawals free Oct.1 – Jan.1)", "Christmas Club (withdrawals free Oct.1 – Jan.1) | $2.50"), null],
+    // A bare wire line often says incoming or international after its price.
+    [held(2, "35.00", "Wire Transfer Fee", "Wire Transfer Fee | $35.00 per International outgoing wire transfer"), null],
+    [returnedMail, null],
+  ] as const)("files held line %# under its own name's category, or keeps it held", (row, category) => {
+    const release = heldNameRelease(row);
+    expect(release?.candidate.canonicalHint ?? null).toBe(category);
+    if (category) expect(release?.passChecks).toBe(true);
+  });
+
+  it("is switched off: today's rules and the held re-check read these names as before", () => {
+    expect(KNOX_HELD_NAME_RULES_LIVE).toBe(false);
+    expect(classifyFeeText("Stop Pay Fee")).toBeNull();
+    expect(recategorizeHeld(stopPay)).toBeNull();
+  });
+
+  it("counts what would go to Darwin and writes nothing", async () => {
+    const db = createDb([stopPay, heloc, courtesyPay]);
+    const result = await previewHeldNameRules(db as never);
+    expect(result).toMatchObject({
+      live: false, candidates: 3, wouldRelease: 1, passChecks: 1, setAside: 1, institutions: 1, byCategory: { stop_payment: 1 },
+      examples: [{ feeRawId: 265119, feeName: "Stop Pay Fee", amount: 30, category: "stop_payment" }],
+    });
+    expect(db.mock.calls.some(([strings]) => /UPDATE|INSERT/.test(templateText(strings)))).toBe(false);
   });
 });

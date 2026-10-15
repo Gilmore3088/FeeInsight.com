@@ -4,6 +4,11 @@ name: tests
 # head, and the main run tests the exact merge commit, since main can move after a PR's last run.
 # Docs-only changes skip it. A newer push to the same PR cancels the older run; main runs are never
 # cancelled, so every merge commit gets its own result.
+#
+# Every test runs once (James, 2026-10-14: no test bloat). The jobs run side by side: checks, the
+# unit suite in two shards, Knox's answer-key gates (the slowest files, on their own), and the
+# end-to-end run on a real database. `app-tests` is the check branch protection and the merge rule
+# read; it passes only when every job above it passed.
 on:
   pull_request:
     paths-ignore:
@@ -20,33 +25,81 @@ concurrency:
   group: tests-${{ github.event.pull_request.number || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+env:
+  # Run by the knox-gates job; the unit shards leave them out.
+  KNOX_GATES: src/lib/agents/knox/answer-key-gate.test.ts src/lib/agents/knox/state-answer-key-gate.test.ts
+  # Run by the e2e job against a real database; the unit shards leave them out.
+  E2E_TESTS: src/lib/agents/pipeline.e2e.test.ts src/lib/data-store/hamilton-peer-list.db.test.ts src/lib/agents/knox/reread.db.test.ts
+
 jobs:
-  app-tests:
+  checks:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Setup Node
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: "22"
           cache: npm
-      - name: Install dependencies
-        run: npm ci
+      - run: npm ci
       - name: Guard retired execution surfaces
         run: npm run guard:legacy
-      - name: Run focused agentic tests
-        run: npm run test:agentic
       - name: Typecheck
         run: npx tsc --noEmit
       - name: Lint
         run: npm run lint
-      - name: Verify peer-list source and focused UI regression
+
+  unit:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - name: Fee-quality gates first (hard documents, taxonomy, category guard, confirmed takedowns)
+        # #1067: real source lines every taxonomy, fold, guard or same-line change must still read
+        # the same way. Shard 1 runs them first so a quality break fails fast; the shard runs leave them out.
+        if: matrix.shard == 1
+        run: npm run test:quality-gates
+      - name: Record the peer-list sources under test
+        if: matrix.shard == 1
         run: |
           git rev-parse HEAD
           git hash-object src/components/hamilton/analyze/PeerListView.tsx src/components/hamilton/analyze/PeerAwareStructuredAsk.tsx src/components/hamilton/analyze/PeerAwareStructuredAsk.test.tsx
-          npx vitest run src/components/hamilton/analyze/PeerAwareStructuredAsk.test.tsx
-      - name: Run full test suite
-        run: npx vitest run
+      - name: Unit tests (shard ${{ matrix.shard }} of 2)
+        run: |
+          excludes=""
+          for file in $KNOX_GATES $E2E_TESTS src/lib/agents/deming/hard-documents.test.ts src/lib/agents/deming/regression-gate.test.ts src/lib/fee-category-guard.test.ts src/lib/fee-taxonomy.test.ts src/lib/fee-fold.test.ts; do
+            excludes="$excludes --exclude $file"
+          done
+          npx vitest run --shard=${{ matrix.shard }}/2 $excludes
+
+  knox-gates:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - name: Knox answer-key gates (Texas and seven states)
+        run: npx vitest run $KNOX_GATES
+
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
       - name: End-to-end pipeline test
         # One real state-lane run against the production schema in a throwaway database.
         # The runner's PostgreSQL has SSL on, which the app's connection requires.
@@ -55,7 +108,21 @@ jobs:
           sudo -u postgres psql -q -c "ALTER USER postgres PASSWORD 'postgres'"
           sudo -u postgres createdb e2e
           PGPASSWORD=postgres psql -h localhost -U postgres -d e2e -q -v ON_ERROR_STOP=1 -f tests/e2e/production-schema.sql
-          E2E_DATABASE_URL=postgres://postgres:postgres@localhost:5432/e2e npx vitest run src/lib/agents/pipeline.e2e.test.ts src/lib/data-store/hamilton-peer-list.db.test.ts src/lib/agents/knox/reread.db.test.ts
+          E2E_DATABASE_URL=postgres://postgres:postgres@localhost:5432/e2e npx vitest run $E2E_TESTS
+
+  app-tests:
+    # The one required check: green only when every job above passed.
+    if: always()
+    needs: [checks, unit, knox-gates, e2e]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Every job passed
+        run: |
+          echo "checks=${{ needs.checks.result }} unit=${{ needs.unit.result }} knox-gates=${{ needs.knox-gates.result }} e2e=${{ needs.e2e.result }}"
+          test "${{ needs.checks.result }}" = success
+          test "${{ needs.unit.result }}" = success
+          test "${{ needs.knox-gates.result }}" = success
+          test "${{ needs.e2e.result }}" = success
 
   fee-audience-sql:
     runs-on: ubuntu-latest

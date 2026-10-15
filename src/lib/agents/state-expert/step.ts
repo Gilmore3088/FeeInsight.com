@@ -3,6 +3,7 @@ import type { sql } from "@/lib/data-store/connection";
 import { notPublishedOnlineCounts, type NotOnlineTierCount } from "@/lib/agents/magellan/escalation";
 
 import { PEER_MIN_INSTITUTIONS, refreshStateMemory, ALL_TIERS } from "./memory";
+import { loadGroupGaps, stateGroupOrder } from "./work-list";
 
 type SqlTag = typeof sql;
 
@@ -53,6 +54,10 @@ export async function runStateExpertStep(options: {
   }
   const notOnlineTotal = notOnline?.reduce((sum, row) => sum + row.institutions, 0) ?? null;
 
+  // The state's work list (#1029): its size groups under $10B, furthest below the coverage
+  // target first. The paid passes take this state's institutions in this order.
+  const workListGroups = stateGroupOrder(await loadGroupGaps(options.db), memory.stateCode);
+
   const stateWide = memory.peerLevels.filter((level) => level.tier === ALL_TIERS);
   const feesWithPeers = stateWide.filter((level) => level.count >= PEER_MIN_INSTITUTIONS);
   const topFinder = memory.strategies.finder[0]?.strategy ?? null;
@@ -85,6 +90,7 @@ export async function runStateExpertStep(options: {
       peer_levels_sample: feesWithPeers.slice(0, 10),
       not_published_online: notOnline,
       not_published_online_total: notOnlineTotal,
+      work_list_groups: workListGroups,
       memory_stored: stored,
       dry_run: Boolean(options.dryRun),
       provider_call_queued: false,

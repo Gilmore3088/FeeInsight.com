@@ -4,6 +4,7 @@ import { MIN_INSTITUTIONS_FOR_MEDIAN, STATS_ROW_FILTER, valuePerInstitution } fr
 import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
 import { median } from "@/lib/hamilton/fee-scenario";
 import { institutionDisplayName } from "@/lib/institution-display-name";
+import { readerFeeConditions } from "@/lib/fee-conditions";
 import { BRANCHLESS_MAX_OFFICES, BRANCHLESS_MIN_DEPOSITS, BRANCHLESS_ONE_OFFICE_SHARE } from "@/lib/data-store/branchless-banks";
 
 /**
@@ -114,17 +115,13 @@ function iso(value: string | Date | null): string | null {
   return value instanceof Date ? value.toISOString() : String(value);
 }
 
-/**
- * The pipeline writes its own provenance into `conditions` ("Knox deterministic extraction from
- * Rosetta artifact #11638. canonical_hint=...; text_hash=..."): that is not a condition of the fee.
- */
-const PIPELINE_NOTE = /\b(?:Knox|Rosetta artifact|canonical_hint|text_hash|calibrated_confidence|excerpt=)/i;
-
 function notesFor(rows: SnapshotFeeRow[]): string[] {
   const notes = new Set<string>();
   for (const row of rows) {
     if (row.account_product_type) notes.add(`Account: ${row.account_product_type}`);
-    if (row.conditions && !PIPELINE_NOTE.test(row.conditions)) notes.add(`Conditions: ${row.conditions}`);
+    // Knox's provenance note in `conditions` is not a condition of the fee (#1234).
+    const conditions = readerFeeConditions(row.conditions);
+    if (conditions) notes.add(`Conditions: ${conditions}`);
     if (row.waiver_text) notes.add(`Waived: ${row.waiver_text}`);
   }
   return [...notes];
@@ -280,7 +277,7 @@ export async function loadSnapshotRows(db: SqlTag, institutionIds: number[], cat
   if (institutionIds.length === 0) return [];
   const rows = await db.unsafe(
     `SELECT ef.fee_published_id, ef.institution_id, ef.fee_category, ef.fee_name, ef.amount, ef.canonical_fee_key,
-            ef.conditions, ef.account_product_type, ef.waiver_text, ef.frequency,
+            COALESCE(ef.extraction_note, ef.conditions) AS conditions, ef.account_product_type, ef.waiver_text, ef.frequency,
             COALESCE(sd.document_url, ef.document_url, ef.source_url) AS document_url,
             COALESCE(sd.last_checked_at, sd.crawled_at) AS read_at,
             t.normalized_text

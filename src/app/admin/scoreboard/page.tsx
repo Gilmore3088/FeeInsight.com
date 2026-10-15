@@ -211,6 +211,7 @@ const GOAL_CARDS: GoalCardSpec[] = [
         <span className="block">
           {goal.coverageCells.bySize.map((size) => `${size.label}: ${size.readyCells} of ${size.totalCells}`).join(" · ")}
         </span>
+        {goal.coverageCells.byState ? <StateGaps states={goal.coverageCells.byState} /> : null}
       </>
     ) : "Could not be read.",
   },
@@ -386,6 +387,26 @@ function SpendTable({ goal }: { goal: GoalScorecard }) {
       </table>
       <p className="mt-2 font-mono text-[10px] text-gray-400">query: {goal.spend?.query}</p>
     </div>
+  );
+}
+
+/** States with the largest gaps shown by name; Atlas runs these lanes first (#1117). */
+const STATE_GAPS_SHOWN = 12;
+
+function StateGaps({ states }: { states: NonNullable<NonNullable<GoalScorecard["coverageCells"]>["byState"]> }) {
+  const short = states.filter((state) => state.institutionsShort > 0);
+  const shown = short.slice(0, STATE_GAPS_SHOWN);
+  const closing = states.reduce((sum, state) => sum + state.closingThisWeek, 0);
+  return (
+    <>
+      <span className="block">
+        Gap by state, institutions short now (7 days ago; closed this week):{" "}
+        {shown.length === 0 ? "none." : shown.map((state) => `${state.state} ${n(state.institutionsShort)} (${n(state.institutionsShortWeekAgo)}; ${n(state.closingThisWeek)})`).join(" · ")}
+      </span>
+      <span className="block">
+        {n(short.length)} of {n(states.length)} states short{short.length > shown.length ? `, ${n(short.length - shown.length)} more not listed` : ""}; {n(closing)} newly live institutions closed gaps this week.
+      </span>
+    </>
   );
 }
 

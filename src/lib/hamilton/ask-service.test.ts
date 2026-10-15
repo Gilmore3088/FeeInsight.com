@@ -17,7 +17,7 @@ const store = vi.hoisted(() => ({
   saved: [] as { fieldKey: string; value: unknown }[],
   status: undefined as string | undefined,
   failRead: false,
-  analyses: [] as { id: string; userId: number; institutionId: string; prompt: string; analysisFocus: string; response: Record<string, unknown> }[],
+  analyses: [] as { id: string; userId: number; institutionId: string; prompt: string; analysisFocus: string; response: Record<string, unknown>; replaceRecentDuplicate?: { request: string } }[],
 }));
 
 const decision: DecisionRecord = {
@@ -58,7 +58,7 @@ vi.mock("./workspace-context", () => ({
 }));
 vi.mock("@/lib/agents/run-store", () => ({ recordProRequest: vi.fn(async () => 1) }));
 vi.mock("@/lib/data-store/hamilton-analyses", () => ({
-  insertSavedAnalysis: async (input: { userId: number; institutionId: string; prompt: string; analysisFocus: string; response: Record<string, unknown> }) => {
+  insertSavedAnalysis: async (input: { userId: number; institutionId: string; prompt: string; analysisFocus: string; response: Record<string, unknown>; replaceRecentDuplicate?: { request: string } }) => {
     const id = `a${store.analyses.length + 1}`;
     store.analyses.push({ id, ...input });
     return id;
@@ -84,7 +84,7 @@ vi.mock("@/lib/research/history", () => ({ logUsage: vi.fn(async () => undefined
 
 import { writeStorylineMemo } from "./memo";
 import { logUsage } from "@/lib/research/history";
-import { answerAsk, answerAskMemo, MEMO_USAGE_AGENT_ID } from "./ask-service";
+import { answerAsk, answerAskMemo, MEMO_USAGE_AGENT_ID, storylineRequestKey } from "./ask-service";
 
 const user = { id: 7, display_name: "Pat", username: "pat" };
 
@@ -280,6 +280,25 @@ describe("answerAsk", () => {
     expect(memo.body).toMatchObject({ status: "written" });
     expect(store.analyses).toHaveLength(1);
     expect(store.analyses[0].response).toMatchObject({ hamiltonView: "Memo summary.", whatThisMeans: "Board.\n\nMarket.", exploreFurther: ["Why?"], memo: { summary: "Memo summary." } });
+  });
+
+  it("files a storyline keyed to its decision, objective and fee, never to a written answer (#1274)", async () => {
+    await answerAsk(user, { institutionId: "1", question: "how does my overdraft fee compare?" });
+    const request = store.analyses[0].replaceRecentDuplicate?.request ?? "";
+    expect(request).toBe(storylineRequestKey("how does my overdraft fee compare?", { decisionId: decision.id, objective: null, feeCategory: "overdraft" }));
+    expect(request.startsWith("storyline\n")).toBe(true);
+    // Each part of the request changes the key, so a storyline for another decision,
+    // objective or fee never replaces this row.
+    const base = { decisionId: "d1", objective: null, feeCategory: "overdraft" };
+    const keys = new Set([
+      storylineRequestKey("q", base),
+      storylineRequestKey("q", { ...base, decisionId: "d2" }),
+      storylineRequestKey("q", { ...base, objective: "revenue" }),
+      storylineRequestKey("q", { ...base, feeCategory: "nsf" }),
+      storylineRequestKey("q2", base),
+    ]);
+    expect(keys.size).toBe(5);
+    expect(storylineRequestKey("q", base)).toBe(storylineRequestKey("q", { ...base }));
   });
 
   it("rejects wrong-subject, wrong-user and missing saved IDs before paid memo generation", async () => {
