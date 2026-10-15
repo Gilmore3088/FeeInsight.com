@@ -112,7 +112,8 @@ describe("subscription events reconcile authoritative customer state", () => {
     }));
     expect(effects.welcome).toEqual([{ email: "a@b.com", name: "Pat" }]);
     expect(issued().join("\n")).toContain("INSERT INTO institution_claims");
-    expect(issued().join("\n")).toContain("INSERT INTO institution_workspace_memberships");
+    // The owner seat waits for a confirmed email that matches the bank's website (#1405).
+    expect(issued().join("\n")).toContain("u.email_confirmed_at IS NOT NULL");
     expect(issued()[1]).toContain("stripe_customer_id IS NULL OR stripe_customer_id = ?");
   });
 
