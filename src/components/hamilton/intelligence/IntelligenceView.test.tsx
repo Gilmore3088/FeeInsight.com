@@ -42,3 +42,17 @@ describe("MarketBriefView", () => {
     expect(html).toContain("It does not recommend a price.");
   });
 });
+
+describe("market board brief", () => {
+  it("lists findings and limits, never actions, and says when data is missing", async () => {
+    const { marketBoardBriefInput } = await import("./market-board-brief");
+    const { boardBriefFromMarket } = await import("@/lib/hamilton/board-brief");
+    const selection = { version: 1 as const, task: "compare" as const, scope: { kind: "state" as const, stateCode: "FL" as const }, charter: "all" as const, categories: ["overdraft"] };
+    const report = boardBriefFromMarket(marketBoardBriefInput(selection, empty, ["fees", "financials"], assetSizeFor("1b-10b")));
+    expect(report.answer?.decisions).toEqual([]);
+    expect(report.answer?.headline).toContain("could not load");
+    expect(report.recommendation).toContain("$1B to $10B");
+    expect(report.recommendation).toContain("does not recommend a price");
+    expect(report.boardBrief?.sourceResearchHref).toContain("size=1b-10b");
+  });
+});

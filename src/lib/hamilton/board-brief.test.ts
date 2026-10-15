@@ -37,6 +37,6 @@ describe("board brief reuses frozen analysis", () => {
   it("labels missing legacy provenance instead of substituting current sources", () => {
     const report = boardBriefFromAnalysis({ ...frozen, storyline: undefined, factEvidence: undefined, identityContext: undefined }, "legacy", edits);
     expect(report.identityContext).toBeUndefined();
-    expect(report.sources?.[0].detail).toContain("not recorded");
+    expect(report.sources?.[0].detail).toContain("were not saved with this answer");
   });
 });

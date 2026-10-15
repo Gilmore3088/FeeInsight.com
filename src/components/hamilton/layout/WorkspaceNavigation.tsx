@@ -15,7 +15,7 @@ const icons = { Activity, Bookmark, Calculator, ChartNoAxesColumnIncreasing, Fil
  * institution and the research subject are shown separately.
  */
 export function WorkspaceNavigation({ pathname, isAdmin, accountLabel, researchLabel }: {
-  pathname: string; isAdmin: boolean; accountLabel: string; researchLabel: string;
+  pathname: string; isAdmin: boolean; accountLabel: string; researchLabel: string | null;
 }) {
   const [open, setOpen] = useState(false);
   const hrefFor = useHamiltonNavigationHref();
@@ -44,7 +44,7 @@ export function WorkspaceNavigation({ pathname, isAdmin, accountLabel, researchL
         <div><span className="workspace-muted">Your institution: </span><strong>{accountLabel}</strong></div>
         <NavAccount />
       </header>
-      <div className="workspace-research-context print:hidden"><span>Researching: {researchLabel}</span><Link href={hrefFor("/pro/settings")}>Change context</Link></div>
+      {researchLabel ? <div className="workspace-research-context print:hidden"><span>Looking at: {researchLabel}</span><Link href={hrefFor("/pro/settings")}>Change your institution</Link></div> : null}
     </section>
   </>;
 }

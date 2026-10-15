@@ -8,6 +8,7 @@ import type { HamiltonAccountContext } from "@/lib/hamilton/account-context";
 import "@/brand/tokens/tokens.css";
 import "@/brand/styles/fee-insight.css";
 import "./workspace.css";
+import { STATE_NAMES } from "@/lib/us-states";
 import { WorkspaceNavigation } from "./WorkspaceNavigation";
 import { setViewAsCustomer } from "@/app/pro/(hamilton)/view-as-actions";
 import { SearchModal } from "@/components/public/search-modal";
@@ -102,12 +103,11 @@ export function HamiltonShell({
     institutionId: currentInstitution?.id ?? (selection.artifact ? null : selection.institutionId),
     unresolved: canResolveLive && !currentInstitution,
   };
-  const researchLabel = selection.invalid ? "Research selection unavailable"
+  // Only a confirmed subject is named; loading, unavailable and invalid states show no label,
+  // never the home institution and never an internal state as if it were a name.
+  const researchLabel = selection.invalid ? null
     : currentInstitution?.name
-    ?? (selection.artifact ? canUseSeed && institutionContext.name ? institutionContext.name : "Saved artifact · original research context shown below"
-    : canResolveLive
-      ? resolved?.requestKey === requestKey ? "Research subject unavailable" : "Research subject is being resolved"
-      : selection.research ? "Market research" : "Research selection unavailable");
+    ?? (selection.artifact ? (canUseSeed && institutionContext.name ? institutionContext.name : null) : null);
   return (
     <SessionChromeProvider value={session}>
       <HamiltonNavigationProvider value={navigation}>
@@ -173,8 +173,8 @@ function accountLabel(accountContext: HamiltonShellProps["accountContext"]): str
 /** Overview and Research read a market, not one institution, unless a local selection says otherwise. */
 function marketScopeLabel(pathname: string, selection: ReturnType<typeof hamiltonNavigationSelection>): string | null {
   const scope = selection.research?.scope;
-  if (scope?.kind === "state") return `${scope.stateCode} · market intelligence`;
-  if (scope?.kind === "national") return "United States · market intelligence";
-  if (!selection.research && ["/pro/hamilton", "/pro/intelligence"].includes(pathname)) return "United States · market intelligence";
+  if (scope?.kind === "state") return `${STATE_NAMES[scope.stateCode] ?? scope.stateCode} market`;
+  if (scope?.kind === "national") return "U.S. market";
+  if (!selection.research && ["/pro/hamilton", "/pro/intelligence"].includes(pathname)) return "U.S. market";
   return null;
 }

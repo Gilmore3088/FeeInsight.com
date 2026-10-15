@@ -3,6 +3,7 @@ import { useRouter } from "next/navigation";
 import { encodeLandingResearch, RESEARCH_STATE_CODES, type LandingResearchHandoff, type ResearchStateCode } from "@/lib/hamilton/landing-research-handoff";
 import { STATE_NAMES } from "@/lib/us-states";
 import { ASSET_SIZES } from "@/lib/hamilton/asset-size";
+import { MARKET_BRIEF_CATEGORIES } from "@/lib/hamilton/market-question";
 
 export function ScopeControls({ selection, pathname, lens, size = "all" }: { selection: LandingResearchHandoff; pathname: string; lens: string; size?: string }) {
   const router = useRouter();
@@ -19,8 +20,8 @@ export function ScopeControls({ selection, pathname, lens, size = "all" }: { sel
     <label>Asset size<select aria-label="Asset size" value={size} onChange={e => change(selection, e.target.value)}>
       {ASSET_SIZES.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
     </select></label>
-    <label>Fee categories<select aria-label="Fee categories" value={selection.categories.length === 1 ? selection.categories[0] : "all"} onChange={e => change({ ...selection, categories: e.target.value === "all" ? ["monthly_maintenance", "wire_domestic_outgoing", "atm_non_network"] : [e.target.value] })}>
-      <option value="all">Selected fee landscape</option><option value="monthly_maintenance">Monthly maintenance</option><option value="wire_domestic_outgoing">Outgoing domestic wire</option><option value="atm_non_network">Non-network ATM</option><option value="overdraft">Overdraft</option><option value="nsf">NSF</option>
+    <label>Fee categories<select aria-label="Fee categories" value={selection.categories.length === 1 ? selection.categories[0] : "all"} onChange={e => change({ ...selection, categories: e.target.value === "all" ? [...MARKET_BRIEF_CATEGORIES] : [e.target.value] })}>
+      <option value="all">Five core fees</option><option value="overdraft">Overdraft</option><option value="nsf">NSF / returned item</option><option value="monthly_maintenance">Monthly maintenance</option><option value="wire_domestic_outgoing">Outgoing domestic wire</option><option value="atm_non_network">Non-network ATM</option>
     </select></label>
     <label>Reporting periods<span className="mt-1.5 block rounded border border-[var(--fi-border)] bg-white p-3 text-sm text-[var(--fi-ink)]">Latest available per exhibit</span></label>
   </div>;

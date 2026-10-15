@@ -6,6 +6,13 @@ import { getHamiltonReportById, saveHamiltonReport } from "@/lib/hamilton/pro-ta
 import { loadAnalysisRecord } from "../analyze/actions";
 import { boardBriefFromAnalysis, editBoardBrief, type BoardBriefEdits } from "@/lib/hamilton/board-brief";
 import { recordProRequest } from "@/lib/agents/run-store";
+import { redirect } from "next/navigation";
+import { boardBriefFromMarket } from "@/lib/hamilton/board-brief";
+import { decodeLandingResearch } from "@/lib/hamilton/landing-research-handoff";
+import { INTELLIGENCE_LENSES, type Lens } from "@/lib/hamilton/market-question";
+import { assetSizeFor } from "@/lib/hamilton/asset-size";
+import { loadIntelligence } from "@/components/hamilton/intelligence/IntelligenceWorkspace";
+import { marketBoardBriefInput } from "@/components/hamilton/intelligence/market-board-brief";
 
 /** Source IDs are user-scoped on every save; browser evidence/identity is never accepted. */
 export async function saveBoardBrief(input: { analysisId?: string; reportId?: string; edits: BoardBriefEdits }): Promise<{ success: true; reportId: string } | { success: false; error: string }> {
@@ -33,4 +40,31 @@ export async function saveBoardBrief(input: { analysisId?: string; reportId?: st
     console.error("[board-brief] save failed", error);
     return { success: false, error: "The board brief could not be saved. Your edits remain here; retry." };
   }
+}
+
+/**
+ * "Build board brief" on Overview, Research and a market brief: reloads the same governed readers
+ * on the server (the browser sends only the selection), saves a board brief and opens its editor.
+ */
+export async function createMarketBoardBrief(form: FormData): Promise<void> {
+  const user = await getCurrentUser();
+  if (!user || !canAccessPremium(user)) redirect("/subscribe");
+  let selection;
+  try { selection = decodeLandingResearch(String(form.get("research") ?? "")); } catch { selection = null; }
+  if (!selection || selection.scope.kind === "local") redirect("/pro/hamilton");
+  const asked = String(form.get("lenses") ?? "").split(",");
+  const lenses: Lens[] = INTELLIGENCE_LENSES.map(l => l.id).filter(id => asked.includes(id));
+  const size = assetSizeFor(String(form.get("size") ?? ""));
+  const compare = { ...selection, task: "compare" as const };
+  const data = await loadIntelligence(compare, lenses.length ? lenses : INTELLIGENCE_LENSES.map(l => l.id), { compact: false, segment: size.id === "all" ? null : size });
+  const report = boardBriefFromMarket(marketBoardBriefInput(compare, data, lenses.length ? lenses : INTELLIGENCE_LENSES.map(l => l.id), size));
+  let reportId: string;
+  try {
+    reportId = await saveHamiltonReport({ userId: user.id, institutionId: "", reportType: "board_brief", reportJson: report, evidencePolicy: "source-diligence", selectedSource: "manual", selectedSourceLabel: "Market research", peerBaselineLabel: null, peerFallbackReason: "Market view; no institution peer group." });
+    await recordProRequest({ operation: "report", title: report.title, status: "completed", summary: "Created board brief from market research without a provider call", userId: user.id, institutionId: null, detail: { report_id: reportId, provider_call_queued: false, evidence_policy: "source-diligence", lenses } });
+  } catch (error) {
+    console.error("[board-brief] market save failed", error);
+    redirect("/pro/reports?board_error=1");
+  }
+  redirect(`/pro/reports?report_id=${encodeURIComponent(reportId)}`);
 }

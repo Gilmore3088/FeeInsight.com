@@ -8,6 +8,7 @@
 import { getSql } from "@/lib/data-store/connection";
 import { getPeerFeeValues, getSegmentFeeValues, type PeerFilterSet } from "@/lib/data-store/fee-index";
 import { MIN_INSTITUTIONS_FOR_MEDIAN } from "@/lib/data-store/maturity";
+import { computeStats } from "@/lib/data-store/fees";
 import { feeComplaintFilterSql } from "@/lib/data-store/complaints";
 import type { LandingResearchHandoff } from "./landing-research-handoff";
 
@@ -24,6 +25,8 @@ export interface FeeMap {
   states: StateMedian[];
   nationalMedian: number | null;
   nationalInstitutions: number;
+  /** How the amounts in the page's scope (a state, or the nation) are spread; null under the cohort floor. */
+  spread: FeeSpread | null;
 }
 
 export function median(values: number[]): number | null {
@@ -34,7 +37,7 @@ export function median(values: number[]): number | null {
 }
 
 /** Each state's median of one fee, one value per institution; states under the cohort floor are withheld. */
-export function buildFeeMap(category: string, values: Array<{ state_code: string | null; amount: number }>): FeeMap {
+export function buildFeeMap(category: string, values: Array<{ state_code: string | null; amount: number }>, scopeState: string | null = null): FeeMap {
   const byState = new Map<string, number[]>();
   for (const value of values) {
     if (!value.state_code || !Number.isFinite(value.amount)) continue;
@@ -53,14 +56,23 @@ export function buildFeeMap(category: string, values: Array<{ state_code: string
     states,
     nationalMedian: all.length >= MIN_INSTITUTIONS_FOR_MEDIAN ? median(all) : null,
     nationalInstitutions: all.length,
+    spread: buildFeeSpread(scopeState ? byState.get(scopeState) ?? [] : all),
   };
 }
 
-export async function loadFeeMap(category: string, charter: Charter): Promise<FeeMap | null> {
+/**
+ * The state map and the price spread for one fee. Both read the same values as the fee index
+ * (approved published fees, one value per institution, same filters), so the scope's median here
+ * matches the landscape table's.
+ */
+export async function loadFeeMap(category: string, charter: Charter, scopeState: string | null = null, assetTiers: readonly string[] | null = null): Promise<FeeMap | null> {
   try {
-    const filters: PeerFilterSet = charter === "all" ? {} : { charter_type: charter };
+    const filters: PeerFilterSet = {
+      ...(charter === "all" ? {} : { charter_type: charter }),
+      ...(assetTiers?.length ? { asset_tiers: [...assetTiers] } : {}),
+    };
     const [byCategory] = await getPeerFeeValues([filters], [category]);
-    return buildFeeMap(category, byCategory.get(category) ?? []);
+    return buildFeeMap(category, byCategory.get(category) ?? [], scopeState);
   } catch {
     return null;
   }
@@ -90,20 +102,11 @@ export interface PeerTable {
   category: string;
   institutionsInScope: number;
   rows: PeerRow[];
-  /** Every published value in scope, not only the rows shown; null under the cohort floor. */
-  spread: FeeSpread | null;
 }
 
 const STEPS = [0.5, 1, 2, 2.5, 5, 10, 20, 25, 50, 100, 250, 500];
 
-function quantile(sorted: number[], q: number): number {
-  const at = (sorted.length - 1) * q;
-  const lo = Math.floor(at);
-  const hi = Math.ceil(at);
-  return sorted[lo] + (sorted[hi] - sorted[lo]) * (at - lo);
-}
-
-/** How one fee's published amounts are spread: quartiles and at most ten even-width bins. */
+/** How one fee's published amounts are spread: the fee index's own quartiles (computeStats) and at most ten even-width bins. */
 export function buildFeeSpread(amounts: number[]): FeeSpread | null {
   const sorted = amounts.filter(Number.isFinite).sort((a, b) => a - b);
   if (sorted.length < MIN_INSTITUTIONS_FOR_MEDIAN) return null;
@@ -113,7 +116,8 @@ export function buildFeeSpread(amounts: number[]): FeeSpread | null {
   const start = Math.floor(low / step) * step;
   const bins = Array.from({ length: Math.floor((high - start) / step) + 1 }, (_, i) => ({ from: start + i * step, to: start + (i + 1) * step, count: 0 }));
   for (const value of sorted) bins[Math.min(bins.length - 1, Math.floor((value - start) / step))].count += 1;
-  return { count: sorted.length, low, p25: quantile(sorted, 0.25), median: quantile(sorted, 0.5), p75: quantile(sorted, 0.75), high, bins };
+  const stats = computeStats(sorted);
+  return { count: sorted.length, low, p25: stats.p25!, median: stats.median!, p75: stats.p75!, high, bins };
 }
 
 /** The largest institutions in a state (or the nation), optionally within an asset range (thousands), with a published value for one fee, each linked to its schedule. */
@@ -139,7 +143,7 @@ export async function loadPeerTable(
         documentUrl: v.document_urls[0] ?? null,
         publishedAt: v.published_at,
       }));
-    return { category, institutionsInScope: segment.institutionsInSegment, rows, spread: buildFeeSpread(segment.values.map(v => v.amount)) };
+    return { category, institutionsInScope: segment.institutionsInSegment, rows };
   } catch {
     return null;
   }

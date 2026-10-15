@@ -22,6 +22,15 @@ function entry(category: string, median: number | null, count: number): IndexEnt
 }
 
 describe("governed geographic landing research", () => {
+  it("applies an asset-size slice to the scope and its national reference alike", async () => {
+    const read = vi.fn(async (_filters: PeerFilterSet[]) => [[entry("paper_statement", 2, 9)], [entry("paper_statement", 3, 17)]]);
+    await loadLandingGeographicResearch(base, read, ["midsize"]);
+    expect(read).toHaveBeenCalledWith([
+      { charter_type: "credit_union", asset_tiers: ["midsize"], state_code: "WA" },
+      { charter_type: "credit_union", asset_tiers: ["midsize"] },
+    ]);
+  });
+
   it("reads Washington CUs against national CUs, not against all institutions", async () => {
     const read = vi.fn(async (_filters: PeerFilterSet[]) => [
       [entry("paper_statement", 2, 9), entry("money_order", 0, 7)],

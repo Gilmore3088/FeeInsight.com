@@ -311,7 +311,7 @@ interface PdfDocumentProps {
 export function PdfDocument({ report, reportType, artifactMetadata }: PdfDocumentProps) {
   const typeLabel = reportTypeLabel(reportType);
   const identity = readHamiltonIdentitySnapshot(report.identityContext);
-  const identityLines = identity ? hamiltonIdentityLines(identity) : ["Historical institution, account and peer context: Not recorded"];
+  const identityLines = identity ? hamiltonIdentityLines(identity) : report.boardBrief ? [] : ["Historical institution, account and peer context: Not recorded"];
   const today = new Date().toLocaleDateString("en-US", {
     year: "numeric",
     month: "long",
@@ -446,11 +446,11 @@ function ConsultantPdfBody({ report }: { report: ReportSummaryResponse }) {
       </View>
 
       <View style={styles.section}>
-        <Text style={styles.sectionHeading}>Trade-offs</Text>
+        <Text style={styles.sectionHeading}>{report.boardBrief ? "Limits of this Evidence" : "Trade-offs"}</Text>
         <PdfParagraphs text={report.recommendation} />
         {(report.watchlist ?? []).length > 0 && (
           <View style={styles.metadataStrip}>
-            <Text style={styles.answerLabel}>What to watch</Text>
+            <Text style={styles.answerLabel}>{report.boardBrief ? "Questions for the committee" : "What to watch"}</Text>
             {(report.watchlist ?? []).map((item, i) => (
               <Text key={i} style={styles.noteItem}>— {item}</Text>
             ))}
