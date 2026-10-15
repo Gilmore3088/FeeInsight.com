@@ -7,13 +7,11 @@ import { getDisplayName, FEE_FAMILIES, FAMILY_COLORS, getFeaturedCategories } fr
 import { formatFeeAmount } from "@/lib/format";
 import { CPI_BANK_SERVICES_SERIES } from "@/lib/regulatory/fed";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
-import { LeadCapture } from "@/components/public/lead-capture";
 import { NATIONAL_INDEX_NAV, PRO_PLANS_NAV } from "@/components/nav-items";
 import { PRODUCT_NAME, SITE_NAME, SITE_URL } from "@/lib/constants";
-import { sampleReportAvailable } from "@/lib/custom-report/sample-report";
 import { getCurrentUser } from "@/lib/auth";
 import { canAccessPremium } from "@/lib/access";
-import { nationalFindings } from "./findings";
+import { datasetDescription, nationalFindings, subheadLead } from "./findings";
 
 export const metadata: Metadata = {
   title: `${PRODUCT_NAME}, national: median bank and credit union fees`,
@@ -42,11 +40,10 @@ export default async function NationalFeeIndexPage() {
   const user = await getCurrentUser();
   const isPro = canAccessPremium(user);
   // Same snapshot as the fee index and research hub, so the medians match to the cent.
-  const [allIndex, cpi, summary, sampleLive] = await Promise.all([
+  const [allIndex, cpi, summary] = await Promise.all([
     getPublicNationalIndex(),
     getCpiContext(),
     getPublicStatsSummary(),
-    sampleReportAvailable(),
   ]);
 
   // Pro: full index. Free: the headline categories, the same set the free report shows.
@@ -87,8 +84,7 @@ export default async function NationalFeeIndexPage() {
           What U.S. banks and credit unions charge
         </h1>
         <p className="mt-3 text-[15px] leading-relaxed text-ink-soft">
-          Median fees from the published fee schedules of {summary.institutionsLabel} banks and credit
-          unions
+          {subheadLead(summary.institutionsLabel)}
           {summary.refreshedOn ? (
             <>
               , updated <span className="whitespace-nowrap">{summary.refreshedOn}</span>
@@ -217,16 +213,6 @@ export default async function NationalFeeIndexPage() {
         </p>
       )}
 
-      <LeadCapture
-        placement="national_index"
-        className="mt-10 max-w-3xl"
-        eyebrow="Monthly update"
-        headline={`Get the ${PRODUCT_NAME} by email`}
-        body="New national medians, no more than once a month."
-        buttonLabel="Subscribe"
-        secondaryLink={sampleLive ? { href: "/reports/sample-competitive-fee-position", label: "See the sample report" } : undefined}
-      />
-
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{
@@ -234,7 +220,7 @@ export default async function NationalFeeIndexPage() {
             "@context": "https://schema.org",
             "@type": "Dataset",
             name: `${PRODUCT_NAME}, national: U.S. bank and credit union fees`,
-            description: `National medians across ${summary.categoriesLabel} bank and credit union fee categories, from published fee schedules.`,
+            description: datasetDescription(summary.categoriesLabel),
             url: `${SITE_URL}${NATIONAL_INDEX_NAV.href}`,
             creator: { "@type": "Organization", name: SITE_NAME },
             publisher: { "@type": "Organization", name: SITE_NAME, url: SITE_URL },

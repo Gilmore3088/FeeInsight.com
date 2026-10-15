@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { IndexEntry } from "@/lib/data-store/fee-index";
 import { NATIONAL_INDEX_NAV } from "@/components/nav-items";
 import { PRODUCT_NAME } from "@/lib/constants";
-import { nationalFindings } from "./findings";
+import { datasetDescription, nationalFindings, subheadLead } from "./findings";
 
 const entry = (fee_category: string, median_amount: number | null, institution_count: number): IndexEntry => ({
   fee_category,
@@ -61,5 +61,16 @@ describe("nationalFindings", () => {
 describe("national page naming", () => {
   it("names the page as the Bank Fee Index, national edition, in the menu", () => {
     expect(NATIONAL_INDEX_NAV.label).toBe(`${PRODUCT_NAME}: national`);
+  });
+});
+
+describe("count clauses", () => {
+  it("drops the count when the figure is unavailable instead of printing a placeholder", () => {
+    expect(subheadLead("3,909")).toBe("Median fees from the published fee schedules of 3,909 banks and credit unions");
+    expect(subheadLead("—")).toBe("Median fees from the published fee schedules of U.S. banks and credit unions");
+    expect(datasetDescription("50")).toContain("across 50 bank");
+    expect(datasetDescription("—")).toBe(
+      "National medians across bank and credit union fee categories, from published fee schedules.",
+    );
   });
 });

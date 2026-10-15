@@ -2,6 +2,7 @@ import type { CpiContext } from "@/lib/data-store/financial";
 import type { IndexEntry } from "@/lib/data-store/fee-index";
 import { getDisplayName } from "@/lib/fee-taxonomy";
 import { formatFeeAmount } from "@/lib/format";
+import { hasFigure } from "@/app/landing-shared";
 
 /**
  * The few sentences the national page leads with. Every figure comes from the live national
@@ -66,4 +67,21 @@ export function nationalFindings(index: IndexEntry[], cpi: CpiContext): National
   if (cpiText) findings.push({ key: "cpi", text: cpiText });
 
   return findings;
+}
+
+/**
+ * The subhead's opening, without its date. A count label with no digits (the unavailable
+ * placeholder) drops the count clause instead of reading "of — banks".
+ */
+export function subheadLead(institutionsLabel: string): string {
+  return hasFigure(institutionsLabel)
+    ? `Median fees from the published fee schedules of ${institutionsLabel} banks and credit unions`
+    : "Median fees from the published fee schedules of U.S. banks and credit unions";
+}
+
+/** The Dataset JSON-LD description, with the category count only when it is known. */
+export function datasetDescription(categoriesLabel: string): string {
+  return hasFigure(categoriesLabel)
+    ? `National medians across ${categoriesLabel} bank and credit union fee categories, from published fee schedules.`
+    : "National medians across bank and credit union fee categories, from published fee schedules.";
 }
