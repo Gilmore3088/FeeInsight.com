@@ -84,6 +84,9 @@ describe("accuracy target (James, Oct 15)", () => {
   it("states the 99.5% target and whether the week met it", () => {
     expect(goalBriefLines(goalWith(1393, 1400)).join("\n")).toContain("target 99.5%, met.");
     expect(goalBriefLines(goalWith(1385, 1400)).join("\n")).toContain("target 99.5%, not met.");
+    // Two decimals, so a week just under the target never reads as 99.5% and "not met".
+    expect(goalBriefLines(goalWith(1990, 2001)).join("\n")).toContain("Accuracy: 99.45% over the last 7 days");
+
   });
 });
 
