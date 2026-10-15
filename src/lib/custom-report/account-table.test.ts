@@ -112,7 +112,8 @@ describe("account comparison tables: #1438 review", () => {
     const business = "Account | Commercial Checking | Business Checking Plus\nMonthly Service Fee | $25 | $30";
     // The second column is traced only by the table fallback, which now refuses a business name.
     // (The first column's price is the row's first price, which the ordinary check reads as before.)
-    expect(accountTableRow(business, "Business Checking Plus Monthly Service Fee", 30)).toBe("Monthly Service Fee | $25 | $30");
+    // Business columns are not read at all now (#1438 review, B6), so the fallback has nothing to trace.
+    expect(accountTableRow(business, "Business Checking Plus Monthly Service Fee", 30)).toBeNull();
     expect(checkFeeAgainstSource(business, "Business Checking Plus Monthly Service Fee", 30, ".", "monthly_maintenance").ok).toBe(false);
   });
 });
@@ -144,11 +145,54 @@ describe("account comparison tables: #1438 re-review (B4)", () => {
     expect(productName("SECOND CHANCE CHECKING Best for rebuilding")).toBe("SECOND CHANCE CHECKING");
     expect(productName("Diamond Checking An Account that Fits All")).toBe("Diamond Checking");
     expect(productName("Republic Checking This exclusive account pays you back")).toBe("Republic Checking");
-    expect(productName("Senior Checking (age 65 years or older)")).toBe("Senior Checking");
+    // An age note says who the account is for, so it stays (#1438 review, B6).
+    expect(productName("Senior Checking (age 65 years or older)")).toBe("Senior Checking (age 65 years or older)");
     expect(productName("Prime of Your Life Checking (55+)")).toBe("Prime of Your Life Checking (55+)");
     expect(productName("Tier3 Checking")).toBe("Tier3 Checking");
     expect(productName("A smart, flexible checking")).toBeNull();
     expect(productName("No NSF Fees for overdrawing Account")).toBeNull();
     expect(reads("Account | Traditions MMDA Checking | Classic Checking\nMonthly Service Charge | $10.00 | $5.00")).toEqual([["Classic Checking Monthly Service Charge", 5]]);
+  });
+});
+
+describe("account comparison tables: #1438 third review (B5, B6)", () => {
+  it("does not climb into the table above (B5)", () => {
+    // Same column count, different products: the second fee row keeps its own header.
+    const stacked = "Account | A Checking | B Checking\nMonthly Fee | $5 | $10\nAccount | C Checking | D Checking\nMonthly Fee | $7 | $9";
+    expect(reads(stacked)).toEqual([["A Checking Monthly Fee", 5], ["B Checking Monthly Fee", 10], ["C Checking Monthly Fee", 7], ["D Checking Monthly Fee", 9]]);
+    // Same products in a different order: each table reads by its own header.
+    const swapped = "Account | Gold Checking | Basic Checking\nMonthly Service Fee | $15 | $0\nPersonal | Basic Checking | Gold Checking\nMinimum to Open | $25 | $25\nMonthly Fee | $0 | $15";
+    expect(reads(swapped)).toEqual([
+      ["Gold Checking Monthly Service Fee", 15], ["Basic Checking Monthly Service Fee", 0],
+      ["Basic Checking Monthly Fee", 0], ["Gold Checking Monthly Fee", 15],
+    ]);
+    // Two different product headers above one fee row, with no fee row between them: not read.
+    const twoHeaders = "Account | A Checking | B Checking\nMinimum to Open | $25 | $25\nAccount | C Checking | D Checking\nMonthly Fee | $7 | $9";
+    expect(reads(twoHeaders)).toEqual([]);
+  });
+
+  it("keeps audience and variant words, and leaves business columns out (B6)", () => {
+    expect(productName("Interest Checking for Ag")).toBe("Interest Checking for Ag");
+    expect(productName("Free Checking for Business")).toBe("Free Checking for Business");
+    expect(productName("Checking for Seniors")).toBe("Checking for Seniors");
+    expect(productName("Basic Checking - Senior")).toBe("Basic Checking - Senior");
+    expect(productName("Open Road Checking")).toBe("Open Road Checking");
+    expect(productName("Get Rewarded Checking")).toBe("Get Rewarded Checking");
+    // Doc 31875: an agricultural business page.
+    expect(reads("Account | Interest Checking for Ag | Free Checking for Business\nMonthly Service Charge | $10 | $5")).toEqual([]);
+    expect(checkFeeAgainstSource("Account | Interest Checking for Ag | Free Checking for Business\nMonthly Service Charge | $10 | $5", "Free Checking Monthly Service Charge", 5, ".", "monthly_maintenance").ok).toBe(false);
+    // A senior or student column is a consumer account and is still read, under its full name.
+    expect(reads("Account | Basic Checking | Basic Checking - Senior\nMonthly Fee | $5 | $0")).toEqual([["Basic Checking Monthly Fee", 5], ["Basic Checking - Senior Monthly Fee", 0]]);
+  });
+
+  it("does not read a business comparison table (doc 34137)", () => {
+    expect(reads("ACCOUNT FEATURES | LOW-VOLUME CHECKING | BUSINESS CHECKING | ANALYSIS CHECKING\nMonthly service charge | $7 | $10 | $10")).toEqual([]);
+    expect(reads("ACCOUNT FEATURES | SIMPLE CHECKING | GREEN CHECKING | PREMIER CHECKING\nMonthly service charge | $0 | $5 | $8")).toEqual([
+      ["SIMPLE CHECKING Monthly service charge", 0], ["GREEN CHECKING Monthly service charge", 5], ["PREMIER CHECKING Monthly service charge", 8],
+    ]);
+  });
+
+  it("refuses a short header whose first cell is a heading", () => {
+    expect(reads("Our Checking Accounts | Essential Checking | Premier Checking\nMonthly Service Fee | $5 | $10 | $15")).toEqual([]);
   });
 });

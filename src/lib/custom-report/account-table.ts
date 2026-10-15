@@ -39,22 +39,47 @@ const PRODUCT_CODE = /\(\s*[A-Z]{1,4}-?\d{1,4}\s*\)/g;
 /** Footnote marks: daggers, superscript digits, and a digit glued to a word's last letter ("Checking1"). */
 const FOOTNOTE_MARKS = /[†‡§¶*¹²³⁴⁵⁶⁷⁸⁹⁰]+|(?<=[a-z])\d{1,2}(?:,\d{1,2})*(?=\s*$)|(?<=(?:checking|account|banking|draft))\d{1,2}(?:,\d{1,2})*\b/gi;
 /**
- * A tagline or button after the product's account word ("CLASSIC CHECKING Most Popular", "Diamond
- * Checking An Account that Fits All", "Planters Perks Checking View More").
+ * Words that say who an account is for or which variant it is. A name that carries one keeps it:
+ * no rule strips it, and the business ones keep the column out (`BUSINESS_PRODUCT`).
  */
-const TAGLINE_AFTER = /(\b(?:checking|account|banking)\b)\s+(?:most popular|best\b|ready\b|view\b|details?\b|find\b|celebrate\b|discover\b|learn\b|open\b|apply\b|an?\s|the\s|perfect\b|great\b|ideal\b|for\s|earn\b|get\b|enjoy\b|no\s|start\b|designed\b|built\b|this\s|our\s|[-–—]\s|\S*,).*$/i;
-/** A sentence-case tagline after the account word ("Republic Checking This exclusive account pays you back"). */
-const SENTENCE_TAIL = /(\b(?:[Cc]hecking|CHECKING|[Aa]ccount|ACCOUNT|[Bb]anking|BANKING)\b)\s+\S+\s+[a-z]+\s+[a-z]+\b.*$/;
+const AUDIENCE_WORDS = /\b(?:business|commercial|ag|agri\w*|farm\w*|ranch\w*|non-?profit|npo|sole\s+prop\w*|corporate|organizations?|senior\w*|student\w*|youth|teens?|kids?|minors?|college|military|employees?|older|younger|age\s+\d+|over\s+\d+|\d+\s*\+)\b/i;
+/** A business column, which the guard's exclusions leave out (#1100): business, commercial, ag, nonprofit. */
+const BUSINESS_PRODUCT = /\b(?:business|commercial|ag|agri\w*|farm\w*|ranch\w*|non-?profit|npo|sole\s+prop\w*|corporate|organizations?)\b/i;
+/** A tagline or button the bank prints after the product's name, by its exact words. */
+const TAGLINE_TAIL = /^(?:most popular|view more|view details|see details|learn more|details?|open in minutes|open now|apply now|open an account|best for\b.*)$/i;
+/** Prose after the name: a sentence mark, or three or more words with a lowercase connective. */
+function isProseTail(tail: string): boolean {
+  if (/[.!?]/.test(tail) || /,\s/.test(tail)) return true;
+  const words = tail.split(/\s+/);
+  return words.length >= 3 && words.some((word) => /^(?:that|this|you|your|our|to|with|and|of|the|an?|pays?|helps?|gives?|includes?|offers?|earn|get|enjoy|find|celebrate|designed|built|ready)$/i.test(word));
+}
+/**
+ * The name without a tagline after its account word ("CLASSIC CHECKING Most Popular", "Diamond
+ * Checking An Account that Fits All", "Inspire Checking Find your inspiration."). Conservative
+ * (#1438 review): only an exact tagline or prose comes off, never a tail that names an audience or
+ * variant ("Interest Checking for Ag", "Basic Checking - Senior") and never a "for …" tail.
+ */
+function withoutTagline(name: string): string {
+  const match = /\b(?:checking|account|banking)\b/i.exec(name);
+  if (!match) return name;
+  const cut = match.index + match[0].length;
+  const tail = name.slice(cut).trim();
+  if (!tail || AUDIENCE_WORDS.test(tail) || /^for\b/i.test(tail)) return name;
+  if (/^best for\b/i.test(tail) || TAGLINE_TAIL.test(tail) || isProseTail(tail)) return name.slice(0, cut).trim();
+  return name;
+}
 /** A cell that reads as a sentence or a feature, not a product's name. */
 const SENTENCE_CELL = /[?!;]|\.\s|,\s+\w+\s+\w+\s+\w+|\b(?:fees|charges?|refunds?|nsf|overdraft\w*|need|needs|those|who|is|are|without)\b/i;
 /** A cell that labels the header row rather than naming a product ("Features", "Compare", "Account Type"). */
-const LABEL_CELL = /^(?:features?|compare|comparison|accounts?|account\s+(?:types?|features|name)|products?|product\s+(?:features|name)|types?|fees?|details|overview|benefits)(?:\s*\/\s*(?:fees|features))?\s*:?$/i;
+const LABEL_CELL = /^(?:features?|compare|comparison|accounts?|account\s+(?:types?|features|name)|products?|product\s+(?:features|name)|types?|fees?|details|overview|benefits|(?:our|your|personal|consumer|all)\s+(?:checking\s+)?accounts|(?:our|your)\s+checking|checking\s+accounts)(?:\s*\/\s*(?:fees|features))?\s*:?$/i;
 /** Action words a row of buttons carries ("Open Online | Open Account | Open Account"). */
 const ACTION_CELL = /^(?:open|apply|learn|enroll|compare|get started|sign up|view|see|select|choose|which)\b(?!.*\bchecking\b)/i;
 /** A button's words before the product ("Open a Basic Account", "Apply for Free Kasasa Cash Checking"). */
-const ACTION_PREFIX = /^(?:click here to\s+)?(?:sign up for|open|apply for|apply|enroll in|get)\s+(?:an?\s+|your\s+)?(?=\S+\s+\S)/i;
+const ACTION_PREFIX = /^(?:click here to\s+)?(?:sign up for|open an?|apply for(?:\s+an?)?)\s+(?=\S+\s+\S)/i;
 /** A cell that opens like a sentence or a tagline ("A smart, flexible checking", "Our highest interest checking"). */
 const TAGLINE_CELL = /^(?:[Aa]n?|[Tt]he|[Oo]ur|[Yy]our|[Ff]or|[Bb]uilt|[Dd]esigned|[Pp]erfect|[Ii]deal|[Gg]reat|[Cc]lick|[Tt]his)\s+[a-z]|,\s*[a-z]/;
+/** A cell that opens as a sentence to the reader ("You want a straightforward account …", "Enjoy free checking that pays"). */
+const SENTENCE_START = /^(?:[Yy]ou|[Yy]ou[’']re|[Ww]e|[Ii]f|[Ww]hen|[Ee]njoy|[Cc]hoose)\b/;
 /**
  * A column that names another bank's account: a page comparing itself with the big banks ("Our
  * Checking | US Bank Smartly Checking | Chase Premier Plus Checking") prices their accounts, not its own.
@@ -99,7 +124,7 @@ function cellsOf(line: string): string[] {
 
 /** The product a header cell names, cleaned of footnote marks, quotes and codes; null when it names none. */
 export function productName(cell: string): string | null {
-  const name = squash(
+  const cleaned = squash(
     cell
       .replace(PRODUCT_NOISE, " ")
       .trim()
@@ -110,16 +135,16 @@ export function productName(cell: string): string | null {
       .replace(/\(\s*\)/g, " ")
       .replace(/(?:\s*[-–—>»→]+\s*)+$/, "")
       .replace(/[*:]+\s*$/, "")
-      .replace(TAGLINE_AFTER, "$1")
-      .replace(SENTENCE_TAIL, "$1")
-      .replace(/\s*\((?:[^()\s]+\s+){2,}[^()]*\)/g, ""),
+      // A long parenthetical is a note, unless it says who the account is for ("(age 65 or older)").
+      .replace(/\s*\((?:[^()\s]+\s+){2,}[^()]*\)/g, (note) => (AUDIENCE_WORDS.test(note) ? note : "")),
   );
+  // A name printed twice in one cell ("Flourish Checking Flourish Checking") is one name.
+  const doubled = /^(.{3,}?)\s+\1$/i.exec(cleaned);
+  const name = withoutTagline(doubled ? doubled[1] : cleaned);
   if (name.length < 3 || name.length > 60 || MONEY.test(name) || NOT_A_PRODUCT.test(name) || !/[a-z]{3}/i.test(name) || /[=•]|^[-–—]/.test(name)) return null;
   if (ACTION_CELL.test(name) || DATED_CELL.test(name) || LABEL_CELL.test(name)) return null;
-  if (name.split(/\s+/).length > 10 || SENTENCE_CELL.test(name) || TAGLINE_CELL.test(name)) return null;
-  // A name printed twice in one cell ("Flourish Checking Flourish Checking") is one name.
-  const doubled = /^(.{3,}?)\s+\1$/i.exec(name);
-  return doubled ? doubled[1] : name;
+  if (name.split(/\s+/).length > 10 || SENTENCE_CELL.test(name) || TAGLINE_CELL.test(name) || SENTENCE_START.test(cleaned)) return null;
+  return name;
 }
 
 /** Words after a figure that make it a balance, deposit or opening requirement, not the fee. */
@@ -190,6 +215,10 @@ function productHeader(header: string[], width: number): Array<string | null> | 
   const isHeader = products.every((name) => name != null) && distinct && products.some((name) => CHECKING_WORD.test(name ?? "")) &&
     !(!short && NOT_A_HEADER_LABEL.test(header[0]));
   if (!isHeader) return null;
+  // A header that names a business account ("LOW-VOLUME CHECKING | BUSINESS CHECKING | ANALYSIS
+  // CHECKING") is a business comparison: its other columns are business accounts too, under names
+  // the guard cannot tell apart, so the table is not read (#1438 review, B6).
+  if (products.some((name) => BUSINESS_PRODUCT.test(name ?? ""))) return null;
   return comparesOtherBanks(products as string[]) ? null : named;
 }
 
@@ -205,7 +234,10 @@ function productHeader(header: string[], width: number): Array<string | null> | 
 function headerFor(lines: string[], index: number, width: number): Array<string | null> | null {
   const run: number[] = [];
   for (let above = index - 1; above >= Math.max(0, index - HEADER_REACH); above -= 1) {
-    const length = cellsOf(lines[above]).length;
+    const cells = cellsOf(lines[above]);
+    const length = cells.length;
+    // An earlier fee row belongs to the table above (#1438 review, B5): the run ends below it.
+    if (ACCOUNT_FEE_ROW_LABEL.test(cells[0])) break;
     if (length === width) {
       run.push(above);
       continue;
@@ -213,11 +245,13 @@ function headerFor(lines: string[], index: number, width: number): Array<string 
     if (length === width - 1) run.push(above);
     break;
   }
-  for (const row of run.reverse()) {
-    const named = productHeader(cellsOf(lines[row]), width);
-    if (named) return named;
-  }
-  return null;
+  const headers = run.reverse().map((row) => productHeader(cellsOf(lines[row]), width)).filter((named) => named != null);
+  if (headers.length === 0) return null;
+  // Two product headers that name different columns: two tables stacked, or a header and a row
+  // of other products. Which one the fee row belongs to is unclear, so the table is not read.
+  const columns = (named: Array<string | null>) => named.slice(1).map((name) => (name ?? "").toLowerCase().replace(/[^a-z0-9]+/g, "")).join("|");
+  if (headers.some((named) => columns(named) !== columns(headers[0]))) return null;
+  return headers[0];
 }
 
 /** Every priced cell of every account comparison table's monthly fee row in a text. */
@@ -234,7 +268,7 @@ export function accountTableCells(text: string): AccountTableCell[] {
     for (let column = 1; column < cells.length; column += 1) {
       const product = products[column];
       const amount = accountCellPrice(cells[column]);
-      if (!product || amount == null || NOT_CHECKING.test(product) || !CHECKING_WORD.test(product)) continue;
+      if (!product || amount == null || NOT_CHECKING.test(product) || BUSINESS_PRODUCT.test(product) || !CHECKING_WORD.test(product)) continue;
       found.push({ label: cells[0], product, feeName: withAccountName(cells[0], product), amount, cell: cells[column], row: line });
     }
   });

@@ -520,9 +520,15 @@ its column (`extract.account_table` v1, `account-table.ts`; see Extraction Passe
   column; a "Key Features" or "Best For" row is never the header ("No NSF Fees for overdrawing
   Account" is not a product). A header one cell short is read only when its first cell is a product.
   Cells that read as sentences, taglines or buttons are not products; MMDA and saver columns are left out.
-- Product names lose footnote marks, quotes, codes, arrows, taglines and button text ("Rewards
-  Checking (CK06)" is "Rewards Checking", "Open a Basic Account" is "Basic Account", "SECOND CHANCE
-  CHECKING Best for rebuilding" is "SECOND CHANCE CHECKING"); a product's own digits stay ("Tier3 Checking"). The shared check's table fallback reads the newest fee-change column, as Knox does, and
+- The run of rows above the fee row ends at an earlier fee row, so a table stacked under another of
+  the same width keeps its own header; two product headers with different columns in one run are
+  not read.
+- Product names lose footnote marks, quotes, codes and arrows, and only an exact tagline or prose
+  after the account word ("CLASSIC CHECKING Most Popular", "Open a Basic Account" is "Basic
+  Account"). A tail that names an audience or variant stays ("Interest Checking for Ag", "Basic
+  Checking - Senior", any "for …" tail), and so do a product's own words and digits ("Open Road
+  Checking", "Tier3 Checking"). A table whose header names a business, commercial, ag or nonprofit
+  account is not read. The shared check's table fallback reads the newest fee-change column, as Knox does, and
   passes only a consumer name the category guard files as monthly maintenance.
 - Answer keys: Texas 551 to 552 right (Texas Capital), 14 wrong unchanged; held out 54 / 4 unchanged;
   seven states unchanged at 797 / 41.
