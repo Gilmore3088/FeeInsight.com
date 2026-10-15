@@ -40,7 +40,9 @@ export const FREQUENCY_FILL_CHECK = "hamilton.frequency_fill";
 // (`perEventPeriodCheck`): a period read from a neighbour is corrected or cleared, a period the fee's
 // own price states (an NSF fee "$23.00/Month", an account's "$25 Monthly Maintenance Fee") is held
 // (taken down with reason `frequency_hold:`), and an overdraft program priced by the month keeps it.
-export const FREQUENCY_FILL_VERSION = 11;
+// v12 (#1301): a live NSF fee stored as annual or daily is checked too: a period from a box-table
+// header, an allowance or a neighbour is cleared, and a daily price with no daily cap is held.
+export const FREQUENCY_FILL_VERSION = 12;
 /** The rolled_back_reason prefix of a fee the frequency fill holds (v11). */
 export const FREQUENCY_HOLD_REASON = "frequency_hold";
 /** Documents read per step for box-table headers; later steps take the rest. */
@@ -232,8 +234,8 @@ export async function fillBlankFrequencies(
     }
     // #1196 (no version change): a blank NSF fee is never filled with a period. Before, the fill
     // set Addition Financial's "Nonsufficient funds" (24188) to monthly from "$15 00 per month" on
-    // its line, and the v11 check cleared it on the next pass, over and over. A stated period
-    // other than monthly waits for James, so only a blank is read this way.
+    // its line, and the v11 check cleared it on the next pass, over and over. A stated period the
+    // check does not cover waits for James, so only a blank is read this way.
     const settled = settledFrequency(sourceLine, amount, stated, row.canonical_fee_key);
     const frequency = check ? check.frequency : stated == null ? perEventFrequency(row.canonical_fee_key, settled, sourceLine, amount) : settled;
     if (frequency === stated) continue;

@@ -1267,6 +1267,34 @@
         "closed": [],
         "kept": null,
         "note": "A one-word qualifier, but two printed lines in two tables (#1303), so both stay."
+      },
+      {
+        "case_key": "near:23731:gift_card_purchase",
+        "source_document_id": 23731,
+        "canonical_fee_key": "gift_card_purchase",
+        "amount": "4.25",
+        "agent_source_text_id": 20802,
+        "text_hash": "3c55afd78804ba12b076b5b8d12bd53509161c2623daea13f8bdc6edd1745ac4",
+        "text": "SCHEDULE OF FEES FOR PERSONAL ACCOUNTS\nValley Visa® Debit Card Transaction Fees:\n• Transaction at a Valley ATM: NO CHARGE\n[...]\nCheck printing: prices vary depending on style ordered; fee will be applied directly to the account.\nVisa® Gift Cards, each: $4.25.\nLevy handling fee per occurrence (Satisfied): $125.\n[...]\nSCHEDULE OF FEES FOR BUSINESS ACCOUNTS\nValley Business Visa® Debit Card Transaction Fees:\n[...]\nCheck printing: prices vary depending on style ordered; fee will be applied directly to the account.\nVisa® Gift Cards, each: $4.25.\nLevy handling fee p",
+        "rows": [
+          {
+            "fee_published_id": 13188,
+            "fee_name": "Visa Gift Card",
+            "frequency": "per_occurrence",
+            "fee_audience": "unknown",
+            "published_at": "2026-08-12T15:32:58Z"
+          },
+          {
+            "fee_published_id": 103400,
+            "fee_name": "Visa® Gift Cards",
+            "frequency": "per_item",
+            "fee_audience": "unknown",
+            "published_at": "2026-10-09T07:16:13Z"
+          }
+        ],
+        "closed": [],
+        "kept": null,
+        "note": "Valley prints \"Visa® Gift Cards, each: $4.25.\" once under its personal schedule and once under its business schedule, about 2,000 characters apart (excerpts joined by [...]). Two fees, so the collapse keeps both. The one wrong pair in the 20-pair check (#1302 comment 6175724347)."
       }
     ]
   },

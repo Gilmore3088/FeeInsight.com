@@ -115,7 +115,10 @@ and `detail.method_version`).
   ("American National Bank" in "First American National Bank"); the number counts only right
   after "FDIC", "Cert", "Certificate", "Charter" or "NCUA", so "$175.00" is not cert 175; when
   the names cannot be read, every bank in the step is treated as shared and the run gets a
-  `magellan.shared_names_unread` event; and the companion finder runs the same check. A host
+  `magellan.shared_names_unread` event; and the companion finder runs the same check. Since #1320
+  "X Credit Union" is shared when "X Federal Credit Union" exists (either way round); a bare
+  "FDIC" or "NCUA" needs "#", "No." or "Number" before the number ("Member FDIC 175 Main Street"
+  is not cert 175), and a number followed by "-day" or the rest of a phone number never counts. A host
   with the website's name is trusted unread only when that name has 6+ characters
   (`SAME_NAME_MIN_CHARS`), so fnb.bank is read for fnb.com. The institution record holds no
   former names, so a renamed bank's new host still needs its current name in the text.
@@ -152,6 +155,10 @@ and `detail.method_version`).
   link is a product page are searched once per version for the real schedule
   (`detail.upgrade_search`). A find replaces the link and keeps the old page as a
   companion `account_page`; a miss leaves the link and rescue state untouched.
+  A re-search (upgrade, business or freshness) never accepts the link it is replacing, from
+  the known-link, hub, crawl or any other finder; the page can still be opened as a hub for
+  its links (v3, #1326: under v2, 1,406 of 1,745 searches stopped at the product page, the
+  known-link finder in 1,247 of its 1,428 finds and the site crawl in 148 of 182).
   Links to an article, blog post, news item or press release (`isArticleLink`, unless the
   path names a fee document such as "/articles/schedule-of-fees/") go to the same search,
   and a find does not keep the article as a companion. Every finder rejects such a
@@ -517,9 +524,9 @@ fails a PR that changes one of these constants without updating its line here (#
 | `COMPANION_FETCH_STRATEGY` | `fetch.companion` | v1 | `magellan/companion-fetch.ts` |
 | `DISCOVERY_METHOD_VERSION` | — | v5 | `magellan/discovery.ts` |
 | `WEBSITE_REPAIR_STRATEGY` | `discover.website_repair` | v1 | `magellan/discovery.ts` |
-| `UPGRADE_SEARCH_VERSION` | — | v2 | `magellan/discovery.ts` |
+| `UPGRADE_SEARCH_VERSION` | — | v3 | `magellan/discovery.ts` |
 | `BUSINESS_SEARCH_VERSION` | — | v1 | `magellan/discovery.ts` |
-| `FRESHNESS_SEARCH_VERSION` | — | v1 | `magellan/discovery.ts` |
+| `FRESHNESS_SEARCH_VERSION` | — | v2 | `magellan/discovery.ts` |
 | `MAGELLAN_FETCH_STRATEGY` | `fetch.http` | v2 | `magellan/fetch.ts` |
 | `OPERATOR_SCHEDULE_STRATEGY` | `discover.operator_schedule` | v1 | `magellan/operator-schedules.ts` |
 | `PAGE_CLASSIFIER_VERSION` | — | v2 | `magellan/page-classifier.ts` |

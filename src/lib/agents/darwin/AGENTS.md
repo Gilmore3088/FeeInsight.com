@@ -118,9 +118,11 @@ Darwin owns verification and classification.
   gives both, and a heading naming one audience leaves the fee `unknown` unless it is a business
   heading under a business schedule title: on unseen schedules those headings agreed with a blind
   reading on 14 of 36 fees (#1059, Oct 14). A business heading never takes the consumer default.
-  The evidence is written as `darwin:<source>: <words>`. The audience trigger copies the raw
-  row's audience onto the verified row until migration 20270110000047 lets it keep a `darwin:`
-  decision, so until then this changes nothing that is written.
+  The evidence is written as `darwin:<source>: <words>`, and migration 20270110000047 lets the
+  audience trigger keep a `darwin:` decision on the verified row (every other verified write
+  still inherits the raw row's audience). The decision is the audience the batch duplicate key,
+  the consumer peer check and the second-source check read, and it is recorded on the
+  `verify.rules` attempt (`fee_audience`, `audience_evidence`).
 - Every decision is written to `pipeline_attempts` (stage `verify`, fingerprint
   `raw:<fee_raw_id>`) with `decision` and `reason_code`; a row decided under this rule
   version is never selected again, so skipped rows cannot starve the batch.

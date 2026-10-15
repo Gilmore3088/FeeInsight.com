@@ -369,8 +369,7 @@ export const HAND_REFILES: readonly HandRefile[] = [
   // #1299 (James approved, Oct 14): names that open on a price's cut cents ("00 ", "00/item "); the
   // price and category are right. Each is renamed in place to its line's own words. A rename that
   // matches a live twin (same bank, category and price) makes the two exact repeats, and the duplicate
-  // collapse closes one (`duplicate of #<kept id>`). 49175 and 29166 also carry a wrong amount (#1310);
-  // 14289's price is printed "$10. 00/m onth", which the source check cannot trace, so it waits for a re-read.
+  // collapse closes one (`duplicate of #<kept id>`). 49175 and 29166 also carry a wrong amount (#1310).
   { feePublishedId: 49593, from: "wire_domestic_outgoing", amount: 25, to: "wire_domestic_outgoing", name: "Wire transfers – outgoing Domestic – U S dollar",
     why: "inst 303, doc 8040: \"Wire transfers – outgoing / Domestic – U S dollar | $25 00\"" },
   { feePublishedId: 49594, from: "wire_domestic_incoming", amount: 25, to: "wire_domestic_incoming", name: "Wire transfers – incoming Domestic – U S dollar",
@@ -389,6 +388,8 @@ export const HAND_REFILES: readonly HandRefile[] = [
     why: "inst 303, doc 8040: \"Returned Item charge | $35 00\"" },
   { feePublishedId: 42051, from: "nsf", amount: 29, to: "nsf", name: "Non-Sufficient Funds",
     why: "inst 6636, doc 6817: \"Non-Sufficient Funds ... $29\"; \"00/hour\" is the research fee's unit on the line before" },
+  { feePublishedId: 14289, from: "dormant_account", amount: 10, to: "dormant_account", name: "Inactive Share Account Fee No activity for 12 months",
+    why: "inst 6636, doc 12872: \"Inactive Share Account Fee3\" over \"No activity fo r 12 months ……… $10. 00/m onth\"; the 3 is a footnote mark" },
   { feePublishedId: 49173, from: "early_closure", amount: 25, to: "early_closure", name: "Early Checking Account Closure Fee 2 Within first 6 months",
     why: "inst 6636, doc 12872: \"Early Checking Account Closure Fee 2 Within first 6 months ... $25\"" },
   { feePublishedId: 29160, from: "nsf", amount: 25, to: "nsf", name: "Non-Sufficient Funds",
@@ -425,6 +426,9 @@ export const HAND_REFILES: readonly HandRefile[] = [
     why: "inst 7517, doc 13851: \"Counter Checks (per book of 8) $10\"; 141768 is the same fee live under this name, so the duplicate collapse keeps one" },
   { feePublishedId: 91981, from: "check_image", amount: 2, to: "check_image", name: "Copy of Draft",
     why: "inst 7517, doc 13851: \"Copy of Draft $2\"; 141770 is the same fee live under this name, so the duplicate collapse keeps one" },
+  // #1304 (James approved, Oct 14): a courtesy pay (paid overdraft) row filed by its payment-channel cell.
+  { feePublishedId: 88513, from: "bill_pay", amount: 32, to: "overdraft", name: "Courtesy Pay (Paid NSF) Check/ACH/Bill Pay Payment",
+    why: "inst 5057, doc 6200: \"Courtesy Pay (Paid NSF) Check/ACH/Bill Pay Payment | $32.00/item\"; Knox named the fee by the cell after the row heading, so \"Bill Pay\" filed it as bill pay (the bank's $32 Account Guardian line, 105896, is a separate overdraft fee)" },
 ];
 
 interface HandRow {
