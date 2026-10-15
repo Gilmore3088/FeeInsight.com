@@ -2,7 +2,7 @@ export const dynamic = "force-dynamic";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getPublicNationalIndex } from "@/lib/public-stats";
+import { getPublicNationalIndex, getPublicStatsSummary } from "@/lib/public-stats";
 import { formatAssets } from "@/lib/format";
 import { STATE_NAMES } from "@/lib/us-states";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
@@ -13,7 +13,7 @@ import { buildHistogram } from "@/components/public/distribution-chart";
 import { StateVideo } from "../../../../research/state/[code]/state-exhibits";
 import { loadCityInstitutions, titleCase } from "./city-lookup";
 import { CityStripChart } from "./city-exhibits";
-import { HEADLINE_FEES, cityFindings, cityStrips, money, stripScale, type CityStrip } from "./city-view";
+import { HEADLINE_FEES, MIN_FOR_CITY_MEDIAN, cityFindings, cityStrips, money, stripScale, type CityStrip } from "./city-view";
 
 interface PageProps {
   params: Promise<{ state: string; city: string }>;
@@ -58,7 +58,7 @@ function RangeCell({ amount, strip }: { amount: number | null; strip: CityStrip 
   const x = stripScale(strip);
   return (
     <span className="flex items-center justify-end gap-2">
-      <span className="relative hidden h-3 w-14 sm:block" aria-hidden="true">
+      <span className="relative block h-3 w-10 sm:w-14" aria-hidden="true">
         <span className="absolute inset-x-0 top-1/2 border-t border-border" />
         {strip.nation && (
           <span
@@ -84,7 +84,8 @@ export default async function CityFeePage({ params }: PageProps) {
   const institutions = await loadCityInstitutions(cityName, stateCode);
   if (institutions.length === 0) notFound();
 
-  const nationalIndex = await getPublicNationalIndex();
+  const [nationalIndex, summary] = await Promise.all([getPublicNationalIndex(), getPublicStatsSummary()]);
+  const asOf = summary.refreshedOn;
   const strips = cityStrips(institutions, nationalIndex);
   const findings = cityFindings(strips, cityName);
   const stripFor = (key: string) => strips.find((s) => s.key === key)!;
@@ -139,10 +140,7 @@ export default async function CityFeePage({ params }: PageProps) {
         </div>
       </section>
 
-      {/* 2. The video, in its own section. */}
-      <StateVideo stateName={cityName} bars={overdraftBars} title={`Watch ${cityName}'s banks take their place`} />
-
-      {/* 3. Every local institution, four fees, each against the U.S. middle half. */}
+      {/* 2. Every local institution, four fees, each against the U.S. middle half. */}
       <section aria-labelledby="compare-heading" className="mx-auto max-w-page px-4 pt-12 sm:px-6 sm:pt-16">
         <h2 id="compare-heading" className={H2}>
           Compare {cityName}&apos;s institutions
@@ -183,7 +181,7 @@ export default async function CityFeePage({ params }: PageProps) {
         </div>
       </section>
 
-      {/* 4. The city against the nation, fee by fee. */}
+      {/* 3. The city against the nation, fee by fee. */}
       {compared.length > 0 && (
         <section aria-labelledby="nation-heading" className="mx-auto max-w-page px-4 pt-12 sm:px-6 sm:pt-16">
           <h2 id="nation-heading" className={H2}>
@@ -224,11 +222,22 @@ export default async function CityFeePage({ params }: PageProps) {
         </section>
       )}
 
-      {/* 5. Staff of a local bank: Hamilton shows this view of their own competitors. */}
+      <p className="mx-auto max-w-page px-4 pt-6 text-[12px] text-ink-muted sm:px-6">
+        From {institutions.length} {cityName} {institutions.length === 1 ? "institution's" : "banks and credit unions'"} own published fee
+        schedules, one value per institution; a local median needs at least {MIN_FOR_CITY_MEDIAN}. {asOf ? `Data as of ${asOf}. ` : ""}
+        <Link href="/methodology" className="font-medium text-ink underline decoration-border underline-offset-4 hover:decoration-ink">
+          How we build it
+        </Link>
+      </p>
+
+      {/* 4. The video, in its own section, after the answer. */}
+      <StateVideo stateName={cityName} bars={overdraftBars} title={`Watch ${cityName}'s banks take their place`} />
+
+      {/* 5. Staff of a local bank or credit union: Hamilton shows this view of their own competitors. */}
       <section className="mx-auto max-w-page px-4 pt-12 sm:px-6 sm:pt-16">
         <div className="flex flex-col gap-4 rounded-2xl border border-border bg-surface-0 px-5 py-6 sm:flex-row sm:items-center sm:justify-between sm:px-7">
           <div>
-            <p className="text-[18px] font-semibold tracking-[-0.02em] text-ink">Work at one of these banks?</p>
+            <p className="text-[18px] font-semibold tracking-[-0.02em] text-ink">Work at one of these banks or credit unions?</p>
             <p className="mt-1 max-w-[36rem] text-[14px] text-ink-muted">
               Hamilton keeps this comparison of your own competitors current, with the source for every fee.
             </p>

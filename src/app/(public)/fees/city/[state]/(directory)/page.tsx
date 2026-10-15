@@ -103,6 +103,15 @@ export default async function StateCityDirectory({ params }: PageProps) {
         </div>
       </section>
 
+      {links.length > 0 && (
+        <section aria-labelledby="all-heading" className="mx-auto max-w-page px-4 pt-10 sm:px-6 sm:pt-14">
+          <h2 id="all-heading" className={`${H2} mb-4`}>
+            Every city
+          </h2>
+          <CityList cities={links} stateName={stateName} />
+        </section>
+      )}
+
       {top.length > 0 && (
         <section aria-labelledby="top-heading" className="mx-auto max-w-page px-4 pt-10 sm:px-6 sm:pt-14">
           <h2 id="top-heading" className={H2}>
@@ -125,15 +134,6 @@ export default async function StateCityDirectory({ params }: PageProps) {
             ))}
           </ol>
           <p className="mt-2 text-[12px] text-ink-muted">Institutions with published fees in each city.</p>
-        </section>
-      )}
-
-      {links.length > 0 && (
-        <section aria-labelledby="all-heading" className="mx-auto max-w-page px-4 pt-10 sm:px-6 sm:pt-14">
-          <h2 id="all-heading" className={`${H2} mb-4`}>
-            Every city
-          </h2>
-          <CityList cities={links} stateName={stateName} />
         </section>
       )}
 
