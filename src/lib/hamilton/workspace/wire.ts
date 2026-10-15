@@ -122,6 +122,13 @@ function andList(items: string[]): string {
   return items.length <= 2 ? items.join(" and ") : `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
 }
 
+/** Up to two agencies by name; a longer list names the watched one and counts the rest (#1359). */
+function agencyList(agencies: string[], watched: ReadonlySet<string>): string {
+  if (agencies.length <= 2) return andList(agencies);
+  const lead = agencies.find((a) => watched.has(a)) ?? agencies[0];
+  return `${lead} and ${agencies.length - 1} other agencies`;
+}
+
 function ruleFacts(rules: WireRuleRow[], scope: WireScope): Fact[] {
   const today = scope.today.toISOString().slice(0, 10);
   const since = isoDaysAgo(scope.today, WIRE_RULE_DAYS);
@@ -135,13 +142,13 @@ function ruleFacts(rules: WireRuleRow[], scope: WireScope): Fact[] {
     .map((r) => {
       const agencies = r.agencies.filter((a) => TRACKED_AGENCIES.has(a));
       const kind = r.kind === "final_rule" ? "final rule" : "proposed rule";
-      const dates = [
-        `published ${day(r.published_on!)}`,
-        r.comments_close_on && r.comments_close_on >= today ? `comments close ${day(r.comments_close_on)}` : null,
-        r.effective_on ? `${r.effective_on > today ? "takes effect" : "effective"} ${day(r.effective_on)}` : null,
-      ].filter(Boolean);
+      // Two dates at most, so a joint rule stays inside the 20-word storyline line (#1359): an open
+      // comment period matters more than a later effective date.
+      const next = r.comments_close_on && r.comments_close_on >= today ? `comments close ${day(r.comments_close_on)}`
+        : r.effective_on ? `${r.effective_on > today ? "takes effect" : "effective"} ${day(r.effective_on)}` : null;
+      const dates = [`published ${day(r.published_on!)}`, next].filter(Boolean);
       return {
-        text: `${andList(agencies)} ${kind} ${quoted(r.title)}, ${dates.join(", ")}.`,
+        text: `${agencyList(agencies, watched)} ${kind} ${quoted(r.title)}, ${dates.join(", ")}.`,
         source: { label: "Federal Register", table: "reg_tracker_items", url: r.url!, asOf: r.published_on },
       };
     });

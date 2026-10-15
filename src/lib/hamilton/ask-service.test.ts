@@ -26,9 +26,6 @@ const decision: DecisionRecord = {
   feeCategory: "overdraft",
   title: "Overdraft fee",
   status: "researching",
-  chosenAmount: null,
-  chosenBy: null,
-  watchConditions: [],
   createdAt: "2026-10-06T08:00:00Z",
   updatedAt: "2026-10-06T08:00:00Z",
 };
@@ -84,7 +81,7 @@ vi.mock("@/lib/research/history", () => ({ logUsage: vi.fn(async () => undefined
 
 import { writeStorylineMemo } from "./memo";
 import { logUsage } from "@/lib/research/history";
-import { answerAsk, answerAskMemo, MEMO_USAGE_AGENT_ID, storylineRequestKey } from "./ask-service";
+import { answerAsk, answerAskMemo, MEMO_USAGE_AGENT_ID, ownScheduleQueued, storylineRequestKey } from "./ask-service";
 
 const user = { id: 7, display_name: "Pat", username: "pat" };
 
@@ -332,5 +329,24 @@ describe("waiver rate answers", () => {
     expect(waiverShare("8")).toBe(0.08);
     expect(waiverShare("0.08")).toBe(0.08);
     expect(waiverShare("150%")).toBeNull();
+  });
+});
+
+describe("the queued note for a Pro account's own schedule (#1388)", () => {
+  const own = { institution: { id: 7, name: "Example Credit Union" } } as Parameters<typeof ownScheduleQueued>[0];
+
+  it("applies only to the account's own institution under Atlas's row minimum", async () => {
+    expect(await ownScheduleQueued(own, 7, async () => 0)).toBe(true);
+    expect(await ownScheduleQueued(own, 7, async () => 2)).toBe(true);
+    // Three catalog rows (say, a business-only schedule) are past Atlas's tier, so no promise.
+    expect(await ownScheduleQueued(own, 7, async () => 3)).toBe(false);
+    expect(await ownScheduleQueued(own, 8, async () => 0)).toBe(false);
+    expect(await ownScheduleQueued({ institution: null } as Parameters<typeof ownScheduleQueued>[0], 7, async () => 0)).toBe(false);
+  });
+
+  it("promises nothing when the count can't be read", async () => {
+    const quiet = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    expect(await ownScheduleQueued(own, 7, async () => { throw new Error("down"); })).toBe(false);
+    quiet.mockRestore();
   });
 });

@@ -1,7 +1,12 @@
 // @vitest-environment node
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const m = vi.hoisted(() => ({ calls: [] as Array<{ text: string; values: unknown[] }>, job: null as Record<string, unknown> | null }));
+const m = vi.hoisted(() => ({
+  calls: [] as Array<{ text: string; values: unknown[] }>,
+  job: null as Record<string, unknown> | null,
+  // The job's status, for the guarded in-progress write; null means no such job.
+  status: "pending" as string | null,
+}));
 vi.mock("@/lib/api-hardening/route-wrapper", () => ({ withApiRoutePolicy: (_id: string, _method: string, handler: unknown) => handler }));
 vi.mock("@/lib/auth", () => ({ getCurrentUser: vi.fn() }));
 vi.mock("@/lib/report-engine/presign", () => ({ generatePresignedUrl: vi.fn() }));
@@ -10,6 +15,10 @@ vi.mock("@/lib/data-store/connection", () => {
     const text = strings.join("?");
     m.calls.push({ text, values });
     if (text.includes("SELECT data_manifest")) return m.job ? [m.job] : [];
+    if (text.includes("SELECT status")) return m.status ? [{ status: m.status }] : [];
+    if (text.includes("UPDATE report_jobs") && text.includes("RETURNING id")) {
+      return m.status && ["pending", "assembling", "rendering"].includes(m.status) ? [{ id: "job-1" }] : [];
+    }
     return [];
   };
   return { getSql: () => tx, withTransaction: async (callback: (t: typeof tx) => Promise<unknown>) => callback(tx) };
@@ -33,6 +42,7 @@ beforeEach(() => {
   process.env.REPORT_INTERNAL_SECRET = SECRET;
   m.calls.length = 0;
   m.job = null;
+  m.status = "pending";
 });
 
 describe("PATCH /api/reports/[id]/status (#1249)", () => {
@@ -80,6 +90,25 @@ describe("PATCH /api/reports/[id]/status (#1249)", () => {
     expect((await patch({ status: "failed", artifact_key: "reports/x.html" })).status).toBe(200);
     const write = m.calls.find((call) => call.text.includes("UPDATE report_jobs"));
     expect(write?.values[1]).toBe("reports/x.html");
+  });
+
+  // #1271: a finished or cancelled job is never moved back to an in-progress status.
+  it("refuses to reopen a complete, failed or cancelled job, and leaves its agent run alone", async () => {
+    for (const status of ["complete", "failed", "cancel_requested", "cancelled"]) {
+      m.calls.length = 0;
+      m.status = status;
+      const response = await patch({ status: "assembling" });
+      expect(response.status).toBe(409);
+      expect((await response.json()).error).toBe(`Report job is ${status}, so it cannot be moved back to assembling.`);
+      const write = m.calls.find((call) => call.text.includes("UPDATE report_jobs"));
+      expect(write?.text).toContain("AND status IN ('pending', 'assembling', 'rendering')");
+      expect(m.calls.some((call) => call.text.includes("UPDATE agent_runs"))).toBe(false);
+    }
+  });
+
+  it("returns 404 for an in-progress status on an unknown job", async () => {
+    m.status = null;
+    expect((await patch({ status: "rendering" })).status).toBe(404);
   });
 
   it("rejects a missing secret", async () => {

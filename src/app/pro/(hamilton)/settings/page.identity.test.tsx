@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   memberships: vi.fn(),
   update: vi.fn(),
   claim: vi.fn(),
+  pendingLink: vi.fn(),
   replace: vi.fn(),
   peerWorkspace: vi.fn(),
   peerSets: vi.fn(),
@@ -20,8 +21,6 @@ vi.mock("@/lib/auth", () => ({ getCurrentUser: mocks.user }));
 vi.mock("@/lib/hamilton/workspace-context", () => ({ resolveHamiltonInstitutionContext: mocks.resolve }));
 vi.mock("./actions", () => ({
   updateWorkspaceInstitution: mocks.update,
-  requestInstitutionClaim: mocks.claim,
-  getWorkspaceInstitutionClaimState: async () => null,
   getIntelligenceSnapshot: async () => ({ savedAnalyses: 0, savedScenarios: 0, tier: "Admin", lastActivity: null }),
   createPeerSet: vi.fn(), editPeerSet: vi.fn(), removePeerSet: vi.fn(), setPeerSetForAllCharts: vi.fn(),
 }));
@@ -46,13 +45,15 @@ vi.mock("@/lib/hamilton/workspace-invite-link", () => ({
   inviteLinksConfigured: () => false,
   buildWorkspaceInvitePath: () => null,
 }));
+vi.mock("@/lib/pro-institution-link", () => ({ getPendingInstitutionLink: mocks.pendingLink }));
+vi.mock("@/lib/data-store/connection", () => ({ sql: {} }));
 vi.mock("@/lib/hamilton/report-cap", () => ({ isCappedConsultant: async () => false }));
 vi.mock("./WorkspaceAccessManager", () => ({ WorkspaceAccessManager: () => null }));
 vi.mock("@/components/hamilton/settings/FeeFiguresUpload", () => ({ FeeFiguresUpload: () => null }));
 vi.mock("@/components/hamilton/settings/ManageBillingButton", () => ({ ManageBillingButton: () => null }));
 
 import SettingsPage from "./page";
-import { WorkspaceInstitutionAccessRequest, WorkspaceInstitutionForm } from "./WorkspaceInstitutionForm";
+import { WorkspaceInstitutionForm } from "./WorkspaceInstitutionForm";
 
 const institution: HamiltonSelectedInstitutionContext = {
   id: 2945,
@@ -149,7 +150,7 @@ describe("Settings research identity", () => {
     expect(screen.getByText("My personal cohort")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Add a peer group" })).toBeEnabled();
     expect(screen.queryByText(/Groups you add are shared with everyone/)).not.toBeInTheDocument();
-    const accountSection = screen.getByRole("heading", { name: "Account institution" }).closest("section")!;
+    const accountSection = screen.getByRole("heading", { name: "Your institution" }).closest("section")!;
     expect(within(accountSection).getByText("Space Coast Credit Union")).toBeInTheDocument();
     expect(mocks.update).not.toHaveBeenCalled();
     expect(mocks.claim).not.toHaveBeenCalled();
@@ -161,8 +162,8 @@ describe("Settings research identity", () => {
       institution_name: institution.name, stripe_customer_id: null, subscription_status: "active",
     });
     render(await SettingsPage({ searchParams: Promise.resolve({ instId: "2945" }) }));
-    const accountSection = screen.getByRole("heading", { name: "Account institution" }).closest("section")!;
-    expect(within(accountSection).getByText("No account institution linked.")).toBeInTheDocument();
+    const accountSection = screen.getByRole("heading", { name: "Your institution" }).closest("section")!;
+    expect(within(accountSection).getByText("No institution linked yet.")).toBeInTheDocument();
     expect(within(accountSection).queryByText(institution.name)).not.toBeInTheDocument();
     expect(screen.getByText("Research institution: Space Coast Credit Union.")).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Do you work at this institution?" })).not.toBeInTheDocument();
@@ -175,9 +176,8 @@ describe("Settings research identity", () => {
       userId: 7, institutionId: 101, institutionName: "Account institution A", status: "active",
     }]);
     const { rerender } = render(await SettingsPage({ searchParams: Promise.resolve({ instId: "2945" }) }));
-    const accountSection = screen.getByRole("heading", { name: "Account institution" }).closest("section")!;
+    const accountSection = screen.getByRole("heading", { name: "Your institution" }).closest("section")!;
     expect(within(accountSection).getByText("Account institution A")).toBeInTheDocument();
-    expect(within(accountSection).getByText("Institution ID 101")).toBeInTheDocument();
     expect(within(accountSection).queryByText(institution.name)).not.toBeInTheDocument();
     const researchSection = screen.getByRole("heading", { name: "Research institution" }).closest("section")!;
     expect(within(researchSection).getByRole("button", { name: "Use for research" })).toBeEnabled();
@@ -185,9 +185,8 @@ describe("Settings research identity", () => {
     expect(screen.getByText("Research institution: Space Coast Credit Union.")).toBeInTheDocument();
     mocks.resolve.mockResolvedValue({ institution: { ...institution, id: 202, name: "Research institution C" }, source: "url" });
     rerender(await SettingsPage({ searchParams: Promise.resolve({ instId: "202" }) }));
-    const updatedAccountSection = screen.getByRole("heading", { name: "Account institution" }).closest("section")!;
+    const updatedAccountSection = screen.getByRole("heading", { name: "Your institution" }).closest("section")!;
     expect(within(updatedAccountSection).getByText("Account institution A")).toBeInTheDocument();
-    expect(within(updatedAccountSection).getByText("Institution ID 101")).toBeInTheDocument();
     expect(screen.getByText("Research institution: Research institution C.")).toBeInTheDocument();
   });
 
@@ -269,7 +268,7 @@ describe("Settings research identity", () => {
     await waitFor(() => expect(mocks.update).toHaveBeenCalledTimes(2));
     expect((mocks.update.mock.calls[1][1] as FormData).get("institution_id")).toBe("2945");
     expect(mocks.claim).not.toHaveBeenCalled();
-    expect(screen.getByText("No account institution linked.")).toBeInTheDocument();
+    expect(screen.getByText("No institution linked yet.")).toBeInTheDocument();
   });
 
   it("navigates to saved research institution A after an explicit selection while the URL still shows B", async () => {
@@ -290,7 +289,7 @@ describe("Settings research identity", () => {
     await waitFor(() => expect(mocks.replace).toHaveBeenCalledWith("/pro/settings?instId=101"));
     expect(mocks.replace).toHaveBeenCalledTimes(1);
     expect(mocks.claim).not.toHaveBeenCalled();
-    expect(screen.getByText("No account institution linked.")).toBeInTheDocument();
+    expect(screen.getByText("No institution linked yet.")).toBeInTheDocument();
   });
 
   it.each([
@@ -308,38 +307,6 @@ describe("Settings research identity", () => {
     expect(mocks.claim).not.toHaveBeenCalled();
   });
 
-  it("shows the same canonical account and research institution with access recorded separately", async () => {
-    const membership: InstitutionWorkspaceMembership = {
-      id: 1, institutionId: 2945, institutionName: institution.name,
-      city: null, stateCode: null, userId: 7, userDisplayName: "Admin", userEmail: null,
-      role: "owner", status: "active", source: "claim", claimId: 2,
-      grantedByUserId: null, grantedAt: "2026-10-01T00:00:00Z", notes: null,
-    };
-    mocks.memberships.mockResolvedValue([membership]);
-    mocks.membership.mockResolvedValue(membership);
-    render(await SettingsPage({ searchParams: Promise.resolve({ instId: "2945" }) }));
-    const accountSection = screen.getByRole("heading", { name: "Account institution" }).closest("section")!;
-    expect(within(accountSection).getByText(institution.name)).toBeInTheDocument();
-    expect(within(accountSection).getByText("Institution ID 2945")).toBeInTheDocument();
-    expect(screen.getByText("Active workspace access to Space Coast Credit Union (owner).")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Access already active", hidden: true })).toBeDisabled();
-    const researchSection = screen.getByRole("heading", { name: "Research institution" }).closest("section")!;
-    expect(within(researchSection).queryByText(/Active workspace access/)).not.toBeInTheDocument();
-  });
-
-  it("does not carry another institution's membership into an access request", () => {
-    const membership: InstitutionWorkspaceMembership = {
-      id: 1, institutionId: 101, institutionName: "Account institution A",
-      city: null, stateCode: null, userId: 7, userDisplayName: "Admin", userEmail: null,
-      role: "owner", status: "active", source: "claim", claimId: 2,
-      grantedByUserId: null, grantedAt: "2026-10-01T00:00:00Z", notes: null,
-    };
-    render(<WorkspaceInstitutionAccessRequest selectedInstitution={institution} selectedClaim={null} selectedMembership={membership} currentUserId={7} />);
-    expect(screen.queryByText(/Your team's workspace/)).not.toBeInTheDocument();
-    expect(screen.queryByText(/Confirmed since/)).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Request workspace access", hidden: true })).toBeEnabled();
-  });
-
   it("ignores another user's active membership for both account identity and selected workspace access", async () => {
     const membership: InstitutionWorkspaceMembership = {
       id: 1, institutionId: 2945, institutionName: institution.name,
@@ -350,25 +317,24 @@ describe("Settings research identity", () => {
     mocks.memberships.mockResolvedValue([membership]);
     mocks.membership.mockResolvedValue(membership);
     render(await SettingsPage({ searchParams: Promise.resolve({ instId: "2945" }) }));
-    expect(screen.getByText("No account institution linked.")).toBeInTheDocument();
+    expect(screen.getByText("No institution linked yet.")).toBeInTheDocument();
     expect(screen.queryByText(/Active workspace access to/)).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Request workspace access", hidden: true })).toBeEnabled();
+    // No claim to file (#1405): the institution is linked by the work email at Pro signup.
+    expect(screen.queryByRole("button", { name: "Request workspace access", hidden: true })).not.toBeInTheDocument();
   });
 
-  it("submits an explicit named access request without changing the research preference", async () => {
-    mocks.claim.mockResolvedValue({ success: true, message: "Request received." });
-    render(<WorkspaceInstitutionAccessRequest selectedInstitution={institution} selectedClaim={null} selectedMembership={null} currentUserId={7} />);
-    const disclosure = screen.getByText("Request workspace access to Space Coast Credit Union").closest("details")!;
-    expect(disclosure).not.toHaveAttribute("open");
-    fireEvent.click(screen.getByText("Request workspace access to Space Coast Credit Union"));
-    fireEvent.change(screen.getByLabelText("Your connection to Space Coast Credit Union"), { target: { value: "Authorized product team member" } });
-    fireEvent.click(screen.getByRole("button", { name: "Request workspace access" }));
-    expect(await screen.findByRole("status")).toHaveTextContent("Request received.");
-    const submitted = mocks.claim.mock.calls[0][1] as FormData;
-    expect(submitted.get("institution_id")).toBe("2945");
-    expect(submitted.get("claim_notes")).toBe("Authorized product team member");
-    expect(mocks.update).not.toHaveBeenCalled();
-    expect(screen.queryByText(/Active workspace access to/)).not.toBeInTheDocument();
+  it("says how the institution named at Pro signup gets linked (#1405)", async () => {
+    mocks.pendingLink.mockResolvedValue({ institutionName: "Space Coast Credit Union", emailConfirmed: false, needsInfo: false });
+    const { rerender } = render(await SettingsPage({ searchParams: Promise.resolve({ instId: "2945" }) }));
+    const section = () => screen.getByRole("heading", { name: "Your institution" }).closest("section")!;
+    expect(within(section()).getByText(/confirm your work email \(the link is in your inbox\) and it links on its own/)).toBeInTheDocument();
+    mocks.pendingLink.mockResolvedValue({ institutionName: "Space Coast Credit Union", emailConfirmed: true, needsInfo: false });
+    rerender(await SettingsPage({ searchParams: Promise.resolve({ instId: "2945" }) }));
+    expect(within(section()).getByText("Space Coast Credit Union: we're checking your work email against it, and it links once that's done.")).toBeInTheDocument();
+    mocks.pendingLink.mockResolvedValue({ institutionName: "Space Coast Credit Union", emailConfirmed: true, needsInfo: true });
+    rerender(await SettingsPage({ searchParams: Promise.resolve({ instId: "2945" }) }));
+    expect(within(section()).getByText(/we need a little more before linking it\. Email .+ from your work address\./)).toBeInTheDocument();
+    expect(screen.queryByText(/claim/i)).not.toBeInTheDocument();
   });
 
   it("asks for a research institution when none is selected", async () => {

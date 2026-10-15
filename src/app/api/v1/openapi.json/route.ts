@@ -528,7 +528,7 @@ const spec = {
             in: "query",
             schema: { type: "string", minLength: 2, maxLength: 100 },
             description:
-              "Search by institution name, e.g. Frost. Institutions with published fees sort first; fed_district is null in name-search results.",
+              "Search by institution name, e.g. JPMorgan Chase. Institutions with published fees sort first; fed_district is null in name-search results.",
           },
           {
             name: "fee_category",

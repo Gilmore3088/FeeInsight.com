@@ -329,6 +329,20 @@ async function executeAgenticStep(
     };
   }
 
+  // Hamilton's paid answer eval (#1079): a provider step, capped at five paid samples a day.
+  if (step.stepKey === "hamilton-paid-answer-eval") {
+    const { runPaidAnswerEval } = await import("@/lib/hamilton/paid-answer-eval");
+    const result = await runPaidAnswerEval({ agentRunId: run.id });
+    const memo = result.paths[0];
+    const simulate = result.paths.find((p) => p.path === "simulate");
+    const simulateLine = simulate && simulate.sampled > 0 ? ` Simulate: ${simulate.passed} of ${simulate.answers} passed; ${simulate.correctness.correct} of ${simulate.correctness.checked} checked tie.` : "";
+    return {
+      status: "completed",
+      summary: result.note ?? `Wrote ${memo.passed} of ${memo.answers} paid memos (cap ${result.cap} a day, ${result.usedBefore} used before); ${memo.correctness.correct} of ${memo.correctness.checked} checked tie to the live catalog.${simulateLine}`,
+      detail: { ...result },
+    };
+  }
+
   // Hamilton's studies (study-*) share one dispatcher in hamilton/studies.
   if (isStudyStep(step.stepKey)) {
     const result = await runStudyStep(step.stepKey, {
@@ -3113,6 +3127,8 @@ const STEP_EXPECTED_MS: Record<string, number> = {
   // p50 238 s, p90 367 s, max 1,101 s: it never fits a tick, so the tick does not start it
   // (`TICK_EXCLUDED_STEP_KEYS`); its own route runs it.
   "hamilton-answer-eval": 400_000,
+  // Up to five memos at once, each up to two 90 s model calls, after the free answers.
+  "hamilton-paid-answer-eval": 280_000,
   // A few dozen draft rows and one catalog check each (growth/withdraw.ts).
   "growth-withdraw": 30_000,
 };
@@ -3122,7 +3138,7 @@ const STEP_EXPECTED_MS: Record<string, number> = {
  * killed ticks (runs 6483 and 6552 failed after three tries, Oct 15). They run from their own
  * route (`/api/admin/crew/answer-eval`).
  */
-export const TICK_EXCLUDED_STEP_KEYS = ["hamilton-answer-eval"] as const;
+export const TICK_EXCLUDED_STEP_KEYS = ["hamilton-answer-eval", "hamilton-paid-answer-eval"] as const;
 /** Steps not listed above: most run in seconds, so this keeps an unknown long one safe. */
 const DEFAULT_STEP_EXPECTED_MS = 120_000;
 /** Steps measured at a few seconds at most (state-expert, enhance, public-*, registry-*). */

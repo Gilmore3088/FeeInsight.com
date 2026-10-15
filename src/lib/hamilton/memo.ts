@@ -184,12 +184,27 @@ export interface MemoClient {
   create(input: { system: string; user: string; model: string }): Promise<string>;
 }
 
-function anthropicMemoClient(institutionId: number | null, usage?: MemoUsage): MemoClient {
+/** Who a memo's model call is for in provider usage: the answer eval tags its own (#1079). */
+export interface MemoTracking {
+  operation: string;
+  subjectKey?: string;
+  agentRunId?: number;
+}
+
+function anthropicMemoClient(institutionId: number | null, usage?: MemoUsage, tracking?: MemoTracking): MemoClient {
   const client = getAnthropicMessagesClient("Hamilton storyline memo", "hamilton");
   return {
     async create({ system, user, model }) {
       const response = await trackAnthropicRequest(
-        { model, agent: "hamilton", operation: "storyline_memo", routeId: MEMO_ROUTE_ID, metadata: { institution_id: institutionId } },
+        {
+          model,
+          agent: "hamilton",
+          operation: tracking?.operation ?? "storyline_memo",
+          routeId: MEMO_ROUTE_ID,
+          ...(tracking?.subjectKey ? { subjectKey: tracking.subjectKey } : {}),
+          ...(tracking?.agentRunId ? { agentRunId: tracking.agentRunId } : {}),
+          metadata: { institution_id: institutionId },
+        },
         () =>
           client.messages.create(
             { model, max_tokens: MAX_TOKENS, system, messages: [{ role: "user", content: user }] },
@@ -217,6 +232,7 @@ export async function writeStorylineMemo(
     factEvidence?: HamiltonEvidenceBundle | null;
     /** Filled with every model call the memo makes, retries included. */
     usage?: MemoUsage;
+    tracking?: MemoTracking;
   } = {},
 ): Promise<StorylineMemoResult> {
   if (!options.client && !hasAnthropicApiKey("hamilton")) {
@@ -226,7 +242,7 @@ export async function writeStorylineMemo(
   const payload = memoPayload(storyline, options.factEvidence, options.identityContext);
   let client: MemoClient;
   try {
-    client = options.client ?? anthropicMemoClient(options.institutionId ?? null, options.usage);
+    client = options.client ?? anthropicMemoClient(options.institutionId ?? null, options.usage, options.tracking);
   } catch (error) {
     return { status: "unavailable", reason: error instanceof Error ? error.message : String(error) };
   }

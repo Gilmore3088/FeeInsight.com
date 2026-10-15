@@ -475,6 +475,14 @@ v65 (rules 65, Oct 9, customer audience):
   cannot become two audiences, so the document's re-read writes them. Pinnacle (47) heads
   `KNOX_PRIORITY_REREAD_IDS` for that re-read.
 
+Stored excerpt, #1394 (Oct 15, no version change, so no document is re-read for it): the
+`excerpt="..."` Knox stores with an extracted fee holds only the fee's own cells of a two-column
+line (`own-cells.ts`): the cell at its price that names it best, the price-less label cells before
+it, and the period or condition cells after it. West Shore Bank's $40 outgoing international wire
+was stored with the zipper-bag cell beside it. A tie, or no cell at the price, keeps the whole line;
+held and rate rows, and the audience read, still use the whole line. Rows stored earlier keep the
+whole line.
+
 Rules 65, subordination (Oct 15, no version change): Knox reads a subordination fee as
 `legal_process` (James, Oct 15, reversing Oct 8; `fee-taxonomy.ts`). Hamilton's rules re-check
 counts that read as reproducing a live subordination still filed as `other_lending_fee` until the

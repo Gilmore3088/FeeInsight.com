@@ -45,7 +45,7 @@ Hamilton supports the decision; it does not make it.
   income for that fee line divided by its published fee), or `institution` (items and
   waiver rate the bank gave Hamilton). The scenario names the one figure that would
   move it up a level.
-- Implementation is a separate step that runs only after management chooses an amount:
+- The implementation plan for a tested price (Simulate, `hamilton/implementation-plan.ts`):
   notice (Reg DD / NCUA Part 707 30 days for an adverse change, Reg E 21 days for EFT
   fees, the overdraft opt-in notice), approvals, systems, earliest effective date and
   monitoring. The compliance caveat is always shown.
@@ -90,6 +90,27 @@ Hamilton supports the decision; it does not make it.
   engine. `detail.pro` counts how many meet the bar and how many Hamilton still asks back on,
   and lists every one that falls short. A replayed answer about a fee the question did not
   ask about fails as "answers a different subject" (`offSubjectFailure`). Questions stay in our own database only.
+- The paid answer eval (`hamilton/paid-answer-eval.ts`, provider step `hamilton-paid-answer-eval`,
+  cron once a day, `/api/admin/crew/answer-eval-paid`, #1079) writes at most five memos a day
+  (James, 2026-10-15) over free answers that carry a storyline: Pro readers' questions first, then
+  quality-bar questions for sampled institutions. Form is "the memo was written" (it passed the
+  memo's own checks); correctness is `reconcileMemoText`: the answer's values tie to live
+  `published_fee_catalog` rows and every dollar figure in the memo ties to a live value. Each
+  sample is reserved before its first model call (a `paid_eval.sample_reserved` run event, a
+  conditional insert outside the step transaction that refuses past five today), so blocked calls,
+  lost usage rows and killed functions still count; the provider stop and each path's budget line
+  (`api.hamilton.ask.memo`, `api.hamilton.simulate`) hold every call.
+  One of the five (when unused today) is a Simulate read (`hamilton/simulate-read.ts`, the same
+  prompt the `/api/hamilton/simulate` route streams): the first sampled answer's fee is tested at
+  the median of the first peer layer with a full band, in the order local, state, charter and size,
+  Fed district, national (or $5 above a fee already there). Form
+  is the shared evidence gate (`checkAnswerEvidence`: every figure traces to the numbers given, no
+  advice); correctness, for a read that passed form and states a figure, is `reconcileMemoText` over
+  the same live rows, with the tested price and change as the reader's own numbers. Reservations
+  carry their path, so a day normally holds one Simulate (two runs started together can each take
+  one; the five-a-day total still holds).
+  The goal scorecard reads the latest run's "Memo (paid)" and "Simulate (paid)" rows. The written
+  answer and report paths are not sampled yet.
   It asks 17 questions (q26, the NSF regulation question, since #1079; q31, fee income against
   peers, and q32, what competitors in the county charge, since #1084). Every answer is also
   scored on correctness (`hamilton/answer-correctness.ts`, the `report-reconciliation` check for
@@ -114,11 +135,16 @@ Hamilton supports the decision; it does not make it.
   what was read; unmatched lines are listed, never guessed, and the file is not stored.
   Nothing is used until `POST /api/hamilton/uploads/apply`, which saves the figures to
   memory with the upload named as their source.
-- `POST /api/hamilton/decisions/[id]` records the amount management chose (Hamilton never
-  chooses), with its implementation plan and watch conditions (a competitor change, a
-  5% peer-median move, a regulator release). A watch that trips is logged once as
-  `watch_tripped`. The ledger (`GET /api/hamilton/decisions`) is a sum over decisions;
-  dollars count only from options chosen on institution evidence.
+- The ledger (`GET /api/hamilton/decisions`, `/pro/monitor`) lists decisions and where each
+  stands; the five deliverables are built from them. Recording the amount management chose,
+  its implementation plan, its dollar effect and the watches that would reopen it were built
+  but never reachable from Pro, and were removed (#1083, James 2026-10-15). The
+  `hamilton_decisions` columns `chosen_amount`, `chosen_by` and `watch_conditions` stay in the
+  database and are no longer read.
+- The monthly briefing (`/pro/intelligence?view=institution`) shows "Since last quarter": the
+  two newest copies the `briefing-refresh` step keeps in `hamilton_briefing_snapshots`,
+  compared by `diffBriefings` (`getQuarterlyChanges`). With one copy it says when the first
+  comparison comes.
 - Decisions, their event log, client-given facts and uploads are kept in
   `hamilton_decisions`, `hamilton_decision_events`, `hamilton_institution_memory` and
   `hamilton_uploads`. A client fact is never edited in place: a new value supersedes it
@@ -137,8 +163,8 @@ Hamilton supports the decision; it does not make it.
   is interpreted. OCC orders have no document link in the OCC export, so OCC lines link to the
   OCC enforcement search page.
 - A state regulator's post comes from `reg_articles` but is tagged `kind: "state_post"`.
-  Only federal releases (`isFederalRelease`) trip a decision's `rule_release` watch, fill the
-  storyline's news slot, or appear in a watch list that is not about regulation (#1254).
+  Only federal releases (`isFederalRelease`) fill the storyline's news slot or appear in a
+  watch list that is not about regulation (#1254).
 - The workspace builders are deterministic and make no provider calls; the memo route
   above is the paid exception.
 
@@ -249,7 +275,12 @@ Regulatory work needs a defensible position, so nothing Hamilton produces is a b
   `verified:<fee_verified_id>`); a decided row is never selected again.
 - An institution publishes only once it has at least 3 distinct fees (canonical keys)
   live or ready to publish (`HAMILTON_PUBLISH_MIN_INSTITUTION_FEES`; run param
-  `publish_min_institution_fees`, 1 turns it off). Thinner institutions' rows are held:
+  `publish_min_institution_fees`, 1 turns it off). It is one count with the catalog view
+  (#1072): "live" is not rolled back and not quarantined (`CATALOG_DEPTH_LIVE_SQL`, the view's
+  own test), and "ready" is a verified row this rule version has not decided yet (the same
+  filter the selection uses), so a row already rejected at publish or taken down never makes
+  a bank look deep. `publish.test.ts` reads the newest migration that defines the view and
+  fails if its count drifts from this one. Thinner institutions' rows are held:
   not published and not written to `pipeline_attempts`, so they publish on the run
   where Knox's later finds bring the institution to the minimum. The step detail lists
   them as `held_thin_institutions`. The gate applies to new publishes only; it does not
@@ -311,6 +342,9 @@ the detail.
     (`PER_ACCOUNT_CATEGORIES`). Off (`PRODUCT_PAGE_CONFLICT_LIVE`): first looks are logged and
     nothing comes down until a hand check of 10 finds 9 right; then a PR turns it on and a
     conflict comes down on its second look, `product_page_conflict: #<doc> at $x vs schedule $y`.
+    A tier's own schedule (premium, private-banking, BankOn: Darwin's `tier-perk.ts` address and
+    name tests) is not the bank's schedule and is left off the schedule side (#1397); a pending
+    flag the check no longer raises on a live fee is cleared (`takedown_cleared`).
 13. Cross-page conflict (`cross-page-conflict.ts`): one product priced differently on two
     current pages (or two editions of one document); the older one comes down on its second
     look, `cross_page_conflict: #<older doc> older than #<newer doc> (fee <id>)` (or `older

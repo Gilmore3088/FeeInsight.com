@@ -1,6 +1,7 @@
 "use server";
 
 import { sql, withTransaction } from "@/lib/data-store/connection";
+import { linkVerifiedInstitutions } from "@/lib/pro-institution-link";
 import { hashPassword } from "@/lib/passwords";
 import { parsePasswordResetToken, verifyPasswordResetToken } from "@/lib/password-reset";
 
@@ -48,6 +49,8 @@ export async function resetPassword(formData: FormData): Promise<ResetPasswordRe
     await sql`UPDATE users SET email_confirmed_at = COALESCE(email_confirmed_at, NOW()) WHERE id = ${user.id}`.catch(
       () => undefined,
     );
+    // A proven inbox also links a Pro buyer's institution when the email matches its website (#1405).
+    await linkVerifiedInstitutions(sql, user.id).catch(() => undefined);
   } catch (error) {
     console.error("[password-reset] reset failed", error instanceof Error ? error.message : String(error));
     return { ok: false, error: "Password reset is unavailable right now. Please try again shortly." };

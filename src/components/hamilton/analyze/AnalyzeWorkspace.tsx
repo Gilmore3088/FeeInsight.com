@@ -434,7 +434,8 @@ function AnalyzeConversationWorkspace({
 
   const ask = useCallback(
     (question: string) => {
-      const trimmed = question.trim();
+      // Model-written "Ask next" follow-ups get the Ask box's own 500-character limit (#1357).
+      const trimmed = question.trim().slice(0, 500);
       if (!active.current || readOnlyReason || !trimmed || isLoading || engineBusy) return;
       // A question about a market, not this institution, opens the market brief (no provider call).
       if (parseMarketQuestion(trimmed)) {
@@ -587,7 +588,7 @@ function AnalyzeConversationWorkspace({
   const startTasks = [
     { label: "Review fees", href: "/pro/research", icon: FileText },
     { label: "Research competitors", href: "/pro/intelligence?lens=fees", icon: Search },
-    { label: "Prepare a board brief", href: "/pro/saved", icon: Presentation },
+    { label: "Build a board brief", href: "/pro/saved", icon: Presentation },
   ];
   const starting = !(askedQuestion || shown);
 
@@ -807,7 +808,7 @@ function AnalyzeConversationWorkspace({
           story={reopenedStory}
           identityContext={answerIdentity}
           memo={initialAnalysis?.memo ? { state: "written", memo: initialAnalysis.memo } : undefined}
-          nextSteps={initialAnalysisId && !readOnlyReason ? <><LinkButton href={`/pro/reports?from_analysis=${encodeURIComponent(initialAnalysisId)}`}>Create board brief</LinkButton><DownloadAnswerPdf analysisId={initialAnalysisId} /></> : null}
+          nextSteps={initialAnalysisId && !readOnlyReason ? <><LinkButton href={`/pro/reports?from_analysis=${encodeURIComponent(initialAnalysisId)}`}>Build board brief</LinkButton><DownloadAnswerPdf analysisId={initialAnalysisId} /></> : null}
         />
       ) : null}
 

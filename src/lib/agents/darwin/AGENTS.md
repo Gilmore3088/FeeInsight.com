@@ -29,6 +29,7 @@ Darwin owns verification and classification.
 | `category_lesson_pending` | the fee name does not match a category lesson the shared guard has not learned yet (`DARWIN_CATEGORY_HOLDS` in `verify.ts`); Darwin never re-files a row itself, so the row waits for the guard | needs_review |
 | `retired_category` | after the source check: the category is not one the top-50 fold retired (`RETIRED_CATEGORIES` in `src/lib/fee-fold.ts`); Hamilton never publishes a retired type, so Darwin never verifies into one | rejected |
 | `conditional_zero` | after the source check: a $0 fee whose own schedule line (or Knox's excerpt) carries a non-zero price ("FREE with e-statements, else $6.95 per month"); the charge is the fee, so the $0 reading waits for a re-read | needs_review |
+| `tier_perk_zero` | after the source check: a $0 fee is not from one account tier's own schedule (a premium, private-banking or BankOn fee page, known by its address or title) and is not named for such an account (`tier-perk.ts`, #1397: one large bank's live overdraft, NSF, stop payment and wire fees were the $0s of its private-banking Premium Account); a priced row on that schedule is still verified | rejected |
 | `name_rule` | after the source check: the name and line pass Hamilton's live-fee name rules (`ruleFor` in `hamilton/eval-verdicts.ts`: rebate, no-fee or waiver sentence, balance threshold, merchant payer, two fees on one line, rate bound, price in name); the rule and why are in the reason text | rejected |
 | `insert_failed` | the database accepted the verified row; a refused insert holds that row so the rest of the batch still runs (#1113) | needs_review |
 
@@ -49,11 +50,14 @@ Darwin owns verification and classification.
   alone: raw 132922, "Collection Items (plus any bank fees)" $20, a plain take-over filed
   `collection_item` and judged `check_cashing`, while today's re-file keeps `collection_item`.
   The same free checks decide, the shared source check among them, and the new decision records
-  today's category, so a row is judged once per category. Switched off
-  (`DARWIN_CATEGORY_CHANGE_REJUDGE_LIVE = false`): each verify step, a dry run included, writes the
-  candidate count, their earlier reasons and a 25-row sample to `detail.category_change_rejudge`
-  and judges nothing; the read runs in a savepoint, so a failed count never fails the step. On, up
-  to 100 a step join the batch. Measured Oct 14 (after #1291 merged): 0 rows qualify; the SQL
+  today's category, so a row is judged once per category. Switched on Oct 15 (#1093, James's
+  yes; `DARWIN_CATEGORY_CHANGE_REJUDGE_LIVE = true`): up to 100 a step join the batch. Each verify
+  step, a dry run included, writes the candidate count, their earlier reasons and a 25-row sample
+  to `detail.category_change_rejudge`; the read runs in a savepoint, so a failed count never fails
+  the step, and a dry run judges nothing. The switched-off dry run (Oct 14 16:16 to Oct 15 09:26,
+  336 steps) found 10 candidates; all 10 match their bank's schedule in amount and today's
+  category: 6 had been judged under the neighbouring column's fee, 4 fax fees under
+  `account_research`. Measured Oct 14 (after #1291 merged): 0 rows qualify; the SQL
   selection reads 1 row (132922), which the proof rule leaves alone. The 8 take-over rows with a
   stale first flag qualify once #1291's repair (inside its switched-off re-file pass) runs, and the
   re-file pass adds its rows when it is on. The 216 rows #1093 step 2 sent back carry the category
@@ -78,10 +82,12 @@ Darwin owns verification and classification.
   (a) a duplicate when the same document has a priced verified fee in its category; (c) verified
   at $0 (flag `darwin_conditional_zero_released`) when the bank's own schedule, not a product page,
   prices it free on its own line with no other dollar figure, outside overdraft, NSF, monthly
-  maintenance and minimum balance; (b) otherwise rejected, for Knox's next read of the line.
-- `verify.recheck` (`verified-recheck.ts`, version 2, 2026-10-09) ends every learning verify step
+  maintenance and minimum balance, and not on one account tier's own schedule (`tier-perk.ts`,
+  #1397); (b) otherwise rejected, for Knox's next read of the line.
+- `verify.recheck` (`verified-recheck.ts`, version 3, 2026-10-15) ends every learning verify step
   by reading up to 200 rows `verify.rules` v3 verified (the rows the `not_in_source` re-select
-  verified first, then newest first), once each under `postSourceCheck`. A failing row that is
+  verified first, then newest first), once each under `postSourceCheck` and, from version 3, the
+  tier-perk test (`tier_perk_zero`, #1397). A failing row that is
   not live is rejected with an `outlier_flags` entry `darwin_recheck:<code>[:<rule>]`; a live one
   is archived in the same step (`published_fee_records` rolled back with that reason, batch
   `darwin-recheck-<run>`, never deleted), the verified row rejected with the same flag and the
@@ -465,7 +471,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `DARWIN_RELEASE_REVIEW_STRATEGY` | `verify.release_review` | v17 | `darwin/release-review.ts` |
 | `DARWIN_SCHEDULE_REFILE_STRATEGY` | `verify.schedule_refile` | v1 | `darwin/schedule-refile.ts` |
 | `DARWIN_VERDICT_SCORE_STRATEGY` | `verify.verdict_score` | v1 | `darwin/verdict-score.ts` |
-| `DARWIN_RECHECK_STRATEGY` | `verify.recheck` | v2 | `darwin/verified-recheck.ts` |
+| `DARWIN_RECHECK_STRATEGY` | `verify.recheck` | v3 | `darwin/verified-recheck.ts` |
 | `DARWIN_VERIFY_STRATEGY` | `verify.rules` | v3 | `darwin/verify.ts` |
 | `DARWIN_SOURCE_CHECK_VERSION` | — | v2 | `darwin/verify.ts` |
 | `DARWIN_BATCH_KEY_VERSION` | — | v4 | `darwin/verify.ts` |

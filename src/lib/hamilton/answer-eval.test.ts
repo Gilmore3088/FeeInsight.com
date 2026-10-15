@@ -52,7 +52,8 @@ describe("answer eval", () => {
     // Company's charter is from ...", while the check looked only for "Your charter is from ...".
     const mo = { id: 2415, name: "O'Bannon Banking Company", stateCode: "MO", charterType: "bank", assetTier: "small" };
     const regulators = { primaryRegulator: "FDIC", charterAgency: "State", source: "fdic" };
-    const named = "O'Bannon Banking Company's charter is from the Missouri Division of Finance, and the FDIC is O'Bannon Banking Company's primary federal regulator.";
+    // The full sentence runs to 21 words, so the line uses its shorter named form (#1076).
+    const named = "O'Bannon Banking Company's charter is from the Missouri Division of Finance; the FDIC is its primary federal regulator.";
     const unnamed = "Your charter is from the Missouri Division of Finance, and the FDIC is your primary federal regulator.";
     expect(liveDataFailures(q("q25"), reply("Reg E applies.", [named]), mo, regulators)).toEqual([]);
     expect(liveDataFailures(q("q25"), reply("Reg E applies.", [unnamed]), mo, regulators)).toEqual([]);

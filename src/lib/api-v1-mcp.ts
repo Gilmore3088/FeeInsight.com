@@ -156,7 +156,7 @@ const TOOLS: ToolDefinition[] = [
     inputSchema: {
       type: "object",
       properties: {
-        name: { type: "string", description: "Part of the institution's name, e.g. Frost" },
+        name: { type: "string", description: "Part of the institution's name, e.g. JPMorgan Chase" },
         state: stateProperty,
         charter: charterProperty,
         city: { type: "string", description: "Exact city name, e.g. Austin" },

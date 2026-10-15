@@ -951,3 +951,26 @@ James, 2026-10-12 evening (builder loop, before leaving for the day): pure techn
 metadata plumbing, structured data, no visible wording change) merges on green; copy and page
 changes wait as open PRs for him on the Vercel preview; no layout work until he says what his design
 updates cover.
+
+**Hamilton's answer check may spend on five paid answers a day.** James, 2026-10-15 (#1079,
+decision card "Allow a daily paid sample so Hamilton's answer check can grade written answers,
+memos and reports?": "5 a day"). The paid sample (`hamilton/paid-answer-eval.ts`) is capped at five
+in code, runs as a provider step under the global provider stop and the memo's budget line, and
+never raises its own cap.
+
+**Hamilton shows quarterly changes; choosing an option and watches are removed.** James,
+2026-10-15 (#1083, decision card "What should happen to the four Hamilton features built but never
+shown to readers?": "Show quarterly changes"). The monthly briefing shows what changed since last
+quarter's stored copy. Recording the option management chose (with its plan, dollar effect and
+watches) is removed from code, the ledger and the deliverables; the unused deliverables API went in
+#1393. The database columns stay, unread.
+
+**A Pro buyer's institution is linked by their business email, not by a claim.** James,
+2026-10-15 (#1405): "When you sign up for pro, you say what institution you are at, prove it with a
+real email (business email), and that's how we associate the data with Hamilton." There is no claim
+for the buyer to file. Pro checkout for a bank or credit union refuses a personal address (Gmail and
+the like); the owner seat is granted once the email is confirmed and its host is exactly the bank's
+website (`src/lib/pro-institution-link.ts`). Anything else waits for the admin check in the Data
+Trust queue while Pro works at once (James, 09:17 UTC, decision card "Hold or block a Pro buyer
+whose email doesn't match their bank?": "Hold for review"). Any Pro reader may still research any
+institution.

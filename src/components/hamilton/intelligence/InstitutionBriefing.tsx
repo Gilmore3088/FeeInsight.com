@@ -12,6 +12,8 @@ import { WorthYourAttention } from "@/components/hamilton/benchmark/WorthYourAtt
 import { ThisMonthOverview } from "@/components/hamilton/benchmark/ThisMonthOverview";
 import { FeeScorecard } from "@/components/hamilton/benchmark/FeeScorecard";
 import { LocalCompetitors } from "@/components/hamilton/benchmark/LocalCompetitors";
+import { QuarterlyChanges } from "@/components/hamilton/intelligence/QuarterlyChanges";
+import { getQuarterlyChanges } from "@/lib/hamilton/briefing-snapshots";
 import { buildAttentionItems, buildBriefingOverview } from "@/lib/hamilton/briefing-observations";
 import { provenanceToTrail, STANDARD_METHOD } from "@/lib/hamilton/audit-trail";
 import { COMPETITOR_MOVE_WINDOW_DAYS, getWorkspaceBriefing, type EnginePeerOptions } from "@/lib/hamilton/workspace/research";
@@ -66,6 +68,12 @@ const BRIEFING_METHOD = [
 
 function ChangesSkeleton() {
   return <div className="skeleton rounded-lg" style={{ minHeight: "3rem" }} />;
+}
+
+/** The briefing against last quarter's stored copy (#1083); nothing when none is stored. */
+async function QuarterlyChangesFor({ institutionId }: { institutionId: number }) {
+  unstable_noStore();
+  return <QuarterlyChanges changes={await getQuarterlyChanges(institutionId)} />;
 }
 
 /** Signals and alerts are fresh on every load (never cached). */
@@ -205,6 +213,12 @@ export async function InstitutionBriefing({
           </LinkButton>
         </div>
       )}
+
+      {briefing ? (
+        <Suspense fallback={<ChangesSkeleton />}>
+          <QuarterlyChangesFor institutionId={briefing.institutionId} />
+        </Suspense>
+      ) : null}
 
       {briefing?.localMarket ? <LocalCompetitors market={briefing.localMarket} notCompared={mixedBasis} /> : null}
 

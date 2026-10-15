@@ -59,9 +59,9 @@ export default async function DarwinPage() {
           },
           {
             label: "Exceptions",
-            title: "Knox reviews",
-            detail: "Resolve anomaly-only decisions without blocking clean verified rows.",
-            href: "/admin/knox",
+            title: "Held fees",
+            detail: "Rows Darwin holds, by reason, each with its way out (above).",
+            href: "/admin/darwin",
           },
         ]}
       />

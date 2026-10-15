@@ -91,8 +91,19 @@ describe("Regulatory Wire lines for a regulation answer (#1090)", () => {
   it("names an open comment period and a future effective date as such", () => {
     const proposed = rule({ kind: "proposed_rule", published_on: "2026-09-01", comments_close_on: "2026-11-02", effective_on: "2027-01-01" });
     expect(wireFacts({ rules: [proposed], bills: [], actions: [] }, scope())[0].text).toBe(
-      'OCC proposed rule "National Bank Non-Interest Charges and Fees", published September 1, 2026, comments close November 2, 2026, takes effect January 1, 2027.',
+      'OCC proposed rule "National Bank Non-Interest Charges and Fees", published September 1, 2026, comments close November 2, 2026.',
     );
+    const closed = rule({ kind: "final_rule", published_on: "2026-09-01", comments_close_on: "2026-09-30", effective_on: "2027-01-01" });
+    expect(wireFacts({ rules: [closed], bills: [], actions: [] }, scope())[0].text).toBe(
+      'OCC final rule "National Bank Non-Interest Charges and Fees", published September 1, 2026, takes effect January 1, 2027.',
+    );
+  });
+
+  it("keeps a joint rule from five agencies inside the storyline word limit (#1359)", () => {
+    const joint = rule({ kind: "proposed_rule", agencies: ["CFPB", "OCC", "FDIC", "Federal Reserve", "NCUA"], published_on: "2026-09-01", comments_close_on: "2026-11-02", effective_on: "2027-01-01" });
+    const [fact] = wireFacts({ rules: [joint], bills: [], actions: [] }, scope());
+    expect(fact.text).toMatch(/^(CFPB|OCC) and \d other agencies proposed rule /);
+    expect(words(fact.text)).toBeLessThanOrEqual(20);
   });
 
   it("leaves out items that do not bear on the fee, are out of date, or have no link", () => {

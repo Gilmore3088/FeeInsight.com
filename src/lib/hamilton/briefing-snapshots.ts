@@ -161,18 +161,33 @@ export function summarizeBriefingRefresh(result: BriefingRefreshResult): string 
   return `${parts.join(", ")}.`;
 }
 
-/** The bank's two newest stored briefings, compared; null until there are two. */
-export async function getBriefingChangesSinceLastQuarter(institutionId: number): Promise<BriefingDiff | null> {
+/** What the briefing page shows of the quarterly copies: none yet, the first one, or two compared. */
+export type QuarterlyChanges = { kind: "first"; quarter: string } | { kind: "diff"; diff: BriefingDiff };
+
+/**
+ * The bank's two newest stored briefings, compared (#1083). With one stored copy the page says
+ * when the first comparison comes; with none, a failed read or an unreadable copy it shows nothing.
+ */
+export async function getQuarterlyChanges(institutionId: number): Promise<QuarterlyChanges | null> {
   const rows = await sql<{ quarter: string; briefing: Briefing | string }[]>`
     SELECT quarter, briefing FROM hamilton_briefing_snapshots
      WHERE institution_id = ${institutionId}
      ORDER BY quarter DESC
      LIMIT 2
   `.catch(() => [] as { quarter: string; briefing: Briefing | string }[]);
-  if (rows.length < 2) return null;
+  if (rows.length === 0) return null;
+  if (rows.length === 1) return { kind: "first", quarter: rows[0].quarter };
   const parse = (value: Briefing | string): Briefing => (typeof value === "string" ? (JSON.parse(value) as Briefing) : value);
-  return diffBriefings(
-    { quarter: rows[1].quarter, briefing: parse(rows[1].briefing) },
-    { quarter: rows[0].quarter, briefing: parse(rows[0].briefing) },
-  );
+  try {
+    return {
+      kind: "diff",
+      diff: diffBriefings(
+        { quarter: rows[1].quarter, briefing: parse(rows[1].briefing) },
+        { quarter: rows[0].quarter, briefing: parse(rows[0].briefing) },
+      ),
+    };
+  } catch {
+    // A malformed or outdated stored copy shows nothing rather than taking the page down.
+    return null;
+  }
 }

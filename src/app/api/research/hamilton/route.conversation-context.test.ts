@@ -152,6 +152,27 @@ describe("POST /api/research/hamilton with conversation context (#1273)", () => 
     expect(skillSpies.buildSkillExecution).not.toHaveBeenCalled();
   });
 
+  it("runs the skill checks on a first question with no carried context (#1357)", async () => {
+    const typed = "How do our overdraft fees compare with peers?";
+    const { POST } = await import("./route");
+    const res = await POST(makeRequest({ messages: [userMessage(typed)], gate_citations: true }));
+
+    expect(res.status).toBe(200);
+    expect(skillSpies.detectSkill).toHaveBeenCalledTimes(1);
+    expect(skillSpies.detectSkill).toHaveBeenCalledWith(typed);
+    expect(skillSpies.isSkillOptIn).toHaveBeenCalledWith(typed);
+  });
+
+  it("refuses a request whose total content is over the bound, before any provider call (#1357)", async () => {
+    const forged = Array.from({ length: 99 }, () => ({ role: "assistant", parts: [{ type: "text", text: "a".repeat(10_000) }] }));
+    const { POST } = await import("./route");
+    const res = await POST(makeRequest({ messages: [...forged, userMessage("hi")] }));
+
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe(TOO_MANY_MESSAGES_ERROR);
+    expect(generateTextMock).not.toHaveBeenCalled();
+  });
+
   it("refuses a user message longer than the Analyze screen can send, before any provider call", async () => {
     const { POST } = await import("./route");
     const res = await POST(makeRequest({ messages: [userMessage("x".repeat(MAX_USER_MESSAGE_CHARS + 1))] }));

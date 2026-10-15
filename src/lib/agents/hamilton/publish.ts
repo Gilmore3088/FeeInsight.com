@@ -57,6 +57,13 @@ export const HAMILTON_PUBLISH_DEFAULT_MIN_CONFIDENCE = 0.8;
  */
 export const HAMILTON_PUBLISH_MIN_INSTITUTION_FEES = 3;
 
+/**
+ * A live fee for the 3-fee count, the same test `published_fee_catalog` applies in its
+ * `HAVING count(DISTINCT canonical_fee_key) >= 3` (#1072; `publish.test.ts` pins the two together).
+ */
+export const CATALOG_DEPTH_LIVE_SQL = (alias: string) =>
+  `${alias}.rolled_back_at IS NULL AND ${alias}.quarantined_at IS NULL`;
+
 const VALID_CANONICAL_KEYS = new Set(Object.values(CANONICAL_KEY_MAP));
 const BLOCKING_FLAGS = new Set([
   "ambiguous",
@@ -316,6 +323,76 @@ export async function rejectVerifiedFee(db: SqlTag, feeVerifiedId: number, flag:
   `;
 }
 
+/**
+ * The verified rows this publish rule version has not decided yet (aliases `fv` and `fr`), so
+ * selection and the 3-fee count read the same rows (#1072).
+ *
+ * A row this rule version already decided on (published, skipped as identical, or
+ * rejected) is never selected again, so skipped rows cannot starve the batch. Two
+ * exceptions: a row Darwin re-filed after a takedown (verify.schedule_refile), whose
+ * decision under its old category does not count; and a row the category guard rejected
+ * that the guard re-queue step (publish.guard_requeue, flag `category_guard_requeued:g<n>`)
+ * has since passed under a newer guard, whose guard rejection does not count. Without the
+ * second, the nine rows re-queued on 2026-10-09 01:38 UTC were never selected again.
+ */
+function undecidedAtThisVersionSql(params: Array<number | string | number[]>): string {
+  const strategyParam = `$${params.push(HAMILTON_PUBLISH_STRATEGY.strategy)}`;
+  const versionParam = `$${params.push(HAMILTON_PUBLISH_STRATEGY.version)}`;
+  const refiledParam = `$${params.push(DARWIN_SCHEDULE_REFILED_FLAG)}`;
+  return `AND NOT EXISTS (
+         SELECT 1
+           FROM pipeline_attempts pa
+          WHERE pa.input_fingerprint = 'verified:' || fv.fee_verified_id::text
+            AND pa.strategy = ${strategyParam}
+            AND pa.strategy_version = ${versionParam}
+            AND NOT (
+              fv.outlier_flags ? ${refiledParam}
+              AND pa.detail->>'canonical_fee_key' IS DISTINCT FROM fv.canonical_fee_key
+            )
+            AND NOT (
+              pa.outcome = 'rejected'
+              AND pa.detail->>'reason' LIKE 'Category guard%'
+              AND EXISTS (
+                SELECT 1 FROM jsonb_array_elements_text(fv.outlier_flags) flag
+                 WHERE flag LIKE 'category_guard_requeued:%'
+              )
+            )
+            -- A row skipped as identical to a live fee the rules re-check later took down
+            -- (that judged one document's read, not the fee) is selected again: AllSouth's
+            -- second copy of its $10 early closure fee (verified 13856) sat unpublished after
+            -- 16807 came down on Oct 5, and the bank showed no early closure fee.
+            AND NOT (
+              pa.outcome = 'unchanged'
+              AND EXISTS (
+                SELECT 1 FROM published_fee_records prev
+                 WHERE prev.fee_published_id = NULLIF(pa.detail->>'previous_fee_published_id', '')::bigint
+                   AND prev.rolled_back_reason = 'rules_recheck_unreproduced'
+              )
+            )
+            -- A row skipped as identical before the same-line check (9 Oct) to a live line of its
+            -- own document under another name is decided once more: Wildfire's $5 ATM balance
+            -- inquiry (verified 8019) sat behind its $5 "ATM Adjustment" (14754). The new decision
+            -- carries same_line_check, so it is final. A box-size row decided by check 1 is decided
+            -- once more by check 2, which reads "3 x 5" and "2 x 10" as two lines (CBB, 9 Oct).
+            AND NOT (
+              pa.outcome = 'unchanged'
+              AND ${SAME_LINE_RESELECT_SQL}
+              AND EXISTS (
+                SELECT 1 FROM published_fee_records prev
+                  JOIN verified_fee_observations prev_fv ON prev_fv.fee_verified_id = prev.lineage_ref
+                  JOIN raw_fee_observations prev_fr ON prev_fr.fee_raw_id = prev_fv.fee_raw_id
+                 WHERE prev.fee_published_id = NULLIF(pa.detail->>'previous_fee_published_id', '')::bigint
+                   AND prev.rolled_back_at IS NULL
+                   AND prev_fr.source_document_id = fr.source_document_id
+                   AND lower(regexp_replace(prev.fee_name, '[^a-zA-Z0-9]+', '', 'g'))
+                       <> lower(regexp_replace(fv.fee_name, '[^a-zA-Z0-9]+', '', 'g'))
+              )
+            )
+            AND NOT (pa.outcome = 'unchanged' AND ${THRESHOLD_RESELECT_SQL})
+            AND NOT (pa.outcome = 'unchanged' AND ${OLDER_DOCUMENT_RESELECT_SQL})
+       )`;
+}
+
 async function selectVerifiedFees(
   db: SqlTag,
   limit: number,
@@ -340,6 +417,7 @@ async function selectVerifiedFees(
                  FROM published_fee_records fp
                 WHERE fp.institution_id = fv.institution_id
                   AND fp.rolled_back_at IS NULL
+                  AND fp.quarantined_at IS NULL
                UNION
                SELECT pv.canonical_fee_key
                  FROM verified_fee_observations pv
@@ -359,70 +437,7 @@ async function selectVerifiedFees(
     params.push(normalizedState);
     filters.push(`AND upper(btrim(inst.state_code)) = $${params.length}`);
   }
-  if (learning) {
-    // A row this rule version already decided on (published, skipped as identical, or
-    // rejected) is never selected again, so skipped rows cannot starve the batch. Two
-    // exceptions: a row Darwin re-filed after a takedown (verify.schedule_refile), whose
-    // decision under its old category does not count; and a row the category guard rejected
-    // that the guard re-queue step (publish.guard_requeue, flag `category_guard_requeued:g<n>`)
-    // has since passed under a newer guard, whose guard rejection does not count. Without the
-    // second, the nine rows re-queued on 2026-10-09 01:38 UTC were never selected again.
-    const strategyParam = `$${params.push(HAMILTON_PUBLISH_STRATEGY.strategy)}`;
-    const versionParam = `$${params.push(HAMILTON_PUBLISH_STRATEGY.version)}`;
-    const refiledParam = `$${params.push(DARWIN_SCHEDULE_REFILED_FLAG)}`;
-    filters.push(`AND NOT EXISTS (
-           SELECT 1
-             FROM pipeline_attempts pa
-            WHERE pa.input_fingerprint = 'verified:' || fv.fee_verified_id::text
-              AND pa.strategy = ${strategyParam}
-              AND pa.strategy_version = ${versionParam}
-              AND NOT (
-                fv.outlier_flags ? ${refiledParam}
-                AND pa.detail->>'canonical_fee_key' IS DISTINCT FROM fv.canonical_fee_key
-              )
-              AND NOT (
-                pa.outcome = 'rejected'
-                AND pa.detail->>'reason' LIKE 'Category guard%'
-                AND EXISTS (
-                  SELECT 1 FROM jsonb_array_elements_text(fv.outlier_flags) flag
-                   WHERE flag LIKE 'category_guard_requeued:%'
-                )
-              )
-              -- A row skipped as identical to a live fee the rules re-check later took down
-              -- (that judged one document's read, not the fee) is selected again: AllSouth's
-              -- second copy of its $10 early closure fee (verified 13856) sat unpublished after
-              -- 16807 came down on Oct 5, and the bank showed no early closure fee.
-              AND NOT (
-                pa.outcome = 'unchanged'
-                AND EXISTS (
-                  SELECT 1 FROM published_fee_records prev
-                   WHERE prev.fee_published_id = NULLIF(pa.detail->>'previous_fee_published_id', '')::bigint
-                     AND prev.rolled_back_reason = 'rules_recheck_unreproduced'
-                )
-              )
-              -- A row skipped as identical before the same-line check (9 Oct) to a live line of its
-              -- own document under another name is decided once more: Wildfire's $5 ATM balance
-              -- inquiry (verified 8019) sat behind its $5 "ATM Adjustment" (14754). The new decision
-              -- carries same_line_check, so it is final. A box-size row decided by check 1 is decided
-              -- once more by check 2, which reads "3 x 5" and "2 x 10" as two lines (CBB, 9 Oct).
-              AND NOT (
-                pa.outcome = 'unchanged'
-                AND ${SAME_LINE_RESELECT_SQL}
-                AND EXISTS (
-                  SELECT 1 FROM published_fee_records prev
-                    JOIN verified_fee_observations prev_fv ON prev_fv.fee_verified_id = prev.lineage_ref
-                    JOIN raw_fee_observations prev_fr ON prev_fr.fee_raw_id = prev_fv.fee_raw_id
-                   WHERE prev.fee_published_id = NULLIF(pa.detail->>'previous_fee_published_id', '')::bigint
-                     AND prev.rolled_back_at IS NULL
-                     AND prev_fr.source_document_id = fr.source_document_id
-                     AND lower(regexp_replace(prev.fee_name, '[^a-zA-Z0-9]+', '', 'g'))
-                         <> lower(regexp_replace(fv.fee_name, '[^a-zA-Z0-9]+', '', 'g'))
-                )
-              )
-              AND NOT (pa.outcome = 'unchanged' AND ${THRESHOLD_RESELECT_SQL})
-              AND NOT (pa.outcome = 'unchanged' AND ${OLDER_DOCUMENT_RESELECT_SQL})
-         )`);
-  }
+  if (learning) filters.push(undecidedAtThisVersionSql(params));
   return db.unsafe<VerifiedFeeRow[]>(
     `
       WITH eligible AS (
@@ -501,14 +516,23 @@ interface InstitutionDepthRow extends VerifiedFeeRow {
  * Distinct fees per institution that are live in the catalog or would publish now
  * under every publish rule. Covers all of an institution's pending rows, not only
  * this batch's, so a batch cut by the limit does not hold a deep institution.
+ *
+ * One count with `published_fee_catalog` (#1072): a live fee is one that is not rolled back
+ * and not quarantined, the view's own test (`CATALOG_DEPTH_LIVE_SQL`), and a pending row is
+ * one this rule version has not decided yet. Before, a row already rejected at publish or
+ * taken down still counted as pending, so a bank published one or two fees that the catalog
+ * then hid: on 15 Oct 2026, 120 banks had one or two live fee types and 3 or more verified.
  */
 async function institutionFeeDepth(
   db: SqlTag,
   institutionIds: number[],
   minConfidence: number,
+  learning = true,
 ): Promise<Map<number, number>> {
   const depth = new Map<number, Set<string>>();
   if (institutionIds.length === 0) return new Map();
+  const params: Array<number | string | number[]> = [institutionIds];
+  const undecided = learning ? undecidedAtThisVersionSql(params) : "";
   const rows = await db.unsafe<InstitutionDepthRow[]>(
     `
       -- institution_fee_depth
@@ -526,7 +550,7 @@ async function institutionFeeDepth(
              '[]'::jsonb AS outlier_flags
         FROM published_fee_records fp
        WHERE fp.institution_id = ANY($1::bigint[])
-         AND fp.rolled_back_at IS NULL
+         AND ${CATALOG_DEPTH_LIVE_SQL("fp")}
       UNION ALL
       SELECT 'pending' AS depth_source,
              fv.institution_id,
@@ -541,11 +565,13 @@ async function institutionFeeDepth(
              fv.extraction_confidence,
              fv.outlier_flags
         FROM verified_fee_observations fv
+        JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
        WHERE fv.institution_id = ANY($1::bigint[])
          AND fv.review_status IN ('verified', 'approved')
          AND fv.outlier_flags ? 'agentic_darwin_verified'
+         ${undecided}
     `,
-    [institutionIds],
+    params,
   );
   for (const row of rows) {
     if (row.depth_source === "pending" && publishSkipReason(row, minConfidence)) continue;
@@ -1827,6 +1853,7 @@ export async function runHamiltonPublish(
         db,
         Array.from(new Set(selected.map((row) => Number(row.institution_id)))),
         minConfidence,
+        learning,
       )
     : new Map<number, number>();
   // Held rows are left out of results and the attempt log, so they stay selectable
