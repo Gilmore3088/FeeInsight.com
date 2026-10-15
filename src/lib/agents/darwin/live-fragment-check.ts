@@ -163,11 +163,12 @@ const figureValue = (text: string) => Number(text.replace(/,/g, ""));
 /**
  * v4 (#1499): true when a figure in the name equals the amount (6 = 6.00, commas ignored). v5: read
  * on the name as the head is read (`gluedReadable`: a glued footnote number dropped, 109893
- * "10NON-MEMBER LOAN APPLICATION FEE" $10), skipping a bare count (`LIVE_FRAGMENT_FIGURE`).
+ * "10NON-MEMBER LOAN APPLICATION FEE" $10), skipping a bare count (`LIVE_FRAGMENT_FIGURE`) only on an
+ * amount under `LIVE_FRAGMENT_CONDITION_MAX` ("more than 1,000 items" $1,000 still blocks).
  */
 export function liveFragmentFigureIsAmount(name: string, amount: number): boolean {
   return [...gluedReadable(name).matchAll(LIVE_FRAGMENT_FIGURE)].some((match) =>
-    !(match[1] == null && !match[2].includes(".") && match[3] != null) && Math.abs(figureValue(match[2]) - amount) < 0.005);
+    !(amount < LIVE_FRAGMENT_CONDITION_MAX && match[1] == null && !match[2].includes(".") && match[3] != null) && Math.abs(figureValue(match[2]) - amount) < 0.005);
 }
 
 /** v3 (#1499): true when the name states a price other than the fee's own (see `LIVE_FRAGMENT_PRICED_FEE`). */
@@ -825,7 +826,7 @@ export function liveFragmentCountSql(): string {
 ), matched AS (
   SELECT *, substring(readable from '${postgresPattern(re.glued_sentence)}') AS head_plain,
          EXISTS (SELECT 1 FROM regexp_matches(readable, '${postgresPattern(LIVE_FRAGMENT_FIGURE)}', 'gi') m
-                  WHERE NOT (m[1] IS NULL AND m[2] !~ '\\.' AND m[3] IS NOT NULL) AND abs(replace(m[2], ',', '')::numeric - amount) < 0.005) AS figure_is_amount,
+                  WHERE NOT (amount < ${LIVE_FRAGMENT_CONDITION_MAX} AND m[1] IS NULL AND m[2] !~ '\\.' AND m[3] IS NOT NULL) AND abs(replace(m[2], ',', '')::numeric - amount) < 0.005) AS figure_is_amount,
          CASE WHEN readable ~ '^[a-z]' THEN upper(left(readable, 1)) || substr(readable, 2) END AS readable_cap,
          btrim(regexp_replace(tail_raw, '${postgresPattern(re.tail_qualifiers)}', '', 'i')) AS tail_phrase
     FROM tagged

@@ -309,7 +309,7 @@ describe("Darwin live fragment re-check", () => {
     expect(text).toContain("AND renamable AND generic_ok THEN 'rename'");
     expect(text).toContain("AND NOT head_ok AND NOT generic_ok AND tail_ok");
     expect(text).toContain("regexp_matches(readable, '(\\$\\s?)?(\\d");
-    expect(text).toContain("WHERE NOT (m[1] IS NULL AND m[2] !~ '\\.' AND m[3] IS NOT NULL)");
+    expect(text).toContain("WHERE NOT (amount < 100 AND m[1] IS NULL AND m[2] !~ '\\.' AND m[3] IS NOT NULL)");
     expect(text).toContain("\\y(?:may\\s+therefore|");
     expect(text).toContain("(?:only\\s+)?(?:if|when)");
     expect(text).toContain("'^activation\\s+(?:fees?|charges?)$'");
@@ -487,6 +487,8 @@ describe("live fragment switch-on rules (#1443)", () => {
     // (97910's "After 5 days" $5 and 44880's "3 years dormant" $3 above stay takedowns).
     ["Accounts with more than $6 in debits are charged an excessive transaction fee of", 6, null, { pattern: "sentence_end", action: "takedown" }],
     ["Accounts with more than 6.00 debits are charged an excessive transaction fee of", 6, null, { pattern: "sentence_end", action: "takedown" }],
+    // The count skip holds only under $100: a count equal to a large amount is the amount misread.
+    ["Accounts with more than 1,000 items are charged an item processing fee of", 1000, null, { pattern: "sentence_end", action: "takedown" }],
     ["Accounts with more than 6 per month are charged an excessive transaction fee of", 6, null, { pattern: "sentence_end", action: "takedown" }],
     ["Accounts inactive for 12 Months are charged a dormant account fee of", 12, null, { pattern: "sentence_end", action: "takedown" }],
     // Known miss (125163): the source line is "$5 monthly service charge when balance falls below $300.

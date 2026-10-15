@@ -322,11 +322,14 @@ Darwin owns verification and classification.
     passes the balance gate (under $100, no excess, no figure equal to the amount): 142422, 110391,
     110392 were real fees correctly priced. Any other generic head is refused as before, and its
     line may still take a tail name (`gluedSentenceSplit(name, { allowGeneric: true })` returns it
-    flagged `generic`; every other caller still gets null).
+    flagged `generic`; every other caller still gets null). Generic names such as "Per quarter
+    charge", "Monthly fee" and "Annual fee" are still allowed as a head when the rest of the line is
+    a gated balance-below clause.
   - Figure gate: read on the name after its glued footnote ("10NON-MEMBER LOAN APPLICATION FEE" $10,
     109893), and a bare whole figure followed by a count noun (debits, withdrawals, transactions,
     transfers, checks, items, times) is a count, not the price ("more than 6 debits per month ...
-    excessive transaction fee of" $6, 137819). A span of time ("After 5 days" $5, 97910; "3 years
+    excessive transaction fee of" $6, 137819), on an amount under $100 only ("more than 1,000 items"
+    $1,000 still blocks). A span of time ("After 5 days" $5, 97910; "3 years
     dormant" $3) still blocks.
   - Known miss: 125163 "Monthly service charge when balance falls below" $2, whose source line also
     states "$5 monthly service charge" and "$2 paper statement fee". The stored name lost both
