@@ -7,7 +7,7 @@ import { runHamiltonCategoryGuard } from "@/lib/agents/hamilton/category-guard";
 import { collapseNearNameDuplicates, collapsePublishedDuplicates } from "@/lib/agents/hamilton/duplicate-collapse";
 import { collapsePageCopies } from "@/lib/agents/hamilton/page-copy-collapse";
 import { retireClosedInstitutionFees } from "@/lib/agents/hamilton/closed-institution";
-import { fillBlankFrequencies, FREQUENCY_FILL_VERSION } from "@/lib/agents/hamilton/frequency-fill";
+import { fillBlankFrequencies, fillFrequenciesInPublish, FREQUENCY_FILL_VERSION } from "@/lib/agents/hamilton/frequency-fill";
 import { repairSourceLinks, SOURCE_LINK_VERSION } from "@/lib/agents/hamilton/source-link";
 import { restoreFeesNowInTaxonomy, rollBackOffTaxonomyFees } from "@/lib/agents/hamilton/off-taxonomy-rollback";
 import { foldRetiredCategories } from "@/lib/agents/hamilton/taxonomy-fold";
@@ -1158,8 +1158,10 @@ async function executeAgenticStep(
       });
       // A live fee's frequency follows its own schedule row: a blank gets the one the row states
       // ("$6.00 each"), and one read from another fee's row is corrected or cleared.
-      const frequencyFill = await fillBlankFrequencies(tx, {
+      // A failed fill write is a warning here, never a failed publish (#1349 review).
+      const frequencyFill = await fillFrequenciesInPublish(tx, {
         runId: run.id,
+        stepId: step.id,
         dryRun: run.runKind === "dry_run",
         institutionId,
       });
@@ -1772,6 +1774,7 @@ async function executeAgenticStep(
           frequency_fills: frequencyFill.filled.length,
           frequency_holds: frequencyFill.held.length,
           frequency_fill_scanned: frequencyFill.scanned,
+          frequency_fill_error: frequencyFill.writeError,
           frequency_fill_samples: frequencyFill.filled.slice(0, 10).map((row) => ({
             fee_published_id: row.feePublishedId,
             from: row.from,
