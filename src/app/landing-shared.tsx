@@ -166,6 +166,28 @@ export interface HomeData {
   scenario: AnalyzeScenario | null;
 }
 
+/**
+ * Whether a homepage render may be kept in the page cache. The page is regenerated in the
+ * background (ISR), and a render made while a read was failing would otherwise be served
+ * for the whole revalidate window, or baked into the build. A read that failed (as opposed
+ * to one that answered "nothing today", such as no sample bank passing the bar) makes the
+ * render uncacheable: the build then serves the page per request, and a background
+ * regeneration keeps the last good page.
+ */
+export function homeReadsCacheable({
+  summary,
+  categories,
+  sampleFailed,
+  overdraftFailed,
+}: {
+  summary: Pick<PublicStatsSummary, "complete">;
+  categories: FeeCategorySummary[];
+  sampleFailed: boolean;
+  overdraftFailed: boolean;
+}): boolean {
+  return summary.complete && categories.length > 0 && !sampleFailed && !overdraftFailed;
+}
+
 /** The sample report's fees and comparable lines, with only verified source lines kept. */
 export function buildSampleView(report: MarketReport | null): SampleView | null {
   if (!report) return null;
