@@ -15,6 +15,7 @@ import {
   foldContext,
   foldRetiredCategory,
   splitLiveCategory,
+  subordinationRefileHeld,
 } from "@/lib/fee-fold";
 
 type SqlTag = typeof sql;
@@ -114,6 +115,8 @@ export function planFold(rows: FoldRow[], texts: Map<number, string>): FoldPlan 
     const split = splitLiveCategory(row.canonical_fee_key, name);
     const fold = foldRetiredCategory(row.canonical_fee_key, name, context) ?? split;
     if (!fold) continue;
+    // A subordination fee its bank's line does not support stays where it is (#1370 review).
+    if (subordinationRefileHeld(row.canonical_fee_key, fold.to, Number(row.fee_verified_id))) continue;
     const amount = amountOf(row.amount);
     const accepted = fold.to != null && passesDarwinChecks(fold.to, name, amount ?? 0);
     // A split fee its new type does not accept stays live where it is.

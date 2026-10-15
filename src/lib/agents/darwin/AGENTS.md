@@ -252,7 +252,7 @@ Darwin owns verification and classification.
   Recorded passes (`releaseRecordedPasses`, strategy `verify.release_recorded`, each extract-free
   `verify` step): the review never picks a fee with a v17 attempt again, so the 421 fees v17 passed
   while the release did not act would stay held even with `DARWIN_RELEASE_ACTS` on. This pass
-  releases them after today's free holds, under its own switch (`DARWIN_RECORDED_RELEASE_ACTS`),
+  releases them after today's free holds, under its own switch (`DARWIN_RECORDED_RELEASE_ACTS`, on since Oct 15),
   so the other release paths stay verdicts-only. Three holds were added after a hand check of 20
   found 19 right (Oct 15), and they hold in the review too:
   - `business_activity_row`: a business account's "Per Each ..." activity row filed outside
@@ -278,13 +278,19 @@ Darwin owns verification and classification.
   - `band_as_price`: a band or threshold read as the price ("Lessthan $5.00", raw 437275; "$1,000 or
     over"), or a name cut at the band word.
   - `two_column_glue`: a name holding a second fee's name that another row prints as its own fee
-    (raw 296682), or a row's band and price cells printed again under another fee's name (raw
-    432124).
+    (raw 296682), a row's short band and price cells (40 characters or fewer, opening on a band
+    word) printed again under another fee's name (raw 432124), or two headings and their two prices
+    on one line with the fee's price not under its own heading (raw 169723, a levy given the
+    account-closure price).
   Every other overdraft and NSF pass in the batch waits for a person (`overdraft_nsf_for_person`,
-  `RECORDED_RELEASE_PERSON_CATEGORIES`). On 15 Oct: 389 of 421 would release, 32 held (11 glued
-  or cut name, 7 frequency word, 5 overdraft/NSF for a person, 4 two-column glue, 2 band as price,
-  1 footnote, 1 overdraft transfer, 1 business activity row). A new 20-fee hand check of the
-  release set must score 18 or better before the switch is turned on.
+  `RECORDED_RELEASE_PERSON_CATEGORIES`). The third hand check scored 18 of 20. Its two misses
+  hold, and two good fees the glue check held (whole sentences repeated in a product table, raw
+  206385 and 512869) now release. `maintenance_without_context` (recorded passes only) holds a
+  maintenance price with no rows around it, already a peer outlier: "Monthly Service Fee $29.95" on
+  every Wilson & Muir page (raw 538902), a business cash management fee. On 15 Oct: 387 of 421
+  would release, 34 held (11 glued or cut name, 7 frequency word, 5 overdraft/NSF for a person, 3
+  two-column glue, 3 maintenance without context, 2 band as price, 1 footnote, 1 overdraft
+  transfer, 1 business activity row).
   v1 released on the schedule check alone; its dry run on 2026-10-06 (1,997 of 4,128 held
   fees) had 12 of 20 hand-checked releases right. v2 adds the gates above. v3 (James chose
   "Reject only", 2026-10-06 16:49 UTC) acts on rejects (`DARWIN_RELEASE_REJECTS_ACT`): each
@@ -382,8 +388,8 @@ Darwin owns verification and classification.
 - Guard v35 (2026-10-08) accepts a per-item overdraft or NSF fee whose note states the daily cap: a dollar cap above the row's own price ("NSF Returned Item(s) Charge (NSF charge maximum of $100 per day)" $25, First State Bank of Rosemount), and a cap note that names the returned items sharing it ("Overdraft Fee ... (Consumer Accts: 5 max total OD or Returned Item fees daily)", BankIowa).
 - Guard v36 (2026-10-08) changes no rule: PRs 665 and 668 both shipped v35, so rows rejected between their deploys are re-checked under both.
 - Guard v42 (2026-10-08; v40 and v41 are Accuracy's, PR 682) files an NSF item marked paid after a dash or in brackets ("NSF Fee Charge - Paid (per item)", "Nonsufficient Funds Fee-Paid", "Insufficient Funds Charge (Check Paid, Per Item)") as the overdraft fee and re-files it there from NSF; "per non-paid item", "Paid from other ... account" and "We will not assess ..." stay out. "Overdraft Privilege Standard or Extended Coverage" names the program, not an extended overdraft fee.
-- The guard is at v63 (`CATEGORY_GUARD_VERSION` in `src/lib/fee-category-guard.ts`). The notes for
-  v43 to v63 are the version comments above that constant, not this guide; v58 is the bond-return
+- The guard is at v64 (`CATEGORY_GUARD_VERSION` in `src/lib/fee-category-guard.ts`). The notes for
+  v43 to v64 are the version comments above that constant, not this guide; v58 is the bond-return
   lesson above.
 - Learning store: every verify decision except duplicates and category rejects (the
   publish-step sync writes those) is written to `pipeline_feedback` as a judgement on

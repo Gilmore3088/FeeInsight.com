@@ -751,7 +751,7 @@ export async function recheckSupersededRows(
  * category the re-read wrote in `conditions`, the stale flag `insertCandidate` now drops. Rows
  * Darwin already verified are left as they are.
  *
- * This changes production rows, so it is off until James approves it (#1093). Off, every extract
+ * This changes production rows. James switched it on (Oct 15, #1093). Off, every extract
  * step reads a sample of the candidates (25, a new sample each hour), writes nothing, and reports
  * the candidate count and what it would do with the sample. A dry-run Knox extract
  * (`run_kind = dry_run`) reads them all and writes nothing. On, it reads 200 a pass in id order,
@@ -761,7 +761,7 @@ export async function recheckSupersededRows(
  * the sample (`skipSample`): every lane read the same all-bank sample (1,336 candidates at 317
  * banks, Oct 15), and the scan took a zero-document extract from 7 s to 53 s.
  */
-export const SUPERSEDED_REFILE_LIVE = false;
+export const SUPERSEDED_REFILE_LIVE = true;
 export const SUPERSEDED_REFILE_LIMIT = 200;
 /** Off: the read-only sample each extract step takes. */
 export const SUPERSEDED_REFILE_SAMPLE = 25;

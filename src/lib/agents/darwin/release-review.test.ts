@@ -425,11 +425,24 @@ describe("releasing the recorded v17 passes", () => {
     // Not footnotes: a price ending in 5, or one of several prices on the line; a price at its band is not the band.
     [recorded("Subpoena", "legal_process", null, "Subpoena | $25 per instance", null, { amount: "25" }), null],
     [recorded("Return Mail", "account_research", null, "Return Mail | $3.00 / item | Updating your address", "Return Mail | $3.00 / item | Updating your address\nOther | Return Mail | $3.00 / item | Updating your address", { amount: "3" }), null],
+    // The third hand check (Oct 15, 18 of 20): two good fees the glue check held now release, and its two misses hold.
+    [recorded("Monthly service fee", "monthly_maintenance", "monthly", "| You can avoid the $30.00 monthly service fee by maintaining a minimum daily balance of $5,000 or more.",
+      "Ways to Avoid the Monthly Service Fee | You can avoid the $10.00 monthly service fee by maintaining a minimum daily balance of $500 or more. | You can avoid the $30.00 monthly service fee by maintaining a minimum daily balance of $5,000 or more. | Not Applicable",
+      { amount: "30" }), null],
+    [recorded("Monthly service fee", "monthly_maintenance", "monthly", "$100 of your deposits, however, may be available on the first business day. | account will be subject to a monthly service fee of $1.00 for that monthly | Ins",
+      "$100 of your deposits, however, may be available on the first business day. | account will be subject to a monthly service fee of $1.00 for that monthly | Insurance Fund.",
+      { amount: "1" }), null],
+    [recorded("LEVIES/GARNISHMENTS", "garnishment_levy", null, "ACCOUNT CLOSURE | LEVIES/GARNISHMENTS | $30.00 – within 90 days | $75.00",
+      "ACCOUNT CLOSURE | LEVIES/GARNISHMENTS\n$30.00 – within 90 days | $75.00", { amount: "30" }), "two_column_glue"],
+    [recorded("Monthly Service Fee", "monthly_maintenance", "monthly", "Monthly Service Fee $29.95", null, { amount: "29.95" }), "maintenance_without_context"],
+    // Its price under its own heading: released.
+    [recorded("LEVIES/GARNISHMENTS", "garnishment_levy", null, "ACCOUNT CLOSURE | LEVIES/GARNISHMENTS | $30.00 – within 90 days | $75.00",
+      "ACCOUNT CLOSURE | LEVIES/GARNISHMENTS\n$30.00 – within 90 days | $75.00", { amount: "75" }), null],
   ])("holds a recorded pass for its shape (%#)", (candidate, reason) => {
     expect(recordedPassHoldReason(candidate)).toBe(reason);
   });
 
-  it("is off: counts what it would release and hold, and writes nothing", async () => {
+  it("switched off: counts what it would release and hold, and writes nothing", async () => {
     expect(DARWIN_RELEASE_ACTS).toBe(false);
     const rows = [
       row({ fee_raw_id: 418400, fee_name: "Per Each ATM Withdrawal", held_canonical_fee_key: "atm_non_network", amount: "0.25", source_line: "Per Each ATM Withdrawal $ .25", source_context: "Per Each ACH Debit $ .25\nPer Each ATM Withdrawal $ .25" }),
@@ -441,7 +454,7 @@ describe("releasing the recorded v17 passes", () => {
       if (text.includes("verify.release_recorded") || text.includes("FROM pipeline_attempts pa")) return Promise.resolve(rows);
       return Promise.resolve([]);
     });
-    const result = await releaseRecordedPasses(db as never, { runId: 9 });
+    const result = await releaseRecordedPasses(db as never, { runId: 9, acts: false });
     expect(result).toMatchObject({ acts: false, recordedPasses: 2, wouldRelease: 1, released: 0, held: { business_activity_row: 1 } });
     expect(result.heldExamples[0]).toMatchObject({ feeRawId: 418400, reason: "business_activity_row" });
     expect(result.releaseByCategory).toEqual({ stop_payment: 1 });
@@ -453,7 +466,7 @@ describe("releasing the recorded v17 passes", () => {
     [false, { acts: false, dryRunRecorded: true, released: 0 }],
     [true, { acts: true, dryRunRecorded: false, released: 1 }],
   ])("switched on, releases only after a recorded dry run (dry run done: %s)", async (dryRunDone, expected) => {
-    expect(DARWIN_RECORDED_RELEASE_ACTS).toBe(false);
+    expect(DARWIN_RECORDED_RELEASE_ACTS).toBe(true);
     const rows = [row({ fee_raw_id: 2 })];
     const writes: Array<{ text: string; values: unknown[] }> = [];
     const db = vi.fn((strings: TemplateStringsArray, ...values: unknown[]) => {
