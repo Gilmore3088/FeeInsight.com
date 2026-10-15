@@ -4,6 +4,7 @@ import { overdraftResearch } from "./workspace/test-fixtures";
 import type { LiveReader } from "./answer-correctness";
 import type { MemoClient } from "./memo";
 import type { WrittenAnswerWriter } from "./written-answer-read";
+import type { PreparedReportAnswer, ReportAnswerWriter } from "./report-answer-read";
 
 // Invented institutions, questions and figures for tests only; nothing here is live data.
 const evalMocks = vi.hoisted(() => ({
@@ -14,6 +15,8 @@ const evalMocks = vi.hoisted(() => ({
 
 vi.mock("@/lib/data-store/connection", () => ({ sql: vi.fn() }));
 vi.mock("./answer-eval", async (importOriginal) => ({ ...(await importOriginal<typeof import("./answer-eval")>()), ...evalMocks }));
+// No report unless a test hands one in: the real preparation reads the database.
+vi.mock("./report-answer-read", async (importOriginal) => ({ ...(await importOriginal<typeof import("./report-answer-read")>()), prepareReportAnswer: async () => null }));
 
 const { orderCandidates, paidSamplesToday, runPaidAnswerEval, simulateInputFor, toolMoneyFigures, PAID_EVAL_RESERVATION } = await import("./paid-answer-eval");
 
@@ -129,7 +132,7 @@ describe("Hamilton's paid answer eval (#1079)", () => {
     expect(client.calls).toBe(2);
     expect(client.simulateCalls).toBe(0);
     expect(result.paths[0]).toMatchObject({ path: "memo", sampled: 2, answers: 2, passed: 2, correctness: { checked: 2, correct: 2, rate: 1 } });
-    expect(result.notSampled).toEqual(["report"]);
+    expect(result.notSampled).toEqual([]);
   });
 
   it("fails form when the memo is withheld for a figure the storyline does not hold", async () => {
@@ -227,7 +230,7 @@ describe("Hamilton's paid answer eval (#1079)", () => {
     expect(writer.calls).toBe(1);
     expect(day.state.paths.filter((p) => p === "written_answer")).toHaveLength(1);
     expect(result.paths[2]).toMatchObject({ path: "written_answer", sampled: 1, answers: 1, passed: 1, correctness: { checked: 1, correct: 1 } });
-    expect(result.notSampled).toEqual(["report"]);
+    expect(result.notSampled).toEqual([]);
   });
 
   it("fails a written answer's form for a figure no tool gave it, and its correctness when it repeats a catalog tool's fee the live catalog does not hold", async () => {
@@ -253,5 +256,72 @@ describe("Hamilton's paid answer eval (#1079)", () => {
       { toolName: "searchFees", output: { institution_id: 45, fee_count: 32, median_amount: 30, rows: [{ amount: "29.50" }], service_charge_income: 1200000 } },
       { toolName: "queryNationalData", output: { _shortened: true, text: JSON.stringify({ median: 27, n: 900 }) } },
     ])).toEqual([1200000, 27]);
+  });
+
+  describe("the report answer page", () => {
+    const prepared: PreparedReportAnswer = {
+      institutionId: 1001,
+      institutionName: "Bank 1001",
+      input: { type: "executive_summary", title: "The Answer", data: {} },
+      deltas: [
+        { fee_name: "Overdraft fee", fee_category: "overdraft", institution_amount: 32, peer_median: 29.5, peer_p25: 25.75, peer_p75: 32, delta_amount: 2.5, delta_percent: null, position: "above_peer_median", evidence_tier: "verified", excluded_from_verified_benchmark: false, institution_count: 12 },
+      ] as PreparedReportAnswer["deltas"],
+      competitorNames: [],
+      selectedInstitution: null,
+      evidencePolicy: "provisional-first",
+    };
+    const fresh = (amount: number) => async () => prepared.deltas.map((d) => ({ ...d, institution_amount: amount }));
+    const writer = (result: Awaited<ReturnType<ReportAnswerWriter>>): ReportAnswerWriter & { calls: number } => {
+      const w = Object.assign(async () => { w.calls += 1; return result; }, { calls: 0 });
+      return w;
+    };
+
+    it("spends one of the day's five on a report the screen would write, and ties the bank's own fee to the live catalog", async () => {
+      evalMocks.answer.mockImplementation(async (id: number) => answered(id));
+      const write = writer({ status: "written", narrative: "HEADLINE: Bank 1001's $32 overdraft fee sits above peers.", passed: true, problems: [] });
+      const day = db(0);
+      const result = await runPaidAnswerEval({
+        db: day.db, now, client: memoClient("Your overdraft fee is $32."), live, agentRunId: 77, written: writtenWriter(),
+        prepareReport: async () => prepared, writeReport: write, comparison: fresh(32),
+      });
+      expect(write.calls).toBe(1);
+      expect(day.state.paths.filter((p) => p === "report")).toHaveLength(1);
+      expect(result.paths[3]).toMatchObject({ path: "report", sampled: 1, answers: 1, passed: 1, correctness: { checked: 1, correct: 1 } });
+    });
+
+    it("fails correctness when the report states the bank's own fee the catalog no longer holds, and form on the review's problems", async () => {
+      evalMocks.answer.mockImplementation(async (id: number) => answered(id));
+      const stale = await runPaidAnswerEval({
+        db: db(0).db, now, client: memoClient("Your overdraft fee is $32."), live, agentRunId: 77, written: writtenWriter(),
+        prepareReport: async () => prepared,
+        writeReport: writer({ status: "written", narrative: "HEADLINE: Bank 1001's $32 overdraft fee sits above peers.", passed: true, problems: [] }),
+        comparison: fresh(29),
+      });
+      expect(stale.paths[3]).toMatchObject({ passed: 1, correctness: { checked: 1, correct: 0 } });
+      expect(stale.results.find((r) => r.path === "report")!.correctness).toEqual(["Overdraft (OD): the report uses $32.00, the catalog has $29.00"]);
+      const flagged = await runPaidAnswerEval({
+        db: db(0).db, now, client: memoClient("Your overdraft fee is $32."), live, agentRunId: 77, written: writtenWriter(),
+        prepareReport: async () => prepared,
+        writeReport: writer({ status: "written", narrative: "Peers vary.", passed: false, problems: ["The headline must name Bank 1001."] }),
+      });
+      expect(flagged.paths[3]).toMatchObject({ answers: 1, passed: 0, correctness: { checked: 0 } });
+    });
+
+    it("spends nothing on a report when no sampled institution has one to write, or today's is used", async () => {
+      evalMocks.answer.mockImplementation(async (id: number) => answered(id));
+      const write = writer({ status: "written", narrative: "", passed: true, problems: [] });
+      const none = await runPaidAnswerEval({ db: db(0).db, now, client: memoClient("Your overdraft fee is $32."), live, agentRunId: 77, written: writtenWriter(), prepareReport: async () => null, writeReport: write });
+      expect(none.paths[3]).toMatchObject({ path: "report", sampled: 0 });
+      await runPaidAnswerEval({ db: db(1, ["report"]).db, now, client: memoClient("Your overdraft fee is $32."), live, agentRunId: 77, written: writtenWriter(), prepareReport: async () => prepared, writeReport: write });
+      expect(write.calls).toBe(0);
+    });
+
+    it("writes no report when the day's remaining samples go to Simulate and the written answer", async () => {
+      evalMocks.answer.mockImplementation(async (id: number) => answered(id));
+      const write = writer({ status: "written", narrative: "", passed: true, problems: [] });
+      // Two left today: Simulate and the written answer take them, so no report is reserved or written.
+      await runPaidAnswerEval({ db: db(3, ["memo", "memo", "memo"]).db, now, client: memoClient("Your overdraft fee is $32."), live, agentRunId: 77, written: writtenWriter(), prepareReport: async () => prepared, writeReport: write });
+      expect(write.calls).toBe(0);
+    });
   });
 });
