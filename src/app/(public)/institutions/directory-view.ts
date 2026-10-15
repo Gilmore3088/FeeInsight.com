@@ -22,6 +22,37 @@ export function normalizeCharter(raw: string | undefined): Charter {
   return raw === "bank" || raw === "credit_union" ? raw : "";
 }
 
+/** What the counts are of, given the type switch: "banks and credit unions", "banks", "credit unions". */
+export function charterNoun(charter: string | undefined): string {
+  if (charter === "bank") return "banks";
+  if (charter === "credit_union") return "credit unions";
+  return "banks and credit unions";
+}
+
+/**
+ * The one sentence a state's (or every state's) share reads as, e.g. "412 of 1,050 banks have
+ * published fees". With no type picked it says "institutions" to stay short.
+ */
+export function shareSentence(
+  summary: Pick<InstitutionStateDirectorySummary, "verified_institution_count" | "institution_count">,
+  charter: string | undefined,
+): string {
+  if (summary.institution_count <= 0) return "None monitored yet";
+  const noun = charter === "bank" || charter === "credit_union" ? charterNoun(charter) : "institutions";
+  const count = new Intl.NumberFormat("en-US");
+  return `${count.format(summary.verified_institution_count)} of ${count.format(summary.institution_count)} ${noun} have published fees`;
+}
+
+/** "39% have published fees", or "39% of banks have published fees" when a type is picked. */
+export function percentSentence(
+  summary: Pick<InstitutionStateDirectorySummary, "verified_institution_count" | "institution_count">,
+  charter: string | undefined,
+): string {
+  if (summary.institution_count <= 0) return "None monitored yet";
+  const typed = charter === "bank" || charter === "credit_union" ? ` of ${charterNoun(charter)}` : "";
+  return `${percentLabel(publishedShare(summary))}${typed} have published fees`;
+}
+
 /** A `?state=` that names no U.S. state or territory degrades to the plain directory. */
 export function normalizeStateCode(raw: string | undefined): string {
   const code = (raw ?? "").trim().toUpperCase();
@@ -116,9 +147,9 @@ export function percentLabel(share: number): string {
 /** The map's shading bands, lightest first. */
 export const SHARE_BANDS = [
   { min: 0, label: "None", fill: "#ebe5d9" },
-  { min: Number.MIN_VALUE, label: "Under 10%", fill: "#f1d5d0" },
-  { min: 0.1, label: "10 to 25%", fill: "#E8A08E" },
-  { min: 0.25, label: "25 to 50%", fill: "#D46F54" },
+  { min: Number.MIN_VALUE, label: "Under 10%", fill: "#F0C4B9" },
+  { min: 0.1, label: "10 to 25%", fill: "#E39A86" },
+  { min: 0.25, label: "25 to 50%", fill: "#CF6A51" },
   { min: 0.5, label: "50% or more", fill: "#b23a32" },
 ] as const;
 

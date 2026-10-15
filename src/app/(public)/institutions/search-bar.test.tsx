@@ -2,9 +2,10 @@ import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const push = vi.fn();
+let currentParams = new URLSearchParams();
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push }),
-  useSearchParams: () => new URLSearchParams(),
+  useSearchParams: () => currentParams,
 }));
 
 import { InstitutionSearchBar } from "./search-bar";
@@ -28,6 +29,7 @@ describe("InstitutionSearchBar", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     push.mockReset();
+    currentParams = new URLSearchParams();
   });
   afterEach(() => {
     vi.useRealTimers();
@@ -65,6 +67,16 @@ describe("InstitutionSearchBar", () => {
     await typeAndWait(input, "Aspen");
     fireEvent.keyDown(input, { key: "Enter" });
     expect(push).toHaveBeenCalledWith("/institutions?q=Aspen");
+  });
+
+  it("a new search keeps the state and institution type already picked", async () => {
+    currentParams = new URLSearchParams("state=NY&charter=bank&fee=overdraft&page=3");
+    vi.stubGlobal("fetch", vi.fn(async () => ({ json: async () => BANKS })));
+    render(<InstitutionSearchBar />);
+    const input = screen.getByRole("combobox");
+    await typeAndWait(input, "M&T");
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(push).toHaveBeenCalledWith("/institutions?q=M%26T&state=NY&charter=bank&fee=overdraft");
   });
 
   it("offers to send a fee schedule, with the searched name, when nothing matches", async () => {

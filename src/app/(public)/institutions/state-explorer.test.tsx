@@ -35,8 +35,9 @@ describe("StateExplorer", () => {
     expect(ny.getAttribute("aria-pressed")).toBe("true");
     const panel = screen.getByRole("complementary", { name: "State detail" });
     expect(panel.textContent).toContain("New York");
-    expect(panel.textContent).toContain("40% have published fees");
-    expect(screen.getByRole("link", { name: /See New York institutions/ }).getAttribute("href")).toBe(
+    expect(panel.textContent).toContain("40% of credit unions have published fees");
+    expect(panel.querySelector("[aria-live]")?.textContent).toBe("New York: 80 of 200 credit unions have published fees");
+    expect(screen.getByRole("link", { name: /See Navy in New York/ }).getAttribute("href")).toBe(
       "/institutions?q=Navy&state=NY&charter=credit_union&fee=overdraft",
     );
   });
@@ -46,11 +47,18 @@ describe("StateExplorer", () => {
     fireEvent.keyDown(screen.getByRole("button", { name: /^California/ }), { key: "Enter" });
     expect(screen.getByRole("link", { name: /See California institutions/ })).toBeTruthy();
 
-    fireEvent.change(screen.getByLabelText("Or choose a state"), { target: { value: "NY" } });
+    fireEvent.change(screen.getByLabelText("Choose a state"), { target: { value: "NY" } });
     expect(screen.getByRole("link", { name: /See New York institutions/ })).toBeTruthy();
 
-    fireEvent.change(screen.getByLabelText("Or choose a state"), { target: { value: "" } });
+    fireEvent.change(screen.getByLabelText("Choose a state"), { target: { value: "" } });
     expect(screen.queryByRole("link")).toBeNull();
+  });
+
+  it("puts the list and panel before the map, so keyboard users reach them first", () => {
+    const { container } = render(<StateExplorer summaries={ROWS} />);
+    const select = container.querySelector("select")!;
+    const map = container.querySelector("svg")!;
+    expect(select.compareDocumentPosition(map) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it("states with no summary are drawn but not tappable", () => {

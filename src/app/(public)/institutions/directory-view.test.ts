@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { InstitutionStateDirectorySummary } from "@/lib/data-store/search";
 import {
   bandsInUse,
+  charterNoun,
   coverageSegments,
   directoryHref,
   namedStates,
@@ -9,8 +10,10 @@ import {
   normalizeStateCode,
   percentLabel,
   publishedShare,
+  percentSentence,
   reportCta,
   shareBand,
+  shareSentence,
   totalSummary,
 } from "./directory-view";
 
@@ -72,6 +75,17 @@ describe("directory-view", () => {
     expect(percentLabel(0.004)).toBe("under 1%");
     expect(percentLabel(0)).toBe("0%");
     expect(percentLabel(0.426)).toBe("43%");
+  });
+
+  it("names the institution type in every count sentence once one is picked", () => {
+    expect(charterNoun("")).toBe("banks and credit unions");
+    expect(charterNoun("bank")).toBe("banks");
+    const s = row("TX", 412, 1050);
+    expect(shareSentence(s, "")).toBe("412 of 1,050 institutions have published fees");
+    expect(shareSentence(s, "credit_union")).toBe("412 of 1,050 credit unions have published fees");
+    expect(percentSentence(s, "")).toBe("39% have published fees");
+    expect(percentSentence(s, "bank")).toBe("39% of banks have published fees");
+    expect(percentSentence(row("GU", 0, 0), "")).toBe("None monitored yet");
   });
 
   it("keeps only states the map can name", () => {

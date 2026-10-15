@@ -11,9 +11,10 @@ import {
   SHARE_BANDS,
   bandsInUse,
   directoryHref,
-  percentLabel,
+  percentSentence,
   publishedShare,
   shareBand,
+  shareSentence,
   totalSummary,
 } from "./directory-view";
 
@@ -64,8 +65,59 @@ export function StateExplorer({ summaries, query = "", charter = "", fee = "" }:
         Browse by state
       </h2>
 
+      {/* The panel and the list come first in the page: on a phone a tap on the map shows its
+          change right above it, and keyboard users reach the button before 50 states. On desktop
+          the map sits left, the panel right. */}
       <div className="mt-4 grid gap-5 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start">
-        <div className="min-w-0">
+        <div className="min-w-0 lg:col-start-2 lg:row-start-1">
+          <label htmlFor="state-explorer-select" className="block text-[13px] font-medium text-ink">
+            Choose a state
+          </label>
+          <select
+            id="state-explorer-select"
+            value={picked}
+            onChange={(event) => setPicked(event.target.value)}
+            className="mt-1.5 min-h-11 w-full rounded-md border border-border bg-surface-0 px-3 text-[15px] text-ink outline-none focus:border-brick"
+          >
+            <option value="">All states</option>
+            {stateOptions.map((code) => (
+              <option key={code} value={code}>
+                {STATE_NAMES[code]}
+              </option>
+            ))}
+          </select>
+
+          <aside aria-label="State detail" className="mt-3 rounded-2xl border border-border bg-surface-0 p-4 shadow-fi-1 sm:p-5">
+            <p aria-live="polite" className="sr-only">
+              {`${name}: ${shareSentence(summary, charter)}`}
+            </p>
+            <p className="text-[13px] font-semibold text-ink-muted">{name}</p>
+            <p className="mt-1 text-[28px] font-semibold leading-none tracking-[-0.02em] tabular-nums text-ink">
+              {COUNT.format(summary.verified_institution_count)}
+              <span className="ml-1.5 text-[15px] font-normal tracking-normal text-ink-muted">
+                of {COUNT.format(summary.institution_count)}
+              </span>
+            </p>
+            <p className="mt-1 text-[13px] text-ink-muted">{percentSentence(summary, charter)}</p>
+            <div className="mt-4">
+              <CoverageBar summary={summary} />
+            </div>
+            {picked && byState.has(picked) ? (
+              <Link
+                href={directoryHref({ q: query, state: picked, charter, fee })}
+                prefetch={false}
+                className="mt-5 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-full bg-ink px-5 text-center text-[14px] font-semibold text-on-ink transition-opacity hover:opacity-90"
+              >
+                {query ? `See ${query} in ${STATE_NAMES[picked]}` : `See ${STATE_NAMES[picked]} institutions`}
+                <ArrowRight className="h-4 w-4 shrink-0" aria-hidden="true" />
+              </Link>
+            ) : (
+              <p className="mt-5 text-[13px] text-ink-muted">Pick a state on the map or in the list.</p>
+            )}
+          </aside>
+        </div>
+
+        <div className="min-w-0 lg:col-start-1 lg:row-start-1">
           <svg
             viewBox="0 0 960 600"
             className="h-auto w-full touch-manipulation"
@@ -91,7 +143,10 @@ export function StateExplorer({ summaries, query = "", charter = "", fee = "" }:
                   fill={isPicked ? PICKED_FILL : SHARE_BANDS[shareBand(publishedShare(row))].fill}
                   stroke={isPicked || isHovered ? PICKED_FILL : "#fbf9f4"}
                   strokeWidth={isPicked || isHovered ? 2.4 : 1.2}
-                  className="cursor-pointer outline-none transition-[fill,stroke] duration-150 focus-visible:stroke-brick"
+                  // A thick focus ring: ink on every shade, brick on the picked (ink) state.
+                  className={`cursor-pointer outline-none transition-[fill,stroke] duration-150 focus-visible:[stroke-width:4] ${
+                    isPicked ? "focus-visible:stroke-brick" : "focus-visible:stroke-ink"
+                  }`}
                   onClick={() => setPicked(state.id)}
                   onKeyDown={(event) => onStateKey(event, state.id)}
                   onMouseEnter={() => setHovered(state.id)}
@@ -112,58 +167,7 @@ export function StateExplorer({ summaries, query = "", charter = "", fee = "" }:
               </span>
             ))}
           </div>
-
-          <label htmlFor="state-explorer-select" className="mt-4 block text-[13px] font-medium text-ink">
-            Or choose a state
-          </label>
-          <select
-            id="state-explorer-select"
-            value={picked}
-            onChange={(event) => setPicked(event.target.value)}
-            className="mt-1.5 min-h-11 w-full rounded-md border border-border bg-surface-0 px-3 text-[15px] text-ink outline-none focus:border-brick sm:max-w-xs"
-          >
-            <option value="">All states</option>
-            {stateOptions.map((code) => (
-              <option key={code} value={code}>
-                {STATE_NAMES[code]}
-              </option>
-            ))}
-          </select>
         </div>
-
-        <aside
-          aria-live="polite"
-          aria-label="State detail"
-          className="rounded-2xl border border-border bg-surface-0 p-4 shadow-fi-1 sm:p-5"
-        >
-          <p className="text-[13px] font-semibold text-ink-muted">{name}</p>
-          <p className="mt-1 text-[28px] font-semibold leading-none tracking-[-0.02em] tabular-nums text-ink">
-            {COUNT.format(summary.verified_institution_count)}
-            <span className="ml-1.5 text-[15px] font-normal tracking-normal text-ink-muted">
-              of {COUNT.format(summary.institution_count)}
-            </span>
-          </p>
-          <p className="mt-1 text-[13px] text-ink-muted">
-            {summary.institution_count > 0
-              ? `${percentLabel(publishedShare(summary))} have published fees`
-              : "No institutions monitored"}
-          </p>
-          <div className="mt-4">
-            <CoverageBar summary={summary} />
-          </div>
-          {picked && byState.has(picked) ? (
-            <Link
-              href={directoryHref({ q: query, state: picked, charter, fee })}
-              prefetch={false}
-              className="mt-5 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-full bg-ink px-5 text-[14px] font-semibold text-on-ink transition-opacity hover:opacity-90"
-            >
-              See {STATE_NAMES[picked]} institutions
-              <ArrowRight className="h-4 w-4" aria-hidden="true" />
-            </Link>
-          ) : (
-            <p className="mt-5 text-[13px] text-ink-muted">Pick a state on the map or in the list.</p>
-          )}
-        </aside>
       </div>
     </section>
   );

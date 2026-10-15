@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense } from "react";
 import { Search } from "lucide-react";
+import { directoryHref } from "./directory-view";
 
 interface Result {
   id: number;
@@ -142,9 +143,15 @@ function InstitutionSearchBarInner({
     if (q.length < 2) return;
     e.preventDefault();
     setShowResults(false);
-    const params = new URLSearchParams({ q });
-    if (fee) params.set("fee", fee);
-    router.push(`/institutions?${params.toString()}`);
+    // A new search keeps the state and the institution type already picked on /institutions.
+    router.push(
+      directoryHref({
+        q,
+        state: searchParams?.get("state") ?? "",
+        charter: searchParams?.get("charter") ?? "",
+        fee,
+      }),
+    );
   }
 
   return (

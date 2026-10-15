@@ -27,6 +27,7 @@ import { DIRECTORY_PAGE_SIZE, DIRECTORY_SORT_WINDOW, paginate, sortVerifiedFirst
 import {
   CHARTER_OPTIONS,
   DEMO_CTA,
+  charterNoun,
   directoryHref,
   namedStates,
   normalizeCharter,
@@ -34,6 +35,7 @@ import {
   percentLabel,
   publishedShare,
   reportCta,
+  totalSummary,
   type Charter,
 } from "./directory-view";
 import { getInstitutionStateDirectorySummariesCached, searchInstitutionsCached } from "@/lib/data-store/public-cached-reads";
@@ -113,6 +115,7 @@ export default async function InstitutionsPage({ searchParams }: PageProps) {
       console.error("Directory state summaries failed:", error);
       return [] as InstitutionStateDirectorySummary[];
     }),
+    // A failed search says so rather than showing "0 institutions".
     shouldShowResults
       ? loadResults({
           query: hasQuery ? query : undefined,
@@ -120,16 +123,19 @@ export default async function InstitutionsPage({ searchParams }: PageProps) {
           charter_type: charter || undefined,
           fee_category: focusCategory || undefined,
           page,
+        }).catch((error: unknown): DirectoryResults | null => {
+          console.error("Directory search failed:", error);
+          return null;
         })
-      : Promise.resolve<DirectoryResults>({ rows: [], total: 0 }),
-    focusCategory ? getPublicCategorySummaries() : Promise.resolve([]),
+      : Promise.resolve<DirectoryResults | null>({ rows: [], total: 0 }),
+    focusCategory ? getPublicCategorySummaries().catch(() => []) : Promise.resolve([]),
     sampleReportAvailable().catch(() => false),
   ]);
 
   // One read for the visible page only. On failure the rows fall back to "Fees published"
   // rather than showing a made-up count.
   const coverage =
-    results.rows.length > 0
+    results && results.rows.length > 0
       ? await getInstitutionHeadlineCoverage(results.rows.map((row) => row.id)).catch((error: unknown) => {
           console.error("Directory headline coverage failed:", error);
           return null;
@@ -145,7 +151,11 @@ export default async function InstitutionsPage({ searchParams }: PageProps) {
   const states = namedStates(stateSummaries);
   const pickedSummary = hasState ? states.find((s) => s.state_code === stateCode) ?? null : null;
   const stateName = hasState ? STATE_NAMES[stateCode] : "";
-  const totalPages = Math.ceil(results.total / DIRECTORY_PAGE_SIZE);
+  const totalPages = results ? Math.ceil(results.total / DIRECTORY_PAGE_SIZE) : 0;
+  // One "with published fees" number on the page: the hero counts what the map counts (and
+  // follows the type switch), falling back to the site total only when the state read failed.
+  const heroCount = states.length > 0 ? totalSummary(states).verified_institution_count : stats.institutions;
+  const heroCountLabel = states.length > 0 ? COUNT.format(heroCount) : stats.institutionsLabel;
   const keep = { q: query, state: stateCode, charter, fee: focusCategory };
 
   // The no-result state offers the source form, carrying the name that was searched for.
@@ -158,7 +168,7 @@ export default async function InstitutionsPage({ searchParams }: PageProps) {
       <div className="mx-auto max-w-page px-4 py-6 sm:px-6 sm:py-9">
         {focus && (
           <div className="fi-reveal mb-5 rounded-xl border border-brick/20 bg-surface-0 px-4 py-3 text-[14px] leading-relaxed text-ink-soft">
-            Comparing <span className="font-semibold text-ink">{focus.label.toLowerCase()}</span>
+            Comparing <span className="font-semibold text-ink">{focus.label.toLowerCase()} fees</span>
             {focus.median !== null && (
               <>
                 . National median{" "}
@@ -182,10 +192,10 @@ export default async function InstitutionsPage({ searchParams }: PageProps) {
           >
             Find your bank or credit union
           </h1>
-          {!hasState && stats.institutions > 0 && (
+          {!hasState && heroCount > 0 && (
             <p className="mt-2 text-[15px] text-ink-muted">
-              <span className="font-semibold tabular-nums text-ink">{stats.institutionsLabel}</span> banks and credit
-              unions with published fees.
+              <span className="font-semibold tabular-nums text-ink">{heroCountLabel}</span> {charterNoun(charter)} with
+              published fees.
             </p>
           )}
           <div className="mt-4 max-w-2xl">
@@ -203,7 +213,7 @@ export default async function InstitutionsPage({ searchParams }: PageProps) {
           <section aria-label={`${stateName} coverage`} className="fi-reveal border-b border-border py-5">
             <div className="flex flex-wrap items-center justify-between gap-x-4">
               <p className="text-[22px] font-semibold tracking-[-0.02em] text-ink">{stateName}</p>
-              <div className="flex items-center gap-x-4">
+              <div className="flex flex-wrap items-center gap-x-4">
                 <Link
                   href={`/research/state/${stateCode}`}
                   className="inline-flex min-h-11 items-center text-[14px] font-medium text-ink underline decoration-border underline-offset-4 hover:decoration-ink"
@@ -222,8 +232,8 @@ export default async function InstitutionsPage({ searchParams }: PageProps) {
             {pickedSummary && pickedSummary.institution_count > 0 && (
               <div className="mt-1 max-w-xl">
                 <p className="mb-2 text-[13px] text-ink-muted">
-                  {percentLabel(publishedShare(pickedSummary))} of {COUNT.format(pickedSummary.institution_count)} have
-                  published fees
+                  {percentLabel(publishedShare(pickedSummary))} of {COUNT.format(pickedSummary.institution_count)}{" "}
+                  {charter ? charterNoun(charter) : "institutions"} have published fees
                 </p>
                 <CoverageBar summary={pickedSummary} />
               </div>
@@ -232,7 +242,14 @@ export default async function InstitutionsPage({ searchParams }: PageProps) {
         )}
 
         {/* Results sit straight under the search (or the picked state); the map follows a name search. */}
-        {shouldShowResults && (
+        {shouldShowResults && results === null && (
+          <section aria-label="Results" className="py-6">
+            <p role="status" className="text-[15px] text-ink-muted">
+              Search is unavailable right now.
+            </p>
+          </section>
+        )}
+        {shouldShowResults && results !== null && (
           <section aria-labelledby="results-heading" className="fi-reveal fi-reveal-delay-1 py-6">
             <h2 id="results-heading" className="text-[15px] font-normal text-ink-muted">
               <span className="font-semibold tabular-nums text-ink">{COUNT.format(results.total)}</span>{" "}
@@ -288,7 +305,7 @@ function CharterSwitch({ current, keep }: { current: Charter; keep: { q: string;
               <Link
                 href={directoryHref({ ...keep, charter: option.value })}
                 prefetch={false}
-                aria-current={active ? "page" : undefined}
+                aria-current={active ? "true" : undefined}
                 className={`inline-flex min-h-11 items-center rounded-full px-4 text-[14px] font-semibold transition-colors ${
                   active ? "bg-ink text-on-ink" : "text-ink-muted hover:text-ink"
                 }`}
