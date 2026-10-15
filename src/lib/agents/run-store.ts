@@ -1769,6 +1769,7 @@ async function executeAgenticStep(
           },
           page_copy_collapse: {
             live: pageCopyCollapse.live,
+            ...(pageCopyCollapse.error ? { error: pageCopyCollapse.error } : {}),
             institutions: pageCopyCollapse.institutions,
             pairs: pageCopyCollapse.pairs,
             apart_on_page: pageCopyCollapse.apartOnPage,

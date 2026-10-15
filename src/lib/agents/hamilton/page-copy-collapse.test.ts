@@ -122,6 +122,14 @@ describe("pageCopyRepeats (#1439)", () => {
     const apart = pageCopyRepeats(rows, new Map([["100", late("Business")], ["200", late("Personal")]]));
     expect(apart.otherDocument).toBe(1);
     expect(pageCopyRepeats(rows, new Map([["100", late("Commercial")], ["200", late("Consumer")]])).otherDocument).toBe(1);
+    // A deadline in business days names no audience; a camel-case file name does.
+    const deadlines = `Personal ${TEXT} within two business days, 3 business days, one business day, next business day`;
+    expect(pageCopyRepeats(rows, new Map([["100", deadlines], ["200", TEXT]])).collapses).toHaveLength(1);
+    const camel = [
+      row({ fee_published_id: 1, source_document_id: 100, document_url: "https://bank.com/PersonalFeeSchedule.pdf" }),
+      row({ fee_published_id: 2, source_document_id: 200, document_url: "https://bank.com/PersonalFeeSchedule.pdf?print=1", crawled_at: "2026-10-10" }),
+    ];
+    expect(pageCopyRepeats(camel, new Map([["100", late("Business")], ["200", TEXT]])).collapses).toHaveLength(1);
   });
 
   it("reads prices whole and needs most of them shared", () => {
@@ -129,6 +137,7 @@ describe("pageCopyRepeats (#1439)", () => {
     expect(sameScheduleText("Box $1000.00", "Box $100.00")).toBe(false);
     expect(sameScheduleText("Coin $.50 Wire $25", "Coin $0.50 Wire $25.00")).toBe(true);
     expect(sameScheduleText("Item $0.125", "Item $0.15")).toBe(false);
+    expect(sameScheduleText("Stop Payment $ | 30.00 Wire $ | 25.00", "Stop Payment $30.00 Wire $25.00")).toBe(true);
     // A "popular fees" page with 6 of a schedule's 10 prices is not a copy of it.
     const all = Array.from({ length: 10 }, (_, i) => `Fee ${i} $${i + 1}.00`).join(" ");
     const some = Array.from({ length: 6 }, (_, i) => `Fee ${i} $${i + 1}.00`).join(" ");
@@ -151,5 +160,23 @@ describe("pageCopyRepeats (#1439)", () => {
       new Map([["100", `Effective July 1, 2025 ${TEXT}`], ["200", `Effective July 1, 2025 ${TEXT}`]]),
     );
     expect(tie.collapses).toEqual([expect.objectContaining({ feePublishedId: 2, keptFeePublishedId: 1 })]);
+  });
+
+  it("never pairs two amounts, two audiences named in the query, or keeps a replaced copy", () => {
+    const priced = [
+      row({ fee_published_id: 1, amount: 0.125 }),
+      row({ fee_published_id: 2, source_document_id: 200, amount: 0.13, crawled_at: "2026-10-10" }),
+    ];
+    expect(pageCopyRepeats(priced, both).pairs).toBe(0);
+    const query = [
+      row({ fee_published_id: 1, document_url: "https://bank.com/disclosure.aspx?type=business" }),
+      row({ fee_published_id: 2, source_document_id: 200, document_url: "https://bank.com/disclosure.aspx?type=personal", crawled_at: "2026-10-10" }),
+    ];
+    expect(pageCopyRepeats(query, both).otherDocument).toBe(1);
+    const replaced = [
+      row({ fee_published_id: 1, crawled_at: "2026-09-01" }),
+      row({ fee_published_id: 2, source_document_id: 200, crawled_at: "2026-10-10", superseded: true }),
+    ];
+    expect(pageCopyRepeats(replaced, both).collapses).toEqual([expect.objectContaining({ feePublishedId: 2, keptFeePublishedId: 1 })]);
   });
 });

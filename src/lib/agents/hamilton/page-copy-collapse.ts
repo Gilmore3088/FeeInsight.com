@@ -30,7 +30,10 @@ export interface PageCopyRow {
   institution_id: number | string;
   source_document_id: number | string;
   document_url: string | null;
+  /** When the document was last read or re-confirmed (`GREATEST(last_checked_at, crawled_at)`). */
   crawled_at: string | Date | null;
+  /** True when a newer copy of the document replaced it (`superseded_by_id` set). */
+  superseded?: boolean | null;
   canonical_fee_key: string;
   variant_type: string | null;
   amount: number | string;
@@ -60,6 +63,8 @@ export interface PageCopyResult {
    */
   otherDocument: number;
   collapses: PageCopyCollapse[];
+  /** Set when the read failed, so a failed step does not read as "nothing found". */
+  error?: string;
 }
 
 function sameLine(a: string | null, b: string | null): boolean {
@@ -68,7 +73,8 @@ function sameLine(a: string | null, b: string | null): boolean {
 }
 
 const SAME_SCHEDULE_OVERLAP = 0.8;
-const PRICE = /\$\s?((?:\d{1,3}(?:,\d{3})+|\d+)?)(?:\.(\d{1,3}))?(?!\d)/g;
+// "$ | 50.00": a two-column PDF read with the dollar sign in its own cell (Dutch Point).
+const PRICE = /\$\s*(?:\|\s*)?((?:\d{1,3}(?:,\d{3})+|\d+)?)(?:\.(\d{1,3}))?(?!\d)/g;
 
 const BUSINESS_WORDS = /\b(?:business|commercial|corporate|treasury)\b/gi;
 const CONSUMER_WORDS = /\b(?:consumer|personal|retail|individual)\b/gi;
@@ -79,9 +85,12 @@ const CONSUMER_WORDS = /\b(?:consumer|personal|retail|individual)\b/gi;
  * Fees") adds a mention or two to each and decides nothing; null when neither dominates.
  */
 function audienceOf(url: string | null, text: string): ScheduleAudience {
-  const named = scheduleAudience(url);
+  // "PersonalFeeSchedule.pdf" names its audience once its words are split.
+  // "?type=business" names it too: the query's words join the path's.
+  const named = scheduleAudience(url?.replace(/([a-z])([A-Z])/g, "$1-$2").replace("?", "/"));
   if (named) return named;
-  const business = text.match(BUSINESS_WORDS)?.length ?? 0;
+  // "two business days" is a deadline, not an audience.
+  const business = text.replace(/\bbusiness\s+days?\b/gi, "").match(BUSINESS_WORDS)?.length ?? 0;
   const consumer = text.match(CONSUMER_WORDS)?.length ?? 0;
   if (business >= 3 && business >= 3 * consumer) return "business";
   if (consumer >= 3 && consumer >= 3 * business) return "consumer";
@@ -165,11 +174,12 @@ export function pageCopyRepeats(rows: PageCopyRow[], texts: Map<string, string>)
   for (const row of rows) {
     const page = feePageKey(row.document_url);
     if (page == null) continue;
-    const key = [row.institution_id, page, row.canonical_fee_key, row.variant_type ?? "", Number(row.amount).toFixed(2)].join("|");
+    const key = [row.institution_id, page, row.canonical_fee_key, row.variant_type ?? "", String(Number(row.amount))].join("|");
     groups.set(key, [...(groups.get(key) ?? []), row]);
   }
-  // The kept copy is the latest edition: by the editions the texts state when every copy in the
-  // group states one, else by when each was read; equal editions fall to the later read.
+  // The kept copy is a current one (not superseded), then the latest edition: by the editions the
+  // texts state when every copy in the group states one, else by when each was last read or
+  // re-confirmed; equal editions fall to the later read.
   const read = (row: PageCopyRow) => new Date(row.crawled_at ?? 0).getTime();
   const stated = new Map<string, number | null>();
   const statedDate = (row: PageCopyRow) => {
@@ -181,7 +191,8 @@ export function pageCopyRepeats(rows: PageCopyRow[], texts: Map<string, string>)
     if (new Set(group.map((row) => String(row.source_document_id))).size < 2) continue;
     const byStated = group.every((row) => statedDate(row) != null);
     const time = (row: PageCopyRow) => (byStated ? statedDate(row)! : read(row));
-    const ordered = [...group].sort((a, b) => time(b) - time(a) || read(b) - read(a) || Number(b.source_document_id) - Number(a.source_document_id) || Number(b.fee_published_id) - Number(a.fee_published_id));
+    // A copy a newer one replaced (`superseded_by_id`) is never the one kept over a current copy.
+    const ordered = [...group].sort((a, b) => Number(a.superseded ?? false) - Number(b.superseded ?? false) || time(b) - time(a) || read(b) - read(a) || Number(b.source_document_id) - Number(a.source_document_id) || Number(b.fee_published_id) - Number(a.fee_published_id));
     const kept: PageCopyRow[] = [];
     for (const row of ordered) {
       const match = kept.find((keep) => {
@@ -217,7 +228,7 @@ export function pageCopyRepeats(rows: PageCopyRow[], texts: Map<string, string>)
           canonicalFeeKey: row.canonical_fee_key,
           feeName: row.fee_name ?? "",
           keptFeeName: match.fee_name ?? "",
-          amount: Math.round(Number(row.amount) * 100) / 100,
+          amount: Number(row.amount),
           sourceDocumentId: Number(row.source_document_id),
           keptSourceDocumentId: Number(match.source_document_id),
         });
@@ -252,7 +263,8 @@ export async function collapsePageCopies(
       // Live dollar rows of one institution, category, variant and amount read from two or more documents.
       const found = await scope.unsafe<PageCopyRow[]>(
         `WITH live AS (
-           SELECT fp.fee_published_id, fp.institution_id, fr.source_document_id, sd.document_url, sd.crawled_at,
+           SELECT fp.fee_published_id, fp.institution_id, fr.source_document_id, sd.document_url,
+                  GREATEST(sd.last_checked_at, sd.crawled_at) AS crawled_at, sd.superseded_by_id IS NOT NULL AS superseded,
                   fp.canonical_fee_key, fp.variant_type, fp.amount, fp.fee_name, fp.frequency, fp.fee_audience
              FROM published_fee_records fp
              JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
@@ -294,7 +306,7 @@ export async function collapsePageCopies(
     }));
   } catch (error) {
     console.error("collapsePageCopies failed:", error);
-    return empty;
+    return { ...empty, error: error instanceof Error ? error.message : String(error) };
   }
 
   const found = pageCopyRepeats(rows, texts);
