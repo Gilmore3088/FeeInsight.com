@@ -15,7 +15,7 @@ import { formatRatePercent } from "@/lib/percent-fees";
 import { MAX_STORY_LINE_WORDS, words } from "./four-roles";
 import { plainName, proseFeeName } from "./names";
 import { ownRate, ownRateSource, rateRelation, ratesOf } from "./rates";
-import { MIN_PEERS_FOR_POSITION, pricePosition } from "./scenario";
+import { MIN_PEERS_FOR_POSITION, placeAmong, pricePosition, spanOf } from "./scenario";
 import { segmentExhibit, shortSegmentLabel } from "./segment";
 import { isFederalRelease, isWireFact } from "./wire";
 import type { ArchetypeKey, KeyFigure, StoryExhibit, StoryOption, Storyline, StorylineKind } from "./storyline-types";
@@ -121,14 +121,19 @@ function comparisonGroup(research: FeeResearch): Group {
 
 type Piece = Omit<StoryExhibit, "id" | "number"> & { key: string };
 
+/** "Peers' middle half charges $25 to $30", or "... all charge $25" when the half is one price. */
+function middleHalfCharges(who: string, band: { p25: number; p75: number }): string {
+  return band.p25 === band.p75 ? `${who} all charge ${money(band.p25)}` : `${who} charges ${money(band.p25)} to ${money(band.p75)}`;
+}
+
 function positionPiece(research: FeeResearch, name: string): Piece | null {
   const band = research.band;
   if (!band || band.n < MIN_PEERS_FOR_POSITION) return null;
   const position = research.current !== null ? pricePosition(research.current, research.peers.map((p) => p.amount)) : null;
   const actionTitle =
     research.current !== null && position !== null
-      ? `Peers' middle half charges ${money(band.p25)} to ${money(band.p75)}; ${subjectPossessive(research, false)} ${money(research.current)} sits at the ${ordinal(position)} percentile.`
-      : `The middle half of ${count(band.n)} peers charges ${money(band.p25)} to ${money(band.p75)}.`;
+      ? `${middleHalfCharges("Peers' middle half", band)}; ${subjectPossessive(research, false)} ${money(research.current)} sits ${placeAmong(position, band.n, true)}.`
+      : `${middleHalfCharges(`The middle half of ${count(band.n)} peers`, band)}.`;
   const national = research.layers.find((l) => l.scope === "national");
   const exhibit: Exhibit = {
     kind: "fee_position",
@@ -204,10 +209,20 @@ function localPiece(research: FeeResearch, name: string): Piece | null {
   const lo = items[0].amount;
   const hi = items[items.length - 1].amount;
   const below = research.current !== null ? items.filter((i) => i.amount < research.current!).length : null;
+  const above = research.current !== null ? items.filter((i) => i.amount > research.current!).length : null;
+  const n = items.length;
+  // The institution is named once; "its" carries the second mention, so the title stays short.
+  const market = `competitors in ${subjectPossessive(research, false)} market`;
+  const own = research.current !== null ? `${research.subjectName ? "its" : "your"} ${money(research.current)}` : "";
+  const spread = lo === hi ? `each charges ${money(lo)}` : `their range is ${money(lo)} to ${money(hi)}`;
   const actionTitle =
-    below !== null
-      ? `${count(below)} of ${count(items.length)} competitors in ${subjectPossessive(research, false)} market charge less than ${subjectPossessive(research, false)} ${money(research.current!)}; their range is ${money(lo)} to ${money(hi)}.`
-      : `${count(items.length)} competitors in ${subjectPossessive(research, false)} market charge ${money(lo)} to ${money(hi)} for ${article(name)} ${name}.`;
+    below === null || above === null
+      ? `${count(n)} ${market} charge ${spanOf(money(lo), money(hi))} for ${article(name)} ${name}.`
+      : above === n
+        ? `All ${count(n)} ${market} charge more than ${own}; ${spread}.`
+        : below === n
+          ? `All ${count(n)} ${market} charge less than ${own}; ${spread}.`
+          : `${count(below)} of ${count(n)} ${market} charge less than ${own}; ${spread}.`;
   return {
     key: "local",
     actionTitle,
@@ -270,7 +285,10 @@ function archetypePiece(research: FeeResearch, name: string): Piece | null {
     takeaway:
       ownGroup && research.current !== null
         ? {
-            text: `${subjectPossessive(research)} ${money(research.current)} puts ${subjectName(research)} in the ${ownGroup.label.toLowerCase()} group (${ownGroup.rule}) with ${count(ownGroup.count)} ${groupWord}.`,
+            text:
+              ownGroup.count === 0
+                ? `${subjectPossessive(research)} ${money(research.current)} puts ${research.subjectName ? "it" : "you"} in the ${ownGroup.label.toLowerCase()} group (${ownGroup.rule}), where no ${segmentLed(research) ? "other member" : "peer"} sits.`
+                : `${subjectPossessive(research)} ${money(research.current)} puts ${research.subjectName ? "it" : "you"} in the ${ownGroup.label.toLowerCase()} group (${ownGroup.rule}) with ${count(ownGroup.count)} ${groupWord}.`,
             source,
             sampleSize: n,
           }
@@ -376,12 +394,13 @@ function ratePiece(research: FeeResearch, name: string): Piece | null {
         : `Where institutions state the ${name} fee as a rate, the national median is ${formatRatePercent(median)} across ${count(n)} institutions.`;
   const institutions = count(n);
   const rows: { name: string; cells: (string | null)[]; own?: boolean }[] = [
-    { name: research.institutionName, cells: [own?.label ?? null, null], own: true },
+    // A bank that prices the fee in dollars has no rate: say so, rather than "Not published".
+    { name: research.institutionName, cells: [own?.label ?? (research.current !== null ? `${money(research.current)} flat` : null), ""], own: true },
   ];
   if (median !== null) {
     rows.push({ name: "National median", cells: [formatRatePercent(median), institutions] });
-    if (p25 !== null && p75 !== null) rows.push({ name: "Middle half", cells: [`${formatRatePercent(p25)} to ${formatRatePercent(p75)}`, institutions] });
-    if (min !== null && max !== null) rows.push({ name: "Lowest to highest", cells: [`${formatRatePercent(min)} to ${formatRatePercent(max)}`, institutions] });
+    if (p25 !== null && p75 !== null) rows.push({ name: "Middle half", cells: [spanOf(formatRatePercent(p25), formatRatePercent(p75)), institutions] });
+    if (min !== null && max !== null) rows.push({ name: "Lowest to highest", cells: [spanOf(formatRatePercent(min), formatRatePercent(max)), institutions] });
   }
   return {
     key: "rate",
@@ -540,7 +559,18 @@ function keyFigures(research: FeeResearch, name: string): KeyFigure[] {
   const position =
     seg && seg.problem === null ? seg.ownPosition : research.current !== null ? pricePosition(research.current, research.peers.map((p) => p.amount)) : null;
   if (position !== null && research.current !== null) {
-    out.push({ value: ordinal(position), label: seg && seg.problem === null ? `${subjectPossessive(research)} percentile in the segment` : `${subjectPossessive(research)} percentile among peers`, source: seg && seg.problem === null ? seg.source : feeSource(research), n: seg && seg.problem === null ? seg.band?.n ?? seg.members.length : research.band?.n });
+    const inSegment = seg && seg.problem === null;
+    const n = inSegment ? seg.band?.n ?? seg.members.length : research.band?.n;
+    // A tile of "0th" reads as an error: every peer charging more is "Lowest", every one less "Highest".
+    const end = n !== undefined && n <= 100 ? (position === 0 ? "Lowest" : position === 100 ? "Highest" : null) : null;
+    out.push({
+      value: end ?? ordinal(position),
+      label: end
+        ? `${subjectPossessive(research)} place ${inSegment ? "in the segment" : `among ${count(n!)} peers`}`
+        : inSegment ? `${subjectPossessive(research)} percentile in the segment` : `${subjectPossessive(research)} percentile among peers`,
+      source: inSegment ? seg.source : feeSource(research),
+      n,
+    });
   }
   const line = research.revenueLine;
   const fin = research.institutionFinancials;
@@ -763,7 +793,7 @@ function priceConsequences(research: FeeResearch, name: string, price: number): 
       text:
         position === 0
           ? `At ${money(price)} no peer of ${count(research.band.n)} would charge less.`
-          : `At ${money(price)} ${subjectName(research)} would sit at the ${ordinal(position)} percentile of ${count(research.band.n)} peers.`,
+          : `At ${money(price)} ${subjectName(research)} would sit ${placeAmong(position, research.band.n)}.`,
       source: feeSource(research),
       sampleSize: research.band.n,
     });

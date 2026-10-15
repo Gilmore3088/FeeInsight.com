@@ -139,7 +139,7 @@ export function FeeScorecard({
                   <span className="col-span-2 sm:col-span-1">
                     <Strip row={row} />
                     <span className="mt-0.5 block text-[11px] text-warm-600 [font-variant-numeric:tabular-nums]">
-                      Middle half {money(row.band.p25)} to {money(row.band.p75)}{" "}
+                      {row.band.p25 === row.band.p75 ? `Middle half all at ${money(row.band.p25)}` : `Middle half ${money(row.band.p25)} to ${money(row.band.p75)}`}{" "}
                       · median {money(row.band.median)} · {row.band.n} peers
                     </span>
                   </span>

@@ -106,7 +106,8 @@ export function StoryExhibitView({ item, number, researchInstitutionName }: { it
     return (
       <ExhibitFrame title={item.actionTitle} sources={x.sources} note={x.note} number={number}>
         <div className="overflow-x-auto rounded-md border border-warm-200 bg-white">
-          <table className="w-full min-w-[36rem] text-sm">
+          {/* Only a wide matrix scrolls; a two-column table fits a phone as it is. */}
+          <table className={`w-full text-sm ${x.columns.length > 2 ? "min-w-[36rem]" : ""}`}>
             <thead>
               <tr className="border-b border-warm-200">
                 <th className={th} scope="col">Institution</th>
@@ -124,7 +125,7 @@ export function StoryExhibitView({ item, number, researchInstitutionName }: { it
                     {r.name}
                   </th>
                   {r.cells.map((c, i) => (
-                    <td key={i} className="px-3 py-2 text-center text-warm-800 [font-variant-numeric:tabular-nums]">
+                    <td key={i} className="whitespace-nowrap px-3 py-2 text-center text-warm-800 [font-variant-numeric:tabular-nums]">
                       {c ?? <span className="text-warm-400">Not published</span>}
                     </td>
                   ))}
