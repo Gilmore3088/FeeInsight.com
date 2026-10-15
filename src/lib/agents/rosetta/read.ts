@@ -1446,13 +1446,14 @@ export async function recordReadResult(
   `;
   const textArtifactId = textArtifact?.id == null ? null : Number(textArtifact.id);
   const companionSource = await companionSourceOf(db, result.sourceDocumentId);
-  // What kind of document this is (#1094), decided once here from the stored text.
-  if (textColumns && textArtifactId != null && normalizedText && (await documentKindColumnsReady(db))) {
-    const kind = documentKind({ text: normalizedText, url: result.sourceUrl, feeSchedule: companionSource == null });
+  // What kind of document this is (#1094), decided once here from the stored text. A read that
+  // stores no text clears the kind, so a row never keeps the kind of a text it no longer holds.
+  if (textColumns && textArtifactId != null && (await documentKindColumnsReady(db))) {
+    const kind = normalizedText ? documentKind({ text: normalizedText, url: result.sourceUrl, feeSchedule: companionSource == null }).kind : null;
     await db`
       UPDATE agent_source_texts
-         SET document_kind = ${kind.kind},
-             document_kind_version = ${DOCUMENT_KIND_VERSION}
+         SET document_kind = ${kind},
+             document_kind_version = ${kind == null ? null : DOCUMENT_KIND_VERSION}
        WHERE id = ${textArtifactId}
     `;
   }
