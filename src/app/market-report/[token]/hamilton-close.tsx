@@ -14,12 +14,12 @@ export function HamiltonClose({ competitors, institutionId }: { competitors: num
       </h2>
       <p className="mt-3 max-w-2xl text-[15px] leading-relaxed text-ink-soft">
         This report is a snapshot. Hamilton, the Pro workspace, keeps these {competitors} competitors on a watchlist
-        and shows each fee change as it is published.
+        and shows a competitor&apos;s change once its schedule is re-read.
       </p>
       <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-3">
         <a
           href={`/subscribe?${params.toString()}#pro`}
-          className="inline-flex items-center rounded-md bg-brick px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-brick-ink"
+          className="inline-flex items-center rounded-md bg-ink px-4 py-2.5 text-sm font-semibold text-on-ink transition-opacity hover:opacity-90"
         >
           See Hamilton plans
         </a>

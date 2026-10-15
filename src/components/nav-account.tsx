@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { HAMILTON_ACCOUNT_NAV, HAMILTON_REFERENCE_NAV } from "@/lib/hamilton/navigation";
-import { PRO_PLANS_NAV } from "./nav-items";
+import { PRIMARY_CTA_NAV } from "./nav-items";
 import { SignOutForm } from "./sign-out-form";
 import { useSessionChrome, type SessionChrome } from "./use-session-chrome";
 import { useHamiltonNavigationHref } from "./hamilton/layout/hamilton-navigation-context";
@@ -46,13 +46,33 @@ export function NavAccount() {
       >
         Sign in
       </Link>
-      <Link
-        href={PRO_PLANS_NAV.href}
-        className="inline-flex items-center rounded-md bg-brick px-3 py-1.5 text-[12px] font-semibold text-white transition-colors hover:bg-brick-ink"
-      >
-        {PRO_PLANS_NAV.label}
-      </Link>
+      <PrimaryCtaLink />
     </>
+  );
+}
+
+const PRIMARY_CTA_CLASS =
+  "inline-flex items-center rounded-md bg-ink px-3 py-1.5 text-[12px] font-semibold text-on-ink transition-opacity hover:opacity-90";
+
+function PrimaryCtaLink() {
+  return (
+    <Link href={PRIMARY_CTA_NAV.href} className={PRIMARY_CTA_CLASS}>
+      {PRIMARY_CTA_NAV.label}
+    </Link>
+  );
+}
+
+/**
+ * The navy CTA in the sticky header on tablets (640px up, below the desktop nav), where the
+ * account corner is hidden. Signed-out visitors only, like the desktop button.
+ */
+export function NavPrimaryCtaTablet() {
+  const session = useSessionChrome();
+  if (session?.signedIn) return null;
+  return (
+    <div className="hidden sm:block lg:hidden">
+      <PrimaryCtaLink />
+    </div>
   );
 }
 

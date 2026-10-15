@@ -17,6 +17,9 @@ describe("ConsumerMobileNav", () => {
     expect(dialog).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Guides" })).toHaveAttribute("aria-current", "page");
     expect(screen.getByRole("button", { name: /Search banks, fees and guides/ })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Hamilton" })).toHaveAttribute("href", "/for-institutions#hamilton");
+    expect(screen.getByRole("link", { name: "See where your fees stand" })).toHaveAttribute("href", "/institutions");
+    expect(screen.queryByRole("link", { name: "See Pro plans" })).toBeNull();
 
     fireEvent.keyDown(dialog, { key: "Escape" });
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
@@ -43,5 +46,6 @@ describe("ConsumerMobileNav", () => {
     expect(isActivePath("/guides/overdraft-fees", "/guides")).toBe(true);
     expect(isActivePath("/guidesx", "/guides")).toBe(false);
     expect(isActivePath("/for-institutions", "/for-institutions#report")).toBe(true);
+    expect(isActivePath("/for-institutions", "/for-institutions#hamilton")).toBe(true);
   });
 });
