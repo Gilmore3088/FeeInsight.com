@@ -1025,3 +1025,12 @@ the header, footer, sign-in screens and report chrome. The Bank Fee Index is nam
 the index pages, data credits and the API attribution. Hamilton's name and mark appear on the pages
 that sell it (/for-institutions, /subscribe, Pro buttons in page bodies) and inside the workspace,
 never in the header or footer; the header calls it "Pro workspace" and "Pro plans".
+
+**Routine commands run without a prompt; the hard limits are blocked outright.** James, 2026-10-15
+("Add the allow-list to .claude/settings.json"), so threads stop stalling on prompts overnight and
+while he travels. `.claude/settings.json` now allows git work on `claude/*` branches, opening,
+reviewing and merging PRs, the lint, build, test and guard commands, read-only shell commands, edits
+under `src`, `docs`, `growth-os`, `.agents`, `public` and `Reports`, and Vercel preview and log reads.
+Force pushes, pushes to main and remote branch deletion move from "ask" to "deny", so a thread gets
+an immediate refusal and keeps working. Migrations, Supabase project changes, production deploys and
+direct GitHub file commits still ask.
