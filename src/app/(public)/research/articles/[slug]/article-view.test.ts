@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { readingMinutes, splitLeadChart } from "./article-view";
+import { plainSummary, readingMinutes, splitLeadChart } from "./article-view";
 
 describe("article lead chart", () => {
   it("lifts the first chart block out of the body", () => {
@@ -22,5 +22,19 @@ describe("article reading time", () => {
   it("rounds to whole minutes and never shows zero", () => {
     expect(readingMinutes("one two three")).toBe(1);
     expect(readingMinutes(Array(690).fill("word").join(" "))).toBe(3);
+  });
+});
+
+describe("article lead chart placement", () => {
+  it("leaves a chart under a later heading in its section", () => {
+    const content = "Intro.\n\n## Costs\n\n```bars Later\nA | 1 | $1\n```";
+    expect(splitLeadChart(content)).toEqual({ lead: null, body: content });
+  });
+});
+
+describe("article plain summary", () => {
+  it("skips chart and table blocks and cuts at a word", () => {
+    expect(plainSummary("```bars T\nA | 1 | $1\n```\n\nOverdraft fees **fell** this year.\n\n| a | b |")).toBe("Overdraft fees fell this year.");
+    expect(plainSummary("one two three four", 9)).toBe("one two...");
   });
 });

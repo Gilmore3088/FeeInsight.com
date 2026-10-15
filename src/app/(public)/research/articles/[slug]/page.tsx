@@ -1,21 +1,33 @@
 export const dynamic = "force-dynamic";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import { cache } from "react";
 import { after } from "next/server";
 import Link from "next/link";
 import { getArticleBySlug, incrementViewCount, getPublishedArticles, type Article } from "@/lib/data-store/articles";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
 import { TrackLink } from "@/components/track-link";
 import { DEMO_REQUEST_NAV, PRO_PLANS_NAV } from "@/components/nav-items";
-import { REPORT_OFFER, REPORT_PRICE_INLINE, SITE_NAME } from "@/lib/constants";
+import { PRODUCT_NAME, REPORT_OFFER, REPORT_PRICE_INLINE, SITE_NAME, SITE_URL } from "@/lib/constants";
 import { linkPreview } from "@/lib/link-preview";
 import { renderArticleMarkdown } from "@/lib/article-markdown";
-import { readingMinutes, splitLeadChart } from "./article-view";
+import { plainSummary, readingMinutes, splitLeadChart } from "./article-view";
 
-/** The published article, or null when it is missing, unpublished or the read fails. */
-async function loadArticle(slug: string): Promise<Article | null> {
-  const article = await getArticleBySlug(slug).catch(() => null);
+/** The published article, or null when it is missing or unpublished. A failed read still errors (500), never a 404. */
+const loadArticle = cache(async (slug: string): Promise<Article | null> => {
+  const article = await getArticleBySlug(slug);
   return article && article.status === "published" ? article : null;
+});
+
+/** The product name is not an author; the site names the byline (brand rule). */
+function byline(author: string | null | undefined): string {
+  return !author || author === PRODUCT_NAME ? SITE_NAME : author;
+}
+
+function isoDate(value: string | Date | null | undefined): string | undefined {
+  if (!value) return undefined;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? undefined : date.toISOString();
 }
 
 export async function generateMetadata({
@@ -29,7 +41,7 @@ export async function generateMetadata({
     return { title: "Article Not Found" };
   }
   const title = `${article.title} | Research`;
-  const description = article.subtitle || article.content.substring(0, 160).replace(/[#*_`]/g, "");
+  const description = article.subtitle || plainSummary(splitLeadChart(article.content).body);
   const path = `/research/articles/${article.slug}`;
   return {
     title,
@@ -91,11 +103,11 @@ export default async function ArticlePage({
             <h1 className="mt-4 text-[32px] font-semibold leading-[1.08] tracking-[-0.03em] text-ink sm:text-[44px]">{article.title}</h1>
             {article.subtitle && <p className="mt-3 text-[17px] text-ink-soft">{article.subtitle}</p>}
             <p className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px] text-ink-muted">
-              <span>{article.author}</span>
+              <span>{byline(article.author)}</span>
               {publishedDate && (
                 <>
                   <span aria-hidden="true">·</span>
-                  <time dateTime={article.published_at ?? undefined}>{publishedDate}</time>
+                  <time dateTime={isoDate(article.published_at)}>{publishedDate}</time>
                 </>
               )}
               <span aria-hidden="true">·</span>
@@ -103,10 +115,12 @@ export default async function ArticlePage({
             </p>
           </div>
           {lead && (
-            <div
-              className="rounded-2xl border border-border bg-surface-0 p-5 shadow-fi-2 sm:p-6"
-              dangerouslySetInnerHTML={{ __html: renderArticleMarkdown(lead) }}
-            />
+            <div className="rounded-2xl border border-border bg-surface-0 p-5 shadow-fi-2 sm:p-6">
+              <div dangerouslySetInnerHTML={{ __html: renderArticleMarkdown(lead) }} />
+              <p className="mt-2 text-[11px] text-ink-muted">
+                Source: {PRODUCT_NAME}, from institutions&apos; own published fee schedules.{publishedDate ? ` As of ${publishedDate}.` : ""}
+              </p>
+            </div>
           )}
         </div>
       </section>
@@ -150,7 +164,7 @@ export default async function ArticlePage({
             Work at a bank or credit union?
           </h2>
           <p className="mt-2 max-w-[38rem] text-[14px] text-ink-muted">
-            Hamilton sets your own fees against the competitors you choose and keeps them current, with the source for every figure.
+            Hamilton shows your fees beside the competitors you choose, kept current, with the source for every figure.
           </p>
           <div className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-3">
             <TrackLink
@@ -166,7 +180,7 @@ export default async function ArticlePage({
             </Link>
           </div>
           <p className="mt-4 text-[13px] text-ink-muted">
-            Or one report for one institution:{" "}
+            One institution, one report:{" "}
             <TrackLink
               event="request_report_click"
               eventProps={{ placement: "research_article" }}
@@ -187,9 +201,11 @@ export default async function ArticlePage({
             "@context": "https://schema.org",
             "@type": "Article",
             headline: article.title,
-            description: article.subtitle || "",
-            author: { "@type": "Organization", name: SITE_NAME },
-            datePublished: article.published_at,
+            description: article.subtitle || plainSummary(body),
+            author: { "@type": "Organization", name: byline(article.author) },
+            datePublished: isoDate(article.published_at),
+            dateModified: isoDate(article.updated_at),
+            mainEntityOfPage: `${SITE_URL}/research/articles/${slug}`,
             publisher: { "@type": "Organization", name: SITE_NAME },
           }).replace(/</g, "\\u003c"),
         }}
