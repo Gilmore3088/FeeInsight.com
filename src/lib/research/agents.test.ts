@@ -125,7 +125,7 @@ describe("getHamilton", () => {
 
   it("pro: a question the data cannot answer is said so first, never swapped for another question (#1077)", async () => {
     const config = await getHamilton("pro");
-    expect(config.systemPrompt).toContain("the first sentence says plainly which part the data cannot answer");
+    expect(config.systemPrompt).toContain("the first sentence says plainly which part the data cannot answer, and it takes the headline's place");
     expect(config.systemPrompt).toContain("Never answer a different question in its place, and never pick a fee the reader did not ask about.");
   });
 

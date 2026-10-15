@@ -45,6 +45,13 @@ describe("regulator and complaint lines fit a storyline line (#1076)", () => {
     expect(wordsIn(cu)).toBeLessThanOrEqual(20);
   });
 
+  it("keeps the second person throughout when no name is given", () => {
+    const ca = regulatorSentence({ primaryRegulator: "Federal Reserve", charterAgency: "State", source: "fdic" }, "CA", "bank")!;
+    expect(ca).toMatch(/^Your charter is from the /);
+    expect(ca).not.toMatch(/\bits\b/);
+    expect(ca.split(/\s+/).length).toBeLessThanOrEqual(20);
+  });
+
   it("keeps a short name's full sentence unchanged", () => {
     expect(regulatorSentence({ primaryRegulator: "FDIC", charterAgency: "State", source: "fdic" }, "TN", "bank", "Example Bank")).toBe(
       "Example Bank's charter is from the Tennessee Department of Financial Institutions, and the FDIC is Example Bank's primary federal regulator.",

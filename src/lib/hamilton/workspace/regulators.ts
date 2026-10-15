@@ -47,7 +47,7 @@ export function regulatorSentence(
     const whose = subjectPossessive({ subjectName: institutionName });
     return withinLine(
       `${whose} charter is from ${agency}, and NCUA insures ${subjectPossessive({ subjectName: institutionName }, false)} shares.`,
-      `${whose} charter is from ${agency}; NCUA insures its shares.`,
+      `${whose} charter is from ${agency}; NCUA insures ${institutionName ? "its" : "your"} shares.`,
       `${institutionName ?? "You"} ${institutionName ? "has" : "have"} a state charter; NCUA insures ${institutionName ? "its" : "your"} shares.`,
     );
   }
@@ -57,7 +57,7 @@ export function regulatorSentence(
     const whose = subjectPossessive({ subjectName: institutionName });
     return withinLine(
       `${whose} charter is from ${agency}, and ${federal} is ${subjectPossessive({ subjectName: institutionName }, false)} primary federal regulator.`,
-      `${whose} charter is from ${agency}; ${federal} is its primary federal regulator.`,
+      `${whose} charter is from ${agency}; ${federal} is ${institutionName ? "its" : "your"} primary federal regulator.`,
       `${institutionName ?? "You"} ${institutionName ? "has" : "have"} a state charter; ${federal} is ${institutionName ? "its" : "your"} primary federal regulator.`,
     );
   }

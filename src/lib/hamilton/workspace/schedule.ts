@@ -103,20 +103,21 @@ export function scheduleOverview(rows: readonly FeePositionRow[], subjectName?: 
   };
 }
 
-/** Puts the overview first; the detailed answer for the furthest fee follows it. */
 /**
- * A Pro account's own institution with no comparable fees is collected first (#1078: Atlas's
- * pro_institution tier), so the reader learns their schedule is on its way rather than missing.
+ * A Pro account's own institution with no fees on file is queued for collection first (#1078:
+ * Atlas's pro_institution tier counts catalog rows under PRO_INSTITUTION_MIN_FEES, and none is
+ * always under it), so the reader learns their schedule is on its way rather than missing.
  */
-export const OWN_SCHEDULE_COLLECTING =
-  "Fee Insight collects your institution's fee schedule ahead of others, and this answer fills in once it is published.";
+export const OWN_SCHEDULE_COLLECTING = "Fee Insight has queued your institution's fee schedule for collection ahead of others.";
 
-export function withOwnScheduleNote(schedule: ScheduleOverview, minimumFees: number): ScheduleOverview {
-  // Fewer than the minimum on file is a collection gap; more fees with too few peers is not.
-  if (schedule.top || (schedule.feesOnFile ?? 0) >= minimumFees) return schedule;
+export function withOwnScheduleNote(schedule: ScheduleOverview): ScheduleOverview {
+  // Only an empty schedule: fees counted here are categories, so a few on file may already be
+  // past the row count Atlas prioritises.
+  if (schedule.top || (schedule.feesOnFile ?? 0) > 0) return schedule;
   return { ...schedule, shortAnswer: `${schedule.shortAnswer} ${OWN_SCHEDULE_COLLECTING}` };
 }
 
+/** Puts the overview first; the detailed answer for the furthest fee follows it. */
 export function withSchedule(response: AskResponse, schedule: ScheduleOverview): AskResponse {
   if (!schedule.top) {
     return { kind: "research", shortAnswer: schedule.shortAnswer, pageChange: { screen: "none" }, facts: schedule.facts, positions: schedule.positions };
