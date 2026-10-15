@@ -48,6 +48,17 @@ while a state run reads only its own state, so these would wait for their state'
 bank asked for by name; a $10B+ bank or market leader with no live overdraft fee. A new
 hand-found link or paid-fetched document starts a new run even inside the retry window.
 
+- A request by name ends once a run for it has completed (Oct 15: until then each of 71
+  requested banks re-ran every 24 hours, 506 re-runs since Oct 7, and 28 of the banks had no new
+  or taken-down fee from any of them). After that the bank runs directly only on another tier.
+- A Knox rules version that has not read a $10B+ bank's or leader's current page lets that bank
+  past its retry window, but at most `PRIORITY_RULES_REREADS_PER_HOUR` (6) such runs an hour. A
+  version bump otherwise made every one due at once (v68: about 213). Past the cap, a bank waits
+  for its retry window, or for its state's lane to read the page first.
+- In the tick, a direct run ahead of a state lane stops starting steps while the next one would
+  leave the lane no room for its first work (`run-store.ts`, `laneFirstWorkMs`). The lane then
+  gets the tick's first-step exemption.
+
 ## State lanes: cadence and state experts
 
 - `state-lane-scheduler.ts`: one full pass per state per UTC calendar month. The first
