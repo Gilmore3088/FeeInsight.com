@@ -971,5 +971,6 @@ real email (business email), and that's how we associate the data with Hamilton.
 for the buyer to file. Pro checkout for a bank or credit union refuses a personal address (Gmail and
 the like); the owner seat is granted once the email is confirmed and its host is exactly the bank's
 website (`src/lib/pro-institution-link.ts`). Anything else waits for the admin check in the Data
-Trust queue while Pro works at once (the recommended default on the decision card; James's answer
-is pending). Any Pro reader may still research any institution.
+Trust queue while Pro works at once (James, 09:17 UTC, decision card "Hold or block a Pro buyer
+whose email doesn't match their bank?": "Hold for review"). Any Pro reader may still research any
+institution.
