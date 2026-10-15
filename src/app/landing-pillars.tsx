@@ -4,7 +4,8 @@ import { FrameMedia, type FrameVideo } from "@/components/marketing/frame-media"
 import { ProductFrame } from "@/components/marketing/product-frame";
 import { TrackLink } from "@/components/track-link";
 import { PRODUCT_NAME } from "@/lib/constants";
-import { AskExhibit, FeeStackExhibit, MarketExhibit, SourcedFeesExhibit, TryPriceExhibit } from "./landing-exhibits";
+import { LadderColumns } from "./landing-charts";
+import { AskChart, SourceDiagram } from "./landing-exhibits";
 import { SECTION_INNER, SectionHeading, TEXT_LINK, type HomeData } from "./landing-shared";
 
 /**
@@ -54,49 +55,50 @@ function Pillar({
 }
 
 /**
- * Brief 06 §4.3 item 4, as the level under the hero's demo (James's note of Oct 15): live
- * samples, each a heading, one line and one live exhibit drawn from published schedules.
- * Each exhibit differs from the demo's chapters: the sample bank's own fees with their source
- * lines, the fee's spread in the nation and each Fed district (the demo shows the bank's own
- * ladder), and Hamilton's Try a price.
+ * Brief 06 §4.3 item 4, as the level under the hero's demo (James's notes of Oct 15): live
+ * samples, each a heading, one line and one visual drawn from published schedules. None
+ * repeats a demo view: the schedule drawn to the index, the bank's fee as a column chart
+ * across its markets, and Hamilton answering with a chart. A pillar without its live
+ * figures is left out.
  */
 export function LandingPillars({ data }: { data: HomeData }) {
   if (!data.overdraft) return null;
+  const sourced = Boolean(data.sample && data.sample.fees.length > 0);
   return (
     <section id="live-samples" className="bg-paper">
-      <div className={`${SECTION_INNER} py-16 sm:py-24`}>
-        <SectionHeading
-          eyebrow="Live samples"
-          title="See it in action"
-          line="Each sample below is drawn live from published fee schedules."
-          center
-        />
-        <div className="mt-14 space-y-20 sm:mt-20 sm:space-y-28">
-          <Pillar
-            eyebrow="Every fee"
-            title="Each fee, quoted from the bank's own schedule"
-            line="Every figure keeps the document and the date we read it."
-            frameLabel={PRODUCT_NAME}
-            video={PILLAR_VIDEOS.fee}
-          >
-            {data.sample && data.sample.fees.length > 0 ? <SourcedFeesExhibit data={data} /> : <FeeStackExhibit data={data} />}
-          </Pillar>
-          <Pillar
-            eyebrow="Every market"
-            title="One fee, by Fed district"
-            line="The national range, and the range and median by Fed district."
-            frameLabel="Hamilton · My fees"
-            video={PILLAR_VIDEOS.market}
-            flip
-          >
-            <MarketExhibit data={data} phoneRows={6} />
-          </Pillar>
+      <div className={`${SECTION_INNER} pb-16 pt-8 sm:pb-24 sm:pt-12`}>
+        <SectionHeading eyebrow="Live samples" title="See it in action" line="Each sample is drawn live from published fee schedules." center />
+        <div className="mt-10 space-y-16 sm:mt-14 sm:space-y-24">
+          {sourced ? (
+            <Pillar
+              eyebrow="Every fee"
+              title="Each fee, quoted from the bank's own schedule"
+              line="Every figure keeps the document and the date we read it."
+              frameLabel={PRODUCT_NAME}
+              video={PILLAR_VIDEOS.fee}
+            >
+              <SourceDiagram data={data} />
+            </Pillar>
+          ) : null}
+          {data.ladder ? (
+            <Pillar
+              eyebrow="Every market"
+              title="One fee, in every market"
+              line="A bank's fee against its local competitors, its state, its charter and the nation."
+              frameLabel="Hamilton · Markets"
+              video={PILLAR_VIDEOS.market}
+              flip
+            >
+              <LadderColumns ladder={data.ladder} />
+            </Pillar>
+          ) : null}
           <Pillar
             eyebrow="One workspace"
             title="Ask, compare and take it to committee"
-            line="Hamilton answers each question with its source and writes the committee report."
-            frameLabel={data.scenario ? "Hamilton · Try a price" : "Hamilton · Your institution"}
+            line="Hamilton answers each question with a chart and its source."
+            frameLabel="Hamilton · Ask"
             video={PILLAR_VIDEOS.workspace}
+            flip={!data.ladder}
             after={
               <p className="mt-6 flex flex-wrap items-center gap-x-5 gap-y-3">
                 <TrackLink
@@ -118,7 +120,7 @@ export function LandingPillars({ data }: { data: HomeData }) {
               </p>
             }
           >
-            {data.scenario ? <TryPriceExhibit data={data} /> : <AskExhibit data={data} />}
+            <AskChart data={data} />
           </Pillar>
         </div>
       </div>

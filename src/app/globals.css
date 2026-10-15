@@ -1425,93 +1425,83 @@ details[open] summary .expand-icon { transform: rotate(180deg); }
 .fi-range-stack .fi-range-label { grid-column: 1 / -1; }
 .fi-range-stack .fi-range-axis > div:first-child { display: none; }
 
-/* ─── Homepage product windows and sizzle (site v3 brief 06 §4.1-4.2) ───
-   .fi-window is the product frame; -hero and -lift are its two depths. The sizzle's
-   fi-a- entrances only run inside a playing chapter: each element's default style is its
-   finished state, so the server render, reduced motion and the end frame are whole. */
+/* ─── Homepage product windows and demo (site v3 brief 06 §4.1-4.2) ───
+   .fi-window is the product frame; -hero and -lift are its two depths. The demo has no
+   timer: the visitor picks a view with its tabs, and each view plays a short entrance when it
+   opens. Every element's default style is its finished state, so the server render and
+   reduced motion show each view whole, with nothing moving. */
 .fi-window { box-shadow: 0 1px 2px rgb(var(--fi-ink-rgb) / 0.05); }
 .fi-window-lift { box-shadow: 0 1px 2px rgb(var(--fi-ink-rgb) / 0.05), 0 24px 48px -28px rgb(var(--fi-ink-rgb) / 0.35); }
 .fi-window-hero {
   box-shadow: 0 1px 2px rgb(var(--fi-ink-rgb) / 0.06), 0 40px 80px -36px rgb(var(--fi-ink-rgb) / 0.45),
     0 0 0 1px rgb(var(--fi-ink-rgb) / 0.04);
 }
+
+/* Chart colors for the homepage exhibits (dataviz method, validated with its palette script).
+   The map is one warm ramp, sand to terracotta, for the overdraft median; --fi-viz-none is a
+   district with too few institutions. Above / below the local market is a diverging pair
+   (brick and blue) with a neutral gray for inside the middle half. Dark mode has its own
+   steps, checked against the dark surface. */
+:root, [data-theme="light"] {
+  --fi-viz-none: #e9e3d8;
+  --fi-viz-1: #f3e6cf;
+  --fi-viz-2: #e7c79d;
+  --fi-viz-3: #d79e70;
+  --fi-viz-4: #c0704d;
+  --fi-viz-5: #8f3b2c;
+  --fi-viz-above: #b23a32;
+  --fi-viz-below: #2f6aa3;
+  --fi-viz-inside: #9aa1a9;
+  --fi-viz-bar: #55606f;
+}
+[data-theme="dark"], .dark {
+  --fi-viz-none: #22354f;
+  --fi-viz-1: #3a3640;
+  --fi-viz-2: #5b4641;
+  --fi-viz-3: #855840;
+  --fi-viz-4: #b9744f;
+  --fi-viz-5: #e8a878;
+  --fi-viz-above: #d65f57;
+  --fi-viz-below: #4f8fd0;
+  --fi-viz-inside: #6b7a8c;
+  --fi-viz-bar: #a9b3c1;
+}
+
+/* The map: a district outlines in ink when it is hovered, focused or chosen. */
+.fi-map-district { cursor: pointer; outline: none; }
+.fi-map-district path { transition: fill 0.3s ease, opacity 0.2s ease; }
+.fi-map-district:focus-visible path { stroke: var(--fi-ink); stroke-width: 3; }
+.fi-map-cell { outline: none; }
+.fi-map-cell:focus-visible { box-shadow: 0 0 0 2px var(--fi-surface-0), 0 0 0 4px var(--fi-ink); }
+
+/* The /subscribe showcase's progress bar (ProgressFill). */
 @keyframes fi-progress-fill { from { transform: scaleX(0); } to { transform: scaleX(1); } }
 @keyframes fi-a-rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
-@keyframes fi-a-drop { from { opacity: 0; transform: translate(-50%, -160%); } to { opacity: 1; transform: translate(-50%, -50%); } }
-@keyframes fi-a-type { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
-@keyframes fi-a-line { from { background-size: 0% 2px; } to { background-size: 100% 2px; } }
-.fi-a-line {
-  background-image: linear-gradient(var(--fi-brick), var(--fi-brick));
-  background-repeat: no-repeat;
-  background-position: 0 100%;
-  background-size: 100% 2px;
-  padding-bottom: 2px;
-}
-.fi-sizzle[data-motion="on"] .fi-sizzle-scene[data-active="true"] .fi-a-rise {
-  animation: fi-a-rise 0.6s cubic-bezier(0.2, 0.7, 0.2, 1) both;
-  animation-delay: var(--fi-d, 0ms);
-}
-.fi-sizzle[data-motion="on"] .fi-sizzle-scene[data-active="true"] .fi-a-drop {
-  animation: fi-a-drop 0.5s cubic-bezier(0.3, 1.4, 0.5, 1) both;
-  animation-delay: var(--fi-d, 0ms);
-}
-.fi-sizzle[data-motion="on"] .fi-sizzle-scene[data-active="true"] .fi-a-type {
-  display: inline-block;
-  animation: fi-a-type 0.9s steps(16, end) 0.2s both;
-}
-.fi-sizzle[data-motion="on"] .fi-sizzle-scene[data-active="true"] .fi-a-line {
-  animation: fi-a-line 0.8s ease-out 2.4s both;
-}
-/* Fee rows fill in: the whiskers draw, the middle half opens out, then the median lands. */
 @keyframes fi-a-fade { from { opacity: 0; } to { opacity: 1; } }
-@keyframes fi-a-grow { from { transform: scaleX(0); } to { transform: scaleX(1); } }
-/* The bank's own fee slides from the axis's start to where it sits in that market. */
-@keyframes fi-a-slide { from { cx: 0; opacity: 0; } 25% { opacity: 1; } }
-/* Hamilton reading: shows for a moment, then gives way to the answer. */
-@keyframes fi-a-think { 0%, 100% { opacity: 0; } 12%, 88% { opacity: 1; } }
-@keyframes fi-a-dot { 0%, 60%, 100% { transform: none; opacity: 0.5; } 30% { transform: translateY(-3px); opacity: 1; } }
-.fi-a-think { opacity: 0; pointer-events: none; }
-.fi-sizzle[data-motion="on"] .fi-sizzle-scene[data-active="true"] .fi-a-fill .w,
-.fi-sizzle[data-motion="on"] .fi-sizzle-scene[data-active="true"] .fi-a-fill .fi-range-value {
-  animation: fi-a-fade 0.4s ease-out both;
-  animation-delay: calc(var(--fi-d, 0ms) + 150ms);
-}
-.fi-sizzle[data-motion="on"] .fi-sizzle-scene[data-active="true"] .fi-a-fill .box {
-  transform-box: fill-box;
-  transform-origin: center;
-  animation: fi-a-grow 0.6s cubic-bezier(0.2, 0.7, 0.2, 1) both;
-  animation-delay: calc(var(--fi-d, 0ms) + 200ms);
-}
-.fi-sizzle[data-motion="on"] .fi-sizzle-scene[data-active="true"] .fi-a-fill .med {
-  animation: fi-a-fade 0.3s ease-out both;
-  animation-delay: calc(var(--fi-d, 0ms) + 600ms);
-}
-.fi-sizzle[data-motion="on"] .fi-sizzle-scene[data-active="true"] .fi-a-marker .you {
-  animation: fi-a-slide 0.9s cubic-bezier(0.3, 0.9, 0.3, 1) both;
-  animation-delay: calc(var(--fi-d, 0ms) + 500ms);
-}
-.fi-sizzle[data-motion="on"] .fi-sizzle-scene[data-active="true"] .fi-a-word {
-  animation: fi-a-fade 0.12s linear both;
-  animation-delay: var(--fi-d, 0ms);
-}
-.fi-sizzle[data-motion="on"] .fi-sizzle-scene[data-active="true"] .fi-a-think {
-  animation: fi-a-think 1s ease-in-out both;
-  animation-delay: var(--fi-d, 0ms);
-}
-.fi-sizzle[data-motion="on"] .fi-sizzle-scene[data-active="true"] .fi-a-think .fi-a-dot { animation: fi-a-dot 0.9s ease-in-out infinite; }
-.fi-sizzle[data-motion="on"] .fi-sizzle-scene[data-active="true"] .fi-a-think .fi-a-dot:nth-child(2) { animation-delay: 0.15s; }
-.fi-sizzle[data-motion="on"] .fi-sizzle-scene[data-active="true"] .fi-a-think .fi-a-dot:nth-child(3) { animation-delay: 0.3s; }
-.fi-sizzle[data-motion="on"] .fi-sizzle-scene[data-active="true"] .fi-a-sourced .fi-chat-source {
-  animation: fi-a-rise 0.5s ease-out both;
-  animation-delay: calc(var(--fi-d, 0ms) + 700ms);
-}
-/* The title bar's caption changes with each chapter. */
-.fi-sizzle[data-motion="on"] .fi-sizzle-caption {
-  display: inline-block;
-  animation: fi-a-rise 0.4s cubic-bezier(0.2, 0.7, 0.2, 1) both;
-}
-.fi-sizzle[data-paused="true"] .fi-sizzle-scene * { animation-play-state: paused !important; }
-@media (prefers-reduced-motion: reduce) {
-  .fi-sizzle .fi-sizzle-scene *,
-  .fi-sizzle .fi-sizzle-caption { animation: none !important; }
+@keyframes fi-a-sweep { from { opacity: 0; } to { opacity: 1; } }
+@keyframes fi-a-grow-x { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+@keyframes fi-a-grow-y { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+@media (prefers-reduced-motion: no-preference) {
+  /* Each view plays in when its tab opens it; the delay is --fi-d. */
+  .fi-demo-view:not([hidden]) .fi-a-rise {
+    animation: fi-a-rise 0.5s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+    animation-delay: var(--fi-d, 0ms);
+  }
+  /* The map's districts fill in, west to east. */
+  .fi-demo-view:not([hidden]) .fi-a-sweep {
+    animation: fi-a-sweep 0.45s ease-out both;
+    animation-delay: var(--fi-d, 0ms);
+  }
+  .fi-demo-view:not([hidden]) .fi-a-bar {
+    transform-box: fill-box;
+    transform-origin: var(--fi-o, left center);
+    animation: fi-a-grow-x 0.6s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+    animation-delay: var(--fi-d, 0ms);
+  }
+  .fi-demo-view:not([hidden]) .fi-a-col {
+    transform-box: fill-box;
+    transform-origin: bottom center;
+    animation: fi-a-grow-y 0.6s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+    animation-delay: var(--fi-d, 0ms);
+  }
 }
