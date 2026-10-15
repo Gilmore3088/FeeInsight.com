@@ -546,4 +546,29 @@ describe("checkFeeAgainstSource daily caps", () => {
     expect(checkFeeAgainstSource(xplore, "Non-Sufficient Funds", 29, ".", "nsf").ok).toBe(true);
     expect(checkFeeAgainstSource(xplore, "IRA Annual Maintenance Fee", 10, ".").ok).toBe(true);
   });
+
+  it("reads a negative balance written with a minus sign or dash as the band, not the price (Capitol FCU)", () => {
+    // Capitol FCU (8299), doc 6778 and its current copy 20641, Oct 15: both overdraft prices were
+    // taken down as thresholds (26152, 26153) and held as untraced on the current copy.
+    const page = [
+      "Privilege Pay Program++",
+      "",
+      "Overdrawn NSF Fee | $34.50/item*",
+      "",
+      "Overdraft Privilege Fee for paid items up to an Avail Balances of negative - $5.00 | $12.50/Item*",
+      "",
+      "Overdraft Privilege Fee for paid items greater than Avail Balance of negative -$5.00 | $31.00/Item*",
+      "",
+      "(Check, ACH, ATM/Debit Card Transactions) ++N/A to Freedom Checking",
+    ].join("\n");
+    const read = (name: string, amount: number) => checkFeeAgainstSource(page, name, amount, ".", "overdraft");
+    // A price for a balance band: Darwin and Hamilton count tiered_fee as stated.
+    expect(read("Overdraft Privilege Fee for paid items greater than Avail Balance of negative", 31)).toEqual({ ok: false, reason: "tiered_fee" });
+    expect(read("Overdraft Privilege Fee for paid items up to an Avail Balances of negative", 12.5)).toEqual({ ok: false, reason: "tiered_fee" });
+    // The balance itself is still not a fee.
+    expect(read("Overdraft Privilege Fee for paid items up to an Avail Balances of negative", 5).ok).toBe(false);
+    expect(read("Overdraft Privilege Fee for paid items up to an Avail Balances of negative", 5)).not.toEqual({ ok: false, reason: "tiered_fee" });
+    // Only after "negative": a dash before a price stays a separator.
+    expect(checkFeeAgainstSource("Account Below Minimum - $5.00", "Account Below Minimum", 5, ".").ok).toBe(true);
+  });
 });
