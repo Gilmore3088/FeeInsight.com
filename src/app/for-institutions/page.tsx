@@ -76,7 +76,7 @@ export default async function ForInstitutionsPage({
         />
         <ClosingBand />
       </main>
-      <CustomerFooter sampleReport={sampleLive} />
+      <CustomerFooter />
       <SearchModal />
     </div>
   );

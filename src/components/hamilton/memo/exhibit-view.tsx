@@ -18,6 +18,16 @@ export const EVIDENCE_LABELS: Record<AnswerSpec["evidenceLevel"], string> = {
   institution: "Your own figures",
 };
 
+/**
+ * The answer's "Evidence:" line. The fees are always published; the level says where the income
+ * figures come from, so it never reads as a contradiction of "your published fee" beside it.
+ */
+export const ANSWER_EVIDENCE_LABELS: Record<AnswerSpec["evidenceLevel"], string> = {
+  market: "Market data only",
+  working_estimate: "Published fees; income estimated from filings",
+  institution: "Published fees and your own figures",
+};
+
 function shortDate(iso: string | null | undefined): string | null {
   if (!iso) return null;
   if (!/^\d{4}-\d{2}-\d{2}/.test(iso)) return iso;
@@ -132,6 +142,11 @@ export function placeLabels(items: readonly { x: number; width: number }[]): { l
   });
 }
 
+/** "middle half $25 to $30", or "middle half all at $25" when the half is one price. */
+export function middleHalfText(p25: number, p75: number, fmt: (v: number) => string = fmtMoney): string {
+  return p25 === p75 ? `middle half all at ${fmt(p25)}` : `middle half ${fmt(p25)} to ${fmt(p75)}`;
+}
+
 /** About how wide an 11px label is on a ~900px track, in %. */
 const labelWidth = (text: string) => text.length * 0.58 + 1;
 
@@ -169,7 +184,8 @@ function FeePosition({ x }: { x: Extract<ExhibitSpec, { kind: "fee_position" }> 
   const ownPlaced = x.own != null ? placeLabels([{ x: axis.at(x.own), width: labelWidth(ownText) + 1 }])[0] : null;
   return (
     <div>
-      <div className="relative" style={{ height: `${3.6 + rowCount * 1.5}rem` }}>
+      {/* On a phone the market names do not fit on the track: it carries ticks, and the names sit in a list below. */}
+      <div className="relative h-[3.6rem] md:h-[var(--track-h)]" style={{ "--track-h": `${3.6 + rowCount * 1.5}rem` } as CSSProperties}>
         {ownPlaced ? (
           <span
             className="absolute top-0 whitespace-nowrap text-xs font-semibold text-terra-text [font-variant-numeric:tabular-nums]"
@@ -183,17 +199,18 @@ function FeePosition({ x }: { x: Extract<ExhibitSpec, { kind: "fee_position" }> 
         <span
           className="absolute top-7 h-4 rounded bg-terra/25 ring-1 ring-terra/40"
           style={{ left: `${axis.at(x.band.p25)}%`, width: `${axis.at(x.band.p75) - axis.at(x.band.p25)}%` }}
-          title={`${x.band.label}, middle half: ${fmtMoney(x.band.p25)} to ${fmtMoney(x.band.p75)}`}
+          title={`${x.band.label}, ${middleHalfText(x.band.p25, x.band.p75)}`}
         />
         <span className="absolute top-6 h-6 w-0.5 -translate-x-1/2 bg-warm-800" style={{ left: `${axis.at(x.band.median)}%` }} title={`${x.band.label} median ${fmtMoney(x.band.median)}`} />
         {markers.map((m, i) => (
           <span key={m.label}>
+            <span className="absolute top-7 h-4 w-px -translate-x-1/2 bg-warm-500 md:hidden" style={{ left: `${axis.at(m.value)}%` }} />
             <span
-              className="absolute top-[2.4rem] w-px -translate-x-1/2 bg-warm-400"
+              className="absolute top-[2.4rem] hidden w-px -translate-x-1/2 bg-warm-400 md:block"
               style={{ left: `${axis.at(m.value)}%`, height: `${0.85 + placed[i].row * 1.5}rem` }}
             />
             <span
-              className="absolute z-10 whitespace-nowrap bg-warm-50 px-1 text-[11px] text-warm-700 [font-variant-numeric:tabular-nums]"
+              className="absolute z-10 hidden whitespace-nowrap bg-warm-50 px-1 text-[11px] text-warm-700 [font-variant-numeric:tabular-nums] md:block"
               style={{ left: `${placed[i].left}%`, top: `${3.3 + placed[i].row * 1.5}rem` }}
             >
               {markerText(m)}
@@ -212,10 +229,20 @@ function FeePosition({ x }: { x: Extract<ExhibitSpec, { kind: "fee_position" }> 
         <span>{fmtMoney(axis.lo)}</span>
         <span>{fmtMoney(axis.hi)}</span>
       </div>
+      {markers.length > 0 ? (
+        <ul className="mt-3 flex flex-wrap gap-1.5 md:hidden" aria-label="Market medians">
+          {markers.map((m) => (
+            <li key={m.label} className="inline-flex items-center gap-1.5 rounded-full border border-warm-300 bg-white px-2.5 py-1 text-xs text-warm-800 [font-variant-numeric:tabular-nums]">
+              <span className="inline-block h-3 w-px bg-warm-500" />
+              {m.label} <span className="font-semibold text-warm-900">{fmtMoney(m.value)}</span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
       <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-xs text-warm-700">
         <span className="inline-flex items-center gap-1.5">
-          <span className="inline-block h-3 w-5 rounded-sm bg-terra/25 ring-1 ring-terra/40" />
-          {x.band.label}, middle half: {fmtMoney(x.band.p25)} to {fmtMoney(x.band.p75)} ({x.band.n} institutions)
+          <span className="inline-block h-3 w-5 shrink-0 rounded-sm bg-terra/25 ring-1 ring-terra/40" />
+          {x.band.label}, {middleHalfText(x.band.p25, x.band.p75)} ({x.band.n} institutions)
         </span>
         <span className="inline-flex items-center gap-1.5">
           <span className="inline-block h-3 w-0.5 bg-warm-800" />
@@ -305,14 +332,19 @@ function CompetitorRange({ x }: { x: Extract<ExhibitSpec, { kind: "competitor_ra
             <span className="inline-block h-3.5 w-[3px] rounded bg-terra" />
             {x.ownLabel}: {fmtMoney(x.own)}
           </span>
-          <span className="inline-flex items-center gap-1.5">
-            <span className="inline-block h-2.5 w-4 rounded-sm bg-warm-400" />
-            Charges less
-          </span>
-          <span className="inline-flex items-center gap-1.5">
-            <span className="inline-block h-2.5 w-4 rounded-sm bg-warm-700" />
-            Charges more
-          </span>
+          {/* Only the sides that occur: "Charges less" with no one charging less reads as a finding. */}
+          {x.items.some((i) => i.amount < x.own!) ? (
+            <span className="inline-flex items-center gap-1.5">
+              <span className="inline-block h-2.5 w-4 rounded-sm bg-warm-400" />
+              Charges less
+            </span>
+          ) : null}
+          {x.items.some((i) => i.amount > x.own!) ? (
+            <span className="inline-flex items-center gap-1.5">
+              <span className="inline-block h-2.5 w-4 rounded-sm bg-warm-700" />
+              Charges more
+            </span>
+          ) : null}
         </p>
       ) : null}
     </div>
@@ -560,7 +592,7 @@ export function AnswerView({
         )
       ) : null}
       <p className="text-xs text-warm-600">
-        Evidence: <span className="font-medium text-warm-800">{EVIDENCE_LABELS[answer.evidenceLevel]}</span>
+        Evidence: <span className="font-medium text-warm-800">{ANSWER_EVIDENCE_LABELS[answer.evidenceLevel]}</span>
       </p>
     </article>
   );

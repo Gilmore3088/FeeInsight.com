@@ -24,6 +24,7 @@
   ],
   "evaluation_suite": [
     "src/lib/agents/deming/hard-documents.test.ts",
+    "src/lib/agents/deming/adversarial-documents.test.ts",
     "src/lib/agents/deming/regression-gate.test.ts",
     "src/lib/custom-report/source-check-layout.test.ts",
     "src/lib/agents/hamilton/limit-guard.test.ts",

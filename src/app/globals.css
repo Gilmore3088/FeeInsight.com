@@ -340,6 +340,11 @@
   border-radius: 3px;
 }
 
+/* On a navy band (the site footer) the brick ring is under 3:1, so focus uses the light ink. */
+.fi-on-navy *:focus-visible {
+  outline-color: var(--color-warm-ink-50);
+}
+
 /* The search box's own row is its focus mark; the ring drew a red box inside the dialog. */
 .command-palette-input:focus-visible {
   outline: none;

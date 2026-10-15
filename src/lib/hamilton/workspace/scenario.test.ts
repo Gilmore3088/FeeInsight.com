@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildScenario, pricePosition } from "./scenario";
+import { buildScenario, placeAmong, pricePosition, spanOf } from "./scenario";
 
 const peers = [25, 28, 30, 30, 32, 35, 35, 36, 25, 30];
 
@@ -79,5 +79,21 @@ describe("buildScenario", () => {
     });
     expect(s.revenueEffect).toEqual({ low: -30_000, high: -30_000 });
     expect(s.missingInput?.fieldKey).toBe("fee.nsf.waiver_rate");
+  });
+});
+
+describe("placing a price in words (Space Coast review, 2026-10-15)", () => {
+  it("says below or above all peers instead of a 0th or 100th percentile", () => {
+    expect(placeAmong(pricePosition(5, [25, 25, 25, 25, 25])!, 5)).toBe("below all 5 peers");
+    expect(placeAmong(pricePosition(40, [25, 25, 25, 25, 25])!, 5)).toBe("above all 5 peers");
+    expect(placeAmong(40, 14)).toBe("at the 40th percentile of 14 peers");
+    expect(placeAmong(40, 14, true)).toBe("at the 40th percentile");
+    // Past 100 peers a rounded 0 no longer means every peer.
+    expect(placeAmong(0, 300)).toBe("at the 0th percentile of 300 peers");
+  });
+
+  it("writes a range of one value once", () => {
+    expect(spanOf("$25", "$25")).toBe("$25");
+    expect(spanOf("$25", "$30")).toBe("$25 to $30");
   });
 });

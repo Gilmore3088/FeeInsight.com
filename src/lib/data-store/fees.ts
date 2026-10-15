@@ -252,6 +252,14 @@ export async function getCheapestAndMostExpensive(
   };
 }
 
+export interface InstitutionPoint {
+  value: number;
+  fed_district: number | null;
+  charter_type: string | null;
+  state_code: string | null;
+  asset_size_tier: string | null;
+}
+
 export async function getFeeCategoryDetail(category: string): Promise<{
   fees: FeeInstance[];
   by_charter_type: DimensionBreakdown[];
@@ -264,6 +272,11 @@ export async function getFeeCategoryDetail(category: string): Promise<{
    * rule as the national median, so the distribution chart and the median agree.
    */
   institution_values: number[];
+  /**
+   * The same one value per institution, with the market it sits in, so a page can redraw
+   * the distribution for one district, charter, size group or state.
+   */
+  institution_points: InstitutionPoint[];
 }> {
   const rawFees = await sql`
     SELECT ef.id, ct.institution_name, ef.institution_id,
@@ -368,6 +381,24 @@ export async function getFeeCategoryDetail(category: string): Promise<{
     LIMIT 50
   ` as FeeChangeEvent[];
 
+  const perInstitution = valuePerInstitution(sourcedFees);
+  const markets = new Map<number, Omit<InstitutionPoint, "value">>();
+  for (const f of rawFees) {
+    const id = Number(f.institution_id);
+    if (f.source_document_id === null || markets.has(id)) continue;
+    markets.set(id, {
+      fed_district: f.fed_district === null ? null : Number(f.fed_district),
+      charter_type: f.charter_type ?? null,
+      state_code: f.state_code ?? null,
+      asset_size_tier: f.asset_size_tier ?? null,
+    });
+  }
+  const institution_points: InstitutionPoint[] = [];
+  for (const [id, value] of perInstitution) {
+    const market = markets.get(id);
+    if (market) institution_points.push({ value, ...market });
+  }
+
   return {
     fees,
     by_charter_type,
@@ -375,9 +406,8 @@ export async function getFeeCategoryDetail(category: string): Promise<{
     by_fed_district: by_fed_district_real,
     by_state: by_state.slice(0, 15),
     change_events,
-    institution_values: [
-      ...valuePerInstitution(sourcedFees.map((fee) => ({ ...fee, fee_category: category }))).values(),
-    ].sort((a, b) => a - b),
+    institution_values: [...perInstitution.values()].sort((a, b) => a - b),
+    institution_points,
   };
 }
 

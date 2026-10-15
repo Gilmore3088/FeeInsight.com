@@ -37,6 +37,31 @@ function fmtCount(n: number): string {
   return Math.round(n).toLocaleString("en-US");
 }
 
+function fmtOrdinal(n: number): string {
+  const s = ["th", "st", "nd", "rd"];
+  const v = n % 100;
+  return `${n}${s[(v - 20) % 10] ?? s[v] ?? s[0]}`;
+}
+
+/**
+ * Where a price sits among peers, in words: "below all 5 peers" when every peer charges more,
+ * "above all 5 peers" when every one charges less, else "at the 40th percentile of 14 peers".
+ * A "0th percentile" reads as an error to a reader. With more than 100 peers a rounded 0 or 100
+ * no longer means every peer, so the percentile stays. `short` drops "of 14 peers" from a percentile,
+ * for a sentence that already says how many peers there are.
+ */
+export function placeAmong(position: number, n: number, short = false): string {
+  const many = fmtCount(n);
+  if (n <= 100 && position === 0) return `below all ${many} peers`;
+  if (n <= 100 && position === 100) return `above all ${many} peers`;
+  return `at the ${fmtOrdinal(position)} percentile${short ? "" : ` of ${many} peers`}`;
+}
+
+/** "$25" when both ends are the same, else "$25 to $30": a range of one value reads as a typo. */
+export function spanOf(lo: string, hi: string): string {
+  return lo === hi ? lo : `${lo} to ${hi}`;
+}
+
 /** Mid-rank percentile: share of peers below the price plus half of those equal to it. */
 export function pricePosition(price: number, peers: number[]): number | null {
   if (peers.length < MIN_PEERS_FOR_POSITION) return null;
