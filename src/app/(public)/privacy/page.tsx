@@ -10,31 +10,31 @@ export default function PrivacyPage() {
   return (
     <div className="mx-auto max-w-3xl px-6 py-14">
       <div className="flex items-center gap-2 mb-4">
-        <span className="h-px w-8 bg-[#C44B2E]/40" />
-        <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#A93D25]/60">
+        <span className="h-px w-8 bg-brick/40" />
+        <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-brick/60">
           Legal
         </span>
       </div>
 
       <h1
-        className="text-[1.75rem] sm:text-[2.25rem] leading-[1.12] tracking-[-0.02em] text-[#1A1815]"
-        style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
+        className="font-extrabold text-[1.75rem] sm:text-[2.25rem] leading-[1.12] tracking-[-0.02em] text-ink"
+        style={{ fontFamily: "var(--fi-font-sans)" }}
       >
         Privacy Policy
       </h1>
-      <p className="mt-2 text-[13px] text-[#6B6255]">
+      <p className="mt-2 text-[13px] text-ink-muted">
         Last updated: October 8, 2026
       </p>
 
-      <div className="mt-8 space-y-6 text-[14px] leading-relaxed text-[#5A5347]">
+      <div className="mt-8 space-y-6 text-[14px] leading-relaxed text-ink-soft">
         <p>
           Fee Insight is operated by {LEGAL_ENTITY_LINE}, which is responsible for
           the personal information described in this policy.
         </p>
 
         <section>
-          <h2 className="text-[16px] font-medium text-[#1A1815] mb-2"
-            style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}>
+          <h2 className="text-[16px] font-bold text-ink mb-2"
+            style={{ fontFamily: "var(--fi-font-sans)" }}>
             Information We Collect
           </h2>
           <p>
@@ -70,8 +70,8 @@ export default function PrivacyPage() {
         </section>
 
         <section>
-          <h2 className="text-[16px] font-medium text-[#1A1815] mb-2"
-            style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}>
+          <h2 className="text-[16px] font-bold text-ink mb-2"
+            style={{ fontFamily: "var(--fi-font-sans)" }}>
             How We Use Your Information
           </h2>
           <ul className="list-disc pl-6 space-y-1.5">
@@ -85,8 +85,8 @@ export default function PrivacyPage() {
         </section>
 
         <section>
-          <h2 className="text-[16px] font-medium text-[#1A1815] mb-2"
-            style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}>
+          <h2 className="text-[16px] font-bold text-ink mb-2"
+            style={{ fontFamily: "var(--fi-font-sans)" }}>
             Data We Publish
           </h2>
           <p>
@@ -99,8 +99,8 @@ export default function PrivacyPage() {
         </section>
 
         <section>
-          <h2 className="text-[16px] font-medium text-[#1A1815] mb-2"
-            style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}>
+          <h2 className="text-[16px] font-bold text-ink mb-2"
+            style={{ fontFamily: "var(--fi-font-sans)" }}>
             Cookies
           </h2>
           <p>
@@ -113,8 +113,8 @@ export default function PrivacyPage() {
         </section>
 
         <section>
-          <h2 className="text-[16px] font-medium text-[#1A1815] mb-2"
-            style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}>
+          <h2 className="text-[16px] font-bold text-ink mb-2"
+            style={{ fontFamily: "var(--fi-font-sans)" }}>
             Data Security
           </h2>
           <p>
@@ -126,8 +126,8 @@ export default function PrivacyPage() {
         </section>
 
         <section>
-          <h2 className="text-[16px] font-medium text-[#1A1815] mb-2"
-            style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}>
+          <h2 className="text-[16px] font-bold text-ink mb-2"
+            style={{ fontFamily: "var(--fi-font-sans)" }}>
             Data Retention
           </h2>
           <p>
@@ -141,8 +141,8 @@ export default function PrivacyPage() {
         </section>
 
         <section>
-          <h2 className="text-[16px] font-medium text-[#1A1815] mb-2"
-            style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}>
+          <h2 className="text-[16px] font-bold text-ink mb-2"
+            style={{ fontFamily: "var(--fi-font-sans)" }}>
             Third-Party Services
           </h2>
           <ul className="list-disc pl-6 space-y-1.5">
@@ -160,22 +160,22 @@ export default function PrivacyPage() {
         </section>
 
         <section>
-          <h2 className="text-[16px] font-medium text-[#1A1815] mb-2"
-            style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}>
+          <h2 className="text-[16px] font-bold text-ink mb-2"
+            style={{ fontFamily: "var(--fi-font-sans)" }}>
             Your Rights
           </h2>
           <p>
             You may request access to, correction of, or deletion of your
             personal information at any time by contacting us at{" "}
-            <a href="mailto:hello@bankfeeindex.com" className="text-[#C44B2E] hover:underline">
+            <a href="mailto:hello@bankfeeindex.com" className="text-brick hover:underline">
               hello@bankfeeindex.com
             </a>.
           </p>
         </section>
 
         <section>
-          <h2 className="text-[16px] font-medium text-[#1A1815] mb-2"
-            style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}>
+          <h2 className="text-[16px] font-bold text-ink mb-2"
+            style={{ fontFamily: "var(--fi-font-sans)" }}>
             Children
           </h2>
           <p>
@@ -185,8 +185,8 @@ export default function PrivacyPage() {
         </section>
 
         <section>
-          <h2 className="text-[16px] font-medium text-[#1A1815] mb-2"
-            style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}>
+          <h2 className="text-[16px] font-bold text-ink mb-2"
+            style={{ fontFamily: "var(--fi-font-sans)" }}>
             Changes to This Policy
           </h2>
           <p>
@@ -197,10 +197,10 @@ export default function PrivacyPage() {
           </p>
         </section>
 
-        <div className="pt-4 border-t border-[#E8DFD1]">
-          <p className="text-[13px] text-[#6B6255]">
+        <div className="pt-4 border-t border-border">
+          <p className="text-[13px] text-ink-muted">
             Questions about this policy? Contact us at{" "}
-            <a href="mailto:hello@bankfeeindex.com" className="text-[#C44B2E] hover:underline">
+            <a href="mailto:hello@bankfeeindex.com" className="text-brick hover:underline">
               hello@bankfeeindex.com
             </a>
           </p>

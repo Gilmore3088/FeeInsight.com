@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { amountsIn, classifyFeeText, nameFrom, joinWrappedProse, foldedCategory, classifyPatternKey, extractCandidatesFromText, extractFromSegment, notAZeroPrice, stripFootnoteMarks } from "./rules";
+import { amountsIn, classifyFeeText, isConditionAmount, nameFrom, joinWrappedProse, foldedCategory, classifyPatternKey, extractCandidatesFromText, extractFromSegment, notAZeroPrice, stripFootnoteMarks } from "./rules";
 import { runFreeSpecialists } from "./specialists";
 import { joinWrappedLeaderNames } from "@/lib/custom-report/source-check";
 import { withBoxSizeCellsSplit, withDroppedDecimalPoints, withSidewaysBoxTable, withoutBusinessOnlyFees } from "./rules";
@@ -1374,5 +1374,25 @@ describe("v69: a price line named by its heading (#1102)", () => {
 
   it("does not reach a heading more than four lines up", () => {
     expect(fees(["Monthly service fee:", "a", "b", "c", "d", "$12"].join("\n"))).toEqual([]);
+  });
+});
+
+describe("Knox v70 balance-word prices stay thresholds where they are not fees (#1392 review)", () => {
+  const condition = (text: string, figure: string) => {
+    const start = text.indexOf(figure);
+    return isConditionAmount(text, { start, end: start + figure.length });
+  };
+  it("reads a cap, an averaged balance and a large figure as conditions", () => {
+    expect(condition("Loan Late Charge (1% of payment) | $15.00 Minimum $30.00 Maximum", "$30.00")).toBe(true);
+    expect(condition("$100 min. $1,500 avg balance", "$1,500")).toBe(true);
+    expect(condition("Minimum Balance $100/Month average", "$100")).toBe(true);
+    expect(condition("Minimum Balance $100 per month average daily balance", "$100")).toBe(true);
+    expect(condition("Required Minimum Balance $1,500/month avg or $10 fee", "$1,500")).toBe(true);
+    // "Low balance $1,000 ..." was never a condition here; the shared check keeps it a threshold.
+  });
+  it("still reads the fee-sized price after those words", () => {
+    expect(condition("Monthly Service Charge Below $500.00 minimum $5.00 per Month", "$5.00")).toBe(false);
+    expect(condition("Low balance $ 5.00 per month", "$ 5.00")).toBe(false);
+    expect(condition("Savvy Spending - Minimum Balance $4.95/Month if the minimum average daily balance is not met", "$4.95")).toBe(false);
   });
 });

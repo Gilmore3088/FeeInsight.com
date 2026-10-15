@@ -34,6 +34,15 @@ export const PRIORITY_GAP_RETRY_DAYS = 7;
  */
 export const PRIORITY_RULES_REREAD_HOURS = 6;
 /**
+ * Direct runs a Knox rules version may start an hour for pages it has not read. A version bump
+ * made every such bank due at once (v68 at 03:35 on Oct 15 made about 213 banks due; 25 v68 runs
+ * started, at most 10 in one hour, before v69 replaced it at 05:30, and v69 then started 84, up
+ * to 22 in one hour), and they took the tick from the state lanes, which read the same pages
+ * anyway. Past the cap a bank waits for its usual retry window, or for its lane to read the page
+ * first.
+ */
+export const PRIORITY_RULES_REREADS_PER_HOUR = 6;
+/**
  * A failure shared by at least this many runs in 24 hours is a break in our code, the
  * same bar as wakeLanesAfterRecovery. A priority run that failed on such a break, with no
  * failure of that step and reason since the current deploy went live, is presumed fixed
@@ -50,13 +59,22 @@ export interface PriorityInstitutionRequest {
   institutionId: number;
   institutionName: string;
   reason: string;
+  /**
+   * When it was asked for (ISO date). Only a run started on or after it serves the request, so
+   * asking again later (a new entry, or this one with a new date) opens it again. Requests from
+   * before Oct 15 carry none: any run serves them.
+   */
+  requestedAt?: string;
 }
 
 const REPORT_GAP_MISREAD = "report-ready gap: schedule on file but fees misread (funnel/report-rule-gaps-2026-10-07.md)";
 
 /**
  * Institutions a person asked to have read now. Names are prod's, for review only; the id
- * is what counts. An institution leaves the direct path on its own once it has run.
+ * is what counts. An institution leaves the direct path on its own once it has been read: a
+ * completed request run, started on or after `requestedAt`, that read one of its documents ends
+ * its request (`requested` tier), and after that it runs directly only on another tier. Until Oct 15 a request re-ran every PRIORITY_RETRY_HOURS with no end (506 re-runs
+ * of 71 banks since Oct 7; 28 of the banks had no new or taken-down fee from any re-run).
  */
 export const PRIORITY_INSTITUTION_REQUESTS: readonly PriorityInstitutionRequest[] = [
   // $10B+ banks whose current page Knox v57 reads correctly (Arvest's $17 overdraft row, Old
@@ -225,6 +243,7 @@ export async function selectPriorityInstitutions(
   const deploy = options.deploy === undefined ? currentDeploy() : options.deploy;
   if (limit === 0) return [];
   const requested = PRIORITY_INSTITUTION_REQUESTS.map((request) => request.institutionId);
+  const requestedSince = PRIORITY_INSTITUTION_REQUESTS.map((request) => request.requestedAt ?? "");
   const leaders = [...options.leaderIds].map(Number);
   const rows = await db<
     Array<{
@@ -276,7 +295,27 @@ export async function selectPriorityInstitutions(
                 AND (SELECT COUNT(*) FROM published_fee_catalog own WHERE own.institution_id = inst.id)
                     < ${PRO_INSTITUTION_MIN_FEES}::int THEN 5
                WHEN paid_new.paid_document_id IS NOT NULL THEN 4
-               WHEN inst.id = ANY(${requested}::bigint[]) THEN 2
+               -- A request ends once a run for it, started after it was asked for, actually read one of
+               -- the bank's documents: its extract step read a stored text of the bank. A completed run
+               -- is not enough, since a run whose fetch fails still completes (Oct 15: 242 of 596
+               -- completed request runs had an extract attempt; #1384 review).
+               WHEN inst.id = ANY(${requested}::bigint[])
+                AND NOT EXISTS (
+                      SELECT 1 FROM agent_runs served
+                        JOIN unnest(${requested}::bigint[], ${requestedSince}::text[]) AS asked(institution_id, since)
+                          ON asked.institution_id = inst.id
+                       WHERE served.params_json->>'source' = ${PRIORITY_INSTITUTION_SOURCE}::text
+                         AND served.params_json->>'institution_id' = inst.id::text
+                         AND served.params_json->>'tier' = 'requested'
+                         AND served.status = 'completed'
+                         AND (asked.since = '' OR served.started_at >= asked.since::timestamptz)
+                         AND EXISTS (
+                               SELECT 1 FROM pipeline_attempts read
+                                WHERE read.agent_run_id = served.id
+                                  AND read.institution_id = inst.id
+                                  AND read.stage = 'extract'
+                             )
+                    ) THEN 2
                WHEN (COALESCE(inst.asset_size, 0) >= ${PRIORITY_MIN_ASSETS_THOUSANDS}::bigint
                      OR inst.id = ANY(${leaders}::bigint[]))
                 AND (inst.fee_schedule_url IS NOT NULL OR EXISTS (
@@ -361,9 +400,17 @@ export async function selectPriorityInstitutions(
                 -- page that version's run still left unread would otherwise come back every tick.
                 -- The same holds for a request by name (Arvest and Old National waited a day on
                 -- their request runs from before Knox v57, 9 Oct).
+                -- At PRIORITY_RULES_REREADS_PER_HOUR this hour, the retry window holds as usual.
                 AND (
                   c.tier NOT IN (2, 3)
                   OR NOT c.rules_unread
+                  -- This rules version's direct re-reads in the last hour reached the cap.
+                  OR (
+                    SELECT COUNT(*) FROM agent_runs reread
+                     WHERE reread.params_json->>'source' = ${PRIORITY_INSTITUTION_SOURCE}::text
+                       AND reread.idempotency_key LIKE ${`atlas:priority:%:knox:${KNOX_RULES_STRATEGY.version}`}::text
+                       AND reread.started_at > NOW() - INTERVAL '1 hour'
+                  ) >= ${PRIORITY_RULES_REREADS_PER_HOUR}::int
                   OR r.started_at > NOW() - make_interval(hours => ${PRIORITY_RULES_REREAD_HOURS}::int)
                   OR r.idempotency_key = ${"atlas:priority:"}::text || c.id::text || ${`:knox:${KNOX_RULES_STRATEGY.version}`}::text
                 )

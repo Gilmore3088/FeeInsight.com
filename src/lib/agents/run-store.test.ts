@@ -157,6 +157,7 @@ import {
   expectedMsToFirstWork,
   expectedStepMs,
   TICK_EXCLUDED_STEP_KEYS,
+  isLaneRoomRun,
   executeQueuedAgentRuns,
   heldByPause,
   startAgentRun,
@@ -1214,6 +1215,36 @@ describe("agentic run store", () => {
 
     expect(result.results.map((run) => run.runId)).toEqual([101, 102, 104]);
     expect(result.results[1]).toMatchObject({ executedSteps: 0, heldForDeadline: true });
+  });
+
+  it("holds a Read-now run that would leave the lane behind it no room for its first work", async () => {
+    getExecutionBackendMock.mockReturnValue("agentic_v1");
+    sqlMock.mockImplementation((strings: TemplateStringsArray, ...values: unknown[]) => {
+      const text = templateText(strings);
+      if (text.includes("SELECT r.id")) {
+        return Promise.resolve([
+          { id: 101, run_kind: "manual_repair", source: "atlas.priority_institution" },
+          { id: 102, run_kind: "workflow_lane", source: null },
+        ]);
+      }
+      if (text.includes("SELECT step_key")) {
+        // The Read-now run's fetch (30 s) fits the tick alone, but not with the lane's discover (115 s).
+        return Promise.resolve(values[0] === 102 ? [{ step_key: "discover" }] : [{ step_key: "fetch" }]);
+      }
+      if (text.includes("FROM agent_runs")) {
+        // The lane is already finished here, so it does nothing; the Read-now run is queued.
+        return Promise.resolve([{ ...runRow, id: values[0], status: values[0] === 101 ? "queued" : "completed" }]);
+      }
+      return Promise.resolve([]);
+    });
+
+    const result = await executeQueuedAgentRuns({ runLimit: 10, maxStepsPerRun: 10, deadlineAt: Date.now() + 140_000 });
+
+    expect(isLaneRoomRun("atlas.priority_institution")).toBe(true);
+    expect(isLaneRoomRun("atlas.priority_state_research")).toBe(true);
+    expect(isLaneRoomRun(null)).toBe(false);
+    // Without the lane's room it would have run as the tick's first run.
+    expect(result.results[0]).toMatchObject({ runId: 101, executedSteps: 0, heldForDeadline: true });
   });
 
   it("counts a lane run's quick first steps together with the first real step", () => {

@@ -89,12 +89,12 @@ export function RegisterForm({
     }
   }
 
-  const inputClass = "w-full rounded-md border border-[#D5CBBF] bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#C44B2E] focus:border-transparent";
-  const labelClass = "block text-sm font-medium text-[#1A1815] mb-1";
+  const inputClass = "w-full rounded-md border border-border bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brick focus:border-transparent";
+  const labelClass = "block text-sm font-medium text-ink mb-1";
   const selectClass = `${inputClass} appearance-none`;
 
   return (
-    <form onSubmit={handleSubmit} className="relative bg-[#FFFDF9] rounded-lg border border-[#E8DFD1] shadow-sm p-6 space-y-4">
+    <form onSubmit={handleSubmit} className="relative bg-surface-0 rounded-lg border border-border shadow-sm p-6 space-y-4">
       <HoneypotField />
       {error && (
         <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">
@@ -125,13 +125,13 @@ export function RegisterForm({
       <div>
         <label htmlFor="password" className={labelClass}>Password</label>
         <input id="password" name="password" type="password" required minLength={8} autoComplete="new-password" className={inputClass} />
-        <p className="mt-1 text-xs text-[#6B6255]">Minimum 8 characters</p>
+        <p className="mt-1 text-xs text-ink-muted">Minimum 8 characters</p>
       </div>
 
       {/* Professional context: only asked of people signing up for professional work. */}
       {!isConsumer && !checkout && (
-      <div className="border-t border-[#E8DFD1] pt-4 mt-4">
-        <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#6B6255] mb-3">
+      <div className="border-t border-border pt-4 mt-4">
+        <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-ink-muted mb-3">
           About your organization
         </p>
 
@@ -188,7 +188,7 @@ export function RegisterForm({
       <button
         type="submit"
         disabled={pending}
-        className="w-full rounded-md bg-[#C44B2E] px-4 py-2.5 text-sm font-medium text-white hover:bg-[#A83D25] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+        className="w-full rounded-md bg-brick px-4 py-2.5 text-sm font-medium text-white hover:bg-brick-ink disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
       >
         {pending ? "Creating account..." : isConsumer ? "Create free account" : checkout ? "Continue to checkout" : "Create account"}
       </button>

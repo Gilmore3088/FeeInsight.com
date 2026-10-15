@@ -76,7 +76,11 @@ import { frequencyFromLine, settledFrequency } from "@/lib/fee-frequency";
 // v69 (#1102): a price line with no name of its own (a bare "$12", "Outgoing domestic $25") takes
 // its name from a short fee heading up to four lines above it, unless a row under that heading
 // already read another kind of fee.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 69 } as const;
+// v70 (#1100): monthly maintenance and low-balance fees the account expert missed: a low-balance
+// charge named without a fee word and charged by the period, one stated in a sentence ("a low
+// balance fee of $6.95 will be imposed every statement cycle"), and a price after a balance word
+// that belongs to the figure before it ("Below $500.00 minimum $5.00 per Month").
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 70 } as const;
 
 export interface SpecialistRun {
   strategy: string;

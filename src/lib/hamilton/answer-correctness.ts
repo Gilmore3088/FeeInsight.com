@@ -145,6 +145,19 @@ export function reconcileMemoText(input: ReconcileInput & { text: string; extra?
 }
 
 /**
+ * Reconciles a Simulate read (#1079) on its own text (#1414): every dollar figure must be a live
+ * value, a recomputed statistic, a figure the storyline states from another source, or a gap
+ * between two anchors, where the reader's tested prices (`readerAnchors`) are anchors too, so "the
+ * tested $37 is $3 below p75" ties. The free answer's own stale values are that answer's failures,
+ * not the read's.
+ */
+export function reconcileSimulateText(input: ReconcileInput & { text: string; readerAnchors: number[] }): CorrectnessResult {
+  const base = reconcileValues(input, catalogFacts(input.response));
+  if (!base) return { checked: false, figures: 0, failures: [] };
+  return tieText(input.text, [...base.anchors, ...input.readerAnchors], [...base.singles, ...otherSourceFigures(input.response)], []);
+}
+
+/**
  * Reconciles a written answer (#1079) on its own text: every dollar figure must be a live value, a
  * recomputed statistic or a gap between two for the asked fee, or one of `extra` (money the answer's
  * tools read from sources other than the fee catalog). The free answer's research only names the

@@ -103,7 +103,7 @@ export default async function ResearchHubPage() {
         <MethodFlow coverageLabel={coverageLabel} />
 
         <section aria-label="Where to start" className="print:hidden">
-          <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.12em] text-[#6B6255]">Not sure where to start?</p>
+          <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.12em] text-ink-muted">Not sure where to start?</p>
           <AudiencePaths />
         </section>
       </div>

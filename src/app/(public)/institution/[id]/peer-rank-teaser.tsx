@@ -1,6 +1,5 @@
-import Link from "next/link";
 import { DISTRICT_NAMES } from "@/lib/fed-districts";
-import { formatAmount } from "@/lib/format";
+import { formatFeeAmount } from "@/lib/format";
 import { STATE_NAMES } from "@/lib/us-states";
 import type { InstitutionPeerRank, PeerRankLine } from "@/lib/data-store/peer-fee-rank";
 
@@ -20,53 +19,59 @@ export function peerGroupLabel(rank: Pick<InstitutionPeerRank, "scope" | "state_
   return state ? `${state} ${kind}` : kind;
 }
 
-function share(count: number, total: number): string {
-  return `${total > 0 ? (count / total) * 100 : 0}%`;
+type Position = "below" | "within" | "above";
+
+const DOT: Record<Position, string> = { below: "bg-below-market", within: "bg-in-range", above: "bg-above-market" };
+
+/** Where it ranks, 0 (cheapest) to 1 (dearest), counting ties as half. */
+function rankShare(line: PeerRankLine): number {
+  return line.peers > 0 ? (line.lower + line.same / 2) / line.peers : 0.5;
+}
+
+function rankPosition(share: number): Position {
+  return share < 0.25 ? "below" : share > 0.75 ? "above" : "within";
 }
 
 /**
  * Where this institution's overdraft and maintenance fees sit against its report peers
- * (value funnel A3): counts only, no names, and a path to the full local comparison.
+ * (value funnel A3): counts only, no names.
  */
-export function PeerRankTeaser({ rank, reportOfferHref }: { rank: InstitutionPeerRank; reportOfferHref: string }) {
+export function PeerRankTeaser({ rank }: { rank: InstitutionPeerRank }) {
   const group = peerGroupLabel(rank);
   return (
-    <section className="border border-[#E0D7C9] bg-white" aria-labelledby="peer-rank-heading">
-      <div className="border-b border-[#E0D7C9] px-4 py-3 sm:px-5">
-        <h2 id="peer-rank-heading" className="text-lg font-semibold text-[#1A1815]">
-          Against {group}
-        </h2>
-        {rank.scope === "district" && (
-          <p className="mt-0.5 text-[13px] text-[#6B6255]">Its state has too few comparable institutions, so these are its Fed district peers.</p>
-        )}
-      </div>
-      <ul className="divide-y divide-[#EFE8DD]">
+    <section className="rounded-xl border border-border bg-surface-0 p-4 shadow-fi-1" aria-labelledby="peer-rank-heading">
+      <h2 id="peer-rank-heading" className="text-[15px] font-semibold text-ink">
+        Against {group}
+      </h2>
+      {rank.scope === "district" && (
+        <p className="mt-0.5 text-[12px] text-ink-muted">Too few peers in its state, so these are Fed district peers.</p>
+      )}
+      <ul className="mt-3 space-y-4">
         {rank.lines.map((line) => (
-          <li key={line.key} className="grid gap-2 px-4 py-3 sm:grid-cols-[180px_minmax(0,1fr)] sm:items-center sm:gap-5 sm:px-5">
-            <div className="flex items-baseline justify-between gap-3 sm:block">
-              <p className="text-[14px] font-medium text-[#1A1815]">{FEE_LABELS[line.key]}</p>
-              <p className="text-[14px] font-semibold tabular-nums text-[#1A1815] sm:mt-0.5">{formatAmount(line.own)}</p>
+          <li key={line.key}>
+            <div className="flex items-baseline justify-between gap-3">
+              <p className="text-[14px] text-ink">{FEE_LABELS[line.key]}</p>
+              <p className="font-mono text-[15px] font-semibold tabular-nums text-ink">{formatFeeAmount(line.own)}</p>
             </div>
-            <div>
-              <div className="flex h-2 overflow-hidden rounded-full bg-[#EFE8DD]" aria-hidden="true">
-                <span className="bg-[#2F5585]" style={{ width: share(line.lower, line.peers) }} />
-                <span className="bg-[#8A8173]" style={{ width: share(line.same, line.peers) }} />
-                <span className="bg-[#C44B2E]" style={{ width: share(line.higher, line.peers) }} />
-              </div>
-              <p className="mt-1.5 text-[13px] text-[#5A5347]">
-                Of {line.peers} others that publish it, <span className="font-semibold text-[#2F5585]">{line.lower} lower</span>
-                {line.same > 0 ? `, ${line.same} the same` : ""} and{" "}
-                <span className="font-semibold text-[#A93D25]">{line.higher} higher</span>.
-              </p>
-            </div>
+            <span className="relative mt-2 block h-4" aria-hidden="true">
+              <span className="absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-control-border" />
+              <span className="absolute left-1/4 top-1/2 h-3 w-1/2 -translate-y-1/2 rounded-[3px] bg-brick-tint" />
+              <span
+                className={`absolute top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full ring-2 ring-surface-0 ${DOT[rankPosition(rankShare(line))]}`}
+                style={{ left: `${rankShare(line) * 100}%` }}
+              />
+            </span>
+            <p className="mt-1 flex justify-between text-[11px] text-ink-muted" aria-hidden="true">
+              <span>Lowest</span>
+              <span>Highest</span>
+            </p>
+            <p className="mt-1 text-[12px] text-ink-soft">
+              Of {line.peers} others that publish it, {line.lower} charge less{line.same > 0 ? `, ${line.same} the same` : ""} and{" "}
+              {line.higher} charge more.
+            </p>
           </li>
         ))}
       </ul>
-      <div className="border-t border-[#E0D7C9] px-4 py-3 text-[13px] sm:px-5">
-        <Link href={reportOfferHref} className="font-semibold text-[#A93D25] hover:text-[#8E2A17]">
-          See every headline fee against its local competitors
-        </Link>
-      </div>
     </section>
   );
 }

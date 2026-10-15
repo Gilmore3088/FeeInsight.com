@@ -29,8 +29,8 @@ export default async function EmailPreferencesPage({ searchParams }: PageProps) 
   return (
     <div className="mx-auto max-w-lg px-6 py-20">
       <h1
-        className="text-[1.75rem] leading-[1.15] tracking-[-0.02em] text-[#1A1815]"
-        style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
+        className="font-extrabold text-[1.75rem] leading-[1.15] tracking-[-0.02em] text-ink"
+        style={{ fontFamily: "var(--fi-font-sans)" }}
       >
         Email preferences
       </h1>
@@ -42,9 +42,9 @@ export default async function EmailPreferencesPage({ searchParams }: PageProps) 
           uid={uid}
         />
       ) : (
-        <p className="mt-4 text-[15px] leading-relaxed text-[#5A5347]">
+        <p className="mt-4 text-[15px] leading-relaxed text-ink-soft">
           This link is incomplete. Use the link from your email, or{" "}
-          <Link href="/contact" className="text-[#C44B2E] underline">
+          <Link href="/contact" className="text-brick underline">
             contact us
           </Link>{" "}
           and we&apos;ll update your preferences.

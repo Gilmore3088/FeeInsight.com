@@ -200,18 +200,18 @@ export function SearchModal() {
     <div className="fixed inset-0 z-[100]">
       {/* Backdrop */}
       <div
-        className="absolute inset-0 bg-[#1A1815]/30 backdrop-blur-sm"
+        className="absolute inset-0 bg-ink/30 backdrop-blur-sm"
         onClick={() => setOpen(false)}
         aria-hidden="true"
       />
 
       {/* Modal */}
       <div role="dialog" aria-modal="true" aria-label="Search" className="relative mx-auto mt-[15vh] w-full max-w-lg px-4">
-        <div className="rounded-2xl border border-[#E8DFD1] bg-[#FFFDF9] shadow-2xl shadow-[#1A1815]/10 overflow-hidden">
+        <div className="rounded-2xl border border-border bg-surface-0 shadow-2xl shadow-[#132338]/10 overflow-hidden">
           {/* Search input */}
-          <div className="flex items-center gap-3 border-b border-[#E8DFD1] px-4 py-3">
+          <div className="flex items-center gap-3 border-b border-border px-4 py-3">
             <svg
-              className="h-5 w-5 text-[#6B6255] shrink-0"
+              className="h-5 w-5 text-ink-muted shrink-0"
               fill="none"
               viewBox="0 0 24 24"
               stroke="currentColor"
@@ -228,7 +228,7 @@ export function SearchModal() {
               onChange={(e) => search(e.target.value)}
               onKeyDown={handleKeyDown}
               placeholder="Search institutions, fees, or guides..."
-              className="flex-1 bg-transparent text-[14px] text-[#1A1815] placeholder:text-[#6B6255] outline-none"
+              className="flex-1 bg-transparent text-[14px] text-ink placeholder:text-ink-muted outline-none"
               aria-label="Search institutions, fees, or guides"
               role="combobox"
               aria-expanded={results.length > 0}
@@ -237,9 +237,9 @@ export function SearchModal() {
               aria-activedescendant={results.length > 0 ? optionId(selectedIndex) : undefined}
             />
             {loading && (
-              <div role="status" aria-label="Searching" className="h-4 w-4 border-2 border-[#E8DFD1] border-t-[#C44B2E] rounded-full animate-spin shrink-0" />
+              <div role="status" aria-label="Searching" className="h-4 w-4 border-2 border-border border-t-brick rounded-full animate-spin shrink-0" />
             )}
-            <kbd className="hidden sm:inline-flex h-5 items-center rounded bg-[#E8DFD1]/50 px-1.5 text-[10px] font-medium text-[#6B6255]">
+            <kbd className="hidden sm:inline-flex h-5 items-center rounded bg-border/50 px-1.5 text-[10px] font-medium text-ink-muted">
               ESC
             </kbd>
           </div>
@@ -256,7 +256,7 @@ export function SearchModal() {
                     <div
                       id={`search-group-${group.type}`}
                       role="presentation"
-                      className="px-4 py-1.5 text-[10px] font-bold uppercase tracking-[0.1em] text-[#6B6255]"
+                      className="px-4 py-1.5 text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted"
                     >
                       {group.label}
                     </div>
@@ -273,11 +273,11 @@ export function SearchModal() {
                           onClick={() => handleSelect(item)}
                           onMouseEnter={() => setSelectedIndex(globalIdx)}
                           className={`w-full cursor-pointer text-left px-4 py-2.5 transition-colors ${
-                            selected ? "bg-[#C44B2E]/8 text-[#A93D25]" : "text-[#1A1815] hover:bg-[#FAF7F2]"
+                            selected ? "bg-brick/8 text-brick" : "text-ink hover:bg-paper"
                           }`}
                         >
                           <div className="text-[13px] font-medium">{item.label}</div>
-                          <div className="text-[11px] text-[#6B6255] mt-0.5">{item.sublabel}</div>
+                          <div className="text-[11px] text-ink-muted mt-0.5">{item.sublabel}</div>
                         </div>
                       );
                     })}
@@ -290,17 +290,17 @@ export function SearchModal() {
           {/* Empty state */}
           {query.trim().length >= 2 && results.length === 0 && !loading && (
             <div className="px-4 py-6 text-center">
-              <p className="text-[13px] text-[#6B6255]">No results for &ldquo;{query}&rdquo;</p>
+              <p className="text-[13px] text-ink-muted">No results for &ldquo;{query}&rdquo;</p>
             </div>
           )}
 
           {/* Footer */}
-          <div className="flex items-center justify-between border-t border-[#E8DFD1] px-4 py-2 text-[10px] text-[#6B6255]">
+          <div className="flex items-center justify-between border-t border-border px-4 py-2 text-[10px] text-ink-muted">
             <span>Search institutions, fees, or guides</span>
             <div className="hidden sm:flex items-center gap-1.5">
-              <kbd className="inline-flex h-4 items-center rounded bg-[#E8DFD1]/50 px-1 text-[9px]">&uarr;&darr;</kbd>
+              <kbd className="inline-flex h-4 items-center rounded bg-border/50 px-1 text-[9px]">&uarr;&darr;</kbd>
               <span>navigate</span>
-              <kbd className="inline-flex h-4 items-center rounded bg-[#E8DFD1]/50 px-1 text-[9px] ml-2">&crarr;</kbd>
+              <kbd className="inline-flex h-4 items-center rounded bg-border/50 px-1 text-[9px] ml-2">&crarr;</kbd>
               <span>select</span>
             </div>
           </div>

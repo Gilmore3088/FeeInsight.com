@@ -139,17 +139,17 @@ export default async function ReportPage({
       <div style={{ maxWidth: "720px", margin: "0 auto", padding: "64px 24px 96px" }}>
 
         {/* Breadcrumb */}
-        <nav aria-label="Breadcrumb" style={{ marginBottom: "32px", fontSize: "13px", color: "#6B6255" }}>
-          <Link href="/reports" style={{ color: "#5A5347", textDecoration: "none" }}>
+        <nav aria-label="Breadcrumb" style={{ marginBottom: "32px", fontSize: "13px", color: "#55606f" }}>
+          <Link href="/reports" style={{ color: "#354252", textDecoration: "none" }}>
             Research Reports
           </Link>
           <span style={{ margin: "0 8px" }}>/</span>
-          <span style={{ color: "#1A1815" }}>{report.title}</span>
+          <span style={{ color: "#132338" }}>{report.title}</span>
         </nav>
 
         {/* Header */}
         <div style={{
-          borderBottom: "2px solid #1A1815",
+          borderBottom: "2px solid #132338",
           paddingBottom: "24px",
           marginBottom: "48px",
         }}>
@@ -157,7 +157,7 @@ export default async function ReportPage({
             fontSize: "11px",
             textTransform: "uppercase",
             letterSpacing: "0.12em",
-            color: "#C44B2E",
+            color: "#b23a32",
             fontWeight: 700,
             marginBottom: "12px",
           }}>
@@ -168,15 +168,15 @@ export default async function ReportPage({
             fontSize: "36px",
             fontWeight: 600,
             letterSpacing: "-0.02em",
-            color: "#1A1815",
+            color: "#132338",
             marginBottom: "16px",
-            fontFamily: "var(--font-newsreader), Georgia, serif",
+            fontFamily: "var(--fi-font-sans)",
             lineHeight: 1.2,
           }}>
             {report.title}
           </h1>
 
-          <p style={{ fontSize: "13px", color: "#6B6255" }}>
+          <p style={{ fontSize: "13px", color: "#55606f" }}>
             {RESEARCH_IMPRINT} &middot; Published {formatDate(report.published_at)}
           </p>
         </div>
@@ -184,9 +184,9 @@ export default async function ReportPage({
         {/* What this page is. Until a report has a written summary and real charts, say so
             plainly rather than showing placeholder text and empty chart boxes. */}
         <section style={{ marginBottom: "48px" }}>
-          <p style={{ fontSize: "15px", color: "#5A5347", lineHeight: 1.75 }}>
+          <p style={{ fontSize: "15px", color: "#354252", lineHeight: 1.75 }}>
             This {typeLabel.toLowerCase()} is delivered as a PDF. Download it below, or{" "}
-            <Link href="/for-institutions#report" style={{ color: "#A93D25", textDecoration: "underline" }}>
+            <Link href="/for-institutions#report" style={{ color: "#b23a32", textDecoration: "underline" }}>
               request a competitive fee report for your own institution
             </Link>
             .
@@ -195,20 +195,20 @@ export default async function ReportPage({
 
         {/* Email gate — full PDF download */}
         <section style={{
-          borderTop: "1px solid #E8DFD1",
+          borderTop: "1px solid #ddd5c6",
           paddingTop: "40px",
         }}>
           <h2 style={{
             fontSize: "20px",
             fontWeight: 600,
-            color: "#1A1815",
+            color: "#132338",
             marginBottom: "8px",
-            fontFamily: "var(--font-newsreader), Georgia, serif",
+            fontFamily: "var(--fi-font-sans)",
             letterSpacing: "-0.01em",
           }}>
             Download Full Report
           </h2>
-          <p style={{ fontSize: "14px", color: "#5A5347", marginBottom: "24px", lineHeight: 1.6 }}>
+          <p style={{ fontSize: "14px", color: "#354252", marginBottom: "24px", lineHeight: 1.6 }}>
             Enter your email to receive a download link for the complete PDF.
           </p>
 
@@ -216,10 +216,10 @@ export default async function ReportPage({
         </section>
 
         {/* Methodology link */}
-        <div style={{ marginTop: "64px", paddingTop: "24px", borderTop: "1px solid #E8DFD1", fontSize: "12px", color: "#6B6255" }}>
+        <div style={{ marginTop: "64px", paddingTop: "24px", borderTop: "1px solid #ddd5c6", fontSize: "12px", color: "#55606f" }}>
           <p>
             Data collected and verified by the Bank Fee Index.{" "}
-            <a href="/methodology" style={{ color: "#5A5347", textDecoration: "underline" }}>
+            <a href="/methodology" style={{ color: "#354252", textDecoration: "underline" }}>
               Read our methodology
             </a>
             .

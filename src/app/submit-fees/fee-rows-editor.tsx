@@ -17,7 +17,7 @@ const FREQUENCIES = [
 ] as const;
 
 const INPUT_CLASS =
-  "min-w-0 rounded border border-[#D5CBBF] px-2 py-1.5 text-sm outline-none focus:border-[#C44B2E]";
+  "min-w-0 rounded border border-border px-2 py-1.5 text-sm outline-none focus:border-brick";
 
 export function FeeRowsEditor({
   fees,
@@ -34,20 +34,20 @@ export function FeeRowsEditor({
   // required work. Typed amounts survive closing it again.
   return (
     <details className="group">
-      <summary className="cursor-pointer list-none text-xs font-bold uppercase tracking-[0.12em] text-[#6B6255] hover:text-[#A93D25] [&::-webkit-details-marker]:hidden">
+      <summary className="cursor-pointer list-none text-xs font-bold uppercase tracking-[0.12em] text-ink-muted hover:text-brick [&::-webkit-details-marker]:hidden">
         <span className="inline-flex items-center gap-1">
           <Plus className="h-3.5 w-3.5 transition-transform group-open:rotate-45" aria-hidden="true" />
           Add individual fees (optional)
         </span>
       </summary>
       <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <p className="text-xs text-[#6B6255]">
+        <p className="text-xs text-ink-muted">
           Leave amounts blank to send the link only.
         </p>
         <button
           type="button"
           onClick={onAdd}
-          className="inline-flex items-center gap-1 rounded-md border border-[#D5CBBF] px-2 py-1 text-xs font-semibold text-[#1A1815] transition-colors hover:border-[#C44B2E] hover:text-[#A93D25]"
+          className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs font-semibold text-ink transition-colors hover:border-brick hover:text-brick"
         >
           <Plus className="h-3.5 w-3.5" />
           Add fee
@@ -58,7 +58,7 @@ export function FeeRowsEditor({
         {fees.map((fee, i) => (
           <div
             key={i}
-            className="fi-row-interaction grid min-w-0 gap-2 border border-[#E0D7C9] bg-[#FDFBF8] p-3 sm:grid-cols-[minmax(0,1fr)_110px_150px_32px]"
+            className="fi-row-interaction grid min-w-0 gap-2 border border-border bg-surface-0 p-3 sm:grid-cols-[minmax(0,1fr)_110px_150px_32px]"
           >
             <input
               type="text"
@@ -93,7 +93,7 @@ export function FeeRowsEditor({
               type="button"
               onClick={() => onRemove(i)}
               aria-label="Remove fee"
-              className="inline-flex h-8 w-8 items-center justify-center rounded border border-[#D5CBBF] text-[#6B6255] hover:border-[#C44B2E] hover:text-[#C44B2E]"
+              className="inline-flex h-8 w-8 items-center justify-center rounded border border-border text-ink-muted hover:border-brick hover:text-brick"
             >
               <Trash2 className="h-3.5 w-3.5" />
             </button>

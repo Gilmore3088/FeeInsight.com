@@ -159,7 +159,7 @@ export default async function AdminGuidesPage() {
                           ? `/guides/pro/${row.slug}`
                           : `/guides/${row.slug}`
                       }
-                      className="font-semibold text-gray-900 hover:text-[#A93D25]"
+                      className="font-semibold text-gray-900 hover:text-brick"
                     >
                       {row.title}
                     </Link>

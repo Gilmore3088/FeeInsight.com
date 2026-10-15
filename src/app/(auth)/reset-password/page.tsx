@@ -21,8 +21,8 @@ export default async function ResetPasswordPage({ searchParams }: { searchParams
         <ResetPasswordForm token={token} />
       ) : (
         <div role="status" className={AUTH_FORM_CLASS}>
-          <p className="text-sm text-[#1A1815]">This reset link has expired or isn&apos;t complete.</p>
-          <Link href="/forgot-password" className="text-sm font-medium text-[#C44B2E] hover:underline">
+          <p className="text-sm text-ink">This reset link has expired or isn&apos;t complete.</p>
+          <Link href="/forgot-password" className="text-sm font-medium text-brick hover:underline">
             Get a new link
           </Link>
         </div>

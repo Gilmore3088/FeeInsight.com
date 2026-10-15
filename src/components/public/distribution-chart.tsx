@@ -66,7 +66,7 @@ const PAD = { top: 16, right: 8, bottom: 30, left: 40 };
 export function DistributionChart({ values, median, bucketCount = 16 }: DistributionChartProps) {
   if (values.length < 3) {
     return (
-      <p className="py-8 text-center text-sm text-[#5A5347]">
+      <p className="py-8 text-center text-sm text-ink-soft">
         Not enough institutions yet to show how this fee is spread.
       </p>
     );
@@ -106,8 +106,8 @@ export function DistributionChart({ values, median, bucketCount = 16 }: Distribu
       >
         {ticks.map((t) => (
           <g key={t}>
-            <line x1={PAD.left} x2={VIEW_W - PAD.right} y1={y(t)} y2={y(t)} stroke="#E8DFD1" strokeDasharray={t === 0 ? undefined : "3 3"} />
-            <text x={PAD.left - 6} y={y(t) + 3.5} textAnchor="end" fontSize="14" fill="#6B6255">
+            <line x1={PAD.left} x2={VIEW_W - PAD.right} y1={y(t)} y2={y(t)} stroke="#ddd5c6" strokeDasharray={t === 0 ? undefined : "3 3"} />
+            <text x={PAD.left - 6} y={y(t) + 3.5} textAnchor="end" fontSize="14" fill="#55606f">
               {formatCount(t)}
             </text>
           </g>
@@ -117,7 +117,7 @@ export function DistributionChart({ values, median, bucketCount = 16 }: Distribu
           const top = y(bin.count);
           return (
             <g key={bin.low}>
-              <rect x={x} y={top} width={barW} height={PAD.top + plotH - top} rx={2} fill="#C44B2E">
+              <rect x={x} y={top} width={barW} height={PAD.top + plotH - top} rx={2} fill="#b23a32">
                 <title>{`${binLabel(bin)}: ${formatCount(bin.count)} institutions`}</title>
               </rect>
               {i % labelEvery === 0 && bin.high !== null && (
@@ -125,7 +125,7 @@ export function DistributionChart({ values, median, bucketCount = 16 }: Distribu
                   x={PAD.left + slot * i}
                   y={VIEW_H - 8}
                   fontSize="14"
-                  fill="#6B6255"
+                  fill="#55606f"
                   textAnchor={PAD.left + slot * i > VIEW_W - 60 ? "end" : "start"}
                 >
                   {money(bin.low)}
@@ -136,13 +136,13 @@ export function DistributionChart({ values, median, bucketCount = 16 }: Distribu
         })}
         {medianX !== null && median !== null && (
           <g>
-            <line x1={medianX} x2={medianX} y1={PAD.top} y2={PAD.top + plotH} stroke="#1A1815" strokeWidth={1.5} strokeDasharray="4 3" />
+            <line x1={medianX} x2={medianX} y1={PAD.top} y2={PAD.top + plotH} stroke="#132338" strokeWidth={1.5} strokeDasharray="4 3" />
             <text
               x={medianX + 5}
               y={PAD.top + 10}
               fontSize="14"
               fontWeight="600"
-              fill="#1A1815"
+              fill="#132338"
               textAnchor={medianX > VIEW_W - 120 ? "end" : "start"}
               dx={medianX > VIEW_W - 120 ? -10 : 0}
             >
@@ -151,7 +151,7 @@ export function DistributionChart({ values, median, bucketCount = 16 }: Distribu
           </g>
         )}
       </svg>
-      <figcaption className="mt-2 text-[12px] text-[#5A5347]">
+      <figcaption className="mt-2 text-[12px] text-ink-soft">
         Each bar counts institutions whose fee falls in that range; {formatCount(total)} institutions in all.
         {overflowBin ? ` The last bar is ${money(overflowBin.low)} and up.` : ""}
       </figcaption>

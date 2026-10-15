@@ -43,13 +43,19 @@ export function gatedPageLabel(from: string | null | undefined): string | null {
  * The line above /subscribe's headline for a visitor sent from a Pro page (James, 9 Oct 2026):
  * the page they wanted, placed inside Pro. The headline itself is the same for everyone, so
  * no one feature is sold as the product. A fixed list of routes; no text comes from the URL.
+ * It is the page's first mention of Hamilton, so it always gives the full name (site v3 brief
+ * 03 section 4: "Hamilton, the Fee Insight Pro workspace"; Hamilton is the workspace, Pro the plan).
  */
+export function hamiltonFullName(siteName: string): string {
+  return `Hamilton, the ${siteName} Pro workspace`;
+}
+
 const ENTRY_POINTS: { path: string; context: (siteName: string) => string }[] = [
-  { path: "/pro/news", context: (site) => `Regulatory Wire is included with ${site} Pro` },
-  { path: "/pro/analyze", context: (site) => `Hamilton analysis is included with ${site} Pro` },
-  { path: "/pro/reports", context: (site) => `Generate reports with ${site} Pro` },
-  { path: "/pro/simulate", context: (site) => `Explore pricing scenarios with ${site} Pro` },
-  { path: "/pro/monitor", context: (site) => `Monitor published fee changes with ${site} Pro` },
+  { path: "/pro/news", context: (site) => `Regulatory Wire is included with ${hamiltonFullName(site)}` },
+  { path: "/pro/analyze", context: (site) => `Fee analysis is included with ${hamiltonFullName(site)}` },
+  { path: "/pro/reports", context: (site) => `Generate reports with ${hamiltonFullName(site)}` },
+  { path: "/pro/simulate", context: (site) => `Explore pricing scenarios with ${hamiltonFullName(site)}` },
+  { path: "/pro/monitor", context: (site) => `Monitor published fee changes with ${hamiltonFullName(site)}` },
 ];
 
 export interface SubscribeEntry {
@@ -61,10 +67,13 @@ export interface SubscribeEntry {
 
 export function subscribeEntry(from: string | null | undefined, siteName: string): SubscribeEntry {
   const page = gatedPageLabel(from);
-  if (!from || !page) return { page: null, context: `Discover everything included with ${siteName} Pro` };
+  if (!from || !page) return { page: null, context: `Discover everything included with ${hamiltonFullName(siteName)}` };
   const path = pathOf(from);
   const entry = ENTRY_POINTS.find((point) => underPath(path, point.path));
-  return { page, context: entry ? entry.context(siteName) : `${page} is included with ${siteName} Pro` };
+  if (entry) return { page, context: entry.context(siteName) };
+  // The workspace home is Hamilton itself.
+  if (page === "Hamilton") return { page, context: hamiltonFullName(siteName) };
+  return { page, context: `${page} is included with ${hamiltonFullName(siteName)}` };
 }
 
 export function subscribeReasonLine(reason: string | undefined, siteName: string, from?: string | null): string | null {
@@ -72,8 +81,8 @@ export function subscribeReasonLine(reason: string | undefined, siteName: string
   if (reason === "pro_required") {
     const page = gatedPageLabel(from);
     return page
-      ? `You're one step away from ${page}. It's part of ${siteName} Pro, and checkout brings you straight back to it.`
-      : `Hamilton is part of ${siteName} Pro. Choose a plan below to open it.`;
+      ? `You're one step away from ${page}. It's part of ${hamiltonFullName(siteName)}, and checkout brings you straight back to it.`
+      : `Choose a plan below to open ${hamiltonFullName(siteName)}.`;
   }
   return null;
 }

@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { NeedsYouItem } from "@/lib/console/needs-you";
 import type { SpendLine } from "@/lib/data-store/console-spend";
 import type { ScoreboardSnapshotRow } from "@/lib/data-store/answer-key";
+import { ACCURACY_TARGET_LABEL } from "@/lib/accuracy-target";
 
 const SEVERITY_STRIPE: Record<NeedsYouItem["severity"], string> = {
   critical: "bg-red-500",
@@ -148,7 +149,7 @@ export function todayVitals(snapshot: ScoreboardSnapshotRow | null, spend: Vital
     {
       label: "Accuracy, 7 days",
       value: pct(accuracy?.accuracy),
-      note: accuracy?.accuracy != null ? `target 95%, ${accuracy.scorable.toLocaleString("en-US")} fees audited${asOf}` : missing,
+      note: accuracy?.accuracy != null ? `target ${ACCURACY_TARGET_LABEL}, ${accuracy.scorable.toLocaleString("en-US")} fees audited${asOf}` : missing,
       href: "/admin/scoreboard",
     },
     {

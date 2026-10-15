@@ -21,11 +21,12 @@ import { combineScores, scoreAnswerKeys, type AnswerKeyDocument, type GateScore 
 // v68 (#1102, Oct 15): fee-schedule labels with no fee word took all from 515 right / 14 wrong
 // (main with v67's dropped-decimal reads and #1365's minus-sign source check) to 537 / 14; held out stayed 53 / 4. Floors are those counts.
 // v69 (#1102, Oct 15): price lines named by their heading took all to 545 / 14; held out stayed 53 / 4.
-// #1100 gap 3 (account tables): Texas Capital's $25 checking column read; all 545 to
-// 546 right, 14 wrong; held out stayed 53 / 4; the seven states unchanged.
+// v70 (#1100, Oct 15): low-balance and maintenance fees the account expert missed took all to 551 / 14
+// and held out to 54 / 4.
+// #1100 gap 3 (account tables, v71): Texas Capital's $25 checking column read; all TBD.
 const FLOORS = {
-  all: { right: 546, wrong: 14 },
-  holdout: { right: 53, wrong: 4 },
+  all: { right: 551, wrong: 14 },
+  holdout: { right: 54, wrong: 4 },
 };
 
 const fixture = JSON.parse(

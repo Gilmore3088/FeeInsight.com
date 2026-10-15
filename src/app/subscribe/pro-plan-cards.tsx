@@ -28,11 +28,12 @@ interface PurchaseCardProps {
   entry: string;
 }
 
-const DISPLAY = { fontFamily: "var(--font-jakarta), ui-sans-serif, system-ui, sans-serif" };
+const DISPLAY = { fontFamily: "var(--fi-font-sans)" };
 
 /**
  * The one place to buy Pro (James, 9 Oct 2026): find the institution, see its one price,
- * pick annual or monthly, subscribe. The tier schedule sits behind "How pricing works".
+ * pick annual or monthly, subscribe. "How pricing works" starts open so every tier and its annual
+ * price show before the search (James, 2026-10-15: Pro is the goal).
  */
 export function PurchaseCard({
   isLoggedIn,
@@ -46,25 +47,25 @@ export function PurchaseCard({
   entry,
 }: PurchaseCardProps) {
   return (
-    <div className="h-full min-w-0 break-words rounded-2xl bg-white/75 p-6 backdrop-blur-xl ring-1 ring-[#E8E1D6]/80 shadow-[0_12px_40px_-12px_rgba(26,24,21,0.25),inset_0_1px_0_rgba(255,255,255,0.7)] sm:p-7">
-      <h2 id="pro-heading" className="scroll-mt-24 text-xl text-[#1A1815] font-semibold tracking-tight" style={DISPLAY}>
-        Fee Insight Pro
+    <div className="h-full min-w-0 break-words rounded-2xl bg-white/75 p-6 backdrop-blur-xl ring-1 ring-border/80 shadow-[0_12px_40px_-12px_rgba(26,24,21,0.25),inset_0_1px_0_rgba(255,255,255,0.7)] sm:p-7">
+      <h2 id="pro-heading" className="scroll-mt-24 text-xl text-ink font-semibold tracking-tight" style={DISPLAY}>
+        Hamilton Pro
       </h2>
       {!selection && (
         <p className="mt-1 flex flex-wrap items-baseline gap-x-1.5">
-          <span className="text-sm text-[#3D3833]">From</span>
-          <span className="text-3xl font-semibold text-[#1A1815] tabular-nums" style={DISPLAY}>
+          <span className="text-sm text-ink">From</span>
+          <span className="text-3xl font-semibold text-ink tabular-nums" style={DISPLAY}>
             {tierAmountLabel(PRO_TIERS[0].key, "monthly")}
           </span>
-          <span className="text-sm text-[#3D3833]">/ month {PLAN_TEAM_LABEL}</span>
+          <span className="text-sm text-ink">/ month {PLAN_TEAM_LABEL}</span>
         </p>
       )}
-      {!selection && <p className="mt-1 text-sm font-medium text-[#1A1815]">Same features at every institution size.</p>}
+      {!selection && <p className="mt-1 text-sm font-medium text-ink">Same features at every institution size.</p>}
 
       <div className="mt-5">{chooser}</div>
 
       {selection && (
-        <div className="mt-5 border-t border-[#E8E1D6] pt-5">
+        <div className="mt-5 border-t border-border pt-5">
           <PlanCheckout
             selection={selection}
             isLoggedIn={isLoggedIn}
@@ -76,29 +77,28 @@ export function PurchaseCard({
             destination={destination}
           />
           {selection.otherOrganization && (
-            <p className="mt-3 text-xs leading-relaxed text-[#6B6255]">{CONSULTANT_PRICE_NOTE}</p>
+            <p className="mt-3 text-xs leading-relaxed text-ink-muted">{CONSULTANT_PRICE_NOTE}</p>
           )}
         </div>
       )}
 
-      <details className="group mt-5 border-t border-[#E8E1D6] pt-4 text-sm">
-        <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between font-medium text-[#1A1815] marker:content-none">
+      <details open className="group mt-5 border-t border-border pt-4 text-sm">
+        <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between font-medium text-ink marker:content-none">
           How pricing works
-          <span aria-hidden className="text-[#6B6255] transition-transform group-open:rotate-45">+</span>
+          <span aria-hidden className="text-ink-muted transition-transform group-open:rotate-45">+</span>
         </summary>
-        <p className="mt-1 leading-relaxed text-[#3D3833]">
-          Every plan has the same full feature set {PLAN_TEAM_LABEL}. The price follows the institution&apos;s total
-          assets from its latest call report.
+        <p className="mt-1 leading-relaxed text-ink">
+          Same features at every size. The price follows total assets in the latest call report.
         </p>
         {/* Scrolls inside itself rather than widening the page on a very narrow phone. */}
-        <div tabIndex={0} role="region" aria-label="Pro price by institution size" className="mt-3 overflow-x-auto focus-visible:outline-2 focus-visible:outline-[#1A1815]">
+        <div tabIndex={0} role="region" aria-label="Pro price by institution size" className="mt-3 overflow-x-auto focus-visible:outline-2 focus-visible:outline-ink">
         <table className="w-full text-left">
           <caption className="sr-only">Pro price by institution size</caption>
           <tbody>
             {PRO_TIERS.map((tier) => (
-              <tr key={tier.key} className="border-t border-[#E8E1D6]">
-                <th scope="row" className="py-2 pr-3 font-normal text-[#3D3833]">{tier.assetsLabel}</th>
-                <td className="py-2 text-right tabular-nums text-[#1A1815]">
+              <tr key={tier.key} className="border-t border-border">
+                <th scope="row" className="py-2 pr-3 font-normal text-ink">{tier.assetsLabel}</th>
+                <td className="py-2 text-right tabular-nums text-ink">
                   {tierPriceLabel(tier.key, "monthly")} or {tierPriceLabel(tier.key, "annual")}
                 </td>
               </tr>
@@ -106,8 +106,8 @@ export function PurchaseCard({
           </tbody>
         </table>
         </div>
-        <p className="mt-2 text-xs leading-relaxed text-[#6B6255]">
-          If a plan is used for a larger institution, we&apos;ll email you before moving it to that price.{" "}
+        <p className="mt-2 text-xs leading-relaxed text-ink-muted">
+          If the plan is used for a larger institution, we&apos;ll email you before changing the price.{" "}
           {CONSULTANT_PRICE_NOTE}
         </p>
       </details>

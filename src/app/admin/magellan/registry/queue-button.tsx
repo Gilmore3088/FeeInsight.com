@@ -31,11 +31,11 @@ export function QueueRegistryButton({ source }: { source: string }) {
         type="button"
         onClick={queue}
         disabled={state === "busy"}
-        className="rounded-md border border-[var(--admin-border,#E0D7C9)] px-2 py-1 text-xs font-medium hover:bg-black/5 disabled:opacity-50"
+        className="rounded-md border border-[var(--admin-border,#ddd5c6)] px-2 py-1 text-xs font-medium hover:bg-black/5 disabled:opacity-50"
       >
         {state === "busy" ? "Queuing…" : "Queue newest"}
       </button>
-      {message && <span className={`text-xs ${state === "error" ? "text-red-700" : "text-[#5A5347]"}`}>{message}</span>}
+      {message && <span className={`text-xs ${state === "error" ? "text-red-700" : "text-ink-soft"}`}>{message}</span>}
     </div>
   );
 }

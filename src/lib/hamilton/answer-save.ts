@@ -16,9 +16,9 @@ export const SAVED_ANALYSIS_ID_KEY = "savedAnalysisId";
 /** The question as the reader typed it, without the conversation context the screen appends. */
 export { questionOnly } from "@/lib/hamilton/conversation-context";
 
-/** The shared evidence gate (answer-gate.ts) on a written answer and the tool outputs it was written from. */
-export function writtenAnswerCheck(text: string, toolOutputs: readonly unknown[]): AnswerEvidenceCheck {
-  return checkAnswerEvidence(text, toolOutputs);
+/** The shared evidence gate (answer-gate.ts) on a written answer, the tool outputs it was written from and the reader's question. */
+export function writtenAnswerCheck(text: string, toolOutputs: readonly unknown[], question?: string): AnswerEvidenceCheck {
+  return checkAnswerEvidence(text, toolOutputs, { question });
 }
 
 /**

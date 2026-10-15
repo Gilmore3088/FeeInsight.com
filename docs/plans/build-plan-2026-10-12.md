@@ -232,7 +232,7 @@ SELECT (SELECT COUNT(*) FROM published) AS published,
 - **Classification belongs to Darwin** (DECISIONS, 2026-10-12): Knox suggests a category, audience
   and tier with evidence; Darwin decides; Gutenberg publishes Darwin's decision with one final check;
   Deming audits independently. Build #1059, #1069, #1102 and #1112 this way.
-- **Targets:** accuracy 95% on Deming's daily audit (weekly average); Knox 85% found and 90% right
+- **Targets:** accuracy 99.5% (James, Oct 15) on Deming's daily audit (weekly average); Knox 85% found and 90% right
   on the answer key; coverage 30 per state and size group, or 75%.
 
 ## Rules for the builder

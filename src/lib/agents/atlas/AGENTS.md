@@ -22,6 +22,19 @@ Atlas is the orchestration and operator-visibility agent. Atlas-specific code ma
 - Do not use free-text institution names as execution identity. Use canonical numeric institution IDs.
 - Do not collapse data trust states into generic success/failure labels; preserve source, extraction, verification, publication, and refresh states separately.
 
+## City repair (`city-repair.ts`, #1213)
+
+NCUA's FOICU file cuts a credit union's city at 15 characters ("Colorado Spring", "North Little
+Ro"); credit unions inserted before #1317 kept the cut. `atlas-city-repair`, the last step of the
+daily scoreboard run, restores the full name from the credit union's own office cities in NCUA's
+branch file (`credit_union_branches`, latest report) when exactly one longer office city starts
+with the cut (case ignored), title-cased where the file writes it in capitals. It writes only rows still holding the cut,
+so a second run changes nothing, and lists every change (id, old city, new city) in the step
+detail; a dry run lists them and writes nothing. Two possible names, or none (College Station, San
+Luis Obispo, and the 5 cuts with no longer office city), stay for a person. On by James's decision
+(Oct 15). The cut city's public page redirects permanently to the full one once no institution
+keeps the cut (`fullCityForCut`). It is a data step, so the pipeline pause holds it.
+
 ## Direct state re-search (`priority-state-research.ts`)
 
 A state on `PRIORITY_STATE_RESEARCH_REQUESTS` gets a `manual_repair` run (source
@@ -47,6 +60,22 @@ stored that is still unread (the paid step fetches blocked links for banks in ev
 while a state run reads only its own state, so these would wait for their state's lane); a
 bank asked for by name; a $10B+ bank or market leader with no live overdraft fee. A new
 hand-found link or paid-fetched document starts a new run even inside the retry window.
+
+- A request by name ends once a run for it, started on or after the request's `requestedAt`
+  date, has read one of the bank's documents (an `extract` attempt in `pipeline_attempts` for
+  that run and bank). A run whose fetch fails still completes, so completion alone is not enough
+  (Oct 15: 242 of 596 completed request runs had an extract attempt). Until this, each of 71
+  requested banks re-ran every 24 hours, 506 re-runs since Oct 7, and 28 of the banks had no new
+  or taken-down fee from any of them. After that the bank runs directly only on another tier;
+  asking again means a new entry or a later `requestedAt`.
+- A Knox rules version that has not read a $10B+ bank's or leader's current page lets that bank
+  past its retry window, but at most `PRIORITY_RULES_REREADS_PER_HOUR` (6) such runs an hour. A
+  version bump otherwise made every one due at once (v68 made about 213 banks due; 25 v68
+  runs started, at most 10 in an hour, before v69 at 05:30 started 84, up to 22 in an hour). Past the cap, a bank waits
+  for its retry window, or for its state's lane to read the page first.
+- In the tick, a direct run ahead of a state lane stops starting steps while the next one would
+  leave the lane no room for its first work (`run-store.ts`, `laneFirstWorkMs`). The lane then
+  gets the tick's first-step exemption.
 
 ## State lanes: cadence and state experts
 

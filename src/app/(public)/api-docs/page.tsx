@@ -23,7 +23,7 @@ export const metadata: Metadata = {
 function Badge({ children, variant }: { children: React.ReactNode; variant: "get" | "tier" | "new" }) {
   const styles = {
     get: "bg-emerald-100 text-emerald-700",
-    tier: "bg-[#E8DFD1]/60 text-[#6B6255]",
+    tier: "bg-border/60 text-ink-muted",
     new: "bg-blue-100 text-blue-700",
   };
   return (
@@ -37,8 +37,8 @@ function SectionHeading({ id, children }: { id: string; children: React.ReactNod
   return (
     <h2
       id={id}
-      className="mt-12 mb-6 text-lg font-bold tracking-tight text-[#1A1815] scroll-mt-20"
-      style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
+      className="mt-12 mb-6 text-lg font-bold tracking-tight text-ink scroll-mt-20"
+      style={{ fontFamily: "var(--fi-font-sans)" }}
     >
       {children}
     </h2>
@@ -57,9 +57,9 @@ function ParamRow({
   description: string;
 }) {
   return (
-    <tr className="border-t border-[#E8DFD1]/60">
+    <tr className="border-t border-border/60">
       <td className="py-2 pr-3 align-top">
-        <code className="rounded bg-[#E8DFD1]/40 px-1.5 py-0.5 text-[12px] text-[#5A5347]">
+        <code className="rounded bg-border/40 px-1.5 py-0.5 text-[12px] text-ink-soft">
           {name}
         </code>
         {required && (
@@ -68,8 +68,8 @@ function ParamRow({
           </span>
         )}
       </td>
-      <td className="py-2 pr-3 align-top text-[12px] text-[#6B6255]">{type}</td>
-      <td className="py-2 align-top text-[13px] text-[#6B6255]">{description}</td>
+      <td className="py-2 pr-3 align-top text-[12px] text-ink-muted">{type}</td>
+      <td className="py-2 align-top text-[13px] text-ink-muted">{description}</td>
     </tr>
   );
 }
@@ -78,11 +78,11 @@ function CodeBlock({ children, title }: { children: string; title?: string }) {
   return (
     <div className="mt-3">
       {title && (
-        <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-[#6B6255]">
+        <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-ink-muted">
           {title}
         </p>
       )}
-      <pre className="overflow-x-auto rounded-lg bg-[#1A1815] px-5 py-4 text-[12px] leading-relaxed text-[#D4C9BA]">
+      <pre className="overflow-x-auto rounded-lg bg-ink px-5 py-4 text-[12px] leading-relaxed text-border">
         {children}
       </pre>
     </div>
@@ -92,9 +92,9 @@ function CodeBlock({ children, title }: { children: string; title?: string }) {
 function ResponseField({ name, type, note }: { name: string; type: string; note?: string }) {
   return (
     <div className="flex items-baseline gap-2 text-[13px]">
-      <code className="text-[12px] text-[#5A5347]">{name}</code>
-      <span className="text-[11px] text-[#6B6255]">{type}</span>
-      {note && <span className="text-[#6B6255]">-- {note}</span>}
+      <code className="text-[12px] text-ink-soft">{name}</code>
+      <span className="text-[11px] text-ink-muted">{type}</span>
+      {note && <span className="text-ink-muted">-- {note}</span>}
     </div>
   );
 }
@@ -123,19 +123,19 @@ function Endpoint({
   tierNote?: string;
 }) {
   return (
-    <div className="rounded-xl border border-[#E8DFD1]/80 bg-white px-6 py-5">
+    <div className="rounded-xl border border-border/80 bg-white px-6 py-5">
       <div className="flex flex-wrap items-center gap-2">
         <Badge variant="get">{method}</Badge>
-        <code className="text-sm font-medium text-[#1A1815]">{path}</code>
+        <code className="text-sm font-medium text-ink">{path}</code>
         {tierNote && <Badge variant="tier">{tierNote}</Badge>}
       </div>
-      <p className="mt-1 text-[14px] font-medium text-[#1A1815]">{summary}</p>
-      <p className="mt-1 text-[13px] text-[#6B6255]">{description}</p>
+      <p className="mt-1 text-[14px] font-medium text-ink">{summary}</p>
+      <p className="mt-1 text-[13px] text-ink-muted">{description}</p>
 
       {/* Parameters */}
       {params.length > 0 && (
         <div className="mt-4">
-          <p className="text-[11px] font-semibold uppercase tracking-wider text-[#6B6255]">
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-ink-muted">
             Parameters
           </p>
           <table className="mt-2 w-full text-left">
@@ -154,7 +154,7 @@ function Endpoint({
       {/* Response */}
       {responseFields && responseFields.length > 0 && (
         <div className="mt-4">
-          <p className="text-[11px] font-semibold uppercase tracking-wider text-[#6B6255]">
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-ink-muted">
             Response fields
           </p>
           <div className="mt-2 space-y-1">{responseFields.map((f) => <ResponseField key={f.name} {...f} />)}</div>
@@ -187,15 +187,15 @@ function TierCard({
     <div
       className={`rounded-xl border px-5 py-5 ${
         highlighted
-          ? "border-[#C44B2E] bg-[#C44B2E]/5"
-          : "border-[#E8DFD1]/80 bg-white"
+          ? "border-brick bg-brick/5"
+          : "border-border/80 bg-white"
       }`}
     >
-      <p className="text-[11px] font-semibold uppercase tracking-wider text-[#6B6255]">
+      <p className="text-[11px] font-semibold uppercase tracking-wider text-ink-muted">
         {name}
       </p>
-      <p className="mt-1 text-2xl font-bold text-[#1A1815]">{price}</p>
-      <ul className="mt-3 space-y-1.5 text-[13px] text-[#6B6255]">
+      <p className="mt-1 text-2xl font-bold text-ink">{price}</p>
+      <ul className="mt-3 space-y-1.5 text-[13px] text-ink-muted">
         {features.map((f, i) => (
           <li key={i} className="flex items-start gap-2">
             <span className="mt-0.5 text-emerald-600">&#10003;</span>
@@ -204,11 +204,11 @@ function TierCard({
         ))}
       </ul>
       {ctaHref ? (
-        <a href={ctaHref} className="mt-4 inline-block text-[13px] font-medium text-[#A93D25] underline underline-offset-2">
+        <a href={ctaHref} className="mt-4 inline-block text-[13px] font-medium text-brick underline underline-offset-2">
           {cta}
         </a>
       ) : (
-        <p className="mt-4 text-[13px] font-medium text-[#A93D25]">{cta}</p>
+        <p className="mt-4 text-[13px] font-medium text-brick">{cta}</p>
       )}
     </div>
   );
@@ -231,55 +231,55 @@ export default async function ApiDocsPage() {
       />
 
       {/* Hero */}
-      <p className="text-[11px] font-semibold uppercase tracking-wider text-[#A93D25]">
+      <p className="text-[11px] font-semibold uppercase tracking-wider text-brick">
         Developer
       </p>
       <h1
-        className="mt-1 text-[1.75rem] sm:text-[2.25rem] leading-[1.12] tracking-[-0.02em] font-bold text-[#1A1815]"
-        style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
+        className="mt-1 text-[1.75rem] sm:text-[2.25rem] leading-[1.12] tracking-[-0.02em] font-extrabold text-ink"
+        style={{ fontFamily: "var(--fi-font-sans)" }}
       >
         Bank Fee Index API
       </h1>
-      <p className="mt-3 max-w-2xl text-[15px] leading-relaxed text-[#5A5347]">
+      <p className="mt-3 max-w-2xl text-[15px] leading-relaxed text-ink-soft">
         Programmatic access to fee benchmarking data for U.S. banks and credit
         unions. {categoriesLabel} fee categories, national and peer medians, percentile ranges,
         and institution-level detail — all via a simple REST API.
       </p>
 
       {/* Access first: what works today without a key, and how a Pro key is issued. */}
-      <section aria-labelledby="getting-access" className="mt-6 rounded-xl border border-[#E8DFD1] bg-white px-6 py-5">
+      <section aria-labelledby="getting-access" className="mt-6 rounded-xl border border-border bg-white px-6 py-5">
         <h2
           id="getting-access"
-          className="text-[15px] font-bold text-[#1A1815]"
-          style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
+          className="text-[15px] font-bold text-ink"
+          style={{ fontFamily: "var(--fi-font-sans)" }}
         >
           Getting access
         </h2>
-        <ol className="mt-3 list-decimal space-y-2 pl-5 text-[13px] leading-relaxed text-[#5A5347]">
+        <ol className="mt-3 list-decimal space-y-2 pl-5 text-[13px] leading-relaxed text-ink-soft">
           <li>
-            <span className="font-semibold text-[#1A1815]">Free, no key.</span> Call any JSON endpoint
+            <span className="font-semibold text-ink">Free, no key.</span> Call any JSON endpoint
             below. The free tier returns the 6 spotlight categories and allows 100 requests a month.
           </li>
           <li>
-            <span className="font-semibold text-[#1A1815]">{PRO_LABEL}, {PRO_ANNUAL_RANGE_LABEL} by institution size, {PLAN_TEAM_LABEL}.</span>{" "}
-            <Link href="/subscribe" className="font-medium text-[#A93D25] underline underline-offset-2">
+            <span className="font-semibold text-ink">{PRO_LABEL}, {PRO_ANNUAL_RANGE_LABEL} by institution size, {PLAN_TEAM_LABEL}.</span>{" "}
+            <Link href="/subscribe" className="font-medium text-brick underline underline-offset-2">
               Subscribe
             </Link>{" "}
             for all {categoriesLabel} categories and signed-in CSV exports from Account.
           </li>
           <li>
-            <span className="font-semibold text-[#1A1815]">API key.</span> Keys are issued by hand to{" "}
+            <span className="font-semibold text-ink">API key.</span> Keys are issued by hand to{" "}
             {PRO_LABEL} workspaces; there is no self-serve key page yet.{" "}
-            <a href={API_ACCESS_HREF} className="font-medium text-[#A93D25] underline underline-offset-2">
+            <a href={API_ACCESS_HREF} className="font-medium text-brick underline underline-offset-2">
               Email us to request one
             </a>{" "}
             and we reply with the key and its limits.
           </li>
         </ol>
-        <p className="mt-3 text-[12px] text-[#6B6255]">
+        <p className="mt-3 text-[12px] text-ink-muted">
           Example responses on this page show the real field names and shapes with illustrative
           numbers. For today&apos;s figures, see the{" "}
-          <Link href="/fees" className="font-medium text-[#A93D25] underline underline-offset-2">
+          <Link href="/fees" className="font-medium text-brick underline underline-offset-2">
             Fee Index
           </Link>
           . {summary.freshnessLabel}.
@@ -288,24 +288,24 @@ export default async function ApiDocsPage() {
 
       {/* Quick links */}
       <div className="mt-5 flex flex-wrap gap-3 text-[13px]">
-        <a href="#authentication" className="rounded-md border border-[#E8DFD1] px-3 py-1.5 text-[#5A5347] hover:bg-[#FAF7F2] transition-colors">
+        <a href="#authentication" className="rounded-md border border-border px-3 py-1.5 text-ink-soft hover:bg-paper transition-colors">
           Authentication
         </a>
-        <a href="#fees" className="rounded-md border border-[#E8DFD1] px-3 py-1.5 text-[#5A5347] hover:bg-[#FAF7F2] transition-colors">
+        <a href="#fees" className="rounded-md border border-border px-3 py-1.5 text-ink-soft hover:bg-paper transition-colors">
           Fees
         </a>
-        <a href="#index" className="rounded-md border border-[#E8DFD1] px-3 py-1.5 text-[#5A5347] hover:bg-[#FAF7F2] transition-colors">
+        <a href="#index" className="rounded-md border border-border px-3 py-1.5 text-ink-soft hover:bg-paper transition-colors">
           Index
         </a>
-        <a href="#institutions" className="rounded-md border border-[#E8DFD1] px-3 py-1.5 text-[#5A5347] hover:bg-[#FAF7F2] transition-colors">
+        <a href="#institutions" className="rounded-md border border-border px-3 py-1.5 text-ink-soft hover:bg-paper transition-colors">
           Institutions
         </a>
-        <a href="#pricing" className="rounded-md border border-[#E8DFD1] px-3 py-1.5 text-[#5A5347] hover:bg-[#FAF7F2] transition-colors">
+        <a href="#pricing" className="rounded-md border border-border px-3 py-1.5 text-ink-soft hover:bg-paper transition-colors">
           Pricing
         </a>
         <a
           href={`${BASE}/openapi.json`}
-          className="rounded-md border border-[#C44B2E]/30 bg-[#C44B2E]/5 px-3 py-1.5 text-[#A93D25] hover:bg-[#C44B2E]/10 transition-colors"
+          className="rounded-md border border-brick/30 bg-brick/5 px-3 py-1.5 text-brick hover:bg-brick/10 transition-colors"
           target="_blank"
           rel="noopener noreferrer"
         >
@@ -314,23 +314,23 @@ export default async function ApiDocsPage() {
       </div>
 
       {/* Base URL */}
-      <div className="mt-6 rounded-lg border border-[#E8DFD1] bg-[#FAF7F2]/50 px-5 py-3">
-        <p className="text-[11px] font-semibold uppercase tracking-wider text-[#6B6255]">
+      <div className="mt-6 rounded-lg border border-border bg-paper/50 px-5 py-3">
+        <p className="text-[11px] font-semibold uppercase tracking-wider text-ink-muted">
           Base URL
         </p>
-        <code className="mt-1 block text-[14px] font-medium text-[#1A1815]">
+        <code className="mt-1 block text-[14px] font-medium text-ink">
           {BASE}
         </code>
       </div>
 
       {/* Authentication */}
       <SectionHeading id="authentication">Authentication</SectionHeading>
-      <div className="rounded-xl border border-[#E8DFD1]/80 bg-white px-6 py-5">
-        <p className="text-[13px] text-[#6B6255]">
+      <div className="rounded-xl border border-border/80 bg-white px-6 py-5">
+        <p className="text-[13px] text-ink-muted">
           Every request needs an API key. Fee Insight issues keys by hand to invited partners. Pass yours in the{" "}
-          <code className="rounded bg-[#E8DFD1]/40 px-1 text-[12px]">Authorization</code>{" "}
+          <code className="rounded bg-border/40 px-1 text-[12px]">Authorization</code>{" "}
           header as a Bearer token, or as an{" "}
-          <code className="rounded bg-[#E8DFD1]/40 px-1 text-[12px]">api_key</code>{" "}
+          <code className="rounded bg-border/40 px-1 text-[12px]">api_key</code>{" "}
           query parameter.
         </p>
 
@@ -347,8 +347,8 @@ export default async function ApiDocsPage() {
 
       {/* Rate Limits */}
       <SectionHeading id="rate-limits">Rate Limits</SectionHeading>
-      <div className="rounded-xl border border-[#E8DFD1]/80 bg-white px-6 py-5">
-        <p className="text-[13px] text-[#6B6255]">
+      <div className="rounded-xl border border-border/80 bg-white px-6 py-5">
+        <p className="text-[13px] text-ink-muted">
           Each API key gets one monthly allowance shared across all endpoints. Unlimited keys get no X-RateLimit-Limit or X-RateLimit-Remaining headers. Errors return JSON with an error message and a stable code such as invalid_parameter, plan_required or rate_limited.
         </p>
         <div className="mt-3 space-y-1.5 text-[13px]">
@@ -356,22 +356,22 @@ export default async function ApiDocsPage() {
           <ResponseField name="X-RateLimit-Remaining" type="header" note="Requests remaining" />
           <ResponseField name="X-RateLimit-Reset" type="header" note="ISO 8601 UTC time when the monthly window resets" />
         </div>
-        <div className="mt-4 overflow-hidden rounded-lg border border-[#E8DFD1]/60">
+        <div className="mt-4 overflow-hidden rounded-lg border border-border/60">
           <table className="w-full text-left text-[13px]">
             <thead>
-              <tr className="bg-[#FAF7F2]">
-                <th className="px-4 py-2 text-[11px] font-semibold uppercase tracking-wider text-[#6B6255]">Tier</th>
-                <th className="px-4 py-2 text-[11px] font-semibold uppercase tracking-wider text-[#6B6255]">Monthly limit</th>
-                <th className="px-4 py-2 text-[11px] font-semibold uppercase tracking-wider text-[#6B6255]">Burst rate</th>
+              <tr className="bg-paper">
+                <th className="px-4 py-2 text-[11px] font-semibold uppercase tracking-wider text-ink-muted">Tier</th>
+                <th className="px-4 py-2 text-[11px] font-semibold uppercase tracking-wider text-ink-muted">Monthly limit</th>
+                <th className="px-4 py-2 text-[11px] font-semibold uppercase tracking-wider text-ink-muted">Burst rate</th>
               </tr>
             </thead>
-            <tbody className="text-[#5A5347]">
-              <tr className="border-t border-[#E8DFD1]/60">
+            <tbody className="text-ink-soft">
+              <tr className="border-t border-border/60">
                 <td className="px-4 py-2 font-medium">{PRO_LABEL} key</td>
                 <td className="px-4 py-2">10,000 requests</td>
                 <td className="px-4 py-2">Manual setup</td>
               </tr>
-              <tr className="border-t border-[#E8DFD1]/60">
+              <tr className="border-t border-border/60">
                 <td className="px-4 py-2">{SITE_NAME} Advisory</td>
                 <td className="px-4 py-2">Custom</td>
                 <td className="px-4 py-2">Custom</td>
@@ -680,32 +680,32 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \\
 
       {/* ---- DATA NOTES ---- */}
       <SectionHeading id="data-notes">Data Notes</SectionHeading>
-      <div className="rounded-xl border border-[#E8DFD1] bg-[#FAF7F2]/50 px-6 py-5">
-        <ul className="space-y-2 text-[13px] text-[#6B6255]">
+      <div className="rounded-xl border border-border bg-paper/50 px-6 py-5">
+        <ul className="space-y-2 text-[13px] text-ink-muted">
           <li>
-            <span className="font-medium text-[#5A5347]">Currency.</span>{" "}
+            <span className="font-medium text-ink-soft">Currency.</span>{" "}
             All monetary amounts are in USD.
           </li>
           <li>
-            <span className="font-medium text-[#5A5347]">Methodology.</span>{" "}
+            <span className="font-medium text-ink-soft">Methodology.</span>{" "}
             Medians, percentiles, and ranges are computed from non-rejected fee observations only.
           </li>
           <li>
-            <span className="font-medium text-[#5A5347]">Sources.</span>{" "}
+            <span className="font-medium text-ink-soft">Sources.</span>{" "}
             Institution data is sourced from FDIC (banks) and NCUA (credit unions) registries.
             Fee data is read from published fee schedules; fees the software is not sure about
             are held for a person to check.
           </li>
           <li>
-            <span className="font-medium text-[#5A5347]">Status.</span>{" "}
+            <span className="font-medium text-ink-soft">Status.</span>{" "}
             Each category carries a status: Strong ({STRONG_INSTITUTION_COUNT}+ institutions with published fees), Provisional ({MIN_INSTITUTIONS_FOR_MEDIAN} to {STRONG_INSTITUTION_COUNT - 1}), or Too few to benchmark (under {MIN_INSTITUTIONS_FOR_MEDIAN}, no median shown).
           </li>
           <li>
-            <span className="font-medium text-[#5A5347]">Tier system.</span>{" "}
+            <span className="font-medium text-ink-soft">Tier system.</span>{" "}
             Categories are organized into 4 tiers: spotlight, core, extended, and comprehensive.
           </li>
           <li>
-            <span className="font-medium text-[#5A5347]">Coverage.</span>{" "}
+            <span className="font-medium text-ink-soft">Coverage.</span>{" "}
             The dataset covers {summary.institutionsLabel} institutions with published fees (of{" "}
             {summary.monitoredLabel} monitored) and is
             refreshed on a rolling calendar. {summary.freshnessLabel}.
@@ -714,16 +714,16 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \\
       </div>
 
       {/* OpenAPI link */}
-      <div className="mt-8 rounded-xl border border-[#E8DFD1] bg-white px-6 py-5 text-center">
-        <p className="text-[11px] font-semibold uppercase tracking-wider text-[#6B6255]">
+      <div className="mt-8 rounded-xl border border-border bg-white px-6 py-5 text-center">
+        <p className="text-[11px] font-semibold uppercase tracking-wider text-ink-muted">
           Machine-readable specification
         </p>
-        <p className="mt-2 text-[14px] text-[#5A5347]">
+        <p className="mt-2 text-[14px] text-ink-soft">
           Import our OpenAPI 3.0 spec into Postman, Swagger UI, or your code generator of choice.
         </p>
         <a
           href={`${BASE}/openapi.json`}
-          className="mt-3 inline-block rounded-lg border border-[#C44B2E]/30 bg-[#C44B2E]/5 px-5 py-2 text-[13px] font-medium text-[#A93D25] hover:bg-[#C44B2E]/10 transition-colors"
+          className="mt-3 inline-block rounded-lg border border-brick/30 bg-brick/5 px-5 py-2 text-[13px] font-medium text-brick hover:bg-brick/10 transition-colors"
           target="_blank"
           rel="noopener noreferrer"
         >

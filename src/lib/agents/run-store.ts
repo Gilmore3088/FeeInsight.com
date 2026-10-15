@@ -94,6 +94,7 @@ import { freshAuditDetail, runFreshAudit, summarizeFreshAudit } from "@/lib/agen
 import { benchmarkHealthDetail, runBenchmarkHealth, summarizeBenchmarkHealth } from "@/lib/agents/deming/benchmark-health";
 import { runBayesLedger, summarizeBayesLedger, BAYES_LEDGER_VERSION } from "@/lib/agents/bayes/ledger";
 import { runScheduleCheck, summarizeScheduleCheck, SCHEDULE_CHECK_VERSION } from "@/lib/agents/atlas/schedule-check";
+import { cityRepairDetail, runCityRepair, summarizeCityRepair } from "@/lib/agents/atlas/city-repair";
 import { MARKET_SPREAD_WORKFLOW, runMarketSpread, summarizeMarketSpread } from "@/lib/agents/content/market-spread";
 import { FEE_DEPTH_WORKFLOW, runFeeDepth, summarizeFeeDepth } from "@/lib/agents/content/fee-depth";
 import { runOdByState, summarizeOdByStateResult } from "@/lib/agents/content/od-by-state";
@@ -334,7 +335,7 @@ async function executeAgenticStep(
     const { runPaidAnswerEval } = await import("@/lib/hamilton/paid-answer-eval");
     const result = await runPaidAnswerEval({ agentRunId: run.id });
     const memo = result.paths[0];
-    const names: Record<string, string> = { simulate: "Simulate", written_answer: "Written answer" };
+    const names: Record<string, string> = { simulate: "Simulate", written_answer: "Written answer", report: "Report answer page" };
     const simulateLine = result.paths
       .filter((p) => p.path !== "memo" && p.sampled > 0)
       .map((p) => ` ${names[p.path] ?? p.path}: ${p.passed} of ${p.answers} passed; ${p.correctness.correct} of ${p.correctness.checked} checked tie.`)
@@ -2239,6 +2240,10 @@ async function executeAgenticStep(
       const result = await runBenchmarkHealth({ db: tx });
       return { status: "completed", summary: summarizeBenchmarkHealth(result), detail: benchmarkHealthDetail(result) };
     }
+    case "atlas-city-repair": {
+      const result = await runCityRepair({ db: tx, dryRun: run.runKind === "dry_run" });
+      return { status: "completed", summary: summarizeCityRepair(result), detail: cityRepairDetail(result) };
+    }
     case "schedule-check": {
       const result = await runScheduleCheck({ db: tx });
       return {
@@ -3167,6 +3172,28 @@ export function expectedMsToFirstWork(stepKeys: string[]): number {
   return total;
 }
 
+/** Direct runs that rank ahead of state lanes and leave the next lane room in the tick. */
+export const LANE_ROOM_SOURCES = ["atlas.priority_institution", "atlas.priority_state_research"] as const;
+
+export function isLaneRoomRun(source: string | null | undefined): boolean {
+  return source != null && (LANE_ROOM_SOURCES as readonly string[]).includes(source);
+}
+
+/** Expected time to a lane run's first real work, from its queued steps (`expectedMsToFirstWork`). */
+async function laneFirstWorkMs(runId: number): Promise<number> {
+  try {
+    const steps = await sql<{ step_key: string }[]>`
+      SELECT step_key FROM agent_run_steps
+       WHERE agent_run_id = ${runId} AND status = 'queued'
+       ORDER BY sequence ASC, id ASC
+    `;
+    return expectedMsToFirstWork(steps.map((step) => String(step.step_key)));
+  } catch (error) {
+    console.error("laneFirstWorkMs failed:", error);
+    return 0;
+  }
+}
+
 export function expectedStepMs(stepKey: string | null): number {
   if (!stepKey) return DEFAULT_STEP_EXPECTED_MS;
   if (stepKey in STEP_EXPECTED_MS) return STEP_EXPECTED_MS[stepKey];
@@ -3425,7 +3452,7 @@ export async function executeQueuedAgentRuns({
   // When provider steps cannot run this tick, skip runs whose next queued step is a
   // provider step so they do not crowd deterministic work out of the run limit.
   const rows = await sql`
-    SELECT r.id, r.run_kind
+    SELECT r.id, r.run_kind, r.params_json->>'source' AS source
       FROM agent_runs r
       LEFT JOIN agent_state_lanes lane
         ON r.run_kind = 'workflow_lane' AND lane.state_code = upper(btrim(r.state_code))
@@ -3522,12 +3549,22 @@ export async function executeQueuedAgentRuns({
   // admin to a crawl. The tick deadline still bounds how much work one tick does.
   const results: AgentRunExecutionResult[] = [];
   let providerRuns = 0;
+  // A direct run (Read now, a state's re-search) ranks ahead of state lanes, and one that ran its
+  // steps until the deadline left the lane behind it no room: on Oct 15 lanes fell to 4-7 an hour
+  // while Read-now runs took up to 1,770 s of tick time an hour. Each one now finishes early enough
+  // to leave the next lane's first work room in the tick (`laneRoomMs`).
+  const firstLaneIndex = rows.findIndex((row) => row.run_kind === "workflow_lane");
+  const laneRoomMs = deadlineAt != null && firstLaneIndex >= 0 && rows.slice(0, firstLaneIndex).some((row) => isLaneRoomRun(row.source))
+    ? await laneFirstWorkMs(Number(rows[firstLaneIndex].id))
+    : 0;
+  // The tick's first run always gets a step; a direct run that left it to the lane passes it on.
+  let firstRunPending = true;
   // Once a state lane is held because its first real step would not finish this tick,
   // no lane further down the order starts in its place: a lower lane that fits would
   // count as under way and take the next tick ahead of it (Tennessee waited behind WY
   // this way, 2026-10-07). Other runs can still use the rest of the tick.
   let laneHeld = false;
-  for (const row of rows) {
+  for (const [index, row] of rows.entries()) {
     if (laneHeld && row.run_kind === "workflow_lane") continue;
     // The first run always gets a step; a later run starts a step only when that step can
     // finish by the deadline, so a larger run limit fills the tick without running past it.
@@ -3545,13 +3582,16 @@ export async function executeQueuedAgentRuns({
     }
     const providerSlot = allowProviderSteps && (providerRunLimit === null || providerRuns < providerRunLimit);
     if (providerSlot) providerRuns += 1;
+    const leavesLaneRoom = laneRoomMs > 0 && index < firstLaneIndex && isLaneRoomRun(row.source);
     const result = await executeAgentRun(runId, {
       maxSteps: maxStepsPerRun,
       allowProviderSteps,
-      deadlineAt,
-      alwaysRunFirstStep: results.length === 0,
+      deadlineAt: leavesLaneRoom && deadlineAt != null ? deadlineAt - laneRoomMs : deadlineAt,
+      // The tick's first step always runs, unless it is a direct run that would take the lane's room.
+      alwaysRunFirstStep: firstRunPending && !leavesLaneRoom,
       deferProviderSteps: allowProviderSteps && !providerSlot,
     });
+    if (!(leavesLaneRoom && result.executedSteps === 0)) firstRunPending = false;
     results.push(result);
     if (result.heldForDeadline && row.run_kind === "workflow_lane") laneHeld = true;
   }

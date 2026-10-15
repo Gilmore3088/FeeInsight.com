@@ -4,7 +4,7 @@ import { formatAbsoluteDate } from "@/lib/public-stats";
 import type { ArticleSummary } from "@/lib/data-store/articles";
 import { SectionHeading } from "./research-hero";
 
-const SERIF = { fontFamily: "var(--font-newsreader), Georgia, serif" };
+const SERIF = { fontFamily: "var(--fi-font-sans)" };
 
 interface Study {
   href: string;
@@ -52,8 +52,8 @@ const STUDIES: Study[] = [
 ];
 
 function Motif({ kind }: { kind: Study["motif"] }) {
-  const ink = "#1A1815";
-  const accent = "#C44B2E";
+  const ink = "#132338";
+  const accent = "#b23a32";
   return (
     <svg aria-hidden="true" viewBox="0 0 120 64" className="h-16 w-full">
       {kind === "bars" &&
@@ -98,21 +98,21 @@ export function ResearchLibrary({ articles }: { articles: ArticleSummary[] }) {
           <Link
             key={s.href}
             href={s.href}
-            className="group flex flex-col overflow-hidden rounded-2xl border border-[#E8DFD1] bg-white transition-all hover:-translate-y-0.5 hover:border-[#C44B2E]/30 hover:shadow-lg hover:shadow-[#C44B2E]/5"
+            className="group flex flex-col overflow-hidden rounded-2xl border border-border bg-white transition-all hover:-translate-y-0.5 hover:border-brick/30 hover:shadow-lg hover:shadow-[#b23a32]/5"
           >
-            <div className="border-b border-[#F1EBE1] bg-[#FAF7F2] px-5 py-4">
+            <div className="border-b border-surface-200 bg-paper px-5 py-4">
               <Motif kind={s.motif} />
             </div>
             <div className="flex flex-1 flex-col px-5 py-4">
-              <p className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-[#8A8072]">
+              <p className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-ink-muted">
                 {s.kicker}
                 {s.pro && <ProLock />}
               </p>
-              <h3 className="mt-1.5 text-[17px] font-semibold leading-snug text-[#1A1815] group-hover:text-[#A93D25]" style={SERIF}>
+              <h3 className="mt-1.5 text-[17px] font-bold leading-snug text-ink group-hover:text-brick" style={SERIF}>
                 {s.title}
               </h3>
-              <p className="mt-1.5 flex-1 text-[13px] leading-relaxed text-[#6B6255]">{s.body}</p>
-              <span className="mt-3 text-[12px] font-semibold text-[#A93D25]">
+              <p className="mt-1.5 flex-1 text-[13px] leading-relaxed text-ink-muted">{s.body}</p>
+              <span className="mt-3 text-[12px] font-semibold text-brick">
                 Open <span className="inline-block transition-transform group-hover:translate-x-0.5">&rarr;</span>
               </span>
             </div>
@@ -122,17 +122,17 @@ export function ResearchLibrary({ articles }: { articles: ArticleSummary[] }) {
 
       {articles.length > 0 && (
         <div className="mt-8">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#6B6255]">Latest analysis</p>
-          <ul className="mt-3 divide-y divide-[#F1EBE1] rounded-2xl border border-[#E8DFD1] bg-white">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-ink-muted">Latest analysis</p>
+          <ul className="mt-3 divide-y divide-surface-200 rounded-2xl border border-border bg-white">
             {articles.map((a) => (
               <li key={a.slug}>
-                <Link href={`/research/articles/${a.slug}`} className="group flex flex-wrap items-baseline gap-x-4 gap-y-1 px-5 py-3.5 hover:bg-[#FAF7F2]">
-                  <span className="text-[11px] tabular-nums text-[#8A8072] sm:w-24">{formatAbsoluteDate(a.published_at) ?? ""}</span>
+                <Link href={`/research/articles/${a.slug}`} className="group flex flex-wrap items-baseline gap-x-4 gap-y-1 px-5 py-3.5 hover:bg-paper">
+                  <span className="text-[11px] tabular-nums text-ink-muted sm:w-24">{formatAbsoluteDate(a.published_at) ?? ""}</span>
                   <span className="min-w-0 flex-1">
-                    <span className="block text-[14px] font-semibold text-[#1A1815] group-hover:text-[#A93D25]">{a.title}</span>
-                    {a.subtitle && <span className="block truncate text-[12px] text-[#6B6255]">{a.subtitle}</span>}
+                    <span className="block text-[14px] font-semibold text-ink group-hover:text-brick">{a.title}</span>
+                    {a.subtitle && <span className="block truncate text-[12px] text-ink-muted">{a.subtitle}</span>}
                   </span>
-                  <span className="text-[12px] font-semibold text-[#A93D25]">Read &rarr;</span>
+                  <span className="text-[12px] font-semibold text-brick">Read &rarr;</span>
                 </Link>
               </li>
             ))}

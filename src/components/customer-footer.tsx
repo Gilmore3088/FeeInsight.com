@@ -1,158 +1,107 @@
 import Link from "next/link";
-import { ProLock } from "@/components/public/pro-lock";
+import { Logo } from "@/brand/components";
 import { EmailSignup } from "./public/email-signup";
 import { CONTACT_EMAIL, LEGAL_ENTITY_NAME, PRODUCT_NAME, SITE_NAME, TRADEMARK_NOTICE } from "@/lib/constants";
 
-const FOOTER_LINK_CLASS = "text-[#6B6255] hover:text-[#1A1815] transition-colors";
-const FOOTER_HEADING_CLASS = "text-[11px] font-bold uppercase tracking-[0.12em] text-[#6B6255] mb-3";
+/** Footer columns (site v3 brief 05, section 3). No link points at a gated or noindexed page. */
+export const FOOTER_COLUMNS: readonly { heading: string; links: readonly { label: string; href: string }[] }[] = [
+  {
+    heading: "Product",
+    links: [
+      { label: PRODUCT_NAME, href: "/fees" },
+      { label: "Find your institution", href: "/institutions" },
+      { label: "Market data", href: "/research" },
+      { label: "Hamilton", href: "/for-institutions" },
+      { label: "Reports", href: "/reports" },
+      { label: "Pricing", href: "/subscribe" },
+    ],
+  },
+  {
+    heading: "Resources",
+    links: [
+      { label: "National fee index", href: "/research/national-fee-index" },
+      { label: "State reports", href: "/research#states" },
+      { label: "District reports", href: "/research#districts" },
+      { label: "Consumer guides", href: "/guides" },
+      { label: "Methodology", href: "/methodology" },
+      { label: "Data sources", href: "/research/data-sources" },
+      { label: "API", href: "/api-docs" },
+    ],
+  },
+  {
+    heading: "Company",
+    links: [
+      { label: "About", href: "/about" },
+      { label: "Contact", href: "/contact" },
+      { label: "Submit a fee source", href: "/submit-fees" },
+    ],
+  },
+  {
+    heading: "Legal",
+    links: [
+      { label: "Privacy", href: "/privacy" },
+      { label: "Terms", href: "/terms" },
+    ],
+  },
+];
 
-export function CustomerFooter() {
+const FOOTER_LINK_CLASS = "text-ink-muted hover:text-ink transition-colors";
+const FOOTER_HEADING_CLASS = "text-[11px] font-bold uppercase tracking-[0.12em] text-ink-muted mb-3";
+
+/**
+ * The live sample report's Product link (05 §3). The footer can't read the sample itself, so a page
+ * that already knows sampleReportAvailable() passes it; elsewhere the link stays out.
+ */
+export const SAMPLE_REPORT_FOOTER_LINK = { label: "Sample report", href: "/reports/sample-competitive-fee-position" } as const;
+
+export function CustomerFooter({ sampleReport = false }: { sampleReport?: boolean } = {}) {
+  const columns = sampleReport
+    ? FOOTER_COLUMNS.map((column) =>
+        column.heading === "Product"
+          ? { ...column, links: column.links.flatMap((link) => (link.href === "/reports" ? [link, SAMPLE_REPORT_FOOTER_LINK] : [link])) }
+          : column,
+      )
+    : FOOTER_COLUMNS;
   return (
-    <footer className="border-t border-[#E8DFD1] bg-white/40">
+    <footer className="border-t border-border bg-surface-0">
       <div className="mx-auto max-w-page px-6 py-12 lg:py-14">
-        <div className="grid grid-cols-1 gap-10 sm:grid-cols-2 lg:grid-cols-[1fr_auto_auto_auto]  lg:gap-x-16">
+        <div className="grid grid-cols-1 gap-10 sm:grid-cols-2 lg:grid-cols-[1fr_auto_auto_auto_auto] lg:gap-x-12">
           {/* Brand + email */}
           <div className="lg:pr-8">
-            <Link href="/" className="flex items-center gap-2 no-underline">
-              <svg
-                viewBox="0 0 24 24"
-                fill="none"
-                className="h-[16px] w-[16px] text-[#C44B2E]"
-                stroke="currentColor"
-                strokeWidth="1.5"
-                aria-hidden="true"
-              >
-                <rect x="4" y="13" width="4" height="8" rx="1" />
-                <rect x="10" y="8" width="4" height="13" rx="1" />
-                <rect x="16" y="3" width="4" height="18" rx="1" />
-              </svg>
-              <span
-                className="text-[14px] font-medium tracking-tight text-[#1A1815]"
-                style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
-              >
-                {SITE_NAME}
-              </span>
+            <Link href="/" className="flex items-center gap-2 no-underline" aria-label={`${PRODUCT_NAME}, powered by ${SITE_NAME}: home`}>
+              <Logo mark="bank-fee-index-lockup" height={40} title="" />
             </Link>
-            <p className="mt-3 text-[12px] leading-relaxed text-[#6B6255] max-w-xs">
-              Home of the {PRODUCT_NAME} — U.S. bank and credit union fees
-              by district, state, size, and type. Published-source benchmarks
-              for consumers and banking teams.
+            <p className="mt-3 text-[12px] leading-relaxed text-ink-muted max-w-xs">
+              The {PRODUCT_NAME} reads the published fee schedules of U.S. banks and credit unions, with a source
+              for every figure.
             </p>
             <div className="mt-4">
               <EmailSignup />
             </div>
           </div>
 
-          {/* Product */}
-          <div>
-            <p className={FOOTER_HEADING_CLASS}>
-              Product
-            </p>
-            <ul className="space-y-2 text-[13px]">
-              <li>
-                <Link href="/fees" className={FOOTER_LINK_CLASS}>
-                  {PRODUCT_NAME}
-                </Link>
-              </li>
-              <li>
-                <Link href="/institutions" className={FOOTER_LINK_CLASS}>
-                  Find Your Institution
-                </Link>
-              </li>
-              <li>
-                <Link href="/research" className={FOOTER_LINK_CLASS}>
-                  Research Hub
-                </Link>
-              </li>
-              <li>
-                <Link href="/guides" className={FOOTER_LINK_CLASS}>
-                  Consumer Guides
-                </Link>
-              </li>
-              <li>
-                <Link href="/for-institutions" className={FOOTER_LINK_CLASS}>
-                  For Institutions
-                </Link>
-              </li>
-              <li>
-                <Link href="/subscribe" className={FOOTER_LINK_CLASS}>
-                  Pricing
-                </Link>
-              </li>
-              <li>
-                <Link href="/api-docs" className={FOOTER_LINK_CLASS}>
-                  API
-                </Link>
-              </li>
-            </ul>
-          </div>
-
-          {/* Research */}
-          <div>
-            <p className={FOOTER_HEADING_CLASS}>
-              Research
-            </p>
-            <ul className="space-y-2 text-[13px]">
-              <li>
-                <Link href="/research/national-fee-index" className={FOOTER_LINK_CLASS}>
-                  National benchmarks
-                </Link>
-              </li>
-              <li>
-                <Link href="/research/fee-revenue-analysis" className={FOOTER_LINK_CLASS}>
-                  Fee-to-Revenue Analysis
-                </Link>{" "}
-                <ProLock className="ml-1 align-middle" />
-              </li>
-              <li>
-                <Link href="/research" className={FOOTER_LINK_CLASS}>
-                  State Reports
-                </Link>
-              </li>
-              <li>
-                <Link href="/research#districts" className={FOOTER_LINK_CLASS}>
-                  District Reports
-                </Link>
-              </li>
-            </ul>
-          </div>
-
-          {/* Company */}
-          <div>
-            <p className={FOOTER_HEADING_CLASS}>
-              Company
-            </p>
-            <ul className="space-y-2 text-[13px]">
-              <li>
-                <Link href="/about" className={FOOTER_LINK_CLASS}>
-                  About
-                </Link>
-              </li>
-              <li>
-                <Link href="/contact" className={FOOTER_LINK_CLASS}>
-                  Contact
-                </Link>
-              </li>
-              <li>
-                <Link href="/privacy" className={FOOTER_LINK_CLASS}>
-                  Privacy Policy
-                </Link>
-              </li>
-              <li>
-                <Link href="/terms" className={FOOTER_LINK_CLASS}>
-                  Terms of Service
-                </Link>
-              </li>
-            </ul>
-          </div>
+          {columns.map((column) => (
+            <div key={column.heading}>
+              <p className={FOOTER_HEADING_CLASS}>{column.heading}</p>
+              <ul className="space-y-2 text-[13px]">
+                {column.links.map((link) => (
+                  <li key={link.href}>
+                    <Link href={link.href} className={FOOTER_LINK_CLASS}>
+                      {link.label}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
         </div>
 
         {/* Bottom bar */}
-        <div className="mt-8 pt-6 border-t border-[#E8DFD1]/60 flex flex-col sm:flex-row items-center justify-between gap-3 text-[11px] text-[#6B6255]">
+        <div className="mt-8 pt-6 border-t border-border/60 flex flex-col sm:flex-row items-center justify-between gap-3 text-[11px] text-ink-muted">
           <span>
             &copy; {new Date().getFullYear()} {LEGAL_ENTITY_NAME}. {TRADEMARK_NOTICE}
           </span>
-          <a href={`mailto:${CONTACT_EMAIL}`} className="text-[#5A5347] hover:text-[#1A1815] hover:underline">
+          <a href={`mailto:${CONTACT_EMAIL}`} className="text-ink-soft hover:text-ink hover:underline">
             {CONTACT_EMAIL}
           </a>
         </div>

@@ -28,12 +28,12 @@ export function ManageBillingButton({
       <button
         onClick={handleClick}
         disabled={pending}
-        className="inline-flex items-center rounded-md border border-[#D5CBBF] bg-[#FFFDF9] px-4 py-2 text-sm font-medium text-[#1A1815] hover:border-[#1A1815] disabled:opacity-50 transition-colors"
+        className="inline-flex items-center rounded-md border border-border bg-surface-0 px-4 py-2 text-sm font-medium text-ink hover:border-ink disabled:opacity-50 transition-colors"
       >
         {pending ? "Loading..." : label}
       </button>
       {failed && (
-        <p role="alert" className="mt-2 text-[13px] text-[#A93D25]">
+        <p role="alert" className="mt-2 text-[13px] text-brick">
           The billing page did not open. Try again, or email{" "}
           <a href={`mailto:${CONTACT_EMAIL}?subject=Billing`} className="underline">
             {CONTACT_EMAIL}

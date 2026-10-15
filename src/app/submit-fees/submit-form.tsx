@@ -164,10 +164,10 @@ export function SubmitForm({
   }
 
   return (
-    <form onSubmit={handleSubmit} className="min-w-0 overflow-hidden border border-[#E0D7C9] bg-white p-5">
+    <form onSubmit={handleSubmit} className="min-w-0 overflow-hidden border border-border bg-white p-5">
       <div className="space-y-5">
         <div className="relative">
-          <label htmlFor="institution-name" className="block text-xs font-bold uppercase tracking-[0.12em] text-[#6B6255]">
+          <label htmlFor="institution-name" className="block text-xs font-bold uppercase tracking-[0.12em] text-ink-muted">
             Institution
           </label>
           <input
@@ -178,25 +178,25 @@ export function SubmitForm({
             onChange={(e) => handleSearch(e.target.value)}
             onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
             placeholder="Search for a bank or credit union"
-            className="mt-1 w-full min-w-0 rounded-md border border-[#D5CBBF] px-3 py-2 text-sm outline-none transition-colors focus:border-[#C44B2E]"
+            className="mt-1 w-full min-w-0 rounded-md border border-border px-3 py-2 text-sm outline-none transition-colors focus:border-brick"
           />
           {institutionId && (
-            <p className="mt-1 text-xs text-[#6B6255]">
+            <p className="mt-1 text-xs text-ink-muted">
               Matched to an institution in the {PRODUCT_NAME}
             </p>
           )}
           {showSuggestions && suggestions.length > 0 && (
-            <div className="absolute z-10 mt-1 max-h-52 w-full overflow-y-auto rounded-md border border-[#E0D7C9] bg-white shadow-lg">
+            <div className="absolute z-10 mt-1 max-h-52 w-full overflow-y-auto rounded-md border border-border bg-white shadow-lg">
               {suggestions.map((suggestion) => (
                 <button
                   key={suggestion.id}
                   type="button"
                   onMouseDown={() => selectInstitution(suggestion)}
-                  className="w-full border-b border-[#F0EBE3] px-3 py-2 text-left text-sm last:border-0 hover:bg-[#FAF7F2]"
+                  className="w-full border-b border-surface-200 px-3 py-2 text-left text-sm last:border-0 hover:bg-paper"
                 >
-                  <span className="font-medium text-[#1A1815]">{suggestion.name}</span>
+                  <span className="font-medium text-ink">{suggestion.name}</span>
                   {suggestion.state && (
-                    <span className="ml-1 text-[#6B6255]">({suggestion.state})</span>
+                    <span className="ml-1 text-ink-muted">({suggestion.state})</span>
                   )}
                 </button>
               ))}
@@ -205,11 +205,11 @@ export function SubmitForm({
         </div>
 
         <div>
-          <label htmlFor="source-url" className="block text-xs font-bold uppercase tracking-[0.12em] text-[#6B6255]">
+          <label htmlFor="source-url" className="block text-xs font-bold uppercase tracking-[0.12em] text-ink-muted">
             Link to the published fee schedule
           </label>
           <div className="mt-1 flex min-w-0 gap-2">
-            <FileText className="mt-2.5 h-4 w-4 shrink-0 text-[#C44B2E]" />
+            <FileText className="mt-2.5 h-4 w-4 shrink-0 text-brick" />
             <input
               id="source-url"
               type="url"
@@ -217,24 +217,24 @@ export function SubmitForm({
               value={sourceUrl}
               onChange={(e) => setSourceUrl(e.target.value)}
               placeholder="https://bank.example/fee-schedule.pdf"
-              className="min-w-0 flex-1 rounded-md border border-[#D5CBBF] px-3 py-2 text-sm outline-none transition-colors focus:border-[#C44B2E]"
+              className="min-w-0 flex-1 rounded-md border border-border px-3 py-2 text-sm outline-none transition-colors focus:border-brick"
             />
           </div>
-          <p className="mt-1 text-xs text-[#6B6255]">
+          <p className="mt-1 text-xs text-ink-muted">
             Use a fee schedule page, PDF, disclosure, or account agreement from the institution.
           </p>
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2">
           <div>
-            <label htmlFor="submitter-role" className="block text-xs font-bold uppercase tracking-[0.12em] text-[#6B6255]">
+            <label htmlFor="submitter-role" className="block text-xs font-bold uppercase tracking-[0.12em] text-ink-muted">
               Your role
             </label>
             <select
               id="submitter-role"
               value={submitterRole}
               onChange={(e) => setSubmitterRole(e.target.value)}
-              className="mt-1 w-full min-w-0 rounded-md border border-[#D5CBBF] px-3 py-2 text-sm outline-none transition-colors focus:border-[#C44B2E]"
+              className="mt-1 w-full min-w-0 rounded-md border border-border px-3 py-2 text-sm outline-none transition-colors focus:border-brick"
             >
               {SUBMITTER_ROLES.map((role) => (
                 <option key={role.value} value={role.value}>
@@ -244,7 +244,7 @@ export function SubmitForm({
             </select>
           </div>
           <div>
-            <label htmlFor="notes" className="block text-xs font-bold uppercase tracking-[0.12em] text-[#6B6255]">
+            <label htmlFor="notes" className="block text-xs font-bold uppercase tracking-[0.12em] text-ink-muted">
               Notes
             </label>
             <input
@@ -253,13 +253,13 @@ export function SubmitForm({
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               placeholder="Optional context for reviewers"
-              className="mt-1 w-full min-w-0 rounded-md border border-[#D5CBBF] px-3 py-2 text-sm outline-none transition-colors focus:border-[#C44B2E]"
+              className="mt-1 w-full min-w-0 rounded-md border border-border px-3 py-2 text-sm outline-none transition-colors focus:border-brick"
             />
           </div>
         </div>
 
         <div>
-          <label htmlFor="contact-email" className="block text-xs font-bold uppercase tracking-[0.12em] text-[#6B6255]">
+          <label htmlFor="contact-email" className="block text-xs font-bold uppercase tracking-[0.12em] text-ink-muted">
             Work email <span className="font-normal normal-case tracking-normal">(optional)</span>
           </label>
           <input
@@ -269,18 +269,18 @@ export function SubmitForm({
             value={contactEmail}
             onChange={(e) => setContactEmail(e.target.value)}
             placeholder="you@yourinstitution.com"
-            className="mt-1 w-full min-w-0 rounded-md border border-[#D5CBBF] px-3 py-2 text-sm outline-none transition-colors focus:border-[#C44B2E]"
+            className="mt-1 w-full min-w-0 rounded-md border border-border px-3 py-2 text-sm outline-none transition-colors focus:border-brick"
           />
-          <p className="mt-1 text-xs text-[#6B6255]">We&apos;ll tell you when it&apos;s reviewed.</p>
+          <p className="mt-1 text-xs text-ink-muted">We&apos;ll tell you when it&apos;s reviewed.</p>
         </div>
 
         <FeeRowsEditor fees={fees} onUpdate={updateFee} onAdd={addFeeRow} onRemove={removeFeeRow} />
 
-        <div className="flex flex-col gap-3 border-t border-[#E0D7C9] pt-5 sm:flex-row sm:items-center">
+        <div className="flex flex-col gap-3 border-t border-border pt-5 sm:flex-row sm:items-center">
           <button
             type="submit"
             disabled={submitting}
-            className="inline-flex items-center justify-center rounded-md bg-[#1A1815] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#2C2822] disabled:cursor-not-allowed disabled:opacity-50"
+            className="inline-flex items-center justify-center rounded-md bg-ink px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#2C2822] disabled:cursor-not-allowed disabled:opacity-50"
           >
             {submitting ? "Sending…" : "Send for review"}
           </button>

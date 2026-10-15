@@ -122,7 +122,7 @@ export function WireSummary({
         {params.q ? <> matching &ldquo;{params.q}&rdquo;</> : null}
       </span>
       {params.q ? (
-        <Link href={wireHref(params, { q: "", page: 1 })} className="text-[#A93D25] underline-offset-2 hover:underline">
+        <Link href={wireHref(params, { q: "", page: 1 })} className="text-brick underline-offset-2 hover:underline">
           Clear search
         </Link>
       ) : null}
@@ -180,7 +180,7 @@ export function FeeChips({ params }: { params: WireParams }) {
             href={wireHref(params, { fee: t.key, page: 1 })}
             aria-current={active ? "true" : undefined}
             className={`${chip} ${
-              active ? "border-[#C44B2E] bg-[#C44B2E] text-white" : "border-warm-200 bg-white/70 text-warm-700 hover:border-warm-400 hover:text-warm-900"
+              active ? "border-brick bg-brick text-white" : "border-warm-200 bg-white/70 text-warm-700 hover:border-warm-400 hover:text-warm-900"
             }`}
           >
             {t.label}
@@ -211,12 +211,12 @@ export function WireHeader({ params }: { params: WireParams }) {
   return (
     <header>
       <h1
-        className="text-[1.75rem] leading-[1.12] tracking-[-0.02em] text-[#1A1815] sm:text-[2.25rem]"
-        style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
+        className="font-extrabold text-[1.75rem] leading-[1.12] tracking-[-0.02em] text-ink sm:text-[2.25rem]"
+        style={{ fontFamily: "var(--fi-font-sans)" }}
       >
         Regulatory Wire
       </h1>
-      <p className="mt-1 text-[13px] text-[#6B6255]">
+      <p className="mt-1 text-[13px] text-ink-muted">
         {states
           ? "State fee bills, state banking regulators' own posts, and the press coverage of them, in one feed."
           : "Federal rulemaking with its comment deadlines and effective dates, and the agencies' own releases."}

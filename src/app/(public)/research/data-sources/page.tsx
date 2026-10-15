@@ -141,41 +141,41 @@ export default async function DataSourcesPage() {
       />
 
       <div className="flex items-center gap-2 mb-4">
-        <span className="h-px w-8 bg-[#C44B2E]/40" />
-        <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#A93D25]/60">
+        <span className="h-px w-8 bg-brick/40" />
+        <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-brick/60">
           Methodology
         </span>
       </div>
       <h1
-        className="text-[1.75rem] sm:text-[2.25rem] leading-[1.12] tracking-[-0.02em] font-bold text-[#1A1815]"
-        style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
+        className="text-[1.75rem] sm:text-[2.25rem] leading-[1.12] tracking-[-0.02em] font-extrabold text-ink"
+        style={{ fontFamily: "var(--fi-font-sans)" }}
       >
         Data Sources & Coverage
       </h1>
-      <p className="mt-2 max-w-2xl text-[14px] text-[#6B6255]">
+      <p className="mt-2 max-w-2xl text-[14px] text-ink-muted">
         The Bank Fee Index integrates data from {DATA_SOURCES.length} federal and
         derived sources. All data is publicly available, sourced from official
         government APIs, and refreshed on automated schedules.
       </p>
 
       {/* Summary strip */}
-      <div className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-2 text-[12px] text-[#6B6255]">
+      <div className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-2 text-[12px] text-ink-muted">
         <span>
-          <span className="font-semibold tabular-nums text-[#5A5347]">
+          <span className="font-semibold tabular-nums text-ink-soft">
             {DATA_SOURCES.length}
           </span>{" "}
           data sources
         </span>
-        <span className="hidden sm:inline text-[#D4C9BA]">|</span>
+        <span className="hidden sm:inline text-border">|</span>
         <span>
-          <span className="font-semibold tabular-nums text-[#5A5347]">
+          <span className="font-semibold tabular-nums text-ink-soft">
             {populatedSources}
           </span>{" "}
           populated
         </span>
-        <span className="hidden sm:inline text-[#D4C9BA]">|</span>
+        <span className="hidden sm:inline text-border">|</span>
         <span>
-          <span className="font-semibold tabular-nums text-[#5A5347]">
+          <span className="font-semibold tabular-nums text-ink-soft">
             {formatCount(totalRecords)}
           </span>{" "}
           total records
@@ -193,12 +193,12 @@ export default async function DataSourcesPage() {
               key={source.name}
               className={`rounded-xl border px-5 py-4 transition-colors ${
                 hasData
-                  ? "border-[#E8DFD1]/80 bg-white/70 backdrop-blur-sm"
-                  : "border-[#E8DFD1]/40 bg-[#FAF7F2]/30 opacity-60"
+                  ? "border-border/80 bg-white/70 backdrop-blur-sm"
+                  : "border-border/40 bg-paper/30 opacity-60"
               }`}
             >
               <div className="flex items-start justify-between gap-2">
-                <h3 className="text-sm font-semibold text-[#1A1815]">
+                <h3 className="text-sm font-semibold text-ink">
                   {source.name}
                 </h3>
                 <span
@@ -215,15 +215,15 @@ export default async function DataSourcesPage() {
                   {source.cadence}
                 </span>
               </div>
-              <p className="mt-1.5 text-[12px] leading-relaxed text-[#6B6255]">
+              <p className="mt-1.5 text-[12px] leading-relaxed text-ink-muted">
                 {source.description}
               </p>
               <div className="mt-3 flex items-center justify-between text-[11px]">
-                <span className="text-[#6B6255]">{source.agency}</span>
+                <span className="text-ink-muted">{source.agency}</span>
                 {count !== null && (
                   <span
                     className={`font-semibold tabular-nums ${
-                      count > 0 ? "text-emerald-600" : "text-[#6B6255]"
+                      count > 0 ? "text-emerald-600" : "text-ink-muted"
                     }`}
                   >
                     {count > 0 ? formatCount(count) : "Not populated"}
@@ -236,11 +236,11 @@ export default async function DataSourcesPage() {
       </div>
 
       {/* Refresh schedule */}
-      <section className="mt-10 rounded-xl border border-[#E8DFD1] bg-[#FAF7F2]/50 px-5 py-4">
-        <h2 className="text-xs font-semibold uppercase tracking-wider text-[#6B6255]">
+      <section className="mt-10 rounded-xl border border-border bg-paper/50 px-5 py-4">
+        <h2 className="text-xs font-semibold uppercase tracking-wider text-ink-muted">
           Automated Refresh Schedule
         </h2>
-        <div className="mt-3 grid gap-2 text-[13px] text-[#6B6255]">
+        <div className="mt-3 grid gap-2 text-[13px] text-ink-muted">
           <div className="flex items-center gap-3">
             <span className="w-20 shrink-0 rounded-full bg-blue-50 px-2 py-0.5 text-center text-[10px] font-semibold text-blue-600">
               Daily

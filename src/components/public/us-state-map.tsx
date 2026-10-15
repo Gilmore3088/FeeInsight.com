@@ -4,7 +4,6 @@ import { useState } from "react";
 import Link from "next/link";
 import { US_STATES } from "@/lib/us-map-paths";
 import { STATE_NAMES } from "@/lib/us-states";
-import { formatAmount } from "@/lib/format";
 
 interface StateData {
   state_code: string;
@@ -27,11 +26,11 @@ export function UsStateMap({ statesData }: UsStateMapProps) {
     const data = dataMap.get(code);
     if (!data) return "#f1f5f9";
     const intensity = data.institution_count / maxInst;
-    if (intensity > 0.6) return "#A93D25";
-    if (intensity > 0.4) return "#C44B2E";
+    if (intensity > 0.6) return "#b23a32";
+    if (intensity > 0.4) return "#b23a32";
     if (intensity > 0.2) return "#DE8A72";
     if (intensity > 0.1) return "#F0C9BE";
-    return "#FDF0ED";
+    return "#f1d5d0";
   }
 
   return (
@@ -90,11 +89,11 @@ export function UsStateMap({ statesData }: UsStateMapProps) {
       {/* Legend */}
       <div className="mt-2 flex items-center justify-center gap-4 text-[10px] text-slate-400">
         <div className="flex items-center gap-1">
-          <span className="inline-block h-2.5 w-2.5 rounded-sm bg-[#FDF0ED]" />
+          <span className="inline-block h-2.5 w-2.5 rounded-sm bg-brick-tint" />
           <span>Fewer institutions</span>
         </div>
         <div className="flex items-center gap-1">
-          <span className="inline-block h-2.5 w-2.5 rounded-sm bg-[#A93D25]" />
+          <span className="inline-block h-2.5 w-2.5 rounded-sm bg-brick" />
           <span>More institutions</span>
         </div>
         <div className="flex items-center gap-1">

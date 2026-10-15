@@ -7,8 +7,8 @@
 import type { PositionStatus, ReportPositionMap } from "@/lib/hosted-reports";
 
 const STATUS_STYLE: Record<PositionStatus, { dot: string; label: string; text: string }> = {
-  above: { dot: "#C44B2E", label: "Above market", text: "text-[#A93D25]" },
-  inside: { dot: "#1A1815", label: "In range", text: "text-[#6B6255]" },
+  above: { dot: "#b23a32", label: "Above market", text: "text-brick" },
+  inside: { dot: "#132338", label: "In range", text: "text-ink-muted" },
   below: { dot: "#3E7C5A", label: "Below market", text: "text-[#2F6447]" },
 };
 
@@ -25,12 +25,12 @@ export function PositionPreview({ map }: { map: ReportPositionMap }) {
   for (const row of map.rows) counts[row.status] += 1;
 
   return (
-    <figure className="m-0 overflow-hidden rounded-xl border border-[#E0D7C9] bg-white shadow-[0_1px_0_rgba(26,24,21,0.04),0_12px_32px_-18px_rgba(26,24,21,0.25)]">
+    <figure className="m-0 overflow-hidden rounded-xl border border-border bg-white shadow-[0_1px_0_rgba(26,24,21,0.04),0_12px_32px_-18px_rgba(26,24,21,0.25)]">
       <figcaption className="border-b border-[#EFE8DE] px-5 py-4">
-        <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#A93D25]">
+        <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-brick">
           From the sample report · Position map
         </p>
-        <p className="mt-1 text-[14px] leading-snug text-[#3D3830]">
+        <p className="mt-1 text-[14px] leading-snug text-ink">
           Sample Community Bank against {map.cohortSize ?? "its"} peer banks
         </p>
       </figcaption>
@@ -40,10 +40,10 @@ export function PositionPreview({ map }: { map: ReportPositionMap }) {
           const max = Math.max(row.you, row.p75) * 1.2;
           const style = STATUS_STYLE[row.status];
           return (
-            <li key={row.category} className="border-b border-[#F3EEE6] py-2.5 last:border-b-0">
+            <li key={row.category} className="border-b border-surface-200 py-2.5 last:border-b-0">
               <div className="flex items-baseline justify-between gap-3">
-                <span className="truncate text-[13px] text-[#1A1815]">{row.category}</span>
-                <span className="shrink-0 text-[12px] tabular-nums text-[#6B6255]">
+                <span className="truncate text-[13px] text-ink">{row.category}</span>
+                <span className="shrink-0 text-[12px] tabular-nums text-ink-muted">
                   <b className={`font-semibold ${style.text}`}>{money(row.you)}</b>
                   <span> vs {money(row.median)} median</span>
                 </span>
@@ -72,7 +72,7 @@ export function PositionPreview({ map }: { map: ReportPositionMap }) {
         })}
       </ul>
 
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 border-t border-[#EFE8DE] bg-[#FDFBF8] px-5 py-3 text-[11px] text-[#6B6255]">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 border-t border-[#EFE8DE] bg-surface-0 px-5 py-3 text-[11px] text-ink-muted">
         <span className="inline-flex items-center gap-1.5">
           <span className="h-2.5 w-2.5 rounded-full" style={{ background: STATUS_STYLE.above.dot }} />
           {counts.above} above market
