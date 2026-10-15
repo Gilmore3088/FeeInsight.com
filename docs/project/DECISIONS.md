@@ -1031,6 +1031,10 @@ never in the header or footer; the header calls it "Pro workspace" and "Pro plan
 while he travels. `.claude/settings.json` now allows git work on `claude/*` branches, opening,
 reviewing and merging PRs, the lint, build, test and guard commands, read-only shell commands, edits
 under `src`, `docs`, `growth-os`, `.agents`, `public` and `Reports`, and Vercel preview and log reads.
-Force pushes, pushes to main and remote branch deletion move from "ask" to "deny", so a thread gets
-an immediate refusal and keeps working. Migrations, Supabase project changes, production deploys and
-direct GitHub file commits still ask.
+GitHub issue, PR, review and merge writes are allowed too. Force pushes (including `+` refspecs),
+pushes to main (including `refs/heads/main`), remote branch deletion, `--mirror`, `gh repo delete`,
+`gh api` DELETE and `gh pr merge --admin` are denied, so a thread gets an immediate refusal and
+keeps working. `apply_migration`, edits under `supabase/migrations/`, Supabase project changes,
+production deploys and direct GitHub file commits still ask. Supabase `execute_sql` stays allowed
+(Oct 13 decision), so the rule that production data changes never go through raw SQL from a
+session still rests on the session, not on a prompt.

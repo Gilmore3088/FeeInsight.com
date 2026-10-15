@@ -276,7 +276,16 @@
       "Bash(gh repo delete*)",
       "Bash(gh api * -X DELETE*)",
       "Bash(gh api * --method DELETE*)",
-      "Bash(gh pr merge * --admin*)"
+      "Bash(gh pr merge * --admin*)",
+      "Bash(git push *refs/heads/main*)",
+      "Bash(git push * +*)",
+      "Bash(git push -d *)",
+      "Bash(gh pr merge --admin*)",
+      "Bash(git push * :claude*)",
+      "Bash(git push * :refs*)",
+      "Bash(git push * :main*)",
+      "Bash(git push * :docs*)",
+      "Bash(git push * :HEAD*)"
     ]
   }
 }
