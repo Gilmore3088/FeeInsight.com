@@ -34,6 +34,14 @@ export interface StudyPlacementRow {
 /** Fewer institutions than this in a comparison group and the placement isn't shown. */
 export const MIN_STUDY_PEERS = 5;
 
+/**
+ * The studies Pro readers see (James, Oct 12, #1082), each with a note on how it was calculated.
+ * The price studies (local_income, market_concentration, fee_income_share) stay stored but off
+ * every Pro surface until reviewed: their effects are weak, and a reader could take them as what
+ * a change would do.
+ */
+export const PRO_STUDIES: ReadonlySet<string> = new Set(["fee_dependence", "inferred_items_paid"]);
+
 const PRICE_DRIVERS: Record<string, { group: string; driver: (institutionName?: string) => string; format: (v: number) => string }> = {
   local_income: {
     group: "institutions whose markets have similar household income",
@@ -127,6 +135,12 @@ function dependenceObservation(row: StudyPlacementRow, institutionName?: string)
   if (typeof firstYear === "number" && firstYear !== year && firstValue !== null) {
     facts.push({ text: `In ${firstYear} the share was ${firstValue.toFixed(2)}%.`, source });
   }
+  facts.push({
+    text: bank
+      ? "How it's calculated: service charges on deposit accounts divided by revenue (net interest income plus noninterest income), summed over the year's four FDIC call reports."
+      : "How it's calculated: fee income divided by revenue (interest income plus noninterest income), from the year-end NCUA call report.",
+    source,
+  });
   return {
     id: "study:fee_dependence",
     kind: "study",
@@ -223,11 +237,18 @@ function inferredObservation(row: StudyPlacementRow, institutionName?: string): 
   };
 }
 
-/** One observation per study the bank is placed in, best supported first within each study. */
-export function studyObservations(rows: StudyPlacementRow[], institutionName?: string): Observation[] {
+/**
+ * One observation per study the bank is placed in, best supported first within each study. Only
+ * the studies in `shown` (by default the ones Pro readers see) are written.
+ */
+export function studyObservations(
+  rows: StudyPlacementRow[],
+  institutionName?: string,
+  shown: ReadonlySet<string> = PRO_STUDIES,
+): Observation[] {
   const out: Observation[] = [];
   const byStudy = new Map<string, StudyPlacementRow[]>();
-  for (const r of rows) byStudy.set(r.studyKey, [...(byStudy.get(r.studyKey) ?? []), r]);
+  for (const r of rows) if (shown.has(r.studyKey)) byStudy.set(r.studyKey, [...(byStudy.get(r.studyKey) ?? []), r]);
   const usedFees = new Set<string>();
   const order = ["fee_dependence", ...Object.keys(PRICE_DRIVERS), "inferred_items_paid"];
   const keys = [...byStudy.keys()].sort((a, b) => order.indexOf(a) - order.indexOf(b));

@@ -103,9 +103,9 @@ describe("Hamilton duplicate collapse", () => {
       return { db, result: collapseNearNameDuplicates(asDb(db), { runId: 130, batchId: "agentic-run-130", dryRun: false, live }) };
     };
 
-    const shadow = run();
+    expect(NEAR_NAME_COLLAPSE_LIVE).toBe(true);
+    const shadow = run(false);
     const reported = await shadow.result;
-    expect(NEAR_NAME_COLLAPSE_LIVE).toBe(false);
     expect(reported).toMatchObject({ live: false, documents: 1, pairs: 1, apartOnPage: 0 });
     expect(reported.collapses.map((row) => [row.feePublishedId, row.keptFeePublishedId])).toEqual([[79471, 138008]]);
     expect(JSON.stringify(shadow.db.mock.calls)).not.toContain("UPDATE");

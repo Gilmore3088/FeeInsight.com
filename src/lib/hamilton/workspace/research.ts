@@ -714,7 +714,7 @@ export async function getWorkspaceBriefing(
         ...(financials?.peerMedian ? [financials.peerMedian.sourceRef] : []),
         ...(nationalIncome ? [nationalIncome.sourceRef] : []),
         { label: `FDIC, Federal Reserve, OCC and CFPB releases, last ${RULE_CHANGE_WINDOW_DAYS} days`, table: "reg_articles" },
-        ...(studyRows.length ? [{ label: "Hamilton studies (call reports, branch deposits, household income, published fees)", table: "hamilton_studies" }] : []),
+        ...(studies.length ? [{ label: "Hamilton studies (call reports, published fees)", table: "hamilton_studies" }] : []),
       ],
       assumptions: [
         `Each fee is compared with the narrowest default peer group where at least ${MIN_PEERS_FOR_POSITION} other institutions publish it, widening to national.`,

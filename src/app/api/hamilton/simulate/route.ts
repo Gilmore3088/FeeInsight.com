@@ -98,13 +98,14 @@ async function handlePOST(request: Request) {
   const { median_amount, p25_amount, p75_amount } = distributionData;
   const institutionCount = distributionData.institution_count;
   const peerLabel = distributionData.peer_label || "verified peer baseline";
-  const direction =
-    proposedFee > currentFee
-      ? "increasing"
-      : proposedFee < currentFee
-      ? "decreasing"
-      : "maintaining";
+  // The tested price is the reader's to try, never a proposal: say only where it sits against the current fee.
   const changeDollars = Math.abs(proposedFee - currentFee).toFixed(2);
+  const againstCurrent =
+    proposedFee > currentFee
+      ? `$${changeDollars} above the current fee`
+      : proposedFee < currentFee
+      ? `$${changeDollars} below the current fee`
+      : "the same as the current fee";
   const displayCategory = feeCategory.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 
   // Hamilton's shared voice carries the no-advice rule (voice.ts); this answer adds only its format.
@@ -125,7 +126,7 @@ THIS ANSWER: a short read of one price the user is testing.
 
 Fee category: ${displayCategory}
 Current fee: $${currentFee.toFixed(2)}
-Proposed fee: $${proposedFee.toFixed(2)} (${direction} by $${changeDollars})
+Tested price: $${proposedFee.toFixed(2)} (${againstCurrent})
 
 Peer group: ${peerLabel}
 Peer distribution (${institutionCount} institutions):
