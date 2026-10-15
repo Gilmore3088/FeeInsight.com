@@ -18,6 +18,8 @@
  *   - 2026-10-06 James: too many tabs, and "a banker doesn't wake up wanting to model or watch".
  *     Four tabs in plain words; Watch folds into This month, Data and Admin into the account menu.
  *   - 2026-10-08 James: Regulatory Wire becomes a top nav item (HAMILTON_WIRE_NAV).
+ *   - 2026-10-15 James's mockups: a left navigation (HAMILTON_SIDEBAR_NAV) replaces the header tabs
+ *     inside /pro. HAMILTON_NAV still drives the site header for Pro users on public pages.
  */
 
 /** Base path for Hamilton screens. Change here if route group structure changes in Phase 40. */
@@ -30,6 +32,23 @@ export const HAMILTON_NAV = [
   { label: "Reports",     href: `${HAMILTON_BASE}/reports`  },
   { label: "Admin",       href: "/admin"                    },
 ] as const;
+
+/**
+ * The left navigation of the Hamilton workspace (James's Oct 15 mockups: Overview, Ask Hamilton,
+ * Research, Try a price, Reports, Monitor, then Saved analyses). Regulatory Wire stays a nav item
+ * (James, 2026-10-08). Ask Hamilton opens the start screen; Saved analyses jumps to its list.
+ */
+export const HAMILTON_SIDEBAR_NAV = [
+  { label: "Overview",        href: `${HAMILTON_BASE}/hamilton`, icon: "overview" },
+  { label: "Ask Hamilton",    href: `${HAMILTON_BASE}/analyze`,  icon: "ask" },
+  { label: "Research",        href: `${HAMILTON_BASE}/research`, icon: "research" },
+  { label: "Try a price",     href: `${HAMILTON_BASE}/simulate`, icon: "price" },
+  { label: "Reports",         href: `${HAMILTON_BASE}/reports`,  icon: "reports" },
+  { label: "Monitor",         href: `${HAMILTON_BASE}/monitor`,  icon: "monitor" },
+  { label: "Regulatory Wire", href: `${HAMILTON_BASE}/news`,     icon: "wire" },
+] as const;
+
+export const HAMILTON_SAVED_NAV = { label: "Saved analyses", href: `${HAMILTON_BASE}/analyze#saved`, icon: "saved" } as const;
 
 /** Account menu: the bank and its data, and what changed, outside the four tabs. */
 export const HAMILTON_ACCOUNT_NAV = [

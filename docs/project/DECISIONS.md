@@ -5,6 +5,13 @@ Seeded 2026-10-05 from the project's working memory; earlier decisions were not 
 
 ## 2026-10-15
 
+**Hamilton's redesign starts now, from James's mockups.** James, Oct 15, after opening
+/pro/research?fee=overdraft: "This is not the Hamilton experience I've been asking for." This
+lifts the Oct 14 hold for Hamilton's screens; the data lanes keep their order. The Pro workspace
+takes the layout of his four mockups (left navigation, a "Your institution" bar, Ask Hamilton
+start and answer screens, Explore, the report view) on the Fee Insight design system's navy and
+brick, not the mockups' teal. It replaces the Oct 6 single-header shell. One PR per screen.
+
 **The site's goal is a Pro subscription; the paid report is a lead.** James, Oct 15, after a
 site review again ranked its findings around the $300 report: "The goal is not to get a paid report.
 That's just a high value lead. The goal is to get them on pro pricing so they're paying monthly or

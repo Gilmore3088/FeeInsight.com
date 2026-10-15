@@ -5,7 +5,12 @@ import { useEffect, useState } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import type { HamiltonContextSource } from "@/lib/hamilton/context-source";
 import type { HamiltonAccountContext } from "@/lib/hamilton/account-context";
-import { ConsumerNav } from "@/components/consumer-nav";
+import "@/brand/tokens/tokens.css";
+import "@/brand/styles/fee-insight.css";
+import { NavAccount } from "@/components/nav-account";
+import { SearchTrigger } from "@/components/search-trigger";
+import { SkipLink } from "@/components/public/skip-link";
+import { HamiltonSidebar } from "./HamiltonSidebar";
 import { setViewAsCustomer } from "@/app/pro/(hamilton)/view-as-actions";
 import { HamiltonAskDock } from "./HamiltonAskDock";
 import { SearchModal } from "@/components/public/search-modal";
@@ -45,8 +50,9 @@ interface HamiltonShellProps {
 /**
  * HamiltonShell - Client component.
  * Outer shell wrapper applying .hamilton-shell CSS isolation boundary.
- * Composes: admin bar (admins only), the Fee Insight site header, the page, and the docked Ask bar.
- * No sidebar and no second bar: James wants the simplicity of the living-memo samples.
+ * Composes: the left navigation, admin bar (admins only), the institution bar, the page, and the
+ * docked Ask bar. Layout follows James's Oct 15 mockups on the Fee Insight design system (#1285);
+ * it replaces the Oct 6 single-header shell.
  * Per D-13, ARCH-01: .hamilton-shell class scopes all editorial design tokens.
  * Per D-10: admin mode bar shown only to admin/analyst users.
  */
@@ -109,8 +115,15 @@ export function HamiltonShell({
     <SessionChromeProvider value={session}>
       <HamiltonNavigationProvider value={navigation}>
       <div
-        className="hamilton-shell min-h-screen bg-warm-100 print:bg-white"
+        className="hamilton-shell min-h-screen bg-[var(--fi-paper)] print:bg-white"
       >
+        {/* display: contents keeps the navigation out of the shell's page-reveal animation, which
+            would otherwise fade and shift the phone drawer each time it opens. */}
+        <div className="contents">
+          <SkipLink />
+          <HamiltonSidebar />
+        </div>
+        <div className="min-w-0 lg:pl-60">
         {/* Admin mode bar - only for admin/analyst users (T-40-05) */}
         {isAdmin && (
           <div className="bg-warm-900 text-white flex flex-wrap items-center justify-between gap-2 px-4 py-1.5 text-xs print:hidden">
@@ -136,25 +149,25 @@ export function HamiltonShell({
           </div>
         )}
 
-        {/* The Fee Insight site header, the same one as the public site; for Pro users its links are
-            Hamilton's four tabs (James, 2026-10-06: one header across the site and Pro).
-            The page-reveal animation gives each shell child its own stacking context, so the
-            wrapper carries the header's sticky z-index; without it the page painted over the
-            account menu. */}
-        <div className="sticky top-0 z-40 print:hidden">
-          <ConsumerNav />
-        </div>
-
-        {accountContext ? (
-          <div aria-label="Institution context" className="border-b border-warm-300 px-4 py-2 text-sm text-warm-800">
-            <span>Researching: {researchLabel}.</span>{" "}
-            <span>Account institution: {accountContext.status === "identified" && accountContext.institution
-              ? accountContext.institution.name
-              : accountContext.status === "ambiguous" ? "multiple memberships; no home selected"
-              : accountContext.status === "unavailable" ? "unavailable"
-              : "not linked"}.</span>
+        {/* The signed-in institution, kept apart from the institution being researched (design brief). */}
+        <div className="flex min-h-14 items-center justify-between gap-x-6 gap-y-2 border-b border-[var(--fi-border)] bg-[var(--fi-surface-0)] px-4 py-2 sm:px-8 print:hidden">
+          <div aria-label="Institution context" className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-5 gap-y-1 text-sm">
+            <p className="text-[var(--fi-muted)]">
+              Your institution:{" "}
+              <span className="font-semibold text-[var(--fi-ink)]">{accountLabel(accountContext)}</span>
+              <span className="sr-only">.</span>
+            </p>
+            <p className="text-[var(--fi-muted)]">
+              Researching: <span className="text-[var(--fi-ink)]">{researchLabel}</span>
+              <span className="sr-only">.</span>
+            </p>
           </div>
-        ) : null}
+          <div className="flex shrink-0 items-center gap-4">
+            <span suppressHydrationWarning className="hidden text-sm text-[var(--fi-muted)] sm:inline">{todayLabel()}</span>
+            <SearchTrigger />
+            <NavAccount />
+          </div>
+        </div>
 
         {canUseSeed && institutionContext.makeDefaultHref ? (
           <div className="border-b border-warm-300 bg-warm-150 px-4 py-2 text-center text-sm text-warm-800 print:hidden">
@@ -165,7 +178,8 @@ export function HamiltonShell({
           </div>
         ) : null}
 
-        <main className="mx-auto min-w-0 max-w-page px-4 pb-32 pt-8 sm:px-6 lg:pt-10 print:max-w-none print:p-0">{children}</main>
+        <main id="main-content" className="mx-auto min-w-0 max-w-page px-4 pb-32 pt-8 sm:px-8 lg:pt-10 print:max-w-none print:p-0">{children}</main>
+        </div>
 
         {/* Ask Hamilton, docked on every screen */}
         <HamiltonAskDock selectedInstitutionId={navigation.institutionId} navigationContext={navigation} />
@@ -176,4 +190,17 @@ export function HamiltonShell({
       </HamiltonNavigationProvider>
     </SessionChromeProvider>
   );
+}
+
+function accountLabel(accountContext: HamiltonShellProps["accountContext"]): string {
+  if (!accountContext) return "not linked";
+  if (accountContext.status === "identified" && accountContext.institution) return accountContext.institution.name;
+  if (accountContext.status === "ambiguous") return "multiple memberships; none selected";
+  if (accountContext.status === "unavailable") return "unavailable";
+  return "not linked";
+}
+
+/** "October 15, 2026", the date the workspace is read on. */
+function todayLabel(): string {
+  return new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
 }

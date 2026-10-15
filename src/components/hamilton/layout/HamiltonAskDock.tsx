@@ -64,7 +64,7 @@ export function HamiltonAskDock({ selectedInstitutionId, navigationContext }: { 
   }
 
   return (
-    <div className="pointer-events-none fixed inset-x-0 bottom-0 z-30 px-4 pb-4 print:hidden sm:px-6">
+    <div className="pointer-events-none fixed inset-x-0 bottom-0 z-30 px-4 pb-4 print:hidden sm:px-6 lg:left-60">
       <form
         method="get"
         action="/pro/analyze"
