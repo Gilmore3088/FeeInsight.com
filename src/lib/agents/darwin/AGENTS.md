@@ -331,6 +331,44 @@ Darwin owns verification and classification.
   `darwin.hourly_frequency_set` event lists them. Whole-table dry run: a verify run with
   `hourly_full_count: true` (step detail `hourly_frequency_full_count`), or `hourlyCountSql()` /
   `hourlySamplesSql()` for someone with prod access.
+- Live non-deposit document re-check (`non-deposit-document-check.ts`, #1442). James's catalog
+  review (Oct 15, URL heuristics) found live deposit-fee rows read from brokerage and wealth pages
+  (33 rows: Northern Trust wealth, U.S. Bank self-directed investing "Research" $20) and from
+  loan, card, HELOC, mortgage and rate pages (386 rows: Bank of Greene `/current-rates/`
+  "Appraisal $400"); those are the issue's counts, not this rule's. The rule is the shared
+  classifier `nonDepositDocumentKind` (`src/lib/non-deposit-document.ts`, also Magellan's companion
+  filter), read on the address of the stored document each live fee came from (the
+  document-owner join: `lineage_ref` -> verified -> raw `source_document_id` -> `source_documents`).
+  It returns `brokerage` or `loan` only when a path segment names the page as one ("current-rates",
+  "loan-rates", "credit-card-agreement", "heloc", "loan-servicing-fees", "wealth-management",
+  "self-directed-investing", "trust-and-investment"; or a `wealth.`/`invest.` host); run-together
+  words are split first ("scheduleoffees", "loanfeeschedule"). A deposit word anywhere
+  ("checking", "savings", "deposit", "overdraft", "truth in savings", "IRA", "HSA") wins, a fee
+  named after a loan ("/fees/loan-payment-fee") never matches, a generic fee schedule filed under a
+  loan section ("/loans/fee-schedule.pdf") and a combined "rates & fee schedule" or "investments
+  and fees" page are left alone, and a bare "cardholder agreement" (often the debit card's) needs
+  "credit" to count. Only lending-category fees on a matched document come down
+  (`LENDING_CATEGORIES` from `knox/held-recheck.ts`: late payment, loan origination, appraisal,
+  vehicle title, other lending fee, cash advance); every other category is a deposit one and stays
+  live (`kept_deposit_category`). The prod read-only check of the first version (Oct 15: 172 fees
+  on 47 documents) found 12 documents, 65 fees, were rate pages holding a credit union's whole
+  deposit schedule, an HSA page or a run-together schedule; real HELOC, card and brokerage pages
+  also list stop payment, wire and NSF fees under deposit categories. Business and commercial documents are out of scope
+  (kept on purpose; fee-stats drops them from medians) and always pass. Every verify/classify step
+  reads the next `NON_DEPOSIT_BATCH` (2,000) live fees after a cursor on the run ledger (the
+  `darwin.non_deposit_document` event's `next_after_id`, 0 at the end of a pass); an
+  institution-scoped run leaves the cursor alone. `NON_DEPOSIT_DOCUMENT_TAKEDOWN_LIVE` is false: the
+  pass only reports (step detail `non_deposit_document_check`: `would_take_down`, `by_kind`,
+  `kept_deposit_category`, `documents`, `institutions`, samples of both with the document address). Switched on by PR after James
+  has seen the whole-table count and a sample, a match goes through the shared 12-hour second look
+  (check `darwin.non_deposit_document`; fees that pass clear a pending flag) and is archived on its
+  second failure (rolled back with `non_deposit_document: <kind> #<doc>`, batch
+  `darwin-non-deposit-<run>`, the verified row rejected with the `non_deposit_document` flag, never
+  deleted), and a `darwin.non_deposit_document_takedown` event lists them. Whole-table dry run: a
+  verify run with `non_deposit_full_count: true` (step detail `non_deposit_document_full_count`),
+  or `nonDepositCountSql()` / `nonDepositSamplesSql()` (the classifier in Postgres, checked equal to
+  the JS one on the fixtures in `src/lib/non-deposit-document.fixtures.ts`) for someone with prod
+  access.
 - Released-fee category re-check (`release-repair.ts`, the repair half of #1367; decision
   2026-10-15, "Darwin re-checks every live fee against today's rules"). Until PR #1468 the release
   check passed "." as the category pattern, so every fee the release published before then went live
@@ -779,6 +817,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `DARWIN_RECHECK_STRATEGY` | `verify.recheck` | v3 | `darwin/verified-recheck.ts` |
 | `LIVE_FRAGMENT_STRATEGY` | `darwin.live_fragment_check` | v4 | `darwin/live-fragment-check.ts` |
 | `HOURLY_CHECK_VERSION` | `darwin.hourly_frequency_check` | v1 | `darwin/hourly-frequency-check.ts` |
+| `NON_DEPOSIT_CHECK_VERSION` | `darwin.non_deposit_document` | v1 | `darwin/non-deposit-document-check.ts` |
 | `DOCUMENT_OWNER_STRATEGY` | `verify.document_owner` | v1 | `darwin/document-owner.ts` |
 | `DARWIN_VERIFY_STRATEGY` | `verify.rules` | v3 | `darwin/verify.ts` |
 | `DARWIN_SOURCE_CHECK_VERSION` | — | v2 | `darwin/verify.ts` |

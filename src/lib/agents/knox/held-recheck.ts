@@ -506,7 +506,7 @@ export const SETTLED_TWO_WORD_MIN_BANKS = 10;
 /** And this share of the name's live rows in one category. */
 export const SETTLED_NAME_MIN_SHARE = 0.9;
 /** Categories a lending fee belongs to; elsewhere a lending word on the line contradicts the filing. */
-const LENDING_CATEGORIES: ReadonlySet<string> = new Set(["late_payment", "loan_origination", "appraisal_fee", "vehicle_title", "other_lending_fee", "cash_advance"]);
+export const LENDING_CATEGORIES: ReadonlySet<string> = new Set(["late_payment", "loan_origination", "appraisal_fee", "vehicle_title", "other_lending_fee", "cash_advance"]);
 const LENDING_WORDS = /\b(?:loans?|heloc|home equity|mortgages?|lines? of credit|titled?|titles|liens?|collateral|deed)\b/i;
 const COPY_WORDS = /\b(?:cop(?:y|ies)|photocop(?:y|ies)|research|reprint)\b/i;
 /** A store decision's line contradicts its category ("Temporary Lien Fee ... collateral titled", a "Statement Fee | $2.00/Copy"). Pure. */
