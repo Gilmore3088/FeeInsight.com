@@ -64,7 +64,7 @@ export function FeeStackExhibit({ data, search = false, shell = false }: { data:
         <FeeRangeAxis ticks={[0, hi / 2, hi]} domain={domain} />
       </div>
       <SourceLine className="fi-a-rise mt-4">
-        <span className="fi-a-line">National medians from published fee schedules</span> · {summary.freshnessLabel}
+        <span className="fi-a-line">National medians from published fee schedules</span> · <span className="whitespace-nowrap">{summary.freshnessLabel}</span>
       </SourceLine>
     </div>
   );
@@ -228,7 +228,7 @@ export function MarketExhibit({
     ) : null;
   const source = (
     <SourceLine className="mt-3">
-      {ladder ? "Dot: its own fee · " : ""}Bar: each district&apos;s range · Dashed line: national median · {summary.freshnessLabel}
+      {ladder ? "Dot: its own fee · Right: each market's median · " : ""}Bar: each district&apos;s range · Dashed line: national median · {summary.freshnessLabel}
     </SourceLine>
   );
   if (wide) {
