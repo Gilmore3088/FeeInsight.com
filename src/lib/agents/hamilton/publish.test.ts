@@ -848,7 +848,7 @@ describe("decidePriorFee", () => {
 
   // #1314 dry run (prod pages, read-only, Oct 15): a pass needs a place of one name clear of every
   // place of the other, and a price that is not another field's value.
-  it("needs one name printed at the price clear of every place of the other (#1314)", () => {
+  it("needs the shorter name printed at the price clear of every place of the longer (#1314)", () => {
     // 125157: the plain line is printed on its own as well as inside the ACH line: two fees.
     const two = "Check Orders | $10.00-$35.00 | Varies Stop Payment | $35.00 | Per item Overdraft (NSF) Fee | $30.00 ACH Stop Payment | $35.00 | Per item";
     expect(linesApartOnPage(two, "Stop Payment", "ACH Stop Payment", "35")).toBe(true);
@@ -859,6 +859,10 @@ describe("decidePriorFee", () => {
     // 127609: the shorter name only ever sits inside the longer lines.
     const inside = "Non-Sufficient Funds (NSF) | $25.00 Bill Payment Non-Sufficient\nFunds (NSF) | $25.00";
     expect(linesApartOnPage(inside, "Funds (NSF)", "Non-Sufficient Funds (NSF)", "25")).toBe(false);
+    // 105072: "Order" is only the end of a "Money Order" heading and unit, so one $2 line.
+    const heading = "Release of Account Hold\n\n/Occurrence\n\n$5.00\n\n(negative)\n\nMoney Order\n\n/Money Order\n\n$2.00\n\nNon-Automated Phone Account Inquiry";
+    expect(linesApartOnPage(heading, "Order", "Money Order", "2")).toBe(false);
+    expect(linesApartOnPage(heading, "Money Order", "Order", "2")).toBe(false);
   });
 
   it("never reads another field's value as the price (133183, #1314)", () => {

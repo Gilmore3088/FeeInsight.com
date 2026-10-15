@@ -1192,12 +1192,14 @@ export function linesApartOnPage(text: string, rowName: string, priorName: strin
     return a.length > 0;
   }
   const b = places(priorName, rowName);
-  // One name must be printed at the price clear of every place of the other (#1314): a shorter
-  // name found only inside the longer line ("Funds (NSF)" in "Non-Sufficient Funds (NSF) $25"),
-  // or one line printed twice, is one fee however its places pair up.
+  // The shorter name must be printed at the price clear of every place of the longer (#1314): a
+  // shorter name found only inside the longer line ("Funds (NSF)" in "Non-Sufficient Funds (NSF)
+  // $25", "Order" under a "Money Order" heading), or one line printed twice, is one fee however
+  // its places pair up. The longer line's own place always holds the shorter name's words.
   const clear = (one: PagePlace, two: PagePlace) => one.end <= two.start || two.end <= one.start;
+  const clearOf = (mine: PagePlace[], theirs: PagePlace[]) => mine.some((one) => theirs.every((two) => clear(one, two)));
   if (a.length === 0 || b.length === 0) return false;
-  return a.some((one) => b.every((two) => clear(one, two))) || b.some((two) => a.every((one) => clear(one, two)));
+  return pageWords(rowName).trim().length <= pageWords(priorName).trim().length ? clearOf(a, b) : clearOf(b, a);
 }
 
 /** Pure: the page prints this name with this price after it (a place `linesApartOnPage` counts). */
@@ -1966,9 +1968,14 @@ export async function runHamiltonPublish(
       // variant re-read ("per_item" to none), so the live line it was identical to no longer
       // matches the key above and it went live as a new fee beside it (104684 "Wire Transfers -
       // Outgoing: Outgoing Wire Fee" beside 23698 "Outgoing Wire Fee", 9 Oct). Its identical
-      // check reads every live line of the category.
+      // check reads every live line of the category on its own document; another document's
+      // line at the price is a different printed line ("Overdraft" $25 beside another
+      // document's "Debit Card Overdraft" $25, #1314), left to the older-document and supersede
+      // checks.
       if (row.same_line_reselect && decision.kind !== "identical") {
-        const wide = await selectLivePublishedFees(db, row, { anyVariant: true });
+        const wide = (await selectLivePublishedFees(db, row, { anyVariant: true })).filter((prior) =>
+          sameDocument(prior.source_document_id, row.source_document_id),
+        );
         const wideApart = await linesApartFrom(db, row, wide);
         const wideDecision = decidePriorFee(row, wide, (prior) => wideApart.has(prior));
         if (wideDecision.kind === "identical") decision = wideDecision;
