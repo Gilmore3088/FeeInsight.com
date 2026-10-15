@@ -37,12 +37,17 @@ const TITLE_CHARS = 300;
  * Words that name a product or a time, not who the fee is for: a corporate (official) check or
  * draft in any spelling a credit union prints ("Corporate/Cashiers Check Fee", "Corporate Bank
  * Check", "Corporate -Bank/Teller Check", "Corporate Share Draft", "on-us or Corporate", the
- * Corporate One correspondent; #1059 spot check, 86052 and 37392), while a corporate account or
- * checking name ("Corporate Checking Monthly Fee") still reads as business; a personal check, a business day, "close of business", a vendor's "Business Systems",
+ * Corporate One correspondent; #1059 spot check, 86052 and 37392), a "Corporate Treasurer's
+ * Check", a bare "Corporate Money Order" and the en-dash form ("Corporate – Bank Check"), while a
+ * corporate account or checking name still reads as business: "Corporate Checking Monthly Fee",
+ * "Corporate Share Draft Account", "Member/Corporate Account Fee" (a reversed join counts only
+ * next to a check or draft: "Member/Corporate Check", "Check Copy – Personal or Corporate",
+ * "Check (Personal/Corporate) Duplicate"), "Corporate One Card" and "Corporate one-time setup fee"
+ * (review of #1382); a personal check, a business day, "close of business", a vendor's "Business Systems",
  * "non-business" or "non commercial" (a URL path's hyphens become spaces) with any slash before it,
  * and "non-personal checks" or "non-consumer information" (products, as main read them).
  */
-const NOT_AN_AUDIENCE = /(?:\/\s*)?\bnon[- ]?(?:personal|consumer)\s+(?:checks?|identification|information|data)\b|\bcorporate(?:(?:\s*[/&-]\s*|\s+(?:or|and)\s+)(?:cashier[’']?s?|official|teller[’']?s?|bank|member|personal|money\s+orders?))*\s+(?:(?:bank|official|teller|cashier[’']?s?|share)\s+)?(?:checks?|drafts?)\b|\bcorporate\s+(?:bonds?|securities|and municipal|one\b|stop\s+payments?\b)|\b(?:on[- ]us|teller[’']?s?|cashier[’']?s?|official|personal|member)\s*(?:[/&]|\bor\b|\band\b)\s*corporate\b(?:\s+(?:checks?|drafts?)\b)?|\bpersonal\s+(?:checks?|identification|information)\b|\bbusiness\s+(?:days?|hours?|systems)\b|\b(?:close of|regular|normal|legitimate|conduct(?:ing)?|doing)\s+business\b|\bcredit union business only\b|(?:\/\s*)?\bnon[- ]?(?:commercial|business)\b|\b(?:commercial|business|consumer|personal)(?:\s+(?:state|national|federal|savings|community|county|city|first))*\s+(?:bank|savings bank|credit union|trust company|savings and loan)\b/gi;
+const NOT_AN_AUDIENCE = /(?:\/\s*)?\bnon[- ]?(?:personal|consumer)\s+(?:checks?|identification|information|data)\b|\bcorporate(?:(?:\s*[/&\-–—]\s*|\s+(?:or|and)\s+)(?:cashier[’']?s?|official|teller[’']?s?|treasurer[’']?s?|bank|member|personal|money\s+orders?))*\s+(?:(?:bank|official|teller|cashier[’']?s?|treasurer[’']?s?|share)\s+)?(?:checks?|drafts?)\b(?!\s+accounts?\b)|\bcorporate\s+money\s+orders?\b|\bcorporate\s+(?:bonds?|securities|and municipal|one\b(?![-‐–’'])(?!\s+cards?\b)|stop\s+payments?\b)|\b(?:on[- ]us|teller[’']?s?|cashier[’']?s?|treasurer[’']?s?|official)\s*(?:[/&]|\bor\b|\band\b)\s*corporate\b(?:\s+(?:checks?|drafts?)\b)?|\b(?:personal|member)\s*(?:[/&]|\bor\b|\band\b)\s*corporate\s+(?:(?:share\s+)?(?:checks?|drafts?))\b(?!\s+accounts?\b)|(?<=\b(?:checks?|drafts?)\b[^|\n$]{0,15})\b(?:personal|member)\s*(?:[/&]|\bor\b|\band\b)\s*corporate\b|\bpersonal\s+(?:checks?|identification|information)\b|\bbusiness\s+(?:days?|hours?|systems)\b|\b(?:close of|regular|normal|legitimate|conduct(?:ing)?|doing)\s+business\b|\bcredit union business only\b|(?:\/\s*)?\bnon[- ]?(?:commercial|business)\b|\b(?:commercial|business|consumer|personal)(?:\s+(?:state|national|federal|savings|community|county|city|first))*\s+(?:bank|savings bank|credit union|trust company|savings and loan)\b/gi;
 /**
  * "Non-Personal Accounts" and "Non-Consumer" are a bank's words for business accounts: read as
  * "business", with any slash before them ("Business/Non-Personal Accounts" stays a heading).
