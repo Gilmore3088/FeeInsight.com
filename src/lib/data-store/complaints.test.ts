@@ -229,11 +229,13 @@ describe("getComplaintBenchmark", () => {
     ...extra,
   });
 
-  it("says zero plainly and widens from state to district when the state has too few peers", async () => {
+  it("counts only verified peers, widening from state to district when the state has too few", async () => {
     const cohort = [
-      row(1, "TN", 6, 0),
-      ...Array.from({ length: 4 }, (_, i) => row(10 + i, "TN", 6, 0)),
-      ...Array.from({ length: 8 }, (_, i) => row(20 + i, "GA", 6, i < 3 ? 2 : 0)),
+      row(1, "TN", 6, 0, { accepted: true }),
+      ...Array.from({ length: 4 }, (_, i) => row(10 + i, "TN", 6, 0, { accepted: true })),
+      ...Array.from({ length: 8 }, (_, i) => row(20 + i, "GA", 6, i < 3 ? 2 : 0, { accepted: true })),
+      // No verified CFPB match: their counts are unknown, so they are not peers.
+      ...Array.from({ length: 50 }, (_, i) => row(100 + i, "TN", 6, 0)),
       // Awaiting review: its count is unknown, so it is not a peer.
       row(99, "TN", 6, 0, { in_review: true }),
     ];
@@ -242,25 +244,76 @@ describe("getComplaintBenchmark", () => {
     const result = await getComplaintBenchmark(1, 2025);
 
     expect(result).toMatchObject({
-      match_status: "none",
+      match_status: "matched",
       fee_complaints: 0,
       peer_level: "fed_district",
       peer_label: "Fed District 6",
       peer_count: 12,
+      eligible_peer_count: 63,
+      peer_coverage: "verified",
       peers_with_fee_complaints: 3,
       peer_median_fee_complaints: 0,
       sub_issues_loaded: true,
     });
-    expect(result!.summary).toBe("Bank 1 had 0 CFPB fee complaints in 2025. 3 of 12 community small banks in Fed District 6 had any.");
+    expect(result!.summary).toBe("Bank 1 had 0 CFPB fee complaints in 2025. 3 of 12 community small banks in Fed District 6 with a verified CFPB match had any.");
   });
 
-  it("gives a rate per $1B of deposits next to the peer median", async () => {
-    const cohort = [row(1, "TX", 11, 6), ...Array.from({ length: 12 }, (_, i) => row(30 + i, "TX", 11, i < 4 ? 1 : 0))];
+  it("gives a rate per $1B of deposits next to the verified peers' median, not one pulled to zero by unmatched peers", async () => {
+    const cohort = [
+      row(1, "TX", 11, 6),
+      ...Array.from({ length: 12 }, (_, i) => row(30 + i, "TX", 11, 1)),
+      ...Array.from({ length: 100 }, (_, i) => row(200 + i, "TX", 11, 0)),
+    ];
     getMock().unsafe.mockResolvedValueOnce(cohort).mockResolvedValueOnce([{ loaded: false }]);
 
     const result = await getComplaintBenchmark(1, 2025);
 
-    expect(result).toMatchObject({ match_status: "matched", peer_level: "state", fee_complaints_per_billion: 30, peer_median_per_billion: 0 });
+    expect(result).toMatchObject({
+      match_status: "matched",
+      peer_level: "state",
+      peer_count: 12,
+      eligible_peer_count: 112,
+      peer_coverage: "verified",
+      fee_complaints_per_billion: 30,
+      peer_median_per_billion: 5,
+      peer_median_fee_complaints: 1,
+    });
+  });
+
+  it("gives no peer rate when too few peers have a verified CFPB match even nationwide", async () => {
+    const cohort = [
+      row(1, "TX", 11, 6),
+      ...Array.from({ length: 5 }, (_, i) => row(30 + i, "CA", 12, 2)),
+      ...Array.from({ length: 200 }, (_, i) => row(200 + i, "TX", 11, 0)),
+    ];
+    getMock().unsafe.mockResolvedValueOnce(cohort).mockResolvedValueOnce([{ loaded: true }]);
+
+    const result = await getComplaintBenchmark(1, 2025);
+
+    expect(result).toMatchObject({
+      match_status: "matched",
+      fee_complaints: 6,
+      fee_complaints_per_billion: 30,
+      peer_level: "national",
+      peer_count: 5,
+      eligible_peer_count: 205,
+      peer_coverage: "insufficient",
+      peer_median_per_billion: null,
+      peer_median_fee_complaints: null,
+    });
+    expect(result!.summary).toBe(
+      "Bank 1 had 6 CFPB fee complaints in 2025. Only 5 of 205 community small banks nationwide have a verified CFPB match, too few to compare.",
+    );
+  });
+
+  it("shows no count, not zero, when no CFPB company is verified as the institution", async () => {
+    const cohort = [row(1, "TX", 11, 0), ...Array.from({ length: 12 }, (_, i) => row(30 + i, "TX", 11, 1))];
+    getMock().unsafe.mockResolvedValueOnce(cohort).mockResolvedValueOnce([{ loaded: true }]);
+
+    const result = await getComplaintBenchmark(1, 2025);
+
+    expect(result).toMatchObject({ match_status: "none", total_complaints: null, fee_complaints: null, fee_complaints_per_billion: null });
+    expect(result!.summary).toBe("No CFPB company is verified as Bank 1, so its 2025 complaint count is unknown.");
   });
 
   it("shows no count while the institution's CFPB match awaits review", async () => {

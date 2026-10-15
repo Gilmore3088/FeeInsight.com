@@ -1025,3 +1025,10 @@ the header, footer, sign-in screens and report chrome. The Bank Fee Index is nam
 the index pages, data credits and the API attribution. Hamilton's name and mark appear on the pages
 that sell it (/for-institutions, /subscribe, Pro buttons in page bodies) and inside the workspace,
 never in the header or footer; the header calls it "Pro workspace" and "Pro plans".
+
+**CFPB complaint peer comparisons use verified matches only, or are hidden.** James, 2026-10-15
+(decision card "CFPB complaint benchmarks": "Hide"; #1523, under H06 #981). Institutions without an
+accepted CFPB identity match are left out of complaint peer groups, since missing evidence is not
+zero complaints. When fewer than 10 similar institutions have a verified match even nationwide, the
+peer rate is not shown and a coverage note says how many of how many are verified. Keeping the old
+numbers with a warning was rejected.
