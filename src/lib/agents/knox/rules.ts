@@ -386,8 +386,8 @@ export const FEE_PATTERNS: FeePattern[] = [
       /\b(?:checking|savings|money market|share|account|club)\b[^|()]{0,30}\(\s*(?:(?:average|avg\.?|daily|minimum|min\.?)\s+)*(?:balances?\s+)?(?:below|under|less than)\b/i,
   },
   // v66 (#1102): fee-schedule labels with no "fee" or "charge" in them, which Knox dropped
-  // (the 62-bank answer key, 15 Oct 2026: 434 key lines in our own stored text had no row and no
-  // fee word). Each is a service's own name at several banks. Last, so they only claim lines
+  // (the 62-bank answer key, 15 Oct 2026: 240 missed key lines in our own stored text had no row
+  // and no fee word). Each is a service's own name at several banks. Last, so they only claim lines
   // no rule above recognizes.
   {
     // "Research (per hour)", "Record Research", "Account/Statement Research", "Research Bank
@@ -1369,6 +1369,11 @@ export function extractFromSegment(segment: string): ExtractionRulesResult {
   let feeName = usableName(nameFrom(segment.slice(0, feeAmounts[0].start))) ? nameFrom(segment.slice(0, feeAmounts[0].start)) : name;
   // v66: the free column is not part of the name ("Stop Payment | FREE | $25" is "Stop Payment").
   if (freeColumns && usableName(nameFrom(cells![0]))) feeName = nameFrom(cells![0]);
+  // v66: a box size row priced per year ("2×5 | $ 25/Year") is named by its size: the unit
+  // left after the price ("/Year") is not a name.
+  if (cells && BOX_SIZE_NAME.test(cells[0].trim()) && cells.slice(1).every((cell) => PRICE_ONLY_CELL.test(cell.trim()))) {
+    feeName = cells[0].trim();
+  }
   if (perWire && !/\bwires?\b/i.test(feeName)) feeName = `${feeName} wire`;
   // v62: a name cut at its length limit inside a parenthesis ("... Nonsufficient Funds (includes
   // but not limited to overdrafts created by check, in-") is named by the words before it.

@@ -1303,6 +1303,14 @@ describe("Knox extract.rules v66: fee-schedule lines with no fee word (#1102)", 
     }
   });
 
+  it("never names a box size row by the unit after its price", () => {
+    // Red Wing CU (text 32117): "2×5 | $ 25/Year" was read as a box named "/Year".
+    for (const line of ["2×5 | $ 25/Year", "10×10 | $100/Year"]) {
+      expect(extractFromSegment(line).candidates.map((fee) => fee.feeName), line).not.toContain("/Year");
+    }
+    expect(extractFromSegment("2 x 5 | $ 45.00").candidates.map((fee) => [fee.feeName, fee.amount])).toEqual([["2 x 5", 45]]);
+  });
+
   it("reads a row's priced columns beside a FREE column and holds the free one at $0", () => {
     const found = extractFromSegment("Stop Payment | FREE | $25 | $25 | $25");
     expect(found.candidates.map((fee) => [fee.feeName, fee.amount, fee.canonicalHint])).toEqual([["Stop Payment", 25, "stop_payment"]]);

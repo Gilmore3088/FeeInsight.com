@@ -489,7 +489,8 @@ hand check found wrong, from their real lines.
   item is still the overdraft fee.
 
 v66 (#1102, Oct 15): priced lines with no "fee" or "charge" that Knox dropped without a record.
-On the 62-bank answer key, 434 key lines in our own stored text had no row and no fee word.
+On the 62-bank answer key (run 9), 333 of the 987 key fees missing from live data were lines in our
+stored text of the key document with no Knox row at that price; 240 of them had no fee word.
 - Name rules for fee-schedule labels seen at several banks, placed after every other rule so they
   only claim lines nothing else names:
   - account research: "Research (per hour)", "Record Research", "Account Reconcilement", "Balancing".
@@ -518,12 +519,14 @@ On the 62-bank answer key, 434 key lines in our own stored text had no row and n
   (`DroppedLineReason`): per document in the extract attempt's `dropped_lines`, and per step in the
   extract step's `dropped_priced_lines`.
 - Gates: Texas 511 right / 14 wrong to 533 / 14 (held out 53 / 4, unchanged); seven states 744 / 41
-  to 787 / 41. No right read was lost and no wrong read was added in either gate. On the 62-bank key's
-  stored texts, the free team plus Darwin's rule checks found 1,308 of 2,321 key fees before and
-  1,385 after; the 69 new reads were all right (1,166 of 1,301 to 1,235 of 1,370).
-- Production dry run (Oct 15): the held re-check would categorize 492 more of the 27,771 held
-  unclassified lines (75 before); 458 of them pass Darwin's category guard, at 205 banks. On 120 random
-  current texts, re-reading added 17 reads (all matching their lines) and dropped none.
+  to 787 / 41. No right read was lost and no wrong read was added in either gate.
+- Box sizes priced per year ("2×5 | $ 25/Year") are named by the size, never by the unit left
+  after the price ("/Year"); a size with no word ("2×5") stays unread unless a heading names it.
+- 62-bank key, stored texts of the key documents, free team reads plus $0 rows with a category
+  (Oct 15): 1,371 of 2,321 key fees found before, 1,451 after (59.1% to 62.5%); precision 1,229 of
+  1,414 distinct reads to 1,301 of 1,487 (86.9% to 87.5%). 73 of the 80 newly found fees are not live today.
+- Production sample (Oct 15): 300 random texts of the 9,140 the v66 bump re-reads: 34 new reads
+  (19 texts), 148 new holds (136 unclassified, 9 untraced, 3 at $0), none of main's reads lost.
 
 Rules 65, #1196 (Oct 14, no version change, so no document is re-read for it):
 - A price whose decimal point the PDF text dropped ("Dormant accounts | $15 00 per month
