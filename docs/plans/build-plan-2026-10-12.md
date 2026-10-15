@@ -69,6 +69,110 @@ and #1242 stay as drafts, and #1083 waits. Phase 6's other items (#1076, #1077, 
 fees (#1234, Oct 13) and 74,832 (the audit, Oct 14 08:17 UTC). The ledger uses the audit's reading
 and counts as its baseline, and names the query and time for every later reading.
 
+**Wrong after publish: the one definition (2026-10-15).** Three readings disagreed: the Oct 14
+checkpoint's 3.10% (1,134 of 36,568), an advisor's 5.5% (2,922 of 52,907) and the scorecard's own
+rule. The 3.10% came from `goal.wrong_after_publish_7d` (`src/lib/agents/goal-scorecard.ts`,
+`readWrongAfterPublish`): it treats every duplicate takedown as housekeeping. The advisor's
+denominator kept refresh copies in. From now on the ledger uses this definition:
+
+- **Window:** fee rows with `published_fee_records.published_at` in the trailing 7 days at read time.
+  Read time is part of the result. The newest rows have had less time to be caught, so compare only
+  readings taken at the same hour.
+- **Denominator:** those rows minus refresh copies, the new rows named by any `refreshed by #N` or
+  `superseded by #N`. A refresh is the same fee published again, not a new publish.
+- **Wrong, part 1 (quality):** a row in the denominator that was taken down (rolled back or
+  quarantined) for any reason that is not on the list below. A new reason counts as wrong until it
+  is added to the list. `rules_recheck_unreproduced` counts unless the same fee (institution,
+  category, amount) is live again under another row.
+- **Wrong, part 2 (duplicate that should never have been published):** each pair closed as
+  `duplicate of #N` or `same_line_duplicate` counts once, on the later-published copy. Pairs from
+  two captures of the same page (one copy superseded by the other, or the same URL) are excluded:
+  that is a fresh copy of the same fee. Pairs from the same document, or from two different current
+  documents, count.
+- **Not wrong:** `refreshed by`, `superseded by`, `newer_copy_drops_fee`, `not_on_current_copy`,
+  `companion_page_retired`, `closed_institution`, `taxonomy_fold`, `rules_recheck_restore`.
+- **Report three numbers:** the total, the quality part and the duplicate part. Duplicates are
+  closed about 5 minutes after the later copy publishes (median over this week's `duplicate of`
+  pairs), so the duplicate part mostly measures repeat publishing, not what a customer sees.
+
+**Reading of 2026-10-15 01:07 UTC:** 2,624 wrong of 32,524 published, **8.07%**. Quality accounts for
+907 (2.79%). The largest reasons are `product_page` 183, `business_schedule` 134, `other_bank_document` 129,
+`unconfirmed_document_host` 125, `source_check_untraceable` 124, `category_guard` 123 and
+`rules_recheck_unreproduced` without a live replacement 32. Duplicates account for 1,719 (5.29%): 1,011
+from the same document and 708 from two different documents. 3,589 duplicate pairs from two
+captures of one page were excluded as fresh copies. Two rows count in both parts. At the same
+minute, the old scorecard rule gave 875 of 32,524 (2.69%). The SQL below, run as written at 01:08:40
+UTC, gave 2,620 of 32,498 (8.06%), because the window had moved by a minute. The scorecard still runs
+the old rule, and changing it is follow-up code work. The live duplicates measured the same day are
+in `docs/project/findings/2026-10-15-live-duplicates-across-page-copies.md`.
+
+```sql
+-- goal.wrong_after_publish_7d, definition of 2026-10-15 (read-only)
+WITH params AS (SELECT NOW() - INTERVAL '7 days' AS window_start),
+rows AS (
+  SELECT fp.fee_published_id, fp.published_at, fp.institution_id, fp.canonical_fee_key, fp.amount,
+         fp.rate_percent, fp.rolled_back_at, fp.quarantined_at, fp.lineage_ref,
+         btrim(split_part(split_part(COALESCE(fp.rolled_back_reason, fp.quarantine_reason, ''), ':', 1), ' #', 1)) AS reason_key,
+         substring(fp.rolled_back_reason FROM '#([0-9]+)')::bigint AS other_id
+    FROM published_fee_records fp),
+refresh_copy AS (
+  SELECT DISTINCT other_id AS fee_published_id FROM rows
+   WHERE reason_key IN ('refreshed by', 'superseded by') AND other_id IS NOT NULL),
+published AS (
+  SELECT r.* FROM rows r, params p
+   WHERE r.published_at >= p.window_start
+     AND NOT EXISTS (SELECT 1 FROM refresh_copy rc WHERE rc.fee_published_id = r.fee_published_id)),
+quality AS (
+  SELECT fee_published_id, reason_key FROM published
+   WHERE (rolled_back_at IS NOT NULL OR quarantined_at IS NOT NULL)
+     AND reason_key NOT IN ('refreshed by', 'superseded by', 'newer_copy_drops_fee', 'not_on_current_copy',
+       'companion_page_retired', 'closed_institution', 'taxonomy_fold', 'rules_recheck_restore',
+       'duplicate of', 'same_line_duplicate', 'rules_recheck_unreproduced')
+  UNION ALL
+  SELECT p.fee_published_id, p.reason_key FROM published p
+   WHERE p.reason_key = 'rules_recheck_unreproduced'
+     AND NOT EXISTS (
+       SELECT 1 FROM published_fee_records l
+        WHERE l.rolled_back_at IS NULL AND l.quarantined_at IS NULL
+          AND l.fee_published_id <> p.fee_published_id
+          AND l.institution_id = p.institution_id AND l.canonical_fee_key = p.canonical_fee_key
+          AND l.amount IS NOT DISTINCT FROM p.amount AND l.rate_percent IS NOT DISTINCT FROM p.rate_percent)),
+dup_pairs AS (
+  SELECT d.fee_published_id AS closed_id, k.fee_published_id AS kept_id,
+         d.published_at AS closed_at, k.published_at AS kept_at,
+         rd.source_document_id AS closed_doc, rk.source_document_id AS kept_doc
+    FROM rows d
+    JOIN published_fee_records k ON k.fee_published_id = d.other_id
+    LEFT JOIN verified_fee_observations vd ON vd.fee_verified_id = d.lineage_ref
+    LEFT JOIN raw_fee_observations rd ON rd.fee_raw_id = vd.fee_raw_id
+    LEFT JOIN verified_fee_observations vk ON vk.fee_verified_id = k.lineage_ref
+    LEFT JOIN raw_fee_observations rk ON rk.fee_raw_id = vk.fee_raw_id
+   WHERE d.reason_key IN ('duplicate of', 'same_line_duplicate') AND d.rolled_back_at IS NOT NULL),
+dup_class AS (
+  SELECT CASE WHEN dp.kept_at > dp.closed_at THEN dp.kept_id ELSE dp.closed_id END AS fee_published_id,
+         CASE WHEN dp.closed_doc = dp.kept_doc THEN 'same document'
+              WHEN sc.superseded_by_id = sk.id OR sk.superseded_by_id = sc.id
+                OR sc.superseded_by_id = sk.superseded_by_id
+                OR lower(regexp_replace(sc.document_url, '[?#].*$', '')) = lower(regexp_replace(sk.document_url, '[?#].*$', ''))
+                THEN 'two captures of one page'
+              ELSE 'two different documents' END AS dup_kind
+    FROM dup_pairs dp
+    LEFT JOIN source_documents sc ON sc.id = dp.closed_doc
+    LEFT JOIN source_documents sk ON sk.id = dp.kept_doc),
+wrong AS (
+  SELECT fee_published_id, 'quality' AS part FROM quality
+  UNION
+  SELECT d.fee_published_id, 'duplicate' FROM dup_class d JOIN published p USING (fee_published_id)
+   WHERE d.dup_kind <> 'two captures of one page')
+SELECT (SELECT COUNT(*) FROM published) AS published,
+       (SELECT COUNT(DISTINCT fee_published_id) FROM wrong) AS wrong,
+       (SELECT COUNT(*) FROM wrong WHERE part = 'quality') AS wrong_quality,
+       (SELECT COUNT(*) FROM wrong WHERE part = 'duplicate') AS wrong_duplicate,
+       ROUND(100.0 * (SELECT COUNT(DISTINCT fee_published_id) FROM wrong)
+             / NULLIF((SELECT COUNT(*) FROM published), 0), 2) AS wrong_pct,
+       NOW() AS read_at;
+```
+
 ## Two rules that shape every item
 
 - **Classification belongs to Darwin** (DECISIONS, 2026-10-12): Knox suggests a category, audience
