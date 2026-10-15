@@ -24,8 +24,9 @@ export default async function KnoxLabelsPage({
         <h1 className="admin-display-title mt-1">This week&apos;s fee names to label</h1>
         <p className="admin-lede mt-2">
           Names the category checks keep rejecting or judge both ways, and names Knox holds with no category at
-          several banks, most banks first. Pick the category each one belongs in. Knox files the name that way from
-          its next extract and sends the lines it held under that name to Darwin; no live fee changes.
+          several banks, most banks first. Pick the category each one belongs in. Knox files new reads of the name that
+          way from its next extract, and sends the lines it held under that name to Darwin within a week; no live fee
+          changes.
         </p>
       </header>
 

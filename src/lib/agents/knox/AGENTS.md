@@ -634,11 +634,13 @@ After the extract itself, each extract step runs these passes in order (`run-sto
 - `fileHeldByName` (#1102, up to 300 per extract step, scoped to the run's lane): one decision per
   held name, across banks. A line held as unclassified whose exact name (`lessonName`) has a
   person's label goes to Darwin under the labelled category ("No category fits" moves nothing).
-  With no label, a name that says fee or charge and is live (`published_fee_records`, flat, not
-  rolled back) under exactly one category at 3 or more banks (`SETTLED_NAME_MIN_BANKS`) is
-  settled, and its held lines go to Darwin under it ("Returned Statement Fee", account research;
-  "Rush Fee", rush card; "Early Closure Fee", early closure). Set-aside lines are read too, since
-  the decision is new and the rules are not. A line moves only when:
+  With no label, a name that says fee or charge is settled when at least 90% of its live rows
+  (`published_fee_records`, flat, not rolled back) sit in one category (`SETTLED_NAME_MIN_SHARE`)
+  at 5 or more banks (`SETTLED_NAME_MIN_BANKS`; 10 for a name of two words or fewer,
+  `SETTLED_TWO_WORD_MIN_BANKS`, so "Statement Fee" at 3 banks is not), and its held lines go to
+  Darwin under that category ("Credit Card Rush Fee", rush card; "Early Closure Fee", early
+  closure). Set-aside lines are read too, since the decision is new and the rules are not. A line
+  moves only when:
   - its name key still names something once digits go (a box size's key is only "x");
   - for a store decision, the name says fee or charge ("Minimum Balance" is a requirement), is
     not a bare "Closing Fee" or a wire fee with no direction, and the price is not $0 (the zero
@@ -648,8 +650,17 @@ After the extract itself, each extract step runs these passes in order (`run-sto
   - the line is not a rate or a bundle price ("4 for $2"), states no requirement ("to avoid",
     "required", "must maintain", "minimum balance to open"), and is not one column of a table of
     accounts or networks ("| None | $7.00 | $10.00 | $10.00");
-  - its price is the line's first price after the name (`priceUnderName`: "$10.00/month ... |
-    Paper Statement Fee | $2.50" stays held), and Darwin's category guard and price range accept it.
+  - its price is the line's first price after the name, with no other fee's name between them
+    (`priceUnderName`: "$10.00/month ... | Paper Statement Fee | $2.50" and "Overdraft Transfer Fee
+    (... | Inquiry Fee12. . . . $1.00" stay held);
+  - for a store decision, the line's wording does not contradict the category (a loan, HELOC,
+    mortgage, line of credit, title, lien or collateral word outside a lending category; copy,
+    photocopy or research filed as a paper statement: `lineContradictsCategory`), the clause that
+    holds the price does not read as another fee ("A $25 fee will be assessed for early
+    withdrawals" under a maintenance name: `priceClauseNamesOtherFee`), and the price sits inside
+    the category's live p5 to p95 across banks ("Early closure fee of $500" stays held);
+  - Darwin's category guard and price range accept it. A person's label skips the store-only
+    checks.
   A moved line keeps its name and amount and carries `knox_name_filed:<label|store>` and
   `canonical_hint:<key>`; Darwin still decides, and Hamilton's rules re-check keeps the fee live
   while its name and price trace in its own text. A line a decision covers that cannot move gets
@@ -657,8 +668,9 @@ After the extract itself, each extract step runs these passes in order (`run-sto
   its other held lines get it too, so the rest of the week's steps read only new held lines and the
   live-fee join has nothing to probe. Settled names come from a hash join of live fees on the held
   lines' own names, and labels from the feedback table's unique dedupe key. Step detail:
-  `held_name_file`. On 15 Oct 2026 (read-only): 312 held lines matched a settled name, 227 would
-  move at 132 banks in 38 states (153 of them set aside), and none had a label yet.
+  `held_name_file`. On 15 Oct 2026 (read-only, after the second review of #1385): 161 held lines
+  matched a settled name, 71 would move at 40 banks in 26 states (38 of them set aside), and none
+  had a label yet.
 - `previewHeldNameRules` (#1102, off until James switches it on): the held-name rules
   (`HELD_NAME_PATTERNS` in `rules.ts`) file unclassified names that say their own category at
   many banks: "Stop Pay Fee", "Reconveyance Fee", a bare "Early Closure Fee" row, a club

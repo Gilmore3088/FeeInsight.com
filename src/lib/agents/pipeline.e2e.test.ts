@@ -289,10 +289,11 @@ describe.skipIf(!E2E_DATABASE_URL)("pipeline end to end (state lane)", () => {
          AND fee_audience = 'consumer' AND source_document_id IS NOT NULL
     `;
     expect(peerCoverage).toMatchObject({ fees: 27, institutions: 9 });
-    // Three peers publish "Returned Statement Fee" as account research: a name the store settles.
+    // Five peers publish "Returned Statement Fee" as account research: a name the store settles
+    // (a three-word name needs five banks, all of its live rows in one category here).
     await sql`
       WITH peers AS (
-        SELECT id FROM institution_sources WHERE institution_name IN ('Peer Test Bank 1', 'Peer Test Bank 2', 'Peer Test Bank 3')
+        SELECT id FROM institution_sources WHERE institution_name IN ('Peer Test Bank 1', 'Peer Test Bank 2', 'Peer Test Bank 3', 'Peer Test Bank 4', 'Peer Test Bank 5')
       ), documents AS (
         INSERT INTO source_documents (institution_id, status, document_url)
         SELECT id, 'success', 'https://peer.example/returned-mail' FROM peers

@@ -453,7 +453,7 @@ export function nameFileCheckedFlag(now: Date = new Date()): string {
   const week = Math.ceil(((day.getTime() - yearStart.getTime()) / 86_400_000 + 1) / 7);
   return `${NAME_FILE_CHECKED_PREFIX}${day.getUTCFullYear()}-W${String(week).padStart(2, "0")}`;
 }
-export const SETTLED_NAME_MIN_BANKS = 3;
+export const SETTLED_NAME_MIN_BANKS = 5;
 export const NAME_FILE_LIMIT = 300;
 /** A rate, or a price for a bundle of items, is not the plain price the store's fees are. */
 const NOT_A_PLAIN_PRICE = /%|\b\d+\s+(?:for|per)\s+\$/i;
@@ -468,10 +468,52 @@ export function priceUnderName(name: string, excerpt: string, amount: number): b
   const at = excerpt.toLowerCase().indexOf(name.trim().toLowerCase());
   const after = at >= 0 ? excerpt.slice(at + name.trim().length) : excerpt;
   const first = DOLLAR_PRICE.exec(after);
-  return first != null && Math.abs(Number(first[1].replace(/,/g, "")) - amount) < 0.005;
+  if (first == null) return false;
+  // The price belongs to another fee when that fee's name stands between ("Overdraft Transfer Fee
+  // (Applicable to ... | Inquiry Fee12. . . . $1.00", raw 506621: the $1 is the inquiry fee's).
+  if (OTHER_FEE_NAME.test(after.slice(0, first.index))) return false;
+  return Math.abs(Number(first[1].replace(/,/g, "")) - amount) < 0.005;
 }
 
+/**
+ * The clause that holds the row's price reads as another fee: "Monthly Service Charge¹ | ... A $25 fee
+ * will be assessed for early withdrawals" (raw 454145) is an early-withdrawal price. Pure.
+ */
+export function priceClauseNamesOtherFee(key: string, name: string, excerpt: string, amount: number): boolean {
+  const at = excerpt.toLowerCase().indexOf(name.trim().toLowerCase());
+  const after = at >= 0 ? excerpt.slice(at + name.trim().length) : excerpt;
+  const first = DOLLAR_PRICE.exec(after);
+  if (!first || Math.abs(Number(first[1].replace(/,/g, "")) - amount) >= 0.005) return false;
+  const start = Math.max(after.lastIndexOf("|", first.index), after.lastIndexOf(". ", first.index)) + 1;
+  const ends = [after.indexOf("|", first.index), after.indexOf(". ", first.index)].filter((index) => index >= 0);
+  const clause = after.slice(start, ends.length > 0 ? Math.min(...ends) : after.length);
+  const reads = classifyFeeText(clause);
+  if (reads != null && reads !== key) return true;
+  // The classifier needs a fee's own name; a clause that prices a withdrawal or excess activity
+  // is that fee's price whatever the row's name says.
+  return OTHER_ACTIVITY_CLAUSE.test(clause) && key !== "early_closure" && key !== "account_research";
+}
+
+const OTHER_ACTIVITY_CLAUSE = /\bearly (?:withdrawals?|closures?|closing)\b|\bexcess(?:ive)? (?:withdrawals?|transactions?|activity)\b/i;
+
+/** Another fee's name in a later cell: capitalized words ending in Fee or Charge, not "Fee charged ...". */
+const OTHER_FEE_NAME = /(?:\||[.…]{2,}|\)\s)\s*(?:[A-Z][\w'’/&-]*\s+){0,4}(?:Fee|FEE|Charge|CHARGE)s?\d*\b(?!\s+(?:charged|is|applies|assessed|of|for|will|may))/;
+
 export type NameFiledBy = "label" | "store";
+
+/** A store decision needs the name live at this many banks (`SETTLED_NAME_MIN_BANKS` is the floor). */
+export const SETTLED_TWO_WORD_MIN_BANKS = 10;
+/** And this share of the name's live rows in one category. */
+export const SETTLED_NAME_MIN_SHARE = 0.9;
+/** Categories a lending fee belongs to; elsewhere a lending word on the line contradicts the filing. */
+const LENDING_CATEGORIES: ReadonlySet<string> = new Set(["late_payment", "loan_origination", "appraisal_fee", "vehicle_title", "other_lending_fee", "cash_advance"]);
+const LENDING_WORDS = /\b(?:loans?|heloc|home equity|mortgages?|lines? of credit|titled?|titles|liens?|collateral|deed)\b/i;
+const COPY_WORDS = /\b(?:cop(?:y|ies)|photocop(?:y|ies)|research|reprint)\b/i;
+/** A store decision's line contradicts its category ("Temporary Lien Fee ... collateral titled", a "Statement Fee | $2.00/Copy"). Pure. */
+export function lineContradictsCategory(key: string, excerpt: string): boolean {
+  if (LENDING_WORDS.test(excerpt) && !LENDING_CATEGORIES.has(key)) return true;
+  return key === "paper_statement" && COPY_WORDS.test(excerpt);
+}
 
 /** A fee's name: it says fee or charge. "Minimum Balance" is a requirement, never a fee. */
 const FEE_WORD_NAME = /\b(?:fees?|charges?)\b/i;
@@ -512,6 +554,9 @@ export interface NameFileRow extends HeldRow {
   filed_key: string;
   filed_by: NameFiledBy;
   settled_banks: number | string | null;
+  /** The settled category's live p5 and p95 across banks (store decisions). */
+  range_p5?: number | string | null;
+  range_p95?: number | string | null;
 }
 
 export interface NameFileResult {
@@ -528,7 +573,7 @@ export interface NameFileResult {
 
 /** Why a held line a name decision covers stays held, or null when it moves. Pure. */
 export function nameFileHold(
-  row: Pick<NameFileRow, "fee_name" | "amount" | "conditions" | "filed_key"> & { filed_by?: NameFiledBy },
+  row: Pick<NameFileRow, "fee_name" | "amount" | "conditions" | "filed_key"> & Partial<Pick<NameFileRow, "range_p5" | "range_p95">> & { filed_by?: NameFiledBy },
 ): string | null {
   const name = row.fee_name?.trim() ?? "";
   const amount = row.amount == null ? Number.NaN : Number(row.amount);
@@ -547,6 +592,15 @@ export function nameFileHold(
   if (REQUIREMENT_LINE.test(excerpt)) return "requirement_line";
   if (severalPriceColumns(name, excerpt)) return "several_price_columns";
   if (!priceUnderName(name, excerpt, amount)) return "price_not_under_name";
+  if (byStore && lineContradictsCategory(row.filed_key, `${name} ${excerpt}`)) return "line_contradicts_category";
+  if (byStore && priceClauseNamesOtherFee(row.filed_key, name, excerpt, amount)) return "price_names_other_fee";
+  // A store decision inherits the store's mistakes; a price outside the category's own live
+  // spread (p5 to p95 across banks) waits for a person ("Early closure fee of $500", raw 337301).
+  if (byStore) {
+    const p5 = row.range_p5 == null ? null : Number(row.range_p5);
+    const p95 = row.range_p95 == null ? null : Number(row.range_p95);
+    if (p5 == null || p95 == null || amount < p5 || amount > p95) return "outside_category_range";
+  }
   if (!passesDarwinChecks(row.filed_key, name, amount)) return "darwin_checks";
   return null;
 }
@@ -568,7 +622,7 @@ export async function fileHeldByName(
   const dryRun = Boolean(options.dryRun);
   const result: NameFileResult = { checked: 0, filed: 0, kept: {}, byCategory: {}, bySource: { label: 0, store: 0 }, institutions: 0, examples: [], dryRun };
   const checkedFlag = nameFileCheckedFlag(options.now);
-  const params: Array<string | number> = [limit, checkedFlag, SETTLED_NAME_MIN_BANKS, NAME_LABEL_KIND];
+  const params: Array<string | number> = [limit, checkedFlag, SETTLED_NAME_MIN_BANKS, NAME_LABEL_KIND, SETTLED_NAME_MIN_SHARE, SETTLED_TWO_WORD_MIN_BANKS];
   const filters: string[] = [];
   if (options.institutionId) filters.push(`AND fr.institution_id = $${params.push(Number(options.institutionId))}`);
   const state = options.stateCode?.trim().toUpperCase();
@@ -596,23 +650,43 @@ export async function fileHeldByName(
          ORDER BY f.dedupe_key, f.created_at DESC
       ), raw_names AS MATERIALIZED (
         SELECT DISTINCT raw_name FROM held WHERE fee_name ~* '\\m(fee|fees|charge|charges)\\M'
-      ), settled AS (
+      ), by_category AS (
         -- Live fees with one of the held names, as printed (lower-cased): a hash join on the live
-        -- index, never a regex over every live fee. Their name keys are then counted.
-        SELECT ${NAME_KEY_SQL("p.fee_name")} AS name, min(p.canonical_fee_key) AS key, count(DISTINCT p.institution_id) AS banks
+        -- index, never a regex over every live fee. Their name keys are then counted by category.
+        SELECT ${NAME_KEY_SQL("p.fee_name")} AS name, p.canonical_fee_key AS key,
+               count(*) AS n, count(DISTINCT p.institution_id) AS banks
           FROM published_fee_records p
           JOIN raw_names r ON r.raw_name = lower(btrim(p.fee_name))
          WHERE p.rolled_back_at IS NULL AND p.quarantined_at IS NULL AND p.amount_kind = 'flat'
+         GROUP BY 1, 2
+      ), ranked AS (
+        SELECT DISTINCT ON (name) name, key, n, banks, sum(n) OVER (PARTITION BY name) AS total
+          FROM by_category
+         ORDER BY name, n DESC, key
+      ), settled AS (
+        -- At least 90% of the name's live rows in one category, at 5 or more banks (10 for a
+        -- two-word name such as "Statement Fee"), review of #1385.
+        SELECT name, key, banks FROM ranked
+         WHERE n >= $5::numeric * total
+           AND banks >= CASE WHEN array_length(string_to_array(name, ' '), 1) <= 2 THEN $6::int ELSE $3::int END
+      ), ranges AS (
+        -- Each settled category's live spread across banks, read on the category index.
+        SELECT p.canonical_fee_key AS key,
+               percentile_cont(0.05) WITHIN GROUP (ORDER BY p.amount) AS p5,
+               percentile_cont(0.95) WITHIN GROUP (ORDER BY p.amount) AS p95
+          FROM published_fee_records p
+         WHERE p.canonical_fee_key IN (SELECT key FROM settled)
+           AND p.rolled_back_at IS NULL AND p.quarantined_at IS NULL AND p.amount_kind = 'flat' AND p.amount > 0
          GROUP BY 1
-        HAVING count(DISTINCT p.canonical_fee_key) = 1 AND count(DISTINCT p.institution_id) >= $3
       )
       SELECT h.fee_raw_id, h.amount, h.conditions, h.institution_id, h.source_document_id, h.fee_name, h.outlier_flags,
              COALESCE(l.key, s.key) AS filed_key,
              CASE WHEN l.name IS NOT NULL THEN 'label' ELSE 'store' END AS filed_by,
-             s.banks AS settled_banks
+             s.banks AS settled_banks, rg.p5 AS range_p5, rg.p95 AS range_p95
         FROM held h
         LEFT JOIN labels l ON l.name = h.name
         LEFT JOIN settled s ON s.name = h.name
+        LEFT JOIN ranges rg ON rg.key = s.key
        WHERE ((l.name IS NOT NULL AND l.key IS NOT NULL) OR (l.name IS NULL AND s.name IS NOT NULL))
          -- Only lines from the document's current text, as the held re-check reads them.
          AND EXISTS (

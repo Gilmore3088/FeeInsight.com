@@ -604,7 +604,9 @@ describe("held-name rules for unclassified held lines (#1102)", () => {
 // #1102: one decision per held name. Production held lines (raw ids), read 15 Oct 2026.
 describe("held lines filed by their name: a person's label or the store's settled name (#1102)", () => {
   const held = (fee_raw_id: number, amount: string, fee_name: string, excerpt: string, filed_key: string, filed_by: "label" | "store" = "store") => ({
-    fee_raw_id, amount, fee_name, conditions: conditions(excerpt), institution_id: 9, source_document_id: 40, filed_key, filed_by, settled_banks: 3,
+    fee_raw_id, amount, fee_name, conditions: conditions(excerpt), institution_id: 9, source_document_id: 40, filed_key, filed_by, settled_banks: 12,
+    // The settled category's live p5 to p95 across banks.
+    range_p5: "1.00", range_p95: "60.00",
     outlier_flags: ["knox_review:unclassified", HELD_SET_ASIDE_FLAG],
   });
   const returnedStatement = held(200601, "10.00", "Returned Statement Fee", "Returned Statement Fee** | $10.00", "account_research");
@@ -631,8 +633,20 @@ describe("held lines filed by their name: a person's label or the store's settle
     [held(441210, "150.00", "Subordination Fee", "Subordination Fee | $150.00", "other_lending_fee"), "name_reads_other_category"],
     // The $10 is the row before's monthly fee; the paper statement fee is $2.50.
     [held(421833, "10.00", "Paper Statement Fee (per Statement)", "• $10.00/month if none of the above criteria are met. | Paper Statement Fee (per Statement) | $2.50", "paper_statement"), "price_not_under_name"],
-    // Darwin's price range: a $500 "returned statement fee" is not one.
-    [held(200602, "500.00", "Returned Statement Fee", "Returned Statement Fee | $500.00", "account_research"), "darwin_checks"],
+    // Outside the category's live spread across banks.
+    [held(200602, "500.00", "Returned Statement Fee", "Returned Statement Fee | $500.00", "account_research"), "outside_category_range"],
+    // Second review of #1385: the price is the next fee's, or the line contradicts the store's category.
+    [held(506621, "1.00", "Overdraft Transfer Fee", "Overdraft Transfer Fee (Applicable to overdraft transfers generated automatically | Inquiry Fee12. . . . . . . . $1.00 per transaction inquiry", "od_protection_transfer"), "price_not_under_name"],
+    [held(114480, "2.00", "Statement Fee", "Statement Fee | $2.00/Copy", "paper_statement"), "line_contradicts_category"],
+    [held(108501, "10.00", "Temporary Lien Fee", "Temporary Lien Fee: $10.00 for all collateral titled in Tennessee", "legal_process"), "line_contradicts_category"],
+    [{ ...held(337301, "500.00", "Early closure fee", "Early closure fee of $500 may apply", "early_closure"), range_p95: "50.00" }, "outside_category_range"],
+    // A description cell ("Fee charged when ...") is not another fee's name.
+    // The clause holding the price is another fee's: an early-withdrawal penalty under a maintenance name.
+    [held(454145, "25.00", "Monthly Service Charge", "Monthly Service Charge¹ | None. A $25 fee will be assessed for early withdrawals", "monthly_maintenance"), "price_names_other_fee"],
+    [held(454146, "25.00", "Early Withdrawal Fee", "Early Withdrawal Fee | A $25 fee will be assessed for early withdrawals", "early_closure"), null],
+    [held(680394, "40.00", "STOP PAYMENT FEE", "STOP PAYMENT FEE | Fee charged when you request to refuse payment for a check or ACH transaction | $40.00", "stop_payment"), null],
+    // A person's label is not held to the store's spread or wording checks.
+    [{ ...held(337302, "500.00", "Early closure fee", "Early closure fee of $500 may apply", "early_closure", "label"), range_p95: null }, null],
   ])("decides whether a held line moves under its name's category (%#)", (row, hold) => {
     expect(nameFileHold(row)).toBe(hold);
   });
@@ -666,9 +680,12 @@ describe("held lines filed by their name: a person's label or the store's settle
     // the feedback table's unique dedupe key, never a scan of either (review of #1385).
     expect(select.text).toContain("JOIN raw_names r ON r.raw_name = lower(btrim(p.fee_name))");
     expect(select.text).toContain("f.dedupe_key IN (SELECT DISTINCT 'knox.name_label:' || name FROM held");
-    expect(select.text).toContain("HAVING count(DISTINCT p.canonical_fee_key) = 1");
+    // Settled: 90% of the name's live rows in one category, at 5 banks (10 for two words), with the category's p5-p95.
+    expect(select.text).toContain("WHERE n >= $5::numeric * total");
+    expect(select.values).toEqual(expect.arrayContaining([0.9, 10, 5]));
+    expect(select.text).toContain("percentile_cont(0.95)");
     expect(select.text).not.toContain("published_fee_catalog");
-    expect(select.values).toEqual(expect.arrayContaining(["knox_name_file_checked:2026-W42", 3, "name_label", "TX"]));
+    expect(select.values).toEqual(expect.arrayContaining(["knox_name_file_checked:2026-W42", 5, "name_label", "TX"]));
     const moves = calls.filter((call) => call.text.includes("RETURNING fr.fee_raw_id")).map((call) => JSON.stringify(call.values));
     expect(moves[0]).toContain("knox_name_filed:store");
     expect(moves[0]).toContain("canonical_hint:account_research");
