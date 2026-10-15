@@ -10,7 +10,7 @@ const geistSans = Geist({ subsets: ["latin"], variable: "--font-geist-sans", wei
 const geistMono = Geist_Mono({ subsets: ["latin"], variable: "--font-geist-mono", weight: ["400", "500", "600"] });
 
 export const metadata: Metadata = {
-  title: { default: "Bank Fee Index", template: "%s · Bank Fee Index" },
+  title: { default: "Fee Insight", template: "%s · Fee Insight" },
   icons: { icon: [{ url: "/favicon.ico", sizes: "any" }, { url: "/icon.svg", type: "image/svg+xml" }], apple: "/apple-touch-icon.png" },
   manifest: "/site.webmanifest",
   openGraph: { images: [{ url: "/brand/og/og-bank-fee-index.png", width: 1200, height: 630 }] },
