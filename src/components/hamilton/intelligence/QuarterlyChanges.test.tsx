@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { QuarterlyChanges } from "./QuarterlyChanges";
 
 // Invented changes for tests only.
-const diff = (count: number) => ({
+const diff = (count: number, fromPeerLabel = "Texas banks") => ({
   kind: "diff" as const,
   diff: {
     institutionId: 1,
@@ -11,7 +11,8 @@ const diff = (count: number) => ({
     toQuarter: "2027-Q1",
     fromGeneratedAt: "2026-10-07T00:00:00Z",
     toGeneratedAt: "2027-01-07T00:00:00Z",
-    peerLabel: "Texas banks",
+    fromPeerLabel,
+    toPeerLabel: "Texas banks",
     changes: Array.from({ length: count }, (_, i) => ({ kind: "own_price" as const, feeCategory: "overdraft", text: `Change ${i + 1}.` })),
   },
 });
@@ -39,6 +40,12 @@ describe("QuarterlyChanges (#1083)", () => {
   it("says so when nothing changed, naming the peer group", () => {
     const html = renderToStaticMarkup(<QuarterlyChanges changes={diff(0)} />);
     expect(html).toContain("Nothing in this briefing changed between Q4 2026 and Q1 2027.");
-    expect(html).toContain("Read against Texas banks.");
+    expect(html).toContain("Q4 2026 briefing compared with Q1 2027, both read against Texas banks.");
+  });
+
+  it("names each peer group when they differ", () => {
+    const html = renderToStaticMarkup(<QuarterlyChanges changes={diff(1, "US banks")} />);
+    expect(html).toContain("the Q4 2026 copy read against US banks, the Q1 2027 copy against Texas banks");
+    expect(html).not.toContain("both read against");
   });
 });

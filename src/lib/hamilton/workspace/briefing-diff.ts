@@ -13,6 +13,7 @@ import type { Briefing, FeePositionRow, Observation } from "./types";
 export type BriefingChangeKind =
   | "own_price"
   | "peer_median"
+  | "peer_group"
   | "band_side"
   | "fee_added"
   | "fee_removed"
@@ -32,8 +33,9 @@ export interface BriefingDiff {
   toQuarter: string;
   fromGeneratedAt: string;
   toGeneratedAt: string;
-  /** The peer group both stored copies were read against (the institution's default group). */
-  peerLabel: string;
+  /** The peer group each stored copy was read against (the institution's default group then). */
+  fromPeerLabel: string;
+  toPeerLabel: string;
   changes: BriefingChange[];
 }
 
@@ -101,6 +103,15 @@ function feeChanges(previous: FeePositionRow[], current: FeePositionRow[]): Brie
         feeCategory: row.feeCategory,
         text: `${name}: its published price moved from ${money(old.current)} to ${money(row.current)} (${delta(old.current, row.current)}).`,
       });
+    }
+    if (old.peerLabel !== row.peerLabel) {
+      // A different peer group is not a market move: name the change and compare nothing across it.
+      changes.push({
+        kind: "peer_group",
+        feeCategory: row.feeCategory,
+        text: `${name}: now compared with ${row.peerLabel} (last quarter ${old.peerLabel}), so its peer figures are not compared.`,
+      });
+      continue;
     }
     if (old.band && row.band && !same(old.band.median, row.band.median)) {
       changes.push({
@@ -181,7 +192,8 @@ export function diffBriefings(
     toQuarter: current.quarter,
     fromGeneratedAt: previous.briefing.generatedAt,
     toGeneratedAt: current.briefing.generatedAt,
-    peerLabel: current.briefing.peerLabel,
+    fromPeerLabel: previous.briefing.peerLabel,
+    toPeerLabel: current.briefing.peerLabel,
     changes: [
       ...feeChanges(previous.briefing.positions ?? [], current.briefing.positions ?? []),
       ...incomeChange(previous.briefing, current.briefing),

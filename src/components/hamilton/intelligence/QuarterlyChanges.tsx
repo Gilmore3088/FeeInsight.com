@@ -38,16 +38,20 @@ export function QuarterlyChanges({ changes }: { changes: Changes | null }) {
   const { diff } = changes;
   const from = quarterLabel(diff.fromQuarter);
   const to = quarterLabel(diff.toQuarter);
+  const peers =
+    diff.fromPeerLabel === diff.toPeerLabel
+      ? `both read against ${diff.toPeerLabel}`
+      : `the ${from} copy read against ${diff.fromPeerLabel}, the ${to} copy against ${diff.toPeerLabel}`;
   if (diff.changes.length === 0) {
     return (
-      <MemoSection title={`Since ${from}`} note={`Read against ${diff.peerLabel}.`}>
+      <MemoSection title={`Since ${from}`} note={`${from} briefing compared with ${to}, ${peers}.`}>
         <p className="text-sm text-warm-700">Nothing in this briefing changed between {from} and {to}.</p>
       </MemoSection>
     );
   }
   const rest = diff.changes.slice(SHOWN);
   return (
-    <MemoSection title={`Since ${from}`} note={`${from} briefing compared with ${to}, both read against ${diff.peerLabel}.`}>
+    <MemoSection title={`Since ${from}`} note={`${from} briefing compared with ${to}, ${peers}.`}>
       <ChangeList items={diff.changes.slice(0, SHOWN)} />
       {rest.length > 0 ? (
         <More label={`${rest.length} more ${rest.length === 1 ? "change" : "changes"}`}>

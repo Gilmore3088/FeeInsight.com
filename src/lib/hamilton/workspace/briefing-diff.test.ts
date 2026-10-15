@@ -54,6 +54,19 @@ describe("diffBriefings", () => {
     expect(diff).toMatchObject({ fromQuarter: "2026-Q3", toQuarter: "2026-Q4" });
   });
 
+  it("compares no peer figures across a changed peer group, and says the group changed", () => {
+    const widened = { ...row("overdraft", 30, 25), peerLabel: "US banks" };
+    const diff = diffBriefings(
+      { quarter: "2026-Q3", briefing: briefing({ peerLabel: "US banks", positions: [widened] }) },
+      { quarter: "2026-Q4", briefing: briefing({ positions: [row("overdraft", 36, 40)] }) },
+    );
+    expect(diff.changes.map((c) => c.text)).toEqual([
+      "Overdraft: its published price moved from $30.00 to $36.00 ($6.00 higher).",
+      "Overdraft: now compared with Texas banks (last quarter US banks), so its peer figures are not compared.",
+    ]);
+    expect(diff).toMatchObject({ fromPeerLabel: "US banks", toPeerLabel: "Texas banks" });
+  });
+
   it("lists fees added and removed, and new and dropped observations", () => {
     const diff = diffBriefings(
       { quarter: "2026-Q3", briefing: briefing({ positions: [row("nsf", 25)], observations: [observation("a", "Old note")] }) },

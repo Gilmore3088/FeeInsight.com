@@ -76,7 +76,7 @@ export default async function MonitorPage({
       {decisionBody ? (
         <MemoSection
           title="Your decisions"
-          note="Each fee your team is working on, and where it stands."
+          note="Each decision your team is working on, and where it stands."
         >
           <DecisionLedger ledger={decisionBody.ledger} institutionId={selectedId} />
         </MemoSection>
