@@ -323,6 +323,9 @@ the detail.
     (`PER_ACCOUNT_CATEGORIES`). Off (`PRODUCT_PAGE_CONFLICT_LIVE`): first looks are logged and
     nothing comes down until a hand check of 10 finds 9 right; then a PR turns it on and a
     conflict comes down on its second look, `product_page_conflict: #<doc> at $x vs schedule $y`.
+    A tier's own schedule (premium, private-banking, BankOn: Darwin's `tier-perk.ts` address and
+    name tests) is not the bank's schedule and is left off the schedule side (#1397); a pending
+    flag the check no longer raises on a live fee is cleared (`takedown_cleared`).
 13. Cross-page conflict (`cross-page-conflict.ts`): one product priced differently on two
     current pages (or two editions of one document); the older one comes down on its second
     look, `cross_page_conflict: #<older doc> older than #<newer doc> (fee <id>)` (or `older
