@@ -1,5 +1,21 @@
 import { sql } from "./connection";
+import { PRIOR_QUARTER_JOIN, QUARTER_SC } from "./call-reports";
 import { STATS_ROW_FILTER } from "./fee-stats";
+
+/**
+ * #1245: each institution's financial rows with service-charge income for the quarter itself.
+ * NCUA 5300 income is year-to-date and FDIC is quarterly, so reading the raw NCUA column beside
+ * FDIC's doubled credit-union income in Q2 (and up to 4x in Q4). The quarter is the YTD minus
+ * the prior quarter's YTD (Q1 stands alone), the same split call-reports.ts uses; a credit union
+ * whose prior quarter is missing has no quarterly figure and is left out, never guessed.
+ */
+const QUARTERLY_FINANCIALS = `(
+    SELECT inf.institution_id, inf.report_date, inf.source, inf.total_assets,
+           ${QUARTER_SC} AS service_charge_income
+      FROM institution_financial_records inf
+      ${PRIOR_QUARTER_JOIN}
+     WHERE inf.source IN ('fdic', 'ncua')
+  )`;
 
 export interface FeeRevenueCorrelation {
   institution_id: number;
@@ -11,7 +27,7 @@ export interface FeeRevenueCorrelation {
   fed_district?: number | null;
   /** The call report quarter these financials come from. */
   report_date?: string | null;
-  /** fdic (quarterly income) or ncua (year-to-date income). */
+  /** fdic or ncua; service_charge_income is the quarter's own income for both (#1245). */
   financial_source?: string | null;
   total_assets: number | null;
   service_charge_income: number | null;
@@ -59,7 +75,7 @@ export async function getFeeRevenueData(): Promise<FeeRevenueCorrelation[]> {
       GROUP BY institution_id
       HAVING COUNT(*) >= 3
     ) ef ON ct.id = ef.institution_id
-    JOIN institution_financial_records ifin ON ct.id = ifin.institution_id AND ifin.source IN ('fdic', 'ncua')
+    JOIN ${sql.unsafe(QUARTERLY_FINANCIALS)} ifin ON ct.id = ifin.institution_id
     WHERE 1 = 1
       AND ifin.report_date = (
         SELECT MAX(report_date)
@@ -121,7 +137,7 @@ export async function getTierFeeRevenueSummary(): Promise<TierFeeRevenueSummary[
       GROUP BY institution_id
       HAVING COUNT(*) >= 3
     ) ef_avg ON ct.id = ef_avg.institution_id
-    JOIN institution_financial_records ifin ON ct.id = ifin.institution_id AND ifin.source IN ('fdic', 'ncua')
+    JOIN ${sql.unsafe(QUARTERLY_FINANCIALS)} ifin ON ct.id = ifin.institution_id
     WHERE ct.asset_size_tier IS NOT NULL
       AND ifin.service_charge_income IS NOT NULL
       AND ifin.report_date = (
@@ -179,7 +195,7 @@ export async function getCharterFeeRevenueSummary(): Promise<CharterFeeRevenueSu
       GROUP BY institution_id
       HAVING COUNT(*) >= 3
     ) ef_avg ON ct.id = ef_avg.institution_id
-    JOIN institution_financial_records ifin ON ct.id = ifin.institution_id AND ifin.source IN ('fdic', 'ncua')
+    JOIN ${sql.unsafe(QUARTERLY_FINANCIALS)} ifin ON ct.id = ifin.institution_id
     WHERE ifin.service_charge_income IS NOT NULL
       AND ifin.report_date = (
         SELECT MAX(report_date)

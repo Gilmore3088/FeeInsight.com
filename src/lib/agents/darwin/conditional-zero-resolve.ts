@@ -113,7 +113,7 @@ export async function runDarwinConditionalZeroResolve(options: {
   try {
     rows = await inSavepoint(options.db, (scope) => scope.unsafe<HeldZeroRow[]>(
       `SELECT fr.fee_raw_id, fr.institution_id, fr.source_url, fr.document_r2_key, fr.extraction_confidence,
-              fr.fee_name, fr.amount, fr.frequency, fr.outlier_flags, fr.conditions, fr.fee_audience,
+              fr.fee_name, fr.amount, fr.frequency, fr.outlier_flags, COALESCE(fr.extraction_note, fr.conditions) AS conditions, fr.fee_audience,
               fr.amount_kind, fr.rate_percent, fr.rate_min_amount, fr.rate_max_amount, fr.rate_basis,
               fr.source_document_id, sd.document_url, last.canonical_fee_key,
               EXISTS (
@@ -170,6 +170,7 @@ export async function runDarwinConditionalZeroResolve(options: {
             row,
             canonicalFeeKey: row.canonical_fee_key,
             extraFlags: [CONDITIONAL_ZERO_RELEASED_FLAG],
+            sourceText: row.source_document_id == null ? null : texts.get(Number(row.source_document_id)) ?? null,
           });
         }
         await recordAttempt(scope as SqlTag, {

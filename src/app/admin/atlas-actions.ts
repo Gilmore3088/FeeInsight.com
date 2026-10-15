@@ -548,3 +548,49 @@ export async function runCategoryGuardRepair(dryRun: boolean): Promise<{
     return { success: false, error: error instanceof Error ? error.message : String(error) };
   }
 }
+
+/**
+ * Hamilton source-link repair (hamilton/source-link.ts): a live fee with no source link takes
+ * its own document's URL, or comes down when it has no traceable document. Run the dry run
+ * first; its step detail lists the counts and every takedown.
+ */
+export async function runSourceLinkRepair(dryRun: boolean): Promise<{
+  success: boolean;
+  runId?: number;
+  title?: string;
+  reused?: boolean;
+  error?: string;
+}> {
+  const user = await requireAuth("trigger_jobs");
+  const title = dryRun
+    ? "Source link dry run: find live fees with no link to their document"
+    : "Source link repair: link live fees to their document or take them down";
+
+  try {
+    await assertAtlasDispatchReady();
+    const result = await startAgentRun({
+      agent: "hamilton",
+      kind: dryRun ? "dry_run" : "manual_repair",
+      title,
+      params: { source: "admin.source_link_repair" },
+      triggeredBy: user.username,
+      triggerSource: "admin",
+      idempotencyKey: dryRun ? "hamilton:source-link-dry-run" : "hamilton:source-link-repair",
+      steps: [
+        {
+          key: "source-link-repair",
+          agent: "hamilton",
+          title: dryRun
+            ? "Find live fees with no link to their own document"
+            : "Link live fees to their own document, or take down those with none",
+        },
+      ],
+      summary: "Agentic run accepted. Watch Atlas live status for step events.",
+    });
+    refreshAtlasDashboard();
+    return { success: true, runId: result.run.id, title, reused: result.reused };
+  } catch (error) {
+    refreshAtlasDashboard();
+    return { success: false, error: error instanceof Error ? error.message : String(error) };
+  }
+}

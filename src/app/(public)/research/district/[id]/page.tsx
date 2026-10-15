@@ -7,7 +7,7 @@ import {
   getBeigeBookHeadline,
   getLatestBeigeBook,
 } from "@/lib/data-store";
-import { getPublicNationalIndex } from "@/lib/public-stats";
+import { getPublicNationalIndex, getPublicStatsSummary } from "@/lib/public-stats";
 import {
   getDisplayName,
   isFeaturedFee,
@@ -77,13 +77,15 @@ export default async function DistrictReportPage({ params }: PageProps) {
   const user = await getCurrentUser();
   const showFullDistrict = canAccessFullDistrict(user);
 
-  const [stats, districtIndex, nationalIndex, beigeHeadline, beigeSections] = await Promise.all([
+  const [stats, districtIndex, nationalIndex, beigeHeadline, beigeSections, summary] = await Promise.all([
     getDistrictStatsCached(districtId),
     getPeerIndexCached({ fed_districts: [districtId] }),
     getPublicNationalIndex(),
     getBeigeBookHeadline(districtId),
     getLatestBeigeBook(districtId),
+    getPublicStatsSummary(),
   ]);
+  const asOf = summary.refreshedOn;
 
   // States in this district
   const districtStates = Object.entries(STATE_TO_DISTRICT)
@@ -377,6 +379,7 @@ export default async function DistrictReportPage({ params }: PageProps) {
             headline: `${districtName} District Fee Analysis`,
             description: `Bank and credit union fee analysis for Federal Reserve District ${districtId}.`,
             url: `${SITE_URL}/research/district/${districtId}`,
+            dateModified: asOf && !Number.isNaN(Date.parse(asOf)) ? new Date(asOf).toISOString() : undefined,
             publisher: { "@type": "Organization", name: SITE_NAME, url: SITE_URL },
           }).replace(/</g, "\\u003c"),
         }}

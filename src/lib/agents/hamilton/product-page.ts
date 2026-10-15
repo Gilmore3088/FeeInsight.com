@@ -106,7 +106,7 @@ export async function retireProductPageFees(
          JOIN source_documents sd ON sd.id = fr.source_document_id
         WHERE fp.rolled_back_at IS NULL
           AND fp.amount = 0
-          AND fr.conditions LIKE '${FREE_READ_PREFIX}%'
+          AND COALESCE(fr.extraction_note, fr.conditions) LIKE '${FREE_READ_PREFIX}%'
           AND ${productPageUrlSql("sd.document_url")}
           ${options.institutionId ? "AND fp.institution_id = $1" : ""}
         ORDER BY fp.fee_published_id`,

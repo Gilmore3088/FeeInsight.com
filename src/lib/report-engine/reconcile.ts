@@ -11,8 +11,10 @@
  *
  * Thresholds are the report-reconciliation skill's: a difference above one cent (one
  * hundredth of a point for a rate) or one institution is a finding, except whole-scope
- * totals, which may drift by the larger of 5 or 0.5% (TOTAL_DRIFT_*), and so is a figure
- * printed where the live data has none, or none printed where it has one. Any finding blocks
+ * totals, which may drift by the larger of 5 or 0.5% (TOTAL_DRIFT_*). The Pulse's
+ * "institutions added this month" is a 30-day window count, not a total, so it keeps the
+ * one-institution rule. A figure printed where the live data has none, or none printed where
+ * it has one, is also a finding. Any finding blocks
  * the report. Figures that come from other sources (Call Reports, FRED, the Beige Book,
  * agency releases) or are computed from the checked figures are listed as not checked, with
  * the reason, so the record never reads as more than it is.
@@ -48,7 +50,8 @@ export const COUNT_TOLERANCE = 1;
  * of the printed value. Added for #1066, not part of the skill's original thresholds: the
  * render takes minutes (paid model calls) and Hamilton publishes and takes fees down in that
  * gap, so an exact total that was right when the report was assembled reads as off. Prices,
- * medians and per-category counts keep the one-cent and one-institution rules.
+ * medians, per-category counts and the Pulse's 30-day "institutions added" count keep the
+ * one-cent and one-institution rules.
  */
 export const TOTAL_DRIFT_MIN = 5;
 export const TOTAL_DRIFT_SHARE = 0.005;
@@ -495,12 +498,19 @@ function coverageValue(rows: LiveFeeRow[], statistic: CoverageStatistic): number
 
 /** Compare each printed figure with its live value. Pure. */
 export function reconcileFigures(printed: PrintedFigures, live: LiveData, now: Date = new Date()): ReconciliationResult {
+  // Rows bucketed by category once, so each (scope, category) filters only its category (#1249).
+  const rowsByCategory = new Map<string, LiveFeeRow[]>();
+  for (const row of live.feeRows) {
+    const bucket = rowsByCategory.get(row.fee_category);
+    if (bucket) bucket.push(row);
+    else rowsByCategory.set(row.fee_category, [row]);
+  }
   const feeStats = new Map<string, FeeStatistics>();
   const statsFor = (category: string, scope: FigureScope): FeeStatistics => {
     const key = `${scopeKey(scope)}|${category}`;
     let stats = feeStats.get(key);
     if (!stats) {
-      stats = summarizeFees(live.feeRows.filter((row) => row.fee_category === category && inScope(row, scope)));
+      stats = summarizeFees((rowsByCategory.get(category) ?? []).filter((row) => inScope(row, scope)));
       feeStats.set(key, stats);
     }
     return stats;
@@ -549,9 +559,14 @@ export function reconcileFigures(printed: PrintedFigures, live: LiveData, now: D
         break;
       }
       case "pulse_coverage":
-        finding = live.pulseCoverage
-          ? compareTotal(f, live.pulseCoverage[f.statistic])
-          : { id: f.id, label: f.label, printed: f.printed, live: null, reason: "cannot_check" };
+        if (!live.pulseCoverage) {
+          finding = { id: f.id, label: f.label, printed: f.printed, live: null, reason: "cannot_check" };
+        } else if (f.statistic === "institutions_added_in_window") {
+          // A 30-day window count, not a whole-scope total (#1249): the one-institution rule.
+          finding = compare(f, f.printed, live.pulseCoverage[f.statistic], COUNT_TOLERANCE);
+        } else {
+          finding = compareTotal(f, live.pulseCoverage[f.statistic]);
+        }
         break;
       case "live_fee":
         if (f.institutionId === null) {

@@ -11,6 +11,7 @@ import { buildNeedsYou, needsYouHeadline, type NeedsYouItem } from "@/lib/consol
 import { getSpendSummary, type SpendSummary } from "@/lib/data-store/console-spend";
 import { getFailureAlerts } from "./failure-alerts";
 import { goalBriefLines, readGoalScorecard, type GoalScorecard } from "./goal-scorecard";
+import { qualityLedgerLines, readQualityLedger, type QualityLedger } from "./quality-ledger";
 
 /**
  * Atlas's morning brief: what ran, how the database moved since the last brief,
@@ -81,6 +82,7 @@ export function buildDailyBrief({
   needsYou,
   spend,
   goal,
+  ledger,
   now = new Date(),
 }: {
   health: PipelineHealth;
@@ -94,6 +96,8 @@ export function buildDailyBrief({
   spend?: SpendSummary | null;
   /** The goal scorecard (#1040): the same numbers as /admin/scoreboard. */
   goal?: GoalScorecard | null;
+  /** The quality ledger James reads on #1026 (Oct 15), copied into the email. */
+  ledger?: QualityLedger | null;
   now?: Date;
 }): DailyBrief {
   const problems = pipelineHealthProblems(health);
@@ -125,6 +129,9 @@ export function buildDailyBrief({
 
   if (goal) {
     lines.push(["The goal (last 7 days):", ...goalBriefLines(goal).map((line) => `- ${line}`)].join("\n"));
+  }
+  if (ledger) {
+    lines.push(["Quality ledger (live fees now):", ...qualityLedgerLines(ledger).map((line) => `- ${line}`)].join("\n"));
   }
 
   if (spend) {
@@ -215,7 +222,7 @@ export interface DailyBriefResult {
 /** Gathers the numbers, writes the brief and emails it. Never throws on delivery. */
 export async function runDailyBrief({ dryRun = false }: { dryRun?: boolean } = {}): Promise<DailyBriefResult> {
   const now = new Date();
-  const [health, funnel, previous, stepsByAgent, feed, center, failureAlerts, leads, spend, goal] = await Promise.all([
+  const [health, funnel, previous, stepsByAgent, feed, center, failureAlerts, leads, spend, goal, ledger] = await Promise.all([
     getPipelineHealth(),
     getPipelineFunnel(),
     previousBrief(now),
@@ -235,12 +242,16 @@ export async function runDailyBrief({ dryRun = false }: { dryRun?: boolean } = {
       console.error("Morning brief goal read failed", error);
       return null;
     }),
+    readQualityLedger().catch((error) => {
+      console.error("Morning brief quality ledger read failed", error);
+      return null;
+    }),
   ]);
   const since = now.getTime() - DAY_MS;
   const feed24h = feed.filter((item) => new Date(item.at).getTime() >= since);
   // Without Atlas's attention list the Needs-you count would be short, so the brief falls back to its older summary.
   const needsYou = center ? buildNeedsYou({ attention: center.attention, failureAlerts, leads, now }) : undefined;
-  const brief = buildDailyBrief({ health, funnel, previous, stepsByAgent, feed24h, needsYou, spend, goal, now });
+  const brief = buildDailyBrief({ health, funnel, previous, stepsByAgent, feed24h, needsYou, spend, goal, ledger, now });
   const { to: recipient, cc } = briefRecipients();
   const from = getTransactionalFromAddress();
 

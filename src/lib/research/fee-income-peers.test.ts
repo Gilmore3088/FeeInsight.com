@@ -39,7 +39,7 @@ describe("feeIncomeAgainstPeers", () => {
     expect("message" in result && result.message).toContain("below 5 there is no median");
   });
 
-  it("never mixes another quarter or the other regulator's year-to-date income", () => {
+  it("never mixes another quarter or the other regulator's income", () => {
     const mixed = [...rows, row(8, 50, { report_date: "2026-03-31" }), row(9, 50, { financial_source: "ncua" })];
     expect(feeIncomeAgainstPeers(mixed, 1, {})).toMatchObject({ peer_count: 6, peer_median_income_per_10k_assets: 4.5 });
   });
@@ -52,5 +52,14 @@ describe("feeIncomeAgainstPeers", () => {
 
   it("says so when the institution has no fee income on file", () => {
     expect(feeIncomeAgainstPeers(rows, 99, {})).toMatchObject({ view: "peers", error: expect.stringContaining("cannot be compared") });
+  });
+});
+
+describe("income basis label (#1245)", () => {
+  it("calls a credit union's figure the quarter's own income, never year to date", () => {
+    const cus = [1, 2, 3, 4, 5, 6, 7].map((id) => row(id, id, { financial_source: "ncua", charter_type: "credit_union" }));
+    const result = feeIncomeAgainstPeers(cus, 1, {});
+    expect(result).toMatchObject({ income_basis: expect.stringContaining("for this quarter") });
+    expect(JSON.stringify(result)).not.toContain("year to date at this quarter");
   });
 });
