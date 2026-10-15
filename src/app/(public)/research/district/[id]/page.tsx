@@ -61,9 +61,9 @@ function firstSentence(text: string): string {
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { id } = await params;
-  const districtId = parseInt(id, 10);
+  const districtId = Number(id);
   const name = DISTRICT_NAMES[districtId];
-  if (!name) notFound();
+  if (!name || String(districtId) !== id) notFound();
 
   const title = `${name} Fed District ${districtId} Fee Analysis`;
   const description = `Bank and credit union fees in the ${name} Fed district (District ${districtId}) against national benchmarks, with economic context from the Beige Book.`;
@@ -71,6 +71,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
     title,
     description,
     ...linkPreview({ title, description, path: `/research/district/${districtId}` }),
+    alternates: { canonical: `/research/district/${districtId}` },
     keywords: [
       `Federal Reserve District ${districtId}`,
       `${name} bank fees`,
@@ -82,8 +83,8 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 
 export default async function DistrictReportPage({ params }: PageProps) {
   const { id } = await params;
-  const districtId = parseInt(id, 10);
-  if (districtId < 1 || districtId > 12 || isNaN(districtId)) notFound();
+  const districtId = Number(id);
+  if (!Number.isInteger(districtId) || districtId < 1 || districtId > 12 || String(districtId) !== id) notFound();
 
   const districtName = DISTRICT_NAMES[districtId];
   if (!districtName) notFound();
@@ -261,7 +262,7 @@ export default async function DistrictReportPage({ params }: PageProps) {
         {states.length > 0 && (
           <section aria-labelledby="states-heading" className="space-y-3">
             <h2 id="states-heading" className={H2}>
-              States in the district
+              Main states in the district
             </h2>
             <DistrictStates district={districtId} states={states} />
           </section>

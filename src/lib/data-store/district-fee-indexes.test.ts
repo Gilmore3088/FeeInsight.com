@@ -49,5 +49,7 @@ describe("getDistrictFeeIndexes", () => {
     expect(overall?.institution_count).toBe(5);
     expect(overall?.median_amount).toBe(30);
     expect(result.bank.find((e) => e.fee_category === "overdraft")?.institution_count).toBe(3);
+    expect(result.credit_union.find((e) => e.fee_category === "overdraft")?.institution_count).toBe(2);
+    expect(result.institution_values.overdraft).toHaveLength(5);
   });
 });
