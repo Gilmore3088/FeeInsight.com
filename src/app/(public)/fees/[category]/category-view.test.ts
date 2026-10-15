@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { DimensionBreakdown, FeeCategorySummary } from "@/lib/data-store/fees";
-import { charterDots, charterFinding, districtHeadline, districtLabel, marketDots, nationalBand, relatedBands } from "./category-view";
+import { bySize, charterDots, charterFinding, districtHeadline, districtLabel, marketDots, nationalBand, relatedBands, tierLabel } from "./category-view";
 
 const summary = (over: Partial<FeeCategorySummary> = {}): FeeCategorySummary => ({
   fee_category: "overdraft",
@@ -81,5 +81,12 @@ describe("fee category view", () => {
   it("lists related fees that have a full national spread", () => {
     const related = relatedBands([summary({ fee_category: "nsf" }), summary({ fee_category: "continuous_od", p25_amount: null }), summary({ fee_category: "od_daily_cap" })], ["nsf", "continuous_od", "od_daily_cap"]);
     expect(related.map((r) => r.category)).toEqual(["nsf"]);
+  });
+
+  it("names size groups by their range and orders them small to large", () => {
+    expect(tierLabel("community_small")).toBe("Under $300M");
+    expect(tierLabel("regional")).toBe("$10B to $50B");
+    const dots = bySize(marketDots([row("super_regional", 35, 10), row("community_small", 30, 1182), row("regional", 32, 78)], band, tierLabel));
+    expect(dots.map((d) => d.label)).toEqual(["Under $300M", "$10B to $50B", "Over $250B"]);
   });
 });

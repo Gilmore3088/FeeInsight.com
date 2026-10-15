@@ -90,9 +90,37 @@ export function charterDots(row: FeeCategorySummary | null | undefined, band: Na
 
 export const stateLabel = (value: string): string | null => STATE_NAMES[value] ?? null;
 
-/** "$1B to $10B", from whichever tier vocabulary the row carries. */
-export const tierLabel = (value: string): string | null =>
-  FDIC_TIER_LABELS[value] ?? getSegmentLabel(value, "bank")?.split(", ")[1] ?? null;
+/** Asset-size groups smallest first, across both tier vocabularies the rows can carry. */
+const TIER_ORDER = [
+  "micro",
+  "community_small",
+  "community",
+  "community_mid",
+  "midsize",
+  "community_large",
+  "regional",
+  "large_regional",
+  "super_regional",
+  "mega",
+];
+
+/**
+ * "Under $300M", "$1B to $10B": the size range alone. The segment vocabulary is read first,
+ * since both vocabularies use "regional" and the rows carry the segment one ($10B to $50B).
+ */
+export const tierLabel = (value: string): string | null => {
+  const range = getSegmentLabel(value, "bank")?.split(", ")[1] ?? FDIC_TIER_LABELS[value] ?? null;
+  return range ? range.charAt(0).toUpperCase() + range.slice(1) : null;
+};
+
+/** Size groups in size order rather than by median, so the reader scans small to large. */
+export function bySize(dots: MarketDot[]): MarketDot[] {
+  const rank = (key: string) => {
+    const i = TIER_ORDER.indexOf(key);
+    return i < 0 ? TIER_ORDER.length : i;
+  };
+  return [...dots].sort((a, b) => rank(a.key) - rank(b.key));
+}
 
 /**
  * The headline over the district plot, and one line under it. When most districts share one

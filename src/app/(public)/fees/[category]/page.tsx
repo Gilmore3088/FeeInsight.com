@@ -29,6 +29,7 @@ import type { FeeCategorySummary, FeeInstance } from "@/lib/data-store/fees";
 import { sampleReportAvailable } from "@/lib/custom-report/sample-report";
 import { SAMPLE_REPORT_FOOTER_LINK } from "@/components/customer-footer";
 import {
+  bySize,
   charterDots,
   charterFinding,
   districtHeadline,
@@ -156,7 +157,7 @@ export default async function FeeCategoryPage({ params }: PageProps) {
   const districts = band ? marketDots(detail.by_fed_district, band, districtLabel) : [];
   const charters = band ? charterDots(national, band) : [];
   const charterSentence = charterFinding(charters, name);
-  const tiers = band ? marketDots(detail.by_asset_tier, band, tierLabel) : [];
+  const tiers = band ? bySize(marketDots(detail.by_asset_tier, band, tierLabel)) : [];
   const states = band ? marketDots(detail.by_state, band, stateLabel).slice(0, STATES_SHOWN) : [];
   // Free visitors get one size group in full (the largest), and the names of the rest.
   const previewTier = isPro ? null : ([...tiers].sort((a, b) => b.institutions - a.institutions)[0] ?? null);
