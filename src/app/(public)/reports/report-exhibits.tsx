@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { US_STATES } from "@/lib/us-map-paths";
-import type { MapState, SampleExhibit, SampleLine } from "./report-view";
+import { lineScale, type MapState, type SampleExhibit } from "./report-view";
 
 const COUNT = new Intl.NumberFormat("en-US");
 
@@ -18,16 +18,6 @@ const POSITION = {
   free: { dot: "bg-[#2f6b4f]", word: "Free, where competitors charge" },
 } as const;
 
-/** One axis per line: the market's low to high quarter, padded so the bank's dot always fits. */
-function lineScale(l: SampleLine): (v: number) => number {
-  const lo = Math.min(l.own, l.p25);
-  const hi = Math.max(l.own, l.p75);
-  const pad = Math.max((hi - lo) * 0.2, 1);
-  const min = Math.max(0, lo - pad);
-  const max = hi + pad;
-  return (v: number) => ((v - min) / (max - min)) * 100;
-}
-
 /**
  * The live sample's fee lines: the bank's fee as a dot on its local market's middle half. Tapping
  * a line says how many local competitors charge less, the report's own count.
@@ -37,14 +27,14 @@ export function SampleLines({ sample }: { sample: SampleExhibit }) {
   const line = sample.lines.find((l) => l.key === picked) ?? sample.lines[0];
   return (
     <div className="rounded-2xl border border-border bg-surface-0 p-4 shadow-fi-1 sm:p-6">
-      <div className="min-h-[3.5rem]" aria-live="polite">
+      <div className="min-h-[4.5rem]" aria-live="polite">
+        <p className="text-[13px] font-semibold text-ink">
+          {line.label} · {sample.name} {money(line.own)}
+        </p>
         <p className="font-mono text-[22px] font-semibold leading-tight tabular-nums text-ink">
           {COUNT.format(line.chargingLess)} of {COUNT.format(line.peers)}
         </p>
-        <p className="text-[13px] text-ink-muted">
-          local competitors charge less than {sample.name}&apos;s {money(line.own)} {line.label.toLowerCase()} fee. Local
-          median {money(line.median)}.
-        </p>
+        <p className="text-[13px] text-ink-muted">local competitors charge less. Local median {money(line.median)}.</p>
       </div>
       <ol aria-label={`${sample.name} against its local market`} className="mt-3 divide-y divide-border">
         {sample.lines.map((l) => {

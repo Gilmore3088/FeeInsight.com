@@ -69,6 +69,16 @@ export function sampleExhibit(report: MarketReport | null): SampleExhibit | null
   };
 }
 
+/** One axis per line: the market's middle half, widened so the bank's own dot always fits. */
+export function lineScale(l: Pick<SampleLine, "own" | "p25" | "p75">): (v: number) => number {
+  const lo = Math.min(l.own, l.p25);
+  const hi = Math.max(l.own, l.p75);
+  const pad = Math.max((hi - lo) * 0.2, 1);
+  const min = Math.max(0, lo - pad);
+  const max = hi + pad;
+  return (v: number) => ((v - min) / (max - min)) * 100;
+}
+
 function titleCase(text: string): string {
   return text.toLowerCase().replace(/\b[a-z]/g, (c) => c.toUpperCase());
 }
