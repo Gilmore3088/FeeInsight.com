@@ -86,7 +86,11 @@ It is computed in `src/lib/agents/goal-scorecard.ts`, by `readWrongAfterPublish`
 - **Housekeeping, never wrong:** `refreshed by`, `superseded by`, `duplicate of`,
   `same_line_duplicate`, `newer_copy_drops_fee`, `not_on_current_copy`, `companion_page_retired`,
   `rules_recheck_unreproduced`, `rules_recheck_restore`, `taxonomy_fold`, `closed_institution`.
-- **Quarantine:** a row held with `quarantined_at` but not rolled back does not count.
+- **Quarantine:** a row held with `quarantined_at` but not rolled back stays in the denominator and
+  is never counted as wrong.
+- **Old snapshots cannot always be re-derived.** Rows change after a snapshot: takedowns are added,
+  restored or re-reasoned. Re-running the Oct 13 window during review on Oct 15 gave 1,608 of 45,785,
+  against the stored 1,587 of 45,423. The stored snapshot is the number of record.
 
 ```sql
 -- goal.wrong_after_publish_7d, as run by readWrongAfterPublish (window = 7 days)
@@ -135,6 +139,11 @@ been published, so this series adds two things to the same denominator:
   copy and does not count.
 - A `rules_recheck_unreproduced` takedown counts when no live row has the same institution, category
   and amount.
+- The denominator is close to the scorecard's but not the same. It leaves out refresh copies named
+  by a refresh at any time, not only in the last 7 days, so the two can differ. At 01:07 UTC both
+  gave 32,524. The 32,498 (01:08:40) and 32,496 (01:14) above were read at different minutes, so
+  their gap is mostly the moving window.
+- A row that is quarantined but not rolled back counts as wrong here, on its quarantine reason.
 
 At 01:08:40 UTC on Oct 15, the SQL below gave 2,620 of 32,498 (8.06%). Of these, 903 are takedowns:
 the scorecard's errors plus `rules_recheck_unreproduced` without a live replacement. The other 1,719
