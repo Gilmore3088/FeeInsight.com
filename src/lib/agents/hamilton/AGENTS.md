@@ -315,7 +315,14 @@ the detail.
     cleared. A hold is the only rollback; clearing `rolled_back_at` restores it. #1196 (Oct 14,
     no version change): a blank NSF fee is never filled with a period (`perEventFrequency`), so
     the fill no longer sets "monthly" that the v11 check clears on the next pass (5 live NSF fees
-    went round that loop on Oct 14). A stated annual or daily NSF period is left as it is.
+    went round that loop on Oct 14). v12 (#1301): NSF fees stored as annual or daily are checked
+    too. v13 (#1339): NSF, overdraft and returned-item fees are per item (James, Oct 15), so an
+    overdraft or `deposited_item_return` fee stored as monthly, annual, quarterly or daily goes
+    through the same check; a daily cap ("Max 4 per day", "6 per day") or a waiver is not the
+    fee's frequency. A continuous overdraft fee stored by the month or year takes daily when its
+    own words say daily, keeps a period the words after its price state, else is cleared
+    (`continuousOverdraftPeriodCheck`). A blank monthly-maintenance fee takes monthly only when
+    its own name or line says month or "per statement cycle" (`maintenanceMonthlyFill`).
 19. Newer-copy check (`newer-copy-retire.ts`): a fee line gone from a newer copy of its page,
     `newer_copy_drops_fee:#<newer document id>` (`NEWER_COPY_RETIRE_LIVE` is true; false makes
     it a shadow run).
@@ -657,7 +664,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `ACCOUNT_NAME_STRATEGY` | `hamilton.account_names` | v1 | `hamilton/account-names.ts` |
 | `CURRENT_COPY_STRATEGY` | `hamilton.current_copy_check` | v2 | `hamilton/current-copy.ts` |
 | `EVAL_VERDICT_VERSION` | — | v7 | `hamilton/eval-verdicts.ts` |
-| `FREQUENCY_FILL_VERSION` | — | v12 | `hamilton/frequency-fill.ts` |
+| `FREQUENCY_FILL_VERSION` | — | v13 | `hamilton/frequency-fill.ts` |
 | `GUARD_REQUEUE_STRATEGY` | `publish.guard_requeue` | v1 | `hamilton/guard-requeue.ts` |
 | `NEWER_COPY_STRATEGY` | `hamilton.newer_copy_check` | v1 | `hamilton/newer-copy-retire.ts` |
 | `HAMILTON_PUBLISH_STRATEGY` | `publish.rules` | v3 | `hamilton/publish.ts` |
