@@ -10,8 +10,6 @@ import { SearchModal } from "@/components/public/search-modal";
 import { getPendingWorkspaceInvitationsForEmail } from "@/lib/hamilton/institution-membership";
 import { sanitizeInternalRedirect } from "@/lib/safe-redirect";
 import { gatedPageLabel, hamiltonFullName, subscribeEntry, subscribeReasonLine } from "@/lib/subscribe-reason";
-import { TrackLink } from "@/components/track-link";
-import { DEMO_REQUEST_NAV } from "@/components/nav-items";
 import type { Metadata } from "next";
 import { getPublicStatsSummary } from "@/lib/public-stats";
 import { CONTACT_EMAIL, PRODUCT_NAME, REPORT_OFFER, SITE_NAME } from "@/lib/constants";
@@ -38,7 +36,8 @@ import { MonitorPreview, ReportPreview } from "./example-panels";
 import { TrackView } from "@/components/track-view";
 import { getProPricingInstitution } from "@/lib/data-store/pro-accounts";
 import { NON_INSTITUTION_TIER, PRO_TIERS, isProTier, proTier, tierAmountLabel, tierForAssets, tierPriceLabel } from "@/lib/pro-tiers";
-import { OtherOptions, PricingFaq } from "./pricing-sections";
+import { GatedOptions, OtherOptions, PricingFaq } from "./pricing-sections";
+import { chosenPriceLine, pricingCtaLabel, type ChosenInstitutionPrice } from "./plan-cta";
 
 import { WORKSPACE_SEAT_LIMIT } from "@/lib/hamilton/workspace-seats";
 import { isProPlan, type ProPlan } from "./pricing";
@@ -348,6 +347,11 @@ export default async function SubscribePage({
     chosenLabel = "A consultant or another organization";
   }
 
+  // The institution the page has priced, named in the phone hero and closing card (review N2).
+  const chosenPrice: ChosenInstitutionPrice | null =
+    selection?.institutionId && pricingInstitution ? { name: pricingInstitution.name, tier: selection.tier } : null;
+  const ctaLabel = pricingCtaLabel(chosenPrice);
+
   const benchmark = await benchmarkRows(pricingInstitution ? pricingInstitution.id : null);
 
   const registerHrefFor = (plan: ProPlan) => {
@@ -443,8 +447,10 @@ export default async function SubscribePage({
             </p>
             <div className="mt-6 lg:hidden">
               <p className="text-sm text-ink">
-                <span className="font-semibold text-ink">From {tierPriceLabel(PRO_TIERS[0].key, "monthly")}</span> · Up to{" "}
-                {WORKSPACE_SEAT_LIMIT} people
+                <span className="font-semibold text-ink">
+                  {chosenPrice ? chosenPriceLine(chosenPrice) : `From ${tierPriceLabel(PRO_TIERS[0].key, "monthly")}`}
+                </span>{" "}
+                · Up to {WORKSPACE_SEAT_LIMIT} people
               </p>
               <PricingJump
                 inputId="pro_tier_institution"
@@ -452,7 +458,7 @@ export default async function SubscribePage({
                 id="pro-hero-cta"
                 className={`mt-3 block rounded-lg ${CTA_CLASS}`}
               >
-                Find your institution &amp; see pricing
+                {ctaLabel}
               </PricingJump>
             </div>
           </div>
@@ -539,37 +545,21 @@ export default async function SubscribePage({
             See where your fees stand.
           </h2>
           <p className="mx-auto mt-3 max-w-xl text-[15px] leading-relaxed text-ink">
-            From {tierPriceLabel(PRO_TIERS[0].key, "monthly")} for up to {WORKSPACE_SEAT_LIMIT} people. Same features at every
-            institution size.
+            {chosenPrice ? chosenPriceLine(chosenPrice) : `From ${tierPriceLabel(PRO_TIERS[0].key, "monthly")}`} for up
+            to {WORKSPACE_SEAT_LIMIT} people. Same features at every institution size.
           </p>
           <PricingJump
             inputId="pro_tier_institution"
             targetId="pro-heading"
             className={`mt-6 inline-flex min-h-12 items-center justify-center rounded-lg ${CTA_CLASS}`}
           >
-            Find your institution &amp; see pricing
+            {ctaLabel}
           </PricingJump>
         </section>
 
         {gated ? (
-          <div className="mt-14 space-y-2 text-[15px] leading-relaxed text-ink">
-            <p>
-              Want to see Hamilton first?{" "}
-              <TrackLink
-                event="contact_sales"
-                eventProps={{ placement: "pricing_gated_demo" }}
-                href={DEMO_REQUEST_NAV.href}
-                className="font-medium text-ink underline underline-offset-2"
-              >
-                Ask for a demo
-              </TrackLink>
-            </p>
-            <p>
-              Need research for one institution instead?{" "}
-              <Link href={REPORT_FORM_HREF} className="font-medium text-ink underline underline-offset-2">
-                Explore the {REPORT_OFFER.name}
-              </Link>
-            </p>
+          <div className="mt-14">
+            <GatedOptions reportHref={REPORT_FORM_HREF} />
           </div>
         ) : (
           <div className="mt-20">
@@ -585,7 +575,7 @@ export default async function SubscribePage({
       <StickyCta
         heroId="pro-hero-cta"
         cardId="pro-heading"
-        label="Find your institution & see pricing"
+        label={ctaLabel}
         className={`block rounded-lg ${CTA_CLASS}`}
       />
       <CustomerFooter />

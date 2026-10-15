@@ -22,13 +22,13 @@ export function HamiltonLine({
 }) {
   const dark = tone === "dark";
   const plansClass = dark
-    ? "font-semibold text-white underline underline-offset-2"
-    : "font-semibold text-ink underline underline-offset-2 hover:text-brick";
+    ? "whitespace-nowrap font-semibold text-white underline underline-offset-2"
+    : "whitespace-nowrap font-semibold text-ink underline underline-offset-2 hover:text-brick";
   const demoClass = dark
-    ? "font-medium text-white underline underline-offset-2"
-    : "font-medium text-brick underline underline-offset-2";
+    ? "whitespace-nowrap font-medium text-white underline underline-offset-2"
+    : "whitespace-nowrap font-medium text-brick underline underline-offset-2";
   return (
-    <p className={`text-[13px] leading-relaxed ${dark ? "text-[#C9BFB1]" : "text-ink-soft"} ${className}`}>
+    <p className={`text-[13px] leading-relaxed ${dark ? "text-on-ink/80" : "text-ink-soft"} ${className}`}>
       The report is a snapshot. {firstMention ? hamiltonFullName(SITE_NAME) : "Hamilton"}
       {firstMention ? "," : ""} keeps your market current.{" "}
       <TrackLink event="upgrade_click" eventProps={{ placement }} href={`${PRO_PLANS_NAV.href}#pro`} className={plansClass}>

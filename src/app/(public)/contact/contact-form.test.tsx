@@ -25,9 +25,25 @@ describe("/contact", () => {
     expect(screen.getByRole("button", { name: "Ask for a demo" })).toBeInTheDocument();
     expect(document.body.textContent).not.toMatch(/Fee Insight Pro(?! workspace)/);
 
-    // Choosing another option turns the button back into a message.
+    // Choosing another option turns the heading, intro and button back into the general page.
     fireEvent.change(select, { target: { value: "report" } });
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Get in touch");
+    expect(document.body.textContent).not.toContain("We walk you through Hamilton");
+    expect(document.body.textContent).toContain("We typically respond within one business day.");
     expect(screen.getByRole("button", { name: "Send message" })).toBeInTheDocument();
+
+    // And choosing the demo again brings the demo heading back.
+    fireEvent.change(select, { target: { value: "demo" } });
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Ask for a Hamilton demo");
+    expect(screen.getByRole("button", { name: "Ask for a demo" })).toBeInTheDocument();
+  });
+
+  it("turns the general page into the demo request when the demo option is chosen", async () => {
+    await renderPage();
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Get in touch");
+    fireEvent.change(screen.getByLabelText("Inquiry type"), { target: { value: "demo" } });
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Ask for a Hamilton demo");
+    expect(screen.getByRole("button", { name: "Ask for a demo" })).toBeInTheDocument();
   });
 
   it("keeps the general page for other sources, and never files an unknown source as a demo", async () => {

@@ -54,6 +54,31 @@ describe("UpgradeGate", () => {
   });
 });
 
+describe("UpgradeGate links", () => {
+  it("uses the caller's plans link, so the institution page opens /subscribe on that institution", async () => {
+    headerPath.value = "/institution/8109";
+    render(await UpgradeGate({ href: "/subscribe?inst=8109&from=%2Finstitution%2F8109#pro" }));
+    expect(screen.getByRole("link", { name: /See Hamilton plans/ })).toHaveAttribute(
+      "href",
+      "/subscribe?inst=8109&from=%2Finstitution%2F8109#pro",
+    );
+    headerPath.value = null;
+  });
+
+  it("ignores an outside link and keeps the default", async () => {
+    render(await UpgradeGate({ href: "https://evil.example", from: "/fees" }));
+    expect(screen.getByRole("link", { name: /See Hamilton plans/ })).toHaveAttribute("href", "/subscribe?from=%2Ffees#pro");
+  });
+
+  it("compact: names Hamilton in full and shows the plans link underlined at rest", async () => {
+    render(await UpgradeGate({ compact: true, message: "Overdraft by state", from: "/fees/overdraft" }));
+    expect(document.body.textContent).toContain("Overdraft by state with Hamilton, the Fee Insight Pro workspace");
+    const link = screen.getByRole("link", { name: /See Hamilton plans/ });
+    expect(link).toHaveAttribute("href", "/subscribe?from=%2Ffees%2Foverdraft#pro");
+    expect(link.className.split(" ")).toContain("underline");
+  });
+});
+
 describe("gateReturnPath", () => {
   it("allows only internal paths", () => {
     expect(gateReturnPath("/fees")).toBe("/fees");

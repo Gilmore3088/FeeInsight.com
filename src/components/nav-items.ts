@@ -38,8 +38,16 @@ export const HAMILTON_PAGE_NAV = {
 /** The Pro button everywhere outside the workspace: Hamilton is the workspace, Pro is the plan. */
 export const PRO_PLANS_NAV = { label: "See Hamilton plans", href: "/subscribe" } as const;
 
-/** The Pro demo request: the contact form with the demo option chosen, never a booking link (brief 03 §4). */
-export const DEMO_REQUEST_NAV = { label: "Or ask for a demo", href: "/contact?source=demo" } as const;
+/**
+ * The Pro demo request: the contact form with the demo option chosen, never a booking link (brief 03 §4).
+ * One verb site-wide (growth OS review N3): `label` follows another link ("See Hamilton plans · Or ask
+ * for a demo"); `standaloneLabel` is the same words when the link stands alone.
+ */
+export const DEMO_REQUEST_NAV = {
+  label: "Or ask for a demo",
+  standaloneLabel: "Ask for a demo",
+  href: "/contact?source=demo",
+} as const;
 
 /** The one navy header button for signed-out visitors: the institution search (brief 03, Q1 option B). */
 export const PRIMARY_CTA_NAV = { label: "See where your fees stand", href: "/institutions" } as const;

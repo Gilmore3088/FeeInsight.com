@@ -81,8 +81,8 @@ export function subscribeReasonLine(reason: string | undefined, siteName: string
   if (reason === "pro_required") {
     const page = gatedPageLabel(from);
     return page
-      ? `You're one step away from ${page}. It's part of ${siteName} Pro, and checkout brings you straight back to it.`
-      : `Hamilton is part of ${siteName} Pro. Choose a plan below to open it.`;
+      ? `You're one step away from ${page}. It's part of ${hamiltonFullName(siteName)}, and checkout brings you straight back to it.`
+      : `Choose a plan below to open ${hamiltonFullName(siteName)}.`;
   }
   return null;
 }

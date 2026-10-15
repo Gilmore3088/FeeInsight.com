@@ -3,6 +3,7 @@ import { CONSULTANT_PRICE_NOTE, PRO_TIERS, tierPriceLabel } from "@/lib/pro-tier
 import { TrackLink } from "@/components/track-link";
 import { CONTACT_EMAIL, PRODUCT_NAME, REPORT_OFFER, SITE_NAME } from "@/lib/constants";
 import type { PublicStatsSummary } from "@/lib/public-stats";
+import { DEMO_REQUEST_NAV } from "@/components/nav-items";
 import { REPORT_PRICE_LABEL } from "./pricing";
 
 const LINK_CLASS = "inline-flex min-h-11 items-center text-sm font-medium text-ink underline underline-offset-2";
@@ -11,7 +12,6 @@ const REPORT_ANCHOR_HREF = "/reports?report=institution&src=pricing#request";
 // Contact form, not mailto, so every ask lands in /admin/leads with a due time.
 const CONTACT_SALES_HREF = "/contact?source=enterprise";
 const ADVISORY_HREF = "/contact?source=advisory";
-const DEMO_HREF = "/contact?source=demo";
 
 const DISPLAY = { fontFamily: "var(--fi-font-sans)" };
 
@@ -25,8 +25,8 @@ export function OtherOptions() {
       name: "A Pro demo",
       note: "A walkthrough of Hamilton on your own market",
       link: (
-        <TrackLink event="contact_sales" eventProps={{ placement: "pricing_demo" }} href={DEMO_HREF} className={LINK_CLASS}>
-          Request a demo
+        <TrackLink event="contact_sales" eventProps={{ placement: "pricing_demo" }} href={DEMO_REQUEST_NAV.href} className={LINK_CLASS}>
+          {DEMO_REQUEST_NAV.standaloneLabel}
         </TrackLink>
       ),
     },
@@ -74,6 +74,34 @@ export function OtherOptions() {
         ))}
       </ul>
     </section>
+  );
+}
+
+/**
+ * The two lines under the plans for a visitor /pro sent here (the gated state): a demo first, then
+ * the one-off report for someone who needs research on one institution instead.
+ */
+export function GatedOptions({ reportHref }: { reportHref: string }) {
+  return (
+    <div className="space-y-2 text-[15px] leading-relaxed text-ink">
+      <p>
+        Want to see Hamilton first?{" "}
+        <TrackLink
+          event="contact_sales"
+          eventProps={{ placement: "pricing_gated_demo" }}
+          href={DEMO_REQUEST_NAV.href}
+          className="whitespace-nowrap font-medium text-ink underline underline-offset-2"
+        >
+          {DEMO_REQUEST_NAV.standaloneLabel}
+        </TrackLink>
+      </p>
+      <p>
+        Need research for one institution instead?{" "}
+        <Link href={reportHref} className="font-medium text-ink underline underline-offset-2">
+          Explore the {REPORT_OFFER.name}
+        </Link>
+      </p>
+    </div>
   );
 }
 

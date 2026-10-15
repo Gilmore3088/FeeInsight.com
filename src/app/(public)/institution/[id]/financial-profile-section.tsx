@@ -50,6 +50,7 @@ export function FinancialProfileSection({
   regulatoryWatch = null,
   exportHref = null,
   institutionName = null,
+  plansHref = null,
 }: {
   isPro: boolean;
   points: FinancialPoint[];
@@ -65,6 +66,8 @@ export function FinancialProfileSection({
   exportHref?: string | null;
   /** Named in the regulatory watch, which is read about the institution, not to it. */
   institutionName?: string | null;
+  /** The locked panel's plans link, opened on this institution's tier (buildPublicInstitutionProfileLinks). */
+  plansHref?: string | null;
 }) {
   const hasRegistryCards = Boolean(footprint || complaints || holdingCompany || enforcement || regulatoryWatch);
   if (isPro && points.length === 0 && !hasRegistryCards) return null;
@@ -116,7 +119,9 @@ export function FinancialProfileSection({
             </div>
             <div className="relative z-10 flex items-center justify-center p-4 [grid-area:1/1]">
               <div className="w-full max-w-md">
-                <UpgradeGate message="Up to 16 years of call-report history with growth, peer rank and outliers, deposit mix and capital, branch footprint, consumer complaints, enforcement actions, and SEC filings" />
+                <UpgradeGate
+                  href={plansHref ?? undefined}
+                  message="Up to 16 years of call-report history with growth, peer rank and outliers, deposit mix and capital, branch footprint, consumer complaints, enforcement actions, and SEC filings" />
               </div>
             </div>
           </div>

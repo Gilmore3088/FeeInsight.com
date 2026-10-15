@@ -26,6 +26,12 @@ interface UpgradeGateProps {
   from?: string;
   /** One sentence naming exactly what sits behind this gate; replaces the generic Pro pitch. */
   locked?: string;
+  /**
+   * Where the plans button goes, when the caller knows more than the page path: the institution
+   * page passes its plans link, so /subscribe opens on that institution's tier (growth OS review N1).
+   * Internal paths only; anything else falls back to the default /subscribe link.
+   */
+  href?: string;
 }
 
 /** Internal paths only: a gate never builds a return link to another site. */
@@ -57,10 +63,12 @@ export async function UpgradeGate({
   audience = "professional",
   from,
   locked,
+  href,
 }: UpgradeGateProps) {
   const summary = await getPublicStatsSummary();
   const returnPath = gateReturnPath(from ?? (await currentPath()));
-  const pricingHref = returnPath ? `/subscribe?from=${encodeURIComponent(returnPath)}#pro` : "/subscribe#pro";
+  const pricingHref =
+    gateReturnPath(href) ?? (returnPath ? `/subscribe?from=${encodeURIComponent(returnPath)}#pro` : "/subscribe#pro");
   const eventProps = { from: returnPath ?? "unknown", audience, compact };
   const moreCount = count && count > 0 ? Math.min(count, summary.categories) : 0;
   if (compact) {
@@ -74,7 +82,7 @@ export async function UpgradeGate({
           event="upgrade_click"
           eventProps={eventProps}
           href={pricingHref}
-          className="inline-block mt-2 text-sm font-bold text-ink underline-offset-2 hover:underline"
+          className="inline-block mt-2 text-sm font-bold text-ink underline underline-offset-2 hover:text-brick"
         >
           {PRO_PLANS_NAV.label} &rarr;
         </TrackLink>

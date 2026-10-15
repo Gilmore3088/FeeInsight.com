@@ -449,7 +449,7 @@ export default async function ReportsPage({ searchParams }: PageProps) {
             <p className="font-semibold text-[24px] leading-snug text-white" style={SERIF}>
               See your own fees against your market.
             </p>
-            <p className="mt-1 text-[13px] text-[#C9BFB1]">
+            <p className="mt-1 text-[13px] text-on-ink/80">
               The {REPORT_OFFER.name}: your fees next to named competitors in your market, with a source for every figure.
             </p>
             <HamiltonLine placement="reports_hub_closing" tone="dark" className="mt-3" />

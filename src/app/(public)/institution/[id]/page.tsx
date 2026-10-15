@@ -420,6 +420,7 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
                   regulatoryWatch={regulatoryWatch}
                   exportHref={`/api/v1/institutions?id=${instId}&view=benchmark&format=csv`}
                   institutionName={inst.institution_name}
+                  plansHref={links.plansHref}
                 />
               )}
             </div>
