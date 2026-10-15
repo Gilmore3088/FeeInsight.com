@@ -107,7 +107,7 @@ function FeeCount({ row }: { row: InstitutionSearchResult }) {
   if (row.provisional_fee_count > 0) {
     return <span className="tabular-nums text-[#9A5A00]">{row.provisional_fee_count} under review</span>;
   }
-  return <span className="text-ink-muted">—</span>;
+  return <span className="text-ink-muted">None</span>;
 }
 
 const TH_CLASS = "px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-ink-muted";
@@ -237,7 +237,7 @@ export function DirectoryPagination({
 }) {
   if (totalPages <= 1) return null;
   const linkClass =
-    "inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-medium text-ink transition-colors hover:border-ink";
+    "inline-flex min-h-11 items-center gap-1.5 rounded-full border border-border px-4 text-[14px] font-medium text-ink transition-colors hover:border-ink";
   return (
     <div className="mt-6 flex items-center justify-center gap-2">
       {page > 1 && (
@@ -246,7 +246,7 @@ export function DirectoryPagination({
           Previous
         </Link>
       )}
-      <span className="text-xs text-ink-muted">
+      <span className="text-[13px] text-ink-muted">
         Page {page} of {totalPages}
       </span>
       {page < totalPages && (
