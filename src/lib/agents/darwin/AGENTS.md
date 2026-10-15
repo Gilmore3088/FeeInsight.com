@@ -220,8 +220,8 @@ Darwin owns verification and classification.
     the bank's other live names fails, the step renames nothing (`duplicate_check_failed`).
   - `trailing_range` comes down only when the name has waiver or discount wording or the amount
     is $0; otherwise it is `exempt` / `trailing_range_priced` (reported only).
-  - Everything else is a `takedown` / `fragment`, except (v5) a `sentence_end` line with no rename,
-    which is a `reread`: kept live, re-read request only (see v5 below).
+  - Everything else is a `takedown` / `fragment`, except (v5) a priced `sentence_end` line with no
+    rename and no waiver wording, which is a `reread`: kept live, re-read request only (see v5 below).
   Step detail: `would_take_down`, `would_rename`, `exempt`, `exempt_by_reason`,
   `takedown_by_reason`, `by_pattern`, `by_action` (pattern counts per action),
   `samples_by_action` (up to 20 of each, with `rename_to`, `exempt_reason` or `takedown_reason`)
@@ -258,8 +258,8 @@ Darwin owns verification and classification.
     Step detail `would_request_reread` (also in shadow) and `reread_requested` (written); a failed
     request never undoes the takedown. `liveFragmentCountSql()` applies the same strip, bars and
     deposit wording; its `takedown` / `fragment` / `sentence_end` row is the re-read count. (v5:
-    these fees are no longer taken down; they are `reread`, and the count SQL's `reread` row is the
-    re-read count.)
+    priced lines with no waiver wording are no longer taken down; they are `reread`, and the count
+    SQL's `reread` row is the re-read count.)
   v3 (#1499, `LIVE_FRAGMENT_STRATEGY` v3, after a prod hand-check of v2: 40 of 43 renames right,
   17 of 20 sampled `sentence_end` takedowns real fees; still in shadow):
   - Threshold gate: a head split from an "if" or "when" condition (either case) is renamed only when
@@ -319,8 +319,9 @@ Darwin owns verification and classification.
     the step only writes the `knox_reread_requested` row (evidence `kept_live: true`) so Knox can
     rename it later (#1511). `pronoun` and `trailing_range` fragments and `rename_duplicate` still
     come down. Step detail `would_reread` and `samples_by_action.reread`; `would_request_reread`
-    counts the same fees. A `sentence_end` line at $0 or with waiver wording (5314's "... reduce your
-    monthly fee to" $0) is a `reread` too.
+    counts the same fees. A `sentence_end` line at $0, with no amount or with waiver wording (the
+    `LIVE_FRAGMENT_WAIVE_WORDING` pattern) is a waived price and still comes down as a `takedown` /
+    `fragment`, with no re-read request (5314's "... reduce your monthly fee to" $0, #1436).
   - A capitalised "THERE" opens the glued sentence like "There" ("10NON-MEMBER LOAN APPLICATION FEE
     THERE IS A $10.00 NON-MEMBER APPLICATION FEE ..." $10, 109893, renames to "NON-MEMBER LOAN
     APPLICATION FEE").

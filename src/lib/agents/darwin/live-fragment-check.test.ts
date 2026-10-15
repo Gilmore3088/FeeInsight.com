@@ -81,6 +81,8 @@ const ROWS = [
   { fee_published_id: "60003", fee_verified_id: "9004", institution_id: "77", fee_name: "Overdraft Fee You will be charged when an item is paid into overdraft", amount: "35", canonical_fee_key: "overdraft" },
   { fee_published_id: "60004", fee_verified_id: "9005", institution_id: "77", fee_name: "Stop Payment (per item, if you request it)", amount: "30", canonical_fee_key: "stop_payment" },
   { fee_published_id: "60005", fee_verified_id: "9006", institution_id: "78", fee_name: "Monthly maintenance fee waived per", amount: "0" },
+  // v5: a priced sentence_end line with no rename stays live and asks Knox to re-read it.
+  { fee_published_id: "60006", fee_verified_id: "9007", institution_id: "78", fee_name: "Paper statement fee for the", amount: "2" },
 ];
 
 describe("Darwin live fragment re-check", () => {
@@ -92,26 +94,27 @@ describe("Darwin live fragment re-check", () => {
   it("counts by pattern and action with samples of each", () => {
     const found = findLiveFragments(ROWS);
     expect(found).toMatchObject({
-      checked: 7,
-      matched: 5,
-      wouldTakeDown: 1,
+      checked: 8,
+      matched: 6,
+      wouldTakeDown: 2,
       wouldRename: 1,
       wouldReread: 1,
       exempt: 2,
       exemptByReason: { parenthetical: 1, trailing_range_priced: 1 },
-      byPattern: { sentence_end: 1, trailing_range: 2, pronoun: 2, plus: 0 },
+      byPattern: { sentence_end: 2, trailing_range: 2, pronoun: 2, plus: 0 },
       byAction: {
-        takedown: { sentence_end: 0, trailing_range: 1, pronoun: 0, plus: 0 },
+        takedown: { sentence_end: 1, trailing_range: 1, pronoun: 0, plus: 0 },
         rename: { sentence_end: 0, trailing_range: 0, pronoun: 1, plus: 0 },
         exempt: { sentence_end: 0, trailing_range: 1, pronoun: 1, plus: 0 },
         reread: { sentence_end: 1, trailing_range: 0, pronoun: 0, plus: 0 },
       },
     });
-    // v5: a sentence_end line with no rename stays live and asks Knox to re-read it.
-    expect(found.samples[0]).toMatchObject({ feePublishedId: 58414, feeVerifiedId: 9001, institutionId: 5314, feeName: ROW_58414, amount: 0, pattern: "sentence_end", action: "reread", rereadRequest: true });
-    expect(found.samples[0]).not.toHaveProperty("takedownReason");
-    expect(found.samplesByAction.takedown.map((fee) => fee.feePublishedId)).toEqual([60005]);
-    expect(found.samplesByAction.reread.map((fee) => fee.feePublishedId)).toEqual([58414]);
+    // The $0 waived price still comes down (#1436); a priced sentence_end line with no rename stays live for a re-read.
+    expect(found.samples[0]).toMatchObject({ feePublishedId: 58414, feeVerifiedId: 9001, institutionId: 5314, feeName: ROW_58414, amount: 0, pattern: "sentence_end", action: "takedown", takedownReason: "fragment" });
+    expect(found.samples[0]).not.toHaveProperty("rereadRequest");
+    expect(found.samplesByAction.takedown.map((fee) => fee.feePublishedId)).toEqual([58414, 60005]);
+    expect(found.samplesByAction.reread).toEqual([expect.objectContaining({ feePublishedId: 60006, rereadRequest: true })]);
+    expect(found.samplesByAction.reread[0]).not.toHaveProperty("takedownReason");
     expect(found.samplesByAction.rename).toEqual([expect.objectContaining({ feePublishedId: 60003, renameTo: "Overdraft Fee" })]);
     expect(found.samplesByAction.exempt.map((fee) => [fee.feePublishedId, fee.exemptReason])).toEqual([[60002, "trailing_range_priced"], [60004, "parenthetical"]]);
   });
@@ -119,17 +122,17 @@ describe("Darwin live fragment re-check", () => {
   it("splits the ledger detail by action with samples", () => {
     const found = findLiveFragments(ROWS);
     const detail = liveFragmentDetail({ ...found, live: false, dryRun: true, afterId: 0, nextAfterId: 0, takenDown: [], renamed: [], rereadRequested: [], duplicateCheckFailed: false });
-    expect(detail).toMatchObject({ version: LIVE_FRAGMENT_STRATEGY.version, would_take_down: 1, would_rename: 1, would_reread: 1, exempt: 2, taken_down: 0, renamed: 0 });
+    expect(detail).toMatchObject({ version: LIVE_FRAGMENT_STRATEGY.version, would_take_down: 2, would_rename: 1, would_reread: 1, exempt: 2, taken_down: 0, renamed: 0 });
     expect(detail.samples_by_action.rename[0]).toMatchObject({ fee_published_id: 60003, action: "rename", rename_to: "Overdraft Fee" });
     expect(detail.samples_by_action.exempt[1]).toMatchObject({ fee_published_id: 60004, action: "exempt", exempt_reason: "parenthetical" });
-    expect(detail.samples_by_action.takedown).toHaveLength(1);
-    expect(detail.samples_by_action.reread[0]).toMatchObject({ fee_published_id: 58414, action: "reread", reread_request: true });
+    expect(detail.samples_by_action.takedown).toHaveLength(2);
+    expect(detail.samples_by_action.reread[0]).toMatchObject({ fee_published_id: 60006, action: "reread", reread_request: true });
   });
 
   it("in shadow reports what it would take down, records the cursor and writes no fee", async () => {
     const db = dbFor(ROWS, "58000");
     const result = await recheckLiveFragmentNames(asDb(db), { runId: 7, stepId: 70, dryRun: false });
-    expect(result).toMatchObject({ live: false, checked: 7, matched: 5, wouldTakeDown: 1, wouldRename: 1, wouldReread: 1, exempt: 2, afterId: 58000, nextAfterId: 0, takenDown: [], renamed: [], rereadRequested: [] });
+    expect(result).toMatchObject({ live: false, checked: 8, matched: 6, wouldTakeDown: 2, wouldRename: 1, wouldReread: 1, exempt: 2, afterId: 58000, nextAfterId: 0, takenDown: [], renamed: [], rereadRequested: [] });
     const calls = JSON.stringify(db.mock.calls);
     expect(calls).not.toContain("UPDATE");
     expect(calls).toContain("darwin.live_fragment_check");
@@ -153,17 +156,18 @@ describe("Darwin live fragment re-check", () => {
   it("switched on, archives the takedowns with their pattern, renames the glued names and leaves the exempt and reread live", async () => {
     const db = dbFor(ROWS);
     const result = await recheckLiveFragmentNames(asDb(db), { runId: 7, stepId: 70, dryRun: false, live: true });
-    expect(result.takenDown).toEqual([60005]);
+    expect(result.takenDown).toEqual([58414, 60005]);
     expect(result.renamed).toEqual([60003]);
     const texts = db.mock.calls.map(([strings]) => (strings as TemplateStringsArray).join("?"));
     const calls = JSON.stringify(db.mock.calls);
     expect(calls).toContain("UPDATE published_fee_records");
+    expect(calls).toContain("fragment name: sentence_end");
     expect(calls).toContain("fragment name: trailing_range");
     expect(calls).toContain("UPDATE verified_fee_observations");
     expect(calls).toContain("darwin.live_fragment_name_taken_down");
     // The takedown never carries the renamed, exempt or reread fees.
     const takedown = db.mock.calls.find(([strings]) => (strings as TemplateStringsArray).join("?").includes("rolled_back_reason"));
-    expect(takedown?.[2]).toEqual([60005]);
+    expect(takedown?.[2]).toEqual([58414, 60005]);
     // The rename goes through Knox's path: the old name logged, then the guarded name update.
     expect(texts.some((text) => text.includes("INSERT INTO pipeline_feedback"))).toBe(true);
     expect(texts.some((text) => text.includes("SET fee_name = rename.new_name") && text.includes("fp.fee_name = rename.old_name"))).toBe(true);
@@ -172,7 +176,7 @@ describe("Darwin live fragment re-check", () => {
     expect(String(feedback?.[1])).toContain("\"new_name\":\"Overdraft Fee\"");
     expect(calls).toContain("darwin.live_fragment_name_renamed");
     // v5 (#1499): the sentence_end line with no rename stays live and asks Knox to re-read it, after the rename's row.
-    expect(result.rereadRequested).toEqual([58414]);
+    expect(result.rereadRequested).toEqual([60006]);
     const feedbackCalls = db.mock.calls.filter(([strings]) => (strings as TemplateStringsArray).join("?").includes("INSERT INTO pipeline_feedback"));
     expect(feedbackCalls).toHaveLength(2);
     const reread = JSON.parse(String(feedbackCalls[1][1]));
@@ -182,9 +186,9 @@ describe("Darwin live fragment re-check", () => {
       about_stage: "extract",
       reported_by: "darwin",
       check_name: "darwin.live_fragment_check",
-      fee_published_id: 58414,
-      fee_verified_id: 9001,
-      dedupe_key: "darwin.live_fragment_check:reread:pub:58414",
+      fee_published_id: 60006,
+      fee_verified_id: 9007,
+      dedupe_key: "darwin.live_fragment_check:reread:pub:60006",
       evidence: expect.objectContaining({ request: "reread_source_line", reason: "fragment name: sentence_end", kept_live: true }),
     })]);
     expect(liveFragmentDetail(result)).toMatchObject({ would_request_reread: 1, reread_requested: 1 });
@@ -200,18 +204,18 @@ describe("Darwin live fragment re-check", () => {
     db.mockImplementation((strings: TemplateStringsArray, ...values: unknown[]) =>
       strings.join("?").includes("FROM verified_fee_observations fv") ? Promise.reject(new Error("read failed")) : base(strings, ...values));
     const on = await recheckLiveFragmentNames(asDb(db), { runId: 7, dryRun: false, live: true });
-    expect(on.takenDown).toEqual([60005]);
+    expect(on.takenDown).toEqual([58414, 60005]);
     expect(on.rereadRequested).toEqual([]);
     // The reread fee is never in the archive update, whether its request is written or not.
-    expect(JSON.stringify(db.mock.calls.filter(([strings]) => (strings as TemplateStringsArray).join("?").includes("UPDATE published_fee_records")))).not.toContain("58414");
+    expect(JSON.stringify(db.mock.calls.filter(([strings]) => (strings as TemplateStringsArray).join("?").includes("UPDATE published_fee_records")))).not.toContain("60006");
   });
 
   it("takes down, not renames, a fee whose new name another live fee of the bank has at that price and category", async () => {
     const db = dbFor(ROWS, null, [{ institution_id: "77", canonical_fee_key: "overdraft", amount: "35.00", fee_name: "Overdraft  Fee " }]);
     const result = await recheckLiveFragmentNames(asDb(db), { runId: 7, dryRun: false, live: true });
     expect(result.renamed).toEqual([]);
-    expect(result.takenDown).toEqual([60003, 60005]);
-    expect(result).toMatchObject({ wouldRename: 0, wouldTakeDown: 2, takedownByReason: { fragment: 1, rename_duplicate: 1 } });
+    expect(result.takenDown).toEqual([58414, 60003, 60005]);
+    expect(result).toMatchObject({ wouldRename: 0, wouldTakeDown: 3, takedownByReason: { fragment: 2, rename_duplicate: 1 } });
     expect(JSON.stringify(db.mock.calls)).toContain("fragment name: pronoun (rename_duplicate)");
     const read = db.mock.calls.map(([strings]) => (strings as TemplateStringsArray).join("?")).find((text) => text.includes("lower(btrim(regexp_replace"));
     expect(read).toContain("fp.quarantined_at IS NULL");
@@ -232,7 +236,7 @@ describe("Darwin live fragment re-check", () => {
     const result = await recheckLiveFragmentNames(asDb(dbFor(ROWS, null, null)), { runId: 7, dryRun: false, live: true });
     expect(result.duplicateCheckFailed).toBe(true);
     expect(result.renamed).toEqual([]);
-    expect(result.takenDown).toEqual([60005]);
+    expect(result.takenDown).toEqual([58414, 60005]);
   });
 
   it("keeps the renames on the ledger when the rename event fails", async () => {
@@ -264,7 +268,7 @@ describe("Darwin live fragment re-check", () => {
   it("counts the whole live table in one read", async () => {
     const db = dbFor(ROWS);
     const totals = await countLiveFragmentNames(asDb(db));
-    expect(totals).toMatchObject({ checked: 7, matched: 5, wouldTakeDown: 1, wouldRename: 1, wouldReread: 1, exempt: 2 });
+    expect(totals).toMatchObject({ checked: 8, matched: 6, wouldTakeDown: 2, wouldRename: 1, wouldReread: 1, exempt: 2 });
     expect(totals).not.toHaveProperty("matches");
     expect(db).toHaveBeenCalledTimes(1);
   });
@@ -320,7 +324,7 @@ describe("Darwin live fragment re-check", () => {
     expect(text).toContain("\\y(?:may\\s+therefore|");
     expect(text).toContain("(?:only\\s+)?(?:if|when)");
     expect(text).toContain("'^activation\\s+(?:fees?|charges?)$'");
-    expect(text).toContain("WHEN pattern = 'sentence_end' THEN 'reread'");
+    expect(text).toContain("WHEN pattern = 'sentence_end' AND COALESCE(amount, 0) > 0 AND name !~* '\\y(?:waiv");
     expect(text).toContain("WHEN reason = 'reread' THEN 'reread'");
   });
 });
@@ -339,12 +343,17 @@ describe("live fragment switch-on rules (#1443)", () => {
     ["Inactive fee: This account may be subject to an Inactive fee of", 5, null, { pattern: "sentence_end", action: "rename", renameTo: "Inactive fee", renameVia: "head" }],
     // ... unless the amount is $0 or the name speaks of a waiver: a waived price comes down.
     ["Monthly Service Fee You will be charged unless", 0, null, { pattern: "pronoun", action: "takedown" }],
-    ["Monthly Service Fee You can avoid this fee by", 10, null, { pattern: "sentence_end", action: "reread" }],
+    ["Monthly Service Fee You can avoid this fee by", 10, null, { pattern: "sentence_end", action: "takedown" }],
     // Pure fragments come down.
     ["Dormant accounts will be charged a monthly", 5, "dormant_account", { pattern: "pronoun", action: "takedown" }],
     ["If you close your account within 90 days", 25, null, { pattern: "pronoun", action: "takedown" }],
     ["Wire Transfer Fee if you request a wire", 25, null, { pattern: "pronoun", action: "takedown" }],
-    [ROW_58414, 0, null, { pattern: "sentence_end", action: "reread" }],
+    // A sentence_end line at $0, with no amount or with waiver wording is a waived price: it comes down (5314, #1436).
+    [ROW_58414, 0, null, { pattern: "sentence_end", action: "takedown" }],
+    [ROW_58414, 7.95, null, { pattern: "sentence_end", action: "takedown" }],
+    ["Paper statement fee for the", null, null, { pattern: "sentence_end", action: "takedown" }],
+    ["Paper statement fee is waived for", 2, null, { pattern: "sentence_end", action: "takedown" }],
+    ["Paper statement fee for the", 0, null, { pattern: "sentence_end", action: "takedown" }],
     ["Paper statement fee for the", 2, null, { pattern: "sentence_end", action: "reread" }],
     ["+ $5.00 for each additional", 5, null, { pattern: "plus", action: "takedown" }],
     // Trailing range: down only on waiver wording or $0; otherwise report only.
@@ -367,7 +376,7 @@ describe("live fragment switch-on rules (#1443)", () => {
     // A minimum or opening deposit in the line is never renamed, even under a clean head.
     ["Paper Statement Fee The minimum opening deposit is", 20, null, { pattern: "sentence_end", action: "reread" }],
     ["Teller Check Payable to Someone Other than", 10, null, { pattern: "sentence_end", action: "reread" }],
-    ["Monthly Service Fee waived with minimum daily balance of", 10, null, { pattern: "sentence_end", action: "reread" }],
+    ["Monthly Service Fee waived with minimum daily balance of", 10, null, { pattern: "sentence_end", action: "takedown" }],
     // v3 (#1499): an "if"/"when" condition renames only on a balance condition under $100.
     ["Monthly Service Fee if balance below", 500, null, { pattern: "sentence_end", action: "reread" }],
     ["Monthly Service Fee if balance below", 10, null, { pattern: "sentence_end", action: "rename", renameTo: "Monthly Service Fee", renameVia: "head" }],
@@ -392,9 +401,9 @@ describe("live fragment switch-on rules (#1443)", () => {
     ["You will pay a service charge fee of", 5, null, { pattern: "sentence_end", action: "reread" }],
     ["You will pay a monthly fee of", 5, null, { pattern: "sentence_end", action: "reread" }],
     ["You will pay a minimum fee of", 5, null, { pattern: "sentence_end", action: "reread" }],
-    ["You can avoid the paper statement fee of", 3, null, { pattern: "sentence_end", action: "reread" }],
+    ["You can avoid the paper statement fee of", 3, null, { pattern: "sentence_end", action: "takedown" }],
     ["Accounts opened with a minimum opening deposit have a setup fee of", 25, null, { pattern: "sentence_end", action: "reread" }],
-    ["If your balance falls below $500 you will be charged a minimum balance fee of", 0, null, { pattern: "sentence_end", action: "reread" }],
+    ["If your balance falls below $500 you will be charged a minimum balance fee of", 0, null, { pattern: "sentence_end", action: "takedown" }],
     ["Customers who opt in pay a paper statement fee of", 3, null, { pattern: "sentence_end", action: "rename", renameTo: "Paper statement fee", renameVia: "tail" }],
     // v4 (#1499 review): no tail rename when a figure in the line equals the amount.
     ["If your balance falls below $500 you will be charged a minimum balance fee of", 500, null, { pattern: "sentence_end", action: "reread" }],

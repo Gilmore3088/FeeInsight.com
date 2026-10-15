@@ -58,7 +58,9 @@ type SqlTag = typeof sql;
  * correctly priced fees): a `sentence_end` line that gets no rename is never taken down. Its action
  * is `reread`: the fee stays live and, with the switch on, the step only writes the
  * `LIVE_FRAGMENT_REREAD_KIND` row asking Knox to read its line again (#1511). `pronoun` and
- * `trailing_range` fragments and `rename_duplicate` still come down.
+ * `trailing_range` fragments and `rename_duplicate` still come down, as does a `sentence_end` line at
+ * $0, with no amount or with waiver wording (a waived price: 5314's "... reduce your monthly fee to"
+ * $0, #1436), with no re-read request.
  *
  * v2 (#1499, after a prod hand-check of v1): the head is read wider for `sentence_end` names and
  * generic or clause heads are refused (see `gluedSentenceHead`); a name that speaks of a minimum or
@@ -330,8 +332,10 @@ export function liveFragmentVerdict(
       if (guardOk) return { pattern, action: "rename", ...candidate };
     }
   }
-  // v5 (#1499): a sentence_end line with no rename is usually a real fee Knox read badly: kept live, re-read.
-  return { pattern, action: pattern === "sentence_end" ? "reread" : "takedown" };
+  // v5 (#1499): a sentence_end line with no rename is usually a real fee Knox read badly: kept live,
+  // re-read. A $0 or unknown amount, or waiver wording, is a waived price (5314, #1436): it comes down.
+  const reread = pattern === "sentence_end" && amount != null && amount > 0 && !waived;
+  return { pattern, action: reread ? "reread" : "takedown" };
 }
 
 /**
@@ -879,7 +883,7 @@ export function liveFragmentCountSql(): string {
                   AND NOT COALESCE(figure_is_amount, false))) THEN 'rename'
     WHEN pattern IN ('pronoun', 'sentence_end') AND renamable AND generic_ok THEN 'rename'
     WHEN pattern = 'sentence_end' AND renamable AND NOT head_ok AND NOT generic_ok AND tail_ok AND NOT COALESCE(figure_is_amount, false) THEN 'rename_tail'
-    WHEN pattern = 'sentence_end' THEN 'reread'
+    WHEN pattern = 'sentence_end' AND COALESCE(amount, 0) > 0 AND name !~* '${waive}' THEN 'reread'
     ELSE 'fragment'
   END AS first_reason,
   CASE WHEN head_ok OR generic_ok THEN head WHEN tail_ok THEN tail END AS rename_to
