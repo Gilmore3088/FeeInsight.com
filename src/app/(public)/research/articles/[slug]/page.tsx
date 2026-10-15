@@ -1,13 +1,22 @@
 export const dynamic = "force-dynamic";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import { after } from "next/server";
 import Link from "next/link";
-import { getArticleBySlug, incrementViewCount, getPublishedArticles } from "@/lib/data-store/articles";
-import { ensureResearchTables } from "@/lib/research/history";
+import { getArticleBySlug, incrementViewCount, getPublishedArticles, type Article } from "@/lib/data-store/articles";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
-import { SITE_NAME } from "@/lib/constants";
+import { TrackLink } from "@/components/track-link";
+import { DEMO_REQUEST_NAV, PRO_PLANS_NAV } from "@/components/nav-items";
+import { REPORT_OFFER, REPORT_PRICE_INLINE, SITE_NAME } from "@/lib/constants";
 import { linkPreview } from "@/lib/link-preview";
 import { renderArticleMarkdown } from "@/lib/article-markdown";
+import { readingMinutes, splitLeadChart } from "./article-view";
+
+/** The published article, or null when it is missing, unpublished or the read fails. */
+async function loadArticle(slug: string): Promise<Article | null> {
+  const article = await getArticleBySlug(slug).catch(() => null);
+  return article && article.status === "published" ? article : null;
+}
 
 export async function generateMetadata({
   params,
@@ -15,13 +24,12 @@ export async function generateMetadata({
   params: Promise<{ slug: string }>;
 }): Promise<Metadata> {
   const { slug } = await params;
-  await ensureResearchTables();
-  const article = await getArticleBySlug(slug);
-  if (!article || article.status !== "published") {
+  const article = await loadArticle(slug);
+  if (!article) {
     return { title: "Article Not Found" };
   }
-  const title = `${article.title} — Research`;
-  const description = article.subtitle || article.content.substring(0, 160).replace(/[#*_]/g, "");
+  const title = `${article.title} | Research`;
+  const description = article.subtitle || article.content.substring(0, 160).replace(/[#*_`]/g, "");
   const path = `/research/articles/${article.slug}`;
   return {
     title,
@@ -31,33 +39,35 @@ export async function generateMetadata({
   };
 }
 
+const LINK = "font-medium text-ink underline decoration-border underline-offset-4 hover:decoration-ink";
+
 export default async function ArticlePage({
   params,
 }: {
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  await ensureResearchTables();
-  const article = await getArticleBySlug(slug);
+  const article = await loadArticle(slug);
+  if (!article) notFound();
 
-  if (!article || article.status !== "published") {
-    notFound();
-  }
+  // Counted after the response is sent, so a slow write never holds the page.
+  after(() => incrementViewCount(slug).catch(() => undefined));
 
-  await incrementViewCount(slug);
-
-  const relatedArticles = (await getPublishedArticles(4)).filter((a) => a.slug !== slug).slice(0, 3);
+  const relatedArticles = (await getPublishedArticles(4).catch(() => [] as Article[])).filter((a) => a.slug !== slug).slice(0, 3);
+  const { lead, body } = splitLeadChart(article.content);
+  const minutes = readingMinutes(article.content);
 
   const publishedDate = article.published_at
     ? new Date(article.published_at).toLocaleDateString("en-US", {
         month: "long",
         day: "numeric",
         year: "numeric",
+        timeZone: "UTC",
       })
     : null;
 
   return (
-    <div className="mx-auto max-w-page px-6 py-14">
+    <>
       <BreadcrumbJsonLd
         items={[
           { name: "Home", href: "/" },
@@ -66,114 +76,109 @@ export default async function ArticlePage({
         ]}
       />
 
-      <div className="grid grid-cols-1 gap-10 xl:grid-cols-[1fr_280px]">
-        {/* Main content */}
-        <article className="min-w-0">
-          <div className="mb-8">
-            <Link
-              href="/research"
-              className="text-[11px] font-semibold uppercase tracking-wider text-ink-muted hover:text-ink transition-colors"
-            >
-              &larr; Research
-            </Link>
-            <h1
-              className="mt-3 text-[1.75rem] sm:text-[2.25rem] leading-[1.12] tracking-[-0.02em] font-extrabold text-ink"
-              style={{ fontFamily: "var(--fi-font-sans)" }}
-            >
-              {article.title}
-            </h1>
-            {article.subtitle && (
-              <p className="mt-2 text-[15px] text-ink-muted">{article.subtitle}</p>
-            )}
-            <div className="mt-3 flex items-center gap-3 text-[12px] text-ink-muted">
+      <section className="border-b border-border bg-paper">
+        <div
+          className={`mx-auto grid max-w-page gap-8 px-4 pb-10 pt-6 sm:px-6 sm:pt-10 ${lead ? "lg:grid-cols-[minmax(0,1fr)_minmax(0,28rem)] lg:items-center lg:gap-12" : ""}`}
+        >
+          <div className="max-w-3xl">
+            <nav aria-label="Breadcrumb" className="flex items-center gap-2 text-[12px] text-ink-muted">
+              <Link href="/research" className="hover:text-ink">
+                Research
+              </Link>
+              <span aria-hidden="true">/</span>
+              <span className="capitalize text-ink-soft">{article.category}</span>
+            </nav>
+            <h1 className="mt-4 text-[32px] font-semibold leading-[1.08] tracking-[-0.03em] text-ink sm:text-[44px]">{article.title}</h1>
+            {article.subtitle && <p className="mt-3 text-[17px] text-ink-soft">{article.subtitle}</p>}
+            <p className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px] text-ink-muted">
               <span>{article.author}</span>
               {publishedDate && (
                 <>
-                  <span className="text-border">&middot;</span>
-                  <span>{publishedDate}</span>
+                  <span aria-hidden="true">·</span>
+                  <time dateTime={article.published_at ?? undefined}>{publishedDate}</time>
                 </>
               )}
-              <span className="text-border">&middot;</span>
-              <span className="capitalize">{article.category}</span>
-            </div>
-          </div>
-
-          {/* Render markdown as HTML-safe prose */}
-          <div className="prose prose-slate max-w-none prose-headings:tracking-tight prose-h2:text-lg prose-h3:text-base prose-p:text-[15px] prose-p:leading-relaxed prose-li:text-[15px] prose-table:text-sm prose-td:px-3 prose-td:py-2 prose-th:px-3 prose-th:py-2">
-            <MarkdownContent content={article.content} />
-          </div>
-
-          {/* CTA */}
-          <div className="mt-12 rounded-xl border border-border/80 bg-paper/50 px-6 py-5">
-            <p className="text-sm font-semibold text-ink">
-              Work at a bank or credit union?
+              <span aria-hidden="true">·</span>
+              <span>{minutes} min read</span>
             </p>
-            <p className="mt-1 text-[13px] text-ink-muted">
-              Request a free competitive fee report: every fee your institution publishes, benchmarked against a verified peer set.
-            </p>
-            <div className="mt-3 flex flex-wrap items-center gap-3">
-              <Link
-                href="/for-institutions#report"
-                className="inline-flex items-center rounded-md bg-brick px-4 py-2 text-[12px] font-semibold text-white hover:bg-brick-ink transition-colors"
-              >
-                Request your report
-              </Link>
-              <Link href="/institutions" className="text-[12px] font-medium text-brick hover:underline">
-                Or look up any bank&rsquo;s fees
-              </Link>
-            </div>
           </div>
+          {lead && (
+            <div
+              className="rounded-2xl border border-border bg-surface-0 p-5 shadow-fi-2 sm:p-6"
+              dangerouslySetInnerHTML={{ __html: renderArticleMarkdown(lead) }}
+            />
+          )}
+        </div>
+      </section>
+
+      <div className="mx-auto grid max-w-page gap-12 px-4 pt-10 sm:px-6 sm:pt-14 xl:grid-cols-[minmax(0,1fr)_16rem]">
+        <article className="min-w-0 max-w-3xl">
+          <div
+            className="prose prose-slate max-w-none prose-headings:tracking-tight prose-h2:text-[22px] prose-h3:text-[18px] prose-p:text-[16px] prose-p:leading-relaxed prose-li:text-[16px] prose-table:text-sm prose-td:px-3 prose-td:py-2 prose-th:px-3 prose-th:py-2"
+            dangerouslySetInnerHTML={{ __html: renderArticleMarkdown(body) }}
+          />
+          <p className="mt-8 text-[12px] text-ink-muted">
+            Bank Fee Index figures come from banks&apos; and credit unions&apos; own published fee schedules.{" "}
+            <Link href="/methodology" className={LINK}>
+              How we build them
+            </Link>
+          </p>
         </article>
 
-        {/* Sidebar */}
-        <aside className="hidden xl:block">
-          <div className="sticky top-24 space-y-5">
-            {relatedArticles.length > 0 && (
-              <div className="rounded-xl border border-border/80 px-4 py-4">
-                <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-ink-muted mb-3">
-                  Related Research
-                </p>
-                <ul className="space-y-2">
-                  {relatedArticles.map((ra) => (
-                    <li key={ra.slug}>
-                      <Link
-                        href={`/research/articles/${ra.slug}`}
-                        className="block text-[12px] font-medium text-ink-soft hover:text-brick transition-colors leading-snug"
-                      >
-                        {ra.title}
-                      </Link>
-                      <span className="text-[10px] text-ink-muted capitalize">{ra.category}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-            <div className="rounded-xl border border-border/80 px-4 py-4">
-              <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-ink-muted mb-3">
-                Explore
-              </p>
-              <ul className="space-y-1.5">
-                <li>
-                  <Link href="/research/national-fee-index" className="text-[12px] text-ink-soft hover:text-brick transition-colors">
-                    National Fee Index
+        {relatedArticles.length > 0 && (
+          <aside aria-labelledby="related-heading" className="xl:pt-1">
+            <h2 id="related-heading" className="text-[15px] font-semibold text-ink">
+              More research
+            </h2>
+            <ul className="mt-3 space-y-3">
+              {relatedArticles.map((ra) => (
+                <li key={ra.slug}>
+                  <Link href={`/research/articles/${ra.slug}`} className="block text-[14px] font-medium leading-snug text-ink hover:text-brick">
+                    {ra.title}
                   </Link>
+                  <span className="text-[12px] capitalize text-ink-muted">{ra.category}</span>
                 </li>
-                <li>
-                  <Link href="/fees" className="text-[12px] text-ink-soft hover:text-brick transition-colors">
-                    Fee Categories
-                  </Link>
-                </li>
-                <li>
-                  <Link href="/guides" className="text-[12px] text-ink-soft hover:text-brick transition-colors">
-                    Consumer Guides
-                  </Link>
-                </li>
-              </ul>
-            </div>
-          </div>
-        </aside>
+              ))}
+            </ul>
+          </aside>
+        )}
       </div>
+
+      <section aria-labelledby="hamilton-heading" className="mx-auto max-w-page px-4 pb-16 pt-12 sm:px-6 sm:pt-16">
+        <div className="rounded-2xl border border-border bg-surface-0 px-5 py-7 sm:px-8">
+          <h2 id="hamilton-heading" className="text-[20px] font-semibold tracking-[-0.02em] text-ink sm:text-[22px]">
+            Work at a bank or credit union?
+          </h2>
+          <p className="mt-2 max-w-[38rem] text-[14px] text-ink-muted">
+            Hamilton sets your own fees against the competitors you choose and keeps them current, with the source for every figure.
+          </p>
+          <div className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-3">
+            <TrackLink
+              event="upgrade_click"
+              eventProps={{ placement: "research_article" }}
+              href={PRO_PLANS_NAV.href}
+              className="inline-flex min-h-11 items-center rounded-full bg-ink px-5 text-[14px] font-semibold text-on-ink hover:opacity-90"
+            >
+              {PRO_PLANS_NAV.label}
+            </TrackLink>
+            <Link href={DEMO_REQUEST_NAV.href} className="text-[14px] font-semibold text-ink underline decoration-border underline-offset-4 hover:decoration-ink">
+              {DEMO_REQUEST_NAV.label}
+            </Link>
+          </div>
+          <p className="mt-4 text-[13px] text-ink-muted">
+            Or one report for one institution:{" "}
+            <TrackLink
+              event="request_report_click"
+              eventProps={{ placement: "research_article" }}
+              href="/reports?report=institution&src=research-article#request"
+              className="font-semibold text-ink underline decoration-border underline-offset-4 hover:decoration-ink"
+            >
+              the {REPORT_OFFER.name}, {REPORT_PRICE_INLINE}
+            </TrackLink>
+            .
+          </p>
+        </div>
+      </section>
 
       <script
         type="application/ld+json"
@@ -189,10 +194,6 @@ export default async function ArticlePage({
           }).replace(/</g, "\\u003c"),
         }}
       />
-    </div>
+    </>
   );
-}
-
-function MarkdownContent({ content }: { content: string }) {
-  return <div dangerouslySetInnerHTML={{ __html: renderArticleMarkdown(content) }} />;
 }
