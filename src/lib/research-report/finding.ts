@@ -9,6 +9,8 @@ export interface Finding {
   detail: string;
   /** Section anchor holding the exhibit behind the finding. */
   exhibit: string;
+  /** The fee the finding is about, when it is about one fee. */
+  fee_category?: string;
 }
 
 export function lowerName(category: string): string {

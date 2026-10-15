@@ -1,6 +1,24 @@
 import type { AnalyzeResponse, ReportExhibit, ReportSummaryResponse } from "./types";
 import type { HamiltonEvidenceBundle } from "./evidence-contract";
+import { CLAIM_BINDING_LIMITATION, LEGACY_HIGH_CONFIDENCE_LIMITATION } from "./evidence-contract";
 import type { SourceRef } from "./workspace/types";
+
+/** A source date as a board reads it: "2026-10-12T00:00:00.000Z" -> "Oct 12, 2026"; anything else as saved. */
+export function readerAsOf(asOf: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})(?:$|T)/.exec(asOf.trim());
+  if (!m) return asOf;
+  const date = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
+  return date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
+}
+
+/** The saved answer's evidence limits in a board's words. The stored wording stays as the audit record. */
+export function readerLimitation(text: string): string {
+  if (text === CLAIM_BINDING_LIMITATION) return "Each figure is tied to its source; the sentences around the figures were not checked one by one.";
+  if (text === LEGACY_HIGH_CONFIDENCE_LIMITATION) return "This answer was saved before Hamilton kept a source for each figure, so treat it as directional.";
+  if (/^\d+ structured evidence records? saved with explicit identity\/source context\.$/.test(text)) return "Hamilton saved the figures behind this answer with the institution and source each came from.";
+  if (text === "Deterministic storyline saved without claim-level structured evidence records.") return "This answer was saved without a source for each individual figure.";
+  return text;
+}
 
 export interface BoardBriefEdits { title: string; teamNote: string; includeEvidence: boolean }
 
@@ -17,7 +35,7 @@ export function boardBriefFromAnalysis(analysis: AnalyzeResponse & { factEvidenc
   const unique = [...new Map(sources.map(s => [`${s.label}|${s.asOf ?? ""}|${s.url ?? ""}`, s])).values()];
   const subject = analysis.identityContext?.researchInstitutionName;
   const fallback = subject && !analysis.title.includes(subject) ? `${subject}: ${analysis.title}` : analysis.title;
-  const title = edits.title.trim().slice(0,200) || `${fallback}: board brief`;
+  const title = edits.title.trim().slice(0,200) || fallback;
   return {
     title,
     ...(analysis.identityContext ? { identityContext: analysis.identityContext } : {}),
@@ -29,11 +47,11 @@ export function boardBriefFromAnalysis(analysis: AnalyzeResponse & { factEvidenc
     executiveSummary: [analysis.hamiltonView],
     snapshot: [],
     strategicRationale: [analysis.whatThisMeans, ...analysis.whyItMatters].filter(Boolean).join("\n\n"),
-    tradeoffs: analysis.confidence.basis.map(value => ({ label: "Evidence limitation", value })),
-    recommendation: analysis.confidence.basis.length ? analysis.confidence.basis.join("\n\n") : "Hamilton recorded no limits for this answer.",
+    tradeoffs: analysis.confidence.basis.map(value => ({ label: "Evidence limitation", value: readerLimitation(value) })),
+    recommendation: analysis.confidence.basis.length ? analysis.confidence.basis.map(readerLimitation).join("\n\n") : "Hamilton recorded no limits for this answer.",
     implementationNotes: ["Built from a saved Hamilton answer. Figures are as first saved and were not refreshed.", ...(edits.teamNote.trim() ? [`Team note (user-authored): ${edits.teamNote.trim().slice(0,5000)}`] : [])],
     exhibits: edits.includeEvidence && analysis.evidence.metrics.length ? [{ id: "statistical_appendix", title: "Evidence from the saved answer", subtitle: "Original values and source notes; not refreshed", columns: ["Measure", "Value", "Source / note"], rows: analysis.evidence.metrics.map(m => [m.label, m.value, m.note ?? ""]), note: "Values as first saved with the answer." }] : [],
-    sources: unique.length ? unique.map(s => ({ label: s.label, detail: s.asOf ? `Reporting period: ${s.asOf}` : "As cited in the saved answer", url: s.url ?? null })) : [{ label: "Saved Hamilton analysis", detail: "Source details were not saved with this answer. Open the saved answer to see its evidence.", url: null }],
+    sources: unique.length ? unique.map(s => ({ label: s.label, detail: s.asOf ? `As of ${readerAsOf(s.asOf)}` : "As cited in the saved answer", url: s.url ?? null })) : [{ label: "Saved Hamilton analysis", detail: "Source details were not saved with this answer. Open the saved answer to see its evidence.", url: null }],
     exportControls: { pdfEnabled: true, shareEnabled: false },
   };
 }

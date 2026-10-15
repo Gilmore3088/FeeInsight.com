@@ -213,7 +213,7 @@ export async function fillBlankFrequencies(
     const text = textsByDocument.get(Number(row.source_document_id));
     if (!sourceLine || !text || !Number.isFinite(amount)) continue;
     // The fee's own line decides first; the header only fills a blank it leaves.
-    if (settledFrequency(sourceLine, amount, null, row.canonical_fee_key) != null) continue;
+    if (fillReading(sourceLine, amount, null, row.canonical_fee_key) != null) continue;
     if (boxTableAnnualHeader(text, sourceLine, amount) !== "annual") continue;
     result.filled.push({
       feePublishedId: Number(row.fee_published_id),
@@ -257,7 +257,7 @@ export async function fillBlankFrequencies(
     // set Addition Financial's "Nonsufficient funds" (24188) to monthly from "$15 00 per month" on
     // its line, and the v11 check cleared it on the next pass, over and over. A stated period the
     // check does not cover waits for James, so only a blank is read this way.
-    const settled = settledFrequency(sourceLine, amount, stated, row.canonical_fee_key);
+    const settled = fillReading(sourceLine, amount, stated, row.canonical_fee_key);
     let frequency = check
       ? check.frequency
       : stated == null
@@ -318,8 +318,7 @@ export async function fillBlankFrequencies(
       });
       result.held = held.filter((fee) => rolledBack.has(fee.feePublishedId));
     } catch (error) {
-      console.error("frequency hold failed:", error);
-      result.held = [];
+      throw writeFailed("frequency hold", error);
     }
   }
 
@@ -353,8 +352,7 @@ export async function fillBlankFrequencies(
       });
       result.filled = filled.filter((fee) => updated.has(fee.feePublishedId));
     } catch (error) {
-      console.error("frequency fill failed:", error);
-      result.filled = [];
+      throw writeFailed("frequency fill", error);
     }
   }
 
@@ -407,6 +405,56 @@ export async function fillBlankFrequencies(
   }
   if (result.filled.length > 0 || result.held.length > 0) invalidatePublicReadCache();
   return result;
+}
+
+/**
+ * The frequency fill as Hamilton's publish step runs it. A failed write must not roll back the
+ * whole publish (a failure that repeats would stop all publishing), so the fill runs in its own
+ * savepoint: on a failure its writes are undone together, the publish carries on, and the error
+ * is kept in the step detail (`writeError`) and as a `step.warning` run event. The dedicated
+ * `frequency-fill` step calls `fillBlankFrequencies` directly and fails on the same error (#1349).
+ */
+export async function fillFrequenciesInPublish(
+  db: SqlTag,
+  options: { runId: number; stepId?: number | null; dryRun: boolean; institutionId?: number },
+): Promise<FrequencyFillResult & { writeError: string | null }> {
+  try {
+    const result = await inSavepoint(db, (scope) => fillBlankFrequencies(scope, options));
+    return { ...result, writeError: null };
+  } catch (error) {
+    const writeError = error instanceof Error ? error.message : String(error);
+    console.error("frequency fill in publish failed:", error);
+    try {
+      await db`
+        INSERT INTO agent_run_events (agent_run_id, step_id, event_type, status, message, detail)
+        VALUES (${options.runId}, ${options.stepId ?? null}, 'step.warning', 'info',
+                ${`Frequency fill skipped: ${writeError}`},
+                ${JSON.stringify({ check: FREQUENCY_FILL_CHECK, version: FREQUENCY_FILL_VERSION, error: writeError })}::jsonb)
+      `;
+    } catch (eventError) {
+      console.error("frequency fill warning event failed:", eventError);
+    }
+    return { scanned: 0, filled: [], held: [], dryRun: options.dryRun, writeError };
+  }
+}
+
+/**
+ * #1349: a failed live write fails the step with the error text, and the run's transaction rolls
+ * back, instead of a "completed" step that reads as 0 changes. A dry run writes nothing.
+ */
+function writeFailed(what: string, error: unknown): Error {
+  return new Error(`${what} write failed: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
+}
+
+/**
+ * `settledFrequency` as the fill applies it. #1456 (no version change): the fill never writes
+ * "hourly" (`hourly: false`). A per-hour fee reads exactly as it did under v8, and a live fee becomes
+ * hourly only through Darwin's live hourly re-check (`darwin/hourly-frequency-check.ts`), which
+ * stays behind its own default-off switch until James has seen its dry-run count. A fee already
+ * hourly keeps it, so the fill never undoes that check.
+ */
+function fillReading(sourceLine: string, amount: number, stated: string | null, canonicalFeeKey: string): string | null {
+  return settledFrequency(sourceLine, amount, stated, canonicalFeeKey, { hourly: false });
 }
 
 function num(value: number | string | null | undefined): number | null {

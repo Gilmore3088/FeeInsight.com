@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { excerptOf, fillBlankFrequencies, FREQUENCY_FILL_VERSION } from "./frequency-fill";
+import { excerptOf, fillBlankFrequencies, fillFrequenciesInPublish, FREQUENCY_FILL_VERSION } from "./frequency-fill";
 
 type DbMock = ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
 
@@ -32,6 +32,40 @@ const row = (id: number, amount: string, excerpt: string, frequency: string | nu
   conditions: `Knox deterministic extraction from Rosetta artifact #1. excerpt="${excerpt}"`,
 });
 
+describe("Hamilton frequency fill write failures (#1349)", () => {
+  it("fails the step when the live write fails, instead of reporting 0 filled", async () => {
+    const db = createDbMock([row(1, "6.00", "Copy of Share Draft (Check) Faxed | $6.00 each")]);
+    const ok = db.getMockImplementation()! as (strings: TemplateStringsArray, ...values: unknown[]) => Promise<unknown>;
+    db.mockImplementation((strings: TemplateStringsArray, ...values: unknown[]) =>
+      strings.join("?").includes("UPDATE published_fee_records")
+        ? Promise.reject(new Error("deadlock detected"))
+        : ok(strings, ...values));
+    await expect(fillBlankFrequencies(asDb(db), { runId: 5, dryRun: false }))
+      .rejects.toThrow(/frequency fill write failed: deadlock detected/);
+  });
+
+  it("in the publish step, a failed write is a warning and the publish carries on", async () => {
+    const db = createDbMock([row(1, "6.00", "Copy of Share Draft (Check) Faxed | $6.00 each")]);
+    const ok = db.getMockImplementation()! as (strings: TemplateStringsArray, ...values: unknown[]) => Promise<unknown>;
+    db.mockImplementation((strings: TemplateStringsArray, ...values: unknown[]) =>
+      strings.join("?").includes("UPDATE published_fee_records")
+        ? Promise.reject(new Error("deadlock detected"))
+        : ok(strings, ...values));
+    const result = await fillFrequenciesInPublish(asDb(db), { runId: 5, stepId: 6, dryRun: false });
+    expect(result).toMatchObject({ filled: [], held: [], writeError: "frequency fill write failed: deadlock detected" });
+    const warning = db.mock.calls.find(([strings]) => (strings as TemplateStringsArray).join("?").includes("'step.warning'"));
+    expect(warning?.slice(1, 4)).toEqual([5, 6, "Frequency fill skipped: frequency fill write failed: deadlock detected"]);
+    expect((await fillFrequenciesInPublish(asDb(createDbMock([row(1, "6.00", "Copy | $6.00 each")])), { runId: 5, dryRun: false })).writeError).toBeNull();
+  });
+
+  it("a dry run still writes nothing and reports what it would fill", async () => {
+    const db = createDbMock([row(1, "6.00", "Copy of Share Draft (Check) Faxed | $6.00 each")]);
+    db.mockImplementation(() => Promise.reject(new Error("no writes on a dry run")));
+    const result = await fillBlankFrequencies(asDb(db), { runId: 5, dryRun: true });
+    expect(result.filled.map((fee) => fee.feePublishedId)).toEqual([1]);
+  });
+});
+
 describe("Hamilton frequency fill", () => {
   it("reads the excerpt at the end of a row's conditions", () => {
     expect(excerptOf('canonical_hint=x; excerpt="Check Copy | $2.00 each"')).toBe("Check Copy | $2.00 each");
@@ -51,6 +85,19 @@ describe("Hamilton frequency fill", () => {
     expect(sqlText).toContain("UPDATE published_fee_records");
     expect(sqlText).toContain("AND fp.frequency IS NOT DISTINCT FROM v.from_frequency");
     expect(sqlText).toContain("INSERT INTO pipeline_feedback");
+  });
+
+  it("never writes or undoes an hourly frequency (#1456: that is Darwin's switched live re-check)", async () => {
+    const db = createDbMock([
+      row(1, "30.00", "Checkbook Reconciliation (per hour) | $30.00 | Stop Payment | $25.00 each"),
+      row(2, "25.00", "Research | $25.00/hr | Copies | $1.00 each", "hourly"),
+      row(3, "40.00", "Research (per hour) | $40.00 | Stop Payment | $25.00", "per_item"),
+    ]);
+    const result = await fillBlankFrequencies(asDb(db), { runId: 5, dryRun: true });
+    expect(result.filled.some((fee) => fee.frequency === "hourly")).toBe(false);
+    expect(result.filled.some((fee) => fee.from === "hourly")).toBe(false);
+    // v8 as before: a flat frequency on a per-hour fee is cleared, not made hourly.
+    expect(result.filled.map((fee) => [fee.feePublishedId, fee.from, fee.frequency])).toEqual([[3, "per_item", null]]);
   });
 
   it("corrects or clears a frequency read from another fee's row (v2)", async () => {

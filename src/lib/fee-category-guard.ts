@@ -18,7 +18,7 @@
  * The one exception is a dollar amount in a category that is usually a rate (below).
  */
 
-import { COLLECTION_ITEM, foldRetiredCategory, ITEM_COPY } from "@/lib/fee-fold";
+import { COLLECTION_ITEM, foldRetiredCategory, ITEM_COPY, RESEARCH_SPLIT_LIVE } from "@/lib/fee-fold";
 
 export type CategoryGuardCode = "name_contradicts" | "name_unsupported" | "rate_as_amount" | "schedule_contradicts" | "amount_implausible";
 
@@ -400,6 +400,39 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
     include: /\S/,
     exclude: /(\bbags?\b|zipper|pouch|depository|night deposit|drop box)/i,
   },
+  // v65: excess withdrawals and returned mail are their own types (James, Oct 15, #1398; nothing is
+  // filed there until `RESEARCH_SPLIT_LIVE` is on). An excess withdrawal row is often named only
+  // "Service charge" with its limit on its own line (`refileFromLine`), so the name must name excess
+  // withdrawals, transactions, transfers, debits or activity, a withdrawal limit, activity over or
+  // after a count, or Reg D, or be a bare (savings, money market or share) service charge or fee; a
+  // transaction, transfer or debit fee, a credit limit or a monthly or business service charge is
+  // not one. A bare (savings, money market or share) service charge or fee counts only when its own
+  // source line charges it per savings, money market or share withdrawal, transfer or debit over a
+  // limit (`savingsOverLimitLine`), the line `refileFromLine` re-files by; Knox filing a bare
+  // "Service charge" here without that line is refused. And it must not name another fee: research, an IRA, returned mail, a copy, an ATM or a foreign or
+  // international charge, an early withdrawal penalty, an overdraft or NSF, a returned item, an
+  // official check, a statement, a wire, a club, a certificate, a point-of-sale or teller charge, a
+  // business account's item count, maintenance or a minimum balance, check printing or cashing, a
+  // safe deposit box, a loan, a card, a collection, a subordination, escheatment or a legal fee.
+  excess_withdrawal: {
+    include:
+      /(\bexcess(?:ive)?\s+(?:[\w/-]+\s+){0,2}?(?:withdrawals?|transactions?|transfers?|debits?|activity)\b|\bwithdrawal\s+limits?\b|\b(?:withdrawals?|transactions?|transfers?|debits?)\s+(?:in\s+excess|over\s+\d|beyond|after\s+\d)|\breg(?:ulation)?\.?\s?d\b)/i,
+    exclude:
+      /(maintenance|minimum balance|printing|safe deposit|\bloans?\b|\bcards?\b|collection|subordinat|escheat|\blegal\b|check cashing|research|reconcil|\bira\b|\breturn(?:ed)?\s+(?:mail|statements?|items?|checks?|deposits?)\b|undeliver|\baddress|\bfax|\b(?:photo ?)?cop(?:y|ies)\b|\bwires?\b|stop pay|dorman|inactiv|\batms?\b|non[- ]?network|foreign|international|\bearly\b|penalt|overdraft|\bnsf\b|cashier|\bstatements?\b(?!\s+(?:savings|cycle|period))|\bclubs?\b|certificate|\bcds?\b|\bpos\b|\bteller\b(?!\s+withdrawals?\b)|\bbusiness\b|\bexcess(?:ive)?\s+(?:(?!(?:withdrawals?|transactions?|transfers?|debits?)\b)[\w/-]+\s+){0,2}items?\b|^(?![\s\S]*\b(?:excess\w*|withdrawals?)\b)[\s\S]*\bitems?\s+(?:over|in excess|after)\b|debit cards?)/i,
+  },
+  // Returned mail names returned mail, statements or an address, undeliverable mail, the bad, invalid
+  // or unknown address, an address correction, search or locator, or a forwarding charge; a bare
+  // "address", or a return of anything else (an item, a card, a coin wrapper, collateral, a bill
+  // payment), does not. Research for the address
+  // itself ("Incorrect Address Research Fee") is returned mail; other research, reconciling, an
+  // excess withdrawal, a copy, a deposit, a returned check, item, draft or payment, an address
+  // change, a return to paper statements or a re-enrollment is a different fee.
+  returned_mail: {
+    include:
+      /(\breturn(?:ed|s)?\b[\s\S]*\b(?:mail(?:ed|ing)?|statements?|stmts?|address(?:es)?)\b|\b(?:mail(?:ed|ing)?|statements?|stmts?)\s+returned\b|\bundeliver|\b(?:bad|invalid|incorrect|wrong|unknown|missing)\s+(?:mail(?:ing)?|address(?:es)?)\b|\baddress\s+(?:correction|search|research|locat)|\blocator\b|forwarding|e-?statements?\b[\s\S]*\b(?:incorrect|bad|invalid|wrong)\s+e-?mail|\b(?:incorrect|bad|invalid|wrong)\s+e-?mail\b[\s\S]*\be-?statements?)/i,
+    exclude:
+      /(reconcil|(?<!\b(?:address(?:es)?|locator|locate)\s+(?:[\w/-]+\s+)?)\bresearch|excess|\bwires?\b|\b(?:photo ?)?cop(?:y|ies)\b|\breturn(?:ed)?\s+(?:checks?|items?|deposits?|ach|payments?|loans?|drafts?)\b|\bnsf\b|\bdeposit\w*|\bdrafts?\b|\b(?:items?|checks?|drafts?)\s+returned\b|change of address|address change|\breturn(?:ing)?\s+to\s+paper|\bre-?enroll|\b(?:branch|atm)\s+locat)/i,
+  },
 };
 
 /** Categories with only a price ceiling (`PRICE_CEILINGS`), checked by the live sweep too. */
@@ -448,7 +481,14 @@ export const GUARDED_CATEGORIES: readonly string[] = [...new Set([...Object.keys
 // v64: subordination is legal process again (James, Oct 15): legal process accepts it and the v48
 // re-file to other lending is gone. Other lending still accepts it, so live fees there stay until
 // the fold's switched re-file (`SUBORDINATION_REFILE_LIVE` in fee-fold.ts) moves them.
-export const CATEGORY_GUARD_VERSION = 64;
+// v65: excess withdrawals and returned mail are their own types (James, Oct 15, #1398): each has a
+// guard rule, and research filed under either goes back to research. Once `RESEARCH_SPLIT_LIVE` is
+// on, an excess activity charge on a monthly maintenance row's own line that names savings, money
+// market or share withdrawals, transfers or debits re-files to excess withdrawals; every other one,
+// and every one while the switch is off, still re-files to account research. While the switch is off
+// the guard reads every live fee exactly as v64 did, so the version stays 64 and Hamilton's catch-up
+// sweep and Darwin's re-read of older category rejections run once, at switch-on.
+export const CATEGORY_GUARD_VERSION = RESEARCH_SPLIT_LIVE ? 65 : 64;
 
 /**
  * Categories whose fee is usually a rate ("1% of the transaction"). A dollar amount filed
@@ -511,6 +551,11 @@ const REFILE_RULES: ReadonlyArray<{ from: string; to: string; when: RegExp; unle
   // v41: a charge-off processing fee sits with the other charge-off fees under account research.
   { from: "overdraft", to: "account_research", when: /\bcharge(d)?[- ]?off\b/i },
   { from: "check_cashing", to: "account_research", when: /\bcharge(d)?[- ]?off\b/i },
+  // v65: research or reconciliation filed as an excess withdrawal or returned mail is account research.
+  { from: "excess_withdrawal", to: "account_research", when: /\bresearch|\breconcil/i },
+  // An IRA's excess withdrawal charge is a charge on the IRA itself (`IRA_EXCESS_WITHDRAWAL` in fee-fold.ts).
+  { from: "excess_withdrawal", to: "ira_administration", when: /\bira\b/i },
+  { from: "returned_mail", to: "account_research", when: /\bresearch|\breconcil/i },
   { from: "deposited_item_return", to: "card_dispute", when: /((\bcards?\b|visa)[^|]{0,25}charge[- ]?back|charge[- ]?back[^|]{0,25}(\bcards?\b|dispute))/i },
   { from: "atm_non_network", to: "card_replacement", when: /(replace|reissue|re-?issu|lost|stolen)/i, unless: /\bpins?\b/i },
   { from: "check_printing", to: "counter_check", when: /\btemporar/i },
@@ -678,7 +723,7 @@ export function checkFeeCategory(
       reason: `"${name}" describes a different fee than ${canonicalFeeKey} ("${excluded[0]}")`,
     };
   }
-  if (!rule.include.test(name)) {
+  if (!rule.include.test(name) && !(canonicalFeeKey === "excess_withdrawal" && GENERIC_SERVICE_CHARGE.test(name) && savingsOverLimitLine(name, context))) {
     return {
       ok: false,
       code: "name_unsupported",
@@ -828,9 +873,23 @@ const PERIOD_AFTER_PRICE = new RegExp(
   String.raw`${WORDS_AFTER_PRICE}(?:(?:per|a|each|every|for each)\s+(?:calendar\s+|monthly\s+)?(?:month|statement|cycle|quarter|fee period|year)|monthly|quarterly|\/\s*(?:mo|month)\b)`,
   "i",
 );
-/** Words that put a count limit on the activity: the excess withdrawal fee the top-50 fold files under account research. */
+/** Words that put a count limit on the activity: the excess withdrawal fee (its own type since Oct 15, #1398). */
 const OVER_LIMIT = /\b(in excess of|over\s+(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten|twelve|fifteen|twenty)\b|after\s+(?:\d+|one|two|three|four|five|six|ten)\b|more than|exceed(?:s|ed|ing)?\b|limit(?:ation)?s?\b)/i;
-const ACTIVITY_REFILE_TO = "account_research";
+/** A bare service charge or fee, maybe naming a savings, money market or share account. */
+const GENERIC_SERVICE_CHARGE = /^\W*(?:(?:savings|money market|mmdas?|share)\s+(?:accounts?\s+)?)?service\s+(?:charges?|fees?)\W*$/i;
+
+/** The fee's own source line charges it per savings, money market or share withdrawal, transfer or debit over a limit. */
+function savingsOverLimitLine(name: string, context: CategoryGuardContext | undefined): boolean {
+  const reading = activityChargeOnLine("monthly_maintenance", context);
+  return Boolean(reading?.overLimit) && SAVINGS_WITHDRAWAL_LINE.test(`${name} | ${reading?.line ?? ""}`);
+}
+
+/**
+ * Withdrawals, transfers or debits from a savings, money market or share account: the excess
+ * withdrawal fee. A line about checks, items, drafts or debit card purchases is another activity.
+ */
+const SAVINGS_WITHDRAWAL_LINE =
+  /^(?![\s\S]*\b(?:checks?|items?|drafts?|debit cards?|pos|point of sale|purchases?)\b)(?=[\s\S]*\b(?:savings|money market|mmdas?|shares?)\b)[\s\S]*\b(?:withdrawals?|transfers?|debits?)\b/i;
 
 function priceOnLine(amount: number): RegExp {
   const whole = Math.trunc(amount);
@@ -843,6 +902,8 @@ interface ActivityReading {
   reason: string;
   /** The line limits the activity ("in excess of six"), so it is an excess activity fee. */
   overLimit: boolean;
+  /** The source line, quotes made plain. */
+  line: string;
 }
 
 function activityChargeOnLine(canonicalFeeKey: string, context: CategoryGuardContext | undefined): ActivityReading | null {
@@ -863,6 +924,7 @@ function activityChargeOnLine(canonicalFeeKey: string, context: CategoryGuardCon
   return {
     reason: `the source line charges $${amount.toFixed(2)} ${unit}, an activity charge, not the account's monthly maintenance fee`,
     overLimit: OVER_LIMIT.test(tail) || OVER_LIMIT.test(before),
+    line,
   };
 }
 
@@ -870,18 +932,23 @@ function activityChargeOnLine(canonicalFeeKey: string, context: CategoryGuardCon
  * The category a fee's own source line places it in, when that differs from the one it was filed
  * under; null otherwise. v62: a monthly maintenance row the line charges per withdrawal, debit or
  * transaction over a limit is the excess activity fee, filed under account research by the top-50
- * fold (James, Oct 8: "fold into existing"). Other activity charges are not re-filed: a transfer or
- * an item charge has no one home. Pure; Darwin and Hamilton's live guard both use it.
+ * fold (James, Oct 8: "fold into existing"). Guard v65 (James, Oct 15, #1398): once
+ * `RESEARCH_SPLIT_LIVE` is on, one whose line or name names savings, money market or share
+ * withdrawals, transfers or debits (`SAVINGS_WITHDRAWAL_LINE`) goes to excess withdrawals instead.
+ * Other activity charges are not re-filed: a transfer or an item charge has no one home. Pure;
+ * Darwin and Hamilton's live guard both use it.
  */
 export function refileFromLine(
   canonicalFeeKey: string | null | undefined,
   feeName: string | null | undefined,
   context: CategoryGuardContext | undefined,
+  live: boolean = RESEARCH_SPLIT_LIVE,
 ): string | null {
   if (!canonicalFeeKey) return null;
   const reading = activityChargeOnLine(canonicalFeeKey, context);
   if (!reading?.overLimit) return null;
-  return checkFeeCategory(ACTIVITY_REFILE_TO, feeName, context).ok ? ACTIVITY_REFILE_TO : null;
+  const targets = live && SAVINGS_WITHDRAWAL_LINE.test(`${feeName ?? ""} | ${reading.line}`) ? ["excess_withdrawal", "account_research"] : ["account_research"];
+  return targets.find((target) => checkFeeCategory(target, feeName, context).ok) ?? null;
 }
 
 const NOTE_HEAD_FEES: ReadonlyArray<readonly [RegExp, string]> = [

@@ -142,6 +142,28 @@ export interface BankScore {
   stages: Record<ScoredStage, BankStageResult>;
   missing: string[];
   extra: string[];
+  /** Key fees Knox did not read from a document Rosetta read right (#1099); empty otherwise. */
+  knox_missed?: string[];
+}
+
+/** Expected fees and the ones Knox missed among them. */
+export interface MissCounts {
+  expected: number;
+  missed: number;
+  missRate: number | null;
+}
+
+/**
+ * Knox's misses where the document was not the problem (#1099): key fees on banks whose right
+ * document Rosetta read (the Rosetta stage is right), that no Knox row from that document matches.
+ * A fee Knox missed because the document was wrong or unread belongs to Magellan or Rosetta, so it
+ * is not counted here.
+ */
+export interface KnoxMisses {
+  banks: number;
+  overall: MissCounts;
+  byCategory: Record<string, MissCounts>;
+  byDocumentType: Record<string, MissCounts>;
 }
 
 export interface AnswerKeyScore {
@@ -153,6 +175,11 @@ export interface AnswerKeyScore {
   byCategory: Record<string, PrecisionRecall & { family: string | null }>;
   byDocumentType: Record<string, { banks: number; stages: Record<ScoredStage, PrecisionRecall> }>;
   banks: BankScore[];
+  knoxMisses: KnoxMisses;
+}
+
+function finishMisses(counts: { expected: number; missed: number }): MissCounts {
+  return { expected: counts.expected, missed: counts.missed, missRate: ratio(counts.missed, counts.expected) };
 }
 
 function ratio(numerator: number, denominator: number): number | null {
@@ -315,6 +342,10 @@ export function scoreAnswerKey(
   const byDocumentType: AnswerKeyScore["byDocumentType"] = {};
   const banks: BankScore[] = [];
   let feesExpected = 0;
+  const knoxMissTotal = { expected: 0, missed: 0 };
+  const knoxMissByCategory: Record<string, { expected: number; missed: number }> = {};
+  const knoxMissByType: Record<string, { expected: number; missed: number }> = {};
+  let knoxMissBanks = 0;
 
   const category = (key: string) => {
     byCategory[key] ??= { ...emptyCounts(), family: getFeeFamily(key) };
@@ -354,6 +385,7 @@ export function scoreAnswerKey(
     } as Record<ScoredStage, BankStageResult>;
     let missing: string[] = [];
     let extra: string[] = [];
+    let knoxMissed: string[] = [];
 
     for (const stage of FEE_STAGES) {
       // v3: Hamilton's rate fees join its dollar fees as their own predictions.
@@ -375,6 +407,21 @@ export function scoreAnswerKey(
         right: counts.expected > 0 ? counts.matched === counts.expected && counts.correct === counts.predicted : null,
         ...counts,
       };
+      if (stage === "knox" && rosettaRight && entry.fees.length > 0) {
+        knoxMissBanks += 1;
+        entry.fees.forEach((fee, index) => {
+          const missed = !comparison.matchedExpected[index];
+          for (const bucket of [
+            knoxMissTotal,
+            (knoxMissByCategory[fee.canonicalKey] ??= { expected: 0, missed: 0 }),
+            (knoxMissByType[entry.documentType] ??= { expected: 0, missed: 0 }),
+          ]) {
+            bucket.expected += 1;
+            if (missed) bucket.missed += 1;
+          }
+        });
+        knoxMissed = entry.fees.filter((_, index) => !comparison.matchedExpected[index]).map((fee) => formatFee(fee));
+      }
       if (stage === "hamilton") {
         entry.fees.forEach((fee, index) => {
           const bucket = category(fee.canonicalKey);
@@ -404,6 +451,7 @@ export function scoreAnswerKey(
       stages,
       missing: missing.slice(0, 40),
       extra: extra.slice(0, 40),
+      knox_missed: knoxMissed.slice(0, 40),
     });
   }
 
@@ -431,7 +479,26 @@ export function scoreAnswerKey(
       ]),
     ),
     banks,
+    knoxMisses: {
+      banks: knoxMissBanks,
+      overall: finishMisses(knoxMissTotal),
+      byCategory: Object.fromEntries(
+        Object.entries(knoxMissByCategory)
+          .sort(([a], [b]) => a.localeCompare(b))
+          .map(([key, counts]) => [key, finishMisses(counts)]),
+      ),
+      byDocumentType: Object.fromEntries(Object.entries(knoxMissByType).map(([type, counts]) => [type, finishMisses(counts)])),
+    },
   };
+}
+
+/** The categories where Knox misses the most key fees on documents read right, most missed first. */
+export function topKnoxMisses(misses: KnoxMisses, limit = 5): Array<{ category: string } & MissCounts> {
+  return Object.entries(misses.byCategory)
+    .filter(([, counts]) => counts.missed > 0)
+    .map(([category, counts]) => ({ category, ...counts }))
+    .sort((a, b) => b.missed - a.missed || a.category.localeCompare(b.category))
+    .slice(0, limit);
 }
 
 function parseFlags(value: unknown): string[] {
@@ -645,5 +712,10 @@ export function summarizeAnswerKeyScore(result: AnswerKeyScoreRunResult): string
     .filter((entry) => entry.scorerVersion !== score.scorerVersion)
     .map((entry) => ` Scorer v${entry.scorerVersion}: precision ${percent(entry.score.overall.precision)}, recall ${percent(entry.score.overall.recall)}.`)
     .join("");
-  return `Atlas scored ${score.banksScored} answer-key institution${score.banksScored === 1 ? "" : "s"} (${score.feesExpected} fees) with scorer v${score.scorerVersion}: precision ${percent(score.overall.precision)}, recall ${percent(score.overall.recall)}. By stage (precision/recall): ${stages}.${older}`;
+  const misses = score.knoxMisses;
+  const top = topKnoxMisses(misses, 3).map((row) => `${row.category} ${row.missed}/${row.expected}`).join(", ");
+  const knox = misses.overall.expected > 0
+    ? ` On the ${misses.banks} documents Rosetta read right, Knox missed ${misses.overall.missed} of ${misses.overall.expected} key fees (${percent(misses.overall.missRate)})${top ? `; most in ${top}` : ""}.`
+    : "";
+  return `Atlas scored ${score.banksScored} answer-key institution${score.banksScored === 1 ? "" : "s"} (${score.feesExpected} fees) with scorer v${score.scorerVersion}: precision ${percent(score.overall.precision)}, recall ${percent(score.overall.recall)}. By stage (precision/recall): ${stages}.${older}${knox}`;
 }

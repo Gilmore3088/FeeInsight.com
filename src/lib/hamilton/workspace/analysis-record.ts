@@ -23,9 +23,12 @@ export function analysisFocusFor(storyline: Storyline): AnalysisFocus {
   return FOCUS[storyline.kind];
 }
 
+/** The governing thought as a title: no closing bracket aside or full stop, cut at a word if long. */
 export function analysisTitle(storyline: Storyline): string {
-  const t = storyline.governingThought.trim();
-  return t.length > 80 ? `${t.slice(0, 79).trimEnd()}…` : t;
+  const t = storyline.governingThought.trim().replace(/\s*\([^()]*\)\.?$/, "").replace(/\.$/, "");
+  if (t.length <= 120) return t;
+  const cut = t.slice(0, 119);
+  return `${cut.slice(0, cut.lastIndexOf(" ") > 60 ? cut.lastIndexOf(" ") : 119).trimEnd()}…`;
 }
 
 /** The storyline as a saved analysis, before any model-written text. */

@@ -254,7 +254,10 @@ function reconcileValues(input: ReconcileInput, facts: Fact[]): { failures: stri
           failures.push(`${group.label}: counts ${group.members.length} institutions, the catalog has ${liveCount} publishing this fee`);
         }
       }
-      const stats = summarizeFees(memberRows);
+      // TODO(#1441): Hamilton's peer band and layers (workspace/research.ts) are raw quantiles
+      // over every member, so this recompute leaves statistics rule 7 (count once) out until
+      // they move onto summarizeFees; then carry each member's schedule keys here.
+      const stats = summarizeFees(memberRows, { countSharedScheduleOnce: false });
       const recomputed = { p25: stats.p25_amount, median: stats.median_amount, p75: stats.p75_amount };
       if (group.printed) {
         const printed = group.printed;
@@ -290,7 +293,14 @@ export function liveCatalogReader(): LiveReader {
       byCategory.set(
         category,
         getContractFeeRows({ categories: [category] })
-          .then((rows) => rows.map((r) => ({ institution_id: r.institution_id, amount: r.amount, fee_category: r.fee_category, charter_type: r.charter_type })))
+          .then((rows) => rows.map((r) => ({
+            institution_id: r.institution_id,
+            amount: r.amount,
+            fee_category: r.fee_category,
+            charter_type: r.charter_type,
+            schedule_keys: r.schedule_keys ?? null,
+            schedule_group: r.schedule_group ?? null,
+          })))
           .catch(() => null),
       );
     }

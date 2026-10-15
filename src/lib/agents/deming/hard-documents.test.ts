@@ -12,6 +12,7 @@ import { nearNameRepeats, type NearNameRow } from "@/lib/agents/hamilton/duplica
 import { isProductPage } from "@/lib/agents/hamilton/product-page";
 import { CATEGORY_GUARD_VERSION, checkFeeCategory } from "@/lib/fee-category-guard";
 import { TAXONOMY_COUNT } from "@/lib/fee-taxonomy";
+import { RESEARCH_SPLIT_LIVE } from "@/lib/fee-fold";
 
 /**
  * The hard-document gate (#1067). Real source lines, read from production and cited by document,
@@ -144,7 +145,8 @@ describe(`hard-document gate (category guard v${CATEGORY_GUARD_VERSION})`, () =>
     expect(new Set(all.map((item) => item.case_key)).size).toBe(all.length);
     for (const item of all) expect(Number.isInteger(item.source_document_id)).toBe(true);
     for (const item of [...hard.same_price, ...hard.category]) expect(item.text_hash).toMatch(/^[0-9a-f]{64}$/);
-    expect(TAXONOMY_COUNT).toBe(50);
+    // 52 once excess withdrawals and returned mail leave account research (#1398).
+    expect(TAXONOMY_COUNT).toBe(RESEARCH_SPLIT_LIVE ? 52 : 50);
   });
 
   it("covers each of the five categories with the most wrong-after-publish takedowns", () => {

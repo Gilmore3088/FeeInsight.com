@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { GuideBlock, GuideSection, GuideSource } from "@/lib/guides";
 import { resolveTokens } from "@/lib/guides";
+import { benchmarkPositionMeaning } from "@/lib/guides/benchmark-position";
 import type { DimensionBreakdown, FeeCategorySummary } from "@/lib/data-store/fees";
 import { getDisplayName } from "@/lib/fee-taxonomy";
 import { formatAmount } from "@/lib/format";
@@ -165,7 +166,7 @@ function BenchmarkBlock({
                 <Prose text={row.condition} summaries={summaries} />
               </td>
               <td className="px-5 py-3 text-[13.5px] text-ink-muted">
-                <Prose text={row.meaning} summaries={summaries} />
+                <Prose text={benchmarkPositionMeaning(row.meaning)} summaries={summaries} />
               </td>
             </tr>
           ))}

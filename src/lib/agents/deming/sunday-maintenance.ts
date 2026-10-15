@@ -7,6 +7,8 @@ import { readDataRoomCounts, type DataRoomCounts } from "@/lib/data-store/data-r
 import { getFailureAlerts, type FailureAlert } from "@/lib/agents/failure-alerts";
 import { goalBriefLines, readGoalScorecard, type GoalScorecard } from "@/lib/agents/goal-scorecard";
 import { briefRecipients } from "@/lib/agents/daily-brief";
+import { hitRateLine, readChangeOutcomeReview, type ChangeOutcomeReview, type FlaggedChange } from "@/lib/agents/deming/change-outcomes";
+import { inSavepoint } from "@/lib/agents/savepoint";
 
 type SqlTag = typeof sql;
 
@@ -24,10 +26,11 @@ export const SUNDAY_EMAIL_MINUTES = 60;
 export const MINUTES_PER_LABEL = 1;
 export const MINUTES_PER_ANSWER_KEY_BANK = 10;
 export const MINUTES_PER_DECISION = 5;
+export const MINUTES_PER_CHANGE_OUTCOME = 5;
 const STUCK_IN_EMAIL = 5;
 
 export interface SundayTask {
-  kind: "label" | "decision" | "answer_key";
+  kind: "label" | "decision" | "change_outcome" | "answer_key";
   title: string;
   minutes: number;
   href: string;
@@ -39,6 +42,8 @@ export interface SundayEmailInputs {
   dataRoom: DataRoomCounts | null;
   goal: GoalScorecard | null;
   stuck: FailureAlert[] | null;
+  /** Last week's 7-day change checks (#1106). Optional so older callers keep working. */
+  outcomes?: ChangeOutcomeReview | null;
   now: Date;
 }
 
@@ -54,6 +59,16 @@ export interface SundayEmail {
 const count = (value: number) => value.toLocaleString("en-US");
 const plural = (value: number, one: string, many = `${one}s`) => `${count(value)} ${value === 1 ? one : many}`;
 const UNREAD = "could not be read this week";
+const REPO = "https://github.com/Gilmore3088/FeeInsight.com";
+
+const shown = (value: number | null) => (value == null ? "unknown" : String(Number(value.toPrecision(4))));
+
+/** Pure: one line for a change that did not move its number. */
+export function flaggedChangeTitle(change: FlaggedChange): string {
+  const what = change.note ? ` (${change.note})` : "";
+  const how = change.verdict === "wrong_way" ? "moved the wrong way on" : "did not move";
+  return `Explain or revert #${change.pr}${what}: it ${how} ${change.metric}, ${shown(change.before)} before and ${shown(change.after)} a week later`;
+}
 
 /** The week's tasks in the issue's order: labels, decisions, samples. Pure. */
 export function sundayTasks(input: SundayEmailInputs): { tasks: SundayTask[]; unreadable: string[] } {
@@ -79,6 +94,16 @@ export function sundayTasks(input: SundayEmailInputs): { tasks: SundayTask[]; un
       });
     }
     // The city-name repair (#1213) was decided on Oct 15 and runs daily (`atlas-city-repair`).
+  }
+  // Changes that did not move the number they named a week after merge (#1106 step 3).
+  if (input.outcomes === null) unreadable.push(`Changes to explain or revert: ${UNREAD}.`);
+  for (const change of input.outcomes?.flagged ?? []) {
+    tasks.push({
+      kind: "change_outcome",
+      title: flaggedChangeTitle(change),
+      minutes: MINUTES_PER_CHANGE_OUTCOME,
+      href: `${REPO}/pull/${change.pr}`,
+    });
   }
   if (input.answerKeyToCheck == null) unreadable.push(`Answer-key banks: ${UNREAD}.`);
   for (let index = 0; index < (input.answerKeyToCheck ?? 0); index += 1) {
@@ -117,6 +142,10 @@ export function buildSundayEmail(input: SundayEmailInputs): SundayEmail {
   for (const task of fitting.filter((item) => item.kind === "decision")) {
     lines.push(`${task.title}, about ${task.minutes} minutes.\n${task.href}`);
   }
+  const changes = fitting.filter((task) => task.kind === "change_outcome");
+  if (changes.length > 0) {
+    lines.push(`Changes that did not move their number last week (${plural(changes.length, "change")}, about ${changes.length * MINUTES_PER_CHANGE_OUTCOME} minutes):\n${changes.map((task) => `- ${task.title}. ${task.href}`).join("\n")}`);
+  }
   const banks = fitting.filter((task) => task.kind === "answer_key");
   if (banks.length > 0) {
     lines.push(`Answer-key banks to check: ${plural(banks.length, "bank")}, about ${banks.length * MINUTES_PER_ANSWER_KEY_BANK} minutes.\n${SITE_URL}/admin/answer-key`);
@@ -127,9 +156,9 @@ export function buildSundayEmail(input: SundayEmailInputs): SundayEmail {
     const goalLines = goalBriefLines(input.goal).filter((line) =>
       /^(Coverage|Accuracy|Wrong after publish|Provider spend)/.test(line),
     );
-    lines.push(`The week in numbers:\n${goalLines.map((line) => `- ${line}`).join("\n")}\n- Held lines leaving the pile: not measured yet.\n${SITE_URL}/admin/scoreboard`);
+    lines.push(`The week in numbers:\n${goalLines.map((line) => `- ${line}`).join("\n")}\n- Held lines leaving the pile: not measured yet.${hitRateItem(input.outcomes)}\n${SITE_URL}/admin/scoreboard`);
   } else {
-    lines.push(`The week in numbers: ${UNREAD}.`);
+    lines.push(`The week in numbers: ${UNREAD}.${hitRateItem(input.outcomes)}`);
   }
 
   if (input.stuck == null) lines.push(`Anything stuck: ${UNREAD}.`);
@@ -145,6 +174,14 @@ export function buildSundayEmail(input: SundayEmailInputs): SundayEmail {
     minutes,
     rolledOver,
   };
+}
+
+/** The "week in numbers" item for the change hit rate (#1106 step 4); empty when not asked for. */
+function hitRateItem(outcomes: ChangeOutcomeReview | null | undefined): string {
+  if (outcomes === undefined) return "";
+  if (outcomes === null) return `\n- Changes that moved their number: ${UNREAD}.`;
+  if (!outcomes.ready || outcomes.hitRate == null) return "\n- Changes that moved their number: not recorded yet.";
+  return `\n- Changes that moved their number: ${hitRateLine(outcomes.hitRate)}.`;
 }
 
 export function isSundayUtc(now: Date): boolean {
@@ -181,14 +218,15 @@ export async function runSundayMaintenance({
   if (!force && !isSundayUtc(now)) {
     return { ran: false, reason: "Not Sunday (UTC).", email: null, deliveryStatus: "skipped", deliveryReason: null };
   }
-  const [labels, answerKeyToCheck, dataRoom, goal, stuck] = await Promise.all([
+  const [labels, answerKeyToCheck, dataRoom, goal, stuck, outcomes] = await Promise.all([
     read("fee-name labels", () => loadLabelQueue(db)),
     read("answer key", async () => ((await answerKeySchemaReady(db)) ? banksToCheck(await listAnswerKeyInstitutions(db)).length : 0)),
     read("data room", () => readDataRoomCounts(db)),
     read("scorecard", () => readGoalScorecard(db, now)),
     read("failure alerts", () => getFailureAlerts(db)),
+    read("change outcomes", () => inSavepoint(db, (scope) => readChangeOutcomeReview(scope, now))),
   ]);
-  const email = buildSundayEmail({ labels, answerKeyToCheck, dataRoom, goal, stuck, now });
+  const email = buildSundayEmail({ labels, answerKeyToCheck, dataRoom, goal, stuck, outcomes, now });
 
   if (dryRun) return { ran: true, reason: null, email, deliveryStatus: "not_configured", deliveryReason: "dry run" };
   if (!sundayEmailLive()) {

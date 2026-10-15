@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { KNOX_PRIORITY_REREAD_IDS, KNOX_REEXTRACT_MAX_FEES, KNOX_REREAD_ASSET_FLOOR, runKnoxExtract, insertCandidate } from "./extract";
+import { extractionOutcome, KNOX_PRIORITY_REREAD_IDS, KNOX_REEXTRACT_MAX_FEES, KNOX_REREAD_ASSET_FLOOR, runKnoxExtract, insertCandidate } from "./extract";
+import { thinRereadKindSql } from "@/lib/agents/thin-document";
 import { KNOX_FAULT_REASONS } from "./calibration";
 import { KNOX_RULES_STRATEGY } from "./specialists";
 
@@ -320,6 +321,9 @@ describe("Knox agentic extraction", () => {
       // A text with few fees goes back to Knox when the rules version moves.
       expect(query).toContain("FROM raw_fee_observations thin");
       expect(params).toEqual(expect.arrayContaining([KNOX_REEXTRACT_MAX_FEES]));
+      // ...unless Rosetta stored it as a product page, which is thin by nature (#1094).
+      expect(query).toContain(`AND ${thinRereadKindSql("adt")})`);
+      expect(query).toContain("adt.document_kind,");
       // A large bank's page is read again once per rules version, ahead of other texts.
       expect(query).toContain("COALESCE(inst.asset_size, 0) >=");
       expect(params).toEqual(expect.arrayContaining([KNOX_REREAD_ASSET_FLOOR]));
@@ -432,6 +436,19 @@ describe("Knox agentic extraction", () => {
 
       expect(result.results[0].attemptOutcome).toBe("low_yield");
       expect(attemptValues(db).at(-1)).toEqual(expect.arrayContaining(["low_yield"]));
+    });
+
+    it("judges low_yield only for a fee schedule or a text with no kind yet (#1094)", async () => {
+      expect(extractionOutcome(3, 40)).toBe("low_yield");
+      expect(extractionOutcome(3, 40, "fee_schedule")).toBe("low_yield");
+      for (const kind of ["truth_in_savings", "account_agreement", "product_page", "other"]) {
+        expect(extractionOutcome(3, 40, kind)).toBe("ok");
+      }
+      expect(extractionOutcome(0, 40, "product_page")).toBe("no_candidates");
+
+      const db = learningDb([{ ...textArtifact, expected_fee_count: 40, document_kind: "product_page" }]);
+      const result = await runKnoxExtract({ runId: 107, db: asExtractDb(db) });
+      expect(result.results[0].attemptOutcome).toBe("ok");
     });
 
     it("records no_candidates so the same text is not retried with this version", async () => {

@@ -29,6 +29,13 @@ export function UnstatedAudienceFootnote({ show = true, className = "" }: { show
   );
 }
 
+/** True when a shown median rests on at least one row with no stated audience: the asterisk test. */
+export function medianHasUnstatedAudience(
+  summary: { median_amount?: number | null; unstated_audience_institution_count?: number } | null | undefined,
+): boolean {
+  return summary?.median_amount != null && hasUnstatedAudience(summary);
+}
+
 /** True when a benchmark rests on at least one row with no stated audience. */
 export function hasUnstatedAudience(summary: { unstated_audience_institution_count?: number } | null | undefined): boolean {
   return (summary?.unstated_audience_institution_count ?? 0) > 0;

@@ -88,16 +88,12 @@ export function annualMonthsFree(tier: ProTier): number {
   return Math.round(12 - def.annualUsd / def.monthlyUsd);
 }
 
-const DOLLARS_AND_CENTS = new Intl.NumberFormat("en-US", {
-  style: "currency",
-  currency: "USD",
-  minimumFractionDigits: 0,
-  maximumFractionDigits: 2,
-});
-
-/** The annual plan as a monthly figure: "$125", or "$416.67" when it isn't whole dollars. */
+/**
+ * The annual plan as a monthly figure, rounded to whole dollars for display: "$125", "$417"
+ * ($5,000 / 12). A label only: checkout charges the annual price itself.
+ */
 export function annualPerMonthLabel(tier: ProTier): string {
-  return DOLLARS_AND_CENTS.format(Math.round((proTier(tier).annualUsd / 12) * 100) / 100);
+  return WHOLE_DOLLARS.format(Math.round(proTier(tier).annualUsd / 12));
 }
 
 /** What the annual plan saves against twelve monthly payments: "$300". */

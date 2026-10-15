@@ -76,7 +76,7 @@ It runs as Atlas steps (agent `atlas`); it is deterministic and makes no model c
 ## Did the change work (#1106)
 
 - `change-outcomes.ts`: the `deming-change-outcomes` step, last in Atlas's daily scoreboard run.
-- `sunday-maintenance.ts`: the `deming-sunday-maintenance` step, after it in the same run, Sundays (UTC) only: James's hour of tasks (labels, data decisions, answer-key banks), the week in numbers and anything stuck (#1104). It emails only while `SUNDAY_EMAIL_LIVE=true`; otherwise the run records the email it would send.
+- `sunday-maintenance.ts`: the `deming-sunday-maintenance` step, after it in the same run, Sundays (UTC) only: James's hour of tasks (labels, data decisions, last week's "no change" and "wrong way" PRs to explain or revert, answer-key banks), the week in numbers with the change hit rate, and anything stuck (#1104, #1106). It emails only while `SUNDAY_EMAIL_LIVE=true`; otherwise the run records the email it would send.
   Each PR that names a "Should move" number adds an entry to `should-move.json` (PR number, issue,
   `metric`: a `pipeline_scoreboard_snapshots` column or a `detail.` path such as
   `detail.goal.accuracy.accuracy`, `direction` up or down, optional `min_change`).
@@ -84,7 +84,11 @@ It runs as Atlas steps (agent `atlas`); it is deterministic and makes no model c
   Seven days later it reads the first snapshot on or after that day and records the verdict:
   `moved_as_expected`, `no_change` (moved less than `min_change`), `wrong_way`, or `unreadable`
   (the scoreboard does not hold the number). The summary names each "no change" and "wrong way"
-  PR, to be explained or reverted (the Sunday email, #1104, lists them).
+  PR, to be explained or reverted (the Sunday email, #1104, lists the ones checked in the last 7
+  days, via `readChangeOutcomeReview`).
+- Hit rate (#1106 step 4): the share of judged changes (`moved_as_expected`, `no_change`,
+  `wrong_way`) that moved as expected; `unreadable` ones are counted apart. The daily step's
+  summary and detail (`hit_rate`) and the Sunday email carry it; the checkpoint copies it.
 - Migration 20270110000046 creates the table (approved by James 2026-10-12). Before it the step
   reports that it skipped.
 
@@ -100,6 +104,43 @@ It runs as Atlas steps (agent `atlas`); it is deterministic and makes no model c
 - **Alarm:** a category that keeps less than 70% of its institutions since the previous check
   (on the same `STATS_METHOD_VERSION`) is named in the step summary as an ALARM.
 - Read-only, deterministic, no model calls. It is pause-exempt like the other reporting steps.
+
+## Knox's answer-key misses
+
+- `knox-misses.ts` (`KNOX_MISSES_VERSION` v1): the `deming-knox-misses` step, its own daily Atlas
+  run (`/api/admin/crew/knox-misses`, 12:29 UTC, after the scoreboard), #1099. For every confirmed
+  answer-key bank whose key document has a completed text, it runs today's free Knox team
+  (`gateReads`, the reads the rules re-check keeps live) and compares each priced key fee as the
+  Knox gate scores it (`gateKeyFor`). A key fee not read becomes an `eval_cases` row: dataset
+  `golden`, label `answer_key`, check `knox.answer_key_read`, error class `missed_fee`, status
+  `candidate`, with the key's source line, category, price, document and text hash frozen in
+  `input`. Every case is replayed each run: a candidate that is read becomes `active`; an active
+  case missed again is a regression, named in the step summary; a case whose key fee is no longer
+  confirmed is retired, and reopens if the fee is confirmed again (a candidate when missed, active
+  when read). The gate's keys come from the gate itself (`gateKeyFor`, `gateReadKey`, used by
+  `scoreAnswerKeys` too), so the replay and the Knox gate cannot drift.
+- The step detail carries the miss rate by category and by document type. A bank with no completed
+  text of its key document is counted apart (`banks_no_text`), never as Knox's miss; a price that
+  varies is not scored, as in the gate.
+- A run that passes `KNOX_MISSES_BUDGET_MS` leaves the remaining banks for the next day: the banks
+  it did not reach (`banks_left_ids` in its detail) go first, then the rest by their oldest case
+  check, a bank with no case counting as checked at the previous run. A case the gate no longer
+  scores is still replayed (`not_scored`), so its check time moves. It writes only `eval_cases`; no fee row, no model calls; pause-exempt.
+
+## Playbook contradiction check
+
+- `playbook-contradictions.ts` (`PLAYBOOK_CHECK_VERSION` v1): the `deming-playbook-check` step in
+  Atlas's daily scoreboard run (#1105). One read-only SELECT over `institution_source_profiles`
+  and each one's current text. Per institution it counts a playbook that contradicts itself: the
+  current source on its own rejected list, on its own do-not-retry list for a fetch failure, or
+  judged the wrong document by a discovery strategy; a fee schedule expected to hold fewer than
+  `THIN_DOCUMENT_MAX_FEES` fees; a product page expected to hold `PAID_MIN_PRICED_LINES` or more.
+  It lists up to 20 institutions per contradiction in the step detail.
+- Not contradictions: the second-document finder and its site searches record the bank's current
+  link as the input they searched *from* (`SEARCH_FROM_STRATEGIES`), so their `wrong_document` /
+  `no_candidates` entry means "found nothing better". They are reported as
+  `search_from_entries`, as is `layout_never_recorded` (no stage writes a layout fingerprint yet).
+- Read-only, deterministic, no model calls, pause-exempt. It changes no row.
 
 ## Boundaries
 
@@ -117,3 +158,5 @@ fails a PR that changes one of these constants without updating its line here (#
 | `FRESH_AUDIT_VERSION` | — | v5 | `deming/fresh-audit.ts` |
 | `DEMING_REGRESSION_VERSION` | — | v1 | `deming/regression.ts` |
 | `BENCHMARK_HEALTH_VERSION` | — | v1 | `deming/benchmark-health.ts` |
+| `PLAYBOOK_CHECK_VERSION` | — | v1 | `deming/playbook-contradictions.ts` |
+| `KNOX_MISSES_VERSION` | — | v1 | `deming/knox-misses.ts` |
