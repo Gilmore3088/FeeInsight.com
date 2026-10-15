@@ -307,9 +307,9 @@ the detail.
 16. Companion retire (`companion-retire.ts`): fees from companion pages Magellan retired as not
     a consumer fee page, `companion_page_retired`.
 17. Duplicate collapse (`duplicate-collapse.ts`): exact repeats of a live row,
-    `duplicate of #<kept id>`. Near-name repeats (#1302) are shadow only
-    (`NEAR_NAME_COLLAPSE_LIVE`): reported in step detail `near_name_collapse`, never closed;
-    switched on, `duplicate of #<kept id> (near name)`.
+    `duplicate of #<kept id>`. Near-name repeats (#1302) are live since 2026-10-15
+    (`NEAR_NAME_COLLAPSE_LIVE`): reported in step detail `near_name_collapse` and closed as
+    `duplicate of #<kept id> (near name)`.
 18. Frequency fill (`frequency-fill.ts`): sets a live fee's frequency from its own schedule row
     (fills a blank, corrects or clears one read from another fee's row), logged to
     `pipeline_feedback` (check `hamilton.frequency_fill`). v11 (#1196): an NSF or overdraft fee
@@ -505,9 +505,9 @@ one printed at the price, then is newest. Doc 14695 prints "Stop Payments, each 
 "Stop Payment, each ... $35" in two copies of its schedule, so both stay. A fee the page prints
 once under its personal schedule heading and once under its business one stays two fees too
 (`printedInPersonalAndBusinessSchedules`; Valley's doc 23731, "Visa® Gift Cards, each: $4.25.").
-This sweep reads up to 25 documents' stored text per step and is shadow only until James turns
-`NEAR_NAME_COLLAPSE_LIVE` on: each step reports `near_name_collapse` (pairs, apart on page, not
-printed, no text, would close, samples) and changes no row. Rollback once on: clear
+This sweep reads up to 25 documents' stored text per step. James turned
+`NEAR_NAME_COLLAPSE_LIVE` on on 2026-10-15: each step reports `near_name_collapse` (pairs, apart
+on page, not printed, no text, would close, samples) and closes the repeats. Rollback: clear
 `rolled_back_at` on rows whose `rolled_back_reason` ends in `(near name)`.
 
 ## Rules Re-check
