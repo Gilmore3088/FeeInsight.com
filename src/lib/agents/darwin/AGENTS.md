@@ -17,7 +17,7 @@ Darwin owns verification and classification.
 |---|---|---|
 | `missing_canonical` | a valid canonical hint | rejected |
 | `missing_name` | a non-empty fee name | rejected |
-| `category_mismatch` | for the guarded categories, the fee name names its category and not a different fee (`src/lib/fee-category-guard.ts`); a name that names a neighbouring guarded category is re-filed there first (`refileCategory`) | rejected |
+| `category_mismatch` | for the guarded categories, the fee name names its category and not a different fee (`src/lib/fee-category-guard.ts`); a name that names a neighbouring guarded category is re-filed there first (`refileCategory`). Guard v62 (#1100) also reads the row's own source line: a monthly maintenance row whose line charges its price per withdrawal, debit, transaction, transfer or item fails, and one charged per activity over a limit is re-filed to account research first (`refileFromLine`) | rejected |
 | `missing_lineage` | a source URL or stored document key | rejected |
 | `percent_not_publishable` | a fee stated as a rate ("1.1% of the transaction") is filed under a category that publishes rates (`PERCENT_FEE_RANGES` in `src/lib/percent-fees.ts`: foreign transaction, cash advance, coin counting, late payment); elsewhere a rate is often an interest rate, not a fee. A rate that passes needs `rate_percent` and no dollar amount (else `invalid_amount`) and a rate inside that category's range (else `outside_envelope`), and its source check is `checkRateAgainstSource` | rejected |
 | `invalid_amount` | an amount; $0 only with Knox's `knox_review:zero` flag | rejected |
@@ -132,6 +132,12 @@ Darwin owns verification and classification.
   until James switches it, in its own PR:
   - `off`: the tick queues one dry run a day over a sample of documents (md5 order by day) that
     counts decisions by audience and evidence source, and writes nothing.
+  - `dry_run_full` (shipped, the gate before live): the same cursor chain as live over every
+    document, one batch per tick, key chain `darwin:audience-relabel:dry:v1:after:<cursor>`,
+    writing nothing but each batch's counts. The last batch adds the chain's totals to its detail
+    (`dry_run_totals`) and writes an `audience_relabel.dry_run_totals` event. Live waits until the
+    totals show unknown at most 10%, and consumer, both and business each within about 5 points
+    of the sample's 70.5 / 23.3 / 2.2. A run does what it was queued for (`params.mode`).
   - `live`: before any write, each fee's old value is recorded as an `audience_relabeled` row in
     `pipeline_feedback` (weight 0). Then the verified row takes the `darwin:` decision, and the
     live published row is touched so the trigger copies it.

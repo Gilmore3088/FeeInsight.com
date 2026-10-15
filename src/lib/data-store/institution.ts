@@ -322,7 +322,7 @@ export async function getInstitutionFees(
   try {
     const rows = await sql`
       SELECT
-        id, fee_name, amount, frequency, conditions,
+        id, fee_name, amount, frequency, COALESCE(extraction_note, conditions) AS conditions,
         extraction_confidence, review_status,
         fee_category, fee_family,
         account_product_type, is_fee_cap,
@@ -476,7 +476,7 @@ export async function getInstitutionFeeScheduleEvidence(
           fee_name,
           amount,
           frequency,
-          conditions,
+          COALESCE(extraction_note, conditions) AS conditions,
           extraction_confidence,
           source_url,
           source,

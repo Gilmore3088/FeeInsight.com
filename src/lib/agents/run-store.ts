@@ -7,6 +7,7 @@ import { runHamiltonCategoryGuard } from "@/lib/agents/hamilton/category-guard";
 import { collapseNearNameDuplicates, collapsePublishedDuplicates } from "@/lib/agents/hamilton/duplicate-collapse";
 import { retireClosedInstitutionFees } from "@/lib/agents/hamilton/closed-institution";
 import { fillBlankFrequencies, FREQUENCY_FILL_VERSION } from "@/lib/agents/hamilton/frequency-fill";
+import { repairSourceLinks, SOURCE_LINK_VERSION } from "@/lib/agents/hamilton/source-link";
 import { restoreFeesNowInTaxonomy, rollBackOffTaxonomyFees } from "@/lib/agents/hamilton/off-taxonomy-rollback";
 import { foldRetiredCategories } from "@/lib/agents/hamilton/taxonomy-fold";
 import { rollBackLimitsPublishedAsFees } from "@/lib/agents/hamilton/limit-guard";
@@ -28,6 +29,7 @@ import { rollBackUnreproducedFees } from "@/lib/agents/hamilton/rules-recheck";
 import { syncPipelineFeedback } from "@/lib/agents/learning/feedback-sync";
 import { linkImportedFeesToTwins, takeDownUntraceableFees } from "@/lib/agents/hamilton/source-check";
 import { retidyLiveFeeNames } from "@/lib/agents/knox/name-retidy";
+import { moveExtractionNotes } from "@/lib/agents/knox/extraction-note";
 import { nameLiveFeesByAccount } from "@/lib/agents/hamilton/account-names";
 import { correctStoredLineups } from "@/lib/agents/knox/lineup-correct";
 import { reviewKnoxBatches } from "@/lib/agents/knox/batch-review";
@@ -73,7 +75,7 @@ import { runDarwinReleaseHeld } from "@/lib/agents/darwin/release-held";
 import { runDarwinConditionalZeroResolve } from "@/lib/agents/darwin/conditional-zero-resolve";
 import { runDarwinScheduleRefile } from "@/lib/agents/darwin/schedule-refile";
 import { runDarwinAdjudicate } from "@/lib/agents/darwin/adjudicate";
-import { AUDIENCE_RELABEL_VERSION, runAudienceRelabel } from "@/lib/agents/darwin/audience-relabel";
+import { AUDIENCE_RELABEL_VERSION, dryRunFullTotals, runAudienceRelabel, type AudienceRelabelMode } from "@/lib/agents/darwin/audience-relabel";
 import { runDailyBrief } from "@/lib/agents/daily-brief";
 import { runSundayMaintenance, summarizeSundayMaintenance } from "@/lib/agents/deming/sunday-maintenance";
 import { runFeeAlertDispatch, summarizeFeeAlertDispatch } from "@/lib/agents/fee-alerts";
@@ -1129,6 +1131,8 @@ async function executeAgenticStep(
         dryRun: run.runKind === "dry_run",
         institutionId,
       });
+      // #1234 step 2: Knox's note leaves `conditions` for `extraction_note`, a batch per step.
+      const extractionNotes = await moveExtractionNotes(tx, { runId: run.id, dryRun: run.runKind === "dry_run" });
       // A live fee named only "Monthly Service Fee" takes the account heading above it in its
       // schedule ("Chase Total Checking Monthly Service Fee"); the old name stays in pipeline_feedback.
       const accountNames = await nameLiveFeesByAccount(tx, {
@@ -1585,6 +1589,7 @@ async function executeAgenticStep(
           imported_twin_linked: importedTwins.linked,
           identical_copy_documents: identicalCopy.documents,
           identical_copy_rows_moved: identicalCopy.rowsMoved,
+          extraction_note_move: { moved: extractionNotes.moved, remaining: extractionNotes.remaining },
           name_retidy: {
             institutions_checked: nameRetidy.institutionsChecked,
             messy_names: nameRetidy.messyFees,
@@ -1794,15 +1799,31 @@ async function executeAgenticStep(
         // One bounded batch per step; the tick queues the next from `next_after_id` (audience-relabel-schedule.ts).
         afterId: numericRunParam(params, ["after_id"]) ?? 0,
         sampleKey: typeof params.day === "string" ? params.day : null,
+        // A run does what it was queued for: a full dry run queued before a deploy never writes.
+        mode: (["off", "dry_run_full", "live", "rollback"] as const).includes(params.mode as AudienceRelabelMode)
+          ? (params.mode as AudienceRelabelMode)
+          : undefined,
       });
       const changed = relabel.relabeled + relabel.restored;
+      // The full dry run's last batch adds the chain's totals, the numbers the live switch waits on.
+      const totals = relabel.mode === "dry_run_full" && relabel.done
+        ? await dryRunFullTotals(tx, relabel, numericRunParam(params, ["after_id"]) ?? 0)
+        : null;
+      if (totals) {
+        await tx`
+          INSERT INTO agent_run_events (agent_run_id, step_id, event_type, status, message, detail)
+          VALUES (${run.id}, ${step.id}, 'audience_relabel.dry_run_totals', 'completed',
+                  ${`Full dry run done: ${totals.fees.toLocaleString()} live unknown fees on ${totals.documents.toLocaleString()} documents in ${totals.batches} batches; ${Object.entries(totals.shares).map(([audience, share]) => `${audience} ${share}%`).join(", ")}.`},
+                  ${JSON.stringify(totals)}::jsonb)
+        `;
+      }
       const indexRefresh = changed > 0 ? await refreshFeeIndexCache(tx, { runId: run.id, force: true }) : null;
       const counts = Object.entries(relabel.byAudience).map(([audience, n]) => `${n.toLocaleString()} ${audience}`).join(", ");
       return {
         status: "completed",
         summary: relabel.mode === "rollback"
           ? `Darwin audience relabel rolled back: ${relabel.restored.toLocaleString()} fees back to their old audience${relabel.dryRun ? " (dry run, nothing written)" : ""}; ${relabel.remaining.toLocaleString()} recorded fees left.`
-          : `Darwin audience relabel${relabel.dryRun ? " (dry run, nothing written)" : ""}: ${relabel.fees.toLocaleString()} live fees verified as unknown on ${relabel.documents.toLocaleString()} documents; decisions ${counts || "none"}. ${relabel.dryRun ? "" : `${relabel.relabeled.toLocaleString()} written, ${relabel.publishedTouched.toLocaleString()} live rows updated.`} ${relabel.remaining.toLocaleString()} documents left${relabel.dryRun ? " outside this sample" : ""}.`.replace(/\s+/g, " ").trim(),
+          : `Darwin audience relabel${relabel.dryRun ? " (dry run, nothing written)" : ""}: ${relabel.fees.toLocaleString()} live fees verified as unknown on ${relabel.documents.toLocaleString()} documents; decisions ${counts || "none"}. ${relabel.dryRun ? "" : `${relabel.relabeled.toLocaleString()} written, ${relabel.publishedTouched.toLocaleString()} live rows updated.`} ${relabel.remaining.toLocaleString()} documents left${relabel.mode === "off" ? " outside this sample" : ""}.${totals ? ` Full dry run done: ${Object.entries(totals.shares).map(([audience, share]) => `${audience} ${share}%`).join(", ")} of ${totals.fees.toLocaleString()} fees.` : ""}`.replace(/\s+/g, " ").trim(),
         detail: {
           audience_relabel_version: AUDIENCE_RELABEL_VERSION,
           mode: relabel.mode,
@@ -1814,6 +1835,7 @@ async function executeAgenticStep(
           relabeled: relabel.relabeled,
           published_touched: relabel.publishedTouched,
           restored: relabel.restored,
+          dry_run_totals: totals,
           after_id: numericRunParam(params, ["after_id"]) ?? 0,
           next_after_id: relabel.nextAfterId,
           remaining: relabel.remaining,
@@ -1851,6 +1873,45 @@ async function executeAgenticStep(
             amount: row.amount,
             from: row.from,
             to: row.frequency,
+          })),
+        },
+      };
+    }
+    case "source-link-repair": {
+      // Started by hand (admin, dry run first): live fees with no source link take their own
+      // document's URL or come down (hamilton/source-link.ts).
+      const repair = await repairSourceLinks(tx, {
+        runId: run.id,
+        batchId: `agentic-run-${run.id}`,
+        dryRun: run.runKind === "dry_run",
+        institutionId: numericRunParam(params, ["institution_id"]),
+        limit: numericRunParam(params, ["source_link_limit", "limit"]),
+      });
+      return {
+        status: "completed",
+        summary: `${repair.dryRun ? "Would link" : "Linked"} ${repair.fills.length.toLocaleString()} of ${repair.scanned.toLocaleString()} live fees with no source link to their own document, and ${repair.dryRun ? "would take down" : "took down"} ${repair.takedowns.length.toLocaleString()} with no traceable document.`,
+        detail: {
+          source_link_version: SOURCE_LINK_VERSION,
+          dry_run: repair.dryRun,
+          scanned: repair.scanned,
+          filled: repair.fills.length,
+          taken_down: repair.takedowns.length,
+          takedown_reasons: repair.takedowns.reduce<Record<string, number>>((counts, fee) => {
+            counts[fee.reason] = (counts[fee.reason] ?? 0) + 1;
+            return counts;
+          }, {}),
+          takedowns: repair.takedowns.map((fee) => ({
+            fee_published_id: fee.feePublishedId,
+            institution_id: fee.institutionId,
+            canonical_fee_key: fee.canonicalFeeKey,
+            amount: fee.amount,
+            reason: fee.reason,
+          })),
+          fill_samples: repair.fills.slice(0, 25).map((fee) => ({
+            fee_published_id: fee.feePublishedId,
+            institution_id: fee.institutionId,
+            source_document_id: fee.sourceDocumentId,
+            url: fee.url,
           })),
         },
       };

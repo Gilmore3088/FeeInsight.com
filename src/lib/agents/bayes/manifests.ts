@@ -235,6 +235,8 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   // every bank not yet searched at the new version, so the discover steps re-search them themselves.
   UPGRADE_SEARCH_VERSION: "Its selector re-searches every product-page link not yet searched at v3; there is nothing to replay.",
   FRESHNESS_SEARCH_VERSION: "Its selector re-searches every stale link not yet searched at v2; there is nothing to replay.",
+  // v1 (#1342): a new hand-started step that reads every live fee with no source link on each run.
+  SOURCE_LINK_VERSION: "Its own step reads every live fee with no source link on each run; nothing to replay.",
 };
 
 export async function loadManifests(): Promise<ReplayManifest[]> {

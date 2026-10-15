@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const startAgentRun = vi.fn();
 vi.mock("@/lib/agents/run-store", () => ({ startAgentRun: (...args: unknown[]) => startAgentRun(...args) }));
 
-import { AUDIENCE_RELABEL_MODE, decideAudience, runAudienceRelabel, type AudienceRelabelRow } from "./audience-relabel";
+import { AUDIENCE_RELABEL_MODE, decideAudience, dryRunFullTotals, runAudienceRelabel, type AudienceRelabelRow } from "./audience-relabel";
 import { scheduleAudienceRelabelRun } from "./audience-relabel-schedule";
 
 const row = (overrides: Partial<AudienceRelabelRow> = {}): AudienceRelabelRow => ({
@@ -49,12 +49,29 @@ describe("Darwin audience relabel (#1059)", () => {
     expect(decideAudience(candidate, text)).toMatchObject({ feeAudience: audience, source });
   });
 
-  it("is off: a sampled dry run counts by audience and source and writes nothing", async () => {
-    expect(AUDIENCE_RELABEL_MODE).toBe("off");
+  it("off: a sampled dry run counts by audience and source and writes nothing", async () => {
     const db = createDb({ rows: [row(), row({ fee_verified_id: 502, source_document_id: 99 })], remaining: 5000 });
-    const result = await runAudienceRelabel(db as never, { sampleKey: "2026-10-15" });
+    const result = await runAudienceRelabel(db as never, { mode: "off", sampleKey: "2026-10-15" });
     expect(result).toMatchObject({ dryRun: true, fees: 2, byAudience: { consumer: 1, unknown: 1 }, bySource: { default_general_schedule: 1, no_text: 1 }, relabeled: 0, remaining: 5000, nextAfterId: null });
     expect(writes(db)).toEqual([]);
+  });
+
+  it("ships as the full dry run: the cursor chain as live, counts only, no migration needed", async () => {
+    expect(AUDIENCE_RELABEL_MODE).toBe("dry_run_full");
+    const db = createDb({ rows: [row()], remaining: 40, migrated: false });
+    const result = await runAudienceRelabel(db as never, { afterId: 20 });
+    expect(result).toMatchObject({ mode: "dry_run_full", dryRun: true, fees: 1, byAudience: { consumer: 1 }, relabeled: 0, nextAfterId: 21, remaining: 40, done: false });
+    expect(writes(db)).toEqual([]);
+  });
+
+  it("totals the full dry run: earlier batches (latest per cursor) plus this one", async () => {
+    const db = createDb();
+    db.mockImplementationOnce(() => Promise.resolve([
+      { documents: 300, fees: 2900, by_audience: { consumer: 2000, both: 700, business: 60, unknown: 140 }, by_source: { default_general_schedule: 1500 } },
+    ]));
+    const totals = await dryRunFullTotals(db as never, { documents: 10, fees: 100, byAudience: { consumer: 80, unknown: 20 }, bySource: { none: 20 } } as never, 300);
+    expect(totals).toMatchObject({ batches: 2, documents: 310, fees: 3000, byAudience: { consumer: 2080, both: 700, business: 60, unknown: 160 } });
+    expect(totals.shares).toEqual({ consumer: 69.3, both: 23.3, business: 2, unknown: 5.3 });
   });
 
   it("live: one bounded batch records the old value before writing, and says where the next resumes", async () => {
@@ -94,8 +111,14 @@ describe("audience relabel schedule", () => {
     else expect(startAgentRun.mock.calls[0][0]).toMatchObject({ params: { mode: "live", after_id: afterId }, idempotencyKey: `darwin:audience-relabel:live:v1:after:${afterId}` });
   });
 
+  it("full dry run: its own key chain, from the cursor, with no migration check", async () => {
+    const lastBatch = { id: 5, status: "completed", after_id: "0", next_after_id: "900", done: false };
+    await scheduleAudienceRelabelRun(createDb({ migrated: false, lastBatch }) as never, new Date("2026-10-15T00:00:00Z"), "dry_run_full");
+    expect(startAgentRun.mock.calls[0][0]).toMatchObject({ kind: "dry_run", params: { mode: "dry_run_full", after_id: 900 }, idempotencyKey: "darwin:audience-relabel:dry:v1:after:900" });
+  });
+
   it("off: one sampled dry run a day", async () => {
-    await scheduleAudienceRelabelRun(createDb() as never, new Date("2026-10-15T08:00:00Z"));
+    await scheduleAudienceRelabelRun(createDb() as never, new Date("2026-10-15T08:00:00Z"), "off");
     expect(startAgentRun.mock.calls[0][0]).toMatchObject({ kind: "dry_run", params: { mode: "off", day: "2026-10-15" } });
   });
 });
