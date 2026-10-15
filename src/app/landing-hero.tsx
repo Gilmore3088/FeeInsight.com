@@ -1,188 +1,94 @@
-"use client";
-
 import Link from "next/link";
-import { LandingResearchPicker } from "@/components/hamilton/landing/LandingResearchPicker";
-import { useId, useState, type KeyboardEvent } from "react";
-import { InstitutionSearchBar } from "@/app/(public)/institutions/search-bar";
-import { TrackLink } from "@/components/track-link";
-import { PRODUCT_NAME, REPORT_OFFER, REPORT_PRICE_INLINE } from "@/lib/constants";
-
-// Display form of the site domain for the "powered by" line under the product name.
-const SITE_DOMAIN_DISPLAY = "FeeInsight.com";
-
-// The request form sits in the bank section further down this page.
-const REPORT_REQUEST_HREF = "#for-banks";
+import { PRODUCT_NAME, REPORT_OFFER, REPORT_PRICE_INLINE, SITE_NAME } from "@/lib/constants";
+import type { PublicStatsSummary } from "@/lib/public-stats";
+import {
+  Eyebrow,
+  InstitutionSearchForm,
+  NationalRange,
+  REPORT_REQUEST_HREF,
+  SAMPLE_REPORT_HREF,
+  SANS,
+  TEXT_LINK,
+  type RangeEntry,
+} from "./landing-shared";
 
 interface LandingHeroProps {
-  institutionsLabel: string;
-  /** Show the "Read the full sample" link: the live sample report exists today. */
-  sampleLive?: boolean;
+  summary: Pick<PublicStatsSummary, "institutionsLabel" | "freshnessLabel">;
+  /** The national overdraft row; null hides the chart rather than drawing a guess. */
+  overdraft: RangeEntry | null;
+  /** The live sample report exists today. */
+  sampleLive: boolean;
 }
 
-type PathKey = "lookup" | "explore" | "benchmark";
-
-/** The three reasons people arrive, each with its own next step. Lookup is the default. */
-const PATHS: { key: PathKey; label: string }[] = [
-  { key: "lookup", label: "Find your bank's fees" },
-  { key: "explore", label: "Explore fee data" },
-  { key: "benchmark", label: "Benchmark your institution" },
-];
-
-const EXPLORE_LINKS = [
-  {
-    href: "/research/national-fee-index",
-    title: "National fee index",
-    body: "Typical prices and ranges for every fee type",
-  },
-  { href: "/fees", title: "Every fee, explained", body: "Overdraft, ATM, wire, monthly and more" },
-  { href: "/research", title: "Research and state data", body: "Trends, state and district analysis" },
-  { href: "/guides", title: "Guides", body: "How to avoid or reduce common fees" },
-];
-
-/**
- * Hero: what the index is, then a three-way choice so each visitor gets one clear next step.
- * Looking up a bank is the default panel; bank staff switch to "Benchmark your institution",
- * which leads to the one report offer (explained in full further down the page).
- */
-export function LandingHero({ institutionsLabel, sampleLive = false }: LandingHeroProps) {
-  const [active, setActive] = useState<PathKey>("lookup");
-  const baseId = useId();
-  const tabId = (key: PathKey) => `${baseId}-tab-${key}`;
-  const panelId = (key: PathKey) => `${baseId}-panel-${key}`;
-
-  function onTabKeyDown(event: KeyboardEvent<HTMLButtonElement>, index: number) {
-    const step = event.key === "ArrowRight" ? 1 : event.key === "ArrowLeft" ? -1 : 0;
-    if (!step) return;
-    event.preventDefault();
-    const next = PATHS[(index + step + PATHS.length) % PATHS.length].key;
-    setActive(next);
-    document.getElementById(tabId(next))?.focus();
-  }
+/** Site v3 brief 08 §B.3, laid out as brief 04 Direction A: the promise, then the search. */
+export function LandingHero({ summary, overdraft, sampleLive }: LandingHeroProps) {
+  const hasCount = /\d/.test(summary.institutionsLabel);
+  const chips = [
+    { href: "/fees/overdraft", label: "Overdraft fees nationwide" },
+    { href: "/research/national-fee-index", label: "National fee report" },
+    ...(sampleLive ? [{ href: SAMPLE_REPORT_HREF, label: "Sample competitive report" }] : []),
+  ];
 
   return (
     <section className="border-b border-border bg-paper">
-      <div className="mx-auto max-w-page px-4 pb-8 pt-8 sm:px-6 sm:pb-10 sm:pt-12 lg:pt-14">
-        <div className="max-w-3xl">
+      <div className="mx-auto grid max-w-6xl gap-10 px-4 py-10 sm:px-6 sm:py-14 lg:grid-cols-[minmax(0,1.25fr)_minmax(0,0.75fr)] lg:items-center lg:gap-14">
+        <div className="min-w-0">
+          <Eyebrow>The {PRODUCT_NAME}</Eyebrow>
           <h1
-            className="text-[clamp(2.25rem,8vw,3.75rem)] font-extrabold leading-none tracking-tight text-ink"
-            style={{ fontFamily: "var(--fi-font-sans)" }}
+            className="mt-3 text-[clamp(2.1rem,7vw,3.25rem)] font-extrabold leading-[1.05] tracking-[-0.025em] text-ink"
+            style={SANS}
           >
-            The {PRODUCT_NAME}
+            <span className="block">Know where your fees stand,</span>
+            <span className="block text-brick">with a source for every figure.</span>
           </h1>
-          <p className="mt-2.5 flex items-center gap-2 text-[11px] font-medium uppercase tracking-[0.14em] text-ink-muted">
-            <span aria-hidden="true" className="h-px w-5 bg-brick/60" />
-            Powered by <span className="text-ink-soft">{SITE_DOMAIN_DISPLAY}</span>
+          <p className="mt-5 text-[17px] leading-relaxed text-ink-soft sm:text-[18px]">
+            The {PRODUCT_NAME} reads the published fee schedules of U.S. banks and credit unions. See each
+            of your fees against your market, your state, your Fed district, your peer group and the
+            nation, then let Hamilton, the {SITE_NAME} Pro workspace, write it up.
           </p>
-          <p className="mt-5 text-pretty text-[16px] leading-relaxed text-ink sm:text-[18px]">
-            What {/\d/.test(institutionsLabel) ? `${institutionsLabel} ` : ""}U.S. banks and credit unions charge, taken from their own
-            published fee schedules. Free to search for anyone checking their bank; benchmarks for
-            the banks themselves.
+
+          <InstitutionSearchForm className="mt-7" />
+          <p className="mt-2 text-[13px] leading-5 text-ink-muted">
+            {hasCount ? `${summary.institutionsLabel} institutions with published fees · ` : ""}
+            {summary.freshnessLabel}. Free to search.
           </p>
-        </div>
 
-        <div
-          role="tablist"
-          aria-label="What brings you here?"
-          className="mt-7 grid grid-cols-3 gap-1 rounded-2xl border border-border bg-white/70 p-1 sm:inline-flex sm:rounded-full"
-        >
-          {PATHS.map((path, index) => {
-            const selected = active === path.key;
-            return (
-              <button
-                key={path.key}
-                id={tabId(path.key)}
-                type="button"
-                role="tab"
-                aria-selected={selected}
-                aria-controls={panelId(path.key)}
-                tabIndex={selected ? 0 : -1}
-                onClick={() => setActive(path.key)}
-                onKeyDown={(event) => onTabKeyDown(event, index)}
-                className={`rounded-xl px-2 py-2 text-[12px] font-semibold leading-tight sm:whitespace-nowrap sm:rounded-full sm:px-4 sm:text-[13px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brick/40 ${
-                  selected ? "bg-ink text-white" : "text-ink-soft hover:text-ink"
-                }`}
-              >
-                {path.label}
-              </button>
-            );
-          })}
-        </div>
+          <ul className="mt-5 flex flex-wrap gap-2" aria-label="Try one of these">
+            {chips.map((chip) => (
+              <li key={chip.href}>
+                <Link
+                  href={chip.href}
+                  className="inline-flex rounded-full border border-border bg-surface-0 px-3 py-1.5 text-[13px] font-medium text-ink hover:border-ink"
+                >
+                  {chip.label}
+                </Link>
+              </li>
+            ))}
+          </ul>
 
-        <div className="mt-5 min-h-[132px]">
-          <div
-            id={panelId("lookup")}
-            role="tabpanel"
-            aria-labelledby={tabId("lookup")}
-            hidden={active !== "lookup"}
-            className="max-w-2xl"
-          >
-            <div role="search" aria-label="Search for a bank or credit union">
-              <InstitutionSearchBar />
-            </div>
-            <p className="mt-3 text-[13px] text-ink-muted">
-              Type a bank or credit union name to see its overdraft, ATM, wire and monthly fees.{" "}
-              <Link href="/institutions" className="font-semibold text-brick hover:text-brick-ink">
-                Browse by state
+          <div className="mt-6 space-y-2 text-[14px] leading-6 text-ink-soft">
+            <p>
+              Questions for Hamilton come with Pro.{" "}
+              <Link href="/subscribe" className={TEXT_LINK}>
+                See Hamilton plans
               </Link>
             </p>
-          </div>
-
-          <div
-            id={panelId("explore")}
-            role="tabpanel"
-            aria-labelledby={tabId("explore")}
-            hidden={active !== "explore"}
-          >
-            <LandingResearchPicker />
-            <ul className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              {EXPLORE_LINKS.map((link) => (
-                <li key={link.href}>
-                  <Link
-                    href={link.href}
-                    className="group block h-full rounded-lg border border-border bg-white px-4 py-3.5 transition-colors hover:border-brick/40"
-                  >
-                    <span className="block text-[14px] font-semibold text-ink group-hover:text-brick">
-                      {link.title} <span aria-hidden="true">→</span>
-                    </span>
-                    <span className="mt-1 block text-[12px] leading-snug text-ink-muted">{link.body}</span>
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </div>
-
-          <div
-            id={panelId("benchmark")}
-            role="tabpanel"
-            aria-labelledby={tabId("benchmark")}
-            hidden={active !== "benchmark"}
-            className="max-w-2xl"
-          >
-            <p className="text-pretty text-[16px] leading-relaxed text-ink">
-              See how your fees compare with your competitors&apos;, fee by fee, in a PDF you can
-              take to your pricing committee. Start with a free national or Fed district report;
-              the report for your institution is priced {REPORT_PRICE_INLINE}.
+            <p>
+              Prefer one document?{" "}
+              <Link href={REPORT_REQUEST_HREF} className={TEXT_LINK}>
+                A {REPORT_OFFER.name} for your institution
+              </Link>
+              , {REPORT_PRICE_INLINE}.
             </p>
-            <div className="mt-4 flex flex-wrap items-center gap-3">
-              <TrackLink
-                event="request_report_click"
-                eventProps={{ placement: "home_hero" }}
-                href={REPORT_REQUEST_HREF}
-                className="inline-flex items-center rounded-md bg-brick px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-brick-ink"
-              >
-                {REPORT_OFFER.ctaLabel}
-              </TrackLink>
-              {sampleLive && (
-                <Link
-                  href="/reports/sample-competitive-fee-position"
-                  className="text-sm font-semibold text-ink underline-offset-4 hover:text-brick hover:underline"
-                >
-                  Read the full sample
-                </Link>
-              )}
-            </div>
+            <p>Checking your own bank&apos;s fees? Search the same index, free.</p>
           </div>
         </div>
+
+        {overdraft ? (
+          <div className="min-w-0 rounded-lg border border-border bg-surface-0 p-5 sm:p-6">
+            <NationalRange row={overdraft} freshnessLabel={summary.freshnessLabel} />
+          </div>
+        ) : null}
       </div>
     </section>
   );

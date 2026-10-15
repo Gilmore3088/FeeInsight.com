@@ -3,29 +3,31 @@ export const dynamic = "force-dynamic";
 
 import type { Metadata } from "next";
 import { getPublicSnapshot } from "@/lib/public-stats";
-import type { InstitutionStateDirectorySummary } from "@/lib/data-store/search";
 import { CONTACT_EMAIL, LEGAL_ENTITY_NAME, PRODUCT_NAME, SITE_NAME, SITE_URL } from "@/lib/constants";
-import { LandingHero } from "./landing-hero";
-import { LandingPriceStrip } from "./landing-price-strip";
-import { LandingTrustStats } from "./landing-trust-stats";
-import { LandingBankOffer } from "./landing-bank-offer";
 import { sampleReportAvailable } from "@/lib/custom-report/sample-report";
-
 import { ConsumerNav } from "@/components/consumer-nav";
 import { CustomerFooter } from "@/components/customer-footer";
 import { SearchModal } from "@/components/public/search-modal";
-import { getInstitutionStateDirectorySummariesCached } from "@/lib/data-store/public-cached-reads";
+import { LandingHero } from "./landing-hero";
+import { LandingProof } from "./landing-proof";
+import { LandingEveryFee, LandingEveryMarket, LandingOneWorkspace } from "./landing-pillars";
+import { LandingPricing } from "./landing-pricing";
+import { LandingFaq } from "./landing-faq";
+import { LandingClose } from "./landing-close";
+import { nationalRange } from "./landing-shared";
 
-const HOME_TITLE = `${SITE_NAME} — Bank and credit union fees, traced to the source`;
+// The buyer promise from site v3 brief 08 §B.3 (h1) and its subhead; no counts, so nothing goes stale.
+const HOME_TITLE = `Know where your fees stand, with a source for every figure | ${SITE_NAME}`;
+const HOME_DESCRIPTION =
+  `The ${PRODUCT_NAME} reads the published fee schedules of U.S. banks and credit unions. ` +
+  "See each of your fees against your market, your state, your Fed district, your peer group and the nation.";
 
 export const metadata: Metadata = {
   title: { absolute: HOME_TITLE },
-  description:
-    "Look up overdraft, ATM, wire and monthly fees at U.S. banks and credit unions, each traced to its published schedule. Peer benchmarks for banking teams.",
+  description: HOME_DESCRIPTION,
   openGraph: {
     title: HOME_TITLE,
-    description:
-      "Look up overdraft, ATM, wire and monthly fees for U.S. banks and credit unions — every figure traced to the published schedule. Free lookup; peer benchmarking for banking teams.",
+    description: HOME_DESCRIPTION,
   },
 };
 
@@ -59,17 +61,13 @@ const WEBSITE_JSON_LD = {
 };
 
 export default async function LandingPage() {
-  // Counts and medians come from one shared snapshot, so they match the fee index,
-  // research hub and directory to the number.
-  const [{ summary, categories }, stateCoverage, sampleLive] = await Promise.all([
-    getPublicSnapshot(),
-    // The coverage map is optional: a failed read hides it, not the page.
-    getInstitutionStateDirectorySummariesCached({}).catch((): InstitutionStateDirectorySummary[] => []),
-    sampleReportAvailable(),
-  ]);
+  // Counts and the national ranges come from one shared snapshot, so they match the fee
+  // index, research hub and directory to the number.
+  const [{ summary, categories }, sampleLive] = await Promise.all([getPublicSnapshot(), sampleReportAvailable()]);
+  const overdraft = nationalRange(categories, "overdraft");
 
   return (
-    <div className="min-h-screen bg-paper consumer-brand">
+    <div className="min-h-screen overflow-x-clip bg-paper consumer-brand">
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(ORGANIZATION_JSON_LD) }}
@@ -80,10 +78,14 @@ export default async function LandingPage() {
       />
       <ConsumerNav />
       <main id="main-content">
-        <LandingHero institutionsLabel={summary.institutionsLabel} sampleLive={sampleLive} />
-        <LandingPriceStrip categories={categories} refreshedOn={summary.refreshedOn} />
-        <LandingBankOffer sampleLive={sampleLive} />
-        <LandingTrustStats summary={summary} states={stateCoverage} />
+        <LandingHero summary={summary} overdraft={overdraft} sampleLive={sampleLive} />
+        <LandingProof summary={summary} />
+        <LandingEveryFee categories={categories} summary={summary} />
+        <LandingEveryMarket overdraft={overdraft} summary={summary} />
+        <LandingOneWorkspace />
+        <LandingPricing />
+        <LandingFaq summary={summary} />
+        <LandingClose />
       </main>
       <CustomerFooter />
       <SearchModal />
