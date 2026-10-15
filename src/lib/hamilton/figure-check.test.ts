@@ -35,3 +35,23 @@ describe("checkNarrativeFigures", () => {
     expect(checkNarrativeFigures("Pricing is competitive.", data)).toEqual({ checked: 0, unmatched: [] });
   });
 });
+
+describe("figures that are not the data's to trace (#1425)", () => {
+  const data = { institution_amount: 35, peer_median: 30 };
+
+  it("accepts a figure the reader's question names, and nothing else from outside the data", () => {
+    const text = "At $40, the fee you asked about would sit above the $30 peer median; $47.13 is not in the data.";
+    expect(checkNarrativeFigures(text, data).unmatched).toEqual(["$40", "$47.13"]);
+    expect(checkNarrativeFigures(text, data, { question: "Would a $40 overdraft fee be high?" }).unmatched).toEqual(["$47.13"]);
+  });
+
+  it("accepts an asset-tier bound only in a sentence about assets or tiers", () => {
+    const tier = "Among banks with $1 billion to $10 billion in assets, the median is $30.";
+    expect(checkNarrativeFigures(tier, data).unmatched).toEqual([]);
+    expect(checkNarrativeFigures("Peers in the $300M to $1B tier charge $30.", data).unmatched).toEqual([]);
+    // A tier bound stated as a money figure, not as a size, still has to trace.
+    expect(checkNarrativeFigures("The bank earned $1 billion in fee income. Its assets are large.", data).unmatched).toEqual(["$1 billion"]);
+    // Only the tiers' own bounds: $5 billion is not one.
+    expect(checkNarrativeFigures("Banks with $5 billion in assets charge $30.", data).unmatched).toEqual(["$5 billion"]);
+  });
+});

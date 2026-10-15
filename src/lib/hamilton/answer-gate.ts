@@ -9,7 +9,7 @@
  * (evidence fact ids, a fee missing from the index, the opening sentence).
  */
 
-import { checkNarrativeFigures, type FigureCheckResult } from "./figure-check";
+import { checkNarrativeFigures, type FigureCheckOptions, type FigureCheckResult } from "./figure-check";
 import { PIPELINE_TERMS, RECOMMENDATION } from "./workspace/four-roles";
 
 /** Price position is "lower" or "higher", never "cheapest". */
@@ -22,9 +22,12 @@ export interface AnswerEvidenceCheck {
   figureCheck: FigureCheckResult;
 }
 
-/** The shared gate: `text` is everything the reader would see, `data` everything the model saw. */
-export function checkAnswerEvidence(text: string, data: unknown): AnswerEvidenceCheck {
-  const figureCheck = checkNarrativeFigures(text, data);
+/**
+ * The shared gate: `text` is everything the reader would see, `data` everything the model saw,
+ * and `options.question` the reader's own question, whose figures the answer may restate.
+ */
+export function checkAnswerEvidence(text: string, data: unknown, options: FigureCheckOptions = {}): AnswerEvidenceCheck {
+  const figureCheck = checkNarrativeFigures(text, data, options);
   const problems: string[] = [];
   if (figureCheck.unmatched.length > 0) problems.push(`These figures are not in DATA: ${figureCheck.unmatched.join(", ")}.`);
   const advice = text.match(RECOMMENDATION);

@@ -6,7 +6,9 @@
  * A figure matches when it equals a payload number, or a difference / percent
  * difference between two payload numbers (the deltas a narrative naturally states),
  * within the rounding its own precision implies ("$35" covers 34.50–35.49).
- * Anything else is reported as unmatched so the caller can regenerate or refuse.
+ * Two kinds of figure are not the data's to trace (#1425): one the reader's own question names,
+ * and an asset-tier bound ("banks with $1 billion to $10 billion in assets") in a sentence about
+ * assets or tiers. Anything else is reported as unmatched so the caller can regenerate or refuse.
  */
 
 export interface NarrativeFigure {
@@ -15,6 +17,13 @@ export interface NarrativeFigure {
   value: number;
   /** Half a unit of the figure's last stated digit. */
   tolerance: number;
+  /** Where the figure starts in the text. */
+  index: number;
+}
+
+export interface FigureCheckOptions {
+  /** The reader's own question: a figure it names may be restated. */
+  question?: string;
 }
 
 export interface FigureCheckResult {
@@ -39,11 +48,11 @@ export function extractFigures(text: string): NarrativeFigure[] {
   for (const match of text.matchAll(USD_PATTERN)) {
     const scale = match[3] ? SCALE[match[3].toLowerCase()] ?? 1 : 1;
     const value = Number(`${match[1].replace(/,/g, "")}${match[2] ? `.${match[2]}` : ""}`) * scale;
-    figures.push({ raw: match[0].trim(), kind: "usd", value, tolerance: toleranceFor(match[2], scale) });
+    figures.push({ raw: match[0].trim(), kind: "usd", value, tolerance: toleranceFor(match[2], scale), index: match.index ?? 0 });
   }
   for (const match of text.matchAll(PCT_PATTERN)) {
     const value = Number(`${match[1]}${match[2] ? `.${match[2]}` : ""}`);
-    figures.push({ raw: match[0].trim(), kind: "pct", value, tolerance: toleranceFor(match[2], 1) });
+    figures.push({ raw: match[0].trim(), kind: "pct", value, tolerance: toleranceFor(match[2], 1), index: match.index ?? 0 });
   }
   return figures;
 }
@@ -99,7 +108,21 @@ function candidateValues(numbers: PayloadNumber[], kind: NarrativeFigure["kind"]
   return [...candidates];
 }
 
-export function checkNarrativeFigures(narrative: string, data: unknown): FigureCheckResult {
+/** The bounds of Hamilton's asset tiers, in dollars: the FDIC tiers and the peer-set tiers. */
+export const ASSET_TIER_BOUNDS: readonly number[] = [100e6, 300e6, 1e9, 10e9, 50e9, 250e9];
+const ASSET_CONTEXT = /\bassets?\b|\btiers?\b|\bin size\b|\basset[- ]size/i;
+
+/** The sentence a figure sits in: decimals ("$1.25") never end one. */
+function sentenceAt(text: string, index: number): string {
+  const before = text.slice(0, index);
+  const start = Math.max(before.lastIndexOf("\n"), ...[...before.matchAll(/[.!?](?=\s)/g)].map((m) => m.index ?? -1)) + 1;
+  const after = text.slice(index).search(/[.!?](?=\s|$)|\n/);
+  return text.slice(start, after < 0 ? text.length : index + after);
+}
+
+const near = (figure: NarrativeFigure, value: number) => Math.abs(Math.abs(figure.value) - value) <= figure.tolerance;
+
+export function checkNarrativeFigures(narrative: string, data: unknown, options: FigureCheckOptions = {}): FigureCheckResult {
   const figures = extractFigures(narrative);
   if (figures.length === 0) return { checked: 0, unmatched: [] };
   const numbers = collectPayloadNumbers(data);
@@ -107,8 +130,13 @@ export function checkNarrativeFigures(narrative: string, data: unknown): FigureC
     usd: candidateValues(numbers, "usd"),
     pct: candidateValues(numbers, "pct"),
   };
+  const asked = options.question ? extractFigures(options.question) : [];
+  const traced = (figure: NarrativeFigure) =>
+    byKind[figure.kind].some((value) => near(figure, value))
+    || asked.some((q) => q.kind === figure.kind && near(figure, Math.abs(q.value)))
+    || (figure.kind === "usd" && ASSET_TIER_BOUNDS.some((bound) => near(figure, bound)) && ASSET_CONTEXT.test(sentenceAt(narrative, figure.index)));
   const unmatched = figures
-    .filter((figure) => !byKind[figure.kind].some((value) => Math.abs(Math.abs(figure.value) - value) <= figure.tolerance))
+    .filter((figure) => !traced(figure))
     .map((figure) => figure.raw);
   return { checked: figures.length, unmatched: [...new Set(unmatched)] };
 }
