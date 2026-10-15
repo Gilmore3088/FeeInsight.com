@@ -214,6 +214,20 @@ describe("Hamilton answer quality (#1079)", () => {
     expect(q.paths.filter((p) => !p.measured).map((p) => p.path)).toEqual(["written_answer", "memo", "simulate", "report"]);
   });
 
+  it("adds the paid memo sample's dated rates and leaves the other paid paths unmeasured", () => {
+    const paid = { paths: [{ path: "memo", sampled: 5, answers: 5, passed: 4, correctness: { checked: 4, correct: 3 } }] };
+    const q = answerQualityFrom("2026-10-14T00:51:00.000Z", detail, { at: "2026-10-14T15:17:00.000Z", detail: paid });
+    expect(q.paidAt).toBe("2026-10-14T15:17:00.000Z");
+    expect(q.paths.find((p) => p.path === "memo")).toMatchObject({ measured: true, answers: 5, formPassed: 4, formRate: 0.8, checked: 4, correct: 3, correctRate: 0.75 });
+    expect(q.paths.filter((p) => !p.measured).map((p) => p.path)).toEqual(["written_answer", "simulate", "report"]);
+  });
+
+  it("treats a paid run that wrote no memo as unmeasured", () => {
+    const q = answerQualityFrom("2026-10-14T00:51:00.000Z", detail, { at: "2026-10-14T15:17:00.000Z", detail: { paths: [{ path: "memo", sampled: 0, answers: 0 }] } });
+    expect(q.paidAt).toBeNull();
+    expect(q.paths.find((p) => p.path === "memo")?.measured).toBe(false);
+  });
+
   it("reads an eval from before the correctness check as form only", () => {
     const q = answerQualityFrom("2026-10-13T20:51:34.000Z", { answers: 126, passed: 89, timedOut: true });
     expect(q.paths[0]).toMatchObject({ formPassed: 89, checked: null, correctRate: null });
@@ -233,6 +247,19 @@ describe("Hamilton answer quality (#1079)", () => {
     expect(goal.answerQuality).toMatchObject({ query: "goal.hamilton_answer_eval_latest", at: "2026-10-14T00:51:00.000Z" });
     expect(goalBriefLines(goal).at(-1)).toBe(
       "Hamilton answers (eval of 2026-10-14 00:51 UTC): Free Ask, standard questions: form 71.4% (100 of 140), figures tie out 90.0% (108 of 120); Free Ask, Pro readers' questions: form 45.0% (9 of 20), figures tie out 100.0% (10 of 10). Paid paths not measured yet.",
+    );
+  });
+
+  it("puts the paid memo sample in the brief with its own date", async () => {
+    const paid = { paths: [{ path: "memo", sampled: 5, answers: 5, passed: 4, correctness: { checked: 4, correct: 3 } }] };
+    const { db, queries } = fakeDb([
+      [/hamilton-answer-eval/, [{ created_at: new Date("2026-10-14T00:51:00Z"), detail }]],
+      [/hamilton-paid-answer-eval/, [{ created_at: new Date("2026-10-14T15:17:00Z"), detail: paid }]],
+    ]);
+    const goal = await readGoalScorecard(db);
+    expect(queries.find((text) => text.includes("hamilton-paid-answer-eval"))).toContain("@.answers > 0");
+    expect(goalBriefLines(goal).at(-1)).toBe(
+      "Hamilton answers (eval of 2026-10-14 00:51 UTC; paid sample of 2026-10-14 15:17 UTC): Free Ask, standard questions: form 71.4% (100 of 140), figures tie out 90.0% (108 of 120); Free Ask, Pro readers' questions: form 45.0% (9 of 20), figures tie out 100.0% (10 of 10); Memo (paid): form 80.0% (4 of 5), figures tie out 75.0% (3 of 4). Not measured yet: written answer, simulate, report.",
     );
   });
 });

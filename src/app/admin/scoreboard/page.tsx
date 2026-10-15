@@ -309,7 +309,8 @@ const GOAL_CARDS: GoalCardSpec[] = [
     unit: "of free Ask answers whose fee figures tie to live catalog rows (latest answer eval)",
     detail: (goal) => goal.answerQuality ? (
       <>
-        Eval of {goal.answerQuality.at.slice(0, 16).replace("T", " ")} UTC{goal.answerQuality.timedOut ? ", stopped at its time budget" : ""}.
+        Eval of {goal.answerQuality.at.slice(0, 16).replace("T", " ")} UTC{goal.answerQuality.timedOut ? ", stopped at its time budget" : ""}
+        {goal.answerQuality.paidAt ? `; paid sample of ${goal.answerQuality.paidAt.slice(0, 16).replace("T", " ")} UTC` : ""}.
         {goal.answerQuality.paths.map((p) => (
           <span key={p.path} className="block">
             {p.label}: {p.measured
