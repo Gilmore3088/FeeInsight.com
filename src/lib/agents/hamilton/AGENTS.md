@@ -112,9 +112,12 @@ Hamilton supports the decision; it does not make it.
   One more (when unused today) is a written answer (`hamilton/written-answer-read.ts`, the same
   prompt, tools, output cap and step limit as `/api/research/hamilton` on the Analyze screen,
   Pricing focus, the sampled institution as the reader's own), on the first sampled question with
-  research; the call stops at 180 s. Form is the route's evidence gate (`writtenAnswerCheck`);
-  correctness, for an answer that passed form and states a figure, is `reconcileMemoText`, with money
-  values the answer's tools returned (other fees, call reports) accepted as stated.
+  research, with no saved peer set; the call stops at 180 s and the ledger records every step's
+  tokens. Form is the route's evidence gate (`writtenAnswerCheck`); correctness, for an answer that
+  passed form and states a figure, is `reconcileWrittenText`: each dollar figure in the text is a
+  live value, recomputed statistic or gap for the asked fee, or money its tools read from sources
+  other than the fee catalog (call reports, national data). A fee price a catalog tool returned
+  still has to match the live catalog.
   The goal scorecard reads the latest run's "Memo (paid)", "Simulate (paid)" and "Written answer
   (paid)" rows. The report path is not sampled yet.
   It asks 17 questions (q26, the NSF regulation question, since #1079; q31, fee income against

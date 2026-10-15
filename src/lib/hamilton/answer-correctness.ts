@@ -144,6 +144,18 @@ export function reconcileMemoText(input: ReconcileInput & { text: string; extra?
   return tieText(input.text, base.anchors, [...base.singles, ...otherSourceFigures(input.response), ...(input.extra ?? [])], base.failures);
 }
 
+/**
+ * Reconciles a written answer (#1079) on its own text: every dollar figure must be a live value, a
+ * recomputed statistic or a gap between two for the asked fee, or one of `extra` (money the answer's
+ * tools read from sources other than the fee catalog). The free answer's research only names the
+ * fee and members to recompute; its own stale values are that answer's failures, not this one's.
+ */
+export function reconcileWrittenText(input: ReconcileInput & { text: string; extra?: number[] }): CorrectnessResult {
+  const base = reconcileValues(input, catalogFacts(input.response));
+  if (!base) return { checked: false, figures: 0, failures: [] };
+  return tieText(input.text, base.anchors, [...base.singles, ...(input.extra ?? [])], []);
+}
+
 /** Dollar figures the answer states from sources other than the fee catalog, accepted as printed. */
 function otherSourceFigures(response: AskResponse): number[] {
   const story = response.answer?.storyline;

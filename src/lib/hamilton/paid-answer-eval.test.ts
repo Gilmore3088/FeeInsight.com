@@ -59,13 +59,16 @@ function memoClient(summary: string, simulateText = "At the tested price the fee
   return client;
 }
 
-/** A written answer writer that returns `text` written from `toolOutputs`, counting its calls. */
-function writtenWriter(text = "Your overdraft fee is $32.", toolOutputs: unknown[] = [{ fee_category: "overdraft", amount: 32 }]): WrittenAnswerWriter & { calls: number } {
+/** A written answer writer that returns `text` written from `toolResults`, counting its calls. */
+function writtenWriter(
+  text = "Your overdraft fee is $32.",
+  toolResults: Array<{ toolName: string; output: unknown }> = [{ toolName: "searchFees", output: { fee_category: "overdraft", amount: 32 } }],
+): WrittenAnswerWriter & { calls: number } {
   const writer = Object.assign(
     async () => {
       writer.calls += 1;
       const { checkAnswerEvidence } = await import("./answer-gate");
-      return { status: "written" as const, text, toolOutputs, check: checkAnswerEvidence(text, toolOutputs) };
+      return { status: "written" as const, text, toolResults, check: checkAnswerEvidence(text, toolResults.map((r) => r.output)) };
     },
     { calls: 0 },
   );
@@ -227,16 +230,15 @@ describe("Hamilton's paid answer eval (#1079)", () => {
     expect(result.notSampled).toEqual(["report"]);
   });
 
-  it("fails a written answer's form for a figure no tool gave it, and its correctness when the catalog moved", async () => {
+  it("fails a written answer's form for a figure no tool gave it, and its correctness when it repeats a catalog tool's fee the live catalog does not hold", async () => {
     evalMocks.answer.mockImplementation(async (id: number) => answered(id));
     const untraced = await runPaidAnswerEval({ db: db(0).db, now, client: memoClient("Your overdraft fee is $32."), live, agentRunId: 77, written: writtenWriter("Your overdraft fee is $32; peers charge $91.37.") });
     expect(untraced.paths[2]).toMatchObject({ answers: 1, passed: 0, correctness: { checked: 0 } });
-    const moved: LiveReader = async (id, research) => {
-      const values = await live(id, research);
-      return values && { rows: values.rows.map((r, i) => (i === 0 ? { ...r, amount: 29 } : r)) };
-    };
-    const stale = await runPaidAnswerEval({ db: db(0).db, now, client: memoClient("Your overdraft fee is $32."), live: moved, agentRunId: 77, written: writtenWriter() });
+    // A catalog tool said $47.13 and the text repeats it; no live value, statistic or gap holds it, so the text's own figure fails.
+    const tool = [{ toolName: "searchFees", output: { fee_category: "overdraft", amount: 47.13 } }];
+    const stale = await runPaidAnswerEval({ db: db(0).db, now, client: memoClient("Your overdraft fee is $32."), live, agentRunId: 77, written: writtenWriter("A peer charges $47.13.", tool) });
     expect(stale.paths[2]).toMatchObject({ passed: 1, correctness: { checked: 1, correct: 0 } });
+    expect(stale.results.find((r) => r.path === "written_answer")!.correctness).toEqual(["figures that tie to no live catalog value: $47.13"]);
   });
 
   it("does not write a second written answer once today's is used", async () => {
@@ -246,7 +248,10 @@ describe("Hamilton's paid answer eval (#1079)", () => {
     expect(writer.calls).toBe(0);
   });
 
-  it("reads money values from tool outputs by key, not ids or counts", () => {
-    expect(toolMoneyFigures([{ institution_id: 45, n: 12, median_amount: 30, rows: [{ amount: "29.50", fee_category: "nsf" }], revenue: 1200000 }])).toEqual([30, 29.5, 1200000]);
+  it("accepts other-source money as stated, never a catalog tool's fee price, an id or a count", () => {
+    expect(toolMoneyFigures([
+      { toolName: "searchFees", output: { institution_id: 45, fee_count: 32, median_amount: 30, rows: [{ amount: "29.50" }], service_charge_income: 1200000 } },
+      { toolName: "queryNationalData", output: { _shortened: true, text: JSON.stringify({ median: 27, n: 900 }) } },
+    ])).toEqual([1200000, 27]);
   });
 });

@@ -21,14 +21,15 @@
  * answer's own peer layer, written by the same prompt as the live screen, form-checked with the
  * shared evidence gate and tied to live values like the memo. One more is a written answer (#1079):
  * the Analyze screen's own prompt and tools for the question, form-checked with the route's evidence
- * gate and its dollar figures tied to live values, figures read from other tools accepted as stated.
+ * gate and its own dollar figures tied to live values for the asked fee, money its tools read from
+ * other sources (call reports, national data) accepted as stated.
  * The report path is not sampled yet.
  * Server only.
  */
 
 import { sql } from "@/lib/data-store/connection";
 import type { SqlTag } from "@/lib/agents/hamilton/studies/common";
-import { liveCatalogReader, reconcileMemoText, type LiveReader } from "./answer-correctness";
+import { liveCatalogReader, reconcileMemoText, reconcileWrittenText, type LiveReader } from "./answer-correctness";
 import { answer, EVAL_QUESTION_IDS, pickEvalInstitutions, pickProQuestions, summarizeCorrectness, type Answered, type CorrectnessSummary } from "./answer-eval";
 import { buildFeeResearchEvidence } from "./evidence-contract";
 import { writeStorylineMemo, type MemoClient } from "./memo";
@@ -253,25 +254,43 @@ async function simulateUp(
   };
 }
 
-/** Keys whose numbers are money in the tools' outputs: fee amounts, statistics, revenue. */
-const MONEY_KEY = /amount|median|^p\d{2}|avg|mean|^min|^max|fee|revenue|income|price|charge|cost/i;
+/** Tools that read sources other than the fee catalog (national data, call-report revenue, regulation). */
+const OTHER_SOURCE_TOOLS = new Set(["queryNationalData", "queryFeeRevenueCorrelation", "queryRegulatoryRisk"]);
+/** Money that is not a fee price: call-report and balance-sheet values, from any tool. */
+const OTHER_MONEY_KEY = /revenue|income|deposit|asset|loan|service_charge|expense|equity|capital|earning/i;
+/** Fee prices and their statistics: accepted as stated only from an other-source tool. */
+const FEE_PRICE_KEY = /amount|median|^p\d{2}|avg|mean|average|^min|^max|price|fee$|charge$/i;
+/** Never money: ids, counts and ranks, whatever else the key says. */
+const NOT_MONEY_KEY = /(^|_)(id|ids|n|rank)$|count|number|^total$/i;
 
-/** Money values in the tool outputs the written answer was given, which it may state as read. */
-export function toolMoneyFigures(outputs: readonly unknown[]): number[] {
+/**
+ * Money values the written answer's tools read from sources other than the fee catalog, which it
+ * may state as read. Fee prices from catalog tools are left out: the live catalog decides those.
+ */
+export function toolMoneyFigures(results: ReadonlyArray<{ toolName: string; output: unknown }>): number[] {
   const out: number[] = [];
-  const walk = (value: unknown, key: string, depth: number) => {
+  const walk = (value: unknown, key: string, depth: number, otherSource: boolean) => {
     if (depth > 8 || value === null || value === undefined) return;
+    const money = !NOT_MONEY_KEY.test(key) && (OTHER_MONEY_KEY.test(key) || (otherSource && FEE_PRICE_KEY.test(key)));
     if (typeof value === "number") {
-      if (Number.isFinite(value) && MONEY_KEY.test(key)) out.push(value);
+      if (Number.isFinite(value) && money) out.push(value);
     } else if (typeof value === "string") {
-      if (MONEY_KEY.test(key) && /^-?\$?\d[\d,]*(\.\d+)?$/.test(value.trim())) out.push(Number(value.replace(/[$,]/g, "")));
+      const text = value.trim();
+      // Compacted tool results carry their JSON as text.
+      if (text.startsWith("{") || text.startsWith("[")) {
+        try {
+          walk(JSON.parse(text), key, depth + 1, otherSource);
+        } catch {
+          // Not JSON: nothing to read.
+        }
+      } else if (money && /^-?\$?\d[\d,]*(\.\d+)?$/.test(text)) out.push(Number(text.replace(/[$,]/g, "")));
     } else if (Array.isArray(value)) {
-      for (const item of value) walk(item, key, depth + 1);
+      for (const item of value) walk(item, key, depth + 1, otherSource);
     } else if (typeof value === "object") {
-      for (const [k, v] of Object.entries(value as Record<string, unknown>)) walk(v, k, depth + 1);
+      for (const [k, v] of Object.entries(value as Record<string, unknown>)) walk(v, k, depth + 1, otherSource);
     }
   };
-  for (const output of outputs) walk(output, "", 0);
+  for (const r of results) walk(r.output, "", 0, OTHER_SOURCE_TOOLS.has(r.toolName));
   return out;
 }
 
@@ -294,15 +313,15 @@ async function writtenUp(
     return { ...candidate, path: "written_answer", status: "withheld", failures: result.check.problems, correctness: null, figures: 0 };
   }
   const values = await live(candidate.institutionId, answered.research, answered.schedule).catch(() => null);
-  const tied = reconcileMemoText({
+  const tied = reconcileWrittenText({
     question: candidate.question,
     response: answered.response,
     research: answered.research,
     schedule: answered.schedule,
     live: values,
     text: result.text,
-    // Figures the answer read from its tools (other fees, call reports, district data) count as stated.
-    extra: toolMoneyFigures(result.toolOutputs),
+    // Money the answer's tools read from other sources (call reports, national data) counts as stated.
+    extra: toolMoneyFigures(result.toolResults),
   });
   return {
     ...candidate,

@@ -12,7 +12,7 @@ import { getAnthropicLanguageModel, hasAnthropicApiKey, isProviderLimitError } f
 import { trackAnthropicRequest } from "@/lib/ai-provider-usage";
 import { getHamilton, buildAnalyzeModeSuffix, buildMonitorModeSuffix, buildSavedPeerSetPrompt, type AgentConfig } from "@/lib/research/agents";
 import { detectSkill, buildSkillInjection, buildSkillExecution, isSkillOptIn, findOfferedSkill } from "@/lib/research/skills";
-import { cacheLatestMessage, cachedSystem } from "@/lib/research/tool-output";
+import { cacheLatestMessage, cachedSystem, ledgerUsage } from "@/lib/research/tool-output";
 import type { AnswerEvidenceCheck } from "./answer-gate";
 import { questionOnly, writtenAnswerCheck } from "./answer-save";
 import type { ActivePeerSet } from "./active-peer-set";
@@ -110,8 +110,14 @@ export async function buildWrittenAnswerSystemPrompt(input: {
   return { status: "ok", systemPrompt, focus };
 }
 
+/** One tool result the answer was written from. */
+export interface WrittenAnswerToolResult {
+  toolName: string;
+  output: unknown;
+}
+
 export type WrittenAnswerResult =
-  | { status: "written"; text: string; toolOutputs: unknown[]; check: AnswerEvidenceCheck }
+  | { status: "written"; text: string; toolResults: WrittenAnswerToolResult[]; check: AnswerEvidenceCheck }
   | { status: "unavailable"; reason: string };
 
 /** One written answer as a buffered call: what the Analyze screen streams, for the eval. */
@@ -158,21 +164,34 @@ export const writeWrittenAnswer: WrittenAnswerWriter = async ({ institutionId, i
         ...(tracking.agentRunId ? { agentRunId: tracking.agentRunId } : {}),
         metadata: { institution_id: institutionId },
       },
-      async () => generateText({
-        model: getAnthropicLanguageModel(agent.model, "hamilton"),
-        system: cachedSystem(prompt.systemPrompt),
-        messages: await convertToModelMessages(contract.messages),
-        prepareStep: ({ messages: stepMessages }) => ({ messages: cacheLatestMessage(stepMessages) }),
-        tools: agent.tools,
-        maxOutputTokens: agent.maxTokens,
-        stopWhen: stepCountIs(agent.maxSteps),
-        abortSignal: AbortSignal.timeout(WRITTEN_ANSWER_TIMEOUT_MS),
-      }),
+      async () => {
+        const generated = await generateText({
+          model: getAnthropicLanguageModel(agent.model, "hamilton"),
+          system: cachedSystem(prompt.systemPrompt),
+          messages: await convertToModelMessages(contract.messages),
+          prepareStep: ({ messages: stepMessages }) => ({ messages: cacheLatestMessage(stepMessages) }),
+          tools: agent.tools,
+          maxOutputTokens: agent.maxTokens,
+          stopWhen: stepCountIs(agent.maxSteps),
+          abortSignal: AbortSignal.timeout(WRITTEN_ANSWER_TIMEOUT_MS),
+        });
+        // The ledger records `usage`: every step's tokens and the cache reads and writes, not the last step's alone.
+        const usage = ledgerUsage(generated.totalUsage);
+        return {
+          generated,
+          usage: {
+            input_tokens: usage.inputTokens,
+            output_tokens: usage.outputTokens,
+            cache_read_input_tokens: usage.cacheReadInputTokens,
+            cache_creation_input_tokens: usage.cacheCreationInputTokens,
+          },
+        };
+      },
     );
-    const text = (result.text ?? "").trim();
+    const text = (result.generated.text ?? "").trim();
     if (!text) return { status: "unavailable", reason: "Hamilton wrote no answer within its steps." };
-    const toolOutputs = (result.steps ?? []).flatMap((step) => step.toolResults.map((r) => r.output));
-    return { status: "written", text, toolOutputs, check: writtenAnswerCheck(text, toolOutputs) };
+    const toolResults = (result.generated.steps ?? []).flatMap((step) => step.toolResults.map((r) => ({ toolName: r.toolName, output: r.output })));
+    return { status: "written", text, toolResults, check: writtenAnswerCheck(text, toolResults.map((r) => r.output)) };
   } catch (error) {
     if (isProviderLimitError(error)) return { status: "unavailable", reason: HAMILTON_PAUSED_MESSAGE };
     const message = error instanceof Error ? error.message : String(error);
