@@ -4,14 +4,21 @@
  * Knox read a fee from also carries the neighbouring column's fee. Stored as the fee's excerpt,
  * that neighbour reads as the fee's own text wherever the excerpt is quoted or re-read.
  *
- * The fee's cells are the cell that prints its price, plus the price-less cells just before it
- * that supply words of its name the price cell lacks ("Stop Payment | $25 per item"). A line
- * with no " | " cells, or no cell at the fee's price, is kept whole. Pure.
+ * The fee's cells are:
+ * - the cell at its price that names it best (a tie keeps the whole line, so a neighbour at the
+ *   same price is never taken for the fee: "Incoming Wire $15.00 | Outgoing Wire $15.00");
+ * - every price-less cell just before it: the fee's label or its product ("Stop Payment | $25",
+ *   "Business Checking | Paper Statement Fee $3.00"), which Darwin's duplicate key reads;
+ * - the cells just after it that state its period or condition ("| Per Month", "| Waived with
+ *   $1,500 minimum daily balance"), which the frequency and waiver readers read.
+ * A line with no " | " cells, or no cell at the fee's price, is kept whole. Pure.
  */
 const CELL_SPLIT = /\s*\|\s*/;
-const PRICE = /\$\s?(\d[\d,]*(?:\.\d{1,2})?)|(?<![\d.])\.(\d{2})\b|\b(free|no charge|none|n\/c|waived)\b/gi;
+const PRICE = /\$\s*(\d[\d,]*(?:\.\d{1,2})?)|(?<![\d.])\.(\d{2})\b|\b(free|no charge|none|n\/c|waived)\b/gi;
 const NAME_WORD = /[a-z][a-z']{2,}/g;
 const NOT_NAME_WORDS = new Set(["fee", "fees", "charge", "charges", "per", "the", "and", "for", "each", "item", "items", "with", "only"]);
+/** A cell that qualifies the price before it: its period, cap or waiver. */
+const CONDITION_CELL = /^(?:per\b|each\b|every\b|a\s+(?:month|year|day|week)\b|monthly|annual|yearly|quarterly|daily|weekly|waived?\b|max|min|if\b|unless\b|plus\b|up\s+to\b|after\b|when\b|with\b|for\s+each\b|\/|\()/i;
 
 function nameWords(text: string): Set<string> {
   const words = text.toLowerCase().replace(/[‘’ʼ`]/g, "'").match(NAME_WORD) ?? [];
@@ -31,21 +38,24 @@ export function ownCells(line: string, feeName: string, amount: number | null): 
   const cells = line.split(CELL_SPLIT).map((cell) => cell.trim()).filter((cell) => cell.length > 0);
   if (cells.length < 2) return line;
   const wanted = nameWords(feeName);
-  const atPrice = cells.findIndex(
-    (cell) => prices(cell).some((value) => Math.abs(value - amount) < 0.005) && [...nameWords(cell)].some((word) => wanted.has(word)),
-  );
-  const priced = atPrice >= 0 ? atPrice : cells.findIndex((cell) => prices(cell).some((value) => Math.abs(value - amount) < 0.005));
-  if (priced < 0) return line;
-  let start = priced;
-  const found = nameWords(cells[priced]);
-  // Price-less cells just before the price that add a missing word of the name are its label.
-  while (start > 0 && prices(cells[start - 1]).length === 0) {
-    const adds = [...nameWords(cells[start - 1])].filter((word) => wanted.has(word) && !found.has(word));
-    if (adds.length === 0) break;
-    for (const word of adds) found.add(word);
-    start -= 1;
-  }
-  // Nothing of the name anywhere in the run: the price is not the fee's own, keep the line.
-  if (![...found].some((word) => wanted.has(word))) return line;
-  return cells.slice(start, priced + 1).join(" | ");
+  const score = (from: number, to: number) => {
+    const words = new Set<string>();
+    for (let k = from; k <= to; k += 1) for (const word of nameWords(cells[k])) if (wanted.has(word)) words.add(word);
+    return words.size;
+  };
+  // Each cell at the price, with the price-less cells before it as its label.
+  const runs = cells.flatMap((cell, index) => {
+    if (!prices(cell).some((value) => Math.abs(value - amount) < 0.005)) return [];
+    let start = index;
+    while (start > 0 && prices(cells[start - 1]).length === 0) start -= 1;
+    return [{ start, priced: index, score: score(start, index) }];
+  });
+  const best = Math.max(0, ...runs.map((run) => run.score));
+  const top = runs.filter((run) => run.score === best);
+  // No run names the fee, or two name it equally well: keep the line.
+  if (best === 0 || top.length !== 1) return line;
+  const { start, priced } = top[0];
+  let end = priced;
+  while (end + 1 < cells.length && CONDITION_CELL.test(cells[end + 1])) end += 1;
+  return cells.slice(start, end + 1).join(" | ");
 }
