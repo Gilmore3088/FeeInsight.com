@@ -128,7 +128,7 @@ export function InstitutionOfferBand({
                 href={PRO_PLANS_HREF}
                 className="inline-flex items-center gap-2 rounded-md bg-brick px-3.5 py-2 text-sm font-semibold text-white transition-colors hover:bg-brick-ink"
               >
-                See Pro plans
+                See Hamilton plans
                 <ArrowRight className="h-4 w-4" />
               </Link>
               <Link

@@ -7,6 +7,9 @@ describe("HamiltonClose", () => {
     render(<HamiltonClose competitors={14} />);
     expect(screen.getByRole("heading", { name: "Track this market in Hamilton" })).toBeInTheDocument();
     expect(screen.getByText(/these 14 competitors/)).toBeInTheDocument();
+    // Monitoring is claimed only as far as it ships (site v3 brief 03, Pillar 3).
+    expect(screen.getByText(/once its schedule is re-read/)).toBeInTheDocument();
+    expect(screen.queryByText(/as it is published/)).toBeNull();
     expect(screen.getByRole("link", { name: "See Hamilton plans" })).toHaveAttribute(
       "href",
       "/subscribe?from=%2Fpro%2Fmonitor#pro",

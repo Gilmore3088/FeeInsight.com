@@ -1,8 +1,49 @@
 import Link from "next/link";
 import { Logo } from "@/brand/components";
-import { ProLock } from "@/components/public/pro-lock";
 import { EmailSignup } from "./public/email-signup";
 import { CONTACT_EMAIL, LEGAL_ENTITY_NAME, PRODUCT_NAME, SITE_NAME, TRADEMARK_NOTICE } from "@/lib/constants";
+
+/** Footer columns (site v3 brief 05, section 3). No link points at a gated or noindexed page. */
+export const FOOTER_COLUMNS: readonly { heading: string; links: readonly { label: string; href: string }[] }[] = [
+  {
+    heading: "Product",
+    links: [
+      { label: PRODUCT_NAME, href: "/fees" },
+      { label: "Find your institution", href: "/institutions" },
+      { label: "Market data", href: "/research" },
+      { label: "Hamilton", href: "/for-institutions" },
+      { label: "Reports", href: "/reports" },
+      { label: "Pricing", href: "/subscribe" },
+    ],
+  },
+  {
+    heading: "Resources",
+    links: [
+      { label: "National fee index", href: "/research/national-fee-index" },
+      { label: "State reports", href: "/research#states" },
+      { label: "District reports", href: "/research#districts" },
+      { label: "Consumer guides", href: "/guides" },
+      { label: "Methodology", href: "/methodology" },
+      { label: "Data sources", href: "/research/data-sources" },
+      { label: "API", href: "/api-docs" },
+    ],
+  },
+  {
+    heading: "Company",
+    links: [
+      { label: "About", href: "/about" },
+      { label: "Contact", href: "/contact" },
+      { label: "Submit a fee source", href: "/submit-fees" },
+    ],
+  },
+  {
+    heading: "Legal",
+    links: [
+      { label: "Privacy", href: "/privacy" },
+      { label: "Terms", href: "/terms" },
+    ],
+  },
+];
 
 const FOOTER_LINK_CLASS = "text-ink-muted hover:text-ink transition-colors";
 const FOOTER_HEADING_CLASS = "text-[11px] font-bold uppercase tracking-[0.12em] text-ink-muted mb-3";
@@ -11,124 +52,35 @@ export function CustomerFooter() {
   return (
     <footer className="border-t border-border bg-surface-0">
       <div className="mx-auto max-w-page px-6 py-12 lg:py-14">
-        <div className="grid grid-cols-1 gap-10 sm:grid-cols-2 lg:grid-cols-[1fr_auto_auto_auto]  lg:gap-x-16">
+        <div className="grid grid-cols-1 gap-10 sm:grid-cols-2 lg:grid-cols-[1fr_auto_auto_auto_auto] lg:gap-x-12">
           {/* Brand + email */}
           <div className="lg:pr-8">
             <Link href="/" className="flex items-center gap-2 no-underline" aria-label={`${PRODUCT_NAME}, powered by ${SITE_NAME}: home`}>
               <Logo mark="bank-fee-index-lockup" height={40} title="" />
             </Link>
             <p className="mt-3 text-[12px] leading-relaxed text-ink-muted max-w-xs">
-              Home of the {PRODUCT_NAME} — U.S. bank and credit union fees
-              by district, state, size, and type. Published-source benchmarks
-              for consumers and banking teams.
+              The {PRODUCT_NAME} reads the published fee schedules of U.S. banks and credit unions, with a source
+              for every figure.
             </p>
             <div className="mt-4">
               <EmailSignup />
             </div>
           </div>
 
-          {/* Product */}
-          <div>
-            <p className={FOOTER_HEADING_CLASS}>
-              Product
-            </p>
-            <ul className="space-y-2 text-[13px]">
-              <li>
-                <Link href="/fees" className={FOOTER_LINK_CLASS}>
-                  {PRODUCT_NAME}
-                </Link>
-              </li>
-              <li>
-                <Link href="/institutions" className={FOOTER_LINK_CLASS}>
-                  Find Your Institution
-                </Link>
-              </li>
-              <li>
-                <Link href="/research" className={FOOTER_LINK_CLASS}>
-                  Research Hub
-                </Link>
-              </li>
-              <li>
-                <Link href="/guides" className={FOOTER_LINK_CLASS}>
-                  Consumer Guides
-                </Link>
-              </li>
-              <li>
-                <Link href="/for-institutions" className={FOOTER_LINK_CLASS}>
-                  For Institutions
-                </Link>
-              </li>
-              <li>
-                <Link href="/subscribe" className={FOOTER_LINK_CLASS}>
-                  Pricing
-                </Link>
-              </li>
-              <li>
-                <Link href="/api-docs" className={FOOTER_LINK_CLASS}>
-                  API
-                </Link>
-              </li>
-            </ul>
-          </div>
-
-          {/* Research */}
-          <div>
-            <p className={FOOTER_HEADING_CLASS}>
-              Research
-            </p>
-            <ul className="space-y-2 text-[13px]">
-              <li>
-                <Link href="/research/national-fee-index" className={FOOTER_LINK_CLASS}>
-                  National benchmarks
-                </Link>
-              </li>
-              <li>
-                <Link href="/research/fee-revenue-analysis" className={FOOTER_LINK_CLASS}>
-                  Fee-to-Revenue Analysis
-                </Link>{" "}
-                <ProLock className="ml-1 align-middle" />
-              </li>
-              <li>
-                <Link href="/research" className={FOOTER_LINK_CLASS}>
-                  State Reports
-                </Link>
-              </li>
-              <li>
-                <Link href="/research#districts" className={FOOTER_LINK_CLASS}>
-                  District Reports
-                </Link>
-              </li>
-            </ul>
-          </div>
-
-          {/* Company */}
-          <div>
-            <p className={FOOTER_HEADING_CLASS}>
-              Company
-            </p>
-            <ul className="space-y-2 text-[13px]">
-              <li>
-                <Link href="/about" className={FOOTER_LINK_CLASS}>
-                  About
-                </Link>
-              </li>
-              <li>
-                <Link href="/contact" className={FOOTER_LINK_CLASS}>
-                  Contact
-                </Link>
-              </li>
-              <li>
-                <Link href="/privacy" className={FOOTER_LINK_CLASS}>
-                  Privacy Policy
-                </Link>
-              </li>
-              <li>
-                <Link href="/terms" className={FOOTER_LINK_CLASS}>
-                  Terms of Service
-                </Link>
-              </li>
-            </ul>
-          </div>
+          {FOOTER_COLUMNS.map((column) => (
+            <div key={column.heading}>
+              <p className={FOOTER_HEADING_CLASS}>{column.heading}</p>
+              <ul className="space-y-2 text-[13px]">
+                {column.links.map((link) => (
+                  <li key={link.href}>
+                    <Link href={link.href} className={FOOTER_LINK_CLASS}>
+                      {link.label}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
         </div>
 
         {/* Bottom bar */}

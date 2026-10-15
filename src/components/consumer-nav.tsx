@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { NavAccount } from "./nav-account";
+import { NavAccount, NavPrimaryCtaTablet } from "./nav-account";
 import { NavLinks, ProBadge } from "./nav-links";
 import { ConsumerMobileNav } from "./consumer-mobile-nav";
 import { SearchTrigger } from "./search-trigger";
@@ -7,7 +7,7 @@ import { SkipLink } from "./public/skip-link";
 import { Logo } from "@/brand/components";
 import { SITE_NAME } from "@/lib/constants";
 
-export { PUBLIC_NAV_ITEMS, PRO_NAV_ITEMS, PRO_PLANS_NAV } from "./nav-items";
+export { PUBLIC_NAV_ITEMS, PRO_NAV_ITEMS, PRO_PLANS_NAV, PRIMARY_CTA_NAV } from "./nav-items";
 
 /**
  * The single public site header.
@@ -37,6 +37,7 @@ export function ConsumerNav() {
           </div>
           <div className="flex items-center gap-3">
             <SearchTrigger />
+            <NavPrimaryCtaTablet />
             <div className="hidden lg:block">
               <NavAccount />
             </div>

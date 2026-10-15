@@ -24,7 +24,7 @@ export function ProNextStep({ className = "" }: { className?: string }) {
         href={PRO_PLANS_HREF}
         className="inline-flex shrink-0 items-center justify-center rounded-full border border-brick px-5 py-2.5 text-sm font-semibold text-brick hover:bg-surface-200"
       >
-        See Pro plans
+        See Hamilton plans
       </Link>
     </div>
   );

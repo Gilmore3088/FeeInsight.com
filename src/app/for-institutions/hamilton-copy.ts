@@ -1,13 +1,24 @@
+import { HAMILTON_MODES, type HamiltonMode } from "@/lib/constants";
+import { HAMILTON_WIRE_NAV } from "@/lib/hamilton/navigation";
+
 export { HAMILTON_CANONICAL, HAMILTON_MODES, type HamiltonMode } from "@/lib/constants";
 
-/**
- * Pro subhead: the report is a snapshot; Pro is the feed. Claims only what ships: competitor
- * changes appear once their schedule is re-read (states are re-read on a rolling, at least monthly
- * calendar), and API access is by invitation, so it isn't offered here.
- */
-export const PRO_SUBHEAD =
-  "For teams that want to see a competitor's fee change once its schedule is re-read, try any " +
-  "price before deciding, and take CSV exports and saved peer sets to committee. " +
-  "The report is a snapshot; Pro is the feed.";
+type HamiltonTab = HamiltonMode | typeof HAMILTON_WIRE_NAV.label;
 
-export const PRO_SECTION_TITLE = "One workspace. Four views.";
+/**
+ * One line per Hamilton tab, in the workspace's own order: the four modes, then the Regulatory
+ * Wire (site v3 brief 03, Pillar 3). The labels come from code, so the page and the workspace
+ * never disagree. Monitoring stays at "once its schedule is re-read"; Hamilton never picks a price.
+ */
+const TAB_LINES: Record<HamiltonTab, string> = {
+  "This month": "The few fees worth a look now, and what changed in your market.",
+  "My fees": "Your market, your state, your Fed district, your peer group and the nation, with competitors named.",
+  "Try a price":
+    "Any amount side by side, including $0, its effect on fee income from your own figures, and the notice it needs.",
+  Reports: "A CEO one-pager, a pricing committee packet or a board brief, with every figure cited.",
+  "Regulatory Wire": "Federal and watched-state items.",
+};
+
+export const HAMILTON_TABS: { label: HamiltonTab; line: string }[] = [...HAMILTON_MODES, HAMILTON_WIRE_NAV.label].map(
+  (label) => ({ label, line: TAB_LINES[label] }),
+);
