@@ -12,6 +12,7 @@ import {
   scheduleKeysSql,
   scheduleGroupSql,
   summarizeRates,
+  MIN_LINKING_TEXT_CHARS,
   COUNT_SHARED_SCHEDULE_ONCE,
   STATS_SCHEDULE_KEYS,
   STATS_METHOD_VERSION,
@@ -304,6 +305,8 @@ describe("count once: sibling charters sharing one schedule (#1441, rule 7)", ()
     expect(keySql).toContain("ef.document_url");
     expect(keySql).toContain("ast.source_document_id = ef.source_document_id");
     expect(keySql).toContain("ezs3download|kcms-doc");
+    expect(keySql).toContain(`ast.char_count >= ${MIN_LINKING_TEXT_CHARS}`);
+    expect(MIN_LINKING_TEXT_CHARS).toBe(200);
     expect(scheduleGroupSql("ef", true)).toContain("hc.holding_company_rssd");
     expect(() => scheduleKeysSql("ef; drop", true)).toThrow();
     expect(() => scheduleGroupSql("ef; drop", true)).toThrow();

@@ -43,6 +43,16 @@ export { MIN_INSTITUTIONS_FOR_MEDIAN, STRONG_INSTITUTION_COUNT, maturityTier, ty
 /**
  * Rule 7 switch. Off until the read's cost and the affected counts are checked on prod (#1441).
  * Readers select STATS_SCHEDULE_KEYS; while this is false it selects NULL and nothing changes.
+ *
+ * Must fix before switching on: these count institutions from raw rows, not summarizeFees,
+ * so they would still count every charter and disagree with the medians beside them:
+ * - src/lib/report-assemblers/national-trends.ts (institution counts at :115 and :258)
+ * - src/app/api/v1/fees/route.ts (:85)
+ * - src/lib/research/tools.ts (:52)
+ * - src/lib/hamilton/workspace/research.ts peer band and layers (raw quantiles, :258-270,
+ *   :920, :952); answer-correctness.ts leaves rule 7 out of its recompute until they move.
+ * Also check, once on: the fee-category-detail cache entry carries the schedule fields
+ * (fees.ts getFeeCategoryDetail) against Next's 2 MB per-entry limit.
  */
 export const COUNT_SHARED_SCHEDULE_ONCE: boolean = false;
 
@@ -73,6 +83,12 @@ export const VENDOR_DOWNLOAD_PATH_SEGMENTS = ["ezs3download", "kcms-doc"] as con
 const VENDOR_DOWNLOAD_PATH_RE = new RegExp(`/(${VENDOR_DOWNLOAD_PATH_SEGMENTS.join("|")})/`, "i");
 const VENDOR_DOWNLOAD_PATH_SQL = `/(${VENDOR_DOWNLOAD_PATH_SEGMENTS.join("|")})/`;
 
+/**
+ * A stored text shorter than this never links siblings by its hash: an empty or near-empty
+ * read (a blocked page, a cookie wall) hashes the same at unrelated banks.
+ */
+export const MIN_LINKING_TEXT_CHARS = 200;
+
 function checkAlias(alias: string): void {
   if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(alias)) throw new Error("Invalid statistics table alias");
 }
@@ -80,8 +96,9 @@ function checkAlias(alias: string): void {
 /**
  * SQL expression (text[]) naming the schedule a catalog row was read from, for rule 7:
  * `u:` its document address (scheme, www., fragment and trailing slashes dropped, lower case)
- * and `t:` the text hash of its stored document text (agent_source_texts.source_document_id
- * is UNIQUE, so the lookup reads one row by index). Sibling charters each hold their own
+ * and `t:` the text hash of its stored document text when it holds at least
+ * MIN_LINKING_TEXT_CHARS characters (agent_source_texts.source_document_id is UNIQUE, so the
+ * lookup reads one row by index). Sibling charters each hold their own
  * source_documents row (institution_id is NOT NULL), so the document id alone never links
  * them. A vendor download path gives no keys. With the switch off it is NULL.
  */
@@ -89,7 +106,8 @@ export function scheduleKeysSql(alias = "ef", enabled = COUNT_SHARED_SCHEDULE_ON
   checkAlias(alias);
   if (!enabled) return "NULL::text[]";
   const url = `lower(regexp_replace(regexp_replace(regexp_replace(${alias}.document_url, '^https?://(www\\.)?', '', 'i'), '#.*$', ''), '/+$', ''))`;
-  const textHash = `(SELECT ast.text_hash FROM agent_source_texts ast WHERE ast.source_document_id = ${alias}.source_document_id)`;
+  const textHash = `(SELECT ast.text_hash FROM agent_source_texts ast
+     WHERE ast.source_document_id = ${alias}.source_document_id AND ast.char_count >= ${MIN_LINKING_TEXT_CHARS})`;
   return `CASE WHEN COALESCE(${alias}.document_url, '') ~* '${VENDOR_DOWNLOAD_PATH_SQL}' THEN NULL::text[]
     ELSE array_remove(ARRAY[NULLIF('u:' || ${url}, 'u:'), 't:' || ${textHash}], NULL) END`;
 }

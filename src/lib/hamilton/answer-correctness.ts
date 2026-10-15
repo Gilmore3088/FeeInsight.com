@@ -219,15 +219,6 @@ function reconcileValues(input: ReconcileInput, facts: Fact[]): { failures: stri
 
   if (research) {
     const values = valuePerInstitution(live.rows);
-    // Each institution's schedule keys and holding company, so a recomputed group counts a
-    // shared schedule once exactly as the published statistics do (fee-stats.ts rule 7).
-    const scheduleOf = new Map<number, Pick<StatsInputRow, "schedule_keys" | "schedule_group">>();
-    for (const r of live.rows) {
-      const id = Number(r.institution_id);
-      const prev = scheduleOf.get(id);
-      const keys = [...(prev?.schedule_keys ?? []), ...(r.schedule_keys ?? [])];
-      scheduleOf.set(id, { schedule_keys: [...new Set(keys)], schedule_group: prev?.schedule_group ?? r.schedule_group ?? null });
-    }
     const own = values.get(research.institutionId) ?? null;
     if (!near(research.current, own)) {
       failures.push(
@@ -253,7 +244,7 @@ function reconcileValues(input: ReconcileInput, facts: Fact[]): { failures: stri
         }
         if (!near(m.amount, value)) differ++;
         singles.push(value);
-        memberRows.push({ institution_id: m.institutionId, amount: value, fee_category: research.feeCategory, ...scheduleOf.get(m.institutionId) });
+        memberRows.push({ institution_id: m.institutionId, amount: value, fee_category: research.feeCategory });
       }
       if (missing > 0) failures.push(`${group.label}: ${missing} of ${group.members.length} values have no live catalog row`);
       if (differ > 0) failures.push(`${group.label}: ${differ} of ${group.members.length} values differ from the catalog`);
@@ -263,7 +254,10 @@ function reconcileValues(input: ReconcileInput, facts: Fact[]): { failures: stri
           failures.push(`${group.label}: counts ${group.members.length} institutions, the catalog has ${liveCount} publishing this fee`);
         }
       }
-      const stats = summarizeFees(memberRows);
+      // TODO(#1441): Hamilton's peer band and layers (workspace/research.ts) are raw quantiles
+      // over every member, so this recompute leaves statistics rule 7 (count once) out until
+      // they move onto summarizeFees; then carry each member's schedule keys here.
+      const stats = summarizeFees(memberRows, { countSharedScheduleOnce: false });
       const recomputed = { p25: stats.p25_amount, median: stats.median_amount, p75: stats.p75_amount };
       if (group.printed) {
         const printed = group.printed;

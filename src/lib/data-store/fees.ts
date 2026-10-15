@@ -1,5 +1,5 @@
 import { sql } from "./connection";
-import { STATS_ROW_FILTER, STATS_SCHEDULE_KEYS, summarizeFeesBy, valuePerInstitution, type StatsInputRow } from "./fee-stats";
+import { COUNT_SHARED_SCHEDULE_ONCE, STATS_ROW_FILTER, STATS_SCHEDULE_KEYS, summarizeFeesBy, valuePerInstitution, type StatsInputRow } from "./fee-stats";
 import { consumerPriceMoveSql } from "./consumer-price-moves";
 import type { FeeReview } from "./types";
 import { institutionDisplayName } from "@/lib/institution-display-name";
@@ -54,6 +54,13 @@ export interface FeeInstance {
   /** Statistics rule 7 (fee-stats.ts): the row's schedule keys and holding company. */
   schedule_keys?: string[] | null;
   schedule_group?: string | null;
+}
+
+/** A fee row without statistics rule 7's schedule fields (see getFeeCategoryDetail). */
+export function withoutScheduleFields(fee: FeeInstance): FeeInstance {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { schedule_keys, schedule_group, ...rest } = fee;
+  return rest;
 }
 
 export interface DimensionBreakdown {
@@ -348,7 +355,13 @@ export async function getFeeCategoryDetail(category: string): Promise<{
   // (229 ms a call, 13,000 calls Oct 5-9); same rows and fields as that query returned.
   const districtRows = rawFees
     .filter((f) => f.source_document_id !== null && f.fed_district !== null)
-    .map((f) => ({ fed_district: f.fed_district as number, amount: f.amount, institution_id: f.institution_id }));
+    .map((f) => ({
+      fed_district: f.fed_district as number,
+      amount: f.amount,
+      institution_id: f.institution_id,
+      schedule_keys: f.schedule_keys,
+      schedule_group: f.schedule_group,
+    }));
 
   const by_fed_district_real = buildBreakdown(districtRows.map((row) => ({ ...row, fee_category: category })), (row) => `District ${Number(row.fed_district)}`);
   by_fed_district_real.sort((a, b) => {
@@ -406,7 +419,10 @@ export async function getFeeCategoryDetail(category: string): Promise<{
   }
 
   return {
-    fees,
+    // While rule 7 is off the schedule fields are always null: drop them so the cached
+    // fee-category-detail entry (Next's 2 MB per-entry limit; overdraft is the largest)
+    // keeps its old shape. When on, /fees/[category] needs them for its own summary.
+    fees: COUNT_SHARED_SCHEDULE_ONCE ? fees : fees.map(withoutScheduleFields),
     by_charter_type,
     by_asset_tier,
     by_fed_district: by_fed_district_real,
