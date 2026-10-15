@@ -146,7 +146,7 @@ export default async function StateReportPage({ params }: PageProps) {
         subhead={districtName ? "What they charge, against their Fed district and the U.S." : "What they charge, against the U.S."}
       />
 
-      {/* 2. The video, floating over the hero's edge. */}
+      {/* 2. The video, in its own section under the hero. */}
       <StateVideo stateName={stateName} bars={posterBars} />
 
       <div className="mx-auto max-w-page space-y-10 px-4 py-8 sm:space-y-12 sm:px-6 sm:py-12">

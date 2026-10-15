@@ -65,8 +65,7 @@ function StateMap({ stateCode, district }: { stateCode: string; district: number
 export function StateHero({ stateCode, stateName, district, figures, freshnessLabel, subhead }: StateHeroProps) {
   return (
     <section className="bg-ink text-paper">
-      {/* The bottom padding leaves room for the video card that floats over the hero's edge. */}
-      <div className="mx-auto grid max-w-page gap-6 px-4 pb-16 pt-6 sm:px-6 sm:pb-24 sm:pt-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)] lg:items-center lg:gap-10">
+      <div className="mx-auto grid max-w-page gap-6 px-4 pb-8 pt-6 sm:px-6 sm:pb-12 sm:pt-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)] lg:items-center lg:gap-10">
         <div>
           <nav aria-label="Breadcrumb" className="flex items-center gap-2 text-[12px] text-paper/60 print:hidden">
             <Link href="/research" className="hover:text-white">Research</Link>
@@ -109,15 +108,21 @@ export function StateHero({ stateCode, stateName, district, figures, freshnessLa
 }
 
 /**
- * The video, as its own card floating over the hero's bottom edge. Until the clip exists the
- * poster draws the state's real spread for its first fee, so the slot shows the product.
+ * The video, in its own section under the hero. Until the clip exists the poster draws the
+ * state's real spread for its first fee, so the slot shows the product.
  */
 export function StateVideo({ stateName, bars }: { stateName: string; bars: number[] }) {
   const top = Math.max(...bars, 1);
   return (
-    <div className="relative mx-auto -mt-10 max-w-page px-4 sm:-mt-16 sm:px-6 print:hidden">
-      <figure className="grid overflow-hidden rounded-2xl border border-border bg-surface-0 shadow-fi-2 md:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)] md:items-center">
-        <div className="relative aspect-video bg-warm-ink-900" aria-hidden="true">
+    <section aria-labelledby="video-heading" className="mx-auto max-w-page px-4 pt-8 sm:px-6 sm:pt-12 print:hidden">
+      <figure className="mx-auto max-w-3xl">
+        <figcaption className="mb-3 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+          <h2 id="video-heading" className="text-[20px] font-semibold tracking-[-0.02em] text-ink sm:text-[24px]">
+            Watch Hamilton explore {stateName}
+          </h2>
+          <span className="text-[13px] text-ink-muted">Video coming</span>
+        </figcaption>
+        <div className="relative aspect-video overflow-hidden rounded-2xl bg-warm-ink-900 shadow-fi-2 ring-1 ring-ink/10" aria-hidden="true">
           {bars.length > 0 && (
             <div className="absolute inset-x-[8%] bottom-[14%] top-[22%] flex items-end gap-[4%] opacity-40">
               {bars.map((n, i) => (
@@ -133,14 +138,8 @@ export function StateVideo({ stateName, bars }: { stateName: string; bars: numbe
             </span>
           </span>
         </div>
-        <figcaption className="px-4 py-4 sm:px-6 sm:py-5">
-          <span className="block text-[20px] font-semibold leading-tight tracking-[-0.02em] text-ink sm:text-[24px]">
-            Watch Hamilton explore {stateName}
-          </span>
-          <span className="mt-1.5 block text-[14px] text-ink-muted">Video coming</span>
-        </figcaption>
       </figure>
-    </div>
+    </section>
   );
 }
 
