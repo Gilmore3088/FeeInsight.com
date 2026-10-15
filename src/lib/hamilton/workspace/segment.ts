@@ -52,7 +52,7 @@ const STATE_BY_NAME = Object.entries(STATE_NAMES)
   .map(([code, name]) => ({ code, name }))
   .sort((a, b) => b.name.length - a.name.length);
 
-function stateIn(question: string): string | null {
+export function stateIn(question: string): string | null {
   for (const { code, name } of STATE_BY_NAME) {
     if (new RegExp(`\\b${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i").test(question)) return code;
   }
@@ -60,7 +60,7 @@ function stateIn(question: string): string | null {
   return m && STATE_NAMES[m[1]] ? m[1] : null;
 }
 
-function charterIn(question: string): AskSegment["charterType"] {
+export function charterIn(question: string): AskSegment["charterType"] {
   const cu = /\bcredit unions?\b|\bCUs?\b/.test(question) || /\bcredit unions?\b/i.test(question);
   const withoutCu = question.replace(/credit unions?/gi, "");
   const bank = /\bbanks\b|\bcommercial banks?\b|\bbanks?\s+(?:with|over|above|under|below)\b/i.test(withoutCu);

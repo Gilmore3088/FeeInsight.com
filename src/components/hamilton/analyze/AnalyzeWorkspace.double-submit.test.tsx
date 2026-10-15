@@ -41,7 +41,7 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
 const enter = () => fireEvent.keyDown(screen.getByRole("textbox"), { key: "Enter" });
-const clickAsk = () => fireEvent.click(screen.getByRole("button", { name: "Ask" }));
+const clickAsk = () => fireEvent.click(screen.getByRole("button", { name: /^Ask( Hamilton)?$/ }));
 
 /** Releases the open engine calls and waits for the written answer's request. */
 async function finishEngine() {

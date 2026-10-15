@@ -7,6 +7,8 @@ import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
 import { AnalyzeWorkspace } from "@/components/hamilton/analyze/AnalyzeWorkspace";
+import { MarketBrief } from "@/components/hamilton/intelligence/MarketBrief";
+import { parseMarketQuestion } from "@/lib/hamilton/market-question";
 import { listSavedAnalyses, loadAnalysisRecord } from "./actions";
 import { resolveHamiltonInstitutionContext } from "@/lib/hamilton/workspace-context";
 import {
@@ -25,7 +27,7 @@ export const metadata: Metadata = { title: "Ask Hamilton" };
 export default async function AnalyzePage({
   searchParams,
 }: {
-  searchParams: Promise<{ analysis?: string; instId?: string; intent?: string; q?: string; send?: string; research?: string }>;
+  searchParams: Promise<{ analysis?: string; instId?: string; intent?: string; q?: string; send?: string; research?: string; brief?: string }>;
 }) {
   const params = await searchParams;
   const user = await getCurrentUser();
@@ -35,6 +37,15 @@ export default async function AnalyzePage({
       if (typeof value === "string") query.set(key, value);
     }
     redirect(`/login?from=${encodeURIComponent(`/pro/analyze?${query}`)}`);
+  }
+
+  // A market question ("Florida: fee pricing, revenue, complaints") gets a market brief from the
+  // governed readers. The server parses the question itself; anything else goes to the Ask engine.
+  if (typeof params.brief === "string" && params.brief.trim()) {
+    const question = params.brief.trim().slice(0, 500);
+    const market = parseMarketQuestion(question);
+    if (market) return <MarketBrief question={question} market={market} instId={params.instId ?? null} />;
+    redirect(`/pro/analyze?${new URLSearchParams({ q: question, send: "1", ...(params.instId ? { instId: params.instId } : {}) })}`);
   }
 
   let landingResearch: LandingResearchHandoff | null = null;

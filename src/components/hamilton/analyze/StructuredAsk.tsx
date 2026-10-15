@@ -539,7 +539,7 @@ function StructuredAskConversation({
                 <LinkButton href={researchHrefFor(response.answer.feeCategory).replace("/pro/research", "/pro/simulate")} primary>
                   Try a price
                 </LinkButton>
-                {response.savedAnalysisId ? <DownloadAnswerPdf analysisId={response.savedAnalysisId} memoWriting={memo?.state === "writing"} /> : null}
+                {response.savedAnalysisId ? <><LinkButton href={`/pro/reports?from_analysis=${encodeURIComponent(response.savedAnalysisId)}`}>Create board brief</LinkButton><DownloadAnswerPdf analysisId={response.savedAnalysisId} memoWriting={memo?.state === "writing"} /></> : null}
               </>
             ) : null
           }
@@ -554,7 +554,7 @@ function StructuredAskConversation({
                 <LinkButton href={researchHrefFor(response.answer.feeCategory).replace("/pro/research", "/pro/simulate")} primary>
                   Try a price
                 </LinkButton>
-                {response.savedAnalysisId ? <DownloadAnswerPdf analysisId={response.savedAnalysisId} memoWriting={memo?.state === "writing"} /> : null}
+                {response.savedAnalysisId ? <><LinkButton href={`/pro/reports?from_analysis=${encodeURIComponent(response.savedAnalysisId)}`}>Create board brief</LinkButton><DownloadAnswerPdf analysisId={response.savedAnalysisId} memoWriting={memo?.state === "writing"} /></> : null}
               </>
             ) : null
           }
@@ -567,10 +567,7 @@ function StructuredAskConversation({
       {!response.answer && !response.positions?.length && response.facts && response.facts.length > 0 ? <FactList facts={response.facts} /> : null}
       {segment && !storyline ? <SegmentTable data={segment} own={exhibitOwn?.own ?? null} ownLabel={exhibitOwn?.ownLabel ?? "Research subject"} /> : null}
       {response.kind === "opinion" && response.opinion ? (
-        <Callout>
-          <span className="font-medium text-warm-900">If the objective is {response.opinion.assumedObjective.replace(/_/g, " ")}: </span>
-          {response.opinion.opinion}
-        </Callout>
+        <Callout>{response.opinion.opinion}</Callout>
       ) : null}
       {response.scenario ? (
         <ScenarioSummary s={response.scenario} modelHref={modelHrefFor(response.scenario.feeCategory, response.scenario.tested)} />

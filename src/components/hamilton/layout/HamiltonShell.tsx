@@ -5,9 +5,11 @@ import { useEffect, useState } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import type { HamiltonContextSource } from "@/lib/hamilton/context-source";
 import type { HamiltonAccountContext } from "@/lib/hamilton/account-context";
-import { ConsumerNav } from "@/components/consumer-nav";
+import "@/brand/tokens/tokens.css";
+import "@/brand/styles/fee-insight.css";
+import "./workspace.css";
+import { WorkspaceNavigation } from "./WorkspaceNavigation";
 import { setViewAsCustomer } from "@/app/pro/(hamilton)/view-as-actions";
-import { HamiltonAskDock } from "./HamiltonAskDock";
 import { SearchModal } from "@/components/public/search-modal";
 import { SessionChromeProvider, type SessionChrome } from "@/components/use-session-chrome";
 import { hamiltonNavigationSelection, isHamiltonSubjectPath } from "@/lib/hamilton/navigation-context";
@@ -45,8 +47,9 @@ interface HamiltonShellProps {
 /**
  * HamiltonShell - Client component.
  * Outer shell wrapper applying .hamilton-shell CSS isolation boundary.
- * Composes: admin bar (admins only), the Fee Insight site header, the page, and the docked Ask bar.
- * No sidebar and no second bar: James wants the simplicity of the living-memo samples.
+ * Composes: admin bar (admins only), the workspace navigation and institution bar, and the page.
+ * The frame is #1011's unified workspace (James, Oct 11; docs/design/hamilton-rebuild/) on the Fee
+ * Insight design system (#1285). One Ask composer per view, so no docked Ask bar.
  * Per D-13, ARCH-01: .hamilton-shell class scopes all editorial design tokens.
  * Per D-10: admin mode bar shown only to admin/analyst users.
  */
@@ -108,12 +111,10 @@ export function HamiltonShell({
   return (
     <SessionChromeProvider value={session}>
       <HamiltonNavigationProvider value={navigation}>
-      <div
-        className="hamilton-shell min-h-screen bg-warm-100 print:bg-white"
-      >
+      <div className="hamilton-shell hamilton-workspace min-h-screen print:bg-white">
         {/* Admin mode bar - only for admin/analyst users (T-40-05) */}
         {isAdmin && (
-          <div className="bg-warm-900 text-white flex flex-wrap items-center justify-between gap-2 px-4 py-1.5 text-xs print:hidden">
+          <div className="workspace-admin-bar flex flex-wrap items-center justify-between gap-2 bg-black px-4 py-1.5 text-xs text-white print:hidden">
             <span className="text-gray-400">
               {viewAsCustomer
                 ? "Viewing as a customer: Hamilton answers exactly as a paying customer sees it"
@@ -136,39 +137,23 @@ export function HamiltonShell({
           </div>
         )}
 
-        {/* The Fee Insight site header, the same one as the public site; for Pro users its links are
-            Hamilton's four tabs (James, 2026-10-06: one header across the site and Pro).
-            The page-reveal animation gives each shell child its own stacking context, so the
-            wrapper carries the header's sticky z-index; without it the page painted over the
-            account menu. */}
-        <div className="sticky top-0 z-40 print:hidden">
-          <ConsumerNav />
-        </div>
-
-        {accountContext ? (
-          <div aria-label="Institution context" className="border-b border-warm-300 px-4 py-2 text-sm text-warm-800">
-            <span>Researching: {researchLabel}.</span>{" "}
-            <span>Account institution: {accountContext.status === "identified" && accountContext.institution
-              ? accountContext.institution.name
-              : accountContext.status === "ambiguous" ? "multiple memberships; no home selected"
-              : accountContext.status === "unavailable" ? "unavailable"
-              : "not linked"}.</span>
-          </div>
-        ) : null}
+        <WorkspaceNavigation
+          pathname={pathname}
+          isAdmin={isAdmin}
+          accountLabel={accountLabel(accountContext)}
+          researchLabel={marketScopeLabel(pathname, selection) ?? researchLabel}
+        />
 
         {canUseSeed && institutionContext.makeDefaultHref ? (
-          <div className="border-b border-warm-300 bg-warm-150 px-4 py-2 text-center text-sm text-warm-800 print:hidden">
+          <div className="workspace-preference-note print:hidden">
             You&apos;re researching {institutionContext.name ?? "another institution"}; your saved research preference is unchanged.{" "}
-            <Link href={institutionContext.makeDefaultHref} className="font-medium text-terra-text underline">
+            <Link href={institutionContext.makeDefaultHref} className="font-medium underline">
               Change research preference in Settings
             </Link>
           </div>
         ) : null}
 
-        <main className="mx-auto min-w-0 max-w-page px-4 pb-32 pt-8 sm:px-6 lg:pt-10 print:max-w-none print:p-0">{children}</main>
-
-        {/* Ask Hamilton, docked on every screen */}
-        <HamiltonAskDock selectedInstitutionId={navigation.institutionId} navigationContext={navigation} />
+        <main id="hamilton-content" className="workspace-content" tabIndex={-1}>{children}</main>
 
         {/* The header's Search button and Cmd/Ctrl+K open this; the public layout mounts its own. */}
         <SearchModal />
@@ -176,4 +161,20 @@ export function HamiltonShell({
       </HamiltonNavigationProvider>
     </SessionChromeProvider>
   );
+}
+
+function accountLabel(accountContext: HamiltonShellProps["accountContext"]): string {
+  if (accountContext?.status === "identified" && accountContext.institution) return accountContext.institution.name;
+  if (accountContext?.status === "ambiguous") return "Multiple memberships";
+  if (accountContext?.status === "unavailable") return "Unavailable";
+  return "Not linked";
+}
+
+/** Overview and Research read a market, not one institution, unless a local selection says otherwise. */
+function marketScopeLabel(pathname: string, selection: ReturnType<typeof hamiltonNavigationSelection>): string | null {
+  const scope = selection.research?.scope;
+  if (scope?.kind === "state") return `${scope.stateCode} · market intelligence`;
+  if (scope?.kind === "national") return "United States · market intelligence";
+  if (!selection.research && ["/pro/hamilton", "/pro/intelligence"].includes(pathname)) return "United States · market intelligence";
+  return null;
 }

@@ -1,5 +1,6 @@
 import { sql } from "@/lib/data-store/connection";
 import { DARWIN_VERIFY_MAX_LIMIT, DARWIN_VERIFY_STRATEGY, darwinDueSql } from "./darwin/verify";
+import { DARWIN_RELEASE_STRATEGY } from "./darwin/release-held";
 import { KNOX_RULES_STRATEGY } from "./knox/specialists";
 import { SOURCE_CHECK_REASON, SOURCE_CHECK_RESTORE_PREFIX, SOURCE_CHECK_STRATEGY } from "./hamilton/source-check";
 
@@ -436,8 +437,26 @@ export function knoxRules(n: HealthNumbers): HealthRule[] {
 
 // ---------------------------------------------------------------- Darwin
 
+/**
+ * The rules hold codes a release review looks at again (`release-held.ts`). Every other
+ * standing decision is final until a rule version changes.
+ */
+export const DARWIN_HELD_REASON_CODES = ["outside_envelope", "peer_outlier"] as const;
+
+/**
+ * Darwin's numbers. The pool is every Knox row flagged for Darwin and not verified; it splits
+ * into three parts that add up to it (#1059 follow-up, 2026-10-15: one "16,363 waiting" number
+ * mixed work Darwin owes with fees it already decided):
+ * - `undecided`: due now (`darwinDueSql`), never decided or due again under today's rules;
+ * - `heldForReview`: not due, latest rules decision a hold the release review looks at
+ *   (`DARWIN_HELD_REASON_CODES`), split by the latest release verdict;
+ * - `finalRejects`: not due, standing decision that is not a hold. These wait for nothing and
+ *   are left out of every waiting number.
+ * `audienceCorrection` counts rows the audience trigger refuses (not due, no decision needed).
+ */
 export async function readDarwinNumbers(db: SqlTag): Promise<HealthNumbers> {
   const common = await readCommon(db, "darwin");
+  const heldCodes = [...DARWIN_HELD_REASON_CODES];
   const [row] = await db`
     SELECT
       (SELECT COUNT(*) FROM pipeline_attempts
@@ -447,43 +466,107 @@ export async function readDarwinNumbers(db: SqlTag): Promise<HealthNumbers> {
         WHERE stage = 'verify' AND strategy = ${DARWIN_VERIFY_STRATEGY.strategy}
           AND outcome = 'ok'
           AND created_at > NOW() - INTERVAL '24 hours')::int AS passed,
+      split.pool,
       -- The rows the verify step would select now (#1052): never decided, or due again
       -- under today's rules (a guard, source-check, envelope or batch-key change).
-      due.undecided,
-      due.waiting_over_7d,
+      split.undecided,
+      split.waiting_over_7d,
+      split.held_for_review,
+      split.held_keep,
+      split.held_review,
+      split.held_duplicate,
+      split.held_reject,
+      split.held_no_verdict,
+      split.final_rejects,
+      split.audience_correction,
       (SELECT COUNT(*) FROM published_fee_records
         WHERE published_at > NOW() - INTERVAL '24 hours')::int AS published,
       (SELECT COUNT(*) FROM published_fee_records
         WHERE rolled_back_at > NOW() - INTERVAL '24 hours'
           AND rolled_back_reason LIKE ${`${SOURCE_CHECK_REASON}:%`})::int AS source_check_takedowns
       FROM (
-        SELECT COUNT(*)::int AS undecided,
-               -- Sent to Darwin over 7 days ago and never decided at this rule version.
+        SELECT COUNT(*)::int AS pool,
+               (COUNT(*) FILTER (WHERE fee.due))::int AS undecided,
+               -- Due, sent to Darwin over 7 days ago, and no first decision at this rule version.
                (COUNT(*) FILTER (
-                 WHERE fr.created_at < NOW() - make_interval(days => ${DARWIN_MAX_FIRST_DECISION_DAYS})
+                 WHERE fee.due
+                   AND fee.created_at < NOW() - make_interval(days => ${DARWIN_MAX_FIRST_DECISION_DAYS})
                    AND NOT EXISTS (
                      SELECT 1 FROM pipeline_attempts first
-                      WHERE first.input_fingerprint = 'raw:' || fr.fee_raw_id::text
+                      WHERE first.input_fingerprint = 'raw:' || fee.fee_raw_id::text
                         AND first.strategy = ${DARWIN_VERIFY_STRATEGY.strategy}
                         AND first.strategy_version = ${DARWIN_VERIFY_STRATEGY.version}
                    )
-               ))::int AS waiting_over_7d
-          FROM raw_fee_observations fr
-         WHERE ${db.unsafe(darwinDueSql())}
-      ) due
+               ))::int AS waiting_over_7d,
+               (COUNT(*) FILTER (WHERE fee.held))::int AS held_for_review,
+               (COUNT(*) FILTER (WHERE fee.held AND fee.verdict = 'keep'))::int AS held_keep,
+               (COUNT(*) FILTER (WHERE fee.held AND fee.verdict = 'review'))::int AS held_review,
+               (COUNT(*) FILTER (WHERE fee.held AND fee.verdict = 'duplicate'))::int AS held_duplicate,
+               (COUNT(*) FILTER (WHERE fee.held AND fee.verdict = 'reject'))::int AS held_reject,
+               -- No release verdict yet, or a first "not stated" look waiting for its second.
+               (COUNT(*) FILTER (
+                 WHERE fee.held AND (fee.verdict IS NULL OR fee.verdict NOT IN ('keep', 'review', 'duplicate', 'reject'))
+               ))::int AS held_no_verdict,
+               (COUNT(*) FILTER (WHERE NOT fee.due AND NOT fee.audience AND NOT fee.held))::int AS final_rejects,
+               (COUNT(*) FILTER (WHERE NOT fee.due AND fee.audience))::int AS audience_correction
+          FROM (
+            SELECT flagged.fee_raw_id,
+                   flagged.created_at,
+                   flagged.due,
+                   flagged.audience,
+                   flagged.latest_reason,
+                   flagged.verdict,
+                   (NOT flagged.due AND NOT flagged.audience
+                     AND flagged.latest_reason = ANY(${heldCodes}::text[])) AS held
+              FROM (
+                SELECT fr.fee_raw_id,
+                       fr.created_at,
+                       (${db.unsafe(darwinDueSql())}) AS due,
+                       (fr.outlier_flags ? 'audience_correction_required') AS audience,
+                       (SELECT pa.detail->>'reason_code' FROM pipeline_attempts pa
+                         WHERE pa.input_fingerprint = 'raw:' || fr.fee_raw_id::text
+                           AND pa.strategy = ${DARWIN_VERIFY_STRATEGY.strategy}
+                           AND pa.strategy_version = ${DARWIN_VERIFY_STRATEGY.version}
+                         ORDER BY pa.created_at DESC, pa.id DESC
+                         LIMIT 1) AS latest_reason,
+                       (SELECT rel.detail->>'verdict' FROM pipeline_attempts rel
+                         WHERE rel.input_fingerprint = 'raw:' || fr.fee_raw_id::text
+                           AND rel.strategy = ${DARWIN_RELEASE_STRATEGY.strategy}
+                           AND rel.strategy_version = ${DARWIN_RELEASE_STRATEGY.version}
+                         ORDER BY rel.created_at DESC, rel.id DESC
+                         LIMIT 1) AS verdict
+                  FROM raw_fee_observations fr
+                 WHERE fr.source = 'knox'
+                   AND fr.outlier_flags ? 'needs_darwin_verification'
+                   AND NOT EXISTS (SELECT 1 FROM verified_fee_observations fv WHERE fv.fee_raw_id = fr.fee_raw_id)
+                -- A fence: without it the planner copies the due and latest-decision subqueries
+                -- into every count that reads them, once per count.
+                OFFSET 0
+              ) flagged
+          ) fee
+      ) split
   `;
   return {
     ...common,
     decided: num(row?.decided),
     passed: num(row?.passed),
+    pool: num(row?.pool),
     undecided: num(row?.undecided),
     waitingOver7d: num(row?.waiting_over_7d),
+    heldForReview: num(row?.held_for_review),
+    heldKeep: num(row?.held_keep),
+    heldReview: num(row?.held_review),
+    heldDuplicate: num(row?.held_duplicate),
+    heldReject: num(row?.held_reject),
+    heldNoVerdict: num(row?.held_no_verdict),
+    finalRejects: num(row?.final_rejects),
+    audienceCorrection: num(row?.audience_correction),
     published: num(row?.published),
     sourceCheckTakedowns: num(row?.source_check_takedowns),
   };
 }
 
-/** The audit's bar (#1052): no Knox row sent to Darwin waits longer for its first decision. */
+/** The audit's bar (#1052): no due Knox row with no first decision waits longer than this. */
 export const DARWIN_MAX_FIRST_DECISION_DAYS = 7;
 
 export function darwinRules(n: HealthNumbers): HealthRule[] {
@@ -501,9 +584,9 @@ export function darwinRules(n: HealthNumbers): HealthRule[] {
     },
     {
       key: "no_week_old_waits",
-      label: `No Knox row sent to Darwin waits more than ${DARWIN_MAX_FIRST_DECISION_DAYS} days for its first decision`,
+      label: `No due Knox row with no first decision waits more than ${DARWIN_MAX_FIRST_DECISION_DAYS} days`,
       ok: waiting === 0,
-      detail: `${waiting} waiting over ${DARWIN_MAX_FIRST_DECISION_DAYS} days`,
+      detail: `${waiting} with no first decision after ${DARWIN_MAX_FIRST_DECISION_DAYS} days`,
     },
     {
       key: "passed_fees_hold_up",

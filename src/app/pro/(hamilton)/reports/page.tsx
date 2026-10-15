@@ -5,6 +5,8 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
 import { LandingResearchEntry } from "@/components/hamilton/landing/LandingResearchEntry";
+import { BoardBriefEditor } from "@/components/hamilton/reports/BoardBriefEditor";
+import { loadAnalysisRecord } from "../analyze/actions";
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
@@ -74,6 +76,7 @@ export default async function ReportsPage({
     research?: string;
     scenario_id?: string;
     report_id?: string;
+    from_analysis?: string;
     report?: string;
     instId?: string;
     intent?: string;
@@ -88,6 +91,13 @@ export default async function ReportsPage({
   if (params.research !== undefined) return <LandingResearchEntry raw={params.research} task="board_report" conflictingArtifact={Boolean(params.report_id || params.report || params.scenario_id)} />;
   const user = await getCurrentUser();
   if (!user) redirect("/");
+  // A board brief is made from one saved answer, reusing its findings with no new research (#1066).
+  if (params.from_analysis) {
+    if (params.report_id || params.report || params.scenario_id) return <p role="alert">Open the saved answer separately from another report.</p>;
+    const analysis = await loadAnalysisRecord(params.from_analysis);
+    if (!analysis) return <p role="alert">Saved answer not found or unavailable.</p>;
+    return <BoardBriefEditor key={analysis.id} analysis={analysis.responseJson} analysisId={analysis.id} />;
+  }
   const initialReportId = params.report_id ?? params.report ?? null;
   const [publishedReports, savedReports, savedScenario, initialReport] = await Promise.all([
     getPublishedReports().catch(() => []),
@@ -101,6 +111,9 @@ export default async function ReportsPage({
   ]);
   if (initialReportId && !initialReport) {
     return <p role="alert">Saved report not found or unavailable.</p>;
+  }
+  if (initialReport?.report_type === "board_brief" && initialReport.report_json.boardBrief) {
+    return <BoardBriefEditor key={initialReport.id} initialReport={initialReport.report_json} reportId={initialReport.id} metadata={initialReport.artifact_metadata} />;
   }
   const contextInstitutionId = resolveArtifactContextInstitutionId({
     urlInstitutionId: params.instId,

@@ -1,0 +1,35 @@
+import { describe, expect, it } from "vitest";
+import { MARKET_BRIEF_CATEGORIES, marketBriefHref, parseMarketQuestion } from "./market-question";
+
+describe("parseMarketQuestion", () => {
+  it("answers the replayed Florida question with the three topics it asked, not an overdraft fallback", () => {
+    const market = parseMarketQuestion("talk to me about $5B and up in florida. fee pricing, revenue, complaints");
+    expect(market?.selection.scope).toEqual({ kind: "state", stateCode: "FL" });
+    expect(market?.lenses).toEqual(["fees", "financials", "complaints"]);
+    expect(market?.selection.categories).toEqual(MARKET_BRIEF_CATEGORIES);
+    expect(market?.segment?.minAssets).toBe(5_000_000);
+  });
+
+  it("keeps a named fee and charter, and covers every lens when no topic is named", () => {
+    const fee = parseMarketQuestion("How do credit unions in Texas price wire transfer fees?");
+    expect(fee?.selection.charter).toBe("credit_union");
+    expect(fee?.selection.categories[0]).toBe("wire_domestic_outgoing");
+    expect(parseMarketQuestion("Tell me about Ohio")?.lenses).toHaveLength(5);
+    expect(parseMarketQuestion("What is happening nationally with complaints?")?.selection.scope).toEqual({ kind: "national" });
+  });
+
+  it("leaves own-institution, price, list, opinion and follow-up questions to the Ask engine", () => {
+    for (const q of [
+      "How does our overdraft fee compare in Florida?",
+      "What if overdraft were $35 in Florida?",
+      "Which credit unions in Florida charge the most?",
+      "Should Florida banks raise wire fees?",
+      "How does the overdraft fee compare?",
+      "How does that compare nationally?",
+    ]) expect(parseMarketQuestion(q)).toBeNull();
+  });
+
+  it("links to the brief without carrying a parsed selection", () => {
+    expect(marketBriefHref(" Tell me about Ohio ", "42")).toBe("/pro/analyze?brief=Tell+me+about+Ohio&instId=42");
+  });
+});

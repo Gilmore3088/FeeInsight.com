@@ -320,35 +320,27 @@ export function scenarioSummary(s: Scenario, subject?: { subjectName?: string })
 }
 
 /**
- * The strongest tested price for the objective the reader picked. Given only on an
- * explicit ask; it names the objective and compares only prices the reader tested.
+ * How each tested price measures against the objective the reader picked. Given only on an explicit
+ * ask; it names the objective, covers only prices the reader tested, in the order tested, and never
+ * picks one: Hamilton gives no pricing advice.
  */
 export function buildOpinion(scenarios: Scenario[], objective: AskObjective, subject?: { subjectName?: string }): (HamiltonOpinion & { chosen: Scenario }) | null {
   if (scenarios.length === 0) return null;
+  if (objective === "competitive_position" && scenarios.every((s) => s.positionAfter === null)) return null;
   const name = proseFeeName(scenarios[0].feeCategory);
-  const count = scenarios.length === 1 ? "the one price you tested" : `the ${scenarios.length} prices you tested`;
-  let best: Scenario;
-  let why: string;
-  if (objective === "revenue") {
-    const withDollars = scenarios.filter((s) => s.revenueEffect);
-    best = (withDollars.length > 0 ? withDollars : scenarios).reduce((a, b) =>
-      (b.revenueEffect?.high ?? b.per1000ItemsDelta) > (a.revenueEffect?.high ?? a.per1000ItemsDelta) ? b : a,
-    );
-    why = revenueSentence(best);
-  } else if (objective === "customer_treatment") {
-    best = scenarios.reduce((a, b) => (b.tested < a.tested ? b : a));
-    why = best.positionAfter !== null ? `It would sit at the ${ordinal(best.positionAfter)} percentile of ${best.n} peers.` : `${best.peersMore} of ${best.n} peers would charge more.`;
-  } else {
-    const ranked = scenarios.filter((s) => s.positionAfter !== null);
-    if (ranked.length === 0) return null;
-    best = ranked.reduce((a, b) => (Math.abs((b.positionAfter as number) - 50) < Math.abs((a.positionAfter as number) - 50) ? b : a));
-    why = `It keeps ${subjectName(subject)} closest to the middle of ${best.n} peers, at the ${ordinal(best.positionAfter as number)} percentile.`;
-  }
+  const measure = (s: Scenario): string => {
+    if (objective === "revenue") return revenueSentence(s);
+    if (objective === "customer_treatment") return `${s.peersMore} of ${s.n} peers would charge more.`;
+    return s.positionAfter !== null
+      ? `${subjectName(subject)} would sit at the ${ordinal(s.positionAfter)} percentile of ${s.n} peers.`
+      : `Fewer than ${MIN_PEERS_FOR_POSITION} peers publish this fee, so it cannot be placed.`;
+  };
+  const lines = scenarios.map((s) => `At ${money(s.tested)}: ${measure(s)}`);
   return {
-    opinion: `If your objective is ${OBJECTIVE_LABELS[objective]}, ${money(best.tested)} was the strongest of ${count} for the ${name} fee. ${why} The decision stays with you.`,
+    opinion: `For ${OBJECTIVE_LABELS[objective]}, here is how ${scenarios.length === 1 ? "the price you tested" : `the ${scenarios.length} prices you tested`} for the ${name} fee measure up. ${lines.join(" ")} Hamilton does not pick a price; the decision stays with you.`,
     assumedObjective: objective,
     scenariosCompared: scenarios.map((s) => s.tested),
-    chosen: best,
+    chosen: scenarios[0],
   };
 }
 
