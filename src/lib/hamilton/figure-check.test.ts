@@ -45,13 +45,25 @@ describe("figures that are not the data's to trace (#1425)", () => {
     expect(checkNarrativeFigures(text, data, { question: "Would a $40 overdraft fee be high?" }).unmatched).toEqual(["$47.13"]);
   });
 
-  it("accepts an asset-tier bound only in a sentence about assets or tiers", () => {
-    const tier = "Among banks with $1 billion to $10 billion in assets, the median is $30.";
-    expect(checkNarrativeFigures(tier, data).unmatched).toEqual([]);
-    expect(checkNarrativeFigures("Peers in the $300M to $1B tier charge $30.", data).unmatched).toEqual([]);
-    // A tier bound stated as a money figure, not as a size, still has to trace.
-    expect(checkNarrativeFigures("The bank earned $1 billion in fee income. Its assets are large.", data).unmatched).toEqual(["$1 billion"]);
-    // Only the tiers' own bounds: $5 billion is not one.
-    expect(checkNarrativeFigures("Banks with $5 billion in assets charge $30.", data).unmatched).toEqual(["$5 billion"]);
+  it("accepts an asset-tier bound stated as a size range or threshold", () => {
+    for (const text of [
+      "Among banks with $1 billion to $10 billion in assets, the median is $30.",
+      "Peers in the $300M to $1B tier charge $30.",
+      "Banks with between $1 billion and $10 billion in total assets charge $30.",
+      "Banks under $1 billion in assets charge $30.",
+      "Among institutions with assets above $10 billion, the median is $30.",
+    ]) expect(checkNarrativeFigures(text, data).unmatched, text).toEqual([]);
+  });
+
+  it("still holds a tier bound stated as money, even beside the word assets (review of #1425)", () => {
+    for (const [text, unmatched] of [
+      ["The bank earned $1 billion in fee income. Its assets are large.", ["$1 billion"]],
+      ["The bank earned $1 billion in fees, with assets of $10 billion.", ["$1 billion", "$10 billion"]],
+      ["Overdraft revenue hit $1B in the community tier.", ["$1B"]],
+      ["Banks under $1 billion in assets charge a $1 billion overdraft fee.", ["$1 billion"]],
+      ["The bank has $10 billion in assets.", ["$10 billion"]],
+      // Only the tiers' own bounds: $5 billion is not one.
+      ["Banks with $5 billion in assets charge $30.", ["$5 billion"]],
+    ] as const) expect(checkNarrativeFigures(text, data).unmatched, text).toEqual(unmatched);
   });
 });

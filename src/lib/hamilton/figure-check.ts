@@ -7,8 +7,7 @@
  * difference between two payload numbers (the deltas a narrative naturally states),
  * within the rounding its own precision implies ("$35" covers 34.50–35.49).
  * Two kinds of figure are not the data's to trace (#1425): one the reader's own question names,
- * and an asset-tier bound ("banks with $1 billion to $10 billion in assets") in a sentence about
- * assets or tiers. Anything else is reported as unmatched so the caller can regenerate or refuse.
+ * and an asset-tier bound stated as a size ("banks with $1 billion to $10 billion in assets"). Anything else is reported as unmatched so the caller can regenerate or refuse.
  */
 
 export interface NarrativeFigure {
@@ -108,19 +107,47 @@ function candidateValues(numbers: PayloadNumber[], kind: NarrativeFigure["kind"]
   return [...candidates];
 }
 
+const near = (figure: NarrativeFigure, value: number) => Math.abs(Math.abs(figure.value) - value) <= figure.tolerance;
+
 /** The bounds of Hamilton's asset tiers, in dollars: the FDIC tiers and the peer-set tiers. */
 export const ASSET_TIER_BOUNDS: readonly number[] = [100e6, 300e6, 1e9, 10e9, 50e9, 250e9];
-const ASSET_CONTEXT = /\bassets?\b|\btiers?\b|\bin size\b|\basset[- ]size/i;
 
-/** The sentence a figure sits in: decimals ("$1.25") never end one. */
-function sentenceAt(text: string, index: number): string {
-  const before = text.slice(0, index);
-  const start = Math.max(before.lastIndexOf("\n"), ...[...before.matchAll(/[.!?](?=\s)/g)].map((m) => m.index ?? -1)) + 1;
-  const after = text.slice(index).search(/[.!?](?=\s|$)|\n/);
-  return text.slice(start, after < 0 ? text.length : index + after);
+const isTierBound = (figure: NarrativeFigure) => figure.kind === "usd" && ASSET_TIER_BOUNDS.some((bound) => near(figure, bound));
+/** Words that make a size phrase after the figure: "in assets", "in total assets", "asset tier", "tier". */
+const SIZE_AFTER = /^\s*(?:in\s+(?:total\s+)?assets?\b|of\s+(?:total\s+)?assets\b|asset\b|assets\b|tier\b|in\s+size\b)/i;
+/** A comparison that makes a single bound a threshold: "under $1 billion", "assets above $10B". */
+const THRESHOLD_BEFORE = /\b(?:under|over|above|below|more\s+than|less\s+than|at\s+least|up\s+to|exceeding)\s*$/i;
+const ASSETS_THRESHOLD_BEFORE = /\bassets?\s+(?:of\s+)?(?:under|over|above|below|more\s+than|less\s+than|at\s+least|up\s+to|exceeding)\s*$/i;
+const RANGE_JOIN = /^\s*(?:to|-|–|—|and)\s*$/i;
+
+/**
+ * An asset-tier bound stated as a size, not as money: two bounds as a range followed by a size
+ * phrase ("$1 billion to $10 billion in assets", "the $300M to $1B tier"), or one bound as a
+ * threshold ("under $1 billion in assets", "assets above $10 billion"). A bound that only shares
+ * a sentence with the word "assets" ("earned $1 billion in fees, with assets of ...") still traces.
+ */
+function tierBoundsAsSize(text: string, figures: NarrativeFigure[]): Set<NarrativeFigure> {
+  const accepted = new Set<NarrativeFigure>();
+  const ordered = [...figures].sort((a, b) => a.index - b.index);
+  for (let i = 0; i < ordered.length; i++) {
+    const a = ordered[i];
+    if (!isTierBound(a)) continue;
+    const aEnd = a.index + a.raw.length;
+    const b = ordered[i + 1];
+    if (b && isTierBound(b) && RANGE_JOIN.test(text.slice(aEnd, b.index))) {
+      if (SIZE_AFTER.test(text.slice(b.index + b.raw.length, b.index + b.raw.length + 30))) {
+        accepted.add(a);
+        accepted.add(b);
+      }
+      i++;
+      continue;
+    }
+    const before = text.slice(Math.max(0, a.index - 40), a.index);
+    const after = text.slice(aEnd, aEnd + 30);
+    if (ASSETS_THRESHOLD_BEFORE.test(before) || (THRESHOLD_BEFORE.test(before) && SIZE_AFTER.test(after))) accepted.add(a);
+  }
+  return accepted;
 }
-
-const near = (figure: NarrativeFigure, value: number) => Math.abs(Math.abs(figure.value) - value) <= figure.tolerance;
 
 export function checkNarrativeFigures(narrative: string, data: unknown, options: FigureCheckOptions = {}): FigureCheckResult {
   const figures = extractFigures(narrative);
@@ -131,10 +158,11 @@ export function checkNarrativeFigures(narrative: string, data: unknown, options:
     pct: candidateValues(numbers, "pct"),
   };
   const asked = options.question ? extractFigures(options.question) : [];
+  const sizes = tierBoundsAsSize(narrative, figures);
   const traced = (figure: NarrativeFigure) =>
     byKind[figure.kind].some((value) => near(figure, value))
     || asked.some((q) => q.kind === figure.kind && near(figure, Math.abs(q.value)))
-    || (figure.kind === "usd" && ASSET_TIER_BOUNDS.some((bound) => near(figure, bound)) && ASSET_CONTEXT.test(sentenceAt(narrative, figure.index)));
+    || sizes.has(figure);
   const unmatched = figures
     .filter((figure) => !traced(figure))
     .map((figure) => figure.raw);
