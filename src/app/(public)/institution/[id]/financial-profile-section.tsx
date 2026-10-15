@@ -114,7 +114,7 @@ export function FinancialProfileSection({
             <div className="[grid-area:1/1]">
               <LockedPreview />
             </div>
-            <div className="flex items-center justify-center p-4 [grid-area:1/1]">
+            <div className="relative z-10 flex items-center justify-center p-4 [grid-area:1/1]">
               <div className="w-full max-w-md">
                 <UpgradeGate message="Up to 16 years of call-report history with growth, peer rank and outliers, deposit mix and capital, branch footprint, consumer complaints, enforcement actions, and SEC filings" />
               </div>

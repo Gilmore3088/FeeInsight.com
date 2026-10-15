@@ -185,7 +185,7 @@ function AdvisorySection() {
               href={REPORT_ANCHOR}
               className={`${HERO_BUTTON_BASE} border border-warm-300 font-normal text-warm-900 hover:border-warm-900`}
             >
-              Get your free report
+              Get a free fee report
             </TrackLink>
           </div>
         </div>
@@ -224,7 +224,7 @@ function FinalCtaSection({ sampleLive }: { sampleLive: boolean }) {
             href={sampleLive ? SAMPLE_REPORT_HREF : REPORT_ANCHOR}
             className={`${HERO_BUTTON_BASE} border border-warm-ink-700 font-normal text-warm-150 hover:border-warm-ink-500`}
           >
-            {sampleLive ? "See the sample report" : "Get your free report"}
+            {sampleLive ? "See the sample report" : "Get a free fee report"}
           </TrackLink>
         </div>
       </div>
