@@ -8,6 +8,7 @@ import {
   rawCanonicalHint,
   scoreAnswerKey,
   summarizeAnswerKeyScore,
+  topKnoxMisses,
   type BankEvidence,
 } from "./answer-key-score";
 import type { ConfirmedAnswerKeyEntry } from "@/lib/data-store/answer-key";
@@ -179,6 +180,35 @@ describe("scoreAnswerKey", () => {
     const score = scoreAnswerKey([{ ...ENTRY, documentType: "scanned_pdf" }], new Map());
     expect(score.overall).toMatchObject({ recall: 0, precision: null });
     expect(score.byDocumentType.scanned_pdf.stages.magellan.recall).toBe(0);
+  });
+
+  it("counts Knox's misses only where Rosetta read the right document, by category and type (#1099)", () => {
+    // Knox read the overdraft and the free e-statement, missed the NSF fee and the box.
+    const knox = [KEY_DOC_FEES[0], KEY_DOC_FEES[2], { canonicalKey: "nsf", amount: 25, sourceDocumentId: 11 }];
+    const second: ConfirmedAnswerKeyEntry = { ...ENTRY, institutionId: 8, documentType: "text_pdf" };
+    const score = scoreAnswerKey(
+      [ENTRY, second],
+      new Map([
+        [7, evidence({ knox })],
+        // Bank 8's text never completed: its misses are Rosetta's, not Knox's.
+        [8, evidence({ institutionId: 8, knox: [], latestText: { sourceDocumentId: 11, status: "failed", charCount: 0 } })],
+      ]),
+    );
+    expect(score.knoxMisses).toMatchObject({
+      banks: 1,
+      overall: { expected: 4, missed: 2, missRate: 0.5 },
+      byDocumentType: { html: { expected: 4, missed: 2 } },
+    });
+    // The $25 NSF row does not match the key's $30, and no Knox row is a safe deposit box.
+    expect(score.knoxMisses.byCategory.nsf).toEqual({ expected: 1, missed: 1, missRate: 1 });
+    expect(score.knoxMisses.byCategory.safe_deposit_box).toEqual({ expected: 1, missed: 1, missRate: 1 });
+    expect(score.knoxMisses.byCategory.overdraft).toEqual({ expected: 1, missed: 0, missRate: 0 });
+    expect(score.knoxMisses.byDocumentType.text_pdf).toBeUndefined();
+    expect(score.banks[0].knox_missed).toEqual(["nsf $30.00", "safe_deposit_box"]);
+    expect(score.banks[1].knox_missed).toEqual([]);
+    expect(topKnoxMisses(score.knoxMisses).map((row) => row.category)).toEqual(["nsf", "safe_deposit_box"]);
+    expect(summarizeAnswerKeyScore({ schemaReady: true, scoreRunId: 1, score, dryRun: false }))
+      .toContain("On the 1 documents Rosetta read right, Knox missed 2 of 4 key fees (50.0%); most in nsf 1/1, safe_deposit_box 1/1.");
   });
 
   it("summarizes and narrates", () => {
