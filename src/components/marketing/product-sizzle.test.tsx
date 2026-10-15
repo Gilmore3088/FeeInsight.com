@@ -106,6 +106,29 @@ describe("product demo", () => {
     expect(shown()).toBe("sizzle-four");
   });
 
+  it("gives a chapter chosen mid-chapter its full run", () => {
+    renderSizzle();
+    tick(5000);
+    fireEvent.click(segment("THREE"));
+    tick(1500);
+    expect(shown()).toBe("sizzle-three");
+    tick(CHAPTER_MS - 1500 - 1);
+    expect(shown()).toBe("sizzle-three");
+    tick(2);
+    expect(shown()).toBe("sizzle-four");
+  });
+
+  it("gives a replayed run its full first chapter", () => {
+    renderSizzle();
+    for (let i = 0; i < CHAPTERS.length * MAX_LOOPS; i += 1) tick(CHAPTER_MS);
+    expect(frame().dataset.mode).toBe("rest");
+    fireEvent.click(screen.getByRole("button", { name: "Replay the product demo" }));
+    tick(CHAPTER_MS - 1);
+    expect(shown()).toBe("sizzle-one");
+    tick(2);
+    expect(shown()).toBe("sizzle-two");
+  });
+
   it("pauses and carries on from where it stopped", () => {
     renderSizzle();
     tick(CHAPTER_MS / 2);

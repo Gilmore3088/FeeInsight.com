@@ -461,23 +461,23 @@ export function AskExhibit({ data, animate = false }: { data: HomeData; animate?
           </div>
           <div className="relative">
             {animate ? <Thinking ms={ASK_THINK_MS} /> : null}
-          <div {...answer}>
-            <ChatMessage from="hamilton" source={source} className="max-w-full">
-              At <Figure>{money(ladder.value)}</Figure>, it sits {where} of the {formatCount(local.institutions)} local competitors
-              that publish this fee.
-              <table className="mt-3 w-full text-[13px]">
-                <tbody>
-                  {ladder.rows.map((row) => (
-                    <tr key={row.label} className="border-t border-border">
-                      <td className="py-1.5 pr-3 text-ink">{row.label}</td>
-                      <td className="py-1.5 pr-3 text-right text-ink-muted">median</td>
-                      <td className="py-1.5 text-right font-mono tabular-nums text-ink">{money(row.median)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </ChatMessage>
-          </div>
+            <div {...answer}>
+              <ChatMessage from="hamilton" source={source} className="max-w-full">
+                At <Figure>{money(ladder.value)}</Figure>, it sits {where} of the {formatCount(local.institutions)} local competitors
+                that publish this fee.
+                <table className="mt-3 w-full text-[13px]">
+                  <tbody>
+                    {ladder.rows.map((row) => (
+                      <tr key={row.label} className="border-t border-border">
+                        <td className="py-1.5 pr-3 text-ink">{row.label}</td>
+                        <td className="py-1.5 pr-3 text-right text-ink-muted">median</td>
+                        <td className="py-1.5 text-right font-mono tabular-nums text-ink">{money(row.median)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </ChatMessage>
+            </div>
           </div>
         </div>
       </HamiltonShell>
@@ -497,19 +497,19 @@ export function AskExhibit({ data, animate = false }: { data: HomeData; animate?
         </div>
         <div className="relative">
           {animate ? <Thinking ms={ASK_THINK_MS} /> : null}
-        <div {...answer}>
-          <ChatMessage from="hamilton" source={source} className="max-w-full">
-            The national median is <Figure>{money(overdraft.median_amount)}</Figure>, from{" "}
-            <Figure>{formatCount(overdraft.institution_count)}</Figure> institutions.
-            {low && high && low.median !== high.median ? (
-              <>
-                {" "}
-                {low.name} is lowest at <Figure>{money(low.median)}</Figure> and {high.name} highest at{" "}
-                <Figure>{money(high.median)}</Figure>.
-              </>
-            ) : null}
-          </ChatMessage>
-        </div>
+          <div {...answer}>
+            <ChatMessage from="hamilton" source={source} className="max-w-full">
+              The national median is <Figure>{money(overdraft.median_amount)}</Figure>, from{" "}
+              <Figure>{formatCount(overdraft.institution_count)}</Figure> institutions.
+              {low && high && low.median !== high.median ? (
+                <>
+                  {" "}
+                  {low.name} is lowest at <Figure>{money(low.median)}</Figure> and {high.name} highest at{" "}
+                  <Figure>{money(high.median)}</Figure>.
+                </>
+              ) : null}
+            </ChatMessage>
+          </div>
         </div>
       </div>
     </HamiltonShell>

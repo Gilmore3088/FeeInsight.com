@@ -215,8 +215,11 @@ describe("homepage (site v3 brief 06 §4.3)", () => {
     const pillars = renderToStaticMarkup(<LandingPillars data={data} />);
     // Every market is the ladder; One workspace answers in figures, with no box plot.
     expect(pillars).toContain("Sample Bank");
-    expect(pillars.match(/aria-label="Local competitors: market/g)?.length).toBe(1);
-    expect(pillars).not.toContain("the nation: market");
+    // The demo's Every market chapter is the bank's ladder; the live sample is the Fed district view.
+    expect(pillars).not.toContain('aria-label="Local competitors: market');
+    expect(pillars).toContain('aria-label="Overdraft by Fed district: range and median"');
+    expect(renderToStaticMarkup(<LandingSizzle data={data} />)).toContain('aria-label="Local competitors: market');
+    expect(pillars.match(/the nation: market/g)?.length).toBe(1);
     const sizzle = renderToStaticMarkup(<LandingSizzle data={data} />);
     // The demo asks the question; the live sample under it is Try a price, so neither repeats.
     expect(text(sizzle)).toContain("of the 8 local competitors that publish this fee");

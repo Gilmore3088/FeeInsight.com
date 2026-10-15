@@ -82,6 +82,9 @@ export function ProductSizzle({
   const [clipShare, setClipShare] = useState(0);
   const loops = useRef(0);
   const remaining = useRef(chapterMs);
+  // Set when a jump or replay starts a chapter afresh, so the old timer's cleanup does not
+  // take the old chapter's elapsed time off the new chapter's full run.
+  const resetting = useRef(false);
   const pausedByScroll = useRef(false);
   const started = useRef(false);
   const held = hovered || focused;
@@ -89,6 +92,7 @@ export function ProductSizzle({
   const restart = useCallback(
     (index: number, next: Mode) => {
       remaining.current = chapterMs;
+      resetting.current = true;
       setActive(index);
       setMode(next);
       setTurn((t) => t + 1);
@@ -126,6 +130,7 @@ export function ProductSizzle({
   // The coded run: one timer per chapter; a pause or a hold keeps what is left of it. Turning
   // reduced motion on mid-run stops the timer, so nothing advances on its own from then on.
   useEffect(() => {
+    resetting.current = false;
     if (hasVideo || mode !== "playing" || held || reduced) return;
     const startedAt = Date.now();
     let fired = false;
@@ -147,7 +152,7 @@ export function ProductSizzle({
     }, remaining.current);
     return () => {
       window.clearTimeout(timer);
-      if (!fired) remaining.current = Math.max(0, remaining.current - (Date.now() - startedAt));
+      if (!fired && !resetting.current) remaining.current = Math.max(0, remaining.current - (Date.now() - startedAt));
     };
   }, [hasVideo, mode, held, turn, active, last, chapterMs, maxLoops, reduced]);
 
