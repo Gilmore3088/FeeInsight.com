@@ -223,6 +223,12 @@ export interface SearchContext {
   rejected: Set<string>;
   /** URL identities opened during this search. */
   tried: Set<string>;
+  /**
+   * A re-search (upgrade, business or freshness) looks for a page to replace the bank's
+   * current link: that link's identity is never accepted, by the known-link finder, a hub
+   * page, the crawl or any candidate (#1326). It can still be opened for its links.
+   */
+  replacing?: Set<string>;
   homepageHtml: string;
   homepageLinks: PageLink[];
   platform: string | null;
@@ -391,7 +397,7 @@ async function tryCandidates(ctx: SearchContext, result: FinderResult, candidate
   for (const candidate of candidates) {
     if (opened >= limit) break;
     const identity = urlIdentity(candidate.url);
-    if (ctx.rejected.has(identity) || ctx.tried.has(identity)) continue;
+    if (ctx.rejected.has(identity) || ctx.tried.has(identity) || ctx.replacing?.has(identity)) continue;
     if (outOfTime(ctx)) {
       result.outOfTime = true;
       return false;
@@ -530,7 +536,7 @@ export async function findFromRejectedPages(ctx: SearchContext): Promise<FinderR
 
 /** The link this bank had before (not a person's locked correction): is it still there? */
 export async function findKnownLink(ctx: SearchContext): Promise<FinderResult> {
-  if (!ctx.knownUrl || ctx.rejected.has(urlIdentity(ctx.knownUrl))) return emptyResult(false);
+  if (!ctx.knownUrl || ctx.rejected.has(urlIdentity(ctx.knownUrl)) || ctx.replacing?.has(urlIdentity(ctx.knownUrl))) return emptyResult(false);
   const result = emptyResult(true);
   const candidate = { ...scoreLink(ctx.knownUrl, "previously found link", "known_link"), score: 0.9 };
   await tryCandidates(ctx, result, [candidate], 1);
@@ -681,7 +687,7 @@ export async function findViaHubPages(ctx: SearchContext): Promise<FinderResult>
     const html = await openPage(ctx, result, hub.url, entry);
     if (html == null) continue;
     // The hub itself may be the fee page.
-    if (!ctx.rejected.has(urlIdentity(hub.url)) && pageIsFeeSchedule(html)) {
+    if (!ctx.rejected.has(urlIdentity(hub.url)) && !ctx.replacing?.has(urlIdentity(hub.url)) && pageIsFeeSchedule(html)) {
       entry.verdict = "accepted_html";
       result.found = {
         url: hub.url,
@@ -780,7 +786,7 @@ export async function findBySiteCrawl(ctx: SearchContext): Promise<FinderResult>
     result.trail.push(entry);
     const html = await openPage(ctx, result, next.link.url, entry);
     if (html == null) continue;
-    if (pageIsFeeSchedule(html)) {
+    if (!ctx.replacing?.has(identity) && pageIsFeeSchedule(html)) {
       entry.verdict = "accepted_html";
       result.found = { url: next.link.url, documentType: "html", confidence: 0.84, reason: `Fee page found by crawling the site (depth ${next.depth})` };
       return result;

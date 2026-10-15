@@ -1,6 +1,10 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const startAgentRun = vi.fn();
+vi.mock("@/lib/agents/run-store", () => ({ startAgentRun: (...args: unknown[]) => startAgentRun(...args) }));
 
 import { AUDIENCE_RELABEL_MODE, decideAudience, runAudienceRelabel, type AudienceRelabelRow } from "./audience-relabel";
+import { scheduleAudienceRelabelRun } from "./audience-relabel-schedule";
 
 const row = (overrides: Partial<AudienceRelabelRow> = {}): AudienceRelabelRow => ({
   fee_verified_id: 501, fee_raw_id: 401, institution_id: 7, source_document_id: 21, source_url: "https://example.coop/fees",
@@ -9,26 +13,32 @@ const row = (overrides: Partial<AudienceRelabelRow> = {}): AudienceRelabelRow =>
 });
 const consumerSchedule = "Fee Schedule\nStop Payment | $30.00\nNSF Fee | $32.00";
 
-function createDb(rows: AudienceRelabelRow[], feedback: unknown[] = []) {
-  let served = false;
-  return vi.fn((strings: TemplateStringsArray) => {
+function createDb(options: { rows?: AudienceRelabelRow[]; docs?: number[]; remaining?: number; feedback?: unknown[]; migrated?: boolean; lastBatch?: unknown } = {}) {
+  const rows = options.rows ?? [];
+  const docs = options.docs ?? [...new Set(rows.map((r) => Number(r.source_document_id)))];
+  const db = vi.fn((strings: TemplateStringsArray) => {
     const text = strings.join(" ");
-    if (text.includes("pg_get_functiondef")) return Promise.resolve([{ ready: true }]);
+    if (text.includes("pg_get_functiondef")) return Promise.resolve([{ ready: options.migrated ?? true }]);
     if (text.includes("to_regclass")) return Promise.resolve([{ ready: true }]);
-    if (text.includes("WITH live AS")) {
-      if (served) return Promise.resolve([]);
-      served = true;
-      return Promise.resolve(rows);
-    }
+    if (text.includes("FROM agent_runs")) return Promise.resolve(options.lastBatch ? [options.lastBatch] : []);
+    if (text.includes("docs AS")) return Promise.resolve(docs.map((id) => ({ source_document_id: id, remaining: docs.length + (options.remaining ?? 0) })));
+    if (text.includes("array_agg")) return Promise.resolve(rows);
     if (text.includes("FROM agent_source_texts")) return Promise.resolve([{ source_document_id: 21, normalized_text: consumerSchedule }]);
-    if (text.includes("FROM pipeline_feedback")) return Promise.resolve(feedback);
+    if (text.includes("FROM pipeline_feedback")) return Promise.resolve(options.feedback ?? []);
     if (text.includes("UPDATE verified_fee_observations")) return Promise.resolve([{ fee_verified_id: 501 }]);
     if (text.includes("UPDATE published_fee_records")) return Promise.resolve([{ fee_published_id: 601 }]);
     if (text.includes("INSERT INTO pipeline_feedback")) return Promise.resolve([{ id: 1 }]);
     return Promise.resolve([]);
-  });
+  }) as ReturnType<typeof vi.fn> & { unsafe: (text: string) => string };
+  db.unsafe = (text: string) => text;
+  return db;
 }
-const writes = (db: ReturnType<typeof createDb>) => db.mock.calls.map(([strings]) => strings.join(" ")).filter((text) => /UPDATE|INSERT/.test(text));
+const writes = (db: ReturnType<typeof createDb>) => db.mock.calls.map(([strings]) => (strings as string[]).join(" ")).filter((text) => /UPDATE|INSERT/.test(text));
+
+beforeEach(() => {
+  startAgentRun.mockReset();
+  startAgentRun.mockResolvedValue({ reused: false, run: { id: 77 } });
+});
 
 describe("Darwin audience relabel (#1059)", () => {
   it.each([
@@ -39,25 +49,53 @@ describe("Darwin audience relabel (#1059)", () => {
     expect(decideAudience(candidate, text)).toMatchObject({ feeAudience: audience, source });
   });
 
-  it("is off: a dry run counts by audience and source and writes nothing", async () => {
+  it("is off: a sampled dry run counts by audience and source and writes nothing", async () => {
     expect(AUDIENCE_RELABEL_MODE).toBe("off");
-    const db = createDb([row(), row({ fee_verified_id: 502, source_document_id: 99 })]);
-    const result = await runAudienceRelabel(db as never, {});
-    expect(result).toMatchObject({ dryRun: true, fees: 2, byAudience: { consumer: 1, unknown: 1 }, bySource: { default_general_schedule: 1, no_text: 1 }, relabeled: 0 });
+    const db = createDb({ rows: [row(), row({ fee_verified_id: 502, source_document_id: 99 })], remaining: 5000 });
+    const result = await runAudienceRelabel(db as never, { sampleKey: "2026-10-15" });
+    expect(result).toMatchObject({ dryRun: true, fees: 2, byAudience: { consumer: 1, unknown: 1 }, bySource: { default_general_schedule: 1, no_text: 1 }, relabeled: 0, remaining: 5000, nextAfterId: null });
     expect(writes(db)).toEqual([]);
   });
 
-  it("live: records the old value before writing, then updates the live row", async () => {
-    const db = createDb([row()]);
-    const result = await runAudienceRelabel(db as never, { mode: "live", runId: 9 });
-    expect(result).toMatchObject({ dryRun: false, relabeled: 1, publishedTouched: 1 });
+  it("live: one bounded batch records the old value before writing, and says where the next resumes", async () => {
+    const db = createDb({ rows: [row()], remaining: 40 });
+    const result = await runAudienceRelabel(db as never, { mode: "live", runId: 9, afterId: 20 });
+    expect(result).toMatchObject({ dryRun: false, relabeled: 1, publishedTouched: 1, nextAfterId: 21, remaining: 40, done: false });
     const order = writes(db).map((text) => (text.includes("pipeline_feedback") ? "record" : text.includes("verified") ? "verified" : "published"));
     expect(order).toEqual(["record", "verified", "published"]);
   });
 
-  it("rollback: restores the old evidence so the trigger restores the old audience", async () => {
-    const db = createDb([], [{ fee_verified_id: 501, from_evidence: null, to_evidence: "darwin:default_general_schedule: x", fee_published_ids: [601] }]);
+  it("live refuses to run before migration 47, writing nothing", async () => {
+    const db = createDb({ rows: [row()], migrated: false });
+    await expect(runAudienceRelabel(db as never, { mode: "live" })).rejects.toThrow(/20270110000047/);
+    expect(writes(db)).toEqual([]);
+  });
+
+  it("rollback: sets the audience back to unknown with the old evidence, so the trigger copies the raw audience", async () => {
+    const db = createDb({ feedback: [{ fee_verified_id: 501, from_evidence: null, to_evidence: "darwin:default_general_schedule: x", fee_published_ids: [601], remaining: 1 }] });
     const result = await runAudienceRelabel(db as never, { mode: "rollback" });
-    expect(result).toMatchObject({ restored: 1, publishedTouched: 1 });
+    expect(result).toMatchObject({ restored: 1, publishedTouched: 1, done: true });
+    expect(writes(db).find((text) => text.includes("verified_fee_observations"))).toMatch(/fee_audience = 'unknown'/);
+  });
+});
+
+describe("audience relabel schedule", () => {
+  it.each([
+    ["no migration", { migrated: false }, { scheduled: false, reason: "migration_47_missing" }, null],
+    ["first batch", {}, { scheduled: true }, 0],
+    ["next batch from the cursor", { lastBatch: { id: 5, status: "completed", after_id: "0", next_after_id: "1200", done: false } }, { scheduled: true }, 1200],
+    ["a failed batch again", { lastBatch: { id: 5, status: "failed", after_id: "1200", next_after_id: null, done: null } }, { scheduled: true }, 1200],
+    ["a batch under way", { lastBatch: { id: 5, status: "running", after_id: "1200", next_after_id: null, done: null } }, { scheduled: false, reason: "waiting" }, null],
+    ["done", { lastBatch: { id: 5, status: "completed", after_id: "1200", next_after_id: "1500", done: true } }, { scheduled: false, reason: "done" }, null],
+  ])("live: %s", async (_name, db, expected, afterId) => {
+    const result = await scheduleAudienceRelabelRun(createDb(db) as never, new Date("2026-10-15T00:00:00Z"), "live");
+    expect(result).toMatchObject(expected);
+    if (afterId == null) expect(startAgentRun).not.toHaveBeenCalled();
+    else expect(startAgentRun.mock.calls[0][0]).toMatchObject({ params: { mode: "live", after_id: afterId }, idempotencyKey: `darwin:audience-relabel:live:v1:after:${afterId}` });
+  });
+
+  it("off: one sampled dry run a day", async () => {
+    await scheduleAudienceRelabelRun(createDb() as never, new Date("2026-10-15T08:00:00Z"));
+    expect(startAgentRun.mock.calls[0][0]).toMatchObject({ kind: "dry_run", params: { mode: "off", day: "2026-10-15" } });
   });
 });

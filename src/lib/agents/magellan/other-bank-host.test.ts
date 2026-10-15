@@ -72,6 +72,13 @@ describe("documents on a host that is not the bank's (#1033)", () => {
     ["Rock Valley, IA 51247", "51247", false],
     ["Certificate of deposit 175 days", "175", false],
     ["FDIC Cert #1750", "175", false],
+    // #1320: a bare FDIC or NCUA needs "#", "No." or "Number"; no term or phone number after it.
+    ["Member FDIC #175", "175", true],
+    ["Member FDIC 175 Main Street", "175", false],
+    ["Member FDIC. 175 Main St", "175", false],
+    ["Member FDIC (175) 555-1212", "175", false],
+    ["certificate: 175-day term", "175", false],
+    ["Cert 175 555-1212", "175", false],
   ])("cert number in %j (cert %s): %s", (text, certNumber, found) => {
     expect(textNamesBank(`Peoples Bank. ${text}`, { websiteHost: "peoples-ebank.com", institutionName: "Peoples Bank", nameShared: true, certNumber })).toBe(found);
   });
@@ -89,11 +96,14 @@ describe("documents on a host that is not the bank's (#1033)", () => {
       { id: 9, institution_name: "Rivertown Credit Union of Ohio" },
       { id: 10, institution_name: "Main Bank" },
       { id: 11, institution_name: "Mainstreet Bank" },
+      { id: 12, institution_name: "Harbor Credit Union" },
+      { id: 13, institution_name: "Harbor Federal Credit Union" },
     ];
     const db = vi.fn(() => Promise.resolve(rows));
-    const shared = await loadSharedNameIds(db as never, rows.filter((row) => [1, 3, 4, 5, 7, 8, 10].includes(row.id)));
+    const shared = await loadSharedNameIds(db as never, rows.filter((row) => [1, 3, 4, 5, 7, 8, 10, 12].includes(row.id)));
     // "Main Bank" is no whole-word part of "Mainstreet Bank"; "First American National Bank" is in no other name.
-    expect([...shared]).toEqual([1, 4, 7, 8]);
+    // "Harbor Credit Union" is the short form of "Harbor Federal Credit Union" (#1320).
+    expect([...shared]).toEqual([1, 4, 7, 8, 12]);
   });
 
   it("treats every bank as shared when the names cannot be read, and says so on the run", async () => {

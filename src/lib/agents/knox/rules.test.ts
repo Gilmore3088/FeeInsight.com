@@ -248,11 +248,22 @@ describe("Knox extract.rules", () => {
     ]);
   });
 
+  it("reads a bare Overdrafts priced per transfer as the covering share transfer (#1291, raw 112570)", () => {
+    const line = "Overdrafts - $2.00 per transfer for all members 19 years of age or older; (i) Stop Payment Order - $32.00 per order";
+    expect(extractFromSegment(line).candidates.map((c) => [c.amount, c.canonicalHint])).toEqual([[2, "od_protection_transfer"], [32, "stop_payment"]]);
+    expect(extractFromSegment("Overdrafts | $30.00 per item").candidates[0]?.canonicalHint).toBe("overdraft");
+  });
+
   // v4 fixtures: the most common priced lines v3 left unrecognized in a 150-text
   // production sample, each mapped to an existing canonical key.
   it.each([
     ["Courtesy Pay*", "overdraft"],
     ["Overdraft Transfer From Savings", "od_protection_transfer"],
+    // #1291 re-file check, real lines (raw 406368, 158607, 131332; Pinnacle's v43 shape stays).
+    ["Maximum Daily OD/NSF Fees", "od_daily_cap"],
+    ["Overdrafts Covered by Courtesy Transfer", "od_protection_transfer"],
+    ["NSF Return/Paid Item Fee for Chkg. & Sav", "nsf"],
+    ["NSF Paid Item Fee/Returned Item Fee (items over $10)", "overdraft"],
     ["Returned Checks Fee (Member Drawn)", "nsf"],
     ["Return Item Chrg (Return Item Charge)", "nsf"],
     ["Returned deposit", "deposited_item_return"],

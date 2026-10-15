@@ -16,24 +16,22 @@ type SqlTag = typeof sql;
  * cannot decide stays `unknown`. No provider calls.
  *
  * `AUDIENCE_RELABEL_MODE`:
- * - "off": a daily dry run. It reads every candidate and counts the decisions by audience and by
- *   evidence source, and writes nothing but its step on the run ledger.
+ * - "off": a daily dry run over a sample of documents. It counts the decisions by audience and
+ *   by evidence source, and writes nothing but its step on the run ledger.
  * - "live": the same read writes each decision to the verified row (`darwin:` evidence, which the
  *   trigger keeps) and touches the live published row so it inherits it. The old value is
  *   recorded first, one `audience_relabeled` row per fee in `pipeline_feedback`.
  * - "rollback": every fee those rows name that still carries the relabel's evidence goes back to
- *   its old evidence, and the trigger restores the raw row's audience (the old value).
+ *   `unknown` with its old evidence, and the trigger copies the raw row's audience back.
  *
- * Needs migration 20270110000047: before it, the trigger overwrites a `darwin:` decision, so the
- * step reads only.
+ * Each step reads one bounded batch and reports where the next resumes; the tick queues batches
+ * until none remain. Live and rollback need migration 20270110000047 and refuse to run before it.
  */
 export type AudienceRelabelMode = "off" | "live" | "rollback";
 export const AUDIENCE_RELABEL_MODE: AudienceRelabelMode = "off";
 export const AUDIENCE_RELABEL_VERSION = 1;
 export const AUDIENCE_RELABEL_SOURCE = "darwin.audience_relabel";
 export const AUDIENCE_RELABEL_KIND = "audience_relabeled";
-/** Documents read per chunk: each chunk loads that many texts at once. */
-const DOCUMENT_CHUNK = 200;
 const SAMPLE_SIZE = 25;
 
 export interface AudienceRelabelRow {
@@ -69,6 +67,11 @@ export interface AudienceRelabelResult {
   publishedTouched: number;
   restored: number;
   samples: Array<{ feeVerifiedId: number; feeName: string; amount: number | null; canonicalFeeKey: string | null; audience: string; evidence: string | null }>;
+  /** Where the next step resumes (document id, or verified id for a rollback); null when sampled or empty. */
+  nextAfterId: number | null;
+  /** Documents (or recorded fees) still to read after this step. */
+  remaining: number;
+  done: boolean;
 }
 
 /** Darwin's decision for one live fee, from its document's newest text. Pure. */
@@ -112,50 +115,103 @@ export function relabelRecord(row: AudienceRelabelRow, decision: AudienceDecisio
   };
 }
 
-function emptyResult(mode: AudienceRelabelMode, dryRun: boolean): AudienceRelabelResult {
-  return { mode, dryRun, documents: 0, fees: 0, byAudience: {}, bySource: {}, relabeled: 0, publishedTouched: 0, restored: 0, samples: [] };
+/** Documents one step reads: about 300 documents is about 3.7M characters of text and 2,900 fees. */
+export const AUDIENCE_RELABEL_DOCUMENTS_PER_STEP = 300;
+/** Recorded fees one rollback step restores. */
+export const AUDIENCE_RELABEL_ROLLBACK_PER_STEP = 3000;
+/** Documents per text load inside a step. */
+const DOCUMENT_CHUNK = 100;
+
+export interface AudienceRelabelOptions {
+  runId?: number | null;
+  dryRun?: boolean;
+  institutionId?: number | null;
+  mode?: AudienceRelabelMode;
+  /** Resume after this document id (live) or verified id (rollback). */
+  afterId?: number;
+  /** Documents (or recorded fees, for a rollback) this step reads. */
+  limit?: number;
+  /** Off: read a sample in md5 order of this key (the day) instead of a cursor. */
+  sampleKey?: string | null;
 }
 
-async function migrationReady(db: SqlTag): Promise<boolean> {
+function emptyResult(mode: AudienceRelabelMode, dryRun: boolean): AudienceRelabelResult {
+  return {
+    mode, dryRun, documents: 0, fees: 0, byAudience: {}, bySource: {}, relabeled: 0, publishedTouched: 0, restored: 0, samples: [],
+    nextAfterId: null, remaining: 0, done: true,
+  };
+}
+
+/** Migration 20270110000047 keeps a `darwin:` decision on the verified row; before it nothing sticks. */
+export async function audienceMigrationReady(db: SqlTag): Promise<boolean> {
   const [row] = await db<Array<{ ready: boolean }>>`
     SELECT position('darwin:' IN pg_get_functiondef('public.inherit_fee_applicability()'::regprocedure)) > 0 AS ready
   `;
   return Boolean(row?.ready);
 }
 
-/** Live fees whose verified row is still unknown, on the next documents after `afterDocumentId`. */
-async function candidateRows(db: SqlTag, afterDocumentId: number, institutionId: number | null): Promise<AudienceRelabelRow[]> {
-  return db<AudienceRelabelRow[]>`
-    WITH live AS (
-      SELECT p.lineage_ref, p.fee_published_id
-        FROM published_fee_records p
-       WHERE p.fee_published_id IN (SELECT fee_published_id FROM published_fee_catalog
-                                    UNION SELECT fee_published_id FROM published_fee_rate_catalog)
-    ), docs AS (
-      SELECT DISTINCT r.source_document_id
-        FROM live
-        JOIN verified_fee_observations v ON v.fee_verified_id = live.lineage_ref
-        JOIN raw_fee_observations r ON r.fee_raw_id = v.fee_raw_id
-       WHERE v.fee_audience = 'unknown'
-         AND r.source_document_id > ${afterDocumentId}
-         AND (${institutionId}::int IS NULL OR v.institution_id = ${institutionId}::int)
-       ORDER BY r.source_document_id
-       LIMIT ${DOCUMENT_CHUNK}
-    )
-    SELECT v.fee_verified_id, v.fee_raw_id, v.institution_id, r.source_document_id, r.source_url,
-           r.fee_name, r.amount, r.amount_kind, v.canonical_fee_key, v.audience_evidence,
-           array_agg(live.fee_published_id ORDER BY live.fee_published_id) AS fee_published_ids
+const LIVE_UNKNOWN_SQL = `
+  live AS (
+    SELECT p.lineage_ref, p.fee_published_id
+      FROM published_fee_records p
+     WHERE p.fee_published_id IN (SELECT fee_published_id FROM published_fee_catalog
+                                  UNION SELECT fee_published_id FROM published_fee_rate_catalog)
+  ), unknown_live AS (
+    SELECT live.fee_published_id, v.fee_verified_id, v.fee_raw_id, v.institution_id, r.source_document_id, r.source_url,
+           r.fee_name, r.amount, r.amount_kind, v.canonical_fee_key, v.audience_evidence
       FROM live
       JOIN verified_fee_observations v ON v.fee_verified_id = live.lineage_ref
       JOIN raw_fee_observations r ON r.fee_raw_id = v.fee_raw_id
      WHERE v.fee_audience = 'unknown'
-       AND r.source_document_id IN (SELECT source_document_id FROM docs)
+       AND r.source_document_id IS NOT NULL
        AND NOT COALESCE(r.outlier_flags, '[]'::jsonb) ? 'audience_correction_required'
-       AND (${institutionId}::int IS NULL OR v.institution_id = ${institutionId}::int)
-     GROUP BY v.fee_verified_id, v.fee_raw_id, v.institution_id, r.source_document_id, r.source_url,
-              r.fee_name, r.amount, r.amount_kind, v.canonical_fee_key, v.audience_evidence
-     ORDER BY r.source_document_id, v.fee_verified_id
+  )`;
+
+/** The documents this step reads: the next ones after the cursor, or the day's sample. */
+async function stepDocuments(
+  db: SqlTag,
+  options: { afterId: number; limit: number; sampleKey: string | null; institutionId: number | null },
+): Promise<{ ids: number[]; remaining: number }> {
+  const rows = await db<Array<{ source_document_id: number | string; remaining: number | string }>>`
+    WITH ${db.unsafe(LIVE_UNKNOWN_SQL)}, docs AS (
+      SELECT DISTINCT source_document_id
+        FROM unknown_live
+       WHERE (${options.institutionId}::int IS NULL OR institution_id = ${options.institutionId}::int)
+         AND (${options.sampleKey}::text IS NOT NULL OR source_document_id > ${options.afterId})
+    )
+    SELECT source_document_id, (SELECT COUNT(*) FROM docs) AS remaining
+      FROM docs
+     ORDER BY CASE WHEN ${options.sampleKey}::text IS NULL THEN NULL ELSE md5(source_document_id::text || ${options.sampleKey}::text) END,
+              source_document_id
+     LIMIT ${options.limit}
   `;
+  const ids = rows.map((row) => Number(row.source_document_id));
+  return { ids, remaining: Math.max(0, Number(rows[0]?.remaining ?? 0) - ids.length) };
+}
+
+async function candidateRows(db: SqlTag, documentIds: number[], institutionId: number | null): Promise<AudienceRelabelRow[]> {
+  return db<AudienceRelabelRow[]>`
+    WITH ${db.unsafe(LIVE_UNKNOWN_SQL)}
+    SELECT fee_verified_id, fee_raw_id, institution_id, source_document_id, source_url, fee_name, amount, amount_kind,
+           canonical_fee_key, audience_evidence, array_agg(fee_published_id ORDER BY fee_published_id) AS fee_published_ids
+      FROM unknown_live
+     WHERE source_document_id = ANY(${documentIds}::bigint[])
+       AND (${institutionId}::int IS NULL OR institution_id = ${institutionId}::int)
+     GROUP BY fee_verified_id, fee_raw_id, institution_id, source_document_id, source_url, fee_name, amount, amount_kind,
+              canonical_fee_key, audience_evidence
+     ORDER BY source_document_id, fee_verified_id
+  `;
+}
+
+async function touchPublished(db: SqlTag, publishedIds: number[]): Promise<number> {
+  if (publishedIds.length === 0) return 0;
+  // Touching the audience column fires the trigger, which copies the verified row's audience.
+  const touched = await db`
+    UPDATE published_fee_records SET fee_audience = fee_audience
+     WHERE fee_published_id = ANY(${publishedIds}::bigint[])
+    RETURNING fee_published_id
+  `;
+  return touched.length;
 }
 
 async function writeDecisions(db: SqlTag, rows: AudienceRelabelRow[], decisions: AudienceDecision[]): Promise<{ relabeled: number; publishedTouched: number }> {
@@ -171,32 +227,32 @@ async function writeDecisions(db: SqlTag, rows: AudienceRelabelRow[], decisions:
        AND v.fee_audience = 'unknown'
     RETURNING v.fee_verified_id
   `;
-  const ids = updated.map((row) => Number(row.fee_verified_id));
-  const publishedIds = rows
-    .filter((row) => ids.includes(Number(row.fee_verified_id)))
-    .flatMap((row) => row.fee_published_ids.map(Number));
-  // Touching the audience column fires the trigger, which copies the verified row's decision.
-  const touched = publishedIds.length === 0 ? [] : await db`
-    UPDATE published_fee_records SET fee_audience = fee_audience
-     WHERE fee_published_id = ANY(${publishedIds}::bigint[])
-    RETURNING fee_published_id
-  `;
-  return { relabeled: ids.length, publishedTouched: touched.length };
+  const ids = new Set(updated.map((row) => Number(row.fee_verified_id)));
+  const publishedIds = rows.filter((row) => ids.has(Number(row.fee_verified_id))).flatMap((row) => row.fee_published_ids.map(Number));
+  return { relabeled: ids.size, publishedTouched: await touchPublished(db, publishedIds) };
 }
 
-/** Puts every relabelled fee still carrying the relabel's evidence back to its old value. */
-async function rollbackRelabel(db: SqlTag): Promise<{ restored: number; publishedTouched: number }> {
-  const records = await db<Array<{ fee_verified_id: number | string; from_evidence: string | null; to_evidence: string | null; fee_published_ids: unknown }>>`
-    SELECT fee_verified_id, evidence->>'from_evidence' AS from_evidence, evidence->>'to_evidence' AS to_evidence,
-           evidence->'fee_published_ids' AS fee_published_ids
-      FROM pipeline_feedback
-     WHERE kind = ${AUDIENCE_RELABEL_KIND} AND check_name = ${AUDIENCE_RELABEL_SOURCE} AND fee_verified_id IS NOT NULL
+/**
+ * Puts recorded fees still carrying the relabel's evidence back to their old value, a batch at a
+ * time in verified-id order. The audience goes back to `unknown` with the old evidence (NULL for
+ * every relabelled fee today), so the trigger copies the raw row's audience back, as it did before.
+ */
+async function rollbackRelabel(db: SqlTag, afterId: number, limit: number): Promise<{ restored: number; publishedTouched: number; nextAfterId: number | null; remaining: number }> {
+  const records = await db<Array<{ fee_verified_id: number | string; from_evidence: string | null; to_evidence: string | null; fee_published_ids: unknown; remaining: number | string }>>`
+    WITH recorded AS (
+      SELECT fee_verified_id, evidence->>'from_evidence' AS from_evidence, evidence->>'to_evidence' AS to_evidence,
+             evidence->'fee_published_ids' AS fee_published_ids
+        FROM pipeline_feedback
+       WHERE kind = ${AUDIENCE_RELABEL_KIND} AND check_name = ${AUDIENCE_RELABEL_SOURCE}
+         AND fee_verified_id IS NOT NULL AND fee_verified_id > ${afterId}
+    )
+    SELECT *, (SELECT COUNT(*) FROM recorded) AS remaining FROM recorded ORDER BY fee_verified_id LIMIT ${limit}
   `;
-  if (records.length === 0) return { restored: 0, publishedTouched: 0 };
-  // Evidence without the darwin: prefix makes the trigger restore the raw row's audience.
+  if (records.length === 0) return { restored: 0, publishedTouched: 0, nextAfterId: null, remaining: 0 };
   const restored = await db<Array<{ fee_verified_id: number | string }>>`
     UPDATE verified_fee_observations v
-       SET audience_evidence = d.from_evidence
+       SET fee_audience = 'unknown',
+           audience_evidence = d.from_evidence
       FROM unnest(${records.map((r) => Number(r.fee_verified_id))}::bigint[], ${records.map((r) => r.from_evidence)}::text[], ${records.map((r) => r.to_evidence)}::text[])
            AS d(fee_verified_id, from_evidence, to_evidence)
      WHERE v.fee_verified_id = d.fee_verified_id
@@ -207,36 +263,49 @@ async function rollbackRelabel(db: SqlTag): Promise<{ restored: number; publishe
   const publishedIds = records
     .filter((record) => restoredIds.has(Number(record.fee_verified_id)))
     .flatMap((record) => (Array.isArray(record.fee_published_ids) ? record.fee_published_ids.map(Number) : []));
-  const touched = publishedIds.length === 0 ? [] : await db`
-    UPDATE published_fee_records SET fee_audience = fee_audience
-     WHERE fee_published_id = ANY(${publishedIds}::bigint[])
-    RETURNING fee_published_id
-  `;
-  return { restored: restoredIds.size, publishedTouched: touched.length };
+  return {
+    restored: restoredIds.size,
+    publishedTouched: await touchPublished(db, publishedIds),
+    nextAfterId: Number(records.at(-1)!.fee_verified_id),
+    remaining: Math.max(0, Number(records[0].remaining) - records.length),
+  };
 }
 
-export async function runAudienceRelabel(
-  db: SqlTag,
-  options: { runId?: number | null; dryRun?: boolean; institutionId?: number | null; mode?: AudienceRelabelMode } = {},
-): Promise<AudienceRelabelResult> {
+/**
+ * One bounded batch of the relabel. Off, it reads the day's sample and writes nothing. Live and
+ * rollback refuse to run before migration 20270110000047 (they throw, so the step fails visibly).
+ */
+export async function runAudienceRelabel(db: SqlTag, options: AudienceRelabelOptions = {}): Promise<AudienceRelabelResult> {
   const mode = options.mode ?? AUDIENCE_RELABEL_MODE;
-  const ready = mode === "off" ? true : await migrationReady(db);
-  const dryRun = Boolean(options.dryRun) || mode === "off" || !ready;
+  if (mode !== "off" && !(await audienceMigrationReady(db))) {
+    throw new Error("Audience relabel: migration 20270110000047 is not applied; nothing written");
+  }
+  const dryRun = Boolean(options.dryRun) || mode === "off";
   const result = emptyResult(mode, dryRun);
+  const afterId = Math.max(0, Number(options.afterId) || 0);
   if (mode === "rollback") {
     if (dryRun) return result;
-    const rolledBack = await rollbackRelabel(db);
-    return { ...result, restored: rolledBack.restored, publishedTouched: rolledBack.publishedTouched };
+    const rolledBack = await rollbackRelabel(db, afterId, Math.max(1, options.limit ?? AUDIENCE_RELABEL_ROLLBACK_PER_STEP));
+    return {
+      ...result, restored: rolledBack.restored, publishedTouched: rolledBack.publishedTouched,
+      nextAfterId: rolledBack.nextAfterId, remaining: rolledBack.remaining, done: rolledBack.remaining === 0,
+    };
   }
+  const sampleKey = mode === "off" ? options.sampleKey ?? null : null;
+  const documents = await stepDocuments(db, {
+    afterId, limit: Math.max(1, options.limit ?? AUDIENCE_RELABEL_DOCUMENTS_PER_STEP), sampleKey, institutionId: options.institutionId ?? null,
+  });
+  result.remaining = documents.remaining;
+  result.done = documents.remaining === 0;
+  result.nextAfterId = documents.ids.length > 0 && !sampleKey ? Math.max(...documents.ids) : null;
   const canRecord = !dryRun && (await feedbackSchemaReady(db));
-  let after = 0;
-  for (;;) {
-    const rows = await candidateRows(db, after, options.institutionId ?? null);
-    if (rows.length === 0) break;
-    const documentIds = [...new Set(rows.map((row) => Number(row.source_document_id)).filter(Number.isFinite))];
-    const texts = await loadSourceTexts(db, documentIds);
-    const decisions = rows.map((row) => decideAudience(row, row.source_document_id == null ? null : texts.get(Number(row.source_document_id)) ?? null));
-    result.documents += documentIds.length;
+  for (let start = 0; start < documents.ids.length; start += DOCUMENT_CHUNK) {
+    const chunk = documents.ids.slice(start, start + DOCUMENT_CHUNK);
+    const rows = await candidateRows(db, chunk, options.institutionId ?? null);
+    if (rows.length === 0) continue;
+    const texts = await loadSourceTexts(db, chunk);
+    const decisions = rows.map((row) => decideAudience(row, texts.get(Number(row.source_document_id)) ?? null));
+    result.documents += chunk.length;
     result.fees += rows.length;
     decisions.forEach((decision, index) => {
       result.byAudience[decision.feeAudience] = (result.byAudience[decision.feeAudience] ?? 0) + 1;
@@ -257,7 +326,6 @@ export async function runAudienceRelabel(
       result.relabeled += written.relabeled;
       result.publishedTouched += written.publishedTouched;
     }
-    after = Math.max(...documentIds, after + 1);
   }
   return result;
 }

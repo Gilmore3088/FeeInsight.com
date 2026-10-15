@@ -1,5 +1,5 @@
 import { sql } from "@/lib/data-store/connection";
-import { answerKeySchemaReady, scoreboardSchemaReady } from "@/lib/data-store/answer-key";
+import { ANSWER_KEY_SCORER_VERSION, answerKeySchemaReady, scoreboardSchemaReady } from "@/lib/data-store/answer-key";
 import { learningSchemaReady } from "@/lib/agents/learning/attempts";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import { readAgentHealth, summarizeAgentHealth, type AgentHealthReport } from "@/lib/agents/agent-health";
@@ -156,6 +156,7 @@ async function readAccuracy(db: SqlTag): Promise<ScoreboardNumbers["accuracy"]> 
   const [row] = await db`
     SELECT id, precision, recall, scored_at
       FROM answer_key_score_runs
+     WHERE scorer_version = ${ANSWER_KEY_SCORER_VERSION}
      ORDER BY scored_at DESC, id DESC
      LIMIT 1
   `;

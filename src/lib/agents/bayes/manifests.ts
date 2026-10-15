@@ -231,6 +231,10 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   // v1 (#1051): a new fetch route, not a changed rule. Its selector picks every unreachable fee
   // link each fetch step (3 a step, once a week each), so the backlog is worked by the route itself.
   ADDRESS_VARIANT_FETCH_STRATEGY: "A new free fetch route; every fetch step selects the unreachable links it works through, so there is nothing to replay.",
+  // v3 / v2 (#1326): the re-searches no longer accept the link they replace. Their selectors pick
+  // every bank not yet searched at the new version, so the discover steps re-search them themselves.
+  UPGRADE_SEARCH_VERSION: "Its selector re-searches every product-page link not yet searched at v3; there is nothing to replay.",
+  FRESHNESS_SEARCH_VERSION: "Its selector re-searches every stale link not yet searched at v2; there is nothing to replay.",
 };
 
 export async function loadManifests(): Promise<ReplayManifest[]> {

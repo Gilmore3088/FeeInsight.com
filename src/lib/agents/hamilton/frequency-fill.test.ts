@@ -96,12 +96,12 @@ describe("Hamilton frequency fill", () => {
       nsf(1, "35.00", "Dormant accounts | $15 00 per month Nonsufficient funds | $35 00", null, "00 per month Nonsufficient funds"),
       // Its own line's per-item wording still fills a blank.
       nsf(2, "28.00", "NSF Item Returned | $28.00 per item", null, "NSF Item Returned"),
-      // A stated daily period is left as it was: it waits for James.
+      // v12 (#1301): a daily price with no daily cap on its line is held for a person.
       nsf(3, "30.00", "NSF/UCF Fee $30 Per Day", "daily", "NSF/UCF Fee"),
     ]);
     const result = await fillBlankFrequencies(asDb(db), { runId: 5, dryRun: true });
     expect(result.filled.map((fee) => [fee.feePublishedId, fee.from, fee.frequency])).toEqual([[2, null, "per_item"]]);
-    expect(result.held).toEqual([]);
+    expect(result.held.map((fee) => fee.feePublishedId)).toEqual([3]);
   });
 
   it("writes nothing on a dry run", async () => {

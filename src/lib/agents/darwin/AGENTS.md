@@ -125,18 +125,23 @@ Darwin owns verification and classification.
   `verify.rules` attempt (`fee_audience`, `audience_evidence`).
 - The audience relabel (`audience-relabel.ts`, step `audience-relabel`, #1059 step 3) gives the
   same decision to live fees verified as `unknown` before migration 20270110000047, reading each
-  document's newest text. A fee it cannot decide stays `unknown`. No provider calls.
-  `AUDIENCE_RELABEL_MODE` is `off` until James switches it:
-  - `off`: the tick queues a daily dry run that counts decisions by audience and evidence source
-    and writes nothing.
+  document's newest text. A fee it cannot decide stays `unknown`. No provider calls. Each step
+  reads at most `AUDIENCE_RELABEL_DOCUMENTS_PER_STEP` documents (by document id, after the
+  run's `after_document_id`) and reports `next_after_document_id` and `remaining_documents`; the
+  tick queues the next batch from that cursor until none remain. `AUDIENCE_RELABEL_MODE` is `off`
+  until James switches it, in its own PR:
+  - `off`: the tick queues one dry run a day over a sample of documents (md5 order by day) that
+    counts decisions by audience and evidence source, and writes nothing.
   - `live`: before any write, each fee's old value is recorded as an `audience_relabeled` row in
     `pipeline_feedback` (weight 0). Then the verified row takes the `darwin:` decision, and the
     live published row is touched so the trigger copies it.
-  - `rollback`: every recorded fee still carrying the relabel's evidence gets its old evidence
-    back, and the trigger restores the raw row's audience.
-  Before the migration the step only reads. On a random 150 of the 7,949 documents (1,509 of
-  the 77,268 live unknown fees, 14 Oct 2026), it decided 1,064 consumer, 351 both, 33 business
-  and left 61 unknown.
+  - `rollback`: every recorded fee still carrying the relabel's evidence goes back to `unknown`
+    with its old evidence, and the trigger copies the raw row's audience back (the old value),
+    in batches of `AUDIENCE_RELABEL_ROLLBACK_PER_STEP`.
+  Live and rollback refuse to start (the tick queues nothing, and a step that finds the trigger
+  without `darwin:` fails) until migration 20270110000047 is present. On a random 150 of the
+  7,949 documents (1,509 of the 77,268 live unknown fees, 14 Oct 2026), it decided 1,064
+  consumer, 351 both, 33 business and left 61 unknown.
 - Every decision is written to `pipeline_attempts` (stage `verify`, fingerprint
   `raw:<fee_raw_id>`) with `decision` and `reason_code`; a row decided under this rule
   version is never selected again, so skipped rows cannot starve the batch.

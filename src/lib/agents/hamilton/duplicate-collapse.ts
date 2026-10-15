@@ -1,7 +1,7 @@
 import { sql } from "@/lib/data-store/connection";
 import { invalidatePublicReadCache } from "@/lib/data-store/fee-cache";
 import { inSavepoint } from "@/lib/agents/savepoint";
-import { linesApartOnPage, nearNames, printedAtPrice } from "@/lib/agents/hamilton/publish";
+import { linesApartOnPage, nearNames, printedAtPrice, printedInPersonalAndBusinessSchedules } from "@/lib/agents/hamilton/publish";
 
 type SqlTag = typeof sql;
 
@@ -184,7 +184,10 @@ export interface NearNameResult {
   documents: number;
   /** Near-name pairs of live rows (same document, category, variant and amount). */
   pairs: number;
-  /** Kept apart: the page prints both as their own lines at the price, as at publish (#1303). */
+  /**
+   * Kept apart: the page prints both as their own lines at the price, as at publish (#1303), or
+   * prints the fee once in its personal and once in its business schedule.
+   */
   apartOnPage: number;
   /** Cannot determine: neither name is printed with the price, or the document has no stored text. */
   notPrinted: number;
@@ -243,7 +246,10 @@ export function nearNameRepeats(rows: NearNameRow[], texts: Map<string, string>)
       if (!text) {
         result.noText += 1;
         kept.push(row);
-      } else if (linesApartOnPage(text, row.fee_name ?? "", match.fee_name ?? "", row.amount)) {
+      } else if (
+        linesApartOnPage(text, row.fee_name ?? "", match.fee_name ?? "", row.amount) ||
+        printedInPersonalAndBusinessSchedules(text, [row.fee_name ?? "", match.fee_name ?? ""], row.amount)
+      ) {
         result.apartOnPage += 1;
         kept.push(row);
       } else if (!printed(row) && !printed(match)) {

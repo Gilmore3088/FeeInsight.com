@@ -8,6 +8,7 @@ import { HAND_REFILES, handFixedPassing, planHandRefiles } from "./taxonomy-fold
 
 /** The schedule lines each hand re-file was read from (copied data: the banks' own text). */
 const PAGE_LINES: Record<number, string> = {
+  88513: "Courtesy Pay (Paid NSF) Check/ACH/Bill Pay Payment | $32.00/item1\nNon-Sufficient Funds (NSF) Check/ACH/ATM Card/Bill Pay Payment | $32.00/item\nStop Payment (Check/ACH/Bill Pay Payment/Money Order)",
   107960: "Lost Card | $10.00\n\nReturn Check Fee | $25.00\n\nMiscellaneous\n\nDormant Fee | $ 3.00\n\nNSF Deposit Fee | $ 30.00",
   108035: "NSF | $25.00 Per Item\nOne-Time Debit Overdraft | $25.00 Per Item\nOverdraft | $25.00 Per Item\nReturned Item | $25.00 Per Item\nStop Payment | $10.00 Per Request",
   108132: "Returned Mail | $10.00 | each occurrence\n\nReturned Check | $30.00 | each\n\nStatement Copy | $1.00 | each page",
