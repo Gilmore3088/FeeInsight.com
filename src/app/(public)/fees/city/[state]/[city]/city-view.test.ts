@@ -62,8 +62,11 @@ describe("city view", () => {
     expect(chargingLess(od, 25)).toBe(0);
     const x = stripScale(od);
     expect(x(0)).toBe(0);
+    expect(x(25)).toBeGreaterThan(0);
     expect(x(25)).toBeLessThan(x(35));
     expect(x(35)).toBeLessThan(100);
+    // The axis starts just under the cheapest amount, so $25 and $30 sit well apart.
+    expect(x(30) - x(25)).toBeGreaterThan(20);
   });
 
   it("states the findings with their own counts", () => {

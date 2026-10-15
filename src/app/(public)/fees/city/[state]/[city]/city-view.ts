@@ -77,12 +77,24 @@ export function cityStrips(institutions: CityInstitution[], national: IndexEntry
   });
 }
 
-/** One axis per strip: the local dots and the nation's middle half both fit, from zero. */
+/** The low end of a strip's axis: just under the cheapest dot or the nation's middle half. */
+export function stripFloor(strip: Pick<CityStrip, "banks" | "nation">): number {
+  const values = strip.banks.map((b) => b.amount);
+  if (strip.nation) values.push(strip.nation.p25);
+  const lo = Math.min(...values);
+  const hi = Math.max(...values, strip.nation?.p75 ?? 0);
+  return Math.max(0, Math.floor(lo - Math.max((hi - lo) * 0.15, 1)));
+}
+
+/** One axis per strip, spread over the amounts actually charged so close fees stay apart. */
 export function stripScale(strip: Pick<CityStrip, "banks" | "nation">): (v: number) => number {
   const values = strip.banks.map((b) => b.amount);
-  if (strip.nation) values.push(strip.nation.p75);
-  const max = Math.max(...values, 1) * 1.08;
-  return (v: number) => Math.min(Math.max((v / max) * 100, 0), 100);
+  if (strip.nation) values.push(strip.nation.p75, strip.nation.p25);
+  if (values.length === 0) return () => 0;
+  const min = stripFloor(strip);
+  const hi = Math.max(...values);
+  const max = hi + Math.max((hi - min) * 0.08, 1);
+  return (v: number) => Math.min(Math.max(((v - min) / (max - min)) * 100, 0), 100);
 }
 
 /** Local institutions that publish the fee and charge strictly less than this amount. */

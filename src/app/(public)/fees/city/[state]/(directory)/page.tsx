@@ -8,6 +8,7 @@ import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
 import { SITE_URL } from "@/lib/constants";
 import { getCitiesInStateCached } from "@/lib/data-store/public-cached-reads";
 import { CityList, type CityLink } from "./city-list";
+import { titleCase } from "../[city]/city-lookup";
 
 interface PageProps {
   params: Promise<{ state: string }>;
@@ -61,7 +62,7 @@ export default async function StateCityDirectory({ params }: PageProps) {
   const cities = await getCitiesInStateCached(stateCode);
   const institutions = cities.reduce((s, c) => s + c.with_fees, 0);
   const links: CityLink[] = cities.map((c) => ({
-    name: c.city,
+    name: titleCase(c.city),
     href: `/fees/city/${stateCode.toLowerCase()}/${encodeURIComponent(c.city.toLowerCase())}`,
     withFees: c.with_fees,
   }));
@@ -107,7 +108,7 @@ export default async function StateCityDirectory({ params }: PageProps) {
           <h2 id="top-heading" className={H2}>
             Most institutions to compare
           </h2>
-          <ol className="mt-4 space-y-1.5">
+          <ol className="mt-4 max-w-3xl space-y-1.5">
             {top.map((c) => (
               <li key={c.href}>
                 <Link

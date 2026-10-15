@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { chargingLess, money, stripScale, type CityStrip } from "./city-view";
+import { chargingLess, money, stripFloor, stripScale, type CityStrip } from "./city-view";
 
 /** Dots that land on the same amount stack upward so every institution stays visible. */
 function stacked(strip: CityStrip): Map<number, number> {
@@ -102,7 +102,7 @@ export function CityStripChart({ strips, cityName }: { strips: CityStrip[]; city
           );
         })}
         <span aria-hidden="true" className="absolute bottom-0 left-0 font-mono text-[11px] text-ink-muted">
-          $0
+          {money(stripFloor(strip))}
         </span>
         {strip.nation && (
           <span
