@@ -196,6 +196,20 @@ const LENDING_LEGAL = /\blien (?:release|satisf)|\b(?:release|satisf\w*) of (?:t
  */
 export const SUBORDINATION_REFILE_LIVE = false;
 
+/**
+ * Live subordination fees the switched re-file leaves where they are, by verified id, because the
+ * bank's line does not support the fee as a subordination price (review of #1370, Oct 15):
+ * - 138129 (live 116720, $20): sits under a "SUBORDINATION REQUEST & PARTIAL ... RELEASE - $250"
+ *   heading; the $20 is another row's price.
+ * - 154983 (live 134129, $10): no price on its line; the $10 is "Business | $10 per month" checking.
+ */
+export const SUBORDINATION_REFILE_HELD_VERIFIED_IDS: ReadonlySet<number> = new Set([138129, 154983]);
+
+/** True when the switched subordination re-file must leave this fee where it is. Pure. */
+export function subordinationRefileHeld(fromKey: string, toKey: string | null | undefined, feeVerifiedId: number): boolean {
+  return fromKey === "other_lending_fee" && toKey === "legal_process" && SUBORDINATION_REFILE_HELD_VERIFIED_IDS.has(feeVerifiedId);
+}
+
 /** A night depository's key, bag or service. */
 const NIGHT_DEPOSIT = /\bnight (?:deposit|drop)/i;
 
@@ -285,7 +299,7 @@ export const ATM_ADJUSTMENT = /^(?![\s\S]*\b(?:limits?|deposit\w*)\b)[\s\S]*\bat
 /** A statement mailed back undelivered ("Returned Mailed Statement", "Return Statement Charge"). */
 const RETURNED_STATEMENT = /\breturn(?:ed)?\b[\s\S]*\b(?:mail|statement)/i;
 
-interface SplitCategory {
+export interface SplitCategory {
   to: string;
   name: RegExp;
   /** Further rules for the same source key, tried in order when `name` does not match. */
@@ -299,65 +313,76 @@ interface SplitCategory {
  * their own type ("Own type"); Knox v26 had filed them under check cashing, where their $20
  * median sat beside check cashing's $5. A fee the rule does not match stays where it is.
  */
-export const SPLIT_CATEGORIES: Readonly<Record<string, SplitCategory>> = {
-  check_cashing: { to: "collection_item", name: COLLECTION_ITEM, sqlPattern: "collection|foreign|canadian|international|non[- ]?u\\.?s" },
-  // A lien release is other lending (James, Oct 8: Lien Release gave up its spot). A subordination
-  // stays legal process (James, Oct 15).
-  legal_process: { to: "other_lending_fee", name: LENDING_LEGAL, sqlPattern: "lien" },
-  // A copy of a money order or cashier's check is a check copy, not the money order itself.
-  money_order: { to: "check_image", name: ITEM_COPY, sqlPattern: "cop(y|ies)" },
-  // A night deposit or night drop key is the night depository's, not a safe deposit box's.
-  safe_deposit_box: { to: "night_deposit", name: NIGHT_DEPOSIT, sqlPattern: "night (deposit|drop)" },
-  // A late charge on box rent is a safe deposit box fee, not a loan's late payment.
-  // A statement or item copy is document reproduction, not a late payment.
-  late_payment: {
-    to: "safe_deposit_box",
-    name: BOX_RENT,
-    also: [{ to: "document_reproduction", name: FAX_OR_COPY }],
-    sqlPattern: "\\mbox|\\msdb\\M|\\msafe|\\mrent|fax|cop(y|ies)",
-  },
-  // Moving an IRA to another institution closes it here; it is not account research. An IRA's
-  // excess withdrawal charge is a charge on the IRA itself, filed as IRA administration.
-  // A fax or a document copy is document reproduction, not research, and so is a copy charged
-  // by the page during research, or a line led by the copy (a member's own fax too).
-  account_research: {
-    to: "ira_termination",
-    name: IRA_TRANSFER_OUT,
-    also: [
-      { to: "ira_administration", name: IRA_EXCESS_WITHDRAWAL },
-      { to: "document_reproduction", name: FAX_OR_COPY },
-      { to: "document_reproduction", name: PER_PAGE_COPY },
-      { to: "document_reproduction", name: COPY_LED },
-    ],
-    sqlPattern: "\\mira\\M|fax|cop(y|ies|ied)|reproduc",
-  },
-  // Balancing or reconciling a checkbook is reconciliation work, not a check order.
-  check_printing: { to: "account_research", name: CHECKBOOK_RECONCILIATION, sqlPattern: "reconcil|balanc|research" },
-  // A cross-border banking bundle's fee is the account's maintenance fee, not a currency fee.
-  card_foreign_txn: { to: "monthly_maintenance", name: CROSS_BORDER_BUNDLE, sqlPattern: "cross.?border" },
-  // Buying or reloading a prepaid card is the prepaid card's fee; its ATM use stays here.
-  // Adjusting an ATM deposit or dispute is research work, not a network ATM fee.
-  atm_non_network: {
-    to: "gift_card_purchase",
-    name: PREPAID_BUY_OR_RELOAD,
-    also: [{ to: "account_research", name: ATM_ADJUSTMENT }],
-    sqlPattern: "prepaid|reload|adjust",
-  },
-  // A statement mailed back undelivered is returned mail, which account research holds.
-  paper_statement: { to: "account_research", name: RETURNED_STATEMENT, sqlPattern: "return" },
-  // Excess savings or money market activity is account servicing, not a lending fee. A
-  // subordination is legal process (James, Oct 15), moved only while `SUBORDINATION_REFILE_LIVE` is on.
-  other_lending_fee: SUBORDINATION_REFILE_LIVE
-    ? { to: "account_research", name: EXCESS_ACTIVITY, also: [{ to: "legal_process", name: SUBORDINATION }], sqlPattern: "excess|subordinat" }
-    : { to: "account_research", name: EXCESS_ACTIVITY, sqlPattern: "excess" },
-};
+export function splitCategoriesFor(options: { subordinationRefileLive: boolean }): Readonly<Record<string, SplitCategory>> {
+  return {
+    check_cashing: { to: "collection_item", name: COLLECTION_ITEM, sqlPattern: "collection|foreign|canadian|international|non[- ]?u\\.?s" },
+    // A lien release is other lending (James, Oct 8: Lien Release gave up its spot). A subordination
+    // stays legal process (James, Oct 15).
+    legal_process: { to: "other_lending_fee", name: LENDING_LEGAL, sqlPattern: "lien" },
+    // A copy of a money order or cashier's check is a check copy, not the money order itself.
+    money_order: { to: "check_image", name: ITEM_COPY, sqlPattern: "cop(y|ies)" },
+    // A night deposit or night drop key is the night depository's, not a safe deposit box's.
+    safe_deposit_box: { to: "night_deposit", name: NIGHT_DEPOSIT, sqlPattern: "night (deposit|drop)" },
+    // A late charge on box rent is a safe deposit box fee, not a loan's late payment.
+    // A statement or item copy is document reproduction, not a late payment.
+    late_payment: {
+      to: "safe_deposit_box",
+      name: BOX_RENT,
+      also: [{ to: "document_reproduction", name: FAX_OR_COPY }],
+      sqlPattern: "\\mbox|\\msdb\\M|\\msafe|\\mrent|fax|cop(y|ies)",
+    },
+    // Moving an IRA to another institution closes it here; it is not account research. An IRA's
+    // excess withdrawal charge is a charge on the IRA itself, filed as IRA administration.
+    // A fax or a document copy is document reproduction, not research, and so is a copy charged
+    // by the page during research, or a line led by the copy (a member's own fax too).
+    account_research: {
+      to: "ira_termination",
+      name: IRA_TRANSFER_OUT,
+      also: [
+        { to: "ira_administration", name: IRA_EXCESS_WITHDRAWAL },
+        { to: "document_reproduction", name: FAX_OR_COPY },
+        { to: "document_reproduction", name: PER_PAGE_COPY },
+        { to: "document_reproduction", name: COPY_LED },
+      ],
+      sqlPattern: "\\mira\\M|fax|cop(y|ies|ied)|reproduc",
+    },
+    // Balancing or reconciling a checkbook is reconciliation work, not a check order.
+    check_printing: { to: "account_research", name: CHECKBOOK_RECONCILIATION, sqlPattern: "reconcil|balanc|research" },
+    // A cross-border banking bundle's fee is the account's maintenance fee, not a currency fee.
+    card_foreign_txn: { to: "monthly_maintenance", name: CROSS_BORDER_BUNDLE, sqlPattern: "cross.?border" },
+    // Buying or reloading a prepaid card is the prepaid card's fee; its ATM use stays here.
+    // Adjusting an ATM deposit or dispute is research work, not a network ATM fee.
+    atm_non_network: {
+      to: "gift_card_purchase",
+      name: PREPAID_BUY_OR_RELOAD,
+      also: [{ to: "account_research", name: ATM_ADJUSTMENT }],
+      sqlPattern: "prepaid|reload|adjust",
+    },
+    // A statement mailed back undelivered is returned mail, which account research holds.
+    paper_statement: { to: "account_research", name: RETURNED_STATEMENT, sqlPattern: "return" },
+    // Excess savings or money market activity is account servicing, not a lending fee. A
+    // subordination is legal process (James, Oct 15), moved only while `SUBORDINATION_REFILE_LIVE` is on.
+    other_lending_fee: options.subordinationRefileLive
+      ? { to: "account_research", name: EXCESS_ACTIVITY, also: [{ to: "legal_process", name: SUBORDINATION }], sqlPattern: "excess|subordinat" }
+      : { to: "account_research", name: EXCESS_ACTIVITY, sqlPattern: "excess" },
+  };
+}
+
+/** The split table in force, as `SUBORDINATION_REFILE_LIVE` sets it. */
+export const SPLIT_CATEGORIES: Readonly<Record<string, SplitCategory>> = splitCategoriesFor({
+  subordinationRefileLive: SUBORDINATION_REFILE_LIVE,
+});
 
 export const SPLIT_CATEGORY_KEYS: ReadonlySet<string> = new Set(Object.keys(SPLIT_CATEGORIES));
 
 /** Where a live-category fee moves under `SPLIT_CATEGORIES`, or null when it stays. Pure. */
-export function splitLiveCategory(key: string | null | undefined, feeName: string | null | undefined): FoldResult | null {
+export function splitLiveCategory(
+  key: string | null | undefined,
+  feeName: string | null | undefined,
+  table: Readonly<Record<string, SplitCategory>> = SPLIT_CATEGORIES,
+): FoldResult | null {
   if (!key) return null;
-  const split = SPLIT_CATEGORIES[key];
+  const split = table[key];
   if (!split) return null;
   const name = plain(feeName ?? "");
   const hit = [{ to: split.to, name: split.name }, ...(split.also ?? [])].find((rule) => rule.name.test(name));

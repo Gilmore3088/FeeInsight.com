@@ -1,7 +1,18 @@
 import { describe, expect, it, test } from "vitest";
 import { FEE_FAMILIES, CANONICAL_KEY_MAP } from "./fee-taxonomy";
 import { passesDarwinChecks } from "./agents/knox/layout";
-import { foldContext, foldRetiredCategory, ownAtmSection, RETIRED_CATEGORIES, RETIRED_CATEGORY_KEYS, splitLiveCategory, SUBORDINATION_REFILE_LIVE } from "./fee-fold";
+import {
+  foldContext,
+  foldRetiredCategory,
+  ownAtmSection,
+  RETIRED_CATEGORIES,
+  RETIRED_CATEGORY_KEYS,
+  SPLIT_CATEGORIES,
+  splitCategoriesFor,
+  splitLiveCategory,
+  SUBORDINATION_REFILE_LIVE,
+  subordinationRefileHeld,
+} from "./fee-fold";
 
 const TAXONOMY = new Set(Object.values(FEE_FAMILIES).flat());
 const to = (key: string, name: string, context?: string) => foldRetiredCategory(key, name, context)?.to;
@@ -151,13 +162,28 @@ describe("top-50 fold", () => {
     expect(TAXONOMY.has("collection_item")).toBe(true);
   });
 
+  // Written for either setting of SUBORDINATION_REFILE_LIVE, so turning it on is a one-line change.
   test("a subordination stays legal process (James, Oct 15) and moves from other lending only once switched on; a money order copy is a check copy", () => {
     const split = (key: string, name: string) => splitLiveCategory(key, name)?.to ?? null;
-    expect(SUBORDINATION_REFILE_LIVE).toBe(false);
+    const off = splitCategoriesFor({ subordinationRefileLive: false });
+    const on = splitCategoriesFor({ subordinationRefileLive: true });
+    expect(SPLIT_CATEGORIES).toEqual(SUBORDINATION_REFILE_LIVE ? on : off);
     for (const name of ["Mortgage Subordination", "Subordination Agreement", "Lien Subordination Fee", "HELOC / 2nd Trust Deed Subordination"]) {
       expect(split("legal_process", name)).toBeNull();
-      expect(split("other_lending_fee", name)).toBeNull();
+      expect(split("other_lending_fee", name)).toBe(SUBORDINATION_REFILE_LIVE ? "legal_process" : null);
+      expect(splitLiveCategory("other_lending_fee", name, off)).toBeNull();
+      expect(splitLiveCategory("other_lending_fee", name, on)).toMatchObject({ to: "legal_process", rule: "other_lending_fee#split" });
     }
+    // Switched on, the incoming and outgoing subordination wires stay where they are, excess activity still goes to research.
+    expect(splitLiveCategory("other_lending_fee", "SUBORDINATION REQUEST: Outgoing Foreign", on)).toBeNull();
+    expect(splitLiveCategory("other_lending_fee", "Excess Withdrawal Fee", on)?.to).toBe("account_research");
+    expect(on.other_lending_fee.sqlPattern).toBe("excess|subordinat");
+    expect(off.other_lending_fee.sqlPattern).toBe("excess");
+    // The two live fees whose lines do not support a subordination price stay put (#1370 review).
+    expect(subordinationRefileHeld("other_lending_fee", "legal_process", 138129)).toBe(true);
+    expect(subordinationRefileHeld("other_lending_fee", "legal_process", 154983)).toBe(true);
+    expect(subordinationRefileHeld("other_lending_fee", "legal_process", 1)).toBe(false);
+    expect(subordinationRefileHeld("other_lending_fee", "account_research", 138129)).toBe(false);
     expect(split("legal_process", "Lien Release")).toBe("other_lending_fee");
     expect(split("legal_process", "SUBORDINATION REQUEST: Outgoing Foreign")).toBeNull();
     expect(split("legal_process", "Garnishment / Levy")).toBeNull();
