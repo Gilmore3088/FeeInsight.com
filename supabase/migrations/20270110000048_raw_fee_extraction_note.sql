@@ -2,19 +2,34 @@
 --
 -- Knox writes an audit note on every raw row it reads ("Knox deterministic extraction from Rosetta
 -- artifact #N. canonical_hint=...; text_hash=...; excerpt=\"...\""). Until now it went into
--- `conditions`, the field for the bank's own condition text, so 237,519 of 238,430 Knox rows held
--- the note there (read-only count, 2026-10-14). From this migration:
---   - `extraction_note` holds the note; `conditions` holds only the bank's text.
---   - Code reads the note as `COALESCE(extraction_note, conditions)` (`extractionNoteOf`), so a row
---     not yet moved reads the same as one moved.
---   - Knox writes new and re-read rows to `extraction_note`.
---   - The stored notes are moved by Knox's ledger-visible `extraction-note` step after deploy, in
---     batches (`moveExtractionNotes`, src/lib/agents/knox/extraction-note.ts), not by this file.
+-- `conditions`, the field for the bank's own condition text: 239,006 of 239,917 Knox rows held only
+-- the note there (read-only count, 2026-10-15 00:56 UTC).
 --
--- This file changes no stored data: it adds a nullable column and appends it to the two catalog
--- views (same columns, same order, `extraction_note` last; `conditions` is still fr.conditions).
--- Rollback: recreate both views from 20270110000040 and drop the column, after the step's own
--- rollback has put every note back in `conditions`.
+-- This file only adds. It adds a nullable column and appends it to the two catalog views as their
+-- last column (same columns, same order before it; `conditions` is still fr.conditions). It changes
+-- no stored data, and today's code, which never names `extraction_note`, runs unchanged against it.
+-- It ships on its own, ahead of the code that reads and writes the column (#1336), so that code
+-- never deploys before the column exists. The stored notes are moved later by Knox's
+-- ledger-visible step in #1336 (`moveExtractionNotes`), not by this file.
+--
+-- lock_timeout: adding a column and replacing a view take an ACCESS EXCLUSIVE lock. If a publish
+-- transaction holds the table or a view, this fails after 5 seconds instead of queueing every
+-- read behind it; it can then be run again.
+--
+-- Rollback (only after #1336's step rollback has put every note back in `conditions`, or before
+-- that step ever ran). CREATE OR REPLACE VIEW cannot drop a view column, so:
+--   BEGIN;
+--   SET LOCAL lock_timeout = '5s';
+--   DROP VIEW public.published_fee_rate_catalog;
+--   DROP VIEW public.published_fee_catalog;
+--   -- CREATE VIEW both again from 20270110000040_fee_audience_integrity.sql, with its REVOKE/GRANT lines.
+--   -- Check: each view's grantees are postgres and service_role only:
+--   --   SELECT relname, relacl FROM pg_class WHERE relname IN ('published_fee_catalog', 'published_fee_rate_catalog');
+--   --   On 2026-10-15 both read {postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}.
+--   ALTER TABLE public.raw_fee_observations DROP COLUMN extraction_note;
+--   COMMIT;
+
+SET lock_timeout = '5s';
 
 ALTER TABLE public.raw_fee_observations ADD COLUMN IF NOT EXISTS extraction_note text;
 COMMENT ON COLUMN public.raw_fee_observations.extraction_note IS

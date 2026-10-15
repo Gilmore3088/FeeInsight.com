@@ -23,14 +23,14 @@ export function extractionNoteSql(alias: string): string {
   return `COALESCE(${alias}.extraction_note, ${alias}.conditions)`;
 }
 
-/** Rows moved per step; about 238,000 Knox rows held the note on Oct 14, so about a dozen steps. */
+/** Rows moved per step; 239,006 Knox rows held only the note on Oct 15, so 12 to 13 steps. */
 export const EXTRACTION_NOTE_MOVE_LIMIT = 20_000;
 export const EXTRACTION_NOTE_MOVE_EVENT = "knox.extraction_note_moved";
 
 /**
  * A Knox row whose `conditions` is one of Knox's notes and nothing else: it starts with Knox's
- * lead ("Knox ... from Rosetta artifact #N.") and ends on the note's closing excerpt quote. All
- * 237,519 Knox rows with a note had this shape on Oct 14 (read-only count), so none holds bank
+ * lead ("Knox ... from Rosetta artifact #N.") and ends on the note's closing excerpt quote.
+ * All 239,006 Knox rows with a note had this shape on Oct 15 (read-only count), so none holds bank
  * text beside it. A row of any other shape is left as it is; its reads still work.
  */
 const NOTE_ONLY_SQL = `fr.source = 'knox'
