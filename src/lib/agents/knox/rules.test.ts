@@ -690,10 +690,11 @@ describe("Knox extract.rules", () => {
       "Paid nonsufficient funds (NSF)*", "", "Consumer account | $25.00", "", "Business account | $35.00", "",
       "Return item*", "", "Consumer account | $15.00", "", "Business account | $25.00",
     ].join("\n"))).toEqual([
-      ["Paid nonsufficient funds (NSF)*: Consumer account", 25, "overdraft"],
-      ["Paid nonsufficient funds (NSF)*: Business account", 35, "overdraft"],
-      ["Return item*: Consumer account", 15, "nsf"],
-      ["Return item*: Business account", 25, "nsf"],
+      // v69: the rules pass names these rows from their heading, without the footnote mark.
+      ["Paid nonsufficient funds (NSF): Consumer account", 25, "overdraft"],
+      ["Paid nonsufficient funds (NSF): Business account", 35, "overdraft"],
+      ["Return item: Consumer account", 15, "nsf"],
+      ["Return item: Business account", 25, "nsf"],
     ]);
     // Bluestone FCU (text 22145): an honored NSF draft is paid.
     expect(paidAndReturned([
@@ -1350,3 +1351,28 @@ describe("Knox extract.rules v68: fee-schedule lines with no fee word (#1102)", 
   });
 });
 
+
+describe("v69: a price line named by its heading (#1102)", () => {
+  it("names a bare price line from the fee heading above it", () => {
+    expect(fees(["Monthly service fee:", "$12 or waived"].join("\n"))).toEqual([["Monthly service fee", 12, "monthly_maintenance"]]);
+  });
+
+  it("reads wire direction rows under a Wire Transfers heading", () => {
+    const text = ["Wire Transfers", "Outgoing domestic $25.00", "Incoming domestic $15.00", "Incoming international $20.00"].join("\n");
+    expect(fees(text).map(([, amount, kind]) => [amount, kind])).toEqual([
+      [25, "wire_domestic_outgoing"],
+      [15, "wire_domestic_incoming"],
+      [20, "wire_intl_incoming"],
+    ]);
+  });
+
+  it("leaves a rate table, a second column and a sentence under a heading unread", () => {
+    expect(fees(["Overdraft Fee:", "Balance $1,000.00 2.50% APY"].join("\n"))).toEqual([]);
+    expect(fees(["Dormant Account Processing Fee", "monthly $5.00 | PIN reminder"].join("\n"))).toEqual([]);
+    expect(fees(["Stop Payment Fee:", "We may charge you $30.00 when you ask us to stop a check that has already cleared."].join("\n"))).toEqual([]);
+  });
+
+  it("does not reach a heading more than four lines up", () => {
+    expect(fees(["Monthly service fee:", "a", "b", "c", "d", "$12"].join("\n"))).toEqual([]);
+  });
+});
