@@ -13,8 +13,10 @@
 -- ledger-visible step in #1336 (`moveExtractionNotes`), not by this file.
 --
 -- lock_timeout: adding a column and replacing a view take an ACCESS EXCLUSIVE lock. If a publish
--- transaction holds the table or a view, this fails after 5 seconds instead of queueing every
--- read behind it; it can then be run again.
+-- transaction holds the table or a view, this fails after 20 seconds instead of queueing every
+-- read behind it; it can then be run again. The first deploy (01:03 UTC Oct 15) used 5 seconds and
+-- was cancelled by a 6-10 second read on the table; nothing was applied
+-- (docs/project/findings/2026-10-15-migration-lock-timeout.md).
 --
 -- Rollback (only after #1336's step rollback has put every note back in `conditions`, or before
 -- that step ever ran). CREATE OR REPLACE VIEW cannot drop a view column, so:
@@ -29,7 +31,7 @@
 --   ALTER TABLE public.raw_fee_observations DROP COLUMN extraction_note;
 --   COMMIT;
 
-SET lock_timeout = '5s';
+SET lock_timeout = '20s';
 
 ALTER TABLE public.raw_fee_observations ADD COLUMN IF NOT EXISTS extraction_note text;
 COMMENT ON COLUMN public.raw_fee_observations.extraction_note IS
