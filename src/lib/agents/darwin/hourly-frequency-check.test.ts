@@ -54,7 +54,7 @@ describe("hourlyWording (#1456)", () => {
   });
 });
 
-describe("hourly frequency on a schedule line (Knox v71)", () => {
+describe("hourly frequency on a schedule line", () => {
   it("reads the fee's own name or the words after its price", () => {
     expect(hourlyFromLine("Research (per hour) | $25.00 Each", 25)).toBe(true);
     expect(hourlyFromLine("Account Research | $25.00/hr", 25)).toBe(true);
@@ -66,13 +66,14 @@ describe("hourly frequency on a schedule line (Knox v71)", () => {
     expect(hourlyFromLine("Research (per hour) | $25.00", 40)).toBe(false);
   });
 
-  it("settles a per-hour fee as hourly, except where reading it is switched off or the category is never hourly", () => {
-    expect(settledFrequency("Research (per hour) | $25.00 Each", 25, null, "account_research")).toBe("hourly");
-    expect(settledFrequency("Research (per hour) | $25.00 Each", 25, "per_item", "account_research")).toBe("hourly");
-    // The fill and Darwin's verify do not derive it (v8: no flat frequency).
+  it("settles a per-hour fee as hourly only when asked, and never on a category never charged by the hour", () => {
+    expect(settledFrequency("Research (per hour) | $25.00 Each", 25, null, "account_research", { hourly: true })).toBe("hourly");
+    expect(settledFrequency("Research (per hour) | $25.00 Each", 25, "per_item", "account_research", { hourly: true })).toBe("hourly");
+    // By default (Knox at v70, the fill, Darwin's verify) it is not derived (v8: no flat frequency).
+    expect(settledFrequency("Research (per hour) | $25.00 Each", 25, null, "account_research")).toBeNull();
     expect(settledFrequency("Research (per hour) | $25.00 Each", 25, null, "account_research", { hourly: false })).toBeNull();
     // "Monthly Fee: (per hour)" filed as monthly maintenance is left for a person.
-    expect(settledFrequency("Monthly Fee: (per hour) | $25.00", 25, null, "monthly_maintenance")).toBeNull();
+    expect(settledFrequency("Monthly Fee: (per hour) | $25.00", 25, null, "monthly_maintenance", { hourly: true })).toBeNull();
     // A stated hourly frequency is never replaced by a flat reading.
     expect(settledFrequency("Research | $25.00 each", 25, "hourly", "account_research", { hourly: false })).toBe("hourly");
   });

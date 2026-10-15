@@ -227,8 +227,10 @@ Darwin owns verification and classification.
   and `samples_rename_duplicate`.
 - Live hourly re-check (`hourly-frequency-check.ts`, #1456). About 802 live fees say in their name
   that they are priced by the hour ("Research Fee $25/hour", "Subpoena Fee - Per Hour") but carried
-  no frequency or a per-item one, so a report read the price as a flat charge. Knox v71 reads new
-  fees as `hourly` (shown "per hour"); Darwin's own verify keeps a stated `hourly` but does not
+  no frequency or a per-item one, so a report read the price as a flat charge. `hourly` shows as "per
+  hour". Knox does not yet read hourly at extraction; that change rides the next Knox rules bump
+  (`settledFrequency(..., { hourly: true })`), and until then this pass catches new fees once
+  they are live. Darwin's own verify keeps a stated `hourly` but does not
   derive one, and Hamilton's frequency fill never writes or clears it. Every verify/classify step
   reads the next `HOURLY_CHECK_BATCH` (2,000) live flat fees after a cursor on the run ledger (the
   `darwin.hourly_frequency_check` event's `next_after_id`, 0 at the end of a pass); an

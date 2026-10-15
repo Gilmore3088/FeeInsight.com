@@ -143,9 +143,9 @@ describe("a rate basis in the fee's own name (v8, whole-record sample 2)", () =>
     expect(settledFrequency("Research ($10 min) /hr | $20.00 each", 20, "per_item", "account_research", { hourly: false })).toBeNull();
   });
 
-  it("reads a fee charged per hour as hourly (#1456, Knox v71)", () => {
-    expect(settledFrequency("Account Balancing (per hour) / $35.00 Each", 35, "per_item", "account_research")).toBe("hourly");
-    expect(settledFrequency("Research ($10 min) /hr | $20.00 each", 20, "per_item", "account_research")).toBe("hourly");
+  it("reads a fee charged per hour as hourly when asked (#1456)", () => {
+    expect(settledFrequency("Account Balancing (per hour) / $35.00 Each", 35, "per_item", "account_research", { hourly: true })).toBe("hourly");
+    expect(settledFrequency("Research ($10 min) /hr | $20.00 each", 20, "per_item", "account_research", { hourly: true })).toBe("hourly");
   });
 
   it("keeps a period when the name only mentions a minimum balance", () => {

@@ -357,12 +357,14 @@ export function settledFrequency(
   canonicalKey: string | null | undefined,
   options: { hourly?: boolean } = {},
 ): string | null {
-  // #1456: an hourly frequency comes from the fee's own words (Knox, or Darwin's live hourly
-  // re-check) and is never replaced by a flat reading of the same line.
+  // #1456: an hourly frequency comes from the fee's own words (Darwin's live hourly re-check) and
+  // is never replaced by a flat reading of the same line.
   if (stated === HOURLY_FREQUENCY) return HOURLY_FREQUENCY;
-  // #1456: a fee whose own row prices it by the hour is hourly, unless its category is never
-  // charged by the hour ("Monthly Fee: (per hour) | $25" is a misread a person looks at).
-  if (options.hourly !== false && hourlyFromLine(sourceLine, amount) && !(canonicalKey != null && HOURLY_EXEMPT_KEYS.has(canonicalKey))) return HOURLY_FREQUENCY;
+  // #1456: with `hourly: true`, a fee whose own row prices it by the hour is hourly, unless its
+  // category is never charged by the hour ("Monthly Fee: (per hour) | $25" is a misread a person
+  // looks at). Opt-in: Knox does not read hourly at extraction yet (it rides the next Knox rules
+  // bump), and the fill and Darwin's verify leave it to Darwin's switched live re-check.
+  if (options.hourly === true && hourlyFromLine(sourceLine, amount) && !(canonicalKey != null && HOURLY_EXEMPT_KEYS.has(canonicalKey))) return HOURLY_FREQUENCY;
   // v8: a fee charged by a rate (per $100, per dollar, or per hour where hourly is not read above)
   // has no flat frequency, whatever was stated.
   if (namedBasis(sourceLine, amount)) return null;

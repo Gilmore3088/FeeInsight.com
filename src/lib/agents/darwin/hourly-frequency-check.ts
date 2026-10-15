@@ -17,8 +17,9 @@ type SqlTag = typeof sql;
  * fee against today's rules"). About 802 live fees say in their name that they are priced by the
  * hour ("Research: Labor Per Hour" $40, "Subpoena Fee - Per Hour (Minimum One Hour Charge)" $25,
  * "Coin Counting (per hour)" $10), but no hourly frequency existed: 796 had none, 5 were `per_item`
- * and 1 `per_occurrence`, so a report read "$40" as a flat charge. Knox v71 reads new fees as
- * `hourly`; this pass sets it on fees already live.
+ * and 1 `per_occurrence`, so a report read "$40" as a flat charge. Knox does not read hourly at
+ * extraction yet (that rides the next Knox rules bump); this pass sets it on live fees, new ones
+ * included, since it re-reads the live table every pass.
  *
  * The live catalog name (`published_fee_records.fee_name`) decides, one of (`hourlyVerdict`):
  * - `set`: the name prices the fee by the hour (`HOURLY_WORDING`: "per hour", "per hr", "/hr",

@@ -423,22 +423,3 @@ describe("Knox v70 monthly maintenance and low-balance fees (#1100)", () => {
     expect(fees("Monthly Service Charge Below $500.00 minimum $5.00 per Month")).not.toContainEqual(expect.arrayContaining([500]));
   });
 });
-
-describe("hourly fees (v71, #1456)", () => {
-  it("reads a fee priced by the hour as hourly, and a price per part of an hour as no frequency", () => {
-    const text = [
-      "Fee Schedule",
-      "Account Research (per hour) | $25.00",
-      "Stop Payment | $30.00 each",
-      "Subpoena Processing | $40.00/hr",
-      "Coin Counting per 15 minutes | $10.00",
-    ].join("\n");
-    const read = runFreeSpecialists(text).candidates.map((fee) => [fee.feeName, fee.amount, fee.frequency]);
-    expect(read).toEqual([
-      ["Account Research (per hour)", 25, "hourly"],
-      ["Stop Payment", 30, "per_item"],
-      ["Subpoena Processing", 40, "hourly"],
-      ["Coin Counting per 15 minutes", 10, null],
-    ]);
-  });
-});

@@ -17,7 +17,7 @@ import { extractTableCandidates, KNOX_TABLE_STRATEGY } from "@/lib/agents/knox/t
 import { checkFeeAgainstSource, joinLabeledFeeCardText } from "@/lib/custom-report/source-check";
 import { rateFeeFromHeld, type RateFeeCandidate } from "@/lib/agents/knox/percent";
 import { contextFees, NO_LONGER_CHARGED } from "@/lib/agents/knox/context-names";
-import { frequencyFromLine, HOURLY_FREQUENCY, settledFrequency } from "@/lib/fee-frequency";
+import { frequencyFromLine, settledFrequency } from "@/lib/fee-frequency";
 
 /**
  * Knox's free extraction team, run over one whole document. Pure.
@@ -79,9 +79,7 @@ import { frequencyFromLine, HOURLY_FREQUENCY, settledFrequency } from "@/lib/fee
 // charge named without a fee word and charged by the period, one stated in a sentence ("a low
 // balance fee of $6.95 will be imposed every statement cycle"), and a price after a balance word
 // that belongs to the figure before it ("Below $500.00 minimum $5.00 per Month").
-// v71 (#1456): a fee priced by the hour ("per hour", "/hr", "hourly", "(hour)") is read with the
-// hourly frequency, shown as "per hour"; a price per part of an hour ("per 15 min") is not.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 71 } as const;
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 70 } as const;
 
 export interface SpecialistRun {
   strategy: string;
@@ -221,11 +219,7 @@ export function runFreeSpecialists(sourceText: string): FreeExtractionResult {
       const feeName = tidyFeeName(read.feeName);
       const checked = selfCheck(text, feeName, read.amount, read.canonicalHint);
       const rowFrequency = checked.row ? frequencyFromLine(checked.row, read.amount) : null;
-      // v71 (#1456): a fee whose own row prices it by the hour is hourly ("Research (per hour) |
-      // $25.00", "$40/hr"); `settledFrequency` reads the row first, then the excerpt.
-      const frequency = checked.row && settledFrequency(checked.row, read.amount, null, read.canonicalHint) === HOURLY_FREQUENCY
-        ? HOURLY_FREQUENCY
-        : rowFrequency
+      const frequency = rowFrequency
         ? settledFrequency(checked.row, read.amount, rowFrequency, read.canonicalHint)
         : settledFrequency(read.excerpt, read.amount, read.frequency, read.canonicalHint);
       const candidate = { ...read, ...feeApplicability(feeName, read.excerpt, read.amount), feeName, frequency };
