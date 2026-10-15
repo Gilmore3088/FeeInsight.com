@@ -189,6 +189,7 @@ export function MarketExhibit({
                 value={ladder.value}
                 domain={domain}
                 format={money}
+                figure="median"
               />
             ))}
             <FeeRangeAxis ticks={[0, hi / 2, hi]} domain={domain} />

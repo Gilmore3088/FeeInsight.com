@@ -40,7 +40,7 @@ export function LandingSizzle({
           video={HOME_TOUR_VIDEO}
           placeholder={HOME_TOUR_PLACEHOLDER}
           chapters={[
-            { key: "fee", label: "Every fee", scene: <FeeStackExhibit data={data} search /> },
+            { key: "fee", label: "Every fee", scene: <FeeStackExhibit data={data} search shell /> },
             { key: "market", label: "Every market", scene: <MarketExhibit data={data} animate wide /> },
             { key: "workspace", label: "One workspace", scene: workspaceScene },
             { key: "reports", label: "Reports", scene: <ReportExhibit data={data} /> },

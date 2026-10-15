@@ -168,13 +168,14 @@ export function MarketLadder({ data, bare = false }: { data: MarketLadderData; b
               max={row.max}
               value={data.value}
               domain={domain}
+              figure="median"
             />
           ))}
           <FeeRangeAxis ticks={[0, top / 2, top]} domain={domain} />
         </div>
       </div>
       <p className="max-w-[none] border-t border-border px-4 py-2.5 text-[12px] text-ink-muted sm:px-6">
-        Dot: its own published fee. Box: the middle half of each market.
+        Dot: its own published fee. Box: the middle half of each market. Right: the market median.
       </p>
     </figure>
   );
