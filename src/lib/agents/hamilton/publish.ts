@@ -1247,7 +1247,7 @@ function pageReader(
   const cents = Math.round(value * 100);
   const whole = Math.floor(cents / 100);
   const price = cents % 100 === 0 ? `${whole}(?: 00)?` : `${whole} ${String(cents % 100).padStart(2, "0")}`;
-  // Up to six words between a name and its price, never through "of" or another field's label
+  // Up to six words between a name and its price, never through "of" or a deposit label
   // ("Monthly Fee $0 Initial Deposit $10" does not price the monthly fee at $10), and never the
   // first digits of a larger amount ("$10,000" is not $10) (#1314).
   const follows = new RegExp(`^ ((?:(?!of |deposit )[a-z0-9]+ ){0,6}?)${price} (?!\\d{3} )`);

@@ -552,18 +552,19 @@ on its second look (check `hamilton.article_page`), archived as `article_page: #
 with the lesson going to Magellan. MTC Federal CU's real schedule, /articles/schedule-of-fees/,
 is not an article.
 
-**Qualifier pairs, check 4 (#1314, Oct 15).** `linesApartOnPage` keeps two names apart only when
-the shorter one is printed at the price clear of every place of the longer: a shorter name found
-only inside the longer lines ("Funds (NSF)" in "Non-Sufficient Funds (NSF) $25", "Order" under a
-"Money Order" heading) or one line printed twice ("Less than Minimum Balance Fee $10.00/year",
-twice) is one fee. The words between a name and its price never run through another field's label
-("Monthly Fee $0 Initial Deposit $10") or stop on the first digits of a larger amount ("$10,000" is
-not $10). An identical skip decided before check 4 beside a live line of its own document whose
-name is its name with one or two qualifier words in front, or the other way round, is decided
-again (`QUALIFIER_RESELECT_SQL`; James on Oct 15: "ACH stop payment could be a second fee"). The
-page check decides; the SQL only narrows the rows. A re-decided row's wide identical check reads
-its own document's lines and another document's line only under the same name (an older crawl of
-the same schedule); another document's line under another name is a different printed line.
+**Qualifier pairs, check 4 (#1314, Oct 15).** `linesApartOnPage` keeps two names apart only when the
+shorter one is printed at the price clear of every place of the longer: a shorter name found only
+inside the longer lines ("Funds (NSF)" in "Non-Sufficient Funds (NSF) $25", "Order" under a "Money
+Order" heading) or one line printed twice ("Less than Minimum Balance Fee $10.00/year", twice) is
+one fee. The words between a name and its price never run through "of" or a deposit label ("Monthly
+Fee $0 Initial Deposit $10"; other labels such as "Minimum Balance" are not yet guarded) or stop on
+the first digits of a larger amount ("$10,000" is not $10). An identical skip decided before check 4
+beside a live line of its own document whose name is its name with one or two qualifier words in
+front, or the other way round, is decided again (`QUALIFIER_RESELECT_SQL`; James on Oct 15: "ACH
+stop payment could be a second fee"). The page check decides; the SQL only narrows the rows. A
+re-decided row's wide identical check reads its own document's lines and another document's line
+only under the same name (an older crawl of the same schedule); another document's line under
+another name is a different printed line.
 
 ## Duplicate Collapse
 
