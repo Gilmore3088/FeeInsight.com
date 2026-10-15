@@ -1,4 +1,4 @@
-# Migration 048 was cancelled by its own 5-second lock timeout
+# Migration 048 was cancelled by its own 5-second lock timeout, then applied on retry
 
 **Date:** 2026-10-15
 **Found by:** builder session, confirming #1337 on prod. Corrected after the #1340 review.
@@ -9,6 +9,16 @@
 - Four readers queued behind it, waiting 1.8 to 5.0 seconds.
 - The file and its history row run as one transaction, so nothing was applied. `schema_migrations` still ends at 047, and the column does not exist.
 - **Cause:** an open transaction held a lock on the table, and the ACCESS EXCLUSIVE lock could not be taken within 5 seconds. The logs do not name the holding session.
+
+## Outcome
+- The next push to `main` was #1341, merged at about 01:15 UTC. On that push the link retried 048 unchanged, still with the 5-second limit.
+- The ALTER ran at 01:16:16 and succeeded.
+- Read-only checks after the retry:
+  - `schema_migrations` ends at `20270110000048`.
+  - `raw_fee_observations.extraction_note` exists.
+  - Both catalog views have the column and keep the ACL `{postgres, service_role}`.
+- The migration file stays as applied. A file that has been applied is not edited afterwards.
+- The retry succeeded because no long transaction held the table at that moment. That is chance, not a fix.
 
 ## Why a longer timeout alone is not enough
 A lock lasts for the holder's whole transaction, not just one statement, and pipeline steps run inside one transaction (`withTransaction`, `run-store.ts`). Over the 12 hours before the failure:
@@ -30,14 +40,14 @@ While the ALTER waits, every new read of `raw_fee_observations` and both catalog
 
 A failed migration does not retry by itself. The link only runs pending migrations on the next push to `main`.
 
-## Safe way to apply
+## Safe way to apply (for the next migration that locks a busy table)
 1. Pause the `pipeline` control. That is James's call, since it is a production control.
 2. Check that `pg_stat_activity` shows no open step transaction on these tables.
-3. Merge #1340.
+3. Merge the migration PR.
 4. Confirm the `20270110000048` row in `supabase_migrations.schema_migrations` and the `extraction_note` column.
 5. Resume the control.
 
-Only then merge the code that uses the column (#1336).
+Only then merge the code that uses the new column or table.
 
 ## For next time
 - A migration that takes an ACCESS EXCLUSIVE lock on a busy table should be applied with the pipeline paused, and with a `lock_timeout` that fails fast.
