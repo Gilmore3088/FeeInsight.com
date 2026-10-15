@@ -48,6 +48,7 @@ type IndexRow = {
   created_at: string;
   charter_type: string;
   schedule_keys?: string[] | null;
+  schedule_group?: string | null;
 };
 
 async function loadNationalRows(db: typeof sql, approvedOnly = true): Promise<IndexRow[]> {
@@ -128,6 +129,7 @@ export interface ContractFeeRow {
   asset_size_tier: string | null;
   /** The schedule the row was read from (statistics rule 7); NULL while the switch is off. */
   schedule_keys?: string[] | null;
+  schedule_group?: string | null;
 }
 
 /** Approved, sourced published rows (the statistics contract's input), optionally filtered. */
@@ -568,6 +570,7 @@ export async function getDistrictMedianByCategory(
     fed_district: number;
     institution_id: number;
     schedule_keys: string[] | null;
+    schedule_group: string | null;
   }[];
 
   return [...summarizeFeesBy(rows, (row) => String(Number(row.fed_district))).entries()]
@@ -592,7 +595,7 @@ export async function getDistrictFeeMedians(
       AND ef.amount IS NOT NULL
       AND ef.amount >= 0
       AND ${sql.unsafe(STATS_ROW_FILTER)}
-  ` as { fee_category: string; amount: number | null; institution_id: number; schedule_keys: string[] | null }[];
+  ` as { fee_category: string; amount: number | null; institution_id: number; schedule_keys: string[] | null; schedule_group: string | null }[];
 
   return [...summarizeFeesBy(rows, (row) => row.fee_category).entries()]
     .filter(([, stats]) => stats.median_amount !== null && stats.institution_count >= MIN_INSTITUTIONS_FOR_MEDIAN)

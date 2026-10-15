@@ -1,5 +1,5 @@
 import { sql } from "./connection";
-import { STATS_ROW_FILTER, summarizeFeesBy } from "./fee-stats";
+import { STATS_ROW_FILTER, STATS_SCHEDULE_KEYS, summarizeFeesBy } from "./fee-stats";
 
 export interface PeerFilteredStats {
   total_institutions: number;
@@ -50,7 +50,7 @@ export async function getTopCategoriesForPeerSet(
   const where = conditions.join(" AND ");
 
   const rows = await sql.unsafe(
-    `SELECT ef.fee_category, ef.amount, ef.institution_id
+    `SELECT ef.fee_category, ef.amount, ef.institution_id, ${STATS_SCHEDULE_KEYS}
      FROM published_fee_catalog ef
      JOIN institution_sources ct ON ef.institution_id = ct.id
      WHERE ${where}`,
@@ -59,6 +59,8 @@ export async function getTopCategoriesForPeerSet(
     fee_category: string;
     amount: number | null;
     institution_id: number;
+    schedule_keys: string[] | null;
+    schedule_group: string | null;
   }[];
 
   const results: PeerTopCategory[] = [];

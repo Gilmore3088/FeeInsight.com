@@ -219,6 +219,15 @@ function reconcileValues(input: ReconcileInput, facts: Fact[]): { failures: stri
 
   if (research) {
     const values = valuePerInstitution(live.rows);
+    // Each institution's schedule keys and holding company, so a recomputed group counts a
+    // shared schedule once exactly as the published statistics do (fee-stats.ts rule 7).
+    const scheduleOf = new Map<number, Pick<StatsInputRow, "schedule_keys" | "schedule_group">>();
+    for (const r of live.rows) {
+      const id = Number(r.institution_id);
+      const prev = scheduleOf.get(id);
+      const keys = [...(prev?.schedule_keys ?? []), ...(r.schedule_keys ?? [])];
+      scheduleOf.set(id, { schedule_keys: [...new Set(keys)], schedule_group: prev?.schedule_group ?? r.schedule_group ?? null });
+    }
     const own = values.get(research.institutionId) ?? null;
     if (!near(research.current, own)) {
       failures.push(
@@ -244,7 +253,7 @@ function reconcileValues(input: ReconcileInput, facts: Fact[]): { failures: stri
         }
         if (!near(m.amount, value)) differ++;
         singles.push(value);
-        memberRows.push({ institution_id: m.institutionId, amount: value, fee_category: research.feeCategory });
+        memberRows.push({ institution_id: m.institutionId, amount: value, fee_category: research.feeCategory, ...scheduleOf.get(m.institutionId) });
       }
       if (missing > 0) failures.push(`${group.label}: ${missing} of ${group.members.length} values have no live catalog row`);
       if (differ > 0) failures.push(`${group.label}: ${differ} of ${group.members.length} values differ from the catalog`);
@@ -290,7 +299,14 @@ export function liveCatalogReader(): LiveReader {
       byCategory.set(
         category,
         getContractFeeRows({ categories: [category] })
-          .then((rows) => rows.map((r) => ({ institution_id: r.institution_id, amount: r.amount, fee_category: r.fee_category, charter_type: r.charter_type })))
+          .then((rows) => rows.map((r) => ({
+            institution_id: r.institution_id,
+            amount: r.amount,
+            fee_category: r.fee_category,
+            charter_type: r.charter_type,
+            schedule_keys: r.schedule_keys ?? null,
+            schedule_group: r.schedule_group ?? null,
+          })))
           .catch(() => null),
       );
     }

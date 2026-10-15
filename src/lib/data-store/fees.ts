@@ -1,5 +1,5 @@
 import { sql } from "./connection";
-import { STATS_ROW_FILTER, summarizeFeesBy, valuePerInstitution, type StatsInputRow } from "./fee-stats";
+import { STATS_ROW_FILTER, STATS_SCHEDULE_KEYS, summarizeFeesBy, valuePerInstitution, type StatsInputRow } from "./fee-stats";
 import { consumerPriceMoveSql } from "./consumer-price-moves";
 import type { FeeReview } from "./types";
 import { institutionDisplayName } from "@/lib/institution-display-name";
@@ -51,6 +51,9 @@ export interface FeeInstance {
   /** The bank document the fee was read from; null for unsourced legacy rows. */
   document_url?: string | null;
   source_document_id?: number | null;
+  /** Statistics rule 7 (fee-stats.ts): the row's schedule keys and holding company. */
+  schedule_keys?: string[] | null;
+  schedule_group?: string | null;
 }
 
 export interface DimensionBreakdown {
@@ -106,7 +109,8 @@ export function computeStats(amounts: number[]): {
 
 export async function getFeeCategorySummaries(): Promise<FeeCategorySummary[]> {
   const rows = await sql`
-    SELECT ef.fee_category, ef.amount, ef.institution_id, ct.charter_type, ef.fee_audience
+    SELECT ef.fee_category, ef.amount, ef.institution_id, ct.charter_type, ef.fee_audience,
+           ${sql.unsafe(STATS_SCHEDULE_KEYS)}
     FROM published_fee_catalog ef
     JOIN institution_sources ct ON ef.institution_id = ct.id
     WHERE ef.fee_category IS NOT NULL
@@ -119,6 +123,8 @@ export async function getFeeCategorySummaries(): Promise<FeeCategorySummary[]> {
     institution_id: number;
     charter_type: string;
     fee_audience?: string | null;
+    schedule_keys?: string[] | null;
+    schedule_group?: string | null;
   }[];
 
   // "Charge nothing" is stronger than "has a free tier": every usable price for
@@ -285,7 +291,7 @@ export async function getFeeCategoryDetail(category: string): Promise<{
            ct.asset_size, ef.review_status, ef.extraction_confidence,
            ef.canonical_fee_key, ef.variant_type, ef.source_document_id,
            ef.fee_name, COALESCE(ef.document_url, ef.source_url) AS document_url,
-           ct.fed_district
+           ct.fed_district, ${sql.unsafe(STATS_SCHEDULE_KEYS)}
     FROM published_fee_catalog ef
     JOIN institution_sources ct ON ef.institution_id = ct.id
     WHERE ef.fee_category = ${category} AND ef.review_status = 'approved'
