@@ -139,6 +139,51 @@ describe("report render step", () => {
     ).rejects.toThrow(/it is now failed\), so it was not marked rendering/);
   });
 
+  // #1271: assembly that throws after a cancel is a skip, not a failure; any other throw fails the step.
+  it("records a throw from assembly after a cancel as skipped, and rethrows any other", async () => {
+    const job = { id: "job-27", report_type: "monthly_pulse", status: "pending", params: null };
+    const put = vi.fn(async () => undefined);
+    const throwing = vi.fn(async () => Promise.reject(new Error("Report job job-27 is no longer open, so it was not assembled.")));
+    const cancelled = await runReportRenderStep(fakeDb(job, [], "cancelled").db, "job-27", { render: throwing, store: { put } });
+    expect(cancelled.status).toBe("skipped");
+    expect(cancelled.summary).toMatch(/cancelled during rendering. Assembly stopped \(it is now cancelled\): .*no longer open/);
+    expect(cancelled.detail).toMatchObject({ lost_race: true, report_status: "cancelled" });
+    expect(put).not.toHaveBeenCalled();
+
+    const boom = vi.fn(async () => Promise.reject(new Error("assembler boom")));
+    await expect(runReportRenderStep(fakeDb(job).db, "job-27", { render: boom, store: { put } })).rejects.toThrow(/assembler boom/);
+  });
+
+  // #1271: a cancel after the upload but before the manifest save leaves the HTML in R2; the step names its key.
+  it("names the unattached object's key when a cancel lands between the upload and the manifest save", async () => {
+    const job = { id: "job-28", report_type: "monthly_pulse", status: "pending", params: null };
+    const { db: base, calls } = fakeDb(job);
+    let cancelled = false;
+    const db = vi.fn(async (strings: TemplateStringsArray, ...values: unknown[]) => {
+      const text = strings.join("?");
+      if (cancelled && text.includes("SELECT status FROM report_jobs")) return [{ status: "cancel_requested" }];
+      if (cancelled && text.includes("data_manifest =")) {
+        calls.push({ text, values });
+        return [];
+      }
+      return (base as unknown as (s: TemplateStringsArray, ...v: unknown[]) => Promise<unknown>)(strings, ...values);
+    }) as unknown as Record<string, unknown>;
+    db.json = (value: unknown) => ({ json: value });
+    const put = vi.fn(async () => {
+      cancelled = true;
+    });
+    const key = reportArtifactKey("monthly_pulse", "job-28");
+    const result = await runReportRenderStep(db as unknown as Parameters<typeof runReportRenderStep>[0], "job-28", {
+      render: vi.fn(async () => rendered("<html/>")),
+      store: { put },
+    });
+    expect(put).toHaveBeenCalledWith(key, "<html/>", "text/html; charset=utf-8");
+    expect(result.status).toBe("skipped");
+    expect(result.summary).toContain(`stays in storage, unattached, at ${key}`);
+    expect(result.detail).toMatchObject({ artifact_key: key, unattached_artifact_key: key, report_status: "cancel_requested" });
+    expect(calls.some((call) => call.text.includes("data_manifest ="))).toBe(true);
+  });
+
   it("refuses peer briefs, which Hamilton Reports owns", async () => {
     const { db } = fakeDb({ id: "job-5", report_type: "peer_brief", status: "pending", params: null });
     await expect(runReportRenderStep(db, "job-5", { render: vi.fn(), store: { put: vi.fn() } })).rejects.toThrow(
@@ -386,7 +431,8 @@ describe("report close step", () => {
   it("leaves a cancel_requested job alone", async () => {
     const { db, calls } = fakeDb({ id: "job-25", report_type: "monthly_pulse", status: "cancel_requested", params: null });
     const result = await runReportCloseStep(db, "job-25");
-    expect(result.status).toBe("completed");
+    // #1271: the same status as a cancel that lands after the read.
+    expect(result.status).toBe("skipped");
     expect(result.summary).toMatch(/cancelled; the cancel is left in place/);
     expect(calls.some((call) => call.text.includes("UPDATE"))).toBe(false);
   });
