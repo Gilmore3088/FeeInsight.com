@@ -299,9 +299,9 @@ async function handlePOST(request: Request) {
     providerStartedAt = await guardProviderCall(providerContext);
     let resolveSaved: (id: string | null) => void = () => {};
     const savedId = new Promise<string | null>((resolve) => { resolveSaved = resolve; });
-    // A written answer passes the shared evidence gate when it finishes (#981). Once the held
-    // line is approved (HELD_ANSWER_MESSAGE), the answer is held until then and is never shown,
-    // or saved, when it fails; until that, a failing answer streams as before and the verdict
+    // A written answer passes the shared evidence gate when it finishes (#981). While the held
+    // line (HELD_ANSWER_MESSAGE) is set, the answer is held until then and is never shown, or
+    // saved, when it fails; with it null, a failing answer streams as before and the verdict
     // is saved with it.
     const holdsAnswers = mode === "analyze" && HELD_ANSWER_MESSAGE !== null;
     let resolveVerdict: (verdict: AnswerVerdict | null) => void = () => {};

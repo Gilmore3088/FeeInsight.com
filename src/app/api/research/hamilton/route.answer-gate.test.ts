@@ -1,7 +1,7 @@
 /**
  * The streamed written answer passes the shared evidence gate (answer-gate.ts, #981).
- * While no held line is approved, a failing answer streams as before and its verdict is
- * saved; with one, a failing answer is never shown or saved and a passing one still is.
+ * With no held line, a failing answer streams as before and its verdict is saved; with
+ * one (the shipped default), a failing answer is never shown or saved and a passing one still is.
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
