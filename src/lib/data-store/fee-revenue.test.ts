@@ -48,3 +48,18 @@ describe("fee revenue fee-population contract", () => {
     expect(predicates).toContain("source_document_id IS NOT NULL");
   });
 });
+
+describe("fee revenue reads split NCUA year-to-date income into quarters (#1245)", () => {
+  it.each([
+    ["getFeeRevenueData", () => getFeeRevenueData()],
+    ["getTierFeeRevenueSummary", () => getTierFeeRevenueSummary()],
+    ["getCharterFeeRevenueSummary", () => getCharterFeeRevenueSummary()],
+  ])("%s reads each quarter's own income, never the raw NCUA YTD", async (_name, read) => {
+    await read();
+    const fragments = mock.unsafe.mock.calls.map((call) => String(call[0])).join("\n");
+    expect(fragments).toContain("inf.service_charge_income - prev.service_charge_income");
+    expect(fragments).toContain("EXTRACT(QUARTER FROM inf.report_date::date) = 1");
+    const raw = mock.mock.calls.map((call) => Array.isArray(call[0]) ? call[0].join(" ") : String(call[0])).join("\n");
+    expect(raw).not.toContain("JOIN institution_financial_records ifin");
+  });
+});

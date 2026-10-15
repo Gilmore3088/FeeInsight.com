@@ -148,7 +148,7 @@ export async function getAllFees(
     feesParams,
   );
 
-  return { fees, total: cnt };
+  return { fees: fees.map((fee) => ({ ...fee, conditions: readerFeeConditions(fee.conditions) })), total: cnt };
 }
 
 export async function getInstitutionsByFilter(filters: {

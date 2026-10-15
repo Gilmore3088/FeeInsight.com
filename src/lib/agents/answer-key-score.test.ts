@@ -26,21 +26,26 @@ const ENTRY: ConfirmedAnswerKeyEntry = {
   ],
 };
 
+const KEY_DOC_FEES = [
+  { canonicalKey: "overdraft", amount: 32, sourceDocumentId: 11 },
+  { canonicalKey: "nsf", amount: 30.004, sourceDocumentId: 11 },
+  { canonicalKey: "estatement_fee", amount: 0, sourceDocumentId: 11 },
+  { canonicalKey: "safe_deposit_box", amount: 45, sourceDocumentId: 11 },
+];
+
 function evidence(overrides: Partial<BankEvidence> = {}): BankEvidence {
-  const fees = [
-    { canonicalKey: "overdraft", amount: 32 },
-    { canonicalKey: "nsf", amount: 30.004 },
-    { canonicalKey: "estatement_fee", amount: 0 },
-    { canonicalKey: "safe_deposit_box", amount: 45 },
-  ];
+  const latestText = overrides.latestText === undefined
+    ? { sourceDocumentId: 11, status: "completed", charCount: 900 }
+    : overrides.latestText;
   return {
     institutionId: 7,
     feeScheduleUrl: "http://example-bank.com/fees",
     documents: [{ id: 11, url: "http://example-bank.com/fees", contentHash: "abc" }],
-    latestText: { sourceDocumentId: 11, status: "completed", charCount: 900 },
-    knox: fees,
-    darwin: fees,
-    hamilton: fees,
+    latestText,
+    texts: latestText ? [latestText] : [],
+    knox: KEY_DOC_FEES,
+    darwin: KEY_DOC_FEES,
+    hamilton: KEY_DOC_FEES,
     ...overrides,
   };
 }
@@ -74,8 +79,9 @@ describe("rawCanonicalHint", () => {
 });
 
 describe("scoreAnswerKey", () => {
-  it("scores a perfect pipeline at precision and recall 1 on every stage", () => {
-    const score = scoreAnswerKey([ENTRY], new Map([[7, evidence()]]));
+  it.each([1, 2] as const)("scores a perfect pipeline at precision and recall 1 on every stage (v%i)", (version) => {
+    const score = scoreAnswerKey([ENTRY], new Map([[7, evidence()]]), version);
+    expect(score.scorerVersion).toBe(version);
     expect(score.overall).toMatchObject({ precision: 1, recall: 1, expected: 4 });
     for (const stage of ["magellan", "rosetta", "knox", "darwin", "hamilton"] as const) {
       expect(score.byStage[stage], stage).toMatchObject({ precision: 1, recall: 1 });
@@ -94,7 +100,7 @@ describe("scoreAnswerKey", () => {
     expect(score.byStage.rosetta.recall).toBe(1);
   });
 
-  it("counts a wrong document, a missing text, wrong amounts and extra fees", () => {
+  it("counts a wrong document, a missing text, wrong amounts and extra fees (v1)", () => {
     const score = scoreAnswerKey(
       [ENTRY],
       new Map([[7, evidence({
@@ -104,6 +110,7 @@ describe("scoreAnswerKey", () => {
         darwin: [{ canonicalKey: "overdraft", amount: 32 }],
         hamilton: [{ canonicalKey: "overdraft", amount: 32 }, { canonicalKey: "stop_payment", amount: 30 }],
       })]]),
+      1,
     );
     expect(score.byStage.magellan).toMatchObject({ predicted: 1, correct: 0, precision: 0, recall: 0 });
     expect(score.byStage.rosetta).toMatchObject({ predicted: 0, precision: null, recall: 0 });
@@ -116,6 +123,36 @@ describe("scoreAnswerKey", () => {
     expect(score.banks[0].extra).toEqual(["stop_payment $30.00"]);
   });
 
+  it("v2 scores the bank's link and the key's own document; v1 the newest page and every document (#1280)", () => {
+    // The link is the key's document (11); a newer overdraft page (14) was stored beside it.
+    const bank = evidence({
+      documents: [
+        { id: 14, url: "https://example-bank.com/overdraft-protection/", contentHash: "new" },
+        { id: 11, url: "http://example-bank.com/fees", contentHash: "abc" },
+      ],
+      latestText: { sourceDocumentId: 14, status: "completed", charCount: 400 },
+      texts: [
+        { sourceDocumentId: 14, status: "completed", charCount: 400 },
+        { sourceDocumentId: 11, status: "completed", charCount: 900 },
+      ],
+      hamilton: [
+        ...KEY_DOC_FEES,
+        { canonicalKey: "monthly_maintenance", amount: 15, sourceDocumentId: 14 },
+        { canonicalKey: "stop_payment", amount: 30, sourceDocumentId: null },
+      ],
+    });
+    const v1 = scoreAnswerKey([ENTRY], new Map([[7, bank]]), 1);
+    const v2 = scoreAnswerKey([ENTRY], new Map([[7, bank]]), 2);
+    expect([v1.byStage.magellan.recall, v1.byStage.rosetta.recall, v1.overall.precision]).toEqual([0, 0, 0.6667]);
+    expect([v2.byStage.magellan.recall, v2.byStage.rosetta.recall]).toEqual([1, 1]);
+    expect(v2.overall).toMatchObject({ predicted: 4, correct: 4, precision: 1, recall: 1, otherDocument: 1, noDocument: 1 });
+    expect(v2.banks[0].stages.hamilton).toMatchObject({ otherDocument: 1, noDocument: 1 });
+    expect(v1.overall.otherDocument).toBeUndefined();
+    // A link to the wrong page is a wrong Magellan prediction under v2.
+    const wrongLink = scoreAnswerKey([ENTRY], new Map([[7, { ...bank, feeScheduleUrl: "https://example-bank.com/overdraft-protection" }]]), 2);
+    expect(wrongLink.byStage.magellan).toMatchObject({ predicted: 1, correct: 0 });
+  });
+
   it("scores a bank the pipeline never touched as zero recall", () => {
     const score = scoreAnswerKey([{ ...ENTRY, documentType: "scanned_pdf" }], new Map());
     expect(score.overall).toMatchObject({ recall: 0, precision: null });
@@ -124,8 +161,16 @@ describe("scoreAnswerKey", () => {
 
   it("summarizes and narrates", () => {
     const score = scoreAnswerKey([ENTRY], new Map([[7, evidence()]]));
-    expect(summarizeAnswerKeyScore({ schemaReady: true, scoreRunId: 1, score, dryRun: false }))
-      .toContain("precision 100.0%, recall 100.0%");
+    const v1 = scoreAnswerKey([ENTRY], new Map([[7, evidence()]]), 1);
+    const summary = summarizeAnswerKeyScore({
+      schemaReady: true,
+      scoreRunId: 2,
+      score,
+      series: [{ scorerVersion: 1, scoreRunId: 1, score: v1 }, { scorerVersion: 2, scoreRunId: 2, score }],
+      dryRun: false,
+    });
+    expect(summary).toContain("with scorer v2: precision 100.0%, recall 100.0%");
+    expect(summary).toContain("Scorer v1: precision 100.0%, recall 100.0%.");
     expect(summarizeAnswerKeyScore({ schemaReady: false, scoreRunId: null, score: null, dryRun: false }))
       .toContain("not applied");
     expect(narrateEvent({

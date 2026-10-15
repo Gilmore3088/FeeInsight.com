@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { getSql } from "@/lib/data-store/connection";
+import { getSql, withTransaction } from "@/lib/data-store/connection";
 import { requireAuth } from "@/lib/auth";
 import { cancelAgentRun } from "@/lib/agents/run-store";
 import { triggerReportJob } from "@/lib/report-agent-runs";
@@ -35,37 +35,38 @@ export async function publishReport(
   const slug = generateSlug(title);
 
   try {
-    const sql = getSql();
-    // #1066: only a complete job whose printed fee figures tied out to live data publishes.
-    const [job] = await sql<Array<{ status: string; data_manifest: unknown }>>`
-      SELECT status, data_manifest FROM report_jobs WHERE id = ${jobId} LIMIT 1
-    `;
-    if (!job) return { success: false, error: "Report job not found." };
-    if (job.status !== "complete") return { success: false, error: `Report job is ${job.status}, not complete.` };
-    if (!reconciliationTiesOut(job.data_manifest)) {
-      return {
-        success: false,
-        error: "This report has no reconciliation that tied out to live data, so it cannot be published. Generate the report again to render and reconcile it.",
-      };
-    }
-    const rows = await sql<Array<{ slug: string }>>`
-      INSERT INTO published_reports (job_id, report_type, slug, title, is_public)
-      VALUES (${jobId}, ${reportType}, ${slug}, ${title}, ${isPublic})
-      ON CONFLICT (slug) DO NOTHING
-      RETURNING slug
-    `;
-
-    let finalSlug = rows[0]?.slug;
-
-    if (!finalSlug) {
+    // #1066/#1259: only a complete job whose printed fee figures tied out to live data
+    // publishes. The check and the insert run in one transaction with the job row locked
+    // (FOR UPDATE), so the job cannot change between them. The tie-out test is
+    // reconciliationTiesOut itself, which also reads a manifest stored as a JSON string.
+    const outcome = await withTransaction(async (tx): Promise<{ slug: string } | { error: string }> => {
+      const [job] = await tx<Array<{ status: string; data_manifest: unknown }>>`
+        SELECT status, data_manifest FROM report_jobs WHERE id = ${jobId} FOR UPDATE
+      `;
+      if (!job) return { error: "Report job not found." };
+      if (job.status !== "complete") return { error: `Report job is ${job.status}, not complete.` };
+      if (!reconciliationTiesOut(job.data_manifest)) {
+        return {
+          error: "This report has no reconciliation that tied out to live data, so it cannot be published. Generate the report again to render and reconcile it.",
+        };
+      }
+      const rows = await tx<Array<{ slug: string }>>`
+        INSERT INTO published_reports (job_id, report_type, slug, title, is_public)
+        VALUES (${jobId}, ${reportType}, ${slug}, ${title}, ${isPublic})
+        ON CONFLICT (slug) DO NOTHING
+        RETURNING slug
+      `;
+      if (rows[0]?.slug) return { slug: rows[0].slug };
       // Slug collision — append timestamp
       const fallbackSlug = `${slug}-${Date.now()}`;
-      await sql`
+      await tx`
         INSERT INTO published_reports (job_id, report_type, slug, title, is_public)
         VALUES (${jobId}, ${reportType}, ${fallbackSlug}, ${title}, ${isPublic})
       `;
-      finalSlug = fallbackSlug;
-    }
+      return { slug: fallbackSlug };
+    });
+    if ("error" in outcome) return { success: false, error: outcome.error };
+    const finalSlug = outcome.slug;
 
     // Trigger ISR revalidation per D-04
     revalidatePath("/reports");

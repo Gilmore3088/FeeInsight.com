@@ -21,6 +21,15 @@ It runs as Atlas steps (agent `atlas`); it is deterministic and makes no model c
   still be caught with its expected reason. Refresh it from `eval_cases where status = 'active'`
   and `input->>'kind' = 'limit_guard'`; source-check cases carry whole documents, so prod's daily
   replay gates those.
+- `__fixtures__/hard-documents.json` + `hard-documents.test.ts`: the hard-document gate (#1067),
+  run in CI as `npm run test:quality-gates` with the taxonomy, fold and guard suites. Real source
+  lines, each cited by `source_document_id` and `text_hash`: two fees at one price on one page stay
+  two fees and two reads of one line collapse (`sameValueLinesApart` + `decidePriorFee`, the
+  publish step's own same-line check); a product page's $0 benefit list is held before release
+  (`publishSkipReason`); and the category guard keeps real fees and refuses wrong ones in the five
+  categories with the most wrong-after-publish takedowns (measured in the fixture's `measured`).
+  `known_misses` run as expected failures: a rule that starts getting one right fails the test, and
+  the case moves into the gate. Add a case from a stored line, never an invented one.
 
 ## Fresh audit (accuracy)
 

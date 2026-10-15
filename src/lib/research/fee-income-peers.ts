@@ -1,8 +1,8 @@
 /**
  * Fee income against peers, for Hamilton's written answer (#1084): one institution's service
  * charge income beside the median of a peer group, on the same call report quarter and the
- * same filer (FDIC quarterly vs NCUA year-to-date income never mix). Pure; the rows come from
- * getFeeRevenueData.
+ * same filer. getFeeRevenueData gives each quarter's own income for both filers (#1245: NCUA
+ * year-to-date less the prior quarter). Pure; the rows come from getFeeRevenueData.
  */
 import type { FeeRevenueCorrelation } from "@/lib/data-store/fee-revenue";
 
@@ -76,7 +76,7 @@ export function feeIncomeAgainstPeers(
     view: "peers" as const,
     quarter: subject.report_date ?? null,
     income_basis: subject.financial_source === "ncua"
-      ? "NCUA 5300 service charge income, year to date at this quarter"
+      ? "NCUA 5300 service charge income for this quarter (year to date less the prior quarter)"
       : "FDIC call report service charge income for this quarter",
     measure: "income_per_10k_assets is service charge income per $10,000 of total assets",
     subject: describe(subject),

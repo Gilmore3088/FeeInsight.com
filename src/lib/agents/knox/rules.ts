@@ -170,7 +170,8 @@ export const FEE_PATTERNS: FeePattern[] = [
   { key: "safe_deposit_box", pattern: /\b\d{1,2}(?:\.\d)?\s?["”]?\s?[x×]\s?\d{1,2}(?:\.\d)?\s?(?:["”]|inch(?:es)?\b)/i },
   { key: "card_dispute", pattern: /\b(?:card|transaction) disputes?\b|\b(?:debit|credit|card)\b.{0,15}\bchargebacks?\b/i },
   // v22: "Maximum daily Overdraft or Returned Item fees ..... $140.00" is the daily cap.
-  { key: "od_daily_cap", pattern: /\b(?:maximum|max\.?)\s+daily\s+overdraft\b/i },
+  // #1291: and "Maximum Daily OD/NSF Fees $210 per day" (#1291 re-file check, raw 406368).
+  { key: "od_daily_cap", pattern: /\b(?:maximum|max\.?)\s+daily\s+(?:overdraft|OD|O\/D)\b/i },
   {
     key: "continuous_od",
     // v33: "Consecutive Overdraft Daily Fee" (Wilson Bank & Trust).
@@ -179,7 +180,9 @@ export const FEE_PATTERNS: FeePattern[] = [
   },
   {
     key: "od_protection_transfer",
-    pattern: /\b(overdraft protection|OD protection).{0,40}\b(transfer|from (savings|shares?))\b|\b(overdraft|OD)\b.{0,15}\b(transfer|sweep|from (savings|shares?))\b|^\W*overdraft protection\W*(?:\([^)]*\))?\W*$|\b(?:insufficient|non[-\s]?sufficient) funds? transfers?\b|\b(?:account|savings|deposit)[-\s]link(?:ed)?\b.{0,25}\boverdraft protection\b|\blinked (?:account|savings)\b.{0,25}\boverdraft protection\b/i,
+    pattern: /\b(overdraft protection|OD protection).{0,40}\b(transfer|from (savings|shares?))\b|\b(overdraft|OD)\b.{0,15}\b(transfer|sweep|from (savings|shares?))\b|^\W*overdraft protection\W*(?:\([^)]*\))?\W*$|\b(?:insufficient|non[-\s]?sufficient) funds? transfers?\b|\b(?:account|savings|deposit)[-\s]link(?:ed)?\b.{0,25}\boverdraft protection\b|\blinked (?:account|savings)\b.{0,25}\boverdraft protection\b|\b(?:overdrafts?|OD)\b.{0,30}\bcovered by\b.{0,25}\btransfers?\b|\bcourtesy transfers?\b/i,
+    // #1291: "Overdrafts Covered by Courtesy Transfer | $5.00 per item" is the transfer, not the
+    // overdraft fee the same page prints on its own line (#1291 re-file check, raw 158607).
   },
   { key: "ach_return", pattern: /\bACH.{0,30}\b(return|returned)\b/i },
   {
@@ -354,6 +357,76 @@ export const FEE_PATTERNS: FeePattern[] = [
 ];
 
 /**
+ * #1102 (K9): names Knox holds as unclassified that say their own category, at many banks
+ * (production, 14 Oct 2026: "Stop Pay Fee | $30.00", "Reconveyance Fee $ 25.00", "Early Closure
+ * Fee", "Christmas Club Withdrawal Fee", "Returned Statement Fee", "IRA Closeout Fee"). Tried
+ * after every rule above, so they only claim names no rule recognizes. A bare "Wire Transfer
+ * Fee" is left out: about 1 in 5 such lines say incoming or international after the price.
+ *
+ * Off until James switches it on (`KNOX_HELD_NAME_RULES_LIVE`, with a rules version bump in the
+ * same change): on, new reads file these names, the held re-check sends the held lines to
+ * Darwin (`knox_promoted_from_held`, plus `knox_held_name_rule`), and Hamilton's rules re-check
+ * reads them the same way. Off, only the extract step's read-only preview applies them.
+ */
+export const KNOX_HELD_NAME_RULES_LIVE = false;
+
+/**
+ * A loan's or a certificate's early closure is not a deposit account's, and neither is one with a
+ * window longer than a year ("within 36 months of opening it ... $750 plus any mortgage ... taxes").
+ */
+const NOT_AN_ACCOUNT_CLOSURE = String.raw`^(?!.*\b(?:loans?|heloc|line of credit|mortgage|equit(?:y|ies)|lease|certificates?|CDs?|IRA|terminate|refinanc\w*)\b)(?!.*\b(?:(?:1[3-9]|[2-9]\d)\s*months?|(?:[2-9]|\d{2})\s*years?)\b)`;
+/** A closure window of a year or less: "within 90 days", "less than 6 months", "(Open < 3 months)". */
+const SHORT_WINDOW = String.raw`(?:\b(?:less than|within|before|prior to)|\bw\/in|<)\s*(?:(?:\d{1,3}|thirty|sixty|ninety)\s*-?\s*days?|(?:[1-9]|1[0-2]|one|two|three|six|nine|twelve)\s*-?\s*months?|(?:1|one)\s*-?\s*years?)\b`;
+
+export const HELD_NAME_PATTERNS: FeePattern[] = [
+  { key: "stop_payment", pattern: /\bstop[- ]?pay\b(?![- ]?ments?)|\bstop p(?:y)?mts?\b/i },
+  { key: "reconveyance", pattern: /\breconvey(?:ance|ances)?\b/i },
+  // A bare "Early Closure Fee" row (with its note), a club's withdrawal, or a closure inside a
+  // short window. A sentence's "Early closure fee of $500 may apply" names no account: on Great
+  // Southern Bank's page it is the HELOC's.
+  {
+    key: "early_closure",
+    pattern: new RegExp(
+      NOT_AN_ACCOUNT_CLOSURE +
+        String.raw`(?:^\W*(?:an?\s+|the\s+)?early\s+(?:account\s+)?(?:clos(?:e|ure|ing)|close-?out)(?:\s*(?:\/|or)\s*account)?(?:\s+(?:fees?|charges?))?(?:\s*[(,–-].*)?\W*$|.*\bclubs?\b.{0,25}\b(?:withdrawals?|close|closing)\b(?=.{0,25}\b(?:fees?|charges?)\b)|.*\b(?:clos(?:e|ed|ing|ure)|close-?out)\b.{0,40}` +
+        SHORT_WINDOW +
+        String.raw`)`,
+      "i",
+    ),
+  },
+  // A statement mailed back undelivered is returned mail, which account research holds
+  // (`SPLIT_CATEGORIES.paper_statement` in fee-fold.ts). Returned mail on its own stays
+  // unclassified (v14).
+  { key: "account_research", pattern: /\b(?:return(?:ed)?|undeliverable|undelivered)\s+(?:mail(?:ed)?\s+)?statements?\b/i },
+  { key: "paper_statement", pattern: /\b(?:paper|mailed|printed)\s+(?:member|account|monthly|quarterly|periodic)\s+statements?\b/i },
+  { key: "ira_termination", pattern: /\bIRA\b.{0,30}\bclose[- ]?outs?\b/i },
+  { key: "ira_distribution", pattern: /\bIRA\b.{0,30}\b(?:withdrawals?|distributions?)\b/i },
+];
+
+let heldNameRulesOn = KNOX_HELD_NAME_RULES_LIVE;
+
+/** Runs `read` with the held-name rules on or off. Synchronous reads only. */
+export function withHeldNameRules<T>(on: boolean, read: () => T): T {
+  const before = heldNameRulesOn;
+  heldNameRulesOn = on;
+  try {
+    return read();
+  } finally {
+    heldNameRulesOn = before;
+  }
+}
+
+/**
+ * Prime marks written as inches in a box size ("3″x5″ Rental | $35.00 annual charge"), which the
+ * box-size rules never read. A footnote number glued to a name ("1Paper statement charge") is
+ * left alone: undone, it also files sentences whose figure is a threshold ("5Monthly fee applied
+ * to share accounts with less than a $100 avg. monthly balance").
+ */
+function heldNameText(text: string): string {
+  return text.replace(/″/g, '"').replace(/′/g, "'");
+}
+
+/**
  * A dollar amount. Thousands need a comma group (`$1,500.00`) or no separator at all
  * (`$1500`); the old pattern matched `$150` out of `$1500`.
  */
@@ -476,7 +549,7 @@ function candidateSegments(text: string): string[] {
 export function classifyPatternKey(value: string): string | null {
   // PDFs usually render the apostrophe in "Cashier's check" as a curly quote. A waiver
   // clause names other services ("(waived if enrolled in Mobile Deposit)"), never the fee.
-  const text = value
+  const text = (heldNameRulesOn ? heldNameText(value) : value)
     .replace(/[‘’ʼ`]/g, "'")
     .replace(/\((?:[^()]*\bwaiv)[^()]*\)?/gi, " ")
     // v32: "(Outside U.S.)" ends on a dot, where \b does not match.
@@ -489,7 +562,9 @@ export function classifyPatternKey(value: string): string | null {
     // wires; one price for "domestic/int'l" stays domestic.
     .replace(/\bint'l\b\.?|\b(?:out of|outside(?: of)?)\s+(?:the\s+)?country\b/gi, (match, offset, whole: string) =>
       /\bdomestic\b/i.test(whole) ? match : "international");
-  let key = FEE_PATTERNS.find((entry) => entry.pattern.test(text))?.key ?? null;
+  let key = FEE_PATTERNS.find((entry) => entry.pattern.test(text))?.key ??
+    (heldNameRulesOn ? HELD_NAME_PATTERNS.find((entry) => entry.pattern.test(text))?.key : null) ??
+    null;
   // v20: "ATM Foreign Transaction Fee" is what a customer pays at another bank's ATM (a
   // "foreign ATM"), not a card's foreign transaction fee; "ATM/Debit Card International/
   // Foreign Transaction Fee" names the card and stays one.
@@ -520,6 +595,12 @@ export function classifyPatternKey(value: string): string | null {
     !/\b(?:overdraft|courtesy|privilege|bounce|OD|paid)\b/i.test(text.replace(/\b(?:applies|when|if)\b[^)]{0,40}/gi, " "))
   ) {
     return "nsf";
+  }
+  // #1291: an NSF-led name for an item returned or paid ("NSF Return/Paid Item Fee for Chkg. & Sav",
+  // Kewanee, raw 131332, whose page prints its own "Overdraft Fee") is the NSF fee; v43 below still
+  // files one price written "Paid Item Fee/Returned Item Fee" as the overdraft price.
+  if (key === "overdraft" && /^\W*(?:NSF|non[-\s]?sufficient|insufficient funds)\b[^|]{0,20}\breturn(?:ed)?\s*(?:\/|or|&)\s*paid items?\b/i.test(text)) {
+    key = "nsf";
   }
   // v22: "Overdrafts Returned" is an item the bank returns unpaid, so an NSF fee.
   if (key === "overdraft" && /\boverdrafts?\s+returned\b/i.test(text) && !/\bpaid\b/i.test(text)) return "nsf";
@@ -1031,6 +1112,11 @@ export function extractFromSegment(segment: string): ExtractionRulesResult {
     /\b(?:incoming|outgoing|inbound|outbound|send|sent|receive|received)\b/i.test(name) &&
     /^\s*per\s+wire(?:\s+transfer)?\b/i.test(segment.slice(firstAmount.end)) && !/\bwires?\b/i.test(name);
   if (perWire) hint = classifyFeeText(`${name} wire`);
+  // #1291: a bare "Overdrafts" priced per transfer is the share transfer that covers them ("Share
+  // Transfer for\nOverdrafts - $2.00 per transfer", raw 112570), not the overdraft fee itself.
+  if (hint === "overdraft" && firstAmount != null && /^\W*overdrafts?\W*$/i.test(name) && /^\s*per\s*transfers?\b/i.test(segment.slice(firstAmount.end))) {
+    hint = "od_protection_transfer";
+  }
 
   // A free fee, written as a "Free"/"No charge" cell or as $0.
   if (hint && cells && cells.length >= 2 && !firstAmount && cells.slice(1).some((cell) => ZERO_CELL.test(cell)) && !notAZeroPrice(hint, cells[0])) {
@@ -1230,7 +1316,12 @@ export function extractFromSegment(segment: string): ExtractionRulesResult {
   // the words just before it name one ("Stop payment $30; Wire, outgoing $25"); otherwise
   // it is a cap, a second account column, or a condition, and is ignored.
   feeAmounts.forEach((amount, index) => {
-    const between = index === 0 ? null : nameFrom(segment.slice(feeAmounts[index - 1].end, amount.start));
+    // #1196: the unit right after the earlier price is that price's ("Dormant accounts |
+    // $15.00 per month Nonsufficient funds | $35.00"), not the next fee's name or period.
+    const unitAfterPrevious = index === 0 ? null : segment.slice(feeAmounts[index - 1].end, amount.start).match(PRICE_UNIT_AFTER);
+    const ownStart = index === 0 ? 0 : feeAmounts[index - 1].end + (unitAfterPrevious?.[0].length ?? 0);
+    const between = index === 0 ? null : nameFrom(segment.slice(ownStart, amount.start));
+    const ownFrequency = unitAfterPrevious ? detectFrequency(segment.slice(ownStart)) : frequency;
     // v19: "$30.00 - fee assessed for each item paid1 Continuous Overdraft Fee ..... $5.00":
     // the lowercase words finish the earlier price's terms; the title that ends them is the name.
     const tail = between && /^[^A-Z]/.test(between) ? titleTail(between) : null;
@@ -1240,7 +1331,8 @@ export function extractFromSegment(segment: string): ExtractionRulesResult {
     // v22: "... you will be assessed a fee of $25.00 on the 7th day. This fee is in addition to
     // any Overdraft Fees assessed. | $25.00": the row's price cell repeats the price in its own cell.
     const priceCellAt = segment.lastIndexOf(CELL_SEPARATOR);
-    if (index > 0 && cells && amount.value === feeAmounts[index - 1].value && amount.start > priceCellAt &&
+    // #1196: not when the earlier price ends on its own unit ("$25.00/hr Wire message | $25.00").
+    if (index > 0 && !unitAfterPrevious && cells && amount.value === feeAmounts[index - 1].value && amount.start > priceCellAt &&
       PRICE_ONLY_CELL.test(cells.at(-1) ?? "") && segment.lastIndexOf(CELL_SEPARATOR, priceCellAt - 1) < feeAmounts[index - 1].start) return;
     const candidateName = index === 0 ? feeName : (chunk as string);
     const canonicalHint = index === 0 ? hint : (chunkHint as string);
@@ -1249,7 +1341,7 @@ export function extractFromSegment(segment: string): ExtractionRulesResult {
     result.candidates.push({
       feeName: candidateName,
       amount: amount.value,
-      frequency,
+      frequency: ownFrequency,
       canonicalHint,
       confidence: confidenceFor(segment),
       excerpt: segment,
@@ -1505,7 +1597,44 @@ export function withoutBusinessOnlyFees(text: string): string {
     .join("\n");
 }
 
-export function extractCandidatesFromText(raw: string): ExtractionRulesResult {
+/** #1196: a price's own unit right after it ("$15.00 per month", "$25.00/hr", "$5.00/statement", "$10.00 each"). */
+const PRICE_UNIT_AFTER = /^\s*(?:\/\s*(?:statement|stmt|hr|hour|item|month|mo|sheet|check|year|yr|day|page|copy|request)\b|per\s+(?:month|item|year|statement|check|hour|sheet|day|page|copy|request)\b|each\b|ea\b\.?)/i;
+
+/**
+ * #1196: a price whose decimal point the PDF text dropped ("Dormant accounts | $15 00 per
+ * month Nonsufficient funds | $35 00", Addition Financial 8629). Knox read "$15" as the price and
+ * gave the cents and their unit to the next fee ("00 per month Nonsufficient funds", monthly).
+ * The point goes back ("$15.00"), so the cents and "per month" stay with the dormant fee.
+ * "00" cents always; other cents only when the text drops the point on "00" prices too and the
+ * cents end their cell ("$2 50 each", "$4 95 |"), so a count after a price ("$5 10 items") stays.
+ * Never a box size ("$5 10 x 10") or a longer number.
+ *
+ * #1305: two more shapes of the same price. A footnote star right after the cents ends them
+ * ("ATM Transactions (per item) | $1 50* after 8/mo", Members 1st 7517, read as $1), and the
+ * star stays a mark, never a digit. A point kept with a space after it ("Loan Skip A Pay Fee
+ * .... $29. 95/ea ch", Xplore 6636, read as $29) is the same dropped point. Each shape is
+ * counted on its own: ". 00" prices never vouch for "$2 50", which in a letter-spaced text is
+ * $250. Cents after ". " end their cell too, since a sentence can end on a price and go on
+ * with another number ("$500. 10-year draw period").
+ */
+const DROPPED_POINT_SHAPES = [" ", "\\. "].map((dropped) => ({
+  zero: new RegExp(String.raw`\$(\s?)(\d{1,3}(?:,\d{3})+|\d{1,4})${dropped}(00)(?![\d.,])(?!\s*[x×]\s*\d)`, "g"),
+  cents: new RegExp(String.raw`\$(\s?)(\d{1,3}(?:,\d{3})+|\d{1,4})${dropped}(\d{2})(?![\d.,])(?=[*†‡]|\s*(?:$|\||\/|each\b|per\b|ea\b))`, "gim"),
+}));
+const DROPPED_POINT_MIN = 3;
+
+export function withDroppedDecimalPoints(text: string): string {
+  const withPoint = (_whole: string, gap: string, dollars: string, cents: string) => `$${gap}${dollars}.${cents}`;
+  return DROPPED_POINT_SHAPES.reduce((current, shape) => {
+    const zeros = current.match(shape.zero)?.length ?? 0;
+    if (zeros === 0) return current;
+    const restored = current.replace(shape.zero, withPoint);
+    return zeros < DROPPED_POINT_MIN ? restored : restored.replace(shape.cents, withPoint);
+  }, text);
+}
+
+export function extractCandidatesFromText(input: string): ExtractionRulesResult {
+  const raw = withDroppedDecimalPoints(input);
   // v48: a fee-change notice's row is read at its newest column ("Money Orders | $2.00 | $5.00").
   const scoped = scopedFeeStatements(raw);
   const handledLines = new Set(scoped.map((fee) => fee.excerpt));

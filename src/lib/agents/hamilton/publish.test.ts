@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { decidePriorFee, HAMILTON_PUBLISH_STRATEGY, linesApartOnPage, listsBothPrices, namesShareReading, newerCopyPrintsLine, otherBalanceLine, publishedFeeName, publishNameHold, publishSkipReason, runHamiltonPublish, sentenceFragmentName, separateLines } from "./publish";
+import { decidePriorFee, HAMILTON_PUBLISH_STRATEGY, linesApartOnPage, listsBothPrices, qualifiedLines, namesShareReading, newerCopyPrintsLine, otherBalanceLine, publishedFeeName, publishNameHold, publishSkipReason, runHamiltonPublish, sentenceFragmentName, separateLines } from "./publish";
 import { feePageKey } from "./page-key";
 
 type DbMock = ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
@@ -823,6 +823,22 @@ describe("decidePriorFee", () => {
     expect(linesApartOnPage(inactive, "Inactive Checking3", "Inactive Checking", "5")).toBe(false);
     // Cents must match.
     expect(linesApartOnPage("Check Copy $2.50 Stop Payment $2.00", "Check Copy", "Stop Payment", "2.50")).toBe(false);
+  });
+
+  it("puts a name with a qualifier word in front to the page check (doc 17371, #1303)", () => {
+    const pair = (rowName: string, priorName: string) =>
+      qualifiedLines({ ...row, fee_name: rowName }, live({ source_document_id: 77, fee_name: priorName }));
+    expect(pair("ACH Stop Payment", "Stop Payment")).toBe(true);
+    expect(pair("Insufficient Funds", "ACH Insufficient Funds")).toBe(true);
+    // A carried-in heading, a filler word or a number qualifies nothing.
+    expect(pair("Debit Cards: Stop Payment", "Stop Payment")).toBe(false);
+    expect(pair("Wire Transfers - Outgoing: Outgoing Wire Fee", "Outgoing Wire Fee")).toBe(false);
+    expect(pair("An Overdraft Transfer", "Overdraft Transfer")).toBe(false);
+    expect(pair("00 Official check", "Official check")).toBe(false);
+    expect(pair("RUSH DELIVERY (2-3 BUSINESS: MONEY ORDER", "MONEY ORDER")).toBe(false);
+    // The page check then decides: a second printed line, or one line read twice.
+    expect(linesApartOnPage("Stop Payment | $35.00\nACH Stop Payment | $35.00", "ACH Stop Payment", "Stop Payment", "35")).toBe(true);
+    expect(linesApartOnPage("Wire | $10.00\nACH Stop Payment | $35.00", "ACH Stop Payment", "Stop Payment", "35")).toBe(false);
   });
 
   it("reads box sizes, footnote marks and two-price tables as lines (CBB and source spot checks, 9 Oct)", () => {
