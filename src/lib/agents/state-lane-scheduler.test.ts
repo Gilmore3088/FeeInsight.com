@@ -176,6 +176,16 @@ describe("state lane scheduler", () => {
     error.mockRestore();
   });
 
+  it("counts no thin product page as backlog (#1094)", async () => {
+    mockCadence({ fullThisMonth: true, recheckThisQuarter: true, backlog: true });
+
+    await stateHasDocumentBacklog("PA");
+
+    expect(sqlMock.mock.calls[0]).toContain(
+      "(adt.document_kind IS NULL OR adt.document_kind NOT IN ('product_page'))",
+    );
+  });
+
   it("counts banks due a free search as backlog, so discovery runs hourly", async () => {
     mockCadence({ fullThisMonth: true, recheckThisQuarter: true, backlog: true });
 
