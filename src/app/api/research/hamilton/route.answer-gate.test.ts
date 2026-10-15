@@ -9,7 +9,18 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   stream: vi.fn(), save: vi.fn(), write: vi.fn(), merge: vi.fn(),
   held: { message: null as string | null },
+  gateThrows: false,
 }));
+vi.mock("@/lib/hamilton/answer-save", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/hamilton/answer-save")>("@/lib/hamilton/answer-save");
+  return {
+    ...actual,
+    writtenAnswerCheck: (...args: Parameters<typeof actual.writtenAnswerCheck>) => {
+      if (mocks.gateThrows) throw new Error("synthetic gate failure");
+      return actual.writtenAnswerCheck(...args);
+    },
+  };
+});
 vi.mock("@/lib/api-hardening/route-wrapper", () => ({ withApiRoutePolicy: (_id: string, _method: string, handler: unknown) => handler }));
 vi.mock("@/lib/api-hardening/audit", () => ({ getRequestSubjectKey: () => "synthetic-user" }));
 vi.mock("@/lib/auth", () => ({ getCurrentUser: async () => ({ id: 7, role: "premium" }) }));
@@ -85,6 +96,7 @@ function metadata() {
 
 beforeEach(() => {
   mocks.held.message = null;
+  mocks.gateThrows = false;
   mocks.stream.mockReset();
   mocks.save.mockReset().mockResolvedValue("saved-1");
   mocks.write.mockReset();
@@ -137,6 +149,16 @@ describe("written answer evidence gate", () => {
     expect(text).not.toContain("$27");
     expect(metadata()).toEqual(expect.objectContaining({ answerEvidence: { passed: false, held: true } }));
     expect(metadata()).not.toHaveProperty("savedAnalysisId");
+  });
+
+  it("holds the answer when the gate itself cannot run, so the reader is never left waiting", async () => {
+    mocks.held.message = "Synthetic held line.";
+    mocks.gateThrows = true;
+    answers(PASSING);
+    await POST(request());
+    expect(mocks.merge).not.toHaveBeenCalled();
+    expect(mocks.save).not.toHaveBeenCalled();
+    expect(metadata()).toEqual(expect.objectContaining({ answerEvidence: { passed: false, held: true } }));
   });
 
   it("still shows and saves a passing answer once the held line is approved", async () => {

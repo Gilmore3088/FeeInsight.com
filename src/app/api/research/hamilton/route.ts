@@ -322,7 +322,16 @@ async function handlePOST(request: Request) {
         // tab or a failed browser call never loses it.
         if (mode === "analyze" && text.trim()) {
           const toolOutputs = steps.flatMap((step) => step.toolResults.map((result) => result.output));
-          const check = writtenAnswerCheck(text, toolOutputs, questionOnly(lastUserText));
+          let check: ReturnType<typeof writtenAnswerCheck>;
+          try {
+            check = writtenAnswerCheck(text, toolOutputs, questionOnly(lastUserText));
+          } catch (error) {
+            // A gate that cannot run fails closed, and the reader is never left waiting on it.
+            console.error("[hamilton] the evidence gate could not run", error);
+            resolveVerdict({ passed: false, held: holdsAnswers });
+            resolveSaved(null);
+            return;
+          }
           const held = holdsAnswers && !check.passed;
           resolveVerdict({ passed: check.passed, held });
           const response = {
