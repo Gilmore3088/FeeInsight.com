@@ -52,7 +52,6 @@ import {
   getRateFeesForPage,
   getVisibleFeesForPage,
   isVerifiedFee,
-  pickHeadlineFees,
   pickHeadlineValues,
   toDisplayFees,
   toPipelineDisplayFees,
@@ -99,7 +98,11 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 
   const fees = Number(inst.fee_count ?? 0) > 0 ? await getVisibleFeesForPage(instId) : [];
   const verifiedFees = fees.filter(isVerifiedFee);
-  const headline = pickHeadlineFees(verifiedFees);
+  // The title quotes the same values as the headline cards (the index's own rule), so a tab or
+  // search result never shows a different amount from the page.
+  const valueOf = (category: string) =>
+    pickHeadlineValues(verifiedFees, [category])[0]?.amount ?? null;
+  const headline = { overdraft: valueOf("overdraft"), nsf: valueOf("nsf"), monthly: valueOf("monthly_maintenance") };
   const city = toTitleCase(inst.city);
   const place = [city, inst.state_code].filter(Boolean).join(", ");
   const stateName = inst.state_code ? STATE_NAMES[inst.state_code] : null;
