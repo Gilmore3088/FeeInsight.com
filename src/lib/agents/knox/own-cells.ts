@@ -61,13 +61,13 @@ export function ownCells(line: string, feeName: string, amount: number | null): 
   const { start, priced } = top[0];
   let end = priced;
   // A condition cell after the price, never the next fee's label (a price-less cell followed by a
-  // price: "| Monthly Maintenance | $10.00") or the next fee itself ("| Daily Overdraft Fee $5").
+  // bare price: "| Monthly Maintenance | $10.00") or the next fee itself ("| Daily Overdraft Fee $5").
   while (end + 1 < cells.length) {
     const next = cells[end + 1];
     const priced = prices(next).length > 0;
     const condition = priced
       ? WAIVER_CELL.test(next)
-      : CONDITION_CELL.test(next) && !(end + 2 < cells.length && prices(cells[end + 2]).length > 0);
+      : CONDITION_CELL.test(next) && !(end + 2 < cells.length && prices(cells[end + 2]).length > 0 && nameWords(cells[end + 2]).size === 0);
     if (!condition) break;
     end += 1;
   }
