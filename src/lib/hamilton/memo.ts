@@ -42,7 +42,8 @@ a CFO taking a pricing decision to the board, and a product or marketing manager
 Return only JSON, no prose around it:
 {"summary": string, "board": string, "market": string, "questions": string[], "evidence_fact_ids": string[]}
 
-- summary: three or four sentences. Open with what DATA shows that bears on the question, then why it holds, then the decision it raises.
+- summary: two or three short sentences, at most 60 words. Open with what DATA shows that bears on the question, then the decision it raises.
+  Name the institution once; after that say "it".
   When DATA cannot answer part of the question, say so once, after a finding and never as the first sentence.
 - board: one paragraph of at most 110 words on money at stake, risk, regulation and what the board would need to see.
 - market: one paragraph of at most 110 words on positioning, the claims competitors can make, and how the market is moving.
@@ -61,7 +62,13 @@ Hard rules:
   never call it a no-fee position, a $0 fee, or a claim the bank can make.
 - A fee changed only where DATA lists the change (a change_timeline exhibit or a dated change line). Never infer a
   price change from anything else. When DATA lists none, say the change history is still building.
-- Plain language, short sentences, no jargon, no internal system names.`;
+- Plain language, short sentences, no jargon, no internal system names. DATA is this prompt's name for the payload:
+  never write the word in the memo; say "the filings", "the index" or "the schedule" instead.`;
+
+/** "DATA does not show" read on screen as a system leaking through (Space Coast review, 2026-10-15). */
+function withoutPayloadName(text: string): string {
+  return text.replace(/(^|[.!?]\s+)DATA\b/g, "$1The data").replace(/\bDATA\b/g, "the data");
+}
 
 /** Phrases that treat a fee missing from the index as a fee the bank does not charge. */
 const NO_FEE_CLAIM = /\bno-[a-z]+ (?:position|claim|policy|stance)\b|\bno-fee\b|\bschedule shows no\b|\bcharges? no [a-z/ ]{0,30}fee\b/i;
@@ -130,11 +137,12 @@ export function parseMemo(raw: string): MemoDraft | null {
     const evidenceFactIds = Array.isArray((parsed as Partial<MemoDraft> & { evidence_fact_ids?: unknown }).evidence_fact_ids)
       ? [...new Set((parsed as { evidence_fact_ids: unknown[] }).evidence_fact_ids.map(str).filter(Boolean))].slice(0, 50)
       : undefined;
+    const prose = (v: unknown) => withoutPayloadName(str(v));
     const draft = {
-      summary: str(parsed.summary),
-      board: str(parsed.board),
-      market: str(parsed.market),
-      questions: Array.isArray(parsed.questions) ? parsed.questions.map(str).filter((q) => q.endsWith("?")).slice(0, 3) : [],
+      summary: prose(parsed.summary),
+      board: prose(parsed.board),
+      market: prose(parsed.market),
+      questions: Array.isArray(parsed.questions) ? parsed.questions.map(prose).filter((q) => q.endsWith("?")).slice(0, 3) : [],
       ...(evidenceFactIds ? { evidenceFactIds } : {}),
     };
     return draft.summary && draft.board && draft.market ? draft : null;

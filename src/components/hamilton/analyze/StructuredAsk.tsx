@@ -9,7 +9,7 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { Loader2 } from "lucide-react";
 import type { AskObjective, AskResponse, ClarifyingQuestion, Scenario } from "@/lib/hamilton/workspace/types";
-import { EVIDENCE_LABELS } from "@/components/hamilton/memo/exhibit-view";
+import { ANSWER_EVIDENCE_LABELS } from "@/components/hamilton/memo/exhibit-view";
 import { AnswerMemo } from "@/components/hamilton/memo/answer-memo";
 import { SegmentTable } from "@/components/hamilton/memo/segment-table";
 import { StorylineView, type MemoState } from "@/components/hamilton/storyline/StorylineView";
@@ -298,7 +298,7 @@ function ScenarioSummary({ s, modelHref }: { s: Scenario; modelHref: string | nu
       ) : null}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-xs text-warm-600">
-          Evidence: <span className="font-medium text-warm-800">{EVIDENCE_LABELS[s.evidenceLevel]}</span>
+          Evidence: <span className="font-medium text-warm-800">{ANSWER_EVIDENCE_LABELS[s.evidenceLevel]}</span>
         </p>
         {modelHref ? <LinkButton href={modelHref}>Compare more prices</LinkButton> : null}
       </div>
