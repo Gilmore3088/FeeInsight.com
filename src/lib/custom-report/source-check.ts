@@ -63,6 +63,14 @@ const COLUMN_LABEL_LINE = /^(?:(?:current|standard|regular|member)\s+)?(?:fees?(
 // "$2.00 - *Service not available to non-customers": a price, then a dash and its note.
 const PRICE_THEN_DASH_NOTE = /^\s*\$\s?\d[\d,]*(?:\.\d{2})?\s*(?:(?:per\s+|\/\s*)[a-z]+|each)?\s*[-–—]\s+\*?\s*[a-z]/i;
 const PRICE_THEN_SENTENCE = /^\s*\$\s?\d[\d,]*(?:\.\d{2})?\s*(?:(?:per\s+|\/\s*)[a-z]+|each)?\s*\.\s+\S/i;
+/** A price that opens a sentence about what it is charged for ("$30 for each check, automatic bill payment, ..."). */
+const PRICE_FOR_EACH = /^\s*\$\s?\d[\d,]*(?:\.\d{2})?\s+for\s+(?:each|every)\s+[a-z]/i;
+/**
+ * A description under a fee's name that ends on the label the bank's statement shows ("If RCB pays an
+ * item when your account does not have enough money ... (Fee shown as Overdraft Fee)", River City
+ * Bank 268). It carries no price, so the price line under it is the fee's.
+ */
+const FEE_SHOWN_AS_LINE = /^[^$|]{0,300}\(\s*fee shown (?:when charged )?as [^()$|]{1,60}\)\s*\.?\s*$/i;
 /** An allowance before the price ("5 Free per month," / "$2.50 each additional") is not the price. */
 const FREE_ALLOWANCE = /\b\d+\s+(?:free|no\s+charge)\b/gi;
 /**
@@ -528,9 +536,12 @@ function feeRow(lines: string[], index: number): string {
   const price = lines
     .slice(index + 1, index + 1 + PRICE_BELOW_LINES)
     .find(
-      (next) =>
+      (next, k) =>
         PRICE_THEN_QUALIFIER.test(next) ||
         PRICE_THEN_SENTENCE.test(next) ||
+        // Only under a statement-label description (River City's layout); elsewhere a long
+        // "$30 for each ..." sentence under a bare name is not read as that name's price.
+        (PRICE_FOR_EACH.test(next) && lines.slice(index + 1, index + 1 + k).some((line) => FEE_SHOWN_AS_LINE.test(line))) ||
         PRICE_THEN_DASH_NOTE.test(next) ||
         ((next.length <= PRICE_BELOW_MAX_LENGTH || PRICE_THEN_NOTE.test(next) || PRICE_THEN_PAREN_NOTE.test(next)) &&
           PRICE_LINE.test(next) &&
@@ -556,6 +567,7 @@ function feeRow(lines: string[], index: number): string {
     (next) =>
       /^\s*(\/|per\b)/i.test(next) ||
       QUALIFIER_LINE.test(next) ||
+      (FEE_SHOWN_AS_LINE.test(next) && moneyTokens(next).length === 0) ||
       COLUMN_LABEL_LINE.test(next.trim()) ||
       (perColumn && next.length <= 20 && moneyTokens(next).length === 0 && !ZERO_WORDS.test(next)),
   )
