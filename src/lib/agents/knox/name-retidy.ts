@@ -67,9 +67,9 @@ const TRAILING_RANGE = trailingRange(String.raw`up\s+to|per|each`);
  * group 1 is the same either way, and Postgres reads a regex that mixes greedy and lazy
  * quantifiers differently from JS (the count SQL runs the tail there).
  */
-const feeOfSentence = (leads: string) =>
+const feeOfSentence = (leads: string, word = String.raw`[A-Za-z'’\-]+`) =>
   new RegExp(
-    String.raw`\b(?:a|an|the|our|your|this)\s+(?:(?:normal|standard|regular|usual|individual|applicable|current)\s+)?((?!(?:${leads})\b)(?:(?!(?:a|an|the|for|of|to)\b)[A-Za-z'’\-]+\s+){1,4}(?:fees?|charges?))(?:\s+for\s+[A-Za-z\s\-]{1,40})?\s+(?:of|is|are|will be)\s*$`,
+    String.raw`\b(?:a|an|the|our|your|this)\s+(?:(?:normal|standard|regular|usual|individual|applicable|current)\s+)?((?!(?:${leads})\b)(?:(?!(?:a|an|the|for|of|to)\b)${word}\s+){1,4}(?:fees?|charges?))(?:\s+for\s+[A-Za-z\s\-]{1,40})?\s+(?:of|is|are|will be)\s*$`,
     "i",
   );
 const FEE_OF_SENTENCE = feeOfSentence("minimum|maximum|additional|same|following");
@@ -77,7 +77,24 @@ const FEE_OF_SENTENCE = feeOfSentence("minimum|maximum|additional|same|following
  * #1499: the live tail name. "a minimum fee of" is a minimum, but "a minimum balance fee of" is a
  * fee, so "minimum" bars the name only right before the fee word.
  */
-const FEE_OF_SENTENCE_TAIL = feeOfSentence(String.raw`minimum(?=\s+(?:fees?|charges?)\b)|maximum|additional|same|following`);
+const FEE_OF_SENTENCE_TAIL = feeOfSentence(
+  String.raw`minimum(?=\s+(?:fees?|charges?)\b)|maximum|additional|same|following`,
+  // v4 (#1499): a word may hold "/" or be a parenthetical ("Return Item/Insufficient Funds Fee",
+  // "Consecutive days overdrawn (OD) fee").
+  String.raw`(?:\([^()]*\)|[A-Za-z'’/\-]+)`,
+);
+/**
+ * v4 (#1499): qualifiers dropped from the front of a tail name ("Appropriate returned item fee",
+ * "Bank's normal overdraft item charge", "Low activation fee").
+ */
+const TAIL_QUALIFIERS = /^(?:(?:bank'?s|bank’s|appropriate|normal|standard|regular|usual|applicable|current|small|low)\s+)+/i;
+/** v4 (#1499): a tail made only of these words names no fee ("Handling fee", "Monthly flat fee", "Late charge"). */
+const TAIL_GENERIC_WORDS = ["handling", "flat", "small", "low", "late", "monthly", "service", "additional", "fees?", "charges?"];
+const TAIL_GENERIC_ONLY = new RegExp(String.raw`^(?:${TAIL_GENERIC_WORDS.join("|")})(?:\s+(?:${TAIL_GENERIC_WORDS.join("|")}))*$`, "i");
+/** v4 (#1499): whose fee it is inside a tail ("Allpoint network our ATM fee") means the phrase is no name. */
+const TAIL_PERSON = /\b(?:our|your)\b/i;
+/** v4 (#1499): a lower-case line's head is read capitalised, but only when a lower-case "if"/"when" follows it. */
+const GLUED_LOWER_CONDITION = /^\s+(?:if|when)\b/;
 /** The condition that follows a name on its line ("Service Charge if balance falls below"). */
 const CONDITION_TAIL = /\s+(?:(?:is|are)\s+)?(?:waived\s+)?(?:if|when|unless|otherwise|charged\s+(?:if|when))\b.*$/i;
 /** A unit left after a name once its condition is cut ("Service charge per month"). */
@@ -275,11 +292,12 @@ const GLUED_SENTENCE = new RegExp(
  * "2nd", "1099"); and a leading "To request " when a capitalised name follows ("To request
  * Overnight/2-day shipping of a debit card"). What is left must still pass every bar.
  */
-const GLUED_LEAD_STRIP = /^(?:(?:\d{2}(?=[A-Z]{2})|\d(?=[A-Z]{3}|[A-Z]{2}[^A-Z\s]))(?!(?:ST|ND|RD|TH|HRS?|HOURS?|DAYS?|MOS?|YRS?)\b)|\d{1,2}(?=A\s+[a-z])|To\s+request\s+(?=[A-Z0-9]))/;
+const GLUED_LEAD_STRIP = /^(?:(?:\d{2}(?=[A-Z]{2})|\d(?=[A-Z]{3}))(?!(?:ST|ND|RD|TH|HRS?|HOURS?|DAYS?|MOS?|YRS?)\b)|\d{1,2}(?=A\s+[a-z])|To\s+request\s+(?=[A-Z0-9]))/;
 /**
  * v3 (#1499): a "continued" mark is no part of a name ("Inactive Accounts Fee (cont.)"); dropped
- * wherever it sits before the head is read. A single digit on exactly two capitals and a space
- * ("2FA Token Fee") is a name, not a footnote, so the strip above leaves it.
+ * wherever it sits before the head is read. A single digit on exactly two capitals ("2FA Token
+ * Fee", "2FA-Token Fee", "2FA: Fee") is a name, not a footnote, so the strip above leaves it; a
+ * single digit is stripped only before three capitals ("7NSF Fee").
  */
 const GLUED_CONT_MARK = /\s*\((?:cont\.?|continued)\)/gi;
 /** Fee nouns and joining words: a head made only of these ("Fee Per Item") names no fee. */
@@ -329,8 +347,17 @@ function gluedReadable(name: string | null | undefined): string {
  * so the caller can read the condition the head was split from ("if the balance falls below").
  */
 export function gluedSentenceSplit(name: string | null | undefined): { head: string; rest: string } | null {
-  const current = gluedReadable(name);
-  const match = current.match(GLUED_SENTENCE);
+  let current = gluedReadable(name);
+  let match = current.match(GLUED_SENTENCE);
+  if (!match && /^[a-z]/.test(current)) {
+    // v4 (#1499): "monthly service fee if balance falls below" is read as "Monthly service fee ...".
+    const capital = current.charAt(0).toUpperCase() + current.slice(1);
+    const lowered = capital.match(GLUED_SENTENCE);
+    if (lowered && GLUED_LOWER_CONDITION.test(capital.slice(lowered[0].length))) {
+      current = capital;
+      match = lowered;
+    }
+  }
   if (!match) return null;
   const head = match[1];
   if (GLUED_HEAD_BARS.some((bar) => bar.test(head))) return null;
@@ -346,8 +373,10 @@ export function gluedSentenceSplit(name: string | null | undefined): { head: str
  */
 export function feeOfSentenceTail(name: string | null | undefined): string | null {
   const current = (name ?? "").replace(/\s+/g, " ").trim();
-  const phrase = current.match(FEE_OF_SENTENCE_TAIL)?.[1]?.trim();
-  if (!phrase || GLUED_HEAD_BARS.some((bar) => bar.test(phrase))) return null;
+  const raw = current.match(FEE_OF_SENTENCE_TAIL)?.[1]?.trim();
+  if (!raw || TAIL_PERSON.test(raw)) return null;
+  const phrase = raw.replace(TAIL_QUALIFIERS, "").trim();
+  if (!phrase || TAIL_GENERIC_ONLY.test(phrase) || GLUED_HEAD_BARS.some((bar) => bar.test(phrase))) return null;
   return phrase.replace(/^[a-z]/, (letter) => letter.toUpperCase());
 }
 
@@ -363,6 +392,10 @@ export const LIVE_FRAGMENT_REGEXES = {
   glued_cont_mark: GLUED_CONT_MARK,
   glued_lead_strip: GLUED_LEAD_STRIP,
   fee_of_sentence_tail: FEE_OF_SENTENCE_TAIL,
+  tail_qualifiers: TAIL_QUALIFIERS,
+  tail_generic_only: TAIL_GENERIC_ONLY,
+  tail_person: TAIL_PERSON,
+  glued_lower_condition: GLUED_LOWER_CONDITION,
   glued_sentence: GLUED_SENTENCE,
   glued_head_bars: GLUED_HEAD_BARS,
 } as const;

@@ -281,6 +281,31 @@ Darwin owns verification and classification.
     the category guard. A line whose head was refused by the threshold gate gets no tail.
   Step detail `would_rename_by_via` ({head, tail}) and `rename_via` on each sample; the count SQL
   reports tail renames as reason `rename_tail` under action `rename`.
+  v4 (#1499 review and the prod hand-check of v3: 67 of 74 renames right, 31 of 32 head, 36 of 42
+  tail; still in shadow):
+  - Figure gate: a tail rename, and a head renamed through an "if"/"when" condition, is refused
+    when any figure in the line (dollar or bare, commas ignored, 6 = 6.00) equals the amount: on a
+    tail line the price follows the cut-off "of", so an equal figure means the amount was read
+    from a threshold or a count ("below $500 ... a minimum balance fee of" $500, "more than $5"
+    $5, "inactive for 12 months" $12, "exceed 6 withdrawals" $6). A plain head ("Overdraft Fee
+    You will be charged $35 per item") keeps its price.
+  - A dollar figure a threshold word leads into ("more than $5", "under $500") is not another
+    price; "Wires are $15 incoming and an outgoing wire fee of" is (no rename at any amount).
+  - Total wording ("may therefore incur", "incur $N in", "in ... fees for one", "a total of") is a
+    sum: no rename (55708).
+  - A balance condition that also counts an excess ("if more than 6 per month, balance below") is a
+    threshold. A dormancy tier after a cell break ("| If more than 3 years dormant", "| If
+    inactive ...") is the fee's own condition: the head renames when it ends on "fee" or "charge"
+    (44880 "Inactive Accounts Fee (cont.) | If more than 3 years dormant" $15).
+  - A lower-case line is read capitalised for its head only when a lower-case "if"/"when" follows
+    the head ("monthly service fee if balance falls below" becomes "Monthly service fee"), under the
+    same balance gate.
+  - Tails: "Bank's", "appropriate", "normal", "applicable", "small", "low" (and the other usual
+    qualifiers) are dropped from the front ("Returned item fee", "Overdraft item charge",
+    "Activation fee"); a tail of only handling / flat / small / low / late / monthly / service /
+    additional and fee words is refused ("Handling fee", "Late charge"), as is one holding "our" or
+    "your" ("Allpoint network our ATM fee"); a tail word may hold "/" or be a parenthetical
+    ("Return Item/Insufficient Funds Fee", "Consecutive days overdrawn (OD) fee").
 - Released-fee category re-check (`release-repair.ts`, the repair half of #1367; decision
   2026-10-15, "Darwin re-checks every live fee against today's rules"). Until PR #1468 the release
   check passed "." as the category pattern, so every fee the release published before then went live
@@ -727,7 +752,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `DARWIN_SCHEDULE_REFILE_STRATEGY` | `verify.schedule_refile` | v1 | `darwin/schedule-refile.ts` |
 | `DARWIN_VERDICT_SCORE_STRATEGY` | `verify.verdict_score` | v1 | `darwin/verdict-score.ts` |
 | `DARWIN_RECHECK_STRATEGY` | `verify.recheck` | v3 | `darwin/verified-recheck.ts` |
-| `LIVE_FRAGMENT_STRATEGY` | `darwin.live_fragment_check` | v3 | `darwin/live-fragment-check.ts` |
+| `LIVE_FRAGMENT_STRATEGY` | `darwin.live_fragment_check` | v4 | `darwin/live-fragment-check.ts` |
 | `DOCUMENT_OWNER_STRATEGY` | `verify.document_owner` | v1 | `darwin/document-owner.ts` |
 | `DARWIN_VERIFY_STRATEGY` | `verify.rules` | v3 | `darwin/verify.ts` |
 | `DARWIN_SOURCE_CHECK_VERSION` | — | v2 | `darwin/verify.ts` |
