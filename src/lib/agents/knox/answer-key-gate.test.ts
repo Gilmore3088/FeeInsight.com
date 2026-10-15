@@ -18,10 +18,10 @@ import { combineScores, scoreAnswerKeys, type AnswerKeyDocument, type GateScore 
 // Since v17 the gate counts only reads that pass Knox's self-check (the shared accuracy
 // check Darwin applies before publishing). Main at v16 scored 444 right / 15 wrong on that basis;
 // floors raised to main at v29 (2026-10-07).
-// v68 (#1102, Oct 15): fee-schedule labels with no fee word took all from 511 right / 14 wrong to
-// 533 / 14; held out stayed 53 / 4. Floors are those counts.
+// v68 (#1102, Oct 15): fee-schedule labels with no fee word took all from 513 right / 14 wrong
+// (main with v67's dropped-decimal reads) to 535 / 14; held out stayed 53 / 4. Floors are those counts.
 const FLOORS = {
-  all: { right: 533, wrong: 14 },
+  all: { right: 535, wrong: 14 },
   holdout: { right: 53, wrong: 4 },
 };
 

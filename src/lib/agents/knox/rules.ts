@@ -774,8 +774,12 @@ export function amountsIn(segment: string): AmountMatch[] {
 const MAX_AFTER = /^\s*(?:maximum|max\b)/i;
 const EARLIER_PRICE = /\$\s?\d|\d\s*%/;
 
+/** v68: a transfer's step ("made in increments of $50", "in multiples of $100") is never the fee. */
+const INCREMENT_BEFORE = /\b(?:increments?|multiples?)\s+of\s*\$?\s*$/i;
+
 export function isConditionAmount(text: string, amount: Pick<AmountMatch, "start" | "end">): boolean {
-  return CONDITION_BEFORE.test(text.slice(Math.max(0, amount.start - 40), amount.start)) ||
+  return INCREMENT_BEFORE.test(text.slice(Math.max(0, amount.start - 40), amount.start)) ||
+    CONDITION_BEFORE.test(text.slice(Math.max(0, amount.start - 40), amount.start)) ||
     CONDITION_AFTER.test(text.slice(amount.end, amount.end + 30)) ||
     (MAX_AFTER.test(text.slice(amount.end, amount.end + 12)) && EARLIER_PRICE.test(text.slice(0, amount.start)));
 }

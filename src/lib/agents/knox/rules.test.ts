@@ -1303,6 +1303,16 @@ describe("Knox extract.rules v68: fee-schedule lines with no fee word (#1102)", 
     }
   });
 
+  it("never reads a transfer's increment as its price", () => {
+    for (const line of [
+      "Automatic transfers from savings to checking are made in increments of $50",
+      "Overdraft protection transfers from your savings account are made in increments of $100",
+    ]) {
+      expect(extractFromSegment(line).candidates.map((fee) => fee.amount), line).toEqual([]);
+    }
+    expect(extractFromSegment("Overdraft Protection Transfer | $10.00 (transfers made in increments of $100)").candidates.map((fee) => [fee.canonicalHint, fee.amount])).toEqual([["od_protection_transfer", 10]]);
+  });
+
   it("never names a box size row by the unit after its price", () => {
     // Red Wing CU (text 32117): "2×5 | $ 25/Year" was read as a box named "/Year".
     for (const line of ["2×5 | $ 25/Year", "10×10 | $100/Year"]) {

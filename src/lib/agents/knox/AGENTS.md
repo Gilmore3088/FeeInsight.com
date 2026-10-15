@@ -518,10 +518,13 @@ stored text of the key document with no Knox row at that price; 240 of them had 
 - Every priced line no rule names that is neither read nor held is counted by reason
   (`DroppedLineReason`): per document in the extract attempt's `dropped_lines`, and per step in the
   extract step's `dropped_priced_lines`.
-- Gates: Texas 511 right / 14 wrong to 533 / 14 (held out 53 / 4, unchanged); seven states 744 / 41
+- Gates: Texas 513 right / 14 wrong (main at v67) to 535 / 14 (held out 53 / 4, unchanged); seven states 744 / 41
   to 787 / 41. No right read was lost and no wrong read was added in either gate.
 - Box sizes priced per year ("2×5 | $ 25/Year") are named by the size, never by the unit left
   after the price ("/Year"); a size with no word ("2×5") stays unread unless a heading names it.
+- A transfer's step ("made in increments of $50", "in multiples of $100") is never the fee
+  (`isConditionAmount`); main read "overdraft protection transfers ... increments of $100" as a
+  $100 overdraft.
 - 62-bank key, stored texts of the key documents, free team reads plus $0 rows with a category
   (Oct 15): 1,371 of 2,321 key fees found before, 1,451 after (59.1% to 62.5%); precision 1,229 of
   1,414 distinct reads to 1,301 of 1,487 (86.9% to 87.5%). 73 of the 80 newly found fees are not live today.
