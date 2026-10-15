@@ -253,7 +253,7 @@ describe("Hamilton category guard repair", () => {
     expect(sqlText).toContain("lower(btrim(live.fee_name)) = lower(btrim(fp.fee_name))");
     expect(sqlText).toContain("AND (NOT v.excess");
     expect(sqlText).toContain("OR live.fee_name ~*");
-    expect(move?.[4]).toEqual([true]);
+    expect(move?.[4]).toEqual(["true"]);
   });
 
   it("re-files only one of two express card lines at one price, and lets any live rush card fee at that price block them (live path)", async () => {
@@ -273,7 +273,10 @@ describe("Hamilton category guard repair", () => {
     await runHamiltonCategoryGuard({ runId: 24, db: db as unknown as GuardDb });
     const move = db.mock.calls.find((call) => templateText(call[0]).includes("v.from_key") && templateText(call[0]).includes("UPDATE"));
     // One fee per bank, type and price: only 350 is sent to move, and not as an excess activity fee.
-    expect([move?.[1], move?.[4]]).toEqual([[350], [false]]);
+    expect([move?.[1], move?.[4]]).toEqual([[350], ["false"]]);
+    // No bound value is a boolean array: postgres.js would send it as a scalar bool and the
+    // ::boolean[] cast fails on Postgres (Oct 15, every v62 re-file).
+    expect(move?.slice(1).some((value) => Array.isArray(value) && value.some((item) => typeof item === "boolean"))).toBe(false);
     // In SQL, a move that is not an excess activity fee is blocked by any live fee of that type and price.
     expect(templateText(move?.[0])).toContain("AND (NOT v.excess");
   });
