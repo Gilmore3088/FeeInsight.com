@@ -15,6 +15,7 @@ import {
   onWebsiteHost,
   ownerNameForms,
   recheckDocumentOwners,
+  registrableDomain,
   sharedNameIds,
   type OwnerBank,
   vendorCopyOwner,
@@ -48,14 +49,19 @@ describe("documentOwnerVerdict: the document names another bank (#1455)", () => 
   });
 
   it("First National Bank, Fort Pierre's schedule filed under First National Bank, Oldham: the city decides", () => {
-    expect(documentOwnerVerdict(FNB_TEXT, fnbOldham, [fnbFortPierre])).toEqual({
+    // The seed stored Fort Pierre's website for Oldham, so the document's host links them.
+    const link = { hostIds: [582], documentHost: "firstnationalbanks.bank" };
+    expect(documentOwnerVerdict(FNB_TEXT, fnbOldham, [fnbFortPierre], [], link)).toEqual({
       kind: "other_bank", otherId: 582, evidence: "city: fort pierre sd",
     });
+    // Linked only by address or text hash, a city alone is not enough.
+    expect(documentOwnerVerdict(FNB_TEXT, fnbOldham, [fnbFortPierre])).toEqual({ kind: "shared_service", otherIds: [582] });
   });
 
   it("the city with its full state name counts too", () => {
     const text = "First National Bank schedule. Fort Pierre, South Dakota.";
-    expect(documentOwnerVerdict(text, fnbOldham, [fnbFortPierre])).toMatchObject({ kind: "other_bank", otherId: 582 });
+    expect(documentOwnerVerdict(text, fnbOldham, [fnbFortPierre], [], { hostIds: [582], documentHost: "firstnationalbanks.bank" }))
+      .toMatchObject({ kind: "other_bank", otherId: 582 });
   });
 });
 
@@ -148,9 +154,9 @@ describe("the real owner on its own website (#1455 re-review B2)", () => {
     expect(documentOwnerVerdict(text, heartland, [springfield], [], own)).toEqual({ kind: "shared_service", otherIds: [9102] });
     expect(documentOwnerVerdict(text, heartland, [springfield], [], { ...own, documentHost: "docs.hbtbank.com", hashIds: [9102] }))
       .toEqual({ kind: "shared_service", otherIds: [9102] });
-    // Off this bank's site the same text still names the other bank.
+    // Off this bank's site too: a city is not enough for an address- or hash-linked bank (probe A).
     expect(documentOwnerVerdict(text, heartland, [springfield], [], { ...own, documentHost: "files.vendor.net" }))
-      .toMatchObject({ kind: "other_bank", otherId: 9102, evidence: "city: springfield il" });
+      .toEqual({ kind: "shared_service", otherIds: [9102] });
     // A bank linked by its stored website (the seed stored it for this bank too) is not capped.
     expect(documentOwnerVerdict(text, heartland, [{ ...springfield, websiteHost: "hbtbank.com" }], [], { ...own, hostIds: [9102] }))
       .toMatchObject({ kind: "other_bank", otherId: 9102 });
@@ -161,6 +167,58 @@ describe("the real owner on its own website (#1455 re-review B2)", () => {
     expect(onWebsiteHost("docs.hbtbank.com", "hbtbank.com")).toBe(true);
     expect(onWebsiteHost("myhbtbank.com", "hbtbank.com")).toBe(false);
     expect(onWebsiteHost(null, "hbtbank.com")).toBe(false);
+  });
+});
+
+describe("the final review's probes (#1455, gen2/probe.test.ts)", () => {
+  const hbt: OwnerBank = { id: 1, name: "Heartland Bank and Trust Company", city: "Bloomington", stateCode: "IL", websiteHost: "hbtbank.com" };
+  const tc: OwnerBank = { id: 2, name: "Town and Country Bank", city: "Springfield", stateCode: "IL", websiteHost: "townandcountrybank.com" };
+  const text = "HBT Bank\nPersonal Fee Schedule\n401 N. Hershey Rd., Springfield, IL 62703\nOverdraft $30";
+  const noSite = { ...hbt, websiteHost: null };
+
+  it("A: on a CDN, a url-linked bank's city does not take the real owner's schedule", () => {
+    expect(documentOwnerVerdict(text, hbt, [tc], [], { documentHost: "files.vendor.net" })).toEqual({ kind: "shared_service", otherIds: [2] });
+    expect(documentOwnerVerdict(text, tc, [hbt], [], { documentHost: "files.vendor.net" })).toMatchObject({ kind: "own_named" });
+  });
+
+  it("B: with no stored website the city is still not enough", () => {
+    expect(documentOwnerVerdict(text, noSite, [tc], [], { documentHost: "hbtbank.com" })).toEqual({ kind: "shared_service", otherIds: [2] });
+  });
+
+  it("C: with no stored website, another bank seeded with this bank's domain gets no site rule", () => {
+    const seeded = { ...tc, websiteHost: "hbtbank.com" };
+    expect(documentOwnerVerdict("HBT Bank\nFee Schedule\nOverdraft $30", noSite, [seeded], [], { documentHost: "hbtbank.com", hostIds: [2] }))
+      .toEqual({ kind: "unproven" });
+  });
+
+  it("D: a trade name on a CDN, with a hash-linked bank's city as a branch address", () => {
+    const hunt: OwnerBank = { id: 3, name: "The Huntington National Bank", city: "Columbus", stateCode: "OH", websiteHost: "huntington.com" };
+    const x: OwnerBank = { id: 4, name: "Heartland Bank", city: "Whitehall", stateCode: "OH", websiteHost: "heartland.bank" };
+    expect(documentOwnerVerdict("Huntington\nConsumer Fee Schedule\nWhitehall, Ohio branch\nOverdraft $15", hunt, [x], [],
+      { documentHost: "cdn.huntington-assets.net", hashIds: [4] })).toEqual({ kind: "shared_service", otherIds: [4] });
+  });
+
+  it("E: a dotted F.S.B. or S.S.B. suffix is dropped, so the name prints", () => {
+    const fsb: OwnerBank = { id: 5, name: "Liberty Savings Bank, F.S.B.", city: "Wilmington", stateCode: "OH", websiteHost: "lsbank.com" };
+    expect(documentOwnerVerdict("Liberty Savings Bank\nFee schedule\nDayton, OH", fsb, [{ id: 6, name: "Dayton Credit Union", city: "Dayton", stateCode: "OH" }], [],
+      { documentHost: "cdn.x.com" })).toEqual({ kind: "own_named", evidence: "name: liberty savings bank" });
+    expect(ownerNameForms("Home Savings Bank, S.S.B.", "Madison")).toContain("home savings bank");
+  });
+
+  it("F: a stored subdomain website owns its apex and sibling subdomains", () => {
+    const sub: OwnerBank = { id: 7, name: "Acme Bank", city: "Zed", stateCode: "TX", websiteHost: "home.acmebank.com" };
+    expect(documentOwnerVerdict("Acmebank\nFees\nAustin, TX", sub, [{ id: 8, name: "Austin Bank", city: "Austin", stateCode: "TX" }], [], { documentHost: "acmebank.com" }))
+      .toEqual({ kind: "shared_service", otherIds: [8] });
+    expect(onWebsiteHost("acmebank.com", "home.acmebank.com")).toBe(true);
+    expect(onWebsiteHost("docs.acmebank.com", "home.acmebank.com")).toBe(true);
+    expect(onWebsiteHost("acmebank.co.uk", "www.acmebank.co.uk")).toBe(true);
+    expect(onWebsiteHost("otherbank.co.uk", "acmebank.co.uk")).toBe(false);
+    expect(registrableDomain("online.bank.com.au")).toBe("bank.com.au");
+  });
+
+  it("a full name form still gives other_bank for an address- or hash-linked bank off this bank's site", () => {
+    expect(documentOwnerVerdict("Town and Country Bank\nFee Schedule", hbt, [tc], [], { documentHost: "files.vendor.net", hashIds: [2] }))
+      .toMatchObject({ kind: "other_bank", otherId: 2, evidence: "name: town and country bank" });
   });
 });
 
@@ -276,9 +334,9 @@ describe("vendor-served documents and the prod dry run (Oct 15)", () => {
     const text = "Fee Schedule\nNon-SMCU ATM withdrawal $2.00";
     expect(documentOwnerVerdict(text, metrowest, [smcu], [], { hostIds: [8298], documentHost: "stmaryscu.org" }))
       .toEqual({ kind: "other_bank", otherId: 8298, evidence: "site: stmaryscu.org" });
-    // The acronym names it when the link is the address or the text hash.
+    // Linked only by address or text hash, the acronym alone is capped (#1455 final review).
     expect(documentOwnerVerdict(text, metrowest, [smcu], [], { documentHost: "firstbranchcms.com" }))
-      .toEqual({ kind: "other_bank", otherId: 8298, evidence: "acronym: smcu" });
+      .toEqual({ kind: "shared_service", otherIds: [8298] });
     expect(creditUnionAcronyms("St. Mary's Federal Credit Union")).toEqual(["smfcu", "smcu"]);
     // St. Mary's own copy names itself by its acronym.
     expect(documentOwnerVerdict(text, smcu, [metrowest], [], { documentHost: "firstbranchcms.com" })).toMatchObject({ kind: "own_named" });
@@ -460,6 +518,7 @@ function createDb(pairs?: unknown[], lastEvent: Record<string, unknown> | null =
     if (text.includes("max(fee_published_id)")) return Promise.resolve([{ text_id: 10, fee_id: 20 }]);
     if (text.includes("SELECT detail FROM agent_run_events")) return Promise.resolve(lastEvent ? [{ detail: lastEvent }] : []);
     if (text.includes("to_regclass")) return Promise.resolve([{ ready: true }]);
+    if (text.includes("current_setting('statement_timeout')")) return Promise.resolve([{ value: "0", applied: "60s" }]);
     if (text.includes("document-owner name scan")) {
       return Promise.resolve([
         { id: 5756, institution_name: bluegrass.name, city: "Ashland", state_code: "KY", cert_number: null, holding_company_rssd: null, holding_company_name: null },
@@ -513,6 +572,9 @@ describe("recheckDocumentOwners (shadow)", () => {
     expect(calls).toContain("darwin.document_owner_shadow");
     // Shadow reads no re-reads.
     expect(db.unsafe.mock.calls[0][1]).toEqual(["owner-shadow:", "verify.document_owner", 1, 25, 0]);
+    // The scoped read runs under a 60 s statement timeout that is put back afterwards.
+    const timeouts = db.mock.calls.filter((call) => templateText(call[0]).includes("set_config('statement_timeout'")).map((call) => call.slice(1));
+    expect(timeouts).toEqual([["60s"], ["0"]]);
   });
 
   it("records an empty read with its watermark, and the next step skips while nothing is new", async () => {

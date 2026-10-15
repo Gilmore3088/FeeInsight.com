@@ -37,13 +37,16 @@ type SqlTag = typeof sql;
  *   acronym, its website (when that is not the document's host), its city, or its FDIC / NCUA
  *   number. Passes, also when it names another bank (co-branded, shared-service).
  * - Vendor copy: on a vendor path, the institution among this bank and those sharing the text
- *   hash whose name the text prints owns it (one-word brands such as "healthplus" count inside
- *   that small group only). This bank: `own_named`; another: `other_bank`.
- * - Site: the document's host is exactly one unrelated linked institution's stored website and
- *   not this bank's: `other_bank` naming it.
+ *   hash whose name form or acronym the text prints owns it (a bare one-word brand never
+ *   counts). This bank: `own_named`; another: `other_bank`.
+ * - Site: this bank has a stored website, the document is not on it (`onWebsiteHost`), and the
+ *   document's host is exactly one unrelated linked institution's stored website: `other_bank`.
  * - Linked institutions the text names (a name form, CU acronym, city with its state, or the
  *   header rule `headerNamesInstitution`): one unrelated is `other_bank`, two or more
- *   `shared_service`; a named sibling is `sibling_shared`.
+ *   `shared_service`; a named sibling is `sibling_shared`. One institution linked only by
+ *   address or text hash is capped at `shared_service` when the text gives only its acronym or
+ *   city, or when the document is on this bank's own site: a name variant this bank's forms miss
+ *   must not hand its own schedule away.
  * - `registry_named`, else `unproven`.
  * A name form is two words or more: a one-word brand counts only next to the institution's
  * city, since "currency", "customers", "direct", "popular" or "timberline" are fee words or other
@@ -168,8 +171,8 @@ function hasWords(padded: string, words: string): boolean {
   return words.length > 0 && padded.includes(` ${words} `);
 }
 
-/** Trailing words a name may print or leave off: "N.A.", "Company", "Inc."... */
-const BASE_NAME_SUFFIX = / (national association|n a|na|ssb|fsb|inc|incorporated|company|co|corp|corporation)$/;
+/** Trailing words a name may print or leave off: "N.A.", "F.S.B.", "S.S.B.", "Company", "Inc."... */
+const BASE_NAME_SUFFIX = / (national association|n a|na|ssb|s s b|fsb|f s b|inc|incorporated|company|co|corp|corporation)$/;
 
 /** A registry name without "The" or its trailing "N.A.", "Company", "Inc."... ("heartland bank and trust"). */
 function baseName(name: string | null | undefined): string {
@@ -372,10 +375,28 @@ export function vendorCopyOwner(text: string, group: OwnerBank[]): OwnerBank | n
   return strict.length === 1 ? strict[0] : null;
 }
 
-/** Is the document on this host or one of its subdomains ("docs.hbtbank.com" on "hbtbank.com")? */
+/**
+ * The registrable domain of a host: its last two labels, or last three when the second-to-last
+ * is a two- or three-letter public suffix under a two-letter country ("bank.co.uk", "cu.com.au").
+ */
+export function registrableDomain(host: string): string {
+  const labels = host.split(".");
+  const last = labels[labels.length - 1] ?? "";
+  const second = labels[labels.length - 2] ?? "";
+  const keep = labels.length >= 3 && last.length === 2 && second.length >= 2 && second.length <= 3 ? 3 : 2;
+  return labels.slice(-keep).join(".");
+}
+
+/**
+ * Is the document on this bank's own site: the stored host, a subdomain of it, its parent, or
+ * another host under the same registrable domain ("acmebank.com" for "home.acmebank.com")?
+ */
 export function onWebsiteHost(documentHost: string | null | undefined, websiteHost: string | null | undefined): boolean {
   if (!documentHost || !websiteHost) return false;
-  return documentHost === websiteHost || documentHost.endsWith(`.${websiteHost}`);
+  return documentHost === websiteHost
+    || documentHost.endsWith(`.${websiteHost}`)
+    || websiteHost.endsWith(`.${documentHost}`)
+    || registrableDomain(documentHost) === registrableDomain(websiteHost);
 }
 
 /**
@@ -435,41 +456,47 @@ export function documentOwnerVerdict(
     if (owner && !sameHoldingCompany(own, owner)) return { kind: "other_bank", otherId: owner.id, evidence: "vendor copy: text hash" };
   }
 
-  // The document sits on exactly one unrelated institution's own website, and not on this bank's.
+  // The document sits on exactly one unrelated institution's own website, and not on this bank's
+  // (a bank with no stored website never gets this rule: the other's seeded host is no evidence).
   const hostIds = new Set(links.hostIds ?? []);
-  if (links.documentHost && !onOwnSite) {
+  if (links.documentHost && own.websiteHost && !onOwnSite) {
     const hosts = unrelated.filter((other) => hostIds.has(other.id) && other.websiteHost === links.documentHost);
     if (hosts.length === 1) return { kind: "other_bank", otherId: hosts[0].id, evidence: `site: ${links.documentHost}` };
   }
 
-  const named = (other: OwnerBank): string | null => {
+  // Strong evidence (a name form of two words or more, or the header rule) before weak (a CU
+  // acronym, or its city with its state).
+  const named = (other: OwnerBank): { evidence: string; strong: boolean } | null => {
     const forms = formsOf.get(other.id)!.filter((form) => !namesOverlap([form], ownForms));
     const name = forms.find((form) => hasWords(padded, form));
     const otherCity = cityWords(other);
     const cityHere = otherCity.length > 0 && otherCity !== ownCity && hasWords(padded, otherCity);
-    if (name && (!other.nameShared || cityHere)) return `name: ${name}`;
-    const acronym = acronymsOf.get(other.id)!.find((value) => !ownAcronyms.includes(value) && hasWords(padded, value));
-    if (acronym) return `acronym: ${acronym}`;
+    if (name && (!other.nameShared || cityHere)) return { evidence: `name: ${name}`, strong: true };
     const legal = legalBankName(other.name);
-    if (legal && !other.nameShared && !namesOverlap([legal], ownForms) && headerNamesInstitution(text, other.name)) return `header: ${legal}`;
+    if (legal && !other.nameShared && !namesOverlap([legal], ownForms) && headerNamesInstitution(text, other.name)) {
+      return { evidence: `header: ${legal}`, strong: true };
+    }
+    const acronym = acronymsOf.get(other.id)!.find((value) => !ownAcronyms.includes(value) && hasWords(padded, value));
+    if (acronym) return { evidence: `acronym: ${acronym}`, strong: false };
     if (otherCity && otherCity !== ownCity && namesCityAndState(padded, other)) {
-      return `city: ${otherCity} ${(other.stateCode ?? "").toLowerCase()}`;
+      return { evidence: `city: ${otherCity} ${(other.stateCode ?? "").toLowerCase()}`, strong: false };
     }
     return null;
   };
   const hits = unrelated.flatMap((other) => {
-    const evidence = named(other);
-    return evidence ? [{ id: other.id, evidence }] : [];
+    const match = named(other);
+    return match ? [{ id: other.id, ...match }] : [];
   });
   // A schedule a holding company's charters share is theirs to share (#1441), whatever it names.
   if (siblings.length > 0 && (hits.length === 0 || siblings.some((other) => named(other)))) {
     return { kind: "sibling_shared", siblingIds: siblings.map((other) => other.id) };
   }
-  // On this bank's own website, an institution that shares the document only by address or text
-  // hash (not by stored website) is never proof the file is another bank's: name variants this
-  // bank's forms miss ("Heartland Bank & Trust Company") must not hand its own schedule away.
-  const ownSiteCap = hits.length === 1 && onOwnSite && !hostIds.has(hits[0].id);
-  if (hits.length === 1 && !ownSiteCap) return { kind: "other_bank", otherId: hits[0].id, evidence: hits[0].evidence };
+  // An institution that shares the document only by address or text hash (not by stored website)
+  // is proof the file is another bank's only by its full name or the header rule, and never on
+  // this bank's own site: name variants this bank's forms miss ("HBT Bank" for Heartland Bank and
+  // Trust) must not hand its own schedule away on a branch city or an acronym.
+  const capped = hits.length === 1 && !hostIds.has(hits[0].id) && (onOwnSite || !hits[0].strong);
+  if (hits.length === 1 && !capped) return { kind: "other_bank", otherId: hits[0].id, evidence: hits[0].evidence };
   if (hits.length > 0) return { kind: "shared_service", otherIds: hits.map((hit) => hit.id) };
   const mentioned = found.filter((other) => other.id !== own.id && !poolIds.has(other.id) && !sameHoldingCompany(own, other));
   if (mentioned.length > 0) return { kind: "registry_named", otherIds: mentioned.map((other) => other.id) };
@@ -634,12 +661,16 @@ export function documentOwnerCountSql(options: { detail?: boolean } = {}): strin
   const printsHostSql = (host: string) =>
     `(${host} <> '' AND EXISTS (SELECT 1 FROM unnest(tx.dotted) d WHERE strpos('.' || d || '.', '.' || ${host} || '.') > 0))`;
   // A linked institution `c` the text names, as `named` in `documentOwnerVerdict` (`j` the pair, `own` its bank).
-  const otherNamed = `(
+  // Strong evidence: a name form, or the header rule.
+  const otherNamedStrong = `(
       (EXISTS (SELECT 1 FROM unnest(c.forms) f WHERE NOT ${overlap("ARRAY[f]", "own.forms")} AND ${has("tx.padded", "f")})
        AND (NOT c.name_shared OR (c.city_w <> own.city_w AND length(c.city_w) >= ${MIN_CITY_CHARS} AND ${has("tx.padded", "c.city_w")})))
-      OR EXISTS (SELECT 1 FROM unnest(c.acronyms) a WHERE NOT (a = ANY(own.acronyms)) AND ${has("tx.padded", "a")})
       OR (c.legal IS NOT NULL AND NOT c.name_shared AND NOT ${overlap("ARRAY[c.legal]", "own.forms")}
           AND EXISTS (SELECT 1 FROM headed hd WHERE hd.source_document_id = j.source_document_id AND hd.id = c.id))
+    )`;
+  // Weak evidence: a CU acronym, or the city with its state.
+  const otherNamedWeak = `(
+      EXISTS (SELECT 1 FROM unnest(c.acronyms) a WHERE NOT (a = ANY(own.acronyms)) AND ${has("tx.padded", "a")})
       OR (c.city_w <> own.city_w AND ${cityState("tx.padded", "c")})
     )`;
   const strictNamed = (alias: string) =>
@@ -648,10 +679,16 @@ export function documentOwnerCountSql(options: { detail?: boolean } = {}): strin
   const poolOf = (where: string) =>
     `(SELECT pr.* FROM pool_rows pr WHERE pr.institution_id = j.institution_id AND pr.source_document_id = j.source_document_id AND ${where})`;
   // The document is on this bank's stored website or a subdomain of it (\`onWebsiteHost\`).
+  // \`registrableDomain\` in SQL.
+  const registrable = (host: string) =>
+    `COALESCE(substring(${host} from '([^.]+[.][^.]{2,3}[.][^.]{2})$'), substring(${host} from '([^.]+[.][^.]+)$'), ${host})`;
   const onOwnSite = `(COALESCE(own.website_host, '') <> '' AND COALESCE(j.document_host, '') <> ''
-      AND (j.document_host = own.website_host OR right(j.document_host, length(own.website_host) + 1) = '.' || own.website_host))`;
+      AND (j.document_host = own.website_host
+           OR right(j.document_host, length(own.website_host) + 1) = '.' || own.website_host
+           OR right(own.website_host, length(j.document_host) + 1) = '.' || j.document_host
+           OR ${registrable("j.document_host")} = ${registrable("own.website_host")}))`;
   const baseSql = (nameExpr: string) =>
-    `regexp_replace(regexp_replace(${wordsSql(nameExpr)}, '^the ', ''), '( (national association|n a|na|ssb|fsb|inc|incorporated|company|co|corp|corporation))+$', '')`;
+    `regexp_replace(regexp_replace(${wordsSql(nameExpr)}, '^the ', ''), '( (national association|n a|na|ssb|s s b|fsb|f s b|inc|incorporated|company|co|corp|corporation))+$', '')`;
   return `-- Darwin document-owner check (#1455), read-only: live fees on a document whose text names another bank.
 -- Run as one script: read-only transaction, rolled back. JIT off: compiling this statement's
 -- ~1,000 expressions took 11 s on a 16-row test database. Merge joins off: the planner's guesses for
@@ -802,7 +839,8 @@ ${scopedPairsSql()},
              (c.id = ANY(j.hash_ids)) AS via_hash,
              (c.id = ANY(j.host_ids)) AS via_host,
              (c.id = ANY(j.host_ids) AND c.website_host = j.document_host) AS site,
-             (tx.padded IS NOT NULL AND ${otherNamed}) AS named,
+             (tx.padded IS NOT NULL AND ${otherNamedStrong}) AS named_strong,
+             (tx.padded IS NOT NULL AND (${otherNamedStrong} OR ${otherNamedWeak})) AS named,
              (tx.padded IS NOT NULL AND ${strictNamed("c")}) AS strict
         FROM judged0 j
         LEFT JOIN texts tx ON tx.source_document_id = j.source_document_id
@@ -837,6 +875,7 @@ ${scopedPairsSql()},
              count(*) FILTER (WHERE NOT sib AND named) AS hits,
              min(id) FILTER (WHERE NOT sib AND named) AS hit_id,
              bool_or(via_host) FILTER (WHERE NOT sib AND named) AS hit_via_host,
+             bool_or(named_strong) FILTER (WHERE NOT sib AND named) AS hit_strong,
              count(*) FILTER (WHERE NOT sib AND site) AS sites,
              min(id) FILTER (WHERE NOT sib AND site) AS site_id,
              count(*) FILTER (WHERE via_hash) AS hash_linked,
@@ -879,9 +918,9 @@ ${scopedPairsSql()},
                    WHEN f.name_distinct OR f.acronym_distinct OR f.website OR f.city THEN 'own_named'
                    WHEN v.owner_id = j.institution_id THEN 'own_named'
                    WHEN v.owner_id IS NOT NULL AND NOT ${sibling("own", "vo")} THEN 'other_bank'
-                   WHEN NOT f.on_own_site AND COALESCE(a.sites, 0) = 1 THEN 'other_bank'
+                   WHEN COALESCE(own.website_host, '') <> '' AND NOT f.on_own_site AND COALESCE(a.sites, 0) = 1 THEN 'other_bank'
                    WHEN COALESCE(a.siblings, 0) > 0 AND (a.hits = 0 OR a.sibling_named) THEN 'sibling_shared'
-                   WHEN COALESCE(a.hits, 0) = 1 AND NOT (f.on_own_site AND NOT a.hit_via_host) THEN 'other_bank'
+                   WHEN COALESCE(a.hits, 0) = 1 AND (a.hit_via_host OR (NOT f.on_own_site AND a.hit_strong)) THEN 'other_bank'
                    WHEN COALESCE(a.hits, 0) >= 1 THEN 'shared_service'
                    WHEN EXISTS (SELECT 1 FROM registry_pairs r WHERE r.institution_id = j.institution_id AND r.source_document_id = j.source_document_id)
                      THEN 'registry_named'
@@ -889,7 +928,7 @@ ${scopedPairsSql()},
                  END AS verdict,
                  CASE
                    WHEN v.owner_id IS NOT NULL AND v.owner_id <> j.institution_id AND NOT ${sibling("own", "vo")} THEN v.owner_id
-                   WHEN NOT f.on_own_site AND COALESCE(a.sites, 0) = 1 THEN a.site_id
+                   WHEN COALESCE(own.website_host, '') <> '' AND NOT f.on_own_site AND COALESCE(a.sites, 0) = 1 THEN a.site_id
                    ELSE a.hit_id
                  END AS named_other_id
         ) x
@@ -972,6 +1011,8 @@ export interface DocumentOwnerResult {
 
 /** Re-reads per step with the takedown on, apart from the new-pair cap, so they never starve new pairs. */
 export const DOCUMENT_OWNER_REREAD_LIMIT = 25;
+/** Statement timeout for the per-step scoped pairs read, set inside its savepoint and put back after. */
+export const DOCUMENT_OWNER_PAIRS_TIMEOUT = "60s";
 
 /** The step-detail form of a result (run-store's verify step). */
 export function documentOwnerDetail(result: DocumentOwnerResult | null) {
@@ -1062,11 +1103,19 @@ export async function recheckDocumentOwners(
   }
   let pairs: PairRow[];
   try {
-    pairs = await inSavepoint(db, (scope) =>
-      scope.unsafe<PairRow[]>(documentOwnerPairsSql(), [
+    pairs = await inSavepoint(db, async (scope) => {
+      // Cap the scoped read so it can never hold the run-ledger transaction. A transaction-local
+      // setting survives RELEASE SAVEPOINT (only a rollback to the savepoint undoes it), so the
+      // previous value is put back once the read succeeds; a failed read is rolled back with it.
+      const [prior] = await scope<Array<{ value: string | null }>>`
+        SELECT current_setting('statement_timeout') AS value, set_config('statement_timeout', ${DOCUMENT_OWNER_PAIRS_TIMEOUT}, true) AS applied
+      `;
+      const rows = await scope.unsafe<PairRow[]>(documentOwnerPairsSql(), [
         documentOwnerFingerprintPrefix(live), DOCUMENT_OWNER_STRATEGY.strategy, DOCUMENT_OWNER_STRATEGY.version, limit, rereadLimit,
-      ]),
-    );
+      ]);
+      if (prior?.value != null) await scope`SELECT set_config('statement_timeout', ${prior.value}, true)`;
+      return rows;
+    });
   } catch (error) {
     console.warn("[darwin] document owner read failed", error instanceof Error ? error.message : error);
     return result;
@@ -1138,12 +1187,13 @@ async function judgePairs(
     });
     const ids = (values: Array<number | string> | null) => (values ?? []).map(Number);
     // A pair whose bank has no registry row (or no name) is recorded unproven, so it is not read again.
+    const vendorPath = pair.vendor_path === true || isVendorDocumentPath(pair.document_url);
     const verdict: DocumentOwnerVerdict = own
       ? documentOwnerVerdict(text, own, linked, found, {
           hostIds: ids(pair.host_ids),
           hashIds: ids(pair.hash_ids),
           documentHost: pair.document_host,
-          vendorPath: pair.vendor_path === true || isVendorDocumentPath(pair.document_url),
+          vendorPath,
         })
       : { kind: "unproven" };
     const key = `${institutionId}:${sourceDocumentId}`;
@@ -1171,7 +1221,7 @@ async function judgePairs(
         detail: {
           verdict: verdict.kind,
           document_url: pair.document_url,
-          vendor_path: isVendorDocumentPath(pair.document_url),
+          vendor_path: vendorPath,
           text_hash: pair.text_hash,
           live_fees: Number(pair.live_fees),
           linked_ids: linked.map((other) => other.id),
