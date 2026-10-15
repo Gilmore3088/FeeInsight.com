@@ -1,0 +1,70 @@
+import { describe, expect, it } from "vitest";
+import type { DimensionBreakdown, FeeCategorySummary } from "@/lib/data-store/fees";
+import { charterDots, charterFinding, districtHeadline, districtLabel, marketDots, nationalBand, relatedBands } from "./category-view";
+
+const summary = (over: Partial<FeeCategorySummary> = {}): FeeCategorySummary => ({
+  fee_category: "overdraft",
+  institution_count: 2100,
+  total_observations: 4000,
+  min_amount: 0,
+  max_amount: 100,
+  avg_amount: 28,
+  median_amount: 29,
+  p25_amount: 25,
+  p75_amount: 33,
+  bank_count: 1200,
+  cu_count: 900,
+  zero_count: 40,
+  bank_median_amount: 32,
+  cu_median_amount: 27,
+  ...over,
+});
+
+const row = (dimension_value: string, median: number | null, count: number): DimensionBreakdown => ({
+  dimension_value,
+  count,
+  min_amount: 0,
+  max_amount: 50,
+  avg_amount: median,
+  median_amount: median,
+});
+
+describe("fee category view", () => {
+  const band = nationalBand(summary())!;
+
+  it("reads the national spread only when every figure is published", () => {
+    expect(band).toMatchObject({ min: 0, p25: 25, median: 29, p75: 33, max: 100, institutions: 2100 });
+    expect(nationalBand(summary({ p75_amount: null }))).toBeNull();
+  });
+
+  it("orders districts by median, drops thin ones, and names the extremes", () => {
+    const dots = marketDots(
+      [row("District 1", 24, 60), row("District 11", 35, 90), row("District 6", 30, 120), row("District 9", 40, 3)],
+      band,
+      districtLabel,
+    );
+    expect(dots.map((d) => [d.label, d.position])).toEqual([
+      ["Dallas", "above"],
+      ["Atlanta", "within"],
+      ["Boston", "below"],
+    ]);
+    expect(districtHeadline(dots)).toBe("Highest in Dallas, lowest in Boston");
+  });
+
+  it("splits banks and credit unions from the snapshot, with one sourced sentence", () => {
+    const dots = charterDots(summary(), band);
+    expect(dots.map((d) => [d.label, d.median, d.institutions])).toEqual([
+      ["Banks", 32, 1200],
+      ["Credit unions", 27, 900],
+    ]);
+    expect(charterFinding(dots, "Overdraft (OD)")).toBe(
+      "Banks charge a median $32 for an overdraft fee, $5 more than credit unions ($27).",
+    );
+    expect(charterDots(summary({ cu_count: 2 }), band)).toHaveLength(1);
+  });
+
+  it("lists related fees that have a full national spread", () => {
+    const related = relatedBands([summary({ fee_category: "nsf" }), summary({ fee_category: "continuous_od", p25_amount: null })], ["nsf", "continuous_od"]);
+    expect(related.map((r) => r.category)).toEqual(["nsf"]);
+  });
+});
