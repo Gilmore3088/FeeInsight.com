@@ -191,6 +191,9 @@ export function EvidenceExhibit({ rows }: { rows: ParsedResponse["evidence"] }) 
   );
 }
 
+/** How long a sent ask holds the composer before the page's own busy state must have taken over. */
+const ASK_PENDING_MS = 10_000;
+
 const ASK_STAGES = [
   { key: "reading", label: "Reading the data" },
   { key: "writing", label: "Writing it up" },
@@ -327,6 +330,11 @@ function AnalyzeConversationWorkspace({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const active = useRef(true);
   const answerGeneration = useRef(0);
+  // When the last ask was sent, until React state shows it in flight (`engineBusy` or the chat's
+  // `isLoading`). `isLoading` and `engineBusy` only change on a later render, so without this a
+  // second Enter, Ask click or "Ask next" pick in the same instant could send the question again.
+  // A stale mark expires, so a lost signal can never lock the composer.
+  const askPendingSince = useRef<number | null>(null);
 
   const { messages, sendMessage, status, setMessages, error: chatError, clearError, stop } = useChat({
     transport: new DefaultChatTransport({
@@ -340,6 +348,7 @@ function AnalyzeConversationWorkspace({
       }),
     }),
     onFinish: async ({ message, isError, isAbort }) => {
+      askPendingSince.current = null;
       const content = extractTextFromMessage(message);
       // A failed or empty reply is never shown as an answer, and never saved.
       if (!active.current || readOnlyReason || isError || isAbort || !content.trim()) return;
@@ -395,6 +404,11 @@ function AnalyzeConversationWorkspace({
 
   const isLoading = status === "streaming" || status === "submitted";
 
+  // Once the page's own state shows the ask in flight (or failed), that state guards the composer.
+  useEffect(() => {
+    if (isLoading || engineBusy || chatError) askPendingSince.current = null;
+  }, [isLoading, engineBusy, chatError]);
+
   // A failed request must never lose the question: put it back in the input.
   useEffect(() => {
     if (chatError && lastPromptRef.current) {
@@ -421,6 +435,9 @@ function AnalyzeConversationWorkspace({
     (question: string) => {
       const trimmed = question.trim();
       if (!active.current || readOnlyReason || !trimmed || isLoading || engineBusy) return;
+      const pendingSince = askPendingSince.current;
+      if (pendingSince !== null && Date.now() - pendingSince < ASK_PENDING_MS) return;
+      askPendingSince.current = Date.now();
       answerGeneration.current += 1;
       if (lastPromptRef.current && lastPromptRef.current !== trimmed) {
         // The answer just read moves up into the conversation, collapsed to its question and lead.
@@ -452,6 +469,7 @@ function AnalyzeConversationWorkspace({
   /** Starts over: no earlier answers, no carried context, the start screen. */
   const newQuestion = useCallback(() => {
     if (isLoading) stop();
+    askPendingSince.current = null;
     answerGeneration.current += 1;
     clearError();
     setThread([]);

@@ -124,6 +124,21 @@ async function logEvents(
   ).catch((error) => console.error("[hamilton-ask] decision log failed", { decisionId: decision.id, error }));
 }
 
+/** What, besides the question, an engine storyline was built from. */
+export interface StorylineRequest {
+  decisionId: string | null;
+  objective: string | null;
+  feeCategory: string | null;
+}
+
+/**
+ * The request a storyline save is matched on for a repeat (insertSavedAnalysis): the kind,
+ * the decision, objective and fee it was read against, and the question.
+ */
+export function storylineRequestKey(question: string, request: StorylineRequest): string {
+  return ["storyline", request.decisionId ?? "", request.objective ?? "", request.feeCategory ?? "", question].join("\n");
+}
+
 /**
  * Files a storyline answer as a saved analysis, so every Ask lands in the reader's history
  * and can go into a report once, whichever screen asked it. Null when there is no storyline
@@ -135,6 +150,7 @@ async function fileAnalysis(
   question: string,
   response: AskResponse,
   research: FeeResearch | null,
+  request: StorylineRequest,
 ): Promise<string | null> {
   const storyline = response.answer?.storyline;
   const canonical = normalizeCanonicalInstitutionId(institutionId);
@@ -152,6 +168,10 @@ async function fileAnalysis(
         research ? buildFeeResearchEvidence(research) : null,
         response.identityContext,
       ),
+      // The same request sent twice in quick succession files one row, not two. A storyline
+      // never replaces a written answer, or a storyline read against another decision,
+      // objective or fee (storylineRequestKey).
+      replaceRecentDuplicate: { request: storylineRequestKey(question, request) },
     });
   } catch (error) {
     console.error("[hamilton-ask] saving the analysis failed", { institutionId: canonical, error });
@@ -356,7 +376,11 @@ export async function answerAsk(user: Asker, body: AskBody): Promise<AskResult> 
   const subjectName = institution.name || research?.institutionName || `Institution ${institutionId}`;
   const identity = identityForAsk(institutionId, subjectName, resolved.source, account, peers, research?.peerLabel ?? null);
   const response = await withResearchIdentity(rawResponse, identity, question, intent.feeCategory, account);
-  const savedAnalysisId = await fileAnalysis(user.id, institution.id, question, response, research);
+  const savedAnalysisId = await fileAnalysis(user.id, institution.id, question, response, research, {
+    decisionId: decision?.id ?? null,
+    objective: effectiveObjective,
+    feeCategory: intent.feeCategory ?? null,
+  });
   const shown = response.scenario;
   const scenarioEvents =
     response.kind === "scenario"
