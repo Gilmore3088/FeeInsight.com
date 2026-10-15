@@ -191,7 +191,7 @@ export const writeWrittenAnswer: WrittenAnswerWriter = async ({ institutionId, i
     const text = (result.generated.text ?? "").trim();
     if (!text) return { status: "unavailable", reason: "Hamilton wrote no answer within its steps." };
     const toolResults = (result.generated.steps ?? []).flatMap((step) => step.toolResults.map((r) => ({ toolName: r.toolName, output: r.output })));
-    return { status: "written", text, toolResults, check: writtenAnswerCheck(text, toolResults.map((r) => r.output)) };
+    return { status: "written", text, toolResults, check: writtenAnswerCheck(text, toolResults.map((r) => r.output), question) };
   } catch (error) {
     if (isProviderLimitError(error)) return { status: "unavailable", reason: HAMILTON_PAUSED_MESSAGE };
     const message = error instanceof Error ? error.message : String(error);

@@ -114,7 +114,8 @@ Hamilton supports the decision; it does not make it.
   prompt, tools, output cap and step limit as `/api/research/hamilton` on the Analyze screen,
   Pricing focus, the sampled institution as the reader's own), on the first sampled question with
   research, with no saved peer set; the call stops at 180 s and the ledger records every step's
-  tokens. Form is the route's evidence gate (`writtenAnswerCheck`); correctness, for an answer that
+  tokens. Form is the route's evidence gate (`writtenAnswerCheck`, which also counts a figure the
+  typed question names, and an asset-tier bound stated as a size range or threshold, as traced: #1425); correctness, for an answer that
   passed form and states a figure, is `reconcileWrittenText`: each dollar figure in the text is a
   live value, recomputed statistic or gap for the asked fee, or money its tools read from sources
   other than the fee catalog (call reports, national data). A fee price a catalog tool returned

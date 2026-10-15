@@ -275,6 +275,7 @@ async function handlePOST(request: Request) {
       const evidence = writtenAnswerCheck(
         result.text ?? "",
         (result.steps ?? []).flatMap((step) => step.toolResults.map((toolResult) => toolResult.output)),
+        questionOnly(lastUserText),
       );
       if (!evidence.passed) {
         return Response.json(
@@ -317,7 +318,7 @@ async function handlePOST(request: Request) {
         // tab or a failed browser call never loses it.
         if (mode === "analyze" && text.trim()) {
           const toolOutputs = steps.flatMap((step) => step.toolResults.map((result) => result.output));
-          const check = writtenAnswerCheck(text, toolOutputs);
+          const check = writtenAnswerCheck(text, toolOutputs, questionOnly(lastUserText));
           const held = holdsAnswers && !check.passed;
           resolveVerdict({ passed: check.passed, held });
           const response = {

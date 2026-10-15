@@ -111,6 +111,15 @@ describe("written answer evidence gate", () => {
     expect(metadata()).toMatchObject({ answerEvidence: { passed: false, held: false } });
   });
 
+  it("counts a figure the reader typed as traced, but not one from the appended earlier question (#1425)", async () => {
+    answers(UNTRACED);
+    await POST(request("Would a $27 overdraft fee sit below peers?"));
+    expect(mocks.save.mock.calls[0][0].response.answerEvidence).toEqual({ passed: true, problems: [] });
+    mocks.save.mockClear();
+    await POST(request(withConversationContext("How does our overdraft fee compare?", [{ question: "Is $27 a normal overdraft fee?", lead: null }])));
+    expect(mocks.save.mock.calls[0][0].response.answerEvidence.passed).toBe(false);
+  });
+
   it("records advice the memo gate would refuse", async () => {
     answers(ADVICE);
     await POST(request());
