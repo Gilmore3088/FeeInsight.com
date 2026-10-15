@@ -77,6 +77,7 @@ export default async function ReportsPage({
     scenario_id?: string;
     report_id?: string;
     from_analysis?: string;
+    board_error?: string;
     report?: string;
     instId?: string;
     intent?: string;
@@ -92,6 +93,9 @@ export default async function ReportsPage({
   const user = await getCurrentUser();
   if (!user) redirect("/");
   // A board brief is made from one saved answer, reusing its findings with no new research (#1066).
+  if (params.board_error) {
+    return <p role="alert" className="mx-auto max-w-3xl rounded-md border border-[var(--fi-brick)] p-4 text-sm text-[var(--fi-brick)]">The board brief could not be saved. Go back and try Build board brief again.</p>;
+  }
   if (params.from_analysis) {
     if (params.report_id || params.report || params.scenario_id) return <p role="alert">Open the saved answer separately from another report.</p>;
     const analysis = await loadAnalysisRecord(params.from_analysis);
@@ -150,7 +154,7 @@ export default async function ReportsPage({
       userId={user.id}
       institutionName={institutionName}
       publishedReports={publishedReports}
-      savedReports={savedReports}
+      savedReports={boardBriefsFirst(savedReports)}
       initialReport={initialReport}
       initialScenarioId={params.scenario_id ?? null}
       selectedInstitution={selectedInstitution}
@@ -162,4 +166,9 @@ export default async function ReportsPage({
       legacyPeerFilterLabel={buildLegacyPeerFilterLabel(params)}
     />
   );
+}
+
+/** Saved board briefs lead the list; each group keeps its newest-first order. */
+function boardBriefsFirst<T extends { report_type: string }>(reports: T[]): T[] {
+  return [...reports].sort((a, b) => Number(b.report_type === "board_brief") - Number(a.report_type === "board_brief"));
 }

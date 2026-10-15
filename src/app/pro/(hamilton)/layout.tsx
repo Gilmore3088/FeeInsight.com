@@ -125,7 +125,7 @@ async function HamiltonLayoutInner({
         selectedFromUrl: selectedSource === "url",
       }
     : {
-        name: savedArtifactRequested ? "Saved artifact · research subject unavailable" : research ? "Market research" : null,
+        name: null,
         type: null,
         assetTier: null,
         fedDistrict: null,

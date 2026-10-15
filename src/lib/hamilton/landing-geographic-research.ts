@@ -116,13 +116,17 @@ export function buildGeographicResearchResult(
 export async function loadLandingGeographicResearch(
   rawSelection: unknown,
   reader: (filters: PeerFilterSet[]) => Promise<IndexEntry[][]> = getPeerIndexes,
+  /** Asset tiers applied to both the selected scope and its national reference, so they stay comparable. */
+  assetTiers: readonly string[] | null = null,
 ): Promise<GeographicResearchResult> {
   const selection = parseLandingResearch(rawSelection);
   if (selection.task !== "compare" || selection.scope.kind === "local") {
     throw new LandingResearchError("This research selection needs its dedicated workflow.");
   }
-  const charter: PeerFilterSet =
-    selection.charter === "all" ? {} : { charter_type: selection.charter };
+  const charter: PeerFilterSet = {
+    ...(selection.charter === "all" ? {} : { charter_type: selection.charter }),
+    ...(assetTiers?.length ? { asset_tiers: [...assetTiers] } : {}),
+  };
   const filters: PeerFilterSet[] = selection.scope.kind === "state"
     ? [{ ...charter, state_code: selection.scope.stateCode }, { ...charter }]
     : [{ ...charter }];

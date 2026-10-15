@@ -23,8 +23,8 @@ export const INTELLIGENCE_LENSES = [
 ] as const;
 export type Lens = (typeof INTELLIGENCE_LENSES)[number]["id"];
 
-/** Fees a market brief compares when the question asks about pricing without naming one. */
-export const MARKET_BRIEF_CATEGORIES = ["monthly_maintenance", "overdraft", "nsf", "wire_domestic_outgoing", "atm_non_network"];
+/** The default fee set for Overview, Research and market briefs: overdraft first, the fees boards and regulators ask about. */
+export const MARKET_BRIEF_CATEGORIES = ["overdraft", "nsf", "monthly_maintenance", "wire_domestic_outgoing", "atm_non_network"];
 
 const NATIONAL = /\b(national(ly)?|nationwide|across the (country|u\.?s\.?)|the u\.?s\.?|united states|u\.s\.|america)\b/i;
 const OWN = /\b(our|my|we|us|i)\b/i;

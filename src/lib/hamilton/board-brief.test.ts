@@ -14,7 +14,7 @@ describe("board brief reuses frozen analysis", () => {
     const report = boardBriefFromAnalysis(frozen, "saved-original", edits);
     expect(report.identityContext).toEqual(frozen.identityContext);
     expect(report.boardBrief?.factEvidence).toEqual(frozen.factEvidence);
-    expect(report.exhibits?.[0].rows).toEqual(frozen.evidence.metrics.map(m => [m.label, m.value, m.note ?? "Not recorded"]));
+    expect(report.exhibits?.[0].rows).toEqual(frozen.evidence.metrics.map(m => [m.label, m.value, m.note ?? ""]));
     expect(report.executiveSummary).toEqual([frozen.hamiltonView]);
     expect(report.implementationNotes).toContain("Team note (user-authored): Discuss waivers with the team.");
     expect(report.sources?.every(s => s.detail.includes("Reporting period"))).toBe(true);
@@ -37,6 +37,6 @@ describe("board brief reuses frozen analysis", () => {
   it("labels missing legacy provenance instead of substituting current sources", () => {
     const report = boardBriefFromAnalysis({ ...frozen, storyline: undefined, factEvidence: undefined, identityContext: undefined }, "legacy", edits);
     expect(report.identityContext).toBeUndefined();
-    expect(report.sources?.[0].detail).toContain("not recorded");
+    expect(report.sources?.[0].detail).toContain("were not saved with this answer");
   });
 });

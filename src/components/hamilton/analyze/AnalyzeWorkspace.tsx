@@ -587,7 +587,7 @@ function AnalyzeConversationWorkspace({
   const startTasks = [
     { label: "Review fees", href: "/pro/research", icon: FileText },
     { label: "Research competitors", href: "/pro/intelligence?lens=fees", icon: Search },
-    { label: "Prepare a board briefing", href: "/pro/reports?intent=executive-briefing", icon: Presentation },
+    { label: "Prepare a board brief", href: "/pro/saved", icon: Presentation },
   ];
   const starting = !(askedQuestion || shown);
 
