@@ -8,6 +8,11 @@ import {
   STATS_ROW_FILTER,
   businessSourceSql,
   statsRowFilter,
+  sharedScheduleRepresentatives,
+  scheduleKeysSql,
+  COUNT_SHARED_SCHEDULE_ONCE,
+  STATS_SCHEDULE_KEYS,
+  STATS_METHOD_VERSION,
 } from "./fee-stats";
 import { BUSINESS_PATH_SQL, CONSUMER_PATH_SQL, isBusinessOnlyLink } from "@/lib/agents/magellan/link-coverage";
 
@@ -174,4 +179,68 @@ it("shares the same audience boundary across SQL aliases without filtering out z
   expect(predicate).not.toContain("amount IS NOT NULL"); // rate rows have a separate value column
   expect(statsRowFilter()).toBe(STATS_ROW_FILTER);
   expect(() => statsRowFilter("c; SELECT 1")).toThrow("Invalid statistics table alias");
+});
+
+describe("count once: sibling charters sharing one schedule (#1441, rule 7)", () => {
+  // Five IBC-style charters read the same schedule (same address, same text) and charge $30;
+  // four unrelated banks charge $10, $12, $14 and $16.
+  const shared = ["u:ibc.com/fees", "t:abc123"];
+  const siblings = [160, 318, 1769, 688, 1319].map((id) => ({
+    institution_id: id, amount: 30, charter_type: "bank", fee_category: "nsf", schedule_keys: shared,
+  }));
+  const others = [10, 12, 14, 16].map((amount, i) => ({
+    institution_id: 9000 + i, amount, charter_type: "bank", fee_category: "nsf", schedule_keys: [`u:bank${i}.com/fees`],
+  }));
+  const rows = [...siblings, ...others];
+
+  it("counts 5 charters on one document as 1 in the median and counts", () => {
+    const before = summarizeFees(rows, { countSharedScheduleOnce: false });
+    expect(before.institution_count).toBe(9);
+    expect(before.median_amount).toBe(30);
+
+    const after = summarizeFees(rows, { countSharedScheduleOnce: true });
+    expect(after.institution_count).toBe(5);
+    expect(after.bank_count).toBe(5);
+    expect(after.median_amount).toBe(14);
+    expect(after.maturity_tier).toBe("provisional");
+  });
+
+  it("keeps every charter's own value for its own page", () => {
+    const values = valuePerInstitution(rows);
+    for (const id of [160, 318, 1769, 688, 1319]) expect(values.get(id)).toBe(30);
+  });
+
+  it("links charters by identical text even when the addresses differ, and through chains", () => {
+    const reps = sharedScheduleRepresentatives([
+      { institution_id: 5, amount: 1, schedule_keys: ["u:a.com/fees", "t:h1"] },
+      { institution_id: 3, amount: 1, schedule_keys: ["u:b.com/fees", "t:h1"] },
+      { institution_id: 8, amount: 1, schedule_keys: ["u:b.com/fees", "t:h2"] },
+      { institution_id: 2, amount: 1, schedule_keys: ["u:c.com/fees"] },
+      { institution_id: 4, amount: 1, schedule_keys: null },
+    ]);
+    expect(Object.fromEntries(reps)).toEqual({ 5: 3, 3: 3, 8: 3, 2: 2, 4: 4 });
+  });
+
+  it("counts a shared schedule once within a peer group, even when its lowest charter is outside it", () => {
+    // A Texas-only peer group: charter 688 (Oklahoma) is filtered out before the stats run.
+    const texas = rows.filter((row) => row.institution_id !== 688);
+    const stats = summarizeFees(texas, { countSharedScheduleOnce: true });
+    expect(stats.institution_count).toBe(5);
+    expect(stats.median_amount).toBe(14);
+  });
+
+  it("is off by default and selects no keys while off", () => {
+    expect(COUNT_SHARED_SCHEDULE_ONCE).toBe(false);
+    expect(summarizeFees(rows).institution_count).toBe(9);
+    expect(STATS_SCHEDULE_KEYS).toBe("NULL::text[] AS schedule_keys");
+    expect(STATS_METHOD_VERSION).toBe(7);
+  });
+
+  it("builds the schedule key from the document address and the stored text hash when on", () => {
+    const keySql = scheduleKeysSql("ef", true);
+    expect(keySql).toContain("ef.document_url");
+    expect(keySql).toContain("agent_source_texts ast");
+    expect(keySql).toContain("ast.source_document_id = ef.source_document_id");
+    expect(() => scheduleKeysSql("ef; drop", true)).toThrow();
+  });
 });

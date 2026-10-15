@@ -24,6 +24,11 @@
  *    business price, not the consumer's. It stays on the bank's own page and is left out
  *    of medians, ranges and comparisons until a consumer schedule replaces it. Same
  *    address test as Magellan's isBusinessOnlyLink (link-coverage.ts).
+ * 7. Count once (James, 2026-10-15, #1441), behind COUNT_SHARED_SCHEDULE_ONCE: sibling
+ *    charters that publish fees from the same schedule (the same document address, or
+ *    stored documents with identical text) count as one institution in a group's median,
+ *    percentiles and counts. Each charter keeps its own rows and its own value
+ *    (valuePerInstitution is unchanged), so every charter's page still shows its fees.
  */
 import { computePercentile, computeStats } from "./fees";
 import { BUSINESS_PATH_SQL, CONSUMER_PATH_SQL } from "@/lib/agents/magellan/link-coverage";
@@ -31,8 +36,14 @@ import { BUSINESS_PATH_SQL, CONSUMER_PATH_SQL } from "@/lib/agents/magellan/link
 import { MIN_INSTITUTIONS_FOR_MEDIAN, STRONG_INSTITUTION_COUNT, maturityTier, type MaturityTier } from "./maturity";
 
 export { MIN_INSTITUTIONS_FOR_MEDIAN, STRONG_INSTITUTION_COUNT, maturityTier, type MaturityTier };
+/**
+ * Rule 7 switch. Off until the read's cost and the affected counts are checked on prod (#1441).
+ * Readers select STATS_SCHEDULE_KEYS; while this is false it selects NULL and nothing changes.
+ */
+export const COUNT_SHARED_SCHEDULE_ONCE: boolean = false;
+
 /** Bump when these rules change; fee_index_cache rows carry it and older ones are ignored. */
-export const STATS_METHOD_VERSION = 7;
+export const STATS_METHOD_VERSION = COUNT_SHARED_SCHEDULE_ONCE ? 8 : 7;
 
 /** SQL predicate: the row's source address names a business-only schedule (rule 6). */
 export function businessSourceSql(alias: string): string {
@@ -49,12 +60,34 @@ export function statsRowFilter(alias = "ef"): string {
 /** Compatibility predicate for readers using the conventional ef alias. */
 export const STATS_ROW_FILTER = statsRowFilter();
 
+/**
+ * SQL expression (text[]) naming the schedule a catalog row was read from, for rule 7:
+ * `u:` its document address (scheme, www., fragment and trailing slashes dropped, lower case)
+ * and `t:` the text hash of its stored document text. Two charters sharing either key share a
+ * schedule. Sibling charters each hold their own source_documents row (institution_id is
+ * NOT NULL), so the document id alone never links them. With the switch off it is NULL.
+ */
+export function scheduleKeysSql(alias = "ef", enabled = COUNT_SHARED_SCHEDULE_ONCE): string {
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(alias)) throw new Error("Invalid statistics table alias");
+  if (!enabled) return "NULL::text[]";
+  const url = `lower(regexp_replace(regexp_replace(regexp_replace(${alias}.document_url, '^https?://(www\\.)?', '', 'i'), '#.*$', ''), '/+$', ''))`;
+  const textHash = `(SELECT ast.text_hash FROM agent_source_texts ast
+     WHERE ast.source_document_id = ${alias}.source_document_id AND ast.text_hash IS NOT NULL
+     ORDER BY ast.id DESC LIMIT 1)`;
+  return `array_remove(ARRAY[NULLIF('u:' || ${url}, 'u:'), 't:' || ${textHash}], NULL)`;
+}
+
+/** Select-list item for statistics readers using the ef alias: `... AS schedule_keys`. */
+export const STATS_SCHEDULE_KEYS = `${scheduleKeysSql()} AS schedule_keys`;
+
 
 export interface StatsInputRow {
   institution_id: number | string;
   amount: number | string | null;
   charter_type?: string | null;
   fee_category?: string | null;
+  /** The schedule the row was read from (scheduleKeysSql); rows sharing a key share a schedule. */
+  schedule_keys?: readonly string[] | null;
 }
 
 /** Categories whose tiers are compared at the highest (standard) tier, not the median. */
@@ -111,19 +144,77 @@ export function valuePerInstitution(rows: StatsInputRow[]): Map<number, number> 
   return values;
 }
 
+/**
+ * Rule 7: within these rows, the institution each institution counts as. Institutions linked
+ * by a shared schedule key (directly or through a chain) count as the lowest id among them;
+ * an institution sharing nothing counts as itself. Rows with no keys link nothing.
+ */
+export function sharedScheduleRepresentatives(rows: StatsInputRow[]): Map<number, number> {
+  const parent = new Map<number, number>();
+  const find = (id: number): number => {
+    let root = id;
+    while (parent.get(root) !== root) root = parent.get(root) as number;
+    let node = id;
+    while (node !== root) {
+      const next = parent.get(node) as number;
+      parent.set(node, root);
+      node = next;
+    }
+    return root;
+  };
+  const ownerOfKey = new Map<string, number>();
+  for (const row of rows) {
+    const id = Number(row.institution_id);
+    if (!Number.isSafeInteger(id) || id <= 0) continue;
+    if (!parent.has(id)) parent.set(id, id);
+    for (const key of row.schedule_keys ?? []) {
+      if (!key) continue;
+      const other = ownerOfKey.get(key);
+      if (other === undefined) {
+        ownerOfKey.set(key, id);
+        continue;
+      }
+      const a = find(id);
+      const b = find(other);
+      if (a !== b) parent.set(Math.max(a, b), Math.min(a, b));
+    }
+  }
+  const representatives = new Map<number, number>();
+  for (const id of parent.keys()) representatives.set(id, find(id));
+  return representatives;
+}
+
 /** Statistics for one group of rows (one category, or one category within a segment). */
-export function summarizeFees(rows: StatsInputRow[]): FeeStatistics {
+export function summarizeFees(
+  rows: StatsInputRow[],
+  options: { countSharedScheduleOnce?: boolean } = {},
+): FeeStatistics {
   // A missing/invalid price is not a sample. Keep displayed counts on the exact
   // population used for the median; a real numeric zero remains a valid observation.
   const validRows = rows.filter((row) => {
     const id = Number(row.institution_id);
     return Number.isSafeInteger(id) && id > 0 && toAmount(row.amount) !== null;
   });
-  const values = valuePerInstitution(validRows);
-  const institutions = new Map<number, string | null | undefined>();
+  let values = valuePerInstitution(validRows);
+  const charterOf = new Map<number, string | null | undefined>();
   for (const row of validRows) {
     const id = Number(row.institution_id);
-    if (!institutions.has(id)) institutions.set(id, row.charter_type);
+    if (!charterOf.has(id)) charterOf.set(id, row.charter_type);
+  }
+  let institutions = charterOf;
+  if (options.countSharedScheduleOnce ?? COUNT_SHARED_SCHEDULE_ONCE) {
+    // Rule 7: each charter's own value first, then one value per shared schedule (the
+    // median of its charters' values), counted under the lowest charter id.
+    const representatives = sharedScheduleRepresentatives(validRows);
+    const members = new Map<number, number[]>();
+    for (const [id, value] of values) {
+      const rep = representatives.get(id) ?? id;
+      const list = members.get(rep);
+      if (list) list.push(value);
+      else members.set(rep, [value]);
+    }
+    values = new Map([...members].map(([rep, list]) => [rep, computePercentile([...list].sort((a, b) => a - b), 50)]));
+    institutions = new Map([...members.keys()].map((rep) => [rep, charterOf.get(rep)]));
   }
   let bankCount = 0;
   let cuCount = 0;
