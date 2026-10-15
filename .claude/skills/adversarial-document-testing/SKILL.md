@@ -63,8 +63,10 @@ lists every case the deployed code gets wrong, graded by `src/lib/agents/deming/
    uses the check that should have caught it, e.g. `severityFor("hamilton.limit_guard", ...)`
    (critical) or `severityFor("hamilton.source_check", reason)`; a correct fee wrongly refused
    is a missed valid fee (major).
-5. To keep a case, propose it as a unit test in the suite for that checker (a normal code PR that
-   waits for CI). `eval_cases` dataset `adversarial` is not written by any step yet
+5. To keep a case, propose it as a unit test in the suite for that checker, or as a case in the
+   hard-document gate (`src/lib/agents/deming/__fixtures__/hard-documents.json`, run in CI by
+   `npm run test:quality-gates`, #1067) when it is a stored line cited by document and text hash;
+   a case the rules still miss goes under `known_misses` (a normal code PR that waits for CI). `eval_cases` dataset `adversarial` is not written by any step yet
    (`src/lib/agents/deming/AGENTS.md`); do not insert rows by hand.
 
 ## Output

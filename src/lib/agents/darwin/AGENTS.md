@@ -17,7 +17,7 @@ Darwin owns verification and classification.
 |---|---|---|
 | `missing_canonical` | a valid canonical hint | rejected |
 | `missing_name` | a non-empty fee name | rejected |
-| `category_mismatch` | for the guarded categories, the fee name names its category and not a different fee (`src/lib/fee-category-guard.ts`); a name that names a neighbouring guarded category is re-filed there first (`refileCategory`) | rejected |
+| `category_mismatch` | for the guarded categories, the fee name names its category and not a different fee (`src/lib/fee-category-guard.ts`); a name that names a neighbouring guarded category is re-filed there first (`refileCategory`). Guard v62 (#1100) also reads the row's own source line: a monthly maintenance row whose line charges its price per withdrawal, debit, transaction, transfer or item fails, and one charged per activity over a limit is re-filed to account research first (`refileFromLine`) | rejected |
 | `missing_lineage` | a source URL or stored document key | rejected |
 | `percent_not_publishable` | a fee stated as a rate ("1.1% of the transaction") is filed under a category that publishes rates (`PERCENT_FEE_RANGES` in `src/lib/percent-fees.ts`: foreign transaction, cash advance, coin counting, late payment); elsewhere a rate is often an interest rate, not a fee. A rate that passes needs `rate_percent` and no dollar amount (else `invalid_amount`) and a rate inside that category's range (else `outside_envelope`), and its source check is `checkRateAgainstSource` | rejected |
 | `invalid_amount` | an amount; $0 only with Knox's `knox_review:zero` flag | rejected |
@@ -37,6 +37,27 @@ Darwin owns verification and classification.
   once more. The hold list (`DARWIN_CATEGORY_HOLDS`) is empty. Its one entry, "Bond return items"
   $35 filed `nsf` (raw 246460, 2026-10-09), left when guard v58 learned that a returned bond or
   coupon filed as NSF is a returned deposited item.
+- A Knox category change is a reason to judge a row again (#1295, `category-change.ts`): new
+  category, new decision. A row qualifies only when Knox marked it as re-read (`knox_reread_took_over`,
+  `knox_stale_hint_repaired`, or `knox_refiled_from:<old>` from #1291), it waits for Darwin
+  unverified, no decision was judged under today's category or today's `refileCategory` of it, and
+  each decision was made under an earlier Knox category. A decision says so by its `knox_category`
+  (recorded from #1295 on). An older one needs proof from the row's flags: a `knox_refiled_from:`
+  or `knox_stale_hint_repaired` marker (written when Knox's category changes on a row Darwin had
+  judged), or a judged category that is another `canonical_hint:` flag still on the row. Without
+  proof the decision may be an older Darwin re-file of today's category, and the row is left
+  alone: raw 132922, "Collection Items (plus any bank fees)" $20, a plain take-over filed
+  `collection_item` and judged `check_cashing`, while today's re-file keeps `collection_item`.
+  The same free checks decide, the shared source check among them, and the new decision records
+  today's category, so a row is judged once per category. Switched off
+  (`DARWIN_CATEGORY_CHANGE_REJUDGE_LIVE = false`): each verify step, a dry run included, writes the
+  candidate count, their earlier reasons and a 25-row sample to `detail.category_change_rejudge`
+  and judges nothing; the read runs in a savepoint, so a failed count never fails the step. On, up
+  to 100 a step join the batch. Measured Oct 14 (after #1291 merged): 0 rows qualify; the SQL
+  selection reads 1 row (132922), which the proof rule leaves alone. The 8 take-over rows with a
+  stale first flag qualify once #1291's repair (inside its switched-off re-file pass) runs, and the
+  re-file pass adds its rows when it is on. The 216 rows #1093 step 2 sent back carry the category
+  they were rejected under, so this rule does not reach them.
 - `not_in_source` (2026-10-06) runs the same check Hamilton's live-fee source check runs, so a
   fee the bank's schedule does not state is stopped before it is verified instead of being
   published and then taken down. It joined version 3 without a bump: a bump re-selects every
@@ -88,9 +109,53 @@ Darwin owns verification and classification.
   (`fee_audience`, `unknown` when unset), so a consumer and a business fee are not duplicates of
   each other. A duplicate recorded under an older key version on a current copy with no verified
   twin on that same document is selected once more.
+- Darwin decides each verified fee's audience (#1059; James, Oct 13). A label Knox read on the
+  fee's own line stands. A fee Knox left `unknown` takes Knox's context suggestion
+  (`knox/audience-context.ts`, via `darwin/audience.ts`), in this order: the schedule's address,
+  then the section heading above the fee's line, then its title, a schedule that prices nothing
+  for businesses (consumer), or a schedule that also prices business items and does not limit
+  the fee (both). In a schedule that also prices business items, a heading for all accounts
+  gives both, and a heading naming one audience leaves the fee `unknown` unless it is a business
+  heading under a business schedule title: on unseen schedules those headings agreed with a blind
+  reading on 14 of 36 fees (#1059, Oct 14). A business heading never takes the consumer default.
+  The evidence is written as `darwin:<source>: <words>`, and migration 20270110000047 lets the
+  audience trigger keep a `darwin:` decision on the verified row (every other verified write
+  still inherits the raw row's audience). The decision is the audience the batch duplicate key,
+  the consumer peer check and the second-source check read, and it is recorded on the
+  `verify.rules` attempt (`fee_audience`, `audience_evidence`).
+- The audience relabel (`audience-relabel.ts`, step `audience-relabel`, #1059 step 3) gives the
+  same decision to live fees verified as `unknown` before migration 20270110000047, reading each
+  document's newest text. A fee it cannot decide stays `unknown`. No provider calls. Each step
+  reads at most `AUDIENCE_RELABEL_DOCUMENTS_PER_STEP` documents (by document id, after the
+  run's `after_document_id`) and reports `next_after_document_id` and `remaining_documents`; the
+  tick queues the next batch from that cursor until none remain. `AUDIENCE_RELABEL_MODE` is `off`
+  until James switches it, in its own PR:
+  - `off`: the tick queues one dry run a day over a sample of documents (md5 order by day) that
+    counts decisions by audience and evidence source, and writes nothing.
+  - `dry_run_full` (shipped, the gate before live): the same cursor chain as live over every
+    document, one batch per tick, key chain `darwin:audience-relabel:dry:v1:after:<cursor>`,
+    writing nothing but each batch's counts. The last batch adds the chain's totals to its detail
+    (`dry_run_totals`) and writes an `audience_relabel.dry_run_totals` event. Live waits until the
+    totals show unknown at most 10%, and consumer, both and business each within about 5 points
+    of the sample's 70.5 / 23.3 / 2.2. A run does what it was queued for (`params.mode`).
+  - `live`: before any write, each fee's old value is recorded as an `audience_relabeled` row in
+    `pipeline_feedback` (weight 0). Then the verified row takes the `darwin:` decision, and the
+    live published row is touched so the trigger copies it.
+  - `rollback`: every recorded fee still carrying the relabel's evidence goes back to `unknown`
+    with its old evidence, and the trigger copies the raw row's audience back (the old value),
+    in batches of `AUDIENCE_RELABEL_ROLLBACK_PER_STEP`.
+  Live and rollback refuse to start (the tick queues nothing, and a step that finds the trigger
+  without `darwin:` fails) until migration 20270110000047 is present. On a random 150 of the
+  7,949 documents (1,509 of the 77,268 live unknown fees, 14 Oct 2026), it decided 1,064
+  consumer, 351 both, 33 business and left 61 unknown.
 - Every decision is written to `pipeline_attempts` (stage `verify`, fingerprint
   `raw:<fee_raw_id>`) with `decision` and `reason_code`; a row decided under this rule
   version is never selected again, so skipped rows cannot starve the batch.
+- Which rows are due is one SQL test, `darwinDueSql` (`darwinStandingDecisionSql` for the
+  decision part) in `verify.ts`, read by the selection, the state-lane scheduler's backlog check
+  and the daily health check (#1052, 2026-10-14). Before, the scheduler and health counted only
+  rows with no decision, so a row due again after a guard bump in a state with nothing else to do
+  never woke a lane: 26 rows in Puerto Rico and Guam waited from Oct 9 and Oct 13.
 - Review signals carry `reason_counts` keyed by code, and the category range for
   `outside_envelope` rows.
 - A verified $0 row carries the `zero_fee` flag, which is what lets Hamilton publish it.
@@ -321,7 +386,8 @@ Change this table and `agent-health.ts` in the same PR.
 | Rule | Number | Holds when |
 |---|---|---|
 | Steps do not fail | `stepsFailed` (24 h) | 0 |
-| Darwin keeps up | `undecided` (Knox rows waiting for the current verify version) | ≤ 500 (`DARWIN_VERIFY_MAX_LIMIT`) |
+| Darwin keeps up | `undecided` (Knox rows the verify step would select now: never decided, or due again after a guard, source-check, envelope or batch-key change; `darwinDueSql` in `verify.ts`) | ≤ 500 (`DARWIN_VERIFY_MAX_LIMIT`) |
+| No week-old waits | `waitingOver7d` (rows sent to Darwin over 7 days ago and never decided at this rule version) | 0 (`DARWIN_MAX_FIRST_DECISION_DAYS`) |
 | Fees Darwin passed survive the bank's own schedule | `sourceCheckTakedowns / published` (24 h) | ≤ 5% |
 
 Also recorded, without a rule: `stepsCompleted`, `spendUsd`, `decided`, `passed`.
@@ -333,6 +399,7 @@ fails a PR that changes one of these constants without updating its line here (#
 
 | Constant | Strategy | Version | File |
 |---|---|---|---|
+| `AUDIENCE_RELABEL_VERSION` | `darwin.audience_relabel` | v1 | `darwin/audience-relabel.ts` |
 | `DARWIN_ADJUDICATE_STRATEGY` | `verify.adjudicate` | v2 | `darwin/adjudicate.ts` |
 | `DARWIN_CATEGORY_MODEL_STRATEGY` | `verify.category_model` | v1 | `darwin/category-model.ts` |
 | `DARWIN_PEER_STRATEGY` | `verify.peer_range` | v3 | `darwin/peer-checks.ts` |

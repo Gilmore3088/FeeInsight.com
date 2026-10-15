@@ -199,6 +199,9 @@ export async function syncPipelineFeedback(
          AND fp.rolled_back_reason NOT LIKE 'article_page:%'
          -- The institution no longer operates: its fees were right when it did (closed-institution.ts).
          AND fp.rolled_back_reason NOT LIKE 'closed_institution:%'
+         -- Published with no traceable document: the lesson is publish's, and the repair writes
+         -- it with its rollback record (hamilton/source-link.ts), not one against Knox's read.
+         AND fp.rolled_back_reason NOT LIKE 'source_link_untraceable:%'
          AND NOT EXISTS (
            SELECT 1 FROM pipeline_feedback f
             WHERE f.dedupe_key = 'hamilton.takedown:pub:' || fp.fee_published_id || ':extract'

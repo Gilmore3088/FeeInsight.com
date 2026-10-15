@@ -13,12 +13,8 @@ import type { AnalyzeResponse } from "@/lib/hamilton/types";
 /** The message metadata key that carries the saved row's id to the Analyze screen. */
 export const SAVED_ANALYSIS_ID_KEY = "savedAnalysisId";
 
-const EARLIER_QUESTION = /\n\n\(For context, my previous question was: "[\s\S]*"\)$/;
-
-/** The question as the reader typed it, without the earlier question the screen appends. */
-export function questionOnly(text: string): string {
-  return text.replace(EARLIER_QUESTION, "").trim();
-}
+/** The question as the reader typed it, without the conversation context the screen appends. */
+export { questionOnly } from "@/lib/hamilton/conversation-context";
 
 /** The shared evidence gate (answer-gate.ts) on a written answer and the tool outputs it was written from. */
 export function writtenAnswerCheck(text: string, toolOutputs: readonly unknown[]): AnswerEvidenceCheck {

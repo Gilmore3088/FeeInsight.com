@@ -27,6 +27,7 @@
     "report of a fee under the wrong heading"
   ],
   "evaluation_suite": [
+    "src/lib/agents/deming/hard-documents.test.ts",
     "src/lib/fee-taxonomy.test.ts",
     "src/lib/fee-category-guard.test.ts",
     "src/lib/fee-fold.test.ts",

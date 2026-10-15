@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const { sqlMock, withTransactionMock, startAgentRunMock, syncStateLaneProfilesMock } = vi.hoisted(() => ({
-  sqlMock: vi.fn(),
+  // `sql.unsafe` fragments come back as their text, so a test can read them in the call's values.
+  sqlMock: Object.assign(vi.fn(), { unsafe: (text: string) => text }),
   withTransactionMock: vi.fn(),
   startAgentRunMock: vi.fn(),
   syncStateLaneProfilesMock: vi.fn(),
@@ -26,12 +27,14 @@ import {
   STATE_LANE_STEPS,
   laneIdempotencyKey,
   refreshLanePriorities,
+  LANE_PRIORITY_REFRESH_FAILED_EVENT,
   NEAR_READY_BANK_PRIORITY,
   NEAR_READY_GAP,
   REPORT_REQUEST_PRIORITY,
   MAX_ACTIVE_STATE_LANE_RUNS,
   STATE_LANE_STARVATION_HOURS,
   UNCOVERED_LEADER_PRIORITY,
+  COVERAGE_GAP_PRIORITY,
   DAILY_FULL_PASS_FIND_DUE,
   nextDayStart,
   nextMonthStart,
@@ -46,6 +49,8 @@ import {
   wakeLanesAfterRecovery,
   wakeLanesWithPendingSecondLooks,
 } from "./state-lane-scheduler";
+import { darwinDueSql } from "./darwin/verify";
+import { CATEGORY_GUARD_VERSION } from "@/lib/fee-category-guard";
 import { KNOX_EXTRACT_MAX_LIMIT } from "./knox/extract";
 import { ROSETTA_READ_MAX_LIMIT } from "./rosetta/read";
 
@@ -223,14 +228,14 @@ describe("state lane scheduler", () => {
     expect(query).toContain("prior.id <> adt.id");
   });
 
-  it("counts raw rows Darwin has not decided as backlog", async () => {
+  it("counts raw rows Darwin's verify step would select as backlog, re-checks after a guard bump included", async () => {
     mockCadence({ fullThisMonth: true, recheckThisQuarter: true, backlog: true });
 
-    await stateHasDocumentBacklog("PA");
+    await stateHasDocumentBacklog("GU");
 
-    const query = templateText(sqlMock.mock.calls[0][0]);
-    expect(query).toContain("needs_darwin_verification");
-    expect(query).toContain("FROM verified_fee_observations fv");
+    // #1052: the same test the selection runs, so Guam's 9 rows due under guard v61 wake its lane.
+    expect(sqlMock.mock.calls[0]).toContain(darwinDueSql());
+    expect(darwinDueSql()).toContain(`COALESCE((pa.detail->>'category_guard_version')::int, 0) < ${CATEGORY_GUARD_VERSION}`);
   });
 
   it("syncs every state's profiles only on the first tick of each hour", async () => {
@@ -441,9 +446,65 @@ describe("state lane scheduler", () => {
 
   it("scores each lane by banks with open work or a recent error", async () => {
     sqlMock.mockImplementation(() => Promise.resolve(Object.assign([], { count: 7 })));
-    await expect(refreshLanePriorities()).resolves.toBe(7);
+    await expect(refreshLanePriorities()).resolves.toEqual({ updated: 7, error: null });
     const query = sqlMock.mock.calls.map((call) => templateText(call[0])).find((text) => text.includes("SET priority_score"));
     for (const part of ["due_search", "stale", "unchecked", "takedowns"]) expect(query).toContain(part);
+  });
+
+  it("says why a priority refresh failed instead of returning a silent 0 (#1264)", async () => {
+    sqlMock.mockImplementation((strings: unknown) =>
+      templateText(strings).includes("SET priority_score")
+        ? Promise.reject(new Error("canceling statement due to statement timeout"))
+        : Promise.resolve([]),
+    );
+    await expect(refreshLanePriorities()).resolves.toEqual({ updated: 0, error: "canceling statement due to statement timeout" });
+  });
+
+  it("puts a failed priority refresh on the newest lane run when the tick starts none (#1264)", async () => {
+    sqlMock.mockImplementation((strings: unknown) => {
+      const text = templateText(strings);
+      if (text.includes("SET priority_score")) return Promise.reject(new Error("statement timeout"));
+      if (text.includes("INSERT INTO public.agent_run_events")) return Promise.resolve([{ agent_run_id: 9001 }]);
+      return Promise.resolve([{ runs: MAX_ACTIVE_STATE_LANE_RUNS }]);
+    });
+
+    const result = await scheduleDueStateLaneRuns({ limit: 3, now: new Date("2026-10-14T09:02:00Z") });
+
+    expect(result.priorities).toEqual({ updated: 0, error: "statement timeout" });
+    const insert = sqlMock.mock.calls.find((entry) => templateText(entry[0]).includes("INSERT INTO public.agent_run_events"));
+    expect(insert).toBeDefined();
+    const text = templateText(insert?.[0]);
+    expect(text).toContain("run_kind = 'workflow_lane'");
+    expect(text).toContain("ORDER BY id DESC");
+    expect(insert?.slice(1)).toEqual(expect.arrayContaining([[], LANE_PRIORITY_REFRESH_FAILED_EVENT]));
+    expect(insert?.slice(1).some((value) => typeof value === "string" && value.includes("kept its previous score") && value.includes("statement timeout"))).toBe(true);
+  });
+
+  it("puts a failed priority refresh on each lane run the same tick starts (#1264)", async () => {
+    mockCadence({ fullThisMonth: false, recheckThisQuarter: true });
+    const cadence = sqlMock.getMockImplementation();
+    sqlMock.mockImplementation((strings: TemplateStringsArray, ...values: unknown[]) => {
+      const text = templateText(strings);
+      if (text.includes("SET priority_score")) return Promise.reject(new Error("statement timeout"));
+      if (text.includes("INSERT INTO public.agent_run_events")) return Promise.resolve([{ agent_run_id: 77 }]);
+      if (text.includes("count(*)::int AS runs")) return Promise.resolve([{ runs: 0 }]);
+      return cadence?.(strings, ...values);
+    });
+    const txMock = vi.fn().mockResolvedValue([{ state_code: "PA" }]);
+    withTransactionMock.mockImplementation((fn: (tx: typeof txMock) => unknown) => fn(txMock));
+
+    const result = await scheduleDueStateLaneRuns({ limit: 1, now: new Date("2026-10-14T09:02:00Z") });
+
+    expect(result.results.map((row) => row.runId)).toEqual([77]);
+    const insert = sqlMock.mock.calls.find((entry) => templateText(entry[0]).includes("INSERT INTO public.agent_run_events"));
+    expect(insert?.slice(1)).toEqual(expect.arrayContaining([[77], LANE_PRIORITY_REFRESH_FAILED_EVENT]));
+  });
+
+  it("leaves no ledger event when the priority refresh works", async () => {
+    sqlMock.mockImplementation(() => Promise.resolve(Object.assign([{ runs: MAX_ACTIVE_STATE_LANE_RUNS }], { count: 4 })));
+    const result = await scheduleDueStateLaneRuns({ limit: 3, now: new Date("2026-10-14T09:02:00Z") });
+    expect(result.priorities).toEqual({ updated: 4, error: null });
+    expect(sqlMock.mock.calls.some((entry) => templateText(entry[0]).includes("INSERT INTO public.agent_run_events"))).toBe(false);
   });
 
   it("puts states with an open report request or a near-ready bank market first", async () => {
@@ -471,6 +532,23 @@ describe("state lane scheduler", () => {
     const call = sqlMock.mock.calls.find((entry) => templateText(entry[0]).includes("SET priority_score"));
     expect(templateText(call?.[0])).toContain("leaders AS");
     expect(call?.slice(1)).toEqual(expect.arrayContaining([[117, 281], UNCOVERED_LEADER_PRIORITY]));
+  });
+
+  it("adds each state's coverage gap under $10B, from the scorecard's own groups (#1117)", async () => {
+    sqlMock.mockImplementation(() => Promise.resolve(Object.assign([], { count: 0 })));
+    await refreshLanePriorities();
+    const call = sqlMock.mock.calls.find((entry) => templateText(entry[0]).includes("SET priority_score"));
+    const text = templateText(call?.[0]);
+    expect(text).toContain("coverage_gap AS");
+    expect(text).toContain("SUM(short)");
+    expect(text).toMatch(/\*\s+COALESCE\(coverage_gap\.short, 0\)/);
+    expect(call?.slice(1)).toEqual(expect.arrayContaining([COVERAGE_GAP_PRIORITY]));
+    // The shared groups query: under $10B only, with the seven-days-ago columns left off hourly.
+    const groups = sqlMock.mock.calls.map((entry) => templateText(entry[0])).find((t) => t.includes("AS covered_week_ago") && t.includes("institution_sources i"));
+    expect(groups).toContain("GREATEST(0, target - covered)");
+    expect(sqlMock.mock.calls.some((entry) => templateText(entry[0]).includes("fp.published_at <"))).toBe(false);
+    // At most 90 short (three groups of 30) stays below report demand.
+    expect(90 * COVERAGE_GAP_PRIORITY).toBeLessThan(REPORT_REQUEST_PRIORITY);
   });
 
   it("casts every number it sends, since an uncast $1 - $2 fails to plan", async () => {

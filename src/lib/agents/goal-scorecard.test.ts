@@ -12,6 +12,7 @@ import {
   readGoalScorecard,
   reasonKey,
   summarizeCoverageCells,
+  summarizeStateGaps,
   summarizeWrongAfterPublish,
 } from "./goal-scorecard";
 
@@ -34,6 +35,38 @@ describe("coverage target (James, 2026-10-12, #1028)", () => {
     ]);
     expect(summary).toMatchObject({ readyCells: 2, totalCells: 4, institutionsShort: 20 + 7 });
     expect(summary.bySize.find((row) => row.size === "1b_10b")).toMatchObject({ readyCells: 0, totalCells: 1, institutionsShort: 7 });
+    expect(summary.byState).toBeUndefined();
+  });
+
+  it("sums each state's gap, largest first, with the gap a week ago and the institutions closing it (#1117)", () => {
+    const states = summarizeStateGaps([
+      { state_code: "TX", size_group: "under_300m", total: 200, covered: 20, covered_week_ago: 15, newly_covered: 6 },
+      { state_code: "TX", size_group: "1b_10b", total: 60, covered: 31, covered_week_ago: 28, newly_covered: 3 },
+      { state_code: "VT", size_group: "under_300m", total: 12, covered: 5, covered_week_ago: 5, newly_covered: 0 },
+      { state_code: "VT", size_group: "1b_10b", total: 0, covered: 0 },
+    ]);
+    expect(states).toEqual([
+      // under_300m: 10 short now, 15 a week ago, 6 added all close it; 1b_10b: ready now,
+      // 2 short a week ago, so 3 added close only 2. VT under_300m: 12 total, target 9.
+      { state: "TX", readyCells: 1, totalCells: 2, institutionsShort: 10, institutionsShortWeekAgo: 17, closingThisWeek: 8 },
+      { state: "VT", readyCells: 0, totalCells: 1, institutionsShort: 4, institutionsShortWeekAgo: 4, closingThisWeek: 0 },
+    ]);
+  });
+
+  it("puts the largest state gaps in the morning brief", () => {
+    const lines = goalBriefLines({
+      readAt: "2026-10-14T00:00:00Z", windowDays: 7,
+      coverageCells: {
+        query: "goal.coverage_cells", readyCells: 1, totalCells: 3, institutionsShort: 14, bySize: [],
+        byState: [
+          { state: "TX", readyCells: 1, totalCells: 2, institutionsShort: 10, institutionsShortWeekAgo: 17, closingThisWeek: 8 },
+          { state: "VT", readyCells: 0, totalCells: 1, institutionsShort: 4, institutionsShortWeekAgo: 4, closingThisWeek: 0 },
+          { state: "RI", readyCells: 1, totalCells: 1, institutionsShort: 0, institutionsShortWeekAgo: 0, closingThisWeek: 0 },
+        ],
+      },
+      liveInstitutions: null, accuracy: null, wrongAfterPublish: null, spend: null, knoxPasses: null, unstatedAudience: null,
+    });
+    expect(lines).toContain("Largest state gaps (institutions short now, 7 days ago): TX 10 (17), VT 4 (4).");
   });
 });
 
@@ -115,7 +148,7 @@ function fakeDb(answers: Array<[RegExp, unknown[] | Error]>) {
 
 describe("readGoalScorecard", () => {
   const answers: Array<[RegExp, unknown[] | Error]> = [
-    [/FROM inst\s+GROUP BY/, [{ state_code: "TN", size_group: "under_300m", total: 50, covered: 30 }]],
+    [/\) coverage_groups/, [{ state_code: "TN", size_group: "under_300m", total: 50, covered: 30, covered_week_ago: 27, newly_covered: 4 }]],
     [/AS added/, [{ live: 3900, added: 40 }]],
     [/deming-fresh-audit/, [{ created_at: new Date("2026-10-12T06:00:00Z"), detail: { right: 190, scorable: 200, accuracy: 0.95 } }]],
     [/refresh_copy/, [{ reason: null, count: 1000 }, { reason: "product_page: #1", count: 10 }]],
@@ -132,6 +165,13 @@ describe("readGoalScorecard", () => {
     const { db, queries } = fakeDb(answers);
     const goal = await readGoalScorecard(db, new Date("2026-10-12T07:00:00Z"));
     expect(goal.coverageCells).toMatchObject({ query: "goal.coverage_cells", readyCells: 1, totalCells: 1 });
+    // TN was 3 short a week ago; 4 newly live institutions closed those 3.
+    expect(goal.coverageCells?.byState).toEqual([
+      { state: "TN", readyCells: 1, totalCells: 1, institutionsShort: 0, institutionsShortWeekAgo: 3, closingThisWeek: 3 },
+    ]);
+    const groups = queries.find((q) => /AS covered_week_ago\s+FROM public\.institution_sources/.test(q));
+    expect(groups).toContain("asset_size <");
+    expect(queries.some((q) => /fp\.published_at < NOW\(\)/.test(q))).toBe(true);
     expect(goal.liveInstitutions).toMatchObject({ live: 3900, addedThisWeek: 40 });
     expect(goal.accuracy).toMatchObject({ accuracy: 0.95, audits: 1 });
     expect(goal.wrongAfterPublish).toMatchObject({ published: 1010, wrong: 10 });

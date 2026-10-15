@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { perEventPeriodCheck } from "./fee-frequency";
+import { continuousOverdraftPeriodCheck, maintenanceMonthlyFill, perEventPeriodCheck } from "./fee-frequency";
 
 // Live NSF and overdraft fees stored with a period on Oct 13 (#1196): id, key, name, amount, stated, line.
 const LIVE: Array<[number, string, string, number, string, string]> = [
@@ -60,23 +60,117 @@ const LIVE: Array<[number, string, string, number, string, string]> = [
 // the fee's own price states is held; a neighbour's or an allowance's period is cleared.
 const KEEP = new Set([19381, 92248, 92746, 112803, 136503]);
 const HOLD = new Set([27383, 40094, 61883, 64720, 64721, 65874, 65875, 85938, 128968, 140198]);
+// v13 (#1339): a corrected fee whose own name says per item takes per_item rather than none.
+const PER_ITEM = new Set([70692, 76864, 140929]);
 
 describe("perEventPeriodCheck on the live rows of Oct 13 (#1196)", () => {
   it.each(LIVE)("%i %s", (id, key, name, amount, stated, line) => {
     const check = perEventPeriodCheck(key, stated, line, amount, name);
     if (KEEP.has(id)) expect(check).toEqual({ action: "keep", frequency: stated });
     else if (HOLD.has(id)) expect(check?.action).toBe("hold");
-    else if (stated === "annual") expect(check).toBeNull();
-    else expect(check).toEqual({ action: "correct", frequency: null });
+    else expect(check).toEqual({ action: "correct", frequency: PER_ITEM.has(id) ? "per_item" : null });
   });
 
-  it("checks the 35 stored as monthly: 5 kept, 10 held, 20 cleared; the 15 annual wait", () => {
+  it("checks the 35 stored as monthly (5 kept, 10 held, 20 corrected), the 10 NSF stored as annual (v12) and the 5 overdraft stored as annual (v13)", () => {
     const checks = LIVE.map(([, key, name, amount, stated, line]) => perEventPeriodCheck(key, stated, line, amount, name)?.action ?? "none");
     expect(LIVE.filter((fee) => fee[4] === "monthly")).toHaveLength(35);
     expect(checks.filter((action) => action === "keep")).toHaveLength(5);
     expect(checks.filter((action) => action === "hold")).toHaveLength(10);
-    expect(checks.filter((action) => action === "correct")).toHaveLength(20);
-    expect(checks.filter((action) => action === "none")).toHaveLength(15);
+    expect(checks.filter((action) => action === "correct")).toHaveLength(35);
+    expect(checks.filter((action) => action === "none")).toHaveLength(0);
+  });
+});
+
+// v13 (#1339): live overdraft and returned-item fees stored with a period, and continuous overdraft
+// fees stored by the month or year, on Oct 15, by their own lines (read-only SQL, 00:40 UTC).
+describe("perEventPeriodCheck on overdraft and returned-item periods (#1339)", () => {
+  it.each([
+    // A daily cap ("Max 4 per day", "6 per day") is not the fee's frequency.
+    [36109, "overdraft", "Overdraft Fee (Max 5 items per day)", 29, "daily", "Overdraft Fee (Max 5 items per day) | $29.00 International Outgoing $40.00", "correct", null],
+    [124039, "overdraft", "Overdraft Protection – ODP (per item presentment)", 24, "daily", "Overdraft Protection – ODP*(per item presentment) | $24.00 (Not to exceed 5 charges per day)", "correct", "per_item"],
+    [128934, "overdraft", "Check Overdraft (ea. debit/draft paid) - and up (negative balance) 6 per day", 23, "daily", "Check Overdraft (ea. debit/draft paid) -$5.01 and up (negative balance) 6 per day: $23.00", "correct", "per_item"],
+    [65026, "deposited_item_return", "Returned Deposited Check, ACH, E$", 25, "daily", "Returned Deposited Check, ACH, E$) $25.00 Maximum one fee per business day", "correct", null],
+    // A price per day with no cap may be a continuous overdraft charge filed as overdraft.
+    [53088, "overdraft", "ACH Overdraft Fee", 5, "daily", "ACH Overdraft Fee | $5 per day", "hold", null],
+    [97385, "overdraft", "Overdraft Amount or more", 16, "daily", "Overdraft Amount $5,000 or more $16 per day (1) | Special Letters (Immigration, etc.) $10 per letter (1)", "hold", null],
+    // A waiver ("First 3 Wavied Annually", the bank's spelling) is not the fee's frequency.
+    [140928, "overdraft", "Non-Sufficient Funds – Overdraft (Per Paid Item)", 25, "annual", "Non-Sufficient Funds – Overdraft (Per Paid Item) | $25.00 | $25.00 | First 3 Wavied Annually | First 3 Wavied Annually | $25.00 | $25.00", "correct", null],
+    // A neighbour's period on a run-together line.
+    [53797, "deposited_item_return", "Deposited Item Returned (per item)", 10, "monthly", "Cashier's Check per check $7.00 Check cashing (non-customer) $5.00 Collection Item $15.00 Deposited Item Returned (per item) $10.00 Dormant Account Fee (per month) $5.00 A dormant ", "correct", "per_item"],
+    [21357, "deposited_item_return", "Returned Deposit Check", 10, "quarterly", "Returned Deposit Check $10.00 Invalid Address (per quarter) $5.00", "correct", null],
+    [20973, "deposited_item_return", "Deposited Check Returned Fee", 20, "monthly", "Deposited Check Returned Fee | each presentment $ 20.00 | Monthly Statement Copy | each copy $ | 5.00", "correct", null],
+    // Another fee filed as a returned item: a person re-files it.
+    [97431, "deposited_item_return", "Note: Select Money Market account balances that fall below the minimum Deposited items returned will not receive interes", 10, "monthly", "Note: Select Money Market account balances that fall below the minimum Deposited items returned will not receive interest and a $10 monthly fee will be charged. | Checks written by", "hold", null],
+    [120298, "deposited_item_return", "Return Deposit Item-Special Handling (per month)", 10, "monthly", "Return Deposit Item-Special Handling (per month) | $10.00", "hold", null],
+  ] as const)("%i %s %s", (_id, key, name, amount, stated, line, action, frequency) => {
+    const check = perEventPeriodCheck(key, stated, line, amount, name);
+    expect(check?.action).toBe(action);
+    if (action === "correct") expect(check).toEqual({ action, frequency });
+  });
+});
+
+describe("continuousOverdraftPeriodCheck (#1339)", () => {
+  it.each([
+    [87587, "Daily overdraft fee", 3, "monthly", "Daily overdraft fee………………………………$3.00 | Online Cash Management & Bill Pay……...……$19.95/month", { action: "correct", frequency: "daily" }],
+    [65200, "DAILY NEGATIVE BALANCE FEE", 1, "monthly", "DAILY NEGATIVE BALANCE FEE | $1.00/day or Cap Monthly", { action: "correct", frequency: "daily" }],
+    [103686, "Daily Overdraft Fee", 5, "annual", "annual addition to the $5.00 Daily Overdraft Fee.", { action: "correct", frequency: "daily" }],
+    [21572, "Continuous Overdraft Fee 2", 15, "annual", "Continuous Overdraft Fee 2 | $15.00 | Vault (per year) Sizes vary by location | $365.00", { action: "correct", frequency: null }],
+    [65321, "Service fee", 25, "monthly", "A service fee of $25.00 monthly will be charged to any account overdrawn more than 30 days.", { action: "keep", frequency: "monthly" }],
+  ] as const)("%i %s", (_id, name, amount, stated, line, expected) => {
+    expect(continuousOverdraftPeriodCheck("continuous_od", stated, line, amount, name)).toEqual(expected);
+  });
+
+  it("never reads a continuous overdraft fee stored as daily, or another category", () => {
+    expect(continuousOverdraftPeriodCheck("continuous_od", "daily", "Continuous OD | $5.00 per day", 5, "Continuous OD")).toBeNull();
+    expect(continuousOverdraftPeriodCheck("overdraft", "monthly", "Overdraft | $30.00 monthly", 30, "Overdraft")).toBeNull();
+  });
+});
+
+describe("maintenanceMonthlyFill (#1339)", () => {
+  it.each([
+    // The fee's own name or line says month or "per statement cycle".
+    [102189, "Monthly1 account service charge", 10, "Monthly1 account service charge is $10 if below minimum balance requirement.", "monthly"],
+    [137720, "Low monthly service fee: Personal", 9, "Personal: $9.00", "monthly"],
+    [136377, "Thrift Account Service charge", 3, "Fees and charges: A service charge of $3.00 will be charged each calendar month.", "monthly"],
+    [127971, "Service Charge per statement cycle (if balance falls below minimum average)", 10, "Service Charge per statement cycle (if balance falls below minimum average) ....$10.00", "monthly"],
+    [85313, "Minimumbalance service charge ifbalance fallsbelow", 10, "Minimumbalance service charge ifbalance fallsbelow | $10.00month Medallion Signature Guarantee | $10.00/each", "monthly"],
+    // "During the statement cycle" is when a balance is measured, not how often the fee is charged.
+    [38576, "Maintenance fee", 3, "$3.00 maintenance fee if balance falls below $100 any day in the statement cycle", null],
+    // Another basis or another service.
+    [62982, "Service charge", 4.5, "A service charge of $4.50 will be imposed each quarterly statement cycle if the average daily balance for the quarterly cycle falls below $100.00", null],
+    [142435, "Service charge fee", 15, "Minimum balance to avoid imposition of fees - A service charge fee of $15.00 will be imposed every four-week statement cycle if the balance in the account falls below", null],
+    [36489, "Monthly Fee: (per hour)", 25, "Monthly Fee | (per hour) ..................................................................................... $ 25.00", null],
+    [68803, "No monthly maintenance fees: Only", 25, "Only $25", null],
+    [21438, "Fresh Start Checking:Opening FeeMonthly Maintenance Fee", 25, "Fresh Start Checking:Opening FeeMonthly Maintenance Fee / $25.00$10.00", null],
+    [66759, "Service charge", 10, "If customer desires to start receiving paper states, a service charge of $10.00 will be imposed on every statement cycle. The customer will have the capability to request paper sta", null],
+    [112975, "service charge if more than 30 debits are posted to the account per statement cycle", 5, "$5 service charge if more than 30 debits are posted to the account per statement cycle", null],
+    [130438, "Account Maintenance Fee (after 6 months, account balance drops below $25)", 5, "Account Maintenance Fee (after 6 months, account balance drops below $25) | $5.00", null],
+    // The line must print the fee's price.
+    [55235, "in your account to avoid a service charge fee. If, during any month, your account balance falls below the required minim", 10, "You must maintain a minimum daily balance of $20,000 in your account to avoid a service charge fee. If, during any month, your account balance falls below the required minimum dail", null],
+  ] as const)("%i %s", (_id, name, amount, line, expected) => {
+    expect(maintenanceMonthlyFill("monthly_maintenance", null, line, amount, name)).toBe(expected);
+  });
+
+  it("fills only a blank monthly-maintenance fee", () => {
+    expect(maintenanceMonthlyFill("monthly_maintenance", "quarterly", "Monthly fee $10.00", 10, "Monthly fee")).toBeNull();
+    expect(maintenanceMonthlyFill("paper_statement", null, "Paper statement $2.00 per month", 2, "Paper statement")).toBeNull();
+  });
+});
+
+// v12 (#1301): live NSF fees stored as daily on Oct 14, by their own lines. A daily cap prices each
+// item, so the period goes; a daily price with no cap is held for a person.
+describe("perEventPeriodCheck on NSF fees stored as daily (#1301)", () => {
+  it.each([
+    ["NSF Returned Item Fee $30.00 (max $180.00 daily)", 30, "correct"], // 36057
+    ["InsufficientFunds (NSF) *Max4 per day | $32.00 Per ttem/Per", 32, "correct"], // 50906
+    ["9. NSF Fees: You will be assessed an NSF fee of $25 for items presented over $10, not to exceed 5 fees charged per day.", 25, "correct"], // 113638
+    ["Returned checks, each: $30.00 (No maximum per day)", 30, "correct"], // 135141
+    ["NSF/UCF Fee $30 Per Day", 30, "hold"], // 55006
+    ["Daily NSF Fee ...................................................................................................................... $5.00", 5, "hold"], // 93271
+    ["Returned Check/Item | $30.00 per day, per account", 30, "hold"], // 117212
+    ["(Per Day) | $10", 10, "hold"], // 67011
+  ])("%s", (line, amount, action) => {
+    expect(perEventPeriodCheck("nsf", "daily", line, amount, "NSF")?.action).toBe(action);
   });
 });
 
@@ -85,7 +179,12 @@ describe("perEventPeriodCheck", () => {
     expect(perEventPeriodCheck("monthly_maintenance", "monthly", "Maintenance | $5.00 per month", 5, "Maintenance")).toBeNull();
     expect(perEventPeriodCheck("nsf", "per_item", "NSF | $30.00 each", 30, "NSF")).toBeNull();
     expect(perEventPeriodCheck("nsf", null, "NSF | $30.00", 30, "NSF")).toBeNull();
-    expect(perEventPeriodCheck("nsf", "annual", "Bill Pay NSF Fee | $25.00 (1 waived per year.)", 25, "Bill Pay NSF Fee")).toBeNull();
+    expect(perEventPeriodCheck("continuous_od", "daily", "Continuous OD | $5.00 per day", 5, "Continuous OD")).toBeNull();
+  });
+
+  it("reads an annual waiver on an overdraft fee as no period (v13)", () => {
+    expect(perEventPeriodCheck("overdraft", "annual", "Overdraft Fee | $25.00 (1 waived per year.)", 25, "Overdraft Fee"))
+      .toEqual({ action: "correct", frequency: null });
   });
 
   it("gives a cleared period the line's per-item reading", () => {

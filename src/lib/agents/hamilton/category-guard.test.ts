@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { restoreTarget, runHamiltonCategoryGuard } from "./category-guard";
+import { movesExcessActivityFee, restoreTarget, runHamiltonCategoryGuard, uniqueRefiles } from "./category-guard";
 import { checkFeeCategory } from "@/lib/fee-category-guard";
 
 function templateText(strings: unknown): string {
@@ -125,6 +125,17 @@ describe("Hamilton category guard repair", () => {
     expect(restoreTarget({ ...row, canonical_fee_key: "card_replacement", fee_name: "Visa Check Card Replacement", amount: "10.00" })).toBe("card_replacement");
   });
 
+  it("re-files an excess activity charge filed as monthly maintenance from its own line, and leaves other activity charges (guard v62)", () => {
+    const note = (line: string) => `Knox deterministic extraction from Rosetta artifact #13538. canonical_hint=monthly_maintenance; excerpt="${line}"`;
+    const row = { canonical_fee_key: "monthly_maintenance", fee_name: "Service charge", document_nsf_amount: null };
+    // Live fee 60814's source line (Oct 14).
+    expect(restoreTarget({ ...row, amount: "2.00", conditions: note("Service charge of $2 per debit in excess of 6 withdrawals per quarter") })).toBe("account_research");
+    // Live fee 142257's line: a transfer charge has no one home, so it is not re-filed.
+    expect(restoreTarget({ ...row, amount: "5.00", conditions: note("1A $5.00 service charge will be applied to each share transfer.") })).toBeNull();
+    // The account's own fee with a per-check charge on top stays where it is.
+    expect(restoreTarget({ ...row, amount: "10.00", conditions: note("a service charge of $10.00 and $.25 per check is assessed.*") })).toBe("monthly_maintenance");
+  });
+
   it("brings a night deposit bag key back as a night deposit fee, and leaves bag supplies down (guard v60)", () => {
     const row = { conditions: null, document_nsf_amount: null };
     expect(restoreTarget({ ...row, canonical_fee_key: "safe_deposit_box", fee_name: "Depository Replacement Key", amount: "5.00" })).toBe("night_deposit");
@@ -195,6 +206,76 @@ describe("Hamilton category guard repair", () => {
     expect(writes.some((text) => text.includes("rolled_back_at = NOW()"))).toBe(false);
     const move = db.mock.calls.find((call) => templateText(call[0]).includes("v.from_key"));
     expect([move?.[1], move?.[2], move?.[3]]).toEqual([[95142], ["money_order"], ["account_research"]]);
+  });
+
+  it("re-files an excess withdrawal fee beside the bank's unrelated research fee at its price (#1283 review)", async () => {
+    const note = (line: string) => `Knox deterministic extraction from Rosetta artifact #1. canonical_hint=monthly_maintenance; excerpt="${line}"`;
+    const fee = (id: number, inst: number, name: string, amount: string, line: string) => ({
+      fee_published_id: id, lineage_ref: id + 100000, institution_id: inst, source_document_id: 1,
+      canonical_fee_key: "monthly_maintenance", fee_name: name, amount, conditions: note(line), document_nsf_amount: null,
+    });
+    // Live fees 124670 and 142436's own lines (Oct 15).
+    const maintenance = fee(124670, 5502, "Maintenance fee", "5.00", "A maintenance fee of $5.00 per transaction will be charged if you make more than two withdrawals during a 12 month period.");
+    const perItem = fee(142436, 3167, "Per item service charge fee", "25.00", "A per item service charge fee of $25.00 will be charged for each transaction in excess of the above limitations.");
+    expect(restoreTarget(maintenance)).toBe("account_research");
+    expect(restoreTarget(perItem)).toBe("account_research");
+    expect(movesExcessActivityFee({ row: maintenance, to: "account_research" })).toBe(true);
+    // A plain hand re-file is not an excess activity fee: only a same-name live fee stops it.
+    const research = { ...fee(95142, 8581, "Money Order Research Fee", "10.00", "x"), canonical_fee_key: "money_order", conditions: null };
+    expect(movesExcessActivityFee({ row: research, to: "account_research" })).toBe(false);
+    // Two copies of one line are one fee; an excess fee and an unrelated fee at one price are two.
+    const copy = { ...maintenance, fee_published_id: 999 };
+    const other = { ...research, institution_id: 5502, amount: "5.00" };
+    expect(uniqueRefiles([{ row: maintenance, to: "account_research" }, { row: copy, to: "account_research" }]).map((r) => r.row.fee_published_id)).toEqual([124670]);
+    expect(uniqueRefiles([{ row: maintenance, to: "account_research" }, { row: other, to: "account_research" }])).toHaveLength(2);
+    // Any other move keeps the old rule: two express card lines at one bank and price are one fee.
+    const express = (id: number, name: string) => ({ ...research, fee_published_id: id, institution_id: 6042, canonical_fee_key: "card_replacement", fee_name: name, amount: "40.00" });
+    expect(uniqueRefiles([
+      { row: express(350, "Replacement Card - Express Mail"), to: "rush_card" },
+      { row: express(27687, "Replacement Card Shipped via Express Mail"), to: "rush_card" },
+    ]).map((r) => r.row.fee_published_id)).toEqual([350]);
+
+    const db = vi.fn((strings: TemplateStringsArray, ...values: unknown[]) => {
+      const text = templateText(strings);
+      if (text.includes("to_regclass('public.pipeline_feedback')")) return Promise.resolve([{ ready: true }]);
+      if (text.includes("UPDATE published_fee_records") && text.includes("v.from_key")) {
+        return Promise.resolve((values[0] as number[]).map((id, i) => ({ fee_published_id: id, lineage_ref: id + 100000, canonical_fee_key: (values[2] as string[])[i] })));
+      }
+      if (text.includes("rolled_back_at IS NOT NULL")) return Promise.resolve([]);
+      if (text.includes("FROM published_fee_records")) return Promise.resolve([maintenance]);
+      return Promise.resolve([]);
+    });
+    const result = await runHamiltonCategoryGuard({ runId: 23, db: db as unknown as GuardDb });
+    expect(result).toMatchObject({ liveRefiledFees: 1, failingFees: 0 });
+    const move = db.mock.calls.find((call) => templateText(call[0]).includes("v.from_key") && templateText(call[0]).includes("UPDATE"));
+    const sqlText = templateText(move?.[0]);
+    // The twin test needs the same name, or an excess activity fee when one moves; price alone is not enough.
+    expect(sqlText).toContain("lower(btrim(live.fee_name)) = lower(btrim(fp.fee_name))");
+    expect(sqlText).toContain("AND (NOT v.excess");
+    expect(sqlText).toContain("OR live.fee_name ~*");
+    expect(move?.[4]).toEqual([true]);
+  });
+
+  it("re-files only one of two express card lines at one price, and lets any live rush card fee at that price block them (live path)", async () => {
+    const card = (id: number, name: string) => ({ fee_published_id: id, lineage_ref: id + 100000, institution_id: 6042, source_document_id: 1, canonical_fee_key: "card_replacement", fee_name: name, amount: "40.00", conditions: null, document_nsf_amount: null });
+    const rows = [card(350, "Replacement Card - Express Mail"), card(27687, "Replacement Card Shipped via Express Mail")];
+    expect(rows.map((row) => restoreTarget(row))).toEqual(["rush_card", "rush_card"]);
+    const db = vi.fn((strings: TemplateStringsArray, ...values: unknown[]) => {
+      const text = templateText(strings);
+      if (text.includes("to_regclass('public.pipeline_feedback')")) return Promise.resolve([{ ready: true }]);
+      if (text.includes("UPDATE published_fee_records") && text.includes("v.from_key")) {
+        return Promise.resolve((values[0] as number[]).map((id, i) => ({ fee_published_id: id, lineage_ref: id + 100000, canonical_fee_key: (values[2] as string[])[i] })));
+      }
+      if (text.includes("rolled_back_at IS NOT NULL")) return Promise.resolve([]);
+      if (text.includes("FROM published_fee_records")) return Promise.resolve(rows);
+      return Promise.resolve([]);
+    });
+    await runHamiltonCategoryGuard({ runId: 24, db: db as unknown as GuardDb });
+    const move = db.mock.calls.find((call) => templateText(call[0]).includes("v.from_key") && templateText(call[0]).includes("UPDATE"));
+    // One fee per bank, type and price: only 350 is sent to move, and not as an excess activity fee.
+    expect([move?.[1], move?.[4]]).toEqual([[350], [false]]);
+    // In SQL, a move that is not an excess activity fee is blocked by any live fee of that type and price.
+    expect(templateText(move?.[0])).toContain("AND (NOT v.excess");
   });
 
   it("brings an express card replacement back as the rush card fee, once per institution and price", async () => {

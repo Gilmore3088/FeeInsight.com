@@ -4,6 +4,8 @@ import {
   accountNameFor,
   additionalDocumentRole,
   classifyCompanionLink,
+  disclosureIndexDocuments,
+  isDocumentIndexPage,
   isGenericAccountName,
   MAX_SEARCH_PAGES_PER_BANK,
   runSecondDocumentFind,
@@ -15,6 +17,7 @@ import {
   siteSearchUrls,
   THIN_BANK_CATEGORY_LIMIT,
 } from "./second-document";
+import { urlIdentity } from "./finders";
 
 type DbMock = ReturnType<typeof vi.fn>;
 
@@ -254,7 +257,7 @@ describe("Magellan site search for fee schedules and agreements", () => {
 
     const result = await runSecondDocumentFind({ db: asDb(db), fetchImpl, runId: 7, deadline: Date.now() + 60_000, learning: true, searchRotation: 0 });
 
-    expect(SECOND_DOCUMENT_FINDER.version).toBe(3);
+    expect(SECOND_DOCUMENT_FINDER.version).toBe(4);
     expect(result).toMatchObject({ status: "ran", checked: 1, found: 1 });
     expect(result.results[0].pages).toEqual([
       expect.objectContaining({
@@ -351,5 +354,128 @@ describe("market leaders without a live overdraft fee", () => {
     expect(thinQueries[0].values).toContain(2);
     // The state's own query leaves out the leader already taken.
     expect(thinQueries[1].values).toContainEqual([839]);
+  });
+});
+
+describe("Magellan companion finder: disclosure index pages (#1051)", () => {
+  const site = new URL("https://www.jonesboro.example/");
+  const index = "https://www.jonesboro.example/agreements-and-disclosures";
+  const links = [
+    { url: "https://www.jonesboro.example/uploads/files/a81f", label: "Download" },
+    { url: "https://www.jonesboro.example/uploads/consumer-information.pdf", label: "Consumer Information" },
+    { url: "https://www.jonesboro.example/uploads/privacy-notice.pdf", label: "Privacy Notice" },
+    { url: "https://www.jonesboro.example/uploads/business-services.pdf", label: "Business Services" },
+    { url: "https://www.jonesboro.example/uploads/home-equity.pdf", label: "Home Equity Disclosure" },
+    { url: "https://www.jonesboro.example/uploads/fee-schedule.pdf", label: "Fee Schedule" },
+    { url: "https://www.jonesboro.example/personal/checking", label: "Checking" },
+  ];
+
+  it("offers an index page's untitled documents, never its privacy, loan or business ones", () => {
+    const found = disclosureIndexDocuments(index, links, site, new Set());
+    expect(found.map((candidate) => candidate.url)).toEqual([
+      "https://www.jonesboro.example/uploads/files/a81f",
+      "https://www.jonesboro.example/uploads/consumer-information.pdf",
+    ]);
+    expect(found[0]).toMatchObject({ kind: "fee_document", foundOn: index, source: "hub_link", reasons: ["disclosure_index"] });
+    // "Fee Schedule" is a fee document by name: the normal path opens it, ahead of these.
+    expect(classifyCompanionLink(links[5], site)?.kind).toBe("fee_document");
+    expect(found[0].score).toBeLessThan(classifyCompanionLink(links[5], site)!.score);
+  });
+
+  it("is only for index pages that list several documents", () => {
+    expect(isDocumentIndexPage(index)).toBe(true);
+    expect(isDocumentIndexPage("https://www.jonesboro.example/disclosures")).toBe(true);
+    expect(isDocumentIndexPage("https://www.jonesboro.example/personal/checking")).toBe(false);
+    expect(isDocumentIndexPage("https://www.jonesboro.example/uploads/disclosures.pdf")).toBe(false);
+    // #1306: the word must start a segment or a word in one.
+    expect(isDocumentIndexPage("https://www.jonesboro.example/forms-documents")).toBe(true);
+    expect(isDocumentIndexPage("https://www.jonesboro.example/digital-platforms")).toBe(false);
+    // Run-together names still count (209 stored addresses, Oct 14).
+    expect(isDocumentIndexPage("https://www.bank.example/ConsumerDisclosures")).toBe(true);
+    expect(isDocumentIndexPage("https://www.bank.example/AccountAgreements")).toBe(true);
+    expect(disclosureIndexDocuments("https://www.jonesboro.example/personal/checking", links, site, new Set())).toEqual([]);
+    expect(disclosureIndexDocuments(index, links.slice(0, 1), site, new Set())).toEqual([]);
+    // A document already stored for the bank is not offered again.
+    expect(disclosureIndexDocuments(index, links, site, new Set([urlIdentity(links[0].url)])).map((candidate) => candidate.url)).toEqual([
+      "https://www.jonesboro.example/uploads/consumer-information.pdf",
+    ]);
+  });
+
+  it("keeps the schedule an index page links to under a generic name", async () => {
+    const bank = {
+      id: 899,
+      institution_name: "Jonesboro State Bank",
+      state_code: "LA",
+      website_url: "https://www.jonesboro.example",
+      fee_schedule_url: index,
+      categories: 0,
+    };
+    const db = createDb(true, [bank]);
+    const SCHEDULE = `<h1>Schedule of Fees and Charges</h1><p>Overdraft fee $30.00 per item</p><p>NSF fee $30.00 per item</p>
+      <p>Stop payment $25.00</p><p>Incoming wire $15.00</p><p>Monthly service charge $8.00</p>`;
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "https://www.jonesboro.example/") return html(`<a href="/agreements-and-disclosures">Disclosures</a>`);
+      if (url === index) {
+        return html(`<h1>Agreements, Disclosures, and Terms of Use</h1><p>Internet Banking Agreement ... a stop payment fee may apply.</p>
+          <a href="/uploads/files/a81f">Download</a><a href="/uploads/consumer-information.pdf">Consumer Information</a>
+          <a href="/uploads/privacy-notice.pdf">Privacy Notice</a>`);
+      }
+      if (url === "https://www.jonesboro.example/uploads/files/a81f") return html(SCHEDULE);
+      return notFound();
+    });
+
+    const result = await runSecondDocumentFind({ db: asDb(db), fetchImpl, runId: 9, deadline: Date.now() + 60_000, learning: true, hiddenTopUp: false });
+
+    expect(result.results[0].pages).toEqual([
+      expect.objectContaining({ url: "https://www.jonesboro.example/uploads/files/a81f", kind: "fee_document" }),
+    ]);
+    expect(result.results[0].indexDocumentsChecked).toBe(2);
+    const opened = fetchImpl.mock.calls.map((call) => String(call[0]));
+    expect(opened).not.toContain("https://www.jonesboro.example/uploads/privacy-notice.pdf");
+    const attempt = db.mock.calls.find((call) => templateText(call[0]).includes("INSERT INTO pipeline_attempts") && call[4] === SECOND_DOCUMENT_FINDER.strategy);
+    expect(JSON.parse(String(attempt![attempt!.length - 1]))).toMatchObject({ index_documents_checked: 2 });
+  });
+});
+
+// #1309: a fee document on another host must name this bank, and a name another institution
+// has counts only with the city or the certificate number next to "FDIC" / "Cert".
+describe("Magellan companion finder: documents on another host", () => {
+  const bank = {
+    id: 41,
+    institution_name: "Peoples Bank",
+    city: "Rock Valley",
+    cert_number: "175",
+    state_code: "IA",
+    website_url: "https://www.peoples-ebank.example",
+    fee_schedule_url: "https://www.peoples-ebank.example/checking",
+    categories: 1,
+  };
+  const pdf = "https://www.peoplesbank-wa.example/fee-schedule.pdf";
+  const schedule = (who: string) =>
+    `<h1>${who} Schedule of Fees</h1><p>Overdraft fee $30.00 per item</p><p>NSF fee $30.00 per item</p><p>Stop payment $175.00</p><p>Incoming wire $15.00</p><p>Monthly service charge $8.00</p>`;
+  it.each([
+    // The schedule's "$175.00" is a price, not cert 175.
+    ["the shared name alone", "Peoples Bank", false],
+    ["the shared name and the city", "Peoples Bank, Rock Valley", true],
+    ["the shared name and the FDIC certificate", "Peoples Bank (FDIC Cert #175)", true],
+  ])("%s", async (_case, who, kept) => {
+    const base = createDb(true, [bank]) as unknown as (strings: TemplateStringsArray, ...values: unknown[]) => Promise<unknown>;
+    const db = vi.fn((strings: TemplateStringsArray, ...values: unknown[]) =>
+      templateText(strings).includes("shared-name check")
+        ? Promise.resolve([{ id: 41, institution_name: "Peoples Bank" }, { id: 77, institution_name: "Peoples Bank" }])
+        : base(strings, ...values),
+    );
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "https://www.peoples-ebank.example/") return html(`<a href="${pdf}">Fee Schedule</a>`);
+      if (url === pdf) return html(schedule(who));
+      return notFound();
+    });
+
+    const result = await runSecondDocumentFind({ db: asDb(db), fetchImpl, runId: 9, deadline: Date.now() + 60_000, learning: true, hiddenTopUp: false });
+
+    expect(fetchImpl.mock.calls.map((call) => String(call[0]))).toContain(pdf);
+    expect(result.results[0].pages.map((page) => page.url)).toEqual(kept ? [pdf] : []);
   });
 });

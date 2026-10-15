@@ -2,8 +2,6 @@ export const dynamic = "force-dynamic";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { cache } from "react";
-import { getCityInstitutions } from "@/lib/data-store";
 import { getPublicNationalIndex } from "@/lib/public-stats";
 import { getDisplayName, isFeaturedFee } from "@/lib/fee-taxonomy";
 import { formatAmount, formatAssets } from "@/lib/format";
@@ -12,6 +10,7 @@ import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
 import { SITE_URL } from "@/lib/constants";
 import { ProNextStep } from "@/components/public/pro-next-step";
 import { getCityFeeAveragesCached } from "@/lib/data-store/public-cached-reads";
+import { loadCityInstitutions, titleCase } from "./city-lookup";
 
 interface PageProps {
   params: Promise<{ state: string; city: string }>;
@@ -19,16 +18,6 @@ interface PageProps {
 
 /** Cities with fewer verified institutions than this are thin pages: rendered, not indexed. */
 const MIN_INDEXABLE_INSTITUTIONS = 3;
-
-// Shared between generateMetadata and the page so the query runs once per request.
-const loadCityInstitutions = cache(getCityInstitutions);
-
-function titleCase(s: string): string {
-  return decodeURIComponent(s)
-    .split(/[-\s]+/)
-    .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
-    .join(" ");
-}
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { state, city } = await params;
