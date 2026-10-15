@@ -219,6 +219,10 @@ export function rosettaReaderManifests(versions: RosettaVersions): ReplayManifes
  * in a manifest above.
  */
 export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
+  // v1 (#1100 gap 3): a new pass 2 specialist inside the free team, logged under extract.rules.
+  // Old texts are read again only when KNOX_RULES_STRATEGY moves, and the knox.rules manifest
+  // counts that replay.
+  KNOX_ACCOUNT_TABLE_STRATEGY: "A pass 2 specialist under extract.rules; the knox.rules manifest counts the replay when KNOX_RULES_STRATEGY moves.",
   // v1 (Oct 15): a new pass over the v17 review's recorded passes; each verify step reads all of
   // them that it has not acted on, so there is no backlog for a replay to count.
   DARWIN_RECORDED_RELEASE_STRATEGY: "Each verify step reads every recorded v17 pass it has not acted on; nothing to replay.",

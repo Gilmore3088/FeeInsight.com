@@ -14,6 +14,7 @@ import { FAMILY_EXPERTS, priceWindows, runFamilyExpert } from "@/lib/agents/knox
 import { newestColumnText } from "@/lib/fee-change-columns";
 import { namesALimit, namesAWorkedExample, passesDarwinChecks, readsAMeasuredAmount, tidyFeeName } from "@/lib/agents/knox/layout";
 import { extractTableCandidates, KNOX_TABLE_STRATEGY } from "@/lib/agents/knox/table-rows";
+import { extractAccountTableCandidates, KNOX_ACCOUNT_TABLE_STRATEGY } from "@/lib/agents/knox/account-table";
 import { checkFeeAgainstSource, joinLabeledFeeCardText } from "@/lib/custom-report/source-check";
 import { rateFeeFromHeld, type RateFeeCandidate } from "@/lib/agents/knox/percent";
 import { contextFees, NO_LONGER_CHARGED } from "@/lib/agents/knox/context-names";
@@ -175,6 +176,8 @@ export function runFreeSpecialists(sourceText: string): FreeExtractionResult {
     { ...KNOX_RULES_STRATEGY, pass: 1, run: () => withContextFees(text, extractCandidatesFromText(text)) },
     // v62: the table pass reads a fee-change table at its newest column too, as the self-check does.
     { ...KNOX_TABLE_STRATEGY, pass: 2, run: () => extractTableCandidates(newestColumnText(text)) },
+    // #1100 gap 3: each product's monthly fee in an account comparison table, read by its column.
+    { ...KNOX_ACCOUNT_TABLE_STRATEGY, pass: 2, run: () => extractAccountTableCandidates(newestColumnText(text)) },
     ...FAMILY_EXPERTS.map((expert) => ({
       strategy: expert.strategy,
       version: expert.version,

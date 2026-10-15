@@ -384,3 +384,23 @@ describe("Knox v31 rebate caps are not prices", () => {
     expect(namesALimit("ATM Surcharge Rebate Fee", "atm_non_network")).toBe(false);
   });
 });
+
+describe("Knox account comparison tables (#1100 gap 3)", () => {
+  it("reads each checking product's monthly fee by its column, as the source check traces it", () => {
+    // Texas Capital Bank's comparison table (answer key 2426): $0 qualified, $25 otherwise.
+    const table = "Features | capital interest checking | Premier checking\nMonthly service charge | $0 | $0/$25\nFully digital account opening | Yes | Yes";
+    expect(fees(table, "extract.account_table")).toEqual([["Premier checking Monthly service charge", 25, "monthly_maintenance"]]);
+    const compare = "Product Features | Smart Rewards Checking (Learn More) | Classic Rewards Checking (Learn More) | Cash Rewards Checking\nMinimum to Open | $25 | $25 | $25\nMonthly Service Fee | $10 | $7 | $8";
+    // The rules pass already reads the row's first price; the table pass adds the other columns.
+    expect(fees(compare)).toEqual(expect.arrayContaining([
+      ["Classic Rewards Checking Monthly Service Fee", 7, "monthly_maintenance"],
+      ["Cash Rewards Checking Monthly Service Fee", 8, "monthly_maintenance"],
+    ]));
+    expect(fees(compare).some(([, amount]) => amount === 25)).toBe(false);
+  });
+
+  it("leaves savings, money market and business columns to the guard's exclusions", () => {
+    expect(fees("Product | Savings | Money Market | Certificate of Deposit\nMonthly Service Fee | $3 | $10 | None", "extract.account_table")).toEqual([]);
+    expect(fees("Features / Fees | Business Checking | Business Checking Plus | Business Checking Premium\nMinimum to Open | $100 | $1000 | $1000\nMonthly Maintenance Fee | $5.00 per month | None | $25", "extract.account_table")).toEqual([]);
+  });
+});

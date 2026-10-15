@@ -15,6 +15,7 @@
 
 import { conflictsWithAudienceStatement, scopedFeeStatements } from "@/lib/fee-audience";
 import { newestColumnText } from "@/lib/fee-change-columns";
+import { accountTableRow } from "@/lib/custom-report/account-table";
 
 export type SourceCheckFailure =
   | "no_source_text"
@@ -828,6 +829,13 @@ export function checkFeeAgainstSource(
   if (first && !first.ok && first.reason === "tiered_fee" && statements.length > 0 &&
       (canonicalFeeKey === "nsf" || /\bnsf\b/i.test(feeName))) {
     return { ok: false, reason: "amount_not_the_fee" };
+  }
+  // #1100 gap 3: a product's monthly fee in an account comparison table, read by its column
+  // ("Better Checking Monthly Service Fees" $5 under "Account | Great Checking | Better Checking").
+  // Only a name the table itself composes passes, and only at that column's price.
+  if (first && !first.ok && (canonicalFeeKey == null || canonicalFeeKey === "monthly_maintenance")) {
+    const row = accountTableRow(text, feeName, amount);
+    if (row) return { ok: true, sourceLine: row };
   }
   return first ?? { ok: false, reason: "no_source_text" };
 }

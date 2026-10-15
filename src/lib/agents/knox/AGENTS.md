@@ -777,6 +777,16 @@ only on what the free team could not read.
     borrowed only by a bare direction or unit ("Wire Transfers" + "Incoming Domestic").
     `tableRowsFromText` is the only adapter over Rosetta's output (today the " | " cell
     lines in `normalized_text`); re-point it when Rosetta stores structured rows.
+  - `extract.account_table` (`account-table.ts`, #1100 gap 3): an account comparison table's
+    monthly fee row, one fee per product column ("Monthly Service Fees | $0 | $5 | $10" under
+    "Account | Great Checking | Better Checking | Best Checking"). Each read is named by its
+    column's product (`withAccountName`: "Better Checking Monthly Service Fees"), so it traces
+    to one cell. The rule lives in `custom-report/account-table.ts`, and the shared check traces
+    the same reads with it (`accountTableRow`, only for `monthly_maintenance` or no key, and only
+    after the normal check fails). It reads only checking columns (no savings, share, money
+    market, club, IRA, HSA or certificate column), only the fee row (never opening deposit or
+    balance rows), and only under a header row whose rows in between have the table's width. A
+    free cell is held as a $0 fee.
   - `extract.family.<family>` (`families.ts`): one expert each for overdraft/NSF, wires,
     ATM/card, account maintenance/statements, checks, and the remaining services. They
     read price windows across a document, including PDFs flattened to one line: tiers
@@ -856,6 +866,7 @@ fails a PR that changes one of these constants without updating its line here (#
 
 | Constant | Strategy | Version | File |
 |---|---|---|---|
+| `KNOX_ACCOUNT_TABLE_STRATEGY` | `extract.account_table` | v1 | `knox/account-table.ts` |
 | `KNOX_BATCH_REVIEW_VERSION` | — | v1 | `knox/batch-review.ts` |
 | `KNOX_CALIBRATION_VERSION` | — | v2 | `knox/calibration.ts` |
 | `HELD_RATE_RECHECK_VERSION` | — | v2 | `knox/held-recheck.ts` |
