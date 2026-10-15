@@ -21,9 +21,12 @@ import {
   computeDistrictFindings,
   computeNationalFindings,
 } from "./report-data";
+import { loadSampleReport } from "@/lib/custom-report/sample-report";
+import { institutionTeaser } from "./institution-view";
 import {
   BenchmarkBoard,
-  LockedInstitutionReport,
+  ClosingBand,
+  InstitutionView,
   ReportHero,
   ReportMethodology,
   type HeroStat,
@@ -59,6 +62,20 @@ async function loadIndexes(scope: BenchmarkScope): Promise<Indexes> {
     getPeerIndexCached({ ...area, charter_type: "credit_union" }),
   ]);
   return { area: areaIndex, national, bank, cu };
+}
+
+const TEASER_DEADLINE_MS = 5_000;
+
+/** The live sample, name withheld; the report renders without it when it is slow or down. */
+async function loadTeaser() {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<null>((resolve) => {
+    timer = setTimeout(() => resolve(null), TEASER_DEADLINE_MS);
+  });
+  const teaser = loadSampleReport()
+    .then(institutionTeaser)
+    .catch(() => null);
+  return Promise.race([teaser, late]).finally(() => clearTimeout(timer));
 }
 
 const DISTRICT_SECTIONS = [
@@ -98,10 +115,11 @@ export default async function BenchmarkReportPage({ params }: PageProps) {
   if (!scope) notFound();
 
   const district = scope.kind === "district" ? scope.district : null;
-  const [indexes, summary, stats] = await Promise.all([
+  const [indexes, summary, stats, teaser] = await Promise.all([
     loadIndexes(scope),
     getPublicStatsSummary(),
     district ? getDistrictStatsCached(district) : Promise.resolve(null),
+    loadTeaser(),
   ]);
   const asOf = summary.refreshedOn;
 
@@ -130,7 +148,8 @@ export default async function BenchmarkReportPage({ params }: PageProps) {
           <KeyFindings findings={computeNationalFindings(rows, charterPairs)} asOf={asOf} />
           <BenchmarkBoard rows={rows} place="the U.S." areaLabel="US" omitted={omitted} asOf={asOf} />
           <CharterExhibit benchmarks={charterPairs} asOf={asOf} />
-          <LockedInstitutionReport />
+          <InstitutionView teaser={teaser} />
+          <ClosingBand />
           <ReportMethodology area="the United States" />
         </div>
         <PrintStyles />
@@ -157,7 +176,8 @@ export default async function BenchmarkReportPage({ params }: PageProps) {
         <PositionExhibit rows={rows} stateName={place} asOf={asOf} />
         <CharterExhibit benchmarks={charterPairs} asOf={asOf} eyebrow="Exhibit 3 · Banks vs credit unions" place={place} />
         <FullTable rows={rows} stateName={place} asOf={asOf} />
-        <LockedInstitutionReport />
+        <InstitutionView teaser={teaser} />
+        <ClosingBand />
         <ReportMethodology area={`the ${name} Fed district`} district />
       </div>
       <PrintStyles />

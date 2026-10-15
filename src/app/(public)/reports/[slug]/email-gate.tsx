@@ -28,11 +28,7 @@ export function EmailGate({ slug, artifactExists }: EmailGateProps) {
   const [errorMessage, setErrorMessage] = useState<string>("");
 
   if (!artifactExists) {
-    return (
-      <p style={{ color: "#55606f", fontSize: "14px", fontStyle: "italic" }}>
-        PDF generation is in progress — check back soon.
-      </p>
-    );
+    return <p className="text-[14px] text-ink-muted">The PDF is being built. Check back soon.</p>;
   }
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
@@ -82,85 +78,52 @@ export function EmailGate({ slug, artifactExists }: EmailGateProps) {
 
   if (state === "success" && downloadUrl) {
     return (
-      <div>
-        <p style={{ color: "#132338", fontSize: "14px", marginBottom: "12px" }}>
-          Your download is ready.
-        </p>
+      <div aria-live="polite">
+        <p className="text-[14px] text-ink">Your download is ready.</p>
         <a
           href={downloadUrl}
           target="_blank"
           rel="noopener noreferrer"
-          style={{
-            display: "inline-block",
-            background: "#132338",
-            color: "#FEFCF9",
-            padding: "10px 20px",
-            borderRadius: "6px",
-            fontSize: "14px",
-            fontWeight: 500,
-            textDecoration: "none",
-          }}
+          className="mt-3 inline-flex min-h-11 items-center rounded-full bg-ink px-5 text-[14px] font-semibold text-on-ink hover:opacity-90"
         >
-          Download full report PDF &darr;
+          Download the PDF
         </a>
-        <p style={{ marginTop: "8px", fontSize: "12px", color: "#55606f" }}>
-          Link valid for 1 hour. Check your email for a copy.
-        </p>
+        <p className="mt-2 text-[12px] text-ink-muted">The link works for one hour.</p>
       </div>
     );
   }
 
   return (
-    <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "12px", maxWidth: "400px" }}>
+    <form onSubmit={handleSubmit} className="flex flex-col gap-3">
+      <label htmlFor="report-gate-email" className="text-[13px] font-medium text-ink">
+        Work email
+      </label>
       <input
+        id="report-gate-email"
         type="email"
         value={email}
         onChange={(e) => setEmail(e.target.value)}
-        placeholder="your@email.com"
+        placeholder="you@yourbank.com"
+        autoComplete="email"
         required
         disabled={state === "submitting"}
-        style={{
-          border: "1px solid #ddd5c6",
-          borderRadius: "6px",
-          padding: "10px 14px",
-          fontSize: "14px",
-          color: "#132338",
-          width: "100%",
-          boxSizing: "border-box",
-          outline: "none",
-        }}
-        onFocus={(e) => (e.target.style.borderColor = "#b23a32")}
-        onBlur={(e) => (e.target.style.borderColor = "#ddd5c6")}
+        aria-invalid={state === "error" || undefined}
+        aria-describedby={state === "error" && errorMessage ? "report-gate-error" : undefined}
+        className="w-full rounded-lg border border-control-border bg-white px-3 py-2.5 text-[15px] text-ink placeholder:text-ink-muted focus:outline-2 focus:outline-offset-1 focus:outline-ink"
       />
-
       <button
         type="submit"
         disabled={state === "submitting"}
-        style={{
-          background: state === "submitting" ? "#354252" : "#132338",
-          color: "#FEFCF9",
-          border: "none",
-          borderRadius: "6px",
-          padding: "10px 20px",
-          fontSize: "14px",
-          fontWeight: 500,
-          cursor: state === "submitting" ? "not-allowed" : "pointer",
-          transition: "background 0.2s",
-          alignSelf: "flex-start",
-        }}
+        className="inline-flex min-h-11 items-center justify-center rounded-full bg-ink px-5 text-[14px] font-semibold text-on-ink hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-70"
       >
-        {state === "submitting" ? "Sending..." : "Get full report"}
+        {state === "submitting" ? "Sending..." : "Send me the report"}
       </button>
-
       {state === "error" && errorMessage && (
-        <p style={{ color: "#DC2626", fontSize: "13px", margin: 0 }}>
+        <p id="report-gate-error" role="alert" className="text-[13px] text-brick">
           {errorMessage}
         </p>
       )}
-
-      <p style={{ fontSize: "11px", color: "#55606f", margin: 0 }}>
-        No spam. One-time link delivered instantly.
-      </p>
+      <p className="text-[12px] text-ink-muted">Your download link opens right here.</p>
     </form>
   );
 }
