@@ -105,6 +105,24 @@ It runs as Atlas steps (agent `atlas`); it is deterministic and makes no model c
   (on the same `STATS_METHOD_VERSION`) is named in the step summary as an ALARM.
 - Read-only, deterministic, no model calls. It is pause-exempt like the other reporting steps.
 
+## Knox's answer-key misses
+
+- `knox-misses.ts` (`KNOX_MISSES_VERSION` v1): the `deming-knox-misses` step, its own daily Atlas
+  run (`/api/admin/crew/knox-misses`, 12:29 UTC, after the scoreboard), #1099. For every confirmed
+  answer-key bank whose key document has a completed text, it runs today's free Knox team
+  (`gateReads`, the reads the rules re-check keeps live) and compares each priced key fee as the
+  Knox gate scores it (`gateKeyFor`). A key fee not read becomes an `eval_cases` row: dataset
+  `golden`, label `answer_key`, check `knox.answer_key_read`, error class `missed_fee`, status
+  `candidate`, with the key's source line, category, price, document and text hash frozen in
+  `input`. Every case is replayed each run: a candidate that is read becomes `active`; an active
+  case missed again is a regression, named in the step summary; a case whose key fee is no longer
+  confirmed is retired.
+- The step detail carries the miss rate by category and by document type. A bank with no completed
+  text of its key document is counted apart (`banks_no_text`), never as Knox's miss; a price that
+  varies is not scored, as in the gate.
+- A run that passes `KNOX_MISSES_BUDGET_MS` leaves the remaining banks for the next day, least
+  recently checked first. It writes only `eval_cases`; no fee row, no model calls; pause-exempt.
+
 ## Playbook contradiction check
 
 - `playbook-contradictions.ts` (`PLAYBOOK_CHECK_VERSION` v1): the `deming-playbook-check` step in
@@ -137,3 +155,4 @@ fails a PR that changes one of these constants without updating its line here (#
 | `DEMING_REGRESSION_VERSION` | — | v1 | `deming/regression.ts` |
 | `BENCHMARK_HEALTH_VERSION` | — | v1 | `deming/benchmark-health.ts` |
 | `PLAYBOOK_CHECK_VERSION` | — | v1 | `deming/playbook-contradictions.ts` |
+| `KNOX_MISSES_VERSION` | — | v1 | `deming/knox-misses.ts` |
