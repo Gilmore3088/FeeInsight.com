@@ -8,8 +8,32 @@ import { HAMILTON_MODES, REPORT_OFFER, REPORT_PRICE_INLINE } from "@/lib/constan
 import { formatFeeAmount } from "@/lib/format";
 import { MarketRange, rangeDomain, type HeadlineRow } from "./market-position";
 
-/** The recorded clip of Hamilton opening on an institution; until it exists the live frame stands in. */
+/** The recorded clip of Hamilton opening on an institution; until it exists a marked slot holds its place. */
 export const INSTITUTION_TOUR_VIDEO: FrameVideo | null = null;
+
+/**
+ * Where the tour clip will play. It is a picture, not a control, so nothing on the page
+ * pretends to play; once the clip exists FrameMedia's button takes its place.
+ */
+function TourVideoSlot({ institutionName }: { institutionName: string }) {
+  return (
+    <figure className="relative flex aspect-video items-center justify-center overflow-hidden rounded-xl border border-warm-ink-700 bg-warm-ink-800">
+      <span
+        aria-hidden="true"
+        className="absolute inset-0 bg-[radial-gradient(circle_at_30%_20%,rgba(255,255,255,0.08),transparent_60%)]"
+      />
+      <span aria-hidden="true" className="relative flex h-14 w-14 items-center justify-center rounded-full bg-warm-ink-50/10 ring-1 ring-warm-ink-50/25">
+        <svg viewBox="0 0 12 12" className="ml-0.5 h-5 w-5 text-warm-ink-50">
+          <path d="M3 1.5v9l7.5-4.5z" fill="currentColor" />
+        </svg>
+      </span>
+      <figcaption className="absolute inset-x-0 bottom-0 flex items-baseline justify-between gap-3 px-4 py-3 text-[13px]">
+        <span className="min-w-0 truncate font-medium text-warm-ink-50">Hamilton opening on {institutionName}</span>
+        <span className="shrink-0 text-warm-ink-300">Video coming</span>
+      </figcaption>
+    </figure>
+  );
+}
 
 /**
  * Hamilton as it opens on this institution, drawn from the same live rows as the page, in the
@@ -135,7 +159,10 @@ export function HamiltonBand({
             </Link>
           </p>
         </div>
-        <HamiltonView institutionName={institutionName} rows={rows} marketLabel={marketLabel} stateLabel={stateLabel} />
+        <div className="min-w-0 space-y-4">
+          {!INSTITUTION_TOUR_VIDEO && <TourVideoSlot institutionName={institutionName} />}
+          <HamiltonView institutionName={institutionName} rows={rows} marketLabel={marketLabel} stateLabel={stateLabel} />
+        </div>
       </div>
     </section>
   );
