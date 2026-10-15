@@ -518,7 +518,7 @@ stored text of the key document with no Knox row at that price; 240 of them had 
 - Every priced line no rule names that is neither read nor held is counted by reason
   (`DroppedLineReason`): per document in the extract attempt's `dropped_lines`, and per step in the
   extract step's `dropped_priced_lines`.
-- Gates: Texas 513 right / 14 wrong (main at v67) to 535 / 14 (held out 53 / 4, unchanged); seven states 744 / 41
+- Gates: Texas 515 right / 14 wrong (main at v67, with #1365) to 537 / 14 (held out 53 / 4, unchanged); seven states 744 / 41
   to 787 / 41. No right read was lost and no wrong read was added in either gate.
 - Box sizes priced per year ("2×5 | $ 25/Year") are named by the size, never by the unit left
   after the price ("/Year"); a size with no word ("2×5") stays unread unless a heading names it.
