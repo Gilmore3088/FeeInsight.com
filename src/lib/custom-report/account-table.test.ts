@@ -192,6 +192,15 @@ describe("account comparison tables: #1438 third review (B5, B6)", () => {
     ]);
   });
 
+  it("keeps a variant word before prose and a product's own digits; leaves small-business, church, trust and public-funds tables out", () => {
+    expect(productName("Checking Plus with Overdraft Line")).toBe("Checking Plus");
+    expect(productName("Prime50")).toBe("Prime50");
+    expect(productName("Heritage50 Checking")).toBe("Heritage50 Checking");
+    for (const product of ["Small Biz Checking", "Church Checking", "Trust Checking", "Public Funds Checking"]) {
+      expect(reads(`Account | Basic Checking | ${product}\nMonthly Fee | $5 | $10`), product).toEqual([]);
+    }
+  });
+
   it("refuses a short header whose first cell is a heading", () => {
     expect(reads("Our Checking Accounts | Essential Checking | Premier Checking\nMonthly Service Fee | $5 | $10 | $15")).toEqual([]);
   });

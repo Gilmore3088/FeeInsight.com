@@ -155,6 +155,21 @@ describe("Hamilton rules re-check", () => {
     expect(result.disputed.map((fee) => fee.feePublishedId)).toEqual([2]);
   });
 
+  it("keeps a fee Knox filed by its name while its name and price trace in its own text (#1102)", async () => {
+    // No rule reads "Returned Statement Fee"; the store settled the name as account research.
+    const text = [{ source_document_id: 9, text_hash: "abc", normalized_text: "Returned Statement Fee | $10.00\nStop Payment | $30.00" }];
+    const filed = { ...live(1, "account_research", "Returned Statement Fee", "10.00"), name_filed: true };
+    const wrongPrice = { ...live(2, "account_research", "Returned Statement Fee", "12.00"), name_filed: true };
+    const db = createDbMock([filed, wrongPrice], text);
+
+    const result = await rollBackUnreproducedFees(asDb(db), { runId: 306, batchId: "b", takedownLive: true, dryRun: true });
+
+    expect(result.rollbacks.map((rollback) => rollback.feePublishedId)).toEqual([2]);
+    expect(result.disputed).toEqual([]);
+    const [query] = db.unsafe.mock.calls[0] as [string];
+    expect(query).toContain("knox_name_filed:store");
+  });
+
   it("never takes a fee down for a text other than the one it was read from", async () => {
     const db = createDbMock([live(1, "stop_payment", "Stop Payment", "30.00"), live(2, "bill_pay", "Copy of Draft (Check)", "3.00", "older")], texts);
 

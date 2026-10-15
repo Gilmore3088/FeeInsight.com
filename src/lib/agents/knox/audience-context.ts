@@ -23,7 +23,11 @@ export interface AudienceSuggestion {
   evidence: string;
 }
 
-const BUSINESS_WORDS = /\b(?:business(?:es)?|commercial|corporate|treasury management|merchant services)\b/i;
+/**
+ * "Agribusiness" (a farm account page, minnstarbank.com/agribusiness/ag-savings, #1059 gate (a)) is
+ * business too: `\bbusiness` never matched inside it, so its fees took the consumer default.
+ */
+const BUSINESS_WORDS = /\b(?:business(?:es)?|agri-?business(?:es)?|commercial|corporate|treasury management|merchant services)\b/i;
 const CONSUMER_WORDS = /\b(?:personal|consumer|individuals?)\b/i;
 /** "Personal and business", "consumer or commercial": both audiences, so no single suggestion. */
 const BOTH_WORDS = /\b(?:personal|consumer)\b[^.\n]{0,20}\b(?:and|or|&|\/)\s*(?:small\s+)?(?:business|commercial)\b|\b(?:business|commercial)\b[^.\n]{0,20}\b(?:and|or|&|\/)\s*(?:personal|consumer)\b/i;
@@ -37,12 +41,17 @@ const TITLE_CHARS = 300;
  * Words that name a product or a time, not who the fee is for: a corporate (official) check or
  * draft in any spelling a credit union prints ("Corporate/Cashiers Check Fee", "Corporate Bank
  * Check", "Corporate -Bank/Teller Check", "Corporate Share Draft", "on-us or Corporate", the
- * Corporate One correspondent; #1059 spot check, 86052 and 37392), while a corporate account or
- * checking name ("Corporate Checking Monthly Fee") still reads as business; a personal check, a business day, "close of business", a vendor's "Business Systems",
+ * Corporate One correspondent; #1059 spot check, 86052 and 37392), a "Corporate Treasurer's
+ * Check", a bare "Corporate Money Order" and the en-dash form ("Corporate – Bank Check"), while a
+ * corporate account or checking name still reads as business: "Corporate Checking Monthly Fee",
+ * "Corporate Share Draft Account", "Member/Corporate Account Fee" (a reversed join counts only
+ * next to a check or draft: "Member/Corporate Check", "Check Copy – Personal or Corporate",
+ * "Check (Personal/Corporate) Duplicate"), "Corporate One Card" and "Corporate one-time setup fee"
+ * (review of #1382); a personal check, a business day, "close of business", a vendor's "Business Systems",
  * "non-business" or "non commercial" (a URL path's hyphens become spaces) with any slash before it,
  * and "non-personal checks" or "non-consumer information" (products, as main read them).
  */
-const NOT_AN_AUDIENCE = /(?:\/\s*)?\bnon[- ]?(?:personal|consumer)\s+(?:checks?|identification|information|data)\b|\bcorporate(?:(?:\s*[/&-]\s*|\s+(?:or|and)\s+)(?:cashier[’']?s?|official|teller[’']?s?|bank|member|personal|money\s+orders?))*\s+(?:(?:bank|official|teller|cashier[’']?s?|share)\s+)?(?:checks?|drafts?)\b|\bcorporate\s+(?:bonds?|securities|and municipal|one\b|stop\s+payments?\b)|\b(?:on[- ]us|teller[’']?s?|cashier[’']?s?|official|personal|member)\s*(?:[/&]|\bor\b|\band\b)\s*corporate\b(?:\s+(?:checks?|drafts?)\b)?|\bpersonal\s+(?:checks?|identification|information)\b|\bbusiness\s+(?:days?|hours?|systems)\b|\b(?:close of|regular|normal|legitimate|conduct(?:ing)?|doing)\s+business\b|\bcredit union business only\b|(?:\/\s*)?\bnon[- ]?(?:commercial|business)\b|\b(?:commercial|business|consumer|personal)(?:\s+(?:state|national|federal|savings|community|county|city|first))*\s+(?:bank|savings bank|credit union|trust company|savings and loan)\b/gi;
+const NOT_AN_AUDIENCE = /(?:\/\s*)?\bnon[- ]?(?:personal|consumer)\s+(?:checks?|identification|information|data)\b|\bcorporate(?:(?:\s*[/&\-–—]\s*|\s+(?:or|and)\s+)(?:cashier[’']?s?|official|teller[’']?s?|treasurer[’']?s?|bank|member|personal|money\s+orders?))*\s+(?:(?:bank|official|teller|cashier[’']?s?|treasurer[’']?s?|share)\s+)?(?:checks?|drafts?)\b(?!\s+accounts?\b)|\bcorporate\s+money\s+orders?\b(?!\s+accounts?\b)|\bcorporate\s+(?:bonds?|securities|and municipal|one\b(?![-‐–’'])(?!\s+cards?\b)|stop\s+payments?\b)|\b(?:on[- ]us|teller[’']?s?|cashier[’']?s?|treasurer[’']?s?|official)\s*(?:[/&]|\bor\b|\band\b)\s*corporate\b(?:\s+(?:checks?|drafts?)\b)?|\b(?:personal|member)\s*(?:[/&]|\bor\b|\band\b)\s*corporate\s+(?:(?:share\s+)?(?:checks?|drafts?))\b(?!\s+accounts?\b)|(?<=\b(?:checks?|drafts?)\b[^|\n$]{0,15})\b(?:personal|member)\s*(?:[/&]|\bor\b|\band\b)\s*corporate\b|\bpersonal\s+(?:checks?|identification|information)\b|\bbusiness\s+(?:days?|hours?|systems)\b|\b(?:close of|regular|normal|legitimate|conduct(?:ing)?|doing)\s+business\b|\bcredit union business only\b|(?:\/\s*)?\bnon[- ]?(?:commercial|business)\b|\b(?:commercial|business|consumer|personal)(?:\s+(?:state|national|federal|savings|community|county|city|first))*\s+(?:bank|savings bank|credit union|trust company|savings and loan)\b/gi;
 /**
  * "Non-Personal Accounts" and "Non-Consumer" are a bank's words for business accounts: read as
  * "business", with any slash before them ("Business/Non-Personal Accounts" stays a heading).
@@ -118,6 +127,31 @@ export function feeLineIndex(lines: string[], feeName: string, amount: number | 
     }
   }
   for (let index = 0; index < lines.length; index += 1) if (named(index)) return index;
+  return groupRowIndex(lines, feeName, priced, price != null);
+}
+
+/** How far below its group heading a row is looked for. */
+const GROUP_ROW_REACH_LINES = 8;
+
+/**
+ * A name Knox built from a group heading and its row ("Wire Transfers: Incoming", printed as
+ * "Wire Transfers" over "Incoming | $10.00") is found as the row at its price within a few lines
+ * under the heading. Only with a price, and only for a row of at least one real word, so a bare
+ * "Fees" or "1" never matches (#1059 gate (a): about 15% of the dry run's unknowns were such
+ * names whose line was not found).
+ */
+function groupRowIndex(lines: string[], feeName: string, priced: (index: number) => boolean, hasPrice: boolean): number {
+  const cut = feeName.lastIndexOf(":");
+  if (!hasPrice || cut <= 0) return -1;
+  const head = squash(feeName.slice(0, cut)).split(" ").slice(0, 4).join(" ");
+  const row = squash(feeName.slice(cut + 1)).split(" ").slice(0, 4).join(" ");
+  if (!head || !row || !/[a-z]{4,}/.test(row)) return -1;
+  for (let index = 0; index < lines.length; index += 1) {
+    if (!` ${squash(lines[index])} `.includes(` ${head} `)) continue;
+    for (let below = index; below < Math.min(lines.length, index + GROUP_ROW_REACH_LINES); below += 1) {
+      if (` ${squash(lines[below])} `.includes(` ${row} `) && priced(below)) return below;
+    }
+  }
   return -1;
 }
 
@@ -195,7 +229,7 @@ const ALL_ACCOUNTS = /\b(?:apply|applies)\s+to\s+all\s+accounts\b|\ball\s+accoun
 export function sectionHeadingAudience(
   lines: string[],
   feeIndex: number,
-): { audience: ContextAudience; heading: string } | { columns: string } | { ambiguous: string } | null {
+): { audience: ContextAudience; heading: string } | { columns: string } | { ambiguous: string; sentence?: ContextAudience } | null {
   let sentenceAudience: ContextAudience | null = null;
   let sentenceMayHead = false;
   for (let index = feeIndex - 1; index >= 0 && index >= feeIndex - HEADING_LOOKBACK_LINES; index -= 1) {
@@ -238,7 +272,7 @@ export function sectionHeadingAudience(
   }
   // An audience sentence that may head the fee ("Business accounts.", "What Business Accounts Are
   // Charged") and no heading above to settle it: unknown, never the consumer default.
-  return sentenceMayHead && sentenceAudience ? { ambiguous: sentenceAudience } : null;
+  return sentenceMayHead && sentenceAudience ? { ambiguous: sentenceAudience, sentence: sentenceAudience } : null;
 }
 
 export function suggestAudience(input: {
@@ -269,17 +303,22 @@ export function suggestAudience(input: {
   if (feeIndex >= 0) {
     const section = sectionHeadingAudience(lines, feeIndex);
     // A fee in one of two audience columns stays unknown: the text does not say which column.
-    if (section && ("columns" in section || "ambiguous" in section)) return null;
+    // So does one under an unclear section, except a consumer sentence with no heading above it
+    // in a schedule that prices nothing for businesses: it takes the consumer default below,
+    // which it would get with no sentence at all (#1059 gate (a)).
+    const consumerSentenceOnly = section && "sentence" in section && section.sentence === "consumer" && businessLine < 0;
+    if (section && ("columns" in section || "ambiguous" in section) && !consumerSentenceOnly) return null;
+    const heading = section && "audience" in section ? section : null;
     // A heading for all accounts in a schedule that also prices business items lists the fee for
     // both. With nothing priced for businesses, it is the consumer schedule (the default below).
-    if (section && section.audience === "both" && businessLine >= 0) {
-      return { audience: "both", source: "section_heading", evidence: section.heading };
+    if (heading && heading.audience === "both" && businessLine >= 0) {
+      return { audience: "both", source: "section_heading", evidence: heading.heading };
     }
     // A personal heading in a schedule that prices nothing for businesses stands, before any
     // title: a menu line "Business Fee Schedule" is no reason to call it business (review of
     // 7c4f3b25).
-    if (section && section.audience === "consumer" && businessLine < 0) {
-      return { audience: "consumer", source: "section_heading", evidence: section.heading };
+    if (heading && heading.audience === "consumer" && businessLine < 0) {
+      return { audience: "consumer", source: "section_heading", evidence: heading.heading };
     }
     // A heading that names one audience does not decide on its own in a schedule that also prices
     // business items. On unseen schedules it agreed with a blind reading on 14 of 36 fees, and 10
@@ -291,9 +330,9 @@ export function suggestAudience(input: {
     // items it is a section heading near the top ("PERSONAL CHECKING SERVICE CHARGE").
     // A business heading never falls through to the consumer default, even when the schedule's
     // business prices sit too far below it to count as business fees.
-    if (section && (businessLine >= 0 || section.audience === "business")) {
+    if (heading && (businessLine >= 0 || heading.audience === "business")) {
       const title = scheduleTitle(lines);
-      return section.audience === "business" && title && "audience" in title && title.audience === "business"
+      return heading.audience === "business" && title && "audience" in title && title.audience === "business"
         ? { audience: "business", source: "document_title", evidence: title.line }
         : null;
     }

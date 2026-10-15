@@ -6,18 +6,29 @@ function mockDb(handler: (text: string, values: unknown[]) => unknown[]) {
 }
 
 describe("Knox weekly label queue", () => {
-  it("lists contested names that have no label yet", async () => {
+  it("lists contested names and names held at several banks that have no label yet, most banks first", async () => {
     const db = mockDb((text) => {
       if (text.includes("to_regclass")) return [{ ready: true }];
       if (text.includes("never_verified")) {
         expect(text).toContain("l.kind =");
         return [{ name: "zipper bags", example: "Zipper Bags", banks: "25", verdicts: [{ canonicalKey: "check_printing", wrongBanks: 25, rightBanks: 0 }], reason: "never_verified" }];
       }
+      // #1102: held unclassified names, 15 Oct 2026; a sentence fragment or a bare word is never listed.
+      if (text.includes("knox_review:unclassified")) {
+        return [
+          { name: "membership fee", example: "Membership Fee", banks: 123 },
+          { name: "fee", example: "Fee", banks: 123 },
+          { name: "we will charge", example: "We will charge", banks: 25 },
+          { name: "lost passbook fee", example: "Lost Passbook Fee", banks: 21 },
+        ];
+      }
       return [];
     });
     const queue = await loadLabelQueue(db);
     expect(queue).toEqual([
+      { name: "membership fee", example: "Membership Fee", banks: 123, verdicts: [], reason: "held_unclassified" },
       { name: "zipper bags", example: "Zipper Bags", banks: 25, verdicts: [{ canonicalKey: "check_printing", wrongBanks: 25, rightBanks: 0 }], reason: "never_verified" },
+      { name: "lost passbook fee", example: "Lost Passbook Fee", banks: 21, verdicts: [], reason: "held_unclassified" },
     ]);
   });
 

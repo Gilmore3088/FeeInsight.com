@@ -74,3 +74,35 @@ describe("AnswerView", () => {
     expect(html).toContain("Not enough points");
   });
 });
+
+describe("phone readings (Space Coast review, 2026-10-15)", () => {
+  const position = {
+    kind: "fee_position" as const,
+    title: "Late payment",
+    unit: "dollars" as const,
+    own: 5,
+    ownLabel: "First Example Credit Union",
+    band: { label: "Peers", p25: 25, median: 25, p75: 25, n: 5 },
+    markers: [
+      { label: "Florida median", scope: "state" as const, value: 23.75, n: 69 },
+      { label: "National median", scope: "national" as const, value: 22, n: 900 },
+    ],
+    sources: [],
+  };
+
+  it("names a one-price middle half once, and lists the market medians for a phone", () => {
+    const html = renderToStaticMarkup(<ExhibitView exhibit={position} />);
+    expect(html).toContain("middle half all at $25");
+    expect(html).not.toContain("$25 to $25");
+    expect(html).toContain('aria-label="Market medians"');
+    expect(html).toMatch(/Florida <span[^>]*>\$23\.75<\/span>/);
+  });
+
+  it("keys only the sides competitors are actually on", () => {
+    const html = renderToStaticMarkup(
+      <ExhibitView exhibit={{ kind: "competitor_range", title: "Local", unit: "dollars", own: 5, ownLabel: "First Example Credit Union", items: [{ name: "A", amount: 10, url: null }, { name: "B", amount: 10, url: null }], sources: [] }} />,
+    );
+    expect(html).toContain("Charges more");
+    expect(html).not.toContain("Charges less");
+  });
+});

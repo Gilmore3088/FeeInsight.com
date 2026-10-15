@@ -17,7 +17,7 @@ import { formatDollarsInWords, formatFeeAmount } from "@/lib/format";
 import { DISPLAY_NAMES } from "@/lib/fee-taxonomy";
 import { buildFeeAnswer, type ExhibitFocus } from "./answer";
 import { proseFeeName } from "./names";
-import { annualItemsQuestion, buildScenario, MIN_PEERS_FOR_POSITION, waiverRateQuestion } from "./scenario";
+import { annualItemsQuestion, buildScenario, MIN_PEERS_FOR_POSITION, placeAmong, waiverRateQuestion } from "./scenario";
 import { parseSegment, SEGMENT_AMOUNTS } from "./segment";
 import { rateVolumeQuestion } from "./rates";
 import { asksAboutStructure } from "./storyline";
@@ -262,12 +262,6 @@ function money(n: number): string {
   return formatFeeAmount(n) ?? `$${n}`;
 }
 
-function ordinal(n: number): string {
-  const s = ["th", "st", "nd", "rd"];
-  const v = n % 100;
-  return `${n}${s[(v - 20) % 10] ?? s[v] ?? s[0]}`;
-}
-
 export function scenariosFor(research: FeeResearch, current: number, tested: number[], facts: InstitutionFeeFacts | null): Scenario[] {
   const peers = research.peers.map((p) => p.amount);
   return tested.map((price) =>
@@ -314,7 +308,7 @@ export function scenarioSummary(s: Scenario, subject?: { subjectName?: string })
   const name = proseFeeName(s.feeCategory);
   const position =
     s.positionAfter !== null && s.positionBefore !== null
-      ? `At ${money(s.tested)}, ${subjectPossessive(subject, false)} ${name} fee would sit at the ${ordinal(s.positionAfter)} percentile of ${s.n.toLocaleString("en-US")} peers, against the ${ordinal(s.positionBefore)} today.`
+      ? `At ${money(s.tested)}, ${subjectPossessive(subject, false)} ${name} fee would sit ${placeAmong(s.positionAfter, s.n)}; today it sits ${placeAmong(s.positionBefore, s.n, true)}.`
       : `At ${money(s.tested)}, ${s.peersMore} of ${s.n} peers would charge more and ${s.peersLess} less.`;
   return `${position} ${revenueSentence(s)}`;
 }
@@ -332,7 +326,7 @@ export function buildOpinion(scenarios: Scenario[], objective: AskObjective, sub
     if (objective === "revenue") return revenueSentence(s);
     if (objective === "customer_treatment") return `${s.peersMore} of ${s.n} peers would charge more.`;
     return s.positionAfter !== null
-      ? `${subjectName(subject)} would sit at the ${ordinal(s.positionAfter)} percentile of ${s.n} peers.`
+      ? `${subjectName(subject)} would sit ${placeAmong(s.positionAfter, s.n)}.`
       : `Fewer than ${MIN_PEERS_FOR_POSITION} peers publish this fee, so it cannot be placed.`;
   };
   const lines = scenarios.map((s) => `At ${money(s.tested)}: ${measure(s)}`);

@@ -74,6 +74,13 @@ Rosetta owns source text normalization.
     companion account page, as a schedule: a product address listing fewer than 10 fee lines
     and no schedule title is `wrong_document`, and the bank goes back to Magellan (#1053).
     The backlog triage re-checks stored texts under v2; a text Knox pulled fees from is kept.
+  - Every text Rosetta stores gets its document kind (#1094, `learning/document-kind.ts`,
+    `DOCUMENT_KIND_VERSION`): `fee_schedule`, `truth_in_savings`, `account_agreement`,
+    `product_page` or `other`. The kind is decided from the content, free and with no model call,
+    and kept in `agent_source_texts.document_kind` once migration 20270110000050 is applied
+    (before that nothing is written). Rosetta decides it; Knox and the scorecard only read it.
+    Texts stored before the migration keep NULL until their next read. Graded on 30 held-out
+    production texts on 15 Oct: 26 right.
   - A JavaScript page (no text, or an app shell or a page whose link names the fee page,
     such as `/fees` or `fee-schedule`, whose text fails the fee-page check)
     tries embedded data (`__NEXT_DATA__`, JSON/ld+json scripts, Next flight chunks,

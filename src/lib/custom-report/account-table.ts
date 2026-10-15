@@ -37,21 +37,31 @@ const PRODUCT_NOISE = /\s*\(?\s*(?:apply now|open now|learn more|open an account
 /** A product code in parentheses ("Rewards Checking (CK06)"). */
 const PRODUCT_CODE = /\(\s*[A-Z]{1,4}-?\d{1,4}\s*\)/g;
 /** Footnote marks: daggers, superscript digits, and a digit glued to a word's last letter ("Checking1"). */
-const FOOTNOTE_MARKS = /[†‡§¶*¹²³⁴⁵⁶⁷⁸⁹⁰]+|(?<=[a-z])\d{1,2}(?:,\d{1,2})*(?=\s*$)|(?<=(?:checking|account|banking|draft))\d{1,2}(?:,\d{1,2})*\b/gi;
+const FOOTNOTE_MARKS = /[†‡§¶*¹²³⁴⁵⁶⁷⁸⁹⁰]+|(?<=(?:checking|account|banking|draft))\d{1,2}(?:,\d{1,2})*\b/gi;
 /**
  * Words that say who an account is for or which variant it is. A name that carries one keeps it:
  * no rule strips it, and the business ones keep the column out (`BUSINESS_PRODUCT`).
  */
 const AUDIENCE_WORDS = /\b(?:business|commercial|ag|agri\w*|farm\w*|ranch\w*|non-?profit|npo|sole\s+prop\w*|corporate|organizations?|senior\w*|student\w*|youth|teens?|kids?|minors?|college|military|employees?|older|younger|age\s+\d+|over\s+\d+|\d+\s*\+)\b/i;
 /** A business column, which the guard's exclusions leave out (#1100): business, commercial, ag, nonprofit. */
-const BUSINESS_PRODUCT = /\b(?:business|commercial|ag|agri\w*|farm\w*|ranch\w*|non-?profit|npo|sole\s+prop\w*|corporate|organizations?)\b/i;
+const BUSINESS_PRODUCT = /\b(?:business|small\s*biz|biz|commercial|ag|agri\w*|farm\w*|ranch\w*|non-?profit|npo|sole\s+prop\w*|corporate|organizations?|church\w*|ministr\w*|trust|public\s+funds?|municipal\w*|government\w*|escrow|iolta)\b/i;
 /** A tagline or button the bank prints after the product's name, by its exact words. */
 const TAGLINE_TAIL = /^(?:most popular|view more|view details|see details|learn more|details?|open in minutes|open now|apply now|open an account|best for\b.*)$/i;
 /** Prose after the name: a sentence mark, or three or more words with a lowercase connective. */
+const PROSE_WORD = /^(?:that|this|you|your|our|to|with|and|of|the|an?|pays?|helps?|gives?|includes?|offers?|earn|get|enjoy|find|celebrate|designed|built|ready)$/i;
 function isProseTail(tail: string): boolean {
   if (/[.!?]/.test(tail) || /,\s/.test(tail)) return true;
   const words = tail.split(/\s+/);
-  return words.length >= 3 && words.some((word) => /^(?:that|this|you|your|our|to|with|and|of|the|an?|pays?|helps?|gives?|includes?|offers?|earn|get|enjoy|find|celebrate|designed|built|ready)$/i.test(word));
+  return words.length >= 3 && words.some((word) => PROSE_WORD.test(word));
+}
+/**
+ * How many words of a prose tail belong to the name: one capitalised variant word before the prose
+ * starts ("Checking Plus with Overdraft Line" keeps "Plus"), otherwise none.
+ */
+function variantWords(tail: string): number {
+  const words = tail.split(/\s+/);
+  const prose = words.findIndex((word) => PROSE_WORD.test(word) || /[.!?,]/.test(word));
+  return prose === 1 && /^[A-Z][A-Za-z+]*$/.test(words[0]) ? 1 : 0;
 }
 /**
  * The name without a tagline after its account word ("CLASSIC CHECKING Most Popular", "Diamond
@@ -65,7 +75,11 @@ function withoutTagline(name: string): string {
   const cut = match.index + match[0].length;
   const tail = name.slice(cut).trim();
   if (!tail || AUDIENCE_WORDS.test(tail) || /^for\b/i.test(tail)) return name;
-  if (/^best for\b/i.test(tail) || TAGLINE_TAIL.test(tail) || isProseTail(tail)) return name.slice(0, cut).trim();
+  if (/^best for\b/i.test(tail) || TAGLINE_TAIL.test(tail)) return name.slice(0, cut).trim();
+  if (isProseTail(tail)) {
+    const keep = variantWords(tail);
+    return [name.slice(0, cut).trim(), ...tail.split(/\s+/).slice(0, keep)].join(" ");
+  }
   return name;
 }
 /** A cell that reads as a sentence or a feature, not a product's name. */

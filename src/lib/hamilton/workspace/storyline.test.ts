@@ -49,6 +49,29 @@ describe("storyline", () => {
     expect(asksAboutStructure("how does my overdraft fee compare?")).toBe(false);
   });
 
+  it("never prints a 0th percentile, a range of one price, or the institution's name twice in a title (Space Coast review)", () => {
+    const base = research();
+    const lowest = {
+      ...base,
+      current: 5,
+      peers: base.peers.slice(0, 5).map((p) => ({ ...p, amount: 25 })),
+      band: { p25: 25, median: 25, p75: 25, n: 5 },
+      localCompetitors: base.localCompetitors!.map((c) => ({ ...c, amount: 10 })),
+    };
+    const answer = buildFeeAnswer(lowest);
+    expect(answer.headline).toBe("Your $5 overdraft fee is below all 5 peers (median $25).");
+    const titles = answer.storyline!.exhibits.map((e) => e.actionTitle);
+    expect(titles).toContain("Peers' middle half all charge $25; your $5 sits below all 5 peers.");
+    expect(titles).toContain("All 3 competitors in your market charge more than your $5; each charges $10.");
+    expect(titles.join(" ")).not.toMatch(/0th|\$25 to \$25|\$10 to \$10/);
+    const named = buildFeeAnswer({ ...lowest, subjectName: "Example Valley Credit Union" }).storyline!.exhibits.map((e) => e.actionTitle);
+    for (const t of named) expect(t.split("Example Valley Credit Union").length - 1).toBeLessThanOrEqual(1);
+    expect(named).toContain("All 3 competitors in Example Valley Credit Union's market charge more than its $5; each charges $10.");
+    expect(answer.storyline!.keyFigures).toContainEqual(expect.objectContaining({ value: "Lowest", label: "Your place among 5 peers" }));
+    const groups = buildFeeAnswer({ ...lowest, subjectName: "Example Valley Credit Union" }).storyline!.exhibits.find((e) => e.exhibit.kind === "archetype_map");
+    expect(groups?.takeaway?.text).toBe("Example Valley Credit Union's $5 puts it in the low group ($0.01 to $15), where no peer sits.");
+  });
+
   it("builds three to five numbered exhibits, each titled with a point that carries a number", () => {
     const story = buildFeeAnswer(research()).storyline!;
     expect(story.kind).toBe("position");

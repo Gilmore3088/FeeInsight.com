@@ -160,6 +160,8 @@ interface LiveKnoxRow {
   pulled?: boolean | null;
   /** `knox_lesson:<wrong>-><right>`: Knox's learning reader re-filed the rules' read (knox/lessons.ts). */
   lesson_flag?: string | null;
+  /** Filed by its name, not by a rule (`knox_name_filed:`, knox/held-recheck.ts `fileHeldByName`). */
+  name_filed?: boolean | null;
 }
 
 /**
@@ -324,7 +326,8 @@ export async function rollBackUnreproducedFees(
                  fp.canonical_fee_key, fp.fee_name, fp.amount, fr.fee_name AS raw_fee_name, fp.fee_audience,
                  fp.rolled_back_at IS NOT NULL AS pulled,
                  (SELECT flag FROM jsonb_array_elements_text(COALESCE(fr.outlier_flags, '[]'::jsonb)) flag
-                   WHERE flag LIKE 'knox_lesson:%' LIMIT 1) AS lesson_flag
+                   WHERE flag LIKE 'knox_lesson:%' LIMIT 1) AS lesson_flag,
+                 COALESCE(fr.outlier_flags, '[]'::jsonb) ?| array['knox_name_filed:label', 'knox_name_filed:store'] AS name_filed
             FROM published_fee_records fp
             JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
             JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
@@ -549,6 +552,12 @@ export async function rollBackUnreproducedFees(
       if (!reproduced && fee.amount != null) {
         const traced = checkFeeAgainstSource(textFor(row).normalized_text, row.fee_name, fee.amount, ".", row.canonical_fee_key);
         const category = checkFeeCategory(row.canonical_fee_key, row.fee_name);
+        // A fee filed by its name (a person's label, or the store's settled name; #1102) has no rule
+        // read to reproduce: it stands while its name and price trace in its own text.
+        if (row.name_filed && traced.ok && category.ok) {
+          passingIds.push(fee.feePublishedId);
+          continue;
+        }
         if ((traced.ok || traced.reason === "tiered_fee") && category.ok) {
           result.disputed.push(fee);
           passingIds.push(fee.feePublishedId);

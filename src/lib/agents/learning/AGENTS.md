@@ -183,3 +183,4 @@ fails a PR that changes one of these constants without updating its line here (#
 | Constant | Strategy | Version | File |
 |---|---|---|---|
 | `FEE_PAGE_CHECK_VERSION` | — | v2 | `learning/fee-page.ts` |
+| `DOCUMENT_KIND_VERSION` | — | v1 | `learning/document-kind.ts` |

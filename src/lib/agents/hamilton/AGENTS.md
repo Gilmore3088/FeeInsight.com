@@ -566,6 +566,20 @@ on its second look (check `hamilton.article_page`), archived as `article_page: #
 with the lesson going to Magellan. MTC Federal CU's real schedule, /articles/schedule-of-fees/,
 is not an article.
 
+**Qualifier pairs, check 4 (#1314, Oct 15).** `linesApartOnPage` keeps two names apart only when the
+shorter one is printed at the price clear of every place of the longer: a shorter name found only
+inside the longer lines ("Funds (NSF)" in "Non-Sufficient Funds (NSF) $25", "Order" under a "Money
+Order" heading) or one line printed twice ("Less than Minimum Balance Fee $10.00/year", twice) is
+one fee. The words between a name and its price never run through "of" or a deposit label ("Monthly
+Fee $0 Initial Deposit $10"; other labels such as "Minimum Balance" are not yet guarded) or stop on
+the first digits of a larger amount ("$10,000" is not $10). An identical skip decided before check 4
+beside a live line of its own document whose name is its name with one or two qualifier words in
+front, or the other way round, is decided again (`QUALIFIER_RESELECT_SQL`; James on Oct 15: "ACH
+stop payment could be a second fee"). The page check decides; the SQL only narrows the rows. A
+re-decided row's wide identical check reads its own document's lines and another document's line
+only under the same name (an older crawl of the same schedule); another document's line under
+another name is a different printed line.
+
 ## Duplicate Collapse
 
 Before each publish step, `duplicate-collapse.ts` closes live rows that repeat another
@@ -590,6 +604,29 @@ This sweep reads up to 25 documents' stored text per step. James turned
 on page, not printed, no text, would close, samples) and closes the repeats. Rollback: clear
 `rolled_back_at` on rows whose `rolled_back_reason` ends in `(near name)`.
 
+**Page copies (#1439, shadow).** One schedule stored under several addresses ("?print=1", "www.",
+"%20", a mirror) is several documents, so a line of it went live once per copy.
+`page-copy-collapse.ts` groups live rows of one institution, category, variant and exact amount
+read from different documents of one page (`feePageKey`) under the same or a near name. It keeps a
+current copy (`superseded_by_id` unset) over a replaced one, then the latest edition: by the
+editions the texts state when every copy in the group states one (the latest "effective" date not
+after the read, so an announced change does not count), else by when each was last read or
+re-confirmed (`GREATEST(last_checked_at, crawled_at)`); equal editions fall to the later read. The
+kept document's stored text must print the kept name at the price, and the two documents must print
+mostly the same prices (distinct dollar amounts overlapping at 0.8 or more, `sameScheduleText`),
+since `feePageKey` keys "?id=101" and "?id=202" alike. Prices survive a two-column PDF read in
+another order ("$ | 30.00"); a fee-change letter or a "popular fees" page stays apart. Two
+documents for different audiences are never copies: the audience named in the URL path or query
+(camel case split), else the one the text keeps naming (three or more mentions and three times the
+other, "business day" not counted, so a menu or footer link decides nothing). A pair the kept text
+prints as two lines, or under both a personal and a business heading, stays two fees. Frequencies
+and audiences must agree or be unstated. Up to 25 institutions per step, picked by the run id; each
+step reports `page_copy_collapse` (live, institutions, pairs, apart on page, unproven, other
+document, would close, samples, and `error` when the read failed). `PAGE_COPY_COLLAPSE_LIVE` stays
+off until James approves the dry-run counts. Rollback: clear `rolled_back_at` on rows whose reason
+ends in `(copy of the page)`. A closed copy is not restored if its kept copy later comes down; like
+the other collapses, that is a gap to close before this goes live.
+
 **At publish (#1069 step 1, shadow).** Each row the publish step is about to publish is checked
 against its live copies with the exact collapse's own test (`exact-duplicate.ts`: institution,
 category, variant, value and name; frequency classes that agree; the copy kept states its
@@ -609,7 +646,10 @@ Before a fee comes down, a second look must fail too: the fee's name and price n
 trace in that text (`checkFeeAgainstSource`), or the category guard rejects its name. A fee
 that passes the second look stays live (`disputed` in the attempt, `kept_disputed` in the
 event) for the next Knox version to settle; one that fails carries both reasons, the
-verified row's flags holding `rules_recheck_unreproduced:second_look:<verdict>`.
+verified row's flags holding `rules_recheck_unreproduced:second_look:<verdict>`. A fee Knox
+filed by its name (`knox_name_filed:`, a person's label or the store's settled name; #1102) has
+no rule read to reproduce, so it passes while its name and price trace in its own text and the
+guard accepts it, and is not counted as disputed.
 A live fee whose category and price the current rules no longer read is rolled back
 (`rolled_back_reason = 'rules_recheck_unreproduced'`, the run's batch id) and its
 verified row is rejected so the next publish does not bring it back. Up to 25 documents

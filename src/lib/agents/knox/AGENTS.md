@@ -692,6 +692,46 @@ After the extract itself, each extract step runs these passes in order (`run-sto
   rules filed under a new category was judged under the old one: 12 of the 54 take-overs by 14 Oct
   ("Wire Transfer - International" $45 judged as an overdraft fee).
 - `recheckHeldRates`: held percentage lines (below).
+- `fileHeldByName` (#1102, up to 300 per extract step, scoped to the run's lane): one decision per
+  held name, across banks. A line held as unclassified whose exact name (`lessonName`) has a
+  person's label goes to Darwin under the labelled category ("No category fits" moves nothing).
+  With no label, a name that says fee or charge is settled when at least 90% of its live rows
+  (`published_fee_records`, flat, not rolled back) sit in one category (`SETTLED_NAME_MIN_SHARE`)
+  at 5 or more banks (`SETTLED_NAME_MIN_BANKS`; 10 for a name of two words or fewer,
+  `SETTLED_TWO_WORD_MIN_BANKS`, so "Statement Fee" at 3 banks is not), and its held lines go to
+  Darwin under that category ("Credit Card Rush Fee", rush card; "Early Closure Fee", early
+  closure). Set-aside lines are read too, since the decision is new and the rules are not. A line
+  moves only when:
+  - its name key still names something once digits go (a box size's key is only "x");
+  - for a store decision, the name says fee or charge ("Minimum Balance" is a requirement), is
+    not a bare "Closing Fee" or a wire fee with no direction, and the price is not $0 (the zero
+    path's to judge);
+  - today's name classifier does not read the name as another category (a subordination live as
+    other lending files as legal process);
+  - the line is not a rate or a bundle price ("4 for $2"), states no requirement ("to avoid",
+    "required", "must maintain", "minimum balance to open"), and is not one column of a table of
+    accounts or networks ("| None | $7.00 | $10.00 | $10.00");
+  - its price is the line's first price after the name, with no other fee's name between them
+    (`priceUnderName`: "$10.00/month ... | Paper Statement Fee | $2.50" and "Overdraft Transfer Fee
+    (... | Inquiry Fee12. . . . $1.00" stay held);
+  - for a store decision, the line's wording does not contradict the category (a loan, HELOC,
+    mortgage, line of credit, title, lien or collateral word outside a lending category; copy,
+    photocopy or research filed as a paper statement: `lineContradictsCategory`), the clause that
+    holds the price does not read as another fee ("A $25 fee will be assessed for early
+    withdrawals" under a maintenance name: `priceClauseNamesOtherFee`), and the price sits inside
+    the category's live p5 to p95, weighted by row ("Early closure fee of $500" stays held);
+  - Darwin's category guard and price range accept it. A person's label skips the store-only
+    checks.
+  A moved line keeps its name and amount and carries `knox_name_filed:<label|store>` and
+  `canonical_hint:<key>`; Darwin still decides, and Hamilton's rules re-check keeps the fee live
+  while its name and price trace in its own text. A line a decision covers that cannot move gets
+  the week's mark (`knox_name_file_checked:<ISO week>`); when a lane's pass reads every candidate,
+  its other held lines get it too, so the rest of the week's steps read only new held lines and the
+  live-fee join has nothing to probe. Settled names come from a hash join of live fees on the held
+  lines' own names, and labels from the feedback table's unique dedupe key. Step detail:
+  `held_name_file`. On 15 Oct 2026 (read-only, after the second review of #1385): 161 held lines
+  matched a settled name, 71 would move at 40 banks in 26 states (38 of them set aside), and none
+  had a label yet.
 - `previewHeldNameRules` (#1102, off until James switches it on): the held-name rules
   (`HELD_NAME_PATTERNS` in `rules.ts`) file unclassified names that say their own category at
   many banks: "Stop Pay Fee", "Reconveyance Fee", a bare "Early Closure Fee" row, a club
@@ -744,8 +784,11 @@ re-filed at that bank only (369 lessons at 307 banks, 6 Oct 2026). The bank's le
 first, then a person's label, then the global lessons.
 
 **Weekly labels (`label-queue.ts`, /admin/knox/labels).** Names the store can't settle on its
-own (rejected at 2 or more banks and never verified, or judged both ways) are listed for a
-person, 25 at a time, most-judged first. A label is a `name_label` row in the store; from the
+own (rejected at 2 or more banks and never verified, or judged both ways), and names Knox holds
+as unclassified at 2 or more banks (#1102; only names that read as a fee's name, "Membership
+Fee" or "Lost Passbook Fee", never a fragment such as "we will charge"), are listed for a
+person, 25 at a time, most banks first. A label also sends the held lines with that name to
+Darwin (`fileHeldByName`). A label is a `name_label` row in the store; from the
 next extract Knox files that exact name under the labelled category from any other. "No category
 fits" only takes the name off the queue. A label that agrees with the rules stops a global
 lesson from moving the fee.

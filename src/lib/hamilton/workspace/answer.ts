@@ -10,7 +10,7 @@
 import { subjectPossessive } from "./subject";
 import { formatDollarsInWords, formatFeeAmount } from "@/lib/format";
 import { proseFeeName } from "./names";
-import { annualItemsQuestion, MIN_PEERS_FOR_POSITION, pricePosition } from "./scenario";
+import { annualItemsQuestion, MIN_PEERS_FOR_POSITION, placeAmong, pricePosition } from "./scenario";
 import { segmentClaims, segmentExhibit, segmentHeadline } from "./segment";
 import { buildStoryline, type StoryIntent } from "./storyline";
 import { ownRate, rateClaims, rateHeadline, rateVolumeQuestion } from "./rates";
@@ -47,12 +47,6 @@ function money(n: number): string {
 
 function pct(n: number): string {
   return `${n.toFixed(1)}%`;
-}
-
-function ordinal(n: number): string {
-  const s = ["th", "st", "nd", "rd"];
-  const v = n % 100;
-  return `${n}${s[(v - 20) % 10] ?? s[v] ?? s[0]}`;
 }
 
 /** "2026-08-01" -> "August 2026". */
@@ -324,7 +318,7 @@ function headline(research: FeeResearch, name: string): string {
   if (research.current !== null) {
     const position = pricePosition(research.current, amounts);
     if (band && position !== null) {
-      return `${subjectPossessive(research)} ${money(research.current)} ${name} fee is at the ${ordinal(position)} percentile of ${count(band.n)} peers (median ${money(band.median)}).`;
+      return `${subjectPossessive(research)} ${money(research.current)} ${name} fee is ${placeAmong(position, band.n)} (median ${money(band.median)}).`;
     }
     return `${subjectPossessive(research)} ${name} fee is ${money(research.current)}; only ${count(amounts.length)} peers publish one, too few to rank.`;
   }
