@@ -5,6 +5,23 @@ Seeded 2026-10-05 from the project's working memory; earlier decisions were not 
 
 ## 2026-10-15
 
+**Darwin re-checks every live fee against today's rules.** James, 2026-10-15 ("This needs to be
+with Darwin. This is his job."), after the 1st Community FCU (5314) $0 fee: "or take advantage of
+both options to reduce your monthly fee to" went live on Oct 6, three days before
+`publishNameHold` (#797, #803) would have held it, and no live re-check runs that hold.
+Publish-time rules only gate rows that are not yet live. Today four partial re-checks exist (Knox's
+rules re-check, Darwin's `verify.recheck` with its takedown off, Hamilton's eval-verdict twin for
+some name rules, Deming's sampled audit), and none applies every rule. Two rules follow:
+- **Every new rule ships with its live re-check in the same PR.** That covers any rule that holds,
+  rejects or re-files a fee at Knox, Darwin or publish. The PR adds the rule to Darwin's live
+  re-check and reports a dry-run count of the live fees it would take down, with a sample, before
+  any takedown is switched on. A rule too blunt for live rows (on Oct 15, `cutoff_name` matched
+  1,571 live fees and roughly two thirds were real fees with a qualifier) gets a narrower live
+  twin, or no takedown.
+- **Darwin owns the backlog.** Darwin re-reads every live fee against today's rules, a share each
+  step, through the shared second look, with every takedown on the run ledger. The first pass is a
+  dry run over all live fees, and James sees the counts by rule before any takedown is switched on.
+
 **Batch similar fixes; push only when ready; merge `main` only when needed.** James, Oct 15, after
 the advisor counted 124 CI runs in 9½ hours (about 16 billed minutes each) against a $50 GitHub
 Actions budget. If the budget runs out, CI stops and no PR can merge. "One issue, one PR" becomes
@@ -980,20 +997,3 @@ institution.
 category match the bank's own document, measured by Deming's audits with `checkFeeAgainstSource`.
 The target replaces 95%; the daily grade states it and whether it is met (`ACCURACY_TARGET`,
 `src/lib/accuracy-target.ts`).
-
-**Darwin re-checks every live fee against today's rules.** James, 2026-10-15 ("This needs to be
-with Darwin. This is his job."), after the 1st Community FCU (5314) $0 fee: "or take advantage of
-both options to reduce your monthly fee to" went live on Oct 6, three days before
-`publishNameHold` (#797, #803) would have held it, and no live re-check runs that hold.
-Publish-time rules only gate rows that are not yet live. Today four partial re-checks exist (Knox's
-rules re-check, Darwin's `verify.recheck` with its takedown off, Hamilton's eval-verdict twin for
-two name rules, Deming's sampled audit), and none applies every rule. Two rules follow:
-- **Every new rule ships with its live re-check in the same PR.** That covers any rule that holds,
-  rejects or re-files a fee at Knox, Darwin or publish. The PR adds the rule to Darwin's live
-  re-check and reports a dry-run count of the live fees it would take down, with a sample, before
-  any takedown is switched on. A rule too blunt for live rows (on Oct 15, `cutoff_name` matched
-  1,571 live fees and roughly two thirds were real fees with a qualifier) gets a narrower live
-  twin, or no takedown.
-- **Darwin owns the backlog.** Darwin re-reads every live fee against today's rules, a share each
-  step, through the shared second look, with every takedown on the run ledger. The first pass is a
-  dry run over all live fees, and James sees the counts by rule before any takedown is switched on.
