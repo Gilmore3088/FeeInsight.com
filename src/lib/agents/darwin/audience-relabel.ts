@@ -28,7 +28,7 @@ type SqlTag = typeof sql;
  * until none remain. Live and rollback need migration 20270110000047 and refuse to run before it.
  */
 export type AudienceRelabelMode = "off" | "live" | "rollback";
-export const AUDIENCE_RELABEL_MODE: AudienceRelabelMode = "off";
+export const AUDIENCE_RELABEL_MODE: AudienceRelabelMode = "live";
 export const AUDIENCE_RELABEL_VERSION = 1;
 export const AUDIENCE_RELABEL_SOURCE = "darwin.audience_relabel";
 export const AUDIENCE_RELABEL_KIND = "audience_relabeled";

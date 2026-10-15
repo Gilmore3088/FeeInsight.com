@@ -49,10 +49,10 @@ describe("Darwin audience relabel (#1059)", () => {
     expect(decideAudience(candidate, text)).toMatchObject({ feeAudience: audience, source });
   });
 
-  it("is off: a sampled dry run counts by audience and source and writes nothing", async () => {
-    expect(AUDIENCE_RELABEL_MODE).toBe("off");
+  it("off: a sampled dry run counts by audience and source and writes nothing", async () => {
+    expect(AUDIENCE_RELABEL_MODE).toBe("live");
     const db = createDb({ rows: [row(), row({ fee_verified_id: 502, source_document_id: 99 })], remaining: 5000 });
-    const result = await runAudienceRelabel(db as never, { sampleKey: "2026-10-15" });
+    const result = await runAudienceRelabel(db as never, { mode: "off", sampleKey: "2026-10-15" });
     expect(result).toMatchObject({ dryRun: true, fees: 2, byAudience: { consumer: 1, unknown: 1 }, bySource: { default_general_schedule: 1, no_text: 1 }, relabeled: 0, remaining: 5000, nextAfterId: null });
     expect(writes(db)).toEqual([]);
   });
@@ -95,7 +95,7 @@ describe("audience relabel schedule", () => {
   });
 
   it("off: one sampled dry run a day", async () => {
-    await scheduleAudienceRelabelRun(createDb() as never, new Date("2026-10-15T08:00:00Z"));
+    await scheduleAudienceRelabelRun(createDb() as never, new Date("2026-10-15T08:00:00Z"), "off");
     expect(startAgentRun.mock.calls[0][0]).toMatchObject({ kind: "dry_run", params: { mode: "off", day: "2026-10-15" } });
   });
 });
