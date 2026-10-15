@@ -61,8 +61,7 @@ function binIndexer(bins: HistogramBin[]): (v: number) => number {
 
 function rangeLabel(bin: HistogramBin): string {
   if (bin.high === null) return `${money(bin.low)} or more`;
-  const top = bin.high - 0.01;
-  return bin.high - bin.low === 1 ? money(bin.low) : `${money(bin.low)} to ${money(top)}`;
+  return `${money(bin.low)} to ${money(bin.high - 0.01)}`;
 }
 
 /** A market's name inside a sentence: "credit unions", "institutions with under $300M in assets". */

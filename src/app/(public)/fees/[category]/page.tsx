@@ -13,7 +13,6 @@ import { loadGuidesForCategory } from "@/lib/guides/source";
 import { formatFeeAmount } from "@/lib/format";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
 import { DistributionChart } from "@/components/public/distribution-chart";
-import type { InstitutionPoint } from "@/lib/data-store/fees";
 import { SITE_NAME, SITE_URL } from "@/lib/constants";
 import { getCurrentUser } from "@/lib/auth";
 import { canAccessPremium } from "@/lib/access";
@@ -36,13 +35,14 @@ import {
   districtHeadline,
   districtLabel,
   marketDots,
+  explorerPoints,
   nationalBand,
   positionsShown,
   relatedBands,
   stateLabel,
   tierLabel,
 } from "./category-view";
-import { ExplorerChart, ExplorerMarkets, FeeExplorer, type ExplorerPoint } from "./fee-explorer";
+import { ExplorerChart, ExplorerMarkets, FeeExplorer } from "./fee-explorer";
 import { DotLegend, HeroRange, LockedRows, MarketDots, RelatedRanges, VideoSlot } from "./exhibits";
 
 interface PageProps {
@@ -80,19 +80,6 @@ function pageSummary(category: string, fees: FeeInstance[], snapshotRow: FeeCate
     cu_median_amount: byCharter.get("credit_union")?.median_amount ?? null,
     unstated_audience_institution_count: snapshotRow?.unstated_audience_institution_count ?? 0,
   };
-}
-
-/**
- * What the explorer needs per institution: its value and the markets it sits in. Size group and state go only to Pro, so a free page
- * never carries the breakdowns Hamilton sells.
- */
-function explorerPoints(points: InstitutionPoint[] | undefined, isPro: boolean): ExplorerPoint[] {
-  return (points ?? []).map((p) => ({
-    v: p.value,
-    d: p.fed_district,
-    c: p.charter_type === "bank" ? "b" : p.charter_type === "credit_union" ? "c" : null,
-    ...(isPro ? { t: p.asset_size_tier, s: p.state_code } : {}),
-  }));
 }
 
 /** Thousands-separated dollars ("$5,000", "$2.50"); "-" when unavailable. */
@@ -180,7 +167,8 @@ export default async function FeeCategoryPage({ params }: PageProps) {
   const headline = districtHeadline(districts);
   // A detail entry cached before the points existed draws the static chart until it refreshes.
   const points = explorerPoints(detail.institution_points, isPro);
-  const interactive = points.length > 0;
+  // Fewer than three institutions draw no chart at all (the static chart says so instead).
+  const interactive = points.length >= 3;
   const related = relatedBands(snapshot.categories, family ? (FEE_FAMILIES[family] ?? []).filter((c) => c !== category) : []);
 
   return (

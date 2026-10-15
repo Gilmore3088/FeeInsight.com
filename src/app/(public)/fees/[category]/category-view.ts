@@ -1,4 +1,5 @@
-import type { DimensionBreakdown, FeeCategorySummary } from "@/lib/data-store/fees";
+import type { DimensionBreakdown, FeeCategorySummary, InstitutionPoint } from "@/lib/data-store/fees";
+import type { ExplorerPoint } from "./fee-explorer";
 import { MIN_INSTITUTIONS_FOR_MEDIAN } from "@/lib/data-store/maturity";
 import { DISTRICT_NAMES, FDIC_TIER_LABELS } from "@/lib/fed-districts";
 import { getDisplayName } from "@/lib/fee-taxonomy";
@@ -180,4 +181,17 @@ export function relatedBands(
     if (out.length >= limit) break;
   }
   return out;
+}
+
+/**
+ * What the explorer needs per institution: its value and the markets it sits in. Size group
+ * and state go only to Pro, so a free page never carries the breakdowns Hamilton sells.
+ */
+export function explorerPoints(points: InstitutionPoint[] | undefined, isPro: boolean): ExplorerPoint[] {
+  return (points ?? []).map((p) => ({
+    v: p.value,
+    d: p.fed_district,
+    c: p.charter_type === "bank" ? "b" : p.charter_type === "credit_union" ? "c" : null,
+    ...(isPro ? { t: p.asset_size_tier, s: p.state_code } : {}),
+  }));
 }

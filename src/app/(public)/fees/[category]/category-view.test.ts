@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { DimensionBreakdown, FeeCategorySummary } from "@/lib/data-store/fees";
-import { bySize, charterDots, charterFinding, districtHeadline, districtLabel, marketDots, nationalBand, relatedBands, tierLabel } from "./category-view";
+import { bySize, charterDots, explorerPoints, charterFinding, districtHeadline, districtLabel, marketDots, nationalBand, relatedBands, tierLabel } from "./category-view";
 
 const summary = (over: Partial<FeeCategorySummary> = {}): FeeCategorySummary => ({
   fee_category: "overdraft",
@@ -88,5 +88,11 @@ describe("fee category view", () => {
     expect(tierLabel("regional")).toBe("$10B to $50B");
     const dots = bySize(marketDots([row("super_regional", 35, 10), row("community_small", 30, 1182), row("regional", 32, 78)], band, tierLabel));
     expect(dots.map((d) => d.label)).toEqual(["Under $300M", "$10B to $50B", "Over $250B"]);
+  });
+
+  it("sends size group and state per institution only to Pro", () => {
+    const raw = [{ value: 30, fed_district: 6, charter_type: "bank", state_code: "FL", asset_size_tier: "community_small" }];
+    expect(explorerPoints(raw, false)).toEqual([{ v: 30, d: 6, c: "b" }]);
+    expect(explorerPoints(raw, true)).toEqual([{ v: 30, d: 6, c: "b", t: "community_small", s: "FL" }]);
   });
 });
