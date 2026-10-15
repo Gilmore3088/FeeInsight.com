@@ -23,8 +23,9 @@ export default async function KnoxLabelsPage({
         <p className="admin-eyebrow mt-3">Agent · Extract</p>
         <h1 className="admin-display-title mt-1">This week&apos;s fee names to label</h1>
         <p className="admin-lede mt-2">
-          Names the category checks keep rejecting, or judge both ways, most-judged first. Pick the category each one
-          belongs in. Knox files the name that way from its next extract; no live fee changes.
+          Names the category checks keep rejecting or judge both ways, and names Knox holds with no category at
+          several banks, most banks first. Pick the category each one belongs in. Knox files the name that way from
+          its next extract and sends the lines it held under that name to Darwin; no live fee changes.
         </p>
       </header>
 
@@ -39,10 +40,11 @@ export default async function KnoxLabelsPage({
               <div>
                 <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">{item.example}</p>
                 <p className="admin-meta mt-1">
-                  {item.reason === "never_verified" ? "Rejected at" : "Judged both ways at"} {item.banks.toLocaleString("en-US")} banks:{" "}
-                  {item.verdicts
-                    .map((verdict) => `${getDisplayName(verdict.canonicalKey)} (${verdict.rightBanks} right, ${verdict.wrongBanks} wrong)`)
-                    .join("; ")}
+                  {item.reason === "held_unclassified"
+                    ? `Held with no category at ${item.banks.toLocaleString("en-US")} banks`
+                    : `${item.reason === "never_verified" ? "Rejected at" : "Judged both ways at"} ${item.banks.toLocaleString("en-US")} banks: ${item.verdicts
+                        .map((verdict) => `${getDisplayName(verdict.canonicalKey)} (${verdict.rightBanks} right, ${verdict.wrongBanks} wrong)`)
+                        .join("; ")}`}
                 </p>
               </div>
               <form action={saveNameLabelAction} className="flex flex-wrap items-center gap-2">

@@ -4,6 +4,9 @@ import { runFreeSpecialists } from "./specialists";
 import { classifyFeeText, KNOX_HELD_NAME_RULES_LIVE } from "./rules";
 
 import {
+  fileHeldByName,
+  NAME_FILE_CHECKED_FLAG,
+  nameFileHold,
   HELD_SET_ASIDE_FLAG,
   heldNameRelease,
   previewHeldNameRules,
@@ -595,5 +598,73 @@ describe("held-name rules for unclassified held lines (#1102)", () => {
       examples: [{ feeRawId: 265119, feeName: "Stop Pay Fee", amount: 30, category: "stop_payment" }],
     });
     expect(db.mock.calls.some(([strings]) => /UPDATE|INSERT/.test(templateText(strings)))).toBe(false);
+  });
+});
+
+// #1102: one decision per held name. Production held lines (raw ids), read 15 Oct 2026.
+describe("held lines filed by their name: a person's label or the store's settled name (#1102)", () => {
+  const held = (fee_raw_id: number, amount: string, fee_name: string, excerpt: string, filed_key: string, filed_by: "label" | "store" = "store") => ({
+    fee_raw_id, amount, fee_name, conditions: conditions(excerpt), institution_id: 9, source_document_id: 40, filed_key, filed_by, settled_banks: 3,
+    outlier_flags: ["knox_review:unclassified", HELD_SET_ASIDE_FLAG],
+  });
+  const returnedStatement = held(200601, "10.00", "Returned Statement Fee", "Returned Statement Fee** | $10.00", "account_research");
+  const membership = held(109152, "5.00", "Membership Fee", "Membership Fee | $5.00", "account_research", "label");
+  const cashAdvance = held(186564, "3.00", "Credit Card Cash Advance Fee", "$3.00 | Credit Card Cash Advance Fee | 2%", "cash_advance");
+
+  it.each([
+    [returnedStatement, null],
+    [held(655954, "45.00", "Rush Fee", "Rush Fee | $45.00/card", "rush_card"), null],
+    // A rate, or a price for a bundle, is not a plain price.
+    [cashAdvance, "not_a_plain_price"],
+    [held(300157, "2.00", "Counter Checks: 4", "Counter Checks | 4 for $2 | Instant Issue Replacement Fee | $5", "counter_check"), "not_a_plain_price"],
+    // Live as other lending at 70 banks, but a subordination files as legal process since Oct 15.
+    [held(441210, "150.00", "Subordination Fee", "Subordination Fee | $150.00", "other_lending_fee"), "name_reads_other_category"],
+    // The $10 is the row before's monthly fee; the paper statement fee is $2.50.
+    [held(421833, "10.00", "Paper Statement Fee (per Statement)", "• $10.00/month if none of the above criteria are met. | Paper Statement Fee (per Statement) | $2.50", "paper_statement"), "price_not_under_name"],
+    // Darwin's price range: a $500 "returned statement fee" is not one.
+    [held(200602, "500.00", "Returned Statement Fee", "Returned Statement Fee | $500.00", "account_research"), "darwin_checks"],
+  ])("decides whether a held line moves under its name's category (%#)", (row, hold) => {
+    expect(nameFileHold(row)).toBe(hold);
+  });
+
+  it("sends labelled and settled names to Darwin, marks the ones that stay, and logs each move", async () => {
+    const calls: Array<{ text: string; values: unknown[] }> = [];
+    const db = Object.assign(
+      vi.fn((strings: TemplateStringsArray, ...values: unknown[]) => {
+        const text = templateText(strings);
+        calls.push({ text, values });
+        if (text.includes("to_regclass")) return Promise.resolve([{ ready: true }]);
+        if (text.includes("RETURNING fr.fee_raw_id")) return Promise.resolve([{ fee_raw_id: values.find((value) => typeof value === "number") }]);
+        if (text.includes("INSERT INTO pipeline_feedback")) return Promise.resolve([{ id: 1 }]);
+        return Promise.resolve([]);
+      }),
+      {
+        unsafe: vi.fn((text: string, values: unknown[]) => {
+          calls.push({ text, values });
+          return Promise.resolve([returnedStatement, membership, cashAdvance]);
+        }),
+      },
+    );
+    const result = await fileHeldByName(db as never, { stateCode: "tx", runId: 7 });
+    expect(result).toMatchObject({
+      checked: 3, filed: 2, kept: { not_a_plain_price: 1 }, bySource: { label: 1, store: 1 }, byCategory: { account_research: 2 }, institutions: 1, dryRun: false,
+    });
+    const select = calls[0];
+    expect(select.text).toContain("published_fee_catalog");
+    expect(select.text).toContain("HAVING count(DISTINCT c.canonical_fee_key) = 1");
+    expect(select.values).toEqual(expect.arrayContaining([NAME_FILE_CHECKED_FLAG, 3, "name_label", "TX"]));
+    const moves = calls.filter((call) => call.text.includes("RETURNING fr.fee_raw_id")).map((call) => JSON.stringify(call.values));
+    expect(moves[0]).toContain("knox_name_filed:store");
+    expect(moves[0]).toContain("canonical_hint:account_research");
+    expect(moves[1]).toContain("knox_name_filed:label");
+    const marked = calls.find((call) => call.text.includes("WHERE fee_raw_id = ANY"))!;
+    expect(marked.values).toContainEqual([186564]);
+    expect(calls.find((call) => call.text.includes("INSERT INTO pipeline_feedback"))?.values.join("")).toContain("knox.held:raw:200601");
+    expect(calls.some((call) => /\bDELETE\b/i.test(call.text))).toBe(false);
+
+    calls.length = 0;
+    const dry = await fileHeldByName(db as never, { dryRun: true });
+    expect(dry).toMatchObject({ filed: 2, dryRun: true });
+    expect(calls.some((call) => /UPDATE|INSERT/.test(call.text))).toBe(false);
   });
 });

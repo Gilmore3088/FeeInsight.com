@@ -552,7 +552,10 @@ Before a fee comes down, a second look must fail too: the fee's name and price n
 trace in that text (`checkFeeAgainstSource`), or the category guard rejects its name. A fee
 that passes the second look stays live (`disputed` in the attempt, `kept_disputed` in the
 event) for the next Knox version to settle; one that fails carries both reasons, the
-verified row's flags holding `rules_recheck_unreproduced:second_look:<verdict>`.
+verified row's flags holding `rules_recheck_unreproduced:second_look:<verdict>`. A fee Knox
+filed by its name (`knox_name_filed:`, a person's label or the store's settled name; #1102) has
+no rule read to reproduce, so it passes while its name and price trace in its own text and the
+guard accepts it, and is not counted as disputed.
 A live fee whose category and price the current rules no longer read is rolled back
 (`rolled_back_reason = 'rules_recheck_unreproduced'`, the run's batch id) and its
 verified row is rejected so the next publish does not bring it back. Up to 25 documents
