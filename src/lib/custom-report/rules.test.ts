@@ -16,12 +16,15 @@ describe("fee line rules", () => {
     expect(counts("overdraft", "Overdraft Fee on item under $5")).toBe(false);
     expect(counts("overdraft", "Overdraft fee, items less than $10")).toBe(false);
     expect(counts("nsf", "NSF fee - item below $ 5")).toBe(false);
-    expect(counts("nsf", "Returned item up to $20")).toBe(false);
   });
 
   it("still counts the standard per-item fees, exemptions included", () => {
     expect(counts("overdraft", "Overdraft Fee (per item)")).toBe(true);
     expect(counts("overdraft", "Overdraft fee for items over $5")).toBe(true);
     expect(counts("nsf", "NSF / Returned Item Fee")).toBe(true);
+    expect(counts("overdraft", "Overdraft Fee (no fee if overdrawn by less than $5)")).toBe(true);
+    expect(counts("nsf", "NSF Fee, no charge for items under $5")).toBe(true);
+    expect(counts("overdraft", "Paid Item Fee (waived on items below $10)")).toBe(true);
+    expect(counts("overdraft", "Overdraft Fee - up to $35 per item")).toBe(true);
   });
 });

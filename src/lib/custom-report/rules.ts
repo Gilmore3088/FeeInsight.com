@@ -17,10 +17,12 @@ export interface FeeLineRule {
 
 /**
  * A fee stated for a small-item variant ("Overdraft fee on item under $5 | $7") is a different
- * charge from the standard per-item fee, so it never stands for the line (#1177). "Items over
- * $5" stays: that is the standard fee with its exemption stated.
+ * charge from the standard per-item fee, so it never stands for the line (#1177). The standard
+ * fee with its exemption stated stays: "items over $5", "no charge for items under $5", "waived
+ * on items below $10", "overdrawn by less than $5". Known gap: a $0 variant worded "items $5 or
+ * less" still matches the line.
  */
-export const CONDITIONAL_VARIANT = "(under|less than|below|up to) ?\\$ ?[0-9]";
+export const CONDITIONAL_VARIANT = "^(?!.*(no (fee|charge)|waive|exempt|not charged)).*\\mitems? (under|less than|below) ?\\$ ?[0-9]";
 
 export const FEE_LINE_RULES: FeeLineRule[] = [
   {

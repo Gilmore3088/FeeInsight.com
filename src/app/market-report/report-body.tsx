@@ -73,11 +73,12 @@ export function LineRange({ line }: { line: ReportLine }) {
   const lo = Math.min(own, p25);
   const hi = Math.max(own, p75);
   const pad = Math.max((hi - lo) * 0.2, 1);
-  const min = Math.max(0, lo - pad);
+  // Not clamped at $0: the axis is never labelled, and a $0 dot needs room to sit whole.
+  const min = lo - pad;
   const span = hi + pad - min;
   const x = (v: number) => ((v - min) / span) * 100;
   return (
-    <span className="relative block h-4 w-full min-w-[7rem]" aria-hidden="true">
+    <span className="relative block h-4 w-full min-w-[7rem] [print-color-adjust:exact]" aria-hidden="true">
       <span className="absolute inset-x-0 top-1/2 border-t border-border" />
       <span className="absolute top-1/2 h-2 -translate-y-1/2 rounded-full bg-brick-tint" style={{ left: `${x(p25)}%`, width: `${Math.max(x(p75) - x(p25), 1)}%` }} />
       <span className="absolute top-0 h-4 w-[2px] bg-ink/60" style={{ left: `${x(median)}%` }} />
@@ -260,7 +261,7 @@ export function MarketReportBody({ report, eyebrow, preparedOn, actions, contact
             <p className="mt-1 text-[13px] text-ink-muted">
               A line is compared only when at least {MIN_LOCAL_PEERS_PER_LINE} local competitors publish it.
             </p>
-            <p className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-ink-muted" aria-hidden="true">
+            <p className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-ink-muted print:hidden" aria-hidden="true">
               <span className="inline-flex items-center gap-1.5">
                 <span className="h-2 w-5 rounded-full bg-brick-tint" /> Local middle half
               </span>
@@ -268,17 +269,21 @@ export function MarketReportBody({ report, eyebrow, preparedOn, actions, contact
                 <span className="h-3 w-[2px] bg-ink/60" /> Local median
               </span>
               <span className="inline-flex items-center gap-1.5">
-                <span className="h-2.5 w-2.5 rounded-full bg-ink" /> {name}
+                <span className="h-2.5 w-2.5 rounded-full bg-brick" /> {name}, above
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <span className="h-2.5 w-2.5 rounded-full bg-ink" /> Inside
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <span className="h-2.5 w-2.5 rounded-full bg-below-market" /> Below
               </span>
             </p>
-            <table className="mt-4 w-full min-w-[760px] text-left text-sm">
+            <table className="mt-4 w-full min-w-[760px] text-left text-sm print:min-w-0">
               <thead className="border-b border-border text-[11px] uppercase tracking-[0.08em] text-ink-muted">
                 <tr>
                   <th className="py-2 pr-3 font-semibold">Fee</th>
                   <th className="py-2 pr-3 text-right font-semibold">Yours</th>
-                  <th className="w-[22%] py-2 pr-4 font-semibold">
-                    <span className="sr-only">Range</span>
-                  </th>
+                  <td className="w-[22%] py-2 pr-4 print:hidden" aria-hidden="true" />
                   <th className="py-2 pr-3 text-right font-semibold">Local median</th>
                   <th className="py-2 pr-3 text-right font-semibold">Middle half</th>
                   <th className="py-2 pr-3 text-right font-semibold">Competitors</th>
@@ -298,7 +303,7 @@ export function MarketReportBody({ report, eyebrow, preparedOn, actions, contact
                         </span>
                       )}
                     </td>
-                    <td className="py-2 pr-4">
+                    <td className="py-2 pr-4 print:hidden" aria-hidden="true">
                       <LineRange line={line} />
                     </td>
                     <td className="py-2 pr-3 text-right tabular-nums">{line.comparable ? money(line.peers?.median) : "—"}</td>

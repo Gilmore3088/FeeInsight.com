@@ -12,7 +12,6 @@ import { TrackLink } from "@/components/track-link";
 import { TrackView } from "@/components/track-view";
 import { HamiltonLine } from "../hamilton-line";
 import { CONTACT_EMAIL, SITE_NAME, SITE_URL, REPORT_OFFER } from "@/lib/constants";
-import { PRO_PLANS_NAV } from "@/components/nav-items";
 import { loadSampleReport } from "@/lib/custom-report/sample-report";
 import { getRevenueContextCached } from "@/lib/custom-report/revenue-context";
 import { getMarketBranchFootprintCached } from "@/lib/data-store/public-cached-reads";
@@ -178,7 +177,7 @@ export default async function SampleReportPage() {
           contactHref="/contact?source=sample_report"
           actions={
             <>
-              <PrintButton className={PRIMARY_BUTTON} />
+              <PrintButton className={SECONDARY_BUTTON} />
               <a href={SAMPLE_CSV_PATH} className={SECONDARY_BUTTON}>
                 Download CSV
               </a>
@@ -200,7 +199,7 @@ export default async function SampleReportPage() {
         <div>
           <p className="text-[20px] font-semibold tracking-[-0.02em] text-ink">Get this report for your institution.</p>
           <p className="mt-1 text-[13px] text-ink-muted">
-            {REPORT_OFFER.refreshLabel}. Questions:{" "}
+            {REPORT_OFFER.priceLabel}. {REPORT_OFFER.refreshLabel}. Questions:{" "}
             <a href={`mailto:${CONTACT_EMAIL}`} className="text-ink-soft underline">
               {CONTACT_EMAIL}
             </a>
@@ -214,14 +213,6 @@ export default async function SampleReportPage() {
             className={PRIMARY_BUTTON}
           >
             {REPORT_OFFER.institutionCtaLabel}
-          </TrackLink>
-          <TrackLink
-            event="upgrade_click"
-            eventProps={{ placement: "sample_report_footer" }}
-            href={PRO_PLANS_NAV.href}
-            className="text-[14px] font-semibold text-ink underline decoration-border underline-offset-4 hover:decoration-ink"
-          >
-            {PRO_PLANS_NAV.label}
           </TrackLink>
         </div>
       </section>
