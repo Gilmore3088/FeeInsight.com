@@ -151,6 +151,34 @@ describe("checkFeeAgainstSource layouts", () => {
     expect(checkFeeAgainstSource(text, "Overdraft Item Fee (items $10.01 - $20.00)", 10, ".").ok).toBe(true);
     expect(checkFeeAgainstSource("Overdraft | Negative $25 or less | $5", "Overdraft", 5, ".")).toEqual({ ok: false, reason: "tiered_fee" });
   });
+
+  it("reads a low-balance price after a balance word that belongs to another figure or names the fee (#1100)", () => {
+    // Government Employees FCU 2435: "minimum" closes $500.00; $5.00 is the price.
+    const gefcu = "Monthly Service Charge Below $500.00 minimum $5.00 per Month";
+    expect(checkFeeAgainstSource(gefcu, "Monthly Service Charge Below minimum", 5, ".", "monthly_maintenance").ok).toBe(true);
+    expect(checkFeeAgainstSource(gefcu, "Monthly Service Charge Below minimum", 500, ".", "monthly_maintenance").ok).toBe(false);
+    // Buffalo Metropolitan 7114 and Georgia United 60.
+    expect(checkFeeAgainstSource("Low balance $ 5.00 per month3", "Low balance", 5, ".", "minimum_balance").ok).toBe(true);
+    expect(checkFeeAgainstSource("Savvy Spending - Minimum Balance $4.95/Month if the minimum average daily balance is not met", "Savvy Spending - Minimum Balance", 4.95, ".", "minimum_balance").ok).toBe(true);
+    // A balance stays a balance: "minimum balance $500" with no period, "minimum of $25".
+    expect(checkFeeAgainstSource("Checking | Minimum Balance $500 | Monthly fee $10", "Checking Monthly fee", 500, ".").ok).toBe(false);
+    expect(checkFeeAgainstSource("Overdraft fee | minimum $25 | $35", "Overdraft fee", 25, ".").ok).toBe(false);
+  });
+
+  it("keeps a cap, an averaged balance and a large figure after those words a threshold (#1392 review)", () => {
+    // A percent fee's cap (docs 2694, 12157, 14459, 15920, 20357, 32424, 34328): $30 is the maximum.
+    const late = "Loan Late Charge (1% of payment) | Every type of Loan (RE, Ag, Home Loan, Consumer) | $15.00 Minimum $30.00 Maximum";
+    expect(checkFeeAgainstSource(late, "Loan Late Charge", 30, ".", "late_payment")).toEqual({ ok: false, reason: "amount_is_a_threshold" });
+    const balance = (text: string, name: string, amount: number) => checkFeeAgainstSource(text, name, amount, ".", "minimum_balance").ok;
+    expect(balance("Minimum Balance $100/Month average", "Minimum Balance", 100)).toBe(false);
+    expect(balance("Minimum Balance $100 per month average daily balance", "Minimum Balance", 100)).toBe(false);
+    expect(balance("Required Minimum Balance $1,500/month avg or $10 fee", "Required Minimum Balance", 1500)).toBe(false);
+    expect(balance("Low balance $1,000 fee $5", "Low balance", 1000)).toBe(false);
+    expect(balance("Low balance $1,000. Fee $5 per month", "Low balance", 1000)).toBe(false);
+    expect(balance("Low balance $1,000 per month", "Low balance", 1000)).toBe(false);
+    // A monthly low-balance fee beside a balance word still reads as a price.
+    expect(balance("Savvy Spending - Minimum Balance $4.95/Month if the minimum average daily balance is not met", "Savvy Spending - Minimum Balance", 4.95)).toBe(true);
+  });
 });
 
 describe("checkFeeAgainstSource daily caps", () => {

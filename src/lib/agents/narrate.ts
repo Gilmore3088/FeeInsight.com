@@ -238,7 +238,7 @@ function narrateFinished(
       if (typeof detail.note === "string") return detail.note;
       const memo = (Array.isArray(detail.paths) ? detail.paths[0] : null) as Detail | null;
       const correctness = (memo?.correctness ?? null) as Detail | null;
-      const names: Record<string, string> = { simulate: "Simulate read", written_answer: "Written answer" };
+      const names: Record<string, string> = { simulate: "Simulate read", written_answer: "Written answer", report: "Report answer page" };
       const simulateLine = (Array.isArray(detail.paths) ? (detail.paths as Array<Detail | null>) : [])
         .filter((p): p is Detail => !!p && typeof p.path === "string" && p.path !== "memo" && n(p, "sampled") > 0)
         .map((p) => ` ${names[String(p.path)] ?? String(p.path)}: ${n(p, "passed")} of ${n(p, "answers")} passed.`)

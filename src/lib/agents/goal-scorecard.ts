@@ -184,6 +184,8 @@ export interface AnswerPathQuality {
   /** Checked answers whose every fee figure ties to a live catalog row. */
   correct: number | null;
   correctRate: number | null;
+  /** For a paid path: when the sample its rates come from finished (ISO). */
+  at?: string;
 }
 
 export interface AnswerQuality {
@@ -196,7 +198,7 @@ export interface AnswerQuality {
   paths: AnswerPathQuality[];
 }
 
-/** The paid paths. Memos, one Simulate read and one written answer are sampled daily (`paid-answer-eval.ts`, five a day); reports are not yet. */
+/** The paid paths, each sampled daily (`paid-answer-eval.ts`, five a day): memos, and one Simulate read, written answer and report answer page. */
 export const PAID_ANSWER_PATHS: Array<Pick<AnswerPathQuality, "path" | "label">> = [
   { path: "written_answer", label: "Written answer (paid)" },
   { path: "memo", label: "Memo (paid)" },
@@ -210,11 +212,17 @@ const correctnessOf = (value: unknown): { checked: number; correct: number } | n
   return { checked: Number(c.checked ?? 0), correct: Number(c.correct ?? 0) };
 };
 
-/** The latest answer eval's detail as one row per path; an eval from before #1079 has no correctness. */
+type PaidRun = { at: string; detail: Record<string, unknown> };
+
+/**
+ * The latest answer eval's detail as one row per path; an eval from before #1079 has no correctness.
+ * `paid` is the paid sample runs, newest first: each paid path takes the newest run that measured it,
+ * so a later run that sampled only memos does not drop the Simulate, written answer or report row (#1414).
+ */
 export function answerQualityFrom(
   at: string,
   detail: Record<string, unknown>,
-  paid: { at: string; detail: Record<string, unknown> } | null = null,
+  paid: PaidRun | PaidRun[] | null = null,
 ): Omit<AnswerQuality, "query"> {
   const path = (
     key: AnswerPathQuality["path"],
@@ -239,23 +247,25 @@ export function answerQualityFrom(
     };
   };
   const pro = (detail.pro ?? null) as Record<string, unknown> | null;
-  // The paid sample's rows by path; a path with no memo answered measures nothing yet.
-  const paidRows = new Map(
-    (Array.isArray(paid?.detail.paths) ? (paid!.detail.paths as Array<Record<string, unknown>>) : [])
-      .filter((row) => Number(row.answers ?? 0) > 0)
-      .map((row) => [String(row.path), row] as const),
-  );
+  // Each paid path's row from the newest run that answered it; a path no run answered measures nothing yet.
+  const paidRows = new Map<string, { at: string; row: Record<string, unknown> }>();
+  for (const run of paid ? (Array.isArray(paid) ? paid : [paid]) : []) {
+    for (const row of Array.isArray(run.detail.paths) ? (run.detail.paths as Array<Record<string, unknown>>) : []) {
+      if (Number(row.answers ?? 0) > 0 && !paidRows.has(String(row.path))) paidRows.set(String(row.path), { at: run.at, row });
+    }
+  }
+  const newestPaid = [...paidRows.values()].map((r) => r.at).sort().at(-1) ?? null;
   return {
     at,
-    paidAt: paidRows.size > 0 ? paid!.at : null,
+    paidAt: newestPaid,
     timedOut: detail.timedOut === true,
     paths: [
       path("free_ask", "Free Ask, standard questions", detail.answers, detail.passed, detail.correctness),
       ...(pro ? [path("pro_replay", "Free Ask, Pro readers' questions", pro.questions, pro.passed, pro.correctness)] : []),
       ...PAID_ANSWER_PATHS.map((p) => {
-        const row = paidRows.get(p.path);
-        return row
-          ? path(p.path, p.label, row.answers, row.passed, row.correctness)
+        const measured = paidRows.get(p.path);
+        return measured
+          ? { ...path(p.path, p.label, measured.row.answers, measured.row.passed, measured.row.correctness), at: measured.at }
           : { ...p, measured: false, answers: null, formPassed: null, formRate: null, checked: null, correct: null, correctRate: null };
       }),
     ],
@@ -673,8 +683,9 @@ async function readAnswerQuality(db: SqlTag): Promise<AnswerQuality | null> {
   });
   const free = parsed(row);
   if (!free.detail) return null;
-  // The latest paid sample that wrote at least one memo (#1079); a capped or paused run measures nothing.
-  // Its own savepoint: a failed paid read leaves the free rates standing.
+  // The window's paid samples that answered something, newest first (#1079); each paid path takes the
+  // newest that measured it (#1414). A capped or paused run measures nothing. Its own savepoint: a
+  // failed paid read leaves the free rates standing.
   const paidRows = await inSavepoint(db, (scope) => scope<Array<{ created_at: Date | string; detail: unknown }>>`
     SELECT e.created_at, e.detail
       FROM agent_run_events e
@@ -685,15 +696,15 @@ async function readAnswerQuality(db: SqlTag): Promise<AnswerQuality | null> {
        AND e.created_at >= NOW() - make_interval(days => ${GOAL_WINDOW_DAYS}::int)
        AND jsonb_path_exists(e.detail, '$.paths[*] ? (@.answers > 0)')
      ORDER BY e.created_at DESC
-     LIMIT 1
+     LIMIT 30
   `).catch((error) => {
     console.error("Goal scorecard: the paid answer eval could not be read", error);
     return [];
   });
-  const paid = paidRows[0] ? parsed(paidRows[0]) : null;
+  const paid = paidRows.map(parsed).filter((run): run is PaidRun => Boolean(run.detail));
   return {
     query: GOAL_QUERIES.answerQuality,
-    ...answerQualityFrom(free.at, free.detail, paid?.detail ? { at: paid.at, detail: paid.detail } : null),
+    ...answerQualityFrom(free.at, free.detail, paid),
   };
 }
 
@@ -780,7 +791,8 @@ export function goalBriefLines(goal: GoalScorecard): string[] {
   const q = goal.answerQuality;
   if (q) {
     const measured = q.paths.filter((p) => p.measured);
-    const parts = measured.map((p) => `${p.label}: form ${pct(p.formRate)} (${p.formPassed} of ${p.answers}), figures tie out ${p.checked == null ? "not checked" : `${pct(p.correctRate)} (${p.correct} of ${p.checked})`}`);
+    const sampleDay = (p: AnswerPathQuality) => (p.at && q.paidAt && p.at.slice(0, 10) !== q.paidAt.slice(0, 10) ? ` (sample of ${p.at.slice(0, 10)})` : "");
+    const parts = measured.map((p) => `${p.label}${sampleDay(p)}: form ${pct(p.formRate)} (${p.formPassed} of ${p.answers}), figures tie out ${p.checked == null ? "not checked" : `${pct(p.correctRate)} (${p.correct} of ${p.checked})`}`);
     const unmeasured = q.paths.filter((p) => !p.measured).map((p) => p.label.replace(/ \(paid\)$/, "").toLowerCase());
     const paidAt = q.paidAt ? `; paid sample of ${q.paidAt.slice(0, 16).replace("T", " ")} UTC` : "";
     const rest = unmeasured.length === PAID_ANSWER_PATHS.length

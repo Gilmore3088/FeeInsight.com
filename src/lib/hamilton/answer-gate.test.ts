@@ -27,7 +27,8 @@ describe("checkAnswerEvidence", () => {
     for (const problem of checkAnswerEvidence(text, DATA).problems) expect(memo.problems).toContain(problem);
   });
 
-  it("ships with no held line: holding waits for approved words (#981)", () => {
-    expect(HELD_ANSWER_MESSAGE).toBeNull();
+  it("ships James's held line, which names no figure and no internal term (#981)", () => {
+    expect(HELD_ANSWER_MESSAGE).toBe("This answer didn't pass Hamilton's source check, so it isn't shown. Ask again, or name one fee to compare.");
+    expect(checkAnswerEvidence(HELD_ANSWER_MESSAGE ?? "", DATA).passed).toBe(true);
   });
 });

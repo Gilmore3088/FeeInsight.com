@@ -48,7 +48,7 @@ describe("selected institution report synthesis", () => {
   });
 
   it("every report prompt carries the no-advice rule (#1256)", () => {
-    const source = readFileSync(join(process.cwd(), "src/app/pro/(hamilton)/reports/actions.ts"), "utf8");
+    const source = readFileSync(join(process.cwd(), "src/lib/hamilton/report-inputs.ts"), "utf8");
     const noFluff = source.slice(source.indexOf("const NO_FLUFF_RULES = `"), source.indexOf("`.trim();", source.indexOf("const NO_FLUFF_RULES = `")));
     expect(noFluff).toContain('13. Never tell the institution to raise, lower, hold, cut or drop a fee, and never write "we recommend".');
     // The executive summary, strategic and trade-off prompts all include NO_FLUFF_RULES.

@@ -37,7 +37,7 @@ vi.mock("@/lib/research/skills", () => ({
   detectSkill: () => null, buildSkillInjection: () => "", buildSkillExecution: () => "", isSkillOptIn: () => false, findOfferedSkill: () => null,
 }));
 vi.mock("@/lib/research/tool-output", () => ({
-  cachedSystem: (text: string) => text, cacheLatestMessage: (messages: unknown) => messages, ledgerUsage: () => ({}),
+  cachedSystem: (text: string) => text, cacheLatestMessage: (messages: unknown) => messages, ledgerUsage: () => ({}), trackerUsage: () => ({}),
 }));
 vi.mock("@/lib/hamilton/citation-gate", () => ({ evaluateCitationDensity: () => ({ status: "ok", metrics: {} }) }));
 vi.mock("@/lib/hamilton/answer-save", () => ({
