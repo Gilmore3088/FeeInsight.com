@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { excerptOf, fillBlankFrequencies } from "./frequency-fill";
+import { excerptOf, fillBlankFrequencies, FREQUENCY_FILL_VERSION } from "./frequency-fill";
 
 type DbMock = ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
 
@@ -96,12 +96,12 @@ describe("Hamilton frequency fill", () => {
       nsf(1, "35.00", "Dormant accounts | $15 00 per month Nonsufficient funds | $35 00", null, "00 per month Nonsufficient funds"),
       // Its own line's per-item wording still fills a blank.
       nsf(2, "28.00", "NSF Item Returned | $28.00 per item", null, "NSF Item Returned"),
-      // A stated daily period is left as it was: it waits for James.
+      // v12 (#1301): a daily price with no daily cap on its line is held for a person.
       nsf(3, "30.00", "NSF/UCF Fee $30 Per Day", "daily", "NSF/UCF Fee"),
     ]);
     const result = await fillBlankFrequencies(asDb(db), { runId: 5, dryRun: true });
     expect(result.filled.map((fee) => [fee.feePublishedId, fee.from, fee.frequency])).toEqual([[2, null, "per_item"]]);
-    expect(result.held).toEqual([]);
+    expect(result.held.map((fee) => fee.feePublishedId)).toEqual([3]);
   });
 
   it("writes nothing on a dry run", async () => {
@@ -109,6 +109,65 @@ describe("Hamilton frequency fill", () => {
     const result = await fillBlankFrequencies(asDb(db), { runId: 5, dryRun: true });
     expect(result.filled).toHaveLength(1);
     expect(db).not.toHaveBeenCalled();
+  });
+
+  it("never fills a blank overdraft fee with a period its own check clears, and reads the v13 keys (#1339)", async () => {
+    // Regression: 130684 went blank -> monthly -> blank on every publish step (fill, then v11 check).
+    const db = createDbMock([
+      { ...row(130684, "5.00", "Overdraft Trans. (After 3rd trans. per mo.) | $5.00"), canonical_fee_key: "overdraft", fee_name: "Overdraft Trans. (After 3rd trans. per mo.)" },
+      { ...row(92746, "30.00", "Overdraft Boost .........................................$30.00 per month"), canonical_fee_key: "overdraft", fee_name: "Overdraft Boost" },
+      { ...row(87587, "3.00", "Daily overdraft fee……$3.00 | Online Cash Management & Bill Pay……$19.95/month", "monthly"), canonical_fee_key: "continuous_od", fee_name: "Daily overdraft fee" },
+      { ...row(102189, "10.00", "Monthly1 account service charge is $10 if below minimum balance requirement."), canonical_fee_key: "monthly_maintenance", fee_name: "Monthly1 account service charge" },
+      { ...row(36109, "29.00", "Overdraft Fee (Max 5 items per day) | $29.00 International Outgoing $40.00", "daily"), canonical_fee_key: "overdraft", fee_name: "Overdraft Fee (Max 5 items per day)" },
+    ]);
+    const result = await fillBlankFrequencies(asDb(db), { runId: 5, dryRun: true });
+    expect(result.filled.map((fee) => [fee.feePublishedId, fee.from, fee.frequency])).toEqual([
+      [92746, null, "monthly"],
+      [87587, "monthly", "daily"],
+      [102189, null, "monthly"],
+      [36109, "daily", null],
+    ]);
+    expect(result.held).toEqual([]);
+    const readSql = db.unsafe.mock.calls[0][0] as string;
+    expect(readSql).toContain("fp.canonical_fee_key = 'continuous_od' AND fp.frequency IN ('monthly', 'annual', 'quarterly')");
+    expect(readSql).toContain("fp.canonical_fee_key = 'monthly_maintenance'");
+  });
+
+  it("keeps a v13 correction on the next pass, and logs a later write under its own version (v14)", async () => {
+    // Regression: on Oct 15 these were corrected at 01:30 UTC and written back at 01:32 by the next
+    // pass's `settledFrequency`, which read the old period off the same line (124039's write-back
+    // left no feedback row: its key `fix:124039:daily` already existed from v10).
+    const live = [
+      { ...row(53797, "10.00", "Cashier's Check per check $7.00 Check cashing (non-customer) $5.00 Collection Item $15.00 Deposited Item Returned (per item) $10.00 Dormant Account Fee (per month) $5.00 A dormant ", "monthly"), canonical_fee_key: "deposited_item_return", fee_name: "Deposited Item Returned (per item)" },
+      { ...row(65200, "1.00", "DAILY NEGATIVE BALANCE FEE | $1.00/day or Cap Monthly", "monthly"), canonical_fee_key: "continuous_od", fee_name: "DAILY NEGATIVE BALANCE FEE" },
+      { ...row(76864, "30.00", "Overdraft Item/s Fee Per Item | $30.00 | Annual Rent – 4 x 10 | $85.00", "annual"), canonical_fee_key: "overdraft", fee_name: "Overdraft Item/s Fee Per Item" },
+      { ...row(103686, "5.00", "annual addition to the $5.00 Daily Overdraft Fee.", "annual"), canonical_fee_key: "continuous_od", fee_name: "Daily Overdraft Fee" },
+      { ...row(128934, "23.00", "Check Overdraft (ea. debit/draft paid) -$5.01 and up (negative balance) 6 per day: $23.00", "daily"), canonical_fee_key: "overdraft", fee_name: "Check Overdraft (ea. debit/draft paid) - and up (negative balance) 6 per day" },
+      { ...row(124039, "24.00", "Overdraft Protection – ODP*(per item presentment) | $24.00 (Not to exceed 5 charges per day)", "daily"), canonical_fee_key: "overdraft", fee_name: "Overdraft Protection – ODP (per item presentment)" },
+      { ...row(87587, "3.00", "Daily overdraft fee………………$3.00 | Online Cash Management & Bill Pay……...……$19.95/month", "monthly"), canonical_fee_key: "continuous_od", fee_name: "Daily overdraft fee" },
+    ];
+    const first = await fillBlankFrequencies(asDb(createDbMock(live)), { runId: 1, dryRun: true });
+    expect(first.filled.map((fee) => [fee.feePublishedId, fee.from, fee.frequency])).toEqual([
+      [53797, "monthly", "per_item"],
+      [65200, "monthly", "daily"],
+      [76864, "annual", "per_item"],
+      [103686, "annual", "daily"],
+      [128934, "daily", "per_item"],
+      [124039, "daily", "per_item"],
+      [87587, "monthly", "daily"],
+    ]);
+    // The next pass reads the corrected rows (live and verified agree) and writes nothing.
+    const corrected = live.map((fee) => ({ ...fee, frequency: first.filled.find((fill) => fill.feePublishedId === fee.fee_published_id)!.frequency }));
+    const second = await fillBlankFrequencies(asDb(createDbMock(corrected)), { runId: 2, dryRun: true });
+    expect(second.filled).toEqual([]);
+    expect(second.held).toEqual([]);
+
+    const db = createDbMock(live.slice(5, 6));
+    await fillBlankFrequencies(asDb(db), { runId: 3, dryRun: false });
+    // Feedback rows upsert on their key: an unversioned key overwrote 124039's v10 row instead of adding one.
+    const values = db.mock.calls.flatMap((call) => call.slice(1)).map((value) => (typeof value === "string" ? value : JSON.stringify(value))).join("\n");
+    expect(values).toContain(`hamilton.frequency_fill:v${FREQUENCY_FILL_VERSION}:fix:124039:daily:per_item`);
+    expect(db.unsafe.mock.calls[0][0]).toContain("COALESCE(fr.extraction_note, fr.conditions) AS conditions");
   });
 
   it("fills a blank box rent from its table's annual header and logs the basis (v10)", async () => {

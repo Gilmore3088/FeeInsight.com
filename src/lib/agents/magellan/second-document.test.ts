@@ -437,3 +437,45 @@ describe("Magellan companion finder: disclosure index pages (#1051)", () => {
     expect(JSON.parse(String(attempt![attempt!.length - 1]))).toMatchObject({ index_documents_checked: 2 });
   });
 });
+
+// #1309: a fee document on another host must name this bank, and a name another institution
+// has counts only with the city or the certificate number next to "FDIC" / "Cert".
+describe("Magellan companion finder: documents on another host", () => {
+  const bank = {
+    id: 41,
+    institution_name: "Peoples Bank",
+    city: "Rock Valley",
+    cert_number: "175",
+    state_code: "IA",
+    website_url: "https://www.peoples-ebank.example",
+    fee_schedule_url: "https://www.peoples-ebank.example/checking",
+    categories: 1,
+  };
+  const pdf = "https://www.peoplesbank-wa.example/fee-schedule.pdf";
+  const schedule = (who: string) =>
+    `<h1>${who} Schedule of Fees</h1><p>Overdraft fee $30.00 per item</p><p>NSF fee $30.00 per item</p><p>Stop payment $175.00</p><p>Incoming wire $15.00</p><p>Monthly service charge $8.00</p>`;
+  it.each([
+    // The schedule's "$175.00" is a price, not cert 175.
+    ["the shared name alone", "Peoples Bank", false],
+    ["the shared name and the city", "Peoples Bank, Rock Valley", true],
+    ["the shared name and the FDIC certificate", "Peoples Bank (FDIC Cert #175)", true],
+  ])("%s", async (_case, who, kept) => {
+    const base = createDb(true, [bank]) as unknown as (strings: TemplateStringsArray, ...values: unknown[]) => Promise<unknown>;
+    const db = vi.fn((strings: TemplateStringsArray, ...values: unknown[]) =>
+      templateText(strings).includes("shared-name check")
+        ? Promise.resolve([{ id: 41, institution_name: "Peoples Bank" }, { id: 77, institution_name: "Peoples Bank" }])
+        : base(strings, ...values),
+    );
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "https://www.peoples-ebank.example/") return html(`<a href="${pdf}">Fee Schedule</a>`);
+      if (url === pdf) return html(schedule(who));
+      return notFound();
+    });
+
+    const result = await runSecondDocumentFind({ db: asDb(db), fetchImpl, runId: 9, deadline: Date.now() + 60_000, learning: true, hiddenTopUp: false });
+
+    expect(fetchImpl.mock.calls.map((call) => String(call[0]))).toContain(pdf);
+    expect(result.results[0].pages.map((page) => page.url)).toEqual(kept ? [pdf] : []);
+  });
+});

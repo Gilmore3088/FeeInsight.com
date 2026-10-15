@@ -475,6 +475,19 @@ v65 (rules 65, Oct 9, customer audience):
   cannot become two audiences, so the document's re-read writes them. Pinnacle (47) heads
   `KNOX_PRIORITY_REREAD_IDS` for that re-read.
 
+Rules 65, #1291 re-file check (Oct 14, no version change): three reads the re-file restore's
+hand check found wrong, from their real lines.
+- "Maximum Daily OD/NSF Fees $210 per day" is the overdraft daily cap, not a continuous
+  overdraft fee ("OD" and "O/D" now count after "maximum daily", raw 406368).
+- "Overdrafts Covered by Courtesy Transfer | $5.00 per item" is the overdraft protection
+  transfer; the page prints its overdraft fee on its own line (raw 158607).
+- An NSF-led name for an item returned or paid ("NSF Return/Paid Item Fee for Chkg. & Sav",
+  Kewanee, raw 131332, beside its own "Overdraft Fee | $25.00") is the NSF fee. One price written
+  "NSF Paid Item Fee/Returned Item Fee" (v43, Pinnacle) is still the overdraft price.
+- A bare "Overdrafts" priced per transfer is the share transfer that covers them ("Share
+  Transfer for\nOverdrafts - $2.00 per transfer", raw 112570). A bare "Overdrafts" priced per
+  item is still the overdraft fee.
+
 Rules 65, #1196 (Oct 14, no version change, so no document is re-read for it):
 - A price whose decimal point the PDF text dropped ("Dormant accounts | $15 00 per month
   Nonsufficient funds | $35 00", Addition Financial) gets its point back before the line is read
@@ -548,6 +561,26 @@ After the extract itself, each extract step runs these passes in order (`run-sto
   rules filed under a new category was judged under the old one: 12 of the 54 take-overs by 14 Oct
   ("Wire Transfer - International" $45 judged as an overdraft fee).
 - `recheckHeldRates`: held percentage lines (below).
+- `previewHeldNameRules` (#1102, off until James switches it on): the held-name rules
+  (`HELD_NAME_PATTERNS` in `rules.ts`) file unclassified names that say their own category at
+  many banks: "Stop Pay Fee", "Reconveyance Fee", a bare "Early Closure Fee" row, a club
+  withdrawal fee, a closure inside a window of a year or less, a returned or undeliverable
+  statement (account research, as `fee-fold.ts` files returned mail), a mailed member statement,
+  an IRA closeout or withdrawal, and a box size written with prime marks ("3″x5″"). They come
+  after every other rule. A loan's, HELOC's, mortgage's or certificate's early closure, a window
+  over a year, and a bare "Wire Transfer Fee" (about 1 in 5 say incoming or international after
+  the price) stay held. While `KNOX_HELD_NAME_RULES_LIVE` is false, each extract step reads every
+  held line whose excerpt could match (`HELD_NAME_PREFILTER_SQL`) and reports in
+  `held_name_preview` how many only these rules price at the row's own amount, and how many of
+  those pass Darwin's category guard and trace on their own line. It writes nothing. On
+  14 Oct 2026, 638 lines at 299 banks passed both checks (436 set aside), and a hand check of
+  20 found 20 right. Switching on takes a rules version bump in the same change: new reads
+  file these names, `recheckHeldRows` sends the held lines to Darwin with
+  `knox_held_name_rule`, and Hamilton's rules re-check reads them the same way. With the
+  switch on, the answer-key gates read Texas 520 right / 15 wrong (511 / 14 off) and seven
+  states 761 / 41 (744 / 41). To reverse it, switch off with another version bump:
+  `recheckPromotedRows` puts unverified promotions back on hold, and the rules re-check
+  takes down the live ones it no longer reproduces.
 - Batch review (`batch-review.ts`, below).
 
 Percentage fees (`percent.ts`). A held "1% of the transaction" line goes to Darwin as a rate fee

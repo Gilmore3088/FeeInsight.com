@@ -27,7 +27,7 @@ import { runWebsiteFind } from "./website-find";
 import { loadSharedNameIds } from "./other-bank-host";
 import { blockedAnswerHostConfirmed, loadOwnHosts, onBankHosts } from "./own-hosts";
 import { domainRule, ownSiteDomains, webSearchToolFor } from "./web-search-tool";
-import { loadGroupGaps, pickFromWorkLists, WORK_LIST_POOL, workListDetail, type GroupGaps, type WorkListPlacement } from "@/lib/agents/state-expert/work-list";
+import { loadGroupGaps, pickFromWorkLists, WORK_LIST_POOL, workListDetail, workListPoolRankSql, type GroupGaps, type WorkListPlacement } from "@/lib/agents/state-expert/work-list";
 
 type Fetcher = typeof fetch;
 
@@ -194,8 +194,10 @@ async function selectBanks(db: typeof sql, stateCode: string | null, limit: numb
               AND pa.outcome <> ALL(${TRANSIENT_PAID_OUTCOMES})
          )
        )
-     -- Report requesters first, then the largest banks; the work lists reorder the rest.
-     ORDER BY EXISTS (SELECT 1 FROM leads lead WHERE lead.quote_institution_id = inst.id) DESC,
+     -- Requesters and paying customers first, then each work-list cell's first rows in turn
+     -- (#1269), so the cut never drops a whole small-bank group; the work lists reorder the rest.
+     ORDER BY requested DESC, paying DESC,
+              ${workListPoolRankSql(db, { state: "inst.state_code", assets: "inst.asset_size", id: "inst.id" })},
               inst.asset_size DESC NULLS LAST, inst.id ASC
      LIMIT ${WORK_LIST_POOL}
   `;
@@ -356,7 +358,7 @@ export async function runMagellanPaidFind(options: RunMagellanPaidFindOptions): 
   const model = PAID_PASS_MODELS.find();
   const usePick = options.pick ?? process.env.MAGELLAN_PAID_PICK?.trim().toLowerCase() !== "off";
   const ownHostsById = await loadOwnHosts(db, rows);
-  const sharedNames = await loadSharedNameIds(db, rows);
+  const sharedNames = await loadSharedNameIds(db, rows, { runId: options.runId, stepId: options.stepId ?? null });
   for (const row of rows) {
     row.name_shared = sharedNames.has(Number(row.id));
     const institutionId = Number(row.id);
@@ -519,6 +521,7 @@ export async function runMagellanPaidFind(options: RunMagellanPaidFindOptions): 
         verdict,
         document_type: documentType,
         reason,
+        ...workListDetail(row.work_list),
       },
     });
     result.results.push({ institution_id: institutionId, outcome, url, cost_microusd: costMicrousd, reason, rung, ...workListDetail(row.work_list) });
@@ -712,6 +715,7 @@ async function runPick(
       model_reason: modelReason,
       document_type: documentType,
       reason,
+      ...workListDetail(row.work_list),
     },
   });
   return { url, documentType, confidence, reason, outcome, costMicrousd, budgetStopped: null };

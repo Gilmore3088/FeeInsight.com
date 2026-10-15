@@ -5,7 +5,7 @@ import { recordAttempt } from "@/lib/agents/learning/attempts";
 import { loadMarketLeaderIds } from "@/lib/data-store/market-leaders";
 import { classifyFetchFailure, type AttemptOutcome } from "@/lib/agents/learning/outcomes";
 import { PAID_PASS_MODELS, paidModelCall, paidResponseJson, type PaidMessageCreator } from "@/lib/agents/paid-pass";
-import { loadGroupGaps, pickFromWorkLists, WORK_LIST_POOL, workListDetail, type GroupGaps, type WorkListPlacement } from "@/lib/agents/state-expert/work-list";
+import { loadGroupGaps, pickFromWorkLists, WORK_LIST_POOL, workListDetail, workListPoolRankSql, type GroupGaps, type WorkListPlacement } from "@/lib/agents/state-expert/work-list";
 
 import { FOUND_COOLDOWN_DAYS, MISS_COOLDOWN_DAYS } from "./cooldowns";
 import { looksLikePdfUrl, validateFeeCandidate } from "./find-validate";
@@ -240,18 +240,25 @@ async function selectRows(db: SqlTag, limit: number, hiddenLimit: number, leader
               AND pa.outcome <> 'budget_blocked'
          ) < ${MAX_TRANSIENT_TRIES}
     )
-    , lanes AS (
+    , due AS (
       SELECT scoped.*,
-             row_number() OVER (PARTITION BY priority ORDER BY requested DESC, leader DESC, asset_size DESC NULLS LAST, id ASC) AS lane_rank
+             ${workListPoolRankSql(db, { state: "state_code", assets: "asset_size", id: "id", within: "priority" })} AS cell_rank
         FROM scoped
        WHERE (priority AND (business_only OR no_overdraft_price OR refers_elsewhere OR stale_copy OR hidden))
           OR (NOT priority AND hidden AND (product_page OR no_overdraft_price))
           -- Any bank whose link is a business-only schedule, once the free business search missed.
           OR (NOT priority AND business_only AND business_searched)
     )
+    -- Each lane's cut keeps requesters and paying customers, then market leaders, then each
+    -- work-list cell's first rows in turn (#1269), so no small-bank group drops out whole.
+    , lanes AS (
+      SELECT due.*,
+             row_number() OVER (PARTITION BY priority ORDER BY requested DESC, paying DESC, leader DESC, cell_rank ASC, asset_size DESC NULLS LAST, id ASC) AS lane_rank
+        FROM due
+    )
     SELECT * FROM lanes
      WHERE lane_rank <= ${WORK_LIST_POOL}
-     ORDER BY priority DESC, requested DESC, leader DESC, asset_size DESC NULLS LAST, id ASC
+     ORDER BY priority DESC, lane_rank ASC
   `;
   const rows = Array.isArray(pool) ? pool : [];
   return [
@@ -320,7 +327,7 @@ export async function runScheduleSearch(options: {
   const fetchImpl = options.fetchImpl ?? fetch;
   const model = PAID_PASS_MODELS.find();
   const ownHostsById = await loadOwnHosts(db, rows);
-  const sharedNames = await loadSharedNameIds(db, rows);
+  const sharedNames = await loadSharedNameIds(db, rows, { runId: options.runId, stepId: options.stepId ?? null });
   for (const row of rows) {
     row.name_shared = sharedNames.has(Number(row.id));
     const institutionId = Number(row.id);
@@ -444,6 +451,7 @@ export async function runScheduleSearch(options: {
         document_type: documentType,
         overdraft_price_seen: overdraftPrice,
         reason,
+        ...workListDetail(row.work_list),
       },
     });
     result.results.push({ institution_id: institutionId, outcome, url: found, cost_microusd: costMicrousd, reason, by: "schedule_search", ...workListDetail(row.work_list) });

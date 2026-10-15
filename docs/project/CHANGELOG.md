@@ -3,6 +3,24 @@
 Merged changes in plain language, newest day first (UTC). Written from `git log` on main.
 Started 2026-10-05; for anything earlier, see `git log`.
 
+## 2026-10-14
+**Accuracy and data quality**
+- Knox no longer shows its internal extraction note in a fee's conditions on any customer page, API or report (#1278).
+- Fee audience: Knox suggests and Darwin decides each fee's audience (#1253); the classifier leaves a fee unknown rather than guess from a one-audience heading in a mixed schedule, reads "Non-Personal" as business, and never gives a business schedule the consumer default (#1281, #1288, #1292). Stored audiences change only after James's migration and relabel.
+- Knox keeps a dropped decimal point's cents ("$15 00", "$1 50*", "$29. 95") (#1307, #1310); a re-read that changes a fee's category drops the old one (#1291).
+- Hamilton keeps "ACH Stop Payment" and "Stop Payment" apart when the page prints both (#1314); a near-name duplicate collapse is built, switched off (#1316).
+- Darwin: a Knox category change is a reason to judge a row again, switched off (#1296); rows due again after a rule change wake their state's lane (#1313).
+
+**Discovery**
+- Magellan's bank-name check matches whole words and needs the city for a shared name (#1298); paid searches cover the bank's other own hosts and paid answers must name the bank (#1282); disclosure index pages have their documents checked, and unreachable links are retried at other spellings, on the bank's own domain only, real PDFs only, with a hard timeout and size cap (#1293, #1308, #1311).
+- On another bank's host, a cert number counts only next to FDIC/Cert/Charter/NCUA, and a name inside another bank's name counts as shared (#1315). New credit unions keep their full city instead of NCUA's 15-character cut (#1317).
+- The coverage-gaps query runs in 0.3 s instead of 3.9 s (#1277).
+
+**Project and tooling**
+- CI: every test runs once in parallel jobs, about half the wait (#1300); a hard-document gate every taxonomy, guard or same-line change must pass (#1290); a merge needs a submitted review of its exact head (#1241).
+- Build plan: data quality before the Hamilton redesign (#1276).
+- Also merged today (earlier lanes): #1233, #1235, #1237, #1239, #1240, #1243, #1244, #1246, #1247, #1248, #1252, #1257, #1258, #1261, #1263, #1262, #1265, #1270, #1272.
+
 ## 2026-10-11
 **Accuracy and data quality**
 - Fee 92156 re-filed as a safe deposit box fee, and escheat fee 59791 hand-checked for takedown (#1020, port of #973).

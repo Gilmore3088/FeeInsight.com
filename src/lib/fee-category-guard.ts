@@ -82,7 +82,7 @@ const EARLY_CLOSE = String.raw`\bearly (account )?(clos|terminat)|\bclos(e|ed|in
 /** A fee for an account with no activity: the dormant account fee, not a balance fee. */
 const INACTIVE = String.raw`inactiv|no activity|dorman`;
 /**
- * v62 (#1312): Spanish fee names. Puerto Rico credit unions publish their schedules in Spanish
+ * v63 (#1312): Spanish fee names. Puerto Rico credit unions publish their schedules in Spanish
  * (Puerto Rico FCU's "Sobregiros" $10, raw 262766; Vapr FCU's "Cheques devueltos" $20), and some
  * U.S. banks publish a Spanish copy beside the English one (General Electric Employees FCU,
  * Sound FCU, OnPoint). Each guarded category's name test reads the common Spanish words for its
@@ -121,10 +121,16 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
     // month)" $38.95, a ZBA or sweep transfer, a business sweep checking account) is not it either.
     // v61: a remote deposit capture service named as a product (Montecito's "CheckCapture
     // Maintenance Fee" $40, 76519) is not it either (#1196).
+    // v62: a service charge for another service ("Stop & Reissue Service Charge", "Claims/Payment
+    // Investigation Service Charge", "IRS Processing Service Charge", "ATM Service Charge", a
+    // negative balance charge) or one priced per item, transfer, transaction, withdrawal or debit
+    // ("Per Item Service Charge", "Service charge per transfer") is not it either (#1100). A
+    // per-debit charge the account's fee carries on top ("Service charge + per debit item fee")
+    // stays.
     exclude:
-    // v62: the same in Spanish: a debit card's monthly fee ("Cargo manejo mensual (Tarjeta de Débito
-    // ATH)" $1, Puerto Rico FCU 262769), savings, a loan, a statement or an annual charge.
-      /(\btarjeta|ahorros?\b|pr[eé]stamo|estados? de cuenta|\banual\b|\bsweep|\bid\s*theft|\bidentity\s+(theft|protect|monitor|restor)|^\s*accidental death|\binsurance plan\b|\bpackage monthly fee|otherwise,? a fee of\s*$|\bmerchant (capture|services?|processing|accounts?)\b|terminat|\boverdraft (privilege|courtesy)|paper (stmt|states|mailed)|\bstmt fee|is waived under|\|\s*na\s*\||transfer service charge|\bwire (manager|module)\b|\bmodule\b|treasury|cash management|\bapi\b|\bach\b|positive pay|paper mailed|cashier|^monthly fee \(per account\)|\batm\/debit card monthly fee|location|scanner|remote deposit|\bcheck\s*capture\b|\brdc\b|lockbox|intrafi|\bics\b|^waiving\b|savings|money market|club|night deposit|safe deposit|box|(?<!\bcross[- ]?border (?:banking )?(?:bundles?|packages?|accounts?|banking) )annual|dormant|inactive|statement(?! cycle)|\bira\b|certificate|\bcd\b|loan|escheat|clos|research|excess|activity|withdrawal|saver|business|commercial|analysis|\bhsa\b|health|escrow|trust|address|fax|cop(y|ies)|(pos|pin[- ]based) transaction|for transactions|transaction service charge|earnings credit (is applied|available to offset))/i,
+    // v63: the same in Spanish: a debit card's monthly fee ("Cargo manejo mensual (Tarjeta de Débito
+    // ATH)" $1, Puerto Rico FCU 262769), savings, a loan, a statement or an annual charge (#1312).
+      /((?<!(?:\+|\bplus\b|\band\b)[^|]{0,20})\bper[- ]?(?:item|transfer|transaction|withdrawal|debit)s?\b|\bstop\b|re-?issue|investigat|\birs\b|negative balance|\batm service charge|\btarjeta|ahorros?\b|pr[eé]stamo|estados? de cuenta|\banual\b|\bsweep|\bid\s*theft|\bidentity\s+(theft|protect|monitor|restor)|^\s*accidental death|\binsurance plan\b|\bpackage monthly fee|otherwise,? a fee of\s*$|\bmerchant (capture|services?|processing|accounts?)\b|terminat|\boverdraft (privilege|courtesy)|paper (stmt|states|mailed)|\bstmt fee|is waived under|\|\s*na\s*\||transfer service charge|\bwire (manager|module)\b|\bmodule\b|treasury|cash management|\bapi\b|\bach\b|positive pay|paper mailed|cashier|^monthly fee \(per account\)|\batm\/debit card monthly fee|location|scanner|remote deposit|\bcheck\s*capture\b|\brdc\b|lockbox|intrafi|\bics\b|^waiving\b|savings|money market|club|night deposit|safe deposit|box|(?<!\bcross[- ]?border (?:banking )?(?:bundles?|packages?|accounts?|banking) )annual|dormant|inactive|statement(?! cycle)|\bira\b|certificate|\bcd\b|loan|escheat|clos|research|excess|activity|withdrawal|saver|business|commercial|analysis|\bhsa\b|health|escrow|trust|address|fax|cop(y|ies)|(pos|pin[- ]based) transaction|for transactions|transaction service charge|earnings credit (is applied|available to offset))/i,
   },
   // "at least" is a balance or a statistic, and a short name ending in "fee on" is a
   // line cut mid-sentence ("Overdraft Fee on" $60), never the overdraft fee itself (v17).
@@ -162,7 +168,7 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
   nsf: {
     include:
       /(nsf|insufficient|non[- ]?sufficient|returned item|return(ed)? (check|item|ach|payment|draft)|returned unpaid|unpaid item|fondos insuficientes|cheques? devuelt[oa]s?|art[ií]culos? devuelt[oa]s?|partidas? devuelt[oa]s?|devoluci[oó]n por fondos)/i,
-    // v62: in Spanish, a deposited check ("depositado", "depósito"), a credit card, a loan, a
+    // v63: in Spanish, a deposited check ("depositado", "depósito"), a credit card, a loan, a
     // returned payment ("Pago por cheque o ACH devuelto", Puerto Rico FCU 262771), an outgoing ACH,
     // a transfer or a return for another reason ("motivo distinto a fondos insuficientes") is not it.
     // v47: a business-only ACH return and a payment the payee sent back ("Payee-returned Check
@@ -216,11 +222,11 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
     exclude: new RegExp(`(outgoing|send|sent|international|foreign|intl|${ES_INTL}|${ES_OUTGOING}|${INTL_ABBREV}|${WIRE_CORRECTIONS}|${BUSINESS_ONLY})`, "i"),
   },
   stop_payment: {
-    // v62: Spanish "Suspensión de pago", "Orden de no pago", "Detener pago" or "Parar cheques".
+    // v63: Spanish "Suspensión de pago", "Orden de no pago", "Detener pago" or "Parar cheques".
     include: /(stop|suspension of payment|suspensi[oó]n de(l)? pagos?|suspender (un |el )?pagos?|[oó]rden(es)? de no pago|detener (el |un )?pagos?|parar (el |un )?(pagos?|cheques?))/i,
     // "Cancel stop payment" and "Stop Payment Removal" remove a stop; "ACH Stop
     // Payment/Cancellation" and "Stop Payments (to put on or remove)" place one.
-    // v62: a stop on a cashier's or official check is the stop payment fee ("Cashier's Check Stop
+    // v63: a stop on a cashier's or official check is the stop payment fee ("Cashier's Check Stop
     // Payments" $20, Community First Guam FCU 327099; "Suspensión de Pago Cheque Oficial", Vapr
     // FCU 262792); a cashier's check named without a stop is not.
     exclude:
@@ -238,12 +244,12 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
   },
   ach_origination: { include: /\S/, exclude: /(?!)/ },
   cashiers_check: {
-    // v62: "Cheques de gerente" (Puerto Rico FCU 262772), "Cheques oficiales", "Cheques de cajero".
+    // v63: "Cheques de gerente" (Puerto Rico FCU 262772), "Cheques oficiales", "Cheques de cajero".
     include: /(cashier|official check|bank check|bank draft|corporate check|treasurer|certified|teller'?s? check|cheques? (de gerente|oficial(es)?|de caja|de cajero|certificados?))/i,
     exclude: /(cop(y|ies)|stop|replace|lost|research|copia|suspensi[oó]n|suspender|detener|parar|no pago|reemplaz|perdid)/i,
   },
   od_protection_transfer: {
-    // v62: "Transferencia(s) por sobregiro(s)" (Puerto Rico FCU 262767, Sound FCU 274044).
+    // v63: "Transferencia(s) por sobregiro(s)" (Puerto Rico FCU 262767, Sound FCU 274044).
     include: /(overdraft|\bod\b|\bodp\b|o\/d|sweep|protection|sobregir)/i,
     // v39: "Returned or Paid Checks (OD Privilege Fee/Insufficient Funds/...includes Electronic Funds
     // Transfer Debits)" $30, "Check-Overdraft/NSF/Return Fees" $30 and "Overdraft Fee-Exceeded
@@ -259,14 +265,14 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
     exclude: new RegExp(String.raw`subordination request:\s*(incoming|outgoing)|${SUBORDINATION.source}`, "i"),
   },
   paper_statement: {
-    // v62: "Cargo por estado de cuenta en papel", "Envío estado de cuenta por correo postal".
+    // v63: "Cargo por estado de cuenta en papel", "Envío estado de cuenta por correo postal".
     include: /(statement|estados? de cuenta)/i,
     // An e-statement fee is excluded, but "Paper Statement (waived with e-Statements)" is not.
     exclude: /(cop(y|ies)|address|research|re-?print|duplicate|interim|special|photo|image|^(?!.*paper).*e-?statement|copia|fax|duplicad|reimpres|interin|^(?!.*(papel|correo|postal|paper)).*electr[oó]nico)/i,
   },
   card_replacement: {
     // "Re-issuance" and "Reissuance" are the reissue fee too ("ATM/Check Card Re-issuance" $10).
-    // v62: "Reemplazo de tarjeta", "Tarjeta de reemplazo", "Sustitución de tarjeta" (Spanish).
+    // v63: "Reemplazo de tarjeta", "Tarjeta de reemplazo", "Sustitución de tarjeta" (Spanish).
     include: /(replace|reissue|re-?issu|lost|stolen|duplicate card|card \(duplicate\)|card reorder|reemplaz|sustituci[oó]n de (la )?tarjeta|reposici[oó]n de (la )?tarjeta)/i,
     // A "check card" is a debit card; checks, checkbooks and checking accounts are not. A PIN
     // reissue alone is not a card replacement, but "Debit Card (replacement or PIN)" is.
@@ -432,9 +438,14 @@ export const GUARDED_CATEGORIES: readonly string[] = [...new Set([...Object.keys
 // replaced bag or bag key is the night deposit fee (104666, 32631, 37193, 94606); a sweep
 // service's monthly charge is not monthly maintenance (95769).
 // v61: a remote deposit capture product ("CheckCapture Maintenance Fee", 76519) is not monthly maintenance (#1196).
-// v62: Spanish fee names for the guarded categories (#1312); "Deposited Return Items" filed as NSF,
+// v62: a monthly maintenance row whose own source line charges its price per withdrawal, debit,
+// transaction, transfer or item is an activity charge, not the account's fee; one charged for each
+// of those over a limit is re-filed to account research, where the top-50 fold files excess
+// withdrawal fees (`activityChargeOnLine`, `refileFromLine`); a service charge named for another
+// service or priced per item is not monthly maintenance either (#1100).
+// v63: Spanish fee names for the guarded categories (#1312); "Deposited Return Items" filed as NSF,
 // an international incoming wire filed as domestic and a stop on a cashier's check are re-filed.
-export const CATEGORY_GUARD_VERSION = 62;
+export const CATEGORY_GUARD_VERSION = 63;
 
 /**
  * Categories whose fee is usually a rate ("1% of the transaction"). A dollar amount filed
@@ -478,11 +489,11 @@ const REFILE_RULES: ReadonlyArray<{ from: string; to: string; when: RegExp; unle
   { from: "nsf", to: "od_protection_transfer", when: /(transfer|xfe?r\b|sweep)/i },
   { from: "nsf", to: "overdraft", when: /(paid nsf|paid (?:[\w&]+ ){1,3}nsf items?|nsf[- ]paid|items? paid|\(\s*paid\s*\)|paid (?:non[-\s]?|in)sufficient|\(\s*honou?red\s*\)|(?:nsf|(?:in|non[-\s]?)sufficient)\b[^|]{0,30}?(?:(?<!\bnon)[-–]\s*|\(\s*(?:check\s+)?)paid\b(?!\s+(?:or|from|by)\b))/i },
   // "Returned Item fee (written to you)" is a check the customer deposited coming back.
-  // v62: "Deposited Return Items" (Community First Guam FCU 327091) and "Depósito en cheque devuelto".
+  // v63: "Deposited Return Items" (Community First Guam FCU 327091) and "Depósito en cheque devuelto".
   { from: "nsf", to: "deposited_item_return", when: /(deposit|dep[oó]sit|written to you|\bbonds?\b|\bcoupons?\b)/i },
   { from: "safe_deposit_box", to: "night_deposit", when: /(\bbags?\b|depository|night deposit)/i },
   { from: "wire_domestic_outgoing", to: "wire_intl_outgoing", when: /(international|foreign|intl|\bint['’]l\b|internacional|extranjer)/i, unless: /(domestic|dom[eé]stic|\bnacional)/i },
-  // v62: "International wire transfer (Incoming)" $40 filed as a domestic incoming wire (Coast360 FCU 462933).
+  // v63: "International wire transfer (Incoming)" $40 filed as a domestic incoming wire (Coast360 FCU 462933).
   // One price for domestic and international, or for both directions, stays where it is, as do a
   // check collection, a currency cell joined into the name, a cut-off sentence and an account name.
   {
@@ -491,7 +502,7 @@ const REFILE_RULES: ReadonlyArray<{ from: string; to: string; when: RegExp; unle
     when: /^(?=.*(wire|transferencias? bancarias?)).*(international|foreign|intl|\bint['’]l\b|internacional|extranjer)/i,
     unless: /(domestic|dom[eé]stic|\bnacional|outgoing|outbound|\bsend|\bsent\b|saliente|collection|currency|must be|not accepting|\belite\b)/i,
   },
-  // v62: a stop on a cashier's check filed as the cashier's check ("Suspension of payment on a Cashier's Checks").
+  // v63: a stop on a cashier's check filed as the cashier's check ("Suspension of payment on a Cashier's Checks").
   { from: "cashiers_check", to: "stop_payment", when: /(\bstop\b|suspensi[oó]n|suspender|detener|parar)/i },
   { from: "overdraft", to: "late_payment", when: /\blate (payment|charge|fee)\b/i },
   // v41: a charge-off processing fee sits with the other charge-off fees under account research.
@@ -680,6 +691,8 @@ export function checkFeeCategory(
   if (courtesyReason) return { ok: false, code: "name_contradicts", reason: courtesyReason };
   const noteReason = noteTailOfAnotherFee(canonicalFeeKey, name, context);
   if (noteReason) return { ok: false, code: "name_contradicts", reason: noteReason };
+  const activityReason = activityChargeOnLine(canonicalFeeKey, context);
+  if (activityReason) return { ok: false, code: "schedule_contradicts", reason: activityReason.reason };
   const slotReason = pairedPriceSlot(canonicalFeeKey, context);
   if (slotReason) return { ok: false, code: "schedule_contradicts", reason: slotReason };
   const ownAtmReason = freeAtOwnAtm(canonicalFeeKey, name, context);
@@ -787,6 +800,86 @@ function pairedPriceSlot(canonicalFeeKey: string, context: CategoryGuardContext 
     return slot === 2 ? `"${pair.text}" prices this wire second ($${prices[2]}), not $${prices[1]}` : null;
   }
   return null;
+}
+
+/**
+ * v62 (#1100): the row's own price on its source line, followed by the unit it is charged per.
+ * "Service charge of $2 per debit in excess of 6 withdrawals per quarter", "A service charge of
+ * $3.00 will be charged for each withdrawal in excess of six", "$25.00/Item" and "a $10.00 service
+ * charge each time you withdraw money" price an activity, not the account's monthly fee. The first
+ * time the price appears on the line decides: a later copy of it in another cell prices another fee
+ * ("Monthly Maintenance Fee: $1.00 | ... | Check Image Fee : $1 per item"). Whichever comes first
+ * after the price wins: a month, statement cycle, quarter or fee period makes it the periodic fee
+ * ("$9 per item charge after 3 withdrawals per month" is the item charge). A per-check charge the
+ * fee carries on top ("$10.00 per month and $.35 per debit", "$8.00 plus .50¢ per check") belongs to
+ * the other figure, so the text after the price stops at the next price, cell, "plus", "and" or
+ * "&". Read from Knox's excerpt of the line; with no excerpt or no amount the check does not apply.
+ */
+const ACTIVITY_UNIT = String.raw`(?:share\s+|debit\s+|posted\s+)?(?:debit|withdrawal|transaction|transfer|check|draft|item)s?\b(?!\s*:)`;
+/** Up to six words after the price; a word may sit in parentheses ("Service Charge (Per Check Charge)"). */
+const WORDS_AFTER_PRICE = String.raw`^\s*(?:[\w'’()-]+\s+){0,6}?\(?`;
+const ACTIVITY_AFTER_PRICE = new RegExp(
+  String.raw`${WORDS_AFTER_PRICE}(?:(?:for\s+)?(?:each|every|per)\s+${ACTIVITY_UNIT}|\/\s*${ACTIVITY_UNIT}|(?:each|every)\s+time\s+(?:you|a member)\s+(?:withdraw|make|transfer))`,
+  "i",
+);
+const PERIOD_AFTER_PRICE = new RegExp(
+  String.raw`${WORDS_AFTER_PRICE}(?:(?:per|a|each|every|for each)\s+(?:calendar\s+|monthly\s+)?(?:month|statement|cycle|quarter|fee period|year)|monthly|quarterly|\/\s*(?:mo|month)\b)`,
+  "i",
+);
+/** Words that put a count limit on the activity: the excess withdrawal fee the top-50 fold files under account research. */
+const OVER_LIMIT = /\b(in excess of|over\s+(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten|twelve|fifteen|twenty)\b|after\s+(?:\d+|one|two|three|four|five|six|ten)\b|more than|exceed(?:s|ed|ing)?\b|limit(?:ation)?s?\b)/i;
+const ACTIVITY_REFILE_TO = "account_research";
+
+function priceOnLine(amount: number): RegExp {
+  const whole = Math.trunc(amount);
+  const cents = Math.round((amount - whole) * 100);
+  const centsPart = cents === 0 ? String.raw`(?:\.00)?` : String.raw`\.${String(cents).padStart(2, "0")}`;
+  return new RegExp(String.raw`\$\s?${whole === 0 ? "0?" : whole}${centsPart}(?![\d,]|\.\d)`, "g");
+}
+
+interface ActivityReading {
+  reason: string;
+  /** The line limits the activity ("in excess of six"), so it is an excess activity fee. */
+  overLimit: boolean;
+}
+
+function activityChargeOnLine(canonicalFeeKey: string, context: CategoryGuardContext | undefined): ActivityReading | null {
+  if (canonicalFeeKey !== "monthly_maintenance" || context?.amount == null || context.amount === "") return null;
+  const amount = Number(context.amount);
+  const excerpt = context.conditions?.match(/\bexcerpt=([\s\S]*)$/)?.[1];
+  if (!excerpt || !Number.isFinite(amount) || amount <= 0) return null;
+  const line = plainQuotes(excerpt).replace(/^["\s]+|["\s]+$/g, "");
+  const match = priceOnLine(amount).exec(line);
+  if (!match) return null;
+  const start = match.index + match[0].length;
+  const tail = line.slice(start, start + 160).split(/\$|\||&|\+|\bplus\b|\band\b/i)[0];
+  const activity = ACTIVITY_AFTER_PRICE.exec(tail);
+  const period = PERIOD_AFTER_PRICE.exec(tail);
+  if (!activity || (period && period[0].length <= activity[0].length)) return null;
+  const before = line.slice(line.lastIndexOf("|", match.index) + 1, match.index);
+  const unit = tail.trim().split(/\s+/).slice(0, 8).join(" ");
+  return {
+    reason: `the source line charges $${amount.toFixed(2)} ${unit}, an activity charge, not the account's monthly maintenance fee`,
+    overLimit: OVER_LIMIT.test(tail) || OVER_LIMIT.test(before),
+  };
+}
+
+/**
+ * The category a fee's own source line places it in, when that differs from the one it was filed
+ * under; null otherwise. v62: a monthly maintenance row the line charges per withdrawal, debit or
+ * transaction over a limit is the excess activity fee, filed under account research by the top-50
+ * fold (James, Oct 8: "fold into existing"). Other activity charges are not re-filed: a transfer or
+ * an item charge has no one home. Pure; Darwin and Hamilton's live guard both use it.
+ */
+export function refileFromLine(
+  canonicalFeeKey: string | null | undefined,
+  feeName: string | null | undefined,
+  context: CategoryGuardContext | undefined,
+): string | null {
+  if (!canonicalFeeKey) return null;
+  const reading = activityChargeOnLine(canonicalFeeKey, context);
+  if (!reading?.overLimit) return null;
+  return checkFeeCategory(ACTIVITY_REFILE_TO, feeName, context).ok ? ACTIVITY_REFILE_TO : null;
 }
 
 const NOTE_HEAD_FEES: ReadonlyArray<readonly [RegExp, string]> = [

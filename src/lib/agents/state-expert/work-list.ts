@@ -24,7 +24,11 @@ type SqlTag = typeof sql;
  * Only the order changes: each pass keeps its own per-step cap. Deterministic, no provider calls.
  */
 
-/** Rows a pass reads before ordering; its per-step cap then applies to the ordered list. */
+/**
+ * Rows a pass reads before ordering; its per-step cap then applies to the ordered list. The
+ * query orders the pool with `workListPoolRankSql` (#1269), so the cut keeps every list's
+ * first rows rather than only the largest institutions.
+ */
 export const WORK_LIST_POOL = 2000;
 /** The list institutions over $10B (or with no state) share. */
 export const NATIONAL_LIST = "national";
@@ -40,6 +44,31 @@ export function sizeGroupOf(assetThousands: number | string | null | undefined):
     if (assets < group.maxThousands) return group.key;
   }
   return "over_10b";
+}
+
+/**
+ * The pool's SQL order (#1269), placed in a pass's ORDER BY after `requested DESC, paying DESC`:
+ * each institution's rank inside its work-list cell (state × size group, or the national list
+ * for $10B+ and no state), largest first. Ordering by it takes every cell's first institution,
+ * then every cell's second, and so on, so a pool cut at WORK_LIST_POOL drops the deepest rows
+ * of the fullest cells, never a whole small-bank group. `columns` are identifiers in the
+ * query (`inst.state_code`); `within` splits the rank by a lane column first.
+ */
+export function workListPoolRankSql(db: SqlTag, columns: { state: string; assets: string; id: string; within?: string }) {
+  const assets = db(columns.assets);
+  const state = db(columns.state);
+  const within = columns.within ? db`${db(columns.within)}, ` : db``;
+  return db`row_number() OVER (
+    PARTITION BY ${within}
+      CASE WHEN ${assets} >= ${SIZE_GROUPS[2].maxThousands}::bigint OR NULLIF(btrim(${state}), '') IS NULL
+           THEN ${NATIONAL_LIST}::text ELSE upper(btrim(${state})) END,
+      CASE WHEN ${assets} IS NULL THEN 'unknown'
+           WHEN ${assets} < ${SIZE_GROUPS[0].maxThousands}::bigint THEN ${SIZE_GROUPS[0].key}::text
+           WHEN ${assets} < ${SIZE_GROUPS[1].maxThousands}::bigint THEN ${SIZE_GROUPS[1].key}::text
+           WHEN ${assets} < ${SIZE_GROUPS[2].maxThousands}::bigint THEN ${SIZE_GROUPS[2].key}::text
+           ELSE 'over_10b' END
+    ORDER BY ${assets} DESC NULLS LAST, ${db(columns.id)} ASC
+  )`;
 }
 
 export interface GroupGap {
@@ -141,7 +170,9 @@ export function stateWorkLists<T extends WorkCandidate>(rows: readonly T[], gaps
   for (const row of rows) {
     const { list, first } = placement(row, gaps);
     if (first) continue;
-    lists.set(list, [...(lists.get(list) ?? []), row]);
+    const listRows = lists.get(list);
+    if (listRows) listRows.push(row);
+    else lists.set(list, [row]);
   }
   const stateShort = new Map<string, number>();
   for (const [key, gap] of gaps) {
@@ -150,7 +181,7 @@ export function stateWorkLists<T extends WorkCandidate>(rows: readonly T[], gaps
   }
   const order = compareInList(gaps);
   return [...lists.entries()]
-    .map(([list, listRows]) => ({ list, short: stateShort.get(list) ?? 0, rows: [...listRows].sort(order) }))
+    .map(([list, listRows]) => ({ list, short: stateShort.get(list) ?? 0, rows: listRows.sort(order) }))
     .sort((a, b) => b.short - a.short || (a.list === NATIONAL_LIST ? 1 : 0) - (b.list === NATIONAL_LIST ? 1 : 0) || a.list.localeCompare(b.list));
 }
 
@@ -193,4 +224,38 @@ export function workListDetail(placementInfo: WorkListPlacement | undefined): Re
     work_group: placementInfo.group,
     work_group_short: placementInfo.groupShort,
   };
+}
+
+/**
+ * The step ledger's record of every work-list entry in a pass's results (#1269). The step's
+ * `sample_results` keeps only the first 10, which the paid finds, blocked fetches and picks
+ * usually fill before the website and schedule searches; this keeps each entry's work-list
+ * fields and counts the real tries (an outcome other than budget_blocked) in short groups, for
+ * the week-after check of the share of paid tries spent on groups below target.
+ */
+export function workListLedger(results: ReadonlyArray<Record<string, unknown>>): {
+  entries: Array<Record<string, unknown>>;
+  tries: number;
+  short_group_tries: number;
+} {
+  const entries: Array<Record<string, unknown>> = [];
+  let tries = 0;
+  let shortGroupTries = 0;
+  for (const result of results) {
+    if (!result || typeof result.work_list !== "string") continue;
+    entries.push({
+      institution_id: result.institution_id ?? null,
+      // The paid web search records its rung (#1032) instead of a `by`.
+      by: result.by ?? (result.rung != null ? "web_search" : null),
+      ...(result.rung != null ? { rung: result.rung } : {}),
+      outcome: result.outcome ?? null,
+      work_list: result.work_list,
+      work_group: result.work_group ?? null,
+      work_group_short: result.work_group_short ?? null,
+    });
+    if (typeof result.outcome !== "string" || result.outcome === "budget_blocked") continue;
+    tries += 1;
+    if (Number(result.work_group_short) > 0) shortGroupTries += 1;
+  }
+  return { entries, tries, short_group_tries: shortGroupTries };
 }

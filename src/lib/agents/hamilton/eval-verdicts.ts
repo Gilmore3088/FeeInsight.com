@@ -529,7 +529,7 @@ function num(value: number | string | null | undefined): number | null {
 export function evalVerdictFeesSql(byInstitution: boolean): string {
   return `
     SELECT fp.fee_published_id, fv.fee_verified_id, fp.institution_id, fr.source_document_id,
-           fp.canonical_fee_key, fp.fee_name, retidy.old_name AS original_fee_name, fp.amount, fr.conditions
+           fp.canonical_fee_key, fp.fee_name, retidy.old_name AS original_fee_name, fp.amount, COALESCE(fr.extraction_note, fr.conditions) AS conditions
       FROM published_fee_records fp
       LEFT JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
       LEFT JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
@@ -556,7 +556,7 @@ export function evalVerdictFeesSql(byInstitution: boolean): string {
             OR (fp.fee_name ~ '[0-9]\\s*%' AND fp.fee_name ~* '\\y(minimum|maximum|min|max)\\.?:?\\s*$')
             OR fp.fee_name ~* '\\yin\\s*/\\s*out\\y|\\yout\\s*/\\s*in\\y|incoming\\s*/\\s*outgoing|outgoing\\s*/\\s*incoming|domestic\\s*/\\s*international|international\\s*/\\s*domestic'
             OR fp.fee_name ~* 'non[- ]?(customer|member|account ?holder)s?\\y|\\ynot\\s+a\\s+(customer|member)\\y|\\yfor\\s+non-?(members|customers)\\y|non-?clients?\\y'
-            OR (fp.canonical_fee_key LIKE 'wire\\_%' AND fr.conditions ~ '\\$.*\\$'))
+            OR (fp.canonical_fee_key LIKE 'wire\\_%' AND COALESCE(fr.extraction_note, fr.conditions) ~ '\\$.*\\$'))
      ORDER BY fp.fee_published_id`;
 }
 

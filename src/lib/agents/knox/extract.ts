@@ -340,7 +340,7 @@ function textArtifactQuery(
                 WHERE unnamed.source = 'knox'
                   AND unnamed.source_document_id = adt.source_document_id
                   AND (unnamed.product_name IS NULL OR (unnamed.min_balance_to_avoid IS NULL AND unnamed.waiver_text IS NULL))
-                  AND unnamed.conditions LIKE '%canonical_hint=${LINEUP_CATEGORY};%'
+                  AND COALESCE(unnamed.extraction_note, unnamed.conditions) LIKE '%canonical_hint=${LINEUP_CATEGORY};%'
              )
              AND NOT EXISTS (
                SELECT 1 FROM source_documents copy
@@ -428,7 +428,7 @@ function textArtifactQuery(
               AND fr.source_document_id = adt.source_document_id
               AND (
                 adt.text_hash IS NULL
-                OR position(('text_hash=' || adt.text_hash || ';') IN COALESCE(fr.conditions, '')) > 0
+                OR position(('text_hash=' || adt.text_hash || ';') IN COALESCE(COALESCE(fr.extraction_note, fr.conditions), '')) > 0
               )
          )${thinTextReextract})
          AND NOT EXISTS (
@@ -506,7 +506,7 @@ export async function retireRowsFromOlderText(db: SqlTag, row: KnoxTextRow): Pro
                            || '["superseded_by_reread"]'::jsonb
      WHERE fr.source = 'knox'
        AND fr.source_document_id = ${Number(row.source_document_id)}
-       AND position(${`text_hash=${row.text_hash};`} IN COALESCE(fr.conditions, '')) = 0
+       AND position(${`text_hash=${row.text_hash};`} IN COALESCE(COALESCE(fr.extraction_note, fr.conditions), '')) = 0
        AND fr.outlier_flags ? 'needs_darwin_verification'
        AND NOT EXISTS (
          SELECT 1 FROM verified_fee_observations fv WHERE fv.fee_raw_id = fr.fee_raw_id
@@ -550,8 +550,8 @@ export async function retireRowsFromOlderCopies(
           WHERE cur.source = 'knox'
             AND cur.source_document_id = old_copy.superseded_by_id
             AND NOT (COALESCE(cur.outlier_flags, '[]'::jsonb) ?| array['superseded_by_reread', 'superseded_by_newer_copy'])
-            AND substring(cur.conditions FROM 'canonical_hint=([a-z_]+)')
-                = substring(fr.conditions FROM 'canonical_hint=([a-z_]+)')
+            AND substring(COALESCE(cur.extraction_note, cur.conditions) FROM 'canonical_hint=([a-z_]+)')
+                = substring(COALESCE(fr.extraction_note, fr.conditions) FROM 'canonical_hint=([a-z_]+)')
        )
      ORDER BY fr.fee_raw_id
      LIMIT ${limit}
@@ -630,7 +630,7 @@ export async function insertCandidate(
       fee_name,
       amount,
       frequency,
-      conditions,
+      extraction_note,
       outlier_flags,
       source,
       product_name,
@@ -664,7 +664,8 @@ export async function insertCandidate(
       extraction_confidence = EXCLUDED.extraction_confidence,
       agent_event_id = EXCLUDED.agent_event_id,
       frequency = COALESCE(fr.frequency, EXCLUDED.frequency),
-      conditions = EXCLUDED.conditions,
+      extraction_note = EXCLUDED.extraction_note,
+      conditions = NULL,
       audience_evidence = EXCLUDED.audience_evidence,
       fee_treatment = EXCLUDED.fee_treatment,
       product_name = COALESCE(fr.product_name, EXCLUDED.product_name),
@@ -760,7 +761,7 @@ export async function insertHeldCandidate(
       fee_name,
       amount,
       frequency,
-      conditions,
+      extraction_note,
       outlier_flags,
       source, fee_audience, audience_evidence, fee_treatment
     )
@@ -810,7 +811,7 @@ export async function insertRateCandidate(
   const inserted = await db`
     INSERT INTO raw_fee_observations (
       institution_id, source_document_id, document_r2_key, source_url, extraction_confidence,
-      agent_event_id, fee_name, amount, frequency, conditions, outlier_flags, source,
+      agent_event_id, fee_name, amount, frequency, extraction_note, outlier_flags, source,
       amount_kind, rate_percent, rate_min_amount, rate_max_amount, rate_basis,
       fee_audience, audience_evidence, fee_treatment
     )

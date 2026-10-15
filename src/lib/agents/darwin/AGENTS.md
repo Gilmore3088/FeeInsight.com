@@ -17,7 +17,7 @@ Darwin owns verification and classification.
 |---|---|---|
 | `missing_canonical` | a valid canonical hint | rejected |
 | `missing_name` | a non-empty fee name | rejected |
-| `category_mismatch` | for the guarded categories, the fee name names its category and not a different fee (`src/lib/fee-category-guard.ts`); a name that names a neighbouring guarded category is re-filed there first (`refileCategory`) | rejected |
+| `category_mismatch` | for the guarded categories, the fee name names its category and not a different fee (`src/lib/fee-category-guard.ts`); a name that names a neighbouring guarded category is re-filed there first (`refileCategory`). Guard v62 (#1100) also reads the row's own source line: a monthly maintenance row whose line charges its price per withdrawal, debit, transaction, transfer or item fails, and one charged per activity over a limit is re-filed to account research first (`refileFromLine`) | rejected |
 | `missing_lineage` | a source URL or stored document key | rejected |
 | `percent_not_publishable` | a fee stated as a rate ("1.1% of the transaction") is filed under a category that publishes rates (`PERCENT_FEE_RANGES` in `src/lib/percent-fees.ts`: foreign transaction, cash advance, coin counting, late payment); elsewhere a rate is often an interest rate, not a fee. A rate that passes needs `rate_percent` and no dollar amount (else `invalid_amount`) and a rate inside that category's range (else `outside_envelope`), and its source check is `checkRateAgainstSource` | rejected |
 | `invalid_amount` | an amount; $0 only with Knox's `knox_review:zero` flag | rejected |
@@ -118,12 +118,44 @@ Darwin owns verification and classification.
   gives both, and a heading naming one audience leaves the fee `unknown` unless it is a business
   heading under a business schedule title: on unseen schedules those headings agreed with a blind
   reading on 14 of 36 fees (#1059, Oct 14). A business heading never takes the consumer default.
-  The evidence is written as `darwin:<source>: <words>`. The audience trigger copies the raw
-  row's audience onto the verified row until migration 20270110000047 lets it keep a `darwin:`
-  decision, so until then this changes nothing that is written.
+  The evidence is written as `darwin:<source>: <words>`, and migration 20270110000047 lets the
+  audience trigger keep a `darwin:` decision on the verified row (every other verified write
+  still inherits the raw row's audience). The decision is the audience the batch duplicate key,
+  the consumer peer check and the second-source check read, and it is recorded on the
+  `verify.rules` attempt (`fee_audience`, `audience_evidence`).
+- The audience relabel (`audience-relabel.ts`, step `audience-relabel`, #1059 step 3) gives the
+  same decision to live fees verified as `unknown` before migration 20270110000047, reading each
+  document's newest text. A fee it cannot decide stays `unknown`. No provider calls. Each step
+  reads at most `AUDIENCE_RELABEL_DOCUMENTS_PER_STEP` documents (by document id, after the
+  run's `after_document_id`) and reports `next_after_document_id` and `remaining_documents`; the
+  tick queues the next batch from that cursor until none remain. `AUDIENCE_RELABEL_MODE` is `off`
+  until James switches it, in its own PR:
+  - `off`: the tick queues one dry run a day over a sample of documents (md5 order by day) that
+    counts decisions by audience and evidence source, and writes nothing.
+  - `dry_run_full` (shipped, the gate before live): the same cursor chain as live over every
+    document, one batch per tick, key chain `darwin:audience-relabel:dry:v1:after:<cursor>`,
+    writing nothing but each batch's counts. The last batch adds the chain's totals to its detail
+    (`dry_run_totals`) and writes an `audience_relabel.dry_run_totals` event. Live waits until the
+    totals show unknown at most 10%, and consumer, both and business each within about 5 points
+    of the sample's 70.5 / 23.3 / 2.2. A run does what it was queued for (`params.mode`).
+  - `live`: before any write, each fee's old value is recorded as an `audience_relabeled` row in
+    `pipeline_feedback` (weight 0). Then the verified row takes the `darwin:` decision, and the
+    live published row is touched so the trigger copies it.
+  - `rollback`: every recorded fee still carrying the relabel's evidence goes back to `unknown`
+    with its old evidence, and the trigger copies the raw row's audience back (the old value),
+    in batches of `AUDIENCE_RELABEL_ROLLBACK_PER_STEP`.
+  Live and rollback refuse to start (the tick queues nothing, and a step that finds the trigger
+  without `darwin:` fails) until migration 20270110000047 is present. On a random 150 of the
+  7,949 documents (1,509 of the 77,268 live unknown fees, 14 Oct 2026), it decided 1,064
+  consumer, 351 both, 33 business and left 61 unknown.
 - Every decision is written to `pipeline_attempts` (stage `verify`, fingerprint
   `raw:<fee_raw_id>`) with `decision` and `reason_code`; a row decided under this rule
   version is never selected again, so skipped rows cannot starve the batch.
+- Which rows are due is one SQL test, `darwinDueSql` (`darwinStandingDecisionSql` for the
+  decision part) in `verify.ts`, read by the selection, the state-lane scheduler's backlog check
+  and the daily health check (#1052, 2026-10-14). Before, the scheduler and health counted only
+  rows with no decision, so a row due again after a guard bump in a state with nothing else to do
+  never woke a lane: 26 rows in Puerto Rico and Guam waited from Oct 9 and Oct 13.
 - Review signals carry `reason_counts` keyed by code, and the category range for
   `outside_envelope` rows.
 - A verified $0 row carries the `zero_fee` flag, which is what lets Hamilton publish it.
@@ -314,8 +346,8 @@ Darwin owns verification and classification.
 - Guard v35 (2026-10-08) accepts a per-item overdraft or NSF fee whose note states the daily cap: a dollar cap above the row's own price ("NSF Returned Item(s) Charge (NSF charge maximum of $100 per day)" $25, First State Bank of Rosemount), and a cap note that names the returned items sharing it ("Overdraft Fee ... (Consumer Accts: 5 max total OD or Returned Item fees daily)", BankIowa).
 - Guard v36 (2026-10-08) changes no rule: PRs 665 and 668 both shipped v35, so rows rejected between their deploys are re-checked under both.
 - Guard v42 (2026-10-08; v40 and v41 are Accuracy's, PR 682) files an NSF item marked paid after a dash or in brackets ("NSF Fee Charge - Paid (per item)", "Nonsufficient Funds Fee-Paid", "Insufficient Funds Charge (Check Paid, Per Item)") as the overdraft fee and re-files it there from NSF; "per non-paid item", "Paid from other ... account" and "We will not assess ..." stay out. "Overdraft Privilege Standard or Extended Coverage" names the program, not an extended overdraft fee.
-- The guard is at v61 (`CATEGORY_GUARD_VERSION` in `src/lib/fee-category-guard.ts`). The notes for
-  v43 to v61 are the version comments above that constant, not this guide; v58 is the bond-return
+- The guard is at v63 (`CATEGORY_GUARD_VERSION` in `src/lib/fee-category-guard.ts`). The notes for
+  v43 to v63 are the version comments above that constant, not this guide; v58 is the bond-return
   lesson above.
 - Learning store: every verify decision except duplicates and category rejects (the
   publish-step sync writes those) is written to `pipeline_feedback` as a judgement on
@@ -354,7 +386,8 @@ Change this table and `agent-health.ts` in the same PR.
 | Rule | Number | Holds when |
 |---|---|---|
 | Steps do not fail | `stepsFailed` (24 h) | 0 |
-| Darwin keeps up | `undecided` (Knox rows waiting for the current verify version) | ≤ 500 (`DARWIN_VERIFY_MAX_LIMIT`) |
+| Darwin keeps up | `undecided` (Knox rows the verify step would select now: never decided, or due again after a guard, source-check, envelope or batch-key change; `darwinDueSql` in `verify.ts`) | ≤ 500 (`DARWIN_VERIFY_MAX_LIMIT`) |
+| No week-old waits | `waitingOver7d` (rows sent to Darwin over 7 days ago and never decided at this rule version) | 0 (`DARWIN_MAX_FIRST_DECISION_DAYS`) |
 | Fees Darwin passed survive the bank's own schedule | `sourceCheckTakedowns / published` (24 h) | ≤ 5% |
 
 Also recorded, without a rule: `stepsCompleted`, `spendUsd`, `decided`, `passed`.
@@ -366,6 +399,7 @@ fails a PR that changes one of these constants without updating its line here (#
 
 | Constant | Strategy | Version | File |
 |---|---|---|---|
+| `AUDIENCE_RELABEL_VERSION` | `darwin.audience_relabel` | v1 | `darwin/audience-relabel.ts` |
 | `DARWIN_ADJUDICATE_STRATEGY` | `verify.adjudicate` | v2 | `darwin/adjudicate.ts` |
 | `DARWIN_CATEGORY_MODEL_STRATEGY` | `verify.category_model` | v1 | `darwin/category-model.ts` |
 | `DARWIN_PEER_STRATEGY` | `verify.peer_range` | v3 | `darwin/peer-checks.ts` |

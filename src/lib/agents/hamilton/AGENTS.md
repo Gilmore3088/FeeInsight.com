@@ -192,6 +192,10 @@ Regulatory work needs a defensible position, so nothing Hamilton produces is a b
   verification event id, confidence at or above the threshold (0.8 by default), and an
   amount inside the category range in `darwin/envelopes.ts`. $0 is published only when
   Darwin flagged the row `zero_fee`.
+- Every published fee links to the bank's own document (#1342): a row with no source document,
+  or no http(s) link from its verified row or its document, is refused (`sourceLinkSkipReason`
+  in `hamilton/source-link.ts`). A stored file key alone is not a link. When the verified row has
+  no URL, the fee takes its document's (`publishSourceLink`); refresh-copy does the same.
 - `published_by_adversarial_event_id` holds Darwin's verification event id, the gate
   that actually ran.
 - One live price per fee: when the same institution, canonical key, variant and
@@ -303,7 +307,9 @@ the detail.
 16. Companion retire (`companion-retire.ts`): fees from companion pages Magellan retired as not
     a consumer fee page, `companion_page_retired`.
 17. Duplicate collapse (`duplicate-collapse.ts`): exact repeats of a live row,
-    `duplicate of #<kept id>`.
+    `duplicate of #<kept id>`. Near-name repeats (#1302) are shadow only
+    (`NEAR_NAME_COLLAPSE_LIVE`): reported in step detail `near_name_collapse`, never closed;
+    switched on, `duplicate of #<kept id> (near name)`.
 18. Frequency fill (`frequency-fill.ts`): sets a live fee's frequency from its own schedule row
     (fills a blank, corrects or clears one read from another fee's row), logged to
     `pipeline_feedback` (check `hamilton.frequency_fill`). v11 (#1196): an NSF or overdraft fee
@@ -313,7 +319,20 @@ the detail.
     cleared. A hold is the only rollback; clearing `rolled_back_at` restores it. #1196 (Oct 14,
     no version change): a blank NSF fee is never filled with a period (`perEventFrequency`), so
     the fill no longer sets "monthly" that the v11 check clears on the next pass (5 live NSF fees
-    went round that loop on Oct 14). A stated annual or daily NSF period is left as it is.
+    went round that loop on Oct 14). v12 (#1301): NSF fees stored as annual or daily are checked
+    too. v13 (#1339): NSF, overdraft and returned-item fees are per item (James, Oct 15), so an
+    overdraft or `deposited_item_return` fee stored as monthly, annual, quarterly or daily goes
+    through the same check; a daily cap ("Max 4 per day", "6 per day") or a waiver is not the
+    fee's frequency. A continuous overdraft fee stored by the month or year takes daily when its
+    own words say daily, keeps a period the words after its price state, else is cleared
+    (`continuousOverdraftPeriodCheck`). A blank monthly-maintenance fee takes monthly only when
+    its own name or line says month or "per statement cycle" (`maintenanceMonthlyFill`).
+    v14 (#1339): every value the fill writes, blank or stated, must be one its own per-event
+    check keeps, so a correction is a fixed point (v13's per_item and daily corrections were
+    written back two minutes later by the next pass). Feedback keys name the version
+    (`hamilton.frequency_fill:v<N>:fix:<id>:<from>:<to>`), because `pipeline_feedback` upserts
+    on its key and an old key was silently overwritten. The excerpt is read from
+    `COALESCE(extraction_note, conditions)`.
 19. Newer-copy check (`newer-copy-retire.ts`): a fee line gone from a newer copy of its page,
     `newer_copy_drops_fee:#<newer document id>` (`NEWER_COPY_RETIRE_LIVE` is true; false makes
     it a shadow run).
@@ -481,6 +500,22 @@ name). The newest copy stays live; the others get `rolled_back_reason = 'duplica
 #<kept id>'`, the run's batch id, and a `hamilton.duplicates_collapsed` run event. Rows
 that differ in name or amount are separate fee lines and are left alone.
 
+**Near names (#1302).** Two live rows of one document, category, variant and amount whose names
+differ only by punctuation, case, a plural, a leading article or a trailing "fee" ("Stop
+Payment" / "Stop Payment ......", "Cashier's Check" / "Cashier’s Check"), or by one qualifier word
+in front ("Research fee" / "Account Research fee"), are one fee only when the page says so:
+`linesApartOnPage` must find no two printed lines at the price (the same check the publish step
+uses, #1303), and at least one name must be printed with the price. Frequencies and audiences
+must agree or be unstated. The copy kept states its audience, then its frequency, then is the
+one printed at the price, then is newest. Doc 14695 prints "Stop Payments, each ... $35" and
+"Stop Payment, each ... $35" in two copies of its schedule, so both stay. A fee the page prints
+once under its personal schedule heading and once under its business one stays two fees too
+(`printedInPersonalAndBusinessSchedules`; Valley's doc 23731, "Visa® Gift Cards, each: $4.25.").
+This sweep reads up to 25 documents' stored text per step and is shadow only until James turns
+`NEAR_NAME_COLLAPSE_LIVE` on: each step reports `near_name_collapse` (pairs, apart on page, not
+printed, no text, would close, samples) and changes no row. Rollback once on: clear
+`rolled_back_at` on rows whose `rolled_back_reason` ends in `(near name)`.
+
 ## Rules Re-check
 
 In state-lane (or single-institution) publish steps, `rules-recheck.ts` re-runs Knox's
@@ -554,6 +589,20 @@ the flag is 12 hours old, while `TAXONOMY_FOLD_ARCHIVE_NO_HOME` is on. James tur
 after seeing the list of 248 (Oct 8, "drop them"); with it off they would stay live and be
 counted as `noHomeHeld`. `refileCategory` applies the same rules to new reads, so Knox can
 keep hinting the retired keys. Publish skips a fee still under a retired key.
+
+## Source Link Repair
+
+`hamilton/source-link.ts` (#1342), step `source-link-repair`, started by hand from Atlas details
+(dry run first; `runSourceLinkRepair`). Never runs on its own. A live fee with no source URL at
+any tier takes its own document's `document_url` when that document is the institution's and,
+when the fee carries a stored file key, the same file; the verified row takes it too. Any other
+is taken down with `rolled_back_reason = 'source_link_untraceable: <why>'`. Each change writes
+one `pipeline_feedback` row (check `hamilton.source_link`, kind `missing_lineage`, evidence
+`action`, `from`, `to`, `verified_filled`) in the same transaction, and a
+`hamilton.source_link_repair` run event. Reverse a fill by setting `source_url` back to NULL (and
+the verified row's when `verified_filled`); reverse a takedown by clearing `rolled_back_at`,
+`rolled_back_by_batch_id` and `rolled_back_reason`. The feedback sync skips these takedowns: the
+lesson is publish's, not Knox's read.
 
 ## Source Check
 
@@ -639,13 +688,14 @@ fails a PR that changes one of these constants without updating its line here (#
 | `ACCOUNT_NAME_STRATEGY` | `hamilton.account_names` | v1 | `hamilton/account-names.ts` |
 | `CURRENT_COPY_STRATEGY` | `hamilton.current_copy_check` | v2 | `hamilton/current-copy.ts` |
 | `EVAL_VERDICT_VERSION` | — | v7 | `hamilton/eval-verdicts.ts` |
-| `FREQUENCY_FILL_VERSION` | — | v11 | `hamilton/frequency-fill.ts` |
+| `FREQUENCY_FILL_VERSION` | — | v14 | `hamilton/frequency-fill.ts` |
 | `GUARD_REQUEUE_STRATEGY` | `publish.guard_requeue` | v1 | `hamilton/guard-requeue.ts` |
 | `NEWER_COPY_STRATEGY` | `hamilton.newer_copy_check` | v1 | `hamilton/newer-copy-retire.ts` |
 | `HAMILTON_PUBLISH_STRATEGY` | `publish.rules` | v3 | `hamilton/publish.ts` |
 | `REFRESH_COPY_STRATEGY` | `hamilton.refresh_copy` | v2 | `hamilton/refresh-copy.ts` |
 | `RULES_RECHECK_STRATEGY` | `hamilton.rules_recheck` | v4 | `hamilton/rules-recheck.ts` |
 | `SOURCE_CHECK_STRATEGY` | `hamilton.source_check` | v16 | `hamilton/source-check.ts` |
+| `SOURCE_LINK_VERSION` | `hamilton.source_link` | v1 | `hamilton/source-link.ts` |
 | `FEE_DEPENDENCE_VERSION` | — | v1 | `hamilton/studies/fee-dependence.ts` |
 | `PRICE_STUDY_VERSION` | — | v1 | `hamilton/studies/index.ts` |
 | `INFERRED_VOLUME_VERSION` | — | v2 | `hamilton/studies/inferred-volume.ts` |
