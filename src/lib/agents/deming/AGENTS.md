@@ -105,6 +105,21 @@ It runs as Atlas steps (agent `atlas`); it is deterministic and makes no model c
   (on the same `STATS_METHOD_VERSION`) is named in the step summary as an ALARM.
 - Read-only, deterministic, no model calls. It is pause-exempt like the other reporting steps.
 
+## Playbook contradiction check
+
+- `playbook-contradictions.ts` (`PLAYBOOK_CHECK_VERSION` v1): the `deming-playbook-check` step in
+  Atlas's daily scoreboard run (#1105). One read-only SELECT over `institution_source_profiles`
+  and each one's current text. Per institution it counts a playbook that contradicts itself: the
+  current source on its own rejected list, on its own do-not-retry list for a fetch failure, or
+  judged the wrong document by a discovery strategy; a fee schedule expected to hold fewer than
+  `THIN_DOCUMENT_MAX_FEES` fees; a product page expected to hold `PAID_MIN_PRICED_LINES` or more.
+  It lists up to 20 institutions per contradiction in the step detail.
+- Not contradictions: the second-document finder and its site searches record the bank's current
+  link as the input they searched *from* (`SEARCH_FROM_STRATEGIES`), so their `wrong_document` /
+  `no_candidates` entry means "found nothing better". They are reported as
+  `search_from_entries`, as is `layout_never_recorded` (no stage writes a layout fingerprint yet).
+- Read-only, deterministic, no model calls, pause-exempt. It changes no row.
+
 ## Boundaries
 
 - Deming never writes fee rows, flags or takedowns. It reads `pipeline_feedback` and the fee tiers.
@@ -121,3 +136,4 @@ fails a PR that changes one of these constants without updating its line here (#
 | `FRESH_AUDIT_VERSION` | — | v5 | `deming/fresh-audit.ts` |
 | `DEMING_REGRESSION_VERSION` | — | v1 | `deming/regression.ts` |
 | `BENCHMARK_HEALTH_VERSION` | — | v1 | `deming/benchmark-health.ts` |
+| `PLAYBOOK_CHECK_VERSION` | — | v1 | `deming/playbook-contradictions.ts` |

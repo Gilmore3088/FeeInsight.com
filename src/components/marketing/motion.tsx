@@ -1,11 +1,10 @@
 "use client";
 
-import { useEffect, useRef, useSyncExternalStore, type RefObject } from "react";
+import { useSyncExternalStore } from "react";
 
 /**
- * Motion helpers shared by the /subscribe showcase and the homepage product sizzle
- * (site v3 brief 06 §4.1): the reader's reduced-motion setting, an in-view check and the
- * progress fill that runs under a chapter while it plays.
+ * Motion helpers for the /subscribe showcase (site v3 brief 06 §4.1): the reader's
+ * reduced-motion setting and the progress fill that runs under a chapter while it plays.
  */
 
 const REDUCED_MOTION = "(prefers-reduced-motion: reduce)";
@@ -23,33 +22,6 @@ function subscribeReducedMotion(onChange: () => void): () => void {
 /** The reader's reduced-motion setting; the server render assumes it is on (nothing moves). */
 export function useReducedMotion(): boolean {
   return useSyncExternalStore(subscribeReducedMotion, prefersReducedMotion, () => true);
-}
-
-/**
- * Calls `onChange(visible)` as at least `threshold` of the element comes on and off screen,
- * while `enabled`. Without IntersectionObserver (old browsers, tests) the element counts as
- * in view, so playback still starts. The callback may set state: it runs from the observer.
- */
-export function useInViewChange(
-  ref: RefObject<Element | null>,
-  onChange: (visible: boolean) => void,
-  { enabled = true, threshold = 0.35 }: { enabled?: boolean; threshold?: number } = {},
-): void {
-  const callback = useRef(onChange);
-  useEffect(() => {
-    callback.current = onChange;
-  });
-  useEffect(() => {
-    const node = ref.current;
-    if (!enabled || !node) return;
-    if (typeof IntersectionObserver === "undefined") {
-      callback.current(true);
-      return;
-    }
-    const observer = new IntersectionObserver(([entry]) => callback.current(entry.isIntersecting), { threshold });
-    observer.observe(node);
-    return () => observer.disconnect();
-  }, [ref, enabled, threshold]);
 }
 
 /**

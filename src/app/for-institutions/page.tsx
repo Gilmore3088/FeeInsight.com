@@ -61,7 +61,7 @@ export default async function ForInstitutionsPage({
   const ladder = liveSample ? await loadSampleLadder(liveSample, snapshot.categories) : null;
   const scenario = buildScenario("Overdraft", heroCategory);
   // Each view shows once here (growth OS re-walk R5): the ladder in the hero, Try a price in
-  // Hamilton, and the sample report's rows in the report offer. The homepage sizzle is not replayed.
+  // Hamilton, and the sample report's rows in the report offer. The homepage demo is not replayed.
 
   return (
     <div className="min-h-screen bg-paper">

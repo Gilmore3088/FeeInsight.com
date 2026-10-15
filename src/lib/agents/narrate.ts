@@ -270,6 +270,10 @@ function narrateFinished(
       const collapses = Array.isArray(detail.collapses) ? detail.collapses.length : 0;
       return `Deming checked the benchmarks: ${n(detail, "groups_meeting_target")} of ${n(detail, "groups_total")} state and size groups meet the coverage target, ${collapses === 0 ? "no benchmark collapsed" : `ALARM: ${count(collapses, "benchmark")} lost a sharp share of its institutions`}.`;
     }
+    case "deming-playbook-check": {
+      if (detail.ready === false) return "Deming could not check the playbooks: the playbook table is not there.";
+      return `Deming checked ${count(n(detail, "profiles"), "playbook")}: ${n(detail, "institutions")} contradict themselves, ${n(detail, "search_from_entries")} carry a second-document search entry on their current link.`;
+    }
     case "deming-change-outcomes": {
       if (detail.ready === false) return "Skipped the 7-day change check (migration not applied yet).";
       const judged = Array.isArray(detail.judged) ? (detail.judged as Array<{ verdict?: string }>) : [];
@@ -633,6 +637,7 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   "atlas-city-repair": "atlas",
   "deming-fresh-audit": "atlas",
   "deming-benchmark-health": "atlas",
+  "deming-playbook-check": "atlas",
   "deming-change-outcomes": "atlas",
   "deming-sunday-maintenance": "atlas",
   "deming-regression": "atlas",
