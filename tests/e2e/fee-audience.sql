@@ -98,6 +98,26 @@ SELECT pg_temp.assert_ok((SELECT fee_audience='consumer' AND audience_evidence L
 UPDATE public.verified_fee_observations SET fee_audience='both', audience_evidence='hand edit' WHERE fee_verified_id=950020;
 SELECT pg_temp.assert_ok((SELECT fee_audience='unknown' FROM public.verified_fee_observations WHERE fee_verified_id=950020),'An update without Darwin evidence falls back to the raw audience');
 SELECT pg_temp.assert_ok(NOT has_function_privilege('anon','public.inherit_fee_applicability()','EXECUTE'),'Replaced trigger must not become a public RPC');
+-- #1059 relabel (darwin/audience-relabel.ts): a live write, then its rollback, on a fee verified as
+-- unknown with NULL evidence, as every live unknown fee is today.
+INSERT INTO public.raw_fee_observations(fee_raw_id,institution_id,source_document_id,agent_event_id,fee_name,amount)
+VALUES (950030,47,21164,gen_random_uuid(),'Test relabel stop payment',30);
+INSERT INTO public.verified_fee_observations
+ (fee_verified_id,fee_raw_id,institution_id,canonical_fee_key,verified_by_agent_event_id,fee_name,amount)
+VALUES (950030,950030,47,'stop_payment',gen_random_uuid(),'Test relabel stop payment',30);
+INSERT INTO public.published_fee_records
+ (fee_published_id,lineage_ref,institution_id,canonical_fee_key,published_by_adversarial_event_id,fee_name,amount)
+VALUES (950030,950030,47,'stop_payment',gen_random_uuid(),'Test relabel stop payment',30);
+SELECT pg_temp.assert_ok((SELECT fee_audience='unknown' AND audience_evidence IS NULL FROM public.verified_fee_observations WHERE fee_verified_id=950030),'Relabel case starts unknown with no evidence');
+UPDATE public.verified_fee_observations SET fee_audience='business', audience_evidence='darwin:document_url: https://example.test/business-fees'
+ WHERE fee_verified_id=950030 AND fee_audience='unknown';
+UPDATE public.published_fee_records SET fee_audience=fee_audience WHERE fee_published_id=950030;
+SELECT pg_temp.assert_ok((SELECT fee_audience='business' FROM public.published_fee_records WHERE fee_published_id=950030),'A live relabel reaches the published row');
+UPDATE public.verified_fee_observations SET fee_audience='unknown', audience_evidence=NULL
+ WHERE fee_verified_id=950030 AND audience_evidence='darwin:document_url: https://example.test/business-fees';
+UPDATE public.published_fee_records SET fee_audience=fee_audience WHERE fee_published_id=950030;
+SELECT pg_temp.assert_ok((SELECT fee_audience='unknown' AND audience_evidence IS NULL FROM public.verified_fee_observations WHERE fee_verified_id=950030),'Rollback restores the verified row''s old audience and evidence');
+SELECT pg_temp.assert_ok((SELECT fee_audience='unknown' AND audience_evidence IS NULL FROM public.published_fee_records WHERE fee_published_id=950030),'Rollback restores the published row''s old audience');
 
 SELECT pg_temp.assert_ok(NOT has_table_privilege('anon','public.published_fee_catalog','SELECT'),'Migration must not grant anonymous catalog access');
 SELECT pg_temp.assert_ok(NOT has_function_privilege('anon','public.inherit_fee_applicability()','EXECUTE'),'Internal trigger must not become a public RPC');
