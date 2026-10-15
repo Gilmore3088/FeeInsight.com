@@ -299,9 +299,9 @@ async function handlePOST(request: Request) {
     providerStartedAt = await guardProviderCall(providerContext);
     let resolveSaved: (id: string | null) => void = () => {};
     const savedId = new Promise<string | null>((resolve) => { resolveSaved = resolve; });
-    // A written answer passes the shared evidence gate when it finishes (#981). Once the held
-    // line is approved (HELD_ANSWER_MESSAGE), the answer is held until then and is never shown,
-    // or saved, when it fails; until that, a failing answer streams as before and the verdict
+    // A written answer passes the shared evidence gate when it finishes (#981). While the held
+    // line (HELD_ANSWER_MESSAGE) is set, the answer is held until then and is never shown, or
+    // saved, when it fails; with it null, a failing answer streams as before and the verdict
     // is saved with it.
     const holdsAnswers = mode === "analyze" && HELD_ANSWER_MESSAGE !== null;
     let resolveVerdict: (verdict: AnswerVerdict | null) => void = () => {};
@@ -322,37 +322,46 @@ async function handlePOST(request: Request) {
         // tab or a failed browser call never loses it.
         if (mode === "analyze" && text.trim()) {
           const toolOutputs = steps.flatMap((step) => step.toolResults.map((result) => result.output));
-          const check = writtenAnswerCheck(text, toolOutputs, questionOnly(lastUserText));
-          const held = holdsAnswers && !check.passed;
-          resolveVerdict({ passed: check.passed, held });
-          const response = {
-            ...writtenAnswerResponse(text, toolOutputs, check),
-            // Historical reference metadata only; never a future access grant.
-            identityContext,
-          };
-          const prompt = questionOnly(lastUserText);
-          if (held) {
-            console.warn("[hamilton] written answer held by the evidence gate", check.problems);
-            resolveSaved(null);
-          } else {
-            try {
-              resolveSaved(await insertSavedAnalysis({
-                userId: user.id,
-                institutionId: normalizeCanonicalInstitutionId(institutionId) ?? "",
-                title: response.title || prompt.slice(0, 60).trim(),
-                analysisFocus: focus,
-                prompt,
-                response,
-                // A second request for the same question (double submit, Try again after a
-                // dropped stream) updates this row instead of adding a duplicate. The match is on
-                // the full text answered, earlier turns included, so the same follow-up words in
-                // another conversation are saved as their own row.
-                replaceRecentDuplicate: { request: `written\n${focus}\n${lastUserText}` },
-              }));
-            } catch (error) {
-              console.error("[hamilton] saving the written answer failed", error);
+          // A gate or response build that throws fails closed: the verdict and saved id still
+          // resolve (a promise keeps its first value), so the reader is never left waiting and
+          // the usage below is still recorded.
+          try {
+            const check = writtenAnswerCheck(text, toolOutputs, questionOnly(lastUserText));
+            const held = holdsAnswers && !check.passed;
+            resolveVerdict({ passed: check.passed, held });
+            const response = {
+              ...writtenAnswerResponse(text, toolOutputs, check),
+              // Historical reference metadata only; never a future access grant.
+              identityContext,
+            };
+            const prompt = questionOnly(lastUserText);
+            if (held) {
+              console.warn("[hamilton] written answer held by the evidence gate", check.problems);
               resolveSaved(null);
+            } else {
+              try {
+                resolveSaved(await insertSavedAnalysis({
+                  userId: user.id,
+                  institutionId: normalizeCanonicalInstitutionId(institutionId) ?? "",
+                  title: response.title || prompt.slice(0, 60).trim(),
+                  analysisFocus: focus,
+                  prompt,
+                  response,
+                  // A second request for the same question (double submit, Try again after a
+                  // dropped stream) updates this row instead of adding a duplicate. The match is on
+                  // the full text answered, earlier turns included, so the same follow-up words in
+                  // another conversation are saved as their own row.
+                  replaceRecentDuplicate: { request: `written\n${focus}\n${lastUserText}` },
+                }));
+              } catch (error) {
+                console.error("[hamilton] saving the written answer failed", error);
+                resolveSaved(null);
+              }
             }
+          } catch (error) {
+            console.error("[hamilton] the evidence gate or its response could not run", error);
+            resolveVerdict({ passed: false, held: holdsAnswers });
+            resolveSaved(null);
           }
         } else {
           resolveVerdict(null);

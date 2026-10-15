@@ -1,15 +1,26 @@
 /**
  * The streamed written answer passes the shared evidence gate (answer-gate.ts, #981).
- * While no held line is approved, a failing answer streams as before and its verdict is
- * saved; with one, a failing answer is never shown or saved and a passing one still is.
+ * With no held line, a failing answer streams as before and its verdict is saved; with
+ * one (the shipped default), a failing answer is never shown or saved and a passing one still is.
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-  stream: vi.fn(), save: vi.fn(), write: vi.fn(), merge: vi.fn(),
+  stream: vi.fn(), save: vi.fn(), write: vi.fn(), merge: vi.fn(), usage: vi.fn(),
   held: { message: null as string | null },
+  gateThrows: false,
 }));
+vi.mock("@/lib/hamilton/answer-save", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/hamilton/answer-save")>("@/lib/hamilton/answer-save");
+  return {
+    ...actual,
+    writtenAnswerCheck: (...args: Parameters<typeof actual.writtenAnswerCheck>) => {
+      if (mocks.gateThrows) throw new Error("synthetic gate failure");
+      return actual.writtenAnswerCheck(...args);
+    },
+  };
+});
 vi.mock("@/lib/api-hardening/route-wrapper", () => ({ withApiRoutePolicy: (_id: string, _method: string, handler: unknown) => handler }));
 vi.mock("@/lib/api-hardening/audit", () => ({ getRequestSubjectKey: () => "synthetic-user" }));
 vi.mock("@/lib/auth", () => ({ getCurrentUser: async () => ({ id: 7, role: "premium" }) }));
@@ -27,7 +38,7 @@ vi.mock("@/lib/ai-provider", () => ({
 }));
 vi.mock("@/lib/ai-provider-usage", () => ({
   ProviderBudgetBlockedError: class extends Error {}, ProviderCircuitOpenError: class extends Error {},
-  guardProviderCall: async () => Date.now(), recordProviderUsage: async () => {}, estimateAnthropicCostMicrousd: () => 0,
+  guardProviderCall: async () => Date.now(), recordProviderUsage: mocks.usage, estimateAnthropicCostMicrousd: () => 0,
   trackAnthropicRequest: async (_context: unknown, call: () => Promise<unknown>) => call(),
 }));
 vi.mock("@/lib/research/agents", () => ({
@@ -85,6 +96,8 @@ function metadata() {
 
 beforeEach(() => {
   mocks.held.message = null;
+  mocks.gateThrows = false;
+  mocks.usage.mockReset();
   mocks.stream.mockReset();
   mocks.save.mockReset().mockResolvedValue("saved-1");
   mocks.write.mockReset();
@@ -137,6 +150,18 @@ describe("written answer evidence gate", () => {
     expect(text).not.toContain("$27");
     expect(metadata()).toEqual(expect.objectContaining({ answerEvidence: { passed: false, held: true } }));
     expect(metadata()).not.toHaveProperty("savedAnalysisId");
+  });
+
+  it("holds the answer when the gate itself cannot run, so the reader is never left waiting", async () => {
+    mocks.held.message = "Synthetic held line.";
+    mocks.gateThrows = true;
+    answers(PASSING);
+    await POST(request());
+    expect(mocks.merge).not.toHaveBeenCalled();
+    expect(mocks.save).not.toHaveBeenCalled();
+    expect(metadata()).toEqual(expect.objectContaining({ answerEvidence: { passed: false, held: true } }));
+    // The paid call still finishes its ledger row.
+    expect(mocks.usage).toHaveBeenCalledWith(expect.anything(), "completed", expect.anything(), expect.anything());
   });
 
   it("still shows and saves a passing answer once the held line is approved", async () => {
