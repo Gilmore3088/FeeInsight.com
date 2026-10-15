@@ -2,7 +2,6 @@
 export const dynamic = "force-dynamic";
 
 import type { Metadata } from "next";
-import type { ReactNode } from "react";
 import Link from "next/link";
 import { linkPreview } from "@/lib/link-preview";
 import { benchmarkBasis, COVERAGE_LABELS, getPublicSnapshot, type PublicStatsSummary } from "@/lib/public-stats";
@@ -10,7 +9,7 @@ import type { FeeCategorySummary } from "@/lib/data-store/fees";
 import { getDisplayName } from "@/lib/fee-taxonomy";
 import { PRODUCT_NAME, SITE_NAME } from "@/lib/constants";
 import { PRO_TIERS, tierPriceLabel } from "@/lib/pro-tiers";
-import { getPeerIndexCached } from "@/lib/data-store/public-cached-reads";
+import { getFeeCategoryDetailCached, getPeerIndexCached } from "@/lib/data-store/public-cached-reads";
 import type { IndexEntry } from "@/lib/data-store/fee-index";
 import type { MarketReport } from "@/lib/custom-report/report-data";
 import { WORKSPACE_SEAT_LIMIT } from "@/lib/hamilton/workspace-seats";
@@ -27,6 +26,8 @@ import { ReportOfferSection, SampleExcerpt } from "./report-offer";
 import { buildMarketLadder, MarketLadder, type MarketLadderData } from "./market-ladder";
 import { TryAPricePanel } from "@/app/subscribe/try-a-price-panel";
 import { buildScenario, type AnalyzeScenario } from "@/app/subscribe/scenario";
+import { LandingSizzle } from "@/app/landing-sizzle";
+import { buildHomeData } from "@/app/landing-shared";
 
 const DEMO_HREF = "/contact?source=demo";
 /** The hero's live figure: the national overdraft benchmark (site v3 brief 03, Q9). */
@@ -54,10 +55,14 @@ export default async function ForInstitutionsPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const query = await searchParams;
-  const [snapshot, sampleLive, sample] = await Promise.all([
+  const [snapshot, sampleLive, sample, overdraftDetail] = await Promise.all([
     getPublicSnapshot(),
     sampleReportAvailable(),
     loadSampleReport().catch(() => null),
+    getFeeCategoryDetailCached("overdraft").catch((error: unknown) => {
+      console.error("[for-institutions] overdraft district read failed; district rows hidden", error);
+      return null;
+    }),
   ]);
   const { summary } = snapshot;
   const heroCategory = snapshot.categories.find((c) => c.fee_category === HERO_CATEGORY) ?? null;
@@ -71,7 +76,9 @@ export default async function ForInstitutionsPage({
       <main id="main-content">
         <Hero summary={summary} category={heroCategory} />
         <ProofStrip summary={summary} />
-        <SizzleSlot frame={SIZZLE_FRAME} />
+        <LandingSizzle
+          data={buildHomeData(summary, snapshot.categories, overdraftDetail?.by_fed_district)}
+        />
         <EveryFeeSection sample={liveSample} />
         <EveryMarketSection ladder={ladder} />
         <HamiltonSection scenario={scenario} />
@@ -202,21 +209,6 @@ function ProofStrip({ summary }: { summary: PublicStatsSummary }) {
   );
 }
 
-/**
- * Where the homepage's coded sizzle frame (site v3 brief 06 §4.1-4.2) also renders on this page,
- * right under the hero. The homepage builder owns the frame; until it is passed in here, the
- * section renders nothing. WIRE: replace `null` in `SIZZLE_FRAME` with the frame element.
- */
-const SIZZLE_FRAME: ReactNode = null;
-
-function SizzleSlot({ frame }: { frame: ReactNode }) {
-  if (!frame) return null;
-  return (
-    <section id="tour" aria-label="Product tour" className="border-b border-border">
-      <div className="mx-auto max-w-page px-6 py-12">{frame}</div>
-    </section>
-  );
-}
 
 function PillarHeading({ eyebrow, title, id, line }: { eyebrow: string; title: string; id: string; line: string }) {
   return (
