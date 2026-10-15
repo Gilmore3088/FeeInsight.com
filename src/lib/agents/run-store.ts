@@ -1059,8 +1059,8 @@ async function executeAgenticStep(
         institutionId,
       });
       // #1302: a live row that repeats another live line of its page under a near name ("Research
-      // fee" / "Account Research fee"), when the page prints one line. Shadow until
-      // NEAR_NAME_COLLAPSE_LIVE is turned on: it reports and changes nothing.
+      // fee" / "Account Research fee"), when the page prints one line. Live while
+      // NEAR_NAME_COLLAPSE_LIVE is on; a dry run reports and changes nothing.
       const nearNameCollapse = await collapseNearNameDuplicates(tx, {
         runId: run.id,
         batchId: `agentic-run-${run.id}`,
