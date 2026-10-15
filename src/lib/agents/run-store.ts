@@ -321,7 +321,8 @@ async function executeAgenticStep(
   // Hamilton's answer eval: the quality bar asked of a spread of real institutions. Read-only, no model calls.
   if (step.stepKey === "hamilton-answer-eval") {
     const { runAnswerEval } = await import("@/lib/hamilton/answer-eval");
-    const result = await runAnswerEval({ perGroup: Number(params.per_group) > 0 ? Number(params.per_group) : 1 });
+    // Its route's limit is 300 s; the budget is checked between batches, so leave one batch of room.
+    const result = await runAnswerEval({ perGroup: Number(params.per_group) > 0 ? Number(params.per_group) : 1, budgetMs: ANSWER_EVAL_STEP_BUDGET_MS });
     return {
       status: "completed",
       summary: `Answered ${result.answers} questions for ${result.institutions} of ${result.planned} institutions; ${result.passed} met the bar; ${result.correctness.correct} of ${result.correctness.checked} checked tie to the live catalog.${result.pro ? ` Replayed ${result.pro.questions} Pro questions: ${result.pro.passed} met the bar, ${result.pro.correctness.correct} of ${result.pro.correctness.checked} checked tie to the catalog, ${result.pro.askedBack} still asked back.` : ""}${result.timedOut ? " Stopped at the time budget." : ""}`,
@@ -690,7 +691,9 @@ async function executeAgenticStep(
         dryRun: run.runKind === "dry_run",
         institutionId: numericRunParam(params, ["institution_id"]),
         stateCode,
-        skipSample: Boolean(stateCode),
+        // A state lane only (a state and no institution): a direct run for one bank carries its
+        // state too, and still reads the sample, which is the evidence for turning the pass on.
+        skipSample: Boolean(stateCode) && numericRunParam(params, ["institution_id"]) == null,
       });
       // Held percentage fees in categories that publish rates go to Darwin as rate fees.
       const rateRecheck = await recheckHeldRates(tx, {
@@ -3121,6 +3124,12 @@ const STEP_EXPECTED_MS: Record<string, number> = {
  * route (`/api/admin/crew/answer-eval`).
  */
 export const TICK_EXCLUDED_STEP_KEYS = ["hamilton-answer-eval"] as const;
+/**
+ * The answer eval's own time budget inside its route (maxDuration 300 s). It is checked between
+ * batches of institutions, so a run overshoots it by up to one batch: at 220 s, runs took p90
+ * 293 s and p99 368 s. 150 s keeps p90 near 225 s and p99 under the 300 s limit.
+ */
+export const ANSWER_EVAL_STEP_BUDGET_MS = 150_000;
 /** Steps not listed above: most run in seconds, so this keeps an unknown long one safe. */
 const DEFAULT_STEP_EXPECTED_MS = 120_000;
 /** Steps measured at a few seconds at most (state-expert, enhance, public-*, registry-*). */
@@ -3171,6 +3180,21 @@ export function heldByPause(
     return `Pipeline is paused${pipeline.reason ? `: ${pipeline.reason}` : ""}; run left queued.`;
   }
   return null;
+}
+
+/**
+ * The oldest queued run started from `source` (`params_json.source`), any hour. A run whose next
+ * step the tick never starts (`TICK_EXCLUDED_STEP_KEYS`) is picked up this way by its own route,
+ * so a retry the reaper re-queued is never left queued.
+ */
+export async function oldestQueuedRunBySource(source: string): Promise<number | null> {
+  const [row] = await sql<{ id: number | string }[]>`
+    SELECT id FROM agent_runs
+     WHERE status = 'queued' AND params_json->>'source' = ${source}
+     ORDER BY id ASC
+     LIMIT 1
+  `;
+  return row ? Number(row.id) : null;
 }
 
 export async function executeAgentRun(
