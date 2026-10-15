@@ -118,7 +118,11 @@ function faqItems(summary: PublicStatsSummary) {
     },
     {
       question: "How is the Pro price set?",
-      answer: `By your institution's total assets in its latest call report. ${CONSULTANT_PRICE_NOTE} If we don't have your institution's total assets, email ${CONTACT_EMAIL} and we'll set your price.`,
+      answer: `By your institution's total assets in its latest call report. ${CONSULTANT_PRICE_NOTE} If we don't have your institution's total assets, email ${CONTACT_EMAIL} and we'll set your price. If the plan is used for a larger institution, we'll email you before changing the price.`,
+    },
+    {
+      question: "Where do the figures come from?",
+      answer: "From each bank's and credit union's own published fee schedule. Every figure in Hamilton keeps its source document and the date we read it.",
     },
     {
       question: "How do seats work?",

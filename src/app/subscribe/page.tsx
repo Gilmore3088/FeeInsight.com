@@ -13,32 +13,25 @@ import { gatedPageLabel, hamiltonFullName, subscribeEntry, subscribeReasonLine }
 import type { Metadata } from "next";
 import { getPublicStatsSummary } from "@/lib/public-stats";
 import { CONTACT_EMAIL, PRODUCT_NAME, REPORT_OFFER, SITE_NAME } from "@/lib/constants";
-import { PurchaseCard, type ProTierSelection } from "./pro-plan-cards";
+import { CHECKOUT_ID, PLANS_ID, ProPlanBoard, type ProTierSelection } from "./pro-plan-cards";
 import { ProTierChooser } from "./pro-tier-chooser";
-import { WirePreview, type WirePreviewItem, type WirePreviewLead } from "./pro-overview";
+import type { WirePreviewItem, WirePreviewLead } from "./pro-overview";
 import { getArticles, TOPIC_LABELS } from "@/lib/data-store/news";
 import { getStateNews, STATE_BILL_STAGE_LABELS } from "@/lib/data-store/state-news";
 import { getWireFeeIndexes } from "@/lib/data-store/wire-fee-data";
-import { buildFeeDataStrips, categoriesForFeeTypes, categoryLabel } from "@/lib/regulatory/wire-fee-links";
+import { buildFeeDataStrips, categoriesForFeeTypes } from "@/lib/regulatory/wire-fee-links";
 import { feeTypesOf, type FeeType } from "@/lib/regulatory/wire-fee-types";
 import { STATE_NAMES } from "@/lib/us-states";
 import { formatAmount } from "@/lib/format";
-import { getCategoryChargeBases, getNationalIndexCached } from "@/lib/data-store/fee-index";
-import { getInstitutionFees } from "@/lib/data-store/institution";
-import { MIN_INSTITUTIONS_FOR_MEDIAN } from "@/lib/data-store/maturity";
-import { compareSelectedInstitutionFees } from "@/lib/hamilton/report-evidence";
-import { BenchmarkPreview, type BenchmarkRow } from "./benchmark-preview";
 import { PricingJump } from "./pricing-jump";
 import { StickyCta } from "./sticky-cta";
-import { ShowcasePillars, ShowcaseProvider, ShowcaseStage } from "./showcase";
-import { AnalyzeDemo } from "./analyze-demo";
-import { buildScenario, type AnalyzeScenario } from "./scenario";
-import { MonitorPreview, ReportPreview } from "./example-panels";
 import { TrackView } from "@/components/track-view";
 import { getProPricingInstitution } from "@/lib/data-store/pro-accounts";
 import { NON_INSTITUTION_TIER, PRO_TIERS, isProTier, proTier, tierAmountLabel, tierForAssets, tierPriceLabel } from "@/lib/pro-tiers";
 import { GatedOptions, OtherOptions, PricingFaq } from "./pricing-sections";
 import { chosenPriceLine, pricingCtaLabel, type ChosenInstitutionPrice } from "./plan-cta";
+import { loadPlansExhibitData } from "./exhibit-data";
+import { PlanIncludes, PlansExhibit } from "./plans-exhibit";
 
 import { WORKSPACE_SEAT_LIMIT } from "@/lib/hamilton/workspace-seats";
 import { isProPlan, type ProPlan } from "./pricing";
@@ -54,7 +47,6 @@ export const metadata: Metadata = {
 const WELCOME_PATH = "/account/welcome";
 /** The one report request form, on /reports (site v3 brief 05 §3-4). */
 const REPORT_FORM_HREF = "/reports?report=institution&src=subscribe#request";
-/** /subscribe keeps the layout James chose (9 Oct 2026), set in the brand face, Geist. */
 
 /** Primary buttons are navy (site v3 brief 04); brick stays for the data. */
 const CTA_CLASS =
@@ -161,80 +153,6 @@ async function wirePreviewData(): Promise<WirePreviewData> {
   return { lead: { ...releases[0], officialTitle: null, place: null, figures: [] } };
 }
 
-/** The fees the benchmark preview shows first, in banker words. */
-const BENCHMARK_FEES: { category: string; label: string }[] = [
-  { category: "overdraft", label: "Overdraft" },
-  { category: "nsf", label: "NSF / returned item" },
-  { category: "monthly_maintenance", label: "Monthly maintenance" },
-  { category: "stop_payment", label: "Stop payment" },
-  { category: "wire_domestic_outgoing", label: "Domestic wire, outgoing" },
-];
-const BENCHMARK_ROWS = 5;
-
-/**
- * The benchmark preview's rows, all read live: the national index, and for a chosen
- * institution its own published fees compared like for like (compareSelectedInstitutionFees,
- * the same comparison Pro reports use). Empty if the index can't be read.
- */
-async function benchmarkRows(institutionId: number | null): Promise<BenchmarkRow[]> {
-  const national = await getNationalIndexCached().catch(() => []);
-  const usable = new Map(
-    national
-      .filter((e) => e.median_amount !== null && e.institution_count >= MIN_INSTITUTIONS_FOR_MEDIAN)
-      .map((e) => [e.fee_category, e]),
-  );
-  const row = (category: string, label: string): BenchmarkRow | null => {
-    const entry = usable.get(category);
-    if (!entry || entry.median_amount === null) return null;
-    return {
-      category,
-      label,
-      median: Number(entry.median_amount),
-      p25: entry.p25_amount === null ? null : Number(entry.p25_amount),
-      p75: entry.p75_amount === null ? null : Number(entry.p75_amount),
-      institutions: entry.institution_count,
-      value: null,
-      position: null,
-    };
-  };
-  const base = BENCHMARK_FEES.map((f) => row(f.category, f.label)).filter((r): r is BenchmarkRow => r !== null);
-  if (!institutionId || base.length === 0) return base.slice(0, BENCHMARK_ROWS);
-
-  const [fees, bases] = await Promise.all([
-    getInstitutionFees(institutionId).catch(() => []),
-    getCategoryChargeBases().catch(() => null),
-  ]);
-  const { deltas } = compareSelectedInstitutionFees({
-    selectedFees: fees,
-    indexEntries: [...usable.values()],
-    chargeBases: bases,
-    evidencePolicy: "verified-only",
-  });
-  const byCategory = new Map(deltas.map((d) => [d.fee_category, d]));
-  const withValue = (r: BenchmarkRow): BenchmarkRow => {
-    const d = byCategory.get(r.category);
-    if (!d) return r;
-    const position = d.position === "above_peer_median" ? "above" : d.position === "below_peer_median" ? "below" : "at";
-    return { ...r, value: d.institution_amount, position };
-  };
-  // The institution's own compared fees first (headline fees, then the most common), then the rest.
-  const headline = base.map(withValue).filter((r) => r.value !== null);
-  const more = deltas
-    .filter((d) => !BENCHMARK_FEES.some((f) => f.category === d.fee_category))
-    .sort((a, b) => b.institution_count - a.institution_count)
-    .map((d) => row(d.fee_category, categoryLabel(d.fee_category)))
-    .filter((r): r is BenchmarkRow => r !== null)
-    .map(withValue);
-  const rest = base.filter((r) => !byCategory.has(r.category));
-  return [...headline, ...more, ...rest].slice(0, BENCHMARK_ROWS);
-}
-
-/** The Analyze example's question: overdraft a few dollars under the live national median. */
-async function analyzeScenario(): Promise<AnalyzeScenario | null> {
-  const national = await getNationalIndexCached().catch(() => []);
-  return buildScenario("Overdraft", national.find((e) => e.fee_category === "overdraft"));
-}
-
 function buildSubscribeReturnPath(options: {
   inviteMode: boolean;
   returnTo: string | null;
@@ -259,11 +177,6 @@ export default async function SubscribePage({
 }) {
   const user = await getCurrentUser();
   const params = await searchParams;
-  const [summary, wire, scenario] = await Promise.all([
-    getPublicStatsSummary(),
-    wirePreviewData(),
-    analyzeScenario(),
-  ]);
   const returnTo = params.from ? sanitizeInternalRedirect(params.from, WELCOME_PATH) : null;
   const requestedPlan: ProPlan | null = isProPlan(params.plan) ? params.plan : null;
   const checkoutRequested = params.checkout === "1";
@@ -277,6 +190,15 @@ export default async function SubscribePage({
     redirect(returnTo && returnTo !== WELCOME_PATH ? returnTo : WELCOME_PATH);
   }
 
+  const [summary, wire, exhibit] = await Promise.all([
+    getPublicStatsSummary(),
+    wirePreviewData(),
+    loadPlansExhibitData().catch((error: unknown) => {
+      console.error("[subscribe] exhibit reads failed; Hamilton window hidden", error);
+      return null;
+    }),
+  ]);
+
   const isLoggedIn = !!user;
   // /pro says "activating" for anyone with a Stripe customer, and that customer is now made
   // when checkout opens. activateIfPaid just asked Stripe and found no live subscription, so
@@ -287,7 +209,7 @@ export default async function SubscribePage({
     (params.reason === "activating" && user) || (!params.reason && gatedPageLabel(returnTo))
       ? "pro_required"
       : params.reason;
-  // A gated visitor's line is the hero's own ("One step away from ..."), not a banner.
+  // A gated visitor's line is the hero's own eyebrow ("Regulatory Wire is included ..."), not a banner.
   const gated = reason === "pro_required" && entry.page !== null && params.canceled !== "1";
   const reasonLine =
     params.canceled === "1"
@@ -311,10 +233,10 @@ export default async function SubscribePage({
       : null;
   let selection: ProTierSelection | null = null;
   let chosenLabel: string | null = null;
-  // The size band under the name, smaller, so the price stays the card's anchor.
+  // The size band under the name, smaller, so the price stays the anchor.
   let chosenDetail: string | null = null;
   let chooserProblem: string | null = null;
-  // No asset size on file: the buyer picks the band (James, 8 Oct 2026); "Plans to check" lists it.
+  // No asset size on file: the buyer picks the band (James, 8 Oct 2026).
   let needsBand = false;
   if (pricingInstitution) {
     const tier = tierForAssets(pricingInstitution.assetsThousands);
@@ -336,12 +258,10 @@ export default async function SubscribePage({
     chosenLabel = "A consultant or another organization";
   }
 
-  // The institution the page has priced, named in the phone hero and closing card (review N2).
+  // The institution the page has priced, named in the closing card and sticky button (review N2).
   const chosenPrice: ChosenInstitutionPrice | null =
     selection?.institutionId && pricingInstitution ? { name: pricingInstitution.name, tier: selection.tier } : null;
   const ctaLabel = pricingCtaLabel(chosenPrice);
-
-  const benchmark = await benchmarkRows(pricingInstitution ? pricingInstitution.id : null);
 
   const registerHrefFor = (plan: ProPlan) => {
     const back = buildSubscribeReturnPath({ inviteMode, returnTo, plan, selection });
@@ -354,111 +274,60 @@ export default async function SubscribePage({
     requestedPlan && selection ? `${loginBack}&checkout=1` : loginBack,
   )}`;
 
-  const wirePreview = wire.lead ? <WirePreview lead={wire.lead} /> : null;
   // Sent with every funnel event so conversion can be read by entry point (James, 9 Oct 2026).
   const entryPoint = entry.page ?? "direct";
-  const benchmarkInstitution = selection?.institutionId && pricingInstitution ? chosenLabel : null;
-
-  // The hero image steps through one example per capability (James, 9 Oct 2026).
-  const showcase =
-    benchmark.length > 0 && scenario ? (
-      <ShowcaseStage
-        panels={[
-          <BenchmarkPreview key="benchmark" institution={benchmarkInstitution} rows={benchmark} totalInstitutions={summary.institutions} />,
-          <AnalyzeDemo key="analyze" scenario={scenario} />,
-          <MonitorPreview
-            key="monitor"
-            wire={wire.lead ? { source: wire.lead.source, title: wire.lead.title, detail: wire.lead.detail } : null}
-          />,
-          <ReportPreview key="report" />,
-        ]}
-      />
-    ) : null;
 
   return (
-    <ShowcaseProvider autoCycle={benchmarkInstitution === null} entry={entryPoint}>
-    <div
-      className={`relative isolate min-h-screen overflow-x-clip bg-paper ${INTERACTION_CLASS}`}
-      style={DISPLAY}
-    >
-      {/* The glass surfaces need colour behind them: two soft light sources, no motion. */}
-      <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-[1100px]">
-        <div className="absolute -left-40 -top-32 h-[560px] w-[560px] rounded-full bg-[#E3C9A8]/45 blur-3xl" />
-        <div className="absolute -right-32 top-24 h-[480px] w-[480px] rounded-full bg-brick/10 blur-3xl" />
-        <div className="absolute left-1/3 top-[620px] h-[420px] w-[520px] rounded-full bg-[#E3C9A8]/35 blur-3xl" />
-      </div>
+    <div className={`min-h-screen overflow-x-clip bg-paper ${INTERACTION_CLASS}`} style={DISPLAY}>
       <ConsumerNav />
       <main id="main-content">
-
-      <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 sm:py-10">
-        {reasonLine && (
-          <p role="status" className="mb-6 rounded-2xl border border-border bg-white px-4 py-3 text-sm text-ink">
-            {reasonLine}
-          </p>
-        )}
-        {inviteMode && (
-          <div className="mb-6 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-            <p className="font-semibold">Workspace invitation pending</p>
-            <p className="mt-1">
-              No seat to buy. Sign in with the invited email and{" "}
-              <Link href="/workspace-invite" className="font-semibold underline">
-                accept the invitation
-              </Link>
-              .
-            </p>
-            {pendingInvitations.length > 0 && (
-              <div className="mt-3 grid gap-2">
-                {pendingInvitations.map((invitation) => (
-                  <div key={invitation.id} className="rounded-md border border-amber-200 bg-white/60 px-3 py-2">
-                    <span className="font-semibold">{invitation.institutionName}</span>
-                    <span className="text-amber-800"> · {invitation.role} access</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-
-        <section id="pro" aria-labelledby="pro-title" className="grid grid-cols-1 gap-8 lg:grid-cols-2 lg:gap-x-12 lg:gap-y-10">
+        <section id="pro" aria-labelledby="pro-title" className="mx-auto max-w-6xl px-4 pb-4 pt-6 sm:px-6 sm:pt-10">
           {entry.page && <TrackView event="subscription_gate_viewed" eventProps={{ page: entry.page, entry: entryPoint }} />}
-          {/* The headline spans both columns; the example and the card start on one line below it. */}
-          <div className="min-w-0 lg:col-span-2 lg:row-start-1">
+          {reasonLine && (
+            <p role="status" className="mx-auto mb-6 max-w-3xl rounded-2xl border border-border bg-surface-0 px-4 py-3 text-sm text-ink">
+              {reasonLine}
+            </p>
+          )}
+          {inviteMode && (
+            <div className="mx-auto mb-6 max-w-3xl rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+              <p className="font-semibold">Workspace invitation pending</p>
+              <p className="mt-1">
+                No seat to buy. Sign in with the invited email and{" "}
+                <Link href="/workspace-invite" className="font-semibold underline">
+                  accept the invitation
+                </Link>
+                .
+              </p>
+              {pendingInvitations.length > 0 && (
+                <div className="mt-3 grid gap-2">
+                  {pendingInvitations.map((invitation) => (
+                    <div key={invitation.id} className="rounded-md border border-amber-200 bg-white/60 px-3 py-2">
+                      <span className="font-semibold">{invitation.institutionName}</span>
+                      <span className="text-amber-800"> · {invitation.role} access</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          <div className="mx-auto max-w-3xl text-center">
             <p className="text-xs font-semibold uppercase tracking-[0.14em] text-ink-muted">{entry.context}</p>
             <h1
               id="pro-title"
-              className="mt-3 text-[length:clamp(1.75rem,8.2vw,2.25rem)] font-bold leading-[1.08] tracking-tight text-ink sm:text-5xl" style={DISPLAY}
+              className="mt-3 text-[2.25rem] font-semibold leading-[1.04] tracking-[-0.04em] text-ink sm:text-[3rem]"
+              style={DISPLAY}
             >
-              {/* On a phone the size follows the width, so it breaks after "fees." as two sentences. */}
-              Understand your fees. Know your market.
+              Hamilton Pro, priced by your institution&apos;s size
             </h1>
-            <p className="mt-4 max-w-xl text-lg leading-relaxed text-ink">
-              Hamilton, the {SITE_NAME} Pro workspace: your fees against your market, with a source for every figure.
+            <p className="mx-auto mt-3 max-w-2xl text-[16px] leading-relaxed text-ink-soft sm:text-[18px]">
+              Your fees against your market, with a source for every figure. One plan covers up to{" "}
+              {WORKSPACE_SEAT_LIMIT} people.
             </p>
-            <div className="mt-6 lg:hidden">
-              <p className="text-sm text-ink">
-                <span className="font-semibold text-ink">
-                  {chosenPrice ? chosenPriceLine(chosenPrice) : `From ${tierPriceLabel(PRO_TIERS[0].key, "monthly")}`}
-                </span>{" "}
-                · Up to {WORKSPACE_SEAT_LIMIT} people
-              </p>
-              <PricingJump
-                inputId="pro_tier_institution"
-                targetId="pro-heading"
-                id="pro-hero-cta"
-                className={`mt-3 block rounded-lg ${CTA_CLASS}`}
-              >
-                {ctaLabel}
-              </PricingJump>
-            </div>
           </div>
 
-          {showcase && <div className="min-w-0 lg:col-start-1 lg:row-start-2">{showcase}</div>}
-
-          {/* Same size as the example beside it (James, 9 Oct 2026): both stretch to the row, each
-              with one 44px line under it (the example dots; the sign-in line). */}
-          <div className="flex min-w-0 flex-col lg:col-start-2 lg:row-start-2">
-            <div className="flex-1">
-            <PurchaseCard
+          <div className="mt-8">
+            <ProPlanBoard
               isLoggedIn={isLoggedIn}
               chooser={
                 <ProTierChooser
@@ -471,105 +340,68 @@ export default async function SubscribePage({
                 />
               }
               selection={selection}
+              selectedName={selection?.institutionId ? chosenLabel : null}
               returnTo={returnTo ?? undefined}
               destination={entry.page}
-              registerHrefFor={registerHrefFor}
+              registerHref={{ annual: registerHrefFor("annual"), monthly: registerHrefFor("monthly") }}
               initialPlan={requestedPlan}
               autoStartPlan={selection ? autoStartPlan : null}
               entry={entryPoint}
             />
-            </div>
-            <div className="mt-1 flex h-11 items-center justify-center text-sm text-ink">
-              {!isLoggedIn && (
-                <p>
-                  Already have an account?{" "}
-                  <a href={loginHref} className="font-medium text-ink underline underline-offset-2">
-                    Sign in
-                  </a>
-                </p>
-              )}
-            </div>
-          </div>
-        </section>
-      </div>
-
-      <section
-        aria-labelledby="capabilities-heading"
-        className="mt-14 border-y border-white/60 bg-surface-200/70 backdrop-blur-md lg:mt-16"
-      >
-        <div className="mx-auto max-w-6xl px-4 py-12 sm:px-6 sm:py-16">
-          <h2 id="capabilities-heading" className="text-2xl text-ink sm:text-3xl font-semibold tracking-tight" style={DISPLAY}>
-            One platform. Four ways to understand your market.
-          </h2>
-          <div className="mt-8 sm:mt-10">
-            <ShowcasePillars interactive={showcase !== null} />
-          </div>
-        </div>
-      </section>
-
-      <div className="mx-auto max-w-6xl px-4 pb-6 sm:px-6 sm:pb-10">
-
-        {wirePreview && (
-          <section
-            aria-labelledby="wire-heading"
-            className="mt-12 grid grid-cols-1 gap-8 sm:mt-16 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] lg:gap-14"
-          >
-            <div>
-              <h2 id="wire-heading" className="mt-2 text-2xl text-ink font-semibold tracking-tight" style={DISPLAY}>
-                Regulatory Wire, with the fee data
-              </h2>
-              <p className="mt-3 text-[15px] leading-relaxed text-ink">
-                Fee rules and bills beside what institutions charge. Included in Pro.
+            {!isLoggedIn && (
+              <p className="mt-4 text-center text-sm text-ink">
+                Already have an account?{" "}
+                <a href={loginHref} className="inline-flex min-h-11 items-center font-medium text-ink underline underline-offset-2">
+                  Sign in
+                </a>
               </p>
-            </div>
-            {wirePreview}
-          </section>
-        )}
+            )}
+          </div>
 
-        <section
-          aria-labelledby="cta-heading"
-          className="mt-16 rounded-2xl bg-white/70 px-6 py-10 text-center ring-1 ring-border/80 shadow-[0_8px_32px_-12px_rgba(26,24,21,0.22),inset_0_1px_0_rgba(255,255,255,0.7)] backdrop-blur-xl sm:px-10"
-        >
-          <h2 id="cta-heading" className="text-2xl font-semibold tracking-tight text-ink sm:text-3xl">
-            See where your fees stand.
-          </h2>
-          <p className="mx-auto mt-3 max-w-xl text-[15px] leading-relaxed text-ink">
-            {chosenPrice ? chosenPriceLine(chosenPrice) : `From ${tierPriceLabel(PRO_TIERS[0].key, "monthly")}`} for up
-            to {WORKSPACE_SEAT_LIMIT} people.
-          </p>
-          <PricingJump
-            inputId="pro_tier_institution"
-            targetId="pro-heading"
-            className={`mt-6 inline-flex min-h-12 items-center justify-center rounded-lg ${CTA_CLASS}`}
-          >
-            {ctaLabel}
-          </PricingJump>
+          <PlanIncludes />
         </section>
 
-        {gated ? (
-          <div className="mt-14">
-            <GatedOptions reportHref={REPORT_FORM_HREF} />
-          </div>
-        ) : (
-          <div className="mt-20">
-            <OtherOptions />
-          </div>
-        )}
+        {exhibit && <PlansExhibit data={exhibit} wire={wire.lead} />}
 
-        <div className="mt-20">
-          <PricingFaq summary={summary} />
+        <div className="mx-auto max-w-6xl px-4 pb-10 sm:px-6">
+          {gated ? (
+            <div className="mt-4">
+              <GatedOptions reportHref={REPORT_FORM_HREF} />
+            </div>
+          ) : (
+            <div className="mt-4">
+              <OtherOptions />
+            </div>
+          )}
+
+          <div className="mt-16">
+            <PricingFaq summary={summary} />
+          </div>
+
+          <section
+            aria-labelledby="cta-heading"
+            className="mt-16 rounded-2xl border border-border bg-surface-0 px-6 py-10 text-center fi-window-lift sm:px-10"
+          >
+            <h2 id="cta-heading" className="text-2xl font-semibold tracking-tight text-ink sm:text-3xl">
+              See where your fees stand
+            </h2>
+            <p className="mx-auto mt-3 max-w-xl text-[15px] leading-relaxed text-ink">
+              {chosenPrice ? chosenPriceLine(chosenPrice) : `From ${tierPriceLabel(PRO_TIERS[0].key, "monthly")}`} for up
+              to {WORKSPACE_SEAT_LIMIT} people.
+            </p>
+            <PricingJump
+              inputId="pro_tier_institution"
+              targetId={CHECKOUT_ID}
+              className={`mt-6 inline-flex min-h-12 items-center justify-center rounded-lg ${CTA_CLASS}`}
+            >
+              {ctaLabel}
+            </PricingJump>
+          </section>
         </div>
-      </div>
       </main>
-      <StickyCta
-        heroId="pro-hero-cta"
-        cardId="pro-heading"
-        label={ctaLabel}
-        className={`block rounded-lg ${CTA_CLASS}`}
-      />
+      <StickyCta heroId={PLANS_ID} cardId={CHECKOUT_ID} label={ctaLabel} className={`block rounded-lg ${CTA_CLASS}`} />
       <CustomerFooter />
       <SearchModal />
     </div>
-    </ShowcaseProvider>
   );
 }
