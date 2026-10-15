@@ -9,12 +9,15 @@ import {
   creditUnionAcronyms,
   documentOwnerVerdict,
   headerNamesInstitution,
+  holdingCompanyKey,
   institutionsNamedIn,
   isVendorDocumentPath,
+  onWebsiteHost,
   ownerNameForms,
   recheckDocumentOwners,
   sharedNameIds,
   type OwnerBank,
+  vendorCopyOwner,
 } from "./document-owner";
 
 // The three #1455 cases, as the registry lists them (the texts are short stand-ins for each schedule).
@@ -124,6 +127,43 @@ describe("documentOwnerVerdict: no takedown", () => {
   });
 });
 
+describe("the real owner on its own website (#1455 re-review B2)", () => {
+  const heartland: OwnerBank = { id: 9101, name: "Heartland Bank and Trust Company", city: "Bloomington", stateCode: "IL", websiteHost: "hbtbank.com" };
+  const springfield: OwnerBank = { id: 9102, name: "Town and Country Bank", city: "Springfield", stateCode: "IL", websiteHost: "townandcountrybank.com" };
+  const own = { documentHost: "hbtbank.com", hostIds: [], hashIds: [] };
+
+  it("prints its name with '&' and 'Company': own_named, not other_bank naming the url-linked bank's city", () => {
+    const text = "Heartland Bank & Trust Company\nPersonal Fee Schedule\n401 N. Hershey Rd., Springfield, IL 62703\nOverdraft $30";
+    expect(documentOwnerVerdict(text, heartland, [springfield], [], own)).toMatchObject({ kind: "own_named", evidence: "name: heartland bank and trust" });
+  });
+
+  it("'&', 'Company', 'Co.', 'Inc.' and 'N.A.' fold the same way in names and holding companies", () => {
+    expect(ownerNameForms("Heartland Bank & Trust Co.", "Bloomington")).toContain("heartland bank and trust");
+    expect(ownerNameForms("Heartland Bank and Trust Company, Inc.", "Bloomington")).toContain("heartland bank and trust");
+    expect(holdingCompanyKey("Wells Fargo & Company")).toBe(holdingCompanyKey("WELLS FARGO AND CO."));
+  });
+
+  it("names only a variant ('HBT Bank'): an address- or hash-linked bank is capped at shared_service on this bank's site or a subdomain", () => {
+    const text = "HBT Bank\nPersonal Fee Schedule\nSpringfield, IL 62703\nOverdraft $30";
+    expect(documentOwnerVerdict(text, heartland, [springfield], [], own)).toEqual({ kind: "shared_service", otherIds: [9102] });
+    expect(documentOwnerVerdict(text, heartland, [springfield], [], { ...own, documentHost: "docs.hbtbank.com", hashIds: [9102] }))
+      .toEqual({ kind: "shared_service", otherIds: [9102] });
+    // Off this bank's site the same text still names the other bank.
+    expect(documentOwnerVerdict(text, heartland, [springfield], [], { ...own, documentHost: "files.vendor.net" }))
+      .toMatchObject({ kind: "other_bank", otherId: 9102, evidence: "city: springfield il" });
+    // A bank linked by its stored website (the seed stored it for this bank too) is not capped.
+    expect(documentOwnerVerdict(text, heartland, [{ ...springfield, websiteHost: "hbtbank.com" }], [], { ...own, hostIds: [9102] }))
+      .toMatchObject({ kind: "other_bank", otherId: 9102 });
+  });
+
+  it("subdomains count as this bank's own site, look-alike hosts do not", () => {
+    expect(onWebsiteHost("hbtbank.com", "hbtbank.com")).toBe(true);
+    expect(onWebsiteHost("docs.hbtbank.com", "hbtbank.com")).toBe(true);
+    expect(onWebsiteHost("myhbtbank.com", "hbtbank.com")).toBe(false);
+    expect(onWebsiteHost(null, "hbtbank.com")).toBe(false);
+  });
+});
+
 describe("vendor-served documents and the prod dry run (Oct 15)", () => {
   const healthplus: OwnerBank = { id: 5009, name: "Healthplus Federal Credit Union", city: "Gulfport", stateCode: "MS", websiteHost: "healthplusfcu.org" };
   const members: OwnerBank[] = [
@@ -141,7 +181,8 @@ describe("vendor-served documents and the prod dry run (Oct 15)", () => {
   const direct: OwnerBank = { id: 5355, name: "Direct Federal Credit Union", city: "Needham", stateCode: "MA" };
   const westminster: OwnerBank = { id: 900, name: "Westminster Bank", city: "Westminster", stateCode: "CO" };
   const directory = buildNameDirectory([healthplus, ...members, onomea, horizons, fiveStar, ukfcu, bluegrass, currency, direct, westminster]);
-  const HEALTHPLUS_TEXT = "HEALTHPLUS | Fee Schedule\nEffective January 1, 2026\nDirect deposit: free\nCurrency exchange $5\nNSF / Returned item $30.00\nFederally insured by NCUA";
+  const HEALTHPLUS_TEXT = "HEALTHPLUS FEDERAL CREDIT UNION | Fee Schedule\nEffective January 1, 2026\nDirect deposit: free\nCurrency exchange $5\nNSF / Returned item $30.00\nFederally insured by NCUA";
+  const BARE_BRAND_TEXT = "HEALTHPLUS | Fee Schedule\nEffective January 1, 2026\nDirect deposit: free\nNSF / Returned item $30.00";
   const LAKEHURST_TEXT = "LAKEHURST NAVAL FEDERAL CREDIT UNION FEE SCHEDULE\nOverdraft $25\nCurrency order $5";
   const scan = (text: string, own: OwnerBank) =>
     institutionsNamedIn(text, directory).filter((id) => id !== own.id).map((id) => directory.banks.get(id)!);
@@ -160,12 +201,29 @@ describe("vendor-served documents and the prod dry run (Oct 15)", () => {
   it("but Healthplus's own copy is its own", () => {
     const linked = members.slice(0, 4);
     expect(documentOwnerVerdict(HEALTHPLUS_TEXT, healthplus, linked, scan(HEALTHPLUS_TEXT, healthplus), vendor(healthplus, linked)))
-      .toEqual({ kind: "own_named", evidence: "vendor copy: own name" });
+      .toMatchObject({ kind: "own_named" });
+  });
+
+  it("a bare one-word brand never names the vendor copy's owner (#1455 re-review)", () => {
+    const own = members[0];
+    const linked = [healthplus, ...members.slice(1, 4)];
+    expect(documentOwnerVerdict(BARE_BRAND_TEXT, own, linked, scan(BARE_BRAND_TEXT, own), vendor(own, linked))).toEqual({ kind: "unproven" });
+    expect(vendorCopyOwner(BARE_BRAND_TEXT, [own, ...linked])).toBeNull();
+  });
+
+  it("a hash sharer 'Access Credit Union' is not named by 'ATM access fee'", () => {
+    const access: OwnerBank = { id: 7001, name: "Access Credit Union", city: "Broadview", stateCode: "IL" };
+    const own = members[1];
+    const text = "Fee Schedule\nATM access fee $2.00\nOverdraft $25";
+    expect(vendorCopyOwner(text, [own, access])).toBeNull();
+    expect(documentOwnerVerdict(text, own, [access], [], vendor(own, [access]))).toEqual({ kind: "unproven" });
   });
 
   it("without the text-hash link, the one-word brand is not a name", () => {
     expect(ownerNameForms("Healthplus Federal Credit Union", "Gulfport")).not.toContain("healthplus");
-    expect(documentOwnerVerdict(HEALTHPLUS_TEXT, members[0], [], scan(HEALTHPLUS_TEXT, members[0]))).toEqual({ kind: "unproven" });
+    expect(documentOwnerVerdict(BARE_BRAND_TEXT, members[0], [], scan(BARE_BRAND_TEXT, members[0]))).toEqual({ kind: "unproven" });
+    // The full name without a link is only a registry mention.
+    expect(documentOwnerVerdict(HEALTHPLUS_TEXT, members[0], [], scan(HEALTHPLUS_TEXT, members[0]))).toEqual({ kind: "registry_named", otherIds: [5009] });
   });
 
   it("4728 Onomea and 5009 Healthplus documents that open with Lakehurst Naval FCU's name are Lakehurst's", () => {
@@ -365,6 +423,21 @@ describe("documentOwnerCountSql", () => {
     }
     expect(text).toContain("('SD', 'south dakota')");
     expect(documentOwnerCountSql({ detail: true })).toContain("named_other_name");
+  });
+
+  it("runs in a read-only transaction that rolls back, with JIT off and a timeout", () => {
+    for (const text of [documentOwnerCountSql(), documentOwnerCountSql({ detail: true })]) {
+      expect(text).toMatch(/^-- [^\n]*\n(--[^\n]*\n)*BEGIN READ ONLY;\nSET LOCAL jit = off;\nSET LOCAL enable_mergejoin = off;\nSET LOCAL statement_timeout = '120s';\n/);
+      expect(text.trimEnd().endsWith("ROLLBACK;")).toBe(true);
+    }
+  });
+
+  it("skips quarantined fees and boilerplate text hashes, and hashes the judged text row", () => {
+    const text = documentOwnerPairsSql();
+    expect(text.match(/fp\.quarantined_at IS NULL/g)).toHaveLength(1);
+    expect(text).toContain("t.char_count >= 200");
+    expect(text).toContain("HAVING count(DISTINCT t.source_document_id) <= 20");
+    expect(text).toContain("t.status = 'completed' AND t.normalized_text IS NOT NULL");
   });
 
   it("reads each pair once per version, mode and text hash; re-reads have their own cap", () => {

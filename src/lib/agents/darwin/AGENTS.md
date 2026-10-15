@@ -115,26 +115,31 @@ Darwin owns verification and classification.
   for 5756, 4884 and 1903; CU website vendors serve one CU's file on every member domain). A live
   (institution, document) pair is read when the document is shared with another institution (its
   host is that institution's stored website, that institution has live fees from the same address,
-  or one of its documents has the same `text_hash`) or sits on a vendor download path
+  or one of its documents has the same `text_hash`: a completed text of 200 characters or more shared by
+  at most 20 documents, so empty and "Access Denied" pages link nothing) or sits on a vendor download path
   (`/ezs3download/download/`, `/_/kcms-doc/`; a path alone is no proof). The order: all linked
   institutions share this bank's holding company gives `sibling_shared` (Wells Fargo 4/172/359,
   #1441: never taken down, counted once per document); this bank's distinct name, credit union
   acronym (SMFCU, SMCU), printed website (not the document's own host), city or certificate number
-  gives `own_named` (co-branded documents pass); on a vendor path, the hash-linked institution whose
-  name the text prints owns the copy (`other_bank` when it is another, unrelated institution); a
-  document on another institution's stored website that never names this bank is `other_bank`
-  naming that institution (the site rule); then linked institutions count by a name of two words or
+  gives `own_named` (co-branded documents pass; names read "&" as "and" and drop a trailing
+  "Company", "Co.", "Corp.", "Inc." or "N.A."); on a vendor path, the hash-linked institution whose
+  name form the text prints owns the copy (`other_bank` when it is another, unrelated institution;
+  a bare one-word brand never counts); a document on another institution's stored website, not on
+  this bank's site or a subdomain of it, that never names this bank is `other_bank` naming that
+  institution (the site rule); then linked institutions count by a name of two words or
   more (a one-word brand such as "healthplus" only next to bank/credit union/fcu or its city;
   boilerplate and common words such as "currency", "direct", "popular" never), a name another
   institution's name contains only with its city, an acronym, or city with state. One named
-  institution gives `other_bank`, two or more `shared_service` (passes), a named sibling
+  institution gives `other_bank`, two or more `shared_service` (passes); on this bank's own website
+  or a subdomain, a named institution linked only by address or text hash is capped at
+  `shared_service`, so a name variant this bank's forms miss never hands its own schedule away, a named sibling
   `sibling_shared`. The header rule (`headerNamesInstitution`: one of the first ten non-empty lines
   starts with the full legal name, two words or more with "bank" or "credit union", printed as a
   title, no other institution sharing it) applies only to linked institutions. An institution only
   the registry-wide name scan finds gives `registry_named`, a review verdict that passes, even as a
   title line ("Wells Fargo Bank", "U.S. Bank", "Bank of America ATM Fees", "Fees associated with",
   "processed through Bank of America" are all negative tests). Other verdicts: `unproven` (also a
-  pair with no registry row), `no_text`. Up to 25 new pairs a step, one attempt each (fingerprint
+  pair with no registry row), `no_text`. Live fees exclude rolled-back and quarantined ones. Up to 25 new pairs a step, one attempt each (fingerprint
   `owner-shadow:<institution>:<document>:<text_hash>` in shadow, `owner:...` once live, so a
   re-extracted text is read again). A step skips the scoped read when the last one of its mode
   selected no pair and the newest stored text and live fee ids are unchanged. With
@@ -144,7 +149,8 @@ Darwin owns verification and classification.
   (`darwin.document_owner`), passing fees clear their pending flags, and a confirmed fee is
   archived with reason `document_owner: names institution <id>`, never deleted.
   `documentOwnerCountSql()` is the read-only count of the whole backlog by verdict, mirroring these
-  rules in staged, materialized steps (JIT off; names are matched only where their first two words
+  rules in staged, materialized steps, as one script in a read-only transaction that rolls back (JIT
+  and merge joins off, a 120 s statement timeout; names are matched only where their first two words
   appear next to each other). It skips the certificate test, so its `other_bank` count is an upper
   bound.
 - Live name re-check (`live-fragment-check.ts`, #1443, #1436; decision 2026-10-15, "Darwin
