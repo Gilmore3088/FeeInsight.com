@@ -73,12 +73,36 @@ describe("Knox audience suggestion from context (#1059)", () => {
     "Check Copy Fee (Corporate One)",
     "Corporate Stop Payment",
     "Check Cashing – Non-member (on-us or Corporate)",
+    // Review of #1382: a treasurer's check, a bare money order, the en-dash join.
+    "Corporate Treasurer's Check",
+    "Corporate Treasurer’s Checks",
+    "Corporate Money Order",
+    "Corporate – Bank Check",
+    "Corporate — Official Check",
+    "Member/Corporate Check Copy",
+    "Personal or Corporate Share Draft Copy",
+    // Live lines with the check word first (documents 3245, 25924 and 26396).
+    "Check Copy – Personal or Corporate",
+    "Check (Personal/Corporate) Duplicate - each",
+    "Stale Corporate Treasurer Check/Money Order processing fee",
   ])("reads an official check as no audience: %s", (name) => {
     expect(suggest(null, `Fee Schedule\n${name} $30`, name)).toMatchObject({ source: "default_general_schedule", audience: "consumer" });
     expect(hasBusinessFees([`${name} | $30.00`, "Stop Payment $30"])).toBe(false);
   });
 
-  it.each(["Corporate Checking Monthly Fee", "Monthly Service Fee - Corporate Checking", "Corporate Account Analysis Fee"])(
+  it.each([
+    "Corporate Checking Monthly Fee",
+    "Monthly Service Fee - Corporate Checking",
+    "Corporate Account Analysis Fee",
+    // Review of #1382: a corporate checking account by its credit union name, a reversed join
+    // with no check after it, and the words "one" starts that are not the Corporate One network.
+    "Corporate Share Draft Account (Monthly Fee)",
+    "Corporate Draft Account Fee",
+    "Member/Corporate Account Fee",
+    "Member or Corporate Accounts Monthly Fee",
+    "Corporate one-time setup fee",
+    "Corporate One Card annual fee",
+  ])(
     "keeps a corporate account name business: %s",
     (name) => {
       expect(suggest(null, `Fee Schedule\n${name} $30`, name)).toMatchObject({ source: "fee_name", audience: "business" });
