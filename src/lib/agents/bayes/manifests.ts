@@ -247,6 +247,9 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   // v3 (#1397): the recheck reads every verified row once per version, so each verify step works
   // through the whole verified set under v3 itself (200 a step).
   DARWIN_RECHECK_STRATEGY: "Its selector re-reads every verified row not yet read at v3 (200 a verify step); there is nothing to replay.",
+  // v1 (#1511): a new shadow pass over Darwin's re-read requests. Its resolution key carries its
+  // version and the Knox rules version, so every request is read again by the extract steps themselves.
+  KNOX_REREAD_FEEDBACK_STRATEGY: "Its resolution key carries its version and the Knox rules version, so the extract steps read every request again themselves; nothing to replay.",
   // v1 (#1443): the live fragment re-check's rules (parenthetical exemption, glued-sentence rename,
   // priced trailing range left live). Its ledger cursor reads the whole live table again every pass.
   // v2 (#1499): the wider sentence_end head, the generic/clause/service-list bars, no rename of an

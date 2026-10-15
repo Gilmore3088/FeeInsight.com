@@ -1567,8 +1567,8 @@ export async function writeLiveRenames(
   scope: SqlTag,
   renames: RetidyRename[],
   meta: { strategy: string; version: number; reportedBy: "knox" | "darwin"; runId: number },
-): Promise<void> {
-  if (renames.length === 0) return;
+): Promise<number[]> {
+  if (renames.length === 0) return [];
   await recordFeedback(
     scope,
     renames.map((rename) => ({
@@ -1593,7 +1593,8 @@ export async function writeLiveRenames(
       dedupeKey: `${meta.strategy}:pub:${rename.feePublishedId}:${createHash("sha1").update(rename.oldName).digest("hex").slice(0, 12)}`,
     })),
   );
-  await scope`
+  // The fees the guarded update renamed: one whose name changed since the read is left as it is.
+  const updated = await scope<Array<{ fee_published_id: number | string }>>`
     UPDATE published_fee_records fp
        SET fee_name = rename.new_name
       FROM unnest(
@@ -1604,7 +1605,9 @@ export async function writeLiveRenames(
      WHERE fp.fee_published_id = rename.fee_published_id
        AND fp.rolled_back_at IS NULL
        AND fp.fee_name = rename.old_name
+    RETURNING fp.fee_published_id
   `;
+  return updated.map((row) => Number(row.fee_published_id));
 }
 
 export interface RetidyResult extends RetidyPlan {
