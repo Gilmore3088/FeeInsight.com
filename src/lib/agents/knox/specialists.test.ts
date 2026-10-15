@@ -140,12 +140,15 @@ describe("Knox pass 2a: extract.table", () => {
   });
 
   it("emits only rows Darwin's category guard and envelope would accept", () => {
-    // A $500 "stop payment" is outside Darwin's envelope; a stop on an official check is
-    // excluded by the stop_payment category guard.
+    // A $500 "stop payment" is outside Darwin's envelope; a stop on an official check is the
+    // stop payment fee (category guard v62+, #1312).
     const rows = tableRowsFromText(
       ["Stop payment (business, per series)", "$500.00", "Official Check Stop Payment", "$25.00", "Stop Payment Order", "$30.00"].join("\n"),
     );
-    expect(extractFromTableRows(rows).candidates.map((fee) => [fee.feeName, fee.amount])).toEqual([["Stop Payment Order", 30]]);
+    expect(extractFromTableRows(rows).candidates.map((fee) => [fee.feeName, fee.amount])).toEqual([
+      ["Official Check Stop Payment", 25],
+      ["Stop Payment Order", 30],
+    ]);
   });
 });
 

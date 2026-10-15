@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { buildLedger, defaultWatches, evaluateWatches, parseWatches } from "./decisions";
 import { overdraftResearch } from "./test-fixtures";
-import type { DecisionEvent, DecisionRecord } from "./types";
+import type { DecisionEvent, DecisionRecord, Fact } from "./types";
 
 const decision = (id: string, status: DecisionRecord["status"], chosenAmount: number | null = null): DecisionRecord => ({
   id,
@@ -41,6 +41,18 @@ describe("watch conditions", () => {
     const [competitor] = evaluateWatches(defaultWatches(withChange), withChange, "2026-10-02T00:00:00Z");
     expect(competitor).toMatchObject({ tripped: true, evidence: { text: "Peer 3: $30 to $35, seen 2026-10-04." } });
     expect(evaluateWatches(defaultWatches(withChange), withChange, "2026-10-05T00:00:00Z")[0].tripped).toBe(false);
+  });
+
+  it("trips a rule watch on a federal release, never on a state regulator post (#1254)", () => {
+    // Invented items for tests only.
+    const statePost = { text: 'Illinois state regulator post "Example Fee Notice", October 4, 2026.', source: { label: "Illinois state regulator release", table: "reg_articles", kind: "state_post" as const, url: "https://example.gov/a", asOf: "2026-10-04" } };
+    const federal = { text: "FDIC: Example overdraft guidance (2026-10-05)", source: { label: "FDIC release", table: "reg_articles", url: "https://example.gov/b", asOf: "2026-10-05" } };
+    const rule = (regulation: Fact[]) => {
+      const r = overdraftResearch({ regulation });
+      return evaluateWatches(defaultWatches(r), r, "2026-10-02T00:00:00Z").find((w) => w.condition.kind === "rule_release");
+    };
+    expect(rule([statePost])?.tripped).toBe(false);
+    expect(rule([statePost, federal])).toMatchObject({ tripped: true, evidence: { text: federal.text } });
   });
 
   it("trips when the peer median moves past the threshold", () => {

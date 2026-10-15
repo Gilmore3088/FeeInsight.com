@@ -261,6 +261,27 @@ describe("storyline for a regulation question", () => {
     expect(priceWatch.some((f) => wire.some((w) => w.text === f.text))).toBe(false);
   });
 
+  it("keeps a state regulator post out of a price question's watch list and the complication (#1254)", () => {
+    // Invented items for tests only.
+    const statePost = { text: 'Illinois state regulator post "Example Fee Notice", May 1, 2026.', source: { label: "Illinois state regulator release", table: "reg_articles", kind: "state_post" as const, url: "https://example.gov/a", asOf: "2026-05-01" } };
+    const federal = { text: "FDIC: Example overdraft guidance (2026-09-01)", source: { label: "FDIC release", table: "reg_articles", url: "https://example.gov/b", asOf: "2026-09-01" } };
+    const price = "How does our overdraft fee compare?";
+    const story = (regulationFacts: FeeResearch["regulation"]) => {
+      const withFacts = { ...research, recentChanges: [], changeEvents: [], institutionFinancials: null, regulation: [...regulation, ...regulationFacts] };
+      return buildAskResponse({ question: price, intent: parseAsk(price), research: withFacts, memory: [] }).answer?.storyline;
+    };
+    const none = story([]);
+    const onlyState = story([statePost]);
+    expect(onlyState?.watch.some((f) => f.text === statePost.text)).toBe(false);
+    expect(onlyState?.complication.some((f) => f.text === statePost.text)).toBe(false);
+    expect(onlyState?.watch).toEqual(none?.watch);
+    expect(onlyState?.complication).toEqual(none?.complication);
+    // A federal release still fills the news slot (and so is not repeated under what to watch).
+    const withFederal = story([statePost, federal]);
+    expect(withFederal?.complication.some((f) => f.text === federal.text)).toBe(true);
+    expect(withFederal?.watch.some((f) => f.text === statePost.text)).toBe(false);
+  });
+
   it("leaves the regulator out of a price question's finance lens when two rules apply", () => {
     const question = "How does our overdraft fee compare?";
     const finance = buildAskResponse({ question, intent: parseAsk(question), research, memory: [] }).answer?.storyline?.lenses.finance ?? [];

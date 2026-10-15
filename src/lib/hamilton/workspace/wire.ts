@@ -26,11 +26,25 @@ const TRACKED_AGENCIES = new Set(["CFPB", "OCC", "FDIC", "Federal Reserve", "NCU
 /** Enforcement list codes for the federal regulators whose orders are loaded. */
 const ENFORCEMENT_CODE: Record<string, string> = { OCC: "OCC", "Federal Reserve": "FRB" };
 
+/** The enforcement list code ("OCC", "FRB") of a bank's federal regulator, or null when its orders are not loaded. */
+export function enforcementCode(primaryRegulator: string | null | undefined): string | null {
+  return primaryRegulator ? ENFORCEMENT_CODE[primaryRegulator] ?? null : null;
+}
+
 /** The Fact tables a Wire line comes from; reg_articles also holds the federal releases. */
 export const WIRE_TABLES: ReadonlySet<string> = new Set(["reg_tracker_items", "institution_enforcement_actions", "reg_articles"]);
 
 export function isWireFact(fact: Fact): boolean {
   return WIRE_TABLES.has(fact.source.table ?? "");
+}
+
+/**
+ * A federal regulator's release (FDIC, Federal Reserve, OCC, CFPB) from reg_articles. A state
+ * regulator's post sits in the same table but is tagged `kind: "state_post"`, so it never
+ * trips a `rule_release` watch or stands in for a federal release (#1254).
+ */
+export function isFederalRelease(fact: Fact): boolean {
+  return fact.source.table === "reg_articles" && fact.source.kind !== "state_post";
 }
 
 export interface WireRuleRow {
@@ -62,6 +76,7 @@ export interface WireActionRow {
   /** The agency in words ("OCC", "Federal Reserve", a state department). */
   agency_label: string;
   party_name: string;
+  /** Two-letter state code in upper case: the loader upper-cases it once, the way its SQL compares it. */
   party_state: string | null;
   action_type: string | null;
   start_date: string | null;
@@ -153,17 +168,17 @@ function billFacts(bills: WireBillRow[], scope: WireScope): Fact[] {
 
 function actionFacts(actions: WireActionRow[], scope: WireScope): Fact[] {
   const state = scope.stateCode?.toUpperCase() ?? null;
-  const federal = scope.primaryRegulator ? ENFORCEMENT_CODE[scope.primaryRegulator] ?? null : null;
+  const federal = enforcementCode(scope.primaryRegulator);
   const since = new Date(scope.today);
   since.setUTCFullYear(since.getUTCFullYear() - WIRE_ACTION_YEARS);
   const from = since.toISOString().slice(0, 10);
   return actions
     .filter((a) => a.url && a.start_date && a.start_date >= from)
-    .filter((a) => (federal !== null && a.agency === federal) || (state !== null && a.party_state?.toUpperCase() === state))
+    .filter((a) => (federal !== null && a.agency === federal) || (state !== null && a.party_state === state))
     .sort((a, b) => b.start_date!.localeCompare(a.start_date!))
     .slice(0, PER_KIND)
     .map((a) => ({
-      text: `${a.agency_label} ${a.action_type ? `${quoted(a.action_type)} ` : "action "}against ${quoted(a.party_name)}${a.party_state ? ` (${a.party_state.toUpperCase()})` : ""}, ${day(a.start_date!)}; its subjects include consumer law.`,
+      text: `${a.agency_label} ${a.action_type ? `${quoted(a.action_type)} ` : "action "}against ${quoted(a.party_name)}${a.party_state ? ` (${a.party_state})` : ""}, ${day(a.start_date!)}; its subjects include consumer law.`,
       source: { label: `${a.agency_label} enforcement actions`, table: "institution_enforcement_actions", url: a.url!, asOf: a.start_date },
     }));
 }
@@ -180,7 +195,7 @@ export function wireFacts(rows: WireRows, scope: WireScope): Fact[] {
   return out;
 }
 
-/** The state regulator's own fee posts in the last year, newest first. */
+/** The state regulator's own fee posts in the last year, newest first, tagged as state posts. */
 export function statePostFacts(posts: WirePostRow[], scope: Pick<WireScope, "stateCode" | "today">, limit = 2): Fact[] {
   const state = scope.stateCode?.toUpperCase();
   if (!state) return [];
@@ -193,7 +208,7 @@ export function statePostFacts(posts: WirePostRow[], scope: Pick<WireScope, "sta
       const asOf = p.published_at!.slice(0, 10);
       return {
         text: `${p.agency} post ${quoted(p.title)}, ${day(asOf)}.`,
-        source: { label: `${p.agency} release`, table: "reg_articles", url: p.link, asOf },
+        source: { label: `${p.agency} release`, table: "reg_articles", kind: "state_post", url: p.link, asOf },
       };
     });
 }

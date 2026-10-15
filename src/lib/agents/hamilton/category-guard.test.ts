@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { movesExcessActivityFee, restoreTarget, runHamiltonCategoryGuard, uniqueRefiles } from "./category-guard";
+import { movesExcessActivityFee, restoreTarget, runHamiltonCategoryGuard, tracesOnOwnText, uniqueRefiles } from "./category-guard";
 import { checkFeeCategory } from "@/lib/fee-category-guard";
 
 function templateText(strings: unknown): string {
@@ -21,10 +21,13 @@ const firstLooks = [2, 4].map((id) => ({
   evidence: { flag_run_id: 1, flagged_at: new Date(Date.now() - 13 * 3_600_000).toISOString(), reason: "name" },
 }));
 
-function createDbMock(flags: unknown[] = firstLooks, takenDown: unknown[] = []) {
+function createDbMock(flags: unknown[] = firstLooks, takenDown: unknown[] = [], texts: Record<number, string> = {}) {
   return vi.fn((strings: TemplateStringsArray, ...values: unknown[]) => {
     const text = templateText(strings);
     if (text.includes("to_regclass('public.pipeline_feedback')")) return Promise.resolve([{ ready: true }]);
+    if (text.includes("FROM agent_source_texts")) {
+      return Promise.resolve(Object.entries(texts).map(([doc, normalized_text]) => ({ source_document_id: Number(doc), normalized_text })));
+    }
     if (text.includes("FROM pipeline_feedback")) return Promise.resolve(flags);
     if (text.includes("rolled_back_at IS NOT NULL")) return Promise.resolve(takenDown);
     if (text.includes("UPDATE published_fee_records") && text.includes("rolled_back_at = NULL")) {
@@ -90,9 +93,9 @@ describe("Hamilton category guard repair", () => {
 
   it("brings back an earlier takedown today's guard passes", async () => {
     const db = createDbMock([], [
-      { fee_published_id: 21, lineage_ref: 31, canonical_fee_key: "card_replacement", fee_name: "Visa Check Card Replacement", amount: "10.00", conditions: null },
-      { fee_published_id: 22, lineage_ref: 32, canonical_fee_key: "atm_non_network", fee_name: "ATM Limit Adjustment", amount: "5.00", conditions: null },
-    ]);
+      { fee_published_id: 21, lineage_ref: 31, source_document_id: 7, canonical_fee_key: "card_replacement", fee_name: "Visa Check Card Replacement", amount: "10.00", conditions: null },
+      { fee_published_id: 22, lineage_ref: 32, source_document_id: 7, canonical_fee_key: "atm_non_network", fee_name: "ATM Limit Adjustment", amount: "5.00", conditions: null },
+    ], { 7: "Visa Check Card Replacement | $10.00\nATM Limit Adjustment | $5.00" });
 
     const result = await runHamiltonCategoryGuard({ runId: 13, db: db as unknown as GuardDb });
 
@@ -104,7 +107,7 @@ describe("Hamilton category guard repair", () => {
   it("brings back an ATM adjustment the guard took down under the type its fold split gives it, logged as a fold", async () => {
     const db = createDbMock([], [
       { fee_published_id: 45585, lineage_ref: 36992, institution_id: 6182, source_document_id: 9, canonical_fee_key: "atm_non_network", fee_name: "ATM Adjustment", amount: "2.00", conditions: null },
-    ]);
+    ], { 9: "ATM Adjustment | $2.00" });
 
     const result = await runHamiltonCategoryGuard({ runId: 14, db: db as unknown as GuardDb });
 
@@ -288,13 +291,37 @@ describe("Hamilton category guard repair", () => {
     const db = createDbMock([], [
       { fee_published_id: 350, lineage_ref: 1350, institution_id: 6042, source_document_id: 2536, canonical_fee_key: "card_replacement", fee_name: "Replacement Card - Express Mail", amount: "40.00", conditions: null },
       { fee_published_id: 27687, lineage_ref: 1687, institution_id: 6042, source_document_id: 15325, canonical_fee_key: "card_replacement", fee_name: "Replacement Card Shipped via Express Mail", amount: "40.00", conditions: null },
-    ]);
+    ], { 2536: "Replacement Card - Express Mail | $40.00", 15325: "Replacement Card Shipped via Express Mail | $40.00" });
 
     await runHamiltonCategoryGuard({ runId: 15, db: db as unknown as GuardDb });
 
     const restore = db.mock.calls.find((call) => templateText(call[0]).includes("rolled_back_at = NULL"));
     expect([restore?.[1], restore?.[2]]).toEqual([[350], ["rush_card"]]);
     expect(templateText(restore?.[0])).toContain("v.to_key <> fp.canonical_fee_key");
+  });
+
+  it("brings a takedown back only when it traces on its own stored text (guard v63, #1312)", async () => {
+    const stop = (id: number, doc: number | null, name: string, amount: string) => ({
+      fee_published_id: id, lineage_ref: id + 100000, institution_id: id, source_document_id: doc, canonical_fee_key: "stop_payment", fee_name: name, amount, conditions: null,
+    });
+    // The five stops on official and cashier's checks v63 passes (Oct 15): only 13389's own text states it.
+    const rows = [
+      stop(13389, 13654, "Stop Payment on Cashier's Checks, Official Checks and Money Orders (each)", "20.00"),
+      stop(1120, null, "Official Check Stop Payment", "35.00"),
+      stop(11233, null, "Stop Payment (Checks, ACH, Bill Pay, Cashier's Checks)", "18.00"),
+      stop(11747, null, "Stop Payment - Cashier's Checks", "20.00"),
+      stop(7924, 270, "Official Check Stop Payment", "15.00"),
+    ];
+    for (const row of rows) expect(restoreTarget({ ...row, document_nsf_amount: null }), String(row.fee_published_id)).toBe("stop_payment");
+    const db = createDbMock([], rows, {
+      13654: "Stop Payment via Internet (per item or range of items)        $10\nStop Payment on Cashier's Checks, Official Checks and Money Orders (each)          $20",
+    });
+    const result = await runHamiltonCategoryGuard({ runId: 25, db: db as unknown as GuardDb });
+    expect(result.restoredFees).toBe(1);
+    const restore = db.mock.calls.find((call) => templateText(call[0]).includes("rolled_back_at = NULL"));
+    expect(restore?.[1]).toEqual([13389]);
+    // A price the text does not state never comes back either.
+    expect(tracesOnOwnText(rows[0], "stop_payment", new Map([[13654, "Stop Payment on Cashier's Checks | $25"]]))).toBe(false);
   });
 
   it("caps the rollbacks at the run limit", async () => {
