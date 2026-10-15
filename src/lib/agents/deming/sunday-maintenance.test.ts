@@ -4,8 +4,10 @@ vi.mock("@/lib/data-store/connection", () => ({ sql: vi.fn() }));
 
 import {
   buildSundayEmail,
+  flaggedChangeTitle,
   isSundayUtc,
   MINUTES_PER_ANSWER_KEY_BANK,
+  MINUTES_PER_CHANGE_OUTCOME,
   runSundayMaintenance,
   SUNDAY_EMAIL_MINUTES,
   sundayEmailLive,
@@ -64,5 +66,31 @@ describe("Sunday maintenance email (#1104)", () => {
     expect(sundayEmailLive({ SUNDAY_EMAIL_LIVE: "true" })).toBe(true);
     const skipped = await runSundayMaintenance({ now: new Date("2026-10-19T12:20:00Z") });
     expect(skipped).toMatchObject({ ran: false, deliveryStatus: "skipped" });
+  });
+
+  it("lists last week's changes that did not move their number, with the hit rate (#1106)", () => {
+    const outcomes = {
+      ready: true,
+      flagged: [
+        { pr: 1150, issue: 1053, metric: "detail.goal.accuracy.accuracy", verdict: "no_change" as const, before: 0.912, after: 0.9121, note: "Product pages rejected" },
+        { pr: 1151, issue: 1033, metric: "detail.goal.wrongAfterPublish.rate", verdict: "wrong_way" as const, before: 0.031, after: 0.034, note: null },
+      ],
+      hitRate: { moved: 7, judged: 10, unreadable: 1 },
+    };
+    const email = buildSundayEmail({ ...base, outcomes, goal: { } as never });
+    const text = email.lines.join("\n");
+    expect(email.minutes).toBe(2 * 1 + 1 * 5 + 2 * MINUTES_PER_CHANGE_OUTCOME + MINUTES_PER_ANSWER_KEY_BANK);
+    expect(text).toContain("Changes that did not move their number last week (2 changes, about 10 minutes):");
+    expect(text).toContain("- Explain or revert #1150 (Product pages rejected): it did not move detail.goal.accuracy.accuracy, 0.912 before and 0.9121 a week later. https://github.com/Gilmore3088/FeeInsight.com/pull/1150");
+    expect(text).toContain("#1151: it moved the wrong way on detail.goal.wrongAfterPublish.rate");
+    expect(text).toContain("- Changes that moved their number: 7 of 10 changes moved their number (70%); 1 could not be checked.");
+  });
+
+  it("says when the change checks could not be read or are not recorded yet", () => {
+    expect(buildSundayEmail({ ...base, outcomes: null }).lines.join("\n")).toContain("Changes to explain or revert: could not be read this week.");
+    expect(buildSundayEmail({ ...base, outcomes: { ready: false, flagged: [], hitRate: null } }).lines.join("\n")).toContain("Changes that moved their number: not recorded yet.");
+    expect(flaggedChangeTitle({ pr: 9, issue: null, metric: "coverage_rate", verdict: "no_change", before: null, after: 0.4, note: null })).toBe(
+      "Explain or revert #9: it did not move coverage_rate, unknown before and 0.4 a week later",
+    );
   });
 });

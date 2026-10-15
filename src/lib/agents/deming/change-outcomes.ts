@@ -101,6 +101,89 @@ export interface ChangeOutcomesResult {
   started: number;
   judged: Array<{ pr: number; metric: string; verdict: ChangeVerdict; before: number | null; after: number | null; scorerChanged?: boolean }>;
   pending: number;
+  /** All checks so far, for the checkpoint's hit rate (#1106 step 4). Null when unread. */
+  hitRate: ChangeHitRate | null;
+}
+
+/** The share of judged changes that moved their number. Unreadable checks are counted apart. */
+export interface ChangeHitRate {
+  moved: number;
+  judged: number;
+  unreadable: number;
+}
+
+/** Pure: the hit rate from a count of rows per verdict. */
+export function changeHitRate(rows: Array<{ verdict: string; n: number | string | null | undefined }>): ChangeHitRate {
+  const tally = new Map<string, number>();
+  for (const row of rows) tally.set(row.verdict, (tally.get(row.verdict) ?? 0) + (Number(row.n) || 0));
+  const moved = tally.get("moved_as_expected") ?? 0;
+  return {
+    moved,
+    judged: moved + (tally.get("no_change") ?? 0) + (tally.get("wrong_way") ?? 0),
+    unreadable: tally.get("unreadable") ?? 0,
+  };
+}
+
+/** Pure: "7 of 10 changes moved their number (70%)", or why there is no rate yet. */
+export function hitRateLine(rate: ChangeHitRate): string {
+  const unreadable = rate.unreadable > 0 ? `; ${rate.unreadable} could not be checked` : "";
+  if (rate.judged === 0) return `no change has been judged yet${unreadable}`;
+  return `${rate.moved} of ${rate.judged} change${rate.judged === 1 ? "" : "s"} moved their number (${Math.round((rate.moved / rate.judged) * 100)}%)${unreadable}`;
+}
+
+async function readHitRate(db: SqlTag): Promise<ChangeHitRate> {
+  const rows = await db<Array<{ verdict: string; n: number }>>`
+    SELECT verdict, COUNT(*)::int AS n FROM change_outcomes WHERE verdict <> 'pending' GROUP BY verdict
+  `;
+  return changeHitRate(rows);
+}
+
+/** A change that did not move its number: the Sunday email asks for it to be explained or reverted. */
+export interface FlaggedChange {
+  pr: number;
+  issue: number | null;
+  metric: string;
+  verdict: "no_change" | "wrong_way";
+  before: number | null;
+  after: number | null;
+  note: string | null;
+}
+
+export interface ChangeOutcomeReview {
+  /** False until the `change_outcomes` table exists. */
+  ready: boolean;
+  /** Checks from the last 7 days that came back "no change" or "wrong way". */
+  flagged: FlaggedChange[];
+  hitRate: ChangeHitRate | null;
+}
+
+/** Last week's "no change" and "wrong way" checks, and the hit rate so far (#1106 steps 3 and 4). Read-only. */
+export async function readChangeOutcomeReview(db: SqlTag, now: Date = new Date()): Promise<ChangeOutcomeReview> {
+  const [table] = await db<{ ready: boolean }[]>`SELECT to_regclass('public.change_outcomes') IS NOT NULL AS ready`;
+  if (!table?.ready) return { ready: false, flagged: [], hitRate: null };
+  const since = new Date(now.getTime() - CHANGE_OUTCOME_DAYS * 86_400_000).toISOString();
+  const rows = await db<Array<{ pr_number: number | string; issue_number: number | string | null; metric: string; verdict: string; before_value: number | string | null; after_value: number | string | null; note: string | null }>>`
+    SELECT pr_number, issue_number, metric, verdict, before_value, after_value, note
+      FROM change_outcomes
+     WHERE verdict IN ('no_change', 'wrong_way')
+       AND checked_at >= ${since}::timestamptz
+       AND checked_at <= ${now.toISOString()}::timestamptz
+     ORDER BY verdict DESC, pr_number
+  `;
+  const num = (value: number | string | null) => (value == null || value === "" ? null : Number(value));
+  return {
+    ready: true,
+    flagged: rows.map((row) => ({
+      pr: Number(row.pr_number),
+      issue: num(row.issue_number),
+      metric: row.metric,
+      verdict: row.verdict === "wrong_way" ? "wrong_way" : "no_change",
+      before: num(row.before_value),
+      after: num(row.after_value),
+      note: row.note ?? null,
+    })),
+    hitRate: await readHitRate(db),
+  };
 }
 
 interface OutcomeRow {
@@ -123,7 +206,7 @@ export async function runChangeOutcomes(options: {
   const db = options.db ?? sql;
   const entries = options.entries ?? SHOULD_MOVE;
   const today = (options.now ?? new Date()).toISOString().slice(0, 10);
-  const result: ChangeOutcomesResult = { ready: false, entries: entries.length, started: 0, judged: [], pending: 0 };
+  const result: ChangeOutcomesResult = { ready: false, entries: entries.length, started: 0, judged: [], pending: 0, hitRate: null };
   const [table] = await db<{ ready: boolean }[]>`SELECT to_regclass('public.change_outcomes') IS NOT NULL AS ready`;
   if (!table?.ready) return result;
   result.ready = true;
@@ -200,6 +283,7 @@ export async function runChangeOutcomes(options: {
        WHERE pr_number = ${entry.pr} AND metric = ${entry.metric} AND verdict = 'pending'
     `);
   }
+  result.hitRate = await inSavepoint(db, (scope) => readHitRate(scope)).catch(() => null);
   return result;
 }
 
@@ -211,5 +295,6 @@ export function summarizeChangeOutcomes(result: ChangeOutcomesResult): string {
     .filter((row) => row.verdict === "no_change" || row.verdict === "wrong_way")
     .map((row) => `#${row.pr} ${row.verdict === "wrong_way" ? "moved the wrong way" : "did not move"} ${row.metric}`);
   const rescored = result.judged.filter((row) => row.scorerChanged).length;
-  return `Checked ${judged} change${judged === 1 ? "" : "s"} a week after merge: ${count("moved_as_expected")} moved as expected, ${count("no_change")} no change, ${count("wrong_way")} the wrong way, ${count("unreadable")} unreadable${rescored > 0 ? ` (${rescored} because the answer-key scorer changed in between)` : ""}. Started ${result.started}; ${result.pending} still within their week.${flagged.length > 0 ? ` To explain or revert: ${flagged.join("; ")}.` : ""}`;
+  const hitRate = result.hitRate ? ` So far ${hitRateLine(result.hitRate)}.` : "";
+  return `Checked ${judged} change${judged === 1 ? "" : "s"} a week after merge: ${count("moved_as_expected")} moved as expected, ${count("no_change")} no change, ${count("wrong_way")} the wrong way, ${count("unreadable")} unreadable${rescored > 0 ? ` (${rescored} because the answer-key scorer changed in between)` : ""}. Started ${result.started}; ${result.pending} still within their week.${flagged.length > 0 ? ` To explain or revert: ${flagged.join("; ")}.` : ""}${hitRate}`;
 }
