@@ -27,9 +27,9 @@ import { PricingJump } from "./pricing-jump";
 import { StickyCta } from "./sticky-cta";
 import { TrackView } from "@/components/track-view";
 import { getProPricingInstitution } from "@/lib/data-store/pro-accounts";
-import { NON_INSTITUTION_TIER, PRO_TIERS, isProTier, proTier, tierAmountLabel, tierForAssets, tierPriceLabel } from "@/lib/pro-tiers";
+import { NON_INSTITUTION_TIER, PRO_TIERS, isProTier, proTier, tierAmountLabel, tierForAssets } from "@/lib/pro-tiers";
 import { GatedOptions, OtherOptions, PricingFaq } from "./pricing-sections";
-import { chosenPriceLine, pricingCtaLabel, type ChosenInstitutionPrice } from "./plan-cta";
+import { chosenPriceLine, fromPriceLine, pricingCtaLabel, type ChosenInstitutionPrice } from "./plan-cta";
 import { loadPlansExhibitData } from "./exhibit-data";
 import { PlanIncludes, PlansExhibit } from "./plans-exhibit";
 
@@ -386,7 +386,7 @@ export default async function SubscribePage({
               See where your fees stand
             </h2>
             <p className="mx-auto mt-3 max-w-xl text-[15px] leading-relaxed text-ink">
-              {chosenPrice ? chosenPriceLine(chosenPrice) : `From ${tierPriceLabel(PRO_TIERS[0].key, "monthly")}`} for up
+              {chosenPrice ? chosenPriceLine(chosenPrice) : fromPriceLine()} for up
               to {WORKSPACE_SEAT_LIMIT} people.
             </p>
             <PricingJump

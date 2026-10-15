@@ -94,11 +94,11 @@ export function ProTierChooser({ chosenLabel, chosenDetail = null, problem = nul
       <InstitutionPicker
         inputId="pro_tier_institution"
         name="pro_tier_institution_id"
-        label="Find your institution"
-        help="Its size sets the price."
+        label="Your bank or credit union"
+        help="Its total assets set the price."
         labelClassName="text-sm font-semibold text-ink"
         labelStyle={{}}
-        inputClassName="w-full rounded-lg border border-[#CFC5B7] bg-white px-3.5 py-3 text-base text-ink outline-none focus:border-brick focus:ring-2 focus:ring-brick/20"
+        inputClassName="w-full rounded-lg border-2 border-ink bg-white px-3.5 py-3 text-base text-ink outline-none focus:border-brick focus:ring-2 focus:ring-brick/20"
         inputStyle={{}}
         onSelect={(result) => {
           if (!result) return;
