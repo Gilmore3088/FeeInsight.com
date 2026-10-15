@@ -66,6 +66,18 @@ describe("buildFindings", () => {
     );
   });
 
+  it("keeps an acronym's capitals inside a sentence", () => {
+    const findings = buildFindings({
+      rows: [{ ...row("atm_non_network", "Non-Network ATM", 3, 3), nation: band(1.5, 1638) }],
+      stateGroup: "Florida banks",
+      stateCode: "FL",
+      peerRank: null,
+      peerGroup: null,
+      positionCounts: { below: 0, within: 1, above: 0 },
+    });
+    expect(findings[0].text).toBe("Its non-network ATM fee is $3, $1.50 above the $1.50 median of 1,638 U.S. institutions.");
+  });
+
   it("falls back to the national market when every fee sits inside the state's middle half", () => {
     const wire: HeadlineRow = { ...row("wire_domestic_outgoing", "Wire Transfer (Domestic Outgoing)", 35, 30), nation: band(25, 900) };
     const findings = buildFindings({

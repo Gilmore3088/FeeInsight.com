@@ -70,9 +70,10 @@ function InsightView({ insight, institutionName }: { insight: HamiltonInsight; i
             <span className="ml-2 align-middle text-[15px] font-normal text-ink-muted">vs {pct(insight.peerSharePct as number)} peers</span>
           </p>
           <p className="mt-2 text-[15px] leading-snug text-ink">
-            Fees bring in {pct(insight.ownSharePct as number)} of {institutionName}&apos;s revenue. The median for{" "}
+            Service charges were {pct(insight.ownSharePct as number)} of {institutionName}&apos;s revenue
+            {latest ? ` in ${formatReportQuarter(latest.reportDate)}` : ""}. The median for{" "}
             {(insight.peerCount as number).toLocaleString("en-US")} {insight.kind === "bank" ? "banks" : "credit unions"} its size
-            is {pct(insight.peerSharePct as number)}.
+            was {pct(insight.peerSharePct as number)}.
           </p>
         </>
       ) : (

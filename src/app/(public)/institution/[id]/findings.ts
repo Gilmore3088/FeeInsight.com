@@ -25,8 +25,13 @@ function signed(diff: number): string {
   return `${diff > 0 ? "+" : "−"}${money(Math.abs(diff))}`;
 }
 
-/** "Overdraft (OD)" reads as "overdraft" inside a sentence. */
-const plain = (label: string) => label.replace(/\s*\([^)]*\)/g, "").toLowerCase();
+/** "Overdraft (OD)" reads as "overdraft" inside a sentence; an acronym such as ATM keeps its capitals. */
+const plain = (label: string) =>
+  label
+    .replace(/\s*\([^)]*\)/g, "")
+    .split(" ")
+    .map((word) => (/^[A-Z]{2,}$/.test(word.replace(/[^A-Za-z]/g, "")) ? word : word.toLowerCase()))
+    .join(" ");
 const article = (word: string) => `${/^[aeiou]/i.test(word) ? "an" : "a"} ${word}`;
 
 const PEER_LABEL: Record<string, string> = { overdraft: "overdraft", monthly_maintenance: "monthly maintenance" };

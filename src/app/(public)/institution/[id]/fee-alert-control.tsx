@@ -58,6 +58,9 @@ export function FeeAlertControl({
   const [honeypot, setHoneypot] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loginHref, setLoginHref] = useState<string | null>(null);
+  // A reader who came to compare one fee, or a thin profile, sees the form at once; everyone
+  // else sees one line and a button, so the alert never competes with the page's findings.
+  const [formOpen, setFormOpen] = useState(mode === "verify" || Boolean(focusCategory));
 
   const label = (category: string) => categoryLabels[category] ?? category;
   const focusLabel = focusCategory ? label(focusCategory) : null;
@@ -135,7 +138,7 @@ export function FeeAlertControl({
   return (
     <section
       aria-labelledby={`${ids}-heading`}
-      className="relative border border-border bg-white px-4 py-4 sm:px-5"
+      className="relative rounded-xl border border-border bg-surface-0 px-4 py-4 sm:px-5"
     >
       <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-ink-muted">
         {saved ? "Saved" : "Fee change alerts"}
@@ -185,11 +188,15 @@ export function FeeAlertControl({
           <h2 id={`${ids}-heading`} className="mt-1 text-base font-semibold text-ink">
             {headline}
           </h2>
-          <p className="mt-1 text-[13px] leading-relaxed text-ink-soft">{body}</p>
+          {(signedIn || formOpen) && <p className="mt-1 text-[13px] leading-relaxed text-ink-soft">{body}</p>}
 
           {signedIn ? (
             <button type="button" className={`${PRIMARY} mt-3`} disabled={pending} onClick={() => save(false)}>
               {pending ? "Saving…" : `Save ${institutionName}`}
+            </button>
+          ) : !formOpen ? (
+            <button type="button" className={`${SECONDARY} mt-3`} onClick={() => setFormOpen(true)}>
+              Follow its fees
             </button>
           ) : (
             <form onSubmit={signUpAndSave} className="mt-3 space-y-2">
