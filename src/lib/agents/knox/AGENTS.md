@@ -475,6 +475,11 @@ v65 (rules 65, Oct 9, customer audience):
   cannot become two audiences, so the document's re-read writes them. Pinnacle (47) heads
   `KNOX_PRIORITY_REREAD_IDS` for that re-read.
 
+Rules 65, subordination (Oct 15, no version change): Knox reads a subordination fee as
+`legal_process` (James, Oct 15, reversing Oct 8; `fee-taxonomy.ts`). Hamilton's rules re-check
+counts that read as reproducing a live subordination still filed as `other_lending_fee` until the
+fold's switched re-file moves it, so no live fee comes down for the change.
+
 Rules 65, #1291 re-file check (Oct 14, no version change): three reads the re-file restore's
 hand check found wrong, from their real lines.
 - "Maximum Daily OD/NSF Fees $210 per day" is the overdraft daily cap, not a continuous
@@ -545,8 +550,10 @@ Rules 65, #1196 (Oct 14, no version change, so no document is re-read for it):
   that price's: the second fee's name and frequency are read from after it, and the second fee is
   not dropped as a repeat of the first price.
 
-v67 (rules 67, Oct 15, #1334; v66 was held for the #1102 dropped-lines fix, which shipped as v68): no rule changes. The bump makes every current text due for one
-more read, so the dropped-decimal reads above (#1196, #1305) reach pages Knox read before them:
+v67 (rules 67, Oct 15, #1334; v66 was held for the #1102 dropped-lines fix, which shipped as v68): no rule changes. The bump does not re-read every text: as with
+v68, a text Knox read before is read again at the new version only when it fires one of the
+triggers in "When Knox reads a text again" above, so the dropped-decimal reads above (#1196,
+#1305) reach the pages Knox read before them that a trigger picks:
 "Loan Skip A Pay Fee .... $29. 95/ea ch" (Xplore, doc 12872) is read at $29.95 and "ATM
 Transactions (per item) | $1 50* after 8/mo" (Members 1st, docs 13851 and 32358) at $1.50, where
 the stored reads said $29 and $1. The source check reads those prices the same way
@@ -594,7 +601,7 @@ After the extract itself, each extract step runs these passes in order (`run-sto
   Only one reader agrees here, so Darwin's free checks, the shared source check among them,
   decide what goes live; the 9 Oct dry read of 17 free rows was 11 of 17 right against source.
   The step's detail reports it as `superseded_free_recheck`.
-- `refileSupersededRows` (#1093, off until James approves, `SUPERSEDED_REFILE_LIVE`): a free-pass
+- `refileSupersededRows` (#1093, `SUPERSEDED_REFILE_LIVE`, switched on by James Oct 15): a free-pass
   row a re-read retired that today's free team reads with the same name and amount under another
   category. The superseded re-check needs the old category, so it leaves these retired, and the
   dedupe index kept the re-read from writing its own row (Oregonians CU's "Card Replacement" $10,

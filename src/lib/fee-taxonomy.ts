@@ -359,11 +359,12 @@ export const CANONICAL_KEY_MAP: Record<string, string> = {
   "5_x_10_box": "safe_deposit_box",
   "10_x_10": "safe_deposit_box",
   "10_x_10_box": "safe_deposit_box",
-  // --- Subordination: a lending service, not legal process (Oct 8) ---
-  subordination_fee: "other_lending_fee",
-  subordination: "other_lending_fee",
-  mortgage_subordination: "other_lending_fee",
-  mortgage_subordination_fee: "other_lending_fee",
+  // --- Subordination: legal process (James, Oct 15, reversing Oct 8): the fee pays for drafting
+  // and executing a legal agreement that changes the lien priority recorded with the county ---
+  subordination_fee: "legal_process",
+  subordination: "legal_process",
+  mortgage_subordination: "legal_process",
+  mortgage_subordination_fee: "legal_process",
   duplicate_lien_release: "legal_process",
   lien_fee: "legal_process",
   // --- Lending variants ---
