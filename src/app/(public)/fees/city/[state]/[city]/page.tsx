@@ -222,13 +222,15 @@ export default async function CityFeePage({ params }: PageProps) {
         </section>
       )}
 
-      <p className="mx-auto max-w-page px-4 pt-6 text-[12px] text-ink-muted sm:px-6">
+      <div className="mx-auto max-w-page px-4 pt-6 sm:px-6">
+      <p className="max-w-3xl text-[12px] text-ink-muted">
         From {institutions.length} {cityName} {institutions.length === 1 ? "institution's" : "banks and credit unions'"} own published fee
         schedules, one value per institution; a local median needs at least {MIN_FOR_CITY_MEDIAN}. {asOf ? `Data as of ${asOf}. ` : ""}
         <Link href="/methodology" className="font-medium text-ink underline decoration-border underline-offset-4 hover:decoration-ink">
           How we build it
         </Link>
       </p>
+      </div>
 
       {/* 4. The video, in its own section, after the answer. */}
       <StateVideo stateName={cityName} bars={overdraftBars} title={`Watch ${cityName}'s banks take their place`} />
