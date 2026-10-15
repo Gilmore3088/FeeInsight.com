@@ -4,6 +4,7 @@ import { isProductPageUrl } from "@/lib/agents/learning/fee-page";
 import { excerptOf } from "@/lib/agents/hamilton/frequency-fill";
 import { checkFeeCategory } from "@/lib/fee-category-guard";
 import { inSavepoint } from "@/lib/agents/savepoint";
+import { tierPerkZero } from "./tier-perk";
 import {
   conditionalZero,
   DARWIN_VERIFY_STRATEGY,
@@ -83,6 +84,8 @@ export function conditionalZeroVerdict(
     && freeOnItsOwnLine(line)
     && !conditionalZero(0, line, row.fee_name)
     && !ACCOUNT_FEATURE_KEYS.has(row.canonical_fee_key)
+    // #1397: free on a premium or private-banking schedule is that tier's perk, not the bank's price.
+    && !tierPerkZero(0, row.fee_name, row.document_url, null)
     && checkFeeCategory(row.canonical_fee_key, row.fee_name).ok;
   return free
     ? { decision: "verified", reason: "conditional_zero_free_on_schedule" }

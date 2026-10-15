@@ -60,6 +60,11 @@ describe("conditionalZeroVerdict", () => {
     expect(conditionalZeroVerdict(row, "Bill Pay: | Free").reason).toBe("conditional_zero_free_on_schedule");
   });
 
+  it("never verifies a free line on one account tier's own schedule at $0 (#1397)", () => {
+    const row = { ...held(9, "bill_pay", "Bill Pay", "Bill Pay: | Free"), document_url: "https://www.frostbank.com/agreements-disclosures/truth-in-savings/premium-account-fees" };
+    expect(conditionalZeroVerdict(row, "Bill Pay: | Free").reason).toBe("conditional_zero_reread");
+  });
+
   it("never verifies a $0 the schedule's newest text no longer states", () => {
     expect(conditionalZeroVerdict(held(11, "bill_pay", "Bill Pay", "Bill Pay: | Free"), null).reason).toBe("conditional_zero_reread");
   });
