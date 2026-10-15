@@ -63,6 +63,12 @@ describe("liveFragmentName (live twin of isCutoffName)", () => {
     expect(liveFragmentName("Fee Schedule A")).toBeNull();
     expect(liveFragmentName("CHECK PRINTING N/A")).toBeNull();
     expect(liveFragmentName("Rewards Checking PLAN A")).toBeNull();
+    // v6 review (live display): an all-capitals label ending on a letter is a name, not a fragment.
+    for (const label of ["SAFE DEPOSIT BOX SIZE A", "CHECKING PLAN A", "OPTION A", "SCHEDULE A", "BOX A", "CLUB A", "PLAN A"]) {
+      expect(liveFragmentName(label)).toBeNull();
+    }
+    expect(liveFragmentName("NSF FEE. THERE IS A")).toBe("sentence_end");
+    expect(liveFragmentName("STOP PAYMENT FEE YOU WILL BE CHARGED A")).toBe("sentence_end");
   });
 });
 
@@ -355,8 +361,8 @@ describe("live fragment switch-on rules (#1443)", () => {
     ["Inactive fee: This account may be subject to an Inactive fee of", 5, null, { pattern: "sentence_end", action: "rename", renameTo: "Inactive fee", renameVia: "head" }],
     // ... unless the amount is $0 or the name speaks of a waiver: a waived price comes down.
     ["Monthly Service Fee You will be charged unless", 0, null, { pattern: "pronoun", action: "takedown" }],
-    // v6: waiver wording alone at a positive amount no longer takes the fee down.
-    ["Monthly Service Fee You can avoid this fee by", 10, null, { pattern: "sentence_end", action: "rename", renameTo: "Monthly Service Fee", renameVia: "head" }],
+    // v6: waiver wording alone at a positive amount no longer takes the fee down, and never renames it: reread.
+    ["Monthly Service Fee You can avoid this fee by", 10, null, { pattern: "sentence_end", action: "reread" }],
     // Pure fragments come down.
     ["Dormant accounts will be charged a monthly", 5, "dormant_account", { pattern: "pronoun", action: "reread" }],
     ["If you close your account within 90 days", 25, null, { pattern: "pronoun", action: "reread" }],
@@ -392,7 +398,8 @@ describe("live fragment switch-on rules (#1443)", () => {
     // A minimum or opening deposit in the line is never renamed, even under a clean head.
     ["Paper Statement Fee The minimum opening deposit is", 20, null, { pattern: "sentence_end", action: "takedown" }],
     ["Teller Check Payable to Someone Other than", 10, null, { pattern: "sentence_end", action: "reread" }],
-    ["Monthly Service Fee waived with minimum daily balance of", 10, null, { pattern: "sentence_end", action: "takedown" }],
+    // v6 (144639): a fee line ending on "balance of" under $100 is kept live for a re-read, never renamed.
+    ["Monthly Service Fee waived with minimum daily balance of", 10, null, { pattern: "sentence_end", action: "reread" }],
     // v3 (#1499): an "if"/"when" condition renames only on a balance condition under $100.
     ["Monthly Service Fee if balance below", 500, null, { pattern: "sentence_end", action: "takedown" }],
     ["Monthly Service Fee if balance below", 10, null, { pattern: "sentence_end", action: "rename", renameTo: "Monthly Service Fee", renameVia: "head" }],
@@ -402,7 +409,9 @@ describe("live fragment switch-on rules (#1443)", () => {
     ["Dormant Account Fee if inactive for more than", 12, null, { pattern: "sentence_end", action: "takedown" }],
     ["Dormant Account Fee If inactive for 12 months or more the fee is", 5, null, { pattern: "sentence_end", action: "takedown" }],
     // v3: another price in the name means no rename (133792, 55708).
-    ["a $35 Overdraft Fee if the transaction is paid or a $15 NSF Fee if returned and", 15, null, { pattern: "sentence_end", action: "takedown" }],
+    // v6 (125163, 125166): when the amount is a later price on the line, the line is no rename but a reread.
+    ["a $35 Overdraft Fee if the transaction is paid or a $15 NSF Fee if returned and", 15, null, { pattern: "sentence_end", action: "reread" }],
+    ["a $35 Overdraft Fee if the transaction is paid or a $15 NSF Fee if returned and", 20, null, { pattern: "sentence_end", action: "takedown" }],
     ["A $20 NSF fee is charged per item; users may therefore incur $45 in NSF fees per day and", 45, null, { pattern: "sentence_end", action: "takedown" }],
     ["Overdraft Fee You will be charged $35 per item for", 25, null, { pattern: "sentence_end", action: "takedown" }],
     ["Overdraft Fee You will be charged $35 per item for", 35, null, { pattern: "sentence_end", action: "rename", renameTo: "Overdraft Fee", renameVia: "head" }],
@@ -417,7 +426,7 @@ describe("live fragment switch-on rules (#1443)", () => {
     ["You will pay a service charge fee of", 5, null, { pattern: "sentence_end", action: "reread" }],
     ["You will pay a monthly fee of", 5, null, { pattern: "sentence_end", action: "reread" }],
     ["You will pay a minimum fee of", 5, null, { pattern: "sentence_end", action: "reread" }],
-    ["You can avoid the paper statement fee of", 3, null, { pattern: "sentence_end", action: "rename", renameTo: "Paper statement fee", renameVia: "tail" }],
+    ["You can avoid the paper statement fee of", 3, null, { pattern: "sentence_end", action: "reread" }],
     ["Accounts opened with a minimum opening deposit have a setup fee of", 25, null, { pattern: "sentence_end", action: "takedown" }],
     ["If your balance falls below $500 you will be charged a minimum balance fee of", 0, null, { pattern: "sentence_end", action: "takedown" }],
     ["Customers who opt in pay a paper statement fee of", 3, null, { pattern: "sentence_end", action: "rename", renameTo: "Paper statement fee", renameVia: "tail" }],
@@ -528,8 +537,10 @@ describe("live fragment switch-on rules (#1443)", () => {
     // 109893: the capitalised "THERE IS A" opens the sentence after the glued footnote, so the head is read.
     ["10NON-MEMBER LOAN APPLICATION FEE THERE IS A $10.00 NON-MEMBER APPLICATION FEE FOR", 10, null, { pattern: "sentence_end", action: "rename", renameTo: "NON-MEMBER LOAN APPLICATION FEE", renameVia: "head" }],
     ["10NON-MEMBER LOAN APPLICATION FEE. THERE IS A $10.00 NON-MEMBER APPLICATION FEE TO", 10, null, { pattern: "sentence_end", action: "rename", renameTo: "NON-MEMBER LOAN APPLICATION FEE", renameVia: "head" }],
-    // 125166: with its figures in the name, the second price refuses the rename ...
-    ["$3.00 per monthly fee if balance falls below $150, $9 per item charge after 3 withdrawals of", 9, null, { pattern: "sentence_end", action: "takedown" }],
+    // 125166: with its figures in the name, the second price ($9, the amount) bars the rename: kept live, re-read (v6) ...
+    ["$3.00 per monthly fee if balance falls below $150, $9 per item charge after 3 withdrawals of", 9, null, { pattern: "sentence_end", action: "reread" }],
+    // ... and 125163 the same: $2 is the paper statement fee, not the $5 monthly service charge.
+    ["$5 monthly service charge when balance falls below $300. $2 paper statement fee for", 2, null, { pattern: "sentence_end", action: "reread" }],
     // ... known, accepted: the stored name lost them, so the generic head renames on the balance gate at $9.
     ["per monthly fee if balance falls below", 9, null, { pattern: "sentence_end", action: "rename", renameTo: "Per monthly fee", renameVia: "head" }],
     // v6 (#1499, prod check of v5). A: gates that refused real fees.
@@ -537,14 +548,16 @@ describe("live fragment switch-on rules (#1443)", () => {
     ["Regular Checking Business Service Charge if Account Falls Below", 10, null, { pattern: "sentence_end", action: "rename", renameTo: "Regular Checking Business Service Charge", renameVia: "head" }],
     ["Money Market Business Service Charge if Account Falls Below", 15, null, { pattern: "sentence_end", action: "rename", renameTo: "Money Market Business Service Charge", renameVia: "head" }],
     ["Statement Savings Business Service Charge if Account Falls Below", 5, null, { pattern: "sentence_end", action: "rename", renameTo: "Statement Savings Business Service Charge", renameVia: "head" }],
-    ["Monthly Maintenance Fee if Account Falls Below Minimum Balance of", 4, null, { pattern: "sentence_end", action: "rename", renameTo: "Monthly Maintenance Fee", renameVia: "head" }],
+    // v6 review: "... Minimum Balance of" ends on the threshold: its amount is refused, never renamed.
+    ["Monthly Maintenance Fee if Account Falls Below Minimum Balance of", 4, null, { pattern: "sentence_end", action: "takedown" }],
     ["Regular Checking Business Service Charge if Account Falls Below", 150, null, { pattern: "sentence_end", action: "takedown" }],
     // 129443: a balance band is the fee's own tier: kept live for a re-read, not taken down.
     ["monthly service charge if the average daily is more than or equal to but less than", 1, null, { pattern: "sentence_end", action: "reread" }],
     // 142676, 146563, 146643: a fee/charge head before ":" or a dash and an if/when clause.
     ["Closing Fee: When the account is closed within 90 days of the open date, there will be a", 20, null, { pattern: "sentence_end", action: "rename", renameTo: "Closing Fee", renameVia: "head" }],
     ["Inactivity Fee - If no activity for 12 consecutive months, a monthly inactivity fee of", 3, null, { pattern: "sentence_end", action: "rename", renameTo: "Inactivity Fee", renameVia: "head" }],
-    ["Continuous Overdraft Charge: If your account remains overdrawn for more than 10 business days, a", 1, null, { pattern: "sentence_end", action: "rename", renameTo: "Continuous Overdraft Charge", renameVia: "head" }],
+    // v6 review: the colon gate carries the balance gate's bars, so an excess ("more than 10 business days") refuses the amount.
+    ["Continuous Overdraft Charge: If your account remains overdrawn for more than 10 business days, a", 1, null, { pattern: "sentence_end", action: "takedown" }],
     // ... never when a figure in the line is the amount, and never with no colon or dash.
     ["Inactivity Fee - If no activity for 12 consecutive months, a monthly inactivity fee of", 12, null, { pattern: "sentence_end", action: "takedown" }],
     ["Dormant Account Fee If inactive for 12 months or more the fee is", 5, null, { pattern: "sentence_end", action: "takedown" }],
@@ -557,11 +570,25 @@ describe("live fragment switch-on rules (#1443)", () => {
     ["Any overdraft fees charged on this account will be at a discounted fee of", 15, null, { pattern: "sentence_end", action: "reread" }],
     ["average collected daily balance required to avoid monthly service charge of", 10, null, { pattern: "sentence_end", action: "reread" }],
     ["average collected daily balance required to avoid monthly service charge of", 15, null, { pattern: "sentence_end", action: "reread" }],
-    ["Minimum balance to avoid imposition of fees - A club fee of", 8, null, { pattern: "sentence_end", action: "rename", renameTo: "Club fee", renameVia: "tail" }],
+    // v6 review: waiver or discount wording bars every rename, head or tail: kept live for a re-read.
+    ["Minimum balance to avoid imposition of fees - A club fee of", 8, null, { pattern: "sentence_end", action: "reread" }],
     ["MONTHLY FEE: The Primary Account Owner Must Meet One of the Following Monthly Statement Cycle Requirements to Avoid a", 12, null, { pattern: "sentence_end", action: "reread" }],
-    ["monthly maintenance fee. If primary account holder is over age 50, a discounted monthly maintenance fee of", 4.95, null, { pattern: "sentence_end", action: "rename", renameTo: "Discounted monthly maintenance fee", renameVia: "tail" }],
-    // 133104: a line ending on "balance of" read the threshold as its amount: down, with a re-read request.
-    ["Avoid service charge with minimum balance of", 3, null, { pattern: "sentence_end", action: "takedown" }],
+    ["monthly maintenance fee. If primary account holder is over age 50, a discounted monthly maintenance fee of", 4.95, null, { pattern: "sentence_end", action: "reread" }],
+    // 133104: a line ending on "balance of" read the threshold as its amount (down, with a re-read request) unless it
+    // names a fee or charge under $100 (v6, 144639): then it is kept live for a re-read, never renamed.
+    ["Avoid service charge with minimum balance of", 3, null, { pattern: "sentence_end", action: "reread" }],
+    ["Account maintains a minimum balance of", 5, null, { pattern: "sentence_end", action: "takedown" }],
+    ["Service charge if your account is below the minimum balance of", 5, null, { pattern: "sentence_end", action: "reread" }],
+    ["Service charge if your account is below the minimum balance of", 150, null, { pattern: "sentence_end", action: "takedown" }],
+    // 133104: a dollar figure with a period ("$3 per quarter") is the fee's own price, so the figure gate lets it through.
+    ["Quarterly service charge of $3 per quarter if balance falls below", 3, null, { pattern: "sentence_end", action: "reread" }],
+    ["Service charge $3 per quarter when the minimum balance of", 3, null, { pattern: "sentence_end", action: "reread" }],
+    // 37674: "$2,500 if not fee will be charged" is a balance, not a priced fee: kept live, re-read.
+    ["Elite Money Market Minimum balance $2,500 if not fee will be charged monthly", 12, null, { pattern: "pronoun", action: "reread" }],
+    ["Elite Money Market if not fee will be charged monthly", 12, null, { pattern: "pronoun", action: "reread" }],
+    // 93834: "reduced to" is a reduced rate: no rename ("Debit" stays in the head when there is one), kept live.
+    ["Debit Card overdraft fee will be reduced to $5.00", 5, null, { pattern: "pronoun", action: "reread" }],
+    ["Debit Card overdraft fee will be reduced to", 5, null, { pattern: "sentence_end", action: "reread" }],
     // A credit or discount amount comes down (87742's "−$2"), as does a $0 waiver (58414 above).
     ["Monthly fee −$2 discount with e-statements for", 2, null, { pattern: "sentence_end", action: "takedown" }],
     ["E-statement discount of $2 per month for", 2, null, { pattern: "sentence_end", action: "takedown" }],
@@ -577,7 +604,8 @@ describe("live fragment switch-on rules (#1443)", () => {
     ["For example, if you have $50 available and you write a check that", 35, null, { pattern: "pronoun", action: "takedown" }],
     ["Monthly service charges will be waived for minors", 0, null, { pattern: "pronoun", action: "takedown" }],
     ["Bank sending the wire will typically charge", 20, null, { pattern: "pronoun", action: "takedown" }],
-    ["Receiving banks will typically charge a fee", 15, null, { pattern: "pronoun", action: "takedown" }],
+    // v6 review: "typically charge" alone is no refusal; only "bank sending" / "sending bank" name another bank.
+    ["Receiving banks will typically charge a fee", 15, null, { pattern: "pronoun", action: "reread" }],
     // ... "other banks" alone is no refusal (a foreign ATM fee is this bank's fee).
     ["ATM Fee at other banks You will be charged", 2, null, { pattern: "pronoun", action: "reread" }],
     // D: a cap or floor is a limit, not the price: down, with a re-read request.
@@ -590,6 +618,52 @@ describe("live fragment switch-on rules (#1443)", () => {
     ["Max Checking Monthly Fee You will be charged", 12, null, { pattern: "pronoun", action: "rename", renameTo: "Max Checking Monthly Fee", renameVia: "head" }],
     // E (109893): an all-capitals line ending on "A" is a sentence_end, and the colon head renames.
     ["10NON-MEMBER LOAN APPLICATION FEE: IF YOU ARE NOT A MEMBER OF WCDU, THERE IS A", 10, null, { pattern: "sentence_end", action: "rename", renameTo: "NON-MEMBER LOAN APPLICATION FEE", renameVia: "head" }],
+    // v6 review, 1: the colon or dash head gate carries the threshold bars; a threshold is refused (fragment_reread).
+    ["Overdraft Fee: If overdrawn by more than", 5, null, { pattern: "sentence_end", action: "takedown" }],
+    ["Excess Withdrawal Fee: If more than", 6, null, { pattern: "sentence_end", action: "takedown" }],
+    ["Dormant Account Fee - If inactive for more than", 12, null, { pattern: "sentence_end", action: "takedown" }],
+    ["Monthly Service Fee: If balance falls below", 500, null, { pattern: "sentence_end", action: "takedown" }],
+    ["Monthly Service Fee - When balance falls below", 1500, null, { pattern: "sentence_end", action: "takedown" }],
+    ["Closing Fee - If closed early the", 150, null, { pattern: "sentence_end", action: "takedown" }],
+    ["Closing Fee: When the account is closed the", 25, null, { pattern: "sentence_end", action: "rename", renameTo: "Closing Fee", renameVia: "head" }],
+    // v6 review, 2: waiver wording bars a rename; a line ending on "balance of" / "balance is" is refused before any rename.
+    ["Monthly Service Fee You can avoid this fee by keeping a minimum balance of", 500, null, { pattern: "sentence_end", action: "takedown" }],
+    ["Monthly Service Fee You can avoid this fee by keeping a minimum balance of", 10, null, { pattern: "sentence_end", action: "reread" }],
+    ["Monthly Service Fee. You can avoid this fee with a balance of", 600, null, { pattern: "sentence_end", action: "takedown" }],
+    ["Monthly Service Fee You may avoid the fee if your balance is", 1000, null, { pattern: "sentence_end", action: "takedown" }],
+    ["Overdraft Fee You will be charged a reduced fee of", 15, null, { pattern: "sentence_end", action: "reread" }],
+    ["to avoid monthly service fee of", 15, null, { pattern: "sentence_end", action: "reread" }],
+    // v6 review, 3: "... Minimum Balance of" is no balance condition; "account goes below" still is, under $100.
+    ["Service Charge if Balance Falls Below Minimum Balance of", 50, null, { pattern: "sentence_end", action: "takedown" }],
+    ["Monthly fee if account falls below the required minimum daily balance of", 8, null, { pattern: "sentence_end", action: "takedown" }],
+    ["Overdraft Fee if account goes below", 35, null, { pattern: "sentence_end", action: "rename", renameTo: "Overdraft Fee", renameVia: "head" }],
+    ["Overdraft Fee if account goes below", 500, null, { pattern: "sentence_end", action: "takedown" }],
+    // v6 review, 4: a whole line ending on a threshold is refused with no head split too.
+    ["Monthly Service Fee: if balance falls below", 500, null, { pattern: "sentence_end", action: "takedown" }],
+    ["Excess Withdrawal Fee: if more than", 6, null, { pattern: "sentence_end", action: "takedown" }],
+    ["Overdraft Fee - when overdrawn by more than", 5, null, { pattern: "sentence_end", action: "takedown" }],
+    ["Dormant fee if inactive for", 12, null, { pattern: "sentence_end", action: "takedown" }],
+    // ... under $100 "below" is no refusal: kept live for a re-read.
+    ["Monthly Fee: if balance falls below", 5, null, { pattern: "sentence_end", action: "reread" }],
+    // v6 review, 5: "credit card" / "credit union" is no credit; a hyphen after a name is a separator.
+    ["Cash advance fee $10 credit card cash advances will", 10, null, { pattern: "pronoun", action: "reread" }],
+    ["Annual fee $25 credit union members will", 25, null, { pattern: "pronoun", action: "reread" }],
+    ["Wire Fee - $25 if you", 25, null, { pattern: "pronoun", action: "reread" }],
+    ["Wire Fee -$25 if you", 25, null, { pattern: "pronoun", action: "reread" }],
+    ["Overdraft fee of −$5 per day you", 5, null, { pattern: "pronoun", action: "takedown" }],
+    ["Monthly fee (-$2 with e-statements) for", 2, null, { pattern: "sentence_end", action: "takedown" }],
+    ["Wire fee $5 credit to your account for", 5, null, { pattern: "sentence_end", action: "takedown" }],
+    // v6 review, 6: a bare "for example" is no worked example; "Example:" and "for example, if" are.
+    ["Fees for certain items, for example stop payments, will be charged a fee of", 30, null, { pattern: "sentence_end", action: "reread" }],
+    ["Example: if you write a check for", 35, null, { pattern: "sentence_end", action: "takedown" }],
+    // v6 review, 7: "maximum of 3 per day" and "MAX CHECKING" are no cap; "maximum charge of", "maximum of" at the end are.
+    ["Overdraft Fee You will be charged $35 per item, maximum of 3 per day for", 35, null, { pattern: "sentence_end", action: "rename", renameTo: "Overdraft Fee", renameVia: "head" }],
+    ["MAX CHECKING MONTHLY FEE YOU WILL", 10, null, { pattern: "pronoun", action: "rename", renameTo: "MAX CHECKING MONTHLY FEE", renameVia: "head" }],
+    ["Late Fee - maximum charge of", 30, null, { pattern: "sentence_end", action: "takedown" }],
+    ["Overdraft fees per day maximum of", 105, null, { pattern: "sentence_end", action: "takedown" }],
+    // v6 review, 8: an all-capitals line ends on an article only after a verb or function word.
+    ["NSF FEE. THERE IS A", 30, null, { pattern: "sentence_end", action: "rename", renameTo: "NSF FEE", renameVia: "head" }],
+    ["STOP PAYMENT FEE YOU WILL BE CHARGED A", 30, null, { pattern: "sentence_end", action: "rename", renameTo: "STOP PAYMENT FEE", renameVia: "head" }],
     // Known miss (125163): the source line is "$5 monthly service charge when balance falls below $300.
     // $2 paper statement fee.", but the stored name lost both $ figures and the row carries no source
     // text (published_fee_records and verified_fee_observations have no source-line column; the raw
@@ -764,7 +838,7 @@ describe("live fragment switch-on rules (#1443)", () => {
       { fee_published_id: 2, fee_verified_id: 12, institution_id: 9, fee_name: "Excess Withdrawal Fee if more than", amount: 6 },
       { fee_published_id: 3, fee_verified_id: 13, institution_id: 9, fee_name: "Dormant Account Fee if inactive for more than", amount: 12 },
       { fee_published_id: 4, fee_verified_id: 14, institution_id: 9, fee_name: "A $20 NSF fee is charged per item; users may therefore incur $45 in NSF fees per day and", amount: 45 },
-      { fee_published_id: 5, fee_verified_id: 15, institution_id: 9, fee_name: "a $35 Overdraft Fee if the transaction is paid or a $15 NSF Fee if returned and", amount: 15 },
+      { fee_published_id: 5, fee_verified_id: 15, institution_id: 9, fee_name: "a $35 Overdraft Fee if the transaction is paid or a $15 NSF Fee if returned and", amount: 20 },
       { fee_published_id: 6, fee_verified_id: 16, institution_id: 9, fee_name: "Overdraft Fee You will be charged $35 per item for", amount: 25 },
       { fee_published_id: 7, fee_verified_id: 17, institution_id: 9, fee_name: "Overdrafts of more than $5 will be charged an overdraft fee of", amount: 5 },
       // A waived price: down, no request.
@@ -803,6 +877,15 @@ describe("live fragment switch-on rules (#1443)", () => {
     expect(LIVE_FRAGMENT_CREDIT.test("Monthly fee (-$2 with e-statements)")).toBe(true);
     expect(LIVE_FRAGMENT_CAP_WORDING.test("Max Checking Monthly Fee")).toBe(false);
     expect(LIVE_FRAGMENT_CAP_WORDING.test("MAXIMUM LATE CHARGE OF")).toBe(true);
+    // v6 review: a cap word counts only before "of $", a dollar figure or a charge/fee word.
+    expect(LIVE_FRAGMENT_CAP_WORDING.test("MAX CHECKING MONTHLY FEE YOU WILL")).toBe(false);
+    expect(LIVE_FRAGMENT_CAP_WORDING.test("$35 per item, maximum of 3 per day for")).toBe(false);
+    expect(LIVE_FRAGMENT_CAP_WORDING.test("maximum of $105 per day")).toBe(true);
+    expect(LIVE_FRAGMENT_CAP_WORDING.test("Overdraft fees are capped at")).toBe(true);
+    expect(LIVE_FRAGMENT_CREDIT.test("Cash advance fee $10 credit card cash advances")).toBe(false);
+    expect(LIVE_FRAGMENT_CREDIT.test("E-statement $2.50 credit per month")).toBe(true);
+    expect(LIVE_FRAGMENT_CREDIT.test("Wire Fee -$25 if you")).toBe(false);
+    expect(LIVE_FRAGMENT_CREDIT.test("-$5 for e-statements")).toBe(true);
   });
 
   it("v5: gluedSentenceSplit returns a generic head only when asked, flagged", () => {

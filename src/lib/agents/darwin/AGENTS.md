@@ -374,31 +374,59 @@ Darwin owns verification and classification.
   when:
   - the amount is $0, missing or negative (`fragment`, no re-read request);
   - the line says the amount is a credit or discount (`LIVE_FRAGMENT_CREDIT`: "$2.50 credit",
-    "reduced by $2", "discount of $2", a minus glued to the "$" as in "−$2", 87742) (`fragment`);
-  - the line is no fee of this bank (`LIVE_FRAGMENT_NOT_A_FEE`: a worked example, "for example",
-    "Because the transact...", 95216; "Bank sending the wire", "typically charge", 142713)
-    (`fragment`);
+    "reduced by $2", "discount of $2", a standalone negative as in "−$2" or "(-$2)", 87742)
+    (`fragment`). "$10 credit card", "credit union", "credit line", "credit limit" and "credit
+    report" are no credit, and a hyphen after a name is a separator ("Wire Fee -$25");
+  - the line is no fee of this bank (`LIVE_FRAGMENT_NOT_A_FEE`: a worked example, "for example,
+    if", "Example:", "Because the transact...", 95216; "Bank sending the wire", "sending bank",
+    142713) (`fragment`). A bare "for example" ("certain items, for example stop payments") and
+    "typically charge" are left alone;
   - a gate refused the amount (`fragment_reread`, with a re-read request): total wording, an
-    opening deposit, cap words (`LIVE_FRAGMENT_CAP_WORDING`: max, maximum, cap, capped, greater
-    of, lesser of, minimum charge, min or; "Max" before a capitalised word is a product), another
-    price, a figure equal to the amount, a refused if/when threshold, or a line ending on "balance
-    of" (133104).
+    opening deposit, cap words (`LIVE_FRAGMENT_CAP_WORDING`: max, maximum or cap before "of $",
+    "of" ending the line, a dollar figure or a charge/fee word; capped, greater of, lesser of,
+    minimum charge, min or; so "MAX CHECKING MONTHLY FEE" and "maximum of 3 per day" are no cap),
+    another price, a figure equal to the amount, a refused if/when threshold, or a line ending on
+    a threshold (`liveFragmentThresholdEnd`, head or no head: "balance of" / "balance is", 133104;
+    "more than", "over", "inactive for"; "below", "under", "less than" at $100 or more). A line
+    ending on "balance of" / "balance is" that names a fee or charge, under $100, is not refused
+    but never renamed (`reread`; 144639's $5 service charge, 133104's $3 charge).
+  - When the line states two or more dollar prices (thresholds left out), the first is not the
+    amount and a later one is, the amount is another price on the line: no rename, `reread`
+    (`liveFragmentPriceElsewhere`; 125163 "$5 monthly service charge ... $2 paper statement fee"
+    at $2, 125166 "$3.00 per monthly fee ... $9 per item charge" at $9). The stored names of both
+    on prod lost their figures, so those two rows still rename until Knox re-reads them.
+  - A dollar figure with a period after it ("$3 per quarter", "$5 monthly") is the fee's own price,
+    so the figure gate lets it through (133104). A priced fee never reads across "if", "when",
+    "unless", "not" or "or" ("$2,500 if not fee will be charged monthly" is a balance, 37674:
+    `reread`).
+  - "reduced to" is waiver wording: no rename ("Debit Card overdraft fee will be reduced to
+    $5.00", 93834, is a `reread`).
   Every other unnamed `pronoun` or `sentence_end` line is `reread`: kept live with a re-read request
   (evidence reason "kept live: <pattern> with no name"). `plus` and `trailing_range` are unchanged.
   - Waiver wording alone no longer takes a priced fee down ("to avoid monthly service fee of" $15,
-    60783; "... discounted fee of" $15, 74073); the line may rename through its head or tail ("Club
-    fee", 95229; "Discounted monthly maintenance fee", 137778). "Discounted" joins the generic tail
-    words. 5314's "... reduce your monthly fee to" at $0 still comes down.
-  - "if Account Falls Below" and "... Below Minimum Balance of" are balance conditions (96650,
-    96651, 96652, 136152).
+    60783; "... discounted fee of" $15, 74073), and it still bars every rename, head or tail: a
+    waived or reduced line is kept live as a `reread` ("Overdraft Fee You will be charged a reduced
+    fee of" $15; "Club fee", 95229, and "Discounted monthly maintenance fee", 137778, are rereads,
+    not renames). "Discounted" joins the generic tail words. 5314's "... reduce your monthly fee
+    to" at $0 still comes down.
+  - "if Account Falls Below" and "... Below Minimum Balance" are balance conditions (96650,
+    96651, 96652); a line ending "... Minimum Balance of" (136152) is not: it ends on the threshold
+    and is refused.
   - A head ending on fee or charge before ":" or a dash, then an if/when clause, renames when no
-    figure equals the amount ("Closing Fee", 142676; "Inactivity Fee", 146563; "Continuous
-    Overdraft Charge", 146643; "NON-MEMBER LOAN APPLICATION FEE", 109893).
+    figure equals the amount and the balance gate's bars hold: no excess or balance condition, no
+    clause ending on below, under, less than, more than, over or for, and an amount under $100
+    ("Closing Fee", 142676; "Inactivity Fee", 146563; "NON-MEMBER LOAN APPLICATION FEE", 109893).
+    "Overdraft Fee: If overdrawn by more than" $5 and "Monthly Service Fee: If balance falls below"
+    $500 are refused; "Continuous Overdraft Charge: If ... overdrawn for more than 10 business
+    days, a" $1 (146643) is now refused too (an excess condition).
   - A balance band ("more than or equal to but less than", 129443) is not refused: `reread`.
   - A dollar figure a threshold word leads into is no priced fee either ("overdrawn more than $5.00
     Fees for" $30, 70303).
-  - An all-capitals line ending on " A", " AN" or " THE" is a `sentence_end` ("... THERE IS A",
-    109893); "Plan A", "Schedule A" and "N/A" are not. This shape also feeds `fee-display-name.ts`.
+  - An all-capitals line ending on a verb or function word (IS, OF, FOR, TO, WITH, BE, BY, CHARGE,
+    CHARGED, CHARGES, ASSESS, ASSESSED, INCUR, PAY) and " A", " AN" or " THE" is a `sentence_end`
+    ("... THERE IS A", 109893). An all-capitals label ending on a letter ("SAFE DEPOSIT BOX SIZE
+    A", "CHECKING PLAN A", "OPTION A", "SCHEDULE A") and "N/A" are not. This shape also feeds
+    `fee-display-name.ts`, the public fee name.
   - Known misses, unchanged: 125166 and 125163 (the stored name lost its $ figures).
 - Live hourly re-check (`hourly-frequency-check.ts`, #1456). About 802 live fees say in their name
   that they are priced by the hour ("Research Fee $25/hour", "Subpoena Fee - Per Hour") but carried

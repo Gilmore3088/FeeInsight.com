@@ -41,4 +41,13 @@ describe("feeDisplayName", () => {
     // Outside the parenthetical the pronoun is still a cut name.
     expect(isCutFeeName("Stop Payment (per item) if you request it")).toBe(true);
   });
+
+  it("leaves an all-capitals label ending on a letter as stored, and cuts one ending on a verb and an article (#1499)", () => {
+    for (const name of ["SAFE DEPOSIT BOX SIZE A", "CHECKING PLAN A", "OPTION A", "SCHEDULE A", "BOX A", "CLUB A"]) {
+      expect(isCutFeeName(name)).toBe(false);
+      expect(feeDisplayName(name, "safe_deposit_box")).toBe(name);
+    }
+    expect(isCutFeeName("10NON-MEMBER LOAN APPLICATION FEE: IF YOU ARE NOT A MEMBER OF WCDU, THERE IS A")).toBe(true);
+    expect(isCutFeeName("WIRE FEE FOR THE")).toBe(true);
+  });
 });

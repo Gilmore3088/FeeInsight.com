@@ -210,10 +210,12 @@ const LIVE_TRAILING_RANGE = trailingRange(String.raw`up\s+to|per`);
 const LIVE_SENTENCE_END = endsIn(SENTENCE_END_WORDS.filter((word) => !["a", "an", "the", "above", "each"].includes(word)));
 /**
  * Case-sensitive: "N/A" ends in a capital A and never reads as a dangling article. v6 (#1499,
- * 109893): an all-capitals line ending on " A", " AN" or " THE" is one ("... WCDU, THERE IS A");
- * "Plan A" and "Schedule A" hold lower-case letters and are not.
+ * 109893): an all-capitals line ending on a verb or function word and " A", " AN" or " THE" is one
+ * ("... WCDU, THERE IS A", "WIRE FEE FOR THE"). An all-capitals label ending on a letter ("SAFE
+ * DEPOSIT BOX SIZE A", "CHECKING PLAN A", "SCHEDULE A") is a name, not a fragment: this shape also
+ * drives the public fee name (`isCutFeeName` in fee-display-name.ts).
  */
-const LIVE_SENTENCE_END_ARTICLE = /\b(?:a|an|the)$|^[^a-z]*\s(?:A|AN|THE)$/;
+const LIVE_SENTENCE_END_ARTICLE = /\b(?:a|an|the)$|^[^a-z]*\s(?:IS|OF|FOR|TO|WITH|BE|BY|CHARGE[DS]?|ASSESS(?:ED)?|INCUR|PAY)\s(?:A|AN|THE)$/;
 const LIVE_PRONOUN = wordsIn(PRONOUN_WORDS.filter((word) => word === "will" || word === "you"));
 /**
  * #1443 switch-on prerequisites: a balanced parenthetical ("Stop Payment (per item, if you request
