@@ -11,6 +11,7 @@ import {
   takedownSignal,
   type FeedbackRow,
 } from "./feedback";
+import { PUBLISHER_AGENT_NAMES } from "@/lib/agents/gutenberg/names";
 
 type SqlTag = typeof sql;
 
@@ -381,7 +382,7 @@ export async function relabelPerFeeTakedowns(db: SqlTag, options: { limit: numbe
     const stale = await inSavepoint(db, (scope) => scope<PerFeeTakedownRow[]>`
       SELECT f.id, f.evidence->>'reason' AS reason
         FROM pipeline_feedback f
-       WHERE f.reported_by = 'hamilton'
+       WHERE f.reported_by = ANY(${[...PUBLISHER_AGENT_NAMES]}::text[])
          AND f.check_name ~ '#[0-9]'
          AND f.evidence->>'reason' IS NOT NULL
        ORDER BY f.id
