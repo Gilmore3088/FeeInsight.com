@@ -21,6 +21,11 @@ const NOT_NAME_WORDS = new Set(["fee", "fees", "charge", "charges", "per", "the"
 /** A cell that qualifies the price before it: its period, cap or waiver. */
 const CONDITION_CELL = /^(?:per\b|each\b|every\b|a\s+(?:month|year|day|week)\b|monthly|annual|yearly|quarterly|daily|weekly|waived?\b|max|min|if\b|unless\b|plus\b|up\s+to\b|after\b|when\b|with\b|for\s+each\b|\/|\()/i;
 
+/**
+ * A bare period ("Per Item", "Monthly"): the fee's own even when a priced cell follows, where any
+ * longer price-less cell is the next fee's label ("| With Overdraft Protection | Transfer $10").
+ */
+const PERIOD_CELL = /^\(?\s*(?:(?:per|each|every)\s+\w+|monthly|annual(?:ly)?|yearly|quarterly|daily|weekly)\s*\)?$/i;
 /** A priced cell that is still a condition: a waiver or a balance, never another fee's price. */
 const WAIVER_CELL = /^(?:waived?\b|with\s+(?:a\s+|an\s+)?(?:\$|minimum|balance|average|direct|combined)|if\b|unless\b|(?:max|min)(?:imum)?\s+(?:of\b|\$|\d|balance)|up\s+to\s+\$)/i;
 
@@ -60,14 +65,15 @@ export function ownCells(line: string, feeName: string, amount: number | null): 
   if (best === 0 || top.length !== 1) return line;
   const { start, priced } = top[0];
   let end = priced;
-  // A condition cell after the price, never the next fee's label (a price-less cell followed by a
-  // bare price: "| Monthly Maintenance | $10.00") or the next fee itself ("| Daily Overdraft Fee $5").
+  // A condition cell after the price, never the next fee's label (a price-less cell other than a
+  // bare period, followed by a price: "| Monthly Maintenance | $10.00") or the next fee itself
+  // ("| Daily Overdraft Fee $5").
   while (end + 1 < cells.length) {
     const next = cells[end + 1];
     const priced = prices(next).length > 0;
     const condition = priced
       ? WAIVER_CELL.test(next)
-      : CONDITION_CELL.test(next) && !(end + 2 < cells.length && prices(cells[end + 2]).length > 0 && nameWords(cells[end + 2]).size === 0);
+      : CONDITION_CELL.test(next) && (!(end + 2 < cells.length && prices(cells[end + 2]).length > 0) || PERIOD_CELL.test(next));
     if (!condition) break;
     end += 1;
   }

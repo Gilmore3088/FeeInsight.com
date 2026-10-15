@@ -60,6 +60,7 @@ describe("the fee's own cells of a two-column line (#1394)", () => {
     expect(ownCells("Money Order $5 | Per Item Fee | $0.25", "Money Order", 5)).toBe("Money Order $5");
     // The next fee names itself in its price cell, so the period cell before it is this fee's.
     expect(ownCells("NSF | $30.00 | Per Item | Stop Payment $25.00", "NSF", 30)).toBe("NSF | $30.00 | Per Item");
+    expect(ownCells("Account Closing $25 | With Overdraft Protection | Transfer $10", "Account Closing", 25)).toBe("Account Closing $25");
     expect(ownCells("Account Closing $25 | if closed within 90 days of opening", "Account Closing", 25)).toBe(
       "Account Closing $25 | if closed within 90 days of opening",
     );
