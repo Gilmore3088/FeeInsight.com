@@ -17,8 +17,11 @@ from the CSI day job.
 ## How work runs
 Up to three builders at once, one per lane in `docs/plans/build-plan-2026-10-12.md` ("Lanes");
 a builder takes only its own lane's items. Work starts from that plan and the Now list at the top
-of GitHub issue #1026 (pipeline review master tracker): one issue, one branch, one PR. Before starting, search open issues, PRs
+of GitHub issue #1026 (pipeline review master tracker): one outcome, one branch, one PR, with small
+related fixes batched into it (build plan, "Rules for the builder"). Before starting, search open issues, PRs
 and `main` for the same outcome, and reuse or explicitly supersede what exists.
+- CI runs cost GitHub Actions minutes. Push a branch only when its PR is ready for review and the
+  local checks pass; merge `main` into a branch only for a conflict or a change it depends on.
 - Every change a review finds is documented as its own issue under a tracker: one tracker per
   agent, plus the Foundation tracker for infrastructure, documentation and process work that
   belongs to no agent. A review also names the issues it closes or merges, so duplicates do not
