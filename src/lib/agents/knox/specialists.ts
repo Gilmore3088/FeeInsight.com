@@ -5,6 +5,7 @@ import {
   withBoxSizeCellsSplit,
   withSidewaysBoxTable,
   withoutBusinessOnlyFees,
+  type DroppedLineReason,
   type ExtractedFeeCandidate,
   type ExtractionRulesResult,
   type HeldFeeCandidate,
@@ -64,10 +65,14 @@ import { frequencyFromLine, settledFrequency } from "@/lib/fee-frequency";
 // v63: a box size glued after another fee's name starts its own line (doc 20570).
 // v64: a box table printed sideways, sizes over prices, is read one box per line (SCCU 8109).
 // v65: every read carries a customer audience (`fee_audience`, `audience_evidence`, `fee_treatment`).
-// v66 is taken by the advisor's dropped-lines fix (#1102, branch advisor/knox-dropped-lines-v66).
+// v66 was held for the dropped-lines fix and never shipped; v67 (#1334) took the next bump.
 // v67 (#1334): no rule change; every current text is read once more so the dropped-decimal reads
 // #1196/#1305 taught the rules pass ("$29. 95" is $29.95, "$1 50*" is $1.50) reach stored pages.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 67 } as const;
+// v68 (#1102): fee-schedule labels with no "fee" or "charge" (research, notary acts, night drop,
+// box keys and sizes, extra statements, copies), a "FREE" column beside priced columns, and
+// label-and-price rows no rule names held in a fee schedule instead of dropped, with every
+// dropped priced line counted by reason.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 68 } as const;
 
 export interface SpecialistRun {
   strategy: string;
@@ -87,6 +92,8 @@ export interface FreeExtractionResult extends ExtractionRulesResult {
   runs: SpecialistRun[];
   /** Percentage fees that publish as rates and trace to the text (`percent.ts`); the rest stay held. */
   rates: RateFeeCandidate[];
+  /** v68: priced lines no rule names that were neither read nor held, by reason. */
+  dropped: Partial<Record<DroppedLineReason, number>>;
 }
 
 const MAX_HELD_PER_DOCUMENT = 40;
@@ -149,6 +156,7 @@ function withContextFees(text: string, read: ExtractionRulesResult): ExtractionR
   return {
     candidates: [...contextFees(text), ...read.candidates.filter((fee) => fee.audienceEvidence != null || !NO_LONGER_CHARGED.test(fee.excerpt))],
     held: read.held.filter((row) => !NO_LONGER_CHARGED.test(row.excerpt)),
+    dropped: read.dropped,
   };
 }
 
@@ -178,9 +186,14 @@ export function runFreeSpecialists(sourceText: string): FreeExtractionResult {
   const untraced: HeldFeeCandidate[] = [];
   let unclassified = 0;
   const runs: SpecialistRun[] = [];
+  const dropped: Partial<Record<DroppedLineReason, number>> = {};
+  const countDropped = (reason: DroppedLineReason, count = 1) => {
+    dropped[reason] = (dropped[reason] ?? 0) + count;
+  };
 
   for (const specialist of specialists) {
     const found = specialist.run();
+    for (const [reason, count] of Object.entries(found.dropped ?? {})) countDropped(reason as DroppedLineReason, count);
     let added = 0;
     let selfCheckFailed = 0;
     for (const read of found.candidates) {
@@ -242,7 +255,10 @@ export function runFreeSpecialists(sourceText: string): FreeExtractionResult {
       added += 1;
     }
     for (const heldRow of found.held) {
-      if (held.length >= MAX_HELD_PER_DOCUMENT) break;
+      if (held.length >= MAX_HELD_PER_DOCUMENT) {
+        if (heldRow.shape === "unclassified") countDropped("unclassified_cap");
+        continue;
+      }
       const foundRow = { ...heldRow, feeName: tidyFeeName(heldRow.feeName) };
       if (foundRow.shape === "zero" && readsAMeasuredAmount(text, foundRow.feeName, 0)) continue;
       // A $0 row can go live through the rules re-check, so it passes the same self-check.
@@ -251,7 +267,10 @@ export function runFreeSpecialists(sourceText: string): FreeExtractionResult {
       const row: HeldFeeCandidate = untracedZero ? { ...foundRow, shape: "untraced" } : foundRow;
       const key = heldKey(row);
       if (seenHeld.has(key)) continue;
-      if (row.shape === "unclassified" && unclassified >= MAX_UNCLASSIFIED_PER_DOCUMENT) continue;
+      if (row.shape === "unclassified" && unclassified >= MAX_UNCLASSIFIED_PER_DOCUMENT) {
+        countDropped("unclassified_cap");
+        continue;
+      }
       seenHeld.add(key);
       if (row.shape === "unclassified") unclassified += 1;
       held.push(row);
@@ -309,5 +328,5 @@ export function runFreeSpecialists(sourceText: string): FreeExtractionResult {
     if (!duplicate) rates.push(rate);
     return false;
   });
-  return { candidates, held: stillHeld, rates, runs };
+  return { candidates, held: stillHeld, rates, runs, dropped };
 }

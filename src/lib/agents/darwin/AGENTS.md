@@ -423,10 +423,24 @@ Change this table and `agent-health.ts` in the same PR.
 |---|---|---|
 | Steps do not fail | `stepsFailed` (24 h) | 0 |
 | Darwin keeps up | `undecided` (Knox rows the verify step would select now: never decided, or due again after a guard, source-check, envelope or batch-key change; `darwinDueSql` in `verify.ts`) | ≤ 500 (`DARWIN_VERIFY_MAX_LIMIT`) |
-| No week-old waits | `waitingOver7d` (rows sent to Darwin over 7 days ago and never decided at this rule version) | 0 (`DARWIN_MAX_FIRST_DECISION_DAYS`) |
+| No week-old waits | `waitingOver7d` (due rows sent to Darwin over 7 days ago with no first decision at this rule version) | 0 (`DARWIN_MAX_FIRST_DECISION_DAYS`) |
 | Fees Darwin passed survive the bank's own schedule | `sourceCheckTakedowns / published` (24 h) | ≤ 5% |
 
 Also recorded, without a rule: `stepsCompleted`, `spendUsd`, `decided`, `passed`.
+
+The pool of Knox rows flagged for Darwin and not verified (`pool`) is split three ways, and the
+parts add up to it:
+- `undecided`: due now (the "Darwin keeps up" number above).
+- `heldForReview`: not due, and the latest `verify.rules` decision is a hold the release review
+  looks at (`outside_envelope`, `peer_outlier`; `DARWIN_HELD_REASON_CODES`). Split by the latest
+  `verify.release` verdict: `heldKeep`, `heldReview`, `heldDuplicate`, `heldReject`, and
+  `heldNoVerdict` (none yet, or a first "not stated" look waiting for its second).
+- `finalRejects`: not due, with a standing decision that is not a hold. Darwin owes these
+  nothing until a rule version changes, so they are in no waiting number.
+
+`audienceCorrection` counts rows the audience trigger refuses; they are neither due nor decided.
+On 15 Oct (03:46 UTC): pool 16,351 = 7,340 due + 6,094 held (4,121 keep, 886 review, 809 duplicate, 278
+reject) + 2,917 final rejects.
 
 ## Current versions
 
