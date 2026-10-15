@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { DEMO_REQUEST_NAV, PRO_PLANS_NAV } from "@/components/nav-items";
+import { TrackLink } from "@/components/track-link";
 import { Tag } from "@/brand/components";
 import { HAMILTON_MODES, PRODUCT_NAME, REPORT_OFFER, REPORT_PRICE_INLINE, SITE_NAME } from "@/lib/constants";
 import type { FeeCategorySummary } from "@/lib/data-store/fees";
@@ -145,12 +147,22 @@ export function LandingOneWorkspace() {
           <p className="mt-2 text-[13px] text-ink-muted">Ask Hamilton on every screen.</p>
 
           <div className="mt-7 flex flex-wrap items-center gap-x-5 gap-y-3">
-            <Link href="/subscribe" className="fi-btn fi-btn-secondary">
-              See Hamilton plans
-            </Link>
-            <Link href="/contact?source=demo" className={`text-[14px] ${TEXT_LINK}`}>
-              Or ask for a demo
-            </Link>
+            <TrackLink
+              event="upgrade_click"
+              eventProps={{ placement: "home_workspace" }}
+              href={PRO_PLANS_NAV.href}
+              className="fi-btn fi-btn-secondary"
+            >
+              {PRO_PLANS_NAV.label}
+            </TrackLink>
+            <TrackLink
+              event="contact_sales"
+              eventProps={{ placement: "home_workspace_demo" }}
+              href={DEMO_REQUEST_NAV.href}
+              className={`text-[14px] ${TEXT_LINK}`}
+            >
+              {DEMO_REQUEST_NAV.label}
+            </TrackLink>
           </div>
           <p className="mt-5 text-[14px] leading-6 text-ink-soft">
             Prefer one document? We build a{" "}

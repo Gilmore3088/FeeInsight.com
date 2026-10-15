@@ -1,5 +1,5 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { FeeCategorySummary } from "@/lib/data-store/fees";
 import { PRO_TIERS, tierPriceLabel } from "@/lib/pro-tiers";
 import { REPORT_PRICE_INLINE } from "@/lib/constants";
@@ -11,6 +11,17 @@ import { LandingFeePath, LandingFiveSources, LandingHowToStart } from "./landing
 import { LandingFaq } from "./landing-faq";
 import { LandingClose } from "./landing-close";
 import { nationalRange } from "./landing-shared";
+
+// TrackLink as a plain anchor that shows its event, so the markup says what each click records.
+vi.mock("@/components/track-link", () => ({
+  TrackLink: ({ event, eventProps, href, children, className }: {
+    event: string; eventProps?: { placement?: string }; href: string; children: React.ReactNode; className?: string;
+  }) => (
+    <a href={href} className={className} data-event={event} data-placement={eventProps?.placement}>
+      {children}
+    </a>
+  ),
+}));
 
 const summary = {
   institutionsLabel: "1,234",
@@ -110,6 +121,27 @@ describe("homepage (site v3, Direction A)", () => {
 
     const start = text(renderToStaticMarkup(<LandingHowToStart />));
     expect(start).toContain("Open Hamilton for all five markets, or ask us for one report.");
+  });
+
+  it("tracks every Pro and demo click with its own placement", () => {
+    const html = renderToStaticMarkup(
+      <>
+        <LandingHero summary={summary} overdraft={null} sampleLive={false} />
+        <LandingOneWorkspace />
+        <LandingPricing />
+        <LandingClose />
+      </>,
+    );
+    const tracked = [...html.matchAll(/<a href="([^"]+)"[^>]*data-event="([^"]+)" data-placement="([^"]+)">([^<]+)</g)].map(
+      ([, href, event, placement, label]) => `${event} ${placement} ${href} ${label}`,
+    );
+    expect(tracked).toEqual([
+      "upgrade_click home_hero /subscribe See Hamilton plans",
+      "upgrade_click home_workspace /subscribe See Hamilton plans",
+      "contact_sales home_workspace_demo /contact?source=demo Or ask for a demo",
+      "upgrade_click home_pricing /subscribe See Hamilton plans",
+      "upgrade_click home_closing /subscribe See Hamilton plans",
+    ]);
   });
 
   it("sends report links to the one form on /reports", () => {

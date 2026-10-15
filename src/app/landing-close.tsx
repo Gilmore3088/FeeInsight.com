@@ -1,4 +1,5 @@
-import Link from "next/link";
+import { PRO_PLANS_NAV } from "@/components/nav-items";
+import { TrackLink } from "@/components/track-link";
 import { InstitutionSearchForm, SANS, SECTION_INNER, TEXT_LINK } from "./landing-shared";
 
 /**
@@ -18,9 +19,9 @@ export function LandingClose() {
           </p>
           <InstitutionSearchForm className="mt-7" />
           <p className="mt-5 text-[14px]">
-            <Link href="/subscribe" className={TEXT_LINK}>
-              See Hamilton plans
-            </Link>
+            <TrackLink event="upgrade_click" eventProps={{ placement: "home_closing" }} href={PRO_PLANS_NAV.href} className={TEXT_LINK}>
+              {PRO_PLANS_NAV.label}
+            </TrackLink>
           </p>
         </div>
       </div>

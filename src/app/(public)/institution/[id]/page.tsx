@@ -396,6 +396,7 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
                 <InstitutionOfferBand
                   institutionName={inst.institution_name}
                   reportOfferHref={links.reportOfferHref}
+                  plansHref={links.plansHref}
                   correctSourceHref={links.correctSourceHref}
                   isPro={isPro}
                 />

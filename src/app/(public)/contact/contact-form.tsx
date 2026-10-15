@@ -8,9 +8,10 @@ import { REPORT_OFFER, REPORT_PRICE_INLINE } from "@/lib/constants";
 
 const INQUIRY_TYPES = [
   // Pro first, the one-off report second (site v3 brief 03 section 4: Pro is the goal).
-  { value: "demo", label: "A Pro demo (a walkthrough of Hamilton)" },
+  // Short enough to show whole in the select at 375px (growth OS review M2).
+  { value: "demo", label: "Hamilton demo" },
   { value: "report", label: `${REPORT_OFFER.name} (${REPORT_PRICE_INLINE})` },
-  { value: "enterprise", label: "Fee Insight Pro (seats, invoicing)" },
+  { value: "enterprise", label: "Hamilton Pro (seats, invoicing)" },
   { value: "billing", label: "Billing or my subscription" },
   { value: "advisory", label: "Fee Insight Advisory (custom work)" },
   { value: "partnership", label: "Data licensing / API" },
@@ -23,9 +24,15 @@ interface ContactFormProps {
 
 export function ContactForm({ searchParamsPromise }: ContactFormProps) {
   const searchParams = use(searchParamsPromise);
-  const defaultSource = typeof searchParams.source === "string" ? searchParams.source : "";
+  // A source with no option of its own (e.g. sample_report, a correction) opens on "Something
+  // else", not on the first option, so it is never recorded as a demo request.
+  const defaultSource =
+    typeof searchParams.source === "string" && INQUIRY_TYPES.some((t) => t.value === searchParams.source)
+      ? searchParams.source
+      : "general";
   const defaultCompany = typeof searchParams.company === "string" ? searchParams.company.slice(0, 160) : "";
 
+  const [inquiry, setInquiry] = useState(defaultSource);
   const [status, setStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
   const [confirmationSent, setConfirmationSent] = useState(false);
 
@@ -65,14 +72,19 @@ export function ContactForm({ searchParamsPromise }: ContactFormProps) {
     }
   }
 
+  // The button and the reply follow the option chosen, so a demo request reads as one.
+  const isDemo = inquiry === "demo";
+
   if (status === "success") {
     return (
       <div className="rounded-xl border border-emerald-200 bg-emerald-50/50 px-6 py-8 text-center">
         <p className="text-[16px] font-medium text-emerald-800">
-          Message received
+          {isDemo ? "Request received" : "Message received"}
         </p>
         <p className="mt-2 text-[13px] text-emerald-700">
-          We&apos;ll get back to you within one business day.
+          {isDemo
+            ? "We'll reply within one business day to set a time."
+            : "We'll get back to you within one business day."}
           {confirmationSent ? " A confirmation is on its way to your inbox." : ""}
         </p>
       </div>
@@ -149,7 +161,8 @@ export function ContactForm({ searchParamsPromise }: ContactFormProps) {
         <select
           id="inquiry_type"
           name="inquiry_type"
-          defaultValue={defaultSource || "general"}
+          value={inquiry}
+          onChange={(e) => setInquiry(e.target.value)}
           className={inputClasses}
         >
           {INQUIRY_TYPES.map((t) => (
@@ -184,7 +197,7 @@ export function ContactForm({ searchParamsPromise }: ContactFormProps) {
         disabled={status === "loading"}
         className="w-full rounded-xl bg-brick py-3 text-[14px] font-semibold text-white hover:bg-brick-ink transition-colors disabled:opacity-50"
       >
-        {status === "loading" ? "Sending..." : "Send message"}
+        {status === "loading" ? "Sending..." : isDemo ? "Ask for a demo" : "Send message"}
       </button>
     </form>
   );

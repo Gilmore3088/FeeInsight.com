@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { PRO_PLANS_NAV } from "@/components/nav-items";
+import { TrackLink } from "@/components/track-link";
 import { REPORT_OFFER, REPORT_OFFER_LINE } from "@/lib/constants";
 import { WORKSPACE_SEAT_LIMIT } from "@/lib/hamilton/workspace-seats";
 import { CONSULTANT_PRICE_NOTE, PRO_TIERS, tierPriceLabel } from "@/lib/pro-tiers";
@@ -46,9 +48,14 @@ export function LandingPricing() {
               One plan for up to {WORKSPACE_SEAT_LIMIT} people. Annual is {ANNUAL_PAYMENTS} monthly payments.
             </p>
             <p className="mt-2 flex-1 text-[12px] leading-5 text-ink-muted">{CONSULTANT_PRICE_NOTE}</p>
-            <Link href="/subscribe" className="fi-btn fi-btn-secondary mt-6 self-start">
-              See Hamilton plans
-            </Link>
+            <TrackLink
+              event="upgrade_click"
+              eventProps={{ placement: "home_pricing" }}
+              href={PRO_PLANS_NAV.href}
+              className="fi-btn fi-btn-secondary mt-6 self-start"
+            >
+              {PRO_PLANS_NAV.label}
+            </TrackLink>
           </div>
 
           <div className={CARD}>

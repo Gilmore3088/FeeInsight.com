@@ -1,17 +1,23 @@
 import type { Metadata } from "next";
-import { CONTACT_EMAIL } from "@/lib/constants";
+import { CONTACT_EMAIL, REPORT_OFFER, SITE_NAME } from "@/lib/constants";
+import { hamiltonFullName } from "@/lib/subscribe-reason";
 import { ContactForm } from "./contact-form";
 
 export const metadata: Metadata = {
   title: "Contact",
-  description: "Get in touch with Fee Insight about a Competitive Fee Position Report, Fee Insight Pro seats, Advisory work, data licensing, or anything else.",
+  description: `Get in touch with ${SITE_NAME} about a Hamilton demo, Pro seats, the ${REPORT_OFFER.name}, Advisory work, data licensing, or anything else.`,
 };
 
-export default function ContactPage({
+/**
+ * /contact?source=demo is the Pro demo request (growth OS review M2): it reads as one, and we
+ * reply to set a time. No booking link. Every other source keeps the general page.
+ */
+export default async function ContactPage({
   searchParams,
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
+  const isDemo = (await searchParams).source === "demo";
   return (
     <div className="mx-auto max-w-2xl px-6 py-14">
       <div className="flex items-center gap-2 mb-4">
@@ -25,11 +31,12 @@ export default function ContactPage({
         className="font-extrabold text-[1.75rem] sm:text-[2.25rem] leading-[1.12] tracking-[-0.02em] text-ink"
         style={{ fontFamily: "var(--fi-font-sans)" }}
       >
-        Get in touch
+        {isDemo ? "Ask for a Hamilton demo" : "Get in touch"}
       </h1>
       <p className="mt-2 text-[14px] text-ink-muted">
-        Reports, Pro seats, Advisory work, data licensing, or general
-        questions. We typically respond within one business day.
+        {isDemo
+          ? `We walk you through ${hamiltonFullName(SITE_NAME)}, using your own market. We reply within one business day to set a time.`
+          : "Reports, Pro seats, Advisory work, data licensing, or general questions. We typically respond within one business day."}
       </p>
 
       <div className="mt-8">

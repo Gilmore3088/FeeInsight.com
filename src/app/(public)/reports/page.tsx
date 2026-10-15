@@ -16,6 +16,7 @@ import { TrackLink } from "@/components/track-link";
 import { CONTACT_EMAIL, REPORT_OFFER, SAMPLE_REPORT_LIVE, SITE_NAME } from "@/lib/constants";
 import { sampleReportAvailable } from "@/lib/custom-report/sample-report";
 import { ReportFaq } from "./report-faq";
+import { HamiltonLine } from "./hamilton-line";
 
 import { RequestReportForm } from "@/app/for-institutions/request-report-form";
 import { extractPositionMap, readSampleReportHtml } from "@/lib/hosted-reports";
@@ -352,6 +353,7 @@ export default async function ReportsPage({ searchParams }: PageProps) {
                 Send us a message
               </Link>
             </p>
+            <HamiltonLine placement="reports_hub_form" firstMention className="mt-4 max-w-[460px]" />
           </div>
           <RequestReportForm contactEmail={CONTACT_EMAIL} defaultSrc="reports-hub" />
         </div>
@@ -450,6 +452,7 @@ export default async function ReportsPage({ searchParams }: PageProps) {
             <p className="mt-1 text-[13px] text-[#C9BFB1]">
               The {REPORT_OFFER.name}: your fees next to named competitors in your market, with a source for every figure.
             </p>
+            <HamiltonLine placement="reports_hub_closing" tone="dark" className="mt-3" />
           </div>
           <div className="flex flex-wrap gap-3">
             <TrackLink

@@ -9,10 +9,12 @@ import { CustomerFooter } from "@/components/customer-footer";
 import { SearchModal } from "@/components/public/search-modal";
 import { getPendingWorkspaceInvitationsForEmail } from "@/lib/hamilton/institution-membership";
 import { sanitizeInternalRedirect } from "@/lib/safe-redirect";
-import { gatedPageLabel, subscribeEntry, subscribeReasonLine } from "@/lib/subscribe-reason";
+import { gatedPageLabel, hamiltonFullName, subscribeEntry, subscribeReasonLine } from "@/lib/subscribe-reason";
+import { TrackLink } from "@/components/track-link";
+import { DEMO_REQUEST_NAV } from "@/components/nav-items";
 import type { Metadata } from "next";
 import { getPublicStatsSummary } from "@/lib/public-stats";
-import { CONTACT_EMAIL, REPORT_OFFER, SITE_NAME } from "@/lib/constants";
+import { CONTACT_EMAIL, PRODUCT_NAME, REPORT_OFFER, SITE_NAME } from "@/lib/constants";
 import { PurchaseCard, type ProTierSelection } from "./pro-plan-cards";
 import { ProTierChooser } from "./pro-tier-chooser";
 import { WirePreview, type WirePreviewItem, type WirePreviewLead } from "./pro-overview";
@@ -35,7 +37,7 @@ import { AnalyzeDemo, type AnalyzeScenario } from "./analyze-demo";
 import { MonitorPreview, ReportPreview } from "./example-panels";
 import { TrackView } from "@/components/track-view";
 import { getProPricingInstitution } from "@/lib/data-store/pro-accounts";
-import { NON_INSTITUTION_TIER, PRO_TIERS, isProTier, proTier, tierForAssets, tierPriceLabel } from "@/lib/pro-tiers";
+import { NON_INSTITUTION_TIER, PRO_TIERS, isProTier, proTier, tierAmountLabel, tierForAssets, tierPriceLabel } from "@/lib/pro-tiers";
 import { OtherOptions, PricingFaq } from "./pricing-sections";
 
 import { WORKSPACE_SEAT_LIMIT } from "@/lib/hamilton/workspace-seats";
@@ -44,7 +46,9 @@ import { isProPlan, type ProPlan } from "./pricing";
 export const metadata: Metadata = {
   title: "Pricing",
   description:
-    "Fee Insight Pro pricing and what it includes: $150 to $500 a month by institution size, for up to 5 people. Also the free Bank Fee Index lookup and the Competitive Fee Position Report.",
+    `Pricing for ${hamiltonFullName(SITE_NAME)}: ${tierAmountLabel(PRO_TIERS[0].key, "monthly")} to ` +
+    `${tierAmountLabel(PRO_TIERS[PRO_TIERS.length - 1].key, "monthly")} a month by institution size, for up to ` +
+    `${WORKSPACE_SEAT_LIMIT} people. Also the free ${PRODUCT_NAME} lookup and the ${REPORT_OFFER.name}.`,
 };
 
 const WELCOME_PATH = "/account/welcome";
@@ -548,12 +552,25 @@ export default async function SubscribePage({
         </section>
 
         {gated ? (
-          <p className="mt-14 text-[15px] leading-relaxed text-ink">
-            Need research for one institution instead?{" "}
-            <Link href={REPORT_FORM_HREF} className="font-medium text-ink underline underline-offset-2">
-              Explore the {REPORT_OFFER.name}
-            </Link>
-          </p>
+          <div className="mt-14 space-y-2 text-[15px] leading-relaxed text-ink">
+            <p>
+              Want to see Hamilton first?{" "}
+              <TrackLink
+                event="contact_sales"
+                eventProps={{ placement: "pricing_gated_demo" }}
+                href={DEMO_REQUEST_NAV.href}
+                className="font-medium text-ink underline underline-offset-2"
+              >
+                Ask for a demo
+              </TrackLink>
+            </p>
+            <p>
+              Need research for one institution instead?{" "}
+              <Link href={REPORT_FORM_HREF} className="font-medium text-ink underline underline-offset-2">
+                Explore the {REPORT_OFFER.name}
+              </Link>
+            </p>
+          </div>
         ) : (
           <div className="mt-20">
             <OtherOptions />

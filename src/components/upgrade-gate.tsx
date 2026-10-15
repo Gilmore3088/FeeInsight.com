@@ -2,6 +2,8 @@ import { TrackLink } from "@/components/track-link";
 import { headers } from "next/headers";
 import { getPublicStatsSummary } from "@/lib/public-stats";
 import { SITE_NAME } from "@/lib/constants";
+import { hamiltonFullName } from "@/lib/subscribe-reason";
+import { PRO_PLANS_NAV } from "@/components/nav-items";
 
 interface UpgradeGateProps {
   message?: string;
@@ -41,7 +43,8 @@ async function currentPath(): Promise<string | null> {
   }
 }
 
-const PRO_LABEL = `${SITE_NAME} Pro`;
+/** Hamilton is the workspace, Pro the plan (site v3 brief 03 §4); never "Fee Insight Pro" alone. */
+const PRO_LABEL = hamiltonFullName(SITE_NAME);
 
 /**
  * Shown when a free user encounters a premium-only feature.
@@ -71,9 +74,9 @@ export async function UpgradeGate({
           event="upgrade_click"
           eventProps={eventProps}
           href={pricingHref}
-          className="inline-block mt-2 text-sm font-bold text-brick hover:underline"
+          className="inline-block mt-2 text-sm font-bold text-ink underline-offset-2 hover:underline"
         >
-          See pricing &rarr;
+          {PRO_PLANS_NAV.label} &rarr;
         </TrackLink>
       </div>
     );
@@ -109,9 +112,9 @@ export async function UpgradeGate({
         event="upgrade_click"
         eventProps={eventProps}
         href={pricingHref}
-        className="inline-flex items-center gap-1.5 rounded-md bg-brick px-5 py-2.5 text-sm font-medium text-white shadow-sm shadow-[#b23a32]/15 hover:bg-brick-ink hover:shadow-md hover:shadow-[#b23a32]/25 transition-all"
+        className="inline-flex items-center gap-1.5 rounded-md bg-ink px-5 py-2.5 text-sm font-semibold text-on-ink transition-opacity hover:opacity-90"
       >
-        See pricing
+        {PRO_PLANS_NAV.label}
         <svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4" aria-hidden="true">
           <path fillRule="evenodd" d="M3 10a.75.75 0 01.75-.75h10.638L10.23 5.29a.75.75 0 111.04-1.08l5.5 5.25a.75.75 0 010 1.08l-5.5 5.25a.75.75 0 11-1.04-1.08l4.158-3.96H3.75A.75.75 0 013 10z" clipRule="evenodd" />
         </svg>

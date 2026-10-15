@@ -4,7 +4,8 @@ import { ArrowRight } from "lucide-react";
 import { InfoTip } from "@/components/public/info-tip";
 import { REPORT_PRICE_INLINE } from "@/lib/constants";
 import { formatCompactDollars } from "@/lib/format";
-import { PRO_PLANS_HREF } from "@/components/public/pro-next-step";
+import { TrackLink } from "@/components/track-link";
+import { DEMO_REQUEST_NAV, PRO_PLANS_NAV } from "@/components/nav-items";
 import { COMPETITIVE_FEE_POSITION_REPORT } from "./profile-copy";
 
 export function Metric({
@@ -78,11 +79,14 @@ export function InstitutionMetricRow({
 export function InstitutionOfferBand({
   institutionName,
   reportOfferHref,
+  plansHref,
   correctSourceHref,
   isPro = false,
 }: {
   institutionName: string;
   reportOfferHref: string;
+  /** The Pro plans opened on this institution's tier (buildPublicInstitutionProfileLinks). */
+  plansHref: string;
   correctSourceHref: string;
   isPro?: boolean;
 }) {
@@ -125,13 +129,23 @@ export function InstitutionOfferBand({
             </Link>
           ) : (
             <>
-              <Link
-                href={PRO_PLANS_HREF}
+              <TrackLink
+                event="upgrade_click"
+                eventProps={{ placement: "institution_offer" }}
+                href={plansHref}
                 className="inline-flex items-center gap-2 rounded-md bg-ink px-3.5 py-2 text-sm font-semibold text-on-ink transition-opacity hover:opacity-90"
               >
-                See Hamilton plans
+                {PRO_PLANS_NAV.label}
                 <ArrowRight className="h-4 w-4" />
-              </Link>
+              </TrackLink>
+              <TrackLink
+                event="contact_sales"
+                eventProps={{ placement: "institution_offer_demo" }}
+                href={DEMO_REQUEST_NAV.href}
+                className="text-xs font-semibold text-brick underline underline-offset-2"
+              >
+                {DEMO_REQUEST_NAV.label}
+              </TrackLink>
               <Link
                 href={reportOfferHref}
                 className="text-xs font-semibold text-ink-muted underline-offset-2 hover:text-brick hover:underline"

@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { PRO_PLANS_NAV } from "@/components/nav-items";
+import { TrackLink } from "@/components/track-link";
 import { PRODUCT_NAME, SITE_NAME } from "@/lib/constants";
 import type { PublicStatsSummary } from "@/lib/public-stats";
 import {
@@ -18,8 +20,6 @@ interface LandingHeroProps {
   /** The live sample report exists today. */
   sampleLive: boolean;
 }
-
-/** The second-buyer line stays quiet: a plain underline, no weight, so the search is the one strong action. */
 
 /** Site v3 brief 08 §B.3, laid out as brief 04 Direction A: the promise, then the search. */
 export function LandingHero({ summary, overdraft, sampleLive }: LandingHeroProps) {
@@ -70,9 +70,9 @@ export function LandingHero({ summary, overdraft, sampleLive }: LandingHeroProps
           <div className="mt-6 space-y-2 text-[14px] leading-6 text-ink-soft">
             <p>
               Questions for Hamilton come with Pro.{" "}
-              <Link href="/subscribe" className={TEXT_LINK}>
-                See Hamilton plans
-              </Link>
+              <TrackLink event="upgrade_click" eventProps={{ placement: "home_hero" }} href={PRO_PLANS_NAV.href} className={TEXT_LINK}>
+                {PRO_PLANS_NAV.label}
+              </TrackLink>
             </p>
             <p>Checking your own bank&apos;s fees? Search the same index, free.</p>
           </div>
