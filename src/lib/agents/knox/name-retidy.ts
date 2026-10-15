@@ -55,8 +55,10 @@ const TRAILING_FEE_OF = /\s+(?:a|an|the)\s+(?:(?:monthly|service|annual)\s+)?(?:
 const LEADING_HEADER = /^(?:Fees?|Charge)\s+(?=[A-Z])(?!(?:Backs?|Off|Cards?|Schedule|Type|Description|Structure|Amount|Name|Above|Below|Per|Each|For|To|Of|If|When)\b)/;
 /** A header cell cut to its first letters, or a header word, left after the name ("... | F", "... | Fee"). */
 const TRAILING_HEADER_CELL = /\s*\|\s*(?:[A-Za-z]{1,2}|fees?|charges?|amount|cost|price)\s*$/i;
+/** A name that ends in one of `words`, after any separator ("Late Fee | Up to"); shared with the live twin. */
+const trailingRange = (words: string) => new RegExp(String.raw`[\s\-–—|:,]*\b(?:${words})\s*$`, "i");
 /** The start of a range or unit left dangling after the name ("Late Fee | Up to", "NSF fee (ACH, ATM, or check) - per"). */
-const TRAILING_RANGE = /[\s\-–—|:,]*\b(?:up\s+to|per|each)\s*$/i;
+const TRAILING_RANGE = trailingRange(String.raw`up\s+to|per|each`);
 /** A sentence that ends at its own price: "Our overdraft fee of", "Avoid the monthly service charge of". */
 const FEE_OF_SENTENCE =
   /\b(?:a|an|the|our|your|this)\s+(?:(?:normal|standard|regular|usual|individual|applicable|current)\s+)?((?!(?:minimum|maximum|additional|same|following)\b)(?:(?!(?:a|an|the|for|of|to)\b)[A-Za-z'’\-]+\s+){1,4}(?:fees?|charges?))(?:\s+for\s+[A-Za-z\s\-]{1,40}?)?\s+(?:of|is|are|will be)\s*$/i;
@@ -66,10 +68,14 @@ const CONDITION_TAIL = /\s+(?:(?:is|are)\s+)?(?:waived\s+)?(?:if|when|unless|oth
 const UNIT_AFTER_NAME = /\s+(?:per|each|a)\s+(?:month|statement(?:\s+cycle)?|year|quarter|item|day|occurrence|transaction)$/i;
 /** A parenthetical condition after the name ("(Dormant Account Fee assessed after 12 months of inactivity.)"). */
 const CONDITION_PARENTHETICAL = /\s*\([^()]*\b(?:after|if|when|assessed|within|inactivity|no activity|unless)\b[^()]*\)\s*$/i;
-const PRONOUN = /\b(?:i|we|you|my|our|your|will|would|may|must|shall)\b/i;
+const PRONOUN_WORDS = ["i", "we", "you", "my", "our", "your", "will", "would", "may", "must", "shall"] as const;
+const wordsIn = (words: readonly string[], flags = "i") => new RegExp(String.raw`\b(?:${words.join("|")})\b`, flags);
+const PRONOUN = wordsIn(PRONOUN_WORDS);
 /** A verb that makes the words a sentence ("Checking accounts are considered dormant"). */
 const SENTENCE_VERB = /\b(?:is|are|was|were|be|been|considered|incurs?|applies|apply|impose|assessed|excluding|including|includes?|do(?:es)?\s+not)\b/i;
-const SENTENCE_END = /\b(?:of|to|from|for|at|is|and|or|with|by|a|an|the|per|than|below|above|up to|each)$/i;
+const SENTENCE_END_WORDS = ["of", "to", "from", "for", "at", "is", "and", "or", "with", "by", "a", "an", "the", "per", "than", "below", "above", "up to", "each"] as const;
+const endsIn = (words: readonly string[], flags = "i") => new RegExp(String.raw`\b(?:${words.join("|")})$`, flags);
+const SENTENCE_END = endsIn(SENTENCE_END_WORDS);
 
 /** True when the words still read as a sentence or a condition, not a fee's name. */
 function sentenceShaped(cell: string): boolean {
@@ -146,6 +152,46 @@ export function isCutoffName(name: string): boolean {
     SENTENCE_VERB.test(current) ||
     FEE_OF_SENTENCE.test(current)
   );
+}
+
+/**
+ * The live twin of `isCutoffName` (#1443, #1436): the cut-off shapes narrow enough to take a
+ * live fee down. `isCutoffName` matched 1,571 live fees on Oct 15 and a labelled sample of 155
+ * found about half were real fees, so only the shapes the sample found to be fragments are kept:
+ * - `sentence_end`: the name ends on a joining word ("... reduce your monthly fee to"). "a", "an"
+ *   and "the" count only in lower case, so "N/A" never fires; "above" ("... not listed above") and
+ *   "each" ("Loan Application, each") are real fees and are left out.
+ * - `trailing_range`: a dangling "up to" or "per"; never "each".
+ * - `pronoun`: "will" or "you" (a sentence); not "my", "our", "your", "we" or "i", which name
+ *   products ("my Value Checking", "Save Your Way", "i.e.").
+ * - `plus`: a leading "+" with no fee noun after it; "+Returned Item Fee" is a list bullet.
+ * Not kept: LEADING_HEADER, TRAILING_HEADER_CELL, CONDITION_TAIL, SENTENCE_VERB, FEE_OF_SENTENCE.
+ */
+export type LiveFragmentPattern = "plus" | "trailing_range" | "sentence_end" | "pronoun";
+const LIVE_TRAILING_RANGE = trailingRange(String.raw`up\s+to|per`);
+const LIVE_SENTENCE_END = endsIn(SENTENCE_END_WORDS.filter((word) => !["a", "an", "the", "above", "each"].includes(word)));
+/** Case-sensitive: "N/A" ends in a capital A and never reads as a dangling article. */
+const LIVE_SENTENCE_END_ARTICLE = endsIn(["a", "an", "the"], "");
+const LIVE_PRONOUN = wordsIn(PRONOUN_WORDS.filter((word) => word === "will" || word === "you"));
+/** The regexes `liveFragmentName` uses, by pattern, for the record and the hand-off SQL. */
+export const LIVE_FRAGMENT_REGEXES = {
+  plus: /^\+/,
+  plus_fee_noun: FEE_NOUN,
+  trailing_range: LIVE_TRAILING_RANGE,
+  sentence_end: LIVE_SENTENCE_END,
+  sentence_end_article: LIVE_SENTENCE_END_ARTICLE,
+  pronoun: LIVE_PRONOUN,
+} as const;
+
+/** The live fragment shape a live fee's name carries, or null (the name may stay live). */
+export function liveFragmentName(name: string | null | undefined): LiveFragmentPattern | null {
+  const current = (name ?? "").replace(/\s+/g, " ").trim();
+  if (!current) return null;
+  if (/^\+/.test(current) && !FEE_NOUN.test(current.replace(/^\++\s*/, ""))) return "plus";
+  if (LIVE_TRAILING_RANGE.test(current)) return "trailing_range";
+  if (LIVE_SENTENCE_END.test(current) || LIVE_SENTENCE_END_ARTICLE.test(current)) return "sentence_end";
+  if (LIVE_PRONOUN.test(current)) return "pronoun";
+  return null;
 }
 
 /** v7: a word that joins the name to the sentence before it ("Otherwise, a monthly service fee"); Knox v57's tidy drops it. */

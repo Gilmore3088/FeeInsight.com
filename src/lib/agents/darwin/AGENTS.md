@@ -109,6 +109,33 @@ Darwin owns verification and classification.
   row that passes now has its pending second-look flag cleared (`takedown_cleared`). Each row
   records a `verify.recheck` attempt (fingerprint `verified:<fee_verified_id>`), so a row is read
   once per recheck version and the pass never starves the batch. Never a hand UPDATE.
+- Live name re-check (`live-fragment-check.ts`, #1443, #1436; decision 2026-10-15, "Darwin
+  re-checks every live fee against today's rules"). `verify.recheck` reads verified rows of the
+  current `verify.rules` version, so fees that went live earlier are never read again; this pass
+  reads the live table itself. Every verify/classify step reads the next `LIVE_FRAGMENT_BATCH`
+  (2,000) live fees (`published_fee_records`, not rolled back or quarantined, dollar and rate
+  rows) after a cursor kept on the run ledger: the `darwin.live_fragment_check` event each step
+  writes, whose `next_after_id` is 0 once a pass reaches the end of the table, so the next step
+  starts the next pass. An institution-scoped run reads that bank's live fees and leaves the
+  cursor alone; a dry-run run writes nothing. The rule is `liveFragmentName` (Knox's
+  `name-retidy.ts`, beside `isCutoffName`), keyed on the live catalog name `fp.fee_name`, not the
+  verified name (21 of 29 rows where the two differ were fragments already repaired in the
+  catalog). It is the narrow live twin of publish's `cutoff_name` hold, which matched 1,571 live
+  fees on Oct 15 with about half real fees in a labelled sample of 155:
+  `sentence_end` (a joining word at the end; "a", "an", "the" only in lower case so "N/A" never
+  fires; never "above" or "each"), `trailing_range` ("up to" or "per", never "each"), `pronoun`
+  ("will" or "you" only) and `plus` (a leading "+" with no fee noun after it). Step detail
+  `live_fragment_check`: rows read, `would_take_down`, `by_pattern`, up to 20 samples (id,
+  institution, name, amount, pattern), the cursor. `FRAGMENT_NAME_TAKEDOWN_LIVE` is false: the
+  pass only reports. When a PR turns it on (after James has seen the whole-table dry run by
+  pattern), a matching fee is archived in the same step (`rolled_back_reason` `fragment name:
+  <pattern>`, batch `darwin-live-fragment-<run>`, never deleted), its verified row is rejected
+  with `darwin_live_fragment:<pattern>` so publish does not bring it back, the public read cache
+  is cleared and a `darwin.live_fragment_name_taken_down` event lists the takedowns. A fragment is
+  taken down rather than renamed because many carry the wrong amount (a minimum, a waived price,
+  a $0 online copy). Whole-table dry run in one read: queue a verify run with
+  `fragment_full_count: true` (step detail `live_fragment_full_count`), or hand someone with
+  prod access `liveFragmentCountSql()` (the same regexes as read-only SQL).
 - The in-batch duplicate key (`batchKey` in `verify.ts`, `DARWIN_BATCH_KEY_VERSION` v4) is the
   institution, category, amount (or rate), frequency, stored document, the fee's own source line
   and its audience. Version 1 named the URL, so a fee on a bank's current copy of a page was held

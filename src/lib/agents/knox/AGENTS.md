@@ -784,6 +784,12 @@ Item", "/mo. | Dormant Fee", "An overdraft fee of") are re-tidied on live rows, 
 publish step. A rename must keep the fee tracing in its own schedule and passing the category guard;
 the old name goes to `pipeline_feedback` (`name_retidied`, weight 0, so it never counts as a lesson).
 
+`isCutoffName` (publish's `cutoff_name` hold) has a narrow live twin beside it, `liveFragmentName`
+(#1443), built from the same regex pieces: a dangling joining word (lower-case "a/an/the" only;
+not "above" or "each"), a dangling "up to" or "per", "will" or "you", or a leading "+" with no fee
+noun after it. Darwin's live name re-check applies it to live fees (`darwin/live-fragment-check.ts`,
+see Darwin's AGENTS.md). A change to either shape list is checked against both.
+
 ## Batch review (`batch-review.ts`)
 
 After every 500 Knox reads (raw rows, oldest first), once they are 24 hours old (Darwin,
