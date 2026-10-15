@@ -14,7 +14,8 @@ type SqlTag = typeof sql;
  * - `moved_as_expected`: moved at least `min_change` the named way;
  * - `wrong_way`: moved at least `min_change` the other way;
  * - `no_change`: moved less than `min_change` (default: any change counts);
- * - `unreadable`: the scoreboard does not hold the number on one of the two days.
+ * - `unreadable`: the scoreboard does not hold the number on one of the two days, or (for the
+ *   answer-key numbers) the two days were scored by different scorer versions (#1354).
  * Read-only on everything but `change_outcomes`. No model calls.
  */
 
@@ -44,6 +45,17 @@ const SNAPSHOT_COLUMNS = new Set([
   "accuracy_recall",
   "freshness_median_days",
 ]);
+
+/** Answer-key numbers: comparable only between snapshots scored by the same scorer version (#1354). */
+export const SCORER_METRICS = new Set(["accuracy_precision", "accuracy_recall"]);
+
+/** Pure: true when two snapshots' answer-key numbers come from the same scorer version. */
+export function sameScorer(before: Record<string, unknown> | null | undefined, after: Record<string, unknown> | null | undefined): boolean {
+  const version = (row: Record<string, unknown> | null | undefined) =>
+    row?.accuracy_scorer_version == null ? null : Number(row.accuracy_scorer_version);
+  const a = version(before);
+  return a != null && a === version(after);
+}
 
 /** Pure: the metric's value in one snapshot row, or null when it is not there. */
 export function metricValue(row: Record<string, unknown> | null | undefined, metric: string): number | null {
@@ -87,7 +99,7 @@ export interface ChangeOutcomesResult {
   ready: boolean;
   entries: number;
   started: number;
-  judged: Array<{ pr: number; metric: string; verdict: ChangeVerdict; before: number | null; after: number | null }>;
+  judged: Array<{ pr: number; metric: string; verdict: ChangeVerdict; before: number | null; after: number | null; scorerChanged?: boolean }>;
   pending: number;
 }
 
@@ -96,6 +108,7 @@ interface OutcomeRow {
   metric: string;
   first_seen_date: string | Date;
   before_value: number | string | null;
+  before_snapshot_date?: string | Date | null;
   verdict: string;
 }
 
@@ -115,10 +128,16 @@ export async function runChangeOutcomes(options: {
   if (!table?.ready) return result;
   result.ready = true;
 
+  // Each snapshot carries the scorer version behind its answer-key numbers (#1354).
   const [latest] = await db<Array<Record<string, unknown>>>`
-    SELECT * FROM pipeline_scoreboard_snapshots WHERE snapshot_date <= ${today}::date ORDER BY snapshot_date DESC LIMIT 1
+    SELECT s.*, COALESCE((s.detail->>'accuracy_scorer_version')::int, r.scorer_version) AS accuracy_scorer_version
+      FROM pipeline_scoreboard_snapshots s
+      LEFT JOIN answer_key_score_runs r ON r.id = s.accuracy_score_run_id
+     WHERE s.snapshot_date <= ${today}::date ORDER BY s.snapshot_date DESC LIMIT 1
   `;
-  const existing = await db<OutcomeRow[]>`SELECT pr_number, metric, first_seen_date, before_value, verdict FROM change_outcomes`;
+  const existing = await db<OutcomeRow[]>`
+    SELECT pr_number, metric, first_seen_date, before_value, before_snapshot_date, verdict FROM change_outcomes
+  `;
   const byKey = new Map(existing.map((row) => [`${Number(row.pr_number)}|${row.metric}`, row]));
 
   for (const entry of entries) {
@@ -145,12 +164,30 @@ export async function runChangeOutcomes(options: {
       continue;
     }
     const [after] = await db<Array<Record<string, unknown>>>`
-      SELECT * FROM pipeline_scoreboard_snapshots WHERE snapshot_date >= ${due}::date ORDER BY snapshot_date ASC LIMIT 1
+      SELECT s.*, COALESCE((s.detail->>'accuracy_scorer_version')::int, r.scorer_version) AS accuracy_scorer_version
+        FROM pipeline_scoreboard_snapshots s
+        LEFT JOIN answer_key_score_runs r ON r.id = s.accuracy_score_run_id
+       WHERE s.snapshot_date >= ${due}::date ORDER BY s.snapshot_date ASC LIMIT 1
     `;
     const before = row.before_value == null ? null : Number(row.before_value);
-    const afterValue = metricValue(after, entry.metric);
+    let afterValue = metricValue(after, entry.metric);
+    // A new scorer version is not a change in the pipeline: never compare across one (#1354).
+    let scorerChanged = false;
+    if (SCORER_METRICS.has(entry.metric)) {
+      const beforeDay = isoDay(row.before_snapshot_date);
+      const [beforeRow] = beforeDay
+        ? await db<Array<Record<string, unknown>>>`
+            SELECT COALESCE((s.detail->>'accuracy_scorer_version')::int, r.scorer_version) AS accuracy_scorer_version
+              FROM pipeline_scoreboard_snapshots s
+              LEFT JOIN answer_key_score_runs r ON r.id = s.accuracy_score_run_id
+             WHERE s.snapshot_date = ${beforeDay}::date
+          `
+        : [];
+      scorerChanged = !sameScorer(beforeRow, after);
+      if (scorerChanged) afterValue = null;
+    }
     const verdict = changeVerdict(entry, before, afterValue);
-    result.judged.push({ pr: entry.pr, metric: entry.metric, verdict, before, after: afterValue });
+    result.judged.push({ pr: entry.pr, metric: entry.metric, verdict, before, after: afterValue, ...(scorerChanged ? { scorerChanged } : {}) });
     if (options.dryRun) continue;
     await inSavepoint(db, (scope) => scope`
       UPDATE change_outcomes
@@ -173,5 +210,6 @@ export function summarizeChangeOutcomes(result: ChangeOutcomesResult): string {
   const flagged = result.judged
     .filter((row) => row.verdict === "no_change" || row.verdict === "wrong_way")
     .map((row) => `#${row.pr} ${row.verdict === "wrong_way" ? "moved the wrong way" : "did not move"} ${row.metric}`);
-  return `Checked ${judged} change${judged === 1 ? "" : "s"} a week after merge: ${count("moved_as_expected")} moved as expected, ${count("no_change")} no change, ${count("wrong_way")} the wrong way, ${count("unreadable")} unreadable. Started ${result.started}; ${result.pending} still within their week.${flagged.length > 0 ? ` To explain or revert: ${flagged.join("; ")}.` : ""}`;
+  const rescored = result.judged.filter((row) => row.scorerChanged).length;
+  return `Checked ${judged} change${judged === 1 ? "" : "s"} a week after merge: ${count("moved_as_expected")} moved as expected, ${count("no_change")} no change, ${count("wrong_way")} the wrong way, ${count("unreadable")} unreadable${rescored > 0 ? ` (${rescored} because the answer-key scorer changed in between)` : ""}. Started ${result.started}; ${result.pending} still within their week.${flagged.length > 0 ? ` To explain or revert: ${flagged.join("; ")}.` : ""}`;
 }
