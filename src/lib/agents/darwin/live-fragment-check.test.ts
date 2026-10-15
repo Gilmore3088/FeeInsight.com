@@ -12,7 +12,7 @@ import {
   liveFragmentDetail,
   liveFragmentVerdict,
   recheckLiveFragmentNames,
-  writableRenames,
+  liveNameKey,
 } from "./live-fragment-check";
 
 // Institution 5314, row 58414 (#1443): the waived price of "ePLUS Checking Monthly service charge" $7.95.
@@ -59,11 +59,11 @@ describe("liveFragmentName (live twin of isCutoffName)", () => {
 
 type DbMock = ReturnType<typeof vi.fn>;
 
-function dbFor(rows: Array<Record<string, unknown>>, cursor: string | null = null, existing: Array<Record<string, unknown>> = []): DbMock {
+function dbFor(rows: Array<Record<string, unknown>>, cursor: string | null = null, existing: Array<Record<string, unknown>> | null = []): DbMock {
   return vi.fn((strings: TemplateStringsArray) => {
     const text = strings.join("?");
     if (text.includes("FROM agent_run_events")) return Promise.resolve(cursor == null ? [] : [{ next_after_id: cursor }]);
-    if (text.includes("lower(btrim(fp.fee_name))")) return Promise.resolve(existing);
+    if (text.includes("lower(btrim(regexp_replace(fp.fee_name")) return existing == null ? Promise.reject(new Error("read failed")) : Promise.resolve(existing);
     if (text.includes("FROM published_fee_records")) return Promise.resolve(rows);
     if (text.includes("UPDATE published_fee_records")) return Promise.resolve(rows.filter((row) => liveFragmentName(row.fee_name as string)).map((row) => ({ fee_published_id: row.fee_published_id })));
     return Promise.resolve([]);
@@ -112,7 +112,7 @@ describe("Darwin live fragment re-check", () => {
 
   it("splits the ledger detail by action with samples", () => {
     const found = findLiveFragments(ROWS);
-    const detail = liveFragmentDetail({ ...found, live: false, dryRun: true, afterId: 0, nextAfterId: 0, takenDown: [], renamed: [], renameSkipped: 0 });
+    const detail = liveFragmentDetail({ ...found, live: false, dryRun: true, afterId: 0, nextAfterId: 0, takenDown: [], renamed: [], duplicateCheckFailed: false });
     expect(detail).toMatchObject({ version: LIVE_FRAGMENT_STRATEGY.version, would_take_down: 2, would_rename: 1, exempt: 2, taken_down: 0, renamed: 0 });
     expect(detail.samples_by_action.rename[0]).toMatchObject({ fee_published_id: 60003, action: "rename", rename_to: "Overdraft Fee" });
     expect(detail.samples_by_action.exempt[1]).toMatchObject({ fee_published_id: 60004, action: "exempt", exempt_reason: "parenthetical" });
@@ -167,11 +167,42 @@ describe("Darwin live fragment re-check", () => {
     expect(calls).toContain("darwin.live_fragment_name_renamed");
   });
 
-  it("does not rename onto a name another live fee of the bank has at that price and category", async () => {
-    const db = dbFor(ROWS, null, [{ institution_id: "77", canonical_fee_key: "overdraft", amount: "35.00", fee_name: "Overdraft Fee" }]);
+  it("takes down, not renames, a fee whose new name another live fee of the bank has at that price and category", async () => {
+    const db = dbFor(ROWS, null, [{ institution_id: "77", canonical_fee_key: "overdraft", amount: "35.00", fee_name: "Overdraft  Fee " }]);
     const result = await recheckLiveFragmentNames(asDb(db), { runId: 7, dryRun: false, live: true });
     expect(result.renamed).toEqual([]);
-    expect(result.renameSkipped).toBe(1);
+    expect(result.takenDown).toEqual([58414, 60003, 60005]);
+    expect(result).toMatchObject({ wouldRename: 0, wouldTakeDown: 3, takedownByReason: { fragment: 2, rename_duplicate: 1 } });
+    expect(JSON.stringify(db.mock.calls)).toContain("fragment name: pronoun (rename_duplicate)");
+    const read = db.mock.calls.map(([strings]) => (strings as TemplateStringsArray).join("?")).find((text) => text.includes("lower(btrim(regexp_replace"));
+    expect(read).toContain("fp.quarantined_at IS NULL");
+  });
+
+  it("counts the duplicate in shadow and in a dry run too", async () => {
+    const existing = [{ institution_id: "77", canonical_fee_key: "overdraft", amount: "35", fee_name: "Overdraft Fee" }];
+    for (const options of [{ dryRun: false }, { dryRun: true }]) {
+      const result = await recheckLiveFragmentNames(asDb(dbFor(ROWS, null, existing)), { runId: 7, ...options });
+      expect(result).toMatchObject({ wouldRename: 0, takedownByReason: { rename_duplicate: 1 }, takenDown: [], renamed: [] });
+      expect(liveFragmentDetail(result).samples_rename_duplicate[0]).toMatchObject({ fee_published_id: 60003, rename_to: "Overdraft Fee", takedown_reason: "rename_duplicate" });
+    }
+  });
+
+  it("renames nothing when the duplicate-name read fails", async () => {
+    const result = await recheckLiveFragmentNames(asDb(dbFor(ROWS, null, null)), { runId: 7, dryRun: false, live: true });
+    expect(result.duplicateCheckFailed).toBe(true);
+    expect(result.renamed).toEqual([]);
+    expect(result.takenDown).toEqual([58414, 60005]);
+  });
+
+  it("keeps the renames on the ledger when the rename event fails", async () => {
+    const db = dbFor(ROWS);
+    const base = db.getMockImplementation() as (strings: TemplateStringsArray, ...values: unknown[]) => Promise<unknown>;
+    db.mockImplementation((strings: TemplateStringsArray, ...values: unknown[]) =>
+      strings.join("?").includes("INSERT INTO agent_run_events") && values.includes("darwin.live_fragment_name_renamed")
+        ? Promise.reject(new Error("event failed"))
+        : base(strings, ...values));
+    const result = await recheckLiveFragmentNames(asDb(db), { runId: 7, dryRun: false, live: true });
+    expect(result.renamed).toEqual([60003]);
   });
 
   it("an institution-scoped run reads that bank and leaves the cursor alone", async () => {
@@ -208,13 +239,18 @@ describe("Darwin live fragment re-check", () => {
 
   it("splits the read-only SQL by action, mirroring the new rules", () => {
     const text = liveFragmentCountSql();
-    expect(text).toContain("THEN 'exempt'");
+    expect(text).toContain("ELSE 'exempt'");
+    expect(text).toContain("THEN 'parenthetical'");
     expect(text).toContain("THEN 'rename'");
     expect(text).toContain("'\\([^()]*\\)'");
-    expect(text).toContain("substring(name from '^([A-Z0-9]");
+    expect(text).toContain("substring(name from '^((?!");
     expect(text).toContain("COALESCE(amount, -1) = 0");
     expect(text).toContain("\\y(?:waiv");
-    expect(text).toContain("GROUPING SETS ((action, pattern), (action), ())");
+    expect(text).toContain("GROUPING SETS ((action, reason, pattern), (action, reason), (action), ())");
+    expect(text).toContain("'rename_duplicate'");
+    expect(text).toContain("row_number() OVER (PARTITION BY v.first_reason = 'rename'");
+    expect(text).toContain("l.canonical_fee_key IS NOT DISTINCT FROM r.canonical_fee_key");
+    expect(text).toContain("quarantined_at IS NULL");
   });
 });
 
@@ -281,21 +317,58 @@ describe("live fragment switch-on rules (#1443)", () => {
     ["Fees will be charged when you", null],
     ["Wire Fee if you request", null],
     ["Account is charged a fee You will", null],
+    // The reviewer's good heads.
+    ["ATM Fee You may be charged by the ATM owner", "ATM Fee"],
+    ["Overdraft Fee per item. You will be charged", "Overdraft Fee per item"],
+    ["Account Closing Fee If you close within 90 days", "Account Closing Fee"],
+    ["NSF Fee This fee will apply per item", "NSF Fee"],
+    ["Wire Transfer Fee You will be charged for each outgoing wire", "Wire Transfer Fee"],
+    ["Courtesy Pay Fee You will be charged up to 5 items per day", "Courtesy Pay Fee"],
+    ["Stop Payment Fee. Please note you will be charged", "Stop Payment Fee"],
+    ["Overdraft Protection Transfer Fee - We will transfer", "Overdraft Protection Transfer Fee"],
+    // The reviewer's bad heads: a person in the head, one word, a lead article/quantifier/ordinal, fee nouns alone.
+    ["Checks Your order will be", null],
+    ["Wire You will pay", null],
+    ["Fee You will be charged", null],
+    ["Deposits You will", null],
+    ["A Fee You will be charged", null],
+    ["An Item You will pay", null],
+    ["Any Fee You will pay", null],
+    ["Each Item You will pay", null],
+    ["Every Item You will pay", null],
+    ["2nd Item You will pay", null],
+    ["Second Item You will pay", null],
+    ["Fee Per Item You will", null],
+    ["Our Wire Fee You will pay", null],
+    ["Wire Fee for our members You will", null],
+    ["Overdraft Fee Waived You will", null],
+    ["Cargo por Sobregiro You will be charged", null],
   ])("gluedSentenceHead(%j) is %j", (name, head) => {
     expect(gluedSentenceHead(name)).toBe(head);
   });
 
-  it("drops a rename onto a live name, and a second rename onto the same name", () => {
-    const { matches } = findLiveFragments([
-      { fee_published_id: 1, fee_verified_id: 1, institution_id: 9, fee_name: "Overdraft Fee You will be charged", amount: 35, canonical_fee_key: "overdraft" },
+  it("takes down a rename onto a live name, and the second of two renames onto the same name", () => {
+    const rows = [
       { fee_published_id: 2, fee_verified_id: 2, institution_id: 9, fee_name: "Overdraft Fee - you will be charged per item", amount: 35, canonical_fee_key: "overdraft" },
+      { fee_published_id: 1, fee_verified_id: 1, institution_id: 9, fee_name: "Overdraft Fee You will be charged", amount: 35, canonical_fee_key: "overdraft" },
       { fee_published_id: 3, fee_verified_id: 3, institution_id: 9, fee_name: "Stop Payment You will be charged", amount: 30, canonical_fee_key: "stop_payment" },
+      // Another bank, another price or another category is no collision.
+      { fee_published_id: 4, fee_verified_id: 4, institution_id: 10, fee_name: "Overdraft Fee You will be charged", amount: 35, canonical_fee_key: "overdraft" },
+      { fee_published_id: 5, fee_verified_id: 5, institution_id: 9, fee_name: "Overdraft Fee You will be charged", amount: 30, canonical_fee_key: "overdraft" },
+    ];
+    const none = findLiveFragments(rows).matches.map((fee) => [fee.feePublishedId, fee.action, fee.takedownReason ?? fee.renameTo]);
+    expect(none).toEqual([[1, "rename", "Overdraft Fee"], [2, "takedown", "rename_duplicate"], [3, "rename", "Stop Payment"], [4, "rename", "Overdraft Fee"], [5, "rename", "Overdraft Fee"]]);
+    const taken = findLiveFragments(rows, new Set([liveNameKey(9, "stop_payment", "30.00", "STOP  payment ")]));
+    expect(taken.matches.find((fee) => fee.feePublishedId === 3)).toMatchObject({ action: "takedown", takedownReason: "rename_duplicate" });
+    expect(taken.takedownByReason).toEqual({ fragment: 0, rename_duplicate: 2 });
+    expect(taken.renameDuplicateSamples.map((fee) => fee.feePublishedId)).toEqual([2, 3]);
+  });
+
+  it("collides with a live name in the same read", () => {
+    const found = findLiveFragments([
+      { fee_published_id: 1, fee_verified_id: 1, institution_id: 9, fee_name: "Account Closing Fee", amount: 25, canonical_fee_key: "early_closure" },
+      { fee_published_id: 2, fee_verified_id: 2, institution_id: 9, fee_name: "Account Closing Fee If you close within 90 days", amount: 25, canonical_fee_key: "early_closure" },
     ]);
-    const none = writableRenames(matches, new Set());
-    expect(none.renames.map((rename) => [rename.feePublishedId, rename.newName])).toEqual([[1, "Overdraft Fee"], [3, "Stop Payment"]]);
-    expect(none.skipped).toBe(1);
-    const taken = writableRenames(matches, new Set(["9|stop_payment|30.00|stop payment"]));
-    expect(taken.renames.map((rename) => rename.feePublishedId)).toEqual([1]);
-    expect(taken.skipped).toBe(2);
+    expect(found.matches).toEqual([expect.objectContaining({ feePublishedId: 2, action: "takedown", takedownReason: "rename_duplicate" })]);
   });
 });

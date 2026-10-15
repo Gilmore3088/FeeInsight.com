@@ -148,23 +148,33 @@ Darwin owns verification and classification.
   a sentence glued on and 8 real names). Each match takes one action (`liveFragmentVerdict`):
   - `exempt` / `parenthetical`: a pronoun only inside a parenthetical ("Stop Payment (per item,
     if you request it)") is no fragment; `liveFragmentName` returns null, `liveFragmentShape`
-    keeps the raw shape for the count.
-  - `rename`: a `pronoun` or `sentence_end` name that opens with a real fee name ending on a fee
-    word, followed by a glued sentence ("Overdraft Fee You will be charged when ..." becomes
-    "Overdraft Fee", Knox's `gluedSentenceHead`), when the amount is above $0, the name has no
-    waiver or discount wording (`LIVE_FRAGMENT_WAIVE_WORDING`) and the category guard still
-    accepts the cleaned name. With the switch on it goes through Knox's live rename path
-    (`writeLiveRenames`: a `pipeline_feedback` `name_retidied` row with the old and new name,
-    `check_name` `darwin.live_fragment_check`, then the update guarded on the old name), skipped
-    when another live fee of the bank has that name at the same price and category; a
-    `darwin.live_fragment_name_renamed` event lists them. Knox's own restore pass reads only its
-    own renames, so it never puts the sentence back.
+    keeps the raw shape for the count. Public pages follow: `isCutFeeName` (`fee-display-name.ts`)
+    uses `liveFragmentName`, so such a fee shows its stored name, not the category's.
+  - `rename`: a `pronoun` or `sentence_end` name that opens with a real fee name followed by a
+    glued sentence ("Overdraft Fee You will be charged when ..." becomes "Overdraft Fee", Knox's
+    `gluedSentenceHead`), when the amount is above $0, the name has no waiver or discount wording
+    (`LIVE_FRAGMENT_WAIVE_WORDING`) and the category guard still accepts the cleaned name. The
+    head is 2 to 8 words, capital or digit first, ends on a fee word, never opens on an article,
+    quantifier or ordinal ("A Fee", "Each Item", "2nd Item"), holds no "you", "your", "we" or
+    "our" ("Checks Your order") and is not fee nouns alone ("Fee Per Item"). With the switch on it
+    goes through Knox's live rename path (`writeLiveRenames`: a `pipeline_feedback`
+    `name_retidied` row with the old and new name, `check_name` `darwin.live_fragment_check`, then
+    the update guarded on the old name); a `darwin.live_fragment_name_renamed` event lists them.
+    Knox's own restore pass reads only its own renames, so it never puts the sentence back.
+  - `takedown` / `rename_duplicate`: a rename onto a name another live fee of the bank (not
+    rolled back or quarantined) already has at the same price and category, compared with inner
+    whitespace collapsed and case-free, or onto a name an earlier fee (by id) of the same read is
+    renamed to, comes down instead (`rolled_back_reason` `fragment name: <pattern>
+    (rename_duplicate)`): that fee is already live. Decided in `findLiveFragments`, so the shadow
+    report, the dry run, the whole-table count and the SQL count it the same way; if the read of
+    the bank's other live names fails, the step renames nothing (`duplicate_check_failed`).
   - `trailing_range` comes down only when the name has waiver or discount wording or the amount
     is $0; otherwise it is `exempt` / `trailing_range_priced` (reported only).
-  - Everything else is a `takedown`.
-  Step detail: `would_take_down`, `would_rename`, `exempt`, `exempt_by_reason`, `by_pattern`,
-  `by_action` (pattern counts per action) and `samples_by_action` (up to 20 of each, with
-  `rename_to` or `exempt_reason`).
+  - Everything else is a `takedown` / `fragment`.
+  Step detail: `would_take_down`, `would_rename`, `exempt`, `exempt_by_reason`,
+  `takedown_by_reason`, `by_pattern`, `by_action` (pattern counts per action),
+  `samples_by_action` (up to 20 of each, with `rename_to`, `exempt_reason` or `takedown_reason`)
+  and `samples_rename_duplicate`.
 - Released-fee category re-check (`release-repair.ts`, the repair half of #1367; decision
   2026-10-15, "Darwin re-checks every live fee against today's rules"). Until PR #1468 the release
   check passed "." as the category pattern, so every fee the release published before then went live

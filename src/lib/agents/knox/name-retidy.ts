@@ -198,18 +198,29 @@ const GLUED_SENTENCE_STARTS = [
   "You", "YOU", "you", "Your", "YOUR", "your", "We", "WE", "we", "This", "THIS", "These", "If", "IF", "When", "WHEN",
   "It", "There", "Our", "Any", "Each", "Will", "WILL", "will", "The", "THE", "Please", "Note",
 ];
+/** Words a head never holds, in any case: whose fee it is ("Checks Your order") is the sentence, not the name. */
+const GLUED_HEAD_PERSON = ["you", "your", "we", "our"].map(anyCase);
+/** A head never opens on an article, a quantifier or an ordinal ("A Fee", "Each Item", "2nd Item"). */
+const GLUED_HEAD_LEADS = ["a", "an", "any", "each", "every", "first", "second", "third", "fourth", "fifth"].map(anyCase).concat(String.raw`\d+(?:[Ss][Tt]|[Nn][Dd]|[Rr][Dd]|[Tt][Hh])`);
+/** One word of a head: no sentence or cell break in it, and never a sentence start or a person. */
+const GLUED_WORD = String.raw`(?!(?:${[...GLUED_SENTENCE_STARTS, ...GLUED_HEAD_PERSON].join("|")})\b)[^\s.:|;()]+`;
+const GLUED_HEAD_MAX_WORDS = 8;
 /**
- * A real fee name (capital or digit first, at most 60 more characters with no sentence or cell
- * break, ending on a fee word) followed by a sentence: "Overdraft Fee You will be charged when ...",
- * "Inactive fee: This account may be subject to an Inactive fee of". Case-sensitive so a lower-case
- * "if" or "the" (a condition, "Wire Fee if you request") never splits a name.
+ * A real fee name of 2 to 8 words (capital or digit first, ending on a fee word) followed by a
+ * sentence: "Overdraft Fee You will be charged when ...", "Inactive fee: This account may be
+ * subject to an Inactive fee of". No head word is a sentence start, so the name ends just before
+ * the first one and the split is the same whichever way a regex engine prefers to match (the
+ * count SQL runs it in Postgres). Case-sensitive so a lower-case "if" or "the" (a condition, "Wire
+ * Fee if you request") never splits a name.
  */
 const GLUED_SENTENCE = new RegExp(
-  String.raw`^([A-Z0-9][^.:|;()]{0,60}?\b(?:${GLUED_HEAD_ENDINGS.join("|")}))(?:\s*[|:.;–—-]\s*|\s+)(?:${GLUED_SENTENCE_STARTS.join("|")})\b`,
+  String.raw`^((?!(?:${GLUED_HEAD_LEADS.join("|")})\b)(?=[A-Z0-9])${GLUED_WORD}(?:\s+${GLUED_WORD}){0,${GLUED_HEAD_MAX_WORDS - 2}}\s+(?:${GLUED_HEAD_ENDINGS.join("|")}))(?:\s*[|:.;–—-]\s*|\s+)(?:${GLUED_SENTENCE_STARTS.join("|")})\b`,
 );
-/** The head is no name when it is itself a sentence or a condition. */
-const GLUED_HEAD_BARS = [LIVE_PRONOUN, SENTENCE_VERB, CONDITION_CLAUSE] as const;
-const GLUED_HEAD_MAX_WORDS = 8;
+/** Fee nouns and joining words: a head made only of these ("Fee Per Item") names no fee. */
+const GLUED_GENERIC_WORDS = ["fees?", "charges?", "items?", "per", "payments?", "each", "a", "an", "the", "of", "for", "and", "or", "services?", "transactions?"];
+const GLUED_GENERIC_ONLY = new RegExp(String.raw`^(?:${GLUED_GENERIC_WORDS.join("|")})(?:\s+(?:${GLUED_GENERIC_WORDS.join("|")}))*$`, "i");
+/** The head is no name when it is itself a sentence, a condition, or fee nouns alone. */
+const GLUED_HEAD_BARS = [LIVE_PRONOUN, SENTENCE_VERB, CONDITION_CLAUSE, GLUED_GENERIC_ONLY] as const;
 
 /**
  * #1443: the real fee name a live fragment opens with, when the rest is a sentence glued on
@@ -221,7 +232,7 @@ export function gluedSentenceHead(name: string | null | undefined): string | nul
   const match = current.match(GLUED_SENTENCE);
   if (!match) return null;
   const head = match[1];
-  if (!head || head.split(/\s+/).length > GLUED_HEAD_MAX_WORDS || GLUED_HEAD_BARS.some((bar) => bar.test(head))) return null;
+  if (GLUED_HEAD_BARS.some((bar) => bar.test(head))) return null;
   return head;
 }
 
@@ -236,7 +247,6 @@ export const LIVE_FRAGMENT_REGEXES = {
   parenthetical: PARENTHETICAL,
   glued_sentence: GLUED_SENTENCE,
   glued_head_bars: GLUED_HEAD_BARS,
-  glued_head_max_words: GLUED_HEAD_MAX_WORDS,
 } as const;
 
 /** The live fragment shape a name carries, parentheticals included (the shape before #1443's exemption). */

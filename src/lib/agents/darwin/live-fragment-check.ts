@@ -72,6 +72,12 @@ export const LIVE_FRAGMENT_WAIVE_WORDING = /\b(?:waiv(?:e|ed|er|ers|es|ing)|disc
 
 export type LiveFragmentAction = "takedown" | "rename" | "exempt";
 export type LiveFragmentExemptReason = "parenthetical" | "trailing_range_priced";
+/**
+ * Why a fee comes down: its name is a `fragment`, or it would have been renamed to a name another
+ * live fee of the bank already has at the same price and category (`rename_duplicate`: that fee
+ * is already live, so this copy comes down).
+ */
+export type LiveFragmentTakedownReason = "fragment" | "rename_duplicate";
 
 export interface LiveFragmentRow {
   fee_published_id: number | string;
@@ -95,6 +101,8 @@ export interface LiveFragmentSample {
   renameTo?: string;
   /** `exempt`: why the fee stays live under its name. */
   exemptReason?: LiveFragmentExemptReason;
+  /** `takedown`: why the fee comes down. */
+  takedownReason?: LiveFragmentTakedownReason;
 }
 
 type PatternCounts = Record<LiveFragmentPattern, number>;
@@ -113,10 +121,13 @@ export interface LiveFragmentFindings {
   /** Matches that stay live under their name (`exempt`). */
   exempt: number;
   exemptByReason: Record<LiveFragmentExemptReason, number>;
+  takedownByReason: Record<LiveFragmentTakedownReason, number>;
   byPattern: PatternCounts;
   byAction: Record<LiveFragmentAction, PatternCounts>;
   /** Up to `LIVE_FRAGMENT_SAMPLES` of each action. */
   samplesByAction: Record<LiveFragmentAction, LiveFragmentSample[]>;
+  /** Up to `LIVE_FRAGMENT_SAMPLES` of the `rename_duplicate` takedowns. */
+  renameDuplicateSamples: LiveFragmentSample[];
   /** Up to `LIVE_FRAGMENT_SAMPLES` of every match, in id order. */
   samples: LiveFragmentSample[];
 }
@@ -132,8 +143,8 @@ export interface LiveFragmentResult extends LiveFragmentFindings {
   takenDown: number[];
   /** Live fees renamed in this step (switch on, not a dry run). */
   renamed: number[];
-  /** Rename candidates left as they are: another live fee of the bank already has the name at that price and category. */
-  renameSkipped: number;
+  /** The read of live names outside the batch failed: duplicates are checked within the batch only and nothing is renamed. */
+  duplicateCheckFailed: boolean;
 }
 
 function num(value: number | string | null | undefined): number | null {
@@ -170,21 +181,52 @@ export function liveFragmentVerdict(
   return { pattern, action: "takedown" };
 }
 
-/** Pure: the live rows whose catalog name is a fragment, counted by pattern and action, with every match kept. */
-export function findLiveFragments(rows: LiveFragmentRow[]): LiveFragmentFindings & { matches: LiveFragmentSample[] } {
+/**
+ * The key a rename collides on: bank, category, price and the name with its inner whitespace
+ * collapsed, case-free. The count SQL compares the same four.
+ */
+export function liveNameKey(institutionId: number | string, canonicalFeeKey: string | null | undefined, amount: number | string | null, name: string): string {
+  const price = num(amount);
+  return `${Number(institutionId)}|${canonicalFeeKey ?? ""}|${price == null ? "" : price.toFixed(2)}|${name.replace(/\s+/g, " ").trim().toLowerCase()}`;
+}
+
+/**
+ * Pure: the live rows whose catalog name is a fragment, counted by pattern and action, with every
+ * match kept. `liveNames` holds the keys (`liveNameKey`) of live fees outside `rows`; the rows'
+ * own names are added. A rename onto a key already live, or onto one an earlier row (by id) of
+ * the same read takes, comes down instead (`rename_duplicate`).
+ */
+export function findLiveFragments(rows: LiveFragmentRow[], liveNames: ReadonlySet<string> = new Set()): LiveFragmentFindings & { matches: LiveFragmentSample[] } {
   const byPattern = emptyPatterns();
   const byAction = emptyByAction();
   const samplesByAction = emptySamples();
   const exemptByReason: Record<LiveFragmentExemptReason, number> = { parenthetical: 0, trailing_range_priced: 0 };
+  const takedownByReason: Record<LiveFragmentTakedownReason, number> = { fragment: 0, rename_duplicate: 0 };
+  const renameDuplicateSamples: LiveFragmentSample[] = [];
+  const taken = new Set(liveNames);
+  for (const row of rows) if (row.fee_name) taken.add(liveNameKey(row.institution_id, row.canonical_fee_key, row.amount, row.fee_name));
   const matches: LiveFragmentSample[] = [];
-  for (const row of rows) {
+  const ordered = [...rows].sort((a, b) => Number(a.fee_published_id) - Number(b.fee_published_id));
+  for (const row of ordered) {
     const amount = num(row.amount);
     const canonicalFeeKey = row.canonical_fee_key ?? null;
     const verdict = liveFragmentVerdict(row.fee_name, amount, canonicalFeeKey);
     if (!verdict) continue;
+    let { action } = verdict;
+    let takedownReason: LiveFragmentTakedownReason | undefined = action === "takedown" ? "fragment" : undefined;
+    if (action === "rename" && verdict.renameTo) {
+      const key = liveNameKey(row.institution_id, canonicalFeeKey, amount, verdict.renameTo);
+      if (taken.has(key)) {
+        action = "takedown";
+        takedownReason = "rename_duplicate";
+      } else {
+        taken.add(key);
+      }
+    }
     byPattern[verdict.pattern] += 1;
-    byAction[verdict.action][verdict.pattern] += 1;
+    byAction[action][verdict.pattern] += 1;
     if (verdict.exemptReason) exemptByReason[verdict.exemptReason] += 1;
+    if (takedownReason) takedownByReason[takedownReason] += 1;
     const sample: LiveFragmentSample = {
       feePublishedId: Number(row.fee_published_id),
       feeVerifiedId: num(row.fee_verified_id),
@@ -193,12 +235,14 @@ export function findLiveFragments(rows: LiveFragmentRow[]): LiveFragmentFindings
       amount,
       canonicalFeeKey,
       pattern: verdict.pattern,
-      action: verdict.action,
+      action,
       ...(verdict.renameTo ? { renameTo: verdict.renameTo } : {}),
       ...(verdict.exemptReason ? { exemptReason: verdict.exemptReason } : {}),
+      ...(takedownReason ? { takedownReason } : {}),
     };
     matches.push(sample);
-    if (samplesByAction[verdict.action].length < LIVE_FRAGMENT_SAMPLES) samplesByAction[verdict.action].push(sample);
+    if (samplesByAction[action].length < LIVE_FRAGMENT_SAMPLES) samplesByAction[action].push(sample);
+    if (takedownReason === "rename_duplicate" && renameDuplicateSamples.length < LIVE_FRAGMENT_SAMPLES) renameDuplicateSamples.push(sample);
   }
   const count = (action: LiveFragmentAction) => matches.filter((fee) => fee.action === action).length;
   return {
@@ -208,9 +252,11 @@ export function findLiveFragments(rows: LiveFragmentRow[]): LiveFragmentFindings
     wouldRename: count("rename"),
     exempt: count("exempt"),
     exemptByReason,
+    takedownByReason,
     byPattern,
     byAction,
     samplesByAction,
+    renameDuplicateSamples,
     samples: matches.slice(0, LIVE_FRAGMENT_SAMPLES),
     matches,
   };
@@ -218,13 +264,38 @@ export function findLiveFragments(rows: LiveFragmentRow[]): LiveFragmentFindings
 
 /** The findings without every match (the ledger keeps samples only). */
 function withoutMatches(found: LiveFragmentFindings & { matches: LiveFragmentSample[] }): LiveFragmentFindings {
-  const { checked, matched, wouldTakeDown, wouldRename, exempt, exemptByReason, byPattern, byAction, samplesByAction, samples } = found;
-  return { checked, matched, wouldTakeDown, wouldRename, exempt, exemptByReason, byPattern, byAction, samplesByAction, samples };
+  const { matches: _matches, ...findings } = found;
+  void _matches;
+  return findings;
+}
+
+/**
+ * The live names outside a read that the read's rename candidates could collide with: every live
+ * fee (not rolled back or quarantined) of the candidates' banks whose collapsed, case-free name is
+ * one of the new names. Null when the read fails.
+ */
+async function liveNamesFor(db: SqlTag, rows: LiveFragmentRow[]): Promise<Set<string> | null> {
+  const candidates = findLiveFragments(rows).matches.filter((fee) => fee.action === "rename" || fee.takedownReason === "rename_duplicate");
+  if (candidates.length === 0) return new Set();
+  try {
+    const existing = await inSavepoint(db, (scope) => scope<{ institution_id: number | string; canonical_fee_key: string | null; amount: number | string | null; fee_name: string }[]>`
+      SELECT fp.institution_id, fp.canonical_fee_key, fp.amount, fp.fee_name
+        FROM published_fee_records fp
+       WHERE fp.rolled_back_at IS NULL
+         AND fp.quarantined_at IS NULL
+         AND fp.institution_id = ANY(${[...new Set(candidates.map((fee) => fee.institutionId))]}::bigint[])
+         AND lower(btrim(regexp_replace(fp.fee_name, '\s+', ' ', 'g'))) = ANY(${[...new Set(candidates.map((fee) => (fee.renameTo ?? "").toLowerCase()))]}::text[])
+    `);
+    return new Set(existing.map((row) => liveNameKey(row.institution_id, row.canonical_fee_key, row.amount, row.fee_name)));
+  } catch (error) {
+    console.warn("[darwin] live fragment duplicate-name read failed", error instanceof Error ? error.message : error);
+    return null;
+  }
 }
 
 /** The reason a live fee comes down with, in `rolled_back_reason`. */
-export function liveFragmentReason(pattern: LiveFragmentPattern): string {
-  return `${LIVE_FRAGMENT_REASON_PREFIX}${pattern}`;
+export function liveFragmentReason(pattern: LiveFragmentPattern, reason: LiveFragmentTakedownReason = "fragment"): string {
+  return `${LIVE_FRAGMENT_REASON_PREFIX}${pattern}${reason === "rename_duplicate" ? " (rename_duplicate)" : ""}`;
 }
 
 async function readCursor(db: SqlTag): Promise<number> {
@@ -237,41 +308,6 @@ async function readCursor(db: SqlTag): Promise<number> {
      LIMIT 1
   `);
   return num(row?.next_after_id ?? null) ?? 0;
-}
-
-/** Live fees the rename would give a name another live fee of the bank already has at the same price and category. */
-function renameKey(institutionId: number, canonicalFeeKey: string | null, amount: number | null, name: string): string {
-  return `${institutionId}|${canonicalFeeKey ?? ""}|${amount == null ? "" : amount.toFixed(2)}|${name.trim().toLowerCase()}`;
-}
-
-/**
- * Pure: the rename candidates that may be written, dropping any whose new name another live fee of
- * the bank (`taken`, keys from `renameKey`) or an earlier candidate already has at the same price
- * and category (the duplicate collapse would close one of them).
- */
-export function writableRenames(candidates: LiveFragmentSample[], taken: Set<string>): { renames: RetidyRename[]; skipped: number } {
-  const seen = new Set(taken);
-  const renames: RetidyRename[] = [];
-  let skipped = 0;
-  for (const fee of candidates) {
-    if (fee.action !== "rename" || !fee.renameTo) continue;
-    const key = renameKey(fee.institutionId, fee.canonicalFeeKey, fee.amount, fee.renameTo);
-    if (seen.has(key)) {
-      skipped += 1;
-      continue;
-    }
-    seen.add(key);
-    renames.push({
-      feePublishedId: fee.feePublishedId,
-      institutionId: fee.institutionId,
-      sourceDocumentId: null,
-      canonicalFeeKey: fee.canonicalFeeKey ?? "",
-      amount: fee.amount,
-      oldName: fee.feeName,
-      newName: fee.renameTo,
-    });
-  }
-  return { renames, skipped };
 }
 
 /**
@@ -293,7 +329,7 @@ export async function recheckLiveFragmentNames(
     nextAfterId: null,
     takenDown: [],
     renamed: [],
-    renameSkipped: 0,
+    duplicateCheckFailed: false,
   };
   let rows: LiveFragmentRow[];
   try {
@@ -318,7 +354,10 @@ export async function recheckLiveFragmentNames(
     return result;
   }
 
-  const all = findLiveFragments(rows);
+  // Rename collisions with live fees outside this batch (the rows' own names are checked in findLiveFragments).
+  const liveNames = await liveNamesFor(db, rows);
+  result.duplicateCheckFailed = liveNames == null;
+  const all = findLiveFragments(rows, liveNames ?? new Set());
   const { matches } = all;
   Object.assign(result, withoutMatches(all));
   const takedowns = matches.filter((fee) => fee.action === "takedown");
@@ -332,7 +371,7 @@ export async function recheckLiveFragmentNames(
              SET rolled_back_at = NOW(),
                  rolled_back_by_batch_id = ${`darwin-live-fragment-${options.runId}`},
                  rolled_back_reason = v.reason
-            FROM unnest(${takedowns.map((fee) => fee.feePublishedId)}::bigint[], ${takedowns.map((fee) => liveFragmentReason(fee.pattern))}::text[])
+            FROM unnest(${takedowns.map((fee) => fee.feePublishedId)}::bigint[], ${takedowns.map((fee) => liveFragmentReason(fee.pattern, fee.takedownReason))}::text[])
                  AS v(fee_published_id, reason)
            WHERE fp.fee_published_id = v.fee_published_id
              AND fp.rolled_back_at IS NULL
@@ -386,32 +425,32 @@ export async function recheckLiveFragmentNames(
     }
   }
 
-  if (live && !options.dryRun && renameCandidates.length > 0) {
+  if (live && !options.dryRun && renameCandidates.length > 0 && !result.duplicateCheckFailed) {
+    const renames: RetidyRename[] = renameCandidates.map((fee) => ({
+      feePublishedId: fee.feePublishedId,
+      institutionId: fee.institutionId,
+      sourceDocumentId: null,
+      canonicalFeeKey: fee.canonicalFeeKey ?? "",
+      amount: fee.amount,
+      oldName: fee.feeName,
+      newName: fee.renameTo as string,
+    }));
     try {
-      const renames = await inSavepoint(db, async (scope) => {
-        const institutions = [...new Set(renameCandidates.map((fee) => fee.institutionId))];
-        const names = [...new Set(renameCandidates.map((fee) => (fee.renameTo ?? "").toLowerCase()))];
-        const existing = await scope<{ institution_id: number | string; canonical_fee_key: string | null; amount: number | string | null; fee_name: string }[]>`
-          SELECT fp.institution_id, fp.canonical_fee_key, fp.amount, fp.fee_name
-            FROM published_fee_records fp
-           WHERE fp.rolled_back_at IS NULL
-             AND fp.institution_id = ANY(${institutions}::bigint[])
-             AND lower(btrim(fp.fee_name)) = ANY(${names}::text[])
-        `;
-        const taken = new Set(existing.map((row) => renameKey(Number(row.institution_id), row.canonical_fee_key, num(row.amount), row.fee_name)));
-        const plan = writableRenames(renameCandidates, taken);
-        result.renameSkipped = plan.skipped;
-        // Knox's live rename path: the old name logged in pipeline_feedback, then the guarded update.
-        await writeLiveRenames(scope, plan.renames, {
-          strategy: LIVE_FRAGMENT_STRATEGY.strategy,
-          version: LIVE_FRAGMENT_STRATEGY.version,
-          reportedBy: "darwin",
-          runId: options.runId,
-        });
-        return plan.renames;
-      });
+      // Knox's live rename path: the old name logged in pipeline_feedback, then the guarded update.
+      await inSavepoint(db, (scope) => writeLiveRenames(scope, renames, {
+        strategy: LIVE_FRAGMENT_STRATEGY.strategy,
+        version: LIVE_FRAGMENT_STRATEGY.version,
+        reportedBy: "darwin",
+        runId: options.runId,
+      }));
       result.renamed = renames.map((rename) => rename.feePublishedId);
-      if (renames.length > 0) {
+    } catch (error) {
+      console.error("[darwin] live fragment rename failed", error instanceof Error ? error.message : error);
+      result.renamed = [];
+    }
+    if (result.renamed.length > 0) {
+      // Its own try, as the takedown's: a failed event never hides renames already written.
+      try {
         await inSavepoint(db, (scope) => scope`
           INSERT INTO agent_run_events (agent_run_id, step_id, event_type, status, message, detail)
           VALUES (
@@ -420,7 +459,6 @@ export async function recheckLiveFragmentNames(
             ${JSON.stringify({
               version: LIVE_FRAGMENT_STRATEGY.version,
               renamed: renames.length,
-              skipped_same_name_live: result.renameSkipped,
               samples: renames.slice(0, LIVE_FRAGMENT_SAMPLES).map((rename) => ({
                 fee_published_id: rename.feePublishedId,
                 institution_id: rename.institutionId,
@@ -431,10 +469,9 @@ export async function recheckLiveFragmentNames(
             })}::jsonb
           )
         `);
+      } catch (error) {
+        console.error("[darwin] live fragment rename event failed", error instanceof Error ? error.message : error);
       }
-    } catch (error) {
-      console.error("[darwin] live fragment rename failed", error instanceof Error ? error.message : error);
-      result.renamed = [];
     }
   }
   if (result.takenDown.length > 0 || result.renamed.length > 0) invalidatePublicReadCache();
@@ -467,6 +504,7 @@ function sampleDetail(fee: LiveFragmentSample) {
     action: fee.action,
     ...(fee.renameTo ? { rename_to: fee.renameTo } : {}),
     ...(fee.exemptReason ? { exempt_reason: fee.exemptReason } : {}),
+    ...(fee.takedownReason ? { takedown_reason: fee.takedownReason } : {}),
   };
 }
 
@@ -479,6 +517,7 @@ export function liveFragmentFindingsDetail(found: LiveFragmentFindings) {
     would_rename: found.wouldRename,
     exempt: found.exempt,
     exempt_by_reason: found.exemptByReason,
+    takedown_by_reason: found.takedownByReason,
     by_pattern: found.byPattern,
     by_action: found.byAction,
     samples_by_action: {
@@ -486,6 +525,7 @@ export function liveFragmentFindingsDetail(found: LiveFragmentFindings) {
       rename: found.samplesByAction.rename.map(sampleDetail),
       exempt: found.samplesByAction.exempt.map(sampleDetail),
     },
+    samples_rename_duplicate: found.renameDuplicateSamples.map(sampleDetail),
   };
 }
 
@@ -502,7 +542,7 @@ export function liveFragmentDetail(result: LiveFragmentResult) {
     ...liveFragmentFindingsDetail(result),
     taken_down: result.takenDown.length,
     renamed: result.renamed.length,
-    rename_skipped_same_name_live: result.renameSkipped,
+    duplicate_check_failed: result.duplicateCheckFailed,
   };
 }
 
@@ -513,21 +553,23 @@ function postgresPattern(re: RegExp): string {
 
 /**
  * The same count as one read-only SQL statement, for someone with prod access (#1443), by action
- * (takedown / rename / exempt) and pattern. Built from `LIVE_FRAGMENT_REGEXES` and
- * `LIVE_FRAGMENT_WAIVE_WORDING`, so it stays in step with `liveFragmentVerdict`, with two known
- * differences: Postgres's word boundary reads non-ASCII letters as word characters, which JS does
- * not, so a name with accented letters next to a matched word can count differently; and the SQL
- * does not run the category guard on a rename (a cleaned name the guard would refuse comes down in
- * the step but counts as a rename here; the step's ledger is the exact count). The trailing
- * range's optional leading separators (`[\s\-–—|:,]*`) never change whether it matches, so the SQL
- * leaves them out.
+ * (takedown / rename / exempt), reason and pattern. Built from `LIVE_FRAGMENT_REGEXES` and
+ * `LIVE_FRAGMENT_WAIVE_WORDING`, so it stays in step with `liveFragmentVerdict` and
+ * `findLiveFragments`: a rename onto a name another live fee of the bank has at the same price and
+ * category, or onto one an earlier fee (by id) is renamed to, counts as a `rename_duplicate`
+ * takedown. Two known differences: Postgres's word boundary reads non-ASCII letters as word
+ * characters, which JS does not, so a name with accented letters next to a matched word can count
+ * differently; and the SQL does not run the category guard on a rename (a cleaned name the guard
+ * would refuse comes down in the step but counts as a rename here; the step's ledger is the exact
+ * count). The trailing range's optional leading separators (`[\s\-–—|:,]*`) never change whether
+ * it matches, so the SQL leaves them out.
  */
 export function liveFragmentCountSql(): string {
   const re = LIVE_FRAGMENT_REGEXES;
   const waive = postgresPattern(LIVE_FRAGMENT_WAIVE_WORDING);
-  const bars = re.glued_head_bars.map((bar) => `head !~* '${postgresPattern(bar)}'`).join(" AND ");
+  const bars = re.glued_head_bars.map((bar) => `head !~${bar.flags.includes("i") ? "*" : ""} '${postgresPattern(bar)}'`).join(" AND ");
   return `WITH live AS (
-  SELECT fee_published_id, institution_id, amount,
+  SELECT fee_published_id, institution_id, canonical_fee_key, amount,
          btrim(regexp_replace(COALESCE(fee_name, ''), '\\s+', ' ', 'g')) AS name
     FROM published_fee_records
    WHERE rolled_back_at IS NULL AND quarantined_at IS NULL
@@ -541,21 +583,44 @@ export function liveFragmentCountSql(): string {
   btrim(regexp_replace(regexp_replace(name, '${postgresPattern(re.parenthetical)}', ' ', 'g'), '\\s+', ' ', 'g')) AS outside,
   substring(name from '${postgresPattern(re.glued_sentence)}') AS head
   FROM live
-), acted AS (
-  SELECT pattern, CASE
-    WHEN pattern = 'pronoun' AND outside !~* '${postgresPattern(re.pronoun)}' THEN 'exempt'
-    WHEN pattern = 'trailing_range' THEN CASE WHEN name ~* '${waive}' OR COALESCE(amount, -1) = 0 THEN 'takedown' ELSE 'exempt' END
+), verdict AS (
+  SELECT fee_published_id, institution_id, canonical_fee_key, amount, pattern, head, CASE
+    WHEN pattern = 'pronoun' AND outside !~* '${postgresPattern(re.pronoun)}' THEN 'parenthetical'
+    WHEN pattern = 'trailing_range' THEN CASE WHEN name ~* '${waive}' OR COALESCE(amount, -1) = 0 THEN 'fragment' ELSE 'trailing_range_priced' END
     WHEN pattern IN ('pronoun', 'sentence_end') AND head IS NOT NULL AND COALESCE(amount, 0) > 0 AND name !~* '${waive}'
-         AND array_length(regexp_split_to_array(head, ' '), 1) <= ${re.glued_head_max_words} AND ${bars} THEN 'rename'
-    ELSE 'takedown'
-  END AS action
+         AND ${bars} THEN 'rename'
+    ELSE 'fragment'
+  END AS first_reason
   FROM tagged
  WHERE pattern IS NOT NULL
-)
-SELECT COALESCE(action, 'all actions') AS action, COALESCE(pattern, 'all patterns') AS pattern, count(*) AS fees
+), ranked AS (
+  SELECT v.*,
+         row_number() OVER (PARTITION BY v.first_reason = 'rename', v.institution_id, v.canonical_fee_key, v.amount, lower(v.head) ORDER BY v.fee_published_id) AS rename_rank
+    FROM verdict v
+), acted AS (
+  SELECT r.pattern, CASE
+    WHEN r.first_reason = 'rename' AND (r.rename_rank > 1 OR EXISTS (
+      SELECT 1 FROM live l
+       WHERE l.institution_id = r.institution_id
+         AND l.canonical_fee_key IS NOT DISTINCT FROM r.canonical_fee_key
+         AND l.amount = r.amount
+         AND lower(l.name) = lower(r.head)
+    )) THEN 'rename_duplicate'
+    ELSE r.first_reason
+  END AS reason
+  FROM ranked r
+), counted AS (
+  SELECT pattern, reason, CASE
+    WHEN reason IN ('fragment', 'rename_duplicate') THEN 'takedown'
+    WHEN reason = 'rename' THEN 'rename'
+    ELSE 'exempt'
+  END AS action
   FROM acted
- GROUP BY GROUPING SETS ((action, pattern), (action), ())
- ORDER BY action NULLS LAST, pattern NULLS LAST;`;
+)
+SELECT COALESCE(action, 'all actions') AS action, COALESCE(reason, 'all reasons') AS reason, COALESCE(pattern, 'all patterns') AS pattern, count(*) AS fees
+  FROM counted
+ GROUP BY GROUPING SETS ((action, reason, pattern), (action, reason), (action), ())
+ ORDER BY 1, 2, 3;`;
 }
 
 /**
