@@ -502,6 +502,13 @@ Rules 65, #1196 (Oct 14, no version change, so no document is re-read for it):
   that price's: the second fee's name and frequency are read from after it, and the second fee is
   not dropped as a repeat of the first price.
 
+v66 (rules 66, Oct 15, #1334): no rule changes. The bump makes every current text due for one
+more read, so the dropped-decimal reads above (#1196, #1305) reach pages Knox read before them:
+"Loan Skip A Pay Fee .... $29. 95/ea ch" (Xplore, doc 12872) is read at $29.95 and "ATM
+Transactions (per item) | $1 50* after 8/mo" (Members 1st, docs 13851 and 32358) at $1.50, where
+the stored reads said $29 and $1. The source check reads those prices the same way
+(`withDroppedDecimalPoints` now lives in `src/lib/custom-report/source-check.ts`). Free: rules only.
+
 ## Held lines and the re-checks after each extract
 
 A new rules version also reaches lines older versions held. Knox does not extract a text twice
@@ -786,6 +793,6 @@ fails a PR that changes one of these constants without updating its line here (#
 | `LINEUP_CORRECT_STRATEGY` | `knox.lineup_correct` | v2 | `knox/lineup-correct.ts` |
 | `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v19 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v2 | `knox/paid-extract.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v65 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v66 | `knox/specialists.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v6 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v1 | `knox/takedown-lessons.ts` |
