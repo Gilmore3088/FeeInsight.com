@@ -83,13 +83,13 @@ export function LandingPillars({ data }: { data: HomeData }) {
           </Pillar>
           <Pillar
             eyebrow="Every market"
-            title="One fee against every market around it"
+            title="One fee, by Fed district"
             line="The national range, and the range and median by Fed district."
             frameLabel="Hamilton · My fees"
             video={PILLAR_VIDEOS.market}
             flip
           >
-              <MarketExhibit data={data} phoneRows={6} />
+            <MarketExhibit data={data} phoneRows={6} />
           </Pillar>
           <Pillar
             eyebrow="One workspace"

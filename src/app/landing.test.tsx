@@ -218,6 +218,11 @@ describe("homepage (site v3 brief 06 §4.3)", () => {
     // The demo's Every market chapter is the bank's ladder; the live sample is the Fed district view.
     expect(pillars).not.toContain('aria-label="Local competitors: market');
     expect(pillars).toContain('aria-label="Overdraft by Fed district: range and median"');
+    // The sample's legend names only the views it draws; the demo's chapter keeps all five.
+    const legendOf = (html: string) => text(html.match(/aria-label="Market layers">(.*?)<\/ul>/)?.[1] ?? "");
+    expect(legendOf(pillars)).toMatch(/^ ?Fed district · Nation ?$/);
+    expect(legendOf(renderToStaticMarkup(<LandingSizzle data={data} />))).toContain("Your market");
+    expect(text(pillars)).toContain("One fee, by Fed district");
     expect(renderToStaticMarkup(<LandingSizzle data={data} />)).toContain('aria-label="Local competitors: market');
     expect(pillars.match(/the nation: market/g)?.length).toBe(1);
     const sizzle = renderToStaticMarkup(<LandingSizzle data={data} />);

@@ -61,6 +61,8 @@ function Thinking({ ms }: { ms: number }) {
 
 /** The market layers Hamilton compares a fee against (brief 03 §2), shown as a legend, not a control. */
 const LAYERS = ["Your market", "Your state", "Fed district", "Peer group", "Nation"] as const;
+/** The layers the still (non-wide) market view actually draws. */
+const DRAWN_LAYERS = ["Fed district", "Nation"] as const;
 
 function SourceLine({ children, className = "" }: { children: ReactNode; className?: string }) {
   return <p className={`text-[12px] leading-5 text-ink-muted sm:text-[13px] ${className}`}>{children}</p>;
@@ -200,13 +202,15 @@ export function MarketExhibit({
     ),
   );
   const domain: [number, number] = [0, hi];
+  // The still view draws only the nation and the Fed districts, so its legend names only those.
+  const layers: readonly string[] = wide ? LAYERS : DRAWN_LAYERS;
   const legend = (
     <ul className="flex flex-wrap gap-y-1 text-[12px]" aria-label="Market layers">
       {/* Each separator rides with the layer before it, so a wrapped line starts with a layer. */}
-      {LAYERS.map((layer, i) => (
+      {layers.map((layer, i) => (
         <li key={layer} className={`whitespace-nowrap ${layer === "Fed district" ? "font-semibold text-ink" : "text-ink-muted"}`}>
           {layer}
-          {i < LAYERS.length - 1 ? <span aria-hidden="true" className="px-1.5 font-normal text-ink-muted">·</span> : null}
+          {i < layers.length - 1 ? <span aria-hidden="true" className="px-1.5 font-normal text-ink-muted">·</span> : null}
         </li>
       ))}
     </ul>
