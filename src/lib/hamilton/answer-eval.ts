@@ -1,9 +1,9 @@
 /**
  * Hamilton's answer eval on live data: the quality bar's consultant questions asked of a
  * spread of real banks and credit unions, through the same engine path as the Ask bar,
- * scored by the quality bar (and the four-roles eval) plus two checks only live data can
- * make: a regulation answer names the institution's own regulator, and a state question
- * names its own state. It also replays the questions Pro readers really asked (kept in the Ask
+ * scored by the quality bar (and the four-roles eval) plus checks only live data can
+ * make: a regulation answer names the institution's own regulator and lists the Regulatory
+ * Wire's recent items for it, and a state question names its own state. It also replays the questions Pro readers really asked (kept in the Ask
  * ledger and saved analyses) through today's engine, so a question Hamilton could not answer
  * stays on the list until it can. Each answer is scored twice: on form (the quality bar) and on
  * correctness (#1079: its fee figures tie to live rows in published_fee_catalog under the
@@ -24,6 +24,7 @@ import { asksIncome, asksIncomeWhy } from "./workspace/why";
 import { liveCatalogReader, reconcileAnswer, type LiveReader } from "./answer-correctness";
 import { QUALITY_QUESTIONS, scoreResponse, type QualityQuestion } from "./workspace/quality-bar";
 import { regulatorSentence } from "./workspace/regulators";
+import { isWireFact } from "./workspace/wire";
 import { getFeeResearch } from "./workspace/research";
 import { withDepth } from "./workspace/story-extras";
 import type { AskResponse, FeeResearch } from "./workspace/types";
@@ -102,6 +103,24 @@ export function liveDataFailures(
   return failures;
 }
 
+/**
+ * A regulation answer lists the Regulatory Wire's recent rules, bills and enforcement for this
+ * bank when the Wire holds any (#1090), and every Wire line it shows carries a date and a link.
+ */
+export function wireFailures(item: QualityQuestion, response: AskResponse, research: FeeResearch | null): string[] {
+  if (!REGULATION.has(item.id) || !research) return [];
+  const failures: string[] = [];
+  const held = research.regulation.filter((f) => isWireFact(f) && f.source.table !== "reg_articles");
+  const shown = (response.answer?.storyline?.watch ?? []).filter(isWireFact);
+  if (held.length > 0 && !shown.some((f) => f.source.table !== "reg_articles")) {
+    failures.push(`lists none of the ${held.length} recent rules, bills or enforcement actions the Regulatory Wire holds for it`);
+  }
+  for (const f of shown) {
+    if (!f.source.url || !f.source.asOf) failures.push(`Regulatory Wire line without a date and link: "${f.text}"`);
+  }
+  return failures;
+}
+
 /** The one fee a response answers about, from the page it opens; null for a question asked back or saved. */
 function answeredFee(response: AskResponse): string | null {
   return "feeCategory" in response.pageChange ? response.pageChange.feeCategory : null;
@@ -160,7 +179,11 @@ export async function evaluateInstitution(institution: EvalInstitution, live: Li
     try {
       const answered = await answer(institution.id, item.question, research);
       const { response } = answered;
-      const failures = [...scoreResponse(item, response).failures, ...liveDataFailures(item, response, institution, regulators)];
+      const failures = [
+        ...scoreResponse(item, response).failures,
+        ...liveDataFailures(item, response, institution, regulators),
+        ...wireFailures(item, response, answered.research),
+      ];
       const correctness = await correctnessOf(institution.id, item.question, answered, live);
       out.push({ institutionId: institution.id, questionId: id, question: item.question, kind: response.kind, failures, correctness });
     } catch (error) {
