@@ -2,6 +2,9 @@ import { describe, expect, it } from "vitest";
 import { dependenceChart, studyObservations, withStudyPlace, type StudyPlacementRow } from "./studies";
 import type { Observation } from "./types";
 
+/** Every stored study, including the three held off Pro surfaces, to check their wording. */
+const ALL_STUDIES = new Set(["fee_dependence", "local_income", "market_concentration", "fee_income_share", "inferred_items_paid"]);
+
 function row(over: Partial<StudyPlacementRow>): StudyPlacementRow {
   return {
     studyKey: "fee_dependence",
@@ -59,7 +62,7 @@ describe("studyObservations", () => {
   it("names public study figures without rewriting source titles or stored study data", () => {
     const rows = [row({ title: "Your Community Bank study" }), priceRow, inferredRow];
     const original = JSON.stringify(rows);
-    const named = studyObservations(rows, "Space Coast Credit Union");
+    const named = studyObservations(rows, "Space Coast Credit Union", ALL_STUDIES);
     expect(named).toHaveLength(3);
     expect(named.map((o) => [o.headline, ...o.facts.map((f) => f.text)].join(" ")).join(" ")).not.toMatch(/\bYour\b|\byour\b|\byou are\b/);
     expect(named[0].headline).toContain("Space Coast Credit Union's revenue");
@@ -76,6 +79,7 @@ describe("studyObservations", () => {
     expect(o.facts.map((f) => f.text)).toEqual([
       "Banks $10B+: median 2.87% across 151 institutions; you are at the 67th percentile.",
       "In 2010 the share was 6.47%.",
+      "How it's calculated: service charges on deposit accounts divided by revenue (net interest income plus noninterest income), summed over the year's four FDIC call reports.",
     ]);
     expect(o.facts[0].source).toEqual({ label: "Hamilton study: Fee dependence since 2010", table: "hamilton_studies", asOf: "2025" });
   });
@@ -83,10 +87,13 @@ describe("studyObservations", () => {
   it("names fee income for a credit union", () => {
     const [o] = studyObservations([row({ peerGroup: "credit unions $1B-$10B", detail: { year: 2025, charter: "credit_union" }, value: 2.5, peerMedian: 2.5 })]);
     expect(o.headline).toBe("Fee income was 2.50% of your revenue in 2025, about the same as the 2.50% median for credit unions $1B-$10B.");
+    expect(o.facts.at(-1)?.text).toBe(
+      "How it's calculated: fee income divided by revenue (interest income plus noninterest income), from the year-end NCUA call report.",
+    );
   });
 
   it("compares the fee furthest from its income fifth's median, skipping thin groups", () => {
-    const [o] = studyObservations([priceRow]);
+    const [o] = studyObservations([priceRow], undefined, ALL_STUDIES);
     expect(o.feeCategory).toBe("monthly_maintenance");
     expect(o.headline).toBe(
       "Your monthly maintenance fee of $15 is higher than the $8.50 median of 177 institutions whose markets have similar household income.",
@@ -106,12 +113,25 @@ describe("studyObservations", () => {
   });
 
   it("drops placements with too few peers or missing figures", () => {
-    expect(studyObservations([row({ peerN: 3 }), row({ studyKey: "local_income", detail: { fees: {} } }), row({ studyKey: "inferred_items_paid", metric: "inferred_overdraft_nsf_items", detail: {} })])).toEqual([]);
+    expect(
+      studyObservations(
+        [row({ peerN: 3 }), row({ studyKey: "local_income", detail: { fees: {} } }), row({ studyKey: "inferred_items_paid", metric: "inferred_overdraft_nsf_items", detail: {} })],
+        undefined,
+        ALL_STUDIES,
+      ),
+    ).toEqual([]);
   });
 
   it("returns one observation per study", () => {
-    const out = studyObservations([row({}), priceRow, inferredRow]);
+    const out = studyObservations([row({}), priceRow, inferredRow], undefined, ALL_STUDIES);
     expect(out.map((o) => o.id).sort()).toEqual(["study:fee_dependence", "study:inferred_items_paid", "study:local_income"]);
+  });
+
+  it("shows Pro readers only fee dependence and inferred items paid; the price studies are held (#1082)", () => {
+    const held = ["local_income", "market_concentration", "fee_income_share"].map((studyKey) => ({ ...priceRow, studyKey }));
+    const out = studyObservations([row({}), ...held, inferredRow]);
+    expect(out.map((o) => o.id).sort()).toEqual(["study:fee_dependence", "study:inferred_items_paid"]);
+    expect(studyObservations(held)).toEqual([]);
   });
 });
 
@@ -152,7 +172,7 @@ describe("price studies cover different fees", () => {
     const out = studyObservations([
       { ...priceRow, detail: { fees } },
       { ...priceRow, studyKey: "market_concentration", title: "Market concentration and fee prices", value: 1006.72, percentile: 17, detail: { fees } },
-    ]);
+    ], undefined, ALL_STUDIES);
     expect(out.map((o) => o.feeCategory)).toEqual(["stop_payment", "atm_non_network"]);
     expect(out[1].headline).toBe("Your non-network ATM fee of $3.62 is higher than the $2 median of 229 institutions in similarly concentrated deposit markets.");
   });

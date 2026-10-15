@@ -153,10 +153,11 @@ export async function collapsePublishedDuplicates(
 }
 
 /**
- * Near-name collapse (#1302) is shadow only: each publish step reports the live rows it would
- * close and changes none. Turning it on takes those rows down, a production data change for James.
+ * Near-name collapse (#1302) is live: James approved it on 2026-10-15 after the shadow check
+ * (19 of 20 right, the miss fixed in #1328). Each publish step closes the repeats it finds.
+ * Set false to go back to shadow, where a step reports the rows it would close and changes none.
  */
-export const NEAR_NAME_COLLAPSE_LIVE = false;
+export const NEAR_NAME_COLLAPSE_LIVE = true;
 /** Documents read per publish step; the step's run id picks which, so steps cover them in turn. */
 export const NEAR_NAME_COLLAPSE_DOCUMENTS = 25;
 export const NEAR_NAME_COLLAPSE_REASON_SUFFIX = " (near name)";

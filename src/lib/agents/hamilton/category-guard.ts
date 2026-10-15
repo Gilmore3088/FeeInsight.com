@@ -15,6 +15,7 @@ import { categoryGuardFlag } from "@/lib/agents/hamilton/publish";
 import { secondLook } from "@/lib/agents/hamilton/second-look";
 import { TAXONOMY_FOLD_CHECK, TAXONOMY_FOLD_KIND } from "@/lib/agents/hamilton/taxonomy-fold";
 import { inSavepoint } from "@/lib/agents/savepoint";
+import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
 
 type SqlTag = typeof sql;
 
@@ -555,6 +556,35 @@ async function applyLiveRefiles(
   }
 }
 
+/** The newest completed stored text of each document. */
+async function ownStoredTexts(db: SqlTag, documentIds: Array<number | string | null>): Promise<Map<number, string>> {
+  const ids = [...new Set(documentIds.filter((id): id is number | string => id != null).map(Number))];
+  if (ids.length === 0) return new Map();
+  const rows = await inSavepoint(db, (scope) => scope<{ source_document_id: number | string; normalized_text: string }[]>`
+    SELECT DISTINCT ON (source_document_id) source_document_id, normalized_text
+      FROM agent_source_texts
+     WHERE source_document_id = ANY(${ids}::bigint[])
+       AND status = 'completed'
+       AND normalized_text IS NOT NULL
+     ORDER BY source_document_id, id DESC
+  `);
+  return new Map(rows.map((row) => [Number(row.source_document_id), row.normalized_text]));
+}
+
+/** Pure: does a takedown trace, at its price and under the type it comes back as, on its own stored text? */
+export function tracesOnOwnText(
+  row: Pick<TakenDownRow, "source_document_id" | "fee_name" | "amount">,
+  to: string,
+  texts: Map<number, string>,
+): boolean {
+  if (row.source_document_id == null) return false;
+  const text = texts.get(Number(row.source_document_id));
+  const amount = normalizedAmount(row.amount);
+  if (!text || amount == null) return false;
+  const result = checkFeeAgainstSource(text, row.fee_name, amount, ".", to);
+  return result.ok || result.reason === "tiered_fee";
+}
+
 /**
  * A guard fix (a new CATEGORY_GUARD_VERSION) can make an earlier takedown wrong. Fees the
  * guard took down that today's guard passes come back live, with their verified row, unless
@@ -585,13 +615,28 @@ async function restorePassingTakedowns(
     console.error("category guard restore read failed:", error);
     return none;
   }
+  const candidates = rows.flatMap((row) => {
+    const to = restoreTarget(row);
+    return to ? [{ row, to }] : [];
+  });
+  if (candidates.length === 0) return none;
+  // Guard v63 (#1312, James Oct 15): a takedown comes back only when the fee traces on its own
+  // stored text (the shared source check). A fee with no document, or a document with no stored
+  // text, stays down: of the five stops on official and cashier's checks v63 passes, only 13389
+  // (doc 13654) traces; 1120, 11233 and 11747 have no document and 7924's has no stored text.
+  let texts: Map<number, string>;
+  try {
+    texts = await ownStoredTexts(db, candidates.map((candidate) => candidate.row.source_document_id));
+  } catch (error) {
+    console.error("category guard restore text read failed:", error);
+    return none;
+  }
   const passing: Restore[] = [];
   // One re-filed fee per institution, type and price: two copies of one schedule's express card
   // line (350 and 27687 at institution 6042) are one fee.
   const refiledSeen = new Set<string>();
-  for (const row of rows) {
-    const to = restoreTarget(row);
-    if (!to) continue;
+  for (const { row, to } of candidates) {
+    if (!tracesOnOwnText(row, to, texts)) continue;
     if (to !== row.canonical_fee_key) {
       const key = `${row.institution_id}|${to}|${normalizedAmount(row.amount)}`;
       if (refiledSeen.has(key)) continue;
