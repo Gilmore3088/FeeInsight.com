@@ -47,7 +47,7 @@ export interface FamilyExpert {
   version: number;
   keys: ReadonlySet<string>;
   /** Phrasings this family uses that the pass 1 patterns do not cover. Checked first. */
-  patterns: Array<{ key: string; pattern: RegExp }>;
+  patterns: Array<{ key: string; pattern: RegExp; needsPeriod?: boolean }>;
 }
 
 // A family still reads the categories folded out of it into the top 50; `refileCategory`
@@ -75,12 +75,21 @@ export const FAMILY_EXPERTS: readonly FamilyExpert[] = [
   {
     family: "account",
     strategy: "extract.family.account",
-    version: 4,
+    // v5 (#1100): a low-balance charge named with no fee word ("Low balance $ 5.00 per month",
+    // "Savings Balance Less than $300.00 ... $6.00 per month", "Money Market minimum balance
+    // violation* $9.00 per month", "Savvy Spending - Minimum Balance $4.95/Month if ...") is the
+    // minimum balance fee when its own line charges it by the period.
+    version: 5,
     keys: familyKeys("Account Maintenance"),
     patterns: [
       {
         key: "minimum_balance",
         pattern: /\b(falls? below|low balance|below minimum|minimum balance)\b.{0,40}\b(fee|charge)\b|\b(fee|charge)\b.{0,40}\b(falls? below|below (the )?minimum)\b/i,
+      },
+      {
+        key: "minimum_balance",
+        pattern: /^\s*low[- ]balance\s*\*?\s*$|\bminimum balance violation\b|[-–]\s*minimum balance\s*$|^\s*(?:savings|share|checking|account|average daily|daily)?\s*balance\s+(?:less than|below|under|falls below)\s*$/i,
+        needsPeriod: true,
       },
     ],
   },
@@ -231,6 +240,10 @@ const CAP_AFTER = /^\s*\)?\s*(?:per|a|each)\s+(?:business\s+)?day\b|^\s*\)?\s*da
 /** A cap named after its figure: "$25 per item ($50 maximum per day)". */
 const CAP_NAMED_AFTER = /^\s*(?:max(?:imum)?|cap)\s+(?:per|a|each)\s+(?:business\s+)?day\b/i;
 const THRESHOLD_ROW = /^(?:per|each)\s+(?:item|check|transaction|occurrence|presentment)s?\s+(?:greater|more|over|above|exceeding|less|under|below)\b/i;
+/** v5 (#1100): "... a low balance fee of" / "... impose a maintenance fee of" right before the price. */
+const SENTENCE_ACCOUNT_FEE = /\b(?:an?|the)\s+((?:low[- ]balance|maintenance|monthly (?:service|maintenance)|minimum balance)\s+(?:fee|charge))\s+of\s*$/i;
+/** ... charged by the statement cycle or month right after the price. */
+const STATEMENT_CYCLE_AFTER = /^\s*(?:will be (?:imposed|charged|assessed)\s+)?(?:(?:once\s+)?(?:during|every|each|per)\s+(?:the\s+)?(?:monthly\s+)?(?:statement cycle|month|cycle)|per month|monthly)\b/i;
 const NEGATIVE_NAME = /\b(no (?:[a-z]+ ){0,2}(?:fee|charge)s?|not charged|without charge)\b/i;
 
 /** "Overdraft fee 1st item" → "Overdraft fee": the fee a later tier row belongs to. */
@@ -247,19 +260,19 @@ interface FamilyMatch {
   feeName: string;
 }
 
-function classifyFor(expert: FamilyExpert, name: string): string | null {
+function classifyFor(expert: FamilyExpert, name: string, periodic = false): string | null {
   const text = name.replace(/[‘’ʼ`]/g, "'");
   // A name the general rules file under another family is not this family's fee
   // ("Photocopy of paid item" is a copy fee, not an overdraft).
   const general = classifyPatternKey(text);
   if (general && !expert.keys.has(CANONICAL_KEY_MAP[general] ?? "")) return null;
-  const key = expert.patterns.find((entry) => entry.pattern.test(text))?.key ?? general;
+  const key = expert.patterns.find((entry) => (!entry.needsPeriod || periodic) && entry.pattern.test(text))?.key ?? general;
   const canonical = key ? CANONICAL_KEY_MAP[key] : null;
   return canonical && expert.keys.has(canonical) ? canonical : null;
 }
 
-function matchFor(expert: FamilyExpert, name: string, heading: string | null): FamilyMatch | null {
-  const hint = classifyFor(expert, name);
+function matchFor(expert: FamilyExpert, name: string, heading: string | null, periodic = false): FamilyMatch | null {
+  const hint = classifyFor(expert, name, periodic);
   if (hint) return { hint, feeName: name };
   // A name the rules already file elsewhere never borrows this family's heading.
   if (!heading || !composableTail(name) || classifyPatternKey(name)) return null;
@@ -284,7 +297,18 @@ export function runFamilyExpert(expert: FamilyExpert, windows: PriceWindow[]): E
     // v28: a fee named after the previous fee's note ("Check printing – (fee depends on
     // style) Temporary check – $.20") is the words after the note.
     const afterNote = cleanFeeName(split.name.match(/\)\s*([A-Z][^()]*?)\s*[–—-]?\s*$/)?.[1] ?? "");
-    const name = afterNote && classifyPatternKey(afterNote) ? afterNote : tail && classifyPatternKey(tail) ? tail : cleaned;
+    // v5 (#1100): an account's low-balance or maintenance fee stated in a sentence ("... – A low
+    // balance fee of $6.95 will be imposed every statement cycle if ...", "we will impose a
+    // maintenance fee of $7.50 once during the statement cycle") is named by its own words.
+    const sentenceFee = expert.family === "account" && STATEMENT_CYCLE_AFTER.test(window.after)
+      ? SENTENCE_ACCOUNT_FEE.exec(window.rawName)?.[1] ?? null
+      : null;
+    const name = sentenceFee
+      ? sentenceFee.charAt(0).toUpperCase() + sentenceFee.slice(1).toLowerCase()
+      : afterNote && classifyPatternKey(afterNote) ? afterNote
+        // v5 (#1100): in the account family, a capitalized tail after prose ("... is not met Enriched
+        // Spending - Minimum Balance $6.95/Month") names the fee even when no general rule files it.
+        : tail && (classifyPatternKey(tail) || (expert.family === "account" && /^[a-z]/.test(cleaned ?? ""))) ? tail : cleaned;
     const recent = last && window.lineIndex - last.lineIndex <= 2 ? last : null;
     const detail = `${window.rawName} ${window.after}`;
     const frequency = detectFrequency(detail);
@@ -317,7 +341,9 @@ export function runFamilyExpert(expert: FamilyExpert, windows: PriceWindow[]): E
     if (!name || NEGATIVE_NAME.test(name) || /^[a-z]/.test(name)) return;
 
     // A tier row under the fee above it: "1st item $25" after "Overdraft fee".
-    let match = matchFor(expert, name, heading);
+    // A charge by the period, stated right after the price ("$5.00 per month").
+    const periodic = /^\s*(?:per\s+(?:month|statement(?:\s+cycle)?|quarter)|\/\s*(?:mo|month)\b|monthly\b|a month\b)/i.test(window.after);
+    let match = matchFor(expert, name, heading, periodic);
     if (!match && recent && TIER_LABEL.test(name) && !classifyPatternKey(name)) {
       match = { hint: recent.hint, feeName: `${tierBase(recent.feeName)} (${name})` };
     }
