@@ -27,8 +27,13 @@ type SqlTag = typeof sql;
  * Each step reads one bounded batch and reports where the next resumes; the tick queues batches
  * until none remain. Live and rollback need migration 20270110000047 and refuse to run before it.
  */
-export type AudienceRelabelMode = "off" | "live" | "rollback";
-export const AUDIENCE_RELABEL_MODE: AudienceRelabelMode = "off";
+/**
+ * "dry_run_full" (#1059 gate before live): the same cursor chain as live, one bounded batch per
+ * tick over every document, writing nothing but each batch's counts; the last batch adds the
+ * chain's totals (`dryRunFullTotals`). Live waits until those totals pass.
+ */
+export type AudienceRelabelMode = "off" | "dry_run_full" | "live" | "rollback";
+export const AUDIENCE_RELABEL_MODE: AudienceRelabelMode = "dry_run_full";
 export const AUDIENCE_RELABEL_VERSION = 1;
 export const AUDIENCE_RELABEL_SOURCE = "darwin.audience_relabel";
 export const AUDIENCE_RELABEL_KIND = "audience_relabeled";
@@ -277,10 +282,10 @@ async function rollbackRelabel(db: SqlTag, afterId: number, limit: number): Prom
  */
 export async function runAudienceRelabel(db: SqlTag, options: AudienceRelabelOptions = {}): Promise<AudienceRelabelResult> {
   const mode = options.mode ?? AUDIENCE_RELABEL_MODE;
-  if (mode !== "off" && !(await audienceMigrationReady(db))) {
+  if ((mode === "live" || mode === "rollback") && !(await audienceMigrationReady(db))) {
     throw new Error("Audience relabel: migration 20270110000047 is not applied; nothing written");
   }
-  const dryRun = Boolean(options.dryRun) || mode === "off";
+  const dryRun = Boolean(options.dryRun) || mode === "off" || mode === "dry_run_full";
   const result = emptyResult(mode, dryRun);
   const afterId = Math.max(0, Number(options.afterId) || 0);
   if (mode === "rollback") {
@@ -328,4 +333,46 @@ export async function runAudienceRelabel(db: SqlTag, options: AudienceRelabelOpt
     }
   }
   return result;
+}
+
+export interface AudienceRelabelTotals {
+  batches: number;
+  documents: number;
+  fees: number;
+  byAudience: Record<string, number>;
+  bySource: Record<string, number>;
+  /** Share of fees per audience, 0-100, one decimal. */
+  shares: Record<string, number>;
+}
+
+/**
+ * The full dry run's totals: every finished batch of the chain (the latest per cursor, so a
+ * re-run batch counts once) plus this one. Read-only.
+ */
+export async function dryRunFullTotals(db: SqlTag, current: AudienceRelabelResult, afterId: number): Promise<AudienceRelabelTotals> {
+  const marker = { source: AUDIENCE_RELABEL_SOURCE, mode: "dry_run_full", version: AUDIENCE_RELABEL_VERSION };
+  const earlier = await db<Array<{ documents: number | string | null; fees: number | string | null; by_audience: Record<string, number> | null; by_source: Record<string, number> | null }>>`
+    SELECT DISTINCT ON (r.params_json->>'after_id')
+           (e.detail->>'documents')::int AS documents, (e.detail->>'fees')::int AS fees,
+           e.detail->'by_audience' AS by_audience, e.detail->'by_source' AS by_source
+      FROM agent_runs r
+      JOIN agent_run_events e ON e.agent_run_id = r.id AND e.event_type = 'step.finished' AND e.status = 'completed'
+     WHERE r.agent_name = 'darwin'
+       AND r.params_json @> ${JSON.stringify(marker)}::jsonb
+       AND COALESCE(r.params_json->>'after_id', '0') <> ${String(afterId)}
+     ORDER BY r.params_json->>'after_id', e.id DESC
+  `;
+  const batches = [
+    ...earlier.map((row) => ({ documents: Number(row.documents ?? 0), fees: Number(row.fees ?? 0), byAudience: row.by_audience ?? {}, bySource: row.by_source ?? {} })),
+    { documents: current.documents, fees: current.fees, byAudience: current.byAudience, bySource: current.bySource },
+  ];
+  const totals: AudienceRelabelTotals = { batches: batches.length, documents: 0, fees: 0, byAudience: {}, bySource: {}, shares: {} };
+  for (const batch of batches) {
+    totals.documents += batch.documents;
+    totals.fees += batch.fees;
+    for (const [key, n] of Object.entries(batch.byAudience)) totals.byAudience[key] = (totals.byAudience[key] ?? 0) + Number(n);
+    for (const [key, n] of Object.entries(batch.bySource)) totals.bySource[key] = (totals.bySource[key] ?? 0) + Number(n);
+  }
+  for (const [key, n] of Object.entries(totals.byAudience)) totals.shares[key] = totals.fees > 0 ? Math.round((n / totals.fees) * 1000) / 10 : 0;
+  return totals;
 }
