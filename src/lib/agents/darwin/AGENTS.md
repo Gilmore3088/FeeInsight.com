@@ -132,6 +132,12 @@ Darwin owns verification and classification.
   until James switches it, in its own PR:
   - `off`: the tick queues one dry run a day over a sample of documents (md5 order by day) that
     counts decisions by audience and evidence source, and writes nothing.
+  - `dry_run_full` (shipped, the gate before live): the same cursor chain as live over every
+    document, one batch per tick, key chain `darwin:audience-relabel:dry:v1:after:<cursor>`,
+    writing nothing but each batch's counts. The last batch adds the chain's totals to its detail
+    (`dry_run_totals`) and writes an `audience_relabel.dry_run_totals` event. Live waits until the
+    totals show unknown at most 10%, and consumer, both and business each within about 5 points
+    of the sample's 70.5 / 23.3 / 2.2. A run does what it was queued for (`params.mode`).
   - `live`: before any write, each fee's old value is recorded as an `audience_relabeled` row in
     `pipeline_feedback` (weight 0). Then the verified row takes the `darwin:` decision, and the
     live published row is touched so the trigger copies it.
