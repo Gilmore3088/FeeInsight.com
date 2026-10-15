@@ -53,7 +53,7 @@ import {
   getVisibleFeesForPage,
   isVerifiedFee,
   pickHeadlineFees,
-  pickHeadlineRows,
+  pickHeadlineValues,
   toDisplayFees,
   toPipelineDisplayFees,
   toRateDisplayFees,
@@ -284,14 +284,15 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
       : null;
   const nationalByCategory = new Map(nationalIndex.map((entry) => [entry.fee_category, entry]));
   const stateByCategory = new Map(stateIndex.map((entry) => [entry.fee_category, entry]));
-  const headlineRows: HeadlineRow[] = pickHeadlineRows(verifiedFees, HEADLINE_FEE_KEYS)
-    .map((fee) => ({
-      category: fee.fee_category as string,
-      label: getDisplayName(fee.fee_category as string),
-      amount: fee.amount as number,
-      sourceUrl: fee.source_url ?? inst.fee_schedule_url ?? null,
-      state: marketBand(stateByCategory.get(fee.fee_category as string)),
-      nation: marketBand(nationalByCategory.get(fee.fee_category as string)),
+  const headlineRows: HeadlineRow[] = pickHeadlineValues(verifiedFees, HEADLINE_FEE_KEYS)
+    .map((value) => ({
+      category: value.category,
+      label: getDisplayName(value.category),
+      amount: value.amount,
+      spread: value.count > 1 && value.low !== value.high ? { count: value.count, low: value.low, high: value.high } : null,
+      sourceUrl: value.sourceUrl ?? inst.fee_schedule_url ?? null,
+      state: marketBand(stateByCategory.get(value.category)),
+      nation: marketBand(nationalByCategory.get(value.category)),
     }))
     .filter((row) => row.state !== null || row.nation !== null)
     .slice(0, HEADLINE_ROWS_SHOWN);

@@ -8,7 +8,7 @@ import {
   normalizeFinancial,
   selectFinancialsByQuarter,
 } from "./financial-units";
-import { buildLocationParts, buildProfileTitle, pickHeadlineFees, PROFILE_TITLE_MAX } from "./profile-data";
+import { buildLocationParts, buildProfileTitle, pickHeadlineFees, pickHeadlineValues, PROFILE_TITLE_MAX } from "./profile-data";
 import type { ExtractedFee } from "@/lib/data-store/types";
 
 const ncuaRecord = {
@@ -178,6 +178,24 @@ describe("headline fees", () => {
       fee({ id: 2, fee_name: "Overdraft Item Paid", fee_category: "overdraft", amount: 30 }),
     ]);
     expect(headline.overdraft).toBe(30);
+  });
+
+  it("values each headline category the way the index does: median, highest for overdraft, no business rows", () => {
+    const values = pickHeadlineValues(
+      [
+        fee({ id: 1, fee_category: "monthly_maintenance", fee_name: "Monthly Service Charge", amount: 30 }),
+        fee({ id: 2, fee_category: "monthly_maintenance", fee_name: "Monthly Service Charge", amount: 8 }),
+        fee({ id: 3, fee_category: "monthly_maintenance", fee_name: "Monthly Service Charge", amount: 3.5 }),
+        fee({ id: 4, fee_category: "monthly_maintenance", fee_name: "Business Analysis", amount: 50, fee_audience: "business" }),
+        fee({ id: 5, fee_category: "overdraft", fee_name: "Overdraft Item Paid", amount: 25 }),
+        fee({ id: 6, fee_category: "overdraft", fee_name: "Overdraft Item Paid, 4th and later", amount: 35 }),
+      ],
+      ["overdraft", "nsf", "monthly_maintenance"],
+    );
+    expect(values.map(({ category, amount, count, low, high }) => ({ category, amount, count, low, high }))).toEqual([
+      { category: "overdraft", amount: 35, count: 2, low: 25, high: 35 },
+      { category: "monthly_maintenance", amount: 8, count: 3, low: 3.5, high: 30 },
+    ]);
   });
 });
 

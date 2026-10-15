@@ -14,7 +14,10 @@ export interface MarketBand {
 export interface HeadlineRow {
   category: string;
   label: string;
+  /** The index's value for this institution (the median of its amounts; the highest for overdraft). */
   amount: number;
+  /** Set when it publishes several amounts in the category. */
+  spread: { count: number; low: number; high: number } | null;
   sourceUrl: string | null;
   state: MarketBand | null;
   nation: MarketBand | null;
@@ -138,6 +141,12 @@ function HeadlineCard({ row, stateLabel, stateCode }: { row: HeadlineRow; stateL
       {position && (
         <p className={`mt-0.5 text-[13px] font-medium ${TEXT[position]}`}>
           {VERDICT[position]} the {where} middle half
+        </p>
+      )}
+      {row.spread && (
+        <p className="text-[12px] text-ink-muted">
+          {row.category === "overdraft" ? "Highest" : "Median"} of its {row.spread.count} fees, {money(row.spread.low)} to{" "}
+          {money(row.spread.high)}
         </p>
       )}
       <div className="mt-3 space-y-1">
