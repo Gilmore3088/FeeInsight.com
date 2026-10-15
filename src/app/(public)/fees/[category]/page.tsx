@@ -195,7 +195,10 @@ export default async function FeeCategoryPage({ params }: PageProps) {
               What institutions charge
             </h2>
             <div className="rounded-2xl border border-border bg-surface-0 p-4 shadow-fi-1 sm:p-6">
-              <DistributionChart values={institutionValues} median={median} />
+              {/* The chart's type scales with its width, so it stops growing past a readable size. */}
+              <div className="mx-auto max-w-[640px]">
+                <DistributionChart values={institutionValues} median={median} />
+              </div>
             </div>
             {consumerGuides[0] && (
               <p className="text-[14px] text-ink-muted">
