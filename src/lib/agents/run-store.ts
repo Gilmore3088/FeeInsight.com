@@ -78,7 +78,7 @@ import { releaseRecordedPasses } from "@/lib/agents/darwin/release-review";
 import { runDarwinConditionalZeroResolve } from "@/lib/agents/darwin/conditional-zero-resolve";
 import { runDarwinScheduleRefile } from "@/lib/agents/darwin/schedule-refile";
 import { runDarwinAdjudicate } from "@/lib/agents/darwin/adjudicate";
-import { countLiveFragmentNames, liveFragmentDetail, recheckLiveFragmentNames } from "@/lib/agents/darwin/live-fragment-check";
+import { countLiveFragmentNames, liveFragmentDetail, liveFragmentFindingsDetail, recheckLiveFragmentNames } from "@/lib/agents/darwin/live-fragment-check";
 import { documentOwnerDetail } from "@/lib/agents/darwin/document-owner";
 import { findingsDetail as releaseRepairFindingsDetail, releaseRepairDetail, runReleaseRepairStep } from "@/lib/agents/darwin/release-repair";
 import { AUDIENCE_RELABEL_VERSION, dryRunFullTotals, runAudienceRelabel, type AudienceRelabelMode } from "@/lib/agents/darwin/audience-relabel";
@@ -874,7 +874,7 @@ async function executeAgenticStep(
         ? ` All released fees: ${releaseRepairFull.wouldTakeDown.toLocaleString()} of ${releaseRepairFull.checked.toLocaleString()} fail both the text check and the category model (${releaseRepairFull.textOnly.toLocaleString()} text only, ${releaseRepairFull.modelOnly.toLocaleString()} model only).`
         : "";
       const liveFragmentNote = liveFragments.matched > 0
-        ? ` Live name re-check: ${liveFragments.matched.toLocaleString()} of ${liveFragments.checked.toLocaleString()} live fee(s) read have a fragment name (${liveFragments.live && !liveFragments.dryRun ? `${liveFragments.takenDown.length.toLocaleString()} archived` : "switch off: would take down, nothing written"}).`
+        ? ` Live name re-check: ${liveFragments.matched.toLocaleString()} of ${liveFragments.checked.toLocaleString()} live fee(s) read have a fragment name: ${liveFragments.wouldTakeDown.toLocaleString()} takedown, ${liveFragments.wouldRename.toLocaleString()} rename, ${liveFragments.exempt.toLocaleString()} exempt (${liveFragments.live && !liveFragments.dryRun ? `${liveFragments.takenDown.length.toLocaleString()} archived, ${liveFragments.renamed.length.toLocaleString()} renamed` : "switch off: nothing written"}).`
         : "";
       // #1455: whose schedule each shared or vendor-served document is, by its own text.
       const documentOwner = verification.documentOwner;
@@ -882,7 +882,7 @@ async function executeAgenticStep(
         ? ` Document owner: ${documentOwner.pairs.toLocaleString()} shared document pair(s) read, ${documentOwner.wouldTakeDown.length.toLocaleString()} live fee(s) on another bank's schedule (${documentOwner.live ? `${documentOwner.takenDown.length.toLocaleString()} archived` : "switch off: would take down, nothing written"}).`
         : "";
       const liveFragmentFullNote = liveFragmentsFull
-        ? ` Whole live table: ${liveFragmentsFull.matched.toLocaleString()} of ${liveFragmentsFull.checked.toLocaleString()} live fees have a fragment name.`
+        ? ` Whole live table: ${liveFragmentsFull.matched.toLocaleString()} of ${liveFragmentsFull.checked.toLocaleString()} live fees have a fragment name (${liveFragmentsFull.wouldTakeDown.toLocaleString()} takedown, ${liveFragmentsFull.wouldRename.toLocaleString()} rename, ${liveFragmentsFull.exempt.toLocaleString()} exempt).`
         : "";
       return {
         status: "completed",
@@ -909,22 +909,7 @@ async function executeAgenticStep(
           },
           recorded_pass_release: recordedRelease,
           live_fragment_check: liveFragmentDetail(liveFragments),
-          ...(liveFragmentsFull
-            ? {
-                live_fragment_full_count: {
-                  checked: liveFragmentsFull.checked,
-                  would_take_down: liveFragmentsFull.matched,
-                  by_pattern: liveFragmentsFull.byPattern,
-                  samples: liveFragmentsFull.samples.map((fee) => ({
-                    fee_published_id: fee.feePublishedId,
-                    institution_id: fee.institutionId,
-                    fee_name: fee.feeName,
-                    amount: fee.amount,
-                    pattern: fee.pattern,
-                  })),
-                },
-              }
-            : {}),
+          ...(liveFragmentsFull ? { live_fragment_full_count: liveFragmentFindingsDetail(liveFragmentsFull) } : {}),
           release_repair: releaseRepair ? releaseRepairDetail(releaseRepair) : { error: releaseRepairError },
           ...(releaseRepairFull ? { release_repair_full_count: releaseRepairFindingsDetail(releaseRepairFull) } : {}),
           schedule_refile: { selected: scheduleRefile.selected, refiled: scheduleRefile.refiled },

@@ -33,4 +33,12 @@ describe("feeDisplayName", () => {
       expect(feeDisplayName(name, "overdraft")).toBe(name);
     }
   });
+
+  it("shows the stored name when a pronoun sits only inside a parenthetical (#1443)", () => {
+    // Darwin's live check exempts these, so the page agrees: the stored name is a real fee name.
+    expect(isCutFeeName("Stop Payment (per item, if you request it)")).toBe(false);
+    expect(feeDisplayName("Stop Payment (per item, if you request it)", "stop_payment")).toBe("Stop Payment (per item, if you request it)");
+    // Outside the parenthetical the pronoun is still a cut name.
+    expect(isCutFeeName("Stop Payment (per item) if you request it")).toBe(true);
+  });
 });
