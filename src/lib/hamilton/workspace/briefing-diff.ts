@@ -7,7 +7,8 @@
  * it reports what moved, with "higher" and "lower", and takes no stance on the price.
  */
 
-import type { Briefing, FeePositionRow } from "./types";
+import { PRO_STUDIES } from "./studies";
+import type { Briefing, FeePositionRow, Observation } from "./types";
 
 export type BriefingChangeKind =
   | "own_price"
@@ -110,16 +111,28 @@ function feeChanges(previous: FeePositionRow[], current: FeePositionRow[]): Brie
   return changes;
 }
 
+/**
+ * Snapshots stored before #1255 can hold studies now held off Pro surfaces (#1082). Leave those
+ * out on both sides, so a held study never shows as "No longer flagged" or "New this quarter".
+ */
+function shownObservations(briefing: Briefing): Observation[] {
+  return briefing.observations.filter(
+    (o) => o.kind !== "study" || !o.id.startsWith("study:") || PRO_STUDIES.has(o.id.slice("study:".length)),
+  );
+}
+
 function observationChanges(previous: Briefing, current: Briefing): BriefingChange[] {
-  const before = new Set(previous.observations.map((o) => o.id));
-  const after = new Set(current.observations.map((o) => o.id));
+  const previousShown = shownObservations(previous);
+  const currentShown = shownObservations(current);
+  const before = new Set(previousShown.map((o) => o.id));
+  const after = new Set(currentShown.map((o) => o.id));
   const changes: BriefingChange[] = [];
-  for (const observation of current.observations) {
+  for (const observation of currentShown) {
     if (!before.has(observation.id)) {
       changes.push({ kind: "observation_new", feeCategory: observation.feeCategory, text: `New this quarter: ${observation.headline}` });
     }
   }
-  for (const observation of previous.observations) {
+  for (const observation of previousShown) {
     if (!after.has(observation.id)) {
       changes.push({ kind: "observation_gone", feeCategory: observation.feeCategory, text: `No longer flagged: ${observation.headline}` });
     }

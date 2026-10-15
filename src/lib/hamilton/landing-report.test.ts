@@ -13,3 +13,10 @@ it("saves a self-contained exact-scope draft in the existing report/PDF schema",
   expect(report.exportControls.pdfEnabled).toBe(true);
   expect(report.sources![0].detail).toContain("Credit unions");
 });
+
+it("frames the next step as a review, never a pricing proposal (#1256)", () => {
+  const research = buildGeographicResearchResult({ ...selection, task: "compare" }, [], []);
+  const report = buildLandingReport(selection, research, "2026-10-10");
+  expect(report.recommendation).toBe("Review the evidence and find any missing schedules before this draft goes to the board.");
+  expect(JSON.stringify(report)).not.toMatch(/proposal|we recommend|raise/i);
+});

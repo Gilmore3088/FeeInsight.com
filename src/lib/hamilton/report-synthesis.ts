@@ -120,9 +120,9 @@ export function buildSelectedInstitutionReportRules(params: {
 
 SELECTED-INSTITUTION RULES:
 1. Use selected_institution.fee_peer_deltas as the primary competitive-positioning evidence. These deltas are computed before generation from the selected institution's fee rows and the selected verified peer baseline.
-2. If fee_peer_deltas is empty, do not write benchmark conclusions or pricing recommendations. Return a diligence/readiness explanation instead.
+2. Whatever fee_peer_deltas shows, never tell the institution to raise, lower or drop a fee: say where its price sits and the question that puts to management. If fee_peer_deltas is empty, write no benchmark conclusions. Return a diligence/readiness explanation instead.
 3. Provisional rows are directional only. When evidence_tier is provisional or excluded_from_verified_benchmark is true, label the conclusion as provisional and do not treat it as a verified benchmark score.
-4. Do not convert national category medians into selected-institution recommendations unless selected_institution.fee_peer_deltas contains a matching selected institution row.
+4. Do not turn national category medians into conclusions about the selected institution unless selected_institution.fee_peer_deltas contains a matching selected institution row.
 5. selected_institution.fee_comparisons_not_like_for_like lists fees charged on another basis or schedule than the peers' (for example per item against a monthly median, or a business schedule against consumer peers). For these, say the comparison is not like for like and give no above or below position.
 6. Dollar figures in selected_institution are whole dollars and ratios are percents; quote them as given. Never describe data collection, sources, review steps, duplicates or reconciliation work: if evidence is thin, say so in one sentence about confidence.
 `.trim();
