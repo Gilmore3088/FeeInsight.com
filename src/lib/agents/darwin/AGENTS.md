@@ -278,13 +278,19 @@ Darwin owns verification and classification.
   - `band_as_price`: a band or threshold read as the price ("Lessthan $5.00", raw 437275; "$1,000 or
     over"), or a name cut at the band word.
   - `two_column_glue`: a name holding a second fee's name that another row prints as its own fee
-    (raw 296682), or a row's band and price cells printed again under another fee's name (raw
-    432124).
+    (raw 296682), a row's short band and price cells (40 characters or fewer, opening on a band
+    word) printed again under another fee's name (raw 432124), or two headings and their two prices
+    on one line with the fee's price not under its own heading (raw 169723, a levy given the
+    account-closure price).
   Every other overdraft and NSF pass in the batch waits for a person (`overdraft_nsf_for_person`,
-  `RECORDED_RELEASE_PERSON_CATEGORIES`). On 15 Oct: 389 of 421 would release, 32 held (11 glued
-  or cut name, 7 frequency word, 5 overdraft/NSF for a person, 4 two-column glue, 2 band as price,
-  1 footnote, 1 overdraft transfer, 1 business activity row). A new 20-fee hand check of the
-  release set must score 18 or better before the switch is turned on.
+  `RECORDED_RELEASE_PERSON_CATEGORIES`). The third hand check scored 18 of 20. Its two misses
+  hold, and two good fees the glue check held (whole sentences repeated in a product table, raw
+  206385 and 512869) now release. `maintenance_without_context` (recorded passes only) holds a
+  maintenance price with no rows around it, already a peer outlier: "Monthly Service Fee $29.95" on
+  every Wilson & Muir page (raw 538902), a business cash management fee. On 15 Oct: 387 of 421
+  would release, 34 held (11 glued or cut name, 7 frequency word, 5 overdraft/NSF for a person, 3
+  two-column glue, 3 maintenance without context, 2 band as price, 1 footnote, 1 overdraft
+  transfer, 1 business activity row).
   v1 released on the schedule check alone; its dry run on 2026-10-06 (1,997 of 4,128 held
   fees) had 12 of 20 hand-checked releases right. v2 adds the gates above. v3 (James chose
   "Reject only", 2026-10-06 16:49 UTC) acts on rejects (`DARWIN_RELEASE_REJECTS_ACT`): each

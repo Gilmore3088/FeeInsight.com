@@ -425,6 +425,19 @@ describe("releasing the recorded v17 passes", () => {
     // Not footnotes: a price ending in 5, or one of several prices on the line; a price at its band is not the band.
     [recorded("Subpoena", "legal_process", null, "Subpoena | $25 per instance", null, { amount: "25" }), null],
     [recorded("Return Mail", "account_research", null, "Return Mail | $3.00 / item | Updating your address", "Return Mail | $3.00 / item | Updating your address\nOther | Return Mail | $3.00 / item | Updating your address", { amount: "3" }), null],
+    // The third hand check (Oct 15, 18 of 20): two good fees the glue check held now release, and its two misses hold.
+    [recorded("Monthly service fee", "monthly_maintenance", "monthly", "| You can avoid the $30.00 monthly service fee by maintaining a minimum daily balance of $5,000 or more.",
+      "Ways to Avoid the Monthly Service Fee | You can avoid the $10.00 monthly service fee by maintaining a minimum daily balance of $500 or more. | You can avoid the $30.00 monthly service fee by maintaining a minimum daily balance of $5,000 or more. | Not Applicable",
+      { amount: "30" }), null],
+    [recorded("Monthly service fee", "monthly_maintenance", "monthly", "$100 of your deposits, however, may be available on the first business day. | account will be subject to a monthly service fee of $1.00 for that monthly | Ins",
+      "$100 of your deposits, however, may be available on the first business day. | account will be subject to a monthly service fee of $1.00 for that monthly | Insurance Fund.",
+      { amount: "1" }), null],
+    [recorded("LEVIES/GARNISHMENTS", "garnishment_levy", null, "ACCOUNT CLOSURE | LEVIES/GARNISHMENTS | $30.00 – within 90 days | $75.00",
+      "ACCOUNT CLOSURE | LEVIES/GARNISHMENTS\n$30.00 – within 90 days | $75.00", { amount: "30" }), "two_column_glue"],
+    [recorded("Monthly Service Fee", "monthly_maintenance", "monthly", "Monthly Service Fee $29.95", null, { amount: "29.95" }), "maintenance_without_context"],
+    // Its price under its own heading: released.
+    [recorded("LEVIES/GARNISHMENTS", "garnishment_levy", null, "ACCOUNT CLOSURE | LEVIES/GARNISHMENTS | $30.00 – within 90 days | $75.00",
+      "ACCOUNT CLOSURE | LEVIES/GARNISHMENTS\n$30.00 – within 90 days | $75.00", { amount: "75" }), null],
   ])("holds a recorded pass for its shape (%#)", (candidate, reason) => {
     expect(recordedPassHoldReason(candidate)).toBe(reason);
   });

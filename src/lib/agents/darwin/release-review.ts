@@ -289,6 +289,7 @@ export function releaseHoldReason({
   if (overdraftTransferAsOdNsf(key, name, sourceLine ?? "")) return "overdraft_transfer_as_od_nsf";
   if (bandAsPrice(name, price, sourceLine ?? "")) return "band_as_price";
   if (twoColumnGlue(name, sourceLine ?? "", sourceContext)) return "two_column_glue";
+  if (columnsMisaligned(name, price, sourceLine ?? "")) return "two_column_glue";
   return null;
 }
 
@@ -349,6 +350,9 @@ export function bandAsPrice(name: string, amount: number | null, sourceLine: str
 // raw 432124, a minimum-check fee).
 const PRICE_TOKEN = /\$\s*\d/;
 const squash = (text: string) => text.replace(/[….]{2,}/g, " ").replace(/\s+/g, " ").trim().toLowerCase();
+const GLUE_CELLS_MAX = 40;
+const BAND_CELL_START = /^(?:less\s*than|lessthan|greater\s*than|more\s*than|up\s*to|under|over|below|above|at\s*least|between|\$?\d[\d,.]*\s*(?:-|–|to)\s*\$?\d)/;
+
 export function twoColumnGlue(name: string, sourceLine: string, sourceContext: string | null | undefined): boolean {
   const line = squash(sourceLine);
   const others = (sourceContext ?? "").split("\n").map(squash).filter((text) => text && text !== line);
@@ -364,14 +368,40 @@ export function twoColumnGlue(name: string, sourceLine: string, sourceContext: s
     if (others.some((text) => ownRow.test(text))) return true;
   }
   // The row's band and price cells ("less than $500 | $5 00"), printed again after a different name.
+  // Only short cells that open on a band word: a whole sentence ("You can avoid the $30.00 monthly
+  // service fee by ...", raw 512869) repeats across a product table without being glued.
   const cut = line.indexOf("|");
   if (cut < 0) return false;
   const cells = line.slice(cut + 1).trim();
-  if (cells.length < 8 || !/^[a-z]/.test(cells) || !PRICE_TOKEN.test(cells)) return false;
+  if (cells.length < 8 || cells.length > GLUE_CELLS_MAX || !BAND_CELL_START.test(cells) || !PRICE_TOKEN.test(cells)) return false;
   return others.some((text) => {
     const at = text.indexOf(cells);
     return at > 0 && /[a-z]{3}/.test(text.slice(0, at));
   });
+}
+
+// Two column headings on one row and their two prices on the next, read as one line: "ACCOUNT CLOSURE |
+// LEVIES/GARNISHMENTS | $30.00 - within 90 days | $75.00" (raw 169723, Falcon) gave the levy the
+// account-closure price. With as many name cells as price cells, a fee's price must sit under its name.
+export function columnsMisaligned(name: string, amount: number | null, sourceLine: string): boolean {
+  if (amount == null) return false;
+  const cells = sourceLine.split("|").map((cell) => cell.trim()).filter(Boolean);
+  const firstPrice = cells.findIndex((cell) => /\d/.test(cell));
+  if (firstPrice < 2) return false;
+  const names = cells.slice(0, firstPrice);
+  const prices = cells.slice(firstPrice);
+  if (prices.length !== names.length || prices.some((cell) => !PRICE_TOKEN.test(cell))) return false;
+  const at = names.findIndex((cell) => squash(cell) === squash(name));
+  if (at < 0) return false;
+  const own = [...prices[at].matchAll(/\$\s*(\d[\d,]*(?:\.\d{1,2})?)/g)].map((match) => Number(match[1].replace(/,/g, "")));
+  return !own.includes(amount);
+}
+
+// A recorded pass's maintenance price with no rows around it to say which account it belongs to, already
+// held as far outside its peers: "Monthly Service Fee $29.95" on every Wilson & Muir page (raw 538902),
+// a business cash management fee. Recorded passes only; the review reads the page itself.
+export function maintenanceWithoutContext(key: string, heldReason: string | null | undefined, sourceContext: string | null | undefined): boolean {
+  return key === "monthly_maintenance" && heldReason === "peer_outlier" && !(sourceContext ?? "").trim();
 }
 
 /**
@@ -934,6 +964,8 @@ export function recordedPassHoldReason(candidate: ReleaseReviewCandidate): strin
   if (premiumServiceMisfiled(candidate)) return "premium_service";
   const reason = releaseHoldReason(candidate);
   if (reason) return reason;
+  const { row, sourceContext } = candidate;
+  if (maintenanceWithoutContext(row.held_canonical_fee_key, row.held_reason, sourceContext)) return "maintenance_without_context";
   if (RECORDED_RELEASE_PERSON_CATEGORIES.has(candidate.row.held_canonical_fee_key)) return "overdraft_nsf_for_person";
   return null;
 }
