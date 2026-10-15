@@ -1,0 +1,231 @@
+import { sql } from "@/lib/data-store/connection";
+import { invalidatePublicReadCache } from "@/lib/data-store/fee-cache";
+import { inSavepoint } from "@/lib/agents/savepoint";
+import { frequencyClass } from "@/lib/agents/hamilton/exact-duplicate";
+import { DUPLICATE_COLLAPSE_REASON_PREFIX, type DuplicateCollapse } from "@/lib/agents/hamilton/duplicate-collapse";
+import { feePageKey } from "@/lib/agents/hamilton/page-key";
+import { linesApartOnPage, nearNames, printedAtPrice } from "@/lib/agents/hamilton/publish";
+
+type SqlTag = typeof sql;
+
+/**
+ * Page-copy collapse (#1439): one schedule stored under several addresses ("?print=1", "www.",
+ * "%20", a CDN mirror) is several documents, and the near-name collapse, the exact collapse and
+ * the newer-copy check each stay inside one document or one exact URL, so a line of that
+ * schedule went live once per copy (1,310 extra live rows, Oct 15). Rows of one institution,
+ * category, variant and amount read from different documents of one page (`feePageKey`) under
+ * the same or a near name are one fee: the copy from the newest document stays.
+ *
+ * Shadow until James approves the dry-run counts: a step reports what it would close and
+ * changes nothing. Set true to close the repeats.
+ */
+export const PAGE_COPY_COLLAPSE_LIVE = false;
+/** Institutions read per publish step; the step's run id picks which, so steps cover them in turn. */
+export const PAGE_COPY_COLLAPSE_INSTITUTIONS = 25;
+export const PAGE_COPY_COLLAPSE_REASON_SUFFIX = " (copy of the page)";
+
+export interface PageCopyRow {
+  fee_published_id: number | string;
+  institution_id: number | string;
+  source_document_id: number | string;
+  document_url: string | null;
+  crawled_at: string | Date | null;
+  canonical_fee_key: string;
+  variant_type: string | null;
+  amount: number | string;
+  fee_name: string | null;
+  frequency: string | null;
+  fee_audience: string | null;
+}
+
+export interface PageCopyCollapse extends DuplicateCollapse {
+  keptFeeName: string;
+  sourceDocumentId: number;
+  keptSourceDocumentId: number;
+}
+
+export interface PageCopyResult {
+  live: boolean;
+  institutions: number;
+  /** Rows paired with a copy of the same line from another document of the same page. */
+  pairs: number;
+  /** Kept apart: the newest copy prints both names as their own lines at the price. */
+  apartOnPage: number;
+  /** Kept: the newest copy has no stored text, or does not print the kept name at the price. */
+  unproven: number;
+  collapses: PageCopyCollapse[];
+}
+
+function sameLine(a: string | null, b: string | null): boolean {
+  const [one, two] = [(a ?? "").trim().toLowerCase(), (b ?? "").trim().toLowerCase()];
+  return (one !== "" && one === two) || nearNames(a, b);
+}
+
+/**
+ * Pure: the live rows that repeat a line of a newer copy of their page (`feePageKey`: scheme,
+ * "www.", query string, `%20` and version words ignored). The row kept is the one read from the
+ * newest document, and it must be printed at the price in that document's stored text; a pair
+ * that text prints as two lines stays two fees, as do rows whose stated frequencies or audiences
+ * differ. Rows of one document are left to the near-name collapse.
+ */
+export function pageCopyRepeats(rows: PageCopyRow[], texts: Map<string, string>): Omit<PageCopyResult, "live" | "institutions"> {
+  const result = { pairs: 0, apartOnPage: 0, unproven: 0, collapses: [] as PageCopyCollapse[] };
+  const groups = new Map<string, PageCopyRow[]>();
+  for (const row of rows) {
+    const page = feePageKey(row.document_url);
+    if (page == null) continue;
+    const key = [row.institution_id, page, row.canonical_fee_key, row.variant_type ?? "", Number(row.amount).toFixed(2)].join("|");
+    groups.set(key, [...(groups.get(key) ?? []), row]);
+  }
+  const time = (row: PageCopyRow) => new Date(row.crawled_at ?? 0).getTime();
+  for (const group of groups.values()) {
+    if (new Set(group.map((row) => String(row.source_document_id))).size < 2) continue;
+    const ordered = [...group].sort((a, b) => time(b) - time(a) || Number(b.source_document_id) - Number(a.source_document_id) || Number(b.fee_published_id) - Number(a.fee_published_id));
+    const kept: PageCopyRow[] = [];
+    for (const row of ordered) {
+      const match = kept.find((keep) => {
+        if (String(keep.source_document_id) === String(row.source_document_id) || !sameLine(keep.fee_name, row.fee_name)) return false;
+        const [f1, f2] = [frequencyClass(keep.frequency), frequencyClass(row.frequency)];
+        const [a1, a2] = [keep.fee_audience ?? "unknown", row.fee_audience ?? "unknown"];
+        return (f1 == null || f2 == null || f1 === f2) && (a1 === "unknown" || a2 === "unknown" || a1 === a2);
+      });
+      if (!match) {
+        kept.push(row);
+        continue;
+      }
+      result.pairs += 1;
+      const text = texts.get(String(match.source_document_id)) ?? null;
+      if (!text || !printedAtPrice(text, match.fee_name ?? "", match.amount)) {
+        result.unproven += 1;
+        kept.push(row);
+      } else if (
+        (row.fee_name ?? "").trim().toLowerCase() !== (match.fee_name ?? "").trim().toLowerCase() &&
+        linesApartOnPage(text, row.fee_name ?? "", match.fee_name ?? "", row.amount)
+      ) {
+        result.apartOnPage += 1;
+        kept.push(row);
+      } else {
+        result.collapses.push({
+          feePublishedId: Number(row.fee_published_id),
+          keptFeePublishedId: Number(match.fee_published_id),
+          institutionId: Number(row.institution_id),
+          canonicalFeeKey: row.canonical_fee_key,
+          feeName: row.fee_name ?? "",
+          keptFeeName: match.fee_name ?? "",
+          amount: Math.round(Number(row.amount) * 100) / 100,
+          sourceDocumentId: Number(row.source_document_id),
+          keptSourceDocumentId: Number(match.source_document_id),
+        });
+      }
+    }
+  }
+  return result;
+}
+
+/**
+ * Close live rows that repeat a line of a newer copy of their page (`pageCopyRepeats`), up to
+ * `PAGE_COPY_COLLAPSE_INSTITUTIONS` institutions per step. While `PAGE_COPY_COLLAPSE_LIVE` is
+ * false, or in a dry run, it reports and writes nothing. A closed row gets `duplicate of #<kept
+ * id> (copy of the page)`; clearing `rolled_back_at` restores it.
+ */
+export async function collapsePageCopies(
+  db: SqlTag,
+  options: { runId: number; batchId: string; dryRun: boolean; institutionId?: number; live?: boolean },
+): Promise<PageCopyResult> {
+  const live = options.live ?? PAGE_COPY_COLLAPSE_LIVE;
+  const empty: PageCopyResult = { live, institutions: 0, pairs: 0, apartOnPage: 0, unproven: 0, collapses: [] };
+  const params: Array<number | string> = [PAGE_COPY_COLLAPSE_INSTITUTIONS, String(options.runId)];
+  let institutionFilter = "";
+  if (options.institutionId) {
+    params.push(options.institutionId);
+    institutionFilter = `AND fp.institution_id = $${params.length}`;
+  }
+  let rows: PageCopyRow[];
+  let texts: Map<string, string>;
+  try {
+    ({ rows, texts } = await inSavepoint(db, async (scope) => {
+      // Live dollar rows of one institution, category, variant and amount read from two or more documents.
+      const found = await scope.unsafe<PageCopyRow[]>(
+        `WITH live AS (
+           SELECT fp.fee_published_id, fp.institution_id, fr.source_document_id, sd.document_url, sd.crawled_at,
+                  fp.canonical_fee_key, fp.variant_type, fp.amount, fp.fee_name, fp.frequency, fp.fee_audience
+             FROM published_fee_records fp
+             JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
+             JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
+             JOIN source_documents sd ON sd.id = fr.source_document_id
+            WHERE fp.rolled_back_at IS NULL
+              AND fp.quarantined_at IS NULL
+              AND fp.amount IS NOT NULL
+              AND fp.rate_percent IS NULL
+              ${institutionFilter}
+         ), lines AS (
+           SELECT institution_id, canonical_fee_key, COALESCE(variant_type, '') AS variant, amount
+             FROM live
+            GROUP BY 1, 2, 3, 4
+           HAVING count(DISTINCT source_document_id) > 1
+         ), picked AS (
+           SELECT institution_id
+             FROM (SELECT DISTINCT institution_id FROM lines) institutions
+            ORDER BY md5(institution_id::text || $2)
+            LIMIT $1
+         )
+         SELECT live.*
+           FROM live
+           JOIN lines ON lines.institution_id = live.institution_id
+                     AND lines.canonical_fee_key = live.canonical_fee_key
+                     AND lines.variant = COALESCE(live.variant_type, '')
+                     AND lines.amount = live.amount
+           JOIN picked ON picked.institution_id = live.institution_id`,
+        params,
+      );
+      const documentIds = [...new Set(found.map((row) => Number(row.source_document_id)))];
+      const stored = documentIds.length === 0 ? [] : await scope<{ source_document_id: number | string; normalized_text: string }[]>`
+        SELECT DISTINCT ON (source_document_id) source_document_id, normalized_text
+          FROM agent_source_texts
+         WHERE source_document_id = ANY(${documentIds}::bigint[]) AND normalized_text IS NOT NULL
+         ORDER BY source_document_id, id DESC
+      `;
+      return { rows: found, texts: new Map(stored.map((row) => [String(row.source_document_id), row.normalized_text])) };
+    }));
+  } catch (error) {
+    console.error("collapsePageCopies failed:", error);
+    return empty;
+  }
+
+  const found = pageCopyRepeats(rows, texts);
+  const result: PageCopyResult = { live, institutions: new Set(rows.map((row) => String(row.institution_id))).size, ...found };
+  if (!live || options.dryRun || found.collapses.length === 0) return result;
+
+  try {
+    const closed = await inSavepoint(db, (scope) => scope<{ fee_published_id: number | string }[]>`
+      UPDATE published_fee_records fp
+         SET rolled_back_at = NOW(),
+             rolled_back_by_batch_id = ${options.batchId},
+             rolled_back_reason = ${DUPLICATE_COLLAPSE_REASON_PREFIX} || pick.kept::text || ${PAGE_COPY_COLLAPSE_REASON_SUFFIX}
+        FROM unnest(${found.collapses.map((row) => row.feePublishedId)}::bigint[], ${found.collapses.map((row) => row.keptFeePublishedId)}::bigint[]) AS pick(id, kept)
+       WHERE fp.fee_published_id = pick.id AND fp.rolled_back_at IS NULL
+      RETURNING fp.fee_published_id
+    `);
+    const ids = new Set(closed.map((row) => Number(row.fee_published_id)));
+    result.collapses = found.collapses.filter((row) => ids.has(row.feePublishedId));
+  } catch (error) {
+    console.error("page-copy collapse failed:", error);
+    return { ...result, collapses: [] };
+  }
+  if (result.collapses.length > 0) {
+    invalidatePublicReadCache();
+    try {
+      await inSavepoint(db, (scope) => scope`
+        INSERT INTO agent_run_events (agent_run_id, event_type, status, message, detail)
+        VALUES (
+          ${options.runId}, 'hamilton.page_copy_duplicates_collapsed', 'completed',
+          ${`Closed ${result.collapses.length} published fee(s) that repeated a line of a newer copy of their page`},
+          ${JSON.stringify({ batch_id: options.batchId, collapsed: result.collapses.length, samples: result.collapses.slice(0, 20) })}::jsonb
+        )
+      `);
+    } catch (error) {
+      console.error("page-copy collapse event failed:", error);
+    }
+  }
+  return result;
+}

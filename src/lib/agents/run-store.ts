@@ -5,6 +5,7 @@ import { reportReviewStates } from "@/lib/agents/atlas/report-review-states";
 import { runDarwinVerify } from "@/lib/agents/darwin/verify";
 import { runHamiltonCategoryGuard } from "@/lib/agents/hamilton/category-guard";
 import { collapseNearNameDuplicates, collapsePublishedDuplicates } from "@/lib/agents/hamilton/duplicate-collapse";
+import { collapsePageCopies } from "@/lib/agents/hamilton/page-copy-collapse";
 import { retireClosedInstitutionFees } from "@/lib/agents/hamilton/closed-institution";
 import { fillBlankFrequencies, FREQUENCY_FILL_VERSION } from "@/lib/agents/hamilton/frequency-fill";
 import { repairSourceLinks, SOURCE_LINK_VERSION } from "@/lib/agents/hamilton/source-link";
@@ -1102,6 +1103,14 @@ async function executeAgenticStep(
         dryRun: run.runKind === "dry_run",
         institutionId,
       });
+      // #1439: a live row that repeats a line of a newer copy of its page stored under another
+      // address ("?print=1", "www.", a mirror). Shadow until PAGE_COPY_COLLAPSE_LIVE is on.
+      const pageCopyCollapse = await collapsePageCopies(tx, {
+        runId: run.id,
+        batchId: `agentic-run-${run.id}`,
+        dryRun: run.runKind === "dry_run",
+        institutionId,
+      });
       // A live fee's frequency follows its own schedule row: a blank gets the one the row states
       // ("$6.00 each"), and one read from another fee's row is corrected or cleared.
       const frequencyFill = await fillBlankFrequencies(tx, {
@@ -1239,6 +1248,7 @@ async function executeAgenticStep(
       const duplicateCollapses = [
         ...earlyDuplicateCollapses,
         ...(nearNameCollapse.live ? nearNameCollapse.collapses : []),
+        ...(pageCopyCollapse.live ? pageCopyCollapse.collapses : []),
         ...lateDuplicateCollapses,
       ];
       // Every live fee must be stated in the bank's own stored schedule: every publish
@@ -1754,6 +1764,23 @@ async function executeAgenticStep(
               kept_fee_published_id: row.keptFeePublishedId,
               kept_fee_name: row.keptFeeName,
               source_document_id: row.sourceDocumentId,
+              amount: row.amount,
+            })),
+          },
+          page_copy_collapse: {
+            live: pageCopyCollapse.live,
+            institutions: pageCopyCollapse.institutions,
+            pairs: pageCopyCollapse.pairs,
+            apart_on_page: pageCopyCollapse.apartOnPage,
+            unproven: pageCopyCollapse.unproven,
+            [pageCopyCollapse.live ? "closed" : "would_close"]: pageCopyCollapse.collapses.length,
+            samples: pageCopyCollapse.collapses.slice(0, 10).map((row) => ({
+              fee_published_id: row.feePublishedId,
+              fee_name: row.feeName,
+              source_document_id: row.sourceDocumentId,
+              kept_fee_published_id: row.keptFeePublishedId,
+              kept_fee_name: row.keptFeeName,
+              kept_source_document_id: row.keptSourceDocumentId,
               amount: row.amount,
             })),
           },
