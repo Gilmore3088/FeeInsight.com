@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { FeeRange, FeeRangeAxis } from "@/brand/components";
+import { FeeRange } from "@/brand/components";
 import { formatFeeAmount } from "@/lib/format";
 import type { MarketDot, NationalBand, Position } from "./category-view";
 
@@ -20,7 +20,8 @@ const DOT: Record<Position, string> = {
 
 /** The hero: the fee's whole national spread as one large range, with its four figures named. */
 export function HeroRange({ band, label }: { band: NationalBand; label: string }) {
-  const top = axisTop(band.p75 * 1.6, band.median * 2);
+  // The bar ends just past the highest fee, unless one outlier would squeeze the middle half flat.
+  const top = axisTop(Math.min(band.max, Math.max(band.p75 * 2.5, band.median * 2)));
   const domain: [number, number] = [0, top];
   const figures = [
     { name: "Low", value: money(band.min) },
@@ -41,7 +42,6 @@ export function HeroRange({ band, label }: { band: NationalBand; label: string }
         format={money}
         figure="median"
       />
-      <FeeRangeAxis ticks={[0, top / 2, top]} domain={domain} format={(v) => money(v)} />
       <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4">
         {figures.map((f) => (
           <div key={f.name}>
@@ -62,12 +62,17 @@ export function HeroRange({ band, label }: { band: NationalBand; label: string }
  * Used for Fed districts, banks against credit unions, and (for Pro) asset size and state.
  */
 export function MarketDots({ dots, band, ariaLabel }: { dots: MarketDot[]; band: NationalBand; ariaLabel: string }) {
-  const top = axisTop(band.p75 * 1.3, ...dots.map((d) => d.median));
-  const pct = (v: number) => `${(Math.min(v, top) / top) * 100}%`;
+  // The axis spans the national middle half and every market's median, with a little room, so
+  // a few dollars between markets reads as distance rather than one pile of dots.
+  const values = [band.p25, band.p75, ...dots.map((d) => d.median)];
+  const span = Math.max(...values) - Math.min(...values) || 1;
+  const lo = Math.max(0, Math.min(...values) - span * 0.25);
+  const hi = Math.max(...values) + span * 0.25;
+  const pct = (v: number) => `${((Math.min(Math.max(v, lo), hi) - lo) / (hi - lo)) * 100}%`;
   return (
     <ol aria-label={ariaLabel} className="divide-y divide-border">
       {dots.map((d) => (
-        <li key={d.key} className="grid grid-cols-[6.5rem_minmax(0,1fr)_3.5rem] items-center gap-3 py-2 text-[14px] sm:grid-cols-[10rem_minmax(0,1fr)_4.5rem]">
+        <li key={d.key} className="grid grid-cols-[6.5rem_minmax(0,1fr)_3.5rem] items-center gap-3 py-1.5 text-[14px] sm:grid-cols-[10rem_minmax(0,1fr)_4.5rem]">
           <span className="min-w-0 leading-tight text-ink">
             {d.label}
             <span className="block text-[11px] text-ink-muted">{d.institutions.toLocaleString("en-US")} institutions</span>
@@ -120,7 +125,7 @@ export function RelatedRanges({ items }: { items: { category: string; label: str
   return (
     <ul className="grid gap-2 sm:grid-cols-2">
       {items.map(({ category, label, band }) => {
-        const top = axisTop(band.p75 * 1.6, band.median * 2);
+        const top = axisTop(Math.min(band.max, Math.max(band.p75 * 2.5, band.median * 2)));
         return (
           <li key={category}>
             <Link

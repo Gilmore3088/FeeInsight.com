@@ -157,12 +157,11 @@ export default async function FeeCategoryPage({ params }: PageProps) {
               {plainName} fee
             </h1>
             {median !== null ? (
-              <p className="mt-2 text-[16px] text-ink">
-                Median{" "}
-                <span className="font-mono text-[28px] font-semibold tabular-nums align-[-2px]">{money(median)}</span>
+              <p className="mt-3 leading-tight">
+                <span className="font-mono text-[44px] font-semibold tabular-nums text-ink">{money(median)}</span>
                 <UnstatedAudienceMark show={unstatedAudience} />
-                <span className="ml-2 text-ink-muted">
-                  across {institutionCount.toLocaleString("en-US")} banks and credit unions
+                <span className="mt-1 block text-[15px] text-ink-muted">
+                  The median across {institutionCount.toLocaleString("en-US")} banks and credit unions
                 </span>
               </p>
             ) : (
@@ -193,7 +192,7 @@ export default async function FeeCategoryPage({ params }: PageProps) {
         {institutionValues.length > 0 && (
           <section aria-labelledby="distribution-heading" className="space-y-3">
             <h2 id="distribution-heading" className="text-[20px] font-semibold tracking-[-0.02em] text-ink sm:text-[24px]">
-              What {institutionCount.toLocaleString("en-US")} institutions charge
+              What institutions charge
             </h2>
             <div className="rounded-2xl border border-border bg-surface-0 p-4 shadow-fi-1 sm:p-6">
               <DistributionChart values={institutionValues} median={median} />
@@ -305,7 +304,7 @@ export default async function FeeCategoryPage({ params }: PageProps) {
         {related.length > 0 && (
           <section aria-labelledby="related-heading" className="space-y-3">
             <h2 id="related-heading" className="text-[20px] font-semibold tracking-[-0.02em] text-ink sm:text-[24px]">
-              Other {family?.toLowerCase()} fees
+              More {family} fees
             </h2>
             <RelatedRanges items={related} />
           </section>
