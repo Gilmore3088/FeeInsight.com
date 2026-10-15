@@ -62,6 +62,10 @@ describe("Ask Hamilton helpers", () => {
     expect(namesInstitution("How does U.S. Bank compare in Ohio?", "U.S. Bank, National Association")).toBe(true);
     expect(namesInstitution("Florida banks: fee pricing, revenue, complaints", "Capital City Bank")).toBe(false);
     expect(namesInstitution("Florida banks", null)).toBe(false);
+    // A generic name, or a name inside another word, is not the institution.
+    expect(namesInstitution("How do community bank overdraft fees compare in Pennsylvania?", "Community Bank, N.A.")).toBe(false);
+    expect(namesInstitution("Tell me about bankers in Ohio", "BOK")).toBe(false);
+    expect(namesInstitution("How does BOK compare?", "BOK")).toBe(true);
   });
 
   it("says plainly when the preview has no AI key", async () => {

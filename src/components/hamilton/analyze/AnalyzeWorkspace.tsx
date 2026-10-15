@@ -40,13 +40,27 @@ function extractTextFromMessage(message: { parts?: Array<{ type: string; text?: 
   );
 }
 
-/** The data lookups Hamilton made for an answer, named in plain words ("tool-getPeerFees" -> "peer fees"). */
-/** The question names this institution: "Capital City Bank's ATM fee" names "Capital City Bank". */
+/** Words that, alone, describe a kind of institution rather than name one ("Community Bank"). */
+const GENERIC_NAME_WORDS = new Set([
+  "the", "of", "and", "first", "national", "state", "community", "citizens", "peoples", "farmers", "american",
+  "united", "security", "savings", "trust", "federal", "credit", "union", "bank", "banks", "company", "co",
+]);
+
+/**
+ * The question names this institution as a whole phrase: "Capital City Bank's ATM fee" names
+ * "Capital City Bank". A name made only of generic words never counts, so "community bank
+ * overdraft fees in Pennsylvania" still reads as a market question.
+ */
 export function namesInstitution(question: string, name: string | null): boolean {
   if (!name) return false;
   const core = name.replace(/,?\s+(National Association|N\.A\.)$/i, "").trim().toLowerCase();
-  return core.length >= 3 && question.toLowerCase().includes(core);
+  const words = core.split(/[^a-z0-9.']+/).filter(Boolean);
+  if (core.length < 3 || words.every((w) => GENERIC_NAME_WORDS.has(w))) return false;
+  const escaped = core.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`(?:^|[^a-z0-9])${escaped}(?![a-z0-9])`).test(question.toLowerCase());
 }
+
+/** The data lookups Hamilton made for an answer, named in plain words ("tool-getPeerFees" -> "peer fees"). */
 
 export function lookupsUsed(parts: ReadonlyArray<MessagePart> | undefined): string[] {
   const names = new Set<string>();
