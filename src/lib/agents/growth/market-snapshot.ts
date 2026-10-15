@@ -34,6 +34,8 @@ export const SNAPSHOT_FEE_KEYS = [
   "stop_payment",
   "cashiers_check",
   "account_research",
+  "excess_withdrawal",
+  "returned_mail",
   "card_replacement",
   "deposited_item_return",
   "dormant_account",

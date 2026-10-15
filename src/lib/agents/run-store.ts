@@ -1338,6 +1338,9 @@ async function executeAgenticStep(
           : "") +
         (taxonomyFold.handFlagsCleared > 0
           ? ` ${published.dryRun ? "Would clear" : "Cleared"} the pending takedown on ${taxonomyFold.handFlagsCleared.toLocaleString()} hand-fixed fee(s) that now trace.`
+          : "") +
+        (taxonomyFold.pendingResearchSplit && taxonomyFold.pendingResearchSplit.wouldMove > 0
+          ? ` Dry run: the research split (off) would move ${taxonomyFold.pendingResearchSplit.wouldMoveLive.toLocaleString()} live and ${(taxonomyFold.pendingResearchSplit.wouldMove - taxonomyFold.pendingResearchSplit.wouldMoveLive).toLocaleString()} verified fee(s) out of account research (${Object.entries(taxonomyFold.pendingResearchSplit.byRoute).map(([route, count]) => `${route} ${count.toLocaleString()}`).join(", ")}).`
           : "");
       const offTaxonomyNote =
         (offTaxonomyRollbacks.length > 0

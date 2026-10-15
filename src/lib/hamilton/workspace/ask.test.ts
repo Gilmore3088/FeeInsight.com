@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { RESEARCH_SPLIT_LIVE, researchSplitTarget } from "@/lib/fee-fold";
 import {
   buildAskResponse,
   feeCategoriesIn,
@@ -174,5 +175,19 @@ describe("a question that names no fee (#1077)", () => {
     expect(feeCategoriesIn("Which banks have both verified NSF and monthly maintenance rows?").sort()).toEqual(["monthly_maintenance", "nsf"]);
     expect(feeCategoriesIn("talk to me about all 10B and up instititions for od fees")).toEqual(["overdraft"]);
     expect(feeCategoriesIn("talk to me about all institutison above 10billion")).toEqual([]);
+  });
+});
+
+describe("excess withdrawal and returned mail questions (#1398)", () => {
+  it("reads them under the type their fees are filed under: account research until the research split is on", () => {
+    const excess = researchSplitTarget("excess_withdrawal");
+    const returned = researchSplitTarget("returned_mail");
+    expect(matchFeeCategory("How does our excess withdrawal fee compare?")).toBe(excess);
+    expect(matchFeeCategory("what do others charge for an excessive withdrawal")).toBe(excess);
+    expect(matchFeeCategory("our excess transaction charge")).toBe(excess);
+    expect(matchFeeCategory("How does our returned mail fee compare?")).toBe(returned);
+    expect(matchFeeCategory("returned statement fee")).toBe(returned);
+    expect(matchFeeCategory("bad address charge")).toBe(returned);
+    if (!RESEARCH_SPLIT_LIVE) expect(matchFeeCategory("Excess Withdrawals")).toBe("account_research");
   });
 });

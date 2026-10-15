@@ -15,6 +15,7 @@
 import { subjectPossessive, subjectName } from "./subject";
 import { formatDollarsInWords, formatFeeAmount } from "@/lib/format";
 import { DISPLAY_NAMES } from "@/lib/fee-taxonomy";
+import { RESEARCH_SPLIT_KEYS, RESEARCH_SPLIT_LIVE, researchSplitTarget } from "@/lib/fee-fold";
 import { buildFeeAnswer, type ExhibitFocus } from "./answer";
 import { proseFeeName } from "./names";
 import { annualItemsQuestion, buildScenario, MIN_PEERS_FOR_POSITION, placeAmong, waiverRateQuestion } from "./scenario";
@@ -56,6 +57,15 @@ const FEE_SYNONYMS: Record<string, string[]> = {
   paper_statement: ["paper statement"],
 };
 
+// Excess withdrawals and returned mail (#1398) are read as account research, where their fees
+// are, until the research split is on.
+for (const [category, phrases] of [
+  [researchSplitTarget("excess_withdrawal"), ["excess withdrawal", "excess withdrawals", "excessive withdrawal", "excessive withdrawals", "excess transaction", "excess transactions"]],
+  [researchSplitTarget("returned_mail"), ["returned mail", "returned statement", "bad address"]],
+] as const) {
+  FEE_SYNONYMS[category] = [...(FEE_SYNONYMS[category] ?? []), ...phrases];
+}
+
 function phrasesFor(category: string): string[] {
   const display = (DISPLAY_NAMES[category] ?? "").toLowerCase();
   const fromDisplay = display
@@ -67,6 +77,7 @@ function phrasesFor(category: string): string[] {
 }
 
 const PHRASES: { category: string; phrase: string }[] = Object.keys(DISPLAY_NAMES)
+  .filter((category) => RESEARCH_SPLIT_LIVE || !RESEARCH_SPLIT_KEYS.has(category))
   .flatMap((category) => phrasesFor(category).map((phrase) => ({ category, phrase })))
   .sort((a, b) => b.phrase.length - a.phrase.length);
 

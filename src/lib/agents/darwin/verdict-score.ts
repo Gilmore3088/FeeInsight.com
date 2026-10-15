@@ -2,6 +2,7 @@ import type { sql } from "@/lib/data-store/connection";
 import { recordAttempt } from "@/lib/agents/learning/attempts";
 import { feedbackSchemaReady, recordFeedback, type FeedbackRow } from "@/lib/agents/learning/feedback";
 import { inSavepoint } from "@/lib/agents/savepoint";
+import { researchSplitCategory } from "@/lib/fee-fold";
 
 import answerKeyTexts from "./answer-key-fees.json";
 
@@ -89,9 +90,12 @@ const sameAmount = (left: number | null, right: number | null) =>
  * Pure: is a claim right by the bank's answer key? The key lists every fee on the schedule,
  * so a price the key does not have at that amount is not a fee. Several key fees often share
  * an amount ($5, $10), so the key's line must share a word with the fee's name before a
- * category it does not match counts as wrong; otherwise the claim is unclear.
+ * category it does not match counts as wrong; otherwise the claim is unclear. A key line keyed
+ * account research that is an excess withdrawal or returned mail counts under that type (James,
+ * Oct 15, #1398; the keys were made before).
  */
-export function scoreClaim(claim: ReviewClaim, keyFees: KeyFee[]): ScoredClaim {
+export function scoreClaim(claim: ReviewClaim, keyedFees: KeyFee[]): ScoredClaim {
+  const keyFees = keyedFees.map(([key, amount, line]): KeyFee => [researchSplitCategory(key, line) ?? key, amount, line]);
   const atAmount = claim.amount == null
     ? keyFees.filter(([, amount]) => amount == null)
     : keyFees.filter(([, amount]) => sameAmount(amount, claim.amount));

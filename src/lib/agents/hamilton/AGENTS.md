@@ -713,6 +713,21 @@ after seeing the list of 248 (Oct 8, "drop them"); with it off they would stay l
 counted as `noHomeHeld`. `refileCategory` applies the same rules to new reads, so Knox can
 keep hinting the retired keys. Publish skips a fee still under a retired key.
 
+The same step applies the live splits (`SPLIT_CATEGORIES`): fees in a live category whose name
+belongs to another type move there, under the same guard and range test. Fold v16 (James, Oct 15,
+#1398: "Add both") gives excess withdrawals (`excess_withdrawal`) and returned mail
+(`returned_mail`) their own types, dark until `RESEARCH_SPLIT_LIVE` is on. While it is off,
+returned statements leaving paper statements, excess activity leaving other lending and the hand
+re-files (21141 and 77918 renamed in place, 44516) all still go to account research, and nothing
+moves out of it. Every step writes a dry run of the switched split to its detail,
+`taxonomy_fold.pendingResearchSplit`: `wouldMove` and `wouldMoveLive`, `byRoute`
+(`account_research->excess_withdrawal`, `account_research->returned_mail`), the ones the new
+type's guard or range would refuse (`refused`, `refusedByRoute`, which stay research), and ten
+samples per route; the publish summary names the counts. Once on, account research's own excess
+withdrawal and returned mail fees (`EXCESS_WITHDRAWAL`, `RETURNED_MAIL` in `fee-fold.ts`) move by
+name. Account research keeps research, reconciliation, balancing, charge-off and ATM adjustment
+charges.
+
 ## Source Link Repair
 
 `hamilton/source-link.ts` (#1342), step `source-link-repair`, started by hand from Atlas details

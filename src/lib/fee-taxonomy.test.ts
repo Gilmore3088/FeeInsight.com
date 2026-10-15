@@ -5,11 +5,13 @@ import {
   CANONICAL_KEY_COUNT,
   TAXONOMY_COUNT,
 } from "./fee-taxonomy";
+import { RESEARCH_SPLIT_LIVE } from "./fee-fold";
 
 // Tripwire for Python↔TS drift. If you change these numbers, update the
 // Guards the canonical taxonomy keys used by public pages and agentic admin flows.
-const EXPECTED_TAXONOMY_COUNT = 50;
-const EXPECTED_CANONICAL_KEY_COUNT = 199;
+// 52 once excess withdrawals and returned mail leave account research (#1398, `RESEARCH_SPLIT_LIVE`).
+const EXPECTED_TAXONOMY_COUNT = RESEARCH_SPLIT_LIVE ? 52 : 50;
+const EXPECTED_CANONICAL_KEY_COUNT = 200;
 
 describe("fee-taxonomy sync", () => {
   test("every FEE_FAMILIES category is in CANONICAL_KEY_MAP", () => {
@@ -50,6 +52,22 @@ describe("fee-taxonomy sync", () => {
     for (const [key, value] of Object.entries(CANONICAL_KEY_MAP)) {
       expect(typeof value).toBe("string");
       expect(value.length).toBeGreaterThan(0);
+    }
+  });
+
+  test("excess withdrawal and returned mail slugs file under their own types once the research split is on (#1398)", () => {
+    const excess = RESEARCH_SPLIT_LIVE ? "excess_withdrawal" : "account_research";
+    const returned = RESEARCH_SPLIT_LIVE ? "returned_mail" : "account_research";
+    for (const slug of ["excess_withdrawal", "excessive_withdrawal_fee", "excessive_transaction_fee"]) {
+      expect(CANONICAL_KEY_MAP[slug]).toBe(excess);
+    }
+    for (const slug of ["returned_mail", "return_mail", "bad_address", "incorrect_address_fee", "undeliverable_mail"]) {
+      expect(CANONICAL_KEY_MAP[slug]).toBe(returned);
+    }
+    expect(CANONICAL_KEY_MAP.returned_statement).toBe(RESEARCH_SPLIT_LIVE ? "returned_mail" : "paper_statement");
+    // Generic slugs name no excess activity: they stay account research either way.
+    for (const slug of ["transaction_fee", "transactions_fee", "per_transaction_fee", "withdrawal_fee", "account_balancing_assistance", "inquiries_fee"]) {
+      expect(CANONICAL_KEY_MAP[slug]).toBe("account_research");
     }
   });
 });
