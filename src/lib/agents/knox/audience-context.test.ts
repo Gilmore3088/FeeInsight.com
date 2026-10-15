@@ -10,6 +10,35 @@ const headingAbove = (text: string, feeName: string, amount: number | null = 30)
 };
 
 describe("Knox audience suggestion from context (#1059)", () => {
+  // #1059 gate (a): the dry run left 8.9% unknown; these two rules take the safe part of it.
+  it("finds a group-and-row name's line under its group heading, at its price", () => {
+    const text = ["Fee Schedule", "Business Checking Maintenance | $15.00", "Wire Transfers", "Incoming | $10.00", "Outgoing | $25.00", "Stop Payment | $30.00"].join("\n");
+    expect(feeLineIndex(text.split("\n"), "Wire Transfers: Incoming", 10)).toBe(3);
+    expect(feeLineIndex(text.split("\n"), "Wire Transfers: Outgoing", 25)).toBe(4);
+    // Listed for every account in a schedule that also prices business items.
+    expect(suggest(null, text, "Wire Transfers: Incoming", 10)).toMatchObject({ audience: "both", source: "mixed_schedule_unqualified" });
+    // Not at its price, not under its heading, or no real word in the row: still not found.
+    expect(feeLineIndex(text.split("\n"), "Wire Transfers: Incoming", 12)).toBe(-1);
+    expect(feeLineIndex(["Wire Transfers", ...Array(9).fill("Notary | Free"), "Incoming | $10.00"], "Wire Transfers: Incoming", 10)).toBe(-1);
+    expect(feeLineIndex(["Fees", "1 | $10.00"], "Fees: 1", 10)).toBe(-1);
+    expect(feeLineIndex(text.split("\n"), "Wire Transfers: Incoming", null)).toBe(-1);
+    // The row's own heading still decides: a business heading over it keeps it unknown.
+    const business = ["Fee Schedule", "Business Accounts", "Wire Transfers", "Incoming | $10.00", "Stop Payment | $30.00"].join("\n");
+    expect(suggest(null, business, "Wire Transfers: Incoming", 10)).toBeNull();
+  });
+
+  it("gives a consumer sentence with no heading the consumer default, only with no business prices", () => {
+    const consumer = ["These fees apply to consumer accounts.", "Statement Copy | $5.00", "Stop Payment | $30.00"].join("\n");
+    expect(suggest(null, consumer, "Statement Copy", 5)).toMatchObject({ audience: "consumer", source: "default_general_schedule" });
+    // With business prices in the schedule, it stays unknown.
+    expect(suggest(null, `${consumer}\nBusiness Checking Maintenance | $15.00`, "Statement Copy", 5)).toBeNull();
+    // A farm account page is business by its address, before any default.
+    expect(suggest("https://www.minnstarbank.com/agribusiness/ag-savings/", consumer, "Statement Copy", 5)).toMatchObject({ audience: "business", source: "document_url" });
+    // A business sentence still leaves the fee unknown.
+    const business = ["These fees apply to business accounts.", "Statement Copy | $5.00", "Stop Payment | $30.00"].join("\n");
+    expect(suggest(null, business, "Statement Copy", 5)).toBeNull();
+  });
+
   it("lets the fee's own name decide first", () => {
     expect(suggest(null, "Fees\nReturned Deposit Items (Commercial Accounts Only) $10", "Returned Deposit Items (Commercial Accounts Only)", 10))
       .toMatchObject({ audience: "business", source: "fee_name" });
@@ -102,6 +131,8 @@ describe("Knox audience suggestion from context (#1059)", () => {
     "Member or Corporate Accounts Monthly Fee",
     "Corporate one-time setup fee",
     "Corporate One Card annual fee",
+    // Review of #1437: a corporate money order account is an account name.
+    "Corporate Money Order Account Fee",
   ])(
     "keeps a corporate account name business: %s",
     (name) => {
