@@ -7,8 +7,8 @@ const band: NationalBand = { min: 0, p25: 25, median: 30, p75: 33, max: 50, inst
 
 // Six institutions in Philadelphia charge $32-$35; four in San Francisco charge $20-$25.
 const points: ExplorerPoint[] = [
-  ...[32, 32, 33, 34, 35, 35].map((v) => ({ v, district: "District 3", charter: "Bank" })),
-  ...[20, 22, 25, 25].map((v) => ({ v, district: "District 12", charter: "Credit Union" })),
+  ...[32, 32, 33, 34, 35, 35].map((v) => ({ v, d: 3, c: "b" as const })),
+  ...[20, 22, 25, 25].map((v) => ({ v, d: 12, c: "c" as const })),
 ];
 
 const dots: MarketDot[] = [

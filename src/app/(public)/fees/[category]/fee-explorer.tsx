@@ -14,13 +14,17 @@ import { MARKET_ROW_GRID, MarketRowBody, marketScale, money } from "./exhibits";
 
 export type MarketDim = "district" | "charter" | "tier" | "state";
 
-/** One institution's value and the markets it sits in. Size group and state are sent only to Pro. */
+/**
+ * One institution's value and the markets it sits in, in short keys because every
+ * institution is sent to the page: d is the Fed district number, c is "b" (bank) or "c"
+ * (credit union). Size group (t) and state (s) are sent only to Pro.
+ */
 export interface ExplorerPoint {
   v: number;
-  district: string | null;
-  charter: string | null;
-  tier?: string | null;
-  state?: string | null;
+  d: number | null;
+  c: "b" | "c" | null;
+  t?: string | null;
+  s?: string | null;
 }
 
 type Selection =
@@ -61,8 +65,11 @@ function rangeLabel(bin: HistogramBin): string {
   return bin.high - bin.low === 1 ? money(bin.low) : `${money(bin.low)} to ${money(top)}`;
 }
 
+/** The point's market, keyed the way the market lists key their rows ("District 3", "Bank"). */
 function marketOf(point: ExplorerPoint, dim: MarketDim): string | null | undefined {
-  return dim === "district" ? point.district : dim === "charter" ? point.charter : dim === "tier" ? point.tier : point.state;
+  if (dim === "district") return point.d === null ? null : `District ${point.d}`;
+  if (dim === "charter") return point.c === "b" ? "Bank" : point.c === "c" ? "Credit Union" : null;
+  return dim === "tier" ? point.t : point.s;
 }
 
 export function FeeExplorer({ points, children }: { points: ExplorerPoint[]; children: ReactNode }) {

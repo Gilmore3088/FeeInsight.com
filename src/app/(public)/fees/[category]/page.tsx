@@ -83,16 +83,15 @@ function pageSummary(category: string, fees: FeeInstance[], snapshotRow: FeeCate
 }
 
 /**
- * What the explorer needs per institution: its value and the markets it sits in, keyed the
- * way the market lists key their rows. Size group and state go only to Pro, so a free page
+ * What the explorer needs per institution: its value and the markets it sits in. Size group and state go only to Pro, so a free page
  * never carries the breakdowns Hamilton sells.
  */
 function explorerPoints(points: InstitutionPoint[] | undefined, isPro: boolean): ExplorerPoint[] {
   return (points ?? []).map((p) => ({
     v: p.value,
-    district: p.fed_district === null ? null : `District ${p.fed_district}`,
-    charter: p.charter_type === "bank" ? "Bank" : p.charter_type === "credit_union" ? "Credit Union" : null,
-    ...(isPro ? { tier: p.asset_size_tier, state: p.state_code } : {}),
+    d: p.fed_district,
+    c: p.charter_type === "bank" ? "b" : p.charter_type === "credit_union" ? "c" : null,
+    ...(isPro ? { t: p.asset_size_tier, s: p.state_code } : {}),
   }));
 }
 
