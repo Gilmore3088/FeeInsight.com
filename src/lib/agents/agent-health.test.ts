@@ -10,6 +10,7 @@ import {
   knoxRules,
   magellanRules,
   readDarwinNumbers,
+  readHamiltonNumbers,
   summarizeAgentHealth,
   type HealthNumbers,
 } from "./agent-health";
@@ -91,6 +92,22 @@ describe("agent health", () => {
     const rules = darwinRules({ stepsCompleted: 10, stepsFailed: 0, ...numbers, undecided: 400, published: 1000, sourceCheckTakedowns: 20 });
     expect(rules.every((rule) => rule.ok)).toBe(true);
     expect(rules.find((rule) => rule.key === "no_week_old_waits")?.label).toContain("no first decision");
+  });
+
+  it("counts the publisher's steps under Hamilton's name and Gutenberg's, and only Hamilton's spend (#1075 step 1)", async () => {
+    const texts: string[] = [];
+    const values: unknown[][] = [];
+    const db = Object.assign(
+      vi.fn(async (strings: TemplateStringsArray, ...args: unknown[]) => {
+        texts.push(strings.join("$"));
+        values.push(args);
+        return [{ steps_completed: 0, steps_failed: 0, spend_microusd: 0 }];
+      }),
+      { unsafe: vi.fn((text: string) => text) },
+    );
+    await readHamiltonNumbers(db as never).catch(() => undefined);
+    expect(texts[0]).toContain("agent_name = ANY($::text[]) AND status = 'completed'");
+    expect(values[0]).toEqual([["hamilton", "gutenberg"], ["hamilton", "gutenberg"], "hamilton"]);
   });
 
   it("breaks Knox's rule when a text is extracted twice at the same rules version", () => {

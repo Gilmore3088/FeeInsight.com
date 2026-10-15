@@ -36,4 +36,12 @@ describe("guard catch-up run", () => {
     expect(result).toMatchObject({ scheduled: false, runId: 777 });
     expect(startAgentRunMock).not.toHaveBeenCalled();
   });
+
+  it("finds an earlier run under either publisher name, Hamilton's or Gutenberg's (#1075 step 1)", async () => {
+    const db = createDb([{ id: 777 }]);
+    await scheduleGuardCatchUpRun(db);
+    const call = db.mock.calls[0] as unknown as [TemplateStringsArray, ...unknown[]];
+    expect(call[0].join("?")).toContain("agent_name = ANY(");
+    expect(call.slice(1)).toContainEqual(["hamilton", "gutenberg"]);
+  });
 });
