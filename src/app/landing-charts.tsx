@@ -1,7 +1,8 @@
 "use client";
 
-import { useId, useState, type CSSProperties, type KeyboardEvent } from "react";
+import { useEffect, useId, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
 import Link from "next/link";
+import { trackEvent } from "@/lib/analytics";
 import { US_STATES } from "@/lib/us-map-paths";
 import { STATE_TO_DISTRICT } from "@/lib/fed-districts";
 import type { MarketLadderData } from "@/app/for-institutions/market-ladder";
@@ -74,10 +75,22 @@ export function firstDistrict(districts: DistrictPoint[]): number | null {
   return pick?.district ?? null;
 }
 
+/** Where a metric sits on the five steps, with "too few" as no step. */
+function scaleOf(districts: DistrictPoint[], metric: Metric) {
+  const values = districts.map((d) => metricOf(d, metric)).filter((v): v is number => v !== null);
+  const lo = values.length ? Math.min(...values) : 0;
+  const hi = values.length ? Math.max(...values) : 0;
+  return { values, lo, hi, step: (d: DistrictPoint | undefined) => {
+    const v = d ? metricOf(d, metric) : null;
+    return v === null ? 0 : stepOf(v, lo, hi);
+  } };
+}
+
 /**
  * The hero exhibit: the 12 Fed districts, each state shaded by its district's overdraft
- * median (no read gives a median for every state, so the district carries it). Hover, click
- * or Enter on a district updates the panel; arrow keys move between districts.
+ * median (no read gives a median for every state, so the district carries it). Hover
+ * previews a district in the panel; a click or Enter picks it. The map is one tab stop:
+ * arrow keys move between districts.
  */
 export function DistrictMap({ data }: { data: HomeData }) {
   const { districts, overdraft, summary } = data;
@@ -88,29 +101,37 @@ export function DistrictMap({ data }: { data: HomeData }) {
   const activeNumber = hovered ?? selected;
   const active = activeNumber !== null ? byNumber.get(activeNumber) ?? null : null;
 
-  const values = districts.map((d) => metricOf(d, metric)).filter((v): v is number => v !== null);
-  const lo = values.length ? Math.min(...values) : 0;
-  const hi = values.length ? Math.max(...values) : 0;
+  const shade = scaleOf(districts, metric);
+  const { values, lo, hi } = shade;
   const fillOf = (n: number) => {
-    const d = byNumber.get(n);
-    const v = d ? metricOf(d, metric) : null;
-    return v === null ? NONE_FILL : STEP_FILL(stepOf(v, lo, hi));
+    const step = shade.step(byNumber.get(n));
+    return step === 0 ? NONE_FILL : STEP_FILL(step);
   };
-  /** A district's map color, and a text color that reads on it (light and dark themes alike). */
+  /**
+   * A district's median color, and a text color that reads on it (light and dark themes
+   * alike). The panel's bar and the "Districts by median" dots plot medians, so they keep
+   * the median colors whichever way the map is shaded.
+   */
+  const medians = scaleOf(districts, "median");
   const swatchOf = (n: number) => {
-    const d = byNumber.get(n);
-    const v = d ? metricOf(d, metric) : null;
-    const step = v === null ? 0 : stepOf(v, lo, hi);
-    return { fill: fillOf(n), text: step >= 4 ? "var(--fi-surface-0)" : "var(--fi-ink)" };
+    const step = medians.step(byNumber.get(n));
+    return { fill: step === 0 ? NONE_FILL : STEP_FILL(step), text: step >= 4 ? "var(--fi-surface-0)" : "var(--fi-ink)" };
   };
   const fmt = (v: number) => (metric === "median" ? money(v) : COUNT.format(v));
   const anyThin = districts.some((d) => metricOf(d, metric) === null) || SWEEP.some((n) => !byNumber.has(n));
 
   const order = SWEEP.filter((n) => byNumber.has(n));
+  /** The one district in the tab order: the chosen one, else the first west to east. */
+  const tabStop = selected !== null && byNumber.has(selected) ? selected : order[0] ?? SWEEP[0];
+  /** A deliberate pick (click, Enter, a dot), counted so we learn whether the map earns its place. */
+  const pick = (n: number) => {
+    setSelected(n);
+    trackEvent("demo_district_picked", { district: n });
+  };
   const onKey = (event: KeyboardEvent<SVGGElement>, n: number) => {
     if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
-      setSelected(n);
+      pick(n);
       return;
     }
     const step = event.key === "ArrowRight" || event.key === "ArrowDown" ? 1 : event.key === "ArrowLeft" || event.key === "ArrowUp" ? -1 : 0;
@@ -121,6 +142,16 @@ export function DistrictMap({ data }: { data: HomeData }) {
     (svg?.querySelector(`[data-district="${next}"]`) as SVGGElement | null)?.focus();
     setSelected(next);
   };
+  const metricRadios = useRef<(HTMLButtonElement | null)[]>([]);
+  const onMetricKey = (event: KeyboardEvent<HTMLButtonElement>, i: number) => {
+    const step = event.key === "ArrowRight" || event.key === "ArrowDown" ? 1 : event.key === "ArrowLeft" || event.key === "ArrowUp" ? -1 : 0;
+    if (!step) return;
+    event.preventDefault();
+    const next = (i + step + METRICS.length) % METRICS.length;
+    setMetric(METRICS[next].key);
+    metricRadios.current[next]?.focus();
+  };
+  const chosen = selected !== null ? byNumber.get(selected) : undefined;
 
   const label = (d: DistrictPoint | undefined, n: number) =>
     d
@@ -133,13 +164,18 @@ export function DistrictMap({ data }: { data: HomeData }) {
         <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
           <p className="text-[13px] font-semibold text-ink">Overdraft by Fed district</p>
           <div role="radiogroup" aria-label="Shade the map by" className="inline-flex rounded-full border border-border bg-paper p-0.5">
-            {METRICS.map((m) => (
+            {METRICS.map((m, i) => (
               <button
                 key={m.key}
+                ref={(node) => {
+                  metricRadios.current[i] = node;
+                }}
                 type="button"
                 role="radio"
                 aria-checked={metric === m.key}
+                tabIndex={metric === m.key ? 0 : -1}
                 onClick={() => setMetric(m.key)}
+                onKeyDown={(event) => onMetricKey(event, i)}
                 className={`fi-map-cell rounded-full px-3 py-1 text-[12px] font-semibold ${
                   metric === m.key ? "bg-ink text-on-ink" : "text-ink-muted hover:text-ink"
                 }`}
@@ -164,12 +200,12 @@ export function DistrictMap({ data }: { data: HomeData }) {
                 key={n}
                 data-district={n}
                 role="button"
-                tabIndex={0}
+                tabIndex={n === tabStop ? 0 : -1}
                 aria-label={label(d, n)}
                 aria-pressed={selected === n}
                 className="fi-map-district fi-a-sweep"
                 style={at(80 + i * 70)}
-                onClick={() => setSelected(n)}
+                onClick={() => pick(n)}
                 onKeyDown={(event) => onKey(event, n)}
                 onMouseEnter={() => setHovered(n)}
                 onMouseLeave={() => setHovered(null)}
@@ -224,7 +260,11 @@ export function DistrictMap({ data }: { data: HomeData }) {
           <span>{summary.freshnessLabel}</span>
         </div>
       </div>
-      <DistrictPanel district={active} number={activeNumber} districts={districts} national={overdraft} onPick={setSelected} swatchOf={swatchOf} />
+      {/* Announced on a pick only, never on hover. */}
+      <p className="sr-only" aria-live="polite" data-district-announce="">
+        {selected !== null ? label(chosen, selected) : ""}
+      </p>
+      <DistrictPanel district={active} number={activeNumber} districts={districts} national={overdraft} onPick={pick} swatchOf={swatchOf} />
     </div>
   );
 }
@@ -248,7 +288,7 @@ function DistrictPanel({
   const drawn = districts.filter((d): d is DistrictPoint & { median: number } => d.median !== null);
   const scaleHi = top10(Math.max(national?.median_amount ?? 0, ...drawn.map((d) => d.median)));
   return (
-    <div className="flex min-w-0 flex-col" aria-live="polite" data-district-panel="">
+    <div className="flex min-w-0 flex-col" data-district-panel="">
       {district && number !== null ? (
         <>
           <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-muted">District {number}</p>
@@ -390,16 +430,28 @@ export function firstFee(rows: SampleRow[]): string | null {
  * My fees: the sample bank's fees as bars that grow left (below its local median) or right
  * (above it), colored by where each sits against the local middle half. Clicking a bar opens
  * that fee: its amount on the local range, and the words of the schedule that state it.
+ * Under lg the fee card sits above the bars, and a tap brings it into view if it is off
+ * screen, so a tap always shows its result.
  */
 export function MyFeesChart({ sample, freshness }: { sample: SampleView; freshness: string }) {
   const rows = [...sample.rows].sort((a, b) => b.amount - b.median - (a.amount - a.median));
   const [selected, setSelected] = useState<string | null>(() => firstFee(rows));
+  const card = useRef<HTMLDivElement>(null);
   const row = rows.find((r) => r.key === selected) ?? rows[0];
   const maxAbs = Math.max(1, ...rows.map((r) => Math.abs(r.amount - r.median)));
   const quote = sample.fees.find((f) => f.key === row?.key) ?? null;
+  const open = (key: string) => {
+    setSelected(key);
+    const el = card.current;
+    if (!el || typeof window === "undefined" || !window.matchMedia?.("(max-width: 1023.98px)").matches) return;
+    const box = el.getBoundingClientRect();
+    if (box.top >= 64 && box.bottom <= window.innerHeight) return;
+    const still = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    el.scrollIntoView({ block: "nearest", behavior: still ? "auto" : "smooth" });
+  };
   return (
-    <div className="grid gap-5 p-4 sm:p-6 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)] lg:gap-8">
-      <div className="min-w-0">
+    <div className="grid gap-4 p-4 sm:p-6 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)] lg:grid-rows-[auto_1fr] lg:gap-x-8 lg:gap-y-3">
+      <div className="min-w-0 lg:col-start-1 lg:row-start-1">
         <p className="text-[13px] text-ink-soft">
           <span className="font-semibold text-ink">{sample.institutionName}</span> against {COUNT.format(sample.competitors)} local
           competitors
@@ -413,7 +465,36 @@ export function MyFeesChart({ sample, freshness }: { sample: SampleView; freshne
           ))}
           <li>Bars: its fee less the local median</li>
         </ul>
-        <div className="relative mt-3" role="group" aria-label={`${sample.institutionName}: each fee against its local median`}>
+      </div>
+      {row ? (
+        <div
+          ref={card}
+          className="flex min-w-0 scroll-mt-20 flex-col rounded-xl border border-border bg-paper/50 p-4 sm:p-5 lg:col-start-2 lg:row-span-2 lg:row-start-1"
+          aria-live="polite"
+          data-fee-detail=""
+        >
+          <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-muted">{row.label}</p>
+          <p className="mt-1 flex items-baseline gap-2">
+            <span className="text-[34px] font-semibold leading-none tracking-[-0.03em] text-ink tabular-nums">{money(row.amount)}</span>
+            <span className="text-[13px] text-ink-muted">local median {money(row.median)}</span>
+          </p>
+          <p className="mt-2 text-[13px] font-semibold text-ink">{POSITION_WORDS[row.position]}</p>
+          <RangeStrip p25={row.p25} median={row.median} p75={row.p75} value={row.amount} color={POSITION_FILL[row.position]} />
+          <p className="mt-2 text-[12px] text-ink-muted">
+            Band: middle half of {COUNT.format(row.competitors)} local competitors · Line: median · Dot: its fee
+          </p>
+          {quote ? (
+            <p className="mt-auto border-t border-border pt-3 text-[12px] leading-5 text-ink-muted">
+              <span className="mr-1.5 rounded bg-brick-tint px-1.5 py-0.5 text-[11px] font-semibold text-ink">Source</span>
+              &ldquo;{quote.quote}&rdquo;
+            </p>
+          ) : (
+            <p className="mt-auto border-t border-border pt-3 text-[12px] text-ink-muted">{freshness}</p>
+          )}
+        </div>
+      ) : null}
+      <div className="min-w-0 lg:col-start-1 lg:row-start-2">
+        <div className="relative" role="group" aria-label={`${sample.institutionName}: each fee against its local median`}>
           {rows.map((r, i) => {
             const diff = r.amount - r.median;
             const width = `${(Math.abs(diff) / maxAbs) * 50}%`;
@@ -424,7 +505,7 @@ export function MyFeesChart({ sample, freshness }: { sample: SampleView; freshne
                 type="button"
                 aria-pressed={on}
                 aria-label={`${r.label}: ${money(r.amount)}, local median ${money(r.median)}`}
-                onClick={() => setSelected(r.key)}
+                onClick={() => open(r.key)}
                 data-fee={r.key}
                 className={`fi-map-cell grid w-full grid-cols-[minmax(0,1fr)_5rem] items-center gap-y-1 rounded-md py-[5px] sm:grid-cols-[13rem_minmax(0,1fr)_5rem] sm:gap-y-0 text-left text-[13px] ${
                   on ? "bg-paper" : "hover:bg-paper/60"
@@ -454,28 +535,6 @@ export function MyFeesChart({ sample, freshness }: { sample: SampleView; freshne
           })}
         </div>
       </div>
-      {row ? (
-        <div className="flex min-w-0 flex-col rounded-xl border border-border bg-paper/50 p-4 sm:p-5" aria-live="polite" data-fee-detail="">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-muted">{row.label}</p>
-          <p className="mt-1 flex items-baseline gap-2">
-            <span className="text-[34px] font-semibold leading-none tracking-[-0.03em] text-ink tabular-nums">{money(row.amount)}</span>
-            <span className="text-[13px] text-ink-muted">local median {money(row.median)}</span>
-          </p>
-          <p className="mt-2 text-[13px] font-semibold text-ink">{POSITION_WORDS[row.position]}</p>
-          <RangeStrip p25={row.p25} median={row.median} p75={row.p75} value={row.amount} color={POSITION_FILL[row.position]} />
-          <p className="mt-2 text-[12px] text-ink-muted">
-            Band: middle half of {COUNT.format(row.competitors)} local competitors · Line: median · Dot: its fee
-          </p>
-          {quote ? (
-            <p className="mt-auto border-t border-border pt-3 text-[12px] leading-5 text-ink-muted">
-              <span className="mr-1.5 rounded bg-brick-tint px-1.5 py-0.5 text-[11px] font-semibold text-ink">Source</span>
-              &ldquo;{quote.quote}&rdquo;
-            </p>
-          ) : (
-            <p className="mt-auto border-t border-border pt-3 text-[12px] text-ink-muted">{freshness}</p>
-          )}
-        </div>
-      ) : null}
     </div>
   );
 }
@@ -521,6 +580,56 @@ export function RangeStrip({
 /* ───────────────────────── Try a price ───────────────────────── */
 
 /**
+ * The price Try a price opens on: the national median when at least one district median
+ * sits under it, so the view shows its effect before any drag; else the first live figure
+ * (the national p75, then the national max) that passes one. Never typed by hand.
+ */
+export function openingPrice(national: RangeEntry, medians: number[]): number {
+  const candidates = [national.median_amount, national.p75_amount, national.max_amount];
+  return candidates.find((v) => medians.some((m) => v > m)) ?? national.median_amount;
+}
+
+const DOT = 12;
+const DOT_STEP = 14;
+
+/**
+ * Lays out the district dots: equal medians cluster three to a row, so a crowded value reads
+ * as a group, not a pole; a cluster that would touch a neighbor's (at this track width) sits
+ * above it instead. Returns each dot's pixel offset from its value and its row from the floor.
+ */
+export function dotLayout(medians: number[], hi: number, width: number): { dx: number; row: number }[] {
+  const keyOf = (m: number) => Math.round(m * 2) / 2;
+  const clusters = new Map<number, number[]>();
+  medians.forEach((m, i) => clusters.set(keyOf(m), [...(clusters.get(keyOf(m)) ?? []), i]));
+  const placed: { x: number; half: number; base: number; rows: number }[] = [];
+  const out: { dx: number; row: number }[] = medians.map(() => ({ dx: 0, row: 0 }));
+  for (const [key, members] of [...clusters.entries()].sort((a, b) => a[0] - b[0])) {
+    const x = (Math.max(0, Math.min(hi, key)) / hi) * width;
+    const perRow = Math.min(3, members.length);
+    const half = ((perRow - 1) * DOT_STEP + DOT) / 2;
+    const rows = Math.ceil(members.length / 3);
+    let base = 0;
+    for (let moved = true; moved; ) {
+      moved = false;
+      for (const p of placed) {
+        const touches = Math.abs(p.x - x) < p.half + half + 2;
+        const overlaps = base < p.base + p.rows && p.base < base + rows;
+        if (touches && overlaps) {
+          base = p.base + p.rows;
+          moved = true;
+        }
+      }
+    }
+    placed.push({ x, half, base, rows });
+    members.forEach((m, index) => {
+      const inRow = Math.min(3, members.length - Math.floor(index / 3) * 3);
+      out[m] = { dx: ((index % 3) - (inRow - 1) / 2) * DOT_STEP, row: base + Math.floor(index / 3) };
+    });
+  }
+  return out;
+}
+
+/**
  * Try a price: drag the slider and the price line moves across the national overdraft
  * market (its middle half and median) and the 12 district medians. Districts whose median
  * the price passes light up.
@@ -528,27 +637,29 @@ export function RangeStrip({
 export function PriceSlider({ data }: { data: HomeData }) {
   const { overdraft, scenario, districts } = data;
   const inputId = useId();
-  const [price, setPrice] = useState(() => scenario?.price ?? overdraft?.median_amount ?? 0);
-  if (!overdraft || !scenario) return null;
   const drawn = districts.filter((d): d is DistrictPoint & { median: number } => d.median !== null);
+  const [price, setPrice] = useState(() => (overdraft ? openingPrice(overdraft, drawn.map((d) => d.median)) : 0));
+  // The track's width, so dots that would touch on a phone stack instead; a desktop guess
+  // until the first measure.
+  const track = useRef<HTMLDivElement>(null);
+  const [width, setWidth] = useState(960);
+  useEffect(() => {
+    const el = track.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => setWidth(el.clientWidth || 960));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  if (!overdraft || !scenario) return null;
   const hi = top10(Math.max(overdraft.max_amount, scenario.price, ...drawn.map((d) => d.median)));
   const passed = drawn.filter((d) => price > d.median).length;
   const diff = price - overdraft.median_amount;
   const band =
     price < overdraft.p25_amount ? "Below the middle half" : price > overdraft.p75_amount ? "Above the middle half" : "Inside the middle half";
-  // Equal medians cluster three to a row, so a crowded value reads as a group, not a pole.
-  const stacks = new Map<number, number>();
-  const dots = drawn.map((d) => {
-    const key = Math.round(d.median * 2) / 2;
-    const index = stacks.get(key) ?? 0;
-    stacks.set(key, index + 1);
-    return { d, key, index };
-  });
-  const offset = (key: number, index: number) => {
-    const size = stacks.get(key) ?? 1;
-    const inRow = Math.min(3, size - Math.floor(index / 3) * 3);
-    return ((index % 3) - (inRow - 1) / 2) * 14;
-  };
+  const layout = dotLayout(drawn.map((d) => d.median), hi, width);
+  const rows = Math.max(1, ...layout.map((l) => l.row + 1));
+  // The label row on top, then the dots' rows, then the floor.
+  const height = Math.max(96, 22 + rows * DOT_STEP + 8);
   const ticks = Array.from({ length: hi / 10 + 1 }, (_, i) => i * 10);
   return (
     <div className="p-4 sm:p-6" data-price-slider="">
@@ -575,7 +686,7 @@ export function PriceSlider({ data }: { data: HomeData }) {
         </dl>
       </div>
       <div className="mt-5 px-2">
-        <div className="relative h-24" aria-hidden="true">
+        <div ref={track} className="relative" style={{ height: `${height}px` }} aria-hidden="true" data-price-track="">
           <span
             className="absolute bottom-0 top-5 rounded-md bg-ink/[0.07]"
             style={{ left: pct(overdraft.p25_amount, hi), width: `calc(${pct(overdraft.p75_amount, hi)} - ${pct(overdraft.p25_amount, hi)})` }}
@@ -587,19 +698,21 @@ export function PriceSlider({ data }: { data: HomeData }) {
           >
             Nation {money(overdraft.median_amount)}
           </span>
-          {dots.map(({ d, key, index }) => (
+          {drawn.map((d, i) => (
             <span
               key={d.district}
               title={`${d.name} ${money(d.median)}`}
-              className="absolute h-3 w-3 -translate-x-1/2 rounded-full ring-2 ring-surface-0 transition-colors duration-200"
+              data-dot={d.district}
+              className="absolute h-3 w-3 -translate-x-1/2 rounded-full ring-2 ring-surface-0 transition-colors duration-200 motion-reduce:transition-none"
               style={{
-                left: `calc(${pct(d.median, hi)} + ${offset(key, index)}px)`,
-                bottom: `${4 + Math.floor(index / 3) * 14}px`,
+                left: `calc(${pct(Math.round(d.median * 2) / 2, hi)} + ${layout[i].dx}px)`,
+                bottom: `${4 + layout[i].row * DOT_STEP}px`,
                 background: price > d.median ? "var(--fi-viz-above)" : "var(--fi-viz-inside)",
               }}
             />
           ))}
-          <span className="absolute bottom-0 top-0 w-[2px] -translate-x-1/2 bg-ink" style={{ left: pct(price, hi) }} />
+          {/* The price line starts under the label row, so it never crosses the "Nation" label. */}
+          <span className="absolute bottom-0 top-5 w-[2px] -translate-x-1/2 bg-ink" style={{ left: pct(price, hi) }} />
         </div>
         <input
           id={inputId}
@@ -623,7 +736,7 @@ export function PriceSlider({ data }: { data: HomeData }) {
       <p className="mt-4 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-ink-muted">
         <span className="flex items-center gap-1.5">
           <span aria-hidden="true" className="h-3 w-4 rounded-sm bg-ink/[0.07]" />
-          Middle half, {COUNT.format(overdraft.institution_count)} institutions
+          Middle half of {COUNT.format(overdraft.institution_count)} institutions
         </span>
         <span className="flex items-center gap-1.5">
           <span aria-hidden="true" className="h-2.5 w-2.5 rounded-full" style={{ background: "var(--fi-viz-above)" }} />

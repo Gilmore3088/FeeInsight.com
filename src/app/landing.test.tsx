@@ -251,8 +251,8 @@ describe("homepage (site v3 brief 06 §4.3)", () => {
     expect(t).toMatch(/^ ?Live samples See it in action Each sample is drawn live from published fee schedules\./);
     // The demo comes first on the page, then the live samples.
     const page = wholePage();
-    expect(page.indexOf('aria-label="Product demo"')).toBeGreaterThan(-1);
-    expect(page.indexOf('aria-label="Product demo"')).toBeLessThan(page.indexOf('id="live-samples"'));
+    expect(page.indexOf('aria-label="Hamilton demo"')).toBeGreaterThan(-1);
+    expect(page.indexOf('aria-label="Hamilton demo"')).toBeLessThan(page.indexOf('id="live-samples"'));
   });
 
   it("keeps at most five short FAQ answers", () => {
@@ -267,7 +267,7 @@ describe("homepage (site v3 brief 06 §4.3)", () => {
   it("keeps the copy rules and the word budget", () => {
     const html = wholePage();
     expect(text(html)).not.toMatch(/—|!|real-time|recommend|\bAI\b|verified|99%/i);
-    // The markup holds all four sizzle chapters (three hidden), every figure and every label, and
+    // The markup holds all four demo views (three hidden), every figure and every label, and
     // still stays under the old page's 889 visible words; the visible count is far lower.
     expect(words(html)).toBeLessThan(800);
     // No section paragraph runs past one sentence of about twenty words.

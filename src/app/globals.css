@@ -1469,7 +1469,9 @@ details[open] summary .expand-icon { transform: rotate(180deg); }
 
 /* The map: a district outlines in ink when it is hovered, focused or chosen. */
 .fi-map-district { cursor: pointer; outline: none; }
-.fi-map-district path { transition: fill 0.3s ease, opacity 0.2s ease; }
+@media (prefers-reduced-motion: no-preference) {
+  .fi-map-district path { transition: fill 0.3s ease, opacity 0.2s ease; }
+}
 .fi-map-district:focus-visible path { stroke: var(--fi-ink); stroke-width: 3; }
 .fi-map-cell { outline: none; }
 .fi-map-cell:focus-visible { box-shadow: 0 0 0 2px var(--fi-surface-0), 0 0 0 4px var(--fi-ink); }
@@ -1477,7 +1479,6 @@ details[open] summary .expand-icon { transform: rotate(180deg); }
 /* The /subscribe showcase's progress bar (ProgressFill). */
 @keyframes fi-progress-fill { from { transform: scaleX(0); } to { transform: scaleX(1); } }
 @keyframes fi-a-rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
-@keyframes fi-a-fade { from { opacity: 0; } to { opacity: 1; } }
 @keyframes fi-a-sweep { from { opacity: 0; } to { opacity: 1; } }
 @keyframes fi-a-grow-x { from { transform: scaleX(0); } to { transform: scaleX(1); } }
 @keyframes fi-a-grow-y { from { transform: scaleY(0); } to { transform: scaleY(1); } }

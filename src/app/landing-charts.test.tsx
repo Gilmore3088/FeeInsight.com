@@ -1,9 +1,13 @@
 // @vitest-environment jsdom
 import { fireEvent, render, screen, within } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+const trackMock = vi.fn();
+vi.mock("@vercel/analytics", () => ({ track: (...args: unknown[]) => trackMock(...args) }));
+
 import type { DimensionBreakdown, FeeCategorySummary } from "@/lib/data-store/fees";
 import type { PublicStatsSummary } from "@/lib/public-stats";
-import { DistrictMap, MyFeesChart, PriceSlider, firstDistrict, gapWords, stepOf } from "./landing-charts";
+import { DistrictMap, MyFeesChart, PriceSlider, dotLayout, firstDistrict, gapWords, openingPrice, stepOf } from "./landing-charts";
 import { demoViews } from "./landing-demo";
 import { buildHomeData, type SampleView } from "./landing-shared";
 import { buildScenario } from "./subscribe/scenario";
@@ -35,6 +39,7 @@ const group = (n: number) => document.querySelector(`[data-district="${n}"]`) as
 
 afterEach(() => {
   document.body.innerHTML = "";
+  trackMock.mockReset();
 });
 
 describe("district map", () => {
@@ -65,13 +70,36 @@ describe("district map", () => {
 
   it("selects with Enter, moves with the arrow keys and previews on hover", () => {
     render(<DistrictMap data={data} />);
-    expect(group(1).getAttribute("tabindex")).toBe("0");
     fireEvent.keyDown(group(12), { key: "Enter" });
     expect(panelName()).toBe("San Francisco");
+    expect(trackMock).toHaveBeenCalledWith("demo_district_picked", { district: 12 });
     fireEvent.mouseEnter(group(1));
     expect(panelName()).toBe("Boston");
     fireEvent.mouseLeave(group(1));
     expect(panelName()).toBe("San Francisco");
+  });
+
+  it("is one tab stop: only the chosen district is in the tab order, and it follows the arrow keys", () => {
+    render(<DistrictMap data={data} />);
+    const stops = () => [...document.querySelectorAll("[data-district]")].filter((g) => g.getAttribute("tabindex") === "0").map((g) => g.getAttribute("data-district"));
+    expect(stops()).toEqual(["3"]);
+    fireEvent.keyDown(group(3), { key: "ArrowRight" });
+    expect(stops()).toHaveLength(1);
+    expect(stops()[0]).not.toBe("3");
+    expect(document.activeElement?.getAttribute("data-district")).toBe(stops()[0]);
+  });
+
+  it("announces a pick, never a hover", () => {
+    render(<DistrictMap data={data} />);
+    const live = () => document.querySelector("[data-district-announce]");
+    expect(live()?.getAttribute("aria-live")).toBe("polite");
+    expect(panel().getAttribute("aria-live")).toBeNull();
+    expect(live()?.textContent).toContain("Philadelphia");
+    fireEvent.mouseEnter(group(1));
+    expect(panelName()).toBe("Boston");
+    expect(live()?.textContent).toContain("Philadelphia");
+    fireEvent.click(group(11));
+    expect(live()?.textContent).toContain("Dallas");
   });
 
   it("marks a thin district with no median and says so, with a legend entry", () => {
@@ -85,11 +113,29 @@ describe("district map", () => {
     expect(document.querySelector("[data-map-legend]")?.textContent).toContain("Too few institutions");
   });
 
-  it("shades by institutions on request", () => {
+  it("shades by institutions on request, and keeps the median colors where medians are plotted", () => {
     render(<DistrictMap data={data} />);
+    const bar = () => (panel().querySelector("[data-panel-bars] span.block") as HTMLElement).style.background;
+    const medianBar = bar();
     fireEvent.click(screen.getByRole("radio", { name: "Institutions" }));
     expect(group(12).querySelector("path")?.getAttribute("fill")).toBe("var(--fi-viz-5)");
     expect(group(2).querySelector("path")?.getAttribute("fill")).toBe("var(--fi-viz-1)");
+    // Philadelphia's bar and dot plot its median, so they keep the median ramp's top step.
+    expect(bar()).toBe(medianBar);
+    expect(medianBar).toBe("var(--fi-viz-5)");
+  });
+
+  it("moves the shade-by radio group with the arrow keys, one tab stop", () => {
+    render(<DistrictMap data={data} />);
+    const median = screen.getByRole("radio", { name: "Median fee" });
+    const inst = screen.getByRole("radio", { name: "Institutions" });
+    expect([median.tabIndex, inst.tabIndex]).toEqual([0, -1]);
+    fireEvent.keyDown(median, { key: "ArrowRight" });
+    expect(inst.getAttribute("aria-checked")).toBe("true");
+    expect(document.activeElement).toBe(inst);
+    expect([median.tabIndex, inst.tabIndex]).toEqual([-1, 0]);
+    fireEvent.keyDown(inst, { key: "ArrowRight" });
+    expect(median.getAttribute("aria-checked")).toBe("true");
   });
 
   it("leaves the map out of the demo when no district figures were read, and opens on My fees", () => {
@@ -123,13 +169,47 @@ describe("my fees", () => {
     expect(detail()).toContain("middle half of 10 local competitors");
     expect(detail()).not.toContain("Outgoing International");
   });
+
+  it("puts the fee card before the bars, so a phone shows it above them", () => {
+    render(<MyFeesChart sample={sample} freshness={summary.freshnessLabel} />);
+    const card = document.querySelector("[data-fee-detail]") as HTMLElement;
+    const firstBar = document.querySelector("[data-fee]") as HTMLElement;
+    expect(card.compareDocumentPosition(firstBar) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
 });
 
 describe("try a price", () => {
+  it("opens on a live price that lights at least one district", () => {
+    // The national median passes San Francisco's $25.00.
+    expect(openingPrice(overdraft as never, [30, 32, 30, 25])).toBe(30);
+    // When no district median sits under the national median, the national p75 opens.
+    expect(openingPrice(overdraft as never, [30, 31])).toBe(33);
+    render(<PriceSlider data={data} />);
+    expect(screen.getByRole("slider").getAttribute("aria-valuetext")).toBe("$30.00");
+    expect(document.querySelector("[data-price-slider]")?.textContent).toContain("1 of 4");
+  });
+
+  it("says the band is the middle half of every institution counted", () => {
+    render(<PriceSlider data={data} />);
+    expect(document.querySelector("[data-price-slider]")?.textContent).toContain("Middle half of 321 institutions");
+  });
+
+  it("stacks a district dot above a cluster it would touch on a phone", () => {
+    const medians = [30, 30, 30, 30, 30, 30, 30, 30, 30, 29, 25, 32];
+    const boxes = (width: number) =>
+      dotLayout(medians, 50, width).map((l, i) => ({ x: (Math.round(medians[i] * 2) / 2 / 50) * width + l.dx, row: l.row }));
+    for (const width of [330, 1000]) {
+      const b = boxes(width);
+      for (let i = 0; i < b.length; i++)
+        for (let j = i + 1; j < b.length; j++) {
+          if (b[i].row === b[j].row) expect(Math.abs(b[i].x - b[j].x)).toBeGreaterThanOrEqual(12);
+        }
+    }
+  });
+
   it("moves the readout with the slider", () => {
     render(<PriceSlider data={data} />);
     const slider = screen.getByRole("slider");
-    expect(slider.getAttribute("aria-valuetext")).toBe("$25.00");
     fireEvent.change(slider, { target: { value: "31" } });
     expect(document.querySelector("[data-price]")?.textContent).toBe("$31.00");
     const text = document.querySelector("[data-price-slider]")?.textContent ?? "";

@@ -8,8 +8,6 @@ export interface FrameVideo {
   poster?: string;
   /** What the button says, e.g. "Watch the tour". */
   label: string;
-  /** Where each chapter starts, in seconds, when the clip plays in the homepage demo frame. */
-  chapters?: number[];
 }
 
 /**
