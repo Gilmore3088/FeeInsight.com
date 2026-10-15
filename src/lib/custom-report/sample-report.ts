@@ -8,10 +8,20 @@ import type { MarketReport } from "./report-data";
 /**
  * The public sample report (value funnel A5) is a live report for one real community bank,
  * built by the same code a buyer's report uses, so it can never drift from what a buyer
- * gets. SAMPLE_REPORT_INSTITUTION_ID pins the institution; otherwise the sample is the
- * first candidate whose local market passes the readiness bar today. When none passes,
- * there is no sample and the page says one is on its way.
+ * gets. The institution is chosen in this order:
+ *   1. SAMPLE_REPORT_INSTITUTION_ID, when set, pins it (ready or not).
+ *   2. DEMO_SAMPLE_INSTITUTION_ID, when its local market passes the readiness bar today
+ *      and names at least SAMPLE_MIN_NAMED competitors.
+ *   3. Otherwise the first candidate whose local market passes the readiness bar today.
+ * When none passes, there is no sample and the page says one is on its way.
  */
+
+/**
+ * Capital City Bank (Tallahassee, FL), the lead bank of James's standard demo set for every
+ * site example, demo and video: Capital City Bank, U.S. Bank, M&T Bank, Navy Federal and
+ * SchoolsFirst FCU. Never use Frost Bank in a sample, demo or video.
+ */
+export const DEMO_SAMPLE_INSTITUTION_ID = 323;
 
 /** Community banks, by asset_size (thousands of dollars): $250M to $2B. */
 const SAMPLE_MIN_ASSETS = 250_000;
@@ -86,8 +96,12 @@ export async function loadSampleReport(): Promise<MarketReport | null> {
     const result = await evaluate(pinned);
     return result.ready ? result.report : null;
   }
-  const evaluated: Awaited<ReturnType<typeof evaluate>>[] = [];
+  const demo = await evaluate(DEMO_SAMPLE_INSTITUTION_ID);
+  if (demo.ready && demo.named >= SAMPLE_MIN_NAMED) return demo.report;
+  // A ready demo naming too few competitors still competes on the automatic fallback.
+  const evaluated: Awaited<ReturnType<typeof evaluate>>[] = demo.ready ? [demo] : [];
   for (const id of await sampleCandidateIdsCached()) {
+    if (id === DEMO_SAMPLE_INSTITUTION_ID) continue;
     const result = await evaluate(id);
     evaluated.push(result);
     if (result.ready && result.named >= SAMPLE_MIN_NAMED) break;
