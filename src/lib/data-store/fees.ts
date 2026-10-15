@@ -1,5 +1,5 @@
 import { sql } from "./connection";
-import { STATS_ROW_FILTER, summarizeFeesBy, valuePerInstitution, type StatsInputRow } from "./fee-stats";
+import { COUNT_SHARED_SCHEDULE_ONCE, STATS_ROW_FILTER, STATS_SCHEDULE_KEYS, summarizeFeesBy, valuePerInstitution, type StatsInputRow } from "./fee-stats";
 import { consumerPriceMoveSql } from "./consumer-price-moves";
 import type { FeeReview } from "./types";
 import { institutionDisplayName } from "@/lib/institution-display-name";
@@ -51,6 +51,16 @@ export interface FeeInstance {
   /** The bank document the fee was read from; null for unsourced legacy rows. */
   document_url?: string | null;
   source_document_id?: number | null;
+  /** Statistics rule 7 (fee-stats.ts): the row's schedule keys and holding company. */
+  schedule_keys?: string[] | null;
+  schedule_group?: string | null;
+}
+
+/** A fee row without statistics rule 7's schedule fields (see getFeeCategoryDetail). */
+export function withoutScheduleFields(fee: FeeInstance): FeeInstance {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { schedule_keys, schedule_group, ...rest } = fee;
+  return rest;
 }
 
 export interface DimensionBreakdown {
@@ -106,7 +116,8 @@ export function computeStats(amounts: number[]): {
 
 export async function getFeeCategorySummaries(): Promise<FeeCategorySummary[]> {
   const rows = await sql`
-    SELECT ef.fee_category, ef.amount, ef.institution_id, ct.charter_type, ef.fee_audience
+    SELECT ef.fee_category, ef.amount, ef.institution_id, ct.charter_type, ef.fee_audience,
+           ${sql.unsafe(STATS_SCHEDULE_KEYS)}
     FROM published_fee_catalog ef
     JOIN institution_sources ct ON ef.institution_id = ct.id
     WHERE ef.fee_category IS NOT NULL
@@ -119,6 +130,8 @@ export async function getFeeCategorySummaries(): Promise<FeeCategorySummary[]> {
     institution_id: number;
     charter_type: string;
     fee_audience?: string | null;
+    schedule_keys?: string[] | null;
+    schedule_group?: string | null;
   }[];
 
   // "Charge nothing" is stronger than "has a free tier": every usable price for
@@ -285,7 +298,7 @@ export async function getFeeCategoryDetail(category: string): Promise<{
            ct.asset_size, ef.review_status, ef.extraction_confidence,
            ef.canonical_fee_key, ef.variant_type, ef.source_document_id,
            ef.fee_name, COALESCE(ef.document_url, ef.source_url) AS document_url,
-           ct.fed_district
+           ct.fed_district, ${sql.unsafe(STATS_SCHEDULE_KEYS)}
     FROM published_fee_catalog ef
     JOIN institution_sources ct ON ef.institution_id = ct.id
     WHERE ef.fee_category = ${category} AND ef.review_status = 'approved'
@@ -342,7 +355,13 @@ export async function getFeeCategoryDetail(category: string): Promise<{
   // (229 ms a call, 13,000 calls Oct 5-9); same rows and fields as that query returned.
   const districtRows = rawFees
     .filter((f) => f.source_document_id !== null && f.fed_district !== null)
-    .map((f) => ({ fed_district: f.fed_district as number, amount: f.amount, institution_id: f.institution_id }));
+    .map((f) => ({
+      fed_district: f.fed_district as number,
+      amount: f.amount,
+      institution_id: f.institution_id,
+      schedule_keys: f.schedule_keys,
+      schedule_group: f.schedule_group,
+    }));
 
   const by_fed_district_real = buildBreakdown(districtRows.map((row) => ({ ...row, fee_category: category })), (row) => `District ${Number(row.fed_district)}`);
   by_fed_district_real.sort((a, b) => {
@@ -400,7 +419,10 @@ export async function getFeeCategoryDetail(category: string): Promise<{
   }
 
   return {
-    fees,
+    // While rule 7 is off the schedule fields are always null: drop them so the cached
+    // fee-category-detail entry (Next's 2 MB per-entry limit; overdraft is the largest)
+    // keeps its old shape. When on, /fees/[category] needs them for its own summary.
+    fees: COUNT_SHARED_SCHEDULE_ONCE ? fees : fees.map(withoutScheduleFields),
     by_charter_type,
     by_asset_tier,
     by_fed_district: by_fed_district_real,

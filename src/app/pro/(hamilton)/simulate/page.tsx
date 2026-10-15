@@ -146,7 +146,7 @@ export default async function ModelPage({ searchParams }: PageProps) {
 
   const row = "border-b border-warm-200";
   const head = "px-4 py-2.5 text-left text-xs font-medium uppercase tracking-[0.08em] text-warm-600";
-  const cell = "px-4 py-2.5 text-right [font-variant-numeric:tabular-nums]";
+  const cell = "whitespace-nowrap px-4 py-2.5 text-right [font-variant-numeric:tabular-nums]";
 
   return (
     <MemoPage>
@@ -155,7 +155,7 @@ export default async function ModelPage({ searchParams }: PageProps) {
         title={`Test any ${ws.feeName.toLowerCase()} price side by side`}
         dek={
           current != null
-            ? `Today you charge ${fmtMoney(current)}. See where each price would sit and what it does to fee income.`
+            ? `Today ${inst?.name ?? "your institution"} charges ${fmtMoney(current)}. See where each price would sit and what it does to fee income.`
             : `No published ${ws.feeName.toLowerCase()} fee for ${inst?.name ?? "your institution"} yet, so each price is measured from $0.`
         }
         actions={<LinkButton href={researchHref}>Back to my fees</LinkButton>}
@@ -253,7 +253,7 @@ export default async function ModelPage({ searchParams }: PageProps) {
           />
         </div>
         <div className="overflow-x-auto rounded-lg border border-warm-300 bg-warm-50">
-          <table className="w-full min-w-[36rem] text-sm">
+          <table className="w-full min-w-[46rem] text-sm">
             <thead>
               <tr className={row}>
                 <th className={head} scope="col">
@@ -268,25 +268,25 @@ export default async function ModelPage({ searchParams }: PageProps) {
             </thead>
             <tbody className="text-warm-800">
               <tr className={row}>
-                <th scope="row" className="px-4 py-2.5 text-left font-normal">Change per item</th>
+                <th scope="row" className="min-w-[11rem] px-4 py-2.5 text-left font-normal">Change per item</th>
                 {columns.map((c) => (
                   <td key={c.label} className={cell}>{c.today ? "—" : fmtSignedPrice(c.price - base)}</td>
                 ))}
               </tr>
               <tr className={row}>
-                <th scope="row" className="px-4 py-2.5 text-left font-normal">Peers charging less</th>
+                <th scope="row" className="min-w-[11rem] px-4 py-2.5 text-left font-normal">Peers charging less</th>
                 {columns.map((c) => (
                   <td key={c.label} className={cell}>{c.result.peersLess} of {c.result.n}</td>
                 ))}
               </tr>
               <tr className={row}>
-                <th scope="row" className="px-4 py-2.5 text-left font-normal">Fee income per 1,000 items, before waivers</th>
+                <th scope="row" className="min-w-[11rem] px-4 py-2.5 text-left font-normal">Fee income per 1,000 items, before waivers</th>
                 {columns.map((c) => (
                   <td key={c.label} className={cell}>{c.today ? "—" : fmtSignedMoney(c.result.per1000Delta)}</td>
                 ))}
               </tr>
               <tr className={row}>
-                <th scope="row" className="px-4 py-2.5 text-left font-normal">Fee income a year, from your figures</th>
+                <th scope="row" className="min-w-[11rem] px-4 py-2.5 text-left font-normal">Fee income a year, from your figures</th>
                 {columns.map((c) => (
                   <td key={c.label} className={cell}>
                     {c.today ? "—" : c.result.annualDelta != null ? fmtSignedMoney(c.result.annualDelta) : <a href="#your-figures" className="text-terra-text underline">Add your figures</a>}
@@ -294,13 +294,13 @@ export default async function ModelPage({ searchParams }: PageProps) {
                 ))}
               </tr>
               <tr className={row}>
-                <th scope="row" className="px-4 py-2.5 text-left font-normal">Evidence</th>
+                <th scope="row" className="min-w-[11rem] px-4 py-2.5 text-left font-normal">Evidence</th>
                 {columns.map((c) => (
                   <td key={c.label} className={cell}>{c.today ? "—" : evidenceLabel(c.result.evidence)}</td>
                 ))}
               </tr>
               <tr className={row}>
-                <th scope="row" className="px-4 py-2.5 text-left font-normal">Notice before it takes effect</th>
+                <th scope="row" className="min-w-[11rem] px-4 py-2.5 text-left font-normal">Notice before it takes effect</th>
                 {columns.map((c) => (
                   <td key={c.label} className={cell}>
                     {c.today ? "—" : c.plan.advanceNoticeDays > 0 ? `${c.plan.advanceNoticeDays} days` : "None required"}
@@ -308,7 +308,7 @@ export default async function ModelPage({ searchParams }: PageProps) {
                 ))}
               </tr>
               <tr>
-                <th scope="row" className="px-4 py-2.5 text-left font-normal">
+                <th scope="row" className="min-w-[11rem] px-4 py-2.5 text-left font-normal">
                   <span className="sr-only">Plan</span>
                 </th>
                 {columns.map((c) => (

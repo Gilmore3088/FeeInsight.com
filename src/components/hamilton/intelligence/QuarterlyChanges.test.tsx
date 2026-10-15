@@ -48,4 +48,10 @@ describe("QuarterlyChanges (#1083)", () => {
     expect(html).toContain("the Q4 2026 copy read against US banks, the Q1 2027 copy against Texas banks");
     expect(html).not.toContain("both read against");
   });
+
+  it("says the quarterly copies use the default group when the page uses another (#1410)", () => {
+    const html = renderToStaticMarkup(<QuarterlyChanges changes={diff(1)} pagePeerLabel="My Florida peers" />);
+    expect(html).toContain("Quarterly copies use the default peer group, not My Florida peers as above.");
+    expect(renderToStaticMarkup(<QuarterlyChanges changes={diff(1)} pagePeerLabel="Texas banks" />)).not.toContain("default peer group");
+  });
 });

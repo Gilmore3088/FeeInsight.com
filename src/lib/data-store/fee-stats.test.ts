@@ -8,6 +8,14 @@ import {
   STATS_ROW_FILTER,
   businessSourceSql,
   statsRowFilter,
+  sharedScheduleRepresentatives,
+  scheduleKeysSql,
+  scheduleGroupSql,
+  summarizeRates,
+  MIN_LINKING_TEXT_CHARS,
+  COUNT_SHARED_SCHEDULE_ONCE,
+  STATS_SCHEDULE_KEYS,
+  STATS_METHOD_VERSION,
 } from "./fee-stats";
 import { BUSINESS_PATH_SQL, CONSUMER_PATH_SQL, isBusinessOnlyLink } from "@/lib/agents/magellan/link-coverage";
 
@@ -174,4 +182,133 @@ it("shares the same audience boundary across SQL aliases without filtering out z
   expect(predicate).not.toContain("amount IS NOT NULL"); // rate rows have a separate value column
   expect(statsRowFilter()).toBe(STATS_ROW_FILTER);
   expect(() => statsRowFilter("c; SELECT 1")).toThrow("Invalid statistics table alias");
+});
+
+describe("count once: sibling charters sharing one schedule (#1441, rule 7)", () => {
+  // IBC's five charters (one holding company) read the same schedule and charge $30;
+  // four unrelated banks charge $10, $12, $14 and $16.
+  const IBC = "1102367";
+  const shared = ["u:ibc.com/fees", "t:abc123"];
+  const siblings = [160, 318, 1769, 688, 1319].map((id) => ({
+    institution_id: id, amount: 30, charter_type: "bank", fee_category: "nsf", schedule_keys: shared, schedule_group: IBC,
+  }));
+  const others = [10, 12, 14, 16].map((amount, i) => ({
+    institution_id: 9000 + i, amount, charter_type: "bank", fee_category: "nsf",
+    schedule_keys: [`u:bank${i}.com/fees`], schedule_group: `hc${i}`,
+  }));
+  const rows = [...siblings, ...others];
+
+  it("counts 5 charters on one document as 1 in the median and counts", () => {
+    const before = summarizeFees(rows, { countSharedScheduleOnce: false });
+    expect(before.institution_count).toBe(9);
+    expect(before.median_amount).toBe(30);
+
+    const after = summarizeFees(rows, { countSharedScheduleOnce: true });
+    expect(after.institution_count).toBe(5);
+    expect(after.bank_count).toBe(5);
+    expect(after.median_amount).toBe(14);
+    expect(after.maturity_tier).toBe("provisional");
+  });
+
+  it("keeps every charter's own value for its own page", () => {
+    const values = valuePerInstitution(rows);
+    for (const id of [160, 318, 1769, 688, 1319]) expect(values.get(id)).toBe(30);
+  });
+
+  it("links siblings by identical text even when the addresses differ, and through chains", () => {
+    const reps = sharedScheduleRepresentatives([
+      { institution_id: 5, schedule_keys: ["u:a.com/fees", "t:h1"], schedule_group: "WF" },
+      { institution_id: 3, schedule_keys: ["u:b.com/fees", "t:h1"], schedule_group: "WF" },
+      { institution_id: 8, schedule_keys: ["u:b.com/fees", "t:h2"], schedule_group: "WF" },
+      { institution_id: 2, schedule_keys: ["u:c.com/fees"], schedule_group: "WF" },
+      { institution_id: 4, schedule_keys: null, schedule_group: "WF" },
+    ]);
+    expect(Object.fromEntries(reps)).toEqual({ 5: 3, 3: 3, 8: 3, 2: 2, 4: 4 });
+  });
+
+  it("links Wells Fargo's three charters on one holding company", () => {
+    const wf = [4, 172, 359].map((id) => ({ institution_id: id, schedule_keys: ["u:wellsfargo.com/fees"], schedule_group: "1120754" }));
+    expect(Object.fromEntries(sharedScheduleRepresentatives(wf))).toEqual({ 4: 4, 172: 4, 359: 4 });
+  });
+
+  it("never links unrelated institutions on one schedule: 6 banks, 4 on one Elan card agreement", () => {
+    const elan = [21, 22, 23, 24, 25, 26].map((id, i) => ({
+      institution_id: id,
+      amount: 25 + i,
+      charter_type: "bank",
+      fee_category: "card_replacement",
+      schedule_keys: i < 4 ? ["u:elan.com/cardagreement.pdf"] : [`u:bank${id}.com/fees`],
+      schedule_group: i < 2 ? null : `hc${id}`,
+    }));
+    const reps = sharedScheduleRepresentatives(elan);
+    for (const id of [21, 22, 23, 24, 25, 26]) expect(reps.get(id)).toBe(id);
+    const stats = summarizeFees(elan, { countSharedScheduleOnce: true });
+    expect(stats.institution_count).toBe(6);
+    expect(stats).toEqual(summarizeFees(elan, { countSharedScheduleOnce: false }));
+  });
+
+  it("ignores vendor download paths even within one holding company (Healthplus, Horizons North)", () => {
+    const vendor = [
+      { institution_id: 5009, schedule_keys: ["u:healthplusfcu.org/ezs3download/download/1/fees.pdf", "t:hp"], schedule_group: "X" },
+      { institution_id: 7001, schedule_keys: ["u:othercu.org/ezs3download/download/1/fees.pdf", "t:hp"], schedule_group: "X" },
+      { institution_id: 8416, schedule_keys: ["u:horizonsnorth.org/_/kcms-doc/9/fees.pdf", "t:hn"], schedule_group: "Y" },
+      { institution_id: 2092, schedule_keys: ["u:5starbank.com/_/kcms-doc/9/fees.pdf", "t:hn"], schedule_group: "Y" },
+    ];
+    const reps = sharedScheduleRepresentatives(vendor);
+    for (const row of vendor) expect(reps.get(row.institution_id)).toBe(row.institution_id);
+  });
+
+  it("does not link charters with no holding company", () => {
+    const cus = [6729, 5756].map((id) => ({ institution_id: id, schedule_keys: ["u:ukfcu.org/fees.pdf"], schedule_group: null }));
+    expect(Object.fromEntries(sharedScheduleRepresentatives(cus))).toEqual({ 6729: 6729, 5756: 5756 });
+    const zero = [1, 2].map((id) => ({ institution_id: id, schedule_keys: ["u:x.com/fees"], schedule_group: "0" }));
+    expect(Object.fromEntries(sharedScheduleRepresentatives(zero))).toEqual({ 1: 1, 2: 2 });
+  });
+
+  it("counts an even-size shared schedule at a price a member charges (the lower middle)", () => {
+    const pair = [
+      { institution_id: 1, amount: 20, charter_type: "bank", schedule_keys: ["u:x.com/fees"], schedule_group: "H" },
+      { institution_id: 2, amount: 30, charter_type: "bank", schedule_keys: ["u:x.com/fees"], schedule_group: "H" },
+      ...[40, 50, 60, 70].map((amount, i) => ({ institution_id: 10 + i, amount, charter_type: "bank" })),
+    ];
+    const stats = summarizeFees(pair, { countSharedScheduleOnce: true });
+    expect(stats.institution_count).toBe(5);
+    expect(stats.min_amount).toBe(20);
+  });
+
+  it("counts a shared schedule once within a peer group, even when its lowest charter is outside it", () => {
+    // A Texas-only peer group: charter 688 (Oklahoma) is filtered out before the stats run.
+    const texas = rows.filter((row) => row.institution_id !== 688);
+    const stats = summarizeFees(texas, { countSharedScheduleOnce: true });
+    expect(stats.institution_count).toBe(5);
+    expect(stats.median_amount).toBe(14);
+  });
+
+  it("applies to rate statistics the same way", () => {
+    const rateRows = [
+      ...[160, 318, 1769, 688, 1319].map((id) => ({ institution_id: id, rate_percent: 3, amount_kind: "percent", schedule_keys: shared, schedule_group: IBC })),
+      ...[1, 1.5, 2, 2.5].map((rate, i) => ({ institution_id: 9000 + i, rate_percent: rate, amount_kind: "percent" })),
+    ];
+    expect(summarizeRates(rateRows, { countSharedScheduleOnce: false })).toMatchObject({ institution_count: 9, median_rate: 3 });
+    expect(summarizeRates(rateRows, { countSharedScheduleOnce: true })).toMatchObject({ institution_count: 5, median_rate: 2 });
+  });
+
+  it("is off by default and selects no keys while off", () => {
+    expect(COUNT_SHARED_SCHEDULE_ONCE).toBe(false);
+    expect(summarizeFees(rows).institution_count).toBe(9);
+    expect(STATS_SCHEDULE_KEYS).toBe("NULL::text[] AS schedule_keys, NULL::text AS schedule_group");
+    expect(STATS_METHOD_VERSION).toBe(7);
+  });
+
+  it("builds the schedule keys and holding company scope when on", () => {
+    const keySql = scheduleKeysSql("ef", true);
+    expect(keySql).toContain("ef.document_url");
+    expect(keySql).toContain("ast.source_document_id = ef.source_document_id");
+    expect(keySql).toContain("ezs3download|kcms-doc");
+    expect(keySql).toContain(`ast.char_count >= ${MIN_LINKING_TEXT_CHARS}`);
+    expect(MIN_LINKING_TEXT_CHARS).toBe(200);
+    expect(scheduleGroupSql("ef", true)).toContain("hc.holding_company_rssd");
+    expect(() => scheduleKeysSql("ef; drop", true)).toThrow();
+    expect(() => scheduleGroupSql("ef; drop", true)).toThrow();
+  });
 });

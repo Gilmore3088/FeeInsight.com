@@ -7,7 +7,7 @@ import { runHamiltonCategoryGuard } from "@/lib/agents/hamilton/category-guard";
 import { collapseNearNameDuplicates, collapsePublishedDuplicates } from "@/lib/agents/hamilton/duplicate-collapse";
 import { collapsePageCopies } from "@/lib/agents/hamilton/page-copy-collapse";
 import { retireClosedInstitutionFees } from "@/lib/agents/hamilton/closed-institution";
-import { fillBlankFrequencies, FREQUENCY_FILL_VERSION } from "@/lib/agents/hamilton/frequency-fill";
+import { fillBlankFrequencies, fillFrequenciesInPublish, FREQUENCY_FILL_VERSION } from "@/lib/agents/hamilton/frequency-fill";
 import { repairSourceLinks, SOURCE_LINK_VERSION } from "@/lib/agents/hamilton/source-link";
 import { restoreFeesNowInTaxonomy, rollBackOffTaxonomyFees } from "@/lib/agents/hamilton/off-taxonomy-rollback";
 import { foldRetiredCategories } from "@/lib/agents/hamilton/taxonomy-fold";
@@ -78,6 +78,9 @@ import { releaseRecordedPasses } from "@/lib/agents/darwin/release-review";
 import { runDarwinConditionalZeroResolve } from "@/lib/agents/darwin/conditional-zero-resolve";
 import { runDarwinScheduleRefile } from "@/lib/agents/darwin/schedule-refile";
 import { runDarwinAdjudicate } from "@/lib/agents/darwin/adjudicate";
+import { countLiveFragmentNames, liveFragmentDetail, recheckLiveFragmentNames } from "@/lib/agents/darwin/live-fragment-check";
+import { documentOwnerDetail } from "@/lib/agents/darwin/document-owner";
+import { findingsDetail as releaseRepairFindingsDetail, releaseRepairDetail, runReleaseRepairStep } from "@/lib/agents/darwin/release-repair";
 import { AUDIENCE_RELABEL_VERSION, dryRunFullTotals, runAudienceRelabel, type AudienceRelabelMode } from "@/lib/agents/darwin/audience-relabel";
 import { runDailyBrief } from "@/lib/agents/daily-brief";
 import { runSundayMaintenance, summarizeSundayMaintenance } from "@/lib/agents/deming/sunday-maintenance";
@@ -93,6 +96,7 @@ import { runScoreboardSnapshot, summarizeScoreboard } from "@/lib/agents/scorebo
 import { runDemingRegression, summarizeDemingRegression, DEMING_REGRESSION_VERSION } from "@/lib/agents/deming/regression";
 import { freshAuditDetail, runFreshAudit, summarizeFreshAudit } from "@/lib/agents/deming/fresh-audit";
 import { benchmarkHealthDetail, runBenchmarkHealth, summarizeBenchmarkHealth } from "@/lib/agents/deming/benchmark-health";
+import { playbookContradictionsDetail, runPlaybookContradictions, summarizePlaybookContradictions } from "@/lib/agents/deming/playbook-contradictions";
 import { runBayesLedger, summarizeBayesLedger, BAYES_LEDGER_VERSION } from "@/lib/agents/bayes/ledger";
 import { runScheduleCheck, summarizeScheduleCheck, SCHEDULE_CHECK_VERSION } from "@/lib/agents/atlas/schedule-check";
 import { cityRepairDetail, runCityRepair, summarizeCityRepair } from "@/lib/agents/atlas/city-repair";
@@ -840,9 +844,49 @@ async function executeAgenticStep(
         institutionId: numericRunParam(params, ["institution_id"]),
         db: tx,
       });
+      // #1443: Darwin re-reads a share of live fees' names each step against the narrow live twin
+      // of the cut-off name hold (live-fragment-check.ts); a report only while its switch is off.
+      const liveFragments = await recheckLiveFragmentNames(tx, {
+        runId: run.id,
+        stepId: step.id,
+        dryRun: run.runKind === "dry_run",
+        institutionId: numericRunParam(params, ["institution_id"]),
+      });
+      // The whole live table in one read, on request (`fragment_full_count: true`), for the dry-run count.
+      const liveFragmentsFull = params.fragment_full_count === true || params.fragment_full_count === "true"
+        ? await countLiveFragmentNames(tx)
+        : null;
+      // #1367 repair: fees the release published before it checked the category are read again under
+      // today's release check (release-repair.ts); a report only while its switch is off.
+      // Never fails the verify step: any throw comes back as `error` with no result.
+      const { result: releaseRepair, full: releaseRepairFull, error: releaseRepairError } = await runReleaseRepairStep(tx, {
+        runId: run.id,
+        stepId: step.id,
+        dryRun: run.runKind === "dry_run",
+        institutionId: numericRunParam(params, ["institution_id"]),
+        // Every released fee in one read-only pass, on request (`release_repair_full_count: true`).
+        fullCount: params.release_repair_full_count === true || params.release_repair_full_count === "true",
+      });
+      const releaseRepairNote = releaseRepair && releaseRepair.wouldTakeDown > 0
+        ? ` Release re-check: ${releaseRepair.wouldTakeDown.toLocaleString()} of ${releaseRepair.checked.toLocaleString()} released fee(s) read fail both the text check and the category model (${releaseRepair.live && !releaseRepair.dryRun ? `${releaseRepair.flagged.toLocaleString()} flagged, ${releaseRepair.takenDown.length.toLocaleString()} archived` : "switch off: would take down, nothing written"}).`
+        : "";
+      const releaseRepairFullNote = releaseRepairFull
+        ? ` All released fees: ${releaseRepairFull.wouldTakeDown.toLocaleString()} of ${releaseRepairFull.checked.toLocaleString()} fail both the text check and the category model (${releaseRepairFull.textOnly.toLocaleString()} text only, ${releaseRepairFull.modelOnly.toLocaleString()} model only).`
+        : "";
+      const liveFragmentNote = liveFragments.matched > 0
+        ? ` Live name re-check: ${liveFragments.matched.toLocaleString()} of ${liveFragments.checked.toLocaleString()} live fee(s) read have a fragment name (${liveFragments.live && !liveFragments.dryRun ? `${liveFragments.takenDown.length.toLocaleString()} archived` : "switch off: would take down, nothing written"}).`
+        : "";
+      // #1455: whose schedule each shared or vendor-served document is, by its own text.
+      const documentOwner = verification.documentOwner;
+      const documentOwnerNote = documentOwner && documentOwner.pairs > 0
+        ? ` Document owner: ${documentOwner.pairs.toLocaleString()} shared document pair(s) read, ${documentOwner.wouldTakeDown.length.toLocaleString()} live fee(s) on another bank's schedule (${documentOwner.live ? `${documentOwner.takenDown.length.toLocaleString()} archived` : "switch off: would take down, nothing written"}).`
+        : "";
+      const liveFragmentFullNote = liveFragmentsFull
+        ? ` Whole live table: ${liveFragmentsFull.matched.toLocaleString()} of ${liveFragmentsFull.checked.toLocaleString()} live fees have a fragment name.`
+        : "";
       return {
         status: "completed",
-        summary: `Darwin verified ${verification.verifiedFees.toLocaleString()} raw fee observations from ${verification.processedRawFees.toLocaleString()} selected rows (${verification.skippedFees.toLocaleString()} skipped).${conditionalZero.selected > 0 ? ` Settled ${conditionalZero.selected.toLocaleString()} conditional-$0 hold(s) (${conditionalZero.verified.toLocaleString()} verified free on the bank's schedule).` : ""}${verification.categoryChange && verification.categoryChange.candidates > 0 ? ` ${verification.categoryChange.candidates.toLocaleString()} row(s) Knox re-filed since Darwin's decision ${verification.categoryChange.live ? `(${verification.categoryChange.selected.toLocaleString()} judged again under today's category)` : "(switch off: counted, not judged again)"}.` : ""}`,
+        summary: `Darwin verified ${verification.verifiedFees.toLocaleString()} raw fee observations from ${verification.processedRawFees.toLocaleString()} selected rows (${verification.skippedFees.toLocaleString()} skipped).${conditionalZero.selected > 0 ? ` Settled ${conditionalZero.selected.toLocaleString()} conditional-$0 hold(s) (${conditionalZero.verified.toLocaleString()} verified free on the bank's schedule).` : ""}${verification.categoryChange && verification.categoryChange.candidates > 0 ? ` ${verification.categoryChange.candidates.toLocaleString()} row(s) Knox re-filed since Darwin's decision ${verification.categoryChange.live ? `(${verification.categoryChange.selected.toLocaleString()} judged again under today's category)` : "(switch off: counted, not judged again)"}.` : ""}${liveFragmentNote}${liveFragmentFullNote}${releaseRepairNote}${releaseRepairFullNote}${documentOwnerNote}`,
         detail: {
           selected_raw_fees: verification.selectedRawFees,
           processed_raw_fees: verification.processedRawFees,
@@ -855,6 +899,7 @@ async function executeAgenticStep(
           learned_envelope_holds: verification.learnedEnvelopeHolds,
           // #1295: rows Knox re-filed since Darwin's decision; a count and sample while the switch is off.
           category_change_rejudge: verification.categoryChange,
+          document_owner: documentOwnerDetail(documentOwner),
           held_release: {
             selected: release.selected,
             acted: release.acted,
@@ -863,6 +908,25 @@ async function executeAgenticStep(
             feedback_written: release.feedbackWritten,
           },
           recorded_pass_release: recordedRelease,
+          live_fragment_check: liveFragmentDetail(liveFragments),
+          ...(liveFragmentsFull
+            ? {
+                live_fragment_full_count: {
+                  checked: liveFragmentsFull.checked,
+                  would_take_down: liveFragmentsFull.matched,
+                  by_pattern: liveFragmentsFull.byPattern,
+                  samples: liveFragmentsFull.samples.map((fee) => ({
+                    fee_published_id: fee.feePublishedId,
+                    institution_id: fee.institutionId,
+                    fee_name: fee.feeName,
+                    amount: fee.amount,
+                    pattern: fee.pattern,
+                  })),
+                },
+              }
+            : {}),
+          release_repair: releaseRepair ? releaseRepairDetail(releaseRepair) : { error: releaseRepairError },
+          ...(releaseRepairFull ? { release_repair_full_count: releaseRepairFindingsDetail(releaseRepairFull) } : {}),
           schedule_refile: { selected: scheduleRefile.selected, refiled: scheduleRefile.refiled },
           conditional_zero: { selected: conditionalZero.selected, verdicts: conditionalZero.verdicts, verified: conditionalZero.verified },
           feedback_written: verification.feedbackWritten,
@@ -978,6 +1042,8 @@ async function executeAgenticStep(
         runId: run.id,
         dryRun: run.runKind === "dry_run",
         institutionId,
+        // The research split's exact dry-run count over every row, on request (#1398).
+        researchSplitFullCount: params.research_split_full_count === true || params.research_split_full_count === "true",
       });
       const outlierRollbacks = await rollBackPublishedOutliers(tx, {
         runId: run.id,
@@ -1122,8 +1188,10 @@ async function executeAgenticStep(
       });
       // A live fee's frequency follows its own schedule row: a blank gets the one the row states
       // ("$6.00 each"), and one read from another fee's row is corrected or cleared.
-      const frequencyFill = await fillBlankFrequencies(tx, {
+      // A failed fill write is a warning here, never a failed publish (#1349 review).
+      const frequencyFill = await fillFrequenciesInPublish(tx, {
         runId: run.id,
+        stepId: step.id,
         dryRun: run.runKind === "dry_run",
         institutionId,
       });
@@ -1338,6 +1406,9 @@ async function executeAgenticStep(
           : "") +
         (taxonomyFold.handFlagsCleared > 0
           ? ` ${published.dryRun ? "Would clear" : "Cleared"} the pending takedown on ${taxonomyFold.handFlagsCleared.toLocaleString()} hand-fixed fee(s) that now trace.`
+          : "") +
+        (taxonomyFold.pendingResearchSplit && taxonomyFold.pendingResearchSplit.wouldMove > 0
+          ? ` Research split (off, nothing moved): it would move ${taxonomyFold.pendingResearchSplit.wouldMoveLive.toLocaleString()} live and ${(taxonomyFold.pendingResearchSplit.wouldMove - taxonomyFold.pendingResearchSplit.wouldMoveLive).toLocaleString()} verified fee(s) out of account research (${Object.entries(taxonomyFold.pendingResearchSplit.byRoute).map(([route, count]) => `${route} ${count.toLocaleString()}`).join(", ")})${taxonomyFold.pendingResearchSplit.capped ? `, in the first ${taxonomyFold.pendingResearchSplit.scanned.toLocaleString()} rows read (run with research_split_full_count for every row)` : ""}.`
           : "");
       const offTaxonomyNote =
         (offTaxonomyRollbacks.length > 0
@@ -1736,6 +1807,7 @@ async function executeAgenticStep(
           frequency_fills: frequencyFill.filled.length,
           frequency_holds: frequencyFill.held.length,
           frequency_fill_scanned: frequencyFill.scanned,
+          frequency_fill_error: frequencyFill.writeError,
           frequency_fill_samples: frequencyFill.filled.slice(0, 10).map((row) => ({
             fee_published_id: row.feePublishedId,
             from: row.from,
@@ -2254,7 +2326,7 @@ async function executeAgenticStep(
       return {
         status: "completed",
         summary: summarizeChangeOutcomes(result),
-        detail: { ready: result.ready, entries: result.entries, started: result.started, pending: result.pending, judged: result.judged },
+        detail: { ready: result.ready, entries: result.entries, started: result.started, pending: result.pending, judged: result.judged, hit_rate: result.hitRate },
       };
     }
     case "deming-sunday-maintenance": {
@@ -2277,6 +2349,11 @@ async function executeAgenticStep(
     case "deming-benchmark-health": {
       const result = await runBenchmarkHealth({ db: tx });
       return { status: "completed", summary: summarizeBenchmarkHealth(result), detail: benchmarkHealthDetail(result) };
+    }
+    case "deming-playbook-check": {
+      // Read-only (#1105): one SELECT over the playbooks; the step's ledger row is its only write.
+      const result = await runPlaybookContradictions({ db: tx });
+      return { status: "completed", summary: summarizePlaybookContradictions(result), detail: playbookContradictionsDetail(result) };
     }
     case "atlas-city-repair": {
       const result = await runCityRepair({ db: tx, dryRun: run.runKind === "dry_run" });

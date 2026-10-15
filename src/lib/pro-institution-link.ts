@@ -11,11 +11,11 @@
 import type { sql as sqlClient } from "@/lib/data-store/connection";
 type Db = typeof sqlClient;
 
-/** "https://www.firstbank.com/x" or "Pat@Mail.FirstBank.com" -> the full host, lower case, without "www."; null when unusable. */
+/** "https://www.firstbank.com/x" or "Pat@Mail.FirstBank.com." -> the full host, lower case, without "www." or a trailing dot; null when unusable. */
 export function hostOf(value: string | null | undefined): string | null {
   if (!value) return null;
   const raw = value.includes("@") ? value.split("@").pop()! : value;
-  const host = raw.trim().toLowerCase().replace(/^[a-z]+:\/\//, "").split(/[/?#:]/)[0].replace(/^www\./, "");
+  const host = raw.trim().toLowerCase().replace(/^[a-z]+:\/\//, "").split(/[/?#:]/)[0].replace(/^www\./, "").replace(/\.$/, "");
   return host.split(".").filter(Boolean).length >= 2 ? host : null;
 }
 
@@ -28,8 +28,30 @@ export const PERSONAL_EMAIL_DOMAINS = new Set([
   "earthlink.net", "frontier.com", "optonline.net", "windstream.net", "centurylink.net", "q.com",
 ]);
 
-/** The same providers' names, for their country domains ("yahoo.co.uk", "hotmail.fr"). */
-const PERSONAL_PROVIDER_NAMES = new Set([...PERSONAL_EMAIL_DOMAINS].filter((d) => d.endsWith(".com")).map((d) => d.split(".")[0]));
+/**
+ * Providers that run personal mail under country domains ("yahoo.co.uk", "hotmail.fr", "gmx.de",
+ * Microsoft's "live.ca" and "msn.co.uk"). Short generic labels with no such domains (me, mac,
+ * mail, hey) are left out, so a bank at "x.mail.ie" or "bank.me.uk" isn't refused at checkout.
+ * Add a provider here when its country domains are personal mail, as well as to the list above.
+ */
+const PERSONAL_PROVIDER_NAMES = new Set(["gmail", "googlemail", "yahoo", "ymail", "rocketmail", "hotmail", "outlook", "live", "msn", "aol", "icloud", "gmx", "protonmail", "yandex", "zoho", "fastmail"]);
+
+/**
+ * Shared platforms an institution's "website" sometimes points at (a Facebook page, a hosted
+ * site builder). Their host belongs to the platform, so it never stands for the institution.
+ */
+const PLATFORM_HOSTS = [
+  "facebook.com", "fb.com", "instagram.com", "linkedin.com", "twitter.com", "x.com", "youtube.com",
+  "google.com", "business.site", "wixsite.com", "wix.com", "squarespace.com", "wordpress.com",
+  "weebly.com", "godaddysites.com", "yelp.com", "mapquest.com", "linktr.ee",
+];
+
+/** The website's host, or null when it is a shared platform page rather than the institution's own site. */
+export function websiteHostOf(websiteUrl: string | null | undefined): string | null {
+  const host = hostOf(websiteUrl);
+  if (host === null) return null;
+  return PLATFORM_HOSTS.some((p) => host === p || host.endsWith(`.${p}`)) ? null : host;
+}
 
 /** True for an address at a personal mailbox provider (or with no usable domain). */
 export function isPersonalEmail(email: string | null | undefined): boolean {
@@ -49,7 +71,7 @@ export function isPersonalEmail(email: string | null | undefined): boolean {
 export function emailMatchesWebsite(email: string | null | undefined, websiteUrl: string | null | undefined): boolean {
   if (isPersonalEmail(email)) return false;
   const mail = hostOf(email);
-  const site = hostOf(websiteUrl);
+  const site = websiteHostOf(websiteUrl);
   return mail !== null && site !== null && mail === site;
 }
 
@@ -70,7 +92,8 @@ export async function linkVerifiedInstitutions(db: Db, userId: number): Promise<
       JOIN users u ON u.id = c.claimant_user_id
       JOIN institution_sources s ON s.id = c.institution_id
      WHERE c.claimant_user_id = ${userId}
-       AND c.review_status IN ('pending', 'needs_info')
+       -- Only open requests link themselves: "needs info" means an admin asked for more first.
+       AND c.review_status = 'pending'
        AND u.email_confirmed_at IS NOT NULL
   `;
   const linked: number[] = [];
@@ -84,7 +107,7 @@ export async function linkVerifiedInstitutions(db: Db, userId: number): Promise<
              reviewer_id = ${userId},
              review_notes = ${`Verified automatically: confirmed email at @${domain} matches the institution's website.`},
              updated_at = NOW()
-       WHERE id = ${row.claim_id} AND review_status IN ('pending', 'needs_info')
+       WHERE id = ${row.claim_id} AND review_status = 'pending'
       RETURNING id
     `;
     if (updated.length === 0) continue;

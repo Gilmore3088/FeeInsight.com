@@ -7,7 +7,7 @@ import { DISTRICT_NAMES, STATE_TO_DISTRICT } from "@/lib/fed-districts";
 import { STATE_NAMES } from "@/lib/us-states";
 import { getCurrentUser } from "@/lib/auth";
 import { canAccessAllCategories, canAccessPremium } from "@/lib/access";
-import { formatCount, getPublicNationalIndex, getPublicStatsSummary } from "@/lib/public-stats";
+import { COVERAGE_LABELS, formatCount, getPublicNationalIndex, getPublicStatsSummary } from "@/lib/public-stats";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
 import { LeadCapture } from "@/components/public/lead-capture";
 import { TrackLink } from "@/components/track-link";
@@ -117,8 +117,8 @@ export default async function StateReportPage({ params }: PageProps) {
   const aboveUs = againstUs.filter((f) => f.us && f.median > f.us.median * 1.01).length;
   const cuLowerOn = paired.filter((f) => f.cu.median! < f.bank.median!).length;
   const figures = [
-    { value: formatCount(indexes.verified_institutions), label: "Institutions with verified fees" },
-    { value: formatCount(indexes.verified_fees), label: "Verified fees" },
+    { value: formatCount(indexes.verified_institutions), label: COVERAGE_LABELS.institutions },
+    { value: formatCount(indexes.verified_fees), label: COVERAGE_LABELS.observations },
     ...(againstUs.length > 0 ? [{ value: `${aboveUs} of ${againstUs.length}`, label: "Fees above the U.S. median" }] : []),
     ...(paired.length > 0 ? [{ value: `${cuLowerOn} of ${paired.length}`, label: "Fees lower at credit unions" }] : []),
   ];

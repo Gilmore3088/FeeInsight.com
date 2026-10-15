@@ -270,11 +270,17 @@ function narrateFinished(
       const collapses = Array.isArray(detail.collapses) ? detail.collapses.length : 0;
       return `Deming checked the benchmarks: ${n(detail, "groups_meeting_target")} of ${n(detail, "groups_total")} state and size groups meet the coverage target, ${collapses === 0 ? "no benchmark collapsed" : `ALARM: ${count(collapses, "benchmark")} lost a sharp share of its institutions`}.`;
     }
+    case "deming-playbook-check": {
+      if (detail.ready === false) return "Deming could not check the playbooks: the playbook table is not there.";
+      return `Deming checked ${count(n(detail, "profiles"), "playbook")}: ${n(detail, "institutions")} contradict themselves, ${n(detail, "search_from_entries")} carry a second-document search entry on their current link.`;
+    }
     case "deming-change-outcomes": {
       if (detail.ready === false) return "Skipped the 7-day change check (migration not applied yet).";
       const judged = Array.isArray(detail.judged) ? (detail.judged as Array<{ verdict?: string }>) : [];
       const moved = judged.filter((row) => row.verdict === "moved_as_expected").length;
-      return `Checked ${count(judged.length, "change")} a week after merge: ${moved} moved as expected; ${n(detail, "pending")} still within their week.`;
+      const rate = detail.hit_rate as { moved?: number; judged?: number } | null | undefined;
+      const soFar = rate && Number(rate.judged) > 0 ? ` So far ${Number(rate.moved)} of ${count(Number(rate.judged), "change")} moved their number.` : "";
+      return `Checked ${count(judged.length, "change")} a week after merge: ${moved} moved as expected; ${n(detail, "pending")} still within their week.${soFar}`;
     }
     case "deming-sunday-maintenance":
       if (detail.ran === false) return "Not Sunday: no maintenance email this time.";
@@ -631,6 +637,7 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   "atlas-city-repair": "atlas",
   "deming-fresh-audit": "atlas",
   "deming-benchmark-health": "atlas",
+  "deming-playbook-check": "atlas",
   "deming-change-outcomes": "atlas",
   "deming-sunday-maintenance": "atlas",
   "deming-regression": "atlas",

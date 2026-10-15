@@ -1,7 +1,7 @@
 import type { FeeAudience, FeeTreatment } from "@/lib/fee-audience";
 import { sql } from "./connection";
 import { readerFeeConditions } from "../fee-conditions";
-import { STATS_ROW_FILTER, summarizeRates, type RateStatistics } from "./fee-stats";
+import { STATS_ROW_FILTER, STATS_SCHEDULE_KEYS, summarizeRates, type RateStatistics } from "./fee-stats";
 import { formatRateFee, type RateFields } from "../percent-fees";
 
 /**
@@ -83,8 +83,14 @@ export async function getRateFeesByInstitution(institutionId: number, scope: "al
  * one value per institution, the same minimum sample as dollars.
  */
 export async function getNationalRateStats(category: string): Promise<RateStatistics> {
-  const rows = await sql.unsafe<Array<{ institution_id: number | string; rate_percent: number | string | null; amount_kind: string | null }>>(
-    `SELECT ef.institution_id, ef.rate_percent, ef.amount_kind
+  const rows = await sql.unsafe<Array<{
+    institution_id: number | string;
+    rate_percent: number | string | null;
+    amount_kind: string | null;
+    schedule_keys: string[] | null;
+    schedule_group: string | null;
+  }>>(
+    `SELECT ef.institution_id, ef.rate_percent, ef.amount_kind, ${STATS_SCHEDULE_KEYS}
        FROM published_fee_rate_catalog ef
       WHERE ef.fee_category = $1
         AND ${STATS_ROW_FILTER}`,

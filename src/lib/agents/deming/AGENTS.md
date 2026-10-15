@@ -76,7 +76,7 @@ It runs as Atlas steps (agent `atlas`); it is deterministic and makes no model c
 ## Did the change work (#1106)
 
 - `change-outcomes.ts`: the `deming-change-outcomes` step, last in Atlas's daily scoreboard run.
-- `sunday-maintenance.ts`: the `deming-sunday-maintenance` step, after it in the same run, Sundays (UTC) only: James's hour of tasks (labels, data decisions, answer-key banks), the week in numbers and anything stuck (#1104). It emails only while `SUNDAY_EMAIL_LIVE=true`; otherwise the run records the email it would send.
+- `sunday-maintenance.ts`: the `deming-sunday-maintenance` step, after it in the same run, Sundays (UTC) only: James's hour of tasks (labels, data decisions, last week's "no change" and "wrong way" PRs to explain or revert, answer-key banks), the week in numbers with the change hit rate, and anything stuck (#1104, #1106). It emails only while `SUNDAY_EMAIL_LIVE=true`; otherwise the run records the email it would send.
   Each PR that names a "Should move" number adds an entry to `should-move.json` (PR number, issue,
   `metric`: a `pipeline_scoreboard_snapshots` column or a `detail.` path such as
   `detail.goal.accuracy.accuracy`, `direction` up or down, optional `min_change`).
@@ -84,7 +84,11 @@ It runs as Atlas steps (agent `atlas`); it is deterministic and makes no model c
   Seven days later it reads the first snapshot on or after that day and records the verdict:
   `moved_as_expected`, `no_change` (moved less than `min_change`), `wrong_way`, or `unreadable`
   (the scoreboard does not hold the number). The summary names each "no change" and "wrong way"
-  PR, to be explained or reverted (the Sunday email, #1104, lists them).
+  PR, to be explained or reverted (the Sunday email, #1104, lists the ones checked in the last 7
+  days, via `readChangeOutcomeReview`).
+- Hit rate (#1106 step 4): the share of judged changes (`moved_as_expected`, `no_change`,
+  `wrong_way`) that moved as expected; `unreadable` ones are counted apart. The daily step's
+  summary and detail (`hit_rate`) and the Sunday email carry it; the checkpoint copies it.
 - Migration 20270110000046 creates the table (approved by James 2026-10-12). Before it the step
   reports that it skipped.
 
@@ -100,6 +104,21 @@ It runs as Atlas steps (agent `atlas`); it is deterministic and makes no model c
 - **Alarm:** a category that keeps less than 70% of its institutions since the previous check
   (on the same `STATS_METHOD_VERSION`) is named in the step summary as an ALARM.
 - Read-only, deterministic, no model calls. It is pause-exempt like the other reporting steps.
+
+## Playbook contradiction check
+
+- `playbook-contradictions.ts` (`PLAYBOOK_CHECK_VERSION` v1): the `deming-playbook-check` step in
+  Atlas's daily scoreboard run (#1105). One read-only SELECT over `institution_source_profiles`
+  and each one's current text. Per institution it counts a playbook that contradicts itself: the
+  current source on its own rejected list, on its own do-not-retry list for a fetch failure, or
+  judged the wrong document by a discovery strategy; a fee schedule expected to hold fewer than
+  `THIN_DOCUMENT_MAX_FEES` fees; a product page expected to hold `PAID_MIN_PRICED_LINES` or more.
+  It lists up to 20 institutions per contradiction in the step detail.
+- Not contradictions: the second-document finder and its site searches record the bank's current
+  link as the input they searched *from* (`SEARCH_FROM_STRATEGIES`), so their `wrong_document` /
+  `no_candidates` entry means "found nothing better". They are reported as
+  `search_from_entries`, as is `layout_never_recorded` (no stage writes a layout fingerprint yet).
+- Read-only, deterministic, no model calls, pause-exempt. It changes no row.
 
 ## Boundaries
 
@@ -117,3 +136,4 @@ fails a PR that changes one of these constants without updating its line here (#
 | `FRESH_AUDIT_VERSION` | — | v5 | `deming/fresh-audit.ts` |
 | `DEMING_REGRESSION_VERSION` | — | v1 | `deming/regression.ts` |
 | `BENCHMARK_HEALTH_VERSION` | — | v1 | `deming/benchmark-health.ts` |
+| `PLAYBOOK_CHECK_VERSION` | — | v1 | `deming/playbook-contradictions.ts` |

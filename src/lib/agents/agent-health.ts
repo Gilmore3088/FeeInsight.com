@@ -3,6 +3,7 @@ import { DARWIN_VERIFY_MAX_LIMIT, DARWIN_VERIFY_STRATEGY, darwinDueSql } from ".
 import { DARWIN_RELEASE_STRATEGY } from "./darwin/release-held";
 import { KNOX_RULES_STRATEGY } from "./knox/specialists";
 import { SOURCE_CHECK_REASON, SOURCE_CHECK_RESTORE_PREFIX, SOURCE_CHECK_STRATEGY } from "./hamilton/source-check";
+import { PUBLISHER_AGENT_NAMES } from "@/lib/agents/gutenberg/names";
 
 /**
  * Agent health check: the same numbers for every agent every day, stored with the daily
@@ -92,13 +93,16 @@ function pct(value: number): string {
 
 /** Steps failed and spend for one agent over the last 24 hours. */
 async function readCommon(db: SqlTag, agent: HealthAgent): Promise<{ stepsCompleted: number; stepsFailed: number; spendUsd: number }> {
+  // Hamilton's health still reads the publisher's steps, under either name, until #1075 step 2
+  // gives Gutenberg its own health row; spend stays Hamilton's own (product spend).
+  const stepAgents = agent === "hamilton" ? [...PUBLISHER_AGENT_NAMES] : [agent];
   const [row] = await db`
     SELECT
       (SELECT COUNT(*) FROM agent_run_steps
-        WHERE agent_name = ${agent} AND status = 'completed'
+        WHERE agent_name = ANY(${stepAgents}::text[]) AND status = 'completed'
           AND started_at > NOW() - INTERVAL '24 hours')::int AS steps_completed,
       (SELECT COUNT(*) FROM agent_run_steps
-        WHERE agent_name = ${agent} AND status = 'failed'
+        WHERE agent_name = ANY(${stepAgents}::text[]) AND status = 'failed'
           AND started_at > NOW() - INTERVAL '24 hours')::int AS steps_failed,
       (SELECT COALESCE(SUM(estimated_cost_microusd), 0) FROM ai_api_usage_events
         WHERE agent_name = ${agent} AND created_at > NOW() - INTERVAL '24 hours') AS spend_microusd

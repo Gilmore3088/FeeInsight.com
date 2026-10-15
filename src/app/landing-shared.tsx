@@ -133,6 +133,10 @@ export interface SampleRow {
   label: string;
   amount: number;
   median: number;
+  /** The middle half of the local competitors that publish this fee, and how many do. */
+  p25: number;
+  p75: number;
+  competitors: number;
   position: LinePosition;
 }
 
@@ -168,7 +172,16 @@ export function buildSampleView(report: MarketReport | null): SampleView | null 
   const rows: SampleRow[] = [];
   for (const line of report.analysis.lines) {
     if (!line.comparable || !line.own || !line.peers || !line.position) continue;
-    rows.push({ key: line.key, label: getDisplayName(line.key), amount: line.own.amount, median: line.peers.median, position: line.position });
+    rows.push({
+      key: line.key,
+      label: getDisplayName(line.key),
+      amount: line.own.amount,
+      median: line.peers.median,
+      p25: line.peers.p25,
+      p75: line.peers.p75,
+      competitors: line.peers.n,
+      position: line.position,
+    });
   }
   return {
     institutionName: report.data.subject.institution_name,

@@ -239,6 +239,7 @@ export async function getDataQualityStats(): Promise<DataQualityStats> {
           'continuous_od','deposited_item_return','late_payment','garnishment_levy',
           'legal_process','notary_fee','safe_deposit_box','coin_counting','bill_pay',
           'mobile_deposit','zelle_fee','night_deposit','account_research',
+          'excess_withdrawal','returned_mail',
           'account_verification','balance_inquiry','appraisal_fee','loan_origination'
         )
         AND review_status = 'approved'`;

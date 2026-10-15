@@ -6,6 +6,7 @@ import { getStateEconomicContext, type IndicatorSeries, type StateEconomicContex
 import { getRevenueByTier, getRevenueTrend, type RevenueTrend, type TierRevenue } from "@/lib/data-store/call-reports";
 import { getArticles, SOURCE_LABELS, TOPIC_LABELS, type RegArticle } from "@/lib/data-store/news";
 import { getDisplayName } from "@/lib/fee-taxonomy";
+import { proseFeeName } from "@/lib/hamilton/workspace/names";
 import { STATE_NAMES } from "@/lib/us-states";
 import { STATE_TO_DISTRICT, DISTRICT_NAMES } from "@/lib/fed-districts";
 import { formatAssets } from "@/lib/format";
@@ -148,6 +149,11 @@ export function feeFocusHref(selection: LandingResearchHandoff, category: string
   return `/pro/intelligence?${new URLSearchParams({ research: encodeLandingResearch({ ...selection, categories }), lens: "fees", ...(size && size.id !== "all" ? { size: size.id } : {}) })}`;
 }
 
+/** A display name mid-sentence: "Non-Network ATM" becomes "non-network ATM"; acronyms keep their case. */
+function midSentence(name: string): string {
+  return name.split(" ").map((w) => (/^\(?[A-Z0-9']{2,5}\)?$/.test(w) ? w : w.toLowerCase())).join(" ");
+}
+
 export interface Finding { lens: Lens; title: string; body: string; source: string }
 
 /** Observed facts from loaded data, one per lens at most, each naming its source; no interpretation, no pricing advice. */
@@ -155,11 +161,11 @@ export function readFindings(data: Loaded, place: string, state: string | null, 
   const findings: Finding[] = [];
   const row = data.fees?.comparisons.find(c => c.category === primary) ?? data.fees?.comparisons.find(c => c.selected.status === "available");
   if (row && row.selected.status === "available") {
-    const fee = getDisplayName(row.category).replace(/\s*\([^)]*\)/g, "").toLowerCase();
+    const fee = proseFeeName(row.category);
     findings.push({
       lens: "fees",
       title: `${place}'s median ${fee} is ${dollars(row.selected.median)}.`,
-      body: `Across ${row.selected.institutions.toLocaleString()} institutions with a published amount${state && row.national?.median != null ? `, against ${dollars(row.national.median)} nationally (${row.difference != null ? `${row.difference >= 0 ? "+" : "-"}${dollars(Math.abs(row.difference))}` : "difference unavailable"})` : ""}. The middle half runs ${dollars(row.selected.p25)} to ${dollars(row.selected.p75)}.`,
+      body: `Across ${row.selected.institutions.toLocaleString()} institutions with a published amount${state && row.national?.median != null ? (row.difference != null && Math.abs(row.difference) < 0.005 ? `, the same as the ${dollars(row.national.median)} national median` : `, against ${dollars(row.national.median)} nationally (${row.difference != null ? `${row.difference >= 0 ? "+" : "-"}${dollars(Math.abs(row.difference))}` : "difference unavailable"})`) : ""}. The middle half runs ${dollars(row.selected.p25)} to ${dollars(row.selected.p75)}.`,
       source: "Bank Fee Index published catalog",
     });
   }
@@ -276,7 +282,7 @@ function FeePanels({ data, selection, place, state, stateHrefs, compact, explore
       </Panel>
       <Panel title={`${primaryName} by state`} subtitle={`Published median by state · ${CHARTER_LABEL[selection.charter]}${sizeNote ? ` ${sizeNote}` : ""}${data.feeMap?.nationalMedian != null ? ` · U.S. ${dollars(data.feeMap.nationalMedian)}` : ""}`}>
         {data.feeMap && data.feeMap.states.length ? <div className="mt-4"><StateFeeMap states={data.feeMap.states} selected={state} hrefs={stateHrefs} feeLabel={primaryName} /></div>
-          : <Unavailable>The state map could not load for {primaryName.toLowerCase()}.</Unavailable>}
+          : <Unavailable>The state map could not load for {midSentence(primaryName)}.</Unavailable>}
         <EvidenceDetails source="Bank Fee Index · published fee catalog" period="Live catalog at page load" geography="States by institution headquarters" coverage={data.feeMap ? `${data.feeMap.nationalInstitutions.toLocaleString()} institutions publish this fee; states with too few are hatched` : "Unavailable"} method="One value per institution, median per state. A state shaded lighter has a lower published median; branches outside the headquarters state are not counted." />
       </Panel>
     </div>
@@ -287,7 +293,7 @@ function FeePanels({ data, selection, place, state, stateHrefs, compact, explore
 
 function PeerTablePanel({ peers, place, primaryName, charter, compact, exploreHref, note }: { peers: PeerTable; place: string; primaryName: string; charter: LandingResearchHandoff["charter"]; compact: boolean; exploreHref: string | null; note?: string }) {
   const amounts = peers.rows.map(r => r.amount).sort((a, b) => a - b);
-  return <Panel title={`Largest institutions in ${place}: ${primaryName.toLowerCase()}`} subtitle={`${peers.rows.length} shown of ${peers.institutionsInScope.toLocaleString()} ${CHARTER_LABEL[charter].toLowerCase()}${note ? ` ${note}` : ""} in scope, largest by assets first`} explore={exploreHref}>
+  return <Panel title={`Largest institutions in ${place}: ${midSentence(primaryName)}`} subtitle={`${peers.rows.length} shown of ${peers.institutionsInScope.toLocaleString()} ${CHARTER_LABEL[charter].toLowerCase()}${note ? ` ${note}` : ""} in scope, largest by assets first`} explore={exploreHref}>
     {peers.rows.length ? <div className="mt-4 overflow-x-auto" tabIndex={0} role="region" aria-label="Institutions and their published fee">
       <table className="w-full text-left text-sm"><caption className="sr-only">Published {primaryName} by institution with source documents</caption>
         <thead><tr className="border-b border-[var(--fi-border)] text-xs uppercase tracking-wide text-[var(--fi-muted)]">{["Institution", "Type", "Assets", primaryName, "Published", "Evidence"].map(h => <th key={h} scope="col" className="p-2.5 font-semibold">{h}</th>)}</tr></thead>
@@ -300,7 +306,7 @@ function PeerTablePanel({ peers, place, primaryName, charter, compact, exploreHr
           <td className="p-2.5">{r.documentUrl ? <a href={r.documentUrl} target="_blank" rel="noreferrer" className="text-[var(--fi-brick)]">Fee schedule ↗</a> : <span className="text-[var(--fi-muted)]">No link</span>}</td>
         </tr>)}</tbody>
       </table>
-    </div> : <Unavailable>No institution in this scope publishes {primaryName.toLowerCase()} yet.</Unavailable>}
+    </div> : <Unavailable>No institution in this scope publishes {midSentence(primaryName)} yet.</Unavailable>}
     {!compact && amounts.length ? <p className="mt-3 text-sm text-[var(--fi-muted)]">Among these {amounts.length}: lowest {dollars(amounts[0])}, highest {dollars(amounts[amounts.length - 1])}.</p> : null}
     <EvidenceDetails source="Bank Fee Index · published fee catalog; assets from FDIC and NCUA filings" period="Each row's published date" geography={place} coverage="Institutions in scope with a published value; others are not shown, not $0" method="One value per institution under the statistics contract; each links to the fee schedule it was read from." />
   </Panel>;

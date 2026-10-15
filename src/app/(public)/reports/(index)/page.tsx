@@ -16,7 +16,7 @@ import { TrackLink } from "@/components/track-link";
 import { CONTACT_EMAIL, REPORT_OFFER, SITE_NAME } from "@/lib/constants";
 import { loadSampleReport } from "@/lib/custom-report/sample-report";
 import { ReportFaq } from "./report-faq";
-import { HamiltonLine } from "./hamilton-line";
+import { HamiltonLine } from "../hamilton-line";
 import { RequestReportForm } from "@/app/for-institutions/request-report-form";
 import { getMarketReadinessCached, getStatesWithFeeDataCached } from "@/lib/data-store/public-cached-reads";
 import type { MarketReadiness } from "@/lib/data-store/market-readiness";

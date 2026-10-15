@@ -20,6 +20,13 @@ export function readHamiltonIdentitySnapshot(value: unknown): HamiltonIdentitySn
   return out;
 }
 
+/** How the peer group was chosen, in words; the default group needs no note. How the subject was picked stays in the record. */
+function peerSourceNote(source: string | null | undefined): string {
+  if (source === "saved-peer-set" || source === "saved_peer_set") return " (saved peer group)";
+  if (source === "national") return " (national index)";
+  return "";
+}
+
 export function hamiltonIdentityLines(snapshot: HamiltonIdentitySnapshot | null | undefined): string[] {
   if (!snapshot) return [];
   const name = (label: string | null | undefined, id: number | null) => label || (id ? `Institution ${id}` : "Not selected");
@@ -28,8 +35,7 @@ export function hamiltonIdentityLines(snapshot: HamiltonIdentitySnapshot | null 
     `Account institution: ${snapshot.accountStatus === "identified" && snapshot.accountInstitutionId
       ? name(snapshot.accountInstitutionName, snapshot.accountInstitutionId)
       : snapshot.accountStatus === "ambiguous" ? "Multiple memberships; not selected" : snapshot.accountStatus === "unavailable" ? "Could not be verified" : "Not linked"}`,
-    ...(snapshot.researchSelectionSource ? [`Research selection: ${snapshot.researchSelectionSource}`] : []),
-    `Peer baseline: ${snapshot.peerBaselineLabel || "Not recorded"}${snapshot.peerBaselineSource ? ` (${snapshot.peerBaselineSource})` : ""}`,
+    `Peer baseline: ${snapshot.peerBaselineLabel || "Not recorded"}${peerSourceNote(snapshot.peerBaselineSource)}`,
     ...(snapshot.peerBaselineFallbackReason ? [`Peer baseline note: ${snapshot.peerBaselineFallbackReason}`] : []),
   ];
 }

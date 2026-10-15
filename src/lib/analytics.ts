@@ -26,6 +26,10 @@ export type AnalyticsEvent =
   | "billing_frequency_selected"
   /** The buyer opened one capability's example (Benchmark, Analyze, Monitor, Report) on /subscribe. */
   | "subscribe_example_viewed"
+  /** A visitor opened a view of the homepage product demo by its tab; `view` names it. */
+  | "demo_view_opened"
+  /** A visitor picked a district on the homepage demo map (click, Enter or a district dot). */
+  | "demo_district_picked"
   /** The welcome page after Stripe returns with success=true. */
   | "checkout_complete"
   | "upgrade_click"

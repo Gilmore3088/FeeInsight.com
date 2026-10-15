@@ -7,6 +7,7 @@ import { countCurrentCopyPairs, CURRENT_COPY_STRATEGY } from "@/lib/agents/hamil
 import { countRetidyReplay, NAME_RETIDY_STRATEGY } from "@/lib/agents/knox/name-retidy";
 import { DARWIN_VERIFY_STRATEGY } from "@/lib/agents/darwin/verify";
 import { DARWIN_PEER_STRATEGY } from "@/lib/agents/darwin/peer-checks";
+import { PUBLISHER_AGENT_NAMES } from "@/lib/agents/gutenberg/names";
 
 type SqlTag = typeof sql;
 
@@ -115,7 +116,7 @@ async function countGuardCatchUp(db: SqlTag): Promise<ReplayCount> {
   };
   const [run] = await db<Array<{ id: number | string; status: string }>>`
     SELECT id, status FROM agent_runs
-     WHERE agent_name = 'hamilton' AND params_json @> ${JSON.stringify(marker)}::jsonb
+     WHERE agent_name = ANY(${[...PUBLISHER_AGENT_NAMES]}::text[]) AND params_json @> ${JSON.stringify(marker)}::jsonb
      ORDER BY id DESC
      LIMIT 1
   `;
@@ -246,6 +247,9 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   // v3 (#1397): the recheck reads every verified row once per version, so each verify step works
   // through the whole verified set under v3 itself (200 a step).
   DARWIN_RECHECK_STRATEGY: "Its selector re-reads every verified row not yet read at v3 (200 a verify step); there is nothing to replay.",
+  // v1 (#1455): a new shadow pass. Its selector reads every shared or vendor-path document pair not
+  // yet read at v1 (25 a verify step), and documentOwnerCountSql counts the whole backlog read-only.
+  DOCUMENT_OWNER_STRATEGY: "A new shadow pass; its selector reads every shared or vendor-path pair not yet read at v1, and documentOwnerCountSql counts the backlog; nothing to replay.",
 };
 
 export async function loadManifests(): Promise<ReplayManifest[]> {

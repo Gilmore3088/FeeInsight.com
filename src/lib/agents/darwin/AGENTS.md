@@ -12,6 +12,13 @@ Darwin owns verification and classification.
   Darwin or publish joins Darwin's live re-check in the same PR, with a dry-run count of the live
   fees it would take down. Takedowns go through the shared second look and the run ledger
   (`docs/project/DECISIONS.md`, 2026-10-15).
+  The Oct 15 re-file of excess withdrawals and returned mail out of account research (#1398) has
+  no Darwin-only live pass yet: its live re-check is Hamilton's fold step (`taxonomy-fold.ts`,
+  every publish step), which reads up to 2,000 live and verified account research fees whose name
+  the split might move (every one with the `research_split_full_count` param) and, while `RESEARCH_SPLIT_LIVE` is off, writes the would-move count by route
+  with samples to `detail.taxonomy_fold.pendingResearchSplit` and moves nothing. Moves only
+  re-file; none takes a fee down. Once on, live fees under the two new types are guarded by the
+  category guard's live sweep.
 
 ## Current Implementation (2026-10-12, verify.rules version 3)
 
@@ -21,8 +28,8 @@ Darwin owns verification and classification.
 |---|---|---|
 | `missing_canonical` | a valid canonical hint | rejected |
 | `missing_name` | a non-empty fee name | rejected |
-| `category_mismatch` | for the guarded categories, the fee name names its category and not a different fee (`src/lib/fee-category-guard.ts`); a name that names a neighbouring guarded category is re-filed there first (`refileCategory`). Guard v62 (#1100) also reads the row's own source line: a monthly maintenance row whose line charges its price per withdrawal, debit, transaction, transfer or item fails, and one charged per activity over a limit is re-filed to account research first (`refileFromLine`) | rejected |
-| `missing_lineage` | a source URL or stored document key | rejected |
+| `category_mismatch` | for the guarded categories, the fee name names its category and not a different fee (`src/lib/fee-category-guard.ts`); a name that names a neighbouring guarded category is re-filed there first (`refileCategory`). Guard v62 (#1100) also reads the row's own source line: a monthly maintenance row whose line charges its price per withdrawal, debit, transaction, transfer or item fails, and one charged per activity over a limit is re-filed to account research first (`refileFromLine`; to excess withdrawals instead, once `RESEARCH_SPLIT_LIVE` is on, when the line names savings, money market or share withdrawals, transfers or debits) | rejected |
+| `missing_lineage` | Hamilton's publish rule (`sourceLinkSkipReason` in `hamilton/source-link.ts`, #1345): a source document, and an http(s) link, the row's own or its document's. A stored file key alone is not enough (#1350): such a row would be verified and then refused at publish forever. The reason text is Hamilton's refusal ("No source link: the fee can't be traced to the bank's document", or "No source document: ...") | rejected |
 | `percent_not_publishable` | a fee stated as a rate ("1.1% of the transaction") is filed under a category that publishes rates (`PERCENT_FEE_RANGES` in `src/lib/percent-fees.ts`: foreign transaction, cash advance, coin counting, late payment); elsewhere a rate is often an interest rate, not a fee. A rate that passes needs `rate_percent` and no dollar amount (else `invalid_amount`) and a rate inside that category's range (else `outside_envelope`), and its source check is `checkRateAgainstSource` | rejected |
 | `invalid_amount` | an amount; $0 only with Knox's `knox_review:zero` flag | rejected |
 | `outside_envelope` | a positive amount inside its category's range: hand-set (`envelopes.ts`), else learned (`learned-envelopes.ts`), else $0.01-$2,500 | needs_review |
@@ -109,6 +116,132 @@ Darwin owns verification and classification.
   row that passes now has its pending second-look flag cleared (`takedown_cleared`). Each row
   records a `verify.recheck` attempt (fingerprint `verified:<fee_verified_id>`), so a row is read
   once per recheck version and the pass never starves the batch. Never a hand UPDATE.
+- `verify.document_owner` (`document-owner.ts`, version 1, 2026-10-15, #1455) ends every learning
+  verify step after `verify.recheck`. It asks whose schedule a live fee's document is, by the
+  document's own text, never by the stored website (the registry seed stored another bank's website
+  for 5756, 4884 and 1903; CU website vendors serve one CU's file on every member domain). A live
+  (institution, document) pair is read when the document is shared with another institution (its
+  host is that institution's stored website, that institution has live fees from the same address,
+  or one of its documents has the same `text_hash`: a completed text of 200 characters or more shared by
+  at most 20 documents, so empty and "Access Denied" pages link nothing) or sits on a vendor download path
+  (`/ezs3download/download/`, `/_/kcms-doc/`; a path alone is no proof). The order: all linked
+  institutions share this bank's holding company gives `sibling_shared` (Wells Fargo 4/172/359,
+  #1441: never taken down, counted once per document); this bank's distinct name, credit union
+  acronym (SMFCU, SMCU), printed website (not the document's own host), city or certificate number
+  gives `own_named` (co-branded documents pass; names read "&" as "and" and drop a trailing
+  "Company", "Co.", "Corp.", "Inc.", "N.A.", "F.S.B." or "S.S.B."); on a vendor path, the hash-linked institution whose
+  name form the text prints owns the copy (`other_bank` when it is another, unrelated institution;
+  a bare one-word brand never counts, nor a sharer's form that contains or sits inside one of
+  this bank's own forms; on this bank's own site the sharer's name must be its own: not shared,
+  or printed with its city); a document on another institution's stored website, not on
+  this bank's site (its stored host, a subdomain or parent of it, or the same registrable domain:
+  `home.acmebank.com` owns `acmebank.com`), that never names this bank is `other_bank` naming that
+  institution (the site rule; never for a bank with no stored website); then linked institutions count by a name of two words or
+  more (a one-word brand such as "healthplus" only next to bank/credit union/fcu or its city;
+  boilerplate and common words such as "currency", "direct", "popular" never), a name another
+  institution's name contains only with its city, an acronym, or city with state. One named
+  institution gives `other_bank`, two or more `shared_service` (passes); a named institution
+  linked only by address or text hash is capped at `shared_service` when the text gives only its
+  acronym or city with state, or when the document is on this bank's own site, so a name variant
+  this bank's forms miss ("HBT Bank") never hands its own schedule away, a named sibling
+  `sibling_shared`. The header rule (`headerNamesInstitution`: one of the first ten non-empty lines
+  starts with the full legal name, two words or more with "bank" or "credit union", printed as a
+  title, no other institution sharing it) applies only to linked institutions. An institution only
+  the registry-wide name scan finds gives `registry_named`, a review verdict that passes, even as a
+  title line ("Wells Fargo Bank", "U.S. Bank", "Bank of America ATM Fees", "Fees associated with",
+  "processed through Bank of America" are all negative tests). Other verdicts: `unproven` (also a
+  pair with no registry row), `no_text`. Live fees exclude rolled-back and quarantined ones; the scoped pairs read runs at most once an
+  hour (`DOCUMENT_OWNER_SCAN_INTERVAL_HOURS`, keyed on the mode's last event), with JIT off and a
+  60 s statement timeout inside its savepoint, both put back after the read. Up to 25 new pairs a step, one attempt each (fingerprint
+  `owner-shadow:<institution>:<document>:<text_hash>` in shadow, `owner:...` once live, so a
+  re-extracted text is read again). A step skips the scoped read when the last one of its mode
+  selected no pair and the newest stored text and live fee ids are unchanged. With
+  `DARWIN_DOCUMENT_OWNER_TAKEDOWN` off (the default) it only logs the live fees it would take down
+  (`darwin.document_owner_shadow` event, step detail `document_owner`); on, `other_bank` pairs are
+  re-read under their own cap of 25, a failing fee goes through the shared second look
+  (`darwin.document_owner`), passing fees clear their pending flags, and a confirmed fee is
+  archived with reason `document_owner: names institution <id>`, never deleted.
+  `documentOwnerCountSql()` is the read-only count of the whole backlog by verdict, mirroring these
+  rules in staged, materialized steps, as one script in a read-only transaction that rolls back (JIT
+  and merge joins off, a 120 s statement timeout; names are matched only where their first two words
+  appear next to each other). It skips the certificate test, so its `other_bank` count is an upper
+  bound.
+- Live name re-check (`live-fragment-check.ts`, #1443, #1436; decision 2026-10-15, "Darwin
+  re-checks every live fee against today's rules"). `verify.recheck` reads verified rows of the
+  current `verify.rules` version, so fees that went live earlier are never read again; this pass
+  reads the live table itself. Every verify/classify step reads the next `LIVE_FRAGMENT_BATCH`
+  (2,000) live fees (`published_fee_records`, not rolled back or quarantined, dollar and rate
+  rows) after a cursor kept on the run ledger: the `darwin.live_fragment_check` event each step
+  writes, whose `next_after_id` is 0 once a pass reaches the end of the table, so the next step
+  starts the next pass. An institution-scoped run reads that bank's live fees and leaves the
+  cursor alone; a dry-run run writes nothing. The rule is `liveFragmentName` (Knox's
+  `name-retidy.ts`, beside `isCutoffName`), keyed on the live catalog name `fp.fee_name`, not the
+  verified name (21 of 29 rows where the two differ were fragments already repaired in the
+  catalog). It is the narrow live twin of publish's `cutoff_name` hold, which matched 1,571 live
+  fees on Oct 15 with about half real fees in a labelled sample of 155:
+  `sentence_end` (a joining word at the end; "a", "an", "the" only in lower case so "N/A" never
+  fires; never "above" or "each"), `trailing_range` ("up to" or "per", never "each"), `pronoun`
+  ("will" or "you" only) and `plus` (a leading "+" with no fee noun after it). Step detail
+  `live_fragment_check`: rows read, `would_take_down`, `by_pattern`, up to 20 samples (id,
+  institution, name, amount, pattern), the cursor. `FRAGMENT_NAME_TAKEDOWN_LIVE` is false: the
+  pass only reports. When a PR turns it on (after James has seen the whole-table dry run by
+  pattern), a matching fee is archived in the same step (`rolled_back_reason` `fragment name:
+  <pattern>`, batch `darwin-live-fragment-<run>`, never deleted), its verified row is rejected
+  with `darwin_live_fragment:<pattern>` so publish does not bring it back, the public read cache
+  is cleared and a `darwin.live_fragment_name_taken_down` event lists the takedowns. A fragment is
+  taken down rather than renamed because many carry the wrong amount (a minimum, a waived price,
+  a $0 online copy). Whole-table dry run in one read: queue a verify run with
+  `fragment_full_count: true` (step detail `live_fragment_full_count`), or hand someone with
+  prod access `liveFragmentCountSql()` (the same regexes as read-only SQL).
+- Released-fee category re-check (`release-repair.ts`, the repair half of #1367; decision
+  2026-10-15, "Darwin re-checks every live fee against today's rules"). Until PR #1468 the release
+  check passed "." as the category pattern, so every fee the release published before then went live
+  without its category being checked: on Oct 15, 2,566 verified rows carried `darwin_released_hold`
+  and 1,680 were live (239 of them from the recorded-pass release's 387 that morning); a seeded
+  sample of 20 found 2 in the wrong category, both `od_protection_transfer` holding an overdraft or
+  courtesy-pay item fee. Every verify/classify step reads the next `RELEASE_REPAIR_BATCH` (250)
+  released fees (`published_fee_records` joined to a verified row flagged `darwin_released_hold`;
+  live ones, plus ones this pass archived) after a cursor on the run ledger (the
+  `darwin.release_repair` event's `next_after_id`, 0 at the end of a pass). It runs
+  `releaseCheckHold` on each, against the fee's own stored text and the category model
+  (`loadReleaseCheckInputs`), with the live category and amount and the name Knox read from the
+  schedule. The amount-range gate is skipped (the live fee already passed Hamilton's range, and the
+  range must not hide a category failure). At release time either category failure only keeps a
+  fee for a person, and each alone is wrong too often for a takedown (the text check fails real
+  names with no heading nearby, such as "Service Fee" under "Basic Checking", "Bounced Check" or
+  "Transfer from Savings"; the model disputes about 6% of right fees). So a fee is a takedown
+  candidate only when both fail: `category_not_in_text` AND the model disputes the category,
+  picking another with at least `RELEASE_REPAIR_SUGGEST_MIN` (0.5) of its probability (reason
+  `category_not_in_text_and_disputed`). One failure alone is report only, counted and sampled apart:
+  `text_only` (`category_not_in_text`) and `model_only` (`category_disputed`). Any other hold is
+  `other`, report only. `no_source_text` and `no_category_model` are skipped and read again next
+  pass (with no model the whole step is skipped and the cursor stays). Step detail
+  `release_repair`: `checked`, `passed`, `would_take_down`, `deferred`, `report_only` (`text_only`,
+  `model_only`, `other`), `by_reason`, `by_category`, `text_only_by_category`,
+  `model_only_by_category`, up to 20 samples of each bucket (with the model's pick and its
+  probability), the cursor. `DARWIN_RELEASE_REPAIR_LIVE` is false: the pass only reports. When a PR
+  turns it on, a candidate goes through the shared 12-hour second look (`secondLook`, check
+  `darwin.release_repair`): flagged `takedown_pending` first, archived only when a run at least 12
+  hours on fails it again (`rolled_back_reason` `release_repair:<reason>`, batch
+  `darwin-release-repair-<run>`, never deleted), its verified row rejected with
+  `darwin_release_repair:<reason>` appended last, in the same savepoint. Rejected rather than
+  re-held: the held pile is raw rows with no verified row, and no code reads a verified row in
+  another status (`challenged` is allowed and read by nothing), so a re-hold would strand the fee.
+  A live fee that is not a candidate (a pass or any report-only bucket) clears its pending flag.
+  Restore: an archived fee that no longer meets the takedown bar comes back in one statement (fee
+  live and verified row verified with the flag removed, together), only when this pass's flag is
+  still the verified row's last flag (no other rule flagged it since) and no equal fee is live at
+  that bank; otherwise it stays down (`restore_blocked`). The restore writes the second look's
+  `takedown_cleared` state row and `flag_cleared` audit row in the same savepoint. A
+  `darwin.release_repair_acted` event lists what came down and what came back. The verify step
+  calls it through `runReleaseRepairStep`, which catches any throw, so the repair never fails the
+  step. No provider call: the category model is Darwin's own naive Bayes, trained in-process from
+  `published_fee_catalog`. Whole dry run in one read-only pass: queue a verify run with
+  `release_repair_full_count: true` (step detail `release_repair_full_count`, every bucket).
+  `releaseRepairCandidateSql()` is the read-only SQL for someone with prod access: live released
+  fees by category, the recorded-pass share, and names lacking the category's wording, a rough
+  guide to the text half only (neither bound: the check reads the schedule line and rows above, not
+  the name); the line read and the model do not run in SQL.
 - The in-batch duplicate key (`batchKey` in `verify.ts`, `DARWIN_BATCH_KEY_VERSION` v4) is the
   institution, category, amount (or rate), frequency, stored document, the fee's own source line
   and its audience. Version 1 named the URL, so a fee on a bank's current copy of a page was held
@@ -171,10 +304,13 @@ Darwin owns verification and classification.
 - A verified $0 row carries the `zero_fee` flag, which is what lets Hamilton publish it.
 - Pass 2 (`peer-checks.ts`, free, rows the rules accept), each its own strategy in
   `pipeline_attempts` (stage `verify`, fingerprint `raw:<fee_raw_id>`):
-  - `verify.peer_range` v3: consumer fees only. The peer levels are consumer prices, so a fee
-    whose audience is not `consumer` or `both` (business or unknown) is not compared at all
-    (2026-10-09); its source check and second-source check still run. A positive consumer
-    amount below p25 / 3 or above p75 * 3 of its
+  - `verify.peer_range` v4: a fee enters on the benchmarks' terms (`entersPeerCheck`, #1112).
+    The peer levels are the benchmark population (`statsRowFilter`: consumer, both and unknown
+    fees, no business-only schedule), so consumer and both fees are compared, an unknown fee is
+    compared unless its schedule's address is business-only (`isBusinessOnlyLink`), and a
+    business fee never is; its source check and second-source check still run. (v3, 2026-10-09,
+    compared consumer and both only; on Oct 15, after Darwin's audience decision, that left 368
+    accepted unknown fees a day unchecked.) A positive amount below p25 / 3 or above p75 * 3 of its
     state peers (asset-size tier level when it has 8+ institutions, else the state-wide
     level) is held as `needs_review` with reason code `peer_outlier` and the range in
     the reason and in the review signal's `peer_outliers`. When the state has fewer than
@@ -301,6 +437,26 @@ Darwin owns verification and classification.
   would release, 34 held (11 glued or cut name, 7 frequency word, 5 overdraft/NSF for a person, 3
   two-column glue, 3 maintenance without context, 2 band as price, 1 footnote, 1 overdraft
   transfer, 1 business activity row).
+  The release check reads the category (#1367, Oct 15, no version change). Until then `releaseVerdict`
+  passed "." as `checkFeeAgainstSource`'s category pattern, so "stated" meant only that the name and
+  amount were on the schedule (a hand check of 20 held `keep` fees found 8 filed under the wrong
+  category, all passing that check). It now passes the category guard's own pattern
+  (`releaseCategoryPattern`: `CATEGORY_GUARD_RULES[key].include`; none for a category with no guard
+  rule or one that accepts any name, where the category rests on today's name guard and the model).
+  A fee on the schedule with no category wording on its line or the 3 rows above is `keep`
+  (`category_not_in_text`), never a reject. Both release paths run the same check again at release
+  time against the fee's own stored schedule (`releaseCheckHold`), so verdicts recorded before the
+  fix are re-read: a recorded pass or a review pass that fails it holds as
+  `release_check:<reason>` (`category_not_in_text`, `category_disputed` when the category model
+  disputes the category, `no_source_text`, ...), in step detail and the attempt's `release_check`.
+  No release without the category model: when it cannot be loaded (each read runs in its own
+  savepoint, `loadReleaseCheckInputs`), the recorded-pass release releases and records nothing that
+  tick, not even its dry-run row, and the paid review makes no call (`modelMissing`). A hold that
+  says only that this tick could not read what the check needs (`no_source_text`,
+  `no_category_model`: `TEMPORARY_RELEASE_HOLDS`) writes no attempt, so the fee comes back next tick;
+  a real hold (`category_not_in_text`, `category_disputed`, ...) is recorded and final for v1.
+  The context check adds to the name guard only where the bank's own row words differ from the
+  stored name; the category model is the stronger gate for a name that fits its category on paper.
   v1 released on the schedule check alone; its dry run on 2026-10-06 (1,997 of 4,128 held
   fees) had 12 of 20 hand-checked releases right. v2 adds the gates above. v3 (James chose
   "Reject only", 2026-10-06 16:49 UTC) acts on rejects (`DARWIN_RELEASE_REJECTS_ACT`): each
@@ -398,9 +554,16 @@ Darwin owns verification and classification.
 - Guard v35 (2026-10-08) accepts a per-item overdraft or NSF fee whose note states the daily cap: a dollar cap above the row's own price ("NSF Returned Item(s) Charge (NSF charge maximum of $100 per day)" $25, First State Bank of Rosemount), and a cap note that names the returned items sharing it ("Overdraft Fee ... (Consumer Accts: 5 max total OD or Returned Item fees daily)", BankIowa).
 - Guard v36 (2026-10-08) changes no rule: PRs 665 and 668 both shipped v35, so rows rejected between their deploys are re-checked under both.
 - Guard v42 (2026-10-08; v40 and v41 are Accuracy's, PR 682) files an NSF item marked paid after a dash or in brackets ("NSF Fee Charge - Paid (per item)", "Nonsufficient Funds Fee-Paid", "Insufficient Funds Charge (Check Paid, Per Item)") as the overdraft fee and re-files it there from NSF; "per non-paid item", "Paid from other ... account" and "We will not assess ..." stay out. "Overdraft Privilege Standard or Extended Coverage" names the program, not an extended overdraft fee.
-- The guard is at v64 (`CATEGORY_GUARD_VERSION` in `src/lib/fee-category-guard.ts`). The notes for
-  v43 to v64 are the version comments above that constant, not this guide; v58 is the bond-return
-  lesson above.
+- The guard is at v64, and v65 once `RESEARCH_SPLIT_LIVE` is on (`CATEGORY_GUARD_VERSION` in
+  `src/lib/fee-category-guard.ts`; off, v65's rules read every live fee as v64 did, so the re-read
+  waits for switch-on). The notes for v43 to v65 are the version comments above that constant, not
+  this guide; v58 is the bond-return lesson above. v65 (James, Oct 15, #1398) adds guard rules for `excess_withdrawal` and
+  `returned_mail` (amount envelopes $1 to $50 in `envelopes.ts`), re-files research filed under
+  either back to account research. Once `RESEARCH_SPLIT_LIVE` is on, an over-limit activity charge
+  on a monthly maintenance row's own line (`refileFromLine`) that names savings, money market or
+  share withdrawals, transfers or debits goes to `excess_withdrawal`; until then, and for every
+  other activity charge, it still goes to account research. Nothing is filed under either new key
+  while the switch is off.
 - Learning store: every verify decision except duplicates and category rejects (the
   publish-step sync writes those) is written to `pipeline_feedback` as a judgement on
   Knox's read (`darwin/feedback.ts`; step detail `feedback_written`, null when skipped).
@@ -468,7 +631,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `AUDIENCE_RELABEL_VERSION` | `darwin.audience_relabel` | v1 | `darwin/audience-relabel.ts` |
 | `DARWIN_ADJUDICATE_STRATEGY` | `verify.adjudicate` | v2 | `darwin/adjudicate.ts` |
 | `DARWIN_CATEGORY_MODEL_STRATEGY` | `verify.category_model` | v1 | `darwin/category-model.ts` |
-| `DARWIN_PEER_STRATEGY` | `verify.peer_range` | v3 | `darwin/peer-checks.ts` |
+| `DARWIN_PEER_STRATEGY` | `verify.peer_range` | v4 | `darwin/peer-checks.ts` |
 | `DARWIN_SECOND_SOURCE_STRATEGY` | `verify.second_source` | v2 | `darwin/peer-checks.ts` |
 | `DARWIN_RELEASE_STRATEGY` | `verify.release` | v4 | `darwin/release-held.ts` |
 | `DARWIN_RECORDED_RELEASE_STRATEGY` | `verify.release_recorded` | v1 | `darwin/release-review.ts` |
@@ -476,6 +639,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `DARWIN_SCHEDULE_REFILE_STRATEGY` | `verify.schedule_refile` | v1 | `darwin/schedule-refile.ts` |
 | `DARWIN_VERDICT_SCORE_STRATEGY` | `verify.verdict_score` | v1 | `darwin/verdict-score.ts` |
 | `DARWIN_RECHECK_STRATEGY` | `verify.recheck` | v3 | `darwin/verified-recheck.ts` |
+| `DOCUMENT_OWNER_STRATEGY` | `verify.document_owner` | v1 | `darwin/document-owner.ts` |
 | `DARWIN_VERIFY_STRATEGY` | `verify.rules` | v3 | `darwin/verify.ts` |
 | `DARWIN_SOURCE_CHECK_VERSION` | — | v2 | `darwin/verify.ts` |
 | `DARWIN_BATCH_KEY_VERSION` | — | v4 | `darwin/verify.ts` |

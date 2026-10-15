@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { trainCategoryModel } from "./category-model";
-import { DARWIN_REJECT_SECOND_LOOK_HOURS, DARWIN_RELEASE_REJECTS_ACT, DARWIN_RELEASE_STRATEGY, releaseVerdict, runDarwinReleaseHeld, type HeldFeeRow } from "./release-held";
+import { CATEGORY_GUARD_RULES } from "@/lib/fee-category-guard";
+import { DARWIN_REJECT_SECOND_LOOK_HOURS, DARWIN_RELEASE_REJECTS_ACT, DARWIN_RELEASE_STRATEGY, releaseCategoryPattern, releaseCheckHold, releaseVerdict, runDarwinReleaseHeld, type HeldFeeRow } from "./release-held";
 
 type DbMock = ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
 
@@ -67,6 +68,34 @@ describe("Darwin held-fee release", () => {
     // A range hold whose amount the hand-set range now accepts (a learned ceiling) goes to review.
     const inside = held({ fee_name: "Safe Deposit Box Vault Annual", amount: "2000.00", held_reason: "outside_envelope", held_canonical_fee_key: "notary_fee" });
     expect(releaseVerdict(inside, boxes).verdict).toBe("review");
+  });
+
+  // #1367: the release passed "." as the category pattern, so the shared check confirmed the name
+  // and amount only. A club account's "Monthly charge" filed as monthly maintenance went to review
+  // although nothing near its line names a maintenance or service fee.
+  it("checks the category's own wording near the line, not just the name and amount (#1367)", () => {
+    const savings = "Christmas Club Accounts\nMonthly charge $5.00\nEarly withdrawal $10.00";
+    const filedAsMaintenance = held({ fee_name: "Monthly Fee", amount: "5.00", held_canonical_fee_key: "monthly_maintenance" });
+    expect(releaseVerdict(filedAsMaintenance, savings)).toMatchObject({ verdict: "keep", sourceCheck: "category_not_in_text", sourceLine: null });
+    expect(releaseCheckHold(filedAsMaintenance, savings, null)).toBe("release_check:category_not_in_text");
+
+    const checking = "Checking Accounts\nMonthly Maintenance Fee $12.00\nStatement copy $3.00";
+    const realMaintenance = held({ fee_name: "Monthly Maintenance Fee", amount: "12.00", held_canonical_fee_key: "monthly_maintenance" });
+    expect(releaseVerdict(realMaintenance, checking)).toMatchObject({ verdict: "review", sourceCheck: "stated" });
+    const model = trainCategoryModel([{ name: "Monthly Maintenance Fee", categoryKey: "monthly_maintenance", count: 20 }, { name: "Stop Payment", categoryKey: "stop_payment", count: 20 }]);
+    expect(releaseCheckHold(realMaintenance, checking, model)).toBeNull();
+    // Review of #1367: no model, no dispute check, so never a release on the text check alone.
+    expect(releaseCheckHold(realMaintenance, checking, null)).toBe("release_check:no_category_model");
+  });
+
+  it("reads the category guard's own name pattern, and none for a category with no real one (#1367)", () => {
+    expect(releaseCategoryPattern("monthly_maintenance")).toContain("maintenance");
+    expect(releaseCategoryPattern("stop_payment")).toContain("stop");
+    // No guard rule, or one that accepts any name: the category rests on today's name guard and the model.
+    expect(releaseCategoryPattern("notary_fee")).toBeNull();
+    expect(releaseCategoryPattern("safe_deposit_box")).toBeNull();
+    // The shared check compiles the pattern with "i" only, so a guard pattern must need no other flag.
+    for (const [key, rule] of Object.entries(CATEGORY_GUARD_RULES)) expect([key, rule.include.flags.replace("i", "")]).toEqual([key, ""]);
   });
 
   it("keeps a fee whose category Darwin's category model disputes", () => {
