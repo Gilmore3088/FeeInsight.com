@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { WORKSPACE_SEAT_LIMIT } from "@/lib/hamilton/workspace-seats";
 import { ArrowRight } from "lucide-react";
 import { InfoTip } from "@/components/public/info-tip";
 import { REPORT_PRICE_INLINE } from "@/lib/constants";
@@ -106,8 +107,8 @@ export function InstitutionOfferBand({
                 </>
               ) : (
                 <>
-                  Pro gives up to 5 people the Hamilton workspace: your fees against peers you pick, a watchlist
-                  of competitor fee changes, and cited board-ready reports.
+                  Hamilton, the Fee Insight Pro workspace, gives up to {WORKSPACE_SEAT_LIMIT} people your fees against
+                  your market, a watchlist of the competitors you pick, and cited reports for the board.
                 </>
               )}
             </InfoTip>
