@@ -12,10 +12,11 @@ import { MarketRange, rangeDomain, type HeadlineRow } from "./market-position";
 export const INSTITUTION_TOUR_VIDEO: FrameVideo | null = null;
 
 /**
- * Where the tour clip will play. It is a picture, not a control, so nothing on the page
+ * Where the tour clip will play. The clip is one generic recording on a demo institution, so the
+ * slot never names the page's institution. It is a picture, not a control, so nothing on the page
  * pretends to play; once the clip exists FrameMedia's button takes its place.
  */
-function TourVideoSlot({ institutionName }: { institutionName: string }) {
+function TourVideoSlot() {
   return (
     <figure className="relative flex aspect-video items-center justify-center overflow-hidden rounded-xl border border-warm-ink-700 bg-warm-ink-800">
       <span
@@ -28,7 +29,7 @@ function TourVideoSlot({ institutionName }: { institutionName: string }) {
         </svg>
       </span>
       <figcaption className="absolute inset-x-0 bottom-0 flex items-baseline justify-between gap-3 px-4 py-3 text-[13px]">
-        <span className="min-w-0 truncate font-medium text-warm-ink-50">Hamilton opening on {institutionName}</span>
+        <span className="min-w-0 truncate font-medium text-warm-ink-50">The Hamilton tour</span>
         <span className="shrink-0 text-warm-ink-300">Video coming</span>
       </figcaption>
     </figure>
@@ -160,7 +161,7 @@ export function HamiltonBand({
           </p>
         </div>
         <div className="min-w-0 space-y-4">
-          {!INSTITUTION_TOUR_VIDEO && <TourVideoSlot institutionName={institutionName} />}
+          {!INSTITUTION_TOUR_VIDEO && <TourVideoSlot />}
           <HamiltonView institutionName={institutionName} rows={rows} marketLabel={marketLabel} stateLabel={stateLabel} />
         </div>
       </div>
