@@ -64,7 +64,7 @@ export function EmailSignup() {
   // the state picker James kept, then email and button. The button stays outlined so the page's own
   // call to action is the only filled one.
   const field =
-    "rounded-lg border border-warm-ink-700 bg-warm-ink-900 px-3 py-2 text-[13px] text-warm-ink-50 placeholder:text-warm-ink-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-warm-ink-50/60";
+    "rounded-lg border border-warm-ink-500 bg-warm-ink-900 px-3 py-2 text-[13px] text-warm-ink-50 placeholder:text-warm-ink-500";
   return (
     <form onSubmit={handleSubmit} className="relative">
       <HoneypotField />
@@ -90,7 +90,7 @@ export function EmailSignup() {
         <button
           type="submit"
           disabled={status === "loading"}
-          className="shrink-0 rounded-lg border border-warm-ink-50 px-4 py-2 text-[12px] font-semibold text-warm-ink-50 transition-colors hover:bg-warm-ink-50 hover:text-warm-ink-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-warm-ink-50/60 disabled:opacity-50"
+          className="shrink-0 rounded-lg border border-warm-ink-50 px-4 py-2 text-[12px] font-semibold text-warm-ink-50 transition-colors hover:bg-warm-ink-50 hover:text-warm-ink-900 disabled:opacity-50"
         >
           {status === "loading" ? "..." : "Subscribe"}
         </button>

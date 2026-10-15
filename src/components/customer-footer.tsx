@@ -36,7 +36,7 @@ const LINK_CLASS = "text-warm-ink-300 transition-colors hover:text-warm-ink-50";
  */
 export function CustomerFooter() {
   return (
-    <footer className="bg-warm-ink-900 text-warm-ink-50">
+    <footer className="fi-on-navy bg-warm-ink-900 text-warm-ink-50">
       <div className="mx-auto max-w-page px-6 pb-6 pt-10 lg:pt-12">
         <div className="grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,1fr)_auto] lg:gap-16">
           <div className="min-w-0">
