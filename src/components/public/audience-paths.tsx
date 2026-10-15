@@ -40,17 +40,17 @@ export function AudiencePaths({ compact = false, className = "" }: { compact?: b
           <li key={path.href}>
             <Link
               href={path.href}
-              className={`group block h-full rounded-xl border border-[#E8DFD1] bg-white/70 no-underline transition-all hover:border-[#C44B2E]/20 hover:shadow-md hover:shadow-[#C44B2E]/5 ${
+              className={`group block h-full rounded-xl border border-border bg-white/70 no-underline transition-all hover:border-brick/20 hover:shadow-md hover:shadow-[#b23a32]/5 ${
                 compact ? "px-4 py-3" : "px-4 py-3.5"
               }`}
             >
-              <span className="block text-[10px] font-bold uppercase tracking-[0.1em] text-[#6B6255]">
+              <span className="block text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted">
                 {path.eyebrow}
               </span>
-              <span className="mt-1 block text-[13px] font-semibold text-[#1A1815] transition-colors group-hover:text-[#A93D25]">
+              <span className="mt-1 block text-[13px] font-semibold text-ink transition-colors group-hover:text-brick">
                 {path.title}
               </span>
-              <span className="mt-0.5 block text-[11px] text-[#6B6255]">{path.body}</span>
+              <span className="mt-0.5 block text-[11px] text-ink-muted">{path.body}</span>
             </Link>
           </li>
         ))}

@@ -57,8 +57,8 @@ export interface TrendLine {
   tone: "primary" | "compare";
 }
 
-const PRIMARY = "#C44B2E";
-const COMPARE = "#8A8072";
+const PRIMARY = "#b23a32";
+const COMPARE = "#55606f";
 
 function yearLabel(date: string): string {
   return date.slice(0, 4);
@@ -105,7 +105,7 @@ export function TrendChart({ lines, format, label }: { lines: TrendLine[]; forma
   return (
     <figure className="mt-4" aria-label={label}>
       {showLegend && (
-        <figcaption className="mb-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-[#5A5347]">
+        <figcaption className="mb-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-ink-soft">
           {visible.map((l) => (
             <span key={l.label} className="inline-flex items-center gap-1.5">
               <span
@@ -118,7 +118,7 @@ export function TrendChart({ lines, format, label }: { lines: TrendLine[]; forma
         </figcaption>
       )}
       <div className="flex">
-        <div className="relative w-10 shrink-0 text-right text-[10px] tabular-nums text-[#8A8072]" aria-hidden="true">
+        <div className="relative w-10 shrink-0 text-right text-[10px] tabular-nums text-ink-muted" aria-hidden="true">
           {ticks.map((t) => (
             <span key={t} className="absolute right-2 -translate-y-1/2" style={{ top: `${y(t)}%` }}>
               {format(t)}
@@ -128,7 +128,7 @@ export function TrendChart({ lines, format, label }: { lines: TrendLine[]; forma
         <div className="relative h-36 flex-1">
           <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="absolute inset-0 h-full w-full overflow-visible" role="img" aria-label={label}>
             {ticks.map((t) => (
-              <line key={t} x1="0" x2="100" y1={y(t)} y2={y(t)} stroke={t === 0 && lo < 0 ? "#B5AA99" : "#EFE8DC"} strokeWidth="1" vectorEffect="non-scaling-stroke" />
+              <line key={t} x1="0" x2="100" y1={y(t)} y2={y(t)} stroke={t === 0 && lo < 0 ? "#B5AA99" : "#ebe5d9"} strokeWidth="1" vectorEffect="non-scaling-stroke" />
             ))}
             {years.map((d) => (
               <line key={d} x1={x(d)} x2={x(d)} y1="0" y2="100" stroke="#F4EEE4" strokeWidth="1" vectorEffect="non-scaling-stroke" />
@@ -153,14 +153,14 @@ export function TrendChart({ lines, format, label }: { lines: TrendLine[]; forma
           />
         </div>
       </div>
-      <div className="relative ml-10 mt-1 h-4 text-[10px] tabular-nums text-[#8A8072]" aria-hidden="true">
+      <div className="relative ml-10 mt-1 h-4 text-[10px] tabular-nums text-ink-muted" aria-hidden="true">
         {years.map((d) => (
           <span key={d} className="absolute -translate-x-1/2" style={{ left: `${x(d)}%` }}>
             {yearLabel(d)}
           </span>
         ))}
       </div>
-      <p className="ml-10 mt-1 text-[10px] text-[#8A8072]">
+      <p className="ml-10 mt-1 text-[10px] text-ink-muted">
         {monthYear(primary.points[0].date)} to {monthYear(last.date)}
       </p>
     </figure>

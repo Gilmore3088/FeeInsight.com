@@ -9,7 +9,7 @@ export default function RootError({
   reset: () => void;
 }) {
   return (
-    <main id="main-content" className="min-h-screen bg-[#FAF7F2]">
+    <main id="main-content" className="min-h-screen bg-paper">
       <ErrorContent reset={reset} />
     </main>
   );

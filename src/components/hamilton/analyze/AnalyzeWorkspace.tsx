@@ -311,6 +311,8 @@ function AnalyzeConversationWorkspace({
   const [answeredAt, setAnsweredAt] = useState<string>(() => new Date().toISOString());
   const [exportError, setExportError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+  // The route's line in place of a written answer its source check held back (#981).
+  const [heldLine, setHeldLine] = useState<string | null>(null);
   const [askedQuestion, setAskedQuestion] = useState<string | null>(null);
   // Bumped on every ask, so asking the same question again (or Try again) really asks again.
   const [askSeq, setAskSeq] = useState(0);
@@ -353,6 +355,15 @@ function AnalyzeConversationWorkspace({
       const content = extractTextFromMessage(message);
       // A failed or empty reply is never shown as an answer, and never saved.
       if (!active.current || readOnlyReason || isError || isAbort || !content.trim()) return;
+      // A held answer is the route's notice, not an answer: never parsed, scored or saved.
+      if ((message.metadata as { answerEvidence?: { held?: boolean } } | undefined)?.answerEvidence?.held) {
+        setHeldLine(content.trim());
+        setParsedResponse(null);
+        setFigureCheck(null);
+        setSavedAnalysisId(null);
+        setInput((current) => current || lastPromptRef.current);
+        return;
+      }
       const generation = answerGeneration.current;
       const parsed = parseAnalyzeResponse(content);
       const parts = message.parts as ReadonlyArray<MessagePart>;
@@ -456,6 +467,7 @@ function AnalyzeConversationWorkspace({
       setStartedAt(Date.now());
       setStoryLead(null);
       clearError();
+      setHeldLine(null);
       setParsedResponse(null);
       setAnswerIdentity(null);
       setFigureCheck(null);
@@ -484,6 +496,7 @@ function AnalyzeConversationWorkspace({
     lastPromptRef.current = "";
     setEngineBusy(false);
     setAskedQuestion(null);
+    setHeldLine(null);
     setParsedResponse(null);
     setAnswerIdentity(null);
     setStoryLead(null);
@@ -497,6 +510,7 @@ function AnalyzeConversationWorkspace({
   // A storyline answer for a fee picked after a written answer replaces that answer.
   const dropWrittenAnswer = useCallback(() => {
     if (isLoading) stop();
+    setHeldLine(null);
     setParsedResponse(null);
     setMessages([]);
   }, [isLoading, setMessages, stop]);
@@ -572,7 +586,7 @@ function AnalyzeConversationWorkspace({
   // A stream that so far holds only a section heading has nothing to read yet; the progress note stays.
   const streamingHasText = streamingContent.replace(/^#+[^\n]*$/gm, "").trim().length > 0;
   const liveParsed = isLoading && streamingHasText ? parseAnalyzeResponse(streamingContent) : null;
-  const shown = chatError && !isLoading ? null : (parsedResponse ?? liveParsed);
+  const shown = (chatError || heldLine) && !isLoading ? null : (parsedResponse ?? liveParsed);
   const view = shown ? shapeHamiltonView(shown.hamiltonView) : { lead: "", paragraphs: [] };
   const feeCategory = view.lead ? inferFeeCategory(view.lead) : null;
   const feeName = feeCategory ? getDisplayName(feeCategory).replace(/\s*\([^)]*\)\s*$/, "").toLowerCase() : null;
@@ -672,6 +686,16 @@ function AnalyzeConversationWorkspace({
           {lastPromptRef.current ? (
             <button type="button" onClick={() => ask(lastPromptRef.current)} className="font-medium text-terra-text underline">
               Try again
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+      {heldLine && !chatError && !isLoading ? (
+        <div role="status" className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-terra bg-terra-soft px-4 py-3 text-sm text-warm-900">
+          <span>{heldLine}</span>
+          {lastPromptRef.current ? (
+            <button type="button" onClick={() => ask(lastPromptRef.current)} className="font-medium text-terra-text underline">
+              Ask again
             </button>
           ) : null}
         </div>

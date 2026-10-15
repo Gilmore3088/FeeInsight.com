@@ -32,7 +32,7 @@ function AudienceLabel({ fee }: { fee: DisplayFee }) {
     : fee.feeAudience === "business" ? "Business accounts"
     : fee.feeAudience === "both" ? "Consumer and business accounts" : "Audience not stated";
   return (
-    <span className="block text-xs font-normal text-[#6B6255]">
+    <span className="block text-xs font-normal text-ink-muted">
       {label}
       <UnstatedAudienceMark show={unstated} />
       {fee.feeTreatment === "eliminated" ? " · Fee eliminated" : ""}
@@ -54,18 +54,19 @@ export interface FeeBenchmark {
 
 export type FeeBenchmarks = Record<string, FeeBenchmark>;
 
-type Position = "below" | "within" | "above";
+export type Position = "below" | "within" | "above";
 
+/** The design system's market-position colours: brick, slate and sage, never good or bad. */
 const POSITION_DOT: Record<Position, string> = {
-  below: "bg-emerald-600",
-  within: "bg-[#8A8072]",
-  above: "bg-amber-600",
+  below: "bg-below-market",
+  within: "bg-in-range",
+  above: "bg-above-market",
 };
 
 const POSITION_TEXT: Record<Position, string> = {
-  below: "Below the typical range",
-  within: "Within the typical range",
-  above: "Above the typical range",
+  below: "Below the U.S. middle half",
+  within: "Inside the U.S. middle half",
+  above: "Above the U.S. middle half",
 };
 
 function benchmarkFor(fee: DisplayFee, benchmarks: FeeBenchmarks | undefined): FeeBenchmark | null {
@@ -73,11 +74,26 @@ function benchmarkFor(fee: DisplayFee, benchmarks: FeeBenchmarks | undefined): F
   return benchmarks[fee.feeCategory] ?? null;
 }
 
+/** How many benchmarked fees sit below, inside and above the national middle half. */
+export function countPositions(fees: DisplayFee[], benchmarks: FeeBenchmarks): Record<Position, number> {
+  const counts: Record<Position, number> = { below: 0, within: 0, above: 0 };
+  const seen = new Set<string>();
+  for (const fee of fees) {
+    const benchmark = benchmarkFor(fee, benchmarks);
+    if (!benchmark || fee.amount === null) continue;
+    const key = dedupeKey(fee);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    counts[fee.amount < benchmark.p25 ? "below" : fee.amount > benchmark.p75 ? "above" : "within"] += 1;
+  }
+  return counts;
+}
+
 /**
  * A tiny bar: the shaded band is where most institutions fall nationally, the tick is
  * the national median, the dot is this fee. Dot color says below / within / above.
  */
-function FeePosition({ amount, benchmark }: { amount: number; benchmark: FeeBenchmark }) {
+function FeePosition({ amount, benchmark, wide = false }: { amount: number; benchmark: FeeBenchmark; wide?: boolean }) {
   const position: Position =
     amount < benchmark.p25 ? "below" : amount > benchmark.p75 ? "above" : "within";
   const scaleMax = Math.max(benchmark.p75 * 1.5, amount * 1.1, 1);
@@ -85,20 +101,20 @@ function FeePosition({ amount, benchmark }: { amount: number; benchmark: FeeBenc
   const description = `${POSITION_TEXT[position]} (${formatFeeAmount(benchmark.p25)}–${formatFeeAmount(benchmark.p75)} nationally)`;
 
   return (
-    <span className="mt-1 inline-flex w-16 flex-col" title={description}>
+    <span className={`mt-1.5 flex flex-col ${wide ? "w-full" : "w-36"}`} title={description}>
       <span className="sr-only">{description}</span>
-      <span aria-hidden="true" className="relative block h-2.5 w-16">
-        <span className="absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-[#E0D7C9]" />
+      <span aria-hidden="true" className="relative block h-3 w-full">
+        <span className="absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-border" />
         <span
-          className="absolute top-1/2 h-1.5 -translate-y-1/2 rounded-full bg-[#E0D7C9]"
+          className="absolute top-1/2 h-2.5 -translate-y-1/2 rounded-[2px] bg-brick-tint"
           style={{ left: pct(benchmark.p25), width: `calc(${pct(benchmark.p75)} - ${pct(benchmark.p25)})` }}
         />
         <span
-          className="absolute top-1/2 h-2.5 w-px -translate-y-1/2 bg-[#8A8072]"
+          className="absolute top-1/2 h-3.5 w-[2px] -translate-y-1/2 bg-ink"
           style={{ left: pct(benchmark.median) }}
         />
         <span
-          className={`absolute top-1/2 h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full ring-2 ring-white ${POSITION_DOT[position]}`}
+          className={`absolute top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full ring-2 ring-surface-0 ${POSITION_DOT[position]}`}
           style={{ left: pct(amount) }}
         />
       </span>
@@ -108,12 +124,12 @@ function FeePosition({ amount, benchmark }: { amount: number; benchmark: FeeBenc
 
 function PositionLegend() {
   return (
-    <p className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-[#F0EBE3] px-4 py-2 text-[11px] text-[#6B6255]">
-      <span>vs. U.S. typical range:</span>
+    <p className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-surface-200 px-4 py-2 text-[11px] text-ink-muted">
+      <span>vs. the U.S. middle half:</span>
       {(["below", "within", "above"] as const).map((position) => (
         <span key={position} className="inline-flex items-center gap-1">
           <span aria-hidden="true" className={`h-2 w-2 rounded-full ${POSITION_DOT[position]}`} />
-          {position === "within" ? "Typical" : position === "below" ? "Lower" : "Higher"}
+          {position === "within" ? "Inside" : position === "below" ? "Below" : "Above"}
         </span>
       ))}
     </p>
@@ -160,9 +176,9 @@ export interface StateMedians {
 }
 
 const DELTA_TONE: Record<MedianDelta["tone"], string> = {
-  above: "text-red-700",
-  below: "text-emerald-700",
-  at: "text-[#6B6255]",
+  above: "text-above-market",
+  below: "text-below-market",
+  at: "text-ink-muted",
 };
 
 /** Verified rows with a known category link to the national picture for that fee. */
@@ -175,12 +191,12 @@ function MedianCell({
   medians: Map<string, number | null>;
   stateMedians?: StateMedians;
 }) {
-  if (!comparesToPersonal(fee) || fee.status !== "verified" || !fee.feeCategory) return <span className="text-xs text-[#6B6255]">&mdash;</span>;
+  if (!comparesToPersonal(fee) || fee.status !== "verified" || !fee.feeCategory) return <span className="text-xs text-ink-muted">&mdash;</span>;
   const delta = describeMedianDelta(fee.amount, medians.get(fee.feeCategory));
   const stateDelta = stateMedians
     ? describeMedianDelta(fee.amount, stateMedians.medians.get(fee.feeCategory), stateMedians.place)
     : null;
-  if (!delta && !stateDelta) return <span className="text-xs text-[#6B6255]">&mdash;</span>;
+  if (!delta && !stateDelta) return <span className="text-xs text-ink-muted">&mdash;</span>;
   return (
     <>
       {delta && (
@@ -203,7 +219,7 @@ function RateValue({ rate }: { rate: NonNullable<DisplayFee["rate"]> }) {
     <>
       {rate.rate}
       {rate.detail && (
-        <span className="block max-w-[180px] whitespace-normal text-right font-sans text-xs text-[#6B6255]">{rate.detail}</span>
+        <span className="block max-w-[180px] whitespace-normal text-right font-sans text-xs text-ink-muted">{rate.detail}</span>
       )}
     </>
   );
@@ -266,16 +282,19 @@ function GroupBadge({ group }: { group: FeeGroup }) {
         {verified ? "Verified" : "Under review"}
       </span>
       {verified && group.provisionalCount > 0 && (
-        <span className="text-[11px] text-[#6B6255]">{group.provisionalCount} under review</span>
+        <span className="text-[11px] text-ink-muted">{group.provisionalCount} under review</span>
       )}
     </span>
   );
 }
 
-const HEADER_CELL = "px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.1em] text-[#6B6255]";
-const SERIF_STYLE = { fontFamily: "var(--font-newsreader), Georgia, serif" } as const;
+const HEADER_CELL = "px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.1em] text-ink-muted";
+const MONO_FIGURE = { fontFamily: "var(--fi-font-mono)" } as const;
 
-const FOCUSED_ROW = "border-l-2 border-l-[#C44B2E] bg-[#C44B2E]/[0.035]";
+const FOCUSED_ROW = "border-l-2 border-l-brick bg-brick/[0.035]";
+
+/** Rows a phone shows before "Show more". */
+const STACK_ROWS_SHOWN = 8;
 
 /**
  * @param focusCategory The fee the reader came to compare (`?fee=`), highlighted and
@@ -310,18 +329,16 @@ export function FeeScheduleTable({
         groups={groups}
         disclosureUrl={disclosureUrl}
         isFocused={isFocused}
-        medians={medians}
-        stateMedians={stateMedians}
         benchmarks={benchmarks}
       />
       <div className="hidden sm:block">
-        <p className="border-b border-[#F0EBE3] px-4 py-1.5 text-xs text-[#6B6255] lg:hidden">
+        <p className="border-b border-surface-200 px-4 py-1.5 text-xs text-ink-muted lg:hidden">
           Swipe for source and notes &rarr;
         </p>
         <div className="table-scroll">
           <table className="w-full min-w-[720px] border-collapse text-left text-sm">
             <thead>
-              <tr className="border-b border-[#E0D7C9] bg-[#FDFBF8]">
+              <tr className="border-b border-border bg-surface-0">
                 <th scope="col" className={HEADER_CELL}>Fee</th>
                 <th scope="col" className={`${HEADER_CELL} text-right`}>Amount</th>
                 <th scope="col" className={HEADER_CELL}>{stateMedians ? "vs medians" : "vs national median"}</th>
@@ -331,11 +348,11 @@ export function FeeScheduleTable({
               </tr>
             </thead>
             {groups.map((group) => (
-              <tbody key={group.family} className="border-t border-[#E0D7C9]">
-                <tr className="bg-[#FAF7F2]">
+              <tbody key={group.family} className="border-t border-border">
+                <tr className="bg-paper">
                   <th scope="rowgroup" colSpan={6} className="px-4 py-2.5 text-left">
                     <div className="flex flex-wrap items-center justify-between gap-2">
-                      <span className="text-sm font-semibold text-[#1A1815]">{group.family}</span>
+                      <span className="text-sm font-semibold text-ink">{group.family}</span>
                       <GroupBadge group={group} />
                     </div>
                   </th>
@@ -357,7 +374,7 @@ export function FeeScheduleTable({
           </table>
         </div>
       </div>
-      <UnstatedAudienceFootnote show={fees.some((fee) => isAudienceUnstated(fee.feeAudience))} className="border-t border-[#F0EBE3] px-4 py-2" />
+      <UnstatedAudienceFootnote show={fees.some((fee) => isAudienceUnstated(fee.feeAudience))} className="border-t border-surface-200 px-4 py-2" />
     </>
   );
 }
@@ -375,13 +392,13 @@ function UnderReviewChip() {
  * general schedule, labelled as such so it never reads as the fee's exact source.
  */
 function SourceLink({ href, fallback = false }: { href: string | null; fallback?: boolean }) {
-  if (!href) return <span className="text-xs text-[#6B6255]">&mdash;</span>;
+  if (!href) return <span className="text-xs text-ink-muted">&mdash;</span>;
   return (
     <a
       href={href}
       target="_blank"
       rel="noopener noreferrer"
-      className="inline-flex items-center gap-1 text-xs font-semibold text-[#A93D25] hover:text-[#A93D25]"
+      className="inline-flex items-center gap-1 text-xs font-semibold text-ink underline decoration-border underline-offset-2 hover:decoration-ink"
     >
       {fallback ? "Institution\u2019s schedule" : "Source"}
       <ExternalLink className="h-3 w-3" />
@@ -415,14 +432,14 @@ function FeeRow({
     <tr
       id={focused && fee.feeCategory ? `fee-${fee.feeCategory}` : undefined}
       data-fee-anchor={focused ? fee.feeCategory ?? undefined : undefined}
-      className={`fi-row-interaction scroll-mt-24 border-b border-[#F0EBE3] last:border-0 ${focused ? FOCUSED_ROW : ""}`}
+      className={`fi-row-interaction scroll-mt-24 border-b border-surface-200 last:border-0 ${focused ? FOCUSED_ROW : ""}`}
     >
       <td className="max-w-[320px] px-4 py-2.5 align-top">
-        <span className="break-words font-medium text-[#1A1815]">{fee.feeName}</span>
+        <span className="break-words font-medium text-ink">{fee.feeName}</span>
         <AudienceLabel fee={fee} />
         {showUnderReview && <UnderReviewChip />}
       </td>
-      <td className="whitespace-nowrap px-4 py-2.5 text-right align-top text-base tabular-nums text-[#1A1815]" style={SERIF_STYLE}>
+      <td className="font-semibold whitespace-nowrap px-4 py-2.5 text-right align-top text-base tabular-nums text-ink" style={MONO_FIGURE}>
         {fee.rate ? <RateValue rate={fee.rate} /> : amount ?? "\u2014"}
         {benchmark && fee.amount !== null && (
           <span className="flex justify-end">
@@ -433,8 +450,8 @@ function FeeRow({
       <td className="px-4 py-2.5 align-top">
         <MedianCell fee={fee} medians={medians} stateMedians={stateMedians} />
       </td>
-      <td className="whitespace-nowrap px-4 py-2.5 align-top text-[#5A5347]">{basis || "\u2014"}</td>
-      <td className="max-w-[280px] px-4 py-2.5 align-top text-xs leading-relaxed text-[#6B6255]">
+      <td className="whitespace-nowrap px-4 py-2.5 align-top text-ink-soft">{basis || "\u2014"}</td>
+      <td className="max-w-[280px] px-4 py-2.5 align-top text-xs leading-relaxed text-ink-muted">
         {fee.conditions ? <span className="break-words">{fee.conditions}</span> : "\u2014"}
       </td>
       <td className="whitespace-nowrap px-4 py-2.5 text-right align-top">
@@ -444,74 +461,86 @@ function FeeRow({
   );
 }
 
-/** Below 640px: stacked rows — fee + amount on one line; basis, note and source beneath. */
+/** Below 640px: stacked rows: fee and amount, its position bar, then basis, note and source. */
 function FeeScheduleStack({
   groups,
   disclosureUrl,
   isFocused,
-  medians,
-  stateMedians,
   benchmarks,
 }: {
   groups: FeeGroup[];
   disclosureUrl: string | null;
   isFocused: (fee: DisplayFee) => boolean;
-  medians: Map<string, number | null>;
-  stateMedians?: StateMedians;
   benchmarks?: FeeBenchmarks;
 }) {
+  // The first few rows show; the rest open on a tap, so a long schedule doesn't bury the page.
+  let shown = 0;
+  const visible: FeeGroup[] = [];
+  const rest: FeeGroup[] = [];
+  for (const group of groups) {
+    const room = Math.max(0, STACK_ROWS_SHOWN - shown);
+    if (room >= group.rows.length) visible.push(group);
+    else if (room > 0) {
+      visible.push({ ...group, rows: group.rows.slice(0, room) });
+      rest.push({ ...group, rows: group.rows.slice(room) });
+    } else rest.push(group);
+    shown += Math.min(room, group.rows.length);
+  }
+  const hiddenCount = rest.reduce((n, g) => n + g.rows.length, 0);
+  const renderGroups = (list: FeeGroup[]) =>
+    list.map((group) => (
+      <section key={group.family} className="border-t border-border">
+        <div className="flex flex-wrap items-center justify-between gap-2 bg-paper px-4 py-2.5">
+          <span className="text-sm font-semibold text-ink">{group.family}</span>
+          <GroupBadge group={group} />
+        </div>
+        <ul>
+          {group.rows.map((fee) => {
+            const sourceUrl = fee.sourceUrl ?? disclosureUrl;
+            const basis = getFrequencyLabel(fee.frequency);
+            const showUnderReview = group.verifiedCount > 0 && fee.status === "provisional";
+            const focused = isFocused(fee);
+            const benchmark = benchmarkFor(fee, benchmarks);
+            return (
+              <li
+                key={fee.id}
+                data-fee-anchor={focused ? fee.feeCategory ?? undefined : undefined}
+                className={`scroll-mt-24 border-b border-surface-200 px-4 py-3 last:border-0 ${focused ? FOCUSED_ROW : ""}`}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <span className="min-w-0 break-words text-sm font-medium text-ink">
+                    {fee.feeName}
+                    <AudienceLabel fee={fee} />
+                    {showUnderReview && <UnderReviewChip />}
+                  </span>
+                  <span className="shrink-0 font-semibold text-base tabular-nums text-ink" style={MONO_FIGURE}>
+                    {fee.rate ? <RateValue rate={fee.rate} /> : formatFeeAmount(fee.amount) ?? "\u2014"}
+                  </span>
+                </div>
+                {benchmark && fee.amount !== null && <FeePosition amount={fee.amount} benchmark={benchmark} wide />}
+                <p className="mt-1.5 text-xs leading-relaxed text-ink-muted">
+                  {[basis || null, fee.conditions].filter(Boolean).join(" \u00b7 ")}
+                  {(basis || fee.conditions) && sourceUrl ? " \u00b7 " : null}
+                  {sourceUrl && <SourceLink href={sourceUrl} fallback={!fee.sourceUrl} />}
+                </p>
+              </li>
+            );
+          })}
+        </ul>
+      </section>
+    ));
+
   return (
     <div className="sm:hidden">
-      {groups.map((group) => (
-        <section key={group.family} className="border-t border-[#E0D7C9]">
-          <div className="flex flex-wrap items-center justify-between gap-2 bg-[#FAF7F2] px-4 py-2.5">
-            <span className="text-sm font-semibold text-[#1A1815]">{group.family}</span>
-            <GroupBadge group={group} />
-          </div>
-          <ul>
-            {group.rows.map((fee) => {
-              const sourceUrl = fee.sourceUrl ?? disclosureUrl;
-              const basis = getFrequencyLabel(fee.frequency);
-              const showUnderReview = group.verifiedCount > 0 && fee.status === "provisional";
-              const focused = isFocused(fee);
-              const benchmark = benchmarkFor(fee, benchmarks);
-              return (
-                <li
-                  key={fee.id}
-                  data-fee-anchor={focused ? fee.feeCategory ?? undefined : undefined}
-                  className={`scroll-mt-24 border-b border-[#F0EBE3] px-4 py-2.5 last:border-0 ${focused ? FOCUSED_ROW : ""}`}
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <span className="min-w-0 break-words text-sm font-medium text-[#1A1815]">
-                      {fee.feeName}
-                      <AudienceLabel fee={fee} />
-                      {showUnderReview && <UnderReviewChip />}
-                    </span>
-                    <span className="flex shrink-0 flex-col items-end">
-                      <span className="text-base tabular-nums text-[#1A1815]" style={SERIF_STYLE}>
-                        {fee.rate ? <RateValue rate={fee.rate} /> : formatFeeAmount(fee.amount) ?? "\u2014"}
-                      </span>
-                      {benchmark && fee.amount !== null && (
-                        <FeePosition amount={fee.amount} benchmark={benchmark} />
-                      )}
-                    </span>
-                  </div>
-                  {fee.status === "verified" && fee.feeCategory && (medians.has(fee.feeCategory) || stateMedians?.medians.has(fee.feeCategory)) && (
-                    <p className="mt-0.5">
-                      <MedianCell fee={fee} medians={medians} stateMedians={stateMedians} />
-                    </p>
-                  )}
-                  <p className="mt-1 text-xs leading-relaxed text-[#6B6255]">
-                    {[basis || null, fee.conditions].filter(Boolean).join(" \u00b7 ")}
-                    {(basis || fee.conditions) && sourceUrl ? " \u00b7 " : null}
-                    {sourceUrl && <SourceLink href={sourceUrl} fallback={!fee.sourceUrl} />}
-                  </p>
-                </li>
-              );
-            })}
-          </ul>
-        </section>
-      ))}
+      {renderGroups(visible)}
+      {hiddenCount > 0 && (
+        <details className="group border-t border-border" open={rest.some((g) => g.rows.some(isFocused))}>
+          <summary className="cursor-pointer list-none px-4 py-3 text-center text-sm font-semibold text-ink group-open:hidden">
+            Show {hiddenCount} more {hiddenCount === 1 ? "fee" : "fees"}
+          </summary>
+          {renderGroups(rest)}
+        </details>
+      )}
     </div>
   );
 }

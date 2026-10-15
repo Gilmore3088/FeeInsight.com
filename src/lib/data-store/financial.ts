@@ -705,8 +705,10 @@ export interface PeerFinancialMedians {
   tier1_capital_ratio: number | null;
   leverage_ratio: number | null;
   total_capital_ratio: number | null;
-  /** Fraction (fdic/ncua convention), e.g. 0.05 = 5%. */
+  /** Fraction (fdic/ncua convention), e.g. 0.05 = 5%; the median of peers with a share above zero. */
   fee_income_ratio: number | null;
+  /** The peers behind that median: a share above zero, the institution itself left out. */
+  fee_income_peer_count: number;
 }
 
 export async function getPeerFinancialMedians(targetId: number): Promise<PeerFinancialMedians | null> {
@@ -731,7 +733,11 @@ export async function getPeerFinancialMedians(targetId: number): Promise<PeerFin
            percentile_cont(0.5) WITHIN GROUP (ORDER BY f.tier1_capital_ratio) AS tier1_capital_ratio,
            percentile_cont(0.5) WITHIN GROUP (ORDER BY f.leverage_ratio) AS leverage_ratio,
            percentile_cont(0.5) WITHIN GROUP (ORDER BY f.total_capital_ratio) FILTER (WHERE f.total_capital_ratio <> 0) AS total_capital_ratio,
-           percentile_cont(0.5) WITHIN GROUP (ORDER BY f.fee_income_ratio) AS fee_income_ratio
+           -- A zero share is a missing service-charge line, not a peer that charges nothing; the
+           -- institution itself is left out so the count is the peers behind the median.
+           percentile_cont(0.5) WITHIN GROUP (ORDER BY f.fee_income_ratio)
+             FILTER (WHERE f.fee_income_ratio > 0 AND s.id <> ${targetId}) AS fee_income_ratio,
+           (COUNT(*) FILTER (WHERE f.fee_income_ratio > 0 AND s.id <> ${targetId}))::int AS fee_income_peer_count
       FROM me
       JOIN institution_sources s
         ON s.charter_type = me.charter_type
@@ -754,6 +760,7 @@ export async function getPeerFinancialMedians(targetId: number): Promise<PeerFin
     leverage_ratio: numOrNull(row.leverage_ratio),
     total_capital_ratio: numOrNull(row.total_capital_ratio),
     fee_income_ratio: numOrNull(row.fee_income_ratio),
+    fee_income_peer_count: Number(row.fee_income_peer_count ?? 0),
   };
 }
 

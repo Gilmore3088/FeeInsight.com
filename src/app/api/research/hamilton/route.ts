@@ -24,30 +24,22 @@ import {
 } from "@/lib/ai-provider";
 import { HAMILTON_PAUSED_MESSAGE } from "@/lib/hamilton/provider-paused";
 import { viewAsCustomerFromCookieHeader } from "@/lib/hamilton/view-as";
-import { getHamilton, buildAnalyzeModeSuffix, buildMonitorModeSuffix, buildSavedPeerSetPrompt, savedPeerSetUsed, type AnswerStep, type HamiltonRole } from "@/lib/research/agents";
+import { getHamilton, savedPeerSetUsed, type AnswerStep, type HamiltonRole } from "@/lib/research/agents";
 import { getActivePeerSet } from "@/lib/hamilton/active-peer-set";
 import { evaluateCitationDensity } from "@/lib/hamilton/citation-gate";
 import { getCurrentUser, type User } from "@/lib/auth";
 import { checkProAiQuota, quotaExceededMessage } from "@/lib/hamilton/quota";
 import { logUsage } from "@/lib/research/history";
-import {
-  detectSkill,
-  buildSkillInjection,
-  buildSkillExecution,
-  isSkillOptIn,
-  findOfferedSkill,
-} from "@/lib/research/skills";
 import { canAccessPremium } from "@/lib/access";
-import { buildHamiltonInstitutionBriefing } from "@/lib/hamilton/institution-briefing";
+import { buildWrittenAnswerSystemPrompt, lastUserTextOf, WRITTEN_ANSWER_ROUTE_ID } from "@/lib/hamilton/written-answer-read";
 import {
-  buildHamiltonRequestContractPrompt,
   parseHamiltonRequestContract,
   type HamiltonAudience,
   type HamiltonRequestContract,
 } from "@/lib/hamilton/request-contract";
 import { getRequestSubjectKey } from "@/lib/api-hardening/audit";
 import { trackFirstHamiltonUse } from "@/lib/analytics-server";
-import { cacheLatestMessage, cachedSystem, ledgerUsage } from "@/lib/research/tool-output";
+import { cacheLatestMessage, cachedSystem, ledgerUsage, trackerUsage } from "@/lib/research/tool-output";
 import { SAVED_ANALYSIS_ID_KEY, questionOnly, writtenAnswerCheck, writtenAnswerResponse } from "@/lib/hamilton/answer-save";
 import { messageBoundsError } from "@/lib/hamilton/conversation-context";
 import { HELD_ANSWER_MESSAGE } from "@/lib/hamilton/answer-gate";
@@ -139,7 +131,6 @@ async function handlePOST(request: Request) {
 
   let messages: UIMessage[];
   let mode: string | undefined;
-  let analysisFocus: string | undefined;
   let institutionId: number | null = null;
   // Opt-in buffered path. Default false preserves the streaming chat UX (useChat);
   // callers that need a vetted report (report runner, export) set `gate_citations: true`
@@ -172,7 +163,6 @@ async function handlePOST(request: Request) {
     }
     messages = contract.messages;
     mode = contract.mode;
-    analysisFocus = contract.analysisFocus;
     institutionId = contract.institutionId;
     gateCitations = contract.gateCitations;
   } catch {
@@ -207,78 +197,22 @@ async function handlePOST(request: Request) {
 
   const agent = await getHamilton(role);
 
-  // Auto-detect and inject domain skill based on the user's latest message
-  const lastUserMessage = [...messages].reverse().find((m) => m.role === "user");
-  const lastUserText =
-    lastUserMessage?.parts
-      ?.filter((p): p is { type: "text"; text: string } => p.type === "text")
-      .map((p) => p.text)
-      .join(" ") || "";
+  // The reader's latest message, earlier turns' context included (the saved row's request key).
+  const lastUserText = lastUserTextOf(messages);
 
-  let systemPrompt = agent.systemPrompt;
-  systemPrompt += buildHamiltonRequestContractPrompt(contract);
-  systemPrompt += buildSavedPeerSetPrompt(peerSet);
-
-  if (institutionId !== null) {
-    const selectedInstitutionContext = await buildHamiltonInstitutionBriefing(contract);
-    if (!selectedInstitutionContext) {
-      return Response.json({ error: "Institution not found" }, { status: 404 });
-    }
-    systemPrompt += selectedInstitutionContext;
+  // The same prompt the paid answer eval writes from (written-answer-read.ts, #1079).
+  const prompt = await buildWrittenAnswerSystemPrompt({ agent, contract, peerSet, homeId });
+  if (prompt.status === "institution_not_found") {
+    return Response.json({ error: "Institution not found" }, { status: 404 });
   }
-  if (homeId && homeId !== institutionId && /\b(us|our|ours|we)\b/i.test(lastUserText)) {
-    const homeBriefing = await buildHamiltonInstitutionBriefing({ ...contract, institutionId: homeId }, { contextRole: "account_evidence" }).catch(() => null);
-    systemPrompt += homeBriefing
-      ? `\nACCOUNT INSTITUTION EVIDENCE (${homeId}). This is the account/home institution for comparisons with us; the research subject remains ${institutionId ?? "unselected"}.\n${homeBriefing}\nEND ACCOUNT INSTITUTION EVIDENCE.\n`
-      : "\nAccount institution evidence could not be loaded. State that limitation; do not substitute research-subject or peer data for our institution.\n";
-  }
-
-  // Analyze mode: override output structure with structured analysis sections (ARCH-05)
-  // VALID_FOCUS guards against prompt injection — only known tab values reach the system prompt.
-  let focus = "Pricing";
-  if (mode === "analyze") {
-    const VALID_FOCUS = new Set(["Pricing", "Risk", "Peer Position", "Trend"]);
-    focus = VALID_FOCUS.has(analysisFocus ?? "") ? (analysisFocus as string) : "Pricing";
-    systemPrompt += buildAnalyzeModeSuffix(focus);
-  }
-
-  // Monitor mode: concise surveillance-oriented responses (Phase 46)
-  if (mode === "monitor") {
-    systemPrompt += buildMonitorModeSuffix();
-  }
-
-  // The skill checks read only what the reader typed: earlier questions and answers carried in
-  // the conversation block must not opt in to a skill or hide the real question (#1273). The
-  // home-institution check above reads the block on purpose, so "us" carries forward.
-  const typedQuestion = questionOnly(lastUserText);
-
-  // Check if user is opting in to a previously offered skill deliverable
-  if (typedQuestion && isSkillOptIn(typedQuestion)) {
-    const assistantTexts = messages
-      .filter((m) => m.role === "assistant")
-      .flatMap((m) =>
-        (m.parts ?? [])
-          .filter((p): p is { type: "text"; text: string } => p.type === "text")
-          .map((p) => ({ text: p.text }))
-      );
-    const offeredSkill = findOfferedSkill(assistantTexts);
-    if (offeredSkill) {
-      systemPrompt += buildSkillExecution(offeredSkill);
-    }
-  } else {
-    // Detect skill match and offer it (without injecting the full template)
-    const matchedSkill = typedQuestion ? detectSkill(typedQuestion) : null;
-    if (matchedSkill) {
-      systemPrompt += buildSkillInjection(matchedSkill);
-    }
-  }
+  const { systemPrompt, focus } = prompt;
 
   const providerContext = {
     provider: "anthropic" as const,
     model: agent.model,
     agent: "hamilton",
     operation: gateCitations ? "research_with_citation_gate" : "research_stream",
-    routeId: "api.research.hamilton",
+    routeId: WRITTEN_ANSWER_ROUTE_ID,
     userId: user.id,
     subjectKey,
   };
@@ -292,17 +226,21 @@ async function handlePOST(request: Request) {
     // of a partial report. Tokens are still logged via logUsage so cost
     // attribution is unchanged.
     if (gateCitations) {
-      const result = await trackAnthropicRequest(
+      const { generated: result } = await trackAnthropicRequest(
         providerContext,
-        async () => generateText({
-          model: getAnthropicLanguageModel(agent.model, "hamilton"),
-          system: cachedSystem(systemPrompt),
-          messages: await convertToModelMessages(messages),
-          prepareStep: ({ messages: stepMessages }) => ({ messages: cacheLatestMessage(stepMessages) }),
-          tools: agent.tools,
-          maxOutputTokens: agent.maxTokens,
-          stopWhen: stepCountIs(agent.maxSteps),
-        }),
+        async () => {
+          const generated = await generateText({
+            model: getAnthropicLanguageModel(agent.model, "hamilton"),
+            system: cachedSystem(systemPrompt),
+            messages: await convertToModelMessages(messages),
+            prepareStep: ({ messages: stepMessages }) => ({ messages: cacheLatestMessage(stepMessages) }),
+            tools: agent.tools,
+            maxOutputTokens: agent.maxTokens,
+            stopWhen: stepCountIs(agent.maxSteps),
+          });
+          // The ledger records `usage`: every tool step's tokens and cache reads and writes (#1418).
+          return { generated, usage: trackerUsage(generated.totalUsage) };
+        },
       );
 
       // totalUsage spans every tool step; usage is only the last step.
@@ -341,6 +279,7 @@ async function handlePOST(request: Request) {
       const evidence = writtenAnswerCheck(
         result.text ?? "",
         (result.steps ?? []).flatMap((step) => step.toolResults.map((toolResult) => toolResult.output)),
+        questionOnly(lastUserText),
       );
       if (!evidence.passed) {
         return Response.json(
@@ -360,9 +299,9 @@ async function handlePOST(request: Request) {
     providerStartedAt = await guardProviderCall(providerContext);
     let resolveSaved: (id: string | null) => void = () => {};
     const savedId = new Promise<string | null>((resolve) => { resolveSaved = resolve; });
-    // A written answer passes the shared evidence gate when it finishes (#981). Once the held
-    // line is approved (HELD_ANSWER_MESSAGE), the answer is held until then and is never shown,
-    // or saved, when it fails; until that, a failing answer streams as before and the verdict
+    // A written answer passes the shared evidence gate when it finishes (#981). While the held
+    // line (HELD_ANSWER_MESSAGE) is set, the answer is held until then and is never shown, or
+    // saved, when it fails; with it null, a failing answer streams as before and the verdict
     // is saved with it.
     const holdsAnswers = mode === "analyze" && HELD_ANSWER_MESSAGE !== null;
     let resolveVerdict: (verdict: AnswerVerdict | null) => void = () => {};
@@ -383,37 +322,46 @@ async function handlePOST(request: Request) {
         // tab or a failed browser call never loses it.
         if (mode === "analyze" && text.trim()) {
           const toolOutputs = steps.flatMap((step) => step.toolResults.map((result) => result.output));
-          const check = writtenAnswerCheck(text, toolOutputs);
-          const held = holdsAnswers && !check.passed;
-          resolveVerdict({ passed: check.passed, held });
-          const response = {
-            ...writtenAnswerResponse(text, toolOutputs, check),
-            // Historical reference metadata only; never a future access grant.
-            identityContext,
-          };
-          const prompt = questionOnly(lastUserText);
-          if (held) {
-            console.warn("[hamilton] written answer held by the evidence gate", check.problems);
-            resolveSaved(null);
-          } else {
-            try {
-              resolveSaved(await insertSavedAnalysis({
-                userId: user.id,
-                institutionId: normalizeCanonicalInstitutionId(institutionId) ?? "",
-                title: response.title || prompt.slice(0, 60).trim(),
-                analysisFocus: focus,
-                prompt,
-                response,
-                // A second request for the same question (double submit, Try again after a
-                // dropped stream) updates this row instead of adding a duplicate. The match is on
-                // the full text answered, earlier turns included, so the same follow-up words in
-                // another conversation are saved as their own row.
-                replaceRecentDuplicate: { request: `written\n${focus}\n${lastUserText}` },
-              }));
-            } catch (error) {
-              console.error("[hamilton] saving the written answer failed", error);
+          // A gate or response build that throws fails closed: the verdict and saved id still
+          // resolve (a promise keeps its first value), so the reader is never left waiting and
+          // the usage below is still recorded.
+          try {
+            const check = writtenAnswerCheck(text, toolOutputs, questionOnly(lastUserText));
+            const held = holdsAnswers && !check.passed;
+            resolveVerdict({ passed: check.passed, held });
+            const response = {
+              ...writtenAnswerResponse(text, toolOutputs, check),
+              // Historical reference metadata only; never a future access grant.
+              identityContext,
+            };
+            const prompt = questionOnly(lastUserText);
+            if (held) {
+              console.warn("[hamilton] written answer held by the evidence gate", check.problems);
               resolveSaved(null);
+            } else {
+              try {
+                resolveSaved(await insertSavedAnalysis({
+                  userId: user.id,
+                  institutionId: normalizeCanonicalInstitutionId(institutionId) ?? "",
+                  title: response.title || prompt.slice(0, 60).trim(),
+                  analysisFocus: focus,
+                  prompt,
+                  response,
+                  // A second request for the same question (double submit, Try again after a
+                  // dropped stream) updates this row instead of adding a duplicate. The match is on
+                  // the full text answered, earlier turns included, so the same follow-up words in
+                  // another conversation are saved as their own row.
+                  replaceRecentDuplicate: { request: `written\n${focus}\n${lastUserText}` },
+                }));
+              } catch (error) {
+                console.error("[hamilton] saving the written answer failed", error);
+                resolveSaved(null);
+              }
             }
+          } catch (error) {
+            console.error("[hamilton] the evidence gate or its response could not run", error);
+            resolveVerdict({ passed: false, held: holdsAnswers });
+            resolveSaved(null);
           }
         } else {
           resolveVerdict(null);

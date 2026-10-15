@@ -52,7 +52,7 @@ export function EmailSignup() {
 
   if (status === "success") {
     return (
-      <p className={`text-[12px] ${emailSent ? "text-emerald-700" : "text-[#5A5347]"}`} role="status">
+      <p className={`text-[12px] ${emailSent ? "text-emerald-700" : "text-ink-soft"}`} role="status">
         {emailSent
           ? "Almost done: check your inbox and click the confirm link to start getting the monthly update."
           : `Saved, but the confirm email didn't go out. Write to ${CONTACT_EMAIL} and we'll add you.`}
@@ -63,10 +63,10 @@ export function EmailSignup() {
   return (
     <form onSubmit={handleSubmit} className="relative flex flex-col gap-2">
       <HoneypotField />
-      <label htmlFor="footer-newsletter-email" className="text-[12px] font-semibold text-[#5A5347]">
+      <label htmlFor="footer-newsletter-email" className="text-[12px] font-semibold text-ink-soft">
         Monthly fee index update
       </label>
-      <p className="text-[12px] leading-relaxed text-[#6B6255]">
+      <p className="text-[12px] leading-relaxed text-ink-muted">
         New national benchmarks and one table worth bringing to a pricing meeting. No more than once a month. Pick a state to get its numbers too.
       </p>
       <label htmlFor="footer-newsletter-state" className="sr-only">
@@ -76,7 +76,7 @@ export function EmailSignup() {
         id="footer-newsletter-state"
         value={state}
         onChange={setState}
-        className="w-full max-w-[200px] rounded-lg border border-[#D4C9BA] bg-[#FAF7F2] px-2 py-1.5 text-[12px] text-[#1A1815] focus:border-transparent focus:outline-none focus:ring-1 focus:ring-[#C44B2E]/30"
+        className="w-full max-w-[200px] rounded-lg border border-border bg-paper px-2 py-1.5 text-[12px] text-ink focus:border-transparent focus:outline-none focus:ring-1 focus:ring-brick/30"
       />
       <div className="flex gap-2">
         <input
@@ -87,12 +87,12 @@ export function EmailSignup() {
           placeholder="you@company.com"
           autoComplete="email"
           required
-          className="w-full max-w-[200px] rounded-lg border border-[#D4C9BA] bg-[#FAF7F2] px-3 py-1.5 text-[12px] text-[#1A1815] placeholder:text-[#6B6255] focus:border-transparent focus:outline-none focus:ring-1 focus:ring-[#C44B2E]/30"
+          className="w-full max-w-[200px] rounded-lg border border-border bg-paper px-3 py-1.5 text-[12px] text-ink placeholder:text-ink-muted focus:border-transparent focus:outline-none focus:ring-1 focus:ring-brick/30"
         />
         <button
           type="submit"
           disabled={status === "loading"}
-          className="shrink-0 rounded-lg bg-[#C44B2E] px-3 py-1.5 text-[11px] font-semibold text-white transition-colors hover:bg-[#A93D25] disabled:opacity-50"
+          className="shrink-0 rounded-lg bg-brick px-3 py-1.5 text-[11px] font-semibold text-white transition-colors hover:bg-brick-ink disabled:opacity-50"
         >
           {status === "loading" ? "..." : "Subscribe"}
         </button>

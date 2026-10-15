@@ -98,10 +98,42 @@ Hamilton supports the decision; it does not make it.
   `published_fee_catalog` rows and every dollar figure in the memo ties to a live value. Each
   sample is reserved before its first model call (a `paid_eval.sample_reserved` run event, a
   conditional insert outside the step transaction that refuses past five today), so blocked calls,
-  lost usage rows and killed functions still count; the provider stop and the memo's budget line
-  (`api.hamilton.ask.memo`) hold every call.
-  The goal scorecard reads the latest run that wrote a memo as the "Memo (paid)" row. The written
-  answer, simulate and report paths are not sampled yet.
+  lost usage rows and killed functions still count; the provider stop and each path's budget line
+  (`api.hamilton.ask.memo`, `api.hamilton.simulate`, `api.research.hamilton`, `api.reports.generate`)
+  hold every call.
+  One of the five (when unused today) is a Simulate read (`hamilton/simulate-read.ts`, the same
+  prompt the `/api/hamilton/simulate` route streams): the first sampled answer's fee is tested at
+  the median of the first peer layer with a full band, in the order local, state, charter and size,
+  Fed district, national (or $5 above a fee already there). Form
+  is the shared evidence gate (`checkAnswerEvidence`: every figure traces to the numbers given, no
+  advice); correctness, for a read that passed form and states a figure, is `reconcileSimulateText` over
+  the same live rows: the read's own figures only, with the tested price as an anchor (so a gap from
+  it ties) and the bank's current fee held to its live row (#1414). Reservations
+  carry their path and are taken under the day's advisory lock, so a day holds at most one Simulate,
+  one written answer and one report, and never more than five samples, even when two runs overlap
+  (#1414, #1418).
+  One more (when unused today) is a written answer (`hamilton/written-answer-read.ts`, the same
+  prompt, tools, output cap and step limit as `/api/research/hamilton` on the Analyze screen,
+  Pricing focus, the sampled institution as the reader's own), on the first sampled question with
+  research, with no saved peer set; the call stops at 180 s and the ledger records every step's
+  tokens. Form is the route's evidence gate (`writtenAnswerCheck`, which also counts a figure the
+  typed question names, and an asset-tier bound stated as a size range or threshold, as traced: #1425); correctness, for an answer that
+  passed form and states a figure, is `reconcileWrittenText`: each dollar figure in the text is a
+  live value, recomputed statistic or gap for the asked fee, or money its tools read from sources
+  other than the fee catalog (call reports, national data). A fee price a catalog tool returned
+  still has to match the live catalog.
+  One more (when unused today) is a report's answer page (`hamilton/report-answer-read.ts`): the
+  Reports screen's own inputs (`hamilton/report-inputs.ts`, shared with `reports/actions.ts`) for
+  the first one or two answered institutions the screen would write a paid report for, Peer
+  Benchmarking template, last three months, no reader or saved peer group. Only the first verified
+  draft is written (up to two calls; the live report's one partner-review rewrite would not fit
+  the run), so its form rate is a floor: form is the figure check plus the partner review;
+  correctness re-reads the page's fee comparison the way the screen does and checks each verified
+  fee the page names still has the bank's amount and peer median it was given. It catches a page
+  built on values the catalog no longer holds, not a figure put on the wrong fee inside the page.
+  The screen's defaults apply (consulting tone, balanced goal, provisional-first). Nothing is saved.
+  The goal scorecard shows "Memo (paid)", "Simulate (paid)", "Written answer (paid)" and "Report
+  (paid)", each from the newest run in the window that measured it, with that run's date (#1414).
   It asks 17 questions (q26, the NSF regulation question, since #1079; q31, fee income against
   peers, and q32, what competitors in the county charge, since #1084). Every answer is also
   scored on correctness (`hamilton/answer-correctness.ts`, the `report-reconciliation` check for

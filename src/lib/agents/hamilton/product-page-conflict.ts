@@ -22,9 +22,9 @@ type SqlTag = typeof sql;
  * a checking page's $14.95 beside a schedule's $7 may be two accounts, not one fee priced twice
  * (production sample, 2026-10-13). Judging those needs the account matched first.
  *
- * Only the bank's general schedule speaks for its price: a tier's own schedule (Frost's Premium
+ * Only the bank's general schedule speaks for its price: a tier's own schedule (one bank's Premium
  * Account, a private-banking or BankOn schedule) or a fee named for a tier's account is left off the
- * schedule side, since its $0 is that tier's perk (#1397: Frost's $35 overdraft and $30 stop
+ * schedule side, since its $0 is that tier's perk (#1397: the bank's $35 overdraft and $30 stop
  * payment were flagged "vs schedule $0.00" against its Premium schedule and hidden). The address
  * and name tests are Darwin's (`tier-perk.ts`). A pending flag this check no longer raises is
  * cleared (`takedown_cleared`) on the next run.

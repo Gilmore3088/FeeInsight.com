@@ -177,12 +177,12 @@ export function LeadCapture({
           placeholder={offersSample ? "you@yourbank.com" : "you@company.com"}
           autoComplete="email"
           required
-          className="min-w-0 flex-1 rounded-md border border-[#D4C9BA] bg-white px-3 py-2 text-[14px] text-[#1A1815] placeholder:text-[#8A8072] focus:border-transparent focus:outline-none focus:ring-2 focus:ring-[#C44B2E]/30"
+          className="min-w-0 flex-1 rounded-md border border-border bg-white px-3 py-2 text-[14px] text-ink placeholder:text-ink-muted focus:border-transparent focus:outline-none focus:ring-2 focus:ring-brick/30"
         />
         <button
           type="submit"
           disabled={status === "loading"}
-          className="shrink-0 whitespace-nowrap rounded-md bg-[#C44B2E] px-4 py-2 text-[13px] font-semibold text-white transition-colors hover:bg-[#A93D25] disabled:opacity-50"
+          className="shrink-0 whitespace-nowrap rounded-md bg-brick px-4 py-2 text-[13px] font-semibold text-white transition-colors hover:bg-brick-ink disabled:opacity-50"
         >
           {status === "loading" ? "Sending…" : buttonLabel}
         </button>
@@ -192,17 +192,17 @@ export function LeadCapture({
   );
 
   const successBlock = (
-    <div role="status" className="text-[13px] leading-relaxed text-[#1A1815]">
+    <div role="status" className="text-[13px] leading-relaxed text-ink">
       {offersSample ? (
         <>
           <a
             href={SAMPLE_REPORT_PDF_HREF}
             download
-            className="inline-flex items-center rounded-md bg-[#C44B2E] px-4 py-2 text-[13px] font-semibold text-white transition-colors hover:bg-[#A93D25]"
+            className="inline-flex items-center rounded-md bg-brick px-4 py-2 text-[13px] font-semibold text-white transition-colors hover:bg-brick-ink"
           >
             Download the sample report (PDF)
           </a>
-          {emailSent && <p className="mt-2 text-[#5A5347]">We also emailed you a copy.</p>}
+          {emailSent && <p className="mt-2 text-ink-soft">We also emailed you a copy.</p>}
         </>
       ) : (
         <p className="text-emerald-700">{emailSent ? successMessage : SIGNED_UP_NO_EMAIL}</p>
@@ -237,18 +237,18 @@ export function LeadCapture({
       ref={rootRef}
       aria-label={headline}
       data-placement={placement}
-      className={`rounded-xl border border-[#E0D7C9] bg-[#FDFBF8] px-4 py-4 sm:px-5 ${className}`}
+      className={`rounded-xl border border-border bg-surface-0 px-4 py-4 sm:px-5 ${className}`}
     >
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between md:gap-6">
         <div className="min-w-0 md:max-w-[52%]">
-          <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-[#A93D25]">{eyebrow}</p>
+          <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-brick">{eyebrow}</p>
           <p
-            className="mt-1 text-[18px] leading-snug text-[#1A1815]"
-            style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
+            className="font-semibold mt-1 text-[18px] leading-snug text-ink"
+            style={{ fontFamily: "var(--fi-font-sans)" }}
           >
             {headline}
           </p>
-          <p className="mt-1 text-[13px] leading-relaxed text-[#6B6255]">{body}</p>
+          <p className="mt-1 text-[13px] leading-relaxed text-ink-muted">{body}</p>
         </div>
 
         {status === "success" ? (
@@ -257,14 +257,14 @@ export function LeadCapture({
           <form onSubmit={handleSubmit} className="w-full md:max-w-[44%]" noValidate>
             {fields}
             {errorLine ?? (
-              <p className="mt-2 text-[11px] text-[#6B6255]">
+              <p className="mt-2 text-[11px] text-ink-muted">
                 One confirmation email, then only what you asked for. Unsubscribe anytime.
                 {secondaryLink && (
                   <>
                     {" "}
                     <Link
                       href={secondaryLink.href}
-                      className="text-[#A93D25] underline"
+                      className="text-brick underline"
                       onClick={() => trackEvent("see_sample_report", eventProps)}
                     >
                       {secondaryLink.label}

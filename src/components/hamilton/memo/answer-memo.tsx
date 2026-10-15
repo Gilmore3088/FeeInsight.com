@@ -6,7 +6,7 @@
  */
 import type { ReactNode } from "react";
 import type { Exhibit, Fact } from "@/lib/hamilton/workspace/types";
-import { EVIDENCE_LABELS, ExhibitView, SourceChip, type AnswerSpec } from "./exhibit-view";
+import { ANSWER_EVIDENCE_LABELS, ExhibitView, SourceChip, type AnswerSpec } from "./exhibit-view";
 import { More, SERIF, fmtMoney } from "./memo";
 
 export interface KeyFigure {
@@ -158,7 +158,7 @@ export function AnswerMemo({ answer, nextSteps }: { answer: AnswerSpec; nextStep
 
       <div className="flex flex-wrap items-center justify-between gap-3 border-t border-warm-200 pt-4">
         <p className="text-xs text-warm-600">
-          Evidence: <span className="font-medium text-warm-800">{EVIDENCE_LABELS[answer.evidenceLevel]}</span>
+          Evidence: <span className="font-medium text-warm-800">{ANSWER_EVIDENCE_LABELS[answer.evidenceLevel]}</span>
         </p>
         {nextSteps ? <div className="flex flex-wrap gap-2">{nextSteps}</div> : null}
       </div>

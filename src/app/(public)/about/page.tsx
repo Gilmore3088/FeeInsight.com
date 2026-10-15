@@ -17,20 +17,20 @@ export default async function AboutPage() {
   return (
     <div className="mx-auto max-w-3xl px-6 py-14">
       <div className="flex items-center gap-2 mb-4">
-        <span className="h-px w-8 bg-[#C44B2E]/40" />
-        <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#A93D25]/60">
+        <span className="h-px w-8 bg-brick/40" />
+        <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-brick/60">
           About
         </span>
       </div>
 
       <h1
-        className="text-[1.75rem] sm:text-[2.25rem] leading-[1.12] tracking-[-0.02em] text-[#1A1815]"
-        style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
+        className="font-extrabold text-[1.75rem] sm:text-[2.25rem] leading-[1.12] tracking-[-0.02em] text-ink"
+        style={{ fontFamily: "var(--fi-font-sans)" }}
       >
         About Fee Insight
       </h1>
 
-      <div className="mt-8 space-y-6 text-[15px] leading-relaxed text-[#5A5347]">
+      <div className="mt-8 space-y-6 text-[15px] leading-relaxed text-ink-soft">
         <p>
           Fee Insight is an independent banking fee intelligence company. Our
           flagship product, the Bank Fee Index, is a source-verified record of US
@@ -49,7 +49,7 @@ export default async function AboutPage() {
         <p>
           Everything is built on one ladder. The Bank Fee Index is the free lookup: any
           institution, any published fee, with its source. The{" "}
-          <Link href="/for-institutions#report" className="text-[#A93D25] hover:underline">
+          <Link href="/for-institutions#report" className="text-brick hover:underline">
             {REPORT_OFFER.name}
           </Link>{" "}
           is a one-time report, {REPORT_PRICE_INLINE}, placing one institution against
@@ -59,8 +59,8 @@ export default async function AboutPage() {
         </p>
 
         <h2
-          className="text-[18px] font-medium text-[#1A1815] pt-4"
-          style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
+          className="text-[18px] font-bold text-ink pt-4"
+          style={{ fontFamily: "var(--fi-font-sans)" }}
         >
           Who&apos;s behind this
         </h2>
@@ -75,15 +75,15 @@ export default async function AboutPage() {
         <p>
           <a
             href={`mailto:${CONTACT_EMAIL}`}
-            className="text-[#A93D25] hover:underline"
+            className="text-brick hover:underline"
           >
             Write to James
           </a>
         </p>
 
         <h2
-          className="text-[18px] font-medium text-[#1A1815] pt-4"
-          style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
+          className="text-[18px] font-bold text-ink pt-4"
+          style={{ fontFamily: "var(--fi-font-sans)" }}
         >
           Our Data
         </h2>
@@ -97,19 +97,19 @@ export default async function AboutPage() {
           ].map((stat) => (
             <div
               key={stat.label}
-              className="rounded-xl border border-[#E8DFD1]/80 bg-white/70 px-4 py-3 text-center"
+              className="rounded-xl border border-border/80 bg-white/70 px-4 py-3 text-center"
             >
-              <p className="text-[20px] font-bold tabular-nums text-[#1A1815]">
+              <p className="text-[20px] font-bold tabular-nums text-ink">
                 {stat.value}
               </p>
-              <p className="mt-0.5 text-[11px] text-[#6B6255]">{stat.label}</p>
+              <p className="mt-0.5 text-[11px] text-ink-muted">{stat.label}</p>
             </div>
           ))}
         </div>
 
         <h2
-          className="text-[18px] font-medium text-[#1A1815] pt-4"
-          style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
+          className="text-[18px] font-bold text-ink pt-4"
+          style={{ fontFamily: "var(--fi-font-sans)" }}
         >
           Methodology
         </h2>
@@ -133,8 +133,8 @@ export default async function AboutPage() {
         </p>
 
         <h2
-          className="text-[18px] font-medium text-[#1A1815] pt-4"
-          style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
+          className="text-[18px] font-bold text-ink pt-4"
+          style={{ fontFamily: "var(--fi-font-sans)" }}
         >
           Data Sources
         </h2>
@@ -147,11 +147,11 @@ export default async function AboutPage() {
           <li>FRED economic indicators for macro benchmarking</li>
         </ul>
 
-        <p className="text-[13px] text-[#6B6255]">{summary.freshnessLabel}.</p>
+        <p className="text-[13px] text-ink-muted">{summary.freshnessLabel}.</p>
 
         <h2
-          className="text-[18px] font-medium text-[#1A1815] pt-4"
-          style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
+          className="text-[18px] font-bold text-ink pt-4"
+          style={{ fontFamily: "var(--fi-font-sans)" }}
         >
           Contact
         </h2>
@@ -161,12 +161,12 @@ export default async function AboutPage() {
           at{" "}
           <a
             href={`mailto:${CONTACT_EMAIL}`}
-            className="text-[#A93D25] hover:underline"
+            className="text-brick hover:underline"
           >
             {CONTACT_EMAIL}
           </a>{" "}
           or use our{" "}
-          <Link href="/contact" className="text-[#A93D25] hover:underline">
+          <Link href="/contact" className="text-brick hover:underline">
             contact form
           </Link>
           .

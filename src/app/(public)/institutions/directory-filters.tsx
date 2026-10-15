@@ -13,7 +13,7 @@ interface DirectoryFiltersProps {
 }
 
 const SELECT_CLASS =
-  "min-h-10 rounded-md border border-[#D5CBBF] bg-[#FDFBF8] px-3 py-2 text-sm text-[#1A1815] outline-none focus:border-[#C44B2E] disabled:opacity-60";
+  "min-h-10 rounded-md border border-border bg-surface-0 px-3 py-2 text-sm text-ink outline-none focus:border-brick disabled:opacity-60";
 
 function buildHref(next: {
   query: string;
@@ -41,7 +41,7 @@ export function DirectoryFilters({ query, stateCode, charterType, feeCategory = 
   }
 
   return (
-    <div className="fi-reveal fi-reveal-delay-2 flex flex-wrap items-center gap-3 border-b border-[#E0D7C9] py-4">
+    <div className="fi-reveal fi-reveal-delay-2 flex flex-wrap items-center gap-3 border-b border-border py-4">
       <label className="sr-only" htmlFor="institution-state-filter">
         Filter by state
       </label>
@@ -75,7 +75,7 @@ export function DirectoryFilters({ query, stateCode, charterType, feeCategory = 
         <option value="bank">Banks only</option>
         <option value="credit_union">Credit unions only</option>
       </select>
-      {isPending && <span className="text-sm text-[#6B6255]">Updating…</span>}
+      {isPending && <span className="text-sm text-ink-muted">Updating…</span>}
     </div>
   );
 }

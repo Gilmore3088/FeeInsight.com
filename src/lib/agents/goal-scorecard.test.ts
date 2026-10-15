@@ -70,6 +70,26 @@ describe("coverage target (James, 2026-10-12, #1028)", () => {
   });
 });
 
+describe("accuracy target (James, Oct 15)", () => {
+  const goalWith = (right: number, scorable: number) => ({
+    readAt: "2026-10-15T00:00:00Z", windowDays: 7, coverageCells: null, liveInstitutions: null,
+    wrongAfterPublish: null, spend: null, knoxPasses: null, unstatedAudience: null,
+    accuracy: {
+      query: "goal.deming_accuracy_7d", accuracy: right / scorable, right, scorable, audits: 7,
+      latestAt: null, latestAccuracy: null, range: null, daily: [],
+      misses: { amount: 0, category: 0, evidence: 0 },
+    },
+  }) as unknown as Parameters<typeof goalBriefLines>[0];
+
+  it("states the 99.5% target and whether the week met it", () => {
+    expect(goalBriefLines(goalWith(1393, 1400)).join("\n")).toContain("target 99.5%, met.");
+    expect(goalBriefLines(goalWith(1385, 1400)).join("\n")).toContain("target 99.5%, not met.");
+    // Two decimals, rounded down, so a week just under the target never reads as 99.50% and "not met".
+    expect(goalBriefLines(goalWith(1392, 1399)).join("\n")).toContain("Accuracy: 99.49% over the last 7 days");
+    expect(goalBriefLines(goalWith(1393, 1400)).join("\n")).toContain("Accuracy: 99.50% over the last 7 days");
+  });
+});
+
 describe("wrong after publish", () => {
   it("keys reasons by their prefix", () => {
     expect(reasonKey("refreshed by #123")).toBe("refreshed by");
@@ -222,6 +242,19 @@ describe("Hamilton answer quality (#1079)", () => {
     expect(q.paths.filter((p) => !p.measured).map((p) => p.path)).toEqual(["written_answer", "simulate", "report"]);
   });
 
+  it("keeps each paid path's newest measured row when a later run sampled only memos (#1414)", () => {
+    const later = { at: "2026-10-15T18:00:00.000Z", detail: { paths: [{ path: "memo", answers: 2, passed: 2, correctness: { checked: 2, correct: 2 } }, { path: "simulate", answers: 0 }] } };
+    const earlier = { at: "2026-10-14T15:17:00.000Z", detail: { paths: [
+      { path: "memo", answers: 2, passed: 1, correctness: { checked: 1, correct: 0 } },
+      { path: "simulate", answers: 1, passed: 1, correctness: { checked: 1, correct: 1 } },
+    ] } };
+    const q = answerQualityFrom("2026-10-15T00:51:00.000Z", detail, [later, earlier]);
+    expect(q.paidAt).toBe("2026-10-15T18:00:00.000Z");
+    expect(q.paths.find((p) => p.path === "memo")).toMatchObject({ measured: true, formRate: 1, at: later.at });
+    expect(q.paths.find((p) => p.path === "simulate")).toMatchObject({ measured: true, answers: 1, correctRate: 1, at: earlier.at });
+    expect(q.paths.filter((p) => !p.measured).map((p) => p.path)).toEqual(["written_answer", "report"]);
+  });
+
   it("treats a paid run that wrote no memo as unmeasured", () => {
     const q = answerQualityFrom("2026-10-14T00:51:00.000Z", detail, { at: "2026-10-14T15:17:00.000Z", detail: { paths: [{ path: "memo", sampled: 0, answers: 0 }] } });
     expect(q.paidAt).toBeNull();
@@ -261,5 +294,19 @@ describe("Hamilton answer quality (#1079)", () => {
     expect(goalBriefLines(goal).at(-1)).toBe(
       "Hamilton answers (eval of 2026-10-14 00:51 UTC; paid sample of 2026-10-14 15:17 UTC): Free Ask, standard questions: form 71.4% (100 of 140), figures tie out 90.0% (108 of 120); Free Ask, Pro readers' questions: form 45.0% (9 of 20), figures tie out 100.0% (10 of 10); Memo (paid): form 80.0% (4 of 5), figures tie out 75.0% (3 of 4). Not measured yet: written answer, simulate, report.",
     );
+  });
+
+  it("dates a paid path measured on an earlier day than the newest sample (#1414)", async () => {
+    const { db } = fakeDb([
+      [/hamilton-answer-eval/, [{ created_at: new Date("2026-10-15T00:51:00Z"), detail }]],
+      [/hamilton-paid-answer-eval/, [
+        { created_at: new Date("2026-10-15T15:17:00Z"), detail: { paths: [{ path: "memo", answers: 1, passed: 1, correctness: { checked: 1, correct: 1 } }] } },
+        { created_at: new Date("2026-10-14T15:17:00Z"), detail: { paths: [{ path: "simulate", answers: 1, passed: 0, correctness: { checked: 0, correct: 0 } }] } },
+      ]],
+    ]);
+    const line = goalBriefLines(await readGoalScorecard(db)).at(-1)!;
+    expect(line).toContain("paid sample of 2026-10-15 15:17 UTC");
+    expect(line).toContain("Memo (paid): form 100.0%");
+    expect(line).toContain("Simulate (paid) (sample of 2026-10-14): form 0.0% (0 of 1)");
   });
 });

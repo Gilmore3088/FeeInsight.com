@@ -136,3 +136,18 @@ export function ledgerUsage(usage: LanguageModelUsage | undefined): ProviderUsag
     cacheCreationInputTokens: cacheWrite,
   };
 }
+
+/**
+ * `ledgerUsage` in the snake_case shape `trackAnthropicRequest` reads from a call's `usage`. Return
+ * it as `usage` beside a multi-step `generateText` result so the ledger records every step's tokens
+ * and the cache reads and writes, not the last step's alone.
+ */
+export function trackerUsage(usage: LanguageModelUsage | undefined) {
+  const ledger = ledgerUsage(usage);
+  return {
+    input_tokens: ledger.inputTokens,
+    output_tokens: ledger.outputTokens,
+    cache_read_input_tokens: ledger.cacheReadInputTokens,
+    cache_creation_input_tokens: ledger.cacheCreationInputTokens,
+  };
+}

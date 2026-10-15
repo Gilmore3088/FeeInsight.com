@@ -25,12 +25,12 @@ import type { FinancialPoint, PeerMedianPoints } from "./financial-history";
  * normal-vision 22.9). Slots 3-4 sit under 3:1 contrast, so the loan mix chart
  * ships a table view. Text always uses ink tokens, never series colors.
  */
-const INK = "#1A1815";
-const INK_MUTED = "#6B6255";
-const AXIS = "#A09788";
-const GRID = "#EFE8DC";
+const INK = "#132338";
+const INK_MUTED = "#55606f";
+const AXIS = "#767c87";
+const GRID = "#ebe5d9";
 const SERIES = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100"] as const;
-const PEER = "#8A8174";
+const PEER = "#55606f";
 
 const RANGES = [
   { key: "3y", label: "3Y", quarters: 12 },
@@ -82,15 +82,15 @@ function ChartTooltip({
 }) {
   if (!active || !payload?.length) return null;
   return (
-    <div className="rounded-lg border border-[#E8DFD1] bg-white px-3 py-2 text-xs shadow-md">
-      <p className="mb-1 font-semibold text-[#1A1815]">{label}</p>
+    <div className="rounded-lg border border-border bg-white px-3 py-2 text-xs shadow-md">
+      <p className="mb-1 font-semibold text-ink">{label}</p>
       {payload
         .filter((entry) => entry.value !== null && entry.value !== undefined)
         .map((entry) => (
-          <p key={String(entry.dataKey)} className="flex items-center gap-2 text-[#5A5347]">
+          <p key={String(entry.dataKey)} className="flex items-center gap-2 text-ink-soft">
             <span aria-hidden className="inline-block h-2 w-2 rounded-full" style={{ background: entry.color }} />
             <span>{entry.name}</span>
-            <span className="ml-auto pl-3 font-medium tabular-nums text-[#1A1815]">{format(Number(entry.value))}</span>
+            <span className="ml-auto pl-3 font-medium tabular-nums text-ink">{format(Number(entry.value))}</span>
           </p>
         ))}
     </div>
@@ -99,7 +99,7 @@ function ChartTooltip({
 
 function Legend({ items }: { items: Array<{ label: string; color: string; dashed?: boolean }> }) {
   return (
-    <ul className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-[#5A5347]">
+    <ul className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-ink-soft">
       {items.map((item) => (
         <li key={item.label} className="flex items-center gap-1.5">
           <span
@@ -126,13 +126,13 @@ function ChartCard({
   children: React.ReactNode;
 }) {
   return (
-    <figure className="rounded-xl border border-[#E0D7C9] bg-white p-4">
+    <figure className="rounded-xl border border-border bg-white p-4">
       <figcaption>
-        <p className="text-sm font-semibold text-[#1A1815]">{title}</p>
-        {subtitle && <p className="text-xs text-[#6B6255]">{subtitle}</p>}
+        <p className="text-sm font-semibold text-ink">{title}</p>
+        {subtitle && <p className="text-xs text-ink-muted">{subtitle}</p>}
       </figcaption>
       <div className="mt-2">{children}</div>
-      <p className="mt-2 text-[10px] text-[#8A8174]">{caption}</p>
+      <p className="mt-2 text-[10px] text-ink-muted">{caption}</p>
     </figure>
   );
 }
@@ -155,13 +155,13 @@ function KpiTile({
   spark?: number[];
 }) {
   return (
-    <div className="rounded-lg border border-[#E0D7C9] bg-white px-3 py-2.5">
-      <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-[#6B6255]">{label}</p>
+    <div className="rounded-lg border border-border bg-white px-3 py-2.5">
+      <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted">{label}</p>
       <div className="mt-1 flex items-end justify-between gap-2">
-        <p className="text-lg font-semibold tabular-nums text-[#1A1815]">{value}</p>
+        <p className="text-lg font-semibold tabular-nums text-ink">{value}</p>
         {spark && spark.length > 1 && <Sparkline data={spark} width={64} height={22} color={SERIES[0]} />}
       </div>
-      {peer && <p className="mt-0.5 text-[11px] text-[#6B6255]">Peer median {peer}</p>}
+      {peer && <p className="mt-0.5 text-[11px] text-ink-muted">Peer median {peer}</p>}
     </div>
   );
 }
@@ -228,14 +228,14 @@ export function FinancialProfileCharts({
         )}
       </div>
       {peers && (
-        <p className="mt-2 text-[11px] text-[#6B6255]">
+        <p className="mt-2 text-[11px] text-ink-muted">
           Peers: {peers.peerCount.toLocaleString("en-US")} {charterLabel.toLowerCase()} institutions in the same asset tier, {peers.quarter}.
         </p>
       )}
 
       <div className="mt-5 flex items-center justify-between gap-3">
-        <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#6B6255]">History</p>
-        <div role="group" aria-label="Time range" className="inline-flex rounded-lg border border-[#E0D7C9] bg-white p-0.5">
+        <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-ink-muted">History</p>
+        <div role="group" aria-label="Time range" className="inline-flex rounded-lg border border-border bg-white p-0.5">
           {RANGES.map((r) => (
             <button
               key={r.key}
@@ -243,7 +243,7 @@ export function FinancialProfileCharts({
               aria-pressed={range === r.key}
               onClick={() => setRange(r.key)}
               className={`rounded-md px-2.5 py-1 text-xs font-medium ${
-                range === r.key ? "bg-[#1A1815] text-white" : "text-[#5A5347] hover:bg-[#FAF7F2]"
+                range === r.key ? "bg-ink text-white" : "text-ink-soft hover:bg-paper"
               }`}
             >
               {r.label}
@@ -286,7 +286,7 @@ export function FinancialProfileCharts({
                 <XAxis dataKey="quarter" {...axisProps} minTickGap={24} />
                 <YAxis {...axisProps} tickFormatter={compactAxis} width={56} />
                 <ReferenceLine y={0} stroke={AXIS} />
-                <Tooltip cursor={{ fill: "#FAF7F2" }} content={<ChartTooltip format={formatCompactDollars} />} />
+                <Tooltip cursor={{ fill: "#f3efe6" }} content={<ChartTooltip format={formatCompactDollars} />} />
                 <Bar dataKey="netIncome" name="Net income" fill={SERIES[0]} radius={[4, 4, 0, 0]} maxBarSize={18} />
               </BarChart>
             </ResponsiveContainer>
@@ -338,7 +338,7 @@ export function FinancialProfileCharts({
               <button
                 type="button"
                 onClick={() => setShowLoanTable((v) => !v)}
-                className="shrink-0 text-[11px] font-medium text-[#A93D25] hover:underline"
+                className="shrink-0 text-[11px] font-medium text-brick hover:underline"
               >
                 {showLoanTable ? "Show chart" : "Show table"}
               </button>
@@ -346,7 +346,7 @@ export function FinancialProfileCharts({
             {showLoanTable ? (
               <div className="mt-2 max-h-[220px] overflow-auto">
                 <table className="w-full text-left text-[11px] tabular-nums">
-                  <thead className="sticky top-0 bg-white text-[#6B6255]">
+                  <thead className="sticky top-0 bg-white text-ink-muted">
                     <tr>
                       <th className="py-1 font-medium">Quarter</th>
                       <th className="py-1 text-right font-medium">Real estate</th>
@@ -355,9 +355,9 @@ export function FinancialProfileCharts({
                       <th className="py-1 text-right font-medium">Other</th>
                     </tr>
                   </thead>
-                  <tbody className="text-[#1A1815]">
+                  <tbody className="text-ink">
                     {[...visible].reverse().map((p) => (
-                      <tr key={p.reportDate} className="border-t border-[#F1EBE1]">
+                      <tr key={p.reportDate} className="border-t border-surface-200">
                         <td className="py-1">{p.quarter}</td>
                         <td className="py-1 text-right">{formatCompactDollars(p.loansRealEstate)}</td>
                         <td className="py-1 text-right">{formatCompactDollars(p.loansCommercial)}</td>
@@ -413,7 +413,7 @@ export function FinancialProfileCharts({
               </LineChart>
             </ResponsiveContainer>
             {peers && (peers.ncoRatePct !== null || peers.noncurrentRatePct !== null) && (
-              <p className="text-[11px] text-[#6B6255]">
+              <p className="text-[11px] text-ink-muted">
                 Peer medians {peers.quarter}: charge-offs {pct(peers.ncoRatePct)}, noncurrent {pct(peers.noncurrentRatePct)}.
               </p>
             )}
@@ -427,7 +427,7 @@ export function FinancialProfileCharts({
                 <CartesianGrid stroke={GRID} vertical={false} />
                 <XAxis dataKey="quarter" {...axisProps} minTickGap={24} />
                 <YAxis {...axisProps} tickFormatter={compactAxis} width={56} />
-                <Tooltip cursor={{ fill: "#FAF7F2" }} content={<ChartTooltip format={formatCompactDollars} />} />
+                <Tooltip cursor={{ fill: "#f3efe6" }} content={<ChartTooltip format={formatCompactDollars} />} />
                 <Bar dataKey="serviceCharges" name="Service charges" fill={SERIES[0]} radius={[4, 4, 0, 0]} maxBarSize={18} />
               </BarChart>
             </ResponsiveContainer>
@@ -492,7 +492,7 @@ export function FinancialProfileCharts({
               </LineChart>
             </ResponsiveContainer>
             {peers && (peers.tier1Pct !== null || peers.leveragePct !== null) && (
-              <p className="text-[11px] text-[#6B6255]">
+              <p className="text-[11px] text-ink-muted">
                 Peer medians {peers.quarter}: {capitalLabel.toLowerCase()} {pct(peers.tier1Pct, 1)}
                 {peers.leveragePct !== null && `, leverage ${pct(peers.leveragePct, 1)}`}
                 {peers.totalCapitalPct !== null && `, total capital ${pct(peers.totalCapitalPct, 1)}`}.

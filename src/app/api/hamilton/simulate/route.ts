@@ -35,7 +35,7 @@ import { getDistributionForCategory } from "@/app/pro/(hamilton)/simulate/action
 import { canSimulate } from "@/lib/hamilton/confidence";
 import { getInstitutionById } from "@/lib/data-store";
 import { getRequestSubjectKey } from "@/lib/api-hardening/audit";
-import { HAMILTON_SYSTEM_PROMPT } from "@/lib/hamilton/voice";
+import { SIMULATE_MAX_TOKENS, SIMULATE_ROUTE_ID, simulatePrompts } from "@/lib/hamilton/simulate-read";
 
 export const maxDuration = 120;
 
@@ -95,53 +95,21 @@ async function handlePOST(request: Request) {
     ? await getInstitutionById(Number(institutionId)).catch(() => null)
     : null;
 
-  const { median_amount, p25_amount, p75_amount } = distributionData;
-  const institutionCount = distributionData.institution_count;
-  const peerLabel = distributionData.peer_label || "verified peer baseline";
-  // The tested price is the reader's to try, never a proposal: say only where it sits against the current fee.
-  const changeDollars = Math.abs(proposedFee - currentFee).toFixed(2);
-  const againstCurrent =
-    proposedFee > currentFee
-      ? `$${changeDollars} above the current fee`
-      : proposedFee < currentFee
-      ? `$${changeDollars} below the current fee`
-      : "the same as the current fee";
-  const displayCategory = feeCategory.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
-
-  // Hamilton's shared voice carries the no-advice rule (voice.ts); this answer adds only its format.
-  const systemPrompt = `${HAMILTON_SYSTEM_PROMPT}
-
-THIS ANSWER: a short read of one price the user is testing.
-- Plain prose, 3 to 4 sentences, no headers, bullets or lists.
-- Say where the tested price sits against the peer 25th percentile, median and 75th percentile, and how many institutions stand behind them.
-- Characterize the revenue direction only (revenue-positive, revenue-neutral or revenue-compressing); give no dollar projections.
-- Do not cite complaint volumes, attrition, migration patterns or regulatory actions: that data is not supplied here.
-- Never say whether to make the change. Describe what this price would mean and the question it puts to management.`;
-
-  const institutionLine = institution
-    ? `Institution: ${institution.institution_name} (${institution.charter_type === "credit_union" ? "credit union" : "bank"}${institution.asset_size_tier ? `, ${institution.asset_size_tier}` : ""})`
-    : "";
-
-  const userPrompt = `${institutionLine}
-
-Fee category: ${displayCategory}
-Current fee: $${currentFee.toFixed(2)}
-Tested price: $${proposedFee.toFixed(2)} (${againstCurrent})
-
-Peer group: ${peerLabel}
-Peer distribution (${institutionCount} institutions):
-- P25: $${p25_amount?.toFixed(2) ?? "N/A"}
-- Median: $${median_amount?.toFixed(2) ?? "N/A"}
-- P75: $${p75_amount?.toFixed(2) ?? "N/A"}
-
-What would this price mean competitively, and what question does it put to management?`.trim();
+  // One prompt for the live read and the paid answer eval (#1079).
+  const { system: systemPrompt, user: userPrompt } = simulatePrompts({
+    feeCategory,
+    currentFee,
+    proposedFee,
+    distribution: distributionData,
+    institution,
+  });
 
   const providerContext = {
     provider: "anthropic" as const,
     model: HAMILTON_MODEL,
     agent: "hamilton",
     operation: "simulate_fee_change",
-    routeId: "api.hamilton.simulate",
+    routeId: SIMULATE_ROUTE_ID,
     userId: user.id,
     subjectKey: getRequestSubjectKey(request),
   };
@@ -161,7 +129,7 @@ What would this price mean competitively, and what question does it put to manag
     system: systemPrompt,
     prompt: userPrompt,
     // Opus 5.5 always thinks first; thinking counts toward this cap.
-    maxOutputTokens: 4000,
+    maxOutputTokens: SIMULATE_MAX_TOKENS,
     onFinish: async ({ totalUsage }) => {
       const inputTokens = totalUsage?.inputTokens ?? 0;
       const outputTokens = totalUsage?.outputTokens ?? 0;

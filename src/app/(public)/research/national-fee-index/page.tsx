@@ -82,23 +82,23 @@ export default async function NationalFeeIndexPage() {
       />
 
       <div className="flex items-center gap-2 mb-4">
-        <span className="h-px w-8 bg-[#C44B2E]/40" />
-        <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#A93D25]/60">
+        <span className="h-px w-8 bg-brick/40" />
+        <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-brick/60">
           National Fee Index
         </span>
         {!isPro && (
-          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-bold bg-[#E8DFD1]/50 text-[#6B6255] uppercase tracking-wider ml-1">
+          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-bold bg-border/50 text-ink-muted uppercase tracking-wider ml-1">
             Preview
           </span>
         )}
       </div>
       <h1
-        className="mt-1 text-[1.75rem] sm:text-[2.25rem] leading-[1.12] tracking-[-0.02em] font-bold text-[#1A1815]"
-        style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
+        className="mt-1 text-[1.75rem] sm:text-[2.25rem] leading-[1.12] tracking-[-0.02em] font-extrabold text-ink"
+        style={{ fontFamily: "var(--fi-font-sans)" }}
       >
         US Bank & Credit Union Fee Benchmarks
       </h1>
-      <p className="mt-2 max-w-2xl text-[14px] text-[#6B6255]">
+      <p className="mt-2 max-w-2xl text-[14px] text-ink-muted">
         {isPro ? (
           <>
             National benchmarking data across {categoriesLabel} fee categories,
@@ -111,7 +111,7 @@ export default async function NationalFeeIndexPage() {
             index of {categoriesLabel} categories.{" "}
             <Link
               href="/subscribe"
-              className="text-[#C44B2E] hover:underline font-medium"
+              className="text-brick hover:underline font-medium"
             >
               Subscribe
             </Link>{" "}
@@ -136,11 +136,11 @@ export default async function NationalFeeIndexPage() {
 
       {/* CPI context strip */}
       {cpi.bankFees && cpi.allItems && (
-        <div className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-2 rounded-xl border border-[#E8DFD1]/80 bg-white/70 backdrop-blur-sm px-5 py-3 text-[13px]">
-          <span className="text-[10px] font-bold uppercase tracking-[0.1em] text-[#6B6255]">
+        <div className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-2 rounded-xl border border-border/80 bg-white/70 backdrop-blur-sm px-5 py-3 text-[13px]">
+          <span className="text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted">
             CPI Context
           </span>
-          <span className="text-[#5A5347]">
+          <span className="text-ink-soft">
             Bank service fees{" "}
             <span
               className={`font-semibold tabular-nums ${cpi.bankFees.yoyPct > 0 ? "text-red-600" : "text-emerald-600"}`}
@@ -150,16 +150,16 @@ export default async function NationalFeeIndexPage() {
             </span>{" "}
             YoY
           </span>
-          <span className="text-[#6B6255]">vs.</span>
-          <span className="text-[#5A5347]">
+          <span className="text-ink-muted">vs.</span>
+          <span className="text-ink-soft">
             Overall CPI{" "}
-            <span className="font-semibold tabular-nums text-[#5A5347]">
+            <span className="font-semibold tabular-nums text-ink-soft">
               {cpi.allItems.yoyPct > 0 ? "+" : ""}
               {cpi.allItems.yoyPct}%
             </span>{" "}
             YoY
           </span>
-          <span className="text-[11px] text-[#6B6255]">
+          <span className="text-[11px] text-ink-muted">
             BLS as of {new Date(cpi.bankFees.date).toLocaleDateString("en-US", { month: "short", year: "numeric" })}
           </span>
         </div>
@@ -167,14 +167,14 @@ export default async function NationalFeeIndexPage() {
 
       {/* Summary cards */}
       <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <div className="rounded-xl border border-[#E8DFD1]/80 bg-white/70 backdrop-blur-sm px-4 py-3">
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-[#6B6255]">
+        <div className="rounded-xl border border-border/80 bg-white/70 backdrop-blur-sm px-4 py-3">
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-ink-muted">
             {isPro ? "Fee Categories" : "Preview"}
           </p>
           <p
-            className="mt-1 text-lg font-bold tabular-nums text-[#1A1815]"
+            className="mt-1 text-lg font-semibold tabular-nums text-ink"
             style={{
-              fontFamily: "var(--font-newsreader), Georgia, serif",
+              fontFamily: "var(--fi-font-mono)",
               fontWeight: 300,
             }}
           >
@@ -183,42 +183,42 @@ export default async function NationalFeeIndexPage() {
               : `${index.length} / ${allIndex.length}`}
           </p>
         </div>
-        <div className="rounded-xl border border-[#E8DFD1]/80 bg-white/70 backdrop-blur-sm px-4 py-3">
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-[#6B6255]">
+        <div className="rounded-xl border border-border/80 bg-white/70 backdrop-blur-sm px-4 py-3">
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-ink-muted">
             Observations
           </p>
           <p
-            className="mt-1 text-lg font-bold tabular-nums text-[#1A1815]"
+            className="mt-1 text-lg font-semibold tabular-nums text-ink"
             style={{
-              fontFamily: "var(--font-newsreader), Georgia, serif",
+              fontFamily: "var(--fi-font-mono)",
               fontWeight: 300,
             }}
           >
             {totalObservations.toLocaleString()}
           </p>
         </div>
-        <div className="rounded-xl border border-[#E8DFD1]/80 bg-white/70 backdrop-blur-sm px-4 py-3">
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-[#6B6255]">
+        <div className="rounded-xl border border-border/80 bg-white/70 backdrop-blur-sm px-4 py-3">
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-ink-muted">
             Full Index
           </p>
           <p
-            className="mt-1 text-lg font-bold tabular-nums text-[#1A1815]"
+            className="mt-1 text-lg font-semibold tabular-nums text-ink"
             style={{
-              fontFamily: "var(--font-newsreader), Georgia, serif",
+              fontFamily: "var(--fi-font-mono)",
               fontWeight: 300,
             }}
           >
             {categoriesLabel} categories
           </p>
         </div>
-        <div className="rounded-xl border border-[#E8DFD1]/80 bg-white/70 backdrop-blur-sm px-4 py-3">
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-[#6B6255]">
+        <div className="rounded-xl border border-border/80 bg-white/70 backdrop-blur-sm px-4 py-3">
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-ink-muted">
             Featured Fees
           </p>
           <p
-            className="mt-1 text-lg font-bold tabular-nums text-[#1A1815]"
+            className="mt-1 text-lg font-semibold tabular-nums text-ink"
             style={{
-              fontFamily: "var(--font-newsreader), Georgia, serif",
+              fontFamily: "var(--fi-font-mono)",
               fontWeight: 300,
             }}
           >
@@ -229,19 +229,19 @@ export default async function NationalFeeIndexPage() {
 
       {/* Upgrade banner for free users */}
       {!isPro && (
-        <div className="mt-8 rounded-xl border-2 border-[#C44B2E]/30 bg-white/70 backdrop-blur-sm p-6 relative overflow-hidden">
-          <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-[#C44B2E]/40 to-transparent" />
+        <div className="mt-8 rounded-xl border-2 border-brick/30 bg-white/70 backdrop-blur-sm p-6 relative overflow-hidden">
+          <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-brick/40 to-transparent" />
           <div className="md:flex md:items-center md:justify-between">
             <div>
               <h2
-                className="text-[16px] font-medium text-[#1A1815]"
+                className="text-[16px] font-bold text-ink"
                 style={{
-                  fontFamily: "var(--font-newsreader), Georgia, serif",
+                  fontFamily: "var(--fi-font-sans)",
                 }}
               >
                 You&apos;re viewing a preview
               </h2>
-              <p className="text-[13px] text-[#6B6255] mt-1">
+              <p className="text-[13px] text-ink-muted mt-1">
                 Showing {index.length} headline categories with median only.
                 The full index includes {gatedCount} more categories with
                 P25/P75 percentiles, bank vs. credit union breakdowns, and range
@@ -250,7 +250,7 @@ export default async function NationalFeeIndexPage() {
             </div>
             <Link
               href="/subscribe"
-              className="mt-4 md:mt-0 inline-flex items-center gap-2 rounded-full bg-[#C44B2E] px-6 py-2.5 text-[13px] font-semibold text-white shadow-sm shadow-[#C44B2E]/15 hover:shadow-md hover:shadow-[#C44B2E]/25 transition-all flex-shrink-0 no-underline"
+              className="mt-4 md:mt-0 inline-flex items-center gap-2 rounded-full bg-brick px-6 py-2.5 text-[13px] font-semibold text-white shadow-sm shadow-[#b23a32]/15 hover:shadow-md hover:shadow-[#b23a32]/25 transition-all flex-shrink-0 no-underline"
             >
               Unlock Full Index
               <svg aria-hidden="true"
@@ -277,95 +277,95 @@ export default async function NationalFeeIndexPage() {
           return (
             <section key={familyName}>
               <h2
-                className={`flex items-center gap-2 text-sm font-bold ${colors?.text ?? "text-[#5A5347]"}`}
+                className={`flex items-center gap-2 text-sm font-bold ${colors?.text ?? "text-ink-soft"}`}
               >
                 <span
-                  className={`inline-block h-3 w-1 rounded-full ${colors?.border?.replace("border-l-", "bg-") ?? "bg-[#A09788]"}`}
+                  className={`inline-block h-3 w-1 rounded-full ${colors?.border?.replace("border-l-", "bg-") ?? "bg-control-border"}`}
                 />
                 {familyName}
               </h2>
-              <div className="mt-3 overflow-hidden rounded-xl border border-[#E8DFD1]/80">
+              <div className="mt-3 overflow-hidden rounded-xl border border-border/80">
                 <div className="overflow-x-auto">
                   <table className={`w-full text-left text-sm ${isPro ? "min-w-[760px]" : "min-w-[420px]"}`}>
                     <thead>
-                      <tr className="border-b border-[#E8DFD1]/60 bg-[#FAF7F2]/60">
-                        <th className="px-4 py-2 text-[10px] font-bold uppercase tracking-[0.1em] text-[#6B6255]">
+                      <tr className="border-b border-border/60 bg-paper/60">
+                        <th className="px-4 py-2 text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted">
                           Fee Category
                         </th>
-                        <th className="px-4 py-2 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-[#6B6255]">
+                        <th className="px-4 py-2 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted">
                           Median
                         </th>
                         {isPro && (
                           <>
-                            <th className="hidden px-4 py-2 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-[#6B6255] sm:table-cell">
+                            <th className="hidden px-4 py-2 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted sm:table-cell">
                               P25
                             </th>
-                            <th className="hidden px-4 py-2 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-[#6B6255] sm:table-cell">
+                            <th className="hidden px-4 py-2 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted sm:table-cell">
                               P75
                             </th>
-                            <th className="px-4 py-2 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-[#6B6255]">
+                            <th className="px-4 py-2 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted">
                               Range
                             </th>
-                            <th className="px-4 py-2 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-[#6B6255]">
+                            <th className="px-4 py-2 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted">
                               Banks
                             </th>
-                            <th className="px-4 py-2 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-[#6B6255]">
+                            <th className="px-4 py-2 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted">
                               CUs
                             </th>
-                            <th className="hidden px-4 py-2 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-[#6B6255] md:table-cell">
+                            <th className="hidden px-4 py-2 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted md:table-cell">
                               Institutions
                             </th>
                           </>
                         )}
                         {!isPro && (
-                          <th className="px-4 py-2 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-[#6B6255]">
+                          <th className="px-4 py-2 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted">
                             Institutions
                           </th>
                         )}
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-[#E8DFD1]/60">
+                    <tbody className="divide-y divide-border/60">
                       {entries.map((entry) => (
                         <tr
                           key={entry.fee_category}
-                          className="hover:bg-[#FAF7F2]/60 transition-colors"
+                          className="hover:bg-paper/60 transition-colors"
                         >
                           <td className="px-4 py-2.5">
                             <Link
                               href={`/fees/${entry.fee_category}`}
-                              className="font-medium text-[#1A1815] hover:text-[#C44B2E] transition-colors"
+                              className="font-medium text-ink hover:text-brick transition-colors"
                             >
                               {getDisplayName(entry.fee_category)}
                             </Link>
                           </td>
-                          <td className="px-4 py-2.5 text-right tabular-nums font-medium text-[#1A1815]">
+                          <td className="px-4 py-2.5 text-right tabular-nums font-medium text-ink">
                             {formatAmount(entry.median_amount)}
                           </td>
                           {isPro && (
                             <>
-                              <td className="hidden px-4 py-2.5 text-right tabular-nums text-[#6B6255] sm:table-cell">
+                              <td className="hidden px-4 py-2.5 text-right tabular-nums text-ink-muted sm:table-cell">
                                 {formatAmount(entry.p25_amount)}
                               </td>
-                              <td className="hidden px-4 py-2.5 text-right tabular-nums text-[#6B6255] sm:table-cell">
+                              <td className="hidden px-4 py-2.5 text-right tabular-nums text-ink-muted sm:table-cell">
                                 {formatAmount(entry.p75_amount)}
                               </td>
-                              <td className="px-4 py-2.5 text-right tabular-nums text-[#6B6255]">
+                              <td className="px-4 py-2.5 text-right tabular-nums text-ink-muted">
                                 {formatAmount(entry.min_amount)} &ndash;{" "}
                                 {formatAmount(entry.max_amount)}
                               </td>
-                              <td className="px-4 py-2.5 text-right tabular-nums text-[#6B6255]">
+                              <td className="px-4 py-2.5 text-right tabular-nums text-ink-muted">
                                 {entry.bank_count.toLocaleString()}
                               </td>
-                              <td className="px-4 py-2.5 text-right tabular-nums text-[#6B6255]">
+                              <td className="px-4 py-2.5 text-right tabular-nums text-ink-muted">
                                 {entry.cu_count.toLocaleString()}
                               </td>
-                              <td className="hidden px-4 py-2.5 text-right tabular-nums text-[#6B6255] md:table-cell">
+                              <td className="hidden px-4 py-2.5 text-right tabular-nums text-ink-muted md:table-cell">
                                 {entry.institution_count.toLocaleString()}
                               </td>
                             </>
                           )}
                           {!isPro && (
-                            <td className="px-4 py-2.5 text-right tabular-nums text-[#6B6255]">
+                            <td className="px-4 py-2.5 text-right tabular-nums text-ink-muted">
                               {entry.institution_count.toLocaleString()}
                             </td>
                           )}
@@ -391,11 +391,11 @@ export default async function NationalFeeIndexPage() {
       )}
 
       {/* Methodology */}
-      <section className="mt-10 rounded-xl border border-[#E8DFD1] bg-[#FAF7F2]/50 px-5 py-4">
-        <h2 className="text-xs font-semibold uppercase tracking-wider text-[#6B6255]">
+      <section className="mt-10 rounded-xl border border-border bg-paper/50 px-5 py-4">
+        <h2 className="text-xs font-semibold uppercase tracking-wider text-ink-muted">
           Methodology
         </h2>
-        <p className="mt-2 text-[13px] leading-relaxed text-[#6B6255]">
+        <p className="mt-2 text-[13px] leading-relaxed text-ink-muted">
           The National Fee Index is computed from published fee schedules of
           FDIC-insured banks and NCUA-insured credit unions. Fees are categorized
           into {TAXONOMY_COUNT} standard categories across {Object.keys(FEE_FAMILIES).length} families. All

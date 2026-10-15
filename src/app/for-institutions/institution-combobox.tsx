@@ -127,7 +127,7 @@ export function InstitutionCombobox({
         <ul
           id={listId}
           role="listbox"
-          className="absolute left-0 right-0 z-20 mt-1 max-h-72 overflow-auto rounded-md border border-[#E0D7C9] bg-white py-1 text-sm shadow-lg"
+          className="absolute left-0 right-0 z-20 mt-1 max-h-72 overflow-auto rounded-md border border-border bg-white py-1 text-sm shadow-lg"
         >
           {suggestions.map((suggestion, index) => (
             <li
@@ -139,11 +139,11 @@ export function InstitutionCombobox({
                 event.preventDefault();
                 choose(suggestion);
               }}
-              className={`cursor-pointer px-3 py-2 ${index === active ? "bg-[#FBF3EF]" : "hover:bg-[#FAF7F2]"}`}
+              className={`cursor-pointer px-3 py-2 ${index === active ? "bg-[#FBF3EF]" : "hover:bg-paper"}`}
             >
-              <span className="font-medium text-[#1A1815]">{suggestion.institution_name}</span>
+              <span className="font-medium text-ink">{suggestion.institution_name}</span>
               {(suggestion.city || suggestion.state_code) && (
-                <span className="ml-1 text-[12px] text-[#6B6255]">
+                <span className="ml-1 text-[12px] text-ink-muted">
                   {[suggestion.city, suggestion.state_code].filter(Boolean).join(", ")}
                 </span>
               )}

@@ -232,7 +232,7 @@ SELECT (SELECT COUNT(*) FROM published) AS published,
 - **Classification belongs to Darwin** (DECISIONS, 2026-10-12): Knox suggests a category, audience
   and tier with evidence; Darwin decides; Gutenberg publishes Darwin's decision with one final check;
   Deming audits independently. Build #1059, #1069, #1102 and #1112 this way.
-- **Targets:** accuracy 95% on Deming's daily audit (weekly average); Knox 85% found and 90% right
+- **Targets:** accuracy 99.5% (James, Oct 15) on Deming's daily audit (weekly average); Knox 85% found and 90% right
   on the answer key; coverage 30 per state and size group, or 75%.
 
 ## Rules for the builder
@@ -263,6 +263,10 @@ SELECT (SELECT COUNT(*) FROM published) AS published,
    publish), not one function. The PR names the live rows it should change and the after-state it
    expects for each. The reviewer checks that path, and once deployed, the builder confirms on prod
    that those rows changed. Until then the fix is not called done.
+   **A new rule covers live fees too** (James, 2026-10-15). A rule that holds, rejects or re-files a
+   fee at Knox, Darwin or publish also joins Darwin's live re-check in the same PR. The PR body gives
+   the dry-run count of live fees it would take down, with a sample. A rule that would take down real
+   fees gets a narrower live twin.
 5. **Merge** only under the standing authorization in `CLAUDE.md`: exact head reviewed, CI green, no
    conflict, no unresolved blocking review, and none of the gates below.
 6. **Gates: open the PR, do not merge, add it to James's list** when a PR:

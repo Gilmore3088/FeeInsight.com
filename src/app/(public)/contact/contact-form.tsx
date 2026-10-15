@@ -5,25 +5,44 @@ import { HoneypotField, honeypotValue } from "@/components/public/honeypot-field
 import { LEAD_HONEYPOT_FIELD } from "@/lib/lead-capture";
 import { readFirstTouch } from "@/lib/marketing-touch";
 import { REPORT_OFFER, REPORT_PRICE_INLINE } from "@/lib/constants";
+import { DEMO_REQUEST_NAV } from "@/components/nav-items";
 
 const INQUIRY_TYPES = [
+  // Pro first, the one-off report second (site v3 brief 03 section 4: Pro is the goal).
+  // Short enough to show whole in the select at 375px (growth OS review M2).
+  { value: "demo", label: "Hamilton demo" },
   { value: "report", label: `${REPORT_OFFER.name} (${REPORT_PRICE_INLINE})` },
-  { value: "enterprise", label: "Fee Insight Pro (seats, invoicing)" },
+  { value: "enterprise", label: "Hamilton Pro (seats, invoicing)" },
   { value: "billing", label: "Billing or my subscription" },
   { value: "advisory", label: "Fee Insight Advisory (custom work)" },
   { value: "partnership", label: "Data licensing / API" },
   { value: "general", label: "Something else" },
 ];
 
-interface ContactFormProps {
-  searchParamsPromise: Promise<Record<string, string | string[] | undefined>>;
+export interface ContactHeadings {
+  /** Shown while "Hamilton demo" is the chosen option. */
+  demo: { title: string; intro: string };
+  /** Shown for every other option. */
+  general: { title: string; intro: string };
 }
 
-export function ContactForm({ searchParamsPromise }: ContactFormProps) {
+interface ContactFormProps {
+  searchParamsPromise: Promise<Record<string, string | string[] | undefined>>;
+  /** The page's h1 and intro; they follow the select, as the button and reply do. */
+  headings?: ContactHeadings;
+}
+
+export function ContactForm({ searchParamsPromise, headings }: ContactFormProps) {
   const searchParams = use(searchParamsPromise);
-  const defaultSource = typeof searchParams.source === "string" ? searchParams.source : "";
+  // A source with no option of its own (e.g. sample_report, a correction) opens on "Something
+  // else", not on the first option, so it is never recorded as a demo request.
+  const defaultSource =
+    typeof searchParams.source === "string" && INQUIRY_TYPES.some((t) => t.value === searchParams.source)
+      ? searchParams.source
+      : "general";
   const defaultCompany = typeof searchParams.company === "string" ? searchParams.company.slice(0, 160) : "";
 
+  const [inquiry, setInquiry] = useState(defaultSource);
   const [status, setStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
   const [confirmationSent, setConfirmationSent] = useState(false);
 
@@ -63,29 +82,51 @@ export function ContactForm({ searchParamsPromise }: ContactFormProps) {
     }
   }
 
+  // The heading, button and reply follow the option chosen, so a demo request reads as one.
+  const isDemo = inquiry === "demo";
+  const heading = headings ? (isDemo ? headings.demo : headings.general) : null;
+  const header = heading ? (
+    <>
+      <h1
+        className="font-extrabold text-[1.75rem] sm:text-[2.25rem] leading-[1.12] tracking-[-0.02em] text-ink"
+        style={{ fontFamily: "var(--fi-font-sans)" }}
+      >
+        {heading.title}
+      </h1>
+      <p className="mt-2 text-[14px] text-ink-muted">{heading.intro}</p>
+    </>
+  ) : null;
+
   if (status === "success") {
     return (
-      <div className="rounded-xl border border-emerald-200 bg-emerald-50/50 px-6 py-8 text-center">
+      <>
+      {header}
+      <div className={`${header ? "mt-8 " : ""}rounded-xl border border-emerald-200 bg-emerald-50/50 px-6 py-8 text-center`}>
         <p className="text-[16px] font-medium text-emerald-800">
-          Message received
+          {isDemo ? "Request received" : "Message received"}
         </p>
         <p className="mt-2 text-[13px] text-emerald-700">
-          We&apos;ll get back to you within one business day.
+          {isDemo
+            ? "We'll reply within one business day to set a time."
+            : "We'll get back to you within one business day."}
           {confirmationSent ? " A confirmation is on its way to your inbox." : ""}
         </p>
       </div>
+      </>
     );
   }
 
   const inputClasses =
-    "w-full rounded-xl border border-[#E8DFD1] bg-white px-4 py-2.5 text-[13px] text-[#1A1815] placeholder:text-[#6B6255] focus:outline-none focus:ring-2 focus:ring-[#C44B2E]/30 focus:border-transparent";
+    "w-full rounded-xl border border-border bg-white px-4 py-2.5 text-[13px] text-ink placeholder:text-ink-muted focus:outline-none focus:ring-2 focus:ring-brick/30 focus:border-transparent";
 
   return (
-    <form onSubmit={handleSubmit} className="relative space-y-4">
+    <>
+    {header}
+    <form onSubmit={handleSubmit} className={`relative space-y-4${header ? " mt-8" : ""}`}>
       <HoneypotField />
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div>
-          <label htmlFor="name" className="block text-[11px] font-bold uppercase tracking-[0.1em] text-[#6B6255] mb-1.5">
+          <label htmlFor="name" className="block text-[11px] font-bold uppercase tracking-[0.1em] text-ink-muted mb-1.5">
             Name
           </label>
           <input
@@ -98,7 +139,7 @@ export function ContactForm({ searchParamsPromise }: ContactFormProps) {
           />
         </div>
         <div>
-          <label htmlFor="email" className="block text-[11px] font-bold uppercase tracking-[0.1em] text-[#6B6255] mb-1.5">
+          <label htmlFor="email" className="block text-[11px] font-bold uppercase tracking-[0.1em] text-ink-muted mb-1.5">
             Work email
           </label>
           <input
@@ -114,7 +155,7 @@ export function ContactForm({ searchParamsPromise }: ContactFormProps) {
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div>
-          <label htmlFor="company" className="block text-[11px] font-bold uppercase tracking-[0.1em] text-[#6B6255] mb-1.5">
+          <label htmlFor="company" className="block text-[11px] font-bold uppercase tracking-[0.1em] text-ink-muted mb-1.5">
             Company / Institution
           </label>
           <input
@@ -127,7 +168,7 @@ export function ContactForm({ searchParamsPromise }: ContactFormProps) {
           />
         </div>
         <div>
-          <label htmlFor="role" className="block text-[11px] font-bold uppercase tracking-[0.1em] text-[#6B6255] mb-1.5">
+          <label htmlFor="role" className="block text-[11px] font-bold uppercase tracking-[0.1em] text-ink-muted mb-1.5">
             Role
           </label>
           <input
@@ -141,13 +182,14 @@ export function ContactForm({ searchParamsPromise }: ContactFormProps) {
       </div>
 
       <div>
-        <label htmlFor="inquiry_type" className="block text-[11px] font-bold uppercase tracking-[0.1em] text-[#6B6255] mb-1.5">
+        <label htmlFor="inquiry_type" className="block text-[11px] font-bold uppercase tracking-[0.1em] text-ink-muted mb-1.5">
           Inquiry type
         </label>
         <select
           id="inquiry_type"
           name="inquiry_type"
-          defaultValue={defaultSource || "general"}
+          value={inquiry}
+          onChange={(e) => setInquiry(e.target.value)}
           className={inputClasses}
         >
           {INQUIRY_TYPES.map((t) => (
@@ -159,7 +201,7 @@ export function ContactForm({ searchParamsPromise }: ContactFormProps) {
       </div>
 
       <div>
-        <label htmlFor="message" className="block text-[11px] font-bold uppercase tracking-[0.1em] text-[#6B6255] mb-1.5">
+        <label htmlFor="message" className="block text-[11px] font-bold uppercase tracking-[0.1em] text-ink-muted mb-1.5">
           Message
         </label>
         <textarea
@@ -180,10 +222,11 @@ export function ContactForm({ searchParamsPromise }: ContactFormProps) {
       <button
         type="submit"
         disabled={status === "loading"}
-        className="w-full rounded-xl bg-[#C44B2E] py-3 text-[14px] font-semibold text-white hover:bg-[#A83D25] transition-colors disabled:opacity-50"
+        className="w-full rounded-xl bg-brick py-3 text-[14px] font-semibold text-white hover:bg-brick-ink transition-colors disabled:opacity-50"
       >
-        {status === "loading" ? "Sending..." : "Send message"}
+        {status === "loading" ? "Sending..." : isDemo ? DEMO_REQUEST_NAV.standaloneLabel : "Send message"}
       </button>
     </form>
+    </>
   );
 }

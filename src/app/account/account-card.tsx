@@ -22,18 +22,18 @@ export function AccountCard({
     <section
       id={id}
       aria-labelledby={headingId}
-      className={`scroll-mt-24 rounded-xl border border-[#E8DFD1] bg-white/70 ${compact ? "p-4" : "p-5"}`}
+      className={`scroll-mt-24 rounded-xl border border-border bg-white/70 ${compact ? "p-4" : "p-5"}`}
     >
       <div className="mb-4 flex items-start justify-between gap-3">
         <div className="min-w-0">
           <h2
             id={headingId}
-            className={`${compact ? "text-[17px]" : "text-[19px]"} font-medium leading-tight text-[#1A1815]`}
-            style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
+            className={`${compact ? "text-[17px]" : "text-[19px]"} font-bold leading-tight text-ink`}
+            style={{ fontFamily: "var(--fi-font-sans)" }}
           >
             {title}
           </h2>
-          {note && <p className="mt-1 text-[13px] text-[#6B6255]">{note}</p>}
+          {note && <p className="mt-1 text-[13px] text-ink-muted">{note}</p>}
         </div>
         {action}
       </div>

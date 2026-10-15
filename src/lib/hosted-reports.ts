@@ -48,9 +48,9 @@ const WRAP_STYLES = `
 const SCREEN_STYLES = `${WRAP_STYLES}
 <style data-fee-insight-embed>
   @media screen {
-    body { background: #FDFBF8; }
-    .page { padding: 0.75in 0.85in 0.8in; border-bottom: 1px solid #E0D7C9; }
-    .bleed { border-bottom: 1px solid #E0D7C9; }
+    body { background: #fbf9f4; }
+    .page { padding: 0.75in 0.85in 0.8in; border-bottom: 1px solid #ddd5c6; }
+    .bleed { border-bottom: 1px solid #ddd5c6; }
   }
 </style>`;
 

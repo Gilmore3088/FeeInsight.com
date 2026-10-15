@@ -1,7 +1,8 @@
 import Link from "next/link";
+import { Logo } from "@/brand/components";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
-import { BarChart3, ExternalLink } from "lucide-react";
+import { ExternalLink } from "lucide-react";
 import { getCurrentUser, type User } from "@/lib/auth";
 import { LogoutButton } from "./logout-button";
 import { AdminBadgesProvider, AdminRoomMenu, AdminRoomTabs, AdminSidebar } from "./admin-nav";
@@ -84,14 +85,8 @@ async function AdminLayoutInner({
               className="flex shrink-0 items-center gap-2 hover:opacity-80 transition-opacity"
               aria-label={`${SITE_NAME} — Dashboard`}
             >
-              <BarChart3
-                aria-hidden="true"
-                className="h-[18px] w-[18px] text-[var(--brand-primary)]"
-                strokeWidth={1.8}
-              />
-              <span className="text-[13px] font-extrabold tracking-tight text-gray-900 dark:text-gray-100 hidden sm:inline">
-                {SITE_NAME}
-              </span>
+              <Logo mark="fee-insight-oneline" height={18} title="" className="hidden sm:inline-block" />
+              <Logo mark="box-plot-i" height={18} title="" className="sm:hidden" />
             </Link>
             <AdminRoomMenu badges={{ trustPending }} />
             <AdminRoomTabs badges={{ trustPending }} />

@@ -9,19 +9,12 @@ export default function manifest(): MetadataRoute.Manifest {
       "National fee benchmarking for banks and credit unions.",
     start_url: "/",
     display: "standalone",
-    background_color: "#FAF7F2",
-    theme_color: "#FAF7F2",
+    background_color: "#f3efe6",
+    theme_color: "#132338",
     icons: [
-      {
-        src: "/icon",
-        sizes: "32x32",
-        type: "image/png",
-      },
-      {
-        src: "/apple-icon",
-        sizes: "180x180",
-        type: "image/png",
-      },
+      { src: "/icon-192.png", sizes: "192x192", type: "image/png" },
+      { src: "/icon-512.png", sizes: "512x512", type: "image/png" },
+      { src: "/icon.svg", sizes: "any", type: "image/svg+xml" },
     ],
   };
 }

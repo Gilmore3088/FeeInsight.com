@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { CONTACT_EMAIL } from "@/lib/constants";
 
-const SERIF = { fontFamily: "var(--font-newsreader), Georgia, serif" };
+const SERIF = { fontFamily: "var(--fi-font-sans)" };
 
 /**
  * Shown when a Hamilton screen fails to load: plain language, a retry, and a way out. It uses the
@@ -19,7 +19,7 @@ export function HamiltonErrorState({
 }) {
   return (
     <div role="alert" className="mx-auto max-w-xl bg-warm-50 px-6 py-16 text-center">
-      <h2 className="text-2xl text-warm-900" style={SERIF}>
+      <h2 className="font-bold text-2xl text-warm-900" style={SERIF}>
         This screen didn&apos;t load
       </h2>
       <p className="mt-3 text-sm text-warm-700">

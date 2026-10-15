@@ -106,3 +106,28 @@ describe("AnalyzeWorkspace multi-turn context for written answers (#979)", () =>
     expect(followUp).not.toContain("NSF");
   });
 });
+
+describe("AnalyzeWorkspace when the route holds a written answer back (#981)", () => {
+  const HELD = "Synthetic held line.";
+
+  it("shows the route's line as a notice, never as an answer, and never saves it", async () => {
+    render(<AnalyzeWorkspace userId={7} institutionId="2945" selectedInstitution={bank} />);
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "What is the overdraft fee?" } });
+    fireEvent.click(screen.getByRole("button", { name: /^Ask( Hamilton)?$/ }));
+    await waitFor(() => expect(chat.send).toHaveBeenCalledTimes(1));
+    await act(async () => {
+      await chat.options.at(-1)?.onFinish?.({
+        message: { parts: [{ type: "text", text: HELD }], metadata: { answerEvidence: { passed: false, held: true } } },
+        isError: false,
+        isAbort: false,
+      });
+    });
+    await waitFor(() => expect(document.body.textContent).toContain(HELD));
+    expect(chat.save).not.toHaveBeenCalled();
+    // The question goes back in the composer, and "Ask again" asks it again.
+    expect((screen.getByRole("textbox") as HTMLTextAreaElement).value).toBe("What is the overdraft fee?");
+    fireEvent.click(screen.getByRole("button", { name: "Ask again" }));
+    await waitFor(() => expect(chat.send).toHaveBeenCalledTimes(2));
+    expect((chat.send.mock.calls[1][0] as { text: string }).text).toBe("What is the overdraft fee?");
+  });
+});

@@ -22,8 +22,8 @@ import {
   type PriceCheckFee,
 } from "@/lib/price-check";
 
-const EYEBROW = "text-[11px] font-bold uppercase tracking-[0.12em] text-[#6B6255]";
-const SERIF = { fontFamily: "var(--font-newsreader), Georgia, serif" };
+const EYEBROW = "text-[11px] font-bold uppercase tracking-[0.12em] text-ink-muted";
+const SERIF = { fontFamily: "var(--fi-font-sans)" };
 const FEE_LABEL: Record<PriceCheckFee, string> = { overdraft: "Overdraft fee", nsf: "NSF (returned item) fee" };
 const FEE_NOUN: Record<PriceCheckFee, string> = { overdraft: "overdraft fee", nsf: "NSF fee" };
 const SHOWN = 25;
@@ -99,19 +99,19 @@ export default async function PriceCheckPage({ searchParams }: PageProps) {
       <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)] lg:items-end">
         <div className="max-w-2xl">
       <p className={EYEBROW}>Free tool</p>
-      <h1 className="mt-3 text-[1.75rem] sm:text-[2.25rem] leading-[1.12] tracking-[-0.02em] text-[#1A1815]" style={SERIF}>
+      <h1 className="font-extrabold mt-3 text-[1.75rem] sm:text-[2.25rem] leading-[1.12] tracking-[-0.02em] text-ink" style={SERIF}>
         Where does a fee price sit in its state?
       </h1>
-      <p className="mt-3 text-[15px] leading-relaxed text-[#5A5347]">
+      <p className="mt-3 text-[15px] leading-relaxed text-ink-soft">
         Enter a price, including $0, and a state. Every fee counted was checked against the institution&apos;s own
         schedule.
       </p>
         </div>
 
-      <form method="get" className="grid gap-4 rounded-xl border border-[#E8DFD1] bg-white/70 p-5 sm:grid-cols-[1fr_1fr_auto] sm:items-end xl:grid-cols-[1.3fr_1fr_0.7fr_auto]">
+      <form method="get" className="grid gap-4 rounded-xl border border-border bg-white/70 p-5 sm:grid-cols-[1fr_1fr_auto] sm:items-end xl:grid-cols-[1.3fr_1fr_0.7fr_auto]">
         <label className="block">
           <span className={EYEBROW}>Fee</span>
-          <select name="fee" defaultValue={fee} className="mt-1.5 block w-full rounded-lg border border-[#E8DFD1] bg-white px-3 py-2.5 text-[15px] text-[#1A1815]">
+          <select name="fee" defaultValue={fee} className="mt-1.5 block w-full rounded-lg border border-border bg-white px-3 py-2.5 text-[15px] text-ink">
             {PRICE_CHECK_FEES.map((key) => (
               <option key={key} value={key}>
                 {FEE_LABEL[key]}
@@ -121,7 +121,7 @@ export default async function PriceCheckPage({ searchParams }: PageProps) {
         </label>
         <label className="block">
           <span className={EYEBROW}>State</span>
-          <select name="state" defaultValue={state ?? ""} required className="mt-1.5 block w-full rounded-lg border border-[#E8DFD1] bg-white px-3 py-2.5 text-[15px] text-[#1A1815]">
+          <select name="state" defaultValue={state ?? ""} required className="mt-1.5 block w-full rounded-lg border border-border bg-white px-3 py-2.5 text-[15px] text-ink">
             <option value="" disabled>
               Choose a state
             </option>
@@ -140,28 +140,28 @@ export default async function PriceCheckPage({ searchParams }: PageProps) {
             defaultValue={priceRaw}
             placeholder="$35"
             required
-            className="mt-1.5 block w-full rounded-lg border border-[#E8DFD1] bg-white px-3 py-2.5 text-[15px] text-[#1A1815]"
+            className="mt-1.5 block w-full rounded-lg border border-border bg-white px-3 py-2.5 text-[15px] text-ink"
           />
         </label>
-        <button type="submit" className="rounded-lg bg-[#1A1815] px-5 py-2.5 text-[15px] font-semibold text-white hover:bg-[#33302A]">
+        <button type="submit" className="rounded-lg bg-ink px-5 py-2.5 text-[15px] font-semibold text-white hover:bg-[#33302A]">
           Check
         </button>
       </form>
       </div>
 
       {state !== null && priceRaw && price === null && (
-        <p className="mt-6 text-[14px] text-[#A93D25]">Enter the price as a dollar amount, such as 35 or 12.50.</p>
+        <p className="mt-6 text-[14px] text-brick">Enter the price as a dollar amount, such as 35 or 12.50.</p>
       )}
 
       {asked && prices === null && (
-        <p className="mt-6 text-[14px] text-[#5A5347]">The fee data couldn&apos;t be read just now. Please try again in a minute.</p>
+        <p className="mt-6 text-[14px] text-ink-soft">The fee data couldn&apos;t be read just now. Please try again in a minute.</p>
       )}
 
       {asked && prices !== null && check === null && (
-        <p className="mt-8 text-[15px] leading-relaxed text-[#5A5347]">
+        <p className="mt-8 text-[15px] leading-relaxed text-ink-soft">
           {stateName} has {plural(prices.institutions.length, "institution", "institutions")} with a source-checked{" "}
           {FEE_NOUN[fee]} so far, too few for a fair comparison. The national picture is on the{" "}
-          <Link href={`/fees/${fee}`} className="font-medium text-[#A93D25] hover:underline">
+          <Link href={`/fees/${fee}`} className="font-medium text-brick hover:underline">
             {FEE_NOUN[fee]} page
           </Link>
           .
@@ -173,7 +173,7 @@ export default async function PriceCheckPage({ searchParams }: PageProps) {
           <p className={EYEBROW}>
             {FEE_LABEL[fee]} in {stateName}
           </p>
-          <h2 className="mt-2 max-w-4xl text-[1.4rem] leading-snug text-[#1A1815]" style={SERIF}>
+          <h2 className="font-bold mt-2 max-w-4xl text-[1.4rem] leading-snug text-ink" style={SERIF}>
             {check.lower} of {check.count} institutions charge less than {money(check.price)}, {check.same} charge the same and{" "}
             {check.higher} charge more.
           </h2>
@@ -187,23 +187,23 @@ export default async function PriceCheckPage({ searchParams }: PageProps) {
             <Stat label="Charge $0" value={String(check.zero)} />
           </dl>
           {prices.uncheckedCount > 0 && (
-            <p className="mt-4 max-w-prose text-[13px] text-[#6B6255]">
+            <p className="mt-4 max-w-prose text-[13px] text-ink-muted">
               {plural(prices.uncheckedCount, "other institution has", "other institutions have")} a published {FEE_NOUN[fee]}{" "}
               that hasn&apos;t been matched to its schedule yet, so {prices.uncheckedCount === 1 ? "it is" : "they are"} not counted.
             </p>
           )}
           {income !== null && (
-            <p className="mt-3 text-[12px] text-[#6B6255]">
+            <p className="mt-3 text-[12px] text-ink-muted">
               Median household income in {stateName}: {money(income)} (Census ACS {demographics?.year}).
             </p>
           )}
 
             </div>
             <div>
-          <h3 className="text-[1.1rem] text-[#1A1815]" style={SERIF}>
+          <h3 className="font-bold text-[1.1rem] text-ink" style={SERIF}>
             How the {stateName} figures are spread
           </h3>
-          <div className="mt-3 rounded-xl border border-[#E8DFD1]/80 bg-white/70 p-3">
+          <div className="mt-3 rounded-xl border border-border/80 bg-white/70 p-3">
             <DistributionChart values={prices.institutions.map((institution) => institution.value)} median={check.median} />
           </div>
             </div>
@@ -211,28 +211,28 @@ export default async function PriceCheckPage({ searchParams }: PageProps) {
 
           {mapWide && (
             <>
-              <h3 className="mt-10 text-[1.1rem] text-[#1A1815]" style={SERIF}>
+              <h3 className="font-bold mt-10 text-[1.1rem] text-ink" style={SERIF}>
                 {stateName} counties against {money(check.price)}
               </h3>
-              <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5 text-[12px] text-[#5A5347]">
+              <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5 text-[12px] text-ink-soft">
                 {PRICE_MAP_LEGEND.map((label, i) => (
                   <span key={label} className="inline-flex items-center gap-1.5">
                     <span className="inline-block h-3 w-4 rounded-sm" style={{ background: PRICE_MAP_FILLS[i] }} />
-                    {label} <b className="tabular-nums text-[#1A1815]">{countySteps[i]}</b>
+                    {label} <b className="tabular-nums text-ink">{countySteps[i]}</b>
                   </span>
                 ))}
                 {countiesWithout > 0 && (
                   <span className="inline-flex items-center gap-1.5">
                     <span
-                      className="inline-block h-3 w-4 rounded-sm border border-[#E0D7C9]"
-                      style={{ background: "repeating-linear-gradient(45deg,#fff 0 2px,#E0D7C9 2px 4px)" }}
+                      className="inline-block h-3 w-4 rounded-sm border border-border"
+                      style={{ background: "repeating-linear-gradient(45deg,#fff 0 2px,#ddd5c6 2px 4px)" }}
                     />
-                    No fee yet <b className="tabular-nums text-[#1A1815]">{countiesWithout}</b>
+                    No fee yet <b className="tabular-nums text-ink">{countiesWithout}</b>
                   </span>
                 )}
               </div>
               <CountyPriceMap wide={mapWide} narrow={mapNarrow} details={countyDetails} price={check.price} feeNoun={FEE_NOUN[fee]} />
-              <p className="mt-2 max-w-3xl text-[12px] text-[#6B6255]">
+              <p className="mt-2 max-w-3xl text-[12px] text-ink-muted">
                 Each county shows the published {FEE_NOUN[fee]} of the institutions with branches there, weighted by their deposits (FDIC Summary of Deposits
                 {countyMap?.sod_year ? `, ${countyMap.sod_year}` : ""}). Fees of $0 are left out.
               </p>
@@ -242,7 +242,7 @@ export default async function PriceCheckPage({ searchParams }: PageProps) {
           <div className="mt-10 grid gap-8 lg:grid-cols-2 lg:items-start">
           {charters.length > 0 && (
             <div>
-              <h3 className=" text-[1.1rem] text-[#1A1815]" style={SERIF}>
+              <h3 className="font-bold  text-[1.1rem] text-ink" style={SERIF}>
                 Banks and credit unions
               </h3>
               <GroupTable rows={charters} price={check.price} firstColumn="Charter" />
@@ -251,10 +251,10 @@ export default async function PriceCheckPage({ searchParams }: PageProps) {
 
           {markets.length > 0 && (
             <div>
-              <h3 className=" text-[1.1rem] text-[#1A1815]" style={SERIF}>
+              <h3 className="font-bold  text-[1.1rem] text-ink" style={SERIF}>
                 By local market
               </h3>
-              <p className="mt-1 max-w-prose text-[13px] text-[#6B6255]">
+              <p className="mt-1 max-w-prose text-[13px] text-ink-muted">
                 Metro areas, or the city where an institution has no metro, with at least 3 source-checked institutions.
               </p>
               <GroupTable rows={markets} price={check.price} firstColumn="Market" />
@@ -263,31 +263,31 @@ export default async function PriceCheckPage({ searchParams }: PageProps) {
           </div>
           <div className="mt-10 grid gap-8 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)] lg:items-start">
             <div>
-          <h3 className="text-[1.1rem] text-[#1A1815]" style={SERIF}>
+          <h3 className="font-bold text-[1.1rem] text-ink" style={SERIF}>
             The institutions behind the count
           </h3>
-          <ul className="mt-3 divide-y divide-[#E8DFD1]/60 rounded-xl border border-[#E8DFD1]/80 bg-white/70">
+          <ul className="mt-3 divide-y divide-border/60 rounded-xl border border-border/80 bg-white/70">
             {prices.institutions.slice(0, SHOWN).map((institution) => (
               <li key={institution.id} className="flex items-baseline justify-between gap-4 px-4 py-2.5 text-[14px]">
                 <span className="min-w-0">
-                  <Link href={`/institution/${institution.id}`} className="text-[#1A1815] hover:underline">
+                  <Link href={`/institution/${institution.id}`} className="text-ink hover:underline">
                     {institution.name}
                   </Link>
                   {institution.documentUrl && (
                     <>
                       {" "}
-                      <a href={institution.documentUrl} rel="nofollow noopener" target="_blank" className="text-[12px] text-[#A93D25] hover:underline">
+                      <a href={institution.documentUrl} rel="nofollow noopener" target="_blank" className="text-[12px] text-brick hover:underline">
                         schedule
                       </a>
                     </>
                   )}
                 </span>
-                <span className="shrink-0 tabular-nums text-[#1A1815]">{money(institution.value)}</span>
+                <span className="shrink-0 tabular-nums text-ink">{money(institution.value)}</span>
               </li>
             ))}
           </ul>
           {prices.institutions.length > SHOWN && (
-            <p className="mt-2 text-[13px] text-[#6B6255]">
+            <p className="mt-2 text-[13px] text-ink-muted">
               Showing the {SHOWN} lowest of {prices.institutions.length}. The full list, with every competitor in a market, is part of a
               market report.
             </p>
@@ -295,35 +295,35 @@ export default async function PriceCheckPage({ searchParams }: PageProps) {
 
             </div>
             <div className="lg:sticky lg:top-24">
-          <div className="rounded-xl border border-[#E8DFD1] bg-[#FAF7F2] p-5">
-            <p className="text-[15px] leading-relaxed text-[#1A1815]">
+          <div className="rounded-xl border border-border bg-paper p-5">
+            <p className="text-[15px] leading-relaxed text-ink">
               A market report puts one institution&apos;s full fee schedule beside its named local competitors, fee by fee, with
               every figure linked to its source.
             </p>
             <div className="mt-4 flex flex-wrap gap-3">
-              <Link href="/contact?source=report" className="rounded-lg bg-[#1A1815] px-4 py-2 text-[14px] font-semibold text-white hover:bg-[#33302A]">
+              <Link href="/contact?source=report" className="rounded-lg bg-ink px-4 py-2 text-[14px] font-semibold text-white hover:bg-[#33302A]">
                 Request a market report
               </Link>
-              <Link href="/reports/sample-competitive-fee-position" className="rounded-lg border border-[#E8DFD1] px-4 py-2 text-[14px] font-semibold text-[#1A1815] hover:bg-white">
+              <Link href="/reports/sample-competitive-fee-position" className="rounded-lg border border-border px-4 py-2 text-[14px] font-semibold text-ink hover:bg-white">
                 See a sample
               </Link>
             </div>
           </div>
-          <p className="mt-4 text-[13px] text-[#5A5347]">
+          <p className="mt-4 text-[13px] text-ink-soft">
             More on {stateName}:{" "}
-            <Link href={`/research/state/${state}`} className="font-medium text-[#A93D25] hover:underline">
+            <Link href={`/research/state/${state}`} className="font-medium text-brick hover:underline">
               state fee report
             </Link>
             {" · "}
-            <Link href={`/fees/city/${(state ?? "").toLowerCase()}`} className="font-medium text-[#A93D25] hover:underline">
+            <Link href={`/fees/city/${(state ?? "").toLowerCase()}`} className="font-medium text-brick hover:underline">
               fees by city
             </Link>
           </p>
 
-          <p className="mt-6 text-[12px] leading-relaxed text-[#6B6255]">
+          <p className="mt-6 text-[12px] leading-relaxed text-ink-muted">
             Counts show where a price sits among published fees. They are not advice on what any institution should charge. How fees
             are collected and checked is on the{" "}
-            <Link href="/methodology" className="text-[#A93D25] hover:underline">
+            <Link href="/methodology" className="text-brick hover:underline">
               methodology page
             </Link>
             .
@@ -339,20 +339,20 @@ export default async function PriceCheckPage({ searchParams }: PageProps) {
 /** Where the price sits in each group: lower, same, higher, and the group's median. */
 function GroupTable({ rows, price, firstColumn }: { rows: GroupCheck[]; price: number; firstColumn: string }) {
   return (
-    <div className="mt-3 overflow-x-auto rounded-xl border border-[#E8DFD1]/80 bg-white/70">
+    <div className="mt-3 overflow-x-auto rounded-xl border border-border/80 bg-white/70">
       <table className="w-full min-w-[22rem] text-left text-[14px]">
         <thead>
-          <tr className="border-b border-[#E8DFD1]/60 bg-[#FAF7F2]/60">
+          <tr className="border-b border-border/60 bg-paper/60">
             <th className={`px-4 py-2.5 ${EYEBROW}`}>{firstColumn}</th>
             <th className={`px-3 py-2.5 text-right ${EYEBROW}`}>Counted</th>
             <th className={`px-3 py-2.5 text-right ${EYEBROW}`}>Median</th>
             <th className={`px-4 py-2.5 text-right ${EYEBROW}`}>Lower / same / higher than {money(price)}</th>
           </tr>
         </thead>
-        <tbody className="divide-y divide-[#E8DFD1]/40">
+        <tbody className="divide-y divide-border/40">
           {rows.map((row) => (
             <tr key={row.label}>
-              <td className="px-4 py-2.5 text-[#1A1815]">{row.label}</td>
+              <td className="px-4 py-2.5 text-ink">{row.label}</td>
               <td className="px-3 py-2.5 text-right tabular-nums">{row.count}</td>
               <td className="px-3 py-2.5 text-right tabular-nums">{money(row.median)}</td>
               <td className="px-4 py-2.5 text-right tabular-nums">
@@ -368,9 +368,9 @@ function GroupTable({ rows, price, firstColumn }: { rows: GroupCheck[]; price: n
 
 function Stat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-xl border border-[#E8DFD1]/80 bg-white/70 px-4 py-3">
+    <div className="rounded-xl border border-border/80 bg-white/70 px-4 py-3">
       <dt className={EYEBROW}>{label}</dt>
-      <dd className="mt-1 text-[1.25rem] tabular-nums text-[#1A1815]">{value}</dd>
+      <dd className="mt-1 text-[1.25rem] tabular-nums text-ink">{value}</dd>
     </div>
   );
 }
@@ -381,12 +381,12 @@ function PositionBar({ lower, same, higher }: { lower: number; same: number; hig
   const pct = (count: number) => `${(count / total) * 100}%`;
   return (
     <div className="mt-5">
-      <div className="flex h-3 overflow-hidden rounded-full bg-[#E8DFD1]" role="img" aria-label={`${lower} lower, ${same} same, ${higher} higher`}>
+      <div className="flex h-3 overflow-hidden rounded-full bg-border" role="img" aria-label={`${lower} lower, ${same} same, ${higher} higher`}>
         <span style={{ width: pct(lower) }} className="bg-[#B8AC98]" />
-        <span style={{ width: pct(same) }} className="bg-[#1A1815]" />
-        <span style={{ width: pct(higher) }} className="bg-[#6B6255]" />
+        <span style={{ width: pct(same) }} className="bg-ink" />
+        <span style={{ width: pct(higher) }} className="bg-ink-muted" />
       </div>
-      <div className="mt-2 flex justify-between text-[12px] text-[#6B6255]">
+      <div className="mt-2 flex justify-between text-[12px] text-ink-muted">
         <span>Lower {lower}</span>
         <span>Same {same}</span>
         <span>Higher {higher}</span>

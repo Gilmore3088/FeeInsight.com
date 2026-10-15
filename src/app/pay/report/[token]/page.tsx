@@ -31,23 +31,23 @@ interface PageProps {
   searchParams: Promise<{ paid?: string; cancelled?: string; error?: string }>;
 }
 
-const SERIF = { fontFamily: "var(--font-newsreader), Georgia, serif" };
-const CARD = "rounded-xl border border-[#E0D7C9] bg-[#FDFBF8] p-6";
+const SERIF = { fontFamily: "var(--fi-font-sans)" };
+const CARD = "rounded-xl border border-border bg-surface-0 p-6";
 const SECONDARY_BUTTON =
-  "inline-flex items-center justify-center rounded-md border border-[#D5CBBF] bg-white px-5 py-3 text-[15px] font-semibold text-[#1A1815] transition-colors hover:border-[#1A1815] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1A1815]";
+  "inline-flex items-center justify-center rounded-md border border-border bg-white px-5 py-3 text-[15px] font-semibold text-ink transition-colors hover:border-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink";
 const BUTTON =
-  "inline-flex items-center justify-center rounded-md bg-[#C44B2E] px-5 py-3 text-[15px] font-semibold text-white transition-colors hover:bg-[#A93D25] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1A1815]";
+  "inline-flex items-center justify-center rounded-md bg-brick px-5 py-3 text-[15px] font-semibold text-white transition-colors hover:bg-brick-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink";
 
 /** A real pay link past its lifetime: say so and how to get a new one, rather than a bare 404. */
 function ExpiredPayLink() {
   return (
-    <div className="min-h-screen bg-[#FAF7F2]">
+    <div className="min-h-screen bg-paper">
       <main className="mx-auto max-w-2xl px-4 pb-24 pt-16 sm:px-6">
-        <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#A93D25]">{REPORT_OFFER.name}</p>
-        <h1 className="mt-2 text-[1.6rem] leading-tight text-[#1A1815]" style={SERIF}>
+        <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-brick">{REPORT_OFFER.name}</p>
+        <h1 className="font-extrabold mt-2 text-[1.6rem] leading-tight text-ink" style={SERIF}>
           This payment link has expired
         </h1>
-        <p className="mt-3 text-[15px] leading-relaxed text-[#5A5347]">
+        <p className="mt-3 text-[15px] leading-relaxed text-ink-soft">
           Nothing was charged. Write to{" "}
           <a href={`mailto:${CONTACT_EMAIL}`} className="underline">
             {CONTACT_EMAIL}
@@ -61,13 +61,13 @@ function ExpiredPayLink() {
 
 function RefundedPayLink() {
   return (
-    <div className="min-h-screen bg-[#FAF7F2]">
+    <div className="min-h-screen bg-paper">
       <main className="mx-auto max-w-2xl px-4 pb-24 pt-16 sm:px-6">
-        <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#A93D25]">{REPORT_OFFER.name}</p>
-        <h1 className="mt-2 text-[1.6rem] leading-tight text-[#1A1815]" style={SERIF}>
+        <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-brick">{REPORT_OFFER.name}</p>
+        <h1 className="font-extrabold mt-2 text-[1.6rem] leading-tight text-ink" style={SERIF}>
           This payment was refunded
         </h1>
-        <p className="mt-3 text-[15px] leading-relaxed text-[#5A5347]">
+        <p className="mt-3 text-[15px] leading-relaxed text-ink-soft">
           The report link for this request is closed. Write to{" "}
           <a href={`mailto:${CONTACT_EMAIL}`} className="underline">
             {CONTACT_EMAIL}
@@ -121,7 +121,7 @@ export default async function PayReportPage({ params, searchParams }: PageProps)
   const place = [institution.city, institution.stateCode].filter(Boolean).join(", ");
 
   return (
-    <div className="min-h-screen bg-[#FAF7F2]">
+    <div className="min-h-screen bg-paper">
       <TrackView
         event={paid ? "report_pay_complete" : "report_pay_view"}
         eventProps={{ lead_id: lead.id, buyable: buyable ? "yes" : "no" }}
@@ -129,20 +129,20 @@ export default async function PayReportPage({ params, searchParams }: PageProps)
       />
       <ReportChrome preparedFor={institution.name} />
       <main className="mx-auto max-w-2xl px-4 pb-24 pt-10 sm:px-6">
-        <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#A93D25]">{REPORT_OFFER.name}</p>
-        <h1 className="mt-2 text-[1.6rem] leading-tight tracking-[-0.02em] text-[#1A1815] sm:text-[2rem]" style={SERIF}>
+        <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-brick">{REPORT_OFFER.name}</p>
+        <h1 className="font-extrabold mt-2 text-[1.6rem] leading-tight tracking-[-0.02em] text-ink sm:text-[2rem]" style={SERIF}>
           {institution.name}
         </h1>
-        {place && <p className="mt-1 text-[14px] text-[#5A5347]">{place}</p>}
+        {place && <p className="mt-1 text-[14px] text-ink-soft">{place}</p>}
 
         {paid ? (
           <section className={`mt-8 ${CARD}`} aria-labelledby="paid-heading">
-            <h2 id="paid-heading" className="text-xl text-[#1A1815]" style={SERIF}>
+            <h2 id="paid-heading" className="font-bold text-xl text-ink" style={SERIF}>
               Payment received. Thank you.
             </h2>
             {reportUrl ? (
               <>
-                <p className="mt-2 text-[15px] leading-relaxed text-[#5A5347]">
+                <p className="mt-2 text-[15px] leading-relaxed text-ink-soft">
                   Your report is ready. The link is private to you and works for {LINK_LIFETIME_DAYS} days; we also
                   emailed it to {lead.email}. Stripe emails your receipt.
                 </p>
@@ -151,33 +151,33 @@ export default async function PayReportPage({ params, searchParams }: PageProps)
                 </a>
               </>
             ) : (
-              <p className="mt-2 text-[15px] leading-relaxed text-[#5A5347]">
+              <p className="mt-2 text-[15px] leading-relaxed text-ink-soft">
                 We will email your report link to {lead.email} within one business day. Stripe emails your receipt.
               </p>
             )}
           </section>
         ) : !buyable ? (
           <section className={`mt-8 ${CARD}`} aria-labelledby="hold-heading">
-            <h2 id="hold-heading" className="text-xl text-[#1A1815]" style={SERIF}>
+            <h2 id="hold-heading" className="font-bold text-xl text-ink" style={SERIF}>
               This report can&apos;t be bought right now
             </h2>
-            <p className="mt-2 text-[15px] leading-relaxed text-[#5A5347]">
+            <p className="mt-2 text-[15px] leading-relaxed text-ink-soft">
               The local fee data for {institution.name} needs a refresh before we can stand behind the comparison, so this
               quote is paused. Nothing has been charged. We have been told and will write to {lead.email}.
             </p>
-            <p className="mt-3 text-[13px] text-[#6B6255]">
+            <p className="mt-3 text-[13px] text-ink-muted">
               Questions? <Link href="/contact?source=report" className="underline">Use the contact form</Link>.
             </p>
           </section>
         ) : (
           <>
             {query.cancelled && (
-              <p className="mt-6 rounded-md border border-[#E0D7C9] bg-[#FDFBF8] px-4 py-3 text-sm text-[#5A5347]" role="status">
+              <p className="mt-6 rounded-md border border-border bg-surface-0 px-4 py-3 text-sm text-ink-soft" role="status">
                 Payment cancelled. Nothing was charged.
               </p>
             )}
             {query.error && (
-              <p className="mt-6 rounded-md border border-[#E7B8AA] bg-[#FBE9E4] px-4 py-3 text-sm text-[#A93D25]" role="alert">
+              <p className="mt-6 rounded-md border border-[#E7B8AA] bg-[#FBE9E4] px-4 py-3 text-sm text-brick" role="alert">
                 {query.error === "invoice" ? "The invoice could not be opened." : "The card payment page could not be opened."} Nothing
                 was charged. Try again, or write to{" "}
                 <a href={`mailto:${CONTACT_EMAIL}`} className="underline">
@@ -187,29 +187,29 @@ export default async function PayReportPage({ params, searchParams }: PageProps)
               </p>
             )}
             {query.paid && (
-              <p className="mt-6 rounded-md border border-[#E0D7C9] bg-[#FDFBF8] px-4 py-3 text-sm text-[#5A5347]" role="status">
+              <p className="mt-6 rounded-md border border-border bg-surface-0 px-4 py-3 text-sm text-ink-soft" role="status">
                 Stripe is still confirming your payment. Refresh this page in a minute; we also email your report link once it
                 is confirmed.
               </p>
             )}
             <section className={`mt-8 ${CARD}`} aria-labelledby="quote-heading">
               <div className="flex flex-wrap items-baseline justify-between gap-3">
-                <h2 id="quote-heading" className="text-xl text-[#1A1815]" style={SERIF}>
+                <h2 id="quote-heading" className="font-bold text-xl text-ink" style={SERIF}>
                   Your quote
                 </h2>
-                <p className="text-[1.75rem] font-semibold tabular-nums text-[#1A1815]">
+                <p className="text-[1.75rem] font-semibold tabular-nums text-ink">
                   {price}
-                  <span className="ml-1 text-sm font-normal text-[#6B6255]">one time</span>
+                  <span className="ml-1 text-sm font-normal text-ink-muted">one time</span>
                 </p>
               </div>
-              <p className="mt-2 text-[15px] leading-relaxed text-[#5A5347]">
+              <p className="mt-2 text-[15px] leading-relaxed text-ink-soft">
                 {institution.name} against the banks and credit unions in its own branch counties, built from their live
                 published fee schedules.
               </p>
-              <ul className="mt-4 space-y-2 text-[15px] leading-relaxed text-[#1A1815]">
+              <ul className="mt-4 space-y-2 text-[15px] leading-relaxed text-ink">
                 {REPORT_INCLUDES.map((item) => (
                   <li key={item} className="flex gap-2">
-                    <span className="text-[#A93D25]" aria-hidden="true">
+                    <span className="text-brick" aria-hidden="true">
                       ●
                     </span>
                     {item}
@@ -226,18 +226,18 @@ export default async function PayReportPage({ params, searchParams }: PageProps)
                   <PayButton label="Get an invoice" pendingLabel="Opening your invoice…" className={`w-full sm:w-auto ${SECONDARY_BUTTON}`} />
                 </form>
               </div>
-              <p className="mt-2 text-[13px] leading-relaxed text-[#6B6255]">
+              <p className="mt-2 text-[13px] leading-relaxed text-ink-muted">
                 The invoice opens on Stripe as a PDF your finance team can download and pay within 30 days.
                 Your report opens once it&apos;s paid.
               </p>
-              <p className="mt-3 text-[13px] leading-relaxed text-[#6B6255]">
+              <p className="mt-3 text-[13px] leading-relaxed text-ink-muted">
                 You pay on Stripe&apos;s secure checkout page; we never see your card number. Your private report link opens
                 as soon as the payment goes through. By paying you agree to the{" "}
                 <Link href="/terms" className="underline">Terms</Link> and{" "}
                 <Link href="/privacy" className="underline">Privacy Policy</Link>.
               </p>
             </section>
-            <p className="mt-6 text-[13px] text-[#6B6255]">
+            <p className="mt-6 text-[13px] text-ink-muted">
               Questions about the scope? Write to{" "}
               <a href={`mailto:${CONTACT_EMAIL}`} className="underline">
                 {CONTACT_EMAIL}
@@ -246,7 +246,7 @@ export default async function PayReportPage({ params, searchParams }: PageProps)
             </p>
           </>
         )}
-        <p className="mt-10 text-[12px] leading-relaxed text-[#6B6255]">
+        <p className="mt-10 text-[12px] leading-relaxed text-ink-muted">
           The report is compiled from each institution&apos;s published fee schedule. It is market information, not
           financial, legal or compliance advice; confirm current fees with the institution.
         </p>

@@ -4,7 +4,7 @@ import type { AttentionItem } from "@/lib/hamilton/briefing-observations";
 import type { AuditTrail } from "@/lib/hamilton/audit-trail";
 import { AuditPanel } from "@/components/hamilton/memo/memo";
 
-const SERIF = { fontFamily: "var(--font-newsreader), Georgia, serif" } as const;
+const SERIF = { fontFamily: "var(--fi-font-sans)" } as const;
 
 /**
  * What stands out this month, at most three: a fee far from its peers (overdraft first when it is
@@ -22,7 +22,7 @@ export function WorthYourAttention({
 }) {
   return (
     <section className="rounded-lg border border-warm-300 bg-warm-50 p-6 text-warm-800">
-      <h2 className="text-2xl text-warm-900 sm:text-3xl" style={SERIF}>
+      <h2 className="font-bold text-2xl text-warm-900 sm:text-3xl" style={SERIF}>
         What stands out this month
       </h2>
       <ol className="mt-5 flex flex-col">
@@ -30,7 +30,7 @@ export function WorthYourAttention({
           <li key={o.id} className="grid gap-x-8 gap-y-2 border-t border-warm-300 py-5 md:grid-cols-[2.5rem_minmax(0,1fr)_minmax(0,1fr)]">
             <span className="text-sm font-semibold text-terra-text">{String(i + 1).padStart(2, "0")}</span>
             <div className="flex flex-col gap-3">
-              <span className="text-xl leading-snug text-warm-900" style={SERIF}>
+              <span className="font-semibold text-xl leading-snug text-warm-900" style={SERIF}>
                 {o.headline}
               </span>
               {o.feeCategory ? (

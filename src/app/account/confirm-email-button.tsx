@@ -19,7 +19,7 @@ export function ConfirmEmailButton() {
             setMessage(result.ok ? { ok: true, text: "Sent. Check your inbox." } : { ok: false, text: result.error });
           })
         }
-        className="min-h-11 text-[14px] font-medium text-[#A93D25] hover:underline disabled:opacity-50"
+        className="min-h-11 text-[14px] font-medium text-brick hover:underline disabled:opacity-50"
       >
         {pending ? "Sending…" : "Email me the link"}
       </button>

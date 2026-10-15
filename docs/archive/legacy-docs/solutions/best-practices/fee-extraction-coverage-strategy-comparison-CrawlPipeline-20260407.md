@@ -75,7 +75,7 @@ Five strategies were run in parallel on 2026-04-07 across ~1,776 institutions to
 | Improved | 17 (7% improvement rate) |
 | Failed | 116 (46% — bot-blocking/timeouts) |
 | Unchanged | 117 (kept existing data) |
-| Top Win | Frost Bank: 1 to 14 fees |
+| Top Win | A large Texas bank: 1 to 14 fees |
 | Runtime | ~43 minutes |
 
 **Why it's low ROI:** If the URL was wrong the first time, re-extracting from the same URL rarely helps. The 46% failure rate confirms large banks actively block automated crawling.

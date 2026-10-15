@@ -11,6 +11,7 @@ import {
 } from "@/lib/data-store/answer-key";
 import { runScoreboardNowAction } from "../answer-key/actions";
 import { GOAL_WINDOW_DAYS, type GoalScorecard } from "@/lib/agents/goal-scorecard";
+import { ACCURACY_TARGET_LABEL } from "@/lib/accuracy-target";
 
 interface Metric {
   key: keyof ScoreboardSnapshotRow;
@@ -247,7 +248,7 @@ const GOAL_CARDS: GoalCardSpec[] = [
     query: "goal.deming_accuracy_7d",
     value: (goal) => goal.accuracy?.accuracy,
     format: share,
-    unit: "of audited live fees right on amount, category, source, line and name (target 95%)",
+    unit: `of audited live fees right on amount, category, source, line and name (target ${ACCURACY_TARGET_LABEL})`,
     detail: (goal) => goal.accuracy ? <AccuracyDetail accuracy={goal.accuracy} /> : "Could not be read.",
   },
   {

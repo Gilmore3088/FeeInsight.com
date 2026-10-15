@@ -207,6 +207,28 @@ describe("POST /api/research/hamilton — citation gate", () => {
     expect(body.suggestion).toMatch(/citation|claim|data source/i);
   });
 
+  it("records every tool step's tokens and cache use for a gated answer, not the last step's (#1418)", async () => {
+    generateTextMock.mockResolvedValue({
+      text: "No figures here.",
+      usage: { inputTokens: 10, outputTokens: 5 },
+      totalUsage: { inputTokens: 900, outputTokens: 300, inputTokenDetails: { noCacheTokens: 200, cacheReadTokens: 600, cacheWriteTokens: 100 } },
+    });
+    let recorded: unknown;
+    providerUsageMocks.trackAnthropicRequestMock.mockImplementation(async (_context: unknown, request: () => Promise<unknown>) => {
+      const value = await request();
+      recorded = (value as { usage?: unknown }).usage;
+      return value;
+    });
+
+    const { POST } = await import("./route");
+    await POST(makeRequest({
+      messages: [{ role: "user", parts: [{ type: "text", text: "overdraft report" }] }],
+      gate_citations: true,
+    }));
+
+    expect(recorded).toEqual({ input_tokens: 200, output_tokens: 300, cache_read_input_tokens: 600, cache_creation_input_tokens: 100 });
+  });
+
   it("should_return_ok_when_report_is_well_cited", async () => {
     generateTextMock.mockResolvedValue({
       text: [

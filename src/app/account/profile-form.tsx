@@ -79,7 +79,7 @@ export function ProfileForm({ user }: ProfileFormProps) {
     }
   }
 
-  const selectClass = "min-h-11 w-full rounded-md border border-[#D5CBBF] bg-white px-3 py-2 text-[16px] sm:text-sm focus:outline-none focus:ring-2 focus:ring-[#C44B2E] focus:border-transparent";
+  const selectClass = "min-h-11 w-full rounded-md border border-border bg-white px-3 py-2 text-[16px] sm:text-sm focus:outline-none focus:ring-2 focus:ring-brick focus:border-transparent";
   const inputClass = selectClass;
 
   if (!editing) {
@@ -95,7 +95,7 @@ export function ProfileForm({ user }: ProfileFormProps) {
         action={
           <button
             onClick={() => setEditing(true)}
-            className="-my-2.5 min-h-11 shrink-0 px-1 text-[14px] font-medium text-[#A93D25] hover:underline"
+            className="-my-2.5 min-h-11 shrink-0 px-1 text-[14px] font-medium text-brick hover:underline"
           >
             {user.institution_name ? "Edit" : "Add"}
           </button>
@@ -103,15 +103,15 @@ export function ProfileForm({ user }: ProfileFormProps) {
       >
         {user.institution_name ? (
           <div className="space-y-1 text-[14px]">
-            <div className="font-medium text-[#1A1815]">{user.institution_name}</div>
-            <div className="text-[#6B6255]">
+            <div className="font-medium text-ink">{user.institution_name}</div>
+            <div className="text-ink-muted">
               {[typeLabel, tierLabel, user.state_code, roleLabel]
                 .filter(Boolean)
                 .join(" · ")}
             </div>
           </div>
         ) : (
-          <p className="text-[14px] text-[#6B6255]">
+          <p className="text-[14px] text-ink-muted">
             Add where you work and your role.
           </p>
         )}
@@ -127,12 +127,12 @@ export function ProfileForm({ user }: ProfileFormProps) {
     <form onSubmit={handleSubmit}>
       <div className="space-y-3">
         <div>
-          <label htmlFor="profile-institution-name" className="block text-[13px] font-medium text-[#1A1815] mb-1">Bank, credit union or company</label>
+          <label htmlFor="profile-institution-name" className="block text-[13px] font-medium text-ink mb-1">Bank, credit union or company</label>
           <input id="profile-institution-name" name="institution_name" defaultValue={user.institution_name || ""} className={inputClass} placeholder="First National Bank" />
         </div>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div>
-            <label htmlFor="profile-institution-type" className="block text-[13px] font-medium text-[#1A1815] mb-1">Type</label>
+            <label htmlFor="profile-institution-type" className="block text-[13px] font-medium text-ink mb-1">Type</label>
             <select
               id="profile-institution-type"
               name="institution_type"
@@ -146,7 +146,7 @@ export function ProfileForm({ user }: ProfileFormProps) {
             </select>
           </div>
           <div>
-            <label htmlFor="profile-job-role" className="block text-[13px] font-medium text-[#1A1815] mb-1">Your role</label>
+            <label htmlFor="profile-job-role" className="block text-[13px] font-medium text-ink mb-1">Your role</label>
             <select id="profile-job-role" name="job_role" defaultValue={user.job_role || ""} className={selectClass}>
               {JOB_ROLES.map((r) => (
                 <option key={r.value} value={r.value}>{r.label}</option>
@@ -157,7 +157,7 @@ export function ProfileForm({ user }: ProfileFormProps) {
         {showBankFields && (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
-              <label htmlFor="profile-asset-tier" className="block text-[13px] font-medium text-[#1A1815] mb-1">Asset size</label>
+              <label htmlFor="profile-asset-tier" className="block text-[13px] font-medium text-ink mb-1">Asset size</label>
               <select id="profile-asset-tier" name="asset_tier" defaultValue={user.asset_tier || ""} className={selectClass}>
                 {ASSET_TIERS.map((t) => (
                   <option key={t.value} value={t.value}>{t.label}</option>
@@ -165,7 +165,7 @@ export function ProfileForm({ user }: ProfileFormProps) {
               </select>
             </div>
             <div>
-              <label htmlFor="profile-state-code" className="block text-[13px] font-medium text-[#1A1815] mb-1">State</label>
+              <label htmlFor="profile-state-code" className="block text-[13px] font-medium text-ink mb-1">State</label>
               <select id="profile-state-code" name="state_code" defaultValue={user.state_code || ""} className={selectClass}>
                 <option value="">Choose</option>
                 {US_STATES.map((s) => (
@@ -185,14 +185,14 @@ export function ProfileForm({ user }: ProfileFormProps) {
         <button
           type="submit"
           disabled={saving}
-          className="min-h-11 rounded-md bg-[#C44B2E] px-5 text-[14px] font-medium text-white hover:bg-[#A83D25] disabled:opacity-50 transition-colors"
+          className="min-h-11 rounded-md bg-brick px-5 text-[14px] font-medium text-white hover:bg-brick-ink disabled:opacity-50 transition-colors"
         >
           {saving ? "Saving..." : "Save"}
         </button>
         <button
           type="button"
           onClick={() => setEditing(false)}
-          className="min-h-11 rounded-md border border-[#D5CBBF] px-5 text-[14px] font-medium text-[#1A1815] hover:border-[#1A1815] transition-colors"
+          className="min-h-11 rounded-md border border-border px-5 text-[14px] font-medium text-ink hover:border-ink transition-colors"
         >
           Cancel
         </button>

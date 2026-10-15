@@ -1,11 +1,11 @@
 "use client";
 
 import { useState } from "react";
+import { Logo } from "@/brand/components";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Dialog as DialogPrimitive } from "radix-ui";
-import { SITE_NAME } from "@/lib/constants";
-import { isActivePath, navItemsFor, REQUEST_REPORT_NAV } from "./nav-items";
+import { isActivePath, MOBILE_NAV_SECTIONS, navItemsFor, PRIMARY_CTA_NAV, type NavGroup } from "./nav-items";
 
 export { isActivePath };
 import { openSearch } from "./public/search-events";
@@ -16,9 +16,9 @@ import { useHamiltonNavigationHref } from "./hamilton/layout/hamilton-navigation
 
 /** 44px open/close controls: the minimum comfortable touch target. */
 const ICON_BUTTON =
-  "flex h-11 w-11 items-center justify-center rounded-lg text-[#5A5347] hover:bg-[#E8DFD1]/40 transition-colors";
+  "flex h-11 w-11 items-center justify-center rounded-lg text-ink-soft hover:bg-border/40 transition-colors";
 const DRAWER_LINK =
-  "block rounded-lg px-3 py-2.5 text-[14px] font-medium text-[#5A5347] hover:bg-[#E8DFD1]/40 hover:text-[#1A1815] transition-colors";
+  "block rounded-lg px-3 py-2.5 text-[14px] font-medium text-ink-soft hover:bg-border/40 hover:text-ink transition-colors";
 
 /**
  * The phone menu, as a modal dialog: focus moves into it and is trapped there, Escape and
@@ -26,10 +26,8 @@ const DRAWER_LINK =
  * scroll. Session state is resolved client-side so the header can be static.
  */
 export function ConsumerMobileNav() {
-  const contextHref = useHamiltonNavigationHref();
   const session = useSessionChrome();
   const isLoggedIn = session?.signedIn === true;
-  const displayItems = navItemsFor(session);
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
   const close = () => setOpen(false);
@@ -44,16 +42,16 @@ export function ConsumerMobileNav() {
         </DialogPrimitive.Trigger>
 
         <DialogPrimitive.Portal>
-          <DialogPrimitive.Overlay className="fixed inset-0 z-40 bg-[#1A1815]/20 backdrop-blur-sm animate-in fade-in duration-200 motion-reduce:animate-none" />
+          <DialogPrimitive.Overlay className="fixed inset-0 z-40 bg-ink/20 backdrop-blur-sm animate-in fade-in duration-200 motion-reduce:animate-none" />
 
           <DialogPrimitive.Content
             aria-describedby={undefined}
-            className="fixed top-0 right-0 z-50 flex h-dvh w-[min(18rem,calc(100vw-1rem))] flex-col bg-[#FAF7F2] border-l border-[#E8DFD1] shadow-xl animate-in slide-in-from-right duration-200 motion-reduce:animate-none focus:outline-none"
+            className="fixed top-0 right-0 z-50 flex h-dvh w-[min(18rem,calc(100vw-1rem))] flex-col bg-paper border-l border-border shadow-xl animate-in slide-in-from-right duration-200 motion-reduce:animate-none focus:outline-none"
           >
-            <div className="flex h-14 items-center justify-between border-b border-[#E8DFD1] pl-6 pr-3">
+            <div className="flex h-14 items-center justify-between border-b border-border pl-6 pr-3">
               <DialogPrimitive.Title
-                className="text-[14px] font-medium text-[#1A1815]"
-                style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
+                className="text-[14px] font-semibold text-ink"
+                style={{ fontFamily: "var(--fi-font-sans)" }}
               >
                 Menu
               </DialogPrimitive.Title>
@@ -71,7 +69,7 @@ export function ConsumerMobileNav() {
                   close();
                   openSearch();
                 }}
-                className="mb-3 flex w-full items-center gap-2 rounded-lg border border-[#E8DFD1] bg-white px-3 py-2.5 text-left text-[14px] text-[#6B6255] transition-colors hover:border-[#C44B2E]/30"
+                className="mb-3 flex w-full items-center gap-2 rounded-lg border border-border bg-white px-3 py-2.5 text-left text-[14px] text-ink-muted transition-colors hover:border-brick/30"
               >
                 <svg aria-hidden="true" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5">
                   <circle cx="11" cy="11" r="8" />
@@ -79,29 +77,20 @@ export function ConsumerMobileNav() {
                 </svg>
                 Search banks, fees and guides
               </button>
-              <ul className="space-y-1">
-                {displayItems.map((item) => {
-                  const isActive = isActivePath(pathname, item.href);
-                  return (
-                    <li key={item.href}>
-                      <Link
-                        href={contextHref(item.href)}
-                        onClick={close}
-                        aria-current={isActive ? "page" : undefined}
-                        className={
-                          isActive
-                            ? "block rounded-lg bg-[#C44B2E]/8 px-3 py-2.5 text-[14px] font-medium text-[#A93D25] transition-colors"
-                            : DRAWER_LINK
-                        }
-                      >
-                        {item.label}
-                      </Link>
-                    </li>
-                  );
-                })}
-              </ul>
+              {session?.isPro ? (
+                <DrawerList items={navItemsFor(session)} pathname={pathname} onNavigate={close} />
+              ) : (
+                MOBILE_NAV_SECTIONS.map((section: NavGroup, index) => (
+                  <div key={section.heading ?? index} className={index > 0 ? "mt-3" : undefined}>
+                    {section.heading ? (
+                      <p className="px-3 pb-1 pt-1 text-[11px] uppercase tracking-[0.1em] text-ink-muted">{section.heading}</p>
+                    ) : null}
+                    <DrawerList items={section.items} pathname={pathname} onNavigate={close} />
+                  </div>
+                ))
+              )}
 
-              <div className="mt-4 border-t border-[#E8DFD1] pt-4">
+              <div className="mt-4 border-t border-border pt-4">
                 {session?.isPro ? (
                   <ProAccountLinks isStaff={session.isStaff === true} onNavigate={close} />
                 ) : isLoggedIn ? (
@@ -117,31 +106,61 @@ export function ConsumerMobileNav() {
                       Sign in
                     </Link>
                     <Link
-                      href={REQUEST_REPORT_NAV.href}
+                      href={PRIMARY_CTA_NAV.href}
                       onClick={close}
-                      className="mt-2 block rounded-md bg-[#C44B2E] px-3 py-2.5 text-center text-[14px] font-semibold text-white transition-colors hover:bg-[#A93D25]"
+                      className="mt-2 block rounded-md bg-ink px-3 py-2.5 text-center text-[14px] font-semibold text-on-ink transition-opacity hover:opacity-90"
                     >
-                      {REQUEST_REPORT_NAV.label}
+                      {PRIMARY_CTA_NAV.label}
                     </Link>
                   </>
                 )}
               </div>
             </nav>
 
-            <div className="border-t border-[#E8DFD1] px-6 py-4">
-              <div className="flex items-center gap-2 text-[#6B6255]">
-                <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" className="h-4 w-4 text-[#C44B2E]/50" stroke="currentColor" strokeWidth="1.5">
-                  <rect x="4" y="13" width="4" height="8" rx="1" />
-                  <rect x="10" y="8" width="4" height="13" rx="1" />
-                  <rect x="16" y="3" width="4" height="18" rx="1" />
-                </svg>
-                <span className="text-[11px]">{SITE_NAME}</span>
+            <div className="border-t border-border px-6 py-4">
+              <div className="flex items-center gap-2 text-ink-muted">
+                <Logo mark="fee-insight-oneline" height={22} />
               </div>
             </div>
           </DialogPrimitive.Content>
         </DialogPrimitive.Portal>
       </DialogPrimitive.Root>
     </div>
+  );
+}
+
+function DrawerList({
+  items,
+  pathname,
+  onNavigate,
+}: {
+  items: readonly { label: string; href: string }[];
+  pathname: string | null;
+  onNavigate: () => void;
+}) {
+  const contextHref = useHamiltonNavigationHref();
+  return (
+    <ul className="space-y-1">
+      {items.map((item) => {
+        const isActive = isActivePath(pathname, item.href);
+        return (
+          <li key={item.href}>
+            <Link
+              href={contextHref(item.href)}
+              onClick={onNavigate}
+              aria-current={isActive ? "page" : undefined}
+              className={
+                isActive
+                  ? "block rounded-lg bg-ink/5 px-3 py-2.5 text-[14px] font-semibold text-ink transition-colors"
+                  : DRAWER_LINK
+              }
+            >
+              {item.label}
+            </Link>
+          </li>
+        );
+      })}
+    </ul>
   );
 }
 
@@ -158,13 +177,13 @@ function ProAccountLinks({ isStaff, onNavigate }: { isStaff: boolean; onNavigate
           {item.label}
         </Link>
       ))}
-      <p className="px-3 pb-1 pt-3 text-[11px] uppercase tracking-[0.1em] text-[#6B6255]">Reference</p>
+      <p className="px-3 pb-1 pt-3 text-[11px] uppercase tracking-[0.1em] text-ink-muted">Reference</p>
       {HAMILTON_REFERENCE_NAV.map((item) => (
         <Link key={item.href} href={item.href} onClick={onNavigate} className={DRAWER_LINK}>
           {item.label}
         </Link>
       ))}
-      <div className="mt-3 border-t border-[#E8DFD1] pt-3">
+      <div className="mt-3 border-t border-border pt-3">
         {isStaff ? (
           <Link href="/admin" onClick={onNavigate} className={DRAWER_LINK}>
             Admin

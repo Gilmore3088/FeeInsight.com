@@ -596,9 +596,33 @@ function inNote(text: string, token: MoneyToken): boolean {
   return open > line.lastIndexOf(")", token.start) && !line.slice(open, token.start).includes("|") && closes;
 }
 
+/**
+ * #1100: "minimum" that closes the balance figure before it ("Monthly Service Charge Below $500.00
+ * minimum $5.00 per Month", Government Employees FCU) belongs to that figure; the next one is the price.
+ */
+const MINIMUM_OF_EARLIER_FIGURE = /\$\s*\d+(?:,\d{3})*(?:\.\d{2})?\s+min(?:imum|\.)?\s*$/i;
+/** #1100: "Minimum Balance $4.95/Month if the minimum ... is not met" (Georgia United FCU) charges $4.95 a month. */
+const MINIMUM_BALANCE_FEE_BEFORE = /\bminimum balance\s*[-–:]?\s*$/i;
+const BY_THE_MONTH_AFTER = /^\s*(?:\/\s*(?:mo|month)\b|per month\b)/i;
+/** #1100: a figure after "low balance" ("Low balance $ 5.00 per month") is the low-balance fee, not a balance. */
+const LOW_BALANCE_FEE_BEFORE = /\blow[- ]balance(?:\s+(?:fee|charge))?\s*:?\s*$/i;
+/**
+ * Never a price after those words (#1392 review): a cap ("Loan Late Charge (1% of payment) | $15.00
+ * Minimum $30.00 Maximum"), a balance that is averaged ("Minimum Balance $100/Month average"), a
+ * figure followed by a fee word and another figure ("Low balance $1,000 fee $5"), or a figure of
+ * $100 or more ("Low balance $1,000 per month"). Knox's `isConditionAmount` reads the same.
+ */
+const STILL_A_BALANCE_AFTER = /^\s*max(?:imum)?\b|^\s*(?:\/\s*(?:mo|month)\b|per\s+month\b|monthly\b)?\s*(?:avg|average|daily balance)\b|^[^|$]{0,12}\b(?:fee|charge)s?\b[^|$]{0,12}\$\s?\d/i;
+const BALANCE_WORD_PRICE_LIMIT = 100;
+
 function isThreshold(line: string, token: MoneyToken): boolean {
   const before = line.slice(Math.max(0, token.start - 16), token.start);
   const after = line.slice(token.end, token.end + 12);
+  const wideBefore = line.slice(Math.max(0, token.start - 40), token.start);
+  const wideAfter = line.slice(token.end, token.end + 40);
+  const feeSized = token.value < BALANCE_WORD_PRICE_LIMIT && !STILL_A_BALANCE_AFTER.test(wideAfter);
+  if (feeSized && (MINIMUM_OF_EARLIER_FIGURE.test(wideBefore) || LOW_BALANCE_FEE_BEFORE.test(wideBefore)) && !THRESHOLD_AFTER.test(after)) return false;
+  if (feeSized && MINIMUM_BALANCE_FEE_BEFORE.test(wideBefore) && BY_THE_MONTH_AFTER.test(after)) return false;
   // "Under $1000 - $5.00 fee per month": a dash after a balance, then a price named as the fee,
   // is a separator, not a band's upper end.
   if (/\$\s*[\d,.]+\s*[-–]\s*$/.test(before) && /^\s*(?:fee|charge|per\b|each\b|\/)/i.test(after) && !THRESHOLD_AFTER.test(after)) return false;

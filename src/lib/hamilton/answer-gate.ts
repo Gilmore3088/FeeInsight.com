@@ -9,7 +9,7 @@
  * (evidence fact ids, a fee missing from the index, the opening sentence).
  */
 
-import { checkNarrativeFigures, type FigureCheckResult } from "./figure-check";
+import { checkNarrativeFigures, type FigureCheckOptions, type FigureCheckResult } from "./figure-check";
 import { PIPELINE_TERMS, RECOMMENDATION } from "./workspace/four-roles";
 
 /** Price position is "lower" or "higher", never "cheapest". */
@@ -22,9 +22,12 @@ export interface AnswerEvidenceCheck {
   figureCheck: FigureCheckResult;
 }
 
-/** The shared gate: `text` is everything the reader would see, `data` everything the model saw. */
-export function checkAnswerEvidence(text: string, data: unknown): AnswerEvidenceCheck {
-  const figureCheck = checkNarrativeFigures(text, data);
+/**
+ * The shared gate: `text` is everything the reader would see, `data` everything the model saw,
+ * and `options.question` the reader's own question, whose figures the answer may restate.
+ */
+export function checkAnswerEvidence(text: string, data: unknown, options: FigureCheckOptions = {}): AnswerEvidenceCheck {
+  const figureCheck = checkNarrativeFigures(text, data, options);
   const problems: string[] = [];
   if (figureCheck.unmatched.length > 0) problems.push(`These figures are not in DATA: ${figureCheck.unmatched.join(", ")}.`);
   const advice = text.match(RECOMMENDATION);
@@ -37,13 +40,14 @@ export function checkAnswerEvidence(text: string, data: unknown): AnswerEvidence
 }
 
 /**
- * What a reader is shown in place of a written answer that fails the gate. Null until
- * James approves the words (#981); while it is null a failing answer is still shown, as
- * before, with its untraced figures called out on screen, and the verdict is saved with
- * the answer. Setting it makes the route hold every written answer until the gate has
- * run, and show this line instead of an answer that fails.
+ * What a reader is shown in place of a written answer that fails the gate (#981; James
+ * picked this line on 2026-10-15). Because it is set, the route holds every written
+ * answer until the gate has run, and shows this line instead of an answer that fails.
+ * Setting it to null turns the hold off: a failing answer is then shown, with its
+ * untraced figures called out on screen, and the verdict is saved with it.
  */
-export const HELD_ANSWER_MESSAGE: string | null = null;
+export const HELD_ANSWER_MESSAGE: string | null =
+  "This answer didn't pass Hamilton's source check, so it isn't shown. Ask again, or name one fee to compare.";
 
 /** The verdict saved with a written answer. A held answer is never saved, so a saved one was shown. */
 export interface SavedAnswerEvidence {

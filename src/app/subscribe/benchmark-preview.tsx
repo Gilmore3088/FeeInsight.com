@@ -1,6 +1,6 @@
 import { formatAmount } from "@/lib/format";
 
-const DISPLAY = { fontFamily: "var(--font-jakarta), ui-sans-serif, system-ui, sans-serif" };
+const DISPLAY = { fontFamily: "var(--fi-font-sans)" };
 
 /** One fee in the preview: the national spread, and the chosen institution's own fee when known. */
 export interface BenchmarkRow {
@@ -31,17 +31,17 @@ function pct(amount: number, max: number): string {
 function RangeBar({ row }: { row: BenchmarkRow }) {
   const max = Math.max(row.p75 ?? row.median, row.value ?? 0, row.median) * 1.25 || 1;
   return (
-    <div aria-hidden className="relative h-2.5 rounded-full bg-[#E8E1D6]">
+    <div aria-hidden className="relative h-2.5 rounded-full bg-border">
       {row.p25 !== null && row.p75 !== null && (
         <div
-          className="absolute inset-y-0 rounded-full bg-[#D6CBBB]"
+          className="absolute inset-y-0 rounded-full bg-border"
           style={{ left: pct(row.p25, max), width: `calc(${pct(row.p75, max)} - ${pct(row.p25, max)})` }}
         />
       )}
-      <div className="absolute -inset-y-1 w-0.5 rounded bg-[#1A1815]" style={{ left: pct(row.median, max) }} />
+      <div className="absolute -inset-y-1 w-0.5 rounded bg-ink" style={{ left: pct(row.median, max) }} />
       {row.value !== null && (
         <div
-          className="absolute top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#C44B2E] ring-2 ring-white"
+          className="absolute top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-brick ring-2 ring-white"
           style={{ left: pct(row.value, max) }}
         />
       )}
@@ -72,37 +72,37 @@ export function BenchmarkPreview({
   const mine = institution !== null;
   const compared = rows.filter((r) => r.value !== null).length;
   return (
-    <figure className="flex h-full flex-col overflow-hidden rounded-2xl bg-white/70 backdrop-blur-xl ring-1 ring-[#E8E1D6]/80 shadow-[0_8px_32px_-12px_rgba(26,24,21,0.22),inset_0_1px_0_rgba(255,255,255,0.7)]">
-      <figcaption className="flex items-center justify-between gap-3 border-b border-[#E8E1D6]/80 bg-white/50 px-4 py-2.5 sm:px-5">
-        <span className="flex items-center gap-2 text-sm font-semibold text-[#1A1815]">
-          <span aria-hidden className="h-2 w-2 rounded-full bg-[#C44B2E]" />
+    <figure className="flex h-full flex-col overflow-hidden rounded-2xl bg-white/70 backdrop-blur-xl ring-1 ring-border/80 shadow-[0_8px_32px_-12px_rgba(26,24,21,0.22),inset_0_1px_0_rgba(255,255,255,0.7)]">
+      <figcaption className="flex items-center justify-between gap-3 border-b border-border/80 bg-white/50 px-4 py-2.5 sm:px-5">
+        <span className="flex items-center gap-2 text-sm font-semibold text-ink">
+          <span aria-hidden className="h-2 w-2 rounded-full bg-ink-muted" />
           Hamilton · Competitive fee position
         </span>
-        <span className="hidden text-xs text-[#6B6255] sm:inline">{mine ? "vs national median" : "Live data"}</span>
+        <span className="hidden text-xs text-ink-muted sm:inline">{mine ? "vs national median" : "Live data"}</span>
       </figcaption>
 
       <div className="px-4 pb-2 pt-4 sm:px-5">
-        <p className="text-lg leading-snug text-[#1A1815] font-semibold tracking-tight" style={DISPLAY}>
+        <p className="text-lg leading-snug text-ink font-semibold tracking-tight" style={DISPLAY}>
           {mine ? institution : "National fee benchmark"}
         </p>
-        {!mine && <p className="mt-0.5 text-sm text-[#6B6255]">Pick your institution to see its own fees here.</p>}
+        {!mine && <p className="mt-0.5 text-sm text-ink-muted">Pick your institution to see its own fees here.</p>}
         {mine && compared === 0 && (
-          <p role="status" className="mt-1.5 rounded-md bg-[#FBF6EC] px-3 py-2 text-sm text-[#3D3833] ring-1 ring-[#D6CBBB]">
+          <p role="status" className="mt-1.5 rounded-md bg-[#FBF6EC] px-3 py-2 text-sm text-ink ring-1 ring-border">
             Limited data: none of its verified published fees compare like for like yet, so this shows national
             medians only.
           </p>
         )}
         {mine && compared > 0 && compared < LIMITED_BELOW && (
-          <p className="mt-0.5 text-sm text-[#6B6255]">
+          <p className="mt-0.5 text-sm text-ink-muted">
             Limited data: {compared} of its verified published fees {compared === 1 ? "compares" : "compare"} like for like.
           </p>
         )}
         {mine && compared >= LIMITED_BELOW && (
-          <p className="mt-0.5 text-sm text-[#6B6255]">Its verified published fees, compared like for like.</p>
+          <p className="mt-0.5 text-sm text-ink-muted">Its verified published fees, compared like for like.</p>
         )}
       </div>
 
-      <ul className="divide-y divide-[#E8E1D6]">
+      <ul className="divide-y divide-border">
         {rows.map((row, i) => (
           <li
             key={row.category}
@@ -111,7 +111,7 @@ export function BenchmarkPreview({
             }`}
           >
             <div>
-              <p className="text-[15px] font-semibold text-[#1A1815]">{row.label}</p>
+              <p className="text-[15px] font-semibold text-ink">{row.label}</p>
             </div>
             <div className="col-span-2 row-start-2 sm:col-span-1 sm:col-start-2 sm:row-start-1">
               <RangeBar row={row} />
@@ -119,14 +119,14 @@ export function BenchmarkPreview({
             <div className="text-right tabular-nums sm:col-start-3">
               {mine && row.value !== null ? (
                 <>
-                  <p className="text-[15px] font-semibold text-[#1A1815]">
-                    {formatAmount(row.value)} <span className="font-normal text-[#6B6255]">vs {formatAmount(row.median)}</span>
+                  <p className="text-[15px] font-semibold text-ink">
+                    {formatAmount(row.value)} <span className="font-normal text-ink-muted">vs {formatAmount(row.median)}</span>
                   </p>
-                  {row.position && <p className="text-xs text-[#3D3833]">{POSITION_WORDS[row.position]}</p>}
+                  {row.position && <p className="text-xs text-ink">{POSITION_WORDS[row.position]}</p>}
                 </>
               ) : (
                 <>
-                  <p className="text-[15px] font-semibold text-[#1A1815]">{formatAmount(row.median)} median</p>
+                  <p className="text-[15px] font-semibold text-ink">{formatAmount(row.median)} median</p>
                 </>
               )}
             </div>
@@ -134,17 +134,17 @@ export function BenchmarkPreview({
         ))}
       </ul>
 
-      <div className="mt-auto border-t border-[#E8E1D6]/80 bg-white/50 px-4 py-2.5 text-xs leading-relaxed text-[#6B6255] sm:px-5">
+      <div className="mt-auto border-t border-border/80 bg-white/50 px-4 py-2.5 text-xs leading-relaxed text-ink-muted sm:px-5">
         <p className="flex flex-wrap items-center gap-x-4 gap-y-1">
           <span className="inline-flex items-center gap-1.5">
-            <span aria-hidden className="inline-block h-2 w-5 rounded-full bg-[#D6CBBB]" /> Middle half of institutions
+            <span aria-hidden className="inline-block h-2 w-5 rounded-full bg-border" /> Middle half of institutions
           </span>
           <span className="inline-flex items-center gap-1.5">
-            <span aria-hidden className="inline-block h-3 w-0.5 bg-[#1A1815]" /> Median
+            <span aria-hidden className="inline-block h-3 w-0.5 bg-ink" /> Median
           </span>
           {mine && (
             <span className="inline-flex items-center gap-1.5">
-              <span aria-hidden className="inline-block h-2.5 w-2.5 rounded-full bg-[#C44B2E]" /> This institution
+              <span aria-hidden className="inline-block h-2.5 w-2.5 rounded-full bg-brick" /> This institution
             </span>
           )}
         </p>

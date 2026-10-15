@@ -61,7 +61,7 @@ function barsHtml(lines: string[], base: string): string {
     return (
       `<div style="display:grid;grid-template-columns:minmax(7rem,38%) 1fr auto;gap:0.6rem;align-items:center;margin:0.35rem 0">` +
       `<span style="font-size:13px;line-height:1.25">${inline(label, base)}</span>` +
-      `<span style="display:block;height:14px;border-radius:3px;background:#EFE8DC"><span style="display:block;height:14px;border-radius:3px;width:${width}%;background:#C44B2E"></span></span>` +
+      `<span style="display:block;height:14px;border-radius:3px;background:#ebe5d9"><span style="display:block;height:14px;border-radius:3px;width:${width}%;background:#b23a32"></span></span>` +
       `<span style="font-size:13px;font-weight:600;font-variant-numeric:tabular-nums">${inline(shown, base)}</span></div>`
     );
   };

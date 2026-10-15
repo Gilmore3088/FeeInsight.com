@@ -34,7 +34,9 @@ describe("Data room frame (#1122 step 5)", () => {
     // #1078: Atlas works these on its own; the pile shows whether any is still short.
     expect(piles[0].wayOut).toContain("direct read run");
     expect(piles[1].unit).toBe("fees at 22 inactive or closed institutions");
-    for (const pile of piles.slice(1)) expect(pile.wayOut).toMatch(/^None yet/);
+    expect(piles[1].wayOut).toMatch(/^None yet/);
+    // #1213: decided Oct 15; Atlas's daily step restores the cut names.
+    expect(piles[2].wayOut).toContain("daily city repair");
   });
 
   it("says a number is unreadable instead of showing zero", () => {

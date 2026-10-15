@@ -20,7 +20,7 @@ export default async function BillingIssuePage() {
 
   return (
     <main className="mx-auto max-w-lg px-6 py-20">
-      <h1 className="text-2xl font-semibold text-[#1A1815]">Your payment didn&apos;t go through</h1>
+      <h1 className="text-2xl font-semibold text-ink">Your payment didn&apos;t go through</h1>
       <p className="mt-4 text-sm text-[#5C554C]">
         We couldn&apos;t charge the card on file for your Hamilton subscription, and the {PAST_DUE_GRACE_DAYS}-day
         grace period has ended. Update your payment method and your workspace, saved reports and analyses come back
@@ -28,7 +28,7 @@ export default async function BillingIssuePage() {
       </p>
       <div className="mt-8 flex flex-wrap items-center gap-4">
         <ManageBillingButton label="Update payment method" />
-        <Link href="/account" className="text-sm underline text-[#1A1815]">
+        <Link href="/account" className="text-sm underline text-ink">
           Account settings
         </Link>
       </div>

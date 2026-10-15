@@ -384,3 +384,42 @@ describe("Knox v31 rebate caps are not prices", () => {
     expect(namesALimit("ATM Surcharge Rebate Fee", "atm_non_network")).toBe(false);
   });
 });
+
+describe("Knox v70 monthly maintenance and low-balance fees (#1100)", () => {
+  it("reads a low-balance charge with no fee word when its line charges it by the period", () => {
+    // Real lines from the answer keys (Buffalo Metropolitan 7114, Central State 3981, Ithink 6820).
+    expect(fees("Checks returned non-sufficient funds $30.00 per item\nLow balance $ 5.00 per month3")).toContainEqual(["Low balance", 5, "minimum_balance"]);
+    expect(fees("Savings Balance Less than $300.00 ................... $6.00 per month | All Other ATM Withdrawals*"))
+      .toContainEqual(["Savings Balance Less than", 6, "minimum_balance"]);
+    expect(fees("Stop payment (ACH or check) $30.00 each | Money Market minimum balance violation* $9.00 per month"))
+      .toContainEqual(["Money Market minimum balance violation", 9, "minimum_balance"]);
+    // Georgia United 60: two products on one flattened line.
+    const tis = "Savvy Spending - Minimum Balance $4.95/Month if the minimum average daily balance is not met Enriched Spending - Minimum Balance $6.95/Month if the minimum average daily balance is not met";
+    expect(fees(tis)).toEqual(expect.arrayContaining([
+      ["Savvy Spending - Minimum Balance", 4.95, "minimum_balance"],
+      ["Enriched Spending - Minimum Balance", 6.95, "minimum_balance"],
+    ]));
+    // Without a period the same words name a balance, not a fee.
+    expect(fees("Low balance $500.00")).not.toContainEqual(expect.arrayContaining(["minimum_balance"]));
+    expect(fees("Savings Balance Less than $300.00 ...... $6.00")).not.toContainEqual(["Savings Balance Less than", 6, "minimum_balance"]);
+  });
+
+  it("names a maintenance or low-balance fee stated in a sentence by its own words", () => {
+    // Brazos National Bank 38 and First State Bank of Livingston 841.
+    // In a long disclosure only the account expert reads it, as "Low balance fee"; on its own the rules pass
+    // reads the same line first under the sentence's opening words.
+    const brazos = "CHECKING ACCOUNT Minimum balance to avoid imposition of fees – A low balance fee of $6.95 will be imposed every statement cycle if the balance in the account falls below $200.00 any day of the cycle.";
+    expect(fees(brazos).some(([, amount, key]) => amount === 6.95 && (key === "minimum_balance" || key === "monthly_maintenance"))).toBe(true);
+    expect(fees(brazos).some(([, amount]) => amount === 200)).toBe(false);
+    const expert = runFamilyExpert(FAMILY_EXPERTS.find((e) => e.family === "account")!, priceWindows(brazos));
+    expect(expert.candidates.map((c) => [c.feeName, c.amount, c.canonicalHint])).toContainEqual(["Low balance fee", 6.95, "minimum_balance"]);
+    expect(fees("If your balance falls below $750.00 on any day in the monthly statement cycle, we will impose a maintenance fee of $7.50 once during the statement cycle."))
+      .toContainEqual(["Maintenance fee", 7.5, "monthly_maintenance"]);
+  });
+
+  it("reads the price after a balance figure's own \"minimum\" (Government Employees FCU 2435)", () => {
+    expect(fees("Monthly Service Charge Below $500.00 minimum $5.00 per Month")).toContainEqual(["Monthly Service Charge Below minimum", 5, "monthly_maintenance"]);
+    // The balance itself is never the fee.
+    expect(fees("Monthly Service Charge Below $500.00 minimum $5.00 per Month")).not.toContainEqual(expect.arrayContaining([500]));
+  });
+});

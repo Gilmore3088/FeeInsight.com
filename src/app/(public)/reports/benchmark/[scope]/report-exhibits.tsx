@@ -10,7 +10,8 @@ import { ExhibitSource } from "../../../research/exhibits";
 import { formatDelta, type StateComparison } from "@/lib/research-report/state-findings";
 import { MIN_BENCHMARK_INSTITUTIONS, MIN_CHARTER_INSTITUTIONS } from "./report-data";
 
-const SERIF = { fontFamily: "var(--font-newsreader), Georgia, serif" };
+const SERIF = { fontFamily: "var(--fi-font-sans)" };
+const MONO_FIGURE = { fontFamily: "var(--fi-font-mono)" } as const;
 
 /** Where the locked institution report's button goes: the paid request on For Institutions. */
 export const INSTITUTION_REPORT_HREF = "/for-institutions?report=institution#report";
@@ -35,38 +36,38 @@ export function ReportHero({
   freshnessLabel: string;
 }) {
   return (
-    <section className="relative overflow-hidden bg-[#1A1815] text-[#F5EFE6]">
+    <section className="relative overflow-hidden bg-ink text-paper">
       <div className="relative mx-auto max-w-page px-4 pb-10 pt-10 sm:px-6 sm:pb-12 sm:pt-12">
-        <p className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-[#E8A48F]">
-          <span aria-hidden="true" className="h-px w-8 bg-[#E8A48F]/60" />
+        <p className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-[#e0716a]">
+          <span aria-hidden="true" className="h-px w-8 bg-[#e0716a]/60" />
           {eyebrow}
         </p>
-        <h1 className="mt-3 max-w-3xl text-[2.25rem] font-normal leading-[1.05] tracking-[-0.015em] text-white sm:text-[3.25rem]" style={SERIF}>
+        <h1 className="mt-3 max-w-3xl text-[2.25rem] font-extrabold leading-[1.05] tracking-[-0.015em] text-white sm:text-[3.25rem]" style={SERIF}>
           {title}
         </h1>
-        <p className="mt-4 max-w-2xl text-[15px] leading-relaxed text-[#F5EFE6]/80 sm:text-base">{lede}</p>
+        <p className="mt-4 max-w-2xl text-[15px] leading-relaxed text-paper/80 sm:text-base">{lede}</p>
 
         <dl className="mt-9 grid grid-cols-2 gap-px overflow-hidden rounded-xl bg-white/10 lg:grid-cols-4">
           {stats.map((s) => (
-            <div key={s.label} className="bg-[#1A1815] px-5 py-5">
+            <div key={s.label} className="bg-ink px-5 py-5">
               <dt className="sr-only">{s.label}</dt>
               <dd>
-                <span className="block text-[2rem] font-semibold leading-none tabular-nums text-white sm:text-[2.5rem]" style={SERIF}>
+                <span className="block text-[2rem] font-semibold leading-none tabular-nums text-white sm:text-[2.5rem]" style={MONO_FIGURE}>
                   {s.value}
                 </span>
-                <span className="mt-2 block text-[13px] font-semibold text-[#F5EFE6]">{s.label}</span>
-                <span className="mt-0.5 block text-[11px] text-[#F5EFE6]/60">{s.note}</span>
+                <span className="mt-2 block text-[13px] font-semibold text-paper">{s.label}</span>
+                <span className="mt-0.5 block text-[11px] text-paper/60">{s.note}</span>
               </dd>
             </div>
           ))}
         </dl>
 
         <div className="mt-6 flex flex-wrap items-center gap-x-6 gap-y-3 text-[12px]">
-          <span className="inline-flex items-center gap-2 text-[#F5EFE6]/75">
-            <span aria-hidden="true" className="h-2 w-2 rounded-full bg-[#7FB77E]" />
+          <span className="inline-flex items-center gap-2 text-paper/75">
+            <span aria-hidden="true" className="h-2 w-2 rounded-full bg-[#7fb59b]" />
             {freshnessLabel}
           </span>
-          <Link href="/methodology" className="text-[#F5EFE6]/75 hover:text-white print:hidden">
+          <Link href="/methodology" className="text-paper/75 hover:text-white print:hidden">
             Methodology
           </Link>
           <PrintButton className="rounded-full border border-white/25 px-3.5 py-1.5 font-semibold text-white hover:bg-white/10 print:hidden" />
@@ -95,12 +96,12 @@ function RangeTrack({
   scaleMax: number;
   tone: "area" | "national";
 }) {
-  const band = tone === "area" ? "bg-[#C44B2E]/25" : "bg-[#1A1815]/12";
-  const tick = tone === "area" ? "bg-[#C44B2E]" : "bg-[#1A1815]/70";
+  const band = tone === "area" ? "bg-brick/25" : "bg-ink/12";
+  const tick = tone === "area" ? "bg-brick" : "bg-ink/70";
   return (
     <div className="grid grid-cols-[34px_minmax(0,1fr)_56px] items-center gap-2">
-      <span className="text-[10px] font-semibold uppercase tracking-wider text-[#8A8072]">{label}</span>
-      <div className="relative h-2.5 rounded-full bg-[#F1EBE1]" aria-hidden="true">
+      <span className="text-[10px] font-semibold uppercase tracking-wider text-ink-muted">{label}</span>
+      <div className="relative h-2.5 rounded-full bg-surface-200" aria-hidden="true">
         {p25 != null && p75 != null && (
           <div
             className={`absolute inset-y-0 rounded-full ${band}`}
@@ -109,7 +110,7 @@ function RangeTrack({
         )}
         <div className={`absolute -top-1 h-[18px] w-1 -translate-x-1/2 rounded-full ${tick}`} style={{ left: `${pct(median, scaleMax)}%` }} />
       </div>
-      <span className="text-right text-[12px] font-semibold tabular-nums text-[#1A1815]">{formatAmount(median)}</span>
+      <span className="text-right text-[12px] font-semibold tabular-nums text-ink">{formatAmount(median)}</span>
     </div>
   );
 }
@@ -119,16 +120,16 @@ function BenchmarkCard({ row, areaLabel }: { row: StateComparison; areaLabel: st
   const scaleMax = Math.max(...values) * 1.35 || 1;
   const delta = row.delta_pct;
   return (
-    <div className="flex flex-col rounded-2xl border border-[#E8DFD1] bg-white p-5 print:break-inside-avoid">
-      <p className="text-[12px] font-semibold text-[#5A5347]">{getDisplayName(row.fee_category)}</p>
+    <div className="flex flex-col rounded-2xl border border-border bg-white p-5 print:break-inside-avoid">
+      <p className="text-[12px] font-semibold text-ink-soft">{getDisplayName(row.fee_category)}</p>
       <p className="mt-2 flex items-baseline gap-2">
-        <span className="text-[2.25rem] font-semibold leading-none tabular-nums text-[#1A1815]" style={SERIF}>
+        <span className="text-[2.25rem] font-semibold leading-none tabular-nums text-ink" style={MONO_FIGURE}>
           {formatAmount(row.median_amount)}
         </span>
         {delta != null && (
           <span
             className={`rounded-full px-2 py-0.5 text-[11px] font-semibold tabular-nums ${
-              Math.abs(delta) < 1 ? "bg-[#F1EBE1] text-[#6B6255]" : delta < 0 ? "bg-[#4F6B3A]/10 text-[#4F6B3A]" : "bg-[#C44B2E]/10 text-[#A93D25]"
+              Math.abs(delta) < 1 ? "bg-surface-200 text-ink-muted" : delta < 0 ? "bg-below-market/10 text-below-market" : "bg-brick/10 text-brick"
             }`}
           >
             {Math.abs(delta) < 1 ? "in line with US" : `${formatDelta(delta)} vs US`}
@@ -141,9 +142,9 @@ function BenchmarkCard({ row, areaLabel }: { row: StateComparison; areaLabel: st
           <RangeTrack label="US" median={row.national_median} p25={row.national_p25} p75={row.national_p75} scaleMax={scaleMax} tone="national" />
         )}
       </div>
-      <p className="mt-auto pt-4 text-[11px] text-[#6B6255]">
-        <span className="font-semibold tabular-nums text-[#1A1815]">{row.institution_count.toLocaleString()}</span> institutions
-        <span className="text-[#8A8072]">
+      <p className="mt-auto pt-4 text-[11px] text-ink-muted">
+        <span className="font-semibold tabular-nums text-ink">{row.institution_count.toLocaleString()}</span> institutions
+        <span className="text-ink-muted">
           {" "}
           · {row.bank_count.toLocaleString()} banks, {row.cu_count.toLocaleString()} CUs
         </span>
@@ -200,43 +201,43 @@ const INSTITUTION_REPORT_ADDS = [
 export function LockedInstitutionReport() {
   return (
     <section id="institution" className="scroll-mt-28 print:hidden">
-      <div className="grid gap-8 rounded-2xl border border-[#E8DFD1] bg-[#F4EFE7] p-6 sm:p-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)] lg:items-center">
+      <div className="grid gap-8 rounded-2xl border border-border bg-surface-200 p-6 sm:p-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)] lg:items-center">
         <div>
-          <p className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-[#A93D25]">
+          <p className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-brick">
             <Lock className="h-3.5 w-3.5" aria-hidden="true" />
             Institution report
           </p>
-          <h2 className="mt-2 text-[1.6rem] font-normal leading-tight text-[#1A1815] sm:text-[2rem]" style={SERIF}>
+          <h2 className="mt-2 text-[1.6rem] font-bold leading-tight text-ink sm:text-[2rem]" style={SERIF}>
             Where does your institution stand?
           </h2>
-          <p className="mt-3 text-[14px] leading-relaxed text-[#5A5347]">
+          <p className="mt-3 text-[14px] leading-relaxed text-ink-soft">
             This report shows the market. The institution report shows you in it.
           </p>
           <ul className="mt-4 space-y-2">
             {INSTITUTION_REPORT_ADDS.map((item) => (
               <li key={item} className="flex items-start gap-2 text-[14px] text-[#3D372F]">
-                <span aria-hidden="true" className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[#C44B2E]" />
+                <span aria-hidden="true" className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-brick" />
                 {item}
               </li>
             ))}
           </ul>
           <Link
             href={INSTITUTION_REPORT_HREF}
-            className="mt-6 inline-flex items-center rounded-full bg-[#C44B2E] px-5 py-2.5 text-sm font-semibold text-white hover:bg-[#A93D25]"
+            className="mt-6 inline-flex items-center rounded-full bg-brick px-5 py-2.5 text-sm font-semibold text-white hover:bg-brick-ink"
           >
             Request your institution report
           </Link>
-          <p className="mt-2 text-[12px] text-[#6B6255]">We reply within one business day with scope and price.</p>
+          <p className="mt-2 text-[12px] text-ink-muted">We reply within one business day with scope and price.</p>
         </div>
 
-        <div aria-hidden="true" className="select-none overflow-hidden rounded-xl border border-[#E0D7C9] bg-white/70">
-          <div className="flex items-center justify-between border-b border-[#E0D7C9] px-4 py-3">
-            <span className="text-[12px] font-semibold text-[#8A8072]">Your institution vs named local competitors</span>
+        <div aria-hidden="true" className="select-none overflow-hidden rounded-xl border border-border bg-white/70">
+          <div className="flex items-center justify-between border-b border-border px-4 py-3">
+            <span className="text-[12px] font-semibold text-ink-muted">Your institution vs named local competitors</span>
             <Lock className="h-3.5 w-3.5 text-[#B5AA9B]" />
           </div>
           <table className="w-full text-[13px] text-[#9A9083]">
             <thead>
-              <tr className="border-b border-[#EFE8DC] text-left text-[10px] uppercase tracking-wider">
+              <tr className="border-b border-surface-200 text-left text-[10px] uppercase tracking-wider">
                 <th className="px-4 py-2 font-semibold">Fee</th>
                 <th className="px-3 py-2 text-right font-semibold">You</th>
                 <th className="px-3 py-2 text-right font-semibold">Competitors</th>
@@ -245,11 +246,11 @@ export function LockedInstitutionReport() {
             </thead>
             <tbody>
               {LOCKED_ROWS.map((fee) => (
-                <tr key={fee} className="border-b border-[#EFE8DC] last:border-b-0">
+                <tr key={fee} className="border-b border-surface-200 last:border-b-0">
                   <td className="px-4 py-2.5">{fee}</td>
-                  <td className="px-3 py-2.5 text-right"><span className="inline-block h-2.5 w-10 rounded bg-[#E0D7C9]" /></td>
-                  <td className="px-3 py-2.5 text-right"><span className="inline-block h-2.5 w-16 rounded bg-[#E0D7C9]" /></td>
-                  <td className="px-4 py-2.5"><span className="inline-block h-2.5 w-20 rounded bg-[#E0D7C9]" /></td>
+                  <td className="px-3 py-2.5 text-right"><span className="inline-block h-2.5 w-10 rounded bg-border" /></td>
+                  <td className="px-3 py-2.5 text-right"><span className="inline-block h-2.5 w-16 rounded bg-border" /></td>
+                  <td className="px-4 py-2.5"><span className="inline-block h-2.5 w-20 rounded bg-border" /></td>
                 </tr>
               ))}
             </tbody>
@@ -263,25 +264,25 @@ export function LockedInstitutionReport() {
 
 export function ReportMethodology({ area, district = false }: { area: string; district?: boolean }) {
   return (
-    <section id="methodology" className="scroll-mt-28 rounded-2xl border border-[#E8DFD1] bg-white p-6 sm:p-8">
+    <section id="methodology" className="scroll-mt-28 rounded-2xl border border-border bg-white p-6 sm:p-8">
       <SectionHeading eyebrow="Methodology" title="How this report is built" />
-      <div className="mt-5 grid gap-5 text-[13px] leading-relaxed text-[#5A5347] md:grid-cols-3">
+      <div className="mt-5 grid gap-5 text-[13px] leading-relaxed text-ink-soft md:grid-cols-3">
         <p>
-          <span className="block font-semibold text-[#1A1815]">Sources.</span>
+          <span className="block font-semibold text-ink">Sources.</span>
           Published fee schedules from FDIC-insured banks and NCUA-insured credit unions in {area}. Every fee is read from
           the institution&apos;s own document and verified before it is published.
           {district && " Institutions are placed in a Fed district by their headquarters state."}
         </p>
         <p>
-          <span className="block font-semibold text-[#1A1815]">Statistics.</span>
+          <span className="block font-semibold text-ink">Statistics.</span>
           Each institution counts once per fee. A fee appears only with at least {MIN_BENCHMARK_INSTITUTIONS} institutions
           behind it, and a bank or credit union median needs at least {MIN_CHARTER_INSTITUTIONS}.
         </p>
         <p>
-          <span className="block font-semibold text-[#1A1815]">Comparison.</span>
+          <span className="block font-semibold text-ink">Comparison.</span>
           The national figure is the same statistic over every institution in the {PRODUCT_NAME}. Differences under 1% are
           shown as in line.{" "}
-          <Link href="/methodology" className="font-semibold text-[#A93D25] hover:underline print:hidden">
+          <Link href="/methodology" className="font-semibold text-brick hover:underline print:hidden">
             Full methodology &rarr;
           </Link>
         </p>
