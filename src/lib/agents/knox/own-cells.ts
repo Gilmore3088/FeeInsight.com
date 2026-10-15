@@ -10,7 +10,8 @@
  * - every price-less cell just before it: the fee's label or its product ("Stop Payment | $25",
  *   "Business Checking | Paper Statement Fee $3.00"), which Darwin's duplicate key reads;
  * - the cells just after it that state its period or condition ("| Per Month", "| Waived with
- *   $1,500 minimum daily balance"), which the frequency and waiver readers read.
+ *   $1,500 minimum daily balance"), which the frequency and waiver readers read; never the next
+ *   fee's label or price ("| Monthly Maintenance | $10.00", "| Daily Overdraft Fee $5").
  * A line with no " | " cells, or no cell at the fee's price, is kept whole. Pure.
  */
 const CELL_SPLIT = /\s*\|\s*/;
@@ -19,6 +20,9 @@ const NAME_WORD = /[a-z][a-z']{2,}/g;
 const NOT_NAME_WORDS = new Set(["fee", "fees", "charge", "charges", "per", "the", "and", "for", "each", "item", "items", "with", "only"]);
 /** A cell that qualifies the price before it: its period, cap or waiver. */
 const CONDITION_CELL = /^(?:per\b|each\b|every\b|a\s+(?:month|year|day|week)\b|monthly|annual|yearly|quarterly|daily|weekly|waived?\b|max|min|if\b|unless\b|plus\b|up\s+to\b|after\b|when\b|with\b|for\s+each\b|\/|\()/i;
+
+/** A priced cell that is still a condition: a waiver or a balance, never another fee's price. */
+const WAIVER_CELL = /^(?:waived?\b|with\s+(?:a\s+|an\s+)?(?:\$|minimum|balance|average|direct|combined)|if\b|unless\b|(?:max|min)(?:imum)?\s+(?:of\b|\$|\d|balance)|up\s+to\s+\$)/i;
 
 function nameWords(text: string): Set<string> {
   const words = text.toLowerCase().replace(/[‘’ʼ`]/g, "'").match(NAME_WORD) ?? [];
@@ -56,6 +60,16 @@ export function ownCells(line: string, feeName: string, amount: number | null): 
   if (best === 0 || top.length !== 1) return line;
   const { start, priced } = top[0];
   let end = priced;
-  while (end + 1 < cells.length && CONDITION_CELL.test(cells[end + 1])) end += 1;
+  // A condition cell after the price, never the next fee's label (a price-less cell followed by a
+  // price: "| Monthly Maintenance | $10.00") or the next fee itself ("| Daily Overdraft Fee $5").
+  while (end + 1 < cells.length) {
+    const next = cells[end + 1];
+    const priced = prices(next).length > 0;
+    const condition = priced
+      ? WAIVER_CELL.test(next)
+      : CONDITION_CELL.test(next) && !(end + 2 < cells.length && prices(cells[end + 2]).length > 0);
+    if (!condition) break;
+    end += 1;
+  }
   return cells.slice(start, end + 1).join(" | ");
 }

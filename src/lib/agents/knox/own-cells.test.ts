@@ -50,4 +50,16 @@ describe("the fee's own cells of a two-column line (#1394)", () => {
       "Business Checking | Paper Statement Fee $3.00",
     );
   });
+
+  it("never keeps the next fee as a condition (re-review of PR 1403)", () => {
+    expect(ownCells("Stop Payment | $30.00 | Monthly Maintenance | $10.00", "Stop Payment", 30)).toBe("Stop Payment | $30.00");
+    expect(ownCells("Stop Payment $30.00 | Monthly Maintenance $10.00", "Stop Payment", 30)).toBe("Stop Payment $30.00");
+    expect(ownCells("Overdraft Fee $30 | Daily Overdraft Fee $5", "Overdraft Fee", 30)).toBe("Overdraft Fee $30");
+    expect(ownCells("Stop Payment $30 | (ACH) Returned Item $5", "Stop Payment", 30)).toBe("Stop Payment $30");
+    expect(ownCells("Stop Payment $30 | Max Rewards Checking | $10", "Stop Payment", 30)).toBe("Stop Payment $30");
+    expect(ownCells("Money Order $5 | Per Item Fee | $0.25", "Money Order", 5)).toBe("Money Order $5");
+    expect(ownCells("Account Closing $25 | if closed within 90 days of opening", "Account Closing", 25)).toBe(
+      "Account Closing $25 | if closed within 90 days of opening",
+    );
+  });
 });
