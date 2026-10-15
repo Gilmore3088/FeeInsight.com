@@ -1321,6 +1321,12 @@ describe("live fragment switch-on rules (#1443)", () => {
     // U+FEFF reads as a space, as in JS's \s.
     ["Overdraft\ufeffFee You will be charged", 35, null, { pattern: "pronoun", action: "rename", renameTo: "Overdraft Fee", renameVia: "head" }],
     ["\ufeffOverdraft Fee You will be charged", 35, null, { pattern: "pronoun", action: "rename", renameTo: "Overdraft Fee", renameVia: "head" }],
+    // #1516: a clause head ("More than", "Over", "Less than", "Up to" a count) is never a fee name; v6 keeps it live for a re-read.
+    ["More than 10 items per statement will be charged an item fee of", 10, null, { pattern: "sentence_end", action: "reread" }],
+    ["Over 6 withdrawals per month will be charged a fee of", 5, null, { pattern: "sentence_end", action: "reread" }],
+    ["Less than 3 items will be charged a fee of", 2, null, { pattern: "sentence_end", action: "reread" }],
+    ["Up to 5 checks you will be charged a fee of", 3, null, { pattern: "sentence_end", action: "reread" }],
+    ["MORE THAN TEN ITEMS - You will be charged a fee of", 10, null, { pattern: "sentence_end", action: "reread" }],
   ] as const)("%j at $%s is %j", (name, amount, key, verdict) => {
     expect(liveFragmentVerdict(name, amount, key)).toEqual(verdict);
   });
