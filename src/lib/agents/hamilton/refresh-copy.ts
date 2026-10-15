@@ -4,6 +4,7 @@ import { inSavepoint } from "@/lib/agents/savepoint";
 import { recordAttempt } from "@/lib/agents/learning/attempts";
 import { checkFeeCategory } from "@/lib/fee-category-guard";
 import { FREE_READ_PREFIX } from "@/lib/agents/hamilton/product-page";
+import { publishSourceLink } from "@/lib/agents/hamilton/source-link";
 import {
   HAMILTON_PUBLISH_DEFAULT_MIN_CONFIDENCE,
   coverageTier,
@@ -218,7 +219,7 @@ export async function refreshFeesFromCurrentCopy(
           const moved = await move`
             UPDATE published_fee_records
                SET lineage_ref = ${Number(candidate.fee_verified_id)},
-                   source_url = ${candidate.source_url},
+                   source_url = ${publishSourceLink(candidate)},
                    document_r2_key = ${candidate.document_r2_key},
                    extraction_confidence = ${confidence},
                    coverage_tier = ${coverageTier(confidence)},

@@ -1,5 +1,6 @@
 import type { FeeAudience } from "@/lib/fee-audience";
 import { ADMIN_HOLD_PREFIX } from "@/lib/fee-hold-rules";
+import { publishSourceLink, sourceLinkSkipReason } from "@/lib/agents/hamilton/source-link";
 import { feePageKey } from "@/lib/agents/hamilton/page-key";
 import { sql } from "@/lib/data-store/connection";
 import { isRetiredCategory } from "@/lib/fee-fold";
@@ -225,7 +226,10 @@ export function publishSkipReason(row: VerifiedFeeRow, minConfidence: number, pr
   // A fee whose wording found no home among the top 50 (fee-fold.ts) is not published.
   if (isRetiredCategory(row.canonical_fee_key)) return "Category folded into the top 50 with no home for this fee";
   if (!row.fee_name?.trim()) return "Missing fee name";
-  if (!row.source_url?.trim() && !row.document_r2_key?.trim()) return "Missing source lineage";
+  if (!row.source_url?.trim() && !row.document_r2_key?.trim() && !row.document_url?.trim()) return "Missing source lineage";
+  // Every live fee links to the bank's own document (#1342): a stored file key alone is not a link.
+  const sourceReason = sourceLinkSkipReason(row);
+  if (sourceReason) return sourceReason;
   if (!row.verified_by_agent_event_id?.trim()) return "Missing Darwin verification event";
   // A blog post or story quotes national averages, not this bank's price (article-page.ts).
   if (isArticlePage(row.source_url)) return "Read from an article page, not a fee schedule";
@@ -610,7 +614,7 @@ export async function insertPublishedFee(
       ${feeVerifiedId},
       ${institutionId},
       ${options.row.canonical_fee_key},
-      ${options.row.source_url},
+      ${publishSourceLink(options.row)},
       ${options.row.document_r2_key},
       ${confidence},
       ${options.row.raw_agent_event_id}::uuid,

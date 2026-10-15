@@ -111,6 +111,28 @@ describe("Hamilton frequency fill", () => {
     expect(db).not.toHaveBeenCalled();
   });
 
+  it("never fills a blank overdraft fee with a period its own check clears, and reads the v13 keys (#1339)", async () => {
+    // Regression: 130684 went blank -> monthly -> blank on every publish step (fill, then v11 check).
+    const db = createDbMock([
+      { ...row(130684, "5.00", "Overdraft Trans. (After 3rd trans. per mo.) | $5.00"), canonical_fee_key: "overdraft", fee_name: "Overdraft Trans. (After 3rd trans. per mo.)" },
+      { ...row(92746, "30.00", "Overdraft Boost .........................................$30.00 per month"), canonical_fee_key: "overdraft", fee_name: "Overdraft Boost" },
+      { ...row(87587, "3.00", "Daily overdraft fee……$3.00 | Online Cash Management & Bill Pay……$19.95/month", "monthly"), canonical_fee_key: "continuous_od", fee_name: "Daily overdraft fee" },
+      { ...row(102189, "10.00", "Monthly1 account service charge is $10 if below minimum balance requirement."), canonical_fee_key: "monthly_maintenance", fee_name: "Monthly1 account service charge" },
+      { ...row(36109, "29.00", "Overdraft Fee (Max 5 items per day) | $29.00 International Outgoing $40.00", "daily"), canonical_fee_key: "overdraft", fee_name: "Overdraft Fee (Max 5 items per day)" },
+    ]);
+    const result = await fillBlankFrequencies(asDb(db), { runId: 5, dryRun: true });
+    expect(result.filled.map((fee) => [fee.feePublishedId, fee.from, fee.frequency])).toEqual([
+      [92746, null, "monthly"],
+      [87587, "monthly", "daily"],
+      [102189, null, "monthly"],
+      [36109, "daily", null],
+    ]);
+    expect(result.held).toEqual([]);
+    const readSql = db.unsafe.mock.calls[0][0] as string;
+    expect(readSql).toContain("fp.canonical_fee_key = 'continuous_od' AND fp.frequency IN ('monthly', 'annual', 'quarterly')");
+    expect(readSql).toContain("fp.canonical_fee_key = 'monthly_maintenance'");
+  });
+
   it("fills a blank box rent from its table's annual header and logs the basis (v10)", async () => {
     const box = { ...row(4, "25.00", "3 x 5 x 21 | $25"), canonical_fee_key: "safe_deposit_box" };
     const plain = { ...row(5, "20.00", "3 x 5 | $20"), canonical_fee_key: "safe_deposit_box", source_document_id: 10 };

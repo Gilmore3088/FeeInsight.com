@@ -2,7 +2,15 @@ import { sql } from "@/lib/data-store/connection";
 import { invalidatePublicReadCache } from "@/lib/data-store/fee-cache";
 import { recordFeedback, type FeedbackRow } from "@/lib/agents/learning/feedback";
 import { inSavepoint } from "@/lib/agents/savepoint";
-import { boxTableAnnualHeader, perEventFrequency, perEventPeriodCheck, PERIOD_FEE_KEYS, settledFrequency } from "@/lib/fee-frequency";
+import {
+  boxTableAnnualHeader,
+  continuousOverdraftPeriodCheck,
+  maintenanceMonthlyFill,
+  perEventFrequency,
+  perEventPeriodCheck,
+  PERIOD_FEE_KEYS,
+  settledFrequency,
+} from "@/lib/fee-frequency";
 
 type SqlTag = typeof sql;
 
@@ -42,7 +50,11 @@ export const FREQUENCY_FILL_CHECK = "hamilton.frequency_fill";
 // (taken down with reason `frequency_hold:`), and an overdraft program priced by the month keeps it.
 // v12 (#1301): a live NSF fee stored as annual or daily is checked too: a period from a box-table
 // header, an allowance or a neighbour is cleared, and a daily price with no daily cap is held.
-export const FREQUENCY_FILL_VERSION = 12;
+// v13 (#1339): James's per-item rule (Oct 15) reaches overdraft and returned-item fees stored as
+// monthly, annual, quarterly or daily (a daily cap or a waiver is not the fee's frequency); a
+// continuous overdraft fee stored by the month or year takes daily when its own words say so; a
+// blank monthly-maintenance fee takes monthly only when its own name or line says month.
+export const FREQUENCY_FILL_VERSION = 13;
 /** The rolled_back_reason prefix of a fee the frequency fill holds (v11). */
 export const FREQUENCY_HOLD_REASON = "frequency_hold";
 /** Documents read per step for box-table headers; later steps take the rest. */
@@ -133,7 +145,12 @@ export async function fillBlankFrequencies(
                OR (fp.frequency IS NOT NULL AND COALESCE(fr.extraction_note, fr.conditions) ~ '${SHARED_LINE}')
                -- v4: a stated period on a per-event fee, which the line may never state.
                OR fp.frequency = 'daily'
-               OR (fp.frequency IN ('monthly', 'annual', 'quarterly') AND fp.canonical_fee_key <> ALL(${PERIOD_KEYS_SQL})))
+               OR (fp.frequency IN ('monthly', 'annual', 'quarterly') AND fp.canonical_fee_key <> ALL(${PERIOD_KEYS_SQL}))
+               -- v13: a continuous overdraft fee stored by the period, and a blank maintenance fee
+               -- whose own name or line names a month or a statement cycle.
+               OR (fp.canonical_fee_key = 'continuous_od' AND fp.frequency IN ('monthly', 'annual', 'quarterly'))
+               OR (fp.frequency IS NULL AND fp.canonical_fee_key = 'monthly_maintenance'
+                   AND (fp.fee_name ILIKE '%month%' OR fr.conditions ~* 'excerpt=.*(month|statement cycle)')))
           ${options.institutionId ? "AND fp.institution_id = $1" : ""}
         ORDER BY fp.fee_published_id`,
       options.institutionId ? [options.institutionId] : [],
@@ -214,7 +231,8 @@ export async function fillBlankFrequencies(
     const sourceLine = excerptOf(row.conditions);
     if (!sourceLine || !Number.isFinite(amount)) continue;
     const stated = row.frequency ?? null;
-    const check = perEventPeriodCheck(row.canonical_fee_key, stated, sourceLine, amount, row.fee_name);
+    const check = perEventPeriodCheck(row.canonical_fee_key, stated, sourceLine, amount, row.fee_name)
+      ?? continuousOverdraftPeriodCheck(row.canonical_fee_key, stated, sourceLine, amount, row.fee_name);
     if (check?.action === "keep") continue;
     if (check?.action === "hold") {
       if (result.held.length >= limit) continue;
@@ -237,7 +255,20 @@ export async function fillBlankFrequencies(
     // its line, and the v11 check cleared it on the next pass, over and over. A stated period the
     // check does not cover waits for James, so only a blank is read this way.
     const settled = settledFrequency(sourceLine, amount, stated, row.canonical_fee_key);
-    const frequency = check ? check.frequency : stated == null ? perEventFrequency(row.canonical_fee_key, settled, sourceLine, amount) : settled;
+    let frequency = check
+      ? check.frequency
+      : stated == null
+        ? perEventFrequency(row.canonical_fee_key, settled, sourceLine, amount) ?? maintenanceMonthlyFill(row.canonical_fee_key, stated, sourceLine, amount, row.fee_name)
+        : settled;
+    // v13 (#1339): a blank is never filled with a period the check above would clear or hold on the
+    // next pass. Before, overdraft fees 79931, 130684 and 140170 went round that loop on every
+    // publish step: "Overdraft Trans. (After 3rd trans. per mo.) | $5.00" was filled monthly from its
+    // line, then cleared, then filled again (the feedback dedupe logged only the first round).
+    if (stated == null && frequency != null) {
+      const recheck = perEventPeriodCheck(row.canonical_fee_key, frequency, sourceLine, amount, row.fee_name)
+        ?? continuousOverdraftPeriodCheck(row.canonical_fee_key, frequency, sourceLine, amount, row.fee_name);
+      if (recheck && recheck.action !== "keep") frequency = recheck.action === "correct" ? recheck.frequency : null;
+    }
     if (frequency === stated) continue;
     if (result.filled.length >= limit) break;
     result.filled.push({
