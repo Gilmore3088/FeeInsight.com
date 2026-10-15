@@ -21,20 +21,25 @@ import { getFeeFamily } from "@/lib/fee-taxonomy";
  *   rosetta   produced a completed text of that right document
  *   knox      raw rows (canonical hint + amount within 1 cent)
  *   darwin    verified rows filed under the right category with the right amount
- *   hamilton  live published_fee_catalog rows with the right amount (end to end)
+ *   hamilton  live published_fee_catalog rows with the right amount (end to end); from v3
+ *             also published_fee_rate_catalog rows (fees stated as a rate)
  *
  * Document stages score per institution (precision: right / any found; recall:
  * right / confirmed institutions). Fee stages score per fee (precision: matching
  * distinct (category, amount) predictions / all predictions; recall: expected fees
  * found / expected fees). "Overall" is the Hamilton stage: what readers see.
  *
- * Two scorer versions run side by side, each stored as its own series (#1280):
+ * Three scorer versions run side by side, each stored as its own series (#1280):
  *   v1  Magellan is the bank's newest stored document; Rosetta its newest text; the
  *       fee stages compare every row at the bank with the key's one document.
  *   v2  Magellan is the bank's link (`fee_schedule_url`) or its stored copy; Rosetta a
  *       completed text of the key's document; the fee stages score only rows read
  *       from the key's document (same URL or same bytes). Rows from the bank's other
  *       documents, and rows with no document, are counted on their own and not scored.
+ *   v3  v2, plus Hamilton's fees published as a rate (`published_fee_rate_catalog`,
+ *       src/lib/percent-fees.ts). A rate is never compared with a dollar amount: it can
+ *       match only a key fee keyed as "varies" in the same category, and counts as its own
+ *       prediction (category + rate).
  */
 
 type SqlTag = typeof sql;
@@ -81,6 +86,8 @@ export interface PipelineText {
 export interface PipelineFee {
   canonicalKey: string;
   amount: number | null;
+  /** Set when the fee is published as a rate ("1% of the transaction"); amount is then null (v3). */
+  ratePercent?: number | null;
   /** The stored document the row was read from (v2 scores only the key's document). */
   sourceDocumentId?: number | null;
 }
@@ -98,6 +105,8 @@ export interface BankEvidence {
   knox: PipelineFee[];
   darwin: PipelineFee[];
   hamilton: PipelineFee[];
+  /** Hamilton's live fees published as a rate, from published_fee_rate_catalog (v3). */
+  hamiltonRates?: PipelineFee[];
 }
 
 export interface PrecisionRecall {
@@ -179,11 +188,27 @@ export function amountMatches(expected: { amount: number | null; amountKind: Ans
   return target != null && Math.abs(actual - target) <= AMOUNT_TOLERANCE;
 }
 
-/** Distinct (category, cents) predictions, so a fee extracted twice counts once. */
+/**
+ * Does a pipeline fee satisfy an answer-key fee? A rate never meets a dollar amount: it
+ * matches only a key fee keyed as "varies" (the key has no rate kind).
+ */
+export function predictionMatches(expected: ExpectedFee, prediction: PipelineFee): boolean {
+  if (expected.canonicalKey !== prediction.canonicalKey) return false;
+  if (prediction.ratePercent != null) return expected.amountKind === "varies";
+  return amountMatches(expected, prediction.amount);
+}
+
+/** Distinct (category, cents) or (category, rate) predictions, so a fee extracted twice counts once. */
 function distinctPredictions(fees: PipelineFee[]): PipelineFee[] {
   const seen = new Map<string, PipelineFee>();
   for (const fee of fees) {
     if (!fee.canonicalKey) continue;
+    if (fee.ratePercent != null) {
+      const rate = Math.round(fee.ratePercent * 10_000) / 10_000;
+      const key = `${fee.canonicalKey}|rate:${rate}`;
+      if (!seen.has(key)) seen.set(key, { canonicalKey: fee.canonicalKey, amount: null, ratePercent: rate });
+      continue;
+    }
     const amount = fee.amount == null ? null : Math.round(fee.amount * 100) / 100;
     const key = `${fee.canonicalKey}|${amount ?? "null"}`;
     if (!seen.has(key)) seen.set(key, { canonicalKey: fee.canonicalKey, amount });
@@ -201,14 +226,13 @@ function compareFees(expected: ExpectedFee[], actual: PipelineFee[]): FeeCompari
   const predictions = distinctPredictions(actual);
   return {
     predictions,
-    matchedExpected: expected.map((fee) =>
-      predictions.some((prediction) => prediction.canonicalKey === fee.canonicalKey && amountMatches(fee, prediction.amount))),
-    correctPredicted: predictions.map((prediction) =>
-      expected.some((fee) => fee.canonicalKey === prediction.canonicalKey && amountMatches(fee, prediction.amount))),
+    matchedExpected: expected.map((fee) => predictions.some((prediction) => predictionMatches(fee, prediction))),
+    correctPredicted: predictions.map((prediction) => expected.some((fee) => predictionMatches(fee, prediction))),
   };
 }
 
-function formatFee(fee: { canonicalKey: string; amount: number | null }): string {
+function formatFee(fee: { canonicalKey: string; amount: number | null; ratePercent?: number | null }): string {
+  if (fee.ratePercent != null) return `${fee.canonicalKey} ${fee.ratePercent}%`;
   return fee.amount == null ? fee.canonicalKey : `${fee.canonicalKey} $${fee.amount.toFixed(2)}`;
 }
 
@@ -332,7 +356,11 @@ export function scoreAnswerKey(
     let extra: string[] = [];
 
     for (const stage of FEE_STAGES) {
-      const scope = scopeFees(version, evidence[stage as FeeStage], rightIds);
+      // v3: Hamilton's rate fees join its dollar fees as their own predictions.
+      const rows = stage === "hamilton" && version >= 3
+        ? [...evidence.hamilton, ...(evidence.hamiltonRates ?? [])]
+        : evidence[stage as FeeStage];
+      const scope = scopeFees(version, rows, rightIds);
       const comparison = compareFees(entry.fees, scope.scored);
       const counts: Counts = {
         expected: entry.fees.length,
@@ -439,10 +467,10 @@ export async function gatherBankEvidence(institutionIds: number[], db: SqlTag = 
   const evidence = new Map<number, BankEvidence>();
   if (institutionIds.length === 0) return evidence;
   for (const id of institutionIds) {
-    evidence.set(id, { institutionId: id, feeScheduleUrl: null, documents: [], latestText: null, texts: [], knox: [], darwin: [], hamilton: [] });
+    evidence.set(id, { institutionId: id, feeScheduleUrl: null, documents: [], latestText: null, texts: [], knox: [], darwin: [], hamilton: [], hamiltonRates: [] });
   }
   const ids = institutionIds;
-  const [institutions, documents, texts, raw, verified, published] = await Promise.all([
+  const [institutions, documents, texts, raw, verified, published, publishedRates] = await Promise.all([
     db`SELECT id, fee_schedule_url FROM institution_sources WHERE id = ANY(${ids}::bigint[])`,
     db`
       SELECT id, institution_id, document_url, content_hash
@@ -474,6 +502,12 @@ export async function gatherBankEvidence(institutionIds: number[], db: SqlTag = 
       SELECT institution_id, source_document_id, canonical_fee_key, amount
         FROM published_fee_catalog
        WHERE institution_id = ANY(${ids}::int[])
+    `,
+    db`
+      SELECT institution_id, source_document_id, canonical_fee_key, rate_percent
+        FROM published_fee_rate_catalog
+       WHERE institution_id = ANY(${ids}::int[])
+         AND rate_percent IS NOT NULL
     `,
   ]);
   for (const row of institutions) {
@@ -528,6 +562,16 @@ export async function gatherBankEvidence(institutionIds: number[], db: SqlTag = 
     evidence.get(Number(row.institution_id))?.hamilton.push({
       canonicalKey: String(row.canonical_fee_key),
       amount: amountOf(row.amount),
+      sourceDocumentId: docId(row.source_document_id),
+    });
+  }
+  for (const row of publishedRates) {
+    const rate = amountOf(row.rate_percent);
+    if (rate == null) continue;
+    evidence.get(Number(row.institution_id))?.hamiltonRates?.push({
+      canonicalKey: String(row.canonical_fee_key),
+      amount: null,
+      ratePercent: rate,
       sourceDocumentId: docId(row.source_document_id),
     });
   }
