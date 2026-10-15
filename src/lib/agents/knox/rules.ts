@@ -170,7 +170,8 @@ export const FEE_PATTERNS: FeePattern[] = [
   { key: "safe_deposit_box", pattern: /\b\d{1,2}(?:\.\d)?\s?["”]?\s?[x×]\s?\d{1,2}(?:\.\d)?\s?(?:["”]|inch(?:es)?\b)/i },
   { key: "card_dispute", pattern: /\b(?:card|transaction) disputes?\b|\b(?:debit|credit|card)\b.{0,15}\bchargebacks?\b/i },
   // v22: "Maximum daily Overdraft or Returned Item fees ..... $140.00" is the daily cap.
-  { key: "od_daily_cap", pattern: /\b(?:maximum|max\.?)\s+daily\s+overdraft\b/i },
+  // #1291: and "Maximum Daily OD/NSF Fees $210 per day" (#1291 re-file check, raw 406368).
+  { key: "od_daily_cap", pattern: /\b(?:maximum|max\.?)\s+daily\s+(?:overdraft|OD|O\/D)\b/i },
   {
     key: "continuous_od",
     // v33: "Consecutive Overdraft Daily Fee" (Wilson Bank & Trust).
@@ -179,7 +180,9 @@ export const FEE_PATTERNS: FeePattern[] = [
   },
   {
     key: "od_protection_transfer",
-    pattern: /\b(overdraft protection|OD protection).{0,40}\b(transfer|from (savings|shares?))\b|\b(overdraft|OD)\b.{0,15}\b(transfer|sweep|from (savings|shares?))\b|^\W*overdraft protection\W*(?:\([^)]*\))?\W*$|\b(?:insufficient|non[-\s]?sufficient) funds? transfers?\b|\b(?:account|savings|deposit)[-\s]link(?:ed)?\b.{0,25}\boverdraft protection\b|\blinked (?:account|savings)\b.{0,25}\boverdraft protection\b/i,
+    pattern: /\b(overdraft protection|OD protection).{0,40}\b(transfer|from (savings|shares?))\b|\b(overdraft|OD)\b.{0,15}\b(transfer|sweep|from (savings|shares?))\b|^\W*overdraft protection\W*(?:\([^)]*\))?\W*$|\b(?:insufficient|non[-\s]?sufficient) funds? transfers?\b|\b(?:account|savings|deposit)[-\s]link(?:ed)?\b.{0,25}\boverdraft protection\b|\blinked (?:account|savings)\b.{0,25}\boverdraft protection\b|\b(?:overdrafts?|OD)\b.{0,30}\bcovered by\b.{0,25}\btransfers?\b|\bcourtesy transfers?\b/i,
+    // #1291: "Overdrafts Covered by Courtesy Transfer | $5.00 per item" is the transfer, not the
+    // overdraft fee the same page prints on its own line (#1291 re-file check, raw 158607).
   },
   { key: "ach_return", pattern: /\bACH.{0,30}\b(return|returned)\b/i },
   {
@@ -592,6 +595,12 @@ export function classifyPatternKey(value: string): string | null {
     !/\b(?:overdraft|courtesy|privilege|bounce|OD|paid)\b/i.test(text.replace(/\b(?:applies|when|if)\b[^)]{0,40}/gi, " "))
   ) {
     return "nsf";
+  }
+  // #1291: an NSF-led name for an item returned or paid ("NSF Return/Paid Item Fee for Chkg. & Sav",
+  // Kewanee, raw 131332, whose page prints its own "Overdraft Fee") is the NSF fee; v43 below still
+  // files one price written "Paid Item Fee/Returned Item Fee" as the overdraft price.
+  if (key === "overdraft" && /^\W*(?:NSF|non[-\s]?sufficient|insufficient funds)\b[^|]{0,20}\breturn(?:ed)?\s*(?:\/|or|&)\s*paid items?\b/i.test(text)) {
+    key = "nsf";
   }
   // v22: "Overdrafts Returned" is an item the bank returns unpaid, so an NSF fee.
   if (key === "overdraft" && /\boverdrafts?\s+returned\b/i.test(text) && !/\bpaid\b/i.test(text)) return "nsf";
@@ -1103,6 +1112,11 @@ export function extractFromSegment(segment: string): ExtractionRulesResult {
     /\b(?:incoming|outgoing|inbound|outbound|send|sent|receive|received)\b/i.test(name) &&
     /^\s*per\s+wire(?:\s+transfer)?\b/i.test(segment.slice(firstAmount.end)) && !/\bwires?\b/i.test(name);
   if (perWire) hint = classifyFeeText(`${name} wire`);
+  // #1291: a bare "Overdrafts" priced per transfer is the share transfer that covers them ("Share
+  // Transfer for\nOverdrafts - $2.00 per transfer", raw 112570), not the overdraft fee itself.
+  if (hint === "overdraft" && firstAmount != null && /^\W*overdrafts?\W*$/i.test(name) && /^\s*per\s*transfers?\b/i.test(segment.slice(firstAmount.end))) {
+    hint = "od_protection_transfer";
+  }
 
   // A free fee, written as a "Free"/"No charge" cell or as $0.
   if (hint && cells && cells.length >= 2 && !firstAmount && cells.slice(1).some((cell) => ZERO_CELL.test(cell)) && !notAZeroPrice(hint, cells[0])) {

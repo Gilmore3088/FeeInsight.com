@@ -475,6 +475,19 @@ v65 (rules 65, Oct 9, customer audience):
   cannot become two audiences, so the document's re-read writes them. Pinnacle (47) heads
   `KNOX_PRIORITY_REREAD_IDS` for that re-read.
 
+Rules 65, #1291 re-file check (Oct 14, no version change): three reads the re-file restore's
+hand check found wrong, from their real lines.
+- "Maximum Daily OD/NSF Fees $210 per day" is the overdraft daily cap, not a continuous
+  overdraft fee ("OD" and "O/D" now count after "maximum daily", raw 406368).
+- "Overdrafts Covered by Courtesy Transfer | $5.00 per item" is the overdraft protection
+  transfer; the page prints its overdraft fee on its own line (raw 158607).
+- An NSF-led name for an item returned or paid ("NSF Return/Paid Item Fee for Chkg. & Sav",
+  Kewanee, raw 131332, beside its own "Overdraft Fee | $25.00") is the NSF fee. One price written
+  "NSF Paid Item Fee/Returned Item Fee" (v43, Pinnacle) is still the overdraft price.
+- A bare "Overdrafts" priced per transfer is the share transfer that covers them ("Share
+  Transfer for\nOverdrafts - $2.00 per transfer", raw 112570). A bare "Overdrafts" priced per
+  item is still the overdraft fee.
+
 Rules 65, #1196 (Oct 14, no version change, so no document is re-read for it):
 - A price whose decimal point the PDF text dropped ("Dormant accounts | $15 00 per month
   Nonsufficient funds | $35 00", Addition Financial) gets its point back before the line is read
