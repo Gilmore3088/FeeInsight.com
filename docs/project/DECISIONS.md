@@ -52,7 +52,8 @@ recorded with the county; it is not an operational loan fee, and PSCU lists it u
 Fees, apart from its general loan fees. From now on subordination fees file as `legal_process`
 (taxonomy, Knox, category guard v64, fold v15). Live and verified fees filed as `other_lending_fee`
 before the change move by the fold's switched re-file (`SUBORDINATION_REFILE_LIVE`), switched on
-the same day at James's go ("proceed with your recs", Audit thread). The answer-key row seeded at institution 4875 under `other_lending_fee` is aligned to
+the same day at James's go ("proceed with your recs", Audit thread; "Switch it on", Data quality
+thread). The answer-key row seeded at institution 4875 under `other_lending_fee` is aligned to
 `legal_process` by its own migration. A lien release stays other lending (Oct 8).
 
 **Four answer-key rows are keyed correctly.** James, same comment, items 2 to 5: 4Front FCU (7273,

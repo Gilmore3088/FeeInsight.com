@@ -392,7 +392,8 @@ export function splitLiveCategory(
 
 /** Bumped when a fold rule changes, so Hamilton's fold step re-reads what it left unplaced. */
 // v15: a subordination stays legal process (James, Oct 15); legal process keeps only lien releases in its split.
-export const FOLD_RULES_VERSION = 15;
+// v16: the subordination re-file is on (`SUBORDINATION_REFILE_LIVE`, James, Oct 15).
+export const FOLD_RULES_VERSION = 16;
 
 /** The retired categories that sat in these families. */
 export function retiredKeysInFamilies(families: readonly string[]): string[] {

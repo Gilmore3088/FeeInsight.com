@@ -255,7 +255,9 @@ function moveFeedback(move: FoldMove, runId: number): FeedbackRow {
     weight: 0,
     evidence: { from: move.from, to: move.to, rule: move.rule, fee_name: move.feeName },
     runId,
-    dedupeKey: `${TAXONOMY_FOLD_CHECK}:ver:${move.feeVerifiedId}`,
+    // Keyed by the target too: a fee folded twice (other lending in v14, legal process at v16)
+    // keeps both moves on the ledger instead of the second overwriting the first.
+    dedupeKey: `${TAXONOMY_FOLD_CHECK}:ver:${move.feeVerifiedId}:${move.to}`,
   };
 }
 
