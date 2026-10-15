@@ -866,11 +866,21 @@ const PRICE_AFTER_BALANCE_WORDS = /\$\s*\d+(?:,\d{3})*(?:\.\d{2})?\s+min(?:imum|
 /** v70 (#1100): "Minimum Balance $4.95/Month if the minimum ... is not met" charges $4.95 a month. */
 const MINIMUM_BALANCE_FEE_BEFORE = /\bminimum balance\s*[-–:]?\s*\$?\s*$/i;
 const BY_THE_MONTH_AFTER = /^\s*(?:\/\s*(?:mo|month)\b|per month\b)/i;
+/**
+ * Never a price after those words (#1392 review): a cap ("$15.00 Minimum $30.00 Maximum" on a 1%
+ * late charge), a balance that is averaged ("Minimum Balance $100/Month average", "$100 min. $1,500
+ * avg balance"), a figure followed by a fee word and another figure ("Low balance $1,000 fee $5"),
+ * or a figure of $100 or more ("Low balance $1,000 per month").
+ */
+export const STILL_A_BALANCE_AFTER = /^\s*max(?:imum)?\b|^\s*(?:\/\s*(?:mo|month)\b|per\s+month\b|monthly\b)?\s*(?:avg|average|daily balance)\b|^[^|$]{0,12}\b(?:fee|charge)s?\b[^|$]{0,12}\$\s?\d/i;
+export const BALANCE_WORD_PRICE_LIMIT = 100;
 
 export function isConditionAmount(text: string, amount: Pick<AmountMatch, "start" | "end">): boolean {
   const before = text.slice(Math.max(0, amount.start - 40), amount.start);
-  const after = text.slice(amount.end, amount.end + 30);
-  if ((PRICE_AFTER_BALANCE_WORDS.test(before) && !CONDITION_AFTER.test(after)) || (MINIMUM_BALANCE_FEE_BEFORE.test(before) && BY_THE_MONTH_AFTER.test(after))) {
+  const after = text.slice(amount.end, amount.end + 40);
+  const value = Number(text.slice(amount.start, amount.end).replace(/[^\d.]/g, ""));
+  const feeSized = Number.isFinite(value) && value < BALANCE_WORD_PRICE_LIMIT && !STILL_A_BALANCE_AFTER.test(after);
+  if (feeSized && ((PRICE_AFTER_BALANCE_WORDS.test(before) && !CONDITION_AFTER.test(after)) || (MINIMUM_BALANCE_FEE_BEFORE.test(before) && BY_THE_MONTH_AFTER.test(after)))) {
     return false;
   }
   return INCREMENT_BEFORE.test(text.slice(Math.max(0, amount.start - 40), amount.start)) ||
