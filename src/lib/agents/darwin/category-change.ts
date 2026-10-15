@@ -275,7 +275,7 @@ export function selectCategoryChangeRows(
              fr.fee_name,
              fr.amount,
              fr.outlier_flags,
-             fr.conditions,
+             COALESCE(fr.extraction_note, fr.conditions) AS conditions,
              att.attempts
         FROM raw_fee_observations fr
         JOIN institution_sources inst ON inst.id = fr.institution_id

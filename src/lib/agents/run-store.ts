@@ -29,6 +29,7 @@ import { rollBackUnreproducedFees } from "@/lib/agents/hamilton/rules-recheck";
 import { syncPipelineFeedback } from "@/lib/agents/learning/feedback-sync";
 import { linkImportedFeesToTwins, takeDownUntraceableFees } from "@/lib/agents/hamilton/source-check";
 import { retidyLiveFeeNames } from "@/lib/agents/knox/name-retidy";
+import { moveExtractionNotes } from "@/lib/agents/knox/extraction-note";
 import { nameLiveFeesByAccount } from "@/lib/agents/hamilton/account-names";
 import { correctStoredLineups } from "@/lib/agents/knox/lineup-correct";
 import { reviewKnoxBatches } from "@/lib/agents/knox/batch-review";
@@ -1128,6 +1129,8 @@ async function executeAgenticStep(
         dryRun: run.runKind === "dry_run",
         institutionId,
       });
+      // #1234 step 2: Knox's note leaves `conditions` for `extraction_note`, a batch per step.
+      const extractionNotes = await moveExtractionNotes(tx, { runId: run.id, dryRun: run.runKind === "dry_run" });
       // A live fee named only "Monthly Service Fee" takes the account heading above it in its
       // schedule ("Chase Total Checking Monthly Service Fee"); the old name stays in pipeline_feedback.
       const accountNames = await nameLiveFeesByAccount(tx, {
@@ -1584,6 +1587,7 @@ async function executeAgenticStep(
           imported_twin_linked: importedTwins.linked,
           identical_copy_documents: identicalCopy.documents,
           identical_copy_rows_moved: identicalCopy.rowsMoved,
+          extraction_note_move: { moved: extractionNotes.moved, remaining: extractionNotes.remaining },
           name_retidy: {
             institutions_checked: nameRetidy.institutionsChecked,
             messy_names: nameRetidy.messyFees,

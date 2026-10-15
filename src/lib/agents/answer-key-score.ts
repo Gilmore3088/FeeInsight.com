@@ -486,9 +486,7 @@ export async function gatherBankEvidence(institutionIds: number[], db: SqlTag = 
        ORDER BY institution_id, source_document_id, updated_at DESC, id DESC
     `,
     db`
-      SELECT institution_id, source_document_id, amount, outlier_flags,
-             -- Knox's note moves to extraction_note (#1336); older rows keep it in conditions.
-             COALESCE(extraction_note, conditions) AS conditions
+      SELECT institution_id, source_document_id, amount, outlier_flags, COALESCE(extraction_note, conditions) AS conditions
         FROM raw_fee_observations
        WHERE institution_id = ANY(${ids}::int[])
          AND NOT (COALESCE(outlier_flags, '[]'::jsonb) ?| array['superseded_by_reread', 'superseded_by_newer_copy'])

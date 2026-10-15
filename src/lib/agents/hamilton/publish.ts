@@ -455,7 +455,7 @@ async function selectVerifiedFees(
                   AND (${SAME_LINE_RESELECT_SQL.replaceAll("pa.detail", "sl_pa.detail")}
                        OR ${THRESHOLD_RESELECT_SQL.replaceAll("pa.detail", "sl_pa.detail")})
              ) AS same_line_reselect,
-             COALESCE(fr.conditions LIKE '${FREE_READ_PREFIX}%', false) AS free_read,
+             COALESCE(COALESCE(fr.extraction_note, fr.conditions) LIKE '${FREE_READ_PREFIX}%', false) AS free_read,
              COALESCE(fr.source_document_id::text, 'row:' || fv.fee_verified_id::text) AS batch_document_key,
              fv.created_at AS batch_created_at
         FROM verified_fee_observations fv

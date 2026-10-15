@@ -244,6 +244,11 @@ SELECT (SELECT COUNT(*) FROM published) AS published,
    Pin behaviour that matters (a reviewer's failing layout, a real source line), not every branch.
    CI runs each test once (`.github/workflows/test.yml`); a new step must not re-run tests a job
    already runs.
+   **A data fix is proven end to end** (James, 2026-10-15, after #1310). Its test runs the whole path
+   a real row takes (the full extract with its self-check and candidate choice, the verify step, and
+   publish), not one function. The PR names the live rows it should change and the after-state it
+   expects for each. The reviewer checks that path, and once deployed, the builder confirms on prod
+   that those rows changed. Until then the fix is not called done.
 5. **Merge** only under the standing authorization in `CLAUDE.md`: exact head reviewed, CI green, no
    conflict, no unresolved blocking review, and none of the gates below.
 6. **Gates: open the PR, do not merge, add it to James's list** when a PR:
