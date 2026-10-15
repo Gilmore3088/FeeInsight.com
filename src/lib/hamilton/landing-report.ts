@@ -21,7 +21,7 @@ export function buildLandingReport(selection: LandingResearchHandoff, result: Lo
     executiveSummary: [`${charter}. Selected fees: ${selection.categories.map(getDisplayName).join(", ")}.`, `Published fee research captured ${asOf}. This draft supports review; it is not a fee-change recommendation.`],
     snapshot: [], strategicRationale: "Compare the selected published fees and verify current schedules, product eligibility, waivers and charging frequency before making a pricing decision.",
     tradeoffs: [{ label: "Evidence limit", value: "Published records are not a fresh independent verification of each schedule. Missing fees are not $0. Thin geographic cohorts are withheld." }],
-    recommendation: "Review the evidence and identify any missing schedules before presenting a pricing proposal.",
+    recommendation: "Review the evidence and find any missing schedules before this draft goes to the board.",
     implementationNotes: [`Research scope: ${JSON.stringify(selection)}`, "No revenue impact, regulatory conclusion or proposed price has been inferred."],
     exhibits: [{ id: local ? "local_market" : "statistical_appendix", title: "Selected published fee comparison", subtitle: `${scope} · ${charter}`, columns, rows, note: local ? "Local peers are ranked by branches in the market. Branch/deposit filings and published fees have different dates." : "State reference medians use the same charter nationally. Counts represent institutions, not fee rows." }],
     sources: local ? [

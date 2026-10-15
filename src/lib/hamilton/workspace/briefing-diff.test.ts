@@ -63,6 +63,29 @@ describe("diffBriefings", () => {
     expect(diff.changes.map((c) => c.text).join(" ")).not.toMatch(/cheapest|dearest|raise|recommend/i);
   });
 
+  it("never shows a held study from a snapshot stored before #1255 (#1256)", () => {
+    const study = (key: string, headline: string): Observation => ({ ...observation(`study:${key}`, headline), kind: "study" });
+    const diff = diffBriefings(
+      {
+        quarter: "2026-Q4",
+        briefing: briefing({
+          observations: [
+            study("local_income", "Held local income study"),
+            study("market_concentration", "Held concentration study"),
+            study("fee_income_share", "Held fee income study"),
+            study("fee_dependence", "Fee dependence before"),
+          ],
+        }),
+      },
+      { quarter: "2027-Q1", briefing: briefing({ observations: [study("inferred_items_paid", "Inferred items paid")] }) },
+    );
+    expect(diff.changes.map((c) => c.text)).toEqual([
+      "New this quarter: Inferred items paid",
+      "No longer flagged: Fee dependence before",
+    ]);
+    expect(diff.changes.map((c) => c.text).join(" ")).not.toMatch(/Held/);
+  });
+
   it("reports nothing when nothing moved", () => {
     const same = briefing({ positions: [row("overdraft", 30)], observations: [observation("a", "Note")] });
     expect(diffBriefings({ quarter: "2026-Q3", briefing: same }, { quarter: "2026-Q4", briefing: same }).changes).toEqual([]);
