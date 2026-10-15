@@ -334,8 +334,11 @@ async function executeAgenticStep(
     const { runPaidAnswerEval } = await import("@/lib/hamilton/paid-answer-eval");
     const result = await runPaidAnswerEval({ agentRunId: run.id });
     const memo = result.paths[0];
-    const simulate = result.paths.find((p) => p.path === "simulate");
-    const simulateLine = simulate && simulate.sampled > 0 ? ` Simulate: ${simulate.passed} of ${simulate.answers} passed; ${simulate.correctness.correct} of ${simulate.correctness.checked} checked tie.` : "";
+    const names: Record<string, string> = { simulate: "Simulate", written_answer: "Written answer" };
+    const simulateLine = result.paths
+      .filter((p) => p.path !== "memo" && p.sampled > 0)
+      .map((p) => ` ${names[p.path] ?? p.path}: ${p.passed} of ${p.answers} passed; ${p.correctness.correct} of ${p.correctness.checked} checked tie.`)
+      .join("");
     return {
       status: "completed",
       summary: result.note ?? `Wrote ${memo.passed} of ${memo.answers} paid memos (cap ${result.cap} a day, ${result.usedBefore} used before); ${memo.correctness.correct} of ${memo.correctness.checked} checked tie to the live catalog.${simulateLine}`,

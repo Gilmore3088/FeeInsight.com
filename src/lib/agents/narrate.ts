@@ -238,8 +238,11 @@ function narrateFinished(
       if (typeof detail.note === "string") return detail.note;
       const memo = (Array.isArray(detail.paths) ? detail.paths[0] : null) as Detail | null;
       const correctness = (memo?.correctness ?? null) as Detail | null;
-      const simulate = (Array.isArray(detail.paths) ? detail.paths.find((p: Detail) => p?.path === "simulate") : null) as Detail | null;
-      const simulateLine = simulate && n(simulate, "sampled") > 0 ? ` Simulate read: ${n(simulate, "passed")} of ${n(simulate, "answers")} passed.` : "";
+      const names: Record<string, string> = { simulate: "Simulate read", written_answer: "Written answer" };
+      const simulateLine = (Array.isArray(detail.paths) ? (detail.paths as Array<Detail | null>) : [])
+        .filter((p): p is Detail => !!p && typeof p.path === "string" && p.path !== "memo" && n(p, "sampled") > 0)
+        .map((p) => ` ${names[String(p.path)] ?? String(p.path)}: ${n(p, "passed")} of ${n(p, "answers")} passed.`)
+        .join("");
       return `Wrote ${memo ? n(memo, "passed") : 0} of ${count(memo ? n(memo, "answers") : 0, "paid memo")}${correctness ? `; ${n(correctness, "correct")} of ${n(correctness, "checked")} checked tie to the live catalog` : ""}.${simulateLine}`;
     }
     case "schedule-check": {

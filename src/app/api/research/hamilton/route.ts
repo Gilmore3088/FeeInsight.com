@@ -24,23 +24,15 @@ import {
 } from "@/lib/ai-provider";
 import { HAMILTON_PAUSED_MESSAGE } from "@/lib/hamilton/provider-paused";
 import { viewAsCustomerFromCookieHeader } from "@/lib/hamilton/view-as";
-import { getHamilton, buildAnalyzeModeSuffix, buildMonitorModeSuffix, buildSavedPeerSetPrompt, savedPeerSetUsed, type AnswerStep, type HamiltonRole } from "@/lib/research/agents";
+import { getHamilton, savedPeerSetUsed, type AnswerStep, type HamiltonRole } from "@/lib/research/agents";
 import { getActivePeerSet } from "@/lib/hamilton/active-peer-set";
 import { evaluateCitationDensity } from "@/lib/hamilton/citation-gate";
 import { getCurrentUser, type User } from "@/lib/auth";
 import { checkProAiQuota, quotaExceededMessage } from "@/lib/hamilton/quota";
 import { logUsage } from "@/lib/research/history";
-import {
-  detectSkill,
-  buildSkillInjection,
-  buildSkillExecution,
-  isSkillOptIn,
-  findOfferedSkill,
-} from "@/lib/research/skills";
 import { canAccessPremium } from "@/lib/access";
-import { buildHamiltonInstitutionBriefing } from "@/lib/hamilton/institution-briefing";
+import { buildWrittenAnswerSystemPrompt, lastUserTextOf, WRITTEN_ANSWER_ROUTE_ID } from "@/lib/hamilton/written-answer-read";
 import {
-  buildHamiltonRequestContractPrompt,
   parseHamiltonRequestContract,
   type HamiltonAudience,
   type HamiltonRequestContract,
@@ -139,7 +131,6 @@ async function handlePOST(request: Request) {
 
   let messages: UIMessage[];
   let mode: string | undefined;
-  let analysisFocus: string | undefined;
   let institutionId: number | null = null;
   // Opt-in buffered path. Default false preserves the streaming chat UX (useChat);
   // callers that need a vetted report (report runner, export) set `gate_citations: true`
@@ -172,7 +163,6 @@ async function handlePOST(request: Request) {
     }
     messages = contract.messages;
     mode = contract.mode;
-    analysisFocus = contract.analysisFocus;
     institutionId = contract.institutionId;
     gateCitations = contract.gateCitations;
   } catch {
@@ -207,78 +197,22 @@ async function handlePOST(request: Request) {
 
   const agent = await getHamilton(role);
 
-  // Auto-detect and inject domain skill based on the user's latest message
-  const lastUserMessage = [...messages].reverse().find((m) => m.role === "user");
-  const lastUserText =
-    lastUserMessage?.parts
-      ?.filter((p): p is { type: "text"; text: string } => p.type === "text")
-      .map((p) => p.text)
-      .join(" ") || "";
+  // The reader's latest message, earlier turns' context included (the saved row's request key).
+  const lastUserText = lastUserTextOf(messages);
 
-  let systemPrompt = agent.systemPrompt;
-  systemPrompt += buildHamiltonRequestContractPrompt(contract);
-  systemPrompt += buildSavedPeerSetPrompt(peerSet);
-
-  if (institutionId !== null) {
-    const selectedInstitutionContext = await buildHamiltonInstitutionBriefing(contract);
-    if (!selectedInstitutionContext) {
-      return Response.json({ error: "Institution not found" }, { status: 404 });
-    }
-    systemPrompt += selectedInstitutionContext;
+  // The same prompt the paid answer eval writes from (written-answer-read.ts, #1079).
+  const prompt = await buildWrittenAnswerSystemPrompt({ agent, contract, peerSet, homeId });
+  if (prompt.status === "institution_not_found") {
+    return Response.json({ error: "Institution not found" }, { status: 404 });
   }
-  if (homeId && homeId !== institutionId && /\b(us|our|ours|we)\b/i.test(lastUserText)) {
-    const homeBriefing = await buildHamiltonInstitutionBriefing({ ...contract, institutionId: homeId }, { contextRole: "account_evidence" }).catch(() => null);
-    systemPrompt += homeBriefing
-      ? `\nACCOUNT INSTITUTION EVIDENCE (${homeId}). This is the account/home institution for comparisons with us; the research subject remains ${institutionId ?? "unselected"}.\n${homeBriefing}\nEND ACCOUNT INSTITUTION EVIDENCE.\n`
-      : "\nAccount institution evidence could not be loaded. State that limitation; do not substitute research-subject or peer data for our institution.\n";
-  }
-
-  // Analyze mode: override output structure with structured analysis sections (ARCH-05)
-  // VALID_FOCUS guards against prompt injection — only known tab values reach the system prompt.
-  let focus = "Pricing";
-  if (mode === "analyze") {
-    const VALID_FOCUS = new Set(["Pricing", "Risk", "Peer Position", "Trend"]);
-    focus = VALID_FOCUS.has(analysisFocus ?? "") ? (analysisFocus as string) : "Pricing";
-    systemPrompt += buildAnalyzeModeSuffix(focus);
-  }
-
-  // Monitor mode: concise surveillance-oriented responses (Phase 46)
-  if (mode === "monitor") {
-    systemPrompt += buildMonitorModeSuffix();
-  }
-
-  // The skill checks read only what the reader typed: earlier questions and answers carried in
-  // the conversation block must not opt in to a skill or hide the real question (#1273). The
-  // home-institution check above reads the block on purpose, so "us" carries forward.
-  const typedQuestion = questionOnly(lastUserText);
-
-  // Check if user is opting in to a previously offered skill deliverable
-  if (typedQuestion && isSkillOptIn(typedQuestion)) {
-    const assistantTexts = messages
-      .filter((m) => m.role === "assistant")
-      .flatMap((m) =>
-        (m.parts ?? [])
-          .filter((p): p is { type: "text"; text: string } => p.type === "text")
-          .map((p) => ({ text: p.text }))
-      );
-    const offeredSkill = findOfferedSkill(assistantTexts);
-    if (offeredSkill) {
-      systemPrompt += buildSkillExecution(offeredSkill);
-    }
-  } else {
-    // Detect skill match and offer it (without injecting the full template)
-    const matchedSkill = typedQuestion ? detectSkill(typedQuestion) : null;
-    if (matchedSkill) {
-      systemPrompt += buildSkillInjection(matchedSkill);
-    }
-  }
+  const { systemPrompt, focus } = prompt;
 
   const providerContext = {
     provider: "anthropic" as const,
     model: agent.model,
     agent: "hamilton",
     operation: gateCitations ? "research_with_citation_gate" : "research_stream",
-    routeId: "api.research.hamilton",
+    routeId: WRITTEN_ANSWER_ROUTE_ID,
     userId: user.id,
     subjectKey,
   };
