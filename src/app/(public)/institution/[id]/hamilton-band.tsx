@@ -25,6 +25,28 @@ export interface HamiltonInsight {
   kind: string;
 }
 
+/**
+ * One quarter's service-charge income, oldest first. NCUA 5300 income is year to date, so a
+ * credit union's quarter is its YTD less the prior quarter's in the same year (Q1 stands alone);
+ * a quarter whose prior quarter is missing is left out rather than shown as a year's total.
+ */
+export function quarterlyServiceCharges(quarters: NormalizedFinancial[]): { reportDate: string; value: number }[] {
+  const oldestFirst = [...quarters].reverse();
+  const out: { reportDate: string; value: number }[] = [];
+  oldestFirst.forEach((q, index) => {
+    if (q.serviceChargeIncome === null) return;
+    if (q.source !== "ncua") return void out.push({ reportDate: q.reportDate, value: q.serviceChargeIncome });
+    const n = Math.ceil(Number(q.reportDate.slice(5, 7)) / 3);
+    if (n === 1) return void out.push({ reportDate: q.reportDate, value: q.serviceChargeIncome });
+    const prev = oldestFirst[index - 1];
+    const contiguous =
+      prev && prev.serviceChargeIncome !== null && prev.source === "ncua" &&
+      prev.reportDate.slice(0, 4) === q.reportDate.slice(0, 4) && Math.ceil(Number(prev.reportDate.slice(5, 7)) / 3) === n - 1;
+    if (contiguous) out.push({ reportDate: q.reportDate, value: q.serviceChargeIncome - (prev.serviceChargeIncome as number) });
+  });
+  return out;
+}
+
 const pct = (n: number) => `${n >= 10 ? n.toFixed(0) : n.toFixed(1)}%`;
 /** A share outside this range is a filing artefact, not a figure to lead with. */
 const plausibleShare = (n: number | null): n is number => n !== null && Number.isFinite(n) && n > 0 && n < 60;
@@ -51,16 +73,14 @@ function TourVideoSlot({ ready }: { ready: boolean }) {
 }
 
 function InsightView({ insight, institutionName }: { insight: HamiltonInsight; institutionName: string }) {
-  const series = [...insight.quarters].reverse().filter((q) => q.serviceChargeIncome !== null);
+  const series = quarterlyServiceCharges(insight.quarters);
   const latest = insight.quarters[0];
   const first = series[0];
   const last = series[series.length - 1];
   const change =
-    first && last && first !== last && first.serviceChargeIncome && last.serviceChargeIncome
-      ? ((last.serviceChargeIncome - first.serviceChargeIncome) / first.serviceChargeIncome) * 100
-      : null;
+    first && last && first !== last && first.value > 0 ? ((last.value - first.value) / first.value) * 100 : null;
   const comparePeers = plausibleShare(insight.ownSharePct) && plausibleShare(insight.peerSharePct) && (insight.peerCount ?? 0) >= 3;
-  const top = Math.max(1, ...series.map((q) => q.serviceChargeIncome ?? 0));
+  const top = Math.max(1, ...series.map((q) => q.value));
   const sourceName = latest?.source === "ncua" ? "NCUA call reports" : "FDIC call reports";
   const span = first && last ? `${formatReportQuarter(first.reportDate)} to ${formatReportQuarter(last.reportDate)}` : null;
 
@@ -74,15 +94,15 @@ function InsightView({ insight, institutionName }: { insight: HamiltonInsight; i
           </p>
           <p className="mt-2 text-[15px] leading-snug text-ink">
             Service charges were {pct(insight.ownSharePct as number)} of {institutionName}&apos;s revenue
-            {latest ? ` in ${formatReportQuarter(latest.reportDate)}` : ""}. The median for{" "}
+            {latest ? ` ${latest.source === "ncua" ? "through" : "in"} ${formatReportQuarter(latest.reportDate)}` : ""}. The median for{" "}
             {(insight.peerCount as number).toLocaleString("en-US")} {insight.kind === "bank" ? "banks" : "credit unions"}
             {insight.sizeRange ? ` with ${insight.sizeRange} in assets` : " its size"} was {pct(insight.peerSharePct as number)}.
           </p>
         </>
       ) : (
-        last?.serviceChargeIncome && (
+        last && last.value > 0 && (
           <p className="text-[15px] leading-snug text-ink">
-            Service-charge income was {formatCompactDollars(last.serviceChargeIncome)} in {formatReportQuarter(last.reportDate)}
+            Service-charge income was {formatCompactDollars(last.value)} in {formatReportQuarter(last.reportDate)}
             {change !== null ? `, ${change >= 0 ? "up" : "down"} ${pct(Math.abs(change))} since ${formatReportQuarter(first.reportDate)}` : ""}.
           </p>
         )
@@ -93,10 +113,10 @@ function InsightView({ insight, institutionName }: { insight: HamiltonInsight; i
           <div className="mt-2 flex h-24 items-end gap-2">
             {series.map((q) => (
               <div key={q.reportDate} className="flex flex-1 flex-col items-center gap-1">
-                <span className="font-mono text-[11px] tabular-nums text-ink-muted">{formatCompactDollars(q.serviceChargeIncome)}</span>
+                <span className="font-mono text-[11px] tabular-nums text-ink-muted">{formatCompactDollars(q.value)}</span>
                 <span
                   className="w-3/5 rounded-t-[3px] bg-warm-ink-500"
-                  style={{ height: `${Math.max(4, ((q.serviceChargeIncome ?? 0) / top) * 64)}px` }}
+                  style={{ height: `${Math.max(4, (Math.max(0, q.value) / top) * 64)}px` }}
                 />
                 <span className="text-[11px] text-ink-muted">{formatReportQuarter(q.reportDate)}</span>
               </div>
@@ -107,7 +127,9 @@ function InsightView({ insight, institutionName }: { insight: HamiltonInsight; i
       {span && (
         <figcaption className="mt-3 text-[12px] text-ink-muted">
           From {sourceName}, {span}
-          {comparePeers ? ". Revenue is net interest income plus noninterest income." : "."}
+          {comparePeers
+            ? `. Revenue is ${latest?.source === "ncua" ? "interest income" : "net interest income"} plus noninterest income.`
+            : "."}
         </figcaption>
       )}
     </figure>
@@ -126,7 +148,7 @@ export function HamiltonBand({
   plansHref: string;
   reportOfferHref: string;
 }) {
-  const hasInsight = Boolean(insight && insight.quarters.some((q) => q.serviceChargeIncome !== null));
+  const hasInsight = Boolean(insight && quarterlyServiceCharges(insight.quarters).length > 0);
   return (
     <section aria-labelledby="hamilton-heading" className="rounded-2xl border border-border bg-surface-0 p-5 shadow-fi-1 sm:p-7">
       <div className={`grid gap-6 ${hasInsight ? "lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)] lg:gap-10" : ""}`}>
