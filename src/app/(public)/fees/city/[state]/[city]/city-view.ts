@@ -1,4 +1,5 @@
 import type { CityInstitution, IndexEntry } from "@/lib/data-store";
+import { MIN_INSTITUTIONS_FOR_MEDIAN } from "@/lib/data-store/maturity";
 
 /** The four fees every city page compares, in the order a checking customer meets them. */
 export const HEADLINE_FEES = [
@@ -35,8 +36,8 @@ export interface CityStrip {
   nation: NationBand | null;
 }
 
-/** A local median needs this many institutions, the same floor the state pages use. */
-export const MIN_FOR_CITY_MEDIAN = 3;
+/** A local median needs this many institutions: the statistics contract's floor, as on /methodology (#1178). */
+export const MIN_FOR_CITY_MEDIAN = MIN_INSTITUTIONS_FOR_MEDIAN;
 
 export function median(values: number[]): number | null {
   if (values.length === 0) return null;

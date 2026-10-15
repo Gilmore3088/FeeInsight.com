@@ -48,7 +48,8 @@ describe("city view", () => {
       ["Main Street Bank", 30, "bank"],
       ["First Bank", 35, "bank"],
     ]);
-    expect(od.cityMedian).toBe(30);
+    // Three institutions are under the statistics contract's floor of five (#1178).
+    expect(od.cityMedian).toBeNull();
     expect(od.nation).toEqual({ p25: 29, median: 32, p75: 35 });
     const nsf = strips.find((s) => s.key === "nsf")!;
     expect(nsf.banks).toHaveLength(1);
@@ -73,8 +74,14 @@ describe("city view", () => {
     expect(cityFindings(cityStrips(banks, national), "Tallahassee")).toEqual([
       "Valley CU has the lowest overdraft fee of 3 in Tallahassee: $25.",
       "2 of 3 have a typical monthly account fee of $0.",
-      "The local overdraft median is $2 below the U.S. median of $32.",
     ]);
+  });
+
+  it("compares the local overdraft median with the U.S. once five institutions publish it", () => {
+    const five = [...banks, inst(4, "Coast CU", { overdraft: 28 }, "credit_union"), inst(5, "Lake Bank", { overdraft: 40 })];
+    const od = cityStrips(five, national)[0];
+    expect(od.cityMedian).toBe(30);
+    expect(cityFindings(cityStrips(five, national), "Tallahassee")).toContain("The local overdraft median is $2 below the U.S. median of $32.");
   });
 
   it("says when the lowest overdraft fee is shared", () => {
