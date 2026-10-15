@@ -8,6 +8,10 @@
 -- row can change, and a database without that row changes nothing.
 -- Reverse: UPDATE public.answer_key_fees SET canonical_key = 'other_lending_fee', updated_at = NOW()
 --          WHERE id = 1440 AND canonical_key = 'legal_process';
+-- A short lock wait (review of #1371): if another session holds the row, this fails fast instead of
+-- queueing behind it; rerun it then.
+SET lock_timeout = '5s';
+
 UPDATE public.answer_key_fees f
    SET canonical_key = 'legal_process',
        updated_at = NOW()
@@ -18,3 +22,5 @@ UPDATE public.answer_key_fees f
    AND f.canonical_key = 'other_lending_fee'
    AND f.amount = 125
    AND f.source_line ILIKE '%Mortgage Subordination Fee%';
+
+RESET lock_timeout;
