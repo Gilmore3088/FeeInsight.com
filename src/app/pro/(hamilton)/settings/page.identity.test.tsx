@@ -324,13 +324,16 @@ describe("Settings research identity", () => {
   });
 
   it("says how the institution named at Pro signup gets linked (#1405)", async () => {
-    mocks.pendingLink.mockResolvedValue({ institutionName: "Space Coast Credit Union", emailConfirmed: false });
+    mocks.pendingLink.mockResolvedValue({ institutionName: "Space Coast Credit Union", emailConfirmed: false, needsInfo: false });
     const { rerender } = render(await SettingsPage({ searchParams: Promise.resolve({ instId: "2945" }) }));
     const section = () => screen.getByRole("heading", { name: "Your institution" }).closest("section")!;
     expect(within(section()).getByText(/confirm your work email \(the link is in your inbox\) and it links on its own/)).toBeInTheDocument();
-    mocks.pendingLink.mockResolvedValue({ institutionName: "Space Coast Credit Union", emailConfirmed: true });
+    mocks.pendingLink.mockResolvedValue({ institutionName: "Space Coast Credit Union", emailConfirmed: true, needsInfo: false });
     rerender(await SettingsPage({ searchParams: Promise.resolve({ instId: "2945" }) }));
     expect(within(section()).getByText("Space Coast Credit Union: we're checking your work email against it, and it links once that's done.")).toBeInTheDocument();
+    mocks.pendingLink.mockResolvedValue({ institutionName: "Space Coast Credit Union", emailConfirmed: true, needsInfo: true });
+    rerender(await SettingsPage({ searchParams: Promise.resolve({ instId: "2945" }) }));
+    expect(within(section()).getByText(/we need a little more before linking it\. Email .+ from your work address\./)).toBeInTheDocument();
     expect(screen.queryByText(/claim/i)).not.toBeInTheDocument();
   });
 

@@ -214,7 +214,7 @@ export default async function SettingsPage({
       <MemoSection
         id="account-institution"
         title="Your institution"
-        note="Linked by your work email when you signed up for Pro. Researching another institution doesn't change it."
+        note="The institution you work at, linked by your work email or your team's invitation. Researching another institution doesn't change it."
       >
         <div className={panel}>
           {accountContext.status === "identified" && accountContext.institution ? (
@@ -228,9 +228,11 @@ export default async function SettingsPage({
                 : accountContext.status === "unavailable"
                   ? "Your institution couldn't load just now."
                   : pendingLink
-                    ? pendingLink.emailConfirmed
-                      ? `${pendingLink.institutionName}: we're checking your work email against it, and it links once that's done.`
-                      : `${pendingLink.institutionName}: confirm your work email (the link is in your inbox) and it links on its own when the email matches ${pendingLink.institutionName}'s website.`
+                    ? pendingLink.needsInfo
+                      ? `${pendingLink.institutionName}: we need a little more before linking it. Email ${CONTACT_EMAIL} from your work address.`
+                      : pendingLink.emailConfirmed
+                        ? `${pendingLink.institutionName}: we're checking your work email against it, and it links once that's done.`
+                        : `${pendingLink.institutionName}: confirm your work email (the link is in your inbox) and it links on its own when the email matches ${pendingLink.institutionName}'s website.`
                     : "No institution linked yet."}
             </p>
           )}

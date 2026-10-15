@@ -4,14 +4,20 @@
  * the buyer to file:
  * - checkout for a bank or credit union needs a work address, not a personal one;
  * - the link (the owner membership that makes Hamilton treat the bank as theirs) is made once the
- *   email is confirmed and its domain matches the bank's website;
+ *   email is confirmed and its host is exactly the bank's website host;
  * - any other case waits for an admin check in the Data Trust queue, while Pro itself works at once.
  * Researching any institution is separate and never needs a link.
  */
 import type { sql as sqlClient } from "@/lib/data-store/connection";
-import { baseDomain, emailDomain } from "@/lib/pro-plan-watch";
-
 type Db = typeof sqlClient;
+
+/** "https://www.firstbank.com/x" or "Pat@Mail.FirstBank.com" -> the full host, lower case, without "www."; null when unusable. */
+export function hostOf(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const raw = value.includes("@") ? value.split("@").pop()! : value;
+  const host = raw.trim().toLowerCase().replace(/^[a-z]+:\/\//, "").split(/[/?#:]/)[0].replace(/^www\./, "");
+  return host.split(".").filter(Boolean).length >= 2 ? host : null;
+}
 
 /** Personal mailbox providers: an address here never proves employment at a bank. */
 export const PERSONAL_EMAIL_DOMAINS = new Set([
@@ -22,22 +28,34 @@ export const PERSONAL_EMAIL_DOMAINS = new Set([
   "earthlink.net", "frontier.com", "optonline.net", "windstream.net", "centurylink.net", "q.com",
 ]);
 
+/** The same providers' names, for their country domains ("yahoo.co.uk", "hotmail.fr"). */
+const PERSONAL_PROVIDER_NAMES = new Set([...PERSONAL_EMAIL_DOMAINS].filter((d) => d.endsWith(".com")).map((d) => d.split(".")[0]));
+
 /** True for an address at a personal mailbox provider (or with no usable domain). */
 export function isPersonalEmail(email: string | null | undefined): boolean {
-  const domain = emailDomain(email);
-  return domain === null || PERSONAL_EMAIL_DOMAINS.has(domain);
+  const host = email?.includes("@") ? hostOf(email) : null;
+  if (host === null) return true;
+  if ([...PERSONAL_EMAIL_DOMAINS].some((d) => host === d || host.endsWith(`.${d}`))) return true;
+  // The same providers under a country suffix: "yahoo.co.uk", "hotmail.fr", "gmx.de".
+  const name = /(?:^|\.)([a-z0-9-]+)\.(?:(?:co|com)\.)?[a-z]{2}$/.exec(host)?.[1];
+  return name !== undefined && PERSONAL_PROVIDER_NAMES.has(name);
 }
 
-/** True when the email's domain is the institution website's domain ("jane@mail.firstbank.com" and "www.firstbank.com"). */
+/**
+ * True when the email's host is exactly the institution website's host ("jane@firstbank.com" and
+ * "www.firstbank.com"). Exact, not by the last two labels, so an address at a shared vendor or
+ * parent host never proves every institution hosted there; anything else goes to the admin check.
+ */
 export function emailMatchesWebsite(email: string | null | undefined, websiteUrl: string | null | undefined): boolean {
-  const mail = emailDomain(email);
-  const site = baseDomain(websiteUrl);
-  return mail !== null && site !== null && !PERSONAL_EMAIL_DOMAINS.has(mail) && mail === site;
+  if (isPersonalEmail(email)) return false;
+  const mail = hostOf(email);
+  const site = hostOf(websiteUrl);
+  return mail !== null && site !== null && mail === site;
 }
 
 /** The buyer-facing line when checkout for a bank or credit union is started with a personal address. */
 export function personalEmailCheckoutError(contactEmail: string): string {
-  return `Pro for a bank or credit union needs your work email, so we can link your institution. Sign in with your work address, or email ${contactEmail}.`;
+  return `Pro for a bank or credit union needs your work email, so we can link your institution. Create an account with your work address, or email ${contactEmail}.`;
 }
 
 /**
@@ -58,7 +76,7 @@ export async function linkVerifiedInstitutions(db: Db, userId: number): Promise<
   const linked: number[] = [];
   for (const row of candidates) {
     if (!emailMatchesWebsite(row.email, row.website_url)) continue;
-    const domain = emailDomain(row.email);
+    const domain = hostOf(row.email);
     const updated = await db<Array<{ id: number }>>`
       UPDATE institution_claims
          SET review_status = 'accepted', reviewed_at = NOW(), resolution = 'verified_claim',
@@ -94,13 +112,15 @@ export async function linkVerifiedInstitutions(db: Db, userId: number): Promise<
 export interface PendingInstitutionLink {
   institutionName: string;
   emailConfirmed: boolean;
+  /** An admin asked the buyer for more before linking. */
+  needsInfo: boolean;
 }
 
 /** The newest open link request, or null; a failed read shows nothing. */
 export async function getPendingInstitutionLink(db: Db, userId: number): Promise<PendingInstitutionLink | null> {
   try {
-    const [row] = await db<Array<{ institution_name: string; confirmed: string | null }>>`
-      SELECT s.institution_name, to_jsonb(u.*) ->> 'email_confirmed_at' AS confirmed
+    const [row] = await db<Array<{ institution_name: string; review_status: string; confirmed: string | null }>>`
+      SELECT s.institution_name, c.review_status, to_jsonb(u.*) ->> 'email_confirmed_at' AS confirmed
         FROM institution_claims c
         JOIN institution_sources s ON s.id = c.institution_id
         JOIN users u ON u.id = c.claimant_user_id
@@ -109,7 +129,7 @@ export async function getPendingInstitutionLink(db: Db, userId: number): Promise
        ORDER BY c.updated_at DESC, c.id DESC
        LIMIT 1
     `;
-    return row ? { institutionName: row.institution_name, emailConfirmed: Boolean(row.confirmed) } : null;
+    return row ? { institutionName: row.institution_name, emailConfirmed: Boolean(row.confirmed), needsInfo: row.review_status === "needs_info" } : null;
   } catch {
     return null;
   }

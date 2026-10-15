@@ -8,6 +8,8 @@ describe("isPersonalEmail", () => {
     expect(isPersonalEmail("Pat@Outlook.com")).toBe(true);
     expect(isPersonalEmail("not-an-email")).toBe(true);
     expect(isPersonalEmail(null)).toBe(true);
+    expect(isPersonalEmail("pat@yahoo.co.uk")).toBe(true);
+    expect(isPersonalEmail("pat@hotmail.fr")).toBe(true);
   });
 
   it("accepts a work address", () => {
@@ -16,9 +18,16 @@ describe("isPersonalEmail", () => {
 });
 
 describe("emailMatchesWebsite", () => {
-  it("matches the bank's domain whatever the subdomain or www", () => {
-    expect(emailMatchesWebsite("pat@mail.firstexamplebank.com", "https://www.firstexamplebank.com/personal")).toBe(true);
+  it("matches the bank's own host, with or without www", () => {
+    expect(emailMatchesWebsite("Pat@FirstExampleBank.com", "https://www.firstexamplebank.com/personal")).toBe(true);
     expect(emailMatchesWebsite("pat@firstexamplebank.com", "firstexamplebank.com")).toBe(true);
+  });
+
+  it("never matches across a shared vendor or parent host", () => {
+    // A site hosted at a vendor proves nothing about an address at the vendor.
+    expect(emailMatchesWebsite("pat@cuvendor.com", "https://examplefcu.cuvendor.com")).toBe(false);
+    expect(emailMatchesWebsite("pat@mail.firstexamplebank.com", "https://www.firstexamplebank.com")).toBe(false);
+    expect(emailMatchesWebsite("pat@yahoo.co.uk", "https://yahoo.co.uk")).toBe(false);
   });
 
   it("does not match another domain, a missing website or a personal address", () => {
@@ -31,7 +40,7 @@ describe("emailMatchesWebsite", () => {
 describe("personalEmailCheckoutError", () => {
   it("asks for the work address and names the contact", () => {
     expect(personalEmailCheckoutError("hello@example.com")).toBe(
-      "Pro for a bank or credit union needs your work email, so we can link your institution. Sign in with your work address, or email hello@example.com.",
+      "Pro for a bank or credit union needs your work email, so we can link your institution. Create an account with your work address, or email hello@example.com.",
     );
   });
 });
