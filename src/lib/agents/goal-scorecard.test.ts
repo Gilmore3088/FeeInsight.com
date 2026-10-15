@@ -220,6 +220,13 @@ describe("Hamilton answer quality (#1079)", () => {
     expect(q.timedOut).toBe(true);
   });
 
+  it("skips an answer eval that stopped before asking any institution (run 5997)", async () => {
+    const { db, queries } = fakeDb([]);
+    await readGoalScorecard(db);
+    const evalQuery = queries.find((text) => text.includes("hamilton-answer-eval"));
+    expect(evalQuery).toContain("NOT (e.detail ? 'institutions' AND (e.detail->>'institutions')::numeric = 0)");
+  });
+
   it("reads the latest answer eval with the scorecard and puts it in the brief", async () => {
     const { db } = fakeDb([[/hamilton-answer-eval/, [{ created_at: new Date("2026-10-14T00:51:00Z"), detail }]]]);
     const goal = await readGoalScorecard(db);

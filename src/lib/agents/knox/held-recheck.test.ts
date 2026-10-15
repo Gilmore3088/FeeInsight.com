@@ -501,11 +501,11 @@ describe("retired lines today's rules file under another category (#1093, Oregon
 
   it("reads nothing in a state lane while the switch is off, and only the lane's state when it reads", async () => {
     const { db, calls } = createRefileDb([cardReplacement]);
-    const skipped = await refileSupersededRows(db as never, { stateCode: "or", skipSample: true });
+    const skipped = await refileSupersededRows(db as never, { live: false, stateCode: "or", skipSample: true });
     expect(skipped).toMatchObject({ mode: "skipped", checked: 0, candidates: 0 });
     expect(calls).toHaveLength(0);
 
-    await refileSupersededRows(db as never, { dryRun: true, stateCode: "or", skipSample: true });
+    await refileSupersededRows(db as never, { live: false, dryRun: true, stateCode: "or", skipSample: true });
     const select = calls.find((call) => call.text.includes("darwin_decided"))!;
     expect(select.text).toContain("inst.state_code");
     expect(select.values).toContain("OR");

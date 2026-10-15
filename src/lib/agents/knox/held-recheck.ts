@@ -757,9 +757,11 @@ export async function recheckSupersededRows(
  * (`run_kind = dry_run`) reads them all and writes nothing. On, it reads 200 a pass in id order,
  * re-files, and marks every row it read with `knox_superseded_refile:vN`.
  *
- * A state lane's extract step reads only its state's rows, and while the switch is off it skips
- * the sample (`skipSample`): every lane read the same all-bank sample (1,336 candidates at 317
- * banks, Oct 15), and the scan took a zero-document extract from 7 s to 53 s.
+ * A state lane's extract step re-files only its state's rows, and a direct run for one bank only
+ * that bank's (`stateCode`, `institutionId`): unscoped, every lane read all banks' rows (1,336
+ * candidates at 317 banks, Oct 15), and the scan took a zero-document extract from 7 s to 53 s.
+ * Each state's rows are re-filed on its lane's next extract step. Switched off, a state lane skips
+ * the read-only sample (`skipSample`).
  */
 export const SUPERSEDED_REFILE_LIVE = true;
 export const SUPERSEDED_REFILE_LIMIT = 200;

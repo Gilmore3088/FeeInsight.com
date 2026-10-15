@@ -321,8 +321,7 @@ async function executeAgenticStep(
   // Hamilton's answer eval: the quality bar asked of a spread of real institutions. Read-only, no model calls.
   if (step.stepKey === "hamilton-answer-eval") {
     const { runAnswerEval } = await import("@/lib/hamilton/answer-eval");
-    // Its route's limit is 300 s; the budget is checked between batches, so leave one batch of room.
-    const result = await runAnswerEval({ perGroup: Number(params.per_group) > 0 ? Number(params.per_group) : 1, budgetMs: ANSWER_EVAL_STEP_BUDGET_MS });
+    const result = await runAnswerEval({ perGroup: Number(params.per_group) > 0 ? Number(params.per_group) : 1 });
     return {
       status: "completed",
       summary: `Answered ${result.answers} questions for ${result.institutions} of ${result.planned} institutions; ${result.passed} met the bar; ${result.correctness.correct} of ${result.correctness.checked} checked tie to the live catalog.${result.pro ? ` Replayed ${result.pro.questions} Pro questions: ${result.pro.passed} met the bar, ${result.pro.correctness.correct} of ${result.pro.correctness.checked} checked tie to the catalog, ${result.pro.askedBack} still asked back.` : ""}${result.timedOut ? " Stopped at the time budget." : ""}`,
@@ -684,9 +683,9 @@ async function executeAgenticStep(
         source: "free",
       });
       // Retired rows today's free team reads under a new category, and taken-over rows with a stale
-      // category flag (#1093). Off until James approves; until then a non-lane extract reads a
-      // sample and writes nothing. A state lane reads only its state, and skips the sample while off:
-      // every lane read the same all-bank sample, which took zero-document extracts from 7 s to 53 s.
+      // category flag (#1093; James switched it on Oct 15). A state lane re-files only its state's
+      // rows and a direct run only its bank's: unscoped, every lane read all banks' rows, which took
+      // zero-document extracts from 7 s to 53 s. Switched off, a lane skips the read-only sample.
       const supersededRefile = await refileSupersededRows(tx, {
         dryRun: run.runKind === "dry_run",
         institutionId: numericRunParam(params, ["institution_id"]),
@@ -3124,12 +3123,6 @@ const STEP_EXPECTED_MS: Record<string, number> = {
  * route (`/api/admin/crew/answer-eval`).
  */
 export const TICK_EXCLUDED_STEP_KEYS = ["hamilton-answer-eval"] as const;
-/**
- * The answer eval's own time budget inside its route (maxDuration 300 s). It is checked between
- * batches of institutions, so a run overshoots it by up to one batch: at 220 s, runs took p90
- * 293 s and p99 368 s. 150 s keeps p90 near 225 s and p99 under the 300 s limit.
- */
-export const ANSWER_EVAL_STEP_BUDGET_MS = 150_000;
 /** Steps not listed above: most run in seconds, so this keeps an unknown long one safe. */
 const DEFAULT_STEP_EXPECTED_MS = 120_000;
 /** Steps measured at a few seconds at most (state-expert, enhance, public-*, registry-*). */
