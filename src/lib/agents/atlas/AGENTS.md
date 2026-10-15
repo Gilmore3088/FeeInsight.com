@@ -28,7 +28,7 @@ NCUA's FOICU file cuts a credit union's city at 15 characters ("Colorado Spring"
 Ro"); credit unions inserted before #1317 kept the cut. `atlas-city-repair`, the last step of the
 daily scoreboard run, restores the full name from the credit union's own office cities in NCUA's
 branch file (`credit_union_branches`, latest report) when exactly one longer office city starts
-with the cut (case ignored), in the stored name's case. It writes only rows still holding the cut,
+with the cut (case ignored), title-cased where the file writes it in capitals. It writes only rows still holding the cut,
 so a second run changes nothing, and lists every change (id, old city, new city) in the step
 detail; a dry run lists them and writes nothing. Two possible names, or none (College Station, San
 Luis Obispo, and the 5 cuts with no longer office city), stay for a person. On by James's decision

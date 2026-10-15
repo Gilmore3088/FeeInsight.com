@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { cityRepairDetail, inCaseOf, runCityRepair, summarizeCityRepair } from "./city-repair";
+import { cityRepairDetail, displayCity, runCityRepair, summarizeCityRepair } from "./city-repair";
 
 type Row = Record<string, unknown>;
 
@@ -20,17 +20,14 @@ const COLORADO = { id: 101, state_code: "CO", old_city: "Colorado Spring", new_c
 const LITTLE_ROCK = { id: 102, state_code: "AR", old_city: "NORTH LITTLE RO", new_city: "North Little Rock", choices: 1 };
 const TWO_NAMES = { id: 103, state_code: "NY", old_city: "Saratoga Spring", new_city: "Saratoga Springs", choices: 2 };
 
-describe("inCaseOf", () => {
-  it("keeps an all-capitals cut in capitals", () => {
-    expect(inCaseOf("NORTH LITTLE RO", "North Little Rock")).toBe("NORTH LITTLE ROCK");
+describe("displayCity", () => {
+  it("title-cases a name the branch file wrote in capitals", () => {
+    expect(displayCity("DEFUNIAK SPRINGS")).toBe("Defuniak Springs");
+    expect(displayCity("SAULT SAINTE MARIE")).toBe("Sault Sainte Marie");
+    expect(displayCity("O'FALLON HEIGHTS")).toBe("O'Fallon Heights");
   });
-  it("title-cases an all-capitals full name for a mixed-case cut", () => {
-    expect(inCaseOf("Colorado Spring", "COLORADO SPRINGS")).toBe("Colorado Springs");
-    expect(inCaseOf("Sault Sainte Ma", "SAULT SAINTE MARIE")).toBe("Sault Sainte Marie");
-    expect(inCaseOf("O'fallon Height", "O'FALLON HEIGHTS")).toBe("O'Fallon Heights");
-  });
-  it("keeps a mixed-case full name as the regulator wrote it", () => {
-    expect(inCaseOf("Rancho Cucamong", "Rancho Cucamonga")).toBe("Rancho Cucamonga");
+  it("keeps a mixed-case name as the regulator wrote it", () => {
+    expect(displayCity("North Little Rock")).toBe("North Little Rock");
   });
 });
 
@@ -40,7 +37,7 @@ describe("runCityRepair", () => {
     const result = await runCityRepair({ db, live: true });
     expect(result.candidates.map((c) => [c.institutionId, c.newCity])).toEqual([
       [101, "Colorado Springs"],
-      [102, "NORTH LITTLE ROCK"],
+      [102, "North Little Rock"],
     ]);
     expect(result.ambiguous).toBe(1);
     expect(result.repaired).toHaveLength(2);

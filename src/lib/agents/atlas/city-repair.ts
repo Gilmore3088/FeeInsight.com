@@ -7,7 +7,8 @@ type SqlTag = typeof sql;
  * ("Colorado Spring", "North Little Ro"), and the universe sync stored that cut on every credit
  * union inserted before #1317. The full name is the regulator's own: the credit union's office
  * city in NCUA's branch file (`credit_union_branches`, latest report), when exactly one longer
- * office city starts with the cut name (case ignored). The main office is not required; a
+ * office city starts with the cut name (case ignored), title-cased where the file writes it in
+ * capitals. The main office is not required; a
  * credit union whose offices offer two different longer names is left alone, as is a 15-letter
  * name no office extends (College Station, San Luis Obispo).
  *
@@ -52,12 +53,11 @@ interface CandidateRow {
 }
 
 /**
- * The full name in the stored name's case, so a state page lists "Colorado Springs" beside its
- * neighbours: an all-capitals cut ("NORTH LITTLE RO") stays in capitals; otherwise an all-capitals
- * branch-file name is title-cased ("COLORADO SPRINGS" -> "Colorado Springs"). Pure.
+ * The full name as a state page lists it: NCUA's branch file writes most cities in title case
+ * ("North Little Rock") and a few in capitals ("DEFUNIAK SPRINGS"); capitals are title-cased so
+ * one city reads the same on every row. Pure.
  */
-export function inCaseOf(cut: string, full: string): string {
-  if (cut === cut.toUpperCase()) return full.toUpperCase();
+export function displayCity(full: string): string {
   if (full !== full.toUpperCase()) return full;
   return full.toLowerCase().replace(/(^|[\s\-'.])([a-z])/g, (_, lead: string, letter: string) => `${lead}${letter.toUpperCase()}`);
 }
@@ -91,7 +91,7 @@ export async function runCityRepair(options: { db?: SqlTag; dryRun?: boolean; li
       ambiguous += 1;
       continue;
     }
-    candidates.push({ institutionId: Number(row.id), stateCode: row.state_code, oldCity: row.old_city, newCity: inCaseOf(row.old_city, row.new_city) });
+    candidates.push({ institutionId: Number(row.id), stateCode: row.state_code, oldCity: row.old_city, newCity: displayCity(row.new_city) });
   }
   const repaired: CityRepairChange[] = [];
   if (live && !dryRun && candidates.length > 0) {
