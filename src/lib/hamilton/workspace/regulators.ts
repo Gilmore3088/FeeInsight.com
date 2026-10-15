@@ -10,6 +10,7 @@ import { STATE_NAMES } from "@/lib/us-states";
 import { rulesForInstitution, stateAgency, type StateRule } from "../regulatory-context";
 import type { Fact } from "./types";
 import { subjectPossessive } from "./subject";
+import { MAX_STORY_LINE_WORDS, words } from "./four-roles";
 
 /** Rules feeRules() already states for Ask, so they are not repeated. */
 const STATED_ELSEWHERE = new Set(["reg_e_opt_in"]);
@@ -20,6 +21,14 @@ function shortSummary(summary: string): string {
   if (words <= MAX_WORDS) return summary;
   const first = summary.split(";")[0].trim();
   return /[.!?]$/.test(first) ? first : `${first}.`;
+}
+
+/**
+ * The first wording that fits a storyline line (#1076): a long institution or agency name can push
+ * the full sentence past the limit, so shorter wordings that keep the name follow it.
+ */
+function withinLine(...options: string[]): string {
+  return options.find((o) => words(o) <= MAX_STORY_LINE_WORDS) ?? options[options.length - 1];
 }
 
 /** One sentence naming who charters and supervises the institution; null when not on file. */
@@ -34,14 +43,23 @@ export function regulatorSentence(
   const named = stateAgency(stateCode, charterType);
   const agency = named ? `the ${named}` : "a state agency";
   if (primaryRegulator === "NCUA") {
-    return charterAgency === "State"
-      ? `${subjectPossessive({ subjectName: institutionName })} charter is from ${agency}, and NCUA insures ${subjectPossessive({ subjectName: institutionName }, false)} shares.`
-      : `NCUA charters and supervises ${institutionName ?? "you"} as a federal credit union.`;
+    if (charterAgency !== "State") return `NCUA charters and supervises ${institutionName ?? "you"} as a federal credit union.`;
+    const whose = subjectPossessive({ subjectName: institutionName });
+    return withinLine(
+      `${whose} charter is from ${agency}, and NCUA insures ${subjectPossessive({ subjectName: institutionName }, false)} shares.`,
+      `${whose} charter is from ${agency}; NCUA insures its shares.`,
+      `${institutionName ?? "You"} ${institutionName ? "has" : "have"} a state charter; NCUA insures ${institutionName ? "its" : "your"} shares.`,
+    );
   }
   if (primaryRegulator === "OCC") return `The OCC charters and supervises ${institutionName ?? "you"} as a national bank.`;
   if (primaryRegulator === "FDIC" || primaryRegulator === "Federal Reserve") {
     const federal = primaryRegulator === "FDIC" ? "the FDIC" : "the Federal Reserve";
-    return `${subjectPossessive({ subjectName: institutionName })} charter is from ${agency}, and ${federal} is ${subjectPossessive({ subjectName: institutionName }, false)} primary federal regulator.`;
+    const whose = subjectPossessive({ subjectName: institutionName });
+    return withinLine(
+      `${whose} charter is from ${agency}, and ${federal} is ${subjectPossessive({ subjectName: institutionName }, false)} primary federal regulator.`,
+      `${whose} charter is from ${agency}; ${federal} is its primary federal regulator.`,
+      `${institutionName ?? "You"} ${institutionName ? "has" : "have"} a state charter; ${federal} is ${institutionName ? "its" : "your"} primary federal regulator.`,
+    );
   }
   if (primaryRegulator === "State") return `${subjectPossessive({ subjectName: institutionName })} charter and supervision are with ${agency}.`;
   return null;
@@ -121,7 +139,14 @@ export function complaintBenchmarkFact(b: ComplaintBenchmark | null | undefined,
   } else if (b.fee_complaints_per_billion !== null && b.peer_median_per_billion !== null) {
     const [noun, verb] = b.fee_complaints === 1 ? ["complaint", "equals"] : ["complaints", "equal"];
     const median = b.peer_level === "national" ? `${b.peer_count.toLocaleString("en-US")} peers' median nationwide` : `${group}' median`;
-    text = `${subjectPossessive({ subjectName: institutionName })} ${b.fee_complaints} CFPB fee ${noun} in ${b.year} ${verb} ${per10B(b.fee_complaints_per_billion)} per $10B of deposits; ${median} is ${per10B(b.peer_median_per_billion)}.`;
+    const whose = subjectPossessive({ subjectName: institutionName });
+    const own = per10B(b.fee_complaints_per_billion);
+    const peers = per10B(b.peer_median_per_billion);
+    text = withinLine(
+      `${whose} ${b.fee_complaints} CFPB fee ${noun} in ${b.year} ${verb} ${own} per $10B of deposits; ${median} is ${peers}.`,
+      `${whose} CFPB fee ${noun} in ${b.year} ${verb} ${own} per $10B of deposits; ${median} is ${peers}.`,
+      `${whose} ${b.year} CFPB fee ${noun} ${verb} ${own} per $10B of deposits; peers' median is ${peers}.`,
+    );
   } else {
     return null;
   }

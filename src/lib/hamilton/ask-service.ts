@@ -28,7 +28,8 @@ import { buildAskResponse, clarifyAgain, parseAsk, parseObjective, type AskInten
 import { proseFeeName } from "./workspace/names";
 import { getFeeResearch, getWorkspaceBriefing, type EnginePeerOptions } from "./workspace/research";
 import { getActivePeerSet } from "./active-peer-set";
-import { asksWholeSchedule, scheduleOverview, type ScheduleOverview } from "./workspace/schedule";
+import { asksWholeSchedule, scheduleOverview, withOwnScheduleNote, type ScheduleOverview } from "./workspace/schedule";
+import { PRO_INSTITUTION_MIN_FEES } from "@/lib/data-store/data-room";
 import { asksIncome, asksIncomeWhy, explainIncome, incomeSplit } from "./workspace/why";
 import { withDepth, type IncomeWhy } from "./workspace/story-extras";
 import { getServiceChargeIntensity, getServiceChargeIntensityTrend } from "@/lib/data-store/call-reports";
@@ -344,7 +345,9 @@ export async function answerAsk(user: Asker, body: AskBody): Promise<AskResult> 
   }
 
   if (!question) return { status: 400, body: { error: "Ask a question." } };
-  const { intent, schedule, why } = await resolveAskIntent(institutionId, question, peers, institution.name, fallbackFee);
+  const resolvedAsk = await resolveAskIntent(institutionId, question, peers, institution.name, fallbackFee);
+  const { intent, why } = resolvedAsk;
+  const schedule = resolvedAsk.schedule && account.institution?.id === institutionId ? withOwnScheduleNote(resolvedAsk.schedule, PRO_INSTITUTION_MIN_FEES) : resolvedAsk.schedule;
   const loadedResearch = intent.feeCategory ? await getFeeResearch(institutionId, intent.feeCategory, new Date(), { segment: intent.segment, ...peers }) : null;
   const research = loadedResearch ? { ...loadedResearch, subjectName: institution.name || loadedResearch.institutionName } : null;
   if (intent.feeCategory && !research) return { status: 404, body: { error: "That institution could not be loaded." } };
