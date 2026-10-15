@@ -29,7 +29,7 @@ export function LandingHero({ summary }: { summary: Pick<PublicStatsSummary, "in
           {SITE_NAME} Pro workspace.
         </p>
 
-        <InstitutionSearchForm id="hero-search" className="mt-4 w-full max-w-2xl [&_.fi-field]:max-w-none sm:mt-7" />
+        <InstitutionSearchForm id="hero-search" className="mt-4 w-full max-w-2xl [&_.fi-field]:max-w-none [&_label]:sr-only sm:mt-7" />
         <p className="mt-2.5 text-[13px] leading-5 text-ink-muted">
           {hasFigure(summary.institutionsLabel) ? `${summary.institutionsLabel} institutions with published fees · ` : ""}
           {summary.freshnessLabel}
