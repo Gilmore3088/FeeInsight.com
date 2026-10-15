@@ -11,6 +11,27 @@ export interface FrameVideo {
 }
 
 /**
+ * Where a recorded tour will go, until one is approved: a 16:9 navy poster with a play mark
+ * and its caption. It is a picture, not a control, so it has no button role and does nothing
+ * on a click. Once a clip exists, `FrameMedia` shows the real button instead.
+ */
+export function FramePlaceholder({ caption, className = "" }: { caption: string; className?: string }) {
+  return (
+    <div
+      data-video-placeholder=""
+      className={`relative flex aspect-video w-full select-none flex-col items-center justify-center gap-2 overflow-hidden rounded-xl bg-ink text-on-ink shadow-fi-2 ${className}`}
+    >
+      <span aria-hidden="true" className="flex h-10 w-10 items-center justify-center rounded-full bg-on-ink/15 ring-1 ring-on-ink/30">
+        <svg viewBox="0 0 12 12" className="ml-0.5 h-3.5 w-3.5">
+          <path d="M3 1.5v9l7.5-4.5z" fill="currentColor" />
+        </svg>
+      </span>
+      <span className="whitespace-nowrap px-3 text-center text-[12px] font-semibold leading-4">{caption}</span>
+    </div>
+  );
+}
+
+/**
  * The live exhibit, with an optional recorded clip behind a button. With no clip there is
  * no button at all, so the page never shows a control that does nothing. The clip loads
  * only once the reader asks for it.

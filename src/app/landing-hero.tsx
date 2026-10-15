@@ -44,6 +44,12 @@ export function LandingHero({ summary }: { summary: Pick<PublicStatsSummary, "in
             className="-mx-4 mt-3 flex min-w-0 gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none] sm:mx-0 sm:flex-wrap sm:justify-center sm:overflow-visible sm:px-0 lg:col-start-1 lg:row-start-2 lg:mt-6 lg:justify-start"
             aria-label="Or start here"
           >
+            {/* The Pro plans chip leads, so a phone shows it whole in the first screen (re-walk R3). */}
+            <li>
+              <TrackLink event="upgrade_click" eventProps={{ placement: "home_hero" }} href={PRO_PLANS_NAV.href} className={CHIP}>
+                {PRO_PLANS_NAV.label}
+              </TrackLink>
+            </li>
             <li>
               <Link href="/fees/overdraft" className={CHIP}>
                 Overdraft fees nationwide
@@ -53,11 +59,6 @@ export function LandingHero({ summary }: { summary: Pick<PublicStatsSummary, "in
               <Link href="/research/national-fee-index" className={CHIP}>
                 Read the national report
               </Link>
-            </li>
-            <li>
-              <TrackLink event="upgrade_click" eventProps={{ placement: "home_hero" }} href={PRO_PLANS_NAV.href} className={CHIP}>
-                {PRO_PLANS_NAV.label}
-              </TrackLink>
             </li>
           </ul>
       </div>

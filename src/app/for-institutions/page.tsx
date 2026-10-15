@@ -9,7 +9,6 @@ import type { FeeCategorySummary } from "@/lib/data-store/fees";
 import { getDisplayName } from "@/lib/fee-taxonomy";
 import { PRODUCT_NAME, SITE_NAME } from "@/lib/constants";
 import { PRO_TIERS, tierPriceLabel } from "@/lib/pro-tiers";
-import { getFeeCategoryDetailCached } from "@/lib/data-store/public-cached-reads";
 import { WORKSPACE_SEAT_LIMIT } from "@/lib/hamilton/workspace-seats";
 import { loadSampleReport, sampleReportAvailable } from "@/lib/custom-report/sample-report";
 import { FeeRange, FeeRangeAxis, Logo } from "@/brand/components";
@@ -24,8 +23,7 @@ import { ReportOfferSection, SampleExcerpt } from "./report-offer";
 import { loadSampleLadder, MarketLadder, type MarketLadderData } from "./market-ladder";
 import { TryAPricePanel } from "@/app/subscribe/try-a-price-panel";
 import { buildScenario, type AnalyzeScenario } from "@/app/subscribe/scenario";
-import { LandingSizzle } from "@/app/landing-sizzle";
-import { buildHomeData, buildSampleView } from "@/app/landing-shared";
+import { SANS } from "@/app/landing-shared";
 
 const DEMO_HREF = "/contact?source=demo";
 /** The hero's live figure: the national overdraft benchmark (site v3 brief 03, Q9). */
@@ -52,25 +50,18 @@ export default async function ForInstitutionsPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const query = await searchParams;
-  const [snapshot, sampleLive, sample, overdraftDetail] = await Promise.all([
+  const [snapshot, sampleLive, sample] = await Promise.all([
     getPublicSnapshot(),
     sampleReportAvailable(),
     loadSampleReport().catch(() => null),
-    getFeeCategoryDetailCached("overdraft").catch((error: unknown) => {
-      console.error("[for-institutions] overdraft district read failed; district rows hidden", error);
-      return null;
-    }),
   ]);
   const { summary } = snapshot;
   const heroCategory = snapshot.categories.find((c) => c.fee_category === HERO_CATEGORY) ?? null;
   const liveSample = sampleLive ? sample : null;
   const ladder = liveSample ? await loadSampleLadder(liveSample, snapshot.categories) : null;
   const scenario = buildScenario("Overdraft", heroCategory);
-  // The sizzle here leaves out what this page already shows (the ladder, Try a price): its
-  // workspace chapter is Hamilton answering a question, and its end frame the sample report.
-  const sizzleData = buildHomeData(summary, snapshot.categories, overdraftDetail?.by_fed_district, {
-    sample: buildSampleView(liveSample),
-  });
+  // Each view shows once here (growth OS re-walk R5): the ladder in the hero, Try a price in
+  // Hamilton, and the sample report's rows in the report offer. The homepage sizzle is not replayed.
 
   return (
     <div className="min-h-screen bg-paper">
@@ -78,7 +69,6 @@ export default async function ForInstitutionsPage({
       <main id="main-content">
         <Hero summary={summary} category={heroCategory} ladder={ladder} />
         <HamiltonSection scenario={scenario} />
-        <LandingSizzle data={sizzleData} workspace="ask" topPadding />
         <ReportOfferSection
           sampleLive={sampleLive}
           query={query}
@@ -107,8 +97,12 @@ function Hero({
       <div className="mx-auto grid max-w-page gap-8 px-4 pb-12 pt-8 sm:px-6 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)] lg:items-center lg:gap-12 lg:pb-16 lg:pt-14">
         <div>
           <p className={EYEBROW}>Bank fee benchmarking</p>
-          <h1 className="mt-4 text-[clamp(30px,5vw,44px)] font-extrabold leading-[1.1] tracking-[-0.025em] text-ink">
-            Benchmark every fee <span className="text-brick">against your competitors&apos; own schedules.</span>
+          {/* The homepage hero's display face: Geist 600, one colour, no trailing period. */}
+          <h1
+            className="mt-4 text-[2.25rem] !font-semibold leading-[1.04] !tracking-[-0.04em] text-ink sm:text-[3.5rem] lg:text-[3.6rem]"
+            style={SANS}
+          >
+            Benchmark every fee against your competitors&apos; own schedules
           </h1>
           <p className="mt-5 max-w-xl text-[17px] leading-relaxed text-ink-soft">
             Hamilton, the {SITE_NAME} Pro workspace, places each of your fees in your market, your state and the

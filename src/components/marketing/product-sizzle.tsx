@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { FrameMedia, type FrameVideo } from "./frame-media";
+import { FrameMedia, FramePlaceholder, type FrameVideo } from "./frame-media";
 import { ProgressFill, useInViewChange, useReducedMotion } from "./motion";
 import { ProductFrame } from "./product-frame";
 
@@ -41,6 +41,7 @@ export function ProductSizzle({
   label,
   chapters,
   video,
+  placeholder,
   chapterMs = CHAPTER_MS,
   maxLoops = MAX_LOOPS,
   sceneClassName = SCENE_MIN_HEIGHT,
@@ -48,6 +49,8 @@ export function ProductSizzle({
   label: string;
   chapters: SizzleChapter[];
   video?: FrameVideo | null;
+  /** The caption of the tour's placeholder tile, shown by the chapter tabs while there is no clip. */
+  placeholder?: string;
   chapterMs?: number;
   maxLoops?: number;
   /** The frame's floor per breakpoint; a taller chapter grows the frame, a shorter one keeps it. */
@@ -217,41 +220,43 @@ export function ProductSizzle({
           </div>
         </FrameMedia>
       </ProductFrame>
-      <div
-        role="group"
-        aria-label="Chapters"
-        className="mx-auto mt-4 grid max-w-xl grid-cols-2 gap-1.5 rounded-2xl border border-border bg-surface-0/70 p-1.5 sm:flex sm:rounded-full"
-      >
-        {chapters.map((chapter, i) => {
-          const on = i === active;
-          return (
-            <button
-              key={chapter.key}
-              type="button"
-              onClick={() => choose(i)}
-              aria-pressed={on}
-              aria-controls={`sizzle-${chapter.key}`}
-              className={`relative flex min-h-10 flex-1 items-center justify-center overflow-hidden rounded-full px-3 text-[13px] font-semibold transition-colors motion-reduce:transition-none ${
-                on ? "bg-ink text-on-ink" : "text-ink-soft hover:bg-surface-200"
-              }`}
-            >
-              {chapter.label}
-              {on && running ? (
-                <span className="absolute inset-x-3 bottom-1 h-0.5 overflow-hidden rounded-full bg-on-ink/25">
-                  <ProgressFill
-                    key={turn}
-                    filling
-                    durationMs={chapterMs}
-                    paused={mode === "paused"}
-                    className="bg-on-ink"
-                  />
-                </span>
-              ) : null}
-            </button>
-          );
-        })}
+      <div className="mt-4 flex flex-col items-center gap-4 lg:flex-row lg:justify-center lg:gap-6">
+        <div
+          role="group"
+          aria-label="Chapters"
+          className="grid w-full max-w-xl grid-cols-2 gap-1.5 rounded-2xl border border-border bg-surface-0/70 p-1.5 sm:flex sm:rounded-full"
+        >
+          {chapters.map((chapter, i) => {
+            const on = i === active;
+            return (
+              <button
+                key={chapter.key}
+                type="button"
+                onClick={() => choose(i)}
+                aria-pressed={on}
+                aria-controls={`sizzle-${chapter.key}`}
+                className={`relative flex min-h-10 flex-1 items-center justify-center overflow-hidden rounded-full px-3 text-[13px] font-semibold transition-colors motion-reduce:transition-none ${
+                  on ? "bg-ink text-on-ink" : "text-ink-soft hover:bg-surface-200"
+                }`}
+              >
+                {chapter.label}
+                {on && running ? (
+                  <span className="absolute inset-x-3 bottom-1 h-0.5 overflow-hidden rounded-full bg-on-ink/25">
+                    <ProgressFill
+                      key={turn}
+                      filling
+                      durationMs={chapterMs}
+                      paused={mode === "paused"}
+                      className="bg-on-ink"
+                    />
+                  </span>
+                ) : null}
+              </button>
+            );
+          })}
+        </div>
+        {placeholder && !video?.src ? <FramePlaceholder caption={placeholder} className="max-w-[15rem] lg:w-48" /> : null}
       </div>
-
     </div>
   );
 }

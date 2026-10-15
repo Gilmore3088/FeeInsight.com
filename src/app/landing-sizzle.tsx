@@ -4,10 +4,12 @@ import { AskExhibit, FeeStackExhibit, MarketExhibit, ReportExhibit, TryPriceExhi
 import type { HomeData } from "./landing-shared";
 
 /**
- * A recorded tour, once one is approved (brief 06 §4.1). Until then there is none, and the
- * frame shows no "Watch the tour" button.
+ * A recorded tour, once one is approved (brief 06 §4.1). Until then there is none: the frame
+ * shows no "Watch the tour" button, and a still placeholder tile sits by the chapter tabs.
  */
 export const HOME_TOUR_VIDEO: FrameVideo | null = null;
+/** The placeholder tile's caption while HOME_TOUR_VIDEO is null (growth OS re-walk R1). */
+export const HOME_TOUR_PLACEHOLDER = "Product tour · coming soon";
 
 /**
  * Brief 06 §4.2: the product sizzle. Four chapters, each a different live exhibit: several
@@ -36,6 +38,7 @@ export function LandingSizzle({
         <ProductSizzle
           label="Hamilton · Your institution"
           video={HOME_TOUR_VIDEO}
+          placeholder={HOME_TOUR_PLACEHOLDER}
           chapters={[
             { key: "fee", label: "Every fee", scene: <FeeStackExhibit data={data} search /> },
             { key: "market", label: "Every market", scene: <MarketExhibit data={data} animate wide /> },

@@ -105,7 +105,8 @@ const report = {
 } as unknown as MarketReport;
 const ladder = {
   institutionName: "Sample Bank",
-  feeLabel: "Overdraft (per item)",
+  feeKey: "overdraft",
+  feeLabel: "Overdraft (OD)",
   value: 10,
   rows: [
     { label: "Local competitors", min: 15, q1: 22.5, median: 29.5, q3: 35, max: 36, institutions: 8 },
@@ -153,6 +154,9 @@ describe("homepage (site v3 brief 06 §4.3)", () => {
     expect(t).toContain("Know where your fees stand, with a source for every figure");
     expect(t).toContain("1,234 institutions with published fees · Data refreshed Oct 14, 2026");
     expect(t).toContain("Hamilton, the Fee Insight Pro workspace");
+    // The Pro plans chip comes first, so a phone shows it whole in the first screen (re-walk R3).
+    const chips = [...html.matchAll(/<li><a href="([^"]+)"/g)].map(([, href]) => href);
+    expect(chips[0]).toBe("/subscribe");
     expect(html).not.toContain("text-brick");
     for (const href of ["/fees/overdraft", "/research/national-fee-index", "/subscribe"]) expect(html).toContain(`href="${href}"`);
     expect(t).not.toContain(REPORT_PRICE_INLINE);
@@ -166,6 +170,10 @@ describe("homepage (site v3 brief 06 §4.3)", () => {
     expect(html).toContain('data-motion="off"');
     expect(html).toMatch(/id="sizzle-reports"[^>]*aria-hidden="false"/);
     expect(html).not.toContain("Watch the tour");
+    expect(text(html)).toContain("Product tour · coming soon");
+    expect(html).toContain("data-video-placeholder");
+    // Every chapter wears Hamilton's tabs, with its own mode marked (re-walk R2).
+    for (const mode of ["My fees", "Try a price", "Reports"]) expect(html).toContain(`font-semibold text-ink">${mode}<`);
     expect(renderToStaticMarkup(<LandingSizzle data={buildHomeData(summary, [], null)} />)).toBe("");
   });
 
@@ -204,6 +212,11 @@ describe("homepage (site v3 brief 06 §4.3)", () => {
     const sizzle = renderToStaticMarkup(<LandingSizzle data={data} />);
     expect(sizzle).toContain("Try a price");
     expect(text(sizzle)).toContain("Sample Bank against 15 local competitors");
+    // One name per fee: the taxonomy's display name, in the report and the source lines alike.
+    expect(text(sizzle)).toContain("Wire Transfer (Int'l Out)");
+    expect(text(sizzle)).not.toMatch(/Outgoing international wire|Overdraft \(per item\)/);
+    // The second count says what it counts (re-walk R4).
+    expect(text(pillars)).toContain("of the 8 local competitors that publish this fee");
     const ask = renderToStaticMarkup(<LandingSizzle data={data} workspace="ask" topPadding />);
     expect(ask).not.toContain("Scenario price");
     expect(ask).toContain("pt-16");

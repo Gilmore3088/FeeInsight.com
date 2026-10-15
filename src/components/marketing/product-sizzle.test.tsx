@@ -2,7 +2,7 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CHAPTER_MS, MAX_LOOPS, ProductSizzle } from "./product-sizzle";
-import { FrameMedia } from "./frame-media";
+import { FrameMedia, FramePlaceholder } from "./frame-media";
 
 function stubReducedMotion(reduced: boolean) {
   vi.stubGlobal("matchMedia", (query: string) => ({
@@ -111,5 +111,28 @@ describe("product sizzle", () => {
     rerender(<FrameMedia video={{ src: "/tour.mp4", label: "Watch the tour" }}><p>live</p></FrameMedia>);
     fireEvent.click(screen.getByRole("button", { name: "Watch the tour" }));
     expect(document.querySelector("video")?.getAttribute("src")).toBe("/tour.mp4");
+  });
+
+  it("shows a still tour placeholder that is not a control", () => {
+    render(<FramePlaceholder caption="Product tour · coming soon" />);
+    expect(screen.getByText("Product tour · coming soon")).toBeTruthy();
+    expect(screen.queryByRole("button")).toBeNull();
+    expect(document.querySelector("[data-video-placeholder]")?.className).toContain("aspect-video");
+  });
+
+  it("puts the placeholder by the chapter tabs until a clip exists, then only the real button", () => {
+    const { rerender } = render(<ProductSizzle label="Hamilton" chapters={CHAPTERS} placeholder="Product tour · coming soon" />);
+    expect(document.querySelectorAll("[data-video-placeholder]").length).toBe(1);
+    expect(screen.queryByRole("button", { name: /coming soon/ })).toBeNull();
+    rerender(
+      <ProductSizzle
+        label="Hamilton"
+        chapters={CHAPTERS}
+        placeholder="Product tour · coming soon"
+        video={{ src: "/tour.mp4", label: "Watch the tour" }}
+      />,
+    );
+    expect(document.querySelector("[data-video-placeholder]")).toBeNull();
+    expect(screen.getByRole("button", { name: "Watch the tour" })).toBeTruthy();
   });
 });

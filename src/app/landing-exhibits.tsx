@@ -22,20 +22,23 @@ const OVERDRAFT_NAME = OVERDRAFT_LABEL.replace(/\s*\(.*\)$/, "");
 /** Delay for an fi-a- entrance inside a sizzle chapter. */
 const at = (ms: number) => ({ "--fi-d": `${ms}ms` }) as CSSProperties;
 
-/** The market layers Hamilton compares a fee against (brief 03 §2), as its layer switcher shows them. */
+/** The market layers Hamilton compares a fee against (brief 03 §2), shown as a legend, not a control. */
 const LAYERS = ["Your market", "Your state", "Fed district", "Peer group", "Nation"] as const;
 
 function SourceLine({ children, className = "" }: { children: ReactNode; className?: string }) {
   return <p className={`text-[12px] leading-5 text-ink-muted sm:text-[13px] ${className}`}>{children}</p>;
 }
 
-/** Every fee: the national box plot for each fee a committee asks about, with the source under it. */
-export function FeeStackExhibit({ data, search = false }: { data: HomeData; search?: boolean }) {
+/**
+ * Every fee: the national box plot for each fee a committee asks about, with the source under it.
+ * `shell` draws it inside Hamilton's rail and tabs (My fees), as the sizzle shows it.
+ */
+export function FeeStackExhibit({ data, search = false, shell = false }: { data: HomeData; search?: boolean; shell?: boolean }) {
   const { lines, summary } = data;
   if (lines.length === 0) return null;
   const hi = axisMax(Math.max(...lines.map((line) => line.row.max_amount)));
   const domain: [number, number] = [0, hi];
-  return (
+  const body = (
     <div className="p-4 sm:p-7">
       {search ? (
         <div className="fi-a-rise mb-5 flex h-11 items-center gap-2.5 rounded-lg border border-control-border bg-paper px-3" style={at(0)}>
@@ -65,6 +68,7 @@ export function FeeStackExhibit({ data, search = false }: { data: HomeData; sear
       </SourceLine>
     </div>
   );
+  return shell ? <HamiltonShell active="My fees">{body}</HamiltonShell> : body;
 }
 
 /** Each Fed district's range (lowest to highest fee) with its median as a dot, on the nation's axis. */
@@ -125,7 +129,11 @@ function DistrictRanges({
   );
 }
 
-/** Every market: the layer switcher, the nation's box plot and each Fed district's median on one axis. */
+/**
+ * Every market: the market layers as a legend, the nation's box plot and each Fed district's
+ * median on one axis. In the sizzle's `wide` frame, with a live sample ladder for the same fee,
+ * the left column is the sample bank's fee in each of its markets instead of the nation alone.
+ */
 export function MarketExhibit({
   data,
   animate = false,
@@ -135,39 +143,71 @@ export function MarketExhibit({
   data: HomeData;
   animate?: boolean;
   phoneRows?: number;
-  /** Desktop: the nation on the left, the districts on the right (the sizzle's wide frame). */
+  /** Desktop: the bank's markets on the left, the districts on the right, in Hamilton's shell (My fees). */
   wide?: boolean;
 }) {
   const { overdraft, districts, summary } = data;
   if (!overdraft) return null;
-  const hi = axisMax(Math.max(overdraft.max_amount, ...districts.map((d) => d.max ?? 0)));
+  const ladder = wide && data.ladder?.feeKey === "overdraft" ? data.ladder : null;
+  const hi = axisMax(
+    Math.max(
+      overdraft.max_amount,
+      ...districts.map((d) => d.max ?? 0),
+      ...(ladder ? [ladder.value, ...ladder.rows.map((row) => row.max)] : []),
+    ),
+  );
   const domain: [number, number] = [0, hi];
+  const legend = (
+    <p className="flex flex-wrap gap-y-1 text-[12px]" aria-label="Market layers">
+      {LAYERS.map((layer, i) => (
+        <span key={layer} className={`whitespace-nowrap ${layer === "Fed district" ? "font-semibold text-ink" : "text-ink-muted"}`}>
+          {i > 0 ? <span aria-hidden="true" className="px-1.5 font-normal text-ink-muted">·</span> : null}
+          {layer}
+        </span>
+      ))}
+    </p>
+  );
   const nation = (
     <>
-      <ul className="flex flex-wrap gap-1.5" aria-label="Market layers">
-        {LAYERS.map((layer) => (
-          <li
-            key={layer}
-            className={`rounded-full px-2.5 py-1 text-[12px] font-semibold ${
-              layer === "Fed district" ? "bg-ink text-on-ink" : "border border-border text-ink-soft"
-            }`}
-          >
-            {layer}
-          </li>
-        ))}
-      </ul>
-      <div className="fi-range-stack mt-4">
-        <FeeRange
-          label={`${OVERDRAFT_LABEL}, the nation`}
-          min={overdraft.min_amount}
-          q1={overdraft.p25_amount}
-          median={overdraft.median_amount}
-          q3={overdraft.p75_amount}
-          max={overdraft.max_amount}
-          domain={domain}
-          format={money}
-        />
-      </div>
+      {legend}
+      {ladder ? (
+        <>
+          <p className="max-w-[none] mt-4 flex items-baseline justify-between gap-3">
+            <span className="min-w-0 truncate text-[15px] font-semibold text-ink">{ladder.institutionName}</span>
+            <span className="shrink-0 font-mono text-[22px] font-semibold tabular-nums tracking-tight text-ink">{money(ladder.value)}</span>
+          </p>
+          <div className="fi-range-stack mt-2 space-y-1">
+            {ladder.rows.map((row) => (
+              <FeeRange
+                key={row.label}
+                label={row.label}
+                min={row.min}
+                q1={row.q1}
+                median={row.median}
+                q3={row.q3}
+                max={row.max}
+                value={ladder.value}
+                domain={domain}
+                format={money}
+              />
+            ))}
+            <FeeRangeAxis ticks={[0, hi / 2, hi]} domain={domain} />
+          </div>
+        </>
+      ) : (
+        <div className="fi-range-stack mt-4">
+          <FeeRange
+            label={`${OVERDRAFT_LABEL}, the nation`}
+            min={overdraft.min_amount}
+            q1={overdraft.p25_amount}
+            median={overdraft.median_amount}
+            q3={overdraft.p75_amount}
+            max={overdraft.max_amount}
+            domain={domain}
+            format={money}
+          />
+        </div>
+      )}
     </>
   );
   const byDistrict =
@@ -186,21 +226,24 @@ export function MarketExhibit({
     ) : null;
   const source = (
     <SourceLine className="mt-3">
-      Bar: each district&apos;s range · Dashed line: national median · {summary.freshnessLabel}
+      {ladder ? "Dot: its own fee · " : ""}Bar: each district&apos;s range · Dashed line: national median · {summary.freshnessLabel}
     </SourceLine>
   );
   if (wide) {
     return (
-      <div className="grid gap-6 p-4 sm:p-7 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] lg:gap-10">
-        <div className="min-w-0">
-          {nation}
-          <div className="max-lg:hidden">{source}</div>
+      <HamiltonShell active="My fees">
+        <div className="grid gap-6 p-4 sm:p-7 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] lg:gap-10">
+          <div className="min-w-0">
+            <p className="mb-3 text-[12px] font-semibold uppercase tracking-[0.12em] text-ink-muted">{OVERDRAFT_LABEL}</p>
+            {nation}
+            <div className="max-lg:hidden">{source}</div>
+          </div>
+          <div className="min-w-0">
+            {byDistrict}
+            <div className="lg:hidden">{source}</div>
+          </div>
         </div>
-        <div className="min-w-0">
-          {byDistrict}
-          <div className="lg:hidden">{source}</div>
-        </div>
-      </div>
+      </HamiltonShell>
     );
   }
   return (
@@ -231,8 +274,8 @@ function readOnLabel(iso: string | null): string | null {
   });
 }
 
-/** A fee's name for running text: "Overdraft (per item)" reads as "overdraft". */
-const plainFee = (label: string) => label.replace(/\s*\(.*\)$/, "").toLowerCase();
+/** A fee's name for running text: "Overdraft (OD)" reads as "overdraft"; an acronym keeps its capitals. */
+const plainFee = (label: string) => label.replace(/\s*\(.*\)$/, "").replace(/\b[A-Z][a-z]+\b/g, (word) => word.toLowerCase());
 
 /**
  * Every fee: several of the sample bank's own fees, each with the words of its schedule that
@@ -273,18 +316,25 @@ export function SourcedFeesExhibit({ data, limit = 4, animate = false }: { data:
   );
 }
 
-/** Hamilton's left rail, so a workspace scene reads as the workspace. */
-function HamiltonShell({ children }: { children: ReactNode }) {
+/**
+ * Hamilton's left rail, and its mode tabs when the scene names one, so every sizzle chapter
+ * reads as the workspace (growth OS re-walk R2).
+ */
+function HamiltonShell({ active, children }: { active?: HamiltonMode; children: ReactNode }) {
   const rail = [Home, BarChart3, Bookmark, FileText];
+  const lit = active === "Reports" ? 3 : 1;
   return (
     <div className="flex min-h-full">
       <nav aria-hidden="true" className="hidden w-14 shrink-0 flex-col items-center gap-4 border-r border-border bg-paper/60 py-5 sm:flex">
         <AppIcon brand="hamilton" size={28} title="" />
         {rail.map((Icon, i) => (
-          <Icon key={i} className={`h-[18px] w-[18px] ${i === 1 ? "text-ink" : "text-ink-muted"}`} />
+          <Icon key={i} className={`h-[18px] w-[18px] ${i === lit ? "text-ink" : "text-ink-muted"}`} />
         ))}
       </nav>
-      <div className="flex min-w-0 flex-1 flex-col">{children}</div>
+      <div className="flex min-w-0 flex-1 flex-col">
+        {active ? <ModeTabs active={active} /> : null}
+        {children}
+      </div>
     </div>
   );
 }
@@ -313,8 +363,7 @@ function ModeTabs({ active }: { active: HamiltonMode }) {
 export function TryPriceExhibit({ data }: { data: HomeData }) {
   if (!data.scenario) return null;
   return (
-    <HamiltonShell>
-      <ModeTabs active="Try a price" />
+    <HamiltonShell active="Try a price">
       <div className="flex flex-1 flex-col justify-center p-0 sm:p-7">
         <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col sm:flex-none sm:rounded-xl sm:border sm:border-border">
           <TryAPricePanel scenario={data.scenario} bare />
@@ -347,7 +396,8 @@ export function AskExhibit({ data, animate = false }: { data: HomeData; animate?
           </div>
           <div {...rise(1200)}>
             <ChatMessage from="hamilton" source={source} className="max-w-full">
-              At <Figure>{money(ladder.value)}</Figure>, it sits {where} of its {formatCount(local.institutions)} local competitors.
+              At <Figure>{money(ladder.value)}</Figure>, it sits {where} of the {formatCount(local.institutions)} local competitors
+              that publish this fee.
               <table className="mt-3 w-full text-[13px]">
                 <tbody>
                   {ladder.rows.map((row) => (
@@ -407,8 +457,8 @@ export function ReportExhibit({ data }: { data: HomeData }) {
   const count = (position: SampleRow["position"]) => sample.rows.filter((row) => row.position === position).length;
   const stat = "min-w-0 !p-3 sm:!p-4 [&_.fi-stat-value]:text-[22px] [&_.fi-stat-value]:leading-7 sm:[&_.fi-stat-value]:text-[28px]";
   return (
-    <div className="bg-surface-200/70 px-3 py-4 sm:px-10 sm:py-8">
-      <article className="fi-a-rise mx-auto min-w-0 max-w-3xl rounded-lg bg-surface-0 p-4 shadow-fi-2 sm:p-7" style={at(0)}>
+    <HamiltonShell active="Reports">
+      <article className="fi-a-rise min-w-0 p-4 sm:px-8 sm:py-6" style={at(0)}>
         <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-muted">Competitive Fee Position Report</p>
         <h3 className="mt-1.5 text-[19px] font-semibold leading-tight tracking-[-0.02em] text-ink sm:text-[23px]">
           {sample.institutionName} against {formatCount(sample.competitors)} local competitors
@@ -432,7 +482,7 @@ export function ReportExhibit({ data }: { data: HomeData }) {
             {rows.map((row) => (
               <tr key={row.key} className="border-t border-border">
                 <td className="py-1.5 pr-2 text-ink">
-                  {row.label.replace(/\s*\(.*\)$/, "")}
+                  {row.label}
                   {row.position !== "in_market" ? (
                     <span
                       className={`ml-1.5 whitespace-nowrap rounded px-1 text-[11px] font-semibold ${
@@ -449,11 +499,11 @@ export function ReportExhibit({ data }: { data: HomeData }) {
             ))}
           </tbody>
         </table>
-        <p className="fi-a-rise mt-3 border-t border-border pt-3 text-[12px] leading-5 text-ink-muted" style={at(1800)}>
+        <p className="max-w-[none] fi-a-rise mt-3 border-t border-border pt-3 text-[12px] leading-5 text-ink-muted" style={at(1800)}>
           Source: each bank&apos;s published fee schedule · {data.summary.freshnessLabel}
         </p>
       </article>
-    </div>
+    </HamiltonShell>
   );
 }
 
@@ -464,8 +514,9 @@ function NationalBriefExhibit({ data }: { data: HomeData }) {
   const hi = axisMax(Math.max(overdraft.max_amount, ...data.districts.map((d) => d.max ?? 0)));
   const domain: [number, number] = [0, hi];
   return (
-    <div className="grid items-start gap-6 bg-surface-200/70 px-4 py-5 sm:px-10 sm:py-8 lg:grid-cols-2">
-      <article className="fi-a-rise min-w-0 rounded-lg bg-surface-0 p-5 shadow-fi-2 sm:p-8" style={at(0)}>
+    <HamiltonShell active="Reports">
+    <div className="grid items-start gap-6 p-4 sm:p-7 lg:grid-cols-2">
+      <article className="fi-a-rise min-w-0" style={at(0)}>
         <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-muted">Committee brief</p>
         <h3 className="mt-2 text-[20px] font-semibold leading-tight tracking-[-0.02em] text-ink sm:text-[24px]">
           {OVERDRAFT_NAME}: where the market stands
@@ -474,17 +525,18 @@ function NationalBriefExhibit({ data }: { data: HomeData }) {
           <StatCard label="National median" value={money(overdraft.median_amount)} className="min-w-0 !p-4" />
           <StatCard label="Institutions" value={formatCount(overdraft.institution_count)} className="min-w-0 !p-4" />
         </div>
-        <p className="mt-4 border-t border-border pt-3 text-[12px] leading-5 text-ink-muted">
+        <p className="max-w-[none] mt-4 border-t border-border pt-3 text-[12px] leading-5 text-ink-muted">
           Source: {PRODUCT_NAME}, published fee schedules · {summary.freshnessLabel}
         </p>
       </article>
       {data.districts.length > 0 ? (
-        <article className="fi-a-rise hidden min-w-0 rounded-lg bg-surface-0 p-8 shadow-fi-2 lg:block" style={at(800)}>
+        <article className="fi-a-rise hidden min-w-0 lg:block" style={at(800)}>
           <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-muted">By Fed district</p>
           <DistrictRanges districts={data.districts} national={overdraft.median_amount} domain={domain} />
         </article>
       ) : null}
     </div>
+    </HamiltonShell>
   );
 }
 

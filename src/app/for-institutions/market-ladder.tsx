@@ -2,9 +2,11 @@ import { FeeRange, FeeRangeAxis } from "@/brand/components";
 import { HAMILTON_MODES } from "@/lib/constants";
 import type { IndexEntry } from "@/lib/data-store/fee-index";
 import type { FeeCategorySummary } from "@/lib/data-store/fees";
+import { getDisplayName } from "@/lib/fee-taxonomy";
 import { getPeerIndexCached } from "@/lib/data-store/public-cached-reads";
 import type { MarketReport } from "@/lib/custom-report/report-data";
 import { STATE_NAMES } from "@/lib/us-states";
+import { money } from "@/app/landing-shared";
 
 /** The fees the ladder can show, in order of preference: the first the sample publishes and can compare. */
 const LADDER_KEYS = ["overdraft", "monthly_maintenance", "nsf"] as const;
@@ -21,6 +23,9 @@ export interface LadderRow {
 
 export interface MarketLadderData {
   institutionName: string;
+  /** The fee's taxonomy key, e.g. "overdraft". */
+  feeKey: string;
+  /** Its display name from the fee taxonomy, the same name every exhibit uses. */
   feeLabel: string;
   value: number;
   rows: LadderRow[];
@@ -45,7 +50,6 @@ function indexRow(label: string, entry: Spread | null | undefined): LadderRow | 
   };
 }
 
-const formatLadderMoney = (v: number) => (Number.isInteger(v) ? `$${v}` : `$${v.toFixed(2)}`);
 
 const CHARTER_PEERS: Record<string, string> = { bank: "Banks nationwide", credit_union: "Credit unions nationwide" };
 
@@ -89,7 +93,13 @@ export function buildMarketLadder({
     indexRow("The nation", national.find((c) => c.fee_category === line.key)),
   ].filter((row): row is LadderRow => row !== null);
   if (rows.length < 2) return null;
-  return { institutionName: subject.institution_name, feeLabel: line.label, value: line.own.amount, rows };
+  return {
+    institutionName: subject.institution_name,
+    feeKey: line.key,
+    feeLabel: getDisplayName(line.key),
+    value: line.own.amount,
+    rows,
+  };
 }
 
 /**
@@ -118,7 +128,7 @@ export function MarketLadder({ data, bare = false }: { data: MarketLadderData; b
       {bare ? null : (
         <figcaption className="flex items-center justify-between gap-3 border-b border-border px-4 py-2.5">
           <span className="flex items-center gap-2 text-sm font-semibold text-ink">
-            <span aria-hidden className="h-2 w-2 rounded-full bg-brick" />
+            <span aria-hidden className="h-2 w-2 rounded-full bg-ink" />
             Hamilton
           </span>
           <span className="text-xs text-ink-muted">Illustration, live figures</span>
@@ -140,10 +150,10 @@ export function MarketLadder({ data, bare = false }: { data: MarketLadderData; b
       </div>
       <div className="px-4 py-4 sm:px-6 sm:py-5">
         <p className="text-[12px] font-semibold uppercase tracking-[0.12em] text-ink-muted">{data.feeLabel}</p>
-        <p className="mt-1 flex items-baseline justify-between gap-3">
+        <p className="max-w-[none] mt-1 flex items-baseline justify-between gap-3">
           <span className="min-w-0 truncate text-[17px] font-semibold text-ink sm:text-[19px]">{data.institutionName}</span>
           <span className="shrink-0 font-mono text-[26px] font-semibold tabular-nums tracking-tight text-ink sm:text-[30px]">
-            {formatLadderMoney(data.value)}
+            {money(data.value)}
           </span>
         </p>
         <div className="fi-range-stack mt-3 space-y-1">
@@ -163,7 +173,7 @@ export function MarketLadder({ data, bare = false }: { data: MarketLadderData; b
           <FeeRangeAxis ticks={[0, top / 2, top]} domain={domain} />
         </div>
       </div>
-      <p className="border-t border-border px-4 py-2.5 text-[12px] text-ink-muted sm:px-6">
+      <p className="max-w-[none] border-t border-border px-4 py-2.5 text-[12px] text-ink-muted sm:px-6">
         Dot: its own published fee. Box: the middle half of each market.
       </p>
     </figure>

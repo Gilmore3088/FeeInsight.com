@@ -168,12 +168,13 @@ export function buildSampleView(report: MarketReport | null): SampleView | null 
   const rows: SampleRow[] = [];
   for (const line of report.analysis.lines) {
     if (!line.comparable || !line.own || !line.peers || !line.position) continue;
-    rows.push({ key: line.key, label: line.label, amount: line.own.amount, median: line.peers.median, position: line.position });
+    rows.push({ key: line.key, label: getDisplayName(line.key), amount: line.own.amount, median: line.peers.median, position: line.position });
   }
   return {
     institutionName: report.data.subject.institution_name,
     competitors: report.analysis.readiness.competitorsWithData,
-    fees: sourcedFees(report.analysis.lines),
+    // One name per fee on every exhibit: the fee taxonomy's display name, not the report line's.
+    fees: sourcedFees(report.analysis.lines).map((fee) => ({ ...fee, label: getDisplayName(fee.key) })),
     rows,
   };
 }

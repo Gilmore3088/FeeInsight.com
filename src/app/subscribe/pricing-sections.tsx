@@ -118,7 +118,7 @@ function faqItems(summary: PublicStatsSummary) {
     },
     {
       question: "How is the Pro price set?",
-      answer: `By your institution's total assets in its latest call report. ${CONSULTANT_PRICE_NOTE}`,
+      answer: `By your institution's total assets in its latest call report. ${CONSULTANT_PRICE_NOTE} If we don't have your institution's total assets, email ${CONTACT_EMAIL} and we'll set your price.`,
     },
     {
       question: "How do seats work?",

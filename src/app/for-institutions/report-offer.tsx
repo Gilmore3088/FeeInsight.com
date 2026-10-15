@@ -2,9 +2,12 @@ import type { ReactNode } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { REPORT_OFFER, REPORT_PRICE_INLINE } from "@/lib/constants";
+import { getDisplayName } from "@/lib/fee-taxonomy";
 import type { CustomReportAnalysis, ReportLine } from "@/lib/custom-report/analysis";
 import type { MarketReport } from "@/lib/custom-report/report-data";
-import { money, POSITION_LABEL } from "@/app/market-report/report-body";
+import { POSITION_LABEL } from "@/app/market-report/report-body";
+// One money format on every marketing exhibit: always with cents ("$10.00").
+import { money } from "@/app/landing-shared";
 import { verifiedSourceQuote } from "./sample-sources";
 
 /** The one report request form (site v3 brief 05 §3-4, #1171): /reports sells the one-off. */
@@ -136,10 +139,10 @@ export function SampleExcerpt({ report }: { report: MarketReport }) {
         {rows.map(({ line, quote }) => (
           <li key={line.key} className="px-4 py-3">
             <div className="flex items-baseline justify-between gap-3">
-              <span className="min-w-0 text-[14px] font-semibold text-ink">{line.label}</span>
+              <span className="min-w-0 text-[14px] font-semibold text-ink">{getDisplayName(line.key)}</span>
               <span className="shrink-0 font-mono text-[17px] font-semibold tabular-nums text-ink">{money(line.own!.amount)}</span>
             </div>
-            <p className="mt-0.5 flex items-baseline justify-between gap-3 text-[12px] text-ink-muted">
+            <p className="max-w-[none] mt-0.5 flex items-baseline justify-between gap-3 text-[12px] text-ink-muted">
               <span>Local median {money(line.peers!.median)}</span>
               <span className="shrink-0">{POSITION_LABEL[line.position!]}</span>
             </p>
@@ -160,7 +163,7 @@ export function SampleExcerpt({ report }: { report: MarketReport }) {
           {rows.map(({ line, quote }) => (
             <tr key={line.key} className="border-b border-border align-top last:border-b-0">
               <td className="px-4 py-2 text-ink">
-                {line.label}
+                {getDisplayName(line.key)}
                 {quote ? <span className="mt-0.5 block text-[11px] leading-4 text-ink-muted">Source: &ldquo;{quote}&rdquo;</span> : null}
               </td>
               <td className="px-3 py-2 text-right font-semibold tabular-nums text-ink">{money(line.own!.amount)}</td>
@@ -170,7 +173,7 @@ export function SampleExcerpt({ report }: { report: MarketReport }) {
           ))}
         </tbody>
       </table>
-      <p className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 border-t border-border px-4 py-2 text-[11px] text-ink-muted">
+      <p className="max-w-[none] flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 border-t border-border px-4 py-2 text-[11px] text-ink-muted">
         <span>Live, each line from the bank&apos;s own fee schedule</span>
         <Link href={SAMPLE_HREF} className="font-semibold text-ink underline underline-offset-2">
           Read the full sample report
