@@ -24,6 +24,10 @@ import { getFeeCategoryDetailCached, getNationalRateStatsCached } from "@/lib/da
 import { formatRatePercent, percentFeeAllowed } from "@/lib/percent-fees";
 import { benchmarkBasis, getPublicSnapshot } from "@/lib/public-stats";
 import { MIN_INSTITUTIONS_FOR_MEDIAN } from "@/lib/data-store/maturity";
+import { summarizeFees, summarizeFeesBy } from "@/lib/data-store/fee-stats";
+import type { FeeCategorySummary, FeeInstance } from "@/lib/data-store/fees";
+import { sampleReportAvailable } from "@/lib/custom-report/sample-report";
+import { SAMPLE_REPORT_FOOTER_LINK } from "@/components/customer-footer";
 import {
   charterDots,
   charterFinding,
@@ -31,11 +35,12 @@ import {
   districtLabel,
   marketDots,
   nationalBand,
+  positionsShown,
   relatedBands,
   stateLabel,
   tierLabel,
 } from "./category-view";
-import { DotLegend, HeroRange, MarketDots, RelatedRanges, VideoSlot } from "./exhibits";
+import { DotLegend, HeroRange, LockedRows, MarketDots, RelatedRanges, VideoSlot } from "./exhibits";
 
 interface PageProps {
   params: Promise<{ category: string }>;
@@ -43,6 +48,36 @@ interface PageProps {
 
 /** States drawn for Pro, by institution count; the full list is in Hamilton. */
 const STATES_SHOWN = 12;
+
+/**
+ * This page's figures, all from the one category read that also draws the chart and the
+ * districts, so the hero, the chart, the districts and the bank/credit union split count the
+ * same institutions. The shared snapshot is a separate cache entry that can be built at
+ * another moment; it still supplies what this read lacks (the $0 count, the audience mark).
+ */
+function pageSummary(category: string, fees: FeeInstance[], snapshotRow: FeeCategorySummary | null): FeeCategorySummary | null {
+  const rows = fees.filter((f) => f.source_document_id !== null).map((f) => ({ ...f, fee_category: category }));
+  if (rows.length === 0) return snapshotRow;
+  const all = summarizeFees(rows);
+  const byCharter = summarizeFeesBy(rows, (r) => (r.charter_type === "bank" || r.charter_type === "credit_union" ? r.charter_type : null));
+  return {
+    fee_category: category,
+    institution_count: all.institution_count,
+    total_observations: all.observation_count,
+    bank_count: all.bank_count,
+    cu_count: all.cu_count,
+    min_amount: all.min_amount,
+    max_amount: all.max_amount,
+    avg_amount: all.avg_amount,
+    median_amount: all.median_amount,
+    p25_amount: all.p25_amount,
+    p75_amount: all.p75_amount,
+    zero_count: snapshotRow?.zero_count ?? 0,
+    bank_median_amount: byCharter.get("bank")?.median_amount ?? null,
+    cu_median_amount: byCharter.get("credit_union")?.median_amount ?? null,
+    unstated_audience_institution_count: snapshotRow?.unstated_audience_institution_count ?? 0,
+  };
+}
 
 /** Thousands-separated dollars ("$5,000", "$2.50"); "-" when unavailable. */
 const money = (value: number | null | undefined) => formatFeeAmount(value) ?? "-";
@@ -63,7 +98,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   return {
     title: `${name} Fee - National Benchmarks & Analysis`,
     ...(thin ? { robots: { index: false, follow: true } } : {}),
-    description: `National benchmarking data for ${name.toLowerCase()} fees. See median, P25/P75, distribution, and breakdowns by bank vs. credit union, asset tier, Fed district, and state.`,
+    description: `What U.S. banks and credit unions charge for ${name.toLowerCase()} fees${national?.median_amount != null ? `: a median of ${money(national.median_amount)}` : ""}. The full spread, every Fed district, and banks against credit unions, each read from the institution's own schedule.`,
     openGraph: {
       title: `${name} Fee Benchmarks`,
       description: `How much do banks charge for ${name.toLowerCase()}? National median, distribution, and peer comparisons.`,
@@ -91,12 +126,13 @@ export default async function FeeCategoryPage({ params }: PageProps) {
   const plainName = name.replace(/\s*\([^)]*\)/g, "");
   const family = getFeeFamily(category);
   const familyColor = family ? getFamilyColor(family) : null;
-  const [detail, snapshot, rateStats] = await Promise.all([
+  const [detail, snapshot, rateStats, hasSample] = await Promise.all([
     getFeeCategoryDetailCached(category),
     getPublicSnapshot(),
     // Fees this category may state as a rate ("1% of the transaction") get their own
     // statistics; a rate is never pooled with the dollar figures above it.
     percentFeeAllowed(category) ? getNationalRateStatsCached(category).catch(() => null) : Promise.resolve(null),
+    sampleReportAvailable().catch(() => false),
   ]);
   const showRates = rateStats != null && rateStats.maturity_tier !== "insufficient" && rateStats.median_rate != null;
 
@@ -104,10 +140,9 @@ export default async function FeeCategoryPage({ params }: PageProps) {
   // explains it. Consumer guides are public, so this link is never a dead end.
   const consumerGuides = await loadGuidesForCategory(category, "consumer");
 
-  // Headline figures come from the shared public snapshot, so this page states the same
-  // median, institution count and entry count as the fee index, research hub and homepage.
-  // The chart uses the same population: one value per institution.
-  const national = snapshot.categories.find((c) => c.fee_category === category) ?? null;
+  // Same statistics contract as the fee index, research hub and homepage (one value per
+  // institution); every figure on this page is read from the one category read (pageSummary).
+  const national = pageSummary(category, detail.fees, snapshot.categories.find((c) => c.fee_category === category) ?? null);
   const band = nationalBand(national);
   const refreshedOn = snapshot.summary.refreshedOn;
   const institutionValues = detail.institution_values ?? [];
@@ -121,8 +156,12 @@ export default async function FeeCategoryPage({ params }: PageProps) {
   const districts = band ? marketDots(detail.by_fed_district, band, districtLabel) : [];
   const charters = band ? charterDots(national, band) : [];
   const charterSentence = charterFinding(charters, name);
-  const tiers = band && isPro ? marketDots(detail.by_asset_tier, band, tierLabel) : [];
-  const states = band && isPro ? marketDots(detail.by_state, band, stateLabel).slice(0, STATES_SHOWN) : [];
+  const tiers = band ? marketDots(detail.by_asset_tier, band, tierLabel) : [];
+  const states = band ? marketDots(detail.by_state, band, stateLabel).slice(0, STATES_SHOWN) : [];
+  // Free visitors get one size group in full (the largest), and the names of the rest.
+  const previewTier = isPro ? null : ([...tiers].sort((a, b) => b.institutions - a.institutions)[0] ?? null);
+  const lockedTiers = previewTier ? tiers.filter((t) => t.key !== previewTier.key) : [];
+  const headline = districtHeadline(districts);
   const related = relatedBands(snapshot.categories, family ? (FEE_FAMILIES[family] ?? []).filter((c) => c !== category) : []);
 
   return (
@@ -216,11 +255,13 @@ export default async function FeeCategoryPage({ params }: PageProps) {
           <section aria-labelledby="district-heading" className="space-y-3">
             <div>
               <h2 id="district-heading" className="text-[20px] font-semibold tracking-[-0.02em] text-ink sm:text-[24px]">
-                {districtHeadline(districts)}
+                {headline?.title}
               </h2>
-              <p className="mt-1 text-[14px] text-ink-muted">The median in each Federal Reserve district.</p>
+              <p className="mt-1 text-[14px] text-ink-muted">
+                {headline?.detail ? `${headline.detail} ` : ""}The median in each Federal Reserve district.
+              </p>
             </div>
-            <DotLegend />
+            <DotLegend positions={positionsShown(districts)} />
             <div className="rounded-2xl border border-border bg-surface-0 px-4 py-2 shadow-fi-1 sm:px-6">
               <MarketDots dots={districts} band={band} ariaLabel={`${plainName} median by Fed district`} />
             </div>
@@ -239,6 +280,15 @@ export default async function FeeCategoryPage({ params }: PageProps) {
               {PRIMARY_CTA_NAV.label}
             </Button>
           </form>
+          {hasSample && (
+            <p className="mt-3 text-[13px] text-ink-muted">
+              Or{" "}
+              <Link href={SAMPLE_REPORT_FOOTER_LINK.href} className="font-medium text-ink underline decoration-border underline-offset-4 hover:decoration-ink">
+                see a sample report
+              </Link>
+              , free.
+            </p>
+          )}
         </section>
 
         {/* 5. One breakdown in full; the rest in Hamilton. */}
@@ -278,8 +328,17 @@ export default async function FeeCategoryPage({ params }: PageProps) {
               <div className="rounded-2xl border border-border bg-surface-0 p-4 sm:p-6">
                 <p className="text-[16px] font-semibold text-ink">By asset size and by state, in Hamilton</p>
                 <p className="mt-1 text-[14px] text-ink-muted">
-                  Hamilton, the Fee Insight Pro workspace, sets this fee against banks your size and your state.
+                  Hamilton, the Fee Insight Pro workspace, sets this fee against institutions your size and in your state.
                 </p>
+                {previewTier && (
+                  <div className="mt-3">
+                    <MarketDots dots={[previewTier]} band={band} ariaLabel={`${plainName} median, ${previewTier.label}`} />
+                    {lockedTiers.length > 0 && <LockedRows rows={lockedTiers} />}
+                    {states.length > 0 && (
+                      <p className="border-t border-border pt-2 text-[12px] text-ink-muted">Plus the median in each state.</p>
+                    )}
+                  </div>
+                )}
                 <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-3">
                   <TrackLink
                     event="upgrade_click"

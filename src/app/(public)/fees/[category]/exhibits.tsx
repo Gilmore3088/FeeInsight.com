@@ -30,7 +30,8 @@ export function HeroRange({ band, label }: { band: NationalBand; label: string }
     { name: "High", value: money(band.max) },
   ];
   return (
-    <figure className="fi-range-stack rounded-2xl border border-border bg-surface-0 p-4 shadow-fi-1 sm:p-6">
+    // The median is the headline figure just above, so the range's own right-hand figure is hidden.
+    <figure className="fi-range-stack rounded-2xl border border-border bg-surface-0 p-4 shadow-fi-1 sm:p-6 [&_.fi-range-value]:hidden">
       <FeeRange
         label={label}
         min={band.min}
@@ -96,8 +97,11 @@ export function MarketDots({ dots, band, ariaLabel }: { dots: MarketDot[]; band:
   );
 }
 
-/** What the dots and bands mean, said once per section that draws them. */
-export function DotLegend() {
+const POSITION_WORD: Record<Position, string> = { below: "below", within: "inside", above: "above" };
+
+/** What the dots and bands mean, said once per section that draws them, naming only the colours drawn. */
+export function DotLegend({ positions }: { positions: Position[] }) {
+  const only = positions.length === 1 ? positions[0] : null;
   return (
     <p className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-ink-muted" aria-hidden="true">
       <span className="inline-flex items-center gap-1.5">
@@ -108,15 +112,44 @@ export function DotLegend() {
         <span className="h-3.5 w-[2px] bg-ink/60" />
         U.S. median
       </span>
-      <span className="inline-flex items-center gap-1.5">
-        <span className="inline-flex gap-0.5">
-          <span className="h-2.5 w-2.5 rounded-full bg-below-market" />
-          <span className="h-2.5 w-2.5 rounded-full bg-in-range" />
-          <span className="h-2.5 w-2.5 rounded-full bg-above-market" />
+      {positions.length > 0 && (
+        <span className="inline-flex items-center gap-1.5">
+          <span className="inline-flex gap-0.5">
+            {positions.map((p) => (
+              <span key={p} className={`h-2.5 w-2.5 rounded-full ${DOT[p]}`} />
+            ))}
+          </span>
+          {only
+            ? `Every median here is ${POSITION_WORD[only]} the U.S. middle half`
+            : `Median: ${positions.map((p) => POSITION_WORD[p]).join(", ")} the U.S. middle half`}
         </span>
-        Market median: below, inside or above
-      </span>
+      )}
     </p>
+  );
+}
+
+/**
+ * The Pro rows a free visitor can't read yet: each group's name and size, with no figure.
+ * Nothing is blurred; the figures are simply not sent to the page.
+ */
+export function LockedRows({ rows }: { rows: { key: string; label: string; institutions: number }[] }) {
+  return (
+    <ul className="divide-y divide-border">
+      {rows.map((r) => (
+        <li key={r.key} className="flex items-center justify-between gap-3 py-1.5 text-[14px]">
+          <span className="min-w-0 leading-tight text-ink">
+            {r.label}
+            <span className="block text-[11px] text-ink-muted">{r.institutions.toLocaleString("en-US")} institutions</span>
+          </span>
+          <span className="inline-flex shrink-0 items-center gap-1 text-[12px] text-ink-muted">
+            <svg viewBox="0 0 12 12" aria-hidden="true" className="h-3 w-3">
+              <path d="M3.5 5V3.75a2.5 2.5 0 0 1 5 0V5M2.5 5h7v5.5h-7z" fill="none" stroke="currentColor" strokeWidth="1.2" />
+            </svg>
+            In Hamilton
+          </span>
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -143,6 +176,9 @@ export function RelatedRanges({ items }: { items: { category: string; label: str
                 format={money}
                 figure="median"
               />
+              <p className="-mt-1 pb-1.5 text-[12px] text-ink-muted">
+                Middle half <span className="font-mono text-ink">{money(band.p25)}–{money(band.p75)}</span>
+              </p>
             </Link>
           </li>
         );

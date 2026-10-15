@@ -48,7 +48,22 @@ describe("fee category view", () => {
       ["Atlanta", "within"],
       ["Boston", "below"],
     ]);
-    expect(districtHeadline(dots)).toBe("Highest in Dallas, lowest in Boston");
+    expect(districtHeadline(dots)).toEqual({
+      title: "Highest in Dallas, lowest in Boston",
+      detail: "Dallas is highest at $35, Boston lowest at $24.",
+    });
+  });
+
+  it("leads with the shared median when most districts charge it", () => {
+    const dots = marketDots(
+      [row("District 3", 32, 97), row("District 6", 30, 300), row("District 7", 30, 351), row("District 1", 30, 168), row("District 12", 25, 269)],
+      band,
+      districtLabel,
+    );
+    expect(districtHeadline(dots)).toEqual({
+      title: "$30 in 3 of 5 Fed districts",
+      detail: "Philadelphia is highest at $32, San Francisco lowest at $25.",
+    });
   });
 
   it("splits banks and credit unions from the snapshot, with one sourced sentence", () => {
@@ -64,7 +79,7 @@ describe("fee category view", () => {
   });
 
   it("lists related fees that have a full national spread", () => {
-    const related = relatedBands([summary({ fee_category: "nsf" }), summary({ fee_category: "continuous_od", p25_amount: null })], ["nsf", "continuous_od"]);
+    const related = relatedBands([summary({ fee_category: "nsf" }), summary({ fee_category: "continuous_od", p25_amount: null }), summary({ fee_category: "od_daily_cap" })], ["nsf", "continuous_od", "od_daily_cap"]);
     expect(related.map((r) => r.category)).toEqual(["nsf"]);
   });
 });

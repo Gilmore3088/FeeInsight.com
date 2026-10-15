@@ -94,13 +94,30 @@ export const stateLabel = (value: string): string | null => STATE_NAMES[value] ?
 export const tierLabel = (value: string): string | null =>
   FDIC_TIER_LABELS[value] ?? getSegmentLabel(value, "bank")?.split(", ")[1] ?? null;
 
-/** The headline over the district plot: where the median is highest and lowest. */
-export function districtHeadline(dots: MarketDot[]): string | null {
+/**
+ * The headline over the district plot, and one line under it. When most districts share one
+ * median that is the finding; a gap of a dollar or two between two districts is not.
+ */
+export function districtHeadline(dots: MarketDot[]): { title: string; detail: string | null } | null {
   if (dots.length < 2) return null;
+  const money = (n: number) => `$${Number.isInteger(n) ? n : n.toFixed(2)}`;
   const high = dots[0];
   const low = dots[dots.length - 1];
-  if (high.median === low.median) return `The same median in every Fed district`;
-  return `Highest in ${high.label}, lowest in ${low.label}`;
+  if (high.median === low.median) return { title: `${money(high.median)} in every Fed district`, detail: null };
+
+  const counts = new Map<number, number>();
+  for (const d of dots) counts.set(d.median, (counts.get(d.median) ?? 0) + 1);
+  const [common, shared] = [...counts].sort((a, b) => b[1] - a[1])[0];
+  const range = `${high.label} is highest at ${money(high.median)}, ${low.label} lowest at ${money(low.median)}.`;
+  if (shared * 2 > dots.length) {
+    return { title: `${money(common)} in ${shared} of ${dots.length} Fed districts`, detail: range };
+  }
+  return { title: `Highest in ${high.label}, lowest in ${low.label}`, detail: range };
+}
+
+/** The dot colours a plot actually draws, so its legend explains only those. */
+export function positionsShown(dots: MarketDot[]): Position[] {
+  return (["below", "within", "above"] as const).filter((p) => dots.some((d) => d.position === p));
 }
 
 /** The free breakdown: banks against credit unions, as one sentence with both medians. */
@@ -126,6 +143,8 @@ export function relatedBands(
 ): { category: string; label: string; band: NationalBand }[] {
   const out: { category: string; label: string; band: NationalBand }[] = [];
   for (const category of members) {
+    // A daily cap is a limit on what is charged, not a charge, so it is not drawn as a fee.
+    if (category.endsWith("_cap")) continue;
     const row = categories.find((c) => c.fee_category === category);
     const band = nationalBand(row);
     if (!band || band.institutions < MIN_INSTITUTIONS_FOR_MEDIAN) continue;
