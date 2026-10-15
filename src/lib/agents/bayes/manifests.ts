@@ -256,6 +256,9 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   // "(cont.)" dropped, "2FA" kept, and the sentence_end tail name; the cursor reads every name again.
   // v4 (#1499 review): the tail's figure-equals-amount gate, total wording, the dormancy tier, tail
   // qualifiers and generic tails, lower-case heads before a balance condition; same cursor, shadow.
+  // v5 (#1499, prod hand-check of v4): "may therefore" totals, period and bare-activation generics,
+  // "only if" and "your" balance conditions, generic heads on a balance-below condition, and the
+  // figure gate on the footnote-stripped name skipping bare counts; same cursor, shadow.
   LIVE_FRAGMENT_STRATEGY: "Its cursor re-reads every live fee name each pass (2,000 a verify step); there is nothing to replay.",
   HOURLY_CHECK_VERSION: "Its cursor re-reads every live fee name for an hourly price each pass (2,000 a verify step); there is nothing to replay.",
   // v1 (#1455): a new shadow pass. Its selector reads every shared or vendor-path document pair not

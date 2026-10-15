@@ -308,6 +308,33 @@ Darwin owns verification and classification.
     additional and fee words is refused ("Handling fee", "Late charge"), as is one holding "our" or
     "your" ("Allpoint network our ATM fee"); a tail word may hold "/" or be a parenthetical
     ("Return Item/Insufficient Funds Fee", "Consecutive days overdrawn (OD) fee").
+  v5 (#1499, after a prod hand-check of v4: 101 of 105 renames right, 2 too generic, 2 wrong, 5
+  missed; still in shadow):
+  - "may therefore" anywhere is total wording: a stored name cut just after it ("... you may
+    therefore", 55708) is a sum, never renamed.
+  - Generic: a period and a fee word alone ("Per quarter charge", 64144; "Per month fee", "Per year
+    fee") and a bare "Activation fee" (98668, a gift card's) are no name, as head or tail. "Card
+    Activation Fee" still is.
+  - "only if" / "only when" after the head reaches the balance gate (132041), and "your" is allowed
+    in a balance-below condition ("... fee if your daily balance falls below", 142684); "you",
+    "we", "our", and "your" in any other condition still give no head.
+  - A generic head ("Monthly Fee", "Service charge") renames only on a balance-below condition that
+    passes the balance gate (under $100, no excess, no figure equal to the amount): 142422, 110391,
+    110392 were real fees correctly priced. Any other generic head is refused as before, and its
+    line may still take a tail name (`gluedSentenceSplit(name, { allowGeneric: true })` returns it
+    flagged `generic`; every other caller still gets null).
+  - Figure gate: read on the name after its glued footnote ("10NON-MEMBER LOAN APPLICATION FEE" $10,
+    109893), and a bare whole figure followed by a count noun (debits, withdrawals, transactions,
+    transfers, checks, items, times) is a count, not the price ("more than 6 debits per month ...
+    excessive transaction fee of" $6, 137819). A span of time ("After 5 days" $5, 97910; "3 years
+    dormant" $3) still blocks.
+  - Known miss: 125163 "Monthly service charge when balance falls below" $2, whose source line also
+    states "$5 monthly service charge" and "$2 paper statement fee". The stored name lost both
+    figures and neither the live row nor its verified row carries the source line (the raw row's
+    `conditions` / `extraction_note` would take a new join), so the second price cannot be seen;
+    the fixture asserts the rename as it is.
+  `liveFragmentCountSql()` mirrors each rule (`head_generic`, `generic_ok`, the figure gate on
+  `readable`); JS-vs-SQL parity holds on every switch-on fixture.
 - Live hourly re-check (`hourly-frequency-check.ts`, #1456). About 802 live fees say in their name
   that they are priced by the hour ("Research Fee $25/hour", "Subpoena Fee - Per Hour") but carried
   no frequency or a per-item one, so a report read the price as a flat charge. `hourly` shows as "per
@@ -777,7 +804,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `DARWIN_SCHEDULE_REFILE_STRATEGY` | `verify.schedule_refile` | v1 | `darwin/schedule-refile.ts` |
 | `DARWIN_VERDICT_SCORE_STRATEGY` | `verify.verdict_score` | v1 | `darwin/verdict-score.ts` |
 | `DARWIN_RECHECK_STRATEGY` | `verify.recheck` | v3 | `darwin/verified-recheck.ts` |
-| `LIVE_FRAGMENT_STRATEGY` | `darwin.live_fragment_check` | v4 | `darwin/live-fragment-check.ts` |
+| `LIVE_FRAGMENT_STRATEGY` | `darwin.live_fragment_check` | v5 | `darwin/live-fragment-check.ts` |
 | `HOURLY_CHECK_VERSION` | `darwin.hourly_frequency_check` | v1 | `darwin/hourly-frequency-check.ts` |
 | `DOCUMENT_OWNER_STRATEGY` | `verify.document_owner` | v1 | `darwin/document-owner.ts` |
 | `DARWIN_VERIFY_STRATEGY` | `verify.rules` | v3 | `darwin/verify.ts` |
