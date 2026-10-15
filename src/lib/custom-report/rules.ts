@@ -15,6 +15,13 @@ export interface FeeLineRule {
   allowZero: boolean;
 }
 
+/**
+ * A fee stated for a small-item variant ("Overdraft fee on item under $5 | $7") is a different
+ * charge from the standard per-item fee, so it never stands for the line (#1177). "Items over
+ * $5" stays: that is the standard fee with its exemption stated.
+ */
+export const CONDITIONAL_VARIANT = "(under|less than|below|up to) ?\\$ ?[0-9]";
+
 export const FEE_LINE_RULES: FeeLineRule[] = [
   {
     key: "monthly_maintenance",
@@ -32,7 +39,7 @@ export const FEE_LINE_RULES: FeeLineRule[] = [
     label: "Overdraft (per item)",
     sourceKeys: ["overdraft", "nsf"],
     include: "(overdraft|overdrawn|\\mod\\M|o/d|paid item|paid nsf|courtesy pay|bounce protection|privilege)",
-    exclude: "(transfer|sweep|daily|continuous|extended|sustained|limit|line of credit|protection plan|\\mcap\\M|maximum|return)",
+    exclude: `(transfer|sweep|daily|continuous|extended|sustained|limit|line of credit|protection plan|\\mcap\\M|maximum|return|${CONDITIONAL_VARIANT})`,
     lo: 5,
     hi: 45,
     // A bank that states $0 (no overdraft or NSF charge) is a real data point, not a gap.
@@ -43,7 +50,7 @@ export const FEE_LINE_RULES: FeeLineRule[] = [
     label: "NSF / returned item",
     sourceKeys: ["nsf", "overdraft"],
     include: "(nsf|insufficient|non-?sufficient|returned item|return(ed)? (check|item|ach|payment)|unpaid item)",
-    exclude: "(deposit|\\mcap\\M|daily max|maximum|\\mpaid\\M|others|re-?present|credit card|loan|transfer|cover)",
+    exclude: `(deposit|\\mcap\\M|daily max|maximum|\\mpaid\\M|others|re-?present|credit card|loan|transfer|cover|${CONDITIONAL_VARIANT})`,
     lo: 5,
     hi: 45,
     // A bank that states $0 (no overdraft or NSF charge) is a real data point, not a gap.
