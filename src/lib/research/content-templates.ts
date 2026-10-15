@@ -52,7 +52,7 @@ export const CONTENT_TEMPLATES: ContentTemplate[] = [
     id: "peer-benchmark",
     name: "Peer Benchmarking Report",
     category: "report",
-    prompt: "Write a 1500-word peer benchmarking report for {tier} {charter} institutions. Include: peer group definition, national vs peer medians across spotlight categories, fee positioning scorecard, revenue correlation insights from call reports, and 3 strategic recommendations. Use the fee-benchmarking and executive-report methodologies.",
+    prompt: "Write a 1500-word peer benchmarking report for {tier} {charter} institutions. Include: peer group definition, national vs peer medians across spotlight categories, fee positioning scorecard, revenue correlation insights from call reports, and 3 questions the data puts to management (never advice to raise, lower or drop a fee). Use the fee-benchmarking and executive-report methodologies.",
     params: [
       { name: "tier", placeholder: "Asset tier (e.g., micro, community, midsize, regional, mega)" },
       { name: "charter", placeholder: "Charter type (bank or credit_union)" },

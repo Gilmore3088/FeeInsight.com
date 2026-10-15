@@ -102,11 +102,18 @@ export async function cancelReport(
       return { success: false, error: "This report has no cancellable agent run" };
     }
 
-    await sql`
+    // Guarded (#1271): a job that finished between the read above and this write keeps its
+    // status, and nothing is cancelled.
+    const requested = await sql`
       UPDATE report_jobs
          SET status = 'cancel_requested', cancel_requested_at = NOW()
        WHERE id = ${jobId}
+         AND status IN ('pending', 'assembling', 'rendering', 'cancel_requested')
+       RETURNING id
     `;
+    if (requested.length === 0) {
+      return { success: false, error: "Job not found or already complete/failed" };
+    }
     const cancelled = await cancelAgentRun(Number(job.agent_run_id), "hamilton-admin");
     if (!cancelled.success) {
       await sql`

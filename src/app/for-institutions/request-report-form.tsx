@@ -474,7 +474,7 @@ function RequestReportFormInner({
               name="competitors"
               type="text"
               maxLength={300}
-              placeholder="e.g. Frost Bank, Amplify Credit Union"
+              placeholder="e.g. JPMorgan Chase, Amplify Credit Union"
               className={INPUT_CLASS}
             />
           </div>

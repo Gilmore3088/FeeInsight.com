@@ -539,7 +539,7 @@ function StructuredAskConversation({
                 <LinkButton href={researchHrefFor(response.answer.feeCategory).replace("/pro/research", "/pro/simulate")} primary>
                   Try a price
                 </LinkButton>
-                {response.savedAnalysisId ? <><LinkButton href={`/pro/reports?from_analysis=${encodeURIComponent(response.savedAnalysisId)}`}>Create board brief</LinkButton><DownloadAnswerPdf analysisId={response.savedAnalysisId} memoWriting={memo?.state === "writing"} /></> : null}
+                {response.savedAnalysisId ? <><LinkButton href={`/pro/reports?from_analysis=${encodeURIComponent(response.savedAnalysisId)}`}>Build board brief</LinkButton><DownloadAnswerPdf analysisId={response.savedAnalysisId} memoWriting={memo?.state === "writing"} /></> : null}
               </>
             ) : null
           }
@@ -554,7 +554,7 @@ function StructuredAskConversation({
                 <LinkButton href={researchHrefFor(response.answer.feeCategory).replace("/pro/research", "/pro/simulate")} primary>
                   Try a price
                 </LinkButton>
-                {response.savedAnalysisId ? <><LinkButton href={`/pro/reports?from_analysis=${encodeURIComponent(response.savedAnalysisId)}`}>Create board brief</LinkButton><DownloadAnswerPdf analysisId={response.savedAnalysisId} memoWriting={memo?.state === "writing"} /></> : null}
+                {response.savedAnalysisId ? <><LinkButton href={`/pro/reports?from_analysis=${encodeURIComponent(response.savedAnalysisId)}`}>Build board brief</LinkButton><DownloadAnswerPdf analysisId={response.savedAnalysisId} memoWriting={memo?.state === "writing"} /></> : null}
               </>
             ) : null
           }

@@ -6,10 +6,10 @@ import { DeliverableView } from "./DeliverableView";
 const source = { label: "Bank Fee Index, published fees", table: "published_fee_catalog", asOf: "2026-10-01" };
 
 describe("DeliverableView", () => {
-  it("renders paragraphs, sourced lines, tables, checklists and the appendix", () => {
+  it("renders paragraphs, sourced lines, tables and the appendix", () => {
     const deliverable: Deliverable = {
-      kind: "implementation_checklist",
-      title: "Implementation checklist",
+      kind: "board_memo",
+      title: "Board memo",
       institutionName: "Example Bank",
       preparedOn: "2026-10-06T00:00:00Z",
       decisionIds: ["d1"],
@@ -19,7 +19,6 @@ describe("DeliverableView", () => {
           paragraphs: ["Example Bank charges $30."],
           facts: [{ text: "The peer median is $29.", source, sampleSize: 41 }],
           table: { columns: ["Price", "Peers charging less"], rows: [["$30", "22 of 41"]] },
-          checklist: [{ text: "Send the change-in-terms notice", rule: "Reg DD, 30 days before" }],
         },
       ],
       appendix: [
@@ -44,8 +43,6 @@ describe("DeliverableView", () => {
       "Example Bank charges $30.",
       "The peer median is $29.",
       "22 of 41",
-      "Send the change-in-terms notice",
-      "Reg DD, 30 days before",
       "How these figures were built",
       "Market data only",
       "Texas banks, n=41",

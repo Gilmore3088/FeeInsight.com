@@ -91,6 +91,9 @@ async function handleGET(
  * `complete` is accepted only for a job whose saved reconciliation tied out (#1249): the
  * report-reconcile step is what completes a report (#1066), and a complete job is
  * downloadable, so this endpoint must not skip that check. Anything else gets a 409.
+ *
+ * `assembling` and `rendering` move only an open job (pending, assembling, rendering); a
+ * complete, failed or cancelled job gets a 409 and is left as it is (#1271).
  */
 const VALID_STATUSES = new Set(['assembling', 'rendering', 'complete', 'failed']);
 
@@ -162,11 +165,24 @@ async function handlePATCH(
            AND status IN ('queued', 'running')
       `;
     } else {
-      await tx`
+      // Only an open job moves (#1271): a finished (complete, failed) or cancelled job is
+      // never reopened, and its agent run is left as it is.
+      const moved = await tx<Array<{ id: string }>>`
         UPDATE report_jobs SET status = ${status}
          WHERE id = ${id}
-           AND status NOT IN ('cancel_requested', 'cancelled')
+           AND status IN ('pending', 'assembling', 'rendering')
+         RETURNING id
       `;
+      if (moved.length === 0) {
+        const [job] = await tx<Array<{ status: string }>>`
+          SELECT status FROM report_jobs WHERE id = ${id}
+        `;
+        if (!job) return { code: 404, error: 'Report job not found' };
+        return {
+          code: 409,
+          error: `Report job is ${job.status}, so it cannot be moved back to ${status}.`,
+        };
+      }
       await tx`
         UPDATE agent_runs
            SET status = 'running', started_at = COALESCE(started_at, NOW()),

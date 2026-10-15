@@ -130,7 +130,7 @@ function LandingResearchResultsForSelection({ selection }: { selection: LandingR
       {result && briefHref ? (
         <a href={briefHref}
           className="mt-4 inline-block rounded-md border border-warm-300 px-4 py-2 text-sm font-medium underline">
-          Prepare a board brief from this selection
+          Build a board brief from this selection
         </a>
       ) : null}
       {message ? <p role="alert" className="mt-4 text-sm text-red-700">{message}</p> : null}

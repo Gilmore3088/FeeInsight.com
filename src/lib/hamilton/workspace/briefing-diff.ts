@@ -13,6 +13,7 @@ import type { Briefing, FeePositionRow, Observation } from "./types";
 export type BriefingChangeKind =
   | "own_price"
   | "peer_median"
+  | "peer_group"
   | "band_side"
   | "fee_added"
   | "fee_removed"
@@ -32,12 +33,29 @@ export interface BriefingDiff {
   toQuarter: string;
   fromGeneratedAt: string;
   toGeneratedAt: string;
+  /** The peer group each stored copy was read against (the institution's default group then). */
+  fromPeerLabel: string;
+  toPeerLabel: string;
   changes: BriefingChange[];
 }
 
 /** "2026-Q4" for any date in October to December 2026 (UTC). */
 export function briefingQuarter(date: Date): string {
   return `${date.getUTCFullYear()}-Q${Math.floor(date.getUTCMonth() / 3) + 1}`;
+}
+
+/** "Q4 2026" for "2026-Q4", as a reader writes it. */
+export function quarterLabel(quarter: string): string {
+  const m = /^(\d{4})-Q([1-4])$/.exec(quarter);
+  return m ? `Q${m[2]} ${m[1]}` : quarter;
+}
+
+/** "2027-Q1" after "2026-Q4". */
+export function nextQuarter(quarter: string): string {
+  const m = /^(\d{4})-Q([1-4])$/.exec(quarter);
+  if (!m) return quarter;
+  const q = Number(m[2]);
+  return q === 4 ? `${Number(m[1]) + 1}-Q1` : `${m[1]}-Q${q + 1}`;
 }
 
 function money(value: number): string {
@@ -76,15 +94,24 @@ function feeChanges(previous: FeePositionRow[], current: FeePositionRow[]): Brie
     const old = before.get(row.feeCategory);
     const name = row.displayName;
     if (!old) {
-      changes.push({ kind: "fee_added", feeCategory: row.feeCategory, text: `${name}: now on your published schedule at ${money(row.current)}.` });
+      changes.push({ kind: "fee_added", feeCategory: row.feeCategory, text: `${name}: now on its published schedule at ${money(row.current)}.` });
       continue;
     }
     if (!same(old.current, row.current)) {
       changes.push({
         kind: "own_price",
         feeCategory: row.feeCategory,
-        text: `${name}: your published price moved from ${money(old.current)} to ${money(row.current)} (${delta(old.current, row.current)}).`,
+        text: `${name}: its published price moved from ${money(old.current)} to ${money(row.current)} (${delta(old.current, row.current)}).`,
       });
+    }
+    if (old.peerLabel !== row.peerLabel) {
+      // A different peer group is not a market move: name the change and compare nothing across it.
+      changes.push({
+        kind: "peer_group",
+        feeCategory: row.feeCategory,
+        text: `${name}: now compared with ${row.peerLabel} (last quarter ${old.peerLabel}), so its peer figures are not compared.`,
+      });
+      continue;
     }
     if (old.band && row.band && !same(old.band.median, row.band.median)) {
       changes.push({
@@ -99,13 +126,13 @@ function feeChanges(previous: FeePositionRow[], current: FeePositionRow[]): Brie
       changes.push({
         kind: "band_side",
         feeCategory: row.feeCategory,
-        text: `${name}: your price is now ${SIDE_TEXT[newSide]}; last quarter it was ${SIDE_TEXT[oldSide]}.`,
+        text: `${name}: its price is now ${SIDE_TEXT[newSide]}; last quarter it was ${SIDE_TEXT[oldSide]}.`,
       });
     }
   }
   for (const row of previous) {
     if (!after.has(row.feeCategory)) {
-      changes.push({ kind: "fee_removed", feeCategory: row.feeCategory, text: `${row.displayName}: no longer on your published schedule (was ${money(row.current)}).` });
+      changes.push({ kind: "fee_removed", feeCategory: row.feeCategory, text: `${row.displayName}: no longer on its published schedule (was ${money(row.current)}).` });
     }
   }
   return changes;
@@ -165,6 +192,8 @@ export function diffBriefings(
     toQuarter: current.quarter,
     fromGeneratedAt: previous.briefing.generatedAt,
     toGeneratedAt: current.briefing.generatedAt,
+    fromPeerLabel: previous.briefing.peerLabel,
+    toPeerLabel: current.briefing.peerLabel,
     changes: [
       ...feeChanges(previous.briefing.positions ?? [], current.briefing.positions ?? []),
       ...incomeChange(previous.briefing, current.briefing),

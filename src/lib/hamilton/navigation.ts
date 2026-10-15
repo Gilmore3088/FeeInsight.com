@@ -21,6 +21,7 @@
  *   - 2026-10-15 James: build on #1011's unified workspace. Its left navigation
  *     (HAMILTON_WORKSPACE_NAV) replaces the header tabs inside /pro; HAMILTON_NAV still drives the
  *     site header for Pro users on public pages.
+ *   - 2026-10-15 James ("Nav only" card): a "Your institution" entry opens My fees; Overview stays national.
  */
 
 /** Base path for Hamilton screens. Change here if route group structure changes in Phase 40. */
@@ -41,6 +42,7 @@ export const HAMILTON_NAV = [
  */
 export const HAMILTON_WORKSPACE_NAV = [
   { label: "Overview",       href: `${HAMILTON_BASE}/hamilton`,     icon: "ChartNoAxesColumnIncreasing" },
+  { label: "Your institution", href: `${HAMILTON_BASE}/research`,   icon: "Landmark" },
   { label: "Ask Hamilton",   href: `${HAMILTON_BASE}/analyze`,      icon: "MessageCircle" },
   { label: "Research",       href: `${HAMILTON_BASE}/intelligence`, icon: "Search" },
   { label: "Try a price",    href: `${HAMILTON_BASE}/simulate`,     icon: "Calculator" },
@@ -50,7 +52,7 @@ export const HAMILTON_WORKSPACE_NAV = [
   { label: "Admin",          href: "/admin",                        icon: "Settings" },
 ] as const;
 
-const RESEARCH_PATHS = ["/pro/intelligence", "/pro/research", "/pro/data", "/pro/market", "/pro/categories", "/pro/districts", "/pro/news"];
+const RESEARCH_PATHS = ["/pro/intelligence", "/pro/data", "/pro/market", "/pro/categories", "/pro/districts", "/pro/news"];
 
 export function isWorkspaceNavActive(pathname: string | null, item: (typeof HAMILTON_WORKSPACE_NAV)[number]): boolean {
   if (!pathname) return false;

@@ -554,7 +554,7 @@ export interface NameFileRow extends HeldRow {
   filed_key: string;
   filed_by: NameFiledBy;
   settled_banks: number | string | null;
-  /** The settled category's live p5 and p95 across banks (store decisions). */
+  /** The settled category's live p5 and p95, weighted by row (store decisions). */
   range_p5?: number | string | null;
   range_p95?: number | string | null;
 }
@@ -595,7 +595,8 @@ export function nameFileHold(
   if (byStore && lineContradictsCategory(row.filed_key, `${name} ${excerpt}`)) return "line_contradicts_category";
   if (byStore && priceClauseNamesOtherFee(row.filed_key, name, excerpt, amount)) return "price_names_other_fee";
   // A store decision inherits the store's mistakes; a price outside the category's own live
-  // spread (p5 to p95 across banks) waits for a person ("Early closure fee of $500", raw 337301).
+  // spread (p5 to p95 of its live rows, weighted by row) waits for a person ("Early closure fee
+  // of $500", raw 337301).
   if (byStore) {
     const p5 = row.range_p5 == null ? null : Number(row.range_p5);
     const p95 = row.range_p95 == null ? null : Number(row.range_p95);
@@ -670,7 +671,8 @@ export async function fileHeldByName(
          WHERE n >= $5::numeric * total
            AND banks >= CASE WHEN array_length(string_to_array(name, ' '), 1) <= 2 THEN $6::int ELSE $3::int END
       ), ranges AS (
-        -- Each settled category's live spread across banks, read on the category index.
+        -- Each settled category's live spread (p5 to p95 of its live rows, weighted by row, not by
+        -- bank), read on the category index.
         SELECT p.canonical_fee_key AS key,
                percentile_cont(0.05) WITHIN GROUP (ORDER BY p.amount) AS p5,
                percentile_cont(0.95) WITHIN GROUP (ORDER BY p.amount) AS p95

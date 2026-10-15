@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { catalogFacts, questionFigures, reconcileAnswer, ties, type LiveFeeValues } from "./answer-correctness";
+import { catalogFacts, questionFigures, reconcileAnswer, reconcileMemoText, ties, type LiveFeeValues } from "./answer-correctness";
 import { buildAskResponse, parseAsk } from "./workspace/ask";
 import { marketLayer } from "./workspace/context";
 import { QUALITY_QUESTIONS } from "./workspace/quality-bar";
@@ -108,5 +108,48 @@ describe("answer correctness", () => {
     expect(ties(20, 0.005, [32], [20])).toBe(true);
     expect(ties(12, 0.005, [32], [20])).toBe(false);
     expect(questionFigures("What if we charged $35 for overdraft?")).toEqual([35]);
+  });
+
+  describe("the paid memo's text (#1079)", () => {
+    const q = "How does our overdraft fee compare?";
+    const setup = () => {
+      const r = research();
+      const response = buildAskResponse({ question: q, intent: parseAsk(q), research: r, memory: [] });
+      return { r, response };
+    };
+
+    it("ties a memo that states the live fee and a live statistic", () => {
+      const { r, response } = setup();
+      const median = response.answer?.storyline ? r.band?.median : null;
+      const text = `Your overdraft fee is $32.${median != null ? ` The peer median is $${median}.` : ""}`;
+      const result = reconcileMemoText({ question: q, response, research: r, live: liveFor(r), text });
+      expect(result).toMatchObject({ checked: true, failures: [] });
+      expect(result.figures).toBeGreaterThan(0);
+    });
+
+    it("fails a memo figure that ties to no live value", () => {
+      const { r, response } = setup();
+      const result = reconcileMemoText({ question: q, response, research: r, live: liveFor(r), text: "Your overdraft fee is $32 and peers charge $91.37." });
+      expect(result.failures).toEqual(["figures that tie to no live catalog value: $91.37"]);
+    });
+
+    it("accepts a figure the storyline states from another source, as the free check does", () => {
+      const { r, response } = setup();
+      const story = response.answer!.storyline!;
+      const withIncome = {
+        ...response,
+        answer: {
+          ...response.answer!,
+          storyline: { ...story, situation: [...story.situation, { text: "Service charges were $4.2 million last year.", source: { table: "call_reports", label: "Call report" } } as (typeof story.situation)[number]] },
+        },
+      };
+      const result = reconcileMemoText({ question: q, response: withIncome, research: r, live: liveFor(r), text: "Service charges were $4.2 million." });
+      expect(result.failures).toEqual([]);
+    });
+
+    it("leaves the memo unchecked when the catalog could not be read", () => {
+      const { r, response } = setup();
+      expect(reconcileMemoText({ question: q, response, research: r, live: null, text: "$32" })).toEqual({ checked: false, figures: 0, failures: [] });
+    });
   });
 });

@@ -475,6 +475,14 @@ v65 (rules 65, Oct 9, customer audience):
   cannot become two audiences, so the document's re-read writes them. Pinnacle (47) heads
   `KNOX_PRIORITY_REREAD_IDS` for that re-read.
 
+Stored excerpt, #1394 (Oct 15, no version change, so no document is re-read for it): the
+`excerpt="..."` Knox stores with an extracted fee holds only the fee's own cells of a two-column
+line (`own-cells.ts`): the cell at its price that names it best, the price-less label cells before
+it, and the period or condition cells after it. West Shore Bank's $40 outgoing international wire
+was stored with the zipper-bag cell beside it. A tie, or no cell at the price, keeps the whole line;
+held and rate rows, and the audience read, still use the whole line. Rows stored earlier keep the
+whole line.
+
 Rules 65, subordination (Oct 15, no version change): Knox reads a subordination fee as
 `legal_process` (James, Oct 15, reversing Oct 8; `fee-taxonomy.ts`). Hamilton's rules re-check
 counts that read as reproducing a live subordination still filed as `other_lending_fee` until the
@@ -658,7 +666,7 @@ After the extract itself, each extract step runs these passes in order (`run-sto
     photocopy or research filed as a paper statement: `lineContradictsCategory`), the clause that
     holds the price does not read as another fee ("A $25 fee will be assessed for early
     withdrawals" under a maintenance name: `priceClauseNamesOtherFee`), and the price sits inside
-    the category's live p5 to p95 across banks ("Early closure fee of $500" stays held);
+    the category's live p5 to p95, weighted by row ("Early closure fee of $500" stays held);
   - Darwin's category guard and price range accept it. A person's label skips the store-only
     checks.
   A moved line keeps its name and amount and carries `knox_name_filed:<label|store>` and

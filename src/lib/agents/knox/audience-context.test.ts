@@ -54,6 +54,37 @@ describe("Knox audience suggestion from context (#1059)", () => {
     expect(hasBusinessFees(["Corporate Drafts (per item) | $3.00", "Copyright Oak Tree Business Systems, Inc.", "Stop Payment $30"])).toBe(false);
   });
 
+  // #1059 50-fee spot check (86052 gpcu.org, 37392 membersfirstctfcu.com) and the live corporate names
+  // it pointed to: a credit union's official check in any spelling is no audience; a corporate
+  // account or checking name still is business.
+  it.each([
+    "Corporate/Cashiers Check Fee",
+    "Corporate Bank Check",
+    "Corporate/cashier’s check withdrawal payable to third party",
+    "Corporate / Cashier’s Checks 5 free then",
+    "Corporate/Official Check Issued (each)",
+    "Corporate -Bank/Teller Check",
+    "Corporate/Teller Checks",
+    "Photocopy - Corporate/Member Check",
+    "Corporate/personal check copy (per draft)",
+    "Corporate or Personal Check Copy",
+    "Copy of Corporate Share Draft",
+    "Stop Payment on Corporate Share Drafts, Money Orders and/or ACH Items",
+    "Check Copy Fee (Corporate One)",
+    "Corporate Stop Payment",
+    "Check Cashing – Non-member (on-us or Corporate)",
+  ])("reads an official check as no audience: %s", (name) => {
+    expect(suggest(null, `Fee Schedule\n${name} $30`, name)).toMatchObject({ source: "default_general_schedule", audience: "consumer" });
+    expect(hasBusinessFees([`${name} | $30.00`, "Stop Payment $30"])).toBe(false);
+  });
+
+  it.each(["Corporate Checking Monthly Fee", "Monthly Service Fee - Corporate Checking", "Corporate Account Analysis Fee"])(
+    "keeps a corporate account name business: %s",
+    (name) => {
+      expect(suggest(null, `Fee Schedule\n${name} $30`, name)).toMatchObject({ source: "fee_name", audience: "business" });
+    },
+  );
+
   it("takes no section from a table row or a menu, but counts a business column", () => {
     // A fee under a consumer | business column header sits in one column; the text does not say which.
     const table = ["CONSUMER CHECKING ACCOUNTS | BUSINESS ACCOUNTS", "Xplore Spend Account* | Xplore Business Savings", "Monthly Service Charge $5.00"].join("\n");

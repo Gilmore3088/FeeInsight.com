@@ -605,7 +605,7 @@ describe("held-name rules for unclassified held lines (#1102)", () => {
 describe("held lines filed by their name: a person's label or the store's settled name (#1102)", () => {
   const held = (fee_raw_id: number, amount: string, fee_name: string, excerpt: string, filed_key: string, filed_by: "label" | "store" = "store") => ({
     fee_raw_id, amount, fee_name, conditions: conditions(excerpt), institution_id: 9, source_document_id: 40, filed_key, filed_by, settled_banks: 12,
-    // The settled category's live p5 to p95 across banks.
+    // The settled category's live p5 to p95, weighted by row.
     range_p5: "1.00", range_p95: "60.00",
     outlier_flags: ["knox_review:unclassified", HELD_SET_ASIDE_FLAG],
   });
@@ -633,7 +633,7 @@ describe("held lines filed by their name: a person's label or the store's settle
     [held(441210, "150.00", "Subordination Fee", "Subordination Fee | $150.00", "other_lending_fee"), "name_reads_other_category"],
     // The $10 is the row before's monthly fee; the paper statement fee is $2.50.
     [held(421833, "10.00", "Paper Statement Fee (per Statement)", "• $10.00/month if none of the above criteria are met. | Paper Statement Fee (per Statement) | $2.50", "paper_statement"), "price_not_under_name"],
-    // Outside the category's live spread across banks.
+    // Outside the category's live spread (p5 to p95, weighted by row).
     [held(200602, "500.00", "Returned Statement Fee", "Returned Statement Fee | $500.00", "account_research"), "outside_category_range"],
     // Second review of #1385: the price is the next fee's, or the line contradicts the store's category.
     [held(506621, "1.00", "Overdraft Transfer Fee", "Overdraft Transfer Fee (Applicable to overdraft transfers generated automatically | Inquiry Fee12. . . . . . . . $1.00 per transaction inquiry", "od_protection_transfer"), "price_not_under_name"],

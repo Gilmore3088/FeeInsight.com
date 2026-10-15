@@ -24,9 +24,9 @@ vi.mock("./actions", () => ({
   loadScenarioById: async () => null,
 }));
 vi.mock("@/components/hamilton/basket/AddToReportButton", () => ({ useReportBasket: () => [] }));
-vi.mock("@/components/hamilton/landing/LandingResearchEntry", () => ({ LandingResearchEntry: () => null }));
 
 import ReportsPage from "./page";
+import { encodeLandingResearch } from "@/lib/hamilton/landing-research-handoff";
 import { buildReportPeerCoveragePreview } from "@/lib/hamilton/report-evidence";
 
 const metadata: ReportArtifactMetadata = {
@@ -75,6 +75,19 @@ function deferred<T>() {
   const promise = new Promise<T>((done) => { resolve = done; });
   return { promise, resolve };
 }
+
+describe("Reports page with a research link (old draft page retired)", () => {
+  const base = { version: 1 as const, task: "board_report" as const, categories: ["overdraft"], charter: "all" as const };
+  it("sends state research to the market view's Build board brief", async () => {
+    const research = encodeLandingResearch({ ...base, scope: { kind: "state", stateCode: "FL" } });
+    await expect(ReportsPage({ searchParams: Promise.resolve({ research }) })).rejects.toThrow(/^\/pro\/intelligence\?research=.*&lens=fees$/);
+  });
+  it("sends a local selection to Saved analyses and a broken link to the Reports list", async () => {
+    const research = encodeLandingResearch({ ...base, scope: { kind: "local", institutionId: 8109 } });
+    await expect(ReportsPage({ searchParams: Promise.resolve({ research }) })).rejects.toThrow("/pro/saved");
+    await expect(ReportsPage({ searchParams: Promise.resolve({ research: "not-json" }) })).rejects.toThrow("/pro/reports");
+  });
+});
 
 describe("Reports page canonical research context", () => {
   it("passes an explicit URL subject through coverage, generation and saved display without making it the default", async () => {

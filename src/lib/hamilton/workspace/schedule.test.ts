@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { asksWholeSchedule, scheduleOverview } from "./schedule";
+import { OWN_SCHEDULE_COLLECTING, asksWholeSchedule, scheduleOverview, withOwnScheduleNote } from "./schedule";
 import type { FeePositionRow } from "./types";
 
 // Invented rows for tests only; no figure here is live data.
@@ -60,5 +60,19 @@ describe("whole-schedule questions", () => {
     const overview = scheduleOverview([row("wire_transfer", "Wire Transfer", 25, null)]);
     expect(overview.top).toBeNull();
     expect(overview.facts).toEqual([]);
+  });
+});
+
+describe("an institution with too few fees on file (#1078)", () => {
+  it("says plainly there is nothing to compare when no fee is on file", () => {
+    const overview = scheduleOverview([], "Example Credit Union");
+    expect(overview.top).toBeNull();
+    expect(overview.feesOnFile).toBe(0);
+    expect(overview.shortAnswer).toBe("Hamilton has no published fees for Example Credit Union on file yet, so there is no schedule to compare.");
+  });
+
+  it("adds the queued note to an overview with no comparable fee", () => {
+    const empty = scheduleOverview([], "Example Credit Union");
+    expect(withOwnScheduleNote(empty).shortAnswer).toBe(`${empty.shortAnswer} ${OWN_SCHEDULE_COLLECTING}`);
   });
 });

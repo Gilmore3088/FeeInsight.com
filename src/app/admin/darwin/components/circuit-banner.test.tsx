@@ -30,4 +30,10 @@ describe("CircuitBanner", () => {
     expect(screen.getByText(/error_rate/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /reset/i })).toBeInTheDocument();
   });
+
+  it("offers no reset button when nothing here can reset the pause (Darwin, #1115)", () => {
+    render(<CircuitBanner status={{ pending: 0, circuit: { halted: true, reason: "backend off" } }} />);
+    expect(screen.getByText(/backend off/)).toBeInTheDocument();
+    expect(screen.queryByRole("button")).not.toBeInTheDocument();
+  });
 });
