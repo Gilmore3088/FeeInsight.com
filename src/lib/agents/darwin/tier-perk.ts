@@ -1,8 +1,8 @@
 /**
- * A $0 that is one account tier's perk, not the bank's price (#1397). Frost's live overdraft, NSF,
- * stop payment and wire fees all read $0 from one document, "The Frost Premium Account Schedule
+ * A $0 that is one account tier's perk, not the bank's price (#1397). One large bank's live overdraft, NSF,
+ * stop payment and wire fees all read $0 from one document, "The Example Premium Account Schedule
  * of Fees" (a private-banking account, $30 a month): every fee is waived for that tier, while
- * Frost's standard schedule charges $35 an overdraft and $30 a stop payment. A $0 published from
+ * the bank's standard schedule charges $35 an overdraft and $30 a stop payment. A $0 published from
  * such a schedule, or named for such an account ("BankOn Checking Account Overdraft Fee $0"),
  * reads as the bank's own price on its profile and in peer comparisons.
  *
@@ -19,7 +19,7 @@ const TIER_QUALIFIERS = "client|banking|account|checking|certified|services";
  */
 const TIER_PATH_SOURCE = `(^|[/_-])(${TIER_WORDS})([/_-](${TIER_QUALIFIERS}))*[/_-]?(account[/_-])?(fees?|schedule|disclosures?)([^a-z]|$)`;
 const TIER_PATH = new RegExp(TIER_PATH_SOURCE, "i");
-/** A title naming a tier's own schedule: "The Frost Premium Account Schedule of Fees", "Private Banking Fee Schedule". */
+/** A title naming a tier's own schedule: "The Example Premium Account Schedule of Fees", "Private Banking Fee Schedule". */
 const TIER_TITLE = new RegExp(`\\b(?:${TIER_WORDS})\\b(?:\\s+(?:${TIER_QUALIFIERS}))*\\s+(?:schedule|fee schedule|fees|rate and fee schedule)\\b`, "i");
 /** A fee named for a tier's account: "BankOn Checking Account Overdraft Fee", "Private Client Stop Payment". */
 const TIER_NAME_WORDS = `(${TIER_WORDS})\\s+(client|banking|checking|account|plus)`;

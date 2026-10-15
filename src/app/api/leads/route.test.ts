@@ -321,11 +321,11 @@ describe("POST /api/leads", () => {
       company: "Example CU",
       source: "report",
       state: "tx",
-      competitors: "Frost Bank; Amplify CU\nstate=CA",
+      competitors: "Example Bank; Amplify CU\nstate=CA",
     });
-    expect(issued(1).values).toContain("state=TX; competitors=Frost Bank, Amplify CU, state, CA");
+    expect(issued(1).values).toContain("state=TX; competitors=Example Bank, Amplify CU, state, CA");
     expect(reportNotifyMock).toHaveBeenCalledWith(
-      expect.objectContaining({ stateCode: "TX", competitors: "Frost Bank, Amplify CU, state, CA" }),
+      expect.objectContaining({ stateCode: "TX", competitors: "Example Bank, Amplify CU, state, CA" }),
     );
   });
 

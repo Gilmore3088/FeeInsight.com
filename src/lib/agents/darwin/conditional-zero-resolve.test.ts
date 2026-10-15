@@ -61,7 +61,7 @@ describe("conditionalZeroVerdict", () => {
   });
 
   it("never verifies a free line on one account tier's own schedule at $0 (#1397)", () => {
-    const row = { ...held(9, "bill_pay", "Bill Pay", "Bill Pay: | Free"), document_url: "https://www.frostbank.com/agreements-disclosures/truth-in-savings/premium-account-fees" };
+    const row = { ...held(9, "bill_pay", "Bill Pay", "Bill Pay: | Free"), document_url: "https://www.examplebank.com/agreements-disclosures/truth-in-savings/premium-account-fees" };
     expect(conditionalZeroVerdict(row, "Bill Pay: | Free").reason).toBe("conditional_zero_reread");
     // Known only by its title: the same text verify reads.
     const titled = held(12, "bill_pay", "Bill Pay", "Bill Pay: | Free");

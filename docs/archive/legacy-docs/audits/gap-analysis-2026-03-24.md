@@ -151,7 +151,7 @@
 | 39 | State Employees' Federal Credit Union | NC | $56.8B | Large Regional ($50B-$250B) | - |
 | 40 | Pinnacle Bank | TN | $55.9B | Large Regional ($50B-$250B) | - |
 | 41 | Cadence Bank | MS | $53.3B | Large Regional ($50B-$250B) | - |
-| 42 | Frost  Bank | TX | $52.6B | Large Regional ($50B-$250B) | - |
+| 42 | (large Texas bank) | TX | $52.6B | Large Regional ($50B-$250B) | - |
 | 43 | BOKF, National Association | OK | $49.9B | Regional ($10B-$50B) | - |
 | 44 | First National Bank of Pennsylvania | PA | $49.7B | Regional ($10B-$50B) | - |
 | 45 | Barclays Bank Delaware | DE | $46.8B | Regional ($10B-$50B) | - |
