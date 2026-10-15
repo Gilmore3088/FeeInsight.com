@@ -135,9 +135,10 @@ export const LIVE_FRAGMENT_PRICED_FEE = new RegExp(String.raw`\$\s?(\d[\d,]*(?:\
  * v3: any dollar figure; one that is not the amount blocks a rename unless the line is about a
  * balance ("below $500"). v4: a figure a threshold word leads into ("more than $5", "under $500")
  * is a threshold, not another price (`LIVE_FRAGMENT_THRESHOLD_DOLLAR`, removed before the read).
+ * Comparison words only: "up to", "at least", "a minimum of" state a price on a fee line.
  */
 export const LIVE_FRAGMENT_DOLLAR = /\$\s?(\d[\d,]*(?:\.\d{1,2})?)/g;
-export const LIVE_FRAGMENT_THRESHOLD_DOLLAR = /\b(?:(?:more|less|greater|fewer)\s+than|below|under|over|above|exceeds?|exceeding|in\s+excess\s+of|at\s+least|(?:minimum|maximum)(?:\s+of)?|up\s+to)\s+\$\s?\d[\d,]*(?:\.\d{1,2})?/gi;
+export const LIVE_FRAGMENT_THRESHOLD_DOLLAR = /\b(?:(?:more|less|greater|fewer)\s+than|below|under|over|above|exceeds?|exceeding|in\s+excess\s+of)\s+\$\s?\d[\d,]*(?:\.\d{1,2})?/gi;
 const LIVE_FRAGMENT_BALANCE_WORD = /\bbalances?\b/i;
 /**
  * v4 (#1499): any figure, dollar or bare ("$500", "12 months", "6 withdrawals"). On a tail line the
@@ -809,7 +810,7 @@ export function liveFragmentCountSql(): string {
   SELECT *,
          COALESCE(head IS NOT NULL AND ${barsOn("head")}, false) AS head_ok,
          substr(COALESCE(CASE WHEN head_plain IS NULL THEN readable_cap END, readable), length(head) + 1) AS rest,
-         COALESCE(tail_phrase <> '' AND tail_raw !~* '${postgresPattern(re.tail_person)}' AND tail_phrase !~* '${postgresPattern(re.tail_generic_only)}' AND ${barsOn("tail_phrase")}, false) AS tail_ok,
+         COALESCE(tail_phrase <> '' AND tail_phrase !~ '${postgresPattern(re.tail_paren_start)}' AND tail_raw !~* '${postgresPattern(re.tail_person)}' AND tail_phrase !~* '${postgresPattern(re.tail_generic_only)}' AND ${barsOn("tail_phrase")}, false) AS tail_ok,
          upper(left(tail_phrase, 1)) || substr(tail_phrase, 2) AS tail,
          COALESCE(amount, 0) > 0 AND name !~* '${waive}' AND name !~* '${deposit}' AND name !~* '${postgresPattern(LIVE_FRAGMENT_TOTAL_WORDING)}'
            AND priced_count < 2 AND NOT COALESCE(other_figure, false) AS renamable

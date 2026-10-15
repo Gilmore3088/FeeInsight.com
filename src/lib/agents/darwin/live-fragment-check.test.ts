@@ -413,6 +413,14 @@ describe("live fragment switch-on rules (#1443)", () => {
     ["Each item returned unpaid is charged a Return Item/Insufficient Funds Fee of", 30, null, { pattern: "sentence_end", action: "rename", renameTo: "Return Item/Insufficient Funds Fee", renameVia: "tail" }],
     ["After 5 days the account is charged a Consecutive days overdrawn (OD) fee of", 25, null, { pattern: "sentence_end", action: "rename", renameTo: "Consecutive days overdrawn (OD) fee", renameVia: "tail" }],
     ["After 5 days the account is charged a Consecutive days overdrawn (OD) fee of", 5, null, { pattern: "sentence_end", action: "takedown" }],
+    // v4 review: "up to", "a minimum of" state a price on a fee line, so the figure is another price.
+    ["Overdraft Fee You will be charged up to $35 per item", 5, null, { pattern: "pronoun", action: "takedown" }],
+    ["Wire Transfer Fee You will be charged up to $35 per wire", 15, null, { pattern: "pronoun", action: "takedown" }],
+    ["Stop Payment Fee You will be charged a minimum of $30", 10, null, { pattern: "pronoun", action: "takedown" }],
+    ["Wires are up to $15 incoming and an outgoing wire fee of", 25, null, { pattern: "sentence_end", action: "takedown" }],
+    // A tail that opens on a parenthetical names no fee.
+    ["Accounts overdrawn are charged the (OD) fee of", 25, null, { pattern: "sentence_end", action: "takedown" }],
+    ["Accounts overdrawn are charged a (see schedule) fee of", 25, null, { pattern: "sentence_end", action: "takedown" }],
     // A head that is refused does not fall back to the tail when the line has a head split from a threshold.
     ["Overdraft Fee when overdrawn by more than $5 a daily overdraft fee of", 5, null, { pattern: "sentence_end", action: "takedown" }],
   ] as const)("%j at $%s is %j", (name, amount, key, verdict) => {

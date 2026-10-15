@@ -290,7 +290,9 @@ Darwin owns verification and classification.
     $5, "inactive for 12 months" $12, "exceed 6 withdrawals" $6). A plain head ("Overdraft Fee
     You will be charged $35 per item") keeps its price.
   - A dollar figure a threshold word leads into ("more than $5", "under $500") is not another
-    price; "Wires are $15 incoming and an outgoing wire fee of" is (no rename at any amount).
+    price; "Wires are $15 incoming and an outgoing wire fee of" is (no rename at any amount). Only
+    comparison words count: "up to", "at least" and "a minimum of" state a price on a fee line.
+    A tail that opens on a parenthetical ("(OD) fee") is refused.
   - Total wording ("may therefore incur", "incur $N in", "in ... fees for one", "a total of") is a
     sum: no rename (55708).
   - A balance condition that also counts an excess ("if more than 6 per month, balance below") is a

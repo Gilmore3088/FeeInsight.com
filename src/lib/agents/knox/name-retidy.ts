@@ -93,6 +93,8 @@ const TAIL_GENERIC_WORDS = ["handling", "flat", "small", "low", "late", "monthly
 const TAIL_GENERIC_ONLY = new RegExp(String.raw`^(?:${TAIL_GENERIC_WORDS.join("|")})(?:\s+(?:${TAIL_GENERIC_WORDS.join("|")}))*$`, "i");
 /** v4 (#1499): whose fee it is inside a tail ("Allpoint network our ATM fee") means the phrase is no name. */
 const TAIL_PERSON = /\b(?:our|your)\b/i;
+/** v4 (#1499 review): a tail that opens on a parenthetical ("(OD) fee", "(see schedule) fee") names no fee. */
+const TAIL_PAREN_START = /^\(/;
 /** v4 (#1499): a lower-case line's head is read capitalised, but only when a lower-case "if"/"when" follows it. */
 const GLUED_LOWER_CONDITION = /^\s+(?:if|when)\b/;
 /** The condition that follows a name on its line ("Service Charge if balance falls below"). */
@@ -376,7 +378,7 @@ export function feeOfSentenceTail(name: string | null | undefined): string | nul
   const raw = current.match(FEE_OF_SENTENCE_TAIL)?.[1]?.trim();
   if (!raw || TAIL_PERSON.test(raw)) return null;
   const phrase = raw.replace(TAIL_QUALIFIERS, "").trim();
-  if (!phrase || TAIL_GENERIC_ONLY.test(phrase) || GLUED_HEAD_BARS.some((bar) => bar.test(phrase))) return null;
+  if (!phrase || TAIL_PAREN_START.test(phrase) || TAIL_GENERIC_ONLY.test(phrase) || GLUED_HEAD_BARS.some((bar) => bar.test(phrase))) return null;
   return phrase.replace(/^[a-z]/, (letter) => letter.toUpperCase());
 }
 
@@ -395,6 +397,7 @@ export const LIVE_FRAGMENT_REGEXES = {
   tail_qualifiers: TAIL_QUALIFIERS,
   tail_generic_only: TAIL_GENERIC_ONLY,
   tail_person: TAIL_PERSON,
+  tail_paren_start: TAIL_PAREN_START,
   glued_lower_condition: GLUED_LOWER_CONDITION,
   glued_sentence: GLUED_SENTENCE,
   glued_head_bars: GLUED_HEAD_BARS,
