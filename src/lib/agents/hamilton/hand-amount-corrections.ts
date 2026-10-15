@@ -12,7 +12,7 @@ type SqlTag = typeof sql;
  * "$ 004 50"). Each is corrected in place to its line's own price, published and verified rows
  * together, instead of coming down for a fresh read: a fresh read of the same document publishes
  * beside the wrong row (`decidePriorFee` gives "additional_line"), so two prices would be live
- * until the wrong one's second look. After the correction the v66 re-read lands as "identical".
+ * until the wrong one's second look. After the correction the v67 re-read lands as "identical".
  *
  * A fixed list, not an amount editor. A row is corrected only while it still reads as labelled
  * (live, same category, same document, the cut amount) and only when the shared source check

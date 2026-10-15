@@ -64,9 +64,10 @@ import { frequencyFromLine, settledFrequency } from "@/lib/fee-frequency";
 // v63: a box size glued after another fee's name starts its own line (doc 20570).
 // v64: a box table printed sideways, sizes over prices, is read one box per line (SCCU 8109).
 // v65: every read carries a customer audience (`fee_audience`, `audience_evidence`, `fee_treatment`).
-// v66 (#1334): no rule change; every current text is read once more so the dropped-decimal reads
+// v66 is taken by the advisor's dropped-lines fix (#1102, branch advisor/knox-dropped-lines-v66).
+// v67 (#1334): no rule change; every current text is read once more so the dropped-decimal reads
 // #1196/#1305 taught the rules pass ("$29. 95" is $29.95, "$1 50*" is $1.50) reach stored pages.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 66 } as const;
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 67 } as const;
 
 export interface SpecialistRun {
   strategy: string;

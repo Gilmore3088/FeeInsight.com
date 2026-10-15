@@ -54,7 +54,7 @@ describe("cut-cents fees through the full free extract (#1334)", () => {
     }
   });
 
-  it("the v66 re-read lands as identical to the corrected live row, so no second price is published", () => {
+  it("the v67 re-read lands as identical to the corrected live row, so no second price is published", () => {
     const corrected = (id: number, doc: number, name: string, amount: number, key: string): PriorPublishedFeeRow => ({
       fee_published_id: id, canonical_fee_key: key, fee_name: name, amount, source_document_id: doc,
       document_crawled_at: "2026-10-01T00:00:00Z", document_stream: null, document_url: null,
