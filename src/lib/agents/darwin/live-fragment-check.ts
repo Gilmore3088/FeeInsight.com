@@ -109,6 +109,7 @@ async function readCursor(db: SqlTag): Promise<number> {
     SELECT detail->>'next_after_id' AS next_after_id
       FROM agent_run_events
      WHERE event_type = ${LIVE_FRAGMENT_CHECK}
+       AND detail->>'next_after_id' IS NOT NULL
      ORDER BY created_at DESC, id DESC
      LIMIT 1
   `);

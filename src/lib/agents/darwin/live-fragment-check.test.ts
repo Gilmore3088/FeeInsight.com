@@ -130,6 +130,13 @@ describe("Darwin live fragment re-check", () => {
     expect(JSON.stringify(db.mock.calls)).not.toContain("FROM agent_run_events");
   });
 
+  it("reads the cursor only from whole-table steps, so a scoped run's event can't reset it", async () => {
+    const db = dbFor(ROWS, "60002");
+    await recheckLiveFragmentNames(asDb(db), { runId: 8, dryRun: false });
+    const cursorRead = db.mock.calls.map(([strings]) => (strings as TemplateStringsArray).join("?")).find((text) => text.includes("FROM agent_run_events"));
+    expect(cursorRead).toContain("detail->>'next_after_id' IS NOT NULL");
+  });
+
   it("counts the whole live table in one read", async () => {
     const db = dbFor(ROWS);
     const totals = await countLiveFragmentNames(asDb(db));
