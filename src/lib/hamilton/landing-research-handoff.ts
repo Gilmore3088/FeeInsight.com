@@ -100,7 +100,7 @@ export function landingResearchHref(value: unknown): string {
   return `${target}?${new URLSearchParams({ [LANDING_RESEARCH_PARAM]: encodeLandingResearch(request) })}`;
 }
 /**
- * Where "Prepare a board brief" goes: a state or national selection opens its market view, whose
+ * Where "Build a board brief" goes: a state or national selection opens its market view, whose
  * Build board brief button saves the brief. A single institution's brief starts from a saved Ask
  * answer instead, so a local selection gets no link (null).
  */

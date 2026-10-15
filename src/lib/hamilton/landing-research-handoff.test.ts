@@ -83,7 +83,7 @@ describe("homepage research handoff (transport, not permission to execute)", () 
   });
 });
 
-describe("Prepare a board brief link", () => {
+describe("Build a board brief link", () => {
   it("opens the market view for state research and gives a local selection no link", () => {
     const state = { ...base, scope: { kind: "state", stateCode: "FL" }, categories: ["overdraft"] };
     const url = new URL(boardBriefHref({ ...state, task: "board_report" })!, "https://example.test");

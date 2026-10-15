@@ -47,7 +47,7 @@ export function BoardBriefEditor({ analysis, analysisId, initialReport, reportId
     } catch (e) { setError(e instanceof Error ? e.message : "PDF download failed."); }
     finally { setDownloadBusy(false); }
   }
-  if (!report) return <p role="alert">Choose a saved answer to create a board brief.</p>;
+  if (!report) return <p role="alert">Choose a saved answer to build a board brief.</p>;
   return <div className="mx-auto flex max-w-6xl flex-col gap-6">
     <header className="flex flex-wrap justify-between gap-4"><div><p className="fi-text-label text-[var(--fi-muted)]">Reports</p><h1 className="mt-1 text-3xl font-semibold">Board brief</h1><p className="mt-2 text-sm text-[var(--fi-muted)]">Hamilton&apos;s findings and their sources, ready for your board. Add a title and a note, save, then download the PDF.</p></div><div className="flex flex-wrap items-start gap-3">
       <button className="fi-btn fi-btn-primary disabled:opacity-50" disabled={busy || !dirty} onClick={() => void save()}><Save size={17} aria-hidden />{busy ? "Saving…" : "Save brief"}</button>

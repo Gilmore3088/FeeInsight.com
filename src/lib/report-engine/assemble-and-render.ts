@@ -6,6 +6,7 @@
  *
  * Status flow: pending → assembling (set at entry) → caller sets rendering before PDF work.
  * On any unhandled error: job status is set to 'failed' before re-throwing.
+ * A job that is no longer open at entry (cancelled or finished) throws before any paid call.
  *
  * Decision refs: D-01 through D-09 (see 18-CONTEXT.md)
  */
@@ -94,7 +95,16 @@ export async function assembleAndRender(
 
   // D-09: Mark job as assembling at entry
   // Only an open job is marked; a cancel stands, and the render step's guarded write sees it (#1266).
-  await sql`UPDATE report_jobs SET status = 'assembling' WHERE id = ${jobId} AND status IN ('pending','assembling','rendering')`;
+  const opened = await sql<Array<{ id: string }>>`
+    UPDATE report_jobs SET status = 'assembling'
+     WHERE id = ${jobId} AND status IN ('pending','assembling','rendering') RETURNING id
+  `;
+  // The write did not apply: the job was cancelled (or finished) before assembly began.
+  // Stop here, before any assembler read or paid Hamilton call (#1271). The render step
+  // reads the job's status and records a cancel as skipped.
+  if (opened.length === 0) {
+    throw new Error(`Report job ${jobId} is no longer open, so it was not assembled.`);
+  }
 
   try {
     switch (reportType) {

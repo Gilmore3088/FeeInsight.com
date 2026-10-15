@@ -459,6 +459,8 @@ export async function loadWire(
            WHERE start_date >= ${actionSince.toISOString().slice(0, 10)}::date
              AND (agency = ${federal} OR upper(party_state) = ${state})
              AND subject ~* ${CONSUMER_LAW_PG}
+             -- Rows the reader would drop for having no link must not use up the LIMIT (#1359).
+             AND (document_url IS NOT NULL OR agency = 'OCC')
            ORDER BY start_date DESC NULLS LAST, id DESC
            LIMIT 50`.catch(empty("enforcement"))
       : Promise.resolve([]),

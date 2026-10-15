@@ -139,7 +139,7 @@ RESPONSE RULES:
 - Never tell the user to raise, lower or drop a fee, and never name a fee level or range to move to. The pricing decision is the user's
 - If deeper analysis is needed, direct the user to the Analyze screen
 
-TONE: Direct, decisive, brief.`;
+TONE: Plain, factual, brief. Describe where a price sits and what question it raises; the decision stays with the user.`;
 }
 
 const REGULATION_INSTRUCTION =

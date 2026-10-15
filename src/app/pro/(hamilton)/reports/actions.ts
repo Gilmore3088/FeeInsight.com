@@ -310,7 +310,7 @@ function buildStrategicContext(
         return `Explain what is behind ${institutionName}'s ${cat} position in two or three short paragraphs, each opening with its takeaway: the named local competitors, the peer spread, and where the sample is thin (use the maturity and count fields).`;
       }
       case "competitive_positioning":
-        return `Explain what is behind ${institutionName}'s position in two or three short paragraphs, each opening with its takeaway. For its most exposed fees, name the local competitors priced above and below it and say whether it has pricing room, parity, or a vulnerability.`;
+        return `Explain what is behind ${institutionName}'s position in two or three short paragraphs, each opening with its takeaway. For its most exposed fees, name the local competitors priced above and below it, say whether it sits above, at or below them, and name the question that puts to management. Do not say whether it should raise, lower or drop the fee.`;
     }
   })();
 
