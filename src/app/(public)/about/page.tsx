@@ -2,6 +2,7 @@ export const dynamic = "force-dynamic";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { getPublicStatsSummary } from "@/lib/public-stats";
+import { aboutCoverageStats } from "./coverage-stats";
 import { CONTACT_EMAIL, LEGAL_ENTITY_LINE, REPORT_OFFER, REPORT_PRICE_INLINE } from "@/lib/constants";
 import { MIN_INSTITUTIONS_FOR_MEDIAN, STRONG_INSTITUTION_COUNT } from "@/lib/data-store/maturity";
 
@@ -89,12 +90,7 @@ export default async function AboutPage() {
         </h2>
 
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-          {[
-            { value: summary.institutionsLabel, label: "Institutions with verified fees" },
-            { value: summary.observationsLabel, label: "Verified fees" },
-            { value: summary.categoriesLabel, label: "Fee categories" },
-            { value: summary.statesLabel, label: "States" },
-          ].map((stat) => (
+          {aboutCoverageStats(summary).map((stat) => (
             <div
               key={stat.label}
               className="rounded-xl border border-border/80 bg-white/70 px-4 py-3 text-center"
