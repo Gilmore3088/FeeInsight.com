@@ -7,8 +7,6 @@ import { feeRange } from "./national-visuals";
 import { getDisplayName } from "@/lib/fee-taxonomy";
 import { formatFeeAmount } from "@/lib/format";
 import { hasFigure } from "@/app/landing-shared";
-import { summarizeFees } from "@/lib/data-store/fee-stats";
-import type { FeeInstance } from "@/lib/data-store/fees";
 
 /** A fee's spread, for the range visual: all five figures, or none. */
 export interface FeeRange {
@@ -189,15 +187,4 @@ export function districtMedians(rows: DimensionBreakdown[] | null | undefined): 
     })
     .filter((row) => Number.isInteger(row.district) && DISTRICT_NAMES[row.district])
     .sort((a, b) => a.district - b.district);
-}
-
-/**
- * The national median the district map compares against, from the same category detail read
- * as the district medians (sourced rows, one value per institution), the way /fees/[category]
- * takes its headline. Null when that read has no sourced rows.
- */
-export function detailNationalMedian(category: string, fees: FeeInstance[] | null | undefined): number | null {
-  const rows = (fees ?? []).filter((f) => f.source_document_id !== null).map((f) => ({ ...f, fee_category: category }));
-  if (rows.length === 0) return null;
-  return summarizeFees(rows).median_amount;
 }

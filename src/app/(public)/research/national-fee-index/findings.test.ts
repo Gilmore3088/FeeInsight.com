@@ -2,8 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { IndexEntry } from "@/lib/data-store/fee-index";
 import { NATIONAL_INDEX_NAV } from "@/components/nav-items";
 import { PRODUCT_NAME } from "@/lib/constants";
-import type { FeeInstance } from "@/lib/data-store/fees";
-import { datasetDescription, detailNationalMedian, districtMedians, nationalFindings, subheadLead } from "./findings";
+import { datasetDescription, districtMedians, nationalFindings, subheadLead } from "./findings";
 
 const entry = (fee_category: string, median_amount: number | null, institution_count: number): IndexEntry => ({
   fee_category,
@@ -135,21 +134,5 @@ describe("count clauses", () => {
     expect(datasetDescription("—")).toBe(
       "National medians across bank and credit union fee categories, from published fee schedules.",
     );
-  });
-});
-
-describe("detailNationalMedian", () => {
-  const fee = (institution_id: number, amount: number, source_document_id: number | null) =>
-    ({ institution_id, amount, source_document_id }) as unknown as FeeInstance;
-
-  it("takes the median of the sourced rows of the same read, one value per institution", () => {
-    // Institution 6's unsourced $90 rows are left out, as the district breakdown leaves them out.
-    const rows = [fee(1, 20, 7), fee(2, 25, 7), fee(3, 30, 8), fee(4, 32, 9), fee(5, 35, 9), fee(6, 90, null), fee(6, 90, null)];
-    expect(detailNationalMedian("nsf", rows)).toBe(30);
-  });
-
-  it("is null when the read has no sourced rows", () => {
-    expect(detailNationalMedian("overdraft", [fee(1, 20, null)])).toBeNull();
-    expect(detailNationalMedian("overdraft", null)).toBeNull();
   });
 });
