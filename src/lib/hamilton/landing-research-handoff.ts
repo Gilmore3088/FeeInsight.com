@@ -100,12 +100,13 @@ export function landingResearchHref(value: unknown): string {
   return `${target}?${new URLSearchParams({ [LANDING_RESEARCH_PARAM]: encodeLandingResearch(request) })}`;
 }
 /**
- * Where "Prepare board brief" goes: a state or national selection opens its market view, whose Build
- * board brief button saves the brief; a local selection keeps the institution report workflow.
+ * Where "Prepare a board brief" goes: a state or national selection opens its market view, whose
+ * Build board brief button saves the brief. A single institution's brief starts from a saved Ask
+ * answer instead, so a local selection gets no link (null).
  */
-export function boardBriefHref(value: unknown): string {
+export function boardBriefHref(value: unknown): string | null {
   const request = parseLandingResearch(value);
-  if (request.scope.kind === "local") return landingResearchHref({ ...request, task: "board_report" });
+  if (request.scope.kind === "local") return null;
   return `/pro/intelligence?${new URLSearchParams({ [LANDING_RESEARCH_PARAM]: encodeLandingResearch({ ...request, task: "compare" }), lens: "fees" })}`;
 }
 /** Only the existing local handler's supported scope may pass this adapter. */

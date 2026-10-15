@@ -86,6 +86,7 @@ describe("H01 retained Hamilton shell navigation", () => {
     await act(async () => resolveA({ id: "2945", name: "Delayed old A" }));
     expect(screen.getByLabelText("Institution context").textContent).toContain("Looking at: Addition Financial Credit Union");
     expect(screen.getByLabelText("Institution context").textContent).not.toContain("Delayed old A");
+    expect(screen.getByRole("link", { name: `Back to ${homeName}` })).toHaveAttribute("href", "/pro/hamilton");
     expect(screen.getByRole("link", { name: "Research" })).toHaveAttribute("href", "/pro/intelligence?instId=1535");
   });
 

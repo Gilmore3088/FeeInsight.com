@@ -68,6 +68,7 @@ export function LandingResearchResults({ selection }: { selection: LandingResear
 }
 
 function LandingResearchResultsForSelection({ selection }: { selection: LandingResearchHandoff }) {
+  const briefHref = boardBriefHref(selection);
   const [result, setResult] = useState<Result | null>(null);
   const [status, setStatus] = useState<"ready" | "loading" | "done" | "error">("ready");
   const [message, setMessage] = useState<string | null>(null);
@@ -126,8 +127,8 @@ function LandingResearchResultsForSelection({ selection }: { selection: LandingR
           {status === "loading" ? "Reading published data…" : result ? "Refresh comparison" : "Run comparison"}
         </button>
       </div>
-      {result ? (
-        <a href={boardBriefHref(selection)}
+      {result && briefHref ? (
+        <a href={briefHref}
           className="mt-4 inline-block rounded-md border border-warm-300 px-4 py-2 text-sm font-medium underline">
           Prepare a board brief from this selection
         </a>

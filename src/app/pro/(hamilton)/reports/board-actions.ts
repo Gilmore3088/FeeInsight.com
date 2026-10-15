@@ -65,7 +65,7 @@ export async function createMarketBoardBrief(form: FormData): Promise<void> {
     if (!input.findings.length && !input.exhibits.length) throw new Error("no market data loaded");
     const report = boardBriefFromMarket(input);
     reportId = await saveHamiltonReport({ userId: user.id, institutionId: "", reportType: "board_brief", reportJson: report, evidencePolicy: "source-diligence", selectedSource: "manual", selectedSourceLabel: "Market research", peerBaselineLabel: null, peerFallbackReason: "Market view; no institution peer group." });
-    await recordProRequest({ operation: "report", title: report.title, status: "completed", summary: "Created board brief from market research without a provider call", userId: user.id, institutionId: null, detail: { report_id: reportId, provider_call_queued: false, evidence_policy: "source-diligence", lenses } });
+    await recordProRequest({ operation: "report", title: report.title, status: "completed", summary: "Created board brief from market research without a provider call", userId: user.id, institutionId: null, detail: { report_id: reportId, provider_call_queued: false, evidence_policy: "source-diligence", lenses: chosen } });
   } catch (error) {
     console.error("[board-brief] market save failed", error);
     redirect("/pro/reports?board_error=1");

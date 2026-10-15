@@ -144,6 +144,7 @@ export function HamiltonShell({
           pathname={pathname}
           isAdmin={isAdmin}
           accountLabel={accountLabel(accountContext)}
+          homeName={accountContext?.status === "identified" ? accountContext.institution?.name ?? null : null}
           researchLabel={marketScopeLabel(pathname, selection) ?? researchLabel}
         />
 

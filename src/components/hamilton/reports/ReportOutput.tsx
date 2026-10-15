@@ -57,7 +57,8 @@ export function ReportOutput({
           {identityLines.map((line) => <p key={line}>{line}</p>)}
         </div>
 
-        {artifactMetadata && (
+        {/* A board brief has no peer group; its scope and limits are in the body. */}
+        {artifactMetadata && !report.boardBrief && (
           <p className="mt-4 flex flex-wrap gap-x-3 gap-y-1 text-sm text-warm-700">
             <span className="font-medium text-warm-900">
               {evidencePolicyLabel(artifactMetadata.evidencePolicy)}

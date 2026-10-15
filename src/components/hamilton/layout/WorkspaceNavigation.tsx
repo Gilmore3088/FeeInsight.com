@@ -14,8 +14,10 @@ const icons = { Activity, Bookmark, Calculator, ChartNoAxesColumnIncreasing, Fil
  * workspace). One sidebar serves desktop and, behind the menu button, phones. The signed-in
  * institution and the research subject are shown separately.
  */
-export function WorkspaceNavigation({ pathname, isAdmin, accountLabel, researchLabel }: {
+export function WorkspaceNavigation({ pathname, isAdmin, accountLabel, researchLabel, homeName = null }: {
   pathname: string; isAdmin: boolean; accountLabel: string; researchLabel: string | null;
+  /** The reader's own institution, when their account is linked to exactly one. */
+  homeName?: string | null;
 }) {
   const [open, setOpen] = useState(false);
   const hrefFor = useHamiltonNavigationHref();
@@ -44,7 +46,7 @@ export function WorkspaceNavigation({ pathname, isAdmin, accountLabel, researchL
         <div><span className="workspace-muted">Your institution: </span><strong>{accountLabel}</strong></div>
         <NavAccount />
       </header>
-      {researchLabel ? <div className="workspace-research-context print:hidden"><span>Looking at: {researchLabel}</span>{researchLabel.endsWith(" market") ? null : <Link href={hrefFor("/pro/settings")}>Change your institution</Link>}</div> : null}
+      {researchLabel ? <div className="workspace-research-context print:hidden"><span>Looking at: {researchLabel}</span>{homeName && !researchLabel.endsWith(" market") ? <Link href="/pro/hamilton">Back to {homeName}</Link> : null}</div> : null}
     </section>
   </>;
 }

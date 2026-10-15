@@ -1,11 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-const mocks = vi.hoisted(() => ({ user: vi.fn(), analysis: vi.fn(), report: vi.fn(), save: vi.fn(), sql: vi.fn(), run: vi.fn() }));
+const mocks = vi.hoisted(() => ({ user: vi.fn(), analysis: vi.fn(), report: vi.fn(), save: vi.fn(), sql: vi.fn(), run: vi.fn(), load: vi.fn(), input: vi.fn() }));
 vi.mock("@/lib/auth", () => ({ getCurrentUser: mocks.user }));
 vi.mock("../analyze/actions", () => ({ loadAnalysisRecord: mocks.analysis }));
 vi.mock("@/lib/hamilton/pro-tables", () => ({ getHamiltonReportById: mocks.report, saveHamiltonReport: mocks.save }));
 vi.mock("@/lib/data-store/connection", () => ({ sql: mocks.sql }));
 vi.mock("@/lib/agents/run-store", () => ({ recordProRequest: mocks.run }));
-import { saveBoardBrief } from "./board-actions";
+vi.mock("next/navigation", () => ({ redirect: (to: string) => { throw new Error(`REDIRECT ${to}`); } }));
+vi.mock("@/components/hamilton/intelligence/IntelligenceWorkspace", () => ({ loadIntelligence: mocks.load }));
+vi.mock("@/components/hamilton/intelligence/market-board-brief", () => ({ marketBoardBriefInput: mocks.input }));
+import { createMarketBoardBrief, saveBoardBrief } from "./board-actions";
+import { encodeLandingResearch } from "@/lib/hamilton/landing-research-handoff";
 import { boardBriefFromAnalysis } from "@/lib/hamilton/board-brief";
 const edits = { title: "Board review", teamNote: "Our note", includeEvidence: true };
 const response = { title: "Saved answer", confidence: { level: "medium" as const, basis: ["Limited"] }, hamiltonView: "Original answer", whatThisMeans: "Original context", whyItMatters: [], evidence: { metrics: [{ label: "Fee", value: "$0.00", note: "Published schedule · 2026-06-30" }] }, exploreFurther: ["Inspect terms"] };
@@ -39,5 +43,40 @@ describe("private board brief writes", () => {
     const [strings, json, id, userId] = mocks.sql.mock.calls[0];
     expect(strings.join("")).toContain("AND user_id ="); expect(strings.join("")).toContain("report_type = 'board_brief'");
     expect(id).toBe("owned"); expect(userId).toBe(7); expect(JSON.parse(json).exhibits).toEqual(report.exhibits);
+  });
+});
+
+describe("Build board brief from a market view", () => {
+  const florida = { version: 1 as const, task: "compare" as const, scope: { kind: "state" as const, stateCode: "FL" as const }, categories: ["overdraft"], charter: "all" as const };
+  const form = (fields: Record<string, string>) => { const f = new FormData(); for (const [k, v] of Object.entries(fields)) f.set(k, v); return f; };
+  const marketInput = { place: "Florida", scopeLabel: "Banks & credit unions, headquartered in Florida", topics: "fees", findings: [{ title: "Florida's median overdraft is $30.00.", body: "Across 40 institutions.", source: "Bank Fee Index published catalog" }], exhibits: [], sources: [], limits: ["Hamilton reports what the data shows. It does not recommend a price."], researchHref: "/pro/intelligence" };
+  beforeEach(() => { mocks.load.mockResolvedValue({}); mocks.input.mockReturnValue(marketInput); });
+
+  it("sends a non-subscriber to /subscribe before loading data", async () => {
+    mocks.user.mockResolvedValue({ id: 7, role: "user", subscription_status: "none" });
+    await expect(createMarketBoardBrief(form({ research: encodeLandingResearch(florida) }))).rejects.toThrow("REDIRECT /subscribe");
+    expect(mocks.load).not.toHaveBeenCalled();
+  });
+  it("refuses a local selection", async () => {
+    const local = { ...florida, scope: { kind: "local" as const, institutionId: 8109 } };
+    await expect(createMarketBoardBrief(form({ research: encodeLandingResearch(local) }))).rejects.toThrow("REDIRECT /pro/hamilton");
+    expect(mocks.save).not.toHaveBeenCalled();
+  });
+  it("keeps only known lenses and sizes, saves under the user and records every lens it read", async () => {
+    await expect(createMarketBoardBrief(form({ research: encodeLandingResearch(florida), lenses: "fees,bogus", size: "huge" }))).rejects.toThrow("REDIRECT /pro/reports?report_id=report-id");
+    expect(mocks.load).toHaveBeenCalledWith(expect.objectContaining({ task: "compare" }), ["fees"], expect.objectContaining({ segment: null }));
+    expect(mocks.save).toHaveBeenCalledWith(expect.objectContaining({ userId: 7, institutionId: "", reportType: "board_brief" }));
+    expect(mocks.run).toHaveBeenCalledWith(expect.objectContaining({ detail: expect.objectContaining({ provider_call_queued: false, lenses: ["fees"] }) }));
+  });
+  it("records the default lenses when none are posted", async () => {
+    await expect(createMarketBoardBrief(form({ research: encodeLandingResearch(florida) }))).rejects.toThrow("REDIRECT /pro/reports?report_id=report-id");
+    const lenses = mocks.load.mock.calls[0][1];
+    expect(lenses.length).toBeGreaterThan(1);
+    expect(mocks.run).toHaveBeenCalledWith(expect.objectContaining({ detail: expect.objectContaining({ lenses }) }));
+  });
+  it("saves nothing when no data loaded and shows the error", async () => {
+    mocks.input.mockReturnValue({ ...marketInput, findings: [], exhibits: [] });
+    await expect(createMarketBoardBrief(form({ research: encodeLandingResearch(florida) }))).rejects.toThrow("REDIRECT /pro/reports?board_error=1");
+    expect(mocks.save).not.toHaveBeenCalled();
   });
 });

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  decodeLandingResearch, encodeLandingResearch, landingResearchHref, localRequestFromLanding,
+  boardBriefHref, decodeLandingResearch, encodeLandingResearch, landingResearchHref, localRequestFromLanding,
   parseLandingResearch, RESEARCH_STATE_CODES,
 } from "./landing-research-handoff";
 
@@ -80,5 +80,16 @@ describe("homepage research handoff (transport, not permission to execute)", () 
     expect(decodeLandingResearch(url.searchParams.get("research"))).toEqual(request);
     expect([...url.searchParams.keys()]).toEqual(["research"]);
     expect(encodeLandingResearch(request)).not.toContain("auto");
+  });
+});
+
+describe("Prepare a board brief link", () => {
+  it("opens the market view for state research and gives a local selection no link", () => {
+    const state = { ...base, scope: { kind: "state", stateCode: "FL" }, categories: ["overdraft"] };
+    const url = new URL(boardBriefHref({ ...state, task: "board_report" })!, "https://example.test");
+    expect(url.pathname).toBe("/pro/intelligence");
+    expect(url.searchParams.get("lens")).toBe("fees");
+    expect(JSON.parse(url.searchParams.get("research")!)).toEqual({ ...state, task: "compare" });
+    expect(boardBriefHref({ ...base, scope: { kind: "local", institutionId: 8109 }, categories: ["overdraft"] })).toBeNull();
   });
 });
