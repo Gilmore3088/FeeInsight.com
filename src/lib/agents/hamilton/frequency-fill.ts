@@ -150,7 +150,7 @@ export async function fillBlankFrequencies(
                -- whose own name or line names a month or a statement cycle.
                OR (fp.canonical_fee_key = 'continuous_od' AND fp.frequency IN ('monthly', 'annual', 'quarterly'))
                OR (fp.frequency IS NULL AND fp.canonical_fee_key = 'monthly_maintenance'
-                   AND (fp.fee_name ILIKE '%month%' OR fr.conditions ~* 'excerpt=.*(month|statement cycle)')))
+                   AND (fp.fee_name ILIKE '%month%' OR COALESCE(fr.extraction_note, fr.conditions) ~* 'excerpt=.*(month|statement cycle)')))
           ${options.institutionId ? "AND fp.institution_id = $1" : ""}
         ORDER BY fp.fee_published_id`,
       options.institutionId ? [options.institutionId] : [],
