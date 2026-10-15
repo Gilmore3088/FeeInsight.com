@@ -12,7 +12,7 @@ const REPORT_ANCHOR_HREF = "/for-institutions?report=institution#report";
 const CONTACT_SALES_HREF = "/contact?source=enterprise";
 const ADVISORY_HREF = "/contact?source=advisory";
 
-const DISPLAY = { fontFamily: "var(--font-jakarta), ui-sans-serif, system-ui, sans-serif" };
+const DISPLAY = { fontFamily: "var(--fi-font-sans)" };
 
 /**
  * The rest of the catalog for a direct visit (James, 9 Oct 2026): the one-time report, the

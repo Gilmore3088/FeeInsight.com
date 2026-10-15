@@ -42,7 +42,7 @@ interface PlanCheckoutProps {
 
 const BUTTON =
   "block w-full rounded-lg cursor-pointer bg-brick px-4 py-3.5 text-center text-base font-semibold text-white shadow-sm hover:bg-brick-ink transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors";
-const DISPLAY = { fontFamily: "var(--font-jakarta), ui-sans-serif, system-ui, sans-serif" };
+const DISPLAY = { fontFamily: "var(--fi-font-sans)" };
 
 /**
  * The price for the chosen institution, one billing toggle (annual first), one button. The

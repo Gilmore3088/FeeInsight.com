@@ -22,7 +22,7 @@ function LockedPreview() {
       </div>
       <div className="mt-4 flex h-40 items-end gap-1.5 rounded-xl border border-border bg-white p-4">
         {bars.map((height, i) => (
-          <div key={i} className="flex-1 rounded-t bg-[#2a78d6]/40" style={{ height: `${height}%` }} />
+          <div key={i} className="flex-1 rounded-t bg-ink/25" style={{ height: `${height}%` }} />
         ))}
       </div>
     </div>
@@ -108,9 +108,13 @@ export function FinancialProfileSection({
             )}
           </>
         ) : (
-          <div className="relative">
-            <LockedPreview />
-            <div className="absolute inset-0 flex items-center justify-center p-4">
+          <div className="grid">
+            {/* Both layers share one grid cell, so the section is as tall as the taller of the two
+                and the gate never spills onto the card below on a phone. */}
+            <div className="[grid-area:1/1]">
+              <LockedPreview />
+            </div>
+            <div className="flex items-center justify-center p-4 [grid-area:1/1]">
               <div className="w-full max-w-md">
                 <UpgradeGate message="Up to 16 years of call-report history with growth, peer rank and outliers, deposit mix and capital, branch footprint, consumer complaints, enforcement actions, and SEC filings" />
               </div>

@@ -7,7 +7,7 @@ import { SkipLink } from "./public/skip-link";
 import { Logo } from "@/brand/components";
 import { SITE_NAME } from "@/lib/constants";
 
-export { PUBLIC_NAV_ITEMS, PRO_NAV_ITEMS, REQUEST_REPORT_NAV } from "./nav-items";
+export { PUBLIC_NAV_ITEMS, PRO_NAV_ITEMS, PRO_PLANS_NAV } from "./nav-items";
 
 /**
  * The single public site header.

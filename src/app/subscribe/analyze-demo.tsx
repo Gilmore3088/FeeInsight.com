@@ -5,7 +5,7 @@ import { formatAmount } from "@/lib/format";
 import { useReducedMotion, useShowcase } from "./showcase";
 import { PreviewFrame } from "./preview-frame";
 
-const DISPLAY = { fontFamily: "var(--font-jakarta), ui-sans-serif, system-ui, sans-serif" };
+const DISPLAY = { fontFamily: "var(--fi-font-sans)" };
 
 /** A Try a price question worked from the live national index (built on the server). */
 export interface AnalyzeScenario {

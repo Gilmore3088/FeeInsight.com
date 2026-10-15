@@ -28,11 +28,12 @@ interface PurchaseCardProps {
   entry: string;
 }
 
-const DISPLAY = { fontFamily: "var(--font-jakarta), ui-sans-serif, system-ui, sans-serif" };
+const DISPLAY = { fontFamily: "var(--fi-font-sans)" };
 
 /**
  * The one place to buy Pro (James, 9 Oct 2026): find the institution, see its one price,
- * pick annual or monthly, subscribe. The tier schedule sits behind "How pricing works".
+ * pick annual or monthly, subscribe. "How pricing works" starts open so every tier and its annual
+ * price show before the search (James, 2026-10-15: Pro is the goal).
  */
 export function PurchaseCard({
   isLoggedIn,
@@ -81,7 +82,7 @@ export function PurchaseCard({
         </div>
       )}
 
-      <details className="group mt-5 border-t border-border pt-4 text-sm">
+      <details open className="group mt-5 border-t border-border pt-4 text-sm">
         <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between font-medium text-ink marker:content-none">
           How pricing works
           <span aria-hidden className="text-ink-muted transition-transform group-open:rotate-45">+</span>

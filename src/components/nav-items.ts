@@ -21,8 +21,11 @@ export const PRICING_NAV = { label: "Pricing", href: "/subscribe" } as const;
 
 export const PRO_NAV_ITEMS = [...HAMILTON_NAV.filter((item) => item.label !== "Admin"), HAMILTON_WIRE_NAV];
 
-/** The one nav pill for signed-out visitors: the money path, not a vague "Pro". */
-export const REQUEST_REPORT_NAV = { label: "Request your report", href: "/for-institutions#report" } as const;
+/**
+ * The one nav pill for signed-out and free visitors: Hamilton Pro is the goal (James, 2026-10-15).
+ * Free and paid reports are leads, offered on the pages themselves.
+ */
+export const PRO_PLANS_NAV = { label: "See Pro plans", href: "/subscribe" } as const;
 
 export interface NavItem {
   label: string;

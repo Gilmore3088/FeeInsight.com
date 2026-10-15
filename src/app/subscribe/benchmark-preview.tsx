@@ -1,6 +1,6 @@
 import { formatAmount } from "@/lib/format";
 
-const DISPLAY = { fontFamily: "var(--font-jakarta), ui-sans-serif, system-ui, sans-serif" };
+const DISPLAY = { fontFamily: "var(--fi-font-sans)" };
 
 /** One fee in the preview: the national spread, and the chosen institution's own fee when known. */
 export interface BenchmarkRow {

@@ -12,13 +12,13 @@ import { ConsumerNav } from "@/components/consumer-nav";
 import { CustomerFooter } from "@/components/customer-footer";
 import { SearchModal } from "@/components/public/search-modal";
 import { TrackLink } from "@/components/track-link";
+import { PRO_PLANS_NAV } from "@/components/nav-items";
 import { ReportOfferSection } from "./report-offer";
 import { ProToolsSection } from "./pro-tools";
 import { CompareTableSection } from "./compare-table";
 
 const SAMPLE_REPORT_HREF = "/reports/sample-competitive-fee-position";
 const REPORT_ANCHOR = "#report";
-const PRO_ANCHOR = "#pro";
 
 const PAGE_TITLE = "Bank Fee Benchmarking and Competitive Fee Reports";
 const PAGE_DESCRIPTION =
@@ -61,41 +61,29 @@ export default async function ForInstitutionsPage() {
               <p className="mt-5 max-w-lg text-[16px] leading-relaxed text-border">
                 Published fees for {summary.institutionsLabel} institutions across{" "}
                 {summary.categoriesLabel} fee categories — every figure traceable to the disclosure
-                it came from. Start with a free national or Fed district report, or run the workspace yourself.
+                it came from. Hamilton Pro keeps your fees against your market every month.
               </p>
 
               <div className="mt-8 flex flex-col gap-4 sm:flex-row">
-                {/* The sample is offline until it is re-rendered from source-checked data, so the
-                    hero leads to the free reports instead of a "coming soon" page. */}
-                {sampleLive ? (
-                  <TrackLink
-                    event="see_sample_report"
-                    eventProps={{ placement: "for_institutions_hero" }}
-                    href={SAMPLE_REPORT_HREF}
-                    className={PRIMARY_BUTTON}
-                  >
-                    See the sample report
-                    <ArrowRight className="h-4 w-4" />
-                  </TrackLink>
-                ) : (
-                  <TrackLink
-                    event="request_report_click"
-                    eventProps={{ placement: "for_institutions_hero" }}
-                    href={REPORT_ANCHOR}
-                    className={PRIMARY_BUTTON}
-                  >
-                    Get a free fee report
-                    <ArrowRight className="h-4 w-4" />
-                  </TrackLink>
-                )}
-                {/* With the sample offline the first button already leads to #report, so the
-                    second one leads to Pro instead of repeating it. */}
-                <a
-                  href={sampleLive ? REPORT_ANCHOR : PRO_ANCHOR}
+                {/* Pro is the goal (James, 2026-10-15); the free report is the step for visitors
+                    not ready to subscribe. */}
+                <TrackLink
+                  event="upgrade_click"
+                  eventProps={{ placement: "for_institutions_hero" }}
+                  href={PRO_PLANS_NAV.href}
+                  className={PRIMARY_BUTTON}
+                >
+                  {PRO_PLANS_NAV.label}
+                  <ArrowRight className="h-4 w-4" />
+                </TrackLink>
+                <TrackLink
+                  event="request_report_click"
+                  eventProps={{ placement: "for_institutions_hero" }}
+                  href={REPORT_ANCHOR}
                   className={`${HERO_BUTTON_BASE} border border-warm-ink-700 font-normal text-warm-150 hover:border-warm-ink-500`}
                 >
-                  {sampleLive ? "What’s in the report" : `See ${SITE_NAME} Pro`}
-                </a>
+                  Get a free fee report
+                </TrackLink>
               </div>
               <p className="mt-4 text-[13px] text-border">National and Fed district reports, free and instant.</p>
             </div>
@@ -103,8 +91,8 @@ export default async function ForInstitutionsPage() {
           <div className="pointer-events-none absolute right-0 top-0 h-full w-1/3 bg-gradient-to-l from-terra/[0.06] to-transparent" />
         </section>
 
-        <ReportOfferSection />
         <ProToolsSection />
+        <ReportOfferSection />
         <CompareTableSection summary={summary} />
         <AudienceSection />
         <AdvisorySection />
@@ -217,40 +205,27 @@ function FinalCtaSection({ sampleLive }: { sampleLive: boolean }) {
           Ready to see where your fees stand?
         </h2>
         <p className="mt-3 text-[15px] text-border">
-          {sampleLive
-            ? "Start with the sample, or request your own report today."
-            : "Start with a free national or Fed district report, or ask us to quote your institution's own."}
+          Hamilton Pro keeps your fees against your market every month. Not ready yet? Start with a free
+          report.
         </p>
         <div className="mt-8 flex flex-col justify-center gap-4 sm:flex-row">
-          {sampleLive ? (
-            <>
-              <TrackLink
-                event="see_sample_report"
-                eventProps={{ placement: "for_institutions_footer" }}
-                href={SAMPLE_REPORT_HREF}
-                className={PRIMARY_BUTTON}
-              >
-                See the sample report
-                <ArrowRight className="h-4 w-4" />
-              </TrackLink>
-              <a
-                href={REPORT_ANCHOR}
-                className={`${HERO_BUTTON_BASE} border border-warm-ink-700 font-normal text-warm-150 hover:border-warm-ink-500`}
-              >
-                Get your free report
-              </a>
-            </>
-          ) : (
-            <TrackLink
-              event="request_report_click"
-              eventProps={{ placement: "for_institutions_footer" }}
-              href={REPORT_ANCHOR}
-              className={PRIMARY_BUTTON}
-            >
-              Get your free report
-              <ArrowRight className="h-4 w-4" />
-            </TrackLink>
-          )}
+          <TrackLink
+            event="upgrade_click"
+            eventProps={{ placement: "for_institutions_footer" }}
+            href={PRO_PLANS_NAV.href}
+            className={PRIMARY_BUTTON}
+          >
+            {PRO_PLANS_NAV.label}
+            <ArrowRight className="h-4 w-4" />
+          </TrackLink>
+          <TrackLink
+            event={sampleLive ? "see_sample_report" : "request_report_click"}
+            eventProps={{ placement: "for_institutions_footer" }}
+            href={sampleLive ? SAMPLE_REPORT_HREF : REPORT_ANCHOR}
+            className={`${HERO_BUTTON_BASE} border border-warm-ink-700 font-normal text-warm-150 hover:border-warm-ink-500`}
+          >
+            {sampleLive ? "See the sample report" : "Get your free report"}
+          </TrackLink>
         </div>
       </div>
     </section>

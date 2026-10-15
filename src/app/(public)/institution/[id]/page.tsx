@@ -24,7 +24,6 @@ import { getDisplayName } from "@/lib/fee-taxonomy";
 import { FeeAlertControl } from "./fee-alert-control";
 import { PeerRankTeaser } from "./peer-rank-teaser";
 import { getInstitutionPeerRankCached, getPeerIndexCached } from "@/lib/data-store/public-cached-reads";
-import { ProNextStep } from "@/components/public/pro-next-step";
 import { InfoTip } from "@/components/public/info-tip";
 import { SITE_NAME } from "@/lib/constants";
 import { computeInstitutionRating, generateInterpretation } from "@/lib/institution-rating";
@@ -394,14 +393,12 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
                   claimHref={links.claimHref}
                 />
               ) : (
-                <>
-                  <InstitutionOfferBand
-                    institutionName={inst.institution_name}
-                    reportOfferHref={links.reportOfferHref}
-                    correctSourceHref={links.correctSourceHref}
-                  />
-                  {!isPro && <ProNextStep />}
-                </>
+                <InstitutionOfferBand
+                  institutionName={inst.institution_name}
+                  reportOfferHref={links.reportOfferHref}
+                  correctSourceHref={links.correctSourceHref}
+                  isPro={isPro}
+                />
               )}
 
               <FinancialContext latest={latestFinancial} history={normalizedFinancials} />

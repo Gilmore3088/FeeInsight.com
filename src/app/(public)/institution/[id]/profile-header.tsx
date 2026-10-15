@@ -102,12 +102,15 @@ export function ProfileHeader({
           <div className="mt-3 flex flex-wrap gap-1.5">
             {location && location.length > 0 ? (
               <FactTag icon={MapPin}>
-                {location.map((part, i) => (
-                  <span key={part.label}>
-                    {i > 0 && ", "}
-                    <TagText {...part} />
-                  </span>
-                ))}
+                {/* One span, so the tag's flex gap doesn't open a space before the comma. */}
+                <span>
+                  {location.map((part, i) => (
+                    <span key={part.label}>
+                      {i > 0 && ", "}
+                      <TagText {...part} />
+                    </span>
+                  ))}
+                </span>
               </FactTag>
             ) : (
               locationLabel && <FactTag icon={MapPin}>{locationLabel}</FactTag>

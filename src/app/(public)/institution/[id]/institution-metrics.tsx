@@ -3,6 +3,7 @@ import { ArrowRight } from "lucide-react";
 import { InfoTip } from "@/components/public/info-tip";
 import { REPORT_PRICE_INLINE } from "@/lib/constants";
 import { formatCompactDollars } from "@/lib/format";
+import { PRO_PLANS_HREF } from "@/components/public/pro-next-step";
 import { COMPETITIVE_FEE_POSITION_REPORT } from "./profile-copy";
 
 export function Metric({
@@ -69,14 +70,20 @@ export function InstitutionMetricRow({
   );
 }
 
+/**
+ * The one ask on a bank's page (James, 2026-10-15: Pro is the goal, the report is a lead): Pro
+ * for anyone who isn't on it yet, with the one-off report as the quieter second path.
+ */
 export function InstitutionOfferBand({
   institutionName,
   reportOfferHref,
   correctSourceHref,
+  isPro = false,
 }: {
   institutionName: string;
   reportOfferHref: string;
   correctSourceHref: string;
+  isPro?: boolean;
 }) {
   return (
     <section className="@container border border-border bg-white px-4 py-4 sm:px-5">
@@ -85,23 +92,53 @@ export function InstitutionOfferBand({
       <div className="flex flex-col gap-3 @2xl:flex-row @2xl:items-center @2xl:justify-between">
         <div className="min-w-0 @2xl:min-w-[16rem] @2xl:flex-1">
           <div className="flex items-center gap-1.5 text-sm font-semibold text-ink">
-            <p>Work at {institutionName}? See every fee vs. your peers.</p>
-            <InfoTip label="About the report">
-              The {COMPETITIVE_FEE_POSITION_REPORT.name}: every fee on this page benchmarked against a
-              verified peer set, in a board-ready document. {COMPETITIVE_FEE_POSITION_REPORT.price}:{" "}
-              {COMPETITIVE_FEE_POSITION_REPORT.nextStep.toLowerCase()}.
+            <p>
+              {isPro
+                ? `Work at ${institutionName}? Put every fee in a board-ready report.`
+                : `Work at ${institutionName}? See every fee against your peers, every month, in Hamilton.`}
+            </p>
+            <InfoTip label={isPro ? "About the report" : "About Fee Insight Pro"}>
+              {isPro ? (
+                <>
+                  The {COMPETITIVE_FEE_POSITION_REPORT.name}: every fee on this page benchmarked against a
+                  verified peer set, in a board-ready document. {COMPETITIVE_FEE_POSITION_REPORT.price}:{" "}
+                  {COMPETITIVE_FEE_POSITION_REPORT.nextStep.toLowerCase()}.
+                </>
+              ) : (
+                <>
+                  Pro gives up to 5 people the Hamilton workspace: your fees against peers you pick, a watchlist
+                  of competitor fee changes, and cited board-ready reports.
+                </>
+              )}
             </InfoTip>
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-          <Link
-            href={reportOfferHref}
-            className="inline-flex items-center gap-2 rounded-md bg-brick px-3.5 py-2 text-sm font-semibold text-white transition-colors hover:bg-brick-ink"
-          >
-            Request the report
-            <ArrowRight className="h-4 w-4" />
-          </Link>
-          <p className="text-xs text-ink-muted">Paid report {REPORT_PRICE_INLINE} · quote within 1 business day</p>
+          {isPro ? (
+            <Link
+              href={reportOfferHref}
+              className="inline-flex items-center gap-2 rounded-md bg-brick px-3.5 py-2 text-sm font-semibold text-white transition-colors hover:bg-brick-ink"
+            >
+              Request the report
+              <ArrowRight className="h-4 w-4" />
+            </Link>
+          ) : (
+            <>
+              <Link
+                href={PRO_PLANS_HREF}
+                className="inline-flex items-center gap-2 rounded-md bg-brick px-3.5 py-2 text-sm font-semibold text-white transition-colors hover:bg-brick-ink"
+              >
+                See Pro plans
+                <ArrowRight className="h-4 w-4" />
+              </Link>
+              <Link
+                href={reportOfferHref}
+                className="text-xs font-semibold text-ink-muted underline-offset-2 hover:text-brick hover:underline"
+              >
+                Or a one-off report, {REPORT_PRICE_INLINE}
+              </Link>
+            </>
+          )}
           <Link
             href={correctSourceHref}
             className="text-xs font-semibold text-ink-muted underline-offset-2 hover:text-brick hover:underline"

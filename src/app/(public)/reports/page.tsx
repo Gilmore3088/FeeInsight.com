@@ -392,7 +392,9 @@ export default async function ReportsPage({ searchParams }: PageProps) {
                     {CHARTER_NOUN[closestMarket.charter_type] ?? closestMarket.charter_type.replace(/_/g, " ")}, with{" "}
                     {closestMarket.rich} of {MARKET_READY_MIN_RICH}.
                   </>
-                )}
+                )}{" "}
+                Each tile shows the state&apos;s closest market as institutions ready of the {MARKET_READY_MIN_RICH} needed;
+                ✓ marks a market that is ready.
               </p>
             )}
             <StateReportGrid states={stateCoverage} readiness={readiness} />

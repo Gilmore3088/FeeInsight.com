@@ -56,10 +56,11 @@ export type FeeBenchmarks = Record<string, FeeBenchmark>;
 
 type Position = "below" | "within" | "above";
 
+/** The design system's market-position colours: brick, slate and sage, never good or bad. */
 const POSITION_DOT: Record<Position, string> = {
-  below: "bg-emerald-600",
-  within: "bg-ink-muted",
-  above: "bg-amber-600",
+  below: "bg-below-market",
+  within: "bg-in-range",
+  above: "bg-above-market",
 };
 
 const POSITION_TEXT: Record<Position, string> = {
@@ -160,8 +161,8 @@ export interface StateMedians {
 }
 
 const DELTA_TONE: Record<MedianDelta["tone"], string> = {
-  above: "text-red-700",
-  below: "text-emerald-700",
+  above: "text-above-market",
+  below: "text-below-market",
   at: "text-ink-muted",
 };
 

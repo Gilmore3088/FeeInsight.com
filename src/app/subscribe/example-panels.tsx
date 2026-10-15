@@ -2,7 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { PreviewFrame } from "./preview-frame";
 
-const DISPLAY = { fontFamily: "var(--font-jakarta), ui-sans-serif, system-ui, sans-serif" };
+const DISPLAY = { fontFamily: "var(--fi-font-sans)" };
 
 /** The newest Regulatory Wire item, in one line. */
 export interface MonitorWireItem {

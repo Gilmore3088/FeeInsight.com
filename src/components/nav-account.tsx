@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { HAMILTON_ACCOUNT_NAV, HAMILTON_REFERENCE_NAV } from "@/lib/hamilton/navigation";
-import { REQUEST_REPORT_NAV } from "./nav-items";
+import { PRO_PLANS_NAV } from "./nav-items";
 import { SignOutForm } from "./sign-out-form";
 import { useSessionChrome, type SessionChrome } from "./use-session-chrome";
 import { useHamiltonNavigationHref } from "./hamilton/layout/hamilton-navigation-context";
@@ -47,10 +47,10 @@ export function NavAccount() {
         Sign in
       </Link>
       <Link
-        href={REQUEST_REPORT_NAV.href}
+        href={PRO_PLANS_NAV.href}
         className="inline-flex items-center rounded-md bg-brick px-3 py-1.5 text-[12px] font-semibold text-white transition-colors hover:bg-brick-ink"
       >
-        {REQUEST_REPORT_NAV.label}
+        {PRO_PLANS_NAV.label}
       </Link>
     </>
   );

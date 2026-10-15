@@ -5,7 +5,7 @@ import { Logo } from "@/brand/components";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Dialog as DialogPrimitive } from "radix-ui";
-import { isActivePath, navItemsFor, REQUEST_REPORT_NAV } from "./nav-items";
+import { isActivePath, navItemsFor, PRO_PLANS_NAV } from "./nav-items";
 
 export { isActivePath };
 import { openSearch } from "./public/search-events";
@@ -117,11 +117,11 @@ export function ConsumerMobileNav() {
                       Sign in
                     </Link>
                     <Link
-                      href={REQUEST_REPORT_NAV.href}
+                      href={PRO_PLANS_NAV.href}
                       onClick={close}
                       className="mt-2 block rounded-md bg-brick px-3 py-2.5 text-center text-[14px] font-semibold text-white transition-colors hover:bg-brick-ink"
                     >
-                      {REQUEST_REPORT_NAV.label}
+                      {PRO_PLANS_NAV.label}
                     </Link>
                   </>
                 )}
