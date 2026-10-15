@@ -50,7 +50,7 @@ describe("homepage (site v3, Direction A)", () => {
     const off = text(renderToStaticMarkup(<LandingHero summary={summary} overdraft={overdraft} sampleLive={false} />));
     expect(off).toContain("1,234 institutions with published fees · Data refreshed Oct 14, 2026. Free to search.");
     expect(off).toContain("National range · 321 institutions · Data refreshed Oct 14, 2026");
-    expect(off).toContain(REPORT_PRICE_INLINE);
+    expect(off).not.toContain(REPORT_PRICE_INLINE);
     expect(off).not.toContain("Sample competitive report");
     const on = renderToStaticMarkup(<LandingHero summary={summary} overdraft={overdraft} sampleLive />);
     expect(on).toContain("/reports/sample-competitive-fee-position");

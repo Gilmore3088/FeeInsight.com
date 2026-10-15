@@ -1,11 +1,10 @@
 import Link from "next/link";
-import { PRODUCT_NAME, REPORT_OFFER, REPORT_PRICE_INLINE, SITE_NAME } from "@/lib/constants";
+import { PRODUCT_NAME, SITE_NAME } from "@/lib/constants";
 import type { PublicStatsSummary } from "@/lib/public-stats";
 import {
   Eyebrow,
   InstitutionSearchForm,
   NationalRange,
-  REPORT_REQUEST_HREF,
   SAMPLE_REPORT_HREF,
   SANS,
   TEXT_LINK,
@@ -21,7 +20,6 @@ interface LandingHeroProps {
 }
 
 /** The second-buyer line stays quiet: a plain underline, no weight, so the search is the one strong action. */
-const QUIET_LINK = "underline underline-offset-4 decoration-border hover:decoration-ink";
 
 /** Site v3 brief 08 §B.3, laid out as brief 04 Direction A: the promise, then the search. */
 export function LandingHero({ summary, overdraft, sampleLive }: LandingHeroProps) {
@@ -75,13 +73,6 @@ export function LandingHero({ summary, overdraft, sampleLive }: LandingHeroProps
               <Link href="/subscribe" className={TEXT_LINK}>
                 See Hamilton plans
               </Link>
-            </p>
-            <p>
-              Prefer one document?{" "}
-              <Link href={REPORT_REQUEST_HREF} className={QUIET_LINK}>
-                A {REPORT_OFFER.name} for your institution
-              </Link>
-              , {REPORT_PRICE_INLINE}.
             </p>
             <p>Checking your own bank&apos;s fees? Search the same index, free.</p>
           </div>
