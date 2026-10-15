@@ -135,16 +135,16 @@ describe("/api/v1/institutions", () => {
 
   it("searches by name when q is given", async () => {
     vi.mocked(searchInstitutions).mockResolvedValue({
-      rows: [{ id: 5, institution_name: "Frost Bank", state_code: "TX", city: "San Antonio", charter_type: "bank", asset_size: 50, asset_size_tier: "large", published_fee_count: 31 }],
+      rows: [{ id: 5, institution_name: "Example Bank", state_code: "TX", city: "San Antonio", charter_type: "bank", asset_size: 50, asset_size_tier: "large", published_fee_count: 31 }],
       total: 1,
     } as never);
 
-    const response = await GET(new NextRequest("https://feeinsight.com/api/v1/institutions?q=frost&state=tx"));
+    const response = await GET(new NextRequest("https://feeinsight.com/api/v1/institutions?q=example&state=tx"));
     const body = await response.json();
 
-    expect(searchInstitutions).toHaveBeenCalledWith(expect.objectContaining({ query: "frost", state_code: "TX" }));
+    expect(searchInstitutions).toHaveBeenCalledWith(expect.objectContaining({ query: "example", state_code: "TX" }));
     expect(getInstitutionsByFilter).not.toHaveBeenCalled();
-    expect(body.data[0]).toMatchObject({ id: 5, name: "Frost Bank", fee_count: 31 });
+    expect(body.data[0]).toMatchObject({ id: 5, name: "Example Bank", fee_count: 31 });
   });
 
   it("rejects a one-letter name search", async () => {

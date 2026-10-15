@@ -100,7 +100,7 @@ describe("Darwin agentic verification", () => {
   it("refuses a $0 read from one account tier's own schedule, not the bank's price (#1397)", async () => {
     const observations = ([['consumer', 0], ['business', 30]] as const).map(([fee_audience, amount], index) => ({
       ...rawFee, fee_raw_id: 321500 + index, institution_id: 49, source_document_id: 21164,
-      source_url: "https://www.frostbank.com/agreements-disclosures/truth-in-savings/premium-account-fees",
+      source_url: "https://www.examplebank.com/agreements-disclosures/truth-in-savings/premium-account-fees",
       fee_name: `Non-sufficient Funds (NSF) Returned Item fees (${fee_audience})`, fee_audience, amount,
       outlier_flags: ["needs_darwin_verification", "canonical_hint:nsf", ...(amount === 0 ? ["knox_review:zero"] : [])],
       conditions: `canonical_hint=nsf; excerpt="${PINNACLE_TEXT}"`,

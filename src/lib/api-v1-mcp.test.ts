@@ -139,7 +139,7 @@ describe("MCP connector", () => {
     const h = handlers();
     await handleMcpPost(
       rpc(
-        { jsonrpc: "2.0", id: 4, method: "tools/call", params: { name: "find_institutions", arguments: { name: "Frost", state: "TX" } } },
+        { jsonrpc: "2.0", id: 4, method: "tools/call", params: { name: "find_institutions", arguments: { name: "Example", state: "TX" } } },
         {},
         "/api/v1/mcp?api_key=bfi_test",
       ),
@@ -148,7 +148,7 @@ describe("MCP connector", () => {
 
     const forwarded = vi.mocked(h.institutions).mock.calls[0][0];
     expect(forwarded.nextUrl.searchParams.get("api_key")).toBe("bfi_test");
-    expect(forwarded.nextUrl.searchParams.get("q")).toBe("Frost");
+    expect(forwarded.nextUrl.searchParams.get("q")).toBe("Example");
   });
 
   it("reports an API error as a tool error, not a protocol error", async () => {

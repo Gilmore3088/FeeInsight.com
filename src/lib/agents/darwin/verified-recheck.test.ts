@@ -111,7 +111,7 @@ describe("Darwin verified re-check", () => {
   });
 
   it("flags an already verified $0 from a tier's own schedule, live or not (v3, #1397)", async () => {
-    const premium = { ...verifiedRow, source_url: "https://www.frostbank.com/agreements-disclosures/truth-in-savings/premium-account-fees" };
+    const premium = { ...verifiedRow, source_url: "https://www.examplebank.com/agreements-disclosures/truth-in-savings/premium-account-fees" };
     const db = dbWith([
       { ...premium, fee_verified_id: 130001, fee_raw_id: 300001, canonical_fee_key: "stop_payment", verified_amount: "0.00", fee_name: "Stop Payment", amount: "0.00", outlier_flags: [], conditions: null, fee_published_id: 7101 },
       { ...premium, fee_verified_id: 130002, fee_raw_id: 300002, canonical_fee_key: "wire_transfer_incoming", verified_amount: "0.00", fee_name: "Incoming Wire", amount: "0.00", outlier_flags: [], conditions: null, fee_published_id: null },

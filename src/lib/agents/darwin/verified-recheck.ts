@@ -29,7 +29,7 @@ type SqlTag = typeof sql;
  * rows v1 rejected (flag `darwin_recheck:*`): one that passes now is restored to verified with the
  * flag removed; a live row that passes now has its pending second-look flag cleared.
  * v3 (2026-10-15, #1397): a $0 from one account tier's own schedule, or named for a tier's
- * account, is that tier's perk, not the bank's price (`tierPerkZero`). Frost's live overdraft,
+ * account, is that tier's perk, not the bank's price (`tierPerkZero`). One large bank's live overdraft,
  * NSF, stop payment and wire fees all read $0 from its Premium Account schedule.
  */
 export const DARWIN_RECHECK_STRATEGY = { strategy: "verify.recheck", version: 3 } as const;
