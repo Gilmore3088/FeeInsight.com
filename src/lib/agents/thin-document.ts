@@ -15,6 +15,20 @@ export function feesSentToDarwinSql(documentColumn: string): string {
               AND thin_fr.outlier_flags ? 'needs_darwin_verification')`;
 }
 
+/**
+ * A product page is thin by nature (an account page quoting two or three fees), not because a
+ * reader or a rule missed its fees (#1094 step 2). It is kept as context beside the bank's fee
+ * schedule (#1051), so a thin product page is not re-read, re-extracted or woken for at every
+ * reader or rules version. The kind is Rosetta's (`agent_source_texts.document_kind`); a text
+ * with no kind yet is treated as before.
+ */
+export const THIN_EXEMPT_DOCUMENT_KINDS = ["product_page"] as const;
+
+/** SQL: true unless `textAlias`'s stored kind exempts it from the thin re-reads. */
+export function thinRereadKindSql(textAlias: string): string {
+  return `(${textAlias}.document_kind IS NULL OR ${textAlias}.document_kind NOT IN (${THIN_EXEMPT_DOCUMENT_KINDS.map((kind) => `'${kind}'`).join(", ")}))`;
+}
+
 export function isThinDocument(feesSentToDarwin: number): boolean {
   return feesSentToDarwin < THIN_DOCUMENT_MAX_FEES;
 }
