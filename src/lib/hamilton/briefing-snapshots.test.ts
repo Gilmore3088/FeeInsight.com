@@ -4,7 +4,7 @@ const mocks = vi.hoisted(() => ({ sql: vi.fn(), getWorkspaceBriefing: vi.fn() })
 vi.mock("@/lib/data-store/connection", () => ({ sql: mocks.sql }));
 vi.mock("@/lib/hamilton/workspace/research", () => ({ getWorkspaceBriefing: mocks.getWorkspaceBriefing }));
 
-import { getBriefingChangesSinceLastQuarter, runBriefingRefresh, summarizeBriefingRefresh } from "./briefing-snapshots";
+import { getQuarterlyChanges, runBriefingRefresh, summarizeBriefingRefresh } from "./briefing-snapshots";
 
 const brief = (current: number) => ({
   institutionId: 1,
@@ -81,16 +81,27 @@ describe("runBriefingRefresh", () => {
   });
 });
 
-describe("getBriefingChangesSinceLastQuarter", () => {
-  it("compares the two newest copies, and is null until there are two", async () => {
+describe("getQuarterlyChanges (#1083)", () => {
+  it("is null with no stored copy, names the first copy, then compares the two newest", async () => {
     mocks.sql.mockReset();
+    mocks.sql.mockResolvedValueOnce([]);
+    expect(await getQuarterlyChanges(1)).toBeNull();
     mocks.sql.mockResolvedValueOnce([{ quarter: "2026-Q4", briefing: brief(35) }]);
-    expect(await getBriefingChangesSinceLastQuarter(1)).toBeNull();
+    expect(await getQuarterlyChanges(1)).toEqual({ kind: "first", quarter: "2026-Q4" });
     mocks.sql.mockResolvedValueOnce([
       { quarter: "2026-Q4", briefing: brief(35) },
       { quarter: "2026-Q3", briefing: JSON.stringify(brief(30)) },
     ]);
-    const diff = await getBriefingChangesSinceLastQuarter(1);
-    expect(diff?.changes[0].text).toBe("Overdraft: your published price moved from $30.00 to $35.00 ($5.00 higher).");
+    const changes = await getQuarterlyChanges(1);
+    expect(changes?.kind === "diff" && changes.diff.changes[0].text).toBe("Overdraft: its published price moved from $30.00 to $35.00 ($5.00 higher).");
+  });
+
+  it("shows nothing for a stored copy it cannot read", async () => {
+    mocks.sql.mockReset();
+    mocks.sql.mockResolvedValueOnce([
+      { quarter: "2026-Q4", briefing: brief(35) },
+      { quarter: "2026-Q3", briefing: "{not json" },
+    ]);
+    expect(await getQuarterlyChanges(1)).toBeNull();
   });
 });

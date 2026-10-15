@@ -45,7 +45,7 @@ Hamilton supports the decision; it does not make it.
   income for that fee line divided by its published fee), or `institution` (items and
   waiver rate the bank gave Hamilton). The scenario names the one figure that would
   move it up a level.
-- Implementation is a separate step that runs only after management chooses an amount:
+- The implementation plan for a tested price (Simulate, `hamilton/implementation-plan.ts`):
   notice (Reg DD / NCUA Part 707 30 days for an adverse change, Reg E 21 days for EFT
   fees, the overdraft opt-in notice), approvals, systems, earliest effective date and
   monitoring. The compliance caveat is always shown.
@@ -126,11 +126,16 @@ Hamilton supports the decision; it does not make it.
   what was read; unmatched lines are listed, never guessed, and the file is not stored.
   Nothing is used until `POST /api/hamilton/uploads/apply`, which saves the figures to
   memory with the upload named as their source.
-- `POST /api/hamilton/decisions/[id]` records the amount management chose (Hamilton never
-  chooses), with its implementation plan and watch conditions (a competitor change, a
-  5% peer-median move, a regulator release). A watch that trips is logged once as
-  `watch_tripped`. The ledger (`GET /api/hamilton/decisions`) is a sum over decisions;
-  dollars count only from options chosen on institution evidence.
+- The ledger (`GET /api/hamilton/decisions`, `/pro/monitor`) lists decisions and where each
+  stands; the five deliverables are built from them. Recording the amount management chose,
+  its implementation plan, its dollar effect and the watches that would reopen it were built
+  but never reachable from Pro, and were removed (#1083, James 2026-10-15). The
+  `hamilton_decisions` columns `chosen_amount`, `chosen_by` and `watch_conditions` stay in the
+  database and are no longer read.
+- The monthly briefing (`/pro/intelligence?view=institution`) shows "Since last quarter": the
+  two newest copies the `briefing-refresh` step keeps in `hamilton_briefing_snapshots`,
+  compared by `diffBriefings` (`getQuarterlyChanges`). With one copy it says when the first
+  comparison comes.
 - Decisions, their event log, client-given facts and uploads are kept in
   `hamilton_decisions`, `hamilton_decision_events`, `hamilton_institution_memory` and
   `hamilton_uploads`. A client fact is never edited in place: a new value supersedes it
@@ -149,8 +154,8 @@ Hamilton supports the decision; it does not make it.
   is interpreted. OCC orders have no document link in the OCC export, so OCC lines link to the
   OCC enforcement search page.
 - A state regulator's post comes from `reg_articles` but is tagged `kind: "state_post"`.
-  Only federal releases (`isFederalRelease`) trip a decision's `rule_release` watch, fill the
-  storyline's news slot, or appear in a watch list that is not about regulation (#1254).
+  Only federal releases (`isFederalRelease`) fill the storyline's news slot or appear in a
+  watch list that is not about regulation (#1254).
 - The workspace builders are deterministic and make no provider calls; the memo route
   above is the paid exception.
 

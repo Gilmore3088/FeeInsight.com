@@ -1,11 +1,9 @@
 /**
- * "Turn this into": the six deliverables built from one or more decisions. Pure and
- * deterministic: every line is a sourced claim, a scenario the reader tested, the option
- * management chose (only when one was chosen) or a step of the implementation plan. The
+ * "Turn this into": the five deliverables built from one or more decisions. Pure and
+ * deterministic: every line is a sourced claim or a scenario the reader tested. The
  * provenance of each decision rides along as an appendix.
  *
- * A deliverable sets out options and consequences. It states the option management chose
- * only when one was chosen, and never recommends one.
+ * A deliverable sets out options and consequences and never recommends one.
  */
 
 import { formatDollarsInWords, formatFeeAmount } from "@/lib/format";
@@ -18,9 +16,7 @@ import type {
   EvidenceLevel,
   Fact,
   FeeResearch,
-  ImplementationPlan,
   Provenance,
-  WatchCondition,
 } from "./types";
 
 export const DELIVERABLE_TITLES: Record<DeliverableKind, string> = {
@@ -29,7 +25,6 @@ export const DELIVERABLE_TITLES: Record<DeliverableKind, string> = {
   pricing_packet: "Pricing committee packet",
   competitive_appendix: "Competitive appendix",
   regulatory_summary: "Regulatory summary",
-  implementation_checklist: "Implementation checklist",
 };
 
 export interface DeliverableTable {
@@ -43,8 +38,6 @@ export interface DeliverableSection {
   /** Sourced lines, shown with their source under the paragraphs. */
   facts?: Fact[];
   table?: DeliverableTable;
-  /** Checklist items (implementation checklist only). */
-  checklist?: { text: string; rule?: string }[];
 }
 
 export interface Deliverable {
@@ -83,13 +76,6 @@ function money(n: number): string {
   return formatFeeAmount(n) ?? `$${n}`;
 }
 
-function longDate(iso: string): string {
-  const d = new Date(`${iso.slice(0, 10)}T00:00:00Z`);
-  return Number.isNaN(d.getTime())
-    ? iso
-    : d.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric", timeZone: "UTC" });
-}
-
 function ordinal(n: number): string {
   const s = ["th", "st", "nd", "rd"];
   const v = n % 100;
@@ -106,8 +92,8 @@ function effectText(effect: { low: number; high: number } | null): string {
 export function testedRows(events: DecisionEvent[]): TestedRow[] {
   const byPrice = new Map<number, TestedRow>();
   for (const e of events) {
-    if (e.kind !== "scenario_tested" && e.kind !== "option_chosen") continue;
-    const tested = Number(e.kind === "option_chosen" ? e.detail.amount : e.detail.tested);
+    if (e.kind !== "scenario_tested") continue;
+    const tested = Number(e.detail.tested);
     if (!Number.isFinite(tested)) continue;
     const effect = e.detail.revenueEffect as { low?: unknown; high?: unknown } | null | undefined;
     const row: TestedRow = {
@@ -122,16 +108,6 @@ export function testedRows(events: DecisionEvent[]): TestedRow[] {
     byPrice.set(tested, row);
   }
   return [...byPrice.values()];
-}
-
-function lastEvent(events: DecisionEvent[], kind: DecisionEvent["kind"]): DecisionEvent | null {
-  for (let i = events.length - 1; i >= 0; i--) if (events[i].kind === kind) return events[i];
-  return null;
-}
-
-function planOf(events: DecisionEvent[]): ImplementationPlan | null {
-  const plan = lastEvent(events, "plan_created")?.detail.plan;
-  return plan && typeof plan === "object" ? (plan as ImplementationPlan) : null;
 }
 
 function optionsTable(input: DeliverableInput): DeliverableTable | null {
@@ -152,37 +128,19 @@ function optionsTable(input: DeliverableInput): DeliverableTable | null {
   };
 }
 
-function choiceParagraph(input: DeliverableInput): string {
-  const chosen = lastEvent(input.events, "option_chosen");
-  const name = proseFeeName(input.decision.feeCategory ?? input.research.feeCategory);
-  if (!chosen || input.decision.chosenAmount === null) return `Management has not chosen an option for the ${name} fee.`;
-  const by = input.decision.chosenBy ? ` (${input.decision.chosenBy})` : "";
-  return `Management chose ${money(input.decision.chosenAmount)} for the ${name} fee on ${longDate(chosen.at)}${by}.`;
-}
-
-function planSteps(plan: ImplementationPlan): { text: string; rule?: string }[] {
-  return [...plan.notice, ...plan.approvals, ...plan.systems, ...plan.monitoring].map((s) => ({ text: s.text, rule: s.rule?.label }));
-}
-
-function watchList(watches: WatchCondition[]): string[] {
-  return watches.map((w) => w.label);
-}
-
 function sectionsFor(kind: DeliverableKind, input: DeliverableInput): DeliverableSection[] {
-  const { research, decision, events } = input;
+  const { research } = input;
   const answer = buildFeeAnswer(research);
   const name = proseFeeName(research.feeCategory);
   const title = `${name[0].toUpperCase()}${name.slice(1)} fee`;
   const options = optionsTable(input);
-  const plan = planOf(events);
-  const choice = choiceParagraph(input);
 
   switch (kind) {
     case "ceo_onepager":
       return [
         {
           heading: title,
-          paragraphs: [answer.headline, choice, ...(plan ? [`Earliest effective date: ${longDate(plan.earliestEffectiveDate)}.`] : [])],
+          paragraphs: [answer.headline],
           facts: answer.claims.slice(0, 3),
           ...(options ? { table: options } : {}),
         },
@@ -196,20 +154,6 @@ function sectionsFor(kind: DeliverableKind, input: DeliverableInput): Deliverabl
           paragraphs: options ? [] : ["No prices have been modeled for this fee yet."],
           ...(options ? { table: options } : {}),
         },
-        { heading: "Management's choice", paragraphs: [choice] },
-        ...(plan
-          ? [
-              {
-                heading: "Implementation and compliance",
-                paragraphs: [
-                  `${plan.noticeRequiredDays > 0 ? `${plan.noticeRequiredDays} days' notice is required` : "No advance notice is required"}; the earliest effective date is ${longDate(plan.earliestEffectiveDate)}.`,
-                  plan.caveat,
-                ],
-                checklist: planSteps(plan),
-              },
-            ]
-          : []),
-        ...(decision.watchConditions.length > 0 ? [{ heading: "What would reopen this decision", paragraphs: watchList(decision.watchConditions) }] : []),
       ];
     case "pricing_packet":
       return [
@@ -219,7 +163,6 @@ function sectionsFor(kind: DeliverableKind, input: DeliverableInput): Deliverabl
           facts: answer.claims,
           ...(options ? { table: options } : {}),
         },
-        { heading: "Decision status", paragraphs: [choice] },
       ];
     case "competitive_appendix": {
       const layers = research.layers.filter((l) => l.median !== null);
@@ -254,18 +197,7 @@ function sectionsFor(kind: DeliverableKind, input: DeliverableInput): Deliverabl
           paragraphs: research.regulation.length > 0 ? [] : ["No rule or regulator release is on file for this fee."],
           facts: research.regulation,
         },
-        ...(plan ? [{ heading: "Notice the chosen change requires", paragraphs: [plan.caveat], checklist: plan.notice.map((s) => ({ text: s.text, rule: s.rule?.label })) }] : []),
       ];
-    case "implementation_checklist":
-      return plan
-        ? [
-            {
-              heading: `${title}: ${money(plan.current)} to ${money(plan.chosen)}`,
-              paragraphs: [`Earliest effective date: ${longDate(plan.earliestEffectiveDate)}.`, plan.caveat],
-              checklist: planSteps(plan),
-            },
-          ]
-        : [{ heading: title, paragraphs: ["Management has not chosen an option, so there is no plan to check off yet."] }];
   }
 }
 

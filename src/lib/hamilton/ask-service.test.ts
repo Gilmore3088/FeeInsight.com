@@ -26,9 +26,6 @@ const decision: DecisionRecord = {
   feeCategory: "overdraft",
   title: "Overdraft fee",
   status: "researching",
-  chosenAmount: null,
-  chosenBy: null,
-  watchConditions: [],
   createdAt: "2026-10-06T08:00:00Z",
   updatedAt: "2026-10-06T08:00:00Z",
 };

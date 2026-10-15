@@ -48,19 +48,6 @@ export function DeliverableView({ deliverable }: { deliverable: Deliverable }) {
                 </table>
               </div>
             ) : null}
-            {section.checklist && section.checklist.length > 0 ? (
-              <ul className="flex flex-col gap-2">
-                {section.checklist.map((item, k) => (
-                  <li key={k} className="flex gap-3 text-[15px] leading-relaxed text-warm-900">
-                    <span aria-hidden className="mt-1.5 h-3.5 w-3.5 shrink-0 rounded-sm border border-warm-400" />
-                    <span>
-                      {item.text}
-                      {item.rule ? <span className="block text-xs text-warm-600">{item.rule}</span> : null}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            ) : null}
           </div>
         </MemoSection>
       ))}

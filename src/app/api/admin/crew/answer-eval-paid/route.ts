@@ -20,8 +20,8 @@ const SOURCE = "hamilton.paid_answer_eval";
 /**
  * Hamilton's paid answer eval (#1079, cron once a day): up to five memos a day written over free
  * answers and scored on form and on whether their figures tie to the live catalog. A provider
- * step, so the global provider stop and the budget policies hold it; the daily cap is counted in
- * provider usage, so a second call the same day writes nothing more.
+ * step, so the global provider stop and the budget policies hold it; each sample is reserved in
+ * the run ledger before its model call, so a second call the same day writes nothing more.
  */
 async function handleGET(request: NextRequest) {
   if (!(await isAuthorized(request))) {
