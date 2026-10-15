@@ -116,6 +116,56 @@ Darwin owns verification and classification.
   row that passes now has its pending second-look flag cleared (`takedown_cleared`). Each row
   records a `verify.recheck` attempt (fingerprint `verified:<fee_verified_id>`), so a row is read
   once per recheck version and the pass never starves the batch. Never a hand UPDATE.
+- `verify.document_owner` (`document-owner.ts`, version 1, 2026-10-15, #1455) ends every learning
+  verify step after `verify.recheck`. It asks whose schedule a live fee's document is, by the
+  document's own text, never by the stored website (the registry seed stored another bank's website
+  for 5756, 4884 and 1903; CU website vendors serve one CU's file on every member domain). A live
+  (institution, document) pair is read when the document is shared with another institution (its
+  host is that institution's stored website, that institution has live fees from the same address,
+  or one of its documents has the same `text_hash`: a completed text of 200 characters or more shared by
+  at most 20 documents, so empty and "Access Denied" pages link nothing) or sits on a vendor download path
+  (`/ezs3download/download/`, `/_/kcms-doc/`; a path alone is no proof). The order: all linked
+  institutions share this bank's holding company gives `sibling_shared` (Wells Fargo 4/172/359,
+  #1441: never taken down, counted once per document); this bank's distinct name, credit union
+  acronym (SMFCU, SMCU), printed website (not the document's own host), city or certificate number
+  gives `own_named` (co-branded documents pass; names read "&" as "and" and drop a trailing
+  "Company", "Co.", "Corp.", "Inc.", "N.A.", "F.S.B." or "S.S.B."); on a vendor path, the hash-linked institution whose
+  name form the text prints owns the copy (`other_bank` when it is another, unrelated institution;
+  a bare one-word brand never counts, nor a sharer's form that contains or sits inside one of
+  this bank's own forms; on this bank's own site the sharer's name must be its own: not shared,
+  or printed with its city); a document on another institution's stored website, not on
+  this bank's site (its stored host, a subdomain or parent of it, or the same registrable domain:
+  `home.acmebank.com` owns `acmebank.com`), that never names this bank is `other_bank` naming that
+  institution (the site rule; never for a bank with no stored website); then linked institutions count by a name of two words or
+  more (a one-word brand such as "healthplus" only next to bank/credit union/fcu or its city;
+  boilerplate and common words such as "currency", "direct", "popular" never), a name another
+  institution's name contains only with its city, an acronym, or city with state. One named
+  institution gives `other_bank`, two or more `shared_service` (passes); a named institution
+  linked only by address or text hash is capped at `shared_service` when the text gives only its
+  acronym or city with state, or when the document is on this bank's own site, so a name variant
+  this bank's forms miss ("HBT Bank") never hands its own schedule away, a named sibling
+  `sibling_shared`. The header rule (`headerNamesInstitution`: one of the first ten non-empty lines
+  starts with the full legal name, two words or more with "bank" or "credit union", printed as a
+  title, no other institution sharing it) applies only to linked institutions. An institution only
+  the registry-wide name scan finds gives `registry_named`, a review verdict that passes, even as a
+  title line ("Wells Fargo Bank", "U.S. Bank", "Bank of America ATM Fees", "Fees associated with",
+  "processed through Bank of America" are all negative tests). Other verdicts: `unproven` (also a
+  pair with no registry row), `no_text`. Live fees exclude rolled-back and quarantined ones; the scoped pairs read runs at most once an
+  hour (`DOCUMENT_OWNER_SCAN_INTERVAL_HOURS`, keyed on the mode's last event), with JIT off and a
+  60 s statement timeout inside its savepoint, both put back after the read. Up to 25 new pairs a step, one attempt each (fingerprint
+  `owner-shadow:<institution>:<document>:<text_hash>` in shadow, `owner:...` once live, so a
+  re-extracted text is read again). A step skips the scoped read when the last one of its mode
+  selected no pair and the newest stored text and live fee ids are unchanged. With
+  `DARWIN_DOCUMENT_OWNER_TAKEDOWN` off (the default) it only logs the live fees it would take down
+  (`darwin.document_owner_shadow` event, step detail `document_owner`); on, `other_bank` pairs are
+  re-read under their own cap of 25, a failing fee goes through the shared second look
+  (`darwin.document_owner`), passing fees clear their pending flags, and a confirmed fee is
+  archived with reason `document_owner: names institution <id>`, never deleted.
+  `documentOwnerCountSql()` is the read-only count of the whole backlog by verdict, mirroring these
+  rules in staged, materialized steps, as one script in a read-only transaction that rolls back (JIT
+  and merge joins off, a 120 s statement timeout; names are matched only where their first two words
+  appear next to each other). It skips the certificate test, so its `other_bank` count is an upper
+  bound.
 - Live name re-check (`live-fragment-check.ts`, #1443, #1436; decision 2026-10-15, "Darwin
   re-checks every live fee against today's rules"). `verify.recheck` reads verified rows of the
   current `verify.rules` version, so fees that went live earlier are never read again; this pass
@@ -589,6 +639,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `DARWIN_SCHEDULE_REFILE_STRATEGY` | `verify.schedule_refile` | v1 | `darwin/schedule-refile.ts` |
 | `DARWIN_VERDICT_SCORE_STRATEGY` | `verify.verdict_score` | v1 | `darwin/verdict-score.ts` |
 | `DARWIN_RECHECK_STRATEGY` | `verify.recheck` | v3 | `darwin/verified-recheck.ts` |
+| `DOCUMENT_OWNER_STRATEGY` | `verify.document_owner` | v1 | `darwin/document-owner.ts` |
 | `DARWIN_VERIFY_STRATEGY` | `verify.rules` | v3 | `darwin/verify.ts` |
 | `DARWIN_SOURCE_CHECK_VERSION` | — | v2 | `darwin/verify.ts` |
 | `DARWIN_BATCH_KEY_VERSION` | — | v4 | `darwin/verify.ts` |

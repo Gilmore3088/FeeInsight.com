@@ -19,6 +19,7 @@ import { sourceLinkSkipReason } from "@/lib/agents/hamilton/source-link";
 import { PERCENT_FEE_RANGES, isPercentFee, percentFeeAllowed, ratePercentOf, type RateFields } from "@/lib/percent-fees";
 import { darwinFeedbackRows, recordDarwinFeedback } from "./feedback";
 import { recheckVerifiedFees, type VerifiedRecheckResult } from "./verified-recheck";
+import { recheckDocumentOwners, type DocumentOwnerResult } from "./document-owner";
 import {
   categoryChangeCandidates,
   DARWIN_CATEGORY_CHANGE_LIMIT,
@@ -349,6 +350,8 @@ export interface RunDarwinVerifyResult {
   /** Skipped rows by reason code. */
   reasonCounts: Partial<Record<DarwinReasonCode, number>>;
   recheck: VerifiedRecheckResult | null;
+  /** Whose schedule each shared document is, by its own text (#1455); shadow until switched on. */
+  documentOwner: DocumentOwnerResult | null;
   /** #1295: rows whose Knox category changed since Darwin's decision; null without the learning log. */
   categoryChange: CategoryChangeRejudgeSummary | null;
   /** Verified rows that are explicit $0 (free) fees. */
@@ -1314,6 +1317,13 @@ export async function runDarwinVerify(
         return null;
       })
     : null;
+  // Darwin's re-check of shared documents against the bank their own text names (document-owner.ts).
+  const documentOwner = learning
+    ? await recheckDocumentOwners(db, { runId: options.runId, stepId: options.stepId ?? null }).catch((error) => {
+        console.warn("[darwin] document owner recheck failed", error instanceof Error ? error.message : error);
+        return null;
+      })
+    : null;
 
   return {
     selectedRawFees: rows.length,
@@ -1326,6 +1336,7 @@ export async function runDarwinVerify(
     outcomes: learning ? countOutcomes(results.map(attemptOutcome)) : {},
     reasonCounts,
     recheck,
+    documentOwner,
     categoryChange: categoryChange.summary,
     zeroFeesVerified: results.filter((result) => result.status === "verified" && result.amount === 0).length,
     peerOutliers: results.filter((result) => result.reasonCode === "peer_outlier").length,
