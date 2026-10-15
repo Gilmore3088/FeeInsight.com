@@ -137,21 +137,46 @@ export async function paidSamplesToday(db: SqlTag, now: Date, path?: PaidPath): 
   return Number(row?.n ?? 0);
 }
 
+/** Each non-memo path's daily share of the cap; memos fill the rest. */
+const PATH_DAILY: Partial<Record<PaidPath, number>> = { simulate: SIMULATE_DAILY, written_answer: WRITTEN_DAILY, report: REPORT_DAILY };
+
+/**
+ * Runs `reserve` inside a transaction that first takes the day's advisory lock, so two runs never
+ * both see room for the last slot (#1418): under READ COMMITTED the insert after the lock reads a
+ * fresh snapshot, which includes the other run's committed reservation. A db with no `begin`
+ * (a test double) runs it directly.
+ */
+async function underDayLock<T>(db: SqlTag, now: Date, reserve: (tx: SqlTag) => Promise<T>): Promise<T> {
+  const begin = (db as unknown as { begin?: (fn: (tx: SqlTag) => Promise<T>) => Promise<T> }).begin;
+  if (typeof begin !== "function") return reserve(db);
+  return begin.call(db, async (tx: SqlTag) => {
+    await tx`SELECT pg_advisory_xact_lock(hashtext(${`hamilton-paid-eval:${dayStart(now)}`}))`;
+    return reserve(tx);
+  });
+}
+
 /**
  * Reserves one sample before any model call: inserts the reservation only while today holds fewer
- * than `cap`, and says whether it did. Runs on its own connection (not the step's transaction), so a
- * killed function keeps the reservation.
+ * than `cap`, and fewer than its path's daily share (one Simulate, written answer and report each,
+ * #1414), and says whether it did. Runs in its own short transaction (not the step's), so a killed
+ * function keeps the reservation.
  */
 export async function reserveSample(db: SqlTag, input: { runId: number; subjectKey: string; cap: number; now: Date; path?: PaidPath }): Promise<boolean> {
-  const rows = await db`
+  const path = input.path ?? "memo";
+  const pathLimit = PATH_DAILY[path] ?? input.cap;
+  const rows = await underDayLock(db, input.now, (tx) => tx`
     INSERT INTO agent_run_events (agent_run_id, step_id, event_type, status, message, detail)
     SELECT ${input.runId}, NULL, ${PAID_EVAL_RESERVATION}, 'info',
-           ${`Reserved paid answer-eval sample ${input.subjectKey}.`}, ${JSON.stringify({ subject_key: input.subjectKey, path: input.path ?? "memo" })}::jsonb
+           ${`Reserved paid answer-eval sample ${input.subjectKey}.`}, ${JSON.stringify({ subject_key: input.subjectKey, path })}::jsonb
      WHERE (SELECT COUNT(*) FROM agent_run_events
+             WHERE event_type = ${PAID_EVAL_RESERVATION}
+               AND created_at >= ${dayStart(input.now)}::timestamptz
+               AND detail ->> 'path' = ${path}) < ${pathLimit}
+       AND (SELECT COUNT(*) FROM agent_run_events
              WHERE event_type = ${PAID_EVAL_RESERVATION}
                AND created_at >= ${dayStart(input.now)}::timestamptz) < ${input.cap}
     RETURNING id
-  `;
+  `);
   return rows.length > 0;
 }
 
@@ -444,10 +469,11 @@ export async function runPaidAnswerEval({
       const left = REPORT_PREP_DEADLINE_MS - (Date.now() - started);
       if (tried.has(candidate.institutionId) || tried.size >= REPORT_TRIES || left <= 0) continue;
       tried.add(candidate.institutionId);
+      let deadline: ReturnType<typeof setTimeout> | undefined;
       const prepared = await Promise.race([
         prepareReport(candidate.institutionId, answered.research.institutionName, now).catch(() => null),
-        new Promise<null>((resolve) => setTimeout(() => resolve(null), left)),
-      ]);
+        new Promise<null>((resolve) => { deadline = setTimeout(() => resolve(null), left); }),
+      ]).finally(() => clearTimeout(deadline));
       if (prepared) {
         reportPick = { path: "report", candidate, answered, report: prepared };
         break;

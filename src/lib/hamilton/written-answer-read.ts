@@ -12,7 +12,7 @@ import { getAnthropicLanguageModel, hasAnthropicApiKey, isProviderLimitError } f
 import { trackAnthropicRequest } from "@/lib/ai-provider-usage";
 import { getHamilton, buildAnalyzeModeSuffix, buildMonitorModeSuffix, buildSavedPeerSetPrompt, type AgentConfig } from "@/lib/research/agents";
 import { detectSkill, buildSkillInjection, buildSkillExecution, isSkillOptIn, findOfferedSkill } from "@/lib/research/skills";
-import { cacheLatestMessage, cachedSystem, ledgerUsage } from "@/lib/research/tool-output";
+import { cacheLatestMessage, cachedSystem, trackerUsage } from "@/lib/research/tool-output";
 import type { AnswerEvidenceCheck } from "./answer-gate";
 import { questionOnly, writtenAnswerCheck } from "./answer-save";
 import type { ActivePeerSet } from "./active-peer-set";
@@ -176,16 +176,7 @@ export const writeWrittenAnswer: WrittenAnswerWriter = async ({ institutionId, i
           abortSignal: AbortSignal.timeout(WRITTEN_ANSWER_TIMEOUT_MS),
         });
         // The ledger records `usage`: every step's tokens and the cache reads and writes, not the last step's alone.
-        const usage = ledgerUsage(generated.totalUsage);
-        return {
-          generated,
-          usage: {
-            input_tokens: usage.inputTokens,
-            output_tokens: usage.outputTokens,
-            cache_read_input_tokens: usage.cacheReadInputTokens,
-            cache_creation_input_tokens: usage.cacheCreationInputTokens,
-          },
-        };
+        return { generated, usage: trackerUsage(generated.totalUsage) };
       },
     );
     const text = (result.generated.text ?? "").trim();

@@ -39,7 +39,7 @@ import {
 } from "@/lib/hamilton/request-contract";
 import { getRequestSubjectKey } from "@/lib/api-hardening/audit";
 import { trackFirstHamiltonUse } from "@/lib/analytics-server";
-import { cacheLatestMessage, cachedSystem, ledgerUsage } from "@/lib/research/tool-output";
+import { cacheLatestMessage, cachedSystem, ledgerUsage, trackerUsage } from "@/lib/research/tool-output";
 import { SAVED_ANALYSIS_ID_KEY, questionOnly, writtenAnswerCheck, writtenAnswerResponse } from "@/lib/hamilton/answer-save";
 import { messageBoundsError } from "@/lib/hamilton/conversation-context";
 import { HELD_ANSWER_MESSAGE } from "@/lib/hamilton/answer-gate";
@@ -226,17 +226,21 @@ async function handlePOST(request: Request) {
     // of a partial report. Tokens are still logged via logUsage so cost
     // attribution is unchanged.
     if (gateCitations) {
-      const result = await trackAnthropicRequest(
+      const { generated: result } = await trackAnthropicRequest(
         providerContext,
-        async () => generateText({
-          model: getAnthropicLanguageModel(agent.model, "hamilton"),
-          system: cachedSystem(systemPrompt),
-          messages: await convertToModelMessages(messages),
-          prepareStep: ({ messages: stepMessages }) => ({ messages: cacheLatestMessage(stepMessages) }),
-          tools: agent.tools,
-          maxOutputTokens: agent.maxTokens,
-          stopWhen: stepCountIs(agent.maxSteps),
-        }),
+        async () => {
+          const generated = await generateText({
+            model: getAnthropicLanguageModel(agent.model, "hamilton"),
+            system: cachedSystem(systemPrompt),
+            messages: await convertToModelMessages(messages),
+            prepareStep: ({ messages: stepMessages }) => ({ messages: cacheLatestMessage(stepMessages) }),
+            tools: agent.tools,
+            maxOutputTokens: agent.maxTokens,
+            stopWhen: stepCountIs(agent.maxSteps),
+          });
+          // The ledger records `usage`: every tool step's tokens and cache reads and writes (#1418).
+          return { generated, usage: trackerUsage(generated.totalUsage) };
+        },
       );
 
       // totalUsage spans every tool step; usage is only the last step.
