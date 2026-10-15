@@ -25,6 +25,10 @@ function signed(diff: number): string {
   return `${diff > 0 ? "+" : "−"}${money(Math.abs(diff))}`;
 }
 
+/** "Overdraft (OD)" reads as "overdraft" inside a sentence. */
+const plain = (label: string) => label.replace(/\s*\([^)]*\)/g, "").toLowerCase();
+const article = (word: string) => `${/^[aeiou]/i.test(word) ? "an" : "a"} ${word}`;
+
 const PEER_LABEL: Record<string, string> = { overdraft: "overdraft", monthly_maintenance: "monthly maintenance" };
 
 /**
@@ -44,34 +48,37 @@ export function buildFindings(input: {
 }): Finding[] {
   const { rows, stateGroup, stateCode, peerRank, peerGroup, positionCounts } = input;
 
-  const measured = rows
-    .filter((row) => row.amount > 0)
-    .map((row) => {
-      const inState = row.state !== null && stateGroup !== null;
-      const band = (inState ? row.state : row.nation) as MarketBand | null;
-      if (!band || band.median <= 0) return null;
-      const diff = row.amount - band.median;
-      return {
-        row,
-        band,
-        group: inState ? `${band.institutions.toLocaleString("en-US")} ${stateGroup}` : `${band.institutions.toLocaleString("en-US")} U.S. institutions`,
-        barLabel: inState ? (stateCode ?? "State") : "U.S.",
-        diff,
-        share: Math.abs(diff) / band.median,
-        position: positionIn(row.amount, band),
-      };
-    })
-    .filter((m): m is NonNullable<typeof m> => m !== null);
+  const measure = (row: HeadlineRow, scope: "state" | "nation") => {
+    const band = scope === "state" ? (stateGroup !== null ? row.state : null) : row.nation;
+    if (!band || band.median <= 0) return null;
+    const diff = row.amount - band.median;
+    const n = band.institutions.toLocaleString("en-US");
+    return {
+      row,
+      band,
+      group: scope === "state" ? `${n} ${stateGroup}` : `${n} U.S. institutions`,
+      barLabel: scope === "state" ? (stateCode ?? "State") : "U.S.",
+      diff,
+      share: Math.abs(diff) / band.median,
+      position: positionIn(row.amount, band),
+    };
+  };
+  type Measure = NonNullable<ReturnType<typeof measure>>;
+  const priced = rows.filter((row) => row.amount > 0);
+  const inState = priced.map((row) => measure(row, "state")).filter((m): m is Measure => m !== null);
+  const inNation = priced.map((row) => measure(row, "nation")).filter((m): m is Measure => m !== null);
+  // The home market speaks first; a fee the state calls ordinary can still stand out nationally.
+  const measured = [...inState, ...inNation.filter((m) => !inState.some((s) => s.row.category === m.row.category))];
 
-  const feeFinding = (m: (typeof measured)[number]): Finding => ({
+  const feeFinding = (m: Measure): Finding => ({
     key: `fee-${m.row.category}`,
     label: m.row.label,
     figure: m.position === "within" ? money(m.row.amount) : signed(m.diff),
     tone: m.position,
     text:
       m.position === "within"
-        ? `Its ${m.row.label.toLowerCase()} fee, ${money(m.row.amount)}, sits inside the middle half of ${m.group}.`
-        : `Its ${m.row.label.toLowerCase()} fee is ${money(m.row.amount)}, ${money(Math.abs(m.diff))} ${m.diff > 0 ? "above" : "below"} the ${money(m.band.median)} median of ${m.group}.`,
+        ? `Its ${plain(m.row.label)} fee, ${money(m.row.amount)}, sits inside the middle half of ${m.group}.`
+        : `Its ${plain(m.row.label)} fee is ${money(m.row.amount)}, ${money(Math.abs(m.diff))} ${m.diff > 0 ? "above" : "below"} the ${money(m.band.median)} median of ${m.group}.`,
     comparedWith: m.group,
     sourceUrl: m.row.sourceUrl,
     bar: { band: m.band, amount: m.row.amount, label: m.barLabel },
@@ -85,7 +92,12 @@ export function buildFindings(input: {
     if (category) used.add(category);
   };
 
-  const outside = measured.filter((m) => m.position !== "within").sort((a, b) => b.share - a.share);
+  const stateOutside = inState.filter((m) => m.position !== "within");
+  const nationOutside = inNation.filter(
+    (m) => m.position !== "within" && !stateOutside.some((s) => s.row.category === m.row.category),
+  );
+  const bySize = (x: Measure, y: Measure) => y.share - x.share;
+  const outside = [...stateOutside.sort(bySize), ...nationOutside.sort(bySize)];
   const topAbove = outside.find((m) => m.position === "above");
   const topBelow = outside.find((m) => m.position === "below");
   for (const m of [topAbove, topBelow]) if (m) take(feeFinding(m), m.row.category);
@@ -101,7 +113,7 @@ export function buildFindings(input: {
           label: line.key === "overdraft" ? "Overdraft among peers" : "Maintenance among peers",
           figure: `${line.higher} of ${line.peers}`,
           tone: share < 0.25 ? "below" : share > 0.75 ? "above" : "within",
-          text: `Of ${line.peers} ${peerGroup} that publish a ${PEER_LABEL[line.key] ?? line.key} fee, ${line.higher} charge more than its ${money(line.own)} and ${line.lower} charge less.`,
+          text: `Of ${line.peers} ${peerGroup} that publish ${article(PEER_LABEL[line.key] ?? line.key)} fee, ${line.higher} charge more than its ${money(line.own)} and ${line.lower} charge less.`,
           comparedWith: `${line.peers} ${peerGroup}`,
           sourceUrl: null,
           bar: null,

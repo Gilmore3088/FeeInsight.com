@@ -146,7 +146,7 @@ function HeadlineRowItem({ row, stateCode }: { row: HeadlineRow; stateCode: stri
         <summary className="grid cursor-pointer list-none grid-cols-[minmax(0,1fr)_4.5rem_5.5rem] items-baseline gap-2 px-4 py-3 hover:bg-paper sm:grid-cols-[minmax(0,1fr)_6rem_7rem_7rem] sm:px-5 [&::-webkit-details-marker]:hidden">
           <span className="flex min-w-0 items-baseline gap-2 text-[14px] text-ink">
             <span aria-hidden="true" className="text-ink-muted transition-transform group-open:rotate-90">›</span>
-            <span className="truncate">{row.label}</span>
+            <span className="min-w-0 leading-snug">{row.label}</span>
           </span>
           <span className="text-right font-mono text-[15px] font-semibold tabular-nums text-ink">{money(row.amount)}</span>
           <span className="text-right text-[13px]">
@@ -207,6 +207,7 @@ export function HeadlineTable({
 }) {
   if (rows.length === 0) return null;
   const vs = stateCode ? `vs ${stateCode}` : "vs U.S.";
+  const showNation = rows.some((row) => row.state && row.nation);
   return (
     <section aria-labelledby="headline-table-heading" className="space-y-3">
       <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
@@ -222,8 +223,8 @@ export function HeadlineTable({
         >
           <span>Fee</span>
           <span className="text-right">Its fee</span>
-          <span className="text-right">{vs} median</span>
-          <span className="hidden text-right sm:block">vs U.S. median</span>
+          <span className="text-right">{vs}</span>
+          <span className="hidden text-right sm:block">{showNation ? "vs U.S." : ""}</span>
         </div>
         <ul>
           {rows.map((row) => (
@@ -231,7 +232,7 @@ export function HeadlineTable({
           ))}
         </ul>
       </div>
-      <p className="text-[12px] text-ink-muted">Tap a fee for its range, sample size and source.</p>
+      <p className="text-[12px] text-ink-muted">Differences are from the median. Tap a fee for its range, sample size and source.</p>
     </section>
   );
 }

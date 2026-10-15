@@ -91,7 +91,7 @@ function InsightView({ insight, institutionName }: { insight: HamiltonInsight; i
               <div key={q.reportDate} className="flex flex-1 flex-col items-center gap-1">
                 <span className="font-mono text-[11px] tabular-nums text-ink-muted">{formatCompactDollars(q.serviceChargeIncome)}</span>
                 <span
-                  className="w-full rounded-t-[3px] bg-ink/80"
+                  className="w-3/5 rounded-t-[3px] bg-warm-ink-500"
                   style={{ height: `${Math.max(4, ((q.serviceChargeIncome ?? 0) / top) * 64)}px` }}
                 />
                 <span className="text-[11px] text-ink-muted">{formatReportQuarter(q.reportDate)}</span>

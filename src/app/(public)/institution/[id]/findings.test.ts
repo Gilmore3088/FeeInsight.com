@@ -65,4 +65,19 @@ describe("buildFindings", () => {
       "Of 23 Florida banks that publish a monthly maintenance fee, 13 charge more than its $8.45 and 10 charge less.",
     );
   });
+
+  it("falls back to the national market when every fee sits inside the state's middle half", () => {
+    const wire: HeadlineRow = { ...row("wire_domestic_outgoing", "Wire Transfer (Domestic Outgoing)", 35, 30), nation: band(25, 900) };
+    const findings = buildFindings({
+      rows: [row("overdraft", "Overdraft (OD)", 30, 30), wire],
+      stateGroup: "Florida banks",
+      stateCode: "FL",
+      peerRank: null,
+      peerGroup: null,
+      positionCounts: { below: 1, within: 2, above: 1 },
+    });
+    expect(findings[0]).toMatchObject({ key: "fee-wire_domestic_outgoing", figure: "+$10", comparedWith: "900 U.S. institutions" });
+    expect(findings[0].text).toBe("Its wire transfer fee is $35, $10 above the $25 median of 900 U.S. institutions.");
+    expect(findings[1].text).toBe("Its overdraft fee, $30, sits inside the middle half of 71 Florida banks.");
+  });
 });
