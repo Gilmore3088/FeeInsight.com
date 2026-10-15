@@ -469,6 +469,48 @@ Darwin owns verification and classification.
     fragment here either.
   - 125166 and 125163 are no longer renamed (see above); the same words with a capital first
     letter would still rename, since nothing in the name shows the lost price.
+  - Round 4 (review rev10, prod r10): conservative by default, so a gap fails safe to `reread`.
+    Where this list and the bullets above differ, this list wins.
+    - Takedown (`fragment`) only at $0 or no amount, on `plus`, when a credit or discount figure
+      equals the amount (`LIVE_FRAGMENT_CREDIT`; "credit/debit", "credit or debit", "credit and
+      debit", "credit builder", "credit score", "credit life" and "credit insurance" are no
+      credit), or when the line opens on a worked example or another bank's charge at its start
+      or a sentence start with no fee or charge word before it (`liveFragmentNotAFee`: "Overdraft
+      Fee $35 per item you will be charged. Example: if you" $35 stays live). A gate refusal
+      (deposit, total, cap, other price, threshold, refused if/when clause, tail figure) goes
+      through one soft check (`liveFragmentSoft`, the amount under $100): under $100 it is always a
+      `reread`, fee word or not (106716 "Cashier's Check (to third party) greater than" $10, the
+      source reads "greater than $500 $10.00 per check"); at $100 or more it is `fragment_reread`.
+      A same-document duplicate is `rename_duplicate`, as before.
+    - A head renames only when the rest of the line carries none of `LIVE_FRAGMENT_RENAME_BAR`:
+      if, when, unless, without, except, after, before, until, once, you, your, we, our,
+      additional, subsequent, increase..., sustained, continuous, consecutive, smaller, lower...,
+      half, reduc..., de minimis, tier..., senior(s), student(s), age(d), older, younger, under,
+      over (only before a figure or a number word: "over the phone" is no condition, 85002),
+      below, above, more, less, least, fewer, exceed..., beyond, max(imum), min(imum), cap(s/ped),
+      up to, per day, daily, "-er than", in excess, keep(s), within, (non-)member(s),
+      customer(s), and no digit or "$". The only exceptions, each under $100 with no figure equal
+      to the amount and a head ending on fee or charge: the balance-below form as the whole rest
+      (`LIVE_FRAGMENT_BALANCE_FORM`: "if the (average daily) balance falls below", "if Account
+      Falls Below (Minimum Balance of)", 96650-96652, 136152; a generic head never on "balance
+      of"), the dormancy tier after a cell break (`LIVE_FRAGMENT_TIER_CONDITION`, 44880), and a
+      duration (`LIVE_FRAGMENT_DURATION_FORM`) when the head itself names the duration fee
+      (`LIVE_FRAGMENT_DURATION_HEAD`: 146643 "Continuous Overdraft Charge", 146563 "Inactivity
+      Fee"). The colon gate is gone: "Closing Fee: When the account is closed the" $25 (142676),
+      "Incoming wire fee you will be charged; the sending bank sets its own fee" $15 and every
+      "... You will be charged ..." head are now rereads, as are the NON-MEMBER LOAN APPLICATION
+      FEE lines of 109893 that state "$10.00" or "IF YOU".
+    - A rename target (head or tail) never carries a digit or "$", holds a fee noun or a known fee
+      product noun (`LIVE_FRAGMENT_FEE_NOUN`), and never opens on a sentence opener (also, the,
+      however, please, if, when, this, that, these, a, an), at its start or after a dash
+      (`LIVE_FRAGMENT_SENTENCE_OPENER`; 64675 renamed to "Also, the order" $32.98 is now a reread).
+    - A tail rename (`rename_tail`) needs the whole line to pass the same bar: no condition,
+      person, segment or reduced word anywhere, and no figure ("you will be charged an overdraft
+      fee of" $35 and "Accounts inactive for 12 months will be charged a dormant account fee of"
+      $10 are rereads).
+    - A cap's own dollar figure (`LIVE_FRAGMENT_CAP_DOLLAR`) is no other price (B1): "Overdraft Fee
+      $30 per item, maximum of $150 per day, you will be charged" $30 is no longer refused (it is a
+      `reread`, the rest barring the rename).
 - Live hourly re-check (`hourly-frequency-check.ts`, #1456). About 802 live fees say in their name
   that they are priced by the hour ("Research Fee $25/hour", "Subpoena Fee - Per Hour") but carried
   no frequency or a per-item one, so a report read the price as a flat charge. `hourly` shows as "per
