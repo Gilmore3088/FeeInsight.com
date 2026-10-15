@@ -66,25 +66,22 @@ export function MarketRange({
   band,
   amount,
   domainMax,
-  tone = "light",
 }: {
   label: string;
   band: MarketBand;
   amount: number;
   domainMax: number;
-  tone?: "light" | "dark";
 }) {
   const pct = (n: number) => `${Math.min(100, Math.max(0, (n / domainMax) * 100))}%`;
   const position = positionIn(amount, band);
   const clipped = band.max > domainMax;
   const summary = `${label}: middle half ${money(band.p25)} to ${money(band.p75)}, median ${money(band.median)}, ${band.institutions} institutions; this fee ${money(amount)}, ${VERDICT[position].toLowerCase()} the middle half`;
-  const dark = tone === "dark";
   return (
     <div className="grid grid-cols-[2.25rem_minmax(0,1fr)] items-center gap-2">
-      <span className={`text-[12px] font-medium ${dark ? "text-warm-ink-300" : "text-ink-muted"}`}>{label}</span>
+      <span className={`text-[12px] font-medium text-ink-muted`}>{label}</span>
       <span role="img" aria-label={summary} className="relative block h-6">
         <span
-          className={`absolute top-1/2 h-px -translate-y-1/2 ${dark ? "bg-warm-ink-500" : "bg-control-border"}`}
+          className={`absolute top-1/2 h-px -translate-y-1/2 bg-control-border`}
           style={{
             left: pct(band.min),
             width: `calc(${pct(Math.min(band.max, domainMax))} - ${pct(band.min)})`,
@@ -92,15 +89,15 @@ export function MarketRange({
           }}
         />
         <span
-          className={`absolute top-1/2 h-3.5 -translate-y-1/2 rounded-[3px] ${dark ? "bg-warm-ink-700" : "bg-brick-tint"}`}
+          className={`absolute top-1/2 h-3.5 -translate-y-1/2 rounded-[3px] bg-brick-tint`}
           style={{ left: pct(band.p25), width: `max(2px, calc(${pct(band.p75)} - ${pct(band.p25)}))` }}
         />
         <span
-          className={`absolute top-1/2 h-5 w-[2px] -translate-x-1/2 -translate-y-1/2 ${dark ? "bg-warm-ink-50" : "bg-ink"}`}
+          className={`absolute top-1/2 h-5 w-[2px] -translate-x-1/2 -translate-y-1/2 bg-ink`}
           style={{ left: pct(band.median) }}
         />
         <span
-          className={`absolute top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full ring-2 ${dark ? "ring-warm-ink-900" : "ring-surface-0"} ${DOT[position]}`}
+          className={`absolute top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full ring-2 ring-surface-0 ${DOT[position]}`}
           style={{ left: pct(amount) }}
         />
       </span>

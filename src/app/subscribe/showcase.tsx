@@ -1,7 +1,10 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
+import { ProgressFill, prefersReducedMotion, useReducedMotion } from "@/components/marketing/motion";
 import { trackEvent } from "@/lib/analytics";
+
+export { useReducedMotion };
 
 /** The four parts of Pro, in James's words (9 Oct 2026): long copy on desktop, short on phones. */
 export const PILLARS = [
@@ -53,23 +56,6 @@ export function useShowcase(): ShowcaseState {
   const state = useContext(ShowcaseContext);
   if (!state) throw new Error("useShowcase needs a ShowcaseProvider");
   return state;
-}
-
-const REDUCED_MOTION = "(prefers-reduced-motion: reduce)";
-
-function prefersReducedMotion(): boolean {
-  return typeof window !== "undefined" && window.matchMedia?.(REDUCED_MOTION).matches === true;
-}
-
-function subscribeReducedMotion(onChange: () => void): () => void {
-  const query = window.matchMedia?.(REDUCED_MOTION);
-  query?.addEventListener("change", onChange);
-  return () => query?.removeEventListener("change", onChange);
-}
-
-/** The reader's reduced-motion setting; the server render assumes it is on (nothing moves). */
-export function useReducedMotion(): boolean {
-  return useSyncExternalStore(subscribeReducedMotion, prefersReducedMotion, () => true);
 }
 
 /**
@@ -182,27 +168,6 @@ function StaticPillars() {
   );
 }
 
-/** Full while an example is chosen; fills over one turn while the page cycles. */
-function FillBar({ filling }: { filling: boolean }) {
-  const [started, setStarted] = useState(!filling);
-  useEffect(() => {
-    if (!filling) return;
-    const frame = window.requestAnimationFrame(() => setStarted(true));
-    return () => window.cancelAnimationFrame(frame);
-  }, [filling]);
-  const full = !filling || started;
-  return (
-    <span
-      className="block h-full bg-ink ease-linear"
-      style={{
-        width: full ? "100%" : "0%",
-        transitionProperty: "width",
-        transitionDuration: filling ? `${CYCLE_MS}ms` : "0ms",
-      }}
-    />
-  );
-}
-
 /**
  * The four capabilities, laid out as before (James, 9 Oct 2026: "I like the current"). Each
  * one opens its example in the hero image; the one showing is marked, with a thin bar that
@@ -246,7 +211,7 @@ export function ShowcasePillars({ interactive = true }: { interactive?: boolean 
                 <span className="hidden sm:inline">{pillar.body}</span>
               </span>
               <span aria-hidden className="mt-3 block h-0.5 overflow-hidden rounded-full bg-border">
-                {on && <FillBar key={`${turn}-${paused}`} filling={cycling && !paused} />}
+                {on && <ProgressFill key={`${turn}-${paused}`} filling={cycling && !paused} durationMs={CYCLE_MS} />}
               </span>
             </button>
           </li>

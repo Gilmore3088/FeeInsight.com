@@ -1,177 +1,112 @@
-import Link from "next/link";
+import type { ReactNode } from "react";
 import { DEMO_REQUEST_NAV, PRO_PLANS_NAV } from "@/components/nav-items";
+import { FrameMedia, type FrameVideo } from "@/components/marketing/frame-media";
+import { ProductFrame } from "@/components/marketing/product-frame";
 import { TrackLink } from "@/components/track-link";
-import { Tag } from "@/brand/components";
-import { HAMILTON_MODES, PRODUCT_NAME, REPORT_OFFER, REPORT_PRICE_INLINE, SITE_NAME } from "@/lib/constants";
-import type { FeeCategorySummary } from "@/lib/data-store/fees";
-import { MIN_INSTITUTIONS_FOR_MEDIAN } from "@/lib/data-store/maturity";
-import { getDisplayName } from "@/lib/fee-taxonomy";
-import { formatCount, type PublicStatsSummary } from "@/lib/public-stats";
-import {
-  NationalRange,
-  REPORT_REQUEST_HREF,
-  SECTION_INNER,
-  SectionHeading,
-  TEXT_LINK,
-  money,
-  type RangeEntry,
-} from "./landing-shared";
-
-/** The three national rows brief 08 §A.2 scene 3 names. */
-const TABLE_CATEGORIES = ["overdraft", "nsf", "monthly_maintenance"] as const;
-
-type PillarSummary = Pick<PublicStatsSummary, "categoriesLabel" | "freshnessLabel">;
-
-/** Brief 08 §B.6: every fee, with live national medians. */
-export function LandingEveryFee({
-  categories,
-  summary,
-}: {
-  categories: FeeCategorySummary[];
-  summary: PillarSummary;
-}) {
-  const rows = TABLE_CATEGORIES.map((key) => categories.find((c) => c.fee_category === key)).filter(
-    (row): row is FeeCategorySummary & { median_amount: number } => row?.median_amount != null,
-  );
-  return (
-    <section className="border-b border-border bg-paper">
-      <div className={`${SECTION_INNER} grid gap-10 py-14 sm:py-16 lg:grid-cols-2 lg:items-center`}>
-        <div className="min-w-0">
-          <SectionHeading eyebrow="Every fee" title="Your competitors' fees, from their own schedules" />
-          <p className="mt-4 text-[16px] leading-relaxed text-ink-soft">
-            The {PRODUCT_NAME} reads each institution&apos;s published fee schedule and keeps every fee with
-            the document, page and date it came from. When a board member quotes a national average from
-            the press, you can answer with the schedules of the banks your customers can walk into. Fees
-            stated as a rate, such as a percentage of a transaction, are kept apart from dollar fees.
-          </p>
-          <p className="mt-5 text-[14px]">
-            <Link href="/methodology" className={TEXT_LINK}>
-              How we read a fee schedule
-            </Link>
-          </p>
-        </div>
-        {rows.length > 0 ? (
-          <figure className="min-w-0">
-            <div className="overflow-x-auto">
-              <table className="fi-table">
-                <caption className="sr-only">National medians from the {PRODUCT_NAME}</caption>
-                <thead>
-                  <tr>
-                    <th scope="col">Fee</th>
-                    <th scope="col" className="num">National median</th>
-                    <th scope="col" className="num">Institutions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map((row) => (
-                    <tr key={row.fee_category}>
-                      <td>{getDisplayName(row.fee_category)}</td>
-                      <td className="num">{money(row.median_amount)}</td>
-                      <td className="num">{formatCount(row.institution_count)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <figcaption className="mt-3 text-[13px] leading-5 text-ink-muted">
-              {PRODUCT_NAME} · {summary.categoriesLabel} fee categories with published fees ·{" "}
-              {summary.freshnessLabel}
-            </figcaption>
-          </figure>
-        ) : null}
-      </div>
-    </section>
-  );
-}
+import { PRODUCT_NAME } from "@/lib/constants";
+import { FeeRowExhibit, MarketExhibit, WorkspaceExhibit } from "./landing-exhibits";
+import { SECTION_INNER, SectionHeading, TEXT_LINK, type HomeData } from "./landing-shared";
 
 /**
- * Brief 08 §B.7: every market. Only the national row is live today, so only the national
- * row is drawn; the other four layers wait for an approved example institution (08 §C.1).
+ * A recorded clip per pillar, once one is approved; each would replace its live exhibit
+ * behind a "Watch" button. None exist yet, so none is shown.
  */
-export function LandingEveryMarket({
-  overdraft,
-  summary,
+export const PILLAR_VIDEOS: Record<"fee" | "market" | "workspace", FrameVideo | null> = {
+  fee: null,
+  market: null,
+  workspace: null,
+};
+
+function Pillar({
+  eyebrow,
+  title,
+  line,
+  frameLabel,
+  video,
+  flip = false,
+  after,
+  children,
 }: {
-  overdraft: RangeEntry | null;
-  summary: PillarSummary;
+  eyebrow: string;
+  title: string;
+  line: string;
+  frameLabel: string;
+  video: FrameVideo | null;
+  flip?: boolean;
+  after?: ReactNode;
+  children: ReactNode;
 }) {
   return (
-    <section className="border-b border-border bg-surface-0">
-      <div className={`${SECTION_INNER} grid gap-10 py-14 sm:py-16 lg:grid-cols-2 lg:items-center`}>
-        <div className="min-w-0">
-          <SectionHeading eyebrow="Every market" title="See each fee in five markets at once" />
-          <p className="mt-4 text-[16px] leading-relaxed text-ink-soft">
-            Each of your fees sits against your market (institutions with branches in your counties), your
-            state, your Fed district, your peer group (same charter and asset size, nationwide) and the
-            nation. You see the median, the middle half and who charges $0, and whether your fee is above,
-            inside or below the range. A market with fewer than {MIN_INSTITUTIONS_FOR_MEDIAN} institutions
-            is marked thin and gets no median.
-          </p>
-          <p className="mt-5 text-[14px]">
-            <Link href="/reports" className={TEXT_LINK}>
-              Read the free national and Fed district reports
-            </Link>
-          </p>
-        </div>
-        {overdraft ? (
-          <div className="min-w-0 rounded-lg border border-border bg-paper p-5 sm:p-6">
-            <NationalRange row={overdraft} label="The nation" freshnessLabel={summary.freshnessLabel} />
-          </div>
-        ) : null}
+    <div
+      className={`grid items-center gap-8 lg:gap-16 ${
+        flip ? "lg:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)]" : "lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]"
+      }`}
+    >
+      <div className={`min-w-0 ${flip ? "lg:order-2" : ""}`}>
+        <SectionHeading eyebrow={eyebrow} title={title} line={line} />
+        {after}
       </div>
-    </section>
+      <ProductFrame label={frameLabel} className={`fi-window-lift ${flip ? "lg:order-1" : ""}`}>
+        <FrameMedia video={video}>{children}</FrameMedia>
+      </ProductFrame>
+    </div>
   );
 }
 
-/** Brief 08 §B.8: one workspace, then James's funnel (plans, one report, or a demo). */
-export function LandingOneWorkspace() {
+/** Brief 06 §4.3 item 4: three pillars, each a heading, one line and one live exhibit. */
+export function LandingPillars({ data }: { data: HomeData }) {
+  if (!data.overdraft) return null;
   return (
-    <section className="border-b border-border bg-paper">
-      <div className={`${SECTION_INNER} py-14 sm:py-16`}>
-        <div className="max-w-3xl">
-          <SectionHeading eyebrow="One workspace" title="Ask, compare and take a report to committee" />
-          <p className="mt-4 text-[16px] leading-relaxed text-ink-soft">
-            Hamilton, the {SITE_NAME} Pro workspace, puts the index and the markets in one place. Ask
-            Hamilton a question and each answer cites its source. Add the findings you want to keep, and
-            Hamilton writes a sourced report, such as a Peer Brief or a Competitive Positioning report. Try
-            a price shows any amount side by side, including $0, before you decide. Hamilton shows the
-            position and the options; the decision stays with your institution.
-          </p>
-          <ul className="mt-5 flex flex-wrap items-center gap-2" aria-label="Hamilton tabs">
-            {HAMILTON_MODES.map((mode) => (
-              <li key={mode}>
-                <Tag>{mode}</Tag>
-              </li>
-            ))}
-          </ul>
-          <p className="mt-2 text-[13px] text-ink-muted">Ask Hamilton on every screen.</p>
-
-          <div className="mt-7 flex flex-wrap items-center gap-x-5 gap-y-3">
-            <TrackLink
-              event="upgrade_click"
-              eventProps={{ placement: "home_workspace" }}
-              href={PRO_PLANS_NAV.href}
-              className="fi-btn fi-btn-secondary"
-            >
-              {PRO_PLANS_NAV.label}
-            </TrackLink>
-            <TrackLink
-              event="contact_sales"
-              eventProps={{ placement: "home_workspace_demo" }}
-              href={DEMO_REQUEST_NAV.href}
-              className={`text-[14px] ${TEXT_LINK}`}
-            >
-              {DEMO_REQUEST_NAV.label}
-            </TrackLink>
-          </div>
-          <p className="mt-5 text-[14px] leading-6 text-ink-soft">
-            Prefer one document? We build a{" "}
-            <Link href={REPORT_REQUEST_HREF} className={TEXT_LINK}>
-              {REPORT_OFFER.name}
-            </Link>{" "}
-            for your institution, {REPORT_PRICE_INLINE}.
-          </p>
-        </div>
+    <section className="bg-paper">
+      <div className={`${SECTION_INNER} space-y-20 py-16 sm:space-y-28 sm:py-24`}>
+        <Pillar
+          eyebrow="Every fee"
+          title="Your competitors' fees, from their own schedules"
+          line="Every fee keeps the document, page and date it came from."
+          frameLabel={PRODUCT_NAME}
+          video={PILLAR_VIDEOS.fee}
+        >
+          <FeeRowExhibit data={data} />
+        </Pillar>
+        <Pillar
+          eyebrow="Every market"
+          title="Each fee in five markets at once"
+          line="Markets with too few institutions are marked thin and get no median."
+          frameLabel="Hamilton · Markets"
+          video={PILLAR_VIDEOS.market}
+          flip
+        >
+          <MarketExhibit data={data} phoneRows={6} />
+        </Pillar>
+        <Pillar
+          eyebrow="One workspace"
+          title="Ask, compare and take it to committee"
+          line="Hamilton answers each question with its source and writes the committee report."
+          frameLabel="Hamilton · Your institution"
+          video={PILLAR_VIDEOS.workspace}
+          after={
+            <p className="mt-6 flex flex-wrap items-center gap-x-5 gap-y-3">
+              <TrackLink
+                event="upgrade_click"
+                eventProps={{ placement: "home_workspace" }}
+                href={PRO_PLANS_NAV.href}
+                className="fi-btn fi-btn-secondary min-h-11"
+              >
+                {PRO_PLANS_NAV.label}
+              </TrackLink>
+              <TrackLink
+                event="contact_sales"
+                eventProps={{ placement: "home_workspace_demo" }}
+                href={DEMO_REQUEST_NAV.href}
+                className={`text-[14px] ${TEXT_LINK}`}
+              >
+                {DEMO_REQUEST_NAV.label}
+              </TrackLink>
+            </p>
+          }
+        >
+          <WorkspaceExhibit data={data} />
+        </Pillar>
       </div>
     </section>
   );

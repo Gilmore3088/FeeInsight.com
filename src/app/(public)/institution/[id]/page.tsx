@@ -381,8 +381,8 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
                 ) : (
                   <p className="px-4 py-8 text-sm text-ink-muted sm:px-5">
                     {underReviewCount > 0
-                      ? "Fees for this institution are under review and will appear here once review is complete."
-                      : "No published fee schedule found yet."}
+                      ? "Fees are under review. They appear here once review is done."
+                      : "No published fee schedule yet. Comparisons start once a schedule is reviewed."}
                   </p>
                 )}
               </div>

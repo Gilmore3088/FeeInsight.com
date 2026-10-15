@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 import { REPORT_OFFER, REPORT_PRICE_INLINE } from "@/lib/constants";
 import type { CustomReportAnalysis, ReportLine } from "@/lib/custom-report/analysis";
@@ -31,20 +32,20 @@ export function reportFormHref(query: QueryParams = {}): string {
 /**
  * The paid report as the no-subscription option (site v3 brief 03 section 4, 08 B.10). `#report`
  * is linked from sent emails, /subscribe history and the /waitlist redirect, so the anchor stays;
- * the form itself lives on /reports (05 section 3-4), and this section links to it.
+ * the form itself lives on /reports (05 section 3-4), and this section links to it. The pages
+ * shown are the committed sample report's own (the same images /subscribe shows).
  */
 export function ReportOfferSection({ sampleLive, query }: { sampleLive: boolean; query?: QueryParams }) {
   return (
     <section id="report" aria-labelledby="report-heading" className="scroll-mt-20 border-b border-border bg-surface-0">
-      <div className="mx-auto max-w-page px-6 py-14">
-        <div className="max-w-2xl">
+      <div className="mx-auto grid max-w-page gap-10 px-6 py-14 lg:grid-cols-2 lg:items-center">
+        <div>
           <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-ink-muted">One report</p>
           <h2 id="report-heading" className="mt-3 text-[28px] font-bold leading-tight text-ink">
             {REPORT_OFFER.name}
           </h2>
-          <p className="mt-4 text-[15px] leading-relaxed text-ink-soft">
-            For your institution against named local competitors, without a subscription. Each report is quoted,{" "}
-            {REPORT_PRICE_INLINE}. {REPORT_OFFER.nextStep}.
+          <p className="mt-4 max-w-xl text-[15px] leading-relaxed text-ink-soft">
+            Your fees against named local competitors in one PDF, {REPORT_PRICE_INLINE}, with no subscription.
           </p>
           <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-5">
             <Link href={reportFormHref(query)} className="fi-btn fi-btn-secondary justify-center">
@@ -57,8 +58,33 @@ export function ReportOfferSection({ sampleLive, query }: { sampleLive: boolean;
             ) : null}
           </div>
         </div>
+        <SamplePages />
       </div>
     </section>
+  );
+}
+
+/** The sample report's cover and findings page, as delivered. */
+export function SamplePages() {
+  return (
+    <div className="relative mx-auto h-[300px] w-full max-w-[460px] sm:h-[340px]">
+      <Image
+        src="/reports/sample-preview/page-1.webp"
+        alt="Cover of the sample Competitive Fee Position report"
+        width={850}
+        height={1100}
+        sizes="(min-width: 1024px) 220px, 45vw"
+        className="absolute left-[4%] top-4 w-[46%] -rotate-2 rounded-sm shadow-[0_10px_30px_-12px_rgba(26,24,21,0.45)] ring-1 ring-border"
+      />
+      <Image
+        src="/reports/sample-preview/page-2.webp"
+        alt="Summary of findings page from the sample report"
+        width={850}
+        height={1100}
+        sizes="(min-width: 1024px) 240px, 50vw"
+        className="absolute right-[4%] top-8 w-[50%] rotate-1 rounded-sm shadow-[0_14px_36px_-12px_rgba(26,24,21,0.5)] ring-1 ring-border"
+      />
+    </div>
   );
 }
 
@@ -101,7 +127,12 @@ export function SampleExcerpt({ report }: { report: MarketReport }) {
           <tbody>
             {lines.map((line) => (
               <tr key={line.key} className="border-b border-border last:border-b-0">
-                <td className="px-4 py-2 text-ink">{line.label}</td>
+                <td className="px-4 py-2 text-ink">
+                  {line.label}
+                  <span className="mt-0.5 block max-w-[16rem] truncate text-[11px] text-ink-muted" title={line.own!.source_line}>
+                    Source: &ldquo;{line.own!.source_line}&rdquo;
+                  </span>
+                </td>
                 <td className="px-3 py-2 text-right font-semibold tabular-nums text-ink">{money(line.own!.amount)}</td>
                 <td className="px-3 py-2 text-right tabular-nums text-ink-soft">{money(line.peers!.median)}</td>
                 <td className="px-4 py-2 text-ink-soft">{POSITION_LABEL[line.position!]}</td>
@@ -111,7 +142,7 @@ export function SampleExcerpt({ report }: { report: MarketReport }) {
         </table>
       </div>
       <p className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 border-t border-border px-4 py-2 text-[11px] text-ink-muted">
-        <span>Live from each institution&apos;s own published fee schedule</span>
+        <span>Live, each line from the bank&apos;s own fee schedule</span>
         <Link href={SAMPLE_HREF} className="font-semibold text-ink underline underline-offset-2">
           Read the full sample report
         </Link>

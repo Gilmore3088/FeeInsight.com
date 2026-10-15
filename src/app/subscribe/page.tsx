@@ -31,7 +31,8 @@ import { BenchmarkPreview, type BenchmarkRow } from "./benchmark-preview";
 import { PricingJump } from "./pricing-jump";
 import { StickyCta } from "./sticky-cta";
 import { ShowcasePillars, ShowcaseProvider, ShowcaseStage } from "./showcase";
-import { AnalyzeDemo, type AnalyzeScenario } from "./analyze-demo";
+import { AnalyzeDemo } from "./analyze-demo";
+import { buildScenario, type AnalyzeScenario } from "./scenario";
 import { MonitorPreview, ReportPreview } from "./example-panels";
 import { TrackView } from "@/components/track-view";
 import { getProPricingInstitution } from "@/lib/data-store/pro-accounts";
@@ -231,19 +232,7 @@ async function benchmarkRows(institutionId: number | null): Promise<BenchmarkRow
 /** The Analyze example's question: overdraft a few dollars under the live national median. */
 async function analyzeScenario(): Promise<AnalyzeScenario | null> {
   const national = await getNationalIndexCached().catch(() => []);
-  const entry = national.find((e) => e.fee_category === "overdraft");
-  if (!entry || entry.median_amount === null || entry.institution_count < MIN_INSTITUTIONS_FOR_MEDIAN) return null;
-  const median = Number(entry.median_amount);
-  if (!(median > 0)) return null;
-  const price = median >= 10 ? Math.round(median) - 5 : Math.round(median * 80) / 100;
-  return {
-    feeLabel: "Overdraft",
-    price,
-    median,
-    p25: entry.p25_amount === null ? null : Number(entry.p25_amount),
-    p75: entry.p75_amount === null ? null : Number(entry.p75_amount),
-    institutions: entry.institution_count,
-  };
+  return buildScenario("Overdraft", national.find((e) => e.fee_category === "overdraft"));
 }
 
 function buildSubscribeReturnPath(options: {
@@ -411,8 +400,7 @@ export default async function SubscribePage({
           <div className="mb-6 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
             <p className="font-semibold">Workspace invitation pending</p>
             <p className="mt-1">
-              You don&apos;t need to buy a seat to accept it: an institution account includes up to
-              five teammates. Sign in with the invited email and{" "}
+              No seat to buy. Sign in with the invited email and{" "}
               <Link href="/workspace-invite" className="font-semibold underline">
                 accept the invitation
               </Link>
@@ -443,7 +431,7 @@ export default async function SubscribePage({
               Understand your fees. Know your market.
             </h1>
             <p className="mt-4 max-w-xl text-lg leading-relaxed text-ink">
-              Benchmark, analyze and monitor bank and credit union fees.
+              Hamilton, the {SITE_NAME} Pro workspace: your fees against your market, with a source for every figure.
             </p>
             <div className="mt-6 lg:hidden">
               <p className="text-sm text-ink">
@@ -530,7 +518,7 @@ export default async function SubscribePage({
                 Regulatory Wire, with the fee data
               </h2>
               <p className="mt-3 text-[15px] leading-relaxed text-ink">
-                Fee rules and bills, each beside what institutions charge. Included in Pro.
+                Fee rules and bills beside what institutions charge. Included in Pro.
               </p>
             </div>
             {wirePreview}
@@ -546,7 +534,7 @@ export default async function SubscribePage({
           </h2>
           <p className="mx-auto mt-3 max-w-xl text-[15px] leading-relaxed text-ink">
             {chosenPrice ? chosenPriceLine(chosenPrice) : `From ${tierPriceLabel(PRO_TIERS[0].key, "monthly")}`} for up
-            to {WORKSPACE_SEAT_LIMIT} people. Same features at every institution size.
+            to {WORKSPACE_SEAT_LIMIT} people.
           </p>
           <PricingJump
             inputId="pro_tier_institution"

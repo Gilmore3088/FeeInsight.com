@@ -25,6 +25,6 @@ describe("PeerRankTeaser", () => {
   it("labels district peers and says why", () => {
     expect(peerGroupLabel({ ...RANK, scope: "district", charter_type: "credit_union" })).toBe("Dallas Fed district credit unions");
     render(<PeerRankTeaser rank={{ ...RANK, scope: "district" }} />);
-    expect(screen.getByText(/too few comparable institutions/)).toBeInTheDocument();
+    expect(screen.getByText(/Too few peers in its state/)).toBeInTheDocument();
   });
 });

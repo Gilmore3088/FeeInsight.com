@@ -10,6 +10,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { TrackLink } from "@/components/track-link";
 import { TrackView } from "@/components/track-view";
+import { HamiltonLine } from "../hamilton-line";
 import { CONTACT_EMAIL, SITE_NAME, SITE_URL, REPORT_OFFER, REPORT_OFFER_LINE } from "@/lib/constants";
 import { loadSampleReport } from "@/lib/custom-report/sample-report";
 import { getRevenueContextCached } from "@/lib/custom-report/revenue-context";
@@ -59,7 +60,7 @@ function SampleComingSoon() {
         <span className="text-ink-soft">Sample</span>
       </nav>
       <p className="mb-3 text-[11px] font-bold uppercase tracking-[0.12em] text-brick">
-        Sample — {REPORT_OFFER.name}
+        Sample: {REPORT_OFFER.name}
       </p>
       <h1
         className="font-extrabold text-[2rem] leading-[1.15] tracking-[-0.02em] text-ink sm:text-[2.5rem]"
@@ -68,13 +69,7 @@ function SampleComingSoon() {
         A new sample report is on its way.
       </h1>
       <p className="mt-4 text-[16px] leading-relaxed text-ink-soft">
-        We took the previous sample down while we rebuild it from current data, with every fee
-        checked against the institution&apos;s own published schedule. It will be back here once that
-        is done.
-      </p>
-      <p className="mt-3 text-[16px] leading-relaxed text-ink-soft">
-        You can still request a report for your own institution. We confirm your peer set with you
-        before anything is sent.
+        We are rebuilding it from current, source-checked data. You can still request one for your institution.
       </p>
       <div className="mt-6 flex flex-wrap items-center gap-3">
         <TrackLink
@@ -125,7 +120,7 @@ export default async function SampleReportPage() {
 
       <header className="border-b border-border pb-8">
         <p className="mb-3 text-[11px] font-bold uppercase tracking-[0.12em] text-brick">
-          Sample — {REPORT_OFFER.name}
+          Sample: {REPORT_OFFER.name}
         </p>
         <h1
           className="font-extrabold text-[2rem] leading-[1.15] tracking-[-0.02em] text-ink sm:text-[2.5rem]"
@@ -134,9 +129,8 @@ export default async function SampleReportPage() {
           This is what your institution report looks like.
         </h1>
         <p className="mt-4 max-w-[680px] text-[16px] leading-relaxed text-ink-soft">
-          Below is today&apos;s report for {name}, built from live data by the same code that builds yours. Every
-          competitor amount links to the fee schedule it was read from, and every fee here is public on the
-          institution&apos;s own site. Yours compares your institution against the competitors in your own market.
+          Today&apos;s report for {name}, built live by the same code that builds yours, every amount linked to its
+          fee schedule.
         </p>
         <div className="mt-6 flex flex-wrap items-center gap-3">
           <TrackLink
@@ -147,7 +141,7 @@ export default async function SampleReportPage() {
           >
             {REPORT_OFFER.institutionCtaLabel}
           </TrackLink>
-          <p className="text-[13px] text-ink-muted">{REPORT_OFFER_LINE}.</p>
+          <HamiltonLine placement="sample_report_header" firstMention className="max-w-[420px]" />
         </div>
       </header>
 
@@ -186,7 +180,7 @@ export default async function SampleReportPage() {
             Get this report for your institution.
           </p>
           <p className="mt-1 text-[13px] text-ink-muted">
-            {REPORT_OFFER_LINE}. {REPORT_OFFER.refreshLabel}. Questions:{" "}
+            {REPORT_OFFER.refreshLabel}. Questions:{" "}
             <a href={`mailto:${CONTACT_EMAIL}`} className="text-ink-soft underline">
               {CONTACT_EMAIL}
             </a>
