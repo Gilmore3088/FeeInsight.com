@@ -720,6 +720,8 @@ After the extract itself, each extract step runs these passes in order (`run-sto
   states 761 / 41 (744 / 41). To reverse it, switch off with another version bump:
   `recheckPromotedRows` puts unverified promotions back on hold, and the rules re-check
   takes down the live ones it no longer reproduces.
+- `consumeRereadRequests` (#1511, `KNOX_REREAD_FEEDBACK_LIVE`, off): Darwin's re-read requests for
+  live fees named by a sentence fragment (below).
 - Batch review (`batch-review.ts`, below).
 
 Percentage fees (`percent.ts`). A held "1% of the transaction" line goes to Darwin as a rate fee
@@ -793,6 +795,44 @@ pronoun only inside a parenthetical is no live fragment (`liveFragmentShape` kee
 and `gluedSentenceHead` gives the fee name a fragment opens with ("Overdraft Fee You will be
 charged ..." is "Overdraft Fee"), which Darwin renames the live fee to through `writeLiveRenames`,
 the same write path the tidy uses (feedback row first, update guarded on the old name).
+
+## Darwin's re-read requests (`reread-feedback.ts`, #1511)
+
+Darwin's live fragment check (`darwin/live-fragment-check.ts`) writes one `pipeline_feedback` row of
+kind `knox_reread_requested` per live fee whose name is a `sentence_end` fragment it cannot rename
+("Paper statement fee for the" $2): evidence `kept_live: true` when the fee stays live (`reread`),
+none when it came down because a gate refused its amount (`fragment_reread`). Each extract step,
+after the held-line passes, reads these requests (`consumeRereadRequests`, `knox.reread_feedback`):
+
+- The line is read again from the newest completed text of the fee's own document with today's
+  free team (`runFreeSpecialists`). Rules only, no provider call: the pass is part of the
+  deterministic extract step and never waits on provider budget. It finds the line by the fee's
+  price and its words (an excerpt holding the fragment or Knox's raw name, or the same name).
+- Outcomes: `renamed` (kept live: the live fee takes today's proper name through
+  `writeLiveRenames`, the old name kept in `pipeline_feedback`), `sent_to_darwin` (taken down:
+  today's read goes in as a raw row with `needs_darwin_verification` and `knox_reread_feedback`,
+  so the fee comes back only through Darwin's checks), `already_read` (Knox already holds that
+  read), and the unresolved ones: `same_name`, `not_found`, `no_text`, `other_category`,
+  `ambiguous`, `refused` (category guard or `checkFeeAgainstSource`), `live_twin` (another live fee
+  of the bank has the proper name at that price), plus `stale` (the request no longer applies).
+- What a re-read yields: the free team is deterministic, so a line Knox already read from the same
+  text at the current rules version comes back under the same name ("Bank sending the wire may
+  charge a fee of" $15 is read as itself at v70). Such a request is settled `same_name`
+  ("unresolved: same name under today's rules"). A better name comes only from a line read at an
+  older rules version, a newer text of the document, or a later rules version.
+- Each request is settled once per pass version and Knox rules version: one `pipeline_feedback`
+  row of kind `knox_reread_resolved` (reported by Knox, weight 0, so never a lesson), dedupe key
+  `knox.reread_feedback:req:<request id>:v<pass>:rules<N>`, evidence with the outcome. The request
+  row is not marked: Darwin upserts it again on each pass of the live table, which would wipe a
+  mark. A rules bump makes every request pending again once; nothing loops within a version.
+- `KNOX_REREAD_FEEDBACK_LIVE` false (default): each extract step counts the pending requests (by
+  kind, documents, banks; scoped to the run's bank or state) and reads up to 10 read-only
+  (`KNOX_REREAD_FEEDBACK_SAMPLE`), reporting what it would do in one `knox.reread_feedback` event
+  (only while requests are pending) and in the step detail `reread_feedback`. Nothing else is
+  written. On: 25 a step (`KNOX_REREAD_FEEDBACK_BATCH`), claimed with `FOR UPDATE ... SKIP LOCKED`
+  so two lanes never take the same request. A dry run writes nothing.
+- `rereadFeedbackCountSql()` is the read-only count of pending requests by kind, documents and
+  banks, and of settled requests by outcome.
 
 ## Batch review (`batch-review.ts`)
 
@@ -939,5 +979,6 @@ fails a PR that changes one of these constants without updating its line here (#
 | `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v19 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v2 | `knox/paid-extract.ts` |
 | `KNOX_RULES_STRATEGY` | `extract.rules` | v70 | `knox/specialists.ts` |
+| `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v6 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v1 | `knox/takedown-lessons.ts` |

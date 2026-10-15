@@ -67,8 +67,8 @@ type SqlTag = typeof sql;
  * opening deposit is never renamed (`LIVE_FRAGMENT_OPENING_DEPOSIT`: its price is the deposit). A
  * `sentence_end` fragment that still comes down is usually a real fee whose line Knox read badly,
  * so with the switch on its takedown also writes a `pipeline_feedback` row of kind
- * `LIVE_FRAGMENT_REREAD_KIND` asking Knox to read its source line again. Knox does not act on that
- * kind yet; the row records the request and where the line is (#1499).
+ * `LIVE_FRAGMENT_REREAD_KIND` asking Knox to read its source line again; the row records the
+ * request and where the line is (#1499). Knox reads it in `knox/reread-feedback.ts` (#1511).
  */
 export const LIVE_FRAGMENT_CHECK = "darwin.live_fragment_check";
 /**
@@ -111,8 +111,8 @@ export const LIVE_FRAGMENT_WAIVE_WORDING = /\b(?:waiv(?:e|ed|er|ers|es|ing)|disc
 export const LIVE_FRAGMENT_OPENING_DEPOSIT = /\b(?:minimum|min|opening|initial)\s+(?:(?:opening|initial)\s+)?deposits?\b|\bdeposits?\s+to\s+open\b/i;
 /**
  * v2 (#1499): the `pipeline_feedback` kind a `sentence_end` takedown (v5: `reread`, the fee kept live) writes: Knox, read this fee's
- * source line again so the real fee can come back under a proper name. A request only: no Knox
- * pass reads this kind yet (darwin/AGENTS.md).
+ * source line again so the real fee can come back under a proper name. Knox's
+ * `consumeRereadRequests` (`knox/reread-feedback.ts`, #1511) reads it.
  */
 export const LIVE_FRAGMENT_REREAD_KIND = "knox_reread_requested";
 /** v5 (#1499): the re-read evidence reason for a `reread` fee kept live (a takedown keeps its `fragment name:` reason). */
@@ -743,7 +743,7 @@ async function requestKnoxRereads(db: SqlTag, fees: LiveFragmentSample[], runId:
             reason: fee.action === "reread" ? LIVE_FRAGMENT_KEPT_REASON : liveFragmentReason(fee.pattern, fee.takedownReason),
             ...(fee.action === "reread" ? { kept_live: true } : {}),
             strategy_version: LIVE_FRAGMENT_STRATEGY.version,
-            consumer: "none yet: no Knox pass reads this kind (#1499)",
+            consumer: "knox.reread_feedback (#1511)",
           },
           runId,
           dedupeKey: `${LIVE_FRAGMENT_CHECK}:reread:pub:${fee.feePublishedId}`,

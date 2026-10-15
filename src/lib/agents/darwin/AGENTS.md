@@ -253,8 +253,8 @@ Darwin owns verification and classification.
     signal `wrong`, about stage `extract`, reported by `darwin`, check `darwin.live_fragment_check`,
     dedupe key `darwin.live_fragment_check:reread:pub:<id>`, with the raw row and document from the
     fee's verified row and evidence `request: reread_source_line`), so the real fee can come back
-    under a proper name. Knox does not consume this kind yet: no Knox pass reads it and nothing
-    re-reads the line today; the row records the request until a Knox reader is built (#1499).
+    under a proper name. Knox reads this kind in its extract step (`knox/reread-feedback.ts`,
+    #1511, `KNOX_REREAD_FEEDBACK_LIVE`, off: count and report only; see Knox's AGENTS.md).
     Step detail `would_request_reread` (also in shadow) and `reread_requested` (written); a failed
     request never undoes the takedown. `liveFragmentCountSql()` applies the same strip, bars and
     deposit wording; its `takedown` / `fragment` / `sentence_end` row is the re-read count. (v5:
@@ -319,7 +319,7 @@ Darwin owns verification and classification.
     - `reread` (`reread`): amount above $0, no waiver wording, and no gate refused the amount. The
       fee stays live and, with the switch on, the step only writes the `knox_reread_requested` row
       (evidence reason "kept live: sentence_end with no name", `kept_live: true`) so Knox can rename
-      it later (#1511). Example: "Paper statement fee for the" $2.
+      it later (#1511, Knox's `consumeRereadRequests`). Example: "Paper statement fee for the" $2.
     - `takedown` with a re-read request (`fragment_reread`): a gate refused the rename because the
       amount is not the fee's price: total wording, an opening deposit, another price in the line
       (`other_figure`, two priced phrases), a figure equal to the amount, or a refused "if"/"when"
