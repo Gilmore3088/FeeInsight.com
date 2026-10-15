@@ -932,7 +932,7 @@ function stem(word: string): string {
  * skip decided before a version is decided again by it: every row before check 1, box-size
  * rows ("3 x 5") before check 2, whose names check 1 read as the same line, balance-named
  * rows skipped as an older document before check 3, and qualifier pairs ("ACH Stop Payment"
- * beside "Stop Payment", \`qualifiedLines\`) before check 4 (#1314).
+ * beside "Stop Payment", `qualifiedLines`) before check 4 (#1314).
  */
 const SAME_LINE_CHECK_VERSION = 4;
 const OLDER_DOCUMENT_REASON_TEXT = "Older document than the live price";
@@ -942,9 +942,10 @@ const SAME_LINE_RESELECT_SQL = `(pa.detail->>'same_line_check' IS NULL
 /**
  * An identical skip decided before check 4 against a live line of its own document whose name is
  * this row's name with words in front, or the other way round ("ACH Stop Payment" / "Stop
- * Payment"), is decided again by check 4 (#1314): \`qualifiedLines\` puts the pair to the page
+ * Payment"), is decided again by check 4 (#1314): `qualifiedLines` puts the pair to the page
  * check, which keeps them apart only when the shorter name is printed as its own line at the price.
- * The SQL only narrows the rows; the decision is the page check's.
+ * The SQL only narrows the rows to `qualifiedLines`' shape (one or two qualifier words, not only
+ * filler, in front; trailing blanks such as "____" ignored); the decision is the page check's.
  */
 const QUALIFIER_RESELECT_SQL = `(COALESCE((pa.detail->>'same_line_check')::int, 0) < 4 AND EXISTS (
                   SELECT 1 FROM published_fee_records q_prev
@@ -953,10 +954,20 @@ const QUALIFIER_RESELECT_SQL = `(COALESCE((pa.detail->>'same_line_check')::int, 
                    WHERE q_prev.fee_published_id = NULLIF(pa.detail->>'previous_fee_published_id', '')::bigint
                      AND q_prev.rolled_back_at IS NULL
                      AND q_fr.source_document_id = fr.source_document_id
-                     AND lower(btrim(q_prev.fee_name)) <> lower(btrim(fv.fee_name))
-                     AND (right(lower(btrim(fv.fee_name)), length(btrim(q_prev.fee_name)) + 1) = ' ' || lower(btrim(q_prev.fee_name))
-                          OR right(lower(btrim(q_prev.fee_name)), length(btrim(fv.fee_name)) + 1) = ' ' || lower(btrim(fv.fee_name)))
+                     AND (${qualifierPairSql("fv.fee_name", "q_prev.fee_name")}
+                          OR ${qualifierPairSql("q_prev.fee_name", "fv.fee_name")})
                 ))`;
+
+/** SQL: `longer` is `shorter` with one or two qualifier words in front (`qualifies`' shape). */
+function qualifierPairSql(longer: string, shorter: string): string {
+  const clean = (column: string) => `regexp_replace(lower(btrim(${column})), '[^a-z0-9)]+$', '')`;
+  const [l, s] = [clean(longer), clean(shorter)];
+  const prefix = `left(${l}, length(${l}) - length(${s}) - 1)`;
+  const word = "[a-z]([a-z0-9&/''’-]*[a-z0-9])?";
+  const filler = [...FILLER_WORDS].join("|");
+  return `(length(${s}) > 0 AND length(${l}) > length(${s}) + 1 AND right(${l}, length(${s}) + 1) = ' ' || ${s}
+                          AND ${prefix} ~ '^${word}( ${word})?$' AND ${prefix} !~ '^(${filler})( (${filler}))?$')`;
+}
 
 /** A balance a fee applies below ("Money Market Savings Account (below $2,500)"). */
 const BALANCE_THRESHOLD = /\b(?:below|under|less than)\s*\$\s?(\d[\d,]*(?:\.\d{2})?)/i;
