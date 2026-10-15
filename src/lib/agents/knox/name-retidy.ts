@@ -88,8 +88,8 @@ const FEE_OF_SENTENCE_TAIL = feeOfSentence(
  * "Bank's normal overdraft item charge", "Low activation fee").
  */
 const TAIL_QUALIFIERS = /^(?:(?:bank'?s|bank’s|appropriate|normal|standard|regular|usual|applicable|current|small|low)\s+)+/i;
-/** v4 (#1499): a tail made only of these words names no fee ("Handling fee", "Monthly flat fee", "Late charge"). */
-const TAIL_GENERIC_WORDS = ["handling", "flat", "small", "low", "late", "monthly", "service", "additional", "fees?", "charges?"];
+/** v4 (#1499): a tail made only of these words names no fee ("Handling fee", "Monthly flat fee", "Late charge"); v6 adds "discounted" (74073). */
+const TAIL_GENERIC_WORDS = ["handling", "flat", "small", "low", "late", "monthly", "service", "additional", "discounted", "fees?", "charges?"];
 const TAIL_GENERIC_ONLY = new RegExp(String.raw`^(?:${TAIL_GENERIC_WORDS.join("|")})(?:\s+(?:${TAIL_GENERIC_WORDS.join("|")}))*$`, "i");
 /** v4 (#1499): whose fee it is inside a tail ("Allpoint network our ATM fee") means the phrase is no name. */
 const TAIL_PERSON = /\b(?:our|your)\b/i;
@@ -208,8 +208,12 @@ export function isCutoffName(name: string): boolean {
 export type LiveFragmentPattern = "plus" | "trailing_range" | "sentence_end" | "pronoun";
 const LIVE_TRAILING_RANGE = trailingRange(String.raw`up\s+to|per`);
 const LIVE_SENTENCE_END = endsIn(SENTENCE_END_WORDS.filter((word) => !["a", "an", "the", "above", "each"].includes(word)));
-/** Case-sensitive: "N/A" ends in a capital A and never reads as a dangling article. */
-const LIVE_SENTENCE_END_ARTICLE = endsIn(["a", "an", "the"], "");
+/**
+ * Case-sensitive: "N/A" ends in a capital A and never reads as a dangling article. v6 (#1499,
+ * 109893): an all-capitals line ending on " A", " AN" or " THE" is one ("... WCDU, THERE IS A");
+ * "Plan A" and "Schedule A" hold lower-case letters and are not.
+ */
+const LIVE_SENTENCE_END_ARTICLE = /\b(?:a|an|the)$|^[^a-z]*\s(?:A|AN|THE)$/;
 const LIVE_PRONOUN = wordsIn(PRONOUN_WORDS.filter((word) => word === "will" || word === "you"));
 /**
  * #1443 switch-on prerequisites: a balanced parenthetical ("Stop Payment (per item, if you request

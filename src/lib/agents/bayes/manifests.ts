@@ -259,6 +259,9 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   // v5 (#1499, prod hand-check of v4): "may therefore" totals, period and bare-activation generics,
   // "only if" and "your" balance conditions, generic heads on a balance-below condition, and the
   // figure gate on the footnote-stripped name skipping bare counts; same cursor, shadow.
+  // v6 (#1499, prod check of v5): takedown only at $0/no amount, a credit, no fee of this bank or a
+  // refused amount; every other unnamed pronoun or sentence_end line is kept live (`reread`); same
+  // cursor, shadow.
   LIVE_FRAGMENT_STRATEGY: "Its cursor re-reads every live fee name each pass (2,000 a verify step); there is nothing to replay.",
   HOURLY_CHECK_VERSION: "Its cursor re-reads every live fee name for an hourly price each pass (2,000 a verify step); there is nothing to replay.",
   // v1 (#1442): a new shadow pass. Its ledger cursor re-reads every live fee's source document address

@@ -369,6 +369,37 @@ Darwin owns verification and classification.
     accepted as they are.
   `liveFragmentCountSql()` mirrors each rule (`head_generic`, `generic_ok`, the figure gate on
   `readable`); JS-vs-SQL parity holds on every switch-on fixture.
+  v6 (#1499, after a prod check of v5: 130 rename, 276 reread, 210 takedown, 17 exempt, with real
+  fees still coming down; still in shadow). A `pronoun` or `sentence_end` line is taken down only
+  when:
+  - the amount is $0, missing or negative (`fragment`, no re-read request);
+  - the line says the amount is a credit or discount (`LIVE_FRAGMENT_CREDIT`: "$2.50 credit",
+    "reduced by $2", "discount of $2", a minus glued to the "$" as in "−$2", 87742) (`fragment`);
+  - the line is no fee of this bank (`LIVE_FRAGMENT_NOT_A_FEE`: a worked example, "for example",
+    "Because the transact...", 95216; "Bank sending the wire", "typically charge", 142713)
+    (`fragment`);
+  - a gate refused the amount (`fragment_reread`, with a re-read request): total wording, an
+    opening deposit, cap words (`LIVE_FRAGMENT_CAP_WORDING`: max, maximum, cap, capped, greater
+    of, lesser of, minimum charge, min or; "Max" before a capitalised word is a product), another
+    price, a figure equal to the amount, a refused if/when threshold, or a line ending on "balance
+    of" (133104).
+  Every other unnamed `pronoun` or `sentence_end` line is `reread`: kept live with a re-read request
+  (evidence reason "kept live: <pattern> with no name"). `plus` and `trailing_range` are unchanged.
+  - Waiver wording alone no longer takes a priced fee down ("to avoid monthly service fee of" $15,
+    60783; "... discounted fee of" $15, 74073); the line may rename through its head or tail ("Club
+    fee", 95229; "Discounted monthly maintenance fee", 137778). "Discounted" joins the generic tail
+    words. 5314's "... reduce your monthly fee to" at $0 still comes down.
+  - "if Account Falls Below" and "... Below Minimum Balance of" are balance conditions (96650,
+    96651, 96652, 136152).
+  - A head ending on fee or charge before ":" or a dash, then an if/when clause, renames when no
+    figure equals the amount ("Closing Fee", 142676; "Inactivity Fee", 146563; "Continuous
+    Overdraft Charge", 146643; "NON-MEMBER LOAN APPLICATION FEE", 109893).
+  - A balance band ("more than or equal to but less than", 129443) is not refused: `reread`.
+  - A dollar figure a threshold word leads into is no priced fee either ("overdrawn more than $5.00
+    Fees for" $30, 70303).
+  - An all-capitals line ending on " A", " AN" or " THE" is a `sentence_end` ("... THERE IS A",
+    109893); "Plan A", "Schedule A" and "N/A" are not. This shape also feeds `fee-display-name.ts`.
+  - Known misses, unchanged: 125166 and 125163 (the stored name lost its $ figures).
 - Live hourly re-check (`hourly-frequency-check.ts`, #1456). About 802 live fees say in their name
   that they are priced by the hour ("Research Fee $25/hour", "Subpoena Fee - Per Hour") but carried
   no frequency or a per-item one, so a report read the price as a flat charge. `hourly` shows as "per
@@ -876,7 +907,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `DARWIN_SCHEDULE_REFILE_STRATEGY` | `verify.schedule_refile` | v1 | `darwin/schedule-refile.ts` |
 | `DARWIN_VERDICT_SCORE_STRATEGY` | `verify.verdict_score` | v1 | `darwin/verdict-score.ts` |
 | `DARWIN_RECHECK_STRATEGY` | `verify.recheck` | v3 | `darwin/verified-recheck.ts` |
-| `LIVE_FRAGMENT_STRATEGY` | `darwin.live_fragment_check` | v5 | `darwin/live-fragment-check.ts` |
+| `LIVE_FRAGMENT_STRATEGY` | `darwin.live_fragment_check` | v6 | `darwin/live-fragment-check.ts` |
 | `HOURLY_CHECK_VERSION` | `darwin.hourly_frequency_check` | v1 | `darwin/hourly-frequency-check.ts` |
 | `NON_DEPOSIT_CHECK_VERSION` | `darwin.non_deposit_document` | v1 | `darwin/non-deposit-document-check.ts` |
 | `DOCUMENT_OWNER_STRATEGY` | `verify.document_owner` | v1 | `darwin/document-owner.ts` |

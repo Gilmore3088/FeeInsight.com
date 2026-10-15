@@ -62,6 +62,11 @@ type SqlTag = typeof sql;
  * $0, with no amount or with waiver wording (a waived price: 5314's "... reduce your monthly fee to"
  * $0, #1436), with no re-read request.
  *
+ * v6 (#1499, after a prod check of v5): `pronoun` lines are kept live the same way, and a line
+ * comes down only at $0 or no amount, on a credit or discount amount, when it is no fee of this
+ * bank, or when a gate refused its amount (with a re-read request). Waiver wording alone no longer
+ * takes a priced fee down. See `liveFragmentVerdictDetail` and darwin/AGENTS.md.
+ *
  * v2 (#1499, after a prod hand-check of v1): the head is read wider for `sentence_end` names and
  * generic or clause heads are refused (see `gluedSentenceHead`); a name that speaks of a minimum or
  * opening deposit is never renamed (`LIVE_FRAGMENT_OPENING_DEPOSIT`: its price is the deposit). A
@@ -99,9 +104,15 @@ export const LIVE_FRAGMENT_FLAG_PREFIX = "darwin_live_fragment";
  * and a bare "Activation fee" are generic; "only if" and "if your ... balance falls below" reach
  * the balance gate; a generic head ("Monthly Fee", "Service charge") renames on a balance-below
  * condition only; the figure gate reads the name after its glued footnote and skips a bare count
- * ("6 debits").
+ * ("6 debits"). v6 (#1499, after a prod check of v5): a pronoun or sentence_end line comes down
+ * only at $0 or no amount, on a credit or discount amount, when it is no fee of this bank, or when
+ * a gate refused the amount; every other unnamed line is a `reread` kept live. Waiver wording alone
+ * no longer takes a priced fee down; cap words refuse the amount; "account falls below" is a
+ * balance condition; a fee head before ":" or a dash renames over an if/when clause; a balance band
+ * is no threshold; a threshold dollar is no second price; an all-capitals line ending on "A" is a
+ * sentence_end.
  */
-export const LIVE_FRAGMENT_STRATEGY = { strategy: LIVE_FRAGMENT_CHECK, version: 5 } as const;
+export const LIVE_FRAGMENT_STRATEGY = { strategy: LIVE_FRAGMENT_CHECK, version: 6 } as const;
 /** Waiver or discount wording: a name that says the price is waived or cut is a waived price, never renamed. */
 export const LIVE_FRAGMENT_WAIVE_WORDING = /\b(?:waiv(?:e|ed|er|ers|es|ing)|discount(?:s|ed)?|rebates?|reduc(?:e|ed|es|tion)|avoid(?:ed|s)?|no charge)\b/i;
 /**
@@ -117,6 +128,8 @@ export const LIVE_FRAGMENT_OPENING_DEPOSIT = /\b(?:minimum|min|opening|initial)\
 export const LIVE_FRAGMENT_REREAD_KIND = "knox_reread_requested";
 /** v5 (#1499): the re-read evidence reason for a `reread` fee kept live (a takedown keeps its `fragment name:` reason). */
 export const LIVE_FRAGMENT_KEPT_REASON = "kept live: sentence_end with no name";
+/** v6: the kept-live reason for any pattern (`pronoun` lines are kept live too). */
+export const liveFragmentKeptReason = (pattern: LiveFragmentPattern) => `kept live: ${pattern} with no name`;
 /**
  * v3 (#1499): the rest of a line opens with an "if" or "when" condition (either case). A head split
  * from one is renamed only when the condition is a balance condition (`LIVE_FRAGMENT_BALANCE_CONDITION`)
@@ -126,7 +139,11 @@ export const LIVE_FRAGMENT_KEPT_REASON = "kept live: sentence_end with no name";
  * the fee ($2 to $15 against thresholds of $50 to $5,000). v5: "only if" / "only when" too (132041).
  */
 export const LIVE_FRAGMENT_IF_CONDITION = /^\s*(?:[|:.;–—-]\s*)?(?:only\s+)?(?:if|when)\b/i;
-export const LIVE_FRAGMENT_BALANCE_CONDITION = /\bbalances?\b.*\b(?:below|under|less\s+than)\s*$/i;
+/**
+ * v6 (96650, 136152): "if Account Falls Below" and "... Below Minimum Balance of" are balance
+ * conditions too.
+ */
+export const LIVE_FRAGMENT_BALANCE_CONDITION = /(?:\bbalances?\b.*\b(?:below|under|less\s+than)|\baccounts?\s+(?:falls?|drops?|goes)\s+(?:below|under|less\s+than))(?:\s+(?:the\s+)?(?:required\s+)?minimum(?:\s+daily)?\s+balance(?:\s+of)?)?\s*$/i;
 export const LIVE_FRAGMENT_CONDITION_MAX = 100;
 /** v4 (#1499): a balance condition that also counts an excess ("if more than 6 per month, balance below") is a threshold. */
 /**
@@ -142,6 +159,32 @@ export const LIVE_FRAGMENT_FEE_HEAD = /\b(?:fees?|charges?)$/i;
  * stored name can be cut just after it ("... you may therefore", 55708 again).
  */
 export const LIVE_FRAGMENT_TOTAL_WORDING = /\b(?:may\s+therefore|incur\s+\$\s?\d[\d,]*(?:\.\d{1,2})?\s+in|in\s+(?:[A-Za-z'’/-]+\s+){0,3}fees?\s+for\s+one|a\s+total\s+of)\b/i;
+/**
+ * v6 (#1499): the amount is a credit or discount, not a fee ("$2.50 credit", "reduced by $2",
+ * "discount of $2", "−$2", 87742): the line comes down. A minus sign glued to the "$" only, so
+ * "Wire Fee - $25" is no credit.
+ */
+export const LIVE_FRAGMENT_CREDIT = /\$\s?\d[\d,]*(?:\.\d{1,2})?\s+credit\b|\bcredit\s+of\s+\$|\b(?:reduced|discounted|lowered)\s+by\s+\$|\bdiscount\s+of\s+\$|(?:^|[\s(])[-−]\$\s?\d/i;
+/**
+ * v6 (#1499): no fee of this bank at all: a worked example ("... Because the transact", 95216) or
+ * another bank's charge ("Bank sending the wire will typically charge", 142713). Comes down.
+ */
+export const LIVE_FRAGMENT_NOT_A_FEE = /\b(?:for\s+example|example|because\s+the\s+transact\w*|bank\s+sending|sending\s+bank|typically\s+charges?)\b/i;
+const caseForms = (words: string[]) => words.flatMap((word) => [word, word.charAt(0).toUpperCase() + word.slice(1), word.toUpperCase()]);
+/**
+ * v6 (#1499): a cap or floor states a limit, not the fee's price ("maximum late charge of" $30,
+ * "min or 1% with max of" $25, "Greater of" $10): the amount is refused. "Max" before a capitalised
+ * word is a product ("Max Checking"), so it does not count; case-sensitive for that reason.
+ */
+export const LIVE_FRAGMENT_CAP_WORDING = new RegExp(
+  String.raw`\b(?:${caseForms(["max", "maximum"]).join("|")})\b(?!\s+[A-Z][a-z])|\b(?:${caseForms(["cap", "capped", "greater of", "lesser of", "minimum charge", "min or"]).map((form) => form.replace(/ /g, String.raw`\s+`)).join("|")})\b`,
+);
+/** v6 (133104): a line that ends on a balance ("Avoid service charge with minimum balance of" $3) read the threshold as its amount. */
+export const LIVE_FRAGMENT_THRESHOLD_END = /\bbalances?\s+of\s*$/i;
+/** v6 (#1499): a fee or charge head before ":" or a dash and an "if"/"when" clause ("Closing Fee: When ...", 142676). */
+export const LIVE_FRAGMENT_COLON_CONDITION = /^\s*[:–—-]\s*(?:only\s+)?(?:if|when)\b/i;
+/** v6 (129443): a balance band ("more than or equal to but less than") is the fee's own tier. */
+export const LIVE_FRAGMENT_BAND_CONDITION = /\b(?:more|greater)\s+than\s+or\s+equal\s+to\b.*\b(?:less\s+than|below|under)\s*$/i;
 export const LIVE_FRAGMENT_EXCESS_CONDITION = /\b(?:more\s+than|exceeds?|exceeding|over|in\s+excess\s+of)\b/i;
 /**
  * v3 (#1499): a price stated in the name with a fee word after it ("a $35 Overdraft Fee", "$45 in
@@ -185,9 +228,10 @@ export function liveFragmentFigureIsAmount(name: string, amount: number): boolea
 /** v3 (#1499): true when the name states a price other than the fee's own (see `LIVE_FRAGMENT_PRICED_FEE`). */
 export function liveFragmentOtherPrice(name: string, amount: number): boolean {
   const differs = (text: string) => Math.abs(figureValue(text) - amount) > 0.005;
-  const priced = [...name.matchAll(LIVE_FRAGMENT_PRICED_FEE)].map((match) => match[1]);
-  if (priced.length >= 2 || priced.some(differs)) return true;
+  // v6 (70303): a priced figure a threshold word leads into ("overdrawn more than $5.00 Fees for") is a threshold too.
   const unthresholded = name.replace(LIVE_FRAGMENT_THRESHOLD_DOLLAR, " ");
+  const priced = [...unthresholded.matchAll(LIVE_FRAGMENT_PRICED_FEE)].map((match) => match[1]);
+  if (priced.length >= 2 || priced.some(differs)) return true;
   return !LIVE_FRAGMENT_BALANCE_WORD.test(name) && [...unthresholded.matchAll(LIVE_FRAGMENT_DOLLAR)].some((match) => differs(match[1]));
 }
 
@@ -324,29 +368,40 @@ export function liveFragmentVerdictDetail(
   if (pattern === "trailing_range") {
     return verdict(waived || amount === 0 ? { pattern, action: "takedown" } : { pattern, action: "exempt", exemptReason: "trailing_range_priced" });
   }
+  if (pattern === "plus") return verdict({ pattern, action: "takedown" });
+  // v6 (#1499): a pronoun or sentence_end line comes down only when its amount is $0 or unknown, the
+  // amount is a credit or discount, the line is no fee at all (a worked example, another bank's
+  // charge), or a gate refused the amount (`amountRefused`, with a re-read request). Waiver wording
+  // alone no longer takes a priced fee down: "to avoid monthly service fee of" $15 is the fee's price.
+  if (amount == null || amount <= 0 || LIVE_FRAGMENT_CREDIT.test(current) || LIVE_FRAGMENT_NOT_A_FEE.test(current)) {
+    return verdict({ pattern, action: "takedown" });
+  }
   let amountRefused = false;
-  if ((pattern === "pronoun" || pattern === "sentence_end") && amount != null && amount > 0 && !waived
-      && (LIVE_FRAGMENT_OPENING_DEPOSIT.test(current) || LIVE_FRAGMENT_TOTAL_WORDING.test(current) || liveFragmentOtherPrice(current, amount))) {
+  if (LIVE_FRAGMENT_OPENING_DEPOSIT.test(current) || LIVE_FRAGMENT_TOTAL_WORDING.test(current) || LIVE_FRAGMENT_CAP_WORDING.test(current) || liveFragmentOtherPrice(current, amount)) {
     amountRefused = true;
-  } else if ((pattern === "pronoun" || pattern === "sentence_end") && amount != null && amount > 0 && !waived) {
+  } else {
     let split = gluedSentenceSplit(current, { allowGeneric: true });
     let candidate: { renameTo: string; renameVia: LiveFragmentRenameVia } | null = null;
     if (split) {
       // v3: a head split from an "if"/"when" condition only on a balance condition under $100.
       // v4: or a dormancy tier after a cell break; never when a figure in the line is the amount.
+      // v6: or a fee/charge head before ":" or a dash ("Closing Fee: When the account is closed ...").
       const ifCondition = LIVE_FRAGMENT_IF_CONDITION.test(split.rest);
       const balanceOk = LIVE_FRAGMENT_BALANCE_CONDITION.test(split.rest) && !LIVE_FRAGMENT_EXCESS_CONDITION.test(split.rest) && amount < LIVE_FRAGMENT_CONDITION_MAX;
       const tierOk = LIVE_FRAGMENT_TIER_CONDITION.test(split.rest) && LIVE_FRAGMENT_FEE_HEAD.test(split.head);
+      const colonOk = LIVE_FRAGMENT_COLON_CONDITION.test(split.rest) && LIVE_FRAGMENT_FEE_HEAD.test(split.head);
+      // v6: a balance band ("more than or equal to but less than") is the fee's own tier, not a threshold.
+      const band = LIVE_FRAGMENT_BAND_CONDITION.test(split.rest);
       if (split.generic) {
         // v5 (142422): a generic head ("Monthly Fee") renames only on that balance condition; else it is no head.
         if (ifCondition && balanceOk && !liveFragmentFigureIsAmount(current, amount)) candidate = { renameTo: split.head, renameVia: "head" };
         else {
-          if (ifCondition) amountRefused = true;
+          if (ifCondition && !band) amountRefused = true;
           split = null;
         }
-      } else if (!ifCondition || ((balanceOk || tierOk) && !liveFragmentFigureIsAmount(current, amount))) {
+      } else if (!ifCondition || ((balanceOk || tierOk || colonOk) && !liveFragmentFigureIsAmount(current, amount))) {
         candidate = { renameTo: split.head, renameVia: "head" };
-      } else {
+      } else if (!band) {
         amountRefused = true;
       }
     }
@@ -363,12 +418,12 @@ export function liveFragmentVerdictDetail(
       const guardOk = canonicalFeeKey == null || !checkFeeCategory(canonicalFeeKey, current).ok || checkFeeCategory(canonicalFeeKey, candidate.renameTo).ok;
       if (guardOk) return verdict({ pattern, action: "rename", ...candidate });
     }
+    // v6 (133104): a line ending on "balance of" read its amount from the threshold that followed.
+    if (LIVE_FRAGMENT_THRESHOLD_END.test(current)) amountRefused = true;
   }
-  // v5 (#1499): a sentence_end line with no rename is usually a real fee Knox read badly: kept live,
-  // re-read. A $0 or unknown amount, or waiver wording, is a waived price (5314, #1436): it comes down.
-  // So does a line a gate refused on its amount, with a re-read request (`amountRefused`).
-  const reread = pattern === "sentence_end" && amount != null && amount > 0 && !waived && !amountRefused;
-  return verdict({ pattern, action: reread ? "reread" : "takedown" }, amountRefused);
+  // v5/v6 (#1499): a line with no rename and a plausible amount is usually a real fee Knox read badly:
+  // kept live, re-read. One a gate refused on its amount comes down, with a re-read request.
+  return verdict({ pattern, action: amountRefused ? "takedown" : "reread" }, amountRefused);
 }
 
 /**
@@ -419,7 +474,8 @@ export function findLiveFragments(rows: LiveFragmentRow[], liveNames: ReadonlySe
     if (verdict.exemptReason) exemptByReason[verdict.exemptReason] += 1;
     if (takedownReason) takedownByReason[takedownReason] += 1;
     // v5: a reread kept live, or a sentence_end takedown refused on its amount (as in v4), asks Knox to re-read.
-    const rereadRequest = action === "reread" || (takedownReason === "fragment" && verdict.pattern === "sentence_end" && detail.amountRefused);
+    // v6: a pronoun line refused on its amount asks for a re-read too.
+    const rereadRequest = action === "reread" || (takedownReason === "fragment" && detail.amountRefused);
     const sample: LiveFragmentSample = {
       feePublishedId: Number(row.fee_published_id),
       feeVerifiedId: num(row.fee_verified_id),
@@ -740,7 +796,7 @@ async function requestKnoxRereads(db: SqlTag, fees: LiveFragmentSample[], runId:
           evidence: {
             request: "reread_source_line",
             fee_name: fee.feeName,
-            reason: fee.action === "reread" ? LIVE_FRAGMENT_KEPT_REASON : liveFragmentReason(fee.pattern, fee.takedownReason),
+            reason: fee.action === "reread" ? liveFragmentKeptReason(fee.pattern) : liveFragmentReason(fee.pattern, fee.takedownReason),
             ...(fee.action === "reread" ? { kept_live: true } : {}),
             strategy_version: LIVE_FRAGMENT_STRATEGY.version,
             consumer: "none yet: no Knox pass reads this kind (#1499)",
@@ -852,6 +908,9 @@ function postgresPattern(re: RegExp): string {
  * (`glued_generic_bars`) renames only through `generic_ok` (an "if"/"when" balance condition under
  * $100 with no figure equal to the amount); otherwise the line may still take its tail. The figure
  * gate reads `readable` (footnote dropped) and skips a bare whole figure before a count noun.
+ * v6: `pronoun` lines follow the same reasons as `sentence_end`; `fragment` is $0 / no amount /
+ * credit / no fee of this bank (and `plus`, waived `trailing_range`); `amount_refused` adds cap
+ * words and a line ending on "balance of", and leaves out a balance band.
  */
 export function liveFragmentCountSql(): string {
   const re = LIVE_FRAGMENT_REGEXES;
@@ -863,6 +922,13 @@ export function liveFragmentCountSql(): string {
   const balanceOk = `(rest ~* '${postgresPattern(LIVE_FRAGMENT_BALANCE_CONDITION)}' AND rest !~* '${postgresPattern(LIVE_FRAGMENT_EXCESS_CONDITION)}' AND amount < ${LIVE_FRAGMENT_CONDITION_MAX})`;
   const priced = postgresPattern(LIVE_FRAGMENT_PRICED_FEE);
   const dollar = postgresPattern(LIVE_FRAGMENT_DOLLAR);
+  const unthresholded = `regexp_replace(name, '${postgresPattern(LIVE_FRAGMENT_THRESHOLD_DOLLAR)}', ' ', 'gi')`;
+  const fig = "NOT COALESCE(figure_is_amount, false)";
+  const tier = `(rest ~* '${postgresPattern(LIVE_FRAGMENT_TIER_CONDITION)}' AND head ~* '${postgresPattern(LIVE_FRAGMENT_FEE_HEAD)}')`;
+  const colon = `(rest ~* '${postgresPattern(LIVE_FRAGMENT_COLON_CONDITION)}' AND head ~* '${postgresPattern(LIVE_FRAGMENT_FEE_HEAD)}')`;
+  const band = `rest ~* '${postgresPattern(LIVE_FRAGMENT_BAND_CONDITION)}'`;
+  const headConditionOk = `((${balanceOk} OR ${tier} OR ${colon}) AND ${fig})`;
+  const priceGates = `name ~* '${deposit}' OR name ~* '${postgresPattern(LIVE_FRAGMENT_TOTAL_WORDING)}' OR name ~ '${postgresPattern(LIVE_FRAGMENT_CAP_WORDING)}' OR priced_count >= 2 OR COALESCE(other_figure, false)`;
   return `WITH live AS (
   SELECT fee_published_id, institution_id, canonical_fee_key, amount,
          btrim(regexp_replace(COALESCE(fee_name, ''), '\\s+', ' ', 'g')) AS name
@@ -878,9 +944,9 @@ export function liveFragmentCountSql(): string {
   btrim(regexp_replace(regexp_replace(name, '${postgresPattern(re.parenthetical)}', ' ', 'g'), '\\s+', ' ', 'g')) AS outside,
   regexp_replace(btrim(regexp_replace(name, '${postgresPattern(re.glued_cont_mark)}', '', 'gi')), '${postgresPattern(re.glued_lead_strip)}', '') AS readable,
   btrim((regexp_match(name, '${postgresPattern(re.fee_of_sentence_tail)}', 'i'))[1]) AS tail_raw,
-  (SELECT count(*) FROM regexp_matches(name, '${priced}', 'gi')) AS priced_count,
-  EXISTS (SELECT 1 FROM regexp_matches(name, '${priced}', 'gi') m WHERE replace(m[1], ',', '')::numeric <> amount)
-    OR (name !~* '\\ybalances?\\y' AND EXISTS (SELECT 1 FROM regexp_matches(regexp_replace(name, '${postgresPattern(LIVE_FRAGMENT_THRESHOLD_DOLLAR)}', ' ', 'gi'), '${dollar}', 'g') m WHERE replace(m[1], ',', '')::numeric <> amount)) AS other_figure
+  (SELECT count(*) FROM regexp_matches(${unthresholded}, '${priced}', 'gi')) AS priced_count,
+  EXISTS (SELECT 1 FROM regexp_matches(${unthresholded}, '${priced}', 'gi') m WHERE replace(m[1], ',', '')::numeric <> amount)
+    OR (name !~* '\\ybalances?\\y' AND EXISTS (SELECT 1 FROM regexp_matches(${unthresholded}, '${dollar}', 'g') m WHERE replace(m[1], ',', '')::numeric <> amount)) AS other_figure
   FROM live
 ), matched AS (
   SELECT *, substring(readable from '${postgresPattern(re.glued_sentence)}') AS head_plain,
@@ -905,32 +971,28 @@ export function liveFragmentCountSql(): string {
          substr(COALESCE(CASE WHEN head_plain IS NULL THEN readable_cap END, readable), length(head) + 1) AS rest,
          COALESCE(tail_phrase <> '' AND tail_phrase !~ '${postgresPattern(re.tail_paren_start)}' AND tail_raw !~* '${postgresPattern(re.tail_person)}' AND tail_phrase !~* '${postgresPattern(re.tail_generic_only)}' AND ${barsOn("tail_phrase")}, false) AS tail_ok,
          upper(left(tail_phrase, 1)) || substr(tail_phrase, 2) AS tail,
-         COALESCE(amount, 0) > 0 AND name !~* '${waive}' AND name !~* '${deposit}' AND name !~* '${postgresPattern(LIVE_FRAGMENT_TOTAL_WORDING)}'
-           AND priced_count < 2 AND NOT COALESCE(other_figure, false) AS renamable
+         NOT (${priceGates}) AS renamable
     FROM split
 ), gated AS (
   SELECT *, COALESCE(head_generic AND ${ifCondition} AND ${balanceOk} AND NOT COALESCE(figure_is_amount, false), false) AS generic_ok
     FROM candidate
 ), refused AS (
-  SELECT *, COALESCE(name ~* '${deposit}' OR name ~* '${postgresPattern(LIVE_FRAGMENT_TOTAL_WORDING)}' OR priced_count >= 2 OR other_figure
-           OR (head_ok AND ${ifCondition} AND NOT ((${balanceOk} OR (rest ~* '${postgresPattern(LIVE_FRAGMENT_TIER_CONDITION)}' AND head ~* '${postgresPattern(LIVE_FRAGMENT_FEE_HEAD)}')) AND NOT COALESCE(figure_is_amount, false)))
-           OR (head_generic AND ${ifCondition} AND NOT generic_ok)
-           OR (NOT head_ok AND NOT generic_ok AND figure_is_amount), false) AS amount_refused
+  SELECT *, COALESCE(${priceGates}
+           OR (head_ok AND ${ifCondition} AND NOT ${headConditionOk} AND NOT ${band})
+           OR (head_generic AND ${ifCondition} AND NOT generic_ok AND NOT ${band})
+           OR (pattern = 'sentence_end' AND NOT head_ok AND NOT generic_ok AND figure_is_amount)
+           OR name ~* '${postgresPattern(LIVE_FRAGMENT_THRESHOLD_END)}', false) AS amount_refused
     FROM gated
 ), verdict AS (
   SELECT fee_published_id, institution_id, canonical_fee_key, amount, name, pattern, CASE
     WHEN pattern = 'pronoun' AND outside !~* '${postgresPattern(re.pronoun)}' THEN 'parenthetical'
     WHEN pattern = 'trailing_range' THEN CASE WHEN name ~* '${waive}' OR COALESCE(amount, -1) = 0 THEN 'fragment' ELSE 'trailing_range_priced' END
-    WHEN pattern IN ('pronoun', 'sentence_end') AND renamable AND head_ok
-         AND (NOT ${ifCondition}
-              OR ((${balanceOk}
-                   OR (rest ~* '${postgresPattern(LIVE_FRAGMENT_TIER_CONDITION)}' AND head ~* '${postgresPattern(LIVE_FRAGMENT_FEE_HEAD)}'))
-                  AND NOT COALESCE(figure_is_amount, false))) THEN 'rename'
-    WHEN pattern IN ('pronoun', 'sentence_end') AND renamable AND generic_ok THEN 'rename'
-    WHEN pattern = 'sentence_end' AND renamable AND NOT head_ok AND NOT generic_ok AND tail_ok AND NOT COALESCE(figure_is_amount, false) THEN 'rename_tail'
-    WHEN pattern = 'sentence_end' AND COALESCE(amount, 0) > 0 AND name !~* '${waive}' AND NOT amount_refused THEN 'reread'
-    WHEN pattern = 'sentence_end' AND COALESCE(amount, 0) > 0 AND name !~* '${waive}' THEN 'fragment_reread'
-    ELSE 'fragment'
+    WHEN pattern = 'plus' OR amount IS NULL OR amount <= 0 OR name ~* '${postgresPattern(LIVE_FRAGMENT_CREDIT)}' OR name ~* '${postgresPattern(LIVE_FRAGMENT_NOT_A_FEE)}' THEN 'fragment'
+    WHEN renamable AND head_ok AND (NOT ${ifCondition} OR ${headConditionOk}) THEN 'rename'
+    WHEN renamable AND generic_ok THEN 'rename'
+    WHEN pattern = 'sentence_end' AND renamable AND NOT head_ok AND NOT generic_ok AND tail_ok AND ${fig} THEN 'rename_tail'
+    WHEN NOT amount_refused THEN 'reread'
+    ELSE 'fragment_reread'
   END AS first_reason,
   CASE WHEN head_ok OR generic_ok THEN head WHEN tail_ok THEN tail END AS rename_to
   FROM refused
