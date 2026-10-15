@@ -6,9 +6,9 @@ import { CATEGORY_GUARD_VERSION, refileCategory } from "@/lib/fee-category-guard
 import { DARWIN_PEER_STRATEGY, DARWIN_SECOND_SOURCE_STRATEGY, resetWiderPeerLevelCache, SECOND_SOURCE_FLAG } from "./peer-checks";
 import { learnedEnvelope, resetLearnedEnvelopeCache } from "./learned-envelopes";
 import { DARWIN_CATEGORY_MODEL_STRATEGY, resetCategoryModelCache } from "./category-model";
-import { categoryChangeCandidates, DARWIN_CATEGORY_CHANGE_REJUDGE_LIVE, type CategoryChangeRow, type PriorDecision } from "./category-change";
+import { categoryChangeCandidates, type CategoryChangeRow, type PriorDecision } from "./category-change";
 
-// The #1295 switch ships off; tests turn it on through this getter.
+// Tests set the #1295 switch through this getter; the shipped value is read from the real module.
 const categoryChangeSwitch = vi.hoisted(() => ({ on: false }));
 vi.mock("./category-change", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./category-change")>()),
@@ -830,8 +830,9 @@ describe("category change re-judge (#1295)", () => {
     fee_raw_id, institution_id: 7114, fee_name, amount: "45.00", outlier_flags, conditions: null, attempts,
   });
 
-  it("ships switched off", () => {
-    expect(DARWIN_CATEGORY_CHANGE_REJUDGE_LIVE).toBe(false);
+  it("ships switched on (#1093)", async () => {
+    const real = await vi.importActual<typeof import("./category-change")>("./category-change");
+    expect(real.DARWIN_CATEGORY_CHANGE_REJUDGE_LIVE).toBe(true);
   });
 
   // Today's re-file keeps collection_item, so only the proof rule can leave raw 132922 alone.
