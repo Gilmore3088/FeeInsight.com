@@ -107,9 +107,11 @@ describe("top-50 fold", () => {
     expect(to("estatement_fee", "Returned eStatement due to incorrect email address")).toBe(RETURNED);
     expect(to("estatement_fee", "eStatement incorrect email address")).toBe(RETURNED);
     expect(to("estatement_fee", "~ Undeliverable E-Statement Fee (per statement)")).toBe(RETURNED);
-    // A charge for going back to paper statements is not returned mail.
-    expect(to("estatement_fee", "Fee to return to paper statements")).toBeNull();
-    expect(to("estatement_fee", "Returning to paper statements after e-Statement enrollment")).toBeNull();
+    // A charge for going back to paper statements is a paper statement fee, never returned mail,
+    // with the research split off or on.
+    expect(to("estatement_fee", "Fee to return to paper statements")).toBe("paper_statement");
+    expect(to("estatement_fee", "Returning to paper statements after e-Statement enrollment")).toBe("paper_statement");
+    expect(to("estatement_fee", "Return to Paper Statement")).toBe("paper_statement");
     expect(to("estatement_fee", "One-time duplicate e-statement")).toBe("document_reproduction");
     expect(to("estatement_fee", "Dual statement delivery (for having both eStatement & paper)")).toBe("paper_statement");
     expect(to("estatement_fee", "Free eStatements")).toBeNull();
@@ -391,6 +393,12 @@ describe("top-50 fold", () => {
     expect(off.other_lending_fee.to).toBe("account_research");
     expect(on.paper_statement.to).toBe("returned_mail");
     expect(on.other_lending_fee.to).toBe("excess_withdrawal");
+    // A return to paper statements stays a paper statement fee, off and on.
+    for (const name of ["Return to paper statements fee", "Returning to paper statements"]) {
+      expect([name, splitLiveCategory("paper_statement", name, off)?.to ?? null]).toEqual([name, null]);
+      expect([name, splitLiveCategory("paper_statement", name, on)?.to ?? null]).toEqual([name, null]);
+      expect([name, passesDarwinChecks("paper_statement", name, 3)]).toEqual([name, true]);
+    }
     expect(researchSplitTarget("returned_mail", false)).toBe("account_research");
     expect(researchSplitTarget("excess_withdrawal", true)).toBe("excess_withdrawal");
     expect(EXCESS_WITHDRAWAL.test("Service charge")).toBe(false);

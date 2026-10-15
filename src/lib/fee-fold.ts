@@ -106,13 +106,15 @@ export const RETIRED_CATEGORIES: Readonly<Record<string, RetiredCategory>> = {
     otherwise: null,
   },
   // A returned e-statement is returned mail (its own type once `RESEARCH_SPLIT_LIVE` is on; account
-  // research before), but a "return to paper statements" charge is not; a copy is a copy fee; a paper-and-electronic
+  // research before), but a "return to paper statements" charge is a paper statement fee, never
+  // returned mail, whether or not the switch is on; a copy is a copy fee; a paper-and-electronic
   // charge is a paper statement; "Bill Pay (w/o ... e-statement)" is bill pay. A fee for the
   // e-statement itself, a free e-statement, and the waiver wording that names e-statements
   // have no home.
   estatement_fee: {
     family: "Account Maintenance",
     rules: [
+      { to: "paper_statement", name: /\breturn(?:ing)?\s+to\s+paper/i },
       {
         to: researchSplitTarget("returned_mail"),
         name: /^(?![\s\S]*\breturn(?:ing)?\s+to\s+paper)[\s\S]*(?:\breturn(?:ed)?\b|\bundeliverable\b|\b(?:incorrect|bad|invalid|wrong) e-?mail\b)/i,
@@ -505,7 +507,8 @@ export function splitLiveCategory(
 // v17: excess withdrawals and returned mail have their own types (James, Oct 15, #1398), dark until
 // `RESEARCH_SPLIT_LIVE` is on: then the paper statement, other lending and e-statement rules file
 // there and account research's split moves its excess withdrawal and returned mail fees there.
-// A "return to paper statements" charge is never returned mail.
+// A "return to paper statements" charge is never returned mail: an e-statement one is a paper
+// statement fee, and a paper statement one stays there.
 export const FOLD_RULES_VERSION = 17;
 
 /** The retired categories that sat in these families. */

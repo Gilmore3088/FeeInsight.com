@@ -99,8 +99,9 @@ export const DISPLAY_NAMES: Record<string, string> = {
   dormant_account: "Dormant Account",
   account_research: "Account Research",
   paper_statement: "Paper Statement",
-  excess_withdrawal: "Excess Withdrawals",
-  returned_mail: "Returned Mail",
+  // Listed only once the research split is on (#1398), so search, the public fee pages, category
+  // inference and guides never offer a type no fee is filed under yet.
+  ...(RESEARCH_SPLIT_LIVE ? { excess_withdrawal: "Excess Withdrawals", returned_mail: "Returned Mail" } : {}),
   // Overdraft & NSF
   overdraft: "Overdraft (OD)",
   nsf: "NSF / Returned Item",

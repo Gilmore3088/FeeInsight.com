@@ -45,9 +45,10 @@ const EQUIVALENT: Record<string, string> = { minimum_balance: "monthly_maintenan
 const cents = (amount: number) => Math.round(amount * 100);
 
 /**
- * A hand-keyed fee under a category folded into the top 50 counts where the fold rules put it. One
- * keyed account research that is an excess withdrawal or returned mail counts under that type
- * (James, Oct 15, #1398; the keys were made before), whether or not the live split is on.
+ * A hand-keyed fee under a category folded into the top 50 counts where the fold rules put it. Once
+ * `RESEARCH_SPLIT_LIVE` is on (James, Oct 15, #1398), one keyed account research that is an excess
+ * withdrawal or returned mail counts under that type, since the keys were made before; while it is
+ * off, `researchSplitCategory` returns null and the key stays account research.
  */
 function keyCategory(fee: AnswerKeyDocument["fees"][number], text: string): string {
   const research = researchSplitCategory(fee.key, fee.source_line);

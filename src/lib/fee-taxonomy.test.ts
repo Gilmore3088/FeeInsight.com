@@ -4,8 +4,10 @@ import {
   CANONICAL_KEY_MAP,
   CANONICAL_KEY_COUNT,
   TAXONOMY_COUNT,
+  DISPLAY_NAMES,
 } from "./fee-taxonomy";
-import { RESEARCH_SPLIT_LIVE } from "./fee-fold";
+import { RESEARCH_SPLIT_KEYS, RESEARCH_SPLIT_LIVE } from "./fee-fold";
+import { inferFeeCategory } from "./hamilton/infer-category";
 
 // Tripwire for Python↔TS drift. If you change these numbers, update the
 // Guards the canonical taxonomy keys used by public pages and agentic admin flows.
@@ -69,5 +71,21 @@ describe("fee-taxonomy sync", () => {
     for (const slug of ["transaction_fee", "transactions_fee", "per_transaction_fee", "withdrawal_fee", "account_balancing_assistance", "inquiries_fee"]) {
       expect(CANONICAL_KEY_MAP[slug]).toBe("account_research");
     }
+  });
+});
+
+// Review O3 (#1398): DISPLAY_NAMES is the public category list (the search modal, the /fees/[category]
+// pages, category inference, guides), so it names the two research split types only once the switch is on.
+describe("public category list while the research split is off", () => {
+  test("lists excess withdrawals and returned mail only once the switch is on", () => {
+    for (const key of RESEARCH_SPLIT_KEYS) {
+      expect([key, key in DISPLAY_NAMES]).toEqual([key, RESEARCH_SPLIT_LIVE]);
+    }
+  });
+
+  test("category inference never names a type no fee is filed under", () => {
+    const want = (key: string) => (RESEARCH_SPLIT_LIVE ? key : null);
+    expect(inferFeeCategory("What do banks charge for excess withdrawals?")).toBe(want("excess_withdrawal"));
+    expect(inferFeeCategory("Returned mail fees near me")).toBe(want("returned_mail"));
   });
 });

@@ -1214,6 +1214,17 @@ describe("excess withdrawals and returned mail, their own types (guard v65, Jame
     ["returned_mail", "Incorrect Address Research Fee"],
     ["returned_mail", "Mail forwarding"],
     ["returned_mail", "eStatement incorrect email address"],
+    ["excess_withdrawal", "Over withdrawal limit"],
+    ["excess_withdrawal", "Reg D violation fee"],
+    ["excess_withdrawal", "Money market service charge"],
+    ["excess_withdrawal", "Savings withdrawals in excess of 6 per month"],
+    ["excess_withdrawal", "Transfers after 6 per statement cycle"],
+    ["returned_mail", "Returned Mailed Statement"],
+    ["returned_mail", "^ Return of Paper Statement Fee (Per statement)"],
+    ["returned_mail", "Statement returned - bad address"],
+    ["returned_mail", "Returned eStatement due to incorrect email address"],
+    ["returned_mail", "Undeliverable E-Statement Fee"],
+    ["returned_mail", "Address Locator Services"],
   ])("%s accepts %s", (key, name) => {
     expect(checkFeeCategory(key, name)).toEqual({ ok: true });
   });
@@ -1259,6 +1270,29 @@ describe("excess withdrawals and returned mail, their own types (guard v65, Jame
     ["returned_mail", "Branch locator"],
     ["returned_mail", "Invalid email address"],
     ["returned_mail", "Returned Mail Fee Reconciling statements and research"],
+    // Review O1: a name that is some other fee is not an excess withdrawal.
+    ["excess_withdrawal", "Monthly Maintenance Fee"],
+    ["excess_withdrawal", "Check Printing"],
+    ["excess_withdrawal", "Safe deposit box rental"],
+    ["excess_withdrawal", "Loan origination"],
+    ["excess_withdrawal", "Card replacement"],
+    ["excess_withdrawal", "Deposit item returned"],
+    ["excess_withdrawal", "Collection item"],
+    ["excess_withdrawal", "Subordination fee"],
+    ["excess_withdrawal", "Escheatment fee"],
+    ["excess_withdrawal", "Legal fee"],
+    ["excess_withdrawal", "Check cashing non-member"],
+    ["excess_withdrawal", "Minimum balance service charge"],
+    ["excess_withdrawal", "Loan transfer fee"],
+    // Review O2: a return of anything but mail, a statement or an address is not returned mail.
+    ["returned_mail", "Item return fee"],
+    ["returned_mail", "Returned foreign item"],
+    ["returned_mail", "Loan payment returned"],
+    ["returned_mail", "Returned card fee"],
+    ["returned_mail", "Returned debit card"],
+    ["returned_mail", "Returned coin wrapper"],
+    ["returned_mail", "Return of collateral"],
+    ["returned_mail", "Returned bill pay"],
   ])("%s refuses %s", (key, name) => {
     expect(checkFeeCategory(key, name).ok).toBe(false);
   });

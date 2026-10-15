@@ -402,24 +402,29 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
   },
   // v65: excess withdrawals and returned mail are their own types (James, Oct 15, #1398; nothing is
   // filed there until `RESEARCH_SPLIT_LIVE` is on). An excess withdrawal row is often named only
-  // "Service charge" with its limit on its own line (`refileFromLine`), so any name counts unless it
-  // names another fee: research, an IRA, returned mail, a copy, an ATM or a foreign or international
-  // charge, an early withdrawal penalty, an overdraft or NSF, a returned item, an official check, a
-  // statement, a wire, a club, a certificate, a point-of-sale or teller charge, or a business
-  // account's item count.
+  // "Service charge" with its limit on its own line (`refileFromLine`), so the name must say excess,
+  // withdrawal, transfer, transaction, debit, limit, Reg D or activity, or be a service charge or fee;
+  // and it must not name another fee: research, an IRA, returned mail, a copy, an ATM or a foreign or
+  // international charge, an early withdrawal penalty, an overdraft or NSF, a returned item, an
+  // official check, a statement, a wire, a club, a certificate, a point-of-sale or teller charge, a
+  // business account's item count, maintenance or a minimum balance, check printing or cashing, a
+  // safe deposit box, a loan, a card, a collection, a subordination, escheatment or a legal fee.
   excess_withdrawal: {
-    include: /\S/,
+    include:
+      /(excess|withdraw|transfers?\b|transactions?\b|\bdebits?\b|\blimits?\b|\breg(?:ulation)?\.?\s?d\b|\bactivity\b|\bservice\s+(?:charges?|fees?)\b)/i,
     exclude:
-      /(research|reconcil|\bira\b|\breturn(?:ed)?\s+(?:mail|statements?|items?|checks?|deposits?)\b|undeliver|\baddress|\bfax|\b(?:photo ?)?cop(?:y|ies)\b|\bwires?\b|stop pay|dorman|inactiv|\batms?\b|non[- ]?network|foreign|international|\bearly\b|penalt|overdraft|\bnsf\b|cashier|\bstatements?\b(?!\s+(?:savings|cycle|period))|\bclubs?\b|certificate|\bcds?\b|\bpos\b|teller|\bexcess(?:ive)?\s+(?:[\w/-]+\s+){0,2}items?\b|\bitems?\s+(?:over|in excess|after)\b|debit cards?)/i,
+      /(maintenance|minimum balance|printing|safe deposit|\bloans?\b|\bcards?\b|collection|subordinat|escheat|\blegal\b|check cashing|research|reconcil|\bira\b|\breturn(?:ed)?\s+(?:mail|statements?|items?|checks?|deposits?)\b|undeliver|\baddress|\bfax|\b(?:photo ?)?cop(?:y|ies)\b|\bwires?\b|stop pay|dorman|inactiv|\batms?\b|non[- ]?network|foreign|international|\bearly\b|penalt|overdraft|\bnsf\b|cashier|\bstatements?\b(?!\s+(?:savings|cycle|period))|\bclubs?\b|certificate|\bcds?\b|\bpos\b|teller|\bexcess(?:ive)?\s+(?:[\w/-]+\s+){0,2}items?\b|\bitems?\s+(?:over|in excess|after)\b|debit cards?)/i,
   },
-  // Returned mail names the return, the bad, invalid or unknown address, an address correction,
-  // search or locator, or a forwarding charge; a bare "address" does not. Research for the address
+  // Returned mail names returned mail, statements or an address, undeliverable mail, the bad, invalid
+  // or unknown address, an address correction, search or locator, or a forwarding charge; a bare
+  // "address", or a return of anything else (an item, a card, a coin wrapper, collateral, a bill
+  // payment), does not. Research for the address
   // itself ("Incorrect Address Research Fee") is returned mail; other research, reconciling, an
   // excess withdrawal, a copy, a deposit, a returned check, item, draft or payment, an address
   // change, a return to paper statements or a re-enrollment is a different fee.
   returned_mail: {
     include:
-      /(\breturn(?:ed)?\b|\bundeliver|\bundelivered\b|\b(?:bad|invalid|incorrect|wrong|unknown|missing)\s+(?:mail(?:ing)?|address(?:es)?)\b|\baddress\s+(?:correction|search|research|locat)|\blocator\b|forwarding|e-?statements?\b[\s\S]*\b(?:incorrect|bad|invalid|wrong)\s+e-?mail|\b(?:incorrect|bad|invalid|wrong)\s+e-?mail\b[\s\S]*\be-?statements?)/i,
+      /(\breturn(?:ed|s)?\b[\s\S]*\b(?:mail(?:ed|ing)?|statements?|stmts?|address(?:es)?)\b|\b(?:mail(?:ed|ing)?|statements?|stmts?)\s+returned\b|\bundeliver|\b(?:bad|invalid|incorrect|wrong|unknown|missing)\s+(?:mail(?:ing)?|address(?:es)?)\b|\baddress\s+(?:correction|search|research|locat)|\blocator\b|forwarding|e-?statements?\b[\s\S]*\b(?:incorrect|bad|invalid|wrong)\s+e-?mail|\b(?:incorrect|bad|invalid|wrong)\s+e-?mail\b[\s\S]*\be-?statements?)/i,
     exclude:
       /(reconcil|(?<!\b(?:address(?:es)?|locator|locate)\s+(?:[\w/-]+\s+)?)\bresearch|excess|\bwires?\b|\b(?:photo ?)?cop(?:y|ies)\b|\breturn(?:ed)?\s+(?:checks?|items?|deposits?|ach|payments?|loans?|drafts?)\b|\bnsf\b|\bdeposit\w*|\bdrafts?\b|\b(?:items?|checks?|drafts?)\s+returned\b|change of address|address change|\breturn(?:ing)?\s+to\s+paper|\bre-?enroll|\b(?:branch|atm)\s+locat)/i,
   },
