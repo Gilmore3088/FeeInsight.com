@@ -7,6 +7,7 @@ import { isProviderStep } from "@/lib/agents/types";
 import {
   KNOX_REREAD_FEEDBACK_FLAG,
   KNOX_REREAD_FEEDBACK_LIVE,
+  KNOX_REREAD_FEEDBACK_SAMPLE,
   KNOX_REREAD_FEEDBACK_STRATEGY,
   KNOX_REREAD_RESOLVED_KIND,
   consumeRereadRequests,
@@ -29,7 +30,6 @@ function row(overrides: Partial<RereadRequestRow> & { request_id: number; fragme
     institution_id: 77,
     source_document_id: 500 + overrides.request_id,
     fee_raw_id: 900 + overrides.request_id,
-    fee_verified_id: 800 + overrides.request_id,
     fee_published_id: 600 + overrides.request_id,
     canonical_fee_key: "paper_statement",
     amount: "2.00",
@@ -68,6 +68,25 @@ describe("decideReread (pure)", () => {
     const decision = decideReread(requestOf(TELLER), TELLER_TEXT, readOf(TELLER_TEXT));
     expect(decision).toMatchObject({ outcome: "sent_to_darwin", newName: "Teller Check Payable to Someone Other than Member" });
     expect(decision.candidate).toMatchObject({ amount: 10, canonicalHint: "cashiers_check" });
+  });
+
+  it("finds the line by Darwin's fragment only: a generic raw name never lends another line's name", () => {
+    // Darwin's fragment is no longer in the text; Knox's raw name "Statement Fee" is in both lines
+    // at $2.00. Matched on the raw name, "Paper Statement Fee" (the other line) was the donor.
+    const text = "Account Services\nPaper Statement Fee $2.00\nE-Statement Fee $2.00\n";
+    const request = requestOf({ ...PAPER, raw_fee_name: "Statement Fee", evidence: { fee_name: "Statement copy fee for the", kept_live: true }, live_fee_name: "Statement copy fee for the" });
+    expect(decideReread(request, text, readOf(text))).toMatchObject({ outcome: "not_found" });
+    // A word that only begins the fragment is not the fragment: whole words only.
+    const glued = requestOf({ ...PAPER, evidence: { fee_name: "aper statement fee for the", kept_live: true } });
+    expect(decideReread(glued, PAPER_TEXT, readOf(PAPER_TEXT)).outcome).toBe("not_found");
+  });
+
+  it("settles a fragment under three words as ambiguous: too short to find one line by", () => {
+    const text = "Account Services\nPaper Statement Fee $2.00\nE-Statement Fee $2.00\n";
+    for (const fragment of ["Fee", "Service charge", "Fee for"]) {
+      const request = requestOf({ ...PAPER, evidence: { fee_name: fragment, kept_live: true }, live_fee_name: fragment, raw_fee_name: fragment });
+      expect(decideReread(request, text, readOf(text))).toEqual({ outcome: "ambiguous" });
+    }
   });
 
   it("reports no text, a line not found at the price, and another category", () => {
@@ -120,6 +139,7 @@ function dbFor(requests: Array<ReturnType<typeof row>>) {
       return Promise.resolve(rows.map((_, index) => ({ id: index + 1 })));
     }
     if (text.includes("INSERT INTO raw_fee_observations")) return Promise.resolve([{ fee_raw_id: 4242 }]);
+    if (text.includes("UPDATE published_fee_records")) return Promise.resolve((values[0] as number[]).map((id) => ({ fee_published_id: id })));
     return Promise.resolve([]);
   });
   return { db, resolved };
@@ -152,7 +172,27 @@ describe("consumeRereadRequests", () => {
     const { db } = dbFor([]);
     const result = await consumeRereadRequests(asDb(db), { runId: 7, dryRun: false, live: true });
     expect(result).toMatchObject({ pending: 0, read: 0 });
-    expect(sqlTexts(db)).toHaveLength(1);
+    // Switch on, the claim is the only read: no separate count before it.
+    expect(sqlTexts(db)).toEqual([expect.stringContaining("FOR UPDATE OF req SKIP LOCKED")]);
+  });
+
+  it("switch off: a state or all-bank lane skips the pass (skipSample) and reads nothing", async () => {
+    const { db } = dbFor([PAPER, WIRE, TELLER]);
+    const result = await consumeRereadRequests(asDb(db), { runId: 7, dryRun: false, skipSample: true, stateCode: "TX" });
+    expect(result).toMatchObject({ skipped: true, pending: 0, read: 0 });
+    expect(db).not.toHaveBeenCalled();
+    // The switch on, skipSample does not apply: the claim path runs in every lane.
+    const { db: liveDb } = dbFor([PAPER]);
+    expect(await consumeRereadRequests(asDb(liveDb), { runId: 7, dryRun: false, live: true, skipSample: true })).toMatchObject({ skipped: false, read: 1 });
+  });
+
+  it("switch off: a one-bank run reads at most the sample", async () => {
+    const many = Array.from({ length: 6 }, (_, index) => row({ request_id: 10 + index, fragment: "Paper statement fee for the" }));
+    const { db } = dbFor(many);
+    const result = await consumeRereadRequests(asDb(db), { runId: 7, dryRun: false, institutionId: 77 });
+    expect(KNOX_REREAD_FEEDBACK_SAMPLE).toBe(3);
+    expect(result).toMatchObject({ pending: 6, read: 3 });
+    expect(result.samples).toHaveLength(3);
   });
 
   it("a dry run writes nothing at all, even switched on", async () => {
@@ -189,7 +229,7 @@ describe("consumeRereadRequests", () => {
     db.mockClear();
     const again = await consumeRereadRequests(asDb(db), { runId: 8, dryRun: false, live: true });
     expect(again).toMatchObject({ pending: 0, read: 0, resolved: 0 });
-    expect(sqlTexts(db).some((text) => /INSERT|UPDATE/.test(text))).toBe(false);
+    expect(sqlTexts(db).some((text) => /INSERT INTO|UPDATE published_fee_records/.test(text))).toBe(false);
   });
 
   it("switch on: a request whose proper name another live fee of the bank has is settled as a live twin, not renamed", async () => {
@@ -201,6 +241,48 @@ describe("consumeRereadRequests", () => {
     expect(result.outcomes).toEqual({ live_twin: 1 });
     expect(result.renamed).toEqual([]);
     expect(sqlTexts(db).some((text) => text.includes("UPDATE published_fee_records"))).toBe(false);
+  });
+
+  it("switch on: a rename the guarded update did not apply is settled as name_changed, not renamed", async () => {
+    const { db } = dbFor([PAPER]);
+    const base = db.getMockImplementation() as (strings: TemplateStringsArray, ...values: unknown[]) => Promise<unknown>;
+    db.mockImplementation((strings: TemplateStringsArray, ...values: unknown[]) =>
+      strings.join("?").includes("UPDATE published_fee_records") ? Promise.resolve([]) : base(strings, ...values));
+    const result = await consumeRereadRequests(asDb(db), { runId: 7, dryRun: false, live: true });
+    expect(result).toMatchObject({ renamed: [], resolved: 1, outcomes: { name_changed: 1 } });
+  });
+
+  it("switch on: a read repeating a takedown Hamilton confirmed is written held, not sent to Darwin", async () => {
+    const { db } = dbFor([TELLER]);
+    const base = db.getMockImplementation() as (strings: TemplateStringsArray, ...values: unknown[]) => Promise<unknown>;
+    db.mockImplementation((strings: TemplateStringsArray, ...values: unknown[]) => {
+      const text = strings.join("?");
+      if (text.includes("to_regclass('public.pipeline_feedback')")) return Promise.resolve([{ ready: true }]);
+      if (text.includes("f.kind = 'takedown_confirmed'")) {
+        return Promise.resolve([{ institution_id: 77, fee_name: "Teller Check Payable to Someone Other than Member", amount: "10.00", check_name: "hamilton.source_check" }]);
+      }
+      return base(strings, ...values);
+    });
+    const result = await consumeRereadRequests(asDb(db), { runId: 7, dryRun: false, live: true });
+    expect(result).toMatchObject({ sentToDarwin: [], resolved: 1, outcomes: { held_taken_down: 1 } });
+    const insert = db.mock.calls.find(([strings]) => (strings as TemplateStringsArray).join("?").includes("INSERT INTO raw_fee_observations"));
+    const flags = JSON.parse(String(insert?.slice(1).find((value) => String(value).includes(KNOX_REREAD_FEEDBACK_FLAG)))) as string[];
+    expect(flags).toEqual(expect.arrayContaining(["knox_review:taken_down", "knox_lesson:taken_down:hamilton.source_check", KNOX_REREAD_FEEDBACK_FLAG]));
+    expect(flags).not.toContain("needs_darwin_verification");
+  });
+
+  it("switch on: a failed write is settled unresolved, so it never holds the head of the queue", async () => {
+    const { db, resolved } = dbFor([PAPER, WIRE]);
+    const base = db.getMockImplementation() as (strings: TemplateStringsArray, ...values: unknown[]) => Promise<unknown>;
+    db.mockImplementation((strings: TemplateStringsArray, ...values: unknown[]) =>
+      strings.join("?").includes("UPDATE published_fee_records") ? Promise.reject(new Error("write failed")) : base(strings, ...values));
+    const first = await consumeRereadRequests(asDb(db), { runId: 7, dryRun: false, live: true, limit: 1 });
+    expect(first).toMatchObject({ read: 1, resolved: 1, renamed: [], outcomes: { refused: 1 } });
+    expect(first.samples[0]).toMatchObject({ request_id: 1, refused_by: "write_failed" });
+    expect(resolved.has(rereadResolutionKey(1))).toBe(true);
+    // The next step claims the next request, not the failed one again.
+    const second = await consumeRereadRequests(asDb(db), { runId: 8, dryRun: false, live: true, limit: 1 });
+    expect(second.samples.map((sample) => sample.request_id)).toEqual([2]);
   });
 
   it("never throws: a failed read reports failed and writes nothing", async () => {

@@ -8,6 +8,7 @@ import { LIVE_FRAGMENT_CHECK, LIVE_FRAGMENT_REREAD_KIND } from "@/lib/agents/dar
 import { KNOX_RULES_STRATEGY, runFreeSpecialists } from "@/lib/agents/knox/specialists";
 import { insertCandidate, type KnoxTextRow } from "@/lib/agents/knox/extract";
 import { liveFragmentName, writeLiveRenames, type RetidyRename } from "@/lib/agents/knox/name-retidy";
+import { loadTakedownLessons, takedownLessonFor } from "@/lib/agents/knox/takedown-lessons";
 import type { ExtractedFeeCandidate } from "@/lib/agents/knox/rules";
 
 type SqlTag = typeof sql;
@@ -23,11 +24,16 @@ type SqlTag = typeof sql;
  * budget), and settles the request once per Knox rules version.
  *
  * A re-read finds the line by its price and its words: a fee today's team reads at the request's
- * amount whose excerpt holds the fragment (or Knox's raw name), or whose name is the fragment.
+ * amount whose excerpt holds the fragment Darwin read (`evidence.fee_name`) as whole words, or whose
+ * name is the fragment. Knox's raw name is not a key: a short raw name ("Service charge") is in
+ * any line at that price, so another fee's line could lend its name. A fragment of fewer than
+ * `REREAD_MIN_KEY_WORDS` words is too short to find one line by, and is settled `ambiguous`.
  * Outcomes (`RereadOutcome`):
  * - `stale`: the request no longer applies (a kept-live fee that came down or was renamed since,
  *   a taken-down fee that is live again).
  * - `no_text`: the request names no document, or the document has no completed text.
+ * - `name_changed` (kept live): the live fee's name changed between the read and the guarded
+ *   rename, so the update touched nothing (`writeLiveRenames` returns only the fees it renamed).
  * - `not_found`: today's team reads no fee at that price on that line.
  * - `same_name`: today's team reads the line, but under the same name or another fragment. This
  *   is the usual answer while the rules have not changed since the line was read: the free team
@@ -43,7 +49,13 @@ type SqlTag = typeof sql;
  *   (`writeLiveRenames`: the old name in `pipeline_feedback`, then the guarded update).
  * - `sent_to_darwin` (taken down): the proper read is inserted as a raw row for Darwin
  *   (`insertCandidate`, `needs_darwin_verification`, `KNOX_REREAD_FEEDBACK_FLAG`), so the fee can
- *   come back through Darwin's own checks; `already_read` when Knox already holds that read.
+ *   come back through Darwin's own checks; `already_read` when Knox already holds that read;
+ *   `held_taken_down` when the read repeats a takedown Hamilton confirmed (`takedown-lessons.ts`):
+ *   written held as `knox_review:taken_down`, as the extract writes it, not sent to Darwin. Knox's
+ *   category lessons (`applyKnoxLesson`) are not applied: the read already matches the fee's own
+ *   category, and loading them is an aggregate over all of `pipeline_feedback`.
+ * - A write that fails (`refused`, `write_failed` / `live_twin_check_failed`) is settled too,
+ *   unresolved, so a failing request cannot hold the head of the queue; a rules bump reads it again.
  *
  * Each settled request gets one `pipeline_feedback` row of kind `KNOX_REREAD_RESOLVED_KIND`
  * (reported by Knox, weight 0 so it never counts as a lesson) keyed on the request's id, this
@@ -51,10 +63,13 @@ type SqlTag = typeof sql;
  * never rewritten: Darwin upserts it again on each pass of the live table, which would wipe a mark
  * kept on it, so the resolution lives on its own row and a request is read once per rules version.
  *
- * `KNOX_REREAD_FEEDBACK_LIVE` false (the default): each extract step counts the pending requests
- * and reads up to `KNOX_REREAD_FEEDBACK_SAMPLE` of them read-only, reporting what it would do in one
- * `knox.reread_feedback` event; nothing else is written. On: a batch of
- * `KNOX_REREAD_FEEDBACK_BATCH` is claimed (`FOR UPDATE ... SKIP LOCKED`), processed and settled.
+ * `KNOX_REREAD_FEEDBACK_LIVE` false (the default): a one-bank run counts that bank's pending
+ * requests (`pipeline_feedback_institution_idx`) and reads up to `KNOX_REREAD_FEEDBACK_SAMPLE` of
+ * them read-only, reporting what it would do in one `knox.reread_feedback` event; nothing else is
+ * written. A state or all-bank lane skips the pass (`skipSample`): `pipeline_feedback` has no index
+ * on `kind`, and the same sample would be read again every step. On: a batch of
+ * `KNOX_REREAD_FEEDBACK_BATCH` is claimed first (`FOR UPDATE ... SKIP LOCKED`), and the pending
+ * count is read only when the claim found work; then the batch is processed and settled.
  * The event is written only while requests are pending; the step detail (`reread_feedback`) always
  * carries the counts. A dry run writes nothing at all.
  */
@@ -63,18 +78,20 @@ export const KNOX_REREAD_FEEDBACK_STRATEGY = { strategy: "knox.reread_feedback",
 export const KNOX_REREAD_FEEDBACK_LIVE = false;
 /** Requests claimed and settled per extract step, switch on. */
 export const KNOX_REREAD_FEEDBACK_BATCH = 25;
-/** Requests read read-only per extract step, switch off: the same first ones each step, so kept small. */
-export const KNOX_REREAD_FEEDBACK_SAMPLE = 10;
+/** Requests read read-only per one-bank extract step, switch off; also the samples kept in the event. */
+export const KNOX_REREAD_FEEDBACK_SAMPLE = 3;
+/** The fewest words a fragment needs to find its line by. */
+export const REREAD_MIN_KEY_WORDS = 3;
 /** The settled request's row in `pipeline_feedback`. */
 export const KNOX_REREAD_RESOLVED_KIND = "knox_reread_resolved";
 /** Flag on a raw row this pass sent to Darwin for a taken-down fee. */
 export const KNOX_REREAD_FEEDBACK_FLAG = "knox_reread_feedback";
-const SAMPLES = 10;
 
 export type RereadRequestKind = "reread" | "fragment_reread";
 export type RereadOutcome =
   | "stale"
   | "no_text"
+  | "name_changed"
   | "not_found"
   | "same_name"
   | "other_category"
@@ -83,9 +100,10 @@ export type RereadOutcome =
   | "live_twin"
   | "renamed"
   | "sent_to_darwin"
+  | "held_taken_down"
   | "already_read";
 /** The outcomes that leave the line as it was: the request is settled as unresolved for this rules version. */
-export const UNRESOLVED_OUTCOMES: ReadonlySet<RereadOutcome> = new Set(["no_text", "not_found", "same_name", "other_category", "ambiguous", "refused", "live_twin"]);
+export const UNRESOLVED_OUTCOMES: ReadonlySet<RereadOutcome> = new Set(["no_text", "not_found", "same_name", "other_category", "ambiguous", "refused", "live_twin", "held_taken_down"]);
 
 /** The dedupe key of a request's resolution: once per request, pass version and Knox rules version. */
 export function rereadResolutionKey(requestId: number, rulesVersion: number = KNOX_RULES_STRATEGY.version): string {
@@ -97,7 +115,6 @@ export interface RereadRequestRow {
   institution_id: number | string | null;
   source_document_id: number | string | null;
   fee_raw_id: number | string | null;
-  fee_verified_id: number | string | null;
   fee_published_id: number | string | null;
   canonical_fee_key: string | null;
   amount: number | string | null;
@@ -193,13 +210,14 @@ export function lineKey(value: string | null | undefined): string {
 export function decideReread(request: RereadRequest, text: string | null, candidates: ExtractedFeeCandidate[]): RereadDecision {
   if (!text || !text.trim() || request.amount == null) return { outcome: "no_text" };
   const amount = request.amount;
-  const keys = [lineKey(request.fragmentName), lineKey(request.rawFeeName)].filter((key) => key.length > 0);
-  if (keys.length === 0) return { outcome: "not_found" };
+  // The line is found by Darwin's fragment only; Knox's raw name only marks a read as not new.
+  const key = lineKey(request.fragmentName);
+  if (key.length === 0) return { outcome: "not_found" };
+  if (key.split(" ").length < REREAD_MIN_KEY_WORDS) return { outcome: "ambiguous" };
+  const keys = [key, lineKey(request.rawFeeName)].filter((entry) => entry.length > 0);
   const onLine = candidates.filter((candidate) => {
     if (Math.abs(candidate.amount - amount) >= 0.005) return false;
-    const name = lineKey(candidate.feeName);
-    const excerpt = lineKey(candidate.excerpt);
-    return keys.some((key) => name === key || excerpt.includes(key));
+    return lineKey(candidate.feeName) === key || ` ${lineKey(candidate.excerpt)} `.includes(` ${key} `);
   });
   if (onLine.length === 0) return { outcome: "not_found" };
   const readNames = [...new Set(onLine.map((candidate) => candidate.feeName))];
@@ -211,9 +229,9 @@ export function decideReread(request: RereadRequest, text: string | null, candid
   if (names.size > 1) return { outcome: "ambiguous", readNames };
   const candidate = sameCategory[0];
   const newName = candidate.feeName.replace(/\s+/g, " ").trim();
-  const key = request.canonicalFeeKey ?? candidate.canonicalHint;
-  if (!checkFeeCategory(key, newName).ok) return { outcome: "refused", refusedBy: "category_guard", newName, readNames };
-  const source = checkFeeAgainstSource(text, newName, amount, ".", key);
+  const feeKey = request.canonicalFeeKey ?? candidate.canonicalHint;
+  if (!checkFeeCategory(feeKey, newName).ok) return { outcome: "refused", refusedBy: "category_guard", newName, readNames };
+  const source = checkFeeAgainstSource(text, newName, amount, ".", feeKey);
   if (!source.ok) return { outcome: "refused", refusedBy: `source_check:${"reason" in source ? String(source.reason) : "untraced"}`, newName, readNames };
   return { outcome: request.kind === "reread" ? "renamed" : "sent_to_darwin", newName, candidate, readNames };
 }
@@ -242,6 +260,8 @@ export interface RereadFeedbackSample {
 export interface RereadFeedbackResult {
   live: boolean;
   dryRun: boolean;
+  /** Switch off in a state or all-bank lane: nothing read (`skipSample`). */
+  skipped: boolean;
   /** Requests not yet settled at this rules version, by kind. */
   pending: number;
   pendingByKind: Record<RereadRequestKind, number>;
@@ -263,6 +283,7 @@ function emptyResult(live: boolean, dryRun: boolean): RereadFeedbackResult {
   return {
     live,
     dryRun,
+    skipped: false,
     pending: 0,
     pendingByKind: { reread: 0, fragment_reread: 0 },
     pendingDocuments: 0,
@@ -391,8 +412,7 @@ async function selectPending(db: SqlTag, limit: number, claim: boolean, institut
   const ids = (await rows).map((row) => Number(row.request_id));
   if (ids.length === 0) return [];
   return db<RereadRequestRow[]>`
-    SELECT req.id AS request_id, req.institution_id, req.source_document_id, req.fee_raw_id, req.fee_verified_id,
-           req.fee_published_id, req.canonical_fee_key, req.amount, req.evidence,
+    SELECT req.id AS request_id, req.institution_id, req.source_document_id, req.fee_raw_id, req.fee_published_id, req.canonical_fee_key, req.amount, req.evidence,
            fr.fee_name AS raw_fee_name, fp.fee_name AS live_fee_name,
            CASE WHEN fp.fee_published_id IS NULL THEN NULL ELSE fp.rolled_back_at IS NOT NULL END AS live_rolled_back,
            adt.id AS document_text_id, adt.text_hash, adt.source_url
@@ -475,6 +495,9 @@ function resolutionRow(request: RereadRequest, decision: RereadDecision, runId: 
       outcome: decision.outcome,
       resolved: !UNRESOLVED_OUTCOMES.has(decision.outcome),
       ...(decision.outcome === "same_name" ? { note: "unresolved: same name under today's rules" } : {}),
+      ...(decision.refusedBy === "write_failed" || decision.refusedBy === "live_twin_check_failed"
+        ? { note: "unresolved: the write failed; read again after a rules bump" }
+        : {}),
       fragment_name: request.fragmentName,
       ...(decision.newName ? { new_name: decision.newName } : {}),
       ...(decision.refusedBy ? { refused_by: decision.refusedBy } : {}),
@@ -489,11 +512,22 @@ function resolutionRow(request: RereadRequest, decision: RereadDecision, runId: 
 
 /**
  * One extract step's share of the re-read requests (see the module note). Never throws: a failed
- * read reports `failed` and writes nothing; a failed write leaves the requests pending.
+ * read reports `failed` and writes nothing; a failed write is settled unresolved for this rules
+ * version, so it does not hold the head of the queue.
  */
 export async function consumeRereadRequests(
   db: SqlTag,
-  options: { runId: number; stepId?: number | null; dryRun: boolean; live?: boolean; limit?: number; institutionId?: number | null; stateCode?: string | null },
+  options: {
+    runId: number;
+    stepId?: number | null;
+    dryRun: boolean;
+    live?: boolean;
+    limit?: number;
+    institutionId?: number | null;
+    stateCode?: string | null;
+    /** Switch off: skip the read-only count and sample (a state or all-bank lane). */
+    skipSample?: boolean;
+  },
 ): Promise<RereadFeedbackResult> {
   const live = options.live ?? KNOX_REREAD_FEEDBACK_LIVE;
   const dryRun = options.dryRun;
@@ -502,17 +536,33 @@ export async function consumeRereadRequests(
   const institutionId = options.institutionId ?? null;
   const stateCode = options.stateCode?.trim().toUpperCase() || null;
   const result = emptyResult(live, dryRun);
+  // Switched off, a state or all-bank lane reads nothing: no index on `kind`, and the same sample
+  // every step. A one-bank run reads its bank's requests by `pipeline_feedback_institution_idx`.
+  if (!live && options.skipSample) {
+    result.skipped = true;
+    return result;
+  }
 
-  let requests: RereadRequest[];
-  let texts: Map<number, string | null>;
-  try {
+  const count = async () => {
     const counted = await inSavepoint(db, (scope) => countPending(scope, institutionId, stateCode));
     result.pendingByKind = { reread: Number(counted?.reread ?? 0), fragment_reread: Number(counted?.fragment_reread ?? 0) };
     result.pending = result.pendingByKind.reread + result.pendingByKind.fragment_reread;
     result.pendingDocuments = Number(counted?.documents ?? 0);
     result.pendingInstitutions = Number(counted?.institutions ?? 0);
-    if (result.pending === 0) return result;
+  };
+  let requests: RereadRequest[];
+  let texts: Map<number, string | null>;
+  try {
+    // Switch on, the claim comes first: an empty claim means nothing pending, with no count read.
+    if (!claim) {
+      await count();
+      if (result.pending === 0) return result;
+    }
     const rows = await inSavepoint(db, (scope) => selectPending(scope, limit, claim, institutionId, stateCode));
+    if (claim) {
+      if (rows.length === 0) return result;
+      await count();
+    }
     requests = rows.map(toRereadRequest);
     const textIds = [...new Set(requests.map((request) => request.documentTextId).filter((id): id is number => id != null))];
     const textRows = textIds.length === 0 ? [] : await inSavepoint(db, (scope) => scope<Array<{ id: number | string; normalized_text: string | null }>>`
@@ -561,21 +611,29 @@ export async function consumeRereadRequests(
         newName: decision.newName as string,
       }));
       try {
-        await inSavepoint(db, (scope) => writeLiveRenames(scope, rows, {
+        const updated = new Set(await inSavepoint(db, (scope) => writeLiveRenames(scope, rows, {
           strategy: KNOX_REREAD_FEEDBACK_STRATEGY.strategy,
           version: KNOX_REREAD_FEEDBACK_STRATEGY.version,
           reportedBy: "knox",
           runId: options.runId,
-        }));
-        result.renamed = rows.map((row) => row.feePublishedId);
+        })));
+        // Only the fees the guarded update touched are renamed; the others changed name since the read.
+        for (const entry of toRename) {
+          const id = entry.request.feePublishedId as number;
+          if (updated.has(id)) result.renamed.push(id);
+          else entry.decision = { ...entry.decision, outcome: "name_changed" };
+        }
       } catch (error) {
         console.error("[knox] re-read rename failed", error instanceof Error ? error.message : error);
-        // Left pending: a failed write is read again next step.
+        // Settled unresolved below: read again after a rules bump, never blocking the queue.
         for (const entry of toRename) entry.decision = { ...entry.decision, outcome: "refused", refusedBy: "write_failed" };
       }
     }
-    // Taken-down fees: today's proper read goes to Darwin as a raw row.
-    for (const entry of decisions.filter(({ decision }) => decision.outcome === "sent_to_darwin")) {
+    // Taken-down fees: today's proper read goes to Darwin as a raw row; a read repeating a takedown
+    // Hamilton confirmed is written held instead, as the extract writes it (`takedownLessonFor`).
+    const toDarwin = decisions.filter(({ decision }) => decision.outcome === "sent_to_darwin");
+    const takedownLessons = toDarwin.length > 0 ? await loadTakedownLessons(db) : new Map<string, string>();
+    for (const entry of toDarwin) {
       const { request, decision } = entry;
       const row: KnoxTextRow = {
         document_text_id: request.documentTextId as number,
@@ -584,16 +642,20 @@ export async function consumeRereadRequests(
         source_url: request.sourceUrl,
         text_hash: request.textHash,
       };
+      const candidate = decision.candidate as ExtractedFeeCandidate;
+      const takenDownBy = takedownLessonFor(candidate, takedownLessons, request.institutionId as number);
       try {
         const inserted = await inSavepoint(db, (scope) => insertCandidate(scope, {
           runId: options.runId,
           row,
-          candidate: decision.candidate as ExtractedFeeCandidate,
+          candidate,
           extraFlags: [KNOX_REREAD_FEEDBACK_FLAG],
           method: `${KNOX_REREAD_FEEDBACK_STRATEGY.strategy} v${KNOX_REREAD_FEEDBACK_STRATEGY.version} re-read (Darwin request #${request.requestId})`,
+          takenDownBy,
         }));
-        if (inserted) result.sentToDarwin.push(request.feePublishedId ?? request.requestId);
-        else entry.decision = { ...decision, outcome: "already_read" };
+        if (!inserted) entry.decision = { ...decision, outcome: "already_read" };
+        else if (takenDownBy) entry.decision = { ...decision, outcome: "held_taken_down", refusedBy: `taken_down:${takenDownBy}` };
+        else result.sentToDarwin.push(request.feePublishedId ?? request.requestId);
       } catch (error) {
         console.error("[knox] re-read insert failed", error instanceof Error ? error.message : error);
         entry.decision = { ...decision, outcome: "refused", refusedBy: "write_failed" };
@@ -603,11 +665,12 @@ export async function consumeRereadRequests(
 
   result.read = decisions.length;
   for (const { decision } of decisions) result.outcomes[decision.outcome] = (result.outcomes[decision.outcome] ?? 0) + 1;
-  result.samples = decisions.slice(0, SAMPLES).map(({ request, decision }) => sampleOf(request, decision));
+  result.samples = decisions.slice(0, KNOX_REREAD_FEEDBACK_SAMPLE).map(({ request, decision }) => sampleOf(request, decision));
 
   if (claim) {
-    // Every request read is settled for this rules version, except a write that failed.
-    const settled = decisions.filter(({ decision }) => decision.refusedBy !== "write_failed" && decision.refusedBy !== "live_twin_check_failed");
+    // Every request read is settled for this rules version, a failed write too (unresolved): left
+    // pending, it would be claimed first again by ORDER BY id and hold the head of the queue.
+    const settled = decisions;
     if (settled.length > 0) {
       try {
         result.resolved = await inSavepoint(db, (scope) => recordFeedback(scope, settled.map(({ request, decision }) => resolutionRow(request, decision, options.runId))));
@@ -653,6 +716,7 @@ export function rereadFeedbackDetail(result: RereadFeedbackResult) {
     rules_version: KNOX_RULES_STRATEGY.version,
     live: result.live,
     dry_run: result.dryRun,
+    skipped: result.skipped,
     pending: result.pending,
     pending_by_kind: result.pendingByKind,
     pending_documents: result.pendingDocuments,

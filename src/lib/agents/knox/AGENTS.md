@@ -807,14 +807,22 @@ after the held-line passes, reads these requests (`consumeRereadRequests`, `knox
 - The line is read again from the newest completed text of the fee's own document with today's
   free team (`runFreeSpecialists`). Rules only, no provider call: the pass is part of the
   deterministic extract step and never waits on provider budget. It finds the line by the fee's
-  price and its words (an excerpt holding the fragment or Knox's raw name, or the same name).
+  price and Darwin's fragment (`evidence.fee_name`): an excerpt holding the fragment as whole
+  words, or the same name. Knox's raw name is not a key (a short raw name such as "Service charge"
+  is in every line at that price, so another fee could lend its name), and a fragment under three
+  words is settled `ambiguous`.
 - Outcomes: `renamed` (kept live: the live fee takes today's proper name through
   `writeLiveRenames`, the old name kept in `pipeline_feedback`), `sent_to_darwin` (taken down:
   today's read goes in as a raw row with `needs_darwin_verification` and `knox_reread_feedback`,
   so the fee comes back only through Darwin's checks), `already_read` (Knox already holds that
-  read), and the unresolved ones: `same_name`, `not_found`, `no_text`, `other_category`,
-  `ambiguous`, `refused` (category guard or `checkFeeAgainstSource`), `live_twin` (another live fee
-  of the bank has the proper name at that price), plus `stale` (the request no longer applies).
+  read), `name_changed` (the guarded rename touched nothing: the live name changed since the read;
+  `writeLiveRenames` returns the fees it renamed), and the unresolved ones: `same_name`,
+  `not_found`, `no_text`, `other_category`, `ambiguous`, `refused` (category guard or
+  `checkFeeAgainstSource`), `live_twin` (another live fee of the bank has the proper name at that
+  price), `held_taken_down` (the read repeats a takedown Hamilton confirmed, `takedownLessonFor`:
+  written held as `knox_review:taken_down`, as the extract does), plus `stale` (the request no
+  longer applies). A failed write (`refused` by `write_failed` or `live_twin_check_failed`) is
+  settled unresolved too, so it never holds the head of the queue; a rules bump reads it again.
 - What a re-read yields: the free team is deterministic, so a line Knox already read from the same
   text at the current rules version comes back under the same name ("Bank sending the wire may
   charge a fee of" $15 is read as itself at v70). Such a request is settled `same_name`
@@ -825,12 +833,19 @@ after the held-line passes, reads these requests (`consumeRereadRequests`, `knox
   `knox.reread_feedback:req:<request id>:v<pass>:rules<N>`, evidence with the outcome. The request
   row is not marked: Darwin upserts it again on each pass of the live table, which would wipe a
   mark. A rules bump makes every request pending again once; nothing loops within a version.
-- `KNOX_REREAD_FEEDBACK_LIVE` false (default): each extract step counts the pending requests (by
-  kind, documents, banks; scoped to the run's bank or state) and reads up to 10 read-only
-  (`KNOX_REREAD_FEEDBACK_SAMPLE`), reporting what it would do in one `knox.reread_feedback` event
-  (only while requests are pending) and in the step detail `reread_feedback`. Nothing else is
-  written. On: 25 a step (`KNOX_REREAD_FEEDBACK_BATCH`), claimed with `FOR UPDATE ... SKIP LOCKED`
-  so two lanes never take the same request. A dry run writes nothing.
+- `KNOX_REREAD_FEEDBACK_LIVE` false (default): only a one-bank extract run reads the requests: it
+  counts that bank's pending ones (by kind and documents; `pipeline_feedback_institution_idx`) and
+  reads up to 3 read-only (`KNOX_REREAD_FEEDBACK_SAMPLE`), reporting what it would do in one
+  `knox.reread_feedback` event (only while requests are pending) and in the step detail
+  `reread_feedback`. A state or all-bank lane skips it (`skipSample`, detail `skipped: true`):
+  `pipeline_feedback` has no index on `kind`, so the count was a full scan every step, and the same
+  sample was read again each time. Nothing else is written. On: 25 a step
+  (`KNOX_REREAD_FEEDBACK_BATCH`), claimed first with `FOR UPDATE ... SKIP LOCKED` so two lanes
+  never take the same request; the pending count is read only when the claim found work. A dry
+  run writes nothing.
+- The switch-on PR should come with a partial index,
+  `pipeline_feedback (id) WHERE kind = 'knox_reread_requested'`, so every lane's claim and count
+  read only the requests (a migration, so it needs James's approval).
 - `rereadFeedbackCountSql()` is the read-only count of pending requests by kind, documents and
   banks, and of settled requests by outcome.
 

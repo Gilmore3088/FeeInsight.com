@@ -738,13 +738,15 @@ async function executeAgenticStep(
       // Held unclassified lines the held-name rules would send to Darwin (#1102). Switch off: read only.
       const heldNamePreview = await previewHeldNameRules(tx, { institutionId: numericRunParam(params, ["institution_id"]), stateCode });
       // Darwin's re-read requests for fee names it could not name (#1511): each line read again with
-      // today's rules, once per rules version. Switch off: counted and read only, one event.
+      // today's rules, once per rules version. Switch off: a one-bank run counts and reads a sample
+      // read only (one event); a state or all-bank lane skips it (no index on the request kind).
       const rereadFeedback = await consumeRereadRequests(tx, {
         runId: run.id,
         stepId: step.id,
         dryRun: run.runKind === "dry_run",
         institutionId: numericRunParam(params, ["institution_id"]),
         stateCode,
+        skipSample: numericRunParam(params, ["institution_id"]) == null,
       });
       const rereadNote = rereadFeedback.pending > 0
         ? ` Darwin's re-read requests: ${rereadFeedback.pending.toLocaleString()} pending, ${rereadFeedback.read.toLocaleString()} read with today's rules (${rereadFeedback.live && !rereadFeedback.dryRun ? `${rereadFeedback.resolved.toLocaleString()} settled, ${rereadFeedback.renamed.length.toLocaleString()} renamed, ${rereadFeedback.sentToDarwin.length.toLocaleString()} sent to Darwin` : "switch off: nothing written"}).`
