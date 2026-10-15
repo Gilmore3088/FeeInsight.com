@@ -18,8 +18,8 @@ describe("PeerRankTeaser", () => {
   it("names the peer group and counts lower and higher fees, with no institution names", () => {
     render(<PeerRankTeaser rank={RANK} />);
     expect(screen.getByRole("heading", { name: "Against Texas banks" })).toBeInTheDocument();
-    expect(screen.getByText(/Of 42 others that publish it/)).toHaveTextContent("30 lower, 4 the same and 8 higher.");
-    expect(screen.getByText(/Of 32 others that publish it/)).toHaveTextContent("12 lower and 20 higher.");
+    expect(screen.getByText(/Of 42 others that publish it/)).toHaveTextContent("30 charge less, 4 the same and 8 charge more.");
+    expect(screen.getByText(/Of 32 others that publish it/)).toHaveTextContent("12 charge less and 20 charge more.");
   });
 
   it("labels district peers and says why", () => {

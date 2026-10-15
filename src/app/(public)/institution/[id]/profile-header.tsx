@@ -85,7 +85,7 @@ export function ProfileHeader({
   } else if (locationLabel) {
     facts.push(<span key="loc">{locationLabel}</span>);
   }
-  facts.push(<span key="charter">{segmentLabel ?? charterLabel}</span>);
+  facts.push(<span key="charter">{assetsLabel ? charterLabel : segmentLabel ?? charterLabel}</span>);
   if (assetsLabel) facts.push(<span key="assets">{assetsLabel}</span>);
   if (districtName) {
     facts.push(

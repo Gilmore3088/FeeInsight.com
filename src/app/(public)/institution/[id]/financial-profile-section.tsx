@@ -137,7 +137,7 @@ export function FinancialProfileSection({
               <div className="w-full max-w-md">
                 <div className="rounded-xl border border-border bg-surface-0/95 p-5 text-center shadow-fi-2">
                   <Lock className="mx-auto h-5 w-5 text-ink" aria-hidden="true" />
-                  <p className="mt-2 text-[15px] font-semibold text-ink">Call-report history with peer rank, branch footprint, complaints and enforcement actions</p>
+                  <p className="mt-2 text-[15px] font-semibold text-ink">Call-report history, peer rank, complaints and enforcement</p>
                   <TrackLink
                     event="upgrade_click"
                     eventProps={{ placement: "institution_financial_lock" }}

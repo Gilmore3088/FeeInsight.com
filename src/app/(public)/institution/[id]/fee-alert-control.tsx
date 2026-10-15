@@ -27,7 +27,7 @@ export interface FeeAlertControlProps {
 const INPUT =
   "min-w-0 w-full rounded-md border border-border bg-white px-3 py-2 text-[14px] text-ink placeholder:text-ink-muted focus:border-transparent focus:outline-none focus:ring-2 focus:ring-brick/30";
 const PRIMARY =
-  "inline-flex shrink-0 items-center justify-center whitespace-nowrap rounded-md bg-brick px-4 py-2 text-[13px] font-semibold text-white transition-colors hover:bg-brick-ink disabled:opacity-50";
+  "inline-flex shrink-0 items-center justify-center whitespace-nowrap rounded-md border border-ink bg-surface-0 px-4 py-2 text-[13px] font-semibold text-ink transition-colors hover:bg-surface-200 disabled:opacity-50";
 const SECONDARY =
   "inline-flex items-center rounded-md border border-border bg-white px-3 py-1.5 text-[12px] font-semibold text-ink transition-colors hover:border-brick hover:text-brick disabled:opacity-50";
 

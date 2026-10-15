@@ -106,8 +106,8 @@ export function HamiltonBand({
             See every fee against your competitors.
           </h2>
           <p className="mt-4 text-[16px] leading-relaxed text-warm-ink-300">
-            Hamilton, the Fee Insight Pro workspace, opens on your institution with your market, your peers and a
-            sourced brief for the board.
+            Hamilton, the Fee Insight Pro workspace, opens on your institution with your market and a sourced brief
+            for the board.
           </p>
           <div className="mt-7 flex flex-wrap items-center gap-x-5 gap-y-3">
             <TrackLink

@@ -124,6 +124,10 @@ function Legend({ kind }: { kind: string }) {
   );
 }
 
+function stateCodeOrLabel(code: string | null, label: string | null): string {
+  return code ?? label ?? "State";
+}
+
 function HeadlineCard({ row, stateLabel, stateCode }: { row: HeadlineRow; stateLabel: string | null; stateCode: string | null }) {
   const domainMax = rangeDomain(row.amount, [row.state, row.nation]);
   const reference = row.state ?? row.nation;
@@ -150,6 +154,12 @@ function HeadlineCard({ row, stateLabel, stateCode }: { row: HeadlineRow; stateL
         {row.state && stateLabel && <MarketRange label={stateCode ?? stateLabel} band={row.state} amount={row.amount} domainMax={domainMax} />}
         {row.nation && <MarketRange label="U.S." band={row.nation} amount={row.amount} domainMax={domainMax} />}
       </div>
+      {reference && (
+        <p className="mt-2 font-mono text-[11px] tabular-nums text-ink-muted">
+          {row.state ? stateCodeOrLabel(stateCode, stateLabel) : "U.S."} median {money(reference.median)} · middle half{" "}
+          {money(reference.p25)}–{money(reference.p75)} · {reference.institutions.toLocaleString("en-US")} institutions
+        </p>
+      )}
       {row.sourceUrl && (
         <a
           href={row.sourceUrl}

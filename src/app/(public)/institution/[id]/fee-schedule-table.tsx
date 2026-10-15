@@ -64,9 +64,9 @@ const POSITION_DOT: Record<Position, string> = {
 };
 
 const POSITION_TEXT: Record<Position, string> = {
-  below: "Below the typical range",
-  within: "Within the typical range",
-  above: "Above the typical range",
+  below: "Below the U.S. middle half",
+  within: "Inside the U.S. middle half",
+  above: "Above the U.S. middle half",
 };
 
 function benchmarkFor(fee: DisplayFee, benchmarks: FeeBenchmarks | undefined): FeeBenchmark | null {
@@ -125,11 +125,11 @@ function FeePosition({ amount, benchmark, wide = false }: { amount: number; benc
 function PositionLegend() {
   return (
     <p className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-surface-200 px-4 py-2 text-[11px] text-ink-muted">
-      <span>vs. U.S. typical range:</span>
+      <span>vs. the U.S. middle half:</span>
       {(["below", "within", "above"] as const).map((position) => (
         <span key={position} className="inline-flex items-center gap-1">
           <span aria-hidden="true" className={`h-2 w-2 rounded-full ${POSITION_DOT[position]}`} />
-          {position === "within" ? "Typical" : position === "below" ? "Lower" : "Higher"}
+          {position === "within" ? "Inside" : position === "below" ? "Below" : "Above"}
         </span>
       ))}
     </p>
@@ -398,7 +398,7 @@ function SourceLink({ href, fallback = false }: { href: string | null; fallback?
       href={href}
       target="_blank"
       rel="noopener noreferrer"
-      className="inline-flex items-center gap-1 text-xs font-semibold text-brick hover:text-brick"
+      className="inline-flex items-center gap-1 text-xs font-semibold text-ink underline decoration-border underline-offset-2 hover:decoration-ink"
     >
       {fallback ? "Institution\u2019s schedule" : "Source"}
       <ExternalLink className="h-3 w-3" />

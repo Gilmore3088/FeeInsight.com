@@ -1,5 +1,5 @@
 import { DISTRICT_NAMES } from "@/lib/fed-districts";
-import { formatAmount } from "@/lib/format";
+import { formatFeeAmount } from "@/lib/format";
 import { STATE_NAMES } from "@/lib/us-states";
 import type { InstitutionPeerRank, PeerRankLine } from "@/lib/data-store/peer-fee-rank";
 
@@ -19,8 +19,17 @@ export function peerGroupLabel(rank: Pick<InstitutionPeerRank, "scope" | "state_
   return state ? `${state} ${kind}` : kind;
 }
 
-function share(count: number, total: number): string {
-  return `${total > 0 ? (count / total) * 100 : 0}%`;
+type Position = "below" | "within" | "above";
+
+const DOT: Record<Position, string> = { below: "bg-below-market", within: "bg-in-range", above: "bg-above-market" };
+
+/** Where it ranks, 0 (cheapest) to 1 (dearest), counting ties as half. */
+function rankShare(line: PeerRankLine): number {
+  return line.peers > 0 ? (line.lower + line.same / 2) / line.peers : 0.5;
+}
+
+function rankPosition(share: number): Position {
+  return share < 0.25 ? "below" : share > 0.75 ? "above" : "within";
 }
 
 /**
@@ -42,17 +51,23 @@ export function PeerRankTeaser({ rank }: { rank: InstitutionPeerRank }) {
           <li key={line.key}>
             <div className="flex items-baseline justify-between gap-3">
               <p className="text-[14px] text-ink">{FEE_LABELS[line.key]}</p>
-              <p className="font-mono text-[15px] font-semibold tabular-nums text-ink">{formatAmount(line.own)}</p>
+              <p className="font-mono text-[15px] font-semibold tabular-nums text-ink">{formatFeeAmount(line.own)}</p>
             </div>
-            <div className="mt-1.5 flex h-3 overflow-hidden rounded-full bg-surface-200" aria-hidden="true">
-              <span className="bg-below-market" style={{ width: share(line.lower, line.peers) }} />
-              <span className="bg-in-range" style={{ width: share(line.same, line.peers) }} />
-              <span className="bg-above-market" style={{ width: share(line.higher, line.peers) }} />
-            </div>
-            <p className="mt-1.5 text-[12px] text-ink-soft">
-              Of {line.peers} others that publish it, <span className="font-semibold text-below-market">{line.lower} lower</span>
-              {line.same > 0 ? `, ${line.same} the same` : ""} and{" "}
-              <span className="font-semibold text-above-market">{line.higher} higher</span>.
+            <span className="relative mt-2 block h-4" aria-hidden="true">
+              <span className="absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-control-border" />
+              <span className="absolute left-1/4 top-1/2 h-3 w-1/2 -translate-y-1/2 rounded-[3px] bg-brick-tint" />
+              <span
+                className={`absolute top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full ring-2 ring-surface-0 ${DOT[rankPosition(rankShare(line))]}`}
+                style={{ left: `${rankShare(line) * 100}%` }}
+              />
+            </span>
+            <p className="mt-1 flex justify-between text-[11px] text-ink-muted" aria-hidden="true">
+              <span>Lowest</span>
+              <span>Highest</span>
+            </p>
+            <p className="mt-1 text-[12px] text-ink-soft">
+              Of {line.peers} others that publish it, {line.lower} charge less{line.same > 0 ? `, ${line.same} the same` : ""} and{" "}
+              {line.higher} charge more.
             </p>
           </li>
         ))}

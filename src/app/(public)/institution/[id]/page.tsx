@@ -43,7 +43,7 @@ import {
 } from "./financial-history";
 import { FinancialProfileSection } from "./financial-profile-section";
 import { assetSizeToDollars, formatReportQuarter, selectFinancialsByQuarter } from "./financial-units";
-import { InstitutionOfferBand } from "./institution-metrics";
+import Link from "next/link";
 import { MIN_VERIFIED_FEES_FOR_OFFER } from "./profile-copy";
 import {
   buildLocationParts,
@@ -215,15 +215,20 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
       p75: entry.p75_amount,
     };
   }
-  // Home-state medians for the second comparison line, under the same "enough institutions" rule.
+  // Home-state medians for its own charter (Texas banks, Florida credit unions), under the same
+  // "enough institutions" rule, so the label names exactly the market the numbers come from.
+  const kind = inst.charter_type === "credit_union" ? "credit union" : "bank";
   const stateIndex =
     verifiedFees.length > 0 && inst.state_code
-      ? await getPeerIndexCached({ state_code: inst.state_code }).catch(fallbackTo("state index", []))
+      ? await getPeerIndexCached({ state_code: inst.state_code, charter_type: inst.charter_type }).catch(
+          fallbackTo("state index", []),
+        )
       : [];
+  const stateMarket = inst.state_code && STATE_NAMES[inst.state_code] ? `${STATE_NAMES[inst.state_code]} ${kind}` : null;
   const stateMedians: StateMedians | undefined =
     stateIndex.length > 0 && inst.state_code && STATE_NAMES[inst.state_code]
       ? {
-          place: STATE_NAMES[inst.state_code],
+          place: `${STATE_NAMES[inst.state_code]} ${kind}`,
           medians: new Map(
             stateIndex
               .filter((entry) => entry.maturity_tier !== "insufficient")
@@ -297,7 +302,6 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
     .filter((row) => row.state !== null || row.nation !== null)
     .slice(0, HEADLINE_ROWS_SHOWN);
   const stateHasBands = headlineRows.some((row) => row.state !== null);
-  const kind = inst.charter_type === "credit_union" ? "credit union" : "bank";
   const marketLabel = stateHasBands && stateName ? `${stateName} ${kind === "bank" ? "banks" : "credit unions"}` : "the U.S. market";
   const positionCounts = countPositions(displayFees, feeBenchmarks);
   const showHamiltonBand = !isPro && !thinProfile && headlineRows.length > 0;
@@ -340,7 +344,7 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
           <div className="space-y-10 sm:space-y-14">
             <MarketPosition
               rows={headlineRows}
-              stateLabel={stateHasBands ? stateName : null}
+              stateLabel={stateHasBands ? stateMarket : null}
               stateCode={stateHasBands ? inst.state_code : null}
               kind={kind}
             />
@@ -403,13 +407,9 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
 
         <div className="mx-auto max-w-6xl space-y-10 px-4 py-10 sm:space-y-14 sm:px-6 sm:py-14">
           {isPro && !thinProfile && (
-            <InstitutionOfferBand
-              institutionName={inst.institution_name}
-              reportOfferHref={links.reportOfferHref}
-              plansHref={links.plansHref}
-              correctSourceHref={links.correctSourceHref}
-              isPro
-            />
+            <Link href={links.analyzeHref} className="fi-btn fi-btn-primary">
+              Open {inst.institution_name} in Hamilton
+            </Link>
           )}
 
           {(isPro
