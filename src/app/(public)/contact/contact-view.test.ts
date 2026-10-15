@@ -40,7 +40,7 @@ function report(lines: ReportLine[], ready = true): MarketReport {
 describe("contact Hamilton screen", () => {
   it("keeps the first comparable lines the institution publishes, up to four", () => {
     const lines = [line("a", 30), line("b", null), line("c", 3, false), line("d", 25), line("e", 20), line("f", 22), line("g", 21)];
-    const screen = hamiltonScreen(report(lines))!;
+    const screen = hamiltonScreen(report(lines), 323)!;
     expect(screen.institution).toBe("Capital City Bank");
     expect(screen.competitors).toBe(18);
     expect(screen.lines.map((l) => l.key)).toEqual(["a", "d", "e", "f"]);
@@ -48,14 +48,24 @@ describe("contact Hamilton screen", () => {
   });
 
   it("shows nothing when the sample is offline, not ready, or has nothing to compare", () => {
-    expect(hamiltonScreen(null)).toBeNull();
-    expect(hamiltonScreen(report([line("a", 30)], false))).toBeNull();
-    expect(hamiltonScreen(report([line("a", null)]))).toBeNull();
+    expect(hamiltonScreen(null, 323)).toBeNull();
+    expect(hamiltonScreen(report([line("a", 30)], false), 323)).toBeNull();
+    expect(hamiltonScreen(report([line("a", null)]), 323)).toBeNull();
+  });
+
+  it("shows only the approved demo bank, never a fallback sample", () => {
+    expect(hamiltonScreen(report([line("a", 30)]), 999)).toBeNull();
   });
 
   it("widens the axis so the dot fits", () => {
     const x = screenScale({ own: 50, p25: 20, p75: 30 });
     expect(x(20)).toBeGreaterThan(0);
     expect(x(50)).toBeLessThan(100);
+  });
+
+  it("keeps a $0 fee on the axis", () => {
+    const x = screenScale({ own: 0, p25: 20, p75: 30 });
+    expect(x(0)).toBeGreaterThanOrEqual(0);
+    expect(x(0)).toBeLessThan(x(20));
   });
 });

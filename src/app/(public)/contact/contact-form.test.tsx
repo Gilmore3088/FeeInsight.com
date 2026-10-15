@@ -1,10 +1,11 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import ContactPage from "./page";
 import { ContactForm } from "./contact-form";
 
 vi.mock("@/lib/marketing-touch", () => ({ readFirstTouch: () => null }));
-vi.mock("@/lib/custom-report/sample-report", () => ({ loadSampleReport: async () => null }));
+const loadSampleReport = vi.fn(async (): Promise<unknown> => null);
+vi.mock("@/lib/custom-report/sample-report", () => ({ DEMO_SAMPLE_INSTITUTION_ID: 323, loadSampleReport: () => loadSampleReport() }));
 
 async function renderPage(source?: string) {
   const params = Promise.resolve(source ? { source } : {});
@@ -19,7 +20,7 @@ describe("/contact", () => {
     await renderPage("demo");
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Ask for a Hamilton demo");
     expect(document.body.textContent).toContain(
-      "We walk you through Hamilton, the Fee Insight Pro workspace, using your own market. We reply within one business day to set a time.",
+      "We walk you through Hamilton, the Fee Insight Pro workspace, using your own market.",
     );
     const select = screen.getByLabelText("Inquiry type") as HTMLSelectElement;
     expect(select.selectedOptions[0].textContent).toBe("Hamilton demo");
@@ -68,15 +69,56 @@ describe("/contact", () => {
     expect(JSON.parse((fetchMock.mock.calls[0] as unknown as [string, RequestInit])[1].body as string).source).toBe("contact_demo");
     expect(screen.getByText("Request received")).toBeInTheDocument();
     expect(document.body.textContent).toContain("We'll reply within one business day to set a time.");
+    expect(document.activeElement).toBe(screen.getByText("Request received").parentElement);
     vi.unstubAllGlobals();
   });
 
   it("lists what happens next, following the option chosen", async () => {
     await renderPage("demo");
     expect(screen.getByRole("heading", { name: "What happens next" })).toBeInTheDocument();
-    expect(screen.getByText("We show Hamilton with your own institution and the competitors you name.")).toBeInTheDocument();
+    expect(screen.getByText("We walk you through Hamilton using your institution and its local market, where we have their published schedules.")).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("Inquiry type"), { target: { value: "general" } });
-    expect(screen.queryByText("We show Hamilton with your own institution and the competitors you name.")).toBeNull();
+    expect(screen.queryByText("We walk you through Hamilton using your institution and its local market, where we have their published schedules.")).toBeNull();
     expect(screen.getByText("We reply within one business day.")).toBeInTheDocument();
+  });
+
+  it("says what failed and where to write when the request fails", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("{}", { status: 500 })));
+    await act(async () => {
+      render(<ContactForm searchParamsPromise={Promise.resolve({})} />);
+    });
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Jane" } });
+    fireEvent.change(screen.getByLabelText("Work email"), { target: { value: "jane@example.com" } });
+    await act(async () => {
+      fireEvent.submit(screen.getByRole("button", { name: "Send message" }).closest("form")!);
+    });
+    expect(screen.getByRole("alert").textContent).toContain("Something went wrong.");
+    expect(screen.getByRole("alert").querySelector("a")?.getAttribute("href")).toMatch(/^mailto:/);
+    vi.unstubAllGlobals();
+  });
+
+  it("draws the Hamilton screen for the demo bank, and nothing when the sample fails", async () => {
+    const line = {
+      key: "od",
+      label: "Overdraft",
+      own: { amount: 35, fee_name: "od", source_url: null, updated_at: null, schedule_read_on: null, source_line: "od" },
+      peers: { n: 12, p25: 25, median: 30, p75: 33, min: 10, max: 40 },
+      comparable: true,
+      position: "above_market",
+      percentile: 90,
+      chargingLess: 9,
+      peerFigures: [],
+    };
+    loadSampleReport.mockResolvedValueOnce({
+      data: { subject: { institution_id: 323, institution_name: "Capital City Bank" } },
+      analysis: { readiness: { ready: true, competitorsWithData: 18 }, lines: [line] },
+    });
+    await renderPage("demo");
+    expect(screen.getByRole("figure", { name: "Hamilton fee position for Capital City Bank" })).toBeInTheDocument();
+    cleanup();
+    loadSampleReport.mockRejectedValueOnce(new Error("down"));
+    await renderPage("demo");
+    expect(screen.queryByRole("figure")).toBeNull();
+    expect(screen.getByRole("button", { name: "Ask for a demo" })).toBeInTheDocument();
   });
 });

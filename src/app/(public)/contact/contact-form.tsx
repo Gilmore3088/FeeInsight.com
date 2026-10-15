@@ -1,10 +1,10 @@
 "use client";
 
-import { useState, use, type ReactNode } from "react";
+import { useEffect, useRef, useState, use, type ReactNode } from "react";
 import { HoneypotField, honeypotValue } from "@/components/public/honeypot-field";
 import { LEAD_HONEYPOT_FIELD } from "@/lib/lead-capture";
 import { readFirstTouch } from "@/lib/marketing-touch";
-import { REPORT_OFFER, REPORT_PRICE_INLINE } from "@/lib/constants";
+import { CONTACT_EMAIL, REPORT_OFFER, REPORT_PRICE_INLINE } from "@/lib/constants";
 import { DEMO_REQUEST_NAV } from "@/components/nav-items";
 
 const INQUIRY_TYPES = [
@@ -54,6 +54,12 @@ export function ContactForm({ searchParamsPromise, headings, aside }: ContactFor
   const [inquiry, setInquiry] = useState(defaultSource);
   const [status, setStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
   const [confirmationSent, setConfirmationSent] = useState(false);
+  const successRef = useRef<HTMLDivElement>(null);
+
+  // The form unmounts on success; focus the confirmation so keyboard and screen reader users land on it.
+  useEffect(() => {
+    if (status === "success") successRef.current?.focus();
+  }, [status]);
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -102,7 +108,7 @@ export function ContactForm({ searchParamsPromise, headings, aside }: ContactFor
   ) : null;
 
   const success = (
-    <div className="rounded-2xl border border-border bg-surface-0 px-6 py-8 shadow-fi-1" role="status">
+    <div ref={successRef} tabIndex={-1} className="rounded-2xl border border-border bg-surface-0 px-6 py-8 shadow-fi-1 outline-none">
       <p className="text-[18px] font-semibold tracking-[-0.02em] text-ink">{isDemo ? "Request received" : "Message received"}</p>
       <p className="mt-2 text-[14px] text-ink-muted">
         {isDemo ? "We'll reply within one business day to set a time." : "We'll get back to you within one business day."}
@@ -112,13 +118,13 @@ export function ContactForm({ searchParamsPromise, headings, aside }: ContactFor
   );
 
   const nextSteps = heading ? (
-    <section aria-labelledby="next-heading">
+    <section aria-labelledby="next-heading" aria-live="polite">
       <h2 id="next-heading" className="text-[15px] font-semibold text-ink">
         What happens next
       </h2>
       <ol className="mt-3 space-y-3">
         {heading.steps.map((step, i) => (
-          <li key={step} className="flex gap-3 text-[14px] text-ink-soft">
+          <li key={i} className="flex gap-3 text-[14px] text-ink-soft">
             <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-ink text-[12px] font-semibold text-on-ink" aria-hidden="true">
               {i + 1}
             </span>
@@ -244,7 +250,11 @@ export function ContactForm({ searchParamsPromise, headings, aside }: ContactFor
 
       {status === "error" && (
         <p role="alert" className="text-[13px] text-brick">
-          Something went wrong. Please try again or email us directly.
+          Something went wrong. Please try again or email{" "}
+          <a href={`mailto:${CONTACT_EMAIL}`} className="font-medium underline">
+            {CONTACT_EMAIL}
+          </a>
+          .
         </p>
       )}
 

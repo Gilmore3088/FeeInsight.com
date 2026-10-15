@@ -23,11 +23,12 @@ export const SCREEN_LINES = 4;
 
 /**
  * The live sample report as Hamilton shows it: the first comparable lines the institution
- * publishes. Null when the sample is offline or has nothing to compare, so the page draws no
+ * publishes, for the approved demo bank only. Null when the sample is offline or has nothing to compare, so the page draws no
  * figure it can't source.
  */
-export function hamiltonScreen(report: MarketReport | null): HamiltonScreen | null {
-  if (!report || !report.analysis.readiness.ready) return null;
+export function hamiltonScreen(report: MarketReport | null, demoInstitutionId: number): HamiltonScreen | null {
+  // The sample can fall back to another bank; only the approved demo bank appears on this page.
+  if (!report || !report.analysis.readiness.ready || report.data.subject.institution_id !== demoInstitutionId) return null;
   const lines: ScreenLine[] = [];
   for (const l of report.analysis.lines) {
     if (lines.length === SCREEN_LINES) break;

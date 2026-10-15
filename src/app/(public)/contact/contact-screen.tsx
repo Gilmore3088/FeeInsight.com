@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { formatAmount } from "@/lib/format";
 import { screenScale, type HamiltonScreen } from "./contact-view";
 
@@ -8,12 +9,17 @@ const DOT = {
   free: "bg-below-market",
 } as const;
 
-const WORDS = { above_market: "above", in_market: "inside", below_market: "below", free: "free, below" } as const;
+const WORDS = {
+  above_market: "above the local middle half",
+  in_market: "inside the local middle half",
+  below_market: "below the local middle half",
+  free: "no fee, below the local middle half",
+} as const;
 
 /** A Hamilton window drawn from the live sample report: what a demo walks through. */
 export function ContactScreen({ screen }: { screen: HamiltonScreen }) {
   return (
-    <figure className="overflow-hidden rounded-2xl border border-border bg-surface-0 shadow-fi-2">
+    <figure aria-label={`Hamilton fee position for ${screen.institution}`} className="overflow-hidden rounded-2xl border border-border bg-surface-0 shadow-fi-2">
       <div className="flex items-center gap-1.5 border-b border-border bg-paper px-4 py-2.5" aria-hidden="true">
         <span className="h-2.5 w-2.5 rounded-full bg-surface-200" />
         <span className="h-2.5 w-2.5 rounded-full bg-surface-200" />
@@ -30,7 +36,7 @@ export function ContactScreen({ screen }: { screen: HamiltonScreen }) {
               <li key={l.key} className="grid grid-cols-[6.5rem_minmax(0,1fr)_3.5rem] items-center gap-3 py-2 text-[12px]">
                 <span className="leading-tight text-ink">
                   {l.label}
-                  <span className="sr-only">, {WORDS[l.position]} the local middle half</span>
+                  <span className="sr-only">, {WORDS[l.position]}</span>
                 </span>
                 <span className="relative h-4" aria-hidden="true">
                   <span className="absolute inset-x-0 top-1/2 border-t border-border" />
@@ -51,7 +57,10 @@ export function ContactScreen({ screen }: { screen: HamiltonScreen }) {
         </ol>
       </div>
       <figcaption className="border-t border-border px-4 py-2.5 text-[11px] text-ink-muted sm:px-5">
-        Live, from each bank&apos;s own published fee schedule. The shaded band is the local middle half.
+        Live, from each bank&apos;s own published fee schedule. The shaded band is the local middle half.{" "}
+        <Link href="/reports/sample-competitive-fee-position" className="font-medium text-ink underline decoration-border underline-offset-4 hover:decoration-ink">
+          See the full sample report, with a source for every fee
+        </Link>
       </figcaption>
     </figure>
   );

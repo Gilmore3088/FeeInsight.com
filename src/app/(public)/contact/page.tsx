@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { CONTACT_EMAIL, REPORT_OFFER, SITE_NAME } from "@/lib/constants";
 import { hamiltonFullName } from "@/lib/subscribe-reason";
-import { loadSampleReport } from "@/lib/custom-report/sample-report";
+import { DEMO_SAMPLE_INSTITUTION_ID, loadSampleReport } from "@/lib/custom-report/sample-report";
 import { ContactForm, type ContactHeadings } from "./contact-form";
 import { ContactScreen } from "./contact-screen";
 import { hamiltonScreen } from "./contact-view";
@@ -19,21 +19,21 @@ export const metadata: Metadata = {
 const HEADINGS: ContactHeadings = {
   demo: {
     title: "Ask for a Hamilton demo",
-    intro: `We walk you through ${hamiltonFullName(SITE_NAME)}, using your own market. We reply within one business day to set a time.`,
+    intro: `We walk you through ${hamiltonFullName(SITE_NAME)}, using your own market.`,
     steps: [
       "We reply within one business day to set a time.",
-      "We show Hamilton with your own institution and the competitors you name.",
+      "We walk you through Hamilton using your institution and its local market, where we have their published schedules.",
       "If it fits, you pick a Pro plan, monthly or annual.",
     ],
   },
   general: {
     title: "Get in touch",
     intro: "Reports, Pro seats, data licensing or anything else. We typically respond within one business day.",
-    steps: ["We reply within one business day.", "Fee questions come back with the bank's own schedule as the source."],
+    steps: ["We reply within one business day."],
   },
 };
 
-const SCREEN_DEADLINE_MS = 4_000;
+const SCREEN_DEADLINE_MS = 2_500;
 
 /** The live sample as a Hamilton screen; the page renders without it when the sample is slow or down. */
 async function loadScreen() {
@@ -42,7 +42,7 @@ async function loadScreen() {
     timer = setTimeout(() => resolve(null), SCREEN_DEADLINE_MS);
   });
   const screen = loadSampleReport()
-    .then(hamiltonScreen)
+    .then((report) => hamiltonScreen(report, DEMO_SAMPLE_INSTITUTION_ID))
     .catch(() => null);
   return Promise.race([screen, late]).finally(() => clearTimeout(timer));
 }
