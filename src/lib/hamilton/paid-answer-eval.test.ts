@@ -237,6 +237,36 @@ describe("Hamilton's paid answer eval (#1079)", () => {
     expect(result.results.find((r) => r.path === "simulate")!.correctness).toBeNull();
   });
 
+  it("fails a Simulate read's correctness when it states a p25 the live catalog no longer gives (#1414)", async () => {
+    evalMocks.answer.mockImplementation(async (id: number) => answered(id));
+    const input = simulateInputFor(overdraftResearch({ institutionId: 1001 }))!;
+    const p25 = input.distribution.p25_amount!;
+    // Every peer has moved up $0.37 since the free answer read them; the bank's own fee has not.
+    const moved: LiveReader = async (id, research) => {
+      const values = await live(id, research);
+      return values && { rows: values.rows.map((r, i) => (i === 0 ? r : { ...r, amount: Number(r.amount) + 0.37 })) };
+    };
+    // The read was given the old p25 (so form passes), but the live peers no longer give it.
+    const client = memoClient("Your overdraft fee is $32.", `A $${input.proposedFee.toFixed(2)} fee sits above the peer p25 of $${p25.toFixed(2)}. The question for management is notice.`);
+    const result = await runPaidAnswerEval({ db: db(3, ["memo", "memo", "written_answer"]).db, now, client, live: moved, agentRunId: 77 });
+    const read = result.results.find((r) => r.path === "simulate")!;
+    expect(read.status).toBe("written");
+    expect(read.correctness).toEqual([`figures that tie to no live catalog value: $${p25.toFixed(2)}`]);
+  });
+
+  it("gives the day's last sample to Simulate when one is still wanted (#1414)", async () => {
+    evalMocks.answer.mockImplementation(async (id: number) => answered(id));
+    const client = memoClient("Your overdraft fee is $32.");
+    const write = writtenWriter();
+    const day = db(4, ["memo", "memo", "memo", "memo"]);
+    const result = await runPaidAnswerEval({ db: day.db, now, client, live, agentRunId: 77, written: write });
+    expect(client.simulateCalls).toBe(1);
+    expect(client.calls).toBe(0);
+    expect(write.calls).toBe(0);
+    expect(day.state.paths.at(-1)).toBe("simulate");
+    expect(result.results).toHaveLength(1);
+  });
+
   it("picks the narrowest layer with a full band and tests its median, or $5 above a fee already at it", () => {
     const research = overdraftResearch({ institutionId: 1001 });
     const input = simulateInputFor(research)!;

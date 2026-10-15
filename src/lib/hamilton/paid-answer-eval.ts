@@ -31,7 +31,7 @@
 
 import { sql } from "@/lib/data-store/connection";
 import type { SqlTag } from "@/lib/agents/hamilton/studies/common";
-import { liveCatalogReader, reconcileMemoText, reconcileWrittenText, type LiveReader } from "./answer-correctness";
+import { liveCatalogReader, reconcileMemoText, reconcileSimulateText, reconcileWrittenText, type LiveReader } from "./answer-correctness";
 import { answer, EVAL_QUESTION_IDS, pickEvalInstitutions, pickProQuestions, summarizeCorrectness, type Answered, type CorrectnessSummary } from "./answer-eval";
 import { buildFeeResearchEvidence } from "./evidence-contract";
 import { writeStorylineMemo, type MemoClient } from "./memo";
@@ -269,15 +269,16 @@ async function simulateUp(
     return { ...sample, path: "simulate", status: "unavailable", failures: [result.reason], correctness: null, figures: 0 };
   }
   const values = await live(candidate.institutionId, answered.research, answered.schedule).catch(() => null);
-  const tied = reconcileMemoText({
+  const tied = reconcileSimulateText({
     question: candidate.question,
     response: answered.response,
     research: answered.research,
     schedule: answered.schedule,
     live: values,
     text: result.text,
-    // The tested price is the reader's own input, not a published value.
-    extra: [input.proposedFee, Math.abs(input.proposedFee - input.currentFee)],
+    // The tested price is the reader's own input: an anchor, so gaps from it tie too. The current fee is
+    // not: it must still be the bank's live value.
+    readerAnchors: [input.proposedFee],
   });
   return {
     ...sample,

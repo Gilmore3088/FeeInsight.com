@@ -106,8 +106,9 @@ Hamilton supports the decision; it does not make it.
   the median of the first peer layer with a full band, in the order local, state, charter and size,
   Fed district, national (or $5 above a fee already there). Form
   is the shared evidence gate (`checkAnswerEvidence`: every figure traces to the numbers given, no
-  advice); correctness, for a read that passed form and states a figure, is `reconcileMemoText` over
-  the same live rows, with the tested price and change as the reader's own numbers. Reservations
+  advice); correctness, for a read that passed form and states a figure, is `reconcileSimulateText` over
+  the same live rows: the read's own figures only, with the tested price as an anchor (so a gap from
+  it ties) and the bank's current fee held to its live row (#1414). Reservations
   carry their path and are taken under the day's advisory lock, so a day holds at most one Simulate,
   one written answer and one report, and never more than five samples, even when two runs overlap
   (#1414, #1418).
