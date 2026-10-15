@@ -45,6 +45,44 @@ describe("Knox audience suggestion from context (#1059)", () => {
     expect(hasBusinessFees(["Official Checks", "Credit Union Business: No Charge", "Member Request: $5 / Check"])).toBe(false);
   });
 
+  // Review of #1453: "credit union business" is the credit union's own business only when no
+  // account word follows; "Credit Union Business Accounts" is business-account wording.
+  it.each([
+    "Connex Credit Union Business Accounts Fee Schedule",
+    "APPLIES TO ALL CREDIT UNION BUSINESS ACCOUNTS",
+    "Credit Union Business Checking Monthly Fee",
+    ...["account", "accounts", "checking", "savings", "banking", "membership", "visa", "services", "loan", "loans", "card", "cards", "mobile", "online"].map(
+      (word) => `Credit Union Business ${word} fee`,
+    ),
+  ])("keeps business-account wording after \"credit union business\" business: %s", (title) => {
+    expect(suggest("https://www.example.org/disclosures/schedule.pdf", "Fees\nStop Payment | $30.00", title)).toMatchObject({
+      audience: "business",
+      source: "fee_name",
+    });
+    const text = [title, "Stop Payment | $30.00", "Statement Copy | $5.00"].join("\n");
+    expect(suggest("https://www.example.org/disclosures/schedule.pdf", text, "Statement Copy", 5)?.audience).not.toBe("consumer");
+  });
+
+  it("still reads the credit union's own business, and a shopping day, as no audience", () => {
+    expect(suggest("https://www.example.org/fees.pdf", "Fees\nStop Payment | $30.00", "Credit Union Business: No Charge", 0)?.audience).not.toBe("business");
+    expect(suggest("https://www.example.org/fees.pdf", "Fees\nStop Payment | $30.00", "Credit Union Business Only", 0)?.audience).not.toBe("business");
+    expect(hasBusinessFees(["Fee Schedule", "Small Business Saturday", "Shop local and save $5 on each purchase", "Stop Payment | $30.00"])).toBe(false);
+  });
+
+  it("turns rule B off only for a business heading between the sentence and the fee", () => {
+    const consumer = ["These fees apply to consumer accounts.", "Statement Copy | $5.00", "Stop Payment | $30.00"];
+    // A footer or report heading below the fee heads other text, not the fee.
+    for (const footer of ["Business Credit Cards:", "Small Business Loans"]) {
+      expect(suggest(null, [...consumer, footer, "Apply online today."].join("\n"), "Statement Copy", 5)).toMatchObject({
+        audience: "consumer",
+        source: "default_general_schedule",
+      });
+    }
+    // Between the sentence and the fee, it may head the fee's section.
+    const between = ["These fees apply to consumer accounts.", "Small Business", "Ask about our accounts.", "Statement Copy | $5.00"].join("\n");
+    expect(suggest(null, between, "Statement Copy", 5)?.audience).not.toBe("consumer");
+  });
+
   it("reads a business price inside a long line", () => {
     const long = `Overdraft fees are explained below in detail for every account type we offer at the bank. ${"Please read carefully. ".repeat(3)}For business accounts overdrawn for 4 or more consecutive days, we will charge an additional $5.00 per day.`;
     expect(long.length).toBeGreaterThan(160);

@@ -51,7 +51,7 @@ const TITLE_CHARS = 300;
  * "non-business" or "non commercial" (a URL path's hyphens become spaces) with any slash before it,
  * and "non-personal checks" or "non-consumer information" (products, as main read them).
  */
-const NOT_AN_AUDIENCE = /(?:\/\s*)?\bnon[- ]?(?:personal|consumer)\s+(?:checks?|identification|information|data)\b|\bcorporate(?:(?:\s*[/&\-–—]\s*|\s+(?:or|and)\s+)(?:cashier[’']?s?|official|teller[’']?s?|treasurer[’']?s?|bank|member|personal|money\s+orders?))*\s+(?:(?:bank|official|teller|cashier[’']?s?|treasurer[’']?s?|share)\s+)?(?:checks?|drafts?)\b(?!\s+accounts?\b)|\bcorporate\s+money\s+orders?\b(?!\s+accounts?\b)|\bcorporate\s+(?:bonds?|securities|and municipal|one\b(?![-‐–’'])(?!\s+cards?\b)|stop\s+payments?\b)|\b(?:on[- ]us|teller[’']?s?|cashier[’']?s?|treasurer[’']?s?|official)\s*(?:[/&]|\bor\b|\band\b)\s*corporate\b(?:\s+(?:checks?|drafts?)\b)?|\b(?:personal|member)\s*(?:[/&]|\bor\b|\band\b)\s*corporate\s+(?:(?:share\s+)?(?:checks?|drafts?))\b(?!\s+accounts?\b)|(?<=\b(?:checks?|drafts?)\b[^|\n$]{0,15})\b(?:personal|member)\s*(?:[/&]|\bor\b|\band\b)\s*corporate\b|\bpersonal\s+(?:checks?|identification|information)\b|\bbusiness\s+(?:days?|hours?|systems)\b|\b(?:close of|regular|normal|legitimate|conduct(?:ing)?|doing)\s+business\b|\bcredit union business(?: only)?\b|(?:\/\s*)?\bnon[- ]?(?:commercial|business)\b|\b(?:commercial|business|consumer|personal)(?:\s+(?:state|national|federal|savings|community|county|city|first))*\s+(?:bank|savings bank|credit union|trust company|savings and loan)\b/gi;
+const NOT_AN_AUDIENCE = /(?:\/\s*)?\bnon[- ]?(?:personal|consumer)\s+(?:checks?|identification|information|data)\b|\bcorporate(?:(?:\s*[/&\-–—]\s*|\s+(?:or|and)\s+)(?:cashier[’']?s?|official|teller[’']?s?|treasurer[’']?s?|bank|member|personal|money\s+orders?))*\s+(?:(?:bank|official|teller|cashier[’']?s?|treasurer[’']?s?|share)\s+)?(?:checks?|drafts?)\b(?!\s+accounts?\b)|\bcorporate\s+money\s+orders?\b(?!\s+accounts?\b)|\bcorporate\s+(?:bonds?|securities|and municipal|one\b(?![-‐–’'])(?!\s+cards?\b)|stop\s+payments?\b)|\b(?:on[- ]us|teller[’']?s?|cashier[’']?s?|treasurer[’']?s?|official)\s*(?:[/&]|\bor\b|\band\b)\s*corporate\b(?:\s+(?:checks?|drafts?)\b)?|\b(?:personal|member)\s*(?:[/&]|\bor\b|\band\b)\s*corporate\s+(?:(?:share\s+)?(?:checks?|drafts?))\b(?!\s+accounts?\b)|(?<=\b(?:checks?|drafts?)\b[^|\n$]{0,15})\b(?:personal|member)\s*(?:[/&]|\bor\b|\band\b)\s*corporate\b|\bpersonal\s+(?:checks?|identification|information)\b|\bbusiness\s+(?:days?|hours?|systems)\b|\b(?:close of|regular|normal|legitimate|conduct(?:ing)?|doing)\s+business\b|\bcredit union business(?: only)?\b(?!\s+(?:accounts?|checking|savings|banking|membership|visa|services|loans?|cards?|mobile|online)\b)|\bsmall business saturday\b|(?:\/\s*)?\bnon[- ]?(?:commercial|business)\b|\b(?:commercial|business|consumer|personal)(?:\s+(?:state|national|federal|savings|community|county|city|first))*\s+(?:bank|savings bank|credit union|trust company|savings and loan)\b/gi;
 /**
  * "Non-Personal Accounts" and "Non-Consumer" are a bank's words for business accounts: read as
  * "business", with any slash before them ("Business/Non-Personal Accounts" stays a heading).
@@ -313,12 +313,14 @@ export function suggestAudience(input: {
     // So does one under an unclear section, except a consumer sentence with no heading above it
     // in a schedule that prices nothing for businesses: it takes the consumer default below,
     // which it would get with no sentence at all (#1059 gate (a)).
-    // Not when any heading below the sentence names business ("Commercial Clients", "Small
-    // Business", a bare "Business", "For Business Owners"): its section may hold the fee (review of
-    // #1445).
+    // Not when a heading between the sentence and the fee names business ("Commercial Clients",
+    // "Small Business", a bare "Business", "For Business Owners"): its section may hold the fee
+    // (review of #1445). A business heading below the fee heads other fees, not this one: a footer
+    // "Business Credit Cards:" or a report's "Small Business Loans" leaves the sentence standing
+    // (review of #1453).
     const consumerSentenceOnly =
       section && "sentence" in section && section.sentence === "consumer" && businessLine < 0 &&
-      !businessHeadingBelow(lines, section.sentenceIndex ?? 0);
+      !businessHeadingBetween(lines, section.sentenceIndex ?? 0, feeIndex);
     if (section && ("columns" in section || "ambiguous" in section) && !consumerSentenceOnly) return null;
     const heading = section && "audience" in section ? section : null;
     // A heading for all accounts in a schedule that also prices business items lists the fee for
@@ -447,9 +449,12 @@ function businessWordHeading(line: string): boolean {
   return BUSINESS_WORDS.test(neutral(trimmed)) && trimmed.split(/\s+/).length <= BUSINESS_HEADING_MAX_WORDS && !NOT_A_SECTION.test(trimmed);
 }
 
-/** Whether a heading below `from` names business (any wording), so a sentence above it heads no section of its own. */
-function businessHeadingBelow(lines: string[], from: number): boolean {
-  for (let index = from + 1; index < lines.length; index += 1) {
+/**
+ * Whether a heading after `from` and above the fee's line `to` names business (any wording), so the
+ * sentence at `from` does not head the fee's section.
+ */
+function businessHeadingBetween(lines: string[], from: number, to: number): boolean {
+  for (let index = from + 1; index < Math.min(lines.length, to); index += 1) {
     if (isHeading(lines[index]) && businessWordHeading(lines[index])) return true;
   }
   return false;
