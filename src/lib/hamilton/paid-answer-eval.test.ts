@@ -187,6 +187,8 @@ describe("Hamilton's paid answer eval (#1079)", () => {
     const result = await runPaidAnswerEval({ db: db(0).db, now, client, live, agentRunId: 77 });
     expect(result.paths[1]).toMatchObject({ path: "simulate", answers: 1, passed: 0 });
     expect(result.results.find((r) => r.path === "simulate")!.failures.join(" ")).toMatch(/not in DATA/);
+    // A read that fails form is not scored for correctness, as with a withheld memo.
+    expect(result.results.find((r) => r.path === "simulate")!.correctness).toBeNull();
   });
 
   it("picks the narrowest layer with a full band and tests its median, or $5 above a fee already at it", () => {

@@ -238,7 +238,9 @@ function narrateFinished(
       if (typeof detail.note === "string") return detail.note;
       const memo = (Array.isArray(detail.paths) ? detail.paths[0] : null) as Detail | null;
       const correctness = (memo?.correctness ?? null) as Detail | null;
-      return `Wrote ${memo ? n(memo, "passed") : 0} of ${count(memo ? n(memo, "answers") : 0, "paid memo")}${correctness ? `; ${n(correctness, "correct")} of ${n(correctness, "checked")} checked tie to the live catalog` : ""}.`;
+      const simulate = (Array.isArray(detail.paths) ? detail.paths.find((p: Detail) => p?.path === "simulate") : null) as Detail | null;
+      const simulateLine = simulate && n(simulate, "sampled") > 0 ? ` Simulate read: ${n(simulate, "passed")} of ${n(simulate, "answers")} passed.` : "";
+      return `Wrote ${memo ? n(memo, "passed") : 0} of ${count(memo ? n(memo, "answers") : 0, "paid memo")}${correctness ? `; ${n(correctness, "correct")} of ${n(correctness, "checked")} checked tie to the live catalog` : ""}.${simulateLine}`;
     }
     case "schedule-check": {
       const missed = n(detail, "missed") + n(detail, "failed");

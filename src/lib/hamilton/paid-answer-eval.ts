@@ -12,8 +12,8 @@
  *   every dollar figure in the memo ties to a live value (`reconcileMemoText`).
  *
  * Paid and capped: it runs as a provider step (`hamilton-paid-answer-eval`), so the global
- * provider stop and the budget policies hold it, and each model call still passes the memo's own
- * budget line (`api.hamilton.ask.memo`). Each sample is reserved before its first model call: one
+ * provider stop and the budget policies hold it, and each model call still passes its own path's
+ * budget line (`api.hamilton.ask.memo` for memos, `api.hamilton.simulate` for the Simulate read). Each sample is reserved before its first model call: one
  * `paid_eval.sample_reserved` event on the run, written outside the step's transaction by a
  * conditional insert that refuses once today holds five. A blocked call, a lost usage row or a
  * killed function still leaves the reservation, so a retried or repeated run never goes past five.
@@ -201,7 +201,8 @@ export function simulateInputFor(research: FeeResearch): SimulateInput | null {
     currentFee: research.current,
     proposedFee: Math.round(tested * 100) / 100,
     distribution: { p25_amount: layer.p25, median_amount: layer.median, p75_amount: layer.p75, institution_count: layer.n, peer_label: layer.label },
-    institution: { institution_name: research.institutionName },
+    // The research carries no charter, so the institution line is left out rather than guessed.
+    institution: null,
   };
 }
 
@@ -237,7 +238,8 @@ async function simulateUp(
     path: "simulate",
     status: result.check.passed ? "written" : "withheld",
     failures: result.check.problems,
-    correctness: tied.checked ? tied.failures : null,
+    // Like a withheld memo, a read that fails form is not scored for correctness; nor is one with no figure to tie.
+    correctness: result.check.passed && tied.checked && tied.figures > 0 ? tied.failures : null,
     figures: tied.figures,
   };
 }

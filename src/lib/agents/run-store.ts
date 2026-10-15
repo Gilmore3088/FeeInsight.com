@@ -329,14 +329,16 @@ async function executeAgenticStep(
     };
   }
 
-  // Hamilton's paid answer eval (#1079): a provider step, capped at five memos a day.
+  // Hamilton's paid answer eval (#1079): a provider step, capped at five paid samples a day.
   if (step.stepKey === "hamilton-paid-answer-eval") {
     const { runPaidAnswerEval } = await import("@/lib/hamilton/paid-answer-eval");
     const result = await runPaidAnswerEval({ agentRunId: run.id });
     const memo = result.paths[0];
+    const simulate = result.paths.find((p) => p.path === "simulate");
+    const simulateLine = simulate && simulate.sampled > 0 ? ` Simulate: ${simulate.passed} of ${simulate.answers} passed; ${simulate.correctness.correct} of ${simulate.correctness.checked} checked tie.` : "";
     return {
       status: "completed",
-      summary: result.note ?? `Wrote ${memo.passed} of ${memo.answers} paid memos (cap ${result.cap} a day, ${result.usedBefore} used before); ${memo.correctness.correct} of ${memo.correctness.checked} checked tie to the live catalog.`,
+      summary: result.note ?? `Wrote ${memo.passed} of ${memo.answers} paid memos (cap ${result.cap} a day, ${result.usedBefore} used before); ${memo.correctness.correct} of ${memo.correctness.checked} checked tie to the live catalog.${simulateLine}`,
       detail: { ...result },
     };
   }

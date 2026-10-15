@@ -98,14 +98,17 @@ Hamilton supports the decision; it does not make it.
   `published_fee_catalog` rows and every dollar figure in the memo ties to a live value. Each
   sample is reserved before its first model call (a `paid_eval.sample_reserved` run event, a
   conditional insert outside the step transaction that refuses past five today), so blocked calls,
-  lost usage rows and killed functions still count; the provider stop and the memo's budget line
-  (`api.hamilton.ask.memo`) hold every call.
+  lost usage rows and killed functions still count; the provider stop and each path's budget line
+  (`api.hamilton.ask.memo`, `api.hamilton.simulate`) hold every call.
   One of the five (when unused today) is a Simulate read (`hamilton/simulate-read.ts`, the same
   prompt the `/api/hamilton/simulate` route streams): the first sampled answer's fee is tested at
-  the median of its narrowest peer layer with a full band (or $5 above a fee already there). Form
+  the median of the first peer layer with a full band, in the order local, state, charter and size,
+  Fed district, national (or $5 above a fee already there). Form
   is the shared evidence gate (`checkAnswerEvidence`: every figure traces to the numbers given, no
-  advice); correctness is `reconcileMemoText` over the same live rows, with the tested price and
-  change as the reader's own numbers. Reservations carry their path, so the day holds one Simulate.
+  advice); correctness, for a read that passed form and states a figure, is `reconcileMemoText` over
+  the same live rows, with the tested price and change as the reader's own numbers. Reservations
+  carry their path, so a day normally holds one Simulate (two runs started together can each take
+  one; the five-a-day total still holds).
   The goal scorecard reads the latest run's "Memo (paid)" and "Simulate (paid)" rows. The written
   answer and report paths are not sampled yet.
   It asks 17 questions (q26, the NSF regulation question, since #1079; q31, fee income against
