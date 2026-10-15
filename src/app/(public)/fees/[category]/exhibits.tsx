@@ -3,7 +3,7 @@ import { FeeRange } from "@/brand/components";
 import { formatFeeAmount } from "@/lib/format";
 import type { MarketDot, NationalBand, Position } from "./category-view";
 
-const money = (n: number) => formatFeeAmount(n) ?? `$${n.toFixed(2)}`;
+export const money = (n: number) => formatFeeAmount(n) ?? `$${n.toFixed(2)}`;
 
 /** The upper end of a shared axis: just past the highest figure, on a round number. */
 export function axisTop(...values: number[]): number {
@@ -12,7 +12,7 @@ export function axisTop(...values: number[]): number {
   return Math.ceil((top * 1.05) / step) * step;
 }
 
-const DOT: Record<Position, string> = {
+export const DOT: Record<Position, string> = {
   below: "bg-below-market",
   within: "bg-in-range",
   above: "bg-above-market",
@@ -59,38 +59,72 @@ export function HeroRange({ band, label }: { band: NationalBand; label: string }
 }
 
 /**
- * Markets as dots on one axis, each read against the national middle half drawn behind it.
- * Used for Fed districts, banks against credit unions, and (for Pro) asset size and state.
+ * The shared axis for a plot of market medians: the national middle half and every market's
+ * median, with a little room, so a few dollars between markets reads as distance rather than
+ * one pile of dots. Returns the left offset of a value, as a CSS percentage.
  */
-export function MarketDots({ dots, band, ariaLabel }: { dots: MarketDot[]; band: NationalBand; ariaLabel: string }) {
-  // The axis spans the national middle half and every market's median, with a little room, so
-  // a few dollars between markets reads as distance rather than one pile of dots.
+export function marketScale(dots: MarketDot[], band: NationalBand): (v: number) => string {
   const values = [band.p25, band.p75, ...dots.map((d) => d.median)];
   const span = Math.max(...values) - Math.min(...values) || 1;
   const lo = Math.max(0, Math.min(...values) - span * 0.25);
   const hi = Math.max(...values) + span * 0.25;
-  const pct = (v: number) => `${((Math.min(Math.max(v, lo), hi) - lo) / (hi - lo)) * 100}%`;
+  return (v: number) => `${((Math.min(Math.max(v, lo), hi) - lo) / (hi - lo)) * 100}%`;
+}
+
+/** One market's row: its name and size, its dot on the national band, and a figure at the right. */
+export function MarketRowBody({
+  dot,
+  band,
+  pct,
+  figure,
+  note,
+}: {
+  dot: MarketDot;
+  band: NationalBand;
+  pct: (v: number) => string;
+  figure: string;
+  note?: string;
+}) {
+  return (
+    <>
+      <span className="min-w-0 leading-tight text-ink">
+        {dot.label}
+        <span className="block text-[11px] text-ink-muted">{dot.institutions.toLocaleString("en-US")} institutions</span>
+      </span>
+      <span className="relative h-5" aria-hidden="true">
+        <span className="absolute inset-x-0 top-1/2 border-t border-border" />
+        <span
+          className="absolute top-1/2 h-2.5 -translate-y-1/2 rounded-full bg-brick-tint"
+          style={{ left: pct(band.p25), width: `calc(${pct(band.p75)} - ${pct(band.p25)})` }}
+        />
+        <span className="absolute top-0 h-5 w-[2px] bg-ink/60" style={{ left: pct(band.median) }} />
+        <span
+          className={`absolute top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full ring-2 ring-surface-0 ${DOT[dot.position]}`}
+          style={{ left: pct(dot.median) }}
+        />
+      </span>
+      <span className="text-right leading-tight">
+        <span className="block font-mono text-[14px] font-semibold tabular-nums text-ink">{figure}</span>
+        {note && <span className="block text-[11px] text-ink-muted">{note}</span>}
+      </span>
+    </>
+  );
+}
+
+export const MARKET_ROW_GRID =
+  "grid grid-cols-[6.5rem_minmax(0,1fr)_3.5rem] items-center gap-3 py-1.5 text-[14px] sm:grid-cols-[10rem_minmax(0,1fr)_4.5rem]";
+
+/**
+ * Markets as dots on one axis, each read against the national middle half drawn behind it.
+ * The static form, for rows nothing on the page reacts to.
+ */
+export function MarketDots({ dots, band, ariaLabel }: { dots: MarketDot[]; band: NationalBand; ariaLabel: string }) {
+  const pct = marketScale(dots, band);
   return (
     <ol aria-label={ariaLabel} className="divide-y divide-border">
       {dots.map((d) => (
-        <li key={d.key} className="grid grid-cols-[6.5rem_minmax(0,1fr)_3.5rem] items-center gap-3 py-1.5 text-[14px] sm:grid-cols-[10rem_minmax(0,1fr)_4.5rem]">
-          <span className="min-w-0 leading-tight text-ink">
-            {d.label}
-            <span className="block text-[11px] text-ink-muted">{d.institutions.toLocaleString("en-US")} institutions</span>
-          </span>
-          <span className="relative h-5" aria-hidden="true">
-            <span className="absolute inset-x-0 top-1/2 border-t border-border" />
-            <span
-              className="absolute top-1/2 h-2.5 -translate-y-1/2 rounded-full bg-brick-tint"
-              style={{ left: pct(band.p25), width: `calc(${pct(band.p75)} - ${pct(band.p25)})` }}
-            />
-            <span className="absolute top-0 h-5 w-[2px] bg-ink/60" style={{ left: pct(band.median) }} />
-            <span
-              className={`absolute top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full ring-2 ring-surface-0 ${DOT[d.position]}`}
-              style={{ left: pct(d.median) }}
-            />
-          </span>
-          <span className="text-right font-mono text-[14px] font-semibold tabular-nums text-ink">{money(d.median)}</span>
+        <li key={d.key} className={MARKET_ROW_GRID}>
+          <MarketRowBody dot={d} band={band} pct={pct} figure={money(d.median)} />
         </li>
       ))}
     </ol>

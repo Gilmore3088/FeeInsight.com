@@ -13,6 +13,7 @@ import { loadGuidesForCategory } from "@/lib/guides/source";
 import { formatFeeAmount } from "@/lib/format";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
 import { DistributionChart } from "@/components/public/distribution-chart";
+import type { InstitutionPoint } from "@/lib/data-store/fees";
 import { SITE_NAME, SITE_URL } from "@/lib/constants";
 import { getCurrentUser } from "@/lib/auth";
 import { canAccessPremium } from "@/lib/access";
@@ -41,6 +42,7 @@ import {
   stateLabel,
   tierLabel,
 } from "./category-view";
+import { ExplorerChart, ExplorerMarkets, FeeExplorer, type ExplorerPoint } from "./fee-explorer";
 import { DotLegend, HeroRange, LockedRows, MarketDots, RelatedRanges, VideoSlot } from "./exhibits";
 
 interface PageProps {
@@ -78,6 +80,20 @@ function pageSummary(category: string, fees: FeeInstance[], snapshotRow: FeeCate
     cu_median_amount: byCharter.get("credit_union")?.median_amount ?? null,
     unstated_audience_institution_count: snapshotRow?.unstated_audience_institution_count ?? 0,
   };
+}
+
+/**
+ * What the explorer needs per institution: its value and the markets it sits in, keyed the
+ * way the market lists key their rows. Size group and state go only to Pro, so a free page
+ * never carries the breakdowns Hamilton sells.
+ */
+function explorerPoints(points: InstitutionPoint[] | undefined, isPro: boolean): ExplorerPoint[] {
+  return (points ?? []).map((p) => ({
+    v: p.value,
+    district: p.fed_district === null ? null : `District ${p.fed_district}`,
+    charter: p.charter_type === "bank" ? "Bank" : p.charter_type === "credit_union" ? "Credit Union" : null,
+    ...(isPro ? { tier: p.asset_size_tier, state: p.state_code } : {}),
+  }));
 }
 
 /** Thousands-separated dollars ("$5,000", "$2.50"); "-" when unavailable. */
@@ -163,6 +179,9 @@ export default async function FeeCategoryPage({ params }: PageProps) {
   const previewTier = isPro ? null : ([...tiers].sort((a, b) => b.institutions - a.institutions)[0] ?? null);
   const lockedTiers = previewTier ? tiers.filter((t) => t.key !== previewTier.key) : [];
   const headline = districtHeadline(districts);
+  // A detail entry cached before the points existed draws the static chart until it refreshes.
+  const points = explorerPoints(detail.institution_points, isPro);
+  const interactive = points.length > 0;
   const related = relatedBands(snapshot.categories, family ? (FEE_FAMILIES[family] ?? []).filter((c) => c !== category) : []);
 
   return (
@@ -197,11 +216,17 @@ export default async function FeeCategoryPage({ params }: PageProps) {
               {plainName} fee
             </h1>
             {median !== null ? (
-              <p className="mt-3 leading-tight">
-                <span className="font-mono text-[44px] font-semibold tabular-nums text-ink">{money(median)}</span>
-                <UnstatedAudienceMark show={unstatedAudience} />
-                <span className="mt-1 block text-[15px] text-ink-muted">
-                  The median across {institutionCount.toLocaleString("en-US")} banks and credit unions
+              <p className="mt-2 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                <span className="font-mono text-[44px] font-semibold leading-none tabular-nums tracking-[-0.02em] text-ink sm:text-[52px]">
+                  {money(median)}
+                  {unstatedAudience && (
+                    <sup className="ml-0.5 align-top font-sans text-[20px] font-medium leading-none text-ink-muted">
+                      <UnstatedAudienceMark />
+                    </sup>
+                  )}
+                </span>
+                <span className="text-[15px] text-ink-muted">
+                  median across {institutionCount.toLocaleString("en-US")} banks and credit unions
                 </span>
               </p>
             ) : (
@@ -228,18 +253,24 @@ export default async function FeeCategoryPage({ params }: PageProps) {
           </section>
         )}
 
-        {/* 2. Distribution: one bar per price band, one institution per value. */}
+        {/* 2-5 share one selection: a bar or a market tapped anywhere redraws the others. */}
+        <FeeExplorer points={points}>
+          {/* 2. Distribution: one bar per price band, one institution per value. */}
         {institutionValues.length > 0 && (
           <section aria-labelledby="distribution-heading" className="space-y-3">
             <h2 id="distribution-heading" className="text-[20px] font-semibold tracking-[-0.02em] text-ink sm:text-[24px]">
               What institutions charge
             </h2>
-            <div className="rounded-2xl border border-border bg-surface-0 p-4 shadow-fi-1 sm:p-6">
-              {/* The chart's type scales with its width, so it stops growing past a readable size. */}
-              <div className="mx-auto max-w-[640px]">
-                <DistributionChart values={institutionValues} median={median} />
+            {interactive ? (
+              <ExplorerChart median={median} />
+            ) : (
+              <div className="rounded-2xl border border-border bg-surface-0 p-4 shadow-fi-1 sm:p-6">
+                {/* The chart's type scales with its width, so it stops growing past a readable size. */}
+                <div className="mx-auto max-w-[640px]">
+                  <DistributionChart values={institutionValues} median={median} />
+                </div>
               </div>
-            </div>
+            )}
             {consumerGuides[0] && (
               <p className="text-[14px] text-ink-muted">
                 New to this fee?{" "}
@@ -264,7 +295,11 @@ export default async function FeeCategoryPage({ params }: PageProps) {
             </div>
             <DotLegend positions={positionsShown(districts)} />
             <div className="rounded-2xl border border-border bg-surface-0 px-4 py-2 shadow-fi-1 sm:px-6">
-              <MarketDots dots={districts} band={band} ariaLabel={`${plainName} median by Fed district`} />
+              {interactive ? (
+                  <ExplorerMarkets dots={districts} band={band} dim="district" ariaLabel={`${plainName} median by Fed district`} />
+                ) : (
+                  <MarketDots dots={districts} band={band} ariaLabel={`${plainName} median by Fed district`} />
+                )}
             </div>
           </section>
         )}
@@ -303,7 +338,11 @@ export default async function FeeCategoryPage({ params }: PageProps) {
             </div>
             {charters.length === 2 && (
               <div className="rounded-2xl border border-border bg-surface-0 px-4 py-2 shadow-fi-1 sm:px-6">
-                <MarketDots dots={charters} band={band} ariaLabel={`${plainName} median, banks and credit unions`} />
+                {interactive ? (
+                  <ExplorerMarkets dots={charters} band={band} dim="charter" ariaLabel={`${plainName} median, banks and credit unions`} />
+                ) : (
+                  <MarketDots dots={charters} band={band} ariaLabel={`${plainName} median, banks and credit unions`} />
+                )}
               </div>
             )}
             {isPro ? (
@@ -312,7 +351,11 @@ export default async function FeeCategoryPage({ params }: PageProps) {
                   <div className="space-y-2">
                     <h3 className="text-[15px] font-semibold text-ink">By asset size</h3>
                     <div className="rounded-2xl border border-border bg-surface-0 px-4 py-2 sm:px-6">
-                      <MarketDots dots={tiers} band={band} ariaLabel={`${plainName} median by asset size`} />
+                      {interactive ? (
+                  <ExplorerMarkets dots={tiers} band={band} dim="tier" ariaLabel={`${plainName} median by asset size`} />
+                ) : (
+                  <MarketDots dots={tiers} band={band} ariaLabel={`${plainName} median by asset size`} />
+                )}
                     </div>
                   </div>
                 )}
@@ -320,7 +363,11 @@ export default async function FeeCategoryPage({ params }: PageProps) {
                   <div className="space-y-2">
                     <h3 className="text-[15px] font-semibold text-ink">By state, highest median first</h3>
                     <div className="rounded-2xl border border-border bg-surface-0 px-4 py-2 sm:px-6">
-                      <MarketDots dots={states} band={band} ariaLabel={`${plainName} median by state`} />
+                      {interactive ? (
+                  <ExplorerMarkets dots={states} band={band} dim="state" ariaLabel={`${plainName} median by state`} />
+                ) : (
+                  <MarketDots dots={states} band={band} ariaLabel={`${plainName} median by state`} />
+                )}
                     </div>
                   </div>
                 )}
@@ -362,6 +409,8 @@ export default async function FeeCategoryPage({ params }: PageProps) {
             )}
           </section>
         )}
+
+        </FeeExplorer>
 
         {/* 6. Related fees, each a small range that links to its page. */}
         {related.length > 0 && (
