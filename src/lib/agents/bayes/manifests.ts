@@ -262,6 +262,15 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   // v5 (#1499, prod hand-check of v4): "may therefore" totals, period and bare-activation generics,
   // "only if" and "your" balance conditions, generic heads on a balance-below condition, and the
   // figure gate on the footnote-stripped name skipping bare counts; same cursor, shadow.
+  // v6 (#1499, prod check of v5): takedown only at $0/no amount, a credit, no fee of this bank or a
+  // refused amount; every other unnamed pronoun or sentence_end line is kept live (`reread`); waiver
+  // wording bars renames only and a line ending on a threshold is refused; same cursor, shadow.
+  // v6 round 4 (rev10, prod r10, still v6 in shadow): every refusal under $100 is a reread, a rename
+  // needs a rest free of the rename bar (or one of three narrow forms) and a fee-noun target with no
+  // figure; same cursor, nothing written. Round 5 (rev11): head and tail renames are allowlists,
+  // credits and "no fee of this bank" are narrowed to an allowlist and the line start; still shadow.
+  // Round 6 (rev12): subject-carrying tail leads, soft if/when clauses and floors, cents figures as "$",
+  // a credit guard and NBSP parity in the count SQL; still shadow.
   LIVE_FRAGMENT_STRATEGY: "Its cursor re-reads every live fee name each pass (2,000 a verify step); there is nothing to replay.",
   HOURLY_CHECK_VERSION: "Its cursor re-reads every live fee name for an hourly price each pass (2,000 a verify step); there is nothing to replay.",
   // v1 (#1442): a new shadow pass. Its ledger cursor re-reads every live fee's source document address

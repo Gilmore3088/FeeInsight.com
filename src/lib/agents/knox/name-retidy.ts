@@ -88,8 +88,8 @@ const FEE_OF_SENTENCE_TAIL = feeOfSentence(
  * "Bank's normal overdraft item charge", "Low activation fee").
  */
 const TAIL_QUALIFIERS = /^(?:(?:bank'?s|bank’s|appropriate|normal|standard|regular|usual|applicable|current|small|low)\s+)+/i;
-/** v4 (#1499): a tail made only of these words names no fee ("Handling fee", "Monthly flat fee", "Late charge"). */
-const TAIL_GENERIC_WORDS = ["handling", "flat", "small", "low", "late", "monthly", "service", "additional", "fees?", "charges?"];
+/** v4 (#1499): a tail made only of these words names no fee ("Handling fee", "Monthly flat fee", "Late charge"); v6 adds "discounted" (74073). */
+const TAIL_GENERIC_WORDS = ["handling", "flat", "small", "low", "late", "monthly", "service", "additional", "discounted", "fees?", "charges?"];
 const TAIL_GENERIC_ONLY = new RegExp(String.raw`^(?:${TAIL_GENERIC_WORDS.join("|")})(?:\s+(?:${TAIL_GENERIC_WORDS.join("|")}))*$`, "i");
 /** v4 (#1499): whose fee it is inside a tail ("Allpoint network our ATM fee") means the phrase is no name. */
 const TAIL_PERSON = /\b(?:our|your)\b/i;

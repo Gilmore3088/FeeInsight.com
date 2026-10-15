@@ -41,4 +41,14 @@ describe("feeDisplayName", () => {
     // Outside the parenthetical the pronoun is still a cut name.
     expect(isCutFeeName("Stop Payment (per item) if you request it")).toBe(true);
   });
+
+  it("shows all-capitals names ending on a letter or an article as stored, as main does (#1499)", () => {
+    // Darwin's all-capitals article rule lives in the live fragment check only; the public name is unchanged.
+    for (const name of ["SAFE DEPOSIT BOX SIZE A", "CHECKING PLAN A", "OPTION A", "SCHEDULE A", "BOX A", "CLUB A",
+      "WIRE FEE FOR THE", "TRANSFER TO A", "SERVICE CHARGE A", "BILL PAY A", "MONTHLY SERVICE CHARGE A"]) {
+      expect(isCutFeeName(name)).toBe(false);
+      expect(feeDisplayName(name, "wire_domestic_outgoing")).toBe(name);
+      expect(feeDisplayName(name, "safe_deposit_box")).toBe(name);
+    }
+  });
 });
