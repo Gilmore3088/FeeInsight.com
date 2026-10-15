@@ -13,7 +13,8 @@ import { inferFeeCategory } from "./hamilton/infer-category";
 // Guards the canonical taxonomy keys used by public pages and agentic admin flows.
 // 52 once excess withdrawals and returned mail leave account research (#1398, `RESEARCH_SPLIT_LIVE`).
 const EXPECTED_TAXONOMY_COUNT = RESEARCH_SPLIT_LIVE ? 52 : 50;
-const EXPECTED_CANONICAL_KEY_COUNT = 200;
+// 200 once the research split adds the `excess_withdrawal` identity key; main's 199 while it is off.
+const EXPECTED_CANONICAL_KEY_COUNT = RESEARCH_SPLIT_LIVE ? 200 : 199;
 
 describe("fee-taxonomy sync", () => {
   test("every FEE_FAMILIES category is in CANONICAL_KEY_MAP", () => {
@@ -60,9 +61,11 @@ describe("fee-taxonomy sync", () => {
   test("excess withdrawal and returned mail slugs file under their own types once the research split is on (#1398)", () => {
     const excess = RESEARCH_SPLIT_LIVE ? "excess_withdrawal" : "account_research";
     const returned = RESEARCH_SPLIT_LIVE ? "returned_mail" : "account_research";
-    for (const slug of ["excess_withdrawal", "excessive_withdrawal_fee", "excessive_transaction_fee"]) {
+    for (const slug of ["excessive_withdrawal_fee", "excessive_transaction_fee"]) {
       expect(CANONICAL_KEY_MAP[slug]).toBe(excess);
     }
+    // Off, there is no `excess_withdrawal` key at all, so a model output of it is rejected as on main.
+    expect(CANONICAL_KEY_MAP.excess_withdrawal).toBe(RESEARCH_SPLIT_LIVE ? "excess_withdrawal" : undefined);
     for (const slug of ["returned_mail", "return_mail", "bad_address", "incorrect_address_fee", "undeliverable_mail"]) {
       expect(CANONICAL_KEY_MAP[slug]).toBe(returned);
     }
@@ -87,5 +90,23 @@ describe("public category list while the research split is off", () => {
     const want = (key: string) => (RESEARCH_SPLIT_LIVE ? key : null);
     expect(inferFeeCategory("What do banks charge for excess withdrawals?")).toBe(want("excess_withdrawal"));
     expect(inferFeeCategory("Returned mail fees near me")).toBe(want("returned_mail"));
+  });
+});
+
+// Review B2: Darwin's paid release review lists the first 12 aliases per category
+// (`ALIASES_BY_KEY` in darwin/release-review.ts), so while the switch is off the order must be main's.
+describe("account research aliases while the research split is off", () => {
+  test("match main's first 12, in order", () => {
+    const list: string[] = [];
+    for (const [alias, key] of Object.entries(CANONICAL_KEY_MAP)) {
+      if (alias === key || key !== "account_research") continue;
+      if (list.length < 12) list.push(alias.replace(/_/g, " "));
+    }
+    if (RESEARCH_SPLIT_LIVE) return;
+    expect(list).toEqual([
+      "excessive withdrawal fee", "transaction fee", "transactions fee", "per transaction fee",
+      "returned mail", "returned mail fee", "return mail", "bad address",
+      "bad address fee", "incorrect address", "incorrect address fee", "invalid address fee",
+    ]);
   });
 });

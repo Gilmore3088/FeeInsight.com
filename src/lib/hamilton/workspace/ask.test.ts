@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { RESEARCH_SPLIT_LIVE, researchSplitTarget } from "@/lib/fee-fold";
+import { RESEARCH_SPLIT_LIVE } from "@/lib/fee-fold";
 import {
   buildAskResponse,
   feeCategoriesIn,
@@ -179,15 +179,17 @@ describe("a question that names no fee (#1077)", () => {
 });
 
 describe("excess withdrawal and returned mail questions (#1398)", () => {
-  it("reads them under the type their fees are filed under: account research until the research split is on", () => {
-    const excess = researchSplitTarget("excess_withdrawal");
-    const returned = researchSplitTarget("returned_mail");
-    expect(matchFeeCategory("How does our excess withdrawal fee compare?")).toBe(excess);
-    expect(matchFeeCategory("what do others charge for an excessive withdrawal")).toBe(excess);
-    expect(matchFeeCategory("our excess transaction charge")).toBe(excess);
-    expect(matchFeeCategory("How does our returned mail fee compare?")).toBe(returned);
-    expect(matchFeeCategory("returned statement fee")).toBe(returned);
-    expect(matchFeeCategory("bad address charge")).toBe(returned);
-    if (!RESEARCH_SPLIT_LIVE) expect(matchFeeCategory("Excess Withdrawals")).toBe("account_research");
+  // While the research split is off, Ask reads these exactly as main does (no category of their own;
+  // main's results written out). Once on, they read under the new types.
+  it.each([
+    ["How does our excess withdrawal fee compare?", "excess_withdrawal", null],
+    ["what do others charge for an excessive withdrawal", "excess_withdrawal", null],
+    ["our excess transaction charge", "excess_withdrawal", null],
+    ["Excess Withdrawals", "excess_withdrawal", null],
+    ["How does our returned mail fee compare?", "returned_mail", null],
+    ["returned statement fee", "returned_mail", null],
+    ["bad address charge", "returned_mail", null],
+  ])("%s", (question, on, main) => {
+    expect(matchFeeCategory(question)).toBe(RESEARCH_SPLIT_LIVE ? on : main);
   });
 });

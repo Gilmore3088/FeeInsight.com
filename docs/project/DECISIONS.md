@@ -66,10 +66,11 @@ savings or money market account's monthly limit) and `returned_mail` ("Returned 
 undeliverable mail or statements, a bad or incorrect address, an address locator), both in Account
 Maintenance, so the taxonomy will have 52 types. The change ships dark behind one switch
 (`RESEARCH_SPLIT_LIVE` in `fee-fold.ts`), off until James says go: while it is off the two types are
-not listed, and every rule that would file a fee there (fold v16's splits and e-statement rule,
+not listed, and every rule that would file a fee there (fold v17's splits and e-statement rule,
 category guard v65's line re-file, the hand re-files, the taxonomy aliases) still files it under
-account research, and each publish step reports what the research split would move. Turning it on
-files new reads there and moves live and verified account research fees by name; Knox's own rules
+account research exactly as before, and each publish step reports what the research split would
+move. Both versions stay at 16 and 64 while it is off, so the re-reads they cost run once, at
+switch-on. Turning it on files new reads there and moves live and verified account research fees by name; Knox's own rules
 re-point in that PR (Knox's rules version is batched with other bumps). Account research keeps
 research, reconciliation, balancing, charge-off and ATM adjustment charges.
 

@@ -323,6 +323,11 @@ describe("top-50 fold", () => {
       ["Transfers after 6 per statement cycle", 3, "excess_withdrawal"],
       ["Reg D violation fee", 10, "excess_withdrawal"],
       ["Regulation D Excess Transfer", 10, "excess_withdrawal"],
+      // Final review G: the guard and the fold agree on these.
+      ["Excess withdrawal per item over 6", 3, "excess_withdrawal"],
+      ["Excess Teller Withdrawal", 5, "excess_withdrawal"],
+      ["Withdrawals over 6", 3, "excess_withdrawal"],
+      ["Savings withdrawal limit fee", 3, "excess_withdrawal"],
       ["Returned Statement Fee", 5, "returned_mail"],
       ["Return Mail Fee (no forwarding)", 5, "returned_mail"],
       ["Bad address fee", 5, "returned_mail"],
@@ -359,6 +364,7 @@ describe("top-50 fold", () => {
       ["Excess items", 0.25, null],
       ["Items over 200 per month", 0.25, null],
       ["Service charge", 3, null],
+      ["Excess transactions - business account item", 0.25, null],
       // Not returned mail: a branch locator, a bare invalid email address, a returned item or deposit,
       // an address change, a return to paper statements, a re-enrollment.
       ["Branch locator", 5, null],

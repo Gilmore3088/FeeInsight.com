@@ -1124,6 +1124,8 @@ describe("activity charges filed as monthly maintenance (v62, #1100)", () => {
     ["Per item service charge fee", 25, "A per item service charge fee of $25.00 will be charged for each transaction in excess of the above limitations.", "account_research"],
   ])("switched on, re-files %s ($%d) by its line's activity", (name, amount, line, want) => {
     const context = { amount, conditions: knoxNote(line) };
+    // The live guard reads the same line, so a re-filed bare service charge stays accepted there.
+    expect(checkFeeCategory("excess_withdrawal", name, context).ok).toBe(want === "excess_withdrawal");
     expect(refileFromLine("monthly_maintenance", name, context, true)).toBe(want);
     expect(refileFromLine("monthly_maintenance", name, context, false)).toBe("account_research");
   });
@@ -1205,7 +1207,11 @@ describe("excess withdrawals and returned mail, their own types (guard v65, Jame
     ["excess_withdrawal", "Excess Statement Savings Transaction"],
     ["excess_withdrawal", "Withdrawal Limit Fee"],
     ["excess_withdrawal", "Excess Activity-Savings Acct (per item)"],
-    ["excess_withdrawal", "Service charge"],
+    // Final review G: a per-item count beside excess or withdrawal, a teller withdrawal over the
+    // limit, withdrawals over a count (the fold places all three too).
+    ["excess_withdrawal", "Excess withdrawal per item over 6"],
+    ["excess_withdrawal", "Excess Teller Withdrawal"],
+    ["excess_withdrawal", "Withdrawals over 6"],
     ["returned_mail", "Returned Statement Fee"],
     ["returned_mail", "Return Mail Fee (no forwarding)"],
     ["returned_mail", "Bad address fee"],
@@ -1218,9 +1224,7 @@ describe("excess withdrawals and returned mail, their own types (guard v65, Jame
     ["excess_withdrawal", "Excess Withdrawal Fee"],
     ["excess_withdrawal", "Excessive Transaction Fee"],
     ["excess_withdrawal", "Savings withdrawal limit fee"],
-    ["excess_withdrawal", "Share service charge"],
     ["excess_withdrawal", "Reg D violation fee"],
-    ["excess_withdrawal", "Money market service charge"],
     ["excess_withdrawal", "Savings withdrawals in excess of 6 per month"],
     ["excess_withdrawal", "Transfers after 6 per statement cycle"],
     ["returned_mail", "Returned Mailed Statement"],
@@ -1304,6 +1308,13 @@ describe("excess withdrawals and returned mail, their own types (guard v65, Jame
     ["excess_withdrawal", "Transaction history"],
     ["excess_withdrawal", "Account activity printout"],
     ["excess_withdrawal", "Excess check fee"],
+    // Final review G: a business account's item count; a bare service charge with no savings
+    // over-limit line behind it (Knox filing one here is refused; see the line re-file below).
+    ["excess_withdrawal", "Excess transactions - business account item"],
+    ["excess_withdrawal", "Service charge"],
+    ["excess_withdrawal", "Service Fee"],
+    ["excess_withdrawal", "Share service charge"],
+    ["excess_withdrawal", "Money market service charge"],
     // Review O2: a return of anything but mail, a statement or an address is not returned mail.
     ["returned_mail", "Item return fee"],
     ["returned_mail", "Returned foreign item"],

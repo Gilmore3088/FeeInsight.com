@@ -1014,6 +1014,8 @@ async function executeAgenticStep(
         runId: run.id,
         dryRun: run.runKind === "dry_run",
         institutionId,
+        // The research split's exact dry-run count over every row, on request (#1398).
+        researchSplitFullCount: params.research_split_full_count === true || params.research_split_full_count === "true",
       });
       const outlierRollbacks = await rollBackPublishedOutliers(tx, {
         runId: run.id,
@@ -1378,7 +1380,7 @@ async function executeAgenticStep(
           ? ` ${published.dryRun ? "Would clear" : "Cleared"} the pending takedown on ${taxonomyFold.handFlagsCleared.toLocaleString()} hand-fixed fee(s) that now trace.`
           : "") +
         (taxonomyFold.pendingResearchSplit && taxonomyFold.pendingResearchSplit.wouldMove > 0
-          ? ` Dry run: the research split (off) would move ${taxonomyFold.pendingResearchSplit.wouldMoveLive.toLocaleString()} live and ${(taxonomyFold.pendingResearchSplit.wouldMove - taxonomyFold.pendingResearchSplit.wouldMoveLive).toLocaleString()} verified fee(s) out of account research (${Object.entries(taxonomyFold.pendingResearchSplit.byRoute).map(([route, count]) => `${route} ${count.toLocaleString()}`).join(", ")}).`
+          ? ` Dry run: the research split (off) would move ${taxonomyFold.pendingResearchSplit.wouldMoveLive.toLocaleString()} live and ${(taxonomyFold.pendingResearchSplit.wouldMove - taxonomyFold.pendingResearchSplit.wouldMoveLive).toLocaleString()} verified fee(s) out of account research (${Object.entries(taxonomyFold.pendingResearchSplit.byRoute).map(([route, count]) => `${route} ${count.toLocaleString()}`).join(", ")})${taxonomyFold.pendingResearchSplit.capped ? `, in the first ${taxonomyFold.pendingResearchSplit.scanned.toLocaleString()} rows read (run with research_split_full_count for every row)` : ""}.`
           : "");
       const offTaxonomyNote =
         (offTaxonomyRollbacks.length > 0

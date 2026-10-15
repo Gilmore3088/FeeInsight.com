@@ -289,7 +289,7 @@ const EXCESS_ACTIVITY = /\bexcess(?:ive)?\s+(?:withdrawals?|transactions?|transf
  * split tries first.
  */
 export const EXCESS_WITHDRAWAL =
-  /^(?![\s\S]*(?:\bresearch|\breconcil|\batms?\b|\bnon[- ]?network\b|\bforeign\b|\boverdraft|\bod\b|\bcheck cashing\b|\bwires?\b|\bexcess(?:ive)?\s+(?:[\w/-]+\s+){0,2}items?\b|\bitems?\s+(?:over|in excess|after)\b|\bdebit cards?\b))(?:[\s\S]*\bexcess(?:ive)?\s+(?:[\w/-]+\s+){0,2}?(?:withdrawals?|transactions?|transfers?|debits?|activity)\b|[\s\S]*\bwithdrawal limit fee\b|[\s\S]*\bover (?:the |your )?withdrawal limits?\b|[\s\S]*\b(?:withdrawals?|transactions?|transfers?|debits?)\s+in excess of\b|[\s\S]*\b(?:withdrawals?|transfers?)\s+after\s+\d|[\s\S]*\breg(?:ulation)?\.?\s?d\b)/i;
+  /^(?![\s\S]*(?:\bresearch|\breconcil|\batms?\b|\bnon[- ]?network\b|\bforeign\b|\boverdraft|\bod\b|\bcheck cashing\b|\bwires?\b|\bbusiness\b|\bexcess(?:ive)?\s+(?:(?!(?:withdrawals?|transactions?|transfers?|debits?)\b)[\w/-]+\s+){0,2}items?\b|\bdebit cards?\b))(?!(?![\s\S]*\b(?:excess\w*|withdrawals?)\b)[\s\S]*\bitems?\s+(?:over|in excess|after)\b)(?:[\s\S]*\bexcess(?:ive)?\s+(?:[\w/-]+\s+){0,2}?(?:withdrawals?|transactions?|transfers?|debits?|activity)\b|[\s\S]*\bwithdrawal\s+limits?\b|[\s\S]*\b(?:withdrawals?|transactions?|transfers?|debits?)\s+(?:in\s+excess|over\s+\d|beyond|after\s+\d)|[\s\S]*\breg(?:ulation)?\.?\s?d\b)/i;
 
 /**
  * Research or reconciliation words that keep a fee in account research. Research named for the
@@ -398,7 +398,7 @@ const RESEARCH_SPLIT_RULES: ReadonlyArray<{ to: string; name: RegExp }> = [
   { to: "returned_mail", name: RETURNED_MAIL },
 ];
 /** The SQL pre-filter for `RESEARCH_SPLIT_RULES` (Postgres `~*`). */
-export const RESEARCH_SPLIT_SQL_PATTERN = "excess|withdrawal limit|withdrawals? after|transfers? after|regulation d|reg\\.? ?d|return|undeliver|address|locator|mail";
+export const RESEARCH_SPLIT_SQL_PATTERN = "excess|withdrawal limit|(withdrawal|transaction|transfer|debit)s? (over|beyond|after)|regulation d|reg\\.? ?d|return|undeliver|address|locator|mail";
 /** The account research split's SQL pre-filter without the switched rules. */
 const RESEARCH_BASE_SQL_PATTERN = "\\mira\\M|fax|cop(y|ies|ied)|reproduc";
 
@@ -533,8 +533,9 @@ export function splitLiveCategory(
 // `RESEARCH_SPLIT_LIVE` is on: then the paper statement, other lending and e-statement rules file
 // there and account research's split moves its excess withdrawal and returned mail fees there.
 // Once on, a "return to paper statements" charge is never returned mail: an e-statement one is a
-// paper statement fee, and a paper statement one stays there. Off, both match exactly as on main.
-export const FOLD_RULES_VERSION = 17;
+// paper statement fee, and a paper statement one stays there. Off, every rule matches exactly as in
+// v16, so the version stays 16 until the switch is on and the fold step re-reads nothing for it.
+export const FOLD_RULES_VERSION = RESEARCH_SPLIT_LIVE ? 17 : 16;
 
 /** The retired categories that sat in these families. */
 export function retiredKeysInFamilies(families: readonly string[]): string[] {

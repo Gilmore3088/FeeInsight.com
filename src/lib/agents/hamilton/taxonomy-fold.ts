@@ -161,8 +161,12 @@ export function planFold(rows: FoldRow[], texts: Map<number, string>): FoldPlan 
   return plan;
 }
 
-/** Rows read for the research split's dry run; about 2,300 live fees matched its names on Oct 15. */
-export const RESEARCH_SPLIT_PREVIEW_LIMIT = 10_000;
+/**
+ * Rows each step's research split dry run reads, so the preview stays cheap while the switch is off
+ * (about 2,300 live fees matched its names on Oct 15). The exact count over every row is on request,
+ * with the publish step's `research_split_full_count` param, as Darwin's `fragment_full_count`.
+ */
+export const RESEARCH_SPLIT_PREVIEW_LIMIT = 2_000;
 const PREVIEW_SAMPLE_PER_ROUTE = 10;
 
 export interface ResearchSplitSample {
@@ -182,7 +186,12 @@ export interface ResearchSplitSample {
 export interface ResearchSplitPreview {
   switchName: "RESEARCH_SPLIT_LIVE";
   live: boolean;
+  /** Rows read: up to `RESEARCH_SPLIT_PREVIEW_LIMIT`, or every row on a full count. */
   scanned: number;
+  /** True when the read was a full count, with no row limit. */
+  fullCount: boolean;
+  /** True when the read hit its row limit, so the counts are a lower bound. */
+  capped: boolean;
   /** Live and verified-only fees the switch would move. */
   wouldMove: number;
   wouldMoveLive: number;
@@ -200,8 +209,8 @@ export interface ResearchSplitPreview {
 export function previewResearchSplit(
   rows: FoldRow[],
   table: Readonly<Record<string, SplitCategory>> = RESEARCH_SPLIT_PREVIEW,
-): Omit<ResearchSplitPreview, "live" | "switchName"> {
-  const preview: Omit<ResearchSplitPreview, "live" | "switchName"> = {
+): Omit<ResearchSplitPreview, "live" | "switchName" | "fullCount" | "capped"> {
+  const preview: Omit<ResearchSplitPreview, "live" | "switchName" | "fullCount" | "capped"> = {
     scanned: rows.length,
     wouldMove: 0,
     wouldMoveLive: 0,
@@ -241,7 +250,7 @@ export function previewResearchSplit(
 }
 
 /** Live fees, and verified fees not yet published, under account research whose name the research split might move. */
-async function selectResearchSplitRows(db: SqlTag, institutionId?: number): Promise<FoldRow[]> {
+async function selectResearchSplitRows(db: SqlTag, institutionId: number | undefined, limit: number | null): Promise<FoldRow[]> {
   return db<FoldRow[]>`
     SELECT * FROM (
       SELECT fp.fee_published_id, fp.lineage_ref AS fee_verified_id, fp.institution_id,
@@ -264,7 +273,7 @@ async function selectResearchSplitRows(db: SqlTag, institutionId?: number): Prom
          )
     ) research
     ORDER BY fee_published_id NULLS LAST, fee_verified_id
-    LIMIT ${RESEARCH_SPLIT_PREVIEW_LIMIT}
+    LIMIT ${limit}
   `;
 }
 
@@ -740,7 +749,7 @@ export interface TaxonomyFoldResult {
 /** Runs the fold. A dry run reports what it would move and take down and writes nothing. */
 export async function foldRetiredCategories(
   db: SqlTag,
-  options: { runId: number; dryRun: boolean; institutionId?: number },
+  options: { runId: number; dryRun: boolean; institutionId?: number; researchSplitFullCount?: boolean },
 ): Promise<TaxonomyFoldResult> {
   const base: TaxonomyFoldResult = {
     scanned: 0,
@@ -767,11 +776,20 @@ export async function foldRetiredCategories(
   } catch (error) {
     console.error("taxonomy fold hand re-file read failed:", error);
   }
-  // The research split's dry run, every step while its switch is off (#1398). Read only.
+  // The research split's dry run, every step while its switch is off (#1398), capped at
+  // RESEARCH_SPLIT_PREVIEW_LIMIT rows unless the step asks for the full count. Read only.
   if (!RESEARCH_SPLIT_LIVE) {
     try {
-      const researchRows = await inSavepoint(db, (scope) => selectResearchSplitRows(scope, options.institutionId));
-      base.pendingResearchSplit = { switchName: "RESEARCH_SPLIT_LIVE", live: false, ...previewResearchSplit(researchRows) };
+      const fullCount = options.researchSplitFullCount === true;
+      const limit = fullCount ? null : RESEARCH_SPLIT_PREVIEW_LIMIT;
+      const researchRows = await inSavepoint(db, (scope) => selectResearchSplitRows(scope, options.institutionId, limit));
+      base.pendingResearchSplit = {
+        switchName: "RESEARCH_SPLIT_LIVE",
+        live: false,
+        fullCount,
+        capped: limit != null && researchRows.length >= limit,
+        ...previewResearchSplit(researchRows),
+      };
     } catch (error) {
       console.error("taxonomy fold research split preview failed:", error);
     }

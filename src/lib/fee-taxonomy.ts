@@ -181,10 +181,10 @@ export const CANONICAL_KEY_MAP: Record<string, string> = {
   paper_statement: "paper_statement",
   // James, Oct 15 2026 (#1398, "Add both"): a per-item charge for withdrawals or transfers past a
   // savings or money market account's monthly limit, and returned or undeliverable mail, statements
-  // or a bad address, each have their own type once `RESEARCH_SPLIT_LIVE` is on; until then they
-  // read as account research, as before. Account research keeps research and reconciliation.
-  excess_withdrawal: researchSplitTarget("excess_withdrawal"),
-  returned_mail: researchSplitTarget("returned_mail"),
+  // or a bad address, each have their own type once `RESEARCH_SPLIT_LIVE` is on; until then the map
+  // is exactly main's (no `excess_withdrawal` key, `returned_mail` an account research alias in its
+  // old place, so alias order and counts do not change). Account research keeps research.
+  ...(RESEARCH_SPLIT_LIVE ? { excess_withdrawal: "excess_withdrawal" } : {}),
   estatement_fee: "estatement_fee",
   // Overdraft & NSF
   overdraft: "overdraft",
@@ -310,6 +310,7 @@ export const CANONICAL_KEY_MAP: Record<string, string> = {
   per_transaction_fee: "account_research",
   ach_batch_fee: "ach_origination",
   // --- Address / mail return variants (returned mail once the research split is on) ---
+  returned_mail: researchSplitTarget("returned_mail"),
   returned_mail_fee: researchSplitTarget("returned_mail"),
   return_mail: researchSplitTarget("returned_mail"),
   bad_address: researchSplitTarget("returned_mail"),
@@ -561,7 +562,7 @@ export const FEE_TIERS: Record<string, FeeTier> = {
   garnishment_levy: "extended",
   safe_deposit_box: "extended",
   account_research: "extended",
-  excess_withdrawal: "extended",
+  ...(RESEARCH_SPLIT_LIVE ? { excess_withdrawal: "extended" as const } : {}),
   check_printing: "extended",
   coin_counting: "extended",
   ach_origination: "extended",
@@ -585,7 +586,7 @@ export const FEE_TIERS: Record<string, FeeTier> = {
   account_verification: "comprehensive",
   loan_origination: "comprehensive",
   appraisal_fee: "comprehensive",
-  returned_mail: "comprehensive",
+  ...(RESEARCH_SPLIT_LIVE ? { returned_mail: "comprehensive" as const } : {}),
 };
 
 const FEATURED_TIERS: Set<FeeTier> = new Set(["spotlight", "core"]);

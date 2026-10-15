@@ -406,16 +406,19 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
   // withdrawals, transactions, transfers, debits or activity, a withdrawal limit, activity over or
   // after a count, or Reg D, or be a bare (savings, money market or share) service charge or fee; a
   // transaction, transfer or debit fee, a credit limit or a monthly or business service charge is
-  // not one. And it must not name another fee: research, an IRA, returned mail, a copy, an ATM or a foreign or
+  // not one. A bare (savings, money market or share) service charge or fee counts only when its own
+  // source line charges it per savings, money market or share withdrawal, transfer or debit over a
+  // limit (`savingsOverLimitLine`), the line `refileFromLine` re-files by; Knox filing a bare
+  // "Service charge" here without that line is refused. And it must not name another fee: research, an IRA, returned mail, a copy, an ATM or a foreign or
   // international charge, an early withdrawal penalty, an overdraft or NSF, a returned item, an
   // official check, a statement, a wire, a club, a certificate, a point-of-sale or teller charge, a
   // business account's item count, maintenance or a minimum balance, check printing or cashing, a
   // safe deposit box, a loan, a card, a collection, a subordination, escheatment or a legal fee.
   excess_withdrawal: {
     include:
-      /(\bexcess(?:ive)?\s+(?:[\w/-]+\s+){0,2}?(?:withdrawals?|transactions?|transfers?|debits?|activity)\b|\bwithdrawal\s+limits?\b|\b(?:withdrawals?|transactions?|transfers?|debits?)\s+(?:in\s+excess|over\s+\d|beyond|after\s+\d)|\breg(?:ulation)?\.?\s?d\b|^\W*(?:(?:savings|money market|mmdas?|share)\s+(?:accounts?\s+)?)?service\s+(?:charges?|fees?)\b)/i,
+      /(\bexcess(?:ive)?\s+(?:[\w/-]+\s+){0,2}?(?:withdrawals?|transactions?|transfers?|debits?|activity)\b|\bwithdrawal\s+limits?\b|\b(?:withdrawals?|transactions?|transfers?|debits?)\s+(?:in\s+excess|over\s+\d|beyond|after\s+\d)|\breg(?:ulation)?\.?\s?d\b)/i,
     exclude:
-      /(maintenance|minimum balance|printing|safe deposit|\bloans?\b|\bcards?\b|collection|subordinat|escheat|\blegal\b|check cashing|research|reconcil|\bira\b|\breturn(?:ed)?\s+(?:mail|statements?|items?|checks?|deposits?)\b|undeliver|\baddress|\bfax|\b(?:photo ?)?cop(?:y|ies)\b|\bwires?\b|stop pay|dorman|inactiv|\batms?\b|non[- ]?network|foreign|international|\bearly\b|penalt|overdraft|\bnsf\b|cashier|\bstatements?\b(?!\s+(?:savings|cycle|period))|\bclubs?\b|certificate|\bcds?\b|\bpos\b|teller|\bexcess(?:ive)?\s+(?:[\w/-]+\s+){0,2}items?\b|\bitems?\s+(?:over|in excess|after)\b|debit cards?)/i,
+      /(maintenance|minimum balance|printing|safe deposit|\bloans?\b|\bcards?\b|collection|subordinat|escheat|\blegal\b|check cashing|research|reconcil|\bira\b|\breturn(?:ed)?\s+(?:mail|statements?|items?|checks?|deposits?)\b|undeliver|\baddress|\bfax|\b(?:photo ?)?cop(?:y|ies)\b|\bwires?\b|stop pay|dorman|inactiv|\batms?\b|non[- ]?network|foreign|international|\bearly\b|penalt|overdraft|\bnsf\b|cashier|\bstatements?\b(?!\s+(?:savings|cycle|period))|\bclubs?\b|certificate|\bcds?\b|\bpos\b|\bteller\b(?!\s+withdrawals?\b)|\bbusiness\b|\bexcess(?:ive)?\s+(?:(?!(?:withdrawals?|transactions?|transfers?|debits?)\b)[\w/-]+\s+){0,2}items?\b|^(?![\s\S]*\b(?:excess\w*|withdrawals?)\b)[\s\S]*\bitems?\s+(?:over|in excess|after)\b|debit cards?)/i,
   },
   // Returned mail names returned mail, statements or an address, undeliverable mail, the bad, invalid
   // or unknown address, an address correction, search or locator, or a forwarding charge; a bare
@@ -482,8 +485,10 @@ export const GUARDED_CATEGORIES: readonly string[] = [...new Set([...Object.keys
 // guard rule, and research filed under either goes back to research. Once `RESEARCH_SPLIT_LIVE` is
 // on, an excess activity charge on a monthly maintenance row's own line that names savings, money
 // market or share withdrawals, transfers or debits re-files to excess withdrawals; every other one,
-// and every one while the switch is off, still re-files to account research.
-export const CATEGORY_GUARD_VERSION = 65;
+// and every one while the switch is off, still re-files to account research. While the switch is off
+// the guard reads every live fee exactly as v64 did, so the version stays 64 and Hamilton's catch-up
+// sweep and Darwin's re-read of older category rejections run once, at switch-on.
+export const CATEGORY_GUARD_VERSION = RESEARCH_SPLIT_LIVE ? 65 : 64;
 
 /**
  * Categories whose fee is usually a rate ("1% of the transaction"). A dollar amount filed
@@ -718,7 +723,7 @@ export function checkFeeCategory(
       reason: `"${name}" describes a different fee than ${canonicalFeeKey} ("${excluded[0]}")`,
     };
   }
-  if (!rule.include.test(name)) {
+  if (!rule.include.test(name) && !(canonicalFeeKey === "excess_withdrawal" && GENERIC_SERVICE_CHARGE.test(name) && savingsOverLimitLine(name, context))) {
     return {
       ok: false,
       code: "name_unsupported",
@@ -874,6 +879,15 @@ const OVER_LIMIT = /\b(in excess of|over\s+(?:\d+|one|two|three|four|five|six|se
  * Withdrawals, transfers or debits from a savings, money market or share account: the excess
  * withdrawal fee. A line about checks, items, drafts or debit card purchases is another activity.
  */
+/** A bare service charge or fee, maybe naming a savings, money market or share account. */
+const GENERIC_SERVICE_CHARGE = /^\W*(?:(?:savings|money market|mmdas?|share)\s+(?:accounts?\s+)?)?service\s+(?:charges?|fees?)\W*$/i;
+
+/** The fee's own source line charges it per savings, money market or share withdrawal, transfer or debit over a limit. */
+function savingsOverLimitLine(name: string, context: CategoryGuardContext | undefined): boolean {
+  const reading = activityChargeOnLine("monthly_maintenance", context);
+  return Boolean(reading?.overLimit) && SAVINGS_WITHDRAWAL_LINE.test(`${name} | ${reading?.line ?? ""}`);
+}
+
 const SAVINGS_WITHDRAWAL_LINE =
   /^(?![\s\S]*\b(?:checks?|items?|drafts?|debit cards?|pos|point of sale|purchases?)\b)(?=[\s\S]*\b(?:savings|money market|mmdas?|shares?)\b)[\s\S]*\b(?:withdrawals?|transfers?|debits?)\b/i;
 
