@@ -27,7 +27,8 @@ interface LastBatch {
 }
 
 /**
- * Queues the relabel step. Off: one dry run a day over that day's sample. Live or rollback: one
+ * Queues the relabel step. Off: one dry run a day over that day's sample. Full dry run, live or
+ * rollback: one
  * bounded batch at a time, the next from where the last finished, until a batch reports none
  * remaining; a failed batch is queued again from its own cursor. Neither starts before migration
  * 20270110000047, so no run is spent while it is missing. A free, deterministic step: the
@@ -49,7 +50,7 @@ export async function scheduleAudienceRelabelRun(
     return start(marker, "dry_run", "Darwin audience relabel: dry run (sample)", `darwin:audience-relabel:off:v${AUDIENCE_RELABEL_VERSION}:${day}`);
   }
 
-  if (!(await audienceMigrationReady(db))) return { scheduled: false, runId: null, reason: "migration_47_missing" };
+  if (mode !== "dry_run_full" && !(await audienceMigrationReady(db))) return { scheduled: false, runId: null, reason: "migration_47_missing" };
   const [last] = await db<LastBatch[]>`
     SELECT r.id, r.status, r.params_json->>'after_id' AS after_id,
            (e.detail->>'next_after_id') AS next_after_id, (e.detail->>'done')::boolean AS done
@@ -74,9 +75,16 @@ export async function scheduleAudienceRelabelRun(
       afterId = Number(last.after_id ?? 0);
     }
   }
-  const title = mode === "live" ? "Darwin audience relabel" : "Darwin audience relabel: roll back";
+  const title = mode === "live" ? "Darwin audience relabel" : mode === "rollback" ? "Darwin audience relabel: roll back" : "Darwin audience relabel: full dry run";
+  // The full dry run has its own key chain, so a later live run starts its own from cursor 0.
+  const keyMode = mode === "dry_run_full" ? "dry" : mode;
   return {
-    ...(await start({ ...base, after_id: afterId }, "manual_repair", `${title} (after ${afterId})`, `darwin:audience-relabel:${mode}:v${AUDIENCE_RELABEL_VERSION}:after:${afterId}`)),
+    ...(await start(
+      { ...base, after_id: afterId },
+      mode === "dry_run_full" ? "dry_run" : "manual_repair",
+      `${title} (after ${afterId})`,
+      `darwin:audience-relabel:${keyMode}:v${AUDIENCE_RELABEL_VERSION}:after:${afterId}`,
+    )),
     afterId,
   };
 }
