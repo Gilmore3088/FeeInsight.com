@@ -86,13 +86,14 @@ describe("state board", () => {
     const fees = boardFees(comparisons, [], [], undefined);
     const findings = leadFindings(
       [
-        { key: "a", figure: "$40", headline: "a", detail: "", exhibit: "x", fee_category: "overdraft" },
+        { key: "a", figure: "$40.00", headline: "a", detail: "", exhibit: "x", fee_category: "overdraft" },
         { key: "b", figure: "+1%", headline: "b", detail: "", exhibit: "x", fee_category: "wire_domestic_incoming" },
         { key: "c", figure: "3 of 5", headline: "c", detail: "", exhibit: "x" },
         { key: "d", figure: "$1", headline: "d", detail: "", exhibit: "x", fee_category: "nsf" },
       ],
       fees,
     );
+    expect(findings[0].figure).toBe("$40");
     expect(findings.map((f) => [f.key, f.fee])).toEqual([
       ["a", "overdraft"],
       ["b", null],

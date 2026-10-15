@@ -114,10 +114,10 @@ export default async function StateReportPage({ params }: PageProps) {
   const figures = [
     { value: formatCount(indexes.verified_institutions), label: "Institutions with verified fees" },
     overdraft
-      ? { value: money(overdraft.median), label: overdraft.us ? `Overdraft median (U.S. ${money(overdraft.us.median)})` : "Overdraft median" }
+      ? { value: money(overdraft.median), label: "Overdraft median" }
       : { value: String(comparisons.length), label: "Fees with a state median" },
     { value: formatCount(indexes.verified_fees), label: "Verified fees" },
-    { value: `${coverage}%`, label: `Of ${formatCount(stats.institution_count)} institutions covered` },
+    { value: `${coverage}%`, label: `Coverage of ${formatCount(stats.institution_count)} institutions` },
   ];
   const positions = (["below", "within", "above"] as const).filter((p) => shown.some((f) => f.position === p));
 
@@ -146,7 +146,7 @@ export default async function StateReportPage({ params }: PageProps) {
                 <h2 id="findings-heading" className="text-[20px] font-semibold tracking-[-0.02em] text-ink sm:text-[24px]">
                   What stands out
                 </h2>
-                <FindingButtons findings={findings} />
+                <FindingButtons findings={findings.map(({ key, figure, headline, fee }) => ({ key, figure, headline, fee }))} />
               </section>
             )}
 

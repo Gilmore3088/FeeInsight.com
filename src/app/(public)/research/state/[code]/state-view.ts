@@ -106,5 +106,10 @@ export function charterHeadline(fees: BoardFee[]): string | null {
 /** The three findings the page leads with, each tied to a fee on the board when it names one. */
 export function leadFindings(findings: Finding[], fees: BoardFee[]): (Finding & { fee: string | null })[] {
   const onBoard = new Set(fees.map((f) => f.key));
-  return findings.slice(0, 3).map((f) => ({ ...f, fee: f.fee_category && onBoard.has(f.fee_category) ? f.fee_category : null }));
+  return findings.slice(0, 3).map((f) => ({
+    ...f,
+    // Whole-dollar figures read as "$30", the way every other figure on the page does.
+    figure: f.figure.replace(/^\$(\d[\d,]*)\.00$/, "$$$1"),
+    fee: f.fee_category && onBoard.has(f.fee_category) ? f.fee_category : null,
+  }));
 }

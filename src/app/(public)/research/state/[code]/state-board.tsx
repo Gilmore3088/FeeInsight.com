@@ -290,7 +290,7 @@ export function CharterRows({ fees }: { fees: BoardFee[] }) {
               aria-pressed={pressed}
               onClick={() => pickFee(f.key)}
               aria-label={`${f.name}: banks ${money(bank)}, credit unions ${money(cu)}`}
-              className={`grid w-[calc(100%+1rem)] -mx-2 grid-cols-[6.5rem_minmax(0,1fr)_5.5rem] items-center gap-3 rounded-lg px-2 py-2 text-left text-[14px] transition-colors hover:bg-paper focus-visible:outline-2 focus-visible:outline-ink sm:grid-cols-[10rem_minmax(0,1fr)_7rem] ${
+              className={`grid w-[calc(100%+1rem)] -mx-2 grid-cols-[6.5rem_minmax(0,1fr)_3.5rem] items-center gap-3 rounded-lg px-2 py-2 text-left text-[14px] transition-colors hover:bg-paper focus-visible:outline-2 focus-visible:outline-ink sm:grid-cols-[10rem_minmax(0,1fr)_4.5rem] ${
                 pressed ? "bg-paper ring-1 ring-ink/30" : ""
               }`}
             >
@@ -304,10 +304,9 @@ export function CharterRows({ fees }: { fees: BoardFee[] }) {
                 <span className="absolute top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-ink ring-2 ring-surface-0" style={{ left: at(bank) }} />
                 <span className="absolute top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-brick ring-2 ring-surface-0" style={{ left: at(cu) }} />
               </span>
-              <span className="text-right font-mono text-[13px] tabular-nums leading-tight text-ink">
-                {money(bank)}
-                <span className="text-ink-muted"> · </span>
-                <span className="text-brick">{money(cu)}</span>
+              <span className="text-right font-mono text-[13px] tabular-nums leading-tight">
+                <span className="block text-ink">{money(bank)}</span>
+                <span className="block text-brick">{money(cu)}</span>
               </span>
             </button>
           </li>
