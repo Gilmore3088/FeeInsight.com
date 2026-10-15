@@ -261,7 +261,12 @@ Regulatory work needs a defensible position, so nothing Hamilton produces is a b
   `verified:<fee_verified_id>`); a decided row is never selected again.
 - An institution publishes only once it has at least 3 distinct fees (canonical keys)
   live or ready to publish (`HAMILTON_PUBLISH_MIN_INSTITUTION_FEES`; run param
-  `publish_min_institution_fees`, 1 turns it off). Thinner institutions' rows are held:
+  `publish_min_institution_fees`, 1 turns it off). It is one count with the catalog view
+  (#1072): "live" is not rolled back and not quarantined (`CATALOG_DEPTH_LIVE_SQL`, the view's
+  own test), and "ready" is a verified row this rule version has not decided yet (the same
+  filter the selection uses), so a row already rejected at publish or taken down never makes
+  a bank look deep. `publish.test.ts` reads the newest migration that defines the view and
+  fails if its count drifts from this one. Thinner institutions' rows are held:
   not published and not written to `pipeline_attempts`, so they publish on the run
   where Knox's later finds bring the institution to the minimum. The step detail lists
   them as `held_thin_institutions`. The gate applies to new publishes only; it does not
