@@ -282,7 +282,7 @@ function RequestReportFormInner({
               <label
                 key={option.value}
                 className={
-                  "relative flex cursor-pointer flex-col items-center rounded-lg px-1.5 py-2 text-center transition-colors focus-within:outline-2 focus-within:outline-ink " +
+                  "relative flex cursor-pointer flex-col items-center rounded-lg px-1.5 py-2 text-center transition-colors focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-ink " +
                   (on ? "bg-ink text-on-ink shadow-fi-1" : "text-ink hover:bg-surface-0")
                 }
               >

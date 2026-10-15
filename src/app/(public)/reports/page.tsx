@@ -184,16 +184,18 @@ export default async function ReportsPage({ searchParams }: PageProps) {
                 </li>
               ))}
             </ul>
-            <p className="mt-5">
-              <TrackLink
-                event="sample_report_click"
-                eventProps={{ placement: "reports_hero_sample" }}
-                href={SAMPLE_REPORT_HREF}
-                className="text-[14px] font-semibold text-ink underline decoration-border underline-offset-4 hover:decoration-ink"
-              >
-                Or read a free sample report
-              </TrackLink>
-            </p>
+            {sample && (
+              <p className="mt-5">
+                <TrackLink
+                  event="sample_report_click"
+                  eventProps={{ placement: "reports_hero_sample" }}
+                  href={SAMPLE_REPORT_HREF}
+                  className="text-[14px] font-semibold text-ink underline decoration-border underline-offset-4 hover:decoration-ink"
+                >
+                  Or read a free sample report
+                </TrackLink>
+              </p>
+            )}
           </div>
           <div id="request" className="scroll-mt-24 lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:self-center">
             <RequestReportForm
@@ -222,15 +224,17 @@ export default async function ReportsPage({ searchParams }: PageProps) {
               </h2>
               <p className="mt-1 text-[14px] text-ink-muted">
                 Live, from each bank&apos;s own published fee schedule
-                {sample.readOn ? `, read as of ${formatReadOn(sample.readOn)}` : ""}.
+                {sample.readOn ? `, schedules read through ${formatReadOn(sample.readOn)}` : ""}.
               </p>
             </div>
-            <Link
+            <TrackLink
+              event="sample_report_click"
+              eventProps={{ placement: "reports_inside_sample" }}
               href={SAMPLE_REPORT_HREF}
               className="text-[14px] font-semibold text-ink underline decoration-border underline-offset-4 hover:decoration-ink"
             >
               Read the whole sample, with sources
-            </Link>
+            </TrackLink>
           </div>
           <SampleLines sample={sample} />
         </section>

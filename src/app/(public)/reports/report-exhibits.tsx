@@ -8,7 +8,9 @@ import { lineScale, type MapState, type SampleExhibit } from "./report-view";
 const COUNT = new Intl.NumberFormat("en-US");
 
 function money(n: number): string {
-  return Number.isInteger(n) ? `$${COUNT.format(n)}` : `$${n.toFixed(2)}`;
+  return Number.isInteger(n)
+    ? `$${COUNT.format(n)}`
+    : `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 const POSITION = {
@@ -126,19 +128,21 @@ export function StateReportMap({ states }: { states: MapState[] }) {
           );
         })}
       </svg>
-      <div className="rounded-2xl border border-border bg-surface-0 p-4 shadow-fi-1" aria-live="polite">
-        <p className="text-[13px] text-ink-muted">Free state report</p>
-        <p className="text-[20px] font-semibold tracking-[-0.02em] text-ink">{shown.name}</p>
-        <dl className="mt-3 grid grid-cols-2 gap-3">
-          <div>
-            <dt className="text-[12px] text-ink-muted">Institutions</dt>
-            <dd className="font-mono text-[20px] font-semibold tabular-nums text-ink">{COUNT.format(shown.institutions)}</dd>
-          </div>
-          <div>
-            <dt className="text-[12px] text-ink-muted">Verified fees</dt>
-            <dd className="font-mono text-[20px] font-semibold tabular-nums text-ink">{COUNT.format(shown.fees)}</dd>
-          </div>
-        </dl>
+      <div className="rounded-2xl border border-border bg-surface-0 p-4 shadow-fi-1">
+        <div aria-live="polite">
+          <p className="text-[13px] text-ink-muted">Free state report</p>
+          <p className="text-[20px] font-semibold tracking-[-0.02em] text-ink">{shown.name}</p>
+          <dl className="mt-3 grid grid-cols-2 gap-3">
+            <div>
+              <dt className="text-[12px] text-ink-muted">Institutions</dt>
+              <dd className="font-mono text-[20px] font-semibold tabular-nums text-ink">{COUNT.format(shown.institutions)}</dd>
+            </div>
+            <div>
+              <dt className="text-[12px] text-ink-muted">Verified fees</dt>
+              <dd className="font-mono text-[20px] font-semibold tabular-nums text-ink">{COUNT.format(shown.fees)}</dd>
+            </div>
+          </dl>
+        </div>
         {shown.reportReady && (
           <a
             href={`/reports?report=institution&src=reports-map-${shown.code}#request`}

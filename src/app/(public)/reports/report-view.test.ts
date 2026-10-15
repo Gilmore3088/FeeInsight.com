@@ -69,8 +69,13 @@ describe("reports page view", () => {
 
   it("widens a line's axis so the bank's own dot fits", () => {
     const x = lineScale({ own: 50, p25: 20, p75: 30 });
-    expect(x(50)).toBeLessThanOrEqual(100);
-    expect(x(20)).toBeGreaterThanOrEqual(0);
+    expect(x(50)).toBeLessThan(100);
+    expect(x(20)).toBeGreaterThan(0);
+    expect(x(20)).toBeLessThan(x(30));
+    expect(x(30)).toBeLessThan(x(50));
+    const below = lineScale({ own: 5, p25: 20, p75: 30 });
+    expect(below(5)).toBeGreaterThanOrEqual(0);
+    expect(below(5)).toBeLessThan(below(20));
   });
 
   it("shades states by institutions with verified fees and marks those ready for a local report", () => {
