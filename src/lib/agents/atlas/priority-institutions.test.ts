@@ -17,6 +17,7 @@ import {
   PRIORITY_INSTITUTION_SOURCE,
   PRIORITY_MAX_ACTIVE,
   PRIORITY_RULES_REREAD_HOURS,
+  PRIORITY_RULES_REREADS_PER_HOUR,
   PRO_INSTITUTION_MIN_FEES,
   priorityInstitutionSteps,
   schedulePriorityInstitutionRuns,
@@ -82,6 +83,27 @@ describe("priority institutions", () => {
     expect(values).toContain(PRIORITY_INSTITUTION_SOURCE);
     expect(values).toContainEqual([7, 9]);
     expect(values).toContainEqual(PRIORITY_INSTITUTION_REQUESTS.map((request) => request.institutionId));
+  });
+
+  it("ends a request only on a run since it was asked that read a document, and caps a rules version's re-reads an hour", async () => {
+    const { db, calls } = createDb(() => []);
+    await selectPriorityInstitutions(db, { limit: 2, leaderIds: [] });
+    const { text, values } = calls[0];
+    // Tier 2 only while no completed request run, started since the request, read a text of the bank.
+    const requested = text.indexOf("THEN 2");
+    const served = text.indexOf("served.params_json->>'tier' = 'requested'");
+    expect(served).toBeGreaterThan(0);
+    expect(served).toBeLessThan(requested);
+    expect(text).toContain("served.status = 'completed'");
+    expect(text).toContain("served.started_at >= asked.since::timestamptz");
+    expect(text).toMatch(/read\.agent_run_id = served\.id\s+AND read\.institution_id = inst\.id\s+AND read\.stage = 'extract'/);
+    expect(values).toContainEqual(PRIORITY_INSTITUTION_REQUESTS.map((request) => request.requestedAt ?? ""));
+    // A page this version has not read bypasses the retry window only under the hourly cap.
+    expect(text).toMatch(/OR NOT c\.rules_unread\s+--[^\n]*\n\s+OR \(\s+SELECT COUNT\(\*\) FROM agent_runs reread/);
+    expect(text).toContain("reread.started_at > NOW() - INTERVAL '1 hour'");
+    expect(values).toContain(`atlas:priority:%:knox:${KNOX_RULES_STRATEGY.version}`);
+    expect(values).toContain(PRIORITY_RULES_REREADS_PER_HOUR);
+    expect(PRIORITY_RULES_REREADS_PER_HOUR).toBe(6);
   });
 
   it("ranks an unread document from the paid fetch right after hand-found schedules, keyed by the document", async () => {
