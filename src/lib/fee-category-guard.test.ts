@@ -1107,7 +1107,27 @@ describe("activity charges filed as monthly maintenance (v62, #1100)", () => {
     const context = { amount, conditions: knoxNote(line) };
     const verdict = checkFeeCategory("monthly_maintenance", name, context);
     expect(verdict.ok).toBe(false);
-    expect(refileFromLine("monthly_maintenance", name, context)).toBe("account_research");
+    // Switch off, every over-limit activity charge goes to account research.
+    expect(refileFromLine("monthly_maintenance", name, context, false)).toBe("account_research");
+  });
+
+  // Guard v65 (#1398): once the research split is on, only a line naming savings, money market or
+  // share withdrawals, transfers or debits goes to excess withdrawals; checks, items, drafts and
+  // debit card activity stay account research.
+  it.each([
+    ["Service charge", 3, "Savings: a service charge of $3.00 will be charged for each withdrawal in excess of six per month.", "excess_withdrawal"],
+    ["Money market service charge", 10, "Money Market: $10.00 per withdrawal or transfer in excess of six per statement cycle", "excess_withdrawal"],
+    ["Share service charge", 2, "Share accounts: $2.00 for each debit in excess of 6 per month", "excess_withdrawal"],
+    ["Service charge", 2, "Service charge of $2 per debit in excess of 6 withdrawals per quarter", "account_research"],
+    ["Service charge", 3, "Savings: $3.00 per check over 3 checks per month", "account_research"],
+    ["Service charge", 1, "Savings: $1.00 per debit card transaction over 10 per month", "account_research"],
+    ["Per item service charge fee", 25, "A per item service charge fee of $25.00 will be charged for each transaction in excess of the above limitations.", "account_research"],
+  ])("switched on, re-files %s ($%d) by its line's activity", (name, amount, line, want) => {
+    const context = { amount, conditions: knoxNote(line) };
+    // The live guard reads the same line, so a re-filed bare service charge stays accepted there.
+    expect(checkFeeCategory("excess_withdrawal", name, context).ok).toBe(want === "excess_withdrawal");
+    expect(refileFromLine("monthly_maintenance", name, context, true)).toBe(want);
+    expect(refileFromLine("monthly_maintenance", name, context, false)).toBe("account_research");
   });
 
   it.each([
@@ -1177,5 +1197,141 @@ describe("service charges for another service filed as monthly maintenance (v62,
     "Monthly Service Charge",
   ])("keeps %s", (name) => {
     expect(checkFeeCategory("monthly_maintenance", name).ok).toBe(true);
+  });
+});
+
+describe("excess withdrawals and returned mail, their own types (guard v65, James, Oct 15, #1398)", () => {
+  it.each([
+    ["excess_withdrawal", "Excess Transaction Fee"],
+    ["excess_withdrawal", "Excessive Withdrawal Fee (Share Account)"],
+    ["excess_withdrawal", "Excess Statement Savings Transaction"],
+    ["excess_withdrawal", "Withdrawal Limit Fee"],
+    ["excess_withdrawal", "Excess Activity-Savings Acct (per item)"],
+    // Final review G: a per-item count beside excess or withdrawal, a teller withdrawal over the
+    // limit, withdrawals over a count (the fold places all three too).
+    ["excess_withdrawal", "Excess withdrawal per item over 6"],
+    ["excess_withdrawal", "Excess Teller Withdrawal"],
+    ["excess_withdrawal", "Withdrawals over 6"],
+    ["returned_mail", "Returned Statement Fee"],
+    ["returned_mail", "Return Mail Fee (no forwarding)"],
+    ["returned_mail", "Bad address fee"],
+    ["returned_mail", "Undeliverable Mail / Locator fee"],
+    ["returned_mail", "Address Correction"],
+    ["returned_mail", "Incorrect Address Research Fee"],
+    ["returned_mail", "Mail forwarding"],
+    ["returned_mail", "eStatement incorrect email address"],
+    ["excess_withdrawal", "Over withdrawal limit"],
+    ["excess_withdrawal", "Excess Withdrawal Fee"],
+    ["excess_withdrawal", "Excessive Transaction Fee"],
+    ["excess_withdrawal", "Savings withdrawal limit fee"],
+    ["excess_withdrawal", "Reg D violation fee"],
+    ["excess_withdrawal", "Savings withdrawals in excess of 6 per month"],
+    ["excess_withdrawal", "Transfers after 6 per statement cycle"],
+    ["returned_mail", "Returned Mailed Statement"],
+    ["returned_mail", "^ Return of Paper Statement Fee (Per statement)"],
+    ["returned_mail", "Statement returned - bad address"],
+    ["returned_mail", "Returned eStatement due to incorrect email address"],
+    ["returned_mail", "Undeliverable E-Statement Fee"],
+    ["returned_mail", "Address Locator Services"],
+  ])("%s accepts %s", (key, name) => {
+    expect(checkFeeCategory(key, name)).toEqual({ ok: true });
+  });
+
+  it.each([
+    ["excess_withdrawal", "Account research, per hour"],
+    ["excess_withdrawal", "IRA Excess Withdrawal Fee"],
+    ["excess_withdrawal", "Returned Mail Fee"],
+    ["excess_withdrawal", "Wire research"],
+    ["excess_withdrawal", "Excessive ATM withdrawals"],
+    ["excess_withdrawal", "Foreign transaction fee"],
+    ["excess_withdrawal", "International wire"],
+    ["excess_withdrawal", "Early withdrawal penalty"],
+    ["excess_withdrawal", "Overdraft transfer"],
+    ["excess_withdrawal", "NSF fee"],
+    ["excess_withdrawal", "Returned item"],
+    ["excess_withdrawal", "Cashier's check"],
+    ["excess_withdrawal", "Paper statement fee"],
+    ["excess_withdrawal", "Christmas club early withdrawal"],
+    ["excess_withdrawal", "Certificate early withdrawal"],
+    ["excess_withdrawal", "CD early withdrawal"],
+    ["excess_withdrawal", "POS transaction fee"],
+    ["excess_withdrawal", "Teller transaction fee"],
+    ["excess_withdrawal", "Excess items"],
+    ["excess_withdrawal", "Excess debit card transactions"],
+    ["returned_mail", "Account research, per hour"],
+    ["returned_mail", "Wire research"],
+    ["returned_mail", "Returned Item"],
+    ["returned_mail", "Returned check fee"],
+    ["returned_mail", "Excess Transaction Fee"],
+    ["returned_mail", "Paper Statement Fee"],
+    ["returned_mail", "Statement copy"],
+    ["returned_mail", "Address"],
+    ["returned_mail", "Address verification"],
+    ["returned_mail", "Returned deposit"],
+    ["returned_mail", "Deposited item returned"],
+    ["returned_mail", "Returned draft"],
+    ["returned_mail", "Checks returned unpaid"],
+    ["returned_mail", "Change of address"],
+    ["returned_mail", "Address change fee"],
+    ["returned_mail", "Return to paper statements"],
+    ["returned_mail", "Re-enroll in paper statements"],
+    ["returned_mail", "Branch locator"],
+    ["returned_mail", "Invalid email address"],
+    ["returned_mail", "Returned Mail Fee Reconciling statements and research"],
+    // Review O1: a name that is some other fee is not an excess withdrawal.
+    ["excess_withdrawal", "Monthly Maintenance Fee"],
+    ["excess_withdrawal", "Check Printing"],
+    ["excess_withdrawal", "Safe deposit box rental"],
+    ["excess_withdrawal", "Loan origination"],
+    ["excess_withdrawal", "Card replacement"],
+    ["excess_withdrawal", "Deposit item returned"],
+    ["excess_withdrawal", "Collection item"],
+    ["excess_withdrawal", "Subordination fee"],
+    ["excess_withdrawal", "Escheatment fee"],
+    ["excess_withdrawal", "Legal fee"],
+    ["excess_withdrawal", "Check cashing non-member"],
+    ["excess_withdrawal", "Minimum balance service charge"],
+    ["excess_withdrawal", "Loan transfer fee"],
+    // Re-review: a fee per transaction, transfer or debit, a credit limit, a monthly or business
+    // service charge, a slip, a history or printout, an excess check fee are other fees.
+    ["excess_withdrawal", "Transaction fee"],
+    ["excess_withdrawal", "ACH debit fee"],
+    ["excess_withdrawal", "Telephone transfer fee"],
+    ["excess_withdrawal", "Online transfer fee"],
+    ["excess_withdrawal", "External transfer fee"],
+    ["excess_withdrawal", "Zelle transfer"],
+    ["excess_withdrawal", "Credit limit fee"],
+    ["excess_withdrawal", "Limit increase fee"],
+    ["excess_withdrawal", "Monthly service charge"],
+    ["excess_withdrawal", "Business account service charge"],
+    ["excess_withdrawal", "Withdrawal slip"],
+    ["excess_withdrawal", "Transaction history"],
+    ["excess_withdrawal", "Account activity printout"],
+    ["excess_withdrawal", "Excess check fee"],
+    // Final review G: a business account's item count; a bare service charge with no savings
+    // over-limit line behind it (Knox filing one here is refused; see the line re-file below).
+    ["excess_withdrawal", "Excess transactions - business account item"],
+    ["excess_withdrawal", "Service charge"],
+    ["excess_withdrawal", "Service Fee"],
+    ["excess_withdrawal", "Share service charge"],
+    ["excess_withdrawal", "Money market service charge"],
+    // Review O2: a return of anything but mail, a statement or an address is not returned mail.
+    ["returned_mail", "Item return fee"],
+    ["returned_mail", "Returned foreign item"],
+    ["returned_mail", "Loan payment returned"],
+    ["returned_mail", "Returned card fee"],
+    ["returned_mail", "Returned debit card"],
+    ["returned_mail", "Returned coin wrapper"],
+    ["returned_mail", "Return of collateral"],
+    ["returned_mail", "Returned bill pay"],
+  ])("%s refuses %s", (key, name) => {
+    expect(checkFeeCategory(key, name).ok).toBe(false);
+  });
+
+  it("re-files research filed under either back to account research, and an IRA's excess withdrawal to the IRA", () => {
+    expect(refileCategory("excess_withdrawal", "Account research, per hour")).toBe("account_research");
+    expect(refileCategory("returned_mail", "Returned mail research fee")).toBe("account_research");
+    expect(refileCategory("excess_withdrawal", "IRA Excess Withdrawal Fee")).toBe("ira_administration");
+    expect(refileCategory("excess_withdrawal", "Excess Transaction Fee")).toBe("excess_withdrawal");
   });
 });

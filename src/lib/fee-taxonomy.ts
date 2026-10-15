@@ -3,10 +3,13 @@
  * Single source of truth for fee families, display names, and colors in the UI.
  */
 
+import { RESEARCH_SPLIT_LIVE, researchSplitTarget } from "@/lib/fee-fold";
+
 /**
- * The top 50 fee types (James, Oct 8 2026). Fifteen smaller categories were folded into
- * these by each fee's own wording (`src/lib/fee-fold.ts`); add a category only by folding
- * another one in.
+ * The top 50 fee types (James, Oct 8 2026), plus excess withdrawals and returned mail once they
+ * leave account research for their own types (James, Oct 15 2026: "Add both", #1398; listed only
+ * while `RESEARCH_SPLIT_LIVE` is on). Fifteen smaller categories were folded into these by each
+ * fee's own wording (`src/lib/fee-fold.ts`); add a category only by James's decision.
  */
 export const FEE_FAMILIES: Record<string, string[]> = {
   "Account Maintenance": [
@@ -16,6 +19,7 @@ export const FEE_FAMILIES: Record<string, string[]> = {
     "dormant_account",
     "account_research",
     "paper_statement",
+    ...(RESEARCH_SPLIT_LIVE ? ["excess_withdrawal", "returned_mail"] : []),
   ],
   "Overdraft & NSF": [
     "overdraft",
@@ -95,6 +99,9 @@ export const DISPLAY_NAMES: Record<string, string> = {
   dormant_account: "Dormant Account",
   account_research: "Account Research",
   paper_statement: "Paper Statement",
+  // Listed only once the research split is on (#1398), so search, the public fee pages, category
+  // inference and guides never offer a type no fee is filed under yet.
+  ...(RESEARCH_SPLIT_LIVE ? { excess_withdrawal: "Excess Withdrawals", returned_mail: "Returned Mail" } : {}),
   // Overdraft & NSF
   overdraft: "Overdraft (OD)",
   nsf: "NSF / Returned Item",
@@ -172,6 +179,12 @@ export const CANONICAL_KEY_MAP: Record<string, string> = {
   dormant_account: "dormant_account",
   account_research: "account_research",
   paper_statement: "paper_statement",
+  // James, Oct 15 2026 (#1398, "Add both"): a per-item charge for withdrawals or transfers past a
+  // savings or money market account's monthly limit, and returned or undeliverable mail, statements
+  // or a bad address, each have their own type once `RESEARCH_SPLIT_LIVE` is on; until then the map
+  // is exactly main's (no `excess_withdrawal` key, `returned_mail` an account research alias in its
+  // old place, so alias order and counts do not change). Account research keeps research.
+  ...(RESEARCH_SPLIT_LIVE ? { excess_withdrawal: "excess_withdrawal" } : {}),
   estatement_fee: "estatement_fee",
   // Overdraft & NSF
   overdraft: "overdraft",
@@ -265,8 +278,9 @@ export const CANONICAL_KEY_MAP: Record<string, string> = {
   overdraft_each_overdraft_paid: "overdraft",
   overdraft_privilege: "overdraft",
   over_fee: "overdraft",
-  // A savings or money market excess withdrawal (Reg D-style) is account servicing, not overdraft.
-  excessive_withdrawal_fee: "account_research",
+  // A savings or money market excess withdrawal (Reg D-style) is its own type (account research
+  // until the research split is on), not overdraft.
+  excessive_withdrawal_fee: researchSplitTarget("excess_withdrawal"),
   // --- Card / debit variants ---
   debit_fee: "card_replacement",
   debit_card_fee: "card_replacement",
@@ -295,16 +309,16 @@ export const CANONICAL_KEY_MAP: Record<string, string> = {
   transactions_fee: "account_research",
   per_transaction_fee: "account_research",
   ach_batch_fee: "ach_origination",
-  // --- Address / mail return variants ---
-  returned_mail: "account_research",
-  returned_mail_fee: "account_research",
-  return_mail: "account_research",
-  bad_address: "account_research",
-  bad_address_fee: "account_research",
-  incorrect_address: "account_research",
-  incorrect_address_fee: "account_research",
-  invalid_address_fee: "account_research",
-  undeliverable_mail: "account_research",
+  // --- Address / mail return variants (returned mail once the research split is on) ---
+  returned_mail: researchSplitTarget("returned_mail"),
+  returned_mail_fee: researchSplitTarget("returned_mail"),
+  return_mail: researchSplitTarget("returned_mail"),
+  bad_address: researchSplitTarget("returned_mail"),
+  bad_address_fee: researchSplitTarget("returned_mail"),
+  incorrect_address: researchSplitTarget("returned_mail"),
+  incorrect_address_fee: researchSplitTarget("returned_mail"),
+  invalid_address_fee: researchSplitTarget("returned_mail"),
+  undeliverable_mail: researchSplitTarget("returned_mail"),
   // --- Dormant / escheatment variants ---
   inactive_fee: "dormant_account",
   dormant_fee: "dormant_account",
@@ -379,7 +393,8 @@ export const CANONICAL_KEY_MAP: Record<string, string> = {
   all_other_atms: "atm_non_network",
   atm_deposit_adjustment: "deposited_item_return",
   // --- Statement variants ---
-  returned_statement: "paper_statement",
+  // A statement mailed back undelivered is returned mail once the research split is on (Oct 15).
+  returned_statement: RESEARCH_SPLIT_LIVE ? "returned_mail" : "paper_statement",
   mailed_paper_statement: "paper_statement",
   // --- Balance inquiry variants ---
   shared_branch_fee: "balance_inquiry",
@@ -403,7 +418,7 @@ export const CANONICAL_KEY_MAP: Record<string, string> = {
   document_copy_fee: "document_reproduction",
   visa_travel_card: "card_replacement",
   loan_extension: "loan_origination",
-  excessive_transaction_fee: "account_research",
+  excessive_transaction_fee: researchSplitTarget("excess_withdrawal"),
   reopen_account: "early_closure",
   loan_cancellation_fee: "loan_origination",
 };
@@ -547,6 +562,7 @@ export const FEE_TIERS: Record<string, FeeTier> = {
   garnishment_levy: "extended",
   safe_deposit_box: "extended",
   account_research: "extended",
+  ...(RESEARCH_SPLIT_LIVE ? { excess_withdrawal: "extended" as const } : {}),
   check_printing: "extended",
   coin_counting: "extended",
   ach_origination: "extended",
@@ -570,6 +586,7 @@ export const FEE_TIERS: Record<string, FeeTier> = {
   account_verification: "comprehensive",
   loan_origination: "comprehensive",
   appraisal_fee: "comprehensive",
+  ...(RESEARCH_SPLIT_LIVE ? { returned_mail: "comprehensive" as const } : {}),
 };
 
 const FEATURED_TIERS: Set<FeeTier> = new Set(["spotlight", "core"]);

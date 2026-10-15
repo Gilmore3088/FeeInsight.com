@@ -12,7 +12,7 @@ export function BoardBriefEditor({ analysis, analysisId, initialReport, reportId
   analysis?: AnalyzeResponse; analysisId?: string; initialReport?: ReportSummaryResponse; reportId?: string; metadata?: ReportArtifactMetadata;
 }) {
   const router = useRouter();
-  const [title, setTitle] = useState(initialReport?.title ?? `${analysis?.title ?? "Research"}: board brief`);
+  const [title, setTitle] = useState(initialReport?.title ?? analysis?.title ?? "Board brief");
   const [teamNote, setTeamNote] = useState(initialReport?.boardBrief?.teamNote ?? "");
   const [includeEvidence, setIncludeEvidence] = useState(initialReport?.boardBrief?.includeEvidence ?? true);
   const [busy, setBusy] = useState(false);

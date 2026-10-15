@@ -1,4 +1,4 @@
-import { isConsumerFee, scopedFeeStatements, type FeeAudience } from "@/lib/fee-audience";
+import { scopedFeeStatements, type FeeAudience } from "@/lib/fee-audience";
 import { darwinAudience, type DarwinAudience } from "./audience";
 import { tierPerkZero } from "./tier-perk";
 import { createHash } from "crypto";
@@ -47,6 +47,7 @@ import {
 import { darwinEnvelopeFor, loadLearnedEnvelopes, type LearnedEnvelope } from "./learned-envelopes";
 import {
   DARWIN_PEER_STRATEGY,
+  entersPeerCheck,
   DARWIN_SECOND_SOURCE_STRATEGY,
   districtOfState,
   holdsForPeerReview,
@@ -1166,9 +1167,10 @@ export async function runDarwinVerify(
     let peer: PeerCheckResult | null = null;
     let secondSource: SecondSourceResult | null = null;
     if (!reasonCode && canonicalFeeKey && base.amount != null) {
-      // A consumer baseline cannot hold a business or unknown-audience fee.
-      // Second-source evidence is separate and still runs for those rows.
-      if (isConsumerFee(row.fee_audience)) {
+      // The peer levels are the benchmark population, so a fee enters on the benchmarks' terms
+      // (#1112): consumer, both, and unknown unless its schedule is business-only; never business.
+      // Second-source evidence is separate; it still gives no confidence to an unknown fee.
+      if (entersPeerCheck(row.fee_audience, row.source_url)) {
         const stateCode = row.state_code ?? options.stateCode;
         const levels = await peers.forState(stateCode);
         peer = peerCheck(

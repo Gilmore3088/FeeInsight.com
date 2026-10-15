@@ -54,7 +54,7 @@ describe("actual saved artifact PDF identity", () => {
     const text = await renderedText(createElement(AnalysisPdfDocument, { analysis, analysisFocus: "Fees" }));
     expect(text).toContain("Research institution: Research Bank A");
     expect(text).toContain("Account institution: Space Coast CU");
-    expect(text).toContain("Peer baseline: Original A cohort (saved-peer-set)");
+    expect(text).toContain("Peer baseline: Original A cohort (saved peer group)");
     expect(text).not.toContain("Current Bank B");
   }, 20000);
 

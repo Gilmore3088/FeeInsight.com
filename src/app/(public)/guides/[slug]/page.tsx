@@ -39,6 +39,7 @@ import {
   type GuideBreakdowns,
 } from "@/components/public/guide-blocks";
 import { SavedInstitutionsPanel } from "@/components/public/saved-institutions-panel";
+import { UnstatedAudienceFootnote, UnstatedAudienceMark, medianHasUnstatedAudience } from "@/components/unstated-audience";
 import { PRODUCT_NAME, SITE_URL } from "@/lib/constants";
 import { Button, SearchInput } from "@/brand/components";
 
@@ -224,7 +225,10 @@ export default async function GuidePage({ params }: PageProps) {
             <figure className="rounded-2xl border border-border bg-surface-0 p-4 shadow-fi-1 sm:p-6">
               <figcaption>
                 <p className="text-[13px] text-ink-muted">Typical {primaryName} fee, U.S. median</p>
-                <p className="font-mono text-[40px] font-semibold leading-none tabular-nums text-ink">{formatAmount(median)}</p>
+                <p className="font-mono text-[40px] font-semibold leading-none tabular-nums text-ink">
+                  {formatAmount(median)}
+                  <UnstatedAudienceMark show={medianHasUnstatedAudience(primarySummary)} />
+                </p>
                 <p className="mt-2 text-[13px] text-ink-muted">
                   {hasRange && (
                     <>
@@ -243,6 +247,10 @@ export default async function GuidePage({ params }: PageProps) {
               <p className="mt-2 text-[11px] text-ink-muted">
                 Source: {PRODUCT_NAME}, institutions&rsquo; own published schedules.{crawlDate ? ` Data as of ${crawlDate}.` : ""}
               </p>
+              <UnstatedAudienceFootnote
+                show={medianHasUnstatedAudience(primarySummary) || otherFees.some(medianHasUnstatedAudience)}
+                className="mt-2"
+              />
               <p className="mt-2 text-[12px]">
                 <Link href={`/fees/${guide.primaryCategory}`} className="font-semibold text-ink underline decoration-border underline-offset-4 hover:decoration-ink">
                   See the full data for this fee
@@ -294,7 +302,9 @@ export default async function GuidePage({ params }: PageProps) {
                     <Link href={`/fees/${fee.fee_category}`} className="flex min-h-11 items-center justify-between gap-4 px-4 py-2.5 text-[14px] text-ink hover:bg-paper">
                       <span>{getDisplayName(fee.fee_category)}</span>
                       <span className="font-mono tabular-nums">
-                        {formatAmount(fee.median_amount)} <span className="text-[12px] text-ink-muted">median</span>
+                        {formatAmount(fee.median_amount)}
+                        <UnstatedAudienceMark show={medianHasUnstatedAudience(fee)} />{" "}
+                        <span className="text-[12px] text-ink-muted">median</span>
                       </span>
                     </Link>
                   </li>

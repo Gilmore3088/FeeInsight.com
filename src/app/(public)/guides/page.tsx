@@ -25,6 +25,7 @@ import { formatAmount } from "@/lib/format";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
 import { SITE_URL } from "@/lib/constants";
 import { COVERAGE_LABELS, getPublicSnapshot } from "@/lib/public-stats";
+import { UnstatedAudienceFootnote, UnstatedAudienceMark, medianHasUnstatedAudience } from "@/components/unstated-audience";
 
 const TITLE = "Consumer Guides — Understanding Bank Fees";
 const DESCRIPTION =
@@ -74,6 +75,17 @@ const Arrow = () => (
     <path d="M5 12h14M12 5l7 7-7 7" />
   </svg>
 );
+
+/** The category summaries whose medians a guide card prints: the primary, plus up to three more on a featured card. */
+function cardMedians(guide: Guide, summaryFor: Map<string, FeeCategorySummary>, featured: boolean): FeeCategorySummary[] {
+  const primary = summaryFor.get(guide.primaryCategory);
+  if (!primary) return [];
+  if (!featured) return [primary];
+  const relevantFees = guideCategories(guide)
+    .map((c) => summaryFor.get(c))
+    .filter((s): s is FeeCategorySummary => Boolean(s));
+  return [primary, ...(relevantFees.length > 1 ? relevantFees.slice(1, 4) : [])];
+}
 
 function GuideCard({
   guide,
@@ -134,6 +146,7 @@ function GuideCard({
                 style={{ fontFamily: "var(--fi-font-mono)" }}
               >
                 {formatAmount(primary.median_amount)}
+                <UnstatedAudienceMark show={medianHasUnstatedAudience(primary)} />
               </span>
               <span className="text-[11px] text-ink-muted">
                 median {getDisplayName(primary.fee_category).toLowerCase()}
@@ -157,6 +170,7 @@ function GuideCard({
                       />
                       <span className="text-[12px] font-medium tabular-nums text-ink-soft">
                         {formatAmount(fee.median_amount)}
+                        <UnstatedAudienceMark show={medianHasUnstatedAudience(fee)} />
                       </span>
                     </div>
                   </div>
@@ -173,6 +187,7 @@ function GuideCard({
               style={{ fontFamily: "var(--fi-font-mono)" }}
             >
               {formatAmount(primary.median_amount)}
+              <UnstatedAudienceMark show={medianHasUnstatedAudience(primary)} />
             </span>
             <span className="text-[10px] text-ink-muted">
               median {getDisplayName(primary.fee_category).toLowerCase()}
@@ -206,6 +221,11 @@ export default async function GuidesIndexPage() {
 
   const featured = consumerGuides.filter((g) => g.featured);
   const more = consumerGuides.filter((g) => !g.featured);
+  // The asterisk's footnote shows when any median a card prints rests on an unstated-audience row.
+  const unstatedShown = [
+    ...featured.flatMap((guide) => cardMedians(guide, summaryFor, true)),
+    ...more.flatMap((guide) => cardMedians(guide, summaryFor, false)),
+  ].some(medianHasUnstatedAudience);
 
   return (
     <div className="mx-auto max-w-page px-6 py-16">
@@ -295,6 +315,8 @@ export default async function GuidesIndexPage() {
           </div>
         </section>
       )}
+
+      <UnstatedAudienceFootnote show={unstatedShown} className="mt-6" />
 
       {/* ── Professional guides ── */}
       {professionalGuides.length > 0 && (

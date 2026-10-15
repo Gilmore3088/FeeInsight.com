@@ -170,10 +170,10 @@ export const CONSUMER_GUIDES: Guide[] = [
             type: "benchmark",
             category: "overdraft",
             rows: [
-              { condition: "{{overdraft.p25}} or less", meaning: "Better than 75% of institutions" },
+              { condition: "{{overdraft.p25}} or less", meaning: "In the lowest-priced quarter" },
               { condition: "Around {{overdraft.median}}", meaning: "Right at the national median" },
-              { condition: "More than {{overdraft.p75}}", meaning: "You pay more than 75% of the country" },
-              { condition: "More than {{overdraft.p75}}, no daily cap", meaning: "You pay more than 75% of the country, with no daily limit" },
+              { condition: "More than {{overdraft.p75}}", meaning: "In the highest-priced quarter" },
+              { condition: "More than {{overdraft.p75}}, no daily cap", meaning: "In the highest-priced quarter, with no daily limit" },
             ],
           },
           {
@@ -315,9 +315,9 @@ export const CONSUMER_GUIDES: Guide[] = [
             category: "nsf",
             rows: [
               { condition: "No NSF fee at all", meaning: "Where a growing share of the industry now sits" },
-              { condition: "{{nsf.p25}} or less", meaning: "Better than 75% of institutions" },
+              { condition: "{{nsf.p25}} or less", meaning: "In the lowest-priced quarter" },
               { condition: "Around {{nsf.median}}", meaning: "Right at the national median" },
-              { condition: "More than {{nsf.p75}}", meaning: "You pay more than 75% of the country" },
+              { condition: "More than {{nsf.p75}}", meaning: "In the highest-priced quarter" },
             ],
           },
           {
@@ -466,9 +466,9 @@ export const CONSUMER_GUIDES: Guide[] = [
             category: "atm_non_network",
             rows: [
               { condition: "$0, or fees rebated", meaning: "Best available — common at online banks and some credit unions" },
-              { condition: "{{atm_non_network.p25}} or less", meaning: "Better than 75% of institutions" },
+              { condition: "{{atm_non_network.p25}} or less", meaning: "In the lowest-priced quarter" },
               { condition: "Around {{atm_non_network.median}}", meaning: "Right at the national median" },
-              { condition: "More than {{atm_non_network.p75}}", meaning: "You pay more than 75% of the country" },
+              { condition: "More than {{atm_non_network.p75}}", meaning: "In the highest-priced quarter" },
             ],
           },
           {
@@ -615,9 +615,9 @@ export const CONSUMER_GUIDES: Guide[] = [
             type: "benchmark",
             category: "wire_domestic_outgoing",
             rows: [
-              { condition: "{{wire_domestic_outgoing.p25}} or less", meaning: "Better than 75% of institutions" },
+              { condition: "{{wire_domestic_outgoing.p25}} or less", meaning: "In the lowest-priced quarter" },
               { condition: "Around {{wire_domestic_outgoing.median}}", meaning: "Right at the national median" },
-              { condition: "More than {{wire_domestic_outgoing.p75}}", meaning: "You pay more than 75% of the country" },
+              { condition: "More than {{wire_domestic_outgoing.p75}}", meaning: "In the highest-priced quarter" },
               { condition: "Charged to receive a domestic wire", meaning: "Many institutions do not charge at all" },
             ],
           },
@@ -756,9 +756,9 @@ export const CONSUMER_GUIDES: Guide[] = [
             category: "monthly_maintenance",
             rows: [
               { condition: "$0 with no conditions", meaning: "Best available, and widely offered" },
-              { condition: "{{monthly_maintenance.p25}} or less", meaning: "Better than 75% of institutions" },
+              { condition: "{{monthly_maintenance.p25}} or less", meaning: "In the lowest-priced quarter" },
               { condition: "Around {{monthly_maintenance.median}}", meaning: "Right at the national median" },
-              { condition: "More than {{monthly_maintenance.p75}}", meaning: "You pay more than 75% of the country" },
+              { condition: "More than {{monthly_maintenance.p75}}", meaning: "In the highest-priced quarter" },
             ],
           },
           {
@@ -907,9 +907,9 @@ export const CONSUMER_GUIDES: Guide[] = [
             category: "card_foreign_txn",
             rows: [
               { condition: "No foreign transaction fee", meaning: "Best available — and widely offered" },
-              { condition: "{{card_foreign_txn.p25}} or less", meaning: "Better than 75% of institutions" },
+              { condition: "{{card_foreign_txn.p25}} or less", meaning: "In the lowest-priced quarter" },
               { condition: "Around {{card_foreign_txn.median}}", meaning: "Right at the national median" },
-              { condition: "More than {{card_foreign_txn.p75}}", meaning: "You pay more than 75% of the country" },
+              { condition: "More than {{card_foreign_txn.p75}}", meaning: "In the highest-priced quarter" },
             ],
           },
           {
@@ -1058,9 +1058,9 @@ export const CONSUMER_GUIDES: Guide[] = [
             category: "cashiers_check",
             rows: [
               { condition: "Free to account holders", meaning: "Common at credit unions" },
-              { condition: "{{cashiers_check.p25}} or less", meaning: "Better than 75% of institutions" },
+              { condition: "{{cashiers_check.p25}} or less", meaning: "In the lowest-priced quarter" },
               { condition: "Around {{cashiers_check.median}}", meaning: "Right at the national median" },
-              { condition: "More than {{cashiers_check.p75}}", meaning: "You pay more than 75% of the country" },
+              { condition: "More than {{cashiers_check.p75}}", meaning: "In the highest-priced quarter" },
             ],
           },
           {
@@ -1212,9 +1212,9 @@ export const CONSUMER_GUIDES: Guide[] = [
             category: "ach_return",
             rows: [
               { condition: "No charge for standard transfers", meaning: "The current market standard" },
-              { condition: "Returned ACH at {{ach_return.p25}} or less", meaning: "Better than 75% of institutions" },
+              { condition: "Returned ACH at {{ach_return.p25}} or less", meaning: "In the lowest-priced quarter" },
               { condition: "Returned ACH around {{ach_return.median}}", meaning: "Right at the national median" },
-              { condition: "Returned ACH above {{ach_return.p75}}", meaning: "You pay more than 75% of the country" },
+              { condition: "Returned ACH above {{ach_return.p75}}", meaning: "In the highest-priced quarter" },
             ],
           },
           {
@@ -1359,9 +1359,9 @@ export const CONSUMER_GUIDES: Guide[] = [
             category: "early_closure",
             rows: [
               { condition: "No early closure fee", meaning: "Common at credit unions" },
-              { condition: "{{early_closure.p25}} or less", meaning: "Better than 75% of institutions" },
+              { condition: "{{early_closure.p25}} or less", meaning: "In the lowest-priced quarter" },
               { condition: "Around {{early_closure.median}}", meaning: "Right at the national median" },
-              { condition: "More than {{early_closure.p75}}", meaning: "You pay more than 75% of the country" },
+              { condition: "More than {{early_closure.p75}}", meaning: "In the highest-priced quarter" },
             ],
           },
           {
@@ -1507,9 +1507,9 @@ export const CONSUMER_GUIDES: Guide[] = [
             category: "safe_deposit_box",
             rows: [
               { condition: "Included with your account", meaning: "Common on premium and relationship accounts" },
-              { condition: "{{safe_deposit_box.p25}} or less", meaning: "Better than 75% of institutions" },
+              { condition: "{{safe_deposit_box.p25}} or less", meaning: "In the lowest-priced quarter" },
               { condition: "Around {{safe_deposit_box.median}}", meaning: "Right at the national median" },
-              { condition: "More than {{safe_deposit_box.p75}}", meaning: "You pay more than 75% of the country" },
+              { condition: "More than {{safe_deposit_box.p75}}", meaning: "In the highest-priced quarter" },
             ],
           },
           {

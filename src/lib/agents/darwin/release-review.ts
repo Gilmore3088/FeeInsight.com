@@ -417,8 +417,9 @@ export function maintenanceWithoutContext(key: string, heldReason: string | null
 const PER_EACH_ROW = /^\W*per\s+each\b/i;
 const PER_EACH_ROWS = /\bper\s+each\b[\s\S]*\bper\s+each\b/i;
 const BUSINESS_ANALYSIS = /\b(?:earnings allowance|analysis|business|commercial|collected balance)\b/i;
+// Account research and excess withdrawals (their own type since Oct 15, #1398) hold per-activity charges by design.
 export function businessActivityRow(key: string, name: string, sourceContext: string | null | undefined): boolean {
-  if (key === "account_research" || !PER_EACH_ROW.test(name)) return false;
+  if (key === "account_research" || key === "excess_withdrawal" || !PER_EACH_ROW.test(name)) return false;
   const context = sourceContext ?? "";
   return PER_EACH_ROWS.test(context) || BUSINESS_ANALYSIS.test(context);
 }

@@ -12,14 +12,28 @@ import {
   splitLiveCategory,
   SUBORDINATION_REFILE_LIVE,
   subordinationRefileHeld,
+  RESEARCH_SPLIT_LIVE,
+  RESEARCH_SPLIT_PREVIEW,
+  RESEARCH_SPLIT_SQL_PATTERN,
+  researchSplitCategory,
+  researchSplitTarget,
+  EXCESS_WITHDRAWAL,
+  RETURNED_MAIL,
+  estatementReturnRules,
 } from "./fee-fold";
 
 const TAXONOMY = new Set(Object.values(FEE_FAMILIES).flat());
+/** Where the switched rules file excess withdrawals and returned mail today. */
+const EXCESS = researchSplitTarget("excess_withdrawal");
+const RETURNED = researchSplitTarget("returned_mail");
 const to = (key: string, name: string, context?: string) => foldRetiredCategory(key, name, context)?.to;
 
 describe("top-50 fold", () => {
-  test("the taxonomy is the top 50 and no retired key is in it", () => {
-    expect(TAXONOMY.size).toBe(50);
+  test("the taxonomy is the top 50 plus excess withdrawals and returned mail (Oct 15), and no retired key is in it", () => {
+    // The two new types are listed only once the research split is on (#1398).
+    expect(TAXONOMY.size).toBe(RESEARCH_SPLIT_LIVE ? 52 : 50);
+    expect(TAXONOMY.has("excess_withdrawal")).toBe(RESEARCH_SPLIT_LIVE);
+    expect(TAXONOMY.has("returned_mail")).toBe(RESEARCH_SPLIT_LIVE);
     for (const key of RETIRED_CATEGORY_KEYS) expect(TAXONOMY.has(key)).toBe(false);
   });
 
@@ -90,10 +104,14 @@ describe("top-50 fold", () => {
     expect(to("card_dispute", "There is no charge for a transaction dispute or fraud claim.")).toBeNull();
   });
 
-  test("e-statements: returned is research, a copy is a copy, both is paper, the rest has no home", () => {
-    expect(to("estatement_fee", "Returned eStatement due to incorrect email address")).toBe("account_research");
-    expect(to("estatement_fee", "eStatement incorrect email address")).toBe("account_research");
-    expect(to("estatement_fee", "~ Undeliverable E-Statement Fee (per statement)")).toBe("account_research");
+  test("e-statements: returned is returned mail (research until switched on), a copy is a copy, both is paper, the rest has no home", () => {
+    expect(to("estatement_fee", "Returned eStatement due to incorrect email address")).toBe(RETURNED);
+    expect(to("estatement_fee", "eStatement incorrect email address")).toBe(RETURNED);
+    expect(to("estatement_fee", "~ Undeliverable E-Statement Fee (per statement)")).toBe(RETURNED);
+    // A charge for going back to paper statements: as on main while the research split is off,
+    // a paper statement fee (never returned mail) once it is on.
+    expect(to("estatement_fee", "Fee to return to paper statements")).toBe(RESEARCH_SPLIT_LIVE ? "paper_statement" : "account_research");
+    expect(to("estatement_fee", "Return to Paper Statement")).toBe(RESEARCH_SPLIT_LIVE ? "paper_statement" : "account_research");
     expect(to("estatement_fee", "One-time duplicate e-statement")).toBe("document_reproduction");
     expect(to("estatement_fee", "Dual statement delivery (for having both eStatement & paper)")).toBe("paper_statement");
     expect(to("estatement_fee", "Free eStatements")).toBeNull();
@@ -174,9 +192,10 @@ describe("top-50 fold", () => {
       expect(splitLiveCategory("other_lending_fee", name, off)).toBeNull();
       expect(splitLiveCategory("other_lending_fee", name, on)).toMatchObject({ to: "legal_process", rule: "other_lending_fee#split" });
     }
-    // Switched on, the incoming and outgoing subordination wires stay where they are, excess activity still goes to research.
+    // Switched on, the incoming and outgoing subordination wires stay where they are, excess activity goes to excess withdrawals.
     expect(splitLiveCategory("other_lending_fee", "SUBORDINATION REQUEST: Outgoing Foreign", on)).toBeNull();
-    expect(splitLiveCategory("other_lending_fee", "Excess Withdrawal Fee", on)?.to).toBe("account_research");
+    expect(splitLiveCategory("other_lending_fee", "Excess Withdrawal Fee", on)?.to).toBe(EXCESS);
+    expect(splitLiveCategory("other_lending_fee", "Excess Withdrawal Fee", off)?.to).toBe(EXCESS);
     expect(on.other_lending_fee.sqlPattern).toBe("excess|subordinat");
     expect(off.other_lending_fee.sqlPattern).toBe("excess");
     // The two live fees whose lines do not support a subordination price stay put (#1370 review).
@@ -211,7 +230,8 @@ describe("top-50 fold", () => {
       ["account_research", "IRA Transfer Closeout", 50, "ira_termination"],
       ["account_research", "IRA Excessive Withdrawal", 10, "ira_administration"],
       ["account_research", "IRA Excess Withdrawal Fee (1 free)", 20, "ira_administration"],
-      ["account_research", "Excessive Withdrawal Fee", 5, null],
+      // Leaves account research only once RESEARCH_SPLIT_LIVE is on (see the research split test).
+      ["account_research", "Excessive Withdrawal Fee", 5, RESEARCH_SPLIT_LIVE ? "excess_withdrawal" : null],
       ["account_research", "All Checking and Savings Accounts EXCEPT Grow Account, Student Edge, IRA Savings: Account Reconciliation", 25, null],
       ["account_research", "IRA Transfer Incoming", 0, null],
       ["account_research", "Account Research (per hour)", 25, null],
@@ -224,11 +244,13 @@ describe("top-50 fold", () => {
       ["atm_non_network", "VISA Reloadable Card - ATM Withdrawal Fees", 1.5, null],
       ["atm_non_network", "Visa travel card ($3,000 max.) Initial purchase Reload ATM withdrawal ATM balance inquiry", 5, null],
       ["atm_non_network", "Non-Network ATM Withdrawal", 3, null],
-      ["paper_statement", "Returned Mailed Statement", 5, "account_research"],
-      ["paper_statement", "Returned statement fee for returned mail", 5, "account_research"],
-      ["paper_statement", "Return Statement Charge", 5, "account_research"],
-      ["paper_statement", "^ Return of Paper Statement Fee (Per statement)", 5, "account_research"],
+      ["paper_statement", "Returned Mailed Statement", 5, RETURNED],
+      ["paper_statement", "Returned statement fee for returned mail", 5, RETURNED],
+      ["paper_statement", "Return Statement Charge", 5, RETURNED],
+      ["paper_statement", "^ Return of Paper Statement Fee (Per statement)", 5, RETURNED],
       ["paper_statement", "Paper Statement Fee", 3, null],
+      // As on main while the research split is off; a paper statement fee once it is on.
+      ["paper_statement", "Return to paper statements fee", 3, RESEARCH_SPLIT_LIVE ? null : "account_research"],
       ["account_research", "Fax (Outgoing)", 5, "document_reproduction"],
       ["account_research", "Copy of previous statement", 5, "document_reproduction"],
       ["account_research", "Fax, Photo, Imaged and Microfilm Copies", 6, "document_reproduction"],
@@ -256,8 +278,8 @@ describe("top-50 fold", () => {
       ["account_research", "Account Closing by Mail/Fax", 8, null],
       ["late_payment", "Statement Copies", 2, "document_reproduction"],
       ["ira_administration", "IRA Savings Excessive Withdrawal", 15, null],
-      ["other_lending_fee", "Excess withdrawal fee (MMDA)", 10, "account_research"],
-      ["other_lending_fee", "Savings account excess debit fee", 5, "account_research"],
+      ["other_lending_fee", "Excess withdrawal fee (MMDA)", 10, EXCESS],
+      ["other_lending_fee", "Savings account excess debit fee", 5, EXCESS],
       ["other_lending_fee", "Loan Payoff Statement", 20, null],
       ["card_foreign_txn", "Cross-Border Banking Bundle annual fee", 0, "monthly_maintenance"],
       ["card_foreign_txn", "Cross-Border Banking Bundle monthly fee", 9.95, "monthly_maintenance"],
@@ -277,6 +299,138 @@ describe("top-50 fold", () => {
       expect([key, name, got]).toEqual([key, name, want]);
       if (want) expect([name, passesDarwinChecks(want, name, amount)]).toEqual([name, true]);
     }
+  });
+
+  // James, Oct 15 (#1398, "Add both"). Written for either setting of RESEARCH_SPLIT_LIVE, so turning
+  // it on is a one-line change.
+  test("excess withdrawals and returned mail leave account research by name, only once switched on", () => {
+    const off = splitCategoriesFor({ subordinationRefileLive: SUBORDINATION_REFILE_LIVE, researchSplitLive: false });
+    const on = splitCategoriesFor({ subordinationRefileLive: SUBORDINATION_REFILE_LIVE, researchSplitLive: true });
+    expect(SPLIT_CATEGORIES).toEqual(RESEARCH_SPLIT_LIVE ? on : off);
+    expect(RESEARCH_SPLIT_PREVIEW).toEqual(on);
+    const cases: [string, number, string | null][] = [
+      ["Excess Transaction Fee", 10, "excess_withdrawal"],
+      ["Excessive Withdrawal Fee (Share Account)", 5, "excess_withdrawal"],
+      ["Excessive transaction fee", 25, "excess_withdrawal"],
+      ["Withdrawal Limit Fee", 3, "excess_withdrawal"],
+      ["Savings withdrawals in excess of 6 per month", 3, "excess_withdrawal"],
+      ["Excess Activity-Savings Acct (per item)", 3, "excess_withdrawal"],
+      // The prod count's misses (Oct 15): one or two words before the noun, a limit, Reg D.
+      ["Excess Savings Account Transaction", 3, "excess_withdrawal"],
+      ["Excess Statement Savings Transaction", 3, "excess_withdrawal"],
+      ["Over withdrawal limit", 5, "excess_withdrawal"],
+      ["Withdrawals after 6 per month", 3, "excess_withdrawal"],
+      ["Transfers after 6 per statement cycle", 3, "excess_withdrawal"],
+      ["Reg D violation fee", 10, "excess_withdrawal"],
+      ["Regulation D Excess Transfer", 10, "excess_withdrawal"],
+      // Final review G: the guard and the fold agree on these.
+      ["Excess withdrawal per item over 6", 3, "excess_withdrawal"],
+      ["Excess Teller Withdrawal", 5, "excess_withdrawal"],
+      ["Withdrawals over 6", 3, "excess_withdrawal"],
+      ["Savings withdrawal limit fee", 3, "excess_withdrawal"],
+      ["Returned Statement Fee", 5, "returned_mail"],
+      ["Return Mail Fee (no forwarding)", 5, "returned_mail"],
+      ["Bad address fee", 5, "returned_mail"],
+      ["Returned Mail/Bad Address (per month)", 5, "returned_mail"],
+      ["Undeliverable Mail / Locator fee", 5, "returned_mail"],
+      ["Address Locator Services", 5, "returned_mail"],
+      ["Invalid Address Fee", 5, "returned_mail"],
+      ["Address Correction", 5, "returned_mail"],
+      ["Return statement (bad address)", 5, "returned_mail"],
+      // Research for the address itself is returned mail.
+      ["Address Research return mail", 5, "returned_mail"],
+      ["Incorrect Address Research Fee", 5, "returned_mail"],
+      ["Locator research fee", 10, "returned_mail"],
+      // Research stays research, and so does a run-on that names reconciling.
+      ["Account research, per hour", 25, null],
+      ["Account reconciliation/research, per hour", 25, null],
+      ["Wire research", 15, null],
+      ["Money Order Research Fee", 10, null],
+      ["Returned mail research, per hour", 25, null],
+      ["Returned Mail Fee Reconciling statements and research (per hour)", 5, null],
+      ["Excess activity research", 20, null],
+      ["Account Balancing Assistance", 20, null],
+      ["ATM Adjustment", 5, null],
+      ["Returned Item research", 15, null],
+      // Not excess withdrawals: an ATM or another network, an overdraft, check cashing, a wire, a
+      // debit card, a business account's item count, a bare service charge.
+      ["Excessive ATM withdrawals", 2, null],
+      ["Excess non-network transactions", 2, null],
+      ["Excessive overdraft transactions", 5, null],
+      ["Excessive OD transfers", 5, null],
+      ["Excess check cashing transactions", 5, null],
+      ["Excess wire transfers", 15, null],
+      ["Excess debit card transactions", 1, null],
+      ["Excess items", 0.25, null],
+      ["Items over 200 per month", 0.25, null],
+      ["Service charge", 3, null],
+      ["Excess transactions - business account item", 0.25, null],
+      // Not returned mail: a branch locator, a bare invalid email address, a returned item or deposit,
+      // an address change, a return to paper statements, a re-enrollment.
+      ["Branch locator", 5, null],
+      ["Invalid email address", 5, null],
+      ["Returned item", 30, null],
+      ["Returned deposit item", 15, null],
+      ["Checks returned unpaid", 30, null],
+      ["Change of address", 5, null],
+      ["Address change fee", 5, null],
+      ["Return to paper statements", 3, null],
+      ["Re-enroll in paper statements", 3, null],
+      // An IRA's excess withdrawal is the IRA's; a copy is a copy.
+      ["IRA Excess Withdrawal Fee (1 free)", 20, "ira_administration"],
+      ["Copy of returned statement", 5, "document_reproduction"],
+    ];
+    const moved = (want: string | null) => want === "excess_withdrawal" || want === "returned_mail";
+    for (const [name, amount, want] of cases) {
+      const got = splitLiveCategory("account_research", name, on)?.to ?? null;
+      expect([name, got]).toEqual([name, want]);
+      if (want) expect([name, passesDarwinChecks(want, name, amount)]).toEqual([name, true]);
+      const offGot = splitLiveCategory("account_research", name, off)?.to ?? null;
+      expect([name, offGot]).toEqual([name, moved(want) ? null : want]);
+      expect([name, researchSplitCategory("account_research", name, true)]).toEqual([name, moved(want) ? want : null]);
+      expect([name, researchSplitCategory("account_research", name, false)]).toEqual([name, null]);
+      // The SQL pre-filter reads every fee the switched rules move (Postgres ~* is case-insensitive).
+      if (moved(want)) expect([name, new RegExp(RESEARCH_SPLIT_SQL_PATTERN, "i").test(name)]).toEqual([name, true]);
+    }
+    expect(off.account_research.sqlPattern).toBe("\\mira\\M|fax|cop(y|ies|ied)|reproduc");
+    expect(on.account_research.sqlPattern).toBe(`\\mira\\M|fax|cop(y|ies|ied)|reproduc|${RESEARCH_SPLIT_SQL_PATTERN}`);
+    expect(researchSplitCategory("paper_statement", "Returned Statement Fee", true)).toBeNull();
+    // While off, every switched target is account research; on, the new types.
+    expect(off.paper_statement.to).toBe("account_research");
+    expect(off.other_lending_fee.to).toBe("account_research");
+    expect(on.paper_statement.to).toBe("returned_mail");
+    expect(on.other_lending_fee.to).toBe("excess_withdrawal");
+    // Review B2: a return to paper statements matches exactly as on main while the switch is off
+    // (main's results, written out), and once on stays, or becomes, a paper statement fee.
+    const mainResults: [string, string, string | null, string | null][] = [
+      // [retired or split key, name, where main files it, where it goes once the switch is on]
+      ["estatement_fee", "Fee to return to paper statements", "account_research", "paper_statement"],
+      ["estatement_fee", "Return to Paper Statement", "account_research", "paper_statement"],
+      ["estatement_fee", "Return to paper", "account_research", "paper_statement"],
+      ["estatement_fee", "Returning to paper statements after e-Statement enrollment", null, "paper_statement"],
+      ["estatement_fee", "Returned eStatement due to incorrect email address", "account_research", "returned_mail"],
+      ["paper_statement", "Return to paper statements fee", "account_research", null],
+      ["paper_statement", "Returning to paper statements", null, null],
+      ["paper_statement", "Return to paper", null, null],
+      ["paper_statement", "Returned Mailed Statement", "account_research", "returned_mail"],
+    ];
+    for (const [key, name, main, onTo] of mainResults) {
+      if (key === "estatement_fee") {
+        const ruleTo = (live: boolean) => estatementReturnRules(live).find((rule) => rule.name.test(name))?.to ?? null;
+        // Off, main's rule; a name main's rule misses falls through to the same later rules as on main.
+        expect([name, ruleTo(false) ?? to(key, name) ?? null]).toEqual([name, main]);
+        expect([name, ruleTo(true)]).toEqual([name, onTo]);
+        if (!RESEARCH_SPLIT_LIVE) expect([name, to(key, name) ?? null]).toEqual([name, main]);
+      } else {
+        expect([name, splitLiveCategory(key, name, off)?.to ?? null]).toEqual([name, main]);
+        expect([name, splitLiveCategory(key, name, on)?.to ?? null]).toEqual([name, onTo]);
+      }
+    }
+    expect(passesDarwinChecks("paper_statement", "Return to paper statements fee", 3)).toBe(true);
+    expect(researchSplitTarget("returned_mail", false)).toBe("account_research");
+    expect(researchSplitTarget("excess_withdrawal", true)).toBe("excess_withdrawal");
+    expect(EXCESS_WITHDRAWAL.test("Service charge")).toBe(false);
+    expect(RETURNED_MAIL.test("Invalid email address")).toBe(false);
   });
 
   test("foldContext returns the text before the fee's line", () => {
