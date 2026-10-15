@@ -289,4 +289,49 @@ describe("Knox audience suggestion from context (#1059)", () => {
     const titled = ["BUSINESS FEE SCHEDULE", "Personal Checking Accounts", "Effective 2026", "Stop Payment $30.00"].join("\n");
     expect(suggest(null, titled, "Stop Payment", 30)).toMatchObject({ audience: "consumer", source: "section_heading" });
   });
+
+  it("reads \"Business/Non-Personal Accounts\" as a business section (#1059 holdout 4)", () => {
+    const lines = ["For Consumer/Personal Accounts", "Stop payment (Per order) $30.00", "For Business/Non-Personal Accounts", "Stop payment (Per order) $30.00"];
+    expect(hasBusinessFees(lines)).toBe(true);
+    // A schedule that also prices business items: the personal heading alone no longer decides.
+    expect(suggest(null, lines.join("\n"), "Stop payment (Per order)", 30)).toBeNull();
+  });
+
+  it("never reads \"non-business\" in an address as business (review of 6905fab5)", () => {
+    expect(suggest("https://bank.example/fees/non-business/schedule.pdf", "Fee Schedule\nStop Payment $30", "Stop Payment")?.audience).not.toBe("business");
+    // "Non-personal" is a bank's word for business accounts (#1059 holdout 5).
+    expect(suggest("https://bank.example/fees/non-personal/schedule.pdf", "Fee Schedule\nStop Payment $30", "Stop Payment")).toMatchObject({ audience: "business", source: "document_url" });
+  });
+
+  it("reads Non-Personal and Non-Consumer as business (#1059 holdout 5)", () => {
+    expect(suggest(null, ["Common Fee Schedule", "Overdraft Item Fee", "Personal Accounts $29.00 per item", "Return Item Fee: Non-Personal Accounts $32.00 per item"].join("\n"), "Return Item Fee: Non-Personal Accounts", 32)).toMatchObject({ audience: "business", source: "fee_name" });
+    expect(suggest(null, ["Fees", "Overdraft Paid Item Fee - Consumers: $25.00", "Overdraft Paid Item Fee - Non-Consumer: fee per item $30.00"].join("\n"), "Overdraft Paid Item Fee - Non-Consumer: fee per item", 30)).toMatchObject({ audience: "business", source: "fee_name" });
+    // A schedule whose only business wording is "non-personal" is not a general consumer schedule.
+    expect(suggest(null, ["Fee Schedule", "Basic Personal Checking $5.00", "Basic Non-Personal Checking $10.00", "Stop Payment $30.00"].join("\n"), "Stop Payment", 30)?.source).not.toBe("default_general_schedule");
+    // Non-business stays no audience.
+    expect(suggest(null, ["Fee Schedule", "Non-business days: none", "Stop Payment $30"].join("\n"), "Stop Payment", 30)).toMatchObject({ audience: "consumer", source: "default_general_schedule" });
+  });
+
+  it("never takes the consumer default for a business schedule flattened into one line or named in the address (#1059 holdout 5)", () => {
+    const flat = "BUSINESS SCHEDULE OF FEES AND CHARGES Community Credit Union Effective 2026 Stop Payment $30.00 Copy of Check $5.00 Fax Service $2.00 " + "x".repeat(200);
+    expect(suggest(null, flat, "Stop Payment", 30)?.audience).not.toBe("consumer");
+    expect(suggest("https://www.ccu.example/documents/ccufl_businessfeeschedule.pdf", "Fees\nStop Payment $30", "Stop Payment", 30)?.audience).not.toBe("consumer");
+    // A consumer schedule is unaffected.
+    expect(suggest("https://bank.example/fee-schedule.pdf", "Fee Schedule\nStop Payment $30", "Stop Payment", 30)).toMatchObject({ audience: "consumer", source: "default_general_schedule" });
+  });
+
+  it("keeps non-personal checks a product, not an audience (review of d31c9248)", () => {
+    const cu = ["Schedule of Fees", "Check Cashing - Non-Member (non-personal checks only) $5.00", "Stop Payment $30.00"].join("\n");
+    expect(suggest(null, cu, "Check Cashing - Non-Member (non-personal checks only)", 5)).toMatchObject({ audience: "consumer", source: "default_general_schedule" });
+    expect(suggest(null, cu, "Stop Payment", 30)).toMatchObject({ audience: "consumer", source: "default_general_schedule" });
+    expect(suggest(null, ["Fees", "Non-Personal Check Cashing $5.00"].join("\n"), "Non-Personal Check Cashing", 5)?.audience).not.toBe("business");
+    expect(suggest(null, ["Fees", "Copy of Non-Personal Information $5.00"].join("\n"), "Copy of Non-Personal Information", 5)?.audience).not.toBe("business");
+  });
+
+  it("strips non-consumer checks as no audience, so a business schedule's fee stays business (review of d71e6929)", () => {
+    expect(suggest(null, ["Business Fee Schedule", "Deposited Item Returned - Non-Consumer Checks $10.00"].join("\n"), "Deposited Item Returned - Non-Consumer Checks", 10)?.audience).not.toBe("consumer");
+    expect(suggest(null, ["Business Schedule of Fees", "Non-Consumer Information Request $5.00"].join("\n"), "Non-Consumer Information Request", 5)?.audience).not.toBe("consumer");
+    expect(suggest("https://bank.example/business/non-consumer-checks.pdf", "Fees\nStop Payment $30", "Stop Payment", 30)?.audience).not.toBe("consumer");
+    expect(suggest(null, ["Business Accounts", "Non-Personal Data Export $5.00", "Personal Accounts", "Stop Payment $30"].join("\n"), "Non-Personal Data Export", 5)?.audience).not.toBe("consumer");
+  });
 });

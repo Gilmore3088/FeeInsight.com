@@ -49,7 +49,62 @@ export function withConversationContext(question: string, earlier: readonly Conv
   return `${question}${BLOCK_START}${lines.join("\n")}\n)`;
 }
 
-/** The question as the reader typed it, without the conversation context the screen appends. */
+/**
+ * The question as the reader typed it, without the conversation context the screen appends.
+ * The older single-question form is stripped only when the current block is absent, so text the
+ * reader typed in front of a current block is never cut (#1273).
+ */
 export function questionOnly(text: string): string {
-  return text.replace(CONTEXT_BLOCK, "").replace(LEGACY_EARLIER_QUESTION, "").trim();
+  if (CONTEXT_BLOCK.test(text)) return text.replace(CONTEXT_BLOCK, "").trim();
+  return text.replace(LEGACY_EARLIER_QUESTION, "").trim();
+}
+
+/**
+ * The longest user message an honest Analyze screen can send: an Ask-box question at its limit
+ * plus the context block with every carried turn at its limit. Computed with the builder itself,
+ * so it follows the block's format and bounds.
+ */
+export const MAX_USER_MESSAGE_CHARS = withConversationContext(
+  "x".repeat(QUESTION_CHARS),
+  Array.from({ length: CONVERSATION_CONTEXT_TURNS }, () => ({
+    question: "x".repeat(QUESTION_CHARS),
+    lead: "x".repeat(LEAD_CHARS),
+  })),
+).length;
+
+/**
+ * Most messages one request may carry. The Analyze screen sends one (it clears the chat before
+ * each written answer); the admin research chat sends its whole history, so this allows 50
+ * questions with their answers in one chat.
+ */
+export const MAX_REQUEST_MESSAGES = 100;
+
+export const MESSAGE_TOO_LONG_ERROR = `Each question can be at most ${MAX_USER_MESSAGE_CHARS.toLocaleString("en-US")} characters.`;
+export const TOO_MANY_MESSAGES_ERROR = "This conversation is too long. Start a new chat to keep asking.";
+
+type MessageLike = { role?: unknown; parts?: unknown };
+
+/** A user message's text, its text parts joined as the route reads them. */
+function messageText(message: MessageLike): string {
+  if (!Array.isArray(message.parts)) return "";
+  return message.parts
+    .filter(
+      (p): p is { type: "text"; text: string } =>
+        !!p && typeof p === "object" && (p as { type?: unknown }).type === "text" && typeof (p as { text?: unknown }).text === "string",
+    )
+    .map((p) => p.text)
+    .join(" ");
+}
+
+/**
+ * The server's own bound on what a client sends (#1273): the number of messages, and each user
+ * message's length. The screens' limits hold only for an honest client; this holds for any.
+ * Returns the error to send, or null when the request is within bounds.
+ */
+export function messageBoundsError(messages: readonly MessageLike[]): string | null {
+  if (messages.length > MAX_REQUEST_MESSAGES) return TOO_MANY_MESSAGES_ERROR;
+  for (const m of messages) {
+    if (m && m.role === "user" && messageText(m).length > MAX_USER_MESSAGE_CHARS) return MESSAGE_TOO_LONG_ERROR;
+  }
+  return null;
 }

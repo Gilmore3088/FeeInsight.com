@@ -48,6 +48,16 @@ describe("agent health", () => {
     expect(bad.filter((rule) => !rule.ok).map((rule) => rule.key)).toEqual(["keeps_up", "passed_fees_hold_up"]);
   });
 
+  // #1052: production on 2026-10-14 had 0 rows never decided and 26 due again after guard v61
+  // (Puerto Rico and Guam, whose lanes no backlog woke); a first decision late by a week breaks.
+  it.each([
+    [{ undecided: 26, waitingOver7d: 0 }, []],
+    [{ undecided: 26, waitingOver7d: 3 }, ["no_week_old_waits"]],
+  ])("holds Darwin to a first decision within 7 days (%o)", (numbers, broken) => {
+    const rules = darwinRules({ stepsCompleted: 10, stepsFailed: 0, published: 1000, sourceCheckTakedowns: 20, ...numbers });
+    expect(rules.filter((rule) => !rule.ok).map((rule) => rule.key)).toEqual(broken);
+  });
+
   it("breaks Knox's rule when a text is extracted twice at the same rules version", () => {
     const rules = knoxRules({ stepsCompleted: 50, stepsFailed: 0, textsExtracted: 1717, repeatExtractions: 61 });
     expect(rules.find((rule) => rule.key === "extract_once")).toMatchObject({ ok: false, detail: "61 of 1717 texts extracted again" });

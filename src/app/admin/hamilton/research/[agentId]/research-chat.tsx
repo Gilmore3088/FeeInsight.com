@@ -6,6 +6,7 @@ import { useState, useRef, useEffect, useTransition } from "react";
 import Link from "next/link";
 import { saveArticleFromChat } from "./save-article-action";
 import { CONTENT_TEMPLATES } from "@/lib/research/content-templates";
+import { MAX_USER_MESSAGE_CHARS } from "@/lib/hamilton/conversation-context";
 import {
   markdownTablesToCsv,
   hasMarkdownTable,
@@ -492,6 +493,8 @@ export function ResearchChat({
               type="text"
               value={input}
               onChange={(e) => setInput(e.target.value)}
+              // The route refuses a longer message (#1273), so the box stops there.
+              maxLength={MAX_USER_MESSAGE_CHARS}
               placeholder="Ask a question..."
               disabled={isLoading}
               className="flex-1 rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-[13px] text-gray-900 placeholder:text-gray-400 focus:border-gray-400 focus:outline-none disabled:opacity-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"

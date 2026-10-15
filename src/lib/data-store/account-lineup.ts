@@ -143,7 +143,7 @@ export async function getAccountLineups(institutionIds: number[]): Promise<Lineu
   if (ids.length === 0) return [];
   const sql = getSql();
   const rows = (await sql.unsafe(
-    `SELECT ef.institution_id, ef.fee_name, ef.amount, ef.conditions, ef.account_product_type,
+    `SELECT ef.institution_id, ef.fee_name, ef.amount, COALESCE(ef.extraction_note, ef.conditions) AS conditions, ef.account_product_type,
             ef.min_balance_to_avoid, ef.min_opening_deposit, ef.waiver_text
        FROM published_fee_catalog ef
       WHERE ef.canonical_fee_key = 'monthly_maintenance'

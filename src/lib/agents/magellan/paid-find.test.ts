@@ -20,9 +20,9 @@ function templateText(strings: unknown): string {
 }
 
 const banks = [
-  { id: 1, institution_name: "Alpha Bank", city: "Burlington", state_code: "VT", website_url: "https://www.alpha.example" },
-  { id: 2, institution_name: "Beta Bank", city: "Rutland", state_code: "VT", website_url: "https://beta.example" },
-  { id: 3, institution_name: "Gamma Bank", city: "Barre", state_code: "VT", website_url: "https://gamma.example" },
+  { id: 1, institution_name: "Alpha Bank", city: "Burlington", state_code: "VT", website_url: "https://www.alpha.example", asset_size: "250000" },
+  { id: 2, institution_name: "Beta Bank", city: "Rutland", state_code: "VT", website_url: "https://beta.example", asset_size: "180000" },
+  { id: 3, institution_name: "Gamma Bank", city: "Barre", state_code: "VT", website_url: "https://gamma.example", asset_size: "120000" },
 ];
 
 function createDb(rows: Array<(typeof banks)[number] & { paid_misses?: number }> = banks): DbMock {
@@ -104,7 +104,8 @@ describe("Magellan paid find (pass 3)", () => {
       [3, "invalid_url"],
     ]);
     expect(logged.every((attempt) => attempt.strategy === PAID_FIND_STRATEGY.strategy && Number(attempt.cost) > 0)).toBe(true);
-    expect(logged[0].detail).toMatchObject({ pass: 3, url: "https://alpha.example/disclosures/fees" });
+    // The try records where the work list placed the bank (#1269), for the week-after check.
+    expect(logged[0].detail).toMatchObject({ pass: 3, url: "https://alpha.example/disclosures/fees", work_list: "VT", work_group: "under_300m" });
     const stored = db.mock.calls.filter((call) => templateText(call[0]).includes("UPDATE institution_sources"));
     expect(stored).toHaveLength(1);
     expect(stored[0]).toContain("https://alpha.example/disclosures/fees");
@@ -279,5 +280,85 @@ describe("state experts' work lists (#1029)", () => {
     // The query reads a pool and the cap applies after the lists are ordered.
     const select = db.mock.calls.find((call) => templateText(call[0]).includes("inst.city"))!;
     expect(templateText(select[0])).toContain("institution_workspace_memberships");
+    // The pool cut keeps requesters and paying customers, then each cell's first rows (#1269).
+    expect(templateText(select[0])).toMatch(/ORDER BY requested DESC, paying DESC,\s+,/);
+    expect(db.mock.calls.some((call) => templateText(call[0]).includes("PARTITION BY"))).toBe(true);
+  });
+});
+
+describe("site-limited search follow-ups (#1251)", () => {
+  const machias = { id: 41, institution_name: "Machias Savings Bank", city: "Machias", state_code: "ME", website_url: "https://www.machiassavings.com", asset_size: "2900000" };
+
+  function ownHostDb(rows: Array<Record<string, unknown>>, ownHosts: Array<{ institution_id: number; host: string; documents?: number }>): DbMock {
+    return vi.fn((strings: TemplateStringsArray) => {
+      const text = templateText(strings);
+      if (text.includes("learning_schema_ready")) return Promise.resolve([{ learning_schema_ready: true }]);
+      if (text.includes("inst.charter_type")) return Promise.resolve([]);
+      if (text.includes("incomplete-link schedule search")) return Promise.resolve([]);
+      if (text.includes("bank-owned document hosts")) return Promise.resolve(ownHosts);
+      if (text.includes("inst.city")) return Promise.resolve(rows);
+      return Promise.resolve([]);
+    });
+  }
+
+  it("searches the bank's other own host too, and keeps an answer found there", async () => {
+    const db = ownHostDb([machias], [{ institution_id: 41, host: "machiassavings.bank" }]);
+    const create = vi.fn().mockResolvedValueOnce(answer({ url: "https://machiassavings.bank/fee-schedule", confidence: 0.9 }));
+    const fetchImpl = vi.fn<(input: RequestInfo | URL) => Promise<Response>>(async () => new Response(FEE_TABLE, { headers: { "content-type": "text/html" } }));
+
+    const result = await runMagellanPaidFind({ runId: 5, stateCode: "ME", db: asDb(db), create, fetchImpl, pick: false });
+
+    const params = create.mock.calls[0][0];
+    expect(params.tools[0].allowed_domains).toEqual(["machiassavings.com", "machiassavings.bank"]);
+    const prompt = String(params.messages[0].content);
+    // A site-limited search cannot reach a parent company's domain, so it is not sent there.
+    expect(prompt).not.toContain("parent company");
+    expect(prompt).toContain("machiassavings.com or machiassavings.bank");
+    expect(fetchImpl.mock.calls.map((call) => String(call[0]))).toContain("https://machiassavings.bank/fee-schedule");
+    expect(result).toMatchObject({ processed: 1, succeeded: 1 });
+    const [logged] = attempts(db);
+    expect(logged.outcome).toBe("ok");
+    expect(logged.detail.search_domains).toEqual(["machiassavings.com", "machiassavings.bank"]);
+    expect(logged.detail.own_hosts).toEqual(["machiassavings.bank"]);
+  });
+
+  it("an answer on a .bank host with another name must name the bank, as every finder's must (#1033)", async () => {
+    const cashmere = { ...machias, id: 42, institution_name: "Cashmere Valley Bank", website_url: "https://www.cashmerevalleybank.com" };
+    const db = ownHostDb([cashmere], [{ institution_id: 42, host: "cvb.bank", documents: 2 }]);
+    const create = vi.fn().mockResolvedValueOnce(answer({ url: "https://cvb.bank/fees", confidence: 0.9 }));
+    const fetchImpl = vi.fn<(input: RequestInfo | URL) => Promise<Response>>(async () => new Response(FEE_TABLE, { headers: { "content-type": "text/html" } }));
+
+    const result = await runMagellanPaidFind({ runId: 5, stateCode: "ME", db: asDb(db), create, fetchImpl, pick: false });
+
+    expect(create.mock.calls[0][0].tools[0].allowed_domains).toEqual(["cashmerevalleybank.com", "cvb.bank"]);
+    expect(fetchImpl).toHaveBeenCalled();
+    expect(result).toMatchObject({ processed: 1, succeeded: 0 });
+    const [logged] = attempts(db);
+    expect(logged.outcome).toBe("wrong_document");
+    expect(logged.detail.verdict).toBe("unconfirmed_host");
+  });
+
+  it("without a known own host, an answer on another domain is still refused", async () => {
+    const db = ownHostDb([machias], []);
+    const create = vi.fn().mockResolvedValueOnce(answer({ url: "https://machiassavings.bank/fee-schedule", confidence: 0.9 }));
+    const fetchImpl = vi.fn<(input: RequestInfo | URL) => Promise<Response>>(async () => new Response(FEE_TABLE, { headers: { "content-type": "text/html" } }));
+
+    await runMagellanPaidFind({ runId: 5, stateCode: "ME", db: asDb(db), create, fetchImpl, pick: false });
+
+    expect(create.mock.calls[0][0].tools[0].allowed_domains).toEqual(["machiassavings.com"]);
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(attempts(db)[0].outcome).toBe("invalid_url");
+  });
+
+  it("a bank with no asset size on file searches the open web and may use a parent company's domain", async () => {
+    const db = ownHostDb([{ ...machias, asset_size: null }], []);
+    const create = vi.fn().mockResolvedValueOnce(answer({ url: null, confidence: 0 }));
+
+    await runMagellanPaidFind({ runId: 5, stateCode: "ME", db: asDb(db), create, pick: false });
+
+    const params = create.mock.calls[0][0];
+    expect(params.tools).toEqual([{ type: "web_search_20250305", name: "web_search", max_uses: 3 }]);
+    expect(String(params.messages[0].content)).toContain("parent company's domain");
+    expect(attempts(db)[0].detail.search_domains).toBeNull();
   });
 });

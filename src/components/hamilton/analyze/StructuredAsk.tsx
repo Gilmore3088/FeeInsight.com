@@ -354,6 +354,9 @@ function StructuredAskConversation({
   const memoFor = useRef<string | null>(null);
   const active = useRef(true);
   const requestGeneration = useRef(0);
+  // Set the moment an answer to Hamilton's question is sent, before React re-renders `busy`, so a
+  // second Enter, click or fee pick in the same instant cannot send (and save) the answer twice.
+  const answering = useRef(false);
   useEffect(() => {
     active.current = true;
     return () => {
@@ -449,6 +452,16 @@ function StructuredAskConversation({
   }, [question, nonce, run, follow, institutionId, onLead]);
 
   const answerQuestion = async (q: ClarifyingQuestion, value: string) => {
+    if (answering.current) return;
+    answering.current = true;
+    try {
+      await sendAnswer(q, value);
+    } finally {
+      answering.current = false;
+    }
+  };
+
+  const sendAnswer = async (q: ClarifyingQuestion, value: string) => {
     setNotFound(null);
     const saved = await run({ answer: { fieldKey: q.fieldKey, value } });
     if (!active.current || !saved) return;
