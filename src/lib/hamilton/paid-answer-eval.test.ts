@@ -267,7 +267,10 @@ describe("Hamilton's paid answer eval (#1079)", () => {
         { fee_name: "Overdraft fee", fee_category: "overdraft", institution_amount: 32, peer_median: 29.5, peer_p25: 25.75, peer_p75: 32, delta_amount: 2.5, delta_percent: null, position: "above_peer_median", evidence_tier: "verified", excluded_from_verified_benchmark: false, institution_count: 12 },
       ] as PreparedReportAnswer["deltas"],
       competitorNames: [],
+      selectedInstitution: null,
+      evidencePolicy: "provisional-first",
     };
+    const fresh = (amount: number) => async () => prepared.deltas.map((d) => ({ ...d, institution_amount: amount }));
     const writer = (result: Awaited<ReturnType<ReportAnswerWriter>>): ReportAnswerWriter & { calls: number } => {
       const w = Object.assign(async () => { w.calls += 1; return result; }, { calls: 0 });
       return w;
@@ -279,7 +282,7 @@ describe("Hamilton's paid answer eval (#1079)", () => {
       const day = db(0);
       const result = await runPaidAnswerEval({
         db: day.db, now, client: memoClient("Your overdraft fee is $32."), live, agentRunId: 77, written: writtenWriter(),
-        prepareReport: async () => prepared, writeReport: write, ownFees: async () => new Map([["overdraft", 32]]),
+        prepareReport: async () => prepared, writeReport: write, comparison: fresh(32),
       });
       expect(write.calls).toBe(1);
       expect(day.state.paths.filter((p) => p === "report")).toHaveLength(1);
@@ -292,7 +295,7 @@ describe("Hamilton's paid answer eval (#1079)", () => {
         db: db(0).db, now, client: memoClient("Your overdraft fee is $32."), live, agentRunId: 77, written: writtenWriter(),
         prepareReport: async () => prepared,
         writeReport: writer({ status: "written", narrative: "HEADLINE: Bank 1001's $32 overdraft fee sits above peers.", passed: true, problems: [] }),
-        ownFees: async () => new Map([["overdraft", 29]]),
+        comparison: fresh(29),
       });
       expect(stale.paths[3]).toMatchObject({ passed: 1, correctness: { checked: 1, correct: 0 } });
       expect(stale.results.find((r) => r.path === "report")!.correctness).toEqual(["Overdraft (OD): the report uses $32.00, the catalog has $29.00"]);
@@ -310,6 +313,14 @@ describe("Hamilton's paid answer eval (#1079)", () => {
       const none = await runPaidAnswerEval({ db: db(0).db, now, client: memoClient("Your overdraft fee is $32."), live, agentRunId: 77, written: writtenWriter(), prepareReport: async () => null, writeReport: write });
       expect(none.paths[3]).toMatchObject({ path: "report", sampled: 0 });
       await runPaidAnswerEval({ db: db(1, ["report"]).db, now, client: memoClient("Your overdraft fee is $32."), live, agentRunId: 77, written: writtenWriter(), prepareReport: async () => prepared, writeReport: write });
+      expect(write.calls).toBe(0);
+    });
+
+    it("writes no report when the day's remaining samples go to Simulate and the written answer", async () => {
+      evalMocks.answer.mockImplementation(async (id: number) => answered(id));
+      const write = writer({ status: "written", narrative: "", passed: true, problems: [] });
+      // Two left today: Simulate and the written answer take them, so no report is reserved or written.
+      await runPaidAnswerEval({ db: db(3, ["memo", "memo", "memo"]).db, now, client: memoClient("Your overdraft fee is $32."), live, agentRunId: 77, written: writtenWriter(), prepareReport: async () => prepared, writeReport: write });
       expect(write.calls).toBe(0);
     });
   });

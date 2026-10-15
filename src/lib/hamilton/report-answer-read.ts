@@ -7,9 +7,15 @@
  * same figure check), and only its first verified draft: the live report rewrites once when the
  * partner review finds problems, which would not fit the eval's 300 s run. So the form rate this
  * gives is a floor for the live answer page. Nothing is saved. Server only.
+ *
+ * Correctness re-reads the comparison the page was written from (the same reads and reduction as the
+ * screen) and checks each fee the page names still has the bank's amount and peer median it was
+ * given. It catches a page built on values the catalog no longer holds; a figure put on the wrong
+ * fee inside the page is not checked here (the figure check only ties figures to the page's data).
  */
 
-import { getFeeValuesForInstitutions } from "@/lib/data-store/fee-index";
+import { getFeesByInstitution } from "@/lib/data-store";
+import { getCategoryChargeBases } from "@/lib/data-store/fee-index";
 import { getDisplayName } from "@/lib/fee-taxonomy";
 import { isProviderLimitError } from "@/lib/ai-provider";
 import { generateVerifiedSection, type SectionTracking } from "./generate";
@@ -17,7 +23,9 @@ import { reviewAnswerPage } from "./partner-review";
 import { HAMILTON_PAUSED_MESSAGE } from "./provider-paused";
 import { extractFigures } from "./figure-check";
 import { assembleReportInputs } from "./report-inputs";
-import type { SelectedInstitutionFeeDelta } from "./report-evidence";
+import { compareSelectedInstitutionFees, type SelectedInstitutionFeeDelta } from "./report-evidence";
+import { resolveHamiltonPeerIndex } from "./peer-index";
+import type { HamiltonEvidencePolicy } from "./request-contract";
 import type { SectionInput } from "./types";
 
 /** A report answer page ready to write: the section input and what the review and tie-out need. */
@@ -27,6 +35,9 @@ export interface PreparedReportAnswer {
   input: SectionInput;
   deltas: SelectedInstitutionFeeDelta[];
   competitorNames: string[];
+  /** What the comparison was read with, so correctness can re-read it the same way. */
+  selectedInstitution: Parameters<typeof resolveHamiltonPeerIndex>[0]["selectedInstitution"];
+  evidencePolicy: HamiltonEvidencePolicy;
 }
 
 /** The window the Reports screen offers by default: the last three months. */
@@ -42,7 +53,15 @@ function defaultPeriod(now: Date): { dateFrom: string; dateTo: string } {
  */
 export async function prepareReportAnswer(institutionId: number, institutionName: string, now = new Date()): Promise<PreparedReportAnswer | null> {
   const assembled = await assembleReportInputs({
-    params: { templateType: "peer_benchmarking", institutionId, ...defaultPeriod(now) },
+    // The screen's defaults: Peer Benchmarking, the last three months, consulting tone, balanced goal.
+    params: {
+      templateType: "peer_benchmarking",
+      institutionId,
+      ...defaultPeriod(now),
+      evidencePolicy: "provisional-first",
+      narrativeTone: "consulting",
+      clientGoal: "balanced",
+    },
     // No reader: the institution's default peers, and no saved peer group.
     userId: null,
     loadAccountContext: async () => ({ status: "identified", institution: { id: institutionId, name: institutionName }, profileLabel: null }),
@@ -55,6 +74,8 @@ export async function prepareReportAnswer(institutionId: number, institutionName
     input: assembled.sectionInputs[0],
     deltas: assembled.selectedFeeDeltas,
     competitorNames: assembled.exhibitSet.data.local_market?.comparisons.flatMap((row) => row.competitors.map((c) => c.name)) ?? [],
+    selectedInstitution: assembled.selectedInstitution,
+    evidencePolicy: assembled.evidencePolicy,
   };
 }
 
@@ -93,34 +114,56 @@ export const writeReportAnswer: ReportAnswerWriter = async (prepared, tracking) 
   }
 };
 
-/** Reads the institution's own live fees, by category; null when the catalog could not be read. */
-export type OwnFeeReader = (institutionId: number, categories: string[]) => Promise<Map<string, number> | null>;
+/** Re-reads the page's fee comparison now; null when it could not be read. */
+export type ComparisonReader = (prepared: PreparedReportAnswer) => Promise<SelectedInstitutionFeeDelta[] | null>;
 
-export const liveOwnFees: OwnFeeReader = async (institutionId, categories) => {
-  const values = await getFeeValuesForInstitutions([institutionId], categories).catch(() => null);
-  return values ? values.get(institutionId) ?? new Map() : null;
+/** The same reads and reduction as `assembleReportInputs`: the bank's visible fees against the same peer index. */
+export const liveReportComparison: ComparisonReader = async (prepared) => {
+  try {
+    const [fees, chargeBases, peerIndex] = await Promise.all([
+      getFeesByInstitution(prepared.institutionId),
+      getCategoryChargeBases().catch(() => null),
+      resolveHamiltonPeerIndex({ userId: null, peerSetId: null, selectedInstitution: prepared.selectedInstitution, approvedOnly: true, minUsableCategories: 3 }),
+    ]);
+    return compareSelectedInstitutionFees({
+      selectedFees: fees.filter((fee) => fee.review_status !== "rejected"),
+      indexEntries: peerIndex.entries,
+      chargeBases,
+      evidencePolicy: prepared.evidencePolicy,
+    }).deltas;
+  } catch {
+    return null;
+  }
 };
 
+const near = (a: number, b: number) => Math.abs(a - b) < 0.005;
+
 /**
- * Correctness of an answer page: each of the bank's own verified fee amounts the page states is
- * still the live `published_fee_catalog` value. Peer statistics come from the peer index, which the
- * figure check already ties to the section's data; provisional fees have no published row to check.
+ * Correctness of an answer page: each verified fee the page names (by name or by the bank's amount)
+ * still has, on a fresh read, the bank's amount and peer median the page was written from.
+ * Provisional fees have no published row to hold them to.
  */
 export async function reconcileReportAnswer(
   prepared: PreparedReportAnswer,
   narrative: string,
-  read: OwnFeeReader = liveOwnFees,
+  read: ComparisonReader = liveReportComparison,
 ): Promise<{ checked: boolean; figures: number; failures: string[] }> {
+  const lower = narrative.toLowerCase();
   const stated = extractFigures(narrative).filter((f) => f.kind === "usd").map((f) => f.value);
-  const own = prepared.deltas.filter((d) => d.evidence_tier === "verified" && stated.some((v) => Math.abs(v - d.institution_amount) < 0.005));
-  if (own.length === 0) return { checked: false, figures: 0, failures: [] };
-  const live = await read(prepared.institutionId, own.map((d) => d.fee_category));
-  if (!live) return { checked: false, figures: 0, failures: [] };
+  const named = prepared.deltas.filter((d) =>
+    d.evidence_tier === "verified"
+    && (lower.includes(getDisplayName(d.fee_category).toLowerCase()) || stated.some((v) => near(v, d.institution_amount))));
+  if (named.length === 0) return { checked: false, figures: 0, failures: [] };
+  const fresh = await read(prepared);
+  if (!fresh) return { checked: false, figures: 0, failures: [] };
+  const now = new Map(fresh.map((d) => [d.fee_category, d]));
   const failures: string[] = [];
-  for (const d of own) {
-    const value = live.get(d.fee_category);
-    if (value === undefined) failures.push(`${getDisplayName(d.fee_category)}: the report uses $${d.institution_amount.toFixed(2)}, and the catalog has no live row`);
-    else if (Math.abs(value - d.institution_amount) >= 0.005) failures.push(`${getDisplayName(d.fee_category)}: the report uses $${d.institution_amount.toFixed(2)}, the catalog has $${value.toFixed(2)}`);
+  for (const d of named) {
+    const name = getDisplayName(d.fee_category);
+    const current = now.get(d.fee_category);
+    if (!current) failures.push(`${name}: the report compares $${d.institution_amount.toFixed(2)}, and a fresh read has no comparison for it`);
+    else if (!near(current.institution_amount, d.institution_amount)) failures.push(`${name}: the report uses $${d.institution_amount.toFixed(2)}, the catalog has $${current.institution_amount.toFixed(2)}`);
+    else if (!near(current.peer_median, d.peer_median)) failures.push(`${name}: the report's peer median is $${d.peer_median.toFixed(2)}, the catalog's is $${current.peer_median.toFixed(2)}`);
   }
-  return { checked: true, figures: own.length, failures };
+  return { checked: true, figures: named.length, failures };
 }

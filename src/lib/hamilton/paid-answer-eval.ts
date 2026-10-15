@@ -37,7 +37,7 @@ import { buildFeeResearchEvidence } from "./evidence-contract";
 import { writeStorylineMemo, type MemoClient } from "./memo";
 import { writeSimulateRead, type SimulateInput } from "./simulate-read";
 import { writeWrittenAnswer, type WrittenAnswerWriter } from "./written-answer-read";
-import { liveOwnFees, prepareReportAnswer, reconcileReportAnswer, writeReportAnswer, type OwnFeeReader, type PreparedReportAnswer, type ReportAnswerWriter } from "./report-answer-read";
+import { liveReportComparison, prepareReportAnswer, reconcileReportAnswer, writeReportAnswer, type ComparisonReader, type PreparedReportAnswer, type ReportAnswerWriter } from "./report-answer-read";
 import { QUALITY_QUESTIONS } from "./workspace/quality-bar";
 import type { FeeResearch } from "./workspace/types";
 
@@ -61,6 +61,8 @@ export const PAID_EVAL_REPORT_OPERATION = "report_answer_eval";
 export const REPORT_DAILY = 1;
 /** Institutions tried for a report the screen would write (some have too little evidence). */
 const REPORT_TRIES = 2;
+/** The report's reads stop by this point of the run, so the paid calls after them still fit the 300 s function. */
+const REPORT_PREP_DEADLINE_MS = 75_000;
 /** Free answers tried in search of storylines to write up, before the run gives up. */
 const MAX_CANDIDATES = 12;
 /** Time the free answers may take, so the samples (a written answer stops at 180 s) still fit the 300 s function. */
@@ -345,7 +347,7 @@ async function writtenUp(
 async function reportUp(
   candidate: PaidCandidate,
   prepared: PreparedReportAnswer,
-  options: { subjectKey: string; agentRunId?: number; writeReport: ReportAnswerWriter; ownFees: OwnFeeReader },
+  options: { subjectKey: string; agentRunId?: number; writeReport: ReportAnswerWriter; comparison: ComparisonReader },
 ): Promise<PaidSampleResult> {
   const sample = { ...candidate, question: `Peer Benchmarking report answer page for ${prepared.institutionName}` };
   const result = await options.writeReport(prepared, { operation: PAID_EVAL_REPORT_OPERATION, subjectKey: options.subjectKey, agentRunId: options.agentRunId });
@@ -355,7 +357,7 @@ async function reportUp(
   if (!result.passed) {
     return { ...sample, path: "report", status: "withheld", failures: result.problems, correctness: null, figures: 0 };
   }
-  const tied = await reconcileReportAnswer(prepared, result.narrative, options.ownFees);
+  const tied = await reconcileReportAnswer(prepared, result.narrative, options.comparison);
   return { ...sample, path: "report", status: "written", failures: [], correctness: tied.checked && tied.figures > 0 ? tied.failures : null, figures: tied.figures };
 }
 
@@ -384,7 +386,7 @@ export async function runPaidAnswerEval({
   written = writeWrittenAnswer,
   prepareReport = prepareReportAnswer,
   writeReport = writeReportAnswer,
-  ownFees = liveOwnFees,
+  comparison = liveReportComparison,
 }: {
   db?: SqlTag;
   now?: Date;
@@ -395,7 +397,7 @@ export async function runPaidAnswerEval({
   written?: WrittenAnswerWriter;
   prepareReport?: (institutionId: number, institutionName: string, now: Date) => Promise<PreparedReportAnswer | null>;
   writeReport?: ReportAnswerWriter;
-  ownFees?: OwnFeeReader;
+  comparison?: ComparisonReader;
 }): Promise<PaidAnswerEvalSummary> {
   const started = Date.now();
   const usedBefore = await paidSamplesToday(db, now);
@@ -439,9 +441,13 @@ export async function runPaidAnswerEval({
   if (wantReport) {
     const tried = new Set<number>();
     for (const { candidate, answered } of answeredCandidates) {
-      if (tried.has(candidate.institutionId) || tried.size >= REPORT_TRIES || Date.now() - started > SEARCH_BUDGET_MS) continue;
+      const left = REPORT_PREP_DEADLINE_MS - (Date.now() - started);
+      if (tried.has(candidate.institutionId) || tried.size >= REPORT_TRIES || left <= 0) continue;
       tried.add(candidate.institutionId);
-      const prepared = await prepareReport(candidate.institutionId, answered.research.institutionName, now).catch(() => null);
+      const prepared = await Promise.race([
+        prepareReport(candidate.institutionId, answered.research.institutionName, now).catch(() => null),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), left)),
+      ]);
       if (prepared) {
         reportPick = { path: "report", candidate, answered, report: prepared };
         break;
@@ -468,7 +474,7 @@ export async function runPaidAnswerEval({
         : path === "written_answer"
           ? writtenUp(candidate, answered, live, { subjectKey, agentRunId, written })
           : path === "report" && report
-            ? reportUp(candidate, report, { subjectKey, agentRunId, writeReport, ownFees })
+            ? reportUp(candidate, report, { subjectKey, agentRunId, writeReport, comparison })
             : writeUp(candidate, answered, live, { subjectKey, agentRunId, client })
       ).catch((error) => ({
         ...candidate,

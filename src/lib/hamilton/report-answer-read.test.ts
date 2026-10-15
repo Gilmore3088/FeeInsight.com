@@ -22,6 +22,8 @@ const prepared: Prepared = {
   input: { type: "executive_summary", title: "The Answer", data: {} },
   deltas: [delta("overdraft", 32), delta("nsf", 31, "provisional"), delta("wire_domestic_outgoing", 25)],
   competitorNames: [],
+  selectedInstitution: null,
+  evidencePolicy: "provisional-first",
 };
 
 beforeEach(() => {
@@ -65,12 +67,21 @@ describe("the report answer page for the paid eval (#1079)", () => {
     expect(await writeReportAnswer(prepared, {})).toEqual({ status: "unavailable", reason: "Hamilton's writing budget for today is used up." });
   });
 
-  it("ties only the bank's own verified fees the page states to the live catalog", async () => {
-    const read = vi.fn(async () => new Map([["overdraft", 29]]));
-    const tied = await reconcileReportAnswer(prepared, "Its $32 overdraft and $31 NSF fees sit above the $30 median.", read);
-    // The provisional NSF fee has no published row to check; the wire fee is not stated.
-    expect(read).toHaveBeenCalledWith(7, ["overdraft"]);
-    expect(tied).toEqual({ checked: true, figures: 1, failures: ["Overdraft (OD): the report uses $32.00, the catalog has $29.00"] });
-    expect(await reconcileReportAnswer(prepared, "Peers vary.", read)).toEqual({ checked: false, figures: 0, failures: [] });
+  it("re-reads the comparison and holds each verified fee the page names to it", async () => {
+    const fresh = (overdraft: number, median = 30) => vi.fn(async () => prepared.deltas.map((d) => (d.fee_category === "overdraft" ? { ...d, institution_amount: overdraft, peer_median: median } : d)));
+    // The page names overdraft by amount and the wire fee by name; NSF is provisional.
+    const text = "Its $32 overdraft and $31 NSF fees sit above peers; its Outgoing Domestic Wire fee does not.";
+    const named = prepared.deltas.filter((d) => d.fee_category !== "nsf").length;
+    const ok = await reconcileReportAnswer(prepared, text, fresh(32));
+    expect(ok.figures).toBeGreaterThanOrEqual(1);
+    expect(ok.figures).toBeLessThanOrEqual(named);
+    expect(ok.failures).toEqual([]);
+    const moved = await reconcileReportAnswer(prepared, text, fresh(29));
+    expect(moved.failures).toContain("Overdraft (OD): the report uses $32.00, the catalog has $29.00");
+    const median = await reconcileReportAnswer(prepared, text, fresh(32, 28));
+    expect(median.failures).toContain("Overdraft (OD): the report's peer median is $30.00, the catalog's is $28.00");
+    const gone = await reconcileReportAnswer(prepared, text, vi.fn(async () => []));
+    expect(gone.failures[0]).toMatch(/a fresh read has no comparison for it/);
+    expect(await reconcileReportAnswer(prepared, "Peers vary.", fresh(32))).toEqual({ checked: false, figures: 0, failures: [] });
   });
 });

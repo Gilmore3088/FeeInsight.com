@@ -125,8 +125,10 @@ Hamilton supports the decision; it does not make it.
   Benchmarking template, last three months, no reader or saved peer group. Only the first verified
   draft is written (up to two calls; the live report's one partner-review rewrite would not fit
   the run), so its form rate is a floor: form is the figure check plus the partner review;
-  correctness is that each of the bank's own verified fee amounts the page states is still the live
-  `published_fee_catalog` value. Nothing is saved.
+  correctness re-reads the page's fee comparison the way the screen does and checks each verified
+  fee the page names still has the bank's amount and peer median it was given. It catches a page
+  built on values the catalog no longer holds, not a figure put on the wrong fee inside the page.
+  The screen's defaults apply (consulting tone, balanced goal, provisional-first). Nothing is saved.
   The goal scorecard reads the latest run's "Memo (paid)", "Simulate (paid)", "Written answer
   (paid)" and "Report (paid)" rows.
   It asks 17 questions (q26, the NSF regulation question, since #1079; q31, fee income against

@@ -541,6 +541,7 @@ export async function assembleReportInputs(input: {
   return {
     kind: "ready" as const,
     sectionInputs,
+    chargeBases,
     institutionName,
     reportTitle,
     period,
