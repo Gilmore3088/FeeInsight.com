@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { restoreTarget, runHamiltonCategoryGuard } from "./category-guard";
+import { movesExcessActivityFee, restoreTarget, runHamiltonCategoryGuard, uniqueRefiles } from "./category-guard";
 import { checkFeeCategory } from "@/lib/fee-category-guard";
 
 function templateText(strings: unknown): string {
@@ -206,6 +206,47 @@ describe("Hamilton category guard repair", () => {
     expect(writes.some((text) => text.includes("rolled_back_at = NOW()"))).toBe(false);
     const move = db.mock.calls.find((call) => templateText(call[0]).includes("v.from_key"));
     expect([move?.[1], move?.[2], move?.[3]]).toEqual([[95142], ["money_order"], ["account_research"]]);
+  });
+
+  it("re-files an excess withdrawal fee beside the bank's unrelated research fee at its price (#1283 review)", async () => {
+    const note = (line: string) => `Knox deterministic extraction from Rosetta artifact #1. canonical_hint=monthly_maintenance; excerpt="${line}"`;
+    const fee = (id: number, inst: number, name: string, amount: string, line: string) => ({
+      fee_published_id: id, lineage_ref: id + 100000, institution_id: inst, source_document_id: 1,
+      canonical_fee_key: "monthly_maintenance", fee_name: name, amount, conditions: note(line), document_nsf_amount: null,
+    });
+    // Live fees 124670 and 142436's own lines (Oct 15).
+    const maintenance = fee(124670, 5502, "Maintenance fee", "5.00", "A maintenance fee of $5.00 per transaction will be charged if you make more than two withdrawals during a 12 month period.");
+    const perItem = fee(142436, 3167, "Per item service charge fee", "25.00", "A per item service charge fee of $25.00 will be charged for each transaction in excess of the above limitations.");
+    expect(restoreTarget(maintenance)).toBe("account_research");
+    expect(restoreTarget(perItem)).toBe("account_research");
+    expect(movesExcessActivityFee({ row: maintenance, to: "account_research" })).toBe(true);
+    // A plain hand re-file is not an excess activity fee: only a same-name live fee stops it.
+    const research = { ...fee(95142, 8581, "Money Order Research Fee", "10.00", "x"), canonical_fee_key: "money_order", conditions: null };
+    expect(movesExcessActivityFee({ row: research, to: "account_research" })).toBe(false);
+    // Two copies of one line are one fee; two different fees at one price are two.
+    const copy = { ...maintenance, fee_published_id: 999 };
+    const other = { ...research, institution_id: 5502, amount: "5.00" };
+    expect(uniqueRefiles([{ row: maintenance, to: "account_research" }, { row: copy, to: "account_research" }]).map((r) => r.row.fee_published_id)).toEqual([124670]);
+    expect(uniqueRefiles([{ row: maintenance, to: "account_research" }, { row: other, to: "account_research" }])).toHaveLength(2);
+
+    const db = vi.fn((strings: TemplateStringsArray, ...values: unknown[]) => {
+      const text = templateText(strings);
+      if (text.includes("to_regclass('public.pipeline_feedback')")) return Promise.resolve([{ ready: true }]);
+      if (text.includes("UPDATE published_fee_records") && text.includes("v.from_key")) {
+        return Promise.resolve((values[0] as number[]).map((id, i) => ({ fee_published_id: id, lineage_ref: id + 100000, canonical_fee_key: (values[2] as string[])[i] })));
+      }
+      if (text.includes("rolled_back_at IS NOT NULL")) return Promise.resolve([]);
+      if (text.includes("FROM published_fee_records")) return Promise.resolve([maintenance]);
+      return Promise.resolve([]);
+    });
+    const result = await runHamiltonCategoryGuard({ runId: 23, db: db as unknown as GuardDb });
+    expect(result).toMatchObject({ liveRefiledFees: 1, failingFees: 0 });
+    const move = db.mock.calls.find((call) => templateText(call[0]).includes("v.from_key") && templateText(call[0]).includes("UPDATE"));
+    const sqlText = templateText(move?.[0]);
+    // The twin test needs the same name, or an excess activity fee when one moves; price alone is not enough.
+    expect(sqlText).toContain("lower(btrim(live.fee_name)) = lower(btrim(fp.fee_name))");
+    expect(sqlText).toContain("v.excess AND live.fee_name ~*");
+    expect(move?.[4]).toEqual([true]);
   });
 
   it("brings an express card replacement back as the rush card fee, once per institution and price", async () => {

@@ -393,25 +393,100 @@ function restoreRefile(canonicalFeeKey: string, feeName: string): string | null 
 }
 
 /**
+ * A live fee at the same bank, type and price is the same fee only when it carries the same name,
+ * or when both are excess activity fees. A bank's unrelated account research fee at the same price
+ * ("Reconciliation" $5, "Return Mail, per item" $5, "Returned mail (monthly)" $3, "Account
+ * research" $25) is not a twin of its excess withdrawal fee (124670, 135850, 142436; #1283 review,
+ * Oct 15). A live fee reads as an excess activity fee by its name; the fee being moved also by its
+ * own source line (`refileFromLine`), since those are named "Service charge" or "Maintenance fee".
+ * The same pattern runs in TS and as a Postgres regex.
+ */
+const EXCESS_ACTIVITY_NAME_PATTERN = String.raw`(excess|withdraw|over[- ]?limit|transaction limit)`;
+const EXCESS_ACTIVITY_NAME = new RegExp(EXCESS_ACTIVITY_NAME_PATTERN, "i");
+
+const nameKey = (name: string | null | undefined) => (name ?? "").trim().toLowerCase();
+
+interface LiveRefile extends Restore {
+  /** The fee being moved is an excess activity fee, by its name or its own source line. */
+  excess: boolean;
+}
+
+/** Pure: whether a refile moves an excess activity fee. */
+export function movesExcessActivityFee(restore: Restore): boolean {
+  return EXCESS_ACTIVITY_NAME.test(restore.row.fee_name) ||
+    refileFromLine(restore.row.canonical_fee_key, restore.row.fee_name, restore.row) === restore.to;
+}
+
+/**
+ * Pure: the refiles that stay, one per bank, type, price and fee. Two copies of one line (same
+ * name) are one fee, and so are two excess activity fees at one price; any other pair is two fees.
+ */
+export function uniqueRefiles(refiles: Restore[]): LiveRefile[] {
+  const kept: LiveRefile[] = [];
+  for (const restore of refiles) {
+    const candidate = { ...restore, excess: movesExcessActivityFee(restore) };
+    const same = kept.some((other) =>
+      String(other.row.institution_id) === String(candidate.row.institution_id) &&
+      other.to === candidate.to &&
+      normalizedAmount(other.row.amount) === normalizedAmount(candidate.row.amount) &&
+      (nameKey(other.row.fee_name) === nameKey(candidate.row.fee_name) || (other.excess && candidate.excess)));
+    if (!same) kept.push(candidate);
+  }
+  return kept;
+}
+
+/**
  * Moves live fees the guard fails to the top-50 type `restoreTarget` gives them, published and
- * verified rows alike, unless the same fee is already live there. Each move is logged as a fold.
- * Returns the ids moved (a dry run counts every candidate).
+ * verified rows alike, unless the same fee is already live there: a live fee of that type and price
+ * with the same name, or, when an excess activity fee moves, a live excess activity fee. Each move
+ * is logged as a fold. Returns the ids moved (a dry run counts every candidate).
  */
 async function refileLiveFees(
   db: SqlTag,
   refiles: Restore[],
   options: { dryRun: boolean; runId: number },
 ): Promise<Set<number>> {
-  // One fee per institution, type and price.
-  const seen = new Set<string>();
-  const unique = refiles.filter((restore) => {
-    const key = `${restore.row.institution_id}|${restore.to}|${normalizedAmount(restore.row.amount)}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
+  const unique = uniqueRefiles(refiles);
   if (unique.length === 0) return new Set();
-  if (options.dryRun) return new Set(unique.map((restore) => Number(restore.row.fee_published_id)));
+  if (options.dryRun) return wouldRefile(db, unique);
+  return applyLiveRefiles(db, unique, options);
+}
+
+/** The dry run's count: the same live-twin test as the move, read only. */
+async function wouldRefile(db: SqlTag, unique: LiveRefile[]): Promise<Set<number>> {
+  try {
+    const rows = await inSavepoint(db, (scope) => scope<{ fee_published_id: number | string }[]>`
+      SELECT fp.fee_published_id
+        FROM published_fee_records fp
+        JOIN unnest(${unique.map((restore) => Number(restore.row.fee_published_id))}::bigint[],
+                    ${unique.map((restore) => restore.row.canonical_fee_key)}::text[],
+                    ${unique.map((restore) => restore.to)}::text[],
+                    ${unique.map((restore) => restore.excess)}::boolean[]) AS v(fee_published_id, from_key, to_key, excess)
+          ON fp.fee_published_id = v.fee_published_id
+       WHERE fp.canonical_fee_key = v.from_key
+         AND fp.rolled_back_at IS NULL
+         AND NOT EXISTS (
+           SELECT 1 FROM published_fee_records live
+            WHERE live.rolled_back_at IS NULL
+              AND live.institution_id = fp.institution_id
+              AND live.canonical_fee_key = v.to_key
+              AND live.amount IS NOT DISTINCT FROM fp.amount
+              AND (lower(btrim(live.fee_name)) = lower(btrim(fp.fee_name))
+                   OR (v.excess AND live.fee_name ~* ${EXCESS_ACTIVITY_NAME_PATTERN}))
+         )
+    `);
+    return new Set(rows.map((row) => Number(row.fee_published_id)));
+  } catch (error) {
+    console.error("category guard live re-file dry run failed:", error);
+    return new Set();
+  }
+}
+
+async function applyLiveRefiles(
+  db: SqlTag,
+  unique: LiveRefile[],
+  options: { runId: number },
+): Promise<Set<number>> {
   try {
     return await inSavepoint(db, async (scope) => {
       const moved = await scope<{ fee_published_id: number | string; lineage_ref: number | string; canonical_fee_key: string }[]>`
@@ -419,7 +494,8 @@ async function refileLiveFees(
            SET canonical_fee_key = v.to_key
           FROM unnest(${unique.map((restore) => Number(restore.row.fee_published_id))}::bigint[],
                       ${unique.map((restore) => restore.row.canonical_fee_key)}::text[],
-                      ${unique.map((restore) => restore.to)}::text[]) AS v(fee_published_id, from_key, to_key)
+                      ${unique.map((restore) => restore.to)}::text[],
+                      ${unique.map((restore) => restore.excess)}::boolean[]) AS v(fee_published_id, from_key, to_key, excess)
          WHERE fp.fee_published_id = v.fee_published_id
            AND fp.canonical_fee_key = v.from_key
            AND fp.rolled_back_at IS NULL
@@ -429,6 +505,8 @@ async function refileLiveFees(
                 AND live.institution_id = fp.institution_id
                 AND live.canonical_fee_key = v.to_key
                 AND live.amount IS NOT DISTINCT FROM fp.amount
+                AND (lower(btrim(live.fee_name)) = lower(btrim(fp.fee_name))
+                     OR (v.excess AND live.fee_name ~* ${EXCESS_ACTIVITY_NAME_PATTERN}))
            )
         RETURNING fp.fee_published_id, fp.lineage_ref, fp.canonical_fee_key
       `;
