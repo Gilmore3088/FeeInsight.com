@@ -2,7 +2,7 @@ import type { ElementType, ReactNode } from "react";
 
 /**
  * Eyebrow — section labels in the editorial style used across Fee Insight
- * marketing surfaces (11px uppercase serif, 0.12em tracking, #7A7062).
+ * marketing surfaces (11px uppercase serif, 0.12em tracking, #55606f).
  *
  * Semantics: defaults to `<span>` (decorative). Pass `as="h2"` (or `h3`/`h4`)
  * when the eyebrow IS the section's heading — so screen readers still get
@@ -25,8 +25,8 @@ interface EyebrowProps {
   children: ReactNode;
 }
 
-/* warm-500 (#A09788) is reserved for rules and disabled states. Eyebrows are text at
-   or below 14px, so warm-600 (#6B6255, 5.6:1 on parchment) is the floor for every tone. */
+/* warm-500 (#767c87) is reserved for rules and disabled states. Eyebrows are text at
+   or below 14px, so warm-600 (#55606f, 5.6:1 on parchment) is the floor for every tone. */
 const TONE: Record<Tone, string> = {
   default: "text-warm-600",
   subtle: "text-warm-600",
@@ -49,7 +49,7 @@ export function Eyebrow({
   return (
     <Component
       className={`${SIZE[size]} ${TONE[tone]} ${className}`}
-      style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
+      style={{ fontFamily: "var(--fi-font-sans)" }}
     >
       {children}
     </Component>

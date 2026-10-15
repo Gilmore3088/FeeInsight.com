@@ -62,7 +62,7 @@ function RelatedList({ items, now }: { items: RelatedItem[]; now: Date }) {
             </span>
             <span className="mt-0.5 block break-words">
               {item.url && /^https?:\/\//i.test(item.url) ? (
-                <a href={item.url} target="_blank" rel="noopener noreferrer" className="underline decoration-warm-300 underline-offset-2 hover:text-[#A93D25]">
+                <a href={item.url} target="_blank" rel="noopener noreferrer" className="underline decoration-warm-300 underline-offset-2 hover:text-brick">
                   {title}
                 </a>
               ) : (
@@ -84,7 +84,7 @@ function Timeline({ entries, now }: { entries: TimelineEntry[]; now: Date }) {
         <li key={`${entry.label}-${i}`} className="relative text-[12px] leading-snug">
           <span
             aria-hidden="true"
-            className={`absolute -left-[17px] top-[5px] h-2 w-2 rounded-full ${entry.current ? "bg-[#C44B2E]" : "bg-warm-400"}`}
+            className={`absolute -left-[17px] top-[5px] h-2 w-2 rounded-full ${entry.current ? "bg-brick" : "bg-warm-400"}`}
           />
           <span className={entry.current ? "font-semibold text-warm-900" : "text-warm-700"}>{entry.label}</span>
           <span className="text-warm-600"> · {day(entry.date, now) ?? "date not recorded"}</span>
@@ -143,7 +143,7 @@ export function ResearchPanel({
   return (
     <details open={open || undefined} className="group mt-0.5 border-t border-dashed border-warm-200">
       <summary className="flex cursor-pointer list-none items-center gap-2 py-2 text-[11px] text-warm-600 marker:hidden hover:text-warm-900 [&::-webkit-details-marker]:hidden">
-        <span aria-hidden="true" className="inline-block text-[9px] text-[#A93D25] transition-transform group-open:rotate-90">
+        <span aria-hidden="true" className="inline-block text-[9px] text-brick transition-transform group-open:rotate-90">
           ▶
         </span>
         <span className="font-semibold uppercase tracking-[0.08em] text-warm-700">Research</span>
@@ -182,7 +182,7 @@ export function ResearchPanel({
             <MiniLabel>{ex}Dates stated in the source</MiniLabel>
             <p className="mt-1 flex flex-wrap gap-1.5">
               {deadline ? (
-                <span className="rounded border border-[#C44B2E]/40 bg-white px-2 py-0.5 text-[12px] font-semibold text-[#A93D25] [font-variant-numeric:tabular-nums]">
+                <span className="rounded border border-brick/40 bg-white px-2 py-0.5 text-[12px] font-semibold text-brick [font-variant-numeric:tabular-nums]">
                   Comment deadline {deadline}
                 </span>
               ) : null}
@@ -199,7 +199,7 @@ export function ResearchPanel({
         ) : null}
 
         {ok && note!.whyItMatters ? (
-          <section aria-label="Why it may matter" className="border-l-2 border-[#C44B2E]/50 pl-3">
+          <section aria-label="Why it may matter" className="border-l-2 border-brick/50 pl-3">
             <MiniLabel>{ex}Why it may matter (interpretation, not a requirement)</MiniLabel>
             <p className="mt-1 text-[13px] italic leading-relaxed text-warm-700">{note!.whyItMatters}</p>
           </section>
@@ -225,7 +225,7 @@ export function ResearchPanel({
 
         {note?.sourceUrl && /^https?:\/\//i.test(note.sourceUrl) ? (
           <p className="text-[11px]">
-            <a href={note.sourceUrl} target="_blank" rel="noopener noreferrer" className="font-semibold text-[#A93D25] underline-offset-2 hover:underline">
+            <a href={note.sourceUrl} target="_blank" rel="noopener noreferrer" className="font-semibold text-brick underline-offset-2 hover:underline">
               Read the source document ↗
             </a>
             <span className="text-warm-600"> · the official text is the requirement; this panel is not legal advice.</span>

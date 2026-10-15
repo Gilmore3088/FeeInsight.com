@@ -89,7 +89,7 @@ export default async function HitListPage({
           <a
             key={option.view}
             href={hrefFor(option.view, state)}
-            className={`rounded-full border px-3 py-1 ${option.view === view ? "border-current font-semibold" : "border-black/15 text-[#6B6255] dark:border-white/15"}`}
+            className={`rounded-full border px-3 py-1 ${option.view === view ? "border-current font-semibold" : "border-black/15 text-ink-muted dark:border-white/15"}`}
           >
             {option.label}
           </a>
@@ -112,7 +112,7 @@ export default async function HitListPage({
 
       {view === "top10" ? (
         coverage ? (
-          <p className="text-sm text-[#6B6255]">
+          <p className="text-sm text-ink-muted">
             <span className="font-semibold text-current">
               {coverage.live.toLocaleString("en-US")} of {coverage.slots.toLocaleString("en-US")}
             </span>{" "}
@@ -123,19 +123,19 @@ export default async function HitListPage({
           <p className="text-sm text-[#9a4a1f]">The top 10 per state could not be counted just now.</p>
         )
       ) : view === "gaps" ? (
-        <p className="text-sm text-[#6B6255]">
+        <p className="text-sm text-ink-muted">
           Banks with no live fees, ordered by how much competitor coverage their fees would add across every bank&rsquo;s
           branch counties (1.0 is one whole market). Magellan&rsquo;s discovery searches the top 100 beside the market
           leaders. Credit unions report no deposits by branch, so they are not ranked here.
         </p>
       ) : (
-        <p className="text-sm text-[#6B6255]">
+        <p className="text-sm text-ink-muted">
           {list.total.toLocaleString("en-US")} {view === "no_fees" ? "institutions with no live fees" : "live institutions with no overdraft fee"}
           {state ? ` in ${state}` : ""}. Showing the largest {list.rows.length.toLocaleString("en-US")}.
         </p>
       )}
       {markets ? (
-        <p className="text-sm text-[#6B6255]">
+        <p className="text-sm text-ink-muted">
           Competitor coverage: in the median bank&rsquo;s branch counties, competitors with live fees hold{" "}
           <span className="font-semibold text-current">{Math.round(markets.medianShare * 100)}%</span> of competitor
           deposits ({Math.round(markets.medianShareOverdraft * 100)}% with an overdraft fee).{" "}
@@ -150,18 +150,18 @@ export default async function HitListPage({
           <li key={row.institutionId} className="admin-card p-4">
             <div className="flex items-baseline justify-between gap-3">
               <p className="font-medium">
-                <span className="mr-2 tabular-nums text-[#6B6255]">{index + 1}</span>
+                <span className="mr-2 tabular-nums text-ink-muted">{index + 1}</span>
                 <a href={`/admin/institution/${row.institutionId}`} className="underline-offset-2 hover:underline">
                   {row.name}
                 </a>
               </p>
-              <span className="shrink-0 text-xs text-[#6B6255]">
+              <span className="shrink-0 text-xs text-ink-muted">
                 {gapBy.has(row.institutionId)
                   ? `In ${gapBy.get(row.institutionId)!.markets.toLocaleString("en-US")} banks' markets · adds ${gapBy.get(row.institutionId)!.gain.toFixed(1)}`
                   : (coverage?.missing.get(row.institutionId)?.map((slot) => `${slot.stateCode} #${slot.rank}`).join(", ") ?? row.stateCode ?? "—")}
               </span>
             </div>
-            <p className="mt-1 text-xs text-[#6B6255]">
+            <p className="mt-1 text-xs text-ink-muted">
               {formatDeposits(row.deposits)}
               {row.charterType === "credit_union" ? " · credit union" : ""}
               {view === "no_overdraft" ? ` · ${row.liveFeeTypes} live fee types` : ""} · last tried {formatDay(row.lastTriedAt)}

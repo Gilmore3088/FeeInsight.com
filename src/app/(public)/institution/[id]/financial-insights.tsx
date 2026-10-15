@@ -42,12 +42,12 @@ export function FinancialInsights({
   return (
     <div className="grid gap-4">
       {flags.length > 0 && (
-        <div className="rounded-xl border border-[#E0D7C9] bg-white p-4">
-          <p className="text-sm font-semibold text-[#1A1815]">Worth a look</p>
+        <div className="rounded-xl border border-border bg-white p-4">
+          <p className="text-sm font-semibold text-ink">Worth a look</p>
           <ul className="mt-2 grid gap-1.5 text-sm text-[#3D372F]">
             {flags.map((flag) => (
               <li key={flag.id} className="flex gap-2">
-                <span aria-hidden className="mt-2 inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-[#A93D25]" />
+                <span aria-hidden className="mt-2 inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-brick" />
                 <span>{flag.text}</span>
               </li>
             ))}
@@ -57,11 +57,11 @@ export function FinancialInsights({
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
         {growth.length > 0 && (
-          <figure className="min-w-0 rounded-xl border border-[#E0D7C9] bg-white p-4">
-            <figcaption className="text-sm font-semibold text-[#1A1815]">Growth</figcaption>
+          <figure className="min-w-0 rounded-xl border border-border bg-white p-4">
+            <figcaption className="text-sm font-semibold text-ink">Growth</figcaption>
             <div className="mt-2 overflow-x-auto">
               <table className="w-full min-w-[480px] text-left text-xs tabular-nums">
-                <thead className="text-[#6B6255]">
+                <thead className="text-ink-muted">
                   <tr>
                     <th className="py-1.5 pr-2 font-medium">Line</th>
                     <th className="py-1.5 pr-2 text-right font-medium">Latest</th>
@@ -71,9 +71,9 @@ export function FinancialInsights({
                     <th className="py-1.5 text-right font-medium">10Y / yr</th>
                   </tr>
                 </thead>
-                <tbody className="text-[#1A1815]">
+                <tbody className="text-ink">
                   {growth.map((row) => (
-                    <tr key={row.key} className="border-t border-[#F1EBE1]">
+                    <tr key={row.key} className="border-t border-surface-200">
                       <td className="py-1.5 pr-2">{row.label}</td>
                       <td className="py-1.5 pr-2 text-right">{latestCell(row)}</td>
                       <td className="py-1.5 pr-2 text-right">{growthCell(row.qoq)}</td>
@@ -85,7 +85,7 @@ export function FinancialInsights({
                 </tbody>
               </table>
             </div>
-            <p className="mt-2 text-[10px] text-[#8A8174]">
+            <p className="mt-2 text-[10px] text-ink-muted">
               Balances compare quarter-end figures. Income lines compare four-quarter totals. 5Y and 10Y are
               compound annual rates. A dash means the earlier figure is not on file.
             </p>
@@ -93,17 +93,17 @@ export function FinancialInsights({
         )}
 
         {ranks.length > 0 && (
-          <figure className="min-w-0 rounded-xl border border-[#E0D7C9] bg-white p-4">
-            <figcaption className="text-sm font-semibold text-[#1A1815]">Peer rank</figcaption>
+          <figure className="min-w-0 rounded-xl border border-border bg-white p-4">
+            <figcaption className="text-sm font-semibold text-ink">Peer rank</figcaption>
             <ul className="mt-2 grid gap-2">
               {ranks.map((row) => (
                 <li key={row.metric} className="text-xs">
                   <div className="flex items-baseline justify-between gap-2">
                     <span className="text-[#3D372F]">{row.label}</span>
-                    <span className="font-medium tabular-nums text-[#1A1815]">{ordinal(row.percentile)} percentile</span>
+                    <span className="font-medium tabular-nums text-ink">{ordinal(row.percentile)} percentile</span>
                   </div>
                   <div
-                    className="relative mt-1 h-1.5 rounded-full bg-[#EFE8DC]"
+                    className="relative mt-1 h-1.5 rounded-full bg-surface-200"
                     role="img"
                     aria-label={`${row.label}: ${ordinal(row.percentile)} percentile`}
                   >
@@ -115,7 +115,7 @@ export function FinancialInsights({
                 </li>
               ))}
             </ul>
-            <p className="mt-2 text-[10px] text-[#8A8174]">
+            <p className="mt-2 text-[10px] text-ink-muted">
               Percentile = share of peers with a lower figure.
               {peerCount !== null &&
                 ` Peers: ${peerCount.toLocaleString("en-US")} ${charterLabel.toLowerCase()} institutions in the same asset tier${peerQuarter ? `, ${peerQuarter}` : ""}.`}

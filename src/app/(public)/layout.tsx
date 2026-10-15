@@ -11,7 +11,7 @@ import { AdminViewBanner } from "@/components/admin-view-banner";
  */
 export default function PublicLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="min-h-screen bg-[#FAF7F2]">
+    <div className="min-h-screen bg-paper">
       <AdminViewBanner />
       <ConsumerNav />
       {/* The one <main> for every public page; pages render sections, not their own <main>. */}

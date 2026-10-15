@@ -44,12 +44,12 @@ function ListBlock({
   const items = block.items.map((item, i) => (
     <li key={i} className="flex gap-3">
       {block.ordered ? (
-        <span className="mt-[3px] flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#C44B2E]/8 text-[11px] font-semibold tabular-nums text-[#C44B2E]">
+        <span className="mt-[3px] flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-brick/8 text-[11px] font-semibold tabular-nums text-brick">
           {i + 1}
         </span>
       ) : (
         <span
-          className="mt-[11px] h-1 w-1 shrink-0 rounded-full bg-[#C44B2E]/40"
+          className="mt-[11px] h-1 w-1 shrink-0 rounded-full bg-brick/40"
           aria-hidden="true"
         />
       )}
@@ -58,9 +58,9 @@ function ListBlock({
   ));
 
   return block.ordered ? (
-    <ol className="mt-4 space-y-3 text-[15px] leading-[1.72] text-[#5A5347]">{items}</ol>
+    <ol className="mt-4 space-y-3 text-[15px] leading-[1.72] text-ink-soft">{items}</ol>
   ) : (
-    <ul className="mt-4 space-y-3 text-[15px] leading-[1.72] text-[#5A5347]">{items}</ul>
+    <ul className="mt-4 space-y-3 text-[15px] leading-[1.72] text-ink-soft">{items}</ul>
   );
 }
 
@@ -72,16 +72,16 @@ const CALLOUT_TONES = {
     labelClass: "text-emerald-700",
   },
   warning: {
-    border: "border-[#C44B2E]/40",
-    bg: "bg-[#C44B2E]/[0.04]",
+    border: "border-brick/40",
+    bg: "bg-brick/[0.04]",
     label: "Watch out",
-    labelClass: "text-[#C44B2E]",
+    labelClass: "text-brick",
   },
   regulatory: {
-    border: "border-[#1A1815]/30",
-    bg: "bg-[#FAF7F2]",
+    border: "border-ink/30",
+    bg: "bg-paper",
     label: "Your rights",
-    labelClass: "text-[#5A5347]",
+    labelClass: "text-ink-soft",
   },
 } as const;
 
@@ -95,7 +95,7 @@ function SourceLink({ source }: { source?: GuideSource }) {
         href={source.url}
         target="_blank"
         rel="noopener noreferrer"
-        className="whitespace-nowrap text-[12.5px] font-medium text-[#A93D25] underline underline-offset-2"
+        className="whitespace-nowrap text-[12.5px] font-medium text-brick underline underline-offset-2"
       >
         {source.label}
       </a>
@@ -120,7 +120,7 @@ function CalloutBlock({
       >
         {tone.label}
       </p>
-      <p className="mt-2 text-[14.5px] leading-[1.7] text-[#5A5347]">
+      <p className="mt-2 text-[14.5px] leading-[1.7] text-ink-soft">
         <Prose text={block.text} summaries={summaries} />
         <SourceLink source={block.source} />
       </p>
@@ -137,22 +137,22 @@ function BenchmarkBlock({
 }) {
   const name = getDisplayName(block.category);
   return (
-    <div className="mt-5 overflow-x-auto rounded-xl border border-[#E8DFD1]/80 bg-white/70">
+    <div className="mt-5 overflow-x-auto rounded-xl border border-border/80 bg-white/70">
       <table className="w-full min-w-[420px] text-left">
         <caption className="sr-only">
           Where your {name} fee sits against the national distribution
         </caption>
         <thead>
-          <tr className="border-b border-[#E8DFD1]">
+          <tr className="border-b border-border">
             <th
               scope="col"
-              className="px-5 py-3 text-[10px] font-bold uppercase tracking-[0.12em] text-[#6B6255]"
+              className="px-5 py-3 text-[10px] font-bold uppercase tracking-[0.12em] text-ink-muted"
             >
               If your bank charges
             </th>
             <th
               scope="col"
-              className="px-5 py-3 text-[10px] font-bold uppercase tracking-[0.12em] text-[#6B6255]"
+              className="px-5 py-3 text-[10px] font-bold uppercase tracking-[0.12em] text-ink-muted"
             >
               Where that puts you
             </th>
@@ -160,11 +160,11 @@ function BenchmarkBlock({
         </thead>
         <tbody>
           {block.rows.map((row, i) => (
-            <tr key={i} className="border-b border-[#E8DFD1]/50 last:border-0">
-              <td className="px-5 py-3 text-[14px] text-[#1A1815]">
+            <tr key={i} className="border-b border-border/50 last:border-0">
+              <td className="px-5 py-3 text-[14px] text-ink">
                 <Prose text={row.condition} summaries={summaries} />
               </td>
-              <td className="px-5 py-3 text-[13.5px] text-[#6B6255]">
+              <td className="px-5 py-3 text-[13.5px] text-ink-muted">
                 <Prose text={row.meaning} summaries={summaries} />
               </td>
             </tr>
@@ -202,7 +202,7 @@ function ComparisonBlock({
   const widest = Math.max(...usable.map((r) => r.median_amount ?? 0));
 
   return (
-    <figure className="mt-5 rounded-xl border border-[#E8DFD1]/80 bg-white/70 px-5 py-5">
+    <figure className="mt-5 rounded-xl border border-border/80 bg-white/70 px-5 py-5">
       <div className="space-y-3">
         {usable.map((row) => {
           const median = row.median_amount ?? 0;
@@ -210,19 +210,19 @@ function ComparisonBlock({
           return (
             <div key={row.dimension_value}>
               <div className="flex items-baseline justify-between gap-3">
-                <span className="text-[13px] font-medium text-[#1A1815]">
+                <span className="text-[13px] font-medium text-ink">
                   {row.dimension_value}
                 </span>
-                <span className="text-[13px] font-semibold tabular-nums text-[#1A1815]">
+                <span className="text-[13px] font-semibold tabular-nums text-ink">
                   {formatAmount(median)}
-                  <span className="ml-2 text-[11px] font-normal tabular-nums text-[#6B6255]">
+                  <span className="ml-2 text-[11px] font-normal tabular-nums text-ink-muted">
                     n={row.count.toLocaleString()}
                   </span>
                 </span>
               </div>
               <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-[#F0EAE0]">
                 <div
-                  className="h-full rounded-full bg-[#C44B2E]/50"
+                  className="h-full rounded-full bg-brick/50"
                   style={{ width: `${pct}%` }}
                 />
               </div>
@@ -230,14 +230,14 @@ function ComparisonBlock({
           );
         })}
       </div>
-      <figcaption className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-[#6B6255]">
+      <figcaption className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-ink-muted">
         <span>
           {block.caption ?? `${getDisplayName(block.category)} median by group`}
         </span>
-        <span className="h-3 w-px bg-[#D4C9BA]" aria-hidden="true" />
+        <span className="h-3 w-px bg-border" aria-hidden="true" />
         <Link
           href={`/fees/${block.category}`}
-          className="font-medium text-[#A93D25]/70 transition-colors hover:text-[#A93D25]"
+          className="font-medium text-brick/70 transition-colors hover:text-brick"
         >
           Full breakdown
         </Link>
@@ -258,7 +258,7 @@ export function GuideBlockRenderer({
   switch (block.type) {
     case "paragraph":
       return (
-        <p className="mt-4 text-[15.5px] leading-[1.82] text-[#5A5347] first:mt-0">
+        <p className="mt-4 text-[15.5px] leading-[1.82] text-ink-soft first:mt-0">
           <Prose text={block.text} summaries={summaries} />
           <SourceLink source={block.source} />
         </p>
@@ -293,8 +293,8 @@ export function GuideSectionRenderer({
     >
       <h2
         id={`${section.id}-heading`}
-        className="text-[21px] font-medium leading-snug tracking-[-0.01em] text-[#1A1815]"
-        style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
+        className="text-[21px] font-bold leading-snug tracking-tight text-ink"
+        style={{ fontFamily: "var(--fi-font-sans)" }}
       >
         {section.heading}
       </h2>
@@ -308,7 +308,7 @@ export function GuideSectionRenderer({
       ))}
       {!isLast && (
         <div
-          className="mt-10 h-px bg-gradient-to-r from-[#E8DFD1] via-[#E8DFD1]/40 to-transparent"
+          className="mt-10 h-px bg-gradient-to-r from-border via-border/40 to-transparent"
           aria-hidden="true"
         />
       )}

@@ -27,7 +27,7 @@ export function AlertRemoveButton({ institutionId, institutionName }: { institut
             }
           })
         }
-        className="text-[12px] font-medium text-[#6B6255] hover:text-[#A93D25] hover:underline disabled:opacity-50"
+        className="text-[12px] font-medium text-ink-muted hover:text-brick hover:underline disabled:opacity-50"
       >
         {pending ? "Removing…" : "Remove"}
       </button>

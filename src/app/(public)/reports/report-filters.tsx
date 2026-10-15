@@ -23,7 +23,7 @@ const DATE_RANGE_OPTIONS = [
 ];
 
 const SELECT_CLASS =
-  "cursor-pointer rounded-md border border-[#E0D7C9] bg-[#FDFBF8] px-3 py-2 text-[13px] text-[#1A1815]";
+  "cursor-pointer rounded-md border border-border bg-surface-0 px-3 py-2 text-[13px] text-ink";
 
 interface ReportFiltersProps {
   typeFilter: string | null;
@@ -69,7 +69,7 @@ export function ReportFilters({ typeFilter, rawRange, filtersActive }: ReportFil
 
       <button
         type="submit"
-        className="cursor-pointer rounded-md border-0 bg-[#1A1815] px-4 py-2 text-[13px] font-medium text-[#FDFBF8]"
+        className="cursor-pointer rounded-md border-0 bg-ink px-4 py-2 text-[13px] font-medium text-surface-0"
       >
         Filter
       </button>
@@ -77,7 +77,7 @@ export function ReportFilters({ typeFilter, rawRange, filtersActive }: ReportFil
       {filtersActive && (
         <Link
           href="/reports"
-          className="inline-flex items-center rounded-md border border-[#E0D7C9] px-4 py-2 text-[13px] text-[#5A5347] no-underline"
+          className="inline-flex items-center rounded-md border border-border px-4 py-2 text-[13px] text-ink-soft no-underline"
         >
           Clear filters
         </Link>

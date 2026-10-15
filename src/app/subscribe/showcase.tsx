@@ -1,7 +1,10 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
+import { ProgressFill, prefersReducedMotion, useReducedMotion } from "@/components/marketing/motion";
 import { trackEvent } from "@/lib/analytics";
+
+export { useReducedMotion };
 
 /** The four parts of Pro, in James's words (9 Oct 2026): long copy on desktop, short on phones. */
 export const PILLARS = [
@@ -53,23 +56,6 @@ export function useShowcase(): ShowcaseState {
   const state = useContext(ShowcaseContext);
   if (!state) throw new Error("useShowcase needs a ShowcaseProvider");
   return state;
-}
-
-const REDUCED_MOTION = "(prefers-reduced-motion: reduce)";
-
-function prefersReducedMotion(): boolean {
-  return typeof window !== "undefined" && window.matchMedia?.(REDUCED_MOTION).matches === true;
-}
-
-function subscribeReducedMotion(onChange: () => void): () => void {
-  const query = window.matchMedia?.(REDUCED_MOTION);
-  query?.addEventListener("change", onChange);
-  return () => query?.removeEventListener("change", onChange);
-}
-
-/** The reader's reduced-motion setting; the server render assumes it is on (nothing moves). */
-export function useReducedMotion(): boolean {
-  return useSyncExternalStore(subscribeReducedMotion, prefersReducedMotion, () => true);
 }
 
 /**
@@ -149,17 +135,17 @@ export function ShowcaseStage({ panels }: { panels: ReactNode[] }) {
           onClick={() => choose(i)}
           aria-label={`${pillar.title} example`}
           aria-pressed={i === active}
-          className="group flex h-11 w-9 items-center justify-center rounded-md focus-visible:outline-2 focus-visible:outline-[#1A1815]"
+          className="group flex h-11 w-9 items-center justify-center rounded-md focus-visible:outline-2 focus-visible:outline-ink"
         >
           <span
             aria-hidden
             className={`block h-2 rounded-full transition-all motion-reduce:transition-none ${
-              i === active ? "w-5 bg-[#1A1815]" : "w-2 bg-[#CFC5B7] group-hover:bg-[#6B6255]"
+              i === active ? "w-5 bg-ink" : "w-2 bg-[#CFC5B7] group-hover:bg-ink-muted"
             }`}
           />
         </button>
       ))}
-      <span className="ml-1 text-xs text-[#6B6255]">{PILLARS[active].title}</span>
+      <span className="ml-1 text-xs text-ink-muted">{PILLARS[active].title}</span>
     </div>
     </div>
   );
@@ -168,38 +154,17 @@ export function ShowcaseStage({ panels }: { panels: ReactNode[] }) {
 /** The same list with nothing to open, for when the examples couldn't be read. */
 function StaticPillars() {
   return (
-    <ul className="divide-y divide-[#E8E1D6] sm:grid sm:grid-cols-2 sm:gap-x-10 sm:gap-y-8 sm:divide-y-0 lg:grid-cols-4">
+    <ul className="divide-y divide-border sm:grid sm:grid-cols-2 sm:gap-x-10 sm:gap-y-8 sm:divide-y-0 lg:grid-cols-4">
       {PILLARS.map((pillar) => (
         <li key={pillar.key} className="py-4 first:pt-0 last:pb-0 sm:py-0">
-          <h3 className="text-base font-semibold text-[#1A1815] sm:text-lg">{pillar.title}</h3>
-          <p className="mt-1 break-words text-[15px] leading-relaxed text-[#3D3833] sm:mt-2">
+          <h3 className="text-base font-semibold text-ink sm:text-lg">{pillar.title}</h3>
+          <p className="mt-1 break-words text-[15px] leading-relaxed text-ink sm:mt-2">
             <span className="sm:hidden">{pillar.short}</span>
             <span className="hidden sm:inline">{pillar.body}</span>
           </p>
         </li>
       ))}
     </ul>
-  );
-}
-
-/** Full while an example is chosen; fills over one turn while the page cycles. */
-function FillBar({ filling }: { filling: boolean }) {
-  const [started, setStarted] = useState(!filling);
-  useEffect(() => {
-    if (!filling) return;
-    const frame = window.requestAnimationFrame(() => setStarted(true));
-    return () => window.cancelAnimationFrame(frame);
-  }, [filling]);
-  const full = !filling || started;
-  return (
-    <span
-      className="block h-full bg-[#1A1815] ease-linear"
-      style={{
-        width: full ? "100%" : "0%",
-        transitionProperty: "width",
-        transitionDuration: filling ? `${CYCLE_MS}ms` : "0ms",
-      }}
-    />
   );
 }
 
@@ -221,7 +186,7 @@ export function ShowcasePillars({ interactive = true }: { interactive?: boolean 
     }
   };
   return (
-    <ul className="divide-y divide-[#E8E1D6] sm:grid sm:grid-cols-2 sm:gap-x-10 sm:gap-y-8 sm:divide-y-0 lg:grid-cols-4">
+    <ul className="divide-y divide-border sm:grid sm:grid-cols-2 sm:gap-x-10 sm:gap-y-8 sm:divide-y-0 lg:grid-cols-4">
       {PILLARS.map((pillar, i) => {
         const on = i === active;
         return (
@@ -231,22 +196,22 @@ export function ShowcasePillars({ interactive = true }: { interactive?: boolean 
               onClick={() => open(i)}
               aria-controls={`pro-example-${pillar.key}`}
               aria-pressed={on}
-              className="group block w-full rounded-md py-3 text-left focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#1A1815] sm:py-0"
+              className="group block w-full rounded-md py-3 text-left focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ink sm:py-0"
             >
               <span className="flex items-baseline justify-between gap-3">
-                <span className="text-base font-semibold text-[#1A1815] sm:text-lg">{pillar.title}</span>
+                <span className="text-base font-semibold text-ink sm:text-lg">{pillar.title}</span>
                 <span
-                  className={`text-xs font-medium ${on ? "text-[#1A1815]" : "text-[#6B6255] group-hover:text-[#1A1815]"}`}
+                  className={`text-xs font-medium ${on ? "text-ink" : "text-ink-muted group-hover:text-ink"}`}
                 >
                   {on ? "Showing above" : "See example"}
                 </span>
               </span>
-              <span className="mt-1 block break-words text-[15px] leading-relaxed text-[#3D3833] sm:mt-2">
+              <span className="mt-1 block break-words text-[15px] leading-relaxed text-ink sm:mt-2">
                 <span className="sm:hidden">{pillar.short}</span>
                 <span className="hidden sm:inline">{pillar.body}</span>
               </span>
-              <span aria-hidden className="mt-3 block h-0.5 overflow-hidden rounded-full bg-[#E8E1D6]">
-                {on && <FillBar key={`${turn}-${paused}`} filling={cycling && !paused} />}
+              <span aria-hidden className="mt-3 block h-0.5 overflow-hidden rounded-full bg-border">
+                {on && <ProgressFill key={`${turn}-${paused}`} filling={cycling && !paused} durationMs={CYCLE_MS} />}
               </span>
             </button>
           </li>

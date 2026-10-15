@@ -3,29 +3,35 @@ export const dynamic = "force-dynamic";
 
 import type { Metadata } from "next";
 import { getPublicSnapshot } from "@/lib/public-stats";
-import type { InstitutionStateDirectorySummary } from "@/lib/data-store/search";
 import { CONTACT_EMAIL, LEGAL_ENTITY_NAME, PRODUCT_NAME, SITE_NAME, SITE_URL } from "@/lib/constants";
-import { LandingHero } from "./landing-hero";
-import { LandingPriceStrip } from "./landing-price-strip";
-import { LandingTrustStats } from "./landing-trust-stats";
-import { LandingBankOffer } from "./landing-bank-offer";
-import { sampleReportAvailable } from "@/lib/custom-report/sample-report";
-
+import { loadSampleReport, sampleReportAvailable } from "@/lib/custom-report/sample-report";
 import { ConsumerNav } from "@/components/consumer-nav";
 import { CustomerFooter } from "@/components/customer-footer";
 import { SearchModal } from "@/components/public/search-modal";
-import { getInstitutionStateDirectorySummariesCached } from "@/lib/data-store/public-cached-reads";
+import { getFeeCategoryDetailCached } from "@/lib/data-store/public-cached-reads";
+import { LandingHero } from "./landing-hero";
+import { LandingSizzle } from "./landing-sizzle";
+import { LandingPillars } from "./landing-pillars";
+import { LandingProvenance } from "./landing-provenance";
+import { LandingPricing } from "./landing-pricing";
+import { LandingFaq } from "./landing-faq";
+import { LandingClose } from "./landing-close";
+import { buildHomeData, buildSampleView } from "./landing-shared";
+import { loadSampleLadder } from "./for-institutions/market-ladder";
+import { buildScenario } from "./subscribe/scenario";
 
-const HOME_TITLE = `${SITE_NAME} — Bank and credit union fees, traced to the source`;
+// The buyer promise from site v3 brief 08 §B.3 (h1) and its subhead; no counts, so nothing goes stale.
+const HOME_TITLE = `Know where your fees stand, with a source for every figure | ${SITE_NAME}`;
+const HOME_DESCRIPTION =
+  `The ${PRODUCT_NAME} reads the published fee schedules of U.S. banks and credit unions. ` +
+  "See each of your fees against your market, your state, your Fed district, your peer group and the nation.";
 
 export const metadata: Metadata = {
   title: { absolute: HOME_TITLE },
-  description:
-    "Look up overdraft, ATM, wire and monthly fees at U.S. banks and credit unions, each traced to its published schedule. Peer benchmarks for banking teams.",
+  description: HOME_DESCRIPTION,
   openGraph: {
     title: HOME_TITLE,
-    description:
-      "Look up overdraft, ATM, wire and monthly fees for U.S. banks and credit unions — every figure traced to the published schedule. Free lookup; peer benchmarking for banking teams.",
+    description: HOME_DESCRIPTION,
   },
 };
 
@@ -59,17 +65,33 @@ const WEBSITE_JSON_LD = {
 };
 
 export default async function LandingPage() {
-  // Counts and medians come from one shared snapshot, so they match the fee index,
-  // research hub and directory to the number.
-  const [{ summary, categories }, stateCoverage, sampleLive] = await Promise.all([
+  // Counts and the national ranges come from one shared snapshot, so they match the fee
+  // index, research hub and directory to the number. The district medians are the cached
+  // read /fees/overdraft already makes; a failed read only hides the district rows. The
+  // live sample report (the same one /for-institutions and the sample page show) gives the
+  // named bank's fees, their source lines and its market ladder; a failed read hides them.
+  const [{ summary, categories }, sampleLive, sample, overdraftDetail] = await Promise.all([
     getPublicSnapshot(),
-    // The coverage map is optional: a failed read hides it, not the page.
-    getInstitutionStateDirectorySummariesCached({}).catch((): InstitutionStateDirectorySummary[] => []),
     sampleReportAvailable(),
+    loadSampleReport().catch((error: unknown) => {
+      console.error("[home] sample report read failed; sample exhibits hidden", error);
+      return null;
+    }),
+    getFeeCategoryDetailCached("overdraft").catch((error: unknown) => {
+      console.error("[home] overdraft district read failed; district rows hidden", error);
+      return null;
+    }),
   ]);
+  const liveSample = sampleLive ? sample : null;
+  const ladder = liveSample ? await loadSampleLadder(liveSample, categories) : null;
+  const data = buildHomeData(summary, categories, overdraftDetail?.by_fed_district, {
+    sample: buildSampleView(liveSample),
+    ladder,
+    scenario: buildScenario("Overdraft", categories.find((c) => c.fee_category === "overdraft")),
+  });
 
   return (
-    <div className="min-h-screen bg-[#FAF7F2] consumer-brand">
+    <div className="min-h-screen overflow-x-clip bg-paper consumer-brand">
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(ORGANIZATION_JSON_LD) }}
@@ -80,12 +102,15 @@ export default async function LandingPage() {
       />
       <ConsumerNav />
       <main id="main-content">
-        <LandingHero institutionsLabel={summary.institutionsLabel} sampleLive={sampleLive} />
-        <LandingPriceStrip categories={categories} refreshedOn={summary.refreshedOn} />
-        <LandingBankOffer sampleLive={sampleLive} />
-        <LandingTrustStats summary={summary} states={stateCoverage} />
+        <LandingHero summary={summary} />
+        <LandingSizzle data={data} />
+        <LandingPillars data={data} />
+        <LandingProvenance summary={summary} />
+        <LandingPricing />
+        <LandingFaq summary={summary} />
+        <LandingClose />
       </main>
-      <CustomerFooter />
+      <CustomerFooter sampleReport={sampleLive} />
       <SearchModal />
     </div>
   );

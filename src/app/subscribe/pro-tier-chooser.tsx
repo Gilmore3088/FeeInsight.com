@@ -44,21 +44,21 @@ export function ProTierChooser({ chosenLabel, chosenDetail = null, problem = nul
       <div className="text-sm">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <p className="text-[15px] font-semibold leading-snug text-[#1A1815]">{chosenLabel}</p>
-            {chosenDetail && <p className="mt-0.5 text-sm text-[#6B6255]">{chosenDetail}</p>}
+            <p className="text-[15px] font-semibold leading-snug text-ink">{chosenLabel}</p>
+            {chosenDetail && <p className="mt-0.5 text-sm text-ink-muted">{chosenDetail}</p>}
           </div>
           <button
             type="button"
             onClick={() => go(() => {})}
-            className="inline-flex min-h-11 flex-shrink-0 items-start text-sm font-medium text-[#A93D25] underline underline-offset-2"
+            className="inline-flex min-h-11 flex-shrink-0 items-start text-sm font-medium text-ink underline underline-offset-2"
           >
             Change
           </button>
         </div>
-        {problem && <p className="mt-2 text-[#A93D25]">{problem}</p>}
+        {problem && <p className="mt-2 text-brick">{problem}</p>}
         {bandChoices && (
           <fieldset className="mt-3">
-            <legend className="text-xs font-medium text-[#1A1815]">Its total assets</legend>
+            <legend className="text-xs font-medium text-ink">Its total assets</legend>
             <div className="mt-1 grid gap-2">
               {bandChoices.map((band) => (
                 <button
@@ -75,8 +75,8 @@ export function ProTierChooser({ chosenLabel, chosenDetail = null, problem = nul
                   className={
                     "min-h-11 rounded-md border px-3 text-left text-sm " +
                     (pickedBand === band.key
-                      ? "border-[#C44B2E] ring-1 ring-[#C44B2E] text-[#1A1815]"
-                      : "border-[#E8E1D6] text-[#3D3833] hover:border-[#1A1815]")
+                      ? "border-brick ring-1 ring-brick text-ink"
+                      : "border-border text-ink hover:border-ink")
                   }
                 >
                   {band.label}
@@ -96,9 +96,9 @@ export function ProTierChooser({ chosenLabel, chosenDetail = null, problem = nul
         name="pro_tier_institution_id"
         label="Find your institution"
         help="Its size sets the price."
-        labelClassName="text-sm font-semibold text-[#1A1815]"
+        labelClassName="text-sm font-semibold text-ink"
         labelStyle={{}}
-        inputClassName="w-full rounded-lg border border-[#CFC5B7] bg-white px-3.5 py-3 text-base text-[#1A1815] outline-none focus:border-[#A93D25] focus:ring-2 focus:ring-[#A93D25]/20"
+        inputClassName="w-full rounded-lg border border-[#CFC5B7] bg-white px-3.5 py-3 text-base text-ink outline-none focus:border-brick focus:ring-2 focus:ring-brick/20"
         inputStyle={{}}
         onSelect={(result) => {
           if (!result) return;
@@ -112,7 +112,7 @@ export function ProTierChooser({ chosenLabel, chosenDetail = null, problem = nul
           trackEvent("pricing_tier_selected", { kind: "other_organization", entry });
           go((params) => params.set("org", "other"));
         }}
-        className="mt-1 inline-flex min-h-11 items-center text-left text-sm text-[#3D3833] underline underline-offset-2 hover:text-[#1A1815]"
+        className="mt-1 inline-flex min-h-11 items-center text-left text-sm text-ink underline underline-offset-2 hover:text-ink"
       >
         Consultant or another organization?
       </button>

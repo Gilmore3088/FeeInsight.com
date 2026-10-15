@@ -72,28 +72,28 @@ export default async function ArticlePage({
           <div className="mb-8">
             <Link
               href="/research"
-              className="text-[11px] font-semibold uppercase tracking-wider text-[#6B6255] hover:text-[#1A1815] transition-colors"
+              className="text-[11px] font-semibold uppercase tracking-wider text-ink-muted hover:text-ink transition-colors"
             >
               &larr; Research
             </Link>
             <h1
-              className="mt-3 text-[1.75rem] sm:text-[2.25rem] leading-[1.12] tracking-[-0.02em] font-extrabold text-[#1A1815]"
-              style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
+              className="mt-3 text-[1.75rem] sm:text-[2.25rem] leading-[1.12] tracking-[-0.02em] font-extrabold text-ink"
+              style={{ fontFamily: "var(--fi-font-sans)" }}
             >
               {article.title}
             </h1>
             {article.subtitle && (
-              <p className="mt-2 text-[15px] text-[#6B6255]">{article.subtitle}</p>
+              <p className="mt-2 text-[15px] text-ink-muted">{article.subtitle}</p>
             )}
-            <div className="mt-3 flex items-center gap-3 text-[12px] text-[#6B6255]">
+            <div className="mt-3 flex items-center gap-3 text-[12px] text-ink-muted">
               <span>{article.author}</span>
               {publishedDate && (
                 <>
-                  <span className="text-[#D4C9BA]">&middot;</span>
+                  <span className="text-border">&middot;</span>
                   <span>{publishedDate}</span>
                 </>
               )}
-              <span className="text-[#D4C9BA]">&middot;</span>
+              <span className="text-border">&middot;</span>
               <span className="capitalize">{article.category}</span>
             </div>
           </div>
@@ -104,21 +104,21 @@ export default async function ArticlePage({
           </div>
 
           {/* CTA */}
-          <div className="mt-12 rounded-xl border border-[#E8DFD1]/80 bg-[#FAF7F2]/50 px-6 py-5">
-            <p className="text-sm font-semibold text-[#1A1815]">
+          <div className="mt-12 rounded-xl border border-border/80 bg-paper/50 px-6 py-5">
+            <p className="text-sm font-semibold text-ink">
               Work at a bank or credit union?
             </p>
-            <p className="mt-1 text-[13px] text-[#6B6255]">
+            <p className="mt-1 text-[13px] text-ink-muted">
               Request a free competitive fee report: every fee your institution publishes, benchmarked against a verified peer set.
             </p>
             <div className="mt-3 flex flex-wrap items-center gap-3">
               <Link
                 href="/for-institutions#report"
-                className="inline-flex items-center rounded-md bg-[#C44B2E] px-4 py-2 text-[12px] font-semibold text-white hover:bg-[#A93D25] transition-colors"
+                className="inline-flex items-center rounded-md bg-brick px-4 py-2 text-[12px] font-semibold text-white hover:bg-brick-ink transition-colors"
               >
                 Request your report
               </Link>
-              <Link href="/institutions" className="text-[12px] font-medium text-[#A93D25] hover:underline">
+              <Link href="/institutions" className="text-[12px] font-medium text-brick hover:underline">
                 Or look up any bank&rsquo;s fees
               </Link>
             </div>
@@ -129,8 +129,8 @@ export default async function ArticlePage({
         <aside className="hidden xl:block">
           <div className="sticky top-24 space-y-5">
             {relatedArticles.length > 0 && (
-              <div className="rounded-xl border border-[#E8DFD1]/80 px-4 py-4">
-                <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-[#6B6255] mb-3">
+              <div className="rounded-xl border border-border/80 px-4 py-4">
+                <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-ink-muted mb-3">
                   Related Research
                 </p>
                 <ul className="space-y-2">
@@ -138,34 +138,34 @@ export default async function ArticlePage({
                     <li key={ra.slug}>
                       <Link
                         href={`/research/articles/${ra.slug}`}
-                        className="block text-[12px] font-medium text-[#5A5347] hover:text-[#A93D25] transition-colors leading-snug"
+                        className="block text-[12px] font-medium text-ink-soft hover:text-brick transition-colors leading-snug"
                       >
                         {ra.title}
                       </Link>
-                      <span className="text-[10px] text-[#6B6255] capitalize">{ra.category}</span>
+                      <span className="text-[10px] text-ink-muted capitalize">{ra.category}</span>
                     </li>
                   ))}
                 </ul>
               </div>
             )}
 
-            <div className="rounded-xl border border-[#E8DFD1]/80 px-4 py-4">
-              <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-[#6B6255] mb-3">
+            <div className="rounded-xl border border-border/80 px-4 py-4">
+              <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-ink-muted mb-3">
                 Explore
               </p>
               <ul className="space-y-1.5">
                 <li>
-                  <Link href="/research/national-fee-index" className="text-[12px] text-[#5A5347] hover:text-[#A93D25] transition-colors">
+                  <Link href="/research/national-fee-index" className="text-[12px] text-ink-soft hover:text-brick transition-colors">
                     National Fee Index
                   </Link>
                 </li>
                 <li>
-                  <Link href="/fees" className="text-[12px] text-[#5A5347] hover:text-[#A93D25] transition-colors">
+                  <Link href="/fees" className="text-[12px] text-ink-soft hover:text-brick transition-colors">
                     Fee Categories
                   </Link>
                 </li>
                 <li>
-                  <Link href="/guides" className="text-[12px] text-[#5A5347] hover:text-[#A93D25] transition-colors">
+                  <Link href="/guides" className="text-[12px] text-ink-soft hover:text-brick transition-colors">
                     Consumer Guides
                   </Link>
                 </li>

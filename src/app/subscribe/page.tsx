@@ -9,10 +9,10 @@ import { CustomerFooter } from "@/components/customer-footer";
 import { SearchModal } from "@/components/public/search-modal";
 import { getPendingWorkspaceInvitationsForEmail } from "@/lib/hamilton/institution-membership";
 import { sanitizeInternalRedirect } from "@/lib/safe-redirect";
-import { gatedPageLabel, subscribeEntry, subscribeReasonLine } from "@/lib/subscribe-reason";
+import { gatedPageLabel, hamiltonFullName, subscribeEntry, subscribeReasonLine } from "@/lib/subscribe-reason";
 import type { Metadata } from "next";
 import { getPublicStatsSummary } from "@/lib/public-stats";
-import { CONTACT_EMAIL, REPORT_OFFER, SITE_NAME } from "@/lib/constants";
+import { CONTACT_EMAIL, PRODUCT_NAME, REPORT_OFFER, SITE_NAME } from "@/lib/constants";
 import { PurchaseCard, type ProTierSelection } from "./pro-plan-cards";
 import { ProTierChooser } from "./pro-tier-chooser";
 import { WirePreview, type WirePreviewItem, type WirePreviewLead } from "./pro-overview";
@@ -30,14 +30,15 @@ import { compareSelectedInstitutionFees } from "@/lib/hamilton/report-evidence";
 import { BenchmarkPreview, type BenchmarkRow } from "./benchmark-preview";
 import { PricingJump } from "./pricing-jump";
 import { StickyCta } from "./sticky-cta";
-import localFont from "next/font/local";
 import { ShowcasePillars, ShowcaseProvider, ShowcaseStage } from "./showcase";
-import { AnalyzeDemo, type AnalyzeScenario } from "./analyze-demo";
+import { AnalyzeDemo } from "./analyze-demo";
+import { buildScenario, type AnalyzeScenario } from "./scenario";
 import { MonitorPreview, ReportPreview } from "./example-panels";
 import { TrackView } from "@/components/track-view";
 import { getProPricingInstitution } from "@/lib/data-store/pro-accounts";
-import { NON_INSTITUTION_TIER, PRO_TIERS, isProTier, proTier, tierForAssets, tierPriceLabel } from "@/lib/pro-tiers";
-import { OtherOptions, PricingFaq } from "./pricing-sections";
+import { NON_INSTITUTION_TIER, PRO_TIERS, isProTier, proTier, tierAmountLabel, tierForAssets, tierPriceLabel } from "@/lib/pro-tiers";
+import { GatedOptions, OtherOptions, PricingFaq } from "./pricing-sections";
+import { chosenPriceLine, pricingCtaLabel, type ChosenInstitutionPrice } from "./plan-cta";
 
 import { WORKSPACE_SEAT_LIMIT } from "@/lib/hamilton/workspace-seats";
 import { isProPlan, type ProPlan } from "./pricing";
@@ -45,28 +46,25 @@ import { isProPlan, type ProPlan } from "./pricing";
 export const metadata: Metadata = {
   title: "Pricing",
   description:
-    "Fee Insight Pro pricing and what it includes: $150 to $500 a month by institution size, for up to 5 people. Also the free Bank Fee Index lookup and the Competitive Fee Position Report.",
+    `Pricing for ${hamiltonFullName(SITE_NAME)}: ${tierAmountLabel(PRO_TIERS[0].key, "monthly")} to ` +
+    `${tierAmountLabel(PRO_TIERS[PRO_TIERS.length - 1].key, "monthly")} a month by institution size, for up to ` +
+    `${WORKSPACE_SEAT_LIMIT} people. Also the free ${PRODUCT_NAME} lookup and the ${REPORT_OFFER.name}.`,
 };
 
 const WELCOME_PATH = "/account/welcome";
-/**
- * /subscribe follows the ui-ux-pro-max design system James asked for (9 Oct 2026): Plus Jakarta
- * Sans, in Fee Insight colours (James, 11:08: keep the layout, on-brand colour), glass over warm light.
- */
-const jakarta = localFont({
-  src: [{ path: "../../../public/fonts/plus-jakarta-sans-variable.ttf", weight: "400 700", style: "normal" }],
-  variable: "--font-jakarta",
-  display: "swap",
-});
+/** The one report request form, on /reports (site v3 brief 05 §3-4). */
+const REPORT_FORM_HREF = "/reports?report=institution&src=subscribe#request";
+/** /subscribe keeps the layout James chose (9 Oct 2026), set in the brand face, Geist. */
 
+/** Primary buttons are navy (site v3 brief 04); brick stays for the data. */
 const CTA_CLASS =
-  "cursor-pointer bg-[#C44B2E] px-5 py-3.5 text-center text-base font-semibold text-white shadow-sm transition-colors duration-200 hover:bg-[#A93D25]";
+  "cursor-pointer bg-ink px-5 py-3.5 text-center text-base font-semibold text-on-ink shadow-sm transition-opacity duration-200 hover:opacity-90";
 
 /** The skill's checklist, page-wide: pointer cursors, 200ms hover transitions, visible focus. */
 const INTERACTION_CLASS =
-  "[&_:is(button,summary):not(:disabled)]:cursor-pointer [&_:is(a,button,summary)]:transition-colors [&_:is(a,button,summary)]:duration-200 [&_:is(a,button,summary,input):focus-visible]:outline-2 [&_:is(a,button,summary,input):focus-visible]:outline-offset-2 [&_:is(a,button,summary,input):focus-visible]:outline-[#A93D25]";
+  "[&_:is(button,summary):not(:disabled)]:cursor-pointer [&_:is(a,button,summary)]:transition-colors [&_:is(a,button,summary)]:duration-200 [&_:is(a,button,summary,input):focus-visible]:outline-2 [&_:is(a,button,summary,input):focus-visible]:outline-offset-2 [&_:is(a,button,summary,input):focus-visible]:outline-brick";
 
-const DISPLAY = { fontFamily: "var(--font-jakarta), ui-sans-serif, system-ui, sans-serif" };
+const DISPLAY = { fontFamily: "var(--fi-font-sans)" };
 
 interface SubscribeSearchParams {
   success?: string;
@@ -234,19 +232,7 @@ async function benchmarkRows(institutionId: number | null): Promise<BenchmarkRow
 /** The Analyze example's question: overdraft a few dollars under the live national median. */
 async function analyzeScenario(): Promise<AnalyzeScenario | null> {
   const national = await getNationalIndexCached().catch(() => []);
-  const entry = national.find((e) => e.fee_category === "overdraft");
-  if (!entry || entry.median_amount === null || entry.institution_count < MIN_INSTITUTIONS_FOR_MEDIAN) return null;
-  const median = Number(entry.median_amount);
-  if (!(median > 0)) return null;
-  const price = median >= 10 ? Math.round(median) - 5 : Math.round(median * 80) / 100;
-  return {
-    feeLabel: "Overdraft",
-    price,
-    median,
-    p25: entry.p25_amount === null ? null : Number(entry.p25_amount),
-    p75: entry.p75_amount === null ? null : Number(entry.p75_amount),
-    institutions: entry.institution_count,
-  };
+  return buildScenario("Overdraft", national.find((e) => e.fee_category === "overdraft"));
 }
 
 function buildSubscribeReturnPath(options: {
@@ -350,6 +336,11 @@ export default async function SubscribePage({
     chosenLabel = "A consultant or another organization";
   }
 
+  // The institution the page has priced, named in the phone hero and closing card (review N2).
+  const chosenPrice: ChosenInstitutionPrice | null =
+    selection?.institutionId && pricingInstitution ? { name: pricingInstitution.name, tier: selection.tier } : null;
+  const ctaLabel = pricingCtaLabel(chosenPrice);
+
   const benchmark = await benchmarkRows(pricingInstitution ? pricingInstitution.id : null);
 
   const registerHrefFor = (plan: ProPlan) => {
@@ -387,13 +378,13 @@ export default async function SubscribePage({
   return (
     <ShowcaseProvider autoCycle={benchmarkInstitution === null} entry={entryPoint}>
     <div
-      className={`${jakarta.variable} relative isolate min-h-screen overflow-x-clip bg-[#FAF7F2] ${INTERACTION_CLASS}`}
+      className={`relative isolate min-h-screen overflow-x-clip bg-paper ${INTERACTION_CLASS}`}
       style={DISPLAY}
     >
       {/* The glass surfaces need colour behind them: two soft light sources, no motion. */}
       <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-[1100px]">
         <div className="absolute -left-40 -top-32 h-[560px] w-[560px] rounded-full bg-[#E3C9A8]/45 blur-3xl" />
-        <div className="absolute -right-32 top-24 h-[480px] w-[480px] rounded-full bg-[#C44B2E]/10 blur-3xl" />
+        <div className="absolute -right-32 top-24 h-[480px] w-[480px] rounded-full bg-brick/10 blur-3xl" />
         <div className="absolute left-1/3 top-[620px] h-[420px] w-[520px] rounded-full bg-[#E3C9A8]/35 blur-3xl" />
       </div>
       <ConsumerNav />
@@ -401,7 +392,7 @@ export default async function SubscribePage({
 
       <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 sm:py-10">
         {reasonLine && (
-          <p role="status" className="mb-6 rounded-2xl border border-[#E8E1D6] bg-white px-4 py-3 text-sm text-[#1A1815]">
+          <p role="status" className="mb-6 rounded-2xl border border-border bg-white px-4 py-3 text-sm text-ink">
             {reasonLine}
           </p>
         )}
@@ -409,8 +400,7 @@ export default async function SubscribePage({
           <div className="mb-6 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
             <p className="font-semibold">Workspace invitation pending</p>
             <p className="mt-1">
-              You don&apos;t need to buy a seat to accept it: an institution account includes up to
-              five teammates. Sign in with the invited email and{" "}
+              No seat to buy. Sign in with the invited email and{" "}
               <Link href="/workspace-invite" className="font-semibold underline">
                 accept the invitation
               </Link>
@@ -433,20 +423,23 @@ export default async function SubscribePage({
           {entry.page && <TrackView event="subscription_gate_viewed" eventProps={{ page: entry.page, entry: entryPoint }} />}
           {/* The headline spans both columns; the example and the card start on one line below it. */}
           <div className="min-w-0 lg:col-span-2 lg:row-start-1">
-            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#A93D25]">{entry.context}</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-ink-muted">{entry.context}</p>
             <h1
               id="pro-title"
-              className="mt-3 text-4xl font-bold leading-[1.08] tracking-tight text-[#1A1815] sm:text-5xl" style={DISPLAY}
+              className="mt-3 text-[length:clamp(1.75rem,8.2vw,2.25rem)] font-bold leading-[1.08] tracking-tight text-ink sm:text-5xl" style={DISPLAY}
             >
+              {/* On a phone the size follows the width, so it breaks after "fees." as two sentences. */}
               Understand your fees. Know your market.
             </h1>
-            <p className="mt-4 max-w-xl text-lg leading-relaxed text-[#3D3833]">
-              Benchmark, analyze and monitor bank and credit union fees.
+            <p className="mt-4 max-w-xl text-lg leading-relaxed text-ink">
+              Hamilton, the {SITE_NAME} Pro workspace: your fees against your market, with a source for every figure.
             </p>
             <div className="mt-6 lg:hidden">
-              <p className="text-sm text-[#3D3833]">
-                <span className="font-semibold text-[#1A1815]">From {tierPriceLabel(PRO_TIERS[0].key, "monthly")}</span> · Up to{" "}
-                {WORKSPACE_SEAT_LIMIT} people
+              <p className="text-sm text-ink">
+                <span className="font-semibold text-ink">
+                  {chosenPrice ? chosenPriceLine(chosenPrice) : `From ${tierPriceLabel(PRO_TIERS[0].key, "monthly")}`}
+                </span>{" "}
+                · Up to {WORKSPACE_SEAT_LIMIT} people
               </p>
               <PricingJump
                 inputId="pro_tier_institution"
@@ -454,7 +447,7 @@ export default async function SubscribePage({
                 id="pro-hero-cta"
                 className={`mt-3 block rounded-lg ${CTA_CLASS}`}
               >
-                Find your institution &amp; see pricing
+                {ctaLabel}
               </PricingJump>
             </div>
           </div>
@@ -486,11 +479,11 @@ export default async function SubscribePage({
               entry={entryPoint}
             />
             </div>
-            <div className="mt-1 flex h-11 items-center justify-center text-sm text-[#3D3833]">
+            <div className="mt-1 flex h-11 items-center justify-center text-sm text-ink">
               {!isLoggedIn && (
                 <p>
                   Already have an account?{" "}
-                  <a href={loginHref} className="font-medium text-[#1A1815] underline underline-offset-2">
+                  <a href={loginHref} className="font-medium text-ink underline underline-offset-2">
                     Sign in
                   </a>
                 </p>
@@ -502,10 +495,10 @@ export default async function SubscribePage({
 
       <section
         aria-labelledby="capabilities-heading"
-        className="mt-14 border-y border-white/60 bg-[#F3EEE6]/70 backdrop-blur-md lg:mt-16"
+        className="mt-14 border-y border-white/60 bg-surface-200/70 backdrop-blur-md lg:mt-16"
       >
         <div className="mx-auto max-w-6xl px-4 py-12 sm:px-6 sm:py-16">
-          <h2 id="capabilities-heading" className="text-2xl text-[#1A1815] sm:text-3xl font-semibold tracking-tight" style={DISPLAY}>
+          <h2 id="capabilities-heading" className="text-2xl text-ink sm:text-3xl font-semibold tracking-tight" style={DISPLAY}>
             One platform. Four ways to understand your market.
           </h2>
           <div className="mt-8 sm:mt-10">
@@ -522,11 +515,11 @@ export default async function SubscribePage({
             className="mt-12 grid grid-cols-1 gap-8 sm:mt-16 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] lg:gap-14"
           >
             <div>
-              <h2 id="wire-heading" className="mt-2 text-2xl text-[#1A1815] font-semibold tracking-tight" style={DISPLAY}>
+              <h2 id="wire-heading" className="mt-2 text-2xl text-ink font-semibold tracking-tight" style={DISPLAY}>
                 Regulatory Wire, with the fee data
               </h2>
-              <p className="mt-3 text-[15px] leading-relaxed text-[#3D3833]">
-                Fee rules and bills, each beside what institutions charge. Included in Pro.
+              <p className="mt-3 text-[15px] leading-relaxed text-ink">
+                Fee rules and bills beside what institutions charge. Included in Pro.
               </p>
             </div>
             {wirePreview}
@@ -535,31 +528,28 @@ export default async function SubscribePage({
 
         <section
           aria-labelledby="cta-heading"
-          className="mt-16 rounded-2xl bg-white/70 px-6 py-10 text-center ring-1 ring-[#E8E1D6]/80 shadow-[0_8px_32px_-12px_rgba(26,24,21,0.22),inset_0_1px_0_rgba(255,255,255,0.7)] backdrop-blur-xl sm:px-10"
+          className="mt-16 rounded-2xl bg-white/70 px-6 py-10 text-center ring-1 ring-border/80 shadow-[0_8px_32px_-12px_rgba(26,24,21,0.22),inset_0_1px_0_rgba(255,255,255,0.7)] backdrop-blur-xl sm:px-10"
         >
-          <h2 id="cta-heading" className="text-2xl font-semibold tracking-tight text-[#1A1815] sm:text-3xl">
+          <h2 id="cta-heading" className="text-2xl font-semibold tracking-tight text-ink sm:text-3xl">
             See where your fees stand.
           </h2>
-          <p className="mx-auto mt-3 max-w-xl text-[15px] leading-relaxed text-[#3D3833]">
-            From {tierPriceLabel(PRO_TIERS[0].key, "monthly")} for up to {WORKSPACE_SEAT_LIMIT} people. Same features at every
-            institution size.
+          <p className="mx-auto mt-3 max-w-xl text-[15px] leading-relaxed text-ink">
+            {chosenPrice ? chosenPriceLine(chosenPrice) : `From ${tierPriceLabel(PRO_TIERS[0].key, "monthly")}`} for up
+            to {WORKSPACE_SEAT_LIMIT} people.
           </p>
           <PricingJump
             inputId="pro_tier_institution"
             targetId="pro-heading"
             className={`mt-6 inline-flex min-h-12 items-center justify-center rounded-lg ${CTA_CLASS}`}
           >
-            Find your institution &amp; see pricing
+            {ctaLabel}
           </PricingJump>
         </section>
 
         {gated ? (
-          <p className="mt-14 text-[15px] leading-relaxed text-[#3D3833]">
-            Need research for one institution instead?{" "}
-            <Link href="/for-institutions?report=institution#report" className="font-medium text-[#1A1815] underline underline-offset-2">
-              Explore the {REPORT_OFFER.name}
-            </Link>
-          </p>
+          <div className="mt-14">
+            <GatedOptions reportHref={REPORT_FORM_HREF} />
+          </div>
         ) : (
           <div className="mt-20">
             <OtherOptions />
@@ -574,7 +564,7 @@ export default async function SubscribePage({
       <StickyCta
         heroId="pro-hero-cta"
         cardId="pro-heading"
-        label="Find your institution & see pricing"
+        label={ctaLabel}
         className={`block rounded-lg ${CTA_CLASS}`}
       />
       <CustomerFooter />

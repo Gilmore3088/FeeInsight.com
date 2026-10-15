@@ -2,28 +2,39 @@
 export const dynamic = "force-dynamic";
 
 import type { Metadata } from "next";
+import Link from "next/link";
 import { linkPreview } from "@/lib/link-preview";
-import { ArrowRight, BarChart2, Megaphone, Shield, Users } from "lucide-react";
-import { getPublicStatsSummary } from "@/lib/public-stats";
+import { benchmarkBasis, getPublicSnapshot, type PublicStatsSummary } from "@/lib/public-stats";
+import type { FeeCategorySummary } from "@/lib/data-store/fees";
+import { getDisplayName } from "@/lib/fee-taxonomy";
 import { PRODUCT_NAME, SITE_NAME } from "@/lib/constants";
-import { sampleReportAvailable } from "@/lib/custom-report/sample-report";
+import { PRO_TIERS, tierPriceLabel } from "@/lib/pro-tiers";
+import { WORKSPACE_SEAT_LIMIT } from "@/lib/hamilton/workspace-seats";
+import { loadSampleReport, sampleReportAvailable } from "@/lib/custom-report/sample-report";
+import { FeeRange, FeeRangeAxis, Logo } from "@/brand/components";
 
 import { ConsumerNav } from "@/components/consumer-nav";
 import { CustomerFooter } from "@/components/customer-footer";
 import { SearchModal } from "@/components/public/search-modal";
 import { TrackLink } from "@/components/track-link";
-import { ReportOfferSection } from "./report-offer";
-import { ProToolsSection } from "./pro-tools";
-import { CompareTableSection } from "./compare-table";
+import { hasUnstatedAudience, UnstatedAudienceFootnote } from "@/components/unstated-audience";
+import { PRIMARY_CTA_NAV, PRO_PLANS_NAV } from "@/components/nav-items";
+import { ReportOfferSection, SampleExcerpt } from "./report-offer";
+import { loadSampleLadder, MarketLadder, type MarketLadderData } from "./market-ladder";
+import { TryAPricePanel } from "@/app/subscribe/try-a-price-panel";
+import { buildScenario, type AnalyzeScenario } from "@/app/subscribe/scenario";
+import { SANS } from "@/app/landing-shared";
 
-const SAMPLE_REPORT_HREF = "/reports/sample-competitive-fee-position";
-const REPORT_ANCHOR = "#report";
-const PRO_ANCHOR = "#pro";
+const DEMO_HREF = "/contact?source=demo";
+/** The hero's live figure: the national overdraft benchmark (site v3 brief 03, Q9). */
+const HERO_CATEGORY = "overdraft";
 
+// Title keeps the buyer's category terms (site v3 brief 05, section 6).
 const PAGE_TITLE = "Bank Fee Benchmarking and Competitive Fee Reports";
 const PAGE_DESCRIPTION =
-  `Compare your institution's published fees with named local competitors, line by line, with a source ` +
-  `for every figure. Start with the free national and Fed district fee reports from the ${PRODUCT_NAME}.`;
+  `Know where your fees stand in your market, with a source for every figure. The ${PRODUCT_NAME} reads ` +
+  `the published fee schedules of U.S. banks and credit unions, and Hamilton, the Pro workspace, takes you ` +
+  `from that figure to a decision and a board document.`;
 
 export const metadata: Metadata = {
   title: PAGE_TITLE,
@@ -31,173 +42,207 @@ export const metadata: Metadata = {
   ...linkPreview({ title: PAGE_TITLE, description: PAGE_DESCRIPTION, path: "/for-institutions" }),
 };
 
-const HERO_BUTTON_BASE =
-  "inline-flex items-center justify-center gap-2 rounded-md px-7 py-3.5 text-[15px] transition-colors";
-const PRIMARY_BUTTON = `${HERO_BUTTON_BASE} bg-[#C44B2E] font-bold text-white hover:bg-[#A93D25]`;
+const EYEBROW = "text-[11px] font-bold uppercase tracking-[0.12em] text-ink-muted";
 
-export default async function ForInstitutionsPage() {
-  const [summary, sampleLive] = await Promise.all([getPublicStatsSummary(), sampleReportAvailable()]);
+export default async function ForInstitutionsPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const query = await searchParams;
+  const [snapshot, sampleLive, sample] = await Promise.all([
+    getPublicSnapshot(),
+    sampleReportAvailable(),
+    loadSampleReport().catch(() => null),
+  ]);
+  const { summary } = snapshot;
+  const heroCategory = snapshot.categories.find((c) => c.fee_category === HERO_CATEGORY) ?? null;
+  const liveSample = sampleLive ? sample : null;
+  const ladder = liveSample ? await loadSampleLadder(liveSample, snapshot.categories) : null;
+  const scenario = buildScenario("Overdraft", heroCategory);
+  // Each view shows once here (growth OS re-walk R5): the ladder in the hero, Try a price in
+  // Hamilton, and the sample report's rows in the report offer. The homepage sizzle is not replayed.
 
   return (
-    <div className="min-h-screen bg-[#FAF7F2]">
+    <div className="min-h-screen bg-paper">
       <ConsumerNav />
       <main id="main-content">
-        <section className="bg-warm-900 relative overflow-hidden">
-          <div className="mx-auto max-w-page px-6 pt-16 pb-14 lg:pt-20 lg:pb-16">
-            <div className="max-w-2xl">
-              <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#D16A52]">
-                For banks and credit unions
-              </span>
-              <h1
-                className="mt-4 text-warm-150 leading-[1.1] tracking-[-0.02em]"
-                style={{
-                  fontFamily: "var(--font-newsreader), Georgia, serif",
-                  fontSize: "clamp(28px, 5vw, 44px)",
-                  fontWeight: 400,
-                }}
-              >
-                Stop guessing what your competitors charge
-              </h1>
-              <p className="mt-5 max-w-lg text-[16px] leading-relaxed text-[#D5CBBF]">
-                Published fees for {summary.institutionsLabel} institutions across{" "}
-                {summary.categoriesLabel} fee categories — every figure traceable to the disclosure
-                it came from. Start with a free national or Fed district report, or run the workspace yourself.
-              </p>
-
-              <div className="mt-8 flex flex-col gap-4 sm:flex-row">
-                {/* The sample is offline until it is re-rendered from source-checked data, so the
-                    hero leads to the free reports instead of a "coming soon" page. */}
-                {sampleLive ? (
-                  <TrackLink
-                    event="see_sample_report"
-                    eventProps={{ placement: "for_institutions_hero" }}
-                    href={SAMPLE_REPORT_HREF}
-                    className={PRIMARY_BUTTON}
-                  >
-                    See the sample report
-                    <ArrowRight className="h-4 w-4" />
-                  </TrackLink>
-                ) : (
-                  <TrackLink
-                    event="request_report_click"
-                    eventProps={{ placement: "for_institutions_hero" }}
-                    href={REPORT_ANCHOR}
-                    className={PRIMARY_BUTTON}
-                  >
-                    Get a free fee report
-                    <ArrowRight className="h-4 w-4" />
-                  </TrackLink>
-                )}
-                {/* With the sample offline the first button already leads to #report, so the
-                    second one leads to Pro instead of repeating it. */}
-                <a
-                  href={sampleLive ? REPORT_ANCHOR : PRO_ANCHOR}
-                  className={`${HERO_BUTTON_BASE} border border-warm-ink-700 font-normal text-warm-150 hover:border-warm-ink-500`}
-                >
-                  {sampleLive ? "What’s in the report" : `See ${SITE_NAME} Pro`}
-                </a>
-              </div>
-              <p className="mt-4 text-[13px] text-[#D5CBBF]">National and Fed district reports, free and instant.</p>
-            </div>
-          </div>
-          <div className="pointer-events-none absolute right-0 top-0 h-full w-1/3 bg-gradient-to-l from-terra/[0.06] to-transparent" />
-        </section>
-
-        <ReportOfferSection />
-        <ProToolsSection />
-        <CompareTableSection summary={summary} />
-        <AudienceSection />
-        <AdvisorySection />
-        <FinalCtaSection sampleLive={sampleLive} />
+        <Hero summary={summary} category={heroCategory} ladder={ladder} />
+        <HamiltonSection scenario={scenario} />
+        <ReportOfferSection
+          sampleLive={sampleLive}
+          query={query}
+          excerpt={liveSample ? <SampleExcerpt report={liveSample} /> : null}
+        />
+        <ClosingBand />
       </main>
-      <CustomerFooter />
+      <CustomerFooter sampleReport={sampleLive} />
       <SearchModal />
     </div>
   );
 }
 
-const AUDIENCES = [
-  {
-    icon: Megaphone,
-    title: "Marketing and product leaders",
-    body: "Substantiate every lower-fees claim with the competitor's own disclosure. Know before the campaign, not after the complaint.",
-  },
-  {
-    icon: Shield,
-    title: "Pricing and finance",
-    body: "Current peer comparison instead of last year's survey.",
-  },
-  {
-    icon: BarChart2,
-    title: "Executives and boards",
-    body: "Board-ready reports that show where you stand, with the fee-income context behind each line.",
-  },
-  {
-    icon: Users,
-    title: "Consultants and advisors",
-    body: "Give every client engagement a data backbone. Custom peer analyses for each institution you serve.",
-  },
-];
-
-function AudienceSection() {
+/** Hero: its own h1 on "bank fee benchmarking" (05 §6, growth OS review S5); CTAs per 03 section 4. */
+function Hero({
+  summary,
+  category,
+  ladder,
+}: {
+  summary: PublicStatsSummary;
+  category: FeeCategorySummary | null;
+  ladder: MarketLadderData | null;
+}) {
   return (
-    <section className="bg-warm-100 border-b border-warm-200">
-      <div className="mx-auto max-w-page px-6 py-14">
-        <h2
-          className="text-center text-[28px] text-warm-900"
-          style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
-        >
-          Built for the people who set the prices
-        </h2>
-        <div className="mt-10 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
-          {AUDIENCES.map(({ icon: Icon, title, body }) => (
-            <div key={title} className="text-center">
-              <Icon className="mx-auto h-6 w-6 text-terra" />
-              <p className="mt-3 text-[15px] font-bold text-warm-900">{title}</p>
-              <p className="mt-2 text-[14px] leading-relaxed text-warm-700">{body}</p>
-            </div>
-          ))}
+    <section className="border-b border-border">
+      <div className="mx-auto grid max-w-page gap-8 px-4 pb-12 pt-8 sm:px-6 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)] lg:items-center lg:gap-12 lg:pb-16 lg:pt-14">
+        <div>
+          <p className={EYEBROW}>Bank fee benchmarking</p>
+          {/* The homepage hero's display face: Geist 600, one colour, no trailing period. The size
+              follows the text column so no line holds a single word (measured with Geist from 320
+              to 1920px): it scales with a phone's width, steps down at lg where the column halves,
+              and steps back up at xl. */}
+          <h1
+            className="mt-4 text-[length:clamp(1.5rem,7.8vw,2rem)] !font-semibold leading-[1.04] !tracking-[-0.04em] text-ink sm:text-[3rem] lg:text-[2.25rem] xl:text-[3rem]"
+            style={SANS}
+          >
+            Benchmark every fee against your competitors&apos; own schedules
+          </h1>
+          <p className="mt-5 max-w-xl text-[17px] leading-relaxed text-ink-soft">
+            Hamilton, the {SITE_NAME} Pro workspace, places each of your fees in your market, your state and the
+            nation.
+          </p>
+          <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:mt-8">
+            <Link
+              href={PRIMARY_CTA_NAV.href}
+              className="fi-btn fi-btn-primary justify-center"
+            >
+              {PRIMARY_CTA_NAV.label}
+            </Link>
+            <TrackLink
+              event="upgrade_click"
+              eventProps={{ placement: "for_institutions_hero" }}
+              href={PRO_PLANS_NAV.href}
+              className="fi-btn fi-btn-secondary justify-center"
+            >
+              {PRO_PLANS_NAV.label}
+            </TrackLink>
+          </div>
+          <p className="mt-4 text-[13px] text-ink-muted">Free. Search any institution in the index.</p>
         </div>
+        {ladder ? <MarketLadder data={ladder} /> : <HeroFigure category={category} refreshedOn={summary.refreshedOn} />}
       </div>
     </section>
   );
 }
 
-function AdvisorySection() {
+/**
+ * The live national overdraft range: the house box plot, with what it measures beside it.
+ * Hidden when the benchmark has no median (below the minimum sample) or failed to read.
+ */
+function HeroFigure({ category, refreshedOn }: { category: FeeCategorySummary | null; refreshedOn: string | null }) {
+  if (
+    !category ||
+    category.median_amount === null ||
+    category.p25_amount === null ||
+    category.p75_amount === null ||
+    category.min_amount === null ||
+    category.max_amount === null
+  ) {
+    return null;
+  }
+  const top = Math.max(1, Math.ceil(category.max_amount / 10) * 10);
+  const domain: [number, number] = [0, top];
+  const label = getDisplayName(category.fee_category);
   return (
-    <section className="bg-white border-b border-warm-200">
+    <figure className="rounded-lg border border-border bg-surface-0 p-5 shadow-fi-1 sm:p-6">
+      <figcaption className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+        <span className={EYEBROW}>The nation</span>
+        <Link href={`/fees/${category.fee_category}`} className="text-[13px] font-semibold text-ink underline underline-offset-2">
+          Overdraft fees nationwide
+        </Link>
+      </figcaption>
+      <div className="mt-4">
+        <FeeRange
+          label={label}
+          min={category.min_amount}
+          q1={category.p25_amount}
+          median={category.median_amount}
+          q3={category.p75_amount}
+          max={category.max_amount}
+          domain={domain}
+        />
+        <FeeRangeAxis ticks={[0, top / 2, top]} domain={domain} />
+      </div>
+      <p className="mt-4 text-[13px] leading-relaxed text-ink-muted">{benchmarkBasis(category, refreshedOn)}</p>
+      <UnstatedAudienceFootnote show={hasUnstatedAudience(category)} className="mt-2" />
+    </figure>
+  );
+}
+
+function PillarHeading({ eyebrow, title, id, line }: { eyebrow: string; title: string; id: string; line: string }) {
+  return (
+    <>
+      <p className={EYEBROW}>{eyebrow}</p>
+      <h2 id={id} className="mt-3 text-[28px] font-bold leading-tight text-ink">
+        {title}
+      </h2>
+      <p className="mt-4 max-w-md text-[15px] leading-relaxed text-ink-soft">{line}</p>
+    </>
+  );
+}
+
+/**
+ * Pillar 3, One workspace, and the Hamilton section the nav links to (`#hamilton`).
+ * Naming per 03 section 4; the example is Try a price on the live national index. Prices from PRO_TIERS.
+ */
+function HamiltonSection({ scenario }: { scenario: AnalyzeScenario | null }) {
+  return (
+    <section id="hamilton" aria-labelledby="hamilton-heading" className="scroll-mt-16 border-b border-border">
       <div className="mx-auto max-w-page px-6 py-14">
-        <div className="max-w-3xl">
-          <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#6B6255]">
-            {SITE_NAME} Advisory
-          </p>
-          <h2
-            className="mt-3 text-[28px] text-warm-900"
-            style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
-          >
-            Need more than one report?
-          </h2>
-          <p className="mt-4 text-[15px] leading-relaxed text-warm-700">
-            {SITE_NAME} Advisory is the bespoke tier: custom competitor sets, board decks and
-            multi-institution work, prepared by us on the same verified data.
-          </p>
-          <div className="mt-6 flex flex-col gap-3 sm:flex-row">
+        <div className="grid gap-10 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] lg:items-center">
+          <div>
+            <div className="mb-5">
+              <Logo mark="hamilton-lockup" height={36} />
+            </div>
+            <PillarHeading
+              eyebrow="One workspace"
+              title="Test a price, then take it to committee"
+              id="hamilton-heading"
+              line="Try any amount against the market, ask questions with sources, and send the board a cited brief."
+            />
+          </div>
+          {scenario ? <TryAPricePanel scenario={scenario} /> : null}
+        </div>
+
+        <div className="mt-12">
+          <ul className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            {PRO_TIERS.map((tier) => (
+              <li key={tier.key} className="rounded-lg border border-border bg-surface-0 p-5">
+                <p className="text-[13px] text-ink-muted">{tier.assetsLabel}</p>
+                <p className="mt-2 font-mono text-[24px] font-semibold tabular-nums text-ink">
+                  {tierPriceLabel(tier.key, "monthly")}
+                </p>
+                <p className="mt-1 text-[13px] text-ink-muted">or {tierPriceLabel(tier.key, "annual")}</p>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-4 text-[14px] text-ink-soft">One plan for up to {WORKSPACE_SEAT_LIMIT} people.</p>
+          <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-5">
             <TrackLink
-              event="contact_sales"
-              eventProps={{ placement: "for_institutions_advisory" }}
-              href="/contact?source=advisory"
-              className={PRIMARY_BUTTON}
+              event="upgrade_click"
+              eventProps={{ placement: "for_institutions_hamilton" }}
+              href={PRO_PLANS_NAV.href}
+              className="fi-btn fi-btn-primary justify-center"
             >
-              Talk to us
-              <ArrowRight className="h-4 w-4" />
+              {PRO_PLANS_NAV.label}
             </TrackLink>
             <TrackLink
-              event="request_report_click"
-              eventProps={{ placement: "for_institutions_advisory" }}
-              href={REPORT_ANCHOR}
-              className={`${HERO_BUTTON_BASE} border border-warm-300 font-normal text-warm-900 hover:border-warm-900`}
+              event="contact_sales"
+              eventProps={{ placement: "for_institutions_hamilton_demo" }}
+              href={DEMO_HREF}
+              className="inline-flex min-h-11 items-center text-[14px] font-medium text-ink underline underline-offset-2"
             >
-              Get your free report
+              Or ask for a demo
             </TrackLink>
           </div>
         </div>
@@ -206,51 +251,27 @@ function AdvisorySection() {
   );
 }
 
-function FinalCtaSection({ sampleLive }: { sampleLive: boolean }) {
+/** Closing band (navy): site v3 brief 08 B.12. */
+function ClosingBand() {
   return (
-    <section className="bg-warm-900">
+    <section className="bg-ink text-on-ink">
       <div className="mx-auto max-w-page px-6 py-14 text-center">
-        <h2
-          className="text-[28px] text-warm-150"
-          style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
-        >
-          Ready to see where your fees stand?
-        </h2>
-        <p className="mt-3 text-[15px] text-[#D5CBBF]">
-          {sampleLive
-            ? "Start with the sample, or request your own report today."
-            : "Start with a free national or Fed district report, or ask us to quote your institution's own."}
-        </p>
-        <div className="mt-8 flex flex-col justify-center gap-4 sm:flex-row">
-          {sampleLive ? (
-            <>
-              <TrackLink
-                event="see_sample_report"
-                eventProps={{ placement: "for_institutions_footer" }}
-                href={SAMPLE_REPORT_HREF}
-                className={PRIMARY_BUTTON}
-              >
-                See the sample report
-                <ArrowRight className="h-4 w-4" />
-              </TrackLink>
-              <a
-                href={REPORT_ANCHOR}
-                className={`${HERO_BUTTON_BASE} border border-warm-ink-700 font-normal text-warm-150 hover:border-warm-ink-500`}
-              >
-                Get your free report
-              </a>
-            </>
-          ) : (
-            <TrackLink
-              event="request_report_click"
-              eventProps={{ placement: "for_institutions_footer" }}
-              href={REPORT_ANCHOR}
-              className={PRIMARY_BUTTON}
-            >
-              Get your free report
-              <ArrowRight className="h-4 w-4" />
-            </TrackLink>
-          )}
+        <h2 className="text-[28px] font-bold leading-tight">See where your fees stand in your market</h2>
+        <div className="mt-8 flex flex-col items-center justify-center gap-4 sm:flex-row sm:gap-6">
+          <Link
+            href={PRIMARY_CTA_NAV.href}
+            className="fi-btn justify-center bg-paper text-ink hover:opacity-90"
+          >
+            {PRIMARY_CTA_NAV.label}
+          </Link>
+          <TrackLink
+            event="upgrade_click"
+            eventProps={{ placement: "for_institutions_closing" }}
+            href={PRO_PLANS_NAV.href}
+            className="text-[14px] font-semibold underline underline-offset-2"
+          >
+            {PRO_PLANS_NAV.label}
+          </TrackLink>
         </div>
       </div>
     </section>

@@ -63,18 +63,18 @@ export default async function FeeRevenueAnalysisPage() {
       />
 
       <div className="flex items-center gap-2 mb-4">
-        <span className="h-px w-8 bg-[#C44B2E]/40" />
-        <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#A93D25]/60">
+        <span className="h-px w-8 bg-brick/40" />
+        <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-brick/60">
           Original Research
         </span>
       </div>
       <h1
-        className="text-[1.75rem] sm:text-[2.25rem] leading-[1.12] tracking-[-0.02em] font-bold text-[#1A1815]"
-        style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
+        className="text-[1.75rem] sm:text-[2.25rem] leading-[1.12] tracking-[-0.02em] font-extrabold text-ink"
+        style={{ fontFamily: "var(--fi-font-sans)" }}
       >
         Fee-to-Revenue Analysis
       </h1>
-      <p className="mt-2 max-w-2xl text-[14px] text-[#6B6255]">
+      <p className="mt-2 max-w-2xl text-[14px] text-ink-muted">
         How do published fee schedules correlate with actual service charge
         income reported in call reports? This analysis cross-references
         extracted fees with FDIC and NCUA financial data to reveal the
@@ -86,27 +86,27 @@ export default async function FeeRevenueAnalysisPage() {
 
       {/* Summary cards */}
       <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3">
-        <div className="rounded-xl border border-[#E8DFD1]/80 bg-white/70 backdrop-blur-sm px-4 py-3">
-          <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-[#6B6255]">
+        <div className="rounded-xl border border-border/80 bg-white/70 backdrop-blur-sm px-4 py-3">
+          <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted">
             Institutions Analyzed
           </p>
-          <p className="mt-1 text-lg font-bold tabular-nums text-[#1A1815]">
+          <p className="mt-1 text-lg font-bold tabular-nums text-ink">
             {totalInstitutions.toLocaleString()}
           </p>
         </div>
-        <div className="rounded-xl border border-[#E8DFD1]/80 bg-white/70 backdrop-blur-sm px-4 py-3">
-          <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-[#6B6255]">
+        <div className="rounded-xl border border-border/80 bg-white/70 backdrop-blur-sm px-4 py-3">
+          <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted">
             Avg Fee Amount
           </p>
-          <p className="mt-1 text-lg font-bold tabular-nums text-[#1A1815]">
+          <p className="mt-1 text-lg font-bold tabular-nums text-ink">
             {formatAmount(avgFee)}
           </p>
         </div>
-        <div className="rounded-xl border border-[#E8DFD1]/80 bg-white/70 backdrop-blur-sm px-4 py-3">
-          <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-[#6B6255]">
+        <div className="rounded-xl border border-border/80 bg-white/70 backdrop-blur-sm px-4 py-3">
+          <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted">
             Avg Service Charge Income
           </p>
-          <p className="mt-1 text-lg font-bold tabular-nums text-[#1A1815]">
+          <p className="mt-1 text-lg font-bold tabular-nums text-ink">
             {formatAssets(avgServiceCharge)}
           </p>
         </div>
@@ -116,56 +116,56 @@ export default async function FeeRevenueAnalysisPage() {
       {charterSummary.length > 0 && (
         <section className="mt-8">
           <h2
-            className="text-sm font-bold text-[#1A1815]"
-            style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
+            className="text-sm font-bold text-ink"
+            style={{ fontFamily: "var(--fi-font-sans)" }}
           >
             Banks vs. Credit Unions — Fee Revenue
           </h2>
-          <p className="mt-1 text-[13px] text-[#6B6255]">
+          <p className="mt-1 text-[13px] text-ink-muted">
             How fee pricing and fee-related revenue differ between banks and
             credit unions.
           </p>
 
-          <div className="mt-3 overflow-hidden rounded-xl border border-[#E8DFD1]/80">
+          <div className="mt-3 overflow-hidden rounded-xl border border-border/80">
             <table className="w-full text-left text-sm">
               <thead>
-                <tr className="border-b border-[#E8DFD1]/60 bg-[#FAF7F2]/60">
-                  <th className="px-4 py-2 text-[10px] font-bold uppercase tracking-[0.1em] text-[#6B6255]">
+                <tr className="border-b border-border/60 bg-paper/60">
+                  <th className="px-4 py-2 text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted">
                     Charter Type
                   </th>
-                  <th className="px-4 py-2 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-[#6B6255]">
+                  <th className="px-4 py-2 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted">
                     Institutions
                   </th>
-                  <th className="px-4 py-2 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-[#6B6255]">
+                  <th className="px-4 py-2 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted">
                     Avg Fee
                   </th>
-                  <th className="px-4 py-2 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-[#6B6255]">
+                  <th className="px-4 py-2 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted">
                     Avg Service Charges
                   </th>
-                  <th className="hidden px-4 py-2 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-[#6B6255] sm:table-cell">
+                  <th className="hidden px-4 py-2 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted sm:table-cell">
                     Fee/Assets (bps)
                   </th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[#E8DFD1]/60">
+              <tbody className="divide-y divide-border/60">
                 {charterSummary.map((row) => (
                   <tr
                     key={row.charter_type}
-                    className="hover:bg-[#FAF7F2]/60 transition-colors"
+                    className="hover:bg-paper/60 transition-colors"
                   >
-                    <td className="px-4 py-2.5 font-medium text-[#1A1815]">
+                    <td className="px-4 py-2.5 font-medium text-ink">
                       {row.charter_type === "bank" ? "Banks" : "Credit Unions"}
                     </td>
-                    <td className="px-4 py-2.5 text-right tabular-nums text-[#5A5347]">
+                    <td className="px-4 py-2.5 text-right tabular-nums text-ink-soft">
                       {row.institution_count.toLocaleString()}
                     </td>
-                    <td className="px-4 py-2.5 text-right tabular-nums font-medium text-[#1A1815]">
+                    <td className="px-4 py-2.5 text-right tabular-nums font-medium text-ink">
                       {formatAmount(row.avg_fee_amount)}
                     </td>
-                    <td className="px-4 py-2.5 text-right tabular-nums text-[#5A5347]">
+                    <td className="px-4 py-2.5 text-right tabular-nums text-ink-soft">
                       {formatAssets(row.avg_service_charge_income)}
                     </td>
-                    <td className="hidden px-4 py-2.5 text-right tabular-nums text-[#6B6255] sm:table-cell">
+                    <td className="hidden px-4 py-2.5 text-right tabular-nums text-ink-muted sm:table-cell">
                       {row.avg_fee_income_ratio?.toFixed(1) ?? "-"}
                     </td>
                   </tr>
@@ -180,56 +180,56 @@ export default async function FeeRevenueAnalysisPage() {
       {tierSummary.length > 0 && (
         <section className="mt-8">
           <h2
-            className="text-sm font-bold text-[#1A1815]"
-            style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
+            className="text-sm font-bold text-ink"
+            style={{ fontFamily: "var(--fi-font-sans)" }}
           >
             Fee Revenue by Asset Tier
           </h2>
-          <p className="mt-1 text-[13px] text-[#6B6255]">
+          <p className="mt-1 text-[13px] text-ink-muted">
             Do larger institutions charge higher fees? How does fee-to-asset
             ratio vary by size?
           </p>
 
-          <div className="mt-3 overflow-hidden rounded-xl border border-[#E8DFD1]/80">
+          <div className="mt-3 overflow-hidden rounded-xl border border-border/80">
             <table className="w-full text-left text-sm">
               <thead>
-                <tr className="border-b border-[#E8DFD1]/60 bg-[#FAF7F2]/60">
-                  <th className="px-4 py-2 text-[10px] font-bold uppercase tracking-[0.1em] text-[#6B6255]">
+                <tr className="border-b border-border/60 bg-paper/60">
+                  <th className="px-4 py-2 text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted">
                     Asset Tier
                   </th>
-                  <th className="px-4 py-2 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-[#6B6255]">
+                  <th className="px-4 py-2 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted">
                     Institutions
                   </th>
-                  <th className="px-4 py-2 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-[#6B6255]">
+                  <th className="px-4 py-2 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted">
                     Avg Fee
                   </th>
-                  <th className="px-4 py-2 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-[#6B6255]">
+                  <th className="px-4 py-2 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted">
                     Avg Service Charges
                   </th>
-                  <th className="hidden px-4 py-2 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-[#6B6255] sm:table-cell">
+                  <th className="hidden px-4 py-2 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted sm:table-cell">
                     Fee/Assets (bps)
                   </th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[#E8DFD1]/60">
+              <tbody className="divide-y divide-border/60">
                 {tierSummary.map((row) => (
                   <tr
                     key={row.asset_size_tier}
-                    className="hover:bg-[#FAF7F2]/60 transition-colors"
+                    className="hover:bg-paper/60 transition-colors"
                   >
-                    <td className="px-4 py-2.5 font-medium text-[#1A1815]">
+                    <td className="px-4 py-2.5 font-medium text-ink">
                       {FDIC_TIER_LABELS[row.asset_size_tier] ?? row.asset_size_tier}
                     </td>
-                    <td className="px-4 py-2.5 text-right tabular-nums text-[#5A5347]">
+                    <td className="px-4 py-2.5 text-right tabular-nums text-ink-soft">
                       {row.institution_count.toLocaleString()}
                     </td>
-                    <td className="px-4 py-2.5 text-right tabular-nums font-medium text-[#1A1815]">
+                    <td className="px-4 py-2.5 text-right tabular-nums font-medium text-ink">
                       {formatAmount(row.avg_fee_amount)}
                     </td>
-                    <td className="px-4 py-2.5 text-right tabular-nums text-[#5A5347]">
+                    <td className="px-4 py-2.5 text-right tabular-nums text-ink-soft">
                       {formatAssets(row.avg_service_charge_income)}
                     </td>
-                    <td className="hidden px-4 py-2.5 text-right tabular-nums text-[#6B6255] sm:table-cell">
+                    <td className="hidden px-4 py-2.5 text-right tabular-nums text-ink-muted sm:table-cell">
                       {row.avg_fee_income_ratio?.toFixed(1) ?? "-"}
                     </td>
                   </tr>
@@ -243,42 +243,42 @@ export default async function FeeRevenueAnalysisPage() {
       {/* Top institutions by fee-income ratio */}
       <section className="mt-8">
         <h2
-          className="text-sm font-bold text-[#1A1815]"
-          style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
+          className="text-sm font-bold text-ink"
+          style={{ fontFamily: "var(--fi-font-sans)" }}
         >
           Institutions — Fee Pricing vs. Service Charge Income
         </h2>
-        <p className="mt-1 text-[13px] text-[#6B6255]">
+        <p className="mt-1 text-[13px] text-ink-muted">
           Showing {Math.min(correlations.length, 50)} institutions with the
           highest fee-to-asset ratios (basis points of service charge income
           relative to total assets).
         </p>
 
-        <div className="mt-3 overflow-hidden rounded-xl border border-[#E8DFD1]/80">
+        <div className="mt-3 overflow-hidden rounded-xl border border-border/80">
           <table className="w-full text-left text-sm">
             <thead>
-              <tr className="border-b border-[#E8DFD1]/60 bg-[#FAF7F2]/60">
-                <th className="px-4 py-2 text-[10px] font-bold uppercase tracking-[0.1em] text-[#6B6255]">
+              <tr className="border-b border-border/60 bg-paper/60">
+                <th className="px-4 py-2 text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted">
                   Institution
                 </th>
-                <th className="hidden px-4 py-2 text-[10px] font-bold uppercase tracking-[0.1em] text-[#6B6255] sm:table-cell">
+                <th className="hidden px-4 py-2 text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted sm:table-cell">
                   Type
                 </th>
-                <th className="px-4 py-2 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-[#6B6255]">
+                <th className="px-4 py-2 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted">
                   Avg Fee
                 </th>
-                <th className="px-4 py-2 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-[#6B6255]">
+                <th className="px-4 py-2 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted">
                   Service Charges
                 </th>
-                <th className="hidden px-4 py-2 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-[#6B6255] md:table-cell">
+                <th className="hidden px-4 py-2 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted md:table-cell">
                   Total Assets
                 </th>
-                <th className="px-4 py-2 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-[#6B6255]">
+                <th className="px-4 py-2 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted">
                   Ratio (bps)
                 </th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-[#E8DFD1]/60">
+            <tbody className="divide-y divide-border/60">
               {correlations
                 .filter((c) => c.fee_income_ratio !== null)
                 .sort((a, b) => (b.fee_income_ratio ?? 0) - (a.fee_income_ratio ?? 0))
@@ -286,32 +286,32 @@ export default async function FeeRevenueAnalysisPage() {
                 .map((row) => (
                   <tr
                     key={row.institution_id}
-                    className="hover:bg-[#FAF7F2]/60 transition-colors"
+                    className="hover:bg-paper/60 transition-colors"
                   >
                     <td className="px-4 py-2.5">
                       <Link
                         href={`/institution/${row.institution_id}`}
-                        className="font-medium text-[#1A1815] hover:text-[#C44B2E] transition-colors"
+                        className="font-medium text-ink hover:text-brick transition-colors"
                       >
                         {row.institution_name}
                       </Link>
-                      <span className="ml-1 text-[11px] text-[#6B6255]">
+                      <span className="ml-1 text-[11px] text-ink-muted">
                         {row.state_code}
                       </span>
                     </td>
-                    <td className="hidden px-4 py-2.5 text-[#6B6255] sm:table-cell">
+                    <td className="hidden px-4 py-2.5 text-ink-muted sm:table-cell">
                       {row.charter_type === "bank" ? "Bank" : "CU"}
                     </td>
-                    <td className="px-4 py-2.5 text-right tabular-nums font-medium text-[#1A1815]">
+                    <td className="px-4 py-2.5 text-right tabular-nums font-medium text-ink">
                       {formatAmount(row.avg_fee)}
                     </td>
-                    <td className="px-4 py-2.5 text-right tabular-nums text-[#5A5347]">
+                    <td className="px-4 py-2.5 text-right tabular-nums text-ink-soft">
                       {formatAssets(row.service_charge_income)}
                     </td>
-                    <td className="hidden px-4 py-2.5 text-right tabular-nums text-[#6B6255] md:table-cell">
+                    <td className="hidden px-4 py-2.5 text-right tabular-nums text-ink-muted md:table-cell">
                       {row.total_assets ? formatAssets(row.total_assets) : "-"}
                     </td>
-                    <td className="px-4 py-2.5 text-right tabular-nums font-medium text-[#1A1815]">
+                    <td className="px-4 py-2.5 text-right tabular-nums font-medium text-ink">
                       {row.fee_income_ratio?.toFixed(1) ?? "-"}
                     </td>
                   </tr>
@@ -322,11 +322,11 @@ export default async function FeeRevenueAnalysisPage() {
       </section>
 
       {/* Methodology */}
-      <section className="mt-10 rounded-xl border border-[#E8DFD1] bg-[#FAF7F2]/50 px-5 py-4">
-        <h2 className="text-xs font-semibold uppercase tracking-wider text-[#6B6255]">
+      <section className="mt-10 rounded-xl border border-border bg-paper/50 px-5 py-4">
+        <h2 className="text-xs font-semibold uppercase tracking-wider text-ink-muted">
           Methodology
         </h2>
-        <p className="mt-2 text-[13px] leading-relaxed text-[#6B6255]">
+        <p className="mt-2 text-[13px] leading-relaxed text-ink-muted">
           This analysis cross-references extracted fee schedule data with
           financial data from FDIC Call Reports and NCUA 5300 Reports.
           &ldquo;Avg Fee&rdquo; is the mean of all extracted fee amounts for

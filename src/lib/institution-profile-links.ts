@@ -37,6 +37,8 @@ export interface PublicInstitutionProfileLinks {
   claimHref: string;
   /** Competitive Fee Position report offer, carrying `institution`, `name` and `src=profile` for the form. */
   reportOfferHref: string;
+  /** The Pro plans, opened on this institution's tier (`inst`) with the profile as `from`. */
+  plansHref: string;
   analyzeHref: string;
   briefHref: string;
   scenarioHref: string;
@@ -45,7 +47,9 @@ export interface PublicInstitutionProfileLinks {
 /**
  * Links for the public institution profile. Pro actions route anonymous
  * viewers to the Pro plans with `from=<that Pro screen>`, so after checkout they land on the
- * brief, question or scenario they clicked rather than back on the profile.
+ * brief, question or scenario they clicked rather than back on the profile. Every /subscribe
+ * link carries `inst`, so the plans open on this institution's tier instead of a second search
+ * (growth OS review M4, the same way the paid report's close does).
  */
 export function buildPublicInstitutionProfileLinks({
   institutionId,
@@ -53,13 +57,14 @@ export function buildPublicInstitutionProfileLinks({
   isAuthenticated,
 }: PublicInstitutionProfileLinkParams): PublicInstitutionProfileLinks {
   const instId = String(institutionId);
-  const gate = (proHref: string) =>
-    isAuthenticated ? proHref : `/subscribe?from=${encodeURIComponent(proHref)}#pro`;
+  const plans = (from: string) => `/subscribe?inst=${instId}&from=${encodeURIComponent(from)}#pro`;
+  const gate = (proHref: string) => (isAuthenticated ? proHref : plans(proHref));
   const reportContext = new URLSearchParams({ institution: instId, name: institutionName, src: "profile" });
   return {
     correctSourceHref: `/submit-fees?institution=${instId}`,
     claimHref: `/submit-fees?institution=${instId}&claim=1`,
     reportOfferHref: `/for-institutions?${reportContext.toString()}#report`,
+    plansHref: plans(`/institution/${instId}`),
     analyzeHref: gate(`/pro/analyze?instId=${instId}&intent=institution`),
     briefHref: gate(`/pro/reports?instId=${instId}&intent=competitive-brief`),
     scenarioHref: gate(`/pro/simulate?instId=${instId}`),

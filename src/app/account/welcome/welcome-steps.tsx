@@ -104,7 +104,7 @@ export function WelcomeSteps({
     !!user.institution_type && user.institution_type !== "bank" && user.institution_type !== "credit_union"
   );
 
-  const inputClass = "w-full rounded-md border border-[#D5CBBF] bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#C44B2E] focus:border-transparent";
+  const inputClass = "w-full rounded-md border border-border bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brick focus:border-transparent";
 
   async function handleProfileSave(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -152,7 +152,7 @@ export function WelcomeSteps({
           </div>
           <Link
             href="/workspace-invite"
-            className="mt-4 inline-flex rounded-full bg-[#C44B2E] px-4 py-2 text-xs font-semibold text-white no-underline"
+            className="mt-4 inline-flex rounded-full bg-brick px-4 py-2 text-xs font-semibold text-white no-underline"
           >
             Accept invitation
           </Link>
@@ -165,8 +165,8 @@ export function WelcomeSteps({
           <div className="mt-3 grid gap-2">
             {workspaceMemberships.slice(0, 3).map((membership) => (
               <div key={membership.id} className="rounded-lg border border-emerald-100 bg-white/70 px-3 py-2">
-                <p className="font-semibold text-[#1A1815]">{membership.institutionName}</p>
-                <p className="text-xs text-[#6B6255]">
+                <p className="font-semibold text-ink">{membership.institutionName}</p>
+                <p className="text-xs text-ink-muted">
                   {membership.role} access · institution ID {membership.institutionId}
                 </p>
               </div>
@@ -174,7 +174,7 @@ export function WelcomeSteps({
           </div>
           <Link
             href={`/pro/analyze?instId=${workspaceMemberships[0].institutionId}`}
-            className="mt-4 inline-flex rounded-full bg-[#1A1815] px-4 py-2 text-xs font-semibold text-white no-underline"
+            className="mt-4 inline-flex rounded-full bg-ink px-4 py-2 text-xs font-semibold text-white no-underline"
           >
             Open Hamilton
           </Link>
@@ -187,7 +187,7 @@ export function WelcomeSteps({
           <div
             key={s}
             className={`h-1.5 flex-1 rounded-full transition-colors ${
-              s <= step ? "bg-[#C44B2E]" : "bg-[#E8DFD1]"
+              s <= step ? "bg-brick" : "bg-border"
             }`}
           />
         ))}
@@ -197,24 +197,24 @@ export function WelcomeSteps({
       {step === 1 && (
         <div>
           <h1
-            className="text-2xl font-normal tracking-tight text-[#1A1815] mb-2"
-            style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
+            className="text-2xl font-extrabold tracking-tight text-ink mb-2"
+            style={{ fontFamily: "var(--fi-font-sans)" }}
           >
             Welcome to Fee Insight, {userName.split(" ")[0]}!
           </h1>
-          <p className="text-sm text-[#6B6255] mb-6">
+          <p className="text-sm text-ink-muted mb-6">
             Which institution do you work for? Hamilton compares its fees with its peers.
           </p>
 
-          <form onSubmit={handleProfileSave} className="bg-[#FFFDF9] rounded-xl border border-[#E8DFD1] p-6 space-y-4">
+          <form onSubmit={handleProfileSave} className="bg-surface-0 rounded-xl border border-border p-6 space-y-4">
             {notAnInstitution ? (
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div>
-                  <label htmlFor="welcome_organization" className="block text-xs font-medium text-[#1A1815] mb-1">Organization</label>
+                  <label htmlFor="welcome_organization" className="block text-xs font-medium text-ink mb-1">Organization</label>
                   <input id="welcome_organization" name="institution_name" defaultValue={user.institution_name || ""} className={inputClass} placeholder="Your company" />
                 </div>
                 <div>
-                  <label htmlFor="welcome_organization_type" className="block text-xs font-medium text-[#1A1815] mb-1">Type</label>
+                  <label htmlFor="welcome_organization_type" className="block text-xs font-medium text-ink mb-1">Type</label>
                   <select id="welcome_organization_type" name="institution_type" defaultValue={user.institution_type || ""} className={inputClass}>
                     {ORGANIZATION_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
                   </select>
@@ -228,7 +228,7 @@ export function WelcomeSteps({
                 initialName={workspaceInstitution?.name ?? null}
                 initialId={workspaceInstitution?.id ?? null}
                 onSelect={(result) => setPickedInstitution(result !== null)}
-                labelClassName="block text-xs font-medium text-[#1A1815] mb-1"
+                labelClassName="block text-xs font-medium text-ink mb-1"
                 labelStyle={{}}
                 inputClassName={inputClass}
                 inputStyle={{}}
@@ -237,12 +237,12 @@ export function WelcomeSteps({
             <button
               type="button"
               onClick={() => setNotAnInstitution((value) => !value)}
-              className="inline-flex min-h-11 items-center text-xs font-medium text-[#C44B2E] underline-offset-2 hover:underline"
+              className="inline-flex min-h-11 items-center text-xs font-medium text-brick underline-offset-2 hover:underline"
             >
               {notAnInstitution ? "I work at a bank or credit union" : "I don't work at a bank or credit union"}
             </button>
             <div>
-              <label htmlFor="welcome_job_role" className="block text-xs font-medium text-[#1A1815] mb-1">Your role</label>
+              <label htmlFor="welcome_job_role" className="block text-xs font-medium text-ink mb-1">Your role</label>
               <select id="welcome_job_role" name="job_role" defaultValue={user.job_role || ""} className={inputClass}>
                 {JOB_ROLES.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
               </select>
@@ -253,7 +253,7 @@ export function WelcomeSteps({
             <button
               type="submit"
               disabled={saving || (!notAnInstitution && !pickedInstitution)}
-              className="w-full rounded-md bg-[#C44B2E] px-4 py-2.5 text-sm font-medium text-white hover:bg-[#A83D25] disabled:opacity-50 transition-colors"
+              className="w-full rounded-md bg-brick px-4 py-2.5 text-sm font-medium text-white hover:bg-brick-ink disabled:opacity-50 transition-colors"
             >
               {saving ? "Saving..." : "Continue"}
             </button>
@@ -261,7 +261,7 @@ export function WelcomeSteps({
               <button
                 type="button"
                 onClick={() => setStep(2)}
-                className="min-h-11 w-full text-center text-xs font-medium text-[#6B6255] hover:text-[#1A1815]"
+                className="min-h-11 w-full text-center text-xs font-medium text-ink-muted hover:text-ink"
               >
                 Can&apos;t find it? Skip for now; you can choose it later in Settings.
               </button>
@@ -274,29 +274,29 @@ export function WelcomeSteps({
       {step === 2 && (
         <div>
           <h1
-            className="text-2xl font-normal tracking-tight text-[#1A1815] mb-2"
-            style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
+            className="text-2xl font-extrabold tracking-tight text-ink mb-2"
+            style={{ fontFamily: "var(--fi-font-sans)" }}
           >
             Your fee intelligence
           </h1>
-          <p className="text-sm text-[#6B6255] mb-6">
+          <p className="text-sm text-ink-muted mb-6">
             {savedInstitution ? `${savedInstitution} is saved as your institution. ` : ""}
             Here are the national median fees across key categories (each institution counted once). With your account, you can drill into the full fee catalog with peer filters.
           </p>
 
-          <div className="bg-[#FFFDF9] rounded-xl border border-[#E8DFD1] overflow-hidden mb-6">
+          <div className="bg-surface-0 rounded-xl border border-border overflow-hidden mb-6">
             <table className="w-full text-left text-sm">
               <thead>
-                <tr className="border-b border-[#E8DFD1] bg-[#FAF7F2]">
-                  <th className="px-4 py-2.5 text-[11px] font-bold uppercase tracking-[0.12em] text-[#6B6255]">Category</th>
-                  <th className="px-4 py-2.5 text-right text-[11px] font-bold uppercase tracking-[0.12em] text-[#6B6255]">National Median</th>
+                <tr className="border-b border-border bg-paper">
+                  <th className="px-4 py-2.5 text-[11px] font-bold uppercase tracking-[0.12em] text-ink-muted">Category</th>
+                  <th className="px-4 py-2.5 text-right text-[11px] font-bold uppercase tracking-[0.12em] text-ink-muted">National Median</th>
                 </tr>
               </thead>
               <tbody>
                 {feePreview.map((fee) => (
-                  <tr key={fee.category} className="border-b border-[#E8DFD1] last:border-0">
-                    <td className="px-4 py-3 text-[#1A1815]">{fee.displayName}</td>
-                    <td className="px-4 py-3 text-right font-medium text-[#1A1815] tabular-nums">${fee.median.toFixed(2)}</td>
+                  <tr key={fee.category} className="border-b border-border last:border-0">
+                    <td className="px-4 py-3 text-ink">{fee.displayName}</td>
+                    <td className="px-4 py-3 text-right font-medium text-ink tabular-nums">${fee.median.toFixed(2)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -306,13 +306,13 @@ export function WelcomeSteps({
           <div className="flex gap-3">
             <button
               onClick={() => setStep(3)}
-              className="flex-1 rounded-md bg-[#C44B2E] px-4 py-2.5 text-sm font-medium text-white hover:bg-[#A83D25] transition-colors"
+              className="flex-1 rounded-md bg-brick px-4 py-2.5 text-sm font-medium text-white hover:bg-brick-ink transition-colors"
             >
               Continue
             </button>
             <Link
               href="/fees"
-              className="flex-1 text-center rounded-md border border-[#D5CBBF] px-4 py-2.5 text-sm font-medium text-[#1A1815] hover:border-[#1A1815] transition-colors"
+              className="flex-1 text-center rounded-md border border-border px-4 py-2.5 text-sm font-medium text-ink hover:border-ink transition-colors"
             >
               Explore the Bank Fee Index
             </Link>
@@ -324,12 +324,12 @@ export function WelcomeSteps({
       {step === 3 && (
         <div>
           <h1
-            className="text-2xl font-normal tracking-tight text-[#1A1815] mb-2"
-            style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
+            className="text-2xl font-extrabold tracking-tight text-ink mb-2"
+            style={{ fontFamily: "var(--fi-font-sans)" }}
           >
             Your tools
           </h1>
-          <p className="text-sm text-[#6B6255] mb-6">
+          <p className="text-sm text-ink-muted mb-6">
             Everything you need for fee intelligence research and analysis.
           </p>
 
@@ -343,18 +343,18 @@ export function WelcomeSteps({
                 <Link
                   key={tool.name}
                   href={href}
-                  className="bg-[#FFFDF9] rounded-xl border border-[#E8DFD1] p-4 no-underline transition-colors hover:border-[#C44B2E]/30 hover:bg-white"
+                  className="bg-surface-0 rounded-xl border border-border p-4 no-underline transition-colors hover:border-brick/30 hover:bg-white"
                 >
-                  <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" className="h-5 w-5 text-[#C44B2E] mb-2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                  <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" className="h-5 w-5 text-brick mb-2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                     <path d={tool.icon} />
                   </svg>
-                  <h3 className="text-sm font-medium text-[#1A1815] mb-1">
+                  <h3 className="text-sm font-medium text-ink mb-1">
                     {tool.name}
                     {tool.requiresPro && !isPro && (
-                      <span className="ml-1.5 inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-semibold bg-[#E8DFD1] text-[#6B6255] uppercase">Pro</span>
+                      <span className="ml-1.5 inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-semibold bg-border text-ink-muted uppercase">Pro</span>
                     )}
                   </h3>
-                  <p className="text-xs text-[#6B6255] leading-relaxed">{tool.description}</p>
+                  <p className="text-xs text-ink-muted leading-relaxed">{tool.description}</p>
                 </Link>
               );
             })}
@@ -362,7 +362,7 @@ export function WelcomeSteps({
 
           <button
             onClick={() => setStep(4)}
-            className="w-full rounded-md bg-[#C44B2E] px-4 py-2.5 text-sm font-medium text-white hover:bg-[#A83D25] transition-colors"
+            className="w-full rounded-md bg-brick px-4 py-2.5 text-sm font-medium text-white hover:bg-brick-ink transition-colors"
           >
             Continue
           </button>
@@ -378,24 +378,24 @@ export function WelcomeSteps({
             </svg>
           </div>
           <h1
-            className="text-2xl font-normal tracking-tight text-[#1A1815] mb-2"
-            style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
+            className="text-2xl font-extrabold tracking-tight text-ink mb-2"
+            style={{ fontFamily: "var(--fi-font-sans)" }}
           >
             You&apos;re all set
           </h1>
-          <p className="text-sm text-[#6B6255] mb-8">
+          <p className="text-sm text-ink-muted mb-8">
             Your account is ready. Start exploring fee intelligence data.
           </p>
           <div className="flex flex-col gap-3 sm:flex-row sm:justify-center">
             <Link
               href={isPro ? "/pro/hamilton" : "/account"}
-              className="rounded-md bg-[#C44B2E] px-6 py-2.5 text-center text-sm font-medium text-white hover:bg-[#A83D25] transition-colors"
+              className="rounded-md bg-brick px-6 py-2.5 text-center text-sm font-medium text-white hover:bg-brick-ink transition-colors"
             >
               {isPro ? "Open Hamilton" : "Go to Account"}
             </Link>
             <Link
               href="/fees"
-              className="rounded-md border border-[#D5CBBF] px-6 py-2.5 text-center text-sm font-medium text-[#1A1815] hover:border-[#1A1815] transition-colors"
+              className="rounded-md border border-border px-6 py-2.5 text-center text-sm font-medium text-ink hover:border-ink transition-colors"
             >
               Browse the Bank Fee Index
             </Link>

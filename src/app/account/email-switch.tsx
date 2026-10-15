@@ -37,10 +37,10 @@ export function EmailSwitch({
   return (
     <div className="flex items-start justify-between gap-4 py-3">
       <div className="min-w-0">
-        <p id={`${id}-label`} className="text-[15px] font-medium text-[#1A1815]">
+        <p id={`${id}-label`} className="text-[15px] font-medium text-ink">
           {label}
         </p>
-        <p id={`${id}-desc`} className="mt-0.5 text-[13px] text-[#6B6255]">
+        <p id={`${id}-desc`} className="mt-0.5 text-[13px] text-ink-muted">
           {description}
         </p>
         {error && (
@@ -57,8 +57,8 @@ export function EmailSwitch({
         aria-describedby={`${id}-desc`}
         disabled={pending}
         onClick={toggle}
-        className={`relative mt-0.5 inline-flex h-7 w-12 shrink-0 items-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C44B2E] focus-visible:ring-offset-2 disabled:opacity-60 ${
-          on ? "bg-[#C44B2E]" : "bg-[#D8CDBD]"
+        className={`relative mt-0.5 inline-flex h-7 w-12 shrink-0 items-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brick focus-visible:ring-offset-2 disabled:opacity-60 ${
+          on ? "bg-brick" : "bg-[#D8CDBD]"
         }`}
       >
         <span

@@ -152,7 +152,7 @@ function InstitutionSearchBarInner({
       <div className="relative">
         <Search
           aria-hidden="true"
-          className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4.5 w-4.5 text-[#6B6255]"
+          className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4.5 w-4.5 text-ink-muted"
           strokeWidth={1.75}
         />
         <input
@@ -171,14 +171,14 @@ function InstitutionSearchBarInner({
           autoFocus={autoFocus}
           className={
             isDark
-              ? "w-full rounded-md border border-[#3D3830] bg-[#2D2A26] pl-10 pr-4 py-3 text-sm text-[#F5EFE6] placeholder:text-[#6B6255] focus:border-transparent focus:outline-none focus:ring-2 focus:ring-[#C44B2E]"
-              : "w-full rounded-md border border-[#D5CBBF] bg-[#FFFDF9] pl-10 pr-4 py-3 text-sm text-[#1A1815] placeholder:text-[#6B6255] focus:border-transparent focus:outline-none focus:ring-2 focus:ring-[#C44B2E]"
+              ? "w-full rounded-md border border-ink bg-[#1a2c44] pl-10 pr-4 py-3 text-sm text-paper placeholder:text-ink-muted focus:border-transparent focus:outline-none focus:ring-2 focus:ring-brick"
+              : "w-full rounded-md border border-border bg-surface-0 pl-10 pr-4 py-3 text-sm text-ink placeholder:text-ink-muted focus:border-transparent focus:outline-none focus:ring-2 focus:ring-brick"
           }
         />
         {loading && (
           <div className="absolute right-3.5 top-1/2 -translate-y-1/2">
             <div
-              className={`h-4 w-4 border-2 ${isDark ? "border-[#3D3830]" : "border-[#E8DFD1]"} border-t-[#C44B2E] rounded-full animate-spin`}
+              className={`h-4 w-4 border-2 ${isDark ? "border-ink" : "border-border"} border-t-brick rounded-full animate-spin`}
             />
           </div>
         )}
@@ -189,7 +189,7 @@ function InstitutionSearchBarInner({
         role="listbox"
         aria-label="Matching institutions"
         hidden={!expanded}
-        className="absolute left-0 right-0 top-full z-50 mt-1 overflow-hidden rounded-md border border-[#E8DFD1] bg-[#FFFDF9] shadow-lg"
+        className="absolute left-0 right-0 top-full z-50 mt-1 overflow-hidden rounded-md border border-border bg-surface-0 shadow-lg"
       >
         {expanded && results.map((r, index) => (
           <li
@@ -201,15 +201,15 @@ function InstitutionSearchBarInner({
             onMouseDown={(e) => e.preventDefault()}
             onMouseEnter={() => setActiveIndex(index)}
             onClick={() => handleSelect(r.id)}
-            className={`fi-row-interaction w-full cursor-pointer border-b border-[#E8DFD1] px-4 py-3 text-left last:border-0 ${index === activeIndex ? "bg-[#F3ECE2]" : ""}`}
+            className={`fi-row-interaction w-full cursor-pointer border-b border-border px-4 py-3 text-left last:border-0 ${index === activeIndex ? "bg-[#F3ECE2]" : ""}`}
           >
-            <div className="text-sm font-medium text-[#1A1815]">
+            <div className="text-sm font-medium text-ink">
               {r.institution_name}
             </div>
-            <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-[#6B6255]">
+            <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-ink-muted">
               {[r.city, r.state_code].filter(Boolean).join(", ")}
               {r.charter_type && (
-                <span className="text-[#6B6255]">
+                <span className="text-ink-muted">
                   {r.charter_type === "bank" ? "Bank" : "Credit Union"}
                 </span>
               )}
@@ -224,7 +224,7 @@ function InstitutionSearchBarInner({
                 </span>
               )}
               {(r.published_fee_count ?? 0) === 0 && (r.provisional_fee_count ?? 0) === 0 && (
-                <span className="rounded-sm border border-[#E0D7C9] bg-white px-1.5 py-0.5 text-[10px] font-semibold text-[#6B6255]">
+                <span className="rounded-sm border border-border bg-white px-1.5 py-0.5 text-[10px] font-semibold text-ink-muted">
                   {r.fee_publication_status === "under_review" ? "Under review" : "No published schedule found"}
                 </span>
               )}
@@ -234,11 +234,11 @@ function InstitutionSearchBarInner({
       </ul>
 
       {showResults && results.length === 0 && query.trim().length >= 2 && !loading && (
-        <div className="absolute left-0 right-0 top-full z-50 mt-1 rounded-md border border-[#E8DFD1] bg-[#FFFDF9] p-4 shadow-lg">
-          <p className="text-sm text-[#6B6255]" role="status">No institutions found for {query}</p>
+        <div className="absolute left-0 right-0 top-full z-50 mt-1 rounded-md border border-border bg-surface-0 p-4 shadow-lg">
+          <p className="text-sm text-ink-muted" role="status">No institutions found for {query}</p>
           <Link
             href={`/submit-fees?${new URLSearchParams({ institutionName: query.trim() }).toString()}`}
-            className="mt-2 inline-block text-sm font-semibold text-[#A93D25] underline-offset-2 hover:underline"
+            className="mt-2 inline-block text-sm font-semibold text-brick underline-offset-2 hover:underline"
           >
             Can&apos;t find the institution? Send its fee schedule
           </Link>
@@ -256,7 +256,7 @@ function InstitutionSearchBarInner({
  */
 export function InstitutionSearchBar(props: Parameters<typeof InstitutionSearchBarInner>[0]) {
   return (
-    <Suspense fallback={<div className="h-[46px] w-full max-w-xl rounded-md border border-[#D5CBBF] bg-[#FFFDF9]" aria-hidden="true" />}>
+    <Suspense fallback={<div className="h-[46px] w-full max-w-xl rounded-md border border-border bg-surface-0" aria-hidden="true" />}>
       <InstitutionSearchBarInner {...props} />
     </Suspense>
   );

@@ -2,6 +2,8 @@ import { TrackLink } from "@/components/track-link";
 import { headers } from "next/headers";
 import { getPublicStatsSummary } from "@/lib/public-stats";
 import { SITE_NAME } from "@/lib/constants";
+import { hamiltonFullName } from "@/lib/subscribe-reason";
+import { PRO_PLANS_NAV } from "@/components/nav-items";
 
 interface UpgradeGateProps {
   message?: string;
@@ -24,6 +26,12 @@ interface UpgradeGateProps {
   from?: string;
   /** One sentence naming exactly what sits behind this gate; replaces the generic Pro pitch. */
   locked?: string;
+  /**
+   * Where the plans button goes, when the caller knows more than the page path: the institution
+   * page passes its plans link, so /subscribe opens on that institution's tier (growth OS review N1).
+   * Internal paths only; anything else falls back to the default /subscribe link.
+   */
+  href?: string;
 }
 
 /** Internal paths only: a gate never builds a return link to another site. */
@@ -41,7 +49,8 @@ async function currentPath(): Promise<string | null> {
   }
 }
 
-const PRO_LABEL = `${SITE_NAME} Pro`;
+/** Hamilton is the workspace, Pro the plan (site v3 brief 03 §4); never "Fee Insight Pro" alone. */
+const PRO_LABEL = hamiltonFullName(SITE_NAME);
 
 /**
  * Shown when a free user encounters a premium-only feature.
@@ -54,16 +63,18 @@ export async function UpgradeGate({
   audience = "professional",
   from,
   locked,
+  href,
 }: UpgradeGateProps) {
   const summary = await getPublicStatsSummary();
   const returnPath = gateReturnPath(from ?? (await currentPath()));
-  const pricingHref = returnPath ? `/subscribe?from=${encodeURIComponent(returnPath)}#pro` : "/subscribe#pro";
+  const pricingHref =
+    gateReturnPath(href) ?? (returnPath ? `/subscribe?from=${encodeURIComponent(returnPath)}#pro` : "/subscribe#pro");
   const eventProps = { from: returnPath ?? "unknown", audience, compact };
   const moreCount = count && count > 0 ? Math.min(count, summary.categories) : 0;
   if (compact) {
     return (
-      <div className="text-center py-6 px-4 border-t border-[#E8DFD1] bg-gradient-to-r from-[#FAF7F2] to-white">
-        <div className="text-sm text-[#6B6255]">
+      <div className="text-center py-6 px-4 border-t border-border bg-gradient-to-r from-paper to-white">
+        <div className="text-sm text-ink-muted">
           {moreCount ? `${moreCount} more available` : message || "Premium feature"}
           {" "}with {PRO_LABEL}
         </div>
@@ -71,29 +82,29 @@ export async function UpgradeGate({
           event="upgrade_click"
           eventProps={eventProps}
           href={pricingHref}
-          className="inline-block mt-2 text-sm font-bold text-[#A93D25] hover:underline"
+          className="inline-block mt-2 text-sm font-bold text-ink underline underline-offset-2 hover:text-brick"
         >
-          See pricing &rarr;
+          {PRO_PLANS_NAV.label} &rarr;
         </TrackLink>
       </div>
     );
   }
 
   return (
-    <div className="bg-[#FFFDF9] border border-[#E8DFD1] rounded-xl p-6 text-center">
-      <div className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-[#FFF0ED] mb-3">
-        <svg viewBox="0 0 24 24" fill="none" className="w-5 h-5 text-[#C44B2E]" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
+    <div className="bg-surface-0 border border-border rounded-xl p-6 text-center">
+      <div className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-brick-tint mb-3">
+        <svg viewBox="0 0 24 24" fill="none" className="w-5 h-5 text-brick" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
           <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
           <path d="M7 11V7a5 5 0 0110 0v4" />
         </svg>
       </div>
       <h3
-        className="text-lg font-normal text-[#1A1815] mb-1"
-        style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
+        className="text-lg font-bold text-ink mb-1"
+        style={{ fontFamily: "var(--fi-font-sans)" }}
       >
         {message || "Unlock full access"}
       </h3>
-      <p className="text-sm text-[#6B6255] mb-4">
+      <p className="text-sm text-ink-muted mb-4">
         {locked
           ? locked
           : audience === "consumer"
@@ -102,16 +113,16 @@ export async function UpgradeGate({
           ? `${moreCount} more fee categories, peer benchmarks by charter, size and district, CSV exports, and the Hamilton workspace.`
           : `Unlock all ${summary.categoriesLabel} fee categories, peer benchmarks by charter, size and district, CSV exports, and the Hamilton workspace.`}
       </p>
-      <div className="text-[12px] text-[#6B6255] mt-2 mb-4">
+      <div className="text-[12px] text-ink-muted mt-2 mb-4">
         Based on {summary.observationsLabel} published fee entries from {summary.institutionsLabel} institutions
       </div>
       <TrackLink
         event="upgrade_click"
         eventProps={eventProps}
         href={pricingHref}
-        className="inline-flex items-center gap-1.5 rounded-md bg-[#C44B2E] px-5 py-2.5 text-sm font-medium text-white shadow-sm shadow-[#C44B2E]/15 hover:bg-[#A93D25] hover:shadow-md hover:shadow-[#C44B2E]/25 transition-all"
+        className="inline-flex items-center gap-1.5 rounded-md bg-ink px-5 py-2.5 text-sm font-semibold text-on-ink transition-opacity hover:opacity-90"
       >
-        See pricing
+        {PRO_PLANS_NAV.label}
         <svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4" aria-hidden="true">
           <path fillRule="evenodd" d="M3 10a.75.75 0 01.75-.75h10.638L10.23 5.29a.75.75 0 111.04-1.08l5.5 5.25a.75.75 0 010 1.08l-5.5 5.25a.75.75 0 11-1.04-1.08l4.158-3.96H3.75A.75.75 0 013 10z" clipRule="evenodd" />
         </svg>
@@ -123,7 +134,7 @@ export async function UpgradeGate({
 /** Lock icon badge for quick action tiles. */
 export function PremiumBadge() {
   return (
-    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-semibold bg-[#FFF0ED] text-[#A93D25] uppercase tracking-wider ml-1">
+    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-semibold bg-brick-tint text-brick uppercase tracking-wider ml-1">
       Pro
     </span>
   );

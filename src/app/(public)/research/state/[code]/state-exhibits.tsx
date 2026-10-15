@@ -17,7 +17,8 @@ import {
   type StateComparison,
 } from "@/lib/research-report/state-findings";
 
-const SERIF = { fontFamily: "var(--font-newsreader), Georgia, serif" };
+const SERIF = { fontFamily: "var(--fi-font-sans)" };
+const MONO_FIGURE = { fontFamily: "var(--fi-font-mono)" } as const;
 
 /** Widest half-width of the % axis in the position chart; larger gaps are pinned to the edge. */
 export const STATE_SECTIONS = [
@@ -33,7 +34,7 @@ export const STATE_SECTIONS = [
 
 function SmallSample() {
   return (
-    <span className="ml-1.5 rounded-full bg-[#F1EBE1] px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-[#8A8072]">
+    <span className="ml-1.5 rounded-full bg-surface-200 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-ink-muted">
       small sample
     </span>
   );
@@ -61,53 +62,53 @@ export function StateHero(props: StateHeroProps) {
   ];
 
   return (
-    <section className="relative overflow-hidden bg-[#1A1815] text-[#F5EFE6]">
+    <section className="relative overflow-hidden bg-ink text-paper">
       <div className="relative mx-auto max-w-page px-4 pb-10 pt-8 sm:px-6 sm:pb-12 sm:pt-10">
-        <nav aria-label="Breadcrumb" className="flex items-center gap-2 text-[12px] text-[#F5EFE6]/60 print:hidden">
+        <nav aria-label="Breadcrumb" className="flex items-center gap-2 text-[12px] text-paper/60 print:hidden">
           <Link href="/" className="hover:text-white">Home</Link>
           <span aria-hidden="true">/</span>
           <Link href="/research" className="hover:text-white">Research</Link>
           <span aria-hidden="true">/</span>
-          <span className="text-[#F5EFE6]/85">{stateName}</span>
+          <span className="text-paper/85">{stateName}</span>
         </nav>
-        <p className="mt-6 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-[#E8A48F]">
-          <span aria-hidden="true" className="h-px w-8 bg-[#E8A48F]/60" />
+        <p className="mt-6 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-[#e0716a]">
+          <span aria-hidden="true" className="h-px w-8 bg-[#e0716a]/60" />
           State fee report{district ? ` · ${DISTRICT_NAMES[district]} Fed` : ""}
         </p>
-        <h1 className="mt-3 max-w-3xl text-[2.25rem] font-normal leading-[1.05] tracking-[-0.015em] text-white sm:text-[3.25rem]" style={SERIF}>
+        <h1 className="mt-3 max-w-3xl text-[2.25rem] font-extrabold leading-[1.05] tracking-[-0.015em] text-white sm:text-[3.25rem]" style={SERIF}>
           {stateName} bank &amp; credit union fees
         </h1>
-        <p className="mt-4 max-w-2xl text-[15px] leading-relaxed text-[#F5EFE6]/80 sm:text-base">
+        <p className="mt-4 max-w-2xl text-[15px] leading-relaxed text-paper/80 sm:text-base">
           What {stateName} banks and credit unions charge for everyday services, measured against the national{" "}
           {PRODUCT_NAME}. Every number comes from verified, published fee schedules.
         </p>
 
         <dl className="mt-9 grid grid-cols-2 gap-px overflow-hidden rounded-xl bg-white/10 lg:grid-cols-4">
           {stats.map((s) => (
-            <div key={s.label} className="bg-[#1A1815] px-5 py-5">
+            <div key={s.label} className="bg-ink px-5 py-5">
               <dt className="sr-only">{s.label}</dt>
               <dd>
-                <span className="block text-[2rem] font-semibold leading-none tabular-nums text-white sm:text-[2.5rem]" style={SERIF}>
+                <span className="block text-[2rem] font-semibold leading-none tabular-nums text-white sm:text-[2.5rem]" style={MONO_FIGURE}>
                   {s.value}
                 </span>
-                <span className="mt-2 block text-[13px] font-semibold text-[#F5EFE6]">{s.label}</span>
-                <span className="mt-0.5 block text-[11px] text-[#F5EFE6]/60">{s.note}</span>
+                <span className="mt-2 block text-[13px] font-semibold text-paper">{s.label}</span>
+                <span className="mt-0.5 block text-[11px] text-paper/60">{s.note}</span>
               </dd>
             </div>
           ))}
         </dl>
 
         <div className="mt-6 flex flex-wrap items-center gap-x-6 gap-y-3 text-[12px]">
-          <span className="inline-flex items-center gap-2 text-[#F5EFE6]/75">
-            <span aria-hidden="true" className="h-2 w-2 rounded-full bg-[#7FB77E]" />
+          <span className="inline-flex items-center gap-2 text-paper/75">
+            <span aria-hidden="true" className="h-2 w-2 rounded-full bg-[#7fb59b]" />
             {freshnessLabel}
           </span>
           {district && (
-            <Link href={`/research/district/${district}`} className="font-semibold text-[#E8A48F] hover:text-white">
+            <Link href={`/research/district/${district}`} className="font-semibold text-[#e0716a] hover:text-white">
               {DISTRICT_NAMES[district]} district report &rarr;
             </Link>
           )}
-          <Link href="/methodology" className="text-[#F5EFE6]/75 hover:text-white">
+          <Link href="/methodology" className="text-paper/75 hover:text-white">
             Methodology
           </Link>
           <PrintButton className="rounded-full border border-white/25 px-3.5 py-1.5 font-semibold text-white hover:bg-white/10 print:hidden" />
@@ -122,12 +123,12 @@ function pct(value: number, scaleMax: number): number {
 }
 
 function RangeTrack({ label, median, p25, p75, scaleMax, tone }: { label: string; median: number; p25: number | null; p75: number | null; scaleMax: number; tone: "state" | "national" }) {
-  const band = tone === "state" ? "bg-[#C44B2E]/25" : "bg-[#1A1815]/12";
-  const tick = tone === "state" ? "bg-[#C44B2E]" : "bg-[#1A1815]/70";
+  const band = tone === "state" ? "bg-brick/25" : "bg-ink/12";
+  const tick = tone === "state" ? "bg-brick" : "bg-ink/70";
   return (
     <div className="grid grid-cols-[34px_minmax(0,1fr)_56px] items-center gap-2">
-      <span className="text-[10px] font-semibold uppercase tracking-wider text-[#8A8072]">{label}</span>
-      <div className="relative h-2.5 rounded-full bg-[#F1EBE1]" aria-hidden="true">
+      <span className="text-[10px] font-semibold uppercase tracking-wider text-ink-muted">{label}</span>
+      <div className="relative h-2.5 rounded-full bg-surface-200" aria-hidden="true">
         {p25 != null && p75 != null && (
           <div
             className={`absolute inset-y-0 rounded-full ${band}`}
@@ -136,7 +137,7 @@ function RangeTrack({ label, median, p25, p75, scaleMax, tone }: { label: string
         )}
         <div className={`absolute -top-1 h-[18px] w-1 -translate-x-1/2 rounded-full ${tick}`} style={{ left: `${pct(median, scaleMax)}%` }} />
       </div>
-      <span className="text-right text-[12px] font-semibold tabular-nums text-[#1A1815]">{formatAmount(median)}</span>
+      <span className="text-right text-[12px] font-semibold tabular-nums text-ink">{formatAmount(median)}</span>
     </div>
   );
 }
@@ -148,20 +149,20 @@ function StateBenchmarkCard({ row, stateCode }: { row: StateComparison; stateCod
   return (
     <Link
       href={`/fees/${row.fee_category}`}
-      className="group flex flex-col rounded-2xl border border-[#E8DFD1] bg-white p-5 transition-all hover:-translate-y-0.5 hover:border-[#C44B2E]/30 hover:shadow-lg hover:shadow-[#C44B2E]/5"
+      className="group flex flex-col rounded-2xl border border-border bg-white p-5 transition-all hover:-translate-y-0.5 hover:border-brick/30 hover:shadow-lg hover:shadow-[#b23a32]/5"
     >
-      <p className="text-[12px] font-semibold text-[#5A5347] group-hover:text-[#A93D25]">
+      <p className="text-[12px] font-semibold text-ink-soft group-hover:text-brick">
         {getDisplayName(row.fee_category)}
         {row.institution_count < STATE_FINDING_MIN_INSTITUTIONS && <SmallSample />}
       </p>
       <p className="mt-2 flex items-baseline gap-2">
-        <span className="text-[2.25rem] font-semibold leading-none tabular-nums text-[#1A1815]" style={SERIF}>
+        <span className="text-[2.25rem] font-semibold leading-none tabular-nums text-ink" style={MONO_FIGURE}>
           {formatAmount(row.median_amount)}
         </span>
         {delta != null && (
           <span
             className={`rounded-full px-2 py-0.5 text-[11px] font-semibold tabular-nums ${
-              Math.abs(delta) < 1 ? "bg-[#F1EBE1] text-[#6B6255]" : delta < 0 ? "bg-[#4F6B3A]/10 text-[#4F6B3A]" : "bg-[#C44B2E]/10 text-[#A93D25]"
+              Math.abs(delta) < 1 ? "bg-surface-200 text-ink-muted" : delta < 0 ? "bg-below-market/10 text-below-market" : "bg-brick/10 text-brick"
             }`}
           >
             {formatDelta(delta)} vs US
@@ -174,9 +175,9 @@ function StateBenchmarkCard({ row, stateCode }: { row: StateComparison; stateCod
           <RangeTrack label="US" median={row.national_median} p25={row.national_p25} p75={row.national_p75} scaleMax={scaleMax} tone="national" />
         )}
       </div>
-      <p className="mt-auto pt-4 text-[11px] text-[#6B6255]">
-        <span className="font-semibold tabular-nums text-[#1A1815]">{row.institution_count}</span> {stateCode} institutions
-        <span className="text-[#8A8072]"> · {row.bank_count} banks, {row.cu_count} CUs</span>
+      <p className="mt-auto pt-4 text-[11px] text-ink-muted">
+        <span className="font-semibold tabular-nums text-ink">{row.institution_count}</span> {stateCode} institutions
+        <span className="text-ink-muted"> · {row.bank_count} banks, {row.cu_count} CUs</span>
       </p>
     </Link>
   );
@@ -196,7 +197,7 @@ export function StateBenchmarkBoard({ rows, stateCode, stateName, asOf }: { rows
           ))}
         </div>
       ) : (
-        <p className="mt-7 rounded-2xl border border-dashed border-[#D4C9BA] px-5 py-8 text-center text-[13px] text-[#6B6255]">
+        <p className="mt-7 rounded-2xl border border-dashed border-border px-5 py-8 text-center text-[13px] text-ink-muted">
           Not enough {stateName} institutions have verified everyday fees yet for a state median. Coverage grows as more
           schedules are read.
         </p>
@@ -223,7 +224,7 @@ export function PositionExhibit({ rows, stateName, asOf, gate }: { rows: StateCo
         Each bar is the {stateName} median relative to the national median for the same fee. Right of center means{" "}
         {stateName} institutions typically charge more.
       </SectionHeading>
-      <div className="mt-7 rounded-2xl border border-[#E8DFD1] bg-white p-5 sm:p-7">
+      <div className="mt-7 rounded-2xl border border-border bg-white p-5 sm:p-7">
         <ul className="space-y-2.5">
           {withDelta.map((r) => {
             const d = r.delta_pct!;
@@ -231,23 +232,23 @@ export function PositionExhibit({ rows, stateName, asOf, gate }: { rows: StateCo
             const small = r.institution_count < STATE_FINDING_MIN_INSTITUTIONS;
             return (
               <li key={r.fee_category} className={`grid items-center gap-x-5 gap-y-1 sm:grid-cols-[210px_minmax(0,1fr)_180px] ${small ? "opacity-70" : ""}`}>
-                <Link href={`/fees/${r.fee_category}`} className="truncate text-[13px] font-semibold text-[#1A1815] hover:text-[#A93D25]">
+                <Link href={`/fees/${r.fee_category}`} className="truncate text-[13px] font-semibold text-ink hover:text-brick">
                   {getDisplayName(r.fee_category)}
                   {small && <SmallSample />}
                 </Link>
                 <div className="relative h-5" aria-hidden="true">
-                  <div className="absolute inset-y-0 left-1/2 w-px bg-[#D4C9BA]" />
+                  <div className="absolute inset-y-0 left-1/2 w-px bg-border" />
                   {Math.abs(d) >= 1 ? (
                     <div
-                      className={`absolute top-1/2 h-3 -translate-y-1/2 ${d > 0 ? "rounded-r-full bg-[#C44B2E]/70" : "rounded-l-full bg-[#7A7F3F]/70"}`}
+                      className={`absolute top-1/2 h-3 -translate-y-1/2 ${d > 0 ? "rounded-r-full bg-brick/70" : "rounded-l-full bg-below-market/70"}`}
                       style={d > 0 ? { left: "50%", width: `${width}%` } : { right: "50%", width: `${width}%` }}
                     />
                   ) : (
-                    <div className="absolute left-1/2 top-1/2 h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#8A8072]" />
+                    <div className="absolute left-1/2 top-1/2 h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-ink-muted" />
                   )}
                 </div>
-                <span className="whitespace-nowrap text-[12px] tabular-nums text-[#5A5347] sm:text-right">
-                  <span className={`font-semibold ${Math.abs(d) < 1 ? "text-[#8A8072]" : d > 0 ? "text-[#A93D25]" : "text-[#4F6B3A]"}`}>
+                <span className="whitespace-nowrap text-[12px] tabular-nums text-ink-soft sm:text-right">
+                  <span className={`font-semibold ${Math.abs(d) < 1 ? "text-ink-muted" : d > 0 ? "text-brick" : "text-below-market"}`}>
                     {Math.abs(d) < 1 ? "in line" : formatDelta(d)}
                   </span>{" "}
                   · {formatAmount(r.median_amount)} vs {formatAmount(r.national_median)}
@@ -256,7 +257,7 @@ export function PositionExhibit({ rows, stateName, asOf, gate }: { rows: StateCo
             );
           })}
         </ul>
-        <div className="mt-3 grid text-[10px] uppercase tracking-wider text-[#8A8072] sm:grid-cols-[210px_minmax(0,1fr)_180px] sm:gap-x-5">
+        <div className="mt-3 grid text-[10px] uppercase tracking-wider text-ink-muted sm:grid-cols-[210px_minmax(0,1fr)_180px] sm:gap-x-5">
           <span />
           <span className="flex justify-between">
             <span>&larr; lower (&minus;{axis}%)</span>
@@ -279,13 +280,13 @@ function CoverageBar({ label, verified, monitored }: { label: string; verified: 
   return (
     <div>
       <div className="flex items-baseline justify-between gap-3 text-[13px]">
-        <span className="font-semibold text-[#1A1815]">{label}</span>
-        <span className="whitespace-nowrap tabular-nums text-[#5A5347]">
-          <span className="font-semibold text-[#1A1815]">{formatCount(verified)}</span> of {formatCount(monitored)}
+        <span className="font-semibold text-ink">{label}</span>
+        <span className="whitespace-nowrap tabular-nums text-ink-soft">
+          <span className="font-semibold text-ink">{formatCount(verified)}</span> of {formatCount(monitored)}
         </span>
       </div>
-      <div className="mt-1.5 h-2.5 overflow-hidden rounded-full bg-[#F1EBE1]" aria-hidden="true">
-        <div className="h-full rounded-full bg-[#C44B2E]/70" style={{ width: `${Math.max(share * 100, verified > 0 ? 1 : 0)}%` }} />
+      <div className="mt-1.5 h-2.5 overflow-hidden rounded-full bg-surface-200" aria-hidden="true">
+        <div className="h-full rounded-full bg-brick/70" style={{ width: `${Math.max(share * 100, verified > 0 ? 1 : 0)}%` }} />
       </div>
     </div>
   );
@@ -310,7 +311,7 @@ export function CoverageExhibit(props: {
         action={
           <Link
             href={`/institutions?state=${stateCode}`}
-            className="rounded-full border border-[#1A1815] px-4 py-2 text-[12px] font-semibold text-[#1A1815] transition-colors hover:bg-[#1A1815] hover:text-white print:hidden"
+            className="rounded-full border border-ink px-4 py-2 text-[12px] font-semibold text-ink transition-colors hover:bg-ink hover:text-white print:hidden"
           >
             All {stateName} institutions &rarr;
           </Link>
@@ -321,15 +322,15 @@ export function CoverageExhibit(props: {
       </SectionHeading>
 
       <div className="mt-7 grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)]">
-        <div className="rounded-2xl border border-[#E8DFD1] bg-white p-5 sm:p-6">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#6B6255]">Verified vs monitored</p>
+        <div className="rounded-2xl border border-border bg-white p-5 sm:p-6">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-ink-muted">Verified vs monitored</p>
           <div className="mt-4 space-y-4">
             <CoverageBar label="Banks" verified={banks.verified} monitored={banks.monitored} />
             <CoverageBar label="Credit unions" verified={cus.verified} monitored={cus.monitored} />
           </div>
           {district && districtStates.length > 0 && (
-            <div className="mt-6 border-t border-[#F1EBE1] pt-4">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#6B6255]">
+            <div className="mt-6 border-t border-surface-200 pt-4">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-ink-muted">
                 Other {DISTRICT_NAMES[district]} district states
               </p>
               <div className="mt-2 flex flex-wrap gap-1.5">
@@ -337,7 +338,7 @@ export function CoverageExhibit(props: {
                   <Link
                     key={code}
                     href={`/research/state/${code}`}
-                    className="rounded-full border border-[#E8DFD1] px-2.5 py-1 text-[12px] font-medium text-[#5A5347] hover:border-[#C44B2E]/40 hover:text-[#A93D25]"
+                    className="rounded-full border border-border px-2.5 py-1 text-[12px] font-medium text-ink-soft hover:border-brick/40 hover:text-brick"
                   >
                     {STATE_NAMES[code] ?? code}
                   </Link>
@@ -347,19 +348,19 @@ export function CoverageExhibit(props: {
           )}
         </div>
 
-        <div className="rounded-2xl border border-[#E8DFD1] bg-white p-5 sm:p-6">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#6B6255]">Cities with the most verified institutions</p>
+        <div className="rounded-2xl border border-border bg-white p-5 sm:p-6">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-ink-muted">Cities with the most verified institutions</p>
           {cities.length > 0 ? (
             <ol className="mt-3 grid gap-x-6 sm:grid-cols-2">
               {cities.map((c, i) => (
-                <li key={c.city} className="border-b border-[#F1EBE1] last:border-0 sm:[&:nth-last-child(2)]:border-0">
+                <li key={c.city} className="border-b border-surface-200 last:border-0 sm:[&:nth-last-child(2)]:border-0">
                   <Link
                     href={`/fees/city/${stateCode.toLowerCase()}/${encodeURIComponent(c.city.toLowerCase())}`}
                     className="group flex items-center gap-3 py-2 text-[13px]"
                   >
-                    <span className="w-5 text-right text-[11px] font-bold tabular-nums text-[#C44B2E]">{i + 1}</span>
-                    <span className="min-w-0 flex-1 truncate font-medium text-[#1A1815] group-hover:text-[#A93D25]">{displayCity(c.city)}</span>
-                    <span className="whitespace-nowrap text-[12px] tabular-nums text-[#6B6255]">
+                    <span className="w-5 text-right text-[11px] font-bold tabular-nums text-brick">{i + 1}</span>
+                    <span className="min-w-0 flex-1 truncate font-medium text-ink group-hover:text-brick">{displayCity(c.city)}</span>
+                    <span className="whitespace-nowrap text-[12px] tabular-nums text-ink-muted">
                       {c.with_fees} of {c.institution_count}
                     </span>
                   </Link>
@@ -367,7 +368,7 @@ export function CoverageExhibit(props: {
               ))}
             </ol>
           ) : (
-            <p className="mt-3 text-[13px] text-[#6B6255]">No city in {stateName} has verified fees yet.</p>
+            <p className="mt-3 text-[13px] text-ink-muted">No city in {stateName} has verified fees yet.</p>
           )}
         </div>
       </div>
@@ -380,17 +381,17 @@ export function CoverageExhibit(props: {
 
 export function FullTable({ rows, stateName, gate, asOf }: { rows: StateComparison[]; stateName: string; gate?: React.ReactNode; asOf: string | null }) {
   if (rows.length === 0) return null;
-  const th = "px-4 py-2.5 text-[10px] font-bold uppercase tracking-[0.1em] text-[#6B6255]";
+  const th = "px-4 py-2.5 text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted";
   return (
     <section id="table" className="scroll-mt-28">
       <SectionHeading eyebrow="Appendix · Full benchmark table" title={`Every fee with a ${stateName} median`}>
         Medians, the middle half of prices, and the national comparison for each fee category.
       </SectionHeading>
-      <div className="mt-7 overflow-hidden rounded-2xl border border-[#E8DFD1] bg-white">
+      <div className="mt-7 overflow-hidden rounded-2xl border border-border bg-white">
         <div className="overflow-x-auto">
           <table className="w-full min-w-[680px] text-left text-sm">
             <thead>
-              <tr className="border-b border-[#E8DFD1] bg-[#FAF7F2]">
+              <tr className="border-b border-border bg-paper">
                 <th className={th}>Fee</th>
                 <th className={`${th} text-right`}>{stateName} median</th>
                 <th className={`${th} text-right`}>Middle half</th>
@@ -399,27 +400,27 @@ export function FullTable({ rows, stateName, gate, asOf }: { rows: StateComparis
                 <th className={`${th} text-right`}>Institutions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-[#F1EBE1]">
+            <tbody className="divide-y divide-surface-200">
               {rows.map((r) => (
-                <tr key={r.fee_category} className="hover:bg-[#FAF7F2]/60">
+                <tr key={r.fee_category} className="hover:bg-paper/60">
                   <td className="px-4 py-2.5">
-                    <Link href={`/fees/${r.fee_category}`} className="font-medium text-[#1A1815] hover:text-[#A93D25]">
+                    <Link href={`/fees/${r.fee_category}`} className="font-medium text-ink hover:text-brick">
                       {getDisplayName(r.fee_category)}
                     </Link>
                   </td>
-                  <td className="px-4 py-2.5 text-right font-semibold tabular-nums text-[#1A1815]">{formatAmount(r.median_amount)}</td>
-                  <td className="px-4 py-2.5 text-right tabular-nums text-[#5A5347]">
+                  <td className="px-4 py-2.5 text-right font-semibold tabular-nums text-ink">{formatAmount(r.median_amount)}</td>
+                  <td className="px-4 py-2.5 text-right tabular-nums text-ink-soft">
                     {r.p25_amount != null && r.p75_amount != null ? `${formatAmount(r.p25_amount)} – ${formatAmount(r.p75_amount)}` : "–"}
                   </td>
-                  <td className="px-4 py-2.5 text-right tabular-nums text-[#5A5347]">{formatAmount(r.national_median)}</td>
+                  <td className="px-4 py-2.5 text-right tabular-nums text-ink-soft">{formatAmount(r.national_median)}</td>
                   <td
                     className={`px-4 py-2.5 text-right text-[12px] font-semibold tabular-nums ${
-                      r.delta_pct == null || Math.abs(r.delta_pct) < 1 ? "text-[#8A8072]" : r.delta_pct > 0 ? "text-[#A93D25]" : "text-[#4F6B3A]"
+                      r.delta_pct == null || Math.abs(r.delta_pct) < 1 ? "text-ink-muted" : r.delta_pct > 0 ? "text-brick" : "text-below-market"
                     }`}
                   >
                     {r.delta_pct == null ? "–" : Math.abs(r.delta_pct) < 1 ? "in line" : formatDelta(r.delta_pct)}
                   </td>
-                  <td className="px-4 py-2.5 text-right tabular-nums text-[#5A5347]">{r.institution_count}</td>
+                  <td className="px-4 py-2.5 text-right tabular-nums text-ink-soft">{r.institution_count}</td>
                 </tr>
               ))}
             </tbody>
@@ -434,23 +435,23 @@ export function FullTable({ rows, stateName, gate, asOf }: { rows: StateComparis
 
 export function StateMethodology({ stateName }: { stateName: string }) {
   return (
-    <section id="methodology" className="scroll-mt-28 rounded-2xl border border-[#E8DFD1] bg-white p-6 sm:p-8">
+    <section id="methodology" className="scroll-mt-28 rounded-2xl border border-border bg-white p-6 sm:p-8">
       <SectionHeading eyebrow="Methodology" title="How this report is built" />
-      <div className="mt-5 grid gap-5 text-[13px] leading-relaxed text-[#5A5347] md:grid-cols-3">
+      <div className="mt-5 grid gap-5 text-[13px] leading-relaxed text-ink-soft md:grid-cols-3">
         <p>
-          <span className="block font-semibold text-[#1A1815]">Sources.</span>
+          <span className="block font-semibold text-ink">Sources.</span>
           Published fee schedules from FDIC-insured banks and NCUA-insured credit unions headquartered in {stateName}.
           Every fee is read from the institution&apos;s own document and verified before it is published.
         </p>
         <p>
-          <span className="block font-semibold text-[#1A1815]">Statistics.</span>
+          <span className="block font-semibold text-ink">Statistics.</span>
           Each institution counts once per fee, so a bank that lists a fee several times does not outweigh one that lists
           it once. A median needs at least 5 institutions; headline findings need at least {STATE_FINDING_MIN_INSTITUTIONS}.
         </p>
         <p>
-          <span className="block font-semibold text-[#1A1815]">Comparison.</span>
+          <span className="block font-semibold text-ink">Comparison.</span>
           The national figure is the same statistic over every institution in the {PRODUCT_NAME}. Differences under 1% are
-          shown as in line. <Link href="/methodology" className="font-semibold text-[#A93D25] hover:underline print:hidden">Full methodology &rarr;</Link>
+          shown as in line. <Link href="/methodology" className="font-semibold text-brick hover:underline print:hidden">Full methodology &rarr;</Link>
         </p>
       </div>
     </section>

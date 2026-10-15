@@ -49,7 +49,7 @@ export const metadata: Metadata = {
 };
 
 const FAMILY_COLORS: Record<string, { bg: string; text: string; dot: string }> = {
-  "Overdraft & NSF": { bg: "bg-[#C44B2E]/8", text: "text-[#C44B2E]", dot: "bg-[#C44B2E]" },
+  "Overdraft & NSF": { bg: "bg-brick/8", text: "text-brick", dot: "bg-brick" },
   "ATM & Card": { bg: "bg-amber-500/8", text: "text-amber-800", dot: "bg-amber-500" },
   "Wire Transfers": { bg: "bg-violet-500/8", text: "text-violet-800", dot: "bg-violet-500" },
   "Account Fees": { bg: "bg-emerald-500/8", text: "text-emerald-800", dot: "bg-emerald-500" },
@@ -94,10 +94,10 @@ function GuideCard({
   return (
     <Link
       href={`/guides/${guide.slug}`}
-      className="group relative flex flex-col overflow-hidden rounded-xl border border-[#E8DFD1]/80 bg-white/70 no-underline backdrop-blur-sm transition-all duration-500 hover:-translate-y-0.5 hover:border-[#C44B2E]/20 hover:shadow-lg hover:shadow-[#C44B2E]/5"
+      className="group relative flex flex-col overflow-hidden rounded-xl border border-border/80 bg-white/70 no-underline backdrop-blur-sm transition-all duration-500 hover:-translate-y-0.5 hover:border-brick/20 hover:shadow-lg hover:shadow-[#b23a32]/5"
     >
       <div
-        className="absolute left-0 right-0 top-0 h-[2px] bg-gradient-to-r from-transparent via-[#C44B2E]/0 to-transparent transition-all duration-700 group-hover:via-[#C44B2E]/40"
+        className="absolute left-0 right-0 top-0 h-[2px] bg-gradient-to-r from-transparent via-brick/0 to-transparent transition-all duration-700 group-hover:via-brick/40"
         aria-hidden="true"
       />
 
@@ -110,32 +110,32 @@ function GuideCard({
         </span>
 
         <h3
-          className={`mt-3 tracking-[-0.01em] text-[#1A1815] transition-colors duration-300 group-hover:text-[#A93D25] ${
+          className={`mt-3 tracking-[-0.01em] text-ink transition-colors duration-300 group-hover:text-brick ${
             featured
-              ? "text-[18px] font-semibold leading-snug"
+              ? "text-[18px] font-bold leading-snug"
               : "text-[14px] font-semibold leading-snug"
           }`}
-          style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
+          style={{ fontFamily: "var(--fi-font-sans)" }}
         >
           {guide.title}
         </h3>
 
         {featured && (
-          <p className="mt-2 line-clamp-2 text-[13px] leading-relaxed text-[#6B6255]">
+          <p className="mt-2 line-clamp-2 text-[13px] leading-relaxed text-ink-muted">
             {guide.description}
           </p>
         )}
 
         {primary && featured && (
-          <div className="mt-4 rounded-lg border border-[#E8DFD1]/50 bg-[#FAF7F2] p-3.5">
+          <div className="mt-4 rounded-lg border border-border/50 bg-paper p-3.5">
             <div className="flex items-baseline gap-2">
               <span
-                className="text-[28px] font-light tracking-tight tabular-nums text-[#1A1815]"
-                style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
+                className="text-[28px] font-semibold tracking-tight tabular-nums text-ink"
+                style={{ fontFamily: "var(--fi-font-mono)" }}
               >
                 {formatAmount(primary.median_amount)}
               </span>
-              <span className="text-[11px] text-[#6B6255]">
+              <span className="text-[11px] text-ink-muted">
                 median {getDisplayName(primary.fee_category).toLowerCase()}
               </span>
             </div>
@@ -147,15 +147,15 @@ function GuideCard({
                     key={fee.fee_category}
                     className="flex items-center justify-between"
                   >
-                    <span className="text-[11px] text-[#6B6255]">
+                    <span className="text-[11px] text-ink-muted">
                       {getDisplayName(fee.fee_category)}
                     </span>
                     <div className="flex items-center gap-2">
                       <span
-                        className="h-px min-w-[20px] flex-1 bg-[#E8DFD1]/60"
+                        className="h-px min-w-[20px] flex-1 bg-border/60"
                         aria-hidden="true"
                       />
-                      <span className="text-[12px] font-medium tabular-nums text-[#5A5347]">
+                      <span className="text-[12px] font-medium tabular-nums text-ink-soft">
                         {formatAmount(fee.median_amount)}
                       </span>
                     </div>
@@ -169,19 +169,19 @@ function GuideCard({
         {primary && !featured && (
           <div className="mt-2 flex items-baseline gap-2">
             <span
-              className="text-[20px] font-light tracking-tight tabular-nums text-[#1A1815]"
-              style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
+              className="text-[20px] font-semibold tracking-tight tabular-nums text-ink"
+              style={{ fontFamily: "var(--fi-font-mono)" }}
             >
               {formatAmount(primary.median_amount)}
             </span>
-            <span className="text-[10px] text-[#6B6255]">
+            <span className="text-[10px] text-ink-muted">
               median {getDisplayName(primary.fee_category).toLowerCase()}
             </span>
           </div>
         )}
 
         <div
-          className={`flex items-center gap-1.5 text-[12px] font-medium text-[#A93D25]/60 transition-colors duration-300 group-hover:text-[#A93D25] ${
+          className={`flex items-center gap-1.5 text-[12px] font-medium text-brick/60 transition-colors duration-300 group-hover:text-brick ${
             featured ? "mt-4" : "mt-3"
           }`}
         >
@@ -219,32 +219,32 @@ export default async function GuidesIndexPage() {
       {/* ── Hero ── */}
       <div className="max-w-2xl">
         <div className="mb-4 flex items-center gap-2">
-          <span className="h-px w-8 bg-[#C44B2E]/40" aria-hidden="true" />
-          <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#A93D25]/60">
+          <span className="h-px w-8 bg-brick/40" aria-hidden="true" />
+          <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-brick/60">
             Consumer Guides
           </span>
         </div>
 
         <h1
-          className="text-[2rem] leading-[1.1] tracking-[-0.025em] text-[#1A1815] sm:text-[2.5rem]"
-          style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
+          className="font-extrabold text-[2rem] leading-[1.1] tracking-[-0.025em] text-ink sm:text-[2.5rem]"
+          style={{ fontFamily: "var(--fi-font-sans)" }}
         >
           Understand what your bank <em style={{ fontWeight: 300 }}>charges</em>
         </h1>
 
-        <p className="mt-4 text-[15px] leading-relaxed text-[#6B6255]">
+        <p className="mt-4 text-[15px] leading-relaxed text-ink-muted">
           Plain-language guides backed by live benchmark data from{" "}
-          <span className="font-medium tabular-nums text-[#5A5347]">
+          <span className="font-medium tabular-nums text-ink-soft">
             {summary.institutionsLabel}
           </span>{" "}
           institutions with published fees (of {summary.monitoredLabel} monitored).
         </p>
 
-        <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-[#6B6255]">
+        <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-ink-muted">
           <span className="tabular-nums">
             {summary.observationsLabel} {COVERAGE_LABELS.observations.toLowerCase()}
           </span>
-          <span className="h-3 w-px bg-[#D4C9BA]" aria-hidden="true" />
+          <span className="h-3 w-px bg-border" aria-hidden="true" />
           <span>{summary.freshnessLabel}</span>
         </div>
       </div>
@@ -272,13 +272,13 @@ export default async function GuidesIndexPage() {
           <div className="mb-6 flex items-center gap-3">
             <h2
               id="more-heading"
-              className="text-[15px] font-medium text-[#1A1815]"
-              style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
+              className="text-[15px] font-bold text-ink"
+              style={{ fontFamily: "var(--fi-font-sans)" }}
             >
               More Fee Guides
             </h2>
-            <span className="h-px flex-1 bg-[#E8DFD1]" aria-hidden="true" />
-            <span className="text-[11px] tabular-nums text-[#6B6255]">
+            <span className="h-px flex-1 bg-border" aria-hidden="true" />
+            <span className="text-[11px] tabular-nums text-ink-muted">
               {more.length} guides
             </span>
           </div>
@@ -302,16 +302,16 @@ export default async function GuidesIndexPage() {
           <div className="mb-6 flex items-center gap-3">
             <h2
               id="professional-heading"
-              className="text-[15px] font-medium text-[#1A1815]"
-              style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
+              className="text-[15px] font-bold text-ink"
+              style={{ fontFamily: "var(--fi-font-sans)" }}
             >
               For Bankers &amp; Consultants
             </h2>
-            <span className="h-px flex-1 bg-[#E8DFD1]" aria-hidden="true" />
-            <span className="text-[11px] text-[#6B6255]">Pro</span>
+            <span className="h-px flex-1 bg-border" aria-hidden="true" />
+            <span className="text-[11px] text-ink-muted">Pro</span>
           </div>
 
-          <p className="mb-5 max-w-2xl text-[13px] leading-relaxed text-[#6B6255]">
+          <p className="mb-5 max-w-2xl text-[13px] leading-relaxed text-ink-muted">
             Benchmarking method for people who set fees rather than pay them. Separate
             guides for a separate reader — the consumer guides above stay free for
             everyone, including you.
@@ -322,14 +322,14 @@ export default async function GuidesIndexPage() {
               <Link
                 key={guide.slug}
                 href={`/guides/pro/${guide.slug}`}
-                className="group rounded-xl border border-[#E8DFD1]/80 bg-[#FAF7F2]/60 px-5 py-4 no-underline transition-all duration-300 hover:border-[#C44B2E]/20 hover:bg-white hover:shadow-md hover:shadow-[#C44B2E]/5"
+                className="group rounded-xl border border-border/80 bg-paper/60 px-5 py-4 no-underline transition-all duration-300 hover:border-brick/20 hover:bg-white hover:shadow-md hover:shadow-[#b23a32]/5"
               >
                 <div className="flex items-center gap-2">
-                  <span className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#6B6255]">
+                  <span className="text-[10px] font-bold uppercase tracking-[0.08em] text-ink-muted">
                     {guide.family}
                   </span>
                   <svg
-                    className="h-2.5 w-2.5 text-[#6B6255]"
+                    className="h-2.5 w-2.5 text-ink-muted"
                     viewBox="0 0 24 24"
                     fill="none"
                     stroke="currentColor"
@@ -342,12 +342,12 @@ export default async function GuidesIndexPage() {
                   </svg>
                 </div>
                 <h3
-                  className="mt-2 text-[15px] font-semibold leading-snug text-[#1A1815] transition-colors group-hover:text-[#A93D25]"
-                  style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
+                  className="mt-2 text-[15px] font-bold leading-snug text-ink transition-colors group-hover:text-brick"
+                  style={{ fontFamily: "var(--fi-font-sans)" }}
                 >
                   {guide.title}
                 </h3>
-                <p className="mt-1.5 line-clamp-3 text-[12px] leading-relaxed text-[#6B6255]">
+                <p className="mt-1.5 line-clamp-3 text-[12px] leading-relaxed text-ink-muted">
                   {guide.description}
                 </p>
               </Link>
@@ -359,13 +359,13 @@ export default async function GuidesIndexPage() {
       {/* ── Explore ── */}
       <section
         aria-labelledby="explore-heading"
-        className="mt-16 rounded-xl border border-[#E8DFD1] bg-white/50 px-7 py-6 backdrop-blur-sm"
+        className="mt-16 rounded-xl border border-border bg-white/50 px-7 py-6 backdrop-blur-sm"
       >
         <div className="mb-4 flex items-center gap-2">
-          <span className="h-px w-6 bg-[#C44B2E]/30" aria-hidden="true" />
+          <span className="h-px w-6 bg-brick/30" aria-hidden="true" />
           <h2
             id="explore-heading"
-            className="text-[10px] font-bold uppercase tracking-[0.15em] text-[#6B6255]"
+            className="text-[10px] font-bold uppercase tracking-[0.15em] text-ink-muted"
           >
             Explore More
           </h2>
@@ -390,13 +390,13 @@ export default async function GuidesIndexPage() {
             <Link
               key={item.href}
               href={item.href}
-              className="group rounded-lg border border-[#E8DFD1]/60 bg-[#FAF7F2]/50 px-4 py-3 no-underline transition-all duration-300 hover:border-[#C44B2E]/20 hover:bg-white"
+              className="group rounded-lg border border-border/60 bg-paper/50 px-4 py-3 no-underline transition-all duration-300 hover:border-brick/20 hover:bg-white"
             >
-              <span className="text-[13px] font-medium text-[#1A1815] transition-colors group-hover:text-[#A93D25]">
+              <span className="text-[13px] font-medium text-ink transition-colors group-hover:text-brick">
                 {item.label}
               </span>
               {"pro" in item && item.pro && <ProLock className="ml-1.5 align-middle" />}
-              <span className="mt-0.5 block text-[11px] text-[#6B6255]">{item.desc}</span>
+              <span className="mt-0.5 block text-[11px] text-ink-muted">{item.desc}</span>
             </Link>
           ))}
         </div>

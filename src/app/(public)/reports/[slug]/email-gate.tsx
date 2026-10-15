@@ -29,7 +29,7 @@ export function EmailGate({ slug, artifactExists }: EmailGateProps) {
 
   if (!artifactExists) {
     return (
-      <p style={{ color: "#6B6255", fontSize: "14px", fontStyle: "italic" }}>
+      <p style={{ color: "#55606f", fontSize: "14px", fontStyle: "italic" }}>
         PDF generation is in progress — check back soon.
       </p>
     );
@@ -83,7 +83,7 @@ export function EmailGate({ slug, artifactExists }: EmailGateProps) {
   if (state === "success" && downloadUrl) {
     return (
       <div>
-        <p style={{ color: "#1A1815", fontSize: "14px", marginBottom: "12px" }}>
+        <p style={{ color: "#132338", fontSize: "14px", marginBottom: "12px" }}>
           Your download is ready.
         </p>
         <a
@@ -92,7 +92,7 @@ export function EmailGate({ slug, artifactExists }: EmailGateProps) {
           rel="noopener noreferrer"
           style={{
             display: "inline-block",
-            background: "#1A1815",
+            background: "#132338",
             color: "#FEFCF9",
             padding: "10px 20px",
             borderRadius: "6px",
@@ -103,7 +103,7 @@ export function EmailGate({ slug, artifactExists }: EmailGateProps) {
         >
           Download full report PDF &darr;
         </a>
-        <p style={{ marginTop: "8px", fontSize: "12px", color: "#6B6255" }}>
+        <p style={{ marginTop: "8px", fontSize: "12px", color: "#55606f" }}>
           Link valid for 1 hour. Check your email for a copy.
         </p>
       </div>
@@ -120,24 +120,24 @@ export function EmailGate({ slug, artifactExists }: EmailGateProps) {
         required
         disabled={state === "submitting"}
         style={{
-          border: "1px solid #E8DFD1",
+          border: "1px solid #ddd5c6",
           borderRadius: "6px",
           padding: "10px 14px",
           fontSize: "14px",
-          color: "#1A1815",
+          color: "#132338",
           width: "100%",
           boxSizing: "border-box",
           outline: "none",
         }}
-        onFocus={(e) => (e.target.style.borderColor = "#C44B2E")}
-        onBlur={(e) => (e.target.style.borderColor = "#E8DFD1")}
+        onFocus={(e) => (e.target.style.borderColor = "#b23a32")}
+        onBlur={(e) => (e.target.style.borderColor = "#ddd5c6")}
       />
 
       <button
         type="submit"
         disabled={state === "submitting"}
         style={{
-          background: state === "submitting" ? "#5A5347" : "#1A1815",
+          background: state === "submitting" ? "#354252" : "#132338",
           color: "#FEFCF9",
           border: "none",
           borderRadius: "6px",
@@ -158,7 +158,7 @@ export function EmailGate({ slug, artifactExists }: EmailGateProps) {
         </p>
       )}
 
-      <p style={{ fontSize: "11px", color: "#6B6255", margin: 0 }}>
+      <p style={{ fontSize: "11px", color: "#55606f", margin: 0 }}>
         No spam. One-time link delivered instantly.
       </p>
     </form>

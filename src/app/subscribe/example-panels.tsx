@@ -2,7 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { PreviewFrame } from "./preview-frame";
 
-const DISPLAY = { fontFamily: "var(--font-jakarta), ui-sans-serif, system-ui, sans-serif" };
+const DISPLAY = { fontFamily: "var(--fi-font-sans)" };
 
 /** The newest Regulatory Wire item, in one line. */
 export interface MonitorWireItem {
@@ -20,25 +20,25 @@ export function MonitorPreview({ wire }: { wire: MonitorWireItem | null }) {
   return (
     <PreviewFrame label="Hamilton · Monitor" aside="Live data">
       <div className="px-4 pb-1 pt-4 sm:px-5">
-        <p className="text-lg leading-snug text-[#1A1815] font-semibold tracking-tight" style={DISPLAY}>
+        <p className="text-lg leading-snug text-ink font-semibold tracking-tight" style={DISPLAY}>
           Schedules you follow
         </p>
       </div>
-      <p className="px-4 py-3 text-sm text-[#3D3833] sm:px-5">
-        When a bank you follow publishes an updated fee schedule, Monitor shows each line that differs, with the page and date it came from.
+      <p className="px-4 py-3 text-sm text-ink sm:px-5">
+        When a bank you follow changes its schedule, see each line that differs, with its page and date.
       </p>
       {wire && (
-        <div className="mx-4 mb-4 mt-2 rounded-lg bg-[#FAF7F2] px-3 py-2.5 ring-1 ring-[#E8E1D6] sm:mx-5">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[#6B6255]">On the Regulatory Wire</p>
-          <p className="mt-1 text-sm font-semibold text-[#1A1815]">{wire.title}</p>
-          <p className="text-xs text-[#6B6255]">
+        <div className="mx-4 mb-4 mt-2 rounded-lg bg-paper px-3 py-2.5 ring-1 ring-border sm:mx-5">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-ink-muted">On the Regulatory Wire</p>
+          <p className="mt-1 text-sm font-semibold text-ink">{wire.title}</p>
+          <p className="text-xs text-ink-muted">
             {wire.source}
             {wire.detail ? ` · ${wire.detail}` : ""}
           </p>
         </div>
       )}
-      <p className="mt-auto border-t border-[#E8E1D6]/80 bg-white/50 px-4 py-2.5 text-xs leading-relaxed text-[#6B6255] sm:px-5">
-        Changes compare a schedule with its own earlier copy. In Pro, watch the institutions you pick.
+      <p className="mt-auto border-t border-border/80 bg-white/50 px-4 py-2.5 text-xs leading-relaxed text-ink-muted sm:px-5">
+        In Pro, follow the institutions you pick.
       </p>
     </PreviewFrame>
   );
@@ -50,14 +50,14 @@ const SAMPLE_HREF = "/reports/sample-competitive-fee-position";
 export function ReportPreview() {
   return (
     <PreviewFrame label="Hamilton · Reports" aside="Sample report">
-      <div className="relative min-h-[19rem] flex-1 overflow-hidden bg-[#F3EEE6] sm:min-h-[21rem]">
+      <div className="relative min-h-[19rem] flex-1 overflow-hidden bg-surface-200 sm:min-h-[21rem]">
         <Image
           src="/reports/sample-preview/page-1.webp"
           alt="Cover of the sample Competitive Fee Position report, prepared for Sample Community Bank"
           width={850}
           height={1100}
           sizes="(min-width: 1024px) 260px, 45vw"
-          className="absolute left-[6%] top-6 w-[46%] -rotate-2 rounded-sm shadow-[0_10px_30px_-12px_rgba(26,24,21,0.45)] ring-1 ring-[#E8E1D6]"
+          className="absolute left-[6%] top-6 w-[46%] -rotate-2 rounded-sm shadow-[0_10px_30px_-12px_rgba(26,24,21,0.45)] ring-1 ring-border"
         />
         <Image
           src="/reports/sample-preview/page-2.webp"
@@ -65,12 +65,12 @@ export function ReportPreview() {
           width={850}
           height={1100}
           sizes="(min-width: 1024px) 280px, 50vw"
-          className="absolute right-[6%] top-10 w-[50%] rotate-1 rounded-sm shadow-[0_14px_36px_-12px_rgba(26,24,21,0.5)] ring-1 ring-[#E8E1D6]"
+          className="absolute right-[6%] top-10 w-[50%] rotate-1 rounded-sm shadow-[0_14px_36px_-12px_rgba(26,24,21,0.5)] ring-1 ring-border"
         />
       </div>
-      <div className="mt-auto flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-t border-[#E8E1D6]/80 bg-white/50 px-4 py-2.5 text-xs text-[#6B6255] sm:px-5">
+      <div className="mt-auto flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-t border-border/80 bg-white/50 px-4 py-2.5 text-xs text-ink-muted sm:px-5">
         <span>A Competitive Fee Position report, as delivered.</span>
-        <Link href={SAMPLE_HREF} className="inline-flex min-h-11 items-center font-medium text-[#A93D25] underline underline-offset-2">
+        <Link href={SAMPLE_HREF} className="inline-flex min-h-11 items-center font-medium text-ink underline underline-offset-2">
           Open the sample report
         </Link>
       </div>

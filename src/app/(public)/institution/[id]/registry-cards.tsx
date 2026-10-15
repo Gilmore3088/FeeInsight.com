@@ -19,8 +19,8 @@ import type {
  * categorical slots from financial-profile.tsx; the map uses one blue hue,
  * light to dark (sequential), and every chart has a text/table equivalent.
  */
-const AXIS = "#A09788";
-const GRID = "#EFE8DC";
+const AXIS = "#767c87";
+const GRID = "#ebe5d9";
 const SERIES = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100"] as const;
 const OTHER = "#B8AFA2";
 const RAMP = ["#E3EEFA", "#B5D0F1", "#7DAEE6", "#4189DB", "#1F5FAE"] as const;
@@ -29,13 +29,13 @@ const axisProps = { tick: { fontSize: 10, fill: AXIS }, tickLine: false, axisLin
 
 function Card({ title, subtitle, caption, children }: { title: string; subtitle?: string; caption: string; children: React.ReactNode }) {
   return (
-    <figure className="rounded-xl border border-[#E0D7C9] bg-white p-4">
+    <figure className="rounded-xl border border-border bg-white p-4">
       <figcaption>
-        <p className="text-sm font-semibold text-[#1A1815]">{title}</p>
-        {subtitle && <p className="text-xs text-[#6B6255]">{subtitle}</p>}
+        <p className="text-sm font-semibold text-ink">{title}</p>
+        {subtitle && <p className="text-xs text-ink-muted">{subtitle}</p>}
       </figcaption>
       <div className="mt-2">{children}</div>
-      <p className="mt-2 text-[10px] text-[#8A8174]">{caption}</p>
+      <p className="mt-2 text-[10px] text-ink-muted">{caption}</p>
     </figure>
   );
 }
@@ -54,15 +54,15 @@ interface TooltipEntry {
 function SimpleTooltip({ active, payload, label, format }: { active?: boolean; payload?: TooltipEntry[]; label?: string; format: (v: number) => string }) {
   if (!active || !payload?.length) return null;
   return (
-    <div className="rounded-lg border border-[#E8DFD1] bg-white px-3 py-2 text-xs shadow-md">
-      <p className="mb-1 font-semibold text-[#1A1815]">{label}</p>
+    <div className="rounded-lg border border-border bg-white px-3 py-2 text-xs shadow-md">
+      <p className="mb-1 font-semibold text-ink">{label}</p>
       {payload
         .filter((entry) => entry.value)
         .map((entry) => (
-          <p key={String(entry.dataKey)} className="flex items-center gap-2 text-[#5A5347]">
+          <p key={String(entry.dataKey)} className="flex items-center gap-2 text-ink-soft">
             <span aria-hidden className="inline-block h-2 w-2 rounded-full" style={{ background: entry.color }} />
             <span>{entry.name}</span>
-            <span className="ml-auto pl-3 font-medium tabular-nums text-[#1A1815]">{format(Number(entry.value))}</span>
+            <span className="ml-auto pl-3 font-medium tabular-nums text-ink">{format(Number(entry.value))}</span>
           </p>
         ))}
     </div>
@@ -125,7 +125,7 @@ export function BranchFootprintCard({ footprint }: { footprint: BranchFootprint 
                 />
               ))}
               {localMap.othersPath && (
-                <path d={localMap.othersPath} stroke="#8A8174" strokeOpacity={0.45} strokeWidth={8} strokeLinecap="round" fill="none" pointerEvents="none" />
+                <path d={localMap.othersPath} stroke="#55606f" strokeOpacity={0.45} strokeWidth={8} strokeLinecap="round" fill="none" pointerEvents="none" />
               )}
               {localMap.dots.map((dot, i) => (
                 <circle key={i} cx={dot.x} cy={dot.y} r={localMap.dotRadius} fill={RAMP[RAMP.length - 1]} fillOpacity={0.75} stroke="#FFFFFF" strokeWidth={1} />
@@ -138,7 +138,7 @@ export function BranchFootprintCard({ footprint }: { footprint: BranchFootprint 
                   textAnchor="middle"
                   fontSize={22}
                   fontWeight={600}
-                  fill="#1A1815"
+                  fill="#132338"
                   stroke="#FFFFFF"
                   strokeWidth={5}
                   paintOrder="stroke"
@@ -148,27 +148,27 @@ export function BranchFootprintCard({ footprint }: { footprint: BranchFootprint 
                 </text>
               ))}
             </svg>
-            <p className="min-h-[1.25rem] text-[11px] text-[#5A5347]" aria-live="polite">
+            <p className="min-h-[1.25rem] text-[11px] text-ink-soft" aria-live="polite">
               {hoveredState
                 ? `${STATE_NAMES[hoveredState.state] ?? hoveredState.state}: ${hoveredState.branches.toLocaleString("en-US")} ${isCu ? "offices" : `branches, ${formatCompactDollars(thousandsToDollars(hoveredState.deposits))}`}`
                 : hovered
                   ? `${STATE_NAMES[hovered] ?? hovered}: no ${isCu ? "offices" : "branches"}`
                   : `Each dot is one office.`}
             </p>
-            <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-[10px] text-[#6B6255]">
+            <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-[10px] text-ink-muted">
               <span className="flex items-center gap-1.5">
                 <span aria-hidden className="inline-block h-2 w-2 rounded-full" style={{ background: RAMP[RAMP.length - 1] }} />
                 {isCu ? "This credit union" : "This bank"}
               </span>
               {localMap.othersCount > 0 && (
                 <span className="flex items-center gap-1.5">
-                  <span aria-hidden className="inline-block h-2 w-2 rounded-full bg-[#8A8174] opacity-60" />
+                  <span aria-hidden className="inline-block h-2 w-2 rounded-full bg-ink-muted opacity-60" />
                   Other banks and credit unions
                 </span>
               )}
             </div>
             {(mapped < latest.branches || (footprint.approxOffices ?? 0) > 0) && (
-              <p className="text-[10px] text-[#6B6255]">
+              <p className="text-[10px] text-ink-muted">
                 {mapped < latest.branches &&
                   `${mapped.toLocaleString("en-US")} of ${latest.branches.toLocaleString("en-US")} ${isCu ? "offices" : "branches"} on the map. `}
                 {(footprint.approxOffices ?? 0) > 0 &&
@@ -177,9 +177,9 @@ export function BranchFootprintCard({ footprint }: { footprint: BranchFootprint 
             )}
           </div>
         ) : footprint.mapPending ? (
-          <div className="flex min-h-[10rem] flex-col justify-center rounded-lg border border-dashed border-[#E0D7C9] bg-[#FAF7F2] px-4 py-6 text-center">
-            <p className="text-[12px] font-medium text-[#1A1815]">Map coming soon</p>
-            <p className="mt-1 text-[11px] text-[#6B6255]">
+          <div className="flex min-h-[10rem] flex-col justify-center rounded-lg border border-dashed border-border bg-paper px-4 py-6 text-center">
+            <p className="text-[12px] font-medium text-ink">Map coming soon</p>
+            <p className="mt-1 text-[11px] text-ink-muted">
               We are placing each {isCu ? "office" : "branch"} on the map from its address. {mapped.toLocaleString("en-US")} of{" "}
               {latest.branches.toLocaleString("en-US")} are placed so far; the map appears once most are.
             </p>
@@ -199,14 +199,14 @@ export function BranchFootprintCard({ footprint }: { footprint: BranchFootprint 
                 />
               ))}
             </svg>
-            <p className="min-h-[1.25rem] text-[11px] text-[#5A5347]" aria-live="polite">
+            <p className="min-h-[1.25rem] text-[11px] text-ink-soft" aria-live="polite">
               {hoveredState
                 ? `${STATE_NAMES[hoveredState.state] ?? hoveredState.state}: ${hoveredState.branches.toLocaleString("en-US")} ${isCu ? "offices" : `branches, ${formatCompactDollars(thousandsToDollars(hoveredState.deposits))}`}`
                 : hovered
                   ? `${STATE_NAMES[hovered] ?? hovered}: no ${isCu ? "offices" : "branches"}`
                   : `Hover a state for its ${isCu ? "office" : "branch"} count.`}
             </p>
-            <div className="mt-1 flex items-center gap-1 text-[10px] text-[#6B6255]">
+            <div className="mt-1 flex items-center gap-1 text-[10px] text-ink-muted">
               <span>Fewer</span>
               {RAMP.map((color) => (
                 <span key={color} className="inline-block h-2 w-5 rounded-sm" style={{ background: color }} />
@@ -216,15 +216,15 @@ export function BranchFootprintCard({ footprint }: { footprint: BranchFootprint 
           </div>
         )}
         <div>
-          <p className="text-[11px] font-bold uppercase tracking-[0.1em] text-[#6B6255]">
+          <p className="text-[11px] font-bold uppercase tracking-[0.1em] text-ink-muted">
             {isCu ? "Cities with the most offices" : "Largest markets by deposits"}
           </p>
           <table className="mt-1 w-full text-left text-[11px] tabular-nums">
-            <tbody className="text-[#1A1815]">
+            <tbody className="text-ink">
               {footprint.topMarkets.map((m) => (
-                <tr key={m.msa_name} className="border-t border-[#F1EBE1]">
+                <tr key={m.msa_name} className="border-t border-surface-200">
                   <td className="py-1 pr-2">{m.msa_name}</td>
-                  <td className="py-1 text-right text-[#5A5347]">{m.branches}</td>
+                  <td className="py-1 text-right text-ink-soft">{m.branches}</td>
                   {!isCu && <td className="py-1 pl-2 text-right">{formatCompactDollars(thousandsToDollars(m.deposits))}</td>}
                 </tr>
               ))}
@@ -232,17 +232,17 @@ export function BranchFootprintCard({ footprint }: { footprint: BranchFootprint 
           </table>
           {nearby.length > 0 && (
             <>
-              <p className="mt-3 text-[11px] font-bold uppercase tracking-[0.1em] text-[#6B6255]">Largest competitors nearby</p>
+              <p className="mt-3 text-[11px] font-bold uppercase tracking-[0.1em] text-ink-muted">Largest competitors nearby</p>
               <table className="mt-1 w-full text-left text-[11px] tabular-nums">
-                <thead className="text-[10px] text-[#6B6255]">
+                <thead className="text-[10px] text-ink-muted">
                   <tr>
                     <th className="py-1 pr-2 font-normal">{nearbyCount.toLocaleString("en-US")} in its local market</th>
                     <th className="py-1 pl-2 text-right font-normal">Deposit share</th>
                   </tr>
                 </thead>
-                <tbody className="text-[#1A1815]">
+                <tbody className="text-ink">
                   {nearby.map((n) => (
-                    <tr key={n.name} className="border-t border-[#F1EBE1]">
+                    <tr key={n.name} className="border-t border-surface-200">
                       <td className="py-1 pr-2">{n.name}</td>
                       <td className="py-1 pl-2 text-right">{n.depositSharePct === null ? "Credit union" : `${n.depositSharePct}%`}</td>
                     </tr>
@@ -250,7 +250,7 @@ export function BranchFootprintCard({ footprint }: { footprint: BranchFootprint 
                 </tbody>
               </table>
               {footprint.ownDepositSharePct != null && (
-                <p className="mt-1 text-[11px] text-[#5A5347]">
+                <p className="mt-1 text-[11px] text-ink-soft">
                   This bank holds {footprint.ownDepositSharePct}% of the deposits in its local market.
                 </p>
               )}
@@ -258,7 +258,7 @@ export function BranchFootprintCard({ footprint }: { footprint: BranchFootprint 
           )}
           {trend.length > 1 && (
             <>
-              <p className="mt-3 text-[11px] font-bold uppercase tracking-[0.1em] text-[#6B6255]">Branch count by year</p>
+              <p className="mt-3 text-[11px] font-bold uppercase tracking-[0.1em] text-ink-muted">Branch count by year</p>
               <ResponsiveContainer width="100%" height={110}>
                 <LineChart data={trend} margin={{ top: 6, right: 6, bottom: 0, left: 0 }}>
                   <CartesianGrid stroke={GRID} vertical={false} />
@@ -300,7 +300,7 @@ export function ComplaintsCard({ trend }: { trend: ComplaintTrend }) {
       subtitle={`${latestTotal.toLocaleString("en-US")} complaints to the CFPB in ${trend.latestYear}`}
       caption="Source: CFPB Consumer Complaint Database, by year received. Complaints are filed against the parent company and are not verified findings."
     >
-      <ul className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-[#5A5347]">
+      <ul className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-ink-soft">
         {keys.map((key, i) => (
           <li key={key} className="flex items-center gap-1.5">
             <span aria-hidden className="inline-block h-2 w-2 rounded-sm" style={{ background: color(key, i) }} />
@@ -313,7 +313,7 @@ export function ComplaintsCard({ trend }: { trend: ComplaintTrend }) {
           <CartesianGrid stroke={GRID} vertical={false} />
           <XAxis dataKey="year" {...axisProps} />
           <YAxis {...axisProps} width={48} allowDecimals={false} />
-          <Tooltip cursor={{ fill: "#FAF7F2" }} content={<SimpleTooltip format={(v) => v.toLocaleString("en-US")} />} />
+          <Tooltip cursor={{ fill: "#f3efe6" }} content={<SimpleTooltip format={(v) => v.toLocaleString("en-US")} />} />
           {keys.map((key, i) => (
             <Bar key={key} dataKey={key} name={key} stackId="complaints" fill={color(key, i)} stroke="#FFFFFF" strokeWidth={1} maxBarSize={28} />
           ))}
@@ -321,11 +321,11 @@ export function ComplaintsCard({ trend }: { trend: ComplaintTrend }) {
       </ResponsiveContainer>
       {trend.topIssues.length > 0 && (
         <div className="mt-2">
-          <p className="text-[11px] font-bold uppercase tracking-[0.1em] text-[#6B6255]">Top issues, {trend.latestYear}</p>
+          <p className="text-[11px] font-bold uppercase tracking-[0.1em] text-ink-muted">Top issues, {trend.latestYear}</p>
           <table className="mt-1 w-full text-left text-[11px] tabular-nums">
-            <tbody className="text-[#1A1815]">
+            <tbody className="text-ink">
               {trend.topIssues.map((issue) => (
-                <tr key={issue.issue} className="border-t border-[#F1EBE1]">
+                <tr key={issue.issue} className="border-t border-surface-200">
                   <td className="py-1 pr-2">{issue.issue}</td>
                   <td className="py-1 text-right">{issue.count.toLocaleString("en-US")}</td>
                 </tr>
@@ -350,29 +350,29 @@ export function HoldingCompanyCard({ profile }: { profile: HoldingCompanyProfile
     >
       {latest && (
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-          <div className="rounded-lg border border-[#E0D7C9] px-3 py-2">
-            <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-[#6B6255]">Consolidated assets</p>
-            <p className="text-base font-semibold tabular-nums text-[#1A1815]">{formatCompactDollars(latest.total_assets)}</p>
+          <div className="rounded-lg border border-border px-3 py-2">
+            <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted">Consolidated assets</p>
+            <p className="text-base font-semibold tabular-nums text-ink">{formatCompactDollars(latest.total_assets)}</p>
           </div>
-          <div className="rounded-lg border border-[#E0D7C9] px-3 py-2">
-            <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-[#6B6255]">Shareholders&apos; equity</p>
-            <p className="text-base font-semibold tabular-nums text-[#1A1815]">{formatCompactDollars(latest.stockholders_equity)}</p>
+          <div className="rounded-lg border border-border px-3 py-2">
+            <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted">Shareholders&apos; equity</p>
+            <p className="text-base font-semibold tabular-nums text-ink">{formatCompactDollars(latest.stockholders_equity)}</p>
           </div>
-          <div className="rounded-lg border border-[#E0D7C9] px-3 py-2">
-            <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-[#6B6255]">As of</p>
-            <p className="text-base font-semibold tabular-nums text-[#1A1815]">{latest.fiscal_period ?? latest.period_end}</p>
+          <div className="rounded-lg border border-border px-3 py-2">
+            <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted">As of</p>
+            <p className="text-base font-semibold tabular-nums text-ink">{latest.fiscal_period ?? latest.period_end}</p>
           </div>
         </div>
       )}
       {quarters.some((q) => q.net_income !== null) && (
         <>
-          <p className="mt-3 text-[11px] font-bold uppercase tracking-[0.1em] text-[#6B6255]">Net income by quarter</p>
+          <p className="mt-3 text-[11px] font-bold uppercase tracking-[0.1em] text-ink-muted">Net income by quarter</p>
           <ResponsiveContainer width="100%" height={160}>
             <BarChart data={quarters} margin={{ top: 6, right: 6, bottom: 0, left: 0 }}>
               <CartesianGrid stroke={GRID} vertical={false} />
               <XAxis dataKey="fiscal_period" {...axisProps} minTickGap={20} />
               <YAxis {...axisProps} width={56} tickFormatter={(v: number) => formatCompactDollars(v)} />
-              <Tooltip cursor={{ fill: "#FAF7F2" }} content={<SimpleTooltip format={formatCompactDollars} />} />
+              <Tooltip cursor={{ fill: "#f3efe6" }} content={<SimpleTooltip format={formatCompactDollars} />} />
               <Bar dataKey="net_income" name="Net income" fill={SERIES[0]} radius={[4, 4, 0, 0]} maxBarSize={18} />
             </BarChart>
           </ResponsiveContainer>
@@ -380,15 +380,15 @@ export function HoldingCompanyCard({ profile }: { profile: HoldingCompanyProfile
       )}
       {profile.filings.length > 0 && (
         <div className="mt-3">
-          <p className="text-[11px] font-bold uppercase tracking-[0.1em] text-[#6B6255]">Recent SEC filings</p>
-          <ul className="mt-1 divide-y divide-[#F1EBE1] text-[12px]">
+          <p className="text-[11px] font-bold uppercase tracking-[0.1em] text-ink-muted">Recent SEC filings</p>
+          <ul className="mt-1 divide-y divide-surface-200 text-[12px]">
             {profile.filings.map((filing) => (
               <li key={`${filing.form}-${filing.filed_at}-${filing.primary_doc_url}`} className="flex items-center justify-between gap-3 py-1.5">
-                <span className="font-medium text-[#1A1815]">{filing.form}</span>
-                <span className="flex-1 truncate text-[#5A5347]">{filing.description ?? (filing.period_of_report ? `Period ${filing.period_of_report}` : "")}</span>
-                <span className="tabular-nums text-[#6B6255]">{filing.filed_at}</span>
+                <span className="font-medium text-ink">{filing.form}</span>
+                <span className="flex-1 truncate text-ink-soft">{filing.description ?? (filing.period_of_report ? `Period ${filing.period_of_report}` : "")}</span>
+                <span className="tabular-nums text-ink-muted">{filing.filed_at}</span>
                 {filing.primary_doc_url && (
-                  <a href={filing.primary_doc_url} target="_blank" rel="noopener noreferrer" className="font-medium text-[#A93D25] hover:underline">
+                  <a href={filing.primary_doc_url} target="_blank" rel="noopener noreferrer" className="font-medium text-brick hover:underline">
                     View
                   </a>
                 )}
@@ -407,10 +407,10 @@ function ActionItem({ action }: { action: EnforcementActionRow }) {
   return (
     <li className="py-2">
       <div className="flex items-baseline justify-between gap-3">
-        <span className="font-medium text-[#1A1815]">{action.action_type ?? "Enforcement action"}</span>
-        <span className="shrink-0 tabular-nums text-[#6B6255]">{date}</span>
+        <span className="font-medium text-ink">{action.action_type ?? "Enforcement action"}</span>
+        <span className="shrink-0 tabular-nums text-ink-muted">{date}</span>
       </div>
-      <p className="text-[#5A5347]">
+      <p className="text-ink-soft">
         {enforcementAgencyLabel(action.agency)}
         {action.against_holding_company && <>, against the holding company, {action.party_name}</>}
         {action.penalty_amount !== null && <>, penalty {formatCompactDollars(action.penalty_amount)}</>}
@@ -418,13 +418,13 @@ function ActionItem({ action }: { action: EnforcementActionRow }) {
         {action.document_url && (
           <>
             {" · "}
-            <a href={action.document_url} target="_blank" rel="noopener noreferrer" className="font-medium text-[#A93D25] hover:underline">
+            <a href={action.document_url} target="_blank" rel="noopener noreferrer" className="font-medium text-brick hover:underline">
               Order
             </a>
           </>
         )}
       </p>
-      {action.subject && <p className="text-[#8A8174]">{action.subject}</p>}
+      {action.subject && <p className="text-ink-muted">{action.subject}</p>}
     </li>
   );
 }
@@ -445,13 +445,13 @@ export function EnforcementCard({ record }: { record: EnforcementRecord }) {
       caption={`Source: public enforcement action lists from the ${agencies}${record.asOf ? `, read ${formatQuarterEnd(record.asOf)}` : ""}. The agencies don't always record when an order ends, so one with no end date may have ended. FDIC orders are not included yet. Actions against individual bank officers are left out.`}
     >
       {openCount === 0 && record.pastCount === 0 ? (
-        <p className="text-[12px] text-[#5A5347]">
+        <p className="text-[12px] text-ink-soft">
           The {agencies} {record.agenciesChecked.length > 1 ? "have" : "has"} no public enforcement action against this bank or its holding company on file.
         </p>
       ) : (
         <div className="text-[12px]">
           {openCount > 0 && (
-            <ul className="divide-y divide-[#F1EBE1]">
+            <ul className="divide-y divide-surface-200">
               {record.open.map((action, i) => (
                 <ActionItem key={`a-${i}`} action={action} />
               ))}
@@ -459,10 +459,10 @@ export function EnforcementCard({ record }: { record: EnforcementRecord }) {
           )}
           {record.pastCount > 0 && (
             <>
-              <p className="mt-2 text-[11px] font-bold uppercase tracking-[0.1em] text-[#6B6255]">
+              <p className="mt-2 text-[11px] font-bold uppercase tracking-[0.1em] text-ink-muted">
                 Past {record.pastCount > record.past.length ? `(latest ${record.past.length} of ${record.pastCount})` : ""}
               </p>
-              <ul className="divide-y divide-[#F1EBE1]">
+              <ul className="divide-y divide-surface-200">
                 {record.past.map((action, i) => (
                   <ActionItem key={`t-${i}`} action={action} />
                 ))}

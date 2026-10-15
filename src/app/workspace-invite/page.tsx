@@ -37,16 +37,16 @@ function MembershipCard({ membership }: { membership: InstitutionWorkspaceMember
     <div className="rounded-lg border border-emerald-100 bg-emerald-50/70 px-4 py-3">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
-          <p className="truncate text-sm font-semibold text-[#1A1815]">
+          <p className="truncate text-sm font-semibold text-ink">
             {membership.institutionName}
           </p>
-          <p className="mt-1 text-xs text-[#6B6255]">
+          <p className="mt-1 text-xs text-ink-muted">
             {[locationLabel(membership), roleLabel(membership.role)].filter(Boolean).join(" · ")}
           </p>
         </div>
         <Link
           href={`/pro/analyze?instId=${membership.institutionId}`}
-          className="inline-flex w-fit rounded-full bg-[#1A1815] px-3 py-1.5 text-[11px] font-semibold text-white no-underline"
+          className="inline-flex w-fit rounded-full bg-ink px-3 py-1.5 text-[11px] font-semibold text-white no-underline"
         >
           Open Hamilton
         </Link>
@@ -95,22 +95,22 @@ export default async function WorkspaceInvitePage({
   const hasAccess = user ? canAccessPremium({ ...user, workspace_seat: hasSeat }) : false;
 
   return (
-    <div className="min-h-screen bg-[#FAF7F2]">
+    <div className="min-h-screen bg-paper">
       <ConsumerNav />
 
       <main id="main-content" className="mx-auto max-w-3xl px-4 py-12">
-        <div className="rounded-xl border border-[#E8DFD1] bg-[#FFFDF9] p-6 shadow-sm">
+        <div className="rounded-xl border border-border bg-surface-0 p-6 shadow-sm">
           <div className="mb-6">
-            <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[#A93D25]">
+            <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-brick">
               Hamilton Workspace
             </p>
             <h1
-              className="mt-2 text-3xl font-normal tracking-tight text-[#1A1815]"
-              style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
+              className="mt-2 text-3xl font-extrabold tracking-tight text-ink"
+              style={{ fontFamily: "var(--fi-font-sans)" }}
             >
               Institution workspace invitation
             </h1>
-            <p className="mt-3 text-sm leading-6 text-[#6B6255]">
+            <p className="mt-3 text-sm leading-6 text-ink-muted">
               An institution account includes up to {WORKSPACE_SEAT_LIMIT} teammates. Open the
               invite link the account owner sent you while signed in with the invited email, and you
               join with full Pro access and no payment of your own. Hamilton then carries that institution into Analyze, Reports,
@@ -119,24 +119,24 @@ export default async function WorkspaceInvitePage({
           </div>
 
           {!user && (
-            <div className="rounded-lg border border-[#E8DFD1] bg-white/70 p-4">
-              <h2 className="text-base font-semibold text-[#1A1815]">
+            <div className="rounded-lg border border-border bg-white/70 p-4">
+              <h2 className="text-base font-semibold text-ink">
                 Sign in with the invited email
               </h2>
-              <p className="mt-2 text-sm text-[#6B6255]">
+              <p className="mt-2 text-sm text-ink-muted">
                 Use the same email address your institution owner invited. If you don&apos;t have an
                 account yet, create a free one with that email.
               </p>
               <div className="mt-4 flex flex-wrap gap-2">
                 <Link
                   href={`/register?from=${fromParam}`}
-                  className="rounded-full bg-[#C44B2E] px-4 py-2 text-sm font-semibold text-white no-underline"
+                  className="rounded-full bg-brick px-4 py-2 text-sm font-semibold text-white no-underline"
                 >
                   Create Account
                 </Link>
                 <Link
                   href={`/login?from=${fromParam}`}
-                  className="rounded-full border border-[#D8CDBD] px-4 py-2 text-sm font-semibold text-[#1A1815] no-underline"
+                  className="rounded-full border border-[#D8CDBD] px-4 py-2 text-sm font-semibold text-ink no-underline"
                 >
                   Sign In
                 </Link>
@@ -160,25 +160,25 @@ export default async function WorkspaceInvitePage({
               )}
               {activeMemberships.length > 0 ? (
                 <div className="space-y-2">
-                  <p className="text-sm font-semibold text-[#1A1815]">
+                  <p className="text-sm font-semibold text-ink">
                     Active institution workspaces
                   </p>
                   {activeMemberships.map((membership) => (
                     <MembershipCard key={membership.id} membership={membership} />
                   ))}
                   {!hasAccess && (
-                    <p className="text-sm text-[#6B6255]">
+                    <p className="text-sm text-ink-muted">
                       This institution account isn&apos;t active right now, so Pro access is paused.
                       Ask the person who owns the account.
                     </p>
                   )}
                 </div>
               ) : (
-                <div className="rounded-lg border border-[#E8DFD1] bg-white/70 p-4">
-                  <p className="text-sm font-semibold text-[#1A1815]">
+                <div className="rounded-lg border border-border bg-white/70 p-4">
+                  <p className="text-sm font-semibold text-ink">
                     No institution workspace for {userEmail} yet
                   </p>
-                  <p className="mt-2 text-sm text-[#6B6255]">
+                  <p className="mt-2 text-sm text-ink-muted">
                     Open the invite link the institution owner sent you. If you don&apos;t have one,
                     ask them to invite this exact email from Hamilton Settings and send you the link.
                     {!hasAccess && " If you want a workspace of your own, see the Pro plans."}
@@ -186,7 +186,7 @@ export default async function WorkspaceInvitePage({
                   {!hasAccess && (
                     <Link
                       href="/subscribe"
-                      className="mt-4 inline-flex rounded-full border border-[#D8CDBD] px-4 py-2 text-sm font-semibold text-[#1A1815] no-underline"
+                      className="mt-4 inline-flex rounded-full border border-[#D8CDBD] px-4 py-2 text-sm font-semibold text-ink no-underline"
                     >
                       See Pro plans
                     </Link>

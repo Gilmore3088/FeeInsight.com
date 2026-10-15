@@ -46,15 +46,15 @@ export function SavedInstitutionsPanel({
   return (
     <section
       aria-labelledby="your-institutions-heading"
-      className="mt-8 rounded-xl border border-[#1A1815]/15 bg-white/80 px-6 py-5"
+      className="mt-8 rounded-xl border border-ink/15 bg-white/80 px-6 py-5"
     >
-      <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-[#1A1815]/50">
+      <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-ink/50">
         Your institutions
       </p>
       <h2
         id="your-institutions-heading"
-        className="mt-2 text-[17px] font-medium text-[#1A1815]"
-        style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
+        className="mt-2 text-[17px] font-bold text-ink"
+        style={{ fontFamily: "var(--fi-font-sans)" }}
       >
         What you pay for {categoryLabel}
       </h2>
@@ -65,25 +65,25 @@ export function SavedInstitutionsPanel({
           return (
             <li
               key={inst.institution_id}
-              className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 border-b border-[#E8DFD1]/60 pb-2.5 last:border-0 last:pb-0"
+              className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 border-b border-border/60 pb-2.5 last:border-0 last:pb-0"
             >
               <Link
                 href={`/institution/${inst.institution_id}?fee=${category}#fee-${category}`}
-                className="text-[14px] font-medium text-[#1A1815] transition-colors hover:text-[#A93D25]"
+                className="text-[14px] font-medium text-ink transition-colors hover:text-brick"
               >
                 {inst.institution_name}
                 {inst.state_code && (
-                  <span className="ml-1.5 text-[11px] font-normal text-[#6B6255]">
+                  <span className="ml-1.5 text-[11px] font-normal text-ink-muted">
                     {inst.state_code}
                   </span>
                 )}
               </Link>
               {inst.amount === null ? (
-                <span className="text-[12px] text-[#6B6255]">
+                <span className="text-[12px] text-ink-muted">
                   No published {categoryLabel}
                 </span>
               ) : (
-                <span className="text-[15px] font-semibold tabular-nums text-[#1A1815]">
+                <span className="text-[15px] font-semibold tabular-nums text-ink">
                   {formatAmount(inst.amount)}
                   {delta !== null && (
                     <span
@@ -92,7 +92,7 @@ export function SavedInstitutionsPanel({
                           ? "text-red-700"
                           : delta < 0
                             ? "text-emerald-700"
-                            : "text-[#6B6255]"
+                            : "text-ink-muted"
                       }`}
                     >
                       {delta > 0
@@ -108,9 +108,9 @@ export function SavedInstitutionsPanel({
           );
         })}
       </ul>
-      <p className="mt-3 text-[11px] text-[#6B6255]">
+      <p className="mt-3 text-[11px] text-ink-muted">
         We&rsquo;ll email you when one of these changes.{" "}
-        <Link href="/account#alerts" className="text-[#A93D25] hover:underline">
+        <Link href="/account#alerts" className="text-brick hover:underline">
           Manage your alerts
         </Link>
       </p>

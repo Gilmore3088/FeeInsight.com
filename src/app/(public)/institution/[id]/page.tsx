@@ -24,7 +24,6 @@ import { getDisplayName } from "@/lib/fee-taxonomy";
 import { FeeAlertControl } from "./fee-alert-control";
 import { PeerRankTeaser } from "./peer-rank-teaser";
 import { getInstitutionPeerRankCached, getPeerIndexCached } from "@/lib/data-store/public-cached-reads";
-import { ProNextStep } from "@/components/public/pro-next-step";
 import { InfoTip } from "@/components/public/info-tip";
 import { SITE_NAME } from "@/lib/constants";
 import { computeInstitutionRating, generateInterpretation } from "@/lib/institution-rating";
@@ -285,7 +284,7 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
         ]}
       />
 
-      <div className="min-h-screen bg-[#FAF7F2] text-[#1A1815]">
+      <div className="min-h-screen bg-paper text-ink">
         <div className="mx-auto max-w-page px-4 py-5 sm:px-6 sm:py-7">
           <ProfileHeader
             name={inst.institution_name}
@@ -312,10 +311,10 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
           <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start">
             <div className="min-w-0 space-y-6">
               {/* The answer first: what this institution charges. */}
-              <section className="border border-[#E0D7C9] bg-white">
-                <div className="border-b border-[#E0D7C9] px-4 py-3 sm:px-5">
+              <section className="border border-border bg-white">
+                <div className="border-b border-border px-4 py-3 sm:px-5">
                   <div className="flex items-center gap-1.5">
-                    <h2 className="text-lg font-semibold text-[#1A1815]">Published fees</h2>
+                    <h2 className="text-lg font-semibold text-ink">Published fees</h2>
                     <InfoTip label="About published fees">
                       Published fees power benchmarks; fees under review do not.
                     </InfoTip>
@@ -336,16 +335,16 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
                   </>
                 ) : (
                   <div className="px-4 py-8 sm:px-5">
-                    <div className="rounded-lg border border-[#E0D7C9] bg-[#FAF7F2] p-4">
-                      <p className="text-sm font-semibold text-[#1A1815]">
+                    <div className="rounded-lg border border-border bg-paper p-4">
+                      <p className="text-sm font-semibold text-ink">
                         {underReviewCount > 0
                           ? "Fees for this institution are under review."
                           : "No published schedule found."}
                       </p>
-                      <p className="mt-1 text-sm leading-relaxed text-[#6B6255]">
+                      <p className="mt-1 text-sm leading-relaxed text-ink-muted">
                         {underReviewCount > 0
-                          ? "Fees will appear here once review is complete."
-                          : "Fee comparisons are withheld until a published fee schedule has been reviewed."}
+                          ? "They appear here once review is done."
+                          : "Comparisons start once a schedule is reviewed."}
                       </p>
                     </div>
                   </div>
@@ -353,6 +352,24 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
               </section>
 
               {peerRank && !thinProfile && <PeerRankTeaser rank={peerRank} reportOfferHref={links.reportOfferHref} />}
+
+              {/* The ask comes right after the fees, not after the financials (growth OS review S7). */}
+              {thinProfile ? (
+                <ThinProfilePanel
+                  status={status}
+                  verifiedCount={verifiedFees.length}
+                  correctSourceHref={links.correctSourceHref}
+                  claimHref={links.claimHref}
+                />
+              ) : (
+                <InstitutionOfferBand
+                  institutionName={inst.institution_name}
+                  reportOfferHref={links.reportOfferHref}
+                  plansHref={links.plansHref}
+                  correctSourceHref={links.correctSourceHref}
+                  isPro={isPro}
+                />
+              )}
 
               <FeeAlertControl
                 institutionId={instId}
@@ -386,24 +403,6 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
                 assetsDollars={assetsDollars}
               />
 
-              {thinProfile ? (
-                <ThinProfilePanel
-                  status={status}
-                  verifiedCount={verifiedFees.length}
-                  correctSourceHref={links.correctSourceHref}
-                  claimHref={links.claimHref}
-                />
-              ) : (
-                <>
-                  <InstitutionOfferBand
-                    institutionName={inst.institution_name}
-                    reportOfferHref={links.reportOfferHref}
-                    correctSourceHref={links.correctSourceHref}
-                  />
-                  {!isPro && <ProNextStep />}
-                </>
-              )}
-
               <FinancialContext latest={latestFinancial} history={normalizedFinancials} />
 
               {(isPro
@@ -422,6 +421,7 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
                   regulatoryWatch={regulatoryWatch}
                   exportHref={`/api/v1/institutions?id=${instId}&view=benchmark&format=csv`}
                   institutionName={inst.institution_name}
+                  plansHref={links.plansHref}
                 />
               )}
             </div>

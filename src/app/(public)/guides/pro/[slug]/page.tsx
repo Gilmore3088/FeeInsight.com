@@ -132,56 +132,56 @@ export default async function ProGuidePage({ params }: PageProps) {
 
       <nav
         aria-label="Breadcrumb"
-        className="mb-8 flex items-center gap-2 text-[12px] text-[#6B6255]"
+        className="mb-8 flex items-center gap-2 text-[12px] text-ink-muted"
       >
-        <Link href="/" className="transition-colors hover:text-[#1A1815]">
+        <Link href="/" className="transition-colors hover:text-ink">
           Home
         </Link>
-        <span className="text-[#D4C9BA]" aria-hidden="true">
+        <span className="text-border" aria-hidden="true">
           /
         </span>
-        <Link href="/guides" className="transition-colors hover:text-[#1A1815]">
+        <Link href="/guides" className="transition-colors hover:text-ink">
           Guides
         </Link>
-        <span className="text-[#D4C9BA]" aria-hidden="true">
+        <span className="text-border" aria-hidden="true">
           /
         </span>
-        <span className="truncate text-[#5A5347]">{guide.title}</span>
+        <span className="truncate text-ink-soft">{guide.title}</span>
       </nav>
 
       <div className="max-w-3xl">
         <div className="mb-4 flex items-center gap-2">
-          <span className="h-px w-8 bg-[#1A1815]/30" aria-hidden="true" />
-          <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#1A1815]/60">
+          <span className="h-px w-8 bg-ink/30" aria-hidden="true" />
+          <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-ink/60">
             Professional Guide
           </span>
         </div>
 
         <h1
-          className="text-[1.75rem] leading-[1.12] tracking-[-0.02em] text-[#1A1815] sm:text-[2.25rem]"
-          style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
+          className="font-extrabold text-[1.75rem] leading-[1.12] tracking-[-0.02em] text-ink sm:text-[2.25rem]"
+          style={{ fontFamily: "var(--fi-font-sans)" }}
         >
           {guide.title}
         </h1>
 
-        <p className="mt-4 text-[15px] leading-relaxed text-[#6B6255]">
+        <p className="mt-4 text-[15px] leading-relaxed text-ink-muted">
           {guide.description}
         </p>
 
-        <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-[#6B6255]">
+        <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-ink-muted">
           <span>{guide.author}</span>
           {reviewDate && (
             <>
-              <span className="h-3 w-px bg-[#D4C9BA]" aria-hidden="true" />
+              <span className="h-3 w-px bg-border" aria-hidden="true" />
               <span>Reviewed {reviewDate}</span>
             </>
           )}
           {guide.methodologyHref && (
             <>
-              <span className="h-3 w-px bg-[#D4C9BA]" aria-hidden="true" />
+              <span className="h-3 w-px bg-border" aria-hidden="true" />
               <Link
                 href={guide.methodologyHref}
-                className="text-[#A93D25]/70 transition-colors hover:text-[#A93D25]"
+                className="text-brick/70 transition-colors hover:text-brick"
               >
                 Methodology
               </Link>
@@ -193,10 +193,10 @@ export default async function ProGuidePage({ params }: PageProps) {
       {!isPro ? (
         <div className="mt-10 max-w-2xl">
           <UpgradeGate message={`"${guide.title}" is part of the professional guide set`} />
-          <p className="mt-6 text-[14px] leading-relaxed text-[#6B6255]">
+          <p className="mt-6 text-[14px] leading-relaxed text-ink-muted">
             Every consumer fee guide on this site is free and ungated, including for
             subscribers.{" "}
-            <Link href="/guides" className="font-medium text-[#C44B2E]">
+            <Link href="/guides" className="font-medium text-brick">
               Browse the consumer guides
             </Link>
             .
@@ -210,21 +210,21 @@ export default async function ProGuidePage({ params }: PageProps) {
                 <Link
                   key={fee.fee_category}
                   href={`/fees/${fee.fee_category}`}
-                  className="group rounded-xl border border-[#E8DFD1]/80 bg-white/70 px-5 py-4 no-underline transition-all hover:border-[#C44B2E]/20 hover:shadow-md hover:shadow-[#C44B2E]/5"
+                  className="group rounded-xl border border-border/80 bg-white/70 px-5 py-4 no-underline transition-all hover:border-brick/20 hover:shadow-md hover:shadow-[#b23a32]/5"
                 >
-                  <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-[#6B6255] transition-colors group-hover:text-[#A93D25]/70">
+                  <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted transition-colors group-hover:text-brick/70">
                     {getDisplayName(fee.fee_category)}
                   </p>
                   <p
-                    className="mt-2 text-[26px] font-light tracking-tight tabular-nums text-[#1A1815]"
-                    style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
+                    className="mt-2 text-[26px] font-semibold tracking-tight tabular-nums text-ink"
+                    style={{ fontFamily: "var(--fi-font-mono)" }}
                   >
                     {formatAmount(fee.median_amount)}
-                    <span className="ml-2 font-sans text-[11px] font-normal text-[#6B6255]">
+                    <span className="ml-2 font-sans text-[11px] font-normal text-ink-muted">
                       median
                     </span>
                   </p>
-                  <p className="mt-1 text-[11px] tabular-nums text-[#6B6255]">
+                  <p className="mt-1 text-[11px] tabular-nums text-ink-muted">
                     {fee.institution_count.toLocaleString()} institutions
                   </p>
                 </Link>
@@ -247,13 +247,13 @@ export default async function ProGuidePage({ params }: PageProps) {
           <div className="mt-12 flex flex-wrap gap-3">
             <Link
               href="/pro/peers"
-              className="inline-flex items-center gap-1.5 rounded-full bg-[#1A1815] px-5 py-2.5 text-[13px] font-semibold text-white no-underline transition-colors hover:bg-[#33302B]"
+              className="inline-flex items-center gap-1.5 rounded-full bg-ink px-5 py-2.5 text-[13px] font-semibold text-white no-underline transition-colors hover:bg-[#33302B]"
             >
               Open the peer tools
             </Link>
             <Link
               href="/research"
-              className="inline-flex items-center gap-1.5 rounded-full border border-[#E8DFD1] bg-white/80 px-5 py-2.5 text-[13px] font-medium text-[#5A5347] no-underline transition-all hover:border-[#C44B2E]/30 hover:text-[#A93D25]"
+              className="inline-flex items-center gap-1.5 rounded-full border border-border bg-white/80 px-5 py-2.5 text-[13px] font-medium text-ink-soft no-underline transition-all hover:border-brick/30 hover:text-brick"
             >
               State &amp; district reports
             </Link>
@@ -266,27 +266,27 @@ export default async function ProGuidePage({ params }: PageProps) {
           <div className="mb-5 flex items-center gap-3">
             <h2
               id="related-heading"
-              className="text-[16px] font-medium text-[#1A1815]"
-              style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
+              className="text-[16px] font-bold text-ink"
+              style={{ fontFamily: "var(--fi-font-sans)" }}
             >
               More Professional Guides
             </h2>
-            <span className="h-px flex-1 bg-[#E8DFD1]" aria-hidden="true" />
+            <span className="h-px flex-1 bg-border" aria-hidden="true" />
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
             {related.map((g) => (
               <Link
                 key={g.slug}
                 href={`/guides/pro/${g.slug}`}
-                className="group rounded-xl border border-[#E8DFD1]/80 bg-white/70 px-5 py-4 no-underline transition-all hover:border-[#C44B2E]/20 hover:shadow-md hover:shadow-[#C44B2E]/5"
+                className="group rounded-xl border border-border/80 bg-white/70 px-5 py-4 no-underline transition-all hover:border-brick/20 hover:shadow-md hover:shadow-[#b23a32]/5"
               >
                 <span
-                  className="text-[14px] font-medium text-[#1A1815] transition-colors group-hover:text-[#A93D25]"
-                  style={{ fontFamily: "var(--font-newsreader), Georgia, serif" }}
+                  className="text-[14px] font-semibold text-ink transition-colors group-hover:text-brick"
+                  style={{ fontFamily: "var(--fi-font-sans)" }}
                 >
                   {g.title}
                 </span>
-                <span className="mt-1 line-clamp-2 block text-[12px] text-[#6B6255]">
+                <span className="mt-1 line-clamp-2 block text-[12px] text-ink-muted">
                   {g.description}
                 </span>
               </Link>

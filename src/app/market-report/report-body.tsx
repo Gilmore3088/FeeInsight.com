@@ -23,7 +23,8 @@ import { HamiltonClose } from "./[token]/hamilton-close";
 import type { CheckingLineupView } from "@/lib/custom-report/checking-lineup";
 import { CheckingLineupSection } from "./checking-lineup-section";
 
-const SERIF = { fontFamily: "var(--font-newsreader), Georgia, serif" };
+const SERIF = { fontFamily: "var(--fi-font-sans)" };
+const MONO_FIGURE = { fontFamily: "var(--fi-font-mono)" } as const;
 const DATE = new Intl.DateTimeFormat("en-US", { month: "long", day: "numeric", year: "numeric", timeZone: "UTC" });
 
 export function money(value: number | null | undefined): string {
@@ -39,14 +40,14 @@ export const POSITION_LABEL: Record<LinePosition, string> = {
 };
 
 const POSITION_CLASS: Record<LinePosition, string> = {
-  above_market: "bg-[#FBE9E4] text-[#A93D25]",
+  above_market: "bg-[#FBE9E4] text-brick",
   in_market: "bg-[#EEF3EC] text-[#3D6B3A]",
   below_market: "bg-[#E8EEF6] text-[#2F5585]",
   free: "bg-[#E8EEF6] text-[#2F5585]",
 };
 
 function PositionChip({ line }: { line: ReportLine }) {
-  if (!line.position) return <span className="text-[12px] text-[#8A8173]">—</span>;
+  if (!line.position) return <span className="text-[12px] text-ink-muted">—</span>;
   return (
     <span className={`inline-block rounded-full px-2 py-0.5 text-[11px] font-semibold ${POSITION_CLASS[line.position]}`}>
       {POSITION_LABEL[line.position]}
@@ -109,39 +110,39 @@ function RevenueSection({ name, charterType, revenue }: { name: string; charterT
   const latest = revenue.quarters[0];
   const filing = charterType === "credit_union" ? "NCUA 5300 Call Report" : "FDIC Call Report";
   return (
-    <section className="mt-8 rounded-xl border border-[#E0D7C9] bg-[#FDFBF8] p-6" aria-labelledby="revenue-heading">
-      <h2 id="revenue-heading" className="text-xl text-[#1A1815]" style={SERIF}>
+    <section className="mt-8 rounded-xl border border-border bg-surface-0 p-6" aria-labelledby="revenue-heading">
+      <h2 id="revenue-heading" className="font-bold text-xl text-ink" style={SERIF}>
         Fee income behind these prices
       </h2>
       <dl className="mt-4 grid gap-4 sm:grid-cols-3">
         <div>
-          <dt className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[#6B6255]">
+          <dt className="text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-muted">
             Deposit service charges, {quarterLabel(latest.quarter)}
           </dt>
-          <dd className="mt-1 text-[1.35rem] tabular-nums text-[#1A1815]" style={SERIF}>
+          <dd className="font-semibold mt-1 text-[1.35rem] tabular-nums text-ink" style={MONO_FIGURE}>
             {incomeLabel(latest.thousands)}
           </dd>
         </div>
         {revenue.trailingThousands !== null && (
           <div>
-            <dt className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[#6B6255]">Last four quarters</dt>
-            <dd className="mt-1 text-[1.35rem] tabular-nums text-[#1A1815]" style={SERIF}>
+            <dt className="text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-muted">Last four quarters</dt>
+            <dd className="font-semibold mt-1 text-[1.35rem] tabular-nums text-ink" style={MONO_FIGURE}>
               {incomeLabel(revenue.trailingThousands)}
             </dd>
           </div>
         )}
         {revenue.peer && (
           <div>
-            <dt className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[#6B6255]">
+            <dt className="text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-muted">
               Median for its size, {quarterLabel(latest.quarter)}
             </dt>
-            <dd className="mt-1 text-[1.35rem] tabular-nums text-[#1A1815]" style={SERIF}>
+            <dd className="font-semibold mt-1 text-[1.35rem] tabular-nums text-ink" style={MONO_FIGURE}>
               {incomeLabel(revenue.peer.medianThousands)}
             </dd>
           </div>
         )}
       </dl>
-      <p className="mt-4 text-[13px] leading-relaxed text-[#5A5347]">
+      <p className="mt-4 text-[13px] leading-relaxed text-ink-soft">
         {name} reported these figures in its {filing}.
         {revenue.peer &&
           ` Among the ${revenue.peer.count.toLocaleString("en-US")} institutions of its size (${revenue.peer.tierLabel} in assets) that reported for the quarter, it ranks ${revenue.peer.rank.toLocaleString("en-US")} by this income, where 1 is the highest.`}{" "}
@@ -165,13 +166,13 @@ export function MarketReportBody({ report, eyebrow, preparedOn, actions, contact
 
   return (
     <>
-      <section className="flex flex-col gap-5 rounded-xl border border-[#E0D7C9] bg-[#FDFBF8] p-6 md:flex-row md:items-center md:justify-between">
+      <section className="flex flex-col gap-5 rounded-xl border border-border bg-surface-0 p-6 md:flex-row md:items-center md:justify-between">
         <div>
-          <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#A93D25]">{eyebrow}</p>
-          <Title className="mt-2 text-[1.5rem] leading-tight tracking-[-0.02em] text-[#1A1815] sm:text-[1.85rem]" style={SERIF}>
+          <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-brick">{eyebrow}</p>
+          <Title className="font-semibold mt-2 text-[1.5rem] leading-tight tracking-[-0.02em] text-ink sm:text-[1.85rem]" style={SERIF}>
             {name} against its local market
           </Title>
-          <p className="mt-2 text-[14px] text-[#5A5347]">
+          <p className="mt-2 text-[14px] text-ink-soft">
             {marketLabel} · verified fees for {analysis.readiness.competitorsWithData} of{" "}
             {analysis.readiness.competitorsInMarket} local competitors · prepared{" "}
             {DATE.format(preparedOn)} by {SITE_NAME}
@@ -181,11 +182,11 @@ export function MarketReportBody({ report, eyebrow, preparedOn, actions, contact
       </section>
 
       {!analysis.readiness.ready ? (
-        <section className="mt-8 rounded-xl border border-[#E0D7C9] bg-[#FDFBF8] p-6">
-          <h2 className="text-xl text-[#1A1815]" style={SERIF}>
+        <section className="mt-8 rounded-xl border border-border bg-surface-0 p-6">
+          <h2 className="font-bold text-xl text-ink" style={SERIF}>
             This market is being refreshed
           </h2>
-          <p className="mt-2 text-sm leading-relaxed text-[#5A5347]">
+          <p className="mt-2 text-sm leading-relaxed text-ink-soft">
             {analysis.readiness.reason} We only show a comparison when the local data supports it.{" "}
             <a href={contactHref} className="underline">
               Send us a question
@@ -196,7 +197,7 @@ export function MarketReportBody({ report, eyebrow, preparedOn, actions, contact
       ) : (
         <>
           {savedAt && (
-            <p className="mt-6 rounded-md border border-[#E0D7C9] bg-[#FDFBF8] px-4 py-3 text-sm text-[#5A5347]" role="status">
+            <p className="mt-6 rounded-md border border-border bg-surface-0 px-4 py-3 text-sm text-ink-soft" role="status">
               These figures are the ones saved on {DATE.format(new Date(savedAt))}, when this report was bought. Our live
               data for your market is being refreshed; the report switches back to live figures once it passes our checks
               again.
@@ -204,29 +205,29 @@ export function MarketReportBody({ report, eyebrow, preparedOn, actions, contact
           )}
           <AtAGlance lines={analysis.lines} />
           {sinceBought && <SinceBought savedAt={sinceBought.savedAt} changes={sinceBought.changes} />}
-          <section className="mt-8 rounded-xl border border-[#E0D7C9] bg-[#FDFBF8] p-6" aria-labelledby="findings-heading">
-            <h2 id="findings-heading" className="text-xl text-[#1A1815]" style={SERIF}>
+          <section className="mt-8 rounded-xl border border-border bg-surface-0 p-6" aria-labelledby="findings-heading">
+            <h2 id="findings-heading" className="font-bold text-xl text-ink" style={SERIF}>
               What stands out
             </h2>
-            <ul className="mt-3 space-y-2 text-[15px] leading-relaxed text-[#1A1815]">
+            <ul className="mt-3 space-y-2 text-[15px] leading-relaxed text-ink">
               {analysis.findings.map((finding) => (
                 <li key={finding} className="flex gap-2">
-                  <span className="text-[#A93D25]">●</span>
+                  <span className="text-brick">●</span>
                   {finding}
                 </li>
               ))}
             </ul>
           </section>
 
-          <section className="mt-8 overflow-x-auto rounded-xl border border-[#E0D7C9] bg-[#FDFBF8] p-6" aria-labelledby="lines-heading">
-            <h2 id="lines-heading" className="text-xl text-[#1A1815]" style={SERIF}>
+          <section className="mt-8 overflow-x-auto rounded-xl border border-border bg-surface-0 p-6" aria-labelledby="lines-heading">
+            <h2 id="lines-heading" className="font-bold text-xl text-ink" style={SERIF}>
               Your fees against local competitors
             </h2>
-            <p className="mt-1 text-[13px] text-[#6B6255]">
+            <p className="mt-1 text-[13px] text-ink-muted">
               A line is compared only when at least {MIN_LOCAL_PEERS_PER_LINE} local competitors publish it.
             </p>
             <table className="mt-4 w-full min-w-[640px] text-left text-sm">
-              <thead className="border-b border-[#E0D7C9] text-[11px] uppercase tracking-[0.08em] text-[#6B6255]">
+              <thead className="border-b border-border text-[11px] uppercase tracking-[0.08em] text-ink-muted">
                 <tr>
                   <th className="py-2 pr-3 font-semibold">Fee</th>
                   <th className="py-2 pr-3 text-right font-semibold">Yours</th>
@@ -239,12 +240,12 @@ export function MarketReportBody({ report, eyebrow, preparedOn, actions, contact
               </thead>
               <tbody>
                 {analysis.lines.map((line) => (
-                  <tr key={line.key} className="border-b border-[#EFE8DD] last:border-0">
-                    <td className="py-2 pr-3 text-[#1A1815]">{line.label}</td>
+                  <tr key={line.key} className="border-b border-surface-200 last:border-0">
+                    <td className="py-2 pr-3 text-ink">{line.label}</td>
                     <td className="py-2 pr-3 text-right tabular-nums">
                       {line.own ? money(line.own.amount) : "Not found"}
                       {line.own?.tiers && line.own.tiers.length > 1 && (
-                        <span className="block text-[11px] text-[#8A8173]">
+                        <span className="block text-[11px] text-ink-muted">
                           tiered: {line.own.tiers.map((tier) => money(tier.amount)).join(" / ")}
                         </span>
                       )}
@@ -258,7 +259,7 @@ export function MarketReportBody({ report, eyebrow, preparedOn, actions, contact
                       {line.chargingLess !== null && line.peers ? `${line.chargingLess} of ${line.peers.n}` : "—"}
                     </td>
                     <td className="py-2">
-                      {line.comparable ? <PositionChip line={line} /> : <span className="text-[12px] text-[#8A8173]">Not enough local data</span>}
+                      {line.comparable ? <PositionChip line={line} /> : <span className="text-[12px] text-ink-muted">Not enough local data</span>}
                     </td>
                   </tr>
                 ))}
@@ -271,11 +272,11 @@ export function MarketReportBody({ report, eyebrow, preparedOn, actions, contact
           {revenue && <RevenueSection name={name} charterType={data.subject.charter_type} revenue={revenue} />}
 
           {analysis.named.length > 0 && (
-            <section className="mt-8 overflow-x-auto rounded-xl border border-[#E0D7C9] bg-[#FDFBF8] p-6" aria-labelledby="named-heading">
-              <h2 id="named-heading" className="text-xl text-[#1A1815]" style={SERIF}>
+            <section className="mt-8 overflow-x-auto rounded-xl border border-border bg-surface-0 p-6" aria-labelledby="named-heading">
+              <h2 id="named-heading" className="font-bold text-xl text-ink" style={SERIF}>
                 Named competitors, same lines
               </h2>
-              <p className="mt-1 text-[13px] text-[#6B6255]">
+              <p className="mt-1 text-[13px] text-ink-muted">
                 Banks by deposits held in your market (FDIC Summary of Deposits, {market.sod_year}), then up to{" "}
                 {NAMED_WITHOUT_DEPOSITS} credit unions, which the Summary of Deposits does not cover, chosen by how many of
                 your fees they publish. Each amount links to the schedule it was read from.
@@ -283,7 +284,7 @@ export function MarketReportBody({ report, eyebrow, preparedOn, actions, contact
                   ` The market's ${branches.totalBranches.toLocaleString("en-US")} bank branches hold ${depositsLabel(branches.totalDeposits)} in deposits; under each bank are its branches and share of those deposits. Credit unions show branches only, in the market's cities, because NCUA reports no deposits by branch.`}
               </p>
               <table className="mt-4 w-full min-w-[760px] text-left text-sm">
-                <thead className="border-b border-[#E0D7C9] text-[11px] uppercase tracking-[0.08em] text-[#6B6255]">
+                <thead className="border-b border-border text-[11px] uppercase tracking-[0.08em] text-ink-muted">
                   <tr>
                     <th className="min-w-[240px] py-2 pr-3 font-semibold">Institution</th>
                     {tableKeys.map((key) => (
@@ -294,11 +295,11 @@ export function MarketReportBody({ report, eyebrow, preparedOn, actions, contact
                   </tr>
                 </thead>
                 <tbody>
-                  <tr className="border-b border-[#EFE8DD] bg-[#FBF3EF] font-semibold">
+                  <tr className="border-b border-surface-200 bg-[#FBF3EF] font-semibold">
                     <td className="py-2 pr-3">
                       {name}
                       {footprintLine(branches, data.subject.institution_id) && (
-                        <span className="block whitespace-nowrap text-[12px] font-normal text-[#6B6255]">{footprintLine(branches, data.subject.institution_id)}</span>
+                        <span className="block whitespace-nowrap text-[12px] font-normal text-ink-muted">{footprintLine(branches, data.subject.institution_id)}</span>
                       )}
                     </td>
                     {tableKeys.map((key) => (
@@ -308,14 +309,14 @@ export function MarketReportBody({ report, eyebrow, preparedOn, actions, contact
                     ))}
                   </tr>
                   {analysis.named.map((competitor) => (
-                    <tr key={competitor.institution_id} className="border-b border-[#EFE8DD] last:border-0">
+                    <tr key={competitor.institution_id} className="border-b border-surface-200 last:border-0">
                       <td className="py-2 pr-3">
-                        <a href={`/institution/${competitor.institution_id}`} className="text-[#1A1815] underline-offset-2 hover:underline">
+                        <a href={`/institution/${competitor.institution_id}`} className="text-ink underline-offset-2 hover:underline">
                           {competitor.institution_name}
                         </a>
-                        {competitor.city && <span className="whitespace-nowrap text-[12px] text-[#8A8173]"> · {cityLabel(competitor.city)}</span>}
+                        {competitor.city && <span className="whitespace-nowrap text-[12px] text-ink-muted"> · {cityLabel(competitor.city)}</span>}
                         {footprintLine(branches, competitor.institution_id) && (
-                          <span className="block whitespace-nowrap text-[12px] text-[#6B6255]">{footprintLine(branches, competitor.institution_id)}</span>
+                          <span className="block whitespace-nowrap text-[12px] text-ink-muted">{footprintLine(branches, competitor.institution_id)}</span>
                         )}
                       </td>
                       {tableKeys.map((key) => {
@@ -326,7 +327,7 @@ export function MarketReportBody({ report, eyebrow, preparedOn, actions, contact
                               <a
                                 href={source.source_url}
                                 title={`“${source.source_line}”`}
-                                className="underline decoration-[#D5CBBF] underline-offset-2 hover:decoration-[#A93D25]"
+                                className="underline decoration-border underline-offset-2 hover:decoration-brick"
                                 rel="noopener noreferrer"
                                 target="_blank"
                               >
@@ -345,8 +346,8 @@ export function MarketReportBody({ report, eyebrow, preparedOn, actions, contact
             </section>
           )}
 
-          <section className="mt-8 rounded-xl border border-[#E0D7C9] bg-[#FDFBF8] p-6 text-[13px] leading-relaxed text-[#5A5347]" aria-labelledby="method-heading">
-            <h2 id="method-heading" className="text-lg text-[#1A1815]" style={SERIF}>
+          <section className="mt-8 rounded-xl border border-border bg-surface-0 p-6 text-[13px] leading-relaxed text-ink-soft" aria-labelledby="method-heading">
+            <h2 id="method-heading" className="font-bold text-lg text-ink" style={SERIF}>
               Sources and method
             </h2>
             <p className="mt-2">
@@ -392,21 +393,21 @@ export function MarketReportBody({ report, eyebrow, preparedOn, actions, contact
                   </li>
                 ))}
             </ul>
-            <details className="mt-4 rounded-md border border-[#E0D7C9] bg-white/60 p-3">
-              <summary className="cursor-pointer font-semibold text-[#1A1815]">
+            <details className="mt-4 rounded-md border border-border bg-white/60 p-3">
+              <summary className="cursor-pointer font-semibold text-ink">
                 Every competitor figure behind the local numbers, with its source
               </summary>
               {comparable.map((line) => (
                 <div key={line.key} className="mt-4 overflow-x-auto">
-                  <h3 className="text-[13px] font-semibold text-[#1A1815]">
+                  <h3 className="text-[13px] font-semibold text-ink">
                     {line.label} ({line.peerFigures.length} competitors)
                   </h3>
                   <table className="mt-1 w-full min-w-[640px] text-left text-[12px]">
                     <tbody>
                       {line.peerFigures.map((figure) => (
-                        <tr key={figure.institution_id} className="border-b border-[#EFE8DD] last:border-0 align-top">
-                          <td className="py-1 pr-3 text-[#1A1815]">{competitorName.get(figure.institution_id) ?? `Institution ${figure.institution_id}`}</td>
-                          <td className="py-1 pr-3 text-right tabular-nums text-[#1A1815]">{money(figure.amount)}</td>
+                        <tr key={figure.institution_id} className="border-b border-surface-200 last:border-0 align-top">
+                          <td className="py-1 pr-3 text-ink">{competitorName.get(figure.institution_id) ?? `Institution ${figure.institution_id}`}</td>
+                          <td className="py-1 pr-3 text-right tabular-nums text-ink">{money(figure.amount)}</td>
                           <td className="py-1 pr-3">“{figure.source_line}”</td>
                           <td className="whitespace-nowrap py-1">
                             {figure.source_url ? (

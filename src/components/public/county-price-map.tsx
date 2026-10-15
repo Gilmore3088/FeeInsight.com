@@ -69,7 +69,7 @@ export function CountyPriceMap({ wide, narrow, details, price, feeNoun }: County
     if (!root) return;
     root.querySelectorAll<SVGPathElement>("path[data-fips]").forEach((p) => {
       const on = p.dataset.fips === selected;
-      p.setAttribute("stroke", on ? "#1A1815" : "#FFFFFF");
+      p.setAttribute("stroke", on ? "#132338" : "#FFFFFF");
       p.setAttribute("stroke-width", on ? "2.4" : "0.8");
       if (on) p.parentNode?.appendChild(p);
     });
@@ -85,7 +85,7 @@ export function CountyPriceMap({ wide, narrow, details, price, feeNoun }: County
     <div className="lg:mt-3 lg:grid lg:grid-cols-[minmax(0,1.8fr)_minmax(18rem,1fr)] lg:items-start lg:gap-6">
       <div
         ref={box}
-        className="relative mt-3 cursor-pointer rounded-xl lg:mt-0 border border-[#E8DFD1]/80 bg-white p-2"
+        className="relative mt-3 cursor-pointer rounded-xl lg:mt-0 border border-border/80 bg-white p-2"
         onMouseMove={(e) => {
           const fips = fipsAt(e.target);
           const rect = box.current?.getBoundingClientRect();
@@ -101,19 +101,19 @@ export function CountyPriceMap({ wide, narrow, details, price, feeNoun }: County
         {narrow && <Drawing html={narrow} className="sm:hidden" />}
         {hover && (
           <div
-            className="pointer-events-none absolute z-10 hidden w-max max-w-[16rem] rounded-lg border border-[#E8DFD1] bg-white px-3 py-2 text-[12px] shadow-md sm:block"
+            className="pointer-events-none absolute z-10 hidden w-max max-w-[16rem] rounded-lg border border-border bg-white px-3 py-2 text-[12px] shadow-md sm:block"
             style={{ left: Math.max(0, Math.min(hover.x + 14, hover.w - 200)), top: hover.y + 14 }}
           >
-            <p className="font-semibold text-[#1A1815]">{shown?.name ?? "County"}</p>
+            <p className="font-semibold text-ink">{shown?.name ?? "County"}</p>
             {shown?.fee != null ? (
-              <p className="tabular-nums text-[#5A5347]">
-                <b className="text-[#1A1815]">{money(Math.round(shown.fee * 100) / 100)}</b> · {versus(shown.fee, price)}
+              <p className="tabular-nums text-ink-soft">
+                <b className="text-ink">{money(Math.round(shown.fee * 100) / 100)}</b> · {versus(shown.fee, price)}
               </p>
             ) : (
-              <p className="text-[#6B6255]">No published {feeNoun} yet</p>
+              <p className="text-ink-muted">No published {feeNoun} yet</p>
             )}
             {shown && shown.institutions > 0 && (
-              <p className="text-[#6B6255]">
+              <p className="text-ink-muted">
                 {shown.institutions} {shown.institutions === 1 ? "institution" : "institutions"} · click for detail
               </p>
             )}
@@ -122,19 +122,19 @@ export function CountyPriceMap({ wide, narrow, details, price, feeNoun }: County
       </div>
 
       {open ? (
-        <div className="mt-3 rounded-xl border border-[#E8DFD1] bg-[#FAF7F2] p-4 lg:mt-0">
+        <div className="mt-3 rounded-xl border border-border bg-paper p-4 lg:mt-0">
           <div className="flex items-baseline justify-between gap-3">
-            <p className="text-[15px] font-semibold text-[#1A1815]">{open.name}</p>
-            <button type="button" onClick={() => setSelected(null)} className="text-[12px] text-[#A93D25] hover:underline">
+            <p className="text-[15px] font-semibold text-ink">{open.name}</p>
+            <button type="button" onClick={() => setSelected(null)} className="text-[12px] text-brick hover:underline">
               Close
             </button>
           </div>
-          <p className="mt-1 text-[13px] text-[#5A5347]">
+          <p className="mt-1 text-[13px] text-ink-soft">
             {open.institutions === 0 ? (
               <>No bank or credit union reports a branch here in the FDIC deposit data.</>
             ) : open.fee != null ? (
               <>
-                <b className="tabular-nums text-[#1A1815]">{money(Math.round(open.fee * 100) / 100)}</b> weighted {feeNoun},{" "}
+                <b className="tabular-nums text-ink">{money(Math.round(open.fee * 100) / 100)}</b> weighted {feeNoun},{" "}
                 {versus(open.fee, price)}.{" "}
               </>
             ) : (
@@ -150,18 +150,18 @@ export function CountyPriceMap({ wide, narrow, details, price, feeNoun }: County
             )}
           </p>
           {open.top.length > 0 && (
-            <ul className="mt-3 divide-y divide-[#E8DFD1]/70 rounded-lg border border-[#E8DFD1]/80 bg-white">
+            <ul className="mt-3 divide-y divide-border/70 rounded-lg border border-border/80 bg-white">
               {open.top.map((i) => (
                 <li key={i.id} className="flex items-baseline justify-between gap-3 px-3 py-2 text-[13px]">
                   <span className="min-w-0">
-                    <Link href={`/institution/${i.id}`} className="text-[#1A1815] hover:underline">
+                    <Link href={`/institution/${i.id}`} className="text-ink hover:underline">
                       {i.name}
                     </Link>{" "}
-                    <span className="text-[11px] text-[#6B6255]">{deposits(i.deposits)} here</span>
+                    <span className="text-[11px] text-ink-muted">{deposits(i.deposits)} here</span>
                   </span>
                   <span
                     className={`shrink-0 tabular-nums ${
-                      i.fee == null ? "text-[#A09788]" : i.fee > price ? "text-[#A93D25]" : i.fee < price ? "text-[#2F5A85]" : "text-[#1A1815]"
+                      i.fee == null ? "text-control-border" : i.fee > price ? "text-brick" : i.fee < price ? "text-[#2F5A85]" : "text-ink"
                     }`}
                   >
                     {i.fee == null ? "not on file" : money(Math.round(i.fee * 100) / 100)}
@@ -171,11 +171,11 @@ export function CountyPriceMap({ wide, narrow, details, price, feeNoun }: County
             </ul>
           )}
           {open.institutions > open.top.length && (
-            <p className="mt-2 text-[12px] text-[#6B6255]">The {open.top.length} largest by deposits in the county.</p>
+            <p className="mt-2 text-[12px] text-ink-muted">The {open.top.length} largest by deposits in the county.</p>
           )}
         </div>
       ) : (
-        <p className="mt-2 text-[12px] text-[#6B6255] lg:mt-0 lg:rounded-xl lg:border lg:border-dashed lg:border-[#E8DFD1] lg:p-4 lg:text-[13px]">Hover a county for its fee. Click or tap it to see the institutions there.</p>
+        <p className="mt-2 text-[12px] text-ink-muted lg:mt-0 lg:rounded-xl lg:border lg:border-dashed lg:border-border lg:p-4 lg:text-[13px]">Hover a county for its fee. Click or tap it to see the institutions there.</p>
       )}
     </div>
   );

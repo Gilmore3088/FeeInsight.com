@@ -82,14 +82,14 @@ export function SubscriptionActionForm({
 
   if (status === "done") {
     return (
-      <p className="mt-4 text-[15px] leading-relaxed text-[#1A1815]" role="status">
+      <p className="mt-4 text-[15px] leading-relaxed text-ink" role="status">
         {copy.done} <strong>{email}</strong>.
         {action === "confirm" ? (
-          <span className="mt-4 block text-[14px] text-[#5A5347]">
+          <span className="mt-4 block text-[14px] text-ink-soft">
             While you wait for the first one:{" "}
-            <Link href="/reports/benchmark/national" className="text-[#C44B2E] underline">open the national report</Link>
+            <Link href="/reports/benchmark/national" className="text-brick underline">open the national report</Link>
             {" "}or{" "}
-            <Link href="/research" className="text-[#C44B2E] underline">see your state&apos;s fees</Link>.
+            <Link href="/research" className="text-brick underline">see your state&apos;s fees</Link>.
           </span>
         ) : null}
       </p>
@@ -98,19 +98,19 @@ export function SubscriptionActionForm({
 
   return (
     <div className="mt-4 space-y-4">
-      <p className="text-[15px] leading-relaxed text-[#5A5347]">
-        {copy.prompt} <strong className="text-[#1A1815]">{email}</strong>?
+      <p className="text-[15px] leading-relaxed text-ink-soft">
+        {copy.prompt} <strong className="text-ink">{email}</strong>?
       </p>
       {action === "confirm" ? (
         <div className="space-y-1">
-          <label htmlFor="preferences-state" className="block text-[13px] text-[#5A5347]">
+          <label htmlFor="preferences-state" className="block text-[13px] text-ink-soft">
             Pick your state to also get its numbers each month.
           </label>
           <StateSelect
             id="preferences-state"
             value={state}
             onChange={setState}
-            className="w-full max-w-xs rounded-md border border-[#D4C9BA] bg-[#FAF7F2] px-3 py-2 text-[14px] text-[#1A1815] focus:outline-none focus:ring-1 focus:ring-[#C44B2E]/30"
+            className="w-full max-w-xs rounded-md border border-border bg-paper px-3 py-2 text-[14px] text-ink focus:outline-none focus:ring-1 focus:ring-brick/30"
           />
         </div>
       ) : null}
@@ -118,7 +118,7 @@ export function SubscriptionActionForm({
         type="button"
         onClick={submit}
         disabled={status === "loading"}
-        className="rounded-md bg-[#C44B2E] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#A93D25] disabled:opacity-50"
+        className="rounded-md bg-brick px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-brick-ink disabled:opacity-50"
       >
         {status === "loading" ? "Saving…" : copy.button}
       </button>

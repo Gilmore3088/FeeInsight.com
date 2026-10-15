@@ -10,7 +10,7 @@ import type { ReactNode } from "react";
 import { priceBands } from "@/lib/hamilton/fee-scenario";
 import type { AuditTrail } from "@/lib/hamilton/audit-trail";
 
-export const SERIF = { fontFamily: "var(--font-newsreader), Georgia, serif" } as const;
+export const SERIF = { fontFamily: "var(--fi-font-sans)" } as const;
 
 /** "reading" keeps a page to one column at a comfortable reading width; most pages use the wide grid. */
 export function MemoPage({ children, width = "wide" }: { children: ReactNode; width?: "wide" | "reading" }) {
@@ -63,7 +63,7 @@ export function MemoSection({
   return (
     <section id={id} className="flex flex-col gap-3">
       <div>
-        <h2 className="text-xl text-warm-900 sm:text-2xl" style={SERIF}>
+        <h2 className="font-bold text-xl text-warm-900 sm:text-2xl" style={SERIF}>
           {title}
         </h2>
         {note ? <p className="mt-1 text-pretty text-sm text-warm-600">{note}</p> : null}
@@ -88,7 +88,7 @@ export function Exhibit({
     <figure className="rounded-lg border border-warm-300 bg-warm-50 p-5">
       <figcaption className="mb-4 flex flex-wrap items-baseline gap-x-3">
         <span className="text-xs font-semibold uppercase tracking-[0.12em] text-terra-text">Exhibit {number}</span>
-        <span className="text-base text-warm-900" style={SERIF}>
+        <span className="font-semibold text-base text-warm-900" style={SERIF}>
           {title}
         </span>
       </figcaption>
@@ -162,7 +162,7 @@ export function Figure({ label, value, note }: { label: string; value: ReactNode
   return (
     <div className="min-w-0">
       <p className="text-xs font-medium uppercase tracking-[0.1em] text-warm-600">{label}</p>
-      <p className="mt-1 text-2xl text-warm-900" style={SERIF}>
+      <p className="font-semibold mt-1 text-2xl text-warm-900" style={SERIF}>
         {value}
       </p>
       {note ? <p className="mt-0.5 text-xs text-warm-600">{note}</p> : null}
@@ -601,7 +601,7 @@ export function QuestionCard({
     <form method="get" action={action} className="flex flex-col gap-3 rounded-lg border border-terra/40 bg-white p-5 shadow-sm">
       {Object.entries(keep).map(([k, v]) => (v ? <input key={k} type="hidden" name={k} value={v} /> : null))}
       <p className="text-xs font-medium uppercase tracking-[0.1em] text-terra-text">Hamilton has one question</p>
-      <label htmlFor={id} className="text-lg leading-snug text-warm-900" style={SERIF}>
+      <label htmlFor={id} className="font-semibold text-lg leading-snug text-warm-900" style={SERIF}>
         {prompt}
       </label>
       <p className="text-sm text-warm-700">{why}</p>
@@ -647,7 +647,7 @@ export function AuditPanel({
   return (
     <details open={open} className="group rounded-lg border border-warm-300 bg-warm-50 text-sm text-warm-800 print:border-0">
       <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-2 px-5 py-3">
-        <span className="text-base text-warm-900" style={SERIF}>
+        <span className="font-semibold text-base text-warm-900" style={SERIF}>
           How this was built
         </span>
         <span className="flex items-center gap-3 text-xs text-warm-600">

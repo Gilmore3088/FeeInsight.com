@@ -27,7 +27,7 @@ export function ResetPasswordForm({ token }: { token: string }) {
   if (done) {
     return (
       <div role="status" className={AUTH_FORM_CLASS}>
-        <p className="text-sm text-[#1A1815]">Your password is changed, and you&apos;re signed out on every device.</p>
+        <p className="text-sm text-ink">Your password is changed, and you&apos;re signed out on every device.</p>
         <Link href="/login" className={`block text-center ${AUTH_BUTTON_CLASS}`}>
           Sign in
         </Link>
@@ -49,14 +49,14 @@ export function ResetPasswordForm({ token }: { token: string }) {
         </div>
       )}
       <div>
-        <label htmlFor="password" className="block text-sm font-medium text-[#1A1815] mb-1">
+        <label htmlFor="password" className="block text-sm font-medium text-ink mb-1">
           New password
         </label>
         <input id="password" name="password" type="password" required minLength={8} autoComplete="new-password" className={AUTH_INPUT_CLASS} />
-        <p className="mt-1 text-xs text-[#6B6255]">At least 8 characters.</p>
+        <p className="mt-1 text-xs text-ink-muted">At least 8 characters.</p>
       </div>
       <div>
-        <label htmlFor="confirm" className="block text-sm font-medium text-[#1A1815] mb-1">
+        <label htmlFor="confirm" className="block text-sm font-medium text-ink mb-1">
           Confirm new password
         </label>
         <input id="confirm" name="confirm" type="password" required minLength={8} autoComplete="new-password" className={AUTH_INPUT_CLASS} />

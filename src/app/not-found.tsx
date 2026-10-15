@@ -12,7 +12,7 @@ export const metadata: Metadata = {
 /** Outside the public layout: supplies its own nav, main landmark, footer and ground. */
 export default function NotFound() {
   return (
-    <div className="min-h-screen bg-[#FAF7F2]">
+    <div className="min-h-screen bg-paper">
       <ConsumerNav />
       <main id="main-content">
         <NotFoundContent />
