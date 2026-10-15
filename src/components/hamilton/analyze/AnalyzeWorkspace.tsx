@@ -40,7 +40,28 @@ function extractTextFromMessage(message: { parts?: Array<{ type: string; text?: 
   );
 }
 
+/** Words that, alone, describe a kind of institution rather than name one ("Community Bank"). */
+const GENERIC_NAME_WORDS = new Set([
+  "the", "of", "and", "first", "national", "state", "community", "citizens", "peoples", "farmers", "american",
+  "united", "security", "savings", "trust", "federal", "credit", "union", "bank", "banks", "company", "co",
+]);
+
+/**
+ * The question names this institution as a whole phrase: "Capital City Bank's ATM fee" names
+ * "Capital City Bank". A name made only of generic words never counts, so "community bank
+ * overdraft fees in Pennsylvania" still reads as a market question.
+ */
+export function namesInstitution(question: string, name: string | null): boolean {
+  if (!name) return false;
+  const core = name.replace(/,?\s+(National Association|N\.A\.)$/i, "").trim().toLowerCase();
+  const words = core.split(/[^a-z0-9.']+/).filter(Boolean);
+  if (core.length < 3 || words.every((w) => GENERIC_NAME_WORDS.has(w))) return false;
+  const escaped = core.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`(?:^|[^a-z0-9])${escaped}(?![a-z0-9])`).test(question.toLowerCase());
+}
+
 /** The data lookups Hamilton made for an answer, named in plain words ("tool-getPeerFees" -> "peer fees"). */
+
 export function lookupsUsed(parts: ReadonlyArray<MessagePart> | undefined): string[] {
   const names = new Set<string>();
   for (const p of parts ?? []) {
@@ -449,7 +470,8 @@ function AnalyzeConversationWorkspace({
       const trimmed = question.trim().slice(0, 500);
       if (!active.current || readOnlyReason || !trimmed || isLoading || engineBusy) return;
       // A question about a market, not this institution, opens the market brief (no provider call).
-      if (parseMarketQuestion(trimmed)) {
+      // One that names the institution being researched stays here, so the answer is about it.
+      if (parseMarketQuestion(trimmed) && !namesInstitution(trimmed, selectedInstitution?.name ?? null)) {
         window.location.assign(marketBriefHref(trimmed, institutionId));
         return;
       }
@@ -482,7 +504,7 @@ function AnalyzeConversationWorkspace({
       if (window.innerWidth < 640) textareaRef.current?.blur();
       window.scrollTo({ top: 0, behavior: "smooth" });
     },
-    [clearError, isLoading, engineBusy, readOnlyReason, setMessages, institutionId],
+    [clearError, isLoading, engineBusy, readOnlyReason, setMessages, institutionId, selectedInstitution?.name],
   );
 
   /** Starts over: no earlier answers, no carried context, the start screen. */
@@ -821,7 +843,11 @@ function AnalyzeConversationWorkspace({
 
       {answerIdentity && (shown || reopenedStory) ? (
         <aside aria-label="Saved answer institution context" className="text-sm text-warm-700">
-          {hamiltonIdentityLines(answerIdentity).map(line => <p key={line}>{line}</p>)}
+          {/* The record of whose answer this is stays one click away, below the header that already names the institution. */}
+          <details>
+            <summary className="cursor-pointer text-xs text-warm-600">Institution and peer group behind this answer</summary>
+            {hamiltonIdentityLines(answerIdentity).map(line => <p key={line}>{line}</p>)}
+          </details>
         </aside>
       ) : initialAnalysis && conversation === 0 && !askedQuestion ? (
         <p className="text-sm text-warm-600">Historical account and peer context was not recorded with this answer.</p>

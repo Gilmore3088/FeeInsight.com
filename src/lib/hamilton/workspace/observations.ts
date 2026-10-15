@@ -13,6 +13,7 @@
  */
 
 import { getDisplayName } from "@/lib/fee-taxonomy";
+import { proseFeeName } from "./names";
 import { MIN_PEERS_FOR_POSITION, pricePosition } from "./scenario";
 import type { Fact, FeePositionRow, Observation, SourceRef } from "./types";
 
@@ -87,8 +88,10 @@ export function marketPositionObservations(positions: FeePositionInput[], instit
     if (p.peers.length < MIN_PEERS_FOR_POSITION) continue;
     const pos = pricePosition(p.current, p.peers);
     if (pos === null || (pos > POSITION_EXTREME_PCT && pos < 100 - POSITION_EXTREME_PCT)) continue;
-    const name = getDisplayName(p.feeCategory);
+    const prose = proseFeeName(p.feeCategory);
+    const name = /\bfees?$/i.test(prose) ? prose : `${prose} fee`;
     const sorted = [...p.peers].sort((a, b) => a - b);
+    const [lo, hi] = [fmtMoney(quantile(sorted, 0.25)), fmtMoney(quantile(sorted, 0.75))];
     const higher = p.peers.filter((v) => v > p.current + 0.005).length;
     const lower = p.peers.filter((v) => v < p.current - 0.005).length;
     const n = p.peers.length;
@@ -102,7 +105,7 @@ export function marketPositionObservations(positions: FeePositionInput[], instit
           : `${owner} ${name} of ${fmtMoney(p.current)} is above ${lower} of ${n} peers.`;
     const facts: Fact[] = [
       {
-        text: `${p.peerLabel}: median ${fmtMoney(quantile(sorted, 0.5))}, middle half ${fmtMoney(quantile(sorted, 0.25))} to ${fmtMoney(quantile(sorted, 0.75))}, from ${n} institutions.`,
+        text: `${p.peerLabel}: median ${fmtMoney(quantile(sorted, 0.5))}, middle half ${lo === hi ? `all at ${lo}` : `${lo} to ${hi}`}, from ${n} institutions.`,
         source: CATALOG,
       },
     ];

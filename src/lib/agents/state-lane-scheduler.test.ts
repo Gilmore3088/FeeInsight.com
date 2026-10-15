@@ -53,6 +53,7 @@ import { darwinDueSql } from "./darwin/verify";
 import { CATEGORY_GUARD_VERSION } from "@/lib/fee-category-guard";
 import { KNOX_EXTRACT_MAX_LIMIT } from "./knox/extract";
 import { ROSETTA_READ_MAX_LIMIT } from "./rosetta/read";
+import { thinRereadKindSql } from "./thin-document";
 
 function templateText(strings: unknown): string {
   return Array.isArray(strings) ? strings.join(" ") : String(strings);
@@ -181,9 +182,8 @@ describe("state lane scheduler", () => {
 
     await stateHasDocumentBacklog("PA");
 
-    expect(sqlMock.mock.calls[0]).toContain(
-      "(adt.document_kind IS NULL OR adt.document_kind NOT IN ('product_page'))",
-    );
+    expect(sqlMock.mock.calls[0]).toContain(thinRereadKindSql("adt"));
+    expect(thinRereadKindSql("adt")).toContain("adt.document_kind_version IS DISTINCT FROM");
   });
 
   it("counts banks due a free search as backlog, so discovery runs hourly", async () => {

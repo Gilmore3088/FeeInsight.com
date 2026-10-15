@@ -174,6 +174,55 @@ Darwin owns verification and classification.
   a $0 online copy). Whole-table dry run in one read: queue a verify run with
   `fragment_full_count: true` (step detail `live_fragment_full_count`), or hand someone with
   prod access `liveFragmentCountSql()` (the same regexes as read-only SQL).
+- Released-fee category re-check (`release-repair.ts`, the repair half of #1367; decision
+  2026-10-15, "Darwin re-checks every live fee against today's rules"). Until PR #1468 the release
+  check passed "." as the category pattern, so every fee the release published before then went live
+  without its category being checked: on Oct 15, 2,566 verified rows carried `darwin_released_hold`
+  and 1,680 were live (239 of them from the recorded-pass release's 387 that morning); a seeded
+  sample of 20 found 2 in the wrong category, both `od_protection_transfer` holding an overdraft or
+  courtesy-pay item fee. Every verify/classify step reads the next `RELEASE_REPAIR_BATCH` (250)
+  released fees (`published_fee_records` joined to a verified row flagged `darwin_released_hold`;
+  live ones, plus ones this pass archived) after a cursor on the run ledger (the
+  `darwin.release_repair` event's `next_after_id`, 0 at the end of a pass). It runs
+  `releaseCheckHold` on each, against the fee's own stored text and the category model
+  (`loadReleaseCheckInputs`), with the live category and amount and the name Knox read from the
+  schedule. The amount-range gate is skipped (the live fee already passed Hamilton's range, and the
+  range must not hide a category failure). At release time either category failure only keeps a
+  fee for a person, and each alone is wrong too often for a takedown (the text check fails real
+  names with no heading nearby, such as "Service Fee" under "Basic Checking", "Bounced Check" or
+  "Transfer from Savings"; the model disputes about 6% of right fees). So a fee is a takedown
+  candidate only when both fail: `category_not_in_text` AND the model disputes the category,
+  picking another with at least `RELEASE_REPAIR_SUGGEST_MIN` (0.5) of its probability (reason
+  `category_not_in_text_and_disputed`). One failure alone is report only, counted and sampled apart:
+  `text_only` (`category_not_in_text`) and `model_only` (`category_disputed`). Any other hold is
+  `other`, report only. `no_source_text` and `no_category_model` are skipped and read again next
+  pass (with no model the whole step is skipped and the cursor stays). Step detail
+  `release_repair`: `checked`, `passed`, `would_take_down`, `deferred`, `report_only` (`text_only`,
+  `model_only`, `other`), `by_reason`, `by_category`, `text_only_by_category`,
+  `model_only_by_category`, up to 20 samples of each bucket (with the model's pick and its
+  probability), the cursor. `DARWIN_RELEASE_REPAIR_LIVE` is false: the pass only reports. When a PR
+  turns it on, a candidate goes through the shared 12-hour second look (`secondLook`, check
+  `darwin.release_repair`): flagged `takedown_pending` first, archived only when a run at least 12
+  hours on fails it again (`rolled_back_reason` `release_repair:<reason>`, batch
+  `darwin-release-repair-<run>`, never deleted), its verified row rejected with
+  `darwin_release_repair:<reason>` appended last, in the same savepoint. Rejected rather than
+  re-held: the held pile is raw rows with no verified row, and no code reads a verified row in
+  another status (`challenged` is allowed and read by nothing), so a re-hold would strand the fee.
+  A live fee that is not a candidate (a pass or any report-only bucket) clears its pending flag.
+  Restore: an archived fee that no longer meets the takedown bar comes back in one statement (fee
+  live and verified row verified with the flag removed, together), only when this pass's flag is
+  still the verified row's last flag (no other rule flagged it since) and no equal fee is live at
+  that bank; otherwise it stays down (`restore_blocked`). The restore writes the second look's
+  `takedown_cleared` state row and `flag_cleared` audit row in the same savepoint. A
+  `darwin.release_repair_acted` event lists what came down and what came back. The verify step
+  calls it through `runReleaseRepairStep`, which catches any throw, so the repair never fails the
+  step. No provider call: the category model is Darwin's own naive Bayes, trained in-process from
+  `published_fee_catalog`. Whole dry run in one read-only pass: queue a verify run with
+  `release_repair_full_count: true` (step detail `release_repair_full_count`, every bucket).
+  `releaseRepairCandidateSql()` is the read-only SQL for someone with prod access: live released
+  fees by category, the recorded-pass share, and names lacking the category's wording, a rough
+  guide to the text half only (neither bound: the check reads the schedule line and rows above, not
+  the name); the line read and the model do not run in SQL.
 - The in-batch duplicate key (`batchKey` in `verify.ts`, `DARWIN_BATCH_KEY_VERSION` v4) is the
   institution, category, amount (or rate), frequency, stored document, the fee's own source line
   and its audience. Version 1 named the URL, so a fee on a bank's current copy of a page was held

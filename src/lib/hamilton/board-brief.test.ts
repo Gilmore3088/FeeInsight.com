@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { boardBriefFromAnalysis, editBoardBrief } from "./board-brief";
+import { boardBriefFromAnalysis, editBoardBrief, readerAsOf, readerLimitation } from "./board-brief";
 import { buildFeeAnswer } from "./workspace/answer";
 import { storylineAnalysis } from "./workspace/analysis-record";
 import { overdraftResearch } from "./workspace/test-fixtures";
-import { buildFeeResearchEvidence } from "./evidence-contract";
+import { buildFeeResearchEvidence, CLAIM_BINDING_LIMITATION } from "./evidence-contract";
 
 const research = overdraftResearch();
 const frozen = storylineAnalysis(buildFeeAnswer(research).storyline!, "test", buildFeeResearchEvidence(research), { version: 1, researchInstitutionId: 2, accountInstitutionId: 1, accountStatus: "identified", researchInstitutionName: "Research CU", accountInstitutionName: "Home CU" });
@@ -17,7 +17,7 @@ describe("board brief reuses frozen analysis", () => {
     expect(report.exhibits?.[0].rows).toEqual(frozen.evidence.metrics.map(m => [m.label, m.value, m.note ?? ""]));
     expect(report.executiveSummary).toEqual([frozen.hamiltonView]);
     expect(report.implementationNotes).toContain("Team note (user-authored): Discuss waivers with the team.");
-    expect(report.sources?.every(s => s.detail.includes("Reporting period"))).toBe(true);
+    expect(report.sources?.every(s => s.detail.startsWith("As of "))).toBe(true);
   });
   it("edits team text without changing the original findings, sources or institution", () => {
     const report = boardBriefFromAnalysis(frozen, "saved-original", edits);
@@ -38,5 +38,20 @@ describe("board brief reuses frozen analysis", () => {
     const report = boardBriefFromAnalysis({ ...frozen, storyline: undefined, factEvidence: undefined, identityContext: undefined }, "legacy", edits);
     expect(report.identityContext).toBeUndefined();
     expect(report.sources?.[0].detail).toContain("were not saved with this answer");
+  });
+});
+
+describe("board brief words", () => {
+  it("writes source dates as a board reads them", () => {
+    expect(readerAsOf("2026-10-12T00:00:00.000Z")).toBe("Oct 12, 2026");
+    expect(readerAsOf("2026-06-30")).toBe("Jun 30, 2026");
+    expect(readerAsOf("Oct 2026")).toBe("Oct 2026");
+  });
+  it("puts the saved evidence limits in plain words without changing the stored record", () => {
+    expect(readerLimitation("3 structured evidence records saved with explicit identity/source context.")).not.toMatch(/structured|identity\/source/);
+    expect(readerLimitation(CLAIM_BINDING_LIMITATION)).toContain("not checked one by one");
+    const report = boardBriefFromAnalysis(frozen, "saved-original", edits);
+    expect(report.recommendation).not.toMatch(/structured evidence|derivations/);
+    expect(frozen.confidence.basis).toContain(CLAIM_BINDING_LIMITATION);
   });
 });

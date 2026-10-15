@@ -80,6 +80,7 @@ import { runDarwinScheduleRefile } from "@/lib/agents/darwin/schedule-refile";
 import { runDarwinAdjudicate } from "@/lib/agents/darwin/adjudicate";
 import { countLiveFragmentNames, liveFragmentDetail, recheckLiveFragmentNames } from "@/lib/agents/darwin/live-fragment-check";
 import { documentOwnerDetail } from "@/lib/agents/darwin/document-owner";
+import { findingsDetail as releaseRepairFindingsDetail, releaseRepairDetail, runReleaseRepairStep } from "@/lib/agents/darwin/release-repair";
 import { AUDIENCE_RELABEL_VERSION, dryRunFullTotals, runAudienceRelabel, type AudienceRelabelMode } from "@/lib/agents/darwin/audience-relabel";
 import { runDailyBrief } from "@/lib/agents/daily-brief";
 import { runSundayMaintenance, summarizeSundayMaintenance } from "@/lib/agents/deming/sunday-maintenance";
@@ -854,6 +855,23 @@ async function executeAgenticStep(
       const liveFragmentsFull = params.fragment_full_count === true || params.fragment_full_count === "true"
         ? await countLiveFragmentNames(tx)
         : null;
+      // #1367 repair: fees the release published before it checked the category are read again under
+      // today's release check (release-repair.ts); a report only while its switch is off.
+      // Never fails the verify step: any throw comes back as `error` with no result.
+      const { result: releaseRepair, full: releaseRepairFull, error: releaseRepairError } = await runReleaseRepairStep(tx, {
+        runId: run.id,
+        stepId: step.id,
+        dryRun: run.runKind === "dry_run",
+        institutionId: numericRunParam(params, ["institution_id"]),
+        // Every released fee in one read-only pass, on request (`release_repair_full_count: true`).
+        fullCount: params.release_repair_full_count === true || params.release_repair_full_count === "true",
+      });
+      const releaseRepairNote = releaseRepair && releaseRepair.wouldTakeDown > 0
+        ? ` Release re-check: ${releaseRepair.wouldTakeDown.toLocaleString()} of ${releaseRepair.checked.toLocaleString()} released fee(s) read fail both the text check and the category model (${releaseRepair.live && !releaseRepair.dryRun ? `${releaseRepair.flagged.toLocaleString()} flagged, ${releaseRepair.takenDown.length.toLocaleString()} archived` : "switch off: would take down, nothing written"}).`
+        : "";
+      const releaseRepairFullNote = releaseRepairFull
+        ? ` All released fees: ${releaseRepairFull.wouldTakeDown.toLocaleString()} of ${releaseRepairFull.checked.toLocaleString()} fail both the text check and the category model (${releaseRepairFull.textOnly.toLocaleString()} text only, ${releaseRepairFull.modelOnly.toLocaleString()} model only).`
+        : "";
       const liveFragmentNote = liveFragments.matched > 0
         ? ` Live name re-check: ${liveFragments.matched.toLocaleString()} of ${liveFragments.checked.toLocaleString()} live fee(s) read have a fragment name (${liveFragments.live && !liveFragments.dryRun ? `${liveFragments.takenDown.length.toLocaleString()} archived` : "switch off: would take down, nothing written"}).`
         : "";
@@ -867,7 +885,7 @@ async function executeAgenticStep(
         : "";
       return {
         status: "completed",
-        summary: `Darwin verified ${verification.verifiedFees.toLocaleString()} raw fee observations from ${verification.processedRawFees.toLocaleString()} selected rows (${verification.skippedFees.toLocaleString()} skipped).${conditionalZero.selected > 0 ? ` Settled ${conditionalZero.selected.toLocaleString()} conditional-$0 hold(s) (${conditionalZero.verified.toLocaleString()} verified free on the bank's schedule).` : ""}${verification.categoryChange && verification.categoryChange.candidates > 0 ? ` ${verification.categoryChange.candidates.toLocaleString()} row(s) Knox re-filed since Darwin's decision ${verification.categoryChange.live ? `(${verification.categoryChange.selected.toLocaleString()} judged again under today's category)` : "(switch off: counted, not judged again)"}.` : ""}${liveFragmentNote}${liveFragmentFullNote}${documentOwnerNote}`,
+        summary: `Darwin verified ${verification.verifiedFees.toLocaleString()} raw fee observations from ${verification.processedRawFees.toLocaleString()} selected rows (${verification.skippedFees.toLocaleString()} skipped).${conditionalZero.selected > 0 ? ` Settled ${conditionalZero.selected.toLocaleString()} conditional-$0 hold(s) (${conditionalZero.verified.toLocaleString()} verified free on the bank's schedule).` : ""}${verification.categoryChange && verification.categoryChange.candidates > 0 ? ` ${verification.categoryChange.candidates.toLocaleString()} row(s) Knox re-filed since Darwin's decision ${verification.categoryChange.live ? `(${verification.categoryChange.selected.toLocaleString()} judged again under today's category)` : "(switch off: counted, not judged again)"}.` : ""}${liveFragmentNote}${liveFragmentFullNote}${releaseRepairNote}${releaseRepairFullNote}${documentOwnerNote}`,
         detail: {
           selected_raw_fees: verification.selectedRawFees,
           processed_raw_fees: verification.processedRawFees,
@@ -906,6 +924,8 @@ async function executeAgenticStep(
                 },
               }
             : {}),
+          release_repair: releaseRepair ? releaseRepairDetail(releaseRepair) : { error: releaseRepairError },
+          ...(releaseRepairFull ? { release_repair_full_count: releaseRepairFindingsDetail(releaseRepairFull) } : {}),
           schedule_refile: { selected: scheduleRefile.selected, refiled: scheduleRefile.refiled },
           conditional_zero: { selected: conditionalZero.selected, verdicts: conditionalZero.verdicts, verified: conditionalZero.verified },
           feedback_written: verification.feedbackWritten,
