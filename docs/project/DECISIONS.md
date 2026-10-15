@@ -56,6 +56,24 @@ the same day at James's go ("proceed with your recs", Audit thread; "Switch it o
 thread). The answer-key row seeded at institution 4875 under `other_lending_fee` is aligned to
 `legal_process` by its own migration. A lien release stays other lending (Oct 8).
 
+**Excess withdrawals and returned mail get their own fee types, out of account research.** James,
+14:32 UTC Oct 15 (#1398, decision card in the Data quality thread: "Add both"). The Oct 7 fold
+(Knox v26, `fee-fold.ts`) had filed excess-activity fees and returned mail, returned statement and
+bad-address fees under account research; about 2,321 of its 5,268 live rows were not research, and
+their per-item price (typically $5) pulled research's $25 median down. The taxonomy gains
+`excess_withdrawal` ("Excess Withdrawals": a per-item charge for withdrawals or transfers past a
+savings or money market account's monthly limit) and `returned_mail` ("Returned Mail": returned or
+undeliverable mail or statements, a bad or incorrect address, an address locator), both in Account
+Maintenance, so the taxonomy will have 52 types. The change ships dark behind one switch
+(`RESEARCH_SPLIT_LIVE` in `fee-fold.ts`), off until James says go: while it is off the two types are
+not listed, and every rule that would file a fee there (fold v17's splits and e-statement rule,
+category guard v65's line re-file, the hand re-files, the taxonomy aliases) still files it under
+account research exactly as before, and each publish step reports what the research split would
+move. Both versions stay at 16 and 64 while it is off, so the re-reads they cost run once, at
+switch-on. Turning it on files new reads there and moves live and verified account research fees by name; Knox's own rules
+re-point in that PR (Knox's rules version is batched with other bumps). Account research keeps
+research, reconciliation, balancing, charge-off and ATM adjustment charges.
+
 **Four answer-key rows are keyed correctly.** James, same comment, items 2 to 5: 4Front FCU (7273,
 $25 for the first 2 a day, $0 after), Texhillco (5643, first check free, $5 each after), Schools
 FCU (4770, free on Platinum, $25 on Gold, Silver+, Silver and College) and Liberty Savings (1175,
@@ -1007,3 +1025,10 @@ the header, footer, sign-in screens and report chrome. The Bank Fee Index is nam
 the index pages, data credits and the API attribution. Hamilton's name and mark appear on the pages
 that sell it (/for-institutions, /subscribe, Pro buttons in page bodies) and inside the workspace,
 never in the header or footer; the header calls it "Pro workspace" and "Pro plans".
+
+**CFPB complaint peer comparisons use verified matches only, or are hidden.** James, 2026-10-15
+(decision card "CFPB complaint benchmarks": "Hide"; #1523, under H06 #981). Institutions without an
+accepted CFPB identity match are left out of complaint peer groups, since missing evidence is not
+zero complaints. When fewer than 10 similar institutions have a verified match even nationwide, the
+peer rate is not shown and a coverage note says how many of how many are verified. Keeping the old
+numbers with a warning was rejected.

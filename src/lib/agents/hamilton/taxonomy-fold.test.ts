@@ -2,9 +2,9 @@ import { describe, expect, it } from "vitest";
 
 import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
 import { passesDarwinChecks } from "@/lib/agents/knox/layout";
-import { RETIRED_CATEGORY_KEYS } from "@/lib/fee-fold";
+import { RESEARCH_SPLIT_LIVE, RETIRED_CATEGORY_KEYS, researchSplitTarget } from "@/lib/fee-fold";
 
-import { HAND_REFILES, handFixedPassing, planHandRefiles } from "./taxonomy-fold";
+import { HAND_REFILES, handFixedPassing, planHandRefiles, previewResearchSplit } from "./taxonomy-fold";
 
 /** The schedule lines each hand re-file was read from (copied data: the banks' own text). */
 const PAGE_LINES: Record<number, string> = {
@@ -72,6 +72,20 @@ const PAGE_LINES: Record<number, string> = {
   97560: "Out of Network ATMs \ufffd\ufffd\ufffd $2\ufffd00/Transaction | Non-Sufficient Funds \ufffd\ufffd\ufffd\ufffd$30/item",
   98064: "Copies of a canceled draft (check) .................... $2.00 each | Inactive Account (after \u0101\u0102 monthsof inactivity) \u010b\u010b\u010b$5.00\u0125month",
   92156: "Safe Deposit Boxes\n\nLost Key Replacement - each key | $20.00\n\nDrilling Box | Actual Cost\n\nLate Payment Fee - if payment is not made within 60 days of due date, late fee will apply | $10.00\n\nBox prices vary based on size.",
+  // #1196 group 2: each row's stored Knox excerpt (prod, Oct 15).
+  99578: "13 Account will default to a mailed statement and a monthly $2 mailed statement service charge will be charged to your account per statement cycle",
+  97539: "(12 consecutive months of | Key Replacement | $30.00 each",
+  65410: "36 months, 48 months, 60 months | Official Bank Check $5.00 per item",
+  65411: "18 Month Variable Rate IRA CD | Money Order Stop Payment $25.00 per item",
+  53490: "11 Inactive Account Inactive Account: $5.00",
+  68521: "12 posted and settled debit card transactions | • Draft Photocopies.............................$ 3.00 / Check",
+  88066: "or less; | 16 Verification of Deposit .................................................................................................. $10.00",
+  88067: "; and | 17 Processing Levies, Garnishments, Attachments, and other Legal Liens – Each....... $75.00",
+  88068: "18 Starter/Temporary Checks – 2 Pages at No Charge",
+  57548: "12 Money Order Fee for First Step Accounts $1.70.",
+  108912: "or Less | 31 Days of Interest | Dormant Account (after first 12 months) | $12.00/year",
+  131129: "ATM Transactions at DFCU ATM (Local ATM) | 15 free ATM transactions per month and 15 free balance inquiries per month; then $2.00/transaction or",
+  70319: "VISA Gift Card – Inactivity Fee after 12 Months of Inactivity $2.95/month",
 };
 
 function liveRow(id: number, key: string, amount: string, name = "(misread cell)") {
@@ -139,10 +153,71 @@ describe("hand re-files of misread live fees (retidy v15 review, Oct 9)", () => 
   it("renames a fee in place once, leaving it alone when the live name already reads as listed", () => {
     const moves = planHandRefiles([
       liveRow(97560, "nsf", "30.00", "�00/Transaction: Non-Sufficient Funds ���"),
-      liveRow(21141, "account_research", "5.00", "Returned Statement Fee"),
+      liveRow(97433, "account_research", "25.00", "Account reconciliation/research, per hour"),
     ]);
     expect(moves.map((move) => [move.refile.feePublishedId, move.refile.to, move.refile.name])).toEqual([
       [97560, "nsf", "Non-Sufficient Funds"],
     ]);
+  });
+
+  it("renames returned mail in place while the research split is off and moves it once on (#1398)", () => {
+    const rows = [
+      liveRow(21141, "account_research", "5.00", "Mailed Statement Fee $\u0017.00 per statement Returned Statement Fee"),
+      liveRow(77918, "account_research", "5.00", "00 Return Mail Fee (no forwarding)"),
+      liveRow(44516, "minimum_balance", "25.00"),
+    ];
+    const returned = researchSplitTarget("returned_mail");
+    const excess = researchSplitTarget("excess_withdrawal");
+    expect(planHandRefiles(rows).map((move) => [move.refile.feePublishedId, move.currentKey, move.refile.to])).toEqual([
+      [21141, "account_research", returned],
+      [77918, "account_research", returned],
+      [44516, "minimum_balance", excess],
+    ]);
+    // Off, nothing lands in the new types.
+    if (!RESEARCH_SPLIT_LIVE) {
+      expect([returned, excess]).toEqual(["account_research", "account_research"]);
+      // Already renamed under account research: nothing left to do while off.
+      expect(planHandRefiles([liveRow(21141, "account_research", "5.00", "Returned Statement Fee")])).toEqual([]);
+    }
+    // 28554 ("No contents ... included in the ATM", $2/envelope) is not moved to either new type.
+    expect(HAND_REFILES.find((refile) => refile.feePublishedId === 28554)?.to).toBe("account_research");
+  });
+});
+
+describe("research split dry run (#1398)", () => {
+  const row = (id: number | null, verifiedId: number, name: string, amount: string) => ({
+    fee_published_id: id, fee_verified_id: verifiedId, institution_id: 1, source_document_id: null,
+    canonical_fee_key: "account_research", fee_name: name, amount,
+  });
+
+  it("counts what turning the switch on would move, by route, with samples, and what the new type would refuse", () => {
+    const preview = previewResearchSplit([
+      row(1, 11, "Excess Transaction Fee", "10.00"),
+      row(2, 12, "Returned Statement Fee", "5.00"),
+      row(3, 13, "Bad address fee", "5.00"),
+      row(null, 14, "Return Mail", "3.00"),
+      // Outside the $1-$50 range: the new type refuses it, so it would stay research.
+      row(5, 15, "Returned mail (per month)", "75.00"),
+      // Research stays research; an IRA's excess withdrawal and a copy are other splits, not this one.
+      row(6, 16, "Account research, per hour", "25.00"),
+      row(7, 17, "Wire research", "15.00"),
+      row(8, 18, "IRA Excess Withdrawal Fee", "20.00"),
+      row(9, 19, "Copy of returned statement", "5.00"),
+    ]);
+    expect(preview).toMatchObject({
+      scanned: 9,
+      wouldMove: 4,
+      wouldMoveLive: 3,
+      byRoute: { "account_research->excess_withdrawal": 1, "account_research->returned_mail": 3 },
+      refused: 1,
+      refusedByRoute: { "account_research->returned_mail": 1 },
+    });
+    expect(preview.sample.map((sample) => [sample.feeVerifiedId, sample.to])).toEqual([
+      [11, "excess_withdrawal"],
+      [12, "returned_mail"],
+      [13, "returned_mail"],
+      [14, "returned_mail"],
+    ]);
+    expect(preview.refusedSample.map((sample) => sample.feePublishedId)).toEqual([5]);
   });
 });

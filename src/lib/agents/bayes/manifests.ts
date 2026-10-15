@@ -220,6 +220,10 @@ export function rosettaReaderManifests(versions: RosettaVersions): ReplayManifes
  * in a manifest above.
  */
 export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
+  // v2 (Oct 15): footnoted held names ("1Monthly fee") also meet the live fees printed without the
+  // mark. The week mark carries the version, so each lane's next extract step reads its held lines
+  // again under v2; there is no backlog for a replay to count.
+  NAME_FILE_KEY_VERSION: "Each lane's next extract step re-reads its held lines under the new week mark; nothing to replay.",
   // v1 (Oct 15): a new pass over the v17 review's recorded passes; each verify step reads all of
   // them that it has not acted on, so there is no backlog for a replay to count.
   DARWIN_RECORDED_RELEASE_STRATEGY: "Each verify step reads every recorded v17 pass it has not acted on; nothing to replay.",
@@ -247,6 +251,38 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   // v3 (#1397): the recheck reads every verified row once per version, so each verify step works
   // through the whole verified set under v3 itself (200 a step).
   DARWIN_RECHECK_STRATEGY: "Its selector re-reads every verified row not yet read at v3 (200 a verify step); there is nothing to replay.",
+  // v1 (#1511): a new shadow pass over Darwin's re-read requests. Its resolution key carries its
+  // version and the Knox rules version, so every request is read again by the extract steps themselves.
+  KNOX_REREAD_FEEDBACK_STRATEGY: "Its resolution key carries its version and the Knox rules version, so the extract steps read every request again themselves; nothing to replay.",
+  // v1 (#1443): the live fragment re-check's rules (parenthetical exemption, glued-sentence rename,
+  // priced trailing range left live). Its ledger cursor reads the whole live table again every pass.
+  // v2 (#1499): the wider sentence_end head, the generic/clause/service-list bars, no rename of an
+  // opening-deposit line and a re-read request to Knox per sentence_end takedown; the same cursor
+  // reads every live name again under v2, still in shadow.
+  // v3 (#1499): the if/when balance gate under $100, no rename with another price in the name,
+  // "(cont.)" dropped, "2FA" kept, and the sentence_end tail name; the cursor reads every name again.
+  // v4 (#1499 review): the tail's figure-equals-amount gate, total wording, the dormancy tier, tail
+  // qualifiers and generic tails, lower-case heads before a balance condition; same cursor, shadow.
+  // v5 (#1499, prod hand-check of v4): "may therefore" totals, period and bare-activation generics,
+  // "only if" and "your" balance conditions, generic heads on a balance-below condition, and the
+  // figure gate on the footnote-stripped name skipping bare counts; same cursor, shadow.
+  // v6 (#1499, prod check of v5): takedown only at $0/no amount, a credit, no fee of this bank or a
+  // refused amount; every other unnamed pronoun or sentence_end line is kept live (`reread`); waiver
+  // wording bars renames only and a line ending on a threshold is refused; same cursor, shadow.
+  // v6 round 4 (rev10, prod r10, still v6 in shadow): every refusal under $100 is a reread, a rename
+  // needs a rest free of the rename bar (or one of three narrow forms) and a fee-noun target with no
+  // figure; same cursor, nothing written. Round 5 (rev11): head and tail renames are allowlists,
+  // credits and "no fee of this bank" are narrowed to an allowlist and the line start; still shadow.
+  // Round 6 (rev12): subject-carrying tail leads, soft if/when clauses and floors, cents figures as "$",
+  // a credit guard and NBSP parity in the count SQL; still shadow.
+  LIVE_FRAGMENT_STRATEGY: "Its cursor re-reads every live fee name each pass (2,000 a verify step); there is nothing to replay.",
+  HOURLY_CHECK_VERSION: "Its cursor re-reads every live fee name for an hourly price each pass (2,000 a verify step); there is nothing to replay.",
+  // v1 (#1442): a new shadow pass. Its ledger cursor re-reads every live fee's source document address
+  // each pass (2,000 a verify step), and nonDepositCountSql counts the whole live table read-only.
+  NON_DEPOSIT_CHECK_VERSION: "Its cursor re-reads every live fee's source document address each pass (2,000 a verify step); there is nothing to replay.",
+  // v1 (#1455): a new shadow pass. Its selector reads every shared or vendor-path document pair not
+  // yet read at v1 (25 a verify step), and documentOwnerCountSql counts the whole backlog read-only.
+  DOCUMENT_OWNER_STRATEGY: "A new shadow pass; its selector reads every shared or vendor-path pair not yet read at v1, and documentOwnerCountSql counts the backlog; nothing to replay.",
 };
 
 export async function loadManifests(): Promise<ReplayManifest[]> {

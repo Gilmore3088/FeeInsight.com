@@ -105,6 +105,43 @@ It runs as Atlas steps (agent `atlas`); it is deterministic and makes no model c
   (on the same `STATS_METHOD_VERSION`) is named in the step summary as an ALARM.
 - Read-only, deterministic, no model calls. It is pause-exempt like the other reporting steps.
 
+## Knox's answer-key misses
+
+- `knox-misses.ts` (`KNOX_MISSES_VERSION` v1): the `deming-knox-misses` step, its own daily Atlas
+  run (`/api/admin/crew/knox-misses`, 12:29 UTC, after the scoreboard), #1099. For every confirmed
+  answer-key bank whose key document has a completed text, it runs today's free Knox team
+  (`gateReads`, the reads the rules re-check keeps live) and compares each priced key fee as the
+  Knox gate scores it (`gateKeyFor`). A key fee not read becomes an `eval_cases` row: dataset
+  `golden`, label `answer_key`, check `knox.answer_key_read`, error class `missed_fee`, status
+  `candidate`, with the key's source line, category, price, document and text hash frozen in
+  `input`. Every case is replayed each run: a candidate that is read becomes `active`; an active
+  case missed again is a regression, named in the step summary; a case whose key fee is no longer
+  confirmed is retired, and reopens if the fee is confirmed again (a candidate when missed, active
+  when read). The gate's keys come from the gate itself (`gateKeyFor`, `gateReadKey`, used by
+  `scoreAnswerKeys` too), so the replay and the Knox gate cannot drift.
+- The step detail carries the miss rate by category and by document type. A bank with no completed
+  text of its key document is counted apart (`banks_no_text`), never as Knox's miss; a price that
+  varies is not scored, as in the gate.
+- A run that passes `KNOX_MISSES_BUDGET_MS` leaves the remaining banks for the next day: the banks
+  it did not reach (`banks_left_ids` in its detail) go first, then the rest by their oldest case
+  check, a bank with no case counting as checked at the previous run. A case the gate no longer
+  scores is still replayed (`not_scored`), so its check time moves. It writes only `eval_cases`; no fee row, no model calls; pause-exempt.
+
+## Playbook contradiction check
+
+- `playbook-contradictions.ts` (`PLAYBOOK_CHECK_VERSION` v1): the `deming-playbook-check` step in
+  Atlas's daily scoreboard run (#1105). One read-only SELECT over `institution_source_profiles`
+  and each one's current text. Per institution it counts a playbook that contradicts itself: the
+  current source on its own rejected list, on its own do-not-retry list for a fetch failure, or
+  judged the wrong document by a discovery strategy; a fee schedule expected to hold fewer than
+  `THIN_DOCUMENT_MAX_FEES` fees; a product page expected to hold `PAID_MIN_PRICED_LINES` or more.
+  It lists up to 20 institutions per contradiction in the step detail.
+- Not contradictions: the second-document finder and its site searches record the bank's current
+  link as the input they searched *from* (`SEARCH_FROM_STRATEGIES`), so their `wrong_document` /
+  `no_candidates` entry means "found nothing better". They are reported as
+  `search_from_entries`, as is `layout_never_recorded` (no stage writes a layout fingerprint yet).
+- Read-only, deterministic, no model calls, pause-exempt. It changes no row.
+
 ## Boundaries
 
 - Deming never writes fee rows, flags or takedowns. It reads `pipeline_feedback` and the fee tiers.
@@ -121,3 +158,5 @@ fails a PR that changes one of these constants without updating its line here (#
 | `FRESH_AUDIT_VERSION` | — | v5 | `deming/fresh-audit.ts` |
 | `DEMING_REGRESSION_VERSION` | — | v1 | `deming/regression.ts` |
 | `BENCHMARK_HEALTH_VERSION` | — | v1 | `deming/benchmark-health.ts` |
+| `PLAYBOOK_CHECK_VERSION` | — | v1 | `deming/playbook-contradictions.ts` |
+| `KNOX_MISSES_VERSION` | — | v1 | `deming/knox-misses.ts` |

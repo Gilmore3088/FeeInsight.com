@@ -5,13 +5,13 @@ import { PRO_TIERS, tierPriceLabel } from "@/lib/pro-tiers";
 import { REPORT_PRICE_INLINE } from "@/lib/constants";
 import type { PublicStatsSummary } from "@/lib/public-stats";
 import { LandingHero } from "./landing-hero";
-import { LandingSizzle } from "./landing-sizzle";
+import { LandingDemo } from "./landing-demo";
 import { LandingPillars } from "./landing-pillars";
 import { LandingProvenance } from "./landing-provenance";
 import { LandingPricing } from "./landing-pricing";
 import { LandingFaq, faqItems } from "./landing-faq";
 import { LandingClose } from "./landing-close";
-import { buildHomeData, buildSampleView } from "./landing-shared";
+import { buildHomeData, buildSampleView, homeReadsCacheable } from "./landing-shared";
 import type { MarketReport } from "@/lib/custom-report/report-data";
 import type { ReportLine } from "@/lib/custom-report/analysis";
 import { buildScenario } from "./subscribe/scenario";
@@ -125,7 +125,7 @@ const wholePage = () =>
   renderToStaticMarkup(
     <>
       <LandingHero summary={summary} />
-      <LandingSizzle data={data} />
+      <LandingDemo data={data} />
       <LandingPillars data={data} />
       <LandingProvenance summary={summary} />
       <LandingPricing />
@@ -164,21 +164,43 @@ describe("homepage (site v3 brief 06 §4.3)", () => {
     expect(unavailable).not.toContain("institutions with published fees");
   });
 
-  it("server-renders the sizzle's composed end frame with all four chapters", () => {
-    const html = renderToStaticMarkup(<LandingSizzle data={data} />);
-    for (const label of ["Every fee", "Every market", "One workspace", "Reports"]) expect(html).toContain(label);
-    expect(html).toContain('data-motion="off"');
-    expect(html).toMatch(/id="sizzle-reports"[^>]*aria-hidden="false"/);
-    expect(html).not.toContain("Watch the tour");
-    expect(text(html)).toContain("Product tour · coming soon");
-    expect(html).toContain("data-video-placeholder");
-    // Every chapter wears Hamilton's tabs, with its own mode marked (re-walk R2).
-    for (const mode of ["My fees", "Try a price", "Reports"]) expect(html).toContain(`font-semibold text-ink">${mode}<`);
-    // Every chapter, Every fee included, renders inside Hamilton's shell (rail and frame).
-    for (const key of ["fee", "market", "workspace", "reports"]) {
-      expect(html).toMatch(new RegExp(`id="sizzle-${key}"[^>]*><div data-hamilton-shell=""`));
-    }
-    expect(renderToStaticMarkup(<LandingSizzle data={buildHomeData(summary, [], null)} />)).toBe("");
+  it("server-renders one demo window: tabs for navigation, the district map open, no time bar", () => {
+    const html = renderToStaticMarkup(<LandingDemo data={data} />);
+    const tabs = [...html.matchAll(/role="tab"[^>]*aria-selected="(true|false)"(?: aria-label="([^"]+)")?[^>]*data-tab="(\w+)"/g)].map(
+      ([, selected, , key]) => `${key}:${selected}`,
+    );
+    expect(tabs).toEqual(["map:true", "fees:false", "price:false", "reports:false"]);
+    for (const label of ["District map", "My fees", "Try a price", "Reports"]) expect(text(html)).toContain(label);
+    // The map view is open; the other views are in the markup but hidden until their tab opens them.
+    expect(html).toMatch(/data-view="map" class="fi-demo-view"/);
+    expect(html).toMatch(/hidden=""[^>]*data-view="fees"/);
+    expect(html).toContain('aria-label="Map of the 12 Federal Reserve districts, shaded by overdraft median"');
+    // No timer of any kind: no segments, no progress group, no play, pause or replay control.
+    expect(html).not.toMatch(/data-segment|Demo progress|fi-progress-fill|Pause the product demo|Replay/);
+    expect(html).not.toContain("<video");
+    // Hamilton's mark sits inside the demo window.
+    expect(html).toContain("Hamilton");
+    expect(renderToStaticMarkup(<LandingDemo data={buildHomeData(summary, [], null)} />)).toBe("");
+  });
+
+  it("draws the demo's views from live figures, the sample bank against its market", () => {
+    const html = renderToStaticMarkup(<LandingDemo data={data} />);
+    const t = text(html);
+    // District map: the highest district median opens in the panel, against the nation.
+    expect(t).toContain("District 1 Boston");
+    expect(t).toContain("Boston $27.25 Nation $29.00 $1.75 below the national median");
+    expect(html).toContain('href="/research/district/1"');
+    // My fees: the sample bank's fees, each a bar against its local median.
+    expect(t).toContain("Sample Bank against 15 local competitors");
+    expect(html).toContain('data-fee="stop_payment"');
+    // Try a price: a slider on the live national range.
+    expect(html).toMatch(/type="range"[^>]*min="0"[^>]*max="40"/);
+    // Reports: a page of the report, with one name per fee (the taxonomy's display name).
+    expect(html).toContain('aria-label="Report preview"');
+    expect(t).toContain("Sample Bank against its local market");
+    expect(t).toContain("Wire Transfer (Int'l Out)");
+    expect(t).not.toMatch(/Outgoing international wire|Overdraft \(per item\)/);
+    expect(html).toContain('href="/reports/sample-competitive-fee-position"');
   });
 
   it("renders Pro prices from PRO_TIERS with the report as one line", () => {
@@ -203,27 +225,34 @@ describe("homepage (site v3 brief 06 §4.3)", () => {
   it("quotes only source lines that pass the shared check, and never a neighbouring fee", () => {
     expect(data.sample?.fees.map((f) => f.key)).toEqual(["overdraft", "wire_intl_outgoing", "stop_payment"]);
     const t = text(renderToStaticMarkup(<LandingPillars data={data} />));
-    expect(t).toContain("Outgoing International Wires … $40.00/ea");
+    expect(t).toContain("Outgoing International Wires … $40.00 /ea");
     expect(t).not.toMatch(/Zipper|Lost Key|Over \$300|Statement Printout/);
   });
 
-  it("draws a different exhibit in each pillar and each sizzle chapter", () => {
+  it("draws one visual in each pillar, none of them a demo view", () => {
     const pillars = renderToStaticMarkup(<LandingPillars data={data} />);
-    // Every market is the ladder; One workspace answers in figures, with no box plot.
-    expect(pillars).toContain("Sample Bank");
-    expect(pillars.match(/aria-label="Local competitors: market/g)?.length).toBe(1);
-    expect(pillars).not.toContain("the nation: market");
-    const sizzle = renderToStaticMarkup(<LandingSizzle data={data} />);
-    expect(sizzle).toContain("Try a price");
-    expect(text(sizzle)).toContain("Sample Bank against 15 local competitors");
-    // One name per fee: the taxonomy's display name, in the report and the source lines alike.
-    expect(text(sizzle)).toContain("Wire Transfer (Int'l Out)");
-    expect(text(sizzle)).not.toMatch(/Outgoing international wire|Overdraft \(per item\)/);
-    // The second count says what it counts (re-walk R4).
-    expect(text(pillars)).toContain("of the 8 local competitors that publish this fee");
-    const ask = renderToStaticMarkup(<LandingSizzle data={data} workspace="ask" topPadding />);
-    expect(ask).not.toContain("Scenario price");
-    expect(ask).toContain("pt-16");
+    const t = text(pillars);
+    // Every fee: the bank's schedule lines drawn to the index.
+    expect(t).toContain("Sample Bank · fee schedule");
+    // Every market: the bank's fee across its markets as columns.
+    expect(t).toContain("Its fee $10.00");
+    expect(pillars).toContain('aria-label="Local competitors: median $29.50"');
+    // One workspace: Hamilton answers with a chart.
+    expect(t).toContain("What do the core fees cost nationally?");
+    expect(pillars).toContain('aria-label="National median of each core fee"');
+    // None repeats the demo: no map, no slider, no report page, no fee bars against the local median.
+    expect(pillars).not.toMatch(/Federal Reserve districts|type="range"|Report preview|data-fee="/);
+  });
+
+  it("heads the pillars as live samples, the level under the demo", () => {
+    const html = renderToStaticMarkup(<LandingPillars data={data} />);
+    expect(html).toContain('id="live-samples"');
+    const t = text(html);
+    expect(t).toMatch(/^ ?Live samples See it in action Each sample is drawn live from published fee schedules\./);
+    // The demo comes first on the page, then the live samples.
+    const page = wholePage();
+    expect(page.indexOf('aria-label="Hamilton demo"')).toBeGreaterThan(-1);
+    expect(page.indexOf('aria-label="Hamilton demo"')).toBeLessThan(page.indexOf('id="live-samples"'));
   });
 
   it("keeps at most five short FAQ answers", () => {
@@ -238,7 +267,7 @@ describe("homepage (site v3 brief 06 §4.3)", () => {
   it("keeps the copy rules and the word budget", () => {
     const html = wholePage();
     expect(text(html)).not.toMatch(/—|!|real-time|recommend|\bAI\b|verified|99%/i);
-    // The markup holds all four sizzle chapters (three hidden), every figure and every label, and
+    // The markup holds all four demo views (three hidden), every figure and every label, and
     // still stays under the old page's 889 visible words; the visible count is far lower.
     expect(words(html)).toBeLessThan(800);
     // No section paragraph runs past one sentence of about twenty words.
@@ -259,5 +288,14 @@ describe("homepage (site v3 brief 06 §4.3)", () => {
       "contact_sales home_pricing_demo /contact?source=demo Or ask for a demo",
       "upgrade_click home_closing /subscribe See Hamilton plans",
     ]);
+  });
+
+  it("keeps a render out of the page cache when any read failed, but not when the sample is simply absent", () => {
+    const ok = { summary, categories, sampleFailed: false, overdraftFailed: false };
+    expect(homeReadsCacheable(ok)).toBe(true);
+    expect(homeReadsCacheable({ ...ok, summary: { ...summary, complete: false } })).toBe(false);
+    expect(homeReadsCacheable({ ...ok, categories: [] })).toBe(false);
+    expect(homeReadsCacheable({ ...ok, sampleFailed: true })).toBe(false);
+    expect(homeReadsCacheable({ ...ok, overdraftFailed: true })).toBe(false);
   });
 });

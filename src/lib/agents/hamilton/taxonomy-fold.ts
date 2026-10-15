@@ -9,13 +9,19 @@ import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
 import { checkFeeCategory } from "@/lib/fee-category-guard";
 import {
   FOLD_RULES_VERSION,
+  RESEARCH_SPLIT_KEYS,
+  RESEARCH_SPLIT_LIVE,
+  RESEARCH_SPLIT_PREVIEW,
+  RESEARCH_SPLIT_SQL_PATTERN,
   RETIRED_CATEGORIES,
   RETIRED_CATEGORY_KEYS,
   SPLIT_CATEGORIES,
   foldContext,
   foldRetiredCategory,
+  researchSplitTarget,
   splitLiveCategory,
   subordinationRefileHeld,
+  type SplitCategory,
 } from "@/lib/fee-fold";
 
 type SqlTag = typeof sql;
@@ -155,6 +161,122 @@ export function planFold(rows: FoldRow[], texts: Map<number, string>): FoldPlan 
   return plan;
 }
 
+/**
+ * Rows each step's research split dry run reads, so the preview stays cheap while the switch is off
+ * (about 2,300 live fees matched its names on Oct 15). The exact count over every row is on request,
+ * with the publish step's `research_split_full_count` param, as Darwin's `fragment_full_count`.
+ */
+export const RESEARCH_SPLIT_PREVIEW_LIMIT = 2_000;
+const PREVIEW_SAMPLE_PER_ROUTE = 10;
+
+export interface ResearchSplitSample {
+  feePublishedId: number | null;
+  feeVerifiedId: number;
+  institutionId: number;
+  from: string;
+  to: string;
+  feeName: string;
+  amount: number | null;
+}
+
+/**
+ * What turning `RESEARCH_SPLIT_LIVE` on would do, from a dry run of the switched split table. A fee
+ * whose name the split places but whose new type's guard or price range refuses it stays research.
+ */
+export interface ResearchSplitPreview {
+  switchName: "RESEARCH_SPLIT_LIVE";
+  live: boolean;
+  /** Rows read: up to `RESEARCH_SPLIT_PREVIEW_LIMIT`, or every row on a full count. */
+  scanned: number;
+  /** True when the read was a full count, with no row limit. */
+  fullCount: boolean;
+  /** True when the read hit its row limit, so the counts are a lower bound. */
+  capped: boolean;
+  /** Live and verified-only fees the switch would move. */
+  wouldMove: number;
+  wouldMoveLive: number;
+  /** By `<from>-><to>`. */
+  byRoute: Record<string, number>;
+  /** Placed by name but refused by the new type's guard or price range, so they would stay. */
+  refused: number;
+  refusedByRoute: Record<string, number>;
+  /** Up to ten moves per route, and up to ten refusals per route. */
+  sample: ResearchSplitSample[];
+  refusedSample: ResearchSplitSample[];
+}
+
+/** The research split's dry run over account research rows. Pure. */
+export function previewResearchSplit(
+  rows: FoldRow[],
+  table: Readonly<Record<string, SplitCategory>> = RESEARCH_SPLIT_PREVIEW,
+): Omit<ResearchSplitPreview, "live" | "switchName" | "fullCount" | "capped"> {
+  const preview: Omit<ResearchSplitPreview, "live" | "switchName" | "fullCount" | "capped"> = {
+    scanned: rows.length,
+    wouldMove: 0,
+    wouldMoveLive: 0,
+    byRoute: {},
+    refused: 0,
+    refusedByRoute: {},
+    sample: [],
+    refusedSample: [],
+  };
+  for (const row of rows) {
+    const name = row.fee_name ?? "";
+    const split = splitLiveCategory(row.canonical_fee_key, name, table);
+    if (!split?.to || !RESEARCH_SPLIT_KEYS.has(split.to)) continue;
+    const amount = amountOf(row.amount);
+    const route = `${row.canonical_fee_key}->${split.to}`;
+    const entry: ResearchSplitSample = {
+      feePublishedId: row.fee_published_id == null ? null : Number(row.fee_published_id),
+      feeVerifiedId: Number(row.fee_verified_id),
+      institutionId: Number(row.institution_id),
+      from: row.canonical_fee_key,
+      to: split.to,
+      feeName: name,
+      amount,
+    };
+    if (passesDarwinChecks(split.to, name, amount ?? 0)) {
+      preview.wouldMove += 1;
+      if (entry.feePublishedId != null) preview.wouldMoveLive += 1;
+      preview.byRoute[route] = (preview.byRoute[route] ?? 0) + 1;
+      if (preview.byRoute[route] <= PREVIEW_SAMPLE_PER_ROUTE) preview.sample.push(entry);
+    } else {
+      preview.refused += 1;
+      preview.refusedByRoute[route] = (preview.refusedByRoute[route] ?? 0) + 1;
+      if (preview.refusedByRoute[route] <= PREVIEW_SAMPLE_PER_ROUTE) preview.refusedSample.push(entry);
+    }
+  }
+  return preview;
+}
+
+/** Live fees, and verified fees not yet published, under account research whose name the research split might move. */
+async function selectResearchSplitRows(db: SqlTag, institutionId: number | undefined, limit: number | null): Promise<FoldRow[]> {
+  return db<FoldRow[]>`
+    SELECT * FROM (
+      SELECT fp.fee_published_id, fp.lineage_ref AS fee_verified_id, fp.institution_id,
+             NULL::bigint AS source_document_id, fp.canonical_fee_key, fp.fee_name, fp.amount
+        FROM published_fee_records fp
+       WHERE fp.rolled_back_at IS NULL
+         AND fp.canonical_fee_key = 'account_research'
+         AND fp.fee_name ~* ${RESEARCH_SPLIT_SQL_PATTERN}
+         AND (${institutionId ?? null}::bigint IS NULL OR fp.institution_id = ${institutionId ?? null}::bigint)
+      UNION ALL
+      SELECT NULL, fv.fee_verified_id, fv.institution_id, NULL::bigint, fv.canonical_fee_key, fv.fee_name, fv.amount
+        FROM verified_fee_observations fv
+       WHERE fv.canonical_fee_key = 'account_research'
+         AND fv.fee_name ~* ${RESEARCH_SPLIT_SQL_PATTERN}
+         AND fv.review_status IN ('verified', 'approved')
+         AND (${institutionId ?? null}::bigint IS NULL OR fv.institution_id = ${institutionId ?? null}::bigint)
+         AND NOT EXISTS (
+           SELECT 1 FROM published_fee_records fp
+            WHERE fp.lineage_ref = fv.fee_verified_id AND fp.rolled_back_at IS NULL
+         )
+    ) research
+    ORDER BY fee_published_id NULLS LAST, fee_verified_id
+    LIMIT ${limit}
+  `;
+}
+
 async function selectRetiredRows(db: SqlTag, institutionId?: number): Promise<FoldRow[]> {
   const keys = [...RETIRED_CATEGORY_KEYS];
   const splitKeys = Object.keys(SPLIT_CATEGORIES);
@@ -277,7 +399,9 @@ export interface HandRefile {
   /**
    * The bad name the fee still carries. When set, the fee is also fixed if another check has
    * already moved it under `to` with that name (96164: the guard's own hand re-file moves it to
-   * atm_non_network without renaming it).
+   * atm_non_network without renaming it). A rename in place (`from` == `to`) with an `oldName`
+   * runs only while the live name is still exactly that, so it runs once and never replaces a
+   * better name a later read or retidy gave the fee (#1459 review).
    */
   oldName?: string;
   why: string;
@@ -315,7 +439,7 @@ export const HAND_REFILES: readonly HandRefile[] = [
     why: "inst 7913, doc 2195: an empty ATM deposit envelope, \"No contents (e.g. check) included in the ATM | $2/envelope\", an ATM adjustment" },
   { feePublishedId: 37068, from: "safe_deposit_box", amount: 25, to: "account_research", name: "research fee",
     why: "inst 6999, doc 7866: footnote \"Up to 5 copies, then $25/hr research fee\"" },
-  { feePublishedId: 44516, from: "minimum_balance", amount: 25, to: "account_research", name: "Excessive transaction fee",
+  { feePublishedId: 44516, from: "minimum_balance", amount: 25, to: researchSplitTarget("excess_withdrawal"), name: "Excessive transaction fee",
     why: "inst 161, doc 9080: \"Excessive transaction fee is $25/transaction\", an excess withdrawal fee" },
   { feePublishedId: 91458, from: "atm_non_network", amount: 5, to: "monthly_maintenance", name: "monthly maintenance fee",
     why: "inst 1349, doc 24074: \"*unlimited 1st National ATM access / $5.00 monthly maintenance fee\"" },
@@ -338,9 +462,11 @@ export const HAND_REFILES: readonly HandRefile[] = [
   { feePublishedId: 56385, from: "monthly_maintenance", amount: 2, to: "night_deposit", name: "Night Depository Service Monthly Fee (earnings credit available)",
     why: "inst 1445, doc 17118: under \"NIGHT DEPOSITORY SERVICE\", \"Monthly Fee (earnings credit available) | $2.00\"" },
   // Renames in place: the price and category are right, the name carries a broken figure.
-  { feePublishedId: 21141, from: "account_research", amount: 5, to: "account_research", name: "Returned Statement Fee",
+  // 21141 and 77918 are returned mail (#1398): renamed in place under account research while
+  // `RESEARCH_SPLIT_LIVE` is off, renamed and moved to returned mail once it is on.
+  { feePublishedId: 21141, from: "account_research", amount: 5, to: researchSplitTarget("returned_mail"), name: "Returned Statement Fee",
     why: "inst 8138, doc 12676: \"Returned Statement Fee $5.00 per statement\"; the mailed statement fee before it was glued on" },
-  { feePublishedId: 77918, from: "account_research", amount: 5, to: "account_research", name: "Return Mail Fee (no forwarding)",
+  { feePublishedId: 77918, from: "account_research", amount: 5, to: researchSplitTarget("returned_mail"), name: "Return Mail Fee (no forwarding)",
     why: "inst 8511, doc 13054: \"Return Mail Fee (no forwarding) ... $5.00\"" },
   { feePublishedId: 97560, from: "nsf", amount: 30, to: "nsf", name: "Non-Sufficient Funds",
     why: "inst 6272, doc 8005: \"Non-Sufficient Funds ... $30/item\"; the ATM line before it was glued on" },
@@ -434,6 +560,48 @@ export const HAND_REFILES: readonly HandRefile[] = [
   // #1304 (James approved, Oct 14): a courtesy pay (paid overdraft) row filed by its payment-channel cell.
   { feePublishedId: 88513, from: "bill_pay", amount: 32, to: "overdraft", name: "Courtesy Pay (Paid NSF) Check/ACH/Bill Pay Payment",
     why: "inst 5057, doc 6200: \"Courtesy Pay (Paid NSF) Check/ACH/Bill Pay Payment | $32.00/item\"; Knox named the fee by the cell after the row heading, so \"Bill Pay\" filed it as bill pay (the bank's $32 Account Guardian line, 105896, is a separate overdraft fee)" },
+  // #1196 (James approved, Oct 15, comment 6193649019 group 2): names that open on a row number, a
+  // footnote or the cell before; the price and category are right. Each is renamed in place to its
+  // line's own words. 131129 and 70319 keep their category; whether it is right is a separate question.
+  { feePublishedId: 99578, from: "paper_statement", amount: 2, to: "paper_statement", name: "Mailed statement service charge",
+    oldName: "13 Account will default to a mailed statement and a monthly",
+    why: "inst 162, doc 33566: \"13 Account will default to a mailed statement and a monthly $2 mailed statement service charge will be charged ... per statement cycle\"; 13 is the footnote" },
+  { feePublishedId: 97539, from: "safe_deposit_box", amount: 30, to: "safe_deposit_box", name: "Key Replacement",
+    oldName: "12 consecutive months of: Key Replacement",
+    why: "inst 223, doc 22645: \"(12 consecutive months of | Key Replacement | $30.00 each\"; the first cell is the row above" },
+  { feePublishedId: 65410, from: "cashiers_check", amount: 5, to: "cashiers_check", name: "Official Bank Check",
+    oldName: "36 months, 48 months, 60 months: Official Bank Check",
+    why: "inst 390, doc 19295: \"36 months, 48 months, 60 months | Official Bank Check $5.00 per item\"; the first cell is a CD term column" },
+  { feePublishedId: 65411, from: "stop_payment", amount: 25, to: "stop_payment", name: "Money Order Stop Payment",
+    oldName: "18 Month Variable Rate IRA CD: Money Order Stop Payment",
+    why: "inst 390, doc 19295: \"18 Month Variable Rate IRA CD | Money Order Stop Payment $25.00 per item\"" },
+  { feePublishedId: 53490, from: "dormant_account", amount: 5, to: "dormant_account", name: "Inactive Account",
+    oldName: "11 Inactive Account Inactive Account",
+    why: "inst 472, doc 14163: \"11 Inactive Account Inactive Account: $5.00\"; 11 is a row number and the name is printed twice" },
+  { feePublishedId: 68521, from: "check_image", amount: 3, to: "check_image", name: "Draft Photocopies",
+    oldName: "12 posted and settled debit card transactions: Draft Photocopies",
+    why: "inst 4610, doc 2442: \"12 posted and settled debit card transactions | • Draft Photocopies......$ 3.00 / Check\"" },
+  { feePublishedId: 88066, from: "account_verification", amount: 10, to: "account_verification", name: "Verification of Deposit",
+    oldName: "16 Verification of Deposit",
+    why: "inst 4613, doc 20748: \"16 Verification of Deposit ...... $10.00\"; 16 is the row number" },
+  { feePublishedId: 88067, from: "garnishment_levy", amount: 75, to: "garnishment_levy", name: "Processing Levies, Garnishments, Attachments, and other Legal Liens",
+    oldName: "17 Processing Levies, Garnishments, Attachments, and other Legal Liens",
+    why: "inst 4613, doc 20748: \"17 Processing Levies, Garnishments, Attachments, and other Legal Liens – Each....... $75.00\"" },
+  { feePublishedId: 88068, from: "counter_check", amount: 0, to: "counter_check", name: "Starter/Temporary Checks – 2 Pages",
+    oldName: "18 Starter/Temporary Checks – 2 Pages",
+    why: "inst 4613, doc 20748: \"18 Starter/Temporary Checks – 2 Pages at No Charge\"" },
+  { feePublishedId: 57548, from: "money_order", amount: 1.7, to: "money_order", name: "Money Order Fee for First Step Accounts",
+    oldName: "12 Money Order Fee for First Step Accounts",
+    why: "inst 5113, doc 2232: \"12 Money Order Fee for First Step Accounts $1.70.\"" },
+  { feePublishedId: 108912, from: "dormant_account", amount: 12, to: "dormant_account", name: "Dormant Account (after first 12 months)",
+    oldName: "31 Days of Interest: Dormant Account (after first 12 months)",
+    why: "inst 7697, doc 24596: \"or Less | 31 Days of Interest | Dormant Account (after first 12 months) | $12.00/year\"" },
+  { feePublishedId: 131129, from: "atm_non_network", amount: 2, to: "atm_non_network", name: "ATM Transactions at DFCU ATM (Local ATM)",
+    oldName: "15 free ATM transactions per month and 15 free balance inquiries per month; then",
+    why: "inst 5100, doc 28876: \"ATM Transactions at DFCU ATM (Local ATM) | 15 free ATM transactions per month ... then $2.00/transaction\"; category kept as filed, its question is on #1196" },
+  { feePublishedId: 70319, from: "dormant_account", amount: 2.95, to: "dormant_account", name: "VISA Gift Card Inactivity Fee",
+    oldName: "12 Months of Inactivity",
+    why: "inst 986, doc 20361: \"VISA Gift Card – Inactivity Fee after 12 Months of Inactivity $2.95/month\"; category kept as filed, its question is on #1196" },
 ];
 
 interface HandRow {
@@ -460,7 +628,10 @@ export interface HandMove {
  * The hand re-files that still apply: the fee is live, still under its old category at its
  * listed price, and the new category accepts the new name. Pure.
  */
-export function planHandRefiles(rows: HandRow[], refiles: readonly HandRefile[] = HAND_REFILES): HandMove[] {
+export function planHandRefiles(
+  rows: HandRow[],
+  refiles: readonly HandRefile[] = HAND_REFILES,
+): HandMove[] {
   const moves: HandMove[] = [];
   for (const row of rows) {
     const refile = refiles.find((entry) => entry.feePublishedId === Number(row.fee_published_id));
@@ -468,8 +639,10 @@ export function planHandRefiles(rows: HandRow[], refiles: readonly HandRefile[] 
     if (!refile || amount == null || Math.abs(amount - refile.amount) >= 0.005) continue;
     const movedUnfixed = refile.oldName != null && row.canonical_fee_key === refile.to && (row.fee_name ?? "") === refile.oldName;
     if (row.canonical_fee_key !== refile.from && !movedUnfixed) continue;
-    // A rename in place (from == to) is done once the live name reads as listed.
+    // A rename in place (from == to) is done once the live name reads as listed, and, when the
+    // entry names the old name, never touches a fee whose name has changed since.
     if (refile.from === refile.to && (row.fee_name ?? "").trim() === refile.name) continue;
+    if (refile.from === refile.to && refile.oldName != null && (row.fee_name ?? "") !== refile.oldName) continue;
     if (!passesDarwinChecks(refile.to, refile.name, amount)) continue;
     moves.push({
       refile,
@@ -542,6 +715,24 @@ async function applyHandMoves(db: SqlTag, moves: HandMove[], runId: number): Pro
        AND fv.canonical_fee_key = v.from_key
   `;
   if (await feedbackSchemaReady(db)) await recordFeedback(db, applied.map((move) => handFeedback(move, runId)));
+  // One event per run that names every row moved and its after-state (#1196).
+  await db`
+    INSERT INTO agent_run_events (agent_run_id, event_type, status, message, detail)
+    VALUES (
+      ${runId}, ${`${TAXONOMY_FOLD_CHECK}.hand_refile`}, 'completed',
+      ${`Re-filed or renamed ${applied.length} live fee(s) by hand (HAND_REFILES)`},
+      ${JSON.stringify({
+        refiled: applied.map((move) => ({
+          fee_published_id: move.refile.feePublishedId,
+          from_key: move.currentKey,
+          to_key: move.refile.to,
+          amount: move.refile.amount,
+          old_name: move.oldName,
+          new_name: move.refile.name,
+        })),
+      })}::jsonb
+    )
+  `;
   return applied.length;
 }
 
@@ -612,12 +803,17 @@ export interface TaxonomyFoldResult {
   rulesVersion: number;
   /** A sample of the takedowns, for the step's detail. */
   noHomeSample: Array<Pick<FoldNoHome, "feePublishedId" | "canonicalFeeKey" | "feeName" | "amount" | "reason">>;
+  /**
+   * While `RESEARCH_SPLIT_LIVE` is off: what turning it on would move out of account research,
+   * by route with samples (a dry run; nothing written). Null once it is on or when the read fails.
+   */
+  pendingResearchSplit: ResearchSplitPreview | null;
 }
 
 /** Runs the fold. A dry run reports what it would move and take down and writes nothing. */
 export async function foldRetiredCategories(
   db: SqlTag,
-  options: { runId: number; dryRun: boolean; institutionId?: number },
+  options: { runId: number; dryRun: boolean; institutionId?: number; researchSplitFullCount?: boolean },
 ): Promise<TaxonomyFoldResult> {
   const base: TaxonomyFoldResult = {
     scanned: 0,
@@ -635,12 +831,32 @@ export async function foldRetiredCategories(
     dryRun: options.dryRun,
     rulesVersion: FOLD_RULES_VERSION,
     noHomeSample: [],
+    pendingResearchSplit: null,
   };
   let handMoves: HandMove[] = [];
   try {
-    handMoves = planHandRefiles(await inSavepoint(db, (scope) => selectHandRows(scope, options.institutionId)));
+    const handRows = await inSavepoint(db, (scope) => selectHandRows(scope, options.institutionId));
+    handMoves = planHandRefiles(handRows);
   } catch (error) {
     console.error("taxonomy fold hand re-file read failed:", error);
+  }
+  // The research split's dry run, every step while its switch is off (#1398), capped at
+  // RESEARCH_SPLIT_PREVIEW_LIMIT rows unless the step asks for the full count. Read only.
+  if (!RESEARCH_SPLIT_LIVE) {
+    try {
+      const fullCount = options.researchSplitFullCount === true;
+      const limit = fullCount ? null : RESEARCH_SPLIT_PREVIEW_LIMIT;
+      const researchRows = await inSavepoint(db, (scope) => selectResearchSplitRows(scope, options.institutionId, limit));
+      base.pendingResearchSplit = {
+        switchName: "RESEARCH_SPLIT_LIVE",
+        live: false,
+        fullCount,
+        capped: limit != null && researchRows.length >= limit,
+        ...previewResearchSplit(researchRows),
+      };
+    } catch (error) {
+      console.error("taxonomy fold research split preview failed:", error);
+    }
   }
   if (options.dryRun) base.handRefiled = handMoves.length;
   else if (handMoves.length > 0) {
