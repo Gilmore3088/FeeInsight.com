@@ -314,14 +314,24 @@ Darwin owns verification and classification.
   v5 (#1499, after a prod hand-check of v4: 101 of 105 renames right, 2 too generic, 2 wrong, 5
   missed, and a prod check of v5: 125 of 127 checkable renames right, but 20 of 22 sampled
   `sentence_end` takedowns real, correctly priced fees; still in shadow):
-  - Re-read, not takedown: a `sentence_end` line that gets no rename is never taken down. Its action
-    is `reread` (count SQL: action and reason `reread`): the fee stays live and, with the switch on,
-    the step only writes the `knox_reread_requested` row (evidence `kept_live: true`) so Knox can
-    rename it later (#1511). `pronoun` and `trailing_range` fragments and `rename_duplicate` still
-    come down. Step detail `would_reread` and `samples_by_action.reread`; `would_request_reread`
-    counts the same fees. A `sentence_end` line at $0, with no amount or with waiver wording (the
-    `LIVE_FRAGMENT_WAIVE_WORDING` pattern) is a waived price and still comes down as a `takedown` /
-    `fragment`, with no re-read request (5314's "... reduce your monthly fee to" $0, #1436).
+  - Re-read, not takedown: a `sentence_end` line that gets no rename falls into one of three groups
+    (`liveFragmentVerdictDetail`; count SQL reason in brackets):
+    - `reread` (`reread`): amount above $0, no waiver wording, and no gate refused the amount. The
+      fee stays live and, with the switch on, the step only writes the `knox_reread_requested` row
+      (evidence reason "kept live: sentence_end with no name", `kept_live: true`) so Knox can rename
+      it later (#1511). Example: "Paper statement fee for the" $2.
+    - `takedown` with a re-read request (`fragment_reread`): a gate refused the rename because the
+      amount is not the fee's price: total wording, an opening deposit, another price in the line
+      (`other_figure`, two priced phrases), a figure equal to the amount, or a refused "if"/"when"
+      threshold (balance below at $100 or more, "more than", "inactive for", excess wording). The
+      fee comes down and its `knox_reread_requested` row keeps the takedown reason ("fragment name:
+      sentence_end"), as in v4.
+    - `takedown` with no request (`fragment`): $0, no amount, or waiver wording (the
+      `LIVE_FRAGMENT_WAIVE_WORDING` pattern): a waived price (5314's "... reduce your monthly fee
+      to" $0, #1436).
+    `pronoun` and `trailing_range` fragments and `rename_duplicate` still come down with no
+    request. Step detail `would_reread` and `samples_by_action.reread`; `would_request_reread`
+    counts both kinds of request.
   - A capitalised "THERE" opens the glued sentence like "There" ("10NON-MEMBER LOAN APPLICATION FEE
     THERE IS A $10.00 NON-MEMBER APPLICATION FEE ..." $10, 109893, renames to "NON-MEMBER LOAN
     APPLICATION FEE").

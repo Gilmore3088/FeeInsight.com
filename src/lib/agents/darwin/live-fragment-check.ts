@@ -115,6 +115,8 @@ export const LIVE_FRAGMENT_OPENING_DEPOSIT = /\b(?:minimum|min|opening|initial)\
  * pass reads this kind yet (darwin/AGENTS.md).
  */
 export const LIVE_FRAGMENT_REREAD_KIND = "knox_reread_requested";
+/** v5 (#1499): the re-read evidence reason for a `reread` fee kept live (a takedown keeps its `fragment name:` reason). */
+export const LIVE_FRAGMENT_KEPT_REASON = "kept live: sentence_end with no name";
 /**
  * v3 (#1499): the rest of a line opens with an "if" or "when" condition (either case). A head split
  * from one is renamed only when the condition is a balance condition (`LIVE_FRAGMENT_BALANCE_CONDITION`)
@@ -294,17 +296,39 @@ export function liveFragmentVerdict(
   name: string | null | undefined,
   amount: number | null,
   canonicalFeeKey: string | null = null,
-): { pattern: LiveFragmentPattern; action: LiveFragmentAction; renameTo?: string; renameVia?: LiveFragmentRenameVia; exemptReason?: LiveFragmentExemptReason } | null {
+): LiveFragmentVerdict | null {
+  const found = liveFragmentVerdictDetail(name, amount, canonicalFeeKey);
+  return found && found.verdict;
+}
+
+export type LiveFragmentVerdict = { pattern: LiveFragmentPattern; action: LiveFragmentAction; renameTo?: string; renameVia?: LiveFragmentRenameVia; exemptReason?: LiveFragmentExemptReason };
+
+/**
+ * `liveFragmentVerdict` with `amountRefused`: true when a gate refused the rename because the
+ * amount is not the fee's price (total wording, an opening deposit, another price in the line, a
+ * figure equal to the amount, a refused "if"/"when" threshold). v5 (#1499): such a `sentence_end`
+ * line is a `takedown` that also asks Knox to re-read it, as in v4; only a line no gate refused on
+ * its amount is a `reread` kept live.
+ */
+export function liveFragmentVerdictDetail(
+  name: string | null | undefined,
+  amount: number | null,
+  canonicalFeeKey: string | null = null,
+): { verdict: LiveFragmentVerdict; amountRefused: boolean } | null {
+  const verdict = (found: LiveFragmentVerdict, amountRefused = false) => ({ verdict: found, amountRefused });
   const pattern = liveFragmentShape(name);
   if (!pattern) return null;
-  if (!liveFragmentName(name)) return { pattern, action: "exempt", exemptReason: "parenthetical" };
+  if (!liveFragmentName(name)) return verdict({ pattern, action: "exempt", exemptReason: "parenthetical" });
   const current = (name ?? "").replace(/\s+/g, " ").trim();
   const waived = LIVE_FRAGMENT_WAIVE_WORDING.test(current);
   if (pattern === "trailing_range") {
-    return waived || amount === 0 ? { pattern, action: "takedown" } : { pattern, action: "exempt", exemptReason: "trailing_range_priced" };
+    return verdict(waived || amount === 0 ? { pattern, action: "takedown" } : { pattern, action: "exempt", exemptReason: "trailing_range_priced" });
   }
+  let amountRefused = false;
   if ((pattern === "pronoun" || pattern === "sentence_end") && amount != null && amount > 0 && !waived
-      && !LIVE_FRAGMENT_OPENING_DEPOSIT.test(current) && !LIVE_FRAGMENT_TOTAL_WORDING.test(current) && !liveFragmentOtherPrice(current, amount)) {
+      && (LIVE_FRAGMENT_OPENING_DEPOSIT.test(current) || LIVE_FRAGMENT_TOTAL_WORDING.test(current) || liveFragmentOtherPrice(current, amount))) {
+    amountRefused = true;
+  } else if ((pattern === "pronoun" || pattern === "sentence_end") && amount != null && amount > 0 && !waived) {
     let split = gluedSentenceSplit(current, { allowGeneric: true });
     let candidate: { renameTo: string; renameVia: LiveFragmentRenameVia } | null = null;
     if (split) {
@@ -316,26 +340,35 @@ export function liveFragmentVerdict(
       if (split.generic) {
         // v5 (142422): a generic head ("Monthly Fee") renames only on that balance condition; else it is no head.
         if (ifCondition && balanceOk && !liveFragmentFigureIsAmount(current, amount)) candidate = { renameTo: split.head, renameVia: "head" };
-        else split = null;
+        else {
+          if (ifCondition) amountRefused = true;
+          split = null;
+        }
       } else if (!ifCondition || ((balanceOk || tierOk) && !liveFragmentFigureIsAmount(current, amount))) {
         candidate = { renameTo: split.head, renameVia: "head" };
+      } else {
+        amountRefused = true;
       }
     }
-    if (!split && pattern === "sentence_end" && !liveFragmentFigureIsAmount(current, amount)) {
+    if (!split && pattern === "sentence_end") {
       // v3: no head, so the fee its sentence ends on; v4: never when a figure in the line is the amount.
-      const tail = feeOfSentenceTail(current);
-      if (tail) candidate = { renameTo: tail, renameVia: "tail" };
+      if (liveFragmentFigureIsAmount(current, amount)) amountRefused = true;
+      else {
+        const tail = feeOfSentenceTail(current);
+        if (tail) candidate = { renameTo: tail, renameVia: "tail" };
+      }
     }
     if (candidate && liveFragmentName(candidate.renameTo) == null) {
       // Knox's rename bar: a name the category guard accepted must still be accepted once cleaned.
       const guardOk = canonicalFeeKey == null || !checkFeeCategory(canonicalFeeKey, current).ok || checkFeeCategory(canonicalFeeKey, candidate.renameTo).ok;
-      if (guardOk) return { pattern, action: "rename", ...candidate };
+      if (guardOk) return verdict({ pattern, action: "rename", ...candidate });
     }
   }
   // v5 (#1499): a sentence_end line with no rename is usually a real fee Knox read badly: kept live,
   // re-read. A $0 or unknown amount, or waiver wording, is a waived price (5314, #1436): it comes down.
-  const reread = pattern === "sentence_end" && amount != null && amount > 0 && !waived;
-  return { pattern, action: reread ? "reread" : "takedown" };
+  // So does a line a gate refused on its amount, with a re-read request (`amountRefused`).
+  const reread = pattern === "sentence_end" && amount != null && amount > 0 && !waived && !amountRefused;
+  return verdict({ pattern, action: reread ? "reread" : "takedown" }, amountRefused);
 }
 
 /**
@@ -367,8 +400,9 @@ export function findLiveFragments(rows: LiveFragmentRow[], liveNames: ReadonlySe
   for (const row of ordered) {
     const amount = num(row.amount);
     const canonicalFeeKey = row.canonical_fee_key ?? null;
-    const verdict = liveFragmentVerdict(row.fee_name, amount, canonicalFeeKey);
-    if (!verdict) continue;
+    const detail = liveFragmentVerdictDetail(row.fee_name, amount, canonicalFeeKey);
+    if (!detail) continue;
+    const { verdict } = detail;
     let { action } = verdict;
     let takedownReason: LiveFragmentTakedownReason | undefined = action === "takedown" ? "fragment" : undefined;
     if (action === "rename" && verdict.renameTo) {
@@ -384,7 +418,8 @@ export function findLiveFragments(rows: LiveFragmentRow[], liveNames: ReadonlySe
     byAction[action][verdict.pattern] += 1;
     if (verdict.exemptReason) exemptByReason[verdict.exemptReason] += 1;
     if (takedownReason) takedownByReason[takedownReason] += 1;
-    const rereadRequest = action === "reread";
+    // v5: a reread kept live, or a sentence_end takedown refused on its amount (as in v4), asks Knox to re-read.
+    const rereadRequest = action === "reread" || (takedownReason === "fragment" && verdict.pattern === "sentence_end" && detail.amountRefused);
     const sample: LiveFragmentSample = {
       feePublishedId: Number(row.fee_published_id),
       feeVerifiedId: num(row.fee_verified_id),
@@ -642,9 +677,11 @@ export async function recheckLiveFragmentNames(
       }
     }
   }
-  if (live && !options.dryRun && rereads.length > 0) {
-    // v5 (#1499): each `sentence_end` line with no rename stays live and asks Knox to re-read it.
-    result.rereadRequested = await requestKnoxRereads(db, rereads, options.runId);
+  const down = new Set(result.takenDown);
+  const rereadFees = [...rereads, ...takedowns.filter((fee) => fee.rereadRequest && down.has(fee.feePublishedId))];
+  if (live && !options.dryRun && rereadFees.length > 0) {
+    // v5 (#1499): each `sentence_end` line kept live (`reread`), and each taken down on its amount, asks Knox to re-read it.
+    result.rereadRequested = await requestKnoxRereads(db, rereadFees, options.runId);
   }
   if (result.takenDown.length > 0 || result.renamed.length > 0) invalidatePublicReadCache();
 
@@ -703,8 +740,8 @@ async function requestKnoxRereads(db: SqlTag, fees: LiveFragmentSample[], runId:
           evidence: {
             request: "reread_source_line",
             fee_name: fee.feeName,
-            reason: liveFragmentReason(fee.pattern, fee.takedownReason),
-            kept_live: true,
+            reason: fee.action === "reread" ? LIVE_FRAGMENT_KEPT_REASON : liveFragmentReason(fee.pattern, fee.takedownReason),
+            ...(fee.action === "reread" ? { kept_live: true } : {}),
             strategy_version: LIVE_FRAGMENT_STRATEGY.version,
             consumer: "none yet: no Knox pass reads this kind (#1499)",
           },
@@ -808,8 +845,10 @@ function postgresPattern(re: RegExp): string {
  * re-check of the cleaned name is skipped for the tail too. v2 (#1499): the
  * glued footnote number or "To request" is dropped (`glued_lead_strip`) before the head is read,
  * the new head bars ride in `glued_head_bars` and the opening-deposit wording blocks a rename, all
- * from the same regexes; the re-read requests to Knox are the `reread` / `reread` /
- * `sentence_end` row (the step's `would_request_reread`; v5: kept live, not taken down). v5 (#1499): a generic head
+ * from the same regexes. v5: the re-read requests to Knox are the `reread` / `reread` /
+ * `sentence_end` row (kept live) plus the `takedown` / `fragment_reread` / `sentence_end` row
+ * (taken down because a gate refused the amount); together the step's `would_request_reread`. A
+ * `takedown` / `fragment` / `sentence_end` row ($0, no amount, waiver wording) asks for none. v5 (#1499): a generic head
  * (`glued_generic_bars`) renames only through `generic_ok` (an "if"/"when" balance condition under
  * $100 with no figure equal to the amount); otherwise the line may still take its tail. The figure
  * gate reads `readable` (footnote dropped) and skips a bare whole figure before a count noun.
@@ -872,6 +911,12 @@ export function liveFragmentCountSql(): string {
 ), gated AS (
   SELECT *, COALESCE(head_generic AND ${ifCondition} AND ${balanceOk} AND NOT COALESCE(figure_is_amount, false), false) AS generic_ok
     FROM candidate
+), refused AS (
+  SELECT *, COALESCE(name ~* '${deposit}' OR name ~* '${postgresPattern(LIVE_FRAGMENT_TOTAL_WORDING)}' OR priced_count >= 2 OR other_figure
+           OR (head_ok AND ${ifCondition} AND NOT ((${balanceOk} OR (rest ~* '${postgresPattern(LIVE_FRAGMENT_TIER_CONDITION)}' AND head ~* '${postgresPattern(LIVE_FRAGMENT_FEE_HEAD)}')) AND NOT COALESCE(figure_is_amount, false)))
+           OR (head_generic AND ${ifCondition} AND NOT generic_ok)
+           OR (NOT head_ok AND NOT generic_ok AND figure_is_amount), false) AS amount_refused
+    FROM gated
 ), verdict AS (
   SELECT fee_published_id, institution_id, canonical_fee_key, amount, name, pattern, CASE
     WHEN pattern = 'pronoun' AND outside !~* '${postgresPattern(re.pronoun)}' THEN 'parenthetical'
@@ -883,11 +928,12 @@ export function liveFragmentCountSql(): string {
                   AND NOT COALESCE(figure_is_amount, false))) THEN 'rename'
     WHEN pattern IN ('pronoun', 'sentence_end') AND renamable AND generic_ok THEN 'rename'
     WHEN pattern = 'sentence_end' AND renamable AND NOT head_ok AND NOT generic_ok AND tail_ok AND NOT COALESCE(figure_is_amount, false) THEN 'rename_tail'
-    WHEN pattern = 'sentence_end' AND COALESCE(amount, 0) > 0 AND name !~* '${waive}' THEN 'reread'
+    WHEN pattern = 'sentence_end' AND COALESCE(amount, 0) > 0 AND name !~* '${waive}' AND NOT amount_refused THEN 'reread'
+    WHEN pattern = 'sentence_end' AND COALESCE(amount, 0) > 0 AND name !~* '${waive}' THEN 'fragment_reread'
     ELSE 'fragment'
   END AS first_reason,
   CASE WHEN head_ok OR generic_ok THEN head WHEN tail_ok THEN tail END AS rename_to
-  FROM gated
+  FROM refused
 ), ranked AS (
   SELECT v.*,
          row_number() OVER (PARTITION BY v.first_reason IN ('rename', 'rename_tail'), v.institution_id, v.canonical_fee_key, v.amount, lower(v.rename_to) ORDER BY v.fee_published_id) AS rename_rank
@@ -906,7 +952,7 @@ export function liveFragmentCountSql(): string {
   FROM ranked r
 ), counted AS (
   SELECT pattern, reason, CASE
-    WHEN reason IN ('fragment', 'rename_duplicate') THEN 'takedown'
+    WHEN reason IN ('fragment', 'fragment_reread', 'rename_duplicate') THEN 'takedown'
     WHEN reason IN ('rename', 'rename_tail') THEN 'rename'
     WHEN reason = 'reread' THEN 'reread'
     ELSE 'exempt'
