@@ -511,6 +511,35 @@ Darwin owns verification and classification.
     - A cap's own dollar figure (`LIVE_FRAGMENT_CAP_DOLLAR`) is no other price (B1): "Overdraft Fee
       $30 per item, maximum of $150 per day, you will be charged" $30 is no longer refused (it is a
       `reread`, the rest barring the rename).
+  - Round 5 (review rev11): both rename sides are allowlists. Where this list and the bullets
+    above differ, this list wins.
+    - A head renames only on one of the three narrow forms (balance below, now only under $25 with
+      `LIVE_FRAGMENT_BALANCE_MAX`; the dormancy tier; a duration the head names) or when the rest,
+      after an optional separator, is one bare charge sentence and nothing else
+      (`LIVE_FRAGMENT_CHARGE_SENTENCE`: "you will be / you'll be / will be / is / are" charged,
+      assessed or imposed, optionally "a", "an", "the", "per item", "per check", "per request",
+      "each", "for each item/check/request/transfer/occurrence" or "per occurrence"; "this fee
+      is / will be charged / assessed", optionally "per item" or "for each item"; a bare "you
+      will"). "This fee is not charged on overdrafts of", "There is no fee for", "The fee for
+      business accounts is", "NSF FEE. THERE IS A" and "A fee of" are rereads.
+      `LIVE_FRAGMENT_RENAME_BAR` no longer reads a head's rest.
+    - A tail renames only when the line opens on a bare charge clause (`LIVE_FRAGMENT_TAIL_LEAD`:
+      "you will be / will be / are / is / accounts are" charged or assessed "a" / "an") and what
+      follows passes `LIVE_FRAGMENT_RENAME_BAR`. Any subject before the clause ("Business accounts
+      are charged", "Each returned item is charged", "There will be a") is a reread.
+    - "No fee of this bank" (`liveFragmentNotAFee`) takes a fee down only when the marker opens the
+      line itself; anywhere else the line is a reread ("Incoming Domestic Wire. The sending bank
+      may charge you" $15).
+    - Credits are an allowlist (`LIVE_FRAGMENT_CREDIT`): "credit of $N", "$N credit to / on /
+      applied to your account / statement", "(-$N)" or "(−$N)" alone in parentheses, "reduced by
+      $N", "discount of $N", each with N equal to the amount. "$25 credit batch", "−$2 discount"
+      and "(-$2 with e-statements)" are rereads.
+    - A "$" figure counts for the figure gate only when a threshold word leads into it, and the
+      other-price gate never refuses when the line's first dollar figure is the amount ("Legal
+      Process / Levy $100.00 per occurrence assessed to" $100 and "Safe Deposit Box Rental 10x10
+      $150; Late Fee $10 if you" $150 are rereads).
+    - A waived trailing range at a positive amount is a reread (Darwin's verdict only; Knox's
+      `liveFragmentName` and the public display are unchanged). $0 still comes down.
 - Live hourly re-check (`hourly-frequency-check.ts`, #1456). About 802 live fees say in their name
   that they are priced by the hour ("Research Fee $25/hour", "Subpoena Fee - Per Hour") but carried
   no frequency or a per-item one, so a report read the price as a flat charge. `hourly` shows as "per
