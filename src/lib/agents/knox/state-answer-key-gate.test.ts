@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { gunzipSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
 
-import { scoreAnswerKeys, type AnswerKeyDocument } from "./answer-key-gate";
+import { combineScores, scoreAnswerKeys, type AnswerKeyDocument, type GateScore } from "./answer-key-gate";
 
 /**
  * The same gate as the Texas one, on 38 fee schedules from CA, FL, GA, IL, MI, MN and NY
@@ -41,6 +41,14 @@ const fixture = JSON.parse(
   gunzipSync(readFileSync(join(process.cwd(), "src/lib/agents/knox/__fixtures__/state-answer-keys.json.gz"))).toString("utf8"),
 ) as { keys: Array<AnswerKeyDocument & { state: string }> };
 
+// Each document is scored once and the floors add the scores up: the total and its parts no
+// longer read the same texts twice.
+const scored = new Map<AnswerKeyDocument, GateScore>();
+const scoreOnce = (document: AnswerKeyDocument): GateScore => {
+  if (!scored.has(document)) scored.set(document, scoreAnswerKeys([document]));
+  return scored.get(document)!;
+};
+
 describe("Knox answer-key gate (seven states)", () => {
   it("covers every keyed fee schedule", () => {
     expect(fixture.keys).toHaveLength(38);
@@ -50,7 +58,7 @@ describe("Knox answer-key gate (seven states)", () => {
     // The self-check traces every read against its text, so a whole fixture takes several seconds.
     it(`reads at least ${floor.right} right fees and at most ${floor.wrong} wrong ones (${state})`, () => {
       const documents = state === "all" ? fixture.keys : fixture.keys.filter((document) => document.state === state);
-      const score = scoreAnswerKeys(documents);
+      const score = combineScores(documents.map(scoreOnce));
       const wrong = score.categoryErrors + score.amountErrors;
       const summary =
         `${state}: ${score.right} right of ${score.reads} reads (precision ${(score.precision * 100).toFixed(1)}%), ` +

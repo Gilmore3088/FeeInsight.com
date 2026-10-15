@@ -1,6 +1,6 @@
 import { unzipSync, strFromU8 } from "fflate";
 import { registryFetch, type RegistryFetchOptions } from "./http";
-import { parseCsv, ncuaZipUrl } from "./ncua";
+import { parseCsv, ncuaZipUrl, NCUA_BRANCH_FILE } from "./ncua";
 import { quarterEndDate, type Quarter } from "./quarters";
 
 /**
@@ -38,8 +38,6 @@ export class NcuaBranchFormatError extends Error {
     this.name = "NcuaBranchFormatError";
   }
 }
-
-const BRANCH_FILE = /(^|\/)[^/]*branch[^/]*\.txt$/i;
 
 const norm = (key: string) => key.toLowerCase().replace(/[^a-z0-9]/g, "");
 
@@ -125,9 +123,33 @@ export function parseNcuaBranches(rows: Row[]): NcuaBranchRow[] {
   return out;
 }
 
+/** Length NCUA's FOICU file cuts CITY to ("Colorado Spring", "North Little Ro"). */
+export const FOICU_CITY_LENGTH = 15;
+
+/**
+ * The full city for a credit union whose FOICU city was cut at 15 characters (#1213).
+ * A city shorter than 15 characters is whole and kept. A 15-character city is replaced by a
+ * longer city of one of the credit union's own offices that starts with it (case ignored),
+ * the main office first; when the offices disagree on the longer name, the cut name stays.
+ * A 15-character name no office extends ("College Station") is kept as it is.
+ */
+export function fullCreditUnionCity(city: string | null, offices: Array<Pick<NcuaBranchRow, "city" | "is_main_office">>): string | null {
+  const cut = city?.trim() ?? "";
+  if (cut.length !== FOICU_CITY_LENGTH) return city;
+  const prefix = cut.toUpperCase();
+  const longer = offices.filter(
+    (o): o is { city: string; is_main_office: boolean } =>
+      !!o.city && o.city.length > FOICU_CITY_LENGTH && o.city.toUpperCase().startsWith(prefix),
+  );
+  const main = longer.find((o) => o.is_main_office);
+  if (main) return main.city;
+  const names = new Set(longer.map((o) => o.city.toUpperCase()));
+  return names.size === 1 ? longer[0].city : city;
+}
+
 /** The branch file's rows from a 5300 archive, or null when the archive has no branch file. */
 export function readNcuaBranchFile(zip: Uint8Array): { file: string; rows: Row[] } | null {
-  const files = unzipSync(zip, { filter: (file) => BRANCH_FILE.test(file.name) });
+  const files = unzipSync(zip, { filter: (file) => NCUA_BRANCH_FILE.test(file.name) });
   const [entry] = Object.entries(files).sort(([a], [b]) => a.localeCompare(b));
   if (!entry) return null;
   return { file: entry[0], rows: parseCsv(strFromU8(entry[1], true)) };

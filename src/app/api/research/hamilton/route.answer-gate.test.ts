@@ -55,6 +55,7 @@ vi.mock("ai", () => ({
   createUIMessageStream: ({ execute }: { execute: (input: unknown) => Promise<void> }) => execute({ writer: { merge: mocks.merge, write: mocks.write } }),
   createUIMessageStreamResponse: async ({ stream }: { stream: Promise<void> }) => { await stream; return new Response("synthetic stream"); },
 }));
+import { withConversationContext } from "@/lib/hamilton/conversation-context";
 import { POST } from "./route";
 
 const TOOL_OUTPUT = { fee: 35, peer_median: 29 };
@@ -62,9 +63,9 @@ const PASSING = "## Hamilton's View\nThe overdraft fee of $35 sits above the pee
 const UNTRACED = "## Hamilton's View\nThe overdraft fee of $35 sits above the peer median of $27.";
 const ADVICE = "## Hamilton's View\nThe overdraft fee of $35 sits above the peer median of $29, so the bank should lower the fee.";
 
-const request = () => new Request("https://example.test/api/research/hamilton", {
+const request = (text = "How does our overdraft fee compare?") => new Request("https://example.test/api/research/hamilton", {
   method: "POST", headers: { "content-type": "application/json" },
-  body: JSON.stringify({ messages: [{ role: "user", parts: [{ type: "text", text: "How does our overdraft fee compare?" }] }], mode: "analyze", institutionId: 202 }),
+  body: JSON.stringify({ messages: [{ role: "user", parts: [{ type: "text", text }] }], mode: "analyze", institutionId: 202 }),
 });
 
 function answers(text: string) {
@@ -137,5 +138,21 @@ describe("written answer evidence gate", () => {
     expect(mocks.save).toHaveBeenCalledTimes(1);
     expect(mocks.write.mock.calls.some(([chunk]) => chunk.type === "text-delta")).toBe(false);
     expect(metadata()).toMatchObject({ savedAnalysisId: "saved-1", answerEvidence: { passed: true, held: false } });
+  });
+
+  it("matches a repeat on the full request, so the same follow-up after different questions saves twice (#1274)", async () => {
+    answers(PASSING);
+    const followUp = "How does that compare to peers?";
+    await POST(request(withConversationContext(followUp, [{ question: "What is our overdraft fee?", lead: null }])));
+    await POST(request(withConversationContext(followUp, [{ question: "What is our NSF fee?", lead: null }])));
+    const [first, second] = mocks.save.mock.calls.map(([input]) => input);
+    // The saved prompt is the reader's words only; the request matched on carries the earlier turns.
+    expect(first.prompt).toBe(followUp);
+    expect(second.prompt).toBe(followUp);
+    expect(first.replaceRecentDuplicate.request).toContain("overdraft");
+    expect(second.replaceRecentDuplicate.request).toContain("NSF");
+    expect(first.replaceRecentDuplicate.request).not.toBe(second.replaceRecentDuplicate.request);
+    // A written answer is never matched against an engine storyline row.
+    expect(first.replaceRecentDuplicate.request.startsWith("written\n")).toBe(true);
   });
 });

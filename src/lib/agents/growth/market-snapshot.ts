@@ -277,7 +277,7 @@ export async function loadSnapshotRows(db: SqlTag, institutionIds: number[], cat
   if (institutionIds.length === 0) return [];
   const rows = await db.unsafe(
     `SELECT ef.fee_published_id, ef.institution_id, ef.fee_category, ef.fee_name, ef.amount, ef.canonical_fee_key,
-            ef.conditions, ef.account_product_type, ef.waiver_text, ef.frequency,
+            COALESCE(ef.extraction_note, ef.conditions) AS conditions, ef.account_product_type, ef.waiver_text, ef.frequency,
             COALESCE(sd.document_url, ef.document_url, ef.source_url) AS document_url,
             COALESCE(sd.last_checked_at, sd.crawled_at) AS read_at,
             t.normalized_text

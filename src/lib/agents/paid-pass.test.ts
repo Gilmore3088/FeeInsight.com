@@ -58,10 +58,10 @@ describe("paid pass", () => {
       create: vi.fn(async () => message("{}")),
     });
     expect(trackAnthropicRequest).toHaveBeenCalledWith(
-      expect.objectContaining({ metadata: { institution_id: 12, web_search_max_uses: 2, web_search_own_site: true } }),
+      expect.objectContaining({ metadata: { institution_id: 12, web_search_max_uses: 2, web_search_own_site: true, web_search_domains: ["alpha.example"] } }),
       expect.any(Function),
     );
-    expect(webSearchSettings([{ type: "web_search_20250305", name: "web_search", max_uses: 3 }])).toEqual({ web_search_max_uses: 3, web_search_own_site: false });
+    expect(webSearchSettings([{ type: "web_search_20250305", name: "web_search", max_uses: 3 }])).toEqual({ web_search_max_uses: 3, web_search_own_site: false, web_search_domains: null });
     expect(webSearchSettings(undefined)).toBeNull();
     expect(webSearchSettings([{ name: "other" }])).toBeNull();
   });

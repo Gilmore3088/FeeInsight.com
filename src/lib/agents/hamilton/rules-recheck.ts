@@ -316,7 +316,7 @@ export async function rollBackUnreproducedFees(
         `
         WITH live AS (
           SELECT fp.fee_published_id, fp.lineage_ref, fp.institution_id, fr.source_document_id,
-                 substring(fr.conditions from 'text_hash=([^;]+);') AS text_hash,
+                 substring(COALESCE(fr.extraction_note, fr.conditions) from 'text_hash=([^;]+);') AS text_hash,
                  fp.canonical_fee_key, fp.fee_name, fp.amount, fr.fee_name AS raw_fee_name, fp.fee_audience,
                  fp.rolled_back_at IS NOT NULL AS pulled,
                  (SELECT flag FROM jsonb_array_elements_text(COALESCE(fr.outlier_flags, '[]'::jsonb)) flag

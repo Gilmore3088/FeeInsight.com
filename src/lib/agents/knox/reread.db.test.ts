@@ -36,7 +36,7 @@ describe.skipIf(!connection)("Knox re-read in isolated PostgreSQL", () => {
     await db`CREATE TEMP TABLE raw_fee_observations (
       fee_raw_id bigserial PRIMARY KEY, institution_id bigint, source_document_id bigint, document_r2_key text,
       source_url text, extraction_confidence numeric, agent_event_id uuid, fee_name text, amount numeric,
-      frequency text, conditions text, outlier_flags jsonb, source text, product_name text,
+      frequency text, conditions text, extraction_note text, outlier_flags jsonb, source text, product_name text,
       min_balance_to_avoid numeric, min_opening_deposit numeric, waiver_text text,
       fee_audience text NOT NULL DEFAULT 'unknown', audience_evidence text, fee_treatment text NOT NULL DEFAULT 'unknown')`;
     await db`CREATE UNIQUE INDEX ON raw_fee_observations
@@ -47,7 +47,7 @@ describe.skipIf(!connection)("Knox re-read in isolated PostgreSQL", () => {
   afterAll(async () => { if (db) await db.end(); });
   beforeEach(async () => { await db`TRUNCATE raw_fee_observations, verified_fee_observations`; });
 
-  const flagsOf = async () => (await db`SELECT outlier_flags, conditions FROM raw_fee_observations`)
+  const flagsOf = async () => (await db`SELECT outlier_flags, COALESCE(extraction_note, conditions) AS conditions FROM raw_fee_observations`)
     .map((row) => ({ flags: row.outlier_flags as string[], conditions: String(row.conditions) }));
 
   it("sends the same fee read again on a re-read back to Darwin instead of leaving it retired", async () => {
@@ -61,6 +61,28 @@ describe.skipIf(!connection)("Knox re-read in isolated PostgreSQL", () => {
     expect(row.flags).toContain("knox_reread_took_over");
     expect(row.flags).not.toContain("superseded_by_reread");
     expect(row.conditions).toContain("text_hash=new-hash;");
+  });
+
+  it("files a re-read under today's category only, so Darwin does not judge it under the old one", async () => {
+    // Peoples National Bank of Kewanee (document 4506): "NSF Return/Paid Item Fee for Chkg. & Sav | $25.00"
+    // was read as nsf; today's rules read the same line as overdraft. Darwin reads the first
+    // canonical_hint flag, so the old flag must not survive the take-over.
+    const nsfLine = {
+      ...overdraft,
+      feeName: "NSF Return/Paid Item Fee for Chkg. & Sav",
+      amount: 25,
+      canonicalHint: "nsf",
+      excerpt: "NSF Return/Paid Item Fee for Chkg. & Sav | $25.00",
+    } as Parameters<typeof insertCandidate>[1]["candidate"];
+    await insertCandidate(db as unknown as Db, { runId: 1, row: firstRead, candidate: nsfLine });
+    await retireRowsFromOlderText(db as unknown as Db, reread);
+
+    expect(await insertCandidate(db as unknown as Db, { runId: 2, row: reread, candidate: { ...nsfLine, canonicalHint: "overdraft" } })).toBe(true);
+    const [row] = await flagsOf();
+    expect(row.flags.filter((flag) => flag.startsWith("canonical_hint:"))).toEqual(["canonical_hint:overdraft"]);
+    expect(row.flags).toContain("needs_darwin_verification");
+    expect(row.flags).toContain("knox_reread_took_over");
+    expect(row.conditions).toContain("canonical_hint=overdraft;");
   });
 
   it("leaves a retired row alone once Darwin has a verified row for it", async () => {
