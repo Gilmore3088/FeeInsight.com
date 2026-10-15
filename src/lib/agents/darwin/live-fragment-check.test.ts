@@ -354,13 +354,16 @@ describe("Darwin live fragment re-check", () => {
     expect(text).toContain("AND NOT gate_refused AND renamable AND NOT head_ok AND NOT exception_ok AND readable ~* ");
     expect(text).toContain("AS first_is_amount");
     expect(text).toContain("regexp_matches(readable, '(\\$\\s?)?(\\d");
-    expect(text).toContain("WHERE m[1] IS NULL AND NOT (amount < 100 AND m[2] !~ '\\.' AND m[3] IS NOT NULL)");
+    expect(text).toContain("WHERE m[1] IS NULL AND m[2] !~ '\\.\\d{2}$' AND NOT (amount < 100 AND m[2] !~ '\\.' AND m[3] IS NOT NULL)");
+    // Round 6 (rev12): no-break spaces read as spaces, as in JS; a soft if/when refusal or a floor never takes a line down.
+    expect(text).toContain("translate(COALESCE(fp.fee_name, ''), U&'\\00A0\\2007\\202F', '   ')");
+    expect(text).toContain("AS takedown_refused");
+    expect(text).toContain("WHEN takedown_refused AND NOT (amount < 100) THEN 'fragment_reread'");
     expect(text).toContain("\\y(?:may\\s+therefore|");
     expect(text).toContain("(?:only\\s+)?(?:if|when)");
     expect(text).toContain("'^activation\\s+(?:fees?|charges?)$'");
-    expect(text).toContain("WHEN pattern = 'plus' OR amount IS NULL OR amount <= 0 OR EXISTS (SELECT 1 FROM regexp_matches(name, ");
+    expect(text).toContain("WHEN pattern = 'plus' OR amount IS NULL OR amount <= 0 OR (EXISTS (SELECT 1 FROM regexp_matches(name, ");
     expect(text).toContain("WHEN reason = 'reread' THEN 'reread'");
-    expect(text).toContain("WHEN gate_refused AND NOT (amount < 100) THEN 'fragment_reread'");
     expect(text).toContain("ELSE 'reread'");
     expect(text).toContain("WHEN reason IN ('fragment', 'fragment_reread', 'rename_duplicate') THEN 'takedown'");
   });
@@ -413,7 +416,7 @@ describe("live fragment switch-on rules (#1443)", () => {
     ["Monthly Fee if the balance falls below", 5, null, { pattern: "sentence_end", action: "rename", renameTo: "Monthly Fee", renameVia: "head" }],
     ["Account Fees The following fees apply to", 5, null, { pattern: "sentence_end", action: "reread" }],
     // v6 (142713): another bank's charge is no fee of this bank.
-    ["Bank sending the wire may charge a fee of", 15, null, { pattern: "sentence_end", action: "takedown" }],
+    ["Bank sending the wire may charge a fee of", 15, null, { pattern: "sentence_end", action: "reread" }],
     ["ATM5, Telephone Banking and Bill Payment The minimum opening deposit is", 20, null, { pattern: "sentence_end", action: "reread" }],
     // A minimum or opening deposit in the line is never renamed, even under a clean head.
     ["Paper Statement Fee The minimum opening deposit is", 20, null, { pattern: "sentence_end", action: "reread" }],
@@ -624,7 +627,7 @@ describe("live fragment switch-on rules (#1443)", () => {
     ["available in your account, our payment of this transaction will result in an overdraft transaction. Because the transact", 20, null, { pattern: "pronoun", action: "reread" }],
     ["For example, if you have $50 available and you write a check that", 35, null, { pattern: "pronoun", action: "takedown" }],
     ["Monthly service charges will be waived for minors", 0, null, { pattern: "pronoun", action: "takedown" }],
-    ["Bank sending the wire will typically charge", 20, null, { pattern: "pronoun", action: "takedown" }],
+    ["Bank sending the wire will typically charge", 20, null, { pattern: "pronoun", action: "reread" }],
     // v6 review: "typically charge" alone is no refusal; only "bank sending" / "sending bank" name another bank.
     ["Receiving banks will typically charge a fee", 15, null, { pattern: "pronoun", action: "reread" }],
     // ... "other banks" alone is no refusal (a foreign ATM fee is this bank's fee).
@@ -645,7 +648,7 @@ describe("live fragment switch-on rules (#1443)", () => {
     ["Dormant Account Fee - If inactive for more than", 12, null, { pattern: "sentence_end", action: "reread" }],
     ["Monthly Service Fee: If balance falls below", 500, null, { pattern: "sentence_end", action: "takedown" }],
     ["Monthly Service Fee - When balance falls below", 1500, null, { pattern: "sentence_end", action: "takedown" }],
-    ["Closing Fee - If closed early the", 150, null, { pattern: "sentence_end", action: "takedown" }],
+    ["Closing Fee - If closed early the", 150, null, { pattern: "sentence_end", action: "reread" }],
     ["Closing Fee: When the account is closed the", 25, null, { pattern: "sentence_end", action: "reread" }],
     // v6 review, 2: waiver wording bars a rename; a line ending on "balance of" / "balance is" is refused before any rename.
     ["Monthly Service Fee You can avoid this fee by keeping a minimum balance of", 500, null, { pattern: "sentence_end", action: "takedown" }],
@@ -942,9 +945,9 @@ describe("live fragment switch-on rules (#1443)", () => {
     ["Legal Process Fee $100 per levy, plus $25 per hour research if you request", 100, null, { pattern: "pronoun", action: "reread" }],
     ["Levy Fee $125 per levy; research at $25 per hour will be", 125, null, { pattern: "pronoun", action: "reread" }],
     ["International Wire Transfer Outgoing $100.00 per wire, plus correspondent bank charges of", 100, null, { pattern: "sentence_end", action: "reread" }],
-    ["Legal Process Fee greater of $100 or actual cost; you will", 100, null, { pattern: "pronoun", action: "takedown" }],
+    ["Legal Process Fee greater of $100 or actual cost; you will", 100, null, { pattern: "pronoun", action: "reread" }],
     ["Legal Process Fee up to a maximum of", 100, null, { pattern: "sentence_end", action: "takedown" }],
-    ["Account Research $25 per hour, minimum charge $100 you will", 100, null, { pattern: "pronoun", action: "takedown" }],
+    ["Account Research $25 per hour, minimum charge $100 you will", 100, null, { pattern: "pronoun", action: "reread" }],
     ["Escheatment Fee $100 when the account is turned over to the state, you will", 100, null, { pattern: "pronoun", action: "reread" }],
     ["Incoming Wire Transfer: sending bank may charge you", 15, null, { pattern: "pronoun", action: "reread" }],
     ["Incoming Wire Transfer: Sending bank may also charge a fee; you will", 15, null, { pattern: "pronoun", action: "reread" }],
@@ -954,8 +957,8 @@ describe("live fragment switch-on rules (#1443)", () => {
     ["NSF Item; for example, if you write a check for", 35, null, { pattern: "sentence_end", action: "reread" }],
     ["Paid Overdraft Item. Because the transaction overdraws your account, you will", 35, null, { pattern: "pronoun", action: "reread" }],
     ["Overdraft Fee −$35 per item you will", 35, null, { pattern: "pronoun", action: "reread" }],
-    ["Overdraft Fee (−$35) per item if you", 35, null, { pattern: "pronoun", action: "takedown" }],
-    ["Overdraft Fee (-$35) per item if you", 35, null, { pattern: "pronoun", action: "takedown" }],
+    ["Overdraft Fee (−$35) per item if you", 35, null, { pattern: "pronoun", action: "reread" }],
+    ["Overdraft Fee (-$35) per item if you", 35, null, { pattern: "pronoun", action: "reread" }],
     ["Wire Transfer Fee −$25 per wire, you will", 25, null, { pattern: "pronoun", action: "reread" }],
     ["Paper Statement Fee (waived with e-statements) per", 3, null, { pattern: "trailing_range", action: "reread" }],
     ["Stop Payment Fee (no charge for online requests) up to", 30, null, { pattern: "trailing_range", action: "reread" }],
@@ -1101,6 +1104,170 @@ describe("live fragment switch-on rules (#1443)", () => {
     ["Overdraft Fee The fee for consumer accounts is", 30, null, { pattern: "sentence_end", action: "reread" }],
     ["Overdraft Fee The fee for personal accounts is", 30, null, { pattern: "sentence_end", action: "reread" }],
     ["Overdraft Fee The fee for business accounts is", 35, null, { pattern: "sentence_end", action: "reread" }],
+    // v6 round 6 (#1499): the rev12 review probes (three carry a no-break space).
+    ["Legal Process Fee If we receive a levy or garnishment, you will be charged a", 100, null, { pattern: "sentence_end", action: "reread" }],
+    ["Legal Process Fee If we receive a levy or garnishment, you will be charged a", 125, null, { pattern: "sentence_end", action: "reread" }],
+    ["Garnishment Fee When a garnishment is received you will be charged", 100, null, { pattern: "pronoun", action: "reread" }],
+    ["Levy Fee When we receive a levy on your account you will", 150, null, { pattern: "pronoun", action: "reread" }],
+    ["Safe Deposit Box Drilling Fee If keys are lost, you will be charged", 150, null, { pattern: "pronoun", action: "reread" }],
+    ["Safe Deposit Box Drilling Fee if both keys are lost you will", 175, null, { pattern: "pronoun", action: "reread" }],
+    ["Box Drilling Charge If you lose your keys, the drilling charge is", 200, null, { pattern: "sentence_end", action: "reread" }],
+    ["Legal Process Fee 100.00 per occurrence assessed to", 100, null, { pattern: "sentence_end", action: "reread" }],
+    ["Levy/Garnishment Fee 125.00 per order, charged to", 125, null, { pattern: "sentence_end", action: "reread" }],
+    ["Legal Process 100.00 each, charged to", 100, null, { pattern: "sentence_end", action: "reread" }],
+    ["Garnishment Fee 100 per order you will", 100, null, { pattern: "pronoun", action: "reread" }],
+    ["Safe Deposit Box 10x10 150.00 annual rent, billed to", 150, null, { pattern: "sentence_end", action: "reread" }],
+    ["Legal Process Fee $100.00 per occurrence, plus actual costs if you", 100, null, { pattern: "pronoun", action: "reread" }],
+    ["Legal Process Fee $100 or actual cost, whichever is greater; you will", 100, null, { pattern: "pronoun", action: "reread" }],
+    ["Legal Process Fee minimum charge $100; you will", 100, null, { pattern: "pronoun", action: "reread" }],
+    ["Account Research Fee $25 per hour, $100 minimum; you will", 100, null, { pattern: "pronoun", action: "reread" }],
+    ["Paper Statement Fee $3.00 per month; you will receive a credit of $3.00 if you", 3, null, { pattern: "pronoun", action: "reread" }],
+    ["Monthly Service Charge $5 is reduced by $5 if you", 5, null, { pattern: "pronoun", action: "reread" }],
+    ["Monthly Maintenance Fee $10; discount of $10 if you", 10, null, { pattern: "pronoun", action: "reread" }],
+    ["Paper Statement Fee $2 per month, $2 credit to your account if you", 2, null, { pattern: "pronoun", action: "reread" }],
+    ["Overdraft Fee (-$35) if you", 35, null, { pattern: "pronoun", action: "reread" }],
+    ["Overdraft Fee ( -$35 ) if you", 35, null, { pattern: "pronoun", action: "reread" }],
+    ["Overdraft Fee (- $35) per item if you", 35, null, { pattern: "pronoun", action: "reread" }],
+    ["Wire Fee (\u2212$15) you will", 15, null, { pattern: "pronoun", action: "reread" }],
+    ["Incoming Wire Fee (-$15) per wire if you", 15, null, { pattern: "pronoun", action: "reread" }],
+    ["Sending bank fees may apply; Incoming Wire Fee you will", 15, null, { pattern: "pronoun", action: "reread" }],
+    ["Sending Bank Charges may apply. Incoming Wire Fee, you will be charged", 15, null, { pattern: "pronoun", action: "reread" }],
+    ["Example: Overdraft Fee you will be charged", 35, null, { pattern: "pronoun", action: "takedown" }],
+    ["are charged a monthly maintenance fee of", 2, null, { pattern: "sentence_end", action: "reread" }],
+    ["are charged a check cashing fee of", 10, null, { pattern: "sentence_end", action: "reread" }],
+    ["will be charged a check cashing fee of", 10, null, { pattern: "sentence_end", action: "reread" }],
+    ["is charged a paper statement fee of", 1, null, { pattern: "sentence_end", action: "reread" }],
+    ["are charged a dormant account fee of", 5, null, { pattern: "sentence_end", action: "reread" }],
+    ["Accounts are charged a paper statement fee of", 1, null, { pattern: "sentence_end", action: "rename", renameTo: "Paper statement fee", renameVia: "tail" }],
+    ["Accounts are charged a check cashing fee of", 5, null, { pattern: "sentence_end", action: "rename", renameTo: "Check cashing fee", renameVia: "tail" }],
+    ["will be charged a coin counting fee of", 3, null, { pattern: "sentence_end", action: "reread" }],
+    ["you will be charged a lesser fee of", 10, null, { pattern: "sentence_end", action: "reread" }],
+    ["You will be charged a second-item fee of", 15, null, { pattern: "sentence_end", action: "rename", renameTo: "Second-item fee", renameVia: "tail" }],
+    ["You will be charged a weekend overdraft fee of", 10, null, { pattern: "sentence_end", action: "rename", renameTo: "Weekend overdraft fee", renameVia: "tail" }],
+    ["You will be charged a teen account fee of", 2, null, { pattern: "sentence_end", action: "rename", renameTo: "Teen account fee", renameVia: "tail" }],
+    ["You will be charged a youth account fee of", 2, null, { pattern: "sentence_end", action: "rename", renameTo: "Youth account fee", renameVia: "tail" }],
+    ["You will be charged a business overdraft fee of", 30, null, { pattern: "sentence_end", action: "rename", renameTo: "Business overdraft fee", renameVia: "tail" }],
+    ["You will be charged a premier account fee of", 5, null, { pattern: "sentence_end", action: "rename", renameTo: "Premier account fee", renameVia: "tail" }],
+    ["You will be charged an e-statement fee of", 1, null, { pattern: "sentence_end", action: "rename", renameTo: "E-statement fee", renameVia: "tail" }],
+    ["You will be charged a courtesy overdraft fee of", 25, null, { pattern: "sentence_end", action: "rename", renameTo: "Courtesy overdraft fee", renameVia: "tail" }],
+    ["You will be charged a partial overdraft fee of", 10, null, { pattern: "sentence_end", action: "reread" }],
+    ["You will be charged a nominal fee of", 5, null, { pattern: "sentence_end", action: "reread" }],
+    ["You will be charged a small item overdraft fee of", 5, null, { pattern: "sentence_end", action: "reread" }],
+    ["You will be charged a first overdraft fee of", 15, null, { pattern: "sentence_end", action: "rename", renameTo: "First overdraft fee", renameVia: "tail" }],
+    ["You will be charged a later overdraft fee of", 35, null, { pattern: "sentence_end", action: "rename", renameTo: "Later overdraft fee", renameVia: "tail" }],
+    ["You will be charged an excess item fee of", 25, null, { pattern: "sentence_end", action: "rename", renameTo: "Excess item fee", renameVia: "tail" }],
+    ["You will be charged a de minimis fee of", 0.5, null, { pattern: "sentence_end", action: "reread" }],
+    ["You will be charged a sixth item fee of", 10, null, { pattern: "sentence_end", action: "rename", renameTo: "Sixth item fee", renameVia: "tail" }],
+    ["You will be charged a reduced overdraft fee of", 15, null, { pattern: "sentence_end", action: "reread" }],
+    ["is charged a junior saver fee of", 1, null, { pattern: "sentence_end", action: "reread" }],
+    ["Teen Overdraft Fee You will be charged", 10, null, { pattern: "pronoun", action: "rename", renameTo: "Teen Overdraft Fee", renameVia: "head" }],
+    ["Second Overdraft Fee You will be charged", 30, null, { pattern: "pronoun", action: "rename", renameTo: "Second Overdraft Fee", renameVia: "head" }],
+    ["Subsequent Overdraft Fee You will be charged", 37, null, { pattern: "pronoun", action: "rename", renameTo: "Subsequent Overdraft Fee", renameVia: "head" }],
+    ["Discounted Overdraft Fee You will be charged", 15, null, { pattern: "pronoun", action: "reread" }],
+    ["Senior Citizen Monthly Fee You will be charged", 2, null, { pattern: "pronoun", action: "rename", renameTo: "Senior Citizen Monthly Fee", renameVia: "head" }],
+    ["Low Balance Fee You will be charged", 10, null, { pattern: "pronoun", action: "rename", renameTo: "Low Balance Fee", renameVia: "head" }],
+    ["Small Overdraft Fee You will be charged", 5, null, { pattern: "pronoun", action: "rename", renameTo: "Small Overdraft Fee", renameVia: "head" }],
+    ["Reduced NSF Fee You will be charged", 15, null, { pattern: "pronoun", action: "reread" }],
+    ["Overdraft Fee - Second Item. You will be charged", 30, null, { pattern: "pronoun", action: "rename", renameTo: "Overdraft Fee - Second Item", renameVia: "head" }],
+    ["Overdraft Fee - Business. You will be charged", 35, null, { pattern: "pronoun", action: "reread" }],
+    ["Overdraft Fee (Business). You will be charged", 35, null, { pattern: "pronoun", action: "rename", renameTo: "Overdraft Fee (Business)", renameVia: "head" }],
+    ["Overdraft Fee (after fifth item). You will be charged", 35, null, { pattern: "pronoun", action: "rename", renameTo: "Overdraft Fee (after fifth item)", renameVia: "head" }],
+    ["Overdraft Fee (each additional item). You will be charged", 35, null, { pattern: "pronoun", action: "rename", renameTo: "Overdraft Fee (each additional item)", renameVia: "head" }],
+    ["Overdraft Fee (waived for students). You will be charged", 35, null, { pattern: "pronoun", action: "reread" }],
+    ["Overdraft Fee (students). You will be charged", 15, null, { pattern: "pronoun", action: "rename", renameTo: "Overdraft Fee (students)", renameVia: "head" }],
+    ["Overdraft Fee (non-members). You will be charged", 15, null, { pattern: "pronoun", action: "rename", renameTo: "Overdraft Fee (non-members)", renameVia: "head" }],
+    ["Overdraft Fee (balances under five hundred). You will be charged", 15, null, { pattern: "pronoun", action: "rename", renameTo: "Overdraft Fee (balances under five hundred)", renameVia: "head" }],
+    ["Paper Statement Fee This fee will be charged", 2, null, { pattern: "pronoun", action: "rename", renameTo: "Paper Statement Fee", renameVia: "head" }],
+    ["Dormant Account Fee You will", 5, null, { pattern: "pronoun", action: "rename", renameTo: "Dormant Account Fee", renameVia: "head" }],
+    ["Overdraft Fee You will", 15, null, { pattern: "pronoun", action: "rename", renameTo: "Overdraft Fee", renameVia: "head" }],
+    ["Overdraft Fee You'll", 35, null, { pattern: "pronoun", action: "rename", renameTo: "Overdraft Fee", renameVia: "head" }],
+    ["Overdraft Fee: You will be charged each", 35, null, { pattern: "pronoun", action: "rename", renameTo: "Overdraft Fee", renameVia: "head" }],
+    ["Overdraft Fee. Will be charged a", 35, null, { pattern: "sentence_end", action: "rename", renameTo: "Overdraft Fee", renameVia: "head" }],
+    ["E-Statement Discount Fee You will be charged", 2, null, { pattern: "pronoun", action: "reread" }],
+    ["Non-Member Check Cashing Fee You will be charged", 10, null, { pattern: "pronoun", action: "rename", renameTo: "Non-Member Check Cashing Fee", renameVia: "head" }],
+    ["Member Check Cashing Fee You will be charged", 0.5, null, { pattern: "pronoun", action: "rename", renameTo: "Member Check Cashing Fee", renameVia: "head" }],
+    ["Non Member Fee You will be charged", 5, null, { pattern: "pronoun", action: "rename", renameTo: "Non Member Fee", renameVia: "head" }],
+    ["Business Overdraft Fee You will be charged", 35, null, { pattern: "pronoun", action: "rename", renameTo: "Business Overdraft Fee", renameVia: "head" }],
+    ["Monthly Service Fee if the balance falls below", 24, null, { pattern: "sentence_end", action: "rename", renameTo: "Monthly Service Fee", renameVia: "head" }],
+    ["Senior Monthly Service Fee if the balance falls below", 2, null, { pattern: "sentence_end", action: "rename", renameTo: "Senior Monthly Service Fee", renameVia: "head" }],
+    ["Student Checking Monthly Fee if the balance falls below", 3, null, { pattern: "sentence_end", action: "rename", renameTo: "Student Checking Monthly Fee", renameVia: "head" }],
+    ["Paper Statement Fee if the balance falls below", 2, null, { pattern: "sentence_end", action: "rename", renameTo: "Paper Statement Fee", renameVia: "head" }],
+    ["Overdraft Fee if the balance falls below", 20, null, { pattern: "sentence_end", action: "rename", renameTo: "Overdraft Fee", renameVia: "head" }],
+    ["Second Item Fee if the balance falls below", 10, null, { pattern: "sentence_end", action: "rename", renameTo: "Second Item Fee", renameVia: "head" }],
+    ["Inactivity Fee If the account is inactive for 12 months, the", 5, null, { pattern: "sentence_end", action: "rename", renameTo: "Inactivity Fee", renameVia: "head" }],
+    ["Inactivity Fee If the account is inactive for 12 months, the fee is", 12, null, { pattern: "sentence_end", action: "reread" }],
+    ["Continuous Overdraft Charge If your account remains overdrawn for more than 5 business days, a", 25, null, { pattern: "sentence_end", action: "rename", renameTo: "Continuous Overdraft Charge", renameVia: "head" }],
+    ["Continuous Overdraft Charge If your account remains overdrawn for more than 5 business days, a", 5, null, { pattern: "sentence_end", action: "reread" }],
+    ["Daily Overdraft Charge If your account remains overdrawn for 7 days, the", 5, null, { pattern: "sentence_end", action: "rename", renameTo: "Daily Overdraft Charge", renameVia: "head" }],
+    ["Inactive Accounts Fee (cont.) | If more than 3 years dormant the fee is", 3, null, { pattern: "sentence_end", action: "reread" }],
+    ["Overdraft Fee $35 per item, $25 for business accounts, you will", 25, null, { pattern: "pronoun", action: "reread" }],
+    ["Overdraft Fee $35 per item, $25 for business accounts, you will", 35, null, { pattern: "pronoun", action: "reread" }],
+    ["Wire Fee $25 domestic, $45 international; you will", 45, null, { pattern: "pronoun", action: "reread" }],
+    ["Wire Fee $25 domestic, $45 international; you will", 25, null, { pattern: "pronoun", action: "reread" }],
+    ["Overdraft Fee $5 for items under $20; you will", 5, null, { pattern: "pronoun", action: "reread" }],
+    ["Overdraft Fee $5 for overdrafts of $20 or less, you will", 5, null, { pattern: "pronoun", action: "reread" }],
+    ["Overdraft Fee $5 for overdrafts of $20 or less, you will", 20, null, { pattern: "pronoun", action: "reread" }],
+    ["Safe Deposit Box Fee $100 per year, $50 for seniors, you will", 100, null, { pattern: "pronoun", action: "reread" }],
+    ["Safe Deposit Box Fee $100 per year, $50 for seniors, you will", 50, null, { pattern: "pronoun", action: "reread" }],
+    ["Legal Process Fee $150 per levy, $100 if you", 100, null, { pattern: "pronoun", action: "reread" }],
+    ["Legal Process Fee $150 per levy, $100 if you", 150, null, { pattern: "pronoun", action: "reread" }],
+    ["Check Cashing Fee $100 minimum balance required if you", 100, null, { pattern: "pronoun", action: "reread" }],
+    ["Monthly Fee $100 minimum balance; you will", 100, null, { pattern: "pronoun", action: "reread" }],
+    ["Monthly Fee $10 unless you keep $100 minimum balance; you will", 100, null, { pattern: "pronoun", action: "reread" }],
+    ["Credit of $5 for e-statements if you", 5, null, { pattern: "pronoun", action: "takedown" }],
+    ["Paper Statement Fee; e-statement credit of $2 if you", 2, null, { pattern: "pronoun", action: "takedown" }],
+    ["Overdraft Fee $35, refund credit of $35 if you", 35, null, { pattern: "pronoun", action: "reread" }],
+    ["Overdraft Fee per item for items over $5. You will be charged", 5, null, { pattern: "pronoun", action: "reread" }],
+    ["Overdraft Fee per item for items over $5. You will be charged", 35, null, { pattern: "pronoun", action: "reread" }],
+    ["Incoming Wire Fee. Example: if you", 15, null, { pattern: "pronoun", action: "reread" }],
+    ["Overdraft Fee. For example, if you", 35, null, { pattern: "pronoun", action: "reread" }],
+    ["Overdraft Fee\u00a0You will be charged", 35, null, { pattern: "pronoun", action: "rename", renameTo: "Overdraft Fee", renameVia: "head" }],
+    ["Overdraft\u00a0Fee You will be charged", 35, null, { pattern: "pronoun", action: "rename", renameTo: "Overdraft Fee", renameVia: "head" }],
+    ["You will be charged a small overdraft fee of", 10, null, { pattern: "sentence_end", action: "reread" }],
+    ["You will be charged a small item fee of", 5, null, { pattern: "sentence_end", action: "reread" }],
+    ["will be charged a small overdraft fee of", 10, null, { pattern: "sentence_end", action: "reread" }],
+    ["You will be charged a low balance fee of", 10, null, { pattern: "sentence_end", action: "reread" }],
+    ["You will be charged a low overdraft fee of", 10, null, { pattern: "sentence_end", action: "reread" }],
+    ["You will be charged a standard overdraft fee of", 35, null, { pattern: "sentence_end", action: "rename", renameTo: "Overdraft fee", renameVia: "tail" }],
+    ["You will be charged a minimal overdraft fee of", 5, null, { pattern: "sentence_end", action: "reread" }],
+    ["You will be charged a nominal overdraft fee of", 5, null, { pattern: "sentence_end", action: "reread" }],
+    ["You will be charged a modest overdraft fee of", 10, null, { pattern: "sentence_end", action: "rename", renameTo: "Modest overdraft fee", renameVia: "tail" }],
+    ["You will be charged a usual overdraft fee of", 35, null, { pattern: "sentence_end", action: "rename", renameTo: "Overdraft fee", renameVia: "tail" }],
+    ["You will be charged a regular overdraft fee of", 35, null, { pattern: "sentence_end", action: "rename", renameTo: "Overdraft fee", renameVia: "tail" }],
+    ["You will be charged a current overdraft fee of", 35, null, { pattern: "sentence_end", action: "rename", renameTo: "Overdraft fee", renameVia: "tail" }],
+    ["You will be charged a separate overdraft fee of", 10, null, { pattern: "sentence_end", action: "rename", renameTo: "Separate overdraft fee", renameVia: "tail" }],
+    ["You will be charged a lesser overdraft fee of", 15, null, { pattern: "sentence_end", action: "reread" }],
+    ["You will be charged an alternate overdraft fee of", 15, null, { pattern: "sentence_end", action: "rename", renameTo: "Alternate overdraft fee", renameVia: "tail" }],
+    ["You will be charged a flat overdraft fee of", 15, null, { pattern: "sentence_end", action: "rename", renameTo: "Flat overdraft fee", renameVia: "tail" }],
+    ["You will be charged a one-time overdraft fee of", 15, null, { pattern: "sentence_end", action: "rename", renameTo: "One-time overdraft fee", renameVia: "tail" }],
+    ["You will be charged a weekly overdraft fee of", 15, null, { pattern: "sentence_end", action: "rename", renameTo: "Weekly overdraft fee", renameVia: "tail" }],
+    ["You will be charged a teen overdraft fee of", 15, null, { pattern: "sentence_end", action: "rename", renameTo: "Teen overdraft fee", renameVia: "tail" }],
+    ["You will be charged a junior overdraft fee of", 15, null, { pattern: "sentence_end", action: "rename", renameTo: "Junior overdraft fee", renameVia: "tail" }],
+    ["You will be charged a youth overdraft fee of", 15, null, { pattern: "sentence_end", action: "rename", renameTo: "Youth overdraft fee", renameVia: "tail" }],
+    ["You will be charged a starter account overdraft fee of", 15, null, { pattern: "sentence_end", action: "rename", renameTo: "Starter account overdraft fee", renameVia: "tail" }],
+    ["You will be charged a basic overdraft fee of", 15, null, { pattern: "sentence_end", action: "rename", renameTo: "Basic overdraft fee", renameVia: "tail" }],
+    ["You will be charged a premium overdraft fee of", 15, null, { pattern: "sentence_end", action: "rename", renameTo: "Premium overdraft fee", renameVia: "tail" }],
+    ["You will be charged an elder overdraft fee of", 15, null, { pattern: "sentence_end", action: "rename", renameTo: "Elder overdraft fee", renameVia: "tail" }],
+    ["You will be charged a veteran overdraft fee of", 15, null, { pattern: "sentence_end", action: "rename", renameTo: "Veteran overdraft fee", renameVia: "tail" }],
+    ["You will be charged a military overdraft fee of", 15, null, { pattern: "sentence_end", action: "rename", renameTo: "Military overdraft fee", renameVia: "tail" }],
+    ["You will be charged an employee overdraft fee of", 15, null, { pattern: "sentence_end", action: "rename", renameTo: "Employee overdraft fee", renameVia: "tail" }],
+    ["You will be charged a staff overdraft fee of", 15, null, { pattern: "sentence_end", action: "rename", renameTo: "Staff overdraft fee", renameVia: "tail" }],
+    ["You will be charged a minor overdraft fee of", 15, null, { pattern: "sentence_end", action: "rename", renameTo: "Minor overdraft fee", renameVia: "tail" }],
+    ["You will be charged a promotional overdraft fee of", 15, null, { pattern: "sentence_end", action: "rename", renameTo: "Promotional overdraft fee", renameVia: "tail" }],
+    ["You will be charged an introductory overdraft fee of", 15, null, { pattern: "sentence_end", action: "rename", renameTo: "Introductory overdraft fee", renameVia: "tail" }],
+    ["You will be charged a waived overdraft fee of", 0, null, { pattern: "sentence_end", action: "takedown" }],
+    ["You will be charged a partial waiver fee of", 15, null, { pattern: "sentence_end", action: "reread" }],
+    ["You will be charged an e-statement discount fee of", 2, null, { pattern: "sentence_end", action: "reread" }],
+    ["You will be charged a paper statement fee of", 2, null, { pattern: "sentence_end", action: "rename", renameTo: "Paper statement fee", renameVia: "tail" }],
+    ["Is charged a small overdraft fee of", 10, null, { pattern: "sentence_end", action: "reread" }],
+    ["Monthly Service Fee\u00a0if the balance falls below", 10, null, { pattern: "sentence_end", action: "rename", renameTo: "Monthly Service Fee", renameVia: "head" }],
+    ["Overdraft Fee You will be charged", 35, null, { pattern: "pronoun", action: "rename", renameTo: "Overdraft Fee", renameVia: "head" }],
+    ["Small Item Overdraft Fee You will be charged", 5, null, { pattern: "pronoun", action: "rename", renameTo: "Small Item Overdraft Fee", renameVia: "head" }],
+    ["Teen Overdraft Fee: you will be charged per item", 10, null, { pattern: "pronoun", action: "rename", renameTo: "Teen Overdraft Fee", renameVia: "head" }],
+    ["Military Overdraft Fee You will be charged", 10, null, { pattern: "pronoun", action: "rename", renameTo: "Military Overdraft Fee", renameVia: "head" }],
+    ["Overdraft Fee Waiver You will be charged", 10, null, { pattern: "pronoun", action: "reread" }],
+    ["Promotional Wire Fee You will be charged", 10, null, { pattern: "pronoun", action: "rename", renameTo: "Promotional Wire Fee", renameVia: "head" }],
+    ["Introductory Monthly Fee You will be charged", 5, null, { pattern: "pronoun", action: "rename", renameTo: "Introductory Monthly Fee", renameVia: "head" }],
   ] as const)("%j at $%s is %j", (name, amount, key, verdict) => {
     expect(liveFragmentVerdict(name, amount, key)).toEqual(verdict);
   });
@@ -1119,6 +1286,12 @@ describe("live fragment switch-on rules (#1443)", () => {
     ["BILL PAY A", 5, null],
     // v6 round 5: rev11 probes with no live fragment shape.
     ["Overdraft Fee Overdrafts of five dollars or less are not charged; others are", 35, null],
+    // v6 round 6: rev12 probes with no live fragment shape.
+    ["Excess Withdrawal Fee is charged", 10, null],
+    ["Excessive Transaction Fee is charged per item", 2, null],
+    ["Items Over Ten Per Month Fee is charged", 2, null],
+    ["Paper Statement Fee This fee is charged", 2, null],
+    ["Overdraft Fee | is charged per occurrence", 35, null],
   ] as const)("leaves rev10 probe %j at $%s with no fragment shape", (name, amount, key) => {
     expect(liveFragmentVerdict(name, amount, key)).toBeNull();
   });
@@ -1345,6 +1518,11 @@ describe("live fragment switch-on rules (#1443)", () => {
     expect(LIVE_FRAGMENT_CREDIT.test("Overdraft credit of $5")).toBe(true);
     expect(LIVE_FRAGMENT_CREDIT.test("$5 credit applied to your statement")).toBe(true);
     expect(LIVE_FRAGMENT_CREDIT.test("ACH Origination $25 credit batch you will")).toBe(false);
+    // Round 6 (rev12): a figure outside the credit equal to the amount is the fee; a bare "(-$N)" needs credit wording.
+    expect(liveFragmentCredit("Paper Statement Fee $3.00 per month; you will receive a credit of $3.00 if you", 3)).toBe(false);
+    expect(liveFragmentCredit("Overdraft Fee (-$35) if you", 35)).toBe(false);
+    expect(liveFragmentCredit("Overdraft Fee (-$35) refund if you", 35)).toBe(true);
+    expect(LIVE_FRAGMENT_CREDIT.test("Overdraft Fee (- $35) per item")).toBe(false);
     expect(LIVE_FRAGMENT_CAP_WORDING.test("Max Checking Monthly Fee")).toBe(false);
     expect(LIVE_FRAGMENT_CAP_WORDING.test("MAXIMUM LATE CHARGE OF")).toBe(true);
     // v6 review: a cap word counts only before "of $", a dollar figure or a charge/fee word.

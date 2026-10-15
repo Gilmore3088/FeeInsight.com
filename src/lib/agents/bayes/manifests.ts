@@ -269,6 +269,8 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   // needs a rest free of the rename bar (or one of three narrow forms) and a fee-noun target with no
   // figure; same cursor, nothing written. Round 5 (rev11): head and tail renames are allowlists,
   // credits and "no fee of this bank" are narrowed to an allowlist and the line start; still shadow.
+  // Round 6 (rev12): subject-carrying tail leads, soft if/when clauses and floors, cents figures as "$",
+  // a credit guard and NBSP parity in the count SQL; still shadow.
   LIVE_FRAGMENT_STRATEGY: "Its cursor re-reads every live fee name each pass (2,000 a verify step); there is nothing to replay.",
   HOURLY_CHECK_VERSION: "Its cursor re-reads every live fee name for an hourly price each pass (2,000 a verify step); there is nothing to replay.",
   // v1 (#1442): a new shadow pass. Its ledger cursor re-reads every live fee's source document address

@@ -540,6 +540,25 @@ Darwin owns verification and classification.
       $150; Late Fee $10 if you" $150 are rereads).
     - A waived trailing range at a positive amount is a reread (Darwin's verdict only; Knox's
       `liveFragmentName` and the public display are unchanged). $0 still comes down.
+  - Round 6 (review rev12), Darwin only (Knox's `liveFragmentName` and the display are unchanged):
+    - A tail lead must carry its own subject (`LIVE_FRAGMENT_TAIL_LEAD`: "you will be", "you'll
+      be", "accounts are"); a bare "are charged a" or "will be charged a" is a reread. A tail
+      phrase with small, low, minimal, nominal, lesser, partial, reduced or discounted
+      (`LIVE_FRAGMENT_TAIL_REDUCED`, read before Knox's qualifiers are stripped) is a reread.
+    - A refused if/when clause is a takedown at $100 or more only when it holds a balance or
+      threshold word (`LIVE_FRAGMENT_IF_THRESHOLD_WORD`) or a figure is the amount; otherwise it is
+      a reread ("Safe Deposit Box Drilling Fee If keys are lost, you will be charged" $150,
+      "Closing Fee - If closed early the" $150).
+    - A bare figure with cents ("100.00 per occurrence") reads like the "$" form in the figure
+      gate: it counts only when a threshold word leads into it (`LIVE_FRAGMENT_THRESHOLD_FIGURE`).
+    - Floors (`LIVE_FRAGMENT_FLOOR_WORDING`: greater of, minimum charge, min or, whichever is
+      greater, "$100 minimum") are rereads, never a takedown or a rename; caps stay hard.
+    - A credit takes a line down only when no dollar figure outside the credit phrase is the
+      amount, and a bare "(-$N)" counts only on a line with credit, discount, rebate or refund.
+    - "Sending bank" / "bank sending" at the start of the line comes down only with no fee or
+      charge word on the line (`LIVE_FRAGMENT_OTHER_BANK`).
+    - The count SQL turns U+00A0, U+2007 and U+202F into spaces before collapsing whitespace, as
+      the JS does.
 - Live hourly re-check (`hourly-frequency-check.ts`, #1456). About 802 live fees say in their name
   that they are priced by the hour ("Research Fee $25/hour", "Subpoena Fee - Per Hour") but carried
   no frequency or a per-item one, so a report read the price as a flat charge. `hourly` shows as "per
