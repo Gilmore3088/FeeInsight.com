@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { PeerLevel } from "@/lib/agents/state-expert/memory";
 
-import { districtOfState, holdsForPeerReview, peerCheck, peerOutlierReason, type WiderPeerLevels } from "./peer-checks";
+import { districtOfState, entersPeerCheck, holdsForPeerReview, peerCheck, peerOutlierReason, type WiderPeerLevels } from "./peer-checks";
 
 const level = (tier: string, count: number, p25 = 30, p75 = 34): PeerLevel => ({
   canonicalFeeKey: "overdraft",
@@ -46,5 +46,26 @@ describe("Darwin peer check fallback", () => {
     expect(districtOfState("TX")).toBe(11);
     expect(districtOfState("ZZ")).toBeNull();
     expect(districtOfState(null)).toBeNull();
+  });
+});
+
+describe("which fees enter the peer check (#1112)", () => {
+  it("compares consumer, both and unknown fees, as the benchmarks count them, and never a business fee", () => {
+    const url = "https://www.examplebank.com/disclosures/fee-schedule.pdf";
+    expect(entersPeerCheck("consumer", url)).toBe(true);
+    expect(entersPeerCheck("both", url)).toBe(true);
+    expect(entersPeerCheck("unknown", url)).toBe(true);
+    expect(entersPeerCheck(null, url)).toBe(true);
+    expect(entersPeerCheck(undefined, null)).toBe(true);
+    expect(entersPeerCheck("business", url)).toBe(false);
+  });
+
+  it("leaves out an unknown fee from a business-only schedule, by the benchmarks' address test", () => {
+    expect(entersPeerCheck("unknown", "https://www.examplebank.com/business/fee-schedule.pdf")).toBe(false);
+    expect(entersPeerCheck("unknown", "https://www.examplebank.com/commercial-banking/fees")).toBe(false);
+    // An address that names both keeps it in, as the benchmarks do.
+    expect(entersPeerCheck("unknown", "https://www.examplebank.com/personal-and-business/fees")).toBe(true);
+    // A stated consumer fee is compared whatever the address says.
+    expect(entersPeerCheck("consumer", "https://www.examplebank.com/business/fee-schedule.pdf")).toBe(true);
   });
 });
