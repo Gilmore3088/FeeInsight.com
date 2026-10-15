@@ -29,6 +29,7 @@ import { proseFeeName } from "./workspace/names";
 import { getFeeResearch, getWorkspaceBriefing, type EnginePeerOptions } from "./workspace/research";
 import { getActivePeerSet } from "./active-peer-set";
 import { asksWholeSchedule, scheduleOverview, withOwnScheduleNote, type ScheduleOverview } from "./workspace/schedule";
+import { PRO_INSTITUTION_MIN_FEES, countCatalogFees } from "@/lib/data-store/data-room";
 import { asksIncome, asksIncomeWhy, explainIncome, incomeSplit } from "./workspace/why";
 import { withDepth, type IncomeWhy } from "./workspace/story-extras";
 import { getServiceChargeIntensity, getServiceChargeIntensityTrend } from "@/lib/data-store/call-reports";
@@ -199,6 +200,24 @@ function identityForAsk(
   });
 }
 
+/**
+ * Whether Atlas's pro_institution tier holds this institution for collection: the account's own
+ * linked institution with fewer live catalog rows than PRO_INSTITUTION_MIN_FEES (#1078, #1388).
+ * A count that can't be read says nothing rather than promise a queue.
+ */
+export async function ownScheduleQueued(
+  account: Pick<HamiltonAccountContext, "institution">,
+  institutionId: number,
+  count: (id: number) => Promise<number> = countCatalogFees,
+): Promise<boolean> {
+  if (account.institution?.id !== institutionId) return false;
+  const rows = await count(institutionId).catch((error) => {
+    console.error("[hamilton-ask] catalog count failed", error);
+    return null;
+  });
+  return rows !== null && rows < PRO_INSTITUTION_MIN_FEES;
+}
+
 /** "Us" is account reference context. Only canonical public institution research is compared. */
 function asksAccountComparison(question: string): boolean {
   // Account pronouns can lead a comparison ("our fees vs peers") or follow it
@@ -346,7 +365,10 @@ export async function answerAsk(user: Asker, body: AskBody): Promise<AskResult> 
   if (!question) return { status: 400, body: { error: "Ask a question." } };
   const resolvedAsk = await resolveAskIntent(institutionId, question, peers, institution.name, fallbackFee);
   const { intent, why } = resolvedAsk;
-  const schedule = resolvedAsk.schedule && account.institution?.id === institutionId ? withOwnScheduleNote(resolvedAsk.schedule) : resolvedAsk.schedule;
+  const schedule =
+    resolvedAsk.schedule && !resolvedAsk.schedule.top && (await ownScheduleQueued(account, institutionId))
+      ? withOwnScheduleNote(resolvedAsk.schedule)
+      : resolvedAsk.schedule;
   const loadedResearch = intent.feeCategory ? await getFeeResearch(institutionId, intent.feeCategory, new Date(), { segment: intent.segment, ...peers }) : null;
   const research = loadedResearch ? { ...loadedResearch, subjectName: institution.name || loadedResearch.institutionName } : null;
   if (intent.feeCategory && !research) return { status: 404, body: { error: "That institution could not be loaded." } };
