@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { excerptOf, fillBlankFrequencies } from "./frequency-fill";
+import { excerptOf, fillBlankFrequencies, FREQUENCY_FILL_VERSION } from "./frequency-fill";
 
 type DbMock = ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
 
@@ -131,6 +131,43 @@ describe("Hamilton frequency fill", () => {
     const readSql = db.unsafe.mock.calls[0][0] as string;
     expect(readSql).toContain("fp.canonical_fee_key = 'continuous_od' AND fp.frequency IN ('monthly', 'annual', 'quarterly')");
     expect(readSql).toContain("fp.canonical_fee_key = 'monthly_maintenance'");
+  });
+
+  it("keeps a v13 correction on the next pass, and logs a later write under its own version (v14)", async () => {
+    // Regression: on Oct 15 these were corrected at 01:30 UTC and written back at 01:32 by the next
+    // pass's `settledFrequency`, which read the old period off the same line (124039's write-back
+    // left no feedback row: its key `fix:124039:daily` already existed from v10).
+    const live = [
+      { ...row(53797, "10.00", "Cashier's Check per check $7.00 Check cashing (non-customer) $5.00 Collection Item $15.00 Deposited Item Returned (per item) $10.00 Dormant Account Fee (per month) $5.00 A dormant ", "monthly"), canonical_fee_key: "deposited_item_return", fee_name: "Deposited Item Returned (per item)" },
+      { ...row(65200, "1.00", "DAILY NEGATIVE BALANCE FEE | $1.00/day or Cap Monthly", "monthly"), canonical_fee_key: "continuous_od", fee_name: "DAILY NEGATIVE BALANCE FEE" },
+      { ...row(76864, "30.00", "Overdraft Item/s Fee Per Item | $30.00 | Annual Rent – 4 x 10 | $85.00", "annual"), canonical_fee_key: "overdraft", fee_name: "Overdraft Item/s Fee Per Item" },
+      { ...row(103686, "5.00", "annual addition to the $5.00 Daily Overdraft Fee.", "annual"), canonical_fee_key: "continuous_od", fee_name: "Daily Overdraft Fee" },
+      { ...row(128934, "23.00", "Check Overdraft (ea. debit/draft paid) -$5.01 and up (negative balance) 6 per day: $23.00", "daily"), canonical_fee_key: "overdraft", fee_name: "Check Overdraft (ea. debit/draft paid) - and up (negative balance) 6 per day" },
+      { ...row(124039, "24.00", "Overdraft Protection – ODP*(per item presentment) | $24.00 (Not to exceed 5 charges per day)", "daily"), canonical_fee_key: "overdraft", fee_name: "Overdraft Protection – ODP (per item presentment)" },
+      { ...row(87587, "3.00", "Daily overdraft fee………………$3.00 | Online Cash Management & Bill Pay……...……$19.95/month", "monthly"), canonical_fee_key: "continuous_od", fee_name: "Daily overdraft fee" },
+    ];
+    const first = await fillBlankFrequencies(asDb(createDbMock(live)), { runId: 1, dryRun: true });
+    expect(first.filled.map((fee) => [fee.feePublishedId, fee.from, fee.frequency])).toEqual([
+      [53797, "monthly", "per_item"],
+      [65200, "monthly", "daily"],
+      [76864, "annual", "per_item"],
+      [103686, "annual", "daily"],
+      [128934, "daily", "per_item"],
+      [124039, "daily", "per_item"],
+      [87587, "monthly", "daily"],
+    ]);
+    // The next pass reads the corrected rows (live and verified agree) and writes nothing.
+    const corrected = live.map((fee) => ({ ...fee, frequency: first.filled.find((fill) => fill.feePublishedId === fee.fee_published_id)!.frequency }));
+    const second = await fillBlankFrequencies(asDb(createDbMock(corrected)), { runId: 2, dryRun: true });
+    expect(second.filled).toEqual([]);
+    expect(second.held).toEqual([]);
+
+    const db = createDbMock(live.slice(5, 6));
+    await fillBlankFrequencies(asDb(db), { runId: 3, dryRun: false });
+    // Feedback rows upsert on their key: an unversioned key overwrote 124039's v10 row instead of adding one.
+    const values = db.mock.calls.flatMap((call) => call.slice(1)).map((value) => (typeof value === "string" ? value : JSON.stringify(value))).join("\n");
+    expect(values).toContain(`hamilton.frequency_fill:v${FREQUENCY_FILL_VERSION}:fix:124039:daily:per_item`);
+    expect(db.unsafe.mock.calls[0][0]).toContain("COALESCE(fr.extraction_note, fr.conditions) AS conditions");
   });
 
   it("fills a blank box rent from its table's annual header and logs the basis (v10)", async () => {

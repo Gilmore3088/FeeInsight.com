@@ -54,7 +54,10 @@ export const FREQUENCY_FILL_CHECK = "hamilton.frequency_fill";
 // monthly, annual, quarterly or daily (a daily cap or a waiver is not the fee's frequency); a
 // continuous overdraft fee stored by the month or year takes daily when its own words say so; a
 // blank monthly-maintenance fee takes monthly only when its own name or line says month.
-export const FREQUENCY_FILL_VERSION = 13;
+// v14 (#1339): every value the fill writes is one its own per-event check keeps, so a v13 correction
+// is not written back on the next pass; feedback dedupe keys name the version, so a later version's
+// write is always logged; the excerpt is read from `extraction_note` when it is set (#1336).
+export const FREQUENCY_FILL_VERSION = 14;
 /** The rolled_back_reason prefix of a fee the frequency fill holds (v11). */
 export const FREQUENCY_HOLD_REASON = "frequency_hold";
 /** Documents read per step for box-table headers; later steps take the rest. */
@@ -264,10 +267,17 @@ export async function fillBlankFrequencies(
     // next pass. Before, overdraft fees 79931, 130684 and 140170 went round that loop on every
     // publish step: "Overdraft Trans. (After 3rd trans. per mo.) | $5.00" was filled monthly from its
     // line, then cleared, then filled again (the feedback dedupe logged only the first round).
-    if (stated == null && frequency != null) {
+    // v14 (#1339): the same holds for a stated frequency. A correction the check made ("Deposited
+    // Item Returned (per item) $10.00 Dormant Account Fee (per month)", 53797 monthly -> per_item)
+    // was read on the next pass by `settledFrequency`, which took "monthly" off the same line and
+    // wrote it back two minutes later (01:30 and 01:32 UTC, Oct 15; 53797, 65200, 76864, 103686,
+    // 128934 and 124039). Any value the fill writes must be one its own check keeps, so a correction
+    // is a fixed point: the next pass reads it and writes nothing. A value the check would hold
+    // leaves a stated frequency as it is and a blank blank.
+    if (frequency != null && frequency !== stated) {
       const recheck = perEventPeriodCheck(row.canonical_fee_key, frequency, sourceLine, amount, row.fee_name)
         ?? continuousOverdraftPeriodCheck(row.canonical_fee_key, frequency, sourceLine, amount, row.fee_name);
-      if (recheck && recheck.action !== "keep") frequency = recheck.action === "correct" ? recheck.frequency : null;
+      if (recheck && recheck.action !== "keep") frequency = recheck.action === "correct" ? recheck.frequency : stated;
     }
     if (frequency === stated) continue;
     if (result.filled.length >= limit) break;
@@ -364,7 +374,9 @@ export async function fillBlankFrequencies(
     amount: fee.amount,
     evidence: { from: fee.from, to: fee.frequency, source_line: fee.sourceLine, ...(fee.basis ? { basis: fee.basis } : {}) },
     runId: options.runId,
-    dedupeKey: fee.from == null ? `${FREQUENCY_FILL_CHECK}:fill:${fee.feePublishedId}` : `${FREQUENCY_FILL_CHECK}:fix:${fee.feePublishedId}:${fee.frequency ?? "none"}`,
+    dedupeKey: fee.from == null
+      ? `${FREQUENCY_FILL_CHECK}:v${FREQUENCY_FILL_VERSION}:fill:${fee.feePublishedId}`
+      : `${FREQUENCY_FILL_CHECK}:v${FREQUENCY_FILL_VERSION}:fix:${fee.feePublishedId}:${fee.from}:${fee.frequency ?? "none"}`,
   }));
   for (const fee of result.held) {
     lessons.push({
@@ -383,7 +395,7 @@ export async function fillBlankFrequencies(
       amount: fee.amount,
       evidence: { from: fee.frequency, held: true, reason: fee.reason, source_line: fee.sourceLine },
       runId: options.runId,
-      dedupeKey: `${FREQUENCY_FILL_CHECK}:hold:${fee.feePublishedId}`,
+      dedupeKey: `${FREQUENCY_FILL_CHECK}:v${FREQUENCY_FILL_VERSION}:hold:${fee.feePublishedId}`,
     });
   }
   if (lessons.length > 0) {
