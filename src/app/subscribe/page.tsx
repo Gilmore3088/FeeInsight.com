@@ -312,7 +312,7 @@ export default async function SubscribePage({
           )}
 
           <div className="mx-auto max-w-3xl text-center">
-            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-ink-muted">{entry.context}</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-ink-muted">{entry.page ? entry.context : "Pricing"}</p>
             <h1
               id="pro-title"
               className="mt-3 text-[2.25rem] font-semibold leading-[1.04] tracking-[-0.04em] text-ink sm:text-[3rem]"

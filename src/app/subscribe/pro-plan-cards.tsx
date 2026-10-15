@@ -49,7 +49,7 @@ interface ProPlanBoardProps {
 
 const DISPLAY = { fontFamily: "var(--fi-font-sans)" };
 const FIND_BUTTON =
-  "mt-5 flex min-h-11 w-full items-center justify-center rounded-lg border border-ink px-4 text-sm font-semibold text-ink hover:bg-ink hover:text-on-ink";
+  "flex min-h-11 w-full items-center justify-center rounded-lg border border-ink px-4 text-sm font-semibold text-ink hover:bg-ink hover:text-on-ink";
 
 /**
  * The one plan comparison (James, 2026-10-15: Pro is the goal). One billing toggle, annual
@@ -82,7 +82,7 @@ export function ProPlanBoard({
   return (
     <div>
       <div className="flex justify-center">
-        <div role="radiogroup" aria-label="Billing" className="relative inline-grid grid-cols-2 gap-1 rounded-full bg-surface-200 p-1 text-sm">
+        <div role="radiogroup" aria-label="Billing" className="inline-flex max-w-full gap-1 rounded-full bg-surface-200 p-1 text-sm">
           {(["annual", "monthly"] as const).map((option) => {
             const on = plan === option;
             return (
@@ -99,7 +99,7 @@ export function ProPlanBoard({
                 {option === "annual" ? "Annual" : "Monthly"}
                 {option === RECOMMENDED_PLAN && (
                   <span className="whitespace-nowrap rounded-full bg-brick/10 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-[0.06em] text-brick">
-                    Recommended · {monthsFree} months free
+                    Recommended<span className="max-sm:hidden"> · {monthsFree} months free</span>
                   </span>
                 )}
               </button>
@@ -143,9 +143,11 @@ export function ProPlanBoard({
               {mine && selectedName ? (
                 <p className="mt-4 border-t border-border pt-3 text-[13px] font-medium leading-snug text-ink">{selectedName}</p>
               ) : selection === null ? (
-                <PricingJump inputId={CHOOSER_INPUT_ID} targetId={CHECKOUT_ID} className={`mt-auto ${FIND_BUTTON}`}>
-                  Find your institution
-                </PricingJump>
+                <div className="mt-auto pt-5">
+                  <PricingJump inputId={CHOOSER_INPUT_ID} targetId={CHECKOUT_ID} className={FIND_BUTTON}>
+                    Find your institution
+                  </PricingJump>
+                </div>
               ) : null}
             </li>
           );
@@ -184,7 +186,7 @@ export function ProPlanBoard({
               )}
             </>
           ) : (
-            <div className="flex h-full flex-col justify-center rounded-xl bg-surface-200/60 p-5 text-sm leading-relaxed text-ink">
+            <div className="rounded-xl bg-surface-200/60 p-5 text-sm leading-relaxed text-ink md:mt-10">
               <p className="font-semibold">Your price and checkout show here.</p>
               <p className="mt-1 text-ink-muted">Pick your bank or credit union and we match it to its size.</p>
             </div>
