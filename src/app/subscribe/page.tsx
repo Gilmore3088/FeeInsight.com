@@ -426,10 +426,10 @@ export default async function SubscribePage({
             <p className="text-xs font-semibold uppercase tracking-[0.14em] text-ink-muted">{entry.context}</p>
             <h1
               id="pro-title"
-              className="mt-3 text-4xl font-bold leading-[1.08] tracking-tight text-ink sm:text-5xl" style={DISPLAY}
+              className="mt-3 text-[length:clamp(1.75rem,8.2vw,2.25rem)] font-bold leading-[1.08] tracking-tight text-ink sm:text-5xl" style={DISPLAY}
             >
-              {/* No-break spaces keep "Understand" and "market." off lines of their own on phones. */}
-              {"Understand\u00a0your fees. Know your\u00a0market."}
+              {/* On a phone the size follows the width, so it breaks after "fees." as two sentences. */}
+              Understand your fees. Know your market.
             </h1>
             <p className="mt-4 max-w-xl text-lg leading-relaxed text-ink">
               Hamilton, the {SITE_NAME} Pro workspace: your fees against your market, with a source for every figure.

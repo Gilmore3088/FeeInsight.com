@@ -117,12 +117,29 @@ describe("product sizzle", () => {
     render(<FramePlaceholder caption="Product tour · coming soon" />);
     expect(screen.getByText("Product tour · coming soon")).toBeTruthy();
     expect(screen.queryByRole("button")).toBeNull();
-    expect(document.querySelector("[data-video-placeholder]")?.className).toContain("aspect-video");
+    const block = document.querySelector("[data-video-placeholder]");
+    expect(block?.className).toContain("aspect-video");
+    expect(block?.className).toContain("w-full");
+    expect(block?.getAttribute("role")).toBeNull();
   });
 
-  it("puts the placeholder by the chapter tabs until a clip exists, then only the real button", () => {
+  it("lays the chapter tabs out as one row of equal pills", () => {
+    renderSizzle();
+    const row = screen.getByRole("group", { name: "Chapters" });
+    expect(row.className).toContain("flex");
+    expect(row.className).not.toContain("grid");
+    const pills = screen.getAllByRole("button", { name: /^(ONE|TWO|THREE|FOUR)$/ });
+    expect(pills).toHaveLength(4);
+    for (const pill of pills) expect(pill.className).toContain("w-[8.25rem]");
+    expect(pills.filter((p) => p.getAttribute("aria-pressed") === "true")).toHaveLength(1);
+  });
+
+  it("puts the placeholder in its own band under the chapter tabs until a clip exists, then only the real button", () => {
     const { rerender } = render(<ProductSizzle label="Hamilton" chapters={CHAPTERS} placeholder="Product tour · coming soon" />);
     expect(document.querySelectorAll("[data-video-placeholder]").length).toBe(1);
+    const row = screen.getByRole("group", { name: "Chapters" });
+    expect(row.nextElementSibling?.hasAttribute("data-video-placeholder")).toBe(true);
+    expect(row.contains(document.querySelector("[data-video-placeholder]"))).toBe(false);
     expect(screen.queryByRole("button", { name: /coming soon/ })).toBeNull();
     rerender(
       <ProductSizzle

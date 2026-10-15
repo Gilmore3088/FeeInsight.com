@@ -5,10 +5,10 @@ import type { HomeData } from "./landing-shared";
 
 /**
  * A recorded tour, once one is approved (brief 06 §4.1). Until then there is none: the frame
- * shows no "Watch the tour" button, and a still placeholder tile sits by the chapter tabs.
+ * shows no "Watch the tour" button, and a full-width still placeholder sits under the chapter tabs.
  */
 export const HOME_TOUR_VIDEO: FrameVideo | null = null;
-/** The placeholder tile's caption while HOME_TOUR_VIDEO is null (growth OS re-walk R1). */
+/** The placeholder block's caption while HOME_TOUR_VIDEO is null (growth OS re-walk R1). */
 export const HOME_TOUR_PLACEHOLDER = "Product tour · coming soon";
 
 /**

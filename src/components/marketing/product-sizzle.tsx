@@ -49,7 +49,7 @@ export function ProductSizzle({
   label: string;
   chapters: SizzleChapter[];
   video?: FrameVideo | null;
-  /** The caption of the tour's placeholder tile, shown by the chapter tabs while there is no clip. */
+  /** The caption of the tour's placeholder block, shown under the chapter tabs while there is no clip. */
   placeholder?: string;
   chapterMs?: number;
   maxLoops?: number;
@@ -58,6 +58,7 @@ export function ProductSizzle({
 }) {
   const last = chapters.length - 1;
   const frameRef = useRef<HTMLDivElement>(null);
+  const tabsRef = useRef<HTMLDivElement>(null);
   const reduced = useReducedMotion();
   const [active, setActive] = useState(last);
   const [mode, setMode] = useState<Mode>("ready");
@@ -130,6 +131,17 @@ export function ProductSizzle({
       if (!fired) remaining.current = Math.max(0, remaining.current - (Date.now() - startedAt));
     };
   }, [mode, turn, active, last, chapterMs, maxLoops, reduced]);
+
+  // On a phone the chapter row scrolls sideways: keep the active pill in view as the run
+  // moves on, scrolling only the row (never the page).
+  useEffect(() => {
+    const row = tabsRef.current;
+    if (!row || row.scrollWidth <= row.clientWidth) return;
+    const pill = row.querySelector<HTMLElement>('[data-active="true"]');
+    if (!pill) return;
+    const left = pill.offsetLeft - (row.clientWidth - pill.offsetWidth) / 2;
+    if (typeof row.scrollTo === "function") row.scrollTo({ left, behavior: reduced ? "auto" : "smooth" });
+  }, [active, reduced]);
 
   const choose = (index: number) => {
     pausedByScroll.current = false;
@@ -220,43 +232,44 @@ export function ProductSizzle({
           </div>
         </FrameMedia>
       </ProductFrame>
-      <div className="mt-4 flex flex-col items-center gap-4 lg:flex-row lg:justify-center lg:gap-6">
-        <div
-          role="group"
-          aria-label="Chapters"
-          className="grid w-full max-w-xl grid-cols-2 gap-1.5 rounded-2xl border border-border bg-surface-0/70 p-1.5 sm:flex sm:rounded-full"
-        >
-          {chapters.map((chapter, i) => {
-            const on = i === active;
-            return (
-              <button
-                key={chapter.key}
-                type="button"
-                onClick={() => choose(i)}
-                aria-pressed={on}
-                aria-controls={`sizzle-${chapter.key}`}
-                className={`relative flex min-h-10 flex-1 items-center justify-center overflow-hidden rounded-full px-3 text-[13px] font-semibold transition-colors motion-reduce:transition-none ${
-                  on ? "bg-ink text-on-ink" : "text-ink-soft hover:bg-surface-200"
-                }`}
-              >
-                {chapter.label}
-                {on && running ? (
-                  <span className="absolute inset-x-3 bottom-1 h-0.5 overflow-hidden rounded-full bg-on-ink/25">
-                    <ProgressFill
-                      key={turn}
-                      filling
-                      durationMs={chapterMs}
-                      paused={mode === "paused"}
-                      className="bg-on-ink"
-                    />
-                  </span>
-                ) : null}
-              </button>
-            );
-          })}
-        </div>
-        {placeholder && !video?.src ? <FramePlaceholder caption={placeholder} className="max-w-[11.5rem] sm:max-w-[15rem] lg:w-48" /> : null}
+      {/* One row of equal pills. A phone scrolls it sideways; it never wraps into a grid. */}
+      <div
+        ref={tabsRef}
+        role="group"
+        aria-label="Chapters"
+        className="-mx-4 mt-5 flex gap-2 overflow-x-auto px-4 pb-1 [mask-image:linear-gradient(to_right,transparent,black_1rem,black_calc(100%-1rem),transparent)] [scrollbar-width:none] sm:mx-auto sm:[mask-image:none] sm:max-w-2xl sm:justify-center sm:overflow-visible sm:px-0 [&::-webkit-scrollbar]:hidden"
+      >
+        {chapters.map((chapter, i) => {
+          const on = i === active;
+          return (
+            <button
+              key={chapter.key}
+              type="button"
+              onClick={() => choose(i)}
+              aria-pressed={on}
+              aria-controls={`sizzle-${chapter.key}`}
+              data-active={on ? "true" : "false"}
+              className={`relative flex min-h-10 w-[8.25rem] shrink-0 items-center justify-center overflow-hidden whitespace-nowrap rounded-full border px-3 text-[13px] font-semibold transition-colors motion-reduce:transition-none sm:w-auto sm:flex-1 sm:basis-0 ${
+                on ? "border-ink bg-ink text-on-ink" : "border-border bg-surface-0 text-ink-soft hover:border-ink hover:text-ink"
+              }`}
+            >
+              {chapter.label}
+              {on && running ? (
+                <span className="absolute inset-x-3 bottom-1 h-0.5 overflow-hidden rounded-full bg-on-ink/25">
+                  <ProgressFill
+                    key={turn}
+                    filling
+                    durationMs={chapterMs}
+                    paused={mode === "paused"}
+                    className="bg-on-ink"
+                  />
+                </span>
+              ) : null}
+            </button>
+          );
+        })}
       </div>
+      {placeholder && !video?.src ? <FramePlaceholder caption={placeholder} className="mt-10 sm:mt-14" /> : null}
     </div>
   );
 }
