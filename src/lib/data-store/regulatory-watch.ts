@@ -133,6 +133,12 @@ export interface RegulatoryWatch {
 
 const CONSUMER_LAW = /consumer law|unfair|deceptive|udap|udaap|abusive|overdraft|truth in savings|regulation (dd|e)\b|electronic fund|\bfees?\b/i;
 
+/**
+ * The same test as a Postgres regular expression, for `subject ~* ...` in SQL. Postgres reads
+ * `\b` as a backspace, so a word start is `\m` and a word end `\M`.
+ */
+export const CONSUMER_LAW_PG = CONSUMER_LAW.source.replace(/\\b(?=\w)/g, "\\m").replace(/\\b/g, "\\M");
+
 export function isConsumerLaw(subject: string | null | undefined): boolean {
   return Boolean(subject && CONSUMER_LAW.test(subject));
 }

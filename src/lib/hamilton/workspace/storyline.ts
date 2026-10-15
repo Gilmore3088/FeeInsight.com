@@ -17,7 +17,7 @@ import { plainName, proseFeeName } from "./names";
 import { ownRate, ownRateSource, rateRelation, ratesOf } from "./rates";
 import { MIN_PEERS_FOR_POSITION, pricePosition } from "./scenario";
 import { segmentExhibit, shortSegmentLabel } from "./segment";
-import { isWireFact } from "./wire";
+import { isFederalRelease, isWireFact } from "./wire";
 import type { ArchetypeKey, KeyFigure, StoryExhibit, StoryOption, Storyline, StorylineKind } from "./storyline-types";
 import type { Exhibit, Fact, FeeResearch, HamiltonAnswer, SegmentMember, SourceRef } from "./types";
 
@@ -571,7 +571,7 @@ function complication(research: FeeResearch, name: string): Fact[] {
     });
   }
   if (out.length < 2) {
-    const news = research.regulation.find((r) => r.source.table === "reg_articles");
+    const news = research.regulation.find(isFederalRelease);
     if (news) out.push(news);
   }
   return out.slice(0, 2);
@@ -830,7 +830,7 @@ function watch(research: FeeResearch, name: string, intent: StoryIntent = {}): F
     const wire = research.regulation.filter(isWireFact).slice(0, REGULATION_WATCH_WIRE);
     return [...wire, ...out].slice(0, REGULATION_WATCH_MAX);
   }
-  const news = research.regulation.filter((r) => r.source.table === "reg_articles").slice(0, 1);
+  const news = research.regulation.filter(isFederalRelease).slice(0, 1);
   return [...out, ...news].slice(0, 3);
 }
 

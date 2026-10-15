@@ -1,0 +1,79 @@
+/* Fee Insight component styles. Load once, after tokens.css:
+   import "@/brand/tokens/tokens.css"; import "@/brand/styles/fee-insight.css"; */
+
+/* Logo: colours come from these variables so marks follow the theme automatically. */
+.fi-mark{--fi-mark-ink:var(--fi-ink);--fi-mark-accent:var(--fi-brick);--fi-mark-muted:var(--fi-muted);display:inline-block;height:auto}
+.fi-mark--reverse{--fi-mark-ink:#f3efe6;--fi-mark-accent:#e0716a;--fi-mark-muted:#a9b3c1}
+.fi-mark--light{--fi-mark-ink:#132338;--fi-mark-accent:#b23a32;--fi-mark-muted:#55606f}
+.fi-mark--mono{--fi-mark-accent:var(--fi-mark-ink);--fi-mark-muted:var(--fi-mark-ink)}
+.fi-root{background:var(--fi-paper);color:var(--fi-ink);font-family:var(--fi-font-sans);font-size:15px;line-height:24px;-webkit-font-smoothing:antialiased}
+:where(.fi-btn,.fi-input,.fi-tag,a):focus-visible{outline:2px solid var(--fi-brick);outline-offset:2px}
+/* AppIcon */
+.fi-appicon{display:block;border-radius:22%;flex:none}
+/* On the navy reverse ground, give navy tiles a hairline so they don't disappear. */
+:where([data-theme="dark"],.dark) .fi-appicon{box-shadow:0 0 0 1px rgba(243,239,230,.2)}
+/* Button */
+.fi-btn{font:600 15px/20px var(--fi-font-sans);border-radius:var(--fi-radius-md);padding:var(--fi-space-3) var(--fi-space-4);border:1px solid transparent;cursor:pointer;display:inline-flex;align-items:center;gap:var(--fi-space-2);transition:opacity .15s ease-out,background-color .15s ease-out}
+.fi-btn:disabled{cursor:not-allowed;color:var(--fi-muted);background:var(--fi-surface-200);border-color:transparent;opacity:.7}
+.fi-btn-primary{background:var(--fi-ink);color:var(--fi-on-ink)}
+.fi-btn-brick{background:var(--fi-brick);color:var(--fi-on-brick)}
+.fi-btn-primary:hover:not(:disabled),.fi-btn-brick:hover:not(:disabled){opacity:.88}
+.fi-btn-secondary{background:var(--fi-surface-0);color:var(--fi-ink);border-color:var(--fi-control-border)}
+.fi-btn-secondary:hover:not(:disabled),.fi-btn-quiet:hover:not(:disabled){background:var(--fi-surface-200)}
+.fi-btn-quiet{background:transparent;color:var(--fi-ink)}
+.fi-btn-sm{font-size:13px;padding:6px var(--fi-space-3)}
+/* Tag */
+.fi-tag{display:inline-flex;align-items:center;gap:6px;font:600 12px/16px var(--fi-font-sans);letter-spacing:.06em;text-transform:uppercase;padding:var(--fi-space-1) var(--fi-space-2);border-radius:var(--fi-radius-sm);background:var(--fi-surface-200);color:var(--fi-muted)}
+.fi-tag-brick{background:var(--fi-brick-tint);color:var(--fi-brick-ink)}
+/* FeeRange */
+.fi-range{display:grid;grid-template-columns:minmax(120px,180px) 1fr 72px;align-items:center;gap:var(--fi-space-4);padding:var(--fi-space-2) 0;border-bottom:1px solid var(--fi-border)}
+.fi-range-label{font-size:14px;line-height:20px;color:var(--fi-ink)}
+.fi-range-value{font:500 14px/20px var(--fi-font-mono);text-align:right;color:var(--fi-ink);font-variant-numeric:tabular-nums}
+.fi-range svg{width:100%;height:28px;display:block;overflow:visible}
+.fi-range .w{stroke:var(--fi-control-border);stroke-width:2}
+.fi-range .box{fill:var(--fi-brick-tint)}
+.fi-range .med{stroke:var(--fi-ink);stroke-width:2}
+.fi-range .you{fill:var(--fi-brick);stroke:var(--fi-paper);stroke-width:2}
+.fi-range-axis{display:grid;grid-template-columns:minmax(120px,180px) 1fr 72px;gap:var(--fi-space-4);font:400 12px/16px var(--fi-font-mono);color:var(--fi-muted)}
+.fi-range-axis div:nth-child(2){position:relative;height:16px}
+.fi-range-axis span{position:absolute;top:0;transform:translateX(-50%);white-space:nowrap}
+.fi-range-axis span:first-child{transform:none}
+.fi-range-axis span:last-child{transform:translateX(-100%)}
+/* Phones: the label takes its own line so the plot gets the full width, and only the end ticks show. */
+@media (max-width:479px){
+.fi-range,.fi-range-axis{grid-template-columns:1fr 64px;column-gap:var(--fi-space-3);row-gap:var(--fi-space-1)}
+.fi-range-label{grid-column:1/-1}
+.fi-range-axis>div:first-child{display:none}
+.fi-range-axis span:not(:first-child):not(:last-child){display:none}
+}
+/* StatCard */
+.fi-stat{background:var(--fi-surface-0);border:1px solid var(--fi-border);border-radius:var(--fi-radius-lg);padding:var(--fi-space-6);display:flex;flex-direction:column;gap:var(--fi-space-2);min-width:220px}
+.fi-stat-label{font:600 12px/16px var(--fi-font-sans);letter-spacing:.06em;text-transform:uppercase;color:var(--fi-muted)}
+.fi-stat-value{font:600 40px/44px var(--fi-font-mono);letter-spacing:-.02em;color:var(--fi-ink);font-variant-numeric:tabular-nums}
+.fi-stat-delta{font:500 14px/20px var(--fi-font-sans);display:flex;gap:6px;align-items:center}
+.fi-stat-delta.above{color:var(--fi-above-market)}.fi-stat-delta.below{color:var(--fi-below-market)}.fi-stat-delta.in{color:var(--fi-in-range)}
+.fi-stat-source{font-size:13px;line-height:20px;color:var(--fi-muted);border-top:1px solid var(--fi-border);padding-top:var(--fi-space-2);margin-top:var(--fi-space-2)}
+/* FeeTable */
+.fi-table{width:100%;border-collapse:collapse;background:var(--fi-surface-0);border:1px solid var(--fi-border);border-radius:var(--fi-radius-lg);overflow:hidden;font-size:14px;line-height:20px}
+.fi-table th{font:600 12px/16px var(--fi-font-sans);letter-spacing:.06em;text-transform:uppercase;color:var(--fi-muted);text-align:left;background:var(--fi-surface-200);padding:var(--fi-space-3) var(--fi-space-4)}
+.fi-table td{padding:var(--fi-space-3) var(--fi-space-4);border-top:1px solid var(--fi-border);color:var(--fi-ink)}
+.fi-table .num{font-family:var(--fi-font-mono);text-align:right;font-variant-numeric:tabular-nums}
+.fi-table th.num{text-align:right}
+.fi-table tr.is-subject td{background:var(--fi-brick-tint);color:var(--fi-brick-ink);font-weight:600}
+.fi-pos{font:500 13px/20px var(--fi-font-sans)}.fi-pos.above{color:var(--fi-above-market)}.fi-pos.below{color:var(--fi-below-market)}.fi-pos.in{color:var(--fi-in-range)}
+tr.is-subject .fi-pos{color:var(--fi-brick-ink)}
+/* SearchInput */
+.fi-field{display:flex;flex-direction:column;gap:6px;max-width:420px}
+.fi-field label{font:600 13px/20px var(--fi-font-sans);color:var(--fi-ink)}
+.fi-input{font:400 15px/24px var(--fi-font-sans);color:var(--fi-ink);background:var(--fi-surface-0);border:1px solid var(--fi-control-border);border-radius:var(--fi-radius-md);padding:var(--fi-space-2) var(--fi-space-3) var(--fi-space-2) 36px;background-image:none;width:100%;box-sizing:border-box}
+.fi-input::placeholder{color:var(--fi-muted)}
+.fi-input-wrap{position:relative}
+.fi-input-wrap svg{position:absolute;left:12px;top:50%;transform:translateY(-50%);width:16px;height:16px;stroke:var(--fi-muted);fill:none;stroke-width:1.5}
+.fi-field .fi-hint{font-size:13px;line-height:20px;color:var(--fi-muted)}
+/* ChatMessage */
+.fi-chat{display:flex;gap:var(--fi-space-3);align-items:flex-start;max-width:640px}
+.fi-chat.user{flex-direction:row-reverse}
+.fi-chat-bubble{background:var(--fi-surface-0);border:1px solid var(--fi-border);border-radius:var(--fi-radius-lg);padding:var(--fi-space-3) var(--fi-space-4);font-size:15px;line-height:24px;color:var(--fi-ink)}
+.fi-chat.user .fi-chat-bubble{background:var(--fi-ink);color:var(--fi-on-ink);border-color:transparent}
+.fi-chat-source{display:block;margin-top:var(--fi-space-2);font-size:13px;line-height:20px;color:var(--fi-muted)}
+.fi-chat-fig{font-family:var(--fi-font-mono);font-weight:600}

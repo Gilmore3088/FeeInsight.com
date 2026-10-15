@@ -7,9 +7,11 @@ Brand strings live in `src/lib/constants.ts`; `scripts/ci-guards.sh brand-kill` 
 Contact stays hello@bankfeeindex.com until feeinsight.com mail exists.
 
 ## Money thesis
-A bank/CU marketing or product manager pays ~$300 for a competitive fee report for
-their market. Why us: live verified fee data (`published_fee_catalog`) + banking domain
-expertise. Kept fully separate from the CSI day job.
+A bank/CU marketing, product or pricing manager subscribes to Hamilton Pro, paid monthly or
+annually. That subscription is the site's goal. The Competitive Fee Position Report ("from $300")
+is a high-value lead into Pro, not the goal; free reports and alerts are lead capture. Why us:
+live verified fee data (`published_fee_catalog`) + banking domain expertise. Kept fully separate
+from the CSI day job.
 
 ## How work runs
 Up to three builders at once, one per lane in `docs/plans/build-plan-2026-10-12.md` ("Lanes");

@@ -124,12 +124,21 @@ Hamilton supports the decision; it does not make it.
   `hamilton_uploads`. A client fact is never edited in place: a new value supersedes it
   (`superseded_at`), so the history of what the bank told Hamilton survives.
 - A regulation answer reads the Regulatory Wire (`workspace/wire.ts`, #1090): federal rules
-  from the bank's own federal regulator and the CFPB whose tracker topics bear on the fee (last
-  365 days, or still open for comment), fee bills in its state (an action in the last two
-  years), consumer-law enforcement actions by its federal regulator or in its state (last three
-  years; state orders carry no subject on file, so they are left out), and its state
-  regulator's fee posts. One of each kind leads the storyline's watch list, each with its date
-  and link; all of them sit in the research page's regulation section. Nothing is interpreted.
+  from the bank's own federal regulator and the CFPB whose tracker topics bear on the fee
+  (published in the last 365 days, still open for comment, or with an effective date no more
+  than 365 days back, future dates included), fee bills in its state (an action in the last two years),
+  consumer-law enforcement actions by its federal regulator or against an institution in its
+  state (last three years; state orders carry no subject on file, so they are left out), and
+  its state regulator's fee posts from the last 365 days. The enforcement read puts the
+  regulator, the state and the consumer-law test in its SQL (`CONSUMER_LAW_PG`), so its row
+  limit never hides the bank's own actions (#1254). State codes are upper-cased once and
+  compared upper case on both sides. One of each kind leads the storyline's watch list, each
+  with its date and link; all of them sit in the research page's regulation section. Nothing
+  is interpreted. OCC orders have no document link in the OCC export, so OCC lines link to the
+  OCC enforcement search page.
+- A state regulator's post comes from `reg_articles` but is tagged `kind: "state_post"`.
+  Only federal releases (`isFederalRelease`) trip a decision's `rule_release` watch, fill the
+  storyline's news slot, or appear in a watch list that is not about regulation (#1254).
 - The workspace builders are deterministic and make no provider calls; the memo route
   above is the paid exception.
 

@@ -5,6 +5,14 @@ Seeded 2026-10-05 from the project's working memory; earlier decisions were not 
 
 ## 2026-10-15
 
+**The site's goal is a Pro subscription; the paid report is a lead.** James, Oct 15, after a
+site review again ranked its findings around the $300 report: "The goal is not to get a paid report.
+That's just a high value lead. The goal is to get them on pro pricing so they're paying monthly or
+annual." The site's main call to action, reviews and copy aim at Hamilton Pro (/subscribe). The
+Competitive Fee Position Report stays on sale as the step for buyers not ready to subscribe; free
+reports and alerts capture leads for Pro. CLAUDE.md's "Money thesis" and the CTA line in
+`.agents/product-marketing.md` now say so.
+
 **Data fixes are proven on the live row, not one function.** James, Oct 15, after #1334's review
 found that #1310's merged cut-cents fix never reached the site. Knox's self-check uses
 `checkFeeAgainstSource`, which still rejected $29.95 and $1.50. #1310's test ran only the first read.
@@ -28,6 +36,14 @@ working." A migration or step that needs a lock retries with a longer lock_timeo
 smaller batches. It does not pause the `pipeline` control.
 
 ## 2026-10-14
+
+**The Fee Insight design system is the site's brand; the header carries Fee Insight.** James, Oct 14.
+The package (Oxford Navy and brick on parchment, Geist, the box-plot I) lives in `src/brand/`,
+`public/brand/` and `Branding/fee-insight-design-system/`. The feeinsight.com header uses the Fee
+Insight one-line logo; Bank Fee Index's lockup goes on its data pages and the footer; Hamilton's
+wordmark on /pro. This is the "James's own design" the layout hold waited for. It ships in staged
+PRs: the package first, then the public site, then Hamilton, admin, reports and email, each
+reviewed by James on the Vercel preview before merge.
 
 **Data-quality approvals (James, Oct 14 evening, builder session).** Answering the "what do you
 need from me" list:

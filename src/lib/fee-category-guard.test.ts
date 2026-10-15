@@ -918,6 +918,50 @@ describe("checkFeeCategory", () => {
     expect(checkFeeCategory("monthly_maintenance", "Monthly maintenance charge per account.").ok).toBe(true);
     expect(checkFeeCategory("monthly_maintenance", "Chase Total Checking Monthly Service Fee").ok).toBe(true);
   });
+
+  // v63 (#1312): real rejected Knox rows (raw ids), filed as [category], and where each belongs.
+  it.each([
+    ["overdraft", "Sobregiros", "overdraft"], // Puerto Rico FCU 262766, $10
+    ["stop_payment", "Suspensión de pago", "stop_payment"], // 262762, $6
+    ["stop_payment", "Suspensión de Pago Cheque Oficial", "stop_payment"], // Vapr FCU 262792
+    ["stop_payment", "Detener pago", "stop_payment"], // Sound FCU 274045
+    ["nsf", "Cheques devueltos", "nsf"], // Vapr FCU 262787, $20
+    ["nsf", "Devolución por fondos insuficientes", "nsf"], // 262789
+    ["cashiers_check", "Cheques de gerente", "cashiers_check"], // 262772, $5
+    ["monthly_maintenance", "Cargo manejo mensual", "monthly_maintenance"], // 262765, $5
+    ["od_protection_transfer", "Transferencias por sobregiros", "od_protection_transfer"], // 262767
+    ["card_replacement", "Reemplazo de la tarjeta ATH perdida o PIN olvidado - Segundo reemplazo", "card_replacement"], // 399886
+    ["paper_statement", "Cargo por estado de cuenta en papel", "paper_statement"], // 399876
+    ["deposited_item_return", "Depósito en cheque devuelto", "deposited_item_return"], // 262763
+    ["wire_domestic_outgoing", "Transferencia bancaria nacional (saliente)", "wire_domestic_outgoing"], // 274064
+    ["nsf", "Deposited Return Items", "deposited_item_return"], // Community First Guam FCU 327091, $10
+    ["stop_payment", "Cashier's Check Stop Payments", "stop_payment"], // 327099, $20
+    ["cashiers_check", "Official Check Stop Payment", "stop_payment"], // 110508
+    ["wire_domestic_incoming", "International wire transfer (Incoming)", "wire_intl_incoming"], // Coast360 FCU 462933, $40
+  ])("v63 reads %s %j as %s", (key, name, to) => {
+    expect(refileCategory(key, name)).toBe(to);
+    expect(checkFeeCategory(to, name).ok).toBe(true);
+  });
+
+  it("v63 keeps other fees out in Spanish and English too", () => {
+    for (const [key, name] of [
+      ["monthly_maintenance", "Cargo manejo mensual (Tarjeta de Débito ATH)"], // a debit card's monthly fee, 262769
+      ["nsf", "Pago por cheque o ACH devuelto"], // a returned payment, 262771
+      ["nsf", "Cheque devuelto (Tarjeta de Crédito)"], // a credit card payment, 262774
+      ["nsf", "Artículo devuelto (motivo distinto a fondos insuficientes)"], // 274060
+      ["stop_payment", "Cashiers Checks – Stop Payments Prohibited"], // 273944, not a fee
+      ["stop_payment", "Cash, wire transfers, cashier's certified | The first business day"], // funds availability, 215133
+    ]) {
+      expect(checkFeeCategory(refileCategory(key, name), name).ok).toBe(false);
+    }
+    // One price for both directions or for domestic and international stays where it was filed.
+    for (const name of ["Wire Transfer - International Incoming or Outgoing", "Incoming Wire (Domestic & International)", "Foreign Check Collection Fee", "Free incoming wire transfers (International Elite)"]) {
+      expect(refileCategory("wire_domestic_incoming", name)).toBe("wire_domestic_incoming");
+    }
+    // English words that only look like the Spanish ones keep live fees where they are.
+    expect(checkFeeCategory("card_replacement", "Express Chip Debit Card Replacement").ok).toBe(true);
+    expect(checkFeeCategory("paper_statement", "Monthly Paper Statement Fee Waived with electronic statement enrollment").ok).toBe(true);
+  });
 });
 
 describe("v54: a free line at the bank's own ATM", () => {

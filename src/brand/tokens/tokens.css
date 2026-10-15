@@ -1,0 +1,104 @@
+/* Fee Insight design tokens — generated from tokens.json. Do not edit by hand. */
+
+:root, [data-theme="light"] {
+  --fi-paper: #f3efe6;
+  --fi-paper-rgb: 243 239 230;
+  --fi-surface-0: #fbf9f4;
+  --fi-surface-0-rgb: 251 249 244;
+  --fi-surface-200: #ebe5d9;
+  --fi-surface-200-rgb: 235 229 217;
+  --fi-ink: #132338;
+  --fi-ink-rgb: 19 35 56;
+  --fi-on-ink: #f3efe6;
+  --fi-on-ink-rgb: 243 239 230;
+  --fi-muted: #55606f;
+  --fi-muted-rgb: 85 96 111;
+  --fi-border: #ddd5c6;
+  --fi-border-rgb: 221 213 198;
+  --fi-control-border: #767c87;
+  --fi-control-border-rgb: 118 124 135;
+  --fi-brick: #b23a32;
+  --fi-brick-rgb: 178 58 50;
+  --fi-on-brick: #ffffff;
+  --fi-on-brick-rgb: 255 255 255;
+  --fi-brick-tint: #f1d5d0;
+  --fi-brick-tint-rgb: 241 213 208;
+  --fi-brick-ink: #7f2620;
+  --fi-brick-ink-rgb: 127 38 32;
+  --fi-above-market: #b23a32;
+  --fi-above-market-rgb: 178 58 50;
+  --fi-in-range: #5a646e;
+  --fi-in-range-rgb: 90 100 110;
+  --fi-below-market: #3b6350;
+  --fi-below-market-rgb: 59 99 80;
+  --fi-shadow-1: 0 1px 2px rgba(19,35,56,0.06), 0 0 0 1px rgba(19,35,56,0.06);
+  --fi-shadow-2: 0 8px 24px rgba(19,35,56,0.12), 0 0 0 1px rgba(19,35,56,0.06);
+  color-scheme: light;
+}
+
+[data-theme="dark"], .dark {
+  --fi-paper: #132338;
+  --fi-paper-rgb: 19 35 56;
+  --fi-surface-0: #1a2c44;
+  --fi-surface-0-rgb: 26 44 68;
+  --fi-surface-200: #0e1a2b;
+  --fi-surface-200-rgb: 14 26 43;
+  --fi-ink: #f3efe6;
+  --fi-ink-rgb: 243 239 230;
+  --fi-on-ink: #132338;
+  --fi-on-ink-rgb: 19 35 56;
+  --fi-muted: #a9b3c1;
+  --fi-muted-rgb: 169 179 193;
+  --fi-border: #263a55;
+  --fi-border-rgb: 38 58 85;
+  --fi-control-border: #5d6f87;
+  --fi-control-border-rgb: 93 111 135;
+  --fi-brick: #e0716a;
+  --fi-brick-rgb: 224 113 106;
+  --fi-on-brick: #132338;
+  --fi-on-brick-rgb: 19 35 56;
+  --fi-brick-tint: #4a2430;
+  --fi-brick-tint-rgb: 74 36 48;
+  --fi-brick-ink: #f3efe6;
+  --fi-brick-ink-rgb: 243 239 230;
+  --fi-above-market: #e0716a;
+  --fi-above-market-rgb: 224 113 106;
+  --fi-in-range: #a3adb8;
+  --fi-in-range-rgb: 163 173 184;
+  --fi-below-market: #7fb59b;
+  --fi-below-market-rgb: 127 181 155;
+  --fi-shadow-1: 0 0 0 1px rgba(243,239,230,0.08);
+  --fi-shadow-2: 0 8px 24px rgba(5,10,18,0.55), 0 0 0 1px rgba(243,239,230,0.1);
+  color-scheme: dark;
+}
+
+:root {
+  --fi-space-1: 4px;
+  --fi-space-2: 8px;
+  --fi-space-3: 12px;
+  --fi-space-4: 16px;
+  --fi-space-6: 24px;
+  --fi-space-8: 32px;
+  --fi-space-12: 48px;
+  --fi-space-16: 64px;
+  --fi-space-24: 96px;
+  --fi-radius-sm: 4px;
+  --fi-radius-md: 8px;
+  --fi-radius-lg: 12px;
+  --fi-radius-tile: 22%;
+  --fi-font-sans: var(--font-geist-sans, Geist), "Helvetica Neue", Arial, system-ui, sans-serif;
+  --fi-font-mono: var(--font-geist-mono, "Geist Mono"), ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+/* Type styles */
+.fi-text-display { font-family: var(--fi-font-sans); font-size: 64px; line-height: 64px; font-weight: 800; letter-spacing: -0.03em; }
+.fi-text-h1 { font-family: var(--fi-font-sans); font-size: 44px; line-height: 48px; font-weight: 800; letter-spacing: -0.025em; }
+.fi-text-h2 { font-family: var(--fi-font-sans); font-size: 30px; line-height: 36px; font-weight: 700; letter-spacing: -0.02em; }
+.fi-text-h3 { font-family: var(--fi-font-sans); font-size: 20px; line-height: 28px; font-weight: 700; letter-spacing: -0.01em; }
+.fi-text-body-lg { font-family: var(--fi-font-sans); font-size: 18px; line-height: 28px; font-weight: 400; }
+.fi-text-body { font-family: var(--fi-font-sans); font-size: 15px; line-height: 24px; font-weight: 400; }
+.fi-text-small { font-family: var(--fi-font-sans); font-size: 13px; line-height: 20px; font-weight: 400; }
+.fi-text-endorsement { font-family: var(--fi-font-sans); font-size: 14px; line-height: 20px; font-weight: 500; }
+.fi-text-label { font-family: var(--fi-font-sans); font-size: 12px; line-height: 16px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; }
+.fi-text-figure-lg { font-family: var(--fi-font-mono); font-size: 40px; line-height: 44px; font-weight: 600; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.fi-text-figure { font-family: var(--fi-font-mono); font-size: 14px; line-height: 20px; font-weight: 500; font-variant-numeric: tabular-nums; }
