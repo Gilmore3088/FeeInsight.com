@@ -21,11 +21,12 @@ import { HamiltonLine } from "./hamilton-line";
 import { RequestReportForm } from "@/app/for-institutions/request-report-form";
 import { extractPositionMap, readSampleReportHtml } from "@/lib/hosted-reports";
 import { getMarketReadinessCached, getStatesWithFeeDataCached } from "@/lib/data-store/public-cached-reads";
-import { HEADLINE_FEE_KEYS, MARKET_READY_MIN_RICH, RICH_MIN_CATEGORIES, type MarketReadiness } from "@/lib/data-store/market-readiness";
-import { STATE_CODES, STATE_NAMES } from "@/lib/us-states";
+import { MARKET_READY_MIN_RICH, type MarketReadiness } from "@/lib/data-store/market-readiness";
+import { STATE_CODES } from "@/lib/us-states";
 import { REPORT_TYPE_LABELS, ReportFilters } from "./report-filters";
 import { PositionPreview } from "./position-preview";
-import { bestMarket, StateReportGrid, type StateCoverage } from "./state-report-grid";
+import { SamplePages } from "@/app/for-institutions/report-offer";
+import { StateReportGrid, type StateCoverage } from "./state-report-grid";
 
 export const revalidate = 3600;
 
@@ -43,46 +44,14 @@ const SECONDARY_BUTTON =
   "inline-flex items-center rounded-md border border-border bg-white px-4 py-2.5 text-sm font-semibold text-ink no-underline transition-colors hover:border-brick hover:text-brick";
 const SERIF = { fontFamily: "var(--fi-font-sans)" } as const;
 
+/** The sample report's six sections, by their headings. */
 const REPORT_CONTENTS = [
-  {
-    title: "The three findings that matter",
-    body: "A one-page summary your pricing committee can read in two minutes.",
-  },
-  {
-    title: "Your position on every fee",
-    body: "Each published fee against the peer median and the middle half of the market.",
-  },
-  {
-    title: "Where you sit above or below",
-    body: "The lines outside the market range, with what each one means for customers.",
-  },
-  {
-    title: "The revenue lens",
-    body: "Posted prices next to the fee income in your FDIC or NCUA Call Report.",
-  },
-  {
-    title: "Named competitors",
-    body: "The institutions you compete with, by name, on the headline fees.",
-  },
-  {
-    title: "A source for every number",
-    body: "The disclosure, the page and the date collected, plus your full schedule.",
-  },
-];
-
-const STEPS = [
-  {
-    title: "Tell us who you are",
-    body: "Your institution, your name and a work email. Nothing to install, no call required.",
-  },
-  {
-    title: "We build your peer set",
-    body: "We pull your published fees and your competitors' from their own disclosures, then check each line.",
-  },
-  {
-    title: "You get a board-ready PDF",
-    body: `Delivered by email on the date we agree when we confirm your peer set. ${REPORT_OFFER.refreshLabel}.`,
-  },
+  "The three findings that matter",
+  "Your position on every fee",
+  "Where you sit above or below",
+  "The revenue lens",
+  "Named competitors",
+  "A source for every number",
 ];
 
 const VALID_REPORT_TYPES: Set<string> = new Set<ReportType>([
@@ -159,8 +128,6 @@ async function loadMarketReadiness(): Promise<MarketReadiness[] | null> {
   }
 }
 
-const CHARTER_NOUN: Record<string, string> = { bank: "banks", credit_union: "credit unions" };
-
 function SectionHeading({ eyebrow, title, children }: { eyebrow: string; title: string; children?: React.ReactNode }) {
   return (
     <div className="mb-8 max-w-[640px]">
@@ -228,7 +195,6 @@ export default async function ReportsPage({ searchParams }: PageProps) {
   const coveredInstitutions = coveredStates.reduce((sum, s) => sum + s.institution_count, 0);
   const coveredFees = coveredStates.reduce((sum, s) => sum + s.fee_count, 0);
   const readyMarkets = readiness?.filter((m) => m.ready).length ?? 0;
-  const closestMarket = readiness ? bestMarket(readiness.filter((m) => !m.ready)) : null;
 
   return (
     <div className="pb-24">
@@ -246,9 +212,7 @@ export default async function ReportsPage({ searchParams }: PageProps) {
               Know where your fees stand against your market.
             </h1>
             <p className="mt-5 max-w-[540px] text-[16px] leading-relaxed text-ink-soft">
-              We put your published fees next to the banks and credit unions you compete with, line by
-              line, and show where you are priced above, inside or below the market. Every number cites
-              the fee schedule it came from.
+              Your published fees next to the competitors you name, line by line, with a source for every figure.
             </p>
             <div className="mt-7 flex flex-wrap items-center gap-3">
               <TrackLink
@@ -287,10 +251,8 @@ export default async function ReportsPage({ searchParams }: PageProps) {
             <div>
               <PositionPreview map={positionMap} />
               <p className="mt-3 text-[12px] leading-relaxed text-ink-muted">
-                Real figures from a report prepared for a ~$400M community bank; only the bank&apos;s name
-                is hidden.{" "}
                 <Link href={SAMPLE_REPORT_HREF} className="text-brick underline-offset-2 hover:underline">
-                  See the whole report
+                  See the whole sample report
                 </Link>
               </p>
             </div>
@@ -298,39 +260,24 @@ export default async function ReportsPage({ searchParams }: PageProps) {
         </div>
       </section>
 
-      {/* What's inside */}
+      {/* What's inside: the sample's own pages, and its six section headings */}
       <section className="mx-auto max-w-page px-6 pt-16">
-        <SectionHeading eyebrow="What's inside" title="Six sections, one PDF you can hand to your pricing committee." />
-        <ol className="m-0 grid list-none gap-3 p-0 sm:grid-cols-2 lg:grid-cols-3">
-          {REPORT_CONTENTS.map((item, index) => (
-            <li key={item.title} className="rounded-lg border border-border bg-white p-5">
-              <span className="text-[13px] font-semibold tabular-nums text-brick">
-                {String(index + 1).padStart(2, "0")}
-              </span>
-              <h3 className="mt-2 text-[16px] font-semibold text-ink">{item.title}</h3>
-              <p className="mt-1.5 text-[14px] leading-relaxed text-ink-soft">{item.body}</p>
-            </li>
-          ))}
-        </ol>
-      </section>
-
-      {/* How it works */}
-      <section className="mx-auto max-w-page px-6 pt-16">
-        <SectionHeading eyebrow="How it works" title="Three steps from request to report." />
-        <ol className="m-0 grid list-none gap-6 p-0 md:grid-cols-3">
-          {STEPS.map((step, index) => (
-            <li key={step.title} className="relative">
-              <div className="flex items-center gap-3">
-                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-ink text-[13px] font-semibold text-white">
-                  {index + 1}
-                </span>
-                {index < STEPS.length - 1 && <span className="hidden h-px flex-1 bg-border md:block" />}
-              </div>
-              <h3 className="mt-4 text-[16px] font-semibold text-ink">{step.title}</h3>
-              <p className="mt-1.5 max-w-[320px] text-[14px] leading-relaxed text-ink-soft">{step.body}</p>
-            </li>
-          ))}
-        </ol>
+        <div className="grid gap-10 lg:grid-cols-2 lg:items-center">
+          <div>
+            <SectionHeading eyebrow="What's inside" title="Six sections in one PDF for your pricing committee." />
+            <ol className="m-0 grid list-none gap-x-6 p-0 sm:grid-cols-2">
+              {REPORT_CONTENTS.map((title, index) => (
+                <li key={title} className="flex items-baseline gap-3 border-b border-border py-2.5">
+                  <span className="text-[13px] font-semibold tabular-nums text-brick">
+                    {String(index + 1).padStart(2, "0")}
+                  </span>
+                  <span className="text-[15px] font-semibold text-ink">{title}</span>
+                </li>
+              ))}
+            </ol>
+          </div>
+          <SamplePages />
+        </div>
       </section>
 
       {/* Request form: the lead lands in the leads table (/admin/leads) */}
@@ -344,8 +291,7 @@ export default async function ReportsPage({ searchParams }: PageProps) {
               Tell us where to send it.
             </h2>
             <p className="mt-3 max-w-[460px] text-[15px] leading-relaxed text-ink-soft">
-              Leave your institution and work email. {REPORT_OFFER.nextStep}, and we confirm your peer
-              set before any work starts.
+              {REPORT_OFFER.nextStep}, and we confirm your peers before any work starts.
             </p>
             <p className="mt-4 text-[13px] text-ink-muted">
               Prefer to write?{" "}
@@ -364,11 +310,7 @@ export default async function ReportsPage({ searchParams }: PageProps) {
       {/* State reports, live from the index */}
       <section className="mx-auto max-w-page px-6 pt-20">
         <SectionHeading eyebrow="Free state fee reports" title="Every state, built live from verified fee schedules.">
-          Each state report compares fees there with the national picture and shows how banks and
-          credit unions differ.{" "}
-          {readiness
-            ? `Darker states are closer to a full local peer comparison: ${MARKET_READY_MIN_RICH} banks or ${MARKET_READY_MIN_RICH} credit unions in the state with at least ${RICH_MIN_CATEGORIES} of the ${HEADLINE_FEE_KEYS.length} headline fees published.`
-            : "Darker states have more institutions with verified fees."}
+          Each state against the nation, banks and credit unions apart. Darker states are closer to a full local comparison.
         </SectionHeading>
         {stateCoverage ? (
           <>
@@ -379,24 +321,9 @@ export default async function ReportsPage({ searchParams }: PageProps) {
             </p>
             {readiness && (
               <p className="mb-4 text-[13px] text-ink-muted">
-                {readyMarkets > 0 ? (
-                  <>
-                    <b className="font-semibold text-ink">{readyMarkets}</b> of {readiness.length} state
-                    markets have enough complete fee schedules for a full local comparison today.
-                  </>
-                ) : (
-                  <>No state market has enough complete fee schedules for a full local comparison yet.</>
-                )}
-                {closestMarket && closestMarket.rich > 0 && (
-                  <>
-                    {" "}
-                    Closest{readyMarkets > 0 ? " of the rest" : ""}: {STATE_NAMES[closestMarket.state_code] ?? closestMarket.state_code}{" "}
-                    {CHARTER_NOUN[closestMarket.charter_type] ?? closestMarket.charter_type.replace(/_/g, " ")}, with{" "}
-                    {closestMarket.rich} of {MARKET_READY_MIN_RICH}.
-                  </>
-                )}{" "}
-                Each tile shows the state&apos;s closest market as institutions ready of the {MARKET_READY_MIN_RICH} needed;
-                ✓ marks a market that is ready.
+                <b className="font-semibold text-ink">{readyMarkets}</b> of {readiness.length} state markets are ready for a
+                full local comparison. Each tile counts its closest market against the {MARKET_READY_MIN_RICH} institutions
+                needed.
               </p>
             )}
             <StateReportGrid states={stateCoverage} readiness={readiness} />
@@ -448,9 +375,6 @@ export default async function ReportsPage({ searchParams }: PageProps) {
           <div>
             <p className="font-semibold text-[24px] leading-snug text-white" style={SERIF}>
               See your own fees against your market.
-            </p>
-            <p className="mt-1 text-[13px] text-on-ink/80">
-              The {REPORT_OFFER.name}: your fees next to named competitors in your market, with a source for every figure.
             </p>
             <HamiltonLine placement="reports_hub_closing" tone="dark" className="mt-3" />
           </div>

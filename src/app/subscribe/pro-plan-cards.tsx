@@ -88,8 +88,7 @@ export function PurchaseCard({
           <span aria-hidden className="text-ink-muted transition-transform group-open:rotate-45">+</span>
         </summary>
         <p className="mt-1 leading-relaxed text-ink">
-          Every plan has the same full feature set {PLAN_TEAM_LABEL}. The price follows the institution&apos;s total
-          assets from its latest call report.
+          Same features at every size. The price follows total assets in the latest call report.
         </p>
         {/* Scrolls inside itself rather than widening the page on a very narrow phone. */}
         <div tabIndex={0} role="region" aria-label="Pro price by institution size" className="mt-3 overflow-x-auto focus-visible:outline-2 focus-visible:outline-ink">
@@ -108,7 +107,7 @@ export function PurchaseCard({
         </table>
         </div>
         <p className="mt-2 text-xs leading-relaxed text-ink-muted">
-          If a plan is used for a larger institution, we&apos;ll email you before moving it to that price.{" "}
+          If the plan is used for a larger institution, we&apos;ll email you before changing the price.{" "}
           {CONSULTANT_PRICE_NOTE}
         </p>
       </details>

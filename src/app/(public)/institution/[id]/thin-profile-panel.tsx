@@ -23,8 +23,8 @@ export function ThinProfilePanel({
 }) {
   const statusLine =
     verifiedCount > 0
-      ? `${verifiedCount} verified ${verifiedCount === 1 ? "fee" : "fees"} so far. Once ${MIN_VERIFIED_FEES_FOR_OFFER} are verified, this profile gets a national-median comparison and a competitive report on request.`
-      : "No verified fees yet, so there is nothing to benchmark on this page.";
+      ? `${verifiedCount} verified ${verifiedCount === 1 ? "fee" : "fees"} so far. Comparisons start at ${MIN_VERIFIED_FEES_FOR_OFFER}.`
+      : "No verified fees yet.";
 
   return (
     <section className="border border-border bg-white px-4 py-4 sm:px-5">

@@ -121,7 +121,7 @@ export function FinancialProfileSection({
               <div className="w-full max-w-md">
                 <UpgradeGate
                   href={plansHref ?? undefined}
-                  message="Up to 16 years of call-report history with growth, peer rank and outliers, deposit mix and capital, branch footprint, consumer complaints, enforcement actions, and SEC filings" />
+                  message="Call-report history with peer rank, branch footprint, complaints and enforcement actions" />
               </div>
             </div>
           </div>

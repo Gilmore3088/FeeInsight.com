@@ -37,7 +37,7 @@ export function PeerRankTeaser({ rank, reportOfferHref }: { rank: InstitutionPee
           Against {group}
         </h2>
         {rank.scope === "district" && (
-          <p className="mt-0.5 text-[13px] text-ink-muted">Its state has too few comparable institutions, so these are its Fed district peers.</p>
+          <p className="mt-0.5 text-[13px] text-ink-muted">Too few peers in its state, so these are Fed district peers.</p>
         )}
       </div>
       <ul className="divide-y divide-surface-200">

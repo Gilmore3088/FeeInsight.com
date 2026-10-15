@@ -343,8 +343,8 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
                       </p>
                       <p className="mt-1 text-sm leading-relaxed text-ink-muted">
                         {underReviewCount > 0
-                          ? "Fees will appear here once review is complete."
-                          : "Fee comparisons are withheld until a published fee schedule has been reviewed."}
+                          ? "They appear here once review is done."
+                          : "Comparisons start once a schedule is reviewed."}
                       </p>
                     </div>
                   </div>
@@ -352,6 +352,24 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
               </section>
 
               {peerRank && !thinProfile && <PeerRankTeaser rank={peerRank} reportOfferHref={links.reportOfferHref} />}
+
+              {/* The ask comes right after the fees, not after the financials (growth OS review S7). */}
+              {thinProfile ? (
+                <ThinProfilePanel
+                  status={status}
+                  verifiedCount={verifiedFees.length}
+                  correctSourceHref={links.correctSourceHref}
+                  claimHref={links.claimHref}
+                />
+              ) : (
+                <InstitutionOfferBand
+                  institutionName={inst.institution_name}
+                  reportOfferHref={links.reportOfferHref}
+                  plansHref={links.plansHref}
+                  correctSourceHref={links.correctSourceHref}
+                  isPro={isPro}
+                />
+              )}
 
               <FeeAlertControl
                 institutionId={instId}
@@ -384,23 +402,6 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
                 underReviewCount={underReviewCount}
                 assetsDollars={assetsDollars}
               />
-
-              {thinProfile ? (
-                <ThinProfilePanel
-                  status={status}
-                  verifiedCount={verifiedFees.length}
-                  correctSourceHref={links.correctSourceHref}
-                  claimHref={links.claimHref}
-                />
-              ) : (
-                <InstitutionOfferBand
-                  institutionName={inst.institution_name}
-                  reportOfferHref={links.reportOfferHref}
-                  plansHref={links.plansHref}
-                  correctSourceHref={links.correctSourceHref}
-                  isPro={isPro}
-                />
-              )}
 
               <FinancialContext latest={latestFinancial} history={normalizedFinancials} />
 

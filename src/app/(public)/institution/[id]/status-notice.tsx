@@ -95,8 +95,7 @@ export function FeeProfileSummary({
             </h2>
             {factsOnly && (
               <InfoTip label="About this comparison">
-                Each figure below is the published fee set against the national median. The commissioned
-                report benchmarks every fee against a verified peer set instead.
+                Each published fee against the national median.
               </InfoTip>
             )}
           </div>
@@ -141,8 +140,7 @@ export function FeeProfileNoVerdict({ verifiedCount }: { verifiedCount: number }
       </p>
       <h2 className="mt-2 text-xl font-semibold text-ink">{NO_VERDICT_LABEL}</h2>
       <p className="mt-2 max-w-2xl text-sm leading-relaxed text-ink-soft">
-        {verifiedCount} verified fees are on record, but none is a paid-item overdraft or NSF charge,
-        so no benchmark verdict is given. Transfer and protection fees do not stand in for it.
+        {verifiedCount} verified fees, but no paid-item overdraft or NSF fee, so no verdict.
       </p>
     </section>
   );
