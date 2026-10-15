@@ -73,6 +73,7 @@ import { runDarwinReleaseHeld } from "@/lib/agents/darwin/release-held";
 import { runDarwinConditionalZeroResolve } from "@/lib/agents/darwin/conditional-zero-resolve";
 import { runDarwinScheduleRefile } from "@/lib/agents/darwin/schedule-refile";
 import { runDarwinAdjudicate } from "@/lib/agents/darwin/adjudicate";
+import { AUDIENCE_RELABEL_VERSION, runAudienceRelabel } from "@/lib/agents/darwin/audience-relabel";
 import { runDailyBrief } from "@/lib/agents/daily-brief";
 import { runSundayMaintenance, summarizeSundayMaintenance } from "@/lib/agents/deming/sunday-maintenance";
 import { runFeeAlertDispatch, summarizeFeeAlertDispatch } from "@/lib/agents/fee-alerts";
@@ -1779,6 +1780,44 @@ async function executeAgenticStep(
             amount: failure.amount,
             code: failure.code,
           })),
+        },
+      };
+    }
+    case "audience-relabel": {
+      // Darwin's audience decision for live fees verified before migration 47 (#1059).
+      const relabel = await runAudienceRelabel(tx, {
+        runId: run.id,
+        dryRun: run.runKind === "dry_run",
+        institutionId: numericRunParam(params, ["institution_id"]),
+        // One bounded batch per step; the tick queues the next from `next_after_id` (audience-relabel-schedule.ts).
+        afterId: numericRunParam(params, ["after_id"]) ?? 0,
+        sampleKey: typeof params.day === "string" ? params.day : null,
+      });
+      const changed = relabel.relabeled + relabel.restored;
+      const indexRefresh = changed > 0 ? await refreshFeeIndexCache(tx, { runId: run.id, force: true }) : null;
+      const counts = Object.entries(relabel.byAudience).map(([audience, n]) => `${n.toLocaleString()} ${audience}`).join(", ");
+      return {
+        status: "completed",
+        summary: relabel.mode === "rollback"
+          ? `Darwin audience relabel rolled back: ${relabel.restored.toLocaleString()} fees back to their old audience${relabel.dryRun ? " (dry run, nothing written)" : ""}; ${relabel.remaining.toLocaleString()} recorded fees left.`
+          : `Darwin audience relabel${relabel.dryRun ? " (dry run, nothing written)" : ""}: ${relabel.fees.toLocaleString()} live fees verified as unknown on ${relabel.documents.toLocaleString()} documents; decisions ${counts || "none"}. ${relabel.dryRun ? "" : `${relabel.relabeled.toLocaleString()} written, ${relabel.publishedTouched.toLocaleString()} live rows updated.`} ${relabel.remaining.toLocaleString()} documents left${relabel.dryRun ? " outside this sample" : ""}.`.replace(/\s+/g, " ").trim(),
+        detail: {
+          audience_relabel_version: AUDIENCE_RELABEL_VERSION,
+          mode: relabel.mode,
+          dry_run: relabel.dryRun,
+          documents: relabel.documents,
+          fees: relabel.fees,
+          by_audience: relabel.byAudience,
+          by_source: relabel.bySource,
+          relabeled: relabel.relabeled,
+          published_touched: relabel.publishedTouched,
+          restored: relabel.restored,
+          after_id: numericRunParam(params, ["after_id"]) ?? 0,
+          next_after_id: relabel.nextAfterId,
+          remaining: relabel.remaining,
+          done: relabel.done,
+          index_refreshed: indexRefresh?.refreshed ?? false,
+          samples: relabel.samples,
         },
       };
     }
