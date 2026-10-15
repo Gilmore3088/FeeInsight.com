@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MOBILE_NAV_SECTIONS, navItemsFor, PRIMARY_CTA_NAV, PRO_PLANS_NAV, PRODUCT_NAV_GROUPS, RESOURCES_NAV } from "./nav-items";
+import { MOBILE_NAV_SECTIONS, navItemsFor, PRIMARY_CTA_NAV, PRO_PLANS_NAV, PRODUCT_NAV_GROUPS, PUBLIC_NAV_ITEMS, RESOURCES_NAV } from "./nav-items";
 
 describe("navItemsFor", () => {
   it("gives Pro users the Hamilton workspace menu, not the old tool names", () => {
@@ -31,7 +31,15 @@ describe("navItemsFor", () => {
       ["/research", "/research/national-fee-index"],
       ["/for-institutions#hamilton", "/subscribe"],
     ]);
-    expect(PRODUCT_NAV_GROUPS[2].items[1].label).toBe("See Hamilton plans");
+    expect(PRODUCT_NAV_GROUPS[2].items.map((i) => i.label)).toEqual(["Pro workspace", "Pro plans"]);
+  });
+
+  it("never names Hamilton in the signed-out header or phone drawer (James, 2026-10-15)", () => {
+    const labels = [
+      ...PUBLIC_NAV_ITEMS.flatMap((i) => [i.label, ...(i.groups ?? []).flatMap((g) => [g.heading ?? "", ...g.items.flatMap((x) => [x.label, x.description ?? ""])])]),
+      ...MOBILE_NAV_SECTIONS.flatMap((s) => [s.heading ?? "", ...s.items.map((x) => x.label)]),
+    ];
+    for (const label of labels) expect(label).not.toMatch(/Hamilton/);
   });
 
   it("keeps every page the header linked before reachable from it", () => {
@@ -49,7 +57,7 @@ describe("navItemsFor", () => {
 
   it("gives the phone drawer the short grouped list", () => {
     expect(MOBILE_NAV_SECTIONS.map((s) => [s.heading ?? null, s.items.map((i) => i.label)])).toEqual([
-      ["Product", ["Find your institution", "Bank Fee Index", "Market data", "Hamilton"]],
+      ["Product", ["Find your institution", "Bank Fee Index", "Market data", "Pro workspace"]],
       [null, ["Reports", "Pricing"]],
       ["Resources", ["Guides", "Methodology", "API"]],
     ]);

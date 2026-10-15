@@ -997,3 +997,12 @@ institution.
 category match the bank's own document, measured by Deming's audits with `checkFeeAgainstSource`.
 The target replaces 95%; the daily grade states it and whether it is met (`ACCURACY_TARGET`,
 `src/lib/accuracy-target.ts`).
+
+**The site chrome carries Fee Insight; Hamilton stays out of the header and footer.** James,
+2026-10-15, on the compact footer (#1423): "I don't like that Bank. The index is the primary brand
+when it's fee insight ... Hamilton never gets displayed in the header or footer but it does have
+places where the mark is used which is in-experience." Fee Insight, the parent brand, is the logo in
+the header, footer, sign-in screens and report chrome. The Bank Fee Index is named where its data is:
+the index pages, data credits and the API attribution. Hamilton's name and mark appear on the pages
+that sell it (/for-institutions, /subscribe, Pro buttons in page bodies) and inside the workspace,
+never in the header or footer; the header calls it "Pro workspace" and "Pro plans".
