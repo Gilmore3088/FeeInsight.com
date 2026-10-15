@@ -37,6 +37,7 @@ import { AtlasStateLaneDispatchPanel } from "../../atlas-state-lane-dispatch";
 import { AtlasTickControl } from "../../atlas-tick-control";
 import { AtlasWorkflowLauncher } from "../../atlas-workflow-launcher";
 import { CategoryGuardRepairControl } from "../../category-guard-repair-control";
+import { SourceLinkRepairControl } from "../../source-link-repair-control";
 import { AgentFrame } from "../../agent-frame";
 
 function number(value: number): string {
@@ -461,6 +462,9 @@ export default async function AtlasCommandPage() {
           executionBlockedReason={execution.detail}
         />
         <CategoryGuardRepairControl
+          disabled={!center.automation.enabled || !execution.enabled}
+        />
+        <SourceLinkRepairControl
           disabled={!center.automation.enabled || !execution.enabled}
         />
         </div>
