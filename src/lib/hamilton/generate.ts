@@ -65,7 +65,14 @@ function countWords(text: string): number {
  * @returns Structured section output with usage metrics
  * @throws Error if API key is missing or the provider call fails
  */
-export async function generateSection(input: SectionInput): Promise<SectionOutput> {
+/** How a section's provider call is tagged in the usage ledger; the report screen's own by default. */
+export interface SectionTracking {
+  operation?: string;
+  subjectKey?: string;
+  agentRunId?: number;
+}
+
+export async function generateSection(input: SectionInput, tracking: SectionTracking = {}): Promise<SectionOutput> {
   const client = getAnthropicMessagesClient("Hamilton section generation", "hamilton");
   const userMessage = buildUserMessage(input);
 
@@ -75,8 +82,10 @@ export async function generateSection(input: SectionInput): Promise<SectionOutpu
       {
         model: MODEL,
         agent: "hamilton",
-        operation: "generate_report_section",
+        operation: tracking.operation ?? "generate_report_section",
         routeId: "api.reports.generate",
+        ...(tracking.subjectKey ? { subjectKey: tracking.subjectKey } : {}),
+        ...(tracking.agentRunId ? { agentRunId: tracking.agentRunId } : {}),
       },
       () => client.messages.create(
         {
@@ -300,8 +309,8 @@ export type VerifiedSectionOutput =
  * back as `needs_review` and must not be published as final. The lexical citation
  * gate is recorded alongside for diagnostics.
  */
-export async function generateVerifiedSection(input: SectionInput): Promise<VerifiedSectionOutput> {
-  let section = await generateSection(input);
+export async function generateVerifiedSection(input: SectionInput, tracking: SectionTracking = {}): Promise<VerifiedSectionOutput> {
+  let section = await generateSection(input, tracking);
   let check = checkNarrativeFigures(section.narrative, input.data);
   if (check.unmatched.length > 0) {
     section = await generateSection({
@@ -311,7 +320,7 @@ export async function generateVerifiedSection(input: SectionInput): Promise<Veri
         `FIGURE CHECK FAILED on your previous draft: ${check.unmatched.join(", ")} do not appear in DATA. ` +
           "Use only figures present in DATA (or simple differences between them); describe anything else qualitatively.",
       ].filter(Boolean).join("\n\n"),
-    });
+    }, tracking);
     check = checkNarrativeFigures(section.narrative, input.data);
   }
   const citation = evaluateCitationDensity(section.narrative);

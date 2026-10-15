@@ -99,7 +99,8 @@ Hamilton supports the decision; it does not make it.
   sample is reserved before its first model call (a `paid_eval.sample_reserved` run event, a
   conditional insert outside the step transaction that refuses past five today), so blocked calls,
   lost usage rows and killed functions still count; the provider stop and each path's budget line
-  (`api.hamilton.ask.memo`, `api.hamilton.simulate`, `api.research.hamilton`) hold every call.
+  (`api.hamilton.ask.memo`, `api.hamilton.simulate`, `api.research.hamilton`, `api.reports.generate`)
+  hold every call.
   One of the five (when unused today) is a Simulate read (`hamilton/simulate-read.ts`, the same
   prompt the `/api/hamilton/simulate` route streams): the first sampled answer's fee is tested at
   the median of the first peer layer with a full band, in the order local, state, charter and size,
@@ -118,8 +119,16 @@ Hamilton supports the decision; it does not make it.
   live value, recomputed statistic or gap for the asked fee, or money its tools read from sources
   other than the fee catalog (call reports, national data). A fee price a catalog tool returned
   still has to match the live catalog.
-  The goal scorecard reads the latest run's "Memo (paid)", "Simulate (paid)" and "Written answer
-  (paid)" rows. The report path is not sampled yet.
+  One more (when unused today) is a report's answer page (`hamilton/report-answer-read.ts`): the
+  Reports screen's own inputs (`hamilton/report-inputs.ts`, shared with `reports/actions.ts`) for
+  the first one or two answered institutions the screen would write a paid report for, Peer
+  Benchmarking template, last three months, no reader or saved peer group. Only the first verified
+  draft is written (up to two calls; the live report's one partner-review rewrite would not fit
+  the run), so its form rate is a floor: form is the figure check plus the partner review;
+  correctness is that each of the bank's own verified fee amounts the page states is still the live
+  `published_fee_catalog` value. Nothing is saved.
+  The goal scorecard reads the latest run's "Memo (paid)", "Simulate (paid)", "Written answer
+  (paid)" and "Report (paid)" rows.
   It asks 17 questions (q26, the NSF regulation question, since #1079; q31, fee income against
   peers, and q32, what competitors in the county charge, since #1084). Every answer is also
   scored on correctness (`hamilton/answer-correctness.ts`, the `report-reconciliation` check for

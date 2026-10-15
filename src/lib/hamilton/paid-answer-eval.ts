@@ -23,7 +23,9 @@
  * the Analyze screen's own prompt and tools for the question, form-checked with the route's evidence
  * gate and its own dollar figures tied to live values for the asked fee, money its tools read from
  * other sources (call reports, national data) accepted as stated.
- * The report path is not sampled yet.
+ * One more is a report's answer page (#1079): the Reports screen's own inputs and section call for
+ * the institution, its first verified draft scored by the figure check and the partner review, and
+ * the bank's own fee amounts it states tied to live values. Every paid path is now sampled.
  * Server only.
  */
 
@@ -35,6 +37,7 @@ import { buildFeeResearchEvidence } from "./evidence-contract";
 import { writeStorylineMemo, type MemoClient } from "./memo";
 import { writeSimulateRead, type SimulateInput } from "./simulate-read";
 import { writeWrittenAnswer, type WrittenAnswerWriter } from "./written-answer-read";
+import { liveOwnFees, prepareReportAnswer, reconcileReportAnswer, writeReportAnswer, type OwnFeeReader, type PreparedReportAnswer, type ReportAnswerWriter } from "./report-answer-read";
 import { QUALITY_QUESTIONS } from "./workspace/quality-bar";
 import type { FeeResearch } from "./workspace/types";
 
@@ -52,6 +55,12 @@ export const SIMULATE_DAILY = 1;
 export const PAID_EVAL_WRITTEN_OPERATION = "written_answer_eval";
 /** Written answers a day, out of the cap: the costliest sample (up to four tool steps). */
 export const WRITTEN_DAILY = 1;
+/** The provider-usage operation the report answer page's calls are tagged with. */
+export const PAID_EVAL_REPORT_OPERATION = "report_answer_eval";
+/** Report answer pages a day, out of the cap. */
+export const REPORT_DAILY = 1;
+/** Institutions tried for a report the screen would write (some have too little evidence). */
+const REPORT_TRIES = 2;
 /** Free answers tried in search of storylines to write up, before the run gives up. */
 const MAX_CANDIDATES = 12;
 /** Time the free answers may take, so the samples (a written answer stops at 180 s) still fit the 300 s function. */
@@ -64,9 +73,9 @@ export interface PaidCandidate {
   from: string;
 }
 
-export type PaidPath = "memo" | "simulate" | "written_answer";
+export type PaidPath = "memo" | "simulate" | "written_answer" | "report";
 /** The sampled paths, in the order the summary lists them (memo first). */
-const PAID_PATHS: PaidPath[] = ["memo", "simulate", "written_answer"];
+const PAID_PATHS: PaidPath[] = ["memo", "simulate", "written_answer", "report"];
 
 export interface PaidSampleResult extends PaidCandidate {
   path: PaidPath;
@@ -85,7 +94,7 @@ export interface PaidPathSummary {
   sampled: number;
   /** Answers the provider gave (written or withheld): the form rate's base. */
   answers: number;
-  /** Answers that passed their checks (the memo's own; the evidence gate for Simulate and written answers). */
+  /** Answers that passed their checks (the memo's own; the evidence gate for Simulate and written answers; figures and partner review for a report). */
   passed: number;
   correctness: CorrectnessSummary;
 }
@@ -333,6 +342,23 @@ async function writtenUp(
   };
 }
 
+async function reportUp(
+  candidate: PaidCandidate,
+  prepared: PreparedReportAnswer,
+  options: { subjectKey: string; agentRunId?: number; writeReport: ReportAnswerWriter; ownFees: OwnFeeReader },
+): Promise<PaidSampleResult> {
+  const sample = { ...candidate, question: `Peer Benchmarking report answer page for ${prepared.institutionName}` };
+  const result = await options.writeReport(prepared, { operation: PAID_EVAL_REPORT_OPERATION, subjectKey: options.subjectKey, agentRunId: options.agentRunId });
+  if (result.status !== "written") {
+    return { ...sample, path: "report", status: "unavailable", failures: [result.reason], correctness: null, figures: 0 };
+  }
+  if (!result.passed) {
+    return { ...sample, path: "report", status: "withheld", failures: result.problems, correctness: null, figures: 0 };
+  }
+  const tied = await reconcileReportAnswer(prepared, result.narrative, options.ownFees);
+  return { ...sample, path: "report", status: "written", failures: [], correctness: tied.checked && tied.figures > 0 ? tied.failures : null, figures: tied.figures };
+}
+
 export function summarizePaid(results: PaidSampleResult[], path: PaidPath = "memo"): PaidPathSummary {
   const answered = results.filter((r) => r.status !== "unavailable");
   return {
@@ -356,25 +382,42 @@ export async function runPaidAnswerEval({
   client,
   live = liveCatalogReader(),
   written = writeWrittenAnswer,
-}: { db?: SqlTag; now?: Date; cap?: number; agentRunId: number; client?: MemoClient; live?: LiveReader; written?: WrittenAnswerWriter }): Promise<PaidAnswerEvalSummary> {
+  prepareReport = prepareReportAnswer,
+  writeReport = writeReportAnswer,
+  ownFees = liveOwnFees,
+}: {
+  db?: SqlTag;
+  now?: Date;
+  cap?: number;
+  agentRunId: number;
+  client?: MemoClient;
+  live?: LiveReader;
+  written?: WrittenAnswerWriter;
+  prepareReport?: (institutionId: number, institutionName: string, now: Date) => Promise<PreparedReportAnswer | null>;
+  writeReport?: ReportAnswerWriter;
+  ownFees?: OwnFeeReader;
+}): Promise<PaidAnswerEvalSummary> {
   const started = Date.now();
   const usedBefore = await paidSamplesToday(db, now);
   const remaining = Math.max(0, cap - usedBefore);
-  const base = { cap, usedBefore, notSampled: ["report"] };
+  const base = { cap, usedBefore, notSampled: [] as string[] };
   const empty = (note: string): PaidAnswerEvalSummary => ({ ...base, paths: PAID_PATHS.map((p) => summarizePaid([], p)), note, results: [] });
   if (remaining === 0) return empty(`Today's ${cap} paid samples are already used.`);
   const wantSimulate = (await paidSamplesToday(db, now, "simulate")) < SIMULATE_DAILY;
   const wantWritten = (await paidSamplesToday(db, now, "written_answer")) < WRITTEN_DAILY;
+  const wantReport = (await paidSamplesToday(db, now, "report")) < REPORT_DAILY;
 
   const pro = await pickProQuestions(db).catch(() => []);
   const institutions = await pickEvalInstitutions(db, 1, now.toISOString().slice(0, 10)).catch(() => []);
   const candidates = orderCandidates(pro, institutions.map((i) => i.id), now).slice(0, MAX_CANDIDATES);
 
   // Free first: only an answer with its fee research is written up (a memo also needs a storyline).
-  type Pick = { path: PaidPath; candidate: PaidCandidate; answered: Answered & { research: FeeResearch }; simulate?: SimulateInput };
+  type Pick = { path: PaidPath; candidate: PaidCandidate; answered: Answered & { research: FeeResearch }; simulate?: SimulateInput; report?: PreparedReportAnswer };
   const memos: Pick[] = [];
   let simulate: Pick | null = null;
   let writtenPick: Pick | null = null;
+  // Answered candidates, in order: the report sample tries their institutions after the search.
+  const answeredCandidates: Array<{ candidate: PaidCandidate; answered: Answered & { research: FeeResearch } }> = [];
   const research = new Map<number, Map<string, Promise<FeeResearch | null>>>();
   for (const candidate of candidates) {
     const simulateDone: boolean = !wantSimulate || simulate !== null;
@@ -384,14 +427,29 @@ export async function runPaidAnswerEval({
     const answered = await answer(candidate.institutionId, candidate.question, research.get(candidate.institutionId)!).catch(() => null);
     if (!answered?.research) continue;
     const withResearch = answered as Answered & { research: FeeResearch };
+    answeredCandidates.push({ candidate, answered: withResearch });
     const input: SimulateInput | null = !simulateDone ? simulateInputFor(withResearch.research) : null;
     if (input) simulate = { path: "simulate", candidate, answered: withResearch, simulate: input };
     // The written answer takes the first answered question; it needs research but no storyline.
     if (!writtenDone) writtenPick = { path: "written_answer", candidate, answered: withResearch };
     if (answered.response.answer?.storyline && memos.length < remaining) memos.push({ path: "memo", candidate, answered: withResearch });
   }
-  // The Simulate and written answer samples take their slots first; memos fill the rest of today's cap.
-  const picked = [...(simulate ? [simulate] : []), ...(writtenPick ? [writtenPick] : []), ...memos].slice(0, remaining);
+  // A report the Reports screen would write, for one of the answered institutions (reads only).
+  let reportPick: Pick | null = null;
+  if (wantReport) {
+    const tried = new Set<number>();
+    for (const { candidate, answered } of answeredCandidates) {
+      if (tried.has(candidate.institutionId) || tried.size >= REPORT_TRIES || Date.now() - started > SEARCH_BUDGET_MS) continue;
+      tried.add(candidate.institutionId);
+      const prepared = await prepareReport(candidate.institutionId, answered.research.institutionName, now).catch(() => null);
+      if (prepared) {
+        reportPick = { path: "report", candidate, answered, report: prepared };
+        break;
+      }
+    }
+  }
+  // The Simulate, written answer and report samples take their slots first; memos fill the rest of today's cap.
+  const picked = [...(simulate ? [simulate] : []), ...(writtenPick ? [writtenPick] : []), ...(reportPick ? [reportPick] : []), ...memos].slice(0, remaining);
   if (picked.length === 0) return empty("No sampled question produced an answer to write up.");
 
   // Reserve each sample before spending; the reservation refuses past the cap.
@@ -404,12 +462,14 @@ export async function runPaidAnswerEval({
   }
   if (reserved.length === 0) return empty(`Today's ${cap} paid samples are already used.`);
   const results = await Promise.all(
-    reserved.map(({ path, candidate, answered, simulate: input, subjectKey }) =>
+    reserved.map(({ path, candidate, answered, simulate: input, report, subjectKey }) =>
       (path === "simulate" && input
         ? simulateUp(candidate, answered, input, live, { subjectKey, agentRunId, client })
         : path === "written_answer"
           ? writtenUp(candidate, answered, live, { subjectKey, agentRunId, written })
-          : writeUp(candidate, answered, live, { subjectKey, agentRunId, client })
+          : path === "report" && report
+            ? reportUp(candidate, report, { subjectKey, agentRunId, writeReport, ownFees })
+            : writeUp(candidate, answered, live, { subjectKey, agentRunId, client })
       ).catch((error) => ({
         ...candidate,
         path,
