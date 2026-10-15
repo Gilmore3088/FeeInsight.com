@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { catalogFacts, questionFigures, reconcileAnswer, reconcileMemoText, ties, type LiveFeeValues } from "./answer-correctness";
+import { catalogFacts, questionFigures, reconcileAnswer, reconcileMemoText, reconcileSimulateText, ties, type LiveFeeValues } from "./answer-correctness";
 import { buildAskResponse, parseAsk } from "./workspace/ask";
 import { marketLayer } from "./workspace/context";
 import { QUALITY_QUESTIONS } from "./workspace/quality-bar";
@@ -150,6 +150,37 @@ describe("answer correctness", () => {
     it("leaves the memo unchecked when the catalog could not be read", () => {
       const { r, response } = setup();
       expect(reconcileMemoText({ question: q, response, research: r, live: null, text: "$32" })).toEqual({ checked: false, figures: 0, failures: [] });
+    });
+  });
+
+  describe("a Simulate read's text (#1414)", () => {
+    const q = "How does our overdraft fee compare?";
+    const setup = () => {
+      const r = research();
+      return { r, response: buildAskResponse({ question: q, intent: parseAsk(q), research: r, memory: [] }) };
+    };
+
+    it("ties a gap stated from the tested price, and fails a figure that ties to nothing", () => {
+      const { r, response } = setup();
+      const p75 = r.band!.p75!;
+      const tested = 43.17;
+      const gap = Math.abs(tested - p75).toFixed(2);
+      const text = `At $43.17 the fee would sit $${gap} from the peer p75 of $${p75.toFixed(2)}.`;
+      const ok = reconcileSimulateText({ question: q, response, research: r, live: liveFor(r), text, readerAnchors: [tested, r.current!] });
+      expect(ok).toMatchObject({ checked: true, figures: 3, failures: [] });
+      // As a single (the old memo path), the tested price could not anchor the gap.
+      expect(reconcileMemoText({ question: q, response, research: r, live: liveFor(r), text, extra: [tested] }).failures).toEqual([`figures that tie to no live catalog value: $${gap}`]);
+      const bad = reconcileSimulateText({ question: q, response, research: r, live: liveFor(r), text: "At $43.17 peers would charge $91.37.", readerAnchors: [tested] });
+      expect(bad.failures).toEqual(["figures that tie to no live catalog value: $91.37"]);
+    });
+
+    it("scores only the read's figures, not the free answer's stale values", () => {
+      const { r, response } = setup();
+      const stale = liveFor(r);
+      // One peer's live value has moved since the free answer read it: the answer's failure, not the read's.
+      stale.rows = stale.rows.map((row, i) => (i === 1 ? { ...row, amount: Number(row.amount) + 7 } : row));
+      expect(reconcileMemoText({ question: q, response, research: r, live: stale, text: "At $41.25." }).failures.length).toBeGreaterThan(0);
+      expect(reconcileSimulateText({ question: q, response, research: r, live: stale, text: "At $41.25.", readerAnchors: [41.25] }).failures).toEqual([]);
     });
   });
 });
