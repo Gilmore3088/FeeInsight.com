@@ -67,7 +67,7 @@ Hard rules:
 
 /** "DATA does not show" read on screen as a system leaking through (Space Coast review, 2026-10-15). */
 function withoutPayloadName(text: string): string {
-  return text.replace(/(^|[.!?]\s+)DATA\b/g, "$1The data").replace(/\bDATA\b/g, "the data");
+  return text.replace(/(^|[.!?]\s+)(?:[Tt]he\s+)?DATA\b/g, "$1The data").replace(/\b(?:the\s+)?DATA\b/g, "the data");
 }
 
 /** Phrases that treat a fee missing from the index as a fee the bank does not charge. */

@@ -67,9 +67,9 @@ describe("storyline", () => {
     const named = buildFeeAnswer({ ...lowest, subjectName: "Example Valley Credit Union" }).storyline!.exhibits.map((e) => e.actionTitle);
     for (const t of named) expect(t.split("Example Valley Credit Union").length - 1).toBeLessThanOrEqual(1);
     expect(named).toContain("All 3 competitors in Example Valley Credit Union's market charge more than its $5; each charges $10.");
-    expect(answer.storyline!.keyFigures.map((f) => f.value)).not.toContain("0th");
+    expect(answer.storyline!.keyFigures).toContainEqual(expect.objectContaining({ value: "Lowest", label: "Your place among 5 peers" }));
     const groups = buildFeeAnswer({ ...lowest, subjectName: "Example Valley Credit Union" }).storyline!.exhibits.find((e) => e.exhibit.kind === "archetype_map");
-    if (groups?.takeaway) expect(groups.takeaway.text).toBe("Example Valley Credit Union's $5 puts it in the low group ($0.01 to $15), where no peer sits.");
+    expect(groups?.takeaway?.text).toBe("Example Valley Credit Union's $5 puts it in the low group ($0.01 to $15), where no peer sits.");
   });
 
   it("builds three to five numbered exhibits, each titled with a point that carries a number", () => {

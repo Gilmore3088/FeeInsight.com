@@ -170,9 +170,9 @@ describe("storyline memo", () => {
     expect(parseMemo(`Here it is: {"summary":"a","board":"b","market":"c","questions":["Why?","Do this."]}`)).toEqual({ summary: "a", board: "b", market: "c", questions: ["Why?"] });
     expect(parseMemo("not json")).toBeNull();
     // The prompt's name for the payload never reaches the reader (Space Coast review).
-    expect(parseMemo(`{"summary":"Its fee is $5. DATA does not show how many items it charges.","board":"b, which DATA lacks.","market":"c","questions":[]}`)).toMatchObject({
+    expect(parseMemo(`{"summary":"Its fee is $5. DATA does not show how many items it charges.","board":"b, which DATA lacks; the DATA shows c.","market":"c","questions":[]}`)).toMatchObject({
       summary: "Its fee is $5. The data does not show how many items it charges.",
-      board: "b, which the data lacks.",
+      board: "b, which the data lacks; the data shows c.",
     });
   });
 
