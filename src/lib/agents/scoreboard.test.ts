@@ -9,7 +9,7 @@ const NUMBERS: ScoreboardSnapshotResult["numbers"] = {
   rightDocument: { rate: 0.75, numerator: 3, denominator: 4, windowDays: 30 },
   knoxYield: { yield: 0.8, fees: 8, pricedLines: 10, sampleSize: 2 },
   depth: { median: 9, liveInstitutions: 120 },
-  accuracy: { precision: 0.9, recall: 0.6, scoreRunId: 4, scoredAt: "2026-10-04T12:00:00.000Z" },
+  accuracy: { precision: 0.9, recall: 0.6, scoreRunId: 4, scoredAt: "2026-10-04T12:00:00.000Z", scorerVersion: 3 },
   freshness: { medianDays: 12.5, liveFees: 900 },
   knoxSurvival: {
     rate: 0.88,

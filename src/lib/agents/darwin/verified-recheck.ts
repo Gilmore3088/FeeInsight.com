@@ -6,6 +6,7 @@ import { excerptOf } from "@/lib/agents/hamilton/frequency-fill";
 import { secondLook } from "@/lib/agents/hamilton/second-look";
 import { refileCategory } from "@/lib/fee-category-guard";
 
+import { tierPerkZero } from "./tier-perk";
 import { DARWIN_VERIFY_STRATEGY, loadSourceTexts, normalizedAmount, postSourceCheck, sourceLineFor, type RawFeeRow } from "./verify";
 
 type SqlTag = typeof sql;
@@ -27,8 +28,11 @@ type SqlTag = typeof sql;
  * price. The $0 rule now reads the fee's own cell and label (`ownSegment`). v2 also re-reads the
  * rows v1 rejected (flag `darwin_recheck:*`): one that passes now is restored to verified with the
  * flag removed; a live row that passes now has its pending second-look flag cleared.
+ * v3 (2026-10-15, #1397): a $0 from one account tier's own schedule, or named for a tier's
+ * account, is that tier's perk, not the bank's price (`tierPerkZero`). Frost's live overdraft,
+ * NSF, stop payment and wire fees all read $0 from its Premium Account schedule.
  */
-export const DARWIN_RECHECK_STRATEGY = { strategy: "verify.recheck", version: 2 } as const;
+export const DARWIN_RECHECK_STRATEGY = { strategy: "verify.recheck", version: 3 } as const;
 export const RECHECK_LIMIT = 200;
 /** The shared second look's check name while live failures are only flagged. */
 export const DARWIN_RECHECK_CHECK = "darwin.verified_recheck";
@@ -147,7 +151,9 @@ export async function recheckVerifiedFees(
     const canonicalFeeKey = refileCategory(row.canonical_fee_key, row.fee_name) ?? row.canonical_fee_key;
     const amount = normalizedAmount(row.verified_amount ?? row.amount);
     const line = sourceLineFor(row, texts, canonicalFeeKey) ?? excerptOf(row.conditions);
-    const check = postSourceCheck(canonicalFeeKey, row.fee_name, amount, line);
+    const text = row.source_document_id == null ? null : texts.get(Number(row.source_document_id)) ?? null;
+    const check: { code: string; rule?: string } | null = postSourceCheck(canonicalFeeKey, row.fee_name, amount, line)
+      ?? (tierPerkZero(amount, row.fee_name, row.source_url, text) ? { code: "tier_perk_zero" } : null);
     const publishedId = row.fee_published_id == null ? null : Number(row.fee_published_id);
     const wasRejected = row.review_status === "rejected";
     result.checked += 1;

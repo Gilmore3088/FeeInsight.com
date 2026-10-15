@@ -4,8 +4,8 @@ This repository uses one agentic experience for data trust, validation, publishi
 
 ## How work runs
 
-One builder at a time, starting from the Now list in GitHub issue #1026: one issue, one branch,
-one PR. Search open issues, PRs and current main before building, and reuse or explicitly
+Up to three builders, one per lane, starting from the Now list in GitHub issue #1026: one
+outcome, one branch, one PR, with small related fixes batched into it. Search open issues, PRs and current main before building, and reuse or explicitly
 supersede what exists. Every change a review finds is its own issue under a tracker (one per
 agent, plus the Foundation tracker for non-agent work), and the review names what it closes.
 Outreach is parked. Do not delete branches; unknown-age branches may hold unmerged work.

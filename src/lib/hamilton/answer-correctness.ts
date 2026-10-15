@@ -56,6 +56,11 @@ const near = (a: number | null | undefined, b: number | null | undefined) =>
 
 /** Every sentence the answer sources to the live fee catalog. */
 export function catalogFacts(response: AskResponse): Fact[] {
+  return answerFacts(response).filter((f) => f.source?.table === FEE_TABLE);
+}
+
+/** Every sourced sentence of an answer, the storyline's included. */
+function answerFacts(response: AskResponse): Fact[] {
   const story = response.answer?.storyline;
   const all: Fact[] = [
     ...(response.facts ?? []),
@@ -73,7 +78,7 @@ export function catalogFacts(response: AskResponse): Fact[] {
         ]
       : []),
   ];
-  return all.filter((f) => f.source?.table === FEE_TABLE);
+  return all;
 }
 
 /** Dollar figures the question itself gives ("what if we charged $35"): the reader's, not the catalog's. */
@@ -117,16 +122,69 @@ function groupsOf(research: FeeResearch): Group[] {
  * Reconciles one answer against live values. `live` is null when the catalog could not be read:
  * the answer is then left unchecked rather than called right or wrong.
  */
-export function reconcileAnswer(input: {
+export function reconcileAnswer(input: ReconcileInput): CorrectnessResult {
+  const facts = catalogFacts(input.response);
+  const base = reconcileValues(input, facts);
+  if (!base) return { checked: false, figures: 0, failures: [] };
+  return tieText(facts.map((f) => f.text).join("\n"), base.anchors, base.singles, base.failures);
+}
+
+/**
+ * Reconciles the paid memo written over an answer's storyline (#1079): the answer's values and
+ * statistics as above, then every dollar figure in the memo's text. A memo figure ties when it is
+ * a live value, a recomputed statistic or a gap between two, or a figure the storyline states from
+ * a source other than the fee catalog (call reports, fee changes, money at stake, a tested price),
+ * which this check accepts as printed just as it does for the free answer.
+ */
+export function reconcileMemoText(input: ReconcileInput & { text: string }): CorrectnessResult {
+  const base = reconcileValues(input, catalogFacts(input.response));
+  if (!base) return { checked: false, figures: 0, failures: [] };
+  // Other-source figures count as stated, never as ends of a gap: a memo may repeat them, not build on them here.
+  return tieText(input.text, base.anchors, [...base.singles, ...otherSourceFigures(input.response)], base.failures);
+}
+
+/** Dollar figures the answer states from sources other than the fee catalog, accepted as printed. */
+function otherSourceFigures(response: AskResponse): number[] {
+  const story = response.answer?.storyline;
+  const text = [
+    ...answerFacts(response).filter((f) => f.source?.table !== FEE_TABLE).map((f) => f.text),
+    ...(story?.keyFigures ?? []).filter((k) => k.source?.table !== FEE_TABLE).map((k) => k.value),
+  ].join("\n");
+  const out = extractFigures(text).filter((f) => f.kind === "usd").map((f) => f.value);
+  for (const e of story?.exhibits ?? []) {
+    const x = e.exhibit;
+    if (x.kind === "change_timeline") for (const ev of x.events) out.push(...[ev.from, ev.to].filter((v): v is number => v !== null));
+    if (x.kind === "money_at_stake") for (const r of x.rows) out.push(r.low, r.high);
+    if (x.kind === "structure_matrix" && x.incomeSplit) {
+      const i = x.incomeSplit;
+      out.push(i.own, i.peerMedian, i.priceExplained, i.otherExplained);
+    }
+  }
+  for (const o of story?.options ?? []) if (typeof o.price === "number") out.push(o.price);
+  return out;
+}
+
+function tieText(text: string, anchors: number[], singles: number[], failures: string[]): CorrectnessResult {
+  const usd = extractFigures(text).filter((f) => f.kind === "usd");
+  const untied = [...new Set(usd.filter((f) => !ties(f.value, f.tolerance, anchors, singles)).map((f) => f.raw))];
+  if (untied.length > 0) {
+    failures.push(`figures that tie to no live catalog value: ${untied.slice(0, MAX_LISTED).join(", ")}${untied.length > MAX_LISTED ? ` and ${untied.length - MAX_LISTED} more` : ""}`);
+  }
+  return { checked: true, figures: usd.length, failures };
+}
+
+interface ReconcileInput {
   question: string;
   response: AskResponse;
   research: FeeResearch | null;
   schedule?: ScheduleOverview | null;
   live: LiveFeeValues | null;
-}): CorrectnessResult {
-  const { question, response, research, schedule, live } = input;
-  const facts = catalogFacts(response);
-  if (!live || (!research && facts.length === 0)) return { checked: false, figures: 0, failures: [] };
+}
+
+/** Steps 1 and 2: the values and statistics, and the anchors a figure may tie to; null when unchecked. */
+function reconcileValues(input: ReconcileInput, facts: Fact[]): { failures: string[]; anchors: number[]; singles: number[] } | null {
+  const { question, research, schedule, live } = input;
+  if (!live || (!research && facts.length === 0)) return null;
   const failures: string[] = [];
   // Anchors: the bank's own values, recomputed statistics and the question's prices; a sentence may
   // state one of them or the gap between two. Singles: each member's live value, stated as is.
@@ -193,12 +251,7 @@ export function reconcileAnswer(input: {
     }
   }
 
-  const usd = extractFigures(facts.map((f) => f.text).join("\n")).filter((f) => f.kind === "usd");
-  const untied = [...new Set(usd.filter((f) => !ties(f.value, f.tolerance, anchors, singles)).map((f) => f.raw))];
-  if (untied.length > 0) {
-    failures.push(`figures that tie to no live catalog value: ${untied.slice(0, MAX_LISTED).join(", ")}${untied.length > MAX_LISTED ? ` and ${untied.length - MAX_LISTED} more` : ""}`);
-  }
-  return { checked: true, figures: usd.length, failures };
+  return { failures, anchors, singles };
 }
 
 export type LiveReader = (institutionId: number, research: FeeResearch | null, schedule?: ScheduleOverview | null) => Promise<LiveFeeValues | null>;

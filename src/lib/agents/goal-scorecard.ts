@@ -187,13 +187,15 @@ export interface AnswerPathQuality {
 
 export interface AnswerQuality {
   query: string;
-  /** When the eval run finished (ISO): the date the rates are for. */
+  /** When the free eval run finished (ISO): the date its rates are for. */
   at: string;
+  /** When the latest paid sample finished (ISO), the date the paid rates are for; null when none ran in the window. */
+  paidAt?: string | null;
   timedOut: boolean;
   paths: AnswerPathQuality[];
 }
 
-/** The paid paths, not sampled until a daily provider budget for the eval is set. */
+/** The paid paths. The memo is sampled daily (`paid-answer-eval.ts`, five a day); the rest are not yet. */
 export const PAID_ANSWER_PATHS: Array<Pick<AnswerPathQuality, "path" | "label">> = [
   { path: "written_answer", label: "Written answer (paid)" },
   { path: "memo", label: "Memo (paid)" },
@@ -208,7 +210,11 @@ const correctnessOf = (value: unknown): { checked: number; correct: number } | n
 };
 
 /** The latest answer eval's detail as one row per path; an eval from before #1079 has no correctness. */
-export function answerQualityFrom(at: string, detail: Record<string, unknown>): Omit<AnswerQuality, "query"> {
+export function answerQualityFrom(
+  at: string,
+  detail: Record<string, unknown>,
+  paid: { at: string; detail: Record<string, unknown> } | null = null,
+): Omit<AnswerQuality, "query"> {
   const path = (
     key: AnswerPathQuality["path"],
     label: string,
@@ -232,13 +238,25 @@ export function answerQualityFrom(at: string, detail: Record<string, unknown>): 
     };
   };
   const pro = (detail.pro ?? null) as Record<string, unknown> | null;
+  // The paid sample's rows by path; a path with no memo answered measures nothing yet.
+  const paidRows = new Map(
+    (Array.isArray(paid?.detail.paths) ? (paid!.detail.paths as Array<Record<string, unknown>>) : [])
+      .filter((row) => Number(row.answers ?? 0) > 0)
+      .map((row) => [String(row.path), row] as const),
+  );
   return {
     at,
+    paidAt: paidRows.size > 0 ? paid!.at : null,
     timedOut: detail.timedOut === true,
     paths: [
       path("free_ask", "Free Ask, standard questions", detail.answers, detail.passed, detail.correctness),
       ...(pro ? [path("pro_replay", "Free Ask, Pro readers' questions", pro.questions, pro.passed, pro.correctness)] : []),
-      ...PAID_ANSWER_PATHS.map((p) => ({ ...p, measured: false, answers: null, formPassed: null, formRate: null, checked: null, correct: null, correctRate: null })),
+      ...PAID_ANSWER_PATHS.map((p) => {
+        const row = paidRows.get(p.path);
+        return row
+          ? path(p.path, p.label, row.answers, row.passed, row.correctness)
+          : { ...p, measured: false, answers: null, formPassed: null, formRate: null, checked: null, correct: null, correctRate: null };
+      }),
     ],
   };
 }
@@ -642,13 +660,40 @@ async function readAnswerQuality(db: SqlTag): Promise<AnswerQuality | null> {
        AND e.event_type = 'step.finished'
        AND e.status = 'completed'
        AND e.created_at >= NOW() - make_interval(days => ${GOAL_WINDOW_DAYS}::int)
+       -- An eval stopped at its time budget before asking any institution measures nothing (run 5997).
+       AND NOT (e.detail ? 'institutions' AND (e.detail->>'institutions')::numeric = 0)
      ORDER BY e.created_at DESC
      LIMIT 1
   `;
   if (!row) return null;
-  const at = row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at);
-  const detail = (typeof row.detail === "string" ? JSON.parse(row.detail) : row.detail) as Record<string, unknown> | null;
-  return detail ? { query: GOAL_QUERIES.answerQuality, ...answerQualityFrom(at, detail) } : null;
+  const parsed = (r: { created_at: Date | string; detail: unknown }) => ({
+    at: r.created_at instanceof Date ? r.created_at.toISOString() : String(r.created_at),
+    detail: (typeof r.detail === "string" ? JSON.parse(r.detail) : r.detail) as Record<string, unknown> | null,
+  });
+  const free = parsed(row);
+  if (!free.detail) return null;
+  // The latest paid sample that wrote at least one memo (#1079); a capped or paused run measures nothing.
+  // Its own savepoint: a failed paid read leaves the free rates standing.
+  const paidRows = await inSavepoint(db, (scope) => scope<Array<{ created_at: Date | string; detail: unknown }>>`
+    SELECT e.created_at, e.detail
+      FROM agent_run_events e
+      JOIN agent_run_steps s ON s.id = e.step_id
+     WHERE s.step_key = 'hamilton-paid-answer-eval'
+       AND e.event_type = 'step.finished'
+       AND e.status = 'completed'
+       AND e.created_at >= NOW() - make_interval(days => ${GOAL_WINDOW_DAYS}::int)
+       AND jsonb_path_exists(e.detail, '$.paths[*] ? (@.answers > 0)')
+     ORDER BY e.created_at DESC
+     LIMIT 1
+  `).catch((error) => {
+    console.error("Goal scorecard: the paid answer eval could not be read", error);
+    return [];
+  });
+  const paid = paidRows[0] ? parsed(paidRows[0]) : null;
+  return {
+    query: GOAL_QUERIES.answerQuality,
+    ...answerQualityFrom(free.at, free.detail, paid?.detail ? { at: paid.at, detail: paid.detail } : null),
+  };
 }
 
 /** One read, in its own savepoint: a failure leaves that number null and the others standing. */
@@ -735,7 +780,12 @@ export function goalBriefLines(goal: GoalScorecard): string[] {
   if (q) {
     const measured = q.paths.filter((p) => p.measured);
     const parts = measured.map((p) => `${p.label}: form ${pct(p.formRate)} (${p.formPassed} of ${p.answers}), figures tie out ${p.checked == null ? "not checked" : `${pct(p.correctRate)} (${p.correct} of ${p.checked})`}`);
-    lines.push(`Hamilton answers (eval of ${q.at.slice(0, 16).replace("T", " ")} UTC${q.timedOut ? ", stopped at its time budget" : ""}): ${parts.join("; ")}. Paid paths not measured yet.`);
+    const unmeasured = q.paths.filter((p) => !p.measured).map((p) => p.label.replace(/ \(paid\)$/, "").toLowerCase());
+    const paidAt = q.paidAt ? `; paid sample of ${q.paidAt.slice(0, 16).replace("T", " ")} UTC` : "";
+    const rest = unmeasured.length === PAID_ANSWER_PATHS.length
+      ? " Paid paths not measured yet."
+      : unmeasured.length > 0 ? ` Not measured yet: ${unmeasured.join(", ")}.` : "";
+    lines.push(`Hamilton answers (eval of ${q.at.slice(0, 16).replace("T", " ")} UTC${q.timedOut ? ", stopped at its time budget" : ""}${paidAt}): ${parts.join("; ")}.${rest}`);
   }
   return lines;
 }

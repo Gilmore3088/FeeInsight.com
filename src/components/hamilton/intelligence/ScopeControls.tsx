@@ -2,11 +2,14 @@
 import { useRouter } from "next/navigation";
 import { encodeLandingResearch, RESEARCH_STATE_CODES, type LandingResearchHandoff, type ResearchStateCode } from "@/lib/hamilton/landing-research-handoff";
 import { STATE_NAMES } from "@/lib/us-states";
+import { ASSET_SIZES } from "@/lib/hamilton/asset-size";
+import { MARKET_BRIEF_CATEGORIES } from "@/lib/hamilton/market-question";
+import { getDisplayName } from "@/lib/fee-taxonomy";
 
-export function ScopeControls({ selection, pathname, lens }: { selection: LandingResearchHandoff; pathname: string; lens: string }) {
+export function ScopeControls({ selection, pathname, lens, size = "all" }: { selection: LandingResearchHandoff; pathname: string; lens: string; size?: string }) {
   const router = useRouter();
-  function change(next: LandingResearchHandoff) {
-    router.push(`${pathname}?${new URLSearchParams({ research: encodeLandingResearch(next), lens })}`);
+  function change(next: LandingResearchHandoff, nextSize = size) {
+    router.push(`${pathname}?${new URLSearchParams({ research: encodeLandingResearch(next), lens, ...(nextSize !== "all" ? { size: nextSize } : {}) })}`);
   }
   return <div className="intelligence-controls">
     <label>Geography<select aria-label="Geography" value={selection.scope.kind === "state" ? selection.scope.stateCode : "national"} onChange={e => change({ ...selection, scope: e.target.value === "national" ? { kind: "national" } : { kind: "state", stateCode: e.target.value as ResearchStateCode } })}>
@@ -15,8 +18,11 @@ export function ScopeControls({ selection, pathname, lens }: { selection: Landin
     <label>Institution type<select aria-label="Institution type" value={selection.charter} onChange={e => change({ ...selection, charter: e.target.value as LandingResearchHandoff["charter"] })}>
       <option value="all">Banks & credit unions</option><option value="bank">Banks</option><option value="credit_union">Credit unions</option>
     </select></label>
-    <label>Fee categories<select aria-label="Fee categories" value={selection.categories.length === 1 ? selection.categories[0] : "all"} onChange={e => change({ ...selection, categories: e.target.value === "all" ? ["monthly_maintenance", "wire_domestic_outgoing", "atm_non_network"] : [e.target.value] })}>
-      <option value="all">Selected fee landscape</option><option value="monthly_maintenance">Monthly maintenance</option><option value="wire_domestic_outgoing">Outgoing domestic wire</option><option value="atm_non_network">Non-network ATM</option><option value="overdraft">Overdraft</option><option value="nsf">NSF</option>
+    <label>Asset size<select aria-label="Asset size" value={size} onChange={e => change(selection, e.target.value)}>
+      {ASSET_SIZES.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
+    </select></label>
+    <label>Fee categories<select aria-label="Fee categories" value={selection.categories.length === 1 ? selection.categories[0] : "all"} onChange={e => change({ ...selection, categories: e.target.value === "all" ? [...MARKET_BRIEF_CATEGORIES] : [e.target.value] })}>
+      <option value="all">Five core fees</option>{MARKET_BRIEF_CATEGORIES.map(c => <option key={c} value={c}>{getDisplayName(c)}</option>)}
     </select></label>
     <label>Reporting periods<span className="mt-1.5 block rounded border border-[var(--fi-border)] bg-white p-3 text-sm text-[var(--fi-ink)]">Latest available per exhibit</span></label>
   </div>;

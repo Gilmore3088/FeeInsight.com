@@ -79,6 +79,14 @@ export const MAX_USER_MESSAGE_CHARS = withConversationContext(
  */
 export const MAX_REQUEST_MESSAGES = 100;
 
+/**
+ * Most content one request may carry across every message and role (#1357). Assistant messages
+ * are not capped one by one, since real research answers run long, but a client that sends many
+ * long ones would otherwise set an unbounded provider cost. 400,000 characters fits a full
+ * 100-message admin chat with long answers; anything larger starts a new chat.
+ */
+export const MAX_REQUEST_CONTENT_CHARS = 400_000;
+
 export const MESSAGE_TOO_LONG_ERROR = `Each question can be at most ${MAX_USER_MESSAGE_CHARS.toLocaleString("en-US")} characters.`;
 export const TOO_MANY_MESSAGES_ERROR = "This conversation is too long. Start a new chat to keep asking.";
 
@@ -96,6 +104,12 @@ function messageText(message: MessageLike): string {
     .join(" ");
 }
 
+/** A message's whole content as it would be forwarded, measured by its serialized parts. */
+function contentSize(message: MessageLike): number {
+  if (!message || !Array.isArray(message.parts)) return 0;
+  try { return JSON.stringify(message.parts).length; } catch { return Number.POSITIVE_INFINITY; }
+}
+
 /**
  * The server's own bound on what a client sends (#1273): the number of messages, and each user
  * message's length. The screens' limits hold only for an honest client; this holds for any.
@@ -103,8 +117,12 @@ function messageText(message: MessageLike): string {
  */
 export function messageBoundsError(messages: readonly MessageLike[]): string | null {
   if (messages.length > MAX_REQUEST_MESSAGES) return TOO_MANY_MESSAGES_ERROR;
+  let total = 0;
   for (const m of messages) {
     if (m && m.role === "user" && messageText(m).length > MAX_USER_MESSAGE_CHARS) return MESSAGE_TOO_LONG_ERROR;
+    // Every part counts, text or not, since the route forwards all of them to the model.
+    total += contentSize(m);
+    if (total > MAX_REQUEST_CONTENT_CHARS) return TOO_MANY_MESSAGES_ERROR;
   }
   return null;
 }

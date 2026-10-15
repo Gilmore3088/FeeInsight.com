@@ -51,4 +51,12 @@ describe("ReportOutput", () => {
     expect(html).toContain("Historical institution, account and peer context: Not recorded");
   });
 
+
+  it("shows no peer-group strip on a board brief, which has no peer group", () => {
+    const metadata = { evidencePolicy: "source-diligence" as const, selectedSource: "manual" as const, selectedSourceLabel: "Market research", peerSetId: null, peerBaselineSource: null, peerBaselineLabel: null, peerFallbackReason: "Market view; no institution peer group.", selectedVerifiedFeeCount: 0, selectedProvisionalFeeCount: 0, selectedFeeDeltaCount: 0 };
+    const brief = renderToStaticMarkup(<ReportOutput report={{ ...report, boardBrief: { teamNote: "", includeEvidence: true } }} reportType="board_brief" artifactMetadata={metadata} />);
+    expect(brief).not.toContain("Peer group:");
+    expect(brief).not.toContain("compared with peers");
+    expect(renderToStaticMarkup(<ReportOutput report={report} reportType="board_brief" artifactMetadata={metadata} />)).toContain("Peer group:");
+  });
 });

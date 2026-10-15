@@ -25,6 +25,17 @@ export interface DataRoomCounts {
  */
 export const PRO_INSTITUTION_MIN_FEES = 3;
 
+/**
+ * Live catalog rows for one institution, counted exactly as Atlas's pro_institution tier counts
+ * them (priority-institutions.ts), so Hamilton's "queued" note matches what Atlas will do (#1388).
+ */
+export async function countCatalogFees(institutionId: number, db: SqlTag = sql): Promise<number> {
+  const [row] = await db<{ n: number }[]>`
+    SELECT COUNT(*)::int AS n FROM published_fee_catalog WHERE institution_id = ${institutionId}
+  `;
+  return Number(row?.n ?? 0);
+}
+
 /** The Atlas source field width that cut city names ("Colorado Spring"). */
 export const CITY_CUT_WIDTH = 15;
 

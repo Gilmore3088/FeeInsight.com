@@ -33,6 +33,8 @@ export interface ScheduleOverview {
   facts: Fact[];
   /** The same fees as rows, for a table. */
   positions: SchedulePosition[];
+  /** How many of the institution's fees are on file, compared or not. */
+  feesOnFile?: number;
 }
 
 const money = (n: number): string => formatFeeAmount(n) ?? `$${n}`;
@@ -65,9 +67,13 @@ export function scheduleOverview(rows: readonly FeePositionRow[], subjectName?: 
   if (ranked.length === 0) {
     return {
       top: null,
-      shortAnswer: `Hamilton has ${rows.length} of ${subjectPossessive(subject, false)} published fees on file; none yet has enough peers publishing it to compare.`,
+      shortAnswer:
+        rows.length === 0
+          ? `Hamilton has no published fees for ${subjectName ?? "your institution"} on file yet, so there is no schedule to compare.`
+          : `Hamilton has ${rows.length} of ${subjectPossessive(subject, false)} published fees on file; none yet has enough peers publishing it to compare.`,
       facts: [],
       positions: [],
+      feesOnFile: rows.length,
     };
   }
   const higher = ranked.filter((r) => r.current - r.band.median >= 0.005).length;
@@ -95,6 +101,18 @@ export function scheduleOverview(rows: readonly FeePositionRow[], subjectName?: 
       band: { p25: r.band.p25, p75: r.band.p75 },
     })),
   };
+}
+
+/**
+ * A Pro account's own institution with too few fees is queued for collection first (#1078:
+ * Atlas's pro_institution tier). The caller decides it applies, counting catalog rows the way
+ * Atlas does (ownScheduleQueued in ask-service, #1388); the note only adds the sentence.
+ */
+export const OWN_SCHEDULE_COLLECTING = "Fee Insight has queued your institution's fee schedule for collection ahead of others.";
+
+export function withOwnScheduleNote(schedule: ScheduleOverview): ScheduleOverview {
+  if (schedule.top) return schedule;
+  return { ...schedule, shortAnswer: `${schedule.shortAnswer} ${OWN_SCHEDULE_COLLECTING}` };
 }
 
 /** Puts the overview first; the detailed answer for the furthest fee follows it. */

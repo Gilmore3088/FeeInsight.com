@@ -234,6 +234,12 @@ function narrateFinished(
       const tied = correctness ? ` ${n(correctness, "correct")} of ${n(correctness, "checked")} checked tie to the live catalog.` : "";
       return `Asked Hamilton ${count(n(detail, "answers"), "question")} for ${count(n(detail, "institutions"), "institution")}; ${n(detail, "passed")} answers met the bar.${tied}`;
     }
+    case "hamilton-paid-answer-eval": {
+      if (typeof detail.note === "string") return detail.note;
+      const memo = (Array.isArray(detail.paths) ? detail.paths[0] : null) as Detail | null;
+      const correctness = (memo?.correctness ?? null) as Detail | null;
+      return `Wrote ${memo ? n(memo, "passed") : 0} of ${count(memo ? n(memo, "answers") : 0, "paid memo")}${correctness ? `; ${n(correctness, "correct")} of ${n(correctness, "checked")} checked tie to the live catalog` : ""}.`;
+    }
     case "schedule-check": {
       const missed = n(detail, "missed") + n(detail, "failed");
       return `Atlas checked every schedule against the route ledger: ${n(detail, "ran")} ran on time, ${missed === 0 ? "none missed or failed" : `${missed} missed or failed`}${n(detail, "unknown") > 0 ? `, ${n(detail, "unknown")} unknown` : ""}.`;
@@ -617,6 +623,7 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   "deming-regression": "atlas",
   "scoreboard-snapshot": "atlas",
   "hamilton-answer-eval": "hamilton",
+  "hamilton-paid-answer-eval": "hamilton",
   "study-fee-dependence": "hamilton",
   "study-local-income": "hamilton",
   "study-concentration": "hamilton",

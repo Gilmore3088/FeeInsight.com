@@ -72,7 +72,10 @@ import { frequencyFromLine, settledFrequency } from "@/lib/fee-frequency";
 // box keys and sizes, extra statements, copies), a "FREE" column beside priced columns, and
 // label-and-price rows no rule names held in a fee schedule instead of dropped, with every
 // dropped priced line counted by reason.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 68 } as const;
+// v69 (#1102): a price line with no name of its own (a bare "$12", "Outgoing domestic $25") takes
+// its name from a short fee heading up to four lines above it, unless a row under that heading
+// already read another kind of fee.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 69 } as const;
 
 export interface SpecialistRun {
   strategy: string;

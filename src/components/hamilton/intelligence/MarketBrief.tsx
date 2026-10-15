@@ -1,7 +1,8 @@
 import Link from "next/link";
-import { encodeLandingResearch, landingResearchHref } from "@/lib/hamilton/landing-research-handoff";
+import { encodeLandingResearch } from "@/lib/hamilton/landing-research-handoff";
 import { INTELLIGENCE_LENSES, type MarketQuestion } from "@/lib/hamilton/market-question";
 import { shortSegmentLabel } from "@/lib/hamilton/workspace/segment";
+import { BoardBriefButton } from "./BoardBriefButton";
 import { lensPanels, loadIntelligence, readFindings, stateLinks, type Loaded } from "./IntelligenceWorkspace";
 
 const CHARTER_LABEL = { all: "Banks and credit unions", bank: "Banks", credit_union: "Credit unions" } as const;
@@ -44,7 +45,7 @@ export function MarketBriefView({ question, market, data, instId }: { question: 
       </div>
       <div className="flex flex-wrap gap-2">
         <Link href={research(lenses[0])} className="fi-btn fi-btn-secondary no-underline">Open in Research</Link>
-        <Link href={landingResearchHref({ ...selection, task: "board_report" })} className="fi-btn fi-btn-primary no-underline">Build board brief</Link>
+        <BoardBriefButton selection={selection} lenses={lenses} />
       </div>
     </header>
 

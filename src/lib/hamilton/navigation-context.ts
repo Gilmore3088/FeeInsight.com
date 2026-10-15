@@ -43,7 +43,9 @@ export function hrefWithHamiltonNavigation(href: string, selection: HamiltonNavi
   // A destination's explicit subject/contract or saved record remains authoritative.
   if (params.has("instId") || params.has("research") || ARTIFACT_PARAMS.some((key) => params.get(key)?.trim())) return href;
   if (selection.research && (path === "/pro/analyze" || path === "/pro/reports")) {
-    params.set("research", encodeLandingResearch({ ...selection.research, task: path === "/pro/reports" ? "board_report" : "compare" }));
+    // Board briefs are built from the market view or a saved answer, so Reports opens the saved list.
+    if (path === "/pro/reports") return href;
+    params.set("research", encodeLandingResearch({ ...selection.research, task: "compare" }));
     return `${path}?${params}${fragment}`;
   }
   return hrefWithInstitutionContext(href, selection.institutionId);

@@ -487,7 +487,7 @@ describe("retired lines today's rules file under another category (#1093, Oregon
     const counted = { ...cardReplacement, total: 1336, decided_total: 881, institutions: 317 };
     const { db, calls } = createRefileDb([counted, incomingWires]);
 
-    const result = await refileSupersededRows(db as never, { now: new Date("2026-10-14T12:34:00Z") });
+    const result = await refileSupersededRows(db as never, { live: false, now: new Date("2026-10-14T12:34:00Z") });
 
     expect(result).toMatchObject({
       live: false, dryRun: true, mode: "sample", candidates: 1336, candidateInstitutions: 317, candidatesDarwinDecided: 881,
@@ -499,11 +499,25 @@ describe("retired lines today's rules file under another category (#1093, Oregon
     expect(calls.some((call) => call.text.includes("UPDATE"))).toBe(false);
   });
 
+  it("reads nothing in a state lane while the switch is off, and only the lane's state when it reads", async () => {
+    const { db, calls } = createRefileDb([cardReplacement]);
+    const skipped = await refileSupersededRows(db as never, { live: false, stateCode: "or", skipSample: true });
+    expect(skipped).toMatchObject({ mode: "skipped", checked: 0, candidates: 0 });
+    expect(calls).toHaveLength(0);
+
+    await refileSupersededRows(db as never, { live: false, dryRun: true, stateCode: "or", skipSample: true });
+    const select = calls.find((call) => call.text.includes("darwin_decided"))!;
+    expect(select.text).toContain("inst.state_code");
+    expect(select.values).toContain("OR");
+    const stale = calls.find((call) => call.text.includes("knox_reread_took_over"))!;
+    expect(stale.values).toContain("OR");
+  });
+
   it("reports what it would do in a dry-run extract while off, and writes nothing", async () => {
     const decided = { ...retiredRow(105900, "Statement Copy", "5.00", "paper_statement"), darwin_decided: true };
     const { db, calls } = createRefileDb([cardReplacement, incomingWires, badAddress, foreignDeposit, decided], [], [{ fee_raw_id: 126752 }]);
 
-    const result = await refileSupersededRows(db as never, { dryRun: true });
+    const result = await refileSupersededRows(db as never, { live: false, dryRun: true });
 
     expect(result).toMatchObject({ live: false, dryRun: true, checked: 5, refiled: 3, notRead: 1, darwinDecided: 1, liveTwin: 0, staleHintRows: 1, staleHintRepaired: 0 });
     expect(result.sample.map((row) => `${row.fee_name}:${row.from}->${row.to}`)).toEqual([

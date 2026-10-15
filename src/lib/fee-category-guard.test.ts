@@ -733,10 +733,12 @@ describe("checkFeeCategory", () => {
     expect(checkFeeCategory("nsf", "Merchant presenting NSF check from member").ok).toBe(false);
     expect(checkFeeCategory("nsf", "NSF Fee (per item)")).toEqual({ ok: true });
     expect(checkFeeCategory("legal_process", "Legal Process Fee")).toEqual({ ok: true });
-    // Since v48 a subordination is another lending fee.
+    // v64 (James, Oct 15, reversing v48): a subordination is legal process; other lending still
+    // accepts the ones filed there until the fold's switched re-file moves them.
     for (const name of ["Subordination Request", "Mortgage Subordination Fee"]) {
-      expect(checkFeeCategory("legal_process", name).ok, name).toBe(false);
-      expect(refileCategory("legal_process", name), name).toBe("other_lending_fee");
+      expect(checkFeeCategory("legal_process", name), name).toEqual({ ok: true });
+      expect(refileCategory("legal_process", name), name).toBe("legal_process");
+      expect(checkFeeCategory("other_lending_fee", name), name).toEqual({ ok: true });
     }
   });
 

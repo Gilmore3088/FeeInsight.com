@@ -751,13 +751,19 @@ export async function recheckSupersededRows(
  * category the re-read wrote in `conditions`, the stale flag `insertCandidate` now drops. Rows
  * Darwin already verified are left as they are.
  *
- * This changes production rows, so it is off until James approves it (#1093). Off, every extract
+ * This changes production rows. James switched it on (Oct 15, #1093). Off, every extract
  * step reads a sample of the candidates (25, a new sample each hour), writes nothing, and reports
  * the candidate count and what it would do with the sample. A dry-run Knox extract
  * (`run_kind = dry_run`) reads them all and writes nothing. On, it reads 200 a pass in id order,
  * re-files, and marks every row it read with `knox_superseded_refile:vN`.
+ *
+ * A state lane's extract step re-files only its state's rows, and a direct run for one bank only
+ * that bank's (`stateCode`, `institutionId`): unscoped, every lane read all banks' rows (1,336
+ * candidates at 317 banks, Oct 15), and the scan took a zero-document extract from 7 s to 53 s.
+ * Each state's rows are re-filed on its lane's next extract step. Switched off, a state lane skips
+ * the read-only sample (`skipSample`).
  */
-export const SUPERSEDED_REFILE_LIVE = false;
+export const SUPERSEDED_REFILE_LIVE = true;
 export const SUPERSEDED_REFILE_LIMIT = 200;
 /** Off: the read-only sample each extract step takes. */
 export const SUPERSEDED_REFILE_SAMPLE = 25;
@@ -820,8 +826,11 @@ export interface SupersededRefileSample {
 export interface SupersededRefileResult {
   live: boolean;
   dryRun: boolean;
-  /** `sample`: off, a read-only sample; `dry_run`: every candidate, read-only; `live`: writes. */
-  mode: "sample" | "dry_run" | "live";
+  /**
+   * `sample`: off, a read-only sample; `dry_run`: every candidate, read-only; `live`: writes;
+   * `skipped`: off, in a state lane, nothing read.
+   */
+  mode: "sample" | "dry_run" | "live" | "skipped";
   /** Retired rows this rules version has not re-filed or marked, their banks, and how many Darwin already judged. */
   candidates: number;
   candidateInstitutions: number;
@@ -842,21 +851,34 @@ export interface SupersededRefileResult {
 
 export async function refileSupersededRows(
   db: SqlTag,
-  options: { limit?: number; dryRun?: boolean; live?: boolean; institutionId?: number | null; now?: Date } = {},
+  options: {
+    limit?: number;
+    dryRun?: boolean;
+    live?: boolean;
+    institutionId?: number | null;
+    /** A state lane's state: only its banks' rows are read. */
+    stateCode?: string | null;
+    /** Off, read nothing instead of the read-only sample (state lanes). */
+    skipSample?: boolean;
+    now?: Date;
+  } = {},
 ): Promise<SupersededRefileResult> {
   const live = options.live ?? SUPERSEDED_REFILE_LIVE;
   // Off, the pass only reads; a dry-run extract reads every candidate, any other step a sample.
   const dryRun = Boolean(options.dryRun) || !live;
-  const mode: SupersededRefileResult["mode"] = options.dryRun ? "dry_run" : live ? "live" : "sample";
+  const sampleMode = !options.dryRun && !live;
+  const mode: SupersededRefileResult["mode"] = options.dryRun ? "dry_run" : live ? "live" : options.skipSample ? "skipped" : "sample";
   const result: SupersededRefileResult = {
     live, dryRun, mode, candidates: 0, candidateInstitutions: 0, candidatesDarwinDecided: 0, checked: 0, refiled: 0, liveTwin: 0, notRead: 0,
     darwinDecided: 0, refiledIds: [], sample: [], staleHintRows: 0, staleHintRepaired: 0,
   };
+  if (sampleMode && options.skipSample) return result;
   if (!(await currentCopySchemaReady(db))) return result;
   const defaultLimit = mode === "dry_run" ? SUPERSEDED_REFILE_DRY_LIMIT : mode === "sample" ? SUPERSEDED_REFILE_SAMPLE : SUPERSEDED_REFILE_LIMIT;
   const cap = mode === "dry_run" ? SUPERSEDED_REFILE_DRY_LIMIT : mode === "sample" ? SUPERSEDED_REFILE_SAMPLE : 500;
   const limit = Math.max(1, Math.min(Number(options.limit) || defaultLimit, cap));
   const institutionId = options.institutionId ?? null;
+  const stateCode = options.stateCode?.trim().toUpperCase() || null;
   const flag = supersededRefileFlag();
   const categoryReasons = [...DARWIN_CATEGORY_REASONS];
   // A read-only sample puts the rows Darwin has not judged first, in an order that changes each hour.
@@ -876,6 +898,7 @@ export async function refileSupersededRows(
                 AND COALESCE(pa.detail->>'reason_code', '') <> ALL(${categoryReasons}::text[])
            ) AS darwin_decided
       FROM raw_fee_observations fr
+      JOIN institution_sources inst ON inst.id = fr.institution_id
       JOIN source_documents doc ON doc.id = fr.source_document_id AND doc.superseded_by_id IS NULL
       JOIN LATERAL (
         SELECT t.id, t.text_hash FROM agent_source_texts t
@@ -893,6 +916,7 @@ export async function refileSupersededRows(
        AND NOT fr.outlier_flags ? ${flag}
        AND NOT EXISTS (SELECT 1 FROM verified_fee_observations fv WHERE fv.fee_raw_id = fr.fee_raw_id)
        AND (${institutionId}::int IS NULL OR fr.institution_id = ${institutionId}::int)
+       AND (${stateCode}::text IS NULL OR upper(btrim(inst.state_code)) = ${stateCode}::text)
     )
     SELECT c.*,
            (SELECT COUNT(*) FROM candidates) AS total,
@@ -977,6 +1001,7 @@ export async function refileSupersededRows(
   const stale = await db<Array<{ fee_raw_id: number | string }>>`
     SELECT fr.fee_raw_id
       FROM raw_fee_observations fr
+      JOIN institution_sources inst ON inst.id = fr.institution_id
      WHERE fr.source = 'knox'
        AND fr.outlier_flags ? 'knox_reread_took_over'
        AND NOT EXISTS (SELECT 1 FROM verified_fee_observations fv WHERE fv.fee_raw_id = fr.fee_raw_id)
@@ -989,6 +1014,7 @@ export async function refileSupersededRows(
           LIMIT 1
        ) IS DISTINCT FROM 'canonical_hint:' || substring(COALESCE(fr.extraction_note, fr.conditions) FROM 'canonical_hint=([a-z0-9_]+);')
        AND (${institutionId}::int IS NULL OR fr.institution_id = ${institutionId}::int)
+       AND (${stateCode}::text IS NULL OR upper(btrim(inst.state_code)) = ${stateCode}::text)
      ORDER BY fr.fee_raw_id
      LIMIT ${limit}
   `;

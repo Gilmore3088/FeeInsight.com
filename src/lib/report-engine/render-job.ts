@@ -140,8 +140,22 @@ export async function runReportRenderStep(
   }
 
   // assembleAndRender marks the job assembling, and failed (with the error) when it throws;
-  // both writes leave a cancel in place (#1266).
-  const rendered = await (deps.render ?? assembleAndRender)(job.report_type, jobParams(job), jobId);
+  // both writes leave a cancel in place (#1266). It throws without a paid call when a cancel
+  // came first; a throw after a cancel is recorded as skipped, not failed (#1271).
+  let rendered: Awaited<ReturnType<typeof assembleAndRender>>;
+  try {
+    rendered = await (deps.render ?? assembleAndRender)(job.report_type, jobParams(job), jobId);
+  } catch (error) {
+    const now = await currentStatus(db, jobId);
+    if (now === "cancel_requested" || now === "cancelled") {
+      return {
+        status: "skipped",
+        summary: `${PHASE_WORDS.render.cancelled} Assembly stopped (it is now ${now}): ${errorText(error)}`,
+        detail: { report_job_id: jobId, report_type: job.report_type, report_status: now, lost_race: true },
+      };
+    }
+    throw error;
+  }
   const html = rendered.html;
   const detail = { report_job_id: jobId, report_type: job.report_type };
   // Only an open job moves on, so a cancel sent while Hamilton wrote the sections stands (#1266).
@@ -170,10 +184,17 @@ export async function runReportRenderStep(
      RETURNING id
   `;
   if (saved.length === 0) {
-    return lostRace(db, jobId, "render", "rendered", "The stored report was not attached to the job.", {
-      ...detail,
-      artifact_key: key,
-    });
+    // The HTML is already in R2 and the store has no delete, so the object stays there
+    // unattached. Its key is named in the summary and the detail, so it can be found and
+    // removed (#1271).
+    return lostRace(
+      db,
+      jobId,
+      "render",
+      "rendered",
+      `The stored report was not attached to the job; the uploaded HTML stays in storage, unattached, at ${key}.`,
+      { ...detail, artifact_key: key, unattached_artifact_key: key },
+    );
   }
   const title = REPORT_TITLES[job.report_type] ?? job.report_type;
   return {
@@ -413,8 +434,9 @@ export async function runReportCloseStep(db: SqlTag, jobId: string | null | unde
   }
   if (job.status === "cancel_requested") {
     // A cancel the admin sent; cancelReport finishes it. Close never overwrites it (#1266).
+    // Skipped, the same as a cancel that lands after this read (lostRace) (#1271).
     return {
-      status: "completed",
+      status: "skipped",
       summary: "Report job was cancelled; the cancel is left in place.",
       detail: { report_job_id: jobId, report_status: job.status },
     };

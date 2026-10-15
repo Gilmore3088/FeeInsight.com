@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   CONVERSATION_CONTEXT_TURNS,
+  MAX_REQUEST_CONTENT_CHARS,
   MAX_REQUEST_MESSAGES,
   MAX_USER_MESSAGE_CHARS,
   MESSAGE_TOO_LONG_ERROR,
@@ -98,5 +99,17 @@ describe("messageBoundsError (#1273)", () => {
     const ok = Array.from({ length: MAX_REQUEST_MESSAGES }, () => user("hi"));
     expect(messageBoundsError(ok)).toBeNull();
     expect(messageBoundsError([...ok, user("one more")])).toBe(TOO_MANY_MESSAGES_ERROR);
+  });
+
+  it("bounds the whole request, so long assistant messages can't run up provider cost (#1357)", () => {
+    const answer = (n: number) => ({ role: "assistant", parts: [{ type: "text", text: "a".repeat(n) }] });
+    // A full admin chat with long answers fits.
+    const realChat = Array.from({ length: 50 }, () => [user("q".repeat(500)), answer(6_000)]).flat();
+    expect(messageBoundsError(realChat)).toBeNull();
+    // 99 forged long assistant messages do not.
+    const forged = [...Array.from({ length: 99 }, () => answer(MAX_REQUEST_CONTENT_CHARS / 50)), user("hi")];
+    expect(messageBoundsError(forged)).toBe(TOO_MANY_MESSAGES_ERROR);
+    // Non-text parts count too.
+    expect(messageBoundsError([{ role: "assistant", parts: [{ type: "tool-result", output: "x".repeat(MAX_REQUEST_CONTENT_CHARS) }] }])).toBe(TOO_MANY_MESSAGES_ERROR);
   });
 });

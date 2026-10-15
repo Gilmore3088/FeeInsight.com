@@ -658,6 +658,11 @@ export interface ScoreboardSnapshotRow {
   accuracy_precision: number | null;
   accuracy_recall: number | null;
   accuracy_score_run_id: number | null;
+  /**
+   * The answer-key scorer version behind accuracy_precision/recall (#1354): `detail.accuracy_scorer_version`,
+   * or for older snapshots the version of the score run they name. Null when no score run is named.
+   */
+  accuracy_scorer_version: number | null;
   freshness_median_days: number | null;
   freshness_live_fees: number | null;
   /** The goal scorecard stored that day (`detail.goal`, #1040); null on older snapshots. */
@@ -680,13 +685,26 @@ export async function scoreboardSchemaReady(db: SqlTag = sql): Promise<boolean> 
   return row?.ready === true;
 }
 
+/**
+ * Where each run of one series starts, for a trend that must not join two series (#1354).
+ * A day with no known series belongs to no run: the same series on both sides of it is one run.
+ */
+export function seriesBreaks(keys: Array<number | null>): Array<{ start: number; key: number }> {
+  const runs: Array<{ start: number; key: number }> = [];
+  keys.forEach((key, index) => {
+    if (key != null && key !== runs.at(-1)?.key) runs.push({ start: index, key });
+  });
+  return runs;
+}
+
 /** The newest snapshots, oldest first (for a trend line). */
 export async function listScoreboardSnapshots(days = 30, db: SqlTag = sql): Promise<ScoreboardSnapshotRow[]> {
   const rows = await db`
-    SELECT *, snapshot_date::text AS snapshot_day
-      FROM pipeline_scoreboard_snapshots
-     WHERE snapshot_date >= CURRENT_DATE - ${days}::int
-     ORDER BY snapshot_date ASC
+    SELECT s.*, s.snapshot_date::text AS snapshot_day, r.scorer_version AS run_scorer_version
+      FROM pipeline_scoreboard_snapshots s
+      LEFT JOIN answer_key_score_runs r ON r.id = s.accuracy_score_run_id
+     WHERE s.snapshot_date >= CURRENT_DATE - ${days}::int
+     ORDER BY s.snapshot_date ASC
   `;
   return rows.map((row) => {
     const snapshot: Record<string, unknown> = {
@@ -697,9 +715,12 @@ export async function listScoreboardSnapshots(days = 30, db: SqlTag = sql): Prom
     }
     const detail = (typeof row.detail === "string" ? JSON.parse(row.detail) : row.detail) as {
       goal?: GoalScorecard;
+      accuracy_scorer_version?: number | null;
       agent_health?: { agents?: Array<{ agent?: string; numbers?: Record<string, unknown> }> };
     } | null;
     snapshot.goal = detail?.goal ?? null;
+    const scorer = detail?.accuracy_scorer_version ?? row.run_scorer_version;
+    snapshot.accuracy_scorer_version = scorer == null || !Number.isFinite(Number(scorer)) ? null : Number(scorer);
     const undecided = detail?.agent_health?.agents?.find((section) => section.agent === "darwin")?.numbers?.undecided;
     snapshot.darwin_backlog = undecided == null || !Number.isFinite(Number(undecided)) ? null : Number(undecided);
     return snapshot as unknown as ScoreboardSnapshotRow;

@@ -30,6 +30,49 @@ describe("who regulates the institution", () => {
   });
 });
 
+describe("regulator and complaint lines fit a storyline line (#1076)", () => {
+  const long = "First Federal Savings and Loan Association of Greater Example County";
+  const wordsIn = (t: string) => t.split(/\s+/).length;
+
+  it("keeps the institution's name and shortens the wording when the full sentence runs past 20 words", () => {
+    const fdic = regulatorSentence({ primaryRegulator: "FDIC", charterAgency: "State", source: "fdic" }, "TN", "bank", "Example Community Bank of Middle Tennessee")!;
+    expect(fdic).toBe("Example Community Bank of Middle Tennessee has a state charter; the FDIC is its primary federal regulator.");
+    expect(wordsIn(fdic)).toBeLessThanOrEqual(20);
+    const longest = regulatorSentence({ primaryRegulator: "Federal Reserve", charterAgency: "State", source: "fdic" }, "TN", "bank", long)!;
+    expect(longest).toBe(`${long} has a state charter; the Federal Reserve is its primary federal regulator.`);
+    const cu = regulatorSentence({ primaryRegulator: "NCUA", charterAgency: "State", source: "ncua" }, "TN", "credit_union", long)!;
+    expect(cu.startsWith(long)).toBe(true);
+    expect(wordsIn(cu)).toBeLessThanOrEqual(20);
+  });
+
+  it("keeps the second person throughout when no name is given", () => {
+    const ca = regulatorSentence({ primaryRegulator: "Federal Reserve", charterAgency: "State", source: "fdic" }, "CA", "bank")!;
+    expect(ca).toMatch(/^Your charter is from the /);
+    expect(ca).not.toMatch(/\bits\b/);
+    expect(ca.split(/\s+/).length).toBeLessThanOrEqual(20);
+  });
+
+  it("keeps a short name's full sentence unchanged", () => {
+    expect(regulatorSentence({ primaryRegulator: "FDIC", charterAgency: "State", source: "fdic" }, "TN", "bank", "Example Bank")).toBe(
+      "Example Bank's charter is from the Tennessee Department of Financial Institutions, and the FDIC is Example Bank's primary federal regulator.",
+    );
+  });
+
+  it("shortens the complaint benchmark for a long name, keeping both rates", () => {
+    const bench: ComplaintBenchmark = {
+      institution_id: 1, institution_name: long, year: "2025", match_status: "matched",
+      total_complaints: 40, fee_complaints: 12, deposits_thousands: 3_500_000, fee_complaints_per_billion: 3.4,
+      peer_level: "state", peer_label: "NH", peer_count: 42, peers_with_fee_complaints: 9, peer_median_per_billion: 0.8,
+      peer_median_fee_complaints: 0, peer_fee_complaints_total: 30, sub_issues_loaded: true, summary: "",
+    };
+    const text = complaintBenchmarkFact(bench, "Example Community Bank of Middle Tennessee")!.text;
+    expect(wordsIn(text)).toBeLessThanOrEqual(20);
+    expect(text).toContain("34 per $10B of deposits");
+    expect(text).toBe("Example Community Bank of Middle Tennessee's 2025 CFPB fee complaints equal 34 per $10B of deposits; peers' median is 8.");
+    expect(text.startsWith("Example Community Bank of Middle Tennessee's")).toBe(true);
+  });
+});
+
 describe("regulatory facts for one fee", () => {
   it("leads with the overdraft exposure rules, then the regulators and complaints, each sourced", () => {
     const facts = regulatoryFacts({
@@ -70,7 +113,7 @@ describe("regulatory facts for one fee", () => {
       "You had no CFPB fee complaints in 2025; 9 of 42 New Hampshire peers had any.",
     );
     expect(complaintBenchmarkFact({ ...bench, fee_complaints: 1, fee_complaints_per_billion: 0.04, peer_median_per_billion: 0 })!.text).toBe(
-      "Your 1 CFPB fee complaint in 2025 equals under 1 per $10B of deposits; 42 New Hampshire peers' median is 0.",
+      "Your CFPB fee complaint in 2025 equals under 1 per $10B of deposits; 42 New Hampshire peers' median is 0.",
     );
     expect(complaintBenchmarkFact({ ...bench, match_status: "none" })).toBeNull();
     expect(complaintBenchmarkFact({ ...bench, match_status: "unconfirmed", fee_complaints: null })).toBeNull();

@@ -90,6 +90,18 @@ Hamilton supports the decision; it does not make it.
   engine. `detail.pro` counts how many meet the bar and how many Hamilton still asks back on,
   and lists every one that falls short. A replayed answer about a fee the question did not
   ask about fails as "answers a different subject" (`offSubjectFailure`). Questions stay in our own database only.
+- The paid answer eval (`hamilton/paid-answer-eval.ts`, provider step `hamilton-paid-answer-eval`,
+  cron once a day, `/api/admin/crew/answer-eval-paid`, #1079) writes at most five memos a day
+  (James, 2026-10-15) over free answers that carry a storyline: Pro readers' questions first, then
+  quality-bar questions for sampled institutions. Form is "the memo was written" (it passed the
+  memo's own checks); correctness is `reconcileMemoText`: the answer's values tie to live
+  `published_fee_catalog` rows and every dollar figure in the memo ties to a live value. Each
+  sample is reserved before its first model call (a `paid_eval.sample_reserved` run event, a
+  conditional insert outside the step transaction that refuses past five today), so blocked calls,
+  lost usage rows and killed functions still count; the provider stop and the memo's budget line
+  (`api.hamilton.ask.memo`) hold every call.
+  The goal scorecard reads the latest run that wrote a memo as the "Memo (paid)" row. The written
+  answer, simulate and report paths are not sampled yet.
   It asks 17 questions (q26, the NSF regulation question, since #1079; q31, fee income against
   peers, and q32, what competitors in the county charge, since #1084). Every answer is also
   scored on correctness (`hamilton/answer-correctness.ts`, the `report-reconciliation` check for
@@ -311,6 +323,9 @@ the detail.
     (`PER_ACCOUNT_CATEGORIES`). Off (`PRODUCT_PAGE_CONFLICT_LIVE`): first looks are logged and
     nothing comes down until a hand check of 10 finds 9 right; then a PR turns it on and a
     conflict comes down on its second look, `product_page_conflict: #<doc> at $x vs schedule $y`.
+    A tier's own schedule (premium, private-banking, BankOn: Darwin's `tier-perk.ts` address and
+    name tests) is not the bank's schedule and is left off the schedule side (#1397); a pending
+    flag the check no longer raises on a live fee is cleared (`takedown_cleared`).
 13. Cross-page conflict (`cross-page-conflict.ts`): one product priced differently on two
     current pages (or two editions of one document); the older one comes down on its second
     look, `cross_page_conflict: #<older doc> older than #<newer doc> (fee <id>)` (or `older

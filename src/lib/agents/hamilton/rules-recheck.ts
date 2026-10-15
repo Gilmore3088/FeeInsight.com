@@ -4,7 +4,7 @@ import { inSavepoint } from "@/lib/agents/savepoint";
 import { recordAttempt } from "@/lib/agents/learning/attempts";
 import { passesDarwinChecks, tidyFeeName } from "@/lib/agents/knox/layout";
 import { refileCategory } from "@/lib/fee-category-guard";
-import { foldContext, isRetiredCategory } from "@/lib/fee-fold";
+import { foldContext, isRetiredCategory, SUBORDINATION } from "@/lib/fee-fold";
 import { FAMILY_EXPERTS } from "@/lib/agents/knox/families";
 import { KNOX_RULES_STRATEGY, runFreeSpecialists } from "@/lib/agents/knox/specialists";
 import { KNOX_TABLE_STRATEGY } from "@/lib/agents/knox/table-rows";
@@ -172,7 +172,11 @@ interface LiveKnoxRow {
  */
 function lessonReadKey(row: LiveKnoxRow, amount: number): string | null {
   const match = /^knox_lesson:([a-z_]+)->([a-z_]+)$/.exec(row.lesson_flag ?? "");
-  return match && match[2] === row.canonical_fee_key ? feeKey(match[1], amount) : null;
+  if (match && match[2] === row.canonical_fee_key) return feeKey(match[1], amount);
+  // A subordination filed as other lending before James's Oct 15 call is read as legal process
+  // today; until the fold's switched re-file moves it, the new read reproduces it.
+  if (row.canonical_fee_key === "other_lending_fee" && SUBORDINATION.test(row.raw_fee_name ?? row.fee_name)) return feeKey("legal_process", amount);
+  return null;
 }
 
 /**

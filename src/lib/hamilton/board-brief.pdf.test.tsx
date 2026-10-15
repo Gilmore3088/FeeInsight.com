@@ -21,5 +21,5 @@ it("exports edited board presentation with original values, sources and separate
   const { text } = await extractText(new Uint8Array(buffer), { mergePages: true });
   const normalized = text.replace(/\s+/g, " ");
   for (const phrase of ["Board review", "Research institution: Research CU", "Account institution: Home CU", "$35", "$30", "2026-07-01", "Team note (user-authored)", "Discuss waivers at the next meeting."]) expect(normalized).toContain(phrase);
-  expect(normalized).toContain("not recorded");
+  expect(normalized).toContain("were not saved with this answer");
 }, 20000);

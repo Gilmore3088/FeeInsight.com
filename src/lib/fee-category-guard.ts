@@ -18,7 +18,7 @@
  * The one exception is a dollar amount in a category that is usually a rate (below).
  */
 
-import { COLLECTION_ITEM, foldRetiredCategory, ITEM_COPY, SUBORDINATION } from "@/lib/fee-fold";
+import { COLLECTION_ITEM, foldRetiredCategory, ITEM_COPY } from "@/lib/fee-fold";
 
 export type CategoryGuardCode = "name_contradicts" | "name_unsupported" | "rate_as_amount" | "schedule_contradicts" | "amount_implausible";
 
@@ -259,10 +259,10 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
   },
   // v39: wire fees read under a "Subordination Request" heading ("SUBORDINATION REQUEST: Incoming"
   // $10, "...: Outgoing Domestic" $25) are not the lien subordination fee.
-  // v47: a mortgage or lien subordination is another lending fee, not legal process.
+  // v64: a mortgage or lien subordination is legal process again (James, Oct 15, reversing v47).
   legal_process: {
     include: /./,
-    exclude: new RegExp(String.raw`subordination request:\s*(incoming|outgoing)|${SUBORDINATION.source}`, "i"),
+    exclude: /subordination request:\s*(incoming|outgoing)/i,
   },
   paper_statement: {
     // v63: "Cargo por estado de cuenta en papel", "Envío estado de cuenta por correo postal".
@@ -445,7 +445,10 @@ export const GUARDED_CATEGORIES: readonly string[] = [...new Set([...Object.keys
 // service or priced per item is not monthly maintenance either (#1100).
 // v63: Spanish fee names for the guarded categories (#1312); "Deposited Return Items" filed as NSF,
 // an international incoming wire filed as domestic and a stop on a cashier's check are re-filed.
-export const CATEGORY_GUARD_VERSION = 63;
+// v64: subordination is legal process again (James, Oct 15): legal process accepts it and the v48
+// re-file to other lending is gone. Other lending still accepts it, so live fees there stay until
+// the fold's switched re-file (`SUBORDINATION_REFILE_LIVE` in fee-fold.ts) moves them.
+export const CATEGORY_GUARD_VERSION = 64;
 
 /**
  * Categories whose fee is usually a rate ("1% of the transaction"). A dollar amount filed
@@ -512,7 +515,6 @@ const REFILE_RULES: ReadonlyArray<{ from: string; to: string; when: RegExp; unle
   { from: "atm_non_network", to: "card_replacement", when: /(replace|reissue|re-?issu|lost|stolen)/i, unless: /\bpins?\b/i },
   { from: "check_printing", to: "counter_check", when: /\btemporar/i },
   { from: "check_cashing", to: "collection_item", when: COLLECTION_ITEM },
-  { from: "legal_process", to: "other_lending_fee", when: SUBORDINATION },
   { from: "money_order", to: "check_image", when: ITEM_COPY },
   { from: "card_replacement", to: "rush_card", when: new RegExp(EXPRESS_CARD, "i") },
   { from: "minimum_balance", to: "early_closure", when: new RegExp(EARLY_CLOSE, "i") },

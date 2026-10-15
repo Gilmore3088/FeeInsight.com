@@ -12,6 +12,7 @@ import {
   retireProductPageConflicts,
   toConflict,
 } from "./product-page-conflict";
+import { TIER_NAME_SQL, TIER_PATH_SQL } from "@/lib/agents/darwin/tier-perk";
 
 describe("product-page fees the schedule prices differently (James, 2026-10-13)", () => {
   it("reads only product pages against non-product documents, leaving per-account and multi-item categories out", () => {
@@ -21,6 +22,40 @@ describe("product-page fees the schedule prices differently (James, 2026-10-13)"
     for (const key of PER_ACCOUNT_CATEGORIES) expect(text).toContain(`'${key}'`);
     expect(productPageConflictSql("institution")).toContain("fp.institution_id = $1");
     expect(productPageConflictSql("fees")).toContain("fee_published_id = ANY($1::bigint[])");
+  });
+
+  it("never counts a tier's own schedule as the bank's price (#1397)", () => {
+    const text = productPageConflictSql("all");
+    expect(text).toContain(`!~* '${TIER_PATH_SQL}'`);
+    expect(text).toContain(`!~* '${TIER_NAME_SQL}'`);
+    // The patterns go into SQL as literals, so they never carry a quote.
+    expect(TIER_PATH_SQL + TIER_NAME_SQL).not.toContain("'");
+    // The address test the SQL runs is the one Darwin runs.
+    expect(new RegExp(TIER_PATH_SQL, "i").test("/agreements-disclosures/truth-in-savings/premium-account-fees")).toBe(true);
+    expect(new RegExp(TIER_PATH_SQL, "i").test("/agreements-disclosures/truth-in-savings/personal-account")).toBe(false);
+  });
+
+  it("clears a pending flag the check no longer raises", async () => {
+    const calls: Array<{ text: string; values: unknown[] }> = [];
+    const db = Object.assign(
+      vi.fn(async (parts: TemplateStringsArray, ...values: unknown[]) => {
+        const text = parts.join("?");
+        calls.push({ text, values });
+        if (text.includes("SELECT fee_published_id, kind, evidence")) return [{ fee_published_id: 12264, kind: "takedown_pending", evidence: { flag_run_id: 6430, reason: "product_page_conflict: #5166 at $35.00 vs schedule $0.00" } }];
+        if (text.includes("FROM pipeline_feedback pf")) return [{ fee_published_id: 12264 }];
+        if (text.includes("to_regclass")) return [{ ready: true }];
+        return [];
+      }),
+      { unsafe: vi.fn(async () => []) },
+    );
+    const result = await retireProductPageConflicts(db as never, { runId: 2, batchId: "b", dryRun: false });
+    expect(result).toMatchObject({ conflicts: 0, cleared: 1, rolledBack: [] });
+    expect(calls.some(({ text }) => text.includes("UPDATE published_fee_records"))).toBe(false);
+    // Only live fees, and only this bank's when the run covers one.
+    const read = calls.find(({ text }) => text.includes("FROM pipeline_feedback pf"))!;
+    expect(read.text).toContain("rolled_back_at IS NULL");
+    await retireProductPageConflicts(db as never, { runId: 3, batchId: "b", dryRun: false, institutionId: 49 });
+    expect(calls.filter(({ text }) => text.includes("FROM pipeline_feedback pf")).at(-1)!.values).toContain(49);
   });
 
   it("parses Postgres arrays either way and names both prices in the reason", () => {

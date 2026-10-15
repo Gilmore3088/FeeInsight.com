@@ -73,6 +73,7 @@ import { runRosettaPaidRead } from "@/lib/agents/rosetta/paid-read";
 import { runMagellanPaidFind } from "@/lib/agents/magellan/paid-find";
 import { runKnoxPaidExtract } from "@/lib/agents/knox/paid-extract";
 import { runDarwinReleaseHeld } from "@/lib/agents/darwin/release-held";
+import { releaseRecordedPasses } from "@/lib/agents/darwin/release-review";
 import { runDarwinConditionalZeroResolve } from "@/lib/agents/darwin/conditional-zero-resolve";
 import { runDarwinScheduleRefile } from "@/lib/agents/darwin/schedule-refile";
 import { runDarwinAdjudicate } from "@/lib/agents/darwin/adjudicate";
@@ -324,6 +325,18 @@ async function executeAgenticStep(
     return {
       status: "completed",
       summary: `Answered ${result.answers} questions for ${result.institutions} of ${result.planned} institutions; ${result.passed} met the bar; ${result.correctness.correct} of ${result.correctness.checked} checked tie to the live catalog.${result.pro ? ` Replayed ${result.pro.questions} Pro questions: ${result.pro.passed} met the bar, ${result.pro.correctness.correct} of ${result.pro.correctness.checked} checked tie to the catalog, ${result.pro.askedBack} still asked back.` : ""}${result.timedOut ? " Stopped at the time budget." : ""}`,
+      detail: { ...result },
+    };
+  }
+
+  // Hamilton's paid answer eval (#1079): a provider step, capped at five memos a day.
+  if (step.stepKey === "hamilton-paid-answer-eval") {
+    const { runPaidAnswerEval } = await import("@/lib/hamilton/paid-answer-eval");
+    const result = await runPaidAnswerEval({ agentRunId: run.id });
+    const memo = result.paths[0];
+    return {
+      status: "completed",
+      summary: result.note ?? `Wrote ${memo.passed} of ${memo.answers} paid memos (cap ${result.cap} a day, ${result.usedBefore} used before); ${memo.correctness.correct} of ${memo.correctness.checked} checked tie to the live catalog.`,
       detail: { ...result },
     };
   }
@@ -682,10 +695,16 @@ async function executeAgenticStep(
         source: "free",
       });
       // Retired rows today's free team reads under a new category, and taken-over rows with a stale
-      // category flag (#1093). Off until James approves; until then it reads a sample and writes nothing.
+      // category flag (#1093; James switched it on Oct 15). A state lane re-files only its state's
+      // rows and a direct run only its bank's: unscoped, every lane read all banks' rows, which took
+      // zero-document extracts from 7 s to 53 s. Switched off, a lane skips the read-only sample.
       const supersededRefile = await refileSupersededRows(tx, {
         dryRun: run.runKind === "dry_run",
         institutionId: numericRunParam(params, ["institution_id"]),
+        stateCode,
+        // A state lane only (a state and no institution): a direct run for one bank carries its
+        // state too, and still reads the sample, which is the evidence for turning the pass on.
+        skipSample: Boolean(stateCode) && numericRunParam(params, ["institution_id"]) == null,
       });
       // Held percentage fees in categories that publish rates go to Darwin as rate fees.
       const rateRecheck = await recheckHeldRates(tx, {
@@ -694,7 +713,7 @@ async function executeAgenticStep(
         stateCode,
       });
       // Held unclassified lines the held-name rules would send to Darwin (#1102). Switch off: read only.
-      const heldNamePreview = await previewHeldNameRules(tx, { institutionId: numericRunParam(params, ["institution_id"]) });
+      const heldNamePreview = await previewHeldNameRules(tx, { institutionId: numericRunParam(params, ["institution_id"]), stateCode });
       // Every 500 settled reads: the batch's error rate and its misses, written for learning.
       const batchReview = await reviewKnoxBatches(tx, { runId: run.id, dryRun: run.runKind === "dry_run" });
       const batchNote = batchReview.batches
@@ -702,7 +721,7 @@ async function executeAgenticStep(
         .join("");
       return {
         status: "completed",
-        summary: `Knox extracted ${extraction.insertedFees.toLocaleString()} raw fee observations and ${extraction.freeFees.toLocaleString()} free fees from ${extraction.processedDocuments.toLocaleString()} Rosetta text artifacts (${extraction.extractedFees.toLocaleString()} candidates, ${extraction.skippedFees.toLocaleString()} skipped). Re-read ${heldRecheck.checked.toLocaleString()} held lines with today's rules: ${heldRecheck.promoted.toLocaleString()} categorized and sent to Darwin, ${heldRecheck.setAside.toLocaleString()} set aside (kept, logged), ${promotionRecheck.withdrawn.toLocaleString()} earlier promotions put back on hold. Re-traced ${untracedRecheck.checked.toLocaleString()} untraced held lines: ${untracedRecheck.promoted.toLocaleString()} sent to Darwin. Re-read ${supersededRecheck.checked.toLocaleString()} lines a re-read retired: ${supersededRecheck.promoted.toLocaleString()} ${supersededRecheck.live ? "sent to Darwin" : "would go to Darwin (dry read)"}, ${supersededRecheck.liveTwin.toLocaleString()} kept back for a live twin. Re-read ${supersededFreeRecheck.checked.toLocaleString()} free lines a re-read retired: ${supersededFreeRecheck.promoted.toLocaleString()} ${supersededFreeRecheck.live ? "sent to Darwin" : "would go to Darwin (dry read)"}, ${supersededFreeRecheck.liveTwin.toLocaleString()} kept back for a live twin, ${supersededFreeRecheck.notRead.toLocaleString()} not read the same way today. Re-file of retired lines under today's category (${supersededRefile.mode === "live" ? "live" : supersededRefile.mode === "dry_run" ? "dry run, nothing written" : "switch off: a read-only sample, nothing written"}): ${supersededRefile.candidates.toLocaleString()} candidates at ${supersededRefile.candidateInstitutions.toLocaleString()} banks (${supersededRefile.candidatesDarwinDecided.toLocaleString()} already judged by Darwin, left retired); of ${supersededRefile.checked.toLocaleString()} read, ${supersededRefile.refiled.toLocaleString()} ${supersededRefile.dryRun ? "would go" : "sent"} to Darwin under today's category, ${supersededRefile.liveTwin.toLocaleString()} kept back for a live twin, ${supersededRefile.notRead.toLocaleString()} not read today; ${supersededRefile.staleHintRows.toLocaleString()} taken-over rows with a stale category flag${supersededRefile.dryRun ? "" : ` (${supersededRefile.staleHintRepaired.toLocaleString()} repaired)`}. Re-read ${rateRecheck.checked.toLocaleString()} held percentage fees: ${rateRecheck.promoted.toLocaleString()} sent to Darwin as rates.${heldNamePreview.live ? "" : ` Held-name rules (switch off, read only): ${heldNamePreview.passChecks.toLocaleString()} held lines would go to Darwin and pass its category and source checks, at ${heldNamePreview.institutions.toLocaleString()} banks (${heldNamePreview.wouldRelease.toLocaleString()} read under them, of ${heldNamePreview.candidates.toLocaleString()} candidates).`}${batchNote}`,
+        summary: `Knox extracted ${extraction.insertedFees.toLocaleString()} raw fee observations and ${extraction.freeFees.toLocaleString()} free fees from ${extraction.processedDocuments.toLocaleString()} Rosetta text artifacts (${extraction.extractedFees.toLocaleString()} candidates, ${extraction.skippedFees.toLocaleString()} skipped). Re-read ${heldRecheck.checked.toLocaleString()} held lines with today's rules: ${heldRecheck.promoted.toLocaleString()} categorized and sent to Darwin, ${heldRecheck.setAside.toLocaleString()} set aside (kept, logged), ${promotionRecheck.withdrawn.toLocaleString()} earlier promotions put back on hold. Re-traced ${untracedRecheck.checked.toLocaleString()} untraced held lines: ${untracedRecheck.promoted.toLocaleString()} sent to Darwin. Re-read ${supersededRecheck.checked.toLocaleString()} lines a re-read retired: ${supersededRecheck.promoted.toLocaleString()} ${supersededRecheck.live ? "sent to Darwin" : "would go to Darwin (dry read)"}, ${supersededRecheck.liveTwin.toLocaleString()} kept back for a live twin. Re-read ${supersededFreeRecheck.checked.toLocaleString()} free lines a re-read retired: ${supersededFreeRecheck.promoted.toLocaleString()} ${supersededFreeRecheck.live ? "sent to Darwin" : "would go to Darwin (dry read)"}, ${supersededFreeRecheck.liveTwin.toLocaleString()} kept back for a live twin, ${supersededFreeRecheck.notRead.toLocaleString()} not read the same way today. Re-file of retired lines under today's category (${supersededRefile.mode === "live" ? "live" : supersededRefile.mode === "dry_run" ? "dry run, nothing written" : supersededRefile.mode === "skipped" ? "switch off: not sampled in a state lane" : "switch off: a read-only sample, nothing written"}): ${supersededRefile.candidates.toLocaleString()} candidates at ${supersededRefile.candidateInstitutions.toLocaleString()} banks (${supersededRefile.candidatesDarwinDecided.toLocaleString()} already judged by Darwin, left retired); of ${supersededRefile.checked.toLocaleString()} read, ${supersededRefile.refiled.toLocaleString()} ${supersededRefile.dryRun ? "would go" : "sent"} to Darwin under today's category, ${supersededRefile.liveTwin.toLocaleString()} kept back for a live twin, ${supersededRefile.notRead.toLocaleString()} not read today; ${supersededRefile.staleHintRows.toLocaleString()} taken-over rows with a stale category flag${supersededRefile.dryRun ? "" : ` (${supersededRefile.staleHintRepaired.toLocaleString()} repaired)`}. Re-read ${rateRecheck.checked.toLocaleString()} held percentage fees: ${rateRecheck.promoted.toLocaleString()} sent to Darwin as rates.${heldNamePreview.live ? "" : ` Held-name rules (switch off, read only): ${heldNamePreview.passChecks.toLocaleString()} held lines would go to Darwin and pass its category and source checks, at ${heldNamePreview.institutions.toLocaleString()} banks (${heldNamePreview.wouldRelease.toLocaleString()} read under them, of ${heldNamePreview.candidates.toLocaleString()} candidates).`}${batchNote}`,
         detail: {
           held_recheck: heldRecheck,
           untraced_recheck: untracedRecheck,
@@ -785,6 +804,9 @@ async function executeAgenticStep(
         stateCode,
         db: tx,
       });
+      // Fees the v17 review passed while the release did not act: released after today's free holds
+      // under their own switch (DARWIN_RECORDED_RELEASE_ACTS), after a ledger dry run; off, a count only.
+      const recordedRelease = await releaseRecordedPasses(tx, { runId: run.id, stepId: step.id, dryRun: run.runKind === "dry_run" });
       // A "returned check" Hamilton took off NSF beside the schedule's own NSF fee is filed as an RDI.
       const scheduleRefile = await runDarwinScheduleRefile({
         runId: run.id,
@@ -824,6 +846,7 @@ async function executeAgenticStep(
             released: release.released,
             feedback_written: release.feedbackWritten,
           },
+          recorded_pass_release: recordedRelease,
           schedule_refile: { selected: scheduleRefile.selected, refiled: scheduleRefile.refiled },
           conditional_zero: { selected: conditionalZero.selected, verdicts: conditionalZero.verdicts, verified: conditionalZero.verified },
           feedback_written: verification.feedbackWritten,
@@ -3067,12 +3090,19 @@ async function providerStepGate(
 }
 
 /**
- * About the longest each step runs (p99 over 3 days on prod, 2026-10-07, rounded up). A
- * step starts only when it can finish by the caller's deadline, so a short step can use
- * the end of a tick that a long one could not.
+ * About how long each step runs. A step starts only when it can finish by the caller's deadline,
+ * so a short step can use the end of a tick that a long one could not.
+ *
+ * Lane steps were re-measured on 2026-10-15 from `agent_run_steps` (3 days, and state lanes over
+ * the last 24 hours): about p90 with a margin, and never so far under p99 that a step started at
+ * the deadline would run past the tick's 300 s limit (the deadline is 270 s). Measured seconds,
+ * p90 / p99 / max: discover 106 / 111 / 117, fetch 14 / 41 / 62, read 6 / 18 / 73,
+ * discover-paid 2 / 5 / 5, read-paid 60 / 127 / 153, extract 52 / 76 / 153 (23 / 62 before #1291's
+ * scans), extract-paid 14 / 50 / 66, classify 15 / 28 / 46, verify-paid 0.4 / 3.5 / 13,
+ * publish 78 / 131 / 164. Steps not re-measured keep their 2026-10-07 p99.
  */
 const STEP_EXPECTED_MS: Record<string, number> = {
-  "discover-paid": 200_000,
+  "discover-paid": 10_000,
   "registry-cfpb": 180_000,
   // Paced to about ten Open States requests a minute; a run ends within about two minutes.
   "registry-state-bills": 120_000,
@@ -3081,20 +3111,32 @@ const STEP_EXPECTED_MS: Record<string, number> = {
   "registry-state-bill-news": 120_000,
   // No new item starts after 100 s; up to three page reads and model calls in flight.
   "registry-wire-research": 150_000,
-  "read-paid": 165_000,
-  read: 110_000,
-  discover: 110_000,
+  "read-paid": 110_000,
+  read: 15_000,
+  discover: 115_000,
   "report-render": 110_000,
   rescue: 110_000,
-  "extract-paid": 80_000,
-  "verify-paid": 80_000,
-  fetch: 60_000,
+  "extract-paid": 40_000,
+  "verify-paid": 10_000,
+  fetch: 30_000,
   extract: 40_000,
-  publish: 30_000,
+  publish: 105_000,
   classify: 25_000,
+  // p50 238 s, p90 367 s, max 1,101 s: it never fits a tick, so the tick does not start it
+  // (`TICK_EXCLUDED_STEP_KEYS`); its own route runs it.
+  "hamilton-answer-eval": 400_000,
+  // Up to five memos at once, each up to two 90 s model calls, after the free answers.
+  "hamilton-paid-answer-eval": 280_000,
   // A few dozen draft rows and one catalog check each (growth/withdraw.ts).
   "growth-withdraw": 30_000,
 };
+/**
+ * Steps the tick never starts, because they do not fit its 270 s budget even alone: the tick
+ * always gives its first run a step, and Hamilton's answer eval (200-370 s) started that way
+ * killed ticks (runs 6483 and 6552 failed after three tries, Oct 15). They run from their own
+ * route (`/api/admin/crew/answer-eval`).
+ */
+export const TICK_EXCLUDED_STEP_KEYS = ["hamilton-answer-eval", "hamilton-paid-answer-eval"] as const;
 /** Steps not listed above: most run in seconds, so this keeps an unknown long one safe. */
 const DEFAULT_STEP_EXPECTED_MS = 120_000;
 /** Steps measured at a few seconds at most (state-expert, enhance, public-*, registry-*). */
@@ -3145,6 +3187,21 @@ export function heldByPause(
     return `Pipeline is paused${pipeline.reason ? `: ${pipeline.reason}` : ""}; run left queued.`;
   }
   return null;
+}
+
+/**
+ * The oldest queued run started from `source` (`params_json.source`), any hour. A run whose next
+ * step the tick never starts (`TICK_EXCLUDED_STEP_KEYS`) is picked up this way by its own route,
+ * so a retry the reaper re-queued is never left queued.
+ */
+export async function oldestQueuedRunBySource(source: string): Promise<number | null> {
+  const [row] = await sql<{ id: number | string }[]>`
+    SELECT id FROM agent_runs
+     WHERE status = 'queued' AND params_json->>'source' = ${source}
+     ORDER BY id ASC
+     LIMIT 1
+  `;
+  return row ? Number(row.id) : null;
 }
 
 export async function executeAgentRun(
@@ -3401,6 +3458,8 @@ export async function executeQueuedAgentRuns({
               OR (${paused.pipeline}
                 AND NOT s.step_key = ANY(${[...MARKETING_STEP_KEYS]}::text[])
                 AND NOT s.step_key = ANY(${[...PAUSE_EXEMPT_STEP_KEYS]}::text[]))
+              -- A step that cannot finish inside a tick runs only from its own route.
+              OR s.step_key = ANY(${[...TICK_EXCLUDED_STEP_KEYS]}::text[])
             )
        )
      -- Report runs go first: someone pressed Generate and is watching the page. Then a guard

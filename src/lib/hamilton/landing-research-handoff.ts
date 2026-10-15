@@ -99,6 +99,16 @@ export function landingResearchHref(value: unknown): string {
   const target = request.task === "board_report" ? "/pro/reports" : "/pro/analyze";
   return `${target}?${new URLSearchParams({ [LANDING_RESEARCH_PARAM]: encodeLandingResearch(request) })}`;
 }
+/**
+ * Where "Build a board brief" goes: a state or national selection opens its market view, whose
+ * Build board brief button saves the brief. A single institution's brief starts from a saved Ask
+ * answer instead, so a local selection gets no link (null).
+ */
+export function boardBriefHref(value: unknown): string | null {
+  const request = parseLandingResearch(value);
+  if (request.scope.kind === "local") return null;
+  return `/pro/intelligence?${new URLSearchParams({ [LANDING_RESEARCH_PARAM]: encodeLandingResearch({ ...request, task: "compare" }), lens: "fees" })}`;
+}
 /** Only the existing local handler's supported scope may pass this adapter. */
 export function localRequestFromLanding(value: unknown): LocalMarketRequest {
   const request = parseLandingResearch(value);

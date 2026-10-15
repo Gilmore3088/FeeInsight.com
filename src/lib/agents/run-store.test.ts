@@ -156,6 +156,7 @@ import {
   executeAgentRun,
   expectedMsToFirstWork,
   expectedStepMs,
+  TICK_EXCLUDED_STEP_KEYS,
   executeQueuedAgentRuns,
   heldByPause,
   startAgentRun,
@@ -1218,15 +1219,18 @@ describe("agentic run store", () => {
   it("counts a lane run's quick first steps together with the first real step", () => {
     // enhance + state-expert are quick; a later run must also fit discover, or it would
     // count as under way after only the quick steps and jump ahead of retries.
-    expect(expectedMsToFirstWork(["enhance", "state-expert", "discover", "discover-paid"])).toBe(170_000);
-    expect(expectedMsToFirstWork(["fetch", "read"])).toBe(60_000);
+    expect(expectedMsToFirstWork(["enhance", "state-expert", "discover", "discover-paid"])).toBe(175_000);
+    expect(expectedMsToFirstWork(["fetch", "read"])).toBe(30_000);
     expect(expectedMsToFirstWork(["public-discovery"])).toBe(30_000);
     expect(expectedMsToFirstWork([])).toBe(0);
   });
 
   it("expects long steps to need most of a tick and quick ones only seconds", () => {
-    expect(expectedStepMs("discover-paid")).toBe(200_000);
-    expect(expectedStepMs("publish")).toBe(30_000);
+    // Re-measured 2026-10-15 (about p90 with a margin): discover-paid runs in seconds, publish about 80 s.
+    expect(expectedStepMs("discover-paid")).toBe(10_000);
+    expect(expectedStepMs("hamilton-answer-eval")).toBe(400_000);
+    expect(TICK_EXCLUDED_STEP_KEYS).toContain("hamilton-answer-eval");
+    expect(expectedStepMs("publish")).toBe(105_000);
     expect(expectedStepMs("public-discovery")).toBe(30_000);
     expect(expectedStepMs("registry-fdic-sod")).toBe(30_000);
     // registry-cfpb ran 172 s, so its own entry wins over the quick registry- prefix.

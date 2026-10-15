@@ -219,6 +219,9 @@ export function rosettaReaderManifests(versions: RosettaVersions): ReplayManifes
  * in a manifest above.
  */
 export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
+  // v1 (Oct 15): a new pass over the v17 review's recorded passes; each verify step reads all of
+  // them that it has not acted on, so there is no backlog for a replay to count.
+  DARWIN_RECORDED_RELEASE_STRATEGY: "Each verify step reads every recorded v17 pass it has not acted on; nothing to replay.",
   // v1 (#1059): a new step that reads every live fee verified as unknown on each run (a daily dry
   // run while off), so there is no backlog for a replay to count.
   AUDIENCE_RELABEL_VERSION: "Its own step reads every live unknown-audience fee on each run; nothing to replay.",
@@ -240,6 +243,9 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   FRESHNESS_SEARCH_VERSION: "Its selector re-searches every stale link not yet searched at v2; there is nothing to replay.",
   // v1 (#1342): a new hand-started step that reads every live fee with no source link on each run.
   SOURCE_LINK_VERSION: "Its own step reads every live fee with no source link on each run; nothing to replay.",
+  // v3 (#1397): the recheck reads every verified row once per version, so each verify step works
+  // through the whole verified set under v3 itself (200 a step).
+  DARWIN_RECHECK_STRATEGY: "Its selector re-reads every verified row not yet read at v3 (200 a verify step); there is nothing to replay.",
 };
 
 export async function loadManifests(): Promise<ReplayManifest[]> {

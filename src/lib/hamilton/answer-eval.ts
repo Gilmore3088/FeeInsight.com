@@ -143,14 +143,14 @@ export function offSubjectFailure(question: string, response: AskResponse): stri
   return `answers a different subject: the ${proseFeeName(answered)} fee, which the question does not name`;
 }
 
-interface Answered {
+export interface Answered {
   response: AskResponse;
   research: FeeResearch | null;
   schedule: ScheduleOverview | null;
 }
 
 /** One question for one institution, through the Ask bar's engine path, with research cached per fee. */
-async function answer(institutionId: number, question: string, research: Map<string, Promise<FeeResearch | null>>): Promise<Answered> {
+export async function answer(institutionId: number, question: string, research: Map<string, Promise<FeeResearch | null>>): Promise<Answered> {
   const { intent, schedule, why } = await resolveAskIntent(institutionId, question, {});
   let found: FeeResearch | null = null;
   if (intent.feeCategory) {
@@ -355,7 +355,7 @@ export interface AnswerEvalSummary {
   topFailures: Array<{ failure: string; count: number }>;
   /** Whether the figures tie to the live catalog (#1079); `passed` above is the form pass. */
   correctness: CorrectnessSummary;
-  /** The path these answers came through: the free Ask engine. Paid paths are not sampled yet. */
+  /** The path these answers came through: the free Ask engine. Paid paths are sampled by `paid-answer-eval.ts`. */
   path: "free_ask";
   /** Pass rate per question, weakest first. */
   byQuestion: Array<{ questionId: string; question: string; passed: number; total: number }>;
