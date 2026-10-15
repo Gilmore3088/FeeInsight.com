@@ -109,6 +109,27 @@ Darwin owns verification and classification.
   row that passes now has its pending second-look flag cleared (`takedown_cleared`). Each row
   records a `verify.recheck` attempt (fingerprint `verified:<fee_verified_id>`), so a row is read
   once per recheck version and the pass never starves the batch. Never a hand UPDATE.
+- `verify.document_owner` (`document-owner.ts`, version 1, 2026-10-15, #1455) ends every learning
+  verify step after `verify.recheck`. It asks whose schedule a live fee's document is, by the
+  document's own text, never by the stored website (the registry seed stored another bank's website
+  for 5756, 4884 and 1903; CU website vendors serve one CU's file on every member domain). A live
+  (institution, document) pair is read when the document is shared with another institution (its
+  host is that institution's stored website, that institution has live fees from the same address,
+  or one of its documents has the same `text_hash`) or sits on a vendor download path
+  (`/ezs3download/download/`, `/_/kcms-doc/`; a path alone is no proof). The text is scanned for
+  those institutions by name or by city with its state, and for every registry institution by name
+  only (brand stems such as "healthplus" included, boilerplate and generic words excluded, a name
+  another institution's name contains counting only with its city). Verdicts: `own_named` (this
+  bank's distinct name, city or certificate number: passes, also for co-branded documents),
+  `sibling_shared` (same holding company, #1441: never taken down, counted once per document),
+  `other_bank` (exactly one unrelated institution named, never this bank), `shared_service` (two or
+  more named: passes), `unproven`, `no_text`. Up to 25 pairs a step, one attempt each (fingerprint
+  `owner-shadow:<institution>:<document>` in shadow, `owner:...` once live). With
+  `DARWIN_DOCUMENT_OWNER_TAKEDOWN` off (the default) it only logs the live fees it would take down
+  (`darwin.document_owner_shadow` event); on, an `other_bank` fee goes through the shared second
+  look (`darwin.document_owner`) and is archived with reason `document_owner: names institution
+  <id>`, never deleted. `documentOwnerCountSql()` is the read-only count of the whole backlog by
+  verdict (it skips the certificate test, so its `other_bank` count is an upper bound).
 - The in-batch duplicate key (`batchKey` in `verify.ts`, `DARWIN_BATCH_KEY_VERSION` v4) is the
   institution, category, amount (or rate), frequency, stored document, the fee's own source line
   and its audience. Version 1 named the URL, so a fee on a bank's current copy of a page was held
@@ -476,6 +497,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `DARWIN_SCHEDULE_REFILE_STRATEGY` | `verify.schedule_refile` | v1 | `darwin/schedule-refile.ts` |
 | `DARWIN_VERDICT_SCORE_STRATEGY` | `verify.verdict_score` | v1 | `darwin/verdict-score.ts` |
 | `DARWIN_RECHECK_STRATEGY` | `verify.recheck` | v3 | `darwin/verified-recheck.ts` |
+| `DOCUMENT_OWNER_STRATEGY` | `verify.document_owner` | v1 | `darwin/document-owner.ts` |
 | `DARWIN_VERIFY_STRATEGY` | `verify.rules` | v3 | `darwin/verify.ts` |
 | `DARWIN_SOURCE_CHECK_VERSION` | — | v2 | `darwin/verify.ts` |
 | `DARWIN_BATCH_KEY_VERSION` | — | v4 | `darwin/verify.ts` |
