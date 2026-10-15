@@ -132,17 +132,39 @@ Darwin owns verification and classification.
   `sentence_end` (a joining word at the end; "a", "an", "the" only in lower case so "N/A" never
   fires; never "above" or "each"), `trailing_range` ("up to" or "per", never "each"), `pronoun`
   ("will" or "you" only) and `plus` (a leading "+" with no fee noun after it). Step detail
-  `live_fragment_check`: rows read, `would_take_down`, `by_pattern`, up to 20 samples (id,
-  institution, name, amount, pattern), the cursor. `FRAGMENT_NAME_TAKEDOWN_LIVE` is false: the
+  `live_fragment_check`: rows read, the counts and samples by action below, the cursor. `FRAGMENT_NAME_TAKEDOWN_LIVE` is false: the
   pass only reports. When a PR turns it on (after James has seen the whole-table dry run by
-  pattern), a matching fee is archived in the same step (`rolled_back_reason` `fragment name:
+  pattern), a `takedown` fee is archived in the same step (`rolled_back_reason` `fragment name:
   <pattern>`, batch `darwin-live-fragment-<run>`, never deleted), its verified row is rejected
   with `darwin_live_fragment:<pattern>` so publish does not bring it back, the public read cache
-  is cleared and a `darwin.live_fragment_name_taken_down` event lists the takedowns. A fragment is
-  taken down rather than renamed because many carry the wrong amount (a minimum, a waived price,
-  a $0 online copy). Whole-table dry run in one read: queue a verify run with
+  is cleared and a `darwin.live_fragment_name_taken_down` event lists the takedowns. A pure
+  fragment is taken down rather than renamed because many carry the wrong amount (a minimum, a
+  waived price, a $0 online copy). Whole-table dry run in one read: queue a verify run with
   `fragment_full_count: true` (step detail `live_fragment_full_count`), or hand someone with
-  prod access `liveFragmentCountSql()` (the same regexes as read-only SQL).
+  prod access `liveFragmentCountSql()` (the same rules as read-only SQL, counted by action and
+  pattern; it skips the category guard on a rename, so the step's ledger is the exact count).
+  Switch-on prerequisites (#1443, `LIVE_FRAGMENT_STRATEGY` v1; the Oct 15 dry run counted 629
+  takedowns, and a hand sample of 100 `pronoun` rows found about 77 fragments, 15 real fees with
+  a sentence glued on and 8 real names). Each match takes one action (`liveFragmentVerdict`):
+  - `exempt` / `parenthetical`: a pronoun only inside a parenthetical ("Stop Payment (per item,
+    if you request it)") is no fragment; `liveFragmentName` returns null, `liveFragmentShape`
+    keeps the raw shape for the count.
+  - `rename`: a `pronoun` or `sentence_end` name that opens with a real fee name ending on a fee
+    word, followed by a glued sentence ("Overdraft Fee You will be charged when ..." becomes
+    "Overdraft Fee", Knox's `gluedSentenceHead`), when the amount is above $0, the name has no
+    waiver or discount wording (`LIVE_FRAGMENT_WAIVE_WORDING`) and the category guard still
+    accepts the cleaned name. With the switch on it goes through Knox's live rename path
+    (`writeLiveRenames`: a `pipeline_feedback` `name_retidied` row with the old and new name,
+    `check_name` `darwin.live_fragment_check`, then the update guarded on the old name), skipped
+    when another live fee of the bank has that name at the same price and category; a
+    `darwin.live_fragment_name_renamed` event lists them. Knox's own restore pass reads only its
+    own renames, so it never puts the sentence back.
+  - `trailing_range` comes down only when the name has waiver or discount wording or the amount
+    is $0; otherwise it is `exempt` / `trailing_range_priced` (reported only).
+  - Everything else is a `takedown`.
+  Step detail: `would_take_down`, `would_rename`, `exempt`, `exempt_by_reason`, `by_pattern`,
+  `by_action` (pattern counts per action) and `samples_by_action` (up to 20 of each, with
+  `rename_to` or `exempt_reason`).
 - Released-fee category re-check (`release-repair.ts`, the repair half of #1367; decision
   2026-10-15, "Darwin re-checks every live fee against today's rules"). Until PR #1468 the release
   check passed "." as the category pattern, so every fee the release published before then went live
@@ -586,6 +608,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `DARWIN_SCHEDULE_REFILE_STRATEGY` | `verify.schedule_refile` | v1 | `darwin/schedule-refile.ts` |
 | `DARWIN_VERDICT_SCORE_STRATEGY` | `verify.verdict_score` | v1 | `darwin/verdict-score.ts` |
 | `DARWIN_RECHECK_STRATEGY` | `verify.recheck` | v3 | `darwin/verified-recheck.ts` |
+| `LIVE_FRAGMENT_STRATEGY` | `darwin.live_fragment_check` | v1 | `darwin/live-fragment-check.ts` |
 | `DARWIN_VERIFY_STRATEGY` | `verify.rules` | v3 | `darwin/verify.ts` |
 | `DARWIN_SOURCE_CHECK_VERSION` | — | v2 | `darwin/verify.ts` |
 | `DARWIN_BATCH_KEY_VERSION` | — | v4 | `darwin/verify.ts` |

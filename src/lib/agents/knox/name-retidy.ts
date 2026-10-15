@@ -173,7 +173,59 @@ const LIVE_SENTENCE_END = endsIn(SENTENCE_END_WORDS.filter((word) => !["a", "an"
 /** Case-sensitive: "N/A" ends in a capital A and never reads as a dangling article. */
 const LIVE_SENTENCE_END_ARTICLE = endsIn(["a", "an", "the"], "");
 const LIVE_PRONOUN = wordsIn(PRONOUN_WORDS.filter((word) => word === "will" || word === "you"));
-/** The regexes `liveFragmentName` uses, by pattern, for the record and the hand-off SQL. */
+/**
+ * #1443 switch-on prerequisites: a balanced parenthetical ("Stop Payment (per item, if you request
+ * it)") qualifies the fee; a pronoun inside one is not a sentence. Only `pronoun` can sit inside one:
+ * the other shapes are read at the end of the name, which a closing ")" never is.
+ */
+const PARENTHETICAL = /\([^()]*\)/g;
+export function withoutParentheticals(name: string): string {
+  return name.replace(PARENTHETICAL, " ").replace(/\s+/g, " ").trim();
+}
+
+/**
+ * #1443: the words a fee's real name ends on, case-free ("Overdraft Fee", "Stop Payment",
+ * "Returned Item"), for `gluedSentenceHead`. A name ending on any other word ("Dormant accounts
+ * will be charged") is not a name with a sentence glued on.
+ */
+const anyCase = (pattern: string) => pattern.replace(/[a-z]/g, (letter) => `[${letter.toUpperCase()}${letter}]`);
+const GLUED_HEAD_ENDINGS = [
+  "fees?", "charges?", "penalty", "payments?", "transfers?", "items?", "checks?", "statements?", "cards?", "orders?",
+  "overdrafts?", "nsf", "research", "cop(?:y|ies)", "withdrawals?", "deposits?", "wires?", "drafts?",
+].map(anyCase);
+/** The words a glued sentence opens with: a capitalised sentence start, or a lower-case "you", "we" or "will". */
+const GLUED_SENTENCE_STARTS = [
+  "You", "YOU", "you", "Your", "YOUR", "your", "We", "WE", "we", "This", "THIS", "These", "If", "IF", "When", "WHEN",
+  "It", "There", "Our", "Any", "Each", "Will", "WILL", "will", "The", "THE", "Please", "Note",
+];
+/**
+ * A real fee name (capital or digit first, at most 60 more characters with no sentence or cell
+ * break, ending on a fee word) followed by a sentence: "Overdraft Fee You will be charged when ...",
+ * "Inactive fee: This account may be subject to an Inactive fee of". Case-sensitive so a lower-case
+ * "if" or "the" (a condition, "Wire Fee if you request") never splits a name.
+ */
+const GLUED_SENTENCE = new RegExp(
+  String.raw`^([A-Z0-9][^.:|;()]{0,60}?\b(?:${GLUED_HEAD_ENDINGS.join("|")}))(?:\s*[|:.;–—-]\s*|\s+)(?:${GLUED_SENTENCE_STARTS.join("|")})\b`,
+);
+/** The head is no name when it is itself a sentence or a condition. */
+const GLUED_HEAD_BARS = [LIVE_PRONOUN, SENTENCE_VERB, CONDITION_CLAUSE] as const;
+const GLUED_HEAD_MAX_WORDS = 8;
+
+/**
+ * #1443: the real fee name a live fragment opens with, when the rest is a sentence glued on
+ * ("Overdraft Fee You will be charged when ..." is "Overdraft Fee"); null when the name opens with
+ * no such name. Pure; the caller decides whether the fee is renamed (amount, waiver wording).
+ */
+export function gluedSentenceHead(name: string | null | undefined): string | null {
+  const current = (name ?? "").replace(/\s+/g, " ").trim();
+  const match = current.match(GLUED_SENTENCE);
+  if (!match) return null;
+  const head = match[1];
+  if (!head || head.split(/\s+/).length > GLUED_HEAD_MAX_WORDS || GLUED_HEAD_BARS.some((bar) => bar.test(head))) return null;
+  return head;
+}
+
+/** The regexes `liveFragmentName` and `gluedSentenceHead` use, for the record and the hand-off SQL. */
 export const LIVE_FRAGMENT_REGEXES = {
   plus: /^\+/,
   plus_fee_noun: FEE_NOUN,
@@ -181,10 +233,14 @@ export const LIVE_FRAGMENT_REGEXES = {
   sentence_end: LIVE_SENTENCE_END,
   sentence_end_article: LIVE_SENTENCE_END_ARTICLE,
   pronoun: LIVE_PRONOUN,
+  parenthetical: PARENTHETICAL,
+  glued_sentence: GLUED_SENTENCE,
+  glued_head_bars: GLUED_HEAD_BARS,
+  glued_head_max_words: GLUED_HEAD_MAX_WORDS,
 } as const;
 
-/** The live fragment shape a live fee's name carries, or null (the name may stay live). */
-export function liveFragmentName(name: string | null | undefined): LiveFragmentPattern | null {
+/** The live fragment shape a name carries, parentheticals included (the shape before #1443's exemption). */
+export function liveFragmentShape(name: string | null | undefined): LiveFragmentPattern | null {
   const current = (name ?? "").replace(/\s+/g, " ").trim();
   if (!current) return null;
   if (/^\+/.test(current) && !FEE_NOUN.test(current.replace(/^\++\s*/, ""))) return "plus";
@@ -192,6 +248,16 @@ export function liveFragmentName(name: string | null | undefined): LiveFragmentP
   if (LIVE_SENTENCE_END.test(current) || LIVE_SENTENCE_END_ARTICLE.test(current)) return "sentence_end";
   if (LIVE_PRONOUN.test(current)) return "pronoun";
   return null;
+}
+
+/**
+ * The live fragment shape a live fee's name carries, or null (the name may stay live). #1443: a
+ * pronoun only inside a parenthetical ("Stop Payment (per item, if you request it)") is no fragment.
+ */
+export function liveFragmentName(name: string | null | undefined): LiveFragmentPattern | null {
+  const shape = liveFragmentShape(name);
+  if (shape === "pronoun" && !LIVE_PRONOUN.test(withoutParentheticals((name ?? "").replace(/\s+/g, " ").trim()))) return null;
+  return shape;
 }
 
 /** v7: a word that joins the name to the sentence before it ("Otherwise, a monthly service fee"); Knox v57's tidy drops it. */
@@ -1291,6 +1357,57 @@ export function planRetidy(
   return { renames, skipped };
 }
 
+/**
+ * The one write path for renaming a live fee (Knox's retidy, and Darwin's live fragment re-check
+ * since #1443): each rename is logged in `pipeline_feedback` (kind `name_retidied`, the old and new
+ * name, one row per name replaced) and the live name changes only while it still reads the old
+ * name. `checkName` is the writer's strategy, so Knox's own restore pass (v15, which reads
+ * `check_name = knox.name_retidy`) never puts back a sentence another check cut off.
+ */
+export async function writeLiveRenames(
+  scope: SqlTag,
+  renames: RetidyRename[],
+  meta: { strategy: string; version: number; reportedBy: "knox" | "darwin"; runId: number },
+): Promise<void> {
+  if (renames.length === 0) return;
+  await recordFeedback(
+    scope,
+    renames.map((rename) => ({
+      aboutStage: "publish",
+      aboutStrategy: meta.strategy,
+      aboutVersion: meta.version,
+      signal: "right",
+      kind: NAME_RETIDY_KIND,
+      reportedBy: meta.reportedBy,
+      checkName: meta.strategy,
+      institutionId: rename.institutionId,
+      sourceDocumentId: rename.sourceDocumentId,
+      feePublishedId: rename.feePublishedId,
+      canonicalFeeKey: rename.canonicalFeeKey,
+      amount: rename.amount,
+      // A rename is housekeeping, not a judgement on the read: it carries no weight in lessons.
+      weight: 0,
+      evidence: { old_name: rename.oldName, new_name: rename.newName },
+      runId: meta.runId,
+      // v15: one row per rename, keyed on the name it replaced, so a second rename of the
+      // same fee no longer overwrites the first one's old name.
+      dedupeKey: `${meta.strategy}:pub:${rename.feePublishedId}:${createHash("sha1").update(rename.oldName).digest("hex").slice(0, 12)}`,
+    })),
+  );
+  await scope`
+    UPDATE published_fee_records fp
+       SET fee_name = rename.new_name
+      FROM unnest(
+             ${renames.map((rename) => rename.feePublishedId)}::bigint[],
+             ${renames.map((rename) => rename.oldName)}::text[],
+             ${renames.map((rename) => rename.newName)}::text[]
+           ) AS rename(fee_published_id, old_name, new_name)
+     WHERE fp.fee_published_id = rename.fee_published_id
+       AND fp.rolled_back_at IS NULL
+       AND fp.fee_name = rename.old_name
+  `;
+}
+
 export interface RetidyResult extends RetidyPlan {
   dryRun: boolean;
   institutionsChecked: number;
@@ -1530,42 +1647,12 @@ export async function retidyLiveFeeNames(
   try {
     await inSavepoint(db, async (scope) => {
       if (result.renames.length > 0) {
-        await recordFeedback(
-          scope,
-          result.renames.map((rename) => ({
-            aboutStage: "publish",
-            aboutStrategy: NAME_RETIDY_STRATEGY.strategy,
-            aboutVersion: NAME_RETIDY_STRATEGY.version,
-            signal: "right",
-            kind: NAME_RETIDY_KIND,
-            reportedBy: "knox",
-            checkName: NAME_RETIDY_STRATEGY.strategy,
-            institutionId: rename.institutionId,
-            sourceDocumentId: rename.sourceDocumentId,
-            feePublishedId: rename.feePublishedId,
-            canonicalFeeKey: rename.canonicalFeeKey,
-            amount: rename.amount,
-            // A rename is housekeeping, not a judgement on the read: it carries no weight in lessons.
-            weight: 0,
-            evidence: { old_name: rename.oldName, new_name: rename.newName },
-            runId: options.runId,
-            // v15: one row per rename, keyed on the name it replaced, so a second rename of the
-            // same fee no longer overwrites the first one's old name.
-            dedupeKey: `${NAME_RETIDY_STRATEGY.strategy}:pub:${rename.feePublishedId}:${createHash("sha1").update(rename.oldName).digest("hex").slice(0, 12)}`,
-          })),
-        );
-        await scope`
-          UPDATE published_fee_records fp
-             SET fee_name = rename.new_name
-            FROM unnest(
-                   ${result.renames.map((rename) => rename.feePublishedId)}::bigint[],
-                   ${result.renames.map((rename) => rename.oldName)}::text[],
-                   ${result.renames.map((rename) => rename.newName)}::text[]
-                 ) AS rename(fee_published_id, old_name, new_name)
-           WHERE fp.fee_published_id = rename.fee_published_id
-             AND fp.rolled_back_at IS NULL
-             AND fp.fee_name = rename.old_name
-        `;
+        await writeLiveRenames(scope, result.renames, {
+          strategy: NAME_RETIDY_STRATEGY.strategy,
+          version: NAME_RETIDY_STRATEGY.version,
+          reportedBy: "knox",
+          runId: options.runId,
+        });
       }
       for (const [institutionId, counts] of perInstitution) {
         await recordAttempt(scope, {

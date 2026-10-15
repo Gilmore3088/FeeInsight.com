@@ -788,7 +788,11 @@ the old name goes to `pipeline_feedback` (`name_retidied`, weight 0, so it never
 (#1443), built from the same regex pieces: a dangling joining word (lower-case "a/an/the" only;
 not "above" or "each"), a dangling "up to" or "per", "will" or "you", or a leading "+" with no fee
 noun after it. Darwin's live name re-check applies it to live fees (`darwin/live-fragment-check.ts`,
-see Darwin's AGENTS.md). A change to either shape list is checked against both.
+see Darwin's AGENTS.md). A change to either shape list is checked against both. Since #1443 a
+pronoun only inside a parenthetical is no live fragment (`liveFragmentShape` keeps the raw shape),
+and `gluedSentenceHead` gives the fee name a fragment opens with ("Overdraft Fee You will be
+charged ..." is "Overdraft Fee"), which Darwin renames the live fee to through `writeLiveRenames`,
+the same write path the tidy uses (feedback row first, update guarded on the old name).
 
 ## Batch review (`batch-review.ts`)
 

@@ -247,6 +247,9 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   // v3 (#1397): the recheck reads every verified row once per version, so each verify step works
   // through the whole verified set under v3 itself (200 a step).
   DARWIN_RECHECK_STRATEGY: "Its selector re-reads every verified row not yet read at v3 (200 a verify step); there is nothing to replay.",
+  // v1 (#1443): the live fragment re-check's rules (parenthetical exemption, glued-sentence rename,
+  // priced trailing range left live). Its ledger cursor reads the whole live table again every pass.
+  LIVE_FRAGMENT_STRATEGY: "Its cursor re-reads every live fee name each pass (2,000 a verify step); there is nothing to replay.",
 };
 
 export async function loadManifests(): Promise<ReplayManifest[]> {
