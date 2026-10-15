@@ -14,7 +14,7 @@ const evalMocks = vi.hoisted(() => ({
 vi.mock("@/lib/data-store/connection", () => ({ sql: vi.fn() }));
 vi.mock("./answer-eval", async (importOriginal) => ({ ...(await importOriginal<typeof import("./answer-eval")>()), ...evalMocks }));
 
-const { orderCandidates, paidSamplesToday, runPaidAnswerEval, PAID_EVAL_OPERATION } = await import("./paid-answer-eval");
+const { orderCandidates, paidSamplesToday, runPaidAnswerEval, PAID_EVAL_RESERVATION } = await import("./paid-answer-eval");
 
 const now = new Date("2026-10-16T15:17:00Z");
 const question = "How does our overdraft fee compare?";
@@ -53,14 +53,25 @@ function memoClient(summary: string): MemoClient & { calls: number } {
   return client;
 }
 
-/** A db that answers the cap count with `used` and every other read with nothing. */
+/**
+ * A db holding today's reservations: the count reads them and the conditional insert adds one
+ * only while fewer than the cap in the query are held, as the SQL does.
+ */
 function db(used: number) {
   const queries: string[] = [];
-  const tag = vi.fn(async (parts: TemplateStringsArray) => {
-    queries.push(parts.join("?"));
-    return parts.join("?").includes("ai_api_usage_events") ? [{ n: used }] : [];
+  const state = { reserved: used };
+  const tag = vi.fn(async (parts: TemplateStringsArray, ...values: unknown[]) => {
+    const text = parts.join("?");
+    queries.push(text);
+    if (text.includes("INSERT INTO agent_run_events")) {
+      const cap = Number(values.at(-1));
+      if (state.reserved >= cap) return [];
+      state.reserved += 1;
+      return [{ id: state.reserved }];
+    }
+    return text.includes("COUNT(*)") ? [{ n: state.reserved }] : [];
   });
-  return { db: tag as unknown as Parameters<typeof paidSamplesToday>[0], queries };
+  return { db: tag as unknown as Parameters<typeof paidSamplesToday>[0], queries, state };
 }
 
 beforeEach(() => {
@@ -71,16 +82,16 @@ beforeEach(() => {
 });
 
 describe("Hamilton's paid answer eval (#1079)", () => {
-  it("counts today's samples by subject key from provider usage, blocked calls excluded", async () => {
+  it("counts today's reservations from the run ledger", async () => {
     const { db: tag, queries } = db(3);
     expect(await paidSamplesToday(tag, now)).toBe(3);
-    expect(queries[0]).toContain("COUNT(DISTINCT subject_key)");
-    expect(queries[0]).toContain("status <> 'blocked'");
+    expect(queries[0]).toContain("FROM agent_run_events");
+    expect(queries[0]).toContain("event_type =");
   });
 
   it("writes nothing once the day's five are used", async () => {
     const client = memoClient("Unused.");
-    const result = await runPaidAnswerEval({ db: db(5).db, now, client, live });
+    const result = await runPaidAnswerEval({ db: db(5).db, now, client, live, agentRunId: 77 });
     expect(client.calls).toBe(0);
     expect(evalMocks.answer).not.toHaveBeenCalled();
     expect(result.note).toBe("Today's 5 paid samples are already used.");
@@ -89,7 +100,7 @@ describe("Hamilton's paid answer eval (#1079)", () => {
   it("writes only the day's remaining samples and scores form and correctness", async () => {
     evalMocks.answer.mockImplementation(async (id: number) => answered(id));
     const client = memoClient("Your overdraft fee is $32.");
-    const result = await runPaidAnswerEval({ db: db(3).db, now, client, live });
+    const result = await runPaidAnswerEval({ db: db(3).db, now, client, live, agentRunId: 77 });
     expect(client.calls).toBe(2);
     expect(result.paths[0]).toMatchObject({ path: "memo", sampled: 2, answers: 2, passed: 2, correctness: { checked: 2, correct: 2, rate: 1 } });
     expect(result.notSampled).toEqual(["written_answer", "simulate", "report"]);
@@ -97,7 +108,7 @@ describe("Hamilton's paid answer eval (#1079)", () => {
 
   it("fails form when the memo is withheld for a figure the storyline does not hold", async () => {
     evalMocks.answer.mockImplementation(async (id: number) => answered(id));
-    const result = await runPaidAnswerEval({ db: db(4).db, now, client: memoClient("Your overdraft fee is $32; peers charge $91.37."), live });
+    const result = await runPaidAnswerEval({ db: db(4).db, now, client: memoClient("Your overdraft fee is $32; peers charge $91.37."), live, agentRunId: 77 });
     expect(result.paths[0]).toMatchObject({ answers: 1, passed: 0, correctness: { checked: 0 } });
     expect(result.results[0].status).toBe("withheld");
   });
@@ -109,7 +120,7 @@ describe("Hamilton's paid answer eval (#1079)", () => {
       const values = await live(id, research);
       return values && { rows: values.rows.map((r, i) => (i === 0 ? { ...r, amount: 29 } : r)) };
     };
-    const result = await runPaidAnswerEval({ db: db(4).db, now, client: memoClient("Your overdraft fee is $32."), live: moved });
+    const result = await runPaidAnswerEval({ db: db(4).db, now, client: memoClient("Your overdraft fee is $32."), live: moved, agentRunId: 77 });
     expect(result.paths[0]).toMatchObject({ passed: 1, correctness: { checked: 1, correct: 0 } });
     expect(result.results[0].correctness).toContain("your fee: the answer uses $32, the catalog has $29");
   });
@@ -117,7 +128,7 @@ describe("Hamilton's paid answer eval (#1079)", () => {
   it("skips answers with no storyline before spending anything", async () => {
     evalMocks.answer.mockResolvedValue({ response: { answer: null }, research: null, schedule: null });
     const client = memoClient("Unused.");
-    const result = await runPaidAnswerEval({ db: db(0).db, now, client, live });
+    const result = await runPaidAnswerEval({ db: db(0).db, now, client, live, agentRunId: 77 });
     expect(client.calls).toBe(0);
     expect(result.note).toBe("No sampled question produced a storyline to write up.");
   });
@@ -131,7 +142,18 @@ describe("Hamilton's paid answer eval (#1079)", () => {
     expect(today[2].from).not.toBe(tomorrow[2].from);
   });
 
-  it("tags the memo's model calls so the cap can count them", () => {
-    expect(PAID_EVAL_OPERATION).toBe("storyline_memo_eval");
+  it("reserves each sample before its model call, so memos the provider refused still count", async () => {
+    evalMocks.answer.mockImplementation(async (id: number) => answered(id));
+    const refusing: MemoClient = { create: async () => { throw new Error("Provider budget guard blocked this call."); } };
+    const day = db(0);
+    const first = await runPaidAnswerEval({ db: day.db, now, client: refusing, live, agentRunId: 77 });
+    expect(first.paths[0]).toMatchObject({ sampled: 5, answers: 0 });
+    expect(day.state.reserved).toBe(5);
+    const client = memoClient("Your overdraft fee is $32.");
+    const second = await runPaidAnswerEval({ db: day.db, now, client, live, agentRunId: 78 });
+    expect(client.calls).toBe(0);
+    expect(second.note).toBe("Today's 5 paid samples are already used.");
+    expect(day.queries.some((q) => q.includes("INSERT INTO agent_run_events") && q.includes("< "))).toBe(true);
+    expect(PAID_EVAL_RESERVATION).toBe("paid_eval.sample_reserved");
   });
 });

@@ -139,7 +139,8 @@ export function reconcileAnswer(input: ReconcileInput): CorrectnessResult {
 export function reconcileMemoText(input: ReconcileInput & { text: string }): CorrectnessResult {
   const base = reconcileValues(input, catalogFacts(input.response));
   if (!base) return { checked: false, figures: 0, failures: [] };
-  return tieText(input.text, [...base.anchors, ...otherSourceFigures(input.response)], base.singles, base.failures);
+  // Other-source figures count as stated, never as ends of a gap: a memo may repeat them, not build on them here.
+  return tieText(input.text, base.anchors, [...base.singles, ...otherSourceFigures(input.response)], base.failures);
 }
 
 /** Dollar figures the answer states from sources other than the fee catalog, accepted as printed. */

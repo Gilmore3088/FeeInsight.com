@@ -95,9 +95,11 @@ Hamilton supports the decision; it does not make it.
   (James, 2026-10-15) over free answers that carry a storyline: Pro readers' questions first, then
   quality-bar questions for sampled institutions. Form is "the memo was written" (it passed the
   memo's own checks); correctness is `reconcileMemoText`: the answer's values tie to live
-  `published_fee_catalog` rows and every dollar figure in the memo ties to a live value. The cap
-  counts distinct `subject_key`s of operation `storyline_memo_eval` in `ai_api_usage_events`
-  today; the provider stop and the memo's budget line (`api.hamilton.ask.memo`) hold every call.
+  `published_fee_catalog` rows and every dollar figure in the memo ties to a live value. Each
+  sample is reserved before its first model call (a `paid_eval.sample_reserved` run event, a
+  conditional insert outside the step transaction that refuses past five today), so blocked calls,
+  lost usage rows and killed functions still count; the provider stop and the memo's budget line
+  (`api.hamilton.ask.memo`) hold every call.
   The goal scorecard reads the latest run that wrote a memo as the "Memo (paid)" row. The written
   answer, simulate and report paths are not sampled yet.
   It asks 17 questions (q26, the NSF regulation question, since #1079; q31, fee income against

@@ -673,7 +673,8 @@ async function readAnswerQuality(db: SqlTag): Promise<AnswerQuality | null> {
   const free = parsed(row);
   if (!free.detail) return null;
   // The latest paid sample that wrote at least one memo (#1079); a capped or paused run measures nothing.
-  const [paidRow] = await db<Array<{ created_at: Date | string; detail: unknown }>>`
+  // Its own savepoint: a failed paid read leaves the free rates standing.
+  const paidRows = await inSavepoint(db, (scope) => scope<Array<{ created_at: Date | string; detail: unknown }>>`
     SELECT e.created_at, e.detail
       FROM agent_run_events e
       JOIN agent_run_steps s ON s.id = e.step_id
@@ -684,8 +685,11 @@ async function readAnswerQuality(db: SqlTag): Promise<AnswerQuality | null> {
        AND jsonb_path_exists(e.detail, '$.paths[*] ? (@.answers > 0)')
      ORDER BY e.created_at DESC
      LIMIT 1
-  `;
-  const paid = paidRow ? parsed(paidRow) : null;
+  `).catch((error) => {
+    console.error("Goal scorecard: the paid answer eval could not be read", error);
+    return [];
+  });
+  const paid = paidRows[0] ? parsed(paidRows[0]) : null;
   return {
     query: GOAL_QUERIES.answerQuality,
     ...answerQualityFrom(free.at, free.detail, paid?.detail ? { at: paid.at, detail: paid.detail } : null),

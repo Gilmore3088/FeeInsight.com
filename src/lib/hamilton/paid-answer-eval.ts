@@ -13,9 +13,11 @@
  *
  * Paid and capped: it runs as a provider step (`hamilton-paid-answer-eval`), so the global
  * provider stop and the budget policies hold it, and each model call still passes the memo's own
- * budget line (`api.hamilton.ask.memo`). The daily cap counts samples already started today in
- * `ai_api_usage_events`, so a retried or repeated run never goes past five. The written answer,
- * simulate and report paths are not sampled yet.
+ * budget line (`api.hamilton.ask.memo`). Each sample is reserved before its first model call: one
+ * `paid_eval.sample_reserved` event on the run, written outside the step's transaction by a
+ * conditional insert that refuses once today holds five. A blocked call, a lost usage row or a
+ * killed function still leaves the reservation, so a retried or repeated run never goes past five.
+ * The written answer, simulate and report paths are not sampled yet.
  * Server only.
  */
 
@@ -30,10 +32,14 @@ import type { FeeResearch } from "./workspace/types";
 
 /** Paid answers a day, James's budget (2026-10-15). */
 export const PAID_SAMPLE_DAILY_CAP = 5;
-/** The provider-usage operation the cap counts. */
+/** The provider-usage operation the memo's calls are tagged with. */
 export const PAID_EVAL_OPERATION = "storyline_memo_eval";
+/** The run event that reserves one sample; the cap counts these. */
+export const PAID_EVAL_RESERVATION = "paid_eval.sample_reserved";
 /** Free answers tried in search of storylines to write up, before the run gives up. */
-const MAX_CANDIDATES = 24;
+const MAX_CANDIDATES = 12;
+/** Time the free answers may take, so the memos (up to two 90 s calls) still fit the 300 s function. */
+const SEARCH_BUDGET_MS = 60_000;
 
 export interface PaidCandidate {
   institutionId: number;
@@ -81,16 +87,33 @@ export function dayStart(now: Date): string {
   return `${now.toISOString().slice(0, 10)}T00:00:00.000Z`;
 }
 
-/** Samples started today: one subject key per sample, whatever its calls did. Blocked calls never reached the model. */
+/** Samples reserved today, by any run, whatever their calls did. */
 export async function paidSamplesToday(db: SqlTag, now: Date): Promise<number> {
   const [row] = await db`
-    SELECT COUNT(DISTINCT subject_key)::int AS n
-      FROM ai_api_usage_events
-     WHERE operation = ${PAID_EVAL_OPERATION}
-       AND status <> 'blocked'
+    SELECT COUNT(*)::int AS n
+      FROM agent_run_events
+     WHERE event_type = ${PAID_EVAL_RESERVATION}
        AND created_at >= ${dayStart(now)}::timestamptz
   `;
   return Number(row?.n ?? 0);
+}
+
+/**
+ * Reserves one sample before any model call: inserts the reservation only while today holds fewer
+ * than `cap`, and says whether it did. Runs on its own connection (not the step's transaction), so a
+ * killed function keeps the reservation.
+ */
+export async function reserveSample(db: SqlTag, input: { runId: number; subjectKey: string; cap: number; now: Date }): Promise<boolean> {
+  const rows = await db`
+    INSERT INTO agent_run_events (agent_run_id, step_id, event_type, status, message, detail)
+    SELECT ${input.runId}, NULL, ${PAID_EVAL_RESERVATION}, 'info',
+           ${`Reserved paid answer-eval sample ${input.subjectKey}.`}, ${JSON.stringify({ subject_key: input.subjectKey })}::jsonb
+     WHERE (SELECT COUNT(*) FROM agent_run_events
+             WHERE event_type = ${PAID_EVAL_RESERVATION}
+               AND created_at >= ${dayStart(input.now)}::timestamptz) < ${input.cap}
+    RETURNING id
+  `;
+  return rows.length > 0;
 }
 
 /**
@@ -163,7 +186,8 @@ export async function runPaidAnswerEval({
   agentRunId,
   client,
   live = liveCatalogReader(),
-}: { db?: SqlTag; now?: Date; cap?: number; agentRunId?: number; client?: MemoClient; live?: LiveReader } = {}): Promise<PaidAnswerEvalSummary> {
+}: { db?: SqlTag; now?: Date; cap?: number; agentRunId: number; client?: MemoClient; live?: LiveReader }): Promise<PaidAnswerEvalSummary> {
+  const started = Date.now();
   const usedBefore = await paidSamplesToday(db, now);
   const remaining = Math.max(0, cap - usedBefore);
   const base = { cap, usedBefore, notSampled: ["written_answer", "simulate", "report"] };
@@ -179,7 +203,7 @@ export async function runPaidAnswerEval({
   const picked: Array<{ candidate: PaidCandidate; answered: Answered & { research: FeeResearch } }> = [];
   const research = new Map<number, Map<string, Promise<FeeResearch | null>>>();
   for (const candidate of candidates) {
-    if (picked.length >= remaining) break;
+    if (picked.length >= remaining || Date.now() - started > SEARCH_BUDGET_MS) break;
     if (!research.has(candidate.institutionId)) research.set(candidate.institutionId, new Map());
     const answered = await answer(candidate.institutionId, candidate.question, research.get(candidate.institutionId)!).catch(() => null);
     if (answered?.research && answered.response.answer?.storyline) {
@@ -190,10 +214,20 @@ export async function runPaidAnswerEval({
     return { ...base, paths: [summarizePaid([])], note: "No sampled question produced a storyline to write up.", results: [] };
   }
 
+  // Reserve each sample before spending; the reservation refuses past the cap.
   const stamp = now.toISOString().slice(0, 10);
+  const reserved: Array<(typeof picked)[number] & { subjectKey: string }> = [];
+  for (const [i, pick] of picked.entries()) {
+    const subjectKey = `hamilton-eval:${stamp}:${agentRunId}:${i + 1}`;
+    if (!(await reserveSample(db, { runId: agentRunId, subjectKey, cap, now }))) break;
+    reserved.push({ ...pick, subjectKey });
+  }
+  if (reserved.length === 0) {
+    return { ...base, paths: [summarizePaid([])], note: `Today's ${cap} paid samples are already used.`, results: [] };
+  }
   const results = await Promise.all(
-    picked.map(({ candidate, answered }, i) =>
-      writeUp(candidate, answered, live, { subjectKey: `hamilton-eval:${stamp}:${usedBefore + i + 1}`, agentRunId, client }).catch((error) => ({
+    reserved.map(({ candidate, answered, subjectKey }) =>
+      writeUp(candidate, answered, live, { subjectKey, agentRunId, client }).catch((error) => ({
         ...candidate,
         path: "memo" as const,
         status: "unavailable" as const,
