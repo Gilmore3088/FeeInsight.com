@@ -657,6 +657,11 @@ institution in it (`src/lib/agents/hamilton/studies`). One run a day
   always labeled inferred. Credit unions 2024 only (NCUA retired the lines); banks once RIAD H032
   loads ($1B+ banks, overdraft and NSF together).
 - Nothing from a study is published on the site or sent until James says so.
+- Pro readers see two studies (James, Oct 12, #1082): `fee_dependence` and `inferred_items_paid`,
+  each with a note on how it was calculated (`PRO_STUDIES` in `src/lib/hamilton/workspace/studies.ts`).
+  The three price studies stay stored and off every Pro surface (briefing, Ask's briefing, the
+  exported brief) until reviewed: their effects are weak and a reader could take them as what a
+  change would do.
 
 ## Marketing
 
