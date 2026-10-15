@@ -32,6 +32,26 @@ const row = (id: number, amount: string, excerpt: string, frequency: string | nu
   conditions: `Knox deterministic extraction from Rosetta artifact #1. excerpt="${excerpt}"`,
 });
 
+describe("Hamilton frequency fill write failures (#1349)", () => {
+  it("fails the step when the live write fails, instead of reporting 0 filled", async () => {
+    const db = createDbMock([row(1, "6.00", "Copy of Share Draft (Check) Faxed | $6.00 each")]);
+    const ok = db.getMockImplementation()! as (strings: TemplateStringsArray, ...values: unknown[]) => Promise<unknown>;
+    db.mockImplementation((strings: TemplateStringsArray, ...values: unknown[]) =>
+      strings.join("?").includes("UPDATE published_fee_records")
+        ? Promise.reject(new Error("deadlock detected"))
+        : ok(strings, ...values));
+    await expect(fillBlankFrequencies(asDb(db), { runId: 5, dryRun: false }))
+      .rejects.toThrow(/frequency fill write failed: deadlock detected/);
+  });
+
+  it("a dry run still writes nothing and reports what it would fill", async () => {
+    const db = createDbMock([row(1, "6.00", "Copy of Share Draft (Check) Faxed | $6.00 each")]);
+    db.mockImplementation(() => Promise.reject(new Error("no writes on a dry run")));
+    const result = await fillBlankFrequencies(asDb(db), { runId: 5, dryRun: true });
+    expect(result.filled.map((fee) => fee.feePublishedId)).toEqual([1]);
+  });
+});
+
 describe("Hamilton frequency fill", () => {
   it("reads the excerpt at the end of a row's conditions", () => {
     expect(excerptOf('canonical_hint=x; excerpt="Check Copy | $2.00 each"')).toBe("Check Copy | $2.00 each");

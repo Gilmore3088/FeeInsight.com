@@ -318,8 +318,7 @@ export async function fillBlankFrequencies(
       });
       result.held = held.filter((fee) => rolledBack.has(fee.feePublishedId));
     } catch (error) {
-      console.error("frequency hold failed:", error);
-      result.held = [];
+      throw writeFailed("frequency hold", error);
     }
   }
 
@@ -353,8 +352,7 @@ export async function fillBlankFrequencies(
       });
       result.filled = filled.filter((fee) => updated.has(fee.feePublishedId));
     } catch (error) {
-      console.error("frequency fill failed:", error);
-      result.filled = [];
+      throw writeFailed("frequency fill", error);
     }
   }
 
@@ -407,6 +405,14 @@ export async function fillBlankFrequencies(
   }
   if (result.filled.length > 0 || result.held.length > 0) invalidatePublicReadCache();
   return result;
+}
+
+/**
+ * #1349: a failed live write fails the step with the error text, and the run's transaction rolls
+ * back, instead of a "completed" step that reads as 0 changes. A dry run writes nothing.
+ */
+function writeFailed(what: string, error: unknown): Error {
+  return new Error(`${what} write failed: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
 }
 
 function num(value: number | string | null | undefined): number | null {

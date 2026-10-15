@@ -7,6 +7,7 @@ vi.mock("@/lib/ai-provider-usage", async (importOriginal) => ({
 }));
 
 import { DARWIN_RELEASE_ACTS, scheduleContext, type HeldFeeRow } from "./release-held";
+import { trainCategoryModel } from "./category-model";
 import {
   DARWIN_RELEASE_REVIEW_STRATEGY,
   frequencyFromLine,
@@ -31,9 +32,16 @@ function templateText(strings: unknown): string {
   return Array.isArray(strings) ? strings.join(" ") : String(strings);
 }
 
+/** The stored schedules the release check reads (#1367): document 20 for `row()`, 21 a savings page. */
+const SOURCE_TEXTS = [
+  { source_document_id: 20, normalized_text: "Fee Schedule\nStop Payment $30.00\nHELOC Late Payment 5% of Amount Owed, $100.00 Maximum" },
+  { source_document_id: 21, normalized_text: "Christmas Club Accounts\nMonthly charge $5.00\nEarly withdrawal $10.00" },
+];
+
 function createDbMock(rows: Array<Record<string, unknown>>): DbMock {
   const db = vi.fn((strings: TemplateStringsArray) => {
     if (templateText(strings).includes("learning_schema_ready")) return Promise.resolve([{ learning_schema_ready: true }]);
+    if (templateText(strings).includes("FROM agent_source_texts")) return Promise.resolve(SOURCE_TEXTS);
     return Promise.resolve([]);
   }) as DbMock;
   db.unsafe = vi.fn(() => Promise.resolve(rows));
@@ -451,6 +459,7 @@ describe("releasing the recorded v17 passes", () => {
     const db = vi.fn((strings: TemplateStringsArray) => {
       const text = templateText(strings);
       if (text.includes("learning_schema_ready")) return Promise.resolve([{ learning_schema_ready: true }]);
+      if (text.includes("FROM agent_source_texts")) return Promise.resolve(SOURCE_TEXTS);
       if (text.includes("verify.release_recorded") || text.includes("FROM pipeline_attempts pa")) return Promise.resolve(rows);
       return Promise.resolve([]);
     });
@@ -472,6 +481,7 @@ describe("releasing the recorded v17 passes", () => {
     const db = vi.fn((strings: TemplateStringsArray, ...values: unknown[]) => {
       const text = templateText(strings);
       if (text.includes("learning_schema_ready")) return Promise.resolve([{ learning_schema_ready: true }]);
+      if (text.includes("FROM agent_source_texts")) return Promise.resolve(SOURCE_TEXTS);
       if (text.includes("AS done")) {
         expect(values).toContain(RECORDED_RELEASE_DRY_RUN_FINGERPRINT);
         return Promise.resolve([{ done: dryRunDone }]);
@@ -491,10 +501,53 @@ describe("releasing the recorded v17 passes", () => {
     expect(writes.some((write) => write.text.includes("verified_fee_observations"))).toBe(dryRunDone);
   });
 
+  // #1367: the recorded passes were sorted by a release check that passed "." as the category
+  // pattern. Each is now checked again against its own stored schedule with the category's pattern.
+  it("holds a recorded pass whose schedule never names its category (#1367)", async () => {
+    const rows = [
+      // The name passes today's category guard; the bank's own row says only "Monthly charge".
+      row({ fee_raw_id: 3, fee_name: "Monthly Fee", held_canonical_fee_key: "monthly_maintenance", amount: "5.00", source_document_id: 21,
+        source_line: "Monthly charge $5.00", source_context: "Christmas Club Accounts\nMonthly charge $5.00" }),
+      row({ fee_raw_id: 2 }),
+    ];
+    const writes: string[] = [];
+    const db = vi.fn((strings: TemplateStringsArray) => {
+      const text = templateText(strings);
+      if (text.includes("learning_schema_ready")) return Promise.resolve([{ learning_schema_ready: true }]);
+      if (text.includes("AS done")) return Promise.resolve([{ done: true }]);
+      if (text.includes("FROM pipeline_attempts pa")) return Promise.resolve(rows);
+      if (text.includes("FROM agent_source_texts")) return Promise.resolve(SOURCE_TEXTS);
+      if (/INSERT/.test(text)) {
+        writes.push(text);
+        if (text.includes("verified_fee_observations")) return Promise.resolve([{ fee_verified_id: 77 }]);
+      }
+      return Promise.resolve([]);
+    });
+    const result = await releaseRecordedPasses(db as never, { runId: 9, acts: true });
+    expect(result).toMatchObject({ acts: true, recordedPasses: 2, wouldRelease: 1, released: 1, held: { "release_check:category_not_in_text": 1 } });
+    expect(result.heldExamples[0]).toMatchObject({ feeRawId: 3, reason: "release_check:category_not_in_text" });
+    expect(writes.filter((text) => text.includes("verified_fee_observations"))).toHaveLength(1);
+  });
+
+  it("holds a recorded pass whose category Darwin's category model disputes (#1367)", () => {
+    const model = trainCategoryModel([
+      ...Array.from({ length: 20 }, () => ({ name: "Stop Payment", categoryKey: "stop_payment", count: 1 })),
+      ...Array.from({ length: 20 }, () => ({ name: "Bad Address Fee", categoryKey: "account_research", count: 1 })),
+    ]);
+    const text = SOURCE_TEXTS[0].normalized_text;
+    const filedWrong = recorded("Stop Payment", "account_research", null, "Stop Payment $30.00");
+    expect(recordedPassHoldReason(filedWrong)).toBeNull();
+    expect(recordedPassHoldReason(filedWrong, { text, categoryModel: model })).toBe("release_check:category_disputed");
+    expect(recordedPassHoldReason(recorded("Stop Payment", "stop_payment", null, "Stop Payment $30.00"), { text, categoryModel: model })).toBeNull();
+    // No stored schedule to read: held, never released on the recorded verdict alone.
+    expect(recordedPassHoldReason(recorded("Stop Payment", "stop_payment", null, "Stop Payment $30.00"), { text: null, categoryModel: model })).toBe("release_check:no_source_text");
+  });
+
   it("a dry_run run never releases or records the dry run", async () => {
     const db = vi.fn((strings: TemplateStringsArray) => {
       const text = templateText(strings);
       if (text.includes("learning_schema_ready")) return Promise.resolve([{ learning_schema_ready: true }]);
+      if (text.includes("FROM agent_source_texts")) return Promise.resolve(SOURCE_TEXTS);
       if (text.includes("AS done")) return Promise.resolve([{ done: true }]);
       if (text.includes("FROM pipeline_attempts pa")) return Promise.resolve([row({ fee_raw_id: 2 })]);
       return Promise.resolve([]);

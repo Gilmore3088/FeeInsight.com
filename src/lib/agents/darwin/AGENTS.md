@@ -22,7 +22,7 @@ Darwin owns verification and classification.
 | `missing_canonical` | a valid canonical hint | rejected |
 | `missing_name` | a non-empty fee name | rejected |
 | `category_mismatch` | for the guarded categories, the fee name names its category and not a different fee (`src/lib/fee-category-guard.ts`); a name that names a neighbouring guarded category is re-filed there first (`refileCategory`). Guard v62 (#1100) also reads the row's own source line: a monthly maintenance row whose line charges its price per withdrawal, debit, transaction, transfer or item fails, and one charged per activity over a limit is re-filed to account research first (`refileFromLine`) | rejected |
-| `missing_lineage` | a source URL or stored document key | rejected |
+| `missing_lineage` | Hamilton's publish rule (`sourceLinkSkipReason` in `hamilton/source-link.ts`, #1345): a source document, and an http(s) link, the row's own or its document's. A stored file key alone is not enough (#1350): such a row would be verified and then refused at publish forever. The reason text is Hamilton's refusal ("No source link: the fee can't be traced to the bank's document", or "No source document: ...") | rejected |
 | `percent_not_publishable` | a fee stated as a rate ("1.1% of the transaction") is filed under a category that publishes rates (`PERCENT_FEE_RANGES` in `src/lib/percent-fees.ts`: foreign transaction, cash advance, coin counting, late payment); elsewhere a rate is often an interest rate, not a fee. A rate that passes needs `rate_percent` and no dollar amount (else `invalid_amount`) and a rate inside that category's range (else `outside_envelope`), and its source check is `checkRateAgainstSource` | rejected |
 | `invalid_amount` | an amount; $0 only with Knox's `knox_review:zero` flag | rejected |
 | `outside_envelope` | a positive amount inside its category's range: hand-set (`envelopes.ts`), else learned (`learned-envelopes.ts`), else $0.01-$2,500 | needs_review |
@@ -328,6 +328,20 @@ Darwin owns verification and classification.
   would release, 34 held (11 glued or cut name, 7 frequency word, 5 overdraft/NSF for a person, 3
   two-column glue, 3 maintenance without context, 2 band as price, 1 footnote, 1 overdraft
   transfer, 1 business activity row).
+  The release check reads the category (#1367, Oct 15, no version change). Until then `releaseVerdict`
+  passed "." as `checkFeeAgainstSource`'s category pattern, so "stated" meant only that the name and
+  amount were on the schedule (a hand check of 20 held `keep` fees found 8 filed under the wrong
+  category, all passing that check). It now passes the category guard's own pattern
+  (`releaseCategoryPattern`: `CATEGORY_GUARD_RULES[key].include`; none for a category with no guard
+  rule or one that accepts any name, where the category rests on today's name guard and the model).
+  A fee on the schedule with no category wording on its line or the 3 rows above is `keep`
+  (`category_not_in_text`), never a reject. Both release paths run the same check again at release
+  time against the fee's own stored schedule (`releaseCheckHold`), so verdicts recorded before the
+  fix are re-read: a recorded pass or a review pass that fails it holds as
+  `release_check:<reason>` (`category_not_in_text`, `category_disputed` when the category model
+  disputes the category, `no_source_text`, ...), in step detail and the attempt's `release_check`.
+  The context check adds to the name guard only where the bank's own row words differ from the
+  stored name; the category model is the stronger gate for a name that fits its category on paper.
   v1 released on the schedule check alone; its dry run on 2026-10-06 (1,997 of 4,128 held
   fees) had 12 of 20 hand-checked releases right. v2 adds the gates above. v3 (James chose
   "Reject only", 2026-10-06 16:49 UTC) acts on rejects (`DARWIN_RELEASE_REJECTS_ACT`): each

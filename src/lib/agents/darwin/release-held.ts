@@ -1,5 +1,6 @@
 import type { sql } from "@/lib/data-store/connection";
 import { checkFeeAgainstSource, type SourceCheckFailure } from "@/lib/custom-report/source-check";
+import { CATEGORY_GUARD_RULES } from "@/lib/fee-category-guard";
 import { learningSchemaReady, recordAttempt } from "@/lib/agents/learning/attempts";
 import { normalizeStateCode } from "@/lib/agents/state-lane-memory";
 import { categoryOpinion, loadCategoryModel, type CategoryModel } from "./category-model";
@@ -30,6 +31,8 @@ type SqlTag = typeof sql;
  *   publish gate uses the same range, so releasing it would not publish it.
  * - stated only as a tier (no single schedule line to show), or filed under a category
  *   Darwin's category model disputes: `keep`.
+ * - stated, but with none of its category's wording on its line or the rows above
+ *   (`category_not_in_text`, #1367: the check read the category pattern "." until Oct 15): `keep`.
  * - otherwise `review`: Claude reads the fee beside its schedule line in the next
  *   `verify-paid` step (release-review.ts), and only a fee it confirms as a price the
  *   bank charges, in the category it was filed under, at that amount, is released.
@@ -136,6 +139,22 @@ export function scheduleContext(text: string | null | undefined, line: string): 
   return context.slice(0, SCHEDULE_CONTEXT_CHARS);
 }
 
+/** Text no category's own wording matches; a pattern that matches it accepts any name. */
+const NO_CATEGORY_WORDING = "zqxj 0";
+
+/**
+ * #1367: the category pattern the release's source check reads beside the fee's line (the line and
+ * the rows above it must carry the category's wording). It is the category guard's own name pattern
+ * (`CATEGORY_GUARD_RULES[key].include`, at the guard's current version). Null for a category with no
+ * guard rule, or one whose rule accepts any name (`\S`, `.`): there the category rests on today's
+ * name guard (`releaseHoldReason` in release-review.ts) and Darwin's category model. Pure.
+ */
+export function releaseCategoryPattern(canonicalFeeKey: string): string | null {
+  const include = CATEGORY_GUARD_RULES[canonicalFeeKey]?.include;
+  if (!include || new RegExp(include.source, "i").test(NO_CATEGORY_WORDING)) return null;
+  return include.source;
+}
+
 /** Pure: the verdict for one held fee, given its stored schedule text and Darwin's category model. */
 export function releaseVerdict(
   row: Pick<HeldFeeRow, "fee_name" | "amount" | "held_reason" | "held_canonical_fee_key">,
@@ -144,7 +163,20 @@ export function releaseVerdict(
 ): { verdict: Exclude<ReleaseVerdict, "duplicate" | "reject_pending">; sourceCheck: ReleaseSourceCheck; sourceLine: string | null } {
   const amount = amountOf(row.amount);
   if (amount == null || amount <= 0) return { verdict: "reject", sourceCheck: "no_amount", sourceLine: null };
-  const check = checkFeeAgainstSource(text, row.fee_name, amount, ".", row.held_canonical_fee_key);
+  // #1367: until Oct 15 this passed "." as the category pattern, so a fee filed under the wrong
+  // category was "stated" whenever its name and amount were.
+  const check = checkFeeAgainstSource(
+    text,
+    row.fee_name,
+    amount,
+    releaseCategoryPattern(row.held_canonical_fee_key) ?? ".",
+    row.held_canonical_fee_key,
+  );
+  // On the schedule at that amount, but nothing near it names the category: a person decides. Not a
+  // reject, which would note the fee as "not on the schedule".
+  if (!check.ok && check.reason === "category_not_in_text") {
+    return { verdict: "keep", sourceCheck: "category_not_in_text", sourceLine: null };
+  }
   // A tiered price is the bank's real price for its band, as Darwin and Hamilton read it.
   const stated = check.ok || check.reason === "tiered_fee";
   if (!stated) return { verdict: "reject", sourceCheck: check.ok ? "stated" : check.reason, sourceLine: null };
@@ -157,6 +189,22 @@ export function releaseVerdict(
   const opinion = categoryModel ? categoryOpinion(categoryModel, row.fee_name, row.held_canonical_fee_key) : null;
   if (opinion?.disputed) return { verdict: "keep", sourceCheck: "category_disputed", sourceLine };
   return { verdict: "review", sourceCheck: "stated", sourceLine };
+}
+
+/**
+ * #1367: why a fee the release would publish fails today's release check against its own stored
+ * schedule (the category's pattern and Darwin's category model), or null when it passes. Both
+ * release paths run it at release time, so verdicts recorded before the fix are checked again. Pure.
+ */
+export function releaseCheckHold(
+  row: Pick<HeldFeeRow, "fee_name" | "amount" | "held_reason" | "held_canonical_fee_key">,
+  text: string | null | undefined,
+  categoryModel: CategoryModel | null,
+): string | null {
+  const judged = releaseVerdict(row, text, categoryModel);
+  if (judged.verdict === "review") return null;
+  // A stated fee kept for a person is one outside the category's hand-set range.
+  return `release_check:${judged.sourceCheck === "stated" ? "outside_envelope" : judged.sourceCheck}`;
 }
 
 /**

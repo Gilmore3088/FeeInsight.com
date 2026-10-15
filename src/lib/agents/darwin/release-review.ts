@@ -20,10 +20,12 @@ import { CANONICAL_KEY_MAP, DISPLAY_NAMES } from "@/lib/fee-taxonomy";
 import {
   DARWIN_RELEASE_ACTS,
   DARWIN_RELEASE_STRATEGY,
+  releaseCheckHold,
   releaseHeldFee,
   scheduleContext,
   type HeldFeeRow,
 } from "./release-held";
+import { loadCategoryModel, type CategoryModel } from "./category-model";
 import { isCutoffName } from "@/lib/agents/knox/name-retidy";
 
 import { withinAmountEnvelope } from "./envelopes";
@@ -774,14 +776,16 @@ export async function runDarwinReleaseReview(
 
   const acts = options.acts ?? DARWIN_RELEASE_ACTS;
   const model = PAID_PASS_MODELS.verify();
-  // Fees judged before the release step stored their schedule's surrounding rows read them now.
-  const missing = candidates.filter((candidate) => !candidate.sourceContext && candidate.row.source_document_id != null);
-  if (missing.length > 0) {
-    const texts = await loadSourceTexts(db, [...new Set(missing.map(({ row }) => Number(row.source_document_id)))]);
-    for (const candidate of missing) {
-      candidate.sourceContext = scheduleContext(texts.get(Number(candidate.row.source_document_id)), candidate.sourceLine);
+  // Each fee's own stored schedule, for the release check (#1367) and, for fees judged before the
+  // release step stored their schedule's surrounding rows, those rows.
+  const texts = await loadSourceTexts(db, [...new Set(candidates.flatMap(({ row }) => (row.source_document_id == null ? [] : [Number(row.source_document_id)])))]);
+  const textOf = ({ row }: ReleaseReviewCandidate) => (row.source_document_id == null ? null : texts.get(Number(row.source_document_id)));
+  for (const candidate of candidates) {
+    if (!candidate.sourceContext && candidate.row.source_document_id != null) {
+      candidate.sourceContext = scheduleContext(textOf(candidate), candidate.sourceLine);
     }
   }
+  const categoryModel = candidates.length > 0 ? await loadCategoryModel(db).catch(() => null) : null;
   const heldKeys = candidates.map(({ row }) => row.held_canonical_fee_key);
   // The pipeline's own outcomes, then this review's misses against the answer keys (verdict-score.ts).
   const lessons = [
@@ -872,7 +876,9 @@ export async function runDarwinReleaseReview(
       const refilesTo = lineRefilesTo(candidate);
       const premium = premiumServiceMisfiled(candidate);
       const holdReason = releaseHoldReason(candidate);
-      const passes = reviewPasses(verdict) && refilesTo == null && !premium && holdReason == null;
+      // #1367: the candidate's release verdict may predate the category check; read it again now.
+      const releaseCheck = releaseCheckHold(candidate.row, textOf(candidate), categoryModel);
+      const passes = reviewPasses(verdict) && refilesTo == null && !premium && holdReason == null && releaseCheck == null;
       if (passes) result.passed += 1;
       // A blank frequency takes what the line says after the price; a stated one is kept (or held above).
       const price = candidate.row.amount == null ? null : Number(candidate.row.amount);
@@ -900,6 +906,7 @@ export async function runDarwinReleaseReview(
           refiles_to: refilesTo,
           premium_service: premium,
           hold_reason: holdReason,
+          release_check: releaseCheck,
           frequency_filled: lineFrequency,
           is_fee: verdict.isFee,
           category_fits: verdict.categoryFits,
@@ -957,8 +964,14 @@ export interface RecordedReleaseResult {
 /** Categories whose recorded passes all wait for a person (second hand check, Oct 15: overdraft 4 of 6, NSF 1 of 3). */
 export const RECORDED_RELEASE_PERSON_CATEGORIES: ReadonlySet<string> = new Set(["overdraft", "nsf"]);
 
+/** The fee's own stored schedule and Darwin's category model, for the release check at release time (#1367). */
+export interface ReleaseCheckInputs {
+  text: string | null | undefined;
+  categoryModel: CategoryModel | null;
+}
+
 /** Why a recorded pass stays held today, or null when it would be released. Pure. */
-export function recordedPassHoldReason(candidate: ReleaseReviewCandidate): string | null {
+export function recordedPassHoldReason(candidate: ReleaseReviewCandidate, checks?: ReleaseCheckInputs): string | null {
   const refilesTo = lineRefilesTo(candidate);
   if (refilesTo) return `refiles_to:${refilesTo}`;
   if (premiumServiceMisfiled(candidate)) return "premium_service";
@@ -966,6 +979,10 @@ export function recordedPassHoldReason(candidate: ReleaseReviewCandidate): strin
   if (reason) return reason;
   const { row, sourceContext } = candidate;
   if (maintenanceWithoutContext(row.held_canonical_fee_key, row.held_reason, sourceContext)) return "maintenance_without_context";
+  // #1367: these passes were sorted by a release check that never read the category. Each is
+  // checked again against its own schedule with the category's pattern and the category model.
+  const checkHold = checks ? releaseCheckHold(row, checks.text, checks.categoryModel) : null;
+  if (checkHold) return checkHold;
   if (RECORDED_RELEASE_PERSON_CATEGORIES.has(candidate.row.held_canonical_fee_key)) return "overdraft_nsf_for_person";
   return null;
 }
@@ -1013,9 +1030,12 @@ export async function releaseRecordedPasses(
      LIMIT ${Math.max(1, options.limit ?? RECORDED_RELEASE_LIMIT)}
   `;
   result.recordedPasses = rows.length;
+  const texts = await loadSourceTexts(db, [...new Set(rows.flatMap((row) => (row.source_document_id == null ? [] : [Number(row.source_document_id)])))]);
+  const categoryModel = rows.length > 0 ? await loadCategoryModel(db).catch(() => null) : null;
   for (const { source_line, source_context, ...raw } of rows) {
     const candidate: ReleaseReviewCandidate = { row: raw as HeldFeeRow, sourceLine: source_line, sourceContext: source_context };
-    const reason = recordedPassHoldReason(candidate);
+    const text = raw.source_document_id == null ? null : texts.get(Number(raw.source_document_id));
+    const reason = recordedPassHoldReason(candidate, { text, categoryModel });
     const feeRawId = Number(raw.fee_raw_id);
     if (reason) {
       result.held[reason] = (result.held[reason] ?? 0) + 1;
