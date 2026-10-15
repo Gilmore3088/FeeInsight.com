@@ -11,6 +11,7 @@ import {
   type RetidyRename,
 } from "@/lib/agents/knox/name-retidy";
 import { checkFeeCategory } from "@/lib/fee-category-guard";
+import { recordFeedback, type FeedbackRow } from "@/lib/agents/learning/feedback";
 
 type SqlTag = typeof sql;
 
@@ -49,6 +50,14 @@ type SqlTag = typeof sql;
  * - `trailing_range` comes down only when the name has waiver or discount wording or the amount is
  *   $0 (the waived price); otherwise it is `exempt` `trailing_range_priced`, reported only.
  * - Everything else is a `takedown`, as before.
+ *
+ * v2 (#1499, after a prod hand-check of v1): the head is read wider for `sentence_end` names and
+ * generic or clause heads are refused (see `gluedSentenceHead`); a name that speaks of a minimum or
+ * opening deposit is never renamed (`LIVE_FRAGMENT_OPENING_DEPOSIT`: its price is the deposit). A
+ * `sentence_end` fragment that still comes down is usually a real fee whose line Knox read badly,
+ * so with the switch on its takedown also writes a `pipeline_feedback` row of kind
+ * `LIVE_FRAGMENT_REREAD_KIND` asking Knox to read its source line again. Knox does not act on that
+ * kind yet; the row records the request and where the line is (#1499).
  */
 export const LIVE_FRAGMENT_CHECK = "darwin.live_fragment_check";
 /**
@@ -64,11 +73,26 @@ export const LIVE_FRAGMENT_REASON_PREFIX = "fragment name: ";
 export const LIVE_FRAGMENT_FLAG_PREFIX = "darwin_live_fragment";
 /**
  * The strategy a rename's `pipeline_feedback` row is about (#1443). v1: the parenthetical
- * exemption, the glued-sentence rename and the priced trailing range left live.
+ * exemption, the glued-sentence rename and the priced trailing range left live. v2 (#1499): the
+ * wider head for `sentence_end` names (a parenthetical after the fee word, "A fee of" / "<Bank>
+ * may" / a lower-case "if" or "when" as the split, a glued footnote number or "To request"
+ * dropped), generic, clause and service-list heads refused, no rename of an opening-deposit line,
+ * and a re-read request to Knox for each `sentence_end` fragment taken down.
  */
-export const LIVE_FRAGMENT_STRATEGY = { strategy: LIVE_FRAGMENT_CHECK, version: 1 } as const;
+export const LIVE_FRAGMENT_STRATEGY = { strategy: LIVE_FRAGMENT_CHECK, version: 2 } as const;
 /** Waiver or discount wording: a name that says the price is waived or cut is a waived price, never renamed. */
 export const LIVE_FRAGMENT_WAIVE_WORDING = /\b(?:waiv(?:e|ed|er|ers|es|ing)|discount(?:s|ed)?|rebates?|reduc(?:e|ed|es|tion)|avoid(?:ed|s)?|no charge)\b/i;
+/**
+ * v2 (#1499): a minimum or opening deposit named in the line: the price is the deposit, never a
+ * fee, so the name is never renamed ("ATM5, Telephone Banking and Bill Payment" $20, 77786).
+ */
+export const LIVE_FRAGMENT_OPENING_DEPOSIT = /\b(?:minimum|min|opening|initial)\s+(?:(?:opening|initial)\s+)?deposits?\b|\bdeposits?\s+to\s+open\b/i;
+/**
+ * v2 (#1499): the `pipeline_feedback` kind a `sentence_end` takedown writes: Knox, read this fee's
+ * source line again so the real fee can come back under a proper name. A request only: no Knox
+ * pass reads this kind yet (darwin/AGENTS.md).
+ */
+export const LIVE_FRAGMENT_REREAD_KIND = "knox_reread_requested";
 
 export type LiveFragmentAction = "takedown" | "rename" | "exempt";
 export type LiveFragmentExemptReason = "parenthetical" | "trailing_range_priced";
@@ -103,6 +127,8 @@ export interface LiveFragmentSample {
   exemptReason?: LiveFragmentExemptReason;
   /** `takedown`: why the fee comes down. */
   takedownReason?: LiveFragmentTakedownReason;
+  /** v2: a `sentence_end` fragment taken down asks Knox to re-read its source line. */
+  rereadRequest?: boolean;
 }
 
 type PatternCounts = Record<LiveFragmentPattern, number>;
@@ -120,6 +146,8 @@ export interface LiveFragmentFindings {
   wouldRename: number;
   /** Matches that stay live under their name (`exempt`). */
   exempt: number;
+  /** v2: takedowns that would ask Knox to re-read their source line (`sentence_end` fragments). */
+  wouldRequestReread: number;
   exemptByReason: Record<LiveFragmentExemptReason, number>;
   takedownByReason: Record<LiveFragmentTakedownReason, number>;
   byPattern: PatternCounts;
@@ -143,6 +171,8 @@ export interface LiveFragmentResult extends LiveFragmentFindings {
   takenDown: number[];
   /** Live fees renamed in this step (switch on, not a dry run). */
   renamed: number[];
+  /** Live fees taken down in this step whose re-read request reached `pipeline_feedback`. */
+  rereadRequested: number[];
   /** The read of live names outside the batch failed: duplicates are checked within the batch only and nothing is renamed. */
   duplicateCheckFailed: boolean;
 }
@@ -172,7 +202,7 @@ export function liveFragmentVerdict(
   }
   if (pattern === "pronoun" || pattern === "sentence_end") {
     const head = gluedSentenceHead(current);
-    if (head && amount != null && amount > 0 && !waived && liveFragmentName(head) == null) {
+    if (head && amount != null && amount > 0 && !waived && !LIVE_FRAGMENT_OPENING_DEPOSIT.test(current) && liveFragmentName(head) == null) {
       // Knox's rename bar: a name the category guard accepted must still be accepted once cleaned.
       const guardOk = canonicalFeeKey == null || !checkFeeCategory(canonicalFeeKey, current).ok || checkFeeCategory(canonicalFeeKey, head).ok;
       if (guardOk) return { pattern, action: "rename", renameTo: head };
@@ -227,6 +257,7 @@ export function findLiveFragments(rows: LiveFragmentRow[], liveNames: ReadonlySe
     byAction[action][verdict.pattern] += 1;
     if (verdict.exemptReason) exemptByReason[verdict.exemptReason] += 1;
     if (takedownReason) takedownByReason[takedownReason] += 1;
+    const rereadRequest = takedownReason === "fragment" && verdict.pattern === "sentence_end";
     const sample: LiveFragmentSample = {
       feePublishedId: Number(row.fee_published_id),
       feeVerifiedId: num(row.fee_verified_id),
@@ -239,6 +270,7 @@ export function findLiveFragments(rows: LiveFragmentRow[], liveNames: ReadonlySe
       ...(verdict.renameTo ? { renameTo: verdict.renameTo } : {}),
       ...(verdict.exemptReason ? { exemptReason: verdict.exemptReason } : {}),
       ...(takedownReason ? { takedownReason } : {}),
+      ...(rereadRequest ? { rereadRequest } : {}),
     };
     matches.push(sample);
     if (samplesByAction[action].length < LIVE_FRAGMENT_SAMPLES) samplesByAction[action].push(sample);
@@ -251,6 +283,7 @@ export function findLiveFragments(rows: LiveFragmentRow[], liveNames: ReadonlySe
     wouldTakeDown: count("takedown"),
     wouldRename: count("rename"),
     exempt: count("exempt"),
+    wouldRequestReread: matches.filter((fee) => fee.rereadRequest).length,
     exemptByReason,
     takedownByReason,
     byPattern,
@@ -329,6 +362,7 @@ export async function recheckLiveFragmentNames(
     nextAfterId: null,
     takenDown: [],
     renamed: [],
+    rereadRequested: [],
     duplicateCheckFailed: false,
   };
   let rows: LiveFragmentRow[];
@@ -474,6 +508,11 @@ export async function recheckLiveFragmentNames(
       }
     }
   }
+  if (result.takenDown.length > 0) {
+    // v2 (#1499): each `sentence_end` fragment taken down asks Knox to re-read its line.
+    const down = new Set(result.takenDown);
+    result.rereadRequested = await requestKnoxRereads(db, takedowns.filter((fee) => fee.rereadRequest && down.has(fee.feePublishedId)), options.runId);
+  }
   if (result.takenDown.length > 0 || result.renamed.length > 0) invalidatePublicReadCache();
 
   // The step's report, which also carries the cursor for the next step. A dry run writes nothing.
@@ -483,7 +522,7 @@ export async function recheckLiveFragmentNames(
         INSERT INTO agent_run_events (agent_run_id, step_id, event_type, status, message, detail)
         VALUES (
           ${options.runId}, ${options.stepId ?? null}, ${LIVE_FRAGMENT_CHECK}, 'completed',
-          ${`Read ${result.checked} live fee name(s): ${result.matched} fragment shape(s), ${result.wouldTakeDown} takedown, ${result.wouldRename} rename, ${result.exempt} exempt; ${live ? `${result.takenDown.length} archived, ${result.renamed.length} renamed` : "switch off, nothing written"}`},
+          ${`Read ${result.checked} live fee name(s): ${result.matched} fragment shape(s), ${result.wouldTakeDown} takedown, ${result.wouldRename} rename, ${result.exempt} exempt; ${live ? `${result.takenDown.length} archived, ${result.renamed.length} renamed, ${result.rereadRequested.length} re-read request(s) to Knox` : "switch off, nothing written"}`},
           ${JSON.stringify(liveFragmentDetail(result))}::jsonb
         )
       `);
@@ -492,6 +531,59 @@ export async function recheckLiveFragmentNames(
     }
   }
   return result;
+}
+
+/**
+ * v2 (#1499): one `pipeline_feedback` row per `sentence_end` fragment taken down, asking Knox to
+ * read its source line again (kind `LIVE_FRAGMENT_REREAD_KIND`, about Knox's extract, reported by
+ * Darwin, one row per live fee). The raw row and its document come from the verified row the
+ * live fee came from. Returns the fees written; a failure writes none and never undoes the takedown.
+ */
+async function requestKnoxRereads(db: SqlTag, fees: LiveFragmentSample[], runId: number): Promise<number[]> {
+  if (fees.length === 0) return [];
+  try {
+    return await inSavepoint(db, async (scope) => {
+      const verifiedIds = fees.map((fee) => fee.feeVerifiedId).filter((id): id is number => id != null);
+      const lineage = verifiedIds.length === 0 ? [] : await scope<{ fee_verified_id: number | string; fee_raw_id: number | string | null; source_document_id: number | string | null }[]>`
+        SELECT fv.fee_verified_id, fv.fee_raw_id, fr.source_document_id
+          FROM verified_fee_observations fv
+          LEFT JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
+         WHERE fv.fee_verified_id = ANY(${verifiedIds}::bigint[])
+      `;
+      const byVerified = new Map(lineage.map((row) => [Number(row.fee_verified_id), row]));
+      const rows: FeedbackRow[] = fees.map((fee) => {
+        const line = fee.feeVerifiedId == null ? undefined : byVerified.get(fee.feeVerifiedId);
+        return {
+          aboutStage: "extract",
+          signal: "wrong",
+          kind: LIVE_FRAGMENT_REREAD_KIND,
+          reportedBy: "darwin",
+          checkName: LIVE_FRAGMENT_CHECK,
+          institutionId: fee.institutionId,
+          sourceDocumentId: num(line?.source_document_id),
+          feeRawId: num(line?.fee_raw_id),
+          feeVerifiedId: fee.feeVerifiedId,
+          feePublishedId: fee.feePublishedId,
+          canonicalFeeKey: fee.canonicalFeeKey,
+          amount: fee.amount,
+          evidence: {
+            request: "reread_source_line",
+            fee_name: fee.feeName,
+            reason: liveFragmentReason(fee.pattern, fee.takedownReason),
+            strategy_version: LIVE_FRAGMENT_STRATEGY.version,
+            consumer: "none yet: no Knox pass reads this kind (#1499)",
+          },
+          runId,
+          dedupeKey: `${LIVE_FRAGMENT_CHECK}:reread:pub:${fee.feePublishedId}`,
+        };
+      });
+      await recordFeedback(scope, rows);
+      return fees.map((fee) => fee.feePublishedId);
+    });
+  } catch (error) {
+    console.error("[darwin] live fragment re-read request failed", error instanceof Error ? error.message : error);
+    return [];
+  }
 }
 
 function sampleDetail(fee: LiveFragmentSample) {
@@ -505,6 +597,7 @@ function sampleDetail(fee: LiveFragmentSample) {
     ...(fee.renameTo ? { rename_to: fee.renameTo } : {}),
     ...(fee.exemptReason ? { exempt_reason: fee.exemptReason } : {}),
     ...(fee.takedownReason ? { takedown_reason: fee.takedownReason } : {}),
+    ...(fee.rereadRequest ? { reread_request: true } : {}),
   };
 }
 
@@ -516,6 +609,7 @@ export function liveFragmentFindingsDetail(found: LiveFragmentFindings) {
     would_take_down: found.wouldTakeDown,
     would_rename: found.wouldRename,
     exempt: found.exempt,
+    would_request_reread: found.wouldRequestReread,
     exempt_by_reason: found.exemptByReason,
     takedown_by_reason: found.takedownByReason,
     by_pattern: found.byPattern,
@@ -542,6 +636,7 @@ export function liveFragmentDetail(result: LiveFragmentResult) {
     ...liveFragmentFindingsDetail(result),
     taken_down: result.takenDown.length,
     renamed: result.renamed.length,
+    reread_requested: result.rereadRequested.length,
     duplicate_check_failed: result.duplicateCheckFailed,
   };
 }
@@ -567,11 +662,16 @@ function postgresPattern(re: RegExp): string {
  * the step finds a duplicate rename only inside its batch of fees or against names already live,
  * so two renames onto the same name in different batches are both renames in the ledger but one
  * rename and one `rename_duplicate` here. The trailing range's optional leading separators
- * (`[\s\-–—|:,]*`) never change whether it matches, so the SQL leaves them out.
+ * (`[\s\-–—|:,]*`) never change whether it matches, so the SQL leaves them out. v2 (#1499): the
+ * glued footnote number or "To request" is dropped (`glued_lead_strip`) before the head is read,
+ * the new head bars ride in `glued_head_bars` and the opening-deposit wording blocks a rename, all
+ * from the same regexes; the re-read requests to Knox are the `takedown` / `fragment` /
+ * `sentence_end` row (the step's `would_request_reread`).
  */
 export function liveFragmentCountSql(): string {
   const re = LIVE_FRAGMENT_REGEXES;
   const waive = postgresPattern(LIVE_FRAGMENT_WAIVE_WORDING);
+  const deposit = postgresPattern(LIVE_FRAGMENT_OPENING_DEPOSIT);
   const bars = re.glued_head_bars.map((bar) => `head !~${bar.flags.includes("i") ? "*" : ""} '${postgresPattern(bar)}'`).join(" AND ");
   return `WITH live AS (
   SELECT fee_published_id, institution_id, canonical_fee_key, amount,
@@ -586,13 +686,13 @@ export function liveFragmentCountSql(): string {
     WHEN name ~* '${postgresPattern(re.pronoun)}' THEN 'pronoun'
   END AS pattern,
   btrim(regexp_replace(regexp_replace(name, '${postgresPattern(re.parenthetical)}', ' ', 'g'), '\\s+', ' ', 'g')) AS outside,
-  substring(name from '${postgresPattern(re.glued_sentence)}') AS head
+  substring(regexp_replace(name, '${postgresPattern(re.glued_lead_strip)}', '') from '${postgresPattern(re.glued_sentence)}') AS head
   FROM live
 ), verdict AS (
   SELECT fee_published_id, institution_id, canonical_fee_key, amount, pattern, head, CASE
     WHEN pattern = 'pronoun' AND outside !~* '${postgresPattern(re.pronoun)}' THEN 'parenthetical'
     WHEN pattern = 'trailing_range' THEN CASE WHEN name ~* '${waive}' OR COALESCE(amount, -1) = 0 THEN 'fragment' ELSE 'trailing_range_priced' END
-    WHEN pattern IN ('pronoun', 'sentence_end') AND head IS NOT NULL AND COALESCE(amount, 0) > 0 AND name !~* '${waive}'
+    WHEN pattern IN ('pronoun', 'sentence_end') AND head IS NOT NULL AND COALESCE(amount, 0) > 0 AND name !~* '${waive}' AND name !~* '${deposit}'
          AND ${bars} THEN 'rename'
     ELSE 'fragment'
   END AS first_reason

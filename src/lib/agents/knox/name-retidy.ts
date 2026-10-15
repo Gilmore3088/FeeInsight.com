@@ -186,18 +186,29 @@ export function withoutParentheticals(name: string): string {
 /**
  * #1443: the words a fee's real name ends on, case-free ("Overdraft Fee", "Stop Payment",
  * "Returned Item"), for `gluedSentenceHead`. A name ending on any other word ("Dormant accounts
- * will be charged") is not a name with a sentence glued on.
+ * will be charged") is not a name with a sentence glued on. v2 (#1499) adds "ATM" ("ATM Withdrawal
+ * Service Charge at Non-BankFive ATM").
  */
 const anyCase = (pattern: string) => pattern.replace(/[a-z]/g, (letter) => `[${letter.toUpperCase()}${letter}]`);
 const GLUED_HEAD_ENDINGS = [
   "fees?", "charges?", "penalty", "payments?", "transfers?", "items?", "checks?", "statements?", "cards?", "orders?",
-  "overdrafts?", "nsf", "research", "cop(?:y|ies)", "withdrawals?", "deposits?", "wires?", "drafts?",
+  "overdrafts?", "nsf", "research", "cop(?:y|ies)", "withdrawals?", "deposits?", "wires?", "drafts?", "atms?",
 ].map(anyCase);
+/** v2 (#1499): the endings a lower-case condition may follow ("Monthly maintenance fee if the balance falls below"). */
+const GLUED_FEE_ENDINGS = ["fees?", "charges?"].map(anyCase);
 /** The words a glued sentence opens with: a capitalised sentence start, or a lower-case "you", "we" or "will". */
 const GLUED_SENTENCE_STARTS = [
   "You", "YOU", "you", "Your", "YOUR", "your", "We", "WE", "we", "This", "THIS", "These", "If", "IF", "When", "WHEN",
   "It", "There", "Our", "Any", "Each", "Will", "WILL", "will", "The", "THE", "Please", "Note",
 ];
+/** v2 (#1499): the price's own lead-in opens the sentence ("... Garnishment Fee A fee of", "The fee", "the charge"). */
+const GLUED_FEE_LEAD = String.raw`(?:[Aa]n?|AN?|[Tt]he|THE)\s+(?:(?:${["monthly", "service", "annual"].map(anyCase).join("|")})\s+)?(?:${GLUED_FEE_ENDINGS.join("|")})`;
+/**
+ * v2 (#1499): a named subject and a modal verb open the sentence ("... at Non-BankFive ATM BankFive
+ * may impose a"). The subject is never a word a name ends on ("Returned Item Fee may be charged"
+ * stays whole, and so has no head).
+ */
+const GLUED_SUBJECT_MODAL = String.raw`(?!(?:${GLUED_HEAD_ENDINGS.join("|")})\b)[A-Z][A-Za-z0-9&'’-]*\s+(?:may|MAY|will|WILL|can|CAN|might|must|MUST)`;
 /** Words a head never holds, in any case: whose fee it is ("Checks Your order") is the sentence, not the name. */
 const GLUED_HEAD_PERSON = ["you", "your", "we", "our"].map(anyCase);
 /**
@@ -206,25 +217,73 @@ const GLUED_HEAD_PERSON = ["you", "your", "we", "our"].map(anyCase);
  * Fee"), so it bars a head only when the rest is fee nouns ("Second Item", in GLUED_GENERIC_WORDS).
  */
 const GLUED_HEAD_LEADS = ["a", "an", "any", "each", "every"].map(anyCase).concat(String.raw`\d+(?:[Ss][Tt]|[Nn][Dd]|[Rr][Dd]|[Tt][Hh])`);
-/** One word of a head: no sentence or cell break in it, and never a sentence start or a person. */
-const GLUED_WORD = String.raw`(?!(?:${[...GLUED_SENTENCE_STARTS, ...GLUED_HEAD_PERSON].join("|")})\b)[^\s.:|;()]+`;
+/**
+ * One word of a head: no sentence or cell break in it, and never a sentence start, a person, a
+ * lower-case "if" or "when", the price's lead-in or a subject with a modal verb. v2 (#1499): a
+ * balanced parenthetical is one word ("Returned/Non-Sufficient Funds (NSF) fee").
+ */
+const GLUED_WORD = String.raw`(?!(?:${[...GLUED_SENTENCE_STARTS, ...GLUED_HEAD_PERSON, "if", "when"].join("|")})\b|${GLUED_FEE_LEAD}\b|${GLUED_SUBJECT_MODAL}\b)(?:\([^()]*\)|[^\s.:|;()]+)`;
 const GLUED_HEAD_MAX_WORDS = 8;
+/** A cell or sentence break between the name and the sentence, or a plain space. */
+const GLUED_CELL_BREAK = String.raw`\s*[|:.;–—-]\s*`;
+const GLUED_BREAK = String.raw`(?:${GLUED_CELL_BREAK}|\s+)`;
+/** What opens the glued sentence: a sentence start, the price's lead-in, or a subject and a modal verb. */
+const GLUED_TERMINATOR = String.raw`(?:${GLUED_SENTENCE_STARTS.join("|")}|${GLUED_FEE_LEAD}|${GLUED_SUBJECT_MODAL})\b`;
 /**
  * A real fee name of 2 to 8 words (capital or digit first, ending on a fee word) followed by a
  * sentence: "Overdraft Fee You will be charged when ...", "Inactive fee: This account may be
  * subject to an Inactive fee of". No head word is a sentence start, so the name ends just before
  * the first one and the split is the same whichever way a regex engine prefers to match (the
- * count SQL runs it in Postgres). Case-sensitive so a lower-case "if" or "the" (a condition, "Wire
- * Fee if you request") never splits a name.
+ * count SQL runs it in Postgres). Case-sensitive so a capitalised sentence start splits and a
+ * lower-case "the" inside a name does not. The match is the head alone (group 1); what follows
+ * is read by lookahead, which Postgres supports (it has no lookbehind).
+ *
+ * v2 (#1499) widens the split for `sentence_end` names, most of which were real fees:
+ * - the head's last fee word may carry a parenthetical when a cell or sentence break follows it
+ *   ("... fee (per item). This fee applies to"; "Paper Statement (monthly) you will" has no head);
+ * - the sentence may open with the price's lead-in ("... Garnishment Fee A fee of") or a named
+ *   subject and a modal verb ("... ATM BankFive may impose a");
+ * - a name ending on "fee" or "charge" splits at a lower-case "if" or "when" whose condition names
+ *   no person ("Monthly maintenance fee if the average daily balance falls below"). A condition on
+ *   the customer ("Wire Fee if you request") still has no head, as in v1.
  */
 const GLUED_SENTENCE = new RegExp(
-  String.raw`^((?!(?:${GLUED_HEAD_LEADS.join("|")})\b)(?=[A-Z0-9])${GLUED_WORD}(?:\s+${GLUED_WORD}){0,${GLUED_HEAD_MAX_WORDS - 2}}\s+(?:${GLUED_HEAD_ENDINGS.join("|")}))(?:\s*[|:.;–—-]\s*|\s+)(?:${GLUED_SENTENCE_STARTS.join("|")})\b`,
+  String.raw`^((?!(?:${GLUED_HEAD_LEADS.join("|")})\b)(?=[A-Z0-9])${GLUED_WORD}(?:\s+${GLUED_WORD}){0,${GLUED_HEAD_MAX_WORDS - 2}}\s+` +
+    String.raw`(?:(?:${GLUED_FEE_ENDINGS.join("|")})(?=\s+(?:if|when)\b(?!.*\b(?:you|your|we|our)\b))` +
+    String.raw`|(?:${GLUED_HEAD_ENDINGS.join("|")})(?:\s+\([^()]*\)(?=${GLUED_CELL_BREAK}${GLUED_TERMINATOR})|(?=${GLUED_BREAK}${GLUED_TERMINATOR}))))`,
 );
+/**
+ * v2 (#1499): marks glued to the front of a name, dropped before the head is read: a footnote
+ * number on a capitalised word ("10NON-MEMBER LOAN APPLICATION FEE", "6A monthly fee", which then
+ * opens on an article and has no head), never an ordinal or a time ("1ST", "24HR", "24 Hour",
+ * "2nd", "1099"); and a leading "To request " when a capitalised name follows ("To request
+ * Overnight/2-day shipping of a debit card"). What is left must still pass every bar.
+ */
+const GLUED_LEAD_STRIP = /^(?:\d{1,2}(?!(?:ST|ND|RD|TH|HRS?|HOURS?|DAYS?|MOS?|YRS?)\b)(?=[A-Z]{2}|A\s+[a-z])|To\s+request\s+(?=[A-Z0-9]))/;
 /** Fee nouns and joining words: a head made only of these ("Fee Per Item") names no fee. */
 const GLUED_GENERIC_WORDS = ["fees?", "charges?", "items?", "per", "payments?", "each", "a", "an", "the", "of", "for", "and", "or", "services?", "transactions?", "first", "second", "third", "fourth", "fifth"];
 const GLUED_GENERIC_ONLY = new RegExp(String.raw`^(?:${GLUED_GENERIC_WORDS.join("|")})(?:\s+(?:${GLUED_GENERIC_WORDS.join("|")}))*$`, "i");
-/** The head is no name when it is itself a sentence, a condition, or fee nouns alone. */
-const GLUED_HEAD_BARS = [LIVE_PRONOUN, SENTENCE_VERB, CONDITION_CLAUSE, GLUED_GENERIC_ONLY] as const;
+/**
+ * v2 (#1499): an account, a period or "other" and fee words alone name no fee ("Account Fees",
+ * "Monthly Fee", "Quarterly fee", "Additional fees", "Other Charges"); "Monthly Service Fee" and
+ * "Monthly maintenance fee" still do.
+ */
+const GLUED_ACCOUNT_WORDS = ["accounts?", "monthly", "quarterly", "annual(?:ly)?", "additional", "other", "misc(?:ellaneous)?", "fees?", "charges?", "per", "each", "a", "an", "the", "of", "for", "and", "or", "&"];
+const GLUED_ACCOUNT_GENERIC = new RegExp(String.raw`^(?:${GLUED_ACCOUNT_WORDS.join("|")})(?:\s+(?:${GLUED_ACCOUNT_WORDS.join("|")}))*$`, "i");
+/**
+ * v2 (#1499): a clause, not a name: who pays ("Customers who opt to receive paper statements"),
+ * another bank's charge ("Bank sending the wire"), a condition ("No matter how many drafts", "To
+ * request ...", "All ...").
+ */
+const GLUED_CLAUSE_HEAD = /^(?:customers?|no\s+matter|to\s+request|all)\b|\b(?:who|sending|receiving)\b/i;
+/**
+ * v2 (#1499): a list of services that does not end on "fee", "charge" or "penalty" is a section
+ * heading, not a fee ("ATM & Visa Debit Card", "ATM5, Telephone Banking and Bill Payment");
+ * "Legal Attachments, Levies, and Garnishment Fee" is a name.
+ */
+const GLUED_SERVICE_LIST = /^(?=.*(?:&|\band\b))(?!.*\b(?:fees?|charges?|penalty)(?:\s+\([^()]*\))?$)/i;
+/** The head is no name when it is itself a sentence, a condition, a clause, a heading or generic words alone. */
+const GLUED_HEAD_BARS = [LIVE_PRONOUN, SENTENCE_VERB, CONDITION_CLAUSE, GLUED_GENERIC_ONLY, GLUED_ACCOUNT_GENERIC, GLUED_CLAUSE_HEAD, GLUED_SERVICE_LIST] as const;
 
 /**
  * #1443: the real fee name a live fragment opens with, when the rest is a sentence glued on
@@ -232,7 +291,7 @@ const GLUED_HEAD_BARS = [LIVE_PRONOUN, SENTENCE_VERB, CONDITION_CLAUSE, GLUED_GE
  * no such name. Pure; the caller decides whether the fee is renamed (amount, waiver wording).
  */
 export function gluedSentenceHead(name: string | null | undefined): string | null {
-  const current = (name ?? "").replace(/\s+/g, " ").trim();
+  const current = (name ?? "").replace(/\s+/g, " ").trim().replace(GLUED_LEAD_STRIP, "");
   const match = current.match(GLUED_SENTENCE);
   if (!match) return null;
   const head = match[1];
@@ -249,6 +308,7 @@ export const LIVE_FRAGMENT_REGEXES = {
   sentence_end_article: LIVE_SENTENCE_END_ARTICLE,
   pronoun: LIVE_PRONOUN,
   parenthetical: PARENTHETICAL,
+  glued_lead_strip: GLUED_LEAD_STRIP,
   glued_sentence: GLUED_SENTENCE,
   glued_head_bars: GLUED_HEAD_BARS,
 } as const;

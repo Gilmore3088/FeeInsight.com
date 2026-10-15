@@ -225,6 +225,38 @@ Darwin owns verification and classification.
   `takedown_by_reason`, `by_pattern`, `by_action` (pattern counts per action),
   `samples_by_action` (up to 20 of each, with `rename_to`, `exempt_reason` or `takedown_reason`)
   and `samples_rename_duplicate`.
+  v2 (#1499, `LIVE_FRAGMENT_STRATEGY` v2, after a prod hand-check of v1 found generic and clause
+  heads renamed and most of the 431 `sentence_end` takedowns real fees; still in shadow):
+  - Generic heads are no name: an account, a period, "additional", "other" or "misc" and fee
+    words alone ("Account Fees", "Monthly Fee", "Quarterly fee", "Additional fees"); "Monthly
+    Service Fee" and "Monthly maintenance fee" still are. A list of services that does not end on
+    "fee", "charge" or "penalty" is a heading ("ATM & Visa Debit Card").
+  - Clause heads are no name: opening with "Customers", "No matter", "To request" or "All", or
+    holding "who", "sending" or "receiving" ("Bank sending the wire", another bank's charge).
+  - A footnote number glued to a capitalised word is dropped before the head is read
+    ("10NON-MEMBER LOAN APPLICATION FEE"; "6A monthly fee" then opens on an article and has no
+    head), never an ordinal or a time ("1ST", "24HR"); so is a leading "To request " before a
+    capitalised name, which must then pass every bar.
+  - A name that speaks of a minimum or opening deposit is never renamed
+    (`LIVE_FRAGMENT_OPENING_DEPOSIT`: its price is the deposit).
+  - The split is wider for `sentence_end` names: the last fee word may carry a parenthetical
+    before a cell or sentence break ("Returned/Non-Sufficient Funds (NSF) fee (per item). This fee
+    applies to"); the sentence may open with the price's lead-in ("A fee of", "The fee", "the
+    charge") or a named subject and a modal verb ("... Non-BankFive ATM BankFive may impose a";
+    "ATM" now ends a name); and a name ending on "fee" or "charge" splits at a lower-case "if" or
+    "when" whose condition names no person ("Monthly maintenance fee if the average daily balance
+    falls below"; "Wire Fee if you request" still has no head). Waiver and discount lines still
+    come down.
+  - Re-read request: with the switch on, each `takedown` / `fragment` / `sentence_end` fee also
+    gets a `pipeline_feedback` row of kind `knox_reread_requested` (`LIVE_FRAGMENT_REREAD_KIND`;
+    signal `wrong`, about stage `extract`, reported by `darwin`, check `darwin.live_fragment_check`,
+    dedupe key `darwin.live_fragment_check:reread:pub:<id>`, with the raw row and document from the
+    fee's verified row and evidence `request: reread_source_line`), so the real fee can come back
+    under a proper name. Knox does not consume this kind yet: no Knox pass reads it and nothing
+    re-reads the line today; the row records the request until a Knox reader is built (#1499).
+    Step detail `would_request_reread` (also in shadow) and `reread_requested` (written); a failed
+    request never undoes the takedown. `liveFragmentCountSql()` applies the same strip, bars and
+    deposit wording; its `takedown` / `fragment` / `sentence_end` row is the re-read count.
 - Released-fee category re-check (`release-repair.ts`, the repair half of #1367; decision
   2026-10-15, "Darwin re-checks every live fee against today's rules"). Until PR #1468 the release
   check passed "." as the category pattern, so every fee the release published before then went live
@@ -671,7 +703,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `DARWIN_SCHEDULE_REFILE_STRATEGY` | `verify.schedule_refile` | v1 | `darwin/schedule-refile.ts` |
 | `DARWIN_VERDICT_SCORE_STRATEGY` | `verify.verdict_score` | v1 | `darwin/verdict-score.ts` |
 | `DARWIN_RECHECK_STRATEGY` | `verify.recheck` | v3 | `darwin/verified-recheck.ts` |
-| `LIVE_FRAGMENT_STRATEGY` | `darwin.live_fragment_check` | v1 | `darwin/live-fragment-check.ts` |
+| `LIVE_FRAGMENT_STRATEGY` | `darwin.live_fragment_check` | v2 | `darwin/live-fragment-check.ts` |
 | `DOCUMENT_OWNER_STRATEGY` | `verify.document_owner` | v1 | `darwin/document-owner.ts` |
 | `DARWIN_VERIFY_STRATEGY` | `verify.rules` | v3 | `darwin/verify.ts` |
 | `DARWIN_SOURCE_CHECK_VERSION` | — | v2 | `darwin/verify.ts` |
