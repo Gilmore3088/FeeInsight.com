@@ -7,7 +7,8 @@ import { linkPreview } from "@/lib/link-preview";
 import { benchmarkBasis, COVERAGE_LABELS, getPublicSnapshot, type PublicStatsSummary } from "@/lib/public-stats";
 import type { FeeCategorySummary } from "@/lib/data-store/fees";
 import { getDisplayName } from "@/lib/fee-taxonomy";
-import { PRODUCT_NAME, REPORT_PRICE_INLINE } from "@/lib/constants";
+import { PRODUCT_NAME, REPORT_PRICE_INLINE, SITE_NAME } from "@/lib/constants";
+import { MIN_INSTITUTIONS_FOR_MEDIAN } from "@/lib/data-store/maturity";
 import { annualMonthsFree, CONSULTANT_PRICE_NOTE, PRO_TIERS, tierPriceLabel } from "@/lib/pro-tiers";
 import { WORKSPACE_SEAT_LIMIT } from "@/lib/hamilton/workspace-seats";
 import { loadSampleReport, sampleReportAvailable } from "@/lib/custom-report/sample-report";
@@ -19,10 +20,9 @@ import { SearchModal } from "@/components/public/search-modal";
 import { TrackLink } from "@/components/track-link";
 import { hasUnstatedAudience, UnstatedAudienceFootnote } from "@/components/unstated-audience";
 import { PRIMARY_CTA_NAV, PRO_PLANS_NAV } from "@/components/nav-items";
-import { ReportOfferSection, SampleExcerpt } from "./report-offer";
+import { reportFormHref, ReportOfferSection, SampleExcerpt } from "./report-offer";
 import { HAMILTON_TABS } from "./hamilton-copy";
 
-const REPORT_ANCHOR = "#report";
 const DEMO_HREF = "/contact?source=demo";
 /** The hero's live figure: the national overdraft benchmark (site v3 brief 03, Q9). */
 const HERO_CATEGORY = "overdraft";
@@ -43,7 +43,12 @@ export const metadata: Metadata = {
 const EYEBROW = "text-[11px] font-bold uppercase tracking-[0.12em] text-ink-muted";
 const TEXT_LINK = "font-semibold text-ink underline underline-offset-2 hover:text-ink-soft";
 
-export default async function ForInstitutionsPage() {
+export default async function ForInstitutionsPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const query = await searchParams;
   const [snapshot, sampleLive, sample] = await Promise.all([
     getPublicSnapshot(),
     sampleReportAvailable(),
@@ -61,10 +66,10 @@ export default async function ForInstitutionsPage() {
         <EveryFeeSection sample={sampleLive ? sample : null} />
         <EveryMarketSection />
         <HamiltonSection />
-        <ReportOfferSection sampleLive={sampleLive} />
+        <ReportOfferSection sampleLive={sampleLive} query={query} />
         <ClosingBand />
       </main>
-      <CustomerFooter />
+      <CustomerFooter sampleReport={sampleLive} />
       <SearchModal />
     </div>
   );
@@ -83,7 +88,7 @@ function Hero({ summary, category }: { summary: PublicStatsSummary; category: Fe
           <p className="mt-5 max-w-xl text-[17px] leading-relaxed text-ink-soft">
             The {PRODUCT_NAME} reads the published fee schedules of U.S. banks and credit unions. See each of your
             fees against your market, your state, your Fed district, your peer group and the nation, then let
-            Hamilton write it up.
+            Hamilton, the {SITE_NAME} Pro workspace, write it up.
           </p>
           <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center">
             <Link
@@ -237,7 +242,7 @@ function EveryMarketSection() {
             Each of your fees sits against your market (institutions with branches in your counties), your state,
             your Fed district, your peer group (same charter and asset size, nationwide) and the nation. You see the
             median, the middle half and who charges $0, and whether your fee is above, inside or below the range. A
-            market with fewer than five institutions is marked thin and gets no median.
+            market with fewer than {MIN_INSTITUTIONS_FOR_MEDIAN} institutions is marked thin and gets no median.
           </p>
           <ul className="mt-6 space-y-2 text-[14px]">
             <li>
@@ -341,7 +346,7 @@ function HamiltonSection() {
             <TrackLink
               event="request_report_click"
               eventProps={{ placement: "for_institutions_hamilton" }}
-              href={REPORT_ANCHOR}
+              href={reportFormHref()}
               className={TEXT_LINK}
             >
               Competitive Fee Position Report

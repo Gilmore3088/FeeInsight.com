@@ -11,6 +11,7 @@ import { SearchModal } from "@/components/public/search-modal";
 import { LandingHero } from "./landing-hero";
 import { LandingProof } from "./landing-proof";
 import { LandingEveryFee, LandingEveryMarket, LandingOneWorkspace } from "./landing-pillars";
+import { LandingFeePath, LandingFiveSources, LandingHowToStart } from "./landing-explainers";
 import { LandingPricing } from "./landing-pricing";
 import { LandingFaq } from "./landing-faq";
 import { LandingClose } from "./landing-close";
@@ -80,14 +81,17 @@ export default async function LandingPage() {
       <main id="main-content">
         <LandingHero summary={summary} overdraft={overdraft} sampleLive={sampleLive} />
         <LandingProof summary={summary} />
+        <LandingFiveSources />
         <LandingEveryFee categories={categories} summary={summary} />
         <LandingEveryMarket overdraft={overdraft} summary={summary} />
         <LandingOneWorkspace />
+        <LandingFeePath summary={summary} />
         <LandingPricing />
+        <LandingHowToStart />
         <LandingFaq summary={summary} />
         <LandingClose />
       </main>
-      <CustomerFooter />
+      <CustomerFooter sampleReport={sampleLive} />
       <SearchModal />
     </div>
   );

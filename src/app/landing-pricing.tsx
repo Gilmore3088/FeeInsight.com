@@ -46,7 +46,7 @@ export function LandingPricing() {
               One plan for up to {WORKSPACE_SEAT_LIMIT} people. Annual is {ANNUAL_PAYMENTS} monthly payments.
             </p>
             <p className="mt-2 flex-1 text-[12px] leading-5 text-ink-muted">{CONSULTANT_PRICE_NOTE}</p>
-            <Link href="/subscribe" className="fi-btn fi-btn-primary mt-6 self-start">
+            <Link href="/subscribe" className="fi-btn fi-btn-secondary mt-6 self-start">
               See Hamilton plans
             </Link>
           </div>

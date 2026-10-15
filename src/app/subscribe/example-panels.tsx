@@ -70,7 +70,7 @@ export function ReportPreview() {
       </div>
       <div className="mt-auto flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-t border-border/80 bg-white/50 px-4 py-2.5 text-xs text-ink-muted sm:px-5">
         <span>A Competitive Fee Position report, as delivered.</span>
-        <Link href={SAMPLE_HREF} className="inline-flex min-h-11 items-center font-medium text-brick underline underline-offset-2">
+        <Link href={SAMPLE_HREF} className="inline-flex min-h-11 items-center font-medium text-ink underline underline-offset-2">
           Open the sample report
         </Link>
       </div>

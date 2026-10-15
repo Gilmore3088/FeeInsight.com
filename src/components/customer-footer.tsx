@@ -48,7 +48,20 @@ export const FOOTER_COLUMNS: readonly { heading: string; links: readonly { label
 const FOOTER_LINK_CLASS = "text-ink-muted hover:text-ink transition-colors";
 const FOOTER_HEADING_CLASS = "text-[11px] font-bold uppercase tracking-[0.12em] text-ink-muted mb-3";
 
-export function CustomerFooter() {
+/**
+ * The live sample report's Product link (05 §3). The footer can't read the sample itself, so a page
+ * that already knows sampleReportAvailable() passes it; elsewhere the link stays out.
+ */
+export const SAMPLE_REPORT_FOOTER_LINK = { label: "Sample report", href: "/reports/sample-competitive-fee-position" } as const;
+
+export function CustomerFooter({ sampleReport = false }: { sampleReport?: boolean } = {}) {
+  const columns = sampleReport
+    ? FOOTER_COLUMNS.map((column) =>
+        column.heading === "Product"
+          ? { ...column, links: column.links.flatMap((link) => (link.href === "/reports" ? [link, SAMPLE_REPORT_FOOTER_LINK] : [link])) }
+          : column,
+      )
+    : FOOTER_COLUMNS;
   return (
     <footer className="border-t border-border bg-surface-0">
       <div className="mx-auto max-w-page px-6 py-12 lg:py-14">
@@ -67,7 +80,7 @@ export function CustomerFooter() {
             </div>
           </div>
 
-          {FOOTER_COLUMNS.map((column) => (
+          {columns.map((column) => (
             <div key={column.heading}>
               <p className={FOOTER_HEADING_CLASS}>{column.heading}</p>
               <ul className="space-y-2 text-[13px]">

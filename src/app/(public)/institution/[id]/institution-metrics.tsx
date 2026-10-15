@@ -96,9 +96,9 @@ export function InstitutionOfferBand({
             <p>
               {isPro
                 ? `Work at ${institutionName}? Put every fee in a board-ready report.`
-                : `Work at ${institutionName}? See every fee against your peers, every month, in Hamilton.`}
+                : `Work at ${institutionName}? See every fee against your competitors in Hamilton.`}
             </p>
-            <InfoTip label={isPro ? "About the report" : "About Fee Insight Pro"}>
+            <InfoTip label={isPro ? "About the report" : "About Hamilton"}>
               {isPro ? (
                 <>
                   The {COMPETITIVE_FEE_POSITION_REPORT.name}: every fee on this page benchmarked against a
@@ -118,7 +118,7 @@ export function InstitutionOfferBand({
           {isPro ? (
             <Link
               href={reportOfferHref}
-              className="inline-flex items-center gap-2 rounded-md bg-brick px-3.5 py-2 text-sm font-semibold text-white transition-colors hover:bg-brick-ink"
+              className="inline-flex items-center gap-2 rounded-md bg-ink px-3.5 py-2 text-sm font-semibold text-on-ink transition-opacity hover:opacity-90"
             >
               Request the report
               <ArrowRight className="h-4 w-4" />
@@ -127,7 +127,7 @@ export function InstitutionOfferBand({
             <>
               <Link
                 href={PRO_PLANS_HREF}
-                className="inline-flex items-center gap-2 rounded-md bg-brick px-3.5 py-2 text-sm font-semibold text-white transition-colors hover:bg-brick-ink"
+                className="inline-flex items-center gap-2 rounded-md bg-ink px-3.5 py-2 text-sm font-semibold text-on-ink transition-opacity hover:opacity-90"
               >
                 See Hamilton plans
                 <ArrowRight className="h-4 w-4" />

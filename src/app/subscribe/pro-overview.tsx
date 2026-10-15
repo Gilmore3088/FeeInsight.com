@@ -56,7 +56,7 @@ export function WirePreview({ lead }: { lead: WirePreviewLead | null }) {
     <figure className="overflow-hidden rounded-2xl bg-white/70 backdrop-blur-xl ring-1 ring-border/80 shadow-[0_8px_32px_-12px_rgba(26,24,21,0.22),inset_0_1px_0_rgba(255,255,255,0.7)]">
       <figcaption className="flex items-center justify-between gap-3 border-b border-border/80 bg-white/50 px-4 py-2.5">
         <span className="flex items-center gap-2 text-sm font-semibold text-ink">
-          <span aria-hidden className="h-2 w-2 rounded-full bg-brick" />
+          <span aria-hidden className="h-2 w-2 rounded-full bg-ink-muted" />
           Regulatory Wire
         </span>
         <span className="text-xs text-ink-muted">Federal releases and state bills</span>
@@ -92,7 +92,7 @@ export function WirePreview({ lead }: { lead: WirePreviewLead | null }) {
               href={lead.url}
               target="_blank"
               rel="noopener noreferrer"
-              className="mt-3 inline-flex min-h-11 items-center text-sm font-medium text-brick underline underline-offset-2"
+              className="mt-3 inline-flex min-h-11 items-center text-sm font-medium text-ink underline underline-offset-2"
             >
               Read the source<ArrowUpRight aria-hidden className="ml-0.5 h-3.5 w-3.5" />
             </a>

@@ -8,7 +8,6 @@ import { SectionHeading } from "./research-hero";
 /** Half-width of the shared % axis in the bank vs credit union chart. */
 const AXIS_PCT = 40;
 
-const SERIF = { fontFamily: "var(--fi-font-sans)" };
 const MONO_FIGURE = { fontFamily: "var(--fi-font-mono)" } as const;
 
 /** Consulting-style source line under every exhibit. */

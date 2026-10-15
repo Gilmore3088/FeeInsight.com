@@ -274,7 +274,6 @@ function GroupBadge({ group }: { group: FeeGroup }) {
 }
 
 const HEADER_CELL = "px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.1em] text-ink-muted";
-const SERIF_STYLE = { fontFamily: "var(--fi-font-sans)" } as const;
 const MONO_FIGURE = { fontFamily: "var(--fi-font-mono)" } as const;
 
 const FOCUSED_ROW = "border-l-2 border-l-brick bg-brick/[0.035]";

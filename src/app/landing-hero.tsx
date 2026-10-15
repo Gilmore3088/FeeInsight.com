@@ -20,6 +20,9 @@ interface LandingHeroProps {
   sampleLive: boolean;
 }
 
+/** The second-buyer line stays quiet: a plain underline, no weight, so the search is the one strong action. */
+const QUIET_LINK = "underline underline-offset-4 decoration-border hover:decoration-ink";
+
 /** Site v3 brief 08 §B.3, laid out as brief 04 Direction A: the promise, then the search. */
 export function LandingHero({ summary, overdraft, sampleLive }: LandingHeroProps) {
   const hasCount = /\d/.test(summary.institutionsLabel);
@@ -31,7 +34,7 @@ export function LandingHero({ summary, overdraft, sampleLive }: LandingHeroProps
 
   return (
     <section className="border-b border-border bg-paper">
-      <div className="mx-auto grid max-w-6xl gap-10 px-4 py-10 sm:px-6 sm:py-14 lg:grid-cols-[minmax(0,1.25fr)_minmax(0,0.75fr)] lg:items-center lg:gap-14">
+      <div className="mx-auto grid max-w-6xl gap-10 px-4 py-10 sm:px-6 sm:py-14 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)] lg:items-center lg:gap-14">
         <div className="min-w-0">
           <Eyebrow>The {PRODUCT_NAME}</Eyebrow>
           <h1
@@ -75,7 +78,7 @@ export function LandingHero({ summary, overdraft, sampleLive }: LandingHeroProps
             </p>
             <p>
               Prefer one document?{" "}
-              <Link href={REPORT_REQUEST_HREF} className={TEXT_LINK}>
+              <Link href={REPORT_REQUEST_HREF} className={QUIET_LINK}>
                 A {REPORT_OFFER.name} for your institution
               </Link>
               , {REPORT_PRICE_INLINE}.

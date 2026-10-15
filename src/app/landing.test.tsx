@@ -7,6 +7,7 @@ import { LandingHero } from "./landing-hero";
 import { LandingProof } from "./landing-proof";
 import { LandingEveryFee, LandingEveryMarket, LandingOneWorkspace } from "./landing-pillars";
 import { LandingPricing } from "./landing-pricing";
+import { LandingFeePath, LandingFiveSources, LandingHowToStart } from "./landing-explainers";
 import { LandingFaq } from "./landing-faq";
 import { LandingClose } from "./landing-close";
 import { nationalRange } from "./landing-shared";
@@ -80,13 +81,40 @@ describe("homepage (site v3, Direction A)", () => {
           <LandingProof summary={summary} />
           <LandingEveryFee categories={categories} summary={summary} />
           <LandingEveryMarket overdraft={nationalRange(categories, "overdraft")} summary={summary} />
+          <LandingFiveSources />
           <LandingOneWorkspace />
+          <LandingFeePath summary={summary} />
           <LandingPricing />
+          <LandingHowToStart />
           <LandingFaq summary={summary} />
           <LandingClose />
         </>,
       ),
     );
     expect(html).not.toMatch(/—|!|real-time|recommend|\bAI\b|verified|99%/i);
+  });
+
+  it("builds brief 08 §B.5 and §B.9 and 04 A §6 from live fields, with no unapproved cadence", () => {
+    const five = text(renderToStaticMarkup(<LandingFiveSources />));
+    expect(five).toContain("Five sources, or one");
+    expect(five).toContain("How fee studies get done today");
+    for (const verb of ["Read", "Place", "Ask", "Report"]) expect(five).toContain(verb);
+
+    const path = text(renderToStaticMarkup(<LandingFeePath summary={summary} />));
+    expect(path).toContain("How a fee reaches the index");
+    expect(path).toContain("It joins the Bank Fee Index. Data refreshed Oct 14, 2026.");
+    expect(path).toContain("5,678 published fee entries.");
+    expect(path).not.toMatch(/rolling calendar|monthly|every month/i);
+    const unavailable = text(renderToStaticMarkup(<LandingFeePath summary={{ ...summary, observationsLabel: "—" }} />));
+    expect(unavailable).not.toContain("published fee entries");
+
+    const start = text(renderToStaticMarkup(<LandingHowToStart />));
+    expect(start).toContain("Open Hamilton for all five markets, or ask us for one report.");
+  });
+
+  it("sends report links to the one form on /reports", () => {
+    const html = renderToStaticMarkup(<LandingPricing />);
+    expect(html).toContain("/reports?report=institution#request");
+    expect(html).not.toContain("/for-institutions?report=institution#report");
   });
 });

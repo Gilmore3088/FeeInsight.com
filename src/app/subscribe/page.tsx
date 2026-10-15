@@ -48,10 +48,13 @@ export const metadata: Metadata = {
 };
 
 const WELCOME_PATH = "/account/welcome";
+/** The one report request form, on /reports (site v3 brief 05 §3-4). */
+const REPORT_FORM_HREF = "/reports?report=institution&src=subscribe#request";
 /** /subscribe keeps the layout James chose (9 Oct 2026), set in the brand face, Geist. */
 
+/** Primary buttons are navy (site v3 brief 04); brick stays for the data. */
 const CTA_CLASS =
-  "cursor-pointer bg-brick px-5 py-3.5 text-center text-base font-semibold text-white shadow-sm transition-colors duration-200 hover:bg-brick-ink";
+  "cursor-pointer bg-ink px-5 py-3.5 text-center text-base font-semibold text-on-ink shadow-sm transition-opacity duration-200 hover:opacity-90";
 
 /** The skill's checklist, page-wide: pointer cursors, 200ms hover transitions, visible focus. */
 const INTERACTION_CLASS =
@@ -424,7 +427,7 @@ export default async function SubscribePage({
           {entry.page && <TrackView event="subscription_gate_viewed" eventProps={{ page: entry.page, entry: entryPoint }} />}
           {/* The headline spans both columns; the example and the card start on one line below it. */}
           <div className="min-w-0 lg:col-span-2 lg:row-start-1">
-            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-brick">{entry.context}</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-ink-muted">{entry.context}</p>
             <h1
               id="pro-title"
               className="mt-3 text-4xl font-bold leading-[1.08] tracking-tight text-ink sm:text-5xl" style={DISPLAY}
@@ -547,7 +550,7 @@ export default async function SubscribePage({
         {gated ? (
           <p className="mt-14 text-[15px] leading-relaxed text-ink">
             Need research for one institution instead?{" "}
-            <Link href="/for-institutions?report=institution#report" className="font-medium text-ink underline underline-offset-2">
+            <Link href={REPORT_FORM_HREF} className="font-medium text-ink underline underline-offset-2">
               Explore the {REPORT_OFFER.name}
             </Link>
           </p>

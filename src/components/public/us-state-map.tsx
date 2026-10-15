@@ -4,7 +4,6 @@ import { useState } from "react";
 import Link from "next/link";
 import { US_STATES } from "@/lib/us-map-paths";
 import { STATE_NAMES } from "@/lib/us-states";
-import { formatAmount } from "@/lib/format";
 
 interface StateData {
   state_code: string;

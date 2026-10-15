@@ -5,9 +5,9 @@ import { CONTACT_EMAIL, PRODUCT_NAME, REPORT_OFFER, SITE_NAME } from "@/lib/cons
 import type { PublicStatsSummary } from "@/lib/public-stats";
 import { REPORT_PRICE_LABEL } from "./pricing";
 
-const LINK_CLASS = "inline-flex min-h-11 items-center text-sm font-medium text-brick underline underline-offset-2";
+const LINK_CLASS = "inline-flex min-h-11 items-center text-sm font-medium text-ink underline underline-offset-2";
 
-const REPORT_ANCHOR_HREF = "/for-institutions?report=institution#report";
+const REPORT_ANCHOR_HREF = "/reports?report=institution&src=pricing#request";
 // Contact form, not mailto, so every ask lands in /admin/leads with a due time.
 const CONTACT_SALES_HREF = "/contact?source=enterprise";
 const ADVISORY_HREF = "/contact?source=advisory";

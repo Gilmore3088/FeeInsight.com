@@ -1407,3 +1407,15 @@ details[open] summary .expand-icon { transform: rotate(180deg); }
   .flow-dot, .flow-dot-down, .flow-card-new { animation: none !important; }
   .flow-dot, .flow-dot-down { display: none; }
 }
+
+/* ─── FeeRange in a half-width column (homepage hero and Every market) ───
+   The label sits above the track, as in site v3 brief 04 Direction A's hero wireframe, so the
+   plot gets the column's full width and the axis ticks don't collide. */
+.fi-range-stack .fi-range,
+.fi-range-stack .fi-range-axis {
+  grid-template-columns: minmax(0, 1fr) 64px;
+  column-gap: var(--fi-space-3);
+  row-gap: var(--fi-space-1);
+}
+.fi-range-stack .fi-range-label { grid-column: 1 / -1; }
+.fi-range-stack .fi-range-axis > div:first-child { display: none; }

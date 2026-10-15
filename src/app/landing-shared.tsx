@@ -4,8 +4,8 @@ import type { FeeCategorySummary } from "@/lib/data-store/fees";
 import { getDisplayName } from "@/lib/fee-taxonomy";
 import { formatCount } from "@/lib/public-stats";
 
-/** The institution report's request form (the same anchor the report pages link to). */
-export const REPORT_REQUEST_HREF = "/for-institutions?report=institution#report";
+/** The one report request form, on /reports (site v3 brief 05 §3-4, #1171). */
+export const REPORT_REQUEST_HREF = "/reports?report=institution#request";
 export const SAMPLE_REPORT_HREF = "/reports/sample-competitive-fee-position";
 
 export const SANS = { fontFamily: "var(--fi-font-sans)" } as const;
@@ -88,7 +88,8 @@ export function NationalRange({
   const hi = axisMax(row.max_amount);
   const domain: [number, number] = [0, hi];
   return (
-    <figure className="min-w-0">
+    // fi-range-stack puts the label above the track, so the plot keeps the column's full width.
+    <figure className="fi-range-stack min-w-0">
       <FeeRange
         label={label ?? getDisplayName(row.fee_category)}
         min={row.min_amount}

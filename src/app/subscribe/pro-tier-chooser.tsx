@@ -50,7 +50,7 @@ export function ProTierChooser({ chosenLabel, chosenDetail = null, problem = nul
           <button
             type="button"
             onClick={() => go(() => {})}
-            className="inline-flex min-h-11 flex-shrink-0 items-start text-sm font-medium text-brick underline underline-offset-2"
+            className="inline-flex min-h-11 flex-shrink-0 items-start text-sm font-medium text-ink underline underline-offset-2"
           >
             Change
           </button>

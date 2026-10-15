@@ -40,13 +40,13 @@ export function ProfileSidebar({
       {showProCard && (
         <section className="border border-ink bg-ink p-5 text-white">
           <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#D4A574]">
-            Fee Insight Pro
+            Hamilton
           </p>
           <h2 className="mt-2 text-lg font-semibold">Benchmark this institution in Hamilton</h2>
           <div className="mt-4 grid gap-2">
             <Link
               href={links.briefHref}
-              className="inline-flex items-center justify-center gap-2 rounded-md bg-brick px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brick-ink"
+              className="inline-flex items-center justify-center gap-2 rounded-md bg-paper px-3 py-2 text-sm font-semibold text-ink transition-opacity hover:opacity-90"
             >
               <BarChart2 className="h-4 w-4" />
               Generate competitive brief

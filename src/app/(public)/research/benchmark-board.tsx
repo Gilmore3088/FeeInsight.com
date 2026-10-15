@@ -19,7 +19,6 @@ export function pickBenchmarks(summaries: FeeCategorySummary[]): FeeCategorySumm
   );
 }
 
-const SERIF = { fontFamily: "var(--fi-font-sans)" };
 const MONO_FIGURE = { fontFamily: "var(--fi-font-mono)" } as const;
 
 function pct(value: number, scaleMax: number): number {

@@ -22,7 +22,7 @@ export function UnstatedAudienceFootnote({ show = true, className = "" }: { show
     <p className={`text-[11px] leading-relaxed text-ink-muted ${className}`}>
       <span aria-hidden="true">* </span>
       {UNSTATED_AUDIENCE_FOOTNOTE}{" "}
-      <Link href="/methodology#audience" className="font-medium text-brick hover:underline">
+      <Link href="/methodology#audience" className="font-medium text-ink underline underline-offset-2 hover:text-ink-soft">
         How audience is decided
       </Link>
     </p>

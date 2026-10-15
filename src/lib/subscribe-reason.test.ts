@@ -29,14 +29,15 @@ describe("subscribeReason", () => {
   it("places the gated page inside Pro from a fixed list, never from URL text", () => {
     expect(subscribeEntry("/pro/news", "Fee Insight")).toEqual({
       page: "Regulatory Wire",
-      context: "Regulatory Wire is included with Fee Insight Pro",
+      context: "Regulatory Wire is included with Hamilton, the Fee Insight Pro workspace",
     });
-    expect(subscribeEntry("/pro/simulate?fee=nsf", "Fee Insight").context).toBe("Explore pricing scenarios with Fee Insight Pro");
+    expect(subscribeEntry("/pro/simulate?fee=nsf", "Fee Insight").context).toBe("Explore pricing scenarios with Hamilton, the Fee Insight Pro workspace");
     expect(subscribeEntry("/pro/research", "Fee Insight")).toEqual({
       page: "My fees",
-      context: "My fees is included with Fee Insight Pro",
+      context: "My fees is included with Hamilton, the Fee Insight Pro workspace",
     });
-    const direct = "Discover everything included with Fee Insight Pro";
+    expect(subscribeEntry("/pro/hamilton", "Fee Insight").context).toBe("Hamilton, the Fee Insight Pro workspace");
+    const direct = "Discover everything included with Hamilton, the Fee Insight Pro workspace";
     expect(subscribeEntry("/pro/<script>", "Fee Insight").context).toBe(direct);
     expect(subscribeEntry(null, "Fee Insight")).toEqual({ page: null, context: direct });
   });

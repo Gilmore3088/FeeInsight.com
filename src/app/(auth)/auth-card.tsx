@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { Logo } from "@/brand/components";
-import { SITE_NAME } from "@/lib/constants";
 
 /** The single-column shell the password pages share: logo, heading, form. */
 export function AuthCard({ title, children }: { title: string; children: React.ReactNode }) {

@@ -49,7 +49,7 @@ export function PurchaseCard({
   return (
     <div className="h-full min-w-0 break-words rounded-2xl bg-white/75 p-6 backdrop-blur-xl ring-1 ring-border/80 shadow-[0_12px_40px_-12px_rgba(26,24,21,0.25),inset_0_1px_0_rgba(255,255,255,0.7)] sm:p-7">
       <h2 id="pro-heading" className="scroll-mt-24 text-xl text-ink font-semibold tracking-tight" style={DISPLAY}>
-        Fee Insight Pro
+        Hamilton Pro
       </h2>
       {!selection && (
         <p className="mt-1 flex flex-wrap items-baseline gap-x-1.5">

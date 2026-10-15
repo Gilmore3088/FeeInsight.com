@@ -23,4 +23,15 @@ describe("CustomerFooter", () => {
       expect(NOINDEXED.some((path) => href === path || href.startsWith(`${path}/`))).toBe(false);
     }
   });
+
+  it("lists the sample report under Product only when the page says it can be shown", () => {
+    const { unmount } = render(<CustomerFooter />);
+    expect(screen.queryByRole("link", { name: "Sample report" })).toBeNull();
+    unmount();
+    render(<CustomerFooter sampleReport />);
+    expect(screen.getByRole("link", { name: "Sample report" })).toHaveAttribute(
+      "href",
+      "/reports/sample-competitive-fee-position",
+    );
+  });
 });

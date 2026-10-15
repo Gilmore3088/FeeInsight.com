@@ -4,7 +4,6 @@ import { getDisplayName, FAMILY_COLORS } from "@/lib/fee-taxonomy";
 import { familySectionId, money } from "./family-section";
 
 const EYEBROW = "text-[11px] font-bold uppercase tracking-[0.12em] text-ink-muted";
-const SERIF = { fontFamily: "var(--fi-font-sans)" };
 const MONO_FIGURE = { fontFamily: "var(--fi-font-mono)" } as const;
 const CARD = "rounded-xl border border-border bg-white/80 backdrop-blur-sm px-4 py-4";
 const MAX_KEY_BENCHMARKS = 6;

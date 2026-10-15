@@ -1,52 +1,60 @@
 import Link from "next/link";
-import { CheckCircle2 } from "lucide-react";
-import { CONTACT_EMAIL, REPORT_INCLUDES, REPORT_OFFER, REPORT_PRICE_INLINE } from "@/lib/constants";
+import { REPORT_OFFER, REPORT_PRICE_INLINE } from "@/lib/constants";
 import type { CustomReportAnalysis, ReportLine } from "@/lib/custom-report/analysis";
 import type { MarketReport } from "@/lib/custom-report/report-data";
 import { money, POSITION_LABEL } from "@/app/market-report/report-body";
-import { RequestReportForm } from "./request-report-form";
 
-// The same list as the homepage offer and the pay page, so the paid report is described one way.
-const REPORT_CONTENTS = REPORT_INCLUDES;
+/** The one report request form (site v3 brief 05 §3-4, #1171): /reports sells the one-off. */
+const REPORT_FORM_PATH = "/reports";
+const REPORT_FORM_ANCHOR = "#request";
+/** Lead attribution for a request that started here, when the link carried no `src`. */
+const DEFAULT_SRC = "for-institutions";
+
+type QueryParams = Record<string, string | string[] | undefined>;
+
+/**
+ * The /reports form link for a visitor who landed on `#report`. Older links (sent emails, profile
+ * pages, /waitlist) carry the bank, the report type and `src` in the query, so those pass
+ * through and the form opens prefilled; with none, it opens on the institution report.
+ */
+export function reportFormHref(query: QueryParams = {}): string {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(query)) {
+    const first = Array.isArray(value) ? value[0] : value;
+    if (typeof first === "string" && first !== "") params.set(key, first);
+  }
+  if (!params.has("report")) params.set("report", "institution");
+  if (!params.has("src")) params.set("src", DEFAULT_SRC);
+  return `${REPORT_FORM_PATH}?${params.toString()}${REPORT_FORM_ANCHOR}`;
+}
 
 /**
  * The paid report as the no-subscription option (site v3 brief 03 section 4, 08 B.10). `#report`
- * is linked from sent emails, /subscribe and the /waitlist redirect, so it must keep landing on
- * the form (05 section 2).
+ * is linked from sent emails, /subscribe history and the /waitlist redirect, so the anchor stays;
+ * the form itself lives on /reports (05 section 3-4), and this section links to it.
  */
-export function ReportOfferSection({ sampleLive }: { sampleLive: boolean }) {
+export function ReportOfferSection({ sampleLive, query }: { sampleLive: boolean; query?: QueryParams }) {
   return (
-    <section aria-labelledby="report-heading" className="border-b border-border bg-surface-0">
+    <section id="report" aria-labelledby="report-heading" className="scroll-mt-20 border-b border-border bg-surface-0">
       <div className="mx-auto max-w-page px-6 py-14">
-        <div className="grid gap-10 lg:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)] lg:items-start">
-          <div>
-            <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-ink-muted">One report</p>
-            <h2 id="report-heading" className="mt-3 text-[28px] font-bold leading-tight text-ink">
-              {REPORT_OFFER.name}
-            </h2>
-            <p className="mt-4 max-w-xl text-[15px] leading-relaxed text-ink-soft">
-              For your institution against named local competitors, without a subscription. Each report is quoted,{" "}
-              {REPORT_PRICE_INLINE}. {REPORT_OFFER.nextStep}.
-            </p>
-            <ul className="mt-6 space-y-2.5">
-              {REPORT_CONTENTS.map((item) => (
-                <li key={item} className="flex items-start gap-2 text-[14px] text-ink-soft">
-                  <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-ink" aria-hidden="true" />
-                  {item}
-                </li>
-              ))}
-            </ul>
+        <div className="max-w-2xl">
+          <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-ink-muted">One report</p>
+          <h2 id="report-heading" className="mt-3 text-[28px] font-bold leading-tight text-ink">
+            {REPORT_OFFER.name}
+          </h2>
+          <p className="mt-4 text-[15px] leading-relaxed text-ink-soft">
+            For your institution against named local competitors, without a subscription. Each report is quoted,{" "}
+            {REPORT_PRICE_INLINE}. {REPORT_OFFER.nextStep}.
+          </p>
+          <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-5">
+            <Link href={reportFormHref(query)} className="fi-btn fi-btn-secondary justify-center">
+              {REPORT_OFFER.institutionCtaLabel}
+            </Link>
             {sampleLive ? (
-              <p className="mt-6 text-[14px]">
-                <Link href={SAMPLE_HREF} className="font-semibold text-ink underline underline-offset-2">
-                  Read the full sample report
-                </Link>
-              </p>
+              <Link href={SAMPLE_HREF} className="text-[14px] font-semibold text-ink underline underline-offset-2">
+                Read the full sample report
+              </Link>
             ) : null}
-          </div>
-          {/* `#report` lands on the form itself, so a phone reader isn't left below the offer list. */}
-          <div id="report" className="scroll-mt-20">
-            <RequestReportForm contactEmail={CONTACT_EMAIL} />
           </div>
         </div>
       </div>

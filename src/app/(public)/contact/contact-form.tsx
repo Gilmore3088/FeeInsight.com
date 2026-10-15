@@ -7,8 +7,9 @@ import { readFirstTouch } from "@/lib/marketing-touch";
 import { REPORT_OFFER, REPORT_PRICE_INLINE } from "@/lib/constants";
 
 const INQUIRY_TYPES = [
-  { value: "report", label: `${REPORT_OFFER.name} (${REPORT_PRICE_INLINE})` },
+  // Pro first, the one-off report second (site v3 brief 03 section 4: Pro is the goal).
   { value: "demo", label: "A Pro demo (a walkthrough of Hamilton)" },
+  { value: "report", label: `${REPORT_OFFER.name} (${REPORT_PRICE_INLINE})` },
   { value: "enterprise", label: "Fee Insight Pro (seats, invoicing)" },
   { value: "billing", label: "Billing or my subscription" },
   { value: "advisory", label: "Fee Insight Advisory (custom work)" },

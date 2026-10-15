@@ -3,7 +3,6 @@ import { DISTRICT_NAMES } from "@/lib/fed-districts";
 import { SectionHeading } from "../../research-hero";
 import { lastMonths, TrendChart, yoySeries, type TrendLine } from "./trend-chart";
 
-const SERIF = { fontFamily: "var(--fi-font-sans)" };
 const MONO_FIGURE = { fontFamily: "var(--fi-font-mono)" } as const;
 
 const THEME_LABELS: Record<string, string> = {
