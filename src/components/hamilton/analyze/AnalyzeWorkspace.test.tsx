@@ -56,6 +56,18 @@ describe("AnalyzeWorkspace send button", () => {
 });
 
 describe("Ask Hamilton helpers", () => {
+  it("keeps a market question that names the researched institution on that institution", async () => {
+    const { namesInstitution } = await import("./AnalyzeWorkspace");
+    expect(namesInstitution("How does Capital City Bank's ATM fee compare with Florida banks?", "Capital City Bank")).toBe(true);
+    expect(namesInstitution("How does U.S. Bank compare in Ohio?", "U.S. Bank, National Association")).toBe(true);
+    expect(namesInstitution("Florida banks: fee pricing, revenue, complaints", "Capital City Bank")).toBe(false);
+    expect(namesInstitution("Florida banks", null)).toBe(false);
+    // A generic name, or a name inside another word, is not the institution.
+    expect(namesInstitution("How do community bank overdraft fees compare in Pennsylvania?", "Community Bank, N.A.")).toBe(false);
+    expect(namesInstitution("Tell me about bankers in Ohio", "BOK")).toBe(false);
+    expect(namesInstitution("How does BOK compare?", "BOK")).toBe(true);
+  });
+
   it("says plainly when the preview has no AI key", async () => {
     const { askErrorMessage } = await import("./AnalyzeWorkspace");
     expect(askErrorMessage(new Error('{"error":"AI service not configured. Set ANTHROPIC_API_KEY."}'))).toMatch(/preview copy/);

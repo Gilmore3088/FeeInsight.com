@@ -114,4 +114,16 @@ describe("source link repair", () => {
     expect(written).toContain("INSERT INTO pipeline_feedback");
     expect(written).toContain("'hamilton.source_link_repair'");
   });
+
+  it("fails the step when the live write fails, instead of reporting 0 linked (#1349)", async () => {
+    const live = createDb();
+    const tag = live.db as unknown as ReturnType<typeof vi.fn>;
+    const ok = tag.getMockImplementation()! as (strings: TemplateStringsArray, ...values: unknown[]) => Promise<unknown>;
+    tag.mockImplementation((strings: TemplateStringsArray, ...values: unknown[]) =>
+      strings.join("?").includes("UPDATE published_fee_records")
+        ? Promise.reject(new Error("permission denied for table published_fee_records"))
+        : ok(strings, ...values));
+    await expect(repairSourceLinks(live.db, { runId: 7, batchId: "agentic-run-7", dryRun: false }))
+      .rejects.toThrow(/source link repair write failed: permission denied for table published_fee_records/);
+  });
 });

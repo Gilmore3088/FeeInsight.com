@@ -28,7 +28,7 @@ export const MARKET_DATA_NAV = {
   href: "/research",
   description: "Your state, your Fed district and the nation",
 } as const;
-export const NATIONAL_INDEX_NAV = { label: "National fee index", href: "/research/national-fee-index" } as const;
+export const NATIONAL_INDEX_NAV = { label: `${PRODUCT_NAME}: national`, href: "/research/national-fee-index" } as const;
 /**
  * The header and footer name the Pro workspace generically: Hamilton's name and mark appear only
  * on the pages that sell it and inside the workspace (James, 2026-10-15, docs/project/DECISIONS.md).

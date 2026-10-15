@@ -25,6 +25,8 @@
 import type { sql as sqlTag } from "@/lib/data-store/connection";
 import {
   STATS_METHOD_VERSION,
+  scheduleGroupSql,
+  scheduleKeysSql,
   statsRowFilter,
   summarizeFees,
   summarizeRates,
@@ -360,6 +362,9 @@ export interface LiveFeeRow {
   state_code: string | null;
   fed_district: number | null;
   asset_size_tier: string | null;
+  /** Statistics rule 7 (fee-stats.ts); NULL while the switch is off. */
+  schedule_keys?: string[] | null;
+  schedule_group?: string | null;
 }
 
 export interface LiveRateRow {
@@ -367,6 +372,8 @@ export interface LiveRateRow {
   institution_id: number | string;
   rate_percent: number | string | null;
   amount_kind: string | null;
+  schedule_keys?: string[] | null;
+  schedule_group?: string | null;
 }
 
 export interface LiveData {
@@ -410,7 +417,8 @@ export async function loadLiveFigures(db: SqlTag, printed: PrintedFigures): Prom
     categories.size || coverageStates.size
       ? ((await db.unsafe(
           `SELECT ef.institution_id, ef.fee_category, ef.amount,
-                  ct.charter_type, ct.state_code, ct.fed_district, ct.asset_size_tier
+                  ct.charter_type, ct.state_code, ct.fed_district, ct.asset_size_tier,
+                  ${scheduleKeysSql("ef")} AS schedule_keys, ${scheduleGroupSql("ef")} AS schedule_group
              FROM published_fee_catalog ef
              JOIN institution_sources ct ON ef.institution_id = ct.id
             WHERE ef.fee_category IS NOT NULL
@@ -422,7 +430,8 @@ export async function loadLiveFigures(db: SqlTag, printed: PrintedFigures): Prom
       : [];
   const rateRows = rateCategories.size
     ? ((await db.unsafe(
-        `SELECT ef.fee_category, ef.institution_id, ef.rate_percent, ef.amount_kind
+        `SELECT ef.fee_category, ef.institution_id, ef.rate_percent, ef.amount_kind,
+                ${scheduleKeysSql("ef")} AS schedule_keys, ${scheduleGroupSql("ef")} AS schedule_group
            FROM published_fee_rate_catalog ef
           WHERE ef.fee_category = ANY($1::text[])
             AND ${statsRowFilter("ef")}`,

@@ -10,7 +10,7 @@ import { CustomerFooter } from "@/components/customer-footer";
 import { SearchModal } from "@/components/public/search-modal";
 import { getFeeCategoryDetailCached } from "@/lib/data-store/public-cached-reads";
 import { LandingHero } from "./landing-hero";
-import { LandingSizzle } from "./landing-sizzle";
+import { LandingDemo } from "./landing-demo";
 import { LandingPillars } from "./landing-pillars";
 import { LandingProvenance } from "./landing-provenance";
 import { LandingPricing } from "./landing-pricing";
@@ -103,7 +103,7 @@ export default async function LandingPage() {
       <ConsumerNav />
       <main id="main-content">
         <LandingHero summary={summary} />
-        <LandingSizzle data={data} />
+        <LandingDemo data={data} />
         <LandingPillars data={data} />
         <LandingProvenance summary={summary} />
         <LandingPricing />

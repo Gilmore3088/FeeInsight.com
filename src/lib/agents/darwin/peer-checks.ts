@@ -1,5 +1,6 @@
 import type { sql } from "@/lib/data-store/connection";
-import type { FeeAudience } from "@/lib/fee-audience";
+import { countsAsPersonal, isAudienceUnstated, type FeeAudience } from "@/lib/fee-audience";
+import { isBusinessOnlyLink } from "@/lib/agents/magellan/link-coverage";
 import { statsRowFilter } from "@/lib/data-store/fee-stats";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import { STATE_TO_DISTRICT } from "@/lib/fed-districts";
@@ -35,8 +36,23 @@ type SqlTag = typeof sql;
  *   agreement is recorded as confidence evidence on the verified row.
  */
 // v3: consumer/both-only source-grounded peer population; unknown/business inputs skip checks.
-export const DARWIN_PEER_STRATEGY = { strategy: "verify.peer_range", version: 3 } as const;
+// v4 (#1112): an unknown-audience fee is compared too, as the benchmarks count it (#1058), unless
+// its schedule's address is business-only. A business fee still never is.
+export const DARWIN_PEER_STRATEGY = { strategy: "verify.peer_range", version: 4 } as const;
 export const DARWIN_SECOND_SOURCE_STRATEGY = { strategy: "verify.second_source", version: 2 } as const;
+
+/**
+ * Whether a fee is compared with its consumer peers (#1112). The peer levels are the benchmark
+ * population (`statsRowFilter`: consumer, both and unknown fees, no business-only schedule), so a
+ * fee enters on the same terms: consumer and both always, unknown unless the schedule's address
+ * names business accounts only (`isBusinessOnlyLink`, the benchmarks' address test), business
+ * never. Pure.
+ */
+export function entersPeerCheck(audience: FeeAudience | null | undefined, sourceUrl: string | null | undefined): boolean {
+  if (!countsAsPersonal(audience)) return false;
+  if (isAudienceUnstated(audience) && sourceUrl && isBusinessOnlyLink(sourceUrl)) return false;
+  return true;
+}
 
 /** Flag on a verified row whose amount another stored document confirms. */
 export const SECOND_SOURCE_FLAG = "second_source_agrees";

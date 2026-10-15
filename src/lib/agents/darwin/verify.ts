@@ -1,4 +1,4 @@
-import { isConsumerFee, scopedFeeStatements, type FeeAudience } from "@/lib/fee-audience";
+import { scopedFeeStatements, type FeeAudience } from "@/lib/fee-audience";
 import { darwinAudience, type DarwinAudience } from "./audience";
 import { tierPerkZero } from "./tier-perk";
 import { createHash } from "crypto";
@@ -15,6 +15,7 @@ import { RULE_WHY, ruleFor } from "@/lib/agents/hamilton/eval-verdicts";
 import { checkFeeAgainstSource, checkRateAgainstSource } from "@/lib/custom-report/source-check";
 import { perEventFrequency, settledFrequency } from "@/lib/fee-frequency";
 import { excerptOf } from "@/lib/agents/hamilton/frequency-fill";
+import { sourceLinkSkipReason } from "@/lib/agents/hamilton/source-link";
 import { PERCENT_FEE_RANGES, isPercentFee, percentFeeAllowed, ratePercentOf, type RateFields } from "@/lib/percent-fees";
 import { darwinFeedbackRows, recordDarwinFeedback } from "./feedback";
 import { recheckVerifiedFees, type VerifiedRecheckResult } from "./verified-recheck";
@@ -46,6 +47,7 @@ import {
 import { darwinEnvelopeFor, loadLearnedEnvelopes, type LearnedEnvelope } from "./learned-envelopes";
 import {
   DARWIN_PEER_STRATEGY,
+  entersPeerCheck,
   DARWIN_SECOND_SOURCE_STRATEGY,
   districtOfState,
   holdsForPeerReview,
@@ -299,6 +301,8 @@ export interface RawFeeRow extends RateFields {
   conditions: string | null;
   institution_name?: string | null;
   source_document_id?: number | string | null;
+  /** The source document's own URL, the link publish falls back to (#1350). */
+  document_url?: string | null;
   state_code?: string | null;
   asset_size_tier?: string | null;
   asset_size?: number | string | null;
@@ -435,7 +439,10 @@ export function verificationReasonCode(
   if (!canonicalFeeKey) return "missing_canonical";
   if (!row.fee_name?.trim()) return "missing_name";
   if (!checkFeeCategory(canonicalFeeKey, row.fee_name, row).ok) return "category_mismatch";
-  if (!row.source_url?.trim() && !row.document_r2_key?.trim()) return "missing_lineage";
+  // #1350: Hamilton's publish rule (#1345, `sourceLinkSkipReason`): a source document and an
+  // http(s) link, the row's own or its document's. A stored file key alone is no lineage, so a row
+  // Hamilton would refuse forever is held here instead of verified.
+  if (sourceLinkSkipReason(row)) return "missing_lineage";
   if (isPercentFee(row)) {
     if (!percentFeeAllowed(canonicalFeeKey)) return "percent_not_publishable";
     const rate = ratePercentOf(row);
@@ -451,6 +458,14 @@ export function verificationReasonCode(
   const envelope = darwinEnvelopeFor(canonicalFeeKey, learnedEnvelopes);
   if (amount < envelope.min || amount > envelope.max) return "outside_envelope";
   return null;
+}
+
+/** The reason text recorded for a code; a lineage hold carries Hamilton's own publish refusal (#1350). */
+export function verificationReasonText(
+  row: Pick<RawFeeRow, "source_url" | "document_url" | "source_document_id"> & Partial<RawFeeRow>,
+  code: DarwinReasonCode,
+): string {
+  return (code === "missing_lineage" ? sourceLinkSkipReason(row) : null) ?? DARWIN_REASON_TEXT[code];
 }
 
 /**
@@ -690,6 +705,7 @@ async function selectRawFees(
              fr.rate_basis,
              inst.institution_name,
              fr.source_document_id,
+             (SELECT sd.document_url FROM source_documents sd WHERE sd.id = fr.source_document_id) AS document_url,
              upper(btrim(inst.state_code)) AS state_code,
              inst.asset_size_tier,
              inst.asset_size,
@@ -1151,9 +1167,10 @@ export async function runDarwinVerify(
     let peer: PeerCheckResult | null = null;
     let secondSource: SecondSourceResult | null = null;
     if (!reasonCode && canonicalFeeKey && base.amount != null) {
-      // A consumer baseline cannot hold a business or unknown-audience fee.
-      // Second-source evidence is separate and still runs for those rows.
-      if (isConsumerFee(row.fee_audience)) {
+      // The peer levels are the benchmark population, so a fee enters on the benchmarks' terms
+      // (#1112): consumer, both, and unknown unless its schedule is business-only; never business.
+      // Second-source evidence is separate; it still gives no confidence to an unknown fee.
+      if (entersPeerCheck(row.fee_audience, row.source_url)) {
         const stateCode = row.state_code ?? options.stateCode;
         const levels = await peers.forState(stateCode);
         peer = peerCheck(
@@ -1191,7 +1208,7 @@ export async function runDarwinVerify(
           ? `${DARWIN_REASON_TEXT[code]}: ${peerOutlierReason(peer, base.amount)}`
           : code === "name_rule" && postCheck?.rule
             ? `${DARWIN_REASON_TEXT[code]}: ${postCheck.rule} (${RULE_WHY[postCheck.rule as keyof typeof RULE_WHY]})`
-            : DARWIN_REASON_TEXT[code],
+            : verificationReasonText(row, code),
         feeVerifiedId: null,
         peerCheck: peer,
         secondSource,

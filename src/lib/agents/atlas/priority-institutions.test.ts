@@ -13,6 +13,7 @@ vi.mock("@/lib/agents/hamilton/publish", () => ({ HAMILTON_PUBLISH_MAX_LIMIT: 50
 
 import {
   PRIORITY_INSTITUTION_REQUESTS,
+  requestWindows,
   PRIORITY_FIXED_BREAK_RUNS,
   PRIORITY_INSTITUTION_SOURCE,
   PRIORITY_MAX_ACTIVE,
@@ -82,7 +83,7 @@ describe("priority institutions", () => {
     expect(text).toContain("c.tier <> 1 OR c.hand_found_at IS NULL OR r.started_at >= c.hand_found_at");
     expect(values).toContain(PRIORITY_INSTITUTION_SOURCE);
     expect(values).toContainEqual([7, 9]);
-    expect(values).toContainEqual(PRIORITY_INSTITUTION_REQUESTS.map((request) => request.institutionId));
+    expect(values).toContainEqual(requestWindows(PRIORITY_INSTITUTION_REQUESTS).institutionIds);
   });
 
   it("ends a request only on a run since it was asked that read a document, and caps a rules version's re-reads an hour", async () => {
@@ -96,8 +97,10 @@ describe("priority institutions", () => {
     expect(served).toBeLessThan(requested);
     expect(text).toContain("served.status = 'completed'");
     expect(text).toContain("served.started_at >= asked.since::timestamptz");
-    expect(text).toMatch(/read\.agent_run_id = served\.id\s+AND read\.institution_id = inst\.id\s+AND read\.stage = 'extract'/);
-    expect(values).toContainEqual(PRIORITY_INSTITUTION_REQUESTS.map((request) => request.requestedAt ?? ""));
+    expect(text).toMatch(/read\.agent_run_id = served\.id\s+AND read\.institution_id = inst\.id\s+AND read\.stage = 'extract'\s+AND read\.strategy = /);
+    // A lineup correction alone is no read: only Knox's rules pass on a stored text ends a request.
+    expect(values).toContain(KNOX_RULES_STRATEGY.strategy);
+    expect(values).toContainEqual(requestWindows(PRIORITY_INSTITUTION_REQUESTS).since);
     // A page this version has not read bypasses the retry window only under the hourly cap.
     expect(text).toMatch(/OR NOT c\.rules_unread\s+--[^\n]*\n\s+OR \(\s+SELECT COUNT\(\*\) FROM agent_runs reread/);
     expect(text).toContain("reread.started_at > NOW() - INTERVAL '1 hour'");
@@ -289,5 +292,37 @@ describe("priority institutions", () => {
     const off = createDb(() => []);
     await selectPriorityInstitutions(off.db, { limit: 2, leaderIds: [], deploy: null });
     expect(off.calls[0].values).toContain(null);
+  });
+});
+
+describe("requestWindows (#1384 follow-up)", () => {
+  const base = { institutionName: "Test Bank", reason: "test" };
+  it("skips an entry whose requestedAt is not an ISO date, with a warning, so the select's cast never throws", () => {
+    const warnings: string[] = [];
+    const windows = requestWindows([
+      { ...base, institutionId: 1, requestedAt: "Oct 15" },
+      { ...base, institutionId: 2, requestedAt: "2026-13-40" },
+      { ...base, institutionId: 3, requestedAt: "2026-10-15" },
+    ], (message) => warnings.push(message));
+    expect(windows).toEqual({ institutionIds: [3], since: ["2026-10-15T00:00:00.000Z"] });
+    expect(warnings).toHaveLength(2);
+    expect(warnings[0]).toContain("institution 1");
+  });
+
+  it("asks a bank listed twice from its latest dated entry, so asking again reopens it", () => {
+    const windows = requestWindows([
+      { ...base, institutionId: 7 },
+      { ...base, institutionId: 7, requestedAt: "2026-10-16T09:00:00Z" },
+      { ...base, institutionId: 7, requestedAt: "2026-10-15" },
+      { ...base, institutionId: 8 },
+    ]);
+    expect(windows).toEqual({ institutionIds: [7, 8], since: ["2026-10-16T09:00:00.000Z", ""] });
+  });
+
+  it("reads today's list as one entry per bank, none skipped", () => {
+    const warnings: string[] = [];
+    const windows = requestWindows(PRIORITY_INSTITUTION_REQUESTS, (message) => warnings.push(message));
+    expect(warnings).toEqual([]);
+    expect(windows.institutionIds).toEqual([...new Set(PRIORITY_INSTITUTION_REQUESTS.map((request) => request.institutionId))]);
   });
 });

@@ -6,10 +6,9 @@ const DISPLAY = { fontFamily: "var(--fi-font-sans)" };
 /**
  * Hamilton's Try a price, drawn from the live national index. No hooks, so a server page can
  * render it still (/for-institutions) and the /subscribe example can type the question in.
- * `typed` is how much of the question shows; the answer appears once it is complete. `bare`
- * drops the panel's own window, for a page that draws one around it (the homepage sizzle).
+ * `typed` is how much of the question shows; the answer appears once it is complete.
  */
-export function TryAPricePanel({ scenario, typed, bare = false }: { scenario: AnalyzeScenario; typed?: number; bare?: boolean }) {
+export function TryAPricePanel({ scenario, typed }: { scenario: AnalyzeScenario; typed?: number }) {
   const question = scenarioQuestion(scenario);
   const shown = typed ?? question.length;
   const answered = shown >= question.length;
@@ -64,7 +63,6 @@ export function TryAPricePanel({ scenario, typed, bare = false }: { scenario: An
       </p>
     </>
   );
-  if (bare) return <div className="flex h-full flex-col">{body}</div>;
   return (
     <PreviewFrame label="Hamilton · Try a price" aside="Illustration, live figures">
       {body}

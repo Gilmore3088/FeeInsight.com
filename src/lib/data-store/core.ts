@@ -1,6 +1,6 @@
 import { sql } from "./connection";
 import { readerFeeConditions } from "../fee-conditions";
-import { summarizeFeesBy } from "./fee-stats";
+import { STATS_SCHEDULE_KEYS, summarizeFeesBy } from "./fee-stats";
 import { VALID_US_CODES } from "../us-states";
 import {
   classifyInstitutionQuality,
@@ -504,9 +504,9 @@ export interface CategoryMedian {
 }
 
 export async function getCategoryMedians(): Promise<Record<string, CategoryMedian>> {
-  const rows = await sql<{ fee_category: string; amount: number; institution_id: number }[]>`
-    SELECT fee_category, amount, institution_id
-    FROM published_fee_catalog
+  const rows = await sql<{ fee_category: string; amount: number; institution_id: number; schedule_keys: string[] | null; schedule_group: string | null }[]>`
+    SELECT ef.fee_category, ef.amount, ef.institution_id, ${sql.unsafe(STATS_SCHEDULE_KEYS)}
+    FROM published_fee_catalog ef
     WHERE fee_category IS NOT NULL
       AND amount IS NOT NULL
       AND source_document_id IS NOT NULL

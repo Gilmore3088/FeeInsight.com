@@ -145,7 +145,7 @@ export function HamiltonShell({
           isAdmin={isAdmin}
           accountLabel={accountLabel(accountContext)}
           homeName={accountContext?.status === "identified" ? accountContext.institution?.name ?? null : null}
-          researchLabel={marketScopeLabel(pathname, selection) ?? researchLabel}
+          researchLabel={marketScopeLabel(pathname, selection, searchParams.get("view")) ?? researchLabel}
         />
 
         {canUseSeed && institutionContext.makeDefaultHref ? (
@@ -175,10 +175,11 @@ function accountLabel(accountContext: HamiltonShellProps["accountContext"]): str
 }
 
 /** Overview and Research read a market, not one institution, unless a local selection says otherwise. */
-function marketScopeLabel(pathname: string, selection: ReturnType<typeof hamiltonNavigationSelection>): string | null {
+function marketScopeLabel(pathname: string, selection: ReturnType<typeof hamiltonNavigationSelection>, view: string | null): string | null {
   const scope = selection.research?.scope;
   if (scope?.kind === "state") return `${STATE_NAMES[scope.stateCode] ?? scope.stateCode} market`;
   if (scope?.kind === "national") return "U.S. market";
-  if (!selection.research && ["/pro/hamilton", "/pro/intelligence"].includes(pathname)) return "U.S. market";
+  // The monthly briefing (view=institution) reads one institution, named like any other subject.
+  if (!selection.research && view !== "institution" && ["/pro/hamilton", "/pro/intelligence"].includes(pathname)) return "U.S. market";
   return null;
 }

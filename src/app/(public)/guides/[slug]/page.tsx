@@ -39,6 +39,7 @@ import {
   type GuideBreakdowns,
 } from "@/components/public/guide-blocks";
 import { SavedInstitutionsPanel } from "@/components/public/saved-institutions-panel";
+import { UnstatedAudienceFootnote, UnstatedAudienceMark, medianHasUnstatedAudience } from "@/components/unstated-audience";
 import { PRODUCT_NAME, SITE_URL } from "@/lib/constants";
 
 interface PageProps {
@@ -331,6 +332,7 @@ export default async function GuidePage({ params }: PageProps) {
                     fee. National median:{" "}
                     <span className="font-medium text-ink">
                       {formatAmount(primarySummary.median_amount)}
+                      <UnstatedAudienceMark show={medianHasUnstatedAudience(primarySummary)} />
                     </span>
                   </p>
                   <div className="mt-4 rounded-xl border border-border/80 bg-white/70 p-5 backdrop-blur-sm">
@@ -383,6 +385,10 @@ export default async function GuidePage({ params }: PageProps) {
                     </>
                   )}
                 </p>
+                <UnstatedAudienceFootnote
+                  show={medianHasUnstatedAudience(primarySummary) || relevantFees.some(medianHasUnstatedAudience)}
+                  className="mt-2"
+                />
               </footer>
 
               {/* ── Explore the Data ── */}
@@ -526,6 +532,7 @@ export default async function GuidePage({ params }: PageProps) {
                             }}
                           >
                             {formatAmount(fee.median_amount)}
+                            <UnstatedAudienceMark show={medianHasUnstatedAudience(fee)} />
                           </span>
                           <span className="text-[10px] text-ink-muted">median</span>
                         </div>

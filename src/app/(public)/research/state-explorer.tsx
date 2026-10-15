@@ -9,9 +9,9 @@ import type { StateCoverage } from "@/lib/data-store/geographic";
 type Metric = "institutions" | "fees" | "coverage";
 
 const METRICS: { key: Metric; label: string; blurb: string }[] = [
-  { key: "institutions", label: "Institutions", blurb: "Banks and credit unions with verified fees" },
-  { key: "fees", label: "Verified fees", blurb: "Verified fee lines published" },
-  { key: "coverage", label: "Coverage", blurb: "Share of monitored institutions with verified fees" },
+  { key: "institutions", label: "Institutions", blurb: "Banks and credit unions with published fees" },
+  { key: "fees", label: "Published fees", blurb: "Published fee entries" },
+  { key: "coverage", label: "Coverage", blurb: "Share of monitored institutions with published fees" },
 ];
 
 /** Warm sequential scale, light to dark. */
@@ -230,7 +230,7 @@ export function StateExplorer({ states }: { states: StateCoverage[] }) {
       <div className="mt-6 rounded-2xl border border-border bg-white">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-surface-200 px-5 py-4">
           <p className="text-[13px] font-semibold text-ink">
-            All state reports <span className="font-normal text-ink-muted">({NUMBER.format(withData.length)} with verified fees)</span>
+            All state reports <span className="font-normal text-ink-muted">({NUMBER.format(withData.length)} with published fees)</span>
           </p>
           <div className="flex flex-wrap items-center gap-2">
             <label className="sr-only" htmlFor="state-filter">Find a state</label>

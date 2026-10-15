@@ -7,6 +7,7 @@ import {
   MIN_INSTITUTIONS_FOR_MEDIAN,
   STATS_METHOD_VERSION,
   STATS_ROW_FILTER,
+  STATS_SCHEDULE_KEYS,
   summarizeFeesBy,
   valuePerInstitution,
 } from "./fee-stats";
@@ -46,6 +47,8 @@ type IndexRow = {
   review_status: string;
   created_at: string;
   charter_type: string;
+  schedule_keys?: string[] | null;
+  schedule_group?: string | null;
 };
 
 async function loadNationalRows(db: typeof sql, approvedOnly = true): Promise<IndexRow[]> {
@@ -55,7 +58,7 @@ async function loadNationalRows(db: typeof sql, approvedOnly = true): Promise<In
 
   return await db.unsafe(
     `SELECT ef.fee_category, ef.amount, ef.institution_id,
-            ef.review_status, ef.created_at, ct.charter_type
+            ef.review_status, ef.created_at, ct.charter_type, ${STATS_SCHEDULE_KEYS}
      FROM published_fee_catalog ef
      JOIN institution_sources ct ON ef.institution_id = ct.id
      WHERE ef.fee_category = ANY(ARRAY[${CANONICAL_CATEGORIES.map((c) => `'${c}'`).join(",")}])
@@ -124,6 +127,9 @@ export interface ContractFeeRow {
   state_code: string | null;
   charter_type: string | null;
   asset_size_tier: string | null;
+  /** The schedule the row was read from (statistics rule 7); NULL while the switch is off. */
+  schedule_keys?: string[] | null;
+  schedule_group?: string | null;
 }
 
 /** Approved, sourced published rows (the statistics contract's input), optionally filtered. */
@@ -140,7 +146,7 @@ export async function getContractFeeRows(filters: { categories?: string[]; chart
   }
   return await sql.unsafe(
     `SELECT ef.institution_id, ef.fee_category, ef.amount, ct.institution_name,
-            ct.state_code, ct.charter_type, ct.asset_size_tier
+            ct.state_code, ct.charter_type, ct.asset_size_tier, ${STATS_SCHEDULE_KEYS}
        FROM published_fee_catalog ef
        JOIN institution_sources ct ON ef.institution_id = ct.id
       WHERE ${conditions.join(" AND ")}`,
@@ -160,7 +166,7 @@ export async function getSegmentFeeRows(categories: string[]): Promise<SegmentFe
   if (categories.length === 0) return [];
   const rows = await sql.unsafe(
     `SELECT ef.institution_id, ef.fee_category, ef.amount, ct.institution_name,
-            ct.state_code, ct.charter_type, ct.asset_size_tier, ct.fed_district
+            ct.state_code, ct.charter_type, ct.asset_size_tier, ct.fed_district, ${STATS_SCHEDULE_KEYS}
        FROM published_fee_catalog ef
        JOIN institution_sources ct ON ef.institution_id = ct.id
       WHERE ef.fee_category = ANY($1::text[])
@@ -377,7 +383,7 @@ export async function getPeerIndex(
 
   const rows = await sql.unsafe(
     `SELECT ef.fee_category, ef.amount, ef.institution_id,
-            ef.review_status, ef.created_at, ct.charter_type
+            ef.review_status, ef.created_at, ct.charter_type, ${STATS_SCHEDULE_KEYS}
      FROM published_fee_catalog ef
      JOIN institution_sources ct ON ef.institution_id = ct.id
      WHERE ${where}`,
@@ -464,7 +470,7 @@ export async function getPeerIndexes(
   }
   const rows = await sql.unsafe(
     `SELECT ef.fee_category, ef.amount, ef.institution_id, ef.review_status, ef.created_at,
-            ct.charter_type, ct.asset_size_tier, ct.fed_district, ct.state_code
+            ct.charter_type, ct.asset_size_tier, ct.fed_district, ct.state_code, ${STATS_SCHEDULE_KEYS}
        FROM published_fee_catalog ef
        JOIN institution_sources ct ON ef.institution_id = ct.id
       WHERE ${conditions.join(" AND ")}`,
@@ -553,7 +559,7 @@ export async function getDistrictMedianByCategory(
   }
 
   const rows = await sql.unsafe(
-    `SELECT ef.fee_category, ef.amount, ct.fed_district, ef.institution_id
+    `SELECT ef.fee_category, ef.amount, ct.fed_district, ef.institution_id, ${STATS_SCHEDULE_KEYS}
      FROM published_fee_catalog ef
      JOIN institution_sources ct ON ef.institution_id = ct.id
      WHERE ${conditions.join(" AND ")}`,
@@ -563,6 +569,8 @@ export async function getDistrictMedianByCategory(
     amount: number | null;
     fed_district: number;
     institution_id: number;
+    schedule_keys: string[] | null;
+    schedule_group: string | null;
   }[];
 
   return [...summarizeFeesBy(rows, (row) => String(Number(row.fed_district))).entries()]
@@ -578,7 +586,7 @@ export async function getDistrictFeeMedians(
   district: number
 ): Promise<{ fee_category: string; median_amount: number; institution_count: number }[]> {
   const rows = await sql`
-    SELECT ef.fee_category, ef.amount, ef.institution_id
+    SELECT ef.fee_category, ef.amount, ef.institution_id, ${sql.unsafe(STATS_SCHEDULE_KEYS)}
     FROM published_fee_catalog ef
     JOIN institution_sources ct ON ef.institution_id = ct.id
     WHERE ct.fed_district = ${district}
@@ -587,7 +595,7 @@ export async function getDistrictFeeMedians(
       AND ef.amount IS NOT NULL
       AND ef.amount >= 0
       AND ${sql.unsafe(STATS_ROW_FILTER)}
-  ` as { fee_category: string; amount: number | null; institution_id: number }[];
+  ` as { fee_category: string; amount: number | null; institution_id: number; schedule_keys: string[] | null; schedule_group: string | null }[];
 
   return [...summarizeFeesBy(rows, (row) => row.fee_category).entries()]
     .filter(([, stats]) => stats.median_amount !== null && stats.institution_count >= MIN_INSTITUTIONS_FOR_MEDIAN)
@@ -869,7 +877,7 @@ export function buildStateFeeIndexes(rows: IndexRow[]): StateFeeIndexes {
 export async function getStateFeeIndexes(stateCode: string): Promise<StateFeeIndexes> {
   const rows = await sql.unsafe(
     `SELECT ef.fee_category, ef.amount, ef.institution_id,
-            ef.review_status, ef.created_at, ct.charter_type
+            ef.review_status, ef.created_at, ct.charter_type, ${STATS_SCHEDULE_KEYS}
        FROM published_fee_catalog ef
        JOIN institution_sources ct ON ef.institution_id = ct.id
       WHERE ct.state_code = $1

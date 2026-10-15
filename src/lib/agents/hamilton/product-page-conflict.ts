@@ -42,8 +42,9 @@ export const PRODUCT_PAGE_CONFLICT_ROLLBACK_LIMIT = 200;
 /**
  * Never judged here: categories priced per account (a checking page's $14.95 beside a schedule's
  * $7 may be two accounts) and categories that hold several different items (safe deposit box
- * sizes; "Return mail" and "Excess transaction" both filed as account research; a statement copy
- * and a check copy). Judging those needs the account or the item matched first.
+ * sizes; account research's research, reconciliation and adjustment charges; a statement copy
+ * and a check copy). Judging those needs the account or the item matched first. An excess
+ * withdrawal fee (its own type since Oct 15, #1398) is priced per savings or money market account.
  */
 export const PER_ACCOUNT_CATEGORIES = [
   "monthly_maintenance",
@@ -52,6 +53,7 @@ export const PER_ACCOUNT_CATEGORIES = [
   "safe_deposit_box",
   "account_research",
   "document_reproduction",
+  "excess_withdrawal",
 ] as const;
 
 /**
