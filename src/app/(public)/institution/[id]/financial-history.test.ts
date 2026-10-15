@@ -97,6 +97,7 @@ describe("financial history series", () => {
       noncurrent_loan_rate: 0.5,
       tier1_capital_ratio: 12,
       fee_income_ratio: 0.04,
+      fee_income_peer_count: 40,
       roe: 10,
       leverage_ratio: 9,
       total_capital_ratio: 13,

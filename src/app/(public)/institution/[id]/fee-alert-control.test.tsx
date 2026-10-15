@@ -52,6 +52,13 @@ describe("FeeAlertControl", () => {
     expect(screen.getByRole("link", { name: "Manage alerts" })).toHaveAttribute("href", "/account#alerts");
   });
 
+  it("keeps the sign-up form behind one button when the reader came for no one fee", () => {
+    render(<FeeAlertControl {...base} focusCategory={null} initial={{ signedIn: false, saved: false, feeCategories: null }} />);
+    expect(screen.queryByLabelText("Email")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Follow its fees" }));
+    expect(screen.getByLabelText("Email")).toBeInTheDocument();
+  });
+
   it("offers sign-in when the email already has an account", async () => {
     mocks.signUp.mockResolvedValue({ ok: false, error: "You already have an account.", loginHref: "/login?from=x" });
     render(<FeeAlertControl {...base} initial={{ signedIn: false, saved: false, feeCategories: null }} />);
