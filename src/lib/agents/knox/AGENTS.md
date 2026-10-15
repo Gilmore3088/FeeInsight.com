@@ -488,7 +488,7 @@ hand check found wrong, from their real lines.
   Transfer for\nOverdrafts - $2.00 per transfer", raw 112570). A bare "Overdrafts" priced per
   item is still the overdraft fee.
 
-v66 (#1102, Oct 15): priced lines with no "fee" or "charge" that Knox dropped without a record.
+v68 (#1102, Oct 15; held as v66 until #1334 took v67): priced lines with no "fee" or "charge" that Knox dropped without a record.
 On the 62-bank answer key (run 9), 333 of the 987 key fees missing from live data were lines in our
 stored text of the key document with no Knox row at that price; 240 of them had no fee word.
 - Name rules for fee-schedule labels seen at several banks, placed after every other rule so they
@@ -525,7 +525,7 @@ stored text of the key document with no Knox row at that price; 240 of them had 
 - 62-bank key, stored texts of the key documents, free team reads plus $0 rows with a category
   (Oct 15): 1,371 of 2,321 key fees found before, 1,451 after (59.1% to 62.5%); precision 1,229 of
   1,414 distinct reads to 1,301 of 1,487 (86.9% to 87.5%). 73 of the 80 newly found fees are not live today.
-- Production sample (Oct 15): 300 random texts of the 9,140 the v66 bump re-reads: 34 new reads
+- Production sample (Oct 15): 300 random texts of the 9,140 texts a bump re-read on Oct 15: 34 new reads
   (19 texts), 148 new holds (136 unclassified, 9 untraced, 3 at $0), none of main's reads lost.
 
 Rules 65, #1196 (Oct 14, no version change, so no document is re-read for it):
@@ -541,6 +541,13 @@ Rules 65, #1196 (Oct 14, no version change, so no document is re-read for it):
 - On a line with two fees, the unit right after the first price ("per month", "/hr", "each") is
   that price's: the second fee's name and frequency are read from after it, and the second fee is
   not dropped as a repeat of the first price.
+
+v67 (rules 67, Oct 15, #1334; v66 was held for the #1102 dropped-lines fix, which shipped as v68): no rule changes. The bump makes every current text due for one
+more read, so the dropped-decimal reads above (#1196, #1305) reach pages Knox read before them:
+"Loan Skip A Pay Fee .... $29. 95/ea ch" (Xplore, doc 12872) is read at $29.95 and "ATM
+Transactions (per item) | $1 50* after 8/mo" (Members 1st, docs 13851 and 32358) at $1.50, where
+the stored reads said $29 and $1. The source check reads those prices the same way
+(`withDroppedDecimalPoints` now lives in `src/lib/custom-report/source-check.ts`). Free: rules only.
 
 ## Held lines and the re-checks after each extract
 
@@ -826,6 +833,6 @@ fails a PR that changes one of these constants without updating its line here (#
 | `LINEUP_CORRECT_STRATEGY` | `knox.lineup_correct` | v2 | `knox/lineup-correct.ts` |
 | `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v19 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v2 | `knox/paid-extract.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v66 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v68 | `knox/specialists.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v6 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v1 | `knox/takedown-lessons.ts` |

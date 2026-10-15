@@ -4,7 +4,10 @@ import { composableTail, passesDarwinChecks, titleTail } from "@/lib/agents/knox
 import type { AccountLineup } from "@/lib/agents/knox/lineup";
 import { CANONICAL_KEY_MAP } from "@/lib/fee-taxonomy";
 import { ATM_ADJUSTMENT, CHECKBOOK_RECONCILIATION, CROSS_BORDER_BUNDLE, FAX_SERVICE, PER_PAGE_COPY } from "@/lib/fee-fold";
-import { joinWrappedLeaderNames, parenBalance, stripPriceFootnoteMarks } from "@/lib/custom-report/source-check";
+import { joinWrappedLeaderNames, parenBalance, stripPriceFootnoteMarks, withDroppedDecimalPoints } from "@/lib/custom-report/source-check";
+
+// Shared with the source check since #1334; Knox's tests and callers keep importing it from here.
+export { withDroppedDecimalPoints };
 import { newestColumnText } from "@/lib/fee-change-columns";
 
 /**
@@ -63,16 +66,16 @@ export interface ExtractionRulesResult {
   candidates: ExtractedFeeCandidate[];
   held: HeldFeeCandidate[];
   /**
-   * v66: priced lines no rule names that were not held, by reason (`DroppedLineReason`). The
+   * v68: priced lines no rule names that were not held, by reason (`DroppedLineReason`). The
    * extract step writes the totals to the run ledger, so no priced line leaves silently.
    */
   dropped?: Partial<Record<DroppedLineReason, number>>;
-  /** v66, one line's read only: a `label | price` row no rule names, held only in a fee schedule. */
+  /** v68, one line's read only: a `label | price` row no rule names, held only in a fee schedule. */
   tableHeld?: HeldFeeCandidate[];
 }
 
 /**
- * Why a priced line no rule names was not held (v66). The first five are the non-fee guards:
+ * Why a priced line no rule names was not held (v68). The first five are the non-fee guards:
  * a balance an account requires, an opening deposit or minimum, a rate or yield line, a limit
  * or loan size, and a figure over the largest reasonable fee.
  */
@@ -192,7 +195,7 @@ export const FEE_PATTERNS: FeePattern[] = [
   },
   { key: "document_reproduction", pattern: /\b(?:reproduction|supporting documents?)\b/i },
   // A box size with three dimensions ("3"X10"X 21"") is a safe deposit box anywhere on the line.
-  // v66: inch marks may print as primes ("03″x05″x22″").
+  // v68: inch marks may print as primes ("03″x05″x22″").
   { key: "safe_deposit_box", pattern: /\b\d{1,2}\s?["”″]?\s?[x×]\s?\d{1,2}\s?["”″]?\s?[x×]\s?\d{1,2}\b/i },
   // v25: so is a two-dimension size in inches ("OVERDRAFT AND NSF FEES 10.5x10.5 Inch", a box
   // row under the next section's heading in a one-line schedule).
@@ -235,12 +238,12 @@ export const FEE_PATTERNS: FeePattern[] = [
   },
   {
     key: "rush_card",
-    // v66: "Rushed Debit Card Request", "Rush Plastic Order (2-day)", "Visa CHECKCARD".
+    // v68: "Rushed Debit Card Request", "Rush Plastic Order (2-day)", "Visa CHECKCARD".
     pattern: /\b(rush(?:ed)?|expedit\w*|overnight)\b.{0,30}\b(cards?|debit|plastics?|check ?cards?)\b|\b(cards?|debit|plastics?|check ?cards?)\b.{0,30}\b(rush(?:ed)?|expedit\w*|overnight)\b/i,
   },
   {
     key: "card_replacement",
-    // v66: "Visa CHECKCARD Replacement", "Replace Lost or Stolen VISA", "Debit Card Reorder".
+    // v68: "Visa CHECKCARD Replacement", "Replace Lost or Stolen VISA", "Debit Card Reorder".
     pattern: /\b(replacement|replace|reissue|re-issue|lost|stolen)\b.{0,30}\b(cards?|debit|check ?cards?|visa)\b|\b(?:cards?|check ?cards?)\b.{0,20}\b(replacement|replace|reissue|re-issue|re-?order)\b/i,
   },
   {
@@ -308,7 +311,7 @@ export const FEE_PATTERNS: FeePattern[] = [
   { key: "cash_advance", pattern: /\bcash advance\b/i },
   { key: "night_deposit", pattern: /\b(night deposit|night depository|night drop|deposit bags?|zipper bags?)\b/i },
   { key: "courier_delivery", pattern: /\b(courier|fed ?ex|overnight (mail|delivery))\b/i },
-  // v66: "notarization", "notarial acts".
+  // v68: "notarization", "notarial acts".
   { key: "notary_fee", pattern: /\bnotar(?:y|ial|i[sz]ation|i[sz]ed?)\b/i },
   {
     key: "safe_deposit_box",
@@ -385,7 +388,7 @@ export const FEE_PATTERNS: FeePattern[] = [
     pattern:
       /\b(?:checking|savings|money market|share|account|club)\b[^|()]{0,30}\(\s*(?:(?:average|avg\.?|daily|minimum|min\.?)\s+)*(?:balances?\s+)?(?:below|under|less than)\b/i,
   },
-  // v66 (#1102): fee-schedule labels with no "fee" or "charge" in them, which Knox dropped
+  // v68 (#1102): fee-schedule labels with no "fee" or "charge" in them, which Knox dropped
   // (the 62-bank answer key, 15 Oct 2026: 240 missed key lines in our own stored text had no row
   // and no fee word). Each is a service's own name at several banks. Last, so they only claim lines
   // no rule above recognizes.
@@ -717,13 +720,13 @@ export function classifyPatternKey(value: string): string | null {
 const BOX_SIZE_NAME = /^\d{1,2}(?:\.\d)?\s?["”″]?\s?[x×]\s?\d{1,2}\s?["”″]?(?:\s?[x×]\s?\d{1,2}\s?["”″]?)?$/i;
 
 export function nearestFeeText(prefix: string): string {
-  // v66: a box size alone in its cell ("RESEARCH | 5 x 10 | $ 100.00", "3×10 | $55.00",
+  // v68: a box size alone in its cell ("RESEARCH | 5 x 10 | $ 100.00", "3×10 | $55.00",
   // "2” x 5” $45.00") names the box it prices, though it has no word.
   const cells = prefix.split(CELL_SEPARATOR).filter((cell) => /[a-z]{3,}/i.test(cell) || BOX_SIZE_NAME.test(cell.trim()));
   // v38: a cell holding only a threshold's comparison word, cut off from its figure
   // ("Courtesy Pay | Over $5 | Per occurrence | $32", Lighthouse), names no fee.
   while (cells.length > 1 && THRESHOLD_WORD_CELL.test(cells.at(-1) ?? "")) cells.pop();
-  // v66: a free cell of another account column ("Stop Payment | FREE | $25") names no fee.
+  // v68: a free cell of another account column ("Stop Payment | FREE | $25") names no fee.
   while (cells.length > 1 && ZERO_CELL.test((cells.at(-1) ?? "").trim())) cells.pop();
   // v42: an overdraft row's last text cell that only lists the items it covers ("Courtesy Pay
   // for paid items | Checks (Share Drafts), Online Payments, & ACH", "Overdrawn/Courtesy Pay |
@@ -1159,7 +1162,7 @@ const ZERO_CONDITION =
   /\b(?:to waive|waived? (?:if|when|with)|if (?!requested\b)\w+|unless|qualifications?|eligible|first \d+|\d+\s+free|free (?:day|with new)|(?:won[’']?t|will not) be charged|not (?:available|charged) on)\b/i;
 
 /**
- * v66: what a label with no "fee" or "charge" names when it is not a fee: a balance or
+ * v68: what a label with no "fee" or "charge" names when it is not a fee: a balance or
  * minimum an account requires or opens with, a rate or yield, a limit or loan size, or a
  * figure larger than any fee. Null when none applies.
  */
@@ -1178,7 +1181,7 @@ export function nonFeeReason(label: string, amount: number): DroppedLineReason |
 }
 
 /**
- * v66: a table row of a short label and its prices, every cell after the label a price ("$5",
+ * v68: a table row of a short label and its prices, every cell after the label a price ("$5",
  * "$22.00 each", "$20.00 per hour") or a free cell, and the label no sentence ("Notary Service |
  * $5", "Night Drop Bag & Keys | $22", "Statement Printout | $2.00 | $2.00").
  */
@@ -1269,7 +1272,7 @@ export function extractFromSegment(segment: string): ExtractionRulesResult {
     return result;
   }
   if (!firstAmount) {
-    // v66: "Inquiry | FREE": a label no rule names beside a free cell is held at $0 in a fee
+    // v68: "Inquiry | FREE": a label no rule names beside a free cell is held at $0 in a fee
     // schedule, as a priced label row is.
     const label = cells ? nameFrom(cells[0]) : "";
     if (!hint && cells && cells.length >= 2 && cells.slice(1).every((cell) => ZERO_CELL.test(cell)) && usableName(label)) {
@@ -1325,7 +1328,7 @@ export function extractFromSegment(segment: string): ExtractionRulesResult {
   if (!cells && !/[a-z]/i.test(prefix) && /(?:\.\s?){3,}\s*$|…\s*$/.test(segment)) return result;
 
   // "No fee with a $500 balance": the dollar figure is a condition, not a fee.
-  // v66: a "FREE" cell of its own in a row of account columns ("Notary Service | FREE | $10 |
+  // v68: a "FREE" cell of its own in a row of account columns ("Notary Service | FREE | $10 |
   // $10 | FREE", "Copy of Cleared Check | FREE | $5") is one column's price, not a condition:
   // the row's priced columns are read, and its free column is held at $0 below.
   const freeColumns = Boolean(hint && cells && cells.length >= 3 && cells.slice(1).every((cell) => ZERO_CELL.test(cell) || PRICE_ONLY_CELL.test(cell)) &&
@@ -1367,9 +1370,9 @@ export function extractFromSegment(segment: string): ExtractionRulesResult {
   if (feeAmounts.length === 0) return result;
   const waivable = Number.isFinite(waiverAt);
   let feeName = usableName(nameFrom(segment.slice(0, feeAmounts[0].start))) ? nameFrom(segment.slice(0, feeAmounts[0].start)) : name;
-  // v66: the free column is not part of the name ("Stop Payment | FREE | $25" is "Stop Payment").
+  // v68: the free column is not part of the name ("Stop Payment | FREE | $25" is "Stop Payment").
   if (freeColumns && usableName(nameFrom(cells![0]))) feeName = nameFrom(cells![0]);
-  // v66: a box size row priced per year ("2×5 | $ 25/Year") is named by its size: the unit
+  // v68: a box size row priced per year ("2×5 | $ 25/Year") is named by its size: the unit
   // left after the price ("/Year") is not a name.
   if (cells && BOX_SIZE_NAME.test(cells[0].trim()) && cells.slice(1).every((cell) => PRICE_ONLY_CELL.test(cell.trim()))) {
     feeName = cells[0].trim();
@@ -1462,7 +1465,7 @@ export function extractFromSegment(segment: string): ExtractionRulesResult {
     } else if (feeWord) {
       result.held.push({ shape: "unclassified", feeName, amount: feeAmounts[0].value, amountMax: null, percent: null, frequency, canonicalHint: null, excerpt: segment });
     } else if (cells && labelPriceRow(cells)) {
-      // v66: "Notary Service | $5", "Night Drop Bag & Keys | $22": a label and its price in a
+      // v68: "Notary Service | $5", "Night Drop Bag & Keys | $22": a label and its price in a
       // table row are held for review in a fee schedule (`extractCandidatesFromText` decides).
       result.tableHeld = [{ shape: "unclassified", feeName, amount: feeAmounts[0].value, amountMax: null, percent: null, frequency, canonicalHint: null, excerpt: segment }];
     } else {
@@ -1759,38 +1762,6 @@ export function withoutBusinessOnlyFees(text: string): string {
 /** #1196: a price's own unit right after it ("$15.00 per month", "$25.00/hr", "$5.00/statement", "$10.00 each"). */
 const PRICE_UNIT_AFTER = /^\s*(?:\/\s*(?:statement|stmt|hr|hour|item|month|mo|sheet|check|year|yr|day|page|copy|request)\b|per\s+(?:month|item|year|statement|check|hour|sheet|day|page|copy|request)\b|each\b|ea\b\.?)/i;
 
-/**
- * #1196: a price whose decimal point the PDF text dropped ("Dormant accounts | $15 00 per
- * month Nonsufficient funds | $35 00", Addition Financial 8629). Knox read "$15" as the price and
- * gave the cents and their unit to the next fee ("00 per month Nonsufficient funds", monthly).
- * The point goes back ("$15.00"), so the cents and "per month" stay with the dormant fee.
- * "00" cents always; other cents only when the text drops the point on "00" prices too and the
- * cents end their cell ("$2 50 each", "$4 95 |"), so a count after a price ("$5 10 items") stays.
- * Never a box size ("$5 10 x 10") or a longer number.
- *
- * #1305: two more shapes of the same price. A footnote star right after the cents ends them
- * ("ATM Transactions (per item) | $1 50* after 8/mo", Members 1st 7517, read as $1), and the
- * star stays a mark, never a digit. A point kept with a space after it ("Loan Skip A Pay Fee
- * .... $29. 95/ea ch", Xplore 6636, read as $29) is the same dropped point. Each shape is
- * counted on its own: ". 00" prices never vouch for "$2 50", which in a letter-spaced text is
- * $250. Cents after ". " end their cell too, since a sentence can end on a price and go on
- * with another number ("$500. 10-year draw period").
- */
-const DROPPED_POINT_SHAPES = [" ", "\\. "].map((dropped) => ({
-  zero: new RegExp(String.raw`\$(\s?)(\d{1,3}(?:,\d{3})+|\d{1,4})${dropped}(00)(?![\d.,])(?!\s*[x×]\s*\d)`, "g"),
-  cents: new RegExp(String.raw`\$(\s?)(\d{1,3}(?:,\d{3})+|\d{1,4})${dropped}(\d{2})(?![\d.,])(?=[*†‡]|\s*(?:$|\||\/|each\b|per\b|ea\b))`, "gim"),
-}));
-const DROPPED_POINT_MIN = 3;
-
-export function withDroppedDecimalPoints(text: string): string {
-  const withPoint = (_whole: string, gap: string, dollars: string, cents: string) => `$${gap}${dollars}.${cents}`;
-  return DROPPED_POINT_SHAPES.reduce((current, shape) => {
-    const zeros = current.match(shape.zero)?.length ?? 0;
-    if (zeros === 0) return current;
-    const restored = current.replace(shape.zero, withPoint);
-    return zeros < DROPPED_POINT_MIN ? restored : restored.replace(shape.cents, withPoint);
-  }, text);
-}
 
 export function extractCandidatesFromText(input: string): ExtractionRulesResult {
   const raw = withDroppedDecimalPoints(input);
@@ -1838,7 +1809,7 @@ export function extractCandidatesFromText(input: string): ExtractionRulesResult 
     tableHeld.push(...(found.tableHeld ?? []));
     for (const [reason, count] of Object.entries(found.dropped ?? {})) countDrop(result, reason as DroppedLineReason, count);
   }
-  // v66: label-and-price rows no rule names are held only in a fee schedule (one that names
+  // v68: label-and-price rows no rule names are held only in a fee schedule (one that names
   // itself so or where the rules read five fees), after the lines that say "fee", so they never
   // crowd those out of the per-document cap.
   const feeSchedule = result.candidates.length >= FEE_SCHEDULE_MIN_FEES || FEE_SCHEDULE_TITLE.test(text);

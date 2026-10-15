@@ -15,6 +15,7 @@ import { retireBusinessScheduleFees } from "@/lib/agents/hamilton/business-sched
 import { retireSameLineDuplicates } from "@/lib/agents/hamilton/same-line-duplicates";
 import { retireOtherBankDocumentFees } from "@/lib/agents/hamilton/other-bank-document";
 import { retireEvalVerdictFees } from "@/lib/agents/hamilton/eval-verdicts";
+import { applyHandAmountCorrections } from "@/lib/agents/hamilton/hand-amount-corrections";
 import { requeueGuardRejectedFees } from "@/lib/agents/hamilton/guard-requeue";
 import { retireArticlePageFees } from "@/lib/agents/hamilton/article-page";
 import { retireProductPageFees } from "@/lib/agents/hamilton/product-page";
@@ -719,7 +720,7 @@ async function executeAgenticStep(
           inserted_free_fees: extraction.freeFees,
           skipped_fee_candidates: extraction.skippedFees,
           held_for_review: extraction.heldForReview,
-          // v66: priced lines no rule names that were neither read nor held, by reason.
+          // v68: priced lines no rule names that were neither read nor held, by reason.
           dropped_priced_lines: extraction.droppedLines,
           replaced_older_rows: extraction.retiredOlderRows,
           retired_older_copy_rows: extraction.retiredOlderCopyRows,
@@ -987,6 +988,9 @@ async function executeAgenticStep(
         dryRun: run.runKind === "dry_run",
         institutionId,
       });
+      // #1334: eight live fees read with their cents cut off are corrected in place, and the
+      // unpublished copies of those reads rejected, before this step publishes anything.
+      const handAmounts = await applyHandAmountCorrections(tx, { runId: run.id, dryRun: run.runKind === "dry_run" });
       // An institution that no longer operates keeps no live fee (#1200).
       const closedInstitution = await retireClosedInstitutionFees(tx, {
         runId: run.id,
@@ -1061,8 +1065,8 @@ async function executeAgenticStep(
         institutionId,
       });
       // #1302: a live row that repeats another live line of its page under a near name ("Research
-      // fee" / "Account Research fee"), when the page prints one line. Shadow until
-      // NEAR_NAME_COLLAPSE_LIVE is turned on: it reports and changes nothing.
+      // fee" / "Account Research fee"), when the page prints one line. Live while
+      // NEAR_NAME_COLLAPSE_LIVE is on; a dry run reports and changes nothing.
       const nearNameCollapse = await collapseNearNameDuplicates(tx, {
         runId: run.id,
         batchId: `agentic-run-${run.id}`,
@@ -1456,6 +1460,11 @@ async function executeAgenticStep(
             unconfirmed_host_waiting: otherBank.unconfirmedHostWaiting,
             rolled_back: otherBank.rolledBack.length,
             links_cleared: otherBank.linksCleared,
+          },
+          hand_amount_correction: {
+            corrected: handAmounts.corrected.map((fix) => ({ fee_published_id: fix.feePublishedId, from: fix.from, to: fix.to })),
+            rejected_twins: handAmounts.rejectedTwins,
+            skipped: handAmounts.skipped.length,
           },
           eval_verdict: {
             eval_matched: evalVerdicts.evalMatched,

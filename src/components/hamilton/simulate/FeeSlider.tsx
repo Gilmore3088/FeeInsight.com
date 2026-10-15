@@ -106,7 +106,7 @@ export function FeeSlider({
               background: "var(--hamilton-primary)",
               borderColor: "white",
             }}
-            aria-label="Proposed fee"
+            aria-label="Tested price"
           />
         </Slider.Root>
 

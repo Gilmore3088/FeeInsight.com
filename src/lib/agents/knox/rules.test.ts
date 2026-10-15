@@ -1270,7 +1270,7 @@ describe("Knox extract.rules: a dropped decimal point (#1196)", () => {
   });
 });
 
-describe("Knox extract.rules v66: fee-schedule lines with no fee word (#1102)", () => {
+describe("Knox extract.rules v68: fee-schedule lines with no fee word (#1102)", () => {
   it("files recurring service labels that say no fee or charge", () => {
     const cases: Array<[string, string]> = [
       ["Research (per hour) | $25.00", "account_research"],

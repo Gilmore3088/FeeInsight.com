@@ -50,6 +50,21 @@ import {
 import { studyObservations, withStudyPlace, type DependenceYear, type StudyPlacementRow } from "./studies";
 import { priceBands } from "./bands";
 import { regulatoryFacts } from "./regulators";
+import {
+  statePostFacts,
+  wireFacts,
+  WIRE_ACTION_YEARS,
+  WIRE_BILL_DAYS,
+  WIRE_POST_DAYS,
+  WIRE_RULE_DAYS,
+  type WirePostRow,
+  type WireRows,
+} from "./wire";
+import { isConsumerLaw } from "@/lib/data-store/regulatory-watch";
+import { STATE_BILL_STAGE_LABELS, toRegulatorPosts } from "@/lib/data-store/state-news";
+import { readableHeadline } from "@/lib/regulatory/state-news";
+import { enforcementAgencyLabel } from "@/lib/regulatory/state-enforcement";
+import { OCC_ENFORCEMENT_SEARCH_URL } from "@/lib/regulatory/enforcement";
 import { buildSegmentResearch, shortSegmentLabel } from "./segment";
 import { MIN_PEERS_FOR_POSITION } from "./scenario";
 import { feeRevenueLine, institutionFinancials, serviceChargeTrend, type ServiceChargeRow } from "./revenue";
@@ -383,6 +398,115 @@ async function loadRegArticles(days: number, now = new Date()): Promise<RegArtic
   }
 }
 
+const isoDay = (value: unknown): string | null => {
+  if (value === null || value === undefined || value === "") return null;
+  const d = value instanceof Date ? value : new Date(String(value));
+  return Number.isNaN(d.getTime()) ? null : d.toISOString().slice(0, 10);
+};
+const textList = (value: unknown): string[] => (Array.isArray(value) ? value.map(String) : []);
+
+/**
+ * The Regulatory Wire rows a regulation answer can cite (#1090): federal rules with a fee topic,
+ * the state's fee bills, consumer-law enforcement actions by the OCC or the Federal Reserve or
+ * in the state, and the state regulator's fee posts. Each read fails to empty on its own.
+ */
+async function loadWire(stateCode: string | null, now = new Date()): Promise<WireRows & { posts: WirePostRow[] }> {
+  const today = now.toISOString().slice(0, 10);
+  const state = stateCode ? stateCode.toUpperCase() : null;
+  const actionSince = new Date(now);
+  actionSince.setUTCFullYear(actionSince.getUTCFullYear() - WIRE_ACTION_YEARS);
+  const empty = (label: string) => (error: unknown): Record<string, unknown>[] => {
+    console.error(`[hamilton-research] wire ${label} read failed`, { error });
+    return [];
+  };
+  const [rules, bills, actions, posts] = await Promise.all([
+    sql`
+      SELECT kind, title, agencies, topics, published_on, comments_close_on, effective_on, url
+        FROM reg_tracker_items
+       WHERE source = 'federal_register'
+         AND kind IN ('proposed_rule', 'final_rule')
+         AND cardinality(topics) > 0
+         AND (published_on >= ${sinceDate(WIRE_RULE_DAYS, now)}::date
+              OR comments_close_on >= ${today}::date
+              OR effective_on >= ${sinceDate(WIRE_RULE_DAYS, now)}::date)
+       ORDER BY published_on DESC NULLS LAST
+       LIMIT 100`.catch(empty("rules")),
+    state
+      ? sql`
+          SELECT jurisdiction, identifier, title, stage, stage_on, published_on, topics, url
+            FROM reg_tracker_items
+           WHERE source = 'open_states'
+             AND jurisdiction = ${state}
+             AND cardinality(topics) > 0
+             AND COALESCE(stage_on, published_on) >= ${sinceDate(WIRE_BILL_DAYS, now)}::date
+           ORDER BY COALESCE(stage_on, published_on) DESC NULLS LAST
+           LIMIT 50`.catch(empty("bills"))
+      : Promise.resolve([]),
+    sql`
+      SELECT agency, party_name, party_state, action_type, subject, start_date, document_url
+        FROM institution_enforcement_actions
+       WHERE start_date >= ${actionSince.toISOString().slice(0, 10)}::date
+         AND (agency IN ('OCC', 'FRB') OR party_state = ${state})
+       ORDER BY start_date DESC NULLS LAST, id DESC
+       LIMIT 500`.catch(empty("enforcement")),
+    state
+      ? sql`
+          SELECT source, title, link, published_at
+            FROM reg_articles
+           WHERE source = ${`state:${state}`}
+             AND published_at >= ${sinceDate(WIRE_POST_DAYS, now)}
+           ORDER BY published_at DESC
+           LIMIT 200`.catch(empty("state posts"))
+      : Promise.resolve([]),
+  ]);
+  const stateName = state ? STATE_NAMES[state] ?? state : null;
+  return {
+    rules: (rules as Record<string, unknown>[]).map((r) => ({
+      kind: String(r.kind),
+      title: String(r.title),
+      agencies: textList(r.agencies),
+      topics: textList(r.topics),
+      published_on: isoDay(r.published_on),
+      comments_close_on: isoDay(r.comments_close_on),
+      effective_on: isoDay(r.effective_on),
+      url: r.url ? String(r.url) : null,
+    })),
+    bills: (bills as Record<string, unknown>[]).map((r) => ({
+      state_code: String(r.jurisdiction),
+      identifier: r.identifier ? String(r.identifier) : null,
+      title: readableHeadline(String(r.title)),
+      stage_label: r.stage ? STATE_BILL_STAGE_LABELS[String(r.stage)] ?? null : null,
+      stage_on: isoDay(r.stage_on) ?? isoDay(r.published_on),
+      topics: textList(r.topics),
+      url: r.url ? String(r.url) : null,
+    })),
+    // Only actions whose agency subject names consumer law; state orders carry no subject, so
+    // they are left out rather than guessed at.
+    actions: (actions as Record<string, unknown>[])
+      .filter((r) => isConsumerLaw(r.subject ? String(r.subject) : null))
+      .map((r) => ({
+        agency: String(r.agency),
+        agency_label: enforcementAgencyLabel(String(r.agency)),
+        party_name: String(r.party_name),
+        party_state: r.party_state ? String(r.party_state) : null,
+        action_type: r.action_type ? String(r.action_type) : null,
+        start_date: isoDay(r.start_date),
+        // The OCC export has no document links; its search page finds the order by name.
+        url: r.document_url ? String(r.document_url) : String(r.agency) === "OCC" ? OCC_ENFORCEMENT_SEARCH_URL : null,
+      })),
+    posts: toRegulatorPosts(
+      (posts as Record<string, unknown>[]).map((r) => ({
+        source: String(r.source),
+        title: String(r.title),
+        link: String(r.link),
+        published_at: r.published_at === null ? null : String(r.published_at),
+      })),
+    )
+      .filter((p) => p.fee_related)
+      .map((p) => ({ state_code: p.state_code, agency: `${stateName ?? p.state_code} state regulator`, title: p.title, link: p.link, published_at: p.published_at })),
+  };
+}
+
 /** Industry deposit service charge income, newest quarter first, in dollars (eight quarters). */
 export async function loadNationalIncomeSeries(): Promise<MarketIncome[]> {
   // Twelve quarters so each of the newest eight has its year-earlier quarter for the change.
@@ -577,7 +701,7 @@ export async function getWorkspaceBriefing(
         ...(financials?.peerMedian ? [financials.peerMedian.sourceRef] : []),
         ...(nationalIncome ? [nationalIncome.sourceRef] : []),
         { label: `FDIC, Federal Reserve, OCC and CFPB releases, last ${RULE_CHANGE_WINDOW_DAYS} days`, table: "reg_articles" },
-        ...(studyRows.length ? [{ label: "Hamilton studies (call reports, branch deposits, household income, published fees)", table: "hamilton_studies" }] : []),
+        ...(studies.length ? [{ label: "Hamilton studies (call reports, published fees)", table: "hamilton_studies" }] : []),
       ],
       assumptions: [
         `Each fee is compared with the narrowest default peer group where at least ${MIN_PEERS_FOR_POSITION} other institutions publish it, widening to national.`,
@@ -751,7 +875,7 @@ export async function getFeeResearch(
 ): Promise<FeeResearch | null> {
   const base = await loadBase(institutionId, [feeCategory], options);
   if (!base) return null;
-  const [changes, financialRows, articles, market, ownFeeRows, nationalIncomeSeries, economy, segment, rates, regulators, complaints, complaintBenchmark] = await Promise.all([
+  const [changes, financialRows, articles, market, ownFeeRows, nationalIncomeSeries, economy, segment, rates, regulators, complaints, complaintBenchmark, wireRows] = await Promise.all([
     loadStateChanges(base.stateCode, feeCategory),
     loadServiceChargeRows(institutionId),
     loadRegArticles(REGULATION_NEWS_WINDOW_DAYS, now),
@@ -764,8 +888,12 @@ export async function getFeeResearch(
     getInstitutionRegulators(institutionId).catch(() => null),
     getInstitutionComplaintYears(institutionId).catch(() => []),
     getComplaintBenchmark(institutionId).catch(() => null),
+    loadWire(base.stateCode, now),
   ]);
   const ownRows: OwnFeeRow[] = ownFeeRows;
+  const wireScope = { feeCategory, stateCode: base.stateCode, primaryRegulator: regulators?.primaryRegulator ?? null, today: now };
+  const wire = wireFacts(wireRows, wireScope);
+  const statePosts = statePostFacts(wireRows.posts, wireScope);
   const financials = await withPeerMedian(base, institutionFinancials(financialRows));
   const revenueLine = feeRevenueLine(financialRows, feeCategory, base.charterType);
   const local = localMarketView(base, market, feeCategory);
@@ -829,7 +957,10 @@ export async function getFeeResearch(
         readOn: now.toISOString().slice(0, 10),
       }),
       ...feeRules(feeCategory, base.charterType),
+      // The Wire: rules, bills and enforcement first, then federal releases, then state posts.
+      ...wire,
       ...feeRegulatoryNews(articles, feeCategory),
+      ...statePosts,
     ],
     economy,
     segment,
@@ -860,6 +991,8 @@ export async function getFeeResearch(
         ...(rates ? [rates.source] : []),
         ...(lineup ? [lineup.source] : []),
         { label: `FDIC, Federal Reserve, OCC and CFPB releases, last ${REGULATION_NEWS_WINDOW_DAYS} days`, table: "reg_articles" },
+        ...(wire.some((f) => f.source.table === "reg_tracker_items") ? [{ label: "Federal Register rules and state fee bills (Open States)", table: "reg_tracker_items" }] : []),
+        ...(wire.some((f) => f.source.table === "institution_enforcement_actions") ? [{ label: "OCC, Federal Reserve and state enforcement action lists", table: "institution_enforcement_actions" }] : []),
       ],
       assumptions: [
         peers.length < MIN_PEERS_FOR_POSITION
@@ -876,6 +1009,7 @@ export async function getFeeResearch(
         `Market layers show percentiles only where at least ${MIN_PEERS_FOR_POSITION} other institutions publish the fee.`,
         "The local market is the counties holding the bank's branches (up to three, in its main state), or its headquarters city when it is not in the Summary of Deposits, as in the custom report.",
         "Rules come from a short reviewed list. State fee laws appear only once reviewed; none is cited otherwise.",
+        "Recent rules, bills and enforcement actions come from the Regulatory Wire as each agency or legislature published them; they are listed, not interpreted.",
         "CFPB complaints count only where the CFPB company name matched this institution; no match is not proof of none.",
       ],
       clientFacts: [],

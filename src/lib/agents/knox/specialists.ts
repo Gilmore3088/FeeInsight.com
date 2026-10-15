@@ -64,11 +64,15 @@ import { frequencyFromLine, settledFrequency } from "@/lib/fee-frequency";
 // specialists is one fee (Northern Trust).
 // v63: a box size glued after another fee's name starts its own line (doc 20570).
 // v64: a box table printed sideways, sizes over prices, is read one box per line (SCCU 8109).
-// v66 (#1102): fee-schedule labels with no "fee" or "charge" (research, notary acts, night drop,
+// v65: every read carries a customer audience (`fee_audience`, `audience_evidence`, `fee_treatment`).
+// v66 was held for the dropped-lines fix and never shipped; v67 (#1334) took the next bump.
+// v67 (#1334): no rule change; every current text is read once more so the dropped-decimal reads
+// #1196/#1305 taught the rules pass ("$29. 95" is $29.95, "$1 50*" is $1.50) reach stored pages.
+// v68 (#1102): fee-schedule labels with no "fee" or "charge" (research, notary acts, night drop,
 // box keys and sizes, extra statements, copies), a "FREE" column beside priced columns, and
 // label-and-price rows no rule names held in a fee schedule instead of dropped, with every
 // dropped priced line counted by reason.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 66 } as const;
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 68 } as const;
 
 export interface SpecialistRun {
   strategy: string;
@@ -88,7 +92,7 @@ export interface FreeExtractionResult extends ExtractionRulesResult {
   runs: SpecialistRun[];
   /** Percentage fees that publish as rates and trace to the text (`percent.ts`); the rest stay held. */
   rates: RateFeeCandidate[];
-  /** v66: priced lines no rule names that were neither read nor held, by reason. */
+  /** v68: priced lines no rule names that were neither read nor held, by reason. */
   dropped: Partial<Record<DroppedLineReason, number>>;
 }
 

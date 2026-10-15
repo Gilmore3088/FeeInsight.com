@@ -15,6 +15,7 @@ import { FEE_FAMILIES, getDisplayName } from "@/lib/fee-taxonomy";
 import { trackerStage, type TrackerStage } from "@/lib/regulatory/federal-register";
 import { isOpenAction } from "./registry-profile";
 import { STATE_REGULATORS } from "@/lib/regulatory/state-regulators";
+import { ALL_FEE_TOPICS, TOPIC_CATEGORIES } from "@/lib/regulatory/fee-topics";
 
 /** Actions that began within this many years are shown. */
 export const WATCH_ACTION_YEARS = 3;
@@ -170,14 +171,8 @@ export function focusFees(
   }).slice(0, FOCUS_SHOWN);
 }
 
-const ALL_FEE_TOPICS = new Set(["fees", "deposit_disclosure"]);
-
-/** Fee categories each tracker topic (federal-register.ts TOPIC_KEYWORDS) bears on. */
-export const TOPIC_CATEGORIES: Record<string, readonly string[]> = {
-  overdraft_nsf: FEE_FAMILIES["Overdraft & NSF"] ?? [],
-  electronic_transfers: [...(FEE_FAMILIES["ATM & Card"] ?? []), "wire_intl_outgoing"],
-  funds_availability: FEE_FAMILIES["Check Services"] ?? [],
-};
+// The topic map is shared with Hamilton's regulation answers (@/lib/regulatory/fee-topics).
+export { TOPIC_CATEGORIES };
 
 /**
  * The institution's fees an item touches, largest amount first. Items about all fees

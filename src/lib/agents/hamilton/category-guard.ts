@@ -458,6 +458,17 @@ async function refileLiveFees(
   return applyLiveRefiles(db, unique, options);
 }
 
+/**
+ * The excess flag per move, as text. postgres.js types a JS array by its first element, so a
+ * boolean array is sent as a scalar `bool` and `$n::boolean[]` fails ("cannot cast type boolean
+ * to boolean[]"), which the catch below turned into zero re-files on Oct 15. Send text and cast
+ * `::text[]::boolean[]`: a text array cast straight to `::boolean[]` reads every flag as false
+ * (checked on Postgres 16 with postgres.js 3.4.8).
+ */
+export function excessFlags(unique: LiveRefile[]): string[] {
+  return unique.map((restore) => (restore.excess ? "true" : "false"));
+}
+
 /** The dry run's count: the same live-twin test as the move, read only. */
 async function wouldRefile(db: SqlTag, unique: LiveRefile[]): Promise<Set<number>> {
   try {
@@ -467,7 +478,7 @@ async function wouldRefile(db: SqlTag, unique: LiveRefile[]): Promise<Set<number
         JOIN unnest(${unique.map((restore) => Number(restore.row.fee_published_id))}::bigint[],
                     ${unique.map((restore) => restore.row.canonical_fee_key)}::text[],
                     ${unique.map((restore) => restore.to)}::text[],
-                    ${unique.map((restore) => restore.excess)}::boolean[]) AS v(fee_published_id, from_key, to_key, excess)
+                    ${excessFlags(unique)}::text[]::boolean[]) AS v(fee_published_id, from_key, to_key, excess)
           ON fp.fee_published_id = v.fee_published_id
        WHERE fp.canonical_fee_key = v.from_key
          AND fp.rolled_back_at IS NULL
@@ -502,7 +513,7 @@ async function applyLiveRefiles(
           FROM unnest(${unique.map((restore) => Number(restore.row.fee_published_id))}::bigint[],
                       ${unique.map((restore) => restore.row.canonical_fee_key)}::text[],
                       ${unique.map((restore) => restore.to)}::text[],
-                      ${unique.map((restore) => restore.excess)}::boolean[]) AS v(fee_published_id, from_key, to_key, excess)
+                      ${excessFlags(unique)}::text[]::boolean[]) AS v(fee_published_id, from_key, to_key, excess)
          WHERE fp.fee_published_id = v.fee_published_id
            AND fp.canonical_fee_key = v.from_key
            AND fp.rolled_back_at IS NULL

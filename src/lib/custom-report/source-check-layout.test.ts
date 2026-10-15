@@ -520,4 +520,30 @@ describe("checkFeeAgainstSource daily caps", () => {
     expect(checkFeeAgainstSource("Garnishment Fee | $100.00 +", "Garnishment Fee", 100, ".").ok).toBe(true);
     expect(checkFeeAgainstSource("Official Checks | Personal Money Orders: $5.00 up to $500 face value.", "Personal Money Orders", 5, ".").ok).toBe(true);
   });
+
+  it("reads a price whose decimal point the PDF dropped as Knox does, so cut cents never trace (#1334)", () => {
+    // Members 1st (7517), doc 13851, Oct 15: live fee 29166 and twin 112658 read "$1 50*" as $1.
+    const members = [
+      "Teller Check | $5 00/check",
+      "Money Orders | $2 00/item",
+      "Counter Checks (per book of 8) | $10 00*",
+      "Debit/ATM/Credit Card Replacement | $15 00*",
+      "ATM Transactions (per item) | $1 50* after 8/mo",
+      "Bad Address/Returned Mail | $10 00/month",
+    ].join("\n");
+    expect(checkFeeAgainstSource(members, "ATM Transactions (per item)", 1, ".", "atm_non_network")).toMatchObject({ ok: false });
+    expect(checkFeeAgainstSource(members, "ATM Transactions (per item)", 1.5, ".", "atm_non_network").ok).toBe(true);
+    expect(checkFeeAgainstSource(members, "Debit/ATM/Credit Card Replacement", 15, ".").ok).toBe(true);
+    // Xplore (6636), doc 12872: live fee 49175 and twin 113133 read "$29. 95/ea ch" as $29.
+    const xplore = [
+      "IRA Annual Maintenance Fee................................................ $10. 00",
+      "Legal Proc es s/ Tax Levy...................................................................... $50. 00",
+      "Loan Skip A Pay Fee................................................................... $29. 95/ea ch",
+      "Account Recon ciliati on/ Res earch Fee (1hr min) .............. $20. 00/hour | Non-Sufficient Funds ...................................................................................... $29.00",
+    ].join("\n");
+    expect(checkFeeAgainstSource(xplore, "Loan Skip A Pay Fee", 29, ".", "other_lending_fee")).toMatchObject({ ok: false });
+    expect(checkFeeAgainstSource(xplore, "Loan Skip A Pay Fee", 29.95, ".", "other_lending_fee").ok).toBe(true);
+    expect(checkFeeAgainstSource(xplore, "Non-Sufficient Funds", 29, ".", "nsf").ok).toBe(true);
+    expect(checkFeeAgainstSource(xplore, "IRA Annual Maintenance Fee", 10, ".").ok).toBe(true);
+  });
 });

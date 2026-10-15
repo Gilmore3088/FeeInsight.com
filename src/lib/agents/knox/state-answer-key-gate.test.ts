@@ -21,7 +21,7 @@ import { combineScores, scoreAnswerKeys, type AnswerKeyDocument, type GateScore 
 // and copy fees to document reproduction, so five of the six read right; the one left is
 // "Account Research Copies (per page) | $2.00" (GA 1338), which the key files as a copy and the
 // taxonomy as research. Floors are today's counts on main with 809: 742 right / 43 wrong.
-// v66 (#1102, Oct 15): fee-schedule labels with no fee word took all from 744 right / 41 wrong to
+// v68 (#1102, Oct 15): fee-schedule labels with no fee word took all from 744 right / 41 wrong to
 // 787 / 41 (no state lost a right read or gained a wrong one). Floors are those counts.
 const FLOORS: Record<string, { right: number; wrong: number }> = {
   CA: { right: 137, wrong: 5 },

@@ -82,7 +82,8 @@ Hamilton supports the decision; it does not make it.
   cron every two hours, `/api/admin/crew/answer-eval`) asks the quality-bar questions of a fresh spread
   of real banks and credit unions (two per charter and asset tier) through the Ask path,
   scores each with the quality bar and four-roles eval, and checks that a regulation answer
-  names the institution's own regulator and a state question names its state. Read-only, no
+  names the institution's own regulator, lists the Regulatory Wire's recent items for it when
+  the Wire holds any (`wireFailures`, #1090), and a state question names its state. Read-only, no
   provider calls; the step detail lists the weakest questions and the commonest failures.
   It first replays the questions Pro readers really asked in the last 90 days (the `pro.ask`
   ledger keeps each question and short answer; saved analyses keep the rest) through today's
@@ -122,6 +123,13 @@ Hamilton supports the decision; it does not make it.
   `hamilton_decisions`, `hamilton_decision_events`, `hamilton_institution_memory` and
   `hamilton_uploads`. A client fact is never edited in place: a new value supersedes it
   (`superseded_at`), so the history of what the bank told Hamilton survives.
+- A regulation answer reads the Regulatory Wire (`workspace/wire.ts`, #1090): federal rules
+  from the bank's own federal regulator and the CFPB whose tracker topics bear on the fee (last
+  365 days, or still open for comment), fee bills in its state (an action in the last two
+  years), consumer-law enforcement actions by its federal regulator or in its state (last three
+  years; state orders carry no subject on file, so they are left out), and its state
+  regulator's fee posts. One of each kind leads the storyline's watch list, each with its date
+  and link; all of them sit in the research page's regulation section. Nothing is interpreted.
 - The workspace builders are deterministic and make no provider calls; the memo route
   above is the paid exception.
 
@@ -307,9 +315,9 @@ the detail.
 16. Companion retire (`companion-retire.ts`): fees from companion pages Magellan retired as not
     a consumer fee page, `companion_page_retired`.
 17. Duplicate collapse (`duplicate-collapse.ts`): exact repeats of a live row,
-    `duplicate of #<kept id>`. Near-name repeats (#1302) are shadow only
-    (`NEAR_NAME_COLLAPSE_LIVE`): reported in step detail `near_name_collapse`, never closed;
-    switched on, `duplicate of #<kept id> (near name)`.
+    `duplicate of #<kept id>`. Near-name repeats (#1302) are live since 2026-10-15
+    (`NEAR_NAME_COLLAPSE_LIVE`): reported in step detail `near_name_collapse` and closed as
+    `duplicate of #<kept id> (near name)`.
 18. Frequency fill (`frequency-fill.ts`): sets a live fee's frequency from its own schedule row
     (fills a blank, corrects or clears one read from another fee's row), logged to
     `pipeline_feedback` (check `hamilton.frequency_fill`). v11 (#1196): an NSF or overdraft fee
@@ -511,9 +519,9 @@ one printed at the price, then is newest. Doc 14695 prints "Stop Payments, each 
 "Stop Payment, each ... $35" in two copies of its schedule, so both stay. A fee the page prints
 once under its personal schedule heading and once under its business one stays two fees too
 (`printedInPersonalAndBusinessSchedules`; Valley's doc 23731, "Visa® Gift Cards, each: $4.25.").
-This sweep reads up to 25 documents' stored text per step and is shadow only until James turns
-`NEAR_NAME_COLLAPSE_LIVE` on: each step reports `near_name_collapse` (pairs, apart on page, not
-printed, no text, would close, samples) and changes no row. Rollback once on: clear
+This sweep reads up to 25 documents' stored text per step. James turned
+`NEAR_NAME_COLLAPSE_LIVE` on on 2026-10-15: each step reports `near_name_collapse` (pairs, apart
+on page, not printed, no text, would close, samples) and closes the repeats. Rollback: clear
 `rolled_back_at` on rows whose `rolled_back_reason` ends in `(near name)`.
 
 ## Rules Re-check
@@ -649,6 +657,11 @@ institution in it (`src/lib/agents/hamilton/studies`). One run a day
   always labeled inferred. Credit unions 2024 only (NCUA retired the lines); banks once RIAD H032
   loads ($1B+ banks, overdraft and NSF together).
 - Nothing from a study is published on the site or sent until James says so.
+- Pro readers see two studies (James, Oct 12, #1082): `fee_dependence` and `inferred_items_paid`,
+  each with a note on how it was calculated (`PRO_STUDIES` in `src/lib/hamilton/workspace/studies.ts`).
+  The three price studies stay stored and off every Pro surface (briefing, Ask's briefing, the
+  exported brief) until reviewed: their effects are weak and a reader could take them as what a
+  change would do.
 
 ## Marketing
 

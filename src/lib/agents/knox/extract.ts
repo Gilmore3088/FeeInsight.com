@@ -167,7 +167,7 @@ export interface RunKnoxExtractResult {
   skippedFees: number;
   /** $0, range, percentage and unrecognized priced lines held for review, not verified. */
   heldForReview: number;
-  /** v66: priced lines no rule names that were neither read nor held, by reason (`DroppedLineReason`). */
+  /** v68: priced lines no rule names that were neither read nor held, by reason (`DroppedLineReason`). */
   droppedLines: Partial<Record<DroppedLineReason, number>>;
   /** Unverified rows from a document's older text that a re-extraction replaced. */
   retiredOlderRows: number;
