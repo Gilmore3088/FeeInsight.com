@@ -1757,7 +1757,7 @@ async function executeAgenticStep(
             apart_on_page: nearNameCollapse.apartOnPage,
             not_printed: nearNameCollapse.notPrinted,
             no_text: nearNameCollapse.noText,
-            [nearNameCollapse.live ? "closed" : "would_close"]: nearNameCollapse.collapses.length,
+            [nearNameCollapse.live && run.runKind !== "dry_run" ? "closed" : "would_close"]: nearNameCollapse.collapses.length,
             samples: nearNameCollapse.collapses.slice(0, 10).map((row) => ({
               fee_published_id: row.feePublishedId,
               fee_name: row.feeName,

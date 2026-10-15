@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { pageCopyRepeats, sameSchedule, type PageCopyRow } from "./page-copy-collapse";
+import { pageCopyRepeats, sameScheduleText, type PageCopyRow } from "./page-copy-collapse";
 
 const row = (over: Partial<PageCopyRow>): PageCopyRow => ({
   fee_published_id: 1,
@@ -63,14 +63,18 @@ describe("pageCopyRepeats (#1439)", () => {
     expect(found.collapses).toHaveLength(0);
   });
 
-  it("keeps both when two documents share a page key but not their wording (\"?id=101\" / \"?id=202\")", () => {
+  it("keeps both when two documents share a page key but not their prices or audience (\"?id=101\" / \"?id=202\")", () => {
     const business = "Business Account Fees Stop Payment $30.00 Account Analysis $15.00 Deposited Item $0.12 Night Deposit Bag $25.00";
+    const letter = "Fee changes: Stop Payment $30.00 Overdraft $35.00 Statement copy $3.00 Research $20.00 Coin $1.00";
     const rows = [
       row({ fee_published_id: 1, source_document_id: 100, document_url: "https://bank.com/disclosure.aspx?id=101", fee_name: "Stop Payments" }),
       row({ fee_published_id: 2, source_document_id: 200, document_url: "https://bank.com/disclosure.aspx?id=202", crawled_at: "2026-10-10" }),
     ];
-    const found = pageCopyRepeats(rows, new Map([["100", business], ["200", TEXT]]));
+    // A consumer and a business schedule from one template share most prices; the audiences differ.
+    const found = pageCopyRepeats(rows, new Map([["100", business], ["200", `Personal ${TEXT}`]]));
     expect(found.otherDocument).toBe(1);
+    expect(found.collapses).toHaveLength(0);
+    expect(pageCopyRepeats(rows, new Map([["100", letter], ["200", TEXT]])).otherDocument).toBe(1);
     expect(found.collapses).toHaveLength(0);
     expect(pageCopyRepeats(rows, new Map([["200", TEXT]])).otherDocument).toBe(1);
   });
@@ -86,7 +90,20 @@ describe("pageCopyRepeats (#1439)", () => {
     expect(found.collapses).toHaveLength(0);
   });
 
-  it("reads a later version of one schedule as the same schedule", () => {
-    expect(sameSchedule(TEXT, `${TEXT} Effective January 1, 2027`)).toBe(true);
+  it("reads one schedule's prices through another layout, and a change letter as another document", () => {
+    const columns = "Fee Schedule Stop Payment Cashier's Check Wire Transfer Incoming Outgoing $30.00 $10.00 $15.00 $25.00";
+    expect(sameScheduleText(TEXT, columns)).toBe(true);
+    expect(sameScheduleText(TEXT, "General Fee Changes effective August 1, 2026: Stop Payment $30.00")).toBe(false);
+  });
+
+  it("keeps the copy from the latest stated edition, not the latest read", () => {
+    const july = `Effective July 1, 2025 ${TEXT}`;
+    const january = `Effective January 1, 2025 ${TEXT}`;
+    const rows = [
+      row({ fee_published_id: 1, source_document_id: 100, document_url: "https://bank.com/Fees-July-1-2025.pdf", crawled_at: "2026-09-01" }),
+      row({ fee_published_id: 2, source_document_id: 200, document_url: "https://bank.com/Fees-January-1-2025.pdf", crawled_at: "2026-10-10" }),
+    ];
+    const found = pageCopyRepeats(rows, new Map([["100", july], ["200", january]]));
+    expect(found.collapses).toEqual([expect.objectContaining({ feePublishedId: 2, keptFeePublishedId: 1 })]);
   });
 });

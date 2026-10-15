@@ -4,6 +4,7 @@ import { inSavepoint } from "@/lib/agents/savepoint";
 import { frequencyClass } from "@/lib/agents/hamilton/exact-duplicate";
 import { DUPLICATE_COLLAPSE_REASON_PREFIX, type DuplicateCollapse } from "@/lib/agents/hamilton/duplicate-collapse";
 import { feePageKey } from "@/lib/agents/hamilton/page-key";
+import { effectiveDate, scheduleAudience, type ScheduleAudience } from "@/lib/agents/hamilton/schedule-edition";
 import { linesApartOnPage, nearNames, printedAtPrice, printedInPersonalAndBusinessSchedules } from "@/lib/agents/hamilton/publish";
 
 type SqlTag = typeof sql;
@@ -14,7 +15,7 @@ type SqlTag = typeof sql;
  * the newer-copy check each stay inside one document or one exact URL, so a line of that
  * schedule went live once per copy (1,310 extra live rows, Oct 15). Rows of one institution,
  * category, variant and amount read from different documents of one page (`feePageKey`) under
- * the same or a near name are one fee: the copy from the newest document stays.
+ * the same or a near name are one fee: the copy from the latest edition stays.
  *
  * Shadow until James approves the dry-run counts: a step reports what it would close and
  * changes nothing. Set true to close the repeats.
@@ -54,8 +55,8 @@ export interface PageCopyResult {
   /** Kept: the newest copy has no stored text, or does not print the kept name at the price. */
   unproven: number;
   /**
-   * Kept: the two documents share a page key but not their wording ("?id=101" and "?id=202",
-   * "/docs/2041.pdf" and "/docs/3315.pdf" key alike), or the older one has no stored text.
+   * Kept: the two documents share a page key but not their prices ("?id=101" and "?id=202",
+   * "/docs/2041.pdf" and "/docs/3315.pdf" key alike), name two audiences, or one has no stored text.
    */
   otherDocument: number;
   collapses: PageCopyCollapse[];
@@ -66,43 +67,70 @@ function sameLine(a: string | null, b: string | null): boolean {
   return (one !== "" && one === two) || nearNames(a, b);
 }
 
-const SAME_SCHEDULE_OVERLAP = 0.5;
+const SAME_SCHEDULE_OVERLAP = 0.6;
+const PRICE = /\$\s?(\d{1,3}(?:,\d{3})*|\d+)(?:\.(\d{2}))?/g;
 
-function shingles(text: string): Set<string> {
-  const words = text.toLowerCase().match(/[a-z0-9$.%]+/g) ?? [];
+/** The audience a schedule names in its address, else in its opening words; null when neither does. */
+function audienceOf(url: string | null, text: string): ScheduleAudience {
+  const named = scheduleAudience(url);
+  if (named) return named;
+  const opening = ` ${text.slice(0, 300).toLowerCase().replace(/[^a-z]+/g, " ")} `;
+  if (/ (?:business|commercial|corporate|treasury) /.test(opening)) return "business";
+  if (/ (?:consumer|personal|retail|individual) /.test(opening)) return "consumer";
+  return null;
+}
+
+function prices(text: string): Set<string> {
   const out = new Set<string>();
-  for (let i = 0; i + 5 <= words.length; i += 1) out.add(words.slice(i, i + 5).join(" "));
+  for (const m of text.matchAll(PRICE)) out.add(`${m[1].replace(/,/g, "")}.${m[2] ?? "00"}`);
   return out;
 }
 
 /**
- * Pure: do two stored texts read as copies of one schedule? Half or more of their five-word runs
- * are shared (Jaccard). A copy under another address, or a later version of the same schedule,
- * shares most of its wording; a consumer and a business schedule served from one script do not.
+ * Pure: do two stored texts read as copies of one schedule? They print mostly the same prices:
+ * the distinct dollar amounts of each overlap at 0.6 or more (Jaccard). Prices survive what
+ * wording does not: a two-column PDF read in another order (Dutch Point), a rendered page against
+ * its structured data (IBC). A fee-change letter stored under the schedule's address prints only
+ * the changed prices (JDCU), and stays apart.
  */
-export function sameSchedule(one: string, two: string): boolean {
-  const [a, b] = [shingles(one), shingles(two)];
+export function sameScheduleText(one: string, two: string): boolean {
+  return pricesOverlap(prices(one), prices(two));
+}
+
+function pricesOverlap(a: Set<string>, b: Set<string>): boolean {
   if (a.size === 0 || b.size === 0) return false;
   let shared = 0;
-  for (const run of a) if (b.has(run)) shared += 1;
+  for (const price of a) if (b.has(price)) shared += 1;
   return shared / (a.size + b.size - shared) >= SAME_SCHEDULE_OVERLAP;
 }
 
 /**
- * Pure: the live rows that repeat a line of a newer copy of their page (`feePageKey`: scheme,
+ * Pure: the live rows that repeat a line of another copy of their page (`feePageKey`: scheme,
  * "www.", query string, `%20` and version words ignored). The row kept is the one read from the
- * newest document, and it must be printed at the price in that document's stored text; a pair
- * that text prints as two lines stays two fees, as do rows whose stated frequencies or audiences
- * differ. Rows of one document are left to the near-name collapse.
+ * latest edition: the effective date its text states, else when it was read (Brazos Star's
+ * January edition was read after its July one). The kept row must be printed at the price in its
+ * document's stored text, and the two documents must print mostly the same prices
+ * (`sameScheduleText`). A pair the kept text prints as two lines, or under both a personal and a
+ * business heading, stays two fees, as do rows whose stated frequencies or audiences differ. Rows
+ * of one document are left to the near-name collapse.
  */
 export function pageCopyRepeats(rows: PageCopyRow[], texts: Map<string, string>): Omit<PageCopyResult, "live" | "institutions"> {
   const result = { pairs: 0, apartOnPage: 0, unproven: 0, otherDocument: 0, collapses: [] as PageCopyCollapse[] };
+  const priceSets = new Map<string, Set<string>>();
+  const priceSet = (id: string) => {
+    if (!priceSets.has(id)) priceSets.set(id, prices(texts.get(id) ?? ""));
+    return priceSets.get(id)!;
+  };
   const same = new Map<string, boolean>();
-  const copies = (one: string, two: string) => {
-    const key = [one, two].sort().join("|");
+  // Two documents are copies when both have text, they do not name two audiences (a consumer
+  // and a business schedule from one template print mostly the same prices), and their prices match.
+  const copies = (one: PageCopyRow, two: PageCopyRow) => {
+    const [x, y] = [String(one.source_document_id), String(two.source_document_id)];
+    const key = [x, y].sort().join("|");
     if (!same.has(key)) {
-      const [a, b] = [texts.get(one), texts.get(two)];
-      same.set(key, a != null && b != null && sameSchedule(a, b));
+      const [a, b] = [texts.get(x), texts.get(y)];
+      const [p, q] = a != null && b != null ? [audienceOf(one.document_url, a), audienceOf(two.document_url, b)] : [null, null];
+      same.set(key, a != null && b != null && (p == null || q == null || p === q) && pricesOverlap(priceSet(x), priceSet(y)));
     }
     return same.get(key)!;
   };
@@ -113,7 +141,16 @@ export function pageCopyRepeats(rows: PageCopyRow[], texts: Map<string, string>)
     const key = [row.institution_id, page, row.canonical_fee_key, row.variant_type ?? "", Number(row.amount).toFixed(2)].join("|");
     groups.set(key, [...(groups.get(key) ?? []), row]);
   }
-  const time = (row: PageCopyRow) => new Date(row.crawled_at ?? 0).getTime();
+  // The kept copy is the latest edition: the effective date its text states, else when it was read.
+  const editions = new Map<string, number>();
+  const time = (row: PageCopyRow) => {
+    const id = String(row.source_document_id);
+    if (!editions.has(id)) {
+      const stated = effectiveDate(texts.get(id));
+      editions.set(id, new Date(stated ?? row.crawled_at ?? 0).getTime());
+    }
+    return editions.get(id)!;
+  };
   for (const group of groups.values()) {
     if (new Set(group.map((row) => String(row.source_document_id))).size < 2) continue;
     const ordered = [...group].sort((a, b) => time(b) - time(a) || Number(b.source_document_id) - Number(a.source_document_id) || Number(b.fee_published_id) - Number(a.fee_published_id));
@@ -134,7 +171,7 @@ export function pageCopyRepeats(rows: PageCopyRow[], texts: Map<string, string>)
       if (!text || !printedAtPrice(text, match.fee_name ?? "", match.amount)) {
         result.unproven += 1;
         kept.push(row);
-      } else if (!copies(String(row.source_document_id), String(match.source_document_id))) {
+      } else if (!copies(row, match)) {
         result.otherDocument += 1;
         kept.push(row);
       } else if (
