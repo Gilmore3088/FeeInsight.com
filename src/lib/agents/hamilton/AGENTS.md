@@ -727,7 +727,9 @@ the verified row's when `verified_filled`); reverse a takedown by clearing `roll
 `rolled_back_by_batch_id` and `rolled_back_reason`. The feedback sync skips these takedowns: the
 lesson is publish's, not Knox's read. A live write that fails fails the step with
 the error text and rolls its transaction back (#1349); it never reads as a completed step with 0
-links. Frequency fill does the same: a failed live hold or fill write fails the step.
+links. Frequency fill does the same in its own `frequency-fill` step. Inside the publish step it
+runs in a savepoint (`fillFrequenciesInPublish`): a failed write undoes the fill's writes, the
+publish carries on, and the error is kept in `frequency_fill_error` and a `step.warning` event.
 
 ## Source Check
 

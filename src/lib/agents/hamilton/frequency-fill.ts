@@ -408,6 +408,37 @@ export async function fillBlankFrequencies(
 }
 
 /**
+ * The frequency fill as Hamilton's publish step runs it. A failed write must not roll back the
+ * whole publish (a failure that repeats would stop all publishing), so the fill runs in its own
+ * savepoint: on a failure its writes are undone together, the publish carries on, and the error
+ * is kept in the step detail (`writeError`) and as a `step.warning` run event. The dedicated
+ * `frequency-fill` step calls `fillBlankFrequencies` directly and fails on the same error (#1349).
+ */
+export async function fillFrequenciesInPublish(
+  db: SqlTag,
+  options: { runId: number; stepId?: number | null; dryRun: boolean; institutionId?: number },
+): Promise<FrequencyFillResult & { writeError: string | null }> {
+  try {
+    const result = await inSavepoint(db, (scope) => fillBlankFrequencies(scope, options));
+    return { ...result, writeError: null };
+  } catch (error) {
+    const writeError = error instanceof Error ? error.message : String(error);
+    console.error("frequency fill in publish failed:", error);
+    try {
+      await db`
+        INSERT INTO agent_run_events (agent_run_id, step_id, event_type, status, message, detail)
+        VALUES (${options.runId}, ${options.stepId ?? null}, 'step.warning', 'info',
+                ${`Frequency fill skipped: ${writeError}`},
+                ${JSON.stringify({ check: FREQUENCY_FILL_CHECK, version: FREQUENCY_FILL_VERSION, error: writeError })}::jsonb)
+      `;
+    } catch (eventError) {
+      console.error("frequency fill warning event failed:", eventError);
+    }
+    return { scanned: 0, filled: [], held: [], dryRun: options.dryRun, writeError };
+  }
+}
+
+/**
  * #1349: a failed live write fails the step with the error text, and the run's transaction rolls
  * back, instead of a "completed" step that reads as 0 changes. A dry run writes nothing.
  */

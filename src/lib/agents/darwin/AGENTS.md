@@ -340,6 +340,12 @@ Darwin owns verification and classification.
   fix are re-read: a recorded pass or a review pass that fails it holds as
   `release_check:<reason>` (`category_not_in_text`, `category_disputed` when the category model
   disputes the category, `no_source_text`, ...), in step detail and the attempt's `release_check`.
+  No release without the category model: when it cannot be loaded (each read runs in its own
+  savepoint, `loadReleaseCheckInputs`), the recorded-pass release releases and records nothing that
+  tick, not even its dry-run row, and the paid review makes no call (`modelMissing`). A hold that
+  says only that this tick could not read what the check needs (`no_source_text`,
+  `no_category_model`: `TEMPORARY_RELEASE_HOLDS`) writes no attempt, so the fee comes back next tick;
+  a real hold (`category_not_in_text`, `category_disputed`, ...) is recorded and final for v1.
   The context check adds to the name guard only where the bank's own row words differ from the
   stored name; the category model is the stronger gate for a name that fits its category on paper.
   v1 released on the schedule check alone; its dry run on 2026-10-06 (1,997 of 4,128 held

@@ -82,7 +82,10 @@ describe("Darwin held-fee release", () => {
     const checking = "Checking Accounts\nMonthly Maintenance Fee $12.00\nStatement copy $3.00";
     const realMaintenance = held({ fee_name: "Monthly Maintenance Fee", amount: "12.00", held_canonical_fee_key: "monthly_maintenance" });
     expect(releaseVerdict(realMaintenance, checking)).toMatchObject({ verdict: "review", sourceCheck: "stated" });
-    expect(releaseCheckHold(realMaintenance, checking, null)).toBeNull();
+    const model = trainCategoryModel([{ name: "Monthly Maintenance Fee", categoryKey: "monthly_maintenance", count: 20 }, { name: "Stop Payment", categoryKey: "stop_payment", count: 20 }]);
+    expect(releaseCheckHold(realMaintenance, checking, model)).toBeNull();
+    // Review of #1367: no model, no dispute check, so never a release on the text check alone.
+    expect(releaseCheckHold(realMaintenance, checking, null)).toBe("release_check:no_category_model");
   });
 
   it("reads the category guard's own name pattern, and none for a category with no real one (#1367)", () => {

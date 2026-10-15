@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const trackAnthropicRequest = vi.fn(async (_context: unknown, request: () => PromiseLike<unknown>) => request());
 vi.mock("@/lib/ai-provider-usage", async (importOriginal) => ({
@@ -7,7 +7,7 @@ vi.mock("@/lib/ai-provider-usage", async (importOriginal) => ({
 }));
 
 import { DARWIN_RELEASE_ACTS, scheduleContext, type HeldFeeRow } from "./release-held";
-import { trainCategoryModel } from "./category-model";
+import { resetCategoryModelCache, trainCategoryModel } from "./category-model";
 import {
   DARWIN_RELEASE_REVIEW_STRATEGY,
   frequencyFromLine,
@@ -26,6 +26,9 @@ import {
   runDarwinReleaseReview,
 } from "./release-review";
 
+// The category model is cached per process; each test loads its own.
+beforeEach(() => resetCategoryModelCache());
+
 type DbMock = ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
 
 function templateText(strings: unknown): string {
@@ -38,10 +41,18 @@ const SOURCE_TEXTS = [
   { source_document_id: 21, normalized_text: "Christmas Club Accounts\nMonthly charge $5.00\nEarly withdrawal $10.00" },
 ];
 
+/** Live catalog names the category model trains on (#1367: no release without a model). */
+const MODEL_ROWS = [
+  { name: "stop payment", category_key: "stop_payment", count: 20 },
+  { name: "monthly service charge", category_key: "monthly_maintenance", count: 20 },
+  { name: "bad address fee", category_key: "account_research", count: 20 },
+];
+
 function createDbMock(rows: Array<Record<string, unknown>>): DbMock {
   const db = vi.fn((strings: TemplateStringsArray) => {
     if (templateText(strings).includes("learning_schema_ready")) return Promise.resolve([{ learning_schema_ready: true }]);
     if (templateText(strings).includes("FROM agent_source_texts")) return Promise.resolve(SOURCE_TEXTS);
+    if (templateText(strings).includes("FROM published_fee_catalog")) return Promise.resolve(MODEL_ROWS);
     return Promise.resolve([]);
   }) as DbMock;
   db.unsafe = vi.fn(() => Promise.resolve(rows));
@@ -460,6 +471,7 @@ describe("releasing the recorded v17 passes", () => {
       const text = templateText(strings);
       if (text.includes("learning_schema_ready")) return Promise.resolve([{ learning_schema_ready: true }]);
       if (text.includes("FROM agent_source_texts")) return Promise.resolve(SOURCE_TEXTS);
+      if (text.includes("FROM published_fee_catalog")) return Promise.resolve(MODEL_ROWS);
       if (text.includes("verify.release_recorded") || text.includes("FROM pipeline_attempts pa")) return Promise.resolve(rows);
       return Promise.resolve([]);
     });
@@ -482,6 +494,7 @@ describe("releasing the recorded v17 passes", () => {
       const text = templateText(strings);
       if (text.includes("learning_schema_ready")) return Promise.resolve([{ learning_schema_ready: true }]);
       if (text.includes("FROM agent_source_texts")) return Promise.resolve(SOURCE_TEXTS);
+      if (text.includes("FROM published_fee_catalog")) return Promise.resolve(MODEL_ROWS);
       if (text.includes("AS done")) {
         expect(values).toContain(RECORDED_RELEASE_DRY_RUN_FINGERPRINT);
         return Promise.resolve([{ done: dryRunDone }]);
@@ -517,6 +530,7 @@ describe("releasing the recorded v17 passes", () => {
       if (text.includes("AS done")) return Promise.resolve([{ done: true }]);
       if (text.includes("FROM pipeline_attempts pa")) return Promise.resolve(rows);
       if (text.includes("FROM agent_source_texts")) return Promise.resolve(SOURCE_TEXTS);
+      if (text.includes("FROM published_fee_catalog")) return Promise.resolve(MODEL_ROWS);
       if (/INSERT/.test(text)) {
         writes.push(text);
         if (text.includes("verified_fee_observations")) return Promise.resolve([{ fee_verified_id: 77 }]);
@@ -543,11 +557,73 @@ describe("releasing the recorded v17 passes", () => {
     expect(recordedPassHoldReason(recorded("Stop Payment", "stop_payment", null, "Stop Payment $30.00"), { text: null, categoryModel: model })).toBe("release_check:no_source_text");
   });
 
+  // Review of #1367: with no category model there is no dispute check, so nothing is released or
+  // recorded, and the rows come back next tick. A model load that throws reads the same way.
+  it.each([
+    ["no catalog rows to train on", () => Promise.resolve([])],
+    ["the model query throws", () => Promise.reject(new Error("canceling statement due to statement timeout"))],
+  ])("releases and records nothing without a category model (%s)", async (_label, catalog) => {
+    for (const dryRunDone of [true, false]) {
+      resetCategoryModelCache();
+      const writes: string[] = [];
+      const db = vi.fn((strings: TemplateStringsArray) => {
+        const text = templateText(strings);
+        if (text.includes("learning_schema_ready")) return Promise.resolve([{ learning_schema_ready: true }]);
+        if (text.includes("AS done")) return Promise.resolve([{ done: dryRunDone }]);
+        if (text.includes("FROM pipeline_attempts pa")) return Promise.resolve([row({ fee_raw_id: 2 })]);
+        if (text.includes("FROM agent_source_texts")) return Promise.resolve(SOURCE_TEXTS);
+        if (text.includes("FROM published_fee_catalog")) return catalog();
+        if (/INSERT|UPDATE/.test(text)) writes.push(text);
+        return Promise.resolve([]);
+      });
+      const result = await releaseRecordedPasses(db as never, { runId: 9, acts: true });
+      expect(result).toMatchObject({ modelMissing: true, released: 0, dryRunRecorded: false, acts: false });
+      expect(writes).toEqual([]);
+    }
+  });
+
+  it("the paid review spends nothing and records nothing without a category model", async () => {
+    const db = createDbMock([row()]);
+    const base = db.getMockImplementation()! as (strings: TemplateStringsArray) => Promise<unknown>;
+    db.mockImplementation((strings: TemplateStringsArray) =>
+      templateText(strings).includes("FROM published_fee_catalog") ? Promise.reject(new Error("timeout")) : base(strings));
+    const create = vi.fn();
+    const result = await runDarwinReleaseReview({ runId: 5, db: asDb(db), create, calls: 2, acts: true });
+    expect(result).toMatchObject({ modelMissing: true, released: 0, processed: 0 });
+    expect(create).not.toHaveBeenCalled();
+    expect(attempts(db)).toEqual([]);
+  });
+
+  it("leaves a fee whose stored text could not be read for a later tick, unrecorded", async () => {
+    const rows = [row({ fee_raw_id: 2 }), row({ fee_raw_id: 4, source_document_id: 99 })];
+    const writes: Array<{ text: string; values: unknown[] }> = [];
+    const db = vi.fn((strings: TemplateStringsArray, ...values: unknown[]) => {
+      const text = templateText(strings);
+      if (text.includes("learning_schema_ready")) return Promise.resolve([{ learning_schema_ready: true }]);
+      if (text.includes("AS done")) return Promise.resolve([{ done: true }]);
+      if (text.includes("FROM pipeline_attempts pa")) return Promise.resolve(rows);
+      if (text.includes("FROM agent_source_texts")) return Promise.resolve(SOURCE_TEXTS);
+      if (text.includes("FROM published_fee_catalog")) return Promise.resolve(MODEL_ROWS);
+      if (/INSERT/.test(text)) {
+        writes.push({ text, values });
+        if (text.includes("verified_fee_observations")) return Promise.resolve([{ fee_verified_id: 77 }]);
+      }
+      return Promise.resolve([]);
+    });
+    const result = await releaseRecordedPasses(db as never, { runId: 9, acts: true });
+    expect(result).toMatchObject({ released: 1, held: { "release_check:no_source_text": 1 } });
+    const attempted = writes.filter((write) => write.text.includes("INSERT INTO pipeline_attempts"));
+    expect(attempted).toHaveLength(1);
+    expect(attempted[0].values).toContain("raw:2");
+    expect(attempted[0].values).not.toContain("raw:4");
+  });
+
   it("a dry_run run never releases or records the dry run", async () => {
     const db = vi.fn((strings: TemplateStringsArray) => {
       const text = templateText(strings);
       if (text.includes("learning_schema_ready")) return Promise.resolve([{ learning_schema_ready: true }]);
       if (text.includes("FROM agent_source_texts")) return Promise.resolve(SOURCE_TEXTS);
+      if (text.includes("FROM published_fee_catalog")) return Promise.resolve(MODEL_ROWS);
       if (text.includes("AS done")) return Promise.resolve([{ done: true }]);
       if (text.includes("FROM pipeline_attempts pa")) return Promise.resolve([row({ fee_raw_id: 2 })]);
       return Promise.resolve([]);

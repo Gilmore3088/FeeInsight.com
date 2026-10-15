@@ -22,6 +22,7 @@ import {
   DARWIN_RELEASE_STRATEGY,
   releaseCheckHold,
   releaseHeldFee,
+  TEMPORARY_RELEASE_HOLDS,
   scheduleContext,
   type HeldFeeRow,
 } from "./release-held";
@@ -744,6 +745,10 @@ export interface ReleaseReviewResult extends PaidPassResult {
   lessons: number;
   passed: number;
   released: number;
+  /** The category model could not be loaded: no calls, no releases, nothing recorded (#1367). */
+  modelMissing?: boolean;
+  /** Candidates left for a later tick because their stored text could not be read. */
+  deferred?: number;
 }
 
 /** Review up to `calls` batches of release candidates; release the ones that pass when acting. */
@@ -778,14 +783,29 @@ export async function runDarwinReleaseReview(
   const model = PAID_PASS_MODELS.verify();
   // Each fee's own stored schedule, for the release check (#1367) and, for fees judged before the
   // release step stored their schedule's surrounding rows, those rows.
-  const texts = await loadSourceTexts(db, [...new Set(candidates.flatMap(({ row }) => (row.source_document_id == null ? [] : [Number(row.source_document_id)])))]);
+  if (candidates.length === 0) return result;
+  const { texts, categoryModel } = await loadReleaseCheckInputs(
+    db,
+    [...new Set(candidates.flatMap(({ row }) => (row.source_document_id == null ? [] : [Number(row.source_document_id)])))],
+  );
+  // Review of #1367: no release without the category model. Nothing is spent or recorded, so every
+  // candidate comes back next tick.
+  if (!categoryModel) {
+    result.modelMissing = true;
+    return result;
+  }
   const textOf = ({ row }: ReleaseReviewCandidate) => (row.source_document_id == null ? null : texts.get(Number(row.source_document_id)));
+  // A fee whose stored text this tick could not read is left for a later tick: no paid call, no attempt.
+  const unread = candidates.filter((candidate) => TEMPORARY_RELEASE_HOLDS.has(releaseCheckHold(candidate.row, textOf(candidate), categoryModel) ?? ""));
+  if (unread.length > 0) {
+    candidates.splice(0, candidates.length, ...candidates.filter((candidate) => !unread.includes(candidate)));
+    result.deferred = unread.length;
+  }
   for (const candidate of candidates) {
     if (!candidate.sourceContext && candidate.row.source_document_id != null) {
       candidate.sourceContext = scheduleContext(textOf(candidate), candidate.sourceLine);
     }
   }
-  const categoryModel = candidates.length > 0 ? await loadCategoryModel(db).catch(() => null) : null;
   const heldKeys = candidates.map(({ row }) => row.held_canonical_fee_key);
   // The pipeline's own outcomes, then this review's misses against the answer keys (verdict-score.ts).
   const lessons = [
@@ -959,6 +979,8 @@ export interface RecordedReleaseResult {
   releaseByCategory: Record<string, number>;
   held: Record<string, number>;
   heldExamples: Array<{ feeRawId: number; feeName: string; amount: number | null; canonicalFeeKey: string; reason: string }>;
+  /** The category model could not be loaded: nothing was released or recorded this tick. */
+  modelMissing?: boolean;
 }
 
 /** Categories whose recorded passes all wait for a person (second hand check, Oct 15: overdraft 4 of 6, NSF 1 of 3). */
@@ -968,6 +990,30 @@ export const RECORDED_RELEASE_PERSON_CATEGORIES: ReadonlySet<string> = new Set([
 export interface ReleaseCheckInputs {
   text: string | null | undefined;
   categoryModel: CategoryModel | null;
+}
+
+/**
+ * The stored texts and the category model the release check reads, each in its own savepoint so a
+ * failed read never aborts the step's transaction. A failed text read leaves the map empty (those
+ * fees hold as `no_source_text`, retried next tick); a failed or empty model load is null.
+ */
+export async function loadReleaseCheckInputs(
+  db: SqlTag,
+  documentIds: number[],
+): Promise<{ texts: Map<number, string>; categoryModel: CategoryModel | null }> {
+  let texts = new Map<number, string>();
+  let categoryModel: CategoryModel | null = null;
+  try {
+    texts = await inSavepoint(db, (scope) => loadSourceTexts(scope, documentIds));
+  } catch (error) {
+    console.error("release check: stored text read failed:", error);
+  }
+  try {
+    categoryModel = await inSavepoint(db, (scope) => loadCategoryModel(scope));
+  } catch (error) {
+    console.error("release check: category model load failed:", error);
+  }
+  return { texts, categoryModel };
 }
 
 /** Why a recorded pass stays held today, or null when it would be released. Pure. */
@@ -1030,8 +1076,19 @@ export async function releaseRecordedPasses(
      LIMIT ${Math.max(1, options.limit ?? RECORDED_RELEASE_LIMIT)}
   `;
   result.recordedPasses = rows.length;
-  const texts = await loadSourceTexts(db, [...new Set(rows.flatMap((row) => (row.source_document_id == null ? [] : [Number(row.source_document_id)])))]);
-  const categoryModel = rows.length > 0 ? await loadCategoryModel(db).catch(() => null) : null;
+  if (rows.length === 0) return result;
+  const { texts, categoryModel } = await loadReleaseCheckInputs(
+    db,
+    [...new Set(rows.flatMap((row) => (row.source_document_id == null ? [] : [Number(row.source_document_id)])))],
+  );
+  // Review of #1367: without the model there is no dispute check, so this tick releases nothing and
+  // records nothing (not even the dry run's ledger row); every row comes back next tick.
+  if (!categoryModel) {
+    result.acts = false;
+    result.dryRun = true;
+    result.modelMissing = true;
+    return result;
+  }
   for (const { source_line, source_context, ...raw } of rows) {
     const candidate: ReleaseReviewCandidate = { row: raw as HeldFeeRow, sourceLine: source_line, sourceContext: source_context };
     const text = raw.source_document_id == null ? null : texts.get(Number(raw.source_document_id));
@@ -1048,6 +1105,8 @@ export async function releaseRecordedPasses(
       result.releaseByCategory[key] = (result.releaseByCategory[key] ?? 0) + 1;
     }
     if (!acts) continue;
+    // A hold that says only this tick could not read the stored text is retried, never recorded.
+    if (reason && TEMPORARY_RELEASE_HOLDS.has(reason)) continue;
     let feeVerifiedId: number | null = null;
     if (!reason) {
       const price = raw.amount == null ? null : Number(raw.amount);

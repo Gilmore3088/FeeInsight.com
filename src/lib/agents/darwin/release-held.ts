@@ -202,10 +202,20 @@ export function releaseCheckHold(
   categoryModel: CategoryModel | null,
 ): string | null {
   const judged = releaseVerdict(row, text, categoryModel);
-  if (judged.verdict === "review") return null;
-  // A stated fee kept for a person is one outside the category's hand-set range.
-  return `release_check:${judged.sourceCheck === "stated" ? "outside_envelope" : judged.sourceCheck}`;
+  if (judged.verdict !== "review") {
+    // A stated fee kept for a person is one outside the category's hand-set range.
+    return `release_check:${judged.sourceCheck === "stated" ? "outside_envelope" : judged.sourceCheck}`;
+  }
+  // No model, no dispute check: never a release on the text check alone (review of #1367).
+  return categoryModel ? null : RELEASE_CHECK_NO_MODEL;
 }
+
+export const RELEASE_CHECK_NO_MODEL = "release_check:no_category_model";
+/**
+ * Holds that say only that this tick could not read what the check needs (the stored text, the
+ * category model). They are retried on a later tick: never recorded as a decision.
+ */
+export const TEMPORARY_RELEASE_HOLDS: ReadonlySet<string> = new Set(["release_check:no_source_text", RELEASE_CHECK_NO_MODEL]);
 
 /**
  * Publish one held fee the review confirmed: a verified row flagged
