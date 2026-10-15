@@ -3,7 +3,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { getDisplayName, getFeeFamily, FEE_FAMILIES, getSpotlightCategories } from "@/lib/fee-taxonomy";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
-import { PRODUCT_NAME, SITE_URL } from "@/lib/constants";
+import { PRODUCT_NAME, REPORT_OFFER, REPORT_PRICE_INLINE, SITE_URL } from "@/lib/constants";
+import { sampleReportAvailable } from "@/lib/custom-report/sample-report";
 import { COVERAGE_LABELS, getPublicSnapshot } from "@/lib/public-stats";
 import { getCurrentUser } from "@/lib/auth";
 import { canAccessAllCategories } from "@/lib/access";
@@ -13,8 +14,8 @@ import { FamilySection } from "../family-section";
 import { UnstatedAudienceFootnote, hasUnstatedAudience } from "@/components/unstated-audience";
 import { getFeeCategoryDetailCached } from "@/lib/data-store/public-cached-reads";
 import { TrackLink } from "@/components/track-link";
-import { DEMO_REQUEST_NAV, PRO_PLANS_NAV } from "@/components/nav-items";
-import { buildHistogram } from "@/components/public/distribution-chart";
+import { DEMO_REQUEST_NAV } from "@/components/nav-items";
+import { DistributionChart, buildHistogram } from "@/components/public/distribution-chart";
 import { StateVideo } from "../../research/state/[code]/state-exhibits";
 import { FeeIndexExplorer, type ExplorerFee } from "./fee-index-explorer";
 
@@ -70,8 +71,13 @@ export default async function FeeCatalogPage() {
     .filter((s): s is NonNullable<typeof s> => Boolean(s));
 
   // One value per institution for each headline fee: the same population as its median.
-  const details = await Promise.all(spotlightFees.map((f) => getFeeCategoryDetailCached(f.fee_category).catch(() => null)));
-  const explorerFees: ExplorerFee[] = spotlightFees.map((f, i) => ({
+  // The charts are drawn here, on the server, so the browser gets bars, not every institution's value.
+  const withMedian = spotlightFees.filter((f): f is typeof f & { median_amount: number } => f.median_amount !== null);
+  const [details, sampleLive] = await Promise.all([
+    Promise.all(withMedian.map((f) => getFeeCategoryDetailCached(f.fee_category).catch(() => null))),
+    sampleReportAvailable().catch(() => false),
+  ]);
+  const explorerFees: ExplorerFee[] = withMedian.map((f, i) => ({
     key: f.fee_category,
     label: EXPLORER_LABELS[f.fee_category] ?? getDisplayName(f.fee_category),
     median: f.median_amount,
@@ -79,10 +85,14 @@ export default async function FeeCatalogPage() {
     p75: f.p75_amount,
     institutions: f.institution_count,
     zeroCount: f.zero_count ?? 0,
-    values: details[i]?.institution_values ?? [],
-    unstated: f.median_amount !== null && hasUnstatedAudience(f),
+    chart: <DistributionChart values={details[i]?.institution_values ?? []} median={f.median_amount} bucketCount={16} />,
+    unstated: hasUnstatedAudience(f),
   }));
-  const videoBars = buildHistogram(explorerFees[0]?.values ?? []).map((b) => b.count);
+  const videoFee = withMedian[0];
+  const videoBars = buildHistogram(details[0]?.institution_values ?? []).map((b) => b.count);
+  const reportLink = sampleLive
+    ? { href: "/reports/sample-competitive-fee-position", label: `See the sample ${REPORT_OFFER.name}` }
+    : { href: "/reports?report=institution&src=fee-index#request", label: REPORT_OFFER.institutionCtaLabel };
 
   return (
     <>
@@ -95,7 +105,7 @@ export default async function FeeCatalogPage() {
 
       {/* 1. The answer first: the national spread of the fees people ask about most. */}
       <section className="border-b border-border bg-paper">
-        <div className="mx-auto grid max-w-page gap-8 px-4 pb-10 pt-6 sm:px-6 sm:pb-14 sm:pt-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] lg:items-start lg:gap-12">
+        <div className="mx-auto grid max-w-page gap-8 px-4 pb-10 pt-6 sm:px-6 sm:pb-14 sm:pt-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,30rem)] lg:items-start lg:gap-12">
           <div className="lg:pt-6">
             <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-brick">{PRODUCT_NAME}</p>
             <h1 className="mt-3 text-[32px] font-semibold leading-[1.08] tracking-[-0.03em] text-ink sm:text-[44px]">
@@ -119,7 +129,12 @@ export default async function FeeCatalogPage() {
                 How we build it
               </Link>
             </p>
-            <nav aria-label="More fee data" className="mt-6 flex flex-wrap gap-2">
+          </div>
+          <div className="lg:row-span-2">
+            <FeeIndexExplorer fees={explorerFees} />
+          </div>
+          <div className="lg:col-start-1 lg:row-start-2">
+            <nav aria-label="More fee data" className="flex flex-wrap gap-2">
               {ACTION_LINKS.map((item) => (
                 <Link
                   key={item.href}
@@ -131,22 +146,14 @@ export default async function FeeCatalogPage() {
               ))}
             </nav>
           </div>
-          <FeeIndexExplorer fees={explorerFees} />
         </div>
       </section>
 
       <div className="mx-auto max-w-page px-4 pt-10 sm:px-6 sm:pt-12">
-      <p className="text-[12px] text-ink-muted">
-        Each institution counts once, and the median and typical range (25th to 75th
-        percentile) are taken across institutions.{" "}
-        {summary.refreshedOn ? `Updated ${summary.refreshedOn}. ` : ""}
-        Full min–max by category is in the tables below.
-      </p>
-      <UnstatedAudienceFootnote show={spotlightFees.some((fee) => fee.median_amount !== null && hasUnstatedAudience(fee))} className="mt-1" />
       {!showAll && gatedCount > 0 && (
-        <p className="mt-3 rounded-lg border border-border bg-paper px-4 py-2.5 text-[13px] text-ink-soft">
+        <p className="rounded-lg border border-border bg-paper px-4 py-2.5 text-[13px] text-ink-soft">
           <span className="font-semibold text-ink">Free:</span> national benchmarks for the{" "}
-          {shownCanonical} spotlight categories below.{" "}
+          {shownCanonical} categories below.{" "}
           <span className="font-semibold text-ink">Pro:</span> the other {gatedCount} categories, peer
           and state breakdowns, and API access on request.{" "}
           <Link href="/subscribe" className="font-medium text-brick hover:underline">
@@ -161,8 +168,19 @@ export default async function FeeCatalogPage() {
           {familyOrder.map((familyName) => {
             const cats = byFamily.get(familyName);
             if (!cats || cats.length === 0) return null;
-            return <FamilySection key={familyName} familyName={familyName} cats={cats} />;
+            return <FamilySection key={familyName} familyName={familyName} cats={cats} footnote={false} />;
           })}
+          <div>
+            <p className="text-[12px] text-ink-muted">
+              Each institution counts once, and the median and typical range (25th to 75th
+              percentile) are taken across institutions.
+              {summary.refreshedOn ? ` Updated ${summary.refreshedOn}.` : ""}
+            </p>
+            <UnstatedAudienceFootnote
+              show={[...byFamily.values()].flat().some((fee) => fee.median_amount !== null && hasUnstatedAudience(fee))}
+              className="mt-1"
+            />
+          </div>
         </div>
         <CatalogSidebar
           familyOrder={familyOrder}
@@ -179,7 +197,7 @@ export default async function FeeCatalogPage() {
       )}
       </div>
 
-      <StateVideo stateName="every fee" bars={videoBars} />
+      {videoFee && <StateVideo stateName={`${getDisplayName(videoFee.fee_category).toLowerCase()} fees`} bars={videoBars} />}
 
       {/* Staff of a bank or credit union: Hamilton puts their own fees on every one of these lines. */}
       <section aria-labelledby="hamilton-heading" className="mx-auto max-w-page px-4 pb-16 pt-12 sm:px-6 sm:pt-16">
@@ -189,17 +207,17 @@ export default async function FeeCatalogPage() {
               Work at a bank or credit union?
             </h2>
             <p className="mt-1 max-w-[36rem] text-[14px] text-ink-muted">
-              Hamilton shows your own fees on every one of these lines, beside the competitors you choose.
+              See your own fees on these lines, beside your local competitors: the {REPORT_OFFER.name}, {REPORT_PRICE_INLINE}.
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
             <TrackLink
-              event="upgrade_click"
+              event="request_report_click"
               eventProps={{ placement: "fee_index_staff_band" }}
-              href={PRO_PLANS_NAV.href}
+              href={reportLink.href}
               className="inline-flex min-h-11 items-center rounded-full bg-ink px-5 text-[14px] font-semibold text-on-ink hover:opacity-90"
             >
-              {PRO_PLANS_NAV.label}
+              {reportLink.label}
             </TrackLink>
             <Link href={DEMO_REQUEST_NAV.href} className="text-[14px] font-semibold text-ink underline decoration-border underline-offset-4 hover:decoration-ink">
               {DEMO_REQUEST_NAV.label}

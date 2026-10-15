@@ -31,7 +31,16 @@ function familyBarScale(cats: { p75_amount: number | null; max_amount: number | 
   return tops.length > 0 ? Math.max(...tops) * BAR_HEADROOM : 100;
 }
 
-export function FamilySection({ familyName, cats }: { familyName: string; cats: FeeCategorySummary[] }) {
+/** `footnote={false}` when the page shows one audience footnote for every family. */
+export function FamilySection({
+  familyName,
+  cats,
+  footnote = true,
+}: {
+  familyName: string;
+  cats: FeeCategorySummary[];
+  footnote?: boolean;
+}) {
   const colors = FAMILY_COLORS[familyName];
   const colorBg = colors?.dot ?? "bg-control-border";
   const sectionMedians = cats.map((c) => c.median_amount).filter((a): a is number => a !== null);
@@ -87,7 +96,7 @@ export function FamilySection({ familyName, cats }: { familyName: string; cats: 
           </table>
         </div>
       </div>
-      <UnstatedAudienceFootnote show={cats.some(hasUnstatedAudience)} className="mt-2" />
+      <UnstatedAudienceFootnote show={footnote && cats.some(hasUnstatedAudience)} className="mt-2" />
     </section>
   );
 }
