@@ -7,6 +7,9 @@
 import Link from "next/link";
 import type { Fact, SchedulePosition } from "@/lib/hamilton/workspace/types";
 import { fmtMoney, SERIF } from "@/components/hamilton/memo/memo";
+import { middleHalfText } from "@/components/hamilton/memo/exhibit-view";
+
+const capitalizeFirst = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
 /** Engine 1.12.1 adds each fee's peer middle half; answers saved before it have the median only. */
 type PositionRow = SchedulePosition;
@@ -43,7 +46,7 @@ function RangeStrip({ row }: { row: PositionRow }) {
   const hi = max + pad;
   const at = (v: number) => ((v - lo) / (hi - lo || 1)) * 100;
   const label = band
-    ? `${fmtMoney(row.current)} against a peer middle half of ${fmtMoney(band.p25)} to ${fmtMoney(band.p75)}, median ${fmtMoney(row.peerMedian)}`
+    ? `${fmtMoney(row.current)} against a peer middle half ${band.p25 === band.p75 ? `all at ${fmtMoney(band.p25)}` : `of ${fmtMoney(band.p25)} to ${fmtMoney(band.p75)}`}, median ${fmtMoney(row.peerMedian)}`
     : `${fmtMoney(row.current)} against a peer median of ${fmtMoney(row.peerMedian)}`;
   const from = Math.min(at(row.current), at(row.peerMedian));
   const to = Math.max(at(row.current), at(row.peerMedian));
@@ -193,7 +196,7 @@ export function SchedulePositionsChart({
             </p>
             <RangeStrip row={r} />
             <span className="text-[11px] text-warm-600 [font-variant-numeric:tabular-nums]">
-              {r.band ? `Middle half ${fmtMoney(r.band.p25)} to ${fmtMoney(r.band.p75)} · ` : ""}
+              {r.band ? `${capitalizeFirst(middleHalfText(r.band.p25, r.band.p75))} · ` : ""}
               {r.peerCount} peers
             </span>
           </li>

@@ -11,6 +11,7 @@ import {
   STUCK_LINK_MAX_FAILURES,
   STUCK_LINK_OUTCOMES,
   STUCK_LINK_WINDOW_DAYS,
+  recordReadResult,
   runRosettaRead,
 } from "./read";
 import { ROSETTA_OCR_VERSION } from "./ocr";
@@ -815,6 +816,44 @@ describe("Rosetta agentic read", () => {
       expect(update![2]).toBe("read.ocr_tesseract");
       // The caller owns an injected reader; the run does not close it.
       expect(reader.close).not.toHaveBeenCalled();
+    });
+
+    it("stores the document's kind with its text once the kind columns exist (#1094)", async () => {
+      const db = specialistDb([scan]);
+      const base = db.getMockImplementation() as (strings: TemplateStringsArray, ...values: unknown[]) => Promise<unknown>;
+      db.mockImplementation((strings: TemplateStringsArray, ...values: unknown[]) => {
+        if (templateText(strings).includes("document_kind_columns_ready")) return Promise.resolve([{ document_kind_columns_ready: true }]);
+        return base(strings, ...values);
+      });
+
+      await runRosettaRead({ runId: 703, db: asReadDb(db), fetchImpl: pdfFetch(), pdfTextExtractor: noText(), scannedPdfReader: ocrReader(feeLines.join("\n")) });
+
+      const update = db.mock.calls.find((call) => templateText(call[0]).includes("SET document_kind ="));
+      // "SCHEDULE OF FEES" is the text's title.
+      expect(update?.slice(1)).toEqual(["fee_schedule", 1, 901]);
+    });
+
+    it("clears the kind when a re-read stores no text (#1094)", async () => {
+      const db = specialistDb([scan]);
+      const base = db.getMockImplementation() as (strings: TemplateStringsArray, ...values: unknown[]) => Promise<unknown>;
+      db.mockImplementation((strings: TemplateStringsArray, ...values: unknown[]) => {
+        if (templateText(strings).includes("document_kind_columns_ready")) return Promise.resolve([{ document_kind_columns_ready: true }]);
+        return base(strings, ...values);
+      });
+      const result = { sourceDocumentId: 5, institutionId: 42, sourceUrl: "https://testbank.example/scan.pdf", documentType: "pdf", contentType: "application/pdf", sourceHash: "h", status: "needs_ocr", textHash: null, charCount: 0, error: "no text", reader: null, rows: [] };
+
+      await recordReadResult(asReadDb(db), 705, result as never, null, true);
+
+      const update = db.mock.calls.find((call) => templateText(call[0]).includes("SET document_kind ="));
+      expect(update?.slice(1)).toEqual([null, null, 901]);
+    });
+
+    it("stores no kind before the kind columns exist", async () => {
+      const db = specialistDb([scan]);
+
+      await runRosettaRead({ runId: 704, db: asReadDb(db), fetchImpl: pdfFetch(), pdfTextExtractor: noText(), scannedPdfReader: ocrReader(feeLines.join("\n")) });
+
+      expect(db.mock.calls.some((call) => templateText(call[0]).includes("SET document_kind ="))).toBe(false);
     });
 
     it("leaves an unreliable OCR result for the paid pass", async () => {

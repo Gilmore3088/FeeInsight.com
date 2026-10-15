@@ -29,11 +29,18 @@ export const MARKET_DATA_NAV = {
   description: "Your state, your Fed district and the nation",
 } as const;
 export const NATIONAL_INDEX_NAV = { label: `${PRODUCT_NAME}: national`, href: "/research/national-fee-index" } as const;
+/**
+ * The header and footer name the Pro workspace generically: Hamilton's name and mark appear only
+ * on the pages that sell it and inside the workspace (James, 2026-10-15, docs/project/DECISIONS.md).
+ */
 export const HAMILTON_PAGE_NAV = {
-  label: "Hamilton",
+  label: "Pro workspace",
   href: "/for-institutions#hamilton",
-  description: "The Pro workspace: your fees against every market layer",
+  description: "Your fees against every market layer",
 } as const;
+
+/** The header's link to the plans; page bodies keep PRO_PLANS_NAV ("See Hamilton plans"). */
+export const HEADER_PLANS_NAV = { label: "Pro plans", href: "/subscribe" } as const;
 
 /** The Pro button everywhere outside the workspace: Hamilton is the workspace, Pro is the plan. */
 export const PRO_PLANS_NAV = { label: "See Hamilton plans", href: "/subscribe" } as const;
@@ -56,7 +63,7 @@ export const PRIMARY_CTA_NAV = { label: "See where your fees stand", href: "/ins
 export const PRODUCT_NAV_GROUPS: readonly NavGroup[] = [
   { heading: "Every fee", items: [FIND_INSTITUTION_NAV, INDEX_NAV] },
   { heading: "Every market", items: [MARKET_DATA_NAV, NATIONAL_INDEX_NAV] },
-  { heading: "One workspace", items: [HAMILTON_PAGE_NAV, PRO_PLANS_NAV] },
+  { heading: "One workspace", items: [HAMILTON_PAGE_NAV, HEADER_PLANS_NAV] },
 ];
 
 export const GUIDES_NAV = { label: "Guides", href: "/guides" } as const;

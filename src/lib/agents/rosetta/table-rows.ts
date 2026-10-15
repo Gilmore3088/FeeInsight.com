@@ -98,6 +98,25 @@ export function tableRowsPayload(rows: SourceTableRow[]): SourceTableRows | null
 }
 
 const columnsReadyCache = new WeakMap<object, boolean>();
+const kindColumnsReadyCache = new WeakMap<object, boolean>();
+
+/**
+ * True once `agent_source_texts.document_kind` and `.document_kind_version` exist (migration
+ * 20270110000050, #1094). Before that, Rosetta stores no kind; only a positive answer is cached.
+ */
+export async function documentKindColumnsReady(db: SqlTag): Promise<boolean> {
+  if (kindColumnsReadyCache.get(db)) return true;
+  const [row] = await db`
+    SELECT COUNT(*) = 2 AS document_kind_columns_ready
+      FROM information_schema.columns
+     WHERE table_schema = 'public'
+       AND table_name = 'agent_source_texts'
+       AND column_name IN ('document_kind', 'document_kind_version')
+  `;
+  const ready = row?.document_kind_columns_ready === true;
+  if (ready) kindColumnsReadyCache.set(db, true);
+  return ready;
+}
 
 /**
  * True once `agent_source_texts.table_rows` and `.reader` exist (migration

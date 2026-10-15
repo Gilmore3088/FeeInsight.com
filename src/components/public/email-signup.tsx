@@ -52,7 +52,7 @@ export function EmailSignup() {
 
   if (status === "success") {
     return (
-      <p className={`text-[12px] ${emailSent ? "text-emerald-700" : "text-ink-soft"}`} role="status">
+      <p className="text-[13px] leading-snug text-warm-ink-50" role="status">
         {emailSent
           ? "Almost done: check your inbox and click the confirm link to start getting the monthly update."
           : `Saved, but the confirm email didn't go out. Write to ${CONTACT_EMAIL} and we'll add you.`}
@@ -60,25 +60,23 @@ export function EmailSignup() {
     );
   }
 
+  // Sits in the footer's navy band (James's review, 2026-10-15): one framed unit with a short line,
+  // the state picker James kept, then email and button. The button stays outlined so the page's own
+  // call to action is the only filled one.
+  const field =
+    "rounded-lg border border-warm-ink-500 bg-warm-ink-900 px-3 py-2 text-[13px] text-warm-ink-50 placeholder:text-warm-ink-500";
   return (
-    <form onSubmit={handleSubmit} className="relative flex flex-col gap-2">
+    <form onSubmit={handleSubmit} className="relative">
       <HoneypotField />
-      <label htmlFor="footer-newsletter-email" className="text-[12px] font-semibold text-ink-soft">
+      <label htmlFor="footer-newsletter-email" className="block text-[13px] font-semibold text-warm-ink-50">
         Monthly fee index update
       </label>
-      <p className="text-[12px] leading-relaxed text-ink-muted">
-        New national benchmarks and one table worth bringing to a pricing meeting. No more than once a month. Pick a state to get its numbers too.
-      </p>
+      <p className="mt-0.5 text-[12px] text-warm-ink-300">One email a month. Pick a state to get its numbers too.</p>
       <label htmlFor="footer-newsletter-state" className="sr-only">
         Your state (optional)
       </label>
-      <StateSelect
-        id="footer-newsletter-state"
-        value={state}
-        onChange={setState}
-        className="w-full max-w-[200px] rounded-lg border border-border bg-paper px-2 py-1.5 text-[12px] text-ink focus:border-transparent focus:outline-none focus:ring-1 focus:ring-brick/30"
-      />
-      <div className="flex gap-2">
+      <StateSelect id="footer-newsletter-state" value={state} onChange={setState} className={`mt-3 w-full ${field}`} />
+      <div className="mt-2 flex gap-2">
         <input
           id="footer-newsletter-email"
           type="email"
@@ -87,21 +85,21 @@ export function EmailSignup() {
           placeholder="you@company.com"
           autoComplete="email"
           required
-          className="w-full max-w-[200px] rounded-lg border border-border bg-paper px-3 py-1.5 text-[12px] text-ink placeholder:text-ink-muted focus:border-transparent focus:outline-none focus:ring-1 focus:ring-brick/30"
+          className={`min-w-0 flex-1 ${field}`}
         />
         <button
           type="submit"
           disabled={status === "loading"}
-          className="shrink-0 rounded-lg bg-brick px-3 py-1.5 text-[11px] font-semibold text-white transition-colors hover:bg-brick-ink disabled:opacity-50"
+          className="shrink-0 rounded-lg border border-warm-ink-50 px-4 py-2 text-[12px] font-semibold text-warm-ink-50 transition-colors hover:bg-warm-ink-50 hover:text-warm-ink-900 disabled:opacity-50"
         >
           {status === "loading" ? "..." : "Subscribe"}
         </button>
-        {status === "error" && (
-          <span className="self-center text-[11px] text-red-600" role="alert">
-            Something went wrong — try again.
-          </span>
-        )}
       </div>
+      {status === "error" && (
+        <p className="mt-2 text-[12px] text-red-300" role="alert">
+          Something went wrong. Try again.
+        </p>
+      )}
     </form>
   );
 }
