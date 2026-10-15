@@ -13,7 +13,9 @@ rule changes that bump the same version go out together (each Knox bump re-reads
 texts and re-queues the priority banks, as v67 and v68 did on Oct 15). Never batch across lanes,
 gated with ungated, or a migration with unrelated code. A branch is pushed when its PR is ready for
 review, after the local checks. `main` is merged into a branch only for a conflict or a change the
-PR depends on; main's CI run tests each merge commit. A new push still needs a new review of its
+PR depends on (a version number, a shared check its gates use), and always for a PR that adds a
+migration, which re-runs `migration-version-kill` before merging (a clashing number shows no
+conflict); main's CI run tests each merge commit. A new push still needs a new review of its
 exact head (Oct 14). Rules: `CLAUDE.md` ("How work runs") and the build plan ("Rules for the
 builder", "Working side by side").
 

@@ -20,8 +20,11 @@ status comment on #1026.
 
 **Working side by side:**
 - **Before merging:** merge `main` into the branch only when GitHub shows a conflict, or when the PR
-  depends on something newly on `main` (a version number, a migration number, a shared check its
-  gates use). Main's own CI run tests every merge commit.
+  depends on something newly on `main` (a version number, a shared check its gates use). **A PR that
+  adds a migration always merges `main` and re-runs `migration-version-kill` before merging**: two
+  PRs that take the same number add different files, so GitHub shows no conflict
+  (`docs/project/findings/2026-10-09-parallel-migration-numbers.md`). Main's own CI run tests every
+  merge commit.
 - **Files another lane owns:** a change that must touch one (for example `src/lib/agents/types.ts`)
   stays as small as it can.
 - **Migrations:** take the next free number when the PR is opened, and check it again before merging.
