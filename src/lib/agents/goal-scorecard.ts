@@ -195,7 +195,7 @@ export interface AnswerQuality {
   paths: AnswerPathQuality[];
 }
 
-/** The paid paths. The memo and one Simulate read are sampled daily (`paid-answer-eval.ts`, five a day); the rest are not yet. */
+/** The paid paths. Memos, one Simulate read and one written answer are sampled daily (`paid-answer-eval.ts`, five a day); reports are not yet. */
 export const PAID_ANSWER_PATHS: Array<Pick<AnswerPathQuality, "path" | "label">> = [
   { path: "written_answer", label: "Written answer (paid)" },
   { path: "memo", label: "Memo (paid)" },
