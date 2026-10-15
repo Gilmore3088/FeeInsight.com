@@ -29,6 +29,14 @@ smaller batches. It does not pause the `pipeline` control.
 
 ## 2026-10-14
 
+**The Fee Insight design system is the site's brand; the header carries Fee Insight.** James, Oct 14.
+The package (Oxford Navy and brick on parchment, Geist, the box-plot I) lives in `src/brand/`,
+`public/brand/` and `Branding/fee-insight-design-system/`. The feeinsight.com header uses the Fee
+Insight one-line logo; Bank Fee Index's lockup goes on its data pages and the footer; Hamilton's
+wordmark on /pro. This is the "James's own design" the layout hold waited for. It ships in staged
+PRs: the package first, then the public site, then Hamilton, admin, reports and email, each
+reviewed by James on the Vercel preview before merge.
+
 **Data-quality approvals (James, Oct 14 evening, builder session).** Answering the "what do you
 need from me" list:
 - **#1059 audience: approved.** The gate is 0 opposite-audience errors on unseen holdouts (a business
