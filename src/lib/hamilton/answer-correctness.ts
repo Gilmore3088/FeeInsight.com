@@ -136,11 +136,12 @@ export function reconcileAnswer(input: ReconcileInput): CorrectnessResult {
  * a source other than the fee catalog (call reports, fee changes, money at stake, a tested price),
  * which this check accepts as printed just as it does for the free answer.
  */
-export function reconcileMemoText(input: ReconcileInput & { text: string }): CorrectnessResult {
+export function reconcileMemoText(input: ReconcileInput & { text: string; extra?: number[] }): CorrectnessResult {
   const base = reconcileValues(input, catalogFacts(input.response));
   if (!base) return { checked: false, figures: 0, failures: [] };
   // Other-source figures count as stated, never as ends of a gap: a memo may repeat them, not build on them here.
-  return tieText(input.text, base.anchors, [...base.singles, ...otherSourceFigures(input.response)], base.failures);
+  // `extra` is the same for numbers the reader supplied (a tested price), which no catalog row holds.
+  return tieText(input.text, base.anchors, [...base.singles, ...otherSourceFigures(input.response), ...(input.extra ?? [])], base.failures);
 }
 
 /** Dollar figures the answer states from sources other than the fee catalog, accepted as printed. */
