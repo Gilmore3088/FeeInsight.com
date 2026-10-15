@@ -38,7 +38,9 @@ async function handleGET(request: NextRequest) {
     idempotencyKey: `hamilton:answer-eval:${stamp}:${perGroup}`,
     steps: [{ key: "hamilton-answer-eval", agent: "hamilton" as const, title: "Ask Hamilton the quality-bar questions for real institutions" }],
   });
-  const result = started.reused
+  // The tick never starts this step (run-store TICK_EXCLUDED_STEP_KEYS), so a run left queued by an
+  // earlier attempt this hour is run here.
+  const result = started.reused && started.run.status !== "queued"
     ? { runId: started.run.id, status: started.run.status, message: "This eval run is already in progress." }
     : await executeAgentRun(started.run.id, { maxSteps: 1 });
   return NextResponse.json({ ok: true, runId: started.run.id, reused: started.reused, result });
