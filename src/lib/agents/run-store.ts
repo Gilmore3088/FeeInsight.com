@@ -17,6 +17,7 @@ import { retireSameLineDuplicates } from "@/lib/agents/hamilton/same-line-duplic
 import { retireOtherBankDocumentFees } from "@/lib/agents/hamilton/other-bank-document";
 import { retireEvalVerdictFees } from "@/lib/agents/hamilton/eval-verdicts";
 import { applyHandAmountCorrections } from "@/lib/agents/hamilton/hand-amount-corrections";
+import { applyCutNameDuplicates } from "@/lib/agents/hamilton/cut-name-duplicates";
 import { requeueGuardRejectedFees } from "@/lib/agents/hamilton/guard-requeue";
 import { retireArticlePageFees } from "@/lib/agents/hamilton/article-page";
 import { retireProductPageFees } from "@/lib/agents/hamilton/product-page";
@@ -1141,6 +1142,12 @@ async function executeAgenticStep(
       // #1334: eight live fees read with their cents cut off are corrected in place, and the
       // unpublished copies of those reads rejected, before this step publishes anything.
       const handAmounts = await applyHandAmountCorrections(tx, { runId: run.id, dryRun: run.runKind === "dry_run" });
+      // #1196: five live cut-name rows that repeat a clean live row come down; the clean row stays.
+      const cutNameDuplicates = await applyCutNameDuplicates(tx, {
+        runId: run.id,
+        batchId: `agentic-run-${run.id}`,
+        dryRun: run.runKind === "dry_run",
+      });
       // An institution that no longer operates keeps no live fee (#1200).
       const closedInstitution = await retireClosedInstitutionFees(tx, {
         runId: run.id,
@@ -1629,6 +1636,10 @@ async function executeAgenticStep(
             corrected: handAmounts.corrected.map((fix) => ({ fee_published_id: fix.feePublishedId, from: fix.from, to: fix.to })),
             rejected_twins: handAmounts.rejectedTwins,
             skipped: handAmounts.skipped.length,
+          },
+          cut_name_duplicate: {
+            taken_down: cutNameDuplicates.takenDown.map((item) => ({ fee_published_id: item.feePublishedId, kept_fee_published_id: item.keepFeePublishedId })),
+            skipped: cutNameDuplicates.skipped.length,
           },
           eval_verdict: {
             eval_matched: evalVerdicts.evalMatched,
