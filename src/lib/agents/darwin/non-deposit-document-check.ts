@@ -2,6 +2,7 @@ import type { sql } from "@/lib/data-store/connection";
 import { invalidatePublicReadCache } from "@/lib/data-store/fee-cache";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import { secondLook } from "@/lib/agents/hamilton/second-look";
+import { LENDING_CATEGORIES } from "@/lib/agents/knox/held-recheck";
 import {
   documentHostLabelSql,
   documentPathSegmentsSql,
@@ -28,6 +29,15 @@ type SqlTag = typeof sql;
  * It is conservative: a path segment must name the page as a loan, rate, card, mortgage, HELOC,
  * brokerage, investing or wealth page, a deposit word anywhere wins, and business and commercial
  * documents are out of scope (kept on purpose; fee-stats drops them from medians).
+ *
+ * Only lending-category fees on a matched document come down (`LENDING_CATEGORIES`, Knox's list:
+ * late payment, loan origination, appraisal, vehicle title, other lending fee, cash advance). The
+ * taxonomy has no brokerage category, so every other key is a deposit one, and a deposit-category
+ * fee stays live wherever it was read: the prod read-only check of the first version (Oct 15)
+ * found 12 of 47 matched documents were "current rates" or "loan rates" pages holding a credit
+ * union's whole deposit schedule, and real HELOC, card and brokerage pages also list stop payment,
+ * wire, NSF and returned-check fees under their deposit categories. Such fees are counted as
+ * `keptDepositCategory` and pass.
  *
  * Each Darwin verify step reads the next `NON_DEPOSIT_BATCH` live fees after a cursor kept on the
  * run ledger (the `darwin.non_deposit_document` event's `next_after_id`, 0 once a pass reaches the
@@ -82,12 +92,18 @@ export interface NonDepositFindings {
   checked: number;
   /** Fees whose stored document address was found. */
   withDocument: number;
+  /** Fees on a matched document, any category. */
+  onMatchedDocument: number;
+  /** Of those, deposit-category fees that stay live. */
+  keptDepositCategory: number;
+  /** Of those, lending-category fees the check takes down (or, in shadow, would). */
   matched: number;
   byKind: Record<NonDepositDocumentKind, number>;
   /** Distinct documents and institutions among the matches. */
   documents: number;
   institutions: number;
   samples: NonDepositMatch[];
+  keptSamples: NonDepositMatch[];
 }
 
 export interface NonDepositResult extends NonDepositFindings {
@@ -109,10 +125,16 @@ function num(value: number | string | null | undefined): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+/** A lending category (Knox's `LENDING_CATEGORIES`): the only fees this check takes down. */
+export function isLendingCategory(key: string | null | undefined): boolean {
+  return key != null && LENDING_CATEGORIES.has(key);
+}
+
 /** Pure: the live rows whose document is a brokerage/wealth or loan/rate page, counted by kind, with every match kept. */
 export function findNonDepositFees(rows: NonDepositRow[]): NonDepositFindings & { matches: NonDepositMatch[]; passing: number[] } {
   const byKind: Record<NonDepositDocumentKind, number> = { brokerage: 0, loan: 0 };
   const matches: NonDepositMatch[] = [];
+  const kept: NonDepositMatch[] = [];
   const passing: number[] = [];
   let withDocument = 0;
   for (const row of [...rows].sort((a, b) => Number(a.fee_published_id) - Number(b.fee_published_id))) {
@@ -125,8 +147,7 @@ export function findNonDepositFees(rows: NonDepositRow[]): NonDepositFindings & 
       passing.push(Number(row.fee_published_id));
       continue;
     }
-    byKind[kind] += 1;
-    matches.push({
+    const match: NonDepositMatch = {
       feePublishedId: Number(row.fee_published_id),
       feeVerifiedId: num(row.fee_verified_id),
       institutionId: Number(row.institution_id),
@@ -137,16 +158,26 @@ export function findNonDepositFees(rows: NonDepositRow[]): NonDepositFindings & 
       documentUrl: url,
       kind,
       reason: `${NON_DEPOSIT_REASON}: ${kind} #${documentId}`,
-    });
+    };
+    if (!isLendingCategory(row.canonical_fee_key)) {
+      kept.push(match);
+      passing.push(match.feePublishedId);
+      continue;
+    }
+    byKind[kind] += 1;
+    matches.push(match);
   }
   return {
     checked: rows.length,
     withDocument,
+    onMatchedDocument: matches.length + kept.length,
+    keptDepositCategory: kept.length,
     matched: matches.length,
     byKind,
     documents: new Set(matches.map((fee) => fee.sourceDocumentId)).size,
     institutions: new Set(matches.map((fee) => fee.institutionId)).size,
     samples: matches.slice(0, NON_DEPOSIT_SAMPLES),
+    keptSamples: kept.slice(0, NON_DEPOSIT_SAMPLES),
     matches,
     passing,
   };
@@ -236,7 +267,7 @@ export async function recheckNonDepositDocuments(
         INSERT INTO agent_run_events (agent_run_id, step_id, event_type, status, message, detail)
         VALUES (
           ${options.runId}, ${options.stepId ?? null}, ${NON_DEPOSIT_CHECK}, 'completed',
-          ${`Read ${result.checked} live fee(s) (${result.withDocument} with a stored document): ${result.matched} came from a non-deposit document (${result.byKind.brokerage} brokerage or wealth, ${result.byKind.loan} loan, card or rate); ${live ? `${result.flagged} flagged, ${result.takenDown.length} archived` : "switch off, would take down, nothing written"}`},
+          ${`Read ${result.checked} live fee(s) (${result.withDocument} with a stored document): ${result.onMatchedDocument} came from a non-deposit document; ${result.matched} lending-category fee(s) would come down (${result.byKind.brokerage} brokerage or wealth, ${result.byKind.loan} loan, card or rate), ${result.keptDepositCategory} deposit-category fee(s) stay; ${live ? `${result.flagged} flagged, ${result.takenDown.length} archived` : "switch off, would take down, nothing written"}`},
           ${JSON.stringify(nonDepositDetail(result))}::jsonb
         )
       `);
@@ -334,11 +365,14 @@ export function nonDepositFindingsDetail(found: NonDepositFindings) {
   return {
     checked: found.checked,
     with_document: found.withDocument,
+    on_matched_document: found.onMatchedDocument,
+    kept_deposit_category: found.keptDepositCategory,
     would_take_down: found.matched,
     by_kind: found.byKind,
     documents: found.documents,
     institutions: found.institutions,
     samples: found.samples.map(sampleDetail),
+    samples_kept: found.keptSamples.map(sampleDetail),
   };
 }
 
@@ -410,17 +444,26 @@ function liveNonDepositSql(): string {
 )`;
 }
 
+/** Postgres: is `column` a lending category (`isLendingCategory`)? */
+function lendingSql(column: string): string {
+  return `COALESCE(${column} IN (${[...LENDING_CATEGORIES].sort().map((key) => `'${key}'`).join(", ")}), false)`;
+}
+
 /**
- * The same count as one read-only SQL statement, for someone with prod access (#1442): live fees
- * whose stored document is a brokerage/wealth or loan/card/rate page, by kind, with the
- * documents and institutions behind them, and every live fee with a document as the base.
+ * The same count as one read-only SQL statement, for someone with prod access (#1442): by kind,
+ * the live fees on brokerage/wealth or loan/card/rate documents, the lending-category ones the
+ * check would take down (with their documents and institutions), the deposit-category ones that
+ * stay, the matched documents, and every live fee with a document as the base.
  */
 export function nonDepositCountSql(): string {
   return `${liveNonDepositSql()}
 SELECT COALESCE(j.kind, 'all kinds') AS kind,
-       count(*) AS live_fees,
-       count(DISTINCT l.source_document_id) AS documents,
-       count(DISTINCT l.institution_id) AS institutions,
+       count(*) AS fees_on_matched_documents,
+       count(*) FILTER (WHERE ${lendingSql("l.canonical_fee_key")}) AS would_take_down,
+       count(*) FILTER (WHERE NOT ${lendingSql("l.canonical_fee_key")}) AS kept_deposit_category,
+       count(DISTINCT l.source_document_id) FILTER (WHERE ${lendingSql("l.canonical_fee_key")}) AS takedown_documents,
+       count(DISTINCT l.institution_id) FILTER (WHERE ${lendingSql("l.canonical_fee_key")}) AS takedown_institutions,
+       count(DISTINCT l.source_document_id) AS matched_documents,
        (SELECT count(*) FROM live) AS live_fees_with_document
   FROM live l
   JOIN judged j ON j.source_document_id = l.source_document_id
@@ -430,20 +473,24 @@ SELECT COALESCE(j.kind, 'all kinds') AS kind,
 }
 
 /**
- * Read-only: the matched documents, most live fees first (`limit` of them), with their kind,
- * normalised path, institutions and up to five fee names with amounts each.
+ * Read-only: the matched documents, most fees that would come down first (`limit` of them), with
+ * their kind, normalised path, institutions, the counts that come down and stay, and up to five
+ * fee names with amount and category each, of each side.
  */
 export function nonDepositSamplesSql(limit = 60): string {
   const rows = Math.max(1, Math.min(Math.trunc(limit), 500));
+  const fee = "l.fee_name || ' $' || COALESCE(l.amount::text, '?') || ' [' || COALESCE(l.canonical_fee_key, '?') || ']'";
   return `${liveNonDepositSql()}
 SELECT j.kind, j.source_document_id, j.document_url, j.path,
-       count(*) AS live_fees,
+       count(*) FILTER (WHERE ${lendingSql("l.canonical_fee_key")}) AS would_take_down,
+       count(*) FILTER (WHERE NOT ${lendingSql("l.canonical_fee_key")}) AS kept_deposit_category,
        array_agg(DISTINCT l.institution_id) AS institution_ids,
-       (array_agg(l.fee_name || ' $' || COALESCE(l.amount::text, '?') ORDER BY l.fee_published_id))[1:5] AS sample_fees
+       (array_agg(${fee} ORDER BY l.fee_published_id) FILTER (WHERE ${lendingSql("l.canonical_fee_key")}))[1:5] AS sample_take_down,
+       (array_agg(${fee} ORDER BY l.fee_published_id) FILTER (WHERE NOT ${lendingSql("l.canonical_fee_key")}))[1:5] AS sample_kept
   FROM live l
   JOIN judged j ON j.source_document_id = l.source_document_id
  WHERE j.kind IS NOT NULL
  GROUP BY j.kind, j.source_document_id, j.document_url, j.path
- ORDER BY count(*) DESC, j.source_document_id
+ ORDER BY 5 DESC, count(*) DESC, j.source_document_id
  LIMIT ${rows};`;
 }

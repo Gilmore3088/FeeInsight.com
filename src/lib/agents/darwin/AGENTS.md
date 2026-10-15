@@ -340,17 +340,26 @@ Darwin owns verification and classification.
   filter), read on the address of the stored document each live fee came from (the
   document-owner join: `lineage_ref` -> verified -> raw `source_document_id` -> `source_documents`).
   It returns `brokerage` or `loan` only when a path segment names the page as one ("current-rates",
-  "loan-rates", "credit-card-agreement", "heloc", "wealth-management", "self-directed-investing",
-  "trust-and-investment"; or a `wealth.`/`invest.` host); a deposit word anywhere ("checking",
-  "savings", "deposit", "overdraft", "truth in savings") wins, a fee named after a loan
-  ("/fees/loan-payment-fee") never matches, and a generic fee schedule filed under a loan section
-  ("/loans/fee-schedule.pdf") is left alone. Business and commercial documents are out of scope
+  "loan-rates", "credit-card-agreement", "heloc", "loan-servicing-fees", "wealth-management",
+  "self-directed-investing", "trust-and-investment"; or a `wealth.`/`invest.` host); run-together
+  words are split first ("scheduleoffees", "loanfeeschedule"). A deposit word anywhere
+  ("checking", "savings", "deposit", "overdraft", "truth in savings", "IRA", "HSA") wins, a fee
+  named after a loan ("/fees/loan-payment-fee") never matches, a generic fee schedule filed under a
+  loan section ("/loans/fee-schedule.pdf") and a combined "rates & fee schedule" or "investments
+  and fees" page are left alone, and a bare "cardholder agreement" (often the debit card's) needs
+  "credit" to count. Only lending-category fees on a matched document come down
+  (`LENDING_CATEGORIES` from `knox/held-recheck.ts`: late payment, loan origination, appraisal,
+  vehicle title, other lending fee, cash advance); every other category is a deposit one and stays
+  live (`kept_deposit_category`). The prod read-only check of the first version (Oct 15: 172 fees
+  on 47 documents) found 12 documents, 65 fees, were rate pages holding a credit union's whole
+  deposit schedule, an HSA page or a run-together schedule; real HELOC, card and brokerage pages
+  also list stop payment, wire and NSF fees under deposit categories. Business and commercial documents are out of scope
   (kept on purpose; fee-stats drops them from medians) and always pass. Every verify/classify step
   reads the next `NON_DEPOSIT_BATCH` (2,000) live fees after a cursor on the run ledger (the
   `darwin.non_deposit_document` event's `next_after_id`, 0 at the end of a pass); an
   institution-scoped run leaves the cursor alone. `NON_DEPOSIT_DOCUMENT_TAKEDOWN_LIVE` is false: the
   pass only reports (step detail `non_deposit_document_check`: `would_take_down`, `by_kind`,
-  `documents`, `institutions`, samples with the document address). Switched on by PR after James
+  `kept_deposit_category`, `documents`, `institutions`, samples of both with the document address). Switched on by PR after James
   has seen the whole-table count and a sample, a match goes through the shared 12-hour second look
   (check `darwin.non_deposit_document`; fees that pass clear a pending flag) and is archived on its
   second failure (rolled back with `non_deposit_document: <kind> #<doc>`, batch

@@ -4,7 +4,7 @@ import { recordAttempt } from "@/lib/agents/learning/attempts";
 import { classifyFetchFailure, type AttemptOutcome } from "@/lib/agents/learning/outcomes";
 import { htmlToScoringText, scoreFeePage } from "@/lib/agents/learning/fee-page";
 import { companionStreamsReady } from "@/lib/agents/companion-streams";
-import { BROKERAGE_LINK_WORDS, nonDepositDocumentKind } from "@/lib/non-deposit-document";
+import { brokerageLinkText, nonDepositDocumentKind } from "@/lib/non-deposit-document";
 
 import { fetchWithTimeout, looksLikePdfUrl, MAX_PDF_CHECK_BYTES, pdfCheckText, validateFeeCandidate } from "./find-validate";
 import { loadSharedNameIds } from "./other-bank-host";
@@ -139,13 +139,17 @@ const STRONG_FEE_DOCUMENT =
 const AGREEMENT =
   /\b((deposit |share |checking |savings |consumer |personal )?account|member(ship)?|deposit|share) agreements?\b|\bterms (and|&) conditions\b|\bagreements? (and|&) disclosures?\b|\bdisclosures? (and|&) agreements?\b/;
 const MEDIUM_FEE_DOCUMENT = /\b(fees?|charges|pricing|disclosures?|account agreements?|deposit agreements?|terms and conditions)\b/;
+const NOT_A_FEE_DOCUMENT =
+  /\b(funds availability|availability of funds|opt in(form)?|zelle|join|privacy|careers?|jobs|mortgage|loans?|lending|heloc|home equity|lines? of credit|introductory rate|credit cards?|visa platinum|auto|rates? sheet|annual report|press|news|scholarship|donation|calculators?|login|log in|enroll|apply|application|employment|vendor|accessibility|swaps?|derivatives?|cftc|blog|articles?)\b/;
 /**
- * Not a deposit fee document. #1442 added the brokerage, investment and wealth words
- * (`BROKERAGE_LINK_WORDS`, shared with Darwin's live re-check in `@/lib/non-deposit-document`).
+ * Discovery only (#1442): a brokerage, investment or wealth link with no deposit word
+ * (`brokerageLinkText`), or a document the shared classifier names (`nonDepositDocumentKind`, also
+ * Darwin's live re-check). It only skips links while searching; the stored-companion review
+ * (`isNonDepositLink`) keeps its pre-#1442 words, so nothing stored or live moves.
  */
-const NOT_A_FEE_DOCUMENT = new RegExp(
-  `\\b(funds availability|availability of funds|opt in(form)?|zelle|join|privacy|careers?|jobs|mortgage|loans?|lending|heloc|home equity|lines? of credit|introductory rate|credit cards?|visa platinum|auto|rates? sheet|annual report|press|news|scholarship|donation|calculators?|login|log in|enroll|apply|application|employment|vendor|accessibility|swaps?|derivatives?|cftc|blog|articles?|${BROKERAGE_LINK_WORDS})\\b`,
-);
+function nonDepositDiscoveryLink(link: PageLink): boolean {
+  return brokerageLinkText(linkText(link)) || nonDepositDocumentKind(link.url, link.label) != null;
+}
 /** Deposit accounts whose pages carry their own fees. Loans and cards are left out. */
 const ACCOUNT_PAGE =
   /\b(checking|savings|money market|share drafts?|share accounts?|share savings|christmas club|holiday club|club accounts?|vacation club|kasasa|youth accounts?|student (checking|accounts?)|teen (checking|accounts?)|compare accounts|personal accounts?|deposit accounts?)\b/;
@@ -185,7 +189,7 @@ export function classifyCompanionLink(link: PageLink, site: URL, foundOn: string
   const lower = linkText(link);
   // Business, loan and other non-deposit links; a rates page ("Savings Rates",
   // "/rates-fees/account-rates") lists rates, not fees.
-  if (excludedLink(lower)) return null;
+  if (excludedLink(lower) || nonDepositDiscoveryLink(link)) return null;
   let url: URL;
   try {
     url = new URL(link.url);
@@ -290,7 +294,7 @@ export function disclosureIndexDocuments(pageUrl: string, links: PageLink[], sit
   if (documents.length < INDEX_MIN_DOCUMENT_LINKS) return [];
   return documents
     .filter((link) => !exclude.has(urlIdentity(link.url)))
-    .filter((link) => !excludedLink(linkText(link)) && !isForeignHostLink(link.url, site.toString()))
+    .filter((link) => !excludedLink(linkText(link)) && !nonDepositDiscoveryLink(link) && !isForeignHostLink(link.url, site.toString()))
     // Named fee documents and agreements are candidates through classifyCompanionLink already.
     .filter((link) => classifyCompanionLink(link, site) == null)
     .map((link): CompanionCandidate => ({
@@ -325,12 +329,13 @@ export function isGenericAccountName(name: string | null | undefined): boolean {
 }
 
 /**
- * True when a link points at a loan, HELOC, brokerage, wealth or other page that is not a deposit
- * fee page: its words, or the shared document classifier (`nonDepositDocumentKind`, #1442) that
- * Darwin's live re-check also uses.
+ * True when a link points at a loan, HELOC or other page that is not a deposit fee page. The
+ * stored-companion review retires on it (and Hamilton then rolls back the companion's live fees),
+ * so it keeps its pre-#1442 words: the brokerage words and the shared classifier apply to discovery
+ * only (`nonDepositDiscoveryLink`) until Darwin's switched live re-check takes their fees down.
  */
 export function isNonDepositLink(label: string, url: string): boolean {
-  return NOT_A_FEE_DOCUMENT.test(linkText({ label, url })) || nonDepositDocumentKind(url, label) != null;
+  return NOT_A_FEE_DOCUMENT.test(linkText({ label, url }));
 }
 
 /**
@@ -792,7 +797,7 @@ async function searchBank(
     }
     searchRuns.push({ query: search.query, url: search.url, status, ok: results != null, links: found, durationMs: Date.now() - startedAt });
   }
-  const hubs = hubPages(links.filter((link) => !BUSINESS.test(linkText(link)) && !NOT_A_FEE_DOCUMENT.test(linkText(link))), site, exclude, MAX_HUBS);
+  const hubs = hubPages(links.filter((link) => !BUSINESS.test(linkText(link)) && !NOT_A_FEE_DOCUMENT.test(linkText(link)) && !nonDepositDiscoveryLink(link)), site, exclude, MAX_HUBS);
   for (const hub of hubs) {
     if (Date.now() > deadline) break;
     const html = await openHtml(hub.url, "hub_page", hub.label);

@@ -49,6 +49,43 @@ export const NON_DEPOSIT_URL_FIXTURES: Array<{ url: string; kind: NonDepositDocu
   { url: "https://www.example.com/learn/whats-a-heloc", kind: null, why: "an article about HELOCs is not named as one" },
   { url: "https://www.example.com/", kind: null, why: "homepage" },
   { url: "", kind: null, why: "no address" },
+  // Review of c93910cc (#1442): combined rate-and-fee pages, debit cardholder agreements, deposit
+  // products named with investment words.
+  { url: "https://www.example.com/uploads/current-rates-fee-schedule.pdf", kind: null, why: "one Rates & Fee Schedule PDF" },
+  { url: "https://www.example.com/Rate-Sheet-Fee-Schedule.pdf", kind: null, why: "rate sheet and fee schedule" },
+  { url: "https://www.example.com/investments-and-fees", kind: null, why: "a combined investments and fees page" },
+  { url: "https://www.example.com/cardholder", kind: null, why: "bare cardholder page" },
+  { url: "https://www.example.com/cardholder-agreement.pdf", kind: null, why: "often the debit card agreement" },
+  { url: "https://www.example.com/forms/cardholder-agreement", kind: null, why: "often the debit card agreement" },
+  { url: "https://www.example.com/credit-card-cardholder-agreement.pdf", kind: "loan", why: "credit card cardholder agreement" },
+  { url: "https://www.example.com/personal/investments/ira-fee-schedule", kind: null, why: "an IRA is a deposit product" },
+  { url: "https://www.example.com/personal/checking-savings-and-investments-fee-schedule.pdf", kind: null, why: "deposit words win" },
+  { url: "https://www.example.com/wp-content/uploads/Investment-and-Deposit-Fee-Schedule.pdf", kind: null, why: "deposit word wins" },
+  { url: "https://www.example.com/hsa-investments-fees", kind: null, why: "an HSA is a deposit account" },
+  { url: "https://www.example.com/wealth-and-investment-management", kind: "brokerage", why: "wealth and investment management" },
+  // Prod read-only check of c93910cc (Oct 15): false positives now null.
+  { url: "https://www.amegybank.com/content/dam/amegy/rate-sheets/scheduleoffeesconsut.pdf", kind: null, why: "run-together schedule of fees under rate sheets" },
+  { url: "https://www.cu1.org/spend-save/investing/hsa", kind: null, why: "an HSA page under investing" },
+  // Prod: rate pages that host a credit union's whole schedule stay "loan" by address; the takedown
+  // takes only their lending-category fees (darwin/non-deposit-document-check.ts).
+  { url: "https://www.siouxlandfederalcu.org/current-rates", kind: "loan", why: "rate page; only lending fees come down" },
+  { url: "https://www.bcscu.com/loan-rates", kind: "loan", why: "loan rates page; only lending fees come down" },
+  { url: "https://www.hapo.org/loans/loan-rates", kind: "loan", why: "loan rates page; only lending fees come down" },
+  // Prod misses, now loan triggers even when the segment ends in fees or schedule.
+  { url: "https://www.bscu.org/wp-content/uploads/Credit-Card-Line-of-Agreement.pdf", kind: "loan", why: "credit card agreement" },
+  { url: "https://www.healthcarefcu.org/docs/Credit_Card_Disclosure1.pdf", kind: "loan", why: "credit card disclosure, digit suffix" },
+  { url: "https://www.trumark.org/docs/Visa-Credit-Card-Rates-and-Fees-Only.pdf", kind: "loan", why: "credit card rates and fees" },
+  { url: "https://www.kitfcu.org/docs/Credit-Card-Solicitation-disclosure.pdf", kind: "loan", why: "credit card solicitation disclosure" },
+  { url: "https://www.argentcu.org/docs/Argent-Credit-Card-Fees-and-Terms.pdf", kind: "loan", why: "credit card fees and terms" },
+  { url: "https://www.university-bank.com/docs/VISA-Credit-Card-Agreement.pdf", kind: "loan", why: "credit card agreement" },
+  { url: "https://www.easternsavingsbank.com/docs/Consumer-Mortgage-Servicing-Fee-Schedule.pdf", kind: "loan", why: "mortgage servicing fee schedule" },
+  { url: "https://www.yourgcu.com/docs/Fee-ScheduleLoans.pdf", kind: "loan", why: "fee schedule for loans, run together" },
+  { url: "https://www.tiogabank.com/docs/Mortgage-Loan-Servicing-Fees.pdf", kind: "loan", why: "mortgage loan servicing fees" },
+  { url: "https://www.greatmidwestbank.com/docs/Loan-Servicing-Fees.pdf", kind: "loan", why: "loan servicing fees" },
+  { url: "https://www.northcountrysavings.com/docs/sch%20of%20Loan%20Fees.pdf", kind: "loan", why: "schedule of loan fees" },
+  { url: "https://www.mayvillesavings.com/docs/loanfeeschedule.pdf", kind: "loan", why: "loan fee schedule, run together" },
+  { url: "https://www.beaconbank.com/docs/consumer-loan-servicing-fee-schedule.pdf", kind: "loan", why: "consumer loan servicing fee schedule" },
+  { url: "https://www.example.com/docs/consumer-loans-and-deposit-fees.pdf", kind: null, why: "a deposit word wins" },
   // Business documents: out of scope, kept in the catalog on purpose.
   { url: "https://www.example.com/business/loans/rates", kind: null, why: "business loans" },
   { url: "https://www.example.com/business/wealth-management", kind: null, why: "business wealth" },

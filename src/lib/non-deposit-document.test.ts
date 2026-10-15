@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   BROKERAGE_SEGMENT,
+  brokerageLinkText,
   DEPOSIT_TOKEN,
   documentHostLabel,
   documentPathSegments,
@@ -32,6 +33,19 @@ describe("nonDepositDocumentKind (#1442)", () => {
     expect(nonDepositDocumentKind("https://x.com/download?id=7", "Make a Loan Payment")).toBeNull();
     expect(nonDepositDocumentKind("https://x.com/loans/auto-loans", "Checking Account Fee Schedule")).toBeNull();
     expect(nonDepositDocumentKind("https://x.com/investments", "Business Services")).toBeNull();
+  });
+
+  it("reads brokerage link words only where no deposit word stands (#1442 review)", () => {
+    expect(brokerageLinkText("Brokerage Fee Schedule docs brokerage fee schedule pdf")).toBe(true);
+    expect(brokerageLinkText("Trust & Investment Services")).toBe(true);
+    expect(brokerageLinkText("Wealth Builder Savings")).toBe(false);
+    expect(brokerageLinkText("Investment Money Market")).toBe(false);
+    expect(brokerageLinkText("Fee Schedule personal checking savings and investments fee schedule pdf")).toBe(false);
+    expect(brokerageLinkText("wp content uploads Investment and Deposit Fee Schedule pdf")).toBe(false);
+    expect(brokerageLinkText("hsa investments fees")).toBe(false);
+    expect(brokerageLinkText("Investors Bank Fee Schedule")).toBe(false);
+    expect(nonDepositDocumentKind("https://x.com/wealth-builder", "Wealth Builder Savings")).toBeNull();
+    expect(nonDepositDocumentKind("https://x.com/investments/money-market", "Investment Money Market")).toBeNull();
   });
 
   it("builds Postgres that carries the same patterns, with no JS-only escapes", () => {

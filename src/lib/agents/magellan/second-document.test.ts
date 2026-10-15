@@ -485,22 +485,29 @@ describe("brokerage, wealth and loan pages are not deposit fee documents (#1442)
   const site = new URL("https://bank.example");
   const classify = (label: string, path: string) => classifyCompanionLink({ url: `https://bank.example${path}`, label } as never, site);
 
-  it("skips brokerage, investment, wealth and trust-and-investment links", () => {
+  it("discovery skips brokerage, investment, wealth and trust-and-investment links", () => {
     expect(classify("Brokerage Fee Schedule", "/docs/brokerage-fee-schedule.pdf")).toBeNull();
     expect(classify("Self-Directed Investing Pricing", "/investing/self-directed-investing/pricing")).toBeNull();
     expect(classify("Wealth Management Fees", "/wealth-management/fee-schedule")).toBeNull();
     expect(classify("Trust & Investment Services", "/trust-and-investment-services/fees")).toBeNull();
+    expect(classify("Download", "/docs/Credit-Card-Solicitation-disclosure.pdf")).toBeNull();
   });
 
-  it("isNonDepositLink adds the shared classifier's rate and card pages to the word list", () => {
-    expect(isNonDepositLink("Rates", "https://bank.example/current-rates/")).toBe(true);
-    expect(isNonDepositLink("Download", "https://bank.example/docs/CreditCardAgreement.pdf")).toBe(true);
-    expect(isNonDepositLink("Investments", "https://bank.example/investments")).toBe(true);
-  });
-
-  it("keeps deposit schedules, including ones that mention a loan payment", () => {
-    expect(isNonDepositLink("Schedule of Fees", "https://bank.example/personal/Schedule-of-Fees-Personal-Checking.pdf")).toBe(false);
-    expect(isNonDepositLink("Fee Schedule", "https://bank.example/fee-schedule")).toBe(false);
+  it("discovery keeps deposit links that carry an investment or wealth word", () => {
+    expect(classify("Fee Schedule", "/personal/checking-savings-and-investments-fee-schedule.pdf")?.kind).toBe("fee_document");
+    expect(classify("Fee Schedule", "/wp-content/uploads/Investment-and-Deposit-Fee-Schedule.pdf")?.kind).toBe("fee_document");
+    expect(classify("HSA Fees", "/docs/hsa-investments-fees.pdf")?.kind).toBe("fee_document");
+    expect(classify("Wealth Builder Savings", "/accounts/wealth-builder-savings")?.kind).toBe("account_page");
+    expect(classify("Investment Money Market", "/accounts/investment-money-market")?.kind).toBe("account_page");
     expect(classify("Schedule of Fees", "/personal/Schedule-of-Fees-Personal-Checking.pdf")?.kind).toBe("fee_document");
+  });
+
+  it("isNonDepositLink, which retires stored companions, keeps its pre-#1442 words", () => {
+    expect(isNonDepositLink("Brokerage Fee Schedule", "https://bank.example/docs/brokerage-fee-schedule.pdf")).toBe(false);
+    expect(isNonDepositLink("Wealth Management", "https://bank.example/wealth-management/fee-schedule")).toBe(false);
+    expect(isNonDepositLink("Rates", "https://bank.example/current-rates/")).toBe(false);
+    expect(isNonDepositLink("Cardholder Agreement", "https://bank.example/forms/cardholder-agreement")).toBe(false);
+    expect(isNonDepositLink("Home Equity Line of Credit", "https://bank.example/heloc")).toBe(true);
+    expect(isNonDepositLink("Fee Schedule", "https://bank.example/fee-schedule")).toBe(false);
   });
 });

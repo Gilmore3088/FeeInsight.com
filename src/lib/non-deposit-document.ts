@@ -33,7 +33,7 @@ export type NonDepositDocumentKind = "brokerage" | "loan";
 type NormalizeStep = { pattern: string; js: string; pg: string } | "lower";
 
 /** Date, number and revision tokens that do not change what a segment names. */
-const NOISE = "[0-9]+[a-z]{0,2}|v[0-9]+|rev[0-9]*|final|updated|(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec|january|february|march|april|june|july|august|september|october|november|december)[0-9]{0,4}";
+const NOISE = "[0-9]+[a-z]{0,2}|v[0-9]*|rev[0-9]*|final|updated|(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec|january|february|march|april|june|july|august|september|october|november|december)[0-9]{0,4}";
 
 /** The steps shared by an address's path and a title (see `PATH_STEPS`). */
 const TEXT_STEPS: NormalizeStep[] = [
@@ -41,6 +41,12 @@ const TEXT_STEPS: NormalizeStep[] = [
   { pattern: "[.][A-Za-z0-9]{1,5}(?=/|$)", js: "", pg: "" },
   { pattern: "([a-z])([A-Z])", js: "$1 $2", pg: "\\1 \\2" },
   "lower",
+  // Run-together words: "Disclosure1", "scheduleoffees", "feeschedule", "loanfeeschedule", "ScheduleLoans".
+  { pattern: "([a-z])([0-9])", js: "$1 $2", pg: "\\1 \\2" },
+  { pattern: "schedule ?of ?(fees?|charges)", js: "schedule of $1 ", pg: "schedule of \\1 " },
+  { pattern: "(fees?) ?schedule", js: "$1 schedule", pg: "\\1 schedule" },
+  { pattern: "schedule(loans?|mortgages?)", js: "schedule $1", pg: "schedule \\1" },
+  { pattern: "(loans?)(fees?)", js: "$1 $2", pg: "\\1 \\2" },
   { pattern: "&", js: " and ", pg: " and " },
   { pattern: "['’]", js: "", pg: "" },
   { pattern: "[^a-z0-9/]+", js: " ", pg: " " },
@@ -67,33 +73,42 @@ const PATH_STEPS: NormalizeStep[] = [
 /** A business, commercial or agricultural document: out of scope, kept in the catalog on purpose. */
 export const BUSINESS_TOKEN = "[ /](?:business|commercial|corporate|treasury|merchants?|agricultur(?:e|al)|ag|farm|hoa|nonprofit|non profit)[ /]";
 
-/** A deposit document: a deposit word anywhere in the address or title wins over any other. */
-export const DEPOSIT_TOKEN = "[ /](?:checking|savings|share drafts?|money market|deposits?|truth in savings|overdrafts?|nsf|cds?|certificates? of deposit)[ /]";
+/** A deposit document: a deposit word anywhere in the address or title wins over any other (IRAs and HSAs are deposit products). */
+export const DEPOSIT_TOKEN = "[ /](?:checking|savings|share drafts?|money market|deposits?|truth in savings|overdrafts?|nsf|cds?|certificates? of deposit|iras?|hsas?|individual retirement)[ /]";
 
 /**
  * A brokerage, wealth or investment segment: one that starts with "wealth", "invest(ing|ment|ments)",
- * "brokerage" or "self directed", or holds "brokerage", "wealth management", "wealth advisory",
- * "private wealth", "investment management", "self directed" or "trust and investment(s)".
+ * "brokerage" or "self directed" (not followed by "and": "investments and fees" is a combined
+ * page), or holds "brokerage", "wealth management", "wealth advisory", "private wealth",
+ * "investment management", "self directed", "trust and investment(s)" or "wealth and investment(s)".
  */
-export const BROKERAGE_SEGMENT = "/(?:(?:wealth|invest|investing|investments?|brokerage|self directed)(?: [^/]*)?|(?:[^/]* )?(?:brokerage|wealth management|wealth advisory|private wealth|investment management|self directed|trust and invest(?:ing|ments?)|invest(?:ing|ments?) and trust)(?: [^/]*)?)/";
+export const BROKERAGE_SEGMENT = "/(?:(?:wealth|invest|investing|investments?|brokerage|self directed)(?: (?!and )[^/]*)?|(?:[^/]* )?(?:brokerage|wealth management|wealth advisory|private wealth|investment management|self directed|trust and invest(?:ing|ments?)|invest(?:ing|ments?) and trust|wealth and (?:invest(?:ing|ments?)|trust)|trust and wealth)(?: [^/]*)?)/";
 
-/** Words naming a loan, card, mortgage, HELOC or rate page, as the whole of one segment. */
+/** Words a loan's own name may start with ("consumer", "auto", "mortgage"...). */
+const LOAN_PREFIX = "(?:(?:personal|consumer|auto|vehicle|car|boat|rv|home|student|signature|installment|mortgage|equity|real estate|land|construction|share secured|secured) )*";
+/** Words naming a loan, card, mortgage, HELOC or loan-servicing page, as the start of one segment. */
 const LOAN_CORE = [
-  "(?:(?:personal|consumer|auto|vehicle|car|boat|rv|home|student|signature|installment|mortgage|equity|real estate|land|construction|share secured|secured) )?(?:loans?|lending)",
+  `${LOAN_PREFIX}(?:loans?|lending|mortgages?)`,
   "borrow(?:ing)?",
-  "(?:home )?mortgages?(?: (?:loans?|lending|center|services))?",
   "helocs?",
-  "home equity(?: (?:loans?|lines? of credit|heloc))?",
+  "home equity",
   "(?:personal )?lines? of credit",
-  "(?:(?:visa|mastercard|platinum|gold|classic|rewards?|signature|secured|student) )*credit cards?(?: (?:accounts?|cardholder))?",
-  "cardholder",
-  "(?:current|todays|today s|our) rates",
-  "rates? sheets?",
+  // Credit card only with "credit": a bare "cardholder agreement" is often the debit card's. Any
+  // words may lead ("Argent Credit Card Fees and Terms", "VISA Credit Card Agreement").
+  "(?:[^/]* )?credit cards?",
+  // A fee schedule named for loans: "Fee Schedule Loans", "Sch of Loan Fees", "Fees for Loans".
+  `(?:fees?|fee schedule|schedule of fees|sch of)(?: for)? ${LOAN_PREFIX}(?:loans?|mortgages?|lending)`,
 ].join("|");
-/** What may follow a loan word in the same segment: "rates", "agreement", "fee schedule"... */
-const LOAN_TAIL = "rates?|agreements?|disclosures?|terms(?: and conditions)?|sheets?|fees?|fee schedule|schedule of fees|pricing|page|information|info|application|and rates|and lines of credit|and credit cards";
+/** Words that may follow a loan word in the same segment: "rates", "agreement", "servicing fee schedule"... */
+const LOAN_TAIL = "rates?|agreements?|disclosures?|solicitations?|terms|conditions|and|of|for|only|lines?|credit|sheets?|fees?|schedule|pricing|page|information|info|application|servicing|services|center|loans?|lending|heloc|accounts?|cardholder";
+/**
+ * A rate page's own name ("current rates", "rate sheet"). Its tail never takes fee words: many
+ * credit unions publish one "Rates & Fee Schedule" PDF that holds the deposit schedule.
+ */
+const RATE_CORE = "(?:current|todays|today s|our) rates|rates? sheets?";
+const RATE_TAIL = "rates?|sheets?|page|information|info";
 /** A loan, card, mortgage, HELOC or rate segment ("current rates", "auto loans", "credit card agreement"). */
-export const LOAN_SEGMENT = `/(?:${LOAN_CORE})(?: (?:${LOAN_TAIL}))*/`;
+export const LOAN_SEGMENT = `/(?:(?:${LOAN_CORE})(?: (?:${LOAN_TAIL}))*|(?:${RATE_CORE})(?: (?:${RATE_TAIL}))*)/`;
 /** The same, as the address's last segment. */
 export const LOAN_LAST_SEGMENT = `${LOAN_SEGMENT}$`;
 /** The address's last segment names a fee document ("fee schedule", "fees", "schedule of charges", "pricing"). */
@@ -109,6 +124,7 @@ export const BROKERAGE_HOST_LABELS = ["wealth", "invest", "investing", "investme
 export const BROKERAGE_LINK_WORDS = "brokerage|invest(?:ing|ments?)?|wealth|self directed|trust (?:and|&) invest(?:ing|ments?)";
 
 const re = (source: string) => new RegExp(source);
+const BROKERAGE_LINK_RE = new RegExp(`(?:^|[^a-z0-9])(?:${BROKERAGE_LINK_WORDS})(?=$|[^a-z0-9])`);
 const BUSINESS_RE = re(BUSINESS_TOKEN);
 const DEPOSIT_RE = re(DEPOSIT_TOKEN);
 const BROKERAGE_RE = re(BROKERAGE_SEGMENT);
@@ -148,6 +164,16 @@ export function documentTitleSegment(title: string | null | undefined): string {
 export function documentHostLabel(url: string | null | undefined): string {
   const host = /^[A-Za-z][A-Za-z0-9+.-]*:\/\/([^/?#:]*)/.exec((url ?? "").trim())?.[1] ?? "";
   return host.toLowerCase().split(".")[0] ?? "";
+}
+
+/**
+ * Pure: link text (label and address words, any case) that names a brokerage, investment or
+ * wealth page and no deposit product: "Wealth Builder Savings", "Investment Money Market",
+ * "checking, savings and investments fee schedule" and an HSA's investments are deposit links.
+ */
+export function brokerageLinkText(text: string | null | undefined): boolean {
+  const words = ` ${(text ?? "").toLowerCase().replace(/[^a-z0-9&]+/g, " ").trim()} `;
+  return BROKERAGE_LINK_RE.test(words) && !DEPOSIT_RE.test(words);
 }
 
 /** Pure: the kind from a normalised path (and optional title segment and host label). */

@@ -911,10 +911,10 @@ async function executeAgenticStep(
         ? ` Whole live table: ${hourlyFull.wouldSet.toLocaleString()} live fees would be set hourly, ${hourlyFull.exempt.toLocaleString()} exempt.`
         : "";
       const nonDepositNote = nonDeposit.matched > 0
-        ? ` Non-deposit document re-check: ${nonDeposit.matched.toLocaleString()} of ${nonDeposit.checked.toLocaleString()} live fee(s) read came from a brokerage or wealth (${nonDeposit.byKind.brokerage.toLocaleString()}) or loan, card or rate (${nonDeposit.byKind.loan.toLocaleString()}) document (${nonDeposit.live && !nonDeposit.dryRun ? `${nonDeposit.flagged.toLocaleString()} flagged, ${nonDeposit.takenDown.length.toLocaleString()} archived` : "switch off: would take down, nothing written"}).`
+        ? ` Non-deposit document re-check: ${nonDeposit.matched.toLocaleString()} of ${nonDeposit.checked.toLocaleString()} lending-category live fee(s) read came from a brokerage or wealth (${nonDeposit.byKind.brokerage.toLocaleString()}) or loan, card or rate (${nonDeposit.byKind.loan.toLocaleString()}) document, ${nonDeposit.keptDepositCategory.toLocaleString()} deposit-category fee(s) there stay (${nonDeposit.live && !nonDeposit.dryRun ? `${nonDeposit.flagged.toLocaleString()} flagged, ${nonDeposit.takenDown.length.toLocaleString()} archived` : "switch off: would take down, nothing written"}).`
         : "";
       const nonDepositFullNote = nonDepositFull
-        ? ` Whole live table: ${nonDepositFull.matched.toLocaleString()} live fees came from a non-deposit document (${nonDepositFull.byKind.brokerage.toLocaleString()} brokerage or wealth, ${nonDepositFull.byKind.loan.toLocaleString()} loan, card or rate) on ${nonDepositFull.documents.toLocaleString()} document(s).`
+        ? ` Whole live table: ${nonDepositFull.matched.toLocaleString()} lending-category live fees would come down from non-deposit documents (${nonDepositFull.byKind.brokerage.toLocaleString()} brokerage or wealth, ${nonDepositFull.byKind.loan.toLocaleString()} loan, card or rate) on ${nonDepositFull.documents.toLocaleString()} document(s); ${nonDepositFull.keptDepositCategory.toLocaleString()} deposit-category fees there stay.`
         : "";
       // #1455: whose schedule each shared or vendor-served document is, by its own text.
       const documentOwner = verification.documentOwner;

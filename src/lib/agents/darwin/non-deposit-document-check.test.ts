@@ -5,6 +5,7 @@ import {
   NON_DEPOSIT_CHECK,
   NON_DEPOSIT_DOCUMENT_TAKEDOWN_LIVE,
   findNonDepositFees,
+  isLendingCategory,
   nonDepositCountSql,
   nonDepositDetail,
   nonDepositSamplesSql,
@@ -12,12 +13,14 @@ import {
 } from "./non-deposit-document-check";
 
 const ROWS = [
-  { fee_published_id: "101", fee_verified_id: "9001", institution_id: "5", fee_name: "Appraisal", amount: "400", canonical_fee_key: "other", source_document_id: "71", document_url: "https://www.bankofgreene.com/current-rates/" },
+  { fee_published_id: "101", fee_verified_id: "9001", institution_id: "5", fee_name: "Appraisal", amount: "400", canonical_fee_key: "appraisal_fee", source_document_id: "71", document_url: "https://www.bankofgreene.com/current-rates/" },
   { fee_published_id: "102", fee_verified_id: "9002", institution_id: "6", fee_name: "Research", amount: "20", canonical_fee_key: "account_research", source_document_id: "72", document_url: "https://www.usbank.com/investing/self-directed-investing/pricing.html" },
   { fee_published_id: "103", fee_verified_id: "9003", institution_id: "5", fee_name: "Loan Payment by Phone", amount: "5", canonical_fee_key: "other", source_document_id: "73", document_url: "https://www.example.com/fees/loan-payment-fee" },
   { fee_published_id: "104", fee_verified_id: "9004", institution_id: "6", fee_name: "Overdraft", amount: "35", canonical_fee_key: "overdraft", source_document_id: "74", document_url: "https://www.example.com/personal/Schedule-of-Fees-Personal-Checking.pdf" },
   { fee_published_id: "105", fee_verified_id: "9005", institution_id: "7", fee_name: "Wire", amount: "25", canonical_fee_key: "wire_domestic_outgoing", source_document_id: "75", document_url: "https://www.example.com/business/loans/rates" },
   { fee_published_id: "106", fee_verified_id: null, institution_id: "7", fee_name: "Stop Payment", amount: "30", canonical_fee_key: "stop_payment", source_document_id: null, document_url: null },
+  { fee_published_id: "107", fee_verified_id: "9007", institution_id: "6", fee_name: "Margin Loan Late Fee", amount: "15", canonical_fee_key: "late_payment", source_document_id: "72", document_url: "https://www.usbank.com/investing/self-directed-investing/pricing.html" },
+  { fee_published_id: "108", fee_verified_id: "9008", institution_id: "5", fee_name: "Stop Payment", amount: "30", canonical_fee_key: "stop_payment", source_document_id: "71", document_url: "https://www.bankofgreene.com/current-rates/" },
 ];
 
 type DbMock = ReturnType<typeof vi.fn>;
@@ -41,14 +44,24 @@ describe("Darwin live non-deposit document re-check (#1442)", () => {
     expect(NON_DEPOSIT_BATCH).toBe(2_000);
   });
 
-  it("counts by kind and leaves deposit, business and undocumented fees alone", () => {
+  it("counts by kind and leaves deposit documents, business documents, undocumented fees and deposit-category fees alone", () => {
     const found = findNonDepositFees(ROWS);
-    expect(found).toMatchObject({ checked: 6, withDocument: 5, matched: 2, byKind: { loan: 1, brokerage: 1 }, documents: 2, institutions: 2 });
+    expect(found).toMatchObject({
+      checked: 8, withDocument: 7, onMatchedDocument: 4, keptDepositCategory: 2, matched: 2, byKind: { loan: 1, brokerage: 1 }, documents: 2, institutions: 2,
+    });
     expect(found.matches.map((fee) => [fee.feePublishedId, fee.kind, fee.reason])).toEqual([
       [101, "loan", "non_deposit_document: loan #71"],
-      [102, "brokerage", "non_deposit_document: brokerage #72"],
+      [107, "brokerage", "non_deposit_document: brokerage #72"],
     ]);
-    expect(found.passing).toEqual([103, 104, 105]);
+    // U.S. Bank's "Research" is filed as account research and a rate page's stop payment as stop
+    // payment: deposit categories, so they stay live and clear any pending flag.
+    expect(found.keptSamples.map((fee) => fee.feePublishedId)).toEqual([102, 108]);
+    expect(found.passing).toEqual([102, 103, 104, 105, 108]);
+  });
+
+  it("takes down only lending categories (Knox's list)", () => {
+    expect(["late_payment", "loan_origination", "appraisal_fee", "vehicle_title", "other_lending_fee", "cash_advance"].every(isLendingCategory)).toBe(true);
+    expect(["stop_payment", "wire_domestic_outgoing", "nsf", "overdraft", "account_research", null].some(isLendingCategory)).toBe(false);
   });
 
   it("in shadow, reports and moves the cursor but writes no fee and logs no flag", async () => {
@@ -115,7 +128,7 @@ describe("Darwin live non-deposit document re-check (#1442)", () => {
     const detail = nonDepositDetail({
       ...findNonDepositFees(ROWS), live: false, dryRun: false, afterId: 0, nextAfterId: 0, flagged: 0, waiting: 0, cleared: 0, takenDown: [],
     });
-    expect(detail).toMatchObject({ check: "darwin.non_deposit_document", switch_live: false, would_take_down: 2, taken_down: 0 });
+    expect(detail).toMatchObject({ check: "darwin.non_deposit_document", switch_live: false, would_take_down: 2, kept_deposit_category: 2, on_matched_document: 4, taken_down: 0 });
     expect(detail.samples[0]).toMatchObject({ fee_published_id: 101, kind: "loan", document_url: "https://www.bankofgreene.com/current-rates/" });
   });
 });
@@ -135,13 +148,16 @@ describe("read-only non-deposit document SQL", () => {
     expect(text).toContain("fv.fee_verified_id = fp.lineage_ref");
     expect(text).toContain("fp.rolled_back_at IS NULL AND fp.quarantined_at IS NULL");
     expect(text).toContain("GROUP BY ROLLUP (j.kind)");
+    expect(text).toContain("COALESCE(l.canonical_fee_key IN ('appraisal_fee', 'cash_advance', 'late_payment', 'loan_origination', 'other_lending_fee', 'vehicle_title'), false)");
+    expect(text).toContain("AS kept_deposit_category");
     expect(text).not.toMatch(/\b(?:UPDATE|INSERT|DELETE)\b/);
   });
 
   it("samples the matched documents, most live fees first", () => {
     const text = nonDepositSamplesSql();
     expect(text).toContain("WHERE j.kind IS NOT NULL");
-    expect(text).toContain("ORDER BY count(*) DESC");
+    expect(text).toContain("ORDER BY 5 DESC, count(*) DESC");
+    expect(text).toContain("AS sample_kept");
     expect(text).toContain("LIMIT 60;");
     expect(text).not.toMatch(/\b(?:UPDATE|INSERT|DELETE)\b/);
   });

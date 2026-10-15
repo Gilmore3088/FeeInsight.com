@@ -128,6 +128,28 @@ describe("Magellan companion fetch", () => {
     expect(retired).toContain(67);
   });
 
+  it("retires the same stored pages as before #1442: brokerage, wealth, rate and cardholder pages stay", async () => {
+    const stored = (id: number, url: string, account_name: string | null) => ({ id, institution_id: 900, url, account_name, found_by_strategy: "discover.second_document" });
+    const rows = [
+      stored(301, "https://bank.example/investments/brokerage-fee-schedule.pdf", "Brokerage Fee Schedule"),
+      stored(302, "https://bank.example/wealth-management/fee-schedule", "Wealth Management"),
+      stored(303, "https://bank.example/investing/self-directed-investing/pricing", "Self-Directed Investing"),
+      stored(304, "https://bank.example/personal/trust-and-investment-services/", "Trust & Investment Services"),
+      stored(305, "https://bank.example/current-rates/", "Current Rates"),
+      stored(306, "https://bank.example/forms/cardholder-agreement", "Cardholder Agreement"),
+      stored(307, "https://bank.example/docs/CreditCardAgreement.pdf", "Download"),
+      // Pre-#1442 words still retire, as before.
+      stored(308, "https://bank.example/loans/home-equity", "Home Equity Line of Credit"),
+      stored(309, "https://bank.example/docs/Credit-Card-Agreement.pdf", "Credit Card Agreement"),
+    ];
+    const db = createDb(rows);
+
+    const review = await reviewStoredCompanions(asDb(db), { stateCode: "WA", institutionId: null });
+
+    expect(review.checked).toBe(rows.length);
+    expect(review.retired.map((page) => page.companionId)).toEqual([308, 309]);
+  });
+
   it("retires a stored page on another institution's own website, even one found by hand", async () => {
     const db = vi.fn((strings: TemplateStringsArray) => {
       const sqlText = templateText(strings);
