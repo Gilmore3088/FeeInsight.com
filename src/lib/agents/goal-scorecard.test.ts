@@ -70,6 +70,23 @@ describe("coverage target (James, 2026-10-12, #1028)", () => {
   });
 });
 
+describe("accuracy target (James, Oct 15)", () => {
+  const goalWith = (right: number, scorable: number) => ({
+    readAt: "2026-10-15T00:00:00Z", windowDays: 7, coverageCells: null, liveInstitutions: null,
+    wrongAfterPublish: null, spend: null, knoxPasses: null, unstatedAudience: null,
+    accuracy: {
+      query: "goal.deming_accuracy_7d", accuracy: right / scorable, right, scorable, audits: 7,
+      latestAt: null, latestAccuracy: null, range: null, daily: [],
+      misses: { amount: 0, category: 0, evidence: 0 },
+    },
+  }) as unknown as Parameters<typeof goalBriefLines>[0];
+
+  it("states the 99.5% target and whether the week met it", () => {
+    expect(goalBriefLines(goalWith(1393, 1400)).join("\n")).toContain("target 99.5%, met.");
+    expect(goalBriefLines(goalWith(1385, 1400)).join("\n")).toContain("target 99.5%, not met.");
+  });
+});
+
 describe("wrong after publish", () => {
   it("keys reasons by their prefix", () => {
     expect(reasonKey("refreshed by #123")).toBe("refreshed by");
