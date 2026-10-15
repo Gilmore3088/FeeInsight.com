@@ -875,10 +875,6 @@ const PERIOD_AFTER_PRICE = new RegExp(
 );
 /** Words that put a count limit on the activity: the excess withdrawal fee (its own type since Oct 15, #1398). */
 const OVER_LIMIT = /\b(in excess of|over\s+(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten|twelve|fifteen|twenty)\b|after\s+(?:\d+|one|two|three|four|five|six|ten)\b|more than|exceed(?:s|ed|ing)?\b|limit(?:ation)?s?\b)/i;
-/**
- * Withdrawals, transfers or debits from a savings, money market or share account: the excess
- * withdrawal fee. A line about checks, items, drafts or debit card purchases is another activity.
- */
 /** A bare service charge or fee, maybe naming a savings, money market or share account. */
 const GENERIC_SERVICE_CHARGE = /^\W*(?:(?:savings|money market|mmdas?|share)\s+(?:accounts?\s+)?)?service\s+(?:charges?|fees?)\W*$/i;
 
@@ -888,6 +884,10 @@ function savingsOverLimitLine(name: string, context: CategoryGuardContext | unde
   return Boolean(reading?.overLimit) && SAVINGS_WITHDRAWAL_LINE.test(`${name} | ${reading?.line ?? ""}`);
 }
 
+/**
+ * Withdrawals, transfers or debits from a savings, money market or share account: the excess
+ * withdrawal fee. A line about checks, items, drafts or debit card purchases is another activity.
+ */
 const SAVINGS_WITHDRAWAL_LINE =
   /^(?![\s\S]*\b(?:checks?|items?|drafts?|debit cards?|pos|point of sale|purchases?)\b)(?=[\s\S]*\b(?:savings|money market|mmdas?|shares?)\b)[\s\S]*\b(?:withdrawals?|transfers?|debits?)\b/i;
 

@@ -1380,7 +1380,7 @@ async function executeAgenticStep(
           ? ` ${published.dryRun ? "Would clear" : "Cleared"} the pending takedown on ${taxonomyFold.handFlagsCleared.toLocaleString()} hand-fixed fee(s) that now trace.`
           : "") +
         (taxonomyFold.pendingResearchSplit && taxonomyFold.pendingResearchSplit.wouldMove > 0
-          ? ` Dry run: the research split (off) would move ${taxonomyFold.pendingResearchSplit.wouldMoveLive.toLocaleString()} live and ${(taxonomyFold.pendingResearchSplit.wouldMove - taxonomyFold.pendingResearchSplit.wouldMoveLive).toLocaleString()} verified fee(s) out of account research (${Object.entries(taxonomyFold.pendingResearchSplit.byRoute).map(([route, count]) => `${route} ${count.toLocaleString()}`).join(", ")})${taxonomyFold.pendingResearchSplit.capped ? `, in the first ${taxonomyFold.pendingResearchSplit.scanned.toLocaleString()} rows read (run with research_split_full_count for every row)` : ""}.`
+          ? ` Research split (off, nothing moved): it would move ${taxonomyFold.pendingResearchSplit.wouldMoveLive.toLocaleString()} live and ${(taxonomyFold.pendingResearchSplit.wouldMove - taxonomyFold.pendingResearchSplit.wouldMoveLive).toLocaleString()} verified fee(s) out of account research (${Object.entries(taxonomyFold.pendingResearchSplit.byRoute).map(([route, count]) => `${route} ${count.toLocaleString()}`).join(", ")})${taxonomyFold.pendingResearchSplit.capped ? `, in the first ${taxonomyFold.pendingResearchSplit.scanned.toLocaleString()} rows read (run with research_split_full_count for every row)` : ""}.`
           : "");
       const offTaxonomyNote =
         (offTaxonomyRollbacks.length > 0

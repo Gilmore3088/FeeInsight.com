@@ -14,8 +14,8 @@ Darwin owns verification and classification.
   (`docs/project/DECISIONS.md`, 2026-10-15).
   The Oct 15 re-file of excess withdrawals and returned mail out of account research (#1398) has
   no Darwin-only live pass yet: its live re-check is Hamilton's fold step (`taxonomy-fold.ts`,
-  every publish step), which reads every live and verified account research fee whose name the
-  split might move and, while `RESEARCH_SPLIT_LIVE` is off, writes the would-move count by route
+  every publish step), which reads up to 2,000 live and verified account research fees whose name
+  the split might move (every one with the `research_split_full_count` param) and, while `RESEARCH_SPLIT_LIVE` is off, writes the would-move count by route
   with samples to `detail.taxonomy_fold.pendingResearchSplit` and moves nothing. Moves only
   re-file; none takes a fee down. Once on, live fees under the two new types are guarded by the
   category guard's live sweep.
