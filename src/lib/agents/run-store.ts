@@ -2281,6 +2281,8 @@ async function executeAgenticStep(
           by_stage: score?.byStage ?? {},
           by_document_type: score?.byDocumentType ?? {},
           by_category: score?.byCategory ?? {},
+          // #1099: Knox's misses on documents Rosetta read right, by category and document type.
+          knox_misses: score?.knoxMisses ?? null,
           dry_run: result.dryRun,
         },
       };
