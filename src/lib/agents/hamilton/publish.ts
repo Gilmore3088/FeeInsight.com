@@ -31,6 +31,14 @@ import { DARWIN_SCHEDULE_REFILED_FLAG } from "@/lib/agents/darwin/schedule-refil
 import { priceInName, RULE_WHY, ruleFor } from "@/lib/agents/hamilton/eval-verdicts";
 import { feeKey, reproducibleFees, RULES_RECHECK_REASON } from "@/lib/agents/hamilton/rules-recheck";
 import { closedInstitutionSql } from "@/lib/agents/hamilton/closed-institution";
+import {
+  exactDuplicateDecision,
+  PUBLISH_DUPLICATE_REFUSE_REASON_PREFIX,
+  PUBLISH_REFUSE_DUPLICATES_LIVE,
+  selectExactCopies,
+  type ExactDuplicateDecision,
+  type PublishDuplicateCheck,
+} from "@/lib/agents/hamilton/exact-duplicate";
 
 type SqlTag = typeof sql;
 
@@ -123,6 +131,8 @@ export interface HamiltonPublishResult {
   supersededFeePublishedId: number | null;
   /** True once the change was written to fee_change_records. */
   changeRecorded: boolean;
+  /** #1069: what the exact duplicate collapse would do once this row is live (rows about to publish only). */
+  exactDuplicate?: Exclude<ExactDuplicateDecision, { kind: "none" }> | null;
 }
 
 export interface RunHamiltonPublishOptions {
@@ -136,6 +146,8 @@ export interface RunHamiltonPublishOptions {
   stepId?: number;
   dryRun?: boolean;
   db?: SqlTag;
+  /** Refuse rows the exact duplicate collapse would close; defaults to `PUBLISH_REFUSE_DUPLICATES_LIVE`. */
+  refuseDuplicatesLive?: boolean;
 }
 
 export interface HeldThinInstitution {
@@ -166,6 +178,8 @@ export interface RunHamiltonPublishResult {
   dryRun: boolean;
   batchId: string;
   results: HamiltonPublishResult[];
+  /** #1069 step 1: rows the exact duplicate collapse would close after this step publishes them. */
+  duplicateCheck: PublishDuplicateCheck;
 }
 
 function boundedLimit(value: unknown): number {
@@ -1787,6 +1801,7 @@ export async function runHamiltonPublish(
   const minConfidence = boundedConfidence(options.minConfidence);
   const minInstitutionFees = boundedMinInstitutionFees(options.minInstitutionFees);
   const dryRun = Boolean(options.dryRun);
+  const refuseDuplicatesLive = options.refuseDuplicatesLive ?? PUBLISH_REFUSE_DUPLICATES_LIVE;
   const learning = !dryRun && (await learningSchemaReady(db));
   const batchId = `agentic-run-${options.runId}`;
   const selected = await selectVerifiedFees(
@@ -1901,6 +1916,24 @@ export async function runHamiltonPublish(
       decision = { kind: "additional_line" };
     }
     const priorPublishedFee = decision?.kind === "supersede" ? decision.prior : null;
+    // #1069: a row about to publish whose line is already live under the collapse's own test
+    // (same category, variant, value and name; frequencies that agree) is closed by the exact
+    // duplicate collapse later. Counted always; refused only while `refuseDuplicatesLive` is on.
+    let exactDuplicate: ExactDuplicateDecision = { kind: "none" };
+    if (!skipReason && decision?.kind !== "identical" && decision?.kind !== "older_document") {
+      const percent = isPercentFee(row);
+      exactDuplicate = exactDuplicateDecision(
+        row,
+        await selectExactCopies(db, {
+          institutionId: Number(row.institution_id),
+          canonicalFeeKey: row.canonical_fee_key,
+          variantType: row.variant_type,
+          amount: percent ? null : normalizedAmount(row.amount),
+          ratePercent: percent ? ratePercentOf(row) : null,
+          feeName: publishedFeeName(row.fee_name, row.canonical_fee_key),
+        }),
+      );
+    }
     if (skipReason) {
       result = { ...base, status: "skipped", reason: skipReason, feePublishedId: null, ...NO_MOVEMENT };
     } else if (decision?.kind === "identical") {
@@ -1920,6 +1953,14 @@ export async function runHamiltonPublish(
         ...base,
         status: "skipped",
         reason: OLDER_DOCUMENT_REASON,
+        feePublishedId: null,
+        ...NO_MOVEMENT,
+      };
+    } else if (refuseDuplicatesLive && exactDuplicate.kind === "refuse") {
+      result = {
+        ...base,
+        status: "skipped",
+        reason: `${PUBLISH_DUPLICATE_REFUSE_REASON_PREFIX}${exactDuplicate.keptFeePublishedId}`,
         feePublishedId: null,
         ...NO_MOVEMENT,
       };
@@ -1967,6 +2008,7 @@ export async function runHamiltonPublish(
         changeRecorded: written.changeRecorded,
       };
     }
+    if (exactDuplicate.kind !== "none") result.exactDuplicate = exactDuplicate;
     results.push(result);
 
     if (learning) {
@@ -1991,6 +2033,7 @@ export async function runHamiltonPublish(
           superseded_fee_published_id: result.supersededFeePublishedId,
           change_recorded: result.changeRecorded,
           same_line_check: SAME_LINE_CHECK_VERSION,
+          ...(result.exactDuplicate ? { exact_duplicate: result.exactDuplicate } : {}),
         },
       });
     }
@@ -2009,6 +2052,21 @@ export async function runHamiltonPublish(
 
   const published = results.filter((result) => result.status === "published");
   const heldInstitutions = Array.from(held.values());
+  const refusable = results.filter((result) => result.exactDuplicate?.kind === "refuse");
+  const duplicateCheck: PublishDuplicateCheck = {
+    live: refuseDuplicatesLive,
+    withLiveCopy: results.filter((result) => result.exactDuplicate != null).length,
+    wouldRefuse: refusable.length,
+    refused: refuseDuplicatesLive ? refusable.filter((result) => result.status === "skipped").length : 0,
+    wouldReplace: results.filter((result) => result.exactDuplicate?.kind === "replace").length,
+    samples: refusable.slice(0, 10).map((result) => ({
+      fee_verified_id: result.feeVerifiedId,
+      fee_published_id: result.feePublishedId,
+      kept_fee_published_id: result.exactDuplicate?.kind === "refuse" ? result.exactDuplicate.keptFeePublishedId : 0,
+      fee_name: result.feeName,
+      amount: result.amount,
+    })),
+  };
   return {
     selectedVerifiedFees: selected.length,
     processedVerifiedFees: results.length,
@@ -2026,5 +2084,6 @@ export async function runHamiltonPublish(
     dryRun,
     batchId,
     results,
+    duplicateCheck,
   };
 }

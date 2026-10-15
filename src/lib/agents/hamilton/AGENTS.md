@@ -389,7 +389,7 @@ the detail.
 30. Publish (`runHamiltonPublish`, `publish.ts`): the rules above; a prior live row at a new
     price closes as `superseded by #<id>`.
 31. Source check (`takeDownUntraceableFees`, `source-check.ts`): up to 120 institutions,
-    `source_check_untraceable:<reason>`; restores earlier takedowns that now trace.
+    `source_check_untraceable:<reason>`; restores earlier takedowns that now trace, except those on `SOURCE_CHECK_KEPT_DOWN` (each with its issue, logged as `kept_down`; 36542, #1369).
 32. Imported twins (`linkImportedFeesToTwins`, `source-check.ts`): an imported live fee with no
     document is pointed at its twin row that has one, up to 100 a step. No rollback.
 33. Feedback sync (`syncPipelineFeedback`, `learning/feedback-sync.ts`): this step's takedowns
@@ -532,6 +532,15 @@ This sweep reads up to 25 documents' stored text per step. James turned
 `NEAR_NAME_COLLAPSE_LIVE` on on 2026-10-15: each step reports `near_name_collapse` (pairs, apart
 on page, not printed, no text, would close, samples) and closes the repeats. Rollback: clear
 `rolled_back_at` on rows whose `rolled_back_reason` ends in `(near name)`.
+
+**At publish (#1069 step 1, shadow).** Each row the publish step is about to publish is checked
+against its live copies with the exact collapse's own test (`exact-duplicate.ts`: institution,
+category, variant, value and name; frequency classes that agree; the copy kept states its
+audience, then its frequency, then is newest). A row the collapse would close is counted as
+`would_refuse`, and a row it would keep, closing the older copy, as `would_replace`. Both are
+reported in the step's `publish_duplicate_check`, with `closed_by_late_collapse` for agreement.
+While `PUBLISH_REFUSE_DUPLICATES_LIVE` is false nothing is refused; turning it on (skip reason
+`Exact duplicate of live fee #<id>`) needs James's OK.
 
 ## Rules Re-check
 

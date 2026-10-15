@@ -8,7 +8,7 @@ import { countOutcomes, type AttemptOutcome } from "@/lib/agents/learning/outcom
 import { playbookFromRow } from "@/lib/agents/learning/playbook";
 import { chooseStrategy } from "@/lib/agents/learning/router";
 import { normalizeStateCode } from "@/lib/agents/state-lane-memory";
-import { confidenceFor, type ExtractedFeeCandidate, type HeldFeeCandidate } from "@/lib/agents/knox/rules";
+import { confidenceFor, type DroppedLineReason, type ExtractedFeeCandidate, type HeldFeeCandidate } from "@/lib/agents/knox/rules";
 import type { RateFeeCandidate } from "@/lib/agents/knox/percent";
 import { groundLineup, LINEUP_CATEGORY, withLineupFromText } from "@/lib/agents/knox/lineup";
 import { KNOX_RULES_STRATEGY, runFreeSpecialists, type SpecialistRun } from "@/lib/agents/knox/specialists";
@@ -167,6 +167,8 @@ export interface RunKnoxExtractResult {
   skippedFees: number;
   /** $0, range, percentage and unrecognized priced lines held for review, not verified. */
   heldForReview: number;
+  /** v68: priced lines no rule names that were neither read nor held, by reason (`DroppedLineReason`). */
+  droppedLines: Partial<Record<DroppedLineReason, number>>;
   /** Unverified rows from a document's older text that a re-extraction replaced. */
   retiredOlderRows: number;
   /** Unverified rows from an older copy of a page whose current copy Knox has read. */
@@ -1016,6 +1018,7 @@ export async function runKnoxExtract(
   const calibration = !dryRun && rows.length > 0 ? await loadKnoxCalibration(db) : new Map();
   let calibratedBelowPublishFloor = 0;
   const layoutReads: Array<{ signature: string; priceLines: number; found: number }> = [];
+  const droppedLines: Partial<Record<DroppedLineReason, number>> = {};
 
   const results: KnoxExtractDocumentResult[] = [];
   let retiredOlderRows = 0;
@@ -1035,6 +1038,9 @@ export async function runKnoxExtract(
     const startedAt = Date.now();
     const free = runFreeSpecialists(row.normalized_text);
     const { held, rates, runs } = free;
+    for (const [reason, count] of Object.entries(free.dropped)) {
+      droppedLines[reason as DroppedLineReason] = (droppedLines[reason as DroppedLineReason] ?? 0) + count;
+    }
     // The learning reader: a name the category guards keep rejecting under the rules'
     // category, and verify under another, is filed under the verified one.
     const lessoned = free.candidates.map((candidate) => applyKnoxLesson(candidate, lessons, Number(row.institution_id)));
@@ -1134,6 +1140,7 @@ export async function runKnoxExtract(
           inserted,
           held_for_review: held.length,
           held_shapes: countHeldShapes(held),
+          dropped_lines: free.dropped,
           rules_found: runs.find((entry) => entry.pass === 1)?.found ?? 0,
           specialists: Object.fromEntries(runs.filter((entry) => entry.pass === 2).map((entry) => [entry.strategy, entry.added])),
           expected_fee_count: playbook.expectedFeeCount,
@@ -1158,6 +1165,7 @@ export async function runKnoxExtract(
     freeFees: results.reduce((total, result) => total + result.freeInserted, 0),
     skippedFees: results.reduce((total, result) => total + result.skipped, 0),
     heldForReview: results.reduce((total, result) => total + result.held.length, 0),
+    droppedLines,
     retiredOlderRows,
     retiredOlderCopyRows,
     limit,

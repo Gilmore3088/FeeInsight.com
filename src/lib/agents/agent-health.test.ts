@@ -9,6 +9,7 @@ import {
   healthChanges,
   knoxRules,
   magellanRules,
+  readDarwinNumbers,
   summarizeAgentHealth,
   type HealthNumbers,
 } from "./agent-health";
@@ -56,6 +57,40 @@ describe("agent health", () => {
   ])("holds Darwin to a first decision within 7 days (%o)", (numbers, broken) => {
     const rules = darwinRules({ stepsCompleted: 10, stepsFailed: 0, published: 1000, sourceCheckTakedowns: 20, ...numbers });
     expect(rules.filter((rule) => !rule.ok).map((rule) => rule.key)).toEqual(broken);
+  });
+
+  // 2026-10-15: one "waiting" number mixed due rows with fees Darwin already held or rejected.
+  it("splits Darwin's pool into due, held for review by release verdict, and final rejects", async () => {
+    const texts: string[] = [];
+    const values: unknown[][] = [];
+    const db = Object.assign(
+      vi.fn(async (strings: TemplateStringsArray, ...args: unknown[]) => {
+        texts.push(strings.join("$"));
+        values.push(args);
+        return [{
+          pool: 16351, undecided: 7340, waiting_over_7d: 0, held_for_review: 6094, held_keep: 4121,
+          held_review: 886, held_duplicate: 809, held_reject: 278, held_no_verdict: 0,
+          final_rejects: 2917, audience_correction: 0,
+        }];
+      }),
+      { unsafe: vi.fn((text: string) => text) },
+    );
+    const numbers = await readDarwinNumbers(db as never);
+    expect(numbers).toMatchObject({
+      pool: 16351, undecided: 7340, waitingOver7d: 0, heldForReview: 6094, heldKeep: 4121, heldReview: 886,
+      heldDuplicate: 809, heldReject: 278, heldNoVerdict: 0, finalRejects: 2917, audienceCorrection: 0,
+    });
+    const split = texts[1];
+    expect(split).toContain("AS final_rejects");
+    // Held means the latest rules decision is a hold; the release verdict is the latest one too.
+    expect(split).toContain("ORDER BY pa.created_at DESC, pa.id DESC");
+    expect(split).toContain("ORDER BY rel.created_at DESC, rel.id DESC");
+    expect(values[1]).toContainEqual(["outside_envelope", "peer_outlier"]);
+    expect(values[1]).toContain("verify.release");
+    // Final rejects and held fees are in no waiting number: both rules read only due rows.
+    const rules = darwinRules({ stepsCompleted: 10, stepsFailed: 0, ...numbers, undecided: 400, published: 1000, sourceCheckTakedowns: 20 });
+    expect(rules.every((rule) => rule.ok)).toBe(true);
+    expect(rules.find((rule) => rule.key === "no_week_old_waits")?.label).toContain("no first decision");
   });
 
   it("breaks Knox's rule when a text is extracted twice at the same rules version", () => {

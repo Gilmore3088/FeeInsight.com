@@ -17,7 +17,11 @@ import {
   releaseReviewPrompt,
   reviewPasses,
   premiumServiceMisfiled,
+  DARWIN_RECORDED_RELEASE_ACTS,
+  RECORDED_RELEASE_DRY_RUN_FINGERPRINT,
+  recordedPassHoldReason,
   releaseHoldReason,
+  releaseRecordedPasses,
   runDarwinReleaseReview,
 } from "./release-review";
 
@@ -374,5 +378,116 @@ describe("Darwin held-fee release review", () => {
     const result = await runDarwinReleaseReview({ runId: 5, dryRun: true, db: asDb(db), create: vi.fn(), calls: 1, stateCode: "UT" });
     expect(result.results.map((entry) => entry.fee_raw_id)).toEqual([1, 2]);
     expect(db.unsafe).toHaveBeenCalledTimes(2);
+  });
+});
+
+// Oct 15: a hand check of 20 of the 421 v17 passes recorded while the release did not act (19 right).
+describe("releasing the recorded v17 passes", () => {
+  const recorded = (
+    feeName: string,
+    key: string,
+    frequency: string | null,
+    sourceLine: string,
+    sourceContext: string | null = null,
+    overrides: Record<string, unknown> = {},
+  ) => ({
+    row: row({ fee_name: feeName, held_canonical_fee_key: key, frequency, ...overrides }) as unknown as HeldFeeRow,
+    sourceLine,
+    sourceContext,
+  });
+
+  it.each([
+    // The hand check's miss (raw 418400): a business activity row filed as an out-of-network ATM fee.
+    [recorded("Per Each ATM Withdrawal", "atm_non_network", null, "Per Each ATM Withdrawal $ .25",
+      "Per Each ACH Debit $ .25\nPer Each POS Withdrawal $ .25\nPer Each ATM Withdrawal $ .25\nThe monthly average collected balance may earn an Earnings Allowance"), "business_activity_row"],
+    [recorded("Vacation Club Excessive Withdrawals (Over 3 per Year)", "account_research", "annual", "Vacation Club Excessive Withdrawals (Over 3 per Year) | $5.00"), "frequency_word_disagrees"],
+    [recorded("Monthly Service Charge, Minimum Bal", "monthly_maintenance", "per_item", "Monthly Service Charge, $1000 Minimum Bal. $25.00 Check Copy Fee, Each Check $7.50"), "frequency_word_disagrees"],
+    [recorded("Account Fees: Excessive Withdrawal Fee (Share Account)", "account_research", null, "Account Fees | Excessive Withdrawal Fee (Share Account) | $5.00 (at the 5th withdrawal in the same month)"), "glued_or_cut_name"],
+    [recorded("Notary: Outgoing", "notary_fee", "per_item", "This fee is charged by | Outgoing | $55.00 per item"), "glued_or_cut_name"],
+    [recorded("Savings Excessive Withdrawal - 5 free per month then", "account_research", "per_item", "Savings Excessive Withdrawal - 5 free per month then | $2.00 per withdrawal"), "glued_or_cut_name"],
+    // Released: the allowance's period agrees with a per-item price, and a real qualifier stays.
+    [recorded("Withdrawal Limit Fee charged for each withdrawal, transfer, and payment that exceeds 6 per monthly statement cycle", "account_research", "per_item", "$3 Withdrawal Limit Fee charged for each withdrawal, transfer, and payment that exceeds 6 per monthly statement cycle4"), null],
+    [recorded("Cashier's Checks: Non-Customer", "cashiers_check", null, "Cashier's Checks | Non-Customer $8.00"), null],
+    [recorded("Share Draft Reconciliation per month", "account_research", "monthly", "Share Draft Reconciliation per month | $5.00"), null],
+    // The second hand check (Oct 15, 15 of 20): its five misses, each held for its shape.
+    [recorded("Monthly Service Charge", "monthly_maintenance", "monthly", "Monthly Service Charge: $31",
+      "Minimum to open: $50\nMonthly Service Charge: $31\nMinimum daily balance needed to avoid monthly service charge: $300", { amount: "31" }), "footnote_in_price"],
+    [recorded("ACH-NSF", "nsf", null, "ACH-NSF | Item paid through overdraft transfer from separate account | $3.00",
+      "ACH-NSF | Item Returned | $30.00\nACH-NSF | Item paid through overdraft transfer from separate account | $3.00", { amount: "3" }), "overdraft_transfer_as_od_nsf"],
+    [recorded("NSF/Uncollected Funds (per occurrence) Excess Withdrawal Item Over 6", "nsf", null, "NSF/Uncollected Funds (per occurrence) Excess Withdrawal Item Over 6……..$5.00",
+      "Inactive Account…….. $10.00 Excess Withdrawal Item Over 6……….$5.00\nNSF/Uncollected Funds (per occurrence) Excess Withdrawal Item Over 6……..$5.00", { amount: "5" }), "two_column_glue"],
+    [recorded("Debit Card Overdraft Service Fee8 – Lessthan", "overdraft", null, "Debit Card Overdraft Service Fee8 – Lessthan $5.00",
+      "Debit Card Overdraft Service Fee8 – Greater than $5.00\nDebit Card Overdraft Service Fee8 – Lessthan $5.00", { amount: "5" }), "band_as_price"],
+    [recorded("Overdraft Privilege Fee Per Presentment (less than $500)", "overdraft", "per_item", "Overdraft Privilege Fee Per Presentment: | Less Than $500 | $5 00",
+      "Overdraft Privilege Fee Per Presentment: | Less Than $500 | $5 00\nResulting Negative Balance Greater Than $25 | $15 00 | Each VIP MMA Share Draft Less Than $500 | $5 00", { amount: "5" }), "two_column_glue"],
+    // Every other overdraft and NSF pass in the batch waits for a person.
+    [recorded("Courtesy Pay Overdraft Fee", "overdraft", null, "Courtesy Pay Overdraft Fee | $5.00", null, { amount: "5" }), "overdraft_nsf_for_person"],
+    // Not footnotes: a price ending in 5, or one of several prices on the line; a price at its band is not the band.
+    [recorded("Subpoena", "legal_process", null, "Subpoena | $25 per instance", null, { amount: "25" }), null],
+    [recorded("Return Mail", "account_research", null, "Return Mail | $3.00 / item | Updating your address", "Return Mail | $3.00 / item | Updating your address\nOther | Return Mail | $3.00 / item | Updating your address", { amount: "3" }), null],
+  ])("holds a recorded pass for its shape (%#)", (candidate, reason) => {
+    expect(recordedPassHoldReason(candidate)).toBe(reason);
+  });
+
+  it("is off: counts what it would release and hold, and writes nothing", async () => {
+    expect(DARWIN_RELEASE_ACTS).toBe(false);
+    const rows = [
+      row({ fee_raw_id: 418400, fee_name: "Per Each ATM Withdrawal", held_canonical_fee_key: "atm_non_network", amount: "0.25", source_line: "Per Each ATM Withdrawal $ .25", source_context: "Per Each ACH Debit $ .25\nPer Each ATM Withdrawal $ .25" }),
+      row({ fee_raw_id: 2 }),
+    ];
+    const db = vi.fn((strings: TemplateStringsArray) => {
+      const text = templateText(strings);
+      if (text.includes("learning_schema_ready")) return Promise.resolve([{ learning_schema_ready: true }]);
+      if (text.includes("verify.release_recorded") || text.includes("FROM pipeline_attempts pa")) return Promise.resolve(rows);
+      return Promise.resolve([]);
+    });
+    const result = await releaseRecordedPasses(db as never, { runId: 9 });
+    expect(result).toMatchObject({ acts: false, recordedPasses: 2, wouldRelease: 1, released: 0, held: { business_activity_row: 1 } });
+    expect(result.heldExamples[0]).toMatchObject({ feeRawId: 418400, reason: "business_activity_row" });
+    expect(result.releaseByCategory).toEqual({ stop_payment: 1 });
+    expect(db.mock.calls.some(([strings]) => /INSERT|UPDATE/.test(templateText(strings)))).toBe(false);
+  });
+
+  // The live release follows a ledger dry run from an earlier tick, never the same step.
+  it.each([
+    [false, { acts: false, dryRunRecorded: true, released: 0 }],
+    [true, { acts: true, dryRunRecorded: false, released: 1 }],
+  ])("switched on, releases only after a recorded dry run (dry run done: %s)", async (dryRunDone, expected) => {
+    expect(DARWIN_RECORDED_RELEASE_ACTS).toBe(false);
+    const rows = [row({ fee_raw_id: 2 })];
+    const writes: Array<{ text: string; values: unknown[] }> = [];
+    const db = vi.fn((strings: TemplateStringsArray, ...values: unknown[]) => {
+      const text = templateText(strings);
+      if (text.includes("learning_schema_ready")) return Promise.resolve([{ learning_schema_ready: true }]);
+      if (text.includes("AS done")) {
+        expect(values).toContain(RECORDED_RELEASE_DRY_RUN_FINGERPRINT);
+        return Promise.resolve([{ done: dryRunDone }]);
+      }
+      if (text.includes("FROM pipeline_attempts pa")) return Promise.resolve(rows);
+      if (/INSERT/.test(text)) {
+        writes.push({ text, values });
+        if (text.includes("verified_fee_observations")) return Promise.resolve([{ fee_verified_id: 77 }]);
+      }
+      return Promise.resolve([]);
+    });
+    const result = await releaseRecordedPasses(db as never, { runId: 9, acts: true });
+    expect(result).toMatchObject({ ...expected, recordedPasses: 1, wouldRelease: 1, releaseByCategory: { stop_payment: 1 } });
+    const attempts = writes.filter((write) => write.text.includes("INSERT INTO pipeline_attempts"));
+    expect(attempts).toHaveLength(1);
+    expect(attempts[0].values.includes(RECORDED_RELEASE_DRY_RUN_FINGERPRINT)).toBe(!dryRunDone);
+    expect(writes.some((write) => write.text.includes("verified_fee_observations"))).toBe(dryRunDone);
+  });
+
+  it("a dry_run run never releases or records the dry run", async () => {
+    const db = vi.fn((strings: TemplateStringsArray) => {
+      const text = templateText(strings);
+      if (text.includes("learning_schema_ready")) return Promise.resolve([{ learning_schema_ready: true }]);
+      if (text.includes("AS done")) return Promise.resolve([{ done: true }]);
+      if (text.includes("FROM pipeline_attempts pa")) return Promise.resolve([row({ fee_raw_id: 2 })]);
+      return Promise.resolve([]);
+    });
+    const result = await releaseRecordedPasses(db as never, { runId: 9, acts: true, dryRun: true });
+    expect(result).toMatchObject({ acts: false, dryRunRecorded: false, wouldRelease: 1 });
+    expect(db.mock.calls.some(([strings]) => /INSERT|UPDATE/.test(templateText(strings)))).toBe(false);
   });
 });

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  SOURCE_CHECK_KEPT_DOWN,
   SOURCE_CHECK_REASON,
   SOURCE_CHECK_RESTORE_PREFIX,
   markRestoredForSourceCheck,
@@ -227,6 +228,25 @@ describe("takeDownUntraceableFees", () => {
     expect(result.takedowns).toEqual([]);
     expect(result.liveFeesChecked).toBe(1);
     expect(calls[0]).toContain("rolled_back_reason LIKE");
+  });
+
+  it("never restores a takedown on the kept-down list, even when it now traces (#1369)", async () => {
+    expect(SOURCE_CHECK_KEPT_DOWN.get(36542)?.issue).toBe(1369);
+    const { db, calls } = createDb([
+      { ...fee(36542, "Overnight Courier Service", "50"), taken_down: true },
+      { ...fee(3, "Overnight Courier Service", "50"), taken_down: true },
+    ]);
+    const result = await takeDownUntraceableFees(db, { runId: 6, batchId: "b", dryRun: false, stateCode: "TX" });
+
+    expect(result.keptDown).toEqual([36542]);
+    const dbCalls = (db as unknown as { mock: { calls: unknown[][] } }).mock.calls;
+    // Only the other takedown goes to the restore.
+    const restore = dbCalls.find((call) => (call[0] as string[]).join("?").includes("SET rolled_back_at = NULL"));
+    expect(restore?.slice(1)).toContainEqual([3]);
+    expect(JSON.stringify(restore?.slice(1))).not.toContain("36542");
+    expect(calls.some((query) => query.includes("SET rolled_back_at = NULL"))).toBe(true);
+    const event = dbCalls.find((call) => (call[0] as string[]).join("?").includes("'hamilton.source_check'"));
+    expect(JSON.stringify(event)).toContain('\\"kept_down\\":[{\\"fee_published_id\\":36542,\\"issue\\":1369');
   });
 
   it("checks any state's institutions when the step has no state, never-checked ones first", async () => {
