@@ -28,11 +28,12 @@ type SqlTag = typeof sql;
  * check (`checkFeeAgainstSource`) among them; its new decision records today's category, so it is
  * judged once per category.
  *
- * Off by default: judging these rows can publish fees. While off, each verify step reads the
- * candidates and writes their count and a sample to its ledger detail (`category_change_rejudge`)
- * and changes nothing. A one-line PR turns it on after James's yes.
+ * On since Oct 15 (#1093, James's yes on the switch-on card): judging these rows can publish
+ * fees. The switched-off dry run (Oct 14 16:16 to Oct 15 09:26) found 10 candidates; all 10 match
+ * their bank's schedule in amount and today's category. Each verify step still writes the count
+ * and a sample to its ledger detail (`category_change_rejudge`).
  */
-export const DARWIN_CATEGORY_CHANGE_REJUDGE_LIVE = false;
+export const DARWIN_CATEGORY_CHANGE_REJUDGE_LIVE = true;
 /** Rows judged again per verify step when the switch is on. */
 export const DARWIN_CATEGORY_CHANGE_LIMIT = 100;
 /** Rows listed in the step's ledger detail for a hand check. */
