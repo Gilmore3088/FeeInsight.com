@@ -1,6 +1,7 @@
 import { sql } from "@/lib/data-store/connection";
 import { invalidatePublicReadCache } from "@/lib/data-store/fee-cache";
 import { inSavepoint } from "@/lib/agents/savepoint";
+import { frequencyClass } from "@/lib/agents/hamilton/exact-duplicate";
 import { linesApartOnPage, nearNames, printedAtPrice, printedInPersonalAndBusinessSchedules } from "@/lib/agents/hamilton/publish";
 
 type SqlTag = typeof sql;
@@ -8,6 +9,7 @@ type SqlTag = typeof sql;
 /** Live duplicates closed per publish step; later steps pick up the rest. */
 export const DUPLICATE_COLLAPSE_LIMIT = 500;
 export const DUPLICATE_COLLAPSE_REASON_PREFIX = "duplicate of #";
+/** SQL form of `frequencyClass` (exact-duplicate.ts); the publish step's check uses that one. */
 const FREQUENCY_CLASS = `CASE
   WHEN fp.frequency IN ('per_item', 'per_occurrence', 'per_transaction', 'one_time') THEN 'each'
   WHEN fp.frequency = 'other' THEN NULL
@@ -194,11 +196,6 @@ export interface NearNameResult {
   notPrinted: number;
   noText: number;
   collapses: NearNameCollapse[];
-}
-
-function frequencyClass(frequency: string | null): string | null {
-  if (frequency == null || frequency === "other") return null;
-  return ["per_item", "per_occurrence", "per_transaction", "one_time"].includes(frequency) ? "each" : frequency;
 }
 
 /**

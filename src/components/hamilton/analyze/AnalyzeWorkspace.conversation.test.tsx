@@ -41,7 +41,7 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 async function askTurn(question: string, lead: string): Promise<string> {
   const before = chat.send.mock.calls.length;
   fireEvent.change(screen.getByRole("textbox"), { target: { value: question } });
-  fireEvent.click(screen.getByRole("button", { name: "Ask" }));
+  fireEvent.click(screen.getByRole("button", { name: /^Ask( Hamilton)?$/ }));
   await waitFor(() => expect(chat.send.mock.calls.length).toBe(before + 1));
   const sent = (chat.send.mock.calls.at(-1)?.[0] as { text: string }).text;
   await act(async () => {

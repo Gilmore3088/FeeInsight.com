@@ -493,6 +493,49 @@ hand check found wrong, from their real lines.
   Transfer for\nOverdrafts - $2.00 per transfer", raw 112570). A bare "Overdrafts" priced per
   item is still the overdraft fee.
 
+v68 (#1102, Oct 15; held as v66 until #1334 took v67): priced lines with no "fee" or "charge" that Knox dropped without a record.
+On the 62-bank answer key (run 9), 333 of the 987 key fees missing from live data were lines in our
+stored text of the key document with no Knox row at that price; 240 of them had no fee word.
+- Name rules for fee-schedule labels seen at several banks, placed after every other rule so they
+  only claim lines nothing else names:
+  - account research: "Research (per hour)", "Record Research", "Account Reconcilement", "Balancing".
+    A bare "RESEARCH" heading cell is not one.
+  - notary acts ("notarization", "notarial"); a night drop.
+  - safe deposit boxes: "Duplicate Key", "Key Deposit / Replacement", "Box Inventory", a size after
+    the word that rents it ("Annual Rent Size 3×5"), sizes with prime marks ("03″x05″x22″"), and a
+    box size alone in its cell ("RESEARCH | 5 x 10 | $100").
+  - document reproduction: additional or duplicate statements, "Copy of ...". A copy of a title is
+    left out.
+  - deposit or account verification; a loan's due date change; sweep transfers and "OD protection
+    transaction" (overdraft protection transfer); "continuous negative balance"; "insufficient item".
+  - wider existing rules: "Rushed" and "plastic" cards, "CHECKCARD" and Visa card replacement,
+    "check images", "Bill-pay", "subpoenas", "legal proceedings", "check reorder".
+- Left out because the keys file them another way: account printouts (the seven-state keys leave
+  them unfiled), other skip-payment wordings (late fees in the keys; v5's "skip-a-pay" stays a lending
+  fee), and loan payments by phone or card (unfiled in the seven-state keys).
+- A "FREE" (or "None") cell in a row of account columns is one column's price. "Stop Payment | FREE
+  | $25 | $25" reads $25 and holds $0 (`zero`). The free cell no longer becomes the fee's name.
+- A `label | price` row (or `label | Free`) that no rule names is held as `unclassified` in a fee
+  schedule (one that names itself so, or where the rules read 5 or more fees) instead of dropped.
+  It is not held when its label is a balance, an opening deposit or minimum, a rate or yield, a
+  limit, loan size, example or total, or the figure is over $2,500 (`nonFeeReason`). These rows fill
+  the 10 unclassified places per document only after the lines that say "fee".
+- Every priced line no rule names that is neither read nor held is counted by reason
+  (`DroppedLineReason`): per document in the extract attempt's `dropped_lines`, and per step in the
+  extract step's `dropped_priced_lines`.
+- Gates: Texas 515 right / 14 wrong (main at v67, with #1365) to 537 / 14 (held out 53 / 4, unchanged); seven states 744 / 41
+  to 787 / 41. No right read was lost and no wrong read was added in either gate.
+- Box sizes priced per year ("2×5 | $ 25/Year") are named by the size, never by the unit left
+  after the price ("/Year"); a size with no word ("2×5") stays unread unless a heading names it.
+- A transfer's step ("made in increments of $50", "in multiples of $100") is never the fee
+  (`isConditionAmount`); main read "overdraft protection transfers ... increments of $100" as a
+  $100 overdraft.
+- 62-bank key, stored texts of the key documents, free team reads plus $0 rows with a category
+  (Oct 15): 1,371 of 2,321 key fees found before, 1,451 after (59.1% to 62.5%); precision 1,229 of
+  1,414 distinct reads to 1,301 of 1,487 (86.9% to 87.5%). 73 of the 80 newly found fees are not live today.
+- Production sample (Oct 15): 300 random texts of the 9,140 texts a bump re-read on Oct 15: 34 new reads
+  (19 texts), 148 new holds (136 unclassified, 9 untraced, 3 at $0), none of main's reads lost.
+
 Rules 65, #1196 (Oct 14, no version change, so no document is re-read for it):
 - A price whose decimal point the PDF text dropped ("Dormant accounts | $15 00 per month
   Nonsufficient funds | $35 00", Addition Financial) gets its point back before the line is read
@@ -507,7 +550,7 @@ Rules 65, #1196 (Oct 14, no version change, so no document is re-read for it):
   that price's: the second fee's name and frequency are read from after it, and the second fee is
   not dropped as a repeat of the first price.
 
-v67 (rules 67, Oct 15, #1334; v66 is the advisor's #1102 dropped-lines fix): no rule changes. The bump makes every current text due for one
+v67 (rules 67, Oct 15, #1334; v66 was held for the #1102 dropped-lines fix, which shipped as v68): no rule changes. The bump makes every current text due for one
 more read, so the dropped-decimal reads above (#1196, #1305) reach pages Knox read before them:
 "Loan Skip A Pay Fee .... $29. 95/ea ch" (Xplore, doc 12872) is read at $29.95 and "ATM
 Transactions (per item) | $1 50* after 8/mo" (Members 1st, docs 13851 and 32358) at $1.50, where
@@ -798,6 +841,6 @@ fails a PR that changes one of these constants without updating its line here (#
 | `LINEUP_CORRECT_STRATEGY` | `knox.lineup_correct` | v2 | `knox/lineup-correct.ts` |
 | `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v19 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v2 | `knox/paid-extract.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v67 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v68 | `knox/specialists.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v6 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v1 | `knox/takedown-lessons.ts` |

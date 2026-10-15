@@ -5,6 +5,15 @@ Seeded 2026-10-05 from the project's working memory; earlier decisions were not 
 
 ## 2026-10-15
 
+**Hamilton's redesign starts now, built on #1011.** James, Oct 15, after opening
+/pro/research?fee=overdraft: "This is not the Hamilton experience I've been asking for", then "We
+already have the design base, the left nav" and "The images were just examples of rich dashboard".
+This lifts the Oct 14 hold for Hamilton's screens; the data lanes keep their order. #1011's unified
+workspace (docs/design/hamilton-rebuild/) is the design base, ported onto current main in per-screen
+PRs on the Fee Insight design system's navy and brick, not merged as its stale branch. The new work
+is making it rich: charts, maps, peer tables and evidence across the five lenses in the design
+brief, and the product review's findings (docs/plans/hamilton-product-review-2026-10-12.md).
+
 **Subordination fees file as legal process, reversing Oct 8.** James, 02:59 UTC Oct 15 (#1026
 comment 6183387204, item 1), on Pacific Service FCU's "Subordination | $125 per loan": a
 subordination fee pays for drafting and executing a legal agreement that changes the lien priority
@@ -29,6 +38,12 @@ annual." The site's main call to action, reviews and copy aim at Hamilton Pro (/
 Competitive Fee Position Report stays on sale as the step for buyers not ready to subscribe; free
 reports and alerts capture leads for Pro. CLAUDE.md's "Money thesis" and the CTA line in
 `.agents/product-marketing.md` now say so.
+
+**The growth plans follow the same funnel.** James, Oct 15: "update the growth plans so we dont focus
+on the $300 and go with the plan we discussed today." The funnel is a free sample report, then the
+paid report as a lead, then Pro, either because the buyer wants it regularly or because the report
+sparks a Pro demo request. GrowthOS (README, agent objectives, KPI order) and the site v3 brief now
+rank work by Pro subscriptions and Pro demo requests; report requests count as leads.
 
 **Data fixes are proven on the live row, not one function.** James, Oct 15, after #1334's review
 found that #1310's merged cut-cents fix never reached the site. Knox's self-check uses

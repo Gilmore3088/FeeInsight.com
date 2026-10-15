@@ -1,6 +1,6 @@
 # Product marketing context
 
-Document version: 1.0 (2026-10-08). Every marketing skill in `.agents/skills/` reads this file
+Document version: 1.1 (2026-10-15: Pro is the goal; the funnel below). Every marketing skill in `.agents/skills/` reads this file
 first. It is drafted from the site's own copy (`src/lib/constants.ts`, `src/app/for-institutions/`)
 and the decisions James has made. When it disagrees with a skill, this file wins.
 
@@ -50,9 +50,13 @@ and the decisions James has made. When it disagrees with a skill, this file wins
 - **Never** promise a turnaround time for a free report.
 - **Goal:** a Hamilton Pro subscription, monthly or annual (James, 2026-10-15). The report is a
   high-value lead into Pro, not the goal.
-- **CTA:** primary "See Pro plans" (/subscribe). Secondary, for buyers not ready to subscribe:
-  "Get a free fee report", the paid report, email hello@bankfeeindex.com, or the /contact form. No
-  booking links (no Calendly or similar).
+- **Funnel:** free sample report, then the Competitive Fee Position Report (from $300) as a high-value lead, then Hamilton Pro, either because the buyer wants it on a regular basis or because the report sparks a Pro demo request. Every page, email and post moves a visitor one step along it.
+- **CTA:** the site's main button is "See where your fees stand", the institution search (site v3
+  brief, `docs/design/site-v3/03-draper-positioning.md` section 4). The Pro button reads "See
+  Hamilton plans" (/subscribe): Hamilton is the workspace, Pro is the plan. For buyers not ready to
+  subscribe: "Get a free fee report", the paid report, or a Pro demo request through the /contact
+  form (`/contact?source=demo`). Email hello@bankfeeindex.com. No booking links (no Calendly or
+  similar).
 
 ## 5. Differentiation
 

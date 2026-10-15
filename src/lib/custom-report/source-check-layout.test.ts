@@ -571,4 +571,30 @@ describe("checkFeeAgainstSource daily caps", () => {
     // Only after "negative": a dash before a price stays a separator.
     expect(checkFeeAgainstSource("Account Below Minimum - $5.00", "Account Below Minimum", 5, ".").ok).toBe(true);
   });
+
+  it("reads a price under a description that ends on the statement label (River City Bank)", () => {
+    // River City Bank (268), current copy doc 28947, Oct 15: the $30 overdraft (36542) was taken
+    // down as amount_not_the_fee and the current copy's reads (274671, 535317) held as untraced.
+    const page = [
+      "Outgoing International Wire Transfer Foreign Exchange Fee sent in Foreign Currency",
+      "(Fee shown when charged as Wire FX Fee.) This fee is assessed in addition to the Int’l Wire Fee Out shown immediately above.",
+      "$30 per wire",
+      "Overdraft",
+      "If RCB pays an item when your account does not have enough money in your Available Balance1 to cover a transaction. (Fee shown as Overdraft Fee)",
+      "$30 for each check, automatic bill payment, ACH debit or recurring debit or similar transaction presented for payment against your account.",
+      "NSF (Non-Sufficient Funds) Returned Item",
+      "If RCB returns an item when your account does not have enough money in your Available Balance to cover a transaction. (Fee shown as NSF Returned Item Fee)",
+      "Maximum of 5 Overdraft and/or NSF Returned Item Fees may be charged per banking day per account.",
+      "Excessive Withdrawal Fee",
+      "The Bank limits the number of withdrawals and transfers that may be made each calendar month from Savings and Money Market Accounts. See RCB Deposit Account Agreement for specific information. (Fee shown as Service Charge – Total Excessive WD)",
+      "$15 for each excessive item.",
+    ].join("\n");
+    expect(checkFeeAgainstSource(page, "Overdraft: (Fee", 30, ".", "overdraft")).toMatchObject({ ok: true });
+    expect(checkFeeAgainstSource(page, "Excessive Withdrawal Fee", 15, ".")).toMatchObject({ ok: true });
+    // The NSF entry prints no price of its own; it never takes the overdraft's.
+    expect(checkFeeAgainstSource(page, "NSF (Non-Sufficient Funds) Returned Item", 30, ".", "nsf").ok).toBe(false);
+    // Without the statement label, a long "$30 for each ..." sentence under a bare name is not its price.
+    const bare = "Overdraft\nIf we pay an item when your account does not have enough money to cover a transaction.\n$30 for each check presented against your account.";
+    expect(checkFeeAgainstSource(bare, "Overdraft", 30, ".", "overdraft").ok).toBe(false);
+  });
 });
