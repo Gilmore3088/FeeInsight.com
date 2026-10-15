@@ -62,6 +62,18 @@ describe("state board", () => {
     expect(fees[1]).toMatchObject({ position: "below", values: [] });
   });
 
+  it("carries the district's middle half only where the district has a median", () => {
+    const district = [
+      { ...entry("overdraft", 32), p25_amount: 28, p75_amount: 35, institution_count: 60 },
+      { ...entry("nsf", 25), p25_amount: 20, p75_amount: 30, institution_count: 4 },
+    ];
+    const fees = boardFees(comparisons, [], [], undefined, district);
+    expect(fees[0].district).toEqual({ p25: 28, median: 32, p75: 35, institutions: 60 });
+    // Four institutions are too few for a district median; garnishment has no district row.
+    expect(fees[1].district).toBeNull();
+    expect(fees[2].district).toBeNull();
+  });
+
   it("shows free visitors the featured fees and names the rest as Hamilton's", () => {
     const fees = boardFees(comparisons, [], [], undefined);
     const free = splitForAccess(fees, false);

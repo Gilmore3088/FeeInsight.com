@@ -2,13 +2,14 @@
 
 import { createContext, useCallback, useContext, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import { buildHistogram, type HistogramBin } from "@/components/public/distribution-chart";
-import { MARKET_ROW_GRID, MarketRowBody, marketScale, money } from "../../../fees/[category]/exhibits";
-import type { BoardFee, LeadFinding } from "./state-view";
+import { DotLegend, MARKET_ROW_GRID, MarketRowBody, marketScale, money } from "../../../fees/[category]/exhibits";
+import { bandFor, positionIn, type Against, type BoardFee, type LeadFinding } from "./state-view";
 
 /**
  * The state page's one interactive exhibit. A fee picked anywhere on the page (a finding, a
  * row of the board, a row of the banks and credit unions list) redraws the chart for it; on
  * the chart, banks or credit unions redraw the bars, and a tapped bar counts who charges that much.
+ * Everything is read against the U.S. or, at a tap, the state's own Fed district.
  */
 
 type Charter = 0 | 1 | 2;
@@ -16,6 +17,10 @@ type Charter = 0 | 1 | 2;
 interface BoardState {
   fees: BoardFee[];
   stateName: string;
+  /** "Dallas Fed district", or null when the district has no medians to compare. */
+  districtName: string | null;
+  against: Against;
+  setAgainst: (a: Against) => void;
   fee: BoardFee;
   charter: Charter;
   bin: number | null;
@@ -37,8 +42,19 @@ const COUNT = new Intl.NumberFormat("en-US");
 
 const POSITION_WORD = { below: "below", within: "inside", above: "above" } as const;
 
-export function StateBoard({ fees, stateName, children }: { fees: BoardFee[]; stateName: string; children: ReactNode }) {
+export function StateBoard({
+  fees,
+  stateName,
+  districtName = null,
+  children,
+}: {
+  fees: BoardFee[];
+  stateName: string;
+  districtName?: string | null;
+  children: ReactNode;
+}) {
   const [feeKey, setFeeKey] = useState(fees[0]?.key ?? "");
+  const [against, setAgainstState] = useState<Against>("us");
   const [charter, setCharterState] = useState<Charter>(0);
   const [bin, setBin] = useState<number | null>(null);
   const chartRef = useRef<HTMLDivElement | null>(null);
@@ -64,9 +80,14 @@ export function StateBoard({ fees, stateName, children }: { fees: BoardFee[]; st
     setBin(null);
   }, []);
 
+  const setAgainst = useCallback((a: Against) => setAgainstState(districtName ? a : "us"), [districtName]);
+
   const value = useMemo(
-    () => (fee ? { fees, stateName, fee, charter, bin, pickFee, setCharter, setBin, chartRef } : null),
-    [fees, stateName, fee, charter, bin, pickFee, setCharter],
+    () =>
+      fee
+        ? { fees, stateName, districtName, against, setAgainst, fee, charter, bin, pickFee, setCharter, setBin, chartRef }
+        : null,
+    [fees, stateName, districtName, against, setAgainst, fee, charter, bin, pickFee, setCharter],
   );
   if (!value) return <>{children}</>;
   return <BoardContext.Provider value={value}>{children}</BoardContext.Provider>;
@@ -97,9 +118,67 @@ const CHARTERS: { c: Charter; label: string }[] = [
   { c: 2, label: "Credit unions" },
 ];
 
-/** The picked fee's spread in the state, drawn over where the middle half of the U.S. sits. */
+/** "the U.S." or "the Dallas Fed district", as the board's sentences name it. */
+function againstName(against: Against, districtName: string | null): string {
+  return against === "district" && districtName ? `the ${districtName}` : "the U.S.";
+}
+
+/** The short label on the chart's line and legend: "U.S." or "District". */
+function againstShort(against: Against): string {
+  return against === "district" ? "District" : "U.S.";
+}
+
+/** The board's heading names what the state is read against, and the switch beside it changes that. */
+export function BoardHeading({ id }: { id: string }) {
+  const { stateName, districtName, against, setAgainst } = useBoard();
+  return (
+    <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-2">
+      <h2 id={id} className="text-[20px] font-semibold tracking-[-0.02em] text-ink sm:text-[24px]">
+        {stateName} against {againstName(against, districtName)}
+      </h2>
+      {districtName && (
+        <div role="group" aria-label="Compare with" className="inline-flex rounded-full bg-paper p-0.5 ring-1 ring-border print:hidden">
+          {(
+            [
+              ["us", "U.S."],
+              ["district", districtName],
+            ] as const
+          ).map(([a, label]) => (
+            <button
+              key={a}
+              type="button"
+              aria-pressed={against === a}
+              onClick={() => setAgainst(a)}
+              className={`rounded-full px-3 py-1.5 text-[13px] font-semibold transition-colors ${
+                against === a ? "bg-ink text-on-ink" : "text-ink-muted hover:text-ink"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** The fee list's key, for whichever comparison is showing. */
+export function BoardLegend({ fees }: { fees: BoardFee[] }) {
+  const { against } = useBoard();
+  const positions = (["below", "within", "above"] as const).filter((p) =>
+    fees.some((f) => {
+      const band = bandFor(f, against);
+      return band && positionIn(f.median, band) === p;
+    }),
+  );
+  return <DotLegend positions={[...positions]} against={againstShort(against)} />;
+}
+
+/** The picked fee's spread in the state, drawn over where the middle half of the U.S. (or district) sits. */
 export function BoardChart() {
-  const { fee, stateName, charter, bin, setCharter, setBin, chartRef } = useBoard();
+  const { fee, stateName, districtName, against, charter, bin, setCharter, setBin, chartRef } = useBoard();
+  const ref = bandFor(fee, against);
+  const refShort = againstShort(against);
   const bins = useMemo(() => buildHistogram(fee.values.map(([v]) => v), 12), [fee]);
   const binOf = useMemo(() => binIndexer(bins), [bins]);
   const counts = useMemo(() => {
@@ -122,7 +201,7 @@ export function BoardChart() {
   const picked = bin !== null ? bins[bin] : null;
   const who = charterWord(charter, stateName);
   const noun = charter === 1 ? "banks" : charter === 2 ? "credit unions" : "institutions";
-  const usAt = fee.us ? x(fee.us.median) : 0;
+  const refAt = ref ? x(ref.median) : 0;
 
   return (
     <div ref={chartRef} className="scroll-mt-20 rounded-2xl border border-border bg-surface-0 p-4 shadow-fi-1 sm:p-6">
@@ -164,8 +243,12 @@ export function BoardChart() {
           <>
             <p className="font-mono text-[22px] font-semibold tabular-nums leading-tight text-ink">{money(shownMedian)}</p>
             <p className="text-[13px] text-ink-muted">
-              Median of {COUNT.format(shownCount)} {who}
-              {fee.us ? `. U.S. ${money(fee.us.median)}.` : "."}
+              Median of {COUNT.format(shownCount)} {who}.{" "}
+              {ref
+                ? `${against === "district" && districtName ? districtName : "U.S."} ${money(ref.median)}.`
+                : against === "district"
+                  ? "Too few district institutions for a median yet."
+                  : ""}
             </p>
           </>
         ) : (
@@ -176,7 +259,7 @@ export function BoardChart() {
         )}
       </div>
 
-      {/* The top strip holds the U.S. median's label, so it never sits on a bar. */}
+      {/* The top strip holds the comparison median's label, so it never sits on a bar. */}
       <div className="relative mt-3 h-44 sm:h-56">
         <div className="absolute inset-x-0 bottom-0 top-6 flex items-end gap-[3px]" role="group" aria-label={`${fee.name}: ${who} by fee amount`}>
           {bins.map((b, i) => {
@@ -200,26 +283,26 @@ export function BoardChart() {
             );
           })}
         </div>
-        {fee.us && (
-          <div className="pointer-events-none absolute inset-y-0 border-l-2 border-dashed border-ink" style={{ left: `${usAt}%` }} aria-hidden="true">
+        {ref && (
+          <div className="pointer-events-none absolute inset-y-0 border-l-2 border-dashed border-ink" style={{ left: `${refAt}%` }} aria-hidden="true">
             {/* The label sits on the open side of the line, so it never runs past the card. */}
             <span
-              className={`absolute top-0 ${usAt > 60 ? "right-1.5" : "left-1.5"} whitespace-nowrap px-1 text-[12px] font-semibold leading-5 text-ink`}
+              className={`absolute top-0 ${refAt > 60 ? "right-1.5" : "left-1.5"} whitespace-nowrap px-1 text-[12px] font-semibold leading-5 text-ink`}
             >
-              U.S. {money(fee.us.median)}
+              {refShort} {money(ref.median)}
             </span>
           </div>
         )}
       </div>
-      {fee.us && (
-        // The U.S. middle half as the same pink band the fee list below uses, on the chart's own axis.
+      {ref && (
+        // The comparison's middle half as the same pink band the fee list below uses, on the chart's own axis.
         <div className="relative mt-1.5 h-3" aria-hidden="true">
           <span className="absolute inset-x-0 top-1/2 border-t border-border" />
           <span
             className="absolute top-1/2 h-2.5 -translate-y-1/2 rounded-full bg-brick-tint"
-            style={{ left: `${x(fee.us.p25)}%`, width: `${Math.max(x(fee.us.p75) - x(fee.us.p25), 1)}%` }}
+            style={{ left: `${x(ref.p25)}%`, width: `${Math.max(x(ref.p75) - x(ref.p25), 1)}%` }}
           />
-          <span className="absolute top-0 h-3 w-[2px] bg-ink/60" style={{ left: `${usAt}%` }} />
+          <span className="absolute top-0 h-3 w-[2px] bg-ink/60" style={{ left: `${refAt}%` }} />
         </div>
       )}
       <div className="mt-1 flex gap-[3px] text-[11px] text-ink-muted" aria-hidden="true">
@@ -234,10 +317,10 @@ export function BoardChart() {
           <span aria-hidden="true" className="h-3 w-2 rounded-t-[2px] bg-brick" />
           {who}
         </span>
-        {fee.us && (
+        {ref && (
           <span className="inline-flex items-center gap-1.5">
             <span aria-hidden="true" className="h-2.5 w-5 rounded-full bg-brick-tint" />
-            U.S. middle half
+            {refShort} middle half
           </span>
         )}
         <span>Tap a bar to count it.</span>
@@ -246,15 +329,21 @@ export function BoardChart() {
   );
 }
 
-/** The fee list: each fee's state median as a dot on its own U.S. middle half. Tapping one draws it above. */
+/**
+ * The fee list: each fee's state median as a dot on its own U.S. (or district) middle half.
+ * Tapping one draws it above.
+ */
 export function BoardRows({ fees, ariaLabel }: { fees: BoardFee[]; ariaLabel: string }) {
-  const { fee: current, pickFee } = useBoard();
+  const { fee: current, pickFee, against } = useBoard();
+  const refShort = againstShort(against);
   return (
     <ol aria-label={ariaLabel} className="divide-y divide-border">
       {fees.map((f) => {
         const pressed = f.key === current.key;
-        const dot = { key: f.key, label: f.name, median: f.median, institutions: f.institutions, position: f.position ?? "within" };
-        const band = f.us ? { min: 0, max: 0, institutions: 0, ...f.us } : null;
+        const ref = bandFor(f, against);
+        const position = ref ? positionIn(f.median, ref) : null;
+        const dot = { key: f.key, label: f.name, median: f.median, institutions: f.institutions, position: position ?? "within" };
+        const band = ref ? { min: 0, max: 0, institutions: 0, p25: ref.p25, median: ref.median, p75: ref.p75 } : null;
         return (
           <li key={f.key}>
             <button
@@ -262,7 +351,9 @@ export function BoardRows({ fees, ariaLabel }: { fees: BoardFee[]; ariaLabel: st
               aria-pressed={pressed}
               onClick={() => pickFee(f.key)}
               aria-label={`${f.name}: ${money(f.median)} across ${COUNT.format(f.institutions)} institutions${
-                f.us && f.position ? `, ${POSITION_WORD[f.position]} the U.S. middle half; U.S. median ${money(f.us.median)}` : ""
+                ref && position
+                  ? `, ${POSITION_WORD[position]} the ${refShort === "U.S." ? "U.S." : "district"} middle half; ${refShort === "U.S." ? "U.S." : "district"} median ${money(ref.median)}`
+                  : ""
               }`}
               className={`${MARKET_ROW_GRID} -mx-2 w-[calc(100%+1rem)] rounded-lg px-2 text-left transition-colors hover:bg-paper focus-visible:outline-2 focus-visible:outline-ink ${
                 pressed ? "bg-paper ring-1 ring-ink/30" : ""
@@ -276,7 +367,7 @@ export function BoardRows({ fees, ariaLabel }: { fees: BoardFee[]; ariaLabel: st
                     {f.name}
                     <span className="block text-[11px] text-ink-muted">{COUNT.format(f.institutions)} institutions</span>
                   </span>
-                  <span className="text-[12px] text-ink-muted">No U.S. median</span>
+                  <span className="text-[12px] text-ink-muted">No {refShort === "U.S." ? "U.S." : "district"} median</span>
                   <span className="text-right font-mono text-[14px] font-semibold tabular-nums text-ink">{money(f.median)}</span>
                 </>
               )}

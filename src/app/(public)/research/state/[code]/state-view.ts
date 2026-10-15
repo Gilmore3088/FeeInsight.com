@@ -4,8 +4,12 @@ import { BENCHMARK_KEYS } from "@/lib/research-report/benchmark-keys";
 import type { StateComparison } from "@/lib/research-report/state-findings";
 import { lowerName, type Finding } from "@/lib/research-report/finding";
 import { formatFeeAmount } from "@/lib/format";
+import { MIN_INSTITUTIONS_FOR_MEDIAN } from "@/lib/data-store/maturity";
 
 export type Position = "below" | "within" | "above";
+
+/** What the board reads the state against: the whole U.S., or the state's own Fed district. */
+export type Against = "us" | "district";
 
 /** The U.S. figures a state's fee is read against. */
 export interface UsBand {
@@ -30,6 +34,8 @@ export interface BoardFee {
   cu: { median: number | null; institutions: number };
   us: UsBand | null;
   position: Position | null;
+  /** The same figures across the state's Fed district (the state included), when it has a median. */
+  district: (UsBand & { institutions: number }) | null;
   values: [number, 0 | 1 | 2][];
 }
 
@@ -44,6 +50,18 @@ function usBand(c: StateComparison): UsBand | null {
   return { p25: c.national_p25, median: c.national_median, p75: c.national_p75 };
 }
 
+/** A district fee's middle half, when enough institutions stand behind it for a median. */
+function districtBand(e: IndexEntry | undefined): (UsBand & { institutions: number }) | null {
+  if (!e || e.institution_count < MIN_INSTITUTIONS_FOR_MEDIAN) return null;
+  if (e.median_amount == null || e.p25_amount == null || e.p75_amount == null) return null;
+  return { p25: e.p25_amount, median: e.median_amount, p75: e.p75_amount, institutions: e.institution_count };
+}
+
+/** The band a fee is read against. */
+export function bandFor(fee: BoardFee, against: Against): UsBand | null {
+  return against === "district" ? fee.district : fee.us;
+}
+
 const CHARTER_CODE = { b: 1, c: 2 } as const;
 
 /**
@@ -55,7 +73,9 @@ export function boardFees(
   bank: IndexEntry[],
   creditUnion: IndexEntry[],
   values: Record<string, StateInstitutionValue[]> | undefined,
+  district: IndexEntry[] = [],
 ): BoardFee[] {
+  const districtBy = new Map(district.map((e) => [e.fee_category, e]));
   const bankBy = new Map(bank.map((e) => [e.fee_category, e]));
   const cuBy = new Map(creditUnion.map((e) => [e.fee_category, e]));
   const everyday = new Map<string, number>(BENCHMARK_KEYS.map((k, i) => [k, i]));
@@ -77,6 +97,7 @@ export function boardFees(
       cu: { median: cuBy.get(c.fee_category)?.median_amount ?? null, institutions: c.cu_count },
       us,
       position: us ? positionIn(c.median_amount, us) : null,
+      district: districtBand(districtBy.get(c.fee_category)),
       values: (values?.[c.fee_category] ?? []).map((p) => [p.v, p.c ? CHARTER_CODE[p.c] : 0]),
     };
   });

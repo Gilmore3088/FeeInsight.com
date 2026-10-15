@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 import { linkPreview } from "@/lib/link-preview";
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { STATE_TO_DISTRICT } from "@/lib/fed-districts";
+import { DISTRICT_NAMES, STATE_TO_DISTRICT } from "@/lib/fed-districts";
 import { STATE_NAMES } from "@/lib/us-states";
 import { getCurrentUser } from "@/lib/auth";
 import { canAccessAllCategories, canAccessPremium } from "@/lib/access";
@@ -15,13 +15,14 @@ import { Button, SearchInput } from "@/brand/components";
 import { DEMO_REQUEST_NAV, PRIMARY_CTA_NAV, PRO_PLANS_NAV } from "@/components/nav-items";
 import { REPORT_OFFER, SITE_NAME, SITE_URL } from "@/lib/constants";
 import { sampleReportAvailable } from "@/lib/custom-report/sample-report";
-import { getStateFeeIndexesCached, getStateStatsCached } from "@/lib/data-store/public-cached-reads";
+import { getPeerIndexCached, getStateFeeIndexesCached, getStateStatsCached } from "@/lib/data-store/public-cached-reads";
 import { MIN_INSTITUTIONS_FOR_MEDIAN } from "@/lib/data-store/maturity";
 import type { StateFeeIndexes } from "@/lib/data-store";
 import { buildCharterPairs, buildComparisons, computeStateFindings } from "@/lib/research-report/state-findings";
-import { DotLegend, LockedRows, VideoSlot } from "../../../fees/[category]/exhibits";
-import { StateHero } from "./state-exhibits";
-import { BoardChart, BoardRows, CharterRows, FindingButtons, StateBoard } from "./state-board";
+import { buildHistogram } from "@/components/public/distribution-chart";
+import { LockedRows } from "../../../fees/[category]/exhibits";
+import { StateHero, StateVideo } from "./state-exhibits";
+import { BoardChart, BoardHeading, BoardLegend, BoardRows, CharterRows, FindingButtons, StateBoard } from "./state-board";
 import { boardFees, charterFees, charterHeadline, leadFindings, splitForAccess } from "./state-view";
 
 interface PageProps {
@@ -82,10 +83,12 @@ export default async function StateReportPage({ params }: PageProps) {
 
   // Every read is served from the public cache between publishes.
   const district = STATE_TO_DISTRICT[stateCode];
-  const [summary, indexes, nationalIndex, sampleLive] = await Promise.all([
+  const [summary, indexes, nationalIndex, districtIndex, sampleLive] = await Promise.all([
     getPublicStatsSummary(),
     getStateFeeIndexesCached(stateCode).catch(() => EMPTY_INDEXES),
     getPublicNationalIndex(),
+    // The district page's own read, so the two pages quote the same district medians.
+    district ? getPeerIndexCached({ fed_districts: [district] }).catch(() => []) : Promise.resolve([]),
     sampleReportAvailable().catch(() => false),
   ]);
   const asOf = summary.refreshedOn;
@@ -93,7 +96,7 @@ export default async function StateReportPage({ params }: PageProps) {
   // The board, the chart, the findings and the banks/credit unions split all read the state's
   // one index, so every figure on the page counts the same institutions.
   const comparisons = buildComparisons(indexes.all, nationalIndex);
-  const fees = boardFees(comparisons, indexes.bank, indexes.credit_union, indexes.institution_values);
+  const fees = boardFees(comparisons, indexes.bank, indexes.credit_union, indexes.institution_values, districtIndex);
   const { shown, locked } = splitForAccess(fees, showAllCategories);
   // A board entry cached before the values existed has nothing to draw until it refreshes.
   const charted = shown.filter((f) => f.values.length > 0);
@@ -119,7 +122,9 @@ export default async function StateReportPage({ params }: PageProps) {
     ...(againstUs.length > 0 ? [{ value: `${aboveUs} of ${againstUs.length}`, label: "Fees above the U.S. median" }] : []),
     ...(paired.length > 0 ? [{ value: `${cuLowerOn} of ${paired.length}`, label: "Fees lower at credit unions" }] : []),
   ];
-  const positions = (["below", "within", "above"] as const).filter((p) => shown.some((f) => f.position === p));
+  // The district switch shows only when the district has a median for a fee the board draws.
+  const districtName = district && charted.some((f) => f.district) ? `${DISTRICT_NAMES[district]} Fed district` : null;
+  const posterBars = charted[0] ? buildHistogram(charted[0].values.map(([v]) => v), 12).map((b) => b.count) : [];
 
   return (
     <>
@@ -138,14 +143,17 @@ export default async function StateReportPage({ params }: PageProps) {
         district={district}
         figures={figures}
         freshnessLabel={summary.freshnessLabel}
-        video={<VideoSlot title={`${stateName}'s fees settling into the U.S. range`} />}
+        subhead={districtName ? "What they charge, against their Fed district and the U.S." : "What they charge, against the U.S."}
       />
+
+      {/* 2. The video, floating over the hero's edge. */}
+      <StateVideo stateName={stateName} bars={posterBars} />
 
       <div className="mx-auto max-w-page space-y-10 px-4 py-8 sm:space-y-12 sm:px-6 sm:py-12">
         {charted.length > 0 ? (
-          // 2-4 share one selection: a fee picked in a finding or a list redraws the chart.
-          <StateBoard fees={charted} stateName={stateName}>
-            {/* 2. Key findings, each one line with its number. */}
+          // 3-6 share one selection: a fee picked in a finding or a list redraws the chart.
+          <StateBoard fees={charted} stateName={stateName} districtName={districtName}>
+            {/* 3. Key findings, each one line with its number. */}
             {findings.length > 0 && (
               <section aria-labelledby="findings-heading" className="space-y-3">
                 <h2 id="findings-heading" className="text-[20px] font-semibold tracking-[-0.02em] text-ink sm:text-[24px]">
@@ -155,13 +163,11 @@ export default async function StateReportPage({ params }: PageProps) {
               </section>
             )}
 
-            {/* 3. The board: the picked fee's spread, then every fee against the U.S. */}
+            {/* 4. The board: the picked fee's spread, then every fee against the U.S. or the district. */}
             <section id="benchmarks" aria-labelledby="board-heading" className="scroll-mt-20 space-y-3">
-              <h2 id="board-heading" className="text-[20px] font-semibold tracking-[-0.02em] text-ink sm:text-[24px]">
-                {stateName} against the U.S.
-              </h2>
+              <BoardHeading id="board-heading" />
               <BoardChart />
-              <DotLegend positions={[...positions]} />
+              <BoardLegend fees={charted} />
               <div className="rounded-2xl border border-border bg-surface-0 px-4 py-2 shadow-fi-1 sm:px-6">
                 <BoardRows fees={charted} ariaLabel={`${stateName} median for each fee`} />
                 {locked.length > 0 && (
@@ -182,7 +188,7 @@ export default async function StateReportPage({ params }: PageProps) {
               </div>
             </section>
 
-            {/* 4. The free state report, straight after the board it summarizes. */}
+            {/* 5. The free state report, straight after the board it summarizes. */}
             <LeadCapture
               placement="state_benchmark"
               className="print:hidden"
@@ -198,7 +204,7 @@ export default async function StateReportPage({ params }: PageProps) {
               }
             />
 
-            {/* 5. Banks against credit unions. */}
+            {/* 6. Banks against credit unions. */}
             {paired.length > 0 && (
               <section aria-labelledby="charter-heading" className="space-y-3">
                 <div>

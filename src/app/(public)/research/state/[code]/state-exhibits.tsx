@@ -30,8 +30,8 @@ interface StateHeroProps {
   /** The live figures under the heading, already formatted. */
   figures: { value: string; label: string }[];
   freshnessLabel: string;
-  /** The hero's clip slot, under the map. */
-  video?: React.ReactNode;
+  /** The line under the heading: what the state's fees are read against. */
+  subhead: string;
 }
 
 /**
@@ -62,10 +62,11 @@ function StateMap({ stateCode, district }: { stateCode: string; district: number
   );
 }
 
-export function StateHero({ stateCode, stateName, district, figures, freshnessLabel, video }: StateHeroProps) {
+export function StateHero({ stateCode, stateName, district, figures, freshnessLabel, subhead }: StateHeroProps) {
   return (
     <section className="bg-ink text-paper">
-      <div className="mx-auto grid max-w-page gap-6 px-4 pb-8 pt-6 sm:px-6 sm:pb-12 sm:pt-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)] lg:items-center lg:gap-10">
+      {/* The bottom padding leaves room for the video card that floats over the hero's edge. */}
+      <div className="mx-auto grid max-w-page gap-6 px-4 pb-16 pt-6 sm:px-6 sm:pb-24 sm:pt-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)] lg:items-center lg:gap-10">
         <div>
           <nav aria-label="Breadcrumb" className="flex items-center gap-2 text-[12px] text-paper/60 print:hidden">
             <Link href="/research" className="hover:text-white">Research</Link>
@@ -75,7 +76,7 @@ export function StateHero({ stateCode, stateName, district, figures, freshnessLa
           <h1 className="mt-4 text-[30px] font-semibold leading-tight tracking-[-0.03em] text-white sm:text-[44px]">
             {stateName} bank &amp; credit union fees
           </h1>
-          <p className="mt-2 text-[15px] text-paper/75">What they charge, against the U.S.</p>
+          <p className="mt-2 text-[15px] text-paper/75">{subhead}</p>
 
           <dl className="mt-6 grid grid-cols-2 gap-px overflow-hidden rounded-xl bg-white/10">
             {figures.map((f) => (
@@ -99,14 +100,47 @@ export function StateHero({ stateCode, stateName, district, figures, freshnessLa
             <PrintButton className="font-semibold text-paper/80 underline decoration-white/30 underline-offset-4 hover:text-white print:hidden" />
           </p>
         </div>
-        <div className="space-y-4">
-          <div className="-mx-1 lg:mx-0">
-            <StateMap stateCode={stateCode} district={district} />
-          </div>
-          {video}
+        <div className="-mx-1 lg:mx-0">
+          <StateMap stateCode={stateCode} district={district} />
         </div>
       </div>
     </section>
+  );
+}
+
+/**
+ * The video, as its own card floating over the hero's bottom edge. Until the clip exists the
+ * poster draws the state's real spread for its first fee, so the slot shows the product.
+ */
+export function StateVideo({ stateName, bars }: { stateName: string; bars: number[] }) {
+  const top = Math.max(...bars, 1);
+  return (
+    <div className="relative mx-auto -mt-10 max-w-page px-4 sm:-mt-16 sm:px-6 print:hidden">
+      <figure className="grid overflow-hidden rounded-2xl border border-border bg-surface-0 shadow-fi-2 md:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)] md:items-center">
+        <div className="relative aspect-video bg-warm-ink-900" aria-hidden="true">
+          {bars.length > 0 && (
+            <div className="absolute inset-x-[8%] bottom-[14%] top-[22%] flex items-end gap-[4%] opacity-40">
+              {bars.map((n, i) => (
+                <span key={i} className="block flex-1 rounded-t-sm bg-[#e0716a]" style={{ height: `${n > 0 ? Math.max((n / top) * 100, 3) : 0}%` }} />
+              ))}
+            </div>
+          )}
+          <span className="absolute inset-0 flex items-center justify-center">
+            <span className="flex h-16 w-16 items-center justify-center rounded-full bg-white shadow-fi-2 sm:h-20 sm:w-20">
+              <svg viewBox="0 0 12 12" className="ml-1 h-6 w-6 text-ink sm:h-7 sm:w-7">
+                <path d="M3 1.5v9l7.5-4.5z" fill="currentColor" />
+              </svg>
+            </span>
+          </span>
+        </div>
+        <figcaption className="px-4 py-4 sm:px-6 sm:py-5">
+          <span className="block text-[20px] font-semibold leading-tight tracking-[-0.02em] text-ink sm:text-[24px]">
+            Watch Hamilton explore {stateName}
+          </span>
+          <span className="mt-1.5 block text-[14px] text-ink-muted">Video coming</span>
+        </figcaption>
+      </figure>
+    </div>
   );
 }
 
