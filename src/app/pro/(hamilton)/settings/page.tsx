@@ -21,12 +21,13 @@ import {
 import { MIN_PEERS_FOR_POSITION } from "@/lib/hamilton/workspace/scenario";
 import {
   getIntelligenceSnapshot,
-  getWorkspaceInstitutionClaimState,
 } from "./actions";
 import { FeatureToggles } from "./FeatureToggles";
 import { ManageBillingButton } from "@/components/hamilton/settings/ManageBillingButton";
 import { resolveHamiltonInstitutionContext } from "@/lib/hamilton/workspace-context";
-import { WorkspaceInstitutionAccessRequest, WorkspaceInstitutionForm } from "./WorkspaceInstitutionForm";
+import { WorkspaceInstitutionForm } from "./WorkspaceInstitutionForm";
+import { sql } from "@/lib/data-store/connection";
+import { getPendingInstitutionLink } from "@/lib/pro-institution-link";
 import { loadHamiltonAccountContext } from "@/lib/hamilton/account-context-store";
 import {
   getActiveInstitutionMembership,
@@ -81,18 +82,18 @@ export default async function SettingsPage({
   const isAdmin = user.role === "admin" || user.role === "analyst";
 
   // Parallel data fetching
-  const [snapshot, cappedConsultant, accountContext, [selectedClaim, fetchedMembership, workspaceMembers, workspaceInvitations]] = await Promise.all([
+  const [snapshot, cappedConsultant, accountContext, pendingLink, [fetchedMembership, workspaceMembers, workspaceInvitations]] = await Promise.all([
     getIntelligenceSnapshot(),
     isCappedConsultant(user).catch(() => false),
     loadHamiltonAccountContext(user),
+    getPendingInstitutionLink(sql, user.id),
     selectedInstitution
       ? Promise.all([
-          getWorkspaceInstitutionClaimState(selectedInstitution.id),
           getActiveInstitutionMembership({ userId: user.id, institutionId: selectedInstitution.id }).catch(() => null),
           getInstitutionWorkspaceMembers(selectedInstitution.id).catch(() => []),
           getPendingInstitutionWorkspaceInvitations(selectedInstitution.id).catch(() => []),
         ])
-      : Promise.resolve([null, null, [] as InstitutionWorkspaceMembership[], [] as InstitutionWorkspaceInvitation[]] as const),
+      : Promise.resolve([null, [] as InstitutionWorkspaceMembership[], [] as InstitutionWorkspaceInvitation[]] as const),
   ]);
   const selectedMembership = fetchedMembership?.userId === user.id &&
     fetchedMembership.institutionId === selectedInstitution?.id && fetchedMembership.status === "active"
@@ -212,22 +213,27 @@ export default async function SettingsPage({
 
       <MemoSection
         id="account-institution"
-        title="Account institution"
-        note="Linked through active workspace membership. Research selection does not change it."
+        title="Your institution"
+        note="The institution you work at, linked by your work email or your team's invitation. Researching another institution doesn't change it."
       >
         <div className={panel}>
           {accountContext.status === "identified" && accountContext.institution ? (
             <>
               <p className="text-lg text-warm-900" style={SERIF}>{accountContext.institution.name}</p>
-              <p className="mt-1 text-sm text-warm-600">Institution ID {accountContext.institution.id}</p>
             </>
           ) : (
             <p className="text-sm text-warm-700">
               {accountContext.status === "ambiguous"
-                ? "Multiple account institutions linked. Hamilton will ask which institution you mean when needed."
+                ? "More than one institution is linked to your account. Hamilton asks which one you mean when it matters."
                 : accountContext.status === "unavailable"
-                  ? "Account institution could not be loaded. Research selection does not establish account membership."
-                  : "No account institution linked."}
+                  ? "Your institution couldn't load just now."
+                  : pendingLink
+                    ? pendingLink.needsInfo
+                      ? `${pendingLink.institutionName}: we need a little more before linking it. Email ${CONTACT_EMAIL} from your work address.`
+                      : pendingLink.emailConfirmed
+                        ? `${pendingLink.institutionName}: we're checking your work email against it, and it links once that's done.`
+                        : `${pendingLink.institutionName}: confirm your work email (the link is in your inbox) and it links on its own when the email matches ${pendingLink.institutionName}'s website.`
+                    : "No institution linked yet."}
             </p>
           )}
         </div>
@@ -245,24 +251,6 @@ export default async function SettingsPage({
           />
         </div>
       </MemoSection>
-
-      {selectedInstitution && (
-        <MemoSection
-          id="workspace-access-request"
-          title="Workspace access request"
-          note="Optional. Request access only for an institution you are authorized to represent."
-        >
-          <div className={panel}>
-            <WorkspaceInstitutionAccessRequest
-              key={selectedInstitution.id}
-              selectedInstitution={{ id: selectedInstitution.id, name: selectedInstitution.name }}
-              selectedClaim={selectedClaim}
-              selectedMembership={selectedMembership}
-              currentUserId={user.id}
-            />
-          </div>
-        </MemoSection>
-      )}
 
       <MemoSection
         id="your-figures"

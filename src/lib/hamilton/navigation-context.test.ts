@@ -19,11 +19,12 @@ describe("Hamilton navigation context contracts", () => {
     expect(hamiltonNavigationSelection("/pro/reports", new URLSearchParams("report_id=saved-a&instId=1535")).institutionId).toBeNull();
   });
 
-  it("keeps local research categories and charter when adapting the destination task", () => {
+  it("keeps local research for Ask and opens the saved Reports list", () => {
     const research = { version: 1, task: "compare", scope: { kind: "local", institutionId: 8109 }, categories: ["money_order"], charter: "credit_union" };
     const selection = hamiltonNavigationSelection("/pro/analyze", new URLSearchParams({ research: encodeLandingResearch(research) }));
-    expect(JSON.parse(new URL(hrefWithHamiltonNavigation("/pro/reports", selection), "https://example.test").searchParams.get("research")!))
-      .toEqual({ ...research, task: "board_report" });
+    expect(hrefWithHamiltonNavigation("/pro/reports", selection)).toBe("/pro/reports");
+    expect(JSON.parse(new URL(hrefWithHamiltonNavigation("/pro/analyze", selection), "https://example.test").searchParams.get("research")!))
+      .toEqual({ ...research, task: "compare" });
     expect(hrefWithHamiltonNavigation("/pro/research", selection)).toBe("/pro/research?instId=8109");
   });
 
@@ -35,7 +36,6 @@ describe("Hamilton navigation context contracts", () => {
     const state = hamiltonNavigationSelection("/pro/analyze", new URLSearchParams({ research: encodeLandingResearch(research) }));
     expect(state.institutionId).toBeNull();
     expect(hrefWithHamiltonNavigation("/pro/research", state)).toBe("/pro/research");
-    expect(JSON.parse(new URL(hrefWithHamiltonNavigation("/pro/reports", state), "https://example.test").searchParams.get("research")!))
-      .toEqual({ ...research, task: "board_report" });
+    expect(hrefWithHamiltonNavigation("/pro/reports", state)).toBe("/pro/reports");
   });
 });

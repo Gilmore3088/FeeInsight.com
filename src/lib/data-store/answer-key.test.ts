@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("./connection", () => ({ sql: vi.fn() }));
 
-import { banksToCheck, isPersonChecked, normalizeFeeAmount, parseAnswerKeyPrefill } from "./answer-key";
+import { banksToCheck, isPersonChecked, listScoreboardSnapshots, normalizeFeeAmount, parseAnswerKeyPrefill, seriesBreaks } from "./answer-key";
 
 describe("normalizeFeeAmount", () => {
   it("derives the amount kind when it is missing", () => {
@@ -66,5 +66,30 @@ describe("person-checked answer keys", () => {
   it("queues every bank a person still has to check, shortest key first", () => {
     const rows = [bank(1, "confirmed", "knox-hand-key", 38), bank(2, "confirmed", "james", 5), bank(3, "prefilled", null, 21), bank(4, "confirmed", "knox-hand-key", 14)];
     expect(banksToCheck(rows).map((row) => row.id)).toEqual([4, 3, 1]);
+  });
+});
+
+describe("scoreboard snapshots and the answer-key scorer version (#1354)", () => {
+  it("starts a new run of a trend wherever the scorer version changes", () => {
+    expect(seriesBreaks([1, 1, 3, 3, null, 3])).toEqual([
+      { start: 0, key: 1 },
+      { start: 2, key: 3 },
+    ]);
+    // A day with no version does not split one version's run in two.
+    expect(seriesBreaks([null, 3, null, 3])).toEqual([{ start: 1, key: 3 }]);
+  });
+
+  it("reads the version from the snapshot, else from the score run it names", async () => {
+    const db = vi.fn(async () => [
+      { snapshot_day: "2026-10-13", accuracy_recall: "0.575", accuracy_score_run_id: 7, run_scorer_version: 1, detail: {} },
+      { snapshot_day: "2026-10-14", accuracy_recall: "0.53", accuracy_score_run_id: 9, run_scorer_version: 3, detail: { accuracy_scorer_version: 3 } },
+      { snapshot_day: "2026-10-15", accuracy_recall: null, accuracy_score_run_id: null, run_scorer_version: null, detail: {} },
+    ]);
+    const rows = await listScoreboardSnapshots(30, db as never);
+    expect(rows.map((row) => [row.snapshot_date, row.accuracy_recall, row.accuracy_scorer_version])).toEqual([
+      ["2026-10-13", 0.575, 1],
+      ["2026-10-14", 0.53, 3],
+      ["2026-10-15", null, null],
+    ]);
   });
 });

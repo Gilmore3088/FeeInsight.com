@@ -68,11 +68,12 @@ describe("landing research confirmation and explicit scope", () => {
     expect(url).toBe("/api/hamilton/ask/market");
     expect(options.method).toBe("POST");
     expect(JSON.parse(String(options.body))).toEqual({ research: selected });
-    const reportLink = [...host.querySelectorAll("a")].find(link => link.textContent?.includes("Prepare board report"));
+    const reportLink = [...host.querySelectorAll("a")].find(link => link.textContent?.includes("Build a board brief"));
     expect(reportLink).toBeDefined();
     const reportUrl = new URL(reportLink!.href);
-    expect(reportUrl.pathname).toBe("/pro/reports");
-    expect(JSON.parse(reportUrl.searchParams.get("research")!)).toEqual({ ...JSON.parse(String(options.body)).research, task: "board_report" });
+    expect(reportUrl.pathname).toBe("/pro/intelligence");
+    expect(reportUrl.searchParams.get("lens")).toBe("fees");
+    expect(JSON.parse(reportUrl.searchParams.get("research")!)).toEqual({ ...JSON.parse(String(options.body)).research, task: "compare" });
     expect(host.textContent).toContain("$0.00");
     expect(host.textContent).toContain("2026-10-10");
   });

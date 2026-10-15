@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { FrameMedia, type FrameVideo } from "./frame-media";
+import { FrameMedia, FramePlaceholder, type FrameVideo } from "./frame-media";
 import { ProgressFill, useInViewChange, useReducedMotion } from "./motion";
 import { ProductFrame } from "./product-frame";
 
@@ -15,6 +15,11 @@ export interface SizzleChapter {
 
 /** Each chapter's share of the 20-second run (brief 06 §4.2). */
 export const CHAPTER_MS = 5000;
+/**
+ * The frame's floor per breakpoint. The active chapter sets the frame's height (the others sit
+ * out of flow), so a short chapter never leaves the tallest one's empty space under it.
+ */
+export const SCENE_MIN_HEIGHT = "min-h-[25rem] sm:min-h-[30rem] lg:min-h-[32rem]";
 /** Runs before the sizzle rests on its end frame with a Replay button. */
 export const MAX_LOOPS = 3;
 
@@ -36,17 +41,24 @@ export function ProductSizzle({
   label,
   chapters,
   video,
+  placeholder,
   chapterMs = CHAPTER_MS,
   maxLoops = MAX_LOOPS,
+  sceneClassName = SCENE_MIN_HEIGHT,
 }: {
   label: string;
   chapters: SizzleChapter[];
   video?: FrameVideo | null;
+  /** The caption of the tour's placeholder block, shown under the chapter tabs while there is no clip. */
+  placeholder?: string;
   chapterMs?: number;
   maxLoops?: number;
+  /** The frame's floor per breakpoint; a taller chapter grows the frame, a shorter one keeps it. */
+  sceneClassName?: string;
 }) {
   const last = chapters.length - 1;
   const frameRef = useRef<HTMLDivElement>(null);
+  const tabsRef = useRef<HTMLDivElement>(null);
   const reduced = useReducedMotion();
   const [active, setActive] = useState(last);
   const [mode, setMode] = useState<Mode>("ready");
@@ -92,9 +104,10 @@ export function ProductSizzle({
     { enabled: !reduced },
   );
 
-  // One timer per chapter; pausing keeps what is left of it.
+  // One timer per chapter; pausing keeps what is left of it. Turning reduced motion on
+  // mid-run stops the timer, so nothing advances on its own from then on.
   useEffect(() => {
-    if (mode !== "playing") return;
+    if (mode !== "playing" || reduced) return;
     const startedAt = Date.now();
     let fired = false;
     const timer = window.setTimeout(() => {
@@ -117,7 +130,18 @@ export function ProductSizzle({
       window.clearTimeout(timer);
       if (!fired) remaining.current = Math.max(0, remaining.current - (Date.now() - startedAt));
     };
-  }, [mode, turn, active, last, chapterMs, maxLoops]);
+  }, [mode, turn, active, last, chapterMs, maxLoops, reduced]);
+
+  // On a phone the chapter row scrolls sideways: keep the active pill in view as the run
+  // moves on, scrolling only the row (never the page).
+  useEffect(() => {
+    const row = tabsRef.current;
+    if (!row || row.scrollWidth <= row.clientWidth) return;
+    const pill = row.querySelector<HTMLElement>('[data-active="true"]');
+    if (!pill) return;
+    const left = pill.offsetLeft - (row.clientWidth - pill.offsetWidth) / 2;
+    if (typeof row.scrollTo === "function") row.scrollTo({ left, behavior: reduced ? "auto" : "smooth" });
+  }, [active, reduced]);
 
   const choose = (index: number) => {
     pausedByScroll.current = false;
@@ -130,7 +154,7 @@ export function ProductSizzle({
     restart(0, "playing");
   };
 
-  const running = mode === "playing" || mode === "paused";
+  const running = !reduced && (mode === "playing" || mode === "paused");
   const motion = !reduced && (running || mode === "chosen");
 
   let control: ReactNode = null;
@@ -183,10 +207,37 @@ export function ProductSizzle({
       data-paused={mode === "paused" ? "true" : "false"}
       data-mode={mode}
     >
+      <ProductFrame label={label} aside={control} className="fi-window-hero">
+        <FrameMedia video={video} onOpen={() => setMode("rest")}>
+          <div className={`relative flex flex-col ${sceneClassName}`}>
+            {chapters.map((chapter, i) => {
+              const on = i === active;
+              return (
+                <div
+                  key={on ? `${chapter.key}-${turn}` : chapter.key}
+                  id={`sizzle-${chapter.key}`}
+                  role="region"
+                  aria-label={chapter.label}
+                  aria-hidden={!on}
+                  inert={!on}
+                  data-active={on ? "true" : "false"}
+                  className={`fi-sizzle-scene flex flex-col [&>*]:flex-1 transition-opacity duration-500 motion-reduce:transition-none ${
+                    on ? "relative flex-1 opacity-100" : "pointer-events-none invisible absolute inset-x-0 top-0 opacity-0"
+                  }`}
+                >
+                  {chapter.scene}
+                </div>
+              );
+            })}
+          </div>
+        </FrameMedia>
+      </ProductFrame>
+      {/* One row of equal pills. A phone scrolls it sideways; it never wraps into a grid. */}
       <div
+        ref={tabsRef}
         role="group"
         aria-label="Chapters"
-        className="mx-auto mb-4 grid max-w-xl grid-cols-2 gap-1.5 rounded-2xl border border-border bg-surface-0/70 p-1.5 sm:flex sm:rounded-full"
+        className="-mx-4 mt-5 flex gap-2 overflow-x-auto px-4 pb-1 [mask-image:linear-gradient(to_right,transparent,black_1rem,black_calc(100%-1rem),transparent)] [scrollbar-width:none] sm:mx-auto sm:[mask-image:none] sm:max-w-2xl sm:justify-center sm:overflow-visible sm:px-0 [&::-webkit-scrollbar]:hidden"
       >
         {chapters.map((chapter, i) => {
           const on = i === active;
@@ -197,8 +248,9 @@ export function ProductSizzle({
               onClick={() => choose(i)}
               aria-pressed={on}
               aria-controls={`sizzle-${chapter.key}`}
-              className={`relative flex min-h-10 flex-1 items-center justify-center overflow-hidden rounded-full px-3 text-[13px] font-semibold transition-colors motion-reduce:transition-none ${
-                on ? "bg-ink text-on-ink" : "text-ink-soft hover:bg-surface-200"
+              data-active={on ? "true" : "false"}
+              className={`relative flex min-h-10 w-[8.25rem] shrink-0 items-center justify-center overflow-hidden whitespace-nowrap rounded-full border px-3 text-[13px] font-semibold transition-colors motion-reduce:transition-none sm:w-auto sm:flex-1 sm:basis-0 ${
+                on ? "border-ink bg-ink text-on-ink" : "border-border bg-surface-0 text-ink-soft hover:border-ink hover:text-ink"
               }`}
             >
               {chapter.label}
@@ -217,32 +269,7 @@ export function ProductSizzle({
           );
         })}
       </div>
-
-      <ProductFrame label={label} aside={control} className="fi-window-hero">
-        <FrameMedia video={video} onOpen={() => setMode("rest")}>
-          <div className="grid">
-            {chapters.map((chapter, i) => {
-              const on = i === active;
-              return (
-                <div
-                  key={on ? `${chapter.key}-${turn}` : chapter.key}
-                  id={`sizzle-${chapter.key}`}
-                  role="region"
-                  aria-label={chapter.label}
-                  aria-hidden={!on}
-                  inert={!on}
-                  data-active={on ? "true" : "false"}
-                  className={`fi-sizzle-scene flex flex-col [grid-area:1/1] [&>*]:flex-1 transition-opacity duration-500 motion-reduce:transition-none ${
-                    on ? "opacity-100" : "pointer-events-none invisible opacity-0"
-                  }`}
-                >
-                  {chapter.scene}
-                </div>
-              );
-            })}
-          </div>
-        </FrameMedia>
-      </ProductFrame>
+      {placeholder && !video?.src ? <FramePlaceholder caption={placeholder} className="mt-10 sm:mt-14" /> : null}
     </div>
   );
 }

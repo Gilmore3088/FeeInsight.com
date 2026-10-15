@@ -4,7 +4,8 @@ import { FrameMedia, type FrameVideo } from "@/components/marketing/frame-media"
 import { ProductFrame } from "@/components/marketing/product-frame";
 import { TrackLink } from "@/components/track-link";
 import { PRODUCT_NAME } from "@/lib/constants";
-import { FeeRowExhibit, MarketExhibit, WorkspaceExhibit } from "./landing-exhibits";
+import { MarketLadder } from "@/app/for-institutions/market-ladder";
+import { AskExhibit, FeeStackExhibit, MarketExhibit, SourcedFeesExhibit } from "./landing-exhibits";
 import { SECTION_INNER, SectionHeading, TEXT_LINK, type HomeData } from "./landing-shared";
 
 /**
@@ -53,7 +54,11 @@ function Pillar({
   );
 }
 
-/** Brief 06 §4.3 item 4: three pillars, each a heading, one line and one live exhibit. */
+/**
+ * Brief 06 §4.3 item 4: three pillars, each a heading, one line and one live exhibit, and
+ * each exhibit different: the sample bank's own fees with their source lines, its fee in
+ * every market around it (the ladder), and Hamilton answering from those figures.
+ */
 export function LandingPillars({ data }: { data: HomeData }) {
   if (!data.overdraft) return null;
   return (
@@ -61,22 +66,22 @@ export function LandingPillars({ data }: { data: HomeData }) {
       <div className={`${SECTION_INNER} space-y-20 py-16 sm:space-y-28 sm:py-24`}>
         <Pillar
           eyebrow="Every fee"
-          title="Your competitors' fees, from their own schedules"
-          line="Every fee keeps the document, page and date it came from."
+          title="Each fee, quoted from the bank's own schedule"
+          line="Every figure keeps the document and the date we read it."
           frameLabel={PRODUCT_NAME}
           video={PILLAR_VIDEOS.fee}
         >
-          <FeeRowExhibit data={data} />
+          {data.sample && data.sample.fees.length > 0 ? <SourcedFeesExhibit data={data} /> : <FeeStackExhibit data={data} />}
         </Pillar>
         <Pillar
           eyebrow="Every market"
-          title="Each fee in five markets at once"
-          line="Markets with too few institutions are marked thin and get no median."
-          frameLabel="Hamilton · Markets"
+          title="One fee against every market around it"
+          line="Local competitors, the state, peers and the nation on one axis."
+          frameLabel="Hamilton · My fees"
           video={PILLAR_VIDEOS.market}
           flip
         >
-          <MarketExhibit data={data} phoneRows={6} />
+          {data.ladder ? <MarketLadder data={data.ladder} bare /> : <MarketExhibit data={data} phoneRows={6} />}
         </Pillar>
         <Pillar
           eyebrow="One workspace"
@@ -105,7 +110,7 @@ export function LandingPillars({ data }: { data: HomeData }) {
             </p>
           }
         >
-          <WorkspaceExhibit data={data} />
+          <AskExhibit data={data} />
         </Pillar>
       </div>
     </section>

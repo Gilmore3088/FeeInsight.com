@@ -1,6 +1,8 @@
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
-import { decidePriorFee, HAMILTON_PUBLISH_STRATEGY, linesApartOnPage, listsBothPrices, qualifiedLines, namesShareReading, newerCopyPrintsLine, otherBalanceLine, publishedFeeName, publishNameHold, publishSkipReason, runHamiltonPublish, sentenceFragmentName, separateLines } from "./publish";
+import { CATALOG_DEPTH_LIVE_SQL, decidePriorFee, HAMILTON_PUBLISH_MIN_INSTITUTION_FEES, HAMILTON_PUBLISH_STRATEGY, linesApartOnPage, listsBothPrices, qualifiedLines, namesShareReading, newerCopyPrintsLine, otherBalanceLine, publishedFeeName, publishNameHold, publishSkipReason, runHamiltonPublish, sentenceFragmentName, separateLines } from "./publish";
 import { feePageKey } from "./page-key";
 
 type DbMock = ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
@@ -713,6 +715,25 @@ describe("Hamilton agentic publish", () => {
       expect(params).toEqual(expect.arrayContaining([HAMILTON_PUBLISH_STRATEGY.strategy, HAMILTON_PUBLISH_STRATEGY.version]));
     });
 
+    it("counts the 3 fees as the catalog does: live and not quarantined, plus rows not yet decided (#1072)", async () => {
+      const db = learningDb([verifiedFee]);
+
+      await runHamiltonPublish({ runId: 505, db: asPublishDb(db) });
+
+      const depthCall = db.unsafe.mock.calls.find((call) => String(call[0]).includes("institution_fee_depth")) as [string, unknown[]];
+      const [query, params] = depthCall;
+      // Live means what the view means.
+      expect(query).toContain("fp.rolled_back_at IS NULL AND fp.quarantined_at IS NULL");
+      // A pending row this rule version already rejected, or published and saw taken down, no
+      // longer counts: the same filter the selection uses.
+      expect(query).toContain("JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id");
+      expect(query).toContain("FROM pipeline_attempts pa");
+      expect(query).toContain("'verified:' || fv.fee_verified_id::text");
+      expect(params).toEqual(expect.arrayContaining([HAMILTON_PUBLISH_STRATEGY.strategy, HAMILTON_PUBLISH_STRATEGY.version]));
+      const select = String(db.unsafe.mock.calls[0][0]);
+      expect(select).toContain("AND fp.quarantined_at IS NULL");
+    });
+
     it("lets a row Darwin re-filed after a takedown publish again under its new category", async () => {
       const db = learningDb([verifiedFee]);
 
@@ -1044,5 +1065,29 @@ describe("glued cells at publish (run 3467, 9 Oct)", () => {
 describe("publishedFeeName keeps a line's own condition (107240, 9 Oct)", () => {
   it("does not take a repair that drops the balance", () => {
     expect(publishedFeeName("Minimum Balance Fee (if Balance is Below $7,500)", "minimum_balance")).toBe("Minimum Balance Fee (if Balance is Below $7,500)");
+  });
+});
+
+describe("one 3-fee count for publishing and the catalog view (#1072)", () => {
+  /** The newest migration that defines `published_fee_catalog`, as Supabase applies them in order. */
+  function latestCatalogView(): string {
+    const dir = join(process.cwd(), "supabase", "migrations");
+    const files = readdirSync(dir)
+      .filter((file) => file.endsWith(".sql"))
+      .sort()
+      .filter((file) => /CREATE (?:OR REPLACE )?VIEW (?:public\.)?published_fee_catalog\b/i.test(readFileSync(join(dir, file), "utf8")));
+    const text = readFileSync(join(dir, files[files.length - 1]), "utf8");
+    const start = text.search(/CREATE (?:OR REPLACE )?VIEW (?:public\.)?published_fee_catalog\b/i);
+    const end = text.indexOf(";", text.indexOf("HAVING", start));
+    return text.slice(start, end);
+  }
+
+  it("uses the publish minimum and the same live test as Hamilton's count", () => {
+    const view = latestCatalogView().replace(/\s+/g, " ");
+    expect(view).toContain(`HAVING count(DISTINCT deep.canonical_fee_key) >= ${HAMILTON_PUBLISH_MIN_INSTITUTION_FEES}`);
+    const depth = view.slice(view.indexOf("SELECT deep.institution_id"), view.indexOf("HAVING"));
+    for (const clause of CATALOG_DEPTH_LIVE_SQL("deep").split(" AND ")) expect(depth).toContain(clause);
+    // Any other condition on the view's count would split the two counts again.
+    expect(depth.match(/deep\.\w+/g)?.filter((column) => !["deep.institution_id", "deep.rolled_back_at", "deep.quarantined_at"].includes(column))).toEqual([]);
   });
 });

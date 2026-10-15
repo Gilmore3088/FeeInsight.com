@@ -4,14 +4,11 @@ export const dynamic = "force-dynamic";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { linkPreview } from "@/lib/link-preview";
-import { benchmarkBasis, COVERAGE_LABELS, getPublicSnapshot, type PublicStatsSummary } from "@/lib/public-stats";
+import { benchmarkBasis, getPublicSnapshot, type PublicStatsSummary } from "@/lib/public-stats";
 import type { FeeCategorySummary } from "@/lib/data-store/fees";
 import { getDisplayName } from "@/lib/fee-taxonomy";
 import { PRODUCT_NAME, SITE_NAME } from "@/lib/constants";
 import { PRO_TIERS, tierPriceLabel } from "@/lib/pro-tiers";
-import { getFeeCategoryDetailCached, getPeerIndexCached } from "@/lib/data-store/public-cached-reads";
-import type { IndexEntry } from "@/lib/data-store/fee-index";
-import type { MarketReport } from "@/lib/custom-report/report-data";
 import { WORKSPACE_SEAT_LIMIT } from "@/lib/hamilton/workspace-seats";
 import { loadSampleReport, sampleReportAvailable } from "@/lib/custom-report/sample-report";
 import { FeeRange, FeeRangeAxis, Logo } from "@/brand/components";
@@ -23,11 +20,10 @@ import { TrackLink } from "@/components/track-link";
 import { hasUnstatedAudience, UnstatedAudienceFootnote } from "@/components/unstated-audience";
 import { PRIMARY_CTA_NAV, PRO_PLANS_NAV } from "@/components/nav-items";
 import { ReportOfferSection, SampleExcerpt } from "./report-offer";
-import { buildMarketLadder, MarketLadder, type MarketLadderData } from "./market-ladder";
+import { loadSampleLadder, MarketLadder, type MarketLadderData } from "./market-ladder";
 import { TryAPricePanel } from "@/app/subscribe/try-a-price-panel";
 import { buildScenario, type AnalyzeScenario } from "@/app/subscribe/scenario";
-import { LandingSizzle } from "@/app/landing-sizzle";
-import { buildHomeData } from "@/app/landing-shared";
+import { SANS } from "@/app/landing-shared";
 
 const DEMO_HREF = "/contact?source=demo";
 /** The hero's live figure: the national overdraft benchmark (site v3 brief 03, Q9). */
@@ -47,7 +43,6 @@ export const metadata: Metadata = {
 };
 
 const EYEBROW = "text-[11px] font-bold uppercase tracking-[0.12em] text-ink-muted";
-const TEXT_LINK = "font-semibold text-ink underline underline-offset-2 hover:text-ink-soft";
 
 export default async function ForInstitutionsPage({
   searchParams,
@@ -55,34 +50,30 @@ export default async function ForInstitutionsPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const query = await searchParams;
-  const [snapshot, sampleLive, sample, overdraftDetail] = await Promise.all([
+  const [snapshot, sampleLive, sample] = await Promise.all([
     getPublicSnapshot(),
     sampleReportAvailable(),
     loadSampleReport().catch(() => null),
-    getFeeCategoryDetailCached("overdraft").catch((error: unknown) => {
-      console.error("[for-institutions] overdraft district read failed; district rows hidden", error);
-      return null;
-    }),
   ]);
   const { summary } = snapshot;
   const heroCategory = snapshot.categories.find((c) => c.fee_category === HERO_CATEGORY) ?? null;
   const liveSample = sampleLive ? sample : null;
-  const ladder = liveSample ? await sampleLadder(liveSample, snapshot.categories) : null;
+  const ladder = liveSample ? await loadSampleLadder(liveSample, snapshot.categories) : null;
   const scenario = buildScenario("Overdraft", heroCategory);
+  // Each view shows once here (growth OS re-walk R5): the ladder in the hero, Try a price in
+  // Hamilton, and the sample report's rows in the report offer. The homepage sizzle is not replayed.
 
   return (
     <div className="min-h-screen bg-paper">
       <ConsumerNav />
       <main id="main-content">
-        <Hero summary={summary} category={heroCategory} />
-        <ProofStrip summary={summary} />
-        <LandingSizzle
-          data={buildHomeData(summary, snapshot.categories, overdraftDetail?.by_fed_district)}
-        />
-        <EveryFeeSection sample={liveSample} />
-        <EveryMarketSection ladder={ladder} />
+        <Hero summary={summary} category={heroCategory} ladder={ladder} />
         <HamiltonSection scenario={scenario} />
-        <ReportOfferSection sampleLive={sampleLive} query={query} />
+        <ReportOfferSection
+          sampleLive={sampleLive}
+          query={query}
+          excerpt={liveSample ? <SampleExcerpt report={liveSample} /> : null}
+        />
         <ClosingBand />
       </main>
       <CustomerFooter sampleReport={sampleLive} />
@@ -91,32 +82,36 @@ export default async function ForInstitutionsPage({
   );
 }
 
-/** The sample's state and charter benchmarks for the market ladder; a failed read drops its row. */
-async function sampleLadder(sample: MarketReport, national: FeeCategorySummary[]): Promise<MarketLadderData | null> {
-  const { state_code, charter_type } = sample.data.subject;
-  const none: IndexEntry[] = [];
-  const [stateIndex, charterIndex] = await Promise.all([
-    state_code ? getPeerIndexCached({ state_code }).catch(() => none) : none,
-    charter_type ? getPeerIndexCached({ charter_type }).catch(() => none) : none,
-  ]);
-  return buildMarketLadder({ sample, stateIndex, charterIndex, national });
-}
-
 /** Hero: its own h1 on "bank fee benchmarking" (05 §6, growth OS review S5); CTAs per 03 section 4. */
-function Hero({ summary, category }: { summary: PublicStatsSummary; category: FeeCategorySummary | null }) {
+function Hero({
+  summary,
+  category,
+  ladder,
+}: {
+  summary: PublicStatsSummary;
+  category: FeeCategorySummary | null;
+  ladder: MarketLadderData | null;
+}) {
   return (
     <section className="border-b border-border">
-      <div className="mx-auto grid max-w-page gap-10 px-6 pb-14 pt-14 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)] lg:items-center lg:pt-20">
+      <div className="mx-auto grid max-w-page gap-8 px-4 pb-12 pt-8 sm:px-6 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)] lg:items-center lg:gap-12 lg:pb-16 lg:pt-14">
         <div>
           <p className={EYEBROW}>Bank fee benchmarking</p>
-          <h1 className="mt-4 text-[clamp(30px,5vw,44px)] font-extrabold leading-[1.1] tracking-[-0.025em] text-ink">
-            Benchmark every fee <span className="text-brick">against your competitors&apos; own schedules.</span>
+          {/* The homepage hero's display face: Geist 600, one colour, no trailing period. The size
+              follows the text column so no line holds a single word (measured with Geist from 320
+              to 1920px): it scales with a phone's width, steps down at lg where the column halves,
+              and steps back up at xl. */}
+          <h1
+            className="mt-4 text-[length:clamp(1.5rem,7.8vw,2rem)] !font-semibold leading-[1.04] !tracking-[-0.04em] text-ink sm:text-[3rem] lg:text-[2.25rem] xl:text-[3rem]"
+            style={SANS}
+          >
+            Benchmark every fee against your competitors&apos; own schedules
           </h1>
           <p className="mt-5 max-w-xl text-[17px] leading-relaxed text-ink-soft">
             Hamilton, the {SITE_NAME} Pro workspace, places each of your fees in your market, your state and the
             nation.
           </p>
-          <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center">
+          <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:mt-8">
             <Link
               href={PRIMARY_CTA_NAV.href}
               className="fi-btn fi-btn-primary justify-center"
@@ -134,7 +129,7 @@ function Hero({ summary, category }: { summary: PublicStatsSummary; category: Fe
           </div>
           <p className="mt-4 text-[13px] text-ink-muted">Free. Search any institution in the index.</p>
         </div>
-        <HeroFigure category={category} refreshedOn={summary.refreshedOn} />
+        {ladder ? <MarketLadder data={ladder} /> : <HeroFigure category={category} refreshedOn={summary.refreshedOn} />}
       </div>
     </section>
   );
@@ -184,32 +179,6 @@ function HeroFigure({ category, refreshedOn }: { category: FeeCategorySummary | 
   );
 }
 
-/** Proof strip: live counts under COVERAGE_LABELS (site v3 brief 08 B.6, 03 Pillar 1). */
-function ProofStrip({ summary }: { summary: PublicStatsSummary }) {
-  const items = [
-    { value: summary.institutionsLabel, label: COVERAGE_LABELS.institutions },
-    { value: summary.observationsLabel, label: COVERAGE_LABELS.observations },
-    { value: summary.categoriesLabel, label: COVERAGE_LABELS.categories },
-    { value: summary.statesLabel, label: "States" },
-  ];
-  return (
-    <section aria-label="Coverage" className="border-b border-border bg-surface-0">
-      <div className="mx-auto max-w-page px-6 py-8">
-        <dl className="grid grid-cols-2 gap-6 lg:grid-cols-4">
-          {items.map((item) => (
-            <div key={item.label}>
-              <dd className="font-mono text-[28px] font-semibold tabular-nums tracking-[-0.02em] text-ink">{item.value}</dd>
-              <dt className="mt-1 text-[13px] text-ink-muted">{item.label}</dt>
-            </div>
-          ))}
-        </dl>
-        <p className="mt-4 text-[12px] text-ink-muted">{summary.freshnessLabel}</p>
-      </div>
-    </section>
-  );
-}
-
-
 function PillarHeading({ eyebrow, title, id, line }: { eyebrow: string; title: string; id: string; line: string }) {
   return (
     <>
@@ -219,56 +188,6 @@ function PillarHeading({ eyebrow, title, id, line }: { eyebrow: string; title: s
       </h2>
       <p className="mt-4 max-w-md text-[15px] leading-relaxed text-ink-soft">{line}</p>
     </>
-  );
-}
-
-/** Pillar 1, Every fee: live rows from the sample report, each with the line it was read from. */
-function EveryFeeSection({ sample }: { sample: MarketReport | null }) {
-  if (!sample) return null;
-  return (
-    <section aria-labelledby="every-fee-heading" className="border-b border-border">
-      <div className="mx-auto grid max-w-page gap-10 px-6 py-14 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] lg:items-center">
-        <div>
-          <PillarHeading
-            eyebrow="Every fee"
-            title="Read from each bank's own fee schedule"
-            id="every-fee-heading"
-            line="Every figure keeps the document, page and date it came from."
-          />
-          <p className="mt-6 text-[14px]">
-            <Link href="/methodology" className={TEXT_LINK}>
-              How we read a fee schedule
-            </Link>
-          </p>
-        </div>
-        <SampleExcerpt report={sample} />
-      </div>
-    </section>
-  );
-}
-
-/** Pillar 2, Every market: one live fee in each market layer, in the Hamilton frame (03 Pillar 2). */
-function EveryMarketSection({ ladder }: { ladder: MarketLadderData | null }) {
-  if (!ladder) return null;
-  return (
-    <section aria-labelledby="every-market-heading" className="border-b border-border bg-surface-0">
-      <div className="mx-auto grid max-w-page gap-10 px-6 py-14 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] lg:items-center">
-        <div>
-          <PillarHeading
-            eyebrow="Every market"
-            title="One fee, every market around you"
-            id="every-market-heading"
-            line="See the same fee against local competitors, your state, your peers and the nation."
-          />
-          <p className="mt-6 text-[14px]">
-            <Link href="/research" className={TEXT_LINK}>
-              Market data by state and Fed district
-            </Link>
-          </p>
-        </div>
-        <MarketLadder data={ladder} />
-      </div>
-    </section>
   );
 }
 

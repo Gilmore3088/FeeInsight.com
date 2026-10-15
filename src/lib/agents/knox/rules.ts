@@ -606,23 +606,102 @@ export function joinWrappedProse(lines: string[]): string[] {
   return joined;
 }
 
-function candidateSegments(text: string): string[] {
+/**
+ * v69: a short line with no price that names a fee ("Monthly service fee:", "Wire Transfers",
+ * "Deposited Items Fees") heads the priced lines under it, for up to `HEADING_REACH_LINES`
+ * lines. Another short unpriced line ends it ("Certificates", "Account Options"), so a rate or
+ * account table is never read under the fee heading above it.
+ */
+const HEADING_REACH_LINES = 4;
+const FEE_FAMILY_HEADING = /\bwire(?:s|\s+transfers?)?\b/i;
+const MAX_HEADING_WORDS = 4;
+
+export function headingName(line: string): string | null | undefined {
+  if (line.includes("$") || PERCENT_PATTERN.test(line) || /\d/.test(line.replace(/[¹²³⁴⁵⁶⁷⁸⁹⁰]/g, ""))) return undefined;
+  const name = normalizeSegment(line.replace(/[¹²³⁴⁵⁶⁷⁸⁹⁰]/g, ""));
+  const words = name.split(" ").filter(Boolean);
+  if (words.length === 0 || words.length > MAX_HEADING_WORDS) return undefined;
+  if (LABEL_SENTENCE.test(name) || !/^[A-Z]/.test(name)) return undefined;
+  // One fee's own row with its price in another column ("Dormant Account Processing Fee") is no
+  // section heading; "Monthly service fee:" with its colon, or "Deposited Items Fees", is.
+  if (/\b(?:fee|charge)\b/i.test(name) && !/:\s*$/.test(line)) return null;
+  // "Wire Transfers" names no fee alone until a row under it gives the direction.
+  return classifyPatternKey(name) === null && !FEE_FAMILY_HEADING.test(name) ? null : name;
+}
+
+const GLUED_HEADING_AFTER_PRICE = /\$\s?\d[\d,]*(?:\.\d{2})?[^$|]*?\b((?:[A-Z][a-z']+\s+){1,4}[A-Z][a-z']+)\s*$/;
+
+interface HeadedSegment {
+  segment: string;
+  /** v69: the fee heading above the segment's line, when one is in reach, and the heading's line. */
+  heading: string | null;
+  headingAt: number | null;
+}
+
+function candidateSegments(text: string): HeadedSegment[] {
   const seen = new Set<string>();
-  const segments: string[] = [];
+  const segments: HeadedSegment[] = [];
   const lines = joinWrappedProse(joinWrappedLeaderNames(text.split(/\n+/).map((line) => line.replace(/\s+/g, " ").trim())));
-  for (const rawLine of lines) {
+  let heading: { name: string; at: number } | null = null;
+  for (const [index, rawLine] of lines.entries()) {
     const line = rawLine.replace(/\s+/g, " ").trim();
+    const asHeading = headingName(line);
+    if (asHeading !== undefined) heading = asHeading ? { name: asHeading, at: index } : null;
     if (!line.includes("$") && !PERCENT_PATTERN.test(line) && !hasZeroCell(line)) continue;
+    const inReach = heading && index - heading.at <= HEADING_REACH_LINES ? heading : null;
+    // A next section's heading glued after a row's price ("$0.50 ea. in excess of 10 Night Deposit
+    // Bag", Commerce Bank) heads the lines after it.
+    const glued = line.match(GLUED_HEADING_AFTER_PRICE)?.[1];
+    if (glued) heading = headingName(glued) ? { name: headingName(glued) as string, at: index } : null;
     const parts = line.length > MAX_SEGMENT_CHARS ? longLineParts(line) : [line];
     for (const part of parts) {
       const segment = part.trim();
       if (segment.length < MIN_SEGMENT_CHARS || segment.length > MAX_SEGMENT_CHARS || seen.has(segment)) continue;
       seen.add(segment);
-      segments.push(segment);
+      segments.push({ segment, heading: inReach?.name ?? null, headingAt: inReach?.at ?? null });
       if (segments.length >= MAX_SEGMENTS_PER_DOCUMENT) return segments;
     }
   }
   return segments;
+}
+
+/**
+ * v69: a priced line no rule names, read again under the fee heading above it ("Monthly service
+ * fee:" / "$12 or waived"; "Wire Transfers" / "Incoming - International | $20"). Only a short
+ * label or price line, never a sentence, a rate or a figure a non-fee guard names, and only a
+ * read that names a fee and passes Darwin's checks; the line otherwise stays dropped.
+ */
+const MAX_HEADED_LINE_WORDS = 10;
+const MAX_HEADED_LABEL_WORDS = 4;
+
+export function readUnderHeading(segment: string, heading: string): ExtractedFeeCandidate[] {
+  const line = normalizeSegment(segment);
+  const amounts = amountsIn(line);
+  if (amounts.length !== 1 || line.split(" ").length > MAX_HEADED_LINE_WORDS || PERCENT_PATTERN.test(line)) return [];
+  const label = normalizeSegment(line.slice(0, amounts[0].start).replace(/(?:\.{2,}|…)[.…]*/g, " "));
+  const after = line.slice(amounts[0].end).replace(/(?:\.{2,}|…)[.…]*/g, " ");
+  // A sentence, a long label of its own, or another column after the price ("| $5.00 | INSTANT
+  // PAYMENTS") is not a row of this heading's table.
+  if (LABEL_SENTENCE.test(`${label} ${after}`) || label.split(" ").filter(Boolean).length > MAX_HEADED_LABEL_WORDS) return [];
+  // A label with its own colon, or a title of three or more capitalized words ("Picture Check
+  // Card:", "RBD Scanner Replacement"), is another fee's row, not a row of this heading.
+  if (/:\s*$/.test(line.slice(0, amounts[0].start).replace(/[\s|]+$/, ""))) return [];
+  if ((label.replace(/\([^)]*\)/g, " ").match(/\b[A-Z][\w'’&/-]*/g) ?? []).length > 2) return [];
+  if (after.includes(CELL_SEPARATOR) && /[a-z]{3,}/i.test(after.slice(after.indexOf(CELL_SEPARATOR)))) return [];
+  // Under one fee's own heading ("Monthly service fee:") the line only qualifies its price ("$12
+  // or waived", "$15 per item"); a capitalized label there is another fee's row in a second column.
+  if (/\b(?:fee|charge)\b/i.test(heading) && /[A-Z]/.test(label)) return [];
+  // A label that names a fee of its own ("Picture Check Card:", "Same-Day ACH (per item)") is
+  // that fee's row in a column beside the heading, not a row of it.
+  const own = label ? classifyPatternKey(`${label} fee`) ?? classifyPatternKey(label) : null;
+  // Named as the table pass names a row under its heading ("Return item: Consumer account").
+  const title = heading.replace(/\s*:\s*$/, "");
+  return extractFromSegment(`${heading} ${line}`).candidates
+    .map((candidate) => ({ ...candidate, feeName: label ? `${title}: ${label}` : title }))
+    .filter((candidate) =>
+      (own === null || own === classifyPatternKey(`${heading} ${label}`)) &&
+      passesDarwinChecks(candidate.canonicalHint, candidate.feeName, candidate.amount),
+    );
 }
 
 /** The FEE_PATTERNS key a fee name matches, before mapping to its canonical key. */
@@ -1801,8 +1880,23 @@ export function extractCandidatesFromText(input: string): ExtractionRulesResult 
     if (held.shape === "unclassified") unclassified += 1;
     result.held.push(held);
   };
-  for (const segment of candidateSegments(text)) {
-    const found = extractFromSegment(segment);
+  // v69: a heading whose rows read as another kind of fee is a column beside a second table
+  // ("Non-Ameris Bank ATM Usage:" over "ACH File Fee | $15.00"), so it names none of the rows under it.
+  const crossedHeadings = new Set<number>();
+  for (const { segment, heading, headingAt } of candidateSegments(text)) {
+    let found = extractFromSegment(segment);
+    const headingKey = heading ? classifyPatternKey(heading) : null;
+    // A row that names its own fee and no category ("ACH File Fee (per file) | $15.00") crosses it too.
+    const readKinds = [...found.candidates, ...found.held].map((read) => read.canonicalHint).filter(Boolean);
+    const ownFeeRow = found.held.some((read) => read.canonicalHint == null && /\b(?:fee|charge)s?\b/i.test(read.feeName));
+    if (headingAt != null && (ownFeeRow || (headingKey && readKinds.some((kind) => kind !== classifyFeeText(heading as string))))) {
+      crossedHeadings.add(headingAt);
+    }
+    // v69: a line dropped for naming no fee is read under the fee heading above it.
+    if (heading && headingAt != null && !crossedHeadings.has(headingAt) && found.candidates.length === 0 && found.held.length === 0 && (found.tableHeld?.length || found.dropped?.no_fee_word_not_table_row)) {
+      const headed = readUnderHeading(segment, heading);
+      if (headed.length > 0) found = { candidates: headed, held: [] };
+    }
     for (const candidate of found.candidates) {
       const key = `fee:${candidate.canonicalHint}:${candidate.feeName.toLowerCase()}:${candidate.amount}`;
       if (seen.has(key) || result.candidates.length >= MAX_FEES_PER_DOCUMENT) continue;

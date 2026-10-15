@@ -2,20 +2,22 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { Activity, Bookmark, Calculator, ChartNoAxesColumnIncreasing, FileText, Menu, MessageCircle, Search, Settings, X } from "lucide-react";
+import { Activity, Bookmark, Calculator, ChartNoAxesColumnIncreasing, FileText, Landmark, Menu, MessageCircle, Search, Settings, X } from "lucide-react";
 import { HAMILTON_WORKSPACE_NAV, isWorkspaceNavActive } from "@/lib/hamilton/navigation";
 import { NavAccount } from "@/components/nav-account";
 import { useHamiltonNavigationHref } from "./hamilton-navigation-context";
 
-const icons = { Activity, Bookmark, Calculator, ChartNoAxesColumnIncreasing, FileText, MessageCircle, Search, Settings };
+const icons = { Activity, Bookmark, Calculator, ChartNoAxesColumnIncreasing, FileText, Landmark, MessageCircle, Search, Settings };
 
 /**
  * The workspace's left navigation and institution bar, from #1011 (James's Oct 11 unified
  * workspace). One sidebar serves desktop and, behind the menu button, phones. The signed-in
  * institution and the research subject are shown separately.
  */
-export function WorkspaceNavigation({ pathname, isAdmin, accountLabel, researchLabel }: {
-  pathname: string; isAdmin: boolean; accountLabel: string; researchLabel: string;
+export function WorkspaceNavigation({ pathname, isAdmin, accountLabel, researchLabel, homeName = null }: {
+  pathname: string; isAdmin: boolean; accountLabel: string; researchLabel: string | null;
+  /** The reader's own institution, when their account is linked to exactly one. */
+  homeName?: string | null;
 }) {
   const [open, setOpen] = useState(false);
   const hrefFor = useHamiltonNavigationHref();
@@ -44,7 +46,7 @@ export function WorkspaceNavigation({ pathname, isAdmin, accountLabel, researchL
         <div><span className="workspace-muted">Your institution: </span><strong>{accountLabel}</strong></div>
         <NavAccount />
       </header>
-      <div className="workspace-research-context print:hidden"><span>Researching: {researchLabel}</span><Link href={hrefFor("/pro/settings")}>Change context</Link></div>
+      {researchLabel ? <div className="workspace-research-context print:hidden"><span>Looking at: {researchLabel}</span>{homeName && !researchLabel.endsWith(" market") ? <Link href="/pro/hamilton">Back to {homeName}</Link> : null}</div> : null}
     </section>
   </>;
 }

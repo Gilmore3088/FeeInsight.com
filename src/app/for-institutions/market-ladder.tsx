@@ -2,8 +2,11 @@ import { FeeRange, FeeRangeAxis } from "@/brand/components";
 import { HAMILTON_MODES } from "@/lib/constants";
 import type { IndexEntry } from "@/lib/data-store/fee-index";
 import type { FeeCategorySummary } from "@/lib/data-store/fees";
+import { getDisplayName } from "@/lib/fee-taxonomy";
+import { getPeerIndexCached } from "@/lib/data-store/public-cached-reads";
 import type { MarketReport } from "@/lib/custom-report/report-data";
 import { STATE_NAMES } from "@/lib/us-states";
+import { money } from "@/app/landing-shared";
 
 /** The fees the ladder can show, in order of preference: the first the sample publishes and can compare. */
 const LADDER_KEYS = ["overdraft", "monthly_maintenance", "nsf"] as const;
@@ -20,6 +23,9 @@ export interface LadderRow {
 
 export interface MarketLadderData {
   institutionName: string;
+  /** The fee's taxonomy key, e.g. "overdraft". */
+  feeKey: string;
+  /** Its display name from the fee taxonomy, the same name every exhibit uses. */
   feeLabel: string;
   value: number;
   rows: LadderRow[];
@@ -43,6 +49,7 @@ function indexRow(label: string, entry: Spread | null | undefined): LadderRow | 
     institutions: entry.institution_count,
   };
 }
+
 
 const CHARTER_PEERS: Record<string, string> = { bank: "Banks nationwide", credit_union: "Credit unions nationwide" };
 
@@ -86,22 +93,47 @@ export function buildMarketLadder({
     indexRow("The nation", national.find((c) => c.fee_category === line.key)),
   ].filter((row): row is LadderRow => row !== null);
   if (rows.length < 2) return null;
-  return { institutionName: subject.institution_name, feeLabel: line.label, value: line.own.amount, rows };
+  return {
+    institutionName: subject.institution_name,
+    feeKey: line.key,
+    feeLabel: getDisplayName(line.key),
+    value: line.own.amount,
+    rows,
+  };
 }
 
-/** The Hamilton frame, My fees: the ladder drawn with the house box plot, every row on one axis. */
-export function MarketLadder({ data }: { data: MarketLadderData }) {
+/**
+ * The live sample's ladder: its state and charter benchmarks read beside the report. A failed
+ * read drops that row; null when the sample has no comparable headline fee.
+ */
+export async function loadSampleLadder(sample: MarketReport, national: FeeCategorySummary[]): Promise<MarketLadderData | null> {
+  const { state_code, charter_type } = sample.data.subject;
+  const none: IndexEntry[] = [];
+  const [stateIndex, charterIndex] = await Promise.all([
+    state_code ? getPeerIndexCached({ state_code }).catch(() => none) : none,
+    charter_type ? getPeerIndexCached({ charter_type }).catch(() => none) : none,
+  ]);
+  return buildMarketLadder({ sample, stateIndex, charterIndex, national });
+}
+
+/**
+ * The Hamilton frame, My fees: the ladder drawn with the house box plot, every row on one axis.
+ * `bare` drops its own window, for a page that already draws one around it.
+ */
+export function MarketLadder({ data, bare = false }: { data: MarketLadderData; bare?: boolean }) {
   const top = Math.max(10, Math.ceil(Math.max(data.value, ...data.rows.map((r) => r.max)) / 10) * 10);
   const domain: [number, number] = [0, top];
   return (
-    <figure className="overflow-hidden rounded-xl border border-border bg-surface-0 shadow-fi-1">
-      <figcaption className="flex items-center justify-between gap-3 border-b border-border px-4 py-2.5">
-        <span className="flex items-center gap-2 text-sm font-semibold text-ink">
-          <span aria-hidden className="h-2 w-2 rounded-full bg-brick" />
-          Hamilton
-        </span>
-        <span className="text-xs text-ink-muted">Illustration, live figures</span>
-      </figcaption>
+    <figure className={bare ? "min-w-0" : "overflow-hidden rounded-xl border border-border bg-surface-0 shadow-fi-1"}>
+      {bare ? null : (
+        <figcaption className="flex items-center justify-between gap-3 border-b border-border px-4 py-2.5">
+          <span className="flex items-center gap-2 text-sm font-semibold text-ink">
+            <span aria-hidden className="h-2 w-2 rounded-full bg-ink" />
+            Hamilton
+          </span>
+          <span className="text-xs text-ink-muted">Illustration, live figures</span>
+        </figcaption>
+      )}
       <div role="presentation" className="flex gap-1 overflow-x-auto border-b border-border px-3 pt-2 text-[13px]">
         {HAMILTON_MODES.map((mode) => (
           <span
@@ -116,14 +148,15 @@ export function MarketLadder({ data }: { data: MarketLadderData }) {
           </span>
         ))}
       </div>
-      <div className="px-4 py-4 sm:px-5">
-        <p className="flex items-baseline justify-between gap-3 text-[15px] font-semibold text-ink">
-          <span>
-            {data.institutionName}: {data.feeLabel.toLowerCase()}
+      <div className="px-4 py-4 sm:px-6 sm:py-5">
+        <p className="text-[12px] font-semibold uppercase tracking-[0.12em] text-ink-muted">{data.feeLabel}</p>
+        <p className="max-w-[none] mt-1 flex items-baseline justify-between gap-3">
+          <span className="min-w-0 truncate text-[17px] font-semibold text-ink sm:text-[19px]">{data.institutionName}</span>
+          <span className="shrink-0 font-mono text-[26px] font-semibold tabular-nums tracking-tight text-ink sm:text-[30px]">
+            {money(data.value)}
           </span>
-          <span className="shrink-0 text-[11px] font-bold uppercase tracking-[0.12em] text-ink-muted">Its fee</span>
         </p>
-        <div className="mt-3 space-y-1">
+        <div className="fi-range-stack mt-3 space-y-1">
           {data.rows.map((row) => (
             <FeeRange
               key={row.label}
@@ -135,13 +168,14 @@ export function MarketLadder({ data }: { data: MarketLadderData }) {
               max={row.max}
               value={data.value}
               domain={domain}
+              figure="median"
             />
           ))}
           <FeeRangeAxis ticks={[0, top / 2, top]} domain={domain} />
         </div>
       </div>
-      <p className="border-t border-border px-4 py-2.5 text-[12px] text-ink-muted sm:px-5">
-        Dot: its own published fee. Box: the middle half of each market.
+      <p className="max-w-[none] border-t border-border px-4 py-2.5 text-[12px] text-ink-muted sm:px-6">
+        Dot: its own published fee. Box: the middle half of each market. Right: each market&apos;s median.
       </p>
     </figure>
   );

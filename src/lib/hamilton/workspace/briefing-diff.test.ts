@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { briefingQuarter, diffBriefings } from "./briefing-diff";
+import { briefingQuarter, diffBriefings, nextQuarter, quarterLabel } from "./briefing-diff";
 import type { Briefing, FeePositionRow, Observation } from "./types";
 
 function row(feeCategory: string, current: number, median: number | null = 30): FeePositionRow {
@@ -47,11 +47,24 @@ describe("diffBriefings", () => {
       { quarter: "2026-Q4", briefing: briefing({ positions: [row("overdraft", 36, 29), row("nsf", 25)] }) },
     );
     expect(diff.changes.map((c) => c.text)).toEqual([
-      "Overdraft: your published price moved from $30.00 to $36.00 ($6.00 higher).",
+      "Overdraft: its published price moved from $30.00 to $36.00 ($6.00 higher).",
       "Overdraft: the peer median moved from $30.00 to $29.00 ($1.00 lower; 40 peers).",
-      "Overdraft: your price is now above the middle half of peers; last quarter it was within the middle half of peers.",
+      "Overdraft: its price is now above the middle half of peers; last quarter it was within the middle half of peers.",
     ]);
     expect(diff).toMatchObject({ fromQuarter: "2026-Q3", toQuarter: "2026-Q4" });
+  });
+
+  it("compares no peer figures across a changed peer group, and says the group changed", () => {
+    const widened = { ...row("overdraft", 30, 25), peerLabel: "US banks" };
+    const diff = diffBriefings(
+      { quarter: "2026-Q3", briefing: briefing({ peerLabel: "US banks", positions: [widened] }) },
+      { quarter: "2026-Q4", briefing: briefing({ positions: [row("overdraft", 36, 40)] }) },
+    );
+    expect(diff.changes.map((c) => c.text)).toEqual([
+      "Overdraft: its published price moved from $30.00 to $36.00 ($6.00 higher).",
+      "Overdraft: now compared with Texas banks (last quarter US banks), so its peer figures are not compared.",
+    ]);
+    expect(diff).toMatchObject({ fromPeerLabel: "US banks", toPeerLabel: "Texas banks" });
   });
 
   it("lists fees added and removed, and new and dropped observations", () => {
@@ -110,5 +123,13 @@ describe("diffBriefings", () => {
     expect(diff.changes).toEqual([
       expect.objectContaining({ kind: "income", text: expect.stringContaining("4.2% lower") }),
     ]);
+  });
+});
+
+describe("quarter labels (#1083)", () => {
+  it("writes a stored quarter as a reader does and finds the next one", () => {
+    expect(quarterLabel("2026-Q4")).toBe("Q4 2026");
+    expect(nextQuarter("2026-Q4")).toBe("2027-Q1");
+    expect(nextQuarter("2027-Q2")).toBe("2027-Q3");
   });
 });

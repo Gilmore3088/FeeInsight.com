@@ -2,7 +2,7 @@ import { withApiRoutePolicy } from "@/lib/api-hardening/route-wrapper";
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser, hasPermission } from "@/lib/auth";
 import { matchesConfiguredCronSecret } from "@/lib/cron-secret";
-import { executeAgentRun, startAgentRun } from "@/lib/agents/run-store";
+import { executeAgentRun, oldestQueuedRunBySource, startAgentRun } from "@/lib/agents/run-store";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -27,6 +27,13 @@ async function handleGET(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const perGroup = Math.min(5, Math.max(1, Number(request.nextUrl.searchParams.get("per_group")) || 1));
+  // The tick never starts this step (run-store TICK_EXCLUDED_STEP_KEYS), so an eval run left
+  // queued (a killed attempt the reaper re-queued, from any hour) runs here first.
+  const waiting = await oldestQueuedRunBySource("hamilton.answer_eval");
+  if (waiting != null) {
+    const result = await executeAgentRun(waiting, { maxSteps: 1 });
+    return NextResponse.json({ ok: true, runId: waiting, reused: true, result });
+  }
   const stamp = new Date().toISOString().slice(0, 13);
   const started = await startAgentRun({
     agent: "hamilton",
@@ -38,7 +45,7 @@ async function handleGET(request: NextRequest) {
     idempotencyKey: `hamilton:answer-eval:${stamp}:${perGroup}`,
     steps: [{ key: "hamilton-answer-eval", agent: "hamilton" as const, title: "Ask Hamilton the quality-bar questions for real institutions" }],
   });
-  const result = started.reused
+  const result = started.reused && started.run.status !== "queued"
     ? { runId: started.run.id, status: started.run.status, message: "This eval run is already in progress." }
     : await executeAgentRun(started.run.id, { maxSteps: 1 });
   return NextResponse.json({ ok: true, runId: started.run.id, reused: started.reused, result });

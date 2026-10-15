@@ -278,7 +278,8 @@ export interface ReportSource {
 
 export interface ReportSummaryResponse {
   /** A board brief made from one saved answer: its findings stay frozen; only the title and team note change. */
-  boardBrief?: { sourceAnalysisId: string; teamNote: string; includeEvidence: boolean; factEvidence?: import("./evidence-contract").HamiltonEvidenceBundle };
+  /** A board brief's origin: a saved Ask answer (`sourceAnalysisId`) or a market view (`sourceResearchHref`). */
+  boardBrief?: { sourceAnalysisId?: string; sourceResearchHref?: string; teamNote: string; includeEvidence: boolean; factEvidence?: import("./evidence-contract").HamiltonEvidenceBundle };
   title: string;
   /** Historical reference identity captured on the authenticated generation request. */
   identityContext?: HamiltonIdentitySnapshot;

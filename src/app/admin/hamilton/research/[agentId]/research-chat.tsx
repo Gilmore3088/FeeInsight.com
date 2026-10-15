@@ -1,6 +1,7 @@
 "use client";
 
 import { useChat } from "@ai-sdk/react";
+import { MESSAGE_TOO_LONG_ERROR, TOO_MANY_MESSAGES_ERROR } from "@/lib/hamilton/conversation-context";
 import { DefaultChatTransport } from "ai";
 import { useState, useRef, useEffect, useTransition } from "react";
 import Link from "next/link";
@@ -55,6 +56,9 @@ export function ResearchChat({
         setError("AI service temporarily unavailable. Daily cost limit may have been reached.");
       } else if (msg.includes("401") || msg.includes("403")) {
         setError("Authentication error. Please refresh the page.");
+      } else if (msg.includes(TOO_MANY_MESSAGES_ERROR) || msg.includes(MESSAGE_TOO_LONG_ERROR)) {
+        // The route's own bound (#1357): say which one, so the admin knows to start a new chat.
+        setError(msg.includes(TOO_MANY_MESSAGES_ERROR) ? TOO_MANY_MESSAGES_ERROR : MESSAGE_TOO_LONG_ERROR);
       } else {
         setError("Something went wrong. Please try again.");
       }
@@ -235,7 +239,8 @@ export function ResearchChat({
                           const prompt = t.params
                             ? t.prompt.replace(/\{(\w+)\}/g, (_, key) => {
                                 const param = t.params?.find((p) => p.name === key);
-                                const val = param ? window.prompt(param.placeholder) : null;
+                                // A template value is a short label (a tier, a state); cap it (#1357).
+                                const val = param ? window.prompt(param.placeholder)?.trim().slice(0, 100) : null;
                                 return val || `[${key}]`;
                               })
                             : t.prompt;

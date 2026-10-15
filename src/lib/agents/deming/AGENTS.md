@@ -43,7 +43,7 @@ It runs as Atlas steps (agent `atlas`); it is deterministic and makes no model c
   (applies after 60 days of inactivity)" (`nameQuality`), the fee line ($0 rows must be priced lines) and the name all
   hold. A fee with no stored text is unknown, never right or wrong. Below
   `FRESH_AUDIT_MIN_SCORABLE` scorable fees there is no percentage. The audit itself only reads.
-- This is the accuracy measure `CLAUDE.md` defines. The target is 95%, averaged over a week.
+- This is the accuracy measure `CLAUDE.md` defines. The target is 99.5% (James, Oct 15; `ACCURACY_TARGET` in `src/lib/accuracy-target.ts`), averaged over a week.
 - The step's detail (counts per check, up to 50 misses, the seed and sample ids) is in its
   `step.finished` event. `goal-scorecard.ts` pools the last 7 days of audits into the scorecard's
   accuracy: right ÷ scorable, a 95% Wilson range (about ±3–4 points at 200 fees), misses per check,

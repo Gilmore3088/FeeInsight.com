@@ -398,7 +398,8 @@ describe("Knox agentic extraction", () => {
       const result = await runKnoxExtract({ runId: 110, stepId: 12, db: asExtractDb(db) });
 
       expect(result.results[0].candidates.map((fee) => [fee.feeName, fee.amount, fee.canonicalHint, fee.strategy])).toEqual([
-        ["Stop Payment", 30, "stop_payment", "extract.table"],
+        // v69: the rules pass reads a price line under its fee heading before the table pass does.
+        ["Stop Payment", 30, "stop_payment", "extract.rules"],
         ["Wire Transfers: Incoming Domestic", 15, "wire_domestic_incoming", "extract.table"],
       ]);
       const strategies = attemptValues(db).map((values) => values[3]);
@@ -418,7 +419,8 @@ describe("Knox agentic extraction", () => {
       const insertFlags = db.mock.calls
         .filter((call) => templateText(call[0]).includes("INSERT INTO raw_fee_observations"))
         .map((call) => String(call[11]));
-      expect(insertFlags[0]).toContain("knox_specialist:extract.table");
+      // The wire row is the table pass's own read.
+      expect(insertFlags[1]).toContain("knox_specialist:extract.table");
     });
 
     it("flags a yield far below the institution's usual fee count as low_yield", async () => {

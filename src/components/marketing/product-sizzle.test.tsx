@@ -2,7 +2,7 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CHAPTER_MS, MAX_LOOPS, ProductSizzle } from "./product-sizzle";
-import { FrameMedia } from "./frame-media";
+import { FrameMedia, FramePlaceholder } from "./frame-media";
 
 function stubReducedMotion(reduced: boolean) {
   vi.stubGlobal("matchMedia", (query: string) => ({
@@ -62,6 +62,26 @@ describe("product sizzle", () => {
     expect(frame().dataset.motion).toBe("off");
   });
 
+  it("stops advancing when reduced motion is turned on mid-run", () => {
+    let reduced = false;
+    const listeners = new Set<() => void>();
+    vi.stubGlobal("matchMedia", (query: string) => ({
+      get matches() {
+        return reduced && query.includes("reduce");
+      },
+      addEventListener: (_: string, fn: () => void) => listeners.add(fn),
+      removeEventListener: (_: string, fn: () => void) => listeners.delete(fn),
+    }));
+    renderSizzle();
+    tick(CHAPTER_MS);
+    expect(shown()).toBe("sizzle-two");
+    reduced = true;
+    act(() => listeners.forEach((fn) => fn()));
+    expect(frame().dataset.motion).toBe("off");
+    tick(CHAPTER_MS * 5);
+    expect(shown()).toBe("sizzle-two");
+  });
+
   it("jumps to a chapter tab and stops the run", () => {
     renderSizzle();
     fireEvent.click(screen.getByRole("button", { name: "THREE" }));
@@ -91,5 +111,45 @@ describe("product sizzle", () => {
     rerender(<FrameMedia video={{ src: "/tour.mp4", label: "Watch the tour" }}><p>live</p></FrameMedia>);
     fireEvent.click(screen.getByRole("button", { name: "Watch the tour" }));
     expect(document.querySelector("video")?.getAttribute("src")).toBe("/tour.mp4");
+  });
+
+  it("shows a still tour placeholder that is not a control", () => {
+    render(<FramePlaceholder caption="Product tour · coming soon" />);
+    expect(screen.getByText("Product tour · coming soon")).toBeTruthy();
+    expect(screen.queryByRole("button")).toBeNull();
+    const block = document.querySelector("[data-video-placeholder]");
+    expect(block?.className).toContain("aspect-video");
+    expect(block?.className).toContain("w-full");
+    expect(block?.getAttribute("role")).toBeNull();
+  });
+
+  it("lays the chapter tabs out as one row of equal pills", () => {
+    renderSizzle();
+    const row = screen.getByRole("group", { name: "Chapters" });
+    expect(row.className).toContain("flex");
+    expect(row.className).not.toContain("grid");
+    const pills = screen.getAllByRole("button", { name: /^(ONE|TWO|THREE|FOUR)$/ });
+    expect(pills).toHaveLength(4);
+    for (const pill of pills) expect(pill.className).toContain("w-[8.25rem]");
+    expect(pills.filter((p) => p.getAttribute("aria-pressed") === "true")).toHaveLength(1);
+  });
+
+  it("puts the placeholder in its own band under the chapter tabs until a clip exists, then only the real button", () => {
+    const { rerender } = render(<ProductSizzle label="Hamilton" chapters={CHAPTERS} placeholder="Product tour · coming soon" />);
+    expect(document.querySelectorAll("[data-video-placeholder]").length).toBe(1);
+    const row = screen.getByRole("group", { name: "Chapters" });
+    expect(row.nextElementSibling?.hasAttribute("data-video-placeholder")).toBe(true);
+    expect(row.contains(document.querySelector("[data-video-placeholder]"))).toBe(false);
+    expect(screen.queryByRole("button", { name: /coming soon/ })).toBeNull();
+    rerender(
+      <ProductSizzle
+        label="Hamilton"
+        chapters={CHAPTERS}
+        placeholder="Product tour · coming soon"
+        video={{ src: "/tour.mp4", label: "Watch the tour" }}
+      />,
+    );
+    expect(document.querySelector("[data-video-placeholder]")).toBeNull();
+    expect(screen.getByRole("button", { name: "Watch the tour" })).toBeTruthy();
   });
 });

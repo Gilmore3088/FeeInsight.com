@@ -475,6 +475,19 @@ v65 (rules 65, Oct 9, customer audience):
   cannot become two audiences, so the document's re-read writes them. Pinnacle (47) heads
   `KNOX_PRIORITY_REREAD_IDS` for that re-read.
 
+Stored excerpt, #1394 (Oct 15, no version change, so no document is re-read for it): the
+`excerpt="..."` Knox stores with an extracted fee holds only the fee's own cells of a two-column
+line (`own-cells.ts`): the cell at its price that names it best, the price-less label cells before
+it, and the period or condition cells after it. West Shore Bank's $40 outgoing international wire
+was stored with the zipper-bag cell beside it. A tie, or no cell at the price, keeps the whole line;
+held and rate rows, and the audience read, still use the whole line. Rows stored earlier keep the
+whole line.
+
+Rules 65, subordination (Oct 15, no version change): Knox reads a subordination fee as
+`legal_process` (James, Oct 15, reversing Oct 8; `fee-taxonomy.ts`). Hamilton's rules re-check
+counts that read as reproducing a live subordination still filed as `other_lending_fee` until the
+fold's switched re-file moves it, so no live fee comes down for the change.
+
 Rules 65, #1291 re-file check (Oct 14, no version change): three reads the re-file restore's
 hand check found wrong, from their real lines.
 - "Maximum Daily OD/NSF Fees $210 per day" is the overdraft daily cap, not a continuous
@@ -487,6 +500,19 @@ hand check found wrong, from their real lines.
 - A bare "Overdrafts" priced per transfer is the share transfer that covers them ("Share
   Transfer for\nOverdrafts - $2.00 per transfer", raw 112570). A bare "Overdrafts" priced per
   item is still the overdraft fee.
+
+v69 (#1102, Oct 15): a price line with no name of its own takes its name from the heading above it.
+- A heading is a short line (up to four words, capitalized, no price or digit) that names a fee
+  ("Monthly service fee:") or the wire family ("Wire Transfers"). A singular "Fee" or "Charge"
+  heading counts only with a colon. It reaches four lines down, and the next priced line's glued
+  heading ("... $5.00 Stop Payments") replaces it.
+- The line under it is read only when nothing else read or held it, it has one price, ten words or
+  fewer, no rate, no sentence, no second labelled column, a label of four words or fewer without its
+  own colon, and passes the Darwin checks. Under a single-fee heading the label must be lowercase.
+- A heading is crossed, and names nothing more, once a row under it reads another kind of fee or
+  holds a self-named "... Fee" row it cannot classify.
+- Answer keys: Texas 537 to 545 right, 14 wrong unchanged; held out 53 / 4 unchanged; seven states
+  788 to 791 right (CA 137 to 140, MN 110 to 111), 41 wrong unchanged.
 
 v68 (#1102, Oct 15; held as v66 until #1334 took v67): priced lines with no "fee" or "charge" that Knox dropped without a record.
 On the 62-bank answer key (run 9), 333 of the 987 key fees missing from live data were lines in our
@@ -545,8 +571,10 @@ Rules 65, #1196 (Oct 14, no version change, so no document is re-read for it):
   that price's: the second fee's name and frequency are read from after it, and the second fee is
   not dropped as a repeat of the first price.
 
-v67 (rules 67, Oct 15, #1334; v66 was held for the #1102 dropped-lines fix, which shipped as v68): no rule changes. The bump makes every current text due for one
-more read, so the dropped-decimal reads above (#1196, #1305) reach pages Knox read before them:
+v67 (rules 67, Oct 15, #1334; v66 was held for the #1102 dropped-lines fix, which shipped as v68): no rule changes. The bump does not re-read every text: as with
+v68, a text Knox read before is read again at the new version only when it fires one of the
+triggers in "When Knox reads a text again" above, so the dropped-decimal reads above (#1196,
+#1305) reach the pages Knox read before them that a trigger picks:
 "Loan Skip A Pay Fee .... $29. 95/ea ch" (Xplore, doc 12872) is read at $29.95 and "ATM
 Transactions (per item) | $1 50* after 8/mo" (Members 1st, docs 13851 and 32358) at $1.50, where
 the stored reads said $29 and $1. The source check reads those prices the same way
@@ -594,7 +622,7 @@ After the extract itself, each extract step runs these passes in order (`run-sto
   Only one reader agrees here, so Darwin's free checks, the shared source check among them,
   decide what goes live; the 9 Oct dry read of 17 free rows was 11 of 17 right against source.
   The step's detail reports it as `superseded_free_recheck`.
-- `refileSupersededRows` (#1093, off until James approves, `SUPERSEDED_REFILE_LIVE`): a free-pass
+- `refileSupersededRows` (#1093, `SUPERSEDED_REFILE_LIVE`, switched on by James Oct 15): a free-pass
   row a re-read retired that today's free team reads with the same name and amount under another
   category. The superseded re-check needs the old category, so it leaves these retired, and the
   dedupe index kept the re-read from writing its own row (Oregonians CU's "Card Replacement" $10,
@@ -836,6 +864,6 @@ fails a PR that changes one of these constants without updating its line here (#
 | `LINEUP_CORRECT_STRATEGY` | `knox.lineup_correct` | v2 | `knox/lineup-correct.ts` |
 | `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v19 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v2 | `knox/paid-extract.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v68 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v69 | `knox/specialists.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v6 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v1 | `knox/takedown-lessons.ts` |

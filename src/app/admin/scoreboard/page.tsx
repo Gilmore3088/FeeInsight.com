@@ -6,10 +6,12 @@ import { Breadcrumbs } from "@/components/breadcrumbs";
 import {
   listScoreboardSnapshots,
   scoreboardSchemaReady,
+  seriesBreaks,
   type ScoreboardSnapshotRow,
 } from "@/lib/data-store/answer-key";
 import { runScoreboardNowAction } from "../answer-key/actions";
 import { GOAL_WINDOW_DAYS, type GoalScorecard } from "@/lib/agents/goal-scorecard";
+import { ACCURACY_TARGET_LABEL } from "@/lib/accuracy-target";
 
 interface Metric {
   key: keyof ScoreboardSnapshotRow;
@@ -21,6 +23,8 @@ interface Metric {
   lowerIsBetter?: boolean;
   /** Why this is a diagnostic, not a goal measure (#1040). */
   caveat?: string;
+  /** Snapshots compare only when this matches: the trend breaks and the change is hidden where it differs. */
+  series?: (row: ScoreboardSnapshotRow) => number | null;
 }
 
 const percent = (value: number) => `${(value * 100).toFixed(1)}%`;
@@ -61,8 +65,10 @@ const METRICS: Metric[] = [
     label: "Accuracy",
     unit: "% precision against the answer key (end to end)",
     format: percent,
-    detail: (row) => `recall ${row.accuracy_recall == null ? "—" : percent(row.accuracy_recall)}`,
+    detail: (row) => `recall ${row.accuracy_recall == null ? "—" : percent(row.accuracy_recall)}${row.accuracy_scorer_version == null ? "" : `, scorer v${row.accuracy_scorer_version}`}`,
     caveat: "The answer key's newest score, not dated here. The goal measure is Deming's 7-day accuracy above.",
+    // A new scorer version rescores the same fees: its numbers start a new line (#1354).
+    series: (row) => row.accuracy_scorer_version,
   },
   {
     key: "freshness_median_days",
@@ -75,10 +81,10 @@ const METRICS: Metric[] = [
   },
 ];
 
-function Sparkline({ values }: { values: Array<number | null> }) {
+function Sparkline({ values, series }: { values: Array<number | null>; series?: Array<number | null> }) {
   const points = values
-    .map((value, index) => (value == null ? null : { x: index, y: value }))
-    .filter((point): point is { x: number; y: number } => point != null);
+    .map((value, index) => (value == null ? null : { x: index, y: value, key: series?.[index] ?? null }))
+    .filter((point): point is { x: number; y: number; key: number | null } => point != null);
   if (points.length < 2) return <p className="text-[10px] text-gray-400">Trend appears after two days.</p>;
   const width = 200;
   const height = 36;
@@ -91,13 +97,24 @@ function Sparkline({ values }: { values: Array<number | null> }) {
     .map((point, index) => {
       const x = (point.x / maxX) * width;
       const y = height - 2 - ((point.y - min) / span) * (height - 4);
-      return `${index === 0 ? "M" : "L"}${x.toFixed(1)},${y.toFixed(1)}`;
+      const starts = index === 0 || (series != null && point.key !== points[index - 1].key);
+      return `${starts ? "M" : "L"}${x.toFixed(1)},${y.toFixed(1)}`;
     })
     .join(" ");
+  const breaks = series ? seriesBreaks(series) : [];
   return (
-    <svg viewBox={`0 0 ${width} ${height}`} className="h-9 w-full text-[var(--brand-primary)]" role="img" aria-label="30-day trend">
-      <path d={path} fill="none" stroke="currentColor" strokeWidth={1.5} />
-    </svg>
+    <>
+      <svg viewBox={`0 0 ${width} ${height}`} className="h-9 w-full text-[var(--brand-primary)]" role="img" aria-label="30-day trend">
+        <path d={path} fill="none" stroke="currentColor" strokeWidth={1.5} />
+        {breaks.slice(1).map((run) => {
+          const x = (run.start / maxX) * width;
+          return <line key={run.start} x1={x} x2={x} y1={0} y2={height} stroke="currentColor" strokeOpacity={0.3} strokeDasharray="2 2" />;
+        })}
+      </svg>
+      {breaks.length > 1 ? (
+        <p className="text-[10px] text-gray-400">Scorer {breaks.map((run) => `v${run.key}`).join(", then ")}: the line breaks where the scorer changed.</p>
+      ) : null}
+    </>
   );
 }
 
@@ -155,7 +172,8 @@ export default async function ScoreboardPage({
         <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           {METRICS.map((metric) => {
             const value = latest[metric.key] as number | null;
-            const before = previous ? (previous[metric.key] as number | null) : null;
+            const comparable = previous != null && (!metric.series || metric.series(previous) === metric.series(latest));
+            const before = previous && comparable ? (previous[metric.key] as number | null) : null;
             const delta = value != null && before != null ? value - before : null;
             const better = delta == null || delta === 0 ? null : metric.lowerIsBetter ? delta < 0 : delta > 0;
             return (
@@ -170,7 +188,7 @@ export default async function ScoreboardPage({
                   ) : null}
                 </p>
                 <p className="text-xs text-gray-500">{metric.unit}</p>
-                <Sparkline values={rows.map((row) => row[metric.key] as number | null)} />
+                <Sparkline values={rows.map((row) => row[metric.key] as number | null)} series={metric.series ? rows.map(metric.series) : undefined} />
                 <p className="text-[11px] text-gray-400">{metric.detail(latest)}</p>
                 {metric.caveat ? <p className="text-[11px] text-amber-700 dark:text-amber-400">{metric.caveat}</p> : null}
               </div>
@@ -230,7 +248,7 @@ const GOAL_CARDS: GoalCardSpec[] = [
     query: "goal.deming_accuracy_7d",
     value: (goal) => goal.accuracy?.accuracy,
     format: share,
-    unit: "of audited live fees right on amount, category, source, line and name (target 95%)",
+    unit: `of audited live fees right on amount, category, source, line and name (target ${ACCURACY_TARGET_LABEL})`,
     detail: (goal) => goal.accuracy ? <AccuracyDetail accuracy={goal.accuracy} /> : "Could not be read.",
   },
   {
@@ -292,7 +310,8 @@ const GOAL_CARDS: GoalCardSpec[] = [
     unit: "of free Ask answers whose fee figures tie to live catalog rows (latest answer eval)",
     detail: (goal) => goal.answerQuality ? (
       <>
-        Eval of {goal.answerQuality.at.slice(0, 16).replace("T", " ")} UTC{goal.answerQuality.timedOut ? ", stopped at its time budget" : ""}.
+        Eval of {goal.answerQuality.at.slice(0, 16).replace("T", " ")} UTC{goal.answerQuality.timedOut ? ", stopped at its time budget" : ""}
+        {goal.answerQuality.paidAt ? `; paid sample of ${goal.answerQuality.paidAt.slice(0, 16).replace("T", " ")} UTC` : ""}.
         {goal.answerQuality.paths.map((p) => (
           <span key={p.path} className="block">
             {p.label}: {p.measured

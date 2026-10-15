@@ -69,7 +69,7 @@ export function dataRoomPiles(counts: DataRoomCounts | null): WorkPile[] {
       count: counts ? counts.cityAtLimit : null,
       unit: "institutions; some are real 15-letter names",
       oldest: null,
-      wayOut: "None yet: an Atlas repair from the regulator's city waits for James (#1213).",
+      wayOut: "Atlas's daily city repair restores each credit union city NCUA's branch file extends; real 15-letter names stay (#1213).",
       ...(counts ? {} : { note: UNREADABLE }),
     },
   ];

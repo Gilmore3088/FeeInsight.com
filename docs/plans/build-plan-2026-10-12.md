@@ -1,7 +1,7 @@
 # Build plan (from the 2026-10-12 pipeline review)
 
 This is the single ordered path for building what the 2026-10-12 reviews found. A builder works
-from the top: one issue, one branch, one PR, then the next. The reviews themselves are in
+from the top: one outcome, one branch, one PR (small related fixes batched), then the next. The reviews themselves are in
 `docs/plans/*-review-2026-10-12.md`; decisions are in `docs/project/DECISIONS.md` (2026-10-12);
 the master tracker is #1026.
 
@@ -19,7 +19,12 @@ status comment on #1026.
 | **C: Discovery and technical SEO** | Atlas, Magellan, the state experts, public-page metadata (titles, sitemap, JSON-LD) | Phase 7 (#1031, #1032, #1030, #1035; #1036 needs James), then #1117 steps 1–2, #1028/#1029; the technical-only items left in #1134's list (#1162–#1181) |
 
 **Working side by side:**
-- **Before merging:** merge the latest `main` into the branch and re-run the checks.
+- **Before merging:** merge `main` into the branch only when GitHub shows a conflict, or when the PR
+  depends on something newly on `main` (a version number, a shared check its gates use). **A PR that
+  adds a migration always merges `main` and re-runs `migration-version-kill` before merging**: two
+  PRs that take the same number add different files, so GitHub shows no conflict
+  (`docs/project/findings/2026-10-09-parallel-migration-numbers.md`). Main's own CI run tests every
+  merge commit.
 - **Files another lane owns:** a change that must touch one (for example `src/lib/agents/types.ts`)
   stays as small as it can.
 - **Migrations:** take the next free number when the PR is opened, and check it again before merging.
@@ -227,13 +232,22 @@ SELECT (SELECT COUNT(*) FROM published) AS published,
 - **Classification belongs to Darwin** (DECISIONS, 2026-10-12): Knox suggests a category, audience
   and tier with evidence; Darwin decides; Gutenberg publishes Darwin's decision with one final check;
   Deming audits independently. Build #1059, #1069, #1102 and #1112 this way.
-- **Targets:** accuracy 95% on Deming's daily audit (weekly average); Knox 85% found and 90% right
+- **Targets:** accuracy 99.5% (James, Oct 15) on Deming's daily audit (weekly average); Knox 85% found and 90% right
   on the answer key; coverage 30 per state and size group, or 75%.
 
 ## Rules for the builder
 
-1. **One issue at a time, in this order.** Skip an item only if it is blocked; say why on the issue
+1. **One outcome at a time, in this order.** Skip an item only if it is blocked; say why on the issue
    and take the next one.
+   **Batch similar fixes** (James, 2026-10-15). One PR may close several issues when they are the
+   same kind of change in the same agent or files: several Knox rules, several guard re-files, several
+   hand fixes of live rows. Rule changes that bump the same version (Knox rules, category guard,
+   frequency fill) go out together in one PR, because each bump re-reads thousands of texts and
+   re-queues the priority banks. Never batch across lanes, a gated change with an ungated one, or a
+   migration with unrelated code. The PR body lists every issue it closes.
+   **Push when ready** (James, 2026-10-15). Every push to a PR runs CI and costs Actions minutes.
+   Run the local checks (rule 3) first and push the branch when the PR is ready for review, not after
+   each work-in-progress commit. A review fix goes out as one push.
 2. **Before starting an item:** read the issue and its review section, search open PRs and `main`
    for the same work, and read the agent's `AGENTS.md`.
 3. **Every code PR** names the issue, says what it changes, how it was verified, and, from #1106 on,
@@ -377,7 +391,8 @@ setup), the gated PRs above, the answer-key batch (#1098), and from #1104 on, th
 > You are building Fee Insight from `docs/plans/build-plan-2026-10-12.md` in
 > `Gilmore3088/FeeInsight.com`. Read `CLAUDE.md`, the latest file in `docs/project/checkpoints/`,
 > and the build plan. Take the first item in the plan that is not done and not blocked. Follow the
-> plan's "Rules for the builder" exactly: one issue, one branch, one PR; run the guards and tests;
+> plan's "Rules for the builder" exactly: one outcome, one branch, one PR, with similar fixes batched;
+> run the guards and tests, and push only when the PR is ready for review;
 > merge only clean, ungated PRs under the standing authorization; leave gated PRs open and list them
 > for James; add one line per merge to today's checkpoint. Never push to main, never force-push or
 > delete branches, never run production data changes or migrations without James, never add
@@ -392,7 +407,7 @@ setup), the gated PRs above, the answer-key batch (#1098), and from #1104 on, th
 > Read `CLAUDE.md`, the latest file in `docs/project/checkpoints/`, and
 > `docs/plans/build-plan-2026-10-12.md`, especially "Lanes" and "Rules for the builder". Take only
 > your lane's items, in order, and follow the same rules as the starting prompt above. Another
-> builder works the other lanes at the same time: merge the latest `main` into your branch before
-> merging, keep changes to files another lane owns as small as possible, and write your checkpoint
+> builder works the other lanes at the same time: merge `main` into your branch only for a conflict
+> or a change you depend on, keep changes to files another lane owns as small as possible, and write your checkpoint
 > lines under your lane's heading. When your lane has nothing left that is not gated or blocked,
 > stop and leave a status comment on #1026.

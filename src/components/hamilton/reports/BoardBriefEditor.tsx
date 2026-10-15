@@ -47,9 +47,9 @@ export function BoardBriefEditor({ analysis, analysisId, initialReport, reportId
     } catch (e) { setError(e instanceof Error ? e.message : "PDF download failed."); }
     finally { setDownloadBusy(false); }
   }
-  if (!report) return <p role="alert">Choose a saved answer to create a board brief.</p>;
+  if (!report) return <p role="alert">Choose a saved answer to build a board brief.</p>;
   return <div className="mx-auto flex max-w-6xl flex-col gap-6">
-    <header className="flex flex-wrap justify-between gap-4"><div><p className="fi-text-label text-[var(--fi-muted)]">Reports</p><h1 className="mt-1 text-3xl font-semibold">Board brief</h1><p className="mt-2 text-sm text-[var(--fi-muted)]">Built from your saved answer. Add a title and a note for your board, save, then download the PDF.</p></div><div className="flex flex-wrap items-start gap-3">
+    <header className="flex flex-wrap justify-between gap-4"><div><p className="fi-text-label text-[var(--fi-muted)]">Reports</p><h1 className="mt-1 text-3xl font-semibold">Board brief</h1><p className="mt-2 text-sm text-[var(--fi-muted)]">Hamilton&apos;s findings and their sources, ready for your board. Add a title and a note, save, then download the PDF.</p></div><div className="flex flex-wrap items-start gap-3">
       <button className="fi-btn fi-btn-primary disabled:opacity-50" disabled={busy || !dirty} onClick={() => void save()}><Save size={17} aria-hidden />{busy ? "Saving…" : "Save brief"}</button>
       <button className="fi-btn fi-btn-secondary disabled:opacity-50" disabled={!savedId || dirty || downloadBusy} onClick={() => void download()}><Download size={17} aria-hidden />{downloadBusy ? "Preparing…" : "Download PDF"}</button>
     </div></header>
@@ -59,8 +59,10 @@ export function BoardBriefEditor({ analysis, analysisId, initialReport, reportId
       <h2 className="!text-base">Report details</h2><label className="text-sm">Title<input className="mt-2 w-full rounded-md border border-[var(--fi-control-border)] p-2" value={title} maxLength={200} disabled={busy} onChange={e => setTitle(e.target.value)} /></label>
       <label className="text-sm">Team note<textarea className="mt-2 w-full rounded-md border border-[var(--fi-control-border)] p-2" rows={6} value={teamNote} maxLength={5000} disabled={busy} onChange={e => setTeamNote(e.target.value)} /><span className="mt-1 block text-xs text-[var(--fi-muted)]">Shown as your note, kept apart from Hamilton’s findings.</span></label>
       {!initialReport ? <label className="text-sm"><input type="checkbox" checked={includeEvidence} disabled={busy} onChange={e => setIncludeEvidence(e.target.checked)} /> Include the evidence table from the answer</label> : null}
-      <p className="text-xs leading-relaxed text-[var(--fi-muted)]">The figures, reporting dates and institution come from the saved answer and are not recalculated.</p>
-      <Link href={`/pro/analyze?analysis=${encodeURIComponent(report.boardBrief!.sourceAnalysisId)}`} className="flex items-center gap-2 text-sm text-[var(--fi-brick)] underline"><FileText size={16} aria-hidden />Open the saved answer</Link>
+      <p className="text-xs leading-relaxed text-[var(--fi-muted)]">The figures and reporting dates are kept as first saved and are not recalculated.</p>
+      {report.boardBrief?.sourceAnalysisId
+        ? <Link href={`/pro/analyze?analysis=${encodeURIComponent(report.boardBrief.sourceAnalysisId)}`} className="flex items-center gap-2 text-sm text-[var(--fi-brick)] underline"><FileText size={16} aria-hidden />Open the saved answer</Link>
+        : report.boardBrief?.sourceResearchHref ? <Link href={report.boardBrief.sourceResearchHref} className="flex items-center gap-2 text-sm text-[var(--fi-brick)] underline"><FileText size={16} aria-hidden />Open the research</Link> : null}
     </section><ReportOutput report={report} reportType="board_brief" artifactMetadata={metadata} editable /></div>
   </div>;
 }

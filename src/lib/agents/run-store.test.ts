@@ -156,6 +156,8 @@ import {
   executeAgentRun,
   expectedMsToFirstWork,
   expectedStepMs,
+  TICK_EXCLUDED_STEP_KEYS,
+  isLaneRoomRun,
   executeQueuedAgentRuns,
   heldByPause,
   startAgentRun,
@@ -1215,18 +1217,51 @@ describe("agentic run store", () => {
     expect(result.results[1]).toMatchObject({ executedSteps: 0, heldForDeadline: true });
   });
 
+  it("holds a Read-now run that would leave the lane behind it no room for its first work", async () => {
+    getExecutionBackendMock.mockReturnValue("agentic_v1");
+    sqlMock.mockImplementation((strings: TemplateStringsArray, ...values: unknown[]) => {
+      const text = templateText(strings);
+      if (text.includes("SELECT r.id")) {
+        return Promise.resolve([
+          { id: 101, run_kind: "manual_repair", source: "atlas.priority_institution" },
+          { id: 102, run_kind: "workflow_lane", source: null },
+        ]);
+      }
+      if (text.includes("SELECT step_key")) {
+        // The Read-now run's fetch (30 s) fits the tick alone, but not with the lane's discover (115 s).
+        return Promise.resolve(values[0] === 102 ? [{ step_key: "discover" }] : [{ step_key: "fetch" }]);
+      }
+      if (text.includes("FROM agent_runs")) {
+        // The lane is already finished here, so it does nothing; the Read-now run is queued.
+        return Promise.resolve([{ ...runRow, id: values[0], status: values[0] === 101 ? "queued" : "completed" }]);
+      }
+      return Promise.resolve([]);
+    });
+
+    const result = await executeQueuedAgentRuns({ runLimit: 10, maxStepsPerRun: 10, deadlineAt: Date.now() + 140_000 });
+
+    expect(isLaneRoomRun("atlas.priority_institution")).toBe(true);
+    expect(isLaneRoomRun("atlas.priority_state_research")).toBe(true);
+    expect(isLaneRoomRun(null)).toBe(false);
+    // Without the lane's room it would have run as the tick's first run.
+    expect(result.results[0]).toMatchObject({ runId: 101, executedSteps: 0, heldForDeadline: true });
+  });
+
   it("counts a lane run's quick first steps together with the first real step", () => {
     // enhance + state-expert are quick; a later run must also fit discover, or it would
     // count as under way after only the quick steps and jump ahead of retries.
-    expect(expectedMsToFirstWork(["enhance", "state-expert", "discover", "discover-paid"])).toBe(170_000);
-    expect(expectedMsToFirstWork(["fetch", "read"])).toBe(60_000);
+    expect(expectedMsToFirstWork(["enhance", "state-expert", "discover", "discover-paid"])).toBe(175_000);
+    expect(expectedMsToFirstWork(["fetch", "read"])).toBe(30_000);
     expect(expectedMsToFirstWork(["public-discovery"])).toBe(30_000);
     expect(expectedMsToFirstWork([])).toBe(0);
   });
 
   it("expects long steps to need most of a tick and quick ones only seconds", () => {
-    expect(expectedStepMs("discover-paid")).toBe(200_000);
-    expect(expectedStepMs("publish")).toBe(30_000);
+    // Re-measured 2026-10-15 (about p90 with a margin): discover-paid runs in seconds, publish about 80 s.
+    expect(expectedStepMs("discover-paid")).toBe(10_000);
+    expect(expectedStepMs("hamilton-answer-eval")).toBe(400_000);
+    expect(TICK_EXCLUDED_STEP_KEYS).toContain("hamilton-answer-eval");
+    expect(expectedStepMs("publish")).toBe(105_000);
     expect(expectedStepMs("public-discovery")).toBe(30_000);
     expect(expectedStepMs("registry-fdic-sod")).toBe(30_000);
     // registry-cfpb ran 172 s, so its own entry wins over the quick registry- prefix.

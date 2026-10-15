@@ -44,8 +44,9 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
-      <body className={`${GeistSans.variable} ${GeistMono.variable} bg-paper text-ink font-sans antialiased`}>
+    // The font variables sit on <html> so tokens declared on :root (--fi-font-sans, --font-sans) can read them.
+    <html lang="en" className={`${GeistSans.variable} ${GeistMono.variable}`}>
+      <body className="bg-paper text-ink font-sans antialiased">
         {children}
         {/* Records a tracked-link visit (utm_ tags) once per session; no personal data. */}
         <MarketingTouchRecorder />

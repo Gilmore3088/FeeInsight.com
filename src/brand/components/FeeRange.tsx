@@ -12,13 +12,15 @@ export interface FeeRangeProps {
   /** Shared [min, max] so stacked rows line up. */
   domain?: [number, number];
   format?: (v: number) => string;
+  /** The figure at the row's right: the bank's fee (default) or the market median, for ladders where every row shares one bank fee. */
+  figure?: "value" | "median";
   className?: string;
 }
 
 const money = (v: number) => `$${v.toFixed(2)}`;
 
 /** The house chart: a fee's spread across the market as a horizontal box plot. */
-export function FeeRange({ label, min, q1, median, q3, max, value, domain = [0, 50], format = money, className }: FeeRangeProps) {
+export function FeeRange({ label, min, q1, median, q3, max, value, domain = [0, 50], format = money, figure = "value", className }: FeeRangeProps) {
   const [lo, hi] = domain;
   const x = (v: number) => `${((v - lo) / (hi - lo)) * 100}%`;
   const summary = `${label}: market ${format(min)} to ${format(max)}, median ${format(median)}${value != null ? `, this bank ${format(value)}` : ""}`;
@@ -33,7 +35,7 @@ export function FeeRange({ label, min, q1, median, q3, max, value, domain = [0, 
         <line className="med" x1={x(median)} x2={x(median)} y1={4} y2={24} />
         {value != null ? <circle className="you" cx={x(value)} cy={14} r={6} /> : null}
       </svg>
-      <div className="fi-range-value">{format(value ?? median)}</div>
+      <div className="fi-range-value">{format(figure === "median" ? median : value ?? median)}</div>
     </div>
   );
 }

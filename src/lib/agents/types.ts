@@ -103,6 +103,8 @@ export const PROVIDER_STEP_KEYS: readonly string[] = [
   "marketing-write",
   // Magellan's Regulatory Wire research notes; shadow mode until REG_WIRE_SUMMARIES_LIVE=true.
   "registry-wire-research",
+  // Hamilton's paid answer eval (#1079): at most five memos a day.
+  "hamilton-paid-answer-eval",
 ];
 
 export function isProviderStep(stepKey: string): boolean {

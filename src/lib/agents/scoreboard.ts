@@ -40,7 +40,7 @@ export interface ScoreboardNumbers {
   rightDocument: { rate: number | null; numerator: number; denominator: number; windowDays: number } | null;
   knoxYield: { yield: number | null; fees: number; pricedLines: number; sampleSize: number } | null;
   depth: { median: number | null; liveInstitutions: number };
-  accuracy: { precision: number | null; recall: number | null; scoreRunId: number | null; scoredAt: string | null } | null;
+  accuracy: { precision: number | null; recall: number | null; scoreRunId: number | null; scoredAt: string | null; scorerVersion: number } | null;
   freshness: { medianDays: number | null; liveFees: number };
   knoxSurvival: KnoxSurvival;
   /** Null when the count could not be read; the other numbers are still stored. */
@@ -160,8 +160,10 @@ async function readAccuracy(db: SqlTag): Promise<ScoreboardNumbers["accuracy"]> 
      ORDER BY scored_at DESC, id DESC
      LIMIT 1
   `;
-  if (!row) return { precision: null, recall: null, scoreRunId: null, scoredAt: null };
+  if (!row) return { precision: null, recall: null, scoreRunId: null, scoredAt: null, scorerVersion: ANSWER_KEY_SCORER_VERSION };
   return {
+    // Scores from different scorer versions are never one series (#1354).
+    scorerVersion: ANSWER_KEY_SCORER_VERSION,
     precision: numberOrNull(row.precision, 4),
     recall: numberOrNull(row.recall, 4),
     scoreRunId: Number(row.id),
@@ -294,6 +296,7 @@ export async function runScoreboardSnapshot({
       ${JSON.stringify({
         right_document_window_days: numbers.rightDocument?.windowDays ?? null,
         accuracy_scored_at: numbers.accuracy?.scoredAt ?? null,
+        accuracy_scorer_version: numbers.accuracy?.scorerVersion ?? null,
         knox_survival: numbers.knoxSurvival,
         ...(numbers.reportReady
           ? {

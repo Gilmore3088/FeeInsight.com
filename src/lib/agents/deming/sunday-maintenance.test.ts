@@ -26,13 +26,15 @@ const base: SundayEmailInputs = {
 describe("Sunday maintenance email (#1104)", () => {
   it("lists the week's tasks with times and links, in order", () => {
     const email = buildSundayEmail(base);
-    expect(email.minutes).toBe(2 * 1 + 2 * 5 + MINUTES_PER_ANSWER_KEY_BANK);
+    expect(email.minutes).toBe(2 * 1 + 1 * 5 + MINUTES_PER_ANSWER_KEY_BANK);
     expect(email.rolledOver).toBe(0);
-    expect(email.lines[0]).toBe("This week: 5 tasks, about 22 minutes.");
+    expect(email.lines[0]).toBe("This week: 4 tasks, about 17 minutes.");
     expect(email.lines[1]).toContain('Fee names to label (2 names, about 2 minutes): "Zipper Bags" (25 banks); "Stop Payment Cancellation" (4 banks).');
     expect(email.lines.join("\n")).toContain("Decide on 490 live fees at 22 closed institutions (#1200)");
+    // The city repair was decided (#1213) and runs daily: no longer a task for James.
+    expect(email.lines.join("\n")).not.toContain("#1213");
     expect(email.lines.join("\n")).toContain("/admin/answer-key");
-    expect(email.subject).toBe("Fee Insight: your Sunday hour, 2026-10-18 (22 minutes)");
+    expect(email.subject).toBe("Fee Insight: your Sunday hour, 2026-10-18 (17 minutes)");
   });
 
   it("never asks for more than the hour; the rest rolls to next week", () => {

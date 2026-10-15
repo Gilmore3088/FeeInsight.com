@@ -9,6 +9,8 @@ const m = vi.hoisted(() => ({
   calls: [] as Array<{ text: string; values: unknown[]; inTx: boolean }>,
   job: null as Record<string, unknown> | null,
   slugTaken: false,
+  // The job finished between cancelReport's read and its guarded write (#1271).
+  finishedBeforeCancel: false,
   inTx: false,
   outsideTx: 0,
 }));
@@ -23,6 +25,7 @@ vi.mock("@/lib/data-store/connection", () => {
     m.calls.push({ text, values, inTx: m.inTx });
     if (text.includes("FROM report_jobs")) return m.job ? [m.job] : [];
     if (text.includes("ON CONFLICT (slug) DO NOTHING")) return m.slugTaken ? [] : [{ slug: values[2] }];
+    if (text.includes("SET status = 'cancel_requested'")) return m.finishedBeforeCancel ? [] : [{ id: values[0] }];
     return [];
   };
   return {
@@ -41,7 +44,8 @@ vi.mock("@/lib/data-store/connection", () => {
   };
 });
 
-import { publishReport } from "./actions";
+import { cancelAgentRun } from "@/lib/agents/run-store";
+import { cancelReport, publishReport } from "./actions";
 
 const tied = { printed: { figures: [] }, reconciliation: { ties_out: true } };
 const inserts = () => m.calls.filter((call) => call.text.includes("INSERT INTO published_reports"));
@@ -50,7 +54,31 @@ beforeEach(() => {
   m.calls.length = 0;
   m.job = null;
   m.slugTaken = false;
+  m.finishedBeforeCancel = false;
   m.outsideTx = 0;
+  vi.mocked(cancelAgentRun).mockReset();
+});
+
+describe("cancelReport (#1271)", () => {
+  it("guards its first write, so a job that finished after the read keeps its status and nothing is cancelled", async () => {
+    m.job = { id: "job-1", status: "rendering", agent_run_id: 7 };
+    m.finishedBeforeCancel = true;
+    const result = await cancelReport("job-1");
+    expect(result).toEqual({ success: false, error: "Job not found or already complete/failed" });
+    const write = m.calls.find((call) => call.text.includes("SET status = 'cancel_requested'"));
+    expect(write?.text).toContain("AND status IN ('pending', 'assembling', 'rendering', 'cancel_requested')");
+    expect(write?.text).toContain("RETURNING id");
+    expect(cancelAgentRun).not.toHaveBeenCalled();
+    expect(m.calls.some((call) => call.text.includes("SET status = 'cancelled'"))).toBe(false);
+  });
+
+  it("cancels an open job", async () => {
+    m.job = { id: "job-1", status: "pending", agent_run_id: 7 };
+    vi.mocked(cancelAgentRun).mockResolvedValue({ success: true } as Awaited<ReturnType<typeof cancelAgentRun>>);
+    expect(await cancelReport("job-1")).toEqual({ success: true });
+    expect(cancelAgentRun).toHaveBeenCalledWith(7, "hamilton-admin");
+    expect(m.calls.some((call) => call.text.includes("SET status = 'cancelled'"))).toBe(true);
+  });
 });
 
 describe("publishReport (#1259)", () => {

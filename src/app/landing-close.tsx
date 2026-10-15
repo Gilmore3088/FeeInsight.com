@@ -13,7 +13,7 @@ export function LandingClose() {
         <h2 className={`mx-auto max-w-3xl ${DISPLAY_H2}`} style={SANS}>
           Know where your fees stand, with a source for every figure
         </h2>
-        <InstitutionSearchForm id="closing-search" className="mx-auto mt-8 max-w-2xl [&_.fi-field]:max-w-none" />
+        <InstitutionSearchForm id="closing-search" className="mx-auto mt-8 max-w-2xl [&_.fi-field]:max-w-none [&_label]:sr-only" />
         <p className="mt-6 text-[14px]">
           <TrackLink event="upgrade_click" eventProps={{ placement: "home_closing" }} href={PRO_PLANS_NAV.href} className={TEXT_LINK}>
             {PRO_PLANS_NAV.label}

@@ -109,4 +109,22 @@ describe("Darwin verified re-check", () => {
     const result = await recheckVerifiedFees(db as never, { runId: 501 });
     expect(result).toMatchObject({ checked: 0, passed: 0, takenDown: [] });
   });
+
+  it("flags an already verified $0 from a tier's own schedule, live or not (v3, #1397)", async () => {
+    const premium = { ...verifiedRow, source_url: "https://www.examplebank.com/agreements-disclosures/truth-in-savings/premium-account-fees" };
+    const db = dbWith([
+      { ...premium, fee_verified_id: 130001, fee_raw_id: 300001, canonical_fee_key: "stop_payment", verified_amount: "0.00", fee_name: "Stop Payment", amount: "0.00", outlier_flags: [], conditions: null, fee_published_id: 7101 },
+      { ...premium, fee_verified_id: 130002, fee_raw_id: 300002, canonical_fee_key: "wire_transfer_incoming", verified_amount: "0.00", fee_name: "Incoming Wire", amount: "0.00", outlier_flags: [], conditions: null, fee_published_id: null },
+      { ...premium, fee_verified_id: 130003, fee_raw_id: 300003, canonical_fee_key: "overdraft", verified_amount: "35.00", fee_name: "Overdraft fee", amount: "35.00", outlier_flags: [], conditions: null, fee_published_id: null },
+    ]);
+
+    const result = await recheckVerifiedFees(db as never, { runId: 503 });
+
+    expect(DARWIN_RECHECK_STRATEGY.version).toBe(3);
+    expect(result).toMatchObject({ checked: 3, passed: 1, flagged: 1, rejected: [{ feeVerifiedId: 130002, code: "tier_perk_zero" }] });
+    const rejects = db.mock.calls.filter((call) => templateText(call[0]).includes("UPDATE verified_fee_observations"));
+    expect(rejects).toHaveLength(1);
+    expect(rejects[0].slice(1)).toContain(JSON.stringify(["darwin_recheck:tier_perk_zero"]));
+    expect(rejects[0].slice(1)).toContain(130002);
+  });
 });

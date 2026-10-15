@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { decodeLandingResearch, encodeLandingResearch, landingResearchHref, RESEARCH_STATE_CODES, type LandingResearchHandoff } from "@/lib/hamilton/landing-research-handoff";
+import { decodeLandingResearch, encodeLandingResearch, RESEARCH_STATE_CODES, type LandingResearchHandoff } from "@/lib/hamilton/landing-research-handoff";
 import { loadLandingGeographicResearch, type GeographicResearchResult } from "@/lib/hamilton/landing-geographic-research";
 import { getStateEconomicContext, type IndicatorSeries, type StateEconomicContext } from "@/lib/data-store/economic-context";
 import { getRevenueByTier, getRevenueTrend, type RevenueTrend, type TierRevenue } from "@/lib/data-store/call-reports";
@@ -11,10 +11,12 @@ import { STATE_TO_DISTRICT, DISTRICT_NAMES } from "@/lib/fed-districts";
 import { formatAssets } from "@/lib/format";
 import {
   joinSeries, loadComplaintTrend, loadFeeMap, loadPeerTable, loadStatePosts, percentChange, yearOverYear,
-  type ComplaintTrend, type FeeMap, type PeerTable, type StatePost,
+  type ComplaintTrend, type FeeMap, type FeeSpread, type PeerTable, type StatePost,
 } from "@/lib/hamilton/intelligence-data";
-import { INTELLIGENCE_LENSES, type Lens } from "@/lib/hamilton/market-question";
+import { INTELLIGENCE_LENSES, MARKET_BRIEF_CATEGORIES, type Lens } from "@/lib/hamilton/market-question";
+import { assetSizeFor, type AssetSize } from "@/lib/hamilton/asset-size";
 import { ScopeControls } from "./ScopeControls";
+import { BoardBriefButton } from "./BoardBriefButton";
 import { EvidenceDetails } from "./EvidenceDetails";
 import { FeeLandscapeChart, HorizontalBars, MultiTrend, StateFeeMap } from "./IntelligenceCharts";
 import { LandingResearchResults } from "@/components/hamilton/landing/LandingResearchResults";
@@ -22,7 +24,7 @@ import { LandingResearchResults } from "@/components/hamilton/landing/LandingRes
 const LENSES = INTELLIGENCE_LENSES;
 export type { Lens };
 
-const DEFAULT: LandingResearchHandoff = { version: 1, task: "compare", scope: { kind: "national" }, charter: "all", categories: ["monthly_maintenance", "wire_domestic_outgoing", "atm_non_network"] };
+const DEFAULT: LandingResearchHandoff = { version: 1, task: "compare", scope: { kind: "national" }, charter: "all", categories: [...MARKET_BRIEF_CATEGORIES] };
 const dollars = (v: number | null | undefined) => v == null ? "Unavailable" : new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(v);
 const pct = (v: number | null | undefined, digits = 1) => v == null ? "Unavailable" : `${v > 0 ? "+" : ""}${v.toFixed(digits)}%`;
 const CHARTER_LABEL: Record<LandingResearchHandoff["charter"], string> = { all: "Banks & credit unions", bank: "Banks", credit_union: "Credit unions" };
@@ -45,26 +47,28 @@ export interface Loaded {
  * #1011 docs/design/hamilton-rebuild/). Every exhibit names its source, period, geography, coverage
  * and method; observed facts are kept apart from interpretation, and missing data is never $0.
  */
-export async function IntelligenceWorkspace({ params, overview = false }: { params: { research?: string; lens?: string; instId?: string }; overview?: boolean }) {
+export async function IntelligenceWorkspace({ params, overview = false }: { params: { research?: string; lens?: string; instId?: string; size?: string }; overview?: boolean }) {
   let selection: LandingResearchHandoff;
   try { selection = decodeLandingResearch(params.research) ?? DEFAULT; }
   catch { return <p role="alert">This research selection is invalid. <Link href={overview ? "/pro/hamilton" : "/pro/intelligence"}>Reset selection</Link></p>; }
   if (selection.scope.kind === "local") return <LandingResearchResults selection={{ ...selection, task: "compare" }} />;
   selection = { ...selection, task: "compare" };
   const lens: Lens = LENSES.find(l => l.id === params.lens)?.id ?? "fees";
-  const data = await loadIntelligence(selection, overview ? LENSES.map(l => l.id) : [lens], { compact: overview });
-  return <IntelligenceView selection={selection} data={data} lens={lens} overview={overview} instId={params.instId} />;
+  const size = assetSizeFor(params.size);
+  const data = await loadIntelligence(selection, overview ? LENSES.map(l => l.id) : [lens], { compact: overview, segment: size.id === "all" ? null : size });
+  return <IntelligenceView selection={selection} data={data} lens={lens} overview={overview} instId={params.instId} size={size} />;
 }
 
 /** Loads only what the chosen lenses show, in parallel; a reader that fails leaves its slot null. */
-export async function loadIntelligence(selection: LandingResearchHandoff, lenses: readonly Lens[], { compact, segment = null }: { compact: boolean; segment?: { minAssets: number | null; maxAssets: number | null } | null }): Promise<Loaded> {
+export async function loadIntelligence(selection: LandingResearchHandoff, lenses: readonly Lens[], { compact, segment = null }: { compact: boolean; segment?: { minAssets: number | null; maxAssets: number | null; tiers?: readonly string[] | null } | null }): Promise<Loaded> {
   const state = selection.scope.kind === "state" ? selection.scope.stateCode : null;
   const district = state ? STATE_TO_DISTRICT[state] ?? null : null;
   const primary = selection.categories[0];
   const want = (id: Lens) => lenses.includes(id);
+  const tiers = segment?.tiers ?? null;
   return Object.fromEntries(await Promise.all(([
-    ["fees", want("fees") ? loadLandingGeographicResearch(selection).catch(() => null) : null],
-    ["feeMap", want("fees") && primary ? loadFeeMap(primary, selection.charter) : null],
+    ["fees", want("fees") ? loadLandingGeographicResearch(selection, undefined, tiers).catch(() => null) : null],
+    ["feeMap", want("fees") && primary ? loadFeeMap(primary, selection.charter, state, tiers) : null],
     ["peers", want("fees") && primary && (state || !compact) ? loadPeerTable(state, selection.charter, primary, compact ? 10 : 25, segment) : null],
     ["revenue", want("financials") ? getRevenueTrend(12).catch(() => null) : null],
     ["tiers", !compact && want("financials") ? getRevenueByTier().catch(() => null) : null],
@@ -76,16 +80,17 @@ export async function loadIntelligence(selection: LandingResearchHandoff, lenses
 }
 
 /** The rendered workspace for already-loaded data; kept apart from loading so it can be checked with sample data. */
-export function IntelligenceView({ selection, data, lens, overview, instId }: { selection: LandingResearchHandoff; data: Loaded; lens: Lens; overview: boolean; instId?: string }) {
+export function IntelligenceView({ selection, data, lens, overview, instId, size = assetSizeFor(null) }: { selection: LandingResearchHandoff; data: Loaded; lens: Lens; overview: boolean; instId?: string; size?: AssetSize }) {
   const state = selection.scope.kind === "state" ? selection.scope.stateCode : null;
   const place = state ? STATE_NAMES[state] ?? state : "United States";
   const pathname = overview ? "/pro/hamilton" : "/pro/intelligence";
   const primary = selection.categories[0];
-  const lensHref = (id: Lens) => `/pro/intelligence?${new URLSearchParams({ research: encodeLandingResearch(selection), lens: id })}`;
-  const stateHrefs = stateLinks(selection, pathname, overview ? undefined : lens);
+  const sized: Record<string, string> = size.id === "all" ? {} : { size: size.id };
+  const lensHref = (id: Lens) => `/pro/intelligence?${new URLSearchParams({ research: encodeLandingResearch(selection), lens: id, ...sized })}`;
+  const stateHrefs = stateLinks(selection, pathname, overview ? undefined : lens, size.id);
 
   const askHref = `/pro/analyze?${new URLSearchParams({ research: encodeLandingResearch(selection), ...(instId ? { instId: instId } : {}) })}`;
-  const panels = lensPanels({ data, selection, stateHrefs, compact: overview, explore: id => overview ? lensHref(id) : null });
+  const panels = lensPanels({ data, selection, stateHrefs, compact: overview, explore: id => overview ? lensHref(id) : null, size });
 
   return <div className="mx-auto flex max-w-7xl flex-col gap-7">
     <header className="flex flex-wrap items-start justify-between gap-4">
@@ -96,10 +101,11 @@ export function IntelligenceView({ selection, data, lens, overview, instId }: { 
       </div>
       <div className="flex flex-wrap gap-2">
         <Link href={askHref} className="fi-btn fi-btn-secondary no-underline">Ask Hamilton about {state ? place : "this market"}</Link>
-        <Link href={landingResearchHref({ ...selection, task: "board_report" })} className="fi-btn fi-btn-primary no-underline">Build board brief</Link>
+        <BoardBriefButton selection={selection} lenses={overview ? LENSES.map(l => l.id) : [lens]} size={size.id} />
       </div>
     </header>
-    <ScopeControls selection={selection} pathname={pathname} lens={lens} />
+    <ScopeControls selection={selection} pathname={pathname} lens={lens} size={size.id} />
+    {size.id !== "all" ? <p className="-mt-3 text-xs text-[var(--fi-muted)]">{size.label}: the fee exhibits, including the U.S. reference, cover institutions of this size. The institution table sorts by each one&apos;s latest reported assets. Financials, economy, complaints and regulation cover every size.</p> : null}
     {overview ? <HamiltonRead data={data} place={place} state={state} primary={primary} /> : null}
     {overview ? <>
       {panels.fees}
@@ -116,14 +122,14 @@ export function IntelligenceView({ selection, data, lens, overview, instId }: { 
 }
 
 /** Each lens's exhibits for loaded data; Overview, Research and the Ask market brief share them. */
-export function lensPanels({ data, selection, stateHrefs, compact, explore, peerNote }: {
-  data: Loaded; selection: LandingResearchHandoff; stateHrefs: Record<string, string>; compact: boolean; explore: (id: Lens) => string | null; peerNote?: string;
+export function lensPanels({ data, selection, stateHrefs, compact, explore, peerNote, size = assetSizeFor(null) }: {
+  data: Loaded; selection: LandingResearchHandoff; stateHrefs: Record<string, string>; compact: boolean; explore: (id: Lens) => string | null; peerNote?: string; size?: AssetSize;
 }): Record<Lens, ReactNode> {
   const state = selection.scope.kind === "state" ? selection.scope.stateCode : null;
   const place = state ? STATE_NAMES[state] ?? state : "United States";
   const district = state ? STATE_TO_DISTRICT[state] ?? null : null;
   return {
-    fees: <FeePanels data={data} selection={selection} place={place} state={state} stateHrefs={stateHrefs} compact={compact} exploreHref={explore("fees")} peerNote={peerNote} />,
+    fees: <FeePanels data={data} selection={selection} place={place} state={state} stateHrefs={stateHrefs} compact={compact} exploreHref={explore("fees")} peerNote={peerNote ?? (size.id === "all" ? undefined : `(${size.label} only)`)} sizeNote={size.id === "all" ? undefined : `(${size.label} only)`} focusHref={category => feeFocusHref(selection, category, size)} />,
     financials: <FinancialPanel revenue={data.revenue} tiers={data.tiers} state={state} compact={compact} exploreHref={explore("financials")} />,
     economy: <EconomyPanel economy={data.economy} place={place} state={state} district={district} compact={compact} exploreHref={explore("economy")} />,
     complaints: <ComplaintPanel complaints={data.complaints} place={place} compact={compact} exploreHref={explore("complaints")} />,
@@ -132,8 +138,14 @@ export function lensPanels({ data, selection, stateHrefs, compact, explore, peer
 }
 
 /** Links that open each state in the same view. */
-export function stateLinks(selection: LandingResearchHandoff, path: string, lens?: Lens): Record<string, string> {
-  return Object.fromEntries(RESEARCH_STATE_CODES.map(code => [code, `${path}?${new URLSearchParams({ research: encodeLandingResearch({ ...selection, scope: { kind: "state", stateCode: code } }), ...(lens ? { lens } : {}) })}`]));
+export function stateLinks(selection: LandingResearchHandoff, path: string, lens?: Lens, size?: string): Record<string, string> {
+  return Object.fromEntries(RESEARCH_STATE_CODES.map(code => [code, `${path}?${new URLSearchParams({ research: encodeLandingResearch({ ...selection, scope: { kind: "state", stateCode: code } }), ...(lens ? { lens } : {}), ...(size && size !== "all" ? { size } : {}) })}`]));
+}
+
+/** Research on the fees lens with one fee in focus: its map, spread and institutions; the other fees stay in the landscape. */
+export function feeFocusHref(selection: LandingResearchHandoff, category: string, size?: AssetSize): string {
+  const categories = [category, ...selection.categories.filter(c => c !== category)].slice(0, 5);
+  return `/pro/intelligence?${new URLSearchParams({ research: encodeLandingResearch({ ...selection, categories }), lens: "fees", ...(size && size.id !== "all" ? { size: size.id } : {}) })}`;
 }
 
 export interface Finding { lens: Lens; title: string; body: string; source: string }
@@ -143,7 +155,7 @@ export function readFindings(data: Loaded, place: string, state: string | null, 
   const findings: Finding[] = [];
   const row = data.fees?.comparisons.find(c => c.category === primary) ?? data.fees?.comparisons.find(c => c.selected.status === "available");
   if (row && row.selected.status === "available") {
-    const fee = getDisplayName(row.category).toLowerCase();
+    const fee = getDisplayName(row.category).replace(/\s*\([^)]*\)/g, "").toLowerCase();
     findings.push({
       lens: "fees",
       title: `${place}'s median ${fee} is ${dollars(row.selected.median)}.`,
@@ -227,17 +239,23 @@ function Unavailable({ children }: { children: ReactNode }) {
   return <p role="status" className="mt-4 rounded-md bg-[var(--fi-surface-200)] p-4 text-sm text-[var(--fi-muted)]">{children}</p>;
 }
 
-function FeePanels({ data, selection, place, state, stateHrefs, compact, exploreHref, peerNote }: {
-  data: Loaded; selection: LandingResearchHandoff; place: string; state: string | null; stateHrefs: Record<string, string>; compact: boolean; exploreHref: string | null; peerNote?: string;
+function FeePanels({ data, selection, place, state, stateHrefs, compact, exploreHref, peerNote, sizeNote, focusHref }: {
+  data: Loaded; selection: LandingResearchHandoff; place: string; state: string | null; stateHrefs: Record<string, string>; compact: boolean; exploreHref: string | null; peerNote?: string; sizeNote?: string; focusHref: (category: string) => string;
 }) {
   const result = data.fees;
   const primary = selection.categories[0];
   const primaryName = primary ? getDisplayName(primary) : "Selected fee";
   const comparisons = result?.comparisons ?? [];
   const available = comparisons.filter(row => row.selected.status === "available");
+  const focusable = [...new Set([...selection.categories, ...MARKET_BRIEF_CATEGORIES])];
   return <>
+    {!compact ? <nav aria-label="Fee in focus" className="flex flex-wrap items-center gap-2 text-sm">
+      <span className="font-medium text-[var(--fi-muted)]">Drill into a fee:</span>
+      {focusable.map(category => <Link key={category} href={focusHref(category)} aria-current={category === primary ? "true" : undefined}
+        className={`rounded-full border px-3 py-1 no-underline ${category === primary ? "border-[var(--fi-ink)] bg-[var(--fi-ink)] text-white" : "border-[var(--fi-control-border)] text-[var(--fi-ink)] hover:border-[var(--fi-ink)]"}`}>{getDisplayName(category)}</Link>)}
+    </nav> : null}
     <div className="flex flex-col gap-6">
-      <Panel title="Published fee landscape" subtitle={`${place} · ${CHARTER_LABEL[selection.charter]} · medians of one value per institution`} explore={exploreHref}>
+      <Panel title="Published fee landscape" subtitle={`${place} · ${CHARTER_LABEL[selection.charter]}${sizeNote ? ` ${sizeNote}` : ""} · medians of one value per institution`} explore={exploreHref}>
         {!result ? <Unavailable>Published comparisons could not load. Refresh to retry; no substitute figures are shown.</Unavailable>
           : available.length ? <div className="mt-5"><FeeLandscapeChart state={state ? place : null} rows={comparisons.map(row => ({ fee: getDisplayName(row.category), selected: row.selected.median, national: row.national?.median ?? null }))} /></div>
           : <Unavailable>Too few institutions publish the selected fees here for a median. Missing observations are not $0 fees.</Unavailable>}
@@ -245,7 +263,7 @@ function FeePanels({ data, selection, place, state, stateHrefs, compact, explore
           <table className="w-full text-left text-sm"><caption className="sr-only">Exact fee amounts, coverage and observation dates</caption>
             <thead><tr className="border-b border-[var(--fi-border)] text-xs uppercase tracking-wide text-[var(--fi-muted)]">{["Fee", "Median", "Middle half", "Institutions", ...(state ? ["U.S. median"] : []), "Latest record"].map(s => <th scope="col" key={s} className="p-2.5 font-semibold">{s}</th>)}</tr></thead>
             <tbody>{comparisons.map(row => <tr key={row.category} className="border-b border-[var(--fi-border)]">
-              <th scope="row" className="p-2.5 font-medium">{getDisplayName(row.category)}</th>
+              <th scope="row" className="p-2.5 font-medium"><Link href={focusHref(row.category)} className="text-[var(--fi-ink)] underline decoration-[var(--fi-border)] underline-offset-2 hover:decoration-[var(--fi-ink)]">{getDisplayName(row.category)}</Link></th>
               <td className="p-2.5 tabular-nums">{row.selected.status === "available" ? dollars(row.selected.median) : row.selected.status === "insufficient" ? "Too few to compare" : "Not observed"}</td>
               <td className="p-2.5 tabular-nums">{row.selected.p25 !== null && row.selected.p75 !== null ? `${dollars(row.selected.p25)}–${dollars(row.selected.p75)}` : "Unavailable"}</td>
               <td className="p-2.5 tabular-nums">{row.selected.institutions.toLocaleString()}</td>
@@ -256,12 +274,13 @@ function FeePanels({ data, selection, place, state, stateHrefs, compact, explore
         </div> : null}
         <EvidenceDetails source="Bank Fee Index · published fee catalog" period="Per-category record dates in the table" geography={place} coverage="Published consumer fees from the selected institution type; cohorts under the minimum are withheld" method="One value per institution; median and 25th–75th percentiles. State figures use the same institution type as the national reference. Missing is not zero; record dates are not a fresh schedule recheck." />
       </Panel>
-      <Panel title={`${primaryName} by state`} subtitle={`Published median by state · ${CHARTER_LABEL[selection.charter]}${data.feeMap?.nationalMedian != null ? ` · U.S. ${dollars(data.feeMap.nationalMedian)}` : ""}`}>
+      <Panel title={`${primaryName} by state`} subtitle={`Published median by state · ${CHARTER_LABEL[selection.charter]}${sizeNote ? ` ${sizeNote}` : ""}${data.feeMap?.nationalMedian != null ? ` · U.S. ${dollars(data.feeMap.nationalMedian)}` : ""}`}>
         {data.feeMap && data.feeMap.states.length ? <div className="mt-4"><StateFeeMap states={data.feeMap.states} selected={state} hrefs={stateHrefs} feeLabel={primaryName} /></div>
           : <Unavailable>The state map could not load for {primaryName.toLowerCase()}.</Unavailable>}
         <EvidenceDetails source="Bank Fee Index · published fee catalog" period="Live catalog at page load" geography="States by institution headquarters" coverage={data.feeMap ? `${data.feeMap.nationalInstitutions.toLocaleString()} institutions publish this fee; states with too few are hatched` : "Unavailable"} method="One value per institution, median per state. A state shaded lighter has a lower published median; branches outside the headquarters state are not counted." />
       </Panel>
     </div>
+    {!compact && data.feeMap?.spread ? <SpreadPanel spread={data.feeMap.spread} place={place} primaryName={primaryName} charter={selection.charter} note={sizeNote} /> : null}
     {data.peers ? <PeerTablePanel peers={data.peers} place={place} primaryName={primaryName} charter={selection.charter} compact={compact} exploreHref={exploreHref} note={peerNote} /> : null}
   </>;
 }
@@ -284,6 +303,21 @@ function PeerTablePanel({ peers, place, primaryName, charter, compact, exploreHr
     </div> : <Unavailable>No institution in this scope publishes {primaryName.toLowerCase()} yet.</Unavailable>}
     {!compact && amounts.length ? <p className="mt-3 text-sm text-[var(--fi-muted)]">Among these {amounts.length}: lowest {dollars(amounts[0])}, highest {dollars(amounts[amounts.length - 1])}.</p> : null}
     <EvidenceDetails source="Bank Fee Index · published fee catalog; assets from FDIC and NCUA filings" period="Each row's published date" geography={place} coverage="Institutions in scope with a published value; others are not shown, not $0" method="One value per institution under the statistics contract; each links to the fee schedule it was read from." />
+  </Panel>;
+}
+
+function SpreadPanel({ spread, place, primaryName, charter, note }: { spread: FeeSpread; place: string; primaryName: string; charter: LandingResearchHandoff["charter"]; note?: string }) {
+  const money = (v: number) => Number.isInteger(v) ? `$${v}` : `$${v.toFixed(2)}`;
+  const range = (from: number, to: number) => `${money(from)} to ${money(to)}`;
+  const where = place === "United States" ? "the United States" : place;
+  const medianBin = spread.bins.find(b => spread.median >= b.from && spread.median < b.to) ?? spread.bins[spread.bins.length - 1];
+  return <Panel title={`${primaryName}: how ${where} prices it`} subtitle={`${spread.count.toLocaleString()} ${CHARTER_LABEL[charter].toLowerCase()}${note ? ` ${note}` : ""} with a published amount · institutions per price band`}>
+    <p className="mt-3 text-sm">Median <strong className="tabular-nums">{dollars(spread.median)}</strong>; the middle half charge <span className="tabular-nums">{dollars(spread.p25)}</span> to <span className="tabular-nums">{dollars(spread.p75)}</span>. Published amounts run from <span className="tabular-nums">{dollars(spread.low)}</span> to <span className="tabular-nums">{dollars(spread.high)}</span>.</p>
+    <div className="mt-4"><HorizontalBars label={`Institutions by ${primaryName} price band`} valueLabel="Institutions" highlight={range(medianBin.from, medianBin.to)} rows={spread.bins.map(b => ({ name: range(b.from, b.to), value: b.count }))} /></div>
+    <table className="sr-only"><caption>Institutions per {primaryName} price band</caption><thead><tr><th scope="col">Price band</th><th scope="col">Institutions</th></tr></thead>
+      <tbody>{spread.bins.map(b => <tr key={b.from}><th scope="row">{range(b.from, b.to)}</th><td>{b.count}</td></tr>)}</tbody></table>
+    <p className="mt-2 text-xs text-[var(--fi-muted)]">Each band includes its lower amount and stops just under its upper one. The highlighted band holds the median.</p>
+    <EvidenceDetails source="Bank Fee Index · published fee catalog" period="Live catalog at page load" geography={place} coverage={`Every institution in scope with a published ${primaryName} amount; institutions without one are not counted as $0`} method="One value per institution, read the same way as the landscape table, so the median and middle half match it. Even-width price bands." />
   </Panel>;
 }
 

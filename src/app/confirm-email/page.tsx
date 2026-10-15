@@ -4,7 +4,9 @@ import { ConsumerNav } from "@/components/consumer-nav";
 import { CustomerFooter } from "@/components/customer-footer";
 import { SearchModal } from "@/components/public/search-modal";
 import { CONTACT_EMAIL } from "@/lib/constants";
+import { sql } from "@/lib/data-store/connection";
 import { markEmailConfirmed, verifyEmailConfirmToken } from "@/lib/email/email-confirm";
+import { linkVerifiedInstitutions } from "@/lib/pro-institution-link";
 
 export const dynamic = "force-dynamic";
 
@@ -29,7 +31,10 @@ async function confirm(params: Record<string, string | string[] | undefined>): P
   const token = first(params.t);
   if (!verifyEmailConfirmToken(userId, email, token)) return "invalid";
   try {
-    return (await markEmailConfirmed(userId, email)) ? "confirmed" : "invalid";
+    if (!(await markEmailConfirmed(userId, email))) return "invalid";
+    // A Pro buyer's institution links once their confirmed email matches its website (#1405).
+    await linkVerifiedInstitutions(sql, userId).catch((error) => console.error("[confirm-email] institution link failed", error));
+    return "confirmed";
   } catch {
     return "error";
   }
