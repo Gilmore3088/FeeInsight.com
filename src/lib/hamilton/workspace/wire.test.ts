@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { topicsBearOn } from "@/lib/regulatory/fee-topics";
 import { words } from "./four-roles";
-import { isWireFact, statePostFacts, wireFacts, type WireActionRow, type WireBillRow, type WireRuleRow } from "./wire";
+import { enforcementCode, isFederalRelease, isWireFact, statePostFacts, wireFacts, type WireActionRow, type WireBillRow, type WireRuleRow } from "./wire";
 
 // Rows shaped like the stored Wire items; titles, parties and dates are for tests only.
 const today = new Date("2026-10-14T12:00:00Z");
@@ -132,8 +132,35 @@ describe("Regulatory Wire lines for a regulation answer (#1090)", () => {
     expect(facts).toEqual([
       {
         text: 'Illinois state regulator post "Overdraft fees at state banks", May 1, 2026.',
-        source: { label: "Illinois state regulator release", table: "reg_articles", url: "https://idfpr.illinois.gov/a", asOf: "2026-05-01" },
+        source: { label: "Illinois state regulator release", table: "reg_articles", kind: "state_post", url: "https://idfpr.illinois.gov/a", asOf: "2026-05-01" },
       },
     ]);
+  });
+});
+
+describe("Wire follow-ups (#1254)", () => {
+  it("tags a state post so it is never read as a federal release", () => {
+    const [post] = statePostFacts(
+      [{ state_code: "IL", agency: "Illinois state regulator", title: "Overdraft fees at state banks", link: "https://idfpr.illinois.gov/a", published_at: "2026-05-01T00:00:00.000Z" }],
+      { stateCode: "IL", today },
+    );
+    expect(isWireFact(post)).toBe(true);
+    expect(isFederalRelease(post)).toBe(false);
+    expect(isFederalRelease({ text: "FDIC: Overdraft guidance", source: { label: "FDIC release", table: "reg_articles", asOf: "2026-09-01" } })).toBe(true);
+    expect(isFederalRelease({ text: "A rule", source: { label: "Federal Register", table: "reg_tracker_items", asOf: "2026-09-01" } })).toBe(false);
+  });
+
+  it("maps a federal regulator to its enforcement list code, and others to none", () => {
+    expect(enforcementCode("OCC")).toBe("OCC");
+    expect(enforcementCode("Federal Reserve")).toBe("FRB");
+    expect(enforcementCode("FDIC")).toBeNull();
+    expect(enforcementCode("NCUA")).toBeNull();
+    expect(enforcementCode(null)).toBeNull();
+  });
+
+  it("matches party_state as the loader stores it, upper case, against an upper-cased bank state", () => {
+    const rows = { rules: [], bills: [], actions: [action({ agency: "STATE_IL", agency_label: "Illinois IDFPR", party_state: "IL" })] };
+    expect(wireFacts(rows, scope({ stateCode: "il", primaryRegulator: "FDIC" }))).toHaveLength(1);
+    expect(wireFacts(rows, scope({ stateCode: "IL", primaryRegulator: "FDIC" }))[0].text).toContain("(IL)");
   });
 });

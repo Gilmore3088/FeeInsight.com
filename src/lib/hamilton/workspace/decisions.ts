@@ -12,6 +12,7 @@
 import type { DecisionEvent, DecisionRecord, DecisionStatus, EvidenceLevel, Fact, FeeResearch, WatchCondition } from "./types";
 import { formatFeeAmount } from "@/lib/format";
 import { proseFeeName } from "./names";
+import { isFederalRelease } from "./wire";
 
 function money(n: number): string {
   return formatFeeAmount(n) ?? `$${n}`;
@@ -72,7 +73,7 @@ export function evaluateWatches(conditions: WatchCondition[], research: FeeResea
       return { condition, tripped: Boolean(fact), evidence: fact };
     }
     if (condition.kind === "rule_release") {
-      const fact = research.regulation.find((f) => f.source.table === "reg_articles" && newer(f, since)) ?? null;
+      const fact = research.regulation.find((f) => isFederalRelease(f) && newer(f, since)) ?? null;
       return { condition, tripped: Boolean(fact), evidence: fact };
     }
     const band = research.band;
