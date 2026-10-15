@@ -36,9 +36,10 @@ export function LandingHero({ summary }: { summary: Pick<PublicStatsSummary, "in
         </p>
 
         <ul
-          className="-mx-4 mt-3 flex w-[calc(100%+2rem)] min-w-0 gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none] sm:mx-0 sm:mt-3 sm:w-auto sm:flex-wrap sm:justify-center sm:overflow-visible sm:px-0"
+          className="-mx-4 mt-3 flex w-[calc(100%+2rem)] min-w-0 gap-2 overflow-x-auto px-4 pb-1 [mask-image:linear-gradient(to_right,#000_calc(100%_-_2.5rem),transparent)] [scrollbar-width:none] sm:mx-0 sm:[mask-image:none] sm:mt-3 sm:w-auto sm:flex-wrap sm:justify-center sm:overflow-visible sm:px-0"
           aria-label="Or start here"
         >
+          {/* Under sm the row scrolls sideways; the fade at its right edge shows there is more. */}
           {/* The Pro plans chip leads, so a phone shows it whole in the first screen (re-walk R3). */}
           <li>
             <TrackLink event="upgrade_click" eventProps={{ placement: "home_hero" }} href={PRO_PLANS_NAV.href} className={CHIP}>
