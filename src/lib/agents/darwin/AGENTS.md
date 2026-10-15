@@ -116,20 +116,29 @@ Darwin owns verification and classification.
   (institution, document) pair is read when the document is shared with another institution (its
   host is that institution's stored website, that institution has live fees from the same address,
   or one of its documents has the same `text_hash`) or sits on a vendor download path
-  (`/ezs3download/download/`, `/_/kcms-doc/`; a path alone is no proof). The text is scanned for
-  those institutions by name or by city with its state, and for every registry institution by name
-  only (brand stems such as "healthplus" included, boilerplate and generic words excluded, a name
-  another institution's name contains counting only with its city). Verdicts: `own_named` (this
-  bank's distinct name, city or certificate number: passes, also for co-branded documents),
+  (`/ezs3download/download/`, `/_/kcms-doc/`; a path alone is no proof). Linked institutions count
+  by name (brand stems such as "healthplus" included, boilerplate and generic words excluded, a
+  name another institution's name contains only with its city) or by city with its state. An
+  institution only the registry-wide name scan finds counts toward a takedown only under the header
+  rule (`headerNamesInstitution`: one of the first ten non-empty lines starts with its full legal
+  name, two words or more with "bank" or "credit union", printed as a title, and no other
+  institution has that name); otherwise it gives `registry_named`, a review verdict that passes
+  ("Fees associated with", "most popular", "processed through Bank of America", "issued by U.S.
+  Bank", "Coin counting at Wells Fargo" are all negative tests). Verdicts: `own_named` (this bank's
+  distinct name, city or certificate number: passes, also for co-branded documents),
   `sibling_shared` (same holding company, #1441: never taken down, counted once per document),
   `other_bank` (exactly one unrelated institution named, never this bank), `shared_service` (two or
-  more named: passes), `unproven`, `no_text`. Up to 25 pairs a step, one attempt each (fingerprint
-  `owner-shadow:<institution>:<document>` in shadow, `owner:...` once live). With
+  more: passes), `registry_named`, `unproven`, `no_text`. Up to 25 new pairs a step, one attempt
+  each (fingerprint `owner-shadow:<institution>:<document>:<text_hash>` in shadow, `owner:...` once
+  live, so a re-extracted text is read again). A step skips the scoped read when the last one of
+  its mode found no pair and the newest stored text and live fee ids are unchanged. With
   `DARWIN_DOCUMENT_OWNER_TAKEDOWN` off (the default) it only logs the live fees it would take down
-  (`darwin.document_owner_shadow` event); on, an `other_bank` fee goes through the shared second
-  look (`darwin.document_owner`) and is archived with reason `document_owner: names institution
-  <id>`, never deleted. `documentOwnerCountSql()` is the read-only count of the whole backlog by
-  verdict (it skips the certificate test, so its `other_bank` count is an upper bound).
+  (`darwin.document_owner_shadow` event, step detail `document_owner`); on, `other_bank` pairs are
+  re-read under their own cap of 25, a failing fee goes through the shared second look
+  (`darwin.document_owner`), passing fees clear their pending flags, and a confirmed fee is
+  archived with reason `document_owner: names institution <id>`, never deleted.
+  `documentOwnerCountSql()` is the read-only count of the whole backlog by verdict (it skips the
+  certificate test, so its `other_bank` count is an upper bound).
 - Live name re-check (`live-fragment-check.ts`, #1443, #1436; decision 2026-10-15, "Darwin
   re-checks every live fee against today's rules"). `verify.recheck` reads verified rows of the
   current `verify.rules` version, so fees that went live earlier are never read again; this pass

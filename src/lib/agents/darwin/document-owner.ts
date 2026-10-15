@@ -28,8 +28,13 @@ type SqlTag = typeof sql;
  * its documents has the same `text_hash`), or sits on a vendor download path
  * (`VENDOR_DOCUMENT_PATH`; a path alone is no proof). For each such pair it asks which bank the
  * text names: the institutions it shares the document with, by name or by city with its state,
- * and every institution in the registry, by name only. Never by the website host, which is the
- * thing in doubt:
+ * and every institution in the registry. Never by the website host, which is the thing in doubt.
+ * A registry-only institution (not linked by host, address or text hash) counts toward a takedown
+ * only under the header rule (`headerNamesInstitution`: a line among the first ten starts with its
+ * full legal name, with "bank" or "credit union" in it, printed as a title, and no other
+ * institution has that name). Ordinary words and partners ("Fees associated with", "most
+ * popular", "processed through Bank of America", "Coin counting at Wells Fargo") give at most
+ * `registry_named`, a review verdict that passes:
  * - `own_named`: the text names this bank (a name no other named institution shares, its city,
  *   or its FDIC certificate / NCUA charter number). Passes, also when it names another bank too
  *   (a co-branded or shared-service document).
@@ -39,7 +44,14 @@ type SqlTag = typeof sql;
  *   The fee is that bank's.
  * - `shared_service`: it names two or more other unrelated institutions and not this bank (a
  *   shared-service or network document). Passes.
+ * - `registry_named`: only the registry scan found another name, outside the header rule. Passes;
+ *   recorded for review.
  * - `unproven` / `no_text`: nothing decides. Passes.
+ *
+ * Each pair is read once per version, mode and text hash (`documentOwnerFingerprint`), and a
+ * step skips the scoped read when the last one found no pair and no text or live fee has arrived
+ * since. With the takedown on, `other_bank` pairs are re-read under their own cap for the second
+ * look, and pairs that pass clear their pending flags.
  *
  * Shadow first (CLAUDE.md standing rule, DECISIONS 2026-10-15): with
  * `DARWIN_DOCUMENT_OWNER_TAKEDOWN` off, each learning verify step reads up to
@@ -112,6 +124,8 @@ export type DocumentOwnerVerdict =
   | { kind: "sibling_shared"; siblingIds: number[] }
   | { kind: "other_bank"; otherId: number; evidence: string }
   | { kind: "shared_service"; otherIds: number[] }
+  /** Only the registry scan found another institution's name (a partner, network or ordinary word): for review, never a takedown. */
+  | { kind: "registry_named"; otherIds: number[] }
   | { kind: "unproven" }
   | { kind: "no_text" };
 
@@ -227,11 +241,53 @@ export function institutionsNamedIn(text: string | null | undefined, directory: 
   return [...ids].sort((a, b) => a - b);
 }
 
+/** Non-empty lines of a document's top that the header rule reads. */
+export const HEADER_LINES = 10;
+/** Words a title prints in lower case ("Bank of America"). */
+const TITLE_SMALL_WORDS = new Set(["of", "the", "and", "for", "at", "in", "&"]);
+
+/**
+ * An institution's full legal name as the header rule reads it: its registry name without "The" or
+ * "N.A.", two words or more, with "bank" or "credit union" in it ("horizons north credit union",
+ * "bank of america"). Null for a name that does not qualify ("Popular", "Discover").
+ */
+export function legalBankName(name: string | null | undefined): string | null {
+  const base = ownerWords(name)
+    .replace(/^the /, "")
+    .replace(/ (national association|n a|ssb|fsb|inc)$/, "");
+  if (base.split(" ").length < 2 || !/(^| )(bank|credit union)( |$)/.test(base)) return null;
+  return base;
+}
+
+/** A line with apostrophes dropped and other punctuation a space, case kept. */
+function caseWords(line: string): string {
+  return line.replace(/['\u2019\u2018`]/g, "").replace(/[^A-Za-z0-9&]+/g, " ").trim();
+}
+
+/**
+ * The header rule for an institution only the registry scan found (#1455 review): one of the
+ * document's first `HEADER_LINES` non-empty lines starts with its full legal name
+ * (`legalBankName`), printed as a title (every word capitalised but "of", "the", "and"...).
+ * "Horizons North Credit Union Fee Schedule" qualifies; "processed through Bank of America",
+ * "Fees associated with" and "Coin counting at Wells Fargo" do not.
+ */
+export function headerNamesInstitution(text: string | null | undefined, name: string | null | undefined): boolean {
+  const legal = legalBankName(name);
+  if (!legal || !text) return false;
+  const lines = text.split(/\r?\n/).map(caseWords).filter(Boolean).slice(0, HEADER_LINES);
+  return lines.some((line) => {
+    if (!`${line.toLowerCase()} `.startsWith(`${legal} `)) return false;
+    return line.slice(0, legal.length).split(" ").every((word) => TITLE_SMALL_WORDS.has(word) || /^[A-Z0-9&]/.test(word));
+  });
+}
+
 /**
  * Pure: which bank does this document's text name? `own` is the institution the fees are filed
  * under; `linked` the institutions it shares the document with (by host, address or text hash),
  * which may be named by name or by city and state; `found` the institutions the registry scan
- * found named in the text (`institutionsNamedIn`), which count by name only.
+ * found named in the text (`institutionsNamedIn`). A registry-only institution counts toward a
+ * takedown only under the header rule (`headerNamesInstitution`) and when no other institution
+ * has its name; otherwise it gives at most `registry_named`, a verdict for review that passes.
  */
 export function documentOwnerVerdict(
   text: string | null | undefined,
@@ -241,8 +297,12 @@ export function documentOwnerVerdict(
 ): DocumentOwnerVerdict {
   if (!text || !text.trim()) return { kind: "no_text" };
   const padded = ` ${ownerWords(text)} `;
-  const linkedIds = new Set(linked.map((other) => other.id));
-  const pool = [...new Map([...linked, ...found].filter((other) => other.id !== own.id).map((other) => [other.id, other])).values()];
+  const linkedOthers = linked.filter((other) => other.id !== own.id);
+  const linkedIds = new Set(linkedOthers.map((other) => other.id));
+  const registryOnly = found.filter((other) => other.id !== own.id && !linkedIds.has(other.id));
+  const headed = registryOnly.filter((other) => !other.nameShared && headerNamesInstitution(text, other.name));
+  const headedIds = new Set(headed.map((other) => other.id));
+  const pool = [...linkedOthers, ...headed];
   const ownForms = ownerNameForms(own.name);
   const formsOf = new Map(pool.map((other) => [other.id, ownerNameForms(other.name)] as const));
 
@@ -261,12 +321,16 @@ export function documentOwnerVerdict(
   }
 
   const named = (other: OwnerBank): string | null => {
+    if (headedIds.has(other.id)) {
+      const legal = legalBankName(other.name)!;
+      return namesOverlap([legal], ownForms) ? null : `header: ${legal}`;
+    }
     const forms = formsOf.get(other.id)!.filter((form) => !namesOverlap([form], ownForms));
     const name = forms.find((form) => hasWords(padded, form));
     const otherCity = cityWords(other);
     const cityHere = otherCity.length > 0 && otherCity !== ownCity && hasWords(padded, otherCity);
     if (name && (!other.nameShared || cityHere)) return `name: ${name}`;
-    if (linkedIds.has(other.id) && otherCity && otherCity !== ownCity && namesCityAndState(padded, other)) {
+    if (otherCity && otherCity !== ownCity && namesCityAndState(padded, other)) {
       return `city: ${otherCity} ${(other.stateCode ?? "").toLowerCase()}`;
     }
     return null;
@@ -284,6 +348,8 @@ export function documentOwnerVerdict(
   }
   if (hits.length === 1) return { kind: "other_bank", otherId: hits[0].id, evidence: hits[0].evidence };
   if (hits.length > 1) return { kind: "shared_service", otherIds: hits.map((hit) => hit.id) };
+  const mentioned = registryOnly.filter((other) => !headedIds.has(other.id) && !sameHoldingCompany(own, other));
+  if (mentioned.length > 0) return { kind: "registry_named", otherIds: mentioned.map((other) => other.id) };
   return { kind: "unproven" };
 }
 
@@ -340,36 +406,59 @@ function scopedPairsSql(): string {
     ),
     shared AS (
       SELECT p.institution_id, p.source_document_id, p.document_url, p.live_fees,
+             COALESCE(h.text_hash, 'none') AS text_hash,
              COALESCE(array_agg(DISTINCT l.other_id ORDER BY l.other_id) FILTER (WHERE l.other_id IS NOT NULL), '{}'::bigint[]) AS other_ids
         FROM placed p
+        LEFT JOIN hashes h ON h.source_document_id = p.source_document_id
         LEFT JOIN links l ON l.institution_id = p.institution_id AND l.source_document_id = p.source_document_id
-       GROUP BY p.institution_id, p.source_document_id, p.document_url, p.live_fees
+       GROUP BY p.institution_id, p.source_document_id, p.document_url, p.live_fees, h.text_hash
       HAVING count(l.other_id) > 0 OR p.document_url ~* '${VENDOR_DOCUMENT_PATH}'
     )`;
 }
 
-/** The attempt fingerprint of one pair; shadow reads are kept apart so the switch re-reads them. */
-export function documentOwnerFingerprint(institutionId: number, sourceDocumentId: number, live: boolean): string {
-  return `owner${live ? "" : "-shadow"}:${institutionId}:${sourceDocumentId}`;
+/**
+ * The attempt fingerprint of one pair: its institution, document and the document's current text
+ * hash, so a re-extracted text is read again. Shadow reads are kept apart so the switch re-reads them.
+ */
+export function documentOwnerFingerprint(institutionId: number, sourceDocumentId: number, textHash: string | null, live: boolean): string {
+  return `${documentOwnerFingerprintPrefix(live)}${institutionId}:${sourceDocumentId}:${textHash ?? "none"}`;
+}
+
+export function documentOwnerFingerprintPrefix(live: boolean): string {
+  return `owner${live ? "" : "-shadow"}:`;
 }
 
 /**
- * The pairs this step reads: not yet read under this version and mode. With the takedown on, a
- * pair last read as `other_bank` is read again, so the second look can confirm it.
+ * The pairs this step reads, in two legs with their own caps so re-reads never starve new pairs:
+ * pairs not yet read under this version, mode and text hash (`$4`), and, with the takedown on,
+ * pairs last read as `other_bank` and never passed, read again so the second look can confirm
+ * them (`$5`, 0 in shadow). `$1` fingerprint prefix, `$2` strategy, `$3` version.
  */
 export function documentOwnerPairsSql(): string {
-  return `${scopedPairsSql()}
-    SELECT s.institution_id, s.source_document_id, s.document_url, s.live_fees, s.other_ids
-      FROM shared s
-     WHERE NOT EXISTS (
-       SELECT 1 FROM pipeline_attempts pa
-        WHERE pa.input_fingerprint = $1 || s.institution_id::text || ':' || s.source_document_id::text
+  const fingerprint = "$1 || s.institution_id::text || ':' || s.source_document_id::text || ':' || s.text_hash";
+  const attempts = (extra: string) => `SELECT 1 FROM pipeline_attempts pa
+        WHERE pa.input_fingerprint = ${fingerprint}
           AND pa.strategy = $2
-          AND pa.strategy_version = $3
-          AND ($4::boolean IS FALSE OR pa.outcome = 'ok')
-     )
-     ORDER BY s.live_fees DESC, s.institution_id, s.source_document_id
-     LIMIT $5`;
+          AND pa.strategy_version = $3${extra}`;
+  return `${scopedPairsSql()},
+    fresh AS (
+      SELECT s.institution_id, s.source_document_id, s.document_url, s.live_fees, s.other_ids, s.text_hash, false AS reread
+        FROM shared s
+       WHERE NOT EXISTS (${attempts("")})
+       ORDER BY s.live_fees DESC, s.institution_id, s.source_document_id
+       LIMIT $4
+    ),
+    rereads AS (
+      SELECT s.institution_id, s.source_document_id, s.document_url, s.live_fees, s.other_ids, s.text_hash, true AS reread
+        FROM shared s
+       WHERE EXISTS (${attempts("\n          AND pa.outcome = 'evidence_mismatch'")})
+         AND NOT EXISTS (${attempts("\n          AND pa.outcome = 'ok'")})
+       ORDER BY s.live_fees DESC, s.institution_id, s.source_document_id
+       LIMIT $5
+    )
+    SELECT * FROM fresh
+    UNION ALL
+    SELECT * FROM rereads`;
 }
 
 /** SQL forms of `ownerWords` and `ownerNameForms`, so the count reads names as the pass does. */
@@ -392,14 +481,17 @@ function formsSql(nameExpr: string): string {
 /**
  * Read-only SQL for James: the live fees the document-owner check would take down, the passes
  * by verdict, and the sibling-shared documents counted once (#1441). Every live fee is counted
- * once. It mirrors `documentOwnerVerdict` with one difference: it does not read the FDIC
- * certificate / NCUA charter number, so its `other_bank` count is an upper bound of the pass's.
- * `detail` lists each (institution, document) pair instead of the totals.
+ * once. It mirrors `documentOwnerVerdict`, header rule included, with one difference: it does
+ * not read the FDIC certificate / NCUA charter number, so its `other_bank` count is an upper
+ * bound of the pass's. `detail` lists each (institution, document) pair instead of the totals.
  */
 export function documentOwnerCountSql(options: { detail?: boolean } = {}): string {
   const states = Object.entries(STATE_NAMES)
     .map(([code, name]) => `('${code}', '${ownerWords(name)}')`)
     .join(", ");
+  const small = [...TITLE_SMALL_WORDS].map((word) => `'${word}'`).join(", ");
+  const legalBase = (nameExpr: string) =>
+    `regexp_replace(regexp_replace(${wordsSql(nameExpr)}, '^the ', ''), ' (national association|n a|ssb|fsb|inc)$', '')`;
   // Whole words: both sides padded with spaces.
   const has = (padded: string, words: string) => `(length(${words}) > 0 AND strpos(${padded}, ' ' || ${words} || ' ') > 0)`;
   const overlap = (a: string, b: string) =>
@@ -408,21 +500,22 @@ export function documentOwnerCountSql(options: { detail?: boolean } = {}): strin
     `(length(${alias}.city_w) >= ${MIN_CITY_CHARS} AND (${has(padded, `${alias}.city_w || ' ' || lower(${alias}.state_code)`)} OR ${has(padded, `${alias}.city_w || ' ' || ${alias}.state_w`)}))`;
   const sibling = (a: string, b: string) =>
     `((${a}.hc_rssd <> '' AND ${a}.hc_rssd = ${b}.hc_rssd) OR (${a}.hc_name <> '' AND ${a}.hc_name = ${b}.hc_name))`;
-  // An institution in play `c` (from `inplay`) and its evidence, as `named` in `documentOwnerVerdict`.
-  const otherNamed = `(
+  // An institution in play `c` and its evidence, as `named` in `documentOwnerVerdict`: a linked
+  // one by name or city and state; a registry-only one (header rule) by its legal name.
+  const otherNamed = `(CASE WHEN c.linked THEN (
       (EXISTS (SELECT 1 FROM unnest(c.forms) f
                 WHERE NOT ${overlap("ARRAY[f]", "own.forms")} AND ${has("j.padded", "f")})
        AND (NOT c.name_shared
             OR (length(c.city_w) >= ${MIN_CITY_CHARS} AND c.city_w <> own.city_w AND ${has("j.padded", "c.city_w")})))
-      OR (c.linked AND c.city_w <> own.city_w AND ${cityState("j.padded", "c")})
-    )`;
+      OR (length(c.city_w) >= ${MIN_CITY_CHARS} AND c.city_w <> own.city_w AND ${cityState("j.padded", "c")})
+    ) ELSE NOT ${overlap("ARRAY[c.legal]", "own.forms")} END)`;
   const inplay = (where: string) => `(SELECT b.*, ip.linked FROM inplay ip JOIN named_banks b ON b.id = ip.other_id
                  WHERE ip.institution_id = j.institution_id AND ip.source_document_id = j.source_document_id AND ${where})`;
   return `-- Darwin document-owner check (#1455), read-only: live fees on a document whose text names another bank.
 ${scopedPairsSql()},
     states(code, state_w) AS (VALUES ${states}),
     texts AS (
-      SELECT DISTINCT ON (source_document_id) source_document_id,
+      SELECT DISTINCT ON (source_document_id) source_document_id, normalized_text AS raw,
              ' ' || ${wordsSql("normalized_text")} || ' ' AS padded
         FROM agent_source_texts
        WHERE source_document_id IN (SELECT source_document_id FROM shared)
@@ -445,15 +538,47 @@ ${scopedPairsSql()},
         JOIN texts t ON t.source_document_id = dw.source_document_id
        WHERE strpos(t.padded, ' ' || d.form || ' ') > 0
     ),
-    inplay AS (
-      SELECT institution_id, source_document_id, other_id, bool_or(linked) AS linked
-        FROM (
-          SELECT s.institution_id, s.source_document_id, unnest(s.other_ids) AS other_id, true AS linked FROM shared s
-          UNION ALL
-          SELECT s.institution_id, s.source_document_id, f.id, false FROM shared s JOIN found f ON f.source_document_id = s.source_document_id
+    header_lines AS (
+      SELECT t.source_document_id, x.line
+        FROM texts t,
+        LATERAL (
+          SELECT y.line FROM (
+            SELECT btrim(regexp_replace(regexp_replace(u.l, '[''’‘\`]', '', 'g'), '[^A-Za-z0-9&]+', ' ', 'g')) AS line, u.n
+              FROM unnest(regexp_split_to_array(t.raw, E'\\r?\\n')) WITH ORDINALITY AS u(l, n)
+          ) y
+           WHERE y.line <> ''
+           ORDER BY y.n
+           LIMIT ${HEADER_LINES}
         ) x
-       WHERE other_id <> institution_id
-       GROUP BY institution_id, source_document_id, other_id
+    ),
+    legal AS (
+      SELECT id, legal FROM (
+        SELECT i.id, ${legalBase("i.institution_name")} AS legal FROM institution_sources i WHERE i.institution_name IS NOT NULL
+      ) z
+       WHERE legal ~ ' ' AND legal ~ '(^| )(bank|credit union)( |$)'
+    ),
+    headed AS (
+      SELECT DISTINCT h.source_document_id, lg.id
+        FROM header_lines h
+        JOIN legal lg ON split_part(lower(h.line), ' ', 1) = split_part(lg.legal, ' ', 1)
+       WHERE left(lower(h.line) || ' ', length(lg.legal) + 1) = lg.legal || ' '
+         AND NOT EXISTS (
+           SELECT 1 FROM regexp_split_to_table(left(h.line, length(lg.legal)), ' ') AS w(word)
+            WHERE w.word NOT IN (${small}) AND w.word !~ '^[A-Z0-9&]'
+         )
+    ),
+    linked AS (
+      SELECT DISTINCT s.institution_id, s.source_document_id, o.other_id
+        FROM shared s, unnest(s.other_ids) AS o(other_id)
+       WHERE o.other_id <> s.institution_id
+    ),
+    registry AS (
+      SELECT s.institution_id, s.source_document_id, f.id AS other_id, (hd.id IS NOT NULL) AS headed
+        FROM shared s
+        JOIN found f ON f.source_document_id = s.source_document_id
+        LEFT JOIN headed hd ON hd.source_document_id = s.source_document_id AND hd.id = f.id
+       WHERE f.id <> s.institution_id
+         AND NOT EXISTS (SELECT 1 FROM linked l WHERE l.institution_id = s.institution_id AND l.source_document_id = s.source_document_id AND l.other_id = f.id)
     ),
     banks AS (
       SELECT i.id, i.state_code,
@@ -461,17 +586,28 @@ ${scopedPairsSql()},
              COALESCE(st.state_w, '') AS state_w,
              ltrim(btrim(COALESCE(i.holding_company_rssd, '')), '0') AS hc_rssd,
              ${wordsSql("i.holding_company_name")} AS hc_name,
-             ${formsSql("i.institution_name")} AS forms
+             ${formsSql("i.institution_name")} AS forms,
+             ${legalBase("i.institution_name")} AS legal
         FROM institution_sources i
         LEFT JOIN states st ON st.code = upper(btrim(COALESCE(i.state_code, '')))
-       WHERE i.id IN (SELECT institution_id FROM shared UNION SELECT other_id FROM inplay)
+       WHERE i.id IN (SELECT institution_id FROM shared UNION SELECT other_id FROM linked UNION SELECT other_id FROM registry)
     ),
     named_banks AS (
-      SELECT b.*, EXISTS (
-               SELECT 1 FROM directory a, unnest(b.forms) y
-                WHERE a.id <> b.id AND strpos(' ' || a.form || ' ', ' ' || y || ' ') > 0
-             ) AS name_shared
+      SELECT b.*,
+             CASE WHEN b.id IN (SELECT other_id FROM linked UNION SELECT other_id FROM registry WHERE headed)
+                  THEN EXISTS (
+                    SELECT 1 FROM directory a, unnest(b.forms) y
+                     WHERE a.id <> b.id AND strpos(' ' || a.form || ' ', ' ' || y || ' ') > 0
+                  )
+                  ELSE false END AS name_shared
         FROM banks b
+    ),
+    inplay AS (
+      SELECT institution_id, source_document_id, other_id, true AS linked FROM linked
+      UNION ALL
+      SELECT r.institution_id, r.source_document_id, r.other_id, false
+        FROM registry r JOIN named_banks b ON b.id = r.other_id
+       WHERE r.headed AND NOT b.name_shared
     ),
     judged0 AS (
       SELECT s.institution_id, s.source_document_id, s.document_url, s.live_fees, s.other_ids, t.padded
@@ -496,7 +632,13 @@ ${scopedPairsSql()},
                          OR EXISTS (SELECT 1 FROM ${inplay(sibling("own", "b"))} c WHERE ${otherNamed}))
                  THEN 'sibling_shared'
                ELSE CASE (SELECT count(*) FROM ${inplay(`NOT ${sibling("own", "b")}`)} c WHERE ${otherNamed})
-                      WHEN 0 THEN 'unproven' WHEN 1 THEN 'other_bank' ELSE 'shared_service' END
+                      WHEN 0 THEN CASE WHEN EXISTS (
+                               SELECT 1 FROM registry r JOIN named_banks b ON b.id = r.other_id
+                                WHERE r.institution_id = j.institution_id AND r.source_document_id = j.source_document_id
+                                  AND NOT (r.headed AND NOT b.name_shared)
+                                  AND NOT ${sibling("own", "b")}
+                             ) THEN 'registry_named' ELSE 'unproven' END
+                      WHEN 1 THEN 'other_bank' ELSE 'shared_service' END
              END AS verdict,
              (SELECT min(c.id) FROM ${inplay(`NOT ${sibling("own", "b")}`)} c WHERE ${otherNamed}) AS named_other_id
         FROM judged0 j
@@ -526,6 +668,8 @@ interface PairRow {
   document_url: string | null;
   live_fees: number | string;
   other_ids: Array<number | string> | null;
+  text_hash: string | null;
+  reread: boolean | null;
 }
 
 interface BankRow {
@@ -549,7 +693,11 @@ export interface DocumentOwnerFee {
 
 export interface DocumentOwnerResult {
   live: boolean;
+  /** True when the step skipped the read: the last read found no pair and nothing new has arrived since. */
+  skipped: boolean;
   pairs: number;
+  /** Of `pairs`, `other_bank` pairs read again for their second look (takedown on only). */
+  rereads: number;
   verdicts: Partial<Record<DocumentOwnerVerdict["kind"], number>>;
   /** Documents a holding company's charters share (#1441), each counted once; never taken down. */
   siblingSharedDocuments: number;
@@ -557,7 +705,78 @@ export interface DocumentOwnerResult {
   wouldTakeDown: DocumentOwnerFee[];
   flagged: number;
   waiting: number;
+  /** Pending second-look flags cleared because the fee's pair passes now (takedown on only). */
+  cleared: number;
   takenDown: number[];
+}
+
+/** Re-reads per step with the takedown on, apart from the new-pair cap, so they never starve new pairs. */
+export const DOCUMENT_OWNER_REREAD_LIMIT = 25;
+
+/** The step-detail form of a result (run-store's verify step). */
+export function documentOwnerDetail(result: DocumentOwnerResult | null) {
+  if (!result) return null;
+  return {
+    check: DOCUMENT_OWNER_CHECK,
+    strategy: DOCUMENT_OWNER_STRATEGY,
+    takedown_live: result.live,
+    skipped: result.skipped,
+    pairs: result.pairs,
+    rereads: result.rereads,
+    verdicts: result.verdicts,
+    sibling_shared_documents: result.siblingSharedDocuments,
+    would_take_down: result.wouldTakeDown.length,
+    flagged: result.flagged,
+    waiting: result.waiting,
+    cleared: result.cleared,
+    taken_down: result.takenDown.length,
+    samples: result.wouldTakeDown.slice(0, 20).map((fee) => ({
+      fee_published_id: fee.feePublishedId,
+      institution_id: fee.institutionId,
+      source_document_id: fee.sourceDocumentId,
+      other_institution_id: fee.otherInstitutionId,
+    })),
+  };
+}
+
+interface Watermark {
+  textId: number | null;
+  feeId: number | null;
+}
+
+function eventType(live: boolean): string {
+  return live ? "darwin.document_owner" : "darwin.document_owner_shadow";
+}
+
+/**
+ * Skip the scoped-pairs read when the last read of this mode found no pair and no stored text or
+ * live fee has arrived since (newest `agent_source_texts.id` and `published_fee_records` id
+ * unchanged). Both are primary-key maxima, so the test is cheap. A failed read never skips.
+ */
+async function readWatermark(db: SqlTag, live: boolean): Promise<{ now: Watermark; skip: boolean }> {
+  const none = { now: { textId: null, feeId: null }, skip: false };
+  try {
+    const [current] = await inSavepoint(db, (scope) => scope<Array<{ text_id: number | string | null; fee_id: number | string | null }>>`
+      SELECT (SELECT max(id) FROM agent_source_texts) AS text_id,
+             (SELECT max(fee_published_id) FROM published_fee_records) AS fee_id
+    `);
+    const now = { textId: current?.text_id == null ? null : Number(current.text_id), feeId: current?.fee_id == null ? null : Number(current.fee_id) };
+    const [last] = await inSavepoint(db, (scope) => scope<Array<{ detail: Record<string, unknown> | null }>>`
+      SELECT detail FROM agent_run_events
+       WHERE event_type = ${eventType(live)}
+       ORDER BY created_at DESC, id DESC
+       LIMIT 1
+    `);
+    const detail = last?.detail ?? null;
+    const skip = detail != null
+      && Number(detail.pairs) === 0
+      && now.textId != null && Number(detail.max_text_id) === now.textId
+      && now.feeId != null && Number(detail.max_fee_id) === now.feeId;
+    return { now, skip };
+  } catch (error) {
+    console.warn("[darwin] document owner watermark read failed", error instanceof Error ? error.message : error);
+    return none;
+  }
 }
 
 /**
@@ -566,27 +785,49 @@ export interface DocumentOwnerResult {
  */
 export async function recheckDocumentOwners(
   db: SqlTag,
-  options: { runId: number; stepId?: number | null; limit?: number; takedown?: boolean; now?: Date },
+  options: { runId: number; stepId?: number | null; limit?: number; rereadLimit?: number; takedown?: boolean; now?: Date },
 ): Promise<DocumentOwnerResult> {
   const live = options.takedown ?? DARWIN_DOCUMENT_OWNER_TAKEDOWN;
   const limit = Math.max(1, Math.min(options.limit ?? DOCUMENT_OWNER_PAIR_LIMIT, 500));
+  const rereadLimit = live ? Math.max(0, Math.min(options.rereadLimit ?? DOCUMENT_OWNER_REREAD_LIMIT, 500)) : 0;
   const result: DocumentOwnerResult = {
-    live, pairs: 0, verdicts: {}, siblingSharedDocuments: 0, wouldTakeDown: [], flagged: 0, waiting: 0, takenDown: [],
+    live, skipped: false, pairs: 0, rereads: 0, verdicts: {}, siblingSharedDocuments: 0, wouldTakeDown: [],
+    flagged: 0, waiting: 0, cleared: 0, takenDown: [],
   };
+  const watermark = await readWatermark(db, live);
+  if (watermark.skip) {
+    result.skipped = true;
+    return result;
+  }
   let pairs: PairRow[];
   try {
     pairs = await inSavepoint(db, (scope) =>
       scope.unsafe<PairRow[]>(documentOwnerPairsSql(), [
-        `owner${live ? "" : "-shadow"}:`, DOCUMENT_OWNER_STRATEGY.strategy, DOCUMENT_OWNER_STRATEGY.version, live, limit,
+        documentOwnerFingerprintPrefix(live), DOCUMENT_OWNER_STRATEGY.strategy, DOCUMENT_OWNER_STRATEGY.version, limit, rereadLimit,
       ]),
     );
   } catch (error) {
     console.warn("[darwin] document owner read failed", error instanceof Error ? error.message : error);
     return result;
   }
-  if (!Array.isArray(pairs) || pairs.length === 0) return result;
+  pairs = Array.isArray(pairs) ? pairs : [];
 
+  if (pairs.length > 0) {
+    await judgePairs(db, options, live, pairs, result);
+  }
+  await recordStepEvent(db, options, live, watermark.now, result);
+  return result;
+}
+
+async function judgePairs(
+  db: SqlTag,
+  options: { runId: number; stepId?: number | null; now?: Date },
+  live: boolean,
+  pairs: PairRow[],
+  result: DocumentOwnerResult,
+): Promise<void> {
   let bankRows: BankRow[];
+  let texts: Map<number, string>;
   try {
     bankRows = await inSavepoint(db, (scope) => scope<BankRow[]>`
       -- the registry for the document-owner name scan
@@ -594,9 +835,10 @@ export async function recheckDocumentOwners(
         FROM institution_sources
        WHERE institution_name IS NOT NULL
     `);
+    texts = await inSavepoint(db, (scope) => loadSourceTexts(scope, [...new Set(pairs.map((pair) => Number(pair.source_document_id)))]));
   } catch (error) {
-    console.warn("[darwin] document owner institution read failed", error instanceof Error ? error.message : error);
-    return result;
+    console.warn("[darwin] document owner institution/text read failed", error instanceof Error ? error.message : error);
+    return;
   }
   const directory = buildNameDirectory((Array.isArray(bankRows) ? bankRows : []).map((row) => ({
     id: Number(row.id),
@@ -607,7 +849,6 @@ export async function recheckDocumentOwners(
     holdingCompanyRssd: row.holding_company_rssd,
     holdingCompanyName: row.holding_company_name,
   })));
-  const texts = await loadSourceTexts(db, [...new Set(pairs.map((pair) => Number(pair.source_document_id)))]);
   const sharedCache = new Map<number, boolean>();
   const withShared = (id: number): OwnerBank | null => {
     const bank = directory.banks.get(id);
@@ -616,7 +857,8 @@ export async function recheckDocumentOwners(
     return { ...bank, nameShared: sharedCache.get(id) };
   };
 
-  const failingPairs: Array<{ institutionId: number; sourceDocumentId: number; otherId: number }> = [];
+  const otherOf = new Map<string, number>();
+  const passingKeys = new Set<string>();
   const siblingDocuments = new Set<number>();
   for (const pair of pairs) {
     const institutionId = Number(pair.institution_id);
@@ -633,97 +875,118 @@ export async function recheckDocumentOwners(
       return bank ? [bank] : [];
     });
     const verdict = documentOwnerVerdict(text, own, linked, found);
+    const key = `${institutionId}:${sourceDocumentId}`;
     result.pairs += 1;
+    if (pair.reread === true) result.rereads += 1;
     result.verdicts[verdict.kind] = (result.verdicts[verdict.kind] ?? 0) + 1;
     if (verdict.kind === "sibling_shared") siblingDocuments.add(sourceDocumentId);
-    if (verdict.kind === "other_bank") failingPairs.push({ institutionId, sourceDocumentId, otherId: verdict.otherId });
-    await recordAttempt(db, {
-      institutionId,
-      sourceDocumentId,
-      stage: "verify",
-      strategy: DOCUMENT_OWNER_STRATEGY.strategy,
-      version: DOCUMENT_OWNER_STRATEGY.version,
-      fingerprint: documentOwnerFingerprint(institutionId, sourceDocumentId, live),
-      outcome: verdict.kind === "other_bank" ? "evidence_mismatch" : "ok",
-      yieldCount: verdict.kind === "other_bank" ? 0 : 1,
-      costMicrousd: 0,
-      durationMs: 0,
-      runId: options.runId,
-      stepId: options.stepId ?? null,
-      foldIntoPlaybook: false,
-      detail: {
-        verdict: verdict.kind,
-        document_url: pair.document_url,
-        vendor_path: isVendorDocumentPath(pair.document_url),
-        live_fees: Number(pair.live_fees),
-        linked_ids: linked.map((other) => other.id),
-        named_ids: found.map((other) => other.id).slice(0, 20),
-        named_other_id: verdict.kind === "other_bank" ? verdict.otherId : null,
-        evidence: "evidence" in verdict ? verdict.evidence : null,
-        mode: live ? "live" : "shadow",
-      },
-    });
+    if (verdict.kind === "other_bank") otherOf.set(key, verdict.otherId);
+    else passingKeys.add(key);
+    try {
+      await inSavepoint(db, (scope) => recordAttempt(scope, {
+        institutionId,
+        sourceDocumentId,
+        stage: "verify",
+        strategy: DOCUMENT_OWNER_STRATEGY.strategy,
+        version: DOCUMENT_OWNER_STRATEGY.version,
+        fingerprint: documentOwnerFingerprint(institutionId, sourceDocumentId, pair.text_hash, live),
+        outcome: verdict.kind === "other_bank" ? "evidence_mismatch" : "ok",
+        yieldCount: verdict.kind === "other_bank" ? 0 : 1,
+        costMicrousd: 0,
+        durationMs: 0,
+        runId: options.runId,
+        stepId: options.stepId ?? null,
+        foldIntoPlaybook: false,
+        detail: {
+          verdict: verdict.kind,
+          document_url: pair.document_url,
+          vendor_path: isVendorDocumentPath(pair.document_url),
+          text_hash: pair.text_hash,
+          live_fees: Number(pair.live_fees),
+          linked_ids: linked.map((other) => other.id),
+          named_ids: found.map((other) => other.id).slice(0, 20),
+          named_other_id: verdict.kind === "other_bank" ? verdict.otherId : null,
+          registry_named_ids: verdict.kind === "registry_named" ? verdict.otherIds.slice(0, 20) : null,
+          evidence: "evidence" in verdict ? verdict.evidence : null,
+          mode: live ? "live" : "shadow",
+          reread: pair.reread === true,
+        },
+      }));
+    } catch (error) {
+      console.warn("[darwin] document owner attempt failed", error instanceof Error ? error.message : error);
+    }
   }
   result.siblingSharedDocuments = siblingDocuments.size;
 
-  if (failingPairs.length > 0) {
-    try {
-      const rows = await inSavepoint(db, (scope) => scope<Array<{
-        fee_published_id: number | string; fee_verified_id: number | string; institution_id: number | string; source_document_id: number | string;
-      }>>`
-        SELECT DISTINCT fp.fee_published_id, fv.fee_verified_id, fp.institution_id, fr.source_document_id
-          FROM published_fee_records fp
-          JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
-          JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
-          JOIN unnest(${failingPairs.map((pair) => pair.institutionId)}::bigint[], ${failingPairs.map((pair) => pair.sourceDocumentId)}::bigint[])
-               AS p(institution_id, source_document_id)
-            ON p.institution_id = fp.institution_id AND p.source_document_id = fr.source_document_id
-         WHERE fp.rolled_back_at IS NULL
-         ORDER BY fp.fee_published_id
-      `);
-      const otherOf = new Map(failingPairs.map((pair) => [`${pair.institutionId}:${pair.sourceDocumentId}`, pair.otherId]));
-      result.wouldTakeDown = rows.map((row) => {
-        const otherInstitutionId = otherOf.get(`${Number(row.institution_id)}:${Number(row.source_document_id)}`) ?? 0;
-        return {
-          feePublishedId: Number(row.fee_published_id),
-          feeVerifiedId: Number(row.fee_verified_id),
-          institutionId: Number(row.institution_id),
-          sourceDocumentId: Number(row.source_document_id),
-          otherInstitutionId,
-          reason: `${DOCUMENT_OWNER_REASON}: names institution ${otherInstitutionId}`,
-        };
-      });
-    } catch (error) {
-      console.warn("[darwin] document owner fee read failed", error instanceof Error ? error.message : error);
+  // The live fees of the pairs read: the failing ones are what a takedown takes; with the takedown
+  // on, the passing ones clear any pending second-look flag.
+  const wanted = live ? pairs : pairs.filter((pair) => otherOf.has(`${Number(pair.institution_id)}:${Number(pair.source_document_id)}`));
+  if (wanted.length === 0) return;
+  let rows: Array<{ fee_published_id: number | string; fee_verified_id: number | string; institution_id: number | string; source_document_id: number | string }>;
+  try {
+    rows = await inSavepoint(db, (scope) => scope<typeof rows>`
+      SELECT DISTINCT fp.fee_published_id, fv.fee_verified_id, fp.institution_id, fr.source_document_id
+        FROM published_fee_records fp
+        JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
+        JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
+        JOIN unnest(${wanted.map((pair) => Number(pair.institution_id))}::bigint[], ${wanted.map((pair) => Number(pair.source_document_id))}::bigint[])
+             AS p(institution_id, source_document_id)
+          ON p.institution_id = fp.institution_id AND p.source_document_id = fr.source_document_id
+       WHERE fp.rolled_back_at IS NULL
+       ORDER BY fp.fee_published_id
+    `);
+  } catch (error) {
+    console.warn("[darwin] document owner fee read failed", error instanceof Error ? error.message : error);
+    return;
+  }
+  const passing: number[] = [];
+  for (const row of rows) {
+    const key = `${Number(row.institution_id)}:${Number(row.source_document_id)}`;
+    const otherInstitutionId = otherOf.get(key);
+    if (otherInstitutionId == null) {
+      if (passingKeys.has(key)) passing.push(Number(row.fee_published_id));
+      continue;
     }
+    result.wouldTakeDown.push({
+      feePublishedId: Number(row.fee_published_id),
+      feeVerifiedId: Number(row.fee_verified_id),
+      institutionId: Number(row.institution_id),
+      sourceDocumentId: Number(row.source_document_id),
+      otherInstitutionId,
+      reason: `${DOCUMENT_OWNER_REASON}: names institution ${otherInstitutionId}`,
+    });
   }
 
-  if (live && result.wouldTakeDown.length > 0) {
-    const look = await secondLook(db, { check: DOCUMENT_OWNER_CHECK, runId: options.runId, failing: result.wouldTakeDown, dryRun: false, now: options.now });
+  if (live && (result.wouldTakeDown.length > 0 || passing.length > 0)) {
+    const look = await secondLook(db, {
+      check: DOCUMENT_OWNER_CHECK, runId: options.runId, failing: result.wouldTakeDown, passing, dryRun: false, now: options.now,
+    });
     result.flagged = look.flagged;
     result.waiting = look.waiting;
+    result.cleared = look.cleared;
     if (look.confirmed.length > 0) result.takenDown = await archive(db, options.runId, look.confirmed);
   }
+}
 
+async function recordStepEvent(
+  db: SqlTag,
+  options: { runId: number; stepId?: number | null },
+  live: boolean,
+  watermark: Watermark,
+  result: DocumentOwnerResult,
+): Promise<void> {
   try {
     await inSavepoint(db, (scope) => scope`
       INSERT INTO agent_run_events (agent_run_id, step_id, event_type, status, message, detail)
       VALUES (
-        ${options.runId}, ${options.stepId ?? null},
-        ${live ? "darwin.document_owner" : "darwin.document_owner_shadow"}, 'completed',
+        ${options.runId}, ${options.stepId ?? null}, ${eventType(live)}, 'completed',
         ${live
           ? `Document owner: ${result.pairs} pair(s) read, ${result.wouldTakeDown.length} live fee(s) name another bank, ${result.takenDown.length} archived`
           : `Document owner (shadow): ${result.pairs} pair(s) read, would take down ${result.wouldTakeDown.length} live fee(s); nothing changed`},
         ${JSON.stringify({
-          strategy: DOCUMENT_OWNER_STRATEGY,
-          live,
-          pairs: result.pairs,
-          verdicts: result.verdicts,
-          sibling_shared_documents: result.siblingSharedDocuments,
-          would_take_down: result.wouldTakeDown.length,
-          flagged: result.flagged,
-          waiting: result.waiting,
-          taken_down: result.takenDown.length,
+          ...documentOwnerDetail(result),
+          max_text_id: watermark.textId,
+          max_fee_id: watermark.feeId,
           samples: result.wouldTakeDown.slice(0, 50).map((fee) => ({
             fee_published_id: fee.feePublishedId,
             institution_id: fee.institutionId,
@@ -736,7 +999,6 @@ export async function recheckDocumentOwners(
   } catch (error) {
     console.warn("[darwin] document owner event failed", error instanceof Error ? error.message : error);
   }
-  return result;
 }
 
 /** Archive confirmed fees: rolled back with the reason, the verified row rejected with the flag. Never deleted. */

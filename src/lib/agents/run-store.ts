@@ -79,6 +79,7 @@ import { runDarwinConditionalZeroResolve } from "@/lib/agents/darwin/conditional
 import { runDarwinScheduleRefile } from "@/lib/agents/darwin/schedule-refile";
 import { runDarwinAdjudicate } from "@/lib/agents/darwin/adjudicate";
 import { countLiveFragmentNames, liveFragmentDetail, recheckLiveFragmentNames } from "@/lib/agents/darwin/live-fragment-check";
+import { documentOwnerDetail } from "@/lib/agents/darwin/document-owner";
 import { AUDIENCE_RELABEL_VERSION, dryRunFullTotals, runAudienceRelabel, type AudienceRelabelMode } from "@/lib/agents/darwin/audience-relabel";
 import { runDailyBrief } from "@/lib/agents/daily-brief";
 import { runSundayMaintenance, summarizeSundayMaintenance } from "@/lib/agents/deming/sunday-maintenance";
@@ -856,12 +857,17 @@ async function executeAgenticStep(
       const liveFragmentNote = liveFragments.matched > 0
         ? ` Live name re-check: ${liveFragments.matched.toLocaleString()} of ${liveFragments.checked.toLocaleString()} live fee(s) read have a fragment name (${liveFragments.live && !liveFragments.dryRun ? `${liveFragments.takenDown.length.toLocaleString()} archived` : "switch off: would take down, nothing written"}).`
         : "";
+      // #1455: whose schedule each shared or vendor-served document is, by its own text.
+      const documentOwner = verification.documentOwner;
+      const documentOwnerNote = documentOwner && documentOwner.pairs > 0
+        ? ` Document owner: ${documentOwner.pairs.toLocaleString()} shared document pair(s) read, ${documentOwner.wouldTakeDown.length.toLocaleString()} live fee(s) on another bank's schedule (${documentOwner.live ? `${documentOwner.takenDown.length.toLocaleString()} archived` : "switch off: would take down, nothing written"}).`
+        : "";
       const liveFragmentFullNote = liveFragmentsFull
         ? ` Whole live table: ${liveFragmentsFull.matched.toLocaleString()} of ${liveFragmentsFull.checked.toLocaleString()} live fees have a fragment name.`
         : "";
       return {
         status: "completed",
-        summary: `Darwin verified ${verification.verifiedFees.toLocaleString()} raw fee observations from ${verification.processedRawFees.toLocaleString()} selected rows (${verification.skippedFees.toLocaleString()} skipped).${conditionalZero.selected > 0 ? ` Settled ${conditionalZero.selected.toLocaleString()} conditional-$0 hold(s) (${conditionalZero.verified.toLocaleString()} verified free on the bank's schedule).` : ""}${verification.categoryChange && verification.categoryChange.candidates > 0 ? ` ${verification.categoryChange.candidates.toLocaleString()} row(s) Knox re-filed since Darwin's decision ${verification.categoryChange.live ? `(${verification.categoryChange.selected.toLocaleString()} judged again under today's category)` : "(switch off: counted, not judged again)"}.` : ""}${liveFragmentNote}${liveFragmentFullNote}`,
+        summary: `Darwin verified ${verification.verifiedFees.toLocaleString()} raw fee observations from ${verification.processedRawFees.toLocaleString()} selected rows (${verification.skippedFees.toLocaleString()} skipped).${conditionalZero.selected > 0 ? ` Settled ${conditionalZero.selected.toLocaleString()} conditional-$0 hold(s) (${conditionalZero.verified.toLocaleString()} verified free on the bank's schedule).` : ""}${verification.categoryChange && verification.categoryChange.candidates > 0 ? ` ${verification.categoryChange.candidates.toLocaleString()} row(s) Knox re-filed since Darwin's decision ${verification.categoryChange.live ? `(${verification.categoryChange.selected.toLocaleString()} judged again under today's category)` : "(switch off: counted, not judged again)"}.` : ""}${liveFragmentNote}${liveFragmentFullNote}${documentOwnerNote}`,
         detail: {
           selected_raw_fees: verification.selectedRawFees,
           processed_raw_fees: verification.processedRawFees,
@@ -874,6 +880,7 @@ async function executeAgenticStep(
           learned_envelope_holds: verification.learnedEnvelopeHolds,
           // #1295: rows Knox re-filed since Darwin's decision; a count and sample while the switch is off.
           category_change_rejudge: verification.categoryChange,
+          document_owner: documentOwnerDetail(documentOwner),
           held_release: {
             selected: release.selected,
             acted: release.acted,
