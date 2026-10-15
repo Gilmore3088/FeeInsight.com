@@ -362,17 +362,36 @@ export function headerNamesInstitution(text: string | null | undefined, name: st
 }
 
 /**
- * Which of `group` owns a vendor-served copy: the one whose name form (a one-word brand only
- * next to "credit union", "bank", "fcu" or its city) or acronym the text prints. A bare one-word
- * brand never counts: a hash sharer "Access Credit Union" is not named by "ATM access fee". Null
- * unless exactly one qualifies.
+ * Which of `group` (this bank first, then the text-hash sharers) owns a vendor-served copy: the
+ * one whose name form (a one-word brand only next to "credit union", "bank", "fcu" or its city)
+ * or acronym the text prints. A bare one-word brand never counts: a hash sharer "Access Credit
+ * Union" is not named by "ATM access fee". A sharer's form or acronym counts only when it neither
+ * contains nor sits inside one of this bank's own forms ("first community bank" is in "first
+ * community bank of tennessee"). With `onOwnSite`, a sharer owns the copy only when its name is
+ * its own: not shared with another institution, or printed with its city. Null unless exactly
+ * one qualifies.
  */
-export function vendorCopyOwner(text: string, group: OwnerBank[]): OwnerBank | null {
+export function vendorCopyOwner(text: string, group: OwnerBank[], options: { onOwnSite?: boolean } = {}): OwnerBank | null {
   const padded = ` ${ownerWords(text)} `;
-  const strict = group.filter((bank) =>
-    ownerNameForms(bank.name, bank.city).some((form) => hasWords(padded, form))
-    || creditUnionAcronyms(bank.name).some((acronym) => hasWords(padded, acronym)));
-  return strict.length === 1 ? strict[0] : null;
+  const [own] = group;
+  if (!own) return null;
+  const ownForms = ownerNameForms(own.name, own.city);
+  const ownAcronyms = creditUnionAcronyms(own.name);
+  const ownCity = cityWords(own);
+  const strict = group.filter((bank, index) => {
+    const forms = ownerNameForms(bank.name, bank.city);
+    const acronyms = creditUnionAcronyms(bank.name);
+    if (index === 0) return forms.some((form) => hasWords(padded, form)) || acronyms.some((acronym) => hasWords(padded, acronym));
+    return forms.some((form) => !namesOverlap([form], ownForms) && hasWords(padded, form))
+      || acronyms.some((acronym) => !ownAcronyms.includes(acronym) && hasWords(padded, acronym));
+  });
+  if (strict.length !== 1) return null;
+  const owner = strict[0];
+  if (owner.id !== own.id && options.onOwnSite && owner.nameShared) {
+    const city = cityWords(owner);
+    if (!(city && city !== ownCity && hasWords(padded, city))) return null;
+  }
+  return owner;
 }
 
 /**
@@ -451,7 +470,7 @@ export function documentOwnerVerdict(
   // A vendor-served copy belongs to whichever of this bank and the text-hash sharers it names.
   const hashIds = new Set(links.hashIds ?? []);
   if (links.vendorPath && pool.some((other) => hashIds.has(other.id))) {
-    const owner = vendorCopyOwner(text, [own, ...pool.filter((other) => hashIds.has(other.id))]);
+    const owner = vendorCopyOwner(text, [own, ...pool.filter((other) => hashIds.has(other.id))], { onOwnSite });
     if (owner?.id === own.id) return { kind: "own_named", evidence: "vendor copy: own name" };
     if (owner && !sameHoldingCompany(own, owner)) return { kind: "other_bank", otherId: owner.id, evidence: "vendor copy: text hash" };
   }
@@ -841,7 +860,11 @@ ${scopedPairsSql()},
              (c.id = ANY(j.host_ids) AND c.website_host = j.document_host) AS site,
              (tx.padded IS NOT NULL AND ${otherNamedStrong}) AS named_strong,
              (tx.padded IS NOT NULL AND (${otherNamedStrong} OR ${otherNamedWeak})) AS named,
-             (tx.padded IS NOT NULL AND ${strictNamed("c")}) AS strict
+             (tx.padded IS NOT NULL AND (
+               EXISTS (SELECT 1 FROM unnest(c.forms) f WHERE NOT ${overlap("ARRAY[f]", "own.forms")} AND ${has("tx.padded", "f")})
+               OR EXISTS (SELECT 1 FROM unnest(c.acronyms) a WHERE NOT (a = ANY(own.acronyms)) AND ${has("tx.padded", "a")}))) AS strict,
+             -- On this bank's own site a sharer owns a vendor copy only by a name of its own.
+             (NOT c.name_shared OR (c.city_w <> '' AND c.city_w <> own.city_w AND ${has("tx.padded", "c.city_w")})) AS own_name
         FROM judged0 j
         LEFT JOIN texts tx ON tx.source_document_id = j.source_document_id
         JOIN banks own ON own.id = j.institution_id
@@ -880,14 +903,17 @@ ${scopedPairsSql()},
              min(id) FILTER (WHERE NOT sib AND site) AS site_id,
              count(*) FILTER (WHERE via_hash) AS hash_linked,
              count(*) FILTER (WHERE via_hash AND strict) AS hash_strict,
-             min(id) FILTER (WHERE via_hash AND strict) AS hash_strict_id
+             min(id) FILTER (WHERE via_hash AND strict) AS hash_strict_id,
+             bool_or(own_name) FILTER (WHERE via_hash AND strict) AS hash_strict_own_name
         FROM pool_rows
        GROUP BY institution_id, source_document_id
     ),
     vendor AS MATERIALIZED (
       SELECT j.institution_id, j.source_document_id,
              CASE
-               WHEN f.strict::int + a.hash_strict = 1 THEN CASE WHEN f.strict THEN j.institution_id ELSE a.hash_strict_id END
+               WHEN f.strict::int + a.hash_strict = 1 THEN CASE
+                 WHEN f.strict THEN j.institution_id
+                 WHEN NOT f.on_own_site OR a.hash_strict_own_name THEN a.hash_strict_id END
              END AS owner_id
         FROM judged0 j
         JOIN own_flags f ON f.institution_id = j.institution_id AND f.source_document_id = j.source_document_id
@@ -989,7 +1015,10 @@ export interface DocumentOwnerFee {
 
 export interface DocumentOwnerResult {
   live: boolean;
-  /** True when the step skipped the read: the last read selected no pair and nothing new has arrived since. */
+  /**
+   * True when the step skipped the read: the last read selected no pair and nothing new has arrived
+   * since, or the last read was less than `DOCUMENT_OWNER_SCAN_INTERVAL_HOURS` ago.
+   */
   skipped: boolean;
   /** Pairs the step selected; the skip keys on this, not on `pairs`. */
   selected: number;
@@ -1013,6 +1042,12 @@ export interface DocumentOwnerResult {
 export const DOCUMENT_OWNER_REREAD_LIMIT = 25;
 /** Statement timeout for the per-step scoped pairs read, set inside its savepoint and put back after. */
 export const DOCUMENT_OWNER_PAIRS_TIMEOUT = "60s";
+/**
+ * The scoped pairs read scans every live fee's document links, so a step runs it at most once
+ * per this many hours (keyed on the mode's last event, like the watermark skip). At 25 pairs a
+ * read that is 600 pairs a day.
+ */
+export const DOCUMENT_OWNER_SCAN_INTERVAL_HOURS = 1;
 
 /** The step-detail form of a result (run-store's verify step). */
 export function documentOwnerDetail(result: DocumentOwnerResult | null) {
@@ -1055,7 +1090,7 @@ function eventType(live: boolean): string {
  * live fee has arrived since (newest `agent_source_texts.id` and `published_fee_records` id
  * unchanged). Both are primary-key maxima, so the test is cheap. A failed read never skips.
  */
-async function readWatermark(db: SqlTag, live: boolean): Promise<{ now: Watermark; skip: boolean }> {
+async function readWatermark(db: SqlTag, live: boolean, at: Date): Promise<{ now: Watermark; skip: boolean }> {
   const none = { now: { textId: null, feeId: null }, skip: false };
   try {
     const [current] = await inSavepoint(db, (scope) => scope<Array<{ text_id: number | string | null; fee_id: number | string | null }>>`
@@ -1063,18 +1098,21 @@ async function readWatermark(db: SqlTag, live: boolean): Promise<{ now: Watermar
              (SELECT max(fee_published_id) FROM published_fee_records) AS fee_id
     `);
     const now = { textId: current?.text_id == null ? null : Number(current.text_id), feeId: current?.fee_id == null ? null : Number(current.fee_id) };
-    const [last] = await inSavepoint(db, (scope) => scope<Array<{ detail: Record<string, unknown> | null }>>`
-      SELECT detail FROM agent_run_events
+    const [last] = await inSavepoint(db, (scope) => scope<Array<{ detail: Record<string, unknown> | null; created_at: Date | string | null }>>`
+      SELECT detail, created_at FROM agent_run_events
        WHERE event_type = ${eventType(live)}
        ORDER BY created_at DESC, id DESC
        LIMIT 1
     `);
     const detail = last?.detail ?? null;
-    const skip = detail != null
+    const unchanged = detail != null
       && Number(detail.selected) === 0
       && now.textId != null && Number(detail.max_text_id) === now.textId
       && now.feeId != null && Number(detail.max_fee_id) === now.feeId;
-    return { now, skip };
+    // A scan that read nothing (skipped) does not restart the clock: only an event of a real read counts.
+    const lastAt = last?.created_at == null || detail?.skipped === true ? null : new Date(last.created_at).getTime();
+    const recent = lastAt != null && Number.isFinite(lastAt) && at.getTime() - lastAt < DOCUMENT_OWNER_SCAN_INTERVAL_HOURS * 3_600_000;
+    return { now, skip: unchanged || recent };
   } catch (error) {
     console.warn("[darwin] document owner watermark read failed", error instanceof Error ? error.message : error);
     return none;
@@ -1096,7 +1134,7 @@ export async function recheckDocumentOwners(
     live, skipped: false, selected: 0, pairs: 0, rereads: 0, verdicts: {}, siblingSharedDocuments: 0, wouldTakeDown: [],
     flagged: 0, waiting: 0, cleared: 0, takenDown: [],
   };
-  const watermark = await readWatermark(db, live);
+  const watermark = await readWatermark(db, live, options.now ?? new Date());
   if (watermark.skip) {
     result.skipped = true;
     return result;
@@ -1107,13 +1145,18 @@ export async function recheckDocumentOwners(
       // Cap the scoped read so it can never hold the run-ledger transaction. A transaction-local
       // setting survives RELEASE SAVEPOINT (only a rollback to the savepoint undoes it), so the
       // previous value is put back once the read succeeds; a failed read is rolled back with it.
-      const [prior] = await scope<Array<{ value: string | null }>>`
-        SELECT current_setting('statement_timeout') AS value, set_config('statement_timeout', ${DOCUMENT_OWNER_PAIRS_TIMEOUT}, true) AS applied
+      // JIT off too: the statement's estimated cost is far above jit_above_cost, and compiling it
+      // took ten times the query itself on the synthetic test set.
+      const [prior] = await scope<Array<{ value: string | null; jit: string | null }>>`
+        SELECT current_setting('statement_timeout') AS value, current_setting('jit') AS jit,
+               set_config('statement_timeout', ${DOCUMENT_OWNER_PAIRS_TIMEOUT}, true) AS applied,
+               set_config('jit', 'off', true) AS jit_applied
       `;
       const rows = await scope.unsafe<PairRow[]>(documentOwnerPairsSql(), [
         documentOwnerFingerprintPrefix(live), DOCUMENT_OWNER_STRATEGY.strategy, DOCUMENT_OWNER_STRATEGY.version, limit, rereadLimit,
       ]);
       if (prior?.value != null) await scope`SELECT set_config('statement_timeout', ${prior.value}, true)`;
+      if (prior?.jit != null) await scope`SELECT set_config('jit', ${prior.jit}, true)`;
       return rows;
     });
   } catch (error) {

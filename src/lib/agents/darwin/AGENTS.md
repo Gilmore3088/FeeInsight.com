@@ -124,7 +124,9 @@ Darwin owns verification and classification.
   gives `own_named` (co-branded documents pass; names read "&" as "and" and drop a trailing
   "Company", "Co.", "Corp.", "Inc.", "N.A.", "F.S.B." or "S.S.B."); on a vendor path, the hash-linked institution whose
   name form the text prints owns the copy (`other_bank` when it is another, unrelated institution;
-  a bare one-word brand never counts); a document on another institution's stored website, not on
+  a bare one-word brand never counts, nor a sharer's form that contains or sits inside one of
+  this bank's own forms; on this bank's own site the sharer's name must be its own: not shared,
+  or printed with its city); a document on another institution's stored website, not on
   this bank's site (its stored host, a subdomain or parent of it, or the same registrable domain:
   `home.acmebank.com` owns `acmebank.com`), that never names this bank is `other_bank` naming that
   institution (the site rule; never for a bank with no stored website); then linked institutions count by a name of two words or
@@ -141,8 +143,9 @@ Darwin owns verification and classification.
   the registry-wide name scan finds gives `registry_named`, a review verdict that passes, even as a
   title line ("Wells Fargo Bank", "U.S. Bank", "Bank of America ATM Fees", "Fees associated with",
   "processed through Bank of America" are all negative tests). Other verdicts: `unproven` (also a
-  pair with no registry row), `no_text`. Live fees exclude rolled-back and quarantined ones; the scoped pairs read runs under a 60 s
-  statement timeout inside its savepoint, put back after the read. Up to 25 new pairs a step, one attempt each (fingerprint
+  pair with no registry row), `no_text`. Live fees exclude rolled-back and quarantined ones; the scoped pairs read runs at most once an
+  hour (`DOCUMENT_OWNER_SCAN_INTERVAL_HOURS`, keyed on the mode's last event), with JIT off and a
+  60 s statement timeout inside its savepoint, both put back after the read. Up to 25 new pairs a step, one attempt each (fingerprint
   `owner-shadow:<institution>:<document>:<text_hash>` in shadow, `owner:...` once live, so a
   re-extracted text is read again). A step skips the scoped read when the last one of its mode
   selected no pair and the newest stored text and live fee ids are unchanged. With

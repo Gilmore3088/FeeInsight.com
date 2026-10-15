@@ -262,6 +262,32 @@ describe("vendor-served documents and the prod dry run (Oct 15)", () => {
       .toMatchObject({ kind: "own_named" });
   });
 
+  it("1248 First Community Bank of Tennessee's kcms-doc on its own site is not 574 First Community Bank's (prod count)", () => {
+    const fcbTn: OwnerBank = { id: 1248, name: "First Community Bank of Tennessee", city: "Shelbyville", stateCode: "TN", websiteHost: "firstcommunitybanker.com" };
+    const fcbSc: OwnerBank = { id: 574, name: "First Community Bank", city: "Lexington", stateCode: "SC", websiteHost: "firstcommunitysc.com", nameShared: true };
+    const text = "Kasasa Cash Checking\nFirst Community Bank\nMonthly service fee: none\nOverdraft $30";
+    const links = { hashIds: [574], hostIds: [], vendorPath: true, documentHost: "firstcommunitybanker.com" };
+    expect(vendorCopyOwner(text, [fcbTn, fcbSc], { onOwnSite: true })).toBeNull();
+    expect(vendorCopyOwner(text, [fcbTn, fcbSc])).toBeNull();
+    expect(documentOwnerVerdict(text, fcbTn, [fcbSc], [], links).kind).not.toBe("other_bank");
+    // The name-distinct test on its own: a shared name printed without its city owns nothing on this bank's site.
+    const other: OwnerBank = { id: 575, name: "Peoples Bank", city: "Lexington", stateCode: "SC", nameShared: true };
+    const own: OwnerBank = { id: 1249, name: "Tennessee Valley Federal Credit Union", city: "Chattanooga", stateCode: "TN" };
+    expect(vendorCopyOwner("Peoples Bank fee schedule", [own, other], { onOwnSite: true })).toBeNull();
+    expect(vendorCopyOwner("Peoples Bank, Lexington fee schedule", [own, other], { onOwnSite: true })?.id).toBe(575);
+    expect(vendorCopyOwner("Peoples Bank fee schedule", [own, other])?.id).toBe(575);
+  });
+
+  it("the Healthplus copy on a member CU's own domain is still Healthplus's", () => {
+    const palace = members[2];
+    const linked = [healthplus, ...members.filter((other) => other.id !== palace.id && other.id !== 5233)];
+    const links = { hashIds: linked.map((other) => other.id), hostIds: [], vendorPath: true, documentHost: "palacecityfcu.org" };
+    for (const text of [HEALTHPLUS_TEXT, "Healthplus FCU | Fee Schedule\nNSF $30.00"]) {
+      expect(documentOwnerVerdict(text, palace, linked, [], links))
+        .toMatchObject({ kind: "other_bank", otherId: 5009, evidence: "vendor copy: text hash" });
+    }
+  });
+
   it("a bare one-word brand never names the vendor copy's owner (#1455 re-review)", () => {
     const own = members[0];
     const linked = [healthplus, ...members.slice(1, 4)];
@@ -512,13 +538,13 @@ function templateText(strings: unknown): string {
   return Array.isArray(strings) ? strings.join(" ") : String(strings);
 }
 
-function createDb(pairs?: unknown[], lastEvent: Record<string, unknown> | null = null) {
+function createDb(pairs?: unknown[], lastEvent: Record<string, unknown> | null = null, lastEventAt: string | null = null) {
   const query = vi.fn((strings: TemplateStringsArray) => {
     const text = templateText(strings);
     if (text.includes("max(fee_published_id)")) return Promise.resolve([{ text_id: 10, fee_id: 20 }]);
-    if (text.includes("SELECT detail FROM agent_run_events")) return Promise.resolve(lastEvent ? [{ detail: lastEvent }] : []);
+    if (text.includes("SELECT detail, created_at FROM agent_run_events")) return Promise.resolve(lastEvent ? [{ detail: lastEvent, created_at: lastEventAt }] : []);
     if (text.includes("to_regclass")) return Promise.resolve([{ ready: true }]);
-    if (text.includes("current_setting('statement_timeout')")) return Promise.resolve([{ value: "0", applied: "60s" }]);
+    if (text.includes("current_setting('statement_timeout')")) return Promise.resolve([{ value: "0", jit: "on", applied: "60s", jit_applied: "off" }]);
     if (text.includes("document-owner name scan")) {
       return Promise.resolve([
         { id: 5756, institution_name: bluegrass.name, city: "Ashland", state_code: "KY", cert_number: null, holding_company_rssd: null, holding_company_name: null },
@@ -575,6 +601,8 @@ describe("recheckDocumentOwners (shadow)", () => {
     // The scoped read runs under a 60 s statement timeout that is put back afterwards.
     const timeouts = db.mock.calls.filter((call) => templateText(call[0]).includes("set_config('statement_timeout'")).map((call) => call.slice(1));
     expect(timeouts).toEqual([["60s"], ["0"]]);
+    const jitResets = db.mock.calls.filter((call) => templateText(call[0]).includes("SELECT set_config('jit',")).map((call) => call.slice(1));
+    expect(jitResets).toEqual([["on"]]);
   });
 
   it("records an empty read with its watermark, and the next step skips while nothing is new", async () => {
@@ -592,6 +620,17 @@ describe("recheckDocumentOwners (shadow)", () => {
     const moved = createDb([], { selected: 0, max_text_id: 9, max_fee_id: 20 });
     expect(await recheckDocumentOwners(moved, { runId: 79 })).toMatchObject({ skipped: false });
     expect(moved.unsafe).toHaveBeenCalled();
+  });
+
+  it("scans at most once per interval, even with a backlog, and again once it has passed", async () => {
+    const now = new Date("2026-10-16T12:00:00Z");
+    const backlog = { selected: 25, max_text_id: 9, max_fee_id: 19 };
+    const soon = createDb(undefined, backlog, "2026-10-16T11:30:00Z");
+    expect(await recheckDocumentOwners(soon, { runId: 90, now })).toMatchObject({ skipped: true });
+    expect(soon.unsafe).not.toHaveBeenCalled();
+    const later = createDb(undefined, backlog, "2026-10-16T10:59:00Z");
+    expect(await recheckDocumentOwners(later, { runId: 91, now })).toMatchObject({ skipped: false });
+    expect(later.unsafe).toHaveBeenCalled();
   });
 });
 
