@@ -82,8 +82,9 @@ export const HAND_AMOUNT_CORRECTIONS: readonly HandAmountCorrection[] = [
 
 /**
  * Verified rows of the same wrong reads that never published (skipped as identical behind a live
- * row above). Rejected so no later step can publish the cut price: a rules re-check takedown of
- * the live row would select them again. Only while each still reads as labelled.
+ * row). Rejected so no later step can publish them: a rules re-check takedown of the live row, or a
+ * publish strategy bump, would select them again. Only while each still reads as labelled. Each
+ * rejection is flagged `hand_rejected:<pattern>` and logged with its issue. Add later checks below.
  */
 export interface HandRejectedTwin {
   feeVerifiedId: number;
@@ -94,6 +95,9 @@ export interface HandRejectedTwin {
   amount: number;
   feeName: string;
   why: string;
+  /** Names the flag (`hand_rejected:<pattern>`) and the lesson's pattern. */
+  pattern?: string;
+  issue?: number;
 }
 
 export const HAND_REJECTED_TWINS: readonly HandRejectedTwin[] = [
@@ -114,8 +118,28 @@ export const HAND_REJECTED_TWINS: readonly HandRejectedTwin[] = [
     feeVerifiedId: 125738, ofFeePublishedId: 79234, sourceDocumentId: 20917, canonicalFeeKey: "card_replacement", amount: 7,
     feeName: "Card Replacement Fee", why: "\"Card Replacement Fee | $7 50\" read as $7",
   },
+  // #1360 (James, Oct 15): copies of the optional overdraft plans taken down by hand verdict
+  // (eval-verdicts.ts), on other copies of the same pages.
+  {
+    feeVerifiedId: 66392, ofFeePublishedId: 19381, sourceDocumentId: 18820, canonicalFeeKey: "overdraft", amount: 10,
+    feeName: "Elevate Courtesy Pay Service (if selected)", pattern: "optional_overdraft_plan_twin", issue: 1360,
+    why: "#1360: Selco's $10/month Elevate-only alternative, not the overdraft fee ($25 per item, 19379)",
+  },
+  {
+    feeVerifiedId: 167844, ofFeePublishedId: 19381, sourceDocumentId: 32155, canonicalFeeKey: "overdraft", amount: 10,
+    feeName: "Elevate Courtesy Pay Service (if selected)", pattern: "optional_overdraft_plan_twin", issue: 1360,
+    why: "#1360: Selco's $10/month Elevate-only alternative, not the overdraft fee ($25 per item, 19379)",
+  },
+  {
+    feeVerifiedId: 102462, ofFeePublishedId: 92248, sourceDocumentId: 12989, canonicalFeeKey: "overdraft", amount: 5,
+    feeName: "E-statements Free Enhanced Overdraft Privilege Fee (per month)", pattern: "optional_overdraft_plan_twin", issue: 1360,
+    why: "#1360: St. Louis Community's optional $5/month Enhanced Privilege plan, not the overdraft fee ($18 per item, 27613)",
+  },
 ];
 export const HAND_REJECTED_TWIN_FLAG = "hand_rejected:cut_cents_twin";
+const twinPattern = (twin: HandRejectedTwin) => twin.pattern ?? "cut_cents_twin";
+/** The flag a rejected twin carries. */
+export const twinFlag = (twin: HandRejectedTwin) => `hand_rejected:${twinPattern(twin)}`;
 
 interface LiveRow {
   fee_published_id: number | string;
@@ -282,17 +306,23 @@ export async function applyHandAmountCorrections(
         }
         result.corrected.push(fix);
       }
-      if (twinPlan.rejectedTwins.length > 0) {
+      // One UPDATE per flag, so each rejected copy carries its own pattern.
+      const byFlag = new Map<string, number[]>();
+      for (const id of twinPlan.rejectedTwins) {
+        const flag = twinFlag(HAND_REJECTED_TWINS.find((twin) => twin.feeVerifiedId === id)!);
+        byFlag.set(flag, [...(byFlag.get(flag) ?? []), id]);
+      }
+      for (const [flag, ids] of byFlag) {
         const rejected = await scope<{ fee_verified_id: number | string }[]>`
           UPDATE verified_fee_observations
              SET review_status = 'rejected',
-                 outlier_flags = CASE WHEN outlier_flags ? ${HAND_REJECTED_TWIN_FLAG} THEN outlier_flags
-                                      ELSE COALESCE(outlier_flags, '[]'::jsonb) || jsonb_build_array(${HAND_REJECTED_TWIN_FLAG}::text) END
-           WHERE fee_verified_id = ANY(${twinPlan.rejectedTwins}::bigint[])
+                 outlier_flags = CASE WHEN outlier_flags ? ${flag} THEN outlier_flags
+                                      ELSE COALESCE(outlier_flags, '[]'::jsonb) || jsonb_build_array(${flag}::text) END
+           WHERE fee_verified_id = ANY(${ids}::bigint[])
              AND review_status IN ('verified', 'approved')
           RETURNING fee_verified_id
         `;
-        result.rejectedTwins = rejected.map((row) => Number(row.fee_verified_id));
+        result.rejectedTwins.push(...rejected.map((row) => Number(row.fee_verified_id)));
       }
       const feedback: FeedbackRow[] = [
         ...result.corrected.map((fix) => {
@@ -328,7 +358,7 @@ export async function applyHandAmountCorrections(
             amount: twin.amount,
             runId: options.runId,
             dedupeKey: `${HAND_AMOUNT_CHECK}:twin:${id}`,
-            evidence: { rejected_twin_of: twin.ofFeePublishedId, previous_review_status: "verified", why: twin.why, pattern: "cut_cents", issue: 1334 },
+            evidence: { rejected_twin_of: twin.ofFeePublishedId, previous_review_status: "verified", flag: twinFlag(twin), why: twin.why, pattern: twinPattern(twin), issue: twin.issue ?? 1334 },
           };
         }),
       ];
@@ -337,7 +367,7 @@ export async function applyHandAmountCorrections(
         INSERT INTO agent_run_events (agent_run_id, event_type, status, message, detail)
         VALUES (
           ${options.runId}, ${HAND_AMOUNT_CHECK}, 'completed',
-          ${`Corrected ${result.corrected.length} live fee(s) read with their cents cut off and rejected ${result.rejectedTwins.length} unpublished copies of those reads (#1334)`},
+          ${`Corrected ${result.corrected.length} live fee(s) read with their cents cut off (#1334) and rejected ${result.rejectedTwins.length} unpublished cop(ies) of hand-checked wrong reads`},
           ${JSON.stringify({
             corrected: result.corrected.map((fix) => ({ fee_published_id: fix.feePublishedId, from: fix.from, to: fix.to, old_name: fix.oldName, new_name: fix.newName })),
             rejected_twins: result.rejectedTwins,

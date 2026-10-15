@@ -720,6 +720,8 @@ async function executeAgenticStep(
           inserted_free_fees: extraction.freeFees,
           skipped_fee_candidates: extraction.skippedFees,
           held_for_review: extraction.heldForReview,
+          // v68: priced lines no rule names that were neither read nor held, by reason.
+          dropped_priced_lines: extraction.droppedLines,
           replaced_older_rows: extraction.retiredOlderRows,
           retired_older_copy_rows: extraction.retiredOlderCopyRows,
           outcomes: extraction.outcomes,
