@@ -17,6 +17,8 @@ import {
   releaseReviewPrompt,
   reviewPasses,
   premiumServiceMisfiled,
+  DARWIN_RECORDED_RELEASE_ACTS,
+  RECORDED_RELEASE_DRY_RUN_FINGERPRINT,
   recordedPassHoldReason,
   releaseHoldReason,
   releaseRecordedPasses,
@@ -419,6 +421,50 @@ describe("releasing the recorded v17 passes", () => {
     const result = await releaseRecordedPasses(db as never, { runId: 9 });
     expect(result).toMatchObject({ acts: false, recordedPasses: 2, wouldRelease: 1, released: 0, held: { business_activity_row: 1 } });
     expect(result.heldExamples[0]).toMatchObject({ feeRawId: 418400, reason: "business_activity_row" });
+    expect(result.releaseByCategory).toEqual({ stop_payment: 1 });
+    expect(db.mock.calls.some(([strings]) => /INSERT|UPDATE/.test(templateText(strings)))).toBe(false);
+  });
+
+  // The live release follows a ledger dry run from an earlier tick, never the same step.
+  it.each([
+    [false, { acts: false, dryRunRecorded: true, released: 0 }],
+    [true, { acts: true, dryRunRecorded: false, released: 1 }],
+  ])("switched on, releases only after a recorded dry run (dry run done: %s)", async (dryRunDone, expected) => {
+    expect(DARWIN_RECORDED_RELEASE_ACTS).toBe(false);
+    const rows = [row({ fee_raw_id: 2 })];
+    const writes: Array<{ text: string; values: unknown[] }> = [];
+    const db = vi.fn((strings: TemplateStringsArray, ...values: unknown[]) => {
+      const text = templateText(strings);
+      if (text.includes("learning_schema_ready")) return Promise.resolve([{ learning_schema_ready: true }]);
+      if (text.includes("AS done")) {
+        expect(values).toContain(RECORDED_RELEASE_DRY_RUN_FINGERPRINT);
+        return Promise.resolve([{ done: dryRunDone }]);
+      }
+      if (text.includes("FROM pipeline_attempts pa")) return Promise.resolve(rows);
+      if (/INSERT/.test(text)) {
+        writes.push({ text, values });
+        if (text.includes("verified_fee_observations")) return Promise.resolve([{ fee_verified_id: 77 }]);
+      }
+      return Promise.resolve([]);
+    });
+    const result = await releaseRecordedPasses(db as never, { runId: 9, acts: true });
+    expect(result).toMatchObject({ ...expected, recordedPasses: 1, wouldRelease: 1, releaseByCategory: { stop_payment: 1 } });
+    const attempts = writes.filter((write) => write.text.includes("INSERT INTO pipeline_attempts"));
+    expect(attempts).toHaveLength(1);
+    expect(attempts[0].values.includes(RECORDED_RELEASE_DRY_RUN_FINGERPRINT)).toBe(!dryRunDone);
+    expect(writes.some((write) => write.text.includes("verified_fee_observations"))).toBe(dryRunDone);
+  });
+
+  it("a dry_run run never releases or records the dry run", async () => {
+    const db = vi.fn((strings: TemplateStringsArray) => {
+      const text = templateText(strings);
+      if (text.includes("learning_schema_ready")) return Promise.resolve([{ learning_schema_ready: true }]);
+      if (text.includes("AS done")) return Promise.resolve([{ done: true }]);
+      if (text.includes("FROM pipeline_attempts pa")) return Promise.resolve([row({ fee_raw_id: 2 })]);
+      return Promise.resolve([]);
+    });
+    const result = await releaseRecordedPasses(db as never, { runId: 9, acts: true, dryRun: true });
+    expect(result).toMatchObject({ acts: false, dryRunRecorded: false, wouldRelease: 1 });
     expect(db.mock.calls.some(([strings]) => /INSERT|UPDATE/.test(templateText(strings)))).toBe(false);
   });
 });

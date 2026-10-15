@@ -784,8 +784,8 @@ async function executeAgenticStep(
         stateCode,
         db: tx,
       });
-      // Fees the v17 review passed while the release did not act: released under the same switch
-      // (DARWIN_RELEASE_ACTS) after today's free holds; off, a count only.
+      // Fees the v17 review passed while the release did not act: released after today's free holds
+      // under their own switch (DARWIN_RECORDED_RELEASE_ACTS), after a ledger dry run; off, a count only.
       const recordedRelease = await releaseRecordedPasses(tx, { runId: run.id, stepId: step.id, dryRun: run.runKind === "dry_run" });
       // A "returned check" Hamilton took off NSF beside the schedule's own NSF fee is filed as an RDI.
       const scheduleRefile = await runDarwinScheduleRefile({

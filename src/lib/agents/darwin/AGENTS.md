@@ -251,9 +251,10 @@ Darwin owns verification and classification.
   oldest held fees from any state (2026-10-07: Utah's lane had 1 while about 1,000 waited elsewhere).
   Recorded passes (`releaseRecordedPasses`, strategy `verify.release_recorded`, each extract-free
   `verify` step): the review never picks a fee with a v17 attempt again, so the 421 fees v17 passed
-  while the release did not act would stay held even with `DARWIN_RELEASE_ACTS` on. Under that
-  same switch this pass releases them after today's free holds. Three were added after a hand
-  check of 20 found 19 right (Oct 15), and they hold in the review too:
+  while the release did not act would stay held even with `DARWIN_RELEASE_ACTS` on. This pass
+  releases them after today's free holds, under its own switch (`DARWIN_RECORDED_RELEASE_ACTS`),
+  so the other release paths stay verdicts-only. Three holds were added after a hand check of 20
+  found 19 right (Oct 15), and they hold in the review too:
   - `business_activity_row`: a business account's "Per Each ..." activity row filed outside
     account research (raw 418400, "Per Each ATM Withdrawal" $0.25 filed as an out-of-network ATM
     fee).
@@ -261,8 +262,12 @@ Darwin owns verification and classification.
     stored annual), or a period word that contradicts a stated frequency.
   - `glued_or_cut_name`: a glued header ("Account Fees: ..."), a glued column (": no", "Notary:
     Outgoing") or a cut-off ending.
-  Off, the step detail (`recorded_pass_release`) counts what would release and what is held, and
-  nothing is written. On 15 Oct: 402 would release, 19 held.
+  Off, the step detail (`recorded_pass_release`) counts what would release and what is held, by
+  category, and nothing is written. Switched on, the first step is a dry run that writes one
+  ledger row (fingerprint `darwin:recorded-release:dry-run:v1`) with those counts; a step of
+  another run at least 4 minutes later (the next tick) releases. A rollback of the batch reads the
+  `verify.release_recorded` v1 attempts with outcome `ok` (`detail.fee_verified_id`). On 15 Oct:
+  402 would release, 19 held (7 frequency word, 11 glued or cut name, 1 business activity row).
   v1 released on the schedule check alone; its dry run on 2026-10-06 (1,997 of 4,128 held
   fees) had 12 of 20 hand-checked releases right. v2 adds the gates above. v3 (James chose
   "Reject only", 2026-10-06 16:49 UTC) acts on rejects (`DARWIN_RELEASE_REJECTS_ACT`): each

@@ -803,19 +803,33 @@ export async function runDarwinReleaseReview(
 /**
  * The fees the v17 review passed while the release did not act (421 on Oct 15). `selectReviewCandidates`
  * never picks a fee with a v17 attempt again, so turning `DARWIN_RELEASE_ACTS` on would not release
- * them. This pass does, under the same switch: each recorded pass is checked again with today's free
- * holds (`lineRefilesTo`, `premiumServiceMisfiled`, `releaseHoldReason`) before `releaseHeldFee`. Off,
- * it only counts. Each fee it acts on is one `verify.release_recorded` attempt.
+ * them. This pass does: each recorded pass is checked again with today's free holds (`lineRefilesTo`,
+ * `premiumServiceMisfiled`, `releaseHoldReason`) before `releaseHeldFee`. Each fee it acts on is one
+ * `verify.release_recorded` attempt, which is also what a rollback of this batch reads.
+ *
+ * It has its own switch, so the other release paths stay verdicts-only. With the switch on, the first
+ * step after deploy is a dry run that writes one ledger row (`RECORDED_RELEASE_DRY_RUN_FINGERPRINT`)
+ * with the counts; a step in a later tick (another run, at least `RECORDED_RELEASE_DRY_RUN_WAIT_MINUTES`
+ * on) releases.
  */
 export const DARWIN_RECORDED_RELEASE_STRATEGY = { strategy: "verify.release_recorded", version: 1 } as const;
 export const RECORDED_RELEASE_LIMIT = 500;
+/** Only this pass; DARWIN_RELEASE_ACTS stays off. Off until the switch is turned on (James approved "fix, then release", Oct 15). */
+export const DARWIN_RECORDED_RELEASE_ACTS = false;
+export const RECORDED_RELEASE_DRY_RUN_FINGERPRINT = `darwin:recorded-release:dry-run:v${DARWIN_RECORDED_RELEASE_STRATEGY.version}`;
+/** A tick is 5 minutes; the live release waits for a later tick than the dry run's. */
+export const RECORDED_RELEASE_DRY_RUN_WAIT_MINUTES = 4;
 
 export interface RecordedReleaseResult {
   acts: boolean;
   dryRun: boolean;
+  /** This step was the dry run the live release waits for, and wrote its ledger row. */
+  dryRunRecorded: boolean;
   recordedPasses: number;
   wouldRelease: number;
   released: number;
+  /** What would be (or was) released, by category. */
+  releaseByCategory: Record<string, number>;
   held: Record<string, number>;
   heldExamples: Array<{ feeRawId: number; feeName: string; amount: number | null; canonicalFeeKey: string; reason: string }>;
 }
@@ -832,9 +846,15 @@ export async function releaseRecordedPasses(
   db: SqlTag,
   options: { runId: number; stepId?: number | null; dryRun?: boolean; acts?: boolean; limit?: number },
 ): Promise<RecordedReleaseResult> {
-  const acts = Boolean(options.acts ?? DARWIN_RELEASE_ACTS) && !options.dryRun;
-  const result: RecordedReleaseResult = { acts, dryRun: !acts, recordedPasses: 0, wouldRelease: 0, released: 0, held: {}, heldExamples: [] };
+  const switchOn = Boolean(options.acts ?? DARWIN_RECORDED_RELEASE_ACTS) && !options.dryRun;
+  const result: RecordedReleaseResult = {
+    acts: false, dryRun: true, dryRunRecorded: false, recordedPasses: 0, wouldRelease: 0, released: 0, releaseByCategory: {}, held: {}, heldExamples: [],
+  };
   if (!(await learningSchemaReady(db))) return result;
+  // The live release follows a dry run recorded by another run in an earlier tick.
+  const acts = switchOn && (await recordedDryRunDone(db, options.runId));
+  result.acts = acts;
+  result.dryRun = !acts;
   const rows = await db<CandidateRow[]>`
     SELECT fr.fee_raw_id, fr.institution_id, fr.source_url, fr.document_r2_key, fr.extraction_confidence,
            fr.fee_name, fr.amount, fr.frequency, fr.outlier_flags,
@@ -876,6 +896,8 @@ export async function releaseRecordedPasses(
       }
     } else {
       result.wouldRelease += 1;
+      const key = raw.held_canonical_fee_key;
+      result.releaseByCategory[key] = (result.releaseByCategory[key] ?? 0) + 1;
     }
     if (!acts) continue;
     let feeVerifiedId: number | null = null;
@@ -903,5 +925,44 @@ export async function releaseRecordedPasses(
       detail: { fee_raw_id: feeRawId, canonical_fee_key: raw.held_canonical_fee_key, hold_reason: reason, fee_verified_id: feeVerifiedId },
     });
   }
+  if (switchOn && !acts && result.recordedPasses > 0) {
+    await recordAttempt(db, {
+      institutionId: null,
+      stage: "verify",
+      strategy: DARWIN_RECORDED_RELEASE_STRATEGY.strategy,
+      version: DARWIN_RECORDED_RELEASE_STRATEGY.version,
+      fingerprint: RECORDED_RELEASE_DRY_RUN_FINGERPRINT,
+      runId: options.runId,
+      stepId: options.stepId ?? null,
+      foldIntoPlaybook: false,
+      outcome: "unchanged",
+      yieldCount: 0,
+      costMicrousd: 0,
+      durationMs: 0,
+      detail: {
+        dry_run: true,
+        recorded_passes: result.recordedPasses,
+        would_release: result.wouldRelease,
+        release_by_category: result.releaseByCategory,
+        held: result.held,
+      },
+    });
+    result.dryRunRecorded = true;
+  }
   return result;
+}
+
+/** True once another run recorded this version's dry run at least a tick ago. */
+async function recordedDryRunDone(db: SqlTag, runId: number): Promise<boolean> {
+  const [row] = await db<Array<{ done: boolean }>>`
+    SELECT EXISTS (
+      SELECT 1 FROM pipeline_attempts
+       WHERE input_fingerprint = ${RECORDED_RELEASE_DRY_RUN_FINGERPRINT}
+         AND strategy = ${DARWIN_RECORDED_RELEASE_STRATEGY.strategy}
+         AND strategy_version = ${DARWIN_RECORDED_RELEASE_STRATEGY.version}
+         AND agent_run_id IS DISTINCT FROM ${runId}
+         AND created_at < NOW() - make_interval(mins => ${RECORDED_RELEASE_DRY_RUN_WAIT_MINUTES})
+    ) AS done
+  `;
+  return Boolean(row?.done);
 }
