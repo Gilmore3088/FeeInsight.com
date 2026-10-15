@@ -54,7 +54,7 @@ export interface FeeBenchmark {
 
 export type FeeBenchmarks = Record<string, FeeBenchmark>;
 
-type Position = "below" | "within" | "above";
+export type Position = "below" | "within" | "above";
 
 /** The design system's market-position colours: brick, slate and sage, never good or bad. */
 const POSITION_DOT: Record<Position, string> = {
@@ -74,11 +74,26 @@ function benchmarkFor(fee: DisplayFee, benchmarks: FeeBenchmarks | undefined): F
   return benchmarks[fee.feeCategory] ?? null;
 }
 
+/** How many benchmarked fees sit below, inside and above the national middle half. */
+export function countPositions(fees: DisplayFee[], benchmarks: FeeBenchmarks): Record<Position, number> {
+  const counts: Record<Position, number> = { below: 0, within: 0, above: 0 };
+  const seen = new Set<string>();
+  for (const fee of fees) {
+    const benchmark = benchmarkFor(fee, benchmarks);
+    if (!benchmark || fee.amount === null) continue;
+    const key = dedupeKey(fee);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    counts[fee.amount < benchmark.p25 ? "below" : fee.amount > benchmark.p75 ? "above" : "within"] += 1;
+  }
+  return counts;
+}
+
 /**
  * A tiny bar: the shaded band is where most institutions fall nationally, the tick is
  * the national median, the dot is this fee. Dot color says below / within / above.
  */
-function FeePosition({ amount, benchmark }: { amount: number; benchmark: FeeBenchmark }) {
+function FeePosition({ amount, benchmark, wide = false }: { amount: number; benchmark: FeeBenchmark; wide?: boolean }) {
   const position: Position =
     amount < benchmark.p25 ? "below" : amount > benchmark.p75 ? "above" : "within";
   const scaleMax = Math.max(benchmark.p75 * 1.5, amount * 1.1, 1);
@@ -86,20 +101,20 @@ function FeePosition({ amount, benchmark }: { amount: number; benchmark: FeeBenc
   const description = `${POSITION_TEXT[position]} (${formatFeeAmount(benchmark.p25)}–${formatFeeAmount(benchmark.p75)} nationally)`;
 
   return (
-    <span className="mt-1 inline-flex w-16 flex-col" title={description}>
+    <span className={`mt-1.5 flex flex-col ${wide ? "w-full" : "w-36"}`} title={description}>
       <span className="sr-only">{description}</span>
-      <span aria-hidden="true" className="relative block h-2.5 w-16">
+      <span aria-hidden="true" className="relative block h-3 w-full">
         <span className="absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-border" />
         <span
-          className="absolute top-1/2 h-1.5 -translate-y-1/2 rounded-full bg-border"
+          className="absolute top-1/2 h-2.5 -translate-y-1/2 rounded-[2px] bg-brick-tint"
           style={{ left: pct(benchmark.p25), width: `calc(${pct(benchmark.p75)} - ${pct(benchmark.p25)})` }}
         />
         <span
-          className="absolute top-1/2 h-2.5 w-px -translate-y-1/2 bg-ink-muted"
+          className="absolute top-1/2 h-3.5 w-[2px] -translate-y-1/2 bg-ink"
           style={{ left: pct(benchmark.median) }}
         />
         <span
-          className={`absolute top-1/2 h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full ring-2 ring-white ${POSITION_DOT[position]}`}
+          className={`absolute top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full ring-2 ring-surface-0 ${POSITION_DOT[position]}`}
           style={{ left: pct(amount) }}
         />
       </span>
@@ -492,11 +507,9 @@ function FeeScheduleStack({
                       <span className="font-semibold text-base tabular-nums text-ink" style={MONO_FIGURE}>
                         {fee.rate ? <RateValue rate={fee.rate} /> : formatFeeAmount(fee.amount) ?? "\u2014"}
                       </span>
-                      {benchmark && fee.amount !== null && (
-                        <FeePosition amount={fee.amount} benchmark={benchmark} />
-                      )}
                     </span>
                   </div>
+                  {benchmark && fee.amount !== null && <FeePosition amount={fee.amount} benchmark={benchmark} wide />}
                   {fee.status === "verified" && fee.feeCategory && (medians.has(fee.feeCategory) || stateMedians?.medians.has(fee.feeCategory)) && (
                     <p className="mt-0.5">
                       <MedianCell fee={fee} medians={medians} stateMedians={stateMedians} />

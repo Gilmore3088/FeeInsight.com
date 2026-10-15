@@ -19,22 +19,21 @@ import { DISTRICT_NAMES } from "@/lib/fed-districts";
 import { STATE_NAMES } from "@/lib/us-states";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
 import { getAlertSubscriptionForInstitution } from "@/lib/data-store/alerts";
-import { HEADLINE_FEE_KEYS, getInstitutionHeadlineCoverage } from "@/lib/data-store/market-readiness";
+import { HEADLINE_FEE_KEYS } from "@/lib/data-store/market-readiness";
 import { getDisplayName } from "@/lib/fee-taxonomy";
 import { FeeAlertControl } from "./fee-alert-control";
 import { PeerRankTeaser } from "./peer-rank-teaser";
 import { getInstitutionPeerRankCached, getPeerIndexCached } from "@/lib/data-store/public-cached-reads";
-import { InfoTip } from "@/components/public/info-tip";
 import { SITE_NAME } from "@/lib/constants";
-import { computeInstitutionRating, generateInterpretation } from "@/lib/institution-rating";
 import type { FeePublicationStatus } from "@/lib/institution-quality";
 import { buildPublicInstitutionProfileLinks } from "@/lib/institution-profile-links";
 import { formatAbsoluteDate, getPublicNationalIndex } from "@/lib/public-stats";
+import { formatCompactDollars } from "@/lib/format";
 import { getCharterLabel, getSegmentLabel, toTitleCase } from "./enum-labels";
 import { FeeFocusScroll } from "./fee-focus-scroll";
-import { FeeScheduleTable, type FeeBenchmarks, type StateMedians } from "./fee-schedule-table";
+import { FeeScheduleTable, countPositions, type FeeBenchmarks, type StateMedians } from "./fee-schedule-table";
+import type { IndexEntry } from "@/lib/data-store/fee-index";
 import { FEE_FAMILIES } from "@/lib/fee-taxonomy";
-import { FinancialContext } from "./financial-context";
 import {
   buildFinancialSeries,
   computeGrowth,
@@ -44,8 +43,8 @@ import {
 } from "./financial-history";
 import { FinancialProfileSection } from "./financial-profile-section";
 import { assetSizeToDollars, formatReportQuarter, selectFinancialsByQuarter } from "./financial-units";
-import { InstitutionMetricRow, InstitutionOfferBand } from "./institution-metrics";
-import { MIN_VERIFIED_FEES_FOR_NARRATIVE, MIN_VERIFIED_FEES_FOR_OFFER } from "./profile-copy";
+import { InstitutionOfferBand } from "./institution-metrics";
+import { MIN_VERIFIED_FEES_FOR_OFFER } from "./profile-copy";
 import {
   buildLocationParts,
   buildProfileTitle,
@@ -54,14 +53,17 @@ import {
   getVisibleFeesForPage,
   isVerifiedFee,
   pickHeadlineFees,
+  pickHeadlineRows,
   toDisplayFees,
   toPipelineDisplayFees,
   toRateDisplayFees,
 } from "./profile-data";
 import { ProfileHeader } from "./profile-header";
 import { InstitutionJsonLd } from "./profile-jsonld";
-import { ProfileSidebar } from "./profile-sidebar";
-import { FeeProfileSummary, StatusNotice } from "./status-notice";
+import { ProfileFootnote } from "./profile-footnote";
+import { HamiltonBand } from "./hamilton-band";
+import { MarketPosition, PositionSummary, type HeadlineRow, type MarketBand } from "./market-position";
+import { StatusNotice } from "./status-notice";
 import { ThinProfilePanel } from "./thin-profile-panel";
 
 interface PageProps {
@@ -73,6 +75,9 @@ interface PageProps {
 const TAXONOMY = new Set(Object.values(FEE_FAMILIES).flat());
 
 const FINANCIAL_HISTORY_QUARTERS = 4;
+/** Headline fees drawn in full on the page, and the few the Hamilton picture repeats. */
+const HEADLINE_ROWS_SHOWN = 6;
+const HAMILTON_ROWS_SHOWN = 3;
 /** fdic and ncua can both carry the same quarter; fetch enough rows to dedupe. */
 const FINANCIAL_SOURCES_PER_QUARTER = 2;
 
@@ -130,7 +135,7 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
     catalogVisibleFeeCount === 0 &&
     Boolean(inst.fee_schedule_url || inst.latest_source_status || (inst.latest_extracted_fee_count ?? 0) > 0);
 
-  const [visibleFees, rateFees, evidence, financials, user, headlineCoverage, peerRank] = await Promise.all([
+  const [visibleFees, rateFees, evidence, financials, user, peerRank] = await Promise.all([
     catalogVisibleFeeCount > 0 ? getVisibleFeesForPage(instId) : Promise.resolve([]),
     getRateFeesForPage(instId),
     shouldLoadPipelineEvidence
@@ -140,7 +145,6 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
       fallbackTo("financial context", []),
     ),
     getCurrentUser().catch(() => null),
-    getInstitutionHeadlineCoverage([instId]).catch(fallbackTo("headline coverage", null)),
     getInstitutionPeerRankCached(instId).catch(fallbackTo("peer rank", null)),
   ]);
 
@@ -194,8 +198,7 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
 
   const nationalIndex =
     verifiedFees.length > 0 ? await getPublicNationalIndex().catch(fallbackTo("national index", [])) : [];
-  const rating = verifiedFees.length > 0 ? computeInstitutionRating(verifiedFees, nationalIndex) : null;
-  // Medians for the per-row comparison: the same verified-only index the rating uses, and
+  // Medians for the per-row comparison: the verified-only national index, and
   // only where enough institutions publish the fee for a median to mean something.
   const nationalMedians = new Map<string, number | null>(
     nationalIndex
@@ -228,19 +231,7 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
           ),
         }
       : undefined;
-  const enoughForNarrative = verifiedFees.length >= MIN_VERIFIED_FEES_FOR_NARRATIVE;
-  const showNarrative = rating !== null && enoughForNarrative;
   const thinProfile = verifiedFees.length < MIN_VERIFIED_FEES_FOR_OFFER;
-  const headline = pickHeadlineFees(verifiedFees);
-  const interpretation =
-    showNarrative && rating
-      ? generateInterpretation({
-          rating,
-          feeCount: verifiedFees.length,
-          overdraftAmount: headline.overdraft,
-          charterType: inst.charter_type,
-        })
-      : null;
 
   // One row per quarter, one source; the KPI strip and Financial Context share the same figure.
   const normalizedFinancials = selectFinancialsByQuarter(financials).slice(0, FINANCIAL_HISTORY_QUARTERS);
@@ -274,6 +265,42 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
     regulatorFacts.push({ label: "Status", value: regulator.closed_date ? `Closed or merged ${regulator.closed_date}` : "Closed or merged" });
   }
 
+  const marketBand = (entry: IndexEntry | undefined): MarketBand | null =>
+    entry &&
+    entry.maturity_tier !== "insufficient" &&
+    entry.min_amount != null &&
+    entry.p25_amount != null &&
+    entry.median_amount != null &&
+    entry.p75_amount != null &&
+    entry.max_amount != null
+      ? {
+          min: entry.min_amount,
+          p25: entry.p25_amount,
+          median: entry.median_amount,
+          p75: entry.p75_amount,
+          max: entry.max_amount,
+          institutions: entry.institution_count,
+        }
+      : null;
+  const nationalByCategory = new Map(nationalIndex.map((entry) => [entry.fee_category, entry]));
+  const stateByCategory = new Map(stateIndex.map((entry) => [entry.fee_category, entry]));
+  const headlineRows: HeadlineRow[] = pickHeadlineRows(verifiedFees, HEADLINE_FEE_KEYS)
+    .map((fee) => ({
+      category: fee.fee_category as string,
+      label: getDisplayName(fee.fee_category as string).replace(/\s*\([^)]*\)/g, ""),
+      amount: fee.amount as number,
+      sourceUrl: fee.source_url ?? inst.fee_schedule_url ?? null,
+      state: marketBand(stateByCategory.get(fee.fee_category as string)),
+      nation: marketBand(nationalByCategory.get(fee.fee_category as string)),
+    }))
+    .filter((row) => row.state !== null || row.nation !== null)
+    .slice(0, HEADLINE_ROWS_SHOWN);
+  const stateHasBands = headlineRows.some((row) => row.state !== null);
+  const kind = inst.charter_type === "credit_union" ? "credit union" : "bank";
+  const marketLabel = stateHasBands && stateName ? `${stateName} ${kind === "bank" ? "banks" : "credit unions"}` : "the U.S. market";
+  const positionCounts = countPositions(displayFees, feeBenchmarks);
+  const showHamiltonBand = !isPro && !thinProfile && headlineRows.length > 0;
+
   return (
     <>
       <BreadcrumbJsonLd
@@ -285,7 +312,7 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
       />
 
       <div className="min-h-screen bg-paper text-ink">
-        <div className="mx-auto max-w-page px-4 py-5 sm:px-6 sm:py-7">
+        <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 sm:py-10">
           <ProfileHeader
             name={inst.institution_name}
             status={status}
@@ -298,7 +325,8 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
             websiteUrl={inst.website_url}
             feeScheduleUrl={inst.fee_schedule_url}
             collectedOn={collectedOn}
-            financialsAsOf={financialsAsOf}
+            publishedCount={verifiedCount}
+            assetsLabel={assetsDollars ? `${formatCompactDollars(assetsDollars)} assets` : null}
           />
 
           <StatusNotice
@@ -308,19 +336,30 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
             claimHref={links.claimHref}
           />
 
-          <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start">
-            <div className="min-w-0 space-y-6">
-              {/* The answer first: what this institution charges. */}
-              <section className="border border-border bg-white">
-                <div className="border-b border-border px-4 py-3 sm:px-5">
-                  <div className="flex items-center gap-1.5">
-                    <h2 className="text-lg font-semibold text-ink">Published fees</h2>
-                    <InfoTip label="About published fees">
-                      Published fees power benchmarks; fees under review do not.
-                    </InfoTip>
-                  </div>
-                </div>
+          <div className="space-y-10 sm:space-y-14">
+            <MarketPosition rows={headlineRows} stateLabel={stateHasBands ? stateName : null} kind={kind} />
 
+            {!thinProfile && (positionCounts.below + positionCounts.within + positionCounts.above > 0 || peerRank) && (
+              <div className="grid gap-3 lg:grid-cols-2">
+                <PositionSummary counts={positionCounts} />
+                {peerRank && <PeerRankTeaser rank={peerRank} />}
+              </div>
+            )}
+
+            {thinProfile && (
+              <ThinProfilePanel
+                status={status}
+                verifiedCount={verifiedFees.length}
+                correctSourceHref={links.correctSourceHref}
+                claimHref={links.claimHref}
+              />
+            )}
+
+            <section aria-labelledby="all-fees-heading" className="space-y-4">
+              <h2 id="all-fees-heading" className="text-[22px] font-semibold tracking-[-0.02em] text-ink sm:text-[26px]">
+                {displayFees.length > 0 ? `Every fee on its schedule` : "Fees"}
+              </h2>
+              <div className="overflow-hidden rounded-xl border border-border bg-surface-0 shadow-fi-1">
                 {displayFees.length > 0 ? (
                   <>
                     {focusFeeCategory && <FeeFocusScroll category={focusFeeCategory} />}
@@ -334,105 +373,78 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
                     />
                   </>
                 ) : (
-                  <div className="px-4 py-8 sm:px-5">
-                    <div className="rounded-lg border border-border bg-paper p-4">
-                      <p className="text-sm font-semibold text-ink">
-                        {underReviewCount > 0
-                          ? "Fees for this institution are under review."
-                          : "No published schedule found."}
-                      </p>
-                      <p className="mt-1 text-sm leading-relaxed text-ink-muted">
-                        {underReviewCount > 0
-                          ? "Fees will appear here once review is complete."
-                          : "Fee comparisons are withheld until a published fee schedule has been reviewed."}
-                      </p>
-                    </div>
-                  </div>
+                  <p className="px-4 py-8 text-sm text-ink-muted sm:px-5">
+                    {underReviewCount > 0
+                      ? "Fees for this institution are under review and will appear here once review is complete."
+                      : "No published fee schedule found yet."}
+                  </p>
                 )}
-              </section>
-
-              {peerRank && !thinProfile && <PeerRankTeaser rank={peerRank} reportOfferHref={links.reportOfferHref} />}
-
-              <FeeAlertControl
-                institutionId={instId}
-                institutionName={inst.institution_name}
-                focusCategory={focusFeeCategory}
-                categoryLabels={alertCategoryLabels}
-                mode={thinProfile ? "verify" : "alerts"}
-                initial={{
-                  signedIn: Boolean(user),
-                  saved: alertSubscription !== null,
-                  feeCategories: alertSubscription?.fee_categories ?? null,
-                }}
-              />
-
-              {/* Public profiles state facts (fee vs. national median), never an adjective verdict — the
-                  commissioned report carries the benchmark against a true peer set. */}
-              {showNarrative && rating && interpretation && (
-                <FeeProfileSummary
-                  rating={rating}
-                  interpretation={interpretation}
-                  overdraftAmount={headline.overdraft}
-                  factsOnly
-                />
-              )}
-
-              <InstitutionMetricRow
-                headlineCategories={headlineCoverage?.get(instId) ?? null}
-                headlineTotal={HEADLINE_FEE_KEYS.length}
-                verifiedCount={verifiedCount}
-                underReviewCount={underReviewCount}
-                assetsDollars={assetsDollars}
-              />
-
-              {thinProfile ? (
-                <ThinProfilePanel
-                  status={status}
-                  verifiedCount={verifiedFees.length}
-                  correctSourceHref={links.correctSourceHref}
-                  claimHref={links.claimHref}
-                />
-              ) : (
-                <InstitutionOfferBand
-                  institutionName={inst.institution_name}
-                  reportOfferHref={links.reportOfferHref}
-                  plansHref={links.plansHref}
-                  correctSourceHref={links.correctSourceHref}
-                  isPro={isPro}
-                />
-              )}
-
-              <FinancialContext latest={latestFinancial} history={normalizedFinancials} />
-
-              {(isPro
-                ? financialSeries.length > 0 || Boolean(footprint || complaints || holdingCompany || regulatoryWatch)
-                : latestFinancial !== null) && (
-                <FinancialProfileSection
-                  isPro={isPro}
-                  points={financialSeries}
-                  peers={peerMedianPoints}
-                  insights={insights}
-                  charterLabel={charterLabel}
-                  footprint={footprint}
-                  complaints={complaints}
-                  holdingCompany={holdingCompany}
-                  enforcement={enforcement}
-                  regulatoryWatch={regulatoryWatch}
-                  exportHref={`/api/v1/institutions?id=${instId}&view=benchmark&format=csv`}
-                  institutionName={inst.institution_name}
-                  plansHref={links.plansHref}
-                />
-              )}
-            </div>
-
-            <ProfileSidebar
-              regulatorFacts={regulatorFacts}
-              links={links}
-              isAuthenticated={Boolean(user)}
-              showAddSource={needsSource}
-              showProCard={!thinProfile}
-            />
+              </div>
+            </section>
           </div>
+        </div>
+
+        {showHamiltonBand && (
+          <HamiltonBand
+            institutionName={inst.institution_name}
+            rows={headlineRows.slice(0, HAMILTON_ROWS_SHOWN)}
+            marketLabel={marketLabel}
+            stateLabel={stateHasBands ? stateName : null}
+            plansHref={links.plansHref}
+            reportOfferHref={links.reportOfferHref}
+          />
+        )}
+
+        <div className="mx-auto max-w-6xl space-y-10 px-4 py-10 sm:space-y-14 sm:px-6 sm:py-14">
+          {isPro && !thinProfile && (
+            <InstitutionOfferBand
+              institutionName={inst.institution_name}
+              reportOfferHref={links.reportOfferHref}
+              plansHref={links.plansHref}
+              correctSourceHref={links.correctSourceHref}
+              isPro
+            />
+          )}
+
+          {(isPro
+            ? financialSeries.length > 0 || Boolean(footprint || complaints || holdingCompany || regulatoryWatch)
+            : latestFinancial !== null) && (
+            <FinancialProfileSection
+              isPro={isPro}
+              points={financialSeries}
+              peers={peerMedianPoints}
+              insights={insights}
+              charterLabel={charterLabel}
+              footprint={footprint}
+              complaints={complaints}
+              holdingCompany={holdingCompany}
+              enforcement={enforcement}
+              regulatoryWatch={regulatoryWatch}
+              exportHref={`/api/v1/institutions?id=${instId}&view=benchmark&format=csv`}
+              institutionName={inst.institution_name}
+              plansHref={links.plansHref}
+              freeQuarters={normalizedFinancials}
+            />
+          )}
+
+          <FeeAlertControl
+            institutionId={instId}
+            institutionName={inst.institution_name}
+            focusCategory={focusFeeCategory}
+            categoryLabels={alertCategoryLabels}
+            mode={thinProfile ? "verify" : "alerts"}
+            initial={{
+              signedIn: Boolean(user),
+              saved: alertSubscription !== null,
+              feeCategories: alertSubscription?.fee_categories ?? null,
+            }}
+          />
+
+          <ProfileFootnote
+            regulatorFacts={regulatorFacts}
+            correctSourceHref={links.correctSourceHref}
+            financialsAsOf={financialsAsOf}
+          />
         </div>
       </div>
 

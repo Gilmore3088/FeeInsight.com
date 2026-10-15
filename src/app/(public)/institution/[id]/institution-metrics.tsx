@@ -3,74 +3,9 @@ import { WORKSPACE_SEAT_LIMIT } from "@/lib/hamilton/workspace-seats";
 import { ArrowRight } from "lucide-react";
 import { InfoTip } from "@/components/public/info-tip";
 import { REPORT_PRICE_INLINE } from "@/lib/constants";
-import { formatCompactDollars } from "@/lib/format";
 import { TrackLink } from "@/components/track-link";
 import { DEMO_REQUEST_NAV, PRO_PLANS_NAV } from "@/components/nav-items";
 import { COMPETITIVE_FEE_POSITION_REPORT } from "./profile-copy";
-
-export function Metric({
-  label,
-  value,
-  tone,
-  framed = false,
-}: {
-  label: string;
-  value: string;
-  tone?: "verified" | "review";
-  framed?: boolean;
-}) {
-  const valueClass =
-    tone === "verified"
-      ? "text-emerald-700"
-      : tone === "review"
-        ? "text-amber-800"
-        : "text-ink";
-
-  return (
-    <div className={`min-w-0 px-3 py-3 sm:px-4 ${framed ? "border border-border bg-surface-0" : ""}`}>
-      <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-ink-muted sm:text-[11px] sm:tracking-[0.12em]">{label}</p>
-      <p className={`mt-1 break-words text-lg font-semibold tabular-nums ${valueClass}`}>
-        {value}
-      </p>
-    </div>
-  );
-}
-
-export interface InstitutionMetricRowProps {
-  /** Headline categories published, out of headlineTotal; null when the count could not be read. */
-  headlineCategories: number | null;
-  headlineTotal: number;
-  verifiedCount: number;
-  underReviewCount: number;
-  assetsDollars: number | null;
-}
-
-/** Counts and context for the profile, below the fee schedule and the alert control. */
-export function InstitutionMetricRow({
-  headlineCategories,
-  headlineTotal,
-  verifiedCount,
-  underReviewCount,
-  assetsDollars,
-}: InstitutionMetricRowProps) {
-  return (
-    <section aria-label="Profile facts" className="overflow-hidden border border-border bg-surface-0">
-      <div className="grid grid-cols-2 gap-px bg-border *:bg-surface-0 sm:grid-cols-4">
-        <Metric
-          label="Headline fees published"
-          value={headlineCategories === null ? "N/A" : `${headlineCategories} of ${headlineTotal}`}
-        />
-        <Metric label="Published fees" value={verifiedCount.toLocaleString("en-US")} />
-        <Metric
-          label="Under review"
-          value={underReviewCount.toLocaleString("en-US")}
-          tone={underReviewCount > 0 ? "review" : undefined}
-        />
-        <Metric label="Assets" value={assetsDollars ? formatCompactDollars(assetsDollars) : "N/A"} />
-      </div>
-    </section>
-  );
-}
 
 /**
  * The one ask on a bank's page (James, 2026-10-15: Pro is the goal, the report is a lead): Pro

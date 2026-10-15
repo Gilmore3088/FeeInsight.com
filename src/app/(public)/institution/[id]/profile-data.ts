@@ -115,6 +115,15 @@ function pickAmount(
   exclude?: RegExp,
   require?: (fee: ExtractedFee) => boolean,
 ): number | null {
+  return pickFee(fees, category, exclude, require)?.amount ?? null;
+}
+
+function pickFee(
+  fees: ExtractedFee[],
+  category: string,
+  exclude?: RegExp,
+  require?: (fee: ExtractedFee) => boolean,
+): ExtractedFee | null {
   const candidates = fees.filter(
     (fee) =>
       fee.fee_category === category &&
@@ -126,8 +135,7 @@ function pickAmount(
       (!require || require(fee)),
   );
   // A fee the schedule states is personal wins over one whose audience is not stated.
-  const match = candidates.find((fee) => !isAudienceUnstated(fee.fee_audience)) ?? candidates[0];
-  return match?.amount ?? null;
+  return candidates.find((fee) => !isAudienceUnstated(fee.fee_audience)) ?? candidates[0] ?? null;
 }
 
 /** A monthly headline must be a recurring account fee, not a per-page or per-item charge in the same category. */
@@ -193,4 +201,17 @@ export function buildLocationParts(input: {
   }
   if (input.stateName) parts.push({ label: input.stateName, href: code ? `/research/state/${code}` : null });
   return parts;
+}
+
+/** One verified, personal fee per headline category, in the order buyers look them up. */
+export function pickHeadlineRows(verifiedFees: ExtractedFee[], categories: readonly string[]): ExtractedFee[] {
+  return categories
+    .map((category) =>
+      category === "overdraft"
+        ? pickFee(verifiedFees, category, NON_PAID_ITEM_OVERDRAFT_PATTERN)
+        : category === "monthly_maintenance"
+          ? pickFee(verifiedFees, category, undefined, isMonthlyMaintenanceFee)
+          : pickFee(verifiedFees, category),
+    )
+    .filter((fee): fee is ExtractedFee => fee !== null);
 }
