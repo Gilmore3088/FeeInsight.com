@@ -366,6 +366,9 @@ export const HAND_REFILES: readonly HandRefile[] = [
   { feePublishedId: 92156, from: "late_payment", amount: 10, to: "safe_deposit_box",
     name: "Safe Deposit Box Late Payment Fee - if payment is not made within 60 days of due date",
     why: "inst 1638, doc 22021: under \"Safe Deposit Boxes\", \"Late Payment Fee - if payment is not made within 60 days of due date, late fee will apply | $10.00\"" },
+  // #1304 (James approved, Oct 14): a courtesy pay (paid overdraft) row filed by its payment-channel cell.
+  { feePublishedId: 88513, from: "bill_pay", amount: 32, to: "overdraft", name: "Courtesy Pay (Paid NSF) Check/ACH/Bill Pay Payment",
+    why: "inst 5057, doc 6200: \"Courtesy Pay (Paid NSF) Check/ACH/Bill Pay Payment | $32.00/item\"; Knox named the fee by the cell after the row heading, so \"Bill Pay\" filed it as bill pay (the bank's $32 Account Guardian line, 105896, is a separate overdraft fee)" },
 ];
 
 interface HandRow {
