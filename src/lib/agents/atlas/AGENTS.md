@@ -22,6 +22,19 @@ Atlas is the orchestration and operator-visibility agent. Atlas-specific code ma
 - Do not use free-text institution names as execution identity. Use canonical numeric institution IDs.
 - Do not collapse data trust states into generic success/failure labels; preserve source, extraction, verification, publication, and refresh states separately.
 
+## City repair (`city-repair.ts`, #1213)
+
+NCUA's FOICU file cuts a credit union's city at 15 characters ("Colorado Spring", "North Little
+Ro"); credit unions inserted before #1317 kept the cut. `atlas-city-repair`, the last step of the
+daily scoreboard run, restores the full name from the credit union's own office cities in NCUA's
+branch file (`credit_union_branches`, latest report) when exactly one longer office city starts
+with the cut (case ignored), in the stored name's case. It writes only rows still holding the cut,
+so a second run changes nothing, and lists every change (id, old city, new city) in the step
+detail; a dry run lists them and writes nothing. Two possible names, or none (College Station, San
+Luis Obispo, and the 5 cuts with no longer office city), stay for a person. On by James's decision
+(Oct 15). The cut city's public page redirects permanently to the full one once no institution
+keeps the cut (`fullCityForCut`). It is a data step, so the pipeline pause holds it.
+
 ## Direct state re-search (`priority-state-research.ts`)
 
 A state on `PRIORITY_STATE_RESEARCH_REQUESTS` gets a `manual_repair` run (source
