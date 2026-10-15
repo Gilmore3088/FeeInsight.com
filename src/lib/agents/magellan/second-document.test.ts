@@ -7,6 +7,7 @@ import {
   disclosureIndexDocuments,
   isDocumentIndexPage,
   isGenericAccountName,
+  isNonDepositLink,
   MAX_SEARCH_PAGES_PER_BANK,
   runSecondDocumentFind,
   SECOND_DOCUMENT_FINDER,
@@ -477,5 +478,29 @@ describe("Magellan companion finder: documents on another host", () => {
 
     expect(fetchImpl.mock.calls.map((call) => String(call[0]))).toContain(pdf);
     expect(result.results[0].pages.map((page) => page.url)).toEqual(kept ? [pdf] : []);
+  });
+});
+
+describe("brokerage, wealth and loan pages are not deposit fee documents (#1442)", () => {
+  const site = new URL("https://bank.example");
+  const classify = (label: string, path: string) => classifyCompanionLink({ url: `https://bank.example${path}`, label } as never, site);
+
+  it("skips brokerage, investment, wealth and trust-and-investment links", () => {
+    expect(classify("Brokerage Fee Schedule", "/docs/brokerage-fee-schedule.pdf")).toBeNull();
+    expect(classify("Self-Directed Investing Pricing", "/investing/self-directed-investing/pricing")).toBeNull();
+    expect(classify("Wealth Management Fees", "/wealth-management/fee-schedule")).toBeNull();
+    expect(classify("Trust & Investment Services", "/trust-and-investment-services/fees")).toBeNull();
+  });
+
+  it("isNonDepositLink adds the shared classifier's rate and card pages to the word list", () => {
+    expect(isNonDepositLink("Rates", "https://bank.example/current-rates/")).toBe(true);
+    expect(isNonDepositLink("Download", "https://bank.example/docs/CreditCardAgreement.pdf")).toBe(true);
+    expect(isNonDepositLink("Investments", "https://bank.example/investments")).toBe(true);
+  });
+
+  it("keeps deposit schedules, including ones that mention a loan payment", () => {
+    expect(isNonDepositLink("Schedule of Fees", "https://bank.example/personal/Schedule-of-Fees-Personal-Checking.pdf")).toBe(false);
+    expect(isNonDepositLink("Fee Schedule", "https://bank.example/fee-schedule")).toBe(false);
+    expect(classify("Schedule of Fees", "/personal/Schedule-of-Fees-Personal-Checking.pdf")?.kind).toBe("fee_document");
   });
 });

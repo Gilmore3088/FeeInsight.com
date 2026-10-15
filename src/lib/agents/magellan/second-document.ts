@@ -4,6 +4,7 @@ import { recordAttempt } from "@/lib/agents/learning/attempts";
 import { classifyFetchFailure, type AttemptOutcome } from "@/lib/agents/learning/outcomes";
 import { htmlToScoringText, scoreFeePage } from "@/lib/agents/learning/fee-page";
 import { companionStreamsReady } from "@/lib/agents/companion-streams";
+import { BROKERAGE_LINK_WORDS, nonDepositDocumentKind } from "@/lib/non-deposit-document";
 
 import { fetchWithTimeout, looksLikePdfUrl, MAX_PDF_CHECK_BYTES, pdfCheckText, validateFeeCandidate } from "./find-validate";
 import { loadSharedNameIds } from "./other-bank-host";
@@ -138,8 +139,13 @@ const STRONG_FEE_DOCUMENT =
 const AGREEMENT =
   /\b((deposit |share |checking |savings |consumer |personal )?account|member(ship)?|deposit|share) agreements?\b|\bterms (and|&) conditions\b|\bagreements? (and|&) disclosures?\b|\bdisclosures? (and|&) agreements?\b/;
 const MEDIUM_FEE_DOCUMENT = /\b(fees?|charges|pricing|disclosures?|account agreements?|deposit agreements?|terms and conditions)\b/;
-const NOT_A_FEE_DOCUMENT =
-  /\b(funds availability|availability of funds|opt in(form)?|zelle|join|privacy|careers?|jobs|mortgage|loans?|lending|heloc|home equity|lines? of credit|introductory rate|credit cards?|visa platinum|auto|rates? sheet|annual report|press|news|scholarship|donation|calculators?|login|log in|enroll|apply|application|employment|vendor|accessibility|swaps?|derivatives?|cftc|blog|articles?)\b/;
+/**
+ * Not a deposit fee document. #1442 added the brokerage, investment and wealth words
+ * (`BROKERAGE_LINK_WORDS`, shared with Darwin's live re-check in `@/lib/non-deposit-document`).
+ */
+const NOT_A_FEE_DOCUMENT = new RegExp(
+  `\\b(funds availability|availability of funds|opt in(form)?|zelle|join|privacy|careers?|jobs|mortgage|loans?|lending|heloc|home equity|lines? of credit|introductory rate|credit cards?|visa platinum|auto|rates? sheet|annual report|press|news|scholarship|donation|calculators?|login|log in|enroll|apply|application|employment|vendor|accessibility|swaps?|derivatives?|cftc|blog|articles?|${BROKERAGE_LINK_WORDS})\\b`,
+);
 /** Deposit accounts whose pages carry their own fees. Loans and cards are left out. */
 const ACCOUNT_PAGE =
   /\b(checking|savings|money market|share drafts?|share accounts?|share savings|christmas club|holiday club|club accounts?|vacation club|kasasa|youth accounts?|student (checking|accounts?)|teen (checking|accounts?)|compare accounts|personal accounts?|deposit accounts?)\b/;
@@ -318,9 +324,13 @@ export function isGenericAccountName(name: string | null | undefined): boolean {
   return cleaned.length === 0 || GENERIC_LABEL.test(cleaned);
 }
 
-/** True when a link points at a loan, HELOC or other page that is not a deposit fee page. */
+/**
+ * True when a link points at a loan, HELOC, brokerage, wealth or other page that is not a deposit
+ * fee page: its words, or the shared document classifier (`nonDepositDocumentKind`, #1442) that
+ * Darwin's live re-check also uses.
+ */
 export function isNonDepositLink(label: string, url: string): boolean {
-  return NOT_A_FEE_DOCUMENT.test(linkText({ label, url }));
+  return NOT_A_FEE_DOCUMENT.test(linkText({ label, url })) || nonDepositDocumentKind(url, label) != null;
 }
 
 /**
