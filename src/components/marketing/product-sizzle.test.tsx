@@ -2,7 +2,7 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CHAPTER_MS, MAX_LOOPS, ProductSizzle } from "./product-sizzle";
-import { FrameMedia, FramePlaceholder } from "./frame-media";
+import { FrameMedia } from "./frame-media";
 
 function stubReducedMotion(reduced: boolean) {
   vi.stubGlobal("matchMedia", (query: string) => ({
@@ -12,18 +12,38 @@ function stubReducedMotion(reduced: boolean) {
   }));
 }
 
-const CHAPTERS = ["one", "two", "three", "four"].map((key) => ({ key, label: key.toUpperCase(), scene: <p>{key} scene</p> }));
+const CHAPTERS = ["one", "two", "three", "four"].map((key) => ({
+  key,
+  label: key.toUpperCase(),
+  caption: `Caption ${key}`,
+  scene: <p>{key} scene</p>,
+}));
 
-function renderSizzle() {
-  render(<ProductSizzle label="Hamilton" chapters={CHAPTERS} />);
+function renderSizzle(props: Partial<Parameters<typeof ProductSizzle>[0]> = {}) {
+  return render(<ProductSizzle label="Hamilton" chapters={CHAPTERS} {...props} />);
 }
 
 const shown = () => document.querySelector('[id^="sizzle-"][aria-hidden="false"]')?.id;
 const frame = () => document.querySelector(".fi-sizzle") as HTMLElement;
+const caption = () => document.querySelector("[data-caption]")?.textContent;
+const segments = () => [...document.querySelectorAll<HTMLElement>("[data-segment]")];
+const states = () => segments().map((s) => s.dataset.segment);
+const segment = (name: string) => screen.getByRole("button", { name: new RegExp(`^${name}, part`) });
 const tick = (ms: number) => act(() => vi.advanceTimersByTime(ms));
+const stage = () => document.querySelector("[data-stage]") as HTMLElement;
+
+// jsdom has no PointerEvent; this one carries pointerType, as a browser's does.
+class TestPointerEvent extends MouseEvent {
+  pointerType: string;
+  constructor(type: string, init: MouseEventInit & { pointerType?: string } = {}) {
+    super(type, init);
+    this.pointerType = init.pointerType ?? "mouse";
+  }
+}
 
 beforeEach(() => {
   vi.useFakeTimers();
+  vi.stubGlobal("PointerEvent", TestPointerEvent);
   stubReducedMotion(false);
   // jsdom has no IntersectionObserver, so the frame counts as in view and playback starts.
   vi.stubGlobal("IntersectionObserver", undefined);
@@ -34,8 +54,8 @@ afterEach(() => {
   document.body.innerHTML = "";
 });
 
-describe("product sizzle", () => {
-  it("plays from the first chapter, advances, and rests on the end frame after its loops", () => {
+describe("product demo", () => {
+  it("plays from the first chapter, advances, and rests on the last after its loops", () => {
     renderSizzle();
     expect(shown()).toBe("sizzle-one");
     expect(frame().dataset.motion).toBe("on");
@@ -44,22 +64,110 @@ describe("product sizzle", () => {
     for (let i = 1; i < CHAPTERS.length * MAX_LOOPS; i += 1) tick(CHAPTER_MS);
     expect(shown()).toBe("sizzle-four");
     expect(frame().dataset.mode).toBe("rest");
+    expect(states()).toEqual(["done", "done", "done", "current"]);
     for (let i = 0; i < 3; i += 1) tick(CHAPTER_MS);
     expect(shown()).toBe("sizzle-four");
-    expect(screen.getByRole("button", { name: "Replay the product tour" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Replay the product demo" }));
+    expect(shown()).toBe("sizzle-one");
+    expect(frame().dataset.mode).toBe("playing");
   });
 
-  it("shows the composed end frame and moves nothing under reduced motion", () => {
+  it("draws one progress segment per chapter, labelled, filling as the run moves on", () => {
+    renderSizzle();
+    const group = screen.getByRole("group", { name: "Demo progress" });
+    expect(segments()).toHaveLength(4);
+    expect(segment("TWO").getAttribute("aria-label")).toBe("TWO, part 2 of 4");
+    // A segment is a bar, not a labelled pill: it has no visible text.
+    for (const s of segments()) expect(s.textContent).toBe("");
+    expect(states()).toEqual(["current", "todo", "todo", "todo"]);
+    expect(segment("ONE").getAttribute("aria-current")).toBe("step");
+    expect(group.querySelector('[style*="fi-progress-fill"]')).toBeTruthy();
+    tick(CHAPTER_MS);
+    tick(CHAPTER_MS);
+    expect(states()).toEqual(["done", "done", "current", "todo"]);
+    expect(segment("THREE").getAttribute("aria-current")).toBe("step");
+  });
+
+  it("names what is happening in the title bar, chapter by chapter", () => {
+    renderSizzle();
+    expect(caption()).toBe("Caption one");
+    tick(CHAPTER_MS);
+    expect(caption()).toBe("Caption two");
+    expect(document.querySelector(".fi-window")?.textContent).toContain("Hamilton · ");
+  });
+
+  it("jumps to a chapter from its segment and plays on from there", () => {
+    renderSizzle();
+    fireEvent.click(segment("THREE"));
+    expect(shown()).toBe("sizzle-three");
+    expect(caption()).toBe("Caption three");
+    expect(frame().dataset.mode).toBe("playing");
+    tick(CHAPTER_MS);
+    expect(shown()).toBe("sizzle-four");
+  });
+
+  it("pauses and carries on from where it stopped", () => {
+    renderSizzle();
+    tick(CHAPTER_MS / 2);
+    fireEvent.click(screen.getByRole("button", { name: "Pause the product demo" }));
+    expect(frame().dataset.paused).toBe("true");
+    tick(CHAPTER_MS * 3);
+    expect(shown()).toBe("sizzle-one");
+    fireEvent.click(screen.getByRole("button", { name: "Play the product demo" }));
+    tick(CHAPTER_MS / 2 - 1);
+    expect(shown()).toBe("sizzle-one");
+    tick(2);
+    expect(shown()).toBe("sizzle-two");
+  });
+
+  it("holds while a mouse is over the scene, and a tap pauses and plays", () => {
+    renderSizzle();
+    tick(CHAPTER_MS / 2);
+    fireEvent.pointerEnter(stage(), { pointerType: "mouse" });
+    expect(frame().dataset.held).toBe("true");
+    expect(frame().dataset.paused).toBe("true");
+    tick(CHAPTER_MS * 2);
+    expect(shown()).toBe("sizzle-one");
+    fireEvent.pointerLeave(stage(), { pointerType: "mouse" });
+    tick(CHAPTER_MS / 2 + 1);
+    expect(shown()).toBe("sizzle-two");
+
+    fireEvent.pointerUp(stage(), { pointerType: "touch" });
+    expect(frame().dataset.mode).toBe("paused");
+    tick(CHAPTER_MS * 2);
+    expect(shown()).toBe("sizzle-two");
+    fireEvent.pointerUp(stage(), { pointerType: "touch" });
+    expect(frame().dataset.mode).toBe("playing");
+  });
+
+  it("holds while the keyboard is on the segments", () => {
+    renderSizzle();
+    act(() => segment("TWO").focus());
+    expect(frame().dataset.held).toBe("true");
+    tick(CHAPTER_MS * 2);
+    expect(shown()).toBe("sizzle-one");
+    act(() => segment("TWO").blur());
+    expect(frame().dataset.held).toBe("false");
+    // A click focuses the segment too, but jumps and plays on rather than holding.
+    fireEvent.click(segment("THREE"));
+    expect(shown()).toBe("sizzle-three");
+  });
+
+  it("shows each chapter's end state and moves nothing under reduced motion", () => {
     stubReducedMotion(true);
     renderSizzle();
-    expect(shown()).toBe("sizzle-four");
+    expect(shown()).toBe("sizzle-one");
     expect(frame().dataset.motion).toBe("off");
     tick(CHAPTER_MS * 5);
-    expect(shown()).toBe("sizzle-four");
+    expect(shown()).toBe("sizzle-one");
     expect(screen.queryByRole("button", { name: /Pause|Play|Replay/ })).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "TWO" }));
-    expect(shown()).toBe("sizzle-two");
+    expect(document.querySelector('[style*="fi-progress-fill"]')).toBeNull();
+    fireEvent.click(segment("THREE"));
+    expect(shown()).toBe("sizzle-three");
+    expect(caption()).toBe("Caption three");
     expect(frame().dataset.motion).toBe("off");
+    tick(CHAPTER_MS * 5);
+    expect(shown()).toBe("sizzle-three");
   });
 
   it("stops advancing when reduced motion is turned on mid-run", () => {
@@ -82,74 +190,49 @@ describe("product sizzle", () => {
     expect(shown()).toBe("sizzle-two");
   });
 
-  it("jumps to a chapter tab and stops the run", () => {
+  it("has no tab row and no separate tour block under the frame", () => {
     renderSizzle();
-    fireEvent.click(screen.getByRole("button", { name: "THREE" }));
-    expect(shown()).toBe("sizzle-three");
-    tick(CHAPTER_MS * 3);
-    expect(shown()).toBe("sizzle-three");
-    expect(frame().dataset.mode).toBe("chosen");
+    expect(screen.queryByRole("group", { name: "Chapters" })).toBeNull();
+    expect(screen.queryByRole("tablist")).toBeNull();
+    expect(document.querySelector("[aria-pressed]")).toBeNull();
+    expect(document.querySelector("[data-video-placeholder]")).toBeNull();
+    expect(screen.queryByText(/coming soon/)).toBeNull();
+    // Everything sits inside the one frame.
+    expect(frame().children).toHaveLength(1);
+    expect(frame().querySelector(".fi-window [data-segments]")).toBeTruthy();
   });
 
-  it("pauses and carries on from where it stopped", () => {
-    renderSizzle();
-    tick(CHAPTER_MS / 2);
-    fireEvent.click(screen.getByRole("button", { name: "Pause the product tour" }));
-    expect(frame().dataset.paused).toBe("true");
-    tick(CHAPTER_MS * 3);
+  it("plays a recorded tour in the same frame, with the same segments and caption", () => {
+    const play = vi.fn(() => Promise.resolve());
+    const pause = vi.fn();
+    vi.spyOn(HTMLMediaElement.prototype, "play").mockImplementation(play);
+    vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(pause);
+    renderSizzle({ video: { src: "/tour.mp4", label: "Watch the tour", chapters: [0, 5, 10, 15] } });
+    const clip = document.querySelector("video") as HTMLVideoElement;
+    expect(clip.getAttribute("src")).toBe("/tour.mp4");
+    expect(clip.muted).toBe(true);
+    expect(clip.closest("[data-stage]")).toBeTruthy();
+    // The first chapter sits under the clip as its poster; the coded motion stays off.
     expect(shown()).toBe("sizzle-one");
-    fireEvent.click(screen.getByRole("button", { name: "Play the product tour" }));
-    tick(CHAPTER_MS / 2 - 1);
-    expect(shown()).toBe("sizzle-one");
-    tick(2);
-    expect(shown()).toBe("sizzle-two");
+    expect(frame().dataset.motion).toBe("off");
+    expect(play).toHaveBeenCalled();
+    Object.defineProperty(clip, "duration", { value: 20, configurable: true });
+    clip.currentTime = 11;
+    fireEvent.timeUpdate(clip);
+    expect(shown()).toBe("sizzle-three");
+    expect(caption()).toBe("Caption three");
+    fireEvent.click(segment("TWO"));
+    expect(clip.currentTime).toBe(5);
+    fireEvent.click(screen.getByRole("button", { name: "Pause the product demo" }));
+    expect(pause).toHaveBeenCalled();
+    expect(screen.queryByRole("button", { name: "Watch the tour" })).toBeNull();
   });
 
-  it("offers a recorded tour only when one exists", () => {
+  it("offers a recorded clip in a still frame only when one exists", () => {
     const { rerender } = render(<FrameMedia video={null}><p>live</p></FrameMedia>);
     expect(screen.queryByRole("button")).toBeNull();
     rerender(<FrameMedia video={{ src: "/tour.mp4", label: "Watch the tour" }}><p>live</p></FrameMedia>);
     fireEvent.click(screen.getByRole("button", { name: "Watch the tour" }));
     expect(document.querySelector("video")?.getAttribute("src")).toBe("/tour.mp4");
-  });
-
-  it("shows a still tour placeholder that is not a control", () => {
-    render(<FramePlaceholder caption="Product tour · coming soon" />);
-    expect(screen.getByText("Product tour · coming soon")).toBeTruthy();
-    expect(screen.queryByRole("button")).toBeNull();
-    const block = document.querySelector("[data-video-placeholder]");
-    expect(block?.className).toContain("aspect-video");
-    expect(block?.className).toContain("w-full");
-    expect(block?.getAttribute("role")).toBeNull();
-  });
-
-  it("lays the chapter tabs out as one row of equal pills", () => {
-    renderSizzle();
-    const row = screen.getByRole("group", { name: "Chapters" });
-    expect(row.className).toContain("flex");
-    expect(row.className).not.toContain("grid");
-    const pills = screen.getAllByRole("button", { name: /^(ONE|TWO|THREE|FOUR)$/ });
-    expect(pills).toHaveLength(4);
-    for (const pill of pills) expect(pill.className).toContain("w-[8.25rem]");
-    expect(pills.filter((p) => p.getAttribute("aria-pressed") === "true")).toHaveLength(1);
-  });
-
-  it("puts the placeholder in its own band under the chapter tabs until a clip exists, then only the real button", () => {
-    const { rerender } = render(<ProductSizzle label="Hamilton" chapters={CHAPTERS} placeholder="Product tour · coming soon" />);
-    expect(document.querySelectorAll("[data-video-placeholder]").length).toBe(1);
-    const row = screen.getByRole("group", { name: "Chapters" });
-    expect(row.nextElementSibling?.hasAttribute("data-video-placeholder")).toBe(true);
-    expect(row.contains(document.querySelector("[data-video-placeholder]"))).toBe(false);
-    expect(screen.queryByRole("button", { name: /coming soon/ })).toBeNull();
-    rerender(
-      <ProductSizzle
-        label="Hamilton"
-        chapters={CHAPTERS}
-        placeholder="Product tour · coming soon"
-        video={{ src: "/tour.mp4", label: "Watch the tour" }}
-      />,
-    );
-    expect(document.querySelector("[data-video-placeholder]")).toBeNull();
-    expect(screen.getByRole("button", { name: "Watch the tour" })).toBeTruthy();
   });
 });

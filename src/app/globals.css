@@ -1457,7 +1457,56 @@ details[open] summary .expand-icon { transform: rotate(180deg); }
 .fi-sizzle[data-motion="on"] .fi-sizzle-scene[data-active="true"] .fi-a-line {
   animation: fi-a-line 0.8s ease-out 2.4s both;
 }
+/* Fee rows fill in: the whiskers draw, the middle half opens out, then the median lands. */
+@keyframes fi-a-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes fi-a-grow { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+/* The bank's own fee slides from the axis's start to where it sits in that market. */
+@keyframes fi-a-slide { from { cx: 0; opacity: 0; } 25% { opacity: 1; } }
+/* Hamilton reading: shows for a moment, then gives way to the answer. */
+@keyframes fi-a-think { 0%, 100% { opacity: 0; } 12%, 88% { opacity: 1; } }
+@keyframes fi-a-dot { 0%, 60%, 100% { transform: none; opacity: 0.5; } 30% { transform: translateY(-3px); opacity: 1; } }
+.fi-a-think { opacity: 0; pointer-events: none; }
+.fi-sizzle[data-motion="on"] .fi-sizzle-scene[data-active="true"] .fi-a-fill .w,
+.fi-sizzle[data-motion="on"] .fi-sizzle-scene[data-active="true"] .fi-a-fill .fi-range-value {
+  animation: fi-a-fade 0.4s ease-out both;
+  animation-delay: calc(var(--fi-d, 0ms) + 150ms);
+}
+.fi-sizzle[data-motion="on"] .fi-sizzle-scene[data-active="true"] .fi-a-fill .box {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: fi-a-grow 0.6s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  animation-delay: calc(var(--fi-d, 0ms) + 200ms);
+}
+.fi-sizzle[data-motion="on"] .fi-sizzle-scene[data-active="true"] .fi-a-fill .med {
+  animation: fi-a-fade 0.3s ease-out both;
+  animation-delay: calc(var(--fi-d, 0ms) + 600ms);
+}
+.fi-sizzle[data-motion="on"] .fi-sizzle-scene[data-active="true"] .fi-a-marker .you {
+  animation: fi-a-slide 0.9s cubic-bezier(0.3, 0.9, 0.3, 1) both;
+  animation-delay: calc(var(--fi-d, 0ms) + 500ms);
+}
+.fi-sizzle[data-motion="on"] .fi-sizzle-scene[data-active="true"] .fi-a-word {
+  animation: fi-a-fade 0.12s linear both;
+  animation-delay: var(--fi-d, 0ms);
+}
+.fi-sizzle[data-motion="on"] .fi-sizzle-scene[data-active="true"] .fi-a-think {
+  animation: fi-a-think 1s ease-in-out both;
+  animation-delay: var(--fi-d, 0ms);
+}
+.fi-sizzle[data-motion="on"] .fi-sizzle-scene[data-active="true"] .fi-a-think .fi-a-dot { animation: fi-a-dot 0.9s ease-in-out infinite; }
+.fi-sizzle[data-motion="on"] .fi-sizzle-scene[data-active="true"] .fi-a-think .fi-a-dot:nth-child(2) { animation-delay: 0.15s; }
+.fi-sizzle[data-motion="on"] .fi-sizzle-scene[data-active="true"] .fi-a-think .fi-a-dot:nth-child(3) { animation-delay: 0.3s; }
+.fi-sizzle[data-motion="on"] .fi-sizzle-scene[data-active="true"] .fi-a-sourced .fi-chat-source {
+  animation: fi-a-rise 0.5s ease-out both;
+  animation-delay: calc(var(--fi-d, 0ms) + 700ms);
+}
+/* The title bar's caption changes with each chapter. */
+.fi-sizzle[data-motion="on"] .fi-sizzle-caption {
+  display: inline-block;
+  animation: fi-a-rise 0.4s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
 .fi-sizzle[data-paused="true"] .fi-sizzle-scene * { animation-play-state: paused !important; }
 @media (prefers-reduced-motion: reduce) {
-  .fi-sizzle .fi-sizzle-scene * { animation: none !important; }
+  .fi-sizzle .fi-sizzle-scene *,
+  .fi-sizzle .fi-sizzle-caption { animation: none !important; }
 }

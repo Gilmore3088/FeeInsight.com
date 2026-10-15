@@ -8,31 +8,8 @@ export interface FrameVideo {
   poster?: string;
   /** What the button says, e.g. "Watch the tour". */
   label: string;
-}
-
-/**
- * Where a recorded tour will go, until one is approved: a full-width 16:9 navy block with a
- * large play mark and its caption, sized like the video it stands for. It is a picture, not
- * a control, so it has no button role and does nothing on a click. Once a clip exists,
- * `FrameMedia` shows the real button instead.
- */
-export function FramePlaceholder({ caption, className = "" }: { caption: string; className?: string }) {
-  return (
-    <div
-      data-video-placeholder=""
-      className={`relative flex aspect-video w-full select-none flex-col items-center justify-center gap-4 overflow-hidden rounded-2xl bg-ink text-on-ink shadow-fi-2 sm:gap-6 ${className}`}
-    >
-      <span
-        aria-hidden="true"
-        className="flex h-16 w-16 items-center justify-center rounded-full bg-on-ink/15 ring-1 ring-on-ink/30 sm:h-24 sm:w-24"
-      >
-        <svg viewBox="0 0 12 12" className="ml-1 h-6 w-6 sm:h-9 sm:w-9">
-          <path d="M3 1.5v9l7.5-4.5z" fill="currentColor" />
-        </svg>
-      </span>
-      <span className="px-4 text-center text-[15px] font-semibold leading-5 sm:text-[20px] sm:leading-7">{caption}</span>
-    </div>
-  );
+  /** Where each chapter starts, in seconds, when the clip plays in the homepage demo frame. */
+  chapters?: number[];
 }
 
 /**

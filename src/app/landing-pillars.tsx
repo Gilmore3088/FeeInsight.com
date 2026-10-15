@@ -5,7 +5,7 @@ import { ProductFrame } from "@/components/marketing/product-frame";
 import { TrackLink } from "@/components/track-link";
 import { PRODUCT_NAME } from "@/lib/constants";
 import { MarketLadder } from "@/app/for-institutions/market-ladder";
-import { AskExhibit, FeeStackExhibit, MarketExhibit, SourcedFeesExhibit } from "./landing-exhibits";
+import { AskExhibit, FeeStackExhibit, MarketExhibit, SourcedFeesExhibit, TryPriceExhibit } from "./landing-exhibits";
 import { SECTION_INNER, SectionHeading, TEXT_LINK, type HomeData } from "./landing-shared";
 
 /**
@@ -55,15 +55,23 @@ function Pillar({
 }
 
 /**
- * Brief 06 §4.3 item 4: three pillars, each a heading, one line and one live exhibit, and
- * each exhibit different: the sample bank's own fees with their source lines, its fee in
- * every market around it (the ladder), and Hamilton answering from those figures.
+ * Brief 06 §4.3 item 4, as the level under the hero's demo (James's note of Oct 15): live
+ * samples, each a heading, one line and one live exhibit drawn from published schedules.
+ * Each exhibit differs from the demo's chapters: the sample bank's own fees with their source
+ * lines, its fee in every market around it (the ladder), and Hamilton's Try a price.
  */
 export function LandingPillars({ data }: { data: HomeData }) {
   if (!data.overdraft) return null;
   return (
-    <section className="bg-paper">
-      <div className={`${SECTION_INNER} space-y-20 py-16 sm:space-y-28 sm:py-24`}>
+    <section id="live-samples" className="bg-paper">
+      <div className={`${SECTION_INNER} py-16 sm:py-24`}>
+        <SectionHeading
+          eyebrow="Live samples"
+          title="See it in action"
+          line="Each sample below is drawn live from published fee schedules."
+          center
+        />
+        <div className="mt-14 space-y-20 sm:mt-20 sm:space-y-28">
         <Pillar
           eyebrow="Every fee"
           title="Each fee, quoted from the bank's own schedule"
@@ -87,7 +95,7 @@ export function LandingPillars({ data }: { data: HomeData }) {
           eyebrow="One workspace"
           title="Ask, compare and take it to committee"
           line="Hamilton answers each question with its source and writes the committee report."
-          frameLabel="Hamilton · Your institution"
+          frameLabel={data.scenario ? "Hamilton · Try a price" : "Hamilton · Your institution"}
           video={PILLAR_VIDEOS.workspace}
           after={
             <p className="mt-6 flex flex-wrap items-center gap-x-5 gap-y-3">
@@ -110,8 +118,9 @@ export function LandingPillars({ data }: { data: HomeData }) {
             </p>
           }
         >
-          <AskExhibit data={data} />
+          {data.scenario ? <TryPriceExhibit data={data} /> : <AskExhibit data={data} />}
         </Pillar>
+        </div>
       </div>
     </section>
   );

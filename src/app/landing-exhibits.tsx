@@ -22,6 +22,43 @@ const OVERDRAFT_NAME = OVERDRAFT_LABEL.replace(/\s*\(.*\)$/, "");
 /** Delay for an fi-a- entrance inside a sizzle chapter. */
 const at = (ms: number) => ({ "--fi-d": `${ms}ms` }) as CSSProperties;
 
+/** The gap between one market row of the ladder and the next as the chapter plays. */
+const LADDER_STEP_MS = 450;
+
+/** When Hamilton starts reading, and when its answer appears, in ms from the chapter's start. */
+const ASK_THINK_MS = 1700;
+const ASK_ANSWER_MS = 2700;
+
+/** A question that appears a word at a time, as if typed, when the chapter plays. */
+function Typed({ text, from, animate }: { text: string; from: number; animate: boolean }) {
+  if (!animate) return <>{text}</>;
+  const words = text.split(" ");
+  return (
+    <>
+      {words.map((word, i) => (
+        <span key={i} className="fi-a-word" style={at(from + i * 110)}>
+          {word}
+          {i < words.length - 1 ? " " : ""}
+        </span>
+      ))}
+    </>
+  );
+}
+
+/** Hamilton reading before it answers: three dots that show only while the chapter plays. */
+function Thinking({ ms }: { ms: number }) {
+  return (
+    <span aria-hidden="true" className="fi-a-think absolute left-0 top-0 flex items-center gap-2" style={at(ms)}>
+      <AppIcon brand="hamilton" size={32} title="" />
+      <span className="flex gap-1 rounded-full border border-border bg-surface-0 px-3 py-3">
+        <span className="fi-a-dot h-1.5 w-1.5 rounded-full bg-ink-muted" />
+        <span className="fi-a-dot h-1.5 w-1.5 rounded-full bg-ink-muted" />
+        <span className="fi-a-dot h-1.5 w-1.5 rounded-full bg-ink-muted" />
+      </span>
+    </span>
+  );
+}
+
 /** The market layers Hamilton compares a fee against (brief 03 §2), shown as a legend, not a control. */
 const LAYERS = ["Your market", "Your state", "Fed district", "Peer group", "Nation"] as const;
 
@@ -48,7 +85,7 @@ export function FeeStackExhibit({ data, search = false, shell = false }: { data:
       ) : null}
       <div className="fi-range-stack">
         {lines.map((line, i) => (
-          <div key={line.key} className="fi-a-rise" style={at(600 + i * 280)}>
+          <div key={line.key} className="fi-a-rise fi-a-fill" style={at(900 + i * 350)}>
             <FeeRange
               label={line.label}
               min={line.row.min_amount}
@@ -78,6 +115,7 @@ function DistrictRanges({
   domain,
   limit,
   animate = false,
+  delay = 400,
 }: {
   districts: DistrictPoint[];
   national: number;
@@ -85,6 +123,8 @@ function DistrictRanges({
   /** On a phone, draw fewer rows, bigger. */
   limit?: number;
   animate?: boolean;
+  /** When the first row plays in, in ms from the chapter's start. */
+  delay?: number;
 }) {
   const [lo, hi] = domain;
   const pct = (v: number) => ((v - lo) / (hi - lo)) * 100;
@@ -101,7 +141,7 @@ function DistrictRanges({
           className={`grid grid-cols-[7rem_minmax(0,1fr)_3.75rem] items-center py-[7px] text-[13px] sm:py-1.5 ${
             limit !== undefined && i >= limit ? "max-sm:hidden" : ""
           } ${animate ? "fi-a-rise" : ""}`}
-          style={animate ? at(400 + i * 140) : undefined}
+          style={animate ? at(delay + i * 140) : undefined}
         >
           <span className="truncate pr-2 text-ink">{d.name}</span>
           <span className="relative h-4" aria-hidden="true">
@@ -113,7 +153,7 @@ function DistrictRanges({
                 />
                 <span
                   className={`absolute top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-surface-0 bg-ink ${animate ? "fi-a-drop" : ""}`}
-                  style={{ left: `${pct(d.median)}%`, ...(animate ? at(600 + i * 140) : {}) }}
+                  style={{ left: `${pct(d.median)}%`, ...(animate ? at(delay + 200 + i * 140) : {}) }}
                 />
               </>
             ) : (
@@ -139,10 +179,13 @@ export function MarketExhibit({
   animate = false,
   phoneRows = 6,
   wide = false,
+  phoneDistricts = true,
 }: {
   data: HomeData;
   animate?: boolean;
   phoneRows?: number;
+  /** False leaves the Fed district rows off a phone, so a demo frame stays one screen tall. */
+  phoneDistricts?: boolean;
   /** Desktop: the bank's markets on the left, the districts on the right, in Hamilton's shell (My fees). */
   wide?: boolean;
 }) {
@@ -173,25 +216,33 @@ export function MarketExhibit({
       {legend}
       {ladder ? (
         <>
-          <p className="max-w-[none] mt-4 flex items-baseline justify-between gap-3">
+          <p
+            className={`max-w-[none] mt-4 flex items-baseline justify-between gap-3 ${animate ? "fi-a-rise" : ""}`}
+            style={animate ? at(150) : undefined}
+          >
             <span className="min-w-0 truncate text-[15px] font-semibold text-ink">{ladder.institutionName}</span>
             <span className="shrink-0 font-mono text-[22px] font-semibold tabular-nums tracking-tight text-ink">{money(ladder.value)}</span>
           </p>
           <div className="fi-range-stack mt-2 space-y-1">
-            {ladder.rows.map((row) => (
-              <FeeRange
+            {ladder.rows.map((row, i) => (
+              <div
                 key={row.label}
-                label={row.label}
-                min={row.min}
-                q1={row.q1}
-                median={row.median}
-                q3={row.q3}
-                max={row.max}
-                value={ladder.value}
-                domain={domain}
-                format={money}
-                figure="median"
-              />
+                className={animate ? "fi-a-rise fi-a-fill fi-a-marker" : undefined}
+                style={animate ? at(500 + i * LADDER_STEP_MS) : undefined}
+              >
+                <FeeRange
+                  label={row.label}
+                  min={row.min}
+                  q1={row.q1}
+                  median={row.median}
+                  q3={row.q3}
+                  max={row.max}
+                  value={ladder.value}
+                  domain={domain}
+                  format={money}
+                  figure="median"
+                />
+              </div>
             ))}
             <FeeRangeAxis ticks={[0, hi / 2, hi]} domain={domain} />
           </div>
@@ -215,7 +266,14 @@ export function MarketExhibit({
   const byDistrict =
     districts.length > 0 ? (
       <>
-        <DistrictRanges districts={districts} national={overdraft.median_amount} domain={domain} limit={phoneRows} animate={animate} />
+        <DistrictRanges
+          districts={districts}
+          national={overdraft.median_amount}
+          domain={domain}
+          limit={phoneRows}
+          animate={animate}
+          delay={ladder ? 900 + ladder.rows.length * LADDER_STEP_MS : 400}
+        />
         <div className="mt-1 grid grid-cols-[7rem_minmax(0,1fr)_3.75rem] font-mono text-[11px] text-ink-muted" aria-hidden="true">
           <span />
           <span className="flex justify-between">
@@ -226,9 +284,12 @@ export function MarketExhibit({
         </div>
       </>
     ) : null;
+  const districtKey = phoneDistricts ? "" : "max-sm:hidden";
   const source = (
     <SourceLine className="mt-3">
-      {ladder ? "Dot: its own fee · Right: each market's median · " : ""}Bar: each district&apos;s range · Dashed line: national median · {summary.freshnessLabel}
+      {ladder ? "Dot: its own fee · Right: each market's median · " : ""}
+      <span className={districtKey}>Bar: each district&apos;s range · Dashed line: national median · </span>
+      {summary.freshnessLabel}
     </SourceLine>
   );
   if (wide) {
@@ -241,7 +302,7 @@ export function MarketExhibit({
             <div className="max-lg:hidden">{source}</div>
           </div>
           <div className="min-w-0">
-            {byDistrict}
+            {byDistrict && !phoneDistricts ? <div className="max-sm:hidden">{byDistrict}</div> : byDistrict}
             <div className="lg:hidden">{source}</div>
           </div>
         </div>
@@ -383,6 +444,8 @@ export function TryPriceExhibit({ data }: { data: HomeData }) {
 export function AskExhibit({ data, animate = false }: { data: HomeData; animate?: boolean }) {
   const { ladder, summary, overdraft, districts } = data;
   const rise = (ms: number) => (animate ? { className: "fi-a-rise", style: at(ms) } : {});
+  // The answer, with its source line after it, once the question is typed and Hamilton has read.
+  const answer = animate ? { className: "fi-a-rise fi-a-sourced", style: at(ASK_ANSWER_MS) } : {};
   const source = `${PRODUCT_NAME} · ${summary.freshnessLabel}`;
   if (ladder) {
     const local = ladder.rows[0];
@@ -391,12 +454,14 @@ export function AskExhibit({ data, animate = false }: { data: HomeData; animate?
     return (
       <HamiltonShell>
         <div className="space-y-4 p-4 sm:p-7">
-          <div {...rise(200)}>
+          <div {...rise(100)}>
             <ChatMessage from="user" className="ml-auto max-w-[85%]">
-              Where does {ladder.institutionName}&apos;s {plainFee(ladder.feeLabel)} fee sit?
+              <Typed text={`Where does ${ladder.institutionName}'s ${plainFee(ladder.feeLabel)} fee sit?`} from={350} animate={animate} />
             </ChatMessage>
           </div>
-          <div {...rise(1200)}>
+          <div className="relative">
+            {animate ? <Thinking ms={ASK_THINK_MS} /> : null}
+          <div {...answer}>
             <ChatMessage from="hamilton" source={source} className="max-w-full">
               At <Figure>{money(ladder.value)}</Figure>, it sits {where} of the {formatCount(local.institutions)} local competitors
               that publish this fee.
@@ -413,6 +478,7 @@ export function AskExhibit({ data, animate = false }: { data: HomeData; animate?
               </table>
             </ChatMessage>
           </div>
+          </div>
         </div>
       </HamiltonShell>
     );
@@ -424,12 +490,14 @@ export function AskExhibit({ data, animate = false }: { data: HomeData; animate?
   return (
     <HamiltonShell>
       <div className="space-y-4 p-4 sm:p-7">
-        <div {...rise(200)}>
+        <div {...rise(100)}>
           <ChatMessage from="user" className="ml-auto max-w-[85%]">
-            How do {plainFee(OVERDRAFT_LABEL)} fees vary across Fed districts?
+            <Typed text={`How do ${plainFee(OVERDRAFT_LABEL)} fees vary across Fed districts?`} from={350} animate={animate} />
           </ChatMessage>
         </div>
-        <div {...rise(1200)}>
+        <div className="relative">
+          {animate ? <Thinking ms={ASK_THINK_MS} /> : null}
+        <div {...answer}>
           <ChatMessage from="hamilton" source={source} className="max-w-full">
             The national median is <Figure>{money(overdraft.median_amount)}</Figure>, from{" "}
             <Figure>{formatCount(overdraft.institution_count)}</Figure> institutions.
@@ -442,6 +510,7 @@ export function AskExhibit({ data, animate = false }: { data: HomeData; animate?
             ) : null}
           </ChatMessage>
         </div>
+        </div>
       </div>
     </HamiltonShell>
   );
@@ -452,7 +521,7 @@ export function AskExhibit({ data, animate = false }: { data: HomeData; animate?
  * Report's first table: the bank's fees against its local market. Without one, a national
  * committee brief.
  */
-export function ReportExhibit({ data }: { data: HomeData }) {
+export function ReportExhibit({ data, phoneRows = 4 }: { data: HomeData; phoneRows?: number }) {
   const sample = data.sample;
   if (!sample || sample.rows.length < 3) return <NationalBriefExhibit data={data} />;
   const rows = sample.rows.slice(0, 6);
@@ -472,17 +541,21 @@ export function ReportExhibit({ data }: { data: HomeData }) {
             </div>
           ))}
         </div>
-        <table className="fi-a-rise mt-4 w-full text-[13px] sm:text-[14px]" style={at(1300)}>
+        <table className="mt-4 w-full text-[13px] sm:text-[14px]">
           <thead>
-            <tr className="text-left text-[11px] font-semibold uppercase tracking-[0.1em] text-ink-muted">
+            <tr className="fi-a-rise text-left text-[11px] font-semibold uppercase tracking-[0.1em] text-ink-muted" style={at(1300)}>
               <th className="pb-1.5 font-semibold">Fee</th>
               <th className="pb-1.5 text-right font-semibold">Its fee</th>
               <th className="pb-1.5 pl-2 text-right font-semibold">Local median</th>
             </tr>
           </thead>
           <tbody>
-            {rows.map((row) => (
-              <tr key={row.key} className="border-t border-border">
+            {rows.map((row, i) => (
+              <tr
+                key={row.key}
+                className={`fi-a-rise border-t border-border ${i >= phoneRows ? "max-sm:hidden" : ""}`}
+                style={at(1500 + i * 220)}
+              >
                 <td className="py-1.5 pr-2 text-ink">
                   {row.label}
                   {row.position !== "in_market" ? (
@@ -501,7 +574,7 @@ export function ReportExhibit({ data }: { data: HomeData }) {
             ))}
           </tbody>
         </table>
-        <p className="max-w-[none] fi-a-rise mt-3 border-t border-border pt-3 text-[12px] leading-5 text-ink-muted" style={at(1800)}>
+        <p className="max-w-[none] fi-a-rise mt-3 border-t border-border pt-3 text-[12px] leading-5 text-ink-muted" style={at(1700 + rows.length * 220)}>
           Source: each bank&apos;s published fee schedule · {data.summary.freshnessLabel}
         </p>
       </article>

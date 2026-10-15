@@ -164,16 +164,20 @@ describe("homepage (site v3 brief 06 §4.3)", () => {
     expect(unavailable).not.toContain("institutions with published fees");
   });
 
-  it("server-renders the sizzle's composed end frame with all four chapters", () => {
+  it("server-renders one demo frame: the first chapter's end state, its caption and a segment per chapter", () => {
     const html = renderToStaticMarkup(<LandingSizzle data={data} />);
-    for (const label of ["Every fee", "Every market", "One workspace", "Reports"]) expect(html).toContain(label);
+    for (const label of ["Every fee", "Every market", "One workspace", "Reports"]) expect(html).toContain(`aria-label="${label}, part`);
     expect(html).toContain('data-motion="off"');
-    expect(html).toMatch(/id="sizzle-reports"[^>]*aria-hidden="false"/);
-    expect(html).not.toContain("Watch the tour");
-    expect(text(html)).toContain("Product tour · coming soon");
-    expect(html).toContain("data-video-placeholder");
+    expect(html).toMatch(/id="sizzle-fee"[^>]*aria-hidden="false"/);
+    expect(text(html)).toContain("Every fee, against the nation");
+    expect(html.match(/data-segment="/g)).toHaveLength(4);
+    // No tab row, no separate tour placeholder, and no clip button while there is no clip.
+    expect(html).not.toContain("aria-pressed");
+    expect(html).not.toContain("data-video-placeholder");
+    expect(text(html)).not.toMatch(/coming soon|Watch the tour/);
+    expect(html).not.toContain("<video");
     // Every chapter wears Hamilton's tabs, with its own mode marked (re-walk R2).
-    for (const mode of ["My fees", "Try a price", "Reports"]) expect(html).toContain(`font-semibold text-ink">${mode}<`);
+    for (const mode of ["My fees", "Reports"]) expect(html).toContain(`font-semibold text-ink">${mode}<`);
     // Every chapter, Every fee included, renders inside Hamilton's shell (rail and frame).
     for (const key of ["fee", "market", "workspace", "reports"]) {
       expect(html).toMatch(new RegExp(`id="sizzle-${key}"[^>]*><div data-hamilton-shell=""`));
@@ -214,16 +218,25 @@ describe("homepage (site v3 brief 06 §4.3)", () => {
     expect(pillars.match(/aria-label="Local competitors: market/g)?.length).toBe(1);
     expect(pillars).not.toContain("the nation: market");
     const sizzle = renderToStaticMarkup(<LandingSizzle data={data} />);
-    expect(sizzle).toContain("Try a price");
+    // The demo asks the question; the live sample under it is Try a price, so neither repeats.
+    expect(text(sizzle)).toContain("of the 8 local competitors that publish this fee");
+    expect(sizzle).not.toContain("Scenario price");
+    expect(pillars).toContain("Hamilton · Try a price");
     expect(text(sizzle)).toContain("Sample Bank against 15 local competitors");
     // One name per fee: the taxonomy's display name, in the report and the source lines alike.
     expect(text(sizzle)).toContain("Wire Transfer (Int'l Out)");
     expect(text(sizzle)).not.toMatch(/Outgoing international wire|Overdraft \(per item\)/);
-    // The second count says what it counts (re-walk R4).
-    expect(text(pillars)).toContain("of the 8 local competitors that publish this fee");
-    const ask = renderToStaticMarkup(<LandingSizzle data={data} workspace="ask" topPadding />);
-    expect(ask).not.toContain("Scenario price");
-    expect(ask).toContain("pt-16");
+    expect(text(pillars)).not.toContain("of the 8 local competitors that publish this fee");
+  });
+
+  it("heads the pillars as live samples, the level under the demo", () => {
+    const html = renderToStaticMarkup(<LandingPillars data={data} />);
+    expect(html).toContain('id="live-samples"');
+    const t = text(html);
+    expect(t).toMatch(/^ ?Live samples See it in action Each sample below is drawn live from published fee schedules\./);
+    // The demo comes first on the page, then the live samples.
+    const page = wholePage();
+    expect(page.indexOf('aria-label="Product demo"')).toBeLessThan(page.indexOf('id="live-samples"'));
   });
 
   it("keeps at most five short FAQ answers", () => {
