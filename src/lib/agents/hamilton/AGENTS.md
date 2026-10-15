@@ -552,6 +552,16 @@ on its second look (check `hamilton.article_page`), archived as `article_page: #
 with the lesson going to Magellan. MTC Federal CU's real schedule, /articles/schedule-of-fees/,
 is not an article.
 
+**Qualifier pairs, check 4 (#1314, Oct 15).** `linesApartOnPage` keeps two names apart only when
+one of them is printed at the price clear of every place of the other: a shorter name found only
+inside the longer lines ("Funds (NSF)" in "Non-Sufficient Funds (NSF) $25") or one line printed
+twice ("Less than Minimum Balance Fee $10.00/year", twice) is one fee. The words between a name
+and its price never run through another field's label ("Monthly Fee $0 Initial Deposit $10") or
+stop on the first digits of a larger amount ("$10,000" is not $10). An identical skip decided
+before check 4 beside a live line of its own document whose name is its name with words in front,
+or the other way round, is decided again (`QUALIFIER_RESELECT_SQL`, James's yes on Oct 15 after a
+dry run). The page check decides; the SQL only narrows the rows.
+
 ## Duplicate Collapse
 
 Before each publish step, `duplicate-collapse.ts` closes live rows that repeat another
