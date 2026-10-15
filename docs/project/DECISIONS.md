@@ -951,3 +951,9 @@ James, 2026-10-12 evening (builder loop, before leaving for the day): pure techn
 metadata plumbing, structured data, no visible wording change) merges on green; copy and page
 changes wait as open PRs for him on the Vercel preview; no layout work until he says what his design
 updates cover.
+
+**Hamilton's answer check may spend on five paid answers a day.** James, 2026-10-15 (#1079,
+decision card "Allow a daily paid sample so Hamilton's answer check can grade written answers,
+memos and reports?": "5 a day"). The paid sample (`hamilton/paid-answer-eval.ts`) is capped at five
+in code, runs as a provider step under the global provider stop and the memo's budget line, and
+never raises its own cap.
