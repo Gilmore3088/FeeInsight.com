@@ -26,6 +26,7 @@ import {
 } from "./release-held";
 import { isCutoffName } from "@/lib/agents/knox/name-retidy";
 
+import { withinAmountEnvelope } from "./envelopes";
 import { loadReviewMisses } from "./verdict-score";
 import { loadSourceTexts, rawFeeFingerprint } from "./verify";
 
@@ -232,7 +233,10 @@ export type ReleaseHoldReason =
   | "frequency_contradicts_line"
   | "business_activity_row"
   | "frequency_word_disagrees"
-  | "glued_or_cut_name";
+  | "glued_or_cut_name"
+  | "two_column_glue"
+  | "band_as_price"
+  | "overdraft_transfer_as_od_nsf";
 
 /** True when the price was likely read with a footnote mark printed onto its last digit. */
 export function footnoteInPrice(amount: number | null, sourceLine: string, sourceContext: string | null | undefined): boolean {
@@ -281,7 +285,93 @@ export function releaseHoldReason({
   if (businessActivityRow(key, name, sourceContext)) return "business_activity_row";
   if (frequencyWordDisagrees(name, row.frequency)) return "frequency_word_disagrees";
   if (gluedOrCutName(name)) return "glued_or_cut_name";
+  if (footnoteOnWholePrice(key, row.held_reason, price, sourceLine ?? "")) return "footnote_in_price";
+  if (overdraftTransferAsOdNsf(key, name, sourceLine ?? "")) return "overdraft_transfer_as_od_nsf";
+  if (bandAsPrice(name, price, sourceLine ?? "")) return "band_as_price";
+  if (twoColumnGlue(name, sourceLine ?? "", sourceContext)) return "two_column_glue";
   return null;
+}
+
+/*
+ * The second hand check of the recorded passes (Oct 15, 15 of 20 right) found four more shapes. Each
+ * is a free check that only holds more.
+ */
+
+// A footnote mark printed onto a whole price: "Monthly Service Charge: $31" where the page shows "$3"
+// and a superscript 1 (raw 459372). The line's only price, whole with no cents, ending in 1 to 3 (the
+// usual footnote numbers), that Darwin already held as far outside its peers and that is still a
+// plausible price for its category without the last digit; or a superscript digit after the price.
+const SUPERSCRIPT_AFTER_PRICE = /\$\s*\d[\d,]*(?:\.\d{2})?\s*[¹²³⁰-⁹]/;
+const WHOLE_PRICE = /\$\s*(\d{2,})(?![\d.,])/g;
+export function footnoteOnWholePrice(
+  key: string,
+  heldReason: string | null | undefined,
+  amount: number | null,
+  sourceLine: string,
+): boolean {
+  if (SUPERSCRIPT_AFTER_PRICE.test(sourceLine)) return true;
+  if (heldReason !== "peer_outlier" || amount == null || !Number.isInteger(amount)) return false;
+  if (![1, 2, 3].includes(amount % 10)) return false;
+  if ((sourceLine.match(/\$\s*\d/g) ?? []).length !== 1) return false;
+  // Without the mark the price must still be a plausible one for the category ($3, not a $2 wire).
+  if (!withinAmountEnvelope(key, Math.floor(amount / 10))) return false;
+  return [...sourceLine.matchAll(WHOLE_PRICE)].some((match) => Number(match[1]) === amount);
+}
+
+// An item paid by an overdraft transfer filed as NSF or overdraft: "ACH-NSF | Item paid through
+// overdraft transfer from separate account | $3.00" (raw 151073) is od_protection_transfer.
+const OVERDRAFT_TRANSFER = /\b(?:overdraft|od|o\/d)\s+(?:protection\s+)?transfers?\b|\btransfers?\s+from\s+(?:an?\s+|your\s+)?(?:separate|another|other|linked|savings|share)\b|\bpaid\s+(?:through|by|via)\s+(?:an?\s+)?(?:overdraft\s+)?transfer\b|\bcourtesy\s+transfer\b|\bsweep\b/i;
+export function overdraftTransferAsOdNsf(key: string, name: string, sourceLine: string): boolean {
+  return (key === "nsf" || key === "overdraft") && OVERDRAFT_TRANSFER.test(`${name} ${sourceLine}`);
+}
+
+// A band or threshold read as the price: "Debit Card Overdraft Service Fee8 – Lessthan $5.00" (raw
+// 437275), where $5.00 is the transaction size and the price sits in another column; also a name cut
+// at the band word.
+const BAND_BEFORE_PRICE = /\b(?:less\s*than|lessthan|greater\s*than|greaterthan|more\s*than|up\s*to|under|over|below|above|at\s*least|exceeding|exceeds)\s*(?:or\s+equal\s+to\s*)?\$\s*(\d[\d,]*(?:\.\d{1,2})?)/gi;
+const PRICE_BEFORE_BAND = /\$\s*(\d[\d,]*(?:\.\d{1,2})?)\s*(?:or\s+(?:less|more|under|over|greater|higher|lower)|and\s+(?:under|over|below|above|up|less|more))\b/gi;
+const BAND_ENDING = /(?:less\s*than|lessthan|greater\s*than|greaterthan|more\s*than|up\s*to|under|over|below|above)\s*$/i;
+export function bandAsPrice(name: string, amount: number | null, sourceLine: string): boolean {
+  if (BAND_ENDING.test(name.trim())) return true;
+  if (amount == null) return false;
+  for (const pattern of [BAND_BEFORE_PRICE, PRICE_BEFORE_BAND]) {
+    for (const match of sourceLine.matchAll(pattern)) {
+      if (Number(match[1].replace(/,/g, "")) === amount) return true;
+    }
+  }
+  return false;
+}
+
+// Two columns glued into one row: the name holds a second fee's name ("NSF/Uncollected Funds (per
+// occurrence) Excess Withdrawal Item Over 6", raw 296682, where $5.00 is the excess-withdrawal fee),
+// or the row's band and price also sit under another fee's name ("Overdraft Privilege Fee Per
+// Presentment: | Less Than $500 | $5 00" beside "Each VIP MMA Share Draft Less Than $500 | $5 00",
+// raw 432124, a minimum-check fee).
+const PRICE_TOKEN = /\$\s*\d/;
+const squash = (text: string) => text.replace(/[….]{2,}/g, " ").replace(/\s+/g, " ").trim().toLowerCase();
+export function twoColumnGlue(name: string, sourceLine: string, sourceContext: string | null | undefined): boolean {
+  const line = squash(sourceLine);
+  const others = (sourceContext ?? "").split("\n").map(squash).filter((text) => text && text !== line);
+  if (others.length === 0) return false;
+  // A trailing part of the name (3+ words, starting with a capital) that another row prints right
+  // after a price or at its start, as its own fee.
+  const words = name.trim().split(/\s+/);
+  for (let start = 2; start <= words.length - 3; start += 1) {
+    if (!/^[A-Z]/.test(words[start])) continue;
+    const tail = squash(words.slice(start).join(" "));
+    if (tail.length < 12) continue;
+    const ownRow = new RegExp(`(?:^|\\d\\s)${tail.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`);
+    if (others.some((text) => ownRow.test(text))) return true;
+  }
+  // The row's band and price cells ("less than $500 | $5 00"), printed again after a different name.
+  const cut = line.indexOf("|");
+  if (cut < 0) return false;
+  const cells = line.slice(cut + 1).trim();
+  if (cells.length < 8 || !/^[a-z]/.test(cells) || !PRICE_TOKEN.test(cells)) return false;
+  return others.some((text) => {
+    const at = text.indexOf(cells);
+    return at > 0 && /[a-z]{3}/.test(text.slice(0, at));
+  });
 }
 
 /**
@@ -834,12 +924,18 @@ export interface RecordedReleaseResult {
   heldExamples: Array<{ feeRawId: number; feeName: string; amount: number | null; canonicalFeeKey: string; reason: string }>;
 }
 
+/** Categories whose recorded passes all wait for a person (second hand check, Oct 15: overdraft 4 of 6, NSF 1 of 3). */
+export const RECORDED_RELEASE_PERSON_CATEGORIES: ReadonlySet<string> = new Set(["overdraft", "nsf"]);
+
 /** Why a recorded pass stays held today, or null when it would be released. Pure. */
 export function recordedPassHoldReason(candidate: ReleaseReviewCandidate): string | null {
   const refilesTo = lineRefilesTo(candidate);
   if (refilesTo) return `refiles_to:${refilesTo}`;
   if (premiumServiceMisfiled(candidate)) return "premium_service";
-  return releaseHoldReason(candidate);
+  const reason = releaseHoldReason(candidate);
+  if (reason) return reason;
+  if (RECORDED_RELEASE_PERSON_CATEGORIES.has(candidate.row.held_canonical_fee_key)) return "overdraft_nsf_for_person";
+  return null;
 }
 
 export async function releaseRecordedPasses(

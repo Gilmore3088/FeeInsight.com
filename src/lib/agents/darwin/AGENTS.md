@@ -266,8 +266,25 @@ Darwin owns verification and classification.
   category, and nothing is written. Switched on, the first step is a dry run that writes one
   ledger row (fingerprint `darwin:recorded-release:dry-run:v1`) with those counts; a step of
   another run at least 4 minutes later (the next tick) releases. A rollback of the batch reads the
-  `verify.release_recorded` v1 attempts with outcome `ok` (`detail.fee_verified_id`). On 15 Oct:
-  402 would release, 19 held (7 frequency word, 11 glued or cut name, 1 business activity row).
+  `verify.release_recorded` v1 attempts with outcome `ok` (`detail.fee_verified_id`).
+  A second hand check of the 402 left to release found 15 of 20 right (Oct 15; overdraft 4 of 6,
+  NSF 1 of 3, maintenance 5 of 6). Four more holds, in the review too:
+  - `footnote_in_price` (also): the line's only price, whole with no cents, ending in 1 to 3,
+    held as a peer outlier, and still plausible for its category without the last digit
+    ("Monthly Service Charge: $31" for $3 plus footnote 1, raw 459372); or a superscript digit
+    after the price.
+  - `overdraft_transfer_as_od_nsf`: an item paid by an overdraft transfer filed as NSF or overdraft
+    (raw 151073, filed as NSF; it is `od_protection_transfer`).
+  - `band_as_price`: a band or threshold read as the price ("Lessthan $5.00", raw 437275; "$1,000 or
+    over"), or a name cut at the band word.
+  - `two_column_glue`: a name holding a second fee's name that another row prints as its own fee
+    (raw 296682), or a row's band and price cells printed again under another fee's name (raw
+    432124).
+  Every other overdraft and NSF pass in the batch waits for a person (`overdraft_nsf_for_person`,
+  `RECORDED_RELEASE_PERSON_CATEGORIES`). On 15 Oct: 389 of 421 would release, 32 held (11 glued
+  or cut name, 7 frequency word, 5 overdraft/NSF for a person, 4 two-column glue, 2 band as price,
+  1 footnote, 1 overdraft transfer, 1 business activity row). A new 20-fee hand check of the
+  release set must score 18 or better before the switch is turned on.
   v1 released on the schedule check alone; its dry run on 2026-10-06 (1,997 of 4,128 held
   fees) had 12 of 20 hand-checked releases right. v2 adds the gates above. v3 (James chose
   "Reject only", 2026-10-06 16:49 UTC) acts on rejects (`DARWIN_RELEASE_REJECTS_ACT`): each

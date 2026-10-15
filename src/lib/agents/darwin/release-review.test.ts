@@ -383,8 +383,15 @@ describe("Darwin held-fee release review", () => {
 
 // Oct 15: a hand check of 20 of the 421 v17 passes recorded while the release did not act (19 right).
 describe("releasing the recorded v17 passes", () => {
-  const recorded = (feeName: string, key: string, frequency: string | null, sourceLine: string, sourceContext: string | null = null) => ({
-    row: row({ fee_name: feeName, held_canonical_fee_key: key, frequency }) as unknown as HeldFeeRow,
+  const recorded = (
+    feeName: string,
+    key: string,
+    frequency: string | null,
+    sourceLine: string,
+    sourceContext: string | null = null,
+    overrides: Record<string, unknown> = {},
+  ) => ({
+    row: row({ fee_name: feeName, held_canonical_fee_key: key, frequency, ...overrides }) as unknown as HeldFeeRow,
     sourceLine,
     sourceContext,
   });
@@ -402,6 +409,22 @@ describe("releasing the recorded v17 passes", () => {
     [recorded("Withdrawal Limit Fee charged for each withdrawal, transfer, and payment that exceeds 6 per monthly statement cycle", "account_research", "per_item", "$3 Withdrawal Limit Fee charged for each withdrawal, transfer, and payment that exceeds 6 per monthly statement cycle4"), null],
     [recorded("Cashier's Checks: Non-Customer", "cashiers_check", null, "Cashier's Checks | Non-Customer $8.00"), null],
     [recorded("Share Draft Reconciliation per month", "account_research", "monthly", "Share Draft Reconciliation per month | $5.00"), null],
+    // The second hand check (Oct 15, 15 of 20): its five misses, each held for its shape.
+    [recorded("Monthly Service Charge", "monthly_maintenance", "monthly", "Monthly Service Charge: $31",
+      "Minimum to open: $50\nMonthly Service Charge: $31\nMinimum daily balance needed to avoid monthly service charge: $300", { amount: "31" }), "footnote_in_price"],
+    [recorded("ACH-NSF", "nsf", null, "ACH-NSF | Item paid through overdraft transfer from separate account | $3.00",
+      "ACH-NSF | Item Returned | $30.00\nACH-NSF | Item paid through overdraft transfer from separate account | $3.00", { amount: "3" }), "overdraft_transfer_as_od_nsf"],
+    [recorded("NSF/Uncollected Funds (per occurrence) Excess Withdrawal Item Over 6", "nsf", null, "NSF/Uncollected Funds (per occurrence) Excess Withdrawal Item Over 6……..$5.00",
+      "Inactive Account…….. $10.00 Excess Withdrawal Item Over 6……….$5.00\nNSF/Uncollected Funds (per occurrence) Excess Withdrawal Item Over 6……..$5.00", { amount: "5" }), "two_column_glue"],
+    [recorded("Debit Card Overdraft Service Fee8 – Lessthan", "overdraft", null, "Debit Card Overdraft Service Fee8 – Lessthan $5.00",
+      "Debit Card Overdraft Service Fee8 – Greater than $5.00\nDebit Card Overdraft Service Fee8 – Lessthan $5.00", { amount: "5" }), "band_as_price"],
+    [recorded("Overdraft Privilege Fee Per Presentment (less than $500)", "overdraft", "per_item", "Overdraft Privilege Fee Per Presentment: | Less Than $500 | $5 00",
+      "Overdraft Privilege Fee Per Presentment: | Less Than $500 | $5 00\nResulting Negative Balance Greater Than $25 | $15 00 | Each VIP MMA Share Draft Less Than $500 | $5 00", { amount: "5" }), "two_column_glue"],
+    // Every other overdraft and NSF pass in the batch waits for a person.
+    [recorded("Courtesy Pay Overdraft Fee", "overdraft", null, "Courtesy Pay Overdraft Fee | $5.00", null, { amount: "5" }), "overdraft_nsf_for_person"],
+    // Not footnotes: a price ending in 5, or one of several prices on the line; a price at its band is not the band.
+    [recorded("Subpoena", "legal_process", null, "Subpoena | $25 per instance", null, { amount: "25" }), null],
+    [recorded("Return Mail", "account_research", null, "Return Mail | $3.00 / item | Updating your address", "Return Mail | $3.00 / item | Updating your address\nOther | Return Mail | $3.00 / item | Updating your address", { amount: "3" }), null],
   ])("holds a recorded pass for its shape (%#)", (candidate, reason) => {
     expect(recordedPassHoldReason(candidate)).toBe(reason);
   });
