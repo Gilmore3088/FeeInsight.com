@@ -221,13 +221,13 @@ export async function rollBackLimitsPublishedAsFees(
   let candidates: LiveLimitRow[];
   try {
     candidates = await inSavepoint(db, (scope) => scope<LiveLimitRow[]>`
-      SELECT fp.fee_published_id, fp.institution_id, fp.canonical_fee_key, fp.fee_name, fp.amount, fr.conditions
+      SELECT fp.fee_published_id, fp.institution_id, fp.canonical_fee_key, fp.fee_name, fp.amount, COALESCE(fr.extraction_note, fr.conditions) AS conditions
         FROM published_fee_records fp
         LEFT JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
         LEFT JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
        WHERE fp.rolled_back_at IS NULL
          AND (fp.amount >= ${LIMIT_GUARD_MIN_AMOUNT} OR fp.fee_name ~* ${WORKED_EXAMPLE_PG}
-              OR fp.fee_name ~* ${CONDITION_SENTENCE_PG} OR fr.conditions ~* ${TRANSACTION_AMOUNT_PG})
+              OR fp.fee_name ~* ${CONDITION_SENTENCE_PG} OR COALESCE(fr.extraction_note, fr.conditions) ~* ${TRANSACTION_AMOUNT_PG})
          ${options.institutionId ? scope`AND fp.institution_id = ${options.institutionId}` : scope``}
        ORDER BY fp.fee_published_id
     `);
@@ -334,7 +334,7 @@ export async function restorePassingLimitTakedowns(
   let rows: LimitTakedownRow[];
   try {
     rows = await inSavepoint(db, (scope) => scope<LimitTakedownRow[]>`
-      SELECT fp.fee_published_id, fp.institution_id, fp.canonical_fee_key, fp.fee_name, fp.amount, fr.conditions
+      SELECT fp.fee_published_id, fp.institution_id, fp.canonical_fee_key, fp.fee_name, fp.amount, COALESCE(fr.extraction_note, fr.conditions) AS conditions
         FROM published_fee_records fp
         LEFT JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
         LEFT JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id

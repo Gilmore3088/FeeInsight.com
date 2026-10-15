@@ -4,8 +4,9 @@
  * excerpt=\"...\""). That is an audit note for operators, not a condition of the fee, so every
  * read that reaches visitors, API users, reports or Hamilton passes `conditions` through
  * `readerFeeConditions`: the bank's own condition text stays, the note goes, and a field that
- * held only the note reads as null. The note stays on the stored row (Knox's duplicate check
- * reads `text_hash=` from it; moving it out is #1234 step 2).
+ * held only the note reads as null. Since #1234 step 2 Knox writes the note to its own column,
+ * `raw_fee_observations.extraction_note`, and a publish-step batch moves the stored notes there
+ * (`knox/extraction-note.ts`); this strip stays for rows not yet moved and for any old shape.
  *
  * Note shapes Knox writes (src/lib/agents/knox/extract.ts, held-recheck.ts, paid-extract.ts):
  *   "Knox <method> from Rosetta artifact #N. "            method: deterministic extraction,

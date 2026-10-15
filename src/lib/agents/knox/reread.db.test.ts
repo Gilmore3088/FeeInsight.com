@@ -36,7 +36,7 @@ describe.skipIf(!connection)("Knox re-read in isolated PostgreSQL", () => {
     await db`CREATE TEMP TABLE raw_fee_observations (
       fee_raw_id bigserial PRIMARY KEY, institution_id bigint, source_document_id bigint, document_r2_key text,
       source_url text, extraction_confidence numeric, agent_event_id uuid, fee_name text, amount numeric,
-      frequency text, conditions text, outlier_flags jsonb, source text, product_name text,
+      frequency text, conditions text, extraction_note text, outlier_flags jsonb, source text, product_name text,
       min_balance_to_avoid numeric, min_opening_deposit numeric, waiver_text text,
       fee_audience text NOT NULL DEFAULT 'unknown', audience_evidence text, fee_treatment text NOT NULL DEFAULT 'unknown')`;
     await db`CREATE UNIQUE INDEX ON raw_fee_observations
@@ -47,7 +47,7 @@ describe.skipIf(!connection)("Knox re-read in isolated PostgreSQL", () => {
   afterAll(async () => { if (db) await db.end(); });
   beforeEach(async () => { await db`TRUNCATE raw_fee_observations, verified_fee_observations`; });
 
-  const flagsOf = async () => (await db`SELECT outlier_flags, conditions FROM raw_fee_observations`)
+  const flagsOf = async () => (await db`SELECT outlier_flags, COALESCE(extraction_note, conditions) AS conditions FROM raw_fee_observations`)
     .map((row) => ({ flags: row.outlier_flags as string[], conditions: String(row.conditions) }));
 
   it("sends the same fee read again on a re-read back to Darwin instead of leaving it retired", async () => {
