@@ -11,6 +11,7 @@ const diff = (count: number) => ({
     toQuarter: "2027-Q1",
     fromGeneratedAt: "2026-10-07T00:00:00Z",
     toGeneratedAt: "2027-01-07T00:00:00Z",
+    peerLabel: "Texas banks",
     changes: Array.from({ length: count }, (_, i) => ({ kind: "own_price" as const, feeCategory: "overdraft", text: `Change ${i + 1}.` })),
   },
 });
@@ -29,13 +30,15 @@ describe("QuarterlyChanges (#1083)", () => {
   it("lists what changed, folding the rest under More", () => {
     const html = renderToStaticMarkup(<QuarterlyChanges changes={diff(8)} />);
     expect(html).toContain("Since Q4 2026");
-    expect(html).toContain("Q4 2026 briefing compared with Q1 2027.");
+    expect(html).toContain("Q4 2026 briefing compared with Q1 2027, both read against Texas banks.");
     expect(html).toContain("Change 1.");
     expect(html).toContain("2 more changes");
     expect(html).toContain("Change 8.");
   });
 
-  it("says so when nothing changed", () => {
-    expect(renderToStaticMarkup(<QuarterlyChanges changes={diff(0)} />)).toContain("Nothing in this briefing changed between Q4 2026 and Q1 2027.");
+  it("says so when nothing changed, naming the peer group", () => {
+    const html = renderToStaticMarkup(<QuarterlyChanges changes={diff(0)} />);
+    expect(html).toContain("Nothing in this briefing changed between Q4 2026 and Q1 2027.");
+    expect(html).toContain("Read against Texas banks.");
   });
 });

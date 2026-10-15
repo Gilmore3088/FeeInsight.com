@@ -32,6 +32,8 @@ export interface BriefingDiff {
   toQuarter: string;
   fromGeneratedAt: string;
   toGeneratedAt: string;
+  /** The peer group both stored copies were read against (the institution's default group). */
+  peerLabel: string;
   changes: BriefingChange[];
 }
 
@@ -90,14 +92,14 @@ function feeChanges(previous: FeePositionRow[], current: FeePositionRow[]): Brie
     const old = before.get(row.feeCategory);
     const name = row.displayName;
     if (!old) {
-      changes.push({ kind: "fee_added", feeCategory: row.feeCategory, text: `${name}: now on your published schedule at ${money(row.current)}.` });
+      changes.push({ kind: "fee_added", feeCategory: row.feeCategory, text: `${name}: now on its published schedule at ${money(row.current)}.` });
       continue;
     }
     if (!same(old.current, row.current)) {
       changes.push({
         kind: "own_price",
         feeCategory: row.feeCategory,
-        text: `${name}: your published price moved from ${money(old.current)} to ${money(row.current)} (${delta(old.current, row.current)}).`,
+        text: `${name}: its published price moved from ${money(old.current)} to ${money(row.current)} (${delta(old.current, row.current)}).`,
       });
     }
     if (old.band && row.band && !same(old.band.median, row.band.median)) {
@@ -113,13 +115,13 @@ function feeChanges(previous: FeePositionRow[], current: FeePositionRow[]): Brie
       changes.push({
         kind: "band_side",
         feeCategory: row.feeCategory,
-        text: `${name}: your price is now ${SIDE_TEXT[newSide]}; last quarter it was ${SIDE_TEXT[oldSide]}.`,
+        text: `${name}: its price is now ${SIDE_TEXT[newSide]}; last quarter it was ${SIDE_TEXT[oldSide]}.`,
       });
     }
   }
   for (const row of previous) {
     if (!after.has(row.feeCategory)) {
-      changes.push({ kind: "fee_removed", feeCategory: row.feeCategory, text: `${row.displayName}: no longer on your published schedule (was ${money(row.current)}).` });
+      changes.push({ kind: "fee_removed", feeCategory: row.feeCategory, text: `${row.displayName}: no longer on its published schedule (was ${money(row.current)}).` });
     }
   }
   return changes;
@@ -179,6 +181,7 @@ export function diffBriefings(
     toQuarter: current.quarter,
     fromGeneratedAt: previous.briefing.generatedAt,
     toGeneratedAt: current.briefing.generatedAt,
+    peerLabel: current.briefing.peerLabel,
     changes: [
       ...feeChanges(previous.briefing.positions ?? [], current.briefing.positions ?? []),
       ...incomeChange(previous.briefing, current.briefing),

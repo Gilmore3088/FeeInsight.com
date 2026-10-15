@@ -47,9 +47,9 @@ describe("diffBriefings", () => {
       { quarter: "2026-Q4", briefing: briefing({ positions: [row("overdraft", 36, 29), row("nsf", 25)] }) },
     );
     expect(diff.changes.map((c) => c.text)).toEqual([
-      "Overdraft: your published price moved from $30.00 to $36.00 ($6.00 higher).",
+      "Overdraft: its published price moved from $30.00 to $36.00 ($6.00 higher).",
       "Overdraft: the peer median moved from $30.00 to $29.00 ($1.00 lower; 40 peers).",
-      "Overdraft: your price is now above the middle half of peers; last quarter it was within the middle half of peers.",
+      "Overdraft: its price is now above the middle half of peers; last quarter it was within the middle half of peers.",
     ]);
     expect(diff).toMatchObject({ fromQuarter: "2026-Q3", toQuarter: "2026-Q4" });
   });

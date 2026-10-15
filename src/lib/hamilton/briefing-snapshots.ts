@@ -166,7 +166,7 @@ export type QuarterlyChanges = { kind: "first"; quarter: string } | { kind: "dif
 
 /**
  * The bank's two newest stored briefings, compared (#1083). With one stored copy the page says
- * when the first comparison comes; with none (or a failed read) it shows nothing.
+ * when the first comparison comes; with none, a failed read or an unreadable copy it shows nothing.
  */
 export async function getQuarterlyChanges(institutionId: number): Promise<QuarterlyChanges | null> {
   const rows = await sql<{ quarter: string; briefing: Briefing | string }[]>`
@@ -178,11 +178,16 @@ export async function getQuarterlyChanges(institutionId: number): Promise<Quarte
   if (rows.length === 0) return null;
   if (rows.length === 1) return { kind: "first", quarter: rows[0].quarter };
   const parse = (value: Briefing | string): Briefing => (typeof value === "string" ? (JSON.parse(value) as Briefing) : value);
-  return {
-    kind: "diff",
-    diff: diffBriefings(
-      { quarter: rows[1].quarter, briefing: parse(rows[1].briefing) },
-      { quarter: rows[0].quarter, briefing: parse(rows[0].briefing) },
-    ),
-  };
+  try {
+    return {
+      kind: "diff",
+      diff: diffBriefings(
+        { quarter: rows[1].quarter, briefing: parse(rows[1].briefing) },
+        { quarter: rows[0].quarter, briefing: parse(rows[0].briefing) },
+      ),
+    };
+  } catch {
+    // A malformed or outdated stored copy shows nothing rather than taking the page down.
+    return null;
+  }
 }

@@ -40,14 +40,14 @@ export function QuarterlyChanges({ changes }: { changes: Changes | null }) {
   const to = quarterLabel(diff.toQuarter);
   if (diff.changes.length === 0) {
     return (
-      <MemoSection title={`Since ${from}`}>
+      <MemoSection title={`Since ${from}`} note={`Read against ${diff.peerLabel}.`}>
         <p className="text-sm text-warm-700">Nothing in this briefing changed between {from} and {to}.</p>
       </MemoSection>
     );
   }
   const rest = diff.changes.slice(SHOWN);
   return (
-    <MemoSection title={`Since ${from}`} note={`${from} briefing compared with ${to}.`}>
+    <MemoSection title={`Since ${from}`} note={`${from} briefing compared with ${to}, both read against ${diff.peerLabel}.`}>
       <ChangeList items={diff.changes.slice(0, SHOWN)} />
       {rest.length > 0 ? (
         <More label={`${rest.length} more ${rest.length === 1 ? "change" : "changes"}`}>

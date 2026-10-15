@@ -93,6 +93,15 @@ describe("getQuarterlyChanges (#1083)", () => {
       { quarter: "2026-Q3", briefing: JSON.stringify(brief(30)) },
     ]);
     const changes = await getQuarterlyChanges(1);
-    expect(changes?.kind === "diff" && changes.diff.changes[0].text).toBe("Overdraft: your published price moved from $30.00 to $35.00 ($5.00 higher).");
+    expect(changes?.kind === "diff" && changes.diff.changes[0].text).toBe("Overdraft: its published price moved from $30.00 to $35.00 ($5.00 higher).");
+  });
+
+  it("shows nothing for a stored copy it cannot read", async () => {
+    mocks.sql.mockReset();
+    mocks.sql.mockResolvedValueOnce([
+      { quarter: "2026-Q4", briefing: brief(35) },
+      { quarter: "2026-Q3", briefing: "{not json" },
+    ]);
+    expect(await getQuarterlyChanges(1)).toBeNull();
   });
 });
