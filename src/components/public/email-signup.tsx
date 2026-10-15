@@ -5,12 +5,14 @@ import { trackEvent } from "@/lib/analytics";
 import { LEAD_HONEYPOT_FIELD } from "@/lib/lead-capture";
 import { CONTACT_EMAIL } from "@/lib/constants";
 import { HoneypotField, honeypotValue } from "./honeypot-field";
+import { StateSelect } from "./state-select";
 
 const NEWSLETTER_SOURCE = "newsletter";
 const NEWSLETTER_LEAD_NAME = "Newsletter signup";
 
 export function EmailSignup() {
   const [email, setEmail] = useState("");
+  const [state, setState] = useState("");
   const [status, setStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
   const [emailSent, setEmailSent] = useState(true);
 
@@ -28,6 +30,7 @@ export function EmailSignup() {
           name: NEWSLETTER_LEAD_NAME,
           email: email.trim(),
           source: NEWSLETTER_SOURCE,
+          ...(state ? { state } : {}),
           [LEAD_HONEYPOT_FIELD]: honeypot,
         }),
       });
@@ -38,6 +41,7 @@ export function EmailSignup() {
         trackEvent("newsletter_signup", { placement: "footer" });
         setStatus("success");
         setEmail("");
+        setState("");
       } else {
         setStatus("error");
       }
@@ -57,14 +61,24 @@ export function EmailSignup() {
   }
 
   // Compact on purpose: the footer is one short band (James's review, 2026-10-15), so the form is
-  // one row and its button stays outlined navy rather than a second brick action.
+  // one row (state, email, button) and its button stays outlined navy rather than a second brick
+  // action. James kept the state picker: a reader who picks a state gets its numbers too.
   return (
     <form onSubmit={handleSubmit} className="relative flex flex-wrap items-center gap-x-3 gap-y-2">
       <HoneypotField />
       <label htmlFor="footer-newsletter-email" className="w-full text-[12px] font-semibold text-ink-soft sm:w-auto">
         Monthly fee index update
       </label>
-      <div className="flex gap-2">
+      <div className="flex w-full flex-wrap gap-2 sm:w-auto sm:flex-nowrap">
+        <label htmlFor="footer-newsletter-state" className="sr-only">
+          Your state (optional)
+        </label>
+        <StateSelect
+          id="footer-newsletter-state"
+          value={state}
+          onChange={setState}
+          className="w-full rounded-lg border border-border bg-paper px-2 sm:w-[170px] py-1.5 text-[12px] text-ink focus:border-transparent focus:outline-none focus-visible:ring-2 focus-visible:ring-ink/40"
+        />
         <input
           id="footer-newsletter-email"
           type="email"
@@ -73,12 +87,12 @@ export function EmailSignup() {
           placeholder="you@company.com"
           autoComplete="email"
           required
-          className="w-full max-w-[220px] rounded-lg border border-border bg-paper px-3 py-1.5 text-[12px] text-ink placeholder:text-ink-muted focus:border-transparent focus:outline-none focus:ring-1 focus:ring-ink/30"
+          className="min-w-0 flex-1 rounded-lg border sm:w-[200px] sm:flex-none border-border bg-paper px-3 py-1.5 text-[12px] text-ink placeholder:text-ink-muted focus:border-transparent focus:outline-none focus-visible:ring-2 focus-visible:ring-ink/40"
         />
         <button
           type="submit"
           disabled={status === "loading"}
-          className="shrink-0 rounded-lg border border-ink px-3 py-1.5 text-[11px] font-semibold text-ink transition-colors hover:bg-ink hover:text-on-ink disabled:opacity-50"
+          className="shrink-0 rounded-lg border border-ink px-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/40 focus-visible:ring-offset-1 py-1.5 text-[11px] font-semibold text-ink transition-colors hover:bg-ink hover:text-on-ink disabled:opacity-50"
         >
           {status === "loading" ? "..." : "Subscribe"}
         </button>

@@ -1,14 +1,16 @@
 import Link from "next/link";
 import { Logo } from "@/brand/components";
 import { EmailSignup } from "./public/email-signup";
-import { CONTACT_EMAIL, LEGAL_ENTITY_NAME, PRODUCT_NAME, SITE_NAME, TRADEMARK_NOTICE } from "@/lib/constants";
+import { CONTACT_EMAIL, LEGAL_ENTITY_NAME, SITE_NAME, TRADEMARK_NOTICE } from "@/lib/constants";
 
 /**
  * The footer's essential links: one short row, not a sitemap (James's review, 2026-10-15). Every
  * page the older four-column footer listed is still one click away from the header: the Product
- * menu (institutions, the index, market data, national index, Hamilton) and the Resources menu
+ * menu (institutions, the index, market data, national index, the Pro workspace) and the Resources menu
  * (guides, methodology, data sources, API, submit a fee source). State and district hubs are linked
  * from /research, which the Product menu carries. No link points at a gated or noindexed page.
+ * The chrome carries the parent brand, Fee Insight; the Bank Fee Index and Hamilton marks belong
+ * to the pages and workspace they name (James, 2026-10-15, docs/project/DECISIONS.md).
  */
 export const FOOTER_LINKS: readonly { label: string; href: string }[] = [
   { label: "Product", href: "/for-institutions" },
@@ -33,8 +35,8 @@ export function CustomerFooter() {
       <div className="mx-auto max-w-page px-6 py-8 lg:py-10">
         <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between lg:gap-12">
           <div className="min-w-0">
-            <Link href="/" className="inline-flex no-underline" aria-label={`${PRODUCT_NAME}, powered by ${SITE_NAME}: home`}>
-              <Logo mark="bank-fee-index-lockup" height={30} title="" />
+            <Link href="/" className="inline-flex no-underline" aria-label={`${SITE_NAME}: home`}>
+              <Logo mark="fee-insight-oneline" height={24} title="" />
             </Link>
             <p className="mt-2 max-w-sm text-[13px] lg:max-w-xl leading-snug text-ink-muted">
               Published fees from U.S. banks and credit unions, with a source for every figure.

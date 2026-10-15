@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("./public/email-signup", () => ({ EmailSignup: () => null }));
 
 import { CustomerFooter, FOOTER_LEGAL_LINKS, FOOTER_LINKS } from "./customer-footer";
+import { MARKS } from "@/brand/components";
 import { MOBILE_NAV_SECTIONS, PUBLIC_NAV_ITEMS, menuLinks } from "./nav-items";
 
 /** Pages that are gated or noindexed; the footer must not link to them (site v3 brief 05, section 3). */
@@ -42,6 +43,14 @@ describe("CustomerFooter", () => {
       "href",
       "mailto:hello@bankfeeindex.com",
     );
+  });
+
+  it("carries the parent brand: the Fee Insight logo, and no Hamilton or Bank Fee Index mark", () => {
+    const { container } = render(<CustomerFooter />);
+    expect(screen.getByRole("link", { name: "Fee Insight: home" })).toHaveAttribute("href", "/");
+    const marks = Array.from(container.querySelectorAll("svg.fi-mark")).map((svg) => svg.getAttribute("viewBox"));
+    expect(marks).toEqual([MARKS["fee-insight-oneline"].viewBox]);
+    expect(container.textContent).not.toMatch(/Hamilton/);
   });
 
   it("links no gated or noindexed page", () => {
