@@ -57,6 +57,13 @@ describe.skipIf(!connection)("Deming Knox miss replay in isolated PostgreSQL", (
     const third = await runKnoxMisses({ db: db as unknown as Db, runId: 3 });
     expect(third.retired).toBe(1);
     expect((await db`SELECT status FROM eval_cases`)[0].status).toBe("retired");
+
+    // Confirmed again: the case reopens (Knox now reads it, so it is active), no duplicate row.
+    await db`UPDATE answer_key_fees SET status = 'confirmed' WHERE id = 11`;
+    const fourth = await runKnoxMisses({ db: db as unknown as Db, runId: 4 });
+    expect(fourth).toMatchObject({ reopened: 1, newCases: 0 });
+    const cases = await db`SELECT status, last_verdict FROM eval_cases`;
+    expect(cases).toEqual([{ status: "active", last_verdict: "read" }]);
     expect(await db`SELECT * FROM raw_fee_observations`).toHaveLength(0);
   });
 });

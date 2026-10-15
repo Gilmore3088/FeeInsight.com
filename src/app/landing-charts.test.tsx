@@ -7,7 +7,20 @@ vi.mock("@vercel/analytics", () => ({ track: (...args: unknown[]) => trackMock(.
 
 import type { DimensionBreakdown, FeeCategorySummary } from "@/lib/data-store/fees";
 import type { PublicStatsSummary } from "@/lib/public-stats";
-import { DistrictMap, MyFeesChart, PriceSlider, dotLayout, firstDistrict, gapWords, openingPrice, stepOf } from "./landing-charts";
+import {
+  DistrictMap,
+  HEADER_OFFSET,
+  MIN_BAR_PX,
+  MyFeesChart,
+  PriceSlider,
+  TRACK_GUESS,
+  dotLayout,
+  firstDistrict,
+  gapWords,
+  openingPrice,
+  scrollTargetTop,
+  stepOf,
+} from "./landing-charts";
 import { demoViews } from "./landing-demo";
 import { buildHomeData, type SampleView } from "./landing-shared";
 import { buildScenario } from "./subscribe/scenario";
@@ -87,6 +100,28 @@ describe("district map", () => {
     expect(stops()).toHaveLength(1);
     expect(stops()[0]).not.toBe("3");
     expect(document.activeElement?.getAttribute("data-district")).toBe(stops()[0]);
+  });
+
+  it("counts a district pick only when the choice changes, arrow keys included", () => {
+    render(<DistrictMap data={data} />);
+    fireEvent.click(group(3));
+    expect(trackMock).not.toHaveBeenCalled();
+    fireEvent.keyDown(group(3), { key: "Enter" });
+    expect(trackMock).not.toHaveBeenCalled();
+    fireEvent.keyDown(group(3), { key: "ArrowRight" });
+    expect(trackMock).toHaveBeenCalledTimes(1);
+    const moved = Number(document.activeElement?.getAttribute("data-district"));
+    expect(trackMock).toHaveBeenLastCalledWith("demo_district_picked", { district: moved });
+    fireEvent.mouseEnter(group(12));
+    expect(trackMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("renders all 12 district report links, whichever district is chosen", () => {
+    render(<DistrictMap data={data} />);
+    const list = document.querySelector("[data-district-reports]") as HTMLElement;
+    const hrefs = [...list.querySelectorAll("a")].map((a) => a.getAttribute("href"));
+    expect(hrefs).toEqual(Array.from({ length: 12 }, (_, i) => `/research/district/${i + 1}`));
+    expect(list.textContent).toContain("12 San Francisco");
   });
 
   it("announces a pick, never a hover", () => {
@@ -170,6 +205,47 @@ describe("my fees", () => {
     expect(detail()).not.toContain("Outgoing International");
   });
 
+  it("draws a short stub for a gap too small to see, and none for a fee at its median", () => {
+    const tiny: SampleView = {
+      ...sample,
+      rows: [...sample.rows, { key: "maintenance", label: "Monthly Maintenance", amount: 9.95, median: 10, p25: 8, p75: 12, competitors: 20, position: "in_market" }],
+    };
+    render(<MyFeesChart sample={tiny} freshness={summary.freshnessLabel} />);
+    const bar = (key: string) => document.querySelector(`[data-fee="${key}"] .fi-a-bar`) as HTMLElement | null;
+    expect(bar("maintenance")?.style.width).toMatch(new RegExp(`^max\\(${MIN_BAR_PX}px, 0\\.1\\d*%\\)$`));
+    expect(bar("overdraft")).toBeNull();
+  });
+
+  it("uses one header offset for the on-screen test and the scroll", () => {
+    // The demo's top fits above the card: scroll it (its tabs) to just under the header.
+    expect(scrollTargetTop({ top: 900, bottom: 1200 }, { top: 700 }, 844)).toBe(700 - HEADER_OFFSET);
+    // Too tall to fit from the tabs down: scroll the card itself under the header.
+    expect(scrollTargetTop({ top: 900, bottom: 1600 }, { top: 700 }, 844)).toBe(900 - HEADER_OFFSET);
+    expect(scrollTargetTop({ top: -200, bottom: 100 }, null, 844)).toBe(-200 - HEADER_OFFSET);
+
+    vi.stubGlobal("matchMedia", (query: string) => ({ matches: query.includes("max-width"), media: query }));
+    const scrollTo = vi.fn();
+    vi.stubGlobal("scrollTo", scrollTo);
+    render(
+      <div data-demo-window="">
+        <MyFeesChart sample={sample} freshness={summary.freshnessLabel} />
+      </div>,
+    );
+    const card = document.querySelector("[data-fee-detail]") as HTMLElement;
+    expect(card.style.scrollMarginTop).toBe(`${HEADER_OFFSET}px`);
+    const frame = document.querySelector("[data-demo-window]") as HTMLElement;
+    frame.getBoundingClientRect = () => ({ top: -300 }) as DOMRect;
+    card.getBoundingClientRect = () => ({ top: -150, bottom: 150 }) as DOMRect;
+    fireEvent.click(document.querySelector('[data-fee="paper_statement"]') as HTMLElement);
+    expect(scrollTo).toHaveBeenCalledWith({ top: window.scrollY - 300 - HEADER_OFFSET, behavior: "smooth" });
+    // A card already clear of the header is left where it is.
+    scrollTo.mockClear();
+    card.getBoundingClientRect = () => ({ top: HEADER_OFFSET, bottom: 400 }) as DOMRect;
+    fireEvent.click(document.querySelector('[data-fee="overdraft"]') as HTMLElement);
+    expect(scrollTo).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
+  });
+
   it("puts the fee card before the bars, so a phone shows it above them", () => {
     render(<MyFeesChart sample={sample} freshness={summary.freshnessLabel} />);
     const card = document.querySelector("[data-fee-detail]") as HTMLElement;
@@ -205,6 +281,25 @@ describe("try a price", () => {
           if (b[i].row === b[j].row) expect(Math.abs(b[i].x - b[j].x)).toBeGreaterThanOrEqual(12);
         }
     }
+  });
+
+  it("says a district median at the price is not under it, only while one is", () => {
+    render(<PriceSlider data={data} />);
+    // The opening $30.00 sits on Boston's and Dallas's $30.00 medians.
+    const note = () => document.querySelector("[data-at-price]")?.textContent ?? null;
+    expect(note()).toBe("On the line: at this price, not under it");
+    fireEvent.change(screen.getByRole("slider"), { target: { value: "31" } });
+    expect(note()).toBeNull();
+  });
+
+  it("lays the dots out for a phone's width until the track is measured", () => {
+    expect(TRACK_GUESS).toBeLessThan(400);
+    render(<PriceSlider data={data} />);
+    const drawn = data.districts.filter((d) => d.median !== null);
+    const hi = 50;
+    const expected = dotLayout(drawn.map((d) => d.median as number), hi, TRACK_GUESS);
+    const bottoms = drawn.map((d) => (document.querySelector(`[data-dot="${d.district}"]`) as HTMLElement).style.bottom);
+    expect(bottoms).toEqual(expected.map((l) => `${4 + l.row * 14}px`));
   });
 
   it("moves the readout with the slider", () => {

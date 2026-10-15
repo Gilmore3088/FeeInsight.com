@@ -13,7 +13,7 @@ export default function Loading() {
             <div key={i} className="h-40 rounded-xl border border-border/80 bg-surface-0" />
           ))}
         </div>
-        <div className="h-96 rounded-2xl border border-border/80 bg-surface-0 lg:col-start-2 lg:row-span-3 lg:row-start-1" />
+        <div className="h-96 rounded-2xl border border-border/80 bg-surface-0 lg:col-start-2 lg:row-span-4 lg:row-start-1" />
         <div className="h-[32rem] rounded-xl border border-border/80 bg-surface-0 lg:col-start-1 lg:row-start-3" />
       </div>
     </div>

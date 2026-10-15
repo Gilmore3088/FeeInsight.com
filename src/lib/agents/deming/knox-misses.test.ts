@@ -6,7 +6,7 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("@/lib/data-store/connection", () => ({ sql: vi.fn() }));
 
 import { gateKeyFor, gateReads, scoreAnswerKeys, type AnswerKeyDocument } from "@/lib/agents/knox/answer-key-gate";
-import { caseKeyFor, judgeBank, knoxMissesDetail, rightDocumentIds, runKnoxMisses, summarizeKnoxMisses, type KeyFee } from "./knox-misses";
+import { caseKeyFor, judgeBank, knoxMissesDetail, rightDocumentIds, rotationOrder, runKnoxMisses, summarizeKnoxMisses, type KeyFee } from "./knox-misses";
 
 const TEXT = ["Fee Schedule", "Stop Payment Fee | $30.00", "Overdraft Fee | $35.00 per item"].join("\n");
 
@@ -71,6 +71,7 @@ describe("Deming's replay of Knox's answer-key misses (#1099)", () => {
       if (text.includes("to_regclass")) return [{ ready: true }];
       if (text.includes("FROM answer_key_fees")) return state.keys;
       if (text.includes("FROM eval_cases")) return state.cases ?? [];
+      if (text.includes("FROM agent_run_steps")) return [];
       if (text.includes("FROM source_documents")) return state.documents ?? [{ id: 11, institution_id: 7, document_url: "https://bank.example/fees.pdf", content_hash: null }];
       if (text.includes("FROM agent_source_texts")) return state.text === null ? [] : [state.text ?? { id: 9, institution_id: 7, source_document_id: 11, text_hash: "h", normalized_text: TEXT }];
       writes.push({ text, values });
@@ -116,12 +117,12 @@ describe("Deming's replay of Knox's answer-key misses (#1099)", () => {
     });
     expect(insert.text).toContain("'golden', 'candidate', 'knox'");
     expect(insert.text).toContain("'answer_key'");
-    const replay = writes.find((write) => write.text.includes("last_caught = (r.verdict = 'read')"))!;
+    const replay = writes.find((write) => write.text.includes("last_verdict = r.verdict"))!;
     expect(JSON.parse(String(replay.values.find((value) => typeof value === "string" && value.startsWith("["))))).toEqual([
       { case_key: caseKeyFor(1), verdict: "read" },
       { case_key: caseKeyFor(4), verdict: "missed" },
     ]);
-    expect(writes.find((write) => write.text.includes("status = 'retired'"))?.values).toContainEqual([caseKeyFor(99)]);
+    expect(writes.find((write) => write.text.includes("SET status = 'retired'"))?.values).toContainEqual([caseKeyFor(99)]);
     // Only Deming's case store is written.
     for (const write of writes) expect(write.text).not.toMatch(/raw_fee_observations|verified_fee_observations|published_fee_records/);
     expect(summarizeKnoxMisses(result)).toContain("2 of 4 key fees missed (50.0%)");
@@ -136,10 +137,46 @@ describe("Deming's replay of Knox's answer-key misses (#1099)", () => {
     expect(writes).toHaveLength(0);
   });
 
+  it("reopens a retired case whose key fee is confirmed again, and keeps replaying a case the gate no longer scores", async () => {
+    const { db, writes } = fakeDb({
+      keys: [keyRow(2, "wire_domestic_outgoing", 25), keyRow(1, "stop_payment", 30), keyRow(3, "safe_deposit_box", null, "varies")],
+      cases: [
+        { case_key: caseKeyFor(2), status: "retired", institution_id: 7, last_checked_at: null },
+        { case_key: caseKeyFor(1), status: "retired", institution_id: 7, last_checked_at: null },
+        { case_key: caseKeyFor(3), status: "candidate", institution_id: 7, last_checked_at: null },
+      ],
+    });
+    const result = await runKnoxMisses({ db: db as never, runId: 6 });
+    expect(result).toMatchObject({ reopened: 2, newCases: 0, retired: 0 });
+    const replay = writes.find((write) => write.text.includes("last_verdict = r.verdict"))!;
+    expect(replay.text).toContain("WHEN e.status = 'retired' AND r.verdict = 'missed' THEN 'candidate'");
+    expect(replay.text).toContain("WHEN e.status = 'retired' AND r.verdict = 'read' THEN 'active'");
+    expect(JSON.parse(String(replay.values.find((value) => typeof value === "string" && value.startsWith("["))))).toEqual([
+      { case_key: caseKeyFor(2), verdict: "missed" },
+      { case_key: caseKeyFor(1), verdict: "read" },
+      { case_key: caseKeyFor(3), verdict: "not_scored" },
+    ]);
+    expect(writes.some((write) => write.text.includes("SET status = 'retired'"))).toBe(false);
+  });
+
+  it("rotates banks: the ones the last run did not reach first, and a bank with no case is not always first", () => {
+    const at = (iso: string) => ({ institution_id: 0, last_checked_at: iso, status: "candidate" });
+    const cases = [
+      { ...at("2026-10-14T12:29:00Z"), institution_id: 1 },
+      { ...at("2026-10-16T12:29:00Z"), institution_id: 2 },
+      { ...at("2026-10-15T12:29:00Z"), institution_id: 3, status: "retired" },
+    ];
+    // Bank 3 has only a retired case and bank 4 none: both count as checked at the last run.
+    const previous = { at: "2026-10-15T12:35:00Z", detail: { banks_left_ids: [5] } };
+    expect(rotationOrder([1, 2, 3, 4, 5], cases, previous)).toEqual([5, 1, 3, 4, 2]);
+    expect(rotationOrder([4, 1], cases, null)).toEqual([4, 1]);
+  });
+
   it("leaves banks for the next day once the budget is spent", async () => {
     let clock = 0;
     const { db } = fakeDb({ keys: [keyRow(1, "stop_payment", 30)] });
     const result = await runKnoxMisses({ db: db as never, runId: 5, dryRun: true, now: () => (clock += 1000), budgetMs: 500 });
-    expect(result).toMatchObject({ banksRead: 0, banksLeft: 1 });
+    expect(result).toMatchObject({ banksRead: 0, banksLeft: 1, banksLeftIds: [7] });
+    expect(knoxMissesDetail(result).banks_left_ids).toEqual([7]);
   });
 });

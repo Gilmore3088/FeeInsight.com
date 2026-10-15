@@ -87,6 +87,19 @@ describe("Hamilton frequency fill", () => {
     expect(sqlText).toContain("INSERT INTO pipeline_feedback");
   });
 
+  it("never writes or undoes an hourly frequency (#1456: that is Darwin's switched live re-check)", async () => {
+    const db = createDbMock([
+      row(1, "30.00", "Checkbook Reconciliation (per hour) | $30.00 | Stop Payment | $25.00 each"),
+      row(2, "25.00", "Research | $25.00/hr | Copies | $1.00 each", "hourly"),
+      row(3, "40.00", "Research (per hour) | $40.00 | Stop Payment | $25.00", "per_item"),
+    ]);
+    const result = await fillBlankFrequencies(asDb(db), { runId: 5, dryRun: true });
+    expect(result.filled.some((fee) => fee.frequency === "hourly")).toBe(false);
+    expect(result.filled.some((fee) => fee.from === "hourly")).toBe(false);
+    // v8 as before: a flat frequency on a per-hour fee is cleared, not made hourly.
+    expect(result.filled.map((fee) => [fee.feePublishedId, fee.from, fee.frequency])).toEqual([[3, "per_item", null]]);
+  });
+
   it("corrects or clears a frequency read from another fee's row (v2)", async () => {
     const db = createDbMock([
       row(1, "5.00", "(Per month some exclusions apply) | Cashier’s Check (Per item) .......... $5.00", "monthly"),

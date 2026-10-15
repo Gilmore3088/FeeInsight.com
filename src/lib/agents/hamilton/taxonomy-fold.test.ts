@@ -72,6 +72,20 @@ const PAGE_LINES: Record<number, string> = {
   97560: "Out of Network ATMs \ufffd\ufffd\ufffd $2\ufffd00/Transaction | Non-Sufficient Funds \ufffd\ufffd\ufffd\ufffd$30/item",
   98064: "Copies of a canceled draft (check) .................... $2.00 each | Inactive Account (after \u0101\u0102 monthsof inactivity) \u010b\u010b\u010b$5.00\u0125month",
   92156: "Safe Deposit Boxes\n\nLost Key Replacement - each key | $20.00\n\nDrilling Box | Actual Cost\n\nLate Payment Fee - if payment is not made within 60 days of due date, late fee will apply | $10.00\n\nBox prices vary based on size.",
+  // #1196 group 2: each row's stored Knox excerpt (prod, Oct 15).
+  99578: "13 Account will default to a mailed statement and a monthly $2 mailed statement service charge will be charged to your account per statement cycle",
+  97539: "(12 consecutive months of | Key Replacement | $30.00 each",
+  65410: "36 months, 48 months, 60 months | Official Bank Check $5.00 per item",
+  65411: "18 Month Variable Rate IRA CD | Money Order Stop Payment $25.00 per item",
+  53490: "11 Inactive Account Inactive Account: $5.00",
+  68521: "12 posted and settled debit card transactions | • Draft Photocopies.............................$ 3.00 / Check",
+  88066: "or less; | 16 Verification of Deposit .................................................................................................. $10.00",
+  88067: "; and | 17 Processing Levies, Garnishments, Attachments, and other Legal Liens – Each....... $75.00",
+  88068: "18 Starter/Temporary Checks – 2 Pages at No Charge",
+  57548: "12 Money Order Fee for First Step Accounts $1.70.",
+  108912: "or Less | 31 Days of Interest | Dormant Account (after first 12 months) | $12.00/year",
+  131129: "ATM Transactions at DFCU ATM (Local ATM) | 15 free ATM transactions per month and 15 free balance inquiries per month; then $2.00/transaction or",
+  70319: "VISA Gift Card – Inactivity Fee after 12 Months of Inactivity $2.95/month",
 };
 
 function liveRow(id: number, key: string, amount: string, name = "(misread cell)") {

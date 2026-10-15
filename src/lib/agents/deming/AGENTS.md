@@ -116,12 +116,16 @@ It runs as Atlas steps (agent `atlas`); it is deterministic and makes no model c
   `candidate`, with the key's source line, category, price, document and text hash frozen in
   `input`. Every case is replayed each run: a candidate that is read becomes `active`; an active
   case missed again is a regression, named in the step summary; a case whose key fee is no longer
-  confirmed is retired.
+  confirmed is retired, and reopens if the fee is confirmed again (a candidate when missed, active
+  when read). The gate's keys come from the gate itself (`gateKeyFor`, `gateReadKey`, used by
+  `scoreAnswerKeys` too), so the replay and the Knox gate cannot drift.
 - The step detail carries the miss rate by category and by document type. A bank with no completed
   text of its key document is counted apart (`banks_no_text`), never as Knox's miss; a price that
   varies is not scored, as in the gate.
-- A run that passes `KNOX_MISSES_BUDGET_MS` leaves the remaining banks for the next day, least
-  recently checked first. It writes only `eval_cases`; no fee row, no model calls; pause-exempt.
+- A run that passes `KNOX_MISSES_BUDGET_MS` leaves the remaining banks for the next day: the banks
+  it did not reach (`banks_left_ids` in its detail) go first, then the rest by their oldest case
+  check, a bank with no case counting as checked at the previous run. A case the gate no longer
+  scores is still replayed (`not_scored`), so its check time moves. It writes only `eval_cases`; no fee row, no model calls; pause-exempt.
 
 ## Playbook contradiction check
 
