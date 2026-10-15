@@ -202,12 +202,12 @@ export default async function ProGuidePage({ params }: PageProps) {
                 </li>
               ))}
             </ol>
-            <p className="mt-5 text-[14px] text-ink-muted">Each step, with the screens that do it, is in Hamilton.</p>
+            <p className="mt-5 text-[14px] text-ink-muted">Hamilton Pro runs each step on live published fees for your own peer set.</p>
             <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2">
               <TrackLink
                 event="upgrade_click"
-                eventProps={{ placement: "pro_guide_gate", guide: slug }}
-                href={PRO_PLANS_NAV.href}
+                eventProps={{ placement: "pro_guide_gate", guide: slug, from: `/guides/pro/${slug}` }}
+                href={`${PRO_PLANS_NAV.href}?from=${encodeURIComponent(`/guides/pro/${slug}`)}#pro`}
                 className="inline-flex min-h-11 items-center rounded-full bg-ink px-5 text-[14px] font-semibold text-on-ink hover:opacity-90"
               >
                 {PRO_PLANS_NAV.label}
@@ -216,6 +216,12 @@ export default async function ProGuidePage({ params }: PageProps) {
                 {DEMO_REQUEST_NAV.label}
               </Link>
             </div>
+            <p className="mt-4 text-[13px] text-ink-muted">
+              Already subscribed?{" "}
+              <Link href={`/login?from=${encodeURIComponent(`/guides/pro/${slug}`)}`} className="font-medium text-ink underline decoration-border underline-offset-4 hover:decoration-ink">
+                Sign in
+              </Link>
+            </p>
           </div>
           <figure>
             <figcaption className="mb-3 flex items-baseline justify-between gap-4">
@@ -225,7 +231,7 @@ export default async function ProGuidePage({ params }: PageProps) {
             <div className="relative aspect-video overflow-hidden rounded-2xl bg-warm-ink-900 shadow-fi-2 ring-1 ring-ink/10" aria-hidden="true">
               <div className="absolute inset-x-[10%] inset-y-[20%] flex flex-col justify-between opacity-40">
                 {guide.sections.map((section, i) => (
-                  <span key={section.id} className="block h-2 rounded-full bg-[#e0716a]/60" style={{ width: `${45 + ((i * 17) % 45)}%` }} />
+                  <span key={section.id} className="block h-2 rounded-full bg-brick/60" style={{ width: `${45 + ((i * 17) % 45)}%` }} />
                 ))}
               </div>
               <span className="absolute inset-0 flex items-center justify-center">

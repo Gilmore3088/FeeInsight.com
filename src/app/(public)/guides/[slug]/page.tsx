@@ -168,6 +168,21 @@ export default async function GuidePage({ params }: PageProps) {
   const hasRange = primarySummary?.p25_amount != null && primarySummary?.p75_amount != null;
   const otherFees = relevantFees.filter((f) => f.fee_category !== guide.primaryCategory);
 
+  const alertCard = (
+    <div className="rounded-2xl border border-border bg-surface-0 px-5 py-5">
+      <p className="text-[15px] font-semibold text-ink">Get an email when your bank&rsquo;s fee schedule is updated</p>
+      <p className="mt-1 text-[13px] text-ink-muted">
+        Free account. Save your institution and we&rsquo;ll email you when we update its published {primaryNamePlain}.
+      </p>
+      <Link
+        href={`/register?intent=fee-alert&category=${guide.primaryCategory}`}
+        className="mt-4 inline-flex min-h-11 items-center rounded-full bg-ink px-5 text-[14px] font-semibold text-on-ink hover:opacity-90"
+      >
+        Get free fee alerts
+      </Link>
+    </div>
+  );
+
   return (
     <div className="pb-20">
       <BreadcrumbJsonLd
@@ -180,14 +195,16 @@ export default async function GuidePage({ params }: PageProps) {
 
       {/* 1. The answer first: what this fee costs today, as one exhibit. */}
       <section className="border-b border-border bg-paper">
-        <div className="mx-auto grid max-w-page gap-8 px-4 pb-10 pt-6 sm:px-6 sm:pb-14 sm:pt-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] lg:items-center lg:gap-12">
+        <div
+          className={`mx-auto grid max-w-page gap-8 px-4 pb-10 pt-6 sm:px-6 sm:pb-14 sm:pt-10 ${primarySummary && median != null ? "lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] lg:items-center lg:gap-12" : ""}`}
+        >
           <div>
             <nav aria-label="Breadcrumb" className="flex items-center gap-2 text-[12px] text-ink-muted">
               <Link href="/guides" className="hover:text-ink">
                 Guides
               </Link>
               <span aria-hidden="true">/</span>
-              <span className="truncate text-ink-soft">{primaryName}</span>
+              <span className="truncate text-ink-soft">{guide.title}</span>
             </nav>
             <h1 className="mt-4 text-[32px] font-semibold leading-[1.08] tracking-[-0.03em] text-ink sm:text-[44px]">{guide.title}</h1>
             <p className="mt-3 max-w-[36rem] text-[16px] text-ink-soft">{guide.description}</p>
@@ -206,12 +223,12 @@ export default async function GuidePage({ params }: PageProps) {
           {primarySummary && median != null && (
             <figure className="rounded-2xl border border-border bg-surface-0 p-4 shadow-fi-1 sm:p-6">
               <figcaption>
-                <p className="text-[13px] text-ink-muted">Typical {primaryNamePlain} in the U.S.</p>
+                <p className="text-[13px] text-ink-muted">Typical {primaryName} fee, U.S. median</p>
                 <p className="font-mono text-[40px] font-semibold leading-none tabular-nums text-ink">{formatAmount(median)}</p>
                 <p className="mt-2 text-[13px] text-ink-muted">
                   {hasRange && (
                     <>
-                      The middle half charge {formatAmount(primarySummary.p25_amount)} to {formatAmount(primarySummary.p75_amount)}.{" "}
+                      The middle half of institutions charge {formatAmount(primarySummary.p25_amount)} to {formatAmount(primarySummary.p75_amount)}.{" "}
                     </>
                   )}
                   Median of {primarySummary.institution_count.toLocaleString()} institutions
@@ -223,9 +240,12 @@ export default async function GuidePage({ params }: PageProps) {
                   <DistributionChart values={primaryAmounts} median={median} bucketCount={16} />
                 </div>
               )}
+              <p className="mt-2 text-[11px] text-ink-muted">
+                Source: {PRODUCT_NAME}, institutions&rsquo; own published schedules.{crawlDate ? ` Data as of ${crawlDate}.` : ""}
+              </p>
               <p className="mt-2 text-[12px]">
                 <Link href={`/fees/${guide.primaryCategory}`} className="font-semibold text-ink underline decoration-border underline-offset-4 hover:decoration-ink">
-                  See the full {primaryNamePlain} data
+                  See the full data for this fee
                 </Link>
               </p>
             </figure>
@@ -241,7 +261,7 @@ export default async function GuidePage({ params }: PageProps) {
           </h2>
           <form action="/institutions" method="get" role="search" className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-end">
             <input type="hidden" name="fee" value={guide.primaryCategory} />
-            <SearchInput name="q" label="Your bank or credit union" required autoComplete="off" className="w-full min-w-0 sm:flex-1" />
+            <SearchInput name="q" label="Your bank or credit union" required minLength={2} autoComplete="off" className="w-full min-w-0 sm:flex-1" />
             <Button type="submit" variant="primary" className="min-h-11 justify-center whitespace-nowrap">
               Look up its fees
             </Button>
@@ -261,12 +281,12 @@ export default async function GuidePage({ params }: PageProps) {
               breakdowns={breakdowns}
               isLast={i === guide.sections.length - 1}
             />
-          ))}
+          )).flatMap((el, i) => (i === 0 ? [el, <div key="alert-inline" className="lg:hidden">{alertCard}</div>] : [el]))}
 
           {otherFees.length > 0 && (
             <section aria-labelledby="related-fees-heading">
               <h2 id="related-fees-heading" className="text-[20px] font-semibold tracking-[-0.02em] text-ink">
-                Related fees today
+                Related fees, national median
               </h2>
               <ul className="mt-3 divide-y divide-border rounded-2xl border border-border bg-surface-0">
                 {otherFees.map((fee) => (
@@ -288,9 +308,15 @@ export default async function GuidePage({ params }: PageProps) {
             institutions&rsquo; own published schedules for {primaryNamePlain}. Institutions change fees often, so check your own
             institution&rsquo;s current schedule.
           </p>
+          <p className="text-[13px] text-ink-muted">
+            Work at a bank or credit union?{" "}
+            <Link href="/reports/sample-competitive-fee-position" className="font-medium text-ink underline decoration-border underline-offset-4 hover:decoration-ink">
+              See a sample competitor report
+            </Link>
+          </p>
         </div>
 
-        <aside className="space-y-4 lg:sticky lg:top-20 lg:self-start">
+        <aside className="hidden space-y-4 lg:sticky lg:top-20 lg:block lg:self-start">
           <nav aria-label="Guide contents" className="hidden rounded-2xl border border-border bg-surface-0 px-5 py-4 lg:block">
             <p className="text-[13px] font-semibold text-ink">In this guide</p>
             <ul className="mt-2 space-y-1.5">
@@ -303,18 +329,7 @@ export default async function GuidePage({ params }: PageProps) {
               ))}
             </ul>
           </nav>
-          <div className="rounded-2xl border border-border bg-surface-0 px-5 py-5">
-            <p className="text-[15px] font-semibold text-ink">Know when your bank changes this fee</p>
-            <p className="mt-1 text-[13px] text-ink-muted">
-              Free account. Save your institution and we&rsquo;ll email you when its published {primaryNamePlain} changes.
-            </p>
-            <Link
-              href={`/register?intent=fee-alert&category=${guide.primaryCategory}`}
-              className="mt-4 inline-flex min-h-11 items-center rounded-full bg-ink px-5 text-[14px] font-semibold text-on-ink hover:opacity-90"
-            >
-              Get free fee alerts
-            </Link>
-          </div>
+          <div className="hidden lg:block">{alertCard}</div>
         </aside>
       </div>
 
