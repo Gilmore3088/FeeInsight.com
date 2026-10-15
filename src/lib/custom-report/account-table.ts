@@ -33,15 +33,28 @@ export const ACCOUNT_FEE_ROW_LABEL =
 
 const MONEY = /\$\s?\d/;
 const NOT_A_PRODUCT = /^(?:yes|no|n\/?a|none|free|varies|included|unlimited|[-–—]+|\d.*)\s*\d?$/i;
-const PRODUCT_NOISE = /\s*\(?\s*(?:apply now|open now|learn more|open an account)\s*\)?\s*:?\s*/gi;
+const PRODUCT_NOISE = /\s*\(?\s*(?:apply now|open now|learn more|open an account|view more|view details|see details|most popular)\s*\)?\s*:?\s*/gi;
 /** A product code in parentheses ("Rewards Checking (CK06)"). */
 const PRODUCT_CODE = /\(\s*[A-Z]{1,4}-?\d{1,4}\s*\)/g;
 /** Footnote marks: daggers, superscript digits, and a digit glued to a word's last letter ("Checking1"). */
-const FOOTNOTE_MARKS = /[†‡§¶*¹²³⁴⁵⁶⁷⁸⁹⁰]+|(?<=[a-z])\d{1,2}(?:,\d{1,2})*\b/g;
+const FOOTNOTE_MARKS = /[†‡§¶*¹²³⁴⁵⁶⁷⁸⁹⁰]+|(?<=[a-z])\d{1,2}(?:,\d{1,2})*(?=\s*$)|(?<=(?:checking|account|banking|draft))\d{1,2}(?:,\d{1,2})*\b/gi;
+/**
+ * A tagline or button after the product's account word ("CLASSIC CHECKING Most Popular", "Diamond
+ * Checking An Account that Fits All", "Planters Perks Checking View More").
+ */
+const TAGLINE_AFTER = /(\b(?:checking|account|banking)\b)\s+(?:most popular|best\b|ready\b|view\b|details?\b|find\b|celebrate\b|discover\b|learn\b|open\b|apply\b|an?\s|the\s|perfect\b|great\b|ideal\b|for\s|earn\b|get\b|enjoy\b|no\s|start\b|designed\b|built\b|this\s|our\s|[-–—]\s|\S*,).*$/i;
+/** A sentence-case tagline after the account word ("Republic Checking This exclusive account pays you back"). */
+const SENTENCE_TAIL = /(\b(?:[Cc]hecking|CHECKING|[Aa]ccount|ACCOUNT|[Bb]anking|BANKING)\b)\s+\S+\s+[a-z]+\s+[a-z]+\b.*$/;
+/** A cell that reads as a sentence or a feature, not a product's name. */
+const SENTENCE_CELL = /[?!;]|\.\s|,\s+\w+\s+\w+\s+\w+|\b(?:fees|charges?|refunds?|nsf|overdraft\w*|need|needs|those|who|is|are|without)\b/i;
 /** A cell that labels the header row rather than naming a product ("Features", "Compare", "Account Type"). */
 const LABEL_CELL = /^(?:features?|compare|comparison|accounts?|account\s+(?:types?|features|name)|products?|product\s+(?:features|name)|types?|fees?|details|overview|benefits)(?:\s*\/\s*(?:fees|features))?\s*:?$/i;
 /** Action words a row of buttons carries ("Open Online | Open Account | Open Account"). */
-const ACTION_CELL = /^(?:open|apply|learn|enroll|compare|get started|sign up|view|see)(?:\s+(?:online|now|today|here|more|details|an?|account|accounts|in branch))*\s*$/i;
+const ACTION_CELL = /^(?:open|apply|learn|enroll|compare|get started|sign up|view|see|select|choose|which)\b(?!.*\bchecking\b)/i;
+/** A button's words before the product ("Open a Basic Account", "Apply for Free Kasasa Cash Checking"). */
+const ACTION_PREFIX = /^(?:click here to\s+)?(?:sign up for|open|apply for|apply|enroll in|get)\s+(?:an?\s+|your\s+)?(?=\S+\s+\S)/i;
+/** A cell that opens like a sentence or a tagline ("A smart, flexible checking", "Our highest interest checking"). */
+const TAGLINE_CELL = /^(?:[Aa]n?|[Tt]he|[Oo]ur|[Yy]our|[Ff]or|[Bb]uilt|[Dd]esigned|[Pp]erfect|[Ii]deal|[Gg]reat|[Cc]lick|[Tt]his)\s+[a-z]|,\s*[a-z]/;
 /**
  * A column that names another bank's account: a page comparing itself with the big banks ("Our
  * Checking | US Bank Smartly Checking | Chase Premier Plus Checking") prices their accounts, not its own.
@@ -56,9 +69,9 @@ function comparesOtherBanks(products: string[]): boolean {
 /** A fee-change notice's column ("fee through 12/31", "as of 1/1"): a date, not a product. */
 const DATED_CELL = /\b(?:through|thru|as of|effective|until|beginning|starting)\b|\d{1,2}\/\d{1,2}/i;
 /** A header's first cell that labels descriptions, not product names ("Checking Description"). */
-const NOT_A_HEADER_LABEL = /\b(?:description|overview|perks|details|about)\b/i;
+const NOT_A_HEADER_LABEL = /\b(?:description|overview|perks|about)\b/i;
 /** Columns the reader leaves alone: savings-type and tax-advantaged accounts. */
-const NOT_CHECKING = /\b(?:shares?(?!\s*drafts?)|savings?|money\s*market|club|ira|hsa|health savings|cds?|certificates?)\b/i;
+const NOT_CHECKING = /\b(?:shares?(?!\s*drafts?)|savings?|savers?|money\s*market|mmda|club|ira|hsa|health savings|cds?|certificates?)\b/i;
 /** A column a checking product heads: its name says checking, account, banking or draft, or carries a brand mark. */
 const CHECKING_WORD = /checking|\baccounts?\b|\bbanking\b|\bdrafts?\b|®|™/i;
 /** Text after a cell's price that names another fee ("$2 00 Account reconciliation/research, per hour"). */
@@ -89,15 +102,21 @@ export function productName(cell: string): string | null {
   const name = squash(
     cell
       .replace(PRODUCT_NOISE, " ")
+      .trim()
+      .replace(ACTION_PREFIX, "")
       .replace(PRODUCT_CODE, " ")
       .replace(FOOTNOTE_MARKS, "")
       .replace(/["“”]/g, "")
       .replace(/\(\s*\)/g, " ")
       .replace(/(?:\s*[-–—>»→]+\s*)+$/, "")
-      .replace(/[*:]+\s*$/, ""),
+      .replace(/[*:]+\s*$/, "")
+      .replace(TAGLINE_AFTER, "$1")
+      .replace(SENTENCE_TAIL, "$1")
+      .replace(/\s*\((?:[^()\s]+\s+){2,}[^()]*\)/g, ""),
   );
   if (name.length < 3 || name.length > 60 || MONEY.test(name) || NOT_A_PRODUCT.test(name) || !/[a-z]{3}/i.test(name) || /[=•]|^[-–—]/.test(name)) return null;
   if (ACTION_CELL.test(name) || DATED_CELL.test(name) || LABEL_CELL.test(name)) return null;
+  if (name.split(/\s+/).length > 10 || SENTENCE_CELL.test(name) || TAGLINE_CELL.test(name)) return null;
   // A name printed twice in one cell ("Flourish Checking Flourish Checking") is one name.
   const doubled = /^(.{3,}?)\s+\1$/i.exec(name);
   return doubled ? doubled[1] : name;
@@ -157,27 +176,46 @@ export function accountCellPrice(cell: string): number | null {
 }
 
 /** The products a fee row's header names, by column, or null when no header stands above it. */
+/** A row's products when it is a product header for a fee row this wide, or null. */
+function productHeader(header: string[], width: number): Array<string | null> | null {
+  // A header with no first cell ("Free Kasasa Cash® | Free Kasasa Cash Back®" over "Monthly Fee |
+  // FREE | FREE") names the price columns alone, so its first cell must itself be a product: a label
+  // there ("Features", "Select an account", "Which is right for you?") would give each price to the
+  // product before it, and `productName` refuses those.
+  const short = header.length === width - 1;
+  const named = short ? [null, ...header.map(productName)] : header.map(productName);
+  const products = named.slice(1);
+  // A row whose cells repeat ("Open Account | Open Account") is buttons or notes, not products.
+  const distinct = new Set(products.map((name) => (name ?? "").toLowerCase())).size === products.length;
+  const isHeader = products.every((name) => name != null) && distinct && products.some((name) => CHECKING_WORD.test(name ?? "")) &&
+    !(!short && NOT_A_HEADER_LABEL.test(header[0]));
+  if (!isHeader) return null;
+  return comparesOtherBanks(products as string[]) ? null : named;
+}
+
+/**
+ * The products a fee row's header names, by column, or null when no header stands above it.
+ * #1438 review (B4): the header is the topmost product header in the run of rows above the fee
+ * row, never the nearest row that happens to name an account ("Key Features | ... | No NSF Fees for
+ * overdrawing Account", "Best For | Basic Checking Needs | ..."). The run is the rows of the table's
+ * width above the fee row; a row one cell short ends it as its top. A "Best For" row above the
+ * real header ("Best For | Cash Back on Purchases" over "Account | Kasasa Cash® Checking") is part
+ * of the run but names no product, so the header below it is taken.
+ */
 function headerFor(lines: string[], index: number, width: number): Array<string | null> | null {
+  const run: number[] = [];
   for (let above = index - 1; above >= Math.max(0, index - HEADER_REACH); above -= 1) {
-    const header = cellsOf(lines[above]);
-    // A header with no first cell ("Free Kasasa Cash® | Free Kasasa Cash Back®" over
-    // "Monthly Fee | FREE | FREE") names the price columns alone.
-    const named = header.length === width - 1 ? [null, ...header.map(productName)] : header.length === width ? header.map(productName) : null;
-    if (!named) return null;
-    const products = named.slice(1);
-    // A row whose cells repeat ("Open Account | Open Account") is buttons or notes, not products.
-    const distinct = new Set(products.map((name) => (name ?? "").toLowerCase())).size === products.length;
-    const isHeader = products.every((name) => name != null) && distinct && products.some((name) => CHECKING_WORD.test(name ?? "")) &&
-      !(header.length === width && NOT_A_HEADER_LABEL.test(header[0]));
-    if (isHeader) return comparesOtherBanks(products as string[]) ? null : named;
-    // #1438 review: a header one cell short whose first cell is a label ("Features | Simply
-    // Checking | Rewards Checking" over "Monthly Maintenance Fee | $0 | $6 | $12") would give each
-    // price to the product before it. Its columns cannot be aligned, so the table is not read.
-    if (header.length === width - 1 && LABEL_CELL.test(squash(header[0]).replace(/[*:]+$/, ""))) return null;
-    // Another row of the same table ("Minimum to open | $25 | $100", "Earns interest | Yes | No",
-    // "Rewards | High Interest | Cash Back"): keep looking up for its header, through rows of the
-    // table's own width only.
-    if (header.length !== width) return null;
+    const length = cellsOf(lines[above]).length;
+    if (length === width) {
+      run.push(above);
+      continue;
+    }
+    if (length === width - 1) run.push(above);
+    break;
+  }
+  for (const row of run.reverse()) {
+    const named = productHeader(cellsOf(lines[row]), width);
+    if (named) return named;
   }
   return null;
 }

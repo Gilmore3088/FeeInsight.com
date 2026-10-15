@@ -516,8 +516,13 @@ its column (`extract.account_table` v1, `account-table.ts`; see Extraction Passe
 - In a cell, a balance or opening figure is skipped ("$25 minimum daily balance or $8" is $8), and so
   are a discount and a $0 that holds only under a condition ("$0 with $500 balance / $12" is $12). A
   cell with two fee figures left ("$7 + $0.40 per debit") is not read; the row's other cells still are.
-- Product names lose footnote marks, quotes, codes and arrows ("Rewards Checking (CK06)" is "Rewards
-  Checking"). The shared check's table fallback reads the newest fee-change column, as Knox does, and
+- The header is the topmost row in the run above the fee row that names a product in every price
+  column; a "Key Features" or "Best For" row is never the header ("No NSF Fees for overdrawing
+  Account" is not a product). A header one cell short is read only when its first cell is a product.
+  Cells that read as sentences, taglines or buttons are not products; MMDA and saver columns are left out.
+- Product names lose footnote marks, quotes, codes, arrows, taglines and button text ("Rewards
+  Checking (CK06)" is "Rewards Checking", "Open a Basic Account" is "Basic Account", "SECOND CHANCE
+  CHECKING Best for rebuilding" is "SECOND CHANCE CHECKING"); a product's own digits stay ("Tier3 Checking"). The shared check's table fallback reads the newest fee-change column, as Knox does, and
   passes only a consumer name the category guard files as monthly maintenance.
 - Answer keys: Texas 551 to 552 right (Texas Capital), 14 wrong unchanged; held out 54 / 4 unchanged;
   seven states unchanged at 797 / 41.

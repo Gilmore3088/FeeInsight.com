@@ -116,3 +116,39 @@ describe("account comparison tables: #1438 review", () => {
     expect(checkFeeAgainstSource(business, "Business Checking Plus Monthly Service Fee", 30, ".", "monthly_maintenance").ok).toBe(false);
   });
 });
+
+describe("account comparison tables: #1438 re-review (B4)", () => {
+  it("takes the topmost product header in the run, never a feature row below it", () => {
+    // Doc 30045: the real header names no account, so the table is not read at all.
+    const doc30045 = "CashBack | WorryFree | FreshStart\nKey Features | High Yield on Balance, ATM Fee Refunds | No NSF Fees for overdrawing Account | Second Chance for those who need it\nOverdraft Privilege (authorize overdraft situation) | Upon Request | No | No\nMonthly Fee | $0 | $5 | $9.95";
+    expect(reads(doc30045)).toEqual([]);
+    // Doc 28054: "Best For | Basic Checking Needs | ..." sits under the real header.
+    const doc28054 = 'Account | CLASSIC CHECKING Most Popular | "NOW" PERSONAL CHECKING\nBest For | Basic Checking Needs | Higher Balances\nMonthly Service Charge | $10 monthly service charge if minimum daily balance drops below $750 | $15 monthly service charge if minimum daily balance drops below $1,000';
+    expect(reads(doc28054)).toEqual([["CLASSIC CHECKING Monthly Service Charge", 10], ["NOW PERSONAL CHECKING Monthly Service Charge", 15]]);
+    // A "Best For" row above the real header (Kasasa pages) is skipped.
+    const kasasa = "Best For | Cash Back on Purchases | Enjoying Great Perks | Savings\nAccount | Kasasa Cash® Checking | Kasasa Cash Back® Checking | Kasasa Saver®\nMonthly Service Fee | $0 | $0 | $0";
+    expect(reads(kasasa)).toEqual([["Kasasa Cash® Checking Monthly Service Fee", 0], ["Kasasa Cash Back® Checking Monthly Service Fee", 0]]);
+  });
+
+  it("reads a short header only when its first cell is a product", () => {
+    expect(reads("Select an account | Essential Checking | Premier Checking\nMonthly Service Fee | $5 | $10 | $15")).toEqual([]);
+    expect(reads("Which is right for you? | Essential Checking | Premier Checking\nMonthly Service Fee | $5 | $10 | $15")).toEqual([]);
+    expect(reads("Simply Checking | Rewards Checking | Premier Checking\nMonthly Maintenance Fee | $0 | $6 | $12")).toEqual([
+      ["Simply Checking Monthly Maintenance Fee", 0], ["Rewards Checking Monthly Maintenance Fee", 6], ["Premier Checking Monthly Maintenance Fee", 12],
+    ]);
+  });
+
+  it("strips taglines and button text, keeps a product's own digits, and leaves MMDA out", () => {
+    expect(productName("Planters Perks Checking View More")).toBe("Planters Perks Checking");
+    expect(productName("Open a Basic Account")).toBe("Basic Account");
+    expect(productName("SECOND CHANCE CHECKING Best for rebuilding")).toBe("SECOND CHANCE CHECKING");
+    expect(productName("Diamond Checking An Account that Fits All")).toBe("Diamond Checking");
+    expect(productName("Republic Checking This exclusive account pays you back")).toBe("Republic Checking");
+    expect(productName("Senior Checking (age 65 years or older)")).toBe("Senior Checking");
+    expect(productName("Prime of Your Life Checking (55+)")).toBe("Prime of Your Life Checking (55+)");
+    expect(productName("Tier3 Checking")).toBe("Tier3 Checking");
+    expect(productName("A smart, flexible checking")).toBeNull();
+    expect(productName("No NSF Fees for overdrawing Account")).toBeNull();
+    expect(reads("Account | Traditions MMDA Checking | Classic Checking\nMonthly Service Charge | $10.00 | $5.00")).toEqual([["Classic Checking Monthly Service Charge", 5]]);
+  });
+});
