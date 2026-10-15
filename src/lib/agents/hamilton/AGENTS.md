@@ -327,6 +327,12 @@ the detail.
     own words say daily, keeps a period the words after its price state, else is cleared
     (`continuousOverdraftPeriodCheck`). A blank monthly-maintenance fee takes monthly only when
     its own name or line says month or "per statement cycle" (`maintenanceMonthlyFill`).
+    v14 (#1339): every value the fill writes, blank or stated, must be one its own per-event
+    check keeps, so a correction is a fixed point (v13's per_item and daily corrections were
+    written back two minutes later by the next pass). Feedback keys name the version
+    (`hamilton.frequency_fill:v<N>:fix:<id>:<from>:<to>`), because `pipeline_feedback` upserts
+    on its key and an old key was silently overwritten. The excerpt is read from
+    `COALESCE(extraction_note, conditions)`.
 19. Newer-copy check (`newer-copy-retire.ts`): a fee line gone from a newer copy of its page,
     `newer_copy_drops_fee:#<newer document id>` (`NEWER_COPY_RETIRE_LIVE` is true; false makes
     it a shadow run).
@@ -682,7 +688,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `ACCOUNT_NAME_STRATEGY` | `hamilton.account_names` | v1 | `hamilton/account-names.ts` |
 | `CURRENT_COPY_STRATEGY` | `hamilton.current_copy_check` | v2 | `hamilton/current-copy.ts` |
 | `EVAL_VERDICT_VERSION` | — | v7 | `hamilton/eval-verdicts.ts` |
-| `FREQUENCY_FILL_VERSION` | — | v13 | `hamilton/frequency-fill.ts` |
+| `FREQUENCY_FILL_VERSION` | — | v14 | `hamilton/frequency-fill.ts` |
 | `GUARD_REQUEUE_STRATEGY` | `publish.guard_requeue` | v1 | `hamilton/guard-requeue.ts` |
 | `NEWER_COPY_STRATEGY` | `hamilton.newer_copy_check` | v1 | `hamilton/newer-copy-retire.ts` |
 | `HAMILTON_PUBLISH_STRATEGY` | `publish.rules` | v3 | `hamilton/publish.ts` |
