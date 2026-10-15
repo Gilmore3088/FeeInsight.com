@@ -5,14 +5,12 @@ import { trackEvent } from "@/lib/analytics";
 import { LEAD_HONEYPOT_FIELD } from "@/lib/lead-capture";
 import { CONTACT_EMAIL } from "@/lib/constants";
 import { HoneypotField, honeypotValue } from "./honeypot-field";
-import { StateSelect } from "./state-select";
 
 const NEWSLETTER_SOURCE = "newsletter";
 const NEWSLETTER_LEAD_NAME = "Newsletter signup";
 
 export function EmailSignup() {
   const [email, setEmail] = useState("");
-  const [state, setState] = useState("");
   const [status, setStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
   const [emailSent, setEmailSent] = useState(true);
 
@@ -30,7 +28,6 @@ export function EmailSignup() {
           name: NEWSLETTER_LEAD_NAME,
           email: email.trim(),
           source: NEWSLETTER_SOURCE,
-          ...(state ? { state } : {}),
           [LEAD_HONEYPOT_FIELD]: honeypot,
         }),
       });
@@ -41,7 +38,6 @@ export function EmailSignup() {
         trackEvent("newsletter_signup", { placement: "footer" });
         setStatus("success");
         setEmail("");
-        setState("");
       } else {
         setStatus("error");
       }
@@ -60,24 +56,14 @@ export function EmailSignup() {
     );
   }
 
+  // Compact on purpose: the footer is one short band (James's review, 2026-10-15), so the form is
+  // one row and its button stays outlined navy rather than a second brick action.
   return (
-    <form onSubmit={handleSubmit} className="relative flex flex-col gap-2">
+    <form onSubmit={handleSubmit} className="relative flex flex-wrap items-center gap-x-3 gap-y-2">
       <HoneypotField />
-      <label htmlFor="footer-newsletter-email" className="text-[12px] font-semibold text-ink-soft">
+      <label htmlFor="footer-newsletter-email" className="w-full text-[12px] font-semibold text-ink-soft sm:w-auto">
         Monthly fee index update
       </label>
-      <p className="text-[12px] leading-relaxed text-ink-muted">
-        New national benchmarks and one table worth bringing to a pricing meeting. No more than once a month. Pick a state to get its numbers too.
-      </p>
-      <label htmlFor="footer-newsletter-state" className="sr-only">
-        Your state (optional)
-      </label>
-      <StateSelect
-        id="footer-newsletter-state"
-        value={state}
-        onChange={setState}
-        className="w-full max-w-[200px] rounded-lg border border-border bg-paper px-2 py-1.5 text-[12px] text-ink focus:border-transparent focus:outline-none focus:ring-1 focus:ring-brick/30"
-      />
       <div className="flex gap-2">
         <input
           id="footer-newsletter-email"
@@ -87,21 +73,21 @@ export function EmailSignup() {
           placeholder="you@company.com"
           autoComplete="email"
           required
-          className="w-full max-w-[200px] rounded-lg border border-border bg-paper px-3 py-1.5 text-[12px] text-ink placeholder:text-ink-muted focus:border-transparent focus:outline-none focus:ring-1 focus:ring-brick/30"
+          className="w-full max-w-[220px] rounded-lg border border-border bg-paper px-3 py-1.5 text-[12px] text-ink placeholder:text-ink-muted focus:border-transparent focus:outline-none focus:ring-1 focus:ring-ink/30"
         />
         <button
           type="submit"
           disabled={status === "loading"}
-          className="shrink-0 rounded-lg bg-brick px-3 py-1.5 text-[11px] font-semibold text-white transition-colors hover:bg-brick-ink disabled:opacity-50"
+          className="shrink-0 rounded-lg border border-ink px-3 py-1.5 text-[11px] font-semibold text-ink transition-colors hover:bg-ink hover:text-on-ink disabled:opacity-50"
         >
           {status === "loading" ? "..." : "Subscribe"}
         </button>
-        {status === "error" && (
-          <span className="self-center text-[11px] text-red-600" role="alert">
-            Something went wrong — try again.
-          </span>
-        )}
       </div>
+      {status === "error" && (
+        <span className="w-full text-[11px] text-red-600 lg:text-right" role="alert">
+          Something went wrong. Try again.
+        </span>
+      )}
     </form>
   );
 }

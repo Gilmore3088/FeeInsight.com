@@ -110,7 +110,7 @@ export default async function LandingPage() {
         <LandingFaq summary={summary} />
         <LandingClose />
       </main>
-      <CustomerFooter sampleReport={sampleLive} />
+      <CustomerFooter />
       <SearchModal />
     </div>
   );
