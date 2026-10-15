@@ -97,9 +97,12 @@ function Hero({
       <div className="mx-auto grid max-w-page gap-8 px-4 pb-12 pt-8 sm:px-6 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)] lg:items-center lg:gap-12 lg:pb-16 lg:pt-14">
         <div>
           <p className={EYEBROW}>Bank fee benchmarking</p>
-          {/* The homepage hero's display face: Geist 600, one colour, no trailing period. */}
+          {/* The homepage hero's display face: Geist 600, one colour, no trailing period. The size
+              follows the text column so no line holds a single word (measured with Geist from 320
+              to 1920px): it scales with a phone's width, steps down at lg where the column halves,
+              and steps back up at xl. */}
           <h1
-            className="mt-4 text-[2.25rem] !font-semibold leading-[1.04] !tracking-[-0.04em] text-ink sm:text-[3.5rem] lg:text-[3.6rem]"
+            className="mt-4 text-[length:clamp(1.5rem,7.8vw,2rem)] !font-semibold leading-[1.04] !tracking-[-0.04em] text-ink sm:text-[3rem] lg:text-[2.25rem] xl:text-[3rem]"
             style={SANS}
           >
             Benchmark every fee against your competitors&apos; own schedules

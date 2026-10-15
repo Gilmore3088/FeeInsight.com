@@ -174,6 +174,10 @@ describe("homepage (site v3 brief 06 §4.3)", () => {
     expect(html).toContain("data-video-placeholder");
     // Every chapter wears Hamilton's tabs, with its own mode marked (re-walk R2).
     for (const mode of ["My fees", "Try a price", "Reports"]) expect(html).toContain(`font-semibold text-ink">${mode}<`);
+    // Every chapter, Every fee included, renders inside Hamilton's shell (rail and frame).
+    for (const key of ["fee", "market", "workspace", "reports"]) {
+      expect(html).toMatch(new RegExp(`id="sizzle-${key}"[^>]*><div data-hamilton-shell=""`));
+    }
     expect(renderToStaticMarkup(<LandingSizzle data={buildHomeData(summary, [], null)} />)).toBe("");
   });
 

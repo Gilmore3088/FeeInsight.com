@@ -54,7 +54,8 @@ export function LandingFaq({ summary }: { summary: FaqSummary }) {
     <section className="border-t border-border bg-paper">
       <div className={`${SECTION_INNER} py-16 sm:py-24`}>
         <div className="mx-auto max-w-3xl">
-          <SectionHeading center title="Questions before you start" />
+          {/* A no-break space keeps "Questions" off a line of its own on a phone. */}
+          <SectionHeading center title={"Questions\u00a0before you start"} />
           <div className="mt-8 divide-y divide-border border-y border-border">
             {faqItems(summary).map((item) => (
               <details key={item.q} className="group py-4">

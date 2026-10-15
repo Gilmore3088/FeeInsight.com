@@ -255,7 +255,7 @@ export function ProductSizzle({
             );
           })}
         </div>
-        {placeholder && !video?.src ? <FramePlaceholder caption={placeholder} className="max-w-[15rem] lg:w-48" /> : null}
+        {placeholder && !video?.src ? <FramePlaceholder caption={placeholder} className="max-w-[11.5rem] sm:max-w-[15rem] lg:w-48" /> : null}
       </div>
     </div>
   );

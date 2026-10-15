@@ -158,14 +158,15 @@ export function MarketExhibit({
   );
   const domain: [number, number] = [0, hi];
   const legend = (
-    <p className="flex flex-wrap gap-y-1 text-[12px]" aria-label="Market layers">
+    <ul className="flex flex-wrap gap-y-1 text-[12px]" aria-label="Market layers">
+      {/* Each separator rides with the layer before it, so a wrapped line starts with a layer. */}
       {LAYERS.map((layer, i) => (
-        <span key={layer} className={`whitespace-nowrap ${layer === "Fed district" ? "font-semibold text-ink" : "text-ink-muted"}`}>
-          {i > 0 ? <span aria-hidden="true" className="px-1.5 font-normal text-ink-muted">·</span> : null}
+        <li key={layer} className={`whitespace-nowrap ${layer === "Fed district" ? "font-semibold text-ink" : "text-ink-muted"}`}>
           {layer}
-        </span>
+          {i < LAYERS.length - 1 ? <span aria-hidden="true" className="px-1.5 font-normal text-ink-muted">·</span> : null}
+        </li>
       ))}
-    </p>
+    </ul>
   );
   const nation = (
     <>
@@ -325,7 +326,7 @@ function HamiltonShell({ active, children }: { active?: HamiltonMode; children: 
   const rail = [Home, BarChart3, Bookmark, FileText];
   const lit = active === "Reports" ? 3 : 1;
   return (
-    <div className="flex min-h-full">
+    <div data-hamilton-shell="" className="flex h-full min-h-full flex-1">
       <nav aria-hidden="true" className="hidden w-14 shrink-0 flex-col items-center gap-4 border-r border-border bg-paper/60 py-5 sm:flex">
         <AppIcon brand="hamilton" size={28} title="" />
         {rail.map((Icon, i) => (
