@@ -60,7 +60,7 @@ vi.mock("./tool-local-competitors", () => ({
 }));
 
 // Import after mocks
-import { buildSavedPeerSetPrompt, getHamilton, savedPeerSetUsed } from "./agents";
+import { buildMonitorModeSuffix, buildSavedPeerSetPrompt, getHamilton, savedPeerSetUsed } from "./agents";
 
 describe("getHamilton", () => {
   beforeEach(() => {
@@ -227,5 +227,16 @@ describe("getHamilton", () => {
     } finally {
       delete process.env.HAMILTON_MODEL;
     }
+  });
+});
+
+describe("buildMonitorModeSuffix (#1256)", () => {
+  it("asks for something to check next and bans pricing advice", () => {
+    const suffix = buildMonitorModeSuffix();
+    expect(suffix).toContain("one specific thing to check next");
+    expect(suffix).toContain("Never tell the user to raise, lower or drop a fee");
+    expect(suffix).toContain("The pricing decision is the user's");
+    expect(suffix).not.toContain("next step");
+    expect(suffix).not.toContain("action is needed");
   });
 });

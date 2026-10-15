@@ -557,8 +557,9 @@ async function addBlockedFetch(result: PaidPassResult, options: RunMagellanPaidF
 }
 
 /**
- * $10B+ banks and report requesters whose page is not the consumer schedule get a paid
- * search for it in the same step (schedule-search.ts); the answer is kept as a companion.
+ * The paid schedule search runs in the same step (schedule-search.ts, #1030): institutions
+ * with a link but no live fee first, then a few banks whose page is not the consumer schedule;
+ * each answer is kept as a companion.
  */
 async function addScheduleSearch(result: PaidPassResult, options: RunMagellanPaidFindOptions, db: typeof sql, gaps: GroupGaps): Promise<void> {
   const searched = await runScheduleSearch({

@@ -63,6 +63,14 @@ const COLUMN_LABEL_LINE = /^(?:(?:current|standard|regular|member)\s+)?(?:fees?(
 // "$2.00 - *Service not available to non-customers": a price, then a dash and its note.
 const PRICE_THEN_DASH_NOTE = /^\s*\$\s?\d[\d,]*(?:\.\d{2})?\s*(?:(?:per\s+|\/\s*)[a-z]+|each)?\s*[-–—]\s+\*?\s*[a-z]/i;
 const PRICE_THEN_SENTENCE = /^\s*\$\s?\d[\d,]*(?:\.\d{2})?\s*(?:(?:per\s+|\/\s*)[a-z]+|each)?\s*\.\s+\S/i;
+/** A price that opens a sentence about what it is charged for ("$30 for each check, automatic bill payment, ..."). */
+const PRICE_FOR_EACH = /^\s*\$\s?\d[\d,]*(?:\.\d{2})?\s+for\s+(?:each|every)\s+[a-z]/i;
+/**
+ * A description under a fee's name that ends on the label the bank's statement shows ("If RCB pays an
+ * item when your account does not have enough money ... (Fee shown as Overdraft Fee)", River City
+ * Bank 268). It carries no price, so the price line under it is the fee's.
+ */
+const FEE_SHOWN_AS_LINE = /^[^$|]{0,300}\(\s*fee shown (?:when charged )?as [^()$|]{1,60}\)\s*\.?\s*$/i;
 /** An allowance before the price ("5 Free per month," / "$2.50 each additional") is not the price. */
 const FREE_ALLOWANCE = /\b\d+\s+(?:free|no\s+charge)\b/gi;
 /**
@@ -87,6 +95,12 @@ const THRESHOLD_BEFORE = /(from|over|under|below|above|exceed(?:s|ing)?|negative
 // A spaced "+" whose next cell is a price ("$1,000.01 + | $10.00") is a band's open top, as
 // is "$1,000.01-Over"; "$500 or under = $5.00" is a band too. A spaced "+" alone ("International
 // Wire $50.00 +") is a price plus costs.
+/**
+ * A negative balance written with its minus sign or a dash after "negative" ("Avail Balance of
+ * negative -$5.00 | $31.00/Item*", "negative - $5.00 | $12.50/Item*", Capitol FCU 8299) is a
+ * balance, not the row's price. Only after "negative": "Below Minimum - $5.00" is a price.
+ */
+const NEGATIVE_SIGNED_BEFORE = /\bnegative\s*[-–−]\s*$/i;
 const THRESHOLD_AFTER = /^\+|^\s+\+\s*\|\s*\$|^\s*[-–]\s*(?:over|up|above)\b|^\s*(or more|and more|or less|and over|and above|or greater|or (?:under|below)|and (?:under|below)|to \$|-\s*\$|–\s*\$|and up|min(?:imum)?\b)/i;
 /** A cap stated after a row's per-item price, and the name words that ask for it. */
 const CAP_BEFORE = /\b(?:max(?:imum)?|cap(?:ped)?|limit(?:ed)?)\b(?:\s+(?:of|at|to))?\s*$/i;
@@ -522,9 +536,12 @@ function feeRow(lines: string[], index: number): string {
   const price = lines
     .slice(index + 1, index + 1 + PRICE_BELOW_LINES)
     .find(
-      (next) =>
+      (next, k) =>
         PRICE_THEN_QUALIFIER.test(next) ||
         PRICE_THEN_SENTENCE.test(next) ||
+        // Only under a statement-label description (River City's layout); elsewhere a long
+        // "$30 for each ..." sentence under a bare name is not read as that name's price.
+        (PRICE_FOR_EACH.test(next) && lines.slice(index + 1, index + 1 + k).some((line) => FEE_SHOWN_AS_LINE.test(line))) ||
         PRICE_THEN_DASH_NOTE.test(next) ||
         ((next.length <= PRICE_BELOW_MAX_LENGTH || PRICE_THEN_NOTE.test(next) || PRICE_THEN_PAREN_NOTE.test(next)) &&
           PRICE_LINE.test(next) &&
@@ -550,6 +567,7 @@ function feeRow(lines: string[], index: number): string {
     (next) =>
       /^\s*(\/|per\b)/i.test(next) ||
       QUALIFIER_LINE.test(next) ||
+      (FEE_SHOWN_AS_LINE.test(next) && moneyTokens(next).length === 0) ||
       COLUMN_LABEL_LINE.test(next.trim()) ||
       (perColumn && next.length <= 20 && moneyTokens(next).length === 0 && !ZERO_WORDS.test(next)),
   )
@@ -585,7 +603,7 @@ function isThreshold(line: string, token: MoneyToken): boolean {
   // is a separator, not a band's upper end.
   if (/\$\s*[\d,.]+\s*[-–]\s*$/.test(before) && /^\s*(?:fee|charge|per\b|each\b|\/)/i.test(after) && !THRESHOLD_AFTER.test(after)) return false;
   if (statesMaximumFee(line, token) && !THRESHOLD_AFTER.test(after)) return false;
-  return THRESHOLD_BEFORE.test(before) || THRESHOLD_AFTER.test(after) || OBJECT_BEFORE.test(before);
+  return THRESHOLD_BEFORE.test(before) || NEGATIVE_SIGNED_BEFORE.test(before) || THRESHOLD_AFTER.test(after) || OBJECT_BEFORE.test(before);
 }
 
 // "We will charge you a fee of up to $35.00 each time we pay an overdraft" and "Late Payment Fee

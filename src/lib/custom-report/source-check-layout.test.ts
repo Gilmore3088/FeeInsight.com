@@ -546,4 +546,55 @@ describe("checkFeeAgainstSource daily caps", () => {
     expect(checkFeeAgainstSource(xplore, "Non-Sufficient Funds", 29, ".", "nsf").ok).toBe(true);
     expect(checkFeeAgainstSource(xplore, "IRA Annual Maintenance Fee", 10, ".").ok).toBe(true);
   });
+
+  it("reads a negative balance written with a minus sign or dash as the band, not the price (Capitol FCU)", () => {
+    // Capitol FCU (8299), doc 6778 and its current copy 20641, Oct 15: both overdraft prices were
+    // taken down as thresholds (26152, 26153) and held as untraced on the current copy.
+    const page = [
+      "Privilege Pay Program++",
+      "",
+      "Overdrawn NSF Fee | $34.50/item*",
+      "",
+      "Overdraft Privilege Fee for paid items up to an Avail Balances of negative - $5.00 | $12.50/Item*",
+      "",
+      "Overdraft Privilege Fee for paid items greater than Avail Balance of negative -$5.00 | $31.00/Item*",
+      "",
+      "(Check, ACH, ATM/Debit Card Transactions) ++N/A to Freedom Checking",
+    ].join("\n");
+    const read = (name: string, amount: number) => checkFeeAgainstSource(page, name, amount, ".", "overdraft");
+    // A price for a balance band: Darwin and Hamilton count tiered_fee as stated.
+    expect(read("Overdraft Privilege Fee for paid items greater than Avail Balance of negative", 31)).toEqual({ ok: false, reason: "tiered_fee" });
+    expect(read("Overdraft Privilege Fee for paid items up to an Avail Balances of negative", 12.5)).toEqual({ ok: false, reason: "tiered_fee" });
+    // The balance itself is still not a fee.
+    expect(read("Overdraft Privilege Fee for paid items up to an Avail Balances of negative", 5).ok).toBe(false);
+    expect(read("Overdraft Privilege Fee for paid items up to an Avail Balances of negative", 5)).not.toEqual({ ok: false, reason: "tiered_fee" });
+    // Only after "negative": a dash before a price stays a separator.
+    expect(checkFeeAgainstSource("Account Below Minimum - $5.00", "Account Below Minimum", 5, ".").ok).toBe(true);
+  });
+
+  it("reads a price under a description that ends on the statement label (River City Bank)", () => {
+    // River City Bank (268), current copy doc 28947, Oct 15: the $30 overdraft (36542) was taken
+    // down as amount_not_the_fee and the current copy's reads (274671, 535317) held as untraced.
+    const page = [
+      "Outgoing International Wire Transfer Foreign Exchange Fee sent in Foreign Currency",
+      "(Fee shown when charged as Wire FX Fee.) This fee is assessed in addition to the Int’l Wire Fee Out shown immediately above.",
+      "$30 per wire",
+      "Overdraft",
+      "If RCB pays an item when your account does not have enough money in your Available Balance1 to cover a transaction. (Fee shown as Overdraft Fee)",
+      "$30 for each check, automatic bill payment, ACH debit or recurring debit or similar transaction presented for payment against your account.",
+      "NSF (Non-Sufficient Funds) Returned Item",
+      "If RCB returns an item when your account does not have enough money in your Available Balance to cover a transaction. (Fee shown as NSF Returned Item Fee)",
+      "Maximum of 5 Overdraft and/or NSF Returned Item Fees may be charged per banking day per account.",
+      "Excessive Withdrawal Fee",
+      "The Bank limits the number of withdrawals and transfers that may be made each calendar month from Savings and Money Market Accounts. See RCB Deposit Account Agreement for specific information. (Fee shown as Service Charge – Total Excessive WD)",
+      "$15 for each excessive item.",
+    ].join("\n");
+    expect(checkFeeAgainstSource(page, "Overdraft: (Fee", 30, ".", "overdraft")).toMatchObject({ ok: true });
+    expect(checkFeeAgainstSource(page, "Excessive Withdrawal Fee", 15, ".")).toMatchObject({ ok: true });
+    // The NSF entry prints no price of its own; it never takes the overdraft's.
+    expect(checkFeeAgainstSource(page, "NSF (Non-Sufficient Funds) Returned Item", 30, ".", "nsf").ok).toBe(false);
+    // Without the statement label, a long "$30 for each ..." sentence under a bare name is not its price.
+    const bare = "Overdraft\nIf we pay an item when your account does not have enough money to cover a transaction.\n$30 for each check presented against your account.";
+    expect(checkFeeAgainstSource(bare, "Overdraft", 30, ".", "overdraft").ok).toBe(false);
+  });
 });

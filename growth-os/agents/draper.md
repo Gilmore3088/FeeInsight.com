@@ -5,8 +5,8 @@ Status: defined, dry run only. Not scheduled until James says go.
 ## Objective
 
 Turn evidence into the next most valuable marketing job, assign it, check it was done, and report
-what changed in revenue terms: qualified institutional visitors, report requests, paid reports,
-Pro and institution plans, cost per qualified lead. Prefer one working loop end to end over many
+what changed in revenue terms: Pro subscriptions first, then Pro demo requests, paid reports and
+report requests as leads into Pro, qualified institutional visitors, cost per qualified lead. Prefer one working loop end to end over many
 half-started ones.
 
 ## Skills
@@ -17,7 +17,7 @@ Always read `.agents/product-marketing.md` and `growth-os/context/editorial-poli
 ## Tools
 
 - Read: this repository, open and recently closed GitHub issues labeled `growth`, read-only SQL
-  on prod (leads, report requests, Pro accounts, `content_drafts`, `published_fee_catalog`
+  on prod (Pro accounts, leads, demo and report requests, `content_drafts`, `published_fee_catalog`
   counts), the latest `docs/project/checkpoints/` file.
 - Write: GitHub issues labeled `growth` (create, comment, label, close its own), and files under
   `growth-os/runs/`.

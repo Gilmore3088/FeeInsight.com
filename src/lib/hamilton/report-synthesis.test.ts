@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { SelectedInstitutionFeeDelta } from "@/lib/hamilton/report-evidence";
 import {
@@ -33,9 +35,26 @@ describe("selected institution report synthesis", () => {
 
     const rules = buildSelectedInstitutionReportRules({ institutionId: 2945 });
     expect(rules).toContain("selected_institution.fee_peer_deltas");
-    expect(rules).toContain("do not write benchmark conclusions");
+    expect(rules).toContain("write no benchmark conclusions");
     expect(rules).toContain("Provisional rows are directional only");
     expect(rules).toContain("do not treat it as a verified benchmark score");
+  });
+
+  it("never allows pricing advice, with or without peer deltas (#1256)", () => {
+    const rules = buildSelectedInstitutionReportRules({ institutionId: 2945 });
+    expect(rules).toContain("Whatever fee_peer_deltas shows, never tell the institution to raise, lower or drop a fee");
+    expect(rules).toContain("write no benchmark conclusions");
+    expect(rules).not.toMatch(/recommendation/i);
+  });
+
+  it("every report prompt carries the no-advice rule (#1256)", () => {
+    const source = readFileSync(join(process.cwd(), "src/app/pro/(hamilton)/reports/actions.ts"), "utf8");
+    const noFluff = source.slice(source.indexOf("const NO_FLUFF_RULES = `"), source.indexOf("`.trim();", source.indexOf("const NO_FLUFF_RULES = `")));
+    expect(noFluff).toContain('13. Never tell the institution to raise, lower, hold, cut or drop a fee, and never write "we recommend".');
+    // The executive summary, strategic and trade-off prompts all include NO_FLUFF_RULES.
+    expect(source).toContain("${ANSWER_SECTION_FORMAT}\\n\\n${NO_FLUFF_RULES}\\n\\n${buildSelectedInstitutionReportRules(params)}");
+    expect(source).toContain("${head}\\n\\n${NO_FLUFF_RULES}\\n\\n${buildSelectedInstitutionReportRules(params)}");
+    expect(source).toMatch(/const DECISION_POINT_RULES = `\n\$\{NO_FLUFF_RULES\}/);
   });
 
   it("labels provisional rows and blocks verified benchmark conclusions for provisional-only deltas", () => {
