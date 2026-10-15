@@ -1,67 +1,50 @@
-import { BadgeCheck, FileSearch, ListPlus, Globe2, type LucideIcon } from "lucide-react";
+import { ArrowRight, BadgeCheck, FileSearch, Globe2, ListPlus, type LucideIcon } from "lucide-react";
 import { PRODUCT_NAME } from "@/lib/constants";
 import type { PublicStatsSummary } from "@/lib/public-stats";
-import { SANS, SECTION_INNER, SectionHeading, hasFigure } from "./landing-shared";
+import { SANS, SECTION_INNER, hasFigure } from "./landing-shared";
 
-type ProvenanceSummary = Pick<
-  PublicStatsSummary,
-  "monitoredLabel" | "institutionsLabel" | "observationsLabel" | "refreshedOn" | "freshnessLabel"
->;
+type ProvenanceSummary = Pick<PublicStatsSummary, "institutionsLabel" | "observationsLabel" | "freshnessLabel">;
 
-interface Step {
-  icon: LucideIcon;
-  label: string;
-  /** A live figure and what it counts; left out when the read failed. */
-  figure?: { value: string; unit: string };
-  /** What the step keeps, in a few words. */
-  note: string;
-}
+const STEPS: { icon: LucideIcon; label: string }[] = [
+  { icon: FileSearch, label: "Schedule read" },
+  { icon: ListPlus, label: "Fee recorded" },
+  { icon: BadgeCheck, label: "Checked against source" },
+  { icon: Globe2, label: "Published" },
+];
 
 /**
- * Brief 06 §4.3 item 5: the navy operating record. Each step's figure comes from the live
- * snapshot; a step with no live field shows none. data-theme="dark" flips the tokens.
+ * Brief 06 §4.3 item 5, as one compact navy strip: the four steps a fee goes through, and the
+ * one live figure the pipeline publishes (fee entries and institutions). A failed read shows
+ * the steps without the figure. data-theme="dark" flips the tokens.
  */
 export function LandingProvenance({ summary }: { summary: ProvenanceSummary }) {
-  const figure = (value: string, unit: string) => (hasFigure(value) ? { value, unit } : undefined);
-  const steps: Step[] = [
-    { icon: FileSearch, label: "Schedule read", figure: figure(summary.monitoredLabel, "institutions monitored"), note: "The institution's own document" },
-    { icon: ListPlus, label: "Fee recorded", note: "With its document, page and date" },
-    { icon: BadgeCheck, label: "Checked against source", note: "Before anything is published" },
-    {
-      icon: Globe2,
-      label: "Published",
-      figure: figure(summary.observationsLabel, `fee entries from ${summary.institutionsLabel} institutions`),
-      note: summary.freshnessLabel,
-    },
-  ];
+  const figure = hasFigure(summary.observationsLabel) && hasFigure(summary.institutionsLabel);
   return (
-    <section data-theme="dark" className="bg-paper text-ink">
-      <div className={`${SECTION_INNER} py-16 sm:py-24`}>
-        <SectionHeading eyebrow="Behind every figure" title={`How a fee reaches the ${PRODUCT_NAME}`} />
-        <ol className="relative mt-10 grid gap-3 sm:mt-14 lg:grid-cols-4 lg:gap-4">
-          <span aria-hidden className="absolute left-[1.75rem] top-6 bottom-6 w-px bg-border lg:left-6 lg:right-6 lg:top-[2.25rem] lg:bottom-auto lg:h-px lg:w-auto" />
-          {steps.map((step, i) => {
+    <section data-theme="dark" aria-labelledby="provenance-heading" className="bg-paper text-ink">
+      <div className={`${SECTION_INNER} flex flex-col gap-6 py-10 sm:py-12 lg:flex-row lg:items-center lg:justify-between lg:gap-10`}>
+        <div className="min-w-0">
+          <h2 id="provenance-heading" className="text-[20px] !font-semibold leading-tight !tracking-[-0.02em] text-ink sm:text-[24px]" style={SANS}>
+            How a fee reaches the {PRODUCT_NAME}
+          </h2>
+          {figure ? (
+            <p className="mt-2 text-[14px] text-ink-muted">
+              <span className="text-[18px] font-semibold tabular-nums text-ink">{summary.observationsLabel}</span> fee
+              entries from {summary.institutionsLabel} institutions · {summary.freshnessLabel}
+            </p>
+          ) : (
+            <p className="mt-2 text-[14px] text-ink-muted">{summary.freshnessLabel}</p>
+          )}
+        </div>
+        <ol className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center sm:gap-1.5 lg:shrink-0 lg:flex-nowrap">
+          {STEPS.map((step, i) => {
             const Icon = step.icon;
             return (
-              <li key={step.label} className="relative flex gap-4 rounded-2xl border border-border bg-surface-0 p-4 lg:flex-col lg:p-6">
-                <span className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-border bg-paper">
-                  <Icon className="h-5 w-5 text-ink" aria-hidden="true" />
+              <li key={step.label} className="flex items-center gap-1.5">
+                <span className="flex min-h-10 w-full items-center gap-2 rounded-full border border-border bg-surface-0 px-3.5 text-[13px] font-semibold text-ink sm:w-auto">
+                  <Icon className="h-4 w-4 shrink-0 text-ink-muted" aria-hidden="true" />
+                  {step.label}
                 </span>
-                <div className="min-w-0">
-                  <p className="font-mono text-[12px] tabular-nums text-ink-muted">{String(i + 1).padStart(2, "0")}</p>
-                  <h3 className="mt-1 text-[17px] font-semibold text-ink" style={SANS}>
-                    {step.label}
-                  </h3>
-                  {step.figure ? (
-                    <p className="mt-3">
-                      <span className="block text-[30px] font-semibold leading-8 tabular-nums tracking-[-0.03em] text-ink">
-                        {step.figure.value}
-                      </span>
-                      <span className="text-[13px] text-ink-muted">{step.figure.unit}</span>
-                    </p>
-                  ) : null}
-                  <p className="mt-2 text-[13px] leading-5 text-ink-muted">{step.note}</p>
-                </div>
+                {i < STEPS.length - 1 ? <ArrowRight className="hidden h-4 w-4 shrink-0 text-ink-muted sm:block" aria-hidden="true" /> : null}
               </li>
             );
           })}

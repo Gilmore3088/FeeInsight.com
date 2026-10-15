@@ -6,15 +6,16 @@ const DISPLAY = { fontFamily: "var(--fi-font-sans)" };
 /**
  * Hamilton's Try a price, drawn from the live national index. No hooks, so a server page can
  * render it still (/for-institutions) and the /subscribe example can type the question in.
- * `typed` is how much of the question shows; the answer appears once it is complete.
+ * `typed` is how much of the question shows; the answer appears once it is complete. `bare`
+ * drops the panel's own window, for a page that draws one around it (the homepage sizzle).
  */
-export function TryAPricePanel({ scenario, typed }: { scenario: AnalyzeScenario; typed?: number }) {
+export function TryAPricePanel({ scenario, typed, bare = false }: { scenario: AnalyzeScenario; typed?: number; bare?: boolean }) {
   const question = scenarioQuestion(scenario);
   const shown = typed ?? question.length;
   const answered = shown >= question.length;
   const max = scenarioMax(scenario);
-  return (
-    <PreviewFrame label="Hamilton · Try a price" aside="Illustration, live figures">
+  const body = (
+    <>
       <div className="space-y-4 px-4 py-4 sm:px-5">
         <div className="flex justify-end">
           <p className="max-w-[85%] rounded-2xl rounded-br-sm bg-ink px-3.5 py-2 text-[15px] text-white">
@@ -58,9 +59,15 @@ export function TryAPricePanel({ scenario, typed }: { scenario: AnalyzeScenario;
           </div>
         </div>
       </div>
-      <p className="mt-auto border-t border-border/80 bg-white/50 px-4 py-2.5 text-xs leading-relaxed text-ink-muted sm:px-5">
+      <p className="mt-auto max-w-none border-t border-border/80 bg-white/50 px-4 py-2.5 text-xs leading-relaxed text-ink-muted sm:px-5">
         A scenario, not advice. In Pro, ask about any fee against your own peers.
       </p>
+    </>
+  );
+  if (bare) return <div className="flex h-full flex-col">{body}</div>;
+  return (
+    <PreviewFrame label="Hamilton · Try a price" aside="Illustration, live figures">
+      {body}
     </PreviewFrame>
   );
 }

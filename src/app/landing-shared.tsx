@@ -5,6 +5,11 @@ import { MIN_INSTITUTIONS_FOR_MEDIAN } from "@/lib/data-store/maturity";
 import { DISTRICT_NAMES } from "@/lib/fed-districts";
 import { getDisplayName } from "@/lib/fee-taxonomy";
 import type { PublicStatsSummary } from "@/lib/public-stats";
+import type { LinePosition } from "@/lib/custom-report/analysis";
+import type { MarketReport } from "@/lib/custom-report/report-data";
+import type { MarketLadderData } from "@/app/for-institutions/market-ladder";
+import { sourcedFees, type SourcedFee } from "@/app/for-institutions/sample-sources";
+import type { AnalyzeScenario } from "@/app/subscribe/scenario";
 
 /** The one report request form, on /reports (site v3 brief 05 §3-4, #1171). */
 export const REPORT_REQUEST_HREF = "/reports?report=institution#request";
@@ -122,6 +127,25 @@ export interface DistrictPoint {
   institutions: number;
 }
 
+/** One comparable line of the live sample report: the bank's fee against its local market. */
+export interface SampleRow {
+  key: string;
+  label: string;
+  amount: number;
+  median: number;
+  position: LinePosition;
+}
+
+/** The live sample Competitive Fee Position Report, as the exhibits draw it. */
+export interface SampleView {
+  institutionName: string;
+  competitors: number;
+  /** Fees whose source line passes the shared source check, each with its quote. */
+  fees: SourcedFee[];
+  /** Comparable lines, in report order. */
+  rows: SampleRow[];
+}
+
 /** Everything the homepage exhibits draw, from live reads only. Nothing here is typed by hand. */
 export interface HomeData {
   summary: PublicStatsSummary;
@@ -130,6 +154,28 @@ export interface HomeData {
   overdraft: RangeEntry | null;
   /** Overdraft by Fed district, in district order. */
   districts: DistrictPoint[];
+  /** The live sample report; null when none is published or it failed to read. */
+  sample: SampleView | null;
+  /** The sample's headline fee in each market layer; null without a sample. */
+  ladder: MarketLadderData | null;
+  /** Try a price, worked from the live national overdraft benchmark. */
+  scenario: AnalyzeScenario | null;
+}
+
+/** The sample report's fees and comparable lines, with only verified source lines kept. */
+export function buildSampleView(report: MarketReport | null): SampleView | null {
+  if (!report) return null;
+  const rows: SampleRow[] = [];
+  for (const line of report.analysis.lines) {
+    if (!line.comparable || !line.own || !line.peers || !line.position) continue;
+    rows.push({ key: line.key, label: line.label, amount: line.own.amount, median: line.peers.median, position: line.position });
+  }
+  return {
+    institutionName: report.data.subject.institution_name,
+    competitors: report.analysis.readiness.competitorsWithData,
+    fees: sourcedFees(report.analysis.lines),
+    rows,
+  };
 }
 
 /** The fees a pricing committee asks about first (brief 08 §A.2), in the order the exhibits list them. */
@@ -147,6 +193,7 @@ export function buildHomeData(
   summary: PublicStatsSummary,
   categories: FeeCategorySummary[],
   byDistrict: DimensionBreakdown[] | null | undefined,
+  extras: Partial<Pick<HomeData, "sample" | "ladder" | "scenario">> = {},
 ): HomeData {
   const lines = FEE_LINE_ORDER.map((key) => categories.find((c) => c.fee_category === key))
     .filter(isComplete)
@@ -167,5 +214,13 @@ export function buildHomeData(
     })
     .filter((row) => Number.isInteger(row.district) && DISTRICT_NAMES[row.district])
     .sort((a, b) => a.district - b.district);
-  return { summary, lines, overdraft: nationalRange(categories, "overdraft"), districts };
+  return {
+    summary,
+    lines,
+    overdraft: nationalRange(categories, "overdraft"),
+    districts,
+    sample: extras.sample ?? null,
+    ladder: extras.ladder ?? null,
+    scenario: extras.scenario ?? null,
+  };
 }

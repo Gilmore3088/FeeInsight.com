@@ -6,13 +6,15 @@ import { REPORT_PRICE_INLINE } from "@/lib/constants";
 import type { PublicStatsSummary } from "@/lib/public-stats";
 import { LandingHero } from "./landing-hero";
 import { LandingSizzle } from "./landing-sizzle";
-import { LandingBeforeAfter } from "./landing-before-after";
 import { LandingPillars } from "./landing-pillars";
 import { LandingProvenance } from "./landing-provenance";
 import { LandingPricing } from "./landing-pricing";
 import { LandingFaq, faqItems } from "./landing-faq";
 import { LandingClose } from "./landing-close";
-import { buildHomeData } from "./landing-shared";
+import { buildHomeData, buildSampleView } from "./landing-shared";
+import type { MarketReport } from "@/lib/custom-report/report-data";
+import type { ReportLine } from "@/lib/custom-report/analysis";
+import { buildScenario } from "./subscribe/scenario";
 
 // TrackLink as a plain anchor that shows its event, so the markup says what each click records.
 vi.mock("@/components/track-link", () => ({
@@ -67,7 +69,54 @@ function district(n: number, overrides: Partial<DimensionBreakdown> = {}): Dimen
 
 const categories = [category("overdraft"), category("nsf"), category("monthly_maintenance"), category("stop_payment")];
 const districts = [district(1), district(2, { count: 3, median_amount: null }), district(12, { median_amount: 25 })];
-const data = buildHomeData(summary, categories, districts);
+function reportLine(
+  key: string,
+  label: string,
+  amount: number,
+  fee_name: string,
+  source_line: string,
+  position: ReportLine["position"],
+): ReportLine {
+  return {
+    key,
+    label,
+    own: { amount, fee_name, source_url: null, updated_at: null, schedule_read_on: "2026-10-08", source_line },
+    peers: { n: 9, p25: 20, median: 25, p75: 30, min: 10, max: 40 },
+    comparable: true,
+    position,
+    percentile: 50,
+    chargingLess: 4,
+    peerFigures: [],
+  };
+}
+
+// The sample's stored source rows can carry a neighbouring fee; only the cell that states the fee shows.
+const report = {
+  data: { subject: { institution_name: "Sample Bank", state_code: "MI", charter_type: "bank" } },
+  analysis: {
+    readiness: { competitorsWithData: 15 },
+    lines: [
+      reportLine("overdraft", "Overdraft (per item)", 10, "Overdraft (items paid)", "Overdraft (items paid)…… $10.00 | Lost Key…… $25.00", "below_market"),
+      reportLine("wire_intl_outgoing", "Outgoing international wire", 40, "Outgoing International Wires", "Zipper Bags (Small)…… $4.00 | Outgoing International Wires…… $40.00/ea", "below_market"),
+      reportLine("stop_payment", "Stop payment", 35, "Stop Payment", "Stop Payment…… $35.00 | Over $300 USD…… $40.00", "above_market"),
+      reportLine("cashiers_check", "Cashier's check", 4, "Cashier's Checks", "Activity/Statement Printout…… $5.00", "in_market"),
+    ],
+  },
+} as unknown as MarketReport;
+const ladder = {
+  institutionName: "Sample Bank",
+  feeLabel: "Overdraft (per item)",
+  value: 10,
+  rows: [
+    { label: "Local competitors", min: 15, q1: 22.5, median: 29.5, q3: 35, max: 36, institutions: 8 },
+    { label: "The nation", min: 0, q1: 25, median: 30, q3: 33, max: 50, institutions: 2493 },
+  ],
+};
+const data = buildHomeData(summary, categories, districts, {
+  sample: buildSampleView(report),
+  ladder,
+  scenario: buildScenario("Overdraft", categories[0]),
+});
 const text = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/&#x27;|&apos;/g, "'").replace(/&amp;/g, "&").replace(/\s+/g, " ");
 const words = (html: string) => text(html).split(" ").filter((w) => /[A-Za-z0-9$]/.test(w)).length;
 
@@ -76,7 +125,6 @@ const wholePage = () =>
     <>
       <LandingHero summary={summary} />
       <LandingSizzle data={data} />
-      <LandingBeforeAfter />
       <LandingPillars data={data} />
       <LandingProvenance summary={summary} />
       <LandingPricing />
@@ -131,16 +179,34 @@ describe("homepage (site v3 brief 06 §4.3)", () => {
     expect(renderToStaticMarkup(<LandingPricing />)).toContain("/reports?report=institution#request");
   });
 
-  it("shows provenance counts only where a live field exists", () => {
+  it("shows the provenance steps as one strip, with its count only where a live field exists", () => {
     const t = text(renderToStaticMarkup(<LandingProvenance summary={summary} />));
     for (const step of ["Schedule read", "Fee recorded", "Checked against source", "Published"]) expect(t).toContain(step);
     expect(t).toContain("5,678 fee entries from 1,234 institutions");
-    expect(t).toContain("4,321 institutions monitored");
-    const failed = text(
-      renderToStaticMarkup(<LandingProvenance summary={{ ...summary, observationsLabel: "—", monitoredLabel: "—" }} />),
-    );
-    expect(failed).not.toMatch(/fee entries|institutions monitored/);
+    const failed = text(renderToStaticMarkup(<LandingProvenance summary={{ ...summary, observationsLabel: "—" }} />));
+    expect(failed).not.toMatch(/fee entries/);
     expect(t).not.toMatch(/rolling calendar|every month/i);
+  });
+
+  it("quotes only source lines that pass the shared check, and never a neighbouring fee", () => {
+    expect(data.sample?.fees.map((f) => f.key)).toEqual(["overdraft", "wire_intl_outgoing", "stop_payment"]);
+    const t = text(renderToStaticMarkup(<LandingPillars data={data} />));
+    expect(t).toContain("Outgoing International Wires … $40.00/ea");
+    expect(t).not.toMatch(/Zipper|Lost Key|Over \$300|Statement Printout/);
+  });
+
+  it("draws a different exhibit in each pillar and each sizzle chapter", () => {
+    const pillars = renderToStaticMarkup(<LandingPillars data={data} />);
+    // Every market is the ladder; One workspace answers in figures, with no box plot.
+    expect(pillars).toContain("Sample Bank");
+    expect(pillars.match(/aria-label="Local competitors: market/g)?.length).toBe(1);
+    expect(pillars).not.toContain("the nation: market");
+    const sizzle = renderToStaticMarkup(<LandingSizzle data={data} />);
+    expect(sizzle).toContain("Try a price");
+    expect(text(sizzle)).toContain("Sample Bank against 15 local competitors");
+    const ask = renderToStaticMarkup(<LandingSizzle data={data} workspace="ask" topPadding />);
+    expect(ask).not.toContain("Scenario price");
+    expect(ask).toContain("pt-16");
   });
 
   it("keeps at most five short FAQ answers", () => {

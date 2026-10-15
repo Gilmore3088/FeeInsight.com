@@ -62,6 +62,26 @@ describe("product sizzle", () => {
     expect(frame().dataset.motion).toBe("off");
   });
 
+  it("stops advancing when reduced motion is turned on mid-run", () => {
+    let reduced = false;
+    const listeners = new Set<() => void>();
+    vi.stubGlobal("matchMedia", (query: string) => ({
+      get matches() {
+        return reduced && query.includes("reduce");
+      },
+      addEventListener: (_: string, fn: () => void) => listeners.add(fn),
+      removeEventListener: (_: string, fn: () => void) => listeners.delete(fn),
+    }));
+    renderSizzle();
+    tick(CHAPTER_MS);
+    expect(shown()).toBe("sizzle-two");
+    reduced = true;
+    act(() => listeners.forEach((fn) => fn()));
+    expect(frame().dataset.motion).toBe("off");
+    tick(CHAPTER_MS * 5);
+    expect(shown()).toBe("sizzle-two");
+  });
+
   it("jumps to a chapter tab and stops the run", () => {
     renderSizzle();
     fireEvent.click(screen.getByRole("button", { name: "THREE" }));

@@ -4,20 +4,21 @@ export const dynamic = "force-dynamic";
 import type { Metadata } from "next";
 import { getPublicSnapshot } from "@/lib/public-stats";
 import { CONTACT_EMAIL, LEGAL_ENTITY_NAME, PRODUCT_NAME, SITE_NAME, SITE_URL } from "@/lib/constants";
-import { sampleReportAvailable } from "@/lib/custom-report/sample-report";
+import { loadSampleReport, sampleReportAvailable } from "@/lib/custom-report/sample-report";
 import { ConsumerNav } from "@/components/consumer-nav";
 import { CustomerFooter } from "@/components/customer-footer";
 import { SearchModal } from "@/components/public/search-modal";
 import { getFeeCategoryDetailCached } from "@/lib/data-store/public-cached-reads";
 import { LandingHero } from "./landing-hero";
 import { LandingSizzle } from "./landing-sizzle";
-import { LandingBeforeAfter } from "./landing-before-after";
 import { LandingPillars } from "./landing-pillars";
 import { LandingProvenance } from "./landing-provenance";
 import { LandingPricing } from "./landing-pricing";
 import { LandingFaq } from "./landing-faq";
 import { LandingClose } from "./landing-close";
-import { buildHomeData } from "./landing-shared";
+import { buildHomeData, buildSampleView } from "./landing-shared";
+import { loadSampleLadder } from "./for-institutions/market-ladder";
+import { buildScenario } from "./subscribe/scenario";
 
 // The buyer promise from site v3 brief 08 §B.3 (h1) and its subhead; no counts, so nothing goes stale.
 const HOME_TITLE = `Know where your fees stand, with a source for every figure | ${SITE_NAME}`;
@@ -66,16 +67,28 @@ const WEBSITE_JSON_LD = {
 export default async function LandingPage() {
   // Counts and the national ranges come from one shared snapshot, so they match the fee
   // index, research hub and directory to the number. The district medians are the cached
-  // read /fees/overdraft already makes; a failed read only hides the district rows.
-  const [{ summary, categories }, sampleLive, overdraftDetail] = await Promise.all([
+  // read /fees/overdraft already makes; a failed read only hides the district rows. The
+  // live sample report (the same one /for-institutions and the sample page show) gives the
+  // named bank's fees, their source lines and its market ladder; a failed read hides them.
+  const [{ summary, categories }, sampleLive, sample, overdraftDetail] = await Promise.all([
     getPublicSnapshot(),
     sampleReportAvailable(),
+    loadSampleReport().catch((error: unknown) => {
+      console.error("[home] sample report read failed; sample exhibits hidden", error);
+      return null;
+    }),
     getFeeCategoryDetailCached("overdraft").catch((error: unknown) => {
       console.error("[home] overdraft district read failed; district rows hidden", error);
       return null;
     }),
   ]);
-  const data = buildHomeData(summary, categories, overdraftDetail?.by_fed_district);
+  const liveSample = sampleLive ? sample : null;
+  const ladder = liveSample ? await loadSampleLadder(liveSample, categories) : null;
+  const data = buildHomeData(summary, categories, overdraftDetail?.by_fed_district, {
+    sample: buildSampleView(liveSample),
+    ladder,
+    scenario: buildScenario("Overdraft", categories.find((c) => c.fee_category === "overdraft")),
+  });
 
   return (
     <div className="min-h-screen overflow-x-clip bg-paper consumer-brand">
@@ -91,7 +104,6 @@ export default async function LandingPage() {
       <main id="main-content">
         <LandingHero summary={summary} />
         <LandingSizzle data={data} />
-        <LandingBeforeAfter />
         <LandingPillars data={data} />
         <LandingProvenance summary={summary} />
         <LandingPricing />
