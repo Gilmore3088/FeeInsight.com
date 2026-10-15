@@ -881,6 +881,25 @@ export async function getStateFeeIndexes(stateCode: string): Promise<StateFeeInd
   return buildStateFeeIndexes(rows);
 }
 
+/**
+ * A Fed district's index overall and by charter, with each institution's own value, from one
+ * district-filtered query: the district page's board reads the same shape as the state page's.
+ */
+export async function getDistrictFeeIndexes(district: number): Promise<StateFeeIndexes> {
+  const rows = await sql.unsafe(
+    `SELECT ef.fee_category, ef.amount, ef.institution_id,
+            ef.review_status, ef.created_at, ct.charter_type
+       FROM published_fee_catalog ef
+       JOIN institution_sources ct ON ef.institution_id = ct.id
+      WHERE ct.fed_district = $1
+        AND ef.fee_category IS NOT NULL
+        AND ef.review_status = 'approved'
+        AND ${STATS_ROW_FILTER}`,
+    [district],
+  ) as IndexRow[];
+  return buildStateFeeIndexes(rows);
+}
+
 export interface PeerFeeValue {
   institution_id: number;
   institution_name: string;

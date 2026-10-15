@@ -2,7 +2,7 @@ import { cachedPublicRead } from "./public-read-cache";
 import { getDataFreshness, getPublicStats, getStats } from "./core";
 import { getDistrictMetrics } from "./dashboard";
 import { getCheapestAndMostExpensive, getFeeCategoryDetail } from "./fees";
-import { getPeerIndex, getStateFeeIndexes } from "./fee-index";
+import { getDistrictFeeIndexes, getPeerIndex, getStateFeeIndexes } from "./fee-index";
 import {
   getCitiesInState,
   getCityFeeAverages,
@@ -104,6 +104,11 @@ export const getStateFeeIndexesCached = cachedPublicRead(
   // v2: entries carry institution_values; older entries without them are not reused.
   "state-fee-indexes-v2",
   getStateFeeIndexes,
+  (indexes) => indexes.all.length === 0,
+);
+export const getDistrictFeeIndexesCached = cachedPublicRead(
+  "district-fee-indexes-v1",
+  getDistrictFeeIndexes,
   (indexes) => indexes.all.length === 0,
 );
 export const getStateEconomicContextCached = cachedPublicRead(
