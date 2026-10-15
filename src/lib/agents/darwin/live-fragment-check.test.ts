@@ -7,10 +7,14 @@ import {
   LIVE_FRAGMENT_BATCH,
   LIVE_FRAGMENT_CAP_WORDING,
   LIVE_FRAGMENT_CREDIT,
+  LIVE_FRAGMENT_CREDIT_WORD,
+  LIVE_FRAGMENT_IF_THRESHOLD_WORD,
   LIVE_FRAGMENT_REREAD_KIND,
+  LIVE_FRAGMENT_SQL_SPACES,
   LIVE_FRAGMENT_STRATEGY,
   liveFragmentCheckShape,
   liveFragmentCredit,
+  liveFragmentCreditHeaded,
   liveFragmentCapRefused,
   countLiveFragmentNames,
   findLiveFragments,
@@ -84,7 +88,7 @@ function dbFor(rows: Array<Record<string, unknown>>, cursor: string | null = nul
   return vi.fn((strings: TemplateStringsArray) => {
     const text = strings.join("?");
     if (text.includes("FROM agent_run_events")) return Promise.resolve(cursor == null ? [] : [{ next_after_id: cursor }]);
-    if (text.includes("lower(btrim(regexp_replace(fp.fee_name")) return existing == null ? Promise.reject(new Error("read failed")) : Promise.resolve(existing);
+    if (text.includes("lower(btrim(regexp_replace(translate(fp.fee_name")) return existing == null ? Promise.reject(new Error("read failed")) : Promise.resolve(existing);
     if (text.includes("FROM published_fee_records")) return Promise.resolve(rows);
     if (text.includes("UPDATE published_fee_records")) return Promise.resolve(rows.filter((row) => liveFragmentName(row.fee_name as string)).map((row) => ({ fee_published_id: row.fee_published_id })));
     return Promise.resolve([]);
@@ -240,7 +244,12 @@ describe("Darwin live fragment re-check", () => {
     const read = db.mock.calls.map(([strings]) => (strings as TemplateStringsArray).join("?")).find((text) => text.includes("lower(btrim(regexp_replace"));
     expect(read).toContain("fp.quarantined_at IS NULL");
     // postgres.js sends the cooked template text: the regex must reach Postgres as \s+, not s+.
-    expect(read).toContain("regexp_replace(fp.fee_name, '\\s+', ' ', 'g')");
+    expect(read).toContain("?), '\\s+', ' ', 'g')");
+    // Round 7 (#1521): the no-break spaces and U+FEFF read as spaces here too, as in JS's \s.
+    expect(read).toContain("regexp_replace(translate(fp.fee_name, ?, ?)");
+    const readCall = db.mock.calls.find(([strings]) => (strings as TemplateStringsArray).join("?").includes("lower(btrim(regexp_replace"));
+    expect(readCall).toContain(LIVE_FRAGMENT_SQL_SPACES);
+    expect(LIVE_FRAGMENT_SQL_SPACES).toBe("\u00a0\u2007\u202f\ufeff");
     expect(read).toContain("fr.source_document_id");
   });
 
@@ -356,13 +365,14 @@ describe("Darwin live fragment re-check", () => {
     expect(text).toContain("regexp_matches(readable, '(\\$\\s?)?(\\d");
     expect(text).toContain("WHERE m[1] IS NULL AND m[2] !~ '\\.\\d{2}$' AND NOT (amount < 100 AND m[2] !~ '\\.' AND m[3] IS NOT NULL)");
     // Round 6 (rev12): no-break spaces read as spaces, as in JS; a soft if/when refusal or a floor never takes a line down.
-    expect(text).toContain("translate(COALESCE(fp.fee_name, ''), U&'\\00A0\\2007\\202F', '   ')");
+    // Round 7 (#1521): U+FEFF too.
+    expect(text).toContain("translate(COALESCE(fp.fee_name, ''), U&'\\00A0\\2007\\202F\\FEFF', '    ')");
     expect(text).toContain("AS takedown_refused");
     expect(text).toContain("WHEN takedown_refused AND NOT (amount < 100) THEN 'fragment_reread'");
     expect(text).toContain("\\y(?:may\\s+therefore|");
     expect(text).toContain("(?:only\\s+)?(?:if|when)");
     expect(text).toContain("'^activation\\s+(?:fees?|charges?)$'");
-    expect(text).toContain("WHEN pattern = 'plus' OR amount IS NULL OR amount <= 0 OR (EXISTS (SELECT 1 FROM regexp_matches(name, ");
+    expect(text).toContain("WHEN pattern = 'plus' OR amount IS NULL OR amount <= 0 OR ((EXISTS (SELECT 1 FROM regexp_matches(name, ");
     expect(text).toContain("WHEN reason = 'reread' THEN 'reread'");
     expect(text).toContain("ELSE 'reread'");
     expect(text).toContain("WHEN reason IN ('fragment', 'fragment_reread', 'rename_duplicate') THEN 'takedown'");
@@ -444,7 +454,9 @@ describe("live fragment switch-on rules (#1443)", () => {
     ["Paper statements are available for a monthly paper statement fee of", 3, null, { pattern: "sentence_end", action: "reread" }],
     ["If your balance falls below $500 you will be charged a minimum balance fee of", 6, null, { pattern: "sentence_end", action: "reread" }],
     ["There will be a card replacement fee of", 10, null, { pattern: "sentence_end", action: "reread" }],
-    ["you will be charged an overdraft fee of", 35, null, { pattern: "sentence_end", action: "rename", renameTo: "Overdraft fee", renameVia: "tail" }],
+    // Round 7 (#1521): a line cut at its start (lower case) takes no tail rename; a capital lead still does.
+    ["you will be charged an overdraft fee of", 35, null, { pattern: "sentence_end", action: "reread" }],
+    ["You will be charged an overdraft fee of", 35, null, { pattern: "sentence_end", action: "rename", renameTo: "Overdraft fee", renameVia: "tail" }],
     ["The account is charged a fee of", 5, null, { pattern: "sentence_end", action: "reread" }],
     ["You will pay a service charge fee of", 5, null, { pattern: "sentence_end", action: "reread" }],
     ["You will pay a monthly fee of", 5, null, { pattern: "sentence_end", action: "reread" }],
@@ -1215,7 +1227,8 @@ describe("live fragment switch-on rules (#1443)", () => {
     ["Monthly Fee $100 minimum balance; you will", 100, null, { pattern: "pronoun", action: "reread" }],
     ["Monthly Fee $10 unless you keep $100 minimum balance; you will", 100, null, { pattern: "pronoun", action: "reread" }],
     ["Credit of $5 for e-statements if you", 5, null, { pattern: "pronoun", action: "takedown" }],
-    ["Paper Statement Fee; e-statement credit of $2 if you", 2, null, { pattern: "pronoun", action: "takedown" }],
+    // Round 7 (#1521): a credit after a fee head and a clause break, with no price of its own, is a reread.
+    ["Paper Statement Fee; e-statement credit of $2 if you", 2, null, { pattern: "pronoun", action: "reread" }],
     ["Overdraft Fee $35, refund credit of $35 if you", 35, null, { pattern: "pronoun", action: "reread" }],
     ["Overdraft Fee per item for items over $5. You will be charged", 5, null, { pattern: "pronoun", action: "reread" }],
     ["Overdraft Fee per item for items over $5. You will be charged", 35, null, { pattern: "pronoun", action: "reread" }],
@@ -1268,6 +1281,46 @@ describe("live fragment switch-on rules (#1443)", () => {
     ["Overdraft Fee Waiver You will be charged", 10, null, { pattern: "pronoun", action: "reread" }],
     ["Promotional Wire Fee You will be charged", 10, null, { pattern: "pronoun", action: "rename", renameTo: "Promotional Wire Fee", renameVia: "head" }],
     ["Introductory Monthly Fee You will be charged", 5, null, { pattern: "pronoun", action: "rename", renameTo: "Introductory Monthly Fee", renameVia: "head" }],
+    // Round 7 (#1521, review of bf43365e, probes rev13/probe8). An if-clause comparative that is a count, a
+    // duration or legal wording is no money threshold: kept live for a re-read at $100 too.
+    ["Legal Process Fee If we are served under a court order, you will be charged", 100, null, { pattern: "pronoun", action: "reread" }],
+    ["Garnishment Fee If more than one order is received, you will be charged", 100, null, { pattern: "pronoun", action: "reread" }],
+    ["Account Research Fee If research exceeds one hour, the", 100, null, { pattern: "sentence_end", action: "reread" }],
+    ["Inactivity Fee If the account is inactive for more than 12 months, the", 100, null, { pattern: "sentence_end", action: "reread" }],
+    ["Escheat Fee if the account is dormant for more than 3 years you will", 100, null, { pattern: "pronoun", action: "reread" }],
+    ["Safe Deposit Box Drilling Fee If you lose more than one key, you will be charged", 150, null, { pattern: "pronoun", action: "reread" }],
+    // ... a "$" or cents figure, "balance" or "minimum" after the comparative is still a threshold.
+    ["Monthly Fee If balance falls below $100, you will be charged", 100, null, { pattern: "pronoun", action: "takedown" }],
+    ["Monthly Fee If balance falls below 1,000.00, you will be charged", 1000, null, { pattern: "pronoun", action: "takedown" }],
+    ["Service Charge If your balance is under the minimum, you will be charged", 150, null, { pattern: "pronoun", action: "takedown" }],
+    ["Legal Process Fee If we receive a levy against your account balance, you will be charged", 125, null, { pattern: "pronoun", action: "reread" }],
+    // The credit guard reads a bare cents price as the fee's own, like "$".
+    ["Paper Statement Fee 3.00 per month; you will receive a credit of $3.00 if you", 3, null, { pattern: "pronoun", action: "reread" }],
+    // "credit union", "Credit Card", "Discount Brokerage", "Refund Check" are no credit wording for a bare "(-$N)".
+    ["Overdraft Fee (-$35) credit union members if you", 35, null, { pattern: "pronoun", action: "reread" }],
+    ["Overdraft Fee (-$35) Credit Card if you", 35, null, { pattern: "pronoun", action: "reread" }],
+    ["Overdraft Fee (-$35) Discount Brokerage if you", 35, null, { pattern: "pronoun", action: "reread" }],
+    ["Credit Card Late Fee (-$25) if you", 25, null, { pattern: "pronoun", action: "reread" }],
+    ["Discount Brokerage Fee (-$25) if you", 25, null, { pattern: "pronoun", action: "reread" }],
+    ["Overdraft Fee (-$35) credited back if you", 35, null, { pattern: "pronoun", action: "takedown" }],
+    ["Overdraft Fee (\u2212$35) refund if you", 35, null, { pattern: "pronoun", action: "takedown" }],
+    // A credit line with no price of its own after a fee head and a break is a reread; with no head, or a head with another price, it comes down.
+    ["Paper Statement Fee | credit of $3.00 if you", 3, null, { pattern: "pronoun", action: "reread" }],
+    ["Paper Statement Fee - e-statement discount of $2 if you", 2, null, { pattern: "pronoun", action: "reread" }],
+    ["Credit of $5 for e-statements; Overdraft Fee if you", 5, null, { pattern: "pronoun", action: "takedown" }],
+    ["Overdraft Fee $35; credit of $5 if you", 5, null, { pattern: "pronoun", action: "takedown" }],
+    // A lower-case tail lead was cut at its start: no tail rename.
+    ["accounts are charged an overdraft fee of", 38, null, { pattern: "sentence_end", action: "reread" }],
+    ["accounts are charged a monthly maintenance fee of", 5, null, { pattern: "sentence_end", action: "reread" }],
+    ["you'll be charged an overdraft fee of", 35, null, { pattern: "sentence_end", action: "reread" }],
+    ["Accounts are charged an overdraft fee of", 38, null, { pattern: "sentence_end", action: "rename", renameTo: "Overdraft fee", renameVia: "tail" }],
+    // Accepted in round 7, pending James (#1521): a floor still holds a cap or a "$N minimum balance" line as a
+    // reread; closing these the issue's way would add takedowns.
+    ["Overdraft Fee $35, maximum of $100 per day; $5 minimum if you", 100, null, { pattern: "pronoun", action: "reread" }],
+    ["Monthly Fee waived with $500 minimum balance; you will", 500, null, { pattern: "pronoun", action: "reread" }],
+    // U+FEFF reads as a space, as in JS's \s.
+    ["Overdraft\ufeffFee You will be charged", 35, null, { pattern: "pronoun", action: "rename", renameTo: "Overdraft Fee", renameVia: "head" }],
+    ["\ufeffOverdraft Fee You will be charged", 35, null, { pattern: "pronoun", action: "rename", renameTo: "Overdraft Fee", renameVia: "head" }],
   ] as const)("%j at $%s is %j", (name, amount, key, verdict) => {
     expect(liveFragmentVerdict(name, amount, key)).toEqual(verdict);
   });
@@ -1522,6 +1575,26 @@ describe("live fragment switch-on rules (#1443)", () => {
     expect(liveFragmentCredit("Paper Statement Fee $3.00 per month; you will receive a credit of $3.00 if you", 3)).toBe(false);
     expect(liveFragmentCredit("Overdraft Fee (-$35) if you", 35)).toBe(false);
     expect(liveFragmentCredit("Overdraft Fee (-$35) refund if you", 35)).toBe(true);
+    // Round 7 (#1521): whole credit words only, never a product or institution noun; a bare cents price is the fee's own.
+    expect(LIVE_FRAGMENT_CREDIT_WORD.test("credit union")).toBe(false);
+    expect(LIVE_FRAGMENT_CREDIT_WORD.test("Credit Card")).toBe(false);
+    expect(LIVE_FRAGMENT_CREDIT_WORD.test("Discount Brokerage")).toBe(false);
+    expect(LIVE_FRAGMENT_CREDIT_WORD.test("creditor")).toBe(false);
+    expect(LIVE_FRAGMENT_CREDIT_WORD.test("credited back")).toBe(true);
+    expect(LIVE_FRAGMENT_CREDIT_WORD.test("refund")).toBe(true);
+    expect(liveFragmentCredit("Overdraft Fee (-$35) credit union members if you", 35)).toBe(false);
+    expect(liveFragmentCredit("Paper Statement Fee 3.00 per month; you will receive a credit of $3.00 if you", 3)).toBe(false);
+    expect(liveFragmentCreditHeaded("Paper Statement Fee | credit of $3.00 if you")).toBe(true);
+    expect(liveFragmentCreditHeaded("Overdraft Fee $35; credit of $5 if you")).toBe(false);
+    expect(liveFragmentCreditHeaded("Monthly fee reduced by $2 for")).toBe(false);
+    expect(liveFragmentCreditHeaded("Credit of $5 for e-statements if you")).toBe(false);
+    // A comparative counts as an if-clause threshold only before a money figure, "balance" or "minimum".
+    expect(LIVE_FRAGMENT_IF_THRESHOLD_WORD.test(" If more than one order is received")).toBe(false);
+    expect(LIVE_FRAGMENT_IF_THRESHOLD_WORD.test(" If we are served under a court order")).toBe(false);
+    expect(LIVE_FRAGMENT_IF_THRESHOLD_WORD.test(" If the account is inactive for more than 12 months, the")).toBe(false);
+    expect(LIVE_FRAGMENT_IF_THRESHOLD_WORD.test(" If your balance is below $500")).toBe(true);
+    expect(LIVE_FRAGMENT_IF_THRESHOLD_WORD.test(" if balance is less than 1,000.00")).toBe(true);
+    expect(LIVE_FRAGMENT_IF_THRESHOLD_WORD.test(" if your account falls below the required minimum balance")).toBe(true);
     expect(LIVE_FRAGMENT_CREDIT.test("Overdraft Fee (- $35) per item")).toBe(false);
     expect(LIVE_FRAGMENT_CAP_WORDING.test("Max Checking Monthly Fee")).toBe(false);
     expect(LIVE_FRAGMENT_CAP_WORDING.test("MAXIMUM LATE CHARGE OF")).toBe(true);

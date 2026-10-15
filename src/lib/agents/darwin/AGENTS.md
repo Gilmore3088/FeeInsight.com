@@ -559,6 +559,36 @@ Darwin owns verification and classification.
       charge word on the line (`LIVE_FRAGMENT_OTHER_BANK`).
     - The count SQL turns U+00A0, U+2007 and U+202F into spaces before collapsing whitespace, as
       the JS does.
+  - Round 7 (#1521, review of bf43365e; still v6 and in shadow). Each change only moves a takedown
+    or a rename to a `reread`; none adds one (checked on every switch-on fixture and the rev9-rev13
+    probes):
+    - An if/when comparative (below, under, less, more, over, above, exceed..., least, greater)
+      counts as a threshold only when a "$" figure, a figure with cents or "balance" follows it
+      (`LIVE_FRAGMENT_IF_THRESHOLD_WORD`; "minimum" and "maximum" still count alone). A count, a
+      duration or legal wording is a reread at $100 too: "Legal Process Fee If we are served under
+      a court order, you will be charged" $100, "Garnishment Fee If more than one order is
+      received", "Account Research Fee If research exceeds one hour, the", "Inactivity Fee If the
+      account is inactive for more than 12 months, the". A bare "balance" no longer counts.
+    - The credit guard reads a bare figure with cents as the fee's own price, like "$"
+      (`LIVE_FRAGMENT_OWN_PRICE`: "Paper Statement Fee 3.00 per month; you will receive a credit of
+      $3.00 if you" $3 is a reread).
+    - `LIVE_FRAGMENT_CREDIT_WORD` is a whole word and never a product or institution noun: a
+      "(-$N)" line with "credit union", "Credit Card", "credit line", "Discount Brokerage" or
+      "Refund Check" is a reread.
+    - A credit line with no price of its own after a fee head and a cell or clause break
+      (`liveFragmentCreditHeaded`: "Paper Statement Fee | credit of $3.00 if you", "Paper Statement
+      Fee; e-statement credit of $2 if you") is a reread. With no head ("Credit of $5 for
+      e-statements") or a head with another price ("Overdraft Fee $35; credit of $5") it still comes
+      down.
+    - A tail rename needs a line that does not open in lower case (`LIVE_FRAGMENT_CUT_START`, as for
+      heads): "accounts are charged an overdraft fee of" and "you will be charged an overdraft fee
+      of" were cut at their start and are rereads.
+    - The count SQL and the duplicate-name read (`liveNamesFor`) turn U+00A0, U+2007, U+202F and
+      U+FEFF into spaces (`LIVE_FRAGMENT_SQL_SPACES`) before collapsing whitespace.
+    - Left as they are, pending James: a floor on the same line still holds a cap ("Overdraft Fee
+      $35, maximum of $100 per day; $5 minimum" $100) or an opening deposit as a reread, and "$N
+      minimum" still reads "$500 minimum balance" as a floor. Closing either the issue's way adds
+      takedowns.
 - Live hourly re-check (`hourly-frequency-check.ts`, #1456). About 802 live fees say in their name
   that they are priced by the hour ("Research Fee $25/hour", "Subpoena Fee - Per Hour") but carried
   no frequency or a per-item one, so a report read the price as a flat charge. `hourly` shows as "per

@@ -85,6 +85,13 @@ type SqlTag = typeof sql;
  * takedowns; a bare cents figure reads like "$"; a credit beside the same price is the fee; another
  * bank's charge comes down only with no fee word; the count SQL reads no-break spaces as spaces.
  *
+ * v6 round 7 (#1521, review of bf43365e, still v6 in shadow): only moves takedowns and renames to
+ * rereads. An if/when comparative is a threshold only before a money figure or "balance"; the credit
+ * guard reads a bare cents price; credit words are whole words and no product noun; a credit after a
+ * fee head with no price of its own is a `reread`; a tail rename never on a line cut at its start; the
+ * SQL reads U+FEFF (and, in `liveNamesFor`, the no-break spaces) as spaces. A floor beside a cap and
+ * "$N minimum balance" read as a floor are left as they are (closing them adds takedowns).
+ *
  * v2 (#1499, after a prod hand-check of v1): the head is read wider for `sentence_end` names and
  * generic or clause heads are refused (see `gluedSentenceHead`); a name that speaks of a minimum or
  * opening deposit is never renamed (`LIVE_FRAGMENT_OPENING_DEPOSIT`: its price is the deposit). A
@@ -219,8 +226,14 @@ export const LIVE_FRAGMENT_TAIL_REDUCED = /\b(?:small|low|minimal|nominal|lesser
  * v6 round 6 (#1499, rev12): a refused if/when clause takes a line down (at $100 or more) only when it
  * speaks of a balance or threshold or a figure in the line is the amount; otherwise ("Safe Deposit
  * Box Drilling Fee If keys are lost, you will be charged" $150) it is a `reread`.
+ * Round 7 (#1521): a comparative counts only when a "$" figure, a figure with cents or "balance"
+ * follows it (through "than", "of", articles and balance qualifiers); "minimum" and "maximum" still
+ * count on their own ("falls below the minimum"). A count, a duration or legal
+ * wording is no money threshold: "If we are served under a court order", "If more than one order is
+ * received", "If research exceeds one hour", "If the account is inactive for more than 12 months" are
+ * rereads at $100 too. A bare "balance" with no comparative before it no longer counts either.
  */
-export const LIVE_FRAGMENT_IF_THRESHOLD_WORD = /\b(?:balances?|below|under|less|more|over|above|exceed\w*|least|minimum|maximum|greater)\b/i;
+export const LIVE_FRAGMENT_IF_THRESHOLD_WORD = /\b(?:minimum|maximum)\b|\b(?:below|under|less|more|over|above|exceed\w*|least|greater)\s+(?:(?:than|of|to|the|your|a|an|required|minimum|daily|average|avg|ledger|collected|account)\s+)*(?:\$|\d[\d,]*\.\d{2}\b|balances?\b)/i;
 /** v6 round 5 (rev11): the balance-below form renames only under this amount ($25 and up is a `reread`). */
 export const LIVE_FRAGMENT_BALANCE_MAX = 25;
 /** v6 round 4: a rename target never carries a price or a count (C). */
@@ -263,9 +276,34 @@ export function liveFragmentCredit(name: string, amount: number): boolean {
   });
   // Round 6 (rev12): a dollar figure outside the credit phrase that is the amount is the fee's own price
   // ("Paper Statement Fee $3.00 per month; you will receive a credit of $3.00 if you" $3): no takedown.
-  return credited && ![...name.replace(new RegExp(LIVE_FRAGMENT_CREDIT.source, "gi"), " ").matchAll(LIVE_FRAGMENT_DOLLAR)].some((match) => Math.abs(figureValue(match[1]) - amount) < 0.005);
+  // Round 7 (#1521): a bare figure with cents ("Paper Statement Fee 3.00 per month; ...") is the price too.
+  return credited && ![...name.replace(new RegExp(LIVE_FRAGMENT_CREDIT.source, "gi"), " ").matchAll(LIVE_FRAGMENT_OWN_PRICE)].some((match) => Math.abs(figureValue(match[1] ?? match[2]) - amount) < 0.005);
 }
-export const LIVE_FRAGMENT_CREDIT_WORD = /\b(?:credit|discount|rebate|refund)/i;
+/**
+ * Round 7 (#1521): the credit guard's own-price read: a "$" figure (group 1) or a bare figure with
+ * cents ("3.00", group 2).
+ */
+export const LIVE_FRAGMENT_OWN_PRICE = /\$\s?(\d[\d,]*(?:\.\d{1,2})?)|\b(\d[\d,]*\.\d{2})\b/g;
+/**
+ * Round 6 (rev12): the wording a bare "(-$N)" needs to count as a credit. Round 7 (#1521): a whole word
+ * ("creditor" is none), and never a product or institution noun: "credit union", "Credit Card",
+ * "credit line" or "Discount Brokerage" is no credit.
+ */
+export const LIVE_FRAGMENT_CREDIT_WORD = /\b(?:credit(?:s|ed)?|discount(?:s|ed)?|rebates?|refund(?:s|ed)?)\b(?!\s+(?:unions?|cards?|lines?|limits?|reports?|checks?|inquir(?:y|ies)|bureaus?|scores?|builder|brokerage|broker)\b)/i;
+/**
+ * Round 7 (#1521): a credit line with no price of its own: before its first credit phrase it names a
+ * fee, then breaks the cell or clause (a "|", ";", ":", ",", a dash or a spaced hyphen: "Paper Statement
+ * Fee | credit of $3.00 if you", "Paper Statement Fee; e-statement credit of $2 if you"), and states no price before the credit. The fee's own price
+ * was cut, so the amount may be it: the line is a `reread`, never a takedown.
+ */
+export const LIVE_FRAGMENT_CREDIT_HEAD = /\b(?:fees?|charges?)\b.*(?:[|;:,–—]|\s-\s)/i;
+/** Round 7 (#1521): the line before its first credit phrase names a fee and no price (`LIVE_FRAGMENT_CREDIT_HEAD`). */
+export function liveFragmentCreditHeaded(name: string): boolean {
+  const at = name.search(new RegExp(LIVE_FRAGMENT_CREDIT.source, "i"));
+  if (at < 0) return false;
+  const before = name.slice(0, at);
+  return LIVE_FRAGMENT_CREDIT_HEAD.test(before) && !new RegExp(LIVE_FRAGMENT_OWN_PRICE.source).test(before);
+}
 /**
  * v6 (#1499): no fee of this bank at all: a worked example ("For example, if ...", "Example:",
  * "... Because the transact", 95216) or another bank's charge ("Bank sending the wire will
@@ -615,9 +653,12 @@ export function liveFragmentVerdictDetail(
   // v6 round 4 (#1499): a pronoun or sentence_end line comes down outright only when its amount is
   // $0 or unknown, the amount is a credit or discount, or the line opens on a worked example or
   // another bank's charge (`liveFragmentNotAFee`). Waiver wording alone never takes a priced fee down.
-  if (amount == null || amount <= 0 || liveFragmentCredit(current, amount) || liveFragmentNotAFee(current)) {
+  const credit = amount != null && amount > 0 && liveFragmentCredit(current, amount);
+  if (amount == null || amount <= 0 || (credit && !liveFragmentCreditHeaded(current)) || liveFragmentNotAFee(current)) {
     return verdict({ pattern, action: "takedown" });
   }
+  // Round 7 (#1521): a credit after a fee head with no price of its own is kept live for a re-read.
+  if (credit) return verdict({ pattern, action: "reread" });
   // Round 4: every refusal goes through one soft check: under $100 it is a `reread`, at $100 or more a
   // takedown with a re-read request. No rename either way.
   const soft = liveFragmentSoft(current, amount);
@@ -678,7 +719,10 @@ export function liveFragmentVerdictDetail(
     // v3: no head, so the fee its sentence ends on; v4: never when a figure in the line is the amount.
     // Round 4 (D): the whole line passes the rename bar.
     if (figureIsAmount) refused = true;
-    else if (LIVE_FRAGMENT_TAIL_LEAD.test(gluedReadable(current)) && !LIVE_FRAGMENT_RENAME_BAR.test(gluedReadable(current).replace(LIVE_FRAGMENT_TAIL_LEAD, ""))
+    // Round 7 (#1521): never on a line cut at its start ("accounts are charged an overdraft fee of": the
+    // cut-off text may hold the subject, "Business accounts"), as for a head (`LIVE_FRAGMENT_CUT_START`).
+    else if (!LIVE_FRAGMENT_CUT_START.test(gluedReadable(current))
+        && LIVE_FRAGMENT_TAIL_LEAD.test(gluedReadable(current)) && !LIVE_FRAGMENT_RENAME_BAR.test(gluedReadable(current).replace(LIVE_FRAGMENT_TAIL_LEAD, ""))
         && !LIVE_FRAGMENT_TAIL_REDUCED.test(gluedReadable(current).replace(LIVE_FRAGMENT_TAIL_LEAD, ""))) {
       // Round 5 (rev11): the line opens on a bare charge clause and the rest passes the bar.
       const tail = feeOfSentenceTail(current);
@@ -832,6 +876,16 @@ function withoutMatches(found: LiveFragmentFindings & { matches: LiveFragmentSam
 }
 
 /**
+ * Round 6/7 (#1499, #1521): the characters JS's `\s` reads as whitespace that Postgres's `\s` does not
+ * (glibc's UTF-8 classes leave out the no-break spaces and U+FEFF): the SQL reads each as a space first,
+ * so a name's collapsed form is the same on both sides.
+ */
+export const LIVE_FRAGMENT_SQL_SPACES = "\u00A0\u2007\u202F\uFEFF";
+export const LIVE_FRAGMENT_SQL_SPACES_TO = " ".repeat(LIVE_FRAGMENT_SQL_SPACES.length);
+/** The same characters as a Postgres Unicode escape literal, for the count SQL. */
+const LIVE_FRAGMENT_SQL_SPACES_LITERAL = `U&'${[...LIVE_FRAGMENT_SQL_SPACES].map((char) => `\\${char.codePointAt(0)!.toString(16).toUpperCase().padStart(4, "0")}`).join("")}'`;
+
+/**
  * The live names outside a read that the read's rename candidates could collide with: every live
  * fee (not rolled back or quarantined) of the candidates' banks whose collapsed, case-free name is
  * one of the new names. Null when the read fails.
@@ -848,7 +902,7 @@ async function liveNamesFor(db: SqlTag, rows: LiveFragmentRow[]): Promise<Set<st
        WHERE fp.rolled_back_at IS NULL
          AND fp.quarantined_at IS NULL
          AND fp.institution_id = ANY(${[...new Set(candidates.map((fee) => fee.institutionId))]}::bigint[])
-         AND lower(btrim(regexp_replace(fp.fee_name, '\\s+', ' ', 'g'))) = ANY(${[...new Set(candidates.map((fee) => (fee.renameTo ?? "").toLowerCase()))]}::text[])
+         AND lower(btrim(regexp_replace(translate(fp.fee_name, ${LIVE_FRAGMENT_SQL_SPACES}, ${LIVE_FRAGMENT_SQL_SPACES_TO}), '\\s+', ' ', 'g'))) = ANY(${[...new Set(candidates.map((fee) => (fee.renameTo ?? "").toLowerCase()))]}::text[])
     `);
     return new Set(existing.flatMap((row) => {
       const twin = liveTwinKey(row.institution_id, row.canonical_fee_key, row.amount, row.fee_name, row.source_document_id);
@@ -1240,6 +1294,10 @@ function postgresPattern(re: RegExp): string {
  * `LIVE_FRAGMENT_TAIL_LEAD` on `readable` and the bar on what follows it; "no fee of this bank" is a
  * plain start-anchored match; `first_is_amount` lifts the other-price gate; the figure gate reads
  * bare figures and threshold dollars only.
+ * Round 7 (#1521): the if/when threshold read, the credit's own-price read (`LIVE_FRAGMENT_OWN_PRICE`)
+ * and its credit word come from the same regexes; a credit line with a fee head and no price before
+ * its credit (`creditBefore`) is a `reread`; `rename_tail` needs `readable` not to open in lower case;
+ * U+FEFF joins the no-break spaces in the `translate`.
  */
 export function liveFragmentCountSql(): string {
   const re = LIVE_FRAGMENT_REGEXES;
@@ -1254,7 +1312,10 @@ export function liveFragmentCountSql(): string {
   const capDollar = postgresPattern(LIVE_FRAGMENT_CAP_DOLLAR);
   const unthresholded = `regexp_replace(regexp_replace(regexp_replace(name, '${postgresPattern(LIVE_FRAGMENT_THRESHOLD_DOLLAR)}', ' ', 'gi'), '${credit}', ' ', 'gi'), '${capDollar}', ' ', 'gi')`;
   const creditIsAmount = `(EXISTS (SELECT 1 FROM regexp_matches(name, '${credit}', 'gi') m WHERE (m[3] IS NULL OR name ~* '${postgresPattern(LIVE_FRAGMENT_CREDIT_WORD)}') AND abs(replace(COALESCE(m[1], m[2], m[3], m[4], m[5]), ',', '')::numeric - amount) < 0.005)`
-    + ` AND NOT EXISTS (SELECT 1 FROM regexp_matches(regexp_replace(name, '${credit}', ' ', 'gi'), '${dollar}', 'g') m WHERE abs(replace(m[1], ',', '')::numeric - amount) < 0.005))`;
+    + ` AND NOT EXISTS (SELECT 1 FROM regexp_matches(regexp_replace(name, '${credit}', ' ', 'gi'), '${postgresPattern(LIVE_FRAGMENT_OWN_PRICE)}', 'g') m WHERE abs(replace(COALESCE(m[1], m[2]), ',', '')::numeric - amount) < 0.005))`;
+  // Round 7 (#1521): the line before its first credit phrase names a fee and no price of its own.
+  const creditBefore = `regexp_replace(name, '(?:${credit}).*$', '', 'i')`;
+  const creditHeaded = `(${creditBefore} ~* '${postgresPattern(LIVE_FRAGMENT_CREDIT_HEAD)}' AND ${creditBefore} !~ '${postgresPattern(LIVE_FRAGMENT_OWN_PRICE)}')`;
   const notAFee = `(name ~* '${postgresPattern(LIVE_FRAGMENT_NOT_A_FEE)}' OR (name ~* '${postgresPattern(LIVE_FRAGMENT_OTHER_BANK)}' AND name !~* '${postgresPattern(LIVE_FRAGMENT_FEE_WORD)}'))`;
   const floor = `name ~* '${postgresPattern(LIVE_FRAGMENT_FLOOR_WORDING)}'`;
   const ifHard = `(rest ~* '${postgresPattern(LIVE_FRAGMENT_IF_THRESHOLD_WORD)}' OR COALESCE(figure_is_amount, false))`;
@@ -1276,7 +1337,7 @@ export function liveFragmentCountSql(): string {
   const target = (column: string) => `${column} !~ '${postgresPattern(LIVE_FRAGMENT_PRICE_IN_NAME)}' AND ${column} ~* '${postgresPattern(LIVE_FRAGMENT_FEE_NOUN)}' AND ${column} !~* '${postgresPattern(LIVE_FRAGMENT_SENTENCE_OPENER)}'`;
   return `WITH live AS (
   SELECT fp.fee_published_id, fp.institution_id, fp.canonical_fee_key, fp.amount, fr.source_document_id,
-         btrim(regexp_replace(translate(COALESCE(fp.fee_name, ''), U&'\\00A0\\2007\\202F', '   '), '\\s+', ' ', 'g')) AS name
+         btrim(regexp_replace(translate(COALESCE(fp.fee_name, ''), ${LIVE_FRAGMENT_SQL_SPACES_LITERAL}, '${LIVE_FRAGMENT_SQL_SPACES_TO}'), '\\s+', ' ', 'g')) AS name
     FROM published_fee_records fp
     LEFT JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
     LEFT JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
@@ -1342,13 +1403,14 @@ export function liveFragmentCountSql(): string {
   SELECT fee_published_id, institution_id, canonical_fee_key, amount, source_document_id, name, pattern, CASE
     WHEN pattern = 'pronoun' AND outside !~* '${postgresPattern(re.pronoun)}' THEN 'parenthetical'
     WHEN pattern = 'trailing_range' THEN CASE WHEN COALESCE(amount, -1) = 0 THEN 'fragment' WHEN name ~* '${waive}' THEN 'reread' ELSE 'trailing_range_priced' END
-    WHEN pattern = 'plus' OR amount IS NULL OR amount <= 0 OR ${creditIsAmount} OR ${notAFee} THEN 'fragment'
+    WHEN pattern = 'plus' OR amount IS NULL OR amount <= 0 OR (${creditIsAmount} AND NOT ${creditHeaded}) OR ${notAFee} THEN 'fragment'
+    WHEN ${creditIsAmount} THEN 'reread'
     WHEN price_elsewhere AND NOT hard_refused THEN 'reread'
     WHEN NOT gate_refused AND renamable AND NOT ${headBarred} AND ${target("head")}
          AND (exception_ok OR (head_ok AND NOT ${ifCondition} AND rest ~* '${postgresPattern(LIVE_FRAGMENT_CHARGE_SENTENCE)}')) THEN 'rename'
     WHEN pattern = 'sentence_end' AND NOT gate_refused AND renamable AND NOT head_ok AND NOT exception_ok AND readable ~* '${tailLead}' AND regexp_replace(readable, '${tailLead}', '', 'i') !~* '${bar}'
          AND regexp_replace(readable, '${tailLead}', '', 'i') !~* '${postgresPattern(LIVE_FRAGMENT_TAIL_REDUCED)}'
-         AND tail_ok AND ${target("tail")} THEN 'rename_tail'
+         AND readable !~ '${postgresPattern(LIVE_FRAGMENT_CUT_START)}' AND tail_ok AND ${target("tail")} THEN 'rename_tail'
     WHEN takedown_refused AND NOT (${soft}) THEN 'fragment_reread'
     ELSE 'reread'
   END AS first_reason,
