@@ -230,7 +230,7 @@ async function selectHeldFees(
              fr.amount,
              fr.frequency,
              fr.outlier_flags,
-             fr.conditions,
+             COALESCE(fr.extraction_note, fr.conditions) AS conditions,
              inst.institution_name,
              fr.source_document_id,
              upper(btrim(inst.state_code)) AS state_code,

@@ -369,7 +369,7 @@ export async function loadReviewLessons(db: SqlTag, keys: string[]): Promise<Rev
           FROM judged
       )
       SELECT ranked.canonical_fee_key, ranked.fee_name, ranked.amount, ranked.kind,
-             substring(fr.conditions FROM 'excerpt="(.*)"') AS excerpt
+             substring(COALESCE(fr.extraction_note, fr.conditions) FROM 'excerpt="(.*)"') AS excerpt
         FROM ranked
         LEFT JOIN raw_fee_observations fr ON fr.fee_raw_id = ranked.fee_raw_id
        WHERE ranked.rank <= CASE WHEN ranked.kind = 'restored'
@@ -506,7 +506,7 @@ async function selectReviewCandidates(db: SqlTag, limit: number, stateCode?: str
              fr.amount,
              fr.frequency,
              fr.outlier_flags,
-             fr.conditions,
+             COALESCE(fr.extraction_note, fr.conditions) AS conditions,
              inst.institution_name,
              fr.source_document_id,
              upper(btrim(inst.state_code)) AS state_code,

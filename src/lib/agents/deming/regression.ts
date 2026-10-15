@@ -181,7 +181,7 @@ async function loadNewTakedowns(db: SqlTag, limit: number): Promise<TakedownRow[
     SELECT f.id AS feedback_id, f.check_name, f.evidence->>'reason' AS reason,
            fp.fee_published_id, fp.institution_id, fp.canonical_fee_key, fp.fee_name, fp.amount,
            fp.amount_kind, fp.rate_percent, fp.source_url, fp.lineage_ref,
-           fv.fee_raw_id, fr.source, fr.source_document_id, fr.conditions
+           fv.fee_raw_id, fr.source, fr.source_document_id, COALESCE(fr.extraction_note, fr.conditions) AS conditions
       FROM pipeline_feedback f
       JOIN published_fee_records fp ON fp.fee_published_id = f.fee_published_id
       LEFT JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref

@@ -194,13 +194,13 @@ export async function recheckHeldRows(
   const institutionId = options.institutionId ?? null;
   const stateCode = options.stateCode?.trim().toUpperCase() || null;
   const rows = await db<HeldRow[]>`
-    SELECT fr.fee_raw_id, fr.amount, fr.conditions, fr.institution_id, fr.source_document_id,
+    SELECT fr.fee_raw_id, fr.amount, COALESCE(fr.extraction_note, fr.conditions) AS conditions, fr.institution_id, fr.source_document_id,
            fr.fee_name, fr.outlier_flags
       FROM raw_fee_observations fr
       JOIN institution_sources inst ON inst.id = fr.institution_id
      WHERE fr.source = 'knox'
        AND (fr.outlier_flags ? 'knox_review:unclassified'
-            OR (fr.outlier_flags ? 'knox_review:range' AND fr.conditions ~* ${CHANGED_PRICE_RANGE_SQL}))
+            OR (fr.outlier_flags ? 'knox_review:range' AND COALESCE(fr.extraction_note, fr.conditions) ~* ${CHANGED_PRICE_RANGE_SQL}))
        AND NOT fr.outlier_flags ? 'needs_darwin_verification'
        AND NOT fr.outlier_flags ? ${recheckFlag}
        AND (${institutionId}::int IS NULL OR fr.institution_id = ${institutionId}::int)
@@ -211,7 +211,7 @@ export async function recheckHeldRows(
           WHERE adt.source_document_id = fr.source_document_id
             AND adt.status = 'completed'
             AND adt.text_hash IS NOT NULL
-            AND position(('text_hash=' || adt.text_hash || ';') IN COALESCE(fr.conditions, '')) > 0
+            AND position(('text_hash=' || adt.text_hash || ';') IN COALESCE(COALESCE(fr.extraction_note, fr.conditions), '')) > 0
        )
      -- $10B+ banks first, as Knox's re-reads go: a full pass over every held line takes
      -- about 12 hours at 300 a step, and the largest banks' gaps show most.
@@ -246,7 +246,8 @@ export async function recheckHeldRows(
         UPDATE raw_fee_observations fr
            SET outlier_flags = (COALESCE(fr.outlier_flags, '[]'::jsonb) - 'knox_review:unclassified' - 'knox_review:range')
                                || ${JSON.stringify(flags)}::jsonb,
-               conditions = ${promotedConditions(row.conditions ?? "", candidate)},
+               extraction_note = ${promotedConditions(row.conditions ?? "", candidate)},
+               conditions = NULL,
                extraction_confidence = ${candidate.confidence},
                frequency = COALESCE(fr.frequency, ${candidate.frequency}),
                fee_name = ${promotedName(row, candidate)},
@@ -368,14 +369,14 @@ export async function previewHeldNameRules(
   const institutionId = options.institutionId ?? null;
   const stateCode = options.stateCode?.trim().toUpperCase() || null;
   const rows = await db<HeldRow[]>`
-    SELECT fr.fee_raw_id, fr.amount, fr.conditions, fr.institution_id, fr.source_document_id,
+    SELECT fr.fee_raw_id, fr.amount, COALESCE(fr.extraction_note, fr.conditions) AS conditions, fr.institution_id, fr.source_document_id,
            fr.fee_name, fr.outlier_flags
       FROM raw_fee_observations fr
       JOIN institution_sources inst ON inst.id = fr.institution_id
      WHERE fr.source = 'knox'
        AND fr.outlier_flags ? 'knox_review:unclassified'
        AND NOT fr.outlier_flags ? 'needs_darwin_verification'
-       AND substring(fr.conditions from 'excerpt="(.*)"') ~* ${HELD_NAME_PREFILTER_SQL}
+       AND substring(COALESCE(fr.extraction_note, fr.conditions) from 'excerpt="(.*)"') ~* ${HELD_NAME_PREFILTER_SQL}
        AND (${institutionId}::int IS NULL OR fr.institution_id = ${institutionId}::int)
        AND (${stateCode}::text IS NULL OR upper(btrim(inst.state_code)) = ${stateCode}::text)
        AND EXISTS (
@@ -384,7 +385,7 @@ export async function previewHeldNameRules(
           WHERE adt.source_document_id = fr.source_document_id
             AND adt.status = 'completed'
             AND adt.text_hash IS NOT NULL
-            AND position(('text_hash=' || adt.text_hash || ';') IN COALESCE(fr.conditions, '')) > 0
+            AND position(('text_hash=' || adt.text_hash || ';') IN COALESCE(COALESCE(fr.extraction_note, fr.conditions), '')) > 0
        )
      ORDER BY fr.fee_raw_id
      LIMIT ${limit}
@@ -465,7 +466,7 @@ export async function recheckUntracedRows(
   const institutionId = options.institutionId ?? null;
   const stateCode = options.stateCode?.trim().toUpperCase() || null;
   const rows = await db<Array<HeldRow & { document_text_id: number | string }>>`
-    SELECT fr.fee_raw_id, fr.amount, fr.conditions, fr.institution_id, fr.source_document_id,
+    SELECT fr.fee_raw_id, fr.amount, COALESCE(fr.extraction_note, fr.conditions) AS conditions, fr.institution_id, fr.source_document_id,
            fr.fee_name, fr.outlier_flags, adt.id AS document_text_id
       FROM raw_fee_observations fr
       JOIN institution_sources inst ON inst.id = fr.institution_id
@@ -473,7 +474,7 @@ export async function recheckUntracedRows(
         ON adt.source_document_id = fr.source_document_id
        AND adt.status = 'completed'
        AND adt.text_hash IS NOT NULL
-       AND position(('text_hash=' || adt.text_hash || ';') IN COALESCE(fr.conditions, '')) > 0
+       AND position(('text_hash=' || adt.text_hash || ';') IN COALESCE(COALESCE(fr.extraction_note, fr.conditions), '')) > 0
      WHERE fr.source = 'knox'
        AND fr.outlier_flags ? 'knox_review:untraced'
        AND NOT fr.outlier_flags ? 'needs_darwin_verification'
@@ -510,7 +511,8 @@ export async function recheckUntracedRows(
       const updated = await db`
         UPDATE raw_fee_observations fr
            SET outlier_flags = (COALESCE(fr.outlier_flags, '[]'::jsonb) - 'knox_review:untraced') || ${JSON.stringify(flags)}::jsonb,
-               conditions = ${conditions},
+               extraction_note = ${conditions},
+               conditions = NULL,
                extraction_confidence = ${read.confidence},
                frequency = COALESCE(fr.frequency, ${read.frequency})
          WHERE fr.fee_raw_id = ${Number(row.fee_raw_id)}
@@ -619,12 +621,12 @@ export async function recheckSupersededRows(
   // Only a document's current copy can bring a line back (before the copy migration, none).
   if (!(await currentCopySchemaReady(db))) return empty;
   const rows = await db<Array<HeldRow & { document_text_id: number | string; text_hash: string; has_live_twin: boolean }>>`
-    SELECT fr.fee_raw_id, fr.amount, fr.conditions, fr.institution_id, fr.source_document_id,
+    SELECT fr.fee_raw_id, fr.amount, COALESCE(fr.extraction_note, fr.conditions) AS conditions, fr.institution_id, fr.source_document_id,
            fr.fee_name, fr.outlier_flags, adt.id AS document_text_id, adt.text_hash,
            EXISTS (
              SELECT 1 FROM published_fee_catalog pc
               WHERE pc.institution_id = fr.institution_id
-                AND pc.fee_category = substring(fr.conditions FROM 'canonical_hint=([a-z_]+);')
+                AND pc.fee_category = substring(COALESCE(fr.extraction_note, fr.conditions) FROM 'canonical_hint=([a-z_]+);')
                 AND pc.amount = fr.amount
            ) AS has_live_twin
       FROM raw_fee_observations fr
@@ -687,7 +689,8 @@ export async function recheckSupersededRows(
       const updated = await db`
         UPDATE raw_fee_observations fr
            SET outlier_flags = (COALESCE(fr.outlier_flags, '[]'::jsonb) - 'superseded_by_reread') || ${JSON.stringify(flags)}::jsonb,
-               conditions = ${supersededConditions(row.conditions, row.text_hash, row.document_text_id)},
+               extraction_note = ${supersededConditions(row.conditions, row.text_hash, row.document_text_id)},
+               conditions = NULL,
                extraction_confidence = ${read.confidence},
                frequency = COALESCE(fr.frequency, ${read.frequency})
          WHERE fr.fee_raw_id = ${Number(row.fee_raw_id)}
@@ -864,7 +867,7 @@ export async function refileSupersededRows(
     total: number | string; decided_total: number | string; institutions: number | string;
   }>>`
     WITH candidates AS (
-    SELECT fr.fee_raw_id, fr.amount, fr.conditions, fr.institution_id, fr.source_document_id,
+    SELECT fr.fee_raw_id, fr.amount, COALESCE(fr.extraction_note, fr.conditions) AS conditions, fr.institution_id, fr.source_document_id,
            fr.fee_name, fr.outlier_flags, adt.id AS document_text_id, adt.text_hash,
            EXISTS (
              SELECT 1 FROM pipeline_attempts pa
@@ -943,7 +946,8 @@ export async function refileSupersededRows(
       const updated = await db`
         UPDATE raw_fee_observations fr
            SET outlier_flags = ${JSON.stringify(refiledFlags(flagList(row.outlier_flags), read.canonicalHint, oldHint))}::jsonb,
-               conditions = ${refiledConditions(row.conditions, read.canonicalHint, row.text_hash, row.document_text_id)},
+               extraction_note = ${refiledConditions(row.conditions, read.canonicalHint, row.text_hash, row.document_text_id)},
+               conditions = NULL,
                extraction_confidence = ${read.confidence},
                frequency = COALESCE(fr.frequency, ${read.frequency})
          WHERE fr.fee_raw_id = ${id}
@@ -976,14 +980,14 @@ export async function refileSupersededRows(
      WHERE fr.source = 'knox'
        AND fr.outlier_flags ? 'knox_reread_took_over'
        AND NOT EXISTS (SELECT 1 FROM verified_fee_observations fv WHERE fv.fee_raw_id = fr.fee_raw_id)
-       AND substring(fr.conditions FROM 'canonical_hint=([a-z0-9_]+);') IS NOT NULL
+       AND substring(COALESCE(fr.extraction_note, fr.conditions) FROM 'canonical_hint=([a-z0-9_]+);') IS NOT NULL
        AND (
          SELECT kept.flag #>> '{}'
            FROM jsonb_array_elements(fr.outlier_flags) WITH ORDINALITY AS kept(flag, ord)
           WHERE kept.flag #>> '{}' LIKE 'canonical_hint:%'
           ORDER BY kept.ord
           LIMIT 1
-       ) IS DISTINCT FROM 'canonical_hint:' || substring(fr.conditions FROM 'canonical_hint=([a-z0-9_]+);')
+       ) IS DISTINCT FROM 'canonical_hint:' || substring(COALESCE(fr.extraction_note, fr.conditions) FROM 'canonical_hint=([a-z0-9_]+);')
        AND (${institutionId}::int IS NULL OR fr.institution_id = ${institutionId}::int)
      ORDER BY fr.fee_raw_id
      LIMIT ${limit}
@@ -992,7 +996,7 @@ export async function refileSupersededRows(
   if (!dryRun && stale.length > 0) {
     const repaired = await db`
       UPDATE raw_fee_observations fr
-         SET outlier_flags = jsonb_build_array('canonical_hint:' || substring(fr.conditions FROM 'canonical_hint=([a-z0-9_]+);'))
+         SET outlier_flags = jsonb_build_array('canonical_hint:' || substring(COALESCE(fr.extraction_note, fr.conditions) FROM 'canonical_hint=([a-z0-9_]+);'))
                              || COALESCE((
                                   SELECT jsonb_agg(kept.flag ORDER BY kept.ord)
                                     FROM jsonb_array_elements(fr.outlier_flags) WITH ORDINALITY AS kept(flag, ord)
@@ -1059,7 +1063,7 @@ export async function recheckPromotedRows(
   const checkedFlag = promotionCheckedFlag();
   const institutionId = options.institutionId ?? null;
   const rows = await db<HeldRow[]>`
-    SELECT fr.fee_raw_id, fr.amount, fr.conditions, fr.institution_id, fr.source_document_id,
+    SELECT fr.fee_raw_id, fr.amount, COALESCE(fr.extraction_note, fr.conditions) AS conditions, fr.institution_id, fr.source_document_id,
            fr.fee_name, fr.outlier_flags
       FROM raw_fee_observations fr
      WHERE fr.source = 'knox'
@@ -1095,7 +1099,8 @@ export async function recheckPromotedRows(
                                  - ${`canonical_hint:${hint}`}
                                  - ${HELD_RECHECK_PROMOTED_FLAG})
                                || ${JSON.stringify(["knox_review:unclassified", heldRecheckFlag(), promotionWithdrawnFlag()])}::jsonb,
-               conditions = ${heldConditions(row.conditions ?? "")}
+               extraction_note = ${heldConditions(row.conditions ?? "")},
+               conditions = NULL
          WHERE fr.fee_raw_id = ${Number(row.fee_raw_id)}
            AND fr.outlier_flags ? ${HELD_RECHECK_PROMOTED_FLAG}
            AND NOT EXISTS (
@@ -1205,7 +1210,7 @@ export async function recheckHeldRates(
   const institutionId = options.institutionId ?? null;
   const stateCode = options.stateCode?.trim().toUpperCase() || null;
   const rows = await db<HeldRateRow[]>`
-    SELECT fr.fee_raw_id, fr.source_document_id, fr.fee_name, fr.conditions, fr.frequency,
+    SELECT fr.fee_raw_id, fr.source_document_id, fr.fee_name, COALESCE(fr.extraction_note, fr.conditions) AS conditions, fr.frequency,
            ARRAY(SELECT jsonb_array_elements_text(COALESCE(fr.outlier_flags, '[]'::jsonb))) AS outlier_flags,
            adt.normalized_text
       FROM raw_fee_observations fr
@@ -1216,7 +1221,7 @@ export async function recheckHeldRates(
          WHERE t.source_document_id = fr.source_document_id
            AND t.status = 'completed'
            AND t.text_hash IS NOT NULL
-           AND position(('text_hash=' || t.text_hash || ';') IN COALESCE(fr.conditions, '')) > 0
+           AND position(('text_hash=' || t.text_hash || ';') IN COALESCE(COALESCE(fr.extraction_note, fr.conditions), '')) > 0
          ORDER BY t.id DESC
          LIMIT 1
       ) adt ON true
@@ -1253,7 +1258,8 @@ export async function recheckHeldRates(
            SET outlier_flags = (COALESCE(fr.outlier_flags, '[]'::jsonb) - 'knox_review:percentage' - ${oldHints}::text[])
                                || ${JSON.stringify(flags)}::jsonb,
                fee_name = ${rate.feeName},
-               conditions = ${(row.conditions ?? "").replace(/^Knox held for review \(percentage\)/, `Knox rate rules v${HELD_RATE_RECHECK_VERSION} read a percentage fee held for review`).replace(/canonical_hint=[^;]*;/, `canonical_hint=${rate.canonicalHint};`)},
+               extraction_note = ${(row.conditions ?? "").replace(/^Knox held for review \(percentage\)/, `Knox rate rules v${HELD_RATE_RECHECK_VERSION} read a percentage fee held for review`).replace(/canonical_hint=[^;]*;/, `canonical_hint=${rate.canonicalHint};`)},
+               conditions = NULL,
                amount_kind = 'percent',
                rate_percent = ${rate.ratePercent},
                rate_min_amount = ${rate.rateMinAmount},

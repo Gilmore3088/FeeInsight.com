@@ -116,7 +116,7 @@ async function selectLiveGuardedFees(db: SqlTag, institutionId?: number): Promis
   if (institutionId) {
     return db<LivePublishedRow[]>`
       SELECT fp.fee_published_id, fp.lineage_ref, fp.institution_id, fr.source_document_id, fp.canonical_fee_key, fp.fee_name,
-             fp.amount, fr.conditions, ${documentNsfAmount(db)}
+             fp.amount, COALESCE(fr.extraction_note, fr.conditions) AS conditions, ${documentNsfAmount(db)}
         FROM published_fee_records fp
         LEFT JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
         LEFT JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
@@ -128,7 +128,7 @@ async function selectLiveGuardedFees(db: SqlTag, institutionId?: number): Promis
   }
   return db<LivePublishedRow[]>`
     SELECT fp.fee_published_id, fp.lineage_ref, fp.institution_id, fr.source_document_id, fp.canonical_fee_key, fp.fee_name,
-           fp.amount, fr.conditions, ${documentNsfAmount(db)}
+           fp.amount, COALESCE(fr.extraction_note, fr.conditions) AS conditions, ${documentNsfAmount(db)}
       FROM published_fee_records fp
       LEFT JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
       LEFT JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
@@ -560,7 +560,7 @@ async function restorePassingTakedowns(
   try {
     rows = await inSavepoint(db, (scope) => scope<TakenDownRow[]>`
       SELECT fp.fee_published_id, fp.lineage_ref, fp.institution_id, fr.source_document_id, fp.canonical_fee_key,
-             fp.fee_name, fp.amount, fr.conditions, ${documentNsfAmount(scope)}
+             fp.fee_name, fp.amount, COALESCE(fr.extraction_note, fr.conditions) AS conditions, ${documentNsfAmount(scope)}
         FROM published_fee_records fp
         LEFT JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
         LEFT JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
