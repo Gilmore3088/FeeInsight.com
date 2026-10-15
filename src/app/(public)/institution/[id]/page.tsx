@@ -287,7 +287,7 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
   const headlineRows: HeadlineRow[] = pickHeadlineRows(verifiedFees, HEADLINE_FEE_KEYS)
     .map((fee) => ({
       category: fee.fee_category as string,
-      label: getDisplayName(fee.fee_category as string).replace(/\s*\([^)]*\)/g, ""),
+      label: getDisplayName(fee.fee_category as string),
       amount: fee.amount as number,
       sourceUrl: fee.source_url ?? inst.fee_schedule_url ?? null,
       state: marketBand(stateByCategory.get(fee.fee_category as string)),
@@ -337,10 +337,15 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
           />
 
           <div className="space-y-10 sm:space-y-14">
-            <MarketPosition rows={headlineRows} stateLabel={stateHasBands ? stateName : null} kind={kind} />
+            <MarketPosition
+              rows={headlineRows}
+              stateLabel={stateHasBands ? stateName : null}
+              stateCode={stateHasBands ? inst.state_code : null}
+              kind={kind}
+            />
 
             {!thinProfile && (positionCounts.below + positionCounts.within + positionCounts.above > 0 || peerRank) && (
-              <div className="grid gap-3 lg:grid-cols-2">
+              <div className={`grid gap-3 ${peerRank ? "lg:grid-cols-2" : ""}`}>
                 <PositionSummary counts={positionCounts} />
                 {peerRank && <PeerRankTeaser rank={peerRank} />}
               </div>
@@ -389,7 +394,7 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
             institutionName={inst.institution_name}
             rows={headlineRows.slice(0, HAMILTON_ROWS_SHOWN)}
             marketLabel={marketLabel}
-            stateLabel={stateHasBands ? stateName : null}
+            stateLabel={stateHasBands ? inst.state_code : null}
             plansHref={links.plansHref}
             reportOfferHref={links.reportOfferHref}
           />

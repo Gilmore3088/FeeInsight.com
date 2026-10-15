@@ -77,7 +77,7 @@ export function MarketRange({
   const summary = `${label}: middle half ${money(band.p25)} to ${money(band.p75)}, median ${money(band.median)}, ${band.institutions} institutions; this fee ${money(amount)}, ${VERDICT[position].toLowerCase()} the middle half`;
   const dark = tone === "dark";
   return (
-    <div className="grid grid-cols-[3.25rem_minmax(0,1fr)] items-center gap-3">
+    <div className="grid grid-cols-[2.25rem_minmax(0,1fr)] items-center gap-2">
       <span className={`text-[12px] font-medium ${dark ? "text-warm-ink-300" : "text-ink-muted"}`}>{label}</span>
       <span role="img" aria-label={summary} className="relative block h-6">
         <span
@@ -124,7 +124,7 @@ function Legend({ kind }: { kind: string }) {
   );
 }
 
-function HeadlineCard({ row, stateLabel }: { row: HeadlineRow; stateLabel: string | null }) {
+function HeadlineCard({ row, stateLabel, stateCode }: { row: HeadlineRow; stateLabel: string | null; stateCode: string | null }) {
   const domainMax = rangeDomain(row.amount, [row.state, row.nation]);
   const reference = row.state ?? row.nation;
   const position = reference ? positionIn(row.amount, reference) : null;
@@ -141,7 +141,7 @@ function HeadlineCard({ row, stateLabel }: { row: HeadlineRow; stateLabel: strin
         </p>
       )}
       <div className="mt-3 space-y-1">
-        {row.state && stateLabel && <MarketRange label={stateLabel} band={row.state} amount={row.amount} domainMax={domainMax} />}
+        {row.state && stateLabel && <MarketRange label={stateCode ?? stateLabel} band={row.state} amount={row.amount} domainMax={domainMax} />}
         {row.nation && <MarketRange label="U.S." band={row.nation} amount={row.amount} domainMax={domainMax} />}
       </div>
       {row.sourceUrl && (
@@ -163,9 +163,12 @@ function HeadlineCard({ row, stateLabel }: { row: HeadlineRow; stateLabel: strin
 export function MarketPosition({
   rows,
   stateLabel,
+  stateCode,
   kind,
 }: {
   rows: HeadlineRow[];
+  /** "TX", the short label beside each state bar so every bar starts at the same point. */
+  stateCode: string | null;
   /** "Texas"; null when the state has too few institutions for a median. */
   stateLabel: string | null;
   /** "bank" or "credit union", for the legend. */
@@ -182,7 +185,7 @@ export function MarketPosition({
       </div>
       <ul className="overflow-hidden rounded-xl border border-border bg-surface-0 shadow-fi-1 sm:grid sm:grid-cols-2 sm:gap-3 sm:overflow-visible sm:border-0 sm:bg-transparent sm:shadow-none lg:grid-cols-3">
         {rows.map((row) => (
-          <HeadlineCard key={row.category} row={row} stateLabel={stateLabel} />
+          <HeadlineCard key={row.category} row={row} stateLabel={stateLabel} stateCode={stateCode} />
         ))}
       </ul>
     </section>

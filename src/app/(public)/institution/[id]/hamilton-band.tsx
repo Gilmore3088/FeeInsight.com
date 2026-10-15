@@ -58,7 +58,7 @@ function HamiltonView({
             return (
               <li key={row.category}>
                 <div className="flex items-baseline justify-between gap-3 text-[13px]">
-                  <span className="text-warm-ink-50">{row.label}</span>
+                  <span className="min-w-0 text-warm-ink-50">{row.label}</span>
                   <span className="font-mono font-semibold tabular-nums text-warm-ink-50">{formatFeeAmount(row.amount)}</span>
                 </div>
                 <MarketRange

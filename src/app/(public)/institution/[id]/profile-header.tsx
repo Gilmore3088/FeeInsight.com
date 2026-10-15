@@ -104,10 +104,10 @@ export function ProfileHeader({
       <h1 className="mt-3 max-w-4xl break-words text-[34px] font-semibold leading-[1.02] tracking-[-0.035em] text-ink sm:text-[52px]">
         {name}
       </h1>
-      <p className="mt-3 flex flex-wrap gap-x-2 gap-y-1 text-[14px] text-ink-soft">
+      <p className="mt-3 text-[14px] leading-6 text-ink-soft">
         {facts.map((fact, i) => (
-          <span key={i} className="inline-flex items-center gap-2">
-            {i > 0 && <span aria-hidden="true" className="text-control-border">·</span>}
+          <span key={i}>
+            {i > 0 && <span aria-hidden="true" className="px-1.5 text-control-border">·</span>}
             {fact}
           </span>
         ))}
