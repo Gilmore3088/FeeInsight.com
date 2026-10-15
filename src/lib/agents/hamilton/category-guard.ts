@@ -393,13 +393,16 @@ function restoreRefile(canonicalFeeKey: string, feeName: string): string | null 
 }
 
 /**
- * A live fee at the same bank, type and price is the same fee only when it carries the same name,
- * or when both are excess activity fees. A bank's unrelated account research fee at the same price
- * ("Reconciliation" $5, "Return Mail, per item" $5, "Returned mail (monthly)" $3, "Account
- * research" $25) is not a twin of its excess withdrawal fee (124670, 135850, 142436; #1283 review,
- * Oct 15). A live fee reads as an excess activity fee by its name; the fee being moved also by its
- * own source line (`refileFromLine`), since those are named "Service charge" or "Maintenance fee".
- * The same pattern runs in TS and as a Postgres regex.
+ * Which live fee is the same fee as one being moved. Moving any fee but an excess activity fee, a
+ * live fee of the target type at the same bank and price is its twin, whatever its name: an
+ * express card replacement's twin is the bank's live rush card fee at that price (235 and 100126),
+ * and two express card lines at one price are one fee (350 and 27687 at institution 6042).
+ * Moving an excess activity fee (guard v62), the bank's unrelated account research fee at the same
+ * price is not its twin ("Reconciliation" $5, "Return Mail, per item" $5, "Returned mail
+ * (monthly)" $3, "Account research" $25 beside 124670, 135850 and 142436; #1283 review, Oct 15):
+ * only a fee with the same name, or another excess activity fee, is. A live fee reads as an excess
+ * activity fee by its name; the fee being moved also by its own source line (`refileFromLine`),
+ * since those are named "Service charge" or "Maintenance fee". The pattern runs in TS and Postgres.
  */
 const EXCESS_ACTIVITY_NAME_PATTERN = String.raw`(excess|withdraw|over[- ]?limit|transaction limit)`;
 const EXCESS_ACTIVITY_NAME = new RegExp(EXCESS_ACTIVITY_NAME_PATTERN, "i");
@@ -418,8 +421,9 @@ export function movesExcessActivityFee(restore: Restore): boolean {
 }
 
 /**
- * Pure: the refiles that stay, one per bank, type, price and fee. Two copies of one line (same
- * name) are one fee, and so are two excess activity fees at one price; any other pair is two fees.
+ * Pure: the refiles that stay, one per bank, type, price and fee. Two refiles at one bank, type and
+ * price are one fee, unless one of them moves an excess activity fee: then they are one fee only
+ * with the same name or when both are excess activity fees.
  */
 export function uniqueRefiles(refiles: Restore[]): LiveRefile[] {
   const kept: LiveRefile[] = [];
@@ -429,7 +433,9 @@ export function uniqueRefiles(refiles: Restore[]): LiveRefile[] {
       String(other.row.institution_id) === String(candidate.row.institution_id) &&
       other.to === candidate.to &&
       normalizedAmount(other.row.amount) === normalizedAmount(candidate.row.amount) &&
-      (nameKey(other.row.fee_name) === nameKey(candidate.row.fee_name) || (other.excess && candidate.excess)));
+      (!(other.excess || candidate.excess) ||
+        nameKey(other.row.fee_name) === nameKey(candidate.row.fee_name) ||
+        (other.excess && candidate.excess)));
     if (!same) kept.push(candidate);
   }
   return kept;
@@ -437,9 +443,9 @@ export function uniqueRefiles(refiles: Restore[]): LiveRefile[] {
 
 /**
  * Moves live fees the guard fails to the top-50 type `restoreTarget` gives them, published and
- * verified rows alike, unless the same fee is already live there: a live fee of that type and price
- * with the same name, or, when an excess activity fee moves, a live excess activity fee. Each move
- * is logged as a fold. Returns the ids moved (a dry run counts every candidate).
+ * verified rows alike, unless the same fee is already live there: any live fee of that type and
+ * price, or, when an excess activity fee moves, one with the same name or an excess activity name.
+ * Each move is logged as a fold. Returns the ids moved (a dry run runs the same test, read only).
  */
 async function refileLiveFees(
   db: SqlTag,
@@ -471,8 +477,9 @@ async function wouldRefile(db: SqlTag, unique: LiveRefile[]): Promise<Set<number
               AND live.institution_id = fp.institution_id
               AND live.canonical_fee_key = v.to_key
               AND live.amount IS NOT DISTINCT FROM fp.amount
-              AND (lower(btrim(live.fee_name)) = lower(btrim(fp.fee_name))
-                   OR (v.excess AND live.fee_name ~* ${EXCESS_ACTIVITY_NAME_PATTERN}))
+              AND (NOT v.excess
+                   OR lower(btrim(live.fee_name)) = lower(btrim(fp.fee_name))
+                   OR live.fee_name ~* ${EXCESS_ACTIVITY_NAME_PATTERN})
          )
     `);
     return new Set(rows.map((row) => Number(row.fee_published_id)));
@@ -505,8 +512,9 @@ async function applyLiveRefiles(
                 AND live.institution_id = fp.institution_id
                 AND live.canonical_fee_key = v.to_key
                 AND live.amount IS NOT DISTINCT FROM fp.amount
-                AND (lower(btrim(live.fee_name)) = lower(btrim(fp.fee_name))
-                     OR (v.excess AND live.fee_name ~* ${EXCESS_ACTIVITY_NAME_PATTERN}))
+                AND (NOT v.excess
+                     OR lower(btrim(live.fee_name)) = lower(btrim(fp.fee_name))
+                     OR live.fee_name ~* ${EXCESS_ACTIVITY_NAME_PATTERN})
            )
         RETURNING fp.fee_published_id, fp.lineage_ref, fp.canonical_fee_key
       `;

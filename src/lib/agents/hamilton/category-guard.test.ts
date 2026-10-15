@@ -223,11 +223,17 @@ describe("Hamilton category guard repair", () => {
     // A plain hand re-file is not an excess activity fee: only a same-name live fee stops it.
     const research = { ...fee(95142, 8581, "Money Order Research Fee", "10.00", "x"), canonical_fee_key: "money_order", conditions: null };
     expect(movesExcessActivityFee({ row: research, to: "account_research" })).toBe(false);
-    // Two copies of one line are one fee; two different fees at one price are two.
+    // Two copies of one line are one fee; an excess fee and an unrelated fee at one price are two.
     const copy = { ...maintenance, fee_published_id: 999 };
     const other = { ...research, institution_id: 5502, amount: "5.00" };
     expect(uniqueRefiles([{ row: maintenance, to: "account_research" }, { row: copy, to: "account_research" }]).map((r) => r.row.fee_published_id)).toEqual([124670]);
     expect(uniqueRefiles([{ row: maintenance, to: "account_research" }, { row: other, to: "account_research" }])).toHaveLength(2);
+    // Any other move keeps the old rule: two express card lines at one bank and price are one fee.
+    const express = (id: number, name: string) => ({ ...research, fee_published_id: id, institution_id: 6042, canonical_fee_key: "card_replacement", fee_name: name, amount: "40.00" });
+    expect(uniqueRefiles([
+      { row: express(350, "Replacement Card - Express Mail"), to: "rush_card" },
+      { row: express(27687, "Replacement Card Shipped via Express Mail"), to: "rush_card" },
+    ]).map((r) => r.row.fee_published_id)).toEqual([350]);
 
     const db = vi.fn((strings: TemplateStringsArray, ...values: unknown[]) => {
       const text = templateText(strings);
@@ -245,8 +251,31 @@ describe("Hamilton category guard repair", () => {
     const sqlText = templateText(move?.[0]);
     // The twin test needs the same name, or an excess activity fee when one moves; price alone is not enough.
     expect(sqlText).toContain("lower(btrim(live.fee_name)) = lower(btrim(fp.fee_name))");
-    expect(sqlText).toContain("v.excess AND live.fee_name ~*");
+    expect(sqlText).toContain("AND (NOT v.excess");
+    expect(sqlText).toContain("OR live.fee_name ~*");
     expect(move?.[4]).toEqual([true]);
+  });
+
+  it("re-files only one of two express card lines at one price, and lets any live rush card fee at that price block them (live path)", async () => {
+    const card = (id: number, name: string) => ({ fee_published_id: id, lineage_ref: id + 100000, institution_id: 6042, source_document_id: 1, canonical_fee_key: "card_replacement", fee_name: name, amount: "40.00", conditions: null, document_nsf_amount: null });
+    const rows = [card(350, "Replacement Card - Express Mail"), card(27687, "Replacement Card Shipped via Express Mail")];
+    expect(rows.map((row) => restoreTarget(row))).toEqual(["rush_card", "rush_card"]);
+    const db = vi.fn((strings: TemplateStringsArray, ...values: unknown[]) => {
+      const text = templateText(strings);
+      if (text.includes("to_regclass('public.pipeline_feedback')")) return Promise.resolve([{ ready: true }]);
+      if (text.includes("UPDATE published_fee_records") && text.includes("v.from_key")) {
+        return Promise.resolve((values[0] as number[]).map((id, i) => ({ fee_published_id: id, lineage_ref: id + 100000, canonical_fee_key: (values[2] as string[])[i] })));
+      }
+      if (text.includes("rolled_back_at IS NOT NULL")) return Promise.resolve([]);
+      if (text.includes("FROM published_fee_records")) return Promise.resolve(rows);
+      return Promise.resolve([]);
+    });
+    await runHamiltonCategoryGuard({ runId: 24, db: db as unknown as GuardDb });
+    const move = db.mock.calls.find((call) => templateText(call[0]).includes("v.from_key") && templateText(call[0]).includes("UPDATE"));
+    // One fee per bank, type and price: only 350 is sent to move, and not as an excess activity fee.
+    expect([move?.[1], move?.[4]]).toEqual([[350], [false]]);
+    // In SQL, a move that is not an excess activity fee is blocked by any live fee of that type and price.
+    expect(templateText(move?.[0])).toContain("AND (NOT v.excess");
   });
 
   it("brings an express card replacement back as the rush card fee, once per institution and price", async () => {
