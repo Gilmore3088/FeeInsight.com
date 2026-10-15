@@ -24,6 +24,15 @@
  *    business price, not the consumer's. It stays on the bank's own page and is left out
  *    of medians, ranges and comparisons until a consumer schedule replaces it. Same
  *    address test as Magellan's isBusinessOnlyLink (link-coverage.ts).
+ * 7. Count once (James, 2026-10-15, #1441), behind COUNT_SHARED_SCHEDULE_ONCE: sibling
+ *    charters that publish fees from the same schedule (the same document address, or
+ *    stored documents with identical text) count as one institution in a group's median,
+ *    percentiles and counts. A shared schedule links two charters only when they have the
+ *    same holding company (institution_sources.holding_company_rssd); a schedule shared by
+ *    unrelated institutions is a wrong link for Magellan (#1455), not a sibling. Vendor
+ *    download paths (VENDOR_DOWNLOAD_PATH_SEGMENTS) never link anyone. Each charter keeps its
+ *    own rows and its own value (valuePerInstitution is unchanged), so every charter's page
+ *    still shows its fees.
  */
 import { computePercentile, computeStats } from "./fees";
 import { BUSINESS_PATH_SQL, CONSUMER_PATH_SQL } from "@/lib/agents/magellan/link-coverage";
@@ -31,8 +40,24 @@ import { BUSINESS_PATH_SQL, CONSUMER_PATH_SQL } from "@/lib/agents/magellan/link
 import { MIN_INSTITUTIONS_FOR_MEDIAN, STRONG_INSTITUTION_COUNT, maturityTier, type MaturityTier } from "./maturity";
 
 export { MIN_INSTITUTIONS_FOR_MEDIAN, STRONG_INSTITUTION_COUNT, maturityTier, type MaturityTier };
+/**
+ * Rule 7 switch. Off until the read's cost and the affected counts are checked on prod (#1441).
+ * Readers select STATS_SCHEDULE_KEYS; while this is false it selects NULL and nothing changes.
+ *
+ * Must fix before switching on: these count institutions from raw rows, not summarizeFees,
+ * so they would still count every charter and disagree with the medians beside them:
+ * - src/lib/report-assemblers/national-trends.ts (institution counts at :115 and :258)
+ * - src/app/api/v1/fees/route.ts (:85)
+ * - src/lib/research/tools.ts (:52)
+ * - src/lib/hamilton/workspace/research.ts peer band and layers (raw quantiles, :258-270,
+ *   :920, :952); answer-correctness.ts leaves rule 7 out of its recompute until they move.
+ * Also check, once on: the fee-category-detail cache entry carries the schedule fields
+ * (fees.ts getFeeCategoryDetail) against Next's 2 MB per-entry limit.
+ */
+export const COUNT_SHARED_SCHEDULE_ONCE: boolean = false;
+
 /** Bump when these rules change; fee_index_cache rows carry it and older ones are ignored. */
-export const STATS_METHOD_VERSION = 7;
+export const STATS_METHOD_VERSION = COUNT_SHARED_SCHEDULE_ONCE ? 8 : 7;
 
 /** SQL predicate: the row's source address names a business-only schedule (rule 6). */
 export function businessSourceSql(alias: string): string {
@@ -49,12 +74,70 @@ export function statsRowFilter(alias = "ef"): string {
 /** Compatibility predicate for readers using the conventional ef alias. */
 export const STATS_ROW_FILTER = statsRowFilter();
 
+/**
+ * Path segments of vendor download services that host many unrelated institutions' files
+ * (#1441 review: Healthplus FCU's schedule on six other CUs via `/ezs3download/`, Horizons
+ * North's on 5Star Bank via `/_/kcms-doc/`). A row read from one never links to anyone.
+ */
+export const VENDOR_DOWNLOAD_PATH_SEGMENTS = ["ezs3download", "kcms-doc"] as const;
+const VENDOR_DOWNLOAD_PATH_RE = new RegExp(`/(${VENDOR_DOWNLOAD_PATH_SEGMENTS.join("|")})/`, "i");
+const VENDOR_DOWNLOAD_PATH_SQL = `/(${VENDOR_DOWNLOAD_PATH_SEGMENTS.join("|")})/`;
+
+/**
+ * A stored text shorter than this never links siblings by its hash: an empty or near-empty
+ * read (a blocked page, a cookie wall) hashes the same at unrelated banks.
+ */
+export const MIN_LINKING_TEXT_CHARS = 200;
+
+function checkAlias(alias: string): void {
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(alias)) throw new Error("Invalid statistics table alias");
+}
+
+/**
+ * SQL expression (text[]) naming the schedule a catalog row was read from, for rule 7:
+ * `u:` its document address (scheme, www., fragment and trailing slashes dropped, lower case)
+ * and `t:` the text hash of its stored document text when it holds at least
+ * MIN_LINKING_TEXT_CHARS characters (agent_source_texts.source_document_id is UNIQUE, so the
+ * lookup reads one row by index). Sibling charters each hold their own
+ * source_documents row (institution_id is NOT NULL), so the document id alone never links
+ * them. A vendor download path gives no keys. With the switch off it is NULL.
+ */
+export function scheduleKeysSql(alias = "ef", enabled = COUNT_SHARED_SCHEDULE_ONCE): string {
+  checkAlias(alias);
+  if (!enabled) return "NULL::text[]";
+  const url = `lower(regexp_replace(regexp_replace(regexp_replace(${alias}.document_url, '^https?://(www\\.)?', '', 'i'), '#.*$', ''), '/+$', ''))`;
+  const textHash = `(SELECT ast.text_hash FROM agent_source_texts ast
+     WHERE ast.source_document_id = ${alias}.source_document_id AND ast.char_count >= ${MIN_LINKING_TEXT_CHARS})`;
+  return `CASE WHEN COALESCE(${alias}.document_url, '') ~* '${VENDOR_DOWNLOAD_PATH_SQL}' THEN NULL::text[]
+    ELSE array_remove(ARRAY[NULLIF('u:' || ${url}, 'u:'), 't:' || ${textHash}], NULL) END`;
+}
+
+/**
+ * SQL expression (text): the row's institution's holding company RSSD, the only scope in
+ * which rule 7 links charters. NULL (no holding company, or the FDIC's "0") links nothing.
+ */
+export function scheduleGroupSql(alias = "ef", enabled = COUNT_SHARED_SCHEDULE_ONCE): string {
+  checkAlias(alias);
+  if (!enabled) return "NULL::text";
+  return `(SELECT NULLIF(NULLIF(btrim(hc.holding_company_rssd), ''), '0') FROM institution_sources hc WHERE hc.id = ${alias}.institution_id)`;
+}
+
+/**
+ * Select-list items for statistics readers using the ef alias: `... AS schedule_keys,
+ * ... AS schedule_group`. Every reader whose rows reach summarizeFees selects them.
+ */
+export const STATS_SCHEDULE_KEYS = `${scheduleKeysSql()} AS schedule_keys, ${scheduleGroupSql()} AS schedule_group`;
+
 
 export interface StatsInputRow {
   institution_id: number | string;
   amount: number | string | null;
   charter_type?: string | null;
   fee_category?: string | null;
+  /** The schedule the row was read from (scheduleKeysSql); rows sharing a key share a schedule. */
+  schedule_keys?: readonly string[] | null;
+  /** The institution's holding company (scheduleGroupSql); keys link only within one. */
+  schedule_group?: string | number | null;
 }
 
 /** Categories whose tiers are compared at the highest (standard) tier, not the median. */
@@ -111,19 +194,77 @@ export function valuePerInstitution(rows: StatsInputRow[]): Map<number, number> 
   return values;
 }
 
+/**
+ * Rule 7: within these rows, the institution each institution counts as. Institutions with
+ * the same holding company (schedule_group) linked by a shared schedule key, directly or
+ * through a chain, count as the lowest id among them; an institution sharing nothing counts
+ * as itself. Rows with no holding company, no keys, or a vendor download address link nothing.
+ */
+export function sharedScheduleRepresentatives(
+  rows: readonly Pick<StatsInputRow, "institution_id" | "schedule_keys" | "schedule_group">[],
+): Map<number, number> {
+  const parent = new Map<number, number>();
+  const find = (id: number): number => {
+    let root = id;
+    while (parent.get(root) !== root) root = parent.get(root) as number;
+    let node = id;
+    while (node !== root) {
+      const next = parent.get(node) as number;
+      parent.set(node, root);
+      node = next;
+    }
+    return root;
+  };
+  const ownerOfKey = new Map<string, number>();
+  for (const row of rows) {
+    const id = Number(row.institution_id);
+    if (!Number.isSafeInteger(id) || id <= 0) continue;
+    if (!parent.has(id)) parent.set(id, id);
+    const group = row.schedule_group == null ? "" : String(row.schedule_group).trim();
+    const keys = row.schedule_keys ?? [];
+    if (!group || group === "0" || keys.some((key) => VENDOR_DOWNLOAD_PATH_RE.test(key))) continue;
+    for (const key of keys) {
+      if (!key) continue;
+      const scoped = `${group}|${key}`;
+      const other = ownerOfKey.get(scoped);
+      if (other === undefined) {
+        ownerOfKey.set(scoped, id);
+        continue;
+      }
+      const a = find(id);
+      const b = find(other);
+      if (a !== b) parent.set(Math.max(a, b), Math.min(a, b));
+    }
+  }
+  const representatives = new Map<number, number>();
+  for (const id of parent.keys()) representatives.set(id, find(id));
+  return representatives;
+}
+
 /** Statistics for one group of rows (one category, or one category within a segment). */
-export function summarizeFees(rows: StatsInputRow[]): FeeStatistics {
+export function summarizeFees(
+  rows: StatsInputRow[],
+  options: { countSharedScheduleOnce?: boolean } = {},
+): FeeStatistics {
   // A missing/invalid price is not a sample. Keep displayed counts on the exact
   // population used for the median; a real numeric zero remains a valid observation.
   const validRows = rows.filter((row) => {
     const id = Number(row.institution_id);
     return Number.isSafeInteger(id) && id > 0 && toAmount(row.amount) !== null;
   });
-  const values = valuePerInstitution(validRows);
-  const institutions = new Map<number, string | null | undefined>();
+  let values = valuePerInstitution(validRows);
+  const charterOf = new Map<number, string | null | undefined>();
   for (const row of validRows) {
     const id = Number(row.institution_id);
-    if (!institutions.has(id)) institutions.set(id, row.charter_type);
+    if (!charterOf.has(id)) charterOf.set(id, row.charter_type);
+  }
+  let institutions = charterOf;
+  if (options.countSharedScheduleOnce ?? COUNT_SHARED_SCHEDULE_ONCE) {
+    // Rule 7: each charter's own value first, then one value per shared schedule, counted
+    // under the lowest charter id: the middle of its charters' values, the lower middle for
+    // an even count, so the counted price is one a member charges.
+    values = collapseSharedSchedules(values, validRows);
+    institutions = new Map([...values.keys()].map((rep) => [rep, charterOf.get(rep)]));
   }
   let bankCount = 0;
   let cuCount = 0;
@@ -204,6 +345,27 @@ export interface RateStatsInputRow {
   institution_id: number | string;
   rate_percent: number | string | null;
   amount_kind?: string | null;
+  schedule_keys?: readonly string[] | null;
+  schedule_group?: string | number | null;
+}
+
+/** Rule 7's collapse: one value per shared schedule (the lower middle of its charters' values). */
+function collapseSharedSchedules(
+  values: Map<number, number>,
+  rows: readonly Pick<StatsInputRow, "institution_id" | "schedule_keys" | "schedule_group">[],
+): Map<number, number> {
+  const representatives = sharedScheduleRepresentatives(rows);
+  const members = new Map<number, number[]>();
+  for (const [id, value] of values) {
+    const rep = representatives.get(id) ?? id;
+    const list = members.get(rep);
+    if (list) list.push(value);
+    else members.set(rep, [value]);
+  }
+  return new Map([...members].map(([rep, list]) => {
+    const sorted = [...list].sort((a, b) => a - b);
+    return [rep, sorted[Math.floor((sorted.length - 1) / 2)]];
+  }));
 }
 
 export interface RateStatistics {
@@ -222,8 +384,12 @@ export interface RateStatistics {
  * (the median of its rates), and the same minimum sample. Rates are never pooled with
  * dollar amounts.
  */
-export function summarizeRates(rows: RateStatsInputRow[]): RateStatistics {
+export function summarizeRates(
+  rows: RateStatsInputRow[],
+  options: { countSharedScheduleOnce?: boolean } = {},
+): RateStatistics {
   const rates = new Map<number, number[]>();
+  const counted: RateStatsInputRow[] = [];
   for (const row of rows) {
     if (row.amount_kind != null && row.amount_kind !== "percent") continue;
     const rate = row.rate_percent == null ? NaN : Number(row.rate_percent);
@@ -232,8 +398,11 @@ export function summarizeRates(rows: RateStatsInputRow[]): RateStatistics {
     const list = rates.get(id);
     if (list) list.push(rate);
     else rates.set(id, [rate]);
+    counted.push(row);
   }
-  const values = [...rates.values()].map((list) => computePercentile([...list].sort((a, b) => a - b), 50));
+  let perInstitution = new Map([...rates].map(([id, list]) => [id, computePercentile([...list].sort((a, b) => a - b), 50)]));
+  if (options.countSharedScheduleOnce ?? COUNT_SHARED_SCHEDULE_ONCE) perInstitution = collapseSharedSchedules(perInstitution, counted);
+  const values = [...perInstitution.values()];
   const tier = maturityTier(values.length);
   const stats = tier === "insufficient" ? null : computeStats(values);
   return {

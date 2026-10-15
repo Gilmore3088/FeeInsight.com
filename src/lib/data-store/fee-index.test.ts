@@ -183,8 +183,10 @@ describe("getDistrictFeeMedians audience boundary", () => {
     const query = text(db.mock.calls[0]);
     expect(query).toContain("ef.amount >= 0");
     expect(query).not.toContain("ef.amount > 0");
-    expect(db.unsafe).toHaveBeenCalledTimes(1);
-    const predicate = String(db.unsafe.mock.calls[0][0]);
+    // Two fragments: the schedule keys (statistics rule 7) and the row filter.
+    expect(db.unsafe).toHaveBeenCalledTimes(2);
+    expect(String(db.unsafe.mock.calls[0][0])).toContain("AS schedule_keys");
+    const predicate = String(db.unsafe.mock.calls[1][0]);
     expect(predicate).toContain("ef.source_document_id IS NOT NULL");
     expect(predicate).toContain("ef.fee_audience IN ('consumer', 'both', 'unknown')");
   });

@@ -1,6 +1,6 @@
 import type { sql } from "@/lib/data-store/connection";
 import { getNationalIndexCached } from "@/lib/data-store/fee-index";
-import { STATS_ROW_FILTER, summarizeFeesBy } from "@/lib/data-store/fee-stats";
+import { STATS_ROW_FILTER, STATS_SCHEDULE_KEYS, summarizeFeesBy } from "@/lib/data-store/fee-stats";
 import { HEADLINE_FEE_KEYS } from "@/lib/data-store/market-readiness";
 import { STATE_NAMES } from "@/lib/us-states";
 
@@ -70,7 +70,7 @@ const round2 = (value: number | null) => Math.round(num(value) * 100) / 100;
  */
 async function readSplit(db: SqlTag, column: "charter" | "state", stateCode?: string, minInstitutions = MIN_INSTITUTIONS_FOR_SPLIT) {
   const rows = await db.unsafe(
-    `SELECT ef.fee_category, ef.amount, ef.institution_id, ct.charter_type, ct.state_code
+    `SELECT ef.fee_category, ef.amount, ef.institution_id, ct.charter_type, ct.state_code, ${STATS_SCHEDULE_KEYS}
        FROM published_fee_catalog ef
        JOIN institution_sources ct ON ct.id = ef.institution_id
       WHERE ef.fee_category = ANY($1::text[])
@@ -78,7 +78,7 @@ async function readSplit(db: SqlTag, column: "charter" | "state", stateCode?: st
         AND ${STATS_ROW_FILTER}
         AND ($2::text IS NULL OR ct.state_code = $2::text)`,
     [[...HEADLINE_FEE_KEYS], stateCode ?? null] as never[],
-  ) as Array<{ fee_category: string; amount: number | string | null; institution_id: number; charter_type: string | null; state_code: string | null }>;
+  ) as Array<{ fee_category: string; amount: number | string | null; institution_id: number; charter_type: string | null; state_code: string | null; schedule_keys: string[] | null; schedule_group: string | null }>;
   const groups = summarizeFeesBy(rows, (row) => {
     const bucket = column === "charter" ? row.charter_type : row.state_code;
     return bucket ? `${row.fee_category}|${bucket}` : null;
