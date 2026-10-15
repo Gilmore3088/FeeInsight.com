@@ -1032,3 +1032,17 @@ accepted CFPB identity match are left out of complaint peer groups, since missin
 zero complaints. When fewer than 10 similar institutions have a verified match even nationwide, the
 peer rate is not shown and a coverage note says how many of how many are verified. Keeping the old
 numbers with a warning was rejected.
+
+**Routine commands run without a prompt; the hard limits are blocked outright.** James, 2026-10-15
+("Add the allow-list to .claude/settings.json"), so threads stop stalling on prompts overnight and
+while he travels. `.claude/settings.json` now allows git work on `claude/*` branches, opening,
+reviewing and merging PRs, the lint, build, test and guard commands, read-only shell commands, edits
+under `src`, `docs`, `growth-os`, `.agents`, `public` and `Reports`, and Vercel preview and log reads.
+GitHub issue, PR, review and merge writes are allowed too. Force pushes (including `+` refspecs),
+pushes to main (including `refs/heads/main`), remote branch deletion (`--delete`, `-d` and empty-source
+`:branch` refspecs), `--all`, `--prune`, `--mirror`, `gh repo delete`,
+`gh api` DELETE and `gh pr merge --admin` are denied, so a thread gets an immediate refusal and
+keeps working. `apply_migration`, edits under `supabase/migrations/`, Supabase project changes,
+production deploys and direct GitHub file commits still ask. Supabase `execute_sql` stays allowed
+(Oct 13 decision), so the rule that production data changes never go through raw SQL from a
+session still rests on the session, not on a prompt.
