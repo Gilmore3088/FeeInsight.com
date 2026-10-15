@@ -501,6 +501,17 @@ hand check found wrong, from their real lines.
   Transfer for\nOverdrafts - $2.00 per transfer", raw 112570). A bare "Overdrafts" priced per
   item is still the overdraft fee.
 
+v71 (#1100 gap 3, Oct 15): each checking product's monthly fee in an account comparison table, read by
+its column (`extract.account_table` v1, `account-table.ts`; see Extraction Passes).
+- "Monthly Service Fees | $0 | $5 | $10" under "Account | Great Checking | Better Checking | Best
+  Checking" is three monthly fees, named by product ("Better Checking Monthly Service Fees"). The
+  shared source check traces each with the same rule (`accountTableRow`); it can only turn a fail
+  into a pass.
+- Only checking columns, only the fee row, only under a header naming one product per price column.
+  The guard's exclusions are unchanged (James to decide, #1100).
+- Answer keys: Texas 551 to 552 right (Texas Capital), 14 wrong unchanged; held out 54 / 4 unchanged;
+  seven states unchanged at 797 / 41.
+
 v70 (#1100, Oct 15): monthly maintenance and low-balance fees the account expert (`extract.family.account` v5) missed.
 - A low-balance charge with no fee word is the minimum balance fee when the price on its own line is
   charged by the period ("$5.00 per month", "/Month"): "Low balance $ 5.00 per month", "Savings
@@ -896,6 +907,6 @@ fails a PR that changes one of these constants without updating its line here (#
 | `LINEUP_CORRECT_STRATEGY` | `knox.lineup_correct` | v2 | `knox/lineup-correct.ts` |
 | `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v19 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v2 | `knox/paid-extract.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v70 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v71 | `knox/specialists.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v6 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v1 | `knox/takedown-lessons.ts` |
