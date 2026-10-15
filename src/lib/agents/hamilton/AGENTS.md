@@ -389,7 +389,7 @@ the detail.
 30. Publish (`runHamiltonPublish`, `publish.ts`): the rules above; a prior live row at a new
     price closes as `superseded by #<id>`.
 31. Source check (`takeDownUntraceableFees`, `source-check.ts`): up to 120 institutions,
-    `source_check_untraceable:<reason>`; restores earlier takedowns that now trace.
+    `source_check_untraceable:<reason>`; restores earlier takedowns that now trace, except those on `SOURCE_CHECK_KEPT_DOWN` (each with its issue, logged as `kept_down`; 36542, #1369).
 32. Imported twins (`linkImportedFeesToTwins`, `source-check.ts`): an imported live fee with no
     document is pointed at its twin row that has one, up to 100 a step. No rollback.
 33. Feedback sync (`syncPipelineFeedback`, `learning/feedback-sync.ts`): this step's takedowns

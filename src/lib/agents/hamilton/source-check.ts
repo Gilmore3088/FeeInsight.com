@@ -71,6 +71,21 @@ export function sourceCheckFingerprint(maxLiveFeeId: number | string): string {
   return `v${SOURCE_CHECK_STRATEGY.version}:${maxLiveFeeId}`;
 }
 
+/**
+ * Fees this check took down that it must never put back, even once their line traces, each with
+ * its issue. Only a fee already down is listed; the restore skips it and logs it in the step's
+ * `hamilton.source_check` event (`kept_down`). Its verified row is rejected, so publish never
+ * selects it either.
+ */
+export const SOURCE_CHECK_KEPT_DOWN: ReadonlyMap<number, { issue: number; why: string }> = new Map([
+  // #1369: River City Bank's $30 overdraft, read from doc 6355 (an older copy of its schedule) as
+  // "Overdraft: (Fee". #1369's fix makes the line trace, and the current copy's reads (raw 274671,
+  // 535317, doc 28947/25708) come back as "Overdraft" through Knox's untraced re-check. Restoring
+  // this one too would list River City's overdraft twice: the restore guard and the exact
+  // duplicate collapse compare the stored name, and the two names differ.
+  [36542, { issue: 1369, why: "River City Bank's $30 overdraft from an older copy (doc 6355); the current copy's read is the live one" }],
+]);
+
 /** The marker a restore leaves, so the restored fee's institution is checked again. */
 export const SOURCE_CHECK_RESTORE_PREFIX = "restored:";
 
@@ -260,6 +275,8 @@ export interface SourceCheckResult {
   cleared: number;
   /** Failed only because a re-read of their own document lost the line (`readerLostLine`): kept. */
   readerLost: number;
+  /** Taken-down fees on `SOURCE_CHECK_KEPT_DOWN` that this check skipped instead of restoring. */
+  keptDown: number[];
 }
 
 const EMPTY_RESULT: SourceCheckResult = {
@@ -273,6 +290,7 @@ const EMPTY_RESULT: SourceCheckResult = {
   awaitingSecondLook: 0,
   cleared: 0,
   readerLost: 0,
+  keptDown: [],
 };
 const TAKEN_DOWN = `${SOURCE_CHECK_REASON}:%`;
 
@@ -394,7 +412,7 @@ export async function takeDownUntraceableFees(
     const id = Number(text.institution_id);
     textsByInstitution.set(id, [...(textsByInstitution.get(id) ?? []), text]);
   }
-  const result: SourceCheckResult = { ...EMPTY_RESULT, takedowns: [] };
+  const result: SourceCheckResult = { ...EMPTY_RESULT, takedowns: [], keptDown: [] };
   const passing: number[] = [];
   const relinks: Array<{ feeRawId: number; sourceDocumentId: number }> = [];
   const linkedKeys = new Set<string>();
@@ -407,6 +425,10 @@ export async function takeDownUntraceableFees(
   for (const fee of fees) {
     const institutionId = Number(fee.institution_id);
     const counts = perInstitution.get(institutionId)!;
+    if (fee.taken_down && SOURCE_CHECK_KEPT_DOWN.has(Number(fee.fee_published_id))) {
+      result.keptDown.push(Number(fee.fee_published_id));
+      continue;
+    }
     const institutionTexts = textsByInstitution.get(institutionId) ?? [];
     const verdict = traceLiveFee(fee, institutionTexts);
     const readerLost = verdict.kind === "untraceable" && readerLostLine(fee, institutionTexts, verdict.reason);
@@ -590,6 +612,7 @@ export async function takeDownUntraceableFees(
             cleared_after_first_look: result.cleared,
             reader_lost_line: result.readerLost,
             reader_loss_restores_on: READER_LOSS_RESTORES_ON,
+            kept_down: result.keptDown.map((id) => ({ fee_published_id: id, ...SOURCE_CHECK_KEPT_DOWN.get(id) })),
             samples: result.takedowns.slice(0, 20).map((row) => ({
               fee_published_id: row.feePublishedId,
               institution_id: row.institutionId,
