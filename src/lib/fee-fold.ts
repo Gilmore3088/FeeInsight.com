@@ -192,9 +192,10 @@ const LENDING_LEGAL = /\blien (?:release|satisf)|\b(?:release|satisf\w*) of (?:t
  * James, Oct 15 2026 (#1026, reversing Oct 8): subordination fees file as legal process. New reads
  * do from this change on. Live and verified fees filed as other lending before it move when this
  * is on: Hamilton's fold step re-files them (logged as `category_fold`, old category kept), each
- * one only when legal process's guard and price range accept it. Off until James says go.
+ * one only when legal process's guard and price range accept it. On since James's go, Oct 15
+ * ("proceed with your recs", Audit thread).
  */
-export const SUBORDINATION_REFILE_LIVE = false;
+export const SUBORDINATION_REFILE_LIVE = true;
 
 /**
  * Live subordination fees the switched re-file leaves where they are, by verified id, because the
@@ -391,7 +392,8 @@ export function splitLiveCategory(
 
 /** Bumped when a fold rule changes, so Hamilton's fold step re-reads what it left unplaced. */
 // v15: a subordination stays legal process (James, Oct 15); legal process keeps only lien releases in its split.
-export const FOLD_RULES_VERSION = 15;
+// v16: the subordination re-file is on (`SUBORDINATION_REFILE_LIVE`, James, Oct 15).
+export const FOLD_RULES_VERSION = 16;
 
 /** The retired categories that sat in these families. */
 export function retiredKeysInFamilies(families: readonly string[]): string[] {
