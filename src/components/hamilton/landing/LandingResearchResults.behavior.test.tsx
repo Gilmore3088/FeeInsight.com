@@ -68,7 +68,7 @@ describe("landing research confirmation and explicit scope", () => {
     expect(url).toBe("/api/hamilton/ask/market");
     expect(options.method).toBe("POST");
     expect(JSON.parse(String(options.body))).toEqual({ research: selected });
-    const reportLink = [...host.querySelectorAll("a")].find(link => link.textContent?.includes("Prepare a board brief"));
+    const reportLink = [...host.querySelectorAll("a")].find(link => link.textContent?.includes("Build a board brief"));
     expect(reportLink).toBeDefined();
     const reportUrl = new URL(reportLink!.href);
     expect(reportUrl.pathname).toBe("/pro/intelligence");
