@@ -509,6 +509,16 @@ its column (`extract.account_table` v1, `account-table.ts`; see Extraction Passe
   into a pass.
 - Only checking columns, only the fee row, only under a header naming one product per price column.
   The guard's exclusions are unchanged (James to decide, #1100).
+- Not read (#1438 review): a header one cell short whose first cell is a label ("Features | Simply
+  Checking | Rewards Checking" over a row with three prices), a header of buttons or repeated cells
+  ("Open Online | Open Account | Open Account"), a fee-change notice's dated columns ("fee through
+  12/31"), and a table that sets big banks' accounts beside others ("US Bank Smartly Checking").
+- In a cell, a balance or opening figure is skipped ("$25 minimum daily balance or $8" is $8), and so
+  are a discount and a $0 that holds only under a condition ("$0 with $500 balance / $12" is $12). A
+  cell with two fee figures left ("$7 + $0.40 per debit") is not read; the row's other cells still are.
+- Product names lose footnote marks, quotes, codes and arrows ("Rewards Checking (CK06)" is "Rewards
+  Checking"). The shared check's table fallback reads the newest fee-change column, as Knox does, and
+  passes only a consumer name the category guard files as monthly maintenance.
 - Answer keys: Texas 551 to 552 right (Texas Capital), 14 wrong unchanged; held out 54 / 4 unchanged;
   seven states unchanged at 797 / 41.
 
@@ -818,7 +828,9 @@ only on what the free team could not read.
     after the normal check fails). It reads only checking columns (no savings, share, money
     market, club, IRA, HSA or certificate column), only the fee row (never opening deposit or
     balance rows), and only under a header row whose rows in between have the table's width. A
-    free cell is held as a $0 fee.
+    free cell is held as a $0 fee. A short header that opens on a label, a row of buttons or
+    repeated cells, dated fee-change columns and a comparison with big banks' accounts are not
+    read; a balance figure in a cell is skipped (v71 history).
   - `extract.family.<family>` (`families.ts`): one expert each for overdraft/NSF, wires,
     ATM/card, account maintenance/statements, checks, and the remaining services. They
     read price windows across a document, including PDFs flattened to one line: tiers
