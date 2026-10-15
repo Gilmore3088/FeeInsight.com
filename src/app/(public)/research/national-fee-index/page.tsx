@@ -3,398 +3,146 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { getCpiContext } from "@/lib/data-store";
 import { getPublicNationalIndex, getPublicStatsSummary } from "@/lib/public-stats";
-import {
-  getDisplayName,
-  FEE_FAMILIES,
-  FAMILY_COLORS,
-  TAXONOMY_COUNT,
-  FEATURED_COUNT,
-  getFeaturedCategories,
-} from "@/lib/fee-taxonomy";
-import { formatAmount } from "@/lib/format";
+import { getDisplayName, FEE_FAMILIES, getFeaturedCategories } from "@/lib/fee-taxonomy";
+import { getFeeCategoryDetailCached } from "@/lib/data-store/public-cached-reads";
+import { CPI_BANK_SERVICES_SERIES } from "@/lib/regulatory/fed";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
-import { DataFreshness } from "@/components/data-freshness";
-import { LeadCapture } from "@/components/public/lead-capture";
-import { SITE_NAME, SITE_URL } from "@/lib/constants";
-import { sampleReportAvailable } from "@/lib/custom-report/sample-report";
-
+import { NATIONAL_INDEX_NAV, PRO_PLANS_NAV } from "@/components/nav-items";
+import { PRODUCT_NAME, SITE_NAME, SITE_URL } from "@/lib/constants";
 import { getCurrentUser } from "@/lib/auth";
 import { canAccessPremium } from "@/lib/access";
-import { UpgradeGate } from "@/components/upgrade-gate";
+import { datasetDescription, detailNationalMedian, districtMedians, nationalFindings, subheadLead } from "./findings";
+import { NationalExplorer } from "./national-explorer";
 
 export const metadata: Metadata = {
-  title: "National Fee Index: Bank and Credit Union Fees",
+  title: `${PRODUCT_NAME}, national: median bank and credit union fees`,
   description:
-    "Median bank and credit union fees by category, with percentiles and institution counts, from thousands of published fee schedules.",
+    "Median bank and credit union fees by category, with institution counts, from the published fee schedules of thousands of U.S. banks and credit unions.",
   keywords: [
+    "bank fee index",
     "national fee index",
     "bank fee benchmarks",
     "average bank fees",
     "overdraft fee average",
     "NSF fee average",
     "credit union fees",
-    "bank fee comparison",
   ],
 };
 
-// Phones get tighter cells; sm and up keep the full padding.
-const CELL = "px-3 py-2.5 sm:px-4";
-const TH = "px-3 py-2 text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted sm:px-4";
+const BLS_SERIES_URL = `https://data.bls.gov/timeseries/${CPI_BANK_SERVICES_SERIES}`;
 
 export default async function NationalFeeIndexPage() {
   const user = await getCurrentUser();
   const isPro = canAccessPremium(user);
-  // Same snapshot as the fee index and research hub, so the medians match to the cent.
-  const allIndex = await getPublicNationalIndex();
-  const cpi = await getCpiContext();
-  // The count of categories with published fees, the same figure the homepage, pricing and
-  // institution pages show (not the taxonomy size, which includes categories with no data yet).
-  const { categoriesLabel, refreshedOn } = await getPublicStatsSummary();
-  const sampleLive = await sampleReportAvailable();
+  // Same snapshot as the fee index and research hub, so the medians match to the cent. The
+  // overdraft district medians, and the national median the map compares them with, are the
+  // cached read /fees/overdraft and the homepage already make; a failed read only hides the map.
+  const [allIndex, cpi, summary, overdraftDetail] = await Promise.all([
+    getPublicNationalIndex(),
+    getCpiContext(),
+    getPublicStatsSummary(),
+    getFeeCategoryDetailCached("overdraft").catch((error: unknown) => {
+      console.error("[national-index] overdraft district read failed; district map hidden", error);
+      return null;
+    }),
+  ]);
 
-  // Pro: full index. Free: the 15 headline categories, the same set the free report shows.
+  // Pro: full index. Free: the headline categories, the same set the free report shows.
   const headlineCats = new Set(getFeaturedCategories());
-  const index = isPro
-    ? allIndex
-    : allIndex.filter((e) => headlineCats.has(e.fee_category));
-  const gatedCount = allIndex.length - index.length;
-
-  // Group by family
+  const index = isPro ? allIndex : allIndex.filter((e) => headlineCats.has(e.fee_category));
   const byFamily = new Map<string, typeof index>();
   for (const entry of index) {
     const family = entry.fee_family ?? "Other";
     if (!byFamily.has(family)) byFamily.set(family, []);
     byFamily.get(family)!.push(entry);
   }
+  const groups = Object.keys(FEE_FAMILIES)
+    .filter((f) => (byFamily.get(f)?.length ?? 0) > 0)
+    .map((family) => ({
+      family,
+      // Only the fields the table and panel draw; bank and credit union counts go to Pro only.
+      entries: byFamily.get(family)!.map((e) => ({
+        fee_category: e.fee_category,
+        fee_family: e.fee_family,
+        median_amount: e.median_amount,
+        p25_amount: e.p25_amount,
+        p75_amount: e.p75_amount,
+        min_amount: e.min_amount,
+        max_amount: e.max_amount,
+        institution_count: e.institution_count,
+        ...(isPro ? { bank_count: e.bank_count, cu_count: e.cu_count } : {}),
+      })),
+    }));
+  // The "most published" bars draw only fees this reader's table holds, so every bar selects one.
+  const tableCategories = new Set(groups.flatMap((g) => g.entries.map((e) => e.fee_category)));
+  const findings = nationalFindings(allIndex, cpi, tableCategories);
 
-  const familyOrder = Object.keys(FEE_FAMILIES);
+  const header = (
+    <div>
+      <div className="mb-3 flex items-center gap-2">
+        <span className="h-px w-8 bg-brick/40" />
+        <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-brick">
+          The {PRODUCT_NAME} &middot; National
+        </span>
+      </div>
+      <h1
+        className="text-[1.75rem] font-extrabold leading-[1.12] tracking-[-0.02em] text-ink sm:text-[2.25rem]"
+        style={{ fontFamily: "var(--fi-font-sans)" }}
+      >
+        What U.S. banks and credit unions charge
+      </h1>
+      <p className="mt-2 max-w-3xl text-[15px] leading-relaxed text-ink-soft">
+        {subheadLead(summary.institutionsLabel)}
+        {summary.refreshedOn ? (
+          <>
+            , updated <span className="whitespace-nowrap">{summary.refreshedOn}</span>
+          </>
+        ) : null}
+        .
+      </p>
+    </div>
+  );
 
-  // Summary stats (from full index for context)
-  const totalObservations = allIndex.reduce(
-    (sum, e) => sum + e.observation_count,
-    0
+  const footer = (
+    <div className="space-y-3 text-[13px] leading-relaxed text-ink-muted">
+      <p>
+        Each institution counts once, and the median is taken across institutions.{" "}
+        <Link href="/methodology" className="text-ink-soft underline underline-offset-2 hover:text-brick">
+          How the index is built
+        </Link>
+      </p>
+      {!isPro && (
+        <p className="text-[14px] text-ink-soft">
+          With a Pro plan this table shows every fee category, with its bank and credit union counts.{" "}
+          <Link href={PRO_PLANS_NAV.href} className="whitespace-nowrap font-semibold text-brick hover:underline">
+            {PRO_PLANS_NAV.label} &rarr;
+          </Link>
+        </p>
+      )}
+    </div>
   );
 
   return (
-    <div className="mx-auto max-w-page px-6 py-14">
+    <div className="mx-auto max-w-page px-4 py-8 sm:px-6 sm:py-10">
       <BreadcrumbJsonLd
         items={[
           { name: "Home", href: "/" },
           { name: "Research", href: "/research" },
-          { name: "National Fee Index", href: "/research/national-fee-index" },
+          { name: NATIONAL_INDEX_NAV.label, href: NATIONAL_INDEX_NAV.href },
         ]}
       />
 
-      <div className="flex items-center gap-2 mb-4">
-        <span className="h-px w-8 bg-brick/40" />
-        <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-brick/60">
-          National Fee Index
-        </span>
-        {!isPro && (
-          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-bold bg-border/50 text-ink-muted uppercase tracking-wider ml-1">
-            Preview
-          </span>
-        )}
-      </div>
-      <h1
-        className="mt-1 text-[1.75rem] sm:text-[2.25rem] leading-[1.12] tracking-[-0.02em] font-extrabold text-ink"
-        style={{ fontFamily: "var(--fi-font-sans)" }}
-      >
-        US Bank & Credit Union Fee Benchmarks
-      </h1>
-      <p className="mt-2 max-w-2xl text-[14px] text-ink-muted">
-        {isPro ? (
-          <>
-            National benchmarking data across {categoriesLabel} fee categories,
-            computed from published fee schedules of FDIC-insured banks and
-            NCUA-insured credit unions.
-          </>
-        ) : (
-          <>
-            Preview of {index.length} headline fee categories from our full
-            index of {categoriesLabel} categories.{" "}
-            <Link
-              href="/subscribe"
-              className="text-brick hover:underline font-medium"
-            >
-              Subscribe
-            </Link>{" "}
-            for the complete dataset with percentiles, peer segmentation, and
-            exports.
-          </>
-        )}
-      </p>
-      <div className="mt-1">
-        <DataFreshness />
-      </div>
-
-      <LeadCapture
-        placement="national_index"
-        className="mt-5"
-        eyebrow="National index updates"
-        headline="Get the national fee index in your inbox"
-        body="New national medians and one table worth bringing to a pricing meeting. No more than once a month."
-        buttonLabel="Subscribe"
-        secondaryLink={sampleLive ? { href: "/reports/sample-competitive-fee-position", label: "See the sample report" } : undefined}
+      <NationalExplorer
+        header={header}
+        footer={footer}
+        findings={findings}
+        groups={groups}
+        isPro={isPro}
+        overdraftDistricts={districtMedians(overdraftDetail?.by_fed_district)}
+        // The map compares each district with the national median from the same read.
+        overdraftNational={detailNationalMedian("overdraft", overdraftDetail?.fees)}
+        cpiSourceUrl={BLS_SERIES_URL}
       />
-
-      {/* CPI context strip */}
-      {cpi.bankFees && cpi.allItems && (
-        <div className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-2 rounded-xl border border-border/80 bg-white/70 backdrop-blur-sm px-5 py-3 text-[13px]">
-          <span className="text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted">
-            CPI Context
-          </span>
-          <span className="text-ink-soft">
-            Bank service fees{" "}
-            <span
-              className={`font-semibold tabular-nums ${cpi.bankFees.yoyPct > 0 ? "text-red-600" : "text-emerald-600"}`}
-            >
-              {cpi.bankFees.yoyPct > 0 ? "+" : ""}
-              {cpi.bankFees.yoyPct}%
-            </span>{" "}
-            YoY
-          </span>
-          <span className="text-ink-muted">vs.</span>
-          <span className="text-ink-soft">
-            Overall CPI{" "}
-            <span className="font-semibold tabular-nums text-ink-soft">
-              {cpi.allItems.yoyPct > 0 ? "+" : ""}
-              {cpi.allItems.yoyPct}%
-            </span>{" "}
-            YoY
-          </span>
-          <span className="text-[11px] text-ink-muted">
-            BLS as of {new Date(cpi.bankFees.date).toLocaleDateString("en-US", { month: "short", year: "numeric" })}
-          </span>
-        </div>
-      )}
-
-      {/* Summary cards */}
-      <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <div className="rounded-xl border border-border/80 bg-white/70 backdrop-blur-sm px-4 py-3">
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-ink-muted">
-            {isPro ? "Fee Categories" : "Preview"}
-          </p>
-          <p
-            className="mt-1 text-lg font-semibold tabular-nums text-ink"
-            style={{
-              fontFamily: "var(--fi-font-mono)",
-              fontWeight: 300,
-            }}
-          >
-            {isPro
-              ? allIndex.length
-              : `${index.length} / ${allIndex.length}`}
-          </p>
-        </div>
-        <div className="rounded-xl border border-border/80 bg-white/70 backdrop-blur-sm px-4 py-3">
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-ink-muted">
-            Observations
-          </p>
-          <p
-            className="mt-1 text-lg font-semibold tabular-nums text-ink"
-            style={{
-              fontFamily: "var(--fi-font-mono)",
-              fontWeight: 300,
-            }}
-          >
-            {totalObservations.toLocaleString()}
-          </p>
-        </div>
-        <div className="rounded-xl border border-border/80 bg-white/70 backdrop-blur-sm px-4 py-3">
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-ink-muted">
-            Full Index
-          </p>
-          <p
-            className="mt-1 text-lg font-semibold tabular-nums text-ink"
-            style={{
-              fontFamily: "var(--fi-font-mono)",
-              fontWeight: 300,
-            }}
-          >
-            {categoriesLabel} categories
-          </p>
-        </div>
-        <div className="rounded-xl border border-border/80 bg-white/70 backdrop-blur-sm px-4 py-3">
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-ink-muted">
-            Featured Fees
-          </p>
-          <p
-            className="mt-1 text-lg font-semibold tabular-nums text-ink"
-            style={{
-              fontFamily: "var(--fi-font-mono)",
-              fontWeight: 300,
-            }}
-          >
-            {FEATURED_COUNT}
-          </p>
-        </div>
-      </div>
-
-      {/* Upgrade banner for free users */}
-      {!isPro && (
-        <div className="mt-8 rounded-xl border-2 border-brick/30 bg-white/70 backdrop-blur-sm p-6 relative overflow-hidden">
-          <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-brick/40 to-transparent" />
-          <div className="md:flex md:items-center md:justify-between">
-            <div>
-              <h2
-                className="text-[16px] font-bold text-ink"
-                style={{
-                  fontFamily: "var(--fi-font-sans)",
-                }}
-              >
-                You&apos;re viewing a preview
-              </h2>
-              <p className="text-[13px] text-ink-muted mt-1">
-                Showing {index.length} headline categories with median only.
-                The full index includes {gatedCount} more categories with
-                P25/P75 percentiles, bank vs. credit union breakdowns, and range
-                data.
-              </p>
-            </div>
-            <Link
-              href="/subscribe"
-              className="mt-4 md:mt-0 inline-flex items-center gap-2 rounded-full bg-brick px-6 py-2.5 text-[13px] font-semibold text-white shadow-sm shadow-[#b23a32]/15 hover:shadow-md hover:shadow-[#b23a32]/25 transition-all flex-shrink-0 no-underline"
-            >
-              Unlock Full Index
-              <svg aria-hidden="true"
-                className="h-3.5 w-3.5"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                strokeWidth="2"
-              >
-                <path d="M5 12h14M12 5l7 7-7 7" />
-              </svg>
-            </Link>
-          </div>
-        </div>
-      )}
-
-      {/* Index tables */}
-      <div className="mt-8 space-y-8">
-        {familyOrder.map((familyName) => {
-          const entries = byFamily.get(familyName);
-          if (!entries || entries.length === 0) return null;
-          const colors = FAMILY_COLORS[familyName];
-
-          return (
-            <section key={familyName}>
-              <h2
-                className={`flex items-center gap-2 text-sm font-bold ${colors?.text ?? "text-ink-soft"}`}
-              >
-                <span
-                  className={`inline-block h-3 w-1 rounded-full ${colors?.border?.replace("border-l-", "bg-") ?? "bg-control-border"}`}
-                />
-                {familyName}
-              </h2>
-              <div className="mt-3 overflow-hidden rounded-xl border border-border/80">
-                <div className="overflow-x-auto">
-                  {/* On a phone the table is two columns (fee with its institution count beneath,
-                      then the median), so it fits a 360px screen with no sideways scroll. */}
-                  <table className={`w-full text-left text-sm ${isPro ? "sm:min-w-[760px]" : ""}`}>
-                    <thead>
-                      <tr className="border-b border-border/60 bg-paper/60">
-                        <th className={TH}>Fee category</th>
-                        <th className={`${TH} text-right`}>Median</th>
-                        {isPro && (
-                          <>
-                            <th className={`hidden ${TH} text-right sm:table-cell`}>P25</th>
-                            <th className={`hidden ${TH} text-right sm:table-cell`}>P75</th>
-                            <th className={`hidden ${TH} text-right sm:table-cell`}>Range</th>
-                            <th className={`hidden ${TH} text-right sm:table-cell`}>Banks</th>
-                            <th className={`hidden ${TH} text-right sm:table-cell`}>CUs</th>
-                            <th className={`hidden ${TH} text-right md:table-cell`}>Institutions</th>
-                          </>
-                        )}
-                        {!isPro && (
-                          <th className={`hidden ${TH} text-right sm:table-cell`}>Institutions</th>
-                        )}
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-border/60">
-                      {entries.map((entry) => (
-                        <tr
-                          key={entry.fee_category}
-                          className="hover:bg-paper/60 transition-colors"
-                        >
-                          <td className={CELL}>
-                            <Link
-                              href={`/fees/${entry.fee_category}`}
-                              className="font-medium text-ink hover:text-brick transition-colors"
-                            >
-                              {getDisplayName(entry.fee_category)}
-                            </Link>
-                            <span className="mt-0.5 block text-[12px] text-ink-muted sm:hidden">
-                              <span className="tabular-nums">{entry.institution_count.toLocaleString()}</span> institutions
-                            </span>
-                          </td>
-                          <td className={`${CELL} text-right align-top tabular-nums font-medium text-ink sm:align-middle`}>
-                            {formatAmount(entry.median_amount)}
-                          </td>
-                          {isPro && (
-                            <>
-                              <td className={`hidden ${CELL} text-right tabular-nums text-ink-muted sm:table-cell`}>
-                                {formatAmount(entry.p25_amount)}
-                              </td>
-                              <td className={`hidden ${CELL} text-right tabular-nums text-ink-muted sm:table-cell`}>
-                                {formatAmount(entry.p75_amount)}
-                              </td>
-                              <td className={`hidden ${CELL} text-right tabular-nums text-ink-muted sm:table-cell`}>
-                                {formatAmount(entry.min_amount)} &ndash;{" "}
-                                {formatAmount(entry.max_amount)}
-                              </td>
-                              <td className={`hidden ${CELL} text-right tabular-nums text-ink-muted sm:table-cell`}>
-                                {entry.bank_count.toLocaleString()}
-                              </td>
-                              <td className={`hidden ${CELL} text-right tabular-nums text-ink-muted sm:table-cell`}>
-                                {entry.cu_count.toLocaleString()}
-                              </td>
-                              <td className={`hidden ${CELL} text-right tabular-nums text-ink-muted md:table-cell`}>
-                                {entry.institution_count.toLocaleString()}
-                              </td>
-                            </>
-                          )}
-                          {!isPro && (
-                            <td className={`hidden ${CELL} text-right tabular-nums text-ink-muted sm:table-cell`}>
-                              {entry.institution_count.toLocaleString()}
-                            </td>
-                          )}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </section>
-          );
-        })}
-      </div>
-
-      {/* Bottom upgrade gate */}
-      {!isPro && gatedCount > 0 && (
-        <div className="mt-10">
-          <UpgradeGate
-            count={gatedCount}
-            message="Unlock the complete National Fee Index"
-          />
-        </div>
-      )}
-
-      {/* Methodology */}
-      <section className="mt-10 rounded-xl border border-border bg-paper/50 px-5 py-4">
-        <h2 className="text-xs font-semibold uppercase tracking-wider text-ink-muted">
-          Methodology
-        </h2>
-        <p className="mt-2 text-[13px] leading-relaxed text-ink-muted">
-          The National Fee Index is computed from published fee schedules of
-          FDIC-insured banks and NCUA-insured credit unions. Fees are categorized
-          into {TAXONOMY_COUNT} standard categories across {Object.keys(FEE_FAMILIES).length} families. All
-          statistics are based on published fee schedules. National
-          medians are computed across all reporting institutions for each fee
-          category.
-        </p>
-      </section>
 
       <script
         type="application/ld+json"
@@ -402,17 +150,17 @@ export default async function NationalFeeIndexPage() {
           __html: JSON.stringify({
             "@context": "https://schema.org",
             "@type": "Dataset",
-            name: "National Fee Index - US Bank & Credit Union Fee Benchmarks",
-            description: `National benchmarking data across ${categoriesLabel} bank and credit union fee categories.`,
-            url: `${SITE_URL}/research/national-fee-index`,
-            creator: {
-              "@type": "Organization",
-              name: SITE_NAME,
-            },
+            name: `${PRODUCT_NAME}, national: U.S. bank and credit union fees`,
+            description: datasetDescription(summary.categoriesLabel),
+            url: `${SITE_URL}${NATIONAL_INDEX_NAV.href}`,
+            creator: { "@type": "Organization", name: SITE_NAME },
             publisher: { "@type": "Organization", name: SITE_NAME, url: SITE_URL },
             // #1166 T11: the terms page states how the data may be used; there is no open license.
             license: `${SITE_URL}/terms`,
-            dateModified: refreshedOn && !Number.isNaN(Date.parse(refreshedOn)) ? new Date(refreshedOn).toISOString() : undefined,
+            dateModified:
+              summary.refreshedOn && !Number.isNaN(Date.parse(summary.refreshedOn))
+                ? new Date(summary.refreshedOn).toISOString()
+                : undefined,
             variableMeasured: allIndex.map((entry) => getDisplayName(entry.fee_category)),
           }).replace(/</g, "\\u003c"),
         }}
