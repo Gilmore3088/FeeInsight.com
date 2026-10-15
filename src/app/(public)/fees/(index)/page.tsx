@@ -9,20 +9,30 @@ import { getCurrentUser } from "@/lib/auth";
 import { canAccessAllCategories } from "@/lib/access";
 import { UpgradeGate } from "@/components/upgrade-gate";
 import { CatalogSidebar } from "../catalog-sidebar";
-import { FamilySection, money } from "../family-section";
-import { UnstatedAudienceFootnote, UnstatedAudienceMark, hasUnstatedAudience } from "@/components/unstated-audience";
+import { FamilySection } from "../family-section";
+import { UnstatedAudienceFootnote, hasUnstatedAudience } from "@/components/unstated-audience";
+import { getFeeCategoryDetailCached } from "@/lib/data-store/public-cached-reads";
+import { TrackLink } from "@/components/track-link";
+import { DEMO_REQUEST_NAV, PRO_PLANS_NAV } from "@/components/nav-items";
+import { buildHistogram } from "@/components/public/distribution-chart";
+import { StateVideo } from "../../research/state/[code]/state-exhibits";
+import { FeeIndexExplorer, type ExplorerFee } from "./fee-index-explorer";
 
 // No live number in the title: counts come from the shared public snapshot in the body.
 export const metadata: Metadata = {
-  title: `The ${PRODUCT_NAME} — Fee benchmarks by category`,
+  title: `The ${PRODUCT_NAME}: fee benchmarks by category`,
   description:
     "Compare bank and credit union fees by category. National medians, typical ranges, and institution counts for overdraft, NSF, ATM, wire transfer, and more.",
 };
 
-const EYEBROW = "text-[11px] font-bold uppercase tracking-[0.12em] text-ink-muted";
-const SERIF = { fontFamily: "var(--fi-font-sans)" };
-const MONO_FIGURE = { fontFamily: "var(--fi-font-mono)" } as const;
 const SPOTLIGHT_CARD_CATEGORIES = ["overdraft", "nsf", "monthly_maintenance", "atm_non_network"];
+/** Short tab names for the hero explorer, so all four fit on a phone. */
+const EXPLORER_LABELS: Record<string, string> = {
+  overdraft: "Overdraft",
+  nsf: "NSF",
+  monthly_maintenance: "Monthly fee",
+  atm_non_network: "Out-of-network ATM",
+};
 const CANONICAL_CATEGORIES = new Set(Object.values(FEE_FAMILIES).flat());
 
 const ACTION_LINKS = [
@@ -59,8 +69,23 @@ export default async function FeeCatalogPage() {
     .map((c) => summaries.find((s) => s.fee_category === c))
     .filter((s): s is NonNullable<typeof s> => Boolean(s));
 
+  // One value per institution for each headline fee: the same population as its median.
+  const details = await Promise.all(spotlightFees.map((f) => getFeeCategoryDetailCached(f.fee_category).catch(() => null)));
+  const explorerFees: ExplorerFee[] = spotlightFees.map((f, i) => ({
+    key: f.fee_category,
+    label: EXPLORER_LABELS[f.fee_category] ?? getDisplayName(f.fee_category),
+    median: f.median_amount,
+    p25: f.p25_amount,
+    p75: f.p75_amount,
+    institutions: f.institution_count,
+    zeroCount: f.zero_count ?? 0,
+    values: details[i]?.institution_values ?? [],
+    unstated: f.median_amount !== null && hasUnstatedAudience(f),
+  }));
+  const videoBars = buildHistogram(explorerFees[0]?.values ?? []).map((b) => b.count);
+
   return (
-    <div className="mx-auto max-w-page px-6 py-14">
+    <>
       <BreadcrumbJsonLd
         items={[
           { name: "Home", href: "/" },
@@ -68,73 +93,50 @@ export default async function FeeCatalogPage() {
         ]}
       />
 
-      {/* ── HERO ── */}
-      <div className="max-w-3xl">
-        <div className="flex items-center gap-2 mb-4">
-          <span className="h-px w-8 bg-brick/40" />
-          <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-brick">
-            Published fees · every figure sourced
-          </span>
+      {/* 1. The answer first: the national spread of the fees people ask about most. */}
+      <section className="border-b border-border bg-paper">
+        <div className="mx-auto grid max-w-page gap-8 px-4 pb-10 pt-6 sm:px-6 sm:pb-14 sm:pt-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] lg:items-start lg:gap-12">
+          <div className="lg:pt-6">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-brick">{PRODUCT_NAME}</p>
+            <h1 className="mt-3 text-[32px] font-semibold leading-[1.08] tracking-[-0.03em] text-ink sm:text-[44px]">
+              What U.S. banks charge, fee by fee
+            </h1>
+            <p className="mt-3 max-w-[34rem] text-[16px] text-ink-soft">
+              {summary.categoriesLabel} fee categories from {summary.institutionsLabel} banks and credit unions&rsquo; own published
+              schedules.
+            </p>
+            <p className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-ink-muted">
+              <span>
+                <span className="font-medium tabular-nums text-ink-soft">{summary.observationsLabel}</span>{" "}
+                {COVERAGE_LABELS.observations.toLowerCase()}
+              </span>
+              <span>
+                <span className="font-medium tabular-nums text-ink-soft">{summary.monitoredLabel}</span>{" "}
+                {COVERAGE_LABELS.monitored.toLowerCase()}
+              </span>
+              <span>{summary.freshnessLabel}</span>
+              <Link href="/methodology" className="underline decoration-border underline-offset-2 hover:text-ink">
+                How we build it
+              </Link>
+            </p>
+            <nav aria-label="More fee data" className="mt-6 flex flex-wrap gap-2">
+              {ACTION_LINKS.map((item) => (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className="inline-flex min-h-9 items-center rounded-full border border-border bg-surface-0 px-4 text-[13px] font-medium text-ink-soft hover:border-ink/30 hover:text-ink"
+                >
+                  {item.label}
+                </Link>
+              ))}
+            </nav>
+          </div>
+          <FeeIndexExplorer fees={explorerFees} />
         </div>
+      </section>
 
-        <h1
-          className="font-extrabold text-[1.75rem] sm:text-[2.25rem] leading-[1.12] tracking-[-0.02em] text-ink"
-          style={SERIF}
-        >
-          {PRODUCT_NAME} — benchmarks by category
-        </h1>
-        <p className="mt-2 text-[15px] leading-relaxed text-ink-soft">
-          Bank and credit union fee benchmarks across {summary.categoriesLabel} fee categories, from{" "}
-          {summary.institutionsLabel} institutions with published fees.
-        </p>
-
-        <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-ink-muted">
-          <span>
-            <span className="font-medium text-ink-soft tabular-nums">{summary.observationsLabel}</span>{" "}
-            {COVERAGE_LABELS.observations.toLowerCase()}
-          </span>
-          <span className="h-3 w-px bg-border" />
-          <span>
-            <span className="font-medium text-ink-soft tabular-nums">{summary.monitoredLabel}</span>{" "}
-            {COVERAGE_LABELS.monitored.toLowerCase()}
-          </span>
-          <span className="h-3 w-px bg-border" />
-          <span>{summary.freshnessLabel}</span>
-        </div>
-
-        <div className="mt-1.5 text-[11px] text-ink-muted">
-          Sources: published fee schedules, FDIC Call Reports, NCUA 5300 Reports, institution websites
-        </div>
-      </div>
-
-      {/* ── SPOTLIGHT STAT CARDS ── */}
-      <div className="mt-8 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        {spotlightFees.map((fee) => (
-          <Link
-            key={fee.fee_category}
-            href={`/fees/${fee.fee_category}`}
-            className="group relative rounded-xl border border-border/80 bg-white/70 backdrop-blur-sm px-5 py-4 transition-all duration-400 hover:border-brick/20 hover:shadow-md hover:shadow-[#b23a32]/5 no-underline overflow-hidden"
-          >
-            <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-brick/0 to-transparent group-hover:via-brick/30 transition-all duration-700" />
-            <p className={`${EYEBROW} group-hover:text-brick transition-colors`}>
-              {getDisplayName(fee.fee_category)}
-            </p>
-            <p className="mt-2 text-[28px] font-semibold tracking-tight text-ink tabular-nums" style={MONO_FIGURE}>
-              {money(fee.median_amount)}
-              <UnstatedAudienceMark show={fee.median_amount !== null && hasUnstatedAudience(fee)} />
-            </p>
-            <p className="mt-1 text-[11px] tabular-nums text-ink-muted">
-              Typical {money(fee.p25_amount)} &ndash; {money(fee.p75_amount)}
-              <span className="mx-1.5 text-border">&middot;</span>
-              {fee.institution_count.toLocaleString()} inst.
-            </p>
-            <p className="mt-0.5 text-[11px] tabular-nums text-ink-muted">
-              {fee.total_observations.toLocaleString()} published fee entries
-            </p>
-          </Link>
-        ))}
-      </div>
-      <p className="mt-2 text-[11px] text-ink-muted">
+      <div className="mx-auto max-w-page px-4 pt-10 sm:px-6 sm:pt-12">
+      <p className="text-[12px] text-ink-muted">
         Each institution counts once, and the median and typical range (25th to 75th
         percentile) are taken across institutions.{" "}
         {summary.refreshedOn ? `Updated ${summary.refreshedOn}. ` : ""}
@@ -152,19 +154,6 @@ export default async function FeeCatalogPage() {
           </Link>
         </p>
       )}
-
-      {/* ── ACTION BAR ── */}
-      <div className="mt-5 flex flex-wrap items-center gap-2">
-        {ACTION_LINKS.map((item) => (
-          <Link
-            key={item.href}
-            href={item.href}
-            className="rounded-full border border-border bg-white/80 px-4 py-1.5 text-[12px] font-medium text-ink-soft transition-all hover:border-brick/30 hover:text-brick no-underline"
-          >
-            {item.label}
-          </Link>
-        ))}
-      </div>
 
       {/* ── MAIN + SIDEBAR ── */}
       <div className="mt-10 grid grid-cols-1 gap-8 xl:grid-cols-[1fr_280px]">
@@ -188,6 +177,36 @@ export default async function FeeCatalogPage() {
           <UpgradeGate count={gatedCount} />
         </div>
       )}
+      </div>
+
+      <StateVideo stateName="every fee" bars={videoBars} />
+
+      {/* Staff of a bank or credit union: Hamilton puts their own fees on every one of these lines. */}
+      <section aria-labelledby="hamilton-heading" className="mx-auto max-w-page px-4 pb-16 pt-12 sm:px-6 sm:pt-16">
+        <div className="flex flex-col gap-4 rounded-2xl border border-border bg-surface-0 px-5 py-6 sm:flex-row sm:items-center sm:justify-between sm:px-7">
+          <div>
+            <h2 id="hamilton-heading" className="text-[18px] font-semibold tracking-[-0.02em] text-ink">
+              Work at a bank or credit union?
+            </h2>
+            <p className="mt-1 max-w-[36rem] text-[14px] text-ink-muted">
+              Hamilton shows your own fees on every one of these lines, beside the competitors you choose.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+            <TrackLink
+              event="upgrade_click"
+              eventProps={{ placement: "fee_index_staff_band" }}
+              href={PRO_PLANS_NAV.href}
+              className="inline-flex min-h-11 items-center rounded-full bg-ink px-5 text-[14px] font-semibold text-on-ink hover:opacity-90"
+            >
+              {PRO_PLANS_NAV.label}
+            </TrackLink>
+            <Link href={DEMO_REQUEST_NAV.href} className="text-[14px] font-semibold text-ink underline decoration-border underline-offset-4 hover:decoration-ink">
+              {DEMO_REQUEST_NAV.label}
+            </Link>
+          </div>
+        </div>
+      </section>
 
       <script
         type="application/ld+json"
@@ -201,6 +220,6 @@ export default async function FeeCatalogPage() {
           }).replace(/</g, "\\u003c"),
         }}
       />
-    </div>
+    </>
   );
 }
