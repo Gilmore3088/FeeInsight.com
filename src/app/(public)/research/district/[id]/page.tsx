@@ -114,8 +114,11 @@ export default async function DistrictReportPage({ params }: PageProps) {
   const charted = shown.filter((f) => f.values.length > 0);
   const paired = charterFees(shown);
   const visibleComparisons = comparisons.filter((c) => shown.some((f) => f.key === c.fee_category));
+  // "In St. Louis district," reads as "In the St. Louis district," (the benchmark report words it the same way).
   const findings = leadFindings(
-    computeStateFindings(place, visibleComparisons, buildCharterPairs(indexes.bank, indexes.credit_union, shown.map((f) => f.key))),
+    computeStateFindings(place, visibleComparisons, buildCharterPairs(indexes.bank, indexes.credit_union, shown.map((f) => f.key))).map(
+      (f) => ({ ...f, detail: f.detail.replace(`In ${place},`, `In the ${place},`) }),
+    ),
     charted,
   );
 
