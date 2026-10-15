@@ -163,7 +163,7 @@ export async function InstitutionBriefing({
         title={institution?.name ?? "Monthly briefing"}
         dek={
           briefing
-            ? `${briefing.feesReviewed} published fees, read against ${briefing.peerLabel}.`
+            ? `Published fees in ${briefing.feesReviewed} ${briefing.feesReviewed === 1 ? "category" : "categories"}, read against ${briefing.peerLabel}.`
             : institution
               ? `Research institution: ${institution.name}.`
               : "Choose an institution and Hamilton reads its published fees against its market every month."

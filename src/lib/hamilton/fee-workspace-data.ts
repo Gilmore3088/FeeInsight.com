@@ -7,6 +7,7 @@
 import { getInstitutionFeeValues } from "@/lib/data-store/fee-index";
 import { getDisplayName } from "@/lib/fee-taxonomy";
 import { plainFeeName } from "./briefing-observations";
+import { directionalTitle } from "./workspace/names";
 import type { HamiltonSelectedInstitutionContext } from "./institution-context";
 import { resolveHamiltonInstitutionContext } from "./workspace-context";
 import { layersFromEngine, summarizeLayer, type LayerSummary } from "./research-layers";
@@ -49,7 +50,7 @@ export interface FeeWorkspace {
 }
 
 export function feeName(category: string): string {
-  return plainFeeName(getDisplayName(category));
+  return directionalTitle(category) ?? plainFeeName(getDisplayName(category));
 }
 
 export async function loadFeeWorkspace(params: {
@@ -83,12 +84,14 @@ export async function loadFeeWorkspace(params: {
   const fee = params.fee && /^[a-z0-9_]+$/.test(params.fee) ? params.fee : (ownFees[0]?.category ?? "overdraft");
   const ownAmount = ownValues.get(fee) ?? null;
 
-  const research = institution
+  // Named like Ask names it, so an admin or a linked user viewing another bank never reads "your".
+  const loaded = institution
     ? await getFeeResearch(institution.id, fee).catch(() => {
         unavailable.push("market fees");
         return null;
       })
     : null;
+  const research = loaded && institution ? { ...loaded, subjectName: institution.name || loaded.institutionName } : loaded;
   const ownFeeRows = research?.ownRows ?? [];
 
   const local: WorkspaceLocal | null =
