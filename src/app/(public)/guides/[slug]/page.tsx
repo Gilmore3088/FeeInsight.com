@@ -172,7 +172,7 @@ export default async function GuidePage({ params }: PageProps) {
     <div className="rounded-2xl border border-border bg-surface-0 px-5 py-5">
       <p className="text-[15px] font-semibold text-ink">Get an email when your bank&rsquo;s fee schedule is updated</p>
       <p className="mt-1 text-[13px] text-ink-muted">
-        Free account. Save your institution and we&rsquo;ll email you when we update its published {primaryNamePlain}.
+        Free account. Save your institution and we&rsquo;ll email you when we update its {primaryNamePlain} fees.
       </p>
       <Link
         href={`/register?intent=fee-alert&category=${guide.primaryCategory}`}
@@ -196,7 +196,7 @@ export default async function GuidePage({ params }: PageProps) {
       {/* 1. The answer first: what this fee costs today, as one exhibit. */}
       <section className="border-b border-border bg-paper">
         <div
-          className={`mx-auto grid max-w-page gap-8 px-4 pb-10 pt-6 sm:px-6 sm:pb-14 sm:pt-10 ${primarySummary && median != null ? "lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] lg:items-center lg:gap-12" : ""}`}
+          className={`mx-auto grid max-w-page gap-8 px-4 pb-10 pt-6 sm:px-6 sm:pb-14 sm:pt-10 ${primarySummary && median != null ? "lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] lg:items-start lg:gap-12" : ""}`}
         >
           <div>
             <nav aria-label="Breadcrumb" className="flex items-center gap-2 text-[12px] text-ink-muted">
