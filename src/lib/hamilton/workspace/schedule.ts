@@ -104,16 +104,14 @@ export function scheduleOverview(rows: readonly FeePositionRow[], subjectName?: 
 }
 
 /**
- * A Pro account's own institution with no fees on file is queued for collection first (#1078:
- * Atlas's pro_institution tier counts catalog rows under PRO_INSTITUTION_MIN_FEES, and none is
- * always under it), so the reader learns their schedule is on its way rather than missing.
+ * A Pro account's own institution with too few fees is queued for collection first (#1078:
+ * Atlas's pro_institution tier). The caller decides it applies, counting catalog rows the way
+ * Atlas does (ownScheduleQueued in ask-service, #1388); the note only adds the sentence.
  */
 export const OWN_SCHEDULE_COLLECTING = "Fee Insight has queued your institution's fee schedule for collection ahead of others.";
 
 export function withOwnScheduleNote(schedule: ScheduleOverview): ScheduleOverview {
-  // Only an empty schedule: fees counted here are categories, so a few on file may already be
-  // past the row count Atlas prioritises.
-  if (schedule.top || (schedule.feesOnFile ?? 0) > 0) return schedule;
+  if (schedule.top) return schedule;
   return { ...schedule, shortAnswer: `${schedule.shortAnswer} ${OWN_SCHEDULE_COLLECTING}` };
 }
 

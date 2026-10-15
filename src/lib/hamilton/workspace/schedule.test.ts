@@ -71,9 +71,8 @@ describe("an institution with too few fees on file (#1078)", () => {
     expect(overview.shortAnswer).toBe("Hamilton has no published fees for Example Credit Union on file yet, so there is no schedule to compare.");
   });
 
-  it("tells a Pro account its own schedule is queued first, only when none of it is on file", () => {
+  it("adds the queued note to an overview with no comparable fee", () => {
     const empty = scheduleOverview([], "Example Credit Union");
     expect(withOwnScheduleNote(empty).shortAnswer).toBe(`${empty.shortAnswer} ${OWN_SCHEDULE_COLLECTING}`);
-    expect(withOwnScheduleNote({ ...empty, feesOnFile: 1 })).toEqual({ ...empty, feesOnFile: 1 });
   });
 });
