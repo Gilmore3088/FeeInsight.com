@@ -66,7 +66,7 @@ async function loadIndexes(scope: BenchmarkScope): Promise<Indexes> {
 
 const TEASER_DEADLINE_MS = 5_000;
 
-/** The live sample, name withheld; the report renders without it when it is slow or down. */
+/** The live sample's lines, for the institution view; the report renders without it when it is slow or down. */
 async function loadTeaser() {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const late = new Promise<null>((resolve) => {
@@ -148,7 +148,7 @@ export default async function BenchmarkReportPage({ params }: PageProps) {
           <KeyFindings findings={computeNationalFindings(rows, charterPairs)} asOf={asOf} />
           <BenchmarkBoard rows={rows} place="the U.S." areaLabel="US" omitted={omitted} asOf={asOf} />
           <CharterExhibit benchmarks={charterPairs} asOf={asOf} />
-          <InstitutionView teaser={teaser} />
+          <InstitutionView teaser={teaser} asOf={asOf} />
           <ClosingBand />
           <ReportMethodology area="the United States" />
         </div>
@@ -176,7 +176,7 @@ export default async function BenchmarkReportPage({ params }: PageProps) {
         <PositionExhibit rows={rows} stateName={place} asOf={asOf} />
         <CharterExhibit benchmarks={charterPairs} asOf={asOf} eyebrow="Exhibit 3 · Banks vs credit unions" place={place} />
         <FullTable rows={rows} stateName={place} asOf={asOf} />
-        <InstitutionView teaser={teaser} />
+        <InstitutionView teaser={teaser} asOf={asOf} />
         <ClosingBand />
         <ReportMethodology area={`the ${name} Fed district`} district />
       </div>

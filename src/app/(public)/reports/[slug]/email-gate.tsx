@@ -10,7 +10,7 @@
  *   artifactExists — false if PDF not yet generated; shows pending message
  */
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 type GateState = "idle" | "submitting" | "success" | "error";
 
@@ -26,6 +26,12 @@ export function EmailGate({ slug, artifactExists }: EmailGateProps) {
   const [state, setState] = useState<GateState>("idle");
   const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string>("");
+  const downloadRef = useRef<HTMLAnchorElement>(null);
+
+  // The form unmounts on success; move focus to the link so keyboard and screen reader users land on it.
+  useEffect(() => {
+    if (state === "success") downloadRef.current?.focus();
+  }, [state]);
 
   if (!artifactExists) {
     return <p className="text-[14px] text-ink-muted">The PDF is being built. Check back soon.</p>;
@@ -78,9 +84,10 @@ export function EmailGate({ slug, artifactExists }: EmailGateProps) {
 
   if (state === "success" && downloadUrl) {
     return (
-      <div aria-live="polite">
+      <div>
         <p className="text-[14px] text-ink">Your download is ready.</p>
         <a
+          ref={downloadRef}
           href={downloadUrl}
           target="_blank"
           rel="noopener noreferrer"
@@ -116,7 +123,7 @@ export function EmailGate({ slug, artifactExists }: EmailGateProps) {
         disabled={state === "submitting"}
         className="inline-flex min-h-11 items-center justify-center rounded-full bg-ink px-5 text-[14px] font-semibold text-on-ink hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-70"
       >
-        {state === "submitting" ? "Sending..." : "Send me the report"}
+        {state === "submitting" ? "Getting your link..." : "Get the download link"}
       </button>
       {state === "error" && errorMessage && (
         <p id="report-gate-error" role="alert" className="text-[13px] text-brick">

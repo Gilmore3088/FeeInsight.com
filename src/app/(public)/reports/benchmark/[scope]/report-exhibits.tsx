@@ -195,21 +195,23 @@ const POSITION_DOT = {
   free: "bg-below-market",
 } as const;
 
+const SAMPLE_REPORT_HREF = "/reports/sample-competitive-fee-position";
+
+const POSITION_WORDS = { above_market: "above", in_market: "inside", below_market: "below", free: "free, below" } as const;
+
 /**
- * The paid next step, shown for real: one live institution's report lines, name withheld,
- * with the video slot for the clip of Hamilton building it.
+ * The paid next step, shown for real: one live institution's report lines against its own
+ * local market, then the video slot for the clip of Hamilton building it, in its own section.
  */
-export function InstitutionView({ teaser }: { teaser: InstitutionTeaser | null }) {
+export function InstitutionView({ teaser, asOf }: { teaser: InstitutionTeaser | null; asOf: string | null }) {
   return (
-    <section id="institution" aria-labelledby="institution-heading" className="scroll-mt-28 print:hidden">
-      <SectionHeading eyebrow="Your institution" title="The same market, with one institution in it">
-        {teaser
-          ? `${teaser.who}, against ${teaser.competitors} local competitors. Name withheld; every figure is live.`
-          : "Your own fees, next to the competitors you name."}
-      </SectionHeading>
-      <div className="mt-7 grid gap-5 lg:grid-cols-2">
-        {teaser && (
-          <div className="rounded-2xl border border-border bg-surface-0 p-4 shadow-fi-1 sm:p-6">
+    <>
+      {teaser && (
+        <section id="institution" aria-labelledby="institution-heading" className="scroll-mt-28 print:hidden">
+          <SectionHeading eyebrow="Your institution" title="One bank against its local market">
+            {`${teaser.who}, against the ${teaser.competitors} local competitors that publish fees. Each row counts the ones that publish that fee.`}
+          </SectionHeading>
+          <div className="mt-7 max-w-3xl rounded-2xl border border-border bg-surface-0 p-4 shadow-fi-1 sm:p-6">
             <p className="text-[13px] text-ink-muted">
               Above the local middle half on{" "}
               <span className="font-semibold text-ink">
@@ -221,8 +223,11 @@ export function InstitutionView({ teaser }: { teaser: InstitutionTeaser | null }
               {teaser.lines.map((l) => {
                 const x = teaserScale(l);
                 return (
-                  <li key={l.key} className="grid grid-cols-[7.5rem_minmax(0,1fr)_3.5rem] items-center gap-3 py-2.5 text-[13px] sm:grid-cols-[10rem_minmax(0,1fr)_4rem]">
-                    <span className="leading-tight text-ink">{l.label}</span>
+                  <li key={l.key} className="grid grid-cols-[7rem_minmax(0,1fr)_4.75rem] items-center gap-3 py-2.5 text-[13px] sm:grid-cols-[10rem_minmax(0,1fr)_6.5rem]">
+                    <span className="leading-tight text-ink">
+                      {l.label}
+                      <span className="sr-only">, {POSITION_WORDS[l.position]} the local middle half</span>
+                    </span>
                     <span className="relative h-5" aria-hidden="true">
                       <span className="absolute inset-x-0 top-1/2 border-t border-border" />
                       <span
@@ -237,8 +242,8 @@ export function InstitutionView({ teaser }: { teaser: InstitutionTeaser | null }
                     </span>
                     <span className="text-right">
                       <span className="block font-mono font-semibold tabular-nums text-ink">{formatAmount(l.own)}</span>
-                      <span className="block text-[11px] text-ink-muted">
-                        {l.chargingLess} of {l.peers} less
+                      <span className="block text-[11px] leading-tight text-ink-muted">
+                        {l.chargingLess} of {l.peers} charge less
                       </span>
                     </span>
                   </li>
@@ -262,12 +267,26 @@ export function InstitutionView({ teaser }: { teaser: InstitutionTeaser | null }
                 <span className="h-2.5 w-2.5 rounded-full bg-below-market" /> Below
               </span>
             </p>
+            <Link
+              href={SAMPLE_REPORT_HREF}
+              className="mt-4 inline-flex text-[14px] font-semibold text-ink underline decoration-border underline-offset-4 hover:decoration-ink"
+            >
+              Read this bank&apos;s full sample report
+            </Link>
           </div>
-        )}
-        <figure className={teaser ? "" : "lg:col-span-2 lg:mx-auto lg:w-full lg:max-w-3xl"}>
+          <ExhibitSource asOf={asOf}>
+            One bank&apos;s own published fee schedule against the published schedules of the competitors in its local market.
+          </ExhibitSource>
+        </section>
+      )}
+
+      <section aria-labelledby="video-heading" className="print:hidden">
+        <figure className="mx-auto w-full max-w-3xl">
           <figcaption className="mb-3 flex items-baseline justify-between gap-4">
-            <span className="text-[15px] font-semibold text-ink">Watch Hamilton build this for one bank</span>
-            <span className="text-[13px] text-ink-muted">Video coming</span>
+            <h2 id="video-heading" className="text-[18px] font-semibold tracking-[-0.02em] text-ink sm:text-[20px]">
+              Watch Hamilton build a report for one bank
+            </h2>
+            <span className="shrink-0 text-[13px] text-ink-muted">Video coming</span>
           </figcaption>
           <div className="relative aspect-video overflow-hidden rounded-2xl bg-warm-ink-900 shadow-fi-2 ring-1 ring-ink/10" aria-hidden="true">
             {teaser && (
@@ -296,16 +315,18 @@ export function InstitutionView({ teaser }: { teaser: InstitutionTeaser | null }
             </span>
           </div>
         </figure>
-      </div>
-    </section>
+      </section>
+    </>
   );
 }
 
 /** The one closing band: Hamilton for your own institution, a demo, and the paid report as one line. */
 export function ClosingBand() {
   return (
-    <section className="rounded-2xl border border-border bg-surface-0 px-5 py-7 print:hidden sm:px-8">
-      <p className="text-[22px] font-semibold tracking-[-0.02em] text-ink">See your own institution in this report</p>
+    <section aria-labelledby="closing-heading" className="rounded-2xl border border-border bg-surface-0 px-5 py-7 print:hidden sm:px-8">
+      <h2 id="closing-heading" className="text-[22px] font-semibold tracking-[-0.02em] text-ink">
+        See your own institution in this report
+      </h2>
       <p className="mt-2 max-w-[38rem] text-[14px] text-ink-muted">
         Hamilton puts your fees on every line of it and keeps them current as competitors change theirs.
       </p>

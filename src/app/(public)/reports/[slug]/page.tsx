@@ -163,7 +163,7 @@ export default async function ReportPage({
       <section className="mx-auto max-w-page px-4 pt-12 sm:px-6">
         <div className="flex flex-col gap-4 rounded-2xl border border-border bg-surface-0 px-5 py-6 sm:flex-row sm:items-center sm:justify-between sm:px-7">
           <div>
-            <p className="text-[18px] font-semibold tracking-[-0.02em] text-ink">Want your own institution in it?</p>
+            <h2 className="text-[18px] font-semibold tracking-[-0.02em] text-ink">Want your own institution in it?</h2>
             <p className="mt-1 max-w-[36rem] text-[14px] text-ink-muted">
               Hamilton sets your fees against the competitors you choose and keeps them current.
             </p>

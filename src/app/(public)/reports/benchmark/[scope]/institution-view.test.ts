@@ -62,3 +62,21 @@ describe("benchmark institution view", () => {
     expect(x(50)).toBeLessThan(100);
   });
 });
+
+describe("benchmark institution view wording and limits", () => {
+  it("names a credit union, and drops the state when there is none", () => {
+    const cu = report([line("od", 30)]);
+    cu.data.subject = { ...cu.data.subject, charter_type: "credit_union" };
+    expect(institutionTeaser(cu)!.who).toBe("A credit union in Florida");
+    const noState = report([line("od", 30)]);
+    noState.data.subject = { ...noState.data.subject, state_code: null } as typeof noState.data.subject;
+    expect(institutionTeaser(noState)!.who).toBe("A bank");
+  });
+
+  it("shows at most five lines and counts above only among them", () => {
+    const lines = [1, 2, 3, 4, 5].map((n) => line(`l${n}`, 25)).concat([line("l6", 99, "above_market")]);
+    const teaser = institutionTeaser(report(lines))!;
+    expect(teaser.lines).toHaveLength(5);
+    expect(teaser.above).toBe(0);
+  });
+});

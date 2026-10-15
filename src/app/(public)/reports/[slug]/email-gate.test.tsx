@@ -1,5 +1,5 @@
 import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { EmailGate } from "./email-gate";
 
 describe("EmailGate", () => {
@@ -16,5 +16,25 @@ describe("EmailGate", () => {
     fireEvent.submit(input.closest("form")!);
     expect(screen.getByRole("alert").textContent).toBe("Please enter a valid email address.");
     expect(input.getAttribute("aria-describedby")).toBe("report-gate-error");
+  });
+});
+
+describe("EmailGate success", () => {
+  it("shows the download link, focuses it, and promises no email", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ downloadUrl: "https://files.example/q3.pdf" }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    try {
+      const { container } = render(<EmailGate slug="q3" artifactExists />);
+      const input = screen.getByLabelText("Work email");
+      fireEvent.change(input, { target: { value: "pat@bank.com" } });
+      fireEvent.submit(input.closest("form")!);
+      const link = await screen.findByRole("link", { name: "Download the PDF" });
+      expect(link.getAttribute("href")).toBe("https://files.example/q3.pdf");
+      expect(document.activeElement).toBe(link);
+      expect(screen.getByText("The link works for one hour.")).toBeTruthy();
+      expect(container.textContent ?? "").not.toMatch(/email|send/i);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });
