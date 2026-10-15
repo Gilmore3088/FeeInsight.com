@@ -7,12 +7,15 @@
 > to use them. Any revival needs James's decision in `docs/project/DECISIONS.md`.
 
 The marketing team: one manager and eight specialists that find banks and credit unions who need
-fee benchmarking, earn their trust with sourced research, and turn interest into report requests
-and Pro customers. Proposed by James on 2026-10-08; built in weekly stages.
+fee benchmarking, earn their trust with sourced research, and turn interest into Hamilton Pro
+subscriptions, paid monthly or annually. Proposed by James on 2026-10-08; built in weekly stages.
 
-The scoreboard is revenue, not content: qualified institutional visitors, report requests,
-paid reports, Pro and institution plans, and agent cost per qualified lead
-(`metrics/kpi-definitions.md`).
+**The goal is a Pro subscription** (James, 2026-10-15). The paid report is a high-value lead, not
+the goal. The funnel every agent works toward: free sample report, then the Competitive Fee Position Report (from $300) as a high-value lead, then Hamilton Pro, either because the buyer wants it on a regular basis or because the report sparks a Pro demo request.
+
+The scoreboard is revenue, not content: Pro subscriptions first, then Pro demo requests, paid
+reports and report requests as leads, free sample and free report views, qualified institutional
+visitors, and agent cost per qualified lead (`metrics/kpi-definitions.md`).
 
 ## The team
 
@@ -93,4 +96,4 @@ No one owns these yet. Each gets an agent when the loop above is working:
 - Partnerships: state bankers' and credit union associations, core vendors and consultants.
 - Webinars and events.
 
-Paid ads and referral programs are out on purpose until the first sale.
+Paid ads and referral programs are out on purpose until the first Pro subscription.
