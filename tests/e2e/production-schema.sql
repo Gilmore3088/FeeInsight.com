@@ -3188,3 +3188,6 @@ ALTER TABLE public.fee_change_records
 
 -- #1094 step 1: the kind of document each stored text is.
 \ir ../../supabase/migrations/20270110000050_source_text_document_kind.sql
+
+-- #1075 step 1: the gutenberg agent row and reporter name.
+\ir ../../supabase/migrations/20270110000051_gutenberg_agent.sql
