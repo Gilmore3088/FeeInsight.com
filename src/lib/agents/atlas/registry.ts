@@ -23,6 +23,7 @@ export const CRON_OWNER: Record<string, AdminAgent> = {
   "/api/admin/crew/lead-watch": "atlas",
   "/api/admin/crew/scoreboard": "atlas",
   "/api/admin/crew/bayes": "atlas",
+  "/api/admin/crew/knox-misses": "atlas",
   "/api/admin/crew/schedule-check": "atlas",
   "/api/admin/reports/schedule": "hamilton",
   "/api/admin/crew/marketing": "growth",

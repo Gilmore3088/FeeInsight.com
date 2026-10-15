@@ -81,6 +81,30 @@ export function combineScores(scores: GateScore[]): GateScore {
   return total;
 }
 
+/**
+ * A key fee as the gate scores it: `category:cents` after the folds and the equivalences, or null
+ * when the gate does not score it (no price, or an "unmapped" line no fold places). Deming's daily
+ * replay of Knox's answer-key misses (#1099) uses the same key, so a case passes when the gate
+ * would count the fee found. Pure.
+ */
+export function gateKeyFor(fee: AnswerKeyDocument["fees"][number], text: string): string | null {
+  const mapped = fee.key === "unmapped" ? { ...fee, key: foldedCategory(fee.source_line ?? "") ?? "unmapped" } : fee;
+  if (mapped.key === "unmapped" || mapped.amount == null) return null;
+  const key = keyCategory(mapped, text);
+  return `${EQUIVALENT[key] ?? key}:${cents(Number(mapped.amount))}`;
+}
+
+/** Today's free reads of a text, keyed as the gate compares them (`category:cents`). Pure. */
+export function gateReads(text: string): Set<string> {
+  const reads = new Set<string>();
+  for (const read of reproducibleFees(text)) {
+    const split = read.lastIndexOf(":");
+    const key = read.slice(0, split);
+    reads.add(`${EQUIVALENT[key] ?? key}:${Number(read.slice(split + 1))}`);
+  }
+  return reads;
+}
+
 export function scoreAnswerKeys(documents: AnswerKeyDocument[]): GateScore {
   const score: GateScore = {
     documents: documents.length,
