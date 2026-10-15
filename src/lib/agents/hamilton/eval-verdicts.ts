@@ -294,27 +294,6 @@ export const HAND_CHECKED_VERDICTS: readonly (EvalVerdict & { pattern: string })
     verdict: "wrong_category", pattern: "category_miss",
     why: "Doc 26244 (refresh of doc 16334): \"Escheat processing fee (plus drilling fee if applicable) | $50.00/account\" sits among account fees after \"Dormant account fee | $7.50/month\"; it is not a safe deposit box fee",
   },
-  // #1310 (James approved, Oct 14): prices whose cents Knox cut ("$1 50*", "$29. 95"). The reader is
-  // fixed for new reads (#1310); there is still no typed path that changes a live amount, so these
-  // come down for a fresh read, as 50019 and 50020 did.
-  {
-    feePublishedId: 49175, institution: "Xplore Federal Credit Union",
-    feeName: "00 Loan Skip A Pay Fee", amount: 29, canonicalFeeKey: "other_lending_fee",
-    verdict: "wrong_amount", pattern: "cut_cents",
-    why: "Doc 12872: \"Loan Skip A Pay Fee.......... $29. 95/ea ch\"; Knox kept $29, the fee is $29.95",
-  },
-  {
-    feePublishedId: 29166, institution: "Members1St Community Federal Credit Union",
-    feeName: "00 ATM Transactions (per item)", amount: 1, canonicalFeeKey: "atm_non_network",
-    verdict: "wrong_amount", pattern: "cut_cents",
-    why: "Doc 13851: \"ATM Transactions (per item) | $1 50* after 8/mo\"; Knox kept $1, the fee is $1.50",
-  },
-  {
-    feePublishedId: 141772, institution: "Members1St Community Federal Credit Union",
-    feeName: "ATM Transactions (per item)", amount: 1, canonicalFeeKey: "atm_non_network",
-    verdict: "wrong_amount", pattern: "cut_cents",
-    why: "Doc 32358 (later copy of doc 13851): \"ATM Transactions (per item) | $1 50* after 8/mo\"; Knox kept $1 (and \"monthly\" from \"after 8/mo\"), the fee is $1.50 per item",
-  },
 ];
 
 /** A surcharge rebate, reimbursement or refund published as the ATM fee itself. */
