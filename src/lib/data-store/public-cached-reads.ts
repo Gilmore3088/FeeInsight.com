@@ -46,7 +46,8 @@ export const getStatsCached = cachedPublicRead("collection-stats", getStats);
 export const getPublicStatsCached = cachedPublicRead("public-stats", getPublicStats, (s) => s.total_observations === 0);
 export const getDistrictMetricsCached = cachedPublicRead("district-metrics", getDistrictMetrics);
 export const getFeeCategoryDetailCached = cachedPublicRead(
-  "fee-category-detail",
+  // v2: entries carry institution_points; older entries without them are not reused.
+  "fee-category-detail-v2",
   getFeeCategoryDetail,
   (detail) => detail.fees.length === 0,
 );
