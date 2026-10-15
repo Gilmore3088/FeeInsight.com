@@ -5,7 +5,9 @@ import { formatFeeAmount } from "@/lib/format";
 import { UnstatedAudienceFootnote, UnstatedAudienceMark, hasUnstatedAudience } from "@/components/unstated-audience";
 
 const EYEBROW = "text-[11px] font-bold uppercase tracking-[0.12em] text-ink-muted";
-const TH = `px-4 py-2.5 ${EYEBROW}`;
+// Phones get tighter cells; sm and up keep the full padding.
+const CELL = "px-3 py-2.5 sm:px-4";
+const TH = `${CELL} ${EYEBROW}`;
 const BAR_HEADROOM = 1.1;
 const BAR_MIN_WIDTH_PCT = 2;
 const BAR_MAX_LEFT_PCT = 100 - BAR_MIN_WIDTH_PCT;
@@ -62,7 +64,10 @@ export function FamilySection({ familyName, cats }: { familyName: string; cats: 
 
       <div className="mt-3 overflow-hidden rounded-xl border border-border/80 bg-white/70 backdrop-blur-sm">
         <div className="table-scroll">
-          <table className="w-full min-w-[560px] text-left text-sm">
+          {/* On a phone the table is two columns (fee with its institution count beneath, then the
+              median), so it fits a 360px screen with no sideways scroll. The range columns, the
+              distribution bar and the count column return from sm up. */}
+          <table className="w-full text-left text-sm sm:min-w-[560px]">
             <thead>
               <tr className="border-b border-border/60 bg-paper/60">
                 <th scope="col" className={TH}>Fee</th>
@@ -70,8 +75,8 @@ export function FamilySection({ familyName, cats }: { familyName: string; cats: 
                 <th scope="col" className={`hidden ${TH} text-right sm:table-cell`}>P25</th>
                 <th scope="col" className={`hidden ${TH} text-right sm:table-cell`}>P75</th>
                 <th scope="col" className={`hidden ${TH} text-right md:table-cell`}>Min – Max</th>
-                <th scope="col" className={TH}>Distribution</th>
-                <th scope="col" className={`${TH} text-right`}>Inst.</th>
+                <th scope="col" className={`hidden ${TH} sm:table-cell`}>Distribution</th>
+                <th scope="col" className={`hidden ${TH} text-right sm:table-cell`}>Inst.</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border/40">
@@ -101,28 +106,31 @@ function CategoryRow({ cat, barScale }: { cat: FeeCategorySummary; barScale: num
 
   return (
     <tr className="group hover:bg-paper/60 transition-colors">
-      <td className="px-4 py-2.5">
+      <td className={CELL}>
         <Link
           href={`/fees/${cat.fee_category}`}
           className="font-medium text-ink group-hover:text-brick transition-colors"
         >
           {getDisplayName(cat.fee_category)}
         </Link>
+        <span className="mt-0.5 block text-[12px] text-ink-muted sm:hidden">
+          <span className="tabular-nums">{cat.institution_count.toLocaleString()}</span> institutions
+        </span>
       </td>
-      <td className="px-4 py-2.5 text-right tabular-nums font-semibold text-ink">
+      <td className={`${CELL} text-right align-top tabular-nums font-semibold text-ink sm:align-middle`}>
         {money(cat.median_amount)}
         <UnstatedAudienceMark show={cat.median_amount !== null && hasUnstatedAudience(cat)} />
       </td>
-      <td className="hidden px-4 py-2.5 text-right tabular-nums text-ink-muted sm:table-cell">
+      <td className={`hidden ${CELL} text-right tabular-nums text-ink-muted sm:table-cell`}>
         {money(cat.p25_amount)}
       </td>
-      <td className="hidden px-4 py-2.5 text-right tabular-nums text-ink-muted sm:table-cell">
+      <td className={`hidden ${CELL} text-right tabular-nums text-ink-muted sm:table-cell`}>
         {money(cat.p75_amount)}
       </td>
-      <td className="hidden px-4 py-2.5 text-right tabular-nums text-ink-muted text-[12px] md:table-cell">
+      <td className={`hidden ${CELL} text-right tabular-nums text-ink-muted text-[12px] md:table-cell`}>
         {money(cat.min_amount ?? 0)} &ndash; {money(cat.max_amount ?? 0)}
       </td>
-      <td className="px-4 py-2.5">
+      <td className={`hidden ${CELL} sm:table-cell`}>
         <div className="relative h-3 w-full min-w-[80px] rounded-full bg-border/40">
           <div
             className="absolute top-0 h-3 rounded-full bg-border/70 group-hover:bg-brick/20 transition-colors"
@@ -136,7 +144,7 @@ function CategoryRow({ cat, barScale }: { cat: FeeCategorySummary; barScale: num
           )}
         </div>
       </td>
-      <td className="px-4 py-2.5 text-right tabular-nums text-ink-muted">
+      <td className={`hidden ${CELL} text-right tabular-nums text-ink-muted sm:table-cell`}>
         {cat.institution_count.toLocaleString()}
       </td>
     </tr>
