@@ -19,9 +19,14 @@ describe("isPersonalEmail", () => {
   it("sees through a trailing dot, and refuses no bank under a short generic name (#1411)", () => {
     expect(isPersonalEmail("pat@gmail.com.")).toBe(true);
     expect(isPersonalEmail("pat@gmx.de")).toBe(true);
-    expect(isPersonalEmail("pat@live.ca")).toBe(false);
-    expect(isPersonalEmail("pat@mail.ie")).toBe(false);
-    expect(isPersonalEmail("pat@live.com")).toBe(true);
+    expect(isPersonalEmail("pat@x.mail.ie")).toBe(false);
+    expect(isPersonalEmail("pat@bank.me.uk")).toBe(false);
+  });
+
+  it("still treats Microsoft's country mail domains as personal (review of #1473)", () => {
+    for (const email of ["pat@live.com", "pat@live.ca", "pat@live.co.uk", "pat@live.com.au", "pat@msn.co.uk"]) {
+      expect(isPersonalEmail(email), email).toBe(true);
+    }
   });
 });
 

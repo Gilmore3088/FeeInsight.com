@@ -29,11 +29,12 @@ export const PERSONAL_EMAIL_DOMAINS = new Set([
 ]);
 
 /**
- * Providers distinctive enough to recognise under a country domain ("yahoo.co.uk", "hotmail.fr",
- * "gmx.de"). Short generic labels (me, mac, mail, live, hey) are left out, so a bank at "live.ca"
- * isn't refused at checkout.
+ * Providers that run personal mail under country domains ("yahoo.co.uk", "hotmail.fr", "gmx.de",
+ * Microsoft's "live.ca" and "msn.co.uk"). Short generic labels with no such domains (me, mac,
+ * mail, hey) are left out, so a bank at "x.mail.ie" or "bank.me.uk" isn't refused at checkout.
+ * Add a provider here when its country domains are personal mail, as well as to the list above.
  */
-const PERSONAL_PROVIDER_NAMES = new Set(["gmail", "googlemail", "yahoo", "ymail", "rocketmail", "hotmail", "outlook", "aol", "icloud", "gmx", "protonmail", "yandex", "zoho", "fastmail"]);
+const PERSONAL_PROVIDER_NAMES = new Set(["gmail", "googlemail", "yahoo", "ymail", "rocketmail", "hotmail", "outlook", "live", "msn", "aol", "icloud", "gmx", "protonmail", "yandex", "zoho", "fastmail"]);
 
 /**
  * Shared platforms an institution's "website" sometimes points at (a Facebook page, a hosted
