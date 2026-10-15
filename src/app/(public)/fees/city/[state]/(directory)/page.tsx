@@ -78,18 +78,18 @@ export default async function StateCityDirectory({ params }: PageProps) {
         ) : (
           <div className="rounded-xl border border-border/80 bg-white/70 backdrop-blur-sm overflow-hidden">
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[520px] text-sm">
+              <table className="w-full text-sm sm:min-w-[520px]">
                 <thead>
                   <tr className="border-b border-border/60 bg-paper/60">
-                    <th className="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted">City</th>
-                    <th className="px-4 py-2.5 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted">Total Institutions</th>
-                    <th className="px-4 py-2.5 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted">With Fee Data</th>
+                    <th className="px-3 py-2.5 sm:px-4 text-left text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted">City</th>
+                    <th className="px-3 py-2.5 sm:px-4 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted">Institutions</th>
+                    <th className="px-3 py-2.5 sm:px-4 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted">With fees</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border/40">
                   {cities.map((c) => (
                     <tr key={`${c.city}-${c.state_code}`} className="hover:bg-paper/60 transition-colors">
-                      <td className="px-4 py-2.5">
+                      <td className="px-3 py-2.5 sm:px-4">
                         <Link
                           href={`/fees/city/${stateCode.toLowerCase()}/${encodeURIComponent(c.city.toLowerCase())}`}
                           className="font-medium text-ink hover:text-brick transition-colors"
@@ -97,10 +97,10 @@ export default async function StateCityDirectory({ params }: PageProps) {
                           {c.city}
                         </Link>
                       </td>
-                      <td className="px-4 py-2.5 text-right tabular-nums text-ink-muted">
+                      <td className="px-3 py-2.5 sm:px-4 text-right tabular-nums text-ink-muted">
                         {c.institution_count}
                       </td>
-                      <td className="px-4 py-2.5 text-right tabular-nums font-medium text-ink">
+                      <td className="px-3 py-2.5 sm:px-4 text-right tabular-nums font-medium text-ink">
                         {c.with_fees}
                       </td>
                     </tr>
