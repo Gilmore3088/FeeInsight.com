@@ -103,7 +103,7 @@ export function IntelligenceView({ selection, data, lens, overview, instId, size
       </div>
     </header>
     <ScopeControls selection={selection} pathname={pathname} lens={lens} size={size.id} />
-    {size.id !== "all" ? <p className="-mt-3 text-xs text-[var(--fi-muted)]">{size.label}: the asset size narrows the fee spread and the institution table. The landscape, the state map and the other lenses still cover every size.</p> : null}
+    {size.id !== "all" && (!overview || state) ? <p className="-mt-3 text-xs text-[var(--fi-muted)]">{size.label}: the asset size narrows {overview ? "the institution table" : "the price bands and the institution table"}. The landscape, the state map and the other lenses still cover every size.</p> : null}
     {overview ? <HamiltonRead data={data} place={place} state={state} primary={primary} /> : null}
     {overview ? <>
       {panels.fees}
@@ -307,13 +307,15 @@ function PeerTablePanel({ peers, place, primaryName, charter, compact, exploreHr
 function SpreadPanel({ spread, place, primaryName, charter, note }: { spread: FeeSpread; place: string; primaryName: string; charter: LandingResearchHandoff["charter"]; note?: string }) {
   const money = (v: number) => Number.isInteger(v) ? `$${v}` : `$${v.toFixed(2)}`;
   const range = (from: number, to: number) => `${money(from)} to ${money(to)}`;
-  const fee = primaryName.replace(/\s*\([^)]*\)\s*$/, "").toLowerCase();
+  const where = place === "United States" ? "the United States" : place;
   const medianBin = spread.bins.find(b => spread.median >= b.from && spread.median < b.to) ?? spread.bins[spread.bins.length - 1];
-  return <Panel title={`How ${place} prices the ${fee} fee`} subtitle={`${spread.count.toLocaleString()} ${CHARTER_LABEL[charter].toLowerCase()}${note ? ` ${note}` : ""} with a published amount · institutions per price band`}>
+  return <Panel title={`${primaryName}: how ${where} prices it`} subtitle={`${spread.count.toLocaleString()} ${CHARTER_LABEL[charter].toLowerCase()}${note ? ` ${note}` : ""} with a published amount · institutions per price band`}>
     <p className="mt-3 text-sm">Median <strong className="tabular-nums">{dollars(spread.median)}</strong>; the middle half charge <span className="tabular-nums">{dollars(spread.p25)}</span> to <span className="tabular-nums">{dollars(spread.p75)}</span>. Published amounts run from <span className="tabular-nums">{dollars(spread.low)}</span> to <span className="tabular-nums">{dollars(spread.high)}</span>.</p>
-    <div className="mt-4"><HorizontalBars label={`Institutions by ${fee} fee band`} valueLabel="Institutions" highlight={range(medianBin.from, medianBin.to)} rows={spread.bins.map(b => ({ name: range(b.from, b.to), value: b.count }))} /></div>
+    <div className="mt-4"><HorizontalBars label={`Institutions by ${primaryName} price band`} valueLabel="Institutions" highlight={range(medianBin.from, medianBin.to)} rows={spread.bins.map(b => ({ name: range(b.from, b.to), value: b.count }))} /></div>
+    <table className="sr-only"><caption>Institutions per {primaryName} price band</caption><thead><tr><th scope="col">Price band</th><th scope="col">Institutions</th></tr></thead>
+      <tbody>{spread.bins.map(b => <tr key={b.from}><th scope="row">{range(b.from, b.to)}</th><td>{b.count}</td></tr>)}</tbody></table>
     <p className="mt-2 text-xs text-[var(--fi-muted)]">Each band includes its lower amount and stops just under its upper one. The highlighted band holds the median.</p>
-    <EvidenceDetails source="Bank Fee Index · published fee catalog" period="Live catalog at page load" geography={place} coverage={`Every institution in scope with a published ${fee} fee; institutions without one are not counted as $0`} method="One value per institution; even-width price bands; quartiles interpolated between values. Figures can differ slightly from the landscape table, which uses the fee index's own cohort rules." />
+    <EvidenceDetails source="Bank Fee Index · published fee catalog" period="Live catalog at page load" geography={place} coverage={`Every institution in scope with a published ${primaryName} amount; institutions without one are not counted as $0`} method="One value per institution; even-width price bands; quartiles interpolated between values. Figures can differ slightly from the landscape table, which uses the fee index's own cohort rules." />
   </Panel>;
 }
 

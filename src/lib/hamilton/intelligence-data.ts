@@ -109,7 +109,7 @@ export function buildFeeSpread(amounts: number[]): FeeSpread | null {
   if (sorted.length < MIN_INSTITUTIONS_FOR_MEDIAN) return null;
   const low = sorted[0];
   const high = sorted[sorted.length - 1];
-  const step = STEPS.find(s => (Math.floor(high / s) - Math.floor(low / s) + 1) <= 10) ?? (Math.ceil((high - low) / 10) || 1);
+  const step = STEPS.find(s => (Math.floor(high / s) - Math.floor(low / s) + 1) <= 10) ?? (Math.ceil((high - low) / 9) || 1);
   const start = Math.floor(low / step) * step;
   const bins = Array.from({ length: Math.floor((high - start) / step) + 1 }, (_, i) => ({ from: start + i * step, to: start + (i + 1) * step, count: 0 }));
   for (const value of sorted) bins[Math.min(bins.length - 1, Math.floor((value - start) / step))].count += 1;

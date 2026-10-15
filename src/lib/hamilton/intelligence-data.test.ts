@@ -22,6 +22,7 @@ describe("buildFeeSpread", () => {
     expect(spread!.bins.reduce((n, b) => n + b.count, 0)).toBe(8);
     expect(spread!.bins.length).toBeLessThanOrEqual(10);
     expect(buildFeeSpread(Array(MIN_INSTITUTIONS_FOR_MEDIAN - 1).fill(10))).toBeNull();
+    expect(buildFeeSpread([0, 1, 2, 3, 10000])!.bins.length).toBeLessThanOrEqual(10);
   });
 });
 
