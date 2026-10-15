@@ -220,6 +220,10 @@ export function rosettaReaderManifests(versions: RosettaVersions): ReplayManifes
  * in a manifest above.
  */
 export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
+  // v2 (Oct 15): footnoted held names ("1Monthly fee") also meet the live fees printed without the
+  // mark. The week mark carries the version, so each lane's next extract step reads its held lines
+  // again under v2; there is no backlog for a replay to count.
+  NAME_FILE_KEY_VERSION: "Each lane's next extract step re-reads its held lines under the new week mark; nothing to replay.",
   // v1 (Oct 15): a new pass over the v17 review's recorded passes; each verify step reads all of
   // them that it has not acted on, so there is no backlog for a replay to count.
   DARWIN_RECORDED_RELEASE_STRATEGY: "Each verify step reads every recorded v17 pass it has not acted on; nothing to replay.",
