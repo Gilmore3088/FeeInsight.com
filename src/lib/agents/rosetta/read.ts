@@ -33,6 +33,7 @@ import {
 } from "@/lib/agents/learning/outcomes";
 import { playbookFromRow, type Playbook } from "@/lib/agents/learning/playbook";
 import { companionSourceOf, companionStreamsReady, rejectCompanionPage } from "@/lib/agents/companion-streams";
+import { documentKind, DOCUMENT_KIND_VERSION } from "@/lib/agents/learning/document-kind";
 import { chooseStrategy, type StrategyCandidate } from "@/lib/agents/learning/router";
 import { feedbackSchemaReady } from "@/lib/agents/learning/feedback";
 import { currentCopySchemaReady, restoreReadableCopies } from "@/lib/agents/magellan/current-copy";
@@ -69,6 +70,7 @@ import {
 } from "@/lib/agents/rosetta/ocr";
 import { layoutPageText, PDF_LAYOUT_VERSION, type PdfTextItem } from "@/lib/agents/rosetta/pdf-layout";
 import {
+  documentKindColumnsReady,
   ROSETTA_TABLE_ROWS_VERSION,
   rosettaTextColumnsReady,
   rowsInText,
@@ -1443,6 +1445,17 @@ export async function recordReadResult(
     RETURNING id
   `;
   const textArtifactId = textArtifact?.id == null ? null : Number(textArtifact.id);
+  const companionSource = await companionSourceOf(db, result.sourceDocumentId);
+  // What kind of document this is (#1094), decided once here from the stored text.
+  if (textColumns && textArtifactId != null && normalizedText && (await documentKindColumnsReady(db))) {
+    const kind = documentKind({ text: normalizedText, url: result.sourceUrl, feeSchedule: companionSource == null });
+    await db`
+      UPDATE agent_source_texts
+         SET document_kind = ${kind.kind},
+             document_kind_version = ${DOCUMENT_KIND_VERSION}
+       WHERE id = ${textArtifactId}
+    `;
+  }
   if (textColumns && textArtifactId != null) {
     // Table rows and the reader live in columns added by a later migration.
     const payload = tableRowsPayload(result.rows);
@@ -1455,7 +1468,7 @@ export async function recordReadResult(
   }
   // A companion page's read says nothing about the bank's main fee link: the profile
   // (canonical link, read strategy) stays as the main link left it.
-  if ((await companionSourceOf(db, result.sourceDocumentId)) != null) return;
+  if (companionSource != null) return;
   const readStrategy = readStrategyForResult(result);
   const sourceKind = sourceKindForResult(result);
   const terminalBacklog = result.status === "needs_ocr" || result.status === "empty" || result.status === "skipped";

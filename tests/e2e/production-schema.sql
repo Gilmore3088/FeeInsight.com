@@ -3185,3 +3185,6 @@ ALTER TABLE public.fee_change_records
 
 -- #1234 step 2: Knox's extraction note column, and both catalog views with it appended.
 \ir ../../supabase/migrations/20270110000048_raw_fee_extraction_note.sql
+
+-- #1094 step 1: the kind of document each stored text is.
+\ir ../../supabase/migrations/20270110000050_source_text_document_kind.sql

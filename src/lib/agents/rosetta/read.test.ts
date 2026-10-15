@@ -817,6 +817,29 @@ describe("Rosetta agentic read", () => {
       expect(reader.close).not.toHaveBeenCalled();
     });
 
+    it("stores the document's kind with its text once the kind columns exist (#1094)", async () => {
+      const db = specialistDb([scan]);
+      const base = db.getMockImplementation() as (strings: TemplateStringsArray, ...values: unknown[]) => Promise<unknown>;
+      db.mockImplementation((strings: TemplateStringsArray, ...values: unknown[]) => {
+        if (templateText(strings).includes("document_kind_columns_ready")) return Promise.resolve([{ document_kind_columns_ready: true }]);
+        return base(strings, ...values);
+      });
+
+      await runRosettaRead({ runId: 703, db: asReadDb(db), fetchImpl: pdfFetch(), pdfTextExtractor: noText(), scannedPdfReader: ocrReader(feeLines.join("\n")) });
+
+      const update = db.mock.calls.find((call) => templateText(call[0]).includes("SET document_kind ="));
+      // "SCHEDULE OF FEES" is the text's title.
+      expect(update?.slice(1)).toEqual(["fee_schedule", 1, 901]);
+    });
+
+    it("stores no kind before the kind columns exist", async () => {
+      const db = specialistDb([scan]);
+
+      await runRosettaRead({ runId: 704, db: asReadDb(db), fetchImpl: pdfFetch(), pdfTextExtractor: noText(), scannedPdfReader: ocrReader(feeLines.join("\n")) });
+
+      expect(db.mock.calls.some((call) => templateText(call[0]).includes("SET document_kind ="))).toBe(false);
+    });
+
     it("leaves an unreliable OCR result for the paid pass", async () => {
       const db = specialistDb([scan]);
 
