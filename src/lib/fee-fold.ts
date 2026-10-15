@@ -192,9 +192,10 @@ const LENDING_LEGAL = /\blien (?:release|satisf)|\b(?:release|satisf\w*) of (?:t
  * James, Oct 15 2026 (#1026, reversing Oct 8): subordination fees file as legal process. New reads
  * do from this change on. Live and verified fees filed as other lending before it move when this
  * is on: Hamilton's fold step re-files them (logged as `category_fold`, old category kept), each
- * one only when legal process's guard and price range accept it. Off until James says go.
+ * one only when legal process's guard and price range accept it. On since James's go, Oct 15
+ * ("proceed with your recs", Audit thread).
  */
-export const SUBORDINATION_REFILE_LIVE = false;
+export const SUBORDINATION_REFILE_LIVE = true;
 
 /**
  * Live subordination fees the switched re-file leaves where they are, by verified id, because the
