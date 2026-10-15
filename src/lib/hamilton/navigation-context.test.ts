@@ -35,7 +35,6 @@ describe("Hamilton navigation context contracts", () => {
     const state = hamiltonNavigationSelection("/pro/analyze", new URLSearchParams({ research: encodeLandingResearch(research) }));
     expect(state.institutionId).toBeNull();
     expect(hrefWithHamiltonNavigation("/pro/research", state)).toBe("/pro/research");
-    expect(JSON.parse(new URL(hrefWithHamiltonNavigation("/pro/reports", state), "https://example.test").searchParams.get("research")!))
-      .toEqual({ ...research, task: "board_report" });
+    expect(hrefWithHamiltonNavigation("/pro/reports", state)).toBe("/pro/reports");
   });
 });

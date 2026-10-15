@@ -105,7 +105,7 @@ export function IntelligenceView({ selection, data, lens, overview, instId, size
       </div>
     </header>
     <ScopeControls selection={selection} pathname={pathname} lens={lens} size={size.id} />
-    {size.id !== "all" ? <p className="-mt-3 text-xs text-[var(--fi-muted)]">{size.label}: every fee exhibit, including the U.S. reference, covers institutions of this size only. Financials, economy, complaints and regulation cover every size.</p> : null}
+    {size.id !== "all" ? <p className="-mt-3 text-xs text-[var(--fi-muted)]">{size.label}: the fee exhibits, including the U.S. reference, cover institutions of this size. The institution table sorts by each one&apos;s latest reported assets. Financials, economy, complaints and regulation cover every size.</p> : null}
     {overview ? <HamiltonRead data={data} place={place} state={state} primary={primary} /> : null}
     {overview ? <>
       {panels.fees}
@@ -155,7 +155,7 @@ export function readFindings(data: Loaded, place: string, state: string | null, 
   const findings: Finding[] = [];
   const row = data.fees?.comparisons.find(c => c.category === primary) ?? data.fees?.comparisons.find(c => c.selected.status === "available");
   if (row && row.selected.status === "available") {
-    const fee = getDisplayName(row.category).toLowerCase();
+    const fee = getDisplayName(row.category).replace(/\s*\([^)]*\)/g, "").toLowerCase();
     findings.push({
       lens: "fees",
       title: `${place}'s median ${fee} is ${dollars(row.selected.median)}.`,

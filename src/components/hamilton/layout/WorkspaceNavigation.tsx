@@ -44,7 +44,7 @@ export function WorkspaceNavigation({ pathname, isAdmin, accountLabel, researchL
         <div><span className="workspace-muted">Your institution: </span><strong>{accountLabel}</strong></div>
         <NavAccount />
       </header>
-      {researchLabel ? <div className="workspace-research-context print:hidden"><span>Looking at: {researchLabel}</span><Link href={hrefFor("/pro/settings")}>Change your institution</Link></div> : null}
+      {researchLabel ? <div className="workspace-research-context print:hidden"><span>Looking at: {researchLabel}</span>{researchLabel.endsWith(" market") ? null : <Link href={hrefFor("/pro/settings")}>Change your institution</Link>}</div> : null}
     </section>
   </>;
 }

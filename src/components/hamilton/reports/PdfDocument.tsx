@@ -446,11 +446,11 @@ function ConsultantPdfBody({ report }: { report: ReportSummaryResponse }) {
       </View>
 
       <View style={styles.section}>
-        <Text style={styles.sectionHeading}>{report.boardBrief ? "Limits of this Evidence" : "Trade-offs"}</Text>
+        <Text style={styles.sectionHeading}>{report.boardBrief ? "Limits of this evidence" : "Trade-offs"}</Text>
         <PdfParagraphs text={report.recommendation} />
         {(report.watchlist ?? []).length > 0 && (
           <View style={styles.metadataStrip}>
-            <Text style={styles.answerLabel}>{report.boardBrief ? "Questions for the committee" : "What to watch"}</Text>
+            <Text style={styles.answerLabel}>{report.boardBrief ? "Further research Hamilton suggested" : "What to watch"}</Text>
             {(report.watchlist ?? []).map((item, i) => (
               <Text key={i} style={styles.noteItem}>— {item}</Text>
             ))}

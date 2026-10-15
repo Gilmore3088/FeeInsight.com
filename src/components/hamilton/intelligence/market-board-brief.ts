@@ -55,7 +55,7 @@ export function marketBoardBriefInput(selection: LandingResearchHandoff, data: L
       rows: data.revenue.quarters.slice(0, 4).map(q => [q.quarter, `$${(q.total_service_charges / 1_000_000).toFixed(2)}B`, `$${(q.bank_service_charges / 1_000_000).toFixed(2)}B`, `$${(q.cu_service_charges / 1_000_000).toFixed(2)}B`, q.yoy_change_pct == null ? "Unavailable" : `${q.yoy_change_pct > 0 ? "+" : ""}${q.yoy_change_pct.toFixed(1)}%`]),
       note: state ? "A state total is not available yet; this is the national figure." : null,
     });
-    sources.push({ label: "FDIC Call Reports (RIAD 4080) and NCUA 5300 filings", detail: `Reporting period: ${data.revenue.latest?.quarter ?? "not recorded"}`, url: null });
+    sources.push({ label: "FDIC Call Reports (RIAD 4080) and NCUA 5300 filings", detail: `Latest quarter: ${data.revenue.quarters[0].quarter}`, url: null });
   }
 
   const findings = readFindings(data, state ? place : "the United States", state, primary).filter(f => lenses.includes(f.lens));

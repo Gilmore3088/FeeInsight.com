@@ -29,11 +29,9 @@ export interface FeeMap {
   spread: FeeSpread | null;
 }
 
+/** The fee index's own median (computeStats), so the map, the landscape and the price bands agree. */
 export function median(values: number[]): number | null {
-  if (values.length === 0) return null;
-  const sorted = [...values].sort((a, b) => a - b);
-  const mid = Math.floor(sorted.length / 2);
-  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+  return computeStats(values).median;
 }
 
 /** Each state's median of one fee, one value per institution; states under the cohort floor are withheld. */

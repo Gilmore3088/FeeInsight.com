@@ -43,6 +43,9 @@ export function hrefWithHamiltonNavigation(href: string, selection: HamiltonNavi
   // A destination's explicit subject/contract or saved record remains authoritative.
   if (params.has("instId") || params.has("research") || ARTIFACT_PARAMS.some((key) => params.get(key)?.trim())) return href;
   if (selection.research && (path === "/pro/analyze" || path === "/pro/reports")) {
+    // A state or national board brief is built from the market view's Build board brief button, so
+    // Reports opens the saved list; only a local selection keeps its institution report workflow.
+    if (path === "/pro/reports" && selection.research.scope.kind !== "local") return href;
     params.set("research", encodeLandingResearch({ ...selection.research, task: path === "/pro/reports" ? "board_report" : "compare" }));
     return `${path}?${params}${fragment}`;
   }

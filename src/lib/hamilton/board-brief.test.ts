@@ -14,7 +14,7 @@ describe("board brief reuses frozen analysis", () => {
     const report = boardBriefFromAnalysis(frozen, "saved-original", edits);
     expect(report.identityContext).toEqual(frozen.identityContext);
     expect(report.boardBrief?.factEvidence).toEqual(frozen.factEvidence);
-    expect(report.exhibits?.[0].rows).toEqual(frozen.evidence.metrics.map(m => [m.label, m.value, m.note ?? "Not recorded"]));
+    expect(report.exhibits?.[0].rows).toEqual(frozen.evidence.metrics.map(m => [m.label, m.value, m.note ?? ""]));
     expect(report.executiveSummary).toEqual([frozen.hamiltonView]);
     expect(report.implementationNotes).toContain("Team note (user-authored): Discuss waivers with the team.");
     expect(report.sources?.every(s => s.detail.includes("Reporting period"))).toBe(true);

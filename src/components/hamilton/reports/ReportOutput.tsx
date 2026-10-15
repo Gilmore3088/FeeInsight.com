@@ -163,7 +163,7 @@ function ConsultantReportBody({ report }: { report: ReportSummaryResponse }) {
         {watchlist.length > 0 && (
           <div className="mt-6 rounded-lg border border-warm-300 bg-warm-100 p-4">
             <p className="mb-2 text-sm font-medium text-terra-text">
-              {report.boardBrief ? "Questions for the committee" : "What to watch"}
+              {report.boardBrief ? "Further research Hamilton suggested" : "What to watch"}
             </p>
             <ul className="list-disc space-y-1.5 pl-5 marker:text-terra">
               {watchlist.map((item, i) => (

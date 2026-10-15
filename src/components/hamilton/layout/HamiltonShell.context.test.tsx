@@ -48,16 +48,14 @@ describe("H01 retained Hamilton shell navigation", () => {
     expect(nav.getByRole("link", { name: "Ask Hamilton" })).toHaveAttribute("href", "/pro/analyze?instId=8109");
   });
 
-  it("keeps encoded state research scope, categories and charter when switching into Reports", () => {
+  it("opens the saved Reports list from state research, where the market view builds the board brief", () => {
     const selection = { version: 1, task: "compare", scope: { kind: "state", stateCode: "FL" }, categories: ["money_order"], charter: "credit_union" };
     route.pathname = "/pro/analyze";
     route.search = new URLSearchParams({ research: encodeLandingResearch(selection) }).toString();
     render(<HamiltonShell {...seed}>State research</HamiltonShell>);
     const nav = within(screen.getByRole("navigation", { name: "Hamilton workspace" }));
     const href = nav.getByRole("link", { name: "Reports" }).getAttribute("href")!;
-    const query = new URL(href, "https://example.test").searchParams;
-    expect(JSON.parse(query.get("research")!)).toEqual({ ...selection, task: "board_report" });
-    expect(query.has("instId")).toBe(false);
+    expect(href).toBe("/pro/reports");
   });
 
   it("drops an old retained subject label and links when the live URL selects Addition", async () => {
@@ -115,7 +113,8 @@ describe("H01 retained Hamilton shell navigation", () => {
     const view = render(<HamiltonShell {...seed}>Initial</HamiltonShell>);
     route.pathname = "/pro/reports"; route.search = "";
     view.rerender(<HamiltonShell {...seed}>Default A</HamiltonShell>);
-    await waitFor(() => expect(screen.getByLabelText("Institution context").textContent).toContain(`Looking at: ${homeName}`));
+    // Back on the home institution, the bar names no separate subject.
+    await waitFor(() => expect(screen.getByLabelText("Institution context").textContent).not.toContain("Looking at:"));
     route.pathname = "/pro/simulate";
     view.rerender(<HamiltonShell {...seed}>Pending</HamiltonShell>);
     route.pathname = "/pro/reports";
@@ -155,7 +154,7 @@ describe("H01 retained Hamilton shell navigation", () => {
   it("uses authorized saved report A as the shell subject despite a conflicting URL B", () => {
     route.pathname = "/pro/reports"; route.search = "report_id=saved-a&instId=1535";
     render(<HamiltonShell {...seed} initialRequestPath={`/pro/reports?${route.search}`}>Saved A</HamiltonShell>);
-    expect(screen.getByLabelText("Institution context").textContent).toContain(`Looking at: ${homeName}`);
+    expect(screen.getByLabelText("Institution context").textContent).not.toContain("Looking at:");
     expect(screen.getByRole("link", { name: "Research" })).toHaveAttribute("href", "/pro/intelligence?instId=8109");
     expect(route.resolve).not.toHaveBeenCalled();
   });
@@ -163,8 +162,8 @@ describe("H01 retained Hamilton shell navigation", () => {
   it("keeps a legacy or unavailable saved report unscoped despite retained profile/default metadata", () => {
     route.pathname = "/pro/reports"; route.search = "report_id=unscoped&instId=1535";
     render(<HamiltonShell {...seed} initialRequestPath={`/pro/reports?${route.search}`} selectedInstitutionId={null}
-      institutionContext={{ ...seed.institutionContext, name: "Saved artifact · research subject unavailable" }}>Unscoped</HamiltonShell>);
-    expect(screen.getByLabelText("Institution context").textContent).toContain("Looking at: Saved artifact · research subject unavailable");
+      institutionContext={{ ...seed.institutionContext, name: null }}>Unscoped</HamiltonShell>);
+    expect(screen.getByLabelText("Institution context").textContent).not.toContain("Looking at:");
     expect(screen.getByRole("link", { name: "Research" })).toHaveAttribute("href", "/pro/intelligence");
     expect(route.resolve).not.toHaveBeenCalled();
   });

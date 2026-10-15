@@ -40,7 +40,7 @@ it.each(["legacy unscoped", "unavailable private"])("does not borrow B for a %s 
   const value = await props();
   expect(mocks.resolve).not.toHaveBeenCalled();
   expect(value.selectedInstitutionId).toBeNull();
-  expect(value.institutionContext.name).toContain("research subject unavailable");
+  expect(value.institutionContext.name).toBeNull();
 });
 
 it("does not show profile text as unresolved canonical research metadata", async () => {

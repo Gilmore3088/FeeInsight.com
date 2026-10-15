@@ -105,7 +105,10 @@ export function HamiltonShell({
   };
   // Only a confirmed subject is named; loading, unavailable and invalid states show no label,
   // never the home institution and never an internal state as if it were a name.
-  const researchLabel = selection.invalid ? null
+  // The reader's own institution is the default subject, so the bar only names a different one.
+  const homeId = accountContext?.status === "identified" ? accountContext.institution?.id : undefined;
+  const isHome = homeId != null && currentInstitution?.id === String(homeId);
+  const researchLabel = selection.invalid || isHome ? null
     : currentInstitution?.name
     ?? (selection.artifact ? (canUseSeed && institutionContext.name ? institutionContext.name : null) : null);
   return (

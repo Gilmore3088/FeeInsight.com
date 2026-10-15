@@ -56,10 +56,14 @@ export async function createMarketBoardBrief(form: FormData): Promise<void> {
   const lenses: Lens[] = INTELLIGENCE_LENSES.map(l => l.id).filter(id => asked.includes(id));
   const size = assetSizeFor(String(form.get("size") ?? ""));
   const compare = { ...selection, task: "compare" as const };
-  const data = await loadIntelligence(compare, lenses.length ? lenses : INTELLIGENCE_LENSES.map(l => l.id), { compact: false, segment: size.id === "all" ? null : size });
-  const report = boardBriefFromMarket(marketBoardBriefInput(compare, data, lenses.length ? lenses : INTELLIGENCE_LENSES.map(l => l.id), size));
+  const chosen = lenses.length ? lenses : INTELLIGENCE_LENSES.map(l => l.id);
   let reportId: string;
   try {
+    const data = await loadIntelligence(compare, chosen, { compact: false, segment: size.id === "all" ? null : size });
+    const input = marketBoardBriefInput(compare, data, chosen, size);
+    // Nothing loaded: say so rather than save an empty brief.
+    if (!input.findings.length && !input.exhibits.length) throw new Error("no market data loaded");
+    const report = boardBriefFromMarket(input);
     reportId = await saveHamiltonReport({ userId: user.id, institutionId: "", reportType: "board_brief", reportJson: report, evidencePolicy: "source-diligence", selectedSource: "manual", selectedSourceLabel: "Market research", peerBaselineLabel: null, peerFallbackReason: "Market view; no institution peer group." });
     await recordProRequest({ operation: "report", title: report.title, status: "completed", summary: "Created board brief from market research without a provider call", userId: user.id, institutionId: null, detail: { report_id: reportId, provider_call_queued: false, evidence_policy: "source-diligence", lenses } });
   } catch (error) {

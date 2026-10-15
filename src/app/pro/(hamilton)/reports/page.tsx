@@ -154,7 +154,7 @@ export default async function ReportsPage({
       userId={user.id}
       institutionName={institutionName}
       publishedReports={publishedReports}
-      savedReports={savedReports}
+      savedReports={boardBriefsFirst(savedReports)}
       initialReport={initialReport}
       initialScenarioId={params.scenario_id ?? null}
       selectedInstitution={selectedInstitution}
@@ -166,4 +166,9 @@ export default async function ReportsPage({
       legacyPeerFilterLabel={buildLegacyPeerFilterLabel(params)}
     />
   );
+}
+
+/** Saved board briefs lead the list; each group keeps its newest-first order. */
+function boardBriefsFirst<T extends { report_type: string }>(reports: T[]): T[] {
+  return [...reports].sort((a, b) => Number(b.report_type === "board_brief") - Number(a.report_type === "board_brief"));
 }
