@@ -586,7 +586,7 @@ function AnalyzeConversationWorkspace({
   const longQuestion = (askedQuestion ?? initialAnalysisPrompt ?? "").length > 120;
   const startTasks = [
     { label: "Review fees", href: "/pro/research", icon: FileText },
-    { label: "Research competitors", href: "/pro/research/peers", icon: Search },
+    { label: "Research competitors", href: "/pro/intelligence?lens=fees", icon: Search },
     { label: "Prepare a board briefing", href: "/pro/reports?intent=executive-briefing", icon: Presentation },
   ];
   const starting = !(askedQuestion || shown);

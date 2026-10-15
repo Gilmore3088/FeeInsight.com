@@ -178,7 +178,7 @@ export async function InstitutionBriefing({
       ) : unavailable ? (
         <p role="status" className="text-sm text-terra-text">
           The monthly briefing for {institution?.name ?? "this institution"} couldn&apos;t load just now.{" "}
-          <Link href={hrefWithInstitutionContext("/pro/hamilton", selectedInstitutionId)} className="underline">
+          <Link href={hrefWithInstitutionContext("/pro/intelligence?view=institution", selectedInstitutionId)} className="underline">
             Try again
           </Link>
         </p>

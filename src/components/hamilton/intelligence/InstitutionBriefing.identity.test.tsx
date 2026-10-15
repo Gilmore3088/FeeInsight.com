@@ -84,7 +84,7 @@ describe("monthly briefing research identity", () => {
     mocks.briefing.mockRejectedValueOnce(new Error("unavailable"));
     let html = renderToStaticMarkup(await HamiltonHomePage({ searchParams: Promise.resolve({ instId: "2945" }) }));
     expect(html).toContain("monthly briefing for Space Coast Credit Union");
-    expect(html).toContain('href="/pro/hamilton?instId=2945"');
+    expect(html).toContain('href="/pro/intelligence?view=institution&amp;instId=2945"');
     mocks.briefing.mockResolvedValueOnce({ ...briefing, institutionId: 101, institutionName: "Other institution A" });
     html = renderToStaticMarkup(await HamiltonHomePage({ searchParams: Promise.resolve({ instId: "2945" }) }));
     expect(html).not.toContain("Other institution A");
