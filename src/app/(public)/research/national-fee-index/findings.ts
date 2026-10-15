@@ -7,12 +7,9 @@ import { feeRange } from "./national-visuals";
 import { getDisplayName } from "@/lib/fee-taxonomy";
 import { formatFeeAmount } from "@/lib/format";
 import { hasFigure } from "@/app/landing-shared";
+import { summarizeFees } from "@/lib/data-store/fee-stats";
+import type { FeeInstance } from "@/lib/data-store/fees";
 
-/**
- * The few sentences the national page leads with. Every figure comes from the live national
- * index (the shared public snapshot of published_fee_catalog) or the BLS CPI rows the page
- * already reads; a finding whose figure is missing is left out rather than filled in.
- */
 /** A fee's spread, for the range visual: all five figures, or none. */
 export interface FeeRange {
   min: number;
@@ -44,7 +41,10 @@ export type NationalFinding =
       category: string;
       label: string;
       institutions: number;
-      /** The most-published fees, most first; the first is the finding's own fee. */
+      /**
+       * The most-published fees the reader can select, most first. The first is always the
+       * finding's own fee, even when the reader's table does not hold it.
+       */
       leaders: PublishedCount[];
     }
   | {
@@ -91,7 +91,21 @@ function cpiFinding(cpi: CpiContext): Extract<NationalFinding, { key: "cpi" }> |
   };
 }
 
-export function nationalFindings(index: IndexEntry[], cpi: CpiContext): NationalFinding[] {
+/**
+ * The few sentences the national page leads with. Every figure comes from the live national
+ * index (the shared public snapshot of published_fee_catalog) or the BLS CPI rows the page
+ * already reads; a finding whose figure is missing is left out rather than filled in.
+ *
+ * `selectable` is the set of fees the reader's table holds. The "most published" bars are built
+ * from those fees, so every bar selects a row; when the fee the most institutions publish is not
+ * one of them, it still leads the bars (the card names it) and links to its own page instead.
+ * Left out, every fee counts as selectable.
+ */
+export function nationalFindings(
+  index: IndexEntry[],
+  cpi: CpiContext,
+  selectable?: ReadonlySet<string>,
+): NationalFinding[] {
   const findings: NationalFinding[] = [];
   const priced = index.filter(hasMedian);
 
@@ -111,8 +125,9 @@ export function nationalFindings(index: IndexEntry[], cpi: CpiContext): National
     null,
   );
   if (mostPublished && mostPublished.fee_category !== "overdraft") {
-    const leaders = [...priced]
-      .sort((a, b) => b.institution_count - a.institution_count)
+    const canSelect = (e: IndexEntry) => !selectable || selectable.has(e.fee_category);
+    const ranked = priced.filter(canSelect).sort((a, b) => b.institution_count - a.institution_count);
+    const leaders = (canSelect(mostPublished) ? ranked : [mostPublished, ...ranked])
       .slice(0, LEADER_COUNT)
       .map((e) => ({ category: e.fee_category, label: getDisplayName(e.fee_category), institutions: e.institution_count }));
     findings.push({
@@ -174,4 +189,15 @@ export function districtMedians(rows: DimensionBreakdown[] | null | undefined): 
     })
     .filter((row) => Number.isInteger(row.district) && DISTRICT_NAMES[row.district])
     .sort((a, b) => a.district - b.district);
+}
+
+/**
+ * The national median the district map compares against, from the same category detail read
+ * as the district medians (sourced rows, one value per institution), the way /fees/[category]
+ * takes its headline. Null when that read has no sourced rows.
+ */
+export function detailNationalMedian(category: string, fees: FeeInstance[] | null | undefined): number | null {
+  const rows = (fees ?? []).filter((f) => f.source_document_id !== null).map((f) => ({ ...f, fee_category: category }));
+  if (rows.length === 0) return null;
+  return summarizeFees(rows).median_amount;
 }

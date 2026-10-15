@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import type { IndexEntry } from "@/lib/data-store/fee-index";
 import { NATIONAL_INDEX_NAV } from "@/components/nav-items";
 import { PRODUCT_NAME } from "@/lib/constants";
-import { datasetDescription, districtMedians, nationalFindings, subheadLead } from "./findings";
+import type { FeeInstance } from "@/lib/data-store/fees";
+import { datasetDescription, detailNationalMedian, districtMedians, nationalFindings, subheadLead } from "./findings";
 
 const entry = (fee_category: string, median_amount: number | null, institution_count: number): IndexEntry => ({
   fee_category,
@@ -78,6 +79,27 @@ describe("finding card figures", () => {
     expect(top.leaders[0].category).toBe(top.category);
   });
 
+  it("builds the bars only from fees the reader's table holds", () => {
+    const index = [
+      entry("overdraft", 30, 2498),
+      entry("stop_payment", 27.5, 3173),
+      entry("nsf", 30, 2668),
+      entry("paper_statement", 3, 2600),
+      entry("wire_domestic_incoming", 15, 2500),
+    ];
+    const [, top] = nationalFindings(index, { bankFees: null, allItems: null }, new Set(["stop_payment", "overdraft", "nsf"]));
+    if (top.key !== "most_published") throw new Error("expected the most-published finding");
+    expect(top.leaders.map((l) => l.category)).toEqual(["stop_payment", "nsf", "overdraft"]);
+  });
+
+  it("keeps the top fee first when the reader's table lacks it, and fills the rest from the table", () => {
+    const index = [entry("overdraft", 30, 2498), entry("stop_payment", 27.5, 3173), entry("nsf", 30, 2668), entry("paper_statement", 3, 2600)];
+    const [, top] = nationalFindings(index, { bankFees: null, allItems: null }, new Set(["overdraft", "nsf"]));
+    if (top.key !== "most_published") throw new Error("expected the most-published finding");
+    expect(top.category).toBe("stop_payment");
+    expect(top.leaders.map((l) => l.category)).toEqual(["stop_payment", "nsf", "overdraft"]);
+  });
+
   it("gives the CPI card both twelve-month changes", () => {
     const [f] = nationalFindings([], cpi);
     expect(f).toMatchObject({ key: "cpi", month: "September 2026", bankPct: 1, allPct: 3.7 });
@@ -113,5 +135,21 @@ describe("count clauses", () => {
     expect(datasetDescription("—")).toBe(
       "National medians across bank and credit union fee categories, from published fee schedules.",
     );
+  });
+});
+
+describe("detailNationalMedian", () => {
+  const fee = (institution_id: number, amount: number, source_document_id: number | null) =>
+    ({ institution_id, amount, source_document_id }) as unknown as FeeInstance;
+
+  it("takes the median of the sourced rows of the same read, one value per institution", () => {
+    // Institution 6's unsourced $90 rows are left out, as the district breakdown leaves them out.
+    const rows = [fee(1, 20, 7), fee(2, 25, 7), fee(3, 30, 8), fee(4, 32, 9), fee(5, 35, 9), fee(6, 90, null), fee(6, 90, null)];
+    expect(detailNationalMedian("nsf", rows)).toBe(30);
+  });
+
+  it("is null when the read has no sourced rows", () => {
+    expect(detailNationalMedian("overdraft", [fee(1, 20, null)])).toBeNull();
+    expect(detailNationalMedian("overdraft", null)).toBeNull();
   });
 });

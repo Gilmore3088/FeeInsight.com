@@ -11,7 +11,7 @@ import { NATIONAL_INDEX_NAV, PRO_PLANS_NAV } from "@/components/nav-items";
 import { PRODUCT_NAME, SITE_NAME, SITE_URL } from "@/lib/constants";
 import { getCurrentUser } from "@/lib/auth";
 import { canAccessPremium } from "@/lib/access";
-import { datasetDescription, districtMedians, nationalFindings, subheadLead } from "./findings";
+import { datasetDescription, detailNationalMedian, districtMedians, nationalFindings, subheadLead } from "./findings";
 import { NationalExplorer } from "./national-explorer";
 
 export const metadata: Metadata = {
@@ -35,8 +35,8 @@ export default async function NationalFeeIndexPage() {
   const user = await getCurrentUser();
   const isPro = canAccessPremium(user);
   // Same snapshot as the fee index and research hub, so the medians match to the cent. The
-  // overdraft district medians are the cached read /fees/overdraft and the homepage already
-  // make; a failed read only hides the map.
+  // overdraft district medians, and the national median the map compares them with, are the
+  // cached read /fees/overdraft and the homepage already make; a failed read only hides the map.
   const [allIndex, cpi, summary, overdraftDetail] = await Promise.all([
     getPublicNationalIndex(),
     getCpiContext(),
@@ -50,8 +50,6 @@ export default async function NationalFeeIndexPage() {
   // Pro: full index. Free: the headline categories, the same set the free report shows.
   const headlineCats = new Set(getFeaturedCategories());
   const index = isPro ? allIndex : allIndex.filter((e) => headlineCats.has(e.fee_category));
-  const findings = nationalFindings(allIndex, cpi);
-
   const byFamily = new Map<string, typeof index>();
   for (const entry of index) {
     const family = entry.fee_family ?? "Other";
@@ -75,6 +73,9 @@ export default async function NationalFeeIndexPage() {
         ...(isPro ? { bank_count: e.bank_count, cu_count: e.cu_count } : {}),
       })),
     }));
+  // The "most published" bars draw only fees this reader's table holds, so every bar selects one.
+  const tableCategories = new Set(groups.flatMap((g) => g.entries.map((e) => e.fee_category)));
+  const findings = nationalFindings(allIndex, cpi, tableCategories);
 
   const header = (
     <div>
@@ -138,6 +139,8 @@ export default async function NationalFeeIndexPage() {
         groups={groups}
         isPro={isPro}
         overdraftDistricts={districtMedians(overdraftDetail?.by_fed_district)}
+        // The map compares each district with the national median from the same read.
+        overdraftNational={detailNationalMedian("overdraft", overdraftDetail?.fees)}
         cpiSourceUrl={BLS_SERIES_URL}
       />
 

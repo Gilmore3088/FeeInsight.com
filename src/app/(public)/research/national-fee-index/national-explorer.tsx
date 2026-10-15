@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, type ReactNode } from "react";
+import { useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import Link from "next/link";
 import type { IndexEntry } from "@/lib/data-store/fee-index";
 import { getDisplayName, FAMILY_COLORS } from "@/lib/fee-taxonomy";
@@ -28,6 +28,10 @@ const COUNT = "[font-variant-numeric:tabular-nums]";
 const RANGE_COL = "hidden sm:table-cell lg:hidden xl:table-cell";
 const PANEL_ID = "fee-panel";
 const DEFAULT_FEE = "overdraft";
+/** The query parameter that carries the selected fee, so a forwarded link opens on it. */
+export const FEE_PARAM = "fee";
+/** The homepage hero's institution search (InstitutionSearchForm posts a GET here). */
+export const INSTITUTION_SEARCH_HREF = "/institutions";
 
 const money = (value: number | null) => formatFeeAmount(value) ?? "-";
 const count = (n: number) => n.toLocaleString("en-US");
@@ -47,11 +51,18 @@ export interface FeeFamilyGroup {
   entries: FeeRow[];
 }
 
+// The URL is read once per render on the client; selections write it with replaceState and
+// keep their own state, so nothing needs to subscribe to it.
+const subscribeNever = () => () => {};
+const readUrlFee = () => new URLSearchParams(window.location.search).get(FEE_PARAM);
+const readNoUrlFee = () => null;
+
 /**
  * The national page body: findings as cards, the fee table, and a panel that draws whichever
  * fee is selected. Selecting a row (click, or Enter on its fee name), the overdraft card or a
  * bar in the "most published" card changes the panel. Overdraft also gets a Fed district map,
- * from the same cached read /fees/overdraft makes.
+ * from the same cached read /fees/overdraft makes. The selected fee rides in the URL (?fee=),
+ * read once on load and kept current with history.replaceState.
  */
 export function NationalExplorer({
   header,
@@ -60,6 +71,7 @@ export function NationalExplorer({
   groups,
   isPro,
   overdraftDistricts,
+  overdraftNational,
   cpiSourceUrl,
 }: {
   header: ReactNode;
@@ -68,18 +80,29 @@ export function NationalExplorer({
   groups: FeeFamilyGroup[];
   isPro: boolean;
   overdraftDistricts: DistrictMedian[];
+  /** Overdraft's national median from the same read as the district medians. */
+  overdraftNational: number | null;
   cpiSourceUrl: string;
 }) {
   const rows = groups.flatMap((g) => g.entries);
   const byCategory = new Map(rows.map((e) => [e.fee_category, e]));
   const initial = byCategory.has(DEFAULT_FEE) ? DEFAULT_FEE : (rows[0]?.fee_category ?? null);
-  const [selected, setSelected] = useState<string | null>(initial);
+  // A link that names a fee (?fee=nsf) opens on it. The server render and hydration use the
+  // default; the URL is read on the client after that. An unknown or locked fee keeps the default.
+  const urlFee = useSyncExternalStore(subscribeNever, readUrlFee, readNoUrlFee);
+  const [picked, setSelected] = useState<string | null>(null);
+  const selected = picked ?? (urlFee && byCategory.has(urlFee) ? urlFee : initial);
   const [district, setDistrict] = useState<number | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
 
   const select = (category: string, reveal = false) => {
     setSelected(category);
     setDistrict(null);
+    if (typeof window !== "undefined") {
+      const url = new URL(window.location.href);
+      url.searchParams.set(FEE_PARAM, category);
+      window.history.replaceState(window.history.state, "", url);
+    }
     // Below lg the panel sits above the table: bring it into view so the change is seen.
     if (reveal && typeof window !== "undefined" && window.matchMedia?.("(max-width: 1023px)").matches) {
       panelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -113,12 +136,13 @@ export function NationalExplorer({
         <div
           ref={panelRef}
           id={PANEL_ID}
-          className="scroll-mt-20 rounded-2xl border border-border/80 bg-surface-0 p-4 shadow-fi-1 sm:p-5 lg:sticky lg:top-20"
+          className="scroll-mt-20 rounded-2xl border border-border/80 bg-surface-0 p-4 shadow-fi-1 sm:p-5 lg:sticky lg:top-20 lg:max-h-[calc(100vh-6rem)] lg:overflow-y-auto"
         >
           {entry ? (
             <FeePanel
               entry={entry}
               districts={entry.fee_category === DEFAULT_FEE ? overdraftDistricts : []}
+              districtNational={entry.fee_category === DEFAULT_FEE ? overdraftNational : null}
               district={district}
               onDistrict={setDistrict}
               family={groups.find((g) => g.family === entry.fee_family)?.entries ?? []}
@@ -311,6 +335,7 @@ function FindingCard({
 function FeePanel({
   entry,
   districts,
+  districtNational,
   district,
   onDistrict,
   family,
@@ -318,6 +343,7 @@ function FeePanel({
 }: {
   entry: FeeRow;
   districts: DistrictMedian[];
+  districtNational: number | null;
   district: number | null;
   onDistrict: (d: number | null) => void;
   family: FeeRow[];
@@ -325,7 +351,8 @@ function FeePanel({
 }) {
   const name = getDisplayName(entry.fee_category);
   const range = feeRange(entry);
-  const national = entry.median_amount;
+  // The map's comparison figure comes from the same read as the district medians.
+  const national = districtNational;
   const showMap = national !== null && districts.some((d) => d.median !== null);
   const familyMedians = family.flatMap((e) =>
     e.median_amount === null ? [] : [{ category: e.fee_category, label: getDisplayName(e.fee_category), median: e.median_amount }],
@@ -340,7 +367,7 @@ function FeePanel({
       <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-brick">{entry.fee_family ?? "Fee"}</p>
       <h2 className="mt-1 text-[1.25rem] font-extrabold leading-tight tracking-[-0.01em] text-ink">{name}</h2>
       <div className="mt-3 flex items-end gap-3">
-        <p className="text-[2.75rem] font-extrabold leading-none tracking-[-0.03em] text-ink sm:text-[3.25rem]">
+        <p className="text-[2.75rem] font-extrabold leading-none tracking-[-0.03em] text-ink sm:text-[3.25rem] lg:text-[2.75rem]">
           {money(entry.median_amount)}
         </p>
         <p className="pb-1 text-[13px] leading-snug text-ink-soft">
@@ -374,15 +401,29 @@ function FeePanel({
       )}
 
       {showMap && national !== null && (
-        <div className="mt-5 border-t border-border/70 pt-4">
+        <div className="mt-5 border-t border-border/70 pt-4 lg:mt-4 lg:pt-3">
           <p className="text-[12px] font-bold text-ink">By Fed district</p>
           <p className="mt-0.5 min-h-[2.5em] text-[12px] leading-snug text-ink-soft">
             {active ? (
               active.median === null ? (
-                <>{active.name}: too few institutions for a median.</>
+                <>
+                  <Link
+                    href={`/research/district/${active.district}`}
+                    className="text-ink underline underline-offset-2 hover:text-brick"
+                  >
+                    {active.name}
+                  </Link>
+                  : too few institutions for a median.
+                </>
               ) : (
                 <>
-                  {active.name}: <span className="font-semibold text-ink">{money(active.median)}</span> median,{" "}
+                  <Link
+                    href={`/research/district/${active.district}`}
+                    className="text-ink underline underline-offset-2 hover:text-brick"
+                  >
+                    {active.name}
+                  </Link>
+                  : <span className="font-semibold text-ink">{money(active.median)}</span> median,{" "}
                   <span className={COUNT}>{count(active.institutions)}</span> institutions.{" "}
                   {POSITION_LABEL[districtPosition(active.median, national)]}.
                 </>
@@ -391,10 +432,13 @@ function FeePanel({
               <>Each district&apos;s median against the national {money(national)}. Select a district.</>
             )}
           </p>
+          {/* Compact at lg so the sticky panel fits a 768px-tall screen. */}
           <div className="mt-2">
-            <DistrictMap districts={districts} national={national} selected={district} onSelect={onDistrict} />
+            <DistrictMap
+              mapClassName="max-w-[22rem] lg:max-w-[12rem]" districts={districts} national={national} selected={district} onSelect={onDistrict} />
           </div>
-          <ul className="sr-only sm:not-sr-only sm:mt-3 sm:grid sm:grid-cols-3 sm:gap-1" aria-label="Overdraft median by Fed district">
+          {/* Visible at every width: on a phone each chip stacks the district over its median. */}
+          <ul className="mt-3 grid grid-cols-3 gap-1 lg:mt-2" aria-label="Overdraft median by Fed district">
             {districts.map((d) => {
               const isActive = d.district === district;
               const position = districtPosition(d.median, national);
@@ -405,11 +449,11 @@ function FeePanel({
                     aria-pressed={isActive}
                     onClick={() => onDistrict(isActive ? null : d.district)}
                     aria-label={`${d.name}: ${d.median === null ? "too few institutions" : `${money(d.median)} median, ${POSITION_LABEL[position].toLowerCase()}`}`}
-                    className={`flex w-full items-center justify-between gap-1 rounded-md border px-1.5 py-1 text-[11px] transition-colors focus-visible:outline-2 focus-visible:outline-ink ${
+                    className={`flex w-full flex-col items-start gap-0.5 rounded-md border px-1.5 py-1 text-[11px] leading-tight lg:py-0.5 transition-colors focus-visible:outline-2 focus-visible:outline-ink sm:flex-row sm:items-center sm:justify-between sm:gap-1 ${
                       isActive ? "border-ink/40 bg-paper" : "border-border/70 hover:bg-paper"
                     }`}
                   >
-                    <span className="min-w-0 truncate text-ink-soft">{d.name}</span>
+                    <span className="w-full min-w-0 truncate text-left text-ink-soft sm:w-auto">{d.name}</span>
                     <span className="flex items-center gap-1 font-semibold text-ink [font-variant-numeric:tabular-nums]">
                       <span className="h-2 w-2 rounded-full" style={{ background: positionFill(position) }} aria-hidden="true" />
                       {d.median === null ? "-" : money(d.median)}
@@ -433,10 +477,22 @@ function FeePanel({
 
       <Link
         href={`/fees/${entry.fee_category}`}
-        className="mt-4 inline-block text-[13px] font-semibold text-brick hover:underline"
+        className="mt-4 inline-block text-[13px] font-semibold text-brick hover:underline lg:mt-3"
       >
         {name} in detail &rarr;
       </Link>
+
+      <p className="mt-3 border-t border-border/70 pt-3 text-[13px] leading-snug text-ink-soft">
+        Where does your {feeNoun(name)} sit?{" "}
+        <Link href={INSTITUTION_SEARCH_HREF} className="text-ink underline underline-offset-2 hover:text-brick">
+          See where your fees stand
+        </Link>
+      </p>
     </div>
   );
+}
+
+/** "Overdraft (OD) fee", but "Monthly Maintenance Fee" stays as it is. */
+function feeNoun(name: string): string {
+  return /\bfees?\b/i.test(name) ? name : `${name} fee`;
 }

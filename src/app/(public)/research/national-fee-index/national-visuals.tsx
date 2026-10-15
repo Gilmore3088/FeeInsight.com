@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { US_STATES } from "@/lib/us-map-paths";
 import { STATE_TO_DISTRICT } from "@/lib/fed-districts";
 import { formatFeeAmount } from "@/lib/format";
@@ -74,7 +75,8 @@ export function RangeStrip({ name, range, height = 36 }: { name: string; range: 
 
 /**
  * How many institutions publish each of the most-published fees. The leader is brick, the rest
- * navy. A bar whose fee is in the table selects it.
+ * navy. A bar whose fee is in the table selects it; one that is not (the page leads with it
+ * only when the reader's table lacks the top fee) links to that fee's own page.
  */
 export function PublishBars({
   leaders,
@@ -95,7 +97,8 @@ export function PublishBars({
         const isSelected = selected === l.category;
         const row = (
           <>
-            <span className="min-w-0 truncate text-left text-[11px] leading-tight text-ink-soft">{l.label}</span>
+            {/* Up to two lines, so a long name ("Wire Transfer (Domestic)") shows whole. */}
+            <span className="line-clamp-2 min-w-0 break-words text-left text-[11px] leading-tight text-ink-soft">{l.label}</span>
             <span className="relative h-2 rounded-full bg-surface-200" aria-hidden="true">
               <span
                 className="absolute inset-y-0 left-0 rounded-full"
@@ -111,7 +114,8 @@ export function PublishBars({
             </span>
           </>
         );
-        const grid = "grid w-full grid-cols-[7.75rem_minmax(0,1fr)_2.5rem] items-center gap-2 rounded px-1 py-0.5";
+        const grid =
+          "grid w-full grid-cols-[minmax(0,8.5rem)_minmax(2rem,1fr)_2.5rem] items-center gap-2 rounded px-1 py-0.5";
         return (
           <li key={l.category}>
             {canSelect ? (
@@ -125,7 +129,13 @@ export function PublishBars({
                 {row}
               </button>
             ) : (
-              <div className={grid}>{row}</div>
+              <Link
+                href={`/fees/${l.category}`}
+                aria-label={`${l.label}: ${count(l.institutions)} institutions publish it. See ${l.label} in detail`}
+                className={`${grid} transition-colors hover:bg-paper focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-ink`}
+              >
+                {row}
+              </Link>
             )}
           </li>
         );
@@ -202,17 +212,20 @@ export function DistrictMap({
   national,
   selected,
   onSelect,
+  mapClassName = "",
 }: {
   districts: DistrictMedian[];
   national: number;
   selected: number | null;
   onSelect: (district: number) => void;
+  /** Extra classes for the map drawing alone (a max width), so the legend keeps the full width. */
+  mapClassName?: string;
 }) {
   const byDistrict = new Map(districts.map((d) => [d.district, d]));
   const present = new Set<DistrictPosition>(districts.map((d) => districtPosition(d.median, national)));
   return (
     <div>
-      <svg viewBox="0 0 960 600" className="block h-auto w-full" aria-hidden="true">
+      <svg viewBox="0 0 960 600" className={`mx-auto block h-auto w-full ${mapClassName}`} aria-hidden="true">
         {US_STATES.map((st) => {
           const d = STATE_TO_DISTRICT[st.id];
           const row = d ? byDistrict.get(d) : undefined;
@@ -236,7 +249,7 @@ export function DistrictMap({
           );
         })}
       </svg>
-      <ul className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-ink-muted">
+      <ul className="mt-1 flex flex-wrap justify-center gap-x-3 gap-y-1 text-[11px] text-ink-muted">
         {(["above", "same", "below", "thin"] as const)
           .filter((p) => present.has(p))
           .map((p) => (
