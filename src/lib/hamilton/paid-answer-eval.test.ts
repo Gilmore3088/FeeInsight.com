@@ -14,7 +14,7 @@ const evalMocks = vi.hoisted(() => ({
 vi.mock("@/lib/data-store/connection", () => ({ sql: vi.fn() }));
 vi.mock("./answer-eval", async (importOriginal) => ({ ...(await importOriginal<typeof import("./answer-eval")>()), ...evalMocks }));
 
-const { orderCandidates, paidSamplesToday, runPaidAnswerEval, PAID_EVAL_RESERVATION } = await import("./paid-answer-eval");
+const { orderCandidates, paidSamplesToday, runPaidAnswerEval, simulateInputFor, PAID_EVAL_RESERVATION } = await import("./paid-answer-eval");
 
 const now = new Date("2026-10-16T15:17:00Z");
 const question = "How does our overdraft fee compare?";
@@ -39,10 +39,15 @@ const live: LiveReader = async (_id, research) => {
   };
 };
 
-function memoClient(summary: string): MemoClient & { calls: number } {
+function memoClient(summary: string, simulateText = "At the tested price the fee sits at the peer median. The question for management is notice."): MemoClient & { calls: number; simulateCalls: number } {
   const client = {
     calls: 0,
-    async create({ user }: { system: string; user: string; model: string }) {
+    simulateCalls: 0,
+    async create({ system, user }: { system: string; user: string; model: string }) {
+      if (system.includes("THIS ANSWER: a short read of one price")) {
+        client.simulateCalls += 1;
+        return simulateText;
+      }
       client.calls += 1;
       // Cite the first evidence record the memo was given, as a well-formed memo does.
       const data = JSON.parse(user.slice(user.indexOf("DATA:\n") + 6).split("\n\n")[0]) as { fact_evidence?: { facts: Array<{ id: string }> } };
@@ -57,9 +62,9 @@ function memoClient(summary: string): MemoClient & { calls: number } {
  * A db holding today's reservations: the count reads them and the conditional insert adds one
  * only while fewer than the cap in the query are held, as the SQL does.
  */
-function db(used: number) {
+function db(used: number, usedPaths: string[] = Array(used).fill("memo")) {
   const queries: string[] = [];
-  const state = { reserved: used };
+  const state = { reserved: used, paths: [...usedPaths] };
   const tag = vi.fn(async (parts: TemplateStringsArray, ...values: unknown[]) => {
     const text = parts.join("?");
     queries.push(text);
@@ -67,8 +72,10 @@ function db(used: number) {
       const cap = Number(values.at(-1));
       if (state.reserved >= cap) return [];
       state.reserved += 1;
+      state.paths.push(String((JSON.parse(String(values.find((v) => typeof v === "string" && v.startsWith("{")))) as { path: string }).path));
       return [{ id: state.reserved }];
     }
+    if (text.includes("detail ->> 'path'")) return [{ n: state.paths.filter((p) => p === values.at(-1)).length }];
     return text.includes("COUNT(*)") ? [{ n: state.reserved }] : [];
   });
   return { db: tag as unknown as Parameters<typeof paidSamplesToday>[0], queries, state };
@@ -100,15 +107,17 @@ describe("Hamilton's paid answer eval (#1079)", () => {
   it("writes only the day's remaining samples and scores form and correctness", async () => {
     evalMocks.answer.mockImplementation(async (id: number) => answered(id));
     const client = memoClient("Your overdraft fee is $32.");
-    const result = await runPaidAnswerEval({ db: db(3).db, now, client, live, agentRunId: 77 });
+    // Today's Simulate read is already used, so both remaining samples are memos.
+    const result = await runPaidAnswerEval({ db: db(3, ["memo", "memo", "simulate"]).db, now, client, live, agentRunId: 77 });
     expect(client.calls).toBe(2);
+    expect(client.simulateCalls).toBe(0);
     expect(result.paths[0]).toMatchObject({ path: "memo", sampled: 2, answers: 2, passed: 2, correctness: { checked: 2, correct: 2, rate: 1 } });
-    expect(result.notSampled).toEqual(["written_answer", "simulate", "report"]);
+    expect(result.notSampled).toEqual(["written_answer", "report"]);
   });
 
   it("fails form when the memo is withheld for a figure the storyline does not hold", async () => {
     evalMocks.answer.mockImplementation(async (id: number) => answered(id));
-    const result = await runPaidAnswerEval({ db: db(4).db, now, client: memoClient("Your overdraft fee is $32; peers charge $91.37."), live, agentRunId: 77 });
+    const result = await runPaidAnswerEval({ db: db(4, ["memo", "memo", "memo", "simulate"]).db, now, client: memoClient("Your overdraft fee is $32; peers charge $91.37."), live, agentRunId: 77 });
     expect(result.paths[0]).toMatchObject({ answers: 1, passed: 0, correctness: { checked: 0 } });
     expect(result.results[0].status).toBe("withheld");
   });
@@ -120,7 +129,7 @@ describe("Hamilton's paid answer eval (#1079)", () => {
       const values = await live(id, research);
       return values && { rows: values.rows.map((r, i) => (i === 0 ? { ...r, amount: 29 } : r)) };
     };
-    const result = await runPaidAnswerEval({ db: db(4).db, now, client: memoClient("Your overdraft fee is $32."), live: moved, agentRunId: 77 });
+    const result = await runPaidAnswerEval({ db: db(4, ["memo", "memo", "memo", "simulate"]).db, now, client: memoClient("Your overdraft fee is $32."), live: moved, agentRunId: 77 });
     expect(result.paths[0]).toMatchObject({ passed: 1, correctness: { checked: 1, correct: 0 } });
     expect(result.results[0].correctness).toContain("your fee: the answer uses $32, the catalog has $29");
   });
@@ -130,7 +139,7 @@ describe("Hamilton's paid answer eval (#1079)", () => {
     const client = memoClient("Unused.");
     const result = await runPaidAnswerEval({ db: db(0).db, now, client, live, agentRunId: 77 });
     expect(client.calls).toBe(0);
-    expect(result.note).toBe("No sampled question produced a storyline to write up.");
+    expect(result.note).toBe("No sampled question produced an answer to write up.");
   });
 
   it("puts Pro readers' questions first and rotates both lists by the day", () => {
@@ -147,7 +156,8 @@ describe("Hamilton's paid answer eval (#1079)", () => {
     const refusing: MemoClient = { create: async () => { throw new Error("Provider budget guard blocked this call."); } };
     const day = db(0);
     const first = await runPaidAnswerEval({ db: day.db, now, client: refusing, live, agentRunId: 77 });
-    expect(first.paths[0]).toMatchObject({ sampled: 5, answers: 0 });
+    expect(first.paths[0]).toMatchObject({ path: "memo", sampled: 4, answers: 0 });
+    expect(first.paths[1]).toMatchObject({ path: "simulate", sampled: 1, answers: 0 });
     expect(day.state.reserved).toBe(5);
     const client = memoClient("Your overdraft fee is $32.");
     const second = await runPaidAnswerEval({ db: day.db, now, client, live, agentRunId: 78 });
@@ -155,5 +165,36 @@ describe("Hamilton's paid answer eval (#1079)", () => {
     expect(second.note).toBe("Today's 5 paid samples are already used.");
     expect(day.queries.some((q) => q.includes("INSERT INTO agent_run_events") && q.includes("< "))).toBe(true);
     expect(PAID_EVAL_RESERVATION).toBe("paid_eval.sample_reserved");
+  });
+
+  it("spends one of the day's five on a Simulate read, checked by the evidence gate and tied to live values", async () => {
+    evalMocks.answer.mockImplementation(async (id: number) => answered(id));
+    const research = overdraftResearch({ institutionId: 1001 });
+    const input = simulateInputFor(research)!;
+    const median = input.distribution.median_amount!;
+    const client = memoClient("Your overdraft fee is $32.", `A $${input.proposedFee.toFixed(2)} fee sits at the peer median of $${median.toFixed(2)}. The question for management is notice.`);
+    const day = db(0);
+    const result = await runPaidAnswerEval({ db: day.db, now, client, live, agentRunId: 77 });
+    expect(client.simulateCalls).toBe(1);
+    expect(client.calls).toBe(4);
+    expect(day.state.paths.filter((p) => p === "simulate")).toHaveLength(1);
+    expect(result.paths[1]).toMatchObject({ path: "simulate", sampled: 1, answers: 1, passed: 1, correctness: { checked: 1, correct: 1 } });
+  });
+
+  it("fails a Simulate read's form when it gives advice or a figure it was not given", async () => {
+    evalMocks.answer.mockImplementation(async (id: number) => answered(id));
+    const client = memoClient("Your overdraft fee is $32.", "You should raise the fee; peers charge $91.37.");
+    const result = await runPaidAnswerEval({ db: db(0).db, now, client, live, agentRunId: 77 });
+    expect(result.paths[1]).toMatchObject({ path: "simulate", answers: 1, passed: 0 });
+    expect(result.results.find((r) => r.path === "simulate")!.failures.join(" ")).toMatch(/not in DATA/);
+  });
+
+  it("picks the narrowest layer with a full band and tests its median, or $5 above a fee already at it", () => {
+    const research = overdraftResearch({ institutionId: 1001 });
+    const input = simulateInputFor(research)!;
+    expect(input.currentFee).toBe(research.current);
+    const atMedian = simulateInputFor({ ...research, current: input.distribution.median_amount })!;
+    expect(atMedian.proposedFee).toBe((input.distribution.median_amount as number) + 5);
+    expect(simulateInputFor({ ...research, current: null })).toBeNull();
   });
 });
