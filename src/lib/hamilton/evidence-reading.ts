@@ -8,19 +8,24 @@ import { readerAsOf } from "./board-brief";
 import type { HamiltonDerivedFact, HamiltonEvidenceFact } from "./evidence-contract";
 
 function money(value: number): string {
-  return Number.isInteger(value) ? `$${value.toLocaleString("en-US")}` : `$${value.toFixed(2)}`;
+  const digits = Number.isInteger(value) ? 0 : 2;
+  return `$${value.toLocaleString("en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits })}`;
+}
+
+function sentence(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
 function possessive(name: string): string {
   return /s$/i.test(name) ? `${name}'` : `${name}'s`;
 }
 
-/** Names for the institutions in the inputs; an unnamed one reads as "Institution 12". */
+/** Names for the institutions in the inputs; one with no name here reads as "Institution 12". */
 export type InstitutionNames = ReadonlyMap<number, string>;
 
 function nameOf(fact: HamiltonEvidenceFact, names: InstitutionNames): string {
   const id = fact.scope.institutionId;
-  return id === null ? "An unnamed institution" : names.get(id) ?? `Institution ${id}`;
+  return id === null ? "an unnamed institution" : names.get(id) ?? `Institution ${id}`;
 }
 
 export function readDerivation(
@@ -37,19 +42,26 @@ export function readDerivation(
   const secondDate = second.scope.reportingDate ? readerAsOf(second.scope.reportingDate) : null;
   if (!firstDate || !secondDate) return null;
 
+  // Re-check the saved value against its inputs, so a hand-built or stale derivation never reads as fact.
   if (derived.derivation.kind === "difference" && derived.unit === "usd") {
+    if (firstDate !== secondDate || Math.abs(first.value - second.value - derived.value) > 0.005) return null;
     const left = `${possessive(nameOf(first, names))} ${feeLabel} fee`;
     const right = possessive(nameOf(second, names));
     const values = `${money(first.value)} vs ${money(second.value)}, both as of ${firstDate}`;
-    if (derived.value === 0) return `${left} is the same as ${right} (${values}).`;
+    if (derived.value === 0) return sentence(`${left} is the same as ${right} (${values}).`);
     const gap = money(Math.abs(derived.value));
-    return `${left} is ${gap} ${derived.value > 0 ? "higher" : "lower"} than ${right} (${values}).`;
+    return sentence(`${left} is ${gap} ${derived.value > 0 ? "higher" : "lower"} than ${right} (${values}).`);
   }
   if (derived.derivation.kind === "percent_change" && derived.unit === "percent") {
+    if (second.value === 0) return null;
+    const exact = ((first.value - second.value) / second.value) * 100;
+    if (Math.abs(exact - derived.value) > 0.05 + 1e-9) return null;
     const subject = `${possessive(nameOf(first, names))} ${feeLabel} fee`;
     const span = `from ${money(second.value)} (${secondDate}) to ${money(first.value)} (${firstDate})`;
-    if (derived.value === 0) return `${subject} did not change, ${span}.`;
-    return `${subject} ${derived.value > 0 ? "rose" : "fell"} ${Math.abs(derived.value).toFixed(1)}%, ${span}.`;
+    if (first.value === second.value) return sentence(`${subject} did not change, ${span}.`);
+    // A change that rounds to 0.0% still happened; say how small it was rather than "did not change".
+    const size = Math.abs(derived.value) < 0.1 ? "less than 0.1%" : `${Math.abs(derived.value).toFixed(1)}%`;
+    return sentence(`${subject} ${exact > 0 ? "rose" : "fell"} ${size}, ${span}.`);
   }
   return null;
 }

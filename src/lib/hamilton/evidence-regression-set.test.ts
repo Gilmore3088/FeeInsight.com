@@ -28,4 +28,15 @@ describe("Hamilton evidence regression set (#981, H06-T09)", () => {
     const wrong = { ...EVIDENCE_REGRESSION_CASES.find((c) => c.id === "fa-2-difference")!, expect: { value: 25 } } as RegressionCase;
     expect(runRegressionCase(wrong).pass).toBe(false);
   });
+
+  it("fails a case when the contract reports a problem the case didn't expect", () => {
+    const rate = EVIDENCE_REGRESSION_CASES.find((c) => c.id === "rate-difference")!;
+    const partial = { ...rate, expect: { value: null, problems: ["unit_mismatch"] } } as RegressionCase;
+    expect(runRegressionCase(partial).pass).toBe(false);
+  });
+
+  it("fails a figure case whose expected confidence is wrong", () => {
+    const fa1 = EVIDENCE_REGRESSION_CASES.find((c) => c.id === "fa-1-figure")!;
+    expect(runRegressionCase({ ...fa1, expect: { level: "low", unmatched: ["$35"] } } as RegressionCase).pass).toBe(false);
+  });
 });

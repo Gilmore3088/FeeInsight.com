@@ -18,7 +18,7 @@ import {
 } from "./evidence-contract";
 import { readDerivation } from "./evidence-reading";
 
-export const EVIDENCE_REGRESSION_SET_VERSION = "2026-10-15.1";
+export const EVIDENCE_REGRESSION_SET_VERSION = "2026-10-15.2";
 
 /** Who has checked the expected outcomes. Change only with a link to the actual review record. */
 export const HUMAN_REVIEW = {
@@ -66,7 +66,7 @@ const B_NO_FREQUENCY = fee(12, BANK_B, 35, "2026-06-30", { frequency: null });
 export type RegressionGroup = "false_attribution" | "control" | "zero_and_unknown" | "rate" | "period" | "coverage";
 
 export type RegressionCase = { id: string; group: RegressionGroup; description: string } & (
-  | { check: "figures"; text: string; data: unknown; expect: { highConfidence: false } }
+  | { check: "figures"; text: string; data: unknown; expect: { level: "high" | "medium" | "low"; unmatched: string[] } }
   | { check: "binding"; fact: HamiltonEvidenceFact; claim: HamiltonClaimBinding; expect: { binds: boolean } }
   | { check: "difference" | "percent_change"; left: HamiltonEvidenceFact; right: HamiltonEvidenceFact;
       expect: { value: number | null; problems?: string[]; reading?: string } }
@@ -75,27 +75,32 @@ export type RegressionCase = { id: string; group: RegressionGroup; description: 
 const PEERS = [{ institution_name: "Bank A", fee: 10 }, { institution_name: "Bank B", fee: 35 }];
 
 export const EVIDENCE_REGRESSION_CASES: readonly RegressionCase[] = [
-  // The four known false attributions (H06-AC1, AC2).
-  { id: "fa-1-figure", group: "false_attribution", description: "\"Bank A charges $35\" matches Bank B's number, so the figure check can't call it verified",
-    check: "figures", text: "Bank A charges $35.", data: PEERS, expect: { highConfidence: false } },
+  // The four known false attributions (H06-AC1, AC2). Each "-figure" case records what the
+  // number-only figure check does today: it finds the number, rates the answer medium (it never
+  // rates anything high) and does NOT catch the false attribution. The "-binding", "-difference"
+  // and "-change" case beside it is the check that does.
+  { id: "fa-1-figure", group: "false_attribution", description: "figure check alone: \"Bank A charges $35\" matches Bank B's number and is not caught",
+    check: "figures", text: "Bank A charges $35.", data: PEERS, expect: { level: "medium", unmatched: [] } },
   { id: "fa-1-binding", group: "false_attribution", description: "Bank B's $35 record doesn't bind to a claim about Bank A",
     check: "binding", fact: B35, claim: { institutionId: BANK_A, feeCategory: "overdraft", unit: "usd" }, expect: { binds: false } },
-  { id: "fa-2-figure", group: "false_attribution", description: "\"Bank A charges $25\" is the difference, not a fee",
-    check: "figures", text: "Bank A charges $25.", data: PEERS, expect: { highConfidence: false } },
+  { id: "fa-2-figure", group: "false_attribution", description: "figure check alone: \"Bank A charges $25\" matches the gap, not a fee, and is not caught",
+    check: "figures", text: "Bank A charges $25.", data: PEERS, expect: { level: "medium", unmatched: [] } },
   { id: "fa-2-difference", group: "false_attribution", description: "the $25 gap keeps both inputs and reads as a gap, not as Bank A's fee",
     check: "difference", left: A10, right: B35,
     expect: { value: -25, reading: "Bank A's overdraft fee is $25 lower than Bank B's ($10 vs $35, both as of Jun 30, 2026)." } },
-  { id: "fa-3-figure", group: "false_attribution", description: "\"increased by 10%\" for a -10% change",
-    check: "figures", text: "Revenue increased by 10%.", data: { revenue_growth: -10 }, expect: { highConfidence: false } },
+  { id: "fa-3-figure", group: "false_attribution", description: "figure check alone: \"increased by 10%\" for a -10% change is not caught",
+    check: "figures", text: "Revenue increased by 10%.", data: { revenue_growth: -10 }, expect: { level: "medium", unmatched: [] } },
   { id: "fa-3-change", group: "false_attribution", description: "a -10% change reads as a fall, with both dates",
     check: "percent_change", left: A90_2026, right: A100_2025,
     expect: { value: -10, reading: "Bank A's overdraft fee fell 10.0%, from $100 (Jun 30, 2025) to $90 (Jun 30, 2026)." } },
-  { id: "fa-4-figure", group: "false_attribution", description: "a 2024 value stated as the 2026 fee",
-    check: "figures", text: "The 2026 overdraft fee is $35.", data: { fee: 35, year: 2024 }, expect: { highConfidence: false } },
+  { id: "fa-4-figure", group: "false_attribution", description: "figure check alone: a 2024 value stated as the 2026 fee is not caught",
+    check: "figures", text: "The 2026 overdraft fee is $35.", data: { fee: 35, year: 2024 }, expect: { level: "medium", unmatched: [] } },
   { id: "fa-4-binding", group: "false_attribution", description: "a 2024 record doesn't bind to a 2026 claim",
     check: "binding", fact: B35_2024, claim: { institutionId: BANK_B, reportingDate: "2026-06-30" }, expect: { binds: false } },
 
   // Valid controls: the right record still binds and the right arithmetic still stands.
+  { id: "control-figure-unmatched", group: "control", description: "the figure check does catch a number found nowhere in the data",
+    check: "figures", text: "Bank A charges $99.", data: PEERS, expect: { level: "low", unmatched: ["$99"] } },
   { id: "control-binding", group: "control", description: "Bank A's own $10 record binds to a claim about Bank A",
     check: "binding", fact: A10, claim: { institutionId: BANK_A, feeCategory: "overdraft", unit: "usd", reportingDate: "2026-06-30" }, expect: { binds: true } },
   { id: "control-higher", group: "control", description: "a positive gap reads as higher",
@@ -153,8 +158,10 @@ export interface RegressionResult {
 export function runRegressionCase(c: RegressionCase): RegressionResult {
   const done = (pass: boolean, actual: string): RegressionResult => ({ id: c.id, group: c.group, pass, actual });
   if (c.check === "figures") {
-    const level = confidenceFromFigureCheck(checkNarrativeFigures(c.text, c.data)).level;
-    return done(level !== "high", `confidence ${level}`);
+    const check = checkNarrativeFigures(c.text, c.data);
+    const level = confidenceFromFigureCheck(check).level;
+    const sameUnmatched = check.unmatched.length === c.expect.unmatched.length && check.unmatched.every((u, i) => u === c.expect.unmatched[i]);
+    return done(level === c.expect.level && sameUnmatched, `confidence ${level}; unmatched [${check.unmatched.join(", ")}]`);
   }
   if (c.check === "binding") {
     const binds = claimBindingMatches(c.fact, c.claim);
@@ -163,7 +170,9 @@ export function runRegressionCase(c: RegressionCase): RegressionResult {
   const result = c.check === "difference" ? deriveDifference(`regression:${c.id}`, c.left, c.right) : derivePercentChange(`regression:${c.id}`, c.left, c.right);
   const value = result.fact?.value ?? null;
   const reading = result.fact ? readDerivation(result.fact, [c.left, c.right], REGRESSION_NAMES, "overdraft") : null;
-  const problemsMatch = (c.expect.problems ?? []).every((p) => result.problems.includes(p)) && (c.expect.problems !== undefined || result.problems.length === 0);
+  const expected = [...(c.expect.problems ?? [])].sort();
+  const actualProblems = [...new Set(result.problems)].sort();
+  const problemsMatch = expected.length === actualProblems.length && expected.every((p, i) => p === actualProblems[i]);
   const readingMatches = c.expect.reading === undefined || reading === c.expect.reading;
   return done(value === c.expect.value && problemsMatch && readingMatches,
     `value ${value ?? "none"}; problems [${result.problems.join(", ")}]${reading ? `; "${reading}"` : ""}`);
