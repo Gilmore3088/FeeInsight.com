@@ -23,7 +23,8 @@ import { formatAmount } from "@/lib/format";
 import { getCurrentUser } from "@/lib/auth";
 import { canAccessPremium } from "@/lib/access";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
-import { UpgradeGate } from "@/components/upgrade-gate";
+import { TrackLink } from "@/components/track-link";
+import { DEMO_REQUEST_NAV, PRO_PLANS_NAV } from "@/components/nav-items";
 import {
   GuideSectionRenderer,
   type GuideBreakdowns,
@@ -157,10 +158,7 @@ export default async function ProGuidePage({ params }: PageProps) {
           </span>
         </div>
 
-        <h1
-          className="font-extrabold text-[1.75rem] leading-[1.12] tracking-[-0.02em] text-ink sm:text-[2.25rem]"
-          style={{ fontFamily: "var(--fi-font-sans)" }}
-        >
+        <h1 className="text-[32px] font-semibold leading-[1.08] tracking-[-0.03em] text-ink sm:text-[44px]">
           {guide.title}
         </h1>
 
@@ -191,12 +189,57 @@ export default async function ProGuidePage({ params }: PageProps) {
       </div>
 
       {!isPro ? (
-        <div className="mt-10 max-w-2xl">
-          <UpgradeGate message={`"${guide.title}" is part of the professional guide set`} />
-          <p className="mt-6 text-[14px] leading-relaxed text-ink-muted">
-            Every consumer fee guide on this site is free and ungated, including for
-            subscribers.{" "}
-            <Link href="/guides" className="font-medium text-brick">
+        <div className="mt-10 grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] lg:items-start">
+          <div className="rounded-2xl border border-border bg-surface-0 p-5 shadow-fi-1 sm:p-6">
+            <p className="text-[13px] text-ink-muted">The method, step by step</p>
+            <ol className="mt-3 space-y-3">
+              {guide.sections.map((section, i) => (
+                <li key={section.id} className="flex gap-3">
+                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-ink font-mono text-[13px] font-semibold text-on-ink">
+                    {i + 1}
+                  </span>
+                  <span className="pt-0.5 text-[15px] font-medium text-ink">{section.heading}</span>
+                </li>
+              ))}
+            </ol>
+            <p className="mt-5 text-[14px] text-ink-muted">Each step, with the screens that do it, is in Hamilton.</p>
+            <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2">
+              <TrackLink
+                event="upgrade_click"
+                eventProps={{ placement: "pro_guide_gate", guide: slug }}
+                href={PRO_PLANS_NAV.href}
+                className="inline-flex min-h-11 items-center rounded-full bg-ink px-5 text-[14px] font-semibold text-on-ink hover:opacity-90"
+              >
+                {PRO_PLANS_NAV.label}
+              </TrackLink>
+              <Link href={DEMO_REQUEST_NAV.href} className="text-[14px] font-semibold text-ink underline decoration-border underline-offset-4 hover:decoration-ink">
+                {DEMO_REQUEST_NAV.label}
+              </Link>
+            </div>
+          </div>
+          <figure>
+            <figcaption className="mb-3 flex items-baseline justify-between gap-4">
+              <span className="text-[15px] font-semibold text-ink">Watch Hamilton do it</span>
+              <span className="text-[13px] text-ink-muted">Video coming</span>
+            </figcaption>
+            <div className="relative aspect-video overflow-hidden rounded-2xl bg-warm-ink-900 shadow-fi-2 ring-1 ring-ink/10" aria-hidden="true">
+              <div className="absolute inset-x-[10%] inset-y-[20%] flex flex-col justify-between opacity-40">
+                {guide.sections.map((section, i) => (
+                  <span key={section.id} className="block h-2 rounded-full bg-[#e0716a]/60" style={{ width: `${45 + ((i * 17) % 45)}%` }} />
+                ))}
+              </div>
+              <span className="absolute inset-0 flex items-center justify-center">
+                <span className="flex h-16 w-16 items-center justify-center rounded-full bg-white shadow-fi-2">
+                  <svg viewBox="0 0 12 12" className="ml-1 h-6 w-6 text-ink">
+                    <path d="M3 1.5v9l7.5-4.5z" fill="currentColor" />
+                  </svg>
+                </span>
+              </span>
+            </div>
+          </figure>
+          <p className="text-[14px] text-ink-muted lg:col-span-2">
+            Every consumer fee guide is free.{" "}
+            <Link href="/guides" className="font-medium text-ink underline decoration-border underline-offset-4 hover:decoration-ink">
               Browse the consumer guides
             </Link>
             .

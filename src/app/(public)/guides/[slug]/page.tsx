@@ -30,7 +30,7 @@ import {
 } from "@/lib/data-store/public-cached-reads";
 import { getPublicSnapshot } from "@/lib/public-stats";
 import type { FeeCategorySummary } from "@/lib/data-store/fees";
-import { getDisplayName, getSpotlightCategories } from "@/lib/fee-taxonomy";
+import { getDisplayName } from "@/lib/fee-taxonomy";
 import { formatAmount } from "@/lib/format";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
 import { DistributionChart } from "@/components/public/distribution-chart";
@@ -40,6 +40,7 @@ import {
 } from "@/components/public/guide-blocks";
 import { SavedInstitutionsPanel } from "@/components/public/saved-institutions-panel";
 import { PRODUCT_NAME, SITE_URL } from "@/lib/constants";
+import { Button, SearchInput } from "@/brand/components";
 
 interface PageProps {
   params: Promise<{ slug: string }>;
@@ -92,20 +93,6 @@ function formatDate(value: string | null | undefined): string | null {
     year: "numeric",
   });
 }
-
-const Arrow = () => (
-  <svg
-    className="h-3 w-3"
-    fill="none"
-    viewBox="0 0 24 24"
-    stroke="currentColor"
-    strokeWidth="2"
-    aria-hidden="true"
-    focusable="false"
-  >
-    <path d="M5 12h14M12 5l7 7-7 7" />
-  </svg>
-);
 
 export default async function GuidePage({ params }: PageProps) {
   const { slug } = await params;
@@ -170,7 +157,6 @@ export default async function GuidePage({ params }: PageProps) {
 
   const zeroFeeCount = primarySummary?.zero_count ?? 0;
 
-  const spotlight = new Set(getSpotlightCategories());
   const primaryName = getDisplayName(guide.primaryCategory);
   // For prose: "overdraft", not "overdraft (od)".
   const primaryNamePlain = primaryName.replace(/\s*\([^)]*\)/g, "").toLowerCase();
@@ -178,8 +164,12 @@ export default async function GuidePage({ params }: PageProps) {
   const reviewDate = formatDate(guide.reviewedAt);
   const plain = (text: string) => resolveTokensToText(text, allSummaries);
 
+  const median = primarySummary?.median_amount ?? null;
+  const hasRange = primarySummary?.p25_amount != null && primarySummary?.p75_amount != null;
+  const otherFees = relevantFees.filter((f) => f.fee_category !== guide.primaryCategory);
+
   return (
-    <div className="mx-auto max-w-page px-6 py-14">
+    <div className="pb-20">
       <BreadcrumbJsonLd
         items={[
           { name: "Home", href: "/" },
@@ -188,428 +178,164 @@ export default async function GuidePage({ params }: PageProps) {
         ]}
       />
 
-      <nav
-        aria-label="Breadcrumb"
-        className="sticky top-14 z-30 -mx-6 mb-8 flex items-center gap-2 bg-paper/95 px-6 py-2 text-[12px] text-ink-muted backdrop-blur-sm sm:static sm:mx-0 sm:bg-transparent sm:px-0 sm:py-0 sm:backdrop-blur-none"
-      >
-        <Link href="/" className="transition-colors hover:text-ink">
-          Home
-        </Link>
-        <span className="text-border" aria-hidden="true">
-          /
-        </span>
-        <Link href="/guides" className="transition-colors hover:text-ink">
-          Guides
-        </Link>
-        <span className="text-border" aria-hidden="true">
-          /
-        </span>
-        <span className="truncate text-ink-soft">{guide.title}</span>
-      </nav>
-
-      {/* ── HERO ── */}
-      <div className="max-w-3xl">
-        <div className="mb-4 flex items-center gap-2">
-          <span className="h-px w-8 bg-brick/40" aria-hidden="true" />
-          <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-brick/60">
-            Consumer Guide
-          </span>
-        </div>
-
-        <h1
-          className="font-extrabold text-[1.75rem] leading-[1.12] tracking-[-0.02em] text-ink sm:text-[2.25rem]"
-          style={{ fontFamily: "var(--fi-font-sans)" }}
-        >
-          {guide.title}
-        </h1>
-
-        <p className="mt-4 text-[15px] leading-relaxed text-ink-muted">
-          {guide.description}
-        </p>
-
-        <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-ink-muted">
-          <span>{guide.author}</span>
-          {reviewDate && (
-            <>
-              <span className="h-3 w-px bg-border" aria-hidden="true" />
-              <span>Guide reviewed {reviewDate}</span>
-            </>
-          )}
-          {crawlDate && (
-            <>
-              <span className="h-3 w-px bg-border" aria-hidden="true" />
-              <span>Fee data updated {crawlDate}</span>
-            </>
-          )}
-          {guide.methodologyHref && (
-            <>
-              <span className="h-3 w-px bg-border" aria-hidden="true" />
-              <Link
-                href={guide.methodologyHref}
-                className="text-brick/70 transition-colors hover:text-brick"
-              >
-                Methodology
+      {/* 1. The answer first: what this fee costs today, as one exhibit. */}
+      <section className="border-b border-border bg-paper">
+        <div className="mx-auto grid max-w-page gap-8 px-4 pb-10 pt-6 sm:px-6 sm:pb-14 sm:pt-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] lg:items-center lg:gap-12">
+          <div>
+            <nav aria-label="Breadcrumb" className="flex items-center gap-2 text-[12px] text-ink-muted">
+              <Link href="/guides" className="hover:text-ink">
+                Guides
               </Link>
-            </>
-          )}
-        </div>
-      </div>
-
-      <>
-          {/* ── CHECK YOUR OWN BANK ── */}
-          <section
-            aria-labelledby="check-your-bank-heading"
-            className="mt-8 rounded-xl border border-brick/15 bg-gradient-to-r from-surface-0 to-paper px-6 py-5"
-          >
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-brick/60">
-                  Check your own bank
-                </p>
-                <h2
-                  id="check-your-bank-heading"
-                  className="mt-2 text-[17px] font-bold text-ink"
-                  style={{ fontFamily: "var(--fi-font-sans)" }}
-                >
-                  {primarySummary?.median_amount != null
-                    ? `Does your bank charge more than ${formatAmount(primarySummary.median_amount)}?`
-                    : `How does your bank compare on ${primaryNamePlain}?`}
-                </h2>
-                <p className="mt-1 text-[13px] text-ink-muted">
-                  Find your bank or credit union and see its published{" "}
-                  {primaryNamePlain} against the national median.
-                </p>
-              </div>
-              <Link
-                href={`/institutions?fee=${guide.primaryCategory}`}
-                className="shrink-0 rounded-full bg-brick px-5 py-2.5 text-[13px] font-semibold text-white no-underline transition-colors hover:bg-brick-ink"
-              >
-                Find your institution
-              </Link>
-            </div>
-          </section>
-
-          {/* ── YOUR SAVED INSTITUTIONS — client island; placed after the CTA so its late arrival cannot shift the hero ── */}
-          <SavedInstitutionsPanel
-            category={guide.primaryCategory}
-            categoryLabel={primaryNamePlain}
-            median={primarySummary?.median_amount ?? null}
-          />
-
-          {/* ── ACTION LINKS ── */}
-          <div className="mt-5 flex flex-wrap items-center gap-3">
-            <Link
-              href="/fees"
-              className="inline-flex items-center gap-1.5 rounded-full border border-border bg-white/80 px-4 py-2 text-[12px] font-medium text-ink-soft no-underline transition-all hover:border-brick/30 hover:text-brick"
-            >
-              View the full fee index
-              <Arrow />
-            </Link>
-            <Link
-              href={`/fees/${guide.primaryCategory}`}
-              className="inline-flex items-center gap-1.5 rounded-full bg-brick px-4 py-2 text-[12px] font-medium text-white no-underline shadow-sm shadow-[#b23a32]/15 transition-all hover:shadow-md hover:shadow-[#b23a32]/25"
-            >
-              {primaryName} analysis
-              <Arrow />
-            </Link>
+              <span aria-hidden="true">/</span>
+              <span className="truncate text-ink-soft">{primaryName}</span>
+            </nav>
+            <h1 className="mt-4 text-[32px] font-semibold leading-[1.08] tracking-[-0.03em] text-ink sm:text-[44px]">{guide.title}</h1>
+            <p className="mt-3 max-w-[36rem] text-[16px] text-ink-soft">{guide.description}</p>
+            <p className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-ink-muted">
+              <span>{guide.author}</span>
+              {reviewDate && <span>Reviewed {reviewDate}</span>}
+              {crawlDate && <span>Fee data updated {crawlDate}</span>}
+              {guide.methodologyHref && (
+                <Link href={guide.methodologyHref} className="underline decoration-border underline-offset-2 hover:text-ink">
+                  Methodology
+                </Link>
+              )}
+            </p>
           </div>
 
-          {/* ── MAIN + SIDEBAR ── */}
-          <div className="mt-12 grid grid-cols-1 gap-10 xl:grid-cols-[1fr_300px]">
-            <div>
-              {primaryAmounts.length >= 5 && primarySummary && (
-                <section aria-labelledby="distribution-heading" className="mb-12">
-                  <h2
-                    id="distribution-heading"
-                    className="text-[18px] font-bold tracking-tight text-ink"
-                    style={{ fontFamily: "var(--fi-font-sans)" }}
-                  >
-                    {primaryName} Fee Distribution
-                  </h2>
-                  <p className="mt-1.5 text-[13px] text-ink-muted">
-                    How {primaryAmounts.length.toLocaleString()} institutions price this
-                    fee. National median:{" "}
-                    <span className="font-medium text-ink">
-                      {formatAmount(primarySummary.median_amount)}
-                    </span>
-                  </p>
-                  <div className="mt-4 rounded-xl border border-border/80 bg-white/70 p-5 backdrop-blur-sm">
-                    <DistributionChart
-                      values={primaryAmounts}
-                      median={primarySummary.median_amount}
-                      bucketCount={16}
-                    />
-                  </div>
-                </section>
-              )}
-
-              <div className="space-y-10">
-                {guide.sections.map((section, i) => (
-                  <GuideSectionRenderer
-                    key={section.id}
-                    section={section}
-                    summaries={allSummaries}
-                    breakdowns={breakdowns}
-                    isLast={i === guide.sections.length - 1}
-                  />
-                ))}
-              </div>
-
-              {/* ── Attribution ── */}
-              <footer className="mt-12 rounded-xl border border-border/70 bg-paper/60 px-5 py-4 text-[12.5px] leading-relaxed text-ink-muted">
-                <p>
-                  Fee data from the {PRODUCT_NAME}, covering{" "}
-                  <span className="tabular-nums">
-                    {primarySummary ? primarySummary.institution_count.toLocaleString() : summary.institutionsLabel}
-                  </span>{" "}
-                  institutions&rsquo; published fee schedules for {primaryNamePlain}.
-                  Medians reflect the most recent collection period. Individual institutions
-                  change fees without much notice — always check your own
-                  institution&rsquo;s current schedule.
-                </p>
-                <p className="mt-2 text-ink-muted">
-                  {guide.author}
-                  {reviewDate && <> &middot; Last reviewed {reviewDate}</>}
-                  {guide.methodologyHref && (
+          {primarySummary && median != null && (
+            <figure className="rounded-2xl border border-border bg-surface-0 p-4 shadow-fi-1 sm:p-6">
+              <figcaption>
+                <p className="text-[13px] text-ink-muted">Typical {primaryNamePlain} in the U.S.</p>
+                <p className="font-mono text-[40px] font-semibold leading-none tabular-nums text-ink">{formatAmount(median)}</p>
+                <p className="mt-2 text-[13px] text-ink-muted">
+                  {hasRange && (
                     <>
-                      {" "}
-                      &middot;{" "}
-                      <Link
-                        href={guide.methodologyHref}
-                        className="text-brick/70 hover:text-brick"
-                      >
-                        Methodology
-                      </Link>
+                      The middle half charge {formatAmount(primarySummary.p25_amount)} to {formatAmount(primarySummary.p75_amount)}.{" "}
                     </>
                   )}
+                  Median of {primarySummary.institution_count.toLocaleString()} institutions
+                  {zeroFeeCount > 0 && `; ${zeroFeeCount.toLocaleString()} charge nothing`}.
                 </p>
-              </footer>
-
-              {/* ── Explore the Data ── */}
-              <section aria-labelledby="explore-heading" className="mt-14">
-                <div className="mb-5 flex items-center gap-3">
-                  <h2
-                    id="explore-heading"
-                    className="text-[16px] font-bold text-ink"
-                    style={{ fontFamily: "var(--fi-font-sans)" }}
-                  >
-                    Explore the Data
-                  </h2>
-                  <span className="h-px flex-1 bg-border" aria-hidden="true" />
-                </div>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  {relevantFees.map((fee) => {
-                    const open = spotlight.has(fee.fee_category);
-                    return (
-                      <Link
-                        key={`deep-${fee.fee_category}`}
-                        href={`/fees/${fee.fee_category}`}
-                        className="group flex items-start gap-3.5 rounded-xl border border-border/80 bg-white/70 px-5 py-4 no-underline transition-all duration-300 hover:border-brick/20 hover:shadow-md hover:shadow-[#b23a32]/5"
-                      >
-                        <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brick/8 text-brick">
-                          <svg
-                            className="h-4 w-4"
-                            fill="none"
-                            viewBox="0 0 24 24"
-                            strokeWidth={1.5}
-                            stroke="currentColor"
-                            aria-hidden="true"
-                            focusable="false"
-                          >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z"
-                            />
-                          </svg>
-                        </div>
-                        <div>
-                          <span className="text-[13px] font-medium text-ink transition-colors group-hover:text-brick">
-                            {getDisplayName(fee.fee_category)}
-                          </span>
-                          <span className="block text-[11px] text-ink-muted">
-                            {open
-                              ? "Distribution, breakdowns by charter, state and tier"
-                              : "Distribution and national median — free"}
-                          </span>
-                          {/* Stated about the destination, not the reader, so this page
-                              renders the same HTML for everyone and can be cached. */}
-                          {!open && (
-                            <span className="mt-1 inline-flex items-center gap-1 text-[10px] font-medium text-ink-muted">
-                              <svg
-                                className="h-2.5 w-2.5"
-                                viewBox="0 0 24 24"
-                                fill="none"
-                                stroke="currentColor"
-                                strokeWidth="2"
-                                aria-hidden="true"
-                                focusable="false"
-                              >
-                                <rect x="3" y="11" width="18" height="11" rx="2" />
-                                <path d="M7 11V7a5 5 0 0110 0v4" />
-                              </svg>
-                              Breakdowns require a subscription
-                            </span>
-                          )}
-                        </div>
-                      </Link>
-                    );
-                  })}
-                </div>
-              </section>
-
-              {/* ── Related guides ── */}
-              {related.length > 0 && (
-                <section aria-labelledby="related-heading" className="mt-14">
-                  <div className="mb-5 flex items-center gap-3">
-                    <h2
-                      id="related-heading"
-                      className="text-[16px] font-bold text-ink"
-                      style={{ fontFamily: "var(--fi-font-sans)" }}
-                    >
-                      Related Guides
-                    </h2>
-                    <span className="h-px flex-1 bg-border" aria-hidden="true" />
-                  </div>
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    {related.map((g) => (
-                      <Link
-                        key={g.slug}
-                        href={`/guides/${g.slug}`}
-                        className="group rounded-xl border border-border/80 bg-white/70 px-5 py-4 no-underline transition-all duration-300 hover:border-brick/20 hover:shadow-md hover:shadow-[#b23a32]/5"
-                      >
-                        <span
-                          className="text-[14px] font-semibold text-ink transition-colors group-hover:text-brick"
-                          style={{ fontFamily: "var(--fi-font-sans)" }}
-                        >
-                          {g.title}
-                        </span>
-                        <span className="mt-1 line-clamp-2 block text-[12px] text-ink-muted">
-                          {g.description}
-                        </span>
-                      </Link>
-                    ))}
-                  </div>
-                </section>
-              )}
-            </div>
-
-            {/* ── SIDEBAR ── */}
-            <aside className="space-y-5 xl:sticky xl:top-20 xl:self-start">
-              {relevantFees.length > 0 && (
-                <div className="relative overflow-hidden rounded-xl border border-border bg-white/80 px-5 py-5 backdrop-blur-sm">
-                  <div
-                    className="absolute left-0 right-0 top-0 h-[2px] bg-gradient-to-r from-transparent via-brick/30 to-transparent"
-                    aria-hidden="true"
-                  />
-                  <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-brick/60">
-                    Live National Benchmarks
-                  </p>
-                  <div className="mt-4 space-y-4">
-                    {relevantFees.map((fee) => (
-                      <div
-                        key={fee.fee_category}
-                        className="border-b border-border/60 pb-3.5 last:border-0 last:pb-0"
-                      >
-                        <Link
-                          href={`/fees/${fee.fee_category}`}
-                          className="text-[13px] font-semibold text-ink transition-colors hover:text-brick"
-                          style={{ fontFamily: "var(--fi-font-sans)" }}
-                        >
-                          {getDisplayName(fee.fee_category)}
-                        </Link>
-                        <div className="mt-1.5 flex items-baseline gap-2">
-                          <span
-                            className="text-[22px] font-semibold tracking-tight tabular-nums text-ink"
-                            style={{
-                              fontFamily: "var(--fi-font-mono)",
-                            }}
-                          >
-                            {formatAmount(fee.median_amount)}
-                          </span>
-                          <span className="text-[10px] text-ink-muted">median</span>
-                        </div>
-                        <div className="mt-1 text-[11px] tabular-nums text-ink-muted">
-                          P25: {formatAmount(fee.p25_amount)} &middot; P75:{" "}
-                          {formatAmount(fee.p75_amount)}
-                        </div>
-                        <Link
-                          href={`/fees/${fee.fee_category}`}
-                          className="mt-2 inline-block rounded-full border border-border/60 bg-paper px-2.5 py-0.5 text-[10px] font-medium text-ink-muted no-underline transition-colors hover:border-brick/30 hover:text-brick"
-                        >
-                          Full analysis
-                        </Link>
-                      </div>
-                    ))}
-                  </div>
+              </figcaption>
+              {primaryAmounts.length >= 5 && (
+                <div className="mt-4">
+                  <DistributionChart values={primaryAmounts} median={median} bucketCount={16} />
                 </div>
               )}
+              <p className="mt-2 text-[12px]">
+                <Link href={`/fees/${guide.primaryCategory}`} className="font-semibold text-ink underline decoration-border underline-offset-4 hover:decoration-ink">
+                  See the full {primaryNamePlain} data
+                </Link>
+              </p>
+            </figure>
+          )}
+        </div>
+      </section>
 
-              {/* #1172: no institution is named outside a buyer's own report. */}
-              {zeroFeeCount > 0 && (
-                <div className="rounded-xl border border-border bg-white/80 px-5 py-4 text-[12px] text-ink-soft">
-                  <span className="font-bold tabular-nums">{zeroFeeCount}</span>{" "}
-                  institution{zeroFeeCount !== 1 ? "s" : ""} in our index charge nothing for {primaryNamePlain}.
-                </div>
-              )}
+      {/* 2. Check your own bank. */}
+      <section aria-labelledby="check-your-bank-heading" className="mx-auto max-w-page px-4 pt-10 sm:px-6">
+        <div className="rounded-2xl border border-border bg-surface-0 p-5 shadow-fi-1 sm:p-6">
+          <h2 id="check-your-bank-heading" className="text-[20px] font-semibold tracking-[-0.02em] text-ink">
+            {median != null ? `Does your bank charge more than ${formatAmount(median)}?` : `How does your bank compare on ${primaryNamePlain}?`}
+          </h2>
+          <form action="/institutions" method="get" role="search" className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-end">
+            <input type="hidden" name="fee" value={guide.primaryCategory} />
+            <SearchInput name="q" label="Your bank or credit union" required autoComplete="off" className="w-full min-w-0 sm:flex-1" />
+            <Button type="submit" variant="primary" className="min-h-11 justify-center whitespace-nowrap">
+              Look up its fees
+            </Button>
+          </form>
+          <SavedInstitutionsPanel category={guide.primaryCategory} categoryLabel={primaryNamePlain} median={median} />
+        </div>
+      </section>
 
-              <nav
-                aria-label="Guide contents"
-                className="rounded-xl border border-border bg-white/80 px-5 py-4"
-              >
-                <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-ink-muted">
-                  In This Guide
-                </p>
-                <ul className="mt-3 space-y-2">
-                  {guide.sections.map((section) => (
-                    <li key={section.id}>
-                      <a
-                        href={`#${section.id}`}
-                        className="flex items-center gap-2 text-[13px] text-ink-muted transition-colors hover:text-brick"
-                      >
-                        <span
-                          className="h-1 w-1 shrink-0 rounded-full bg-border"
-                          aria-hidden="true"
-                        />
-                        {section.heading}
-                      </a>
-                    </li>
-                  ))}
-                </ul>
-              </nav>
+      {/* 3. The guide, with its contents and the free alert beside it. */}
+      <div className="mx-auto grid max-w-page grid-cols-1 gap-10 px-4 pt-12 sm:px-6 lg:grid-cols-[minmax(0,1fr)_17rem]">
+        <div className="max-w-3xl space-y-10">
+          {guide.sections.map((section, i) => (
+            <GuideSectionRenderer
+              key={section.id}
+              section={section}
+              summaries={allSummaries}
+              breakdowns={breakdowns}
+              isLast={i === guide.sections.length - 1}
+            />
+          ))}
 
-              {/* ── CTA: a consumer page offers the consumer something ── */}
-              <div className="rounded-xl border border-border bg-white/80 px-5 py-5">
-                  <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-brick/60">
-                    Follow this fee
-                  </p>
-                  <p
-                    className="mt-2 text-[15px] font-semibold text-ink"
-                    style={{ fontFamily: "var(--fi-font-sans)" }}
-                  >
-                    Get an email when your bank updates this fee
-                  </p>
-                  <p className="mt-1.5 text-[12px] leading-relaxed text-ink-muted">
-                    Free account. Save your institution and we&rsquo;ll email you when its published{" "}
-                    {primaryNamePlain} is updated.
-                  </p>
-                  <Link
-                    href={`/register?intent=fee-alert&category=${guide.primaryCategory}`}
-                    className="mt-4 inline-flex items-center gap-1.5 rounded-full bg-ink px-5 py-2 text-[12px] font-semibold text-white no-underline transition-all hover:bg-[#33302B]"
-                  >
-                    Create a free account
-                    <Arrow />
-                  </Link>
-                  <p className="mt-3 text-[11px] text-ink-muted">
-                    Benchmarking for your institution?{" "}
-                    <Link href="/subscribe" className="text-brick/80 hover:text-brick">
-                      See professional plans
+          {otherFees.length > 0 && (
+            <section aria-labelledby="related-fees-heading">
+              <h2 id="related-fees-heading" className="text-[20px] font-semibold tracking-[-0.02em] text-ink">
+                Related fees today
+              </h2>
+              <ul className="mt-3 divide-y divide-border rounded-2xl border border-border bg-surface-0">
+                {otherFees.map((fee) => (
+                  <li key={fee.fee_category}>
+                    <Link href={`/fees/${fee.fee_category}`} className="flex min-h-11 items-center justify-between gap-4 px-4 py-2.5 text-[14px] text-ink hover:bg-paper">
+                      <span>{getDisplayName(fee.fee_category)}</span>
+                      <span className="font-mono tabular-nums">
+                        {formatAmount(fee.median_amount)} <span className="text-[12px] text-ink-muted">median</span>
+                      </span>
                     </Link>
-                  </p>
-                </div>
-            </aside>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+
+          <p className="text-[12px] leading-relaxed text-ink-muted">
+            Fee data from the {PRODUCT_NAME}: {primarySummary ? primarySummary.institution_count.toLocaleString() : summary.institutionsLabel}{" "}
+            institutions&rsquo; own published schedules for {primaryNamePlain}. Institutions change fees often, so check your own
+            institution&rsquo;s current schedule.
+          </p>
+        </div>
+
+        <aside className="space-y-4 lg:sticky lg:top-20 lg:self-start">
+          <nav aria-label="Guide contents" className="hidden rounded-2xl border border-border bg-surface-0 px-5 py-4 lg:block">
+            <p className="text-[13px] font-semibold text-ink">In this guide</p>
+            <ul className="mt-2 space-y-1.5">
+              {guide.sections.map((section) => (
+                <li key={section.id}>
+                  <a href={`#${section.id}`} className="text-[13px] text-ink-muted hover:text-ink">
+                    {section.heading}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </nav>
+          <div className="rounded-2xl border border-border bg-surface-0 px-5 py-5">
+            <p className="text-[15px] font-semibold text-ink">Know when your bank changes this fee</p>
+            <p className="mt-1 text-[13px] text-ink-muted">
+              Free account. Save your institution and we&rsquo;ll email you when its published {primaryNamePlain} changes.
+            </p>
+            <Link
+              href={`/register?intent=fee-alert&category=${guide.primaryCategory}`}
+              className="mt-4 inline-flex min-h-11 items-center rounded-full bg-ink px-5 text-[14px] font-semibold text-on-ink hover:opacity-90"
+            >
+              Get free fee alerts
+            </Link>
           </div>
-      </>
+        </aside>
+      </div>
+
+      {/* 5. Related guides. */}
+      {related.length > 0 && (
+        <section aria-labelledby="related-heading" className="mx-auto max-w-page px-4 pt-14 sm:px-6">
+          <h2 id="related-heading" className="text-[20px] font-semibold tracking-[-0.02em] text-ink">
+            Related guides
+          </h2>
+          <ul className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {related.map((g) => (
+              <li key={g.slug}>
+                <Link href={`/guides/${g.slug}`} className="block h-full rounded-2xl border border-border bg-surface-0 px-5 py-4 hover:border-ink/30">
+                  <span className="text-[15px] font-semibold text-ink">{g.title}</span>
+                  <span className="mt-1 line-clamp-2 block text-[13px] text-ink-muted">{g.description}</span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       <script
         type="application/ld+json"
