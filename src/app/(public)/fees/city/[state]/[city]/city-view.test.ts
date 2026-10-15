@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { CityInstitution, IndexEntry } from "@/lib/data-store";
-import { chargingLess, cityFindings, cityStrips, median, stripScale } from "./city-view";
+import { chargingLess, cityFindings, cityStrips, stripScale } from "./city-view";
 
 function inst(id: number, name: string, fees: Partial<CityInstitution>, charter = "bank"): CityInstitution {
   return {
@@ -95,9 +95,4 @@ describe("city view", () => {
     );
   });
 
-  it("takes the middle value, or the mean of the two middle values", () => {
-    expect(median([3, 1, 2])).toBe(2);
-    expect(median([4, 1, 2, 3])).toBe(2.5);
-    expect(median([])).toBeNull();
-  });
 });

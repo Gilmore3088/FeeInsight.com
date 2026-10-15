@@ -1,4 +1,5 @@
 import type { CityInstitution, IndexEntry } from "@/lib/data-store";
+import { cityMedian } from "@/lib/city-median";
 import { MIN_INSTITUTIONS_FOR_MEDIAN } from "@/lib/data-store/maturity";
 
 /** The four fees every city page compares, in the order a checking customer meets them. */
@@ -39,13 +40,6 @@ export interface CityStrip {
 /** A local median needs this many institutions: the statistics contract's floor, as on /methodology (#1178). */
 export const MIN_FOR_CITY_MEDIAN = MIN_INSTITUTIONS_FOR_MEDIAN;
 
-export function median(values: number[]): number | null {
-  if (values.length === 0) return null;
-  const sorted = [...values].sort((a, b) => a - b);
-  const mid = Math.floor(sorted.length / 2);
-  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
-}
-
 function nationBand(entry: IndexEntry | undefined): NationBand | null {
   if (!entry || entry.p25_amount == null || entry.median_amount == null || entry.p75_amount == null) return null;
   return { p25: entry.p25_amount, median: entry.median_amount, p75: entry.p75_amount };
@@ -72,7 +66,7 @@ export function cityStrips(institutions: CityInstitution[], national: IndexEntry
       key,
       label,
       banks,
-      cityMedian: banks.length >= MIN_FOR_CITY_MEDIAN ? median(amounts) : null,
+      cityMedian: cityMedian(amounts),
       nation: nationBand(byCategory.get(key)),
     };
   });
