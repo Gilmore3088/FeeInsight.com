@@ -16,6 +16,7 @@ import {
   liveFragmentVerdict,
   recheckLiveFragmentNames,
   liveNameKey,
+  liveTwinKey,
 } from "./live-fragment-check";
 
 // Institution 5314, row 58414 (#1443): the waived price of "ePLUS Checking Monthly service charge" $7.95.
@@ -92,7 +93,7 @@ const ROWS = [
   { fee_published_id: "58415", fee_verified_id: "9002", institution_id: "5314", fee_name: "ePLUS Checking Monthly service charge", amount: "7.95" },
   { fee_published_id: "60001", fee_verified_id: null, institution_id: "77", fee_name: "Loan Application, each", amount: "25" },
   { fee_published_id: "60002", fee_verified_id: "9003", institution_id: "77", fee_name: "Late Fee | Up to", amount: "15" },
-  { fee_published_id: "60003", fee_verified_id: "9004", institution_id: "77", fee_name: "Overdraft Fee You will be charged when an item is paid into overdraft", amount: "35", canonical_fee_key: "overdraft" },
+  { fee_published_id: "60003", fee_verified_id: "9004", institution_id: "77", fee_name: "Overdraft Fee You will be charged when an item is paid into overdraft", amount: "35", canonical_fee_key: "overdraft", source_document_id: "501" },
   { fee_published_id: "60004", fee_verified_id: "9005", institution_id: "77", fee_name: "Stop Payment (per item, if you request it)", amount: "30", canonical_fee_key: "stop_payment" },
   { fee_published_id: "60005", fee_verified_id: "9006", institution_id: "78", fee_name: "Monthly maintenance fee waived per", amount: "0" },
   // v5: a priced sentence_end line with no rename stays live and asks Knox to re-read it.
@@ -225,7 +226,7 @@ describe("Darwin live fragment re-check", () => {
   });
 
   it("takes down, not renames, a fee whose new name another live fee of the bank has at that price and category", async () => {
-    const db = dbFor(ROWS, null, [{ institution_id: "77", canonical_fee_key: "overdraft", amount: "35.00", fee_name: "Overdraft  Fee " }]);
+    const db = dbFor(ROWS, null, [{ institution_id: "77", canonical_fee_key: "overdraft", amount: "35.00", fee_name: "Overdraft  Fee ", source_document_id: "501" }]);
     const result = await recheckLiveFragmentNames(asDb(db), { runId: 7, dryRun: false, live: true });
     expect(result.renamed).toEqual([]);
     expect(result.takenDown).toEqual([58414, 60003, 60005]);
@@ -235,10 +236,22 @@ describe("Darwin live fragment re-check", () => {
     expect(read).toContain("fp.quarantined_at IS NULL");
     // postgres.js sends the cooked template text: the regex must reach Postgres as \s+, not s+.
     expect(read).toContain("regexp_replace(fp.fee_name, '\\s+', ' ', 'g')");
+    expect(read).toContain("fr.source_document_id");
+  });
+
+  it("v6: keeps live for a re-read, not takes down, a rename onto a live name from another document or none", async () => {
+    for (const doc of ["502", null]) {
+      const db = dbFor(ROWS, null, [{ institution_id: "77", canonical_fee_key: "overdraft", amount: "35.00", fee_name: "Overdraft Fee", source_document_id: doc }]);
+      const result = await recheckLiveFragmentNames(asDb(db), { runId: 7, dryRun: false, live: true });
+      expect(result.renamed).toEqual([]);
+      expect(result.takenDown).toEqual([58414, 60005]);
+      expect(result).toMatchObject({ wouldRename: 0, takedownByReason: { fragment: 2, rename_duplicate: 0 } });
+      expect(result.samplesByAction.reread.map((fee) => fee.feePublishedId)).toContain(60003);
+    }
   });
 
   it("counts the duplicate in shadow and in a dry run too", async () => {
-    const existing = [{ institution_id: "77", canonical_fee_key: "overdraft", amount: "35", fee_name: "Overdraft Fee" }];
+    const existing = [{ institution_id: "77", canonical_fee_key: "overdraft", amount: "35", fee_name: "Overdraft Fee", source_document_id: 501 }];
     for (const options of [{ dryRun: false }, { dryRun: true }]) {
       const result = await recheckLiveFragmentNames(asDb(dbFor(ROWS, null, existing)), { runId: 7, ...options });
       expect(result).toMatchObject({ wouldRename: 0, takedownByReason: { rename_duplicate: 1 }, takenDown: [], renamed: [] });
@@ -331,7 +344,7 @@ describe("Darwin live fragment re-check", () => {
     const text = liveFragmentCountSql();
     expect(text).toContain("AS head_generic");
     expect(text).toContain("AS generic_ok");
-    expect(text).toContain("WHEN renamable AND generic_ok THEN 'rename'");
+    expect(text).toContain("WHEN renamable AND generic_ok AND readable !~ '^[a-z]' THEN 'rename'");
     expect(text).toContain("AND NOT head_ok AND NOT generic_ok AND tail_ok");
     expect(text).toContain("regexp_matches(readable, '(\\$\\s?)?(\\d");
     expect(text).toContain("WHERE NOT (amount < 100 AND m[1] IS NULL AND m[2] !~ '\\.' AND m[3] IS NOT NULL)");
@@ -465,8 +478,9 @@ describe("live fragment switch-on rules (#1443)", () => {
     ["This account has a small monthly fee of", 5, null, { pattern: "sentence_end", action: "reread" }],
     ["Payments received after the due date carry a late charge of", 15, null, { pattern: "sentence_end", action: "reread" }],
     ["Withdrawals at an Allpoint network our ATM fee of", 2, null, { pattern: "sentence_end", action: "reread" }],
-    // A lower-case head before a balance-below condition (132041).
-    ["monthly service fee if balance falls below", 10, null, { pattern: "sentence_end", action: "rename", renameTo: "Monthly service fee", renameVia: "head" }],
+    // A lower-case head before a balance-below condition (132041); v6 (125163, 125166): a line opening in lower
+    // case was cut where its price stood, so its head is no rename: kept live, re-read.
+    ["monthly service fee if balance falls below", 10, null, { pattern: "sentence_end", action: "reread" }],
     ["monthly service fee if more than 6 withdrawals, balance below", 10, null, { pattern: "sentence_end", action: "takedown" }],
     // "/" and a parenthetical inside a tail (68548, 97910).
     ["Each item returned unpaid is charged a Return Item/Insufficient Funds Fee of", 30, null, { pattern: "sentence_end", action: "rename", renameTo: "Return Item/Insufficient Funds Fee", renameVia: "tail" }],
@@ -499,7 +513,7 @@ describe("live fragment switch-on rules (#1443)", () => {
     ["Card Activation Fee. This fee is charged to", 4, null, { pattern: "sentence_end", action: "rename", renameTo: "Card Activation Fee", renameVia: "head" }],
     // 132041: "only if" / "only when" before a balance-below condition reaches the balance gate.
     ["Monthly maintenance fee only if the balance falls below", 5, null, { pattern: "sentence_end", action: "rename", renameTo: "Monthly maintenance fee", renameVia: "head" }],
-    ["monthly maintenance fee only when the balance falls below", 5, null, { pattern: "sentence_end", action: "rename", renameTo: "Monthly maintenance fee", renameVia: "head" }],
+    ["monthly maintenance fee only when the balance falls below", 5, null, { pattern: "sentence_end", action: "reread" }],
     ["Monthly maintenance fee only if the balance falls below", 500, null, { pattern: "sentence_end", action: "takedown" }],
     ["Excess Withdrawal Fee only if more than", 6, null, { pattern: "sentence_end", action: "takedown" }],
     // 142684: "your" is allowed in a balance-below condition only.
@@ -541,8 +555,8 @@ describe("live fragment switch-on rules (#1443)", () => {
     ["$3.00 per monthly fee if balance falls below $150, $9 per item charge after 3 withdrawals of", 9, null, { pattern: "sentence_end", action: "reread" }],
     // ... and 125163 the same: $2 is the paper statement fee, not the $5 monthly service charge.
     ["$5 monthly service charge when balance falls below $300. $2 paper statement fee for", 2, null, { pattern: "sentence_end", action: "reread" }],
-    // ... known, accepted: the stored name lost them, so the generic head renames on the balance gate at $9.
-    ["per monthly fee if balance falls below", 9, null, { pattern: "sentence_end", action: "rename", renameTo: "Per monthly fee", renameVia: "head" }],
+    // ... and the live names, which lost their figures, open in lower case: no rename, kept live (v6).
+    ["per monthly fee if balance falls below", 9, null, { pattern: "sentence_end", action: "reread" }],
     // v6 (#1499, prod check of v5). A: gates that refused real fees.
     // 96650-96652, 136152: "if Account Falls Below" (and "... Minimum Balance of") is a balance condition.
     ["Regular Checking Business Service Charge if Account Falls Below", 10, null, { pattern: "sentence_end", action: "rename", renameTo: "Regular Checking Business Service Charge", renameVia: "head" }],
@@ -664,11 +678,18 @@ describe("live fragment switch-on rules (#1443)", () => {
     // v6 review, 8: an all-capitals line ends on an article only after a verb or function word.
     ["NSF FEE. THERE IS A", 30, null, { pattern: "sentence_end", action: "rename", renameTo: "NSF FEE", renameVia: "head" }],
     ["STOP PAYMENT FEE YOU WILL BE CHARGED A", 30, null, { pattern: "sentence_end", action: "rename", renameTo: "STOP PAYMENT FEE", renameVia: "head" }],
-    // Known miss (125163): the source line is "$5 monthly service charge when balance falls below $300.
+    // 125163 and 125166, the live names exactly (v6): cut at their start, so kept live, never renamed.
+    ["monthly service charge when balance falls below", 2, null, { pattern: "sentence_end", action: "reread" }],
+    // 133104, 144639, 37674, 93834, the live names exactly (v6): real fees kept live for a re-read.
+    ["Service charge per month if a minimum balance of", 5, null, { pattern: "sentence_end", action: "reread" }],
+    ["Elite Money Market Account: minimum balance of $5,000, if not fee will be charged monthly", 12, null, { pattern: "pronoun", action: "reread" }],
+    ["Card overdraft fee will be reduced", 5, null, { pattern: "pronoun", action: "reread" }],
+    // Was a known miss (125163): the source line is "$5 monthly service charge when balance falls below $300.
     // $2 paper statement fee.", but the stored name lost both $ figures and the row carries no source
     // text (published_fee_records and verified_fee_observations have no source-line column; the raw
-    // row's conditions / extraction_note would need a new join), so the second price cannot be seen
-    // and $2 is still renamed. Asserted as-is so a fix shows up here.
+    // row's conditions / extraction_note would need a new join), so the second price cannot be seen.
+    // The live name opens in lower case and is now a reread (above); the same words with a capital
+    // first letter still rename. Asserted as-is so a fix shows up here.
     ["Monthly service charge when balance falls below", 2, null, { pattern: "sentence_end", action: "rename", renameTo: "Monthly service charge", renameVia: "head" }],
   ] as const)("%j at $%s is %j", (name, amount, key, verdict) => {
     expect(liveFragmentVerdict(name, amount, key)).toEqual(verdict);
@@ -790,21 +811,32 @@ describe("live fragment switch-on rules (#1443)", () => {
     expect(gluedSentenceHead(name)).toBe(head);
   });
 
-  it("takes down a rename onto a live name, and the second of two renames onto the same name", () => {
+  it("takes down a rename onto a live name of its own document, and the second of two renames from one line", () => {
     const rows = [
-      { fee_published_id: 2, fee_verified_id: 2, institution_id: 9, fee_name: "Overdraft Fee - you will be charged per item", amount: 35, canonical_fee_key: "overdraft" },
-      { fee_published_id: 1, fee_verified_id: 1, institution_id: 9, fee_name: "Overdraft Fee You will be charged", amount: 35, canonical_fee_key: "overdraft" },
-      { fee_published_id: 3, fee_verified_id: 3, institution_id: 9, fee_name: "Stop Payment You will be charged", amount: 30, canonical_fee_key: "stop_payment" },
+      // v6: the second of two renames onto one name comes down only from the same document and line (the same stored name).
+      { fee_published_id: 2, fee_verified_id: 2, institution_id: 9, fee_name: "Overdraft Fee You will be charged", amount: 35, canonical_fee_key: "overdraft", source_document_id: 70 },
+      { fee_published_id: 1, fee_verified_id: 1, institution_id: 9, fee_name: "Overdraft Fee You will be charged", amount: 35, canonical_fee_key: "overdraft", source_document_id: 70 },
+      // ... another line of that document, or another document, is another account's fee: kept live, re-read.
+      { fee_published_id: 6, fee_verified_id: 6, institution_id: 9, fee_name: "Overdraft Fee - you will be charged per item", amount: 35, canonical_fee_key: "overdraft", source_document_id: 70 },
+      { fee_published_id: 7, fee_verified_id: 7, institution_id: 9, fee_name: "Overdraft Fee You will be charged", amount: 35, canonical_fee_key: "overdraft", source_document_id: 71 },
+      { fee_published_id: 8, fee_verified_id: 8, institution_id: 9, fee_name: "Overdraft Fee You will be charged", amount: 35, canonical_fee_key: "overdraft" },
+      { fee_published_id: 3, fee_verified_id: 3, institution_id: 9, fee_name: "Stop Payment You will be charged", amount: 30, canonical_fee_key: "stop_payment", source_document_id: 70 },
       // Another bank, another price or another category is no collision.
-      { fee_published_id: 4, fee_verified_id: 4, institution_id: 10, fee_name: "Overdraft Fee You will be charged", amount: 35, canonical_fee_key: "overdraft" },
-      { fee_published_id: 5, fee_verified_id: 5, institution_id: 9, fee_name: "Overdraft Fee You will be charged", amount: 30, canonical_fee_key: "overdraft" },
+      { fee_published_id: 4, fee_verified_id: 4, institution_id: 10, fee_name: "Overdraft Fee You will be charged", amount: 35, canonical_fee_key: "overdraft", source_document_id: 70 },
+      { fee_published_id: 5, fee_verified_id: 5, institution_id: 9, fee_name: "Overdraft Fee You will be charged", amount: 30, canonical_fee_key: "overdraft", source_document_id: 70 },
     ];
     const none = findLiveFragments(rows).matches.map((fee) => [fee.feePublishedId, fee.action, fee.takedownReason ?? fee.renameTo]);
-    expect(none).toEqual([[1, "rename", "Overdraft Fee"], [2, "takedown", "rename_duplicate"], [3, "rename", "Stop Payment"], [4, "rename", "Overdraft Fee"], [5, "rename", "Overdraft Fee"]]);
-    const taken = findLiveFragments(rows, new Set([liveNameKey(9, "stop_payment", "30.00", "STOP  payment ")]));
+    expect(none).toEqual([
+      [1, "rename", "Overdraft Fee"], [2, "takedown", "rename_duplicate"], [3, "rename", "Stop Payment"], [4, "rename", "Overdraft Fee"],
+      [5, "rename", "Overdraft Fee"], [6, "reread", "Overdraft Fee"], [7, "reread", "Overdraft Fee"], [8, "reread", "Overdraft Fee"],
+    ]);
+    // A live twin counts only with its document: one of the fragment's document takes it down, a bare name keeps it live.
+    const taken = findLiveFragments(rows, new Set([liveNameKey(9, "stop_payment", "30.00", "STOP  payment "), liveTwinKey(9, "stop_payment", "30.00", "STOP  payment ", 70) as string]));
     expect(taken.matches.find((fee) => fee.feePublishedId === 3)).toMatchObject({ action: "takedown", takedownReason: "rename_duplicate" });
     expect(taken.takedownByReason).toEqual({ fragment: 0, rename_duplicate: 2 });
     expect(taken.renameDuplicateSamples.map((fee) => fee.feePublishedId)).toEqual([2, 3]);
+    const bare = findLiveFragments(rows, new Set([liveNameKey(9, "stop_payment", "30.00", "Stop Payment")]));
+    expect(bare.matches.find((fee) => fee.feePublishedId === 3)).toMatchObject({ action: "reread", rereadRequest: true });
   });
 
   it("v3: counts renames by head and tail, with the way in each sample", () => {
@@ -825,8 +857,8 @@ describe("live fragment switch-on rules (#1443)", () => {
     expect(liveFragmentVerdict("Withdrawals at an Allpoint network our ATM fee of", 2)).toEqual({ pattern: "sentence_end", action: "reread" });
     // 68548: its tail is a name the bank already has live at that price and category, so it comes down.
     const found = findLiveFragments([
-      { fee_published_id: 1, fee_verified_id: 1, institution_id: 9, fee_name: "Return Item/Insufficient Funds Fee", amount: 30, canonical_fee_key: "nsf" },
-      { fee_published_id: 2, fee_verified_id: 2, institution_id: 9, fee_name: "Each item returned unpaid is charged a Return Item/Insufficient Funds Fee of", amount: 30, canonical_fee_key: "nsf" },
+      { fee_published_id: 1, fee_verified_id: 1, institution_id: 9, fee_name: "Return Item/Insufficient Funds Fee", amount: 30, canonical_fee_key: "nsf", source_document_id: 5 },
+      { fee_published_id: 2, fee_verified_id: 2, institution_id: 9, fee_name: "Each item returned unpaid is charged a Return Item/Insufficient Funds Fee of", amount: 30, canonical_fee_key: "nsf", source_document_id: 5 },
     ]);
     expect(found.matches).toEqual([expect.objectContaining({ feePublishedId: 2, action: "takedown", takedownReason: "rename_duplicate", renameTo: "Return Item/Insufficient Funds Fee", renameVia: "tail" })]);
   });
@@ -899,9 +931,15 @@ describe("live fragment switch-on rules (#1443)", () => {
 
   it("collides with a live name in the same read", () => {
     const found = findLiveFragments([
-      { fee_published_id: 1, fee_verified_id: 1, institution_id: 9, fee_name: "Account Closing Fee", amount: 25, canonical_fee_key: "early_closure" },
-      { fee_published_id: 2, fee_verified_id: 2, institution_id: 9, fee_name: "Account Closing Fee You will be charged on early closing", amount: 25, canonical_fee_key: "early_closure" },
+      { fee_published_id: 1, fee_verified_id: 1, institution_id: 9, fee_name: "Account Closing Fee", amount: 25, canonical_fee_key: "early_closure", source_document_id: 3 },
+      { fee_published_id: 2, fee_verified_id: 2, institution_id: 9, fee_name: "Account Closing Fee You will be charged on early closing", amount: 25, canonical_fee_key: "early_closure", source_document_id: 3 },
     ]);
     expect(found.matches).toEqual([expect.objectContaining({ feePublishedId: 2, action: "takedown", takedownReason: "rename_duplicate" })]);
+    // v6: the same name read from another document (a savings page against a checking page) is kept live, re-read.
+    const other = findLiveFragments([
+      { fee_published_id: 1, fee_verified_id: 1, institution_id: 9, fee_name: "Account Closing Fee", amount: 25, canonical_fee_key: "early_closure", source_document_id: 3 },
+      { fee_published_id: 2, fee_verified_id: 2, institution_id: 9, fee_name: "Account Closing Fee You will be charged on early closing", amount: 25, canonical_fee_key: "early_closure", source_document_id: 4 },
+    ]);
+    expect(other.matches).toEqual([expect.objectContaining({ feePublishedId: 2, action: "reread", rereadRequest: true })]);
   });
 });

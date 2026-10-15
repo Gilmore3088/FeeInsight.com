@@ -393,8 +393,19 @@ Darwin owns verification and classification.
   - When the line states two or more dollar prices (thresholds left out), the first is not the
     amount and a later one is, the amount is another price on the line: no rename, `reread`
     (`liveFragmentPriceElsewhere`; 125163 "$5 monthly service charge ... $2 paper statement fee"
-    at $2, 125166 "$3.00 per monthly fee ... $9 per item charge" at $9). The stored names of both
-    on prod lost their figures, so those two rows still rename until Knox re-reads them.
+    at $2, 125166 "$3.00 per monthly fee ... $9 per item charge" at $9). Their live names lost the
+    figures and open in lower case ("monthly service charge when balance falls below" $2, "per
+    monthly fee if balance falls below" $9): a line opening in lower case was cut where its price
+    stood, so its head is never a rename (`LIVE_FRAGMENT_CUT_START`), only a `reread`. This also
+    turns v4's lower-case balance-below head renames (132041) into rereads.
+  - `rename_duplicate` reads each fee's source document (raw tier, through its verified row). A
+    rename onto a name the bank already has live comes down only when that twin was read from the
+    same document; a rename onto the name an earlier fragment takes comes down only when both come
+    from the same document and the same line (the same stored fragment name, the only line signal
+    the live tier carries). Any other collision, or an unknown document, is kept live as a
+    `reread`: on prod 4 of 24 duplicates took down another account's fee (a checking page against
+    a savings page), and same-fee twins on different documents (60484, 69054, 92417, 142086,
+    142613) are now rereads.
   - A dollar figure with a period after it ("$3 per quarter", "$5 monthly") is the fee's own price,
     so the figure gate lets it through (133104). A priced fee never reads across "if", "when",
     "unless", "not" or "or" ("$2,500 if not fee will be charged monthly" is a balance, 37674:
@@ -427,7 +438,8 @@ Darwin owns verification and classification.
     ("... THERE IS A", 109893). An all-capitals label ending on a letter ("SAFE DEPOSIT BOX SIZE
     A", "CHECKING PLAN A", "OPTION A", "SCHEDULE A") and "N/A" are not. This shape also feeds
     `fee-display-name.ts`, the public fee name.
-  - Known misses, unchanged: 125166 and 125163 (the stored name lost its $ figures).
+  - 125166 and 125163 are no longer renamed (see above); the same words with a capital first
+    letter would still rename, since nothing in the name shows the lost price.
 - Live hourly re-check (`hourly-frequency-check.ts`, #1456). About 802 live fees say in their name
   that they are priced by the hour ("Research Fee $25/hour", "Subpoena Fee - Per Hour") but carried
   no frequency or a per-item one, so a report read the price as a flat charge. `hourly` shows as "per
