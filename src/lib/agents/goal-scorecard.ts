@@ -1,4 +1,5 @@
 import { sql } from "@/lib/data-store/connection";
+import { ACCURACY_TARGET, ACCURACY_TARGET_LABEL } from "@/lib/accuracy-target";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import { FRESH_AUDIT_MIN_SCORABLE } from "@/lib/agents/deming/fresh-audit";
 
@@ -761,7 +762,7 @@ export function goalBriefLines(goal: GoalScorecard): string[] {
   lines.push(!a ? "Accuracy: could not be read today."
     : a.accuracy == null
       ? `Accuracy: not enough audited fees in the last 7 days (${count(a.scorable)} scorable, ${a.audits} audits).`
-      : `Accuracy: ${pct(a.accuracy)} over the last 7 days${a.range ? ` (95% range ${pct(a.range.low)}–${pct(a.range.high)})` : ""}: ${count(a.right)} of ${count(a.scorable)} fees right, ${a.audits} Deming audits; target 95%.`);
+      : `Accuracy: ${(Math.floor(a.accuracy * 10000) / 100).toFixed(2)}% over the last 7 days${a.range ? ` (95% range ${pct(a.range.low)}–${pct(a.range.high)})` : ""}: ${count(a.right)} of ${count(a.scorable)} fees right, ${a.audits} Deming audits; target ${ACCURACY_TARGET_LABEL}, ${a.accuracy >= ACCURACY_TARGET ? "met" : "not met"}.`);
   const w = goal.wrongAfterPublish;
   lines.push(w
     ? `Wrong after publish: ${pct(w.rate)} (${count(w.wrong)} of ${count(w.published)} fees published in the last 7 days taken down as errors).`

@@ -1,4 +1,5 @@
 import type { SpendSummary } from "@/lib/data-store/console-spend";
+import { ACCURACY_TARGET_LABEL } from "@/lib/accuracy-target";
 
 /**
  * Launch checklist: each line is a live check against settings or tables. A line
@@ -96,7 +97,7 @@ export function buildLaunchChecklist({ env, spend, readyMarkets, libraryReports 
 
   checks.push({
     key: "accuracy",
-    label: "Accuracy at 95% of live fees",
+    label: `Accuracy at ${ACCURACY_TARGET_LABEL} of live fees`,
     state: "unknown",
     detail: "Not stored as a live number yet; the last hand-checked sample is on the Scoreboard.",
     href: "/admin/scoreboard",
