@@ -8,6 +8,10 @@ Darwin owns verification and classification.
 - Darwin writes eligible rows to `verified_fee_observations`.
 - Darwin may skip or challenge raw rows when canonical category, amount, duplicate, source lineage, or policy checks fail.
 - Darwin may emit Monitor signals for verified rows and verification-review states.
+- Darwin owns re-checking live fees against today's rules (James, 2026-10-15). A rule added at Knox,
+  Darwin or publish joins Darwin's live re-check in the same PR, with a dry-run count of the live
+  fees it would take down. Takedowns go through the shared second look and the run ledger
+  (`docs/project/DECISIONS.md`, 2026-10-15).
 
 ## Current Implementation (2026-10-12, verify.rules version 3)
 

@@ -40,6 +40,9 @@ No branch deletion, force-push or direct main push under a general cleanup instr
 
 ## Standing rules
 - Never fake logs, records or numbers. If a count or result isn't known, say so.
+- A rule that holds, rejects or re-files a fee ships with its live re-check in Darwin, in the same
+  PR, with a dry-run count of the live fees it would take down. Darwin re-checks live fees against
+  today's rules (`docs/project/DECISIONS.md`, 2026-10-15).
 - Accuracy means the share of live published fees whose amount and category match the
   bank's own current fee schedule. The one shared check is `checkFeeAgainstSource` in
   `src/lib/custom-report/source-check.ts`; use it rather than writing another.
