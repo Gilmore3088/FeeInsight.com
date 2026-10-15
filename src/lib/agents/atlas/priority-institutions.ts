@@ -67,6 +67,43 @@ export interface PriorityInstitutionRequest {
   requestedAt?: string;
 }
 
+/** An ISO date ("2026-10-15") or date-time ("2026-10-15T12:00:00Z"). */
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?)?$/;
+
+export interface RequestWindows {
+  /** One id per requested bank. */
+  institutionIds: number[];
+  /** For each id, the latest `requestedAt` as an ISO time, or "" when the bank has no dated entry. */
+  since: string[];
+}
+
+/**
+ * The requests as the select reads them, one per bank (#1384 follow-up). A bank listed twice is
+ * asked for since its latest dated entry, so a new dated entry reopens it even beside an old
+ * undated one. A `requestedAt` that is not an ISO date would make the select's cast throw and fail
+ * every direct run, so that entry is skipped with a warning instead. Pure.
+ */
+export function requestWindows(
+  requests: readonly PriorityInstitutionRequest[],
+  warn: (message: string) => void = (message) => console.warn(message),
+): RequestWindows {
+  const latest = new Map<number, string>();
+  for (const request of requests) {
+    let since = "";
+    if (request.requestedAt != null) {
+      const time = ISO_DATE.test(request.requestedAt) ? Date.parse(request.requestedAt) : Number.NaN;
+      if (Number.isNaN(time)) {
+        warn(`priority request for institution ${request.institutionId} skipped: requestedAt "${request.requestedAt}" is not an ISO date`);
+        continue;
+      }
+      since = new Date(time).toISOString();
+    }
+    const prior = latest.get(request.institutionId);
+    if (prior === undefined || since > prior) latest.set(request.institutionId, since);
+  }
+  return { institutionIds: [...latest.keys()], since: [...latest.values()] };
+}
+
 const REPORT_GAP_MISREAD = "report-ready gap: schedule on file but fees misread (funnel/report-rule-gaps-2026-10-07.md)";
 
 /**
@@ -242,8 +279,9 @@ export async function selectPriorityInstitutions(
   const limit = Math.max(0, Math.floor(options.limit));
   const deploy = options.deploy === undefined ? currentDeploy() : options.deploy;
   if (limit === 0) return [];
-  const requested = PRIORITY_INSTITUTION_REQUESTS.map((request) => request.institutionId);
-  const requestedSince = PRIORITY_INSTITUTION_REQUESTS.map((request) => request.requestedAt ?? "");
+  const windows = requestWindows(PRIORITY_INSTITUTION_REQUESTS);
+  const requested = windows.institutionIds;
+  const requestedSince = windows.since;
   const leaders = [...options.leaderIds].map(Number);
   const rows = await db<
     Array<{
@@ -298,7 +336,8 @@ export async function selectPriorityInstitutions(
                -- A request ends once a run for it, started after it was asked for, actually read one of
                -- the bank's documents: its extract step read a stored text of the bank. A completed run
                -- is not enough, since a run whose fetch fails still completes (Oct 15: 242 of 596
-               -- completed request runs had an extract attempt; #1384 review).
+               -- completed request runs had an extract attempt; #1384 review). The read is Knox's rules
+               -- pass on a stored text; a lineup correction alone (knox.lineup_correct) reads none.
                WHEN inst.id = ANY(${requested}::bigint[])
                 AND NOT EXISTS (
                       SELECT 1 FROM agent_runs served
@@ -314,6 +353,7 @@ export async function selectPriorityInstitutions(
                                 WHERE read.agent_run_id = served.id
                                   AND read.institution_id = inst.id
                                   AND read.stage = 'extract'
+                                  AND read.strategy = ${KNOX_RULES_STRATEGY.strategy}::text
                              )
                     ) THEN 2
                WHEN (COALESCE(inst.asset_size, 0) >= ${PRIORITY_MIN_ASSETS_THOUSANDS}::bigint
