@@ -11,6 +11,7 @@ import { normalizeStateCode } from "@/lib/agents/state-lane-memory";
 import { confidenceFor, type DroppedLineReason, type ExtractedFeeCandidate, type HeldFeeCandidate } from "@/lib/agents/knox/rules";
 import type { RateFeeCandidate } from "@/lib/agents/knox/percent";
 import { groundLineup, LINEUP_CATEGORY, withLineupFromText } from "@/lib/agents/knox/lineup";
+import { ownCells } from "@/lib/agents/knox/own-cells";
 import { KNOX_RULES_STRATEGY, runFreeSpecialists, type SpecialistRun } from "@/lib/agents/knox/specialists";
 import { applyKnoxLesson, loadKnoxLessons } from "@/lib/agents/knox/lessons";
 import { loadTakedownLessons, TAKEN_DOWN_REVIEW_FLAG, takedownLessonFlag, takedownLessonFor } from "@/lib/agents/knox/takedown-lessons";
@@ -605,7 +606,8 @@ export async function insertCandidate(
     `Knox ${options.method ?? "deterministic extraction"} from Rosetta artifact #${documentTextId}. ` +
     `canonical_hint=${options.candidate.canonicalHint}; text_hash=${options.row.text_hash ?? "unknown"}; ` +
     (options.calibratedConfidence === undefined ? "" : `calibrated_confidence=${options.calibratedConfidence.toFixed(2)}; `) +
-    `excerpt="${options.candidate.excerpt.slice(0, 180)}"`;
+    // #1394: only the fee's own cells, not the neighbouring column's fee on the same line.
+    `excerpt="${ownCells(options.candidate.excerpt, options.candidate.feeName, options.candidate.amount).slice(0, 180)}"`;
   // A checking account's lineup facts, already grounded in the text (`lineup.ts`); only a
   // monthly maintenance fee carries them.
   const applicability = feeApplicability(options.candidate.feeName, options.candidate.excerpt, options.candidate.amount);
