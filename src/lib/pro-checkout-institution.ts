@@ -1,10 +1,13 @@
 /**
  * The institution a Pro buyer chose at checkout (Stripe metadata `institution_id`) becomes
- * their workspace bank and profile, they hold its owner seat at once (so the team seats they paid
- * for work on day one; James, Oct 8 2026), and their claim is filed so James can review or
- * revoke it. A choice the user already made, or a membership they already hold, is never overwritten.
+ * their workspace bank and profile, and the link to it is recorded as an open request. Their
+ * business email proves it (James, 2026-10-15, #1405): once the email is confirmed and its domain
+ * matches the bank's website, the owner seat is granted with no review; otherwise the request
+ * waits for an admin check, and Pro itself works meanwhile. A choice the user already made, or a
+ * membership they already hold, is never overwritten.
  */
 import type { sql as sqlClient } from "@/lib/data-store/connection";
+import { linkVerifiedInstitutions } from "@/lib/pro-institution-link";
 
 type Db = typeof sqlClient;
 
@@ -40,7 +43,7 @@ export async function anchorPaidInstitution(db: Db, params: { userId: number; in
        AND (u.institution_name IS NULL OR u.institution_name = '')
   `;
 
-  // The claim, filed for review unless one is open or the user is already a member.
+  // The link request, open until the email proves it or an admin checks it, unless the user is already a member.
   const claims = await db<Array<{ id: number }>>`
     INSERT INTO institution_claims (institution_id, claimant_user_id, claimant_role, claim_notes, review_status, created_at, updated_at)
     SELECT ${institutionId}, ${userId}, COALESCE(NULLIF(u.job_role, ''), 'institution_employee'), ${note}, 'pending', NOW(), NOW()
@@ -61,18 +64,6 @@ export async function anchorPaidInstitution(db: Db, params: { userId: number; in
     `;
   }
 
-  // The owner seat, tied to the open claim, unless the user already holds a membership there.
-  await db`
-    INSERT INTO institution_workspace_memberships (
-      institution_id, user_id, membership_role, membership_status, source, claim_id, granted_at, notes, created_at, updated_at
-    )
-    SELECT c.institution_id, c.claimant_user_id, 'owner', 'active', 'claim', c.id, NOW(), ${`Granted at Pro checkout; claim open for review. ${note}`}, NOW(), NOW()
-      FROM institution_claims c
-     WHERE c.institution_id = ${institutionId}
-       AND c.claimant_user_id = ${userId}
-       AND c.review_status IN ('pending', 'needs_info')
-    ORDER BY c.id DESC
-    LIMIT 1
-    ON CONFLICT (institution_id, user_id) WHERE membership_status = 'active' DO NOTHING
-  `;
+  // The owner seat, only when the confirmed business email matches the bank's website.
+  await linkVerifiedInstitutions(db, userId);
 }

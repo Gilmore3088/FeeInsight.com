@@ -9,6 +9,7 @@ import { redirect } from "next/navigation";
 import { headers } from "next/headers";
 import { CONTACT_EMAIL } from "@/lib/constants";
 import { getProPricingInstitution } from "@/lib/data-store/pro-accounts";
+import { isPersonalEmail, personalEmailCheckoutError } from "@/lib/pro-institution-link";
 import { resolveProPriceId } from "@/lib/stripe-prices";
 import {
   NON_INSTITUTION_TIER,
@@ -71,6 +72,8 @@ export async function createCheckoutSession(input: ProCheckoutInput): Promise<Pr
         error: `We don't have ${institution.name}'s asset size yet. Pick its size above, or email ${CONTACT_EMAIL}.`,
       };
     }
+    // The institution is linked by the buyer's business email (#1405), so a personal address can't buy for a bank.
+    if (isPersonalEmail(user.email || user.username)) return { url: null, error: personalEmailCheckoutError(CONTACT_EMAIL) };
     institutionId = institution.id;
   } else if (input.otherOrganization) {
     tier = NON_INSTITUTION_TIER;
