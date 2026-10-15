@@ -7,6 +7,7 @@ import { runHamiltonCategoryGuard } from "@/lib/agents/hamilton/category-guard";
 import { collapseNearNameDuplicates, collapsePublishedDuplicates } from "@/lib/agents/hamilton/duplicate-collapse";
 import { retireClosedInstitutionFees } from "@/lib/agents/hamilton/closed-institution";
 import { fillBlankFrequencies, FREQUENCY_FILL_VERSION } from "@/lib/agents/hamilton/frequency-fill";
+import { repairSourceLinks, SOURCE_LINK_VERSION } from "@/lib/agents/hamilton/source-link";
 import { restoreFeesNowInTaxonomy, rollBackOffTaxonomyFees } from "@/lib/agents/hamilton/off-taxonomy-rollback";
 import { foldRetiredCategories } from "@/lib/agents/hamilton/taxonomy-fold";
 import { rollBackLimitsPublishedAsFees } from "@/lib/agents/hamilton/limit-guard";
@@ -48,7 +49,7 @@ import { runStateEditions, summarizeStateEditions } from "@/lib/agents/marketing
 import { runHamiltonPublish } from "@/lib/agents/hamilton/publish";
 import { runGuideDraft } from "@/lib/agents/guides/draft";
 import { runKnoxExtract } from "@/lib/agents/knox/extract";
-import { recheckHeldRates, recheckHeldRows, recheckPromotedRows, recheckSupersededRows, recheckUntracedRows, refileSupersededRows } from "@/lib/agents/knox/held-recheck";
+import { previewHeldNameRules, recheckHeldRates, recheckHeldRows, recheckPromotedRows, recheckSupersededRows, recheckUntracedRows, refileSupersededRows } from "@/lib/agents/knox/held-recheck";
 import { refreshFeeIndexCache } from "@/lib/data-store/fee-index";
 import { runMagellanDiscovery } from "@/lib/agents/magellan/discovery";
 import { runMagellanFetch } from "@/lib/agents/magellan/fetch";
@@ -73,6 +74,7 @@ import { runDarwinReleaseHeld } from "@/lib/agents/darwin/release-held";
 import { runDarwinConditionalZeroResolve } from "@/lib/agents/darwin/conditional-zero-resolve";
 import { runDarwinScheduleRefile } from "@/lib/agents/darwin/schedule-refile";
 import { runDarwinAdjudicate } from "@/lib/agents/darwin/adjudicate";
+import { AUDIENCE_RELABEL_VERSION, dryRunFullTotals, runAudienceRelabel, type AudienceRelabelMode } from "@/lib/agents/darwin/audience-relabel";
 import { runDailyBrief } from "@/lib/agents/daily-brief";
 import { runSundayMaintenance, summarizeSundayMaintenance } from "@/lib/agents/deming/sunday-maintenance";
 import { runFeeAlertDispatch, summarizeFeeAlertDispatch } from "@/lib/agents/fee-alerts";
@@ -689,6 +691,8 @@ async function executeAgenticStep(
         institutionId: numericRunParam(params, ["institution_id"]),
         stateCode,
       });
+      // Held unclassified lines the held-name rules would send to Darwin (#1102). Switch off: read only.
+      const heldNamePreview = await previewHeldNameRules(tx, { institutionId: numericRunParam(params, ["institution_id"]) });
       // Every 500 settled reads: the batch's error rate and its misses, written for learning.
       const batchReview = await reviewKnoxBatches(tx, { runId: run.id, dryRun: run.runKind === "dry_run" });
       const batchNote = batchReview.batches
@@ -696,7 +700,7 @@ async function executeAgenticStep(
         .join("");
       return {
         status: "completed",
-        summary: `Knox extracted ${extraction.insertedFees.toLocaleString()} raw fee observations and ${extraction.freeFees.toLocaleString()} free fees from ${extraction.processedDocuments.toLocaleString()} Rosetta text artifacts (${extraction.extractedFees.toLocaleString()} candidates, ${extraction.skippedFees.toLocaleString()} skipped). Re-read ${heldRecheck.checked.toLocaleString()} held lines with today's rules: ${heldRecheck.promoted.toLocaleString()} categorized and sent to Darwin, ${heldRecheck.setAside.toLocaleString()} set aside (kept, logged), ${promotionRecheck.withdrawn.toLocaleString()} earlier promotions put back on hold. Re-traced ${untracedRecheck.checked.toLocaleString()} untraced held lines: ${untracedRecheck.promoted.toLocaleString()} sent to Darwin. Re-read ${supersededRecheck.checked.toLocaleString()} lines a re-read retired: ${supersededRecheck.promoted.toLocaleString()} ${supersededRecheck.live ? "sent to Darwin" : "would go to Darwin (dry read)"}, ${supersededRecheck.liveTwin.toLocaleString()} kept back for a live twin. Re-read ${supersededFreeRecheck.checked.toLocaleString()} free lines a re-read retired: ${supersededFreeRecheck.promoted.toLocaleString()} ${supersededFreeRecheck.live ? "sent to Darwin" : "would go to Darwin (dry read)"}, ${supersededFreeRecheck.liveTwin.toLocaleString()} kept back for a live twin, ${supersededFreeRecheck.notRead.toLocaleString()} not read the same way today. Re-file of retired lines under today's category (${supersededRefile.mode === "live" ? "live" : supersededRefile.mode === "dry_run" ? "dry run, nothing written" : "switch off: a read-only sample, nothing written"}): ${supersededRefile.candidates.toLocaleString()} candidates at ${supersededRefile.candidateInstitutions.toLocaleString()} banks (${supersededRefile.candidatesDarwinDecided.toLocaleString()} already judged by Darwin, left retired); of ${supersededRefile.checked.toLocaleString()} read, ${supersededRefile.refiled.toLocaleString()} ${supersededRefile.dryRun ? "would go" : "sent"} to Darwin under today's category, ${supersededRefile.liveTwin.toLocaleString()} kept back for a live twin, ${supersededRefile.notRead.toLocaleString()} not read today; ${supersededRefile.staleHintRows.toLocaleString()} taken-over rows with a stale category flag${supersededRefile.dryRun ? "" : ` (${supersededRefile.staleHintRepaired.toLocaleString()} repaired)`}. Re-read ${rateRecheck.checked.toLocaleString()} held percentage fees: ${rateRecheck.promoted.toLocaleString()} sent to Darwin as rates.${batchNote}`,
+        summary: `Knox extracted ${extraction.insertedFees.toLocaleString()} raw fee observations and ${extraction.freeFees.toLocaleString()} free fees from ${extraction.processedDocuments.toLocaleString()} Rosetta text artifacts (${extraction.extractedFees.toLocaleString()} candidates, ${extraction.skippedFees.toLocaleString()} skipped). Re-read ${heldRecheck.checked.toLocaleString()} held lines with today's rules: ${heldRecheck.promoted.toLocaleString()} categorized and sent to Darwin, ${heldRecheck.setAside.toLocaleString()} set aside (kept, logged), ${promotionRecheck.withdrawn.toLocaleString()} earlier promotions put back on hold. Re-traced ${untracedRecheck.checked.toLocaleString()} untraced held lines: ${untracedRecheck.promoted.toLocaleString()} sent to Darwin. Re-read ${supersededRecheck.checked.toLocaleString()} lines a re-read retired: ${supersededRecheck.promoted.toLocaleString()} ${supersededRecheck.live ? "sent to Darwin" : "would go to Darwin (dry read)"}, ${supersededRecheck.liveTwin.toLocaleString()} kept back for a live twin. Re-read ${supersededFreeRecheck.checked.toLocaleString()} free lines a re-read retired: ${supersededFreeRecheck.promoted.toLocaleString()} ${supersededFreeRecheck.live ? "sent to Darwin" : "would go to Darwin (dry read)"}, ${supersededFreeRecheck.liveTwin.toLocaleString()} kept back for a live twin, ${supersededFreeRecheck.notRead.toLocaleString()} not read the same way today. Re-file of retired lines under today's category (${supersededRefile.mode === "live" ? "live" : supersededRefile.mode === "dry_run" ? "dry run, nothing written" : "switch off: a read-only sample, nothing written"}): ${supersededRefile.candidates.toLocaleString()} candidates at ${supersededRefile.candidateInstitutions.toLocaleString()} banks (${supersededRefile.candidatesDarwinDecided.toLocaleString()} already judged by Darwin, left retired); of ${supersededRefile.checked.toLocaleString()} read, ${supersededRefile.refiled.toLocaleString()} ${supersededRefile.dryRun ? "would go" : "sent"} to Darwin under today's category, ${supersededRefile.liveTwin.toLocaleString()} kept back for a live twin, ${supersededRefile.notRead.toLocaleString()} not read today; ${supersededRefile.staleHintRows.toLocaleString()} taken-over rows with a stale category flag${supersededRefile.dryRun ? "" : ` (${supersededRefile.staleHintRepaired.toLocaleString()} repaired)`}. Re-read ${rateRecheck.checked.toLocaleString()} held percentage fees: ${rateRecheck.promoted.toLocaleString()} sent to Darwin as rates.${heldNamePreview.live ? "" : ` Held-name rules (switch off, read only): ${heldNamePreview.passChecks.toLocaleString()} held lines would go to Darwin and pass its category and source checks, at ${heldNamePreview.institutions.toLocaleString()} banks (${heldNamePreview.wouldRelease.toLocaleString()} read under them, of ${heldNamePreview.candidates.toLocaleString()} candidates).`}${batchNote}`,
         detail: {
           held_recheck: heldRecheck,
           untraced_recheck: untracedRecheck,
@@ -705,6 +709,7 @@ async function executeAgenticStep(
           superseded_refile: supersededRefile,
           promotion_recheck: promotionRecheck,
           held_rate_recheck: rateRecheck,
+          held_name_preview: heldNamePreview,
           batch_review: batchReview,
           selected_text_artifacts: extraction.selectedDocuments,
           processed_text_artifacts: extraction.processedDocuments,
@@ -1779,6 +1784,61 @@ async function executeAgenticStep(
         },
       };
     }
+    case "audience-relabel": {
+      // Darwin's audience decision for live fees verified before migration 47 (#1059).
+      const relabel = await runAudienceRelabel(tx, {
+        runId: run.id,
+        dryRun: run.runKind === "dry_run",
+        institutionId: numericRunParam(params, ["institution_id"]),
+        // One bounded batch per step; the tick queues the next from `next_after_id` (audience-relabel-schedule.ts).
+        afterId: numericRunParam(params, ["after_id"]) ?? 0,
+        sampleKey: typeof params.day === "string" ? params.day : null,
+        // A run does what it was queued for: a full dry run queued before a deploy never writes.
+        mode: (["off", "dry_run_full", "live", "rollback"] as const).includes(params.mode as AudienceRelabelMode)
+          ? (params.mode as AudienceRelabelMode)
+          : undefined,
+      });
+      const changed = relabel.relabeled + relabel.restored;
+      // The full dry run's last batch adds the chain's totals, the numbers the live switch waits on.
+      const totals = relabel.mode === "dry_run_full" && relabel.done
+        ? await dryRunFullTotals(tx, relabel, numericRunParam(params, ["after_id"]) ?? 0)
+        : null;
+      if (totals) {
+        await tx`
+          INSERT INTO agent_run_events (agent_run_id, step_id, event_type, status, message, detail)
+          VALUES (${run.id}, ${step.id}, 'audience_relabel.dry_run_totals', 'completed',
+                  ${`Full dry run done: ${totals.fees.toLocaleString()} live unknown fees on ${totals.documents.toLocaleString()} documents in ${totals.batches} batches; ${Object.entries(totals.shares).map(([audience, share]) => `${audience} ${share}%`).join(", ")}.`},
+                  ${JSON.stringify(totals)}::jsonb)
+        `;
+      }
+      const indexRefresh = changed > 0 ? await refreshFeeIndexCache(tx, { runId: run.id, force: true }) : null;
+      const counts = Object.entries(relabel.byAudience).map(([audience, n]) => `${n.toLocaleString()} ${audience}`).join(", ");
+      return {
+        status: "completed",
+        summary: relabel.mode === "rollback"
+          ? `Darwin audience relabel rolled back: ${relabel.restored.toLocaleString()} fees back to their old audience${relabel.dryRun ? " (dry run, nothing written)" : ""}; ${relabel.remaining.toLocaleString()} recorded fees left.`
+          : `Darwin audience relabel${relabel.dryRun ? " (dry run, nothing written)" : ""}: ${relabel.fees.toLocaleString()} live fees verified as unknown on ${relabel.documents.toLocaleString()} documents; decisions ${counts || "none"}. ${relabel.dryRun ? "" : `${relabel.relabeled.toLocaleString()} written, ${relabel.publishedTouched.toLocaleString()} live rows updated.`} ${relabel.remaining.toLocaleString()} documents left${relabel.mode === "off" ? " outside this sample" : ""}.${totals ? ` Full dry run done: ${Object.entries(totals.shares).map(([audience, share]) => `${audience} ${share}%`).join(", ")} of ${totals.fees.toLocaleString()} fees.` : ""}`.replace(/\s+/g, " ").trim(),
+        detail: {
+          audience_relabel_version: AUDIENCE_RELABEL_VERSION,
+          mode: relabel.mode,
+          dry_run: relabel.dryRun,
+          documents: relabel.documents,
+          fees: relabel.fees,
+          by_audience: relabel.byAudience,
+          by_source: relabel.bySource,
+          relabeled: relabel.relabeled,
+          published_touched: relabel.publishedTouched,
+          restored: relabel.restored,
+          dry_run_totals: totals,
+          after_id: numericRunParam(params, ["after_id"]) ?? 0,
+          next_after_id: relabel.nextAfterId,
+          remaining: relabel.remaining,
+          done: relabel.done,
+          index_refreshed: indexRefresh?.refreshed ?? false,
+          samples: relabel.samples,
+        },
+      };
+    }
     case "frequency-fill": {
       // The frequency half of a guard catch-up run (hamilton/guard-catch-up.ts): every live fee,
       // not one lane's, so a frequency fix reaches live rows on the tick after its deploy.
@@ -1807,6 +1867,45 @@ async function executeAgenticStep(
             amount: row.amount,
             from: row.from,
             to: row.frequency,
+          })),
+        },
+      };
+    }
+    case "source-link-repair": {
+      // Started by hand (admin, dry run first): live fees with no source link take their own
+      // document's URL or come down (hamilton/source-link.ts).
+      const repair = await repairSourceLinks(tx, {
+        runId: run.id,
+        batchId: `agentic-run-${run.id}`,
+        dryRun: run.runKind === "dry_run",
+        institutionId: numericRunParam(params, ["institution_id"]),
+        limit: numericRunParam(params, ["source_link_limit", "limit"]),
+      });
+      return {
+        status: "completed",
+        summary: `${repair.dryRun ? "Would link" : "Linked"} ${repair.fills.length.toLocaleString()} of ${repair.scanned.toLocaleString()} live fees with no source link to their own document, and ${repair.dryRun ? "would take down" : "took down"} ${repair.takedowns.length.toLocaleString()} with no traceable document.`,
+        detail: {
+          source_link_version: SOURCE_LINK_VERSION,
+          dry_run: repair.dryRun,
+          scanned: repair.scanned,
+          filled: repair.fills.length,
+          taken_down: repair.takedowns.length,
+          takedown_reasons: repair.takedowns.reduce<Record<string, number>>((counts, fee) => {
+            counts[fee.reason] = (counts[fee.reason] ?? 0) + 1;
+            return counts;
+          }, {}),
+          takedowns: repair.takedowns.map((fee) => ({
+            fee_published_id: fee.feePublishedId,
+            institution_id: fee.institutionId,
+            canonical_fee_key: fee.canonicalFeeKey,
+            amount: fee.amount,
+            reason: fee.reason,
+          })),
+          fill_samples: repair.fills.slice(0, 25).map((fee) => ({
+            fee_published_id: fee.feePublishedId,
+            institution_id: fee.institutionId,
+            source_document_id: fee.sourceDocumentId,
+            url: fee.url,
           })),
         },
       };

@@ -322,14 +322,23 @@ export function frequencyFamily(frequency: string | null | undefined): string | 
   return ["per_item", "per_transaction", "per_occurrence", "one_time"].includes(frequency) ? "per_item" : frequency;
 }
 
-/** The fee categories whose stated period is re-checked against their own line (#1196). */
-export const PER_EVENT_PERIOD_KEYS: ReadonlySet<string> = new Set(["nsf", "overdraft"]);
+/** The fee categories whose stated period is re-checked against their own line (#1196, #1339). */
+export const PER_EVENT_PERIOD_KEYS: ReadonlySet<string> = new Set(["nsf", "overdraft", "deposited_item_return"]);
 const STATED_PERIODS: ReadonlySet<string> = new Set(["monthly", "annual", "quarterly"]);
 /**
- * The stored periods the check acts on. James approved monthly (#1026, Oct 13); 15 live NSF and
- * overdraft fees stored as annual wait for his word.
+ * The stored periods the check acts on, by category. James approved monthly (#1026, Oct 13), and
+ * annual and daily for NSF (#1301, Oct 14). v13 (#1339, Oct 15): James's rule that NSF, overdraft
+ * and returned-item fees are charged per item, never by the month, year or day; a "max N per day"
+ * is a daily cap and an "N waived per year" a waiver, neither the fee's frequency.
  */
-const CHECKED_PERIODS: ReadonlySet<string> = new Set(["monthly"]);
+const CHECKED_PERIODS: Readonly<Record<string, ReadonlySet<string>>> = {
+  nsf: new Set(["monthly", "annual", "daily"]),
+  overdraft: new Set(["monthly", "annual", "quarterly", "daily"]),
+  deposited_item_return: new Set(["monthly", "annual", "quarterly", "daily"]),
+};
+/** v12: a daily count or dollar cap on a per-item fee ("Max 4 per day", "max $180.00 daily", "not to exceed 5 fees charged per day"). */
+// v13: a bare count per day is a cap too ("6 per day: $23.00"); a price per day ("$16 per day") is not.
+const DAILY_CAP = /\b(?:max(?:imum)?(?![a-z])|limit\b|up to\b|not to exceed\b)|(?<![$\d.,]\s?)\b\d{1,2}\s+(?:(?:fees?|items?|charges?)\s+)?per\s+(?:business\s+)?day\b/i;
 /** An overdraft program sold by the month ("Enhanced Overdraft Privilege Fee (per month)", "Bounce Protection / $9 Monthly Fee"). */
 const OVERDRAFT_PROGRAM = /\b(relief|privilege|protection|courtesy pay|coverage|boost|advanced overdraft)\b/i;
 /** An account's own charge after the price ("/ $25 Monthly Maintenance Fee"), not an overdraft or NSF fee. */
@@ -337,7 +346,8 @@ const ACCOUNT_CHARGE = /\b(maintenance|service (fee|charge))\b/i;
 /** A cell after the price that is only a period ("| $30.00 | Per Month"). */
 const PERIOD_CELL = /^\s*\(?\s*(per (month|year|quarter)|monthly|annual(ly)?|quarterly|yearly)\s*\)?\.?\s*$/i;
 /** A waiver is not the fee's period: "$25.00 (1 waived per year.)", "$25 will be waived per statement cycle". */
-const WAIVER = /\(\s*\d*\s*(?:is |are )?waived?\b[^)]*\)?|\b(?:will be |is |are )?waived?\b[^|$]*/gi;
+// v13: "First 3 Wavied Annually" (the bank's misspelling, 140928).
+const WAIVER = /\(\s*\d*\s*(?:is |are )?(?:waived?|wavied)\b[^)]*\)?|\b(?:will be |is |are )?(?:waived?|wavied)\b[^|$]*/gi;
 
 /**
  * The period the words right after the fee's own price state ("NSF | $23.00/Month", "$30.00 |
@@ -355,10 +365,26 @@ function periodAfterPrice(sourceLine: string, amount: number): { period: FilledF
     let own = cells[0].split(/\$\s?\.?\d/)[0];
     if (own.trim() === "" && cells.length > 1 && PERIOD_CELL.test(cells[1])) own = cells[1];
     words = `${words} ${own}`;
-    readings.add(statedFrequency(periodWords(withoutAllowance(own)) ?? ""));
+    // v13 (#1339): only the first three words after the price state its period ("$23.00/Month",
+    // "$10 monthly fee", "| Per Month"). On a run-together line the words up to the next price
+    // include the next fee's name: "Deposited Item Returned (per item) $10.00 Dormant Account Fee
+    // (per month) $5.00" does not price the $10 fee monthly.
+    const lead = (periodWords(withoutAllowance(own)) ?? "").trim().split(/\s+/).slice(0, 3).join(" ");
+    readings.add(statedFrequency(lead));
   }
   const read = readings.size === 1 ? [...readings][0] : null;
   return { period: read != null && read !== "none" && STATED_PERIODS.has(read) ? read : null, words };
+}
+
+/**
+ * The per-item frequency a corrected per-event fee takes: its own row's per-item reading, else
+ * "per_item" when its own name says so (v13: "Overdraft Item/s Fee Per Item | $30.00 | Annual Rent
+ * – 4 x 10 | $85.00" read the next cell's "Annual"), else none.
+ */
+function perItemReading(own: FilledFrequency | null, feeName: string | null | undefined): string | null {
+  if (own && frequencyFamily(own) === "per_item") return own;
+  const name = feeName ? withoutAllowance(feeName) : "";
+  return PER_ITEM_WORDING.test(name) || MORE_PER_ITEM.test(name) ? "per_item" : null;
 }
 
 export type PerEventPeriodCheck =
@@ -368,6 +394,8 @@ export type PerEventPeriodCheck =
 
 /**
  * v11 (#1196): an NSF or overdraft fee stored as monthly, checked against its own schedule line.
+ * v12 (#1301): an NSF fee stored as annual is checked the same way, and one stored as daily keeps
+ * no period when its line states a daily cap, else is held.
  * - An overdraft program the bank prices by the period keeps it when its own row states that
  *   period and names the program ("Enhanced Overdraft Privilege Fee (per month) | $5.00").
  * - When the words right after its price state a period otherwise, the line cannot say what the fee
@@ -388,8 +416,20 @@ export function perEventPeriodCheck(
   feeName: string | null | undefined,
 ): PerEventPeriodCheck | null {
   if (canonicalKey == null || !PER_EVENT_PERIOD_KEYS.has(canonicalKey)) return null;
-  if (frequency == null || !CHECKED_PERIODS.has(frequency)) return null;
+  if (frequency == null || !CHECKED_PERIODS[canonicalKey]?.has(frequency)) return null;
   if (!sourceLine || amount == null) return null;
+  // v12 (#1301): an NSF fee stored as daily. A line that states a daily cap prices each item, so
+  // the fee takes its own row's per-item reading, else none; one that names no cap ("NSF/UCF Fee
+  // $30 Per Day", "Daily NSF Fee ... $5.00") may really be charged by the day, so a person looks.
+  // v13 (#1339): an overdraft or returned-item fee stored as daily is read the same way. "Courtesy Pay
+  // (Max. 4 per day) | $25" is a per-item fee with a daily cap; "ACH Overdraft Fee | $5 per day" may
+  // be a continuous overdraft charge filed as overdraft, so a person looks.
+  const what = canonicalKey === "nsf" ? "an NSF fee" : canonicalKey === "overdraft" ? "an overdraft fee" : "a returned-item fee";
+  if (frequency === "daily") {
+    if (!DAILY_CAP.test(sourceLine)) return { action: "hold", reason: `${what} whose own line prices it daily with no daily cap` };
+    const own = frequencyFromLine(sourceLine, amount);
+    return { action: "correct", frequency: perItemReading(own, feeName) };
+  }
   const after = periodAfterPrice(sourceLine, amount);
   const accountCharge = ACCOUNT_CHARGE.test(after.words);
   const name = feeName ?? "";
@@ -398,9 +438,74 @@ export function perEventPeriodCheck(
     if (own != null && STATED_PERIODS.has(own)) return own === frequency ? { action: "keep", frequency } : { action: "correct", frequency: own };
   }
   if (after.period != null) {
-    const what = canonicalKey === "nsf" ? "an NSF fee" : "an overdraft fee";
     return { action: "hold", reason: `${what} whose own line prices it ${after.period}${accountCharge ? " as an account charge" : ""}` };
   }
   const own = frequencyFromLine(sourceLine, amount);
-  return { action: "correct", frequency: own && frequencyFamily(own) === "per_item" ? own : null };
+  // v13: a returned-item fee whose own name states a period ("Return Deposit Item-Special Handling
+  // (per month) | $10.00") is another service filed as returned item; a person re-files it.
+  const named = feeName ? statedFrequency(periodWords(withoutAllowance(feeName)) ?? "") : "none";
+  if (canonicalKey === "deposited_item_return" && named != null && STATED_PERIODS.has(named)) {
+    return { action: "hold", reason: `${what} whose own name prices it ${named}` };
+  }
+  return { action: "correct", frequency: perItemReading(own, feeName) };
+}
+
+/** v13: a charge per day in the fee's own words ("Daily Overdraft Fee", "$1.00/day", "each business day"). */
+const OWN_DAILY = /\b(daily|per (business |calendar )?day|(each|every) (business |calendar )?day)\b|\/\s?day\b/i;
+const CONTINUOUS_PERIODS: ReadonlySet<string> = new Set(["monthly", "annual", "quarterly"]);
+
+/**
+ * v13 (#1339): a continuous overdraft fee stored as monthly, annual or quarterly. One stored as
+ * daily is right (charged per day the account stays overdrawn) and is never read here.
+ * - The fee's own name or the words right after its price say it is charged daily ("Daily overdraft
+ *   fee ... $3.00 | Online Bill Pay ... $19.95/month", "DAILY NEGATIVE BALANCE FEE | $1.00/day or Cap
+ *   Monthly"): it takes daily, and the period was a neighbour's or a cap's.
+ * - The words right after its price state the stored period ("A service fee of $25.00 monthly will be
+ *   charged to any account overdrawn more than 30 days"): the bank charges it by that period; kept.
+ * - Otherwise the period was another fee's ("Continuous Overdraft Fee 2 | $15.00 | Vault (per year)"):
+ *   it is cleared.
+ * Null for other categories and stored frequencies. Pure.
+ */
+export function continuousOverdraftPeriodCheck(
+  canonicalKey: string | null | undefined,
+  frequency: string | null | undefined,
+  sourceLine: string | null | undefined,
+  amount: number | null,
+  feeName: string | null | undefined,
+): PerEventPeriodCheck | null {
+  if (canonicalKey !== "continuous_od" || frequency == null || !CONTINUOUS_PERIODS.has(frequency)) return null;
+  if (!sourceLine || amount == null) return null;
+  const after = periodAfterPrice(sourceLine, amount);
+  if (OWN_DAILY.test(`${feeName ?? ""} ${after.words}`)) return { action: "correct", frequency: "daily" };
+  if (after.period === frequency) return { action: "keep", frequency };
+  return { action: "correct", frequency: null };
+}
+
+/** Wording that makes a blank monthly-maintenance row something other than the account's monthly fee. */
+const NOT_MONTHLY_MAINTENANCE = /\bno (monthly )?(maintenance|service) (fees?|charges?)\b|quarter|annual|yearly|per year|per hour|hourly|week|\b\d+\s*months\b|opening|clos(ed|ing)|paper|check images?|\b(debits?|checks?|withdrawals?|transfers?|items?|transactions?)\b/i;
+/** Month wording in the fee's own name or line ("Monthly1 account service charge", "$10.00month", "each calendar month", "for that month"). */
+const OWN_MONTH = /(?<![a-z])month(ly)?(?![a-z])|\b(per|each|every) statement cycle\b|\bstatement cycle \(month\)/i;
+
+/**
+ * v13 (#1339): a live monthly-maintenance fee with no frequency takes "monthly" only when its own
+ * name or line says so: a month word ("Monthly1 account service charge is $10", "a service charge of
+ * $3.00 will be charged each calendar month") or a charge per statement cycle ("Service Charge per
+ * statement cycle ... $10.00"). The line must print the fee's price. It stays blank when the line
+ * names another basis or service (quarterly, per hour, "every four-week statement cycle", "No monthly
+ * maintenance fees: Only $25", an opening or closing charge, paper statements, check images, or a
+ * per-check or per-transfer charge), and when it says only "during the statement cycle", which is the
+ * window a balance is measured over, not how often the fee is charged. Pure.
+ */
+export function maintenanceMonthlyFill(
+  canonicalKey: string | null | undefined,
+  frequency: string | null | undefined,
+  sourceLine: string | null | undefined,
+  amount: number | null,
+  feeName: string | null | undefined,
+): "monthly" | null {
+  if (canonicalKey !== "monthly_maintenance" || frequency != null || !sourceLine || amount == null) return null;
+  if (!feePrices(sourceLine).some((price) => Math.abs(price - amount) < 0.005)) return null;
+  const text = `${feeName ?? ""} | ${sourceLine}`;
+  if (NOT_MONTHLY_MAINTENANCE.test(text) || namedBasis(sourceLine, amount)) return null;
+  return OWN_MONTH.test(text) ? "monthly" : null;
 }

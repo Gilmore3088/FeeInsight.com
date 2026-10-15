@@ -1,9 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { runFreeSpecialists } from "./specialists";
+import { classifyFeeText, KNOX_HELD_NAME_RULES_LIVE } from "./rules";
 
 import {
   HELD_SET_ASIDE_FLAG,
+  heldNameRelease,
+  previewHeldNameRules,
   heldExcerpt,
   heldHint,
   heldConditions,
@@ -526,5 +529,57 @@ describe("retired lines today's rules file under another category (#1093, Oregon
     expect(JSON.stringify(marked.values)).toContain(supersededRefileFlag());
     const repair = calls.find((call) => call.text.includes("jsonb_build_array"))!;
     expect(JSON.stringify(repair.values)).toContain(STALE_HINT_REPAIRED_FLAG);
+  });
+});
+
+// #1102 (K9): production held lines (raw ids), read 14 Oct 2026.
+describe("held-name rules for unclassified held lines (#1102)", () => {
+  const held = (fee_raw_id: number, amount: string, fee_name: string, excerpt: string) => ({
+    fee_raw_id, amount, fee_name, conditions: conditions(excerpt), institution_id: 7, outlier_flags: ["knox_review:unclassified", HELD_SET_ASIDE_FLAG],
+  });
+  const stopPay = held(265119, "30.00", "Stop Pay Fee", "Stop Pay Fee | $30.00 per item");
+  const heloc = held(337301, "500.00", "Early closure fee", "Early closure fee of $500 may apply");
+
+  it.each([
+    [stopPay, "stop_payment"],
+    [held(653776, "95.00", "Deed of Trust Reconveyance Fee", "Deed of Trust Reconveyance Fee | $95.00"), "reconveyance"],
+    [held(295678, "5.00", "Early closure fee (90 days)", "Early closure fee (90 days) | $5.00"), "early_closure"],
+    [held(643931, "10.00", "Christmas Club Withdrawal Fee", "Christmas Club Withdrawal Fee | $10.00"), "early_closure"],
+    // Returned mail is account research (fee-fold.ts), tracing the new address too.
+    [held(163946, "3.00", "Returned Statement Fee", "Returned Statement Fee | $3 | per statement"), "account_research"],
+    [held(219557, "25.00", "Returned statements after 3, tracer fee", "Returned statements after 3, tracer fee | $25.00"), "account_research"],
+    [held(678207, "5.00", "Printed / Mailed Monthly Statement Fee", "Printed / Mailed Monthly Statement Fee | $5.00"), "paper_statement"],
+    [held(341058, "25.00", "IRA Early Closeout Fee", "IRA Early Closeout Fee . . . . . . . . $25"), "ira_termination"],
+    [held(227987, "100.00", "IRA Account Early Withdrawal Fee", "IRA Account Early Withdrawal Fee | $100.00 per withdrawal"), "ira_distribution"],
+    [held(472697, "95.00", "7″x10″ Rental", "7″x10″ Rental | $95.00 annual charge (Eldersburg Location Only)"), "safe_deposit_box"],
+    // A HELOC's early closure fee (Great Southern Bank) and a mortgage's 36-month one stay held.
+    [heloc, null],
+    [held(480501, "750.00", "If you terminate your account within 36 months of opening it, you will be required to pay an early closure fee of", "If you terminate your account within 36 months of opening it, you will be required to pay an early closure fee of $750 plus any mortgage and government taxes"), null],
+    [held(1, "350.00", "Early Closure Fee (Home Equities only)", "Early Closure Fee (Home Equities only) | $350.00 | First 2 years."), null],
+    // A club line that names no fee (the Texas key leaves it unmapped).
+    [held(3, "2.50", "Christmas Club (withdrawals free Oct.1 – Jan.1)", "Christmas Club (withdrawals free Oct.1 – Jan.1) | $2.50"), null],
+    // A bare wire line often says incoming or international after its price.
+    [held(2, "35.00", "Wire Transfer Fee", "Wire Transfer Fee | $35.00 per International outgoing wire transfer"), null],
+    [returnedMail, null],
+  ] as const)("files held line %# under its own name's category, or keeps it held", (row, category) => {
+    const release = heldNameRelease(row);
+    expect(release?.candidate.canonicalHint ?? null).toBe(category);
+    if (category) expect(release?.passChecks).toBe(true);
+  });
+
+  it("is switched off: today's rules and the held re-check read these names as before", () => {
+    expect(KNOX_HELD_NAME_RULES_LIVE).toBe(false);
+    expect(classifyFeeText("Stop Pay Fee")).toBeNull();
+    expect(recategorizeHeld(stopPay)).toBeNull();
+  });
+
+  it("counts what would go to Darwin and writes nothing", async () => {
+    const db = createDb([stopPay, heloc, courtesyPay]);
+    const result = await previewHeldNameRules(db as never);
+    expect(result).toMatchObject({
+      live: false, candidates: 3, wouldRelease: 1, passChecks: 1, setAside: 1, institutions: 1, byCategory: { stop_payment: 1 },
+      examples: [{ feeRawId: 265119, feeName: "Stop Pay Fee", amount: 30, category: "stop_payment" }],
+    });
+    expect(db.mock.calls.some(([strings]) => /UPDATE|INSERT/.test(templateText(strings)))).toBe(false);
   });
 });
