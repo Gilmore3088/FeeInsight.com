@@ -369,14 +369,14 @@ export async function previewHeldNameRules(
   const institutionId = options.institutionId ?? null;
   const stateCode = options.stateCode?.trim().toUpperCase() || null;
   const rows = await db<HeldRow[]>`
-    SELECT fr.fee_raw_id, fr.amount, fr.conditions, fr.institution_id, fr.source_document_id,
+    SELECT fr.fee_raw_id, fr.amount, COALESCE(fr.extraction_note, fr.conditions) AS conditions, fr.institution_id, fr.source_document_id,
            fr.fee_name, fr.outlier_flags
       FROM raw_fee_observations fr
       JOIN institution_sources inst ON inst.id = fr.institution_id
      WHERE fr.source = 'knox'
        AND fr.outlier_flags ? 'knox_review:unclassified'
        AND NOT fr.outlier_flags ? 'needs_darwin_verification'
-       AND substring(fr.conditions from 'excerpt="(.*)"') ~* ${HELD_NAME_PREFILTER_SQL}
+       AND substring(COALESCE(fr.extraction_note, fr.conditions) from 'excerpt="(.*)"') ~* ${HELD_NAME_PREFILTER_SQL}
        AND (${institutionId}::int IS NULL OR fr.institution_id = ${institutionId}::int)
        AND (${stateCode}::text IS NULL OR upper(btrim(inst.state_code)) = ${stateCode}::text)
        AND EXISTS (
@@ -385,7 +385,7 @@ export async function previewHeldNameRules(
           WHERE adt.source_document_id = fr.source_document_id
             AND adt.status = 'completed'
             AND adt.text_hash IS NOT NULL
-            AND position(('text_hash=' || adt.text_hash || ';') IN COALESCE(fr.conditions, '')) > 0
+            AND position(('text_hash=' || adt.text_hash || ';') IN COALESCE(COALESCE(fr.extraction_note, fr.conditions), '')) > 0
        )
      ORDER BY fr.fee_raw_id
      LIMIT ${limit}
