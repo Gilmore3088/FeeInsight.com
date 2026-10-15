@@ -604,6 +604,29 @@ This sweep reads up to 25 documents' stored text per step. James turned
 on page, not printed, no text, would close, samples) and closes the repeats. Rollback: clear
 `rolled_back_at` on rows whose `rolled_back_reason` ends in `(near name)`.
 
+**Page copies (#1439, shadow).** One schedule stored under several addresses ("?print=1", "www.",
+"%20", a mirror) is several documents, so a line of it went live once per copy.
+`page-copy-collapse.ts` groups live rows of one institution, category, variant and exact amount
+read from different documents of one page (`feePageKey`) under the same or a near name. It keeps a
+current copy (`superseded_by_id` unset) over a replaced one, then the latest edition: by the
+editions the texts state when every copy in the group states one (the latest "effective" date not
+after the read, so an announced change does not count), else by when each was last read or
+re-confirmed (`GREATEST(last_checked_at, crawled_at)`); equal editions fall to the later read. The
+kept document's stored text must print the kept name at the price, and the two documents must print
+mostly the same prices (distinct dollar amounts overlapping at 0.8 or more, `sameScheduleText`),
+since `feePageKey` keys "?id=101" and "?id=202" alike. Prices survive a two-column PDF read in
+another order ("$ | 30.00"); a fee-change letter or a "popular fees" page stays apart. Two
+documents for different audiences are never copies: the audience named in the URL path or query
+(camel case split), else the one the text keeps naming (three or more mentions and three times the
+other, "business day" not counted, so a menu or footer link decides nothing). A pair the kept text
+prints as two lines, or under both a personal and a business heading, stays two fees. Frequencies
+and audiences must agree or be unstated. Up to 25 institutions per step, picked by the run id; each
+step reports `page_copy_collapse` (live, institutions, pairs, apart on page, unproven, other
+document, would close, samples, and `error` when the read failed). `PAGE_COPY_COLLAPSE_LIVE` stays
+off until James approves the dry-run counts. Rollback: clear `rolled_back_at` on rows whose reason
+ends in `(copy of the page)`. A closed copy is not restored if its kept copy later comes down; like
+the other collapses, that is a gap to close before this goes live.
+
 **At publish (#1069 step 1, shadow).** Each row the publish step is about to publish is checked
 against its live copies with the exact collapse's own test (`exact-duplicate.ts`: institution,
 category, variant, value and name; frequency classes that agree; the copy kept states its
