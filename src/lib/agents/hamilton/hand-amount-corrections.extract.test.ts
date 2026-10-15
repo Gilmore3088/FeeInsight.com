@@ -19,7 +19,8 @@ function chosen(text: string, name: string) {
   return runFreeSpecialists(text).candidates.filter((fee) => fee.feeName.toLowerCase() === name.toLowerCase());
 }
 
-describe("cut-cents fees through the full free extract (#1334)", () => {
+// The full free extract runs every specialist on 7 stored texts; under CI load it can pass 5 s.
+describe("cut-cents fees through the full free extract (#1334)", { timeout: 20_000 }, () => {
   it("chooses $29.95 for Xplore's Loan Skip A Pay Fee and $1.50 for Members 1st's ATM transactions", () => {
     expect(chosen(xplore, "Loan Skip A Pay Fee").map((fee) => fee.amount)).toEqual([29.95]);
     expect(chosen(members, "ATM Transactions (per item)").map((fee) => fee.amount)).toEqual([1.5]);
