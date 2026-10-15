@@ -252,7 +252,7 @@ Darwin owns verification and classification.
   Recorded passes (`releaseRecordedPasses`, strategy `verify.release_recorded`, each extract-free
   `verify` step): the review never picks a fee with a v17 attempt again, so the 421 fees v17 passed
   while the release did not act would stay held even with `DARWIN_RELEASE_ACTS` on. This pass
-  releases them after today's free holds, under its own switch (`DARWIN_RECORDED_RELEASE_ACTS`),
+  releases them after today's free holds, under its own switch (`DARWIN_RECORDED_RELEASE_ACTS`, on since Oct 15),
   so the other release paths stay verdicts-only. Three holds were added after a hand check of 20
   found 19 right (Oct 15), and they hold in the review too:
   - `business_activity_row`: a business account's "Per Each ..." activity row filed outside
