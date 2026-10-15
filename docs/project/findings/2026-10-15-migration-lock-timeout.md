@@ -7,7 +7,7 @@
 - #1337 merged at 01:02:41 UTC. The Supabase GitHub link ran migration `20270110000048` (a nullable `raw_fee_observations.extraction_note` column, appended to both catalog views).
 - The ALTER started at 01:03:21.042 and was cancelled at 01:03:26.042: `canceling statement due to lock timeout`.
 - Four readers queued behind it, waiting 1.8 to 5.0 seconds.
-- The file and its history row run as one transaction, so nothing was applied. `schema_migrations` still ends at 047, and the column does not exist.
+- The file and its history row run as one transaction, so nothing was applied. At that point `schema_migrations` still ended at 047 and the column did not exist (it was applied on retry; see Outcome).
 - **Cause:** an open transaction held a lock on the table, and the ACCESS EXCLUSIVE lock could not be taken within 5 seconds. The logs do not name the holding session.
 
 ## Outcome
@@ -21,7 +21,7 @@
 - The retry succeeded because no long transaction held the table at that moment. That is chance, not a fix.
 
 ## Why a longer timeout alone is not enough
-A lock lasts for the holder's whole transaction, not just one statement, and pipeline steps run inside one transaction (`withTransaction`, `run-store.ts`). Over the 12 hours before the failure:
+A lock lasts for the holder's whole transaction, not just one statement, and pipeline steps run inside one transaction (`withTransaction`, `run-store.ts`). In the 12 hours to about 01:10 UTC:
 
 | Measure | Value |
 |---|---|
@@ -44,7 +44,7 @@ A failed migration does not retry by itself. The link only runs pending migratio
 1. Pause the `pipeline` control. That is James's call, since it is a production control.
 2. Check that `pg_stat_activity` shows no open step transaction on these tables.
 3. Merge the migration PR.
-4. Confirm the `20270110000048` row in `supabase_migrations.schema_migrations` and the `extraction_note` column.
+4. Confirm the migration's row in `supabase_migrations.schema_migrations` and the schema change it makes.
 5. Resume the control.
 
 Only then merge the code that uses the new column or table.
