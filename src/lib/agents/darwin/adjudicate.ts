@@ -228,7 +228,7 @@ async function selectCandidates(db: SqlTag, scan: number, stateCode?: string): P
     `
       SELECT * FROM (
         SELECT DISTINCT ON (fr.fee_raw_id)
-               fr.fee_raw_id, fr.institution_id, fr.source_document_id, fr.fee_name, fr.amount, fr.conditions,
+               fr.fee_raw_id, fr.institution_id, fr.source_document_id, fr.fee_name, fr.amount, COALESCE(fr.extraction_note, fr.conditions) AS conditions,
                cm.detail->>'canonical_fee_key' AS knox_key,
                cm.detail->>'suggested_key' AS suggested_key,
                cm.detail->>'suggested_probability' AS suggested_probability,

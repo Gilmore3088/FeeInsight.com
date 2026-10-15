@@ -5,6 +5,7 @@ import {
   GUARDED_CATEGORIES,
   PLAIN_RETURNED_ITEM,
   refileCategory,
+  refileFromLine,
   type CategoryGuardCode,
 } from "@/lib/fee-category-guard";
 import { isRetiredCategory, splitLiveCategory, FOLD_RULES_VERSION } from "@/lib/fee-fold";
@@ -115,7 +116,7 @@ async function selectLiveGuardedFees(db: SqlTag, institutionId?: number): Promis
   if (institutionId) {
     return db<LivePublishedRow[]>`
       SELECT fp.fee_published_id, fp.lineage_ref, fp.institution_id, fr.source_document_id, fp.canonical_fee_key, fp.fee_name,
-             fp.amount, fr.conditions, ${documentNsfAmount(db)}
+             fp.amount, COALESCE(fr.extraction_note, fr.conditions) AS conditions, ${documentNsfAmount(db)}
         FROM published_fee_records fp
         LEFT JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
         LEFT JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
@@ -127,7 +128,7 @@ async function selectLiveGuardedFees(db: SqlTag, institutionId?: number): Promis
   }
   return db<LivePublishedRow[]>`
     SELECT fp.fee_published_id, fp.lineage_ref, fp.institution_id, fr.source_document_id, fp.canonical_fee_key, fp.fee_name,
-           fp.amount, fr.conditions, ${documentNsfAmount(db)}
+           fp.amount, COALESCE(fr.extraction_note, fr.conditions) AS conditions, ${documentNsfAmount(db)}
       FROM published_fee_records fp
       LEFT JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
       LEFT JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
@@ -333,7 +334,11 @@ export function restoreTarget(
   if (hand) return hand;
   // Or the guard's own re-file rule names it: express card replacements kept coming back as
   // card_replacement and going down again (235, 12213, 29782, Oct 6-9); rush_card is their home.
-  const to = splitLiveCategory(row.canonical_fee_key, row.fee_name)?.to ?? restoreRefile(row.canonical_fee_key, row.fee_name);
+  // Or its own source line does (guard v62): an excess activity charge filed as monthly maintenance.
+  const to =
+    splitLiveCategory(row.canonical_fee_key, row.fee_name)?.to ??
+    restoreRefile(row.canonical_fee_key, row.fee_name) ??
+    refileFromLine(row.canonical_fee_key, row.fee_name, row);
   // A retired key is no home: Hamilton never publishes it.
   if (!to || to === row.canonical_fee_key || isRetiredCategory(to)) return null;
   const amount = normalizedAmount(row.amount) ?? 0;
@@ -388,25 +393,107 @@ function restoreRefile(canonicalFeeKey: string, feeName: string): string | null 
 }
 
 /**
+ * Which live fee is the same fee as one being moved. Moving any fee but an excess activity fee, a
+ * live fee of the target type at the same bank and price is its twin, whatever its name: an
+ * express card replacement's twin is the bank's live rush card fee at that price (235 and 100126),
+ * and two express card lines at one price are one fee (350 and 27687 at institution 6042).
+ * Moving an excess activity fee (guard v62), the bank's unrelated account research fee at the same
+ * price is not its twin ("Reconciliation" $5, "Return Mail, per item" $5, "Returned mail
+ * (monthly)" $3, "Account research" $25 beside 124670, 135850 and 142436; #1283 review, Oct 15):
+ * only a fee with the same name, or another excess activity fee, is. A live fee reads as an excess
+ * activity fee by its name; the fee being moved also by its own source line (`refileFromLine`),
+ * since those are named "Service charge" or "Maintenance fee". The pattern runs in TS and Postgres.
+ */
+const EXCESS_ACTIVITY_NAME_PATTERN = String.raw`(excess|withdraw|over[- ]?limit|transaction limit)`;
+const EXCESS_ACTIVITY_NAME = new RegExp(EXCESS_ACTIVITY_NAME_PATTERN, "i");
+
+const nameKey = (name: string | null | undefined) => (name ?? "").trim().toLowerCase();
+
+interface LiveRefile extends Restore {
+  /** The fee being moved is an excess activity fee, by its name or its own source line. */
+  excess: boolean;
+}
+
+/** Pure: whether a refile moves an excess activity fee. */
+export function movesExcessActivityFee(restore: Restore): boolean {
+  return EXCESS_ACTIVITY_NAME.test(restore.row.fee_name) ||
+    refileFromLine(restore.row.canonical_fee_key, restore.row.fee_name, restore.row) === restore.to;
+}
+
+/**
+ * Pure: the refiles that stay, one per bank, type, price and fee. Two refiles at one bank, type and
+ * price are one fee, unless one of them moves an excess activity fee: then they are one fee only
+ * with the same name or when both are excess activity fees.
+ */
+export function uniqueRefiles(refiles: Restore[]): LiveRefile[] {
+  const kept: LiveRefile[] = [];
+  for (const restore of refiles) {
+    const candidate = { ...restore, excess: movesExcessActivityFee(restore) };
+    const same = kept.some((other) =>
+      String(other.row.institution_id) === String(candidate.row.institution_id) &&
+      other.to === candidate.to &&
+      normalizedAmount(other.row.amount) === normalizedAmount(candidate.row.amount) &&
+      (!(other.excess || candidate.excess) ||
+        nameKey(other.row.fee_name) === nameKey(candidate.row.fee_name) ||
+        (other.excess && candidate.excess)));
+    if (!same) kept.push(candidate);
+  }
+  return kept;
+}
+
+/**
  * Moves live fees the guard fails to the top-50 type `restoreTarget` gives them, published and
- * verified rows alike, unless the same fee is already live there. Each move is logged as a fold.
- * Returns the ids moved (a dry run counts every candidate).
+ * verified rows alike, unless the same fee is already live there: any live fee of that type and
+ * price, or, when an excess activity fee moves, one with the same name or an excess activity name.
+ * Each move is logged as a fold. Returns the ids moved (a dry run runs the same test, read only).
  */
 async function refileLiveFees(
   db: SqlTag,
   refiles: Restore[],
   options: { dryRun: boolean; runId: number },
 ): Promise<Set<number>> {
-  // One fee per institution, type and price.
-  const seen = new Set<string>();
-  const unique = refiles.filter((restore) => {
-    const key = `${restore.row.institution_id}|${restore.to}|${normalizedAmount(restore.row.amount)}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
+  const unique = uniqueRefiles(refiles);
   if (unique.length === 0) return new Set();
-  if (options.dryRun) return new Set(unique.map((restore) => Number(restore.row.fee_published_id)));
+  if (options.dryRun) return wouldRefile(db, unique);
+  return applyLiveRefiles(db, unique, options);
+}
+
+/** The dry run's count: the same live-twin test as the move, read only. */
+async function wouldRefile(db: SqlTag, unique: LiveRefile[]): Promise<Set<number>> {
+  try {
+    const rows = await inSavepoint(db, (scope) => scope<{ fee_published_id: number | string }[]>`
+      SELECT fp.fee_published_id
+        FROM published_fee_records fp
+        JOIN unnest(${unique.map((restore) => Number(restore.row.fee_published_id))}::bigint[],
+                    ${unique.map((restore) => restore.row.canonical_fee_key)}::text[],
+                    ${unique.map((restore) => restore.to)}::text[],
+                    ${unique.map((restore) => restore.excess)}::boolean[]) AS v(fee_published_id, from_key, to_key, excess)
+          ON fp.fee_published_id = v.fee_published_id
+       WHERE fp.canonical_fee_key = v.from_key
+         AND fp.rolled_back_at IS NULL
+         AND NOT EXISTS (
+           SELECT 1 FROM published_fee_records live
+            WHERE live.rolled_back_at IS NULL
+              AND live.institution_id = fp.institution_id
+              AND live.canonical_fee_key = v.to_key
+              AND live.amount IS NOT DISTINCT FROM fp.amount
+              AND (NOT v.excess
+                   OR lower(btrim(live.fee_name)) = lower(btrim(fp.fee_name))
+                   OR live.fee_name ~* ${EXCESS_ACTIVITY_NAME_PATTERN})
+         )
+    `);
+    return new Set(rows.map((row) => Number(row.fee_published_id)));
+  } catch (error) {
+    console.error("category guard live re-file dry run failed:", error);
+    return new Set();
+  }
+}
+
+async function applyLiveRefiles(
+  db: SqlTag,
+  unique: LiveRefile[],
+  options: { runId: number },
+): Promise<Set<number>> {
   try {
     return await inSavepoint(db, async (scope) => {
       const moved = await scope<{ fee_published_id: number | string; lineage_ref: number | string; canonical_fee_key: string }[]>`
@@ -414,7 +501,8 @@ async function refileLiveFees(
            SET canonical_fee_key = v.to_key
           FROM unnest(${unique.map((restore) => Number(restore.row.fee_published_id))}::bigint[],
                       ${unique.map((restore) => restore.row.canonical_fee_key)}::text[],
-                      ${unique.map((restore) => restore.to)}::text[]) AS v(fee_published_id, from_key, to_key)
+                      ${unique.map((restore) => restore.to)}::text[],
+                      ${unique.map((restore) => restore.excess)}::boolean[]) AS v(fee_published_id, from_key, to_key, excess)
          WHERE fp.fee_published_id = v.fee_published_id
            AND fp.canonical_fee_key = v.from_key
            AND fp.rolled_back_at IS NULL
@@ -424,6 +512,9 @@ async function refileLiveFees(
                 AND live.institution_id = fp.institution_id
                 AND live.canonical_fee_key = v.to_key
                 AND live.amount IS NOT DISTINCT FROM fp.amount
+                AND (NOT v.excess
+                     OR lower(btrim(live.fee_name)) = lower(btrim(fp.fee_name))
+                     OR live.fee_name ~* ${EXCESS_ACTIVITY_NAME_PATTERN})
            )
         RETURNING fp.fee_published_id, fp.lineage_ref, fp.canonical_fee_key
       `;
@@ -469,7 +560,7 @@ async function restorePassingTakedowns(
   try {
     rows = await inSavepoint(db, (scope) => scope<TakenDownRow[]>`
       SELECT fp.fee_published_id, fp.lineage_ref, fp.institution_id, fr.source_document_id, fp.canonical_fee_key,
-             fp.fee_name, fp.amount, fr.conditions, ${documentNsfAmount(scope)}
+             fp.fee_name, fp.amount, COALESCE(fr.extraction_note, fr.conditions) AS conditions, ${documentNsfAmount(scope)}
         FROM published_fee_records fp
         LEFT JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
         LEFT JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id

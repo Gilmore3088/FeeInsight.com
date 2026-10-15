@@ -1,4 +1,5 @@
 import { sql } from "./connection";
+import { readerFeeConditions } from "../fee-conditions";
 import { dailyFeeLimitFor, type DailyFeeLimit } from "@/lib/fee-daily-limit";
 import { getFeeFamily, FEE_FAMILIES } from "@/lib/fee-taxonomy";
 import { frequencyFamily } from "@/lib/fee-frequency";
@@ -261,7 +262,7 @@ export async function getInstitutionFeeRows(institutionId: number, category: str
     sourceUrl: r.source_url,
     publishedAt: timestamp(r.created_at),
     frequency: r.frequency ?? null,
-    conditions: r.conditions ?? null,
+    conditions: readerFeeConditions(r.conditions),
     feeAudience: r.fee_audience === "consumer" || r.fee_audience === "business" || r.fee_audience === "both"
       ? r.fee_audience : "unknown",
     audienceEvidence: r.audience_evidence ?? null,

@@ -1,5 +1,6 @@
 import type { FeeAudience } from "@/lib/fee-audience";
 import { ADMIN_HOLD_PREFIX } from "@/lib/fee-hold-rules";
+import { publishSourceLink, sourceLinkSkipReason } from "@/lib/agents/hamilton/source-link";
 import { feePageKey } from "@/lib/agents/hamilton/page-key";
 import { sql } from "@/lib/data-store/connection";
 import { isRetiredCategory } from "@/lib/fee-fold";
@@ -93,7 +94,7 @@ export interface VerifiedFeeRow extends RateFields {
   free_read?: boolean | null;
 }
 
-interface PriorPublishedFeeRow extends RateFields {
+export interface PriorPublishedFeeRow extends RateFields {
   fee_published_id: number | string;
   amount: number | string | null;
   fee_name: string;
@@ -225,7 +226,10 @@ export function publishSkipReason(row: VerifiedFeeRow, minConfidence: number, pr
   // A fee whose wording found no home among the top 50 (fee-fold.ts) is not published.
   if (isRetiredCategory(row.canonical_fee_key)) return "Category folded into the top 50 with no home for this fee";
   if (!row.fee_name?.trim()) return "Missing fee name";
-  if (!row.source_url?.trim() && !row.document_r2_key?.trim()) return "Missing source lineage";
+  if (!row.source_url?.trim() && !row.document_r2_key?.trim() && !row.document_url?.trim()) return "Missing source lineage";
+  // Every live fee links to the bank's own document (#1342): a stored file key alone is not a link.
+  const sourceReason = sourceLinkSkipReason(row);
+  if (sourceReason) return sourceReason;
   if (!row.verified_by_agent_event_id?.trim()) return "Missing Darwin verification event";
   // A blog post or story quotes national averages, not this bank's price (article-page.ts).
   if (isArticlePage(row.source_url)) return "Read from an article page, not a fee schedule";
@@ -451,7 +455,7 @@ async function selectVerifiedFees(
                   AND (${SAME_LINE_RESELECT_SQL.replaceAll("pa.detail", "sl_pa.detail")}
                        OR ${THRESHOLD_RESELECT_SQL.replaceAll("pa.detail", "sl_pa.detail")})
              ) AS same_line_reselect,
-             COALESCE(fr.conditions LIKE '${FREE_READ_PREFIX}%', false) AS free_read,
+             COALESCE(COALESCE(fr.extraction_note, fr.conditions) LIKE '${FREE_READ_PREFIX}%', false) AS free_read,
              COALESCE(fr.source_document_id::text, 'row:' || fv.fee_verified_id::text) AS batch_document_key,
              fv.created_at AS batch_created_at
         FROM verified_fee_observations fv
@@ -610,7 +614,7 @@ export async function insertPublishedFee(
       ${feeVerifiedId},
       ${institutionId},
       ${options.row.canonical_fee_key},
-      ${options.row.source_url},
+      ${publishSourceLink(options.row)},
       ${options.row.document_r2_key},
       ${confidence},
       ${options.row.raw_agent_event_id}::uuid,
@@ -1022,6 +1026,66 @@ export function separateLines(row: VerifiedFeeRow, prior: PriorPublishedFeeRow):
   return !within(rowWords, priorWords) && !within(priorWords, rowWords);
 }
 
+/** A qualifier word printed before a line's name ("ACH", "Debit"): letters, no heading mark after it. */
+const QUALIFIER_WORD = /^[A-Za-z](?:[A-Za-z0-9&/'’-]*[A-Za-z0-9])?$/;
+
+/**
+ * Pure: one name is the other with one or two qualifier words in front ("ACH Insufficient Funds"
+ * and "Insufficient Funds", "ACH Stop Payment" and "Stop Payment", all $35 on doc 17371, 14 Oct).
+ * Every word of the shorter name is in the longer one, so `separateLines` reads them as one line;
+ * this only puts the pair to the page check (`linesApartOnPage`), which keeps them apart when the
+ * page prints the shorter name as a line of its own at the price, and as one line when the shorter
+ * name sits only inside the longer one. A carried-in heading ("Debit Cards: Stop Payment",
+ * "Wire Transfers - Outgoing: Outgoing Wire Fee") ends on a mark, and a filler or number
+ * ("An Overdraft Transfer", "00 Official check") qualifies nothing, so neither counts.
+ */
+export function qualifiedLines(row: VerifiedFeeRow, prior: PriorPublishedFeeRow): boolean {
+  if (!sameDocument(prior.source_document_id, row.source_document_id)) return false;
+  if (unclearName(row.fee_name) || unclearName(prior.fee_name)) return false;
+  return qualifies(row.fee_name ?? "", prior.fee_name ?? "") || qualifies(prior.fee_name ?? "", row.fee_name ?? "");
+}
+
+function qualifies(longer: string, shorter: string): boolean {
+  const core = pageWords(shorter).trim();
+  if (!core) return false;
+  const tokens = longer.trim().split(/\s+/);
+  for (let k = 1; k <= 2 && k < tokens.length; k += 1) {
+    const qualifier = tokens.slice(0, k);
+    const rest = tokens.slice(k);
+    if (!qualifier.every((word) => QUALIFIER_WORD.test(word))) return false;
+    if (!qualifier.some((word) => !FILLER_WORDS.has(word.toLowerCase()))) continue;
+    if (/^[A-Za-z0-9]/.test(rest[0]) && pageWords(rest.join(" ")).trim() === core) return true;
+  }
+  return false;
+}
+
+/** A name's words for the near-name check: stemmed, without a leading article or a trailing "fee"/"charge". */
+function nameCore(name: string): string {
+  const words = pageWords(name).trim().split(" ").filter(Boolean).map(stem);
+  while (words.length > 1 && /^(?:a|an|the)$/.test(words[0])) words.shift();
+  while (words.length > 1 && /^(?:fee|charge)$/.test(words[words.length - 1])) words.pop();
+  return words.join(" ");
+}
+
+/**
+ * Pure: two names that read as one line when they differ (#1302). Either they differ only by
+ * punctuation, case, a plural, a leading article or a trailing "fee" ("Stop Payment" / "Stop
+ * Payments", "International Wire" / "International Wire fee", "Cashier's Check" / "Cashier’s
+ * Check"), or one is the other with one qualifier word in front ("Account Research fee" /
+ * "Research fee", `qualifiedLines`' rule held to one word). The names alone never decide that
+ * two live rows are one fee: the duplicate collapse also asks the page (`linesApartOnPage`), so a
+ * pair the page prints as two lines stays two fees, as at publish (#1303).
+ */
+export function nearNames(a: string | null | undefined, b: string | null | undefined): boolean {
+  const [one, two] = [(a ?? "").trim(), (b ?? "").trim()];
+  if (!one || !two || one.toLowerCase() === two.toLowerCase()) return false;
+  const [coreA, coreB] = [nameCore(one), nameCore(two)];
+  if (coreA && coreA === coreB) return true;
+  if (unclearName(one) || unclearName(two)) return false;
+  const size = (name: string) => pageWords(name).trim().split(" ").length;
+  return Math.abs(size(one) - size(two)) === 1 && (qualifies(one, two) || qualifies(two, one));
+}
+
 /** Text as words: lower case, every run of other characters one space, padded with spaces. */
 function pageWords(text: string): string {
   return ` ${text.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim()} `;
@@ -1036,28 +1100,15 @@ function pageWords(text: string): string {
  * Every place a name is printed counts ("5 x 10" also sits inside "2.5 x 10"), a footnote mark
  * glued to a name's last word is the name ("Premium overdraft fee2"), and the words before the
  * price may be another column's price ("5 x 10 | $150.00 per year | $110.00 per year"). A box of
- * another size that the page does not print needs only the row's own line.
+ * another size that the page does not print needs only the row's own line. A name whose price
+ * comes only after the other name is a heading over that line ("Stop Payment" above "ACH Stop
+ * Payment $35"), so it is not a line of its own.
  */
 export function linesApartOnPage(text: string, rowName: string, priorName: string, amount: number | string | null): boolean {
-  const value = amount == null ? NaN : Number(amount);
-  if (!Number.isFinite(value) || value < 0) return false;
-  const cents = Math.round(value * 100);
-  const whole = Math.floor(cents / 100);
-  const price = cents % 100 === 0 ? `${whole}(?: 00)?` : `${whole} ${String(cents % 100).padStart(2, "0")}`;
-  const follows = new RegExp(`^ (?:(?!of )[a-z0-9]+ ){0,6}${price} `);
-  const page = pageWords(text);
-  const printed = (name: string) => {
-    const words = pageWords(name).trim();
-    if (!words) return [];
-    const mark = /[a-z]$/.test(words) ? "(?:\\d{1,2})?" : "";
-    const pattern = new RegExp(`(?<= )${escapeRegExp(words)}${mark}(?= )`, "g");
-    return [...page.matchAll(pattern)].map((match) => {
-      const start = (match.index ?? 0) - 1;
-      return { start, end: start + match[0].length + 1 };
-    });
-  };
-  const places = (name: string) => printed(name).filter((place) => follows.test(page.slice(place.end)));
-  const a = places(rowName);
+  const reader = pageReader(text, amount);
+  if (!reader) return false;
+  const { printed, places } = reader;
+  const a = places(rowName, priorName);
   // A box of another size that this copy does not print at all is another line (CBB's 3 x 5 at
   // $45 beside a misread "SAFE DEPOSIT BOX: 2.5 x 10" at $45, 9 Oct). One printed without this
   // price is a price-first table ("$25.00 Safe Deposit Box 3x5"), where the price after a name
@@ -1067,8 +1118,80 @@ export function linesApartOnPage(text: string, rowName: string, priorName: strin
   if (rowSizes.size > 0 && priorSizes.size > 0 && ![...rowSizes].some((size) => priorSizes.has(size)) && printed(priorName).length === 0) {
     return a.length > 0;
   }
-  const b = places(priorName);
+  const b = places(priorName, rowName);
   return a.some((one) => b.some((two) => one.end <= two.start || two.end <= one.start));
+}
+
+/** Pure: the page prints this name with this price after it (a place `linesApartOnPage` counts). */
+export function printedAtPrice(text: string, name: string, amount: number | string | null): boolean {
+  return (pageReader(text, amount)?.places(name).length ?? 0) > 0;
+}
+
+/** A schedule heading that names whose accounts it prices ("SCHEDULE OF FEES FOR BUSINESS ACCOUNTS"). */
+const SCHEDULE_AUDIENCE_HEADING =
+  / (?:(?:schedule of fees|fee schedule|fees|charges) for (personal|consumer|individual|business|commercial)(?: banking)? accounts?|(?:schedule of fees|fee schedule) (personal|consumer|business|commercial)|(personal|consumer|business|commercial)(?: account)? (?:fee schedule|schedule of fees)) /g;
+
+/**
+ * Pure: does the page print any of these names at this price under both a personal and a business
+ * schedule heading? Each place counts under the nearest audience heading before it. Valley's doc
+ * 23731 prints "Visa® Gift Cards, each: $4.25." once under "SCHEDULE OF FEES FOR PERSONAL
+ * ACCOUNTS" and once under "SCHEDULE OF FEES FOR BUSINESS ACCOUNTS": two fees, not one (#1302).
+ */
+export function printedInPersonalAndBusinessSchedules(text: string, names: ReadonlyArray<string>, amount: number | string | null): boolean {
+  const reader = pageReader(text, amount);
+  if (!reader) return false;
+  const page = pageWords(text);
+  const headings = [...page.matchAll(SCHEDULE_AUDIENCE_HEADING)].map((match) => ({
+    at: match.index ?? 0,
+    business: /^(business|commercial)$/.test(match[1] ?? match[2] ?? match[3] ?? ""),
+  }));
+  const audiences = new Set<boolean>();
+  for (const name of names) {
+    for (const place of reader.places(name)) {
+      const heading = headings.filter((head) => head.at < place.start).pop();
+      if (heading) audiences.add(heading.business);
+    }
+  }
+  return audiences.size === 2;
+}
+
+type PagePlace = { start: number; end: number };
+
+/** Where a page prints a name (`printed`), and where it prints it with the price after it (`places`). */
+function pageReader(
+  text: string,
+  amount: number | string | null,
+): { printed: (name: string) => PagePlace[]; places: (name: string, other?: string) => PagePlace[] } | null {
+  const value = amount == null ? NaN : Number(amount);
+  if (!Number.isFinite(value) || value < 0) return null;
+  const cents = Math.round(value * 100);
+  const whole = Math.floor(cents / 100);
+  const price = cents % 100 === 0 ? `${whole}(?: 00)?` : `${whole} ${String(cents % 100).padStart(2, "0")}`;
+  const follows = new RegExp(`^ ((?:(?!of )[a-z0-9]+ ){0,6}?)${price} `);
+  const page = pageWords(text);
+  const printed = (name: string): PagePlace[] => {
+    const words = pageWords(name).trim();
+    if (!words) return [];
+    const mark = /[a-z]$/.test(words) ? "(?:\\d{1,2})?" : "";
+    const pattern = new RegExp(`(?<= )${escapeRegExp(words)}${mark}(?= )`, "g");
+    return [...page.matchAll(pattern)].map((match) => {
+      const start = (match.index ?? 0) - 1;
+      return { start, end: start + match[0].length + 1 };
+    });
+  };
+  // With `other`, a longer name that holds this one ("Small Business Checking" for "Business
+  // Checking"): a place whose words before the price hold the other name is a heading over that
+  // line and does not count.
+  const places = (name: string, other?: string) => {
+    const nameWords = pageWords(name);
+    const otherWords = other ? pageWords(other) : null;
+    const heads = otherWords != null && otherWords.length > nameWords.length && nameWords.trim() !== "" && otherWords.includes(nameWords);
+    return printed(name).filter((place) => {
+      const match = follows.exec(page.slice(place.end));
+      return match != null && !(heads && ` ${match[1]}`.includes(otherWords));
+    });
+  };
+  return { printed, places };
 }
 
 function escapeRegExp(text: string): string {
@@ -1094,18 +1217,35 @@ async function selectDocumentText(db: SqlTag, documentId: number | string | null
 
 /**
  * The live rows that are another line of this row's page at the same price: names that share no
- * reading (\`separateLines\`) printed apart on the page, each with the price (\`linesApartOnPage\`).
+ * reading (\`separateLines\`), or one name with a qualifier word in front of the other
+ * (\`qualifiedLines\`), printed apart on the page, each with the price (\`linesApartOnPage\`).
  * Source spot checks of 20 such rows, 9 Oct: words alone 13, 10 and 14 of 20; with the page check
  * see docs/project/findings/2026-10-09-identical-skip-ignored-name.md.
  */
 async function linesApartFrom(db: SqlTag, row: VerifiedFeeRow, live: PriorPublishedFeeRow[]): Promise<Set<PriorPublishedFeeRow>> {
-  if (isPercentFee(row)) return new Set();
+  const { candidates, balanced } = sameValueLines(row, live);
+  if (candidates.length === 0 && balanced.length === 0) return new Set();
+  return sameValueLinesApart(row, live, await selectDocumentText(db, row.source_document_id));
+}
+
+function sameValueLines(row: VerifiedFeeRow, live: PriorPublishedFeeRow[]): { candidates: PriorPublishedFeeRow[]; balanced: PriorPublishedFeeRow[] } {
+  if (isPercentFee(row)) return { candidates: [], balanced: [] };
   const value = feeValue(row);
   const sameValue = live.filter((prior) => feeValue(prior) === value);
-  const candidates = sameValue.filter((prior) => separateLines(row, prior));
-  const balanced = sameValue.filter((prior) => balanceThreshold(prior.fee_name) != null);
-  if (candidates.length === 0 && balanced.length === 0) return new Set();
-  const text = await selectDocumentText(db, row.source_document_id);
+  return {
+    candidates: sameValue.filter((prior) => separateLines(row, prior) || qualifiedLines(row, prior)),
+    balanced: sameValue.filter((prior) => balanceThreshold(prior.fee_name) != null),
+  };
+}
+
+/**
+ * Pure: the live rows at this row's price that are another line of its page, given the current
+ * read of the row's document (`linesApartFrom` without the database read). The hard-document gate
+ * (`deming/hard-documents.test.ts`) replays stored source lines through it, so two fees at one
+ * price stay two fees and two reads of one line stay one.
+ */
+export function sameValueLinesApart(row: VerifiedFeeRow, live: PriorPublishedFeeRow[], text: string | null): Set<PriorPublishedFeeRow> {
+  const { candidates, balanced } = sameValueLines(row, live);
   const apart = new Set(balanced.filter((prior) => otherBalanceLine(row, prior, text)));
   if (!text) return apart;
   for (const prior of candidates) {

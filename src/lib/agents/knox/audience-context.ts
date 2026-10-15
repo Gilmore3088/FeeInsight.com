@@ -1,6 +1,8 @@
 /**
  * Knox's audience suggestion from the fee's context (#1059): the document's address and title,
- * the section heading above the fee's own line, or a general schedule with no business wording.
+ * a heading for all accounts, or a general schedule with no business wording. A heading naming
+ * one audience still blocks the defaults below it, but no longer decides on its own where the
+ * schedule also prices business items.
  * Pure; no model call. Knox suggests, Darwin decides (DECISIONS, 2026-10-12 and 2026-10-13): this
  * returns evidence for Darwin, never a published label on its own.
  */
@@ -33,10 +35,20 @@ const TITLE_CHARS = 300;
 
 /**
  * Words that name a product or a time, not who the fee is for: a corporate (official) check or
- * draft, a personal check, a business day, "close of business", a vendor's "Business Systems".
+ * draft, a personal check, a business day, "close of business", a vendor's "Business Systems",
+ * "non-business" or "non commercial" (a URL path's hyphens become spaces) with any slash before it,
+ * and "non-personal checks" or "non-consumer information" (products, as main read them).
  */
-const NOT_AN_AUDIENCE = /\bcorporate\s+(?:checks?|drafts?|bonds?|securities|and municipal)\b|\bpersonal\s+(?:checks?|identification|information)\b|\bbusiness\s+(?:days?|hours?|systems)\b|\b(?:close of|regular|normal|legitimate|conduct(?:ing)?|doing)\s+business\b|\bcredit union business only\b|\bnon-?(?:commercial|business|personal|consumer)\b|\b(?:commercial|business|consumer|personal)(?:\s+(?:state|national|federal|savings|community|county|city|first))*\s+(?:bank|savings bank|credit union|trust company|savings and loan)\b/gi;
-const neutral = (text: string) => text.replace(NOT_AN_AUDIENCE, " ");
+const NOT_AN_AUDIENCE = /(?:\/\s*)?\bnon[- ]?(?:personal|consumer)\s+(?:checks?|identification|information|data)\b|\bcorporate\s+(?:checks?|drafts?|bonds?|securities|and municipal)\b|\bpersonal\s+(?:checks?|identification|information)\b|\bbusiness\s+(?:days?|hours?|systems)\b|\b(?:close of|regular|normal|legitimate|conduct(?:ing)?|doing)\s+business\b|\bcredit union business only\b|(?:\/\s*)?\bnon[- ]?(?:commercial|business)\b|\b(?:commercial|business|consumer|personal)(?:\s+(?:state|national|federal|savings|community|county|city|first))*\s+(?:bank|savings bank|credit union|trust company|savings and loan)\b/gi;
+/**
+ * "Non-Personal Accounts" and "Non-Consumer" are a bank's words for business accounts: read as
+ * "business", with any slash before them ("Business/Non-Personal Accounts" stays a heading).
+ * Stripping them as no audience let such fees take the consumer default (#1059 holdout 5).
+ * "Non-personal checks", "identification", "information" and "data" are products, not accounts
+ * (check cashing for a consumer), so they stay no audience (review of d31c9248).
+ */
+const NON_PERSONAL = /(?:\/\s*)?\bnon[- ]?(?:personal|consumer)\b(?!\s+(?:checks?|identification|information|data)\b)/gi;
+const neutral = (text: string) => text.replace(NON_PERSONAL, " business").replace(NOT_AN_AUDIENCE, " ");
 
 function audienceOf(raw: string): ContextAudience | null {
   const text = neutral(raw);
@@ -251,14 +263,36 @@ export function suggestAudience(input: {
   // lines under it, or a priced line that names business, is.
   const businessLine = businessFeeLine(lines);
   const feeIndex = feeLineIndex(lines, input.feeName, input.amount);
-  // The section heading above the fee's own line is nearer evidence than the page's title.
   if (feeIndex >= 0) {
     const section = sectionHeadingAudience(lines, feeIndex);
     // A fee in one of two audience columns stays unknown: the text does not say which column.
     if (section && ("columns" in section || "ambiguous" in section)) return null;
-    // "All accounts" in a schedule that prices nothing for businesses is the consumer schedule.
-    if (section && !(section.audience === "both" && businessLine < 0)) {
-      return { audience: section.audience, source: "section_heading", evidence: section.heading };
+    // A heading for all accounts in a schedule that also prices business items lists the fee for
+    // both. With nothing priced for businesses, it is the consumer schedule (the default below).
+    if (section && section.audience === "both" && businessLine >= 0) {
+      return { audience: "both", source: "section_heading", evidence: section.heading };
+    }
+    // A personal heading in a schedule that prices nothing for businesses stands, before any
+    // title: a menu line "Business Fee Schedule" is no reason to call it business (review of
+    // 7c4f3b25).
+    if (section && section.audience === "consumer" && businessLine < 0) {
+      return { audience: "consumer", source: "section_heading", evidence: section.heading };
+    }
+    // A heading that names one audience does not decide on its own in a schedule that also prices
+    // business items. On unseen schedules it agreed with a blind reading on 14 of 36 fees, and 10
+    // went to the other audience: a distant "Business Checking" heading or column on a web page,
+    // or a two-column PDF read line by line, claims fees listed for every account (#1059 holdout,
+    // Oct 14). The fee stays unknown until a heading can be tied to its section.
+    // A business schedule's title over a business heading ("BUSINESS FEE SCHEDULE" over "Business
+    // Accounts") settles it. A personal title does not: in a schedule that also prices business
+    // items it is a section heading near the top ("PERSONAL CHECKING SERVICE CHARGE").
+    // A business heading never falls through to the consumer default, even when the schedule's
+    // business prices sit too far below it to count as business fees.
+    if (section && (businessLine >= 0 || section.audience === "business")) {
+      const title = scheduleTitle(lines);
+      return section.audience === "business" && title && "audience" in title && title.audience === "business"
+        ? { audience: "business", source: "document_title", evidence: title.line }
+        : null;
     }
   }
   const title = scheduleTitle(lines);
@@ -266,6 +300,10 @@ export function suggestAudience(input: {
   if (title && "ambiguous" in title) return null;
   if (title) return { audience: title.audience, source: "document_title", evidence: title.line };
   // A general schedule with no business fees is the consumer schedule (#1059 step 4).
+  // A business schedule's own wording near the top, even inside one long flattened line, or run
+  // together in the address ("ccufl_businessfeeschedule.pdf"), rules out the consumer default
+  // (#1059 holdout 5).
+  if (businessLine < 0 && businessScheduleWording(text, path)) return null;
   if (businessLine < 0) return { audience: "consumer", source: "default_general_schedule", evidence: "no business fees in the document" };
   // In a schedule that also prices business items, a fee whose own line is not found cannot be
   // shown to be unlimited, so it stays unknown.
@@ -325,4 +363,14 @@ export function businessFeeLine(lines: string[]): number {
 /** Whether the document prices anything for businesses. */
 export function hasBusinessFees(lines: string[]): boolean {
   return businessFeeLine(lines) >= 0;
+}
+
+/** Business or commercial schedule wording in the text's first characters or the address. */
+const BUSINESS_SCHEDULE_TEXT = /\b(?:business|commercial)\s+(?:(?:banking|deposit)\s+)?(?:fee schedule|schedule of (?:fees|charges)|fees and charges|service (?:charges|fees)|banking accounts|accounts? fee schedule)\b/i;
+const BUSINESS_SCHEDULE_PATH = /(?:business|commercial)\s*(?:fee|fees|schedule|service|banking)/i;
+function businessScheduleWording(text: string, path: string): boolean {
+  // A line that points elsewhere ("For business accounts, see the Business Fee Schedule.") names
+  // another document, not this one.
+  const top = text.slice(0, TITLE_CHARS).split("\n").filter((line) => !isPointer(line));
+  return top.some((line) => BUSINESS_SCHEDULE_TEXT.test(neutral(line))) || BUSINESS_SCHEDULE_PATH.test(neutral(path));
 }

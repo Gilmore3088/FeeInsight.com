@@ -76,16 +76,21 @@ export async function paidModelCall({
 
 /**
  * What a request's web search tool allowed, logged with the call so a search setting's cost and
- * hit rate can be compared before and after it changes (#1035). Null without a web search tool.
+ * hit rate can be compared before and after it changes (#1035), with the sites a limited search
+ * ran on (#1251; null for the open web). Null without a web search tool.
  */
-export function webSearchSettings(tools: unknown): { web_search_max_uses: number | null; web_search_own_site: boolean } | null {
+export function webSearchSettings(
+  tools: unknown,
+): { web_search_max_uses: number | null; web_search_own_site: boolean; web_search_domains: string[] | null } | null {
   if (!Array.isArray(tools)) return null;
   const tool = tools.find((entry): entry is { name: string; max_uses?: number | null; allowed_domains?: string[] | null } =>
     Boolean(entry) && typeof entry === "object" && (entry as { name?: unknown }).name === "web_search");
   if (!tool) return null;
+  const domains = Array.isArray(tool.allowed_domains) && tool.allowed_domains.length > 0 ? [...tool.allowed_domains] : null;
   return {
     web_search_max_uses: tool.max_uses ?? null,
-    web_search_own_site: Array.isArray(tool.allowed_domains) && tool.allowed_domains.length > 0,
+    web_search_own_site: domains != null,
+    web_search_domains: domains,
   };
 }
 
