@@ -32,6 +32,12 @@ lists every case the deployed code gets wrong, graded by `src/lib/agents/deming/
 
 ## Procedure
 
+CI runs the fixed part of this on every PR (`npm run test:quality-gates`, #1067): the
+adversarial-document gate (`src/lib/agents/deming/adversarial-documents.test.ts`) replays taken-down
+readings with their stored lines through Knox's free readers, `passesDarwinChecks`, the source
+check, the limit guard and the eval rules, with and without an injected instruction. The steps
+below add new shapes and live reach.
+
 1. Build cases as pure inputs, each with `expected` and the family it tests:
    - limit or threshold as fee ("Mobile Deposit Daily Limit $2,500"), worked example ("For
      example ... you will be charged $30"): `limitGuardVerdict` in

@@ -1,0 +1,1338 @@
+{
+ "about": "Adversarial documents (#1067): wrong readings that reached live fees and were taken down (limit_as_fee, wrong_amount, not_a_fee, eval_critical), each with the stored source lines around Knox's excerpt (agent_source_texts, cited by source_document_id, agent_source_text_id and text_hash; up to 4 lines before and 2 after). Replayed in CI by src/lib/agents/deming/adversarial-documents.test.ts with no database and no model calls. refused_by names every pure check that refused the wrong reading when the fixture was read: knox (the free readers no longer read that amount under that category), darwin (passesDarwinChecks), source_check (checkFeeAgainstSource's reason), limit_guard (limitGuardVerdict's code) and eval_rule (ruleFor's rule). Each must keep refusing. known_misses are takedowns no pure check refuses yet; they run as expected failures. The injected sentence in the test is synthetic and labelled as such; it is not a bank's text.",
+ "read_at": "2026-10-15T13:16:15Z",
+ "query": "published_fee_records rolled back for limit_as_fee, wrong_amount, not_a_fee or eval_critical, newest 100, joined to their verified and raw rows (excerpt and text_hash from the raw row's note) and the stored text with that hash; cases whose excerpt is not in the stored text are left out",
+ "cases": [
+  {
+   "case_key": "limit_as_fee:141299",
+   "family": "source_states_limit",
+   "takedown": "limit_as_fee",
+   "fee_published_id": 141299,
+   "canonical_fee_key": "appraisal_fee",
+   "fee_name": "APPRAISAL",
+   "amount": "450.00",
+   "source_document_id": 32252,
+   "agent_source_text_id": 30202,
+   "text_hash": "20b3499b8b4836f9b77c657aabf87c6a1b20b7bb0e4551a3d1a55c2368d00381",
+   "excerpt": "APPRAISAL | $450.00 & up",
+   "text": "SATISFACTION | $68.75\n\nPROPERTY SEARCH | $58.00\n\nAPPRAISAL | $450.00 & up\n\nVISA CREDIT CARD | Late Payment Fee: $25.00 after 30 days",
+   "refused_by": {
+    "limit_guard": "source_states_limit"
+   }
+  },
+  {
+   "case_key": "limit_as_fee:125473",
+   "family": "source_states_limit",
+   "takedown": "limit_as_fee",
+   "fee_published_id": 125473,
+   "canonical_fee_key": "coin_counting",
+   "fee_name": "Coin Counting Machine: Members",
+   "amount": "200.00",
+   "source_document_id": 21877,
+   "agent_source_text_id": 18491,
+   "text_hash": "10bbb90d6dac11aec32d0a3f140af4a6b2b76c16bfbe0e33d72da73945ee685f",
+   "excerpt": "Coin Counting Machine | Members - $200 per day and 5% the",
+   "text": "Subpoena | $50\nCoin Deposits | Bad Address Locator Fee | $5 per incident\nRolls | 5 rolls of coins per day are free and thereafter\n$0.25 per roll. | Emergency Services\nCoin Counting Machine | Members - $200 per day and 5% thereafter | Stop Payment Order on Credit Union Check | $30 per stop\n(Lost or stolen checks only)\nNon-Member - 9%",
+   "refused_by": {
+    "limit_guard": "source_states_limit"
+   }
+  },
+  {
+   "case_key": "limit_as_fee:118754",
+   "family": "source_states_limit",
+   "takedown": "limit_as_fee",
+   "fee_published_id": 118754,
+   "canonical_fee_key": "check_cashing",
+   "fee_name": "Third Party On Us Check Cashing",
+   "amount": "500.00",
+   "source_document_id": 14287,
+   "agent_source_text_id": 1916,
+   "text_hash": "dd1f11b9566794f83b68d13d57edb87b0ca46fa3129f973716e7ed6dd5ff80bf",
+   "excerpt": "Third Party On Us Check Cashing ($500 Maximum)",
+   "text": "\nSafety Deposit Replacement Key\n$60.00\n\nThird Party On Us Check Cashing ($500 Maximum)\n$10.00\n",
+   "refused_by": {
+    "knox": "not_read",
+    "source_check": "amount_is_a_threshold",
+    "limit_guard": "source_states_limit"
+   }
+  },
+  {
+   "case_key": "wrong_amount:103410",
+   "family": "rate_bound",
+   "takedown": "wrong_amount",
+   "fee_published_id": 103410,
+   "canonical_fee_key": "cash_advance",
+   "fee_name": "Signature Authorization Cash Advance Fee: 4% of transaction amount. Minimum",
+   "amount": "4.00",
+   "source_document_id": 23731,
+   "agent_source_text_id": 20802,
+   "text_hash": "3c55afd78804ba12b076b5b8d12bd53509161c2623daea13f8bdc6edd1745ac4",
+   "excerpt": "• Signature Authorization Cash Advance Fee: 4% of transact",
+   "text": "Maximum POS spending limit for an Individual Cardholder: $2,000; Maximum POS spending limit for an Authorized\nCardholder: $5,000.\n• Replacement Card: $25.\n• Express Delivery of Replacement Card: $35.\n• Signature Authorization Cash Advance Fee: 4% of transaction amount. Minimum: $4; Maximum: $29.\n• Transaction at a Valley ATM: NO CHARGE\n• ATM Service Charge for withdrawals at a non-Valley ATM: $2.",
+   "refused_by": {
+    "eval_rule": "rate_bound"
+   }
+  },
+  {
+   "case_key": "not_a_fee:102866",
+   "family": "rebate",
+   "takedown": "not_a_fee",
+   "fee_published_id": 102866,
+   "canonical_fee_key": "atm_non_network",
+   "fee_name": "There are three easy requirements each qualification cycle to receive the additional rate and ATM refunds: Receive eStat",
+   "amount": "10.00",
+   "source_document_id": 24915,
+   "agent_source_text_id": 22093,
+   "text_hash": "a8a9f982f9ef169fd349996fdf5b854d5786142f2b41b1d64cf0870362702422",
+   "excerpt": "There are three easy requirements each qualification cy",
+   "text": "• Earn an additional 0.50% APY* rate on balances up to $25,000\n\n• Get refunds for non-Mascoma ATM fees up to $50\n\nThere are three easy requirements each qualification cycle to receive the additional rate and ATM refunds: Receive eStatements; make at least one direct deposit or automatic debit (ACH); and make at least 12 debit card purchases. The minimum balance to open the account is $10.00.\n\nApply for an Account",
+   "refused_by": {
+    "eval_rule": "rebate"
+   }
+  },
+  {
+   "case_key": "not_a_fee:102158",
+   "family": "waiver_sentence",
+   "takedown": "not_a_fee",
+   "fee_published_id": 102158,
+   "canonical_fee_key": "monthly_maintenance",
+   "fee_name": "Minimum Balance required to avoid a Service Charge",
+   "amount": "0.00",
+   "source_document_id": 23411,
+   "agent_source_text_id": 20483,
+   "text_hash": "43807831a6f8e4fcc242605c91c3651e1cc4e56e57cb32ebbc354e22eb042cc8",
+   "excerpt": "Minimum Balance required to avoid a Service Charge / FREE",
+   "text": "Cornerstone Plus:\nNo\n\nFeature:\nMinimum Balance required to avoid a Service Charge\n\nFREE REWARD Checking:",
+   "refused_by": {
+    "knox": "not_read",
+    "eval_rule": "waiver_sentence"
+   }
+  },
+  {
+   "case_key": "wrong_amount:100816",
+   "family": "rate_bound",
+   "takedown": "wrong_amount",
+   "fee_published_id": 100816,
+   "canonical_fee_key": "check_cashing",
+   "fee_name": "Check Cashing 2% or minimum",
+   "amount": "5.00",
+   "source_document_id": 23171,
+   "agent_source_text_id": 20209,
+   "text_hash": "eeecde88e54adf126b91fbdf5b4878dd25047aab7f1a35d59545190c9ed5f341",
+   "excerpt": "Check Cashing 2% or minimum | $5.00",
+   "text": "Account Closure within 90 days | $5.00\n\nRepetitive Account Open/Closure | $5.00\n\nCheck Cashing 2% or minimum | $5.00\n\nStatement Copies per item | $3.00",
+   "refused_by": {
+    "eval_rule": "rate_bound"
+   }
+  },
+  {
+   "case_key": "not_a_fee:100784",
+   "family": "waiver_sentence",
+   "takedown": "not_a_fee",
+   "fee_published_id": 100784,
+   "canonical_fee_key": "monthly_maintenance",
+   "fee_name": "Minimum Balance to Avoid Maintenance Fee",
+   "amount": "0.00",
+   "source_document_id": 23173,
+   "agent_source_text_id": 20207,
+   "text_hash": "d22d841f1abc64e5c8000252493884540479daeaab00616d4e6290c8ca20ff69",
+   "excerpt": "Minimum Balance to Avoid Maintenance Fee / $0",
+   "text": "n/a\n\n$1,000\n\nMinimum Balance to Avoid Maintenance Fee\n\n$0",
+   "refused_by": {
+    "knox": "not_read",
+    "eval_rule": "waiver_sentence"
+   }
+  },
+  {
+   "case_key": "wrong_amount:100162",
+   "family": "two_column_glue",
+   "takedown": "wrong_amount",
+   "fee_published_id": 100162,
+   "canonical_fee_key": "wire_domestic_incoming",
+   "fee_name": "11 - Wire Transfers Fee: Incoming will be",
+   "amount": "0.00",
+   "source_document_id": 23020,
+   "agent_source_text_id": 20041,
+   "text_hash": "c759cc6666d124dce3331a6eaf5086e7be56a31822a65fa9469c1707298aa8f4",
+   "excerpt": "11 - Wire Transfers Fee: Incoming will be $0 if the wire transfer is originated from ",
+   "text": "The Bank will charge a maximum of five (5) Paid Item Fees per day, which is equal to $92.50. The Bank will provide periodic notifications based on\nthe number of overdraft occurrences to help you manage your account and offer you an alternative option to reduce your fees.\n10 - This fee is in addition to any statutory fee permitted. If state or federal law prohibit or limit said charges, then this fee will be assessed accordingly, or\nnot at all.\n11 - Wire Transfers Fee: Incoming will be $0 if the wire transfer is originated from a CNB account to a CNB personal account.\nMember FDIC | Page 3 of 4 | Revised September 2026\nDisclosure and Schedule of Fees for Personal Accounts | City National Bank of Florida",
+   "refused_by": {
+    "knox": "not_read"
+   }
+  },
+  {
+   "case_key": "wrong_amount:100161",
+   "family": "two_column_glue",
+   "takedown": "wrong_amount",
+   "fee_published_id": 100161,
+   "canonical_fee_key": "cashiers_check",
+   "fee_name": "Cashier’s Checks",
+   "amount": "0.00",
+   "source_document_id": 23020,
+   "agent_source_text_id": 20041,
+   "text_hash": "c759cc6666d124dce3331a6eaf5086e7be56a31822a65fa9469c1707298aa8f4",
+   "excerpt": "(APY) are available at any of City National Bank of Florida (CNB) banking | Cashier’s Checks.",
+   "text": "Products | Monthly Maintenance Fee ................................................................ $15.00\nCharge Per Check .............................................................................. $0.00\nRate Information - Current interest rates and Annual Percentage Yields | Incoming Wire Transfers - Foreign / Domestic .................................. 0.00\n(APY) are available at any of City National Bank of Florida (CNB) banking | Cashier’s Checks................................................................................ $0.00\nlocations or by calling 1-800-435-8839. | Paper Statement Fee ......................................................................... $3.00\nVariable Rates - All interest bearing checking, savings, and money market",
+   "refused_by": {
+    "knox": "not_read"
+   }
+  },
+  {
+   "case_key": "not_a_fee:100160",
+   "family": "waiver_sentence",
+   "takedown": "not_a_fee",
+   "fee_published_id": 100160,
+   "canonical_fee_key": "monthly_maintenance",
+   "fee_name": "to Avoid Monthly Maintenance Fee",
+   "amount": "0.00",
+   "source_document_id": 23020,
+   "agent_source_text_id": 20041,
+   "text_hash": "c759cc6666d124dce3331a6eaf5086e7be56a31822a65fa9469c1707298aa8f4",
+   "excerpt": "calculated by adding the balance in the account for each day for a | to Avoid Monthly Ma",
+   "text": "Effective September 2026\nSchedule of Fees on Personal Accounts | CNB @ Work Checking Account 1\nBalance Information - Balance requirements to avoid service fees refer | Minimum to Open ........................................................................... $100.00\nto the minimum average daily balance. The average daily balances are | Minimum Average Monthly Balance\ncalculated by adding the balance in the account for each day for a | to Avoid Monthly Maintenance Fee .................................................. $0.00\nstatement cycle and dividing that figure by the number of days in the cycle. | Monthly Maintenance Fee (If 2 ACH transactions not credited a month) $5.00\nCharge Per Check .............................................................................. $0.00",
+   "refused_by": {
+    "knox": "not_read",
+    "eval_rule": "waiver_sentence"
+   }
+  },
+  {
+   "case_key": "wrong_amount:99903",
+   "family": "price_in_name",
+   "takedown": "wrong_amount",
+   "fee_published_id": 99903,
+   "canonical_fee_key": "check_image",
+   "fee_name": "Check Copy Fee $2.00 per copy Pay Card Savings",
+   "amount": "1.00",
+   "source_document_id": 22971,
+   "agent_source_text_id": 20006,
+   "text_hash": "0973d92d26ea5203c2e88959f70e0a8857a15fe1ed9dfb7a85443ba4dc4767dc",
+   "excerpt": "Check Copy Fee $2.00 per copy Pay Card Savings | $1.00 each",
+   "text": "Day\nAccount closure fee\nCheck Cashing Fee for Non-Members $5.00 per item Pay Card Savings | $10.00 per month\nService Fee\nCheck Copy Fee $2.00 per copy Pay Card Savings | $1.00 each\nTeller Assisted Cash Withdrawal Fee\nCheck Printing Fee Set by Check Printing | POS Limits: $9,999.99 / 15 per",
+   "refused_by": {
+    "eval_rule": "price_in_name"
+   }
+  },
+  {
+   "case_key": "not_a_fee:97917",
+   "family": "rebate",
+   "takedown": "not_a_fee",
+   "fee_published_id": 97917,
+   "canonical_fee_key": "atm_non_network",
+   "fee_name": "ATM fee reimbursement per account will be paid",
+   "amount": "10.00",
+   "source_document_id": 13509,
+   "agent_source_text_id": 961,
+   "text_hash": "0d394ba935e6ffafc84acaf4e77a11b51edf48098aedc5ecd0679a78f5bbe4f0",
+   "excerpt": "$10.00/month ATM fee reimbursement per account will be pa",
+   "text": "Allpoint® is available, please visit www.allpointnetwork.com. Clients may also access their funds via any Interlink, Star, Plus terminal where a fee may be charged for usage.\n19 For those Northwestern Mutual Cash Management Platinum account holders who access their funds where a fee is charged (non-PNC Bank and non-Allpoint® terminals) a\n$10.00/month ATM fee reimbursement per account will be paid.\nNorthwestern Mutual is the marketing name for The Northwestern Mutual Life Insurance Company, Milwaukee, WI (NM) and its subsidiaries. Investment brokerage services\nare offered through Northwestern Mutual Investment Services, LLC (NMIS) a subsidiary of NM, broker-dealer, registered investment adviser, and member FINRA and SIPC.",
+   "refused_by": {
+    "eval_rule": "rebate"
+   }
+  },
+  {
+   "case_key": "not_a_fee:97905",
+   "family": "rebate",
+   "takedown": "not_a_fee",
+   "fee_published_id": 97905,
+   "canonical_fee_key": "atm_non_network",
+   "fee_name": "ATM Fee Reimbursement",
+   "amount": "10.00",
+   "source_document_id": 13509,
+   "agent_source_text_id": 961,
+   "text_hash": "0d394ba935e6ffafc84acaf4e77a11b51edf48098aedc5ecd0679a78f5bbe4f0",
+   "excerpt": "ATM Fee Reimbursement | $10.00/month19",
+   "text": "Expedited/Alternative Address Delivery Fee | Starting at $20.00 (will vary per delivery address)\nOverdraft Fee | $40.00\nBill Suite | $0.00\nATM Access Fee | No Fee18\nATM Fee Reimbursement | $10.00/month19\nCash Advance Fee (non-ATM) | 0.25% of principal ($2.50 minimum)\nForeign Transaction Fee (Visa® fee for transactions performed outside the U.S.) | 1% of the transaction",
+   "refused_by": {
+    "eval_rule": "rebate"
+   }
+  },
+  {
+   "case_key": "eval_critical:96172",
+   "family": "not_a_fee",
+   "takedown": "eval_critical",
+   "fee_published_id": 96172,
+   "canonical_fee_key": "money_order",
+   "fee_name": "No fee for cashier’s checks or money orders No minimum balance requirement No monthly service charge or membership fee A",
+   "amount": "0.00",
+   "source_document_id": 22373,
+   "agent_source_text_id": 19043,
+   "text_hash": "aca977381cef9457f6132dd99f32a1c3a52a6c01b6f0ab973b633c5feee85147",
+   "excerpt": "No fee for cashier’s checks or money orders No minimum balance requirement No monthly service ch",
+   "text": "\nAdvantage Plus Checking | Customers needing an interest-bearing account with a lot of perks and low fees. | Earn interest on every dollar Earns a great rate, depending on your balance. No fee for cashier’s checks or money orders No minimum balance requirement Access to Online Banking and Mobile Banking | Low $3.00 monthly membership fee\n",
+   "refused_by": {
+    "knox": "not_read",
+    "source_check": "amount_is_a_threshold",
+    "eval_rule": "no_fee_sentence"
+   }
+  },
+  {
+   "case_key": "eval_critical:95951",
+   "family": "wrong_payer",
+   "takedown": "eval_critical",
+   "fee_published_id": 95951,
+   "canonical_fee_key": "nsf",
+   "fee_name": "Merchant presenting NSF check from member",
+   "amount": "5.00",
+   "source_document_id": 8220,
+   "agent_source_text_id": 2859,
+   "text_hash": "51e6392045a6350f415d401ebc6c5cfc9097881493cc7c094259ba9e70910d6f",
+   "excerpt": "Merchant presenting NSF check from member for | $5.00/check Merchant",
+   "text": "$30/every 6 | checking account for a 90-day\nmonths. | period.\nCHECKING ACCOUNT FEES\nAccount Service Fee Description Fee Amount Important Information\nMerchant presenting NSF check from member for | $5.00/check Merchant pays\ncounter check.\nInactive Member Check Cashing 3% of check | No services/No activity & under",
+   "refused_by": {
+    "darwin": "refused",
+    "eval_rule": "merchant_payer"
+   }
+  },
+  {
+   "case_key": "eval_critical:95816",
+   "family": "not_a_fee",
+   "takedown": "eval_critical",
+   "fee_published_id": 95816,
+   "canonical_fee_key": "atm_non_network",
+   "fee_name": "Non Rockland Trust ATM AccessNo fee from Rockland Trust",
+   "amount": "10.00",
+   "source_document_id": 33792,
+   "agent_source_text_id": 31860,
+   "text_hash": "c31e95477a2df2582fa9601f13a3a619bc22a89b176073e7f6620ccd00869964",
+   "excerpt": "Non Rockland Trust ATM AccessNo fee from Rockland Trust. $10 in surcharge rebates3 ",
+   "text": "Chip-enabled Debit CardYes\n\nFree access to Online Banking & Mobile App Yes\n\nNon Rockland Trust ATM AccessNo fee from Rockland Trust. ATM owner may assess a surcharge for the use of their ATM, if not in the SUM® Network.\n\nStandard-Style Checks First order free.",
+   "refused_by": {
+    "knox": "not_read",
+    "source_check": "amount_not_the_fee"
+   }
+  },
+  {
+   "case_key": "eval_critical:95801",
+   "family": "wrong_amount",
+   "takedown": "eval_critical",
+   "fee_published_id": 95801,
+   "canonical_fee_key": "wire_intl_outgoing",
+   "fee_name": "Wire International In/Out",
+   "amount": "10.00",
+   "source_document_id": 15109,
+   "agent_source_text_id": 2515,
+   "text_hash": "e19f2175fa55f112c4517913a0c0ced552f1f62503ce984c02611cf774a45b58",
+   "excerpt": "Wire International In/Out | $10/$35",
+   "text": "Money Order | $2 | per item\nOfficial/Teller Check | $3 | per item\nPayment from other FI¹ | $5.99\nWire Domestic In/Out | $10/$20\nWire International In/Out | $10/$35\nCoin Purchase Fee | $0.35 | per roll (first 10 free per month)\nLoose Coin Deposit Fee | 5% | over 100 only allowed at Hewitt",
+   "refused_by": {
+    "eval_rule": "two_fees_one_line"
+   }
+  },
+  {
+   "case_key": "not_a_fee:88092",
+   "family": "perk_claim",
+   "takedown": "not_a_fee",
+   "fee_published_id": 88092,
+   "canonical_fee_key": "bill_pay",
+   "fee_name": "Free bill pay",
+   "amount": "0.00",
+   "source_document_id": 20882,
+   "agent_source_text_id": 16835,
+   "text_hash": "14ca1cc9c1d52f0652777e9665e8f90ba1d6c5bf31c28e65830e1d1c30acfc9f",
+   "excerpt": "VISA Debit and free bill pay",
+   "text": "\nBank\n\nFree Checking\nVISA Debit and free bill pay\n→\n",
+   "refused_by": {
+    "knox": "not_read"
+   }
+  },
+  {
+   "case_key": "not_a_fee:87808",
+   "family": "perk_claim",
+   "takedown": "not_a_fee",
+   "fee_published_id": 87808,
+   "canonical_fee_key": "bill_pay",
+   "fee_name": "Free online banking, bill pay",
+   "amount": "0.00",
+   "source_document_id": 21644,
+   "agent_source_text_id": 18173,
+   "text_hash": "15926940206ba5ccebc70b6d7249aba6def868e77f20156fff6b87debfeacbbc",
+   "excerpt": "Free online banking, bill pay, & money management software",
+   "text": "Discover your Intelligent High-Yield Bundle perks\n\n$0 monthly service fee or minimum balance requirement\n\nFree online banking, bill pay, & money management software\n\nEnjoy no fees with a nationwide network of 30,000+ ATMs",
+   "refused_by": {
+    "knox": "not_read"
+   }
+  },
+  {
+   "case_key": "not_a_fee:86158",
+   "family": "waiver_sentence",
+   "takedown": "not_a_fee",
+   "fee_published_id": 86158,
+   "canonical_fee_key": "monthly_maintenance",
+   "fee_name": "Minimum Daily Balance to Avoid Service Charge",
+   "amount": "0.00",
+   "source_document_id": 21079,
+   "agent_source_text_id": 17031,
+   "text_hash": "fc9383e15fd086d916f72bd9cd449a555db4ff2f0b25e748ef3e296b33b1f111",
+   "excerpt": "Minimum Daily Balance to Avoid Service Charge | None",
+   "text": "Age Requirement | None | 0-25 | 55 & over | None\n\nMinimum Opening Balance | $50.00 | $25.00 | $50.00 | $50.00\n\nMinimum Daily Balance to Avoid Service Charge | $300.00 | None | $100.00 | $2,500.00\n\nOther Ways to Avoid Monthly Service Charge | E-Statement, Direct Deposit, Auto Pay, MMB Loan | N/A | E-Statement, Direct Deposit, Auto Pay, MMB Loan | E-Statement, Direct Deposit, Auto Pay, MMB Loan",
+   "refused_by": {
+    "knox": "not_read",
+    "source_check": "amount_is_a_threshold",
+    "eval_rule": "waiver_sentence"
+   }
+  },
+  {
+   "case_key": "wrong_amount:85928",
+   "family": "two_fees_one_line",
+   "takedown": "wrong_amount",
+   "fee_published_id": 85928,
+   "canonical_fee_key": "collection_item",
+   "fee_name": "Incoming/Outgoing Collection Item",
+   "amount": "32.00",
+   "source_document_id": 16995,
+   "agent_source_text_id": 12509,
+   "text_hash": "45cfedd10ae7d1603f576302b6005ab08a1c45a29fbb1628c16a012859c486dd",
+   "excerpt": "Incoming/Outgoing Collection Item | $32 | Outgoing | $20",
+   "text": "Stop Payment Fee | $25\nWire Transfer (customers only)\nForeign Currency / Collection Item | Incoming | $10\nForeign Cash Letter (Check Deposit) 1 | $13 | Incoming – International | $40\nIncoming/Outgoing Collection Item | $32 | Outgoing | $20\nOutgoing – International\nOther Service Fees | Business | $45",
+   "refused_by": {
+    "eval_rule": "two_fees_one_line"
+   }
+  },
+  {
+   "case_key": "not_a_fee:85619",
+   "family": "rebate",
+   "takedown": "not_a_fee",
+   "fee_published_id": 85619,
+   "canonical_fee_key": "atm_non_network",
+   "fee_name": "in ATM fees per month. If the reimbursement limit is reached, partial reimbursements will apply",
+   "amount": "2.00",
+   "source_document_id": 20854,
+   "agent_source_text_id": 16801,
+   "text_hash": "fc6fa9f99125c3a5605d0420f9db33f7fad0928c32b0d93b685b66fc5af104f3",
+   "excerpt": "Members are reimbursed up to $25.00 in ATM fees per mon",
+   "text": "No, Midcoast does not currently offer early direct deposit posting.\n\n4. What is the ATM fee reimbursement policy?\n\nMembers are reimbursed up to $25.00 in ATM fees per month. If the reimbursement limit is reached, partial reimbursements will apply (e.g., if only $2.00 of a $3.00 fee remains within the limit, only $2.00 will be reimbursed).\n\nMidcoast FCU",
+   "refused_by": {
+    "source_check": "tiered_fee",
+    "eval_rule": "rebate"
+   }
+  },
+  {
+   "case_key": "wrong_amount:81904",
+   "family": "rate_bound",
+   "takedown": "wrong_amount",
+   "fee_published_id": 81904,
+   "canonical_fee_key": "cashiers_check",
+   "fee_name": "Cashiers Check 1% of Check Amt Max",
+   "amount": "5.00",
+   "source_document_id": 21133,
+   "agent_source_text_id": 17144,
+   "text_hash": "66bbce093d3d3224caa33d48033dc5e8ad3e57ef7c03f5ae6b80a37274c9f608",
+   "excerpt": "Cashiers Check 1% of Check Amt Max $5.00 $5.00",
+   "text": "Outgoing Wire Fee (Customer) $25.00\n\nForeign Wire Fee (Customer) $60.00\n\nCashiers Check 1% of Check Amt Max $5.00 $5.00\n\nNon-Customer Check Cashing $2 per $100 $2.00",
+   "refused_by": {
+    "eval_rule": "rate_bound"
+   }
+  },
+  {
+   "case_key": "not_a_fee:75618",
+   "family": "waiver_sentence",
+   "takedown": "not_a_fee",
+   "fee_published_id": 75618,
+   "canonical_fee_key": "monthly_maintenance",
+   "fee_name": "Average daily balance to avoid monthly service charge",
+   "amount": "0.00",
+   "source_document_id": 25423,
+   "agent_source_text_id": 22645,
+   "text_hash": "2b742dec03af767c30ad7cdf4b56e94080ee62081f217fb89a03083ff90ccd01",
+   "excerpt": "Average daily balance to avoid monthly service charge | $0.00",
+   "text": "*Kemba is part of the Alliance One, STAR and MoneyPass surcharge-free networks. These networks offer over 30,000 surcharge free ATMs throughout the United States. HSA transactions are not included in the MoneyPass Network. You can find an ATM near you by visiting kemba.com.  Kemba fees may apply.\n\nBusiness Plus\n\nAverage daily balance to avoid monthly service charge | $0.00\n\nMonthly Service Charge | $0.00",
+   "refused_by": {
+    "knox": "not_read",
+    "eval_rule": "waiver_sentence"
+   }
+  },
+  {
+   "case_key": "not_a_fee:73465",
+   "family": "rebate",
+   "takedown": "not_a_fee",
+   "fee_published_id": 73465,
+   "canonical_fee_key": "atm_non_network",
+   "fee_name": "in reimbursements for ATM fees charged by other institutions",
+   "amount": "0.00",
+   "source_document_id": 20498,
+   "agent_source_text_id": 16382,
+   "text_hash": "379a27e2b2a33b493cd53a1d13de20007887f53fa9e6833388772dc980dc564e",
+   "excerpt": ") in reimbursements for ATM fees charged by other institutions. / FREE",
+   "text": "Enjoy all the Basic Member Benefits plus the following.\n\nPaid up to two days early with Direct Deposit.\n\nUp to $10 per month ($120 per year) in reimbursements for ATM fees charged by other institutions.\n\n0.50% discount on most consumer loans, when the loan is paid with electronic payment.",
+   "refused_by": {
+    "knox": "not_read",
+    "source_check": "amount_not_the_fee",
+    "eval_rule": "rebate"
+   }
+  },
+  {
+   "case_key": "wrong_amount:73106",
+   "family": "price_in_name",
+   "takedown": "wrong_amount",
+   "fee_published_id": 73106,
+   "canonical_fee_key": "monthly_maintenance",
+   "fee_name": "Monthly Maintenance Fee ($9 Monthly Maintenance Fee with direct deposit)",
+   "amount": "10.00",
+   "source_document_id": 17776,
+   "agent_source_text_id": 13287,
+   "text_hash": "645af784185c5b11926e83a527272b046f147e11b7010f6777806548ca5bf0d6",
+   "excerpt": "$10 Monthly Maintenance Fee ($9 Monthly Maintenance Fee with direct deposit)",
+   "text": "$100 Minimum to Open\n\nNo minimum balance requirement.\n\n$10 Monthly Maintenance Fee ($9 Monthly Maintenance Fee with direct deposit)\n\nMagyar Debit Card with no annual fee.",
+   "refused_by": {
+    "eval_rule": "price_in_name"
+   }
+  },
+  {
+   "case_key": "limit_as_fee:69051",
+   "family": "source_states_limit",
+   "takedown": "limit_as_fee",
+   "fee_published_id": 69051,
+   "canonical_fee_key": "zelle_fee",
+   "fee_name": "Transfer funds externally to a person using either their mobile phone number or email address through our peer-to-peer p",
+   "amount": "500.00",
+   "source_document_id": 20273,
+   "agent_source_text_id": 16069,
+   "text_hash": "4d2ad9904908de71f39659d7aa35d9e7ffaaaceaa736637a1b837542086c34b4",
+   "excerpt": "• | Transfer funds externally to a person using either their ",
+   "text": "Types of Transfers\n• | Transfer funds from checking to checking, savings, or loan account(s)\n• | Transfer funds from savings to checking, savings, or loan account(s)\n• | Transfer funds from line of credit to checking, savings, or loan account(s\n• | Transfer funds externally to a person using either their mobile phone number or email address through our peer-to-peer payment partner Zelle® (limits start at $500 per day and can vary\ndepending on your relationship with us.)\n• | Transfer funds externally to an account you have at another financial institution using the account and routing number (limits start at $5,000 per day and can vary depending on your",
+   "refused_by": {
+    "limit_guard": "above_category_ceiling"
+   }
+  },
+  {
+   "case_key": "not_a_fee:67733",
+   "family": "waiver_sentence",
+   "takedown": "not_a_fee",
+   "fee_published_id": 67733,
+   "canonical_fee_key": "monthly_maintenance",
+   "fee_name": "Minimum Balance Requirement To Avoid Monthly Maintenance Fee",
+   "amount": "0.00",
+   "source_document_id": 19905,
+   "agent_source_text_id": 15704,
+   "text_hash": "14240b258b62413cfeb0d4c47ef362ac19fa3d98b5b67fb8d75d6a8ccfbdc5ef",
+   "excerpt": "Minimum Balance Requirement To Avoid Monthly Maintenance Fee | None | None | None | None",
+   "text": "Enrollment Requirement | None | None | None | Age 55+\n\nOpening Deposit | $100 | $100 | $100 | $100\n\nMinimum Balance Requirement To Avoid Monthly Maintenance Fee | None | None | None | None\n\nMonthly Maintenance Fee | None | None | $6 | None",
+   "refused_by": {
+    "knox": "not_read",
+    "eval_rule": "waiver_sentence"
+   }
+  },
+  {
+   "case_key": "not_a_fee:66467",
+   "family": "balance_threshold",
+   "takedown": "not_a_fee",
+   "fee_published_id": 66467,
+   "canonical_fee_key": "monthly_maintenance",
+   "fee_name": "minimum balance requirement to avoid the monthly maintenance fee. FAT CAT Share accounts can be opened with a",
+   "amount": "5.00",
+   "source_document_id": 19636,
+   "agent_source_text_id": 15434,
+   "text_hash": "4057432be4838104d47e52a193e9b9cc18f1ed4f77019cd86c8faf1e678a19a6",
+   "excerpt": "accounts have a $25 minimum balance requirement to ",
+   "text": "accounts.\n4 If minor cannot sign, a parent or legal guardian must sign on the minor’s behalf even if the parent/legal guardian is not the joint owner.\n5 $25 minimum deposit required to open Share accounts (and Zard Share accounts for members aged 13-19). The $25 opening deposit in the member’s first Share or Zard\nShare account establishes Credit Union membership, and $25 must remain in at least one Share or Zard Share account to maintain membership. All Share and Zard Share\naccounts have a $25 minimum balance requirement to avoid the monthly maintenance fee. FAT CAT Share accounts can be opened with a $5 opening deposit. Once\na FAT CAT Share account reaches a balance of $25, that balance must be maintained, and no withdrawals are allowed until the balance exceeds $25.\n6 You must elect whether your STC will mature or renew at account opening; however, you can change this election during the term of the STC.",
+   "refused_by": {
+    "knox": "not_read",
+    "eval_rule": "balance_threshold"
+   }
+  },
+  {
+   "case_key": "wrong_amount:66146",
+   "family": "price_in_name",
+   "takedown": "wrong_amount",
+   "fee_published_id": 66146,
+   "canonical_fee_key": "check_image",
+   "fee_name": "Reprint Statements Check Copy fee of $1.00 per item will be applied for all check copies requested",
+   "amount": "3.00",
+   "source_document_id": 19560,
+   "agent_source_text_id": 15359,
+   "text_hash": "d9dea985ee1507402e679dfd23c6936c8690b605a9ed6e45c00945740b2e6496",
+   "excerpt": "Reprint Statements Check Copy fee of $1.00 per item will be",
+   "text": "ATM or Debit Card Replacement Fee | $10.00\n\nAccount Printout | $1.00 per page\n\nReprint Statements Check Copy fee of $1.00 per item will be applied for all check copies requested | $3.00 per stmt\n\nCheck Copies | $1.00 per item",
+   "refused_by": {
+    "eval_rule": "price_in_name"
+   }
+  },
+  {
+   "case_key": "limit_as_fee:65951",
+   "family": "name_states_limit",
+   "takedown": "limit_as_fee",
+   "fee_published_id": 65951,
+   "canonical_fee_key": "zelle_fee",
+   "fee_name": "If you use person-to-person payment options like Cash App or Zelle, the limit is",
+   "amount": "2500.00",
+   "source_document_id": 19523,
+   "agent_source_text_id": 15326,
+   "text_hash": "e428f1136512d1ac9f9fc7c2ccd3310d4f457d9f09bd61e8d34d1135171d0c1d",
+   "excerpt": "If you use person-to-person payment options like Cash App or ",
+   "text": "\nWhat are the daily limits for a VISA debit card?\n\nProviding the funds are in your account, you may use your debit card for purchases up to $2,500 per day or up to 15 transactions. You can withdrawal up to $1,000 per day at an ATM. If you use person-to-person payment options like Cash App or Zelle, the limit is $2,500 per day or three transactions.\n\nHow much am I charged for using my debit card to make a purchase?",
+   "refused_by": {
+    "knox": "not_read",
+    "source_check": "tiered_fee",
+    "limit_guard": "name_states_limit"
+   }
+  },
+  {
+   "case_key": "not_a_fee:65873",
+   "family": "waiver_sentence",
+   "takedown": "not_a_fee",
+   "fee_published_id": 65873,
+   "canonical_fee_key": "monthly_maintenance",
+   "fee_name": "To avoid a monthly maintenance fee, most accounts have a stated minimum balance. And not all checking accounts have the",
+   "amount": "0.00",
+   "source_document_id": 19487,
+   "agent_source_text_id": 15284,
+   "text_hash": "26e7ebf864cc56c2b780d2342591ddef8cda5b85b5fccb3cf44ae9127daf00e1",
+   "excerpt": "To avoid a monthly maintenance fee, most accounts have a stated minimum balance. And not",
+   "text": "Here are factors to keep in mind as you compare accounts. Balance what you need in a checking account with any associated costs or limitations.\n\nMinimum balances\n\nTo avoid a monthly maintenance fee, most accounts have a stated minimum balance. And not all checking accounts have the same balance requirements. For basic accounts, it might be as low as $0, or as high as $100 or $250.\n",
+   "refused_by": {
+    "knox": "not_read",
+    "eval_rule": "waiver_sentence"
+   }
+  },
+  {
+   "case_key": "not_a_fee:65866",
+   "family": "waiver_sentence",
+   "takedown": "not_a_fee",
+   "fee_published_id": 65866,
+   "canonical_fee_key": "monthly_maintenance",
+   "fee_name": "Minimum Monthly Balance to avoid a service charge",
+   "amount": "0.00",
+   "source_document_id": 15852,
+   "agent_source_text_id": 10163,
+   "text_hash": "7e32886e986f87bfffe306663ce00636e5dae67837363b745a2f03fb23321b1c",
+   "excerpt": "Minimum Monthly Balance to avoid a service charge $0.00 average daily.",
+   "text": "Account requires an opening deposit of $50.00.\n\nAccount requires a minimum balance of $0.01 to earn interest.\n\nMinimum Monthly Balance to avoid a service charge $300.00 average daily.\n\nPremier Yield Savings Account",
+   "refused_by": {
+    "knox": "not_read",
+    "source_check": "amount_not_the_fee",
+    "eval_rule": "waiver_sentence"
+   }
+  },
+  {
+   "case_key": "not_a_fee:65682",
+   "family": "waiver_sentence",
+   "takedown": "not_a_fee",
+   "fee_published_id": 65682,
+   "canonical_fee_key": "monthly_maintenance",
+   "fee_name": "Minimum Balance to Avoid Monthly Fee",
+   "amount": "0.00",
+   "source_document_id": 19421,
+   "agent_source_text_id": 15212,
+   "text_hash": "19c98e35c9a02c802c5db9748e8147c07fce341fea61c8081744bd43176d2027",
+   "excerpt": "Minimum Balance to Avoid Monthly Fee | None",
+   "text": "Account Features | Cashback Checking Open an Account Learn More: Cashback Checking\n\nMinimum Opening Balance | $10\n\nMinimum Balance to Avoid Monthly Fee | None if $500 minimum monthly direct deposit is maintained\n\nMonthly Fee | $5 if direct deposit is not maintained",
+   "refused_by": {
+    "knox": "not_read",
+    "eval_rule": "waiver_sentence"
+   }
+  },
+  {
+   "case_key": "not_a_fee:64331",
+   "family": "no_fee_sentence",
+   "takedown": "not_a_fee",
+   "fee_published_id": 64331,
+   "canonical_fee_key": "stop_payment",
+   "fee_name": "No Fee for Stop Payments",
+   "amount": "0.00",
+   "source_document_id": 18829,
+   "agent_source_text_id": 14318,
+   "text_hash": "e67663c3eaf15be6fd0b7a5e75ef14171fd55be4ea1cee305b83f31163b262b1",
+   "excerpt": "No Fee for Stop Payments",
+   "text": "One package per order.\n\nNo Fee for Cashier’s Checks\n\nNo Fee for Stop Payments\n\n$1,000 Overdraft Service",
+   "refused_by": {
+    "knox": "not_read",
+    "eval_rule": "no_fee_sentence"
+   }
+  },
+  {
+   "case_key": "not_a_fee:64330",
+   "family": "no_fee_sentence",
+   "takedown": "not_a_fee",
+   "fee_published_id": 64330,
+   "canonical_fee_key": "cashiers_check",
+   "fee_name": "No Fee for Cashier’s Checks",
+   "amount": "0.00",
+   "source_document_id": 18829,
+   "agent_source_text_id": 14318,
+   "text_hash": "e67663c3eaf15be6fd0b7a5e75ef14171fd55be4ea1cee305b83f31163b262b1",
+   "excerpt": "No Fee for Cashier’s Checks",
+   "text": "\nNo Fee for Elite Checks\nOne package per order.\n\nNo Fee for Cashier’s Checks\n\nNo Fee for Stop Payments",
+   "refused_by": {
+    "knox": "not_read",
+    "eval_rule": "no_fee_sentence"
+   }
+  },
+  {
+   "case_key": "not_a_fee:63680",
+   "family": "rebate",
+   "takedown": "not_a_fee",
+   "fee_published_id": 63680,
+   "canonical_fee_key": "atm_non_network",
+   "fee_name": "ATM Fee Refunds",
+   "amount": "5.00",
+   "source_document_id": 18970,
+   "agent_source_text_id": 14562,
+   "text_hash": "9886292b6d1c73af01d9f1cca05c3b93133439c0f0b75ecb2e74234c9ef01ad5",
+   "excerpt": "ATM Fee Refunds: $5 in ATM fees waived per statement cycle.",
+   "text": "Enjoy these premium features with your Platinum Advantage Checking Account:\n\nMonthly Service Fee Waived: Pay no monthly fee when you maintain $25,000 or more in your Union checking and savings accounts.\n\nATM Fee Refunds: $5 in ATM fees waived per statement cycle.\n\nFree Checks: 1 free box of Platinum Advantage checks at opening.",
+   "refused_by": {
+    "eval_rule": "rebate"
+   }
+  },
+  {
+   "case_key": "not_a_fee:62153",
+   "family": "rebate",
+   "takedown": "not_a_fee",
+   "fee_published_id": 62153,
+   "canonical_fee_key": "atm_non_network",
+   "fee_name": "Refunds on ATM withdrawal fees nationwide",
+   "amount": "4.99",
+   "source_document_id": 18470,
+   "agent_source_text_id": 13979,
+   "text_hash": "fecdad5ed34ca1e1f9391b41c219808a6349863110ed791ff143f0cb626a9a42",
+   "excerpt": "Refunds on ATM withdrawal fees nationwide (up to $25 monthly; $4.99 per transaction",
+   "text": "No minimum balance to earn rewards\n\nNo monthly maintenance fees\n\nRefunds on ATM withdrawal fees nationwide                                                                                                                (up to $25 monthly; $4.99 per transaction***)\n\nLink to free Kasasa Saver® to build savings automatically",
+   "refused_by": {
+    "eval_rule": "rebate"
+   }
+  },
+  {
+   "case_key": "not_a_fee:61128",
+   "family": "rebate",
+   "takedown": "not_a_fee",
+   "fee_published_id": 61128,
+   "canonical_fee_key": "atm_non_network",
+   "fee_name": "Qualification Cycle in which you qualified. ATM withdrawal fee refund per transaction is",
+   "amount": "4.99",
+   "source_document_id": 18144,
+   "agent_source_text_id": 13647,
+   "text_hash": "2ae7edd4c1df2cdc109ece94b8e87fd2749302a9cb2e54d26f655dc949f9d3d6",
+   "excerpt": "Qualification Cycle in which you qualified. ATM withdrawal fee refund per transacti",
+   "text": "interest rate of 2.92% resulting in an APY of 2.96%; and average daily balances over $15,000 earn an\ninterest rate of 0.10% on the portion of the average daily balance over $15,000, resulting in a range from\n2.96% to 0.47% APY depending on the account's average daily balance. You will receive reimbursements up to\n$20.00 for nationwide ATM withdrawal fees incurred within your Kasasa Cash account during the Monthly\nQualification Cycle in which you qualified. ATM withdrawal fee refund per transaction is $4.99. When your\nKasasa Cash account qualifications are not met, the interest rate earned on the account's entire average\ndaily balance will be 0.01% resulting in an APY of 0.01% and ATM withdrawal fees are not refunded. Interest",
+   "refused_by": {
+    "eval_rule": "rebate"
+   }
+  },
+  {
+   "case_key": "limit_as_fee:59846",
+   "family": "worked_example",
+   "takedown": "limit_as_fee",
+   "fee_published_id": 59846,
+   "canonical_fee_key": "bill_pay",
+   "fee_name": "Example: Assume you establish a bill pay payment for a utility bill in the amount of",
+   "amount": "100.00",
+   "source_document_id": 16340,
+   "agent_source_text_id": 11028,
+   "text_hash": "1e7d2f66a60e507c8026d6fef0301d8340e45dcf0c4241a1d37b1a194a0dfd1e",
+   "excerpt": "Example: Assume you establish a bill pay payment for a utility bill in the amount of $100 ",
+   "text": "EXCEPTION: The above payment method may not apply to checks presented to us in electronic format (converted check to an\nautomated clearing house (ACH) item) or to a check payment generated from our online bill payment service. Electronic items\nwill clear as presented to us. When using online bill pay, check numbers are generated from the third-party bill payment\nservice and will not match with your check numbers.\nExample: Assume you establish a bill pay payment for a utility bill in the amount of $100 and request payment of the bill on\nTuesday. The bill payment service sends the payment by check with a check sequence number of 4555; also we receive checks\nwritten by you, one for $250 with a check number of 1001; and one for $500 with a check number of 1002. Under our system,",
+   "refused_by": {
+    "knox": "not_read",
+    "limit_guard": "worked_example"
+   }
+  },
+  {
+   "case_key": "wrong_amount:59008",
+   "family": "price_in_name",
+   "takedown": "wrong_amount",
+   "fee_published_id": 59008,
+   "canonical_fee_key": "counter_check",
+   "fee_name": "Counter Checks (per page) $0.50 Signature Validation Program (SVP)",
+   "amount": "5.00",
+   "source_document_id": 49,
+   "agent_source_text_id": 6213,
+   "text_hash": "a27cb422287265b2f39ca05279b7193ec23c477e952a2a332aed17a8b4e3eeac",
+   "excerpt": "Counter Checks (per page) $0.50 Signature Validation Program (SVP) | $5.00",
+   "text": "Collections (plus costs): 10 x 10 $110.00\nCheck (domestic) $25.00 Drilling $170.00\nCheck (international) $45.00 Replacement Key $85.00\nCoupons/Bonds $15.00 Signature Guarantee or Validation:\nCounter Checks (per page) $0.50 Signature Validation Program (SVP) | $5.00\nStamp (customer)\nMedallion Stamp (customer) $5.00",
+   "refused_by": {
+    "eval_rule": "price_in_name"
+   }
+  },
+  {
+   "case_key": "wrong_amount:58437",
+   "family": "price_in_name",
+   "takedown": "wrong_amount",
+   "fee_published_id": 58437,
+   "canonical_fee_key": "overdraft",
+   "fee_name": "Courtesy Pay per debit as applicable $29.00 Inactivity Fee (first charged to checking then savings)",
+   "amount": "10.00",
+   "source_document_id": 16923,
+   "agent_source_text_id": 12466,
+   "text_hash": "982db0195e6952916422026697d2c8aea0aefe31fc6bafc7519a4e4a7b4f4684",
+   "excerpt": "Courtesy Pay per debit as applicable $29.00 Inactivity Fee (first charged to checking the",
+   "text": "Research per hour (one hour minimum) $20.00 Deposit Correction Fee per deposit $2.50\nStatement Reconciliation (one hour minimum) $20.00\nTemporary Checks (12 Checks) $2.00 General Fees\nTemporary Checks (20 Checks) $3.00 Non-suƯicient Funds Per debit $29.00\nCourtesy Pay per debit as applicable $29.00 Inactivity Fee (first charged to checking then savings) | $10.00\nper month after 12 months of inactivity\nStop Payment (Checks and Other Payments per Item) $29.00 Bad Address Fee $5.00",
+   "refused_by": {
+    "knox": "not_read",
+    "eval_rule": "price_in_name"
+   }
+  },
+  {
+   "case_key": "eval_critical:57064",
+   "family": "wrong_amount",
+   "takedown": "eval_critical",
+   "fee_published_id": 57064,
+   "canonical_fee_key": "early_closure",
+   "fee_name": "Accounts closed within 90 days: International Wire",
+   "amount": "45.00",
+   "source_document_id": 17279,
+   "agent_source_text_id": 12772,
+   "text_hash": "3b34d8d596b431839dfee5184f57a57b876326018b0d5f125ae4f4137c57df38",
+   "excerpt": "International Wire $45",
+   "text": "Two free each month\nEarly Account Closure $30\nAccounts closed within 90 days\nDomestic Wire Transfer $25\nInternational Wire $45\nCheck Copy $5 per check\nStatement Copy $5 per statement",
+   "refused_by": {
+    "knox": "not_read",
+    "darwin": "refused"
+   }
+  },
+  {
+   "case_key": "not_a_fee:56853",
+   "family": "no_fee_sentence",
+   "takedown": "not_a_fee",
+   "fee_published_id": 56853,
+   "canonical_fee_key": "cashiers_check",
+   "fee_name": "No Fee for Cashier's Checks",
+   "amount": "0.00",
+   "source_document_id": 17168,
+   "agent_source_text_id": 12686,
+   "text_hash": "43807831a6f8e4fcc242605c91c3651e1cc4e56e57cb32ebbc354e22eb042cc8",
+   "excerpt": "No Fee for Cashier's Checks",
+   "text": "Cornerstone Checking:\n\n2 Boxes Personal Checks Free per Year\n\nNo Fee for Cashier's Checks\n\nCornerstone Plus:",
+   "refused_by": {
+    "knox": "not_read",
+    "eval_rule": "no_fee_sentence"
+   }
+  },
+  {
+   "case_key": "limit_as_fee:54387",
+   "family": "name_states_limit",
+   "takedown": "limit_as_fee",
+   "fee_published_id": 54387,
+   "canonical_fee_key": "zelle_fee",
+   "fee_name": "Zelle® have daily limits set by the Bank of",
+   "amount": "500.00",
+   "source_document_id": 16825,
+   "agent_source_text_id": 12301,
+   "text_hash": "3c00eb488e182666feecc4fbf4b605ea06e9acfc0723b2ec685ddde78944c9d1",
+   "excerpt": "Zelle® have daily limits set by the Bank of $500 per transaction and $750 per day. We res",
+   "text": "You may send or receive money using Zelle®\nYou may view your account statement(s) and canceled checks.\nMobile carrier and other third-party fees may apply when using Forest Park National Bank's & Trust Co. Mobile App.\nREAL-TIME PAYMENT SERVICES PROVIDED THROUGH USE OF Zelle®. Person to Person transaction services like\nZelle® have daily limits set by the Bank of $500 per transaction and $750 per day. We reserve the right to change or remove\nlimitations for security purposes at any time.\n© TruStage Compliance Solutions 2007-2024 11303f22-443a78cb - 2024.11.0.3",
+   "refused_by": {
+    "limit_guard": "name_states_limit"
+   }
+  },
+  {
+   "case_key": "not_a_fee:53961",
+   "family": "waiver_sentence",
+   "takedown": "not_a_fee",
+   "fee_published_id": 53961,
+   "canonical_fee_key": "monthly_maintenance",
+   "fee_name": "No minimum balance to avoid a service charge",
+   "amount": "0.00",
+   "source_document_id": 16691,
+   "agent_source_text_id": 12110,
+   "text_hash": "f18bbce72623ec93d18817d45fade9d10efcfd77ad002ec5b0c92936b3e1273c",
+   "excerpt": "No minimum balance to avoid a service charge / FREE",
+   "text": "Green Checking\n\nWant a hassle-free checking account? Then Green checking is for you.\n\nNo minimum balance to avoid a service charge\n\nFREE ATM/Debit Card",
+   "refused_by": {
+    "knox": "not_read",
+    "eval_rule": "waiver_sentence"
+   }
+  },
+  {
+   "case_key": "limit_as_fee:53909",
+   "family": "source_states_limit",
+   "takedown": "limit_as_fee",
+   "fee_published_id": 53909,
+   "canonical_fee_key": "zelle_fee",
+   "fee_name": "Zelle® (",
+   "amount": "2000.00",
+   "source_document_id": 16682,
+   "agent_source_text_id": 12092,
+   "text_hash": "9f06a01ba8386c3484d81b6c314abf602b8d788a943d387c3a97ab199b916fd0",
+   "excerpt": "Zelle® ($2,000 daily",
+   "text": "Overdraft transfer fee (per transfer) ................................................................................................................. $5.00\nPaper statements (per account, per month) ..................................................................................................... $3.00\nPerson to Person Payments:\niPay Bill Pay Person to Person ($5,000 maximum limit) per transaction ................................................. $1.00\nZelle® ($2,000 daily limit) ........................................................................................................................... Free\nPhotocopies (per page) .................................................................................................................................... $0.25\nRedeposit ....................................................................................................................................................... $10.00",
+   "refused_by": {
+    "limit_guard": "source_states_limit"
+   }
+  },
+  {
+   "case_key": "limit_as_fee:53413",
+   "family": "source_states_limit",
+   "takedown": "limit_as_fee",
+   "fee_published_id": 53413,
+   "canonical_fee_key": "cash_advance",
+   "fee_name": "Cash Advance: Non-Customer",
+   "amount": "500.00",
+   "source_document_id": 13970,
+   "agent_source_text_id": 1463,
+   "text_hash": "fd0a6f95eadf13170a4fb9f46fefffd0e51b140a6f024153f5d7aae1b3ef9184",
+   "excerpt": "Non-Customer | $500 Limit",
+   "text": "Area | Per | Fee\n\nCustomer | $2,500 Limit | No Fee\n\nNon-Customer | $500 Limit | $10.00\n\nWire Transfer Fees - Customers Only",
+   "refused_by": {
+    "knox": "not_read",
+    "source_check": "name_not_in_text",
+    "limit_guard": "source_states_limit"
+   }
+  },
+  {
+   "case_key": "limit_as_fee:53412",
+   "family": "source_states_limit",
+   "takedown": "limit_as_fee",
+   "fee_published_id": 53412,
+   "canonical_fee_key": "cash_advance",
+   "fee_name": "Cash Advance: Customer",
+   "amount": "2500.00",
+   "source_document_id": 13970,
+   "agent_source_text_id": 1463,
+   "text_hash": "fd0a6f95eadf13170a4fb9f46fefffd0e51b140a6f024153f5d7aae1b3ef9184",
+   "excerpt": "Customer | $2,500 Limit",
+   "text": "Cash Advance\n\nArea | Per | Fee\n\nCustomer | $2,500 Limit | No Fee\n\nNon-Customer | $500 Limit | $10.00",
+   "refused_by": {
+    "knox": "not_read",
+    "limit_guard": "source_states_limit"
+   }
+  },
+  {
+   "case_key": "limit_as_fee:52337",
+   "family": "worked_example",
+   "takedown": "limit_as_fee",
+   "fee_published_id": 52337,
+   "canonical_fee_key": "od_protection_transfer",
+   "fee_name": "example results in total Overdraft Transfer Fees",
+   "amount": "18.00",
+   "source_document_id": 12280,
+   "agent_source_text_id": 1154,
+   "text_hash": "4ce002b40c1b8610a2095839b499f2e0c7b0df5865e5261250077cfa13ce1862",
+   "excerpt": "example results in total Overdraft Transfer Fees of $18 (a $6",
+   "text": "transaction amount and the remaining $6 applied to Overdraft\nTransfer Fee), and $50 from your Secondary Share Savings\nAccount ($50 applied to transaction amount, and $6 applies\nto Overdraft Transfer Fee) to cover the overdrawn balance� This\nexample results in total Overdraft Transfer Fees of $18 (a $6\nfee will be assessed on each of the three linked accounts)�\nIf you also have an Unsecured Line of Credit Account with us,",
+   "refused_by": {
+    "limit_guard": "worked_example"
+   }
+  },
+  {
+   "case_key": "wrong_amount:51568",
+   "family": "price_in_name",
+   "takedown": "wrong_amount",
+   "fee_published_id": 51568,
+   "canonical_fee_key": "wire_intl_outgoing",
+   "fee_name": "Wire Out (international) $50.00 10X10 Box Annually",
+   "amount": "65.00",
+   "source_document_id": 814,
+   "agent_source_text_id": 6675,
+   "text_hash": "9a866116c2385169cb56b91e0d1f3f345d42a2cd84979ff25f39f8cb237924dd",
+   "excerpt": "Wire Out (international) $50.00 • 10X10 Box Annually | $65.00",
+   "text": "Stop Payment (per item) $30.00 • Lost Key | $25.00\nTelephone Transfer $2.00 • 3X5 Box Annually | $30.00\nWire In $15.00 • 3X10 Box Annually | $45.00\nWire Out (domestic) $25.00 • 5X10 Box Annually | $55.00\nWire Out (international) $50.00 • 10X10 Box Annually | $65.00\nWire Out (domestic/manual) $45.00 Signature Guarantee No Charge\nWire Out (international/manual) $55.00 Zipper Bag/Locked Zipper Bag $5.00/18.00",
+   "refused_by": {
+    "eval_rule": "price_in_name"
+   }
+  },
+  {
+   "case_key": "wrong_amount:51567",
+   "family": "price_in_name",
+   "takedown": "wrong_amount",
+   "fee_published_id": 51567,
+   "canonical_fee_key": "wire_domestic_outgoing",
+   "fee_name": "Wire Out (domestic) $25.00 5X10 Box Annually",
+   "amount": "55.00",
+   "source_document_id": 814,
+   "agent_source_text_id": 6675,
+   "text_hash": "9a866116c2385169cb56b91e0d1f3f345d42a2cd84979ff25f39f8cb237924dd",
+   "excerpt": "Wire Out (domestic) $25.00 • 5X10 Box Annually | $55.00",
+   "text": "Statement Copy $5.00 • Extra Key | $25.00\nStop Payment (per item) $30.00 • Lost Key | $25.00\nTelephone Transfer $2.00 • 3X5 Box Annually | $30.00\nWire In $15.00 • 3X10 Box Annually | $45.00\nWire Out (domestic) $25.00 • 5X10 Box Annually | $55.00\nWire Out (international) $50.00 • 10X10 Box Annually | $65.00\nWire Out (domestic/manual) $45.00 Signature Guarantee No Charge",
+   "refused_by": {
+    "eval_rule": "price_in_name"
+   }
+  },
+  {
+   "case_key": "wrong_amount:51566",
+   "family": "price_in_name",
+   "takedown": "wrong_amount",
+   "fee_published_id": 51566,
+   "canonical_fee_key": "stop_payment",
+   "fee_name": "Stop Payment (per item) $30.00 Lost Key",
+   "amount": "25.00",
+   "source_document_id": 814,
+   "agent_source_text_id": 6675,
+   "text_hash": "9a866116c2385169cb56b91e0d1f3f345d42a2cd84979ff25f39f8cb237924dd",
+   "excerpt": "Stop Payment (per item) $30.00 • Lost Key | $25.00",
+   "text": "(2 or more signatures per check written)\nSafe Deposit Box:\nSpecial Statement Request (per month) $5.00 • Drilling $150 or Cost\nStatement Copy $5.00 • Extra Key | $25.00\nStop Payment (per item) $30.00 • Lost Key | $25.00\nTelephone Transfer $2.00 • 3X5 Box Annually | $30.00\nWire In $15.00 • 3X10 Box Annually | $45.00",
+   "refused_by": {
+    "eval_rule": "price_in_name"
+   }
+  },
+  {
+   "case_key": "limit_as_fee:43074",
+   "family": "name_states_limit",
+   "takedown": "limit_as_fee",
+   "fee_published_id": 43074,
+   "canonical_fee_key": "zelle_fee",
+   "fee_name": "Zelle® transfer limit",
+   "amount": "1000.00",
+   "source_document_id": 926,
+   "agent_source_text_id": 7142,
+   "text_hash": "8b3ae0d107b8d8dd2815e37e058ba770ab15a3455c69b6e26e0c007fa83dfa65",
+   "excerpt": "Digital Banking | Zelle® transfer limit | $1,000.00 | Daily",
+   "text": "Business Checking | 200 no charge* | Monthly\n\nNon-Profit | 200 no charge* | Monthly\n\nDigital Banking | Zelle® transfer limit | $1,000.00 | Daily\n\nOnline/Mobile Banking external transfer limit | $2,500.00 | Daily",
+   "refused_by": {
+    "knox": "not_read",
+    "limit_guard": "name_states_limit"
+   }
+  },
+  {
+   "case_key": "not_a_fee:42622",
+   "family": "waiver_sentence",
+   "takedown": "not_a_fee",
+   "fee_published_id": 42622,
+   "canonical_fee_key": "monthly_maintenance",
+   "fee_name": "Average Balance Required to Avoid Monthly Fee",
+   "amount": "0.00",
+   "source_document_id": 505,
+   "agent_source_text_id": 6506,
+   "text_hash": "a986cf2b211013497dd076c7c76e0916046ebb7ed2f7bb8d4dd2bfe390f98d55",
+   "excerpt": "Average Balance Required to Avoid Monthly Fee ................................. $ 0 . 0 0",
+   "text": "Personal Accounts | Personal & Business Services\nSupreme Checking | Service Fee Online & Card Services | Service Fee\nMinimum Opening Balance: $2,500.00 | $ 2 5 . 0 0 / M o n t h | Online Banking. ................................................................................................. FREE\nMobile Banking & Mobile Deposit ................................................................. FREE\nAverage Balance Required to Avoid Monthly Fee ......................... $15,000.00\nBill Payment........................................................................................................ FREE\nFederal Interest Checking | Expedited Bill Payments. ................................................ Up to $25.00 per item",
+   "refused_by": {
+    "knox": "not_read",
+    "source_check": "amount_not_the_fee",
+    "eval_rule": "waiver_sentence"
+   }
+  },
+  {
+   "case_key": "not_a_fee:42612",
+   "family": "balance_threshold",
+   "takedown": "not_a_fee",
+   "fee_published_id": 42612,
+   "canonical_fee_key": "monthly_maintenance",
+   "fee_name": "Average Balance Required to Avoid Monthly Fee",
+   "amount": "10.00",
+   "source_document_id": 505,
+   "agent_source_text_id": 6506,
+   "text_hash": "a986cf2b211013497dd076c7c76e0916046ebb7ed2f7bb8d4dd2bfe390f98d55",
+   "excerpt": "Average Balance Required to Avoid Monthly Fee ................................$1",
+   "text": "Personal Accounts | Personal & Business Services\nSupreme Checking | Service Fee Online & Card Services | Service Fee\nMinimum Opening Balance: $2,500.00 | $ 2 5 . 0 0 / M o n t h | Online Banking. ................................................................................................. FREE\nMobile Banking & Mobile Deposit ................................................................. FREE\nAverage Balance Required to Avoid Monthly Fee ......................... $15,000.00\nBill Payment........................................................................................................ FREE\nFederal Interest Checking | Expedited Bill Payments. ................................................ Up to $25.00 per item",
+   "refused_by": {
+    "knox": "not_read",
+    "source_check": "amount_not_the_fee",
+    "eval_rule": "balance_threshold"
+   }
+  },
+  {
+   "case_key": "not_a_fee:39317",
+   "family": "rebate",
+   "takedown": "not_a_fee",
+   "fee_published_id": 39317,
+   "canonical_fee_key": "atm_non_network",
+   "fee_name": "To receive a refund of surcharges incurred on this account at foreign ATM's, you must have a minimum of six (6) point-of",
+   "amount": "10.00",
+   "source_document_id": 15979,
+   "agent_source_text_id": 10343,
+   "text_hash": "3b60f3718a44d6de6058103359f818d12c8c9e3da2fa8fd7d7ca8269ca39f424",
+   "excerpt": "*To receive a refund of surcharges incurred on this account at foreign ATM's, you m",
+   "text": "eStatements only on this account\n\nGet reimbursed for up to $10.00/month in ATM surcharges*\n\n*To receive a refund of surcharges incurred on this account at foreign ATM's, you must have a minimum of six (6) point-of-sale transactions posted during the statement cycle. Refund is limited to $10.00 per statement cycle.\n\nMinimum opening deposit only $50 except Free Student Checking - minimum opening deposit is $25. Other fees such as non-sufficient funds, Zelle, overdraft, sustained overdraft fees, etc. may apply. See fee schedule for details.",
+   "refused_by": {
+    "eval_rule": "rebate"
+   }
+  },
+  {
+   "case_key": "limit_as_fee:35536",
+   "family": "above_category_ceiling",
+   "takedown": "limit_as_fee",
+   "fee_published_id": 35536,
+   "canonical_fee_key": "zelle_fee",
+   "fee_name": "Zelle® Online Personal Payments",
+   "amount": "2500.00",
+   "source_document_id": 3220,
+   "agent_source_text_id": 7935,
+   "text_hash": "7a2666647c1fab0776b3065999e96f78b49d8ceed4c9af1f39f3425681e88fc3",
+   "excerpt": "Zelle® Online Personal Payments: | $2,500",
+   "text": "Standard 3-Day Transfer | $9.95\n\nNext Day Transfer | $14.95\n\nZelle® Online Personal Payments: | $2,500\n\nZelle® Send or Request - Within minutes | Free - *subject to daily limits www.zellepay.com",
+   "refused_by": {
+    "limit_guard": "above_category_ceiling"
+   }
+  },
+  {
+   "case_key": "limit_as_fee:35333",
+   "family": "source_states_limit",
+   "takedown": "limit_as_fee",
+   "fee_published_id": 35333,
+   "canonical_fee_key": "cash_advance",
+   "fee_name": "Cash Advance……",
+   "amount": "1000.00",
+   "source_document_id": 3666,
+   "agent_source_text_id": 7351,
+   "text_hash": "6d8b62abb79f5c2537a2c41d1c0425698aec78e4f40e5b5f79fbbdf9eaf71195",
+   "excerpt": "• Cash Advance……...$1000 & up…..$15.00",
+   "text": "resubmitted for payment regardless if the item is paid or returned\n• Returned Mail Fee (after 2nd piece)….….$15.00\n• Southside Bank deposit fee………….….$5.00\n• Cash Advance …..…$0 - $999.99…..$10.00\n• Cash Advance……...$1000 & up…..$15.00\n*Copy of paid drafts will be provided to member without charge when required by the Internal Revenue Service for audit purposes.\nShare Value",
+   "refused_by": {
+    "limit_guard": "source_states_limit"
+   }
+  },
+  {
+   "case_key": "not_a_fee:23743",
+   "family": "waiver_sentence",
+   "takedown": "not_a_fee",
+   "fee_published_id": 23743,
+   "canonical_fee_key": "monthly_maintenance",
+   "fee_name": "Minimum Balance Required to avoid service charge",
+   "amount": "0.00",
+   "source_document_id": 15195,
+   "agent_source_text_id": 2717,
+   "text_hash": "1c9410c63c0c3d7ba25419d6972d09edd119256d0ed7197df14e748a392976ae",
+   "excerpt": "Minimum Balance Required to avoid service charge | None",
+   "text": "Checking Accounts for students ages 16-18 will require a signer of legal age (19 years or older).\n\nMinimum Balance (opening) | $100.00\n\nMinimum Balance Required to avoid service charge | None\n\nService Charge | None",
+   "refused_by": {
+    "knox": "not_read",
+    "eval_rule": "waiver_sentence"
+   }
+  },
+  {
+   "case_key": "limit_as_fee:22800",
+   "family": "above_category_ceiling",
+   "takedown": "limit_as_fee",
+   "fee_published_id": 22800,
+   "canonical_fee_key": "cash_advance",
+   "fee_name": "5002 Cash Advance",
+   "amount": "500.00",
+   "source_document_id": 4690,
+   "agent_source_text_id": 5051,
+   "text_hash": "be72bafe818fd5dc5a293a0e9e2d153052d4f23d0145ad783a387ff405946eb6",
+   "excerpt": ",5002 Cash Advance $500",
+   "text": "Limitations on the Uses of Consumer VISA Debit and ATM Card\n\nAll limits expressed in this section are daily limits. The day for purposes of applying these limits starts at 12:00 am and ends at 11:59 pm EST each calendar day.\n\nLimits for Visa Debit Cards are as follows: Aggregate/Cap $2,5001 ATM Cash Withdraw $510 Point of Sale Purchase w/PIN $1,5002 Point of Sale Purchase w/out PIN $1,5002 Cash Advance $500 | Limits for ATM Cards are as follows: ATM Cash Withdraw $510 Point of Sale Purchase w/PIN3 $500 Aggregate/Cap $1,010\n\n1 For Business debit cards, this limit is $3,000 2 For Business debit cards, this limit is $2,500 3 Requires the card be linked to a checking account.",
+   "refused_by": {
+    "limit_guard": "above_category_ceiling"
+   }
+  },
+  {
+   "case_key": "limit_as_fee:22330",
+   "family": "name_states_limit",
+   "takedown": "limit_as_fee",
+   "fee_published_id": 22330,
+   "canonical_fee_key": "zelle_fee",
+   "fee_name": "Zelle® transfer daily maximum",
+   "amount": "500.00",
+   "source_document_id": 13080,
+   "agent_source_text_id": 464,
+   "text_hash": "2649770c20eadc68c1d1edc41ea95f3069b8debc6d5f68a10f4d085870e59991",
+   "excerpt": "Zelle® transfer daily maximum | $500 per day",
+   "text": "Counter check (maximum 8 checks per member) | $5\n\nStop payment | $32\n\nZelle® transfer daily maximum | $500 per day\n\nOverdraft Privilege limit | $500",
+   "refused_by": {
+    "knox": "not_read",
+    "limit_guard": "name_states_limit"
+   }
+  },
+  {
+   "case_key": "not_a_fee:17011",
+   "family": "balance_threshold",
+   "takedown": "not_a_fee",
+   "fee_published_id": 17011,
+   "canonical_fee_key": "monthly_maintenance",
+   "fee_name": "Minimum balance to avoid monthly service fee",
+   "amount": "5.00",
+   "source_document_id": 14065,
+   "agent_source_text_id": 1567,
+   "text_hash": "625918c5484926ed013e2026854e9e1306b839beffdef1058297b5ec330850cc",
+   "excerpt": "Minimum balance to avoid monthly service fee | $5",
+   "text": "Share (Savings) Account\n\nType of Fee | Amount of Fee\n\nMinimum balance to avoid monthly service fee | $5\n\nMonthly service fee (if minimum is not met) | $2",
+   "refused_by": {
+    "eval_rule": "balance_threshold"
+   }
+  },
+  {
+   "case_key": "not_a_fee:14301",
+   "family": "balance_threshold",
+   "takedown": "not_a_fee",
+   "fee_published_id": 14301,
+   "canonical_fee_key": "monthly_maintenance",
+   "fee_name": "Minimum balance required to avoid service charge -",
+   "amount": "50.00",
+   "source_document_id": 12873,
+   "agent_source_text_id": 241,
+   "text_hash": "2485d0436ef44dc48632e2edb085707122e547988d710c2ea9b6d1a3fa595e5a",
+   "excerpt": "Minimum balance required to avoid service charge - $50.00",
+   "text": "\n\nMinimum Opening Balance - $1,000.00\n\nMinimum balance required to avoid service charge - $1,000.00\n\nMonthly maintenance fee - $5.00",
+   "refused_by": {
+    "knox": "not_read",
+    "source_check": "amount_not_the_fee",
+    "eval_rule": "balance_threshold"
+   }
+  }
+ ],
+ "known_misses": [
+  {
+   "case_key": "wrong_amount:104697",
+   "family": "fee_in_sentence",
+   "takedown": "wrong_amount",
+   "fee_published_id": 104697,
+   "canonical_fee_key": "continuous_od",
+   "fee_name": "consecutively overdrawn (OD). Maximum Overdraft Continuation Fee",
+   "amount": "30.00",
+   "source_document_id": 24024,
+   "agent_source_text_id": 21206,
+   "text_hash": "d7fe4205caaf104829f2040eb1b228a6ae9003b4594026993d8020f19e91a618",
+   "excerpt": "consecutively overdrawn (OD). Maximum Overdraft Continuat",
+   "text": "means. The maximum OVERDRAFT (Paid Item) fees is $176.00 per day on consumer\naccounts. If an item should create an overdraft of $10.00 or less, no fees are assessed.\nIndividual items that are $1.00 or less will not be assessed an overdraft fee.\nAn Overdraft Continuation Fee will be charged every 5th business day the account is | $5.00\nconsecutively overdrawn (OD). Maximum Overdraft Continuation Fee is $30.00\nduring each consecutive OD period.\nStop Payment per check or debit | $25.00"
+  },
+  {
+   "case_key": "not_a_fee:100158",
+   "family": "two_column_glue",
+   "takedown": "not_a_fee",
+   "fee_published_id": 100158,
+   "canonical_fee_key": "overdraft",
+   "fee_name": "Item Fees and the Paid Item Fee for the check/item in the amount of",
+   "amount": "17.00",
+   "source_document_id": 23020,
+   "agent_source_text_id": 20041,
+   "text_hash": "c759cc6666d124dce3331a6eaf5086e7be56a31822a65fa9469c1707298aa8f4",
+   "excerpt": "Item Fees and the Paid Item Fee for the check/item in the amo",
+   "text": "as follows: $500, $100, and $17 but only have $20 available/collected balance in your account and CNB pays the three checks/items leaving an end\nof day balance of negative $597. Because the sum of all items presented exceeds negative $20 ($20 less ($500 + $100 + $17) = negative $597) the\n$0 to negative $20 automated waiver of the Paid Item Fee does not apply. In the above example, you would be charged two (2) Overdraft Funds Paid\nItem Fees and the Paid Item Fee for the check/item in the amount of $17 would be waived, as the amount is below the $20 threshold.\nThe Bank will charge a maximum of five (5) Paid Item Fees per day, which is equal to $92.50. The Bank will provide periodic notifications based on\nthe number of overdraft occurrences to help you manage your account and offer you an alternative option to reduce your fees."
+  },
+  {
+   "case_key": "eval_critical:96379",
+   "family": "wrong_amount",
+   "takedown": "eval_critical",
+   "fee_published_id": 96379,
+   "canonical_fee_key": "wire_domestic_incoming",
+   "fee_name": "Incoming Wire Fee",
+   "amount": "35.00",
+   "source_document_id": 21268,
+   "agent_source_text_id": 17426,
+   "text_hash": "5eb2206b34cacc02e0e0f1ffdb1492105b8d81f76b87dc24d831f40e67453f67",
+   "excerpt": "Incoming Wire Fee | $35.00",
+   "text": "Service | Fee\n\nOutgoing Wire Fee | $35.00\n\nIncoming Wire Fee | $35.00\n\nMiscellaneous Fees"
+  },
+  {
+   "case_key": "eval_critical:96294",
+   "family": "wrong_category",
+   "takedown": "eval_critical",
+   "fee_published_id": 96294,
+   "canonical_fee_key": "cashiers_check",
+   "fee_name": "Corporate Check",
+   "amount": "20.00",
+   "source_document_id": 19787,
+   "agent_source_text_id": 15606,
+   "text_hash": "c5fc85fc299d2b79f5b54d83acb5ac92b21a8404379f1cbc89f3f9a3592ea0ea",
+   "excerpt": "Corporate Check | $20.00/ea",
+   "text": "Share / Loan Draft or ACH Special Handling Transfer Fee | $5.00/ea\n\nStop Payments\n\nCorporate Check | $20.00/ea\n\nMember Check | $15.00/ea."
+  },
+  {
+   "case_key": "eval_critical:95762",
+   "family": "wrong_payer",
+   "takedown": "eval_critical",
+   "fee_published_id": 95762,
+   "canonical_fee_key": "cashiers_check",
+   "fee_name": "Official Bank Check (Non-Customers)",
+   "amount": "20.00",
+   "source_document_id": 20455,
+   "agent_source_text_id": 16316,
+   "text_hash": "74dc3a119142664e60fc4c4e3231f0787b4ca6cc51af03d0fcc1dcee379948fc",
+   "excerpt": "Official Bank Check (Non-Customers) | $20.00",
+   "text": "Night Depository Bag | $15.00\n\nOfficial Bank Check (Customers) | $7.00\n\nOfficial Bank Check (Non-Customers) | $20.00\n\nSafe Deposit Box Lock Drill (both keys lost) | $250.00"
+  },
+  {
+   "case_key": "eval_critical:93480",
+   "family": "wrong_amount",
+   "takedown": "eval_critical",
+   "fee_published_id": 93480,
+   "canonical_fee_key": "wire_intl_outgoing",
+   "fee_name": "Cash Management International Wire Origination",
+   "amount": "10.00",
+   "source_document_id": 14370,
+   "agent_source_text_id": 2019,
+   "text_hash": "8a88c5d8ad9d964461a0e53cd2d32014541dcfc21e8dbf1b5a047384d9af4d26",
+   "excerpt": "Cash Management International Wire Origination / $10.",
+   "text": "Cash Management Monthly Fee\n\nCash Management Domestic Wire Origination\n\nCash Management International Wire Origination\n\n$10.00"
+  },
+  {
+   "case_key": "wrong_amount:85861",
+   "family": "two_fees_one_line",
+   "takedown": "wrong_amount",
+   "fee_published_id": 85861,
+   "canonical_fee_key": "early_closure",
+   "fee_name": "Accounts closed within 6 months domestic/international, each",
+   "amount": "50.00",
+   "source_document_id": 21514,
+   "agent_source_text_id": 17935,
+   "text_hash": "dae211fdc351a04fb9dc32a450fc9d0e01eac11e8091a71dccc054d852c1d830",
+   "excerpt": "Accounts closed within 6 months domestic/international, e",
+   "text": "DLR: 06/01/20\n\nPacific National Bank Member FDIC\nSchedule of Charges - Effective 11/22/2021\nAccounts closed within 6 months domestic/international, each $50.00/$100.00\nAccount confirmations to auditors, each $25.00\nAccount inquiry with printout, each $1.00"
+  },
+  {
+   "case_key": "wrong_amount:76240",
+   "family": "rate_bound",
+   "takedown": "wrong_amount",
+   "fee_published_id": 76240,
+   "canonical_fee_key": "collection_item",
+   "fee_name": "Collection Fee 1% of Payment",
+   "amount": "5.71",
+   "source_document_id": 809,
+   "agent_source_text_id": 6350,
+   "text_hash": "e53973b71be133fd0dc451a4ca8075bb6de68520b4249bfb874f9ed9234a9ebd",
+   "excerpt": "Collection Fee……………………..…..1% of Payment (min. of $5.71",
+   "text": "\nESCROWS\n\nSet-up…………………….…………………………………..……………….$76.56\nCollection Fee……………………..…..1% of Payment (min. of $5.71)\n\nWELCH STATE BANK"
+  },
+  {
+   "case_key": "eval_critical:69839",
+   "family": "wrong_payer",
+   "takedown": "eval_critical",
+   "fee_published_id": 69839,
+   "canonical_fee_key": "atm_non_network",
+   "fee_name": "Foreign ATM transactions at Trax Machines",
+   "amount": "3.50",
+   "source_document_id": 20327,
+   "agent_source_text_id": 16132,
+   "text_hash": "354e220db3e3467eba48da3ad0db3bb9d0badf84a4885595d9dd77aee681a74e",
+   "excerpt": "Foreign ATM transactions at Trax Machines | $3.50 per t",
+   "text": "ATM Inquiry | .50 per inquiry\n\nATM Transaction Rejection | .50 per rejection\n\nForeign ATM transactions at Trax Machines | $3.50 per transaction\n\nNon-Proprietary ATM Transaction fee | $1.50 per transaction"
+  },
+  {
+   "case_key": "eval_critical:47309",
+   "family": "wrong_payer",
+   "takedown": "eval_critical",
+   "fee_published_id": 47309,
+   "canonical_fee_key": "money_order",
+   "fee_name": "Money Orders (Non-Customer)",
+   "amount": "3.00",
+   "source_document_id": 15929,
+   "agent_source_text_id": 10293,
+   "text_hash": "e7e63530dbafa8bafa659f7e4d0ce6fdd0b0a38ba5c8729b2b4d313fb25d18d3",
+   "excerpt": "Money Orders (Non-Customer) $3.00",
+   "text": "IRA Termination Fee $40.00\nLevy/Garnishment Processing $40.00\nLoan Coupon Book Replacement $5.00\nMoney Orders (Customer) $2.00\nMoney Orders (Non-Customer) $3.00\nNotary Fee (Customer) No Charge\nNotary Fee (Non-Customer) $1.00"
+  },
+  {
+   "case_key": "wrong_amount:29509",
+   "family": "rate_bound",
+   "takedown": "wrong_amount",
+   "fee_published_id": 29509,
+   "canonical_fee_key": "cash_advance",
+   "fee_name": "MasterCard/Visa Cash Advance 10% charge",
+   "amount": "10.00",
+   "source_document_id": 13826,
+   "agent_source_text_id": 1325,
+   "text_hash": "908144a2d5009188be58036b832526ee64ea5ae8261e28a6eae1981ec385098d",
+   "excerpt": "MasterCard/Visa Cash Advance 10% charge (min. of $10",
+   "text": "more than 1 gal 10% with a min of $30\nChargeoff Account $ 35.00\nCertified Public Accountant Confirmation $ 15.00\nGarnishment/Levy $ 150.00\nMasterCard/Visa Cash Advance 10% charge (min. of $10, max. of $50)\nCommercial Change orders No charge\nNotary Services No charge"
+  },
+  {
+   "case_key": "wrong_amount:17477",
+   "family": "fee_in_sentence",
+   "takedown": "wrong_amount",
+   "fee_published_id": 17477,
+   "canonical_fee_key": "early_closure",
+   "fee_name": "if closed within two years. Minimum balance is",
+   "amount": "500.00",
+   "source_document_id": 15565,
+   "agent_source_text_id": 3740,
+   "text_hash": "bd26f1d8b7bf10a5ac236cbf2c39d561a5446c0c4c85c30f4a393ee83b703851",
+   "excerpt": "IRA Closing Fee | $50.00 if closed within two years. Minimum balance is $500.00 if not",
+   "text": "Bulk Coin | $8.00 per box\n\nIRA Accounts\n\nIRA Closing Fee | $50.00 if closed within two years. Minimum balance is $500.00 if not on direct deposit.\n\nCredit Union Membership"
+  },
+  {
+   "case_key": "not_a_fee:15199",
+   "family": "fee_in_sentence",
+   "takedown": "not_a_fee",
+   "fee_published_id": 15199,
+   "canonical_fee_key": "appraisal_fee",
+   "fee_name": "credit toward closing costs (for example, appraisal or title insurance fees) on a secondary market mortgage loan, which",
+   "amount": "100.00",
+   "source_document_id": 14467,
+   "agent_source_text_id": 2147,
+   "text_hash": "c6dcaaf14be1c079611830bda8e33c6d9fdba56d59db023ee08a24d6b70b7317",
+   "excerpt": "$100 credit toward closing costs (for example, appraisal or title insurance fees) on a",
+   "text": "\nIf qualifications are not met by the last business day of each calendar month: Balances earn 0.05% APY; No ATM fees or surcharges are reimbursed; A $10 monthly service charge is applied.\n\n**$100 credit toward closing costs (for example, appraisal or title insurance fees) on a secondary market mortgage loan, which is a closed-end, consumer-purpose, 1-4 family dwelling-secured, fixed-rate, long-term, fully-amortizing loan. All loans are subject to credit approval.\n\n"
+  }
+ ]
+}

@@ -27,7 +27,7 @@ import { MIN_INSTITUTIONS_FOR_MEDIAN } from "@/lib/data-store/maturity";
 import { summarizeFees, summarizeFeesBy } from "@/lib/data-store/fee-stats";
 import type { FeeCategorySummary, FeeInstance } from "@/lib/data-store/fees";
 import { sampleReportAvailable } from "@/lib/custom-report/sample-report";
-import { SAMPLE_REPORT_FOOTER_LINK } from "@/components/customer-footer";
+import { SAMPLE_REPORT_HREF } from "@/app/landing-shared";
 import {
   bySize,
   charterDots,
@@ -307,7 +307,7 @@ export default async function FeeCategoryPage({ params }: PageProps) {
           {hasSample && (
             <p className="mt-3 text-[13px] text-ink-muted">
               Or{" "}
-              <Link href={SAMPLE_REPORT_FOOTER_LINK.href} className="font-medium text-ink underline decoration-border underline-offset-4 hover:decoration-ink">
+              <Link href={SAMPLE_REPORT_HREF} className="font-medium text-ink underline decoration-border underline-offset-4 hover:decoration-ink">
                 see a sample report
               </Link>
               , free.

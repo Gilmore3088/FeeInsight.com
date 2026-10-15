@@ -19,6 +19,12 @@ type SqlTag = typeof sql;
  * exact name under the labelled category (`applyKnoxLesson`). "No category fits" only
  * takes the name off the queue; the category guards already reject it. A label changes
  * how new reads are filed, never a live fee.
+ *
+ * #1102: a third kind is the names Knox holds as unclassified at several banks that the store
+ * does not settle on its own (`fileHeldByName` in held-recheck.ts files the settled ones). One
+ * label then sends every held line with that name to Darwin under the labelled category. Only
+ * names that read as a fee's name are listed ("Membership Fee", "Lost Passbook Fee"), never a
+ * sentence fragment ("we will charge you", "there is a").
  */
 
 export const LABEL_QUEUE_SIZE = 25;
@@ -37,7 +43,20 @@ export interface ContestedName {
   example: string;
   banks: number;
   verdicts: ContestedNameVerdict[];
-  reason: "never_verified" | "verdicts_disagree";
+  reason: "never_verified" | "verdicts_disagree" | "held_unclassified";
+}
+
+/** Held names listed for a label: held at this many banks or more. */
+export const HELD_NAME_QUEUE_MIN_BANKS = 2;
+/** A fee's name: a fee or charge word, at most six words, not the start of a sentence. Pure. */
+export function heldNameWorthLabel(name: string): boolean {
+  const words = name.trim().split(/\s+/).filter(Boolean);
+  return (
+    words.length >= 2 &&
+    words.length <= 6 &&
+    /\b(?:fees?|charges?)$/i.test(name.trim()) &&
+    !/^(?:we|you|your|there|the|a|an|if|this|that|it|our|any|each|per|only|and|or|of|to|for|with|plus)\b/i.test(name.trim())
+  );
 }
 
 export function labelDedupeKey(name: string): string {
@@ -107,7 +126,34 @@ export async function loadLabelQueue(db: SqlTag, limit = LABEL_QUEUE_SIZE): Prom
          ORDER BY n.banks DESC, n.name
          LIMIT ${limit}
       `;
-      return rows.map((row) => ({ ...row, banks: Number(row.banks) }));
+      const contested = rows.map((row) => ({ ...row, banks: Number(row.banks) }));
+      const held = await scope<Array<{ name: string; example: string; banks: number | string }>>`
+        WITH held AS (
+          SELECT regexp_replace(btrim(lower(regexp_replace(fr.fee_name, '[^A-Za-z ]+', ' ', 'g'))), '\\s+', ' ', 'g') AS name,
+                 fr.fee_name, fr.institution_id
+            FROM raw_fee_observations fr
+           WHERE fr.source = 'knox'
+             AND fr.outlier_flags ? 'knox_review:unclassified'
+             AND NOT fr.outlier_flags ? 'needs_darwin_verification'
+             AND fr.fee_name ~* '(fee|charge)s?\\s*$'
+        )
+        SELECT h.name, mode() WITHIN GROUP (ORDER BY h.fee_name) AS example, count(DISTINCT h.institution_id)::int AS banks
+          FROM held h
+         WHERE h.name <> ''
+           AND NOT EXISTS (
+             SELECT 1 FROM pipeline_feedback l
+              WHERE l.kind = ${NAME_LABEL_KIND} AND l.dedupe_key = 'knox.name_label:' || h.name
+           )
+         GROUP BY h.name
+        HAVING count(DISTINCT h.institution_id) >= ${HELD_NAME_QUEUE_MIN_BANKS}
+         ORDER BY count(DISTINCT h.institution_id) DESC, h.name
+         LIMIT ${limit * 4}
+      `;
+      const listed = new Set(contested.map((row) => row.name));
+      const heldNames: ContestedName[] = held
+        .filter((row) => !listed.has(row.name) && heldNameWorthLabel(row.name))
+        .map((row) => ({ name: row.name, example: row.example, banks: Number(row.banks), verdicts: [], reason: "held_unclassified" }));
+      return [...contested, ...heldNames].sort((a, b) => b.banks - a.banks || a.name.localeCompare(b.name)).slice(0, limit);
     });
   } catch (error) {
     console.error("loadLabelQueue failed:", error);

@@ -390,6 +390,7 @@ function undecidedAtThisVersionSql(params: Array<number | string | number[]>): s
             )
             AND NOT (pa.outcome = 'unchanged' AND ${THRESHOLD_RESELECT_SQL})
             AND NOT (pa.outcome = 'unchanged' AND ${OLDER_DOCUMENT_RESELECT_SQL})
+            AND NOT (pa.outcome = 'unchanged' AND ${QUALIFIER_RESELECT_SQL})
        )`;
 }
 
@@ -482,7 +483,8 @@ async function selectVerifiedFees(
                 WHERE sl_pa.input_fingerprint = 'verified:' || fv.fee_verified_id::text
                   AND sl_pa.outcome = 'unchanged'
                   AND (${SAME_LINE_RESELECT_SQL.replaceAll("pa.detail", "sl_pa.detail")}
-                       OR ${THRESHOLD_RESELECT_SQL.replaceAll("pa.detail", "sl_pa.detail")})
+                       OR ${THRESHOLD_RESELECT_SQL.replaceAll("pa.detail", "sl_pa.detail")}
+                       OR ${QUALIFIER_RESELECT_SQL.replaceAll("pa.detail", "sl_pa.detail")})
              ) AS same_line_reselect,
              COALESCE(COALESCE(fr.extraction_note, fr.conditions) LIKE '${FREE_READ_PREFIX}%', false) AS free_read,
              COALESCE(fr.source_document_id::text, 'row:' || fv.fee_verified_id::text) AS batch_document_key,
@@ -928,13 +930,44 @@ function stem(word: string): string {
 /**
  * The same-line check's version on each publish attempt (\`detail.same_line_check\`). An identical
  * skip decided before a version is decided again by it: every row before check 1, box-size
- * rows ("3 x 5") before check 2, whose names check 1 read as the same line, and balance-named
- * rows skipped as an older document before check 3.
+ * rows ("3 x 5") before check 2, whose names check 1 read as the same line, balance-named
+ * rows skipped as an older document before check 3, and qualifier pairs ("ACH Stop Payment"
+ * beside "Stop Payment", `qualifiedLines`) before check 4 (#1314).
  */
-const SAME_LINE_CHECK_VERSION = 3;
+const SAME_LINE_CHECK_VERSION = 4;
 const OLDER_DOCUMENT_REASON_TEXT = "Older document than the live price";
 const SAME_LINE_RESELECT_SQL = `(pa.detail->>'same_line_check' IS NULL
                 OR (pa.detail->>'same_line_check' = '1' AND fv.fee_name ~ '\\d\\s*[xX\u00d7]\\s*\\d'))`;
+
+/**
+ * An identical skip decided before check 4 against a live line of its own document whose name is
+ * this row's name with words in front, or the other way round ("ACH Stop Payment" / "Stop
+ * Payment"), is decided again by check 4 (#1314): `qualifiedLines` puts the pair to the page
+ * check, which keeps them apart only when the shorter name is printed as its own line at the price.
+ * The SQL only narrows the rows to `qualifiedLines`' shape (one or two qualifier words, not only
+ * filler, in front; trailing blanks such as "____" ignored); the decision is the page check's.
+ */
+const QUALIFIER_RESELECT_SQL = `(COALESCE((pa.detail->>'same_line_check')::int, 0) < 4 AND EXISTS (
+                  SELECT 1 FROM published_fee_records q_prev
+                    JOIN verified_fee_observations q_fv ON q_fv.fee_verified_id = q_prev.lineage_ref
+                    JOIN raw_fee_observations q_fr ON q_fr.fee_raw_id = q_fv.fee_raw_id
+                   WHERE q_prev.fee_published_id = NULLIF(pa.detail->>'previous_fee_published_id', '')::bigint
+                     AND q_prev.rolled_back_at IS NULL
+                     AND q_fr.source_document_id = fr.source_document_id
+                     AND (${qualifierPairSql("fv.fee_name", "q_prev.fee_name")}
+                          OR ${qualifierPairSql("q_prev.fee_name", "fv.fee_name")})
+                ))`;
+
+/** SQL: `longer` is `shorter` with one or two qualifier words in front (`qualifies`' shape). */
+function qualifierPairSql(longer: string, shorter: string): string {
+  const clean = (column: string) => `regexp_replace(lower(btrim(${column})), '[^a-z0-9)]+$', '')`;
+  const [l, s] = [clean(longer), clean(shorter)];
+  const prefix = `left(${l}, length(${l}) - length(${s}) - 1)`;
+  const word = "[a-z]([a-z0-9&/''’-]*[a-z0-9])?";
+  const filler = [...FILLER_WORDS].join("|");
+  return `(length(${s}) > 0 AND length(${l}) > length(${s}) + 1 AND right(${l}, length(${s}) + 1) = ' ' || ${s}
+                          AND ${prefix} ~ '^${word}( ${word})?$' AND ${prefix} !~ '^(${filler})( (${filler}))?$')`;
+}
 
 /** A balance a fee applies below ("Money Market Savings Account (below $2,500)"). */
 const BALANCE_THRESHOLD = /\b(?:below|under|less than)\s*\$\s?(\d[\d,]*(?:\.\d{2})?)/i;
@@ -1159,7 +1192,14 @@ export function linesApartOnPage(text: string, rowName: string, priorName: strin
     return a.length > 0;
   }
   const b = places(priorName, rowName);
-  return a.some((one) => b.some((two) => one.end <= two.start || two.end <= one.start));
+  // The shorter name must be printed at the price clear of every place of the longer (#1314): a
+  // shorter name found only inside the longer line ("Funds (NSF)" in "Non-Sufficient Funds (NSF)
+  // $25", "Order" under a "Money Order" heading), or one line printed twice, is one fee however
+  // its places pair up. The longer line's own place always holds the shorter name's words.
+  const clear = (one: PagePlace, two: PagePlace) => one.end <= two.start || two.end <= one.start;
+  const clearOf = (mine: PagePlace[], theirs: PagePlace[]) => mine.some((one) => theirs.every((two) => clear(one, two)));
+  if (a.length === 0 || b.length === 0) return false;
+  return pageWords(rowName).trim().length <= pageWords(priorName).trim().length ? clearOf(a, b) : clearOf(b, a);
 }
 
 /** Pure: the page prints this name with this price after it (a place `linesApartOnPage` counts). */
@@ -1207,7 +1247,10 @@ function pageReader(
   const cents = Math.round(value * 100);
   const whole = Math.floor(cents / 100);
   const price = cents % 100 === 0 ? `${whole}(?: 00)?` : `${whole} ${String(cents % 100).padStart(2, "0")}`;
-  const follows = new RegExp(`^ ((?:(?!of )[a-z0-9]+ ){0,6}?)${price} `);
+  // Up to six words between a name and its price, never through "of" or a deposit label
+  // ("Monthly Fee $0 Initial Deposit $10" does not price the monthly fee at $10), and never the
+  // first digits of a larger amount ("$10,000" is not $10) (#1314).
+  const follows = new RegExp(`^ ((?:(?!of |deposit )[a-z0-9]+ ){0,6}?)${price} (?!\\d{3} )`);
   const page = pageWords(text);
   const printed = (name: string): PagePlace[] => {
     const words = pageWords(name).trim();
@@ -1925,9 +1968,15 @@ export async function runHamiltonPublish(
       // variant re-read ("per_item" to none), so the live line it was identical to no longer
       // matches the key above and it went live as a new fee beside it (104684 "Wire Transfers -
       // Outgoing: Outgoing Wire Fee" beside 23698 "Outgoing Wire Fee", 9 Oct). Its identical
-      // check reads every live line of the category.
+      // check reads every live line of the category on its own document, and another
+      // document's line only under the same name (an older crawl of the same schedule: 72051
+      // "Loan Late Payment" $25 beside 6464 on Feb's copy). Another document's line under
+      // another name is a different printed line ("Overdraft" $25 beside another document's
+      // "Debit Card Overdraft" $25, #1314).
       if (row.same_line_reselect && decision.kind !== "identical") {
-        const wide = await selectLivePublishedFees(db, row, { anyVariant: true });
+        const wide = (await selectLivePublishedFees(db, row, { anyVariant: true })).filter(
+          (prior) => sameDocument(prior.source_document_id, row.source_document_id) || nameCore(prior.fee_name ?? "") === nameCore(row.fee_name ?? ""),
+        );
         const wideApart = await linesApartFrom(db, row, wide);
         const wideDecision = decidePriorFee(row, wide, (prior) => wideApart.has(prior));
         if (wideDecision.kind === "identical") decision = wideDecision;
