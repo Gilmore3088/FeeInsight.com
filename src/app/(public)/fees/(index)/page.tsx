@@ -105,7 +105,7 @@ export default async function FeeCatalogPage() {
 
       {/* 1. The answer first: the national spread of the fees people ask about most. */}
       <section className="border-b border-border bg-paper">
-        <div className="mx-auto grid max-w-page gap-8 px-4 pb-10 pt-6 sm:px-6 sm:pb-14 sm:pt-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,30rem)] lg:items-start lg:gap-12">
+        <div className="mx-auto grid max-w-page gap-8 px-4 pb-10 pt-6 sm:px-6 sm:pb-14 sm:pt-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,30rem)] lg:grid-rows-[auto_1fr] lg:items-start lg:gap-x-12 lg:gap-y-6">
           <div className="lg:pt-6">
             <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-brick">{PRODUCT_NAME}</p>
             <h1 className="mt-3 text-[32px] font-semibold leading-[1.08] tracking-[-0.03em] text-ink sm:text-[44px]">
@@ -197,7 +197,7 @@ export default async function FeeCatalogPage() {
       )}
       </div>
 
-      {videoFee && <StateVideo stateName={`${getDisplayName(videoFee.fee_category).toLowerCase()} fees`} bars={videoBars} />}
+      {videoFee && <StateVideo stateName={`${getDisplayName(videoFee.fee_category).replace(/\s*\(.*\)$/, "").toLowerCase()} fees`} bars={videoBars} />}
 
       {/* Staff of a bank or credit union: Hamilton puts their own fees on every one of these lines. */}
       <section aria-labelledby="hamilton-heading" className="mx-auto max-w-page px-4 pb-16 pt-12 sm:px-6 sm:pt-16">
