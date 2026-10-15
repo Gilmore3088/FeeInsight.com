@@ -249,6 +249,13 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   DARWIN_RECHECK_STRATEGY: "Its selector re-reads every verified row not yet read at v3 (200 a verify step); there is nothing to replay.",
   // v1 (#1443): the live fragment re-check's rules (parenthetical exemption, glued-sentence rename,
   // priced trailing range left live). Its ledger cursor reads the whole live table again every pass.
+  // v2 (#1499): the wider sentence_end head, the generic/clause/service-list bars, no rename of an
+  // opening-deposit line and a re-read request to Knox per sentence_end takedown; the same cursor
+  // reads every live name again under v2, still in shadow.
+  // v3 (#1499): the if/when balance gate under $100, no rename with another price in the name,
+  // "(cont.)" dropped, "2FA" kept, and the sentence_end tail name; the cursor reads every name again.
+  // v4 (#1499 review): the tail's figure-equals-amount gate, total wording, the dormancy tier, tail
+  // qualifiers and generic tails, lower-case heads before a balance condition; same cursor, shadow.
   LIVE_FRAGMENT_STRATEGY: "Its cursor re-reads every live fee name each pass (2,000 a verify step); there is nothing to replay.",
   HOURLY_CHECK_VERSION: "Its cursor re-reads every live fee name for an hourly price each pass (2,000 a verify step); there is nothing to replay.",
   // v1 (#1455): a new shadow pass. Its selector reads every shared or vendor-path document pair not

@@ -225,6 +225,89 @@ Darwin owns verification and classification.
   `takedown_by_reason`, `by_pattern`, `by_action` (pattern counts per action),
   `samples_by_action` (up to 20 of each, with `rename_to`, `exempt_reason` or `takedown_reason`)
   and `samples_rename_duplicate`.
+  v2 (#1499, `LIVE_FRAGMENT_STRATEGY` v2, after a prod hand-check of v1 found generic and clause
+  heads renamed and most of the 431 `sentence_end` takedowns real fees; still in shadow):
+  - Generic heads are no name: an account, a period, "additional", "other" or "misc" and fee
+    words alone ("Account Fees", "Monthly Fee", "Quarterly fee", "Additional fees"); "Monthly
+    Service Fee" and "Monthly maintenance fee" still are. A list of services that does not end on
+    "fee", "charge" or "penalty" is a heading ("ATM & Visa Debit Card").
+  - Clause heads are no name: opening with "Customers", "No matter", "To request" or "All", or
+    holding "who", "sending" or "receiving" ("Bank sending the wire", another bank's charge).
+  - A footnote number glued to a capitalised word is dropped before the head is read
+    ("10NON-MEMBER LOAN APPLICATION FEE"; "6A monthly fee" then opens on an article and has no
+    head), never an ordinal or a time ("1ST", "24HR"); so is a leading "To request " before a
+    capitalised name, which must then pass every bar.
+  - A name that speaks of a minimum or opening deposit is never renamed
+    (`LIVE_FRAGMENT_OPENING_DEPOSIT`: its price is the deposit).
+  - The split is wider for `sentence_end` names: the last fee word may carry a parenthetical
+    before a cell or sentence break ("Returned/Non-Sufficient Funds (NSF) fee (per item). This fee
+    applies to"); the sentence may open with the price's lead-in ("A fee of", "The fee", "the
+    charge") or a named subject and a modal verb ("... Non-BankFive ATM BankFive may impose a";
+    "ATM" now ends a name); and a name ending on "fee" or "charge" splits at a lower-case "if" or
+    "when" whose condition names no person ("Monthly maintenance fee if the average daily balance
+    falls below"; "Wire Fee if you request" still has no head). Waiver and discount lines still
+    come down.
+  - Re-read request: with the switch on, each `takedown` / `fragment` / `sentence_end` fee also
+    gets a `pipeline_feedback` row of kind `knox_reread_requested` (`LIVE_FRAGMENT_REREAD_KIND`;
+    signal `wrong`, about stage `extract`, reported by `darwin`, check `darwin.live_fragment_check`,
+    dedupe key `darwin.live_fragment_check:reread:pub:<id>`, with the raw row and document from the
+    fee's verified row and evidence `request: reread_source_line`), so the real fee can come back
+    under a proper name. Knox does not consume this kind yet: no Knox pass reads it and nothing
+    re-reads the line today; the row records the request until a Knox reader is built (#1499).
+    Step detail `would_request_reread` (also in shadow) and `reread_requested` (written); a failed
+    request never undoes the takedown. `liveFragmentCountSql()` applies the same strip, bars and
+    deposit wording; its `takedown` / `fragment` / `sentence_end` row is the re-read count.
+  v3 (#1499, `LIVE_FRAGMENT_STRATEGY` v3, after a prod hand-check of v2: 40 of 43 renames right,
+  17 of 20 sampled `sentence_end` takedowns real fees; still in shadow):
+  - Threshold gate: a head split from an "if" or "when" condition (either case) is renamed only when
+    the condition is a balance condition (it names a balance and ends on below, under or less than)
+    and the amount is under $100 (`LIVE_FRAGMENT_BALANCE_CONDITION`, `LIVE_FRAGMENT_CONDITION_MAX`):
+    13 of 14 "X fee if the balance falls below" rows on prod were the fee. Any other condition
+    ("when overdrawn by more than" $5, "if more than" 6, "if inactive for more than" 12) is a
+    threshold: no rename, so the fee comes down and asks Knox to re-read.
+  - Another price in the name means no rename (`liveFragmentOtherPrice`): two "$N ... fee" phrases,
+    one whose figure is not the fee's amount, or any other dollar figure in a line that is not
+    about a balance ("a $35 Overdraft Fee ... or a $15 NSF Fee" $15, 133792; "A $20 NSF fee ...
+    $45 in NSF fees" $45, 55708). "below $500 ... a minimum balance fee of" $6 still renames.
+  - "(cont.)" / "(continued)" is dropped before the head is read ("Inactive Accounts Fee (cont.)").
+    A single digit on exactly two capitals and a space is a name ("2FA Token Fee"), not a footnote.
+  - Tail name (`rename` / `tail`): a `sentence_end` line with no head is renamed to the fee its
+    sentence ends on, with Knox's fee-of-sentence phrase (`feeOfSentenceTail`, the same regex
+    builder as Knox's `FEE_OF_SENTENCE`; "minimum" bars it only right before the fee word): "There
+    will be a card replacement fee of" $10 becomes "Card replacement fee", "... for a monthly paper
+    statement fee of" $3 "Monthly paper statement fee". First letter capitalised as Knox's cut-off
+    repair writes it, the rest as in the source. Every head bar applies ("a service charge fee of",
+    "a monthly fee of" give no name), as do the amount, waiver, deposit and other-price gates and
+    the category guard. A line whose head was refused by the threshold gate gets no tail.
+  Step detail `would_rename_by_via` ({head, tail}) and `rename_via` on each sample; the count SQL
+  reports tail renames as reason `rename_tail` under action `rename`.
+  v4 (#1499 review and the prod hand-check of v3: 67 of 74 renames right, 31 of 32 head, 36 of 42
+  tail; still in shadow):
+  - Figure gate: a tail rename, and a head renamed through an "if"/"when" condition, is refused
+    when any figure in the line (dollar or bare, commas ignored, 6 = 6.00) equals the amount: on a
+    tail line the price follows the cut-off "of", so an equal figure means the amount was read
+    from a threshold or a count ("below $500 ... a minimum balance fee of" $500, "more than $5"
+    $5, "inactive for 12 months" $12, "exceed 6 withdrawals" $6). A plain head ("Overdraft Fee
+    You will be charged $35 per item") keeps its price.
+  - A dollar figure a threshold word leads into ("more than $5", "under $500") is not another
+    price; "Wires are $15 incoming and an outgoing wire fee of" is (no rename at any amount). Only
+    comparison words count: "up to", "at least" and "a minimum of" state a price on a fee line.
+    A tail that opens on a parenthetical ("(OD) fee") is refused.
+  - Total wording ("may therefore incur", "incur $N in", "in ... fees for one", "a total of") is a
+    sum: no rename (55708).
+  - A balance condition that also counts an excess ("if more than 6 per month, balance below") is a
+    threshold. A dormancy tier after a cell break ("| If more than 3 years dormant", "| If
+    inactive ...") is the fee's own condition: the head renames when it ends on "fee" or "charge"
+    (44880 "Inactive Accounts Fee (cont.) | If more than 3 years dormant" $15).
+  - A lower-case line is read capitalised for its head only when a lower-case "if"/"when" follows
+    the head ("monthly service fee if balance falls below" becomes "Monthly service fee"), under the
+    same balance gate.
+  - Tails: "Bank's", "appropriate", "normal", "applicable", "small", "low" (and the other usual
+    qualifiers) are dropped from the front ("Returned item fee", "Overdraft item charge",
+    "Activation fee"); a tail of only handling / flat / small / low / late / monthly / service /
+    additional and fee words is refused ("Handling fee", "Late charge"), as is one holding "our" or
+    "your" ("Allpoint network our ATM fee"); a tail word may hold "/" or be a parenthetical
+    ("Return Item/Insufficient Funds Fee", "Consecutive days overdrawn (OD) fee").
 - Live hourly re-check (`hourly-frequency-check.ts`, #1456). About 802 live fees say in their name
   that they are priced by the hour ("Research Fee $25/hour", "Subpoena Fee - Per Hour") but carried
   no frequency or a per-item one, so a report read the price as a flat charge. `hourly` shows as "per
@@ -694,7 +777,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `DARWIN_SCHEDULE_REFILE_STRATEGY` | `verify.schedule_refile` | v1 | `darwin/schedule-refile.ts` |
 | `DARWIN_VERDICT_SCORE_STRATEGY` | `verify.verdict_score` | v1 | `darwin/verdict-score.ts` |
 | `DARWIN_RECHECK_STRATEGY` | `verify.recheck` | v3 | `darwin/verified-recheck.ts` |
-| `LIVE_FRAGMENT_STRATEGY` | `darwin.live_fragment_check` | v1 | `darwin/live-fragment-check.ts` |
+| `LIVE_FRAGMENT_STRATEGY` | `darwin.live_fragment_check` | v4 | `darwin/live-fragment-check.ts` |
 | `HOURLY_CHECK_VERSION` | `darwin.hourly_frequency_check` | v1 | `darwin/hourly-frequency-check.ts` |
 | `DOCUMENT_OWNER_STRATEGY` | `verify.document_owner` | v1 | `darwin/document-owner.ts` |
 | `DARWIN_VERIFY_STRATEGY` | `verify.rules` | v3 | `darwin/verify.ts` |

@@ -3,7 +3,8 @@ import { invalidatePublicReadCache } from "@/lib/data-store/fee-cache";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import {
   LIVE_FRAGMENT_REGEXES,
-  gluedSentenceHead,
+  feeOfSentenceTail,
+  gluedSentenceSplit,
   liveFragmentName,
   liveFragmentShape,
   writeLiveRenames,
@@ -11,6 +12,7 @@ import {
   type RetidyRename,
 } from "@/lib/agents/knox/name-retidy";
 import { checkFeeCategory } from "@/lib/fee-category-guard";
+import { recordFeedback, type FeedbackRow } from "@/lib/agents/learning/feedback";
 
 type SqlTag = typeof sql;
 
@@ -49,6 +51,14 @@ type SqlTag = typeof sql;
  * - `trailing_range` comes down only when the name has waiver or discount wording or the amount is
  *   $0 (the waived price); otherwise it is `exempt` `trailing_range_priced`, reported only.
  * - Everything else is a `takedown`, as before.
+ *
+ * v2 (#1499, after a prod hand-check of v1): the head is read wider for `sentence_end` names and
+ * generic or clause heads are refused (see `gluedSentenceHead`); a name that speaks of a minimum or
+ * opening deposit is never renamed (`LIVE_FRAGMENT_OPENING_DEPOSIT`: its price is the deposit). A
+ * `sentence_end` fragment that still comes down is usually a real fee whose line Knox read badly,
+ * so with the switch on its takedown also writes a `pipeline_feedback` row of kind
+ * `LIVE_FRAGMENT_REREAD_KIND` asking Knox to read its source line again. Knox does not act on that
+ * kind yet; the row records the request and where the line is (#1499).
  */
 export const LIVE_FRAGMENT_CHECK = "darwin.live_fragment_check";
 /**
@@ -64,14 +74,98 @@ export const LIVE_FRAGMENT_REASON_PREFIX = "fragment name: ";
 export const LIVE_FRAGMENT_FLAG_PREFIX = "darwin_live_fragment";
 /**
  * The strategy a rename's `pipeline_feedback` row is about (#1443). v1: the parenthetical
- * exemption, the glued-sentence rename and the priced trailing range left live.
+ * exemption, the glued-sentence rename and the priced trailing range left live. v2 (#1499): the
+ * wider head for `sentence_end` names (a parenthetical after the fee word, "A fee of" / "<Bank>
+ * may" / a lower-case "if" or "when" as the split, a glued footnote number or "To request"
+ * dropped), generic, clause and service-list heads refused, no rename of an opening-deposit line,
+ * and a re-read request to Knox for each `sentence_end` fragment taken down. v3 (#1499, after a prod
+ * hand-check of v2): a head split from an "if"/"when" condition is renamed only on a balance
+ * condition under $100; no rename when the name states another price; "(cont.)" dropped; "2FA"
+ * kept; a `sentence_end` line with no head is renamed to the fee its sentence ends on (`tail`).
+ * v4 (#1499 review): no tail rename when a figure in the line equals the amount; a balance
+ * condition that also counts an excess is a threshold; a dollar figure a threshold word leads into
+ * is not another price; "2FA-" and "2FA:" are no footnote.
  */
-export const LIVE_FRAGMENT_STRATEGY = { strategy: LIVE_FRAGMENT_CHECK, version: 1 } as const;
+export const LIVE_FRAGMENT_STRATEGY = { strategy: LIVE_FRAGMENT_CHECK, version: 4 } as const;
 /** Waiver or discount wording: a name that says the price is waived or cut is a waived price, never renamed. */
 export const LIVE_FRAGMENT_WAIVE_WORDING = /\b(?:waiv(?:e|ed|er|ers|es|ing)|discount(?:s|ed)?|rebates?|reduc(?:e|ed|es|tion)|avoid(?:ed|s)?|no charge)\b/i;
+/**
+ * v2 (#1499): a minimum or opening deposit named in the line: the price is the deposit, never a
+ * fee, so the name is never renamed ("ATM5, Telephone Banking and Bill Payment" $20, 77786).
+ */
+export const LIVE_FRAGMENT_OPENING_DEPOSIT = /\b(?:minimum|min|opening|initial)\s+(?:(?:opening|initial)\s+)?deposits?\b|\bdeposits?\s+to\s+open\b/i;
+/**
+ * v2 (#1499): the `pipeline_feedback` kind a `sentence_end` takedown writes: Knox, read this fee's
+ * source line again so the real fee can come back under a proper name. A request only: no Knox
+ * pass reads this kind yet (darwin/AGENTS.md).
+ */
+export const LIVE_FRAGMENT_REREAD_KIND = "knox_reread_requested";
+/**
+ * v3 (#1499): the rest of a line opens with an "if" or "when" condition (either case). A head split
+ * from one is renamed only when the condition is a balance condition (`LIVE_FRAGMENT_BALANCE_CONDITION`)
+ * and the amount is under `LIVE_FRAGMENT_CONDITION_MAX` dollars: "Overdraft Fee when overdrawn by
+ * more than" $5, "Excess Withdrawal Fee if more than" 6 and "Dormant Account Fee if inactive for
+ * more than" 12 are thresholds, while 13 of 14 "X fee if the balance falls below" rows on prod were
+ * the fee ($2 to $15 against thresholds of $50 to $5,000).
+ */
+export const LIVE_FRAGMENT_IF_CONDITION = /^\s*(?:[|:.;–—-]\s*)?(?:if|when)\b/i;
+export const LIVE_FRAGMENT_BALANCE_CONDITION = /\bbalances?\b.*\b(?:below|under|less\s+than)\s*$/i;
+export const LIVE_FRAGMENT_CONDITION_MAX = 100;
+/** v4 (#1499): a balance condition that also counts an excess ("if more than 6 per month, balance below") is a threshold. */
+/**
+ * v4 (#1499): a dormancy tier after a cell break is the fee's condition, not a threshold read as
+ * the amount ("Inactive Accounts Fee (cont.) | If more than 3 years dormant" $15, 44880); taken
+ * only when the head ends on "fee" or "charge" and no figure in the line equals the amount.
+ */
+export const LIVE_FRAGMENT_TIER_CONDITION = /^\s*\|\s*if\s+(?:(?:more\s+than|over)\s+\d+\s+(?:years?|months?|days?)\s+)?(?:dormant|inactive|inactivity)\b/i;
+export const LIVE_FRAGMENT_FEE_HEAD = /\b(?:fees?|charges?)$/i;
+/**
+ * v4 (#1499): wording that totals several charges ("users may therefore incur $45 in NSF fees",
+ * "a total of"): the amount is a sum, never renamed (55708).
+ */
+export const LIVE_FRAGMENT_TOTAL_WORDING = /\b(?:may\s+therefore\s+incur|incur\s+\$\s?\d[\d,]*(?:\.\d{1,2})?\s+in|in\s+(?:[A-Za-z'’/-]+\s+){0,3}fees?\s+for\s+one|a\s+total\s+of)\b/i;
+export const LIVE_FRAGMENT_EXCESS_CONDITION = /\b(?:more\s+than|exceeds?|exceeding|over|in\s+excess\s+of)\b/i;
+/**
+ * v3 (#1499): a price stated in the name with a fee word after it ("a $35 Overdraft Fee", "$45 in
+ * NSF fees"); group 1 is the figure. Two of them, or one that is not the fee's amount, mean the
+ * line holds another fee's price and is never renamed (133792, 55708).
+ */
+export const LIVE_FRAGMENT_PRICED_FEE = new RegExp(String.raw`\$\s?(\d[\d,]*(?:\.\d{1,2})?)\s+(?:[A-Za-z'’/-]+\s+){0,3}(?:fees?|charges?)\b`, "gi");
+/**
+ * v3: any dollar figure; one that is not the amount blocks a rename unless the line is about a
+ * balance ("below $500"). v4: a figure a threshold word leads into ("more than $5", "under $500")
+ * is a threshold, not another price (`LIVE_FRAGMENT_THRESHOLD_DOLLAR`, removed before the read).
+ * Comparison words only: "up to", "at least", "a minimum of" state a price on a fee line.
+ */
+export const LIVE_FRAGMENT_DOLLAR = /\$\s?(\d[\d,]*(?:\.\d{1,2})?)/g;
+export const LIVE_FRAGMENT_THRESHOLD_DOLLAR = /\b(?:(?:more|less|greater|fewer)\s+than|below|under|over|above|exceeds?|exceeding|in\s+excess\s+of)\s+\$\s?\d[\d,]*(?:\.\d{1,2})?/gi;
+const LIVE_FRAGMENT_BALANCE_WORD = /\bbalances?\b/i;
+/**
+ * v4 (#1499): any figure, dollar or bare ("$500", "12 months", "6 withdrawals"). On a tail line the
+ * fee's own price follows the cut-off "of", so an amount equal to a figure already in the line was
+ * read from that figure (a threshold, a count, another price) and the tail is never used.
+ */
+export const LIVE_FRAGMENT_FIGURE = /(\d[\d,]*(?:\.\d+)?)/g;
+const figureValue = (text: string) => Number(text.replace(/,/g, ""));
+
+/** v4 (#1499): true when a figure in the name equals the amount (6 = 6.00, commas ignored). */
+export function liveFragmentFigureIsAmount(name: string, amount: number): boolean {
+  return [...name.matchAll(LIVE_FRAGMENT_FIGURE)].some((match) => Math.abs(figureValue(match[1]) - amount) < 0.005);
+}
+
+/** v3 (#1499): true when the name states a price other than the fee's own (see `LIVE_FRAGMENT_PRICED_FEE`). */
+export function liveFragmentOtherPrice(name: string, amount: number): boolean {
+  const differs = (text: string) => Math.abs(figureValue(text) - amount) > 0.005;
+  const priced = [...name.matchAll(LIVE_FRAGMENT_PRICED_FEE)].map((match) => match[1]);
+  if (priced.length >= 2 || priced.some(differs)) return true;
+  const unthresholded = name.replace(LIVE_FRAGMENT_THRESHOLD_DOLLAR, " ");
+  return !LIVE_FRAGMENT_BALANCE_WORD.test(name) && [...unthresholded.matchAll(LIVE_FRAGMENT_DOLLAR)].some((match) => differs(match[1]));
+}
 
 export type LiveFragmentAction = "takedown" | "rename" | "exempt";
 export type LiveFragmentExemptReason = "parenthetical" | "trailing_range_priced";
+/** v3: how a rename found its name: the `head` the line opens with, or the fee its sentence ends on (`tail`). */
+export type LiveFragmentRenameVia = "head" | "tail";
 /**
  * Why a fee comes down: its name is a `fragment`, or it would have been renamed to a name another
  * live fee of the bank already has at the same price and category (`rename_duplicate`: that fee
@@ -97,12 +191,15 @@ export interface LiveFragmentSample {
   canonicalFeeKey: string | null;
   pattern: LiveFragmentPattern;
   action: LiveFragmentAction;
-  /** `rename`: the fee name the fragment opens with. */
+  /** `rename`: the fee name the fragment opens with (or, `tail`, ends on). */
   renameTo?: string;
+  renameVia?: LiveFragmentRenameVia;
   /** `exempt`: why the fee stays live under its name. */
   exemptReason?: LiveFragmentExemptReason;
   /** `takedown`: why the fee comes down. */
   takedownReason?: LiveFragmentTakedownReason;
+  /** v2: a `sentence_end` fragment taken down asks Knox to re-read its source line. */
+  rereadRequest?: boolean;
 }
 
 type PatternCounts = Record<LiveFragmentPattern, number>;
@@ -118,8 +215,12 @@ export interface LiveFragmentFindings {
   wouldTakeDown: number;
   /** Matches that would keep their fee under a cleaned name (`rename`). */
   wouldRename: number;
+  /** v3: the renames by how they found their name (`head` or `tail`). */
+  wouldRenameByVia: Record<LiveFragmentRenameVia, number>;
   /** Matches that stay live under their name (`exempt`). */
   exempt: number;
+  /** v2: takedowns that would ask Knox to re-read their source line (`sentence_end` fragments). */
+  wouldRequestReread: number;
   exemptByReason: Record<LiveFragmentExemptReason, number>;
   takedownByReason: Record<LiveFragmentTakedownReason, number>;
   byPattern: PatternCounts;
@@ -143,6 +244,8 @@ export interface LiveFragmentResult extends LiveFragmentFindings {
   takenDown: number[];
   /** Live fees renamed in this step (switch on, not a dry run). */
   renamed: number[];
+  /** Live fees taken down in this step whose re-read request reached `pipeline_feedback`. */
+  rereadRequested: number[];
   /** The read of live names outside the batch failed: duplicates are checked within the batch only and nothing is renamed. */
   duplicateCheckFailed: boolean;
 }
@@ -161,7 +264,7 @@ export function liveFragmentVerdict(
   name: string | null | undefined,
   amount: number | null,
   canonicalFeeKey: string | null = null,
-): { pattern: LiveFragmentPattern; action: LiveFragmentAction; renameTo?: string; exemptReason?: LiveFragmentExemptReason } | null {
+): { pattern: LiveFragmentPattern; action: LiveFragmentAction; renameTo?: string; renameVia?: LiveFragmentRenameVia; exemptReason?: LiveFragmentExemptReason } | null {
   const pattern = liveFragmentShape(name);
   if (!pattern) return null;
   if (!liveFragmentName(name)) return { pattern, action: "exempt", exemptReason: "parenthetical" };
@@ -170,12 +273,25 @@ export function liveFragmentVerdict(
   if (pattern === "trailing_range") {
     return waived || amount === 0 ? { pattern, action: "takedown" } : { pattern, action: "exempt", exemptReason: "trailing_range_priced" };
   }
-  if (pattern === "pronoun" || pattern === "sentence_end") {
-    const head = gluedSentenceHead(current);
-    if (head && amount != null && amount > 0 && !waived && liveFragmentName(head) == null) {
+  if ((pattern === "pronoun" || pattern === "sentence_end") && amount != null && amount > 0 && !waived
+      && !LIVE_FRAGMENT_OPENING_DEPOSIT.test(current) && !LIVE_FRAGMENT_TOTAL_WORDING.test(current) && !liveFragmentOtherPrice(current, amount)) {
+    const split = gluedSentenceSplit(current);
+    let candidate: { renameTo: string; renameVia: LiveFragmentRenameVia } | null = null;
+    if (split) {
+      // v3: a head split from an "if"/"when" condition only on a balance condition under $100.
+      // v4: or a dormancy tier after a cell break; never when a figure in the line is the amount.
+      const balanceOk = LIVE_FRAGMENT_BALANCE_CONDITION.test(split.rest) && !LIVE_FRAGMENT_EXCESS_CONDITION.test(split.rest) && amount < LIVE_FRAGMENT_CONDITION_MAX;
+      const tierOk = LIVE_FRAGMENT_TIER_CONDITION.test(split.rest) && LIVE_FRAGMENT_FEE_HEAD.test(split.head);
+      const conditionOk = !LIVE_FRAGMENT_IF_CONDITION.test(split.rest) || ((balanceOk || tierOk) && !liveFragmentFigureIsAmount(current, amount));
+      if (conditionOk) candidate = { renameTo: split.head, renameVia: "head" };
+    } else if (pattern === "sentence_end" && !liveFragmentFigureIsAmount(current, amount)) {
+      const tail = feeOfSentenceTail(current);
+      if (tail) candidate = { renameTo: tail, renameVia: "tail" };
+    }
+    if (candidate && liveFragmentName(candidate.renameTo) == null) {
       // Knox's rename bar: a name the category guard accepted must still be accepted once cleaned.
-      const guardOk = canonicalFeeKey == null || !checkFeeCategory(canonicalFeeKey, current).ok || checkFeeCategory(canonicalFeeKey, head).ok;
-      if (guardOk) return { pattern, action: "rename", renameTo: head };
+      const guardOk = canonicalFeeKey == null || !checkFeeCategory(canonicalFeeKey, current).ok || checkFeeCategory(canonicalFeeKey, candidate.renameTo).ok;
+      if (guardOk) return { pattern, action: "rename", ...candidate };
     }
   }
   return { pattern, action: "takedown" };
@@ -227,6 +343,7 @@ export function findLiveFragments(rows: LiveFragmentRow[], liveNames: ReadonlySe
     byAction[action][verdict.pattern] += 1;
     if (verdict.exemptReason) exemptByReason[verdict.exemptReason] += 1;
     if (takedownReason) takedownByReason[takedownReason] += 1;
+    const rereadRequest = takedownReason === "fragment" && verdict.pattern === "sentence_end";
     const sample: LiveFragmentSample = {
       feePublishedId: Number(row.fee_published_id),
       feeVerifiedId: num(row.fee_verified_id),
@@ -237,8 +354,10 @@ export function findLiveFragments(rows: LiveFragmentRow[], liveNames: ReadonlySe
       pattern: verdict.pattern,
       action,
       ...(verdict.renameTo ? { renameTo: verdict.renameTo } : {}),
+      ...(verdict.renameVia ? { renameVia: verdict.renameVia } : {}),
       ...(verdict.exemptReason ? { exemptReason: verdict.exemptReason } : {}),
       ...(takedownReason ? { takedownReason } : {}),
+      ...(rereadRequest ? { rereadRequest } : {}),
     };
     matches.push(sample);
     if (samplesByAction[action].length < LIVE_FRAGMENT_SAMPLES) samplesByAction[action].push(sample);
@@ -250,7 +369,12 @@ export function findLiveFragments(rows: LiveFragmentRow[], liveNames: ReadonlySe
     matched: matches.length,
     wouldTakeDown: count("takedown"),
     wouldRename: count("rename"),
+    wouldRenameByVia: {
+      head: matches.filter((fee) => fee.action === "rename" && fee.renameVia === "head").length,
+      tail: matches.filter((fee) => fee.action === "rename" && fee.renameVia === "tail").length,
+    },
     exempt: count("exempt"),
+    wouldRequestReread: matches.filter((fee) => fee.rereadRequest).length,
     exemptByReason,
     takedownByReason,
     byPattern,
@@ -329,6 +453,7 @@ export async function recheckLiveFragmentNames(
     nextAfterId: null,
     takenDown: [],
     renamed: [],
+    rereadRequested: [],
     duplicateCheckFailed: false,
   };
   let rows: LiveFragmentRow[];
@@ -474,6 +599,11 @@ export async function recheckLiveFragmentNames(
       }
     }
   }
+  if (result.takenDown.length > 0) {
+    // v2 (#1499): each `sentence_end` fragment taken down asks Knox to re-read its line.
+    const down = new Set(result.takenDown);
+    result.rereadRequested = await requestKnoxRereads(db, takedowns.filter((fee) => fee.rereadRequest && down.has(fee.feePublishedId)), options.runId);
+  }
   if (result.takenDown.length > 0 || result.renamed.length > 0) invalidatePublicReadCache();
 
   // The step's report, which also carries the cursor for the next step. A dry run writes nothing.
@@ -483,7 +613,7 @@ export async function recheckLiveFragmentNames(
         INSERT INTO agent_run_events (agent_run_id, step_id, event_type, status, message, detail)
         VALUES (
           ${options.runId}, ${options.stepId ?? null}, ${LIVE_FRAGMENT_CHECK}, 'completed',
-          ${`Read ${result.checked} live fee name(s): ${result.matched} fragment shape(s), ${result.wouldTakeDown} takedown, ${result.wouldRename} rename, ${result.exempt} exempt; ${live ? `${result.takenDown.length} archived, ${result.renamed.length} renamed` : "switch off, nothing written"}`},
+          ${`Read ${result.checked} live fee name(s): ${result.matched} fragment shape(s), ${result.wouldTakeDown} takedown, ${result.wouldRename} rename, ${result.exempt} exempt; ${live ? `${result.takenDown.length} archived, ${result.renamed.length} renamed, ${result.rereadRequested.length} re-read request(s) to Knox` : "switch off, nothing written"}`},
           ${JSON.stringify(liveFragmentDetail(result))}::jsonb
         )
       `);
@@ -492,6 +622,59 @@ export async function recheckLiveFragmentNames(
     }
   }
   return result;
+}
+
+/**
+ * v2 (#1499): one `pipeline_feedback` row per `sentence_end` fragment taken down, asking Knox to
+ * read its source line again (kind `LIVE_FRAGMENT_REREAD_KIND`, about Knox's extract, reported by
+ * Darwin, one row per live fee). The raw row and its document come from the verified row the
+ * live fee came from. Returns the fees written; a failure writes none and never undoes the takedown.
+ */
+async function requestKnoxRereads(db: SqlTag, fees: LiveFragmentSample[], runId: number): Promise<number[]> {
+  if (fees.length === 0) return [];
+  try {
+    return await inSavepoint(db, async (scope) => {
+      const verifiedIds = fees.map((fee) => fee.feeVerifiedId).filter((id): id is number => id != null);
+      const lineage = verifiedIds.length === 0 ? [] : await scope<{ fee_verified_id: number | string; fee_raw_id: number | string | null; source_document_id: number | string | null }[]>`
+        SELECT fv.fee_verified_id, fv.fee_raw_id, fr.source_document_id
+          FROM verified_fee_observations fv
+          LEFT JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
+         WHERE fv.fee_verified_id = ANY(${verifiedIds}::bigint[])
+      `;
+      const byVerified = new Map(lineage.map((row) => [Number(row.fee_verified_id), row]));
+      const rows: FeedbackRow[] = fees.map((fee) => {
+        const line = fee.feeVerifiedId == null ? undefined : byVerified.get(fee.feeVerifiedId);
+        return {
+          aboutStage: "extract",
+          signal: "wrong",
+          kind: LIVE_FRAGMENT_REREAD_KIND,
+          reportedBy: "darwin",
+          checkName: LIVE_FRAGMENT_CHECK,
+          institutionId: fee.institutionId,
+          sourceDocumentId: num(line?.source_document_id),
+          feeRawId: num(line?.fee_raw_id),
+          feeVerifiedId: fee.feeVerifiedId,
+          feePublishedId: fee.feePublishedId,
+          canonicalFeeKey: fee.canonicalFeeKey,
+          amount: fee.amount,
+          evidence: {
+            request: "reread_source_line",
+            fee_name: fee.feeName,
+            reason: liveFragmentReason(fee.pattern, fee.takedownReason),
+            strategy_version: LIVE_FRAGMENT_STRATEGY.version,
+            consumer: "none yet: no Knox pass reads this kind (#1499)",
+          },
+          runId,
+          dedupeKey: `${LIVE_FRAGMENT_CHECK}:reread:pub:${fee.feePublishedId}`,
+        };
+      });
+      await recordFeedback(scope, rows);
+      return fees.map((fee) => fee.feePublishedId);
+    });
+  } catch (error) {
+    console.error("[darwin] live fragment re-read request failed", error instanceof Error ? error.message : error);
+    return [];
+  }
 }
 
 function sampleDetail(fee: LiveFragmentSample) {
@@ -503,8 +686,10 @@ function sampleDetail(fee: LiveFragmentSample) {
     pattern: fee.pattern,
     action: fee.action,
     ...(fee.renameTo ? { rename_to: fee.renameTo } : {}),
+    ...(fee.renameVia ? { rename_via: fee.renameVia } : {}),
     ...(fee.exemptReason ? { exempt_reason: fee.exemptReason } : {}),
     ...(fee.takedownReason ? { takedown_reason: fee.takedownReason } : {}),
+    ...(fee.rereadRequest ? { reread_request: true } : {}),
   };
 }
 
@@ -515,7 +700,9 @@ export function liveFragmentFindingsDetail(found: LiveFragmentFindings) {
     matched: found.matched,
     would_take_down: found.wouldTakeDown,
     would_rename: found.wouldRename,
+    would_rename_by_via: found.wouldRenameByVia,
     exempt: found.exempt,
+    would_request_reread: found.wouldRequestReread,
     exempt_by_reason: found.exemptByReason,
     takedown_by_reason: found.takedownByReason,
     by_pattern: found.byPattern,
@@ -542,6 +729,7 @@ export function liveFragmentDetail(result: LiveFragmentResult) {
     ...liveFragmentFindingsDetail(result),
     taken_down: result.takenDown.length,
     renamed: result.renamed.length,
+    reread_requested: result.rereadRequested.length,
     duplicate_check_failed: result.duplicateCheckFailed,
   };
 }
@@ -567,12 +755,23 @@ function postgresPattern(re: RegExp): string {
  * the step finds a duplicate rename only inside its batch of fees or against names already live,
  * so two renames onto the same name in different batches are both renames in the ledger but one
  * rename and one `rename_duplicate` here. The trailing range's optional leading separators
- * (`[\s\-–—|:,]*`) never change whether it matches, so the SQL leaves them out.
+ * (`[\s\-–—|:,]*`) never change whether it matches, so the SQL leaves them out. v3 (#1499): the
+ * "if"/"when" gate reads the rest of the line after the head, the other-price gate counts the
+ * priced figures with `regexp_matches`, and a `sentence_end` line with no head that ends on a fee
+ * (`fee_of_sentence_tail`) counts as reason `rename_tail` (action `rename`); the `liveFragmentName`
+ * re-check of the cleaned name is skipped for the tail too. v2 (#1499): the
+ * glued footnote number or "To request" is dropped (`glued_lead_strip`) before the head is read,
+ * the new head bars ride in `glued_head_bars` and the opening-deposit wording blocks a rename, all
+ * from the same regexes; the re-read requests to Knox are the `takedown` / `fragment` /
+ * `sentence_end` row (the step's `would_request_reread`).
  */
 export function liveFragmentCountSql(): string {
   const re = LIVE_FRAGMENT_REGEXES;
   const waive = postgresPattern(LIVE_FRAGMENT_WAIVE_WORDING);
-  const bars = re.glued_head_bars.map((bar) => `head !~${bar.flags.includes("i") ? "*" : ""} '${postgresPattern(bar)}'`).join(" AND ");
+  const deposit = postgresPattern(LIVE_FRAGMENT_OPENING_DEPOSIT);
+  const barsOn = (column: string) => re.glued_head_bars.map((bar) => `${column} !~${bar.flags.includes("i") ? "*" : ""} '${postgresPattern(bar)}'`).join(" AND ");
+  const priced = postgresPattern(LIVE_FRAGMENT_PRICED_FEE);
+  const dollar = postgresPattern(LIVE_FRAGMENT_DOLLAR);
   return `WITH live AS (
   SELECT fee_published_id, institution_id, canonical_fee_key, amount,
          btrim(regexp_replace(COALESCE(fee_name, ''), '\\s+', ' ', 'g')) AS name
@@ -586,30 +785,62 @@ export function liveFragmentCountSql(): string {
     WHEN name ~* '${postgresPattern(re.pronoun)}' THEN 'pronoun'
   END AS pattern,
   btrim(regexp_replace(regexp_replace(name, '${postgresPattern(re.parenthetical)}', ' ', 'g'), '\\s+', ' ', 'g')) AS outside,
-  substring(name from '${postgresPattern(re.glued_sentence)}') AS head
+  regexp_replace(btrim(regexp_replace(name, '${postgresPattern(re.glued_cont_mark)}', '', 'gi')), '${postgresPattern(re.glued_lead_strip)}', '') AS readable,
+  btrim((regexp_match(name, '${postgresPattern(re.fee_of_sentence_tail)}', 'i'))[1]) AS tail_raw,
+  (SELECT count(*) FROM regexp_matches(name, '${priced}', 'gi')) AS priced_count,
+  EXISTS (SELECT 1 FROM regexp_matches(name, '${priced}', 'gi') m WHERE replace(m[1], ',', '')::numeric <> amount)
+    OR (name !~* '\\ybalances?\\y' AND EXISTS (SELECT 1 FROM regexp_matches(regexp_replace(name, '${postgresPattern(LIVE_FRAGMENT_THRESHOLD_DOLLAR)}', ' ', 'gi'), '${dollar}', 'g') m WHERE replace(m[1], ',', '')::numeric <> amount)) AS other_figure,
+  EXISTS (SELECT 1 FROM regexp_matches(name, '${postgresPattern(LIVE_FRAGMENT_FIGURE)}', 'g') m WHERE abs(replace(m[1], ',', '')::numeric - amount) < 0.005) AS figure_is_amount
   FROM live
+), matched AS (
+  SELECT *, substring(readable from '${postgresPattern(re.glued_sentence)}') AS head_plain,
+         CASE WHEN readable ~ '^[a-z]' THEN upper(left(readable, 1)) || substr(readable, 2) END AS readable_cap,
+         btrim(regexp_replace(tail_raw, '${postgresPattern(re.tail_qualifiers)}', '', 'i')) AS tail_phrase
+    FROM tagged
+   WHERE pattern IS NOT NULL
+), capped AS (
+  SELECT *, substring(readable_cap from '${postgresPattern(re.glued_sentence)}') AS head_cap FROM matched
+), split AS (
+  SELECT *, CASE
+    WHEN head_plain IS NOT NULL THEN head_plain
+    WHEN head_cap IS NOT NULL AND substr(readable_cap, length(head_cap) + 1) ~ '${postgresPattern(re.glued_lower_condition)}' THEN head_cap
+  END AS head
+    FROM capped
+), candidate AS (
+  SELECT *,
+         COALESCE(head IS NOT NULL AND ${barsOn("head")}, false) AS head_ok,
+         substr(COALESCE(CASE WHEN head_plain IS NULL THEN readable_cap END, readable), length(head) + 1) AS rest,
+         COALESCE(tail_phrase <> '' AND tail_phrase !~ '${postgresPattern(re.tail_paren_start)}' AND tail_raw !~* '${postgresPattern(re.tail_person)}' AND tail_phrase !~* '${postgresPattern(re.tail_generic_only)}' AND ${barsOn("tail_phrase")}, false) AS tail_ok,
+         upper(left(tail_phrase, 1)) || substr(tail_phrase, 2) AS tail,
+         COALESCE(amount, 0) > 0 AND name !~* '${waive}' AND name !~* '${deposit}' AND name !~* '${postgresPattern(LIVE_FRAGMENT_TOTAL_WORDING)}'
+           AND priced_count < 2 AND NOT COALESCE(other_figure, false) AS renamable
+    FROM split
 ), verdict AS (
-  SELECT fee_published_id, institution_id, canonical_fee_key, amount, pattern, head, CASE
+  SELECT fee_published_id, institution_id, canonical_fee_key, amount, name, pattern, CASE
     WHEN pattern = 'pronoun' AND outside !~* '${postgresPattern(re.pronoun)}' THEN 'parenthetical'
     WHEN pattern = 'trailing_range' THEN CASE WHEN name ~* '${waive}' OR COALESCE(amount, -1) = 0 THEN 'fragment' ELSE 'trailing_range_priced' END
-    WHEN pattern IN ('pronoun', 'sentence_end') AND head IS NOT NULL AND COALESCE(amount, 0) > 0 AND name !~* '${waive}'
-         AND ${bars} THEN 'rename'
+    WHEN pattern IN ('pronoun', 'sentence_end') AND renamable AND head_ok
+         AND (rest !~* '${postgresPattern(LIVE_FRAGMENT_IF_CONDITION)}'
+              OR (((rest ~* '${postgresPattern(LIVE_FRAGMENT_BALANCE_CONDITION)}' AND rest !~* '${postgresPattern(LIVE_FRAGMENT_EXCESS_CONDITION)}' AND amount < ${LIVE_FRAGMENT_CONDITION_MAX})
+                   OR (rest ~* '${postgresPattern(LIVE_FRAGMENT_TIER_CONDITION)}' AND head ~* '${postgresPattern(LIVE_FRAGMENT_FEE_HEAD)}'))
+                  AND NOT COALESCE(figure_is_amount, false))) THEN 'rename'
+    WHEN pattern = 'sentence_end' AND renamable AND NOT head_ok AND tail_ok AND NOT COALESCE(figure_is_amount, false) THEN 'rename_tail'
     ELSE 'fragment'
-  END AS first_reason
-  FROM tagged
- WHERE pattern IS NOT NULL
+  END AS first_reason,
+  CASE WHEN head_ok THEN head WHEN tail_ok THEN tail END AS rename_to
+  FROM candidate
 ), ranked AS (
   SELECT v.*,
-         row_number() OVER (PARTITION BY v.first_reason = 'rename', v.institution_id, v.canonical_fee_key, v.amount, lower(v.head) ORDER BY v.fee_published_id) AS rename_rank
+         row_number() OVER (PARTITION BY v.first_reason IN ('rename', 'rename_tail'), v.institution_id, v.canonical_fee_key, v.amount, lower(v.rename_to) ORDER BY v.fee_published_id) AS rename_rank
     FROM verdict v
 ), acted AS (
-  SELECT r.pattern, CASE
-    WHEN r.first_reason = 'rename' AND (r.rename_rank > 1 OR EXISTS (
+  SELECT r.fee_published_id, r.name, r.amount, r.rename_to, r.pattern, CASE
+    WHEN r.first_reason IN ('rename', 'rename_tail') AND (r.rename_rank > 1 OR EXISTS (
       SELECT 1 FROM live l
        WHERE l.institution_id = r.institution_id
          AND l.canonical_fee_key IS NOT DISTINCT FROM r.canonical_fee_key
          AND l.amount = r.amount
-         AND lower(l.name) = lower(r.head)
+         AND lower(l.name) = lower(r.rename_to)
     )) THEN 'rename_duplicate'
     ELSE r.first_reason
   END AS reason
@@ -617,7 +848,7 @@ export function liveFragmentCountSql(): string {
 ), counted AS (
   SELECT pattern, reason, CASE
     WHEN reason IN ('fragment', 'rename_duplicate') THEN 'takedown'
-    WHEN reason = 'rename' THEN 'rename'
+    WHEN reason IN ('rename', 'rename_tail') THEN 'rename'
     ELSE 'exempt'
   END AS action
   FROM acted

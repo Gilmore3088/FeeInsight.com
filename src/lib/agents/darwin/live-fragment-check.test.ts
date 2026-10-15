@@ -5,6 +5,7 @@ import { gluedSentenceHead, isCutoffName, liveFragmentName, liveFragmentShape } 
 import {
   FRAGMENT_NAME_TAKEDOWN_LIVE,
   LIVE_FRAGMENT_BATCH,
+  LIVE_FRAGMENT_REREAD_KIND,
   LIVE_FRAGMENT_STRATEGY,
   countLiveFragmentNames,
   findLiveFragments,
@@ -112,7 +113,7 @@ describe("Darwin live fragment re-check", () => {
 
   it("splits the ledger detail by action with samples", () => {
     const found = findLiveFragments(ROWS);
-    const detail = liveFragmentDetail({ ...found, live: false, dryRun: true, afterId: 0, nextAfterId: 0, takenDown: [], renamed: [], duplicateCheckFailed: false });
+    const detail = liveFragmentDetail({ ...found, live: false, dryRun: true, afterId: 0, nextAfterId: 0, takenDown: [], renamed: [], rereadRequested: [], duplicateCheckFailed: false });
     expect(detail).toMatchObject({ version: LIVE_FRAGMENT_STRATEGY.version, would_take_down: 2, would_rename: 1, exempt: 2, taken_down: 0, renamed: 0 });
     expect(detail.samples_by_action.rename[0]).toMatchObject({ fee_published_id: 60003, action: "rename", rename_to: "Overdraft Fee" });
     expect(detail.samples_by_action.exempt[1]).toMatchObject({ fee_published_id: 60004, action: "exempt", exempt_reason: "parenthetical" });
@@ -165,6 +166,37 @@ describe("Darwin live fragment re-check", () => {
     expect(String(feedback?.[1])).toContain("darwin.live_fragment_check");
     expect(String(feedback?.[1])).toContain("\"new_name\":\"Overdraft Fee\"");
     expect(calls).toContain("darwin.live_fragment_name_renamed");
+    // v2 (#1499): the sentence_end fragment taken down asks Knox to re-read its line, after the rename's row.
+    expect(result.rereadRequested).toEqual([58414]);
+    const feedbackCalls = db.mock.calls.filter(([strings]) => (strings as TemplateStringsArray).join("?").includes("INSERT INTO pipeline_feedback"));
+    expect(feedbackCalls).toHaveLength(2);
+    const reread = JSON.parse(String(feedbackCalls[1][1]));
+    expect(reread).toEqual([expect.objectContaining({
+      kind: LIVE_FRAGMENT_REREAD_KIND,
+      signal: "wrong",
+      about_stage: "extract",
+      reported_by: "darwin",
+      check_name: "darwin.live_fragment_check",
+      fee_published_id: 58414,
+      fee_verified_id: 9001,
+      dedupe_key: "darwin.live_fragment_check:reread:pub:58414",
+      evidence: expect.objectContaining({ request: "reread_source_line", reason: "fragment name: sentence_end" }),
+    })]);
+    expect(liveFragmentDetail(result)).toMatchObject({ would_request_reread: 1, reread_requested: 1 });
+  });
+
+  it("asks for no re-read in shadow, and keeps the takedown when the request fails", async () => {
+    const shadow = dbFor(ROWS);
+    const off = await recheckLiveFragmentNames(asDb(shadow), { runId: 7, dryRun: false });
+    expect(off).toMatchObject({ wouldRequestReread: 1, rereadRequested: [] });
+    expect(JSON.stringify(shadow.mock.calls)).not.toContain(LIVE_FRAGMENT_REREAD_KIND);
+    const db = dbFor(ROWS);
+    const base = db.getMockImplementation() as (strings: TemplateStringsArray, ...values: unknown[]) => Promise<unknown>;
+    db.mockImplementation((strings: TemplateStringsArray, ...values: unknown[]) =>
+      strings.join("?").includes("FROM verified_fee_observations fv") ? Promise.reject(new Error("read failed")) : base(strings, ...values));
+    const on = await recheckLiveFragmentNames(asDb(db), { runId: 7, dryRun: false, live: true });
+    expect(on.takenDown).toEqual([58414, 60005]);
+    expect(on.rereadRequested).toEqual([]);
   });
 
   it("takes down, not renames, a fee whose new name another live fee of the bank has at that price and category", async () => {
@@ -245,14 +277,29 @@ describe("Darwin live fragment re-check", () => {
     expect(text).toContain("THEN 'parenthetical'");
     expect(text).toContain("THEN 'rename'");
     expect(text).toContain("'\\([^()]*\\)'");
-    expect(text).toContain("substring(name from '^((?!");
+    expect(text).toContain("from '^((?!");
     expect(text).toContain("COALESCE(amount, -1) = 0");
     expect(text).toContain("\\y(?:waiv");
     expect(text).toContain("GROUPING SETS ((action, reason, pattern), (action, reason), (action), ())");
     expect(text).toContain("'rename_duplicate'");
-    expect(text).toContain("row_number() OVER (PARTITION BY v.first_reason = 'rename'");
+    expect(text).toContain("row_number() OVER (PARTITION BY v.first_reason IN ('rename', 'rename_tail')");
     expect(text).toContain("l.canonical_fee_key IS NOT DISTINCT FROM r.canonical_fee_key");
     expect(text).toContain("quarantined_at IS NULL");
+  });
+
+  it("v2: reads the head after the glued footnote number and refuses opening-deposit renames in SQL too", () => {
+    const text = liveFragmentCountSql();
+    expect(LIVE_FRAGMENT_STRATEGY.version).toBe(4);
+    expect(text).toContain("AS figure_is_amount");
+    expect(text).toContain("AND NOT COALESCE(figure_is_amount, false) THEN 'rename_tail'");
+    expect(text).toContain("btrim(regexp_replace(name, '\\s*\\((?:cont\\.?|continued)\\)', '', 'gi')), '^(?:(?:\\d{2}");
+    expect(text).toContain("substring(readable from '^((?!");
+    expect(text).toContain("THEN 'rename_tail'");
+    expect(text).toContain("regexp_matches(name, '\\$\\s?(\\d");
+    expect(text).toContain("AND amount < 100");
+    expect(text).toContain("name !~* '\\y(?:minimum|min|opening|initial)");
+    expect(text).toContain("head !~* '^(?:customers?|no\\s+matter|to\\s+request|all)\\y");
+    expect(text).not.toContain("(?<");
   });
 });
 
@@ -264,10 +311,10 @@ describe("live fragment switch-on rules (#1443)", () => {
     // ... but not when the pronoun is outside it too.
     ["Paper Statement (monthly) you will be charged", 3, null, { pattern: "pronoun", action: "takedown" }],
     // Glued sentence: the fee keeps its leading name.
-    ["Overdraft Fee You will be charged when an item is paid into overdraft", 35, "overdraft", { pattern: "pronoun", action: "rename", renameTo: "Overdraft Fee" }],
-    ["Returned Item Fee - you will be charged for each item returned", 30, "nsf", { pattern: "pronoun", action: "rename", renameTo: "Returned Item Fee" }],
-    ["Stop Payment You will be charged", 30, "stop_payment", { pattern: "pronoun", action: "rename", renameTo: "Stop Payment" }],
-    ["Inactive fee: This account may be subject to an Inactive fee of", 5, null, { pattern: "sentence_end", action: "rename", renameTo: "Inactive fee" }],
+    ["Overdraft Fee You will be charged when an item is paid into overdraft", 35, "overdraft", { pattern: "pronoun", action: "rename", renameTo: "Overdraft Fee", renameVia: "head" }],
+    ["Returned Item Fee - you will be charged for each item returned", 30, "nsf", { pattern: "pronoun", action: "rename", renameTo: "Returned Item Fee", renameVia: "head" }],
+    ["Stop Payment You will be charged", 30, "stop_payment", { pattern: "pronoun", action: "rename", renameTo: "Stop Payment", renameVia: "head" }],
+    ["Inactive fee: This account may be subject to an Inactive fee of", 5, null, { pattern: "sentence_end", action: "rename", renameTo: "Inactive fee", renameVia: "head" }],
     // ... unless the amount is $0 or the name speaks of a waiver: a waived price comes down.
     ["Monthly Service Fee You will be charged unless", 0, null, { pattern: "pronoun", action: "takedown" }],
     ["Monthly Service Fee You can avoid this fee by", 10, null, { pattern: "sentence_end", action: "takedown" }],
@@ -284,6 +331,98 @@ describe("live fragment switch-on rules (#1443)", () => {
     ["Monthly maintenance fee waived per", 10, null, { pattern: "trailing_range", action: "takedown" }],
     ["Late Fee | Up to", 0, null, { pattern: "trailing_range", action: "takedown" }],
     ["Discounted Safe Deposit Box rent up to", 40, null, { pattern: "trailing_range", action: "takedown" }],
+    // v2 (#1499) prod hand-check.
+    ["Returned/Non-Sufficient Funds (NSF) fee (per item). This fee applies to", 40, null, { pattern: "sentence_end", action: "rename", renameTo: "Returned/Non-Sufficient Funds (NSF) fee (per item)", renameVia: "head" }],
+    ["Legal Attachments, Levies, and Garnishment Fee A fee of", 60, null, { pattern: "sentence_end", action: "rename", renameTo: "Legal Attachments, Levies, and Garnishment Fee", renameVia: "head" }],
+    ["ATM Withdrawal Service Charge at Non-BankFive ATM BankFive may impose a", 1.5, null, { pattern: "sentence_end", action: "rename", renameTo: "ATM Withdrawal Service Charge at Non-BankFive ATM", renameVia: "head" }],
+    ["Monthly maintenance fee if the average daily balance falls below", 6.05, null, { pattern: "sentence_end", action: "rename", renameTo: "Monthly maintenance fee", renameVia: "head" }],
+    ["10NON-MEMBER LOAN APPLICATION FEE THE FEE IS NON-REFUNDABLE AND IS", 25, null, { pattern: "sentence_end", action: "rename", renameTo: "NON-MEMBER LOAN APPLICATION FEE", renameVia: "head" }],
+    ["Monthly Fee if the balance falls below", 5, null, { pattern: "sentence_end", action: "takedown" }],
+    ["Account Fees The following fees apply to", 5, null, { pattern: "sentence_end", action: "takedown" }],
+    ["Bank sending the wire may charge a fee of", 15, null, { pattern: "sentence_end", action: "takedown" }],
+    ["ATM5, Telephone Banking and Bill Payment The minimum opening deposit is", 20, null, { pattern: "sentence_end", action: "takedown" }],
+    // A minimum or opening deposit in the line is never renamed, even under a clean head.
+    ["Paper Statement Fee The minimum opening deposit is", 20, null, { pattern: "sentence_end", action: "takedown" }],
+    ["Teller Check Payable to Someone Other than", 10, null, { pattern: "sentence_end", action: "takedown" }],
+    ["Monthly Service Fee waived with minimum daily balance of", 10, null, { pattern: "sentence_end", action: "takedown" }],
+    // v3 (#1499): an "if"/"when" condition renames only on a balance condition under $100.
+    ["Monthly Service Fee if balance below", 500, null, { pattern: "sentence_end", action: "takedown" }],
+    ["Monthly Service Fee if balance below", 10, null, { pattern: "sentence_end", action: "rename", renameTo: "Monthly Service Fee", renameVia: "head" }],
+    ["Monthly Service Fee If your average daily balance falls below", 10, null, { pattern: "sentence_end", action: "rename", renameTo: "Monthly Service Fee", renameVia: "head" }],
+    ["Overdraft Fee when overdrawn by more than", 5, null, { pattern: "sentence_end", action: "takedown" }],
+    ["Excess Withdrawal Fee if more than", 6, null, { pattern: "sentence_end", action: "takedown" }],
+    ["Dormant Account Fee if inactive for more than", 12, null, { pattern: "sentence_end", action: "takedown" }],
+    ["Dormant Account Fee If inactive for 12 months or more the fee is", 5, null, { pattern: "sentence_end", action: "takedown" }],
+    // v3: another price in the name means no rename (133792, 55708).
+    ["a $35 Overdraft Fee if the transaction is paid or a $15 NSF Fee if returned and", 15, null, { pattern: "sentence_end", action: "takedown" }],
+    ["A $20 NSF fee is charged per item; users may therefore incur $45 in NSF fees per day and", 45, null, { pattern: "sentence_end", action: "takedown" }],
+    ["Overdraft Fee You will be charged $35 per item for", 25, null, { pattern: "sentence_end", action: "takedown" }],
+    ["Overdraft Fee You will be charged $35 per item for", 35, null, { pattern: "sentence_end", action: "rename", renameTo: "Overdraft Fee", renameVia: "head" }],
+    // v3: "(cont.)" dropped (44880).
+    ["Inactive Accounts Fee (cont.) This fee is charged to", 5, null, { pattern: "sentence_end", action: "rename", renameTo: "Inactive Accounts Fee", renameVia: "head" }],
+    // v3: a sentence_end line with no head takes the fee its sentence ends on (tail).
+    ["Paper statements are available for a monthly paper statement fee of", 3, null, { pattern: "sentence_end", action: "rename", renameTo: "Monthly paper statement fee", renameVia: "tail" }],
+    ["If your balance falls below $500 you will be charged a minimum balance fee of", 6, null, { pattern: "sentence_end", action: "rename", renameTo: "Minimum balance fee", renameVia: "tail" }],
+    ["There will be a card replacement fee of", 10, null, { pattern: "sentence_end", action: "rename", renameTo: "Card replacement fee", renameVia: "tail" }],
+    ["you will be charged an overdraft fee of", 35, null, { pattern: "sentence_end", action: "rename", renameTo: "Overdraft fee", renameVia: "tail" }],
+    ["The account is charged a fee of", 5, null, { pattern: "sentence_end", action: "takedown" }],
+    ["You will pay a service charge fee of", 5, null, { pattern: "sentence_end", action: "takedown" }],
+    ["You will pay a monthly fee of", 5, null, { pattern: "sentence_end", action: "takedown" }],
+    ["You will pay a minimum fee of", 5, null, { pattern: "sentence_end", action: "takedown" }],
+    ["You can avoid the paper statement fee of", 3, null, { pattern: "sentence_end", action: "takedown" }],
+    ["Accounts opened with a minimum opening deposit have a setup fee of", 25, null, { pattern: "sentence_end", action: "takedown" }],
+    ["If your balance falls below $500 you will be charged a minimum balance fee of", 0, null, { pattern: "sentence_end", action: "takedown" }],
+    ["Customers who opt in pay a paper statement fee of", 3, null, { pattern: "sentence_end", action: "rename", renameTo: "Paper statement fee", renameVia: "tail" }],
+    // v4 (#1499 review): no tail rename when a figure in the line equals the amount.
+    ["If your balance falls below $500 you will be charged a minimum balance fee of", 500, null, { pattern: "sentence_end", action: "takedown" }],
+    ["If your balance falls below $500 you will be charged a minimum balance fee of", 500.0, null, { pattern: "sentence_end", action: "takedown" }],
+    ["If your balance falls below $1,000 you will be charged a minimum balance fee of", 1000, null, { pattern: "sentence_end", action: "takedown" }],
+    ["Accounts with a balance under $500 will be charged a maintenance fee of", 500, null, { pattern: "sentence_end", action: "takedown" }],
+    ["Accounts with a balance under $500 will be charged a maintenance fee of", 10, null, { pattern: "sentence_end", action: "rename", renameTo: "Maintenance fee", renameVia: "tail" }],
+    ["Wires are $15 incoming and an outgoing wire fee of", 15, null, { pattern: "sentence_end", action: "takedown" }],
+    ["Wires are $15 incoming and an outgoing wire fee of", 25, null, { pattern: "sentence_end", action: "takedown" }],
+    ["Overdrafts of more than $5 will be charged an overdraft fee of", 5, null, { pattern: "sentence_end", action: "takedown" }],
+    ["Overdrafts of more than $5 will be charged an overdraft fee of", 25, null, { pattern: "sentence_end", action: "rename", renameTo: "Overdraft fee", renameVia: "tail" }],
+    ["Accounts inactive for 12 months will be charged a dormant account fee of", 12, null, { pattern: "sentence_end", action: "takedown" }],
+    ["Accounts inactive for 12 months will be charged a dormant account fee of", 10, null, { pattern: "sentence_end", action: "rename", renameTo: "Dormant account fee", renameVia: "tail" }],
+    ["If you exceed 6 withdrawals per month you will be charged an excess withdrawal fee of", 6, null, { pattern: "sentence_end", action: "takedown" }],
+    ["If you exceed 6 withdrawals per month you will be charged an excess withdrawal fee of", 10, null, { pattern: "sentence_end", action: "rename", renameTo: "Excess withdrawal fee", renameVia: "tail" }],
+    // v4: a balance condition that also counts an excess is a threshold.
+    ["Excess Transaction Fee if more than 6 per month, balance below", 10, null, { pattern: "sentence_end", action: "takedown" }],
+    // v4 round-3 hand check. Total wording is a sum, never renamed (55708).
+    ["Bill Pay NSF Fee. This fee is passed along per returned payment; Bill Pay users may therefore incur $45 in NSF fees for", 45, null, { pattern: "sentence_end", action: "takedown" }],
+    ["Overdraft Fee. You may be charged up to a total of", 105, null, { pattern: "sentence_end", action: "takedown" }],
+    // A dormancy tier after a cell break is the fee's condition (44880).
+    ["Inactive Accounts Fee (cont.) | If more than 3 years dormant the fee is", 15, null, { pattern: "sentence_end", action: "rename", renameTo: "Inactive Accounts Fee", renameVia: "head" }],
+    ["Dormant Account Fee | If inactive for 12 months the fee is", 5, null, { pattern: "sentence_end", action: "rename", renameTo: "Dormant Account Fee", renameVia: "head" }],
+    ["Inactive Accounts Fee | If more than 3 years dormant the fee is", 3, null, { pattern: "sentence_end", action: "takedown" }],
+    ["Dormant Account Fee if inactive for more than", 12, null, { pattern: "sentence_end", action: "takedown" }],
+    // Tail qualifiers dropped; generic tails and "our"/"your" refused.
+    ["Each returned item is charged the appropriate returned item fee of", 30, null, { pattern: "sentence_end", action: "rename", renameTo: "Returned item fee", renameVia: "tail" }],
+    ["Each item paid is charged the Bank's normal overdraft item charge of", 30, null, { pattern: "sentence_end", action: "rename", renameTo: "Overdraft item charge", renameVia: "tail" }],
+    ["Items are subject to a handling fee of", 5, null, { pattern: "sentence_end", action: "takedown" }],
+    ["New cards carry a low activation fee of", 5, null, { pattern: "sentence_end", action: "rename", renameTo: "Activation fee", renameVia: "tail" }],
+    ["This account has a monthly flat fee of", 5, null, { pattern: "sentence_end", action: "takedown" }],
+    ["This account has a small monthly fee of", 5, null, { pattern: "sentence_end", action: "takedown" }],
+    ["Payments received after the due date carry a late charge of", 15, null, { pattern: "sentence_end", action: "takedown" }],
+    ["Withdrawals at an Allpoint network our ATM fee of", 2, null, { pattern: "sentence_end", action: "takedown" }],
+    // A lower-case head before a balance-below condition (132041).
+    ["monthly service fee if balance falls below", 10, null, { pattern: "sentence_end", action: "rename", renameTo: "Monthly service fee", renameVia: "head" }],
+    ["monthly service fee if more than 6 withdrawals, balance below", 10, null, { pattern: "sentence_end", action: "takedown" }],
+    // "/" and a parenthetical inside a tail (68548, 97910).
+    ["Each item returned unpaid is charged a Return Item/Insufficient Funds Fee of", 30, null, { pattern: "sentence_end", action: "rename", renameTo: "Return Item/Insufficient Funds Fee", renameVia: "tail" }],
+    ["After 5 days the account is charged a Consecutive days overdrawn (OD) fee of", 25, null, { pattern: "sentence_end", action: "rename", renameTo: "Consecutive days overdrawn (OD) fee", renameVia: "tail" }],
+    ["After 5 days the account is charged a Consecutive days overdrawn (OD) fee of", 5, null, { pattern: "sentence_end", action: "takedown" }],
+    // v4 review: "up to", "a minimum of" state a price on a fee line, so the figure is another price.
+    ["Overdraft Fee You will be charged up to $35 per item", 5, null, { pattern: "pronoun", action: "takedown" }],
+    ["Wire Transfer Fee You will be charged up to $35 per wire", 15, null, { pattern: "pronoun", action: "takedown" }],
+    ["Stop Payment Fee You will be charged a minimum of $30", 10, null, { pattern: "pronoun", action: "takedown" }],
+    ["Wires are up to $15 incoming and an outgoing wire fee of", 25, null, { pattern: "sentence_end", action: "takedown" }],
+    // A tail that opens on a parenthetical names no fee.
+    ["Accounts overdrawn are charged the (OD) fee of", 25, null, { pattern: "sentence_end", action: "takedown" }],
+    ["Accounts overdrawn are charged a (see schedule) fee of", 25, null, { pattern: "sentence_end", action: "takedown" }],
+    // A head that is refused does not fall back to the tail when the line has a head split from a threshold.
+    ["Overdraft Fee when overdrawn by more than $5 a daily overdraft fee of", 5, null, { pattern: "sentence_end", action: "takedown" }],
   ] as const)("%j at $%s is %j", (name, amount, key, verdict) => {
     expect(liveFragmentVerdict(name, amount, key)).toEqual(verdict);
   });
@@ -348,6 +487,46 @@ describe("live fragment switch-on rules (#1443)", () => {
     ["Wire Fee for our members You will", null],
     ["Overdraft Fee Waived You will", null],
     ["Cargo por Sobregiro You will be charged", null],
+    // v2 (#1499) prod hand-check. Generic heads are no name (88206, 126998, 116036, 65340, 13617, 49798).
+    ["Account Fees The following fees apply", null],
+    ["Monthly Fee If your balance falls below", null],
+    ["Monthly Fee if the balance falls below", null],
+    ["Quarterly fee: This fee is charged", null],
+    ["Additional fees The fee for", null],
+    ["Other Charges You will", null],
+    ["ATM & Visa Debit Card You will be charged", null],
+    ["Monthly Service Fee You will be charged", "Monthly Service Fee"],
+    // A footnote number glued to the name (109893, 87357); never an ordinal, a time or a form number.
+    ["10NON-MEMBER LOAN APPLICATION FEE You will be charged", "NON-MEMBER LOAN APPLICATION FEE"],
+    ["6A monthly fee You will be charged", null],
+    ["24 Hour ATM Fee You will be charged", "24 Hour ATM Fee"],
+    ["24HR Banking Fee You will be charged", "24HR Banking Fee"],
+    ["1099 Form Copy Fee You will be charged", "1099 Form Copy Fee"],
+    ["1ST CHECK ORDER FEE You will be charged", null],
+    // Clause heads (125909, 62983, 54122, 142713, 77786).
+    ["Customers who opt to receive paper statements will be charged", null],
+    ["No matter how many drafts you write", null],
+    ["To request Overnight/2-day shipping of a debit card You will be charged", "Overnight/2-day shipping of a debit card"],
+    ["To request a replacement card You will be charged", null],
+    ["Bank sending the wire You may also be charged", null],
+    ["All Returned Items You will be charged", null],
+    ["ATM5, Telephone Banking and Bill Payment The minimum opening deposit is", null],
+    // The wider split for sentence_end names (42560, 20754, 32742, 91862).
+    ["Returned/Non-Sufficient Funds (NSF) fee (per item). This fee applies to", "Returned/Non-Sufficient Funds (NSF) fee (per item)"],
+    ["Legal Attachments, Levies, and Garnishment Fee A fee of", "Legal Attachments, Levies, and Garnishment Fee"],
+    ["Overdraft Fee the charge is", "Overdraft Fee"],
+    ["ATM Withdrawal Service Charge at Non-BankFive ATM BankFive may impose a", "ATM Withdrawal Service Charge at Non-BankFive ATM"],
+    ["Monthly maintenance fee if the average daily balance falls below", "Monthly maintenance fee"],
+    ["Returned Item Fee may be charged", null],
+    ["Teller Check Payable to Someone Other than", null],
+    // v3 (#1499): "(cont.)" dropped; "2FA" is a name, not a footnote.
+    ["Inactive Accounts Fee (cont.) This fee is charged to", "Inactive Accounts Fee"],
+    ["Inactive Accounts Fee (continued). This fee is charged to", "Inactive Accounts Fee"],
+    ["2FA Token Fee You will be charged", "2FA Token Fee"],
+    ["3D Secure Fee You will be charged", "3D Secure Fee"],
+    ["6NO-FEE ATM Card You will be charged", "6NO-FEE ATM Card"],
+    ["2FA-Token Fee You will be charged", "2FA-Token Fee"],
+    ["7NSF Fee You will be charged", "NSF Fee"],
   ])("gluedSentenceHead(%j) is %j", (name, head) => {
     expect(gluedSentenceHead(name)).toBe(head);
   });
@@ -369,10 +548,22 @@ describe("live fragment switch-on rules (#1443)", () => {
     expect(taken.renameDuplicateSamples.map((fee) => fee.feePublishedId)).toEqual([2, 3]);
   });
 
+  it("v3: counts renames by head and tail, with the way in each sample", () => {
+    const found = findLiveFragments([
+      { fee_published_id: 1, fee_verified_id: 1, institution_id: 9, fee_name: "Overdraft Fee You will be charged", amount: 35, canonical_fee_key: null },
+      { fee_published_id: 2, fee_verified_id: 2, institution_id: 9, fee_name: "There will be a card replacement fee of", amount: 10, canonical_fee_key: null },
+      { fee_published_id: 3, fee_verified_id: 3, institution_id: 9, fee_name: "Excess Withdrawal Fee if more than", amount: 6, canonical_fee_key: null },
+    ]);
+    expect(found).toMatchObject({ wouldRename: 2, wouldRenameByVia: { head: 1, tail: 1 }, wouldTakeDown: 1, wouldRequestReread: 1 });
+    const detail = liveFragmentDetail({ ...found, live: false, dryRun: true, afterId: 0, nextAfterId: 0, takenDown: [], renamed: [], rereadRequested: [], duplicateCheckFailed: false });
+    expect(detail.would_rename_by_via).toEqual({ head: 1, tail: 1 });
+    expect(detail.samples_by_action.rename.map((fee) => [fee.fee_published_id, fee.rename_to, fee.rename_via])).toEqual([[1, "Overdraft Fee", "head"], [2, "Card replacement fee", "tail"]]);
+  });
+
   it("collides with a live name in the same read", () => {
     const found = findLiveFragments([
       { fee_published_id: 1, fee_verified_id: 1, institution_id: 9, fee_name: "Account Closing Fee", amount: 25, canonical_fee_key: "early_closure" },
-      { fee_published_id: 2, fee_verified_id: 2, institution_id: 9, fee_name: "Account Closing Fee If you close within 90 days", amount: 25, canonical_fee_key: "early_closure" },
+      { fee_published_id: 2, fee_verified_id: 2, institution_id: 9, fee_name: "Account Closing Fee You will be charged on early closing", amount: 25, canonical_fee_key: "early_closure" },
     ]);
     expect(found.matches).toEqual([expect.objectContaining({ feePublishedId: 2, action: "takedown", takedownReason: "rename_duplicate" })]);
   });
