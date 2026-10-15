@@ -42,12 +42,13 @@ describe("feeDisplayName", () => {
     expect(isCutFeeName("Stop Payment (per item) if you request it")).toBe(true);
   });
 
-  it("leaves an all-capitals label ending on a letter as stored, and cuts one ending on a verb and an article (#1499)", () => {
-    for (const name of ["SAFE DEPOSIT BOX SIZE A", "CHECKING PLAN A", "OPTION A", "SCHEDULE A", "BOX A", "CLUB A"]) {
+  it("shows all-capitals names ending on a letter or an article as stored, as main does (#1499)", () => {
+    // Darwin's all-capitals article rule lives in the live fragment check only; the public name is unchanged.
+    for (const name of ["SAFE DEPOSIT BOX SIZE A", "CHECKING PLAN A", "OPTION A", "SCHEDULE A", "BOX A", "CLUB A",
+      "WIRE FEE FOR THE", "TRANSFER TO A", "SERVICE CHARGE A", "BILL PAY A", "MONTHLY SERVICE CHARGE A"]) {
       expect(isCutFeeName(name)).toBe(false);
+      expect(feeDisplayName(name, "wire_domestic_outgoing")).toBe(name);
       expect(feeDisplayName(name, "safe_deposit_box")).toBe(name);
     }
-    expect(isCutFeeName("10NON-MEMBER LOAN APPLICATION FEE: IF YOU ARE NOT A MEMBER OF WCDU, THERE IS A")).toBe(true);
-    expect(isCutFeeName("WIRE FEE FOR THE")).toBe(true);
   });
 });

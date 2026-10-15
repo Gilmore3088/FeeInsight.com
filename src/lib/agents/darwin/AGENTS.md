@@ -375,29 +375,58 @@ Darwin owns verification and classification.
   - the amount is $0, missing or negative (`fragment`, no re-read request);
   - the line says the amount is a credit or discount (`LIVE_FRAGMENT_CREDIT`: "$2.50 credit",
     "reduced by $2", "discount of $2", a standalone negative as in "−$2" or "(-$2)", 87742)
-    (`fragment`). "$10 credit card", "credit union", "credit line", "credit limit" and "credit
-    report" are no credit, and a hyphen after a name is a separator ("Wire Fee -$25");
+    (`fragment`) when the credit's figure is the amount (`liveFragmentCredit`: "..., $2 credit with
+    e-statements" at $10 is the fee). "$10 credit card", "credit union", "credit line", "credit
+    limit", "credit report", "credit check", "credit inquiry" and "credit bureau" are no credit;
+    a hyphen after a name is a separator ("Wire Fee -$25") and one at the start a bullet ("-$5.00
+    per statement"). A credit or discount figure is no other price either;
   - the line is no fee of this bank (`LIVE_FRAGMENT_NOT_A_FEE`: a worked example, "for example,
-    if", "Example:", "Because the transact...", 95216; "Bank sending the wire", "sending bank",
-    142713) (`fragment`). A bare "for example" ("certain items, for example stop payments") and
-    "typically charge" are left alone;
+    if", "Example:", "Because the transact..." at the start or after a sentence break, 95216; "Bank
+    sending the wire" / "sending bank" at the start of the line, 142713) (`fragment`). A bare "for
+    example", "typically charge", "charged because the transaction exceeds" and a later "; the
+    sending bank sets its own fee" are left alone;
   - a gate refused the amount (`fragment_reread`, with a re-read request): total wording, an
     opening deposit, cap words (`LIVE_FRAGMENT_CAP_WORDING`: max, maximum or cap before "of $",
     "of" ending the line, a dollar figure or a charge/fee word; capped, greater of, lesser of,
-    minimum charge, min or; so "MAX CHECKING MONTHLY FEE" and "maximum of 3 per day" are no cap),
-    another price, a figure equal to the amount, a refused if/when threshold, or a line ending on
-    a threshold (`liveFragmentThresholdEnd`, head or no head: "balance of" / "balance is", 133104;
-    "more than", "over", "inactive for"; "below", "under", "less than" at $100 or more). A line
-    ending on "balance of" / "balance is" that names a fee or charge, under $100, is not refused
-    but never renamed (`reread`; 144639's $5 service charge, 133104's $3 charge).
+    minimum charge, min or; so "MAX CHECKING MONTHLY FEE" and "maximum of 3 per day" are no cap;
+    `liveFragmentCapRefused`: never when the line states a dollar price equal to the amount outside
+    the cap's own figure, "Research Fee $25 per hour, minimum charge one hour" at $25), another
+    price, a figure equal to the amount, a refused if/when threshold, or a line ending on a
+    threshold (`liveFragmentThresholdEnd`, head or no head: "balance of" / "balance is", 133104;
+    "more than", "greater than", "over", "above", "at least", "exceed(s/ing)", "in excess of",
+    "inactive for"; "below", "under", "less than" at $100 or more).
+  - Prod r9: a line that names a fee or charge at an amount under $100 (`liveFragmentSoft`) is
+    most likely the fee, so a threshold reading of it (a threshold ending, a refused if/when or
+    colon clause, a conditional glued sentence whose figure is the amount) keeps it live as a
+    `reread` and never renames it, instead of refusing it: 35202 "Overdraft Fee for each item we
+    pay that overdraws your account more than" $35, 144639's $5 service charge, 133104's $3 charge,
+    "Excess Withdrawal Fee if more than" $6. At $100 or more the refusal stands. The one rename
+    such a line can take is a proper head's balance-below condition, "... Below Minimum Balance of"
+    included (136152 "Monthly Maintenance Fee if Account Falls Below Minimum Balance of" $4 renames
+    to "Monthly Maintenance Fee"); a generic head never renames on "balance of" ("Service Charge
+    if Balance Falls Below Minimum Balance of" $50 and "Monthly fee if account falls below the
+    required minimum daily balance of" $8 are rereads).
+  - Review 9: a head glued to a sentence with a condition (`LIVE_FRAGMENT_REST_CONDITION`: unless,
+    after, exceed..., above, over, less than, greater/older than, at least, in excess of, keep, or
+    a clause ending on below, under, by, within or before) is no rename ("Monthly Maintenance Fee
+    You will be charged unless your balance is at least" $1,500, "Dormant Account Fee You will be
+    charged after 12 months" $12). The colon gate also bars a clause ending on greater than, at
+    least, above, exceed..., in excess of, by, within, after or before ("Overdraft Fee: If
+    overdrawn by" $5, "Early Closing Fee: When you close the account within" $25); a duration
+    ("more than 10 business days", 146643) is no money excess, so 146643 renames again. "lower",
+    "lowered" and "half" bar a rename like waiver wording (`LIVE_FRAGMENT_REDUCED_WORDING`). A
+    generic head whose if-clause was refused never takes its tail ("Service Charge if balance
+    falls below the minimum; a monthly maintenance charge of" $500).
   - When the line states two or more dollar prices (thresholds left out), the first is not the
     amount and a later one is, the amount is another price on the line: no rename, `reread`
     (`liveFragmentPriceElsewhere`; 125163 "$5 monthly service charge ... $2 paper statement fee"
     at $2, 125166 "$3.00 per monthly fee ... $9 per item charge" at $9). Their live names lost the
     figures and open in lower case ("monthly service charge when balance falls below" $2, "per
-    monthly fee if balance falls below" $9): a line opening in lower case was cut where its price
-    stood, so its head is never a rename (`LIVE_FRAGMENT_CUT_START`), only a `reread`. This also
-    turns v4's lower-case balance-below head renames (132041) into rereads.
+    monthly fee if balance falls below" $9): on a line opening in lower case, a head of period and
+    service words only (`LIVE_FRAGMENT_CUT_GENERIC_HEAD`: "monthly service charge", "per monthly
+    fee") is no rename, and a head opening on "per" never renames (64144 "Per quarter charge").
+    Other lower-case heads ("monthly maintenance fee only when the balance falls below") still
+    rename, as in v4.
   - `rename_duplicate` reads each fee's source document (raw tier, through its verified row). A
     rename onto a name the bank already has live comes down only when that twin was read from the
     same document; a rename onto the name an earlier fragment takes comes down only when both come
@@ -420,24 +449,24 @@ Darwin owns verification and classification.
     fee of" $15; "Club fee", 95229, and "Discounted monthly maintenance fee", 137778, are rereads,
     not renames). "Discounted" joins the generic tail words. 5314's "... reduce your monthly fee
     to" at $0 still comes down.
-  - "if Account Falls Below" and "... Below Minimum Balance" are balance conditions (96650,
-    96651, 96652); a line ending "... Minimum Balance of" (136152) is not: it ends on the threshold
-    and is refused.
+  - "if Account Falls Below" and "... Below Minimum Balance (of)" are balance conditions (96650,
+    96651, 96652, 136152).
   - A head ending on fee or charge before ":" or a dash, then an if/when clause, renames when no
     figure equals the amount and the balance gate's bars hold: no excess or balance condition, no
     clause ending on below, under, less than, more than, over or for, and an amount under $100
     ("Closing Fee", 142676; "Inactivity Fee", 146563; "NON-MEMBER LOAN APPLICATION FEE", 109893).
-    "Overdraft Fee: If overdrawn by more than" $5 and "Monthly Service Fee: If balance falls below"
-    $500 are refused; "Continuous Overdraft Charge: If ... overdrawn for more than 10 business
-    days, a" $1 (146643) is now refused too (an excess condition).
+    "Overdraft Fee: If overdrawn by more than" $5 is a reread and "Monthly Service Fee: If balance
+    falls below" $500 is refused.
   - A balance band ("more than or equal to but less than", 129443) is not refused: `reread`.
   - A dollar figure a threshold word leads into is no priced fee either ("overdrawn more than $5.00
     Fees for" $30, 70303).
-  - An all-capitals line ending on a verb or function word (IS, OF, FOR, TO, WITH, BE, BY, CHARGE,
-    CHARGED, CHARGES, ASSESS, ASSESSED, INCUR, PAY) and " A", " AN" or " THE" is a `sentence_end`
-    ("... THERE IS A", 109893). An all-capitals label ending on a letter ("SAFE DEPOSIT BOX SIZE
-    A", "CHECKING PLAN A", "OPTION A", "SCHEDULE A") and "N/A" are not. This shape also feeds
-    `fee-display-name.ts`, the public fee name.
+  - In this check only (`liveFragmentCheckShape`, `LIVE_FRAGMENT_CAPS_ARTICLE`), an all-capitals
+    line ending on a verb or function word (IS, OF, FOR, TO, WITH, BE, BY, CHARGED, CHARGES,
+    ASSESS, ASSESSED, INCUR) and " A", " AN" or " THE" is a `sentence_end` ("... THERE IS A",
+    109893). Knox's `liveFragmentName`, which `fee-display-name.ts` reads for the public fee name,
+    is unchanged from main, so "WIRE FEE FOR THE", "SERVICE CHARGE A" or "BILL PAY A" display as
+    stored. An all-capitals label ending on a letter ("SAFE DEPOSIT BOX SIZE A") and "N/A" are no
+    fragment here either.
   - 125166 and 125163 are no longer renamed (see above); the same words with a capital first
     letter would still rename, since nothing in the name shows the lost price.
 - Live hourly re-check (`hourly-frequency-check.ts`, #1456). About 802 live fees say in their name
