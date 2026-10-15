@@ -94,7 +94,7 @@ export function StateFeeMap({ states, selected, hrefs, feeLabel }: {
   const shown = hover ? byCode.get(hover) : selected ? byCode.get(selected) : null;
   const name = (code: string) => US_STATES.find(s => s.id === code)?.name ?? code;
   return <div className="flex flex-col gap-3">
-    <svg viewBox="0 0 960 600" className="h-auto w-full" role="img" aria-label={`${feeLabel}: published median by state. Exact values are in the table.`}>
+    <svg viewBox="0 0 960 600" className="mx-auto h-auto w-full max-w-3xl" role="img" aria-label={`${feeLabel}: published median by state. Exact values are in the table.`}>
       <defs><pattern id="withheld" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" fill="#f3efe6" /><line x1="0" y1="0" x2="0" y2="6" stroke="#ddd5c6" strokeWidth="2" /></pattern></defs>
       {US_STATES.map(state => {
         const data = byCode.get(state.id);

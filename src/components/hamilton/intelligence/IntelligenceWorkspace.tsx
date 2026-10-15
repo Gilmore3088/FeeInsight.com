@@ -103,8 +103,10 @@ export function IntelligenceView({ selection, data, lens, overview, instId }: { 
     {overview ? <HamiltonRead data={data} place={place} state={state} primary={primary} /> : null}
     {overview ? <>
       {panels.fees}
-      <div className="grid gap-6 lg:grid-cols-2">{panels.financials}{panels.economy}</div>
-      <div className="grid gap-6 lg:grid-cols-2">{panels.complaints}{panels.regulation}</div>
+      {panels.financials}
+      {panels.economy}
+      {panels.complaints}
+      {panels.regulation}
       <Link className="text-sm font-medium text-[var(--fi-ink)] underline" href={`/pro/intelligence?${new URLSearchParams({ view: "institution", ...(instId ? { instId: instId } : {}) })}`}>Open your institution&apos;s monthly briefing</Link>
     </> : <>
       <nav aria-label="Research lenses" className="intelligence-tabs">{LENSES.map(l => <Link key={l.id} href={lensHref(l.id)} aria-current={lens === l.id ? "page" : undefined}>{l.label}</Link>)}</nav>
@@ -234,7 +236,7 @@ function FeePanels({ data, selection, place, state, stateHrefs, compact, explore
   const comparisons = result?.comparisons ?? [];
   const available = comparisons.filter(row => row.selected.status === "available");
   return <>
-    <div className="grid gap-6 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
+    <div className="flex flex-col gap-6">
       <Panel title="Published fee landscape" subtitle={`${place} · ${CHARTER_LABEL[selection.charter]} · medians of one value per institution`} explore={exploreHref}>
         {!result ? <Unavailable>Published comparisons could not load. Refresh to retry; no substitute figures are shown.</Unavailable>
           : available.length ? <div className="mt-5"><FeeLandscapeChart state={state ? place : null} rows={comparisons.map(row => ({ fee: getDisplayName(row.category), selected: row.selected.median, national: row.national?.median ?? null }))} /></div>
