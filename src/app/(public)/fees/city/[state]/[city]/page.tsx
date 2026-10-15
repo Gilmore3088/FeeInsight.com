@@ -3,14 +3,17 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getPublicNationalIndex } from "@/lib/public-stats";
-import { getDisplayName, isFeaturedFee } from "@/lib/fee-taxonomy";
-import { formatAmount, formatAssets } from "@/lib/format";
+import { formatAssets } from "@/lib/format";
 import { STATE_NAMES } from "@/lib/us-states";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
+import { TrackLink } from "@/components/track-link";
+import { DEMO_REQUEST_NAV, PRO_PLANS_NAV } from "@/components/nav-items";
 import { SITE_URL } from "@/lib/constants";
-import { ProNextStep } from "@/components/public/pro-next-step";
-import { getCityFeeAveragesCached } from "@/lib/data-store/public-cached-reads";
+import { buildHistogram } from "@/components/public/distribution-chart";
+import { StateVideo } from "../../../../research/state/[code]/state-exhibits";
 import { loadCityInstitutions, titleCase } from "./city-lookup";
+import { CityStripChart } from "./city-exhibits";
+import { HEADLINE_FEES, cityFindings, cityStrips, money, stripScale, type CityStrip } from "./city-view";
 
 interface PageProps {
   params: Promise<{ state: string; city: string }>;
@@ -18,6 +21,9 @@ interface PageProps {
 
 /** Cities with fewer verified institutions than this are thin pages: rendered, not indexed. */
 const MIN_INDEXABLE_INSTITUTIONS = 3;
+
+const H2 = "text-[20px] font-semibold tracking-[-0.02em] text-ink sm:text-[24px]";
+const COLUMNS = "sm:grid-cols-[minmax(0,1.3fr)_repeat(4,minmax(0,1fr))]";
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { state, city } = await params;
@@ -46,6 +52,27 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   };
 }
 
+/** One institution's amount on a fee, as a dot on the U.S. middle half. */
+function RangeCell({ amount, strip }: { amount: number | null; strip: CityStrip }) {
+  if (amount == null) return <span className="block text-right text-ink-muted">-</span>;
+  const x = stripScale(strip);
+  return (
+    <span className="flex items-center justify-end gap-2">
+      <span className="relative hidden h-3 w-14 sm:block" aria-hidden="true">
+        <span className="absolute inset-x-0 top-1/2 border-t border-border" />
+        {strip.nation && (
+          <span
+            className="absolute top-1/2 h-2 -translate-y-1/2 rounded-full bg-brick-tint"
+            style={{ left: `${x(strip.nation.p25)}%`, width: `${Math.max(x(strip.nation.p75) - x(strip.nation.p25), 1)}%` }}
+          />
+        )}
+        <span className="absolute top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-ink" style={{ left: `${x(amount)}%` }} />
+      </span>
+      <span className="w-12 text-right font-mono tabular-nums text-ink">{money(amount)}</span>
+    </span>
+  );
+}
+
 export default async function CityFeePage({ params }: PageProps) {
   const { state, city } = await params;
   const stateCode = state.toUpperCase();
@@ -57,30 +84,16 @@ export default async function CityFeePage({ params }: PageProps) {
   const institutions = await loadCityInstitutions(cityName, stateCode);
   if (institutions.length === 0) notFound();
 
-  const cityAverages = await getCityFeeAveragesCached(cityName, stateCode);
   const nationalIndex = await getPublicNationalIndex();
-
-  const nationalMedians: Record<string, number> = {};
-  for (const entry of nationalIndex) {
-    nationalMedians[entry.fee_category] = entry.median_amount ?? 0;
-  }
-
-  const spotlightCategories = ["overdraft", "monthly_maintenance", "nsf", "atm_non_network"];
-  const spotlightAverages = spotlightCategories.map((cat) => {
-    const cityAvg = cityAverages.find((a) => a.fee_category === cat);
-    const natMedian = nationalMedians[cat];
-    return {
-      category: cat,
-      displayName: getDisplayName(cat),
-      cityAvg: cityAvg?.median ?? null,
-      nationalMedian: natMedian ?? null,
-      institutionCount: cityAvg?.institution_count ?? 0,
-      delta: cityAvg && natMedian ? ((cityAvg.median - natMedian) / natMedian) * 100 : null,
-    };
-  });
+  const strips = cityStrips(institutions, nationalIndex);
+  const findings = cityFindings(strips, cityName);
+  const stripFor = (key: string) => strips.find((s) => s.key === key)!;
 
   const bankCount = institutions.filter((i) => i.charter_type === "bank").length;
   const cuCount = institutions.filter((i) => i.charter_type === "credit_union").length;
+  const overdraftBars = buildHistogram(stripFor("overdraft").banks.map((b) => b.amount)).map((b) => b.count);
+  const cityHref = `/fees/city/${stateCode.toLowerCase()}/${encodeURIComponent(cityName.toLowerCase())}`;
+  const compared = strips.filter((s) => s.cityMedian != null && s.nation);
 
   return (
     <>
@@ -89,210 +102,164 @@ export default async function CityFeePage({ params }: PageProps) {
           { name: "Home", href: SITE_URL },
           { name: "Fees", href: `${SITE_URL}/fees` },
           { name: stateName, href: `${SITE_URL}/fees/city/${stateCode.toLowerCase()}` },
-          { name: cityName, href: `${SITE_URL}/fees/city/${stateCode.toLowerCase()}/${encodeURIComponent(cityName.toLowerCase())}` },
+          { name: cityName, href: `${SITE_URL}${cityHref}` },
         ]}
       />
 
-      <div className="max-w-page mx-auto px-6 py-14">
-        {/* Breadcrumb */}
-        <nav aria-label="Breadcrumb" className="flex items-center gap-2 text-[12px] text-ink-muted mb-6">
-          <Link href="/fees" className="hover:text-ink transition-colors">Fees</Link>
-          <span className="text-border">/</span>
-          <Link href={`/fees/city/${stateCode.toLowerCase()}`} className="hover:text-ink transition-colors">{stateName}</Link>
-          <span className="text-border">/</span>
-          <span className="text-ink-soft">{cityName}</span>
-        </nav>
-
-        {/* Header */}
-        <div className="flex items-center gap-2 mb-4">
-          <span className="h-px w-8 bg-brick/40" />
-          <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-brick/60">
-            Local Fee Comparison
-          </span>
-        </div>
-
-        <h1
-          className="font-extrabold text-[1.75rem] sm:text-[2.25rem] leading-[1.12] tracking-[-0.02em] text-ink mb-2"
-          style={{ fontFamily: "var(--fi-font-sans)" }}
-        >
-          Bank Fees in {cityName}, {stateCode}
-        </h1>
-        <p className="text-[14px] text-ink-muted mb-8">
-          {institutions.length} institution{institutions.length !== 1 ? "s" : ""} with fee data
-          ({bankCount} bank{bankCount !== 1 ? "s" : ""}, {cuCount} credit union{cuCount !== 1 ? "s" : ""})
-        </p>
-
-        {/* Spotlight fee cards */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-10">
-          {spotlightAverages.map((s) => (
-            <div key={s.category} className="rounded-xl border border-border/80 bg-white/70 backdrop-blur-sm px-4 py-3.5">
-              <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted mb-1.5">{s.displayName}</p>
-              <p
-                className="text-[22px] font-semibold tabular-nums text-ink"
-                style={{ fontFamily: "var(--fi-font-mono)" }}
-              >
-                {s.cityAvg !== null ? formatAmount(s.cityAvg) : "N/A"}
-              </p>
-              {s.delta !== null && (
-                <p className={`text-[11px] tabular-nums mt-0.5 ${s.delta > 0 ? "text-red-500" : "text-emerald-600"}`}>
-                  {s.delta > 0 ? "+" : ""}{s.delta.toFixed(1)}% vs national
-                </p>
-              )}
-              <p className="text-[10px] text-ink-muted mt-0.5">
-                {s.institutionCount} institution{s.institutionCount !== 1 ? "s" : ""} reporting
-              </p>
-            </div>
-          ))}
-        </div>
-
-        {/* Institution table */}
-        <div className="rounded-xl border border-border/80 bg-white/70 backdrop-blur-sm overflow-hidden">
-          <div className="px-5 py-3 bg-paper/60 border-b border-border/60">
-            <h2
-              className="text-[14px] font-bold text-ink"
-              style={{ fontFamily: "var(--fi-font-sans)" }}
-            >
-              Institutions in {cityName}
-            </h2>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[760px] text-sm">
-              <thead>
-                <tr className="border-b border-border/40 bg-paper/30">
-                  <th className="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted">Institution</th>
-                  <th className="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted">Type</th>
-                  <th className="px-4 py-2.5 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted">Assets</th>
-                  <th className="px-4 py-2.5 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted">Overdraft</th>
-                  <th className="px-4 py-2.5 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted">Monthly Fee</th>
-                  <th className="px-4 py-2.5 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted">NSF</th>
-                  <th className="px-4 py-2.5 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted">ATM</th>
-                  <th className="px-4 py-2.5 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted">Fees</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border/40">
-                {institutions.map((inst) => (
-                  <tr key={inst.id} className="hover:bg-paper/60 transition-colors">
-                    <td className="px-4 py-2.5">
-                      <Link
-                        href={`/institution/${inst.id}`}
-                        className="block min-w-0 max-w-[260px] break-words font-medium text-ink transition-colors hover:text-brick"
-                      >
-                        {inst.institution_name}
-                      </Link>
-                    </td>
-                    <td className="px-4 py-2.5 text-ink-muted">
-                      {inst.charter_type === "bank" ? "Bank" : "CU"}
-                    </td>
-                    <td className="px-4 py-2.5 text-right tabular-nums text-ink-muted">
-                      {inst.asset_size ? formatAssets(inst.asset_size) : "-"}
-                    </td>
-                    <td className="px-4 py-2.5 text-right tabular-nums text-ink">
-                      {formatAmount(inst.overdraft)}
-                    </td>
-                    <td className="px-4 py-2.5 text-right tabular-nums text-ink">
-                      {formatAmount(inst.monthly_maintenance)}
-                    </td>
-                    <td className="px-4 py-2.5 text-right tabular-nums text-ink">
-                      {formatAmount(inst.nsf)}
-                    </td>
-                    <td className="px-4 py-2.5 text-right tabular-nums text-ink">
-                      {formatAmount(inst.atm_non_network)}
-                    </td>
-                    <td className="px-4 py-2.5 text-right tabular-nums text-ink-muted">
-                      {inst.fee_count}
-                    </td>
-                  </tr>
+      {/* 1. The answer: who charges what here, against the nation. */}
+      <section className="border-b border-border bg-paper">
+        <div className="mx-auto grid max-w-page gap-8 px-4 pb-10 pt-6 sm:px-6 sm:pb-14 sm:pt-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)] lg:items-center lg:gap-12">
+          <div>
+            <nav aria-label="Breadcrumb" className="flex items-center gap-2 text-[12px] text-ink-muted">
+              <Link href="/fees" className="hover:text-ink">Fees</Link>
+              <span aria-hidden="true">/</span>
+              <Link href={`/fees/city/${stateCode.toLowerCase()}`} className="hover:text-ink">{stateName}</Link>
+              <span aria-hidden="true">/</span>
+              <span className="text-ink-soft">{cityName}</span>
+            </nav>
+            <h1 className="mt-4 text-[32px] font-semibold leading-[1.08] tracking-[-0.03em] text-ink sm:text-[44px]">
+              {cityName} bank fees
+            </h1>
+            <p className="mt-2 text-[15px] text-ink-soft">
+              {institutions.length} {institutions.length === 1 ? "institution" : "institutions"} with published fees: {bankCount}{" "}
+              {bankCount === 1 ? "bank" : "banks"}, {cuCount} {cuCount === 1 ? "credit union" : "credit unions"}.
+            </p>
+            {findings.length > 0 && (
+              <ul className="mt-5 space-y-2.5">
+                {findings.map((f) => (
+                  <li key={f} className="flex gap-2.5 text-[15px] leading-snug text-ink">
+                    <span aria-hidden="true" className="mt-[0.45rem] h-1.5 w-1.5 shrink-0 rounded-full bg-brick" />
+                    {f}
+                  </li>
                 ))}
-              </tbody>
-            </table>
+              </ul>
+            )}
+          </div>
+          <CityStripChart strips={strips} cityName={cityName} />
+        </div>
+      </section>
+
+      {/* 2. The video, in its own section. */}
+      <StateVideo stateName={cityName} bars={overdraftBars} title={`Watch ${cityName}'s banks take their place`} />
+
+      {/* 3. Every local institution, four fees, each against the U.S. middle half. */}
+      <section aria-labelledby="compare-heading" className="mx-auto max-w-page px-4 pt-12 sm:px-6 sm:pt-16">
+        <h2 id="compare-heading" className={H2}>
+          Compare {cityName}&apos;s institutions
+        </h2>
+        <p className="mt-1 text-[14px] text-ink-muted">Largest first. The shaded band is the U.S. middle half for each fee.</p>
+        <div className="mt-5 overflow-hidden rounded-2xl border border-border bg-surface-0 shadow-fi-1">
+          <div className={`hidden border-b border-border bg-paper px-5 py-2 text-[12px] font-medium text-ink-muted sm:grid sm:gap-4 ${COLUMNS}`} aria-hidden="true">
+            <span>Institution</span>
+            {HEADLINE_FEES.map((fee) => (
+              <span key={fee.key} className="text-right">{fee.label}</span>
+            ))}
+          </div>
+          <ul className="divide-y divide-border">
+            {institutions.map((inst) => (
+              <li key={inst.id} className={`grid gap-3 px-4 py-3.5 sm:items-center sm:gap-4 sm:px-5 ${COLUMNS}`}>
+                <div className="min-w-0">
+                  <Link href={`/institution/${inst.id}`} className="font-semibold text-ink underline decoration-transparent underline-offset-4 hover:decoration-ink">
+                    {inst.institution_name}
+                  </Link>
+                  <p className="text-[12px] text-ink-muted">
+                    {inst.charter_type === "credit_union" ? "Credit union" : "Bank"}
+                    {inst.asset_size ? ` · ${formatAssets(inst.asset_size)}` : ""} · {inst.fee_count} fees
+                  </p>
+                </div>
+                <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-[13px] sm:contents">
+                  {HEADLINE_FEES.map((fee) => (
+                    <div key={fee.key} className="flex items-center justify-between gap-2 sm:block">
+                      <dt className="text-ink-muted sm:sr-only">{fee.label}</dt>
+                      <dd>
+                        <RangeCell amount={inst[fee.key]} strip={stripFor(fee.key)} />
+                      </dd>
+                    </div>
+                  ))}
+                </dl>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </section>
+
+      {/* 4. The city against the nation, fee by fee. */}
+      {compared.length > 0 && (
+        <section aria-labelledby="nation-heading" className="mx-auto max-w-page px-4 pt-12 sm:px-6 sm:pt-16">
+          <h2 id="nation-heading" className={H2}>
+            {cityName} against the U.S.
+          </h2>
+          <p className="mt-1 text-[14px] text-ink-muted">Medians of the institutions that publish each fee.</p>
+          <ul className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            {compared.map((s) => {
+              const diff = s.cityMedian! - s.nation!.median;
+              const top = Math.max(s.cityMedian!, s.nation!.median, 1);
+              return (
+                <li key={s.key} className="rounded-2xl border border-border bg-surface-0 p-4">
+                  <Link href={`/fees/${s.key}`} className="text-[14px] font-semibold text-ink hover:text-brick">
+                    {s.label}
+                  </Link>
+                  <p className="mt-1 text-[13px] text-ink-muted">
+                    {Math.abs(diff) < 0.5 ? "Same as the U.S." : `${money(Math.abs(diff))} ${diff > 0 ? "above" : "below"} the U.S.`}
+                  </p>
+                  <div className="mt-3 space-y-2 text-[12px]">
+                    {[
+                      { name: cityName, value: s.cityMedian!, bar: "bg-ink" },
+                      { name: "U.S.", value: s.nation!.median, bar: "bg-brick/70" },
+                    ].map((row) => (
+                      <div key={row.name} className="grid grid-cols-[4.5rem_minmax(0,1fr)_3rem] items-center gap-2">
+                        <span className="truncate text-ink-soft">{row.name}</span>
+                        <span className="h-2.5 rounded-full bg-paper" aria-hidden="true">
+                          <span className={`block h-full rounded-full ${row.bar}`} style={{ width: `${(row.value / top) * 100}%` }} />
+                        </span>
+                        <span className="text-right font-mono tabular-nums text-ink">{money(row.value)}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="mt-2 text-[12px] text-ink-muted">{s.banks.length} local institutions</p>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      )}
+
+      {/* 5. Staff of a local bank: Hamilton shows this view of their own competitors. */}
+      <section className="mx-auto max-w-page px-4 pt-12 sm:px-6 sm:pt-16">
+        <div className="flex flex-col gap-4 rounded-2xl border border-border bg-surface-0 px-5 py-6 sm:flex-row sm:items-center sm:justify-between sm:px-7">
+          <div>
+            <p className="text-[18px] font-semibold tracking-[-0.02em] text-ink">Work at one of these banks?</p>
+            <p className="mt-1 max-w-[36rem] text-[14px] text-ink-muted">
+              Hamilton keeps this comparison of your own competitors current, with the source for every fee.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+            <TrackLink
+              event="upgrade_click"
+              eventProps={{ placement: "city_staff_band" }}
+              href={PRO_PLANS_NAV.href}
+              className="inline-flex min-h-11 items-center rounded-full bg-ink px-5 text-[14px] font-semibold text-on-ink hover:opacity-90"
+            >
+              {PRO_PLANS_NAV.label}
+            </TrackLink>
+            <Link href={DEMO_REQUEST_NAV.href} className="text-[14px] font-semibold text-ink underline decoration-border underline-offset-4 hover:decoration-ink">
+              {DEMO_REQUEST_NAV.label}
+            </Link>
           </div>
         </div>
+      </section>
 
-        {/* City averages vs national */}
-        {cityAverages.length > 0 && (
-          <div className="mt-10 rounded-xl border border-border/80 bg-white/70 backdrop-blur-sm overflow-hidden">
-            <div className="px-5 py-3 bg-paper/60 border-b border-border/60">
-              <h2
-                className="text-[14px] font-bold text-ink"
-                style={{ fontFamily: "var(--fi-font-sans)" }}
-              >
-                Average Fees in {cityName} vs National
-              </h2>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[620px] text-sm">
-                <thead>
-                  <tr className="border-b border-border/40 bg-paper/30">
-                    <th className="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted">Fee Category</th>
-                    <th className="px-4 py-2.5 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted">{cityName} Avg</th>
-                    <th className="px-4 py-2.5 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted">National</th>
-                    <th className="px-4 py-2.5 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted">Difference</th>
-                    <th className="px-4 py-2.5 text-right text-[10px] font-bold uppercase tracking-[0.1em] text-ink-muted">Reporting</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border/40">
-                  {cityAverages.filter((a) => isFeaturedFee(a.fee_category)).map((avg) => {
-                    const natMedian = nationalMedians[avg.fee_category];
-                    const delta = natMedian ? ((avg.median - natMedian) / natMedian) * 100 : null;
-                    return (
-                      <tr key={avg.fee_category} className="hover:bg-paper/60 transition-colors">
-                        <td className="px-4 py-2.5">
-                          <Link
-                            href={`/fees/${avg.fee_category}`}
-                            className="font-medium text-ink transition-colors hover:text-brick"
-                          >
-                            {getDisplayName(avg.fee_category)}
-                          </Link>
-                        </td>
-                        <td className="px-4 py-2.5 text-right tabular-nums font-semibold text-ink">
-                          {formatAmount(avg.median)}
-                        </td>
-                        <td className="px-4 py-2.5 text-right tabular-nums text-ink-muted">
-                          {natMedian !== undefined ? formatAmount(natMedian) : "-"}
-                        </td>
-                        <td className="px-4 py-2.5 text-right tabular-nums">
-                          {delta !== null ? (
-                            <span className={delta > 0 ? "text-red-500" : "text-emerald-600"}>
-                              {delta > 0 ? "+" : ""}{delta.toFixed(1)}%
-                            </span>
-                          ) : "-"}
-                        </td>
-                        <td className="px-4 py-2.5 text-right tabular-nums text-ink-muted">
-                          {avg.institution_count}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-
-        <ProNextStep className="mt-8" />
-
-        {/* Links */}
-        <div className="mt-6 flex flex-wrap gap-3">
-          <Link
-            href={`/fees/city/${stateCode.toLowerCase()}`}
-            className="rounded-full border border-border px-4 py-1.5 text-[12px] font-medium text-ink-soft hover:border-brick/30 hover:text-brick transition-colors no-underline"
-          >
-            More cities in {stateName}
-          </Link>
-          <Link
-            href={`/research/state/${stateCode}`}
-            className="rounded-full border border-border px-4 py-1.5 text-[12px] font-medium text-ink-soft hover:border-brick/30 hover:text-brick transition-colors no-underline"
-          >
-            {stateName} Fee Report
-          </Link>
-          <Link
-            href="/fees"
-            className="rounded-full border border-border px-4 py-1.5 text-[12px] font-medium text-ink-soft hover:border-brick/30 hover:text-brick transition-colors no-underline"
-          >
-            Bank Fee Index
-          </Link>
-        </div>
-      </div>
+      <nav aria-label="More fee pages" className="mx-auto flex max-w-page flex-wrap gap-x-6 gap-y-2 px-4 pb-16 pt-8 text-[14px] sm:px-6">
+        <Link href={`/fees/city/${stateCode.toLowerCase()}`} className="font-medium text-ink underline decoration-border underline-offset-4 hover:decoration-ink">
+          More cities in {stateName}
+        </Link>
+        <Link href={`/research/state/${stateCode}`} className="font-medium text-ink underline decoration-border underline-offset-4 hover:decoration-ink">
+          {stateName} fee report
+        </Link>
+        <Link href="/fees" className="font-medium text-ink underline decoration-border underline-offset-4 hover:decoration-ink">
+          Every fee category
+        </Link>
+      </nav>
     </>
   );
 }
