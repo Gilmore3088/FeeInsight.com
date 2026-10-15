@@ -1,5 +1,11 @@
 # 07 - Landing page principles for the Fee Insight homepage
 
+> **Goal updated 2026-10-15 (James).** The site's goal is a Hamilton Pro subscription, monthly or
+> annual. The paid report is a high-value lead, not the goal. The funnel: a free sample report, then
+> the Competitive Fee Position Report ("from $300"), then Pro, either because the buyer wants it on a
+> regular basis or because the report sparks a Pro demo request (through `/contact?source=demo`; no
+> booking links). Where anything below ranks the report above Pro, this note wins.
+
 Read date for all three sources: 2026-10-14. Each was read with WebFetch. Everything below is
 paraphrased. Conversion figures are the sources' own claims. We have not checked them, and none of
 them come from banking or fee-data products.
@@ -146,8 +152,10 @@ Each rule can be checked on the Vercel preview. The tags in brackets show which 
 5. **The sizzle shows the actual product.** It uses real `published_fee_catalog` output or a
    faithful render of it. No illustrative numbers, and every number on screen has a source
    (editorial policy). [UH, UB - Productive dashboards, Salesforce stats]
-6. **The hero has one primary CTA and at most one secondary.** The primary is the $300 report
-   path. The secondary is lower-commitment (a sample report). [UH, UB - Singular; GS - Proof]
+6. **The hero has one primary CTA and at most one secondary.** The primary leads toward Pro: "See
+   where your fees stand" (the institution search), with "See Hamilton plans" as the secondary
+   (03 section 4). The free sample report and the paid report are the lower-commitment paths, never
+   the primary. [UH, UB - Singular; GS - Proof]
 7. **CTA labels say what happens next.** For example, "Get your market's fee report", not "Submit"
    or "Learn more". [UH, UB - Going, B2B Quotes]
 8. **The primary CTA appears again lower on the page.** At least twice in total, the second time
@@ -161,13 +169,14 @@ Each rule can be checked on the Vercel preview. The tags in brackets show which 
     Thinkific calculator]
 12. **The first form asks for very little.** Email plus institution at most. More detail is
     collected after purchase or at the demo. [UH, UB - Shopify]
-13. **There are paths for visitors at earlier stages.** A sample report or published research for
-    people just researching, the report or a demo for people ready to buy. [UB funnel stages; GS -
+13. **There are paths for visitors at earlier stages.** A free sample report or published research for
+    people just researching, the paid report as the next step, and Pro or a Pro demo for people
+    ready to buy. [UB funnel stages; GS -
     Baremetrics, Chargebee]
 14. **Benefits come before features.** Each section opens with the decision it helps make (pricing,
     competitive position) and then explains how the data supports it. [GS, UH, UB]
 15. **Objections are answered on the page.** Where the data comes from, how fresh it is, how it is
-    checked, and what $300 buys, in short FAQ or reassurance blocks. [GS, UB, UH - Simply Business]
+    checked, what Pro costs and what the paid report buys, in short FAQ or reassurance blocks. [GS, UB, UH - Simply Business]
 16. **The navigation and footer don't pull visitors away.** Few header links, and footer items that
     reassure (who we are, method, contact). [GS, UH]
 17. **Mobile gets a lighter hero.** At narrow widths, or with reduced-motion turned on, a still

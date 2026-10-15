@@ -1,5 +1,11 @@
 # Site v3 brief 05: architecture, navigation and SEO keep-list (ERNEST)
 
+> **Goal updated 2026-10-15 (James).** The site's goal is a Hamilton Pro subscription, monthly or
+> annual. The paid report is a high-value lead, not the goal. The funnel: a free sample report, then
+> the Competitive Fee Position Report ("from $300"), then Pro, either because the buyer wants it on a
+> regular basis or because the report sparks a Pro demo request (through `/contact?source=demo`; no
+> booking links). Where anything below ranks the report above Pro, this note wins.
+
 Issue #1289. Written 2026-10-14 from the code on branch `docs/site-v3-brief` (routes under
 `src/app`, `src/app/sitemap.ts`, `src/app/robots.ts`, `src/proxy.ts`, `src/lib/llms-txt.ts`, the nav
 files in `src/components/`) and briefs 01 to 03. It builds on DRAPER's positioning: three layers

@@ -1,5 +1,11 @@
 # Site v3 brief 06: landing-page teardown and the hero sizzle (NORMAN)
 
+> **Goal updated 2026-10-15 (James).** The site's goal is a Hamilton Pro subscription, monthly or
+> annual. The paid report is a high-value lead, not the goal. The funnel: a free sample report, then
+> the Competitive Fee Position Report ("from $300"), then Pro, either because the buyer wants it on a
+> regular basis or because the report sparks a Pro demo request (through `/contact?source=demo`; no
+> booking links). Where anything below ranks the report above Pro, this note wins.
+
 Issue #1289. Written 2026-10-14. One-off brief; nothing is scheduled. James said "I like the
 landing page for betteranalyst", asked for Ramp, Attio, Loom and Retool to be reviewed too, and
 wants a 20-second sizzle (an animated walkthrough) in the hero. This brief takes those five pages

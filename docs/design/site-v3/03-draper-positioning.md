@@ -1,5 +1,11 @@
 # Site v3 brief 03: positioning and message hierarchy (DRAPER)
 
+> **Goal updated 2026-10-15 (James).** The site's goal is a Hamilton Pro subscription, monthly or
+> annual. The paid report is a high-value lead, not the goal. The funnel: a free sample report, then
+> the Competitive Fee Position Report ("from $300"), then Pro, either because the buyer wants it on a
+> regular basis or because the report sparks a Pro demo request (through `/contact?source=demo`; no
+> booking links). Where anything below ranks the report above Pro, this note wins.
+
 Issue #1289. Written 2026-10-14. One-off brief; nothing is scheduled. Built on SHERLOCK's market
 research (`01-sherlock-market.md`), NORMAN's CRO audit (`02-norman-cro-audit.md`) and James's
 direction of 2026-10-14: the homepage sells the product and its value, not a report, through three
@@ -181,7 +187,8 @@ neutrally, and never as a threat about exposure.
 
 ## 4. Funnel and primary conversion
 
-**The ladder, as it exists in code today:**
+**The ladder, as it exists in code today.** The goal is step 4; steps 1 to 3 are how a buyer gets
+there, and step 5 catches the buyer the report convinces:
 
 1. **Free data.** Institution search, fee pages and the peer-rank teaser on institution pages.
 2. **Free reports.** National and Fed district reports, instant (`REPORT_OFFER_LINE`), plus state
@@ -191,6 +198,10 @@ neutrally, and never as a threat about exposure.
 4. **Paid, ongoing.** Hamilton Pro, by asset tier, for up to 5 people. Consultants pay the mid
    price with 10 Hamilton reports a month (`CONSULTANT_PRICE_NOTE`). Per DECISIONS, Pro trials are
    14 days and set up by hand, and the market report and annual Pro are separate products.
+   **This is the goal.**
+5. **Pro demo.** A buyer who wants to see Hamilton before subscribing asks for a demo through the
+   contact form (`/contact?source=demo`). It sits beside the report on /subscribe and at the end of
+   the paid report. No booking links.
 
 **The primary homepage CTA: three options (James's call)**
 

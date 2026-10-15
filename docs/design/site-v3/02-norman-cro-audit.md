@@ -1,5 +1,11 @@
 # Site v3: CRO audit of the current pages (NORMAN)
 
+> **Goal updated 2026-10-15 (James).** The site's goal is a Hamilton Pro subscription, monthly or
+> annual. The paid report is a high-value lead, not the goal. The funnel: a free sample report, then
+> the Competitive Fee Position Report ("from $300"), then Pro, either because the buyer wants it on a
+> regular basis or because the report sparks a Pro demo request (through `/contact?source=demo`; no
+> booking links). Where anything below ranks the report above Pro, this note wins.
+
 Issue #1289. Written 2026-10-14 from the code on `origin/main` (branch `docs/site-v3-brief`) and the
 live pages read the same day with WebFetch (feeinsight.com, /for-institutions, /subscribe, /reports;
 every fetch worked). Method: the `cro` skill's seven checks, in order of impact, applied to each page.

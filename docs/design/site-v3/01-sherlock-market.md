@@ -1,5 +1,11 @@
 # Site v3 brief 01: market and buyer research (SHERLOCK)
 
+> **Goal updated 2026-10-15 (James).** The site's goal is a Hamilton Pro subscription, monthly or
+> annual. The paid report is a high-value lead, not the goal. The funnel: a free sample report, then
+> the Competitive Fee Position Report ("from $300"), then Pro, either because the buyer wants it on a
+> regular basis or because the report sparks a Pro demo request (through `/contact?source=demo`; no
+> booking links). Where anything below ranks the report above Pro, this note wins.
+
 Issue #1289. One-off brief for the landing page redesign, not a scheduled run.
 Researched 2026-10-14 with web search and plain page fetches (no Firecrawl). Every competitor
 claim below is what that company's own page or a named third party said on the date read; "not

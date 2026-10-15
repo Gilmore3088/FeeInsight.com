@@ -1,5 +1,11 @@
 # Site v3 brief 08: the hero sizzle and the homepage copy (DRAPER with NORMAN)
 
+> **Goal updated 2026-10-15 (James).** The site's goal is a Hamilton Pro subscription, monthly or
+> annual. The paid report is a high-value lead, not the goal. The funnel: a free sample report, then
+> the Competitive Fee Position Report ("from $300"), then Pro, either because the buyer wants it on a
+> regular basis or because the report sparks a Pro demo request (through `/contact?source=demo`; no
+> booking links). Where anything below ranks the report above Pro, this note wins.
+
 Issue #1289. Written 2026-10-14. It follows James's direction of 2026-10-14: BetterAnalyst's page
 shape, and a 20-second sizzle in the hero that walks from the pain of gathering fee data to
 Fee Insight, the Bank Fee Index, the market view and Hamilton ("Hamilton is the chat process
@@ -309,7 +315,8 @@ an example institution is approved.
 **Tabs line:** This month · My fees · Try a price · Reports, with Ask Hamilton on every screen
 (`HAMILTON_MODES`).
 
-**Link:** See Hamilton plans → `/subscribe`
+**Link:** See Hamilton plans → `/subscribe`. Beside it, a quieter link: Or ask for a demo →
+`/contact?source=demo`
 
 **One-off line:**
 
