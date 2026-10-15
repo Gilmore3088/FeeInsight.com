@@ -144,6 +144,17 @@ describe("Hamilton rules re-check", () => {
     expect(query).toContain("knox_lesson:%");
   });
 
+  it("keeps a subordination filed as other lending before Oct 15, which today's rules read as legal process", async () => {
+    const text = [{ source_document_id: 9, text_hash: "abc", normalized_text: "Mortgage Subordination Fee | $150.00\nStop Payment | $30.00" }];
+    const db = createDbMock([live(1, "other_lending_fee", "Mortgage Subordination Fee", "150.00"), live(2, "other_lending_fee", "Stop Payment", "30.00")], text);
+
+    const result = await rollBackUnreproducedFees(asDb(db), { runId: 305, batchId: "b", takedownLive: true, dryRun: true });
+
+    // The subordination is reproduced; the stop payment under other lending is not (and no guard covers it).
+    expect(result.rollbacks).toEqual([]);
+    expect(result.disputed.map((fee) => fee.feePublishedId)).toEqual([2]);
+  });
+
   it("never takes a fee down for a text other than the one it was read from", async () => {
     const db = createDbMock([live(1, "stop_payment", "Stop Payment", "30.00"), live(2, "bill_pay", "Copy of Draft (Check)", "3.00", "older")], texts);
 

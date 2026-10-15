@@ -5,6 +5,23 @@ Seeded 2026-10-05 from the project's working memory; earlier decisions were not 
 
 ## 2026-10-15
 
+**Subordination fees file as legal process, reversing Oct 8.** James, 02:59 UTC Oct 15 (#1026
+comment 6183387204, item 1), on Pacific Service FCU's "Subordination | $125 per loan": a
+subordination fee pays for drafting and executing a legal agreement that changes the lien priority
+recorded with the county; it is not an operational loan fee, and PSCU lists it under Real Estate
+Fees, apart from its general loan fees. From now on subordination fees file as `legal_process`
+(taxonomy, Knox, category guard v64, fold v15). Live and verified fees filed as `other_lending_fee`
+before the change move by the fold's switched re-file (`SUBORDINATION_REFILE_LIVE`) when James
+says go. The answer-key row seeded at institution 4875 under `other_lending_fee` is aligned to
+`legal_process` by its own migration. A lien release stays other lending (Oct 8).
+
+**Four answer-key rows are keyed correctly.** James, same comment, items 2 to 5: 4Front FCU (7273,
+$25 for the first 2 a day, $0 after), Texhillco (5643, first check free, $5 each after), Schools
+FCU (4770, free on Platinum, $25 on Gold, Silver+, Silver and College) and Liberty Savings (1175,
+coin counting free up to $250 a day, 1% above) stay as keyed. Schools FCU's free and $25 prices are
+two product-specific fees, never one blended amount, in the key and in live fees (#1060, account
+tiers).
+
 **The site's goal is a Pro subscription; the paid report is a lead.** James, Oct 15, after a
 site review again ranked its findings around the $300 report: "The goal is not to get a paid report.
 That's just a high value lead. The goal is to get them on pro pricing so they're paying monthly or

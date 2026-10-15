@@ -185,11 +185,16 @@ export const SUBORDINATION = /^(?![\s\S]*subordination request:\s*(?:incoming|ou
 /** A copy of an item, not the item. */
 export const ITEM_COPY = /\b(?:photo ?)?cop(?:y|ies)\b/i;
 
-/** A subordination or a lien release or satisfaction ("Duplicate Lien Satisfied") filed as legal process. */
-const LENDING_LEGAL = new RegExp(
-  String.raw`${SUBORDINATION.source}|\blien (?:release|satisf)|\b(?:release|satisf\w*) of (?:the )?lien`,
-  "i",
-);
+/** A lien release or satisfaction ("Duplicate Lien Satisfied") filed as legal process. */
+const LENDING_LEGAL = /\blien (?:release|satisf)|\b(?:release|satisf\w*) of (?:the )?lien/i;
+
+/**
+ * James, Oct 15 2026 (#1026, reversing Oct 8): subordination fees file as legal process. New reads
+ * do from this change on. Live and verified fees filed as other lending before it move when this
+ * is on: Hamilton's fold step re-files them (logged as `category_fold`, old category kept), each
+ * one only when legal process's guard and price range accept it. Off until James says go.
+ */
+export const SUBORDINATION_REFILE_LIVE = false;
 
 /** A night depository's key, bag or service. */
 const NIGHT_DEPOSIT = /\bnight (?:deposit|drop)/i;
@@ -296,10 +301,9 @@ interface SplitCategory {
  */
 export const SPLIT_CATEGORIES: Readonly<Record<string, SplitCategory>> = {
   check_cashing: { to: "collection_item", name: COLLECTION_ITEM, sqlPattern: "collection|foreign|canadian|international|non[- ]?u\\.?s" },
-  // A mortgage or lien subordination is a lending service (median $150), not legal process like
-  // a levy or garnishment (median $50). Wire lines under a "Subordination Request" heading stay.
-  // A lien release is other lending too (James, Oct 8: Lien Release gave up its spot).
-  legal_process: { to: "other_lending_fee", name: LENDING_LEGAL, sqlPattern: "subordinat|lien" },
+  // A lien release is other lending (James, Oct 8: Lien Release gave up its spot). A subordination
+  // stays legal process (James, Oct 15).
+  legal_process: { to: "other_lending_fee", name: LENDING_LEGAL, sqlPattern: "lien" },
   // A copy of a money order or cashier's check is a check copy, not the money order itself.
   money_order: { to: "check_image", name: ITEM_COPY, sqlPattern: "cop(y|ies)" },
   // A night deposit or night drop key is the night depository's, not a safe deposit box's.
@@ -341,8 +345,11 @@ export const SPLIT_CATEGORIES: Readonly<Record<string, SplitCategory>> = {
   },
   // A statement mailed back undelivered is returned mail, which account research holds.
   paper_statement: { to: "account_research", name: RETURNED_STATEMENT, sqlPattern: "return" },
-  // Excess savings or money market activity is account servicing, not a lending fee.
-  other_lending_fee: { to: "account_research", name: EXCESS_ACTIVITY, sqlPattern: "excess" },
+  // Excess savings or money market activity is account servicing, not a lending fee. A
+  // subordination is legal process (James, Oct 15), moved only while `SUBORDINATION_REFILE_LIVE` is on.
+  other_lending_fee: SUBORDINATION_REFILE_LIVE
+    ? { to: "account_research", name: EXCESS_ACTIVITY, also: [{ to: "legal_process", name: SUBORDINATION }], sqlPattern: "excess|subordinat" }
+    : { to: "account_research", name: EXCESS_ACTIVITY, sqlPattern: "excess" },
 };
 
 export const SPLIT_CATEGORY_KEYS: ReadonlySet<string> = new Set(Object.keys(SPLIT_CATEGORIES));
@@ -358,7 +365,8 @@ export function splitLiveCategory(key: string | null | undefined, feeName: strin
 }
 
 /** Bumped when a fold rule changes, so Hamilton's fold step re-reads what it left unplaced. */
-export const FOLD_RULES_VERSION = 14;
+// v15: a subordination stays legal process (James, Oct 15); legal process keeps only lien releases in its split.
+export const FOLD_RULES_VERSION = 15;
 
 /** The retired categories that sat in these families. */
 export function retiredKeysInFamilies(families: readonly string[]): string[] {
