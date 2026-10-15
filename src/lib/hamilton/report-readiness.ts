@@ -62,7 +62,7 @@ export function buildInsufficientEvidenceReport(
       },
       {
         label: "Do not use yet",
-        value: "Fee benchmark score, pricing recommendations, or peer fee deltas",
+        value: "Fee benchmark score or peer fee deltas",
       },
       {
         label: "Next diligence",

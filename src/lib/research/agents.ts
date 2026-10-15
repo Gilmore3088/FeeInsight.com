@@ -134,9 +134,9 @@ You are answering a question from the Monitor screen. The user is reviewing live
 
 RESPONSE RULES:
 - Keep responses concise: 2–4 sentences maximum
-- Frame every answer around: (1) what the signal means for the user's institution, (2) whether action is needed now or can wait, (3) one specific next step if relevant
+- Frame every answer around: (1) what the signal means for the user's institution, (2) whether it needs attention now or can wait, (3) if relevant, one specific thing to check next, such as a named competitor's price, a complaint trend or the fee schedule itself
 - Do NOT provide lengthy analysis — Monitor is a surveillance tool, not an analysis workspace
-- Do NOT recommend a specific fee level or range
+- Never tell the user to raise, lower or drop a fee, and never name a fee level or range to move to. The pricing decision is the user's
 - If deeper analysis is needed, direct the user to the Analyze screen
 
 TONE: Direct, decisive, brief.`;

@@ -36,7 +36,7 @@ describe("buildInsufficientEvidenceReport", () => {
     });
     expect(report.tradeoffs).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ label: "Do not use yet" }),
+        expect.objectContaining({ label: "Do not use yet", value: "Fee benchmark score or peer fee deltas" }),
         expect.objectContaining({ label: "Next diligence" }),
       ]),
     );

@@ -262,6 +262,7 @@ HARD RULES — fail any, rewrite the section:
 10. If a sentence could appear unchanged in any other bank's report, delete it.
 11. exhibits.local_moves lists price changes by named local competitors since tracked_since. When a decision touches a fee a competitor changed, name the competitor and its old and new amount. When moves is empty, say nothing about competitor changes, and never claim what happened before tracked_since.
 12. exhibits.fee_income_trend, when present, is the institution's fee income after inflation (in dollars_of dollars), with tests already run. Use it to say whether pricing is fighting a declining or a growing income line. Quote real_cagr_pct against industry_real_cagr_pct, and a structural_break only when significant is true, naming its quarter. Never compute a growth rate or test result yourself; when it is null, say nothing about trend.
+13. Never tell the institution to raise, lower, hold, cut or drop a fee, and never write "we recommend". Say where its prices sit and the question that puts to management; the decision is management's.
 `.trim();
 
 function buildExecutiveSummaryContext(
@@ -326,10 +327,10 @@ const DECISION_POINT_RULES = `
 ${NO_FLUFF_RULES}
 
 DECISION-POINT RULES:
-13. Cover the decision points on the answer page, in its order, and no others. At most 3.
-14. For each, lay out the options management could weigh (keep the price, move toward the local or peer anchor, restructure the fee), each with one concrete consequence: who notices, the complaint or regulatory exposure, or the income figure from exhibits.fee_impacts.
-15. Never choose an option. Never tell the institution to raise, lower, hold, cut or drop a fee, and never write "we recommend" or "should". End each decision point with the question management faces.
-16. If you can ground only 0 or 1 decision points, write only that many. Better short than generic.
+14. Cover the decision points on the answer page, in its order, and no others. At most 3.
+15. For each, lay out the options management could weigh (keep the price, move toward the local or peer anchor, restructure the fee), each with one concrete consequence: who notices, the complaint or regulatory exposure, or the income figure from exhibits.fee_impacts.
+16. Never choose an option. Never tell the institution to raise, lower, hold, cut or drop a fee, and never write "we recommend" or "should". End each decision point with the question management faces.
+17. If you can ground only 0 or 1 decision points, write only that many. Better short than generic.
 `.trim();
 
 function buildRecommendationContext(
