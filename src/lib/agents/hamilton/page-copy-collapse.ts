@@ -4,7 +4,7 @@ import { inSavepoint } from "@/lib/agents/savepoint";
 import { frequencyClass } from "@/lib/agents/hamilton/exact-duplicate";
 import { DUPLICATE_COLLAPSE_REASON_PREFIX, type DuplicateCollapse } from "@/lib/agents/hamilton/duplicate-collapse";
 import { feePageKey } from "@/lib/agents/hamilton/page-key";
-import { linesApartOnPage, nearNames, printedAtPrice } from "@/lib/agents/hamilton/publish";
+import { linesApartOnPage, nearNames, printedAtPrice, printedInPersonalAndBusinessSchedules } from "@/lib/agents/hamilton/publish";
 
 type SqlTag = typeof sql;
 
@@ -53,12 +53,39 @@ export interface PageCopyResult {
   apartOnPage: number;
   /** Kept: the newest copy has no stored text, or does not print the kept name at the price. */
   unproven: number;
+  /**
+   * Kept: the two documents share a page key but not their wording ("?id=101" and "?id=202",
+   * "/docs/2041.pdf" and "/docs/3315.pdf" key alike), or the older one has no stored text.
+   */
+  otherDocument: number;
   collapses: PageCopyCollapse[];
 }
 
 function sameLine(a: string | null, b: string | null): boolean {
   const [one, two] = [(a ?? "").trim().toLowerCase(), (b ?? "").trim().toLowerCase()];
   return (one !== "" && one === two) || nearNames(a, b);
+}
+
+const SAME_SCHEDULE_OVERLAP = 0.5;
+
+function shingles(text: string): Set<string> {
+  const words = text.toLowerCase().match(/[a-z0-9$.%]+/g) ?? [];
+  const out = new Set<string>();
+  for (let i = 0; i + 5 <= words.length; i += 1) out.add(words.slice(i, i + 5).join(" "));
+  return out;
+}
+
+/**
+ * Pure: do two stored texts read as copies of one schedule? Half or more of their five-word runs
+ * are shared (Jaccard). A copy under another address, or a later version of the same schedule,
+ * shares most of its wording; a consumer and a business schedule served from one script do not.
+ */
+export function sameSchedule(one: string, two: string): boolean {
+  const [a, b] = [shingles(one), shingles(two)];
+  if (a.size === 0 || b.size === 0) return false;
+  let shared = 0;
+  for (const run of a) if (b.has(run)) shared += 1;
+  return shared / (a.size + b.size - shared) >= SAME_SCHEDULE_OVERLAP;
 }
 
 /**
@@ -69,7 +96,16 @@ function sameLine(a: string | null, b: string | null): boolean {
  * differ. Rows of one document are left to the near-name collapse.
  */
 export function pageCopyRepeats(rows: PageCopyRow[], texts: Map<string, string>): Omit<PageCopyResult, "live" | "institutions"> {
-  const result = { pairs: 0, apartOnPage: 0, unproven: 0, collapses: [] as PageCopyCollapse[] };
+  const result = { pairs: 0, apartOnPage: 0, unproven: 0, otherDocument: 0, collapses: [] as PageCopyCollapse[] };
+  const same = new Map<string, boolean>();
+  const copies = (one: string, two: string) => {
+    const key = [one, two].sort().join("|");
+    if (!same.has(key)) {
+      const [a, b] = [texts.get(one), texts.get(two)];
+      same.set(key, a != null && b != null && sameSchedule(a, b));
+    }
+    return same.get(key)!;
+  };
   const groups = new Map<string, PageCopyRow[]>();
   for (const row of rows) {
     const page = feePageKey(row.document_url);
@@ -98,9 +134,13 @@ export function pageCopyRepeats(rows: PageCopyRow[], texts: Map<string, string>)
       if (!text || !printedAtPrice(text, match.fee_name ?? "", match.amount)) {
         result.unproven += 1;
         kept.push(row);
+      } else if (!copies(String(row.source_document_id), String(match.source_document_id))) {
+        result.otherDocument += 1;
+        kept.push(row);
       } else if (
-        (row.fee_name ?? "").trim().toLowerCase() !== (match.fee_name ?? "").trim().toLowerCase() &&
-        linesApartOnPage(text, row.fee_name ?? "", match.fee_name ?? "", row.amount)
+        ((row.fee_name ?? "").trim().toLowerCase() !== (match.fee_name ?? "").trim().toLowerCase() &&
+          linesApartOnPage(text, row.fee_name ?? "", match.fee_name ?? "", row.amount)) ||
+        printedInPersonalAndBusinessSchedules(text, [row.fee_name ?? "", match.fee_name ?? ""], row.amount)
       ) {
         result.apartOnPage += 1;
         kept.push(row);
@@ -133,7 +173,7 @@ export async function collapsePageCopies(
   options: { runId: number; batchId: string; dryRun: boolean; institutionId?: number; live?: boolean },
 ): Promise<PageCopyResult> {
   const live = options.live ?? PAGE_COPY_COLLAPSE_LIVE;
-  const empty: PageCopyResult = { live, institutions: 0, pairs: 0, apartOnPage: 0, unproven: 0, collapses: [] };
+  const empty: PageCopyResult = { live, institutions: 0, pairs: 0, apartOnPage: 0, unproven: 0, otherDocument: 0, collapses: [] };
   const params: Array<number | string> = [PAGE_COPY_COLLAPSE_INSTITUTIONS, String(options.runId)];
   let institutionFilter = "";
   if (options.institutionId) {

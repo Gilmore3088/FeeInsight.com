@@ -609,9 +609,11 @@ on page, not printed, no text, would close, samples) and closes the repeats. Rol
 `page-copy-collapse.ts` groups live rows of one institution, category, variant and amount read
 from different documents of one page (`feePageKey`) under the same or a near name, and keeps the
 copy from the newest document. That document's stored text must print the kept name at the price,
-and a pair it prints as two lines stays two fees. Frequencies and audiences must agree or be
+and the two documents' texts must read as one schedule (half or more of their five-word runs
+shared, `sameSchedule`), since `feePageKey` keys "?id=101" and "?id=202" alike. A pair the kept
+text prints as two lines, or under both a personal and a business heading, stays two fees. Frequencies and audiences must agree or be
 unstated. Up to 25 institutions per step; each step reports `page_copy_collapse` (pairs, apart on
-page, unproven, would close, samples). `PAGE_COPY_COLLAPSE_LIVE` stays off until James approves
+page, unproven, other document, would close, samples). `PAGE_COPY_COLLAPSE_LIVE` stays off until James approves
 the dry-run counts. Rollback: clear `rolled_back_at` on rows whose reason ends in
 `(copy of the page)`.
 

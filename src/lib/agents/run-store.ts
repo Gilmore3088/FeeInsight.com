@@ -1773,7 +1773,8 @@ async function executeAgenticStep(
             pairs: pageCopyCollapse.pairs,
             apart_on_page: pageCopyCollapse.apartOnPage,
             unproven: pageCopyCollapse.unproven,
-            [pageCopyCollapse.live ? "closed" : "would_close"]: pageCopyCollapse.collapses.length,
+            other_document: pageCopyCollapse.otherDocument,
+            [pageCopyCollapse.live && run.runKind !== "dry_run" ? "closed" : "would_close"]: pageCopyCollapse.collapses.length,
             samples: pageCopyCollapse.collapses.slice(0, 10).map((row) => ({
               fee_published_id: row.feePublishedId,
               fee_name: row.feeName,
