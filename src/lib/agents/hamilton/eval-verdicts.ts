@@ -294,6 +294,34 @@ export const HAND_CHECKED_VERDICTS: readonly (EvalVerdict & { pattern: string })
     verdict: "wrong_category", pattern: "category_miss",
     why: "Doc 26244 (refresh of doc 16334): \"Escheat processing fee (plus drilling fee if applicable) | $50.00/account\" sits among account fees after \"Dormant account fee | $7.50/month\"; it is not a safe deposit box fee",
   },
+  // #1360 (James, Oct 15 02:42 UTC: "take down 4 rows"): an optional overdraft plan priced by the
+  // month, filed as the bank's overdraft fee, beside the bank's real per-item overdraft fee (live).
+  // Each bank's own page was read by James and by the advisor session. First Community FCU's 92746
+  // stays live until its tiered overdraft fees are captured; it is its only overdraft row.
+  {
+    feePublishedId: 136503, institution: "Independent Bank",
+    feeName: "With Advanced Overdraft, pay", amount: 10, canonicalFeeKey: "overdraft",
+    verdict: "wrong_category", pattern: "optional_overdraft_plan",
+    why: "#1360: $10/month is the optional Advanced Overdraft rebate plan, not the overdraft fee; the bank's overdraft fee is $34 per item (86630, live)",
+  },
+  {
+    feePublishedId: 112803, institution: "Central National Bank",
+    feeName: "About Bounce Protection", amount: 9, canonicalFeeKey: "overdraft",
+    verdict: "wrong_category", pattern: "optional_overdraft_plan",
+    why: "#1360: the bank's bounce protection page has no $9 monthly fee; its overdraft fee is $32 per item (112807, live)",
+  },
+  {
+    feePublishedId: 92248, institution: "St. Louis Community Federal Credit Union",
+    feeName: "Enhanced Overdraft Privilege Fee (per month)", amount: 5, canonicalFeeKey: "overdraft",
+    verdict: "wrong_category", pattern: "optional_overdraft_plan",
+    why: "#1360: $5/month is the optional Enhanced Privilege plan, not the overdraft fee; the overdraft fee is $18 per item (27613, live)",
+  },
+  {
+    feePublishedId: 19381, institution: "Selco Community Federal Credit Union",
+    feeName: "Courtesy pay fee", amount: 10, canonicalFeeKey: "overdraft",
+    verdict: "wrong_category", pattern: "optional_overdraft_plan",
+    why: "#1360: $10/month is the Elevate-only alternative plan, not the overdraft fee; the courtesy pay fee is $25 per item (19379, live)",
+  },
 ];
 
 /** A surcharge rebate, reimbursement or refund published as the ATM fee itself. */

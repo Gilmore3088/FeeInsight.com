@@ -7,7 +7,7 @@ Status: defined, dry run only. Starts with the first scheduled run (moved up fro
 
 Get bank and credit union fee owners to find Fee Insight when they search for fee benchmarks,
 peer fee comparisons and state fee data, in Google and in AI answers. Then turn those visits
-into free reports and report requests.
+into free reports, then Pro (the funnel in `../README.md`).
 
 ## Skills
 

@@ -1,5 +1,9 @@
 # Marketing loop build plan (2026-10-08)
 
+> **Goal updated 2026-10-15.** The goal is a Hamilton Pro subscription; the paid report is a lead.
+> Read every task below against the funnel in `README.md`: free sample report, then the paid report,
+> then Pro or a Pro demo request.
+
 Calls waiting on James:
 
 - 1. Who owns press, events and partners? **New agent BERNAYS (recommended)** / DRAPER and CARNEGIE

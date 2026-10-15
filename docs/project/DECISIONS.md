@@ -22,6 +22,12 @@ Competitive Fee Position Report stays on sale as the step for buyers not ready t
 reports and alerts capture leads for Pro. CLAUDE.md's "Money thesis" and the CTA line in
 `.agents/product-marketing.md` now say so.
 
+**The growth plans follow the same funnel.** James, Oct 15: "update the growth plans so we dont focus
+on the $300 and go with the plan we discussed today." The funnel is a free sample report, then the
+paid report as a lead, then Pro, either because the buyer wants it regularly or because the report
+sparks a Pro demo request. GrowthOS (README, agent objectives, KPI order) and the site v3 brief now
+rank work by Pro subscriptions and Pro demo requests; report requests count as leads.
+
 **Data fixes are proven on the live row, not one function.** James, Oct 15, after #1334's review
 found that #1310's merged cut-cents fix never reached the site. Knox's self-check uses
 `checkFeeAgainstSource`, which still rejected $29.95 and $1.50. #1310's test ran only the first read.

@@ -278,20 +278,35 @@ and `detail.method_version`).
   the automation stop ends the step cleanly (`budgetStopped`); the unspent bank stays due.
   $10B+ banks and requesters are picked from any state's paid step, not only their own.
   Order: the state experts' work lists (#1029, below).
-- Schedule search (`schedule-search.ts`, `discover.paid_schedule_search`), in the same paid
-  step: up to `SCHEDULE_SEARCH_PER_RUN` $10B+ banks, report requesters or market leaders
-  (top 15 in their state by deposits or fee income, `loadMarketLeaderIds` in
-  `src/lib/data-store/market-leaders.ts`), from any state, whose link is not the consumer
-  schedule (link coverage) or who are hidden (fewer than three live fee categories), off
-  the paid cooldown, requesters then leaders then largest first. If the ranking fails the lane runs
-  on size and requests alone. The model (web search) is told why the held page is not it; the
-  answer must be on the bank's domain, new to the bank, and pass the fee-page check. It is
-  stored as a `consumer_supplement` companion beside the link, so companion fetch, Rosetta
-  and Knox read it; the link and its live fees stay. A second lane takes up to
-  `HIDDEN_BANK_SEARCH_PER_RUN` banks of any size that the catalog hides (fewer than three
-  live fee categories) whose link is an account product page or prices no overdraft.
-  Each lane takes its cap from the work lists (#1029, below). The bank's own domain includes
-  its corporate domain (`onBankDomain`).
+- Schedule search (`schedule-search.ts`, `discover.paid_schedule_search`, version 2, #1030), in
+  the same paid step, from any state, off the paid cooldown, in two lanes, the uncovered lane first:
+  - **Uncovered first:** up to `SCHEDULE_SEARCH_PER_RUN` (10) institutions that hold a fee link but
+    have no live fee at all, whose oldest stored copy is at least `UNCOVERED_SETTLE_DAYS` (3) old,
+    with no discovery find in those days (a free #1327 re-search or any finder; the free pipeline
+    reads a new link first) and no companion still waiting for its first fetch. One search asks for the fee schedule, the Truth in Savings disclosure and the deposit
+    account agreement (`UNCOVERED_DOCUMENT_KINDS`); each answer that passes the checks is its own
+    `consumer_supplement` companion, its kind named in the companion's reason and the attempt's
+    `detail.documents`. Institutions with no fee link at all are the paid web search's
+    (above, with its disclosure rung).
+  - **Gap-fill, on its own cap:** up to `GAP_FILL_PER_RUN` (3) banks with live fees whose link is
+    not the consumer schedule yet (link coverage). First $10B+ banks, report requesters and market
+    leaders (top 15 in their state by deposits or fee income, `loadMarketLeaderIds` in
+    `src/lib/data-store/market-leaders.ts`) on any gap (business-only, no overdraft price, refers
+    elsewhere, stale copy, or hidden: fewer than three live categories); then other banks when
+    hidden with a product-page link or no overdraft price, or with a business-only link the free
+    business search missed. No gap-fill search once the lane has spent `GAP_FILL_CAP_MICROUSD`
+    ($10) in `GAP_FILL_CAP_DAYS` (30), counted from attempts with `detail.lane = 'gap_fill'`,
+    checked before each search.
+  - **Order inside each lane** is the work lists' (#1029, #1269, below): the pools (`pool_lane`:
+    uncovered, gap_priority, gap_other) are each cut at `WORK_LIST_POOL` requesters, Pro
+    accounts' institutions and market leaders first, then each state x size cell's first
+    institution, then its second; each lane then takes its cap requesters and Pro accounts first,
+    then one per state in turn. "No live fees first" is the lane split; it never reorders a lane.
+  If the ranking fails the lanes run on size and requests alone. The model (web search, site-limited
+  under $10B, #1035/#1251) is told why the held page is not it; every answer must be on the bank's
+  own hosts, new to the bank, and pass the fee-page check with the bank's name and the shared-name
+  rule. It is stored beside the link, so companion fetch, Rosetta and Knox read it; the link and
+  its live fees stay. The bank's own domain includes its corporate domain (`onBankDomain`).
 - Work lists (#1029, `state-expert/work-list.ts`): the paid web search, the schedule search
   (each lane) and the website search read up to `WORK_LIST_POOL` (2,000) due institutions,
   then take their unchanged per-step cap in this order: report requesters and Pro accounts'
@@ -544,6 +559,6 @@ fails a PR that changes one of these constants without updating its line here (#
 | `STATE_ENFORCEMENT_PARSER_VERSION` | — | v5 | `magellan/registry/state-enforcement.ts` |
 | `STATE_NEWS_PARSER_VERSION` | — | v2 | `magellan/registry/state-reg-news.ts` |
 | `RESTORE_FEE_PAGE_VERSION` | — | v1 | `magellan/restore-fee-page.ts` |
-| `SCHEDULE_SEARCH_STRATEGY` | `discover.paid_schedule_search` | v1 | `magellan/schedule-search.ts` |
+| `SCHEDULE_SEARCH_STRATEGY` | `discover.paid_schedule_search` | v2 | `magellan/schedule-search.ts` |
 | `SITE_SEARCH_STRATEGY` | `discover.site_search` | v1 | `magellan/second-document.ts` |
 | `WEBSITE_FIND_STRATEGY` | `discover.website_search` | v1 | `magellan/website-find.ts` |
