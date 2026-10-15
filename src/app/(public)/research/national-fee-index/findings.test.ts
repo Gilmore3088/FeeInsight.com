@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { IndexEntry } from "@/lib/data-store/fee-index";
 import { NATIONAL_INDEX_NAV } from "@/components/nav-items";
 import { PRODUCT_NAME } from "@/lib/constants";
-import { datasetDescription, nationalFindings, subheadLead } from "./findings";
+import { datasetDescription, districtMedians, nationalFindings, subheadLead } from "./findings";
 
 const entry = (fee_category: string, median_amount: number | null, institution_count: number): IndexEntry => ({
   fee_category,
@@ -55,6 +55,47 @@ describe("nationalFindings", () => {
     expect(f.text).toBe(
       "Prices for bank services fell 0.4% in the year to September 2026, against a 2.1% rise in all consumer prices.",
     );
+  });
+});
+
+describe("finding card figures", () => {
+  it("carries the overdraft range only when all five figures are known", () => {
+    const full = { ...entry("overdraft", 30, 2498), min_amount: 0, p25_amount: 25, p75_amount: 33, max_amount: 50 };
+    const [withRange] = nationalFindings([full], { bankFees: null, allItems: null });
+    expect(withRange).toMatchObject({ key: "overdraft", median: 30, institutions: 2498, range: { min: 0, p25: 25, median: 30, p75: 33, max: 50 } });
+    const [noRange] = nationalFindings([entry("overdraft", 30, 2498)], { bankFees: null, allItems: null });
+    expect(noRange).toMatchObject({ key: "overdraft", range: null });
+  });
+
+  it("ranks the most-published fees, leader first, for the bars", () => {
+    const [, top] = nationalFindings(
+      [entry("overdraft", 30, 2498), entry("stop_payment", 27.5, 3173), entry("nsf", 30, 2668), entry("paper_statement", 3, 10)],
+      { bankFees: null, allItems: null },
+    );
+    expect(top.key).toBe("most_published");
+    if (top.key !== "most_published") return;
+    expect(top.leaders.map((l) => l.category)).toEqual(["stop_payment", "nsf", "overdraft", "paper_statement"]);
+    expect(top.leaders[0].category).toBe(top.category);
+  });
+
+  it("gives the CPI card both twelve-month changes", () => {
+    const [f] = nationalFindings([], cpi);
+    expect(f).toMatchObject({ key: "cpi", month: "September 2026", bankPct: 1, allPct: 3.7 });
+  });
+});
+
+describe("districtMedians", () => {
+  it("orders districts and leaves a thin district without a median", () => {
+    const rows = districtMedians([
+      { dimension_value: "District 12", count: 269, median_amount: 25, min_amount: 0, max_amount: 40, avg_amount: 24 },
+      { dimension_value: "District 3", count: 4, median_amount: 32, min_amount: 0, max_amount: 40, avg_amount: 30 },
+      { dimension_value: "Unknown", count: 9, median_amount: 30, min_amount: 0, max_amount: 40, avg_amount: 30 },
+    ]);
+    expect(rows).toEqual([
+      { district: 3, name: "Philadelphia", median: null, institutions: 4 },
+      { district: 12, name: "San Francisco", median: 25, institutions: 269 },
+    ]);
+    expect(districtMedians(null)).toEqual([]);
   });
 });
 
