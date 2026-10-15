@@ -1,5 +1,5 @@
 import { createHash } from "crypto";
-import { feesSentToDarwinSql, THIN_DOCUMENT_MAX_FEES } from "@/lib/agents/thin-document";
+import { feesSentToDarwinSql, THIN_DOCUMENT_MAX_FEES, thinRereadKindSql } from "@/lib/agents/thin-document";
 
 import { sql, stripNulChars } from "@/lib/data-store/connection";
 import {
@@ -1254,6 +1254,7 @@ async function selectCandidates(
               OR (
                 adt.status = 'completed'
                 AND ${feesSentToDarwinSql("adt.source_document_id")} < ${rereadMaxParam}
+                AND ${thinRereadKindSql("adt")}
                 AND ${notSettledByCurrentReader}
               )
             )`;

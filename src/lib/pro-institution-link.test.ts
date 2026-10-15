@@ -15,6 +15,19 @@ describe("isPersonalEmail", () => {
   it("accepts a work address", () => {
     expect(isPersonalEmail("pat@firstexamplebank.com")).toBe(false);
   });
+
+  it("sees through a trailing dot, and refuses no bank under a short generic name (#1411)", () => {
+    expect(isPersonalEmail("pat@gmail.com.")).toBe(true);
+    expect(isPersonalEmail("pat@gmx.de")).toBe(true);
+    expect(isPersonalEmail("pat@x.mail.ie")).toBe(false);
+    expect(isPersonalEmail("pat@bank.me.uk")).toBe(false);
+  });
+
+  it("still treats Microsoft's country mail domains as personal (review of #1473)", () => {
+    for (const email of ["pat@live.com", "pat@live.ca", "pat@live.co.uk", "pat@live.com.au", "pat@msn.co.uk"]) {
+      expect(isPersonalEmail(email), email).toBe(true);
+    }
+  });
 });
 
 describe("emailMatchesWebsite", () => {
@@ -34,6 +47,12 @@ describe("emailMatchesWebsite", () => {
     expect(emailMatchesWebsite("pat@otherbank.com", "https://firstexamplebank.com")).toBe(false);
     expect(emailMatchesWebsite("pat@firstexamplebank.com", null)).toBe(false);
     expect(emailMatchesWebsite("pat@gmail.com", "https://gmail.com")).toBe(false);
+  });
+
+  it("never treats a shared platform page as the institution's site (#1411)", () => {
+    expect(emailMatchesWebsite("pat@facebook.com", "https://www.facebook.com/examplecu")).toBe(false);
+    expect(emailMatchesWebsite("pat@examplecu.wixsite.com", "https://examplecu.wixsite.com/home")).toBe(false);
+    expect(emailMatchesWebsite("pat@firstexamplebank.com.", "https://firstexamplebank.com")).toBe(true);
   });
 });
 
@@ -65,6 +84,9 @@ describe("linkVerifiedInstitutions", () => {
     const { db, issued } = fakeDb([]);
     expect(await linkVerifiedInstitutions(db, 7)).toEqual([]);
     expect(issued[0]).toContain("u.email_confirmed_at IS NOT NULL");
+    // An admin's "needs info" holds the link until the admin decides (#1411).
+    expect(issued[0]).toContain("c.review_status = 'pending'");
+    expect(issued[0]).not.toContain("needs_info");
     expect(issued).toHaveLength(1);
   });
 

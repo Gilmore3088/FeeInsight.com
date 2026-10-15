@@ -48,6 +48,10 @@ export type FeedbackStage = (typeof FEEDBACK_STAGES)[number];
  *   Second look (Hamilton, `hamilton/second-look.ts`): takedown_pending, takedown_confirmed,
  *     takedown_cleared (a fee's current state, one row per fee and check) and the appended
  *     audit trail flag_recorded, flag_cleared, flag_confirmed (one row per event, never rewritten)
+ *   Re-read request (Darwin, `darwin/live-fragment-check.ts`): knox_reread_requested (a live fee
+ *     with a `sentence_end` fragment name, kept live or taken down; Knox is asked to read its
+ *     source line again, #1499). Knox settles each one per rules version with
+ *     knox_reread_resolved (`knox/reread-feedback.ts`, weight 0, #1511)
  */
 export type FeedbackKind =
   | "wrong_category"

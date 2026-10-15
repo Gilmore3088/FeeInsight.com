@@ -133,6 +133,10 @@ export interface SampleRow {
   label: string;
   amount: number;
   median: number;
+  /** The middle half of the local competitors that publish this fee, and how many do. */
+  p25: number;
+  p75: number;
+  competitors: number;
   position: LinePosition;
 }
 
@@ -162,13 +166,44 @@ export interface HomeData {
   scenario: AnalyzeScenario | null;
 }
 
+/**
+ * Whether a homepage render may be kept in the page cache. The page is regenerated in the
+ * background (ISR), and a render made while a read was failing would otherwise be served
+ * for the whole revalidate window, or baked into the build. A read that failed (as opposed
+ * to one that answered "nothing today", such as no sample bank passing the bar) makes the
+ * render uncacheable: the build then serves the page per request, and a background
+ * regeneration keeps the last good page.
+ */
+export function homeReadsCacheable({
+  summary,
+  categories,
+  sampleFailed,
+  overdraftFailed,
+}: {
+  summary: Pick<PublicStatsSummary, "complete">;
+  categories: FeeCategorySummary[];
+  sampleFailed: boolean;
+  overdraftFailed: boolean;
+}): boolean {
+  return summary.complete && categories.length > 0 && !sampleFailed && !overdraftFailed;
+}
+
 /** The sample report's fees and comparable lines, with only verified source lines kept. */
 export function buildSampleView(report: MarketReport | null): SampleView | null {
   if (!report) return null;
   const rows: SampleRow[] = [];
   for (const line of report.analysis.lines) {
     if (!line.comparable || !line.own || !line.peers || !line.position) continue;
-    rows.push({ key: line.key, label: getDisplayName(line.key), amount: line.own.amount, median: line.peers.median, position: line.position });
+    rows.push({
+      key: line.key,
+      label: getDisplayName(line.key),
+      amount: line.own.amount,
+      median: line.peers.median,
+      p25: line.peers.p25,
+      p75: line.peers.p75,
+      competitors: line.peers.n,
+      position: line.position,
+    });
   }
   return {
     institutionName: report.data.subject.institution_name,

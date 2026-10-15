@@ -47,7 +47,9 @@ export interface FlowSnapshot {
 }
 
 /** Institutions waiting in front of each data agent; growth handles no institutions. */
-export type FlowWaiting = Record<Exclude<AdminAgent, "atlas" | "growth">, number> & { published: number; total: number };
+// Gutenberg joins the flow when it takes over publishing (#1075 step 2); until then the
+// publisher's queue is Hamilton's column.
+export type FlowWaiting = Record<Exclude<AdminAgent, "atlas" | "growth" | "gutenberg">, number> & { published: number; total: number };
 
 export type Sample = Record<string, unknown>;
 

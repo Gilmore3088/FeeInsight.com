@@ -2,6 +2,7 @@ import { sql } from "@/lib/data-store/connection";
 import { startAgentRun } from "@/lib/agents/run-store";
 import { CATEGORY_GUARD_VERSION } from "@/lib/fee-category-guard";
 import { FREQUENCY_FILL_VERSION } from "@/lib/agents/hamilton/frequency-fill";
+import { PUBLISHER_AGENT_NAMES } from "@/lib/agents/gutenberg/names";
 
 type SqlTag = typeof sql;
 
@@ -31,7 +32,7 @@ export async function scheduleGuardCatchUpRun(db: SqlTag = sql): Promise<GuardCa
   const base = { categoryGuardVersion: CATEGORY_GUARD_VERSION, frequencyFillVersion: FREQUENCY_FILL_VERSION };
   const [existing] = await db<Array<{ id: number | string }>>`
     SELECT id FROM agent_runs
-     WHERE agent_name = 'hamilton' AND params_json @> ${JSON.stringify(marker)}::jsonb
+     WHERE agent_name = ANY(${[...PUBLISHER_AGENT_NAMES]}::text[]) AND params_json @> ${JSON.stringify(marker)}::jsonb
      ORDER BY id DESC
      LIMIT 1
   `;

@@ -485,6 +485,8 @@ describe("Rosetta agentic read", () => {
       expect(query).toMatch(/SELECT COUNT\(\*\) FROM raw_fee_observations thin_fr[\s\S]*needs_darwin_verification[\s\S]*\) < \$\d+/);
       expect(params).toContain(ROSETTA_READ_VERSION);
       expect(params).toContain(REREAD_MAX_KNOX_FEES);
+      // A thin product page is thin by nature and is not re-read for it (#1094).
+      expect(query).toMatch(/needs_darwin_verification'\) < \$\d+\s+AND \(adt\.document_kind IS NULL OR adt\.document_kind NOT IN \('product_page'\) OR adt\.document_kind_version IS DISTINCT FROM \d+\)/);
     });
 
     it("binds every candidate-SQL placeholder to a parameter of the type it is used as", async () => {

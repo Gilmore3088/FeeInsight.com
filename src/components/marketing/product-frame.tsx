@@ -12,7 +12,7 @@ export function ProductFrame({
   className,
   bodyClassName = "",
 }: {
-  label: string;
+  label: ReactNode;
   aside?: ReactNode;
   children: ReactNode;
   className?: string;

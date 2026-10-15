@@ -134,17 +134,17 @@ export function MarketDots({ dots, band, ariaLabel }: { dots: MarketDot[]; band:
 const POSITION_WORD: Record<Position, string> = { below: "below", within: "inside", above: "above" };
 
 /** What the dots and bands mean, said once per section that draws them, naming only the colours drawn. */
-export function DotLegend({ positions }: { positions: Position[] }) {
+export function DotLegend({ positions, against = "U.S." }: { positions: Position[]; against?: string }) {
   const only = positions.length === 1 ? positions[0] : null;
   return (
     <p className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-ink-muted" aria-hidden="true">
       <span className="inline-flex items-center gap-1.5">
         <span className="h-2.5 w-5 rounded-full bg-brick-tint" />
-        U.S. middle half
+        {against} middle half
       </span>
       <span className="inline-flex items-center gap-1.5">
         <span className="h-3.5 w-[2px] bg-ink/60" />
-        U.S. median
+        {against} median
       </span>
       {positions.length > 0 && (
         <span className="inline-flex items-center gap-1.5">
@@ -154,8 +154,8 @@ export function DotLegend({ positions }: { positions: Position[] }) {
             ))}
           </span>
           {only
-            ? `Every median here is ${POSITION_WORD[only]} the U.S. middle half`
-            : `Median: ${positions.map((p) => POSITION_WORD[p]).join(", ")} the U.S. middle half`}
+            ? `Every median here is ${POSITION_WORD[only]} the ${against === "U.S." ? "U.S." : against.toLowerCase()} middle half`
+            : `Median: ${positions.map((p) => POSITION_WORD[p]).join(", ")} the ${against === "U.S." ? "U.S." : against.toLowerCase()} middle half`}
         </span>
       )}
     </p>

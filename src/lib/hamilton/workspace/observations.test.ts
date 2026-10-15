@@ -29,6 +29,14 @@ describe("market position observations", () => {
     expect(obs.headline.toLowerCase()).not.toMatch(/raise|lower|should|recommend/);
     expect(obs.actions).toContain("model_price");
   });
+  it("says which wire it means and writes a one-price middle half once", () => {
+    const [obs] = marketPositionObservations(
+      [{ feeCategory: "wire_domestic_incoming", current: 25, peers: [15, 15, 15, 15, 15, 15, 15, 15], peerLabel: "FL banks" }],
+      "Capital City Bank",
+    );
+    expect(obs.headline).toBe("Capital City Bank's incoming domestic wire fee of $25 is the highest of 8 peers.");
+    expect(obs.facts[0].text).toBe("FL banks: median $15, middle half all at $15, from 8 institutions.");
+  });
   it("skips fees inside the normal range", () => {
     expect(marketPositionObservations([{ feeCategory: "x", current: 5, peers, peerLabel: "p" }])).toEqual([]);
   });

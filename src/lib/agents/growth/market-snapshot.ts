@@ -1,4 +1,5 @@
 import { displayCity } from "@/lib/format";
+import { RESEARCH_SPLIT_LIVE } from "@/lib/fee-fold";
 import { sql } from "@/lib/data-store/connection";
 import { MIN_INSTITUTIONS_FOR_MEDIAN, STATS_ROW_FILTER, valuePerInstitution } from "@/lib/data-store/fee-stats";
 import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
@@ -27,13 +28,15 @@ type SqlTag = typeof sql;
  * prospect's snapshot (and the first email, which quotes several of them) has depth (James,
  * 22:23 UTC Oct 8: "prioritize institutions where our dataset supports multiple meaningful
  * findings"). Wire fees are left out: Darwin's 200-fee check found column errors in wire tables.
+ * Excess withdrawals and returned mail join once the research split (#1398) is on.
  */
-export const SNAPSHOT_FEE_KEYS = [
+export const SNAPSHOT_FEE_KEYS: readonly string[] = [
   "overdraft",
   "nsf",
   "stop_payment",
   "cashiers_check",
   "account_research",
+  ...(RESEARCH_SPLIT_LIVE ? ["excess_withdrawal", "returned_mail"] : []),
   "card_replacement",
   "deposited_item_return",
   "dormant_account",
@@ -44,7 +47,7 @@ export const SNAPSHOT_FEE_KEYS = [
   "od_protection_transfer",
   "document_reproduction",
   "early_closure",
-] as const;
+];
 
 /** A local median needs as many verified institutions as any other median on the site. */
 export const SNAPSHOT_MIN_PEERS = MIN_INSTITUTIONS_FOR_MEDIAN;

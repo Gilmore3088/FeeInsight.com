@@ -6,6 +6,7 @@ import type {
 } from "@/lib/agents/types";
 import { normalizeStateCode, syncStateLaneProfiles } from "./state-lane-memory";
 import { KNOX_REEXTRACT_MAX_FEES } from "./knox/extract";
+import { thinRereadKindSql } from "./thin-document";
 import { KNOX_RULES_STRATEGY } from "./knox/specialists";
 import { REREAD_MAX_KNOX_FEES, ROSETTA_READ_VERSION } from "./rosetta/read";
 import { DARWIN_VERIFY_MAX_LIMIT, darwinDueSql } from "./darwin/verify";
@@ -334,6 +335,8 @@ export async function stateHasDocumentBacklog(stateCode: string): Promise<boolea
                (SELECT COUNT(*) FROM raw_fee_observations fr
                  WHERE fr.source = 'knox'
                    AND fr.source_document_id = adt.source_document_id) < ${KNOX_REEXTRACT_MAX_FEES}
+               -- A thin product page is no backlog (#1094 step 2).
+               AND ${sql.unsafe(thinRereadKindSql("adt"))}
                AND NOT EXISTS (
                  SELECT 1 FROM pipeline_attempts pa
                   WHERE pa.stage = 'extract'

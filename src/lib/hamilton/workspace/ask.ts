@@ -15,6 +15,7 @@
 import { subjectPossessive, subjectName } from "./subject";
 import { formatDollarsInWords, formatFeeAmount } from "@/lib/format";
 import { DISPLAY_NAMES } from "@/lib/fee-taxonomy";
+import { RESEARCH_SPLIT_LIVE } from "@/lib/fee-fold";
 import { buildFeeAnswer, type ExhibitFocus } from "./answer";
 import { proseFeeName } from "./names";
 import { annualItemsQuestion, buildScenario, MIN_PEERS_FOR_POSITION, placeAmong, waiverRateQuestion } from "./scenario";
@@ -55,6 +56,15 @@ const FEE_SYNONYMS: Record<string, string[]> = {
   cashiers_check: ["cashier's check", "cashiers check", "official check"],
   paper_statement: ["paper statement"],
 };
+
+// Excess withdrawals and returned mail (#1398) get their own phrases only once the research split
+// is on; until then Ask reads these questions exactly as before.
+if (RESEARCH_SPLIT_LIVE) for (const [category, phrases] of [
+  ["excess_withdrawal", ["excess withdrawal", "excess withdrawals", "excessive withdrawal", "excessive withdrawals", "excess transaction", "excess transactions"]],
+  ["returned_mail", ["returned mail", "returned statement", "bad address"]],
+] as const) {
+  FEE_SYNONYMS[category] = [...(FEE_SYNONYMS[category] ?? []), ...phrases];
+}
 
 function phrasesFor(category: string): string[] {
   const display = (DISPLAY_NAMES[category] ?? "").toLowerCase();

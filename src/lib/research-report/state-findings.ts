@@ -105,6 +105,7 @@ export function computeStateFindings(
       headline: `The typical ${stateName} overdraft fee`,
       detail: `Median across ${overdraft.institution_count} ${stateName} institutions, ${vs} the national median of ${formatAmount(overdraft.national_median)}.`,
       exhibit: "benchmarks",
+      fee_category: "overdraft",
     });
   }
 
@@ -117,6 +118,7 @@ export function computeStateFindings(
       headline: `${getDisplayName(premium.fee_category)} runs furthest above national`,
       detail: `${stateName} median ${formatAmount(premium.median_amount)} vs ${formatAmount(premium.national_median)} nationally, across ${premium.institution_count} ${stateName} institutions.`,
       exhibit: "position",
+      fee_category: premium.fee_category,
     });
   }
   const discount = ranked[ranked.length - 1];
@@ -127,6 +129,7 @@ export function computeStateFindings(
       headline: `${getDisplayName(discount.fee_category)} is the biggest discount`,
       detail: `${stateName} median ${formatAmount(discount.median_amount)} vs ${formatAmount(discount.national_median)} nationally, across ${discount.institution_count} ${stateName} institutions.`,
       exhibit: "position",
+      fee_category: discount.fee_category,
     });
   }
 
@@ -143,6 +146,7 @@ export function computeStateFindings(
       headline: `${gap > 0 ? "Credit unions" : "Banks"} charge less for ${lowerName(widest.fee_category)}`,
       detail: `In ${stateName}, median ${formatAmount(widest.cu_median_amount)} at credit unions vs ${formatAmount(widest.bank_median_amount)} at banks. Credit unions are lower on ${cuCheaper} of ${paired.length} fees compared.`,
       exhibit: "charters",
+      fee_category: widest.fee_category,
     });
   } else if (solid.length >= 3) {
     const above = solid.filter((c) => c.delta_pct! >= IN_LINE_PCT).length;

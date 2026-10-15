@@ -1,5 +1,5 @@
 import { feeApplicability } from "@/lib/fee-audience";
-import { feesSentToDarwinSql, THIN_DOCUMENT_MAX_FEES } from "@/lib/agents/thin-document";
+import { feesSentToDarwinSql, THIN_DOCUMENT_MAX_FEES, thinRereadKindSql } from "@/lib/agents/thin-document";
 import { createHash } from "crypto";
 
 import { sql } from "@/lib/data-store/connection";
@@ -120,6 +120,8 @@ interface TextArtifactRow {
   source_url: string | null;
   normalized_text: string;
   text_hash: string | null;
+  /** Rosetta's kind for the text (#1094); null until it is decided. */
+  document_kind?: string | null;
   institution_name?: string | null;
   /** Playbook columns, present once the learning-core migration is applied. */
   format?: string | null;
@@ -270,7 +272,7 @@ function textArtifactQuery(
     // attempt-log filter below stops a second pass with the same version.
     params.push(KNOX_REEXTRACT_MAX_FEES);
     thinTextReextract = `
-           OR ${feesSentToDarwinSql("adt.source_document_id")} < $${params.length}`;
+           OR (${feesSentToDarwinSql("adt.source_document_id")} < $${params.length} AND ${thinRereadKindSql("adt")})`;
     // Hamilton's rules re-check found fees today's rules read from this document that
     // are not live (an older version missed them): extract it again.
     const signatureParam = `$${params.push(knoxFreeSignature())}`;
@@ -414,6 +416,7 @@ function textArtifactQuery(
              adt.source_url,
              adt.normalized_text,
              adt.text_hash,
+             adt.document_kind,
              inst.institution_name${playbookColumns}
         FROM agent_source_texts adt
         JOIN institution_sources inst ON inst.id = adt.institution_id${playbookJoin}
@@ -984,9 +987,15 @@ function specialistDetail(row: TextArtifactRow, run: SpecialistRun): Record<stri
   };
 }
 
-function extractionOutcome(extracted: number, expectedFeeCount: number | null): AttemptOutcome {
+/**
+ * `low_yield` compares a read with the bank's usual fee count, which is its fee schedule's. A
+ * Truth in Savings disclosure, an agreement or a product page holds fewer fees by nature, so only
+ * a fee schedule (or a text with no kind yet) can be low yield (#1094 step 2).
+ */
+export function extractionOutcome(extracted: number, expectedFeeCount: number | null, documentKind: string | null = null): AttemptOutcome {
   if (extracted === 0) return "no_candidates";
-  if (expectedFeeCount != null && expectedFeeCount > 0 && extracted < expectedFeeCount * LOW_YIELD_RATIO) {
+  const judgedAgainstSchedule = documentKind == null || documentKind === "fee_schedule";
+  if (judgedAgainstSchedule && expectedFeeCount != null && expectedFeeCount > 0 && extracted < expectedFeeCount * LOW_YIELD_RATIO) {
     return "low_yield";
   }
   return "ok";
@@ -1087,7 +1096,7 @@ export async function runKnoxExtract(
     }
     const layout = layoutSignature(row.normalized_text);
     layoutReads.push({ ...layout, found: candidates.length });
-    const attemptOutcome = extractionOutcome(candidates.length, playbook.expectedFeeCount);
+    const attemptOutcome = extractionOutcome(candidates.length, playbook.expectedFeeCount, row.document_kind ?? null);
     results.push({
       documentTextId: Number(row.document_text_id),
       sourceDocumentId: Number(row.source_document_id),

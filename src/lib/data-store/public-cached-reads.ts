@@ -101,7 +101,8 @@ export const getPublishedArticleSummariesCached = cachedPublicRead(
   () => false,
 );
 export const getStateFeeIndexesCached = cachedPublicRead(
-  "state-fee-indexes",
+  // v2: entries carry institution_values; older entries without them are not reused.
+  "state-fee-indexes-v2",
   getStateFeeIndexes,
   (indexes) => indexes.all.length === 0,
 );

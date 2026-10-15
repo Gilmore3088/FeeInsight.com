@@ -1,4 +1,4 @@
-export type AdminAgent = "atlas" | "magellan" | "rosetta" | "darwin" | "knox" | "hamilton" | "growth";
+export type AdminAgent = "atlas" | "magellan" | "rosetta" | "darwin" | "knox" | "hamilton" | "gutenberg" | "growth";
 
 export type AgentRunStatus =
   | "queued"
@@ -128,6 +128,8 @@ export const PAUSE_EXEMPT_STEP_KEYS: readonly string[] = [
   "deming-benchmark-health",
   "deming-change-outcomes",
   "deming-fresh-audit",
+  "deming-knox-misses",
+  "deming-playbook-check",
   "deming-regression",
   "deming-sunday-maintenance",
   "fee-alert-dispatch",

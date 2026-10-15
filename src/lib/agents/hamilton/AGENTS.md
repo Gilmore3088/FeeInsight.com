@@ -610,6 +610,29 @@ This sweep reads up to 25 documents' stored text per step. James turned
 on page, not printed, no text, would close, samples) and closes the repeats. Rollback: clear
 `rolled_back_at` on rows whose `rolled_back_reason` ends in `(near name)`.
 
+**Page copies (#1439, shadow).** One schedule stored under several addresses ("?print=1", "www.",
+"%20", a mirror) is several documents, so a line of it went live once per copy.
+`page-copy-collapse.ts` groups live rows of one institution, category, variant and exact amount
+read from different documents of one page (`feePageKey`) under the same or a near name. It keeps a
+current copy (`superseded_by_id` unset) over a replaced one, then the latest edition: by the
+editions the texts state when every copy in the group states one (the latest "effective" date not
+after the read, so an announced change does not count), else by when each was last read or
+re-confirmed (`GREATEST(last_checked_at, crawled_at)`); equal editions fall to the later read. The
+kept document's stored text must print the kept name at the price, and the two documents must print
+mostly the same prices (distinct dollar amounts overlapping at 0.8 or more, `sameScheduleText`),
+since `feePageKey` keys "?id=101" and "?id=202" alike. Prices survive a two-column PDF read in
+another order ("$ | 30.00"); a fee-change letter or a "popular fees" page stays apart. Two
+documents for different audiences are never copies: the audience named in the URL path or query
+(camel case split), else the one the text keeps naming (three or more mentions and three times the
+other, "business day" not counted, so a menu or footer link decides nothing). A pair the kept text
+prints as two lines, or under both a personal and a business heading, stays two fees. Frequencies
+and audiences must agree or be unstated. Up to 25 institutions per step, picked by the run id; each
+step reports `page_copy_collapse` (live, institutions, pairs, apart on page, unproven, other
+document, would close, samples, and `error` when the read failed). `PAGE_COPY_COLLAPSE_LIVE` stays
+off until James approves the dry-run counts. Rollback: clear `rolled_back_at` on rows whose reason
+ends in `(copy of the page)`. A closed copy is not restored if its kept copy later comes down; like
+the other collapses, that is a gap to close before this goes live.
+
 **At publish (#1069 step 1, shadow).** Each row the publish step is about to publish is checked
 against its live copies with the exact collapse's own test (`exact-duplicate.ts`: institution,
 category, variant, value and name; frequency classes that agree; the copy kept states its
@@ -696,6 +719,25 @@ after seeing the list of 248 (Oct 8, "drop them"); with it off they would stay l
 counted as `noHomeHeld`. `refileCategory` applies the same rules to new reads, so Knox can
 keep hinting the retired keys. Publish skips a fee still under a retired key.
 
+The same step applies the live splits (`SPLIT_CATEGORIES`): fees in a live category whose name
+belongs to another type move there, under the same guard and range test. Fold v17 (`FOLD_RULES_VERSION`, 16 until the switch is on; James, Oct 15,
+#1398: "Add both") gives excess withdrawals (`excess_withdrawal`) and returned mail
+(`returned_mail`) their own types, dark until `RESEARCH_SPLIT_LIVE` is on. While it is off,
+returned statements leaving paper statements, excess activity leaving other lending and the hand
+re-files (21141 and 77918 renamed in place, 44516) all still go to account research, the paper
+statement and e-statement rules match exactly as before (a "return to paper statements" charge
+still goes to account research), and nothing moves out of it. Once on, a return to paper
+statements charge is a paper statement fee, never returned mail. Every step writes a dry run of the switched split to its detail,
+`taxonomy_fold.pendingResearchSplit`, over at most 2,000 rows (`RESEARCH_SPLIT_PREVIEW_LIMIT`;
+`capped` when it hits the limit; the publish step's `research_split_full_count` param reads every
+row for the exact count): `wouldMove` and `wouldMoveLive`, `byRoute`
+(`account_research->excess_withdrawal`, `account_research->returned_mail`), the ones the new
+type's guard or range would refuse (`refused`, `refusedByRoute`, which stay research), and ten
+samples per route; the publish summary names the counts. Once on, account research's own excess
+withdrawal and returned mail fees (`EXCESS_WITHDRAWAL`, `RETURNED_MAIL` in `fee-fold.ts`) move by
+name. Account research keeps research, reconciliation, balancing, charge-off and ATM adjustment
+charges.
+
 `HAND_REFILES` in the same file re-files or renames listed live fees in place (James approved
 each batch: #1299, #1304, #1196). A row moves only while it is still under its listed category
 at its listed price, and a rename is done once the live name reads as listed, so a re-run
@@ -714,7 +756,11 @@ one `pipeline_feedback` row (check `hamilton.source_link`, kind `missing_lineage
 `hamilton.source_link_repair` run event. Reverse a fill by setting `source_url` back to NULL (and
 the verified row's when `verified_filled`); reverse a takedown by clearing `rolled_back_at`,
 `rolled_back_by_batch_id` and `rolled_back_reason`. The feedback sync skips these takedowns: the
-lesson is publish's, not Knox's read.
+lesson is publish's, not Knox's read. A live write that fails fails the step with
+the error text and rolls its transaction back (#1349); it never reads as a completed step with 0
+links. Frequency fill does the same in its own `frequency-fill` step. Inside the publish step it
+runs in a savepoint (`fillFrequenciesInPublish`): a failed write undoes the fill's writes, the
+publish carries on, and the error is kept in `frequency_fill_error` and a `step.warning` event.
 
 ## Source Check
 

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { computeStats, computePercentile } from "./fees";
+import { computeStats, computePercentile, withoutScheduleFields, type FeeInstance } from "./fees";
 
 describe("computePercentile", () => {
   it("returns 0 for empty array", () => {
@@ -151,5 +151,13 @@ describe("computeStats with string amounts", () => {
     expect(stats.min).toBe(10);
     expect(stats.max).toBe(20);
     expect(stats.avg).toBe(15);
+  });
+});
+
+describe("withoutScheduleFields", () => {
+  it("drops statistics rule 7's fields so the cached fee rows keep their shape (#1441)", () => {
+    const fee = { id: 1, institution_id: 2, amount: 30, schedule_keys: null, schedule_group: null } as unknown as FeeInstance;
+    const stripped = withoutScheduleFields(fee);
+    expect(Object.keys(stripped).sort()).toEqual(["amount", "id", "institution_id"]);
   });
 });

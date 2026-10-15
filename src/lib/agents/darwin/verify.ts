@@ -1,4 +1,4 @@
-import { isConsumerFee, scopedFeeStatements, type FeeAudience } from "@/lib/fee-audience";
+import { scopedFeeStatements, type FeeAudience } from "@/lib/fee-audience";
 import { darwinAudience, type DarwinAudience } from "./audience";
 import { tierPerkZero } from "./tier-perk";
 import { createHash } from "crypto";
@@ -15,9 +15,11 @@ import { RULE_WHY, ruleFor } from "@/lib/agents/hamilton/eval-verdicts";
 import { checkFeeAgainstSource, checkRateAgainstSource } from "@/lib/custom-report/source-check";
 import { perEventFrequency, settledFrequency } from "@/lib/fee-frequency";
 import { excerptOf } from "@/lib/agents/hamilton/frequency-fill";
+import { sourceLinkSkipReason } from "@/lib/agents/hamilton/source-link";
 import { PERCENT_FEE_RANGES, isPercentFee, percentFeeAllowed, ratePercentOf, type RateFields } from "@/lib/percent-fees";
 import { darwinFeedbackRows, recordDarwinFeedback } from "./feedback";
 import { recheckVerifiedFees, type VerifiedRecheckResult } from "./verified-recheck";
+import { recheckDocumentOwners, type DocumentOwnerResult } from "./document-owner";
 import {
   categoryChangeCandidates,
   DARWIN_CATEGORY_CHANGE_LIMIT,
@@ -46,6 +48,7 @@ import {
 import { darwinEnvelopeFor, loadLearnedEnvelopes, type LearnedEnvelope } from "./learned-envelopes";
 import {
   DARWIN_PEER_STRATEGY,
+  entersPeerCheck,
   DARWIN_SECOND_SOURCE_STRATEGY,
   districtOfState,
   holdsForPeerReview,
@@ -299,6 +302,8 @@ export interface RawFeeRow extends RateFields {
   conditions: string | null;
   institution_name?: string | null;
   source_document_id?: number | string | null;
+  /** The source document's own URL, the link publish falls back to (#1350). */
+  document_url?: string | null;
   state_code?: string | null;
   asset_size_tier?: string | null;
   asset_size?: number | string | null;
@@ -345,6 +350,8 @@ export interface RunDarwinVerifyResult {
   /** Skipped rows by reason code. */
   reasonCounts: Partial<Record<DarwinReasonCode, number>>;
   recheck: VerifiedRecheckResult | null;
+  /** Whose schedule each shared document is, by its own text (#1455); shadow until switched on. */
+  documentOwner: DocumentOwnerResult | null;
   /** #1295: rows whose Knox category changed since Darwin's decision; null without the learning log. */
   categoryChange: CategoryChangeRejudgeSummary | null;
   /** Verified rows that are explicit $0 (free) fees. */
@@ -435,7 +442,10 @@ export function verificationReasonCode(
   if (!canonicalFeeKey) return "missing_canonical";
   if (!row.fee_name?.trim()) return "missing_name";
   if (!checkFeeCategory(canonicalFeeKey, row.fee_name, row).ok) return "category_mismatch";
-  if (!row.source_url?.trim() && !row.document_r2_key?.trim()) return "missing_lineage";
+  // #1350: Hamilton's publish rule (#1345, `sourceLinkSkipReason`): a source document and an
+  // http(s) link, the row's own or its document's. A stored file key alone is no lineage, so a row
+  // Hamilton would refuse forever is held here instead of verified.
+  if (sourceLinkSkipReason(row)) return "missing_lineage";
   if (isPercentFee(row)) {
     if (!percentFeeAllowed(canonicalFeeKey)) return "percent_not_publishable";
     const rate = ratePercentOf(row);
@@ -451,6 +461,14 @@ export function verificationReasonCode(
   const envelope = darwinEnvelopeFor(canonicalFeeKey, learnedEnvelopes);
   if (amount < envelope.min || amount > envelope.max) return "outside_envelope";
   return null;
+}
+
+/** The reason text recorded for a code; a lineage hold carries Hamilton's own publish refusal (#1350). */
+export function verificationReasonText(
+  row: Pick<RawFeeRow, "source_url" | "document_url" | "source_document_id"> & Partial<RawFeeRow>,
+  code: DarwinReasonCode,
+): string {
+  return (code === "missing_lineage" ? sourceLinkSkipReason(row) : null) ?? DARWIN_REASON_TEXT[code];
 }
 
 /**
@@ -690,6 +708,7 @@ async function selectRawFees(
              fr.rate_basis,
              inst.institution_name,
              fr.source_document_id,
+             (SELECT sd.document_url FROM source_documents sd WHERE sd.id = fr.source_document_id) AS document_url,
              upper(btrim(inst.state_code)) AS state_code,
              inst.asset_size_tier,
              inst.asset_size,
@@ -740,7 +759,9 @@ export async function insertVerifiedFee(
   if (options.extraFlags) flags.push(...options.extraFlags);
   const stated = options.row.frequency ?? null;
   const line = excerptOf(options.row.conditions);
-  const settled = amount == null ? stated : settledFrequency(line, amount, stated, options.canonicalFeeKey);
+  // #1456: Darwin keeps an hourly frequency Knox stated but does not read one itself; live fees
+  // become hourly through the switched live re-check (hourly-frequency-check.ts).
+  const settled = amount == null ? stated : settledFrequency(line, amount, stated, options.canonicalFeeKey, { hourly: false });
   // #1196: an NSF fee is charged per item; a period on one is a misread, so it is never verified.
   const frequency = perEventFrequency(options.canonicalFeeKey, settled, line, amount);
   if (frequency !== stated) flags.push(FREQUENCY_SETTLED_FLAG);
@@ -1151,9 +1172,10 @@ export async function runDarwinVerify(
     let peer: PeerCheckResult | null = null;
     let secondSource: SecondSourceResult | null = null;
     if (!reasonCode && canonicalFeeKey && base.amount != null) {
-      // A consumer baseline cannot hold a business or unknown-audience fee.
-      // Second-source evidence is separate and still runs for those rows.
-      if (isConsumerFee(row.fee_audience)) {
+      // The peer levels are the benchmark population, so a fee enters on the benchmarks' terms
+      // (#1112): consumer, both, and unknown unless its schedule is business-only; never business.
+      // Second-source evidence is separate; it still gives no confidence to an unknown fee.
+      if (entersPeerCheck(row.fee_audience, row.source_url)) {
         const stateCode = row.state_code ?? options.stateCode;
         const levels = await peers.forState(stateCode);
         peer = peerCheck(
@@ -1191,7 +1213,7 @@ export async function runDarwinVerify(
           ? `${DARWIN_REASON_TEXT[code]}: ${peerOutlierReason(peer, base.amount)}`
           : code === "name_rule" && postCheck?.rule
             ? `${DARWIN_REASON_TEXT[code]}: ${postCheck.rule} (${RULE_WHY[postCheck.rule as keyof typeof RULE_WHY]})`
-            : DARWIN_REASON_TEXT[code],
+            : verificationReasonText(row, code),
         feeVerifiedId: null,
         peerCheck: peer,
         secondSource,
@@ -1297,6 +1319,13 @@ export async function runDarwinVerify(
         return null;
       })
     : null;
+  // Darwin's re-check of shared documents against the bank their own text names (document-owner.ts).
+  const documentOwner = learning
+    ? await recheckDocumentOwners(db, { runId: options.runId, stepId: options.stepId ?? null }).catch((error) => {
+        console.warn("[darwin] document owner recheck failed", error instanceof Error ? error.message : error);
+        return null;
+      })
+    : null;
 
   return {
     selectedRawFees: rows.length,
@@ -1309,6 +1338,7 @@ export async function runDarwinVerify(
     outcomes: learning ? countOutcomes(results.map(attemptOutcome)) : {},
     reasonCounts,
     recheck,
+    documentOwner,
     categoryChange: categoryChange.summary,
     zeroFeesVerified: results.filter((result) => result.status === "verified" && result.amount === 0).length,
     peerOutliers: results.filter((result) => result.reasonCode === "peer_outlier").length,

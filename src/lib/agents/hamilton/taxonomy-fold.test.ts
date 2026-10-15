@@ -2,9 +2,9 @@ import { describe, expect, it } from "vitest";
 
 import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
 import { passesDarwinChecks } from "@/lib/agents/knox/layout";
-import { RETIRED_CATEGORY_KEYS } from "@/lib/fee-fold";
+import { RESEARCH_SPLIT_LIVE, RETIRED_CATEGORY_KEYS, researchSplitTarget } from "@/lib/fee-fold";
 
-import { HAND_REFILES, handFixedPassing, planHandRefiles } from "./taxonomy-fold";
+import { HAND_REFILES, handFixedPassing, planHandRefiles, previewResearchSplit } from "./taxonomy-fold";
 
 /** The schedule lines each hand re-file was read from (copied data: the banks' own text). */
 const PAGE_LINES: Record<number, string> = {
@@ -153,10 +153,71 @@ describe("hand re-files of misread live fees (retidy v15 review, Oct 9)", () => 
   it("renames a fee in place once, leaving it alone when the live name already reads as listed", () => {
     const moves = planHandRefiles([
       liveRow(97560, "nsf", "30.00", "�00/Transaction: Non-Sufficient Funds ���"),
-      liveRow(21141, "account_research", "5.00", "Returned Statement Fee"),
+      liveRow(97433, "account_research", "25.00", "Account reconciliation/research, per hour"),
     ]);
     expect(moves.map((move) => [move.refile.feePublishedId, move.refile.to, move.refile.name])).toEqual([
       [97560, "nsf", "Non-Sufficient Funds"],
     ]);
+  });
+
+  it("renames returned mail in place while the research split is off and moves it once on (#1398)", () => {
+    const rows = [
+      liveRow(21141, "account_research", "5.00", "Mailed Statement Fee $\u0017.00 per statement Returned Statement Fee"),
+      liveRow(77918, "account_research", "5.00", "00 Return Mail Fee (no forwarding)"),
+      liveRow(44516, "minimum_balance", "25.00"),
+    ];
+    const returned = researchSplitTarget("returned_mail");
+    const excess = researchSplitTarget("excess_withdrawal");
+    expect(planHandRefiles(rows).map((move) => [move.refile.feePublishedId, move.currentKey, move.refile.to])).toEqual([
+      [21141, "account_research", returned],
+      [77918, "account_research", returned],
+      [44516, "minimum_balance", excess],
+    ]);
+    // Off, nothing lands in the new types.
+    if (!RESEARCH_SPLIT_LIVE) {
+      expect([returned, excess]).toEqual(["account_research", "account_research"]);
+      // Already renamed under account research: nothing left to do while off.
+      expect(planHandRefiles([liveRow(21141, "account_research", "5.00", "Returned Statement Fee")])).toEqual([]);
+    }
+    // 28554 ("No contents ... included in the ATM", $2/envelope) is not moved to either new type.
+    expect(HAND_REFILES.find((refile) => refile.feePublishedId === 28554)?.to).toBe("account_research");
+  });
+});
+
+describe("research split dry run (#1398)", () => {
+  const row = (id: number | null, verifiedId: number, name: string, amount: string) => ({
+    fee_published_id: id, fee_verified_id: verifiedId, institution_id: 1, source_document_id: null,
+    canonical_fee_key: "account_research", fee_name: name, amount,
+  });
+
+  it("counts what turning the switch on would move, by route, with samples, and what the new type would refuse", () => {
+    const preview = previewResearchSplit([
+      row(1, 11, "Excess Transaction Fee", "10.00"),
+      row(2, 12, "Returned Statement Fee", "5.00"),
+      row(3, 13, "Bad address fee", "5.00"),
+      row(null, 14, "Return Mail", "3.00"),
+      // Outside the $1-$50 range: the new type refuses it, so it would stay research.
+      row(5, 15, "Returned mail (per month)", "75.00"),
+      // Research stays research; an IRA's excess withdrawal and a copy are other splits, not this one.
+      row(6, 16, "Account research, per hour", "25.00"),
+      row(7, 17, "Wire research", "15.00"),
+      row(8, 18, "IRA Excess Withdrawal Fee", "20.00"),
+      row(9, 19, "Copy of returned statement", "5.00"),
+    ]);
+    expect(preview).toMatchObject({
+      scanned: 9,
+      wouldMove: 4,
+      wouldMoveLive: 3,
+      byRoute: { "account_research->excess_withdrawal": 1, "account_research->returned_mail": 3 },
+      refused: 1,
+      refusedByRoute: { "account_research->returned_mail": 1 },
+    });
+    expect(preview.sample.map((sample) => [sample.feeVerifiedId, sample.to])).toEqual([
+      [11, "excess_withdrawal"],
+      [12, "returned_mail"],
+      [13, "returned_mail"],
+      [14, "returned_mail"],
+    ]);
+    expect(preview.refusedSample.map((sample) => sample.feePublishedId)).toEqual([5]);
   });
 });

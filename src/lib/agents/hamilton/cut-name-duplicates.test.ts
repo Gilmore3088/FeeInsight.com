@@ -88,7 +88,13 @@ describe("#1196 hand renames", () => {
       [131129, "atm_non_network", "atm_non_network", "ATM Transactions at DFCU ATM (Local ATM)"],
       [70319, "dormant_account", "dormant_account", "VISA Gift Card Inactivity Fee"],
     ]);
-    // Done once: a row already carrying its new name is not moved again.
+    // Done once: a row already carrying its new name is not moved again, and a row whose name
+    // changed since (a later read or retidy) is left alone.
+    const changed = RENAME_ROWS.map((row) => ({ ...row, fee_name: "Some better name" }));
+    expect(planHandRefiles(changed)).toEqual([]);
+    for (const row of RENAME_ROWS) {
+      expect(HAND_REFILES.find((refile) => refile.feePublishedId === row.fee_published_id)!.oldName).toBe(row.fee_name);
+    }
     const done = RENAME_ROWS.map((row) => ({ ...row, fee_name: HAND_REFILES.find((refile) => refile.feePublishedId === row.fee_published_id)!.name }));
     expect(planHandRefiles(done)).toEqual([]);
   });

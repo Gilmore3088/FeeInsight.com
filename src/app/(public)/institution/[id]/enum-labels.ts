@@ -75,6 +75,7 @@ const FREQUENCY_LABELS: Record<string, string> = {
   annual: "per year",
   quarterly: "per quarter",
   daily: "per day",
+  hourly: "per hour",
   one_time: "one time",
   other: "varies",
   source_url: "",
