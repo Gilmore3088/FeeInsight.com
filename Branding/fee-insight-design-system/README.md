@@ -65,7 +65,7 @@ import { Logo, StatCard, FeeRange, FeeRangeAxis, FeeTable } from "@/brand/compon
 | Hamilton site header | `<Logo mark="hamilton-wordmark" />`; the footer and sales material get `hamilton-lockup` |
 | Hamilton chat avatar | `<AppIcon brand="hamilton" size={32} />` |
 | Corporate pages, invoices, report covers, email | `fee-insight-stacked`; `fee-insight-oneline` for short headers |
-| Favicon / PWA | Bank Fee Index site: `public/favicon.ico`, `icon.svg`, `apple-touch-icon.png`, `icon-192/512.png` (the Fee Insight I). Per-product icons are in `public/brand/icons/` (`app-icon-bank-fee-index-*`, `app-icon-hamilton-*`). |
+| Favicon / PWA | feeinsight.com (Fee Insight): `public/favicon.ico`, `icon.svg`, `apple-touch-icon.png`, `icon-192/512.png` (the Fee Insight I). Per-product icons are in `public/brand/icons/` (`app-icon-bank-fee-index-*`, `app-icon-hamilton-*`). |
 | Social share | `public/brand/og/og-*.png` (1200×630) |
 
 Minimum sizes: stacked Fee Insight 32px tall, one-line wordmarks 16px cap height, app icons 16px. Clear space equals the height of the box-plot I's box on every side.
