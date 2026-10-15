@@ -25,7 +25,7 @@ export function MonitorPreview({ wire }: { wire: MonitorWireItem | null }) {
         </p>
       </div>
       <p className="px-4 py-3 text-sm text-ink sm:px-5">
-        When a bank you follow publishes an updated fee schedule, Monitor shows each line that differs, with the page and date it came from.
+        When a bank you follow changes its schedule, see each line that differs, with its page and date.
       </p>
       {wire && (
         <div className="mx-4 mb-4 mt-2 rounded-lg bg-paper px-3 py-2.5 ring-1 ring-border sm:mx-5">
@@ -38,7 +38,7 @@ export function MonitorPreview({ wire }: { wire: MonitorWireItem | null }) {
         </div>
       )}
       <p className="mt-auto border-t border-border/80 bg-white/50 px-4 py-2.5 text-xs leading-relaxed text-ink-muted sm:px-5">
-        Changes compare a schedule with its own earlier copy. In Pro, watch the institutions you pick.
+        In Pro, follow the institutions you pick.
       </p>
     </PreviewFrame>
   );

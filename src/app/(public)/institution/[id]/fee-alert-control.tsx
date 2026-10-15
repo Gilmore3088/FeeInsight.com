@@ -70,8 +70,8 @@ export function FeeAlertControl({
       : `Get an email when ${institutionName} updates ${focusLabel ? `its published ${focusLabel.toLowerCase()}` : "a published fee"}`;
   const body =
     mode === "verify"
-      ? "We'll write once its fee schedule is verified, and again whenever a verified fee changes. Nothing else."
-      : "One email when the schedule updates a verified fee you follow. Nothing else unless you ask for it.";
+      ? "Once when its schedule is verified, then when a verified fee changes."
+      : "One email when a fee you follow changes.";
 
   function done(next: string[] | null) {
     setSaved(true);

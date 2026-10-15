@@ -20,7 +20,7 @@ const HEADINGS: ContactHeadings = {
   },
   general: {
     title: "Get in touch",
-    intro: "Reports, Pro seats, Advisory work, data licensing, or general questions. We typically respond within one business day.",
+    intro: "Reports, Pro seats, data licensing or anything else. We typically respond within one business day.",
   },
 };
 

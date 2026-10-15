@@ -105,14 +105,11 @@ export function InstitutionOfferBand({
             <InfoTip label={isPro ? "About the report" : "About Hamilton"}>
               {isPro ? (
                 <>
-                  The {COMPETITIVE_FEE_POSITION_REPORT.name}: every fee on this page benchmarked against a
-                  verified peer set, in a board-ready document. {COMPETITIVE_FEE_POSITION_REPORT.price}:{" "}
-                  {COMPETITIVE_FEE_POSITION_REPORT.nextStep.toLowerCase()}.
+                  The {COMPETITIVE_FEE_POSITION_REPORT.name}, {COMPETITIVE_FEE_POSITION_REPORT.price.toLowerCase()}.
                 </>
               ) : (
                 <>
-                  Hamilton, the Fee Insight Pro workspace, gives up to {WORKSPACE_SEAT_LIMIT} people your fees against
-                  your market, a watchlist of the competitors you pick, and cited reports for the board.
+                  Hamilton, the Fee Insight Pro workspace: your fees against your market, for up to {WORKSPACE_SEAT_LIMIT} people.
                 </>
               )}
             </InfoTip>

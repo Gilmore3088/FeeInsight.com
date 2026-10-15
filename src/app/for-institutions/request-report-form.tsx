@@ -31,7 +31,7 @@ const SUCCESS_HEADLINE = "Request received.";
 const SUCCESS_PROMISE = "The institution report is paid. We reply within one business day with scope and price.";
 const CONFIRMATION_SENT = "A confirmation email is on its way to you now.";
 const CONFIRMATION_MISSING =
-  "We couldn't send a confirmation email — we still have your request; expect an email from";
+  "We couldn't send a confirmation email, but we have your request. Expect an email from";
 const FREE_SUCCESS_HEADLINE = "Your report is ready.";
 const FREE_EMAIL_SENT = "We also emailed you the link.";
 const FREE_EMAIL_MISSING = "We couldn't email the link, so keep this page or bookmark the report.";
@@ -39,7 +39,7 @@ const FREE_EMAIL_MISSING = "We couldn't email the link, so keep this page or boo
 const FREE_EMAIL_NOTE =
   "We email you the link. Nothing else arrives unless you confirm your address in that email.";
 const KNOWN_READER_NOTE =
-  "You confirmed this address earlier, so there's nothing to type. A first free report also starts three short emails on reading it, alongside your monthly update. Unsubscribe anytime.";
+  "You confirmed this address earlier. A first free report also starts three short emails on reading it. Unsubscribe anytime.";
 const GENERIC_ERROR = "We couldn't send that request. Please try again or email us directly.";
 
 const INPUT_CLASS =
@@ -52,9 +52,9 @@ type Status = "idle" | "submitting" | "success" | "error";
 type ReportType = "national" | "district" | "institution";
 
 const REPORT_TYPES: { value: ReportType; title: string; detail: string; paid: boolean }[] = [
-  { value: "national", title: "National report", detail: "15 headline fees across the U.S. Email only.", paid: false },
-  { value: "district", title: "Fed district report", detail: "The same 15 fees for one Federal Reserve district, against the national median.", paid: false },
-  { value: "institution", title: "Your institution vs. competitors", detail: "Your own fees, line by line, against named competitors in your market.", paid: true },
+  { value: "national", title: "National report", detail: "The headline fees across the U.S.", paid: false },
+  { value: "district", title: "Fed district report", detail: "The same fees for one Fed district, against the nation.", paid: false },
+  { value: "institution", title: "Your institution vs. competitors", detail: "Your fees against named local competitors.", paid: true },
 ];
 type ConfirmationStatus = "sent" | "not_configured" | "failed" | "unknown";
 
@@ -495,8 +495,8 @@ function RequestReportFormInner({
       </button>
       <p className="text-xs leading-relaxed text-ink-muted">
         {institution
-          ? "A paid report. We reply within one business day with scope and price, and you pay by card once you agree to the quote."
-          : "Free, no card. The report opens right away and the link comes by email."}{" "}
+          ? "Paid. We reply within one business day with scope and price; you pay once you agree."
+          : "Free. It opens right away, and the link comes by email."}{" "}
         By sending you agree to the{" "}
         <Link href="/terms" className="underline">Terms</Link> and{" "}
         <Link href="/privacy" className="underline">Privacy Policy</Link>.

@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { CONSULTANT_PRICE_NOTE, PRO_TIERS, tierPriceLabel } from "@/lib/pro-tiers";
+import { CONSULTANT_PRICE_NOTE } from "@/lib/pro-tiers";
+import { WORKSPACE_SEAT_LIMIT } from "@/lib/hamilton/workspace-seats";
 import { TrackLink } from "@/components/track-link";
 import { CONTACT_EMAIL, PRODUCT_NAME, REPORT_OFFER, SITE_NAME } from "@/lib/constants";
 import type { PublicStatsSummary } from "@/lib/public-stats";
@@ -109,7 +110,7 @@ function faqItems(summary: PublicStatsSummary) {
   return [
     {
       question: "Can I cancel anytime?",
-      answer: "Yes. Every plan cancels at the end of its current billing period, from your account's billing page. Annual plans cancelled within 14 days of the first annual payment are refunded in full; after that, an annual plan runs to the end of its paid year. Monthly plans aren't refunded.",
+      answer: "Yes, from your billing page; a plan ends with its paid period. An annual plan cancelled within 14 days of the first payment is refunded in full.",
     },
     {
       question: "Do you invoice or accept POs?",
@@ -117,13 +118,11 @@ function faqItems(summary: PublicStatsSummary) {
     },
     {
       question: "How is the Pro price set?",
-      answer: `By your institution's total assets from its latest call report: ${PRO_TIERS.map(
-        (tier) => `${tier.assetsLabel.toLowerCase()} is ${tierPriceLabel(tier.key, "annual")}`,
-      ).join(", ")}. ${CONSULTANT_PRICE_NOTE} If we don't have your institution's total assets, email ${CONTACT_EMAIL} and we'll set your price. If we don't have your fee schedule yet, send it there too and we'll add it.`,
+      answer: `By your institution's total assets in its latest call report. ${CONSULTANT_PRICE_NOTE}`,
     },
     {
       question: "How do seats work?",
-      answer: "An institution account includes up to five teammates, the owner included. Once your bank's workspace is set up, add colleagues from Hamilton Settings and send them the invite link. Each person gets their own login and full Pro access.",
+      answer: `One plan covers up to ${WORKSPACE_SEAT_LIMIT} people, each with their own login. Invite them from Hamilton Settings.`,
     },
     {
       question: "How often is the data refreshed?",

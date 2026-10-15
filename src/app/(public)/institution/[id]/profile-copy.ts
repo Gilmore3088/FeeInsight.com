@@ -1,5 +1,5 @@
 import type { FeePublicationStatus } from "@/lib/institution-quality";
-import { PRODUCT_NAME, REPORT_OFFER, SITE_NAME } from "@/lib/constants";
+import { PRODUCT_NAME, REPORT_OFFER } from "@/lib/constants";
 
 /** One name, one price, one next step — matches the plan's report offer. */
 export const COMPETITIVE_FEE_POSITION_REPORT = {
@@ -15,18 +15,13 @@ export const MIN_VERIFIED_FEES_FOR_NARRATIVE = 5;
 export const MIN_VERIFIED_FEES_FOR_OFFER = 5;
 
 export const STATUS_COPY: Record<FeePublicationStatus, string> = {
-  verified:
-    "Fees on this page come from the institution's own published fee schedule. Benchmark scores use only fees that cleared review.",
-  provisional:
-    "Fees are shown from the institution's published schedule but have not finished review. They are excluded from benchmark scores until they clear.",
-  under_review:
-    "A fee schedule is on record for this institution and is being reviewed. Fees will appear here once review is complete.",
-  unavailable:
-    "We have not found a published fee schedule for this institution yet. Know where it lives? Send us the link and we will review it.",
+  verified: "Fees come from the institution's own published fee schedule.",
+  provisional: "From the published schedule, still in review, so left out of benchmarks for now.",
+  under_review: "Its fee schedule is in review. Fees appear here once it clears.",
+  unavailable: "We haven't found its published fee schedule yet. Know where it is? Send us the link.",
 };
 
 export const METHODOLOGY_COPY = [
-  `Verified fees have cleared review and are used in ${PRODUCT_NAME} benchmarks.`,
-  "Fees marked Under review are shown with their source for context, but stay out of benchmark scores until they clear.",
-  `Financial figures come from public FDIC and NCUA call reports and are shown in whole dollars by ${SITE_NAME}.`,
+  `Only fees that cleared review count in ${PRODUCT_NAME} benchmarks.`,
+  "Financial figures come from public FDIC and NCUA call reports.",
 ] as const;
