@@ -3,10 +3,10 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("@/lib/data-store/connection", () => ({ sql: {} }));
 vi.mock("./ask-service", () => ({ resolveAskIntent: vi.fn() }));
 
-import { EVAL_QUESTION_IDS, failureShape, liveDataFailures, offSubjectFailure, pickProQuestions, summarizeCorrectness, summarizeEval, summarizeProReplay, type EvalResult, type ProQuestionResult } from "./answer-eval";
+import { EVAL_QUESTION_IDS, failureShape, liveDataFailures, offSubjectFailure, pickProQuestions, summarizeCorrectness, summarizeEval, summarizeProReplay, wireFailures, type EvalResult, type ProQuestionResult } from "./answer-eval";
 import type { SqlTag } from "@/lib/agents/hamilton/studies/common";
 import { QUALITY_QUESTIONS } from "./workspace/quality-bar";
-import type { AskResponse } from "./workspace/types";
+import type { AskResponse, FeeResearch } from "./workspace/types";
 
 const q = (id: string) => QUALITY_QUESTIONS.find((x) => x.id === id)!;
 const reply = (text: string, facts: string[] = []): AskResponse =>
@@ -65,6 +65,21 @@ describe("answer eval", () => {
   it("fails a state question that does not name the state", () => {
     expect(liveDataFailures(q("q17"), reply("The median overdraft fee is $30 across 40 peers."), fl, null)).toEqual(["does not name its state (Florida)"]);
     expect(liveDataFailures(q("q17"), reply("In Florida the median overdraft fee is $30."), fl, null)).toEqual([]);
+  });
+
+  it("fails a regulation answer that lists none of the Wire items held for the bank, or one without a date and link (#1090)", () => {
+    const item = { text: 'OCC final rule "Example", published April 29, 2026.', source: { label: "Federal Register", table: "reg_tracker_items", url: "https://example.gov/r", asOf: "2026-04-29" } };
+    const research = { regulation: [item] } as unknown as FeeResearch;
+    const withWatch = (watch: unknown[]) => ({ kind: "research", shortAnswer: "x", answer: { storyline: { watch } } }) as unknown as AskResponse;
+    expect(wireFailures(q("q25"), withWatch([item]), research)).toEqual([]);
+    expect(wireFailures(q("q25"), withWatch([]), research)).toEqual([
+      "lists none of the 1 recent rules, bills or enforcement actions the Regulatory Wire holds for it",
+    ]);
+    const undated = { ...item, source: { ...item.source, asOf: null } };
+    expect(wireFailures(q("q26"), withWatch([undated]), research)).toEqual([`Regulatory Wire line without a date and link: "${item.text}"`]);
+    // Not a regulation question, or nothing held: no check.
+    expect(wireFailures(q("q17"), withWatch([]), research)).toEqual([]);
+    expect(wireFailures(q("q25"), withWatch([]), { regulation: [] } as unknown as FeeResearch)).toEqual([]);
   });
 
   it("groups the same failure across institutions and ranks the weakest question first", () => {

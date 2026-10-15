@@ -241,6 +241,26 @@ describe("storyline for a regulation question", () => {
     expect(response.answer ? evaluateFourRoles(response.answer).roles.flatMap((r) => r.failures) : ["no answer"]).toEqual([]);
   });
 
+  it("lists the Regulatory Wire's rule, bill and action under what to watch, not in the lens (#1090)", () => {
+    // Invented Wire items for tests only.
+    const wire = [
+      { text: 'OCC final rule "Example Fee Rule", published April 29, 2026.', source: { label: "Federal Register", table: "reg_tracker_items", url: "https://www.federalregister.gov/d/x", asOf: "2026-04-29" } },
+      { text: 'Illinois bill HB 1 "Example Overdraft Bill": in committee, last action March 18, 2026.', source: { label: "Illinois legislature, via Open States", table: "reg_tracker_items", url: "https://openstates.org/x", asOf: "2026-03-18" } },
+      { text: 'OCC "Civil Money Penalty (CMP)" against "Example Bank" (OH), December 19, 2025; its subjects include consumer law.', source: { label: "OCC enforcement actions", table: "institution_enforcement_actions", url: "https://apps.occ.gov/EASearch/", asOf: "2025-12-19" } },
+    ];
+    const question = "What regulation applies to our overdraft fee?";
+    const withWire = { ...research, regulation: [...regulation, ...wire] };
+    const answer = buildAskResponse({ question, intent: parseAsk(question), research: withWire, memory: [] }).answer;
+    const story = answer?.storyline;
+    expect(story?.watch.slice(0, 3).map((f) => f.text)).toEqual(wire.map((f) => f.text));
+    expect(answer ? evaluateFourRoles(answer).roles.flatMap((r) => r.failures) : ["no answer"]).toEqual([]);
+    expect(story?.lenses.finance.some((f) => wire.some((w) => w.text === f.text))).toBe(false);
+    // A price question keeps its own watch list.
+    const price = "How does our overdraft fee compare?";
+    const priceWatch = buildAskResponse({ question: price, intent: parseAsk(price), research: withWire, memory: [] }).answer?.storyline?.watch ?? [];
+    expect(priceWatch.some((f) => wire.some((w) => w.text === f.text))).toBe(false);
+  });
+
   it("leaves the regulator out of a price question's finance lens when two rules apply", () => {
     const question = "How does our overdraft fee compare?";
     const finance = buildAskResponse({ question, intent: parseAsk(question), research, memory: [] }).answer?.storyline?.lenses.finance ?? [];
