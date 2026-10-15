@@ -69,45 +69,85 @@ and #1242 stay as drafts, and #1083 waits. Phase 6's other items (#1076, #1077, 
 fees (#1234, Oct 13) and 74,832 (the audit, Oct 14 08:17 UTC). The ledger uses the audit's reading
 and counts as its baseline, and names the query and time for every later reading.
 
-**Wrong after publish: the one definition (2026-10-15).** Three readings disagreed: the Oct 14
-checkpoint's 3.10% (1,134 of 36,568), an advisor's 5.5% (2,922 of 52,907) and the scorecard's own
-rule. The 3.10% came from `goal.wrong_after_publish_7d` (`src/lib/agents/goal-scorecard.ts`,
-`readWrongAfterPublish`): it treats every duplicate takedown as housekeeping. The advisor's
-denominator kept refresh copies in. From now on the ledger uses this definition:
+**Wrong after publish: what the ledger number is (2026-10-15).** The ledger and James's audit read
+the daily scoreboard. That is `pipeline_scoreboard_snapshots.detail->'goal'->'wrongAfterPublish'`,
+query name `goal.wrong_after_publish_7d`, written by Atlas's snapshot at about 12:17 UTC.
+- Oct 13: 1,587 of 45,423 (3.49%).
+- Oct 14: 1,133 of 36,592 (3.10%).
 
-- **Window:** fee rows with `published_fee_records.published_at` in the trailing 7 days at read time.
-  Read time is part of the result. The newest rows have had less time to be caught, so compare only
-  readings taken at the same hour.
-- **Denominator:** those rows minus refresh copies, the new rows named by any `refreshed by #N` or
-  `superseded by #N`. A refresh is the same fee published again, not a new publish.
-- **Wrong, part 1 (quality):** a row in the denominator that was taken down (rolled back or
-  quarantined) for any reason that is not on the list below. A new reason counts as wrong until it
-  is added to the list. `rules_recheck_unreproduced` counts unless the same fee (institution,
-  category, amount) is live again under another row.
-- **Wrong, part 2 (duplicate that should never have been published):** each pair closed as
-  `duplicate of #N` or `same_line_duplicate` counts once, on the later-published copy. Pairs from
-  two captures of the same page (one copy superseded by the other, or the same URL) are excluded:
-  that is a fresh copy of the same fee. Pairs from the same document, or from two different current
-  documents, count.
-- **Not wrong:** `refreshed by`, `superseded by`, `newer_copy_drops_fee`, `not_on_current_copy`,
-  `companion_page_retired`, `closed_institution`, `taxonomy_fold`, `rules_recheck_restore`.
-- **Report three numbers:** the total, the quality part and the duplicate part. Duplicates are
-  closed about 5 minutes after the later copy publishes (median over this week's `duplicate of`
-  pairs), so the duplicate part mostly measures repeat publishing, not what a customer sees.
+It is computed in `src/lib/agents/goal-scorecard.ts`, by `readWrongAfterPublish` (SQL) and
+`summarizeWrongAfterPublish` (counting). This definition stays as it is.
 
-**Reading of 2026-10-15 01:07 UTC:** 2,624 wrong of 32,524 published, **8.07%**. Quality accounts for
-907 (2.79%). The largest reasons are `product_page` 183, `business_schedule` 134, `other_bank_document` 129,
-`unconfirmed_document_host` 125, `source_check_untraceable` 124, `category_guard` 123 and
-`rules_recheck_unreproduced` without a live replacement 32. Duplicates account for 1,719 (5.29%): 1,011
-from the same document and 708 from two different documents. 3,589 duplicate pairs from two
-captures of one page were excluded as fresh copies. Two rows count in both parts. At the same
-minute, the old scorecard rule gave 875 of 32,524 (2.69%). The SQL below, run as written at 01:08:40
-UTC, gave 2,620 of 32,498 (8.06%), because the window had moved by a minute. The scorecard still runs
-the old rule, and changing it is follow-up code work. The live duplicates measured the same day are
-in `docs/project/findings/2026-10-15-live-duplicates-across-page-copies.md`.
+- **Window:** rows of `published_fee_records` with `published_at` in the trailing 7 days at snapshot time.
+- **Denominator (`published`):** those rows minus refresh copies. A refresh copy is a row named as the
+  new copy (`#N`) in a `refreshed by #N` or `superseded by #N` takedown made in the same 7 days.
+- **Numerator (`wrong`):** denominator rows that were rolled back for a reason whose key (the text
+  before ":" or " #") is not in `HOUSEKEEPING_REASON_KEYS`. A new reason counts as wrong by default.
+- **Housekeeping, never wrong:** `refreshed by`, `superseded by`, `duplicate of`,
+  `same_line_duplicate`, `newer_copy_drops_fee`, `not_on_current_copy`, `companion_page_retired`,
+  `rules_recheck_unreproduced`, `rules_recheck_restore`, `taxonomy_fold`, `closed_institution`.
+- **Quarantine:** a row held with `quarantined_at` but not rolled back does not count.
 
 ```sql
--- goal.wrong_after_publish_7d, definition of 2026-10-15 (read-only)
+-- goal.wrong_after_publish_7d, as run by readWrongAfterPublish (window = 7 days)
+WITH refresh_copy AS (
+  SELECT substring(rolled_back_reason FROM '^[a-z]+ by #([0-9]+)')::bigint AS id
+    FROM published_fee_records
+   WHERE (rolled_back_reason LIKE 'refreshed by #%' OR rolled_back_reason LIKE 'superseded by #%')
+     AND rolled_back_at >= NOW() - make_interval(days => 7)
+)
+SELECT CASE WHEN fp.rolled_back_at IS NULL THEN NULL ELSE COALESCE(fp.rolled_back_reason, 'no reason') END AS reason,
+       COUNT(*)::int AS count
+  FROM published_fee_records fp
+ WHERE fp.published_at >= NOW() - make_interval(days => 7)
+   AND NOT EXISTS (SELECT 1 FROM refresh_copy rc WHERE rc.id = fp.fee_published_id)
+ GROUP BY 1;
+-- published = sum(count); wrong = sum(count) for non-null reasons whose key
+-- (split on ":" then " #") is not in HOUSEKEEPING_REASON_KEYS; rate = wrong / published.
+```
+
+**Why the raw read differs.** An advisor read on Oct 15 found 14,715 of 52,907 rows published in 7
+days taken down, 2,922 of them for a quality reason (5.5%). The pieces were re-read at 01:14 UTC Oct 15,
+all from one query at the same minute. The 7-day window then held 52,679 rows, and 14,581 of them were
+taken down.
+
+| Rows published in 7 days | All | Refresh copies | Left in the scorecard |
+|---|---|---|---|
+| Still live | 38,098 | 14,367 | 23,731 |
+| `refreshed by` / `superseded by` | 7,048 | 4,568 | 2,480 (housekeeping) |
+| `duplicate of` / `same_line_duplicate` | 4,760 | 180 | 4,580 (housekeeping) |
+| Other housekeeping (mostly `rules_recheck_unreproduced`) | 1,676 | 842 | 834 (housekeeping) |
+| Every other reason (errors) | 1,097 | 226 | **871 wrong** |
+| Total | 52,679 | 20,183 | **32,496 published** |
+
+Two things separate the raw 5.5% from the scorecard. The denominator drops 20,183 refresh copies.
+The numerator drops `rules_recheck_unreproduced` and the other housekeeping reasons (1,676), which
+the raw read counted as quality reasons, and it drops errors on rows that were themselves refresh
+copies (226). At 01:14 the scorecard rule gave 871 of 32,496 (2.68%). That is not comparable to the
+12:17 snapshots, because the window moves; the Oct 15 snapshot is the number for the ledger.
+
+**Proposed separate series (not a replacement): `goal.wrong_after_publish_with_duplicates_7d`.** The
+scorecard counts no duplicate as wrong. A second copy of a fee that was already live should never have
+been published, so this series adds two things to the same denominator:
+- Each pair closed as `duplicate of #N` or `same_line_duplicate` counts once, on the later-published copy.
+  It counts when both copies come from the same document or from two different current documents.
+  A pair from two captures of one page (one copy superseded by the other, or the same URL) is a fresh
+  copy and does not count.
+- A `rules_recheck_unreproduced` takedown counts when no live row has the same institution, category
+  and amount.
+
+At 01:08:40 UTC on Oct 15, the SQL below gave 2,620 of 32,498 (8.06%). Of these, 903 are takedowns:
+the scorecard's errors plus `rules_recheck_unreproduced` without a live replacement. The other 1,719
+are duplicates: 1,011 from the same document and 708 from two different documents. Two rows are in
+both groups. 3,589 pairs were left out because both copies come from captures of one page. Duplicates
+are closed about 5 minutes after the later copy publishes (median over this week's `duplicate of`
+pairs). So this series mostly measures repeat publishing, not what a customer sees, and the two
+parts should be reported separately. Adding it to the scorecard is follow-up code work. The live
+duplicates measured the same day are in
+`docs/project/findings/2026-10-15-live-duplicates-across-page-copies.md`.
+
+```sql
+-- goal.wrong_after_publish_with_duplicates_7d (proposed, read-only)
 WITH params AS (SELECT NOW() - INTERVAL '7 days' AS window_start),
 rows AS (
   SELECT fp.fee_published_id, fp.published_at, fp.institution_id, fp.canonical_fee_key, fp.amount,
