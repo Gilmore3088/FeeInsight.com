@@ -2,6 +2,7 @@ import { sql } from "@/lib/data-store/connection";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import { normalizeDocumentUrl } from "@/lib/agents/answer-key-score";
 import { gateKeyFor, gateReads } from "@/lib/agents/knox/answer-key-gate";
+import { latestFinishedStep } from "@/lib/data-store/agent-quality";
 import { severityFor } from "./severity";
 
 /**
@@ -17,7 +18,8 @@ import { severityFor } from "./severity";
  *   no_text  the bank's right document has no completed text this run (not Knox's miss).
  *   not_scored  the gate does not score the fee (a price that varies, or an unplaced line).
  *
- * A case whose key fee is no longer confirmed is retired. Inputs are frozen at insert (the key's
+ * A case whose key fee is no longer confirmed is retired; if the fee is confirmed again, the case
+ * reopens (a candidate when missed, active when read). Inputs are frozen at insert (the key's
  * source line, category, price, document and text hash); a replay reads the document's newest
  * completed text. The step writes only `eval_cases`; it never touches a fee row. Deterministic,
  * no model calls. Its own daily run (`/api/admin/crew/knox-misses`), so the replay's reading time
@@ -119,7 +121,11 @@ export interface KnoxMissesResult {
   activated: number;
   regressions: Array<{ caseKey: string; institutionId: number; fee: string }>;
   retired: number;
+  /** Retired cases whose key fee was confirmed again. */
+  reopened: number;
   stillMissing: number;
+  /** Banks the run did not reach before its deadline; the next run starts with them. */
+  banksLeftIds: number[];
 }
 
 export const caseKeyFor = (feeId: number) => `answer_key_read:${feeId}`;
@@ -193,7 +199,7 @@ export async function runKnoxMisses({
   const result: KnoxMissesResult = {
     version: KNOX_MISSES_VERSION, ready: false, dryRun, banksRead: 0, banksLeft: 0, banksNoText: 0,
     feesScored: 0, feesRead: 0, feesMissed: 0, missRate: null, byCategory: {}, byDocumentType: {},
-    newCases: 0, activated: 0, regressions: [], retired: 0, stillMissing: 0,
+    newCases: 0, activated: 0, regressions: [], retired: 0, reopened: 0, stillMissing: 0, banksLeftIds: [],
   };
   if (!(await schemaReady(db))) return result;
   result.ready = true;
@@ -207,12 +213,14 @@ export async function runKnoxMisses({
      WHERE ak.status = 'confirmed' AND f.status = 'confirmed'
      ORDER BY ak.institution_id, f.id
   `;
+  // Retired cases too: a key fee confirmed again reopens its case rather than leaving it retired.
   const existing = await db<CaseRow[]>`
     SELECT case_key, status, institution_id, last_checked_at
       FROM eval_cases
-     WHERE check_name = ${KNOX_MISS_CHECK} AND status <> 'retired'
+     WHERE check_name = ${KNOX_MISS_CHECK}
   `;
   const caseByKey = new Map(existing.map((row) => [row.case_key, row]));
+  const previous = await inSavepoint(db, (scope) => latestFinishedStep(scope, "deming-knox-misses")).catch(() => null);
 
   const banks = new Map<number, { url: string; type: string; hash: string | null; fees: KeyFee[] }>();
   for (const row of keyRows) {
@@ -233,16 +241,8 @@ export async function runKnoxMisses({
 
   // Retire cases whose key fee is no longer confirmed.
   const confirmedKeys = new Set(keyRows.map((row) => caseKeyFor(Number(row.fee_id))));
-  const toRetire = existing.filter((row) => !confirmedKeys.has(row.case_key)).map((row) => row.case_key);
-
-  // Least recently checked banks first, so a run that hits its deadline rotates.
-  const lastChecked = new Map<number, number>();
-  for (const row of existing) {
-    const id = Number(row.institution_id);
-    const at = row.last_checked_at ? Date.parse(row.last_checked_at) : 0;
-    lastChecked.set(id, Math.min(lastChecked.get(id) ?? Number.POSITIVE_INFINITY, at));
-  }
-  const order = [...banks.keys()].sort((a, b) => (lastChecked.get(a) ?? 0) - (lastChecked.get(b) ?? 0) || a - b);
+  const toRetire = existing.filter((row) => row.status !== "retired" && !confirmedKeys.has(row.case_key)).map((row) => row.case_key);
+  const order = rotationOrder([...banks.keys()], existing, previous);
 
   const ids = order;
   const documents = ids.length === 0 ? [] : await db<DocumentRow[]>`
@@ -265,6 +265,7 @@ export async function runKnoxMisses({
   for (const institutionId of order) {
     if (now() - started > budgetMs) {
       result.banksLeft += 1;
+      result.banksLeftIds.push(institutionId);
       continue;
     }
     const bank = banks.get(institutionId)!;
@@ -286,7 +287,11 @@ export async function runKnoxMisses({
     for (const { fee, gateKey, verdict } of judgeBank(bank.fees, text)) {
       const key = caseKeyFor(fee.feeId);
       const prior = caseByKey.get(key);
-      if (verdict === "not_scored") continue;
+      if (verdict === "not_scored") {
+        // Still replayed, so its check time moves and its bank does not sort first for ever.
+        if (prior && prior.status !== "retired") replays.push({ case_key: key, verdict });
+        continue;
+      }
       if (verdict !== "no_text") {
         result.feesScored += 1;
         const missed = verdict === "missed";
@@ -294,6 +299,7 @@ export async function runKnoxMisses({
         else result.feesRead += 1;
         count(byCategory, fee.canonicalKey, missed);
         count(byType, fee.documentType, missed);
+        if (missed && prior?.status === "retired") result.reopened += 1;
         if (missed && !prior) {
           newCases.push({
             case_key: key,
@@ -319,6 +325,7 @@ export async function runKnoxMisses({
           });
         }
       }
+      if (prior && prior.status === "retired" && verdict === "read") result.reopened += 1;
       if (prior) {
         replays.push({ case_key: key, verdict });
         if (prior.status === "candidate" && verdict === "read") result.activated += 1;
@@ -360,10 +367,16 @@ export async function runKnoxMisses({
     await inSavepoint(db, (scope) => scope`
       UPDATE eval_cases e
          SET last_checked_at = NOW(),
-             last_caught = (r.verdict = 'read'),
+             last_caught = CASE r.verdict WHEN 'read' THEN TRUE WHEN 'missed' THEN FALSE ELSE NULL END,
              last_verdict = r.verdict,
              last_run_id = ${runId},
-             status = CASE WHEN e.status = 'candidate' AND r.verdict = 'read' THEN 'active' ELSE e.status END,
+             -- A candidate read becomes active; a retired case whose key fee is confirmed again reopens.
+             status = CASE
+               WHEN e.status = 'candidate' AND r.verdict = 'read' THEN 'active'
+               WHEN e.status = 'retired' AND r.verdict = 'read' THEN 'active'
+               WHEN e.status = 'retired' AND r.verdict = 'missed' THEN 'candidate'
+               ELSE e.status
+             END,
              updated_at = NOW()
         FROM jsonb_to_recordset(${JSON.stringify(replays)}::jsonb) AS r(case_key text, verdict text)
        WHERE e.case_key = r.case_key AND e.check_name = ${KNOX_MISS_CHECK}
@@ -377,6 +390,32 @@ export async function runKnoxMisses({
     `);
   }
   return result;
+}
+
+/**
+ * The order the run reads banks in, so a run that hits its deadline rotates: banks the previous
+ * run did not reach come first, then the rest by their oldest case check. A bank with no case
+ * (Knox read every key fee) counts as checked when the previous run finished, not as never
+ * checked, so it does not always go first. Pure.
+ */
+export function rotationOrder(
+  bankIds: number[],
+  cases: Array<Pick<CaseRow, "institution_id" | "last_checked_at" | "status">>,
+  previous: { at: string; detail?: Record<string, unknown> | null } | null,
+): number[] {
+  const lastRun = previous?.at ? Date.parse(previous.at) : 0;
+  const left = new Set(
+    Array.isArray(previous?.detail?.banks_left_ids) ? (previous!.detail!.banks_left_ids as unknown[]).map(Number) : [],
+  );
+  const checked = new Map<number, number>();
+  for (const row of cases) {
+    if (row.status === "retired") continue;
+    const id = Number(row.institution_id);
+    const at = row.last_checked_at ? Date.parse(row.last_checked_at) : 0;
+    checked.set(id, Math.min(checked.get(id) ?? Number.POSITIVE_INFINITY, at));
+  }
+  const when = (id: number) => (left.has(id) ? Number.NEGATIVE_INFINITY : checked.get(id) ?? lastRun);
+  return [...bankIds].sort((a, b) => when(a) - when(b) || a - b);
 }
 
 function percent(value: number | null): string {
@@ -415,5 +454,7 @@ export function knoxMissesDetail(result: KnoxMissesResult) {
     still_missing: result.stillMissing,
     regressions: result.regressions,
     retired: result.retired,
+    reopened: result.reopened,
+    banks_left_ids: result.banksLeftIds,
   };
 }
