@@ -856,7 +856,23 @@ const EARLIER_PRICE = /\$\s?\d|\d\s*%/;
 /** v68: a transfer's step ("made in increments of $50", "in multiples of $100") is never the fee. */
 const INCREMENT_BEFORE = /\b(?:increments?|multiples?)\s+of\s*\$?\s*$/i;
 
+/**
+ * v70 (#1100): "minimum" that closes the figure before it ("Monthly Service Charge Below $500.00
+ * minimum $5.00 per Month") belongs to that figure, and a figure after "low balance" ("Low balance
+ * $ 5.00 per month") is the low-balance fee; the shared source check reads both the same way.
+ */
+const PRICE_AFTER_BALANCE_WORDS = /\$\s*\d+(?:,\d{3})*(?:\.\d{2})?\s+min(?:imum|\.)?\s*$|\blow[- ]balance(?:\s+(?:fee|charge))?\s*:?\s*\$?\s*$/i;
+
+/** v70 (#1100): "Minimum Balance $4.95/Month if the minimum ... is not met" charges $4.95 a month. */
+const MINIMUM_BALANCE_FEE_BEFORE = /\bminimum balance\s*[-–:]?\s*\$?\s*$/i;
+const BY_THE_MONTH_AFTER = /^\s*(?:\/\s*(?:mo|month)\b|per month\b)/i;
+
 export function isConditionAmount(text: string, amount: Pick<AmountMatch, "start" | "end">): boolean {
+  const before = text.slice(Math.max(0, amount.start - 40), amount.start);
+  const after = text.slice(amount.end, amount.end + 30);
+  if ((PRICE_AFTER_BALANCE_WORDS.test(before) && !CONDITION_AFTER.test(after)) || (MINIMUM_BALANCE_FEE_BEFORE.test(before) && BY_THE_MONTH_AFTER.test(after))) {
+    return false;
+  }
   return INCREMENT_BEFORE.test(text.slice(Math.max(0, amount.start - 40), amount.start)) ||
     CONDITION_BEFORE.test(text.slice(Math.max(0, amount.start - 40), amount.start)) ||
     CONDITION_AFTER.test(text.slice(amount.end, amount.end + 30)) ||

@@ -151,6 +151,19 @@ describe("checkFeeAgainstSource layouts", () => {
     expect(checkFeeAgainstSource(text, "Overdraft Item Fee (items $10.01 - $20.00)", 10, ".").ok).toBe(true);
     expect(checkFeeAgainstSource("Overdraft | Negative $25 or less | $5", "Overdraft", 5, ".")).toEqual({ ok: false, reason: "tiered_fee" });
   });
+
+  it("reads a low-balance price after a balance word that belongs to another figure or names the fee (#1100)", () => {
+    // Government Employees FCU 2435: "minimum" closes $500.00; $5.00 is the price.
+    const gefcu = "Monthly Service Charge Below $500.00 minimum $5.00 per Month";
+    expect(checkFeeAgainstSource(gefcu, "Monthly Service Charge Below minimum", 5, ".", "monthly_maintenance").ok).toBe(true);
+    expect(checkFeeAgainstSource(gefcu, "Monthly Service Charge Below minimum", 500, ".", "monthly_maintenance").ok).toBe(false);
+    // Buffalo Metropolitan 7114 and Georgia United 60.
+    expect(checkFeeAgainstSource("Low balance $ 5.00 per month3", "Low balance", 5, ".", "minimum_balance").ok).toBe(true);
+    expect(checkFeeAgainstSource("Savvy Spending - Minimum Balance $4.95/Month if the minimum average daily balance is not met", "Savvy Spending - Minimum Balance", 4.95, ".", "minimum_balance").ok).toBe(true);
+    // A balance stays a balance: "minimum balance $500" with no period, "minimum of $25".
+    expect(checkFeeAgainstSource("Checking | Minimum Balance $500 | Monthly fee $10", "Checking Monthly fee", 500, ".").ok).toBe(false);
+    expect(checkFeeAgainstSource("Overdraft fee | minimum $25 | $35", "Overdraft fee", 25, ".").ok).toBe(false);
+  });
 });
 
 describe("checkFeeAgainstSource daily caps", () => {

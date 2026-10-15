@@ -25,9 +25,11 @@ import { combineScores, scoreAnswerKeys, type AnswerKeyDocument, type GateScore 
 // 787 / 41 (no state lost a right read or gained a wrong one). Floors are those counts.
 const FLOORS: Record<string, { right: number; wrong: number }> = {
   // v69 (#1102): price lines named by their heading, CA 137 to 140, MN 110 to 111, all 788 to 791.
-  CA: { right: 140, wrong: 5 },
-  FL: { right: 116, wrong: 7 },
-  GA: { right: 161, wrong: 9 },
+  // v70 (#1100): low-balance and maintenance fees, CA 140 to 141, FL 116 to 117, GA 161 to 164,
+  // NY 42 to 43, all 791 to 797; no state gained a wrong read.
+  CA: { right: 141, wrong: 5 },
+  FL: { right: 117, wrong: 7 },
+  GA: { right: 164, wrong: 9 },
   // 88 since the top-50 fold (Oct 8): a "Travel Card Reload" at $4.95 now files as a gift card
   // at $4.95, the same (category, price) pair as that schedule's gift card, so two right reads count once.
   IL: { right: 99, wrong: 7 },
@@ -36,8 +38,8 @@ const FLOORS: Record<string, { right: number; wrong: number }> = {
   // item" line under check cashing, and Knox now reads that schedule's "Collection Item" $20
   // as a collection item, so one right read became one wrong one.
   MN: { right: 111, wrong: 8 },
-  NY: { right: 42, wrong: 5 },
-  all: { right: 791, wrong: 41 },
+  NY: { right: 43, wrong: 5 },
+  all: { right: 797, wrong: 41 },
 };
 
 const fixture = JSON.parse(

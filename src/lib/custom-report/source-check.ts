@@ -596,9 +596,23 @@ function inNote(text: string, token: MoneyToken): boolean {
   return open > line.lastIndexOf(")", token.start) && !line.slice(open, token.start).includes("|") && closes;
 }
 
+/**
+ * #1100: "minimum" that closes the balance figure before it ("Monthly Service Charge Below $500.00
+ * minimum $5.00 per Month", Government Employees FCU) belongs to that figure; the next one is the price.
+ */
+const MINIMUM_OF_EARLIER_FIGURE = /\$\s*\d+(?:,\d{3})*(?:\.\d{2})?\s+min(?:imum|\.)?\s*$/i;
+/** #1100: "Minimum Balance $4.95/Month if the minimum ... is not met" (Georgia United FCU) charges $4.95 a month. */
+const MINIMUM_BALANCE_FEE_BEFORE = /\bminimum balance\s*[-–:]?\s*$/i;
+const BY_THE_MONTH_AFTER = /^\s*(?:\/\s*(?:mo|month)\b|per month\b)/i;
+/** #1100: a figure after "low balance" ("Low balance $ 5.00 per month") is the low-balance fee, not a balance. */
+const LOW_BALANCE_FEE_BEFORE = /\blow[- ]balance(?:\s+(?:fee|charge))?\s*:?\s*$/i;
+
 function isThreshold(line: string, token: MoneyToken): boolean {
   const before = line.slice(Math.max(0, token.start - 16), token.start);
   const after = line.slice(token.end, token.end + 12);
+  const wideBefore = line.slice(Math.max(0, token.start - 40), token.start);
+  if ((MINIMUM_OF_EARLIER_FIGURE.test(wideBefore) || LOW_BALANCE_FEE_BEFORE.test(wideBefore)) && !THRESHOLD_AFTER.test(after)) return false;
+  if (MINIMUM_BALANCE_FEE_BEFORE.test(wideBefore) && BY_THE_MONTH_AFTER.test(after)) return false;
   // "Under $1000 - $5.00 fee per month": a dash after a balance, then a price named as the fee,
   // is a separator, not a band's upper end.
   if (/\$\s*[\d,.]+\s*[-–]\s*$/.test(before) && /^\s*(?:fee|charge|per\b|each\b|\/)/i.test(after) && !THRESHOLD_AFTER.test(after)) return false;

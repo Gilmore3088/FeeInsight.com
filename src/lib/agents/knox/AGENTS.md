@@ -493,6 +493,27 @@ hand check found wrong, from their real lines.
   Transfer for\nOverdrafts - $2.00 per transfer", raw 112570). A bare "Overdrafts" priced per
   item is still the overdraft fee.
 
+v70 (#1100, Oct 15): monthly maintenance and low-balance fees the account expert (`extract.family.account` v5) missed.
+- A low-balance charge with no fee word is the minimum balance fee when the price on its own line is
+  charged by the period ("$5.00 per month", "/Month"): "Low balance $ 5.00 per month", "Savings
+  Balance Less than $300.00 ... $6.00 per month", "Money Market minimum balance violation* $9.00 per
+  month", "Savvy Spending - Minimum Balance $4.95/Month if the minimum ... is not met".
+- A fee stated in a sentence is named by its own words when the price is charged by the statement
+  cycle or month: "... A low balance fee of $6.95 will be imposed every statement cycle if ..." is
+  "Low balance fee"; "... we will impose a maintenance fee of $7.50 once during the statement cycle"
+  is "Maintenance fee".
+- In the account family, a capitalized tail after prose names the fee ("... is not met Enriched
+  Spending - Minimum Balance $6.95/Month").
+- A price is no threshold when "minimum" closes the figure before it ("Monthly Service Charge Below
+  $500.00 minimum $5.00 per Month"), when it follows "low balance", or when it follows "Minimum
+  Balance" and is charged by the month. The shared source check (`isThreshold`) reads the same three.
+- The guard's exclusions for savings, money market, club and business accounts are unchanged
+  (James to decide, #1100).
+- Answer keys: Texas 545 to 551 right, 14 wrong unchanged; held out 53 to 54, 4 wrong unchanged;
+  seven states 791 to 797 right (CA 140 to 141, FL 116 to 117, GA 161 to 164, NY 42 to 43), 41
+  wrong unchanged. Monthly maintenance with minimum balance: 47 to 57 of 105 key fees found; 43 to 50
+  of 87 when the key leaves out the savings, money market, club and business lines the guard excludes.
+
 v69 (#1102, Oct 15): a price line with no name of its own takes its name from the heading above it.
 - A heading is a short line (up to four words, capitalized, no price or digit) that names a fee
   ("Monthly service fee:") or the wire family ("Wire Transfers"). A singular "Fee" or "Charge"
@@ -856,6 +877,6 @@ fails a PR that changes one of these constants without updating its line here (#
 | `LINEUP_CORRECT_STRATEGY` | `knox.lineup_correct` | v2 | `knox/lineup-correct.ts` |
 | `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v19 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v2 | `knox/paid-extract.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v69 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v70 | `knox/specialists.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v6 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v1 | `knox/takedown-lessons.ts` |
