@@ -3,6 +3,30 @@
 Newest first. Each entry: date, what was decided, who, why, and what it means for the work.
 Seeded 2026-10-05 from the project's working memory; earlier decisions were not recorded here.
 
+## 2026-10-15
+
+**Data fixes are proven on the live row, not one function.** James, Oct 15, after #1334's review
+found that #1310's merged cut-cents fix never reached the site. Knox's self-check uses
+`checkFeeAgainstSource`, which still rejected $29.95 and $1.50. #1310's test ran only the first read.
+From now on, a data fix's test follows the row's whole path. The PR names the live rows and the
+after-state expected for each, and the builder confirms them on prod after deploy (build plan rule 4).
+
+**#1334 covers all 8 cut-cents fees.** James, Oct 15: "yes. approved. fix it." The 8 fees are 49175,
+29166 and 141772 (approved Oct 14) plus 97435, 61650, 61934, 79234 and 79237, found when the shared
+check was fixed. The work:
+- fix the shared check;
+- stop the verified twins with wrong amounts (113133, 112658, and any others found) from publishing;
+- re-read the documents with a Knox version bump;
+- confirm the correct amounts on prod.
+
+**#1283's corrected counts are approved.** James, Oct 15 ("im fine with 1283"): 16 re-files (the
+15 approved Oct 14, plus 142567), the same 12 second looks, and institution 3919's 9 fees entering
+the catalog.
+
+**No pipeline pause.** James, Oct 15 (relayed by his advisor session): "I don't want to pause. Keep
+working." A migration or step that needs a lock retries with a longer lock_timeout or runs in
+smaller batches. It does not pause the `pipeline` control.
+
 ## 2026-10-14
 
 **Data-quality approvals (James, Oct 14 evening, builder session).** Answering the "what do you

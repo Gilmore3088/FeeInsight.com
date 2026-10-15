@@ -109,8 +109,14 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
     // month)" $38.95, a ZBA or sweep transfer, a business sweep checking account) is not it either.
     // v61: a remote deposit capture service named as a product (Montecito's "CheckCapture
     // Maintenance Fee" $40, 76519) is not it either (#1196).
+    // v62: a service charge for another service ("Stop & Reissue Service Charge", "Claims/Payment
+    // Investigation Service Charge", "IRS Processing Service Charge", "ATM Service Charge", a
+    // negative balance charge) or one priced per item, transfer, transaction, withdrawal or debit
+    // ("Per Item Service Charge", "Service charge per transfer") is not it either (#1100). A
+    // per-debit charge the account's fee carries on top ("Service charge + per debit item fee")
+    // stays.
     exclude:
-      /(\bsweep|\bid\s*theft|\bidentity\s+(theft|protect|monitor|restor)|^\s*accidental death|\binsurance plan\b|\bpackage monthly fee|otherwise,? a fee of\s*$|\bmerchant (capture|services?|processing|accounts?)\b|terminat|\boverdraft (privilege|courtesy)|paper (stmt|states|mailed)|\bstmt fee|is waived under|\|\s*na\s*\||transfer service charge|\bwire (manager|module)\b|\bmodule\b|treasury|cash management|\bapi\b|\bach\b|positive pay|paper mailed|cashier|^monthly fee \(per account\)|\batm\/debit card monthly fee|location|scanner|remote deposit|\bcheck\s*capture\b|\brdc\b|lockbox|intrafi|\bics\b|^waiving\b|savings|money market|club|night deposit|safe deposit|box|(?<!\bcross[- ]?border (?:banking )?(?:bundles?|packages?|accounts?|banking) )annual|dormant|inactive|statement(?! cycle)|\bira\b|certificate|\bcd\b|loan|escheat|clos|research|excess|activity|withdrawal|saver|business|commercial|analysis|\bhsa\b|health|escrow|trust|address|fax|cop(y|ies)|(pos|pin[- ]based) transaction|for transactions|transaction service charge|earnings credit (is applied|available to offset))/i,
+      /((?<!(?:\+|\bplus\b|\band\b)[^|]{0,20})\bper[- ]?(?:item|transfer|transaction|withdrawal|debit)s?\b|\bstop\b|re-?issue|investigat|\birs\b|negative balance|\batm service charge|\bsweep|\bid\s*theft|\bidentity\s+(theft|protect|monitor|restor)|^\s*accidental death|\binsurance plan\b|\bpackage monthly fee|otherwise,? a fee of\s*$|\bmerchant (capture|services?|processing|accounts?)\b|terminat|\boverdraft (privilege|courtesy)|paper (stmt|states|mailed)|\bstmt fee|is waived under|\|\s*na\s*\||transfer service charge|\bwire (manager|module)\b|\bmodule\b|treasury|cash management|\bapi\b|\bach\b|positive pay|paper mailed|cashier|^monthly fee \(per account\)|\batm\/debit card monthly fee|location|scanner|remote deposit|\bcheck\s*capture\b|\brdc\b|lockbox|intrafi|\bics\b|^waiving\b|savings|money market|club|night deposit|safe deposit|box|(?<!\bcross[- ]?border (?:banking )?(?:bundles?|packages?|accounts?|banking) )annual|dormant|inactive|statement(?! cycle)|\bira\b|certificate|\bcd\b|loan|escheat|clos|research|excess|activity|withdrawal|saver|business|commercial|analysis|\bhsa\b|health|escrow|trust|address|fax|cop(y|ies)|(pos|pin[- ]based) transaction|for transactions|transaction service charge|earnings credit (is applied|available to offset))/i,
   },
   // "at least" is a balance or a statistic, and a short name ending in "fee on" is a
   // line cut mid-sentence ("Overdraft Fee on" $60), never the overdraft fee itself (v17).
@@ -407,7 +413,12 @@ export const GUARDED_CATEGORIES: readonly string[] = [...new Set([...Object.keys
 // replaced bag or bag key is the night deposit fee (104666, 32631, 37193, 94606); a sweep
 // service's monthly charge is not monthly maintenance (95769).
 // v61: a remote deposit capture product ("CheckCapture Maintenance Fee", 76519) is not monthly maintenance (#1196).
-export const CATEGORY_GUARD_VERSION = 61;
+// v62: a monthly maintenance row whose own source line charges its price per withdrawal, debit,
+// transaction, transfer or item is an activity charge, not the account's fee; one charged for each
+// of those over a limit is re-filed to account research, where the top-50 fold files excess
+// withdrawal fees (`activityChargeOnLine`, `refileFromLine`); a service charge named for another
+// service or priced per item is not monthly maintenance either (#1100).
+export const CATEGORY_GUARD_VERSION = 62;
 
 /**
  * Categories whose fee is usually a rate ("1% of the transaction"). A dollar amount filed
@@ -641,6 +652,8 @@ export function checkFeeCategory(
   if (courtesyReason) return { ok: false, code: "name_contradicts", reason: courtesyReason };
   const noteReason = noteTailOfAnotherFee(canonicalFeeKey, name, context);
   if (noteReason) return { ok: false, code: "name_contradicts", reason: noteReason };
+  const activityReason = activityChargeOnLine(canonicalFeeKey, context);
+  if (activityReason) return { ok: false, code: "schedule_contradicts", reason: activityReason.reason };
   const slotReason = pairedPriceSlot(canonicalFeeKey, context);
   if (slotReason) return { ok: false, code: "schedule_contradicts", reason: slotReason };
   const ownAtmReason = freeAtOwnAtm(canonicalFeeKey, name, context);
@@ -748,6 +761,86 @@ function pairedPriceSlot(canonicalFeeKey: string, context: CategoryGuardContext 
     return slot === 2 ? `"${pair.text}" prices this wire second ($${prices[2]}), not $${prices[1]}` : null;
   }
   return null;
+}
+
+/**
+ * v62 (#1100): the row's own price on its source line, followed by the unit it is charged per.
+ * "Service charge of $2 per debit in excess of 6 withdrawals per quarter", "A service charge of
+ * $3.00 will be charged for each withdrawal in excess of six", "$25.00/Item" and "a $10.00 service
+ * charge each time you withdraw money" price an activity, not the account's monthly fee. The first
+ * time the price appears on the line decides: a later copy of it in another cell prices another fee
+ * ("Monthly Maintenance Fee: $1.00 | ... | Check Image Fee : $1 per item"). Whichever comes first
+ * after the price wins: a month, statement cycle, quarter or fee period makes it the periodic fee
+ * ("$9 per item charge after 3 withdrawals per month" is the item charge). A per-check charge the
+ * fee carries on top ("$10.00 per month and $.35 per debit", "$8.00 plus .50¢ per check") belongs to
+ * the other figure, so the text after the price stops at the next price, cell, "plus", "and" or
+ * "&". Read from Knox's excerpt of the line; with no excerpt or no amount the check does not apply.
+ */
+const ACTIVITY_UNIT = String.raw`(?:share\s+|debit\s+|posted\s+)?(?:debit|withdrawal|transaction|transfer|check|draft|item)s?\b(?!\s*:)`;
+/** Up to six words after the price; a word may sit in parentheses ("Service Charge (Per Check Charge)"). */
+const WORDS_AFTER_PRICE = String.raw`^\s*(?:[\w'’()-]+\s+){0,6}?\(?`;
+const ACTIVITY_AFTER_PRICE = new RegExp(
+  String.raw`${WORDS_AFTER_PRICE}(?:(?:for\s+)?(?:each|every|per)\s+${ACTIVITY_UNIT}|\/\s*${ACTIVITY_UNIT}|(?:each|every)\s+time\s+(?:you|a member)\s+(?:withdraw|make|transfer))`,
+  "i",
+);
+const PERIOD_AFTER_PRICE = new RegExp(
+  String.raw`${WORDS_AFTER_PRICE}(?:(?:per|a|each|every|for each)\s+(?:calendar\s+|monthly\s+)?(?:month|statement|cycle|quarter|fee period|year)|monthly|quarterly|\/\s*(?:mo|month)\b)`,
+  "i",
+);
+/** Words that put a count limit on the activity: the excess withdrawal fee the top-50 fold files under account research. */
+const OVER_LIMIT = /\b(in excess of|over\s+(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten|twelve|fifteen|twenty)\b|after\s+(?:\d+|one|two|three|four|five|six|ten)\b|more than|exceed(?:s|ed|ing)?\b|limit(?:ation)?s?\b)/i;
+const ACTIVITY_REFILE_TO = "account_research";
+
+function priceOnLine(amount: number): RegExp {
+  const whole = Math.trunc(amount);
+  const cents = Math.round((amount - whole) * 100);
+  const centsPart = cents === 0 ? String.raw`(?:\.00)?` : String.raw`\.${String(cents).padStart(2, "0")}`;
+  return new RegExp(String.raw`\$\s?${whole === 0 ? "0?" : whole}${centsPart}(?![\d,]|\.\d)`, "g");
+}
+
+interface ActivityReading {
+  reason: string;
+  /** The line limits the activity ("in excess of six"), so it is an excess activity fee. */
+  overLimit: boolean;
+}
+
+function activityChargeOnLine(canonicalFeeKey: string, context: CategoryGuardContext | undefined): ActivityReading | null {
+  if (canonicalFeeKey !== "monthly_maintenance" || context?.amount == null || context.amount === "") return null;
+  const amount = Number(context.amount);
+  const excerpt = context.conditions?.match(/\bexcerpt=([\s\S]*)$/)?.[1];
+  if (!excerpt || !Number.isFinite(amount) || amount <= 0) return null;
+  const line = plainQuotes(excerpt).replace(/^["\s]+|["\s]+$/g, "");
+  const match = priceOnLine(amount).exec(line);
+  if (!match) return null;
+  const start = match.index + match[0].length;
+  const tail = line.slice(start, start + 160).split(/\$|\||&|\+|\bplus\b|\band\b/i)[0];
+  const activity = ACTIVITY_AFTER_PRICE.exec(tail);
+  const period = PERIOD_AFTER_PRICE.exec(tail);
+  if (!activity || (period && period[0].length <= activity[0].length)) return null;
+  const before = line.slice(line.lastIndexOf("|", match.index) + 1, match.index);
+  const unit = tail.trim().split(/\s+/).slice(0, 8).join(" ");
+  return {
+    reason: `the source line charges $${amount.toFixed(2)} ${unit}, an activity charge, not the account's monthly maintenance fee`,
+    overLimit: OVER_LIMIT.test(tail) || OVER_LIMIT.test(before),
+  };
+}
+
+/**
+ * The category a fee's own source line places it in, when that differs from the one it was filed
+ * under; null otherwise. v62: a monthly maintenance row the line charges per withdrawal, debit or
+ * transaction over a limit is the excess activity fee, filed under account research by the top-50
+ * fold (James, Oct 8: "fold into existing"). Other activity charges are not re-filed: a transfer or
+ * an item charge has no one home. Pure; Darwin and Hamilton's live guard both use it.
+ */
+export function refileFromLine(
+  canonicalFeeKey: string | null | undefined,
+  feeName: string | null | undefined,
+  context: CategoryGuardContext | undefined,
+): string | null {
+  if (!canonicalFeeKey) return null;
+  const reading = activityChargeOnLine(canonicalFeeKey, context);
+  if (!reading?.overLimit) return null;
+  return checkFeeCategory(ACTIVITY_REFILE_TO, feeName, context).ok ? ACTIVITY_REFILE_TO : null;
 }
 
 const NOTE_HEAD_FEES: ReadonlyArray<readonly [RegExp, string]> = [
