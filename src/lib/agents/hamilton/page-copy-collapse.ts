@@ -68,33 +68,47 @@ function sameLine(a: string | null, b: string | null): boolean {
 }
 
 const SAME_SCHEDULE_OVERLAP = 0.8;
-const PRICE = /\$\s?((?:\d{1,3}(?:,\d{3})+|\d+)?)(?:\.(\d{1,2}))?(?!\d)/g;
+const PRICE = /\$\s?((?:\d{1,3}(?:,\d{3})+|\d+)?)(?:\.(\d{1,3}))?(?!\d)/g;
 
-const BUSINESS_WORD = "business|commercial|corporate|treasury";
-const CONSUMER_WORD = "consumer|personal|retail|individual";
-const scheduleHeading = (words: string) =>
-  new RegExp(` (?:(?:${words}) (?:banking )?(?:accounts? )?(?:fee schedule|schedule of fees|fees|service charges)|(?:fee schedule|schedule of fees|fees|service charges) for (?:${words}) (?:banking )?accounts?) `);
-const BUSINESS_HEADING = scheduleHeading(BUSINESS_WORD);
-const CONSUMER_HEADING = scheduleHeading(CONSUMER_WORD);
+const BUSINESS_WORDS = /\b(?:business|commercial|corporate|treasury)\b/gi;
+const CONSUMER_WORDS = /\b(?:consumer|personal|retail|individual)\b/gi;
 
 /**
- * The audience a schedule names: in its address path, else in a schedule heading anywhere in its
- * text ("Business Account Fees", "Schedule of Fees for Personal Accounts"); null when it names
- * none or both. A bare "Personal Business Commercial" navigation menu names none.
+ * The audience a schedule is for: named in its address path, else the one its text keeps naming
+ * (three or more mentions, three times the other's). A menu or footer link ("Personal | Business
+ * Fees") adds a mention or two to each and decides nothing; null when neither dominates.
  */
 function audienceOf(url: string | null, text: string): ScheduleAudience {
   const named = scheduleAudience(url);
   if (named) return named;
-  const words = ` ${text.toLowerCase().replace(/[^a-z]+/g, " ")} `;
-  const [business, consumer] = [BUSINESS_HEADING.test(words), CONSUMER_HEADING.test(words)];
-  return business === consumer ? null : business ? "business" : "consumer";
+  const business = text.match(BUSINESS_WORDS)?.length ?? 0;
+  const consumer = text.match(CONSUMER_WORDS)?.length ?? 0;
+  if (business >= 3 && business >= 3 * consumer) return "business";
+  if (consumer >= 3 && consumer >= 3 * business) return "consumer";
+  return null;
+}
+
+/**
+ * The edition a copy states: the latest "effective" date in its text that is not after it was
+ * read. A later date is a change the page announces ("new fees effective January 1, 2027"), so
+ * the copy keeps the edition it states before it.
+ */
+function editionDate(text: string | undefined, read: number): number | null {
+  if (!text) return null;
+  let best: number | null = null;
+  for (const m of text.matchAll(/effective/gi)) {
+    const date = effectiveDate(text.slice(m.index, (m.index ?? 0) + 60));
+    const time = date ? new Date(date).getTime() : NaN;
+    if (Number.isFinite(time) && time <= read && (best == null || time > best)) best = time;
+  }
+  return best;
 }
 
 function prices(text: string): Set<string> {
   const out = new Set<string>();
   for (const m of text.matchAll(PRICE)) {
     if (!m[1] && !m[2]) continue;
-    out.add(`${Number(m[1].replace(/,/g, "") || 0)}.${(m[2] ?? "").padEnd(2, "0")}`);
+    out.add(Number(`${m[1].replace(/,/g, "") || 0}.${m[2] ?? 0}`).toFixed(3));
   }
   return out;
 }
@@ -135,8 +149,8 @@ export function pageCopyRepeats(rows: PageCopyRow[], texts: Map<string, string>)
     return priceSets.get(id)!;
   };
   const same = new Map<string, boolean>();
-  // Two documents are copies when both have text, they do not name two audiences (a consumer
-  // and a business schedule from one template print mostly the same prices), and their prices match.
+  // Two documents are copies when both have text, they are not for two audiences (a consumer and
+  // a business schedule from one template print mostly the same prices), and their prices match.
   const copies = (one: PageCopyRow, two: PageCopyRow) => {
     const [x, y] = [String(one.source_document_id), String(two.source_document_id)];
     const key = [x, y].sort().join("|");
@@ -154,24 +168,20 @@ export function pageCopyRepeats(rows: PageCopyRow[], texts: Map<string, string>)
     const key = [row.institution_id, page, row.canonical_fee_key, row.variant_type ?? "", Number(row.amount).toFixed(2)].join("|");
     groups.set(key, [...(groups.get(key) ?? []), row]);
   }
-  // The kept copy is the latest edition: by the effective dates the texts state when every copy in
-  // the group states one, else by when each was read. A stated date after the read is a coming
-  // change the page announces, not its edition, and does not count.
+  // The kept copy is the latest edition: by the editions the texts state when every copy in the
+  // group states one, else by when each was read; equal editions fall to the later read.
+  const read = (row: PageCopyRow) => new Date(row.crawled_at ?? 0).getTime();
   const stated = new Map<string, number | null>();
   const statedDate = (row: PageCopyRow) => {
     const id = String(row.source_document_id);
-    if (!stated.has(id)) {
-      const date = effectiveDate(texts.get(id));
-      const read = new Date(row.crawled_at ?? 0).getTime();
-      stated.set(id, date && new Date(date).getTime() <= read ? new Date(date).getTime() : null);
-    }
+    if (!stated.has(id)) stated.set(id, editionDate(texts.get(id), read(row)));
     return stated.get(id)!;
   };
   for (const group of groups.values()) {
     if (new Set(group.map((row) => String(row.source_document_id))).size < 2) continue;
     const byStated = group.every((row) => statedDate(row) != null);
-    const time = (row: PageCopyRow) => (byStated ? statedDate(row)! : new Date(row.crawled_at ?? 0).getTime());
-    const ordered = [...group].sort((a, b) => time(b) - time(a) || Number(b.source_document_id) - Number(a.source_document_id) || Number(b.fee_published_id) - Number(a.fee_published_id));
+    const time = (row: PageCopyRow) => (byStated ? statedDate(row)! : read(row));
+    const ordered = [...group].sort((a, b) => time(b) - time(a) || read(b) - read(a) || Number(b.source_document_id) - Number(a.source_document_id) || Number(b.fee_published_id) - Number(a.fee_published_id));
     const kept: PageCopyRow[] = [];
     for (const row of ordered) {
       const match = kept.find((keep) => {
