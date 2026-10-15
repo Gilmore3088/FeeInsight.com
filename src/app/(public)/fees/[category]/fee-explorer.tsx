@@ -65,6 +65,13 @@ function rangeLabel(bin: HistogramBin): string {
   return bin.high - bin.low === 1 ? money(bin.low) : `${money(bin.low)} to ${money(top)}`;
 }
 
+/** A market's name inside a sentence: "credit unions", "institutions with under $300M in assets". */
+function inSentence(dim: MarketDim, label: string): string {
+  if (dim === "charter") return label.toLowerCase();
+  if (dim === "tier") return `institutions with ${label.charAt(0).toLowerCase()}${label.slice(1)} in assets`;
+  return label;
+}
+
 /** The point's market, keyed the way the market lists key their rows ("District 3", "Bank"). */
 function marketOf(point: ExplorerPoint, dim: MarketDim): string | null | undefined {
   if (dim === "district") return point.d === null ? null : `District ${point.d}`;
@@ -212,7 +219,7 @@ export function ExplorerChart({ median }: { median: number | null }) {
       </div>
       <p className="mt-3 text-[12px] text-ink-muted">
         {market
-          ? `Solid bars are ${market.label}; pale bars are all ${COUNT.format(total)} U.S. institutions, each as a share of its own total.`
+          ? `Solid bars are ${inSentence(market.dim, market.label)}; pale bars are all ${COUNT.format(total)} U.S. institutions, each as a share of its own total.`
           : `Each bar counts institutions whose fee falls in that range; ${COUNT.format(total)} in all.`}
         {overflow ? ` The last bar is ${money(overflow.low)} and up.` : ""}
       </p>
