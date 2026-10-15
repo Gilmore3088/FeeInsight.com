@@ -807,7 +807,7 @@ function AnalyzeConversationWorkspace({
           story={reopenedStory}
           identityContext={answerIdentity}
           memo={initialAnalysis?.memo ? { state: "written", memo: initialAnalysis.memo } : undefined}
-          nextSteps={initialAnalysisId && !readOnlyReason ? <DownloadAnswerPdf analysisId={initialAnalysisId} /> : null}
+          nextSteps={initialAnalysisId && !readOnlyReason ? <><LinkButton href={`/pro/reports?from_analysis=${encodeURIComponent(initialAnalysisId)}`}>Create board brief</LinkButton><DownloadAnswerPdf analysisId={initialAnalysisId} /></> : null}
         />
       ) : null}
 

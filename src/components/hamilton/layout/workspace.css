@@ -49,6 +49,9 @@
 .ask-task-grid button:hover { background:var(--fi-brick-tint); border-color:var(--fi-brick); }
 .ask-recent a { display:flex; justify-content:space-between; align-items:center; gap:20px; padding:18px 0; border-bottom:1px solid var(--fi-border); text-decoration:none; color:var(--fi-ink); }
 .ask-recent a:hover { color:var(--fi-brick); }
+.ask-recent-row { display:flex; align-items:center; gap:20px; border-bottom:1px solid var(--fi-border); }
+.ask-recent-row a { border-bottom:0; }
+.ask-recent-row a:first-child { flex:1; min-width:0; }
 .intelligence-controls { display:flex; flex-wrap:wrap; gap:14px; }
 .intelligence-controls label { flex:1; min-width:150px; font-size:12px; color:var(--fi-muted); }
 .intelligence-controls select { display:block; width:100%; margin-top:5px; border:1px solid var(--fi-border); border-radius:5px; background:white; padding:11px; font-size:14px; color:var(--fi-ink); }
