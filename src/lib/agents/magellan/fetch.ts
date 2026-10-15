@@ -54,7 +54,8 @@ export const MAGELLAN_STALE_LINK_REFETCH_DAYS = 30;
 export const MAGELLAN_FETCH_STRATEGY = { strategy: "fetch.http", version: 2 } as const;
 
 const REQUEST_TIMEOUT_MS = 15_000;
-const MAX_DOCUMENT_BYTES = 15 * 1024 * 1024;
+/** The size cap on a stored document; the address-variant fetch applies it while reading. */
+export const MAX_DOCUMENT_BYTES = 15 * 1024 * 1024;
 
 export interface FetchCandidateRow {
   id: number | string;

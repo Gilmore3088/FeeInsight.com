@@ -72,7 +72,7 @@ function selectRows(db: SqlTag, limit: number, reselectCohort: boolean): Promise
   return inSavepoint(db, (scope) => scope<RecheckRow[]>`
       SELECT v.fee_verified_id, v.review_status, v.canonical_fee_key, v.amount AS verified_amount,
              r.fee_raw_id, r.institution_id, r.source_url, r.document_r2_key, r.extraction_confidence,
-             r.fee_name, r.amount, r.frequency, r.outlier_flags, r.conditions, r.source_document_id,
+             r.fee_name, r.amount, r.frequency, r.outlier_flags, COALESCE(r.extraction_note, r.conditions) AS conditions, r.source_document_id,
              r.amount_kind, r.rate_percent,
              (SELECT p.fee_published_id FROM published_fee_records p
                WHERE p.lineage_ref = v.fee_verified_id AND p.rolled_back_at IS NULL

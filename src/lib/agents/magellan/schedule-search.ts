@@ -5,10 +5,14 @@ import { recordAttempt } from "@/lib/agents/learning/attempts";
 import { loadMarketLeaderIds } from "@/lib/data-store/market-leaders";
 import { classifyFetchFailure, type AttemptOutcome } from "@/lib/agents/learning/outcomes";
 import { PAID_PASS_MODELS, paidModelCall, paidResponseJson, type PaidMessageCreator } from "@/lib/agents/paid-pass";
+import { loadGroupGaps, pickFromWorkLists, WORK_LIST_POOL, workListDetail, workListPoolRankSql, type GroupGaps, type WorkListPlacement } from "@/lib/agents/state-expert/work-list";
 
 import { FOUND_COOLDOWN_DAYS, MISS_COOLDOWN_DAYS } from "./cooldowns";
 import { looksLikePdfUrl, validateFeeCandidate } from "./find-validate";
 import { urlIdentity } from "./finders";
+import { loadSharedNameIds } from "./other-bank-host";
+import { blockedAnswerHostConfirmed, loadOwnHosts, onBankHosts } from "./own-hosts";
+import { domainRule, ownSiteDomains, webSearchToolFor } from "./web-search-tool";
 import {
   BUSINESS_PATH_SQL,
   CONSUMER_PATH_SQL,
@@ -17,7 +21,6 @@ import {
   hasOverdraftPrice,
   HIDDEN_BELOW_CATEGORIES,
   LARGE_BANK_ASSETS,
-  onBankDomain,
   OVERDRAFT_PRICE_SQL,
   PRODUCT_LINK_SQL,
   REFERS_ELSEWHERE_SQL,
@@ -42,14 +45,19 @@ type Fetcher = typeof fetch;
  * **Gap-filling second, on its own small cap.** Banks with live fees whose page is not the
  * consumer schedule yet (link-coverage.ts): a business-only schedule, a page with no overdraft
  * price (Wells Fargo's Clear Access summary), a page that sends the reader to the account
- * agreement, a stale copy, or fewer than three live categories. A few per step, and none once
- * the lane has spent `GAP_FILL_CAP_MICROUSD` in the last `GAP_FILL_CAP_DAYS`.
+ * agreement, a stale copy, or fewer than three live categories. A few per step, $10B+ banks,
+ * requesters and market leaders before the rest, and none once the lane has spent
+ * `GAP_FILL_CAP_MICROUSD` in the last `GAP_FILL_CAP_DAYS`.
  *
- * Every answer must be on the bank's domain, new to the bank, and pass the same fee-page check
- * as every finder. It is stored beside the bank's link as a companion document, so the bank
- * keeps its link and live fees; companion fetch, Rosetta and Knox read the new document next.
- * Selection is national (requesters, market leaders, $10B+, then largest first) until the
- * state experts' work lists (#1029) set the order.
+ * Inside each lane the state experts' work lists set the order (#1029, #1269): the pool is cut
+ * requesters, Pro accounts' institutions and market leaders first, then each state x size cell's
+ * first institution, then each cell's second; the step's cap is then taken requesters and Pro
+ * accounts first, then one per state in turn, the largest coverage gap first.
+ *
+ * Every answer must be on the bank's own hosts, new to the bank, and pass the same fee-page check
+ * (bank name, shared-name rule) as every finder. It is stored beside the bank's link as a
+ * companion document, so the bank keeps its link and live fees; companion fetch, Rosetta and
+ * Knox read the new document next.
  */
 
 export const SCHEDULE_SEARCH_STRATEGY = { strategy: "discover.paid_schedule_search", version: 2 } as const;
@@ -61,8 +69,9 @@ export const GAP_FILL_PER_RUN = 3;
 export const GAP_FILL_CAP_MICROUSD = 10_000_000;
 export const GAP_FILL_CAP_DAYS = 30;
 /**
- * Days the bank's oldest stored copy must have before it counts as uncovered, so the free
- * pipeline (Rosetta, Knox, Darwin) reads a new link before a paid search second-guesses it.
+ * Days the bank's oldest stored copy must have, and days since any discovery find for it (a free
+ * re-search, #1327), before it counts as uncovered, so the free pipeline (Rosetta, Knox, Darwin)
+ * reads a new link before a paid search second-guesses it.
  */
 export const UNCOVERED_SETTLE_DAYS = 3;
 
@@ -90,6 +99,9 @@ export interface ScheduleSearchRow {
   id: number | string;
   institution_name: string;
   city: string | null;
+  cert_number?: string | null;
+  /** Another institution has this name (`loadSharedNameIds`). */
+  name_shared?: boolean;
   state_code: string | null;
   website_url: string;
   fee_schedule_url: string;
@@ -107,6 +119,11 @@ export interface ScheduleSearchRow {
   stale_copy?: boolean | null;
   hidden?: boolean | null;
   product_page?: boolean | null;
+  /** A Pro account's own institution; its site platform (#1029 work lists). */
+  paying?: boolean | null;
+  platform?: string | null;
+  priority?: boolean | null;
+  work_list?: WorkListPlacement;
 }
 
 interface ScheduleAnswer {
@@ -153,7 +170,7 @@ function bankLines(row: ScheduleSearchRow): string[] {
 }
 
 /** The uncovered lane's ask: every document that may list the bank's consumer fees. */
-export function uncoveredSearchPrompt(row: ScheduleSearchRow): string {
+export function uncoveredSearchPrompt(row: ScheduleSearchRow, siteDomains: string[] | null = null): string {
   const site = websiteHost(row.website_url) ?? row.website_url;
   return [
     "We have no fee data for this bank yet. Find the URLs of the bank's consumer (personal) documents",
@@ -170,7 +187,7 @@ export function uncoveredSearchPrompt(row: ScheduleSearchRow): string {
     `We already have ${row.fee_schedule_url}, but ${whyNotIt(row)}. Find different documents.`,
     "",
     "Rules:",
-    `- Each URL must be on the bank's own domain (${site}, a subdomain of it, or its parent company's domain).`,
+    domainRule(site, siteDomains).replace("The URL must", "Each URL must"),
     "- Not a business or commercial document, a rate sheet, a single CD disclosure, a press release, or a marketing page.",
     "- Use null for any document you cannot find. Do not guess a URL you have not seen.",
     "",
@@ -179,9 +196,13 @@ export function uncoveredSearchPrompt(row: ScheduleSearchRow): string {
   ].join("\n");
 }
 
-/** The gap-fill lane's ask: the consumer schedule a covered bank's held page is not. */
-export function scheduleSearchPrompt(row: ScheduleSearchRow): string {
-  if (row.uncovered) return uncoveredSearchPrompt(row);
+/**
+ * The search's ask. `siteDomains` are the sites the search is limited to (`ownSiteDomains`), or
+ * null for the open web; only an open-web search is told about a parent company's domain (#1251).
+ * An uncovered institution gets the three-document ask; a covered bank the consumer schedule.
+ */
+export function scheduleSearchPrompt(row: ScheduleSearchRow, siteDomains: string[] | null = null): string {
+  if (row.uncovered) return uncoveredSearchPrompt(row, siteDomains);
   const site = websiteHost(row.website_url) ?? row.website_url;
   return [
     "Find the URL of this bank's consumer (personal) fee schedule: the document, usually a PDF,",
@@ -189,13 +210,13 @@ export function scheduleSearchPrompt(row: ScheduleSearchRow): string {
     "NSF / returned item fee, stop payment, wires and monthly maintenance. It may be titled",
     "\"Schedule of Fees\", \"Schedule of Charges\", \"Schedule of Service Charges\", \"Personal Fee Schedule\",",
     "\"Account Fee Schedule\", \"Consumer Fees\", \"Consumer Deposit Account Agreement\" or \"Truth in Savings",
-    "Disclosure\". Large banks often publish it on their parent company's domain.",
+    siteDomains ? "Disclosure\"." : "Disclosure\". Large banks often publish it on their parent company's domain.",
     "",
     ...bankLines(row),
     `We already have ${row.fee_schedule_url}, but ${whyNotIt(row)}. Find a different document.`,
     "",
     "Rules:",
-    `- The URL must be on the bank's own domain (${site}, a subdomain of it, or its parent company's domain).`,
+    domainRule(site, siteDomains),
     "- Not a business or commercial schedule, a rate sheet, a press release, or a marketing page.",
     "- If you cannot find it, answer with url null. Do not guess a URL you have not seen.",
     "",
@@ -223,18 +244,20 @@ export function proposedDocuments(row: Pick<ScheduleSearchRow, "uncovered">, ans
 }
 
 /**
- * Two lanes, neither on the paid cooldown (`cooldowns.ts`):
+ * Two lanes, neither on the paid cooldown (`cooldowns.ts`), the uncovered lane first:
  * - uncovered (up to `limit`): no live fee at all, a held link whose first copy is at least
  *   `UNCOVERED_SETTLE_DAYS` old, and no companion still waiting for its first fetch;
  * - gap_fill (up to `gapLimit`): banks with live fees whose link is not the consumer schedule
- *   yet. $10B+ banks, report requesters and each state's market leaders (`leaderIds`, top 15
- *   by deposits or fee income) on any gap; others when the catalog hides them (fewer than
- *   three live categories) and their page is a product page or prices no overdraft, or when
- *   the link is business-only and the free business search missed.
- * Each lane: requesters, then priority names, then leaders, then largest first.
+ *   yet. First $10B+ banks, report requesters and each state's market leaders (`leaderIds`,
+ *   top 15 by deposits or fee income) on any gap; then others when the catalog hides them
+ *   (fewer than three live categories) and their page is a product page or prices no overdraft,
+ *   or when the link is business-only and the free business search missed.
+ * Each pool (`pool_lane`: uncovered, gap_priority, gap_other) is cut at WORK_LIST_POOL in #1269's
+ * order and takes its cap from the state experts' work lists (#1029): requesters and paying
+ * customers first, then one per state in turn.
  */
-async function selectRows(db: SqlTag, limit: number, gapLimit: number, leaderIds: number[]): Promise<ScheduleSearchRow[]> {
-  return db<ScheduleSearchRow[]>`
+async function selectRows(db: SqlTag, limit: number, gapLimit: number, leaderIds: number[], gaps: GroupGaps): Promise<ScheduleSearchRow[]> {
+  const pool = await db<ScheduleSearchRow[]>`
     -- incomplete-link schedule search
     WITH live AS (
       SELECT record.institution_id, count(DISTINCT record.canonical_fee_key)::int AS categories
@@ -243,8 +266,13 @@ async function selectRows(db: SqlTag, limit: number, gapLimit: number, leaderIds
        GROUP BY record.institution_id
     ),
     scoped AS (
-      SELECT inst.id, inst.institution_name, inst.city, inst.state_code, inst.website_url, inst.fee_schedule_url, inst.asset_size,
+      SELECT inst.id, inst.institution_name, inst.city, inst.cert_number, inst.state_code, inst.website_url, inst.fee_schedule_url, inst.asset_size,
              EXISTS (SELECT 1 FROM leads lead WHERE lead.quote_institution_id = inst.id) AS requested,
+             EXISTS (
+               SELECT 1 FROM institution_workspace_memberships pro
+                WHERE pro.institution_id = inst.id AND pro.membership_status = 'active'
+             ) AS paying,
+             COALESCE(NULLIF(btrim(profile.platform), ''), NULLIF(btrim(inst.cms_platform), '')) AS platform,
              inst.id = ANY(${leaderIds}::bigint[]) AS leader,
              (
                inst.asset_size >= ${LARGE_BANK_ASSETS}
@@ -256,6 +284,15 @@ async function selectRows(db: SqlTag, limit: number, gapLimit: number, leaderIds
                SELECT 1 FROM source_documents settled
                 WHERE settled.institution_id = inst.id
                   AND settled.crawled_at < NOW() - make_interval(days => ${UNCOVERED_SETTLE_DAYS}::int)
+             )
+             -- A free find in the same days (a #1327 upgrade, freshness or business re-search, or any
+             -- finder) is read by the pipeline before a paid search second-guesses it.
+             AND NOT EXISTS (
+               SELECT 1 FROM pipeline_attempts found
+                WHERE found.institution_id = inst.id
+                  AND found.stage = 'discover'
+                  AND found.outcome = 'ok'
+                  AND found.created_at >= NOW() - make_interval(days => ${UNCOVERED_SETTLE_DAYS}::int)
              ) AS settled,
              EXISTS (
                SELECT 1 FROM institution_additional_sources waiting
@@ -327,20 +364,37 @@ async function selectRows(db: SqlTag, limit: number, gapLimit: number, leaderIds
               AND pa.outcome <> 'budget_blocked'
          ) < ${MAX_TRANSIENT_TRIES}
     )
-    , lanes AS (
+    , eligible AS (
       SELECT scoped.*,
-             row_number() OVER (PARTITION BY uncovered ORDER BY requested DESC, priority DESC, leader DESC, asset_size DESC NULLS LAST, id ASC) AS lane_rank
+             CASE WHEN uncovered THEN 'uncovered' WHEN priority THEN 'gap_priority' ELSE 'gap_other' END AS pool_lane
         FROM scoped
        WHERE (uncovered AND settled AND NOT companion_waiting)
           OR (NOT uncovered AND priority AND (business_only OR no_overdraft_price OR refers_elsewhere OR stale_copy OR hidden))
-          OR (NOT uncovered AND hidden AND (product_page OR no_overdraft_price))
+          OR (NOT uncovered AND NOT priority AND hidden AND (product_page OR no_overdraft_price))
           -- Any covered bank whose link is a business-only schedule, once the free business search missed.
-          OR (NOT uncovered AND business_only AND business_searched)
+          OR (NOT uncovered AND NOT priority AND business_only AND business_searched)
+    )
+    , due AS (
+      SELECT eligible.*,
+             ${workListPoolRankSql(db, { state: "state_code", assets: "asset_size", id: "id", within: "pool_lane" })} AS cell_rank
+        FROM eligible
+    )
+    -- Each pool's cut keeps requesters and paying customers, then market leaders, then each
+    -- work-list cell's first rows in turn (#1269), so no small-bank group drops out whole.
+    , lanes AS (
+      SELECT due.*,
+             row_number() OVER (PARTITION BY pool_lane ORDER BY requested DESC, paying DESC, leader DESC, cell_rank ASC, asset_size DESC NULLS LAST, id ASC) AS lane_rank
+        FROM due
     )
     SELECT * FROM lanes
-     WHERE (uncovered AND lane_rank <= ${limit}) OR (NOT uncovered AND lane_rank <= ${gapLimit})
-     ORDER BY uncovered DESC, lane_rank ASC
+     WHERE lane_rank <= ${WORK_LIST_POOL}
+     ORDER BY pool_lane DESC, lane_rank ASC
   `;
+  const rows = Array.isArray(pool) ? pool : [];
+  const uncovered = pickFromWorkLists(rows.filter((row) => row.uncovered), gaps, limit);
+  const gapPriority = pickFromWorkLists(rows.filter((row) => !row.uncovered && row.priority), gaps, gapLimit);
+  const gapOther = pickFromWorkLists(rows.filter((row) => !row.uncovered && !row.priority), gaps, gapLimit - gapPriority.length);
+  return [...uncovered, ...gapPriority, ...gapOther];
 }
 
 /** What the gap-fill lane spent in the last `GAP_FILL_CAP_DAYS`. */
@@ -393,10 +447,11 @@ interface CheckedDocument {
   reason: string;
 }
 
-/** One proposed URL through the domain, already-held and fee-page checks. */
+/** One proposed URL through the own-host, already-held and fee-page checks. */
 async function checkProposal(
   proposal: { kind: DocumentKind; url: string },
   row: ScheduleSearchRow,
+  ownHosts: readonly string[],
   known: Set<string>,
   fetchImpl: Fetcher,
 ): Promise<CheckedDocument> {
@@ -405,14 +460,22 @@ async function checkProposal(
   const checked: CheckedDocument = {
     kind, proposed_url: proposed, outcome: "rejected", url: null, document_type: null, verdict: null, overdraft_price_seen: null, reason: "",
   };
-  if (!onBankDomain(proposed, row.website_url)) {
+  if (!onBankHosts(proposed, row.website_url, ownHosts)) {
     return { ...checked, outcome: "invalid_url", reason: `Answer (${label}) is not on the bank's domain: ${proposed}` };
   }
   if (known.has(urlIdentity(proposed))) {
     return { ...checked, outcome: "rejected", reason: `Answer (${label}) is a document the bank already has: ${proposed}` };
   }
   try {
-    const validation = await validateFeeCandidate({ url: proposed, score: ANSWER_SCORE, reasons: [`paid schedule search: ${label}`] }, fetchImpl);
+    // With the bank's website and name, so an answer on another host must name the bank
+    // (#1033's unconfirmed-host rule, find-validate.ts; #1251 review).
+    const validation = await validateFeeCandidate(
+      {
+        url: proposed, score: ANSWER_SCORE, reasons: [`paid schedule search: ${label}`], websiteUrl: row.website_url,
+        institutionName: row.institution_name, nameShared: row.name_shared, city: row.city, certNumber: row.cert_number,
+      },
+      fetchImpl,
+    );
     checked.verdict = validation.verdict;
     if (validation.ok) {
       return {
@@ -424,9 +487,10 @@ async function checkProposal(
         reason: `Paid schedule search (${label}): ${validation.reason}`,
       };
     }
-    if (validation.status === 403) {
+    if (validation.status === 403 && blockedAnswerHostConfirmed(proposed, row.website_url)) {
       // The bank's site refuses our fetcher: keep the answer for the paid fetch, as the
       // paid web search does (paid-find.ts). Desert Financial's lost this way, 8 Oct 2026.
+      // Only on the website's own host or name (#1251 review).
       return {
         ...checked,
         outcome: "ok",
@@ -461,6 +525,8 @@ export async function runScheduleSearch(options: {
   db?: SqlTag;
   create?: PaidMessageCreator;
   fetchImpl?: Fetcher;
+  /** Coverage gaps for the work lists; read here when left out. */
+  gaps?: GroupGaps;
 }): Promise<ScheduleSearchResult> {
   const db = options.db ?? sql;
   const result: ScheduleSearchResult = {
@@ -471,7 +537,8 @@ export async function runScheduleSearch(options: {
   const requestedGap = Math.max(0, Math.min(Math.floor(Number(options.gapLimit ?? GAP_FILL_PER_RUN)) || 0, GAP_FILL_PER_RUN));
   const gapLimit = gapSpent >= GAP_FILL_CAP_MICROUSD ? 0 : requestedGap;
   const leaderIds = options.leaderIds ?? (await leaderIdsOrNone(db));
-  const rows = await selectRows(db, limit, gapLimit, leaderIds);
+  const gaps = options.gaps ?? (await loadGroupGaps(db));
+  const rows = await selectRows(db, limit, gapLimit, leaderIds, gaps);
   result.selected = rows.length;
   if (options.dryRun) {
     result.results = rows.map((row) => ({
@@ -480,21 +547,27 @@ export async function runScheduleSearch(options: {
       lane: laneOf(row),
       would_search_schedule: true,
       why: whyNotIt(row),
+      ...workListDetail(row.work_list),
     }));
     return result;
   }
 
   const fetchImpl = options.fetchImpl ?? fetch;
   const model = PAID_PASS_MODELS.find();
+  const ownHostsById = await loadOwnHosts(db, rows);
+  const sharedNames = await loadSharedNameIds(db, rows, { runId: options.runId, stepId: options.stepId ?? null });
   let gapSpentNow = gapSpent;
   for (const row of rows) {
+    row.name_shared = sharedNames.has(Number(row.id));
     const institutionId = Number(row.id);
     const lane = laneOf(row);
     // The lane's cap is checked again before each search, so one step cannot run past it.
     if (lane === "gap_fill" && gapSpentNow >= GAP_FILL_CAP_MICROUSD) {
-      result.results.push({ institution_id: institutionId, lane, outcome: "skipped", reason: "Gap-fill lane is at its cap", by: "schedule_search" });
+      result.results.push({ institution_id: institutionId, lane, outcome: "skipped", reason: "Gap-fill lane is at its cap", by: "schedule_search", ...workListDetail(row.work_list) });
       continue;
     }
+    const ownHosts = ownHostsById.get(institutionId) ?? [];
+    const siteDomains = ownSiteDomains(row, ownHosts);
     const startedAt = Date.now();
     let costMicrousd = 0;
     let outcome: AttemptOutcome;
@@ -513,8 +586,8 @@ export async function runScheduleSearch(options: {
         params: {
           model,
           max_tokens: MAX_OUTPUT_TOKENS,
-          tools: [{ type: "web_search_20250305", name: "web_search", max_uses: WEB_SEARCH_MAX_USES }],
-          messages: [{ role: "user", content: scheduleSearchPrompt(row) }],
+          tools: [webSearchToolFor(siteDomains, WEB_SEARCH_MAX_USES)],
+          messages: [{ role: "user", content: scheduleSearchPrompt(row, siteDomains) }],
         },
       });
       costMicrousd = call.costMicrousd;
@@ -531,7 +604,7 @@ export async function runScheduleSearch(options: {
       } else {
         const known = await knownUrls(db, institutionId, row.fee_schedule_url);
         for (const proposal of proposals) {
-          const checked = await checkProposal(proposal, row, known, fetchImpl);
+          const checked = await checkProposal(proposal, row, ownHosts, known, fetchImpl);
           documents.push(checked);
           if (checked.url) known.add(urlIdentity(checked.url));
         }
@@ -585,6 +658,8 @@ export async function runScheduleSearch(options: {
         url: kept[0]?.url ?? null,
         held_link: row.fee_schedule_url,
         why_searched: whyNotIt(row),
+        search_domains: siteDomains,
+        own_hosts: ownHosts,
         proposed_url: proposals[0]?.url ?? null,
         evidence,
         verdict: first?.verdict ?? null,
@@ -592,6 +667,7 @@ export async function runScheduleSearch(options: {
         overdraft_price_seen: kept[0]?.overdraft_price_seen ?? null,
         documents,
         reason,
+        ...workListDetail(row.work_list),
       },
     });
     result.results.push({
@@ -603,6 +679,7 @@ export async function runScheduleSearch(options: {
       cost_microusd: costMicrousd,
       reason,
       by: "schedule_search",
+      ...workListDetail(row.work_list),
     });
   }
   return result;

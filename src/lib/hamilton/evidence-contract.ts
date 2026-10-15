@@ -1,3 +1,4 @@
+import { readerFeeConditions } from "@/lib/fee-conditions";
 import type { AnalyzeResponse } from "./types";
 import type { FeeResearch, OwnFeeRow } from "./workspace/types";
 
@@ -118,7 +119,7 @@ function ownFeeFact(institutionId: number, feeCategory: string, row: OwnFeeRow):
     unit: "usd",
     currency: "USD",
     frequency: row.frequency ?? null,
-    conditions: row.conditions ?? null,
+    conditions: readerFeeConditions(row.conditions),
     audienceEvidence: row.audienceEvidence ?? null,
     status: "published",
     source: {

@@ -111,7 +111,7 @@ export async function correctStoredLineups(
             FROM raw_fee_observations fr
             JOIN source_documents copy ON copy.id = fr.source_document_id AND copy.superseded_by_id IS NULL
            WHERE fr.source = 'knox'
-             AND fr.conditions LIKE ${hint}
+             AND COALESCE(fr.extraction_note, fr.conditions) LIKE ${hint}
              AND (fr.product_name IS NOT NULL OR fr.min_balance_to_avoid IS NOT NULL
                   OR fr.min_opening_deposit IS NOT NULL OR fr.waiver_text IS NOT NULL)
              AND (${options.institutionId ?? null}::bigint IS NULL OR fr.institution_id = ${options.institutionId ?? null}::bigint)
@@ -138,12 +138,12 @@ export async function correctStoredLineups(
     if (due.length === 0) return { ...EMPTY, dryRun: options.dryRun };
     const documentIds = due.map((doc) => Number(doc.source_document_id));
     rows = await inSavepoint(db, (scope) => scope<LineupRow[]>`
-      SELECT fee_raw_id, institution_id, source_document_id, fee_name, conditions,
+      SELECT fee_raw_id, institution_id, source_document_id, fee_name, COALESCE(extraction_note, conditions) AS conditions,
              product_name, min_balance_to_avoid, min_opening_deposit, waiver_text
         FROM raw_fee_observations
        WHERE source = 'knox'
          AND source_document_id = ANY(${documentIds}::bigint[])
-         AND conditions LIKE ${hint}
+         AND COALESCE(extraction_note, conditions) LIKE ${hint}
          AND (product_name IS NOT NULL OR min_balance_to_avoid IS NOT NULL
               OR min_opening_deposit IS NOT NULL OR waiver_text IS NOT NULL)
     `);

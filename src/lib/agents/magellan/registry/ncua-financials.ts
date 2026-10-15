@@ -9,6 +9,7 @@ import {
   type NcuaInstitutionRow,
 } from "@/lib/regulatory/ncua";
 import type { RegistryFetchOptions } from "@/lib/regulatory/http";
+import { fullCreditUnionCity, parseNcuaBranches, type NcuaBranchRow } from "@/lib/regulatory/ncua-branches";
 import {
   compareQuarters,
   latestPublishableQuarter,
@@ -197,6 +198,37 @@ async function upsertChunk(db: RegistryDb, records: ReturnType<typeof toRecord>[
   return { matched: Number(row?.matched ?? 0), unmatched: Number(row?.unmatched ?? 0) };
 }
 
+/**
+ * FOICU cuts CITY at 15 characters; the same zip's branch file has the full name, so new
+ * credit unions are inserted with it (#1213). A branch file that cannot be read leaves the
+ * FOICU cities as they are and the partition detail says why.
+ */
+export function withFullCities(
+  institutions: NcuaInstitutionRow[],
+  branchRows: Array<Record<string, string>>,
+): { institutions: NcuaInstitutionRow[]; citiesRestored: number; branchFileError: string | null } {
+  let branches: NcuaBranchRow[];
+  try {
+    branches = parseNcuaBranches(branchRows);
+  } catch (error) {
+    return { institutions, citiesRestored: 0, branchFileError: error instanceof Error ? error.message : String(error) };
+  }
+  const offices = new Map<string, NcuaBranchRow[]>();
+  for (const branch of branches) {
+    const list = offices.get(branch.charter);
+    if (list) list.push(branch);
+    else offices.set(branch.charter, [branch]);
+  }
+  let citiesRestored = 0;
+  const out = institutions.map((row) => {
+    const city = fullCreditUnionCity(row.city, offices.get(row.charter) ?? []);
+    if (city === row.city) return row;
+    citiesRestored += 1;
+    return { ...row, city };
+  });
+  return { institutions: out, citiesRestored, branchFileError: null };
+}
+
 interface UniverseRow extends NcuaInstitutionRow {
   asset_size: number | null;
   asset_size_tier: string | null;
@@ -315,9 +347,10 @@ export async function runRegistryNcuaFinancials(
     return base;
   }
 
-  const institutions = archive.foicu
-    .map(parseNcuaInstitution)
-    .filter((row): row is NcuaInstitutionRow => row !== null);
+  const { institutions, citiesRestored, branchFileError } = withFullCities(
+    archive.foicu.map(parseNcuaInstitution).filter((row): row is NcuaInstitutionRow => row !== null),
+    archive.branchRows,
+  );
   const parsed = [...archive.accounts.entries()]
     .map(([charter, row]) => parseNcuaFinancial(charter, row, quarter))
     .filter((row): row is NcuaFinancialRow => row !== null);
@@ -382,6 +415,8 @@ export async function runRegistryNcuaFinancials(
       universe_synced: result.universeSynced,
       inserted_institutions: result.insertedInstitutions,
       deactivated_institutions: result.deactivatedInstitutions,
+      cities_restored_from_branch_file: citiesRestored,
+      branch_file_error: branchFileError,
     },
   });
   return result;

@@ -9,6 +9,7 @@ import {
 import { schedulePriorityInstitutionRuns } from "@/lib/agents/atlas/priority-institutions";
 import { schedulePriorityStateResearchRuns } from "@/lib/agents/atlas/priority-state-research";
 import { scheduleGuardCatchUpRun } from "@/lib/agents/hamilton/guard-catch-up";
+import { scheduleAudienceRelabelRun } from "@/lib/agents/darwin/audience-relabel-schedule";
 import { scheduleStaleOutreachWithdrawal } from "@/lib/agents/growth/withdraw";
 import { scheduleDueStateLaneRuns, STATE_LANE_LIMIT_PER_TICK } from "@/lib/agents/state-lane-scheduler";
 import { getMarketingControl, getPipelineControl } from "@/lib/automation-control";
@@ -166,12 +167,20 @@ async function handleGET(request: NextRequest) {
   let priorityStateResearch: Awaited<ReturnType<typeof schedulePriorityStateResearchRuns>> | { error: string } | null = null;
   // A deployed guard or frequency fix re-checks every live fee now, not at the next publish step.
   let guardCatchUp: Awaited<ReturnType<typeof scheduleGuardCatchUpRun>> | { error: string } | null = null;
+  // Darwin's audience relabel (#1059): a daily dry run while off, once when switched on.
+  let audienceRelabel: Awaited<ReturnType<typeof scheduleAudienceRelabelRun>> | { error: string } | null = null;
   if (pipeline.enabled) {
     try {
       guardCatchUp = await scheduleGuardCatchUpRun();
     } catch (error) {
       console.error("Guard catch-up scheduling failed:", error);
       guardCatchUp = { error: error instanceof Error ? error.message : String(error) };
+    }
+    try {
+      audienceRelabel = await scheduleAudienceRelabelRun();
+    } catch (error) {
+      console.error("Audience relabel scheduling failed:", error);
+      audienceRelabel = { error: error instanceof Error ? error.message : String(error) };
     }
     try {
       priorityInstitutions = await schedulePriorityInstitutionRuns();
@@ -222,6 +231,7 @@ async function handleGET(request: NextRequest) {
     priorityInstitutions,
     priorityStateResearch,
     guardCatchUp,
+    audienceRelabel,
     staleOutreachWithdraw,
     ...result,
   });

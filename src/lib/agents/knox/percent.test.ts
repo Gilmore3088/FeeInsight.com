@@ -72,6 +72,22 @@ describe("held rates a schedule row states without the word fee (#1102)", () => 
     expect(rateFeeFromHeld(held(name, line, hint), text)).toMatchObject({ canonicalHint: hint, ratePercent: percent });
   });
 
+  it("never reads a share of a balance or a rewards rate as a fee (post-merge review of #1237)", () => {
+    for (const line of ["Coin Counting | 0.5% of the total balance", "Coin Counting | 1% of the average daily balance amount", "Coin Counting | Earn 1% on all purchases"]) {
+      expect(typeof rateFeeFromHeld(held("Coin Counting", line, "coin_counting"), line)).toBe("string");
+    }
+  });
+
+  it("still traces a rewards card's named fee (review of 7b253470)", () => {
+    for (const [hint, name, line] of [
+      ["card_foreign_txn", "Foreign Transaction Fee", "Visa Rewards Card | Foreign Transaction Fee | 1% of each transaction"],
+      ["cash_advance", "Cash Advance Fee", "Cash Back Visa | Cash Advance Fee | 3% of each advance"],
+      ["card_foreign_txn", "Foreign Transaction Fee", "Foreign Transaction Fee 1% (earn points on purchases)"],
+    ] as const) {
+      expect(rateFeeFromHeld(held(name, line, hint), line)).toMatchObject({ canonicalHint: hint });
+    }
+  });
+
   it("still holds a share of a balance, an interest rate and a card network's own assessment", () => {
     const balance = "Savings | 1% of balance";
     expect(typeof rateFeeFromHeld(held("Savings", balance, "monthly_maintenance"), balance)).toBe("string");

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { actionTheme, feesTouched, focusFees, isConsumerLaw, marketMediansFrom, stateLawFees } from "./regulatory-watch";
+import { actionTheme, CONSUMER_LAW_PG, feesTouched, focusFees, isConsumerLaw, marketMediansFrom, stateLawFees } from "./regulatory-watch";
 import { benchmarkCsvRows, positionAgainst } from "./benchmark-export";
 
 describe("regulatory watch", () => {
@@ -7,6 +7,13 @@ describe("regulatory watch", () => {
     expect(isConsumerLaw("Consumer Law; Unfair or Deceptive (UDAP)")).toBe(true);
     expect(isConsumerLaw("BSA Internal Controls; BSA Officer")).toBe(false);
     expect(isConsumerLaw(null)).toBe(false);
+  });
+
+  it("writes the consumer-law test for Postgres with word starts and ends, never \\b (#1254)", () => {
+    expect(CONSUMER_LAW_PG).toBe(
+      "consumer law|unfair|deceptive|udap|udaap|abusive|overdraft|truth in savings|regulation (dd|e)\\M|electronic fund|\\mfees?\\M",
+    );
+    expect(CONSUMER_LAW_PG).not.toContain("\\b");
   });
 
   it("suppresses thin market medians and uses the same five-institution floor as benchmarks", () => {

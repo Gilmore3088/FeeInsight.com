@@ -3,6 +3,86 @@
 Newest first. Each entry: date, what was decided, who, why, and what it means for the work.
 Seeded 2026-10-05 from the project's working memory; earlier decisions were not recorded here.
 
+## 2026-10-15
+
+**The site's goal is a Pro subscription; the paid report is a lead.** James, Oct 15, after a
+site review again ranked its findings around the $300 report: "The goal is not to get a paid report.
+That's just a high value lead. The goal is to get them on pro pricing so they're paying monthly or
+annual." The site's main call to action, reviews and copy aim at Hamilton Pro (/subscribe). The
+Competitive Fee Position Report stays on sale as the step for buyers not ready to subscribe; free
+reports and alerts capture leads for Pro. CLAUDE.md's "Money thesis" and the CTA line in
+`.agents/product-marketing.md` now say so.
+
+**Data fixes are proven on the live row, not one function.** James, Oct 15, after #1334's review
+found that #1310's merged cut-cents fix never reached the site. Knox's self-check uses
+`checkFeeAgainstSource`, which still rejected $29.95 and $1.50. #1310's test ran only the first read.
+From now on, a data fix's test follows the row's whole path. The PR names the live rows and the
+after-state expected for each, and the builder confirms them on prod after deploy (build plan rule 4).
+
+**#1334 covers all 8 cut-cents fees.** James, Oct 15: "yes. approved. fix it." The 8 fees are 49175,
+29166 and 141772 (approved Oct 14) plus 97435, 61650, 61934, 79234 and 79237, found when the shared
+check was fixed. The work:
+- fix the shared check;
+- stop the verified twins with wrong amounts (113133, 112658, and any others found) from publishing;
+- re-read the documents with a Knox version bump;
+- confirm the correct amounts on prod.
+
+**#1283's corrected counts are approved.** James, Oct 15 ("im fine with 1283"): 16 re-files (the
+15 approved Oct 14, plus 142567), the same 12 second looks, and institution 3919's 9 fees entering
+the catalog.
+
+**No pipeline pause.** James, Oct 15 (relayed by his advisor session): "I don't want to pause. Keep
+working." A migration or step that needs a lock retries with a longer lock_timeout or runs in
+smaller batches. It does not pause the `pipeline` control.
+
+## 2026-10-14
+
+**The Fee Insight design system is the site's brand; the header carries Fee Insight.** James, Oct 14.
+The package (Oxford Navy and brick on parchment, Geist, the box-plot I) lives in `src/brand/`,
+`public/brand/` and `Branding/fee-insight-design-system/`. The feeinsight.com header uses the Fee
+Insight one-line logo; Bank Fee Index's lockup goes on its data pages and the footer; Hamilton's
+wordmark on /pro. This is the "James's own design" the layout hold waited for. It ships in staged
+PRs: the package first, then the public site, then Hamilton, admin, reports and email, each
+reviewed by James on the Vercel preview before merge.
+
+**Data-quality approvals (James, Oct 14 evening, builder session).** Answering the "what do you
+need from me" list:
+- **#1059 audience: approved.** The gate is 0 opposite-audience errors on unseen holdouts (a business
+  fee called consumer or both, or a consumer fee called business); 95% exact agreement is the aim, not
+  the gate. Holdout 6 met the gate (0 of 225). The migration (verified tier keeps Darwin's audience)
+  and the relabel go ahead. The relabel runs as a Darwin step in the run ledger, with counts, a dry
+  run and a rollback, and leaves undecided fees unknown.
+- **#1283 guard v62: approved as written** (15 in-place re-files; the 12 flagged rows go through
+  Hamilton's second look).
+- **#1299, #1301, #1304 and #1310's 3 wrong amounts: approved.**
+- **#1234 step 2 (move Knox's note out of stored `conditions`): approved**, migration included.
+- **#1291's re-file restore pass: revalidate before it is switched on.**
+- **#1316's near-name collapse: validate first; once the check confirms it, it is approved.**
+- **Magellan's paid cap stays as it is.** Improve the data and Magellan's process with what is already
+  stored, so the work is better when paid discovery resumes.
+- **#1280: yes**, the answer-key scorer starts a new versioned series.
+- Not decided: the 216 step-2 rows from #1093, and the older items (#1275, #1274, the copy PRs,
+  #1238).
+
+**Data quality comes before the Hamilton redesign.** James, Oct 14, after his quality gap audit:
+"The Hamilton redesign is not ready to go yet. I still think we need to focus on the data quality
+and eventually we'll get to the redesign." Lane B moves from Hamilton to published-fee quality
+(#1234, #1100, #1196, #1067). Lane A takes #1059, then recall (#1093, #1052, #1051). Hamilton UI and
+redesign work waits. A quality fix counts only once stored rows or customer output change, measured
+before and after on the same rows. The order and proof rules are in
+`docs/plans/build-plan-2026-10-12.md` ("Data quality first").
+
+**"Reviewed" means a submitted review of the exact head SHA; CI also runs on main.** James, Oct 14,
+after an auditor found merged PRs with no submitted review and no CI run on main's merge commits.
+A PR merges under the standing authorization only when a separate reviewer agent (not the builder
+that wrote it) has posted a submitted GitHub review of the PR's exact head SHA, naming that SHA,
+with a "no blockers" verdict, plus green CI on that SHA. A new push needs a new review. The reviews
+are COMMENT reviews, because the account that opens every PR can't approve its own. CI also runs on
+every push to main (`.github/workflows/test.yml`), and is never cancelled there, so each merge commit
+gets its own result. A red main run is fixed before other work. "Merged" or "deployed" is never
+called customer acceptance: signed-in, two-user, mobile, save-and-reopen and PDF checks are stated
+as untested until someone runs them.
+
 ## 2026-10-13
 
 **Supabase reads run without a prompt; writes still ask.** James, Oct 13. Builders were asking

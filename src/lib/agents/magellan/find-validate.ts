@@ -74,6 +74,11 @@ export interface FeeCandidate {
   websiteUrl?: string | null;
   /** The bank's name, so a document on another host can show it is this bank's (#1033). */
   institutionName?: string | null;
+  /** Another institution has the bank's name: it then needs the city or number too (#1287). */
+  nameShared?: boolean;
+  /** The bank's city and FDIC certificate / NCUA charter number. */
+  city?: string | null;
+  certNumber?: string | number | null;
 }
 
 export type CandidateVerdict =
@@ -111,12 +116,17 @@ export interface CandidateValidation {
   scoringText?: string | null;
 }
 
-export async function fetchWithTimeout(fetchImpl: Fetcher, url: string, timeoutMs = FIND_REQUEST_TIMEOUT_MS): Promise<Response> {
+/**
+ * A GET that gives up when the headers take longer than `timeoutMs`. The timer stops once the
+ * headers arrive; a caller that also bounds the body read passes its own `signal`, which
+ * aborts the whole request (body download included) whenever the caller aborts it.
+ */
+export async function fetchWithTimeout(fetchImpl: Fetcher, url: string, timeoutMs = FIND_REQUEST_TIMEOUT_MS, signal?: AbortSignal): Promise<Response> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
     return await fetchImpl(url, {
-      signal: controller.signal,
+      signal: signal ? AbortSignal.any([controller.signal, signal]) : controller.signal,
       redirect: "follow",
       headers: {
         "User-Agent": crawlerUserAgent("Magellan"),
@@ -198,6 +208,9 @@ function confirmDocumentHost(candidate: FeeCandidate, validation: CandidateValid
     url: candidate.url,
     websiteUrl: candidate.websiteUrl,
     institutionName: candidate.institutionName,
+    nameShared: candidate.nameShared,
+    city: candidate.city,
+    certNumber: candidate.certNumber,
     text: validation.scoringText,
   });
   if (!why) return validation;

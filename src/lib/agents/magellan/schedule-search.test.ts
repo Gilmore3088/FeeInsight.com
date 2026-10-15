@@ -50,7 +50,8 @@ describe("paid schedule search for the largest banks", () => {
     // PR 314 shipped `btrim(...) <>` with its '' lost, and every paid discovery step failed.
     const db = createDb([]);
     await runScheduleSearch({ runId: 4, db: asDb(db), create: vi.fn() });
-    const statements = db.mock.calls.map((call) => (call[0] as unknown as string[]).join("$?"));
+    // Identifier calls (`db("priority")`) carry a plain string, not SQL text.
+    const statements = db.mock.calls.filter((call) => Array.isArray(call[0])).map((call) => (call[0] as unknown as string[]).join("$?"));
     expect(statements.some((sqlText) => sqlText.includes("incomplete-link schedule search"))).toBe(true);
     for (const sqlText of statements) {
       expect(sqlText).not.toMatch(/(<>|<=|>=|=|<|>)\s*(\n\s*(AND|OR|\))|$)/);
@@ -109,6 +110,66 @@ describe("paid schedule search for the largest banks", () => {
     expect(result.selected).toBe(1);
     expect(result.results[0]).toMatchObject({ would_search_schedule: true });
     expect(create).not.toHaveBeenCalled();
+  });
+
+  // Uncovered (100s), covered priority (200s) and other covered (300s) rows; the gap-fill lane
+  // takes priority names before the rest, inside one cap (#1030 on #1269's work lists).
+  it.each([
+    { name: "two priority gaps fill the gap cap", priority: 4, gapLimit: 2, picks: [3, 2, 0] },
+    { name: "one priority gap, the rest from the other covered banks", priority: 1, gapLimit: 3, picks: [3, 1, 2] },
+  ])("keeps each lane's own cap, uncovered first, and cuts each pool by requesters, then cells in turn: $name", async ({ priority, gapLimit, picks }) => {
+    const pool = (from: number, count: number, extra: Partial<ScheduleSearchRow>) =>
+      Array.from({ length: count }, (_, index) => ({ ...wells, id: from + index, state_code: index % 2 ? "VT" : "TX", ...extra }));
+    const db = createDb([
+      ...pool(100, 4, { uncovered: true, priority: false }),
+      ...pool(200, priority, { uncovered: false, priority: true }),
+      ...pool(300, 4, { uncovered: false, priority: false }),
+    ]);
+    const result = await runScheduleSearch({ runId: 4, dryRun: true, limit: 3, gapLimit, db: asDb(db), create: vi.fn() });
+    const ids = result.results.map((entry) => Number(entry.institution_id));
+    expect([1, 2, 3].map((hundred) => ids.filter((id) => Math.floor(id / 100) === hundred).length)).toEqual(picks);
+    // Uncovered rows come first, and the work lists rotate states inside the lane.
+    expect(result.results.slice(0, 3).map((entry) => entry.lane)).toEqual(["uncovered", "uncovered", "uncovered"]);
+    expect(new Set(ids.slice(0, 2).map((id) => (id % 2 ? "VT" : "TX"))).size).toBe(2);
+    const select = text(db.mock.calls.find((call) => text(call[0]).includes("incomplete-link schedule search"))![0]);
+    expect(select).toContain("PARTITION BY pool_lane ORDER BY requested DESC, paying DESC, leader DESC, cell_rank ASC");
+  });
+
+  it("searches a small bank on its own sites only, and never sends it to a parent company's domain (#1251)", async () => {
+    const cashmere: ScheduleSearchRow = {
+      ...wells, id: 12, institution_name: "Cashmere Valley Bank", city: "Cashmere", state_code: "WA",
+      website_url: "https://www.cashmerevalleybank.com", fee_schedule_url: "https://www.cashmerevalleybank.com/checking", asset_size: "2300000",
+    };
+    const db = vi.fn((strings: TemplateStringsArray) => {
+      const sqlText = text(strings);
+      if (sqlText.includes("incomplete-link schedule search")) return Promise.resolve([cashmere]);
+      if (sqlText.includes("bank-owned document hosts")) return Promise.resolve([{ institution_id: 12, host: "cvb.bank", documents: 2 }]);
+      return Promise.resolve([]);
+    });
+    const create = vi.fn().mockResolvedValueOnce(answer({ url: "https://www.cvb.bank/personal-fee-schedule" }));
+    const named = SCHEDULE.replace("<h1>Consumer Account", "<p>Cashmere Valley Bank</p><h1>Consumer Account");
+    const result = await runScheduleSearch({ runId: 4, db: asDb(db), create, fetchImpl: serve(named) });
+
+    const params = create.mock.calls[0][0];
+    expect(params.tools[0].allowed_domains).toEqual(["cashmerevalleybank.com", "cvb.bank"]);
+    const prompt = String(params.messages[0].content);
+    expect(prompt).not.toContain("parent company");
+    expect(prompt).toContain("cashmerevalleybank.com or cvb.bank");
+    expect(result.results[0]).toMatchObject({ outcome: "ok", url: "https://www.cvb.bank/personal-fee-schedule" });
+    // A $10B+ bank keeps the open web and may still use a parent company's domain.
+    expect(scheduleSearchPrompt(wells)).toContain("parent company's domain");
+
+    // The same answer is refused when the document does not name the bank (#1033's rule, now
+    // applied to paid answers), and when the host refuses our check, since it can't be read.
+    const unnamed = vi.fn().mockResolvedValueOnce(answer({ url: "https://www.cvb.bank/personal-fee-schedule" }));
+    const r2 = await runScheduleSearch({ runId: 4, db: asDb(db), create: unnamed, fetchImpl: serve(SCHEDULE) });
+    expect(r2.results[0]).toMatchObject({ outcome: "wrong_document", url: null });
+    const refused = vi.fn().mockResolvedValueOnce(answer({ url: "https://www.cvb.bank/personal-fee-schedule.pdf" }));
+    const r3 = await runScheduleSearch({
+      runId: 4, db: asDb(db), create: refused, fetchImpl: vi.fn(async () => new Response("Forbidden", { status: 403, headers: { "content-type": "text/html" } })),
+    });
+    expect(r3.results[0]).toMatchObject({ url: null });
+    expect(r3.results[0].outcome).not.toBe("ok");
   });
 });
 
@@ -175,13 +236,13 @@ describe("institutions without live fees come first (#1030)", () => {
     // A bank counts as uncovered with no live fee record at all, once its held copy is a few days old.
     expect(sqlText).toContain("COALESCE(live.categories, 0) = 0 AS uncovered");
     expect(sqlText).toContain("(uncovered AND settled AND NOT companion_waiting)");
-    // Each lane ranks on its own, and every uncovered row is listed before any covered one.
-    expect(sqlText).toContain("PARTITION BY uncovered ORDER BY requested DESC, priority DESC");
-    expect(sqlText).toMatch(/ORDER BY uncovered DESC, lane_rank ASC\s*$/);
+    // A free find in the same days (a #1327 re-search) is read before a paid search runs.
+    expect(sqlText).toMatch(/AND NOT EXISTS \(\s*SELECT 1 FROM pipeline_attempts found[\s\S]*found\.outcome = 'ok'[\s\S]*\) AS settled/);
+    // Each pool is cut on its own; uncovered rows are never mixed into a covered pool.
+    expect(sqlText).toContain("CASE WHEN uncovered THEN 'uncovered' WHEN priority THEN 'gap_priority' ELSE 'gap_other' END AS pool_lane");
     // Gap-filling is only for banks that already have live fees.
     expect(sqlText).toContain("(NOT uncovered AND priority AND (business_only OR no_overdraft_price OR refers_elsewhere OR stale_copy OR hidden))");
     expect(selection(db).slice(1)).toContain(UNCOVERED_SETTLE_DAYS);
-    expect(selection(db).slice(1)).toContain(SCHEDULE_SEARCH_PER_RUN);
   });
 
   it("asks for the fee schedule, the Truth in Savings disclosure and the deposit account agreement", () => {
@@ -206,6 +267,10 @@ describe("institutions without live fees come first (#1030)", () => {
     const result = await runScheduleSearch({ runId: 4, db: asDb(db), create, fetchImpl, leaderIds: [] });
     expect(result).toMatchObject({ selected: 1, processed: 1, found: 1, documents: 2 });
     expect(fetchImpl).toHaveBeenCalledTimes(2);
+    // A small credit union is searched on its own site only (#1035, #1251), for all three documents.
+    const params = create.mock.calls[0][0];
+    expect(params.tools[0].allowed_domains).toEqual(["pinnaclecu.org"]);
+    expect(String(params.messages[0].content)).toContain("- Each URL must be on the bank's own site (pinnaclecu.org");
     const inserted = companions(db);
     expect(inserted).toHaveLength(2);
     expect(inserted[0]).toContain("https://www.pinnaclecu.org/fee-schedule/");
@@ -249,22 +314,21 @@ describe("gap-filling for covered banks runs on its own small cap (#1030)", () =
       return Promise.resolve([]);
     });
 
-  it("takes a few covered banks a step while the lane is under its cap", async () => {
-    const db = spentDb(0);
-    await runScheduleSearch({ runId: 4, db: asDb(db), create: vi.fn(), leaderIds: [] });
-    const call = db.mock.calls.find((c) => text(c[0]).includes("incomplete-link schedule search"))!;
-    expect(call.slice(-2)).toEqual([SCHEDULE_SEARCH_PER_RUN, GAP_FILL_PER_RUN]);
-  });
-
-  it("selects no covered bank once the lane has spent its cap", async () => {
-    const db = spentDb(GAP_FILL_CAP_MICROUSD);
-    await runScheduleSearch({ runId: 4, db: asDb(db), create: vi.fn(), leaderIds: [] });
+  it.each([
+    { spent: 0, covered: GAP_FILL_PER_RUN },
+    { spent: GAP_FILL_CAP_MICROUSD, covered: 0 },
+  ])("takes $covered covered banks a step after $spent spent; the uncovered lane keeps its limit", async ({ spent, covered }) => {
+    const rows = [
+      ...Array.from({ length: SCHEDULE_SEARCH_PER_RUN + 2 }, (_, index) => ({ ...wells, id: 100 + index, uncovered: true })),
+      ...Array.from({ length: GAP_FILL_PER_RUN + 2 }, (_, index) => ({ ...wells, id: 300 + index, uncovered: false, priority: true })),
+    ];
+    const db = spentDb(spent, rows);
+    const result = await runScheduleSearch({ runId: 4, dryRun: true, db: asDb(db), create: vi.fn(), leaderIds: [] });
+    const lanes = result.results.map((entry) => entry.lane);
+    expect([lanes.filter((lane) => lane === "uncovered").length, lanes.filter((lane) => lane === "gap_fill").length]).toEqual([SCHEDULE_SEARCH_PER_RUN, covered]);
     const spendCall = db.mock.calls.find((c) => text(c[0]).includes("gap-fill lane spend"))!;
     expect(text(spendCall[0])).toContain("pa.detail->>'lane' = 'gap_fill'");
     expect(spendCall.slice(1)).toContain(GAP_FILL_CAP_DAYS);
-    const call = db.mock.calls.find((c) => text(c[0]).includes("incomplete-link schedule search"))!;
-    // The uncovered lane keeps its limit; the gap-fill lane gets none.
-    expect(call.slice(-2)).toEqual([SCHEDULE_SEARCH_PER_RUN, 0]);
   });
 
   it("stops gap-filling within a step when a search takes the lane past its cap", async () => {

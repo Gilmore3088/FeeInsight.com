@@ -8,8 +8,8 @@ import { COVERAGE_LABELS, getPublicSnapshot } from "@/lib/public-stats";
 import { getCurrentUser } from "@/lib/auth";
 import { canAccessAllCategories } from "@/lib/access";
 import { UpgradeGate } from "@/components/upgrade-gate";
-import { CatalogSidebar } from "./catalog-sidebar";
-import { FamilySection, money } from "./family-section";
+import { CatalogSidebar } from "../catalog-sidebar";
+import { FamilySection, money } from "../family-section";
 import { UnstatedAudienceFootnote, UnstatedAudienceMark, hasUnstatedAudience } from "@/components/unstated-audience";
 
 // No live number in the title: counts come from the shared public snapshot in the body.

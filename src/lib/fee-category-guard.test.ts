@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { amountEnvelopeFor } from "@/lib/agents/darwin/envelopes";
 
-import { checkFeeCategory, GUARDED_CATEGORIES, refileCategory } from "./fee-category-guard";
+import { checkFeeCategory, GUARDED_CATEGORIES, refileCategory, refileFromLine } from "./fee-category-guard";
 
 describe("checkFeeCategory", () => {
   it("passes keys it does not guard", () => {
@@ -918,6 +918,50 @@ describe("checkFeeCategory", () => {
     expect(checkFeeCategory("monthly_maintenance", "Monthly maintenance charge per account.").ok).toBe(true);
     expect(checkFeeCategory("monthly_maintenance", "Chase Total Checking Monthly Service Fee").ok).toBe(true);
   });
+
+  // v63 (#1312): real rejected Knox rows (raw ids), filed as [category], and where each belongs.
+  it.each([
+    ["overdraft", "Sobregiros", "overdraft"], // Puerto Rico FCU 262766, $10
+    ["stop_payment", "Suspensión de pago", "stop_payment"], // 262762, $6
+    ["stop_payment", "Suspensión de Pago Cheque Oficial", "stop_payment"], // Vapr FCU 262792
+    ["stop_payment", "Detener pago", "stop_payment"], // Sound FCU 274045
+    ["nsf", "Cheques devueltos", "nsf"], // Vapr FCU 262787, $20
+    ["nsf", "Devolución por fondos insuficientes", "nsf"], // 262789
+    ["cashiers_check", "Cheques de gerente", "cashiers_check"], // 262772, $5
+    ["monthly_maintenance", "Cargo manejo mensual", "monthly_maintenance"], // 262765, $5
+    ["od_protection_transfer", "Transferencias por sobregiros", "od_protection_transfer"], // 262767
+    ["card_replacement", "Reemplazo de la tarjeta ATH perdida o PIN olvidado - Segundo reemplazo", "card_replacement"], // 399886
+    ["paper_statement", "Cargo por estado de cuenta en papel", "paper_statement"], // 399876
+    ["deposited_item_return", "Depósito en cheque devuelto", "deposited_item_return"], // 262763
+    ["wire_domestic_outgoing", "Transferencia bancaria nacional (saliente)", "wire_domestic_outgoing"], // 274064
+    ["nsf", "Deposited Return Items", "deposited_item_return"], // Community First Guam FCU 327091, $10
+    ["stop_payment", "Cashier's Check Stop Payments", "stop_payment"], // 327099, $20
+    ["cashiers_check", "Official Check Stop Payment", "stop_payment"], // 110508
+    ["wire_domestic_incoming", "International wire transfer (Incoming)", "wire_intl_incoming"], // Coast360 FCU 462933, $40
+  ])("v63 reads %s %j as %s", (key, name, to) => {
+    expect(refileCategory(key, name)).toBe(to);
+    expect(checkFeeCategory(to, name).ok).toBe(true);
+  });
+
+  it("v63 keeps other fees out in Spanish and English too", () => {
+    for (const [key, name] of [
+      ["monthly_maintenance", "Cargo manejo mensual (Tarjeta de Débito ATH)"], // a debit card's monthly fee, 262769
+      ["nsf", "Pago por cheque o ACH devuelto"], // a returned payment, 262771
+      ["nsf", "Cheque devuelto (Tarjeta de Crédito)"], // a credit card payment, 262774
+      ["nsf", "Artículo devuelto (motivo distinto a fondos insuficientes)"], // 274060
+      ["stop_payment", "Cashiers Checks – Stop Payments Prohibited"], // 273944, not a fee
+      ["stop_payment", "Cash, wire transfers, cashier's certified | The first business day"], // funds availability, 215133
+    ]) {
+      expect(checkFeeCategory(refileCategory(key, name), name).ok).toBe(false);
+    }
+    // One price for both directions or for domestic and international stays where it was filed.
+    for (const name of ["Wire Transfer - International Incoming or Outgoing", "Incoming Wire (Domestic & International)", "Foreign Check Collection Fee", "Free incoming wire transfers (International Elite)"]) {
+      expect(refileCategory("wire_domestic_incoming", name)).toBe("wire_domestic_incoming");
+    }
+    // English words that only look like the Spanish ones keep live fees where they are.
+    expect(checkFeeCategory("card_replacement", "Express Chip Debit Card Replacement").ok).toBe(true);
+    expect(checkFeeCategory("paper_statement", "Monthly Paper Statement Fee Waived with electronic statement enrollment").ok).toBe(true);
+  });
 });
 
 describe("v54: a free line at the bank's own ATM", () => {
@@ -1028,5 +1072,108 @@ describe("a remote deposit capture product filed as monthly maintenance (v61)", 
 
   it("keeps an account's own maintenance fee", () => {
     expect(checkFeeCategory("monthly_maintenance", "Checking Maintenance Fee").ok).toBe(true);
+  });
+});
+
+/** Knox's provenance note around a source line, as stored on the raw row. */
+function knoxNote(line: string): string {
+  return `Knox deterministic extraction from Rosetta artifact #1. canonical_hint=monthly_maintenance; text_hash=0; excerpt="${line}"`;
+}
+
+describe("activity charges filed as monthly maintenance (v62, #1100)", () => {
+  // Source lines of live monthly_maintenance fees (tuning set, Oct 14): each prices an activity.
+  it.each([
+    ["Service charge", 2, "Service charge of $2 per debit in excess of 6 withdrawals per quarter"],
+    [
+      "Service charge",
+      3,
+      "fee refund will be credited to your account on the last day of your statement cycle. | A service charge of $3.00 will be charged for each withdrawal in excess of six during",
+    ],
+    [
+      "Service charge fee",
+      2,
+      "A service charge fee of $2.00 will be charged for each debit transaction (withdrawal, transfer, or payment out of this account) in excess of six per quarter.",
+    ],
+    ["Per item service charge fee", 25, "A per item service charge fee of $25.00 will be charged for each transaction in excess of the above limitations."],
+    ["Maintenance fee", 5, "A maintenance fee of $5.00 per transaction will be charged if you make more than two withdrawals during a 12 month period."],
+    ["Service charge fee", 10, "A service charge fee of $10.00 will be charged for each debit transaction in excess of six during a month and no more than three of the six may be check/draft."],
+    ["Maintenance fee", 1, "A maintenance fee of $1 will be imposed for every debit transaction (withdrawal, check paid, automatic transfer or payment out of your account) over six per quarter"],
+    // First holdout's misses (Oct 14): the nearer unit wins, and a unit in parentheses counts.
+    ["per monthly fee if balance falls below", 9, "$3.00 per monthly fee if balance falls below $150, $9 per item charge after 3 withdrawals per month. ACH and ATM transactions are considered withdrawals."],
+    ["Service charge", 3, "The following additional terms apply to this account: $3.00 Service Charge (Per Check Charge) Assessed per item if over six (6) transactions per four (4) week period."],
+  ])("re-files %s ($%d) to account research from its line", (name, amount, line) => {
+    const context = { amount, conditions: knoxNote(line) };
+    const verdict = checkFeeCategory("monthly_maintenance", name, context);
+    expect(verdict.ok).toBe(false);
+    expect(refileFromLine("monthly_maintenance", name, context)).toBe("account_research");
+  });
+
+  it.each([
+    ["Service charge", 5, "1A $5.00 service charge will be applied to each share transfer. Funds must be available in order to be transferred."],
+    ["Service charge", 10, "Should you need to withdraw the funds before October, you may leave your account open, but there is a $10.00 service charge each time you withdraw money"],
+  ])("fails %s ($%d), an activity charge with no limit, without re-filing it", (name, amount, line) => {
+    const context = { amount, conditions: knoxNote(line) };
+    expect(checkFeeCategory("monthly_maintenance", name, context).ok).toBe(false);
+    expect(refileFromLine("monthly_maintenance", name, context)).toBeNull();
+  });
+
+  // Same tuning set: the account's own fee, priced per period, with a per-check charge on top.
+  it.each([
+    ["NOW Account Checking Maintenance fee", 8, "A maintenance fee of $8.00 plus .50¢ per check will be imposed every statement cycle unless you maintain either a minimum daily balance of $750.00"],
+    ["Maintenance charge", 10, "If your balance drops below the required balance there is a maintenance charge of $10.00 per month and $.35 per debit."],
+    ["NOW Account Service charge", 10, "If the average falls below the requirement, a service charge of $10.00 and $.25 per check is assessed.*"],
+    ["low balance service charge plus cents per check", 10, "$10.00 low balance service charge plus $0.10 cents per check"],
+    ["Fees – A service charge", 5, "Fees – A service charge of $5.00 will be charged each statement cycle. See Additional Terms section for options to offset"],
+    ["Service charge fee", 10, "Additional Information Regarding Your Account: A service charge fee of $10.00 will be charged each calendar quarter"],
+    ["Monthly Fee", 5, "Monthly Transaction Fees: | $0.05 per item over 200, plus $5.00 monthly fee"],
+    ["Regular Checking Service Charge", 5, "Regular Checking Service Charge | $5.00 per month (age 18-59) $0.20 per check over 50 checks"],
+    ["Service charge + per debit item fee", 10, "$10 service charge + $0.10 per debit item fee"],
+    ["Monthly Service Charge", 30, "Monthly Service Charge ...................................................... $ 30.00 | Items Deposited (Per Item)"],
+    ["Basic Monthly Service Fee", 5, "Basic Monthly Service Fee | $5.00 | Insufficient Funds Returned | $32.00 per item"],
+    // A unit followed by a colon labels the next price.
+    ["Account fees: Monthly maintenance fee", 8, "Account fees: Monthly maintenance fee: $8.00 Per check: $0.20 Per deposited item: $0.07 Per deposit or credit: $0.25"],
+    ["Max Money Checking Monthly service charge", 8, "Max Money Checking | $8/month if balance falls below $2,500 $5/withdrawals over two (2)"],
+    ["Monthly Fee", 4.95, "Monthly Fee $4.95, plus $1.50 for each transaction over 5"],
+    // First holdout's false positive: the price's first appearance decides, not another cell's.
+    ["Fees: Monthly Maintenance Fee", 1, "Fees: Monthly Maintenance Fee: $1.00 | NSF Fee: $30.00 | Stop Payment Fee (checks): $10 | Check Image Fee : $1 per item"],
+  ])("keeps %s ($%d), the account's periodic fee", (name, amount, line) => {
+    const context = { amount, conditions: knoxNote(line) };
+    expect(checkFeeCategory("monthly_maintenance", name, context)).toEqual({ ok: true });
+    expect(refileFromLine("monthly_maintenance", name, context)).toBeNull();
+  });
+
+  it("leaves a row with no excerpt or no amount to its name", () => {
+    expect(checkFeeCategory("monthly_maintenance", "Service charge", { amount: 3 }).ok).toBe(true);
+    expect(checkFeeCategory("monthly_maintenance", "Service charge", { conditions: knoxNote("$3.00 for each withdrawal over six") }).ok).toBe(true);
+  });
+
+  it("reads only monthly maintenance", () => {
+    const context = { amount: 2, conditions: knoxNote("Service charge of $2 per debit in excess of 6 withdrawals per quarter") };
+    expect(refileFromLine("account_research", "Service charge", context)).toBeNull();
+  });
+});
+
+describe("service charges for another service filed as monthly maintenance (v62, #1100)", () => {
+  // Live monthly_maintenance names, tuning set, Oct 14.
+  it.each([
+    "Stop & Reissue Service Charge",
+    "Claims/Payment Investigation Service Charge",
+    "General Service (Consumer) Other IRS Processing Service Charge",
+    "ATM Service Charge (WSB and AllPoint Network ATMs excluded)",
+    "Negative Balance Service Charge (after 20 calendar days of being overdrawn)",
+    "Per Item Service Charge",
+    "Service charge per transfer",
+  ])("takes %s out of monthly_maintenance", (name) => {
+    expect(checkFeeCategory("monthly_maintenance", name).ok).toBe(false);
+  });
+
+  it.each([
+    "Service charge + per debit item fee",
+    "low balance service charge plus cents per check",
+    "Cash Rewards/Super Checking monthly service fee (per month)",
+    "Monthly maintenance fee per statement cycle",
+    "Monthly Service Charge",
+  ])("keeps %s", (name) => {
+    expect(checkFeeCategory("monthly_maintenance", name).ok).toBe(true);
   });
 });

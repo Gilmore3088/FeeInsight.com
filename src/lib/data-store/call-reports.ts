@@ -20,13 +20,13 @@ const SAME_SCALE_SOURCES = financialSourceFilter("inf");
  * prior YTD (Q1 stands alone), or NULL when the prior quarter is missing. Reading the raw
  * YTD as a quarter doubled Q2 credit-union income (Q2 2026: $5.16B YTD vs $2.64B in the quarter).
  */
-const PRIOR_QUARTER_JOIN = `LEFT JOIN institution_financial_records prev
+export const PRIOR_QUARTER_JOIN = `LEFT JOIN institution_financial_records prev
        ON inf.source = 'ncua'
       AND prev.institution_id = inf.institution_id
       AND prev.source = inf.source
       AND EXTRACT(QUARTER FROM inf.report_date::date) > 1
       AND prev.report_date = TO_CHAR(DATE_TRUNC('quarter', inf.report_date::date)::date - 1, 'YYYY-MM-DD')`;
-const QUARTER_SC = `(CASE
+export const QUARTER_SC = `(CASE
        WHEN inf.source <> 'ncua' OR EXTRACT(QUARTER FROM inf.report_date::date) = 1 THEN inf.service_charge_income
        WHEN prev.service_charge_income IS NOT NULL THEN inf.service_charge_income - prev.service_charge_income
      END)`;

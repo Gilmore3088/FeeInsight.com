@@ -614,6 +614,42 @@ function namesItsBand(row: string, feeName: string): boolean {
   return moneyTokens(feeName).some((named) => bands.some((t) => Math.abs(t.value - named.value) < 0.005));
 }
 
+/**
+ * #1196: a price whose decimal point the PDF text dropped ("Dormant accounts | $15 00 per
+ * month Nonsufficient funds | $35 00", Addition Financial 8629). Knox read "$15" as the price and
+ * gave the cents and their unit to the next fee ("00 per month Nonsufficient funds", monthly).
+ * The point goes back ("$15.00"), so the cents and "per month" stay with the dormant fee.
+ * "00" cents always; other cents only when the text drops the point on "00" prices too and the
+ * cents end their cell ("$2 50 each", "$4 95 |"), so a count after a price ("$5 10 items") stays.
+ * Never a box size ("$5 10 x 10") or a longer number.
+ *
+ * #1305: two more shapes of the same price. A footnote star right after the cents ends them
+ * ("ATM Transactions (per item) | $1 50* after 8/mo", Members 1st 7517, read as $1), and the
+ * star stays a mark, never a digit. A point kept with a space after it ("Loan Skip A Pay Fee
+ * .... $29. 95/ea ch", Xplore 6636, read as $29) is the same dropped point. Each shape is
+ * counted on its own: ". 00" prices never vouch for "$2 50", which in a letter-spaced text is
+ * $250. Cents after ". " end their cell too, since a sentence can end on a price and go on
+ * with another number ("$500. 10-year draw period").
+ *
+ * #1334: the source check reads the text the same way Knox does, so a fee read with its cents
+ * cut off ("$29" from "$29. 95", "$1" from "$1 50*") no longer traces, and the right price does.
+ */
+const DROPPED_POINT_SHAPES = [" ", "\\. "].map((dropped) => ({
+  zero: new RegExp(String.raw`\$(\s?)(\d{1,3}(?:,\d{3})+|\d{1,4})${dropped}(00)(?![\d.,])(?!\s*[x×]\s*\d)`, "g"),
+  cents: new RegExp(String.raw`\$(\s?)(\d{1,3}(?:,\d{3})+|\d{1,4})${dropped}(\d{2})(?![\d.,])(?=[*†‡]|\s*(?:$|\||\/|each\b|per\b|ea\b))`, "gim"),
+}));
+const DROPPED_POINT_MIN = 3;
+
+export function withDroppedDecimalPoints(text: string): string {
+  const withPoint = (_whole: string, gap: string, dollars: string, cents: string) => `$${gap}${dollars}.${cents}`;
+  return DROPPED_POINT_SHAPES.reduce((current, shape) => {
+    const zeros = current.match(shape.zero)?.length ?? 0;
+    if (zeros === 0) return current;
+    const restored = current.replace(shape.zero, withPoint);
+    return zeros < DROPPED_POINT_MIN ? restored : restored.replace(shape.cents, withPoint);
+  }, text);
+}
+
 // Callers check many fees against one text in a row (Knox's self-check, a document's
 // live fees); split it once.
 let lastText: string | null = null;
@@ -719,14 +755,28 @@ function policyAmount(row: string, amount: number): boolean {
   });
 }
 
+/** Callers check many fees against one text in a row; the restored text is kept for the last one. */
+let lastRawText: string | null = null;
+let lastDroppedPointText = "";
+
+function droppedPointText(text: string): string {
+  if (text !== lastRawText) {
+    lastDroppedPointText = withDroppedDecimalPoints(text);
+    lastRawText = text;
+  }
+  return lastDroppedPointText;
+}
+
 export function checkFeeAgainstSource(
-  text: string | null | undefined,
+  rawText: string | null | undefined,
   feeName: string,
   amount: number,
   categoryPattern: string,
   canonicalFeeKey?: string | null,
 ): SourceCheckResult {
-  if (!text || !text.trim()) return { ok: false, reason: "no_source_text" };
+  if (!rawText || !rawText.trim()) return { ok: false, reason: "no_source_text" };
+  // #1334: prices whose decimal point the PDF text dropped read as Knox reads them ("$29. 95" is $29.95).
+  const text = droppedPointText(rawText);
   // An explicitly eliminated fee is $0 even when the bank does not print a zero.
   // Only the exact scoped name/amount pair derived from that completed statement passes.
   const statements = scopedFeeStatements(text);
@@ -907,13 +957,20 @@ function pricedPerAmount(row: string, amount: number): boolean {
  * A range's upper end ("the typical 2.5-3.5%") is not a rate the bank charges. */
 const RATE = /(?<![\d.]|\d\s?[-–]\s?)(\d{1,3}(?:\.\d{1,4})?)\s*(?:%|percent\b)/gi;
 const INTEREST_WORDS = /\b(apy|apr|annual percentage|interest|dividend|rate earned|yield)\b/i;
+/**
+ * A cash-back or rewards rate ("Earn 1% on all purchases") is paid to the customer, not charged
+ * (post-merge review of #1237). It only stops the share-of-base reading below: a row that names its
+ * fee ("Visa Rewards Card | Foreign Transaction Fee | 1% of each transaction") still traces.
+ */
+const REWARD_WORDS = /\b(earns?|earned|cash ?back|rewards?)\b/i;
 const RATE_FEE_WORDS = /\b(fees?|charges?|assessments?|assessed)\b/i;
 /**
  * #1102: a rate stated as a share of what it is charged on ("1% of foreign transaction amount",
  * "1.00% of Amount", "10% of total", "2% of each check presented") is the charge itself, on a
  * schedule row that never says "fee". A share of a balance is left out: it reads like interest.
  */
-const RATE_OF_BASE = /(?:%|\bpercent)\s*(?:of|on)\s+(?:the\s+|each\s+|all\s+|any\s+|total\s+)?(?:[a-z$]+\s+){0,3}?(transactions?|amount|checks?|coins?|total|value|purchases?|payments?|advances?|withdrawals?|items?)\b/i;
+// No balance anywhere in the base ("0.5% of the total balance", "1% of the average daily balance amount").
+const RATE_OF_BASE = /(?:%|\bpercent)\s*(?:of|on)\s+(?![^|.;]{0,40}\bbalances?\b)(?:the\s+|each\s+|all\s+|any\s+|total\s+)?(?:[a-z$]+\s+){0,3}?(transactions?|amount|checks?|coins?|total|value|purchases?|payments?|advances?|withdrawals?|items?)\b/i;
 
 /**
  * Pure: is this percentage fee stated in its source text? The rate's twin of
@@ -950,7 +1007,7 @@ export function checkRateAgainstSource(
     // The fee word may come from a heading just above ("Coin Counting Fees" / "Coin
     // Counting | 10% of total"); interest wording is judged on the row itself.
     const context = lines.slice(Math.max(0, i - CATEGORY_LOOKBACK_LINES), i + 1).join(" ");
-    if (INTEREST_WORDS.test(row) || !(RATE_FEE_WORDS.test(`${feeName} ${row} ${context}`) || RATE_OF_BASE.test(row))) {
+    if (INTEREST_WORDS.test(row) || !(RATE_FEE_WORDS.test(`${feeName} ${row} ${context}`) || (RATE_OF_BASE.test(row) && !REWARD_WORDS.test(row)))) {
       best = "amount_not_the_fee";
       continue;
     }

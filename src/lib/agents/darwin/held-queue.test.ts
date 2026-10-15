@@ -9,7 +9,8 @@ describe("Darwin held queue (#1115 step 1)", () => {
     expect(labelFor("not_judged")).toBe("Not judged yet");
     expect(labelFor("outside_envelope")).toBe("Amount outside the category's plausible range");
     expect(wayOutFor("peer_outlier").hasExit).toBe(true);
-    expect(wayOutFor("conditional_zero")).toMatchObject({ hasExit: false });
+    expect(wayOutFor("conditional_zero")).toMatchObject({ hasExit: true });
+    expect(wayOutFor("insert_failed")).toMatchObject({ hasExit: false });
     expect(wayOutFor("something_new")).toMatchObject({ hasExit: false, text: "None recorded for this reason." });
   });
 

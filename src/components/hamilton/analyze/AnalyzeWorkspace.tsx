@@ -16,6 +16,7 @@ import { renderInline } from "./markdown";
 import { inferFeeCategory } from "@/lib/hamilton/infer-category";
 import { basketItemId } from "@/lib/hamilton/report-basket";
 import { HAMILTON_VERSION } from "@/lib/hamilton/voice";
+import { withConversationContext, type ConversationTurn } from "@/lib/hamilton/conversation-context";
 import { HAMILTON_PAUSED_MESSAGE, isHamiltonPausedText } from "@/lib/hamilton/provider-paused";
 import { STANDARD_METHOD, type AuditTrail } from "@/lib/hamilton/audit-trail";
 import { getDisplayName } from "@/lib/fee-taxonomy";
@@ -149,15 +150,6 @@ interface AnalyzeWorkspaceProps {
  * and how it was built. Hamilton shows evidence; it never recommends a price.
  */
 /**
- * Each Ask starts a fresh written answer, so a follow-up ("how does this compare nationally?")
- * carries the question before it; otherwise "this" has nothing to point at.
- */
-export function withEarlierQuestion(question: string, earlier: string): string {
-  if (!earlier || earlier === question) return question;
-  return `${question}\n\n(For context, my previous question was: "${earlier}")`;
-}
-
-/**
  * The Evidence rows ("- Label: Value — note") drawn as figure tiles in the shared exhibit frame;
  * a row with no value is a group heading. The figures are the answer's own, unchanged.
  */
@@ -198,6 +190,9 @@ export function EvidenceExhibit({ rows }: { rows: ParsedResponse["evidence"] }) 
     </ExhibitFrame>
   );
 }
+
+/** How long a sent ask holds the composer before the page's own busy state must have taken over. */
+const ASK_PENDING_MS = 10_000;
 
 const ASK_STAGES = [
   { key: "reading", label: "Reading the data" },
@@ -328,11 +323,18 @@ function AnalyzeConversationWorkspace({
   const currentLeadRef = useRef<string | null>(null);
   const answerHeadingRef = useRef<HTMLDivElement>(null);
   const lastPromptRef = useRef<string>("");
-  // The question before this one, so a follow-up's written answer knows what "this" refers to.
-  const previousPromptRef = useRef<string>("");
+  // The earlier turns of this conversation (question and one-line answer), so a follow-up's
+  // written answer knows what "this", "those" and "us" refer to. Kept in step with `thread`
+  // synchronously, so an answer sent right after an ask never reads a stale list.
+  const historyRef = useRef<ConversationTurn[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const active = useRef(true);
   const answerGeneration = useRef(0);
+  // When the last ask was sent, until React state shows it in flight (`engineBusy` or the chat's
+  // `isLoading`). `isLoading` and `engineBusy` only change on a later render, so without this a
+  // second Enter, Ask click or "Ask next" pick in the same instant could send the question again.
+  // A stale mark expires, so a lost signal can never lock the composer.
+  const askPendingSince = useRef<number | null>(null);
 
   const { messages, sendMessage, status, setMessages, error: chatError, clearError, stop } = useChat({
     transport: new DefaultChatTransport({
@@ -346,6 +348,7 @@ function AnalyzeConversationWorkspace({
       }),
     }),
     onFinish: async ({ message, isError, isAbort }) => {
+      askPendingSince.current = null;
       const content = extractTextFromMessage(message);
       // A failed or empty reply is never shown as an answer, and never saved.
       if (!active.current || readOnlyReason || isError || isAbort || !content.trim()) return;
@@ -401,6 +404,11 @@ function AnalyzeConversationWorkspace({
 
   const isLoading = status === "streaming" || status === "submitted";
 
+  // Once the page's own state shows the ask in flight (or failed), that state guards the composer.
+  useEffect(() => {
+    if (isLoading || engineBusy || chatError) askPendingSince.current = null;
+  }, [isLoading, engineBusy, chatError]);
+
   // A failed request must never lose the question: put it back in the input.
   useEffect(() => {
     if (chatError && lastPromptRef.current) {
@@ -418,7 +426,7 @@ function AnalyzeConversationWorkspace({
   const answerInProse = useCallback(
     (question: string) => {
       if (!active.current || readOnlyReason || question !== lastPromptRef.current) return;
-      sendMessage({ text: withEarlierQuestion(question, previousPromptRef.current) });
+      sendMessage({ text: withConversationContext(question, historyRef.current) });
     },
     [sendMessage, readOnlyReason],
   );
@@ -427,12 +435,15 @@ function AnalyzeConversationWorkspace({
     (question: string) => {
       const trimmed = question.trim();
       if (!active.current || readOnlyReason || !trimmed || isLoading || engineBusy) return;
+      const pendingSince = askPendingSince.current;
+      if (pendingSince !== null && Date.now() - pendingSince < ASK_PENDING_MS) return;
+      askPendingSince.current = Date.now();
       answerGeneration.current += 1;
       if (lastPromptRef.current && lastPromptRef.current !== trimmed) {
-        previousPromptRef.current = lastPromptRef.current;
         // The answer just read moves up into the conversation, collapsed to its question and lead.
-        const earlier = lastPromptRef.current;
-        setThread((t) => [...t, { question: earlier, lead: currentLeadRef.current }]);
+        const earlier: ConversationTurn = { question: lastPromptRef.current, lead: currentLeadRef.current };
+        historyRef.current = [...historyRef.current, earlier];
+        setThread((t) => [...t, earlier]);
       }
       lastPromptRef.current = trimmed;
       setStartedAt(Date.now());
@@ -458,10 +469,11 @@ function AnalyzeConversationWorkspace({
   /** Starts over: no earlier answers, no carried context, the start screen. */
   const newQuestion = useCallback(() => {
     if (isLoading) stop();
+    askPendingSince.current = null;
     answerGeneration.current += 1;
     clearError();
     setThread([]);
-    previousPromptRef.current = "";
+    historyRef.current = [];
     lastPromptRef.current = "";
     setEngineBusy(false);
     setAskedQuestion(null);

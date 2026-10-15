@@ -18,13 +18,15 @@ export interface SourceRef {
   label: string;
   /** e.g. "published_fee_catalog", "institution_financial_records", "fee_change_records". */
   table?: string;
+  /** A subset of the table's rows: "state_post" is a state regulator's own post in reg_articles, not a federal release. */
+  kind?: "state_post";
   url?: string;
   /** ISO date of the data, when it has one (a report quarter, a change date). */
   asOf?: string | null;
 }
 
 /** Bump when any builder's math or wording changes, so a saved output names the engine that made it. */
-export const WORKSPACE_ENGINE_VERSION = "1.17.7";
+export const WORKSPACE_ENGINE_VERSION = "1.18.1";
 
 /** A figure the bank gave Hamilton, with who gave it and when. */
 export interface ClientFactRef {

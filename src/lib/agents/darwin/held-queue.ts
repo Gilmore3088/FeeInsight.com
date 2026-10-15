@@ -35,7 +35,10 @@ const WAY_OUT: Partial<Record<HoldCause, { text: string; hasExit: boolean }>> = 
   outside_envelope: { text: RANGE_EXIT, hasExit: true },
   peer_outlier: { text: RANGE_EXIT, hasExit: true },
   category_lesson_pending: { text: "Judged again when the category guard's version rises.", hasExit: true },
-  conditional_zero: { text: "None yet: nothing looks at it again (#1115 step 2).", hasExit: false },
+  conditional_zero: {
+    text: "Each verify step settles it (#1115): a duplicate of a priced fee on the same document, verified at $0 when the bank's schedule prices it free, else rejected for Knox's next read.",
+    hasExit: true,
+  },
   insert_failed: { text: "None yet: nothing looks at it again (#1115 step 2).", hasExit: false },
 };
 

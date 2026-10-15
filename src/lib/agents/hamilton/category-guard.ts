@@ -5,6 +5,7 @@ import {
   GUARDED_CATEGORIES,
   PLAIN_RETURNED_ITEM,
   refileCategory,
+  refileFromLine,
   type CategoryGuardCode,
 } from "@/lib/fee-category-guard";
 import { isRetiredCategory, splitLiveCategory, FOLD_RULES_VERSION } from "@/lib/fee-fold";
@@ -14,6 +15,7 @@ import { categoryGuardFlag } from "@/lib/agents/hamilton/publish";
 import { secondLook } from "@/lib/agents/hamilton/second-look";
 import { TAXONOMY_FOLD_CHECK, TAXONOMY_FOLD_KIND } from "@/lib/agents/hamilton/taxonomy-fold";
 import { inSavepoint } from "@/lib/agents/savepoint";
+import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
 
 type SqlTag = typeof sql;
 
@@ -115,7 +117,7 @@ async function selectLiveGuardedFees(db: SqlTag, institutionId?: number): Promis
   if (institutionId) {
     return db<LivePublishedRow[]>`
       SELECT fp.fee_published_id, fp.lineage_ref, fp.institution_id, fr.source_document_id, fp.canonical_fee_key, fp.fee_name,
-             fp.amount, fr.conditions, ${documentNsfAmount(db)}
+             fp.amount, COALESCE(fr.extraction_note, fr.conditions) AS conditions, ${documentNsfAmount(db)}
         FROM published_fee_records fp
         LEFT JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
         LEFT JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
@@ -127,7 +129,7 @@ async function selectLiveGuardedFees(db: SqlTag, institutionId?: number): Promis
   }
   return db<LivePublishedRow[]>`
     SELECT fp.fee_published_id, fp.lineage_ref, fp.institution_id, fr.source_document_id, fp.canonical_fee_key, fp.fee_name,
-           fp.amount, fr.conditions, ${documentNsfAmount(db)}
+           fp.amount, COALESCE(fr.extraction_note, fr.conditions) AS conditions, ${documentNsfAmount(db)}
       FROM published_fee_records fp
       LEFT JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
       LEFT JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
@@ -333,7 +335,11 @@ export function restoreTarget(
   if (hand) return hand;
   // Or the guard's own re-file rule names it: express card replacements kept coming back as
   // card_replacement and going down again (235, 12213, 29782, Oct 6-9); rush_card is their home.
-  const to = splitLiveCategory(row.canonical_fee_key, row.fee_name)?.to ?? restoreRefile(row.canonical_fee_key, row.fee_name);
+  // Or its own source line does (guard v62): an excess activity charge filed as monthly maintenance.
+  const to =
+    splitLiveCategory(row.canonical_fee_key, row.fee_name)?.to ??
+    restoreRefile(row.canonical_fee_key, row.fee_name) ??
+    refileFromLine(row.canonical_fee_key, row.fee_name, row);
   // A retired key is no home: Hamilton never publishes it.
   if (!to || to === row.canonical_fee_key || isRetiredCategory(to)) return null;
   const amount = normalizedAmount(row.amount) ?? 0;
@@ -388,25 +394,118 @@ function restoreRefile(canonicalFeeKey: string, feeName: string): string | null 
 }
 
 /**
+ * Which live fee is the same fee as one being moved. Moving any fee but an excess activity fee, a
+ * live fee of the target type at the same bank and price is its twin, whatever its name: an
+ * express card replacement's twin is the bank's live rush card fee at that price (235 and 100126),
+ * and two express card lines at one price are one fee (350 and 27687 at institution 6042).
+ * Moving an excess activity fee (guard v62), the bank's unrelated account research fee at the same
+ * price is not its twin ("Reconciliation" $5, "Return Mail, per item" $5, "Returned mail
+ * (monthly)" $3, "Account research" $25 beside 124670, 135850 and 142436; #1283 review, Oct 15):
+ * only a fee with the same name, or another excess activity fee, is. A live fee reads as an excess
+ * activity fee by its name; the fee being moved also by its own source line (`refileFromLine`),
+ * since those are named "Service charge" or "Maintenance fee". The pattern runs in TS and Postgres.
+ */
+const EXCESS_ACTIVITY_NAME_PATTERN = String.raw`(excess|withdraw|over[- ]?limit|transaction limit)`;
+const EXCESS_ACTIVITY_NAME = new RegExp(EXCESS_ACTIVITY_NAME_PATTERN, "i");
+
+const nameKey = (name: string | null | undefined) => (name ?? "").trim().toLowerCase();
+
+interface LiveRefile extends Restore {
+  /** The fee being moved is an excess activity fee, by its name or its own source line. */
+  excess: boolean;
+}
+
+/** Pure: whether a refile moves an excess activity fee. */
+export function movesExcessActivityFee(restore: Restore): boolean {
+  return EXCESS_ACTIVITY_NAME.test(restore.row.fee_name) ||
+    refileFromLine(restore.row.canonical_fee_key, restore.row.fee_name, restore.row) === restore.to;
+}
+
+/**
+ * Pure: the refiles that stay, one per bank, type, price and fee. Two refiles at one bank, type and
+ * price are one fee, unless one of them moves an excess activity fee: then they are one fee only
+ * with the same name or when both are excess activity fees.
+ */
+export function uniqueRefiles(refiles: Restore[]): LiveRefile[] {
+  const kept: LiveRefile[] = [];
+  for (const restore of refiles) {
+    const candidate = { ...restore, excess: movesExcessActivityFee(restore) };
+    const same = kept.some((other) =>
+      String(other.row.institution_id) === String(candidate.row.institution_id) &&
+      other.to === candidate.to &&
+      normalizedAmount(other.row.amount) === normalizedAmount(candidate.row.amount) &&
+      (!(other.excess || candidate.excess) ||
+        nameKey(other.row.fee_name) === nameKey(candidate.row.fee_name) ||
+        (other.excess && candidate.excess)));
+    if (!same) kept.push(candidate);
+  }
+  return kept;
+}
+
+/**
  * Moves live fees the guard fails to the top-50 type `restoreTarget` gives them, published and
- * verified rows alike, unless the same fee is already live there. Each move is logged as a fold.
- * Returns the ids moved (a dry run counts every candidate).
+ * verified rows alike, unless the same fee is already live there: any live fee of that type and
+ * price, or, when an excess activity fee moves, one with the same name or an excess activity name.
+ * Each move is logged as a fold. Returns the ids moved (a dry run runs the same test, read only).
  */
 async function refileLiveFees(
   db: SqlTag,
   refiles: Restore[],
   options: { dryRun: boolean; runId: number },
 ): Promise<Set<number>> {
-  // One fee per institution, type and price.
-  const seen = new Set<string>();
-  const unique = refiles.filter((restore) => {
-    const key = `${restore.row.institution_id}|${restore.to}|${normalizedAmount(restore.row.amount)}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
+  const unique = uniqueRefiles(refiles);
   if (unique.length === 0) return new Set();
-  if (options.dryRun) return new Set(unique.map((restore) => Number(restore.row.fee_published_id)));
+  if (options.dryRun) return wouldRefile(db, unique);
+  return applyLiveRefiles(db, unique, options);
+}
+
+/**
+ * The excess flag per move, as text. postgres.js types a JS array by its first element, so a
+ * boolean array is sent as a scalar `bool` and `$n::boolean[]` fails ("cannot cast type boolean
+ * to boolean[]"), which the catch below turned into zero re-files on Oct 15. Send text and cast
+ * `::text[]::boolean[]`: a text array cast straight to `::boolean[]` reads every flag as false
+ * (checked on Postgres 16 with postgres.js 3.4.8).
+ */
+export function excessFlags(unique: LiveRefile[]): string[] {
+  return unique.map((restore) => (restore.excess ? "true" : "false"));
+}
+
+/** The dry run's count: the same live-twin test as the move, read only. */
+async function wouldRefile(db: SqlTag, unique: LiveRefile[]): Promise<Set<number>> {
+  try {
+    const rows = await inSavepoint(db, (scope) => scope<{ fee_published_id: number | string }[]>`
+      SELECT fp.fee_published_id
+        FROM published_fee_records fp
+        JOIN unnest(${unique.map((restore) => Number(restore.row.fee_published_id))}::bigint[],
+                    ${unique.map((restore) => restore.row.canonical_fee_key)}::text[],
+                    ${unique.map((restore) => restore.to)}::text[],
+                    ${excessFlags(unique)}::text[]::boolean[]) AS v(fee_published_id, from_key, to_key, excess)
+          ON fp.fee_published_id = v.fee_published_id
+       WHERE fp.canonical_fee_key = v.from_key
+         AND fp.rolled_back_at IS NULL
+         AND NOT EXISTS (
+           SELECT 1 FROM published_fee_records live
+            WHERE live.rolled_back_at IS NULL
+              AND live.institution_id = fp.institution_id
+              AND live.canonical_fee_key = v.to_key
+              AND live.amount IS NOT DISTINCT FROM fp.amount
+              AND (NOT v.excess
+                   OR lower(btrim(live.fee_name)) = lower(btrim(fp.fee_name))
+                   OR live.fee_name ~* ${EXCESS_ACTIVITY_NAME_PATTERN})
+         )
+    `);
+    return new Set(rows.map((row) => Number(row.fee_published_id)));
+  } catch (error) {
+    console.error("category guard live re-file dry run failed:", error);
+    return new Set();
+  }
+}
+
+async function applyLiveRefiles(
+  db: SqlTag,
+  unique: LiveRefile[],
+  options: { runId: number },
+): Promise<Set<number>> {
   try {
     return await inSavepoint(db, async (scope) => {
       const moved = await scope<{ fee_published_id: number | string; lineage_ref: number | string; canonical_fee_key: string }[]>`
@@ -414,7 +513,8 @@ async function refileLiveFees(
            SET canonical_fee_key = v.to_key
           FROM unnest(${unique.map((restore) => Number(restore.row.fee_published_id))}::bigint[],
                       ${unique.map((restore) => restore.row.canonical_fee_key)}::text[],
-                      ${unique.map((restore) => restore.to)}::text[]) AS v(fee_published_id, from_key, to_key)
+                      ${unique.map((restore) => restore.to)}::text[],
+                      ${excessFlags(unique)}::text[]::boolean[]) AS v(fee_published_id, from_key, to_key, excess)
          WHERE fp.fee_published_id = v.fee_published_id
            AND fp.canonical_fee_key = v.from_key
            AND fp.rolled_back_at IS NULL
@@ -424,6 +524,9 @@ async function refileLiveFees(
                 AND live.institution_id = fp.institution_id
                 AND live.canonical_fee_key = v.to_key
                 AND live.amount IS NOT DISTINCT FROM fp.amount
+                AND (NOT v.excess
+                     OR lower(btrim(live.fee_name)) = lower(btrim(fp.fee_name))
+                     OR live.fee_name ~* ${EXCESS_ACTIVITY_NAME_PATTERN})
            )
         RETURNING fp.fee_published_id, fp.lineage_ref, fp.canonical_fee_key
       `;
@@ -453,6 +556,35 @@ async function refileLiveFees(
   }
 }
 
+/** The newest completed stored text of each document. */
+async function ownStoredTexts(db: SqlTag, documentIds: Array<number | string | null>): Promise<Map<number, string>> {
+  const ids = [...new Set(documentIds.filter((id): id is number | string => id != null).map(Number))];
+  if (ids.length === 0) return new Map();
+  const rows = await inSavepoint(db, (scope) => scope<{ source_document_id: number | string; normalized_text: string }[]>`
+    SELECT DISTINCT ON (source_document_id) source_document_id, normalized_text
+      FROM agent_source_texts
+     WHERE source_document_id = ANY(${ids}::bigint[])
+       AND status = 'completed'
+       AND normalized_text IS NOT NULL
+     ORDER BY source_document_id, id DESC
+  `);
+  return new Map(rows.map((row) => [Number(row.source_document_id), row.normalized_text]));
+}
+
+/** Pure: does a takedown trace, at its price and under the type it comes back as, on its own stored text? */
+export function tracesOnOwnText(
+  row: Pick<TakenDownRow, "source_document_id" | "fee_name" | "amount">,
+  to: string,
+  texts: Map<number, string>,
+): boolean {
+  if (row.source_document_id == null) return false;
+  const text = texts.get(Number(row.source_document_id));
+  const amount = normalizedAmount(row.amount);
+  if (!text || amount == null) return false;
+  const result = checkFeeAgainstSource(text, row.fee_name, amount, ".", to);
+  return result.ok || result.reason === "tiered_fee";
+}
+
 /**
  * A guard fix (a new CATEGORY_GUARD_VERSION) can make an earlier takedown wrong. Fees the
  * guard took down that today's guard passes come back live, with their verified row, unless
@@ -469,7 +601,7 @@ async function restorePassingTakedowns(
   try {
     rows = await inSavepoint(db, (scope) => scope<TakenDownRow[]>`
       SELECT fp.fee_published_id, fp.lineage_ref, fp.institution_id, fr.source_document_id, fp.canonical_fee_key,
-             fp.fee_name, fp.amount, fr.conditions, ${documentNsfAmount(scope)}
+             fp.fee_name, fp.amount, COALESCE(fr.extraction_note, fr.conditions) AS conditions, ${documentNsfAmount(scope)}
         FROM published_fee_records fp
         LEFT JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
         LEFT JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
@@ -483,13 +615,28 @@ async function restorePassingTakedowns(
     console.error("category guard restore read failed:", error);
     return none;
   }
+  const candidates = rows.flatMap((row) => {
+    const to = restoreTarget(row);
+    return to ? [{ row, to }] : [];
+  });
+  if (candidates.length === 0) return none;
+  // Guard v63 (#1312, James Oct 15): a takedown comes back only when the fee traces on its own
+  // stored text (the shared source check). A fee with no document, or a document with no stored
+  // text, stays down: of the five stops on official and cashier's checks v63 passes, only 13389
+  // (doc 13654) traces; 1120, 11233 and 11747 have no document and 7924's has no stored text.
+  let texts: Map<number, string>;
+  try {
+    texts = await ownStoredTexts(db, candidates.map((candidate) => candidate.row.source_document_id));
+  } catch (error) {
+    console.error("category guard restore text read failed:", error);
+    return none;
+  }
   const passing: Restore[] = [];
   // One re-filed fee per institution, type and price: two copies of one schedule's express card
   // line (350 and 27687 at institution 6042) are one fee.
   const refiledSeen = new Set<string>();
-  for (const row of rows) {
-    const to = restoreTarget(row);
-    if (!to) continue;
+  for (const { row, to } of candidates) {
+    if (!tracesOnOwnText(row, to, texts)) continue;
     if (to !== row.canonical_fee_key) {
       const key = `${row.institution_id}|${to}|${normalizedAmount(row.amount)}`;
       if (refiledSeen.has(key)) continue;

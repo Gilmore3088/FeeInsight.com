@@ -85,7 +85,7 @@ and `detail.method_version`).
 | 1 | `discover.common_paths` | Guessed common paths, last. |
 | 2 | `discover.peer_hint` | Version 2. Reusable paths that produced live fees for a bank on the same platform anywhere in the country, not yet in the platform list, most live fees first. (Version 1 copied same-state peers' paths; 205 of 237 tries were 404s.) |
 | 2 | `discover.site_crawl` | Same-host crawl, at most 40 requests, one at a time with a pause, robots.txt Disallow rules for FeeInsightBot respected, negative links skipped. |
-| 2 | `discover.second_document` | `second-document.ts` (version 3, the companion finder), after the main loop, in the last 25 s each step keeps for it (`COMPANION_RESERVE_MS`; banks stop starting at 50 s): two of each step's six slots go first to a state top-10 bank from any state with no live overdraft fee (`LEADER_SLOTS`); then banks with fewer than 8 published fee categories (none counts), an HTML fee link and no monthly fee, no live monthly maintenance or overdraft item fee (often in a separate account disclosure), or a link that is not the consumer schedule yet (link coverage), get a search of the homepage, the fee page, up to 3 hub pages and the site's own search. Every deposit-account page that lists at least 3 fee lines (`ACCOUNT_PAGE_MIN_FEE_LINES`; pages with 1 or 2 gave live fees about 1 time in 10 on prod) (named after its account, e.g. "Freedom Checking"), every fee document (schedule, disclosure, courtesy pay policy, opaque `/assets/files/` PDFs; checked by the shared fee-page check) and every account, member, membership or deposit agreement (or terms and conditions) whose text lists at least 2 fee lines with a dollar amount (`AGREEMENT_MIN_FEE_LINES`) (role `consumer_supplement`, PDFs read up to 12 pages, at most 3 checked) is stored in `institution_additional_sources`, up to 8 per bank. Business, loan, HELOC and line-of-credit pages are skipped, and so are funds-availability notices, overdraft opt-in forms, Zelle terms, rates pages, calculators and join pages. Never replaces the fee link. Each bank at most monthly. Report requesters (`leads.quote_institution_id`) and $10B+ banks go first, then links that are not the schedule, then banks of 8+ categories missing maintenance or overdraft, then the fewest categories. Slots the state's own banks leave free go to hidden banks (fewer than 3 live categories, link a product page or no overdraft price) from any state, in the same order, so a state lane that has checked all its banks this month still works on the 3-fee-rule backlog. |
+| 2 | `discover.second_document` | `second-document.ts` (version 4, the companion finder), after the main loop, in the last 25 s each step keeps for it (`COMPANION_RESERVE_MS`; banks stop starting at 50 s): two of each step's six slots go first to a state top-10 bank from any state with no live overdraft fee (`LEADER_SLOTS`); then banks with fewer than 8 published fee categories (none counts), an HTML fee link and no monthly fee, no live monthly maintenance or overdraft item fee (often in a separate account disclosure), or a link that is not the consumer schedule yet (link coverage), get a search of the homepage, the fee page, up to 3 hub pages and the site's own search. Every deposit-account page that lists at least 3 fee lines (`ACCOUNT_PAGE_MIN_FEE_LINES`; pages with 1 or 2 gave live fees about 1 time in 10 on prod) (named after its account, e.g. "Freedom Checking"), every fee document (schedule, disclosure, courtesy pay policy, opaque `/assets/files/` PDFs; checked by the shared fee-page check) and every account, member, membership or deposit agreement (or terms and conditions) whose text lists at least 2 fee lines with a dollar amount (`AGREEMENT_MIN_FEE_LINES`) (role `consumer_supplement`, PDFs read up to 12 pages, at most 3 checked) is stored in `institution_additional_sources`, up to 8 per bank. When the fee link or a hub page is a disclosures index (its address names disclosures, agreements, documents, forms or legal) and links to at least 2 documents (`INDEX_MIN_DOCUMENT_LINKS`), up to 4 of those documents whose link text names no fee (`INDEX_DOCUMENTS_CHECKED`; "Download", "Consumer Information") are checked too, after the named fee documents, by the same fee-page check (version 4, #1051: Jonesboro State Bank's link is its `/agreements-and-disclosures` page). Privacy, loan, business and rates documents are still skipped; the attempt's `index_documents_checked` counts them, and hidden banks whose link is such a page go first after requesters and $10B+ banks. Business, loan, HELOC and line-of-credit pages are skipped, and so are funds-availability notices, overdraft opt-in forms, Zelle terms, rates pages, calculators and join pages. Never replaces the fee link. Each bank at most monthly. Report requesters (`leads.quote_institution_id`) and $10B+ banks go first, then links that are not the schedule, then banks of 8+ categories missing maintenance or overdraft, then the fewest categories. Slots the state's own banks leave free go to hidden banks (fewer than 3 live categories, link a product page or no overdraft price) from any state, in the same order, so a state lane that has checked all its banks this month still works on the 3-fee-rule backlog. |
 | 2 | `discover.site_search` | Inside the companion finder: the bank's own site search (a GET search form on its homepage), at most 4 result pages per bank per run. "fee schedule" always runs; the other 3 rotate each recheck window through "account agreement", "schedule of fees", "member agreement", "truth in savings", "deposit agreement", "membership agreement". One attempt row per query (`detail.query`, `candidates`, `kept`; not folded into the playbook): `ok` when a page it found was kept, `rejected` when its hits were all dropped, `no_candidates` when it linked to nothing useful. |
 | 3 | `discover.paid_pick` | `paid-find.ts`: one model call, no tools, picks up to 3 of the homepage's links; each pick passes the fee-page check. Off with `MAGELLAN_PAID_PICK=off`. |
 | 3 | `discover.paid_web_search` | `paid-find.ts`, the `discover-paid` provider step (below); runs only when the pick found nothing, then waits out the paid cooldown (90 days after a find, 30 after a miss; `cooldowns.ts`). |
@@ -105,9 +105,23 @@ and `detail.method_version`).
   `non_fee_document` without downloading (`isNonFeeDocumentLink`; brochures pass, since several
   are the bank's fee list). When the finder passes the bank's website (the crawl and the companion
   finder do), an accepted document on another host must name the bank's website or name, or it
-  is rejected as `unconfirmed_host` (`unconfirmedDocumentHost` in `other-bank-host.ts`, the rule
-  Hamilton's `unconfirmed_document_host` takedown uses). See
-  `docs/project/findings/2026-10-12-wrong-host-documents.md`.
+  is rejected as `unconfirmed_host` (`unconfirmedDocumentHost` in `other-bank-host.ts`; since #1287
+  stricter than Hamilton's `unconfirmed_document_host` takedown, which keeps the older rule). See
+  `docs/project/findings/2026-10-12-wrong-host-documents.md`. Since #1287 the website, its name
+  and the bank's name must appear as whole words ("t bank" is not in "first bank"); a name
+  another institution has (`loadSharedNameIds`: "Peoples Bank", "First National Bank") counts
+  only with the bank's city or FDIC certificate / NCUA charter number in the text. Since #1309
+  a name is also shared when it sits as whole words inside another institution's name
+  ("American National Bank" in "First American National Bank"); the number counts only right
+  after "FDIC", "Cert", "Certificate", "Charter" or "NCUA", so "$175.00" is not cert 175; when
+  the names cannot be read, every bank in the step is treated as shared and the run gets a
+  `magellan.shared_names_unread` event; and the companion finder runs the same check. Since #1320
+  "X Credit Union" is shared when "X Federal Credit Union" exists (either way round); a bare
+  "FDIC" or "NCUA" needs "#", "No." or "Number" before the number ("Member FDIC 175 Main Street"
+  is not cert 175), and a number followed by "-day" or the rest of a phone number never counts. A host
+  with the website's name is trusted unread only when that name has 6+ characters
+  (`SAME_NAME_MIN_CHARS`), so fnb.bank is read for fnb.com. The institution record holds no
+  former names, so a renamed bank's new host still needs its current name in the text.
   A business-only schedule (its address or its own heading names business/commercial and
   nothing names personal or consumer accounts) is rejected as `business_schedule`.
 - A found link on another institution's own website (`other-bank-host.ts`: its host is another
@@ -141,6 +155,10 @@ and `detail.method_version`).
   link is a product page are searched once per version for the real schedule
   (`detail.upgrade_search`). A find replaces the link and keeps the old page as a
   companion `account_page`; a miss leaves the link and rescue state untouched.
+  A re-search (upgrade, business or freshness) never accepts the link it is replacing, from
+  the known-link, hub, crawl or any other finder; the page can still be opened as a hub for
+  its links (v3, #1326: under v2, 1,406 of 1,745 searches stopped at the product page, the
+  known-link finder in 1,247 of its 1,428 finds and the site crawl in 148 of 182).
   Links to an article, blog post, news item or press release (`isArticleLink`, unless the
   path names a fee document such as "/articles/schedule-of-fees/") go to the same search,
   and a find does not keep the article as a companion. Every finder rejects such a
@@ -239,36 +257,72 @@ and `detail.method_version`).
   `detail.rung`. The institution's admin page shows its place on the ladder and the
   methods tried; the state page and the state-expert step (`not_published_online`) count
   "not published online" by size tier. One `paidModelCall` per bank (agent `magellan`, `PAID_PASS_MODELS.find()`,
-  server `web_search` tool, max 3 uses) asks for the consumer fee schedule on the bank's
+  server `web_search` tool from `web-search-tool.ts`, #1035: a bank under $10B is searched on its own
+  website host only (`allowed_domains`), at most `OWN_SITE_MAX_USES` (2) searches; a $10B+ bank keeps
+  the open web and 3, as the schedule search does) asks for the consumer fee schedule on the bank's
   own domain as JSON. The answer must be on the bank's domain and pass the same
-  fee-page check before it is stored. Each try is logged with its cost. A budget cap or
+  fee-page check before it is stored. Since #1251 (both paid searches): "its own website" also
+  covers the bank's other own hosts (`own-hosts.ts`: a host of the bank's own stored documents that
+  no other institution has documents on, that is not another institution's website or a
+  subdomain or parent of one, and that has the website's name with another ending, 6+ characters,
+  or is a `.bank` domain holding at least 2 of the bank's documents; machiassavings.com and
+  machiassavings.bank, cashmerevalleybank.com and cvb.bank), up to 4 sites, and an answer on one
+  of them passes the domain check. Both paid searches and the paid pick pass the bank's website
+  and name to `validateFeeCandidate`, so an answer on any other host must name the bank (#1033's
+  unconfirmed-host rule), and an answer whose host refused our check (HTTP 403) is kept unread only
+  on the website's own host, a subdomain, or a host with the website's name. A bank with no asset size on
+  file, or whose website host the API may refuse (an IP address, a trailing dot, no dot) or is a
+  third-party host (a bot check, a social page), searches the open web. Only an open-web search is
+  told about a parent company's domain. The call's usage row records `web_search_domains`, and the
+  attempt records `detail.search_domains` and `detail.own_hosts`. Each try is logged with its cost. A budget cap or
   the automation stop ends the step cleanly (`budgetStopped`); the unspent bank stays due.
-  Report requesters go first, then the largest banks; $10B+ banks and requesters are
-  picked from any state's paid step, not only their own.
+  $10B+ banks and requesters are picked from any state's paid step, not only their own.
+  Order: the state experts' work lists (#1029, below).
 - Schedule search (`schedule-search.ts`, `discover.paid_schedule_search`, version 2, #1030), in
-  the same paid step, from any state, off the paid cooldown, in two lanes:
-  - **Uncovered first:** up to `SCHEDULE_SEARCH_PER_RUN` institutions that hold a fee link but
-    have no live fee at all, whose oldest stored copy is at least `UNCOVERED_SETTLE_DAYS` old
-    (the free pipeline reads a new link first) and with no companion still waiting for its first
-    fetch. One search asks for the fee schedule, the Truth in Savings disclosure and the deposit
+  the same paid step, from any state, off the paid cooldown, in two lanes, the uncovered lane first:
+  - **Uncovered first:** up to `SCHEDULE_SEARCH_PER_RUN` (10) institutions that hold a fee link but
+    have no live fee at all, whose oldest stored copy is at least `UNCOVERED_SETTLE_DAYS` (3) old,
+    with no discovery find in those days (a free #1327 re-search or any finder; the free pipeline
+    reads a new link first) and no companion still waiting for its first fetch. One search asks for the fee schedule, the Truth in Savings disclosure and the deposit
     account agreement (`UNCOVERED_DOCUMENT_KINDS`); each answer that passes the checks is its own
     `consumer_supplement` companion, its kind named in the companion's reason and the attempt's
     `detail.documents`. Institutions with no fee link at all are the paid web search's
     (above, with its disclosure rung).
-  - **Gap-fill, on its own cap:** up to `GAP_FILL_PER_RUN` banks with live fees whose link is not
-    the consumer schedule yet (link coverage): $10B+ banks, report requesters and market leaders
-    (top 15 in their state by deposits or fee income, `loadMarketLeaderIds` in
-    `src/lib/data-store/market-leaders.ts`) on any gap, or that are hidden (fewer than three live
-    categories); other banks when hidden with a product-page link or no overdraft price, or with
-    a business-only link the free business search missed. No gap-fill search once the lane has
-    spent `GAP_FILL_CAP_MICROUSD` ($10) in `GAP_FILL_CAP_DAYS` (30), counted from attempts with
-    `detail.lane = 'gap_fill'`, checked before each search.
-  Each lane ranks requesters, then priority names, then leaders, then largest first, until the
-  state experts' work lists (#1029) set the order. If the ranking fails the lanes run on size and
-  requests alone. The model (web search) is told why the held page is not it; every answer must
-  be on the bank's domain, new to the bank, and pass the fee-page check. It is stored beside the
-  link, so companion fetch, Rosetta and Knox read it; the link and its live fees stay. The bank's
-  own domain includes its corporate domain (`onBankDomain`).
+  - **Gap-fill, on its own cap:** up to `GAP_FILL_PER_RUN` (3) banks with live fees whose link is
+    not the consumer schedule yet (link coverage). First $10B+ banks, report requesters and market
+    leaders (top 15 in their state by deposits or fee income, `loadMarketLeaderIds` in
+    `src/lib/data-store/market-leaders.ts`) on any gap (business-only, no overdraft price, refers
+    elsewhere, stale copy, or hidden: fewer than three live categories); then other banks when
+    hidden with a product-page link or no overdraft price, or with a business-only link the free
+    business search missed. No gap-fill search once the lane has spent `GAP_FILL_CAP_MICROUSD`
+    ($10) in `GAP_FILL_CAP_DAYS` (30), counted from attempts with `detail.lane = 'gap_fill'`,
+    checked before each search.
+  - **Order inside each lane** is the work lists' (#1029, #1269, below): the pools (`pool_lane`:
+    uncovered, gap_priority, gap_other) are each cut at `WORK_LIST_POOL` requesters, Pro
+    accounts' institutions and market leaders first, then each state x size cell's first
+    institution, then its second; each lane then takes its cap requesters and Pro accounts first,
+    then one per state in turn. "No live fees first" is the lane split; it never reorders a lane.
+  If the ranking fails the lanes run on size and requests alone. The model (web search, site-limited
+  under $10B, #1035/#1251) is told why the held page is not it; every answer must be on the bank's
+  own hosts, new to the bank, and pass the fee-page check with the bank's name and the shared-name
+  rule. It is stored beside the link, so companion fetch, Rosetta and Knox read it; the link and
+  its live fees stay. The bank's own domain includes its corporate domain (`onBankDomain`).
+- Work lists (#1029, `state-expert/work-list.ts`): the paid web search, the schedule search
+  (each lane) and the website search read up to `WORK_LIST_POOL` (2,000) due institutions,
+  then take their unchanged per-step cap in this order: report requesters and Pro accounts'
+  own institutions first; then one institution from each state's list in turn, the state with
+  the largest coverage gap under $10B first. A state's list puts its size groups furthest below
+  James's target first (`coverageGroupsSql`, the scorecard's own groups; short / target), and
+  within a group a website on file, then a known platform, then the larger institution.
+  Institutions over $10B share one national list that takes its turn, since they are compared
+  nationally, never by state. Each result entry records `work_list`, `work_group` and
+  `work_group_short`. If the gaps can't be read, the lists keep size order and still rotate.
+  The pool is cut in this order (#1269, `workListPoolRankSql`): requesters, Pro accounts'
+  institutions (and, in the schedule search, market leaders), then each state × size group
+  cell's first institution, then each cell's second, so a cut drops the deepest rows of the
+  fullest cells, never a whole small-bank group. Each paid try's `pipeline_attempts.detail`
+  records the same three fields, and the `discover-paid` step keeps every work-list entry
+  under `work_lists` (with `tries` and `short_group_tries`), not only its 10 sample results.
 - Website search (`website-find.ts`, `discover.website_search`), in the same paid step after
   the banks: up to `WEBSITE_FIND_PER_RUN` institutions in the state with no `website_url`
   and no fee link, off the paid cooldown. The model (web search) names the official homepage;
@@ -277,7 +331,7 @@ and `detail.method_version`).
   city or its FDIC certificate / NCUA charter number. Saving resets the bank's search
   (`rescue_status = 'pending'`) so the free finders search the new site next. Anything
   else stays for a person: `detail.candidate_url`, `needs_human: true`. A one-word stored
-  name ("CALIFORNIA") is not searched.
+  name ("CALIFORNIA") is not searched. It runs at most 2 searches a call (#1035).
 
 ## Outcome ledger (`outcomes.ts`)
 
@@ -329,6 +383,32 @@ A bank searched from scratch whose search ends `dead` or `needs_human` gets one
 stopped, how many addresses it tried, and each finder's outcome. The link ledger only
 judges links Magellan handed on, so these are the lessons for banks it gave up on. The
 step's `search_miss_lessons` detail counts them.
+
+## Other spellings of an unreachable link (`address-variant-fetch.ts`)
+
+A fee link on the bank's own site whose latest plain fetch could not reach the page
+(network error, timeout or HTTP 5xx) at least `ADDRESS_VARIANT_MIN_FAILURES` (2) times in a
+row is asked for at the bank's other spellings of the same address, after the fee links in
+every `fetch` step (#1051): the path and query on the stored website's host and scheme, the
+link's host with or without `www.`, then plain http (at most `MAX_ADDRESS_VARIANTS`, 3).
+State Department FCU's `https://www.sdfcu.org/.../fees.pdf` had failed with a network error
+since 3 Oct 2026 while its website is stored as `http://www.sdfcu.org`; Great Oaks Bank's link
+is on the bare domain and its site on `www.`. Plain GETs with Magellan's crawler identity: no
+provider and no budget, so the paid cap never holds it. Up to `ADDRESS_VARIANT_BANKS_PER_STEP`
+(3) banks a step within `ADDRESS_VARIANT_BUDGET_MS` (30 s, which also cuts each request and
+body read), banks with no live fees first, each at most once per `ADDRESS_VARIANT_RETRY_DAYS`
+(7). The document means a 2xx whose final address after redirects is still on the bank's domain
+(`onBankDomain`) and is not the homepage or an error page, whose body was read in full within
+the 15 MB document cap (`MAX_DOCUMENT_BYTES`; past it the read stops, `too_large`), and, for a
+PDF link, whose bytes are a PDF: a parked domain's 200 HTML page is refused (#1306). One timer
+covers the headers and the body; when it fires, or the cap is passed, the request is aborted so
+the download stops too. A spelling that fails any of these, including a body read that fails
+after it answered, is a failed try, so it never becomes the fetch address or moves the failure count. The first
+spelling that answers with the document is stored through `fetchAndRecordLink` (attempt strategy `fetch.address_variant`), which makes it the profile's fetch address; when
+none answers, one attempt row lists each try and the bank's fetch state is left alone. A 403
+is a bot wall on every spelling and stays with the paid fetch below; a person's locked
+correction is never re-spelled. The `fetch` step's `address_variants` detail counts banks
+selected, tried, recovered and failed.
 
 ## Paid fetch for refused links (`blocked-fetch.ts`)
 
@@ -453,14 +533,15 @@ fails a PR that changes one of these constants without updating its line here (#
 
 | Constant | Strategy | Version | File |
 |---|---|---|---|
+| `ADDRESS_VARIANT_FETCH_STRATEGY` | `fetch.address_variant` | v1 | `magellan/address-variant-fetch.ts` |
 | `BLOCKED_FETCH_STRATEGY` | `fetch.paid_web_fetch` | v2 | `magellan/blocked-fetch.ts` |
 | `BLOCKED_COMPANION_FETCH_STRATEGY` | `fetch.paid_web_fetch_companion` | v1 | `magellan/blocked-fetch.ts` |
 | `COMPANION_FETCH_STRATEGY` | `fetch.companion` | v1 | `magellan/companion-fetch.ts` |
 | `DISCOVERY_METHOD_VERSION` | — | v5 | `magellan/discovery.ts` |
 | `WEBSITE_REPAIR_STRATEGY` | `discover.website_repair` | v1 | `magellan/discovery.ts` |
-| `UPGRADE_SEARCH_VERSION` | — | v2 | `magellan/discovery.ts` |
+| `UPGRADE_SEARCH_VERSION` | — | v3 | `magellan/discovery.ts` |
 | `BUSINESS_SEARCH_VERSION` | — | v1 | `magellan/discovery.ts` |
-| `FRESHNESS_SEARCH_VERSION` | — | v1 | `magellan/discovery.ts` |
+| `FRESHNESS_SEARCH_VERSION` | — | v2 | `magellan/discovery.ts` |
 | `MAGELLAN_FETCH_STRATEGY` | `fetch.http` | v2 | `magellan/fetch.ts` |
 | `OPERATOR_SCHEDULE_STRATEGY` | `discover.operator_schedule` | v1 | `magellan/operator-schedules.ts` |
 | `PAGE_CLASSIFIER_VERSION` | — | v2 | `magellan/page-classifier.ts` |

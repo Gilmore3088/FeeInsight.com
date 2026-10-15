@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { restoreTarget, runHamiltonCategoryGuard } from "./category-guard";
+import { movesExcessActivityFee, restoreTarget, runHamiltonCategoryGuard, tracesOnOwnText, uniqueRefiles } from "./category-guard";
 import { checkFeeCategory } from "@/lib/fee-category-guard";
 
 function templateText(strings: unknown): string {
@@ -21,10 +21,13 @@ const firstLooks = [2, 4].map((id) => ({
   evidence: { flag_run_id: 1, flagged_at: new Date(Date.now() - 13 * 3_600_000).toISOString(), reason: "name" },
 }));
 
-function createDbMock(flags: unknown[] = firstLooks, takenDown: unknown[] = []) {
+function createDbMock(flags: unknown[] = firstLooks, takenDown: unknown[] = [], texts: Record<number, string> = {}) {
   return vi.fn((strings: TemplateStringsArray, ...values: unknown[]) => {
     const text = templateText(strings);
     if (text.includes("to_regclass('public.pipeline_feedback')")) return Promise.resolve([{ ready: true }]);
+    if (text.includes("FROM agent_source_texts")) {
+      return Promise.resolve(Object.entries(texts).map(([doc, normalized_text]) => ({ source_document_id: Number(doc), normalized_text })));
+    }
     if (text.includes("FROM pipeline_feedback")) return Promise.resolve(flags);
     if (text.includes("rolled_back_at IS NOT NULL")) return Promise.resolve(takenDown);
     if (text.includes("UPDATE published_fee_records") && text.includes("rolled_back_at = NULL")) {
@@ -90,9 +93,9 @@ describe("Hamilton category guard repair", () => {
 
   it("brings back an earlier takedown today's guard passes", async () => {
     const db = createDbMock([], [
-      { fee_published_id: 21, lineage_ref: 31, canonical_fee_key: "card_replacement", fee_name: "Visa Check Card Replacement", amount: "10.00", conditions: null },
-      { fee_published_id: 22, lineage_ref: 32, canonical_fee_key: "atm_non_network", fee_name: "ATM Limit Adjustment", amount: "5.00", conditions: null },
-    ]);
+      { fee_published_id: 21, lineage_ref: 31, source_document_id: 7, canonical_fee_key: "card_replacement", fee_name: "Visa Check Card Replacement", amount: "10.00", conditions: null },
+      { fee_published_id: 22, lineage_ref: 32, source_document_id: 7, canonical_fee_key: "atm_non_network", fee_name: "ATM Limit Adjustment", amount: "5.00", conditions: null },
+    ], { 7: "Visa Check Card Replacement | $10.00\nATM Limit Adjustment | $5.00" });
 
     const result = await runHamiltonCategoryGuard({ runId: 13, db: db as unknown as GuardDb });
 
@@ -104,7 +107,7 @@ describe("Hamilton category guard repair", () => {
   it("brings back an ATM adjustment the guard took down under the type its fold split gives it, logged as a fold", async () => {
     const db = createDbMock([], [
       { fee_published_id: 45585, lineage_ref: 36992, institution_id: 6182, source_document_id: 9, canonical_fee_key: "atm_non_network", fee_name: "ATM Adjustment", amount: "2.00", conditions: null },
-    ]);
+    ], { 9: "ATM Adjustment | $2.00" });
 
     const result = await runHamiltonCategoryGuard({ runId: 14, db: db as unknown as GuardDb });
 
@@ -123,6 +126,17 @@ describe("Hamilton category guard repair", () => {
     // Only spot-checked re-file rules bring a fee back: this one has not been checked yet.
     expect(restoreTarget({ ...row, canonical_fee_key: "overdraft", fee_name: "Overdraft Transfer Fee (Sweep)", amount: "7.50" })).toBeNull();
     expect(restoreTarget({ ...row, canonical_fee_key: "card_replacement", fee_name: "Visa Check Card Replacement", amount: "10.00" })).toBe("card_replacement");
+  });
+
+  it("re-files an excess activity charge filed as monthly maintenance from its own line, and leaves other activity charges (guard v62)", () => {
+    const note = (line: string) => `Knox deterministic extraction from Rosetta artifact #13538. canonical_hint=monthly_maintenance; excerpt="${line}"`;
+    const row = { canonical_fee_key: "monthly_maintenance", fee_name: "Service charge", document_nsf_amount: null };
+    // Live fee 60814's source line (Oct 14).
+    expect(restoreTarget({ ...row, amount: "2.00", conditions: note("Service charge of $2 per debit in excess of 6 withdrawals per quarter") })).toBe("account_research");
+    // Live fee 142257's line: a transfer charge has no one home, so it is not re-filed.
+    expect(restoreTarget({ ...row, amount: "5.00", conditions: note("1A $5.00 service charge will be applied to each share transfer.") })).toBeNull();
+    // The account's own fee with a per-check charge on top stays where it is.
+    expect(restoreTarget({ ...row, amount: "10.00", conditions: note("a service charge of $10.00 and $.25 per check is assessed.*") })).toBe("monthly_maintenance");
   });
 
   it("brings a night deposit bag key back as a night deposit fee, and leaves bag supplies down (guard v60)", () => {
@@ -197,6 +211,79 @@ describe("Hamilton category guard repair", () => {
     expect([move?.[1], move?.[2], move?.[3]]).toEqual([[95142], ["money_order"], ["account_research"]]);
   });
 
+  it("re-files an excess withdrawal fee beside the bank's unrelated research fee at its price (#1283 review)", async () => {
+    const note = (line: string) => `Knox deterministic extraction from Rosetta artifact #1. canonical_hint=monthly_maintenance; excerpt="${line}"`;
+    const fee = (id: number, inst: number, name: string, amount: string, line: string) => ({
+      fee_published_id: id, lineage_ref: id + 100000, institution_id: inst, source_document_id: 1,
+      canonical_fee_key: "monthly_maintenance", fee_name: name, amount, conditions: note(line), document_nsf_amount: null,
+    });
+    // Live fees 124670 and 142436's own lines (Oct 15).
+    const maintenance = fee(124670, 5502, "Maintenance fee", "5.00", "A maintenance fee of $5.00 per transaction will be charged if you make more than two withdrawals during a 12 month period.");
+    const perItem = fee(142436, 3167, "Per item service charge fee", "25.00", "A per item service charge fee of $25.00 will be charged for each transaction in excess of the above limitations.");
+    expect(restoreTarget(maintenance)).toBe("account_research");
+    expect(restoreTarget(perItem)).toBe("account_research");
+    expect(movesExcessActivityFee({ row: maintenance, to: "account_research" })).toBe(true);
+    // A plain hand re-file is not an excess activity fee: only a same-name live fee stops it.
+    const research = { ...fee(95142, 8581, "Money Order Research Fee", "10.00", "x"), canonical_fee_key: "money_order", conditions: null };
+    expect(movesExcessActivityFee({ row: research, to: "account_research" })).toBe(false);
+    // Two copies of one line are one fee; an excess fee and an unrelated fee at one price are two.
+    const copy = { ...maintenance, fee_published_id: 999 };
+    const other = { ...research, institution_id: 5502, amount: "5.00" };
+    expect(uniqueRefiles([{ row: maintenance, to: "account_research" }, { row: copy, to: "account_research" }]).map((r) => r.row.fee_published_id)).toEqual([124670]);
+    expect(uniqueRefiles([{ row: maintenance, to: "account_research" }, { row: other, to: "account_research" }])).toHaveLength(2);
+    // Any other move keeps the old rule: two express card lines at one bank and price are one fee.
+    const express = (id: number, name: string) => ({ ...research, fee_published_id: id, institution_id: 6042, canonical_fee_key: "card_replacement", fee_name: name, amount: "40.00" });
+    expect(uniqueRefiles([
+      { row: express(350, "Replacement Card - Express Mail"), to: "rush_card" },
+      { row: express(27687, "Replacement Card Shipped via Express Mail"), to: "rush_card" },
+    ]).map((r) => r.row.fee_published_id)).toEqual([350]);
+
+    const db = vi.fn((strings: TemplateStringsArray, ...values: unknown[]) => {
+      const text = templateText(strings);
+      if (text.includes("to_regclass('public.pipeline_feedback')")) return Promise.resolve([{ ready: true }]);
+      if (text.includes("UPDATE published_fee_records") && text.includes("v.from_key")) {
+        return Promise.resolve((values[0] as number[]).map((id, i) => ({ fee_published_id: id, lineage_ref: id + 100000, canonical_fee_key: (values[2] as string[])[i] })));
+      }
+      if (text.includes("rolled_back_at IS NOT NULL")) return Promise.resolve([]);
+      if (text.includes("FROM published_fee_records")) return Promise.resolve([maintenance]);
+      return Promise.resolve([]);
+    });
+    const result = await runHamiltonCategoryGuard({ runId: 23, db: db as unknown as GuardDb });
+    expect(result).toMatchObject({ liveRefiledFees: 1, failingFees: 0 });
+    const move = db.mock.calls.find((call) => templateText(call[0]).includes("v.from_key") && templateText(call[0]).includes("UPDATE"));
+    const sqlText = templateText(move?.[0]);
+    // The twin test needs the same name, or an excess activity fee when one moves; price alone is not enough.
+    expect(sqlText).toContain("lower(btrim(live.fee_name)) = lower(btrim(fp.fee_name))");
+    expect(sqlText).toContain("AND (NOT v.excess");
+    expect(sqlText).toContain("OR live.fee_name ~*");
+    expect(move?.[4]).toEqual(["true"]);
+  });
+
+  it("re-files only one of two express card lines at one price, and lets any live rush card fee at that price block them (live path)", async () => {
+    const card = (id: number, name: string) => ({ fee_published_id: id, lineage_ref: id + 100000, institution_id: 6042, source_document_id: 1, canonical_fee_key: "card_replacement", fee_name: name, amount: "40.00", conditions: null, document_nsf_amount: null });
+    const rows = [card(350, "Replacement Card - Express Mail"), card(27687, "Replacement Card Shipped via Express Mail")];
+    expect(rows.map((row) => restoreTarget(row))).toEqual(["rush_card", "rush_card"]);
+    const db = vi.fn((strings: TemplateStringsArray, ...values: unknown[]) => {
+      const text = templateText(strings);
+      if (text.includes("to_regclass('public.pipeline_feedback')")) return Promise.resolve([{ ready: true }]);
+      if (text.includes("UPDATE published_fee_records") && text.includes("v.from_key")) {
+        return Promise.resolve((values[0] as number[]).map((id, i) => ({ fee_published_id: id, lineage_ref: id + 100000, canonical_fee_key: (values[2] as string[])[i] })));
+      }
+      if (text.includes("rolled_back_at IS NOT NULL")) return Promise.resolve([]);
+      if (text.includes("FROM published_fee_records")) return Promise.resolve(rows);
+      return Promise.resolve([]);
+    });
+    await runHamiltonCategoryGuard({ runId: 24, db: db as unknown as GuardDb });
+    const move = db.mock.calls.find((call) => templateText(call[0]).includes("v.from_key") && templateText(call[0]).includes("UPDATE"));
+    // One fee per bank, type and price: only 350 is sent to move, and not as an excess activity fee.
+    expect([move?.[1], move?.[4]]).toEqual([[350], ["false"]]);
+    // No bound value is a boolean array: postgres.js would send it as a scalar bool and the
+    // ::boolean[] cast fails on Postgres (Oct 15, every v62 re-file).
+    expect(move?.slice(1).some((value) => Array.isArray(value) && value.some((item) => typeof item === "boolean"))).toBe(false);
+    // In SQL, a move that is not an excess activity fee is blocked by any live fee of that type and price.
+    expect(templateText(move?.[0])).toContain("AND (NOT v.excess");
+  });
+
   it("brings an express card replacement back as the rush card fee, once per institution and price", async () => {
     const row = { conditions: null, document_nsf_amount: null };
     expect(restoreTarget({ ...row, canonical_fee_key: "card_replacement", fee_name: "Express Replacement Card", amount: "25.00" })).toBe("rush_card");
@@ -204,13 +291,37 @@ describe("Hamilton category guard repair", () => {
     const db = createDbMock([], [
       { fee_published_id: 350, lineage_ref: 1350, institution_id: 6042, source_document_id: 2536, canonical_fee_key: "card_replacement", fee_name: "Replacement Card - Express Mail", amount: "40.00", conditions: null },
       { fee_published_id: 27687, lineage_ref: 1687, institution_id: 6042, source_document_id: 15325, canonical_fee_key: "card_replacement", fee_name: "Replacement Card Shipped via Express Mail", amount: "40.00", conditions: null },
-    ]);
+    ], { 2536: "Replacement Card - Express Mail | $40.00", 15325: "Replacement Card Shipped via Express Mail | $40.00" });
 
     await runHamiltonCategoryGuard({ runId: 15, db: db as unknown as GuardDb });
 
     const restore = db.mock.calls.find((call) => templateText(call[0]).includes("rolled_back_at = NULL"));
     expect([restore?.[1], restore?.[2]]).toEqual([[350], ["rush_card"]]);
     expect(templateText(restore?.[0])).toContain("v.to_key <> fp.canonical_fee_key");
+  });
+
+  it("brings a takedown back only when it traces on its own stored text (guard v63, #1312)", async () => {
+    const stop = (id: number, doc: number | null, name: string, amount: string) => ({
+      fee_published_id: id, lineage_ref: id + 100000, institution_id: id, source_document_id: doc, canonical_fee_key: "stop_payment", fee_name: name, amount, conditions: null,
+    });
+    // The five stops on official and cashier's checks v63 passes (Oct 15): only 13389's own text states it.
+    const rows = [
+      stop(13389, 13654, "Stop Payment on Cashier's Checks, Official Checks and Money Orders (each)", "20.00"),
+      stop(1120, null, "Official Check Stop Payment", "35.00"),
+      stop(11233, null, "Stop Payment (Checks, ACH, Bill Pay, Cashier's Checks)", "18.00"),
+      stop(11747, null, "Stop Payment - Cashier's Checks", "20.00"),
+      stop(7924, 270, "Official Check Stop Payment", "15.00"),
+    ];
+    for (const row of rows) expect(restoreTarget({ ...row, document_nsf_amount: null }), String(row.fee_published_id)).toBe("stop_payment");
+    const db = createDbMock([], rows, {
+      13654: "Stop Payment via Internet (per item or range of items)        $10\nStop Payment on Cashier's Checks, Official Checks and Money Orders (each)          $20",
+    });
+    const result = await runHamiltonCategoryGuard({ runId: 25, db: db as unknown as GuardDb });
+    expect(result.restoredFees).toBe(1);
+    const restore = db.mock.calls.find((call) => templateText(call[0]).includes("rolled_back_at = NULL"));
+    expect(restore?.[1]).toEqual([13389]);
+    // A price the text does not state never comes back either.
+    expect(tracesOnOwnText(rows[0], "stop_payment", new Map([[13654, "Stop Payment on Cashier's Checks | $25"]]))).toBe(false);
   });
 
   it("caps the rollbacks at the run limit", async () => {

@@ -48,8 +48,11 @@ and the decisions James has made. When it disagrees with a skill, this file wins
   `REPORT_OFFER.priceLabel` in `src/lib/constants.ts`, never typed by hand. Never write a fixed
   report price ("$300", "only $300"): each report is quoted.
 - **Never** promise a turnaround time for a free report.
-- **CTA:** "Get a free fee report", email hello@bankfeeindex.com, or the /contact form. No booking
-  links (no Calendly or similar).
+- **Goal:** a Hamilton Pro subscription, monthly or annual (James, 2026-10-15). The report is a
+  high-value lead into Pro, not the goal.
+- **CTA:** primary "See Pro plans" (/subscribe). Secondary, for buyers not ready to subscribe:
+  "Get a free fee report", the paid report, email hello@bankfeeindex.com, or the /contact form. No
+  booking links (no Calendly or similar).
 
 ## 5. Differentiation
 

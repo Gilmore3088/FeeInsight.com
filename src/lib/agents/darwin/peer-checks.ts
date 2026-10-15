@@ -322,7 +322,7 @@ export async function loadSourceCopies(
     conditions: string | null;
     fee_audience: FeeAudience | null;
   }>>`
-    SELECT fr.fee_raw_id, fr.institution_id, fr.source_document_id, fr.amount, fr.outlier_flags, fr.conditions,
+    SELECT fr.fee_raw_id, fr.institution_id, fr.source_document_id, fr.amount, fr.outlier_flags, COALESCE(fr.extraction_note, fr.conditions) AS conditions,
            fr.fee_audience
       FROM raw_fee_observations fr
      WHERE fr.source = 'knox'

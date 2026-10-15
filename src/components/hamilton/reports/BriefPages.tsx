@@ -324,7 +324,7 @@ export function BriefPages({ brief, institutionName }: { brief: AnswerBrief; ins
             </View>
           ))}
           <Text style={styles.tableSource}>
-            Hamilton studies: {[...new Set(brief.studies.items.flatMap((o) => o.facts.map((f) => `${f.source.label.replace("Hamilton study: ", "")} (${f.source.asOf ?? "current"})`)))].join("; ")}. Built from FDIC and NCUA call reports, FDIC Summary of Deposits, Census household income and published fee schedules. Inferred figures are labelled and never reported.
+            Hamilton studies: {[...new Set(brief.studies.items.flatMap((o) => o.facts.map((f) => `${f.source.label.replace("Hamilton study: ", "")} (${f.source.asOf ?? "current"})`)))].join("; ")}. Built from FDIC and NCUA call reports and published fee schedules. Inferred figures are labelled and never reported.
           </Text>
         </>
       ) : null}

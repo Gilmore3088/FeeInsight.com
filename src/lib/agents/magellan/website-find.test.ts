@@ -76,6 +76,8 @@ describe("Magellan website search for institutions with no website", () => {
     expect(updates[0]).toContain("https://www.fnblipan.com");
     expect(text(updates[0][0])).toContain("rescue_status = 'pending'");
     expect(text(updates[0][0])).toContain("locked_by_correction IS TRUE");
+    // The homepage is not known yet, so the open web, two searches at most (#1035).
+    expect(create.mock.calls[0][0].tools).toEqual([{ type: "web_search_20250305", name: "web_search", max_uses: 2 }]);
   });
 
   it("does not save a homepage that fails the check, a taken domain, or a directory answer", async () => {

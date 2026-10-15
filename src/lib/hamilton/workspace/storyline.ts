@@ -17,6 +17,7 @@ import { plainName, proseFeeName } from "./names";
 import { ownRate, ownRateSource, rateRelation, ratesOf } from "./rates";
 import { MIN_PEERS_FOR_POSITION, pricePosition } from "./scenario";
 import { segmentExhibit, shortSegmentLabel } from "./segment";
+import { isFederalRelease, isWireFact } from "./wire";
 import type { ArchetypeKey, KeyFigure, StoryExhibit, StoryOption, Storyline, StorylineKind } from "./storyline-types";
 import type { Exhibit, Fact, FeeResearch, HamiltonAnswer, SegmentMember, SourceRef } from "./types";
 
@@ -570,7 +571,7 @@ function complication(research: FeeResearch, name: string): Fact[] {
     });
   }
   if (out.length < 2) {
-    const news = research.regulation.find((r) => r.source.table === "reg_articles");
+    const news = research.regulation.find(isFederalRelease);
     if (news) out.push(news);
   }
   return out.slice(0, 2);
@@ -578,7 +579,8 @@ function complication(research: FeeResearch, name: string): Fact[] {
 
 function financeLens(research: FeeResearch, answer: HamiltonAnswer, intent: StoryIntent): Fact[] {
   const money = answer.claims.filter((c) => c.source.table === "institution_financial_records" || /call report|5300|filing/i.test(c.source.label));
-  const rules = research.regulation.filter((r) => r.source.table !== "reg_articles");
+  // Regulatory Wire items (rules, bills, enforcement, releases) are listed under what to watch.
+  const rules = research.regulation.filter((r) => !isWireFact(r));
   // A regulation question names who regulates the bank, then its fee complaints against peers', then the rules.
   if (intent.regulation) {
     const regulator = rules.filter((r) => r.source.table === "institution_sources");
@@ -801,7 +803,11 @@ function options(research: FeeResearch, kind: StorylineKind, intent: StoryIntent
   return out.length > 1 ? out : undefined;
 }
 
-function watch(research: FeeResearch, name: string): Fact[] {
+/** Wire lines a regulation answer lists under what to watch: one rule, bill and action first. */
+const REGULATION_WATCH_WIRE = 3;
+const REGULATION_WATCH_MAX = 4;
+
+function watch(research: FeeResearch, name: string, intent: StoryIntent = {}): Fact[] {
   const out: Fact[] = [];
   if (research.current !== null && research.band && research.band.n >= MIN_PEERS_FOR_POSITION) {
     const close = research.peers.filter((p) => p.amount !== research.current && Math.abs(p.amount - research.current!) <= CLOSE_PRICE).length;
@@ -819,7 +825,12 @@ function watch(research: FeeResearch, name: string): Fact[] {
       source: { label: "Figures you give Hamilton", asOf: research.provenance.generatedAt.slice(0, 10) },
     });
   }
-  const news = research.regulation.filter((r) => r.source.table === "reg_articles").slice(0, 1);
+  // A regulation question lists the Wire's recent rules, bills and enforcement first (#1090).
+  if (intent.regulation) {
+    const wire = research.regulation.filter(isWireFact).slice(0, REGULATION_WATCH_WIRE);
+    return [...wire, ...out].slice(0, REGULATION_WATCH_MAX);
+  }
+  const news = research.regulation.filter(isFederalRelease).slice(0, 1);
   return [...out, ...news].slice(0, 3);
 }
 
@@ -874,6 +885,6 @@ export function buildStoryline(research: FeeResearch, answer: HamiltonAnswer, in
     lenses: { finance: fresh(financeLens(research, answer, intent)), market: fresh(marketLens(research, name)) },
     defaultView: kind === "price_test" || kind === "board_decision" ? "finance" : "market",
     options: options(research, kind, intent, name),
-    watch: fresh(watch(research, name)),
+    watch: fresh(watch(research, name, intent)),
   };
 }
