@@ -220,7 +220,8 @@ Darwin owns verification and classification.
     the bank's other live names fails, the step renames nothing (`duplicate_check_failed`).
   - `trailing_range` comes down only when the name has waiver or discount wording or the amount
     is $0; otherwise it is `exempt` / `trailing_range_priced` (reported only).
-  - Everything else is a `takedown` / `fragment`.
+  - Everything else is a `takedown` / `fragment`, except (v5) a priced `sentence_end` line with no
+    rename and no waiver wording, which is a `reread`: kept live, re-read request only (see v5 below).
   Step detail: `would_take_down`, `would_rename`, `exempt`, `exempt_by_reason`,
   `takedown_by_reason`, `by_pattern`, `by_action` (pattern counts per action),
   `samples_by_action` (up to 20 of each, with `rename_to`, `exempt_reason` or `takedown_reason`)
@@ -256,7 +257,9 @@ Darwin owns verification and classification.
     re-reads the line today; the row records the request until a Knox reader is built (#1499).
     Step detail `would_request_reread` (also in shadow) and `reread_requested` (written); a failed
     request never undoes the takedown. `liveFragmentCountSql()` applies the same strip, bars and
-    deposit wording; its `takedown` / `fragment` / `sentence_end` row is the re-read count.
+    deposit wording; its `takedown` / `fragment` / `sentence_end` row is the re-read count. (v5:
+    priced lines with no waiver wording are no longer taken down; they are `reread`, and the count
+    SQL's `reread` row is the re-read count.)
   v3 (#1499, `LIVE_FRAGMENT_STRATEGY` v3, after a prod hand-check of v2: 40 of 43 renames right,
   17 of 20 sampled `sentence_end` takedowns real fees; still in shadow):
   - Threshold gate: a head split from an "if" or "when" condition (either case) is renamed only when
@@ -308,6 +311,64 @@ Darwin owns verification and classification.
     additional and fee words is refused ("Handling fee", "Late charge"), as is one holding "our" or
     "your" ("Allpoint network our ATM fee"); a tail word may hold "/" or be a parenthetical
     ("Return Item/Insufficient Funds Fee", "Consecutive days overdrawn (OD) fee").
+  v5 (#1499, after a prod hand-check of v4: 101 of 105 renames right, 2 too generic, 2 wrong, 5
+  missed, and a prod check of v5: 125 of 127 checkable renames right, but 20 of 22 sampled
+  `sentence_end` takedowns real, correctly priced fees; still in shadow):
+  - Re-read, not takedown: a `sentence_end` line that gets no rename falls into one of three groups
+    (`liveFragmentVerdictDetail`; count SQL reason in brackets):
+    - `reread` (`reread`): amount above $0, no waiver wording, and no gate refused the amount. The
+      fee stays live and, with the switch on, the step only writes the `knox_reread_requested` row
+      (evidence reason "kept live: sentence_end with no name", `kept_live: true`) so Knox can rename
+      it later (#1511). Example: "Paper statement fee for the" $2.
+    - `takedown` with a re-read request (`fragment_reread`): a gate refused the rename because the
+      amount is not the fee's price: total wording, an opening deposit, another price in the line
+      (`other_figure`, two priced phrases), a figure equal to the amount, or a refused "if"/"when"
+      threshold (balance below at $100 or more, "more than", "inactive for", excess wording). The
+      fee comes down and its `knox_reread_requested` row keeps the takedown reason ("fragment name:
+      sentence_end"), as in v4.
+    - `takedown` with no request (`fragment`): $0, no amount, or waiver wording (the
+      `LIVE_FRAGMENT_WAIVE_WORDING` pattern): a waived price (5314's "... reduce your monthly fee
+      to" $0, #1436).
+    `pronoun` and `trailing_range` fragments and `rename_duplicate` still come down with no
+    request. Step detail `would_reread` and `samples_by_action.reread`; `would_request_reread`
+    counts both kinds of request.
+  - A capitalised "THERE" opens the glued sentence like "There" ("10NON-MEMBER LOAN APPLICATION FEE
+    THERE IS A $10.00 NON-MEMBER APPLICATION FEE ..." $10, 109893, renames to "NON-MEMBER LOAN
+    APPLICATION FEE").
+  - "may therefore" anywhere is total wording: a stored name cut just after it ("... you may
+    therefore", 55708) is a sum, never renamed.
+  - Generic: a period and a fee word alone ("Per quarter charge", 64144; "Per month fee", "Per year
+    fee") and a bare "Activation fee" (98668, a gift card's) are no name, as head or tail. "Card
+    Activation Fee" still is.
+  - "only if" / "only when" after the head reaches the balance gate (132041), and "your" is allowed
+    in a balance-below condition ("... fee if your daily balance falls below", 142684); "you",
+    "we", "our", and "your" in any other condition still give no head.
+  - A generic head ("Monthly Fee", "Service charge") renames only on a balance-below condition that
+    passes the balance gate (under $100, no excess, no figure equal to the amount): 142422, 110391,
+    110392 were real fees correctly priced. Any other generic head is refused as before, and its
+    line may still take a tail name (`gluedSentenceSplit(name, { allowGeneric: true })` returns it
+    flagged `generic`; every other caller still gets null). Generic names such as "Per quarter
+    charge", "Monthly fee" and "Annual fee" are still allowed as a head when the rest of the line is
+    a gated balance-below clause.
+  - Figure gate: read on the name after its glued footnote ("10NON-MEMBER LOAN APPLICATION FEE" $10,
+    109893), and a bare whole figure followed by a count noun (debits, withdrawals, transactions,
+    transfers, checks, items, times) is a count, not the price ("more than 6 debits per month ...
+    excessive transaction fee of" $6, 137819), on an amount under $100 only ("more than 1,000 items"
+    $1,000 still blocks). A span of time ("After 5 days" $5, 97910; "3 years
+    dormant" $3) still blocks.
+  - Known miss: 125163 "Monthly service charge when balance falls below" $2, whose source line also
+    states "$5 monthly service charge" and "$2 paper statement fee". The stored name lost both
+    figures and neither the live row nor its verified row carries the source line (the raw row's
+    `conditions` / `extraction_note` would take a new join), so the second price cannot be seen;
+    the fixture asserts the rename as it is.
+  - Known and accepted: 125166, whose source line is "$3.00 per monthly fee if balance falls below
+    $150, $9 per item charge after 3 withdrawals", is renamed "Per monthly fee" at $9: the stored
+    name lost the figures, so the generic head passes the balance gate (with the figures in the name
+    the second price refuses it; both are fixtures). 64144 "Per quarter charge" renamed through the
+    generic balance-below route, and 110391's generic tail "monthly service charge" refused, are
+    accepted as they are.
+  `liveFragmentCountSql()` mirrors each rule (`head_generic`, `generic_ok`, the figure gate on
+  `readable`); JS-vs-SQL parity holds on every switch-on fixture.
 - Live hourly re-check (`hourly-frequency-check.ts`, #1456). About 802 live fees say in their name
   that they are priced by the hour ("Research Fee $25/hour", "Subpoena Fee - Per Hour") but carried
   no frequency or a per-item one, so a report read the price as a flat charge. `hourly` shows as "per
@@ -815,7 +876,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `DARWIN_SCHEDULE_REFILE_STRATEGY` | `verify.schedule_refile` | v1 | `darwin/schedule-refile.ts` |
 | `DARWIN_VERDICT_SCORE_STRATEGY` | `verify.verdict_score` | v1 | `darwin/verdict-score.ts` |
 | `DARWIN_RECHECK_STRATEGY` | `verify.recheck` | v3 | `darwin/verified-recheck.ts` |
-| `LIVE_FRAGMENT_STRATEGY` | `darwin.live_fragment_check` | v4 | `darwin/live-fragment-check.ts` |
+| `LIVE_FRAGMENT_STRATEGY` | `darwin.live_fragment_check` | v5 | `darwin/live-fragment-check.ts` |
 | `HOURLY_CHECK_VERSION` | `darwin.hourly_frequency_check` | v1 | `darwin/hourly-frequency-check.ts` |
 | `NON_DEPOSIT_CHECK_VERSION` | `darwin.non_deposit_document` | v1 | `darwin/non-deposit-document-check.ts` |
 | `DOCUMENT_OWNER_STRATEGY` | `verify.document_owner` | v1 | `darwin/document-owner.ts` |

@@ -95,8 +95,11 @@ const TAIL_GENERIC_ONLY = new RegExp(String.raw`^(?:${TAIL_GENERIC_WORDS.join("|
 const TAIL_PERSON = /\b(?:our|your)\b/i;
 /** v4 (#1499 review): a tail that opens on a parenthetical ("(OD) fee", "(see schedule) fee") names no fee. */
 const TAIL_PAREN_START = /^\(/;
-/** v4 (#1499): a lower-case line's head is read capitalised, but only when a lower-case "if"/"when" follows it. */
-const GLUED_LOWER_CONDITION = /^\s+(?:if|when)\b/;
+/**
+ * v4 (#1499): a lower-case line's head is read capitalised, but only when a lower-case "if"/"when"
+ * follows it. v5: "only if" / "only when" too (132041).
+ */
+const GLUED_LOWER_CONDITION = /^\s+(?:only\s+)?(?:if|when)\b/;
 /** The condition that follows a name on its line ("Service Charge if balance falls below"). */
 const CONDITION_TAIL = /\s+(?:(?:is|are)\s+)?(?:waived\s+)?(?:if|when|unless|otherwise|charged\s+(?:if|when))\b.*$/i;
 /** A unit left after a name once its condition is cut ("Service charge per month"). */
@@ -231,10 +234,13 @@ const GLUED_HEAD_ENDINGS = [
 ].map(anyCase);
 /** v2 (#1499): the endings a lower-case condition may follow ("Monthly maintenance fee if the balance falls below"). */
 const GLUED_FEE_ENDINGS = ["fees?", "charges?"].map(anyCase);
-/** The words a glued sentence opens with: a capitalised sentence start, or a lower-case "you", "we" or "will". */
+/**
+ * The words a glued sentence opens with: a capitalised sentence start, or a lower-case "you", "we" or "will".
+ * v5 (#1499): "THERE" in capitals too ("10NON-MEMBER LOAN APPLICATION FEE THERE IS A $10.00 ...", 109893).
+ */
 const GLUED_SENTENCE_STARTS = [
   "You", "YOU", "you", "Your", "YOUR", "your", "We", "WE", "we", "This", "THIS", "These", "If", "IF", "When", "WHEN",
-  "It", "There", "Our", "Any", "Each", "Will", "WILL", "will", "The", "THE", "Please", "Note",
+  "It", "There", "THERE", "Our", "Any", "Each", "Will", "WILL", "will", "The", "THE", "Please", "Note",
 ];
 /** v2 (#1499): the price's own lead-in opens the sentence ("... Garnishment Fee A fee of", "The fee", "the charge"). */
 const GLUED_FEE_LEAD = String.raw`(?:[Aa]n?|AN?|[Tt]he|THE)\s+(?:(?:${["monthly", "service", "annual"].map(anyCase).join("|")})\s+)?(?:${GLUED_FEE_ENDINGS.join("|")})`;
@@ -281,10 +287,16 @@ const GLUED_TERMINATOR = String.raw`(?:${GLUED_SENTENCE_STARTS.join("|")}|${GLUE
  * - a name ending on "fee" or "charge" splits at a lower-case "if" or "when" whose condition names
  *   no person ("Monthly maintenance fee if the average daily balance falls below"). A condition on
  *   the customer ("Wire Fee if you request") still has no head, as in v1.
+ *
+ * v5 (#1499, Darwin's live check only): the lower-case split also takes "only if" / "only when"
+ * (132041), and "your" in a balance-below condition ("... fee if your daily balance falls below",
+ * 142684); "you", "we", "our" and "your" in any other condition still give no head.
  */
+/** v5 (#1499): a balance-below condition, any case; the one place "your" may sit in a lower-case condition. */
+const GLUED_BALANCE_BELOW = String.raw`\b${anyCase("balance")}s?\b.*\b(?:${anyCase("below")}|${anyCase("under")}|${anyCase("less")}\s+${anyCase("than")})\s*$`;
 const GLUED_SENTENCE = new RegExp(
   String.raw`^((?!(?:${GLUED_HEAD_LEADS.join("|")})\b)(?=[A-Z0-9])${GLUED_WORD}(?:\s+${GLUED_WORD}){0,${GLUED_HEAD_MAX_WORDS - 2}}\s+` +
-    String.raw`(?:(?:${GLUED_FEE_ENDINGS.join("|")})(?=\s+(?:if|when)\b(?!.*\b(?:you|your|we|our)\b))` +
+    String.raw`(?:(?:${GLUED_FEE_ENDINGS.join("|")})(?=\s+(?:only\s+)?(?:if|when)\b(?!.*\b(?:you|we|our)\b)(?:(?!.*\byour\b)|(?=.*${GLUED_BALANCE_BELOW})))` +
     String.raw`|(?:${GLUED_HEAD_ENDINGS.join("|")})(?:\s+\([^()]*\)(?=${GLUED_CELL_BREAK}${GLUED_TERMINATOR})|(?=${GLUED_BREAK}${GLUED_TERMINATOR}))))`,
 );
 /**
@@ -308,9 +320,10 @@ const GLUED_GENERIC_ONLY = new RegExp(String.raw`^(?:${GLUED_GENERIC_WORDS.join(
 /**
  * v2 (#1499): an account, a period or "other" and fee words alone name no fee ("Account Fees",
  * "Monthly Fee", "Quarterly fee", "Additional fees", "Other Charges"); "Monthly Service Fee" and
- * "Monthly maintenance fee" still do.
+ * "Monthly maintenance fee" still do. v5: a period alone too ("Per quarter charge", 64144; "Per
+ * month fee", "Per year fee").
  */
-const GLUED_ACCOUNT_WORDS = ["accounts?", "monthly", "quarterly", "annual(?:ly)?", "additional", "other", "misc(?:ellaneous)?", "fees?", "charges?", "per", "each", "a", "an", "the", "of", "for", "and", "or", "&"];
+const GLUED_ACCOUNT_WORDS = ["accounts?", "monthly", "quarterly", "annual(?:ly)?", "months?", "quarters?", "years?", "additional", "other", "misc(?:ellaneous)?", "fees?", "charges?", "per", "each", "a", "an", "the", "of", "for", "and", "or", "&"];
 const GLUED_ACCOUNT_GENERIC = new RegExp(String.raw`^(?:${GLUED_ACCOUNT_WORDS.join("|")})(?:\s+(?:${GLUED_ACCOUNT_WORDS.join("|")}))*$`, "i");
 /**
  * v2 (#1499): a clause, not a name: who pays ("Customers who opt to receive paper statements"),
@@ -324,8 +337,16 @@ const GLUED_CLAUSE_HEAD = /^(?:customers?|no\s+matter|to\s+request|all)\b|\b(?:w
  * "Legal Attachments, Levies, and Garnishment Fee" is a name.
  */
 const GLUED_SERVICE_LIST = /^(?=.*(?:&|\band\b))(?!.*\b(?:fees?|charges?|penalty)(?:\s+\([^()]*\))?$)/i;
-/** The head is no name when it is itself a sentence, a condition, a clause, a heading or generic words alone. */
-const GLUED_HEAD_BARS = [LIVE_PRONOUN, SENTENCE_VERB, CONDITION_CLAUSE, GLUED_GENERIC_ONLY, GLUED_ACCOUNT_GENERIC, GLUED_CLAUSE_HEAD, GLUED_SERVICE_LIST] as const;
+/** v5 (#1499): a bare "Activation fee" names no product (98668 was a gift card's). "Card activation fee" still does. */
+const GLUED_BARE_ACTIVATION = /^activation\s+(?:fees?|charges?)$/i;
+/** The head is no name when it is itself a sentence, a condition, a clause, a heading or a bare activation fee. */
+const GLUED_HEAD_BARS = [LIVE_PRONOUN, SENTENCE_VERB, CONDITION_CLAUSE, GLUED_CLAUSE_HEAD, GLUED_SERVICE_LIST, GLUED_BARE_ACTIVATION] as const;
+/**
+ * v5 (#1499): generic words alone ("Monthly Fee", "Service charge", "Per quarter charge") name no
+ * fee. Split from `GLUED_HEAD_BARS` so Darwin can let a generic head through on a balance-below
+ * condition only (`gluedSentenceSplit(name, { allowGeneric: true })`); every other caller refuses it.
+ */
+const GLUED_GENERIC_BARS = [GLUED_GENERIC_ONLY, GLUED_ACCOUNT_GENERIC] as const;
 
 /**
  * #1443: the real fee name a live fragment opens with, when the rest is a sentence glued on
@@ -340,15 +361,20 @@ export function gluedSentenceHead(name: string | null | undefined): string | nul
  * The name as the head is read from it: whitespace collapsed, "continued" marks dropped, then a
  * glued footnote number or "To request" (`GLUED_LEAD_STRIP`).
  */
-function gluedReadable(name: string | null | undefined): string {
+export function gluedReadable(name: string | null | undefined): string {
   return (name ?? "").replace(/\s+/g, " ").trim().replace(GLUED_CONT_MARK, "").trim().replace(GLUED_LEAD_STRIP, "");
 }
 
 /**
  * v3 (#1499): `gluedSentenceHead` with the rest of the line after the head (its break included),
  * so the caller can read the condition the head was split from ("if the balance falls below").
+ * v5: with `allowGeneric`, a head of generic words alone (`GLUED_GENERIC_BARS`) is returned with
+ * `generic: true` instead of null, for the caller to gate; every other bar still refuses it.
  */
-export function gluedSentenceSplit(name: string | null | undefined): { head: string; rest: string } | null {
+export function gluedSentenceSplit(
+  name: string | null | undefined,
+  options: { allowGeneric?: boolean } = {},
+): { head: string; rest: string; generic: boolean } | null {
   let current = gluedReadable(name);
   let match = current.match(GLUED_SENTENCE);
   if (!match && /^[a-z]/.test(current)) {
@@ -363,7 +389,9 @@ export function gluedSentenceSplit(name: string | null | undefined): { head: str
   if (!match) return null;
   const head = match[1];
   if (GLUED_HEAD_BARS.some((bar) => bar.test(head))) return null;
-  return { head, rest: current.slice(match[0].length) };
+  const generic = GLUED_GENERIC_BARS.some((bar) => bar.test(head));
+  if (generic && !options.allowGeneric) return null;
+  return { head, rest: current.slice(match[0].length), generic };
 }
 
 /**
@@ -378,7 +406,7 @@ export function feeOfSentenceTail(name: string | null | undefined): string | nul
   const raw = current.match(FEE_OF_SENTENCE_TAIL)?.[1]?.trim();
   if (!raw || TAIL_PERSON.test(raw)) return null;
   const phrase = raw.replace(TAIL_QUALIFIERS, "").trim();
-  if (!phrase || TAIL_PAREN_START.test(phrase) || TAIL_GENERIC_ONLY.test(phrase) || GLUED_HEAD_BARS.some((bar) => bar.test(phrase))) return null;
+  if (!phrase || TAIL_PAREN_START.test(phrase) || TAIL_GENERIC_ONLY.test(phrase) || [...GLUED_HEAD_BARS, ...GLUED_GENERIC_BARS].some((bar) => bar.test(phrase))) return null;
   return phrase.replace(/^[a-z]/, (letter) => letter.toUpperCase());
 }
 
@@ -401,6 +429,7 @@ export const LIVE_FRAGMENT_REGEXES = {
   glued_lower_condition: GLUED_LOWER_CONDITION,
   glued_sentence: GLUED_SENTENCE,
   glued_head_bars: GLUED_HEAD_BARS,
+  glued_generic_bars: GLUED_GENERIC_BARS,
 } as const;
 
 /** The live fragment shape a name carries, parentheticals included (the shape before #1443's exemption). */
