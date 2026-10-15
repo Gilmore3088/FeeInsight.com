@@ -1,145 +1,153 @@
 import Link from "next/link";
-import { ArrowRight, Search } from "lucide-react";
-import { FrameMedia, type FrameVideo } from "@/components/marketing/frame-media";
-import { ProductFrame } from "@/components/marketing/product-frame";
+import { ArrowRight } from "lucide-react";
+import type { FrameVideo } from "@/components/marketing/frame-media";
+import { FrameMedia } from "@/components/marketing/frame-media";
 import { DEMO_REQUEST_NAV, PRO_PLANS_NAV } from "@/components/nav-items";
 import { TrackLink } from "@/components/track-link";
-import { HAMILTON_MODES, REPORT_OFFER, REPORT_PRICE_INLINE } from "@/lib/constants";
-import { formatFeeAmount } from "@/lib/format";
-import { MarketRange, rangeDomain, type HeadlineRow } from "./market-position";
+import { REPORT_OFFER, REPORT_PRICE_INLINE } from "@/lib/constants";
+import { formatCompactDollars } from "@/lib/format";
+import { formatReportQuarter, type NormalizedFinancial } from "./financial-units";
 
-/** The recorded clip of Hamilton opening on an institution; until it exists a marked slot holds its place. */
+/** The recorded clip of the Hamilton tour; until it exists a marked slot holds its place. */
 export const INSTITUTION_TOUR_VIDEO: FrameVideo | null = null;
+
+/** The one Hamilton insight shown free: its fee-income share against peers its size, from call reports. */
+export interface HamiltonInsight {
+  /** Newest first, as selectFinancialsByQuarter returns them. */
+  quarters: NormalizedFinancial[];
+  ownSharePct: number | null;
+  peerSharePct: number | null;
+  peerCount: number | null;
+  /** "credit union" or "bank". */
+  kind: string;
+}
+
+const pct = (n: number) => `${n >= 10 ? n.toFixed(0) : n.toFixed(1)}%`;
+/** A share outside this range is a filing artefact, not a figure to lead with. */
+const plausibleShare = (n: number | null): n is number => n !== null && Number.isFinite(n) && n > 0 && n < 60;
 
 /**
  * Where the tour clip will play. The clip is one generic recording on a demo institution, so the
  * slot never names the page's institution. It is a picture, not a control, so nothing on the page
- * pretends to play; once the clip exists FrameMedia's button takes its place.
+ * pretends to play; once the clip exists FrameMedia's play button sits on it.
  */
-function TourVideoSlot() {
+function TourVideoSlot({ ready }: { ready: boolean }) {
   return (
-    <figure className="relative flex aspect-video items-center justify-center overflow-hidden rounded-xl border border-warm-ink-700 bg-warm-ink-800">
-      <span
-        aria-hidden="true"
-        className="absolute inset-0 bg-[radial-gradient(circle_at_30%_20%,rgba(255,255,255,0.08),transparent_60%)]"
-      />
-      <span aria-hidden="true" className="relative flex h-14 w-14 items-center justify-center rounded-full bg-warm-ink-50/10 ring-1 ring-warm-ink-50/25">
-        <svg viewBox="0 0 12 12" className="ml-0.5 h-5 w-5 text-warm-ink-50">
+    <figure className="flex items-center gap-3 rounded-lg border border-border bg-paper p-2 pr-4">
+      <span aria-hidden="true" className="flex h-14 w-24 shrink-0 items-center justify-center rounded-md bg-warm-ink-900">
+        <svg viewBox="0 0 12 12" className="ml-0.5 h-4 w-4 text-warm-ink-50">
           <path d="M3 1.5v9l7.5-4.5z" fill="currentColor" />
         </svg>
       </span>
-      <figcaption className="absolute inset-x-0 bottom-0 flex items-baseline justify-between gap-3 px-4 py-3 text-[13px]">
-        <span className="min-w-0 truncate font-medium text-warm-ink-50">The Hamilton tour</span>
-        <span className="shrink-0 text-warm-ink-300">Video coming</span>
+      <figcaption className="min-w-0 text-[13px]">
+        <span className="block font-medium text-ink">The Hamilton tour</span>
+        {!ready && <span className="text-ink-muted">Video coming</span>}
       </figcaption>
     </figure>
   );
 }
 
-/**
- * Hamilton as it opens on this institution, drawn from the same live rows as the page, in the
- * shared product window. When the tour clip exists it plays behind a button on this frame.
- */
-function HamiltonView({
-  institutionName,
-  rows,
-  marketLabel,
-  stateLabel,
-}: {
-  institutionName: string;
-  rows: HeadlineRow[];
-  marketLabel: string;
-  stateLabel: string | null;
-}) {
+function InsightView({ insight, institutionName }: { insight: HamiltonInsight; institutionName: string }) {
+  const series = [...insight.quarters].reverse().filter((q) => q.serviceChargeIncome !== null);
+  const latest = insight.quarters[0];
+  const first = series[0];
+  const last = series[series.length - 1];
+  const change =
+    first && last && first !== last && first.serviceChargeIncome && last.serviceChargeIncome
+      ? ((last.serviceChargeIncome - first.serviceChargeIncome) / first.serviceChargeIncome) * 100
+      : null;
+  const comparePeers = plausibleShare(insight.ownSharePct) && plausibleShare(insight.peerSharePct) && (insight.peerCount ?? 0) >= 3;
+  const top = Math.max(1, ...series.map((q) => q.serviceChargeIncome ?? 0));
+  const sourceName = latest?.source === "ncua" ? "NCUA call reports" : "FDIC call reports";
+  const span = first && last ? `${formatReportQuarter(first.reportDate)} to ${formatReportQuarter(last.reportDate)}` : null;
+
   return (
-    <FrameMedia video={INSTITUTION_TOUR_VIDEO}>
-      <ProductFrame label="Hamilton" className="shadow-fi-2">
-        <div className="flex gap-1 overflow-hidden border-b border-border px-3 py-2" aria-hidden="true">
-          {HAMILTON_MODES.map((mode, i) => (
-            <span
-              key={mode}
-              className={`shrink-0 rounded-md px-2.5 py-1 text-[12px] font-medium ${
-                i === 1 ? "bg-ink text-on-ink" : "text-ink-muted"
-              }`}
-            >
-              {mode}
-            </span>
-          ))}
-        </div>
-        <div className="space-y-4 p-4 sm:p-5">
-          <div>
-            <p className="text-[17px] font-semibold leading-snug text-ink">{institutionName}</p>
-            <p className="text-[12px] text-ink-muted">against {marketLabel}</p>
-          </div>
-          <ul className="space-y-3">
-            {rows.map((row) => {
-              const band = row.state ?? row.nation;
-              if (!band) return null;
-              return (
-                <li key={row.category}>
-                  <div className="flex items-baseline justify-between gap-3 text-[13px]">
-                    <span className="min-w-0 text-ink">{row.label}</span>
-                    <span className="font-mono font-semibold tabular-nums text-ink">{formatFeeAmount(row.amount)}</span>
-                  </div>
-                  <MarketRange
-                    label={row.state && stateLabel ? stateLabel : "U.S."}
-                    band={band}
-                    amount={row.amount}
-                    domainMax={rangeDomain(row.amount, [band])}
-                  />
-                </li>
-              );
-            })}
-          </ul>
-          <div className="flex items-center gap-2 rounded-lg border border-control-border bg-paper px-3 py-2.5 text-[13px] text-ink-muted">
-            <Search className="h-4 w-4 shrink-0" aria-hidden="true" />
-            <span className="truncate">Ask Hamilton about {institutionName}</span>
+    <figure className="min-w-0">
+      {comparePeers ? (
+        <>
+          <p className="font-mono text-[34px] font-semibold leading-none tabular-nums text-ink">
+            {pct(insight.ownSharePct as number)}
+            <span className="ml-2 align-middle text-[15px] font-normal text-ink-muted">vs {pct(insight.peerSharePct as number)} peers</span>
+          </p>
+          <p className="mt-2 text-[15px] leading-snug text-ink">
+            Fees bring in {pct(insight.ownSharePct as number)} of {institutionName}&apos;s revenue. The median for{" "}
+            {(insight.peerCount as number).toLocaleString("en-US")} {insight.kind === "bank" ? "banks" : "credit unions"} its size
+            is {pct(insight.peerSharePct as number)}.
+          </p>
+        </>
+      ) : (
+        last?.serviceChargeIncome && (
+          <p className="text-[15px] leading-snug text-ink">
+            Service-charge income was {formatCompactDollars(last.serviceChargeIncome)} in {formatReportQuarter(last.reportDate)}
+            {change !== null ? `, ${change >= 0 ? "up" : "down"} ${pct(Math.abs(change))} since ${formatReportQuarter(first.reportDate)}` : ""}.
+          </p>
+        )
+      )}
+      {series.length > 1 && (
+        <div className="mt-4" role="img" aria-label={`Service-charge income by quarter, ${span}`}>
+          <p className="text-[12px] font-medium text-ink-muted">Service-charge income by quarter</p>
+          <div className="mt-2 flex h-24 items-end gap-2">
+            {series.map((q) => (
+              <div key={q.reportDate} className="flex flex-1 flex-col items-center gap-1">
+                <span className="font-mono text-[11px] tabular-nums text-ink-muted">{formatCompactDollars(q.serviceChargeIncome)}</span>
+                <span
+                  className="w-full rounded-t-[3px] bg-ink/80"
+                  style={{ height: `${Math.max(4, ((q.serviceChargeIncome ?? 0) / top) * 64)}px` }}
+                />
+                <span className="text-[11px] text-ink-muted">{formatReportQuarter(q.reportDate)}</span>
+              </div>
+            ))}
           </div>
         </div>
-      </ProductFrame>
-    </FrameMedia>
+      )}
+      {span && (
+        <figcaption className="mt-3 text-[12px] text-ink-muted">
+          From {sourceName}, {span}
+          {comparePeers ? ". Peers share its charter and asset tier." : "."}
+        </figcaption>
+      )}
+    </figure>
   );
 }
 
-/** The one Pro ask on the page: Hamilton opened on this institution, then plans or a demo. */
+/** The page's one next step: one complete Hamilton insight on this institution, then plans or a demo. */
 export function HamiltonBand({
   institutionName,
-  rows,
-  marketLabel,
-  stateLabel,
+  insight,
   plansHref,
   reportOfferHref,
 }: {
   institutionName: string;
-  rows: HeadlineRow[];
-  marketLabel: string;
-  stateLabel: string | null;
+  insight: HamiltonInsight | null;
   plansHref: string;
   reportOfferHref: string;
 }) {
+  const hasInsight = Boolean(insight && insight.quarters.some((q) => q.serviceChargeIncome !== null));
   return (
-    <section aria-labelledby="hamilton-band-heading" className="bg-warm-ink-900 text-warm-ink-50">
-      <div className="mx-auto grid max-w-6xl gap-8 px-4 py-12 sm:px-6 sm:py-16 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] lg:items-center lg:gap-14">
-        <div className="min-w-0">
-          <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-warm-ink-300">
-            Work at {institutionName}?
-          </p>
-          <h2
-            id="hamilton-band-heading"
-            className="mt-3 text-[30px] font-semibold leading-[1.05] tracking-[-0.03em] sm:text-[40px]"
-          >
-            See every fee against your competitors.
+    <section aria-labelledby="hamilton-heading" className="rounded-2xl border border-border bg-surface-0 p-5 shadow-fi-1 sm:p-7">
+      <div className={`grid gap-6 ${hasInsight ? "lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)] lg:gap-10" : ""}`}>
+        {hasInsight && insight && (
+          <div className="min-w-0">
+            <p className="text-[12px] font-semibold uppercase tracking-[0.12em] text-ink-muted">A Hamilton finding</p>
+            <div className="mt-3">
+              <InsightView insight={insight} institutionName={institutionName} />
+            </div>
+          </div>
+        )}
+        <div className="min-w-0 space-y-4 lg:border-l lg:border-border lg:pl-10">
+          <h2 id="hamilton-heading" className="text-[22px] font-semibold leading-tight tracking-[-0.02em] text-ink sm:text-[26px]">
+            Work at {institutionName}? See every fee and filing against your peers.
           </h2>
-          <p className="mt-4 text-[16px] leading-relaxed text-warm-ink-300">
-            Hamilton, the Fee Insight Pro workspace, opens on your institution with your market and a sourced brief
-            for the board.
+          <p className="text-[14px] leading-relaxed text-ink-muted">
+            Hamilton, the Fee Insight Pro workspace, opens on your institution with your market, your call reports and a
+            sourced brief for the board.
           </p>
-          <div className="mt-7 flex flex-wrap items-center gap-x-5 gap-y-3">
+          <div className="flex flex-wrap items-center gap-x-5 gap-y-3">
             <TrackLink
               event="upgrade_click"
               eventProps={{ placement: "institution_hamilton_band" }}
               href={plansHref}
-              className="inline-flex items-center gap-2 rounded-full bg-warm-ink-50 px-6 py-3 text-[15px] font-semibold text-warm-ink-900 transition-opacity hover:opacity-90"
+              className="inline-flex items-center gap-2 rounded-full bg-ink px-5 py-2.5 text-[14px] font-semibold text-on-ink hover:opacity-90"
             >
               {PRO_PLANS_NAV.label}
               <ArrowRight className="h-4 w-4" aria-hidden="true" />
@@ -148,21 +156,20 @@ export function HamiltonBand({
               event="contact_sales"
               eventProps={{ placement: "institution_hamilton_band_demo" }}
               href={DEMO_REQUEST_NAV.href}
-              className="text-[14px] font-semibold text-warm-ink-50 underline decoration-warm-ink-500 underline-offset-4 hover:decoration-warm-ink-50"
+              className="text-[14px] font-semibold text-ink underline decoration-border underline-offset-4 hover:decoration-ink"
             >
               {DEMO_REQUEST_NAV.label}
             </TrackLink>
           </div>
-          <p className="mt-6 text-[13px] text-warm-ink-500">
+          <FrameMedia video={INSTITUTION_TOUR_VIDEO}>
+            <TourVideoSlot ready={Boolean(INSTITUTION_TOUR_VIDEO)} />
+          </FrameMedia>
+          <p className="text-[12px] text-ink-muted">
             Prefer one document?{" "}
-            <Link href={reportOfferHref} className="underline underline-offset-2 hover:text-warm-ink-50">
+            <Link href={reportOfferHref} className="underline underline-offset-2 hover:text-ink">
               {REPORT_OFFER.name}, {REPORT_PRICE_INLINE}
             </Link>
           </p>
-        </div>
-        <div className="min-w-0 space-y-4">
-          {!INSTITUTION_TOUR_VIDEO && <TourVideoSlot />}
-          <HamiltonView institutionName={institutionName} rows={rows} marketLabel={marketLabel} stateLabel={stateLabel} />
         </div>
       </div>
     </section>

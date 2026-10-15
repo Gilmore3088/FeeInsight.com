@@ -22,7 +22,7 @@ import { getAlertSubscriptionForInstitution } from "@/lib/data-store/alerts";
 import { HEADLINE_FEE_KEYS } from "@/lib/data-store/market-readiness";
 import { getDisplayName } from "@/lib/fee-taxonomy";
 import { FeeAlertControl } from "./fee-alert-control";
-import { PeerRankTeaser } from "./peer-rank-teaser";
+import { peerGroupLabel } from "./peer-rank-teaser";
 import { getInstitutionPeerRankCached, getPeerIndexCached } from "@/lib/data-store/public-cached-reads";
 import { SITE_NAME } from "@/lib/constants";
 import type { FeePublicationStatus } from "@/lib/institution-quality";
@@ -60,8 +60,10 @@ import {
 import { ProfileHeader } from "./profile-header";
 import { InstitutionJsonLd } from "./profile-jsonld";
 import { ProfileFootnote } from "./profile-footnote";
-import { HamiltonBand } from "./hamilton-band";
-import { MarketPosition, PositionSummary, type HeadlineRow, type MarketBand } from "./market-position";
+import { HamiltonBand, type HamiltonInsight } from "./hamilton-band";
+import { HeadlineTable, type HeadlineRow, type MarketBand } from "./market-position";
+import { buildFindings } from "./findings";
+import { FindingsSection } from "./findings-section";
 import { StatusNotice } from "./status-notice";
 import { ThinProfilePanel } from "./thin-profile-panel";
 
@@ -76,7 +78,6 @@ const TAXONOMY = new Set(Object.values(FEE_FAMILIES).flat());
 const FINANCIAL_HISTORY_QUARTERS = 4;
 /** Headline fees drawn in full on the page, and the few the Hamilton picture repeats. */
 const HEADLINE_ROWS_SHOWN = 6;
-const HAMILTON_ROWS_SHOWN = 3;
 /** fdic and ncua can both carry the same quarter; fetch enough rows to dedupe. */
 const FINANCIAL_SOURCES_PER_QUARTER = 2;
 
@@ -227,7 +228,6 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
           fallbackTo("state index", []),
         )
       : [];
-  const stateMarket = inst.state_code && STATE_NAMES[inst.state_code] ? `${STATE_NAMES[inst.state_code]} ${kind}` : null;
   const stateMedians: StateMedians | undefined =
     stateIndex.length > 0 && inst.state_code && STATE_NAMES[inst.state_code]
       ? {
@@ -308,6 +308,31 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
   const marketLabel = stateHasBands && stateName ? `${stateName} ${kind === "bank" ? "banks" : "credit unions"}` : "the U.S. market";
   const positionCounts = countPositions(displayFees, feeBenchmarks);
   const showHamiltonBand = !isPro && !thinProfile && headlineRows.length > 0;
+  const stateGroup = stateHasBands && stateName ? marketLabel : null;
+  const findings = thinProfile
+    ? []
+    : buildFindings({
+        rows: headlineRows,
+        stateGroup,
+        stateCode: inst.state_code,
+        peerRank,
+        peerGroup: peerRank ? peerGroupLabel(peerRank) : null,
+        positionCounts,
+      });
+  // The one Hamilton finding shown free: its fee-income share against the peer median from the
+  // same quarter's call reports (a Pro visitor already has the full financial profile).
+  const freePeerMedians =
+    showHamiltonBand && latestFinancial ? await getPeerFinancialMedians(instId).catch(fallbackTo("peer medians", null)) : null;
+  const hamiltonInsight: HamiltonInsight | null =
+    showHamiltonBand && normalizedFinancials.length > 0
+      ? {
+          quarters: normalizedFinancials,
+          ownSharePct: latestFinancial?.feeIncomeRatioPct ?? null,
+          peerSharePct: freePeerMedians?.fee_income_ratio != null ? freePeerMedians.fee_income_ratio * 100 : null,
+          peerCount: freePeerMedians?.peer_count ?? null,
+          kind,
+        }
+      : null;
 
   return (
     <>
@@ -344,20 +369,15 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
             claimHref={links.claimHref}
           />
 
-          <div className="space-y-10 sm:space-y-14">
-            <MarketPosition
+          <div className="space-y-8 sm:space-y-10">
+            <FindingsSection findings={findings} asOf={null} />
+
+            <HeadlineTable
               rows={headlineRows}
-              stateLabel={stateHasBands ? stateMarket : null}
               stateCode={stateHasBands ? inst.state_code : null}
+              stateLabel={stateHasBands ? marketLabel : null}
               kind={kind}
             />
-
-            {!thinProfile && (positionCounts.below + positionCounts.within + positionCounts.above > 0 || peerRank) && (
-              <div className={`grid gap-3 ${peerRank ? "lg:grid-cols-2" : ""}`}>
-                <PositionSummary counts={positionCounts} />
-                {peerRank && <PeerRankTeaser rank={peerRank} />}
-              </div>
-            )}
 
             {thinProfile && (
               <ThinProfilePanel
@@ -368,92 +388,90 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
               />
             )}
 
-            <section aria-labelledby="all-fees-heading" className="space-y-4">
-              <h2 id="all-fees-heading" className="text-[22px] font-semibold tracking-[-0.02em] text-ink sm:text-[26px]">
-                {displayFees.length > 0 ? `Every fee on its schedule` : "Fees"}
-              </h2>
-              <div className="overflow-hidden rounded-xl border border-border bg-surface-0 shadow-fi-1">
-                {displayFees.length > 0 ? (
-                  <>
-                    {focusFeeCategory && <FeeFocusScroll category={focusFeeCategory} />}
-                    <FeeScheduleTable
-                      fees={displayFees}
-                      disclosureUrl={inst.fee_schedule_url}
-                      focusCategory={focusFeeCategory}
-                      medians={nationalMedians}
-                      stateMedians={stateMedians}
-                      benchmarks={feeBenchmarks}
-                    />
-                  </>
-                ) : (
-                  <p className="px-4 py-8 text-sm text-ink-muted sm:px-5">
-                    {underReviewCount > 0
-                      ? "Fees are under review. They appear here once review is done."
-                      : "No published fee schedule yet. Comparisons start once a schedule is reviewed."}
-                  </p>
-                )}
-              </div>
-            </section>
-          </div>
-        </div>
+            {displayFees.length > 0 ? (
+              <details
+                open={Boolean(focusFeeCategory) || headlineRows.length === 0}
+                className="group overflow-hidden rounded-xl border border-border bg-surface-0 shadow-fi-1"
+              >
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3.5 sm:px-5 [&::-webkit-details-marker]:hidden">
+                  <span className="text-[15px] font-semibold text-ink">
+                    All {displayFees.length} fees on its schedule, with sources
+                  </span>
+                  <span aria-hidden="true" className="text-ink-muted transition-transform group-open:rotate-90">
+                    ›
+                  </span>
+                </summary>
+                <div className="border-t border-border">
+                  {focusFeeCategory && <FeeFocusScroll category={focusFeeCategory} />}
+                  <FeeScheduleTable
+                    fees={displayFees}
+                    disclosureUrl={inst.fee_schedule_url}
+                    focusCategory={focusFeeCategory}
+                    medians={nationalMedians}
+                    stateMedians={stateMedians}
+                    benchmarks={feeBenchmarks}
+                  />
+                </div>
+              </details>
+            ) : (
+              <p className="rounded-xl border border-border bg-surface-0 px-4 py-8 text-sm text-ink-muted sm:px-5">
+                {underReviewCount > 0
+                  ? "Fees are under review. They appear here once review is done."
+                  : "No published fee schedule yet. Comparisons start once a schedule is reviewed."}
+              </p>
+            )}
 
-        {showHamiltonBand && (
-          <HamiltonBand
-            institutionName={inst.institution_name}
-            rows={headlineRows.slice(0, HAMILTON_ROWS_SHOWN)}
-            marketLabel={marketLabel}
-            stateLabel={stateHasBands ? inst.state_code : null}
-            plansHref={links.plansHref}
-            reportOfferHref={links.reportOfferHref}
-          />
-        )}
+            {showHamiltonBand && (
+              <HamiltonBand
+                institutionName={inst.institution_name}
+                insight={hamiltonInsight}
+                plansHref={links.plansHref}
+                reportOfferHref={links.reportOfferHref}
+              />
+            )}
 
-        <div className="mx-auto max-w-6xl space-y-10 px-4 py-10 sm:space-y-14 sm:px-6 sm:py-14">
-          {isPro && !thinProfile && (
-            <Link href={links.analyzeHref} className="fi-btn fi-btn-primary">
-              Open {inst.institution_name} in Hamilton
-            </Link>
-          )}
+            {isPro && !thinProfile && (
+              <Link href={links.analyzeHref} className="fi-btn fi-btn-primary">
+                Open {inst.institution_name} in Hamilton
+              </Link>
+            )}
 
-          {(isPro
-            ? financialSeries.length > 0 || Boolean(footprint || complaints || holdingCompany || regulatoryWatch)
-            : latestFinancial !== null) && (
-            <FinancialProfileSection
-              isPro={isPro}
-              points={financialSeries}
-              peers={peerMedianPoints}
-              insights={insights}
-              charterLabel={charterLabel}
-              footprint={footprint}
-              complaints={complaints}
-              holdingCompany={holdingCompany}
-              enforcement={enforcement}
-              regulatoryWatch={regulatoryWatch}
-              exportHref={`/api/v1/institutions?id=${instId}&view=benchmark&format=csv`}
+            {isPro && (financialSeries.length > 0 || Boolean(footprint || complaints || holdingCompany || regulatoryWatch)) && (
+              <FinancialProfileSection
+                isPro={isPro}
+                points={financialSeries}
+                peers={peerMedianPoints}
+                insights={insights}
+                charterLabel={charterLabel}
+                footprint={footprint}
+                complaints={complaints}
+                holdingCompany={holdingCompany}
+                enforcement={enforcement}
+                regulatoryWatch={regulatoryWatch}
+                exportHref={`/api/v1/institutions?id=${instId}&view=benchmark&format=csv`}
+                institutionName={inst.institution_name}
+              />
+            )}
+
+            <FeeAlertControl
+              institutionId={instId}
               institutionName={inst.institution_name}
-              plansHref={links.plansHref}
-              freeQuarters={normalizedFinancials}
+              focusCategory={focusFeeCategory}
+              categoryLabels={alertCategoryLabels}
+              mode={thinProfile ? "verify" : "alerts"}
+              initial={{
+                signedIn: Boolean(user),
+                saved: alertSubscription !== null,
+                feeCategories: alertSubscription?.fee_categories ?? null,
+              }}
             />
-          )}
 
-          <FeeAlertControl
-            institutionId={instId}
-            institutionName={inst.institution_name}
-            focusCategory={focusFeeCategory}
-            categoryLabels={alertCategoryLabels}
-            mode={thinProfile ? "verify" : "alerts"}
-            initial={{
-              signedIn: Boolean(user),
-              saved: alertSubscription !== null,
-              feeCategories: alertSubscription?.fee_categories ?? null,
-            }}
-          />
-
-          <ProfileFootnote
-            regulatorFacts={regulatorFacts}
-            correctSourceHref={links.correctSourceHref}
-            financialsAsOf={financialsAsOf}
-          />
+            <ProfileFootnote
+              regulatorFacts={regulatorFacts}
+              correctSourceHref={links.correctSourceHref}
+              financialsAsOf={financialsAsOf}
+            />
+          </div>
         </div>
       </div>
 

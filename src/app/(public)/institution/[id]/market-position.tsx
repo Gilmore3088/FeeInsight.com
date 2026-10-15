@@ -124,113 +124,114 @@ function Legend({ kind }: { kind: string }) {
   );
 }
 
-function stateCodeOrLabel(code: string | null, label: string | null): string {
-  return code ?? label ?? "State";
+/** The difference from a median, coloured by where the fee sits in that market's middle half. */
+function Diff({ amount, band }: { amount: number; band: MarketBand | null }) {
+  if (!band) return <span className="text-ink-muted">—</span>;
+  const diff = amount - band.median;
+  const position = positionIn(amount, band);
+  return (
+    <span className={`font-mono tabular-nums ${TEXT[position]}`}>
+      {Math.abs(diff) < 0.005 ? "at median" : `${diff > 0 ? "+" : "−"}${money(Math.abs(diff))}`}
+    </span>
+  );
 }
 
-function HeadlineCard({ row, stateLabel, stateCode }: { row: HeadlineRow; stateLabel: string | null; stateCode: string | null }) {
+function HeadlineRowItem({ row, stateCode }: { row: HeadlineRow; stateCode: string | null }) {
   const domainMax = rangeDomain(row.amount, [row.state, row.nation]);
   const reference = row.state ?? row.nation;
-  const position = reference ? positionIn(row.amount, reference) : null;
-  const where = row.state ? stateLabel : "U.S.";
+  const place = row.state ? (stateCode ?? "State") : "U.S.";
   return (
-    <li className="min-w-0 border-b border-border px-4 py-4 last:border-b-0 sm:rounded-xl sm:border sm:bg-surface-0 sm:shadow-fi-1 sm:last:border-b">
-      <div className="flex items-baseline justify-between gap-3">
-        <h3 className="min-w-0 text-[15px] font-semibold text-ink">{row.label}</h3>
-        <span className="shrink-0 font-mono text-[22px] font-semibold tabular-nums text-ink">{money(row.amount)}</span>
-      </div>
-      {position && (
-        <p className={`mt-0.5 text-[13px] font-medium ${TEXT[position]}`}>
-          {VERDICT[position]} the {where} middle half
-        </p>
-      )}
-      {row.spread && (
-        <p className="text-[12px] text-ink-muted">
-          {row.category === "overdraft" ? "Highest" : "Median"} of its {row.spread.count} fees, {money(row.spread.low)} to{" "}
-          {money(row.spread.high)}
-        </p>
-      )}
-      <div className="mt-3 space-y-1">
-        {row.state && stateLabel && <MarketRange label={stateCode ?? stateLabel} band={row.state} amount={row.amount} domainMax={domainMax} />}
-        {row.nation && <MarketRange label="U.S." band={row.nation} amount={row.amount} domainMax={domainMax} />}
-      </div>
-      {reference && (
-        <p className="mt-2 font-mono text-[11px] tabular-nums text-ink-muted">
-          {row.state ? stateCodeOrLabel(stateCode, stateLabel) : "U.S."} median {money(reference.median)} · middle half{" "}
-          {money(reference.p25)}–{money(reference.p75)} · {reference.institutions.toLocaleString("en-US")} institutions
-        </p>
-      )}
-      {row.sourceUrl && (
-        <a
-          href={row.sourceUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="mt-2 inline-flex items-center gap-1 text-[12px] font-medium text-ink-muted underline decoration-border underline-offset-2 hover:text-ink"
-        >
-          From its fee schedule
-          <ExternalLink className="h-3 w-3" aria-hidden="true" />
-        </a>
-      )}
+    <li className="border-t border-border first:border-t-0">
+      <details className="group">
+        <summary className="grid cursor-pointer list-none grid-cols-[minmax(0,1fr)_4.5rem_5.5rem] items-baseline gap-2 px-4 py-3 hover:bg-paper sm:grid-cols-[minmax(0,1fr)_6rem_7rem_7rem] sm:px-5 [&::-webkit-details-marker]:hidden">
+          <span className="flex min-w-0 items-baseline gap-2 text-[14px] text-ink">
+            <span aria-hidden="true" className="text-ink-muted transition-transform group-open:rotate-90">›</span>
+            <span className="truncate">{row.label}</span>
+          </span>
+          <span className="text-right font-mono text-[15px] font-semibold tabular-nums text-ink">{money(row.amount)}</span>
+          <span className="text-right text-[13px]">
+            <Diff amount={row.amount} band={reference} />
+          </span>
+          <span className="hidden text-right text-[13px] sm:block">
+            {row.state && row.nation ? <Diff amount={row.amount} band={row.nation} /> : <span className="text-ink-muted">—</span>}
+          </span>
+        </summary>
+        <div className="space-y-2 px-4 pb-4 sm:px-5">
+          {row.spread && (
+            <p className="text-[12px] text-ink-muted">
+              {row.category === "overdraft" ? "Highest" : "Median"} of its {row.spread.count} fees, {money(row.spread.low)} to{" "}
+              {money(row.spread.high)}
+            </p>
+          )}
+          <div className="space-y-1">
+            {row.state && <MarketRange label={stateCode ?? "State"} band={row.state} amount={row.amount} domainMax={domainMax} />}
+            {row.nation && <MarketRange label="U.S." band={row.nation} amount={row.amount} domainMax={domainMax} />}
+          </div>
+          {reference && (
+            <p className="font-mono text-[11px] tabular-nums text-ink-muted">
+              {place} median {money(reference.median)} · middle half {money(reference.p25)}–{money(reference.p75)} ·{" "}
+              {reference.institutions.toLocaleString("en-US")} institutions
+            </p>
+          )}
+          {row.sourceUrl && (
+            <a
+              href={row.sourceUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 text-[12px] font-medium text-ink underline decoration-border underline-offset-2 hover:decoration-ink"
+            >
+              From its fee schedule
+              <ExternalLink className="h-3 w-3" aria-hidden="true" />
+            </a>
+          )}
+        </div>
+      </details>
     </li>
   );
 }
 
-/** The hero exhibit: each headline fee placed in its state and the nation. */
-export function MarketPosition({
+/** One compact table of the headline fees; each row opens to its market bars, numbers and source. */
+export function HeadlineTable({
   rows,
-  stateLabel,
   stateCode,
+  stateLabel,
   kind,
 }: {
   rows: HeadlineRow[];
-  /** "TX", the short label beside each state bar so every bar starts at the same point. */
+  /** "TX"; null when the state has too few institutions for a median. */
   stateCode: string | null;
-  /** "Texas"; null when the state has too few institutions for a median. */
+  /** "Texas banks". */
   stateLabel: string | null;
   /** "bank" or "credit union", for the legend. */
   kind: string;
 }) {
   if (rows.length === 0) return null;
+  const vs = stateCode ? `vs ${stateCode}` : "vs U.S.";
   return (
-    <section aria-labelledby="market-position-heading" className="space-y-4">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-        <h2 id="market-position-heading" className="text-[22px] font-semibold tracking-[-0.02em] text-ink sm:text-[26px]">
-          Its fees against the market
+    <section aria-labelledby="headline-table-heading" className="space-y-3">
+      <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+        <h2 id="headline-table-heading" className="text-[20px] font-semibold tracking-[-0.02em] text-ink sm:text-[24px]">
+          Its main fees against {stateLabel ?? "the U.S."}
         </h2>
         <Legend kind={kind} />
       </div>
-      <ul className="overflow-hidden rounded-xl border border-border bg-surface-0 shadow-fi-1 sm:grid sm:grid-cols-2 sm:gap-3 sm:overflow-visible sm:border-0 sm:bg-transparent sm:shadow-none lg:grid-cols-3">
-        {rows.map((row) => (
-          <HeadlineCard key={row.category} row={row} stateLabel={stateLabel} stateCode={stateCode} />
-        ))}
-      </ul>
-    </section>
-  );
-}
-
-/** Below, inside and above the national middle half, across every fee with a benchmark. */
-export function PositionSummary({ counts }: { counts: Record<Position, number> }) {
-  const total = counts.below + counts.within + counts.above;
-  if (total === 0) return null;
-  const order: Position[] = ["below", "within", "above"];
-  return (
-    <figure className="rounded-xl border border-border bg-surface-0 p-4 shadow-fi-1">
-      <figcaption className="flex items-baseline justify-between gap-3">
-        <span className="text-[15px] font-semibold text-ink">All {total} fees vs. the U.S.</span>
-      </figcaption>
-      <div className="mt-3 flex h-3 overflow-hidden rounded-full bg-surface-200" aria-hidden="true">
-        {order.map((p) =>
-          counts[p] > 0 ? <span key={p} className={DOT[p]} style={{ width: `${(counts[p] / total) * 100}%` }} /> : null,
-        )}
+      <div className="overflow-hidden rounded-xl border border-border bg-surface-0 shadow-fi-1">
+        <div
+          aria-hidden="true"
+          className="grid grid-cols-[minmax(0,1fr)_4.5rem_5.5rem] gap-2 border-b border-border bg-paper px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-muted sm:grid-cols-[minmax(0,1fr)_6rem_7rem_7rem] sm:px-5"
+        >
+          <span>Fee</span>
+          <span className="text-right">Its fee</span>
+          <span className="text-right">{vs} median</span>
+          <span className="hidden text-right sm:block">vs U.S. median</span>
+        </div>
+        <ul>
+          {rows.map((row) => (
+            <HeadlineRowItem key={row.category} row={row} stateCode={stateCode} />
+          ))}
+        </ul>
       </div>
-      <dl className="mt-3 grid grid-cols-3 gap-2">
-        {order.map((p) => (
-          <div key={p}>
-            <dt className={`text-[12px] font-medium ${TEXT[p]}`}>{VERDICT[p]}</dt>
-            <dd className="font-mono text-[20px] font-semibold tabular-nums text-ink">{counts[p]}</dd>
-          </div>
-        ))}
-      </dl>
-    </figure>
+      <p className="text-[12px] text-ink-muted">Tap a fee for its range, sample size and source.</p>
+    </section>
   );
 }
