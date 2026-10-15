@@ -132,6 +132,7 @@ function per10B(perBillion: number): string {
 export function complaintBenchmarkFact(b: ComplaintBenchmark | null | undefined, institutionName?: string): Fact | null {
   if (!b || b.match_status !== "matched" || b.fee_complaints === null) return null;
   if (b.peer_coverage === "insufficient") {
+    if (b.eligible_peer_count === 0) return null;
     return {
       text: `Only ${b.peer_count} of ${b.eligible_peer_count.toLocaleString("en-US")} similar institutions have a verified CFPB match, too few to compare fee complaint rates.`,
       source: { label: "CFPB Consumer Complaint Database, verified institution matches", table: "institution_identity_links", asOf: `${b.year}-12-31` },

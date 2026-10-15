@@ -232,7 +232,8 @@ export interface ComplaintBenchmark {
   peer_coverage: "verified" | "insufficient";
   peers_with_fee_complaints: number;
   peer_median_per_billion: number | null;
-  peer_median_fee_complaints: number;
+  /** null when coverage is insufficient: too few verified peers for a median. */
+  peer_median_fee_complaints: number | null;
   peer_fee_complaints_total: number;
   /** False until CFPB sub-issues load; "Managing an account" fee problems are then not counted. */
   sub_issues_loaded: boolean;
@@ -385,7 +386,7 @@ export async function getComplaintBenchmark(institutionId: number, year?: number
   } else if (coverage === "insufficient") {
     summary = `${target.institution_name} had ${target.fee_complaints} CFPB fee complaints in ${period}. Only ${chosen.peers.length} of ${chosen.eligible.length} ${tierLabel} nationwide have a verified CFPB match, too few to compare.`;
   } else if (target.fee_complaints === 0) {
-    summary = `${target.institution_name} had 0 CFPB fee complaints in ${period}. ${chosen.peers.filter((p) => p.fee_complaints > 0).length} of ${chosen.peers.length} ${tierLabel} ${where} had any.`;
+    summary = `${target.institution_name} had 0 CFPB fee complaints in ${period}. ${chosen.peers.filter((p) => p.fee_complaints > 0).length} of ${chosen.peers.length} ${tierLabel} ${where} with a verified CFPB match had any.`;
   } else {
     const comparison =
       targetRate !== null && peerMedianRate !== null
@@ -410,7 +411,7 @@ export async function getComplaintBenchmark(institutionId: number, year?: number
     peer_coverage: coverage,
     peers_with_fee_complaints: chosen.peers.filter((p) => p.fee_complaints > 0).length,
     peer_median_per_billion: peerMedianRate === null ? null : round1(peerMedianRate),
-    peer_median_fee_complaints: median(chosen.peers.map((p) => p.fee_complaints)) ?? 0,
+    peer_median_fee_complaints: coverage === "verified" ? median(chosen.peers.map((p) => p.fee_complaints)) : null,
     peer_fee_complaints_total: chosen.peers.reduce((sum, p) => sum + p.fee_complaints, 0),
     sub_issues_loaded: Boolean(loaded?.loaded),
     summary,

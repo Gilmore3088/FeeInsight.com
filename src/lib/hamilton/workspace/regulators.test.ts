@@ -121,6 +121,7 @@ describe("regulatory facts for one fee", () => {
     expect(thin.text).toBe("Only 6 of 1,210 similar institutions have a verified CFPB match, too few to compare fee complaint rates.");
     expect(thin.text).not.toMatch(/median|per \$10B/);
     expect(thin.text.split(/\s+/).length).toBeLessThanOrEqual(20);
+    expect(complaintBenchmarkFact({ ...bench, peer_count: 0, eligible_peer_count: 0, peer_coverage: "insufficient", peer_median_per_billion: null })).toBeNull();
     expect(thin).toMatchObject({ sampleSize: 6, source: { table: "institution_identity_links" } });
   });
 

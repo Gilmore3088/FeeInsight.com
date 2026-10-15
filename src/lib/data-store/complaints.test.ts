@@ -255,7 +255,7 @@ describe("getComplaintBenchmark", () => {
       peer_median_fee_complaints: 0,
       sub_issues_loaded: true,
     });
-    expect(result!.summary).toBe("Bank 1 had 0 CFPB fee complaints in 2025. 3 of 12 community small banks in Fed District 6 had any.");
+    expect(result!.summary).toBe("Bank 1 had 0 CFPB fee complaints in 2025. 3 of 12 community small banks in Fed District 6 with a verified CFPB match had any.");
   });
 
   it("gives a rate per $1B of deposits next to the verified peers' median, not one pulled to zero by unmatched peers", async () => {
@@ -299,6 +299,7 @@ describe("getComplaintBenchmark", () => {
       eligible_peer_count: 205,
       peer_coverage: "insufficient",
       peer_median_per_billion: null,
+      peer_median_fee_complaints: null,
     });
     expect(result!.summary).toBe(
       "Bank 1 had 6 CFPB fee complaints in 2025. Only 5 of 205 community small banks nationwide have a verified CFPB match, too few to compare.",
