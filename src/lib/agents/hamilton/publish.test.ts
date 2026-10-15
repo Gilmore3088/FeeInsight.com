@@ -846,6 +846,33 @@ describe("decidePriorFee", () => {
     expect(linesApartOnPage("Check Copy $2.50 Stop Payment $2.00", "Check Copy", "Stop Payment", "2.50")).toBe(false);
   });
 
+  // #1314 dry run (prod pages, read-only, Oct 15): a pass needs a place of one name clear of every
+  // place of the other, and a price that is not another field's value.
+  it("needs the shorter name printed at the price clear of every place of the longer (#1314)", () => {
+    // 125157: the plain line is printed on its own as well as inside the ACH line: two fees.
+    const two = "Check Orders | $10.00-$35.00 | Varies Stop Payment | $35.00 | Per item Overdraft (NSF) Fee | $30.00 ACH Stop Payment | $35.00 | Per item";
+    expect(linesApartOnPage(two, "Stop Payment", "ACH Stop Payment", "35")).toBe(true);
+    expect(linesApartOnPage(two, "ACH Stop Payment", "Stop Payment", "35")).toBe(true);
+    // 105388: one line printed twice is one fee, however its places pair up.
+    const twice = "● Less than Minimum Balance Fee $10.00/year ... LESS THAN MINIMUM BALANCE FEE $10.00/year";
+    expect(linesApartOnPage(twice, "Minimum Balance Fee", "Less than Minimum Balance Fee", "10")).toBe(false);
+    // 127609: the shorter name only ever sits inside the longer lines.
+    const inside = "Non-Sufficient Funds (NSF) | $25.00 Bill Payment Non-Sufficient\nFunds (NSF) | $25.00";
+    expect(linesApartOnPage(inside, "Funds (NSF)", "Non-Sufficient Funds (NSF)", "25")).toBe(false);
+    // 105072: "Order" is only the end of a "Money Order" heading and unit, so one $2 line.
+    const heading = "Release of Account Hold\n\n/Occurrence\n\n$5.00\n\n(negative)\n\nMoney Order\n\n/Money Order\n\n$2.00\n\nNon-Automated Phone Account Inquiry";
+    expect(linesApartOnPage(heading, "Order", "Money Order", "2")).toBe(false);
+    expect(linesApartOnPage(heading, "Money Order", "Order", "2")).toBe(false);
+  });
+
+  it("never reads another field's value as the price (133183, #1314)", () => {
+    const page = "See Demo Simply Elite Monthly Fee $10 Initial Deposit $1,000 Simply Student Monthly Fee: $0 Initial Deposit: $10 "
+      + "Simply More Money Market Monthly Fee $25 Initial Deposit $10,000";
+    expect(linesApartOnPage(page, "Simply Elite Monthly Fee", "Monthly Fee", "10")).toBe(false);
+    // "$10,000" is not $10.
+    expect(linesApartOnPage("Daily Wire Limit $10,000 Outgoing Wire Fee $25 Incoming Wire Fee $10", "Daily Wire Limit", "Incoming Wire Fee", "10")).toBe(false);
+  });
+
   it("puts a name with a qualifier word in front to the page check (doc 17371, #1303)", () => {
     const pair = (rowName: string, priorName: string) =>
       qualifiedLines({ ...row, fee_name: rowName }, live({ source_document_id: 77, fee_name: priorName }));
