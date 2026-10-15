@@ -179,3 +179,17 @@ describe("labels open the screen of the same name", () => {
   });
 });
 
+
+describe("workspace left navigation: Your institution (James, Oct 15, \"Nav only\")", () => {
+  it("opens My fees right after Overview and lights up there, not Research", async () => {
+    const { HAMILTON_WORKSPACE_NAV, isWorkspaceNavActive } = await import("./navigation");
+    const labels = HAMILTON_WORKSPACE_NAV.map(item => item.label);
+    expect(labels.slice(0, 2)).toEqual(["Overview", "Your institution"]);
+    const mine = HAMILTON_WORKSPACE_NAV.find(item => item.label === "Your institution")!;
+    const research = HAMILTON_WORKSPACE_NAV.find(item => item.label === "Research")!;
+    expect(mine.href).toBe("/pro/research");
+    expect(isWorkspaceNavActive("/pro/research", mine)).toBe(true);
+    expect(isWorkspaceNavActive("/pro/research", research)).toBe(false);
+    expect(isWorkspaceNavActive("/pro/intelligence", research)).toBe(true);
+  });
+});
