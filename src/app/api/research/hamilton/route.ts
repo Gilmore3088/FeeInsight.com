@@ -322,46 +322,46 @@ async function handlePOST(request: Request) {
         // tab or a failed browser call never loses it.
         if (mode === "analyze" && text.trim()) {
           const toolOutputs = steps.flatMap((step) => step.toolResults.map((result) => result.output));
-          let check: ReturnType<typeof writtenAnswerCheck>;
+          // A gate or response build that throws fails closed: the verdict and saved id still
+          // resolve (a promise keeps its first value), so the reader is never left waiting and
+          // the usage below is still recorded.
           try {
-            check = writtenAnswerCheck(text, toolOutputs, questionOnly(lastUserText));
+            const check = writtenAnswerCheck(text, toolOutputs, questionOnly(lastUserText));
+            const held = holdsAnswers && !check.passed;
+            resolveVerdict({ passed: check.passed, held });
+            const response = {
+              ...writtenAnswerResponse(text, toolOutputs, check),
+              // Historical reference metadata only; never a future access grant.
+              identityContext,
+            };
+            const prompt = questionOnly(lastUserText);
+            if (held) {
+              console.warn("[hamilton] written answer held by the evidence gate", check.problems);
+              resolveSaved(null);
+            } else {
+              try {
+                resolveSaved(await insertSavedAnalysis({
+                  userId: user.id,
+                  institutionId: normalizeCanonicalInstitutionId(institutionId) ?? "",
+                  title: response.title || prompt.slice(0, 60).trim(),
+                  analysisFocus: focus,
+                  prompt,
+                  response,
+                  // A second request for the same question (double submit, Try again after a
+                  // dropped stream) updates this row instead of adding a duplicate. The match is on
+                  // the full text answered, earlier turns included, so the same follow-up words in
+                  // another conversation are saved as their own row.
+                  replaceRecentDuplicate: { request: `written\n${focus}\n${lastUserText}` },
+                }));
+              } catch (error) {
+                console.error("[hamilton] saving the written answer failed", error);
+                resolveSaved(null);
+              }
+            }
           } catch (error) {
-            // A gate that cannot run fails closed, and the reader is never left waiting on it.
-            console.error("[hamilton] the evidence gate could not run", error);
+            console.error("[hamilton] the evidence gate or its response could not run", error);
             resolveVerdict({ passed: false, held: holdsAnswers });
             resolveSaved(null);
-            return;
-          }
-          const held = holdsAnswers && !check.passed;
-          resolveVerdict({ passed: check.passed, held });
-          const response = {
-            ...writtenAnswerResponse(text, toolOutputs, check),
-            // Historical reference metadata only; never a future access grant.
-            identityContext,
-          };
-          const prompt = questionOnly(lastUserText);
-          if (held) {
-            console.warn("[hamilton] written answer held by the evidence gate", check.problems);
-            resolveSaved(null);
-          } else {
-            try {
-              resolveSaved(await insertSavedAnalysis({
-                userId: user.id,
-                institutionId: normalizeCanonicalInstitutionId(institutionId) ?? "",
-                title: response.title || prompt.slice(0, 60).trim(),
-                analysisFocus: focus,
-                prompt,
-                response,
-                // A second request for the same question (double submit, Try again after a
-                // dropped stream) updates this row instead of adding a duplicate. The match is on
-                // the full text answered, earlier turns included, so the same follow-up words in
-                // another conversation are saved as their own row.
-                replaceRecentDuplicate: { request: `written\n${focus}\n${lastUserText}` },
-              }));
-            } catch (error) {
-              console.error("[hamilton] saving the written answer failed", error);
-              resolveSaved(null);
-            }
           }
         } else {
           resolveVerdict(null);

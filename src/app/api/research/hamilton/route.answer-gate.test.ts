@@ -7,7 +7,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-  stream: vi.fn(), save: vi.fn(), write: vi.fn(), merge: vi.fn(),
+  stream: vi.fn(), save: vi.fn(), write: vi.fn(), merge: vi.fn(), usage: vi.fn(),
   held: { message: null as string | null },
   gateThrows: false,
 }));
@@ -38,7 +38,7 @@ vi.mock("@/lib/ai-provider", () => ({
 }));
 vi.mock("@/lib/ai-provider-usage", () => ({
   ProviderBudgetBlockedError: class extends Error {}, ProviderCircuitOpenError: class extends Error {},
-  guardProviderCall: async () => Date.now(), recordProviderUsage: async () => {}, estimateAnthropicCostMicrousd: () => 0,
+  guardProviderCall: async () => Date.now(), recordProviderUsage: mocks.usage, estimateAnthropicCostMicrousd: () => 0,
   trackAnthropicRequest: async (_context: unknown, call: () => Promise<unknown>) => call(),
 }));
 vi.mock("@/lib/research/agents", () => ({
@@ -97,6 +97,7 @@ function metadata() {
 beforeEach(() => {
   mocks.held.message = null;
   mocks.gateThrows = false;
+  mocks.usage.mockReset();
   mocks.stream.mockReset();
   mocks.save.mockReset().mockResolvedValue("saved-1");
   mocks.write.mockReset();
@@ -159,6 +160,8 @@ describe("written answer evidence gate", () => {
     expect(mocks.merge).not.toHaveBeenCalled();
     expect(mocks.save).not.toHaveBeenCalled();
     expect(metadata()).toEqual(expect.objectContaining({ answerEvidence: { passed: false, held: true } }));
+    // The paid call still finishes its ledger row.
+    expect(mocks.usage).toHaveBeenCalledWith(expect.anything(), "completed", expect.anything(), expect.anything());
   });
 
   it("still shows and saves a passing answer once the held line is approved", async () => {
