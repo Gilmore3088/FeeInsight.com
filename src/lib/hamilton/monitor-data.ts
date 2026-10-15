@@ -6,7 +6,7 @@
  */
 
 import { sql } from "@/lib/data-store/connection";
-import { INTERNAL_REVIEW_SIGNAL_TYPES, isCustomerSignal } from "@/lib/hamilton/customer-signals";
+import { INTERNAL_REVIEW_SIGNAL_TYPES, customerSignalCopy, isCustomerSignal } from "@/lib/hamilton/customer-signals";
 import {
   getHamiltonInstitutionContext,
   type HamiltonSelectedInstitutionContext,
@@ -177,8 +177,7 @@ async function fetchSignalFeed(
       institutionId: r.institution_id == null ? null : String(r.institution_id),
       signalType: String(r.signal_type),
       severity: String(r.severity),
-      title: String(r.title),
-      body: String(r.body),
+      ...customerSignalCopy({ signalType: String(r.signal_type), title: String(r.title), body: String(r.body) }),
       createdAt: String(r.created_at),
       evidencePolicy: r.evidence_policy == null ? null : String(r.evidence_policy) as SignalEntry["evidencePolicy"],
       providerCallQueued: r.provider_call_queued === true,
@@ -257,8 +256,7 @@ async function fetchTopAlert(
       institutionId: r.institution_id == null ? null : String(r.institution_id),
       signalType: String(r.signal_type),
       severity: String(r.severity),
-      title: String(r.title),
-      body: String(r.body),
+      ...customerSignalCopy({ signalType: String(r.signal_type), title: String(r.title), body: String(r.body) }),
       status: String(r.status),
       createdAt: String(r.created_at),
       evidencePolicy: r.evidence_policy == null ? null : String(r.evidence_policy) as AlertEntry["evidencePolicy"],
