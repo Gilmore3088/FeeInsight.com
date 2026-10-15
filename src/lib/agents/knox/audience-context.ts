@@ -51,7 +51,7 @@ const TITLE_CHARS = 300;
  * "non-business" or "non commercial" (a URL path's hyphens become spaces) with any slash before it,
  * and "non-personal checks" or "non-consumer information" (products, as main read them).
  */
-const NOT_AN_AUDIENCE = /(?:\/\s*)?\bnon[- ]?(?:personal|consumer)\s+(?:checks?|identification|information|data)\b|\bcorporate(?:(?:\s*[/&\-–—]\s*|\s+(?:or|and)\s+)(?:cashier[’']?s?|official|teller[’']?s?|treasurer[’']?s?|bank|member|personal|money\s+orders?))*\s+(?:(?:bank|official|teller|cashier[’']?s?|treasurer[’']?s?|share)\s+)?(?:checks?|drafts?)\b(?!\s+accounts?\b)|\bcorporate\s+money\s+orders?\b(?!\s+accounts?\b)|\bcorporate\s+(?:bonds?|securities|and municipal|one\b(?![-‐–’'])(?!\s+cards?\b)|stop\s+payments?\b)|\b(?:on[- ]us|teller[’']?s?|cashier[’']?s?|treasurer[’']?s?|official)\s*(?:[/&]|\bor\b|\band\b)\s*corporate\b(?:\s+(?:checks?|drafts?)\b)?|\b(?:personal|member)\s*(?:[/&]|\bor\b|\band\b)\s*corporate\s+(?:(?:share\s+)?(?:checks?|drafts?))\b(?!\s+accounts?\b)|(?<=\b(?:checks?|drafts?)\b[^|\n$]{0,15})\b(?:personal|member)\s*(?:[/&]|\bor\b|\band\b)\s*corporate\b|\bpersonal\s+(?:checks?|identification|information)\b|\bbusiness\s+(?:days?|hours?|systems)\b|\b(?:close of|regular|normal|legitimate|conduct(?:ing)?|doing)\s+business\b|\bcredit union business only\b|(?:\/\s*)?\bnon[- ]?(?:commercial|business)\b|\b(?:commercial|business|consumer|personal)(?:\s+(?:state|national|federal|savings|community|county|city|first))*\s+(?:bank|savings bank|credit union|trust company|savings and loan)\b/gi;
+const NOT_AN_AUDIENCE = /(?:\/\s*)?\bnon[- ]?(?:personal|consumer)\s+(?:checks?|identification|information|data)\b|\bcorporate(?:(?:\s*[/&\-–—]\s*|\s+(?:or|and)\s+)(?:cashier[’']?s?|official|teller[’']?s?|treasurer[’']?s?|bank|member|personal|money\s+orders?))*\s+(?:(?:bank|official|teller|cashier[’']?s?|treasurer[’']?s?|share)\s+)?(?:checks?|drafts?)\b(?!\s+accounts?\b)|\bcorporate\s+money\s+orders?\b(?!\s+accounts?\b)|\bcorporate\s+(?:bonds?|securities|and municipal|one\b(?![-‐–’'])(?!\s+cards?\b)|stop\s+payments?\b)|\b(?:on[- ]us|teller[’']?s?|cashier[’']?s?|treasurer[’']?s?|official)\s*(?:[/&]|\bor\b|\band\b)\s*corporate\b(?:\s+(?:checks?|drafts?)\b)?|\b(?:personal|member)\s*(?:[/&]|\bor\b|\band\b)\s*corporate\s+(?:(?:share\s+)?(?:checks?|drafts?))\b(?!\s+accounts?\b)|(?<=\b(?:checks?|drafts?)\b[^|\n$]{0,15})\b(?:personal|member)\s*(?:[/&]|\bor\b|\band\b)\s*corporate\b|\bpersonal\s+(?:checks?|identification|information)\b|\bbusiness\s+(?:days?|hours?|systems)\b|\b(?:close of|regular|normal|legitimate|conduct(?:ing)?|doing)\s+business\b|\bcredit union business(?: only)?\b(?!\s+(?:accounts?|checking|savings|banking|membership|visa|services|loans?|cards?|mobile|online)\b)|\bsmall business saturday\b|(?:\/\s*)?\bnon[- ]?(?:commercial|business)\b|\b(?:commercial|business|consumer|personal)(?:\s+(?:state|national|federal|savings|community|county|city|first))*\s+(?:bank|savings bank|credit union|trust company|savings and loan)\b/gi;
 /**
  * "Non-Personal Accounts" and "Non-Consumer" are a bank's words for business accounts: read as
  * "business", with any slash before them ("Business/Non-Personal Accounts" stays a heading).
@@ -150,6 +150,9 @@ function groupRowIndex(lines: string[], feeName: string, priced: (index: number)
     if (!` ${squash(lines[index])} `.includes(` ${head} `)) continue;
     for (let below = index; below < Math.min(lines.length, index + GROUP_ROW_REACH_LINES); below += 1) {
       if (` ${squash(lines[below])} `.includes(` ${row} `) && priced(below)) return below;
+      // The next group's heading ("Collection Items" under "Wire Transfers") ends this group; a row
+      // label whose price is on the line below ("Incoming" / "$10.00") does not.
+      if (below > index && isHeading(lines[below]) && !overAPrice(lines, below)) break;
     }
   }
   return -1;
@@ -229,8 +232,9 @@ const ALL_ACCOUNTS = /\b(?:apply|applies)\s+to\s+all\s+accounts\b|\ball\s+accoun
 export function sectionHeadingAudience(
   lines: string[],
   feeIndex: number,
-): { audience: ContextAudience; heading: string } | { columns: string } | { ambiguous: string; sentence?: ContextAudience } | null {
+): { audience: ContextAudience; heading: string } | { columns: string } | { ambiguous: string; sentence?: ContextAudience; sentenceIndex?: number } | null {
   let sentenceAudience: ContextAudience | null = null;
+  let sentenceIndex = -1;
   let sentenceMayHead = false;
   for (let index = feeIndex - 1; index >= 0 && index >= feeIndex - HEADING_LOOKBACK_LINES; index -= 1) {
     const line = lines[index];
@@ -247,7 +251,10 @@ export function sectionHeadingAudience(
     if (trimmed.length <= MAX_FEE_ROW_CHARS && !PRICED.test(trimmed) && isSentence(trimmed)) {
       const named = audienceOf(line);
       if (named) {
-        sentenceAudience ??= named;
+        if (!sentenceAudience) {
+          sentenceAudience = named;
+          sentenceIndex = index;
+        }
         // A sentence that does not point elsewhere may head the fees below it.
         if (!isPointer(trimmed)) sentenceMayHead = true;
       }
@@ -272,7 +279,7 @@ export function sectionHeadingAudience(
   }
   // An audience sentence that may head the fee ("Business accounts.", "What Business Accounts Are
   // Charged") and no heading above to settle it: unknown, never the consumer default.
-  return sentenceMayHead && sentenceAudience ? { ambiguous: sentenceAudience, sentence: sentenceAudience } : null;
+  return sentenceMayHead && sentenceAudience ? { ambiguous: sentenceAudience, sentence: sentenceAudience, sentenceIndex } : null;
 }
 
 export function suggestAudience(input: {
@@ -306,7 +313,14 @@ export function suggestAudience(input: {
     // So does one under an unclear section, except a consumer sentence with no heading above it
     // in a schedule that prices nothing for businesses: it takes the consumer default below,
     // which it would get with no sentence at all (#1059 gate (a)).
-    const consumerSentenceOnly = section && "sentence" in section && section.sentence === "consumer" && businessLine < 0;
+    // Not when a heading between the sentence and the fee names business ("Commercial Clients",
+    // "Small Business", a bare "Business", "For Business Owners"): its section may hold the fee
+    // (review of #1445). A business heading below the fee heads other fees, not this one: a footer
+    // "Business Credit Cards:" or a report's "Small Business Loans" leaves the sentence standing
+    // (review of #1453).
+    const consumerSentenceOnly =
+      section && "sentence" in section && section.sentence === "consumer" && businessLine < 0 &&
+      !businessHeadingBetween(lines, section.sentenceIndex ?? 0, feeIndex);
     if (section && ("columns" in section || "ambiguous" in section) && !consumerSentenceOnly) return null;
     const heading = section && "audience" in section ? section : null;
     // A heading for all accounts in a schedule that also prices business items lists the fee for
@@ -391,6 +405,16 @@ export function businessFeeLine(lines: string[]): number {
     const line = lines[index];
     if (NOT_A_SECTION.test(line) || !BUSINESS_WORDS.test(neutral(line))) continue;
     if (PRICED.test(line) && line.trim().length <= MAX_FEE_ROW_CHARS) return index;
+    // A long line (a paragraph, or a PDF flattened to one line) prices business items in one of
+    // its clauses: "... For business accounts, a $15 monthly service fee applies. ..." (review of #1445).
+    if (PRICED.test(line) && line.trim().length > MAX_FEE_ROW_CHARS && businessPriceClause(line)) return index;
+    // A short business heading directly over a price ("Commercial Clients" / "Account
+    // analysis | $25"): a section, though SECTION_HEADING does not name it. A menu word over more
+    // menu words ("Business" / "Checking") is not (review of #1445).
+    if (isHeading(line, true) && businessWordHeading(line)) {
+      const next = nextLine(lines, index);
+      if (next != null && businessHeadingRow(next)) return lines.indexOf(next, index + 1);
+    }
     // Only a business section heading owns the prices under it, not a lone menu word ("Business").
     if (!isHeading(line, true) || !(SECTION_HEADING.test(neutral(line)) || SCHEDULE_TITLE.test(neutral(line)))) continue;
     for (let below = index + 1; below < Math.min(lines.length, index + 1 + SECTION_REACH_LINES); below += 1) {
@@ -400,6 +424,49 @@ export function businessFeeLine(lines: string[]): number {
     }
   }
   return -1;
+}
+
+/**
+ * The line under a short business heading that makes it a section: a fee row, priced as a fee
+ * ("Temporary Checks (4 checks) | $2.00", "$10.00/Month", "Monthly service charge $5"), not a
+ * promotion under a menu word ("Business Forms" / "Refer a Friend and Earn Up to $500").
+ */
+const TABLE_ROW_PRICE = /\|\s*\$?\s*\d/;
+function businessHeadingRow(line: string): boolean {
+  const trimmed = line.trim();
+  return (
+    PRICED.test(trimmed) &&
+    trimmed.length <= MAX_FEE_ROW_CHARS &&
+    !NOT_A_SECTION.test(trimmed) &&
+    (FEE_CLAUSE.test(trimmed) || STARTS_WITH_PRICE.test(trimmed) || TABLE_ROW_PRICE.test(trimmed))
+  );
+}
+
+/** A short line that names business and little else: "Commercial Clients", "Small Business", "COMMERCIAL". */
+const BUSINESS_HEADING_MAX_WORDS = 6;
+function businessWordHeading(line: string): boolean {
+  const trimmed = line.trim();
+  return BUSINESS_WORDS.test(neutral(trimmed)) && trimmed.split(/\s+/).length <= BUSINESS_HEADING_MAX_WORDS && !NOT_A_SECTION.test(trimmed);
+}
+
+/**
+ * Whether a heading after `from` and above the fee's line `to` names business (any wording), so the
+ * sentence at `from` does not head the fee's section.
+ */
+function businessHeadingBetween(lines: string[], from: number, to: number): boolean {
+  for (let index = from + 1; index < Math.min(lines.length, to); index += 1) {
+    if (isHeading(lines[index]) && businessWordHeading(lines[index])) return true;
+  }
+  return false;
+}
+
+/** A fee word in a clause: what makes a priced clause a fee, not "built for the business economy, $250". */
+const FEE_CLAUSE = /\b(?:fees?|charges?|service charge|per (?:item|month|check)|each|monthly)\b/i;
+/** One clause of a long line that names business, a price and a fee word. */
+function businessPriceClause(line: string): boolean {
+  return line
+    .split(/(?<=[.;!?])\s+|\s+\|\s+/)
+    .some((clause) => clause.length <= MAX_FEE_ROW_CHARS && PRICED.test(clause) && FEE_CLAUSE.test(clause) && BUSINESS_WORDS.test(neutral(clause)));
 }
 
 /** Whether the document prices anything for businesses. */

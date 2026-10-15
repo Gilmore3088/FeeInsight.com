@@ -1,4 +1,4 @@
-export type AdminAgent = "atlas" | "magellan" | "rosetta" | "darwin" | "knox" | "hamilton" | "growth";
+export type AdminAgent = "atlas" | "magellan" | "rosetta" | "darwin" | "knox" | "hamilton" | "gutenberg" | "growth";
 
 export type AgentRunStatus =
   | "queued"

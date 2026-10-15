@@ -18,6 +18,7 @@
     { "pr": 1238, "issue": 1030, "metric": "detail.goal.liveInstitutions.live", "direction": "up", "min_change": 5, "note": "Magellan schedule search looks first for institutions with no live fees: fee schedule, Truth in Savings disclosure and account agreement" },
     { "pr": 1380, "issue": 1102, "metric": "accuracy_recall", "direction": "up", "min_change": 0.002, "note": "Knox v69: price lines with no name of their own are named by the fee heading above them (answer keys +11 right, 0 wrong)" },
     { "pr": 1400, "issue": 1397, "metric": "detail.goal.accuracy.accuracy", "direction": "up", "min_change": 0.001, "note": "Darwin refuses a $0 that is one account tier's perk (a private-banking Premium Account schedule), not the bank's price" },
-    { "pr": 1392, "issue": 1100, "metric": "accuracy_recall", "direction": "up", "min_change": 0.002, "note": "Knox v70: low-balance and maintenance fees the account expert missed (answer keys +12 right, 0 wrong; monthly maintenance 47 to 57 of 105 key fees)" }
+    { "pr": 1392, "issue": 1100, "metric": "accuracy_recall", "direction": "up", "min_change": 0.002, "note": "Knox v70: low-balance and maintenance fees the account expert missed (answer keys +12 right, 0 wrong; monthly maintenance 47 to 57 of 105 key fees)" },
+    { "pr": 1385, "issue": 1102, "metric": "accuracy_recall", "direction": "up", "min_change": 0.001, "note": "Held lines whose name the store settles across banks (or a person labels) go to Darwin by that name: 71 lines at 40 banks on 15 Oct" }
   ]
 }

@@ -31,6 +31,8 @@
 .workspace-research-context a { color:var(--fi-brick); text-decoration:underline; }
 .workspace-content { margin-left:218px; padding:36px clamp(20px,3vw,54px) 64px; min-width:0; outline:none; }
 .workspace-preference-note { margin-left:218px; padding:10px 32px; font-size:12px; color:var(--fi-muted); border-bottom:1px solid var(--fi-border); }
+/* The admin bar sits beside the fixed sidebar, like the top bar, so its text isn't hidden under it. */
+.workspace-admin-bar { margin-left:218px; }
 .workspace-mobile-bar { display:none; }
 .workspace-skip { position:fixed; z-index:100; top:8px; left:230px; background:white; padding:10px; transform:translateY(-160%); }
 .workspace-skip:focus { transform:none; }
@@ -75,7 +77,7 @@
  .workspace-sidebar { display:none; top:66px; width:min(280px,100%); }
  .workspace-sidebar.is-open { display:flex; }
  .workspace-sidebar .workspace-brand { display:none; }
- .workspace-topbar,.workspace-research-context,.workspace-content,.workspace-preference-note { margin-left:0; }
+ .workspace-admin-bar,.workspace-topbar,.workspace-research-context,.workspace-content,.workspace-preference-note { margin-left:0; }
  .workspace-topbar { padding:14px 20px; }
  .workspace-research-context { padding:10px 20px; }
  .workspace-content { padding:28px 20px 48px; }

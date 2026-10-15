@@ -274,7 +274,9 @@ function narrateFinished(
       if (detail.ready === false) return "Skipped the 7-day change check (migration not applied yet).";
       const judged = Array.isArray(detail.judged) ? (detail.judged as Array<{ verdict?: string }>) : [];
       const moved = judged.filter((row) => row.verdict === "moved_as_expected").length;
-      return `Checked ${count(judged.length, "change")} a week after merge: ${moved} moved as expected; ${n(detail, "pending")} still within their week.`;
+      const rate = detail.hit_rate as { moved?: number; judged?: number } | null | undefined;
+      const soFar = rate && Number(rate.judged) > 0 ? ` So far ${Number(rate.moved)} of ${count(Number(rate.judged), "change")} moved their number.` : "";
+      return `Checked ${count(judged.length, "change")} a week after merge: ${moved} moved as expected; ${n(detail, "pending")} still within their week.${soFar}`;
     }
     case "deming-sunday-maintenance":
       if (detail.ran === false) return "Not Sunday: no maintenance email this time.";

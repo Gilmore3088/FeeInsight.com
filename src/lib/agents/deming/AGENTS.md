@@ -76,7 +76,7 @@ It runs as Atlas steps (agent `atlas`); it is deterministic and makes no model c
 ## Did the change work (#1106)
 
 - `change-outcomes.ts`: the `deming-change-outcomes` step, last in Atlas's daily scoreboard run.
-- `sunday-maintenance.ts`: the `deming-sunday-maintenance` step, after it in the same run, Sundays (UTC) only: James's hour of tasks (labels, data decisions, answer-key banks), the week in numbers and anything stuck (#1104). It emails only while `SUNDAY_EMAIL_LIVE=true`; otherwise the run records the email it would send.
+- `sunday-maintenance.ts`: the `deming-sunday-maintenance` step, after it in the same run, Sundays (UTC) only: James's hour of tasks (labels, data decisions, last week's "no change" and "wrong way" PRs to explain or revert, answer-key banks), the week in numbers with the change hit rate, and anything stuck (#1104, #1106). It emails only while `SUNDAY_EMAIL_LIVE=true`; otherwise the run records the email it would send.
   Each PR that names a "Should move" number adds an entry to `should-move.json` (PR number, issue,
   `metric`: a `pipeline_scoreboard_snapshots` column or a `detail.` path such as
   `detail.goal.accuracy.accuracy`, `direction` up or down, optional `min_change`).
@@ -84,7 +84,11 @@ It runs as Atlas steps (agent `atlas`); it is deterministic and makes no model c
   Seven days later it reads the first snapshot on or after that day and records the verdict:
   `moved_as_expected`, `no_change` (moved less than `min_change`), `wrong_way`, or `unreadable`
   (the scoreboard does not hold the number). The summary names each "no change" and "wrong way"
-  PR, to be explained or reverted (the Sunday email, #1104, lists them).
+  PR, to be explained or reverted (the Sunday email, #1104, lists the ones checked in the last 7
+  days, via `readChangeOutcomeReview`).
+- Hit rate (#1106 step 4): the share of judged changes (`moved_as_expected`, `no_change`,
+  `wrong_way`) that moved as expected; `unreadable` ones are counted apart. The daily step's
+  summary and detail (`hit_rate`) and the Sunday email carry it; the checkpoint copies it.
 - Migration 20270110000046 creates the table (approved by James 2026-10-12). Before it the step
   reports that it skipped.
 

@@ -26,4 +26,25 @@ describe("buildStateFeeIndexes", () => {
     // One institution is below the minimum sample, so no NSF median.
     expect(result.all.find((e) => e.fee_category === "nsf")?.median_amount).toBeNull();
   });
+
+  it("keeps each institution's own value by the same rule as the medians, with its charter", () => {
+    const rows = [
+      // Overdraft is compared at the highest tier: $5/$20/$35 counts once, as $35.
+      row(1, "bank", 5),
+      row(1, "bank", 20),
+      row(1, "bank", 35),
+      row(2, "credit_union", 25),
+      row(3, "trust", 30),
+      // Other fees count the median of an institution's own amounts.
+      row(1, "bank", 10, "nsf"),
+      row(1, "bank", 20, "nsf"),
+    ];
+    const values = buildStateFeeIndexes(rows).institution_values!;
+    expect(values.overdraft).toEqual([
+      { v: 25, c: "c" },
+      { v: 30, c: null },
+      { v: 35, c: "b" },
+    ]);
+    expect(values.nsf).toEqual([{ v: 15, c: "b" }]);
+  });
 });

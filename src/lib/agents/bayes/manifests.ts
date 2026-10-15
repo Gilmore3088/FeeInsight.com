@@ -7,6 +7,7 @@ import { countCurrentCopyPairs, CURRENT_COPY_STRATEGY } from "@/lib/agents/hamil
 import { countRetidyReplay, NAME_RETIDY_STRATEGY } from "@/lib/agents/knox/name-retidy";
 import { DARWIN_VERIFY_STRATEGY } from "@/lib/agents/darwin/verify";
 import { DARWIN_PEER_STRATEGY } from "@/lib/agents/darwin/peer-checks";
+import { PUBLISHER_AGENT_NAMES } from "@/lib/agents/gutenberg/names";
 
 type SqlTag = typeof sql;
 
@@ -115,7 +116,7 @@ async function countGuardCatchUp(db: SqlTag): Promise<ReplayCount> {
   };
   const [run] = await db<Array<{ id: number | string; status: string }>>`
     SELECT id, status FROM agent_runs
-     WHERE agent_name = 'hamilton' AND params_json @> ${JSON.stringify(marker)}::jsonb
+     WHERE agent_name = ANY(${[...PUBLISHER_AGENT_NAMES]}::text[]) AND params_json @> ${JSON.stringify(marker)}::jsonb
      ORDER BY id DESC
      LIMIT 1
   `;

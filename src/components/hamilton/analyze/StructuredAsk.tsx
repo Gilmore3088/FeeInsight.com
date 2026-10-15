@@ -514,7 +514,12 @@ function StructuredAskConversation({
     answerExhibit && (answerExhibit.kind === "fee_position" || answerExhibit.kind === "competitor_range") ? answerExhibit : null;
   return (
     <div className="flex flex-col gap-5">
-      {hamiltonIdentityLines(readHamiltonIdentitySnapshot(response.identityContext)).map(line => <p key={line} className="text-sm text-warm-700">{line}</p>)}
+      {response.identityContext ? (
+        <details className="text-sm text-warm-700">
+          <summary className="cursor-pointer text-xs text-warm-600">Institution and peer group behind this answer</summary>
+          {hamiltonIdentityLines(readHamiltonIdentitySnapshot(response.identityContext)).map(line => <p key={line}>{line}</p>)}
+        </details>
+      ) : null}
       {response.positions && response.positions.length > 0 ? (
         <>
           {/* The takeaways lead; the table and the top fee's storyline follow. Without a storyline

@@ -139,6 +139,8 @@ export const AGENT_RUN_STEPS: Record<AdminAgent, Array<{ key: string; title: str
   knox: [{ key: "extract", title: "Pull fees out of documents" }],
   darwin: [{ key: "classify", title: "Verify extracted fees" }],
   hamilton: [{ key: "publish", title: "Publish verified fees" }],
+  // Gutenberg takes over "publish" in #1075 step 2; until then Hamilton's steps run it.
+  gutenberg: [],
   // Growth runs from its own crons (content, marketing); the command bar does not start it.
   growth: [],
 };

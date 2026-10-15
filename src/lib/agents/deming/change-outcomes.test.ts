@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/data-store/connection", () => ({ sql: vi.fn() }));
 
-import { changeVerdict, metricValue, runChangeOutcomes, sameScorer, SHOULD_MOVE, summarizeChangeOutcomes } from "./change-outcomes";
+import { changeHitRate, changeVerdict, hitRateLine, metricValue, readChangeOutcomeReview, runChangeOutcomes, sameScorer, SHOULD_MOVE, summarizeChangeOutcomes } from "./change-outcomes";
 
 describe("did the change move its number (#1106)", () => {
   const snapshot = { snapshot_date: "2026-10-13", coverage_rate: "0.41", detail: { goal: { accuracy: { accuracy: 0.87 } } } };
@@ -97,5 +97,36 @@ describe("did the change move its number (#1106)", () => {
   it("does nothing before the migration", async () => {
     const db = vi.fn(async () => [{ ready: false }]);
     expect(await runChangeOutcomes({ db: db as never, runId: 1, entries: [] })).toMatchObject({ ready: false });
+  });
+
+  it("counts the hit rate over judged changes, unreadable ones apart (#1106 step 4)", () => {
+    const rate = changeHitRate([
+      { verdict: "moved_as_expected", n: "3" },
+      { verdict: "no_change", n: 1 },
+      { verdict: "wrong_way", n: 1 },
+      { verdict: "unreadable", n: 2 },
+    ]);
+    expect(rate).toEqual({ moved: 3, judged: 5, unreadable: 2 });
+    expect(hitRateLine(rate)).toBe("3 of 5 changes moved their number (60%); 2 could not be checked");
+    expect(hitRateLine({ moved: 0, judged: 0, unreadable: 0 })).toBe("no change has been judged yet");
+  });
+
+  it("reads last week's flagged changes and the hit rate, read-only (#1106 step 3)", async () => {
+    const queries: string[] = [];
+    const db = vi.fn(async (parts: TemplateStringsArray) => {
+      const text = parts.join("?");
+      queries.push(text);
+      if (text.includes("to_regclass")) return [{ ready: true }];
+      if (text.includes("GROUP BY verdict")) return [{ verdict: "moved_as_expected", n: 2 }, { verdict: "wrong_way", n: 1 }];
+      if (text.includes("verdict IN")) return [{ pr_number: "1151", issue_number: 1033, metric: "coverage_rate", verdict: "wrong_way", before_value: "0.41", after_value: "0.39", note: null }];
+      return [];
+    }) as never;
+    const review = await readChangeOutcomeReview(db, new Date("2026-10-18T12:20:00Z"));
+    expect(review.flagged).toEqual([{ pr: 1151, issue: 1033, metric: "coverage_rate", verdict: "wrong_way", before: 0.41, after: 0.39, note: null }]);
+    expect(review.hitRate).toEqual({ moved: 2, judged: 3, unreadable: 0 });
+    expect(queries.some((text) => /INSERT|UPDATE|DELETE/.test(text))).toBe(false);
+
+    const missing = vi.fn(async () => [{ ready: false }]) as never;
+    expect(await readChangeOutcomeReview(missing)).toEqual({ ready: false, flagged: [], hitRate: null });
   });
 });

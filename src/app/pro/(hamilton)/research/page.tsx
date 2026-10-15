@@ -156,14 +156,14 @@ function RuleRows({ rules }: { rules: RuleRow[] }) {
   return (
     <ul className="flex flex-col gap-2 text-sm text-warm-800">
       {rules.map((r) => (
-        <li key={r.text} className="flex flex-wrap justify-between gap-x-4 gap-y-1 border-b border-warm-200 pb-2">
-          <span className="min-w-0 flex-1">{r.text}</span>
+        <li key={r.text} className="grid gap-x-6 gap-y-1 border-b border-warm-200 pb-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,16rem)]">
+          <span className="min-w-0">{r.text}</span>
           {r.url ? (
-            <a href={r.url} className="text-terra-text underline" target="_blank" rel="noreferrer">
+            <a href={r.url} className="min-w-0 text-terra-text underline sm:text-right" target="_blank" rel="noreferrer">
               {r.label}
             </a>
           ) : (
-            <span className="text-warm-600">{r.label}</span>
+            <span className="min-w-0 text-warm-600 sm:text-right">{r.label}</span>
           )}
         </li>
       ))}
@@ -291,7 +291,7 @@ export default async function ResearchPage({ searchParams }: PageProps) {
         dek={
           inst
             ? ws.ownAmount != null
-              ? `Your published fee is ${fmtMoney(ws.ownAmount)}.`
+              ? `${inst.name}'s published fee is ${fmtMoney(ws.ownAmount)}.`
               : `No published ${ws.feeName.toLowerCase()} fee for ${inst.name} yet; this shows the market alone.`
             : "Choose your institution in Settings to see your own position."
         }
@@ -339,7 +339,7 @@ export default async function ResearchPage({ searchParams }: PageProps) {
         </MemoSection>
       ) : null}
 
-      <MemoSection title="The market, layer by layer" note="One institution, one value each. Overdraft counts at a bank's highest tier.">
+      <MemoSection title="The market, layer by layer" note={`One institution, one value each.${ws.fee === "overdraft" ? " Overdraft counts at a bank's highest tier." : ""}`}>
         <LayerTabs
           label="Market layer"
           initial={layer.key}

@@ -159,9 +159,17 @@ const SITE: Record<string, { body: string | Uint8Array; type: string }> = {
     type: "text/html",
     body: page("Fee Schedule | Aspen Test Bank", FEE_TABLE.replace("$32.00", "$5.00")),
   },
+  // Two names no rule files (#1102): the store settles one (live as account research at three
+  // banks), so Knox sends the held line to Darwin by its name; the other stays held.
   "https://www.champlain-test-cu.org/fees": {
     type: "text/html",
-    body: page("Fee Schedule | Champlain Test Credit Union", FEE_TABLE.replace("$32.00", "$29.00")),
+    body: page(
+      "Fee Schedule | Champlain Test Credit Union",
+      FEE_TABLE.replace("$32.00", "$29.00").replace(
+        "</table>",
+        "<tr><td>Returned Statement Fee</td><td>$5.00</td></tr><tr><td>Lost Passbook Fee</td><td>$10.00</td></tr></table>",
+      ),
+    ),
   },
 };
 
@@ -281,6 +289,34 @@ describe.skipIf(!E2E_DATABASE_URL)("pipeline end to end (state lane)", () => {
          AND fee_audience = 'consumer' AND source_document_id IS NOT NULL
     `;
     expect(peerCoverage).toMatchObject({ fees: 27, institutions: 9 });
+    // Five peers publish "Returned Statement Fee" as account research: a name the store settles
+    // (a three-word name needs five banks, all of its live rows in one category here).
+    await sql`
+      WITH peers AS (
+        SELECT id FROM institution_sources WHERE institution_name IN ('Peer Test Bank 1', 'Peer Test Bank 2', 'Peer Test Bank 3', 'Peer Test Bank 4', 'Peer Test Bank 5')
+      ), documents AS (
+        INSERT INTO source_documents (institution_id, status, document_url)
+        SELECT id, 'success', 'https://peer.example/returned-mail' FROM peers
+        RETURNING id, institution_id
+      ), raw AS (
+        INSERT INTO raw_fee_observations
+          (institution_id, source_document_id, agent_event_id, fee_name, amount, source, source_url, fee_audience, audience_evidence, fee_treatment)
+        SELECT institution_id, id, gen_random_uuid(), 'Returned Statement Fee', 5, 'manual_import', 'https://peer.example/returned-mail',
+               'consumer', 'Consumer accounts: Returned Statement Fee', 'charged'
+          FROM documents
+        RETURNING fee_raw_id, institution_id
+      ), verified AS (
+        INSERT INTO verified_fee_observations
+          (fee_raw_id, institution_id, canonical_fee_key, verified_by_agent_event_id, fee_name, amount, source_url)
+        SELECT fee_raw_id, institution_id, 'account_research', gen_random_uuid(), 'Returned Statement Fee', 5, 'https://peer.example/returned-mail'
+          FROM raw
+        RETURNING fee_verified_id, institution_id
+      )
+      INSERT INTO published_fee_records
+        (lineage_ref, institution_id, canonical_fee_key, published_by_adversarial_event_id, fee_name, amount, source_url)
+      SELECT fee_verified_id, institution_id, 'account_research', gen_random_uuid(), 'Returned Statement Fee', 5, 'https://peer.example/returned-mail'
+        FROM verified
+    `;
   });
 
   afterAll(async () => {
@@ -341,8 +377,20 @@ describe.skipIf(!E2E_DATABASE_URL)("pipeline end to end (state lane)", () => {
     };
     // Found from a homepage link, read from HTML.
     expect(published("Green Mountain Test Bank")).toEqual(tableFees);
-    // Known fee URL, read from HTML.
-    expect(published("Champlain Test Credit Union")).toEqual({ ...tableFees, overdraft: 29 });
+    // Known fee URL, read from HTML. The held "Returned Statement Fee" went to Darwin by its settled
+    // name and was published; "Lost Passbook Fee" has no decision and stays held.
+    expect(published("Champlain Test Credit Union")).toEqual({ ...tableFees, overdraft: 29, account_research: 5 });
+    const champlainHeld = await sql`
+      SELECT fr.fee_name, fr.outlier_flags ? 'knox_name_filed:store' AS filed, fr.outlier_flags ? 'knox_review:unclassified' AS held
+        FROM raw_fee_observations fr
+        JOIN institution_sources inst ON inst.id = fr.institution_id
+       WHERE inst.institution_name = 'Champlain Test Credit Union' AND fr.fee_name IN ('Returned Statement Fee', 'Lost Passbook Fee')
+       ORDER BY fr.fee_name
+    `;
+    expect(champlainHeld.map((row) => [row.fee_name, row.filed, row.held])).toEqual([
+      ["Lost Passbook Fee", false, true],
+      ["Returned Statement Fee", true, false],
+    ]);
     // Found from a homepage link, read from a text PDF (curly apostrophe in "Cashier’s").
     expect(published("Lakeside Test Bank")).toEqual({
       overdraft: 34,
