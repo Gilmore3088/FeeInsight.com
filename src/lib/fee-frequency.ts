@@ -52,6 +52,63 @@ const PRICE = /\$\s?(\d[\d,]*(?:\.\d+)?|\.\d+)/g;
 
 export type FilledFrequency = "per_item" | "one_time" | "monthly" | "annual" | "quarterly" | "daily";
 
+/**
+ * #1456: a fee charged by the hour ("Research Fee $25/hour", "Account reconciliation per hour",
+ * "Subpoena Fee - Per Hour (Minimum One Hour Charge)", "Coin Counting (hour)"). Stored as
+ * `hourly` and shown as "per hour". Only a per-hour basis counts: "24 hour", "within 48 hours",
+ * "after hours", "hours of operation" and "1 hour photo" never say "per", "/", "hourly" or a bare
+ * "(hour)", so they do not match.
+ */
+export const HOURLY_FREQUENCY = "hourly";
+export const HOURLY_WORDING = /\bper\s+(?:an?\s+|each\s+|one\s+|1\s+)?(?:hour|hr)s?(?![a-z])|\bhourly(?![a-z])|\beach\s+hour(?![a-z])|\$\s?[\d.,]+\s*(?:an?|\/)\s*(?:hour|hr)s?(?![a-z])|\/\s?(?:hour|hr)s?(?![a-z])|\(\s*(?:hour|hr)s?\s*\)/i;
+/**
+ * A price per part of an hour ("$10 per 15 min", "per half hour", "per 1/2 hour", "per minute"):
+ * not an hourly charge, so the fee keeps no hourly frequency. A minimum ("1/2 hour minimum") is not a basis.
+ */
+export const PARTIAL_HOUR_WORDING = /(?:\bper|\beach|\bevery|\/)\s*(?:half|1\/2|quarter|15|30|fifteen|thirty)[\s-]*(?:an?\s+)?(?:hour|hr|minutes?|mins?)(?![a-z])|\bper\s+(?:minute|min)(?![a-z])|\b(?:half|quarter)[\s-]hour(?:ly)?\s+(?:increments?|rate|charge)(?![a-z])/i;
+
+/**
+ * Categories never charged by the hour: a per-hour reading on one of these is a misread or a
+ * neighbour's wording, so it is left for a person (#1456: "Monthly Fee: (per hour)" filed as
+ * monthly maintenance).
+ */
+export const HOURLY_EXEMPT_KEYS: ReadonlySet<string> = new Set([
+  "monthly_maintenance", "minimum_balance", "dormant_account", "continuous_od", "paper_statement",
+  "nsf", "overdraft", "deposited_item_return",
+]);
+
+/** True when the words price the fee by the whole hour and not by a part of one. Pure. */
+export function hourlyWording(words: string | null | undefined): boolean {
+  if (!words) return false;
+  return HOURLY_WORDING.test(words) && !PARTIAL_HOUR_WORDING.test(words);
+}
+
+/**
+ * True when the fee's own row prices it by the hour: its name before its price ("Research (per
+ * hour) | $25.00 Each") or the words right after its price ("Research | $25.00/hr", "$40 per hour").
+ * The line must print the fee's price. Pure.
+ */
+export function hourlyFromLine(sourceLine: string | null | undefined, amount: number | null): boolean {
+  if (!sourceLine || amount == null) return false;
+  const name = nameWords(sourceLine, amount);
+  if (name == null) return false;
+  if (hourlyWording(name)) return true;
+  // The words after the price in its own cell ("$25.00/hr"), or a next cell that is only the
+  // hour basis ("| $40.00 | per hour"); a next cell naming another fee ("| Research (per hour)")
+  // is that fee's.
+  for (const match of sourceLine.matchAll(PRICE)) {
+    if (Math.abs(Number(match[1].replace(/,/g, "")) - amount) >= 0.005) continue;
+    const start = (match.index ?? 0) + match[0].length;
+    const cells = sourceLine.slice(start, start + 60).split(/[|;]/);
+    const own = cells[0].split(/\$\s?\.?\d/)[0];
+    if (hourlyWording(own)) return true;
+    if (own.trim() === "" && cells.length > 1 && HOURLY_CELL.test(cells[1]) && hourlyWording(cells[1])) return true;
+  }
+  return false;
+}
+/** A cell that is only an hour basis: "per hour", "(Hourly)", "/hr". */
+const HOURLY_CELL = /^\s*\(?\s*(?:per\s+(?:hour|hr)|hourly|\/\s?(?:hour|hr))s?\s*\)?\.?\s*$/i;
+
 /** The words right after the fee's own price on its line ("$5.00 each after 6"), else the whole line. */
 export function wordsAfterPrice(sourceLine: string, amount: number | null): string {
   return priceWords(sourceLine, amount, false)[0] ?? sourceLine;
@@ -298,8 +355,18 @@ export function settledFrequency(
   amount: number | null,
   stated: string | null | undefined,
   canonicalKey: string | null | undefined,
+  options: { hourly?: boolean } = {},
 ): string | null {
-  // v8: a fee charged per hour has no flat frequency, whatever was stated.
+  // #1456: an hourly frequency comes from the fee's own words (Darwin's live hourly re-check) and
+  // is never replaced by a flat reading of the same line.
+  if (stated === HOURLY_FREQUENCY) return HOURLY_FREQUENCY;
+  // #1456: with `hourly: true`, a fee whose own row prices it by the hour is hourly, unless its
+  // category is never charged by the hour ("Monthly Fee: (per hour) | $25" is a misread a person
+  // looks at). Opt-in: Knox does not read hourly at extraction yet (it rides the next Knox rules
+  // bump), and the fill and Darwin's verify leave it to Darwin's switched live re-check.
+  if (options.hourly === true && hourlyFromLine(sourceLine, amount) && !(canonicalKey != null && HOURLY_EXEMPT_KEYS.has(canonicalKey))) return HOURLY_FREQUENCY;
+  // v8: a fee charged by a rate (per $100, per dollar, or per hour where hourly is not read above)
+  // has no flat frequency, whatever was stated.
   if (namedBasis(sourceLine, amount)) return null;
   const own = frequencyFromLine(sourceLine, amount);
   const periodCategory = canonicalKey != null && PERIOD_FEE_KEYS.has(canonicalKey);

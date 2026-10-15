@@ -79,6 +79,7 @@ import { runDarwinConditionalZeroResolve } from "@/lib/agents/darwin/conditional
 import { runDarwinScheduleRefile } from "@/lib/agents/darwin/schedule-refile";
 import { runDarwinAdjudicate } from "@/lib/agents/darwin/adjudicate";
 import { countLiveFragmentNames, liveFragmentDetail, liveFragmentFindingsDetail, recheckLiveFragmentNames } from "@/lib/agents/darwin/live-fragment-check";
+import { countHourlyFees, hourlyDetail, hourlyFindingsDetail, recheckHourlyFrequencies } from "@/lib/agents/darwin/hourly-frequency-check";
 import { documentOwnerDetail } from "@/lib/agents/darwin/document-owner";
 import { findingsDetail as releaseRepairFindingsDetail, releaseRepairDetail, runReleaseRepairStep } from "@/lib/agents/darwin/release-repair";
 import { AUDIENCE_RELABEL_VERSION, dryRunFullTotals, runAudienceRelabel, type AudienceRelabelMode } from "@/lib/agents/darwin/audience-relabel";
@@ -97,6 +98,7 @@ import { runDemingRegression, summarizeDemingRegression, DEMING_REGRESSION_VERSI
 import { freshAuditDetail, runFreshAudit, summarizeFreshAudit } from "@/lib/agents/deming/fresh-audit";
 import { benchmarkHealthDetail, runBenchmarkHealth, summarizeBenchmarkHealth } from "@/lib/agents/deming/benchmark-health";
 import { playbookContradictionsDetail, runPlaybookContradictions, summarizePlaybookContradictions } from "@/lib/agents/deming/playbook-contradictions";
+import { knoxMissesDetail, runKnoxMisses, summarizeKnoxMisses } from "@/lib/agents/deming/knox-misses";
 import { runBayesLedger, summarizeBayesLedger, BAYES_LEDGER_VERSION } from "@/lib/agents/bayes/ledger";
 import { runScheduleCheck, summarizeScheduleCheck, SCHEDULE_CHECK_VERSION } from "@/lib/agents/atlas/schedule-check";
 import { cityRepairDetail, runCityRepair, summarizeCityRepair } from "@/lib/agents/atlas/city-repair";
@@ -856,6 +858,18 @@ async function executeAgenticStep(
       const liveFragmentsFull = params.fragment_full_count === true || params.fragment_full_count === "true"
         ? await countLiveFragmentNames(tx)
         : null;
+      // #1456: Darwin re-reads a share of live fees' names each step for an hourly price
+      // (hourly-frequency-check.ts); a report only while its switch is off.
+      const hourly = await recheckHourlyFrequencies(tx, {
+        runId: run.id,
+        stepId: step.id,
+        dryRun: run.runKind === "dry_run",
+        institutionId: numericRunParam(params, ["institution_id"]),
+      });
+      // The whole live table in one read, on request (`hourly_full_count: true`), for the dry-run count.
+      const hourlyFull = params.hourly_full_count === true || params.hourly_full_count === "true"
+        ? await countHourlyFees(tx)
+        : null;
       // #1367 repair: fees the release published before it checked the category are read again under
       // today's release check (release-repair.ts); a report only while its switch is off.
       // Never fails the verify step: any throw comes back as `error` with no result.
@@ -876,6 +890,12 @@ async function executeAgenticStep(
       const liveFragmentNote = liveFragments.matched > 0
         ? ` Live name re-check: ${liveFragments.matched.toLocaleString()} of ${liveFragments.checked.toLocaleString()} live fee(s) read have a fragment name: ${liveFragments.wouldTakeDown.toLocaleString()} takedown, ${liveFragments.wouldRename.toLocaleString()} rename (${liveFragments.wouldRenameByVia.tail.toLocaleString()} by the fee the line ends on), ${liveFragments.exempt.toLocaleString()} exempt, ${liveFragments.wouldRequestReread.toLocaleString()} would ask Knox to re-read (${liveFragments.live && !liveFragments.dryRun ? `${liveFragments.takenDown.length.toLocaleString()} archived, ${liveFragments.renamed.length.toLocaleString()} renamed, ${liveFragments.rereadRequested.length.toLocaleString()} re-read request(s)` : "switch off: nothing written"}).`
         : "";
+      const hourlyNote = hourly.matched > 0
+        ? ` Hourly re-check: ${hourly.wouldSet.toLocaleString()} of ${hourly.checked.toLocaleString()} live fee(s) read are priced by the hour with no hourly frequency, ${hourly.exempt.toLocaleString()} exempt (${hourly.live && !hourly.dryRun ? `${hourly.set.length.toLocaleString()} set hourly` : "switch off: nothing written"}).`
+        : "";
+      const hourlyFullNote = hourlyFull
+        ? ` Whole live table: ${hourlyFull.wouldSet.toLocaleString()} live fees would be set hourly, ${hourlyFull.exempt.toLocaleString()} exempt.`
+        : "";
       // #1455: whose schedule each shared or vendor-served document is, by its own text.
       const documentOwner = verification.documentOwner;
       const documentOwnerNote = documentOwner && documentOwner.pairs > 0
@@ -886,7 +906,7 @@ async function executeAgenticStep(
         : "";
       return {
         status: "completed",
-        summary: `Darwin verified ${verification.verifiedFees.toLocaleString()} raw fee observations from ${verification.processedRawFees.toLocaleString()} selected rows (${verification.skippedFees.toLocaleString()} skipped).${conditionalZero.selected > 0 ? ` Settled ${conditionalZero.selected.toLocaleString()} conditional-$0 hold(s) (${conditionalZero.verified.toLocaleString()} verified free on the bank's schedule).` : ""}${verification.categoryChange && verification.categoryChange.candidates > 0 ? ` ${verification.categoryChange.candidates.toLocaleString()} row(s) Knox re-filed since Darwin's decision ${verification.categoryChange.live ? `(${verification.categoryChange.selected.toLocaleString()} judged again under today's category)` : "(switch off: counted, not judged again)"}.` : ""}${liveFragmentNote}${liveFragmentFullNote}${releaseRepairNote}${releaseRepairFullNote}${documentOwnerNote}`,
+        summary: `Darwin verified ${verification.verifiedFees.toLocaleString()} raw fee observations from ${verification.processedRawFees.toLocaleString()} selected rows (${verification.skippedFees.toLocaleString()} skipped).${conditionalZero.selected > 0 ? ` Settled ${conditionalZero.selected.toLocaleString()} conditional-$0 hold(s) (${conditionalZero.verified.toLocaleString()} verified free on the bank's schedule).` : ""}${verification.categoryChange && verification.categoryChange.candidates > 0 ? ` ${verification.categoryChange.candidates.toLocaleString()} row(s) Knox re-filed since Darwin's decision ${verification.categoryChange.live ? `(${verification.categoryChange.selected.toLocaleString()} judged again under today's category)` : "(switch off: counted, not judged again)"}.` : ""}${liveFragmentNote}${liveFragmentFullNote}${hourlyNote}${hourlyFullNote}${releaseRepairNote}${releaseRepairFullNote}${documentOwnerNote}`,
         detail: {
           selected_raw_fees: verification.selectedRawFees,
           processed_raw_fees: verification.processedRawFees,
@@ -910,6 +930,8 @@ async function executeAgenticStep(
           recorded_pass_release: recordedRelease,
           live_fragment_check: liveFragmentDetail(liveFragments),
           ...(liveFragmentsFull ? { live_fragment_full_count: liveFragmentFindingsDetail(liveFragmentsFull) } : {}),
+          hourly_frequency_check: hourlyDetail(hourly),
+          ...(hourlyFull ? { hourly_frequency_full_count: hourlyFindingsDetail(hourlyFull) } : {}),
           release_repair: releaseRepair ? releaseRepairDetail(releaseRepair) : { error: releaseRepairError },
           ...(releaseRepairFull ? { release_repair_full_count: releaseRepairFindingsDetail(releaseRepairFull) } : {}),
           schedule_refile: { selected: scheduleRefile.selected, refiled: scheduleRefile.refiled },
@@ -2336,6 +2358,11 @@ async function executeAgenticStep(
     case "deming-benchmark-health": {
       const result = await runBenchmarkHealth({ db: tx });
       return { status: "completed", summary: summarizeBenchmarkHealth(result), detail: benchmarkHealthDetail(result) };
+    }
+    case "deming-knox-misses": {
+      // #1099: writes only eval_cases (new missed-fee cases and each case's replay); never a fee row.
+      const result = await runKnoxMisses({ db: tx, runId: run.id, dryRun: run.runKind === "dry_run" });
+      return { status: "completed", summary: summarizeKnoxMisses(result), detail: knoxMissesDetail(result) };
     }
     case "deming-playbook-check": {
       // Read-only (#1105): one SELECT over the playbooks; the step's ledger row is its only write.

@@ -79,6 +79,7 @@ const BASIS_WORDS: Record<string, string> = {
   quarterly: "quarterly",
   daily: "daily",
   weekly: "weekly",
+  hourly: "by the hour",
 };
 
 function basisWords(family: string): string {

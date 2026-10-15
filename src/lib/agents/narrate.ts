@@ -270,6 +270,11 @@ function narrateFinished(
       const collapses = Array.isArray(detail.collapses) ? detail.collapses.length : 0;
       return `Deming checked the benchmarks: ${n(detail, "groups_meeting_target")} of ${n(detail, "groups_total")} state and size groups meet the coverage target, ${collapses === 0 ? "no benchmark collapsed" : `ALARM: ${count(collapses, "benchmark")} lost a sharp share of its institutions`}.`;
     }
+    case "deming-knox-misses": {
+      if (detail.ready === false) return "Deming could not replay Knox's answer-key misses: the case store or the answer key is not there.";
+      const regressions = Array.isArray(detail.regressions) ? detail.regressions.length : 0;
+      return `Deming replayed the answer key against today's Knox: ${n(detail, "fees_missed")} of ${n(detail, "fees_scored")} key fees missed, ${n(detail, "activated")} newly read, ${regressions === 0 ? "no regressions" : count(regressions, "regression")}.`;
+    }
     case "deming-playbook-check": {
       if (detail.ready === false) return "Deming could not check the playbooks: the playbook table is not there.";
       return `Deming checked ${count(n(detail, "profiles"), "playbook")}: ${n(detail, "institutions")} contradict themselves, ${n(detail, "search_from_entries")} carry a second-document search entry on their current link.`;
@@ -637,6 +642,7 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   "atlas-city-repair": "atlas",
   "deming-fresh-audit": "atlas",
   "deming-benchmark-health": "atlas",
+  "deming-knox-misses": "atlas",
   "deming-playbook-check": "atlas",
   "deming-change-outcomes": "atlas",
   "deming-sunday-maintenance": "atlas",

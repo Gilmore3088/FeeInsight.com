@@ -759,7 +759,9 @@ export async function insertVerifiedFee(
   if (options.extraFlags) flags.push(...options.extraFlags);
   const stated = options.row.frequency ?? null;
   const line = excerptOf(options.row.conditions);
-  const settled = amount == null ? stated : settledFrequency(line, amount, stated, options.canonicalFeeKey);
+  // #1456: Darwin keeps an hourly frequency Knox stated but does not read one itself; live fees
+  // become hourly through the switched live re-check (hourly-frequency-check.ts).
+  const settled = amount == null ? stated : settledFrequency(line, amount, stated, options.canonicalFeeKey, { hourly: false });
   // #1196: an NSF fee is charged per item; a period on one is a misread, so it is never verified.
   const frequency = perEventFrequency(options.canonicalFeeKey, settled, line, amount);
   if (frequency !== stated) flags.push(FREQUENCY_SETTLED_FLAG);

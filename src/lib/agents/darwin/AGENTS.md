@@ -306,6 +306,29 @@ Darwin owns verification and classification.
     additional and fee words is refused ("Handling fee", "Late charge"), as is one holding "our" or
     "your" ("Allpoint network our ATM fee"); a tail word may hold "/" or be a parenthetical
     ("Return Item/Insufficient Funds Fee", "Consecutive days overdrawn (OD) fee").
+- Live hourly re-check (`hourly-frequency-check.ts`, #1456). About 802 live fees say in their name
+  that they are priced by the hour ("Research Fee $25/hour", "Subpoena Fee - Per Hour") but carried
+  no frequency or a per-item one, so a report read the price as a flat charge. `hourly` shows as "per
+  hour". Knox does not yet read hourly at extraction; that change rides the next Knox rules bump
+  (`settledFrequency(..., { hourly: true })`), and until then this pass catches new fees once
+  they are live. Darwin's own verify keeps a stated `hourly` but does not
+  derive one, and Hamilton's frequency fill never writes or clears it. Every verify/classify step
+  reads the next `HOURLY_CHECK_BATCH` (2,000) live flat fees after a cursor on the run ledger (the
+  `darwin.hourly_frequency_check` event's `next_after_id`, 0 at the end of a pass); an
+  institution-scoped run leaves the cursor alone. `hourlyVerdict`, on the live catalog name: `set`
+  when the name prices by the hour (`HOURLY_WORDING`: "per hour", "/hr", "hourly", "(hour)", "$25 an
+  hour") and the frequency is blank or per-item; `exempt` (reported only) for `partial_hour` ("per
+  15 min", "per half hour"), `category` (`HOURLY_EXEMPT_KEYS`: monthly maintenance, minimum balance,
+  dormant, continuous OD, paper statement, NSF, overdraft, returned item), `period_word` (the name
+  also says monthly, annual, daily...) and `stated_period`. "24 hour", "within 48 hours", "after
+  hours" and "1 hour photo" never match. `HOURLY_FREQUENCY_LIVE` is false: the pass only reports
+  (step detail `hourly_frequency_check`: `would_set`, `would_set_by_frequency`, `exempt_by_reason`,
+  samples). Switched on by PR after James has seen the whole-table count, the live row and its
+  verified row take `hourly` guarded on the old value, each change is logged to `pipeline_feedback`
+  (check `darwin.hourly_frequency_check`, evidence `from`/`to`, so it reverses), and a
+  `darwin.hourly_frequency_set` event lists them. Whole-table dry run: a verify run with
+  `hourly_full_count: true` (step detail `hourly_frequency_full_count`), or `hourlyCountSql()` /
+  `hourlySamplesSql()` for someone with prod access.
 - Released-fee category re-check (`release-repair.ts`, the repair half of #1367; decision
   2026-10-15, "Darwin re-checks every live fee against today's rules"). Until PR #1468 the release
   check passed "." as the category pattern, so every fee the release published before then went live
@@ -753,6 +776,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `DARWIN_VERDICT_SCORE_STRATEGY` | `verify.verdict_score` | v1 | `darwin/verdict-score.ts` |
 | `DARWIN_RECHECK_STRATEGY` | `verify.recheck` | v3 | `darwin/verified-recheck.ts` |
 | `LIVE_FRAGMENT_STRATEGY` | `darwin.live_fragment_check` | v4 | `darwin/live-fragment-check.ts` |
+| `HOURLY_CHECK_VERSION` | `darwin.hourly_frequency_check` | v1 | `darwin/hourly-frequency-check.ts` |
 | `DOCUMENT_OWNER_STRATEGY` | `verify.document_owner` | v1 | `darwin/document-owner.ts` |
 | `DARWIN_VERIFY_STRATEGY` | `verify.rules` | v3 | `darwin/verify.ts` |
 | `DARWIN_SOURCE_CHECK_VERSION` | — | v2 | `darwin/verify.ts` |
