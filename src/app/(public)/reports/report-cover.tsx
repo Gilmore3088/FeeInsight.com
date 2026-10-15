@@ -13,7 +13,7 @@ function money(n: number): string {
 export function ReportCover({ sample }: { sample: SampleExhibit | null }) {
   const lines = sample?.lines.slice(0, 5) ?? [];
   return (
-    <div className="relative mx-auto w-full max-w-[26rem] py-6" aria-hidden="true">
+    <div className="relative mx-auto w-full max-w-[32rem] py-6" aria-hidden="true">
       {/* The brick block and the page behind give the cover depth. */}
       <span className="absolute -left-2 top-0 h-2/3 w-2/3 rounded-2xl bg-brick-tint" />
       <span className="absolute bottom-2 right-0 h-1/2 w-1/2 rounded-2xl bg-[#f3e3b8]" />
@@ -34,8 +34,8 @@ export function ReportCover({ sample }: { sample: SampleExhibit | null }) {
             {lines.map((l) => {
               const x = lineScale(l);
               return (
-                <li key={l.key} className="grid grid-cols-[6.5rem_minmax(0,1fr)_2.75rem] items-center gap-2 text-[11px]">
-                  <span className="truncate text-ink-soft">{l.label}</span>
+                <li key={l.key} className="grid grid-cols-[8.5rem_minmax(0,1fr)_2.75rem] items-center gap-2 text-[11px]">
+                  <span className="leading-tight text-ink-soft">{l.label}</span>
                   <span className="relative h-3">
                     <span className="absolute inset-x-0 top-1/2 border-t border-border" />
                     <span

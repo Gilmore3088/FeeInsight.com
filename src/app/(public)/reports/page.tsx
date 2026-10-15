@@ -24,7 +24,7 @@ import { STATE_CODES, STATE_NAMES } from "@/lib/us-states";
 import { REPORT_TYPE_LABELS, ReportFilters } from "./report-filters";
 import { ReportCover, ReportVideo } from "./report-cover";
 import { SampleLines, StateReportMap } from "./report-exhibits";
-import { mapStates, sampleExhibit, type StateCoverage } from "./report-view";
+import { formatReadOn, mapStates, sampleExhibit, type StateCoverage } from "./report-view";
 
 export const revalidate = 3600;
 
@@ -174,16 +174,26 @@ export default async function ReportsPage({ searchParams }: PageProps) {
               Know where your fees stand against your market
             </h1>
             <p className="mt-4 max-w-[34rem] text-[16px] text-ink-soft">
-              Your published fees next to the competitors you name, with a source for every figure.
+              Your published fees next to the competitors you name.
             </p>
             <ul className="mt-5 flex flex-wrap gap-x-5 gap-y-2 text-[13px] font-medium text-ink">
-              {[REPORT_OFFER.priceLabel, "Reply within one business day", "Board-ready PDF"].map((item) => (
+              {[REPORT_OFFER.priceLabel, "Board-ready PDF", "A source for every figure"].map((item) => (
                 <li key={item} className="inline-flex items-center gap-2">
                   <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-brick" />
                   {item}
                 </li>
               ))}
             </ul>
+            <p className="mt-5">
+              <TrackLink
+                event="sample_report_click"
+                eventProps={{ placement: "reports_hero_sample" }}
+                href={SAMPLE_REPORT_HREF}
+                className="text-[14px] font-semibold text-ink underline decoration-border underline-offset-4 hover:decoration-ink"
+              >
+                Or read a free sample report
+              </TrackLink>
+            </p>
           </div>
           <div id="request" className="scroll-mt-24 lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:self-center">
             <RequestReportForm
@@ -210,13 +220,16 @@ export default async function ReportsPage({ searchParams }: PageProps) {
               <h2 id="inside-heading" className={H2}>
                 Inside: {sample.name} against {sample.competitorsWithData} local competitors
               </h2>
-              <p className="mt-1 text-[14px] text-ink-muted">A live sample, rebuilt from verified fees.</p>
+              <p className="mt-1 text-[14px] text-ink-muted">
+                Live, from each bank&apos;s own published fee schedule
+                {sample.readOn ? `, read as of ${formatReadOn(sample.readOn)}` : ""}.
+              </p>
             </div>
             <Link
               href={SAMPLE_REPORT_HREF}
               className="text-[14px] font-semibold text-ink underline decoration-border underline-offset-4 hover:decoration-ink"
             >
-              Read the whole sample
+              Read the whole sample, with sources
             </Link>
           </div>
           <SampleLines sample={sample} />
@@ -257,7 +270,10 @@ export default async function ReportsPage({ searchParams }: PageProps) {
         {states.length > 0 ? (
           <>
             <p className="mt-1 text-[14px] text-ink-muted">
-              {coveredInstitutions.toLocaleString("en-US")} institutions with verified fees. Darker states have more.
+              {coveredInstitutions.toLocaleString("en-US")} institutions with verified fees. Darker states have more.{" "}
+              <Link href="/methodology" className="font-medium text-ink underline decoration-border underline-offset-2 hover:decoration-ink">
+                How we verify
+              </Link>
             </p>
             <div className="mt-5">
               <StateReportMap states={states} />
@@ -276,9 +292,9 @@ export default async function ReportsPage({ searchParams }: PageProps) {
 
       {/* 6. Hamilton, once. */}
       <section className="mx-auto max-w-page px-4 pt-14 sm:px-6 sm:pt-20">
-        <div className="rounded-2xl bg-ink px-6 py-7 sm:px-8">
-          <p className="text-[22px] font-semibold tracking-[-0.02em] text-white">Keep your market current</p>
-          <HamiltonLine placement="reports_hub_closing" tone="dark" firstMention className="mt-2 max-w-[40rem] text-[14px]" />
+        <div className="rounded-2xl border border-border bg-surface-0 px-6 py-7 sm:px-8">
+          <p className="text-[20px] font-semibold tracking-[-0.02em] text-ink">After the report</p>
+          <HamiltonLine placement="reports_hub_closing" firstMention className="mt-2 max-w-[40rem] text-[14px]" />
         </div>
       </section>
 

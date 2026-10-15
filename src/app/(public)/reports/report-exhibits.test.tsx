@@ -9,6 +9,7 @@ const sample: SampleExhibit = {
   competitorsWithData: 18,
   competitorsInMarket: 30,
   findings: [],
+  readOn: "2026-10-03",
   lines: [
     { key: "od", label: "Overdraft", own: 35, p25: 25, median: 30, p75: 32, peers: 14, chargingLess: 11, position: "above_market" },
     { key: "nsf", label: "NSF", own: 25, p25: 20, median: 28, p75: 30, peers: 12, chargingLess: 3, position: "in_market" },
@@ -18,11 +19,11 @@ const sample: SampleExhibit = {
 describe("reports page exhibits", () => {
   it("counts the competitors charging less on the tapped fee", () => {
     render(<SampleLines sample={sample} />);
-    expect(screen.getByText("11 of 14")).toBeTruthy();
+    expect(screen.getByText("11")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /^NSF: \$25/ }));
-    expect(screen.getByText("3 of 12")).toBeTruthy();
+    expect(screen.getByText("3")).toBeTruthy();
     expect(screen.getByText("NSF · Capital City Bank $25")).toBeTruthy();
-    expect(screen.getByText("local competitors charge less. Local median $28.")).toBeTruthy();
+    expect(screen.getByText(/of the 12 local competitors publishing this fee charge less\. Local median \$28\./)).toBeTruthy();
   });
 
   it("opens on the best-covered state and switches from the picker", () => {
@@ -35,9 +36,11 @@ describe("reports page exhibits", () => {
       />,
     );
     expect(screen.getByRole("link", { name: "Open the Florida report" }).getAttribute("href")).toBe("/research/state/FL");
-    expect(screen.getByText("Enough data here for a local competitor report.")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Get a competitor report for Florida" }).getAttribute("href")).toBe(
+      "/reports?report=institution&src=reports-map-FL#request",
+    );
     fireEvent.change(screen.getByLabelText("Pick a state"), { target: { value: "VT" } });
     expect(screen.getByRole("link", { name: "Open the Vermont report" })).toBeTruthy();
-    expect(screen.queryByText("Enough data here for a local competitor report.")).toBeNull();
+    expect(screen.queryByRole("link", { name: /Get a competitor report/ })).toBeNull();
   });
 });

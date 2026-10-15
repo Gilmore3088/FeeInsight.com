@@ -18,6 +18,8 @@ const POSITION = {
   free: { dot: "bg-[#2f6b4f]", word: "Free, where competitors charge" },
 } as const;
 
+const LEGEND = { above_market: "Above the middle half", in_market: "Inside", below_market: "Below" } as const;
+
 /**
  * The live sample's fee lines: the bank's fee as a dot on its local market's middle half. Tapping
  * a line says how many local competitors charge less, the report's own count.
@@ -32,9 +34,10 @@ export function SampleLines({ sample }: { sample: SampleExhibit }) {
           {line.label} · {sample.name} {money(line.own)}
         </p>
         <p className="font-mono text-[22px] font-semibold leading-tight tabular-nums text-ink">
-          {COUNT.format(line.chargingLess)} of {COUNT.format(line.peers)}
+          {COUNT.format(line.chargingLess)}
         </p>
-        <p className="text-[13px] text-ink-muted">local competitors charge less. Local median {money(line.median)}.</p>
+        <p className="text-[13px] text-ink-muted">of the {COUNT.format(line.peers)} local competitors publishing this fee charge less. Local median{" "}
+          {money(line.median)}.</p>
       </div>
       <ol aria-label={`${sample.name} against its local market`} className="mt-3 divide-y divide-border">
         {sample.lines.map((l) => {
@@ -77,9 +80,11 @@ export function SampleLines({ sample }: { sample: SampleExhibit }) {
         <span className="inline-flex items-center gap-1.5">
           <span className="h-3.5 w-[2px] bg-ink/60" /> Local median
         </span>
-        <span className="inline-flex items-center gap-1.5">
-          <span className="h-2.5 w-2.5 rounded-full bg-ink" /> {sample.name}
-        </span>
+        {(["above_market", "in_market", "below_market"] as const).map((p) => (
+          <span key={p} className="inline-flex items-center gap-1.5">
+            <span className={`h-2.5 w-2.5 rounded-full ${POSITION[p].dot}`} /> {LEGEND[p]}
+          </span>
+        ))}
         <span>Tap a fee to count.</span>
       </p>
     </div>
@@ -135,7 +140,12 @@ export function StateReportMap({ states }: { states: MapState[] }) {
           </div>
         </dl>
         {shown.reportReady && (
-          <p className="mt-2 text-[12px] text-ink-muted">Enough data here for a local competitor report.</p>
+          <a
+            href={`/reports?report=institution&src=reports-map-${shown.code}#request`}
+            className="mt-2 inline-block text-[13px] font-semibold text-ink underline decoration-border underline-offset-4 hover:decoration-ink"
+          >
+            Get a competitor report for {shown.name}
+          </a>
         )}
         <Link
           href={`/research/state/${shown.code}`}

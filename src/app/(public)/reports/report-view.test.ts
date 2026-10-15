@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { MarketReport } from "@/lib/custom-report/report-data";
 import type { ReportLine } from "@/lib/custom-report/analysis";
-import { lineScale, mapStates, sampleExhibit } from "./report-view";
+import { formatReadOn, lineScale, mapStates, sampleExhibit } from "./report-view";
 
 function line(key: string, own: number | null, comparable = true): ReportLine {
   return {
@@ -46,6 +46,19 @@ describe("reports page view", () => {
       ["wire", 25, "in_market"],
     ]);
     expect(sample!.findings).toHaveLength(3);
+    expect(sample!.readOn).toBeNull();
+  });
+
+  it("dates the sample by the latest schedule read behind it", () => {
+    const r = report([line("od", 35)]);
+    const fee = { institution_id: 1, line: "od", amount: 30, fee_name: "od", source_url: null, updated_at: null, source_line: "od" };
+    r.data.lines = [
+      { ...fee, schedule_read_on: "2026-09-28" },
+      { ...fee, schedule_read_on: "2026-10-03" },
+      { ...fee, schedule_read_on: null },
+    ];
+    expect(sampleExhibit(r)!.readOn).toBe("2026-10-03");
+    expect(formatReadOn("2026-10-03")).toBe("October 3, 2026");
   });
 
   it("shows no sample when it is offline, not ready, or has nothing comparable", () => {

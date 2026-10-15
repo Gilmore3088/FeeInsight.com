@@ -31,6 +31,8 @@ export interface SampleExhibit {
   competitorsInMarket: number;
   findings: string[];
   lines: SampleLine[];
+  /** The latest day a schedule behind the sample was read (YYYY-MM-DD), or null when none says. */
+  readOn: string | null;
 }
 
 /** Lines the exhibit draws; the full sample has the rest. */
@@ -66,6 +68,7 @@ export function sampleExhibit(report: MarketReport | null): SampleExhibit | null
     competitorsInMarket: report.analysis.readiness.competitorsInMarket,
     findings: report.analysis.findings.slice(0, 3),
     lines: lines.slice(0, SAMPLE_LINES_SHOWN),
+    readOn: latestReadOn(report),
   };
 }
 
@@ -77,6 +80,26 @@ export function lineScale(l: Pick<SampleLine, "own" | "p25" | "p75">): (v: numbe
   const min = Math.max(0, lo - pad);
   const max = hi + pad;
   return (v: number) => ((v - min) / (max - min)) * 100;
+}
+
+function latestReadOn(report: MarketReport): string | null {
+  let latest: string | null = null;
+  for (const line of report.data.lines) {
+    const day = line.schedule_read_on;
+    if (day && /^\d{4}-\d{2}-\d{2}$/.test(day) && (!latest || day > latest)) latest = day;
+  }
+  return latest;
+}
+
+/** "October 3, 2026" from a YYYY-MM-DD day, read as a calendar date (no time zone shift). */
+export function formatReadOn(day: string): string {
+  const [y, m, dd] = day.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, dd)).toLocaleDateString("en-US", {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  });
 }
 
 function titleCase(text: string): string {
