@@ -9,12 +9,14 @@ export function CircuitBanner({
   onReset,
 }: {
   status: Omit<AgentStatus, "pending"> & { pending?: number | null };
-  onReset: () => Promise<void>;
+  /** Omitted when nothing can reset the pause from here (Darwin's is the execution backend's). */
+  onReset?: () => Promise<void>;
 }) {
   const [busy, setBusy] = useState(false);
   if (!status.circuit.halted) return null;
 
   async function reset() {
+    if (!onReset) return;
     setBusy(true);
     try {
       await onReset();
@@ -28,21 +30,26 @@ export function CircuitBanner({
       <div className="flex gap-3">
         <ShieldAlert className="mt-0.5 h-5 w-5 shrink-0 text-red-700 dark:text-red-400" />
         <div>
-          <p className="text-sm font-bold text-red-900 dark:text-red-200">Work is paused for this agent</p>
+          <p className="text-sm font-bold text-red-900 dark:text-red-200">
+            Work is paused for this agent
+          </p>
           <p className="mt-1 text-xs text-red-800/80 dark:text-red-300/80">
-            {status.circuit.reason ?? "The circuit breaker did not record a reason."}
+            {status.circuit.reason ??
+              "The circuit breaker did not record a reason."}
           </p>
         </div>
       </div>
-      <button
-        type="button"
-        onClick={reset}
-        disabled={busy}
-        className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-md border border-red-300 bg-white px-3 text-xs font-semibold text-red-800 transition-colors hover:bg-red-100 disabled:opacity-50 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300 dark:hover:bg-red-950/50"
-      >
-        {busy && <RotateCw className="h-3.5 w-3.5 animate-spin" />}
-        {busy ? "Resetting" : "Reset agent"}
-      </button>
+      {onReset ? (
+        <button
+          type="button"
+          onClick={reset}
+          disabled={busy}
+          className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-md border border-red-300 bg-white px-3 text-xs font-semibold text-red-800 transition-colors hover:bg-red-100 disabled:opacity-50 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300 dark:hover:bg-red-950/50"
+        >
+          {busy && <RotateCw className="h-3.5 w-3.5 animate-spin" />}
+          {busy ? "Resetting" : "Reset agent"}
+        </button>
+      ) : null}
     </div>
   );
 }

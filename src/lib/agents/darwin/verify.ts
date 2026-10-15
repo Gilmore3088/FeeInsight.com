@@ -1,5 +1,6 @@
 import { isConsumerFee, scopedFeeStatements, type FeeAudience } from "@/lib/fee-audience";
 import { darwinAudience, type DarwinAudience } from "./audience";
+import { tierPerkZero } from "./tier-perk";
 import { createHash } from "crypto";
 
 import { sql } from "@/lib/data-store/connection";
@@ -118,6 +119,7 @@ export type DarwinReasonCode =
   | "category_lesson_pending"
   | "retired_category"
   | "conditional_zero"
+  | "tier_perk_zero"
   | "name_rule"
   | "insert_failed";
 
@@ -144,6 +146,7 @@ export const DARWIN_REASON_TEXT: Readonly<Record<DarwinReasonCode, string>> = {
   category_lesson_pending: "Fee name belongs to a category the guard does not place it in yet; held until the guard learns it",
   retired_category: "Category retired by the top-50 fold and the name has no home in a live one; Hamilton never publishes it",
   conditional_zero: "A $0 fee whose own schedule line prices it ($0 if a condition is met, else a charge); the charge is the fee",
+  tier_perk_zero: "A $0 from one account tier's own schedule (premium, private banking, BankOn) or named for that account: the tier's perk, not the bank's price",
   name_rule: "The name or line fails a rule Hamilton would take the live fee down for",
   insert_failed: "The database refused the verified row; held for review so the rest of the batch still runs",
 };
@@ -1131,6 +1134,8 @@ export async function runDarwinVerify(
     const sourceLine = reasonCode || !canonicalFeeKey ? null : sourceLineFor(row, sourceTexts, canonicalFeeKey) ?? excerptOf(row.conditions);
     const postCheck = reasonCode || !canonicalFeeKey ? null : postSourceCheck(canonicalFeeKey, row.fee_name, normalizedAmount(row.amount), sourceLine);
     if (postCheck) reasonCode = postCheck.code;
+    // #1397: a $0 a premium or private-banking schedule grants is that tier's perk, not the bank's price.
+    if (!reasonCode && tierPerkZero(normalizedAmount(row.amount), row.fee_name, row.source_url, sourceText)) reasonCode = "tier_perk_zero";
     if (!reasonCode && canonicalFeeKey && verifiedInBatch.has(batchKey(row, canonicalFeeKey))) {
       reasonCode = "duplicate_in_batch";
     }
