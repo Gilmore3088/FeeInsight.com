@@ -54,6 +54,23 @@ describe("buildDailyBrief", () => {
     expect(text).toContain("Audience not stated: 99.7% of live fees");
   });
 
+  it("copies the quality ledger into the email (Oct 15)", () => {
+    const brief = buildDailyBrief({
+      health, funnel, stepsByAgent: {}, feed24h: [], previous: null,
+      ledger: {
+        answerKey: { precision: 0.874, recall: 0.575, scoredAt: "2026-10-14T16:53:00Z", scorerVersion: 2 },
+        liveFees: 76629, storedNotes: 75227, perItemBreaks: 71, noSourceLink: 1338,
+      },
+      now: new Date("2026-10-15T12:00:00Z"),
+    });
+    const text = brief.lines.join("\n");
+    expect(text).toContain("Quality ledger (live fees now):");
+    expect(text).toContain("Answer key (scorer v2, 2026-10-14): 87.4% of the fees we publish are right; we find 57.5% of the fees we should.");
+    expect(text).toContain("Knox's note still stored in a live fee's conditions: 75,227 of 76,629 (target 0).");
+    expect(text).toContain("Per-item rule breaks (overdraft and returned items stored by a period): 71 (target 0).");
+    expect(text).toContain("Live fees with no link to the bank's own document: 1,338 (target 0).");
+  });
+
   it("summarizes runs, movement since the last brief, and what needs the owner", () => {
     const brief = buildDailyBrief({
       health,
