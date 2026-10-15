@@ -94,6 +94,7 @@ import { freshAuditDetail, runFreshAudit, summarizeFreshAudit } from "@/lib/agen
 import { benchmarkHealthDetail, runBenchmarkHealth, summarizeBenchmarkHealth } from "@/lib/agents/deming/benchmark-health";
 import { runBayesLedger, summarizeBayesLedger, BAYES_LEDGER_VERSION } from "@/lib/agents/bayes/ledger";
 import { runScheduleCheck, summarizeScheduleCheck, SCHEDULE_CHECK_VERSION } from "@/lib/agents/atlas/schedule-check";
+import { cityRepairDetail, runCityRepair, summarizeCityRepair } from "@/lib/agents/atlas/city-repair";
 import { MARKET_SPREAD_WORKFLOW, runMarketSpread, summarizeMarketSpread } from "@/lib/agents/content/market-spread";
 import { FEE_DEPTH_WORKFLOW, runFeeDepth, summarizeFeeDepth } from "@/lib/agents/content/fee-depth";
 import { runOdByState, summarizeOdByStateResult } from "@/lib/agents/content/od-by-state";
@@ -2238,6 +2239,10 @@ async function executeAgenticStep(
     case "deming-benchmark-health": {
       const result = await runBenchmarkHealth({ db: tx });
       return { status: "completed", summary: summarizeBenchmarkHealth(result), detail: benchmarkHealthDetail(result) };
+    }
+    case "atlas-city-repair": {
+      const result = await runCityRepair({ db: tx, dryRun: run.runKind === "dry_run" });
+      return { status: "completed", summary: summarizeCityRepair(result), detail: cityRepairDetail(result) };
     }
     case "schedule-check": {
       const result = await runScheduleCheck({ db: tx });

@@ -16,10 +16,10 @@ async function isAuthorized(request: NextRequest): Promise<boolean> {
 }
 
 /**
- * Atlas's daily measurement, as a visible four-step run (cron, once a day): score the
+ * Atlas's daily measurement, as a visible run (cron, once a day): score the
  * pipeline against the hand-checked answer key, let Deming turn confirmed takedowns into
  * regression cases and replay them, audit a fresh seeded sample of live fees, then snapshot the six scoreboard numbers (which include
- * that score). Deterministic; no model calls.
+ * that score), then restore cut credit union cities (#1213). Deterministic; no model calls.
  */
 async function handleGET(request: NextRequest) {
   if (!(await isAuthorized(request))) {
@@ -42,11 +42,13 @@ async function handleGET(request: NextRequest) {
       { key: "scoreboard-snapshot", agent: "atlas", title: "Record the daily scoreboard" },
       { key: "deming-change-outcomes", agent: "atlas", title: "Deming: check whether each change moved the number it named, a week on" },
       { key: "deming-sunday-maintenance", agent: "atlas", title: "Deming: on Sunday, write James's hour of maintenance tasks" },
+      // Last: a data repair, so a pipeline pause holds it without holding the measurements above.
+      { key: "atlas-city-repair", agent: "atlas", title: "Atlas: restore credit union cities NCUA cut at 15 characters (#1213)" },
     ],
   });
   const result = started.reused
     ? { runId: started.run.id, status: started.run.status, message: "Today's scoreboard already ran." }
-    : await executeAgentRun(started.run.id, { maxSteps: 7 });
+    : await executeAgentRun(started.run.id, { maxSteps: 8 });
   return NextResponse.json({ ok: true, runId: started.run.id, reused: started.reused, result });
 }
 

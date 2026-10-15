@@ -185,6 +185,25 @@ export function normalizeCitySummaryRow(
   };
 }
 
+/**
+ * The full city a cut 15-character name stands for (#1213): the one longer city in the state that
+ * starts with it (case ignored), or null when there is none or more than one. The city page
+ * redirects a cut address here once the cut has no institutions left.
+ */
+export async function fullCityForCut(city: string, stateCode: string): Promise<string | null> {
+  const cut = city.trim();
+  if (cut.length !== 15) return null;
+  const rows = await sql<{ city: string }[]>`
+    SELECT DISTINCT ON (lower(btrim(city))) btrim(city) AS city
+      FROM institution_sources
+     WHERE state_code = ${stateCode.toUpperCase()}
+       AND length(btrim(city)) > 15
+       AND lower(left(btrim(city), 15)) = lower(${cut})
+     LIMIT 2
+  `;
+  return rows.length === 1 ? rows[0].city : null;
+}
+
 export async function getCityInstitutions(city: string, stateCode: string): Promise<CityInstitution[]> {
   const upperState = stateCode.toUpperCase();
   const rows = await sql`

@@ -245,6 +245,13 @@ function narrateFinished(
         .join("");
       return `Wrote ${memo ? n(memo, "passed") : 0} of ${count(memo ? n(memo, "answers") : 0, "paid memo")}${correctness ? `; ${n(correctness, "correct")} of ${n(correctness, "checked")} checked tie to the live catalog` : ""}.${simulateLine}`;
     }
+    case "atlas-city-repair": {
+      const found = n(detail, "candidates");
+      if (found === 0) return "Atlas found no credit union city cut at 15 characters to restore.";
+      return n(detail, "repaired") > 0
+        ? `Atlas restored ${count(n(detail, "repaired"), "credit union city", "credit union cities")} cut at 15 characters from NCUA's branch file.`
+        : `Atlas found ${count(found, "credit union city", "credit union cities")} cut at 15 characters and changed none (${detail.dry_run === true ? "dry run" : "switched off"}).`;
+    }
     case "schedule-check": {
       const missed = n(detail, "missed") + n(detail, "failed");
       return `Atlas checked every schedule against the route ledger: ${n(detail, "ran")} ran on time, ${missed === 0 ? "none missed or failed" : `${missed} missed or failed`}${n(detail, "unknown") > 0 ? `, ${n(detail, "unknown")} unknown` : ""}.`;
@@ -621,6 +628,7 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   "score-answer-key": "atlas",
   "bayes-replay-ledger": "atlas",
   "schedule-check": "atlas",
+  "atlas-city-repair": "atlas",
   "deming-fresh-audit": "atlas",
   "deming-benchmark-health": "atlas",
   "deming-change-outcomes": "atlas",

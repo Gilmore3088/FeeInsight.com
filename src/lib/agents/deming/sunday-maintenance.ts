@@ -78,14 +78,7 @@ export function sundayTasks(input: SundayEmailInputs): { tasks: SundayTask[]; un
         href: "https://github.com/Gilmore3088/FeeInsight.com/issues/1200",
       });
     }
-    if (input.dataRoom.cityAtLimit > 0) {
-      tasks.push({
-        kind: "decision",
-        title: `Approve the city-name repair: ${plural(input.dataRoom.cityAtLimit, "institution")} at the 15-character cut (#1213)`,
-        minutes: MINUTES_PER_DECISION,
-        href: "https://github.com/Gilmore3088/FeeInsight.com/issues/1213",
-      });
-    }
+    // The city-name repair (#1213) was decided on Oct 15 and runs daily (`atlas-city-repair`).
   }
   if (input.answerKeyToCheck == null) unreadable.push(`Answer-key banks: ${UNREAD}.`);
   for (let index = 0; index < (input.answerKeyToCheck ?? 0); index += 1) {
