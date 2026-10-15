@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { feeDisplayName } from "@/lib/fee-display-name";
+import { feeDisplayName, isCutFeeName } from "@/lib/fee-display-name";
 
 describe("feeDisplayName", () => {
   it("names a safe deposit box row that states only its size (101392)", () => {
@@ -15,5 +15,22 @@ describe("feeDisplayName", () => {
     expect(feeDisplayName("Drilling", "safe_deposit_box")).toBe("Drilling");
     expect(feeDisplayName("3 x 10", "check_printing")).toBe("3 x 10");
     expect(feeDisplayName("3 x 10", null)).toBe("3 x 10");
+  });
+
+  it("shows the category's name for a name cut from its line (#1180)", () => {
+    expect(feeDisplayName("Chase Mobile to send a wire from your account to", "wire_domestic_outgoing")).toBe("Wire Transfer (Domestic Out)");
+    expect(feeDisplayName("Fees: o A Minimum Balance Fee", "monthly_maintenance")).toBe("Monthly Maintenance");
+  });
+
+  it("keeps a cut name when there is no known category to fall back to", () => {
+    expect(feeDisplayName("Chase Mobile to send a wire from your account to", null)).toBe("Chase Mobile to send a wire from your account to");
+    expect(feeDisplayName("Chase Mobile to send a wire from your account to", "not_a_category")).toBe("Chase Mobile to send a wire from your account to");
+  });
+
+  it("leaves whole names alone, including ones that only look odd", () => {
+    for (const name of ["OVERDRAFT FEE", "Monthly Service Fee", "Stop Payment", "Loan Application, each", "N/A", "e-Statement fee"]) {
+      expect(isCutFeeName(name)).toBe(false);
+      expect(feeDisplayName(name, "overdraft")).toBe(name);
+    }
   });
 });
