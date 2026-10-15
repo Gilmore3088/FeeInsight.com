@@ -2,6 +2,7 @@ const SERIF = { fontFamily: "var(--fi-font-sans)" };
 
 // The report's last section: the same market, kept current in Hamilton (James, 6 Oct 2026).
 // institutionId is the report's own bank, so /subscribe opens on its tier instead of a search.
+// A reader not ready to subscribe can ask for a Pro demo (James, 15 Oct 2026).
 export function HamiltonClose({ competitors, institutionId }: { competitors: number; institutionId?: number | null }) {
   const params = new URLSearchParams({ from: "/pro/monitor" });
   if (institutionId) params.set("inst", String(institutionId));
@@ -15,12 +16,17 @@ export function HamiltonClose({ competitors, institutionId }: { competitors: num
         This report is a snapshot. Hamilton, the Pro workspace, keeps these {competitors} competitors on a watchlist
         and shows each fee change as it is published.
       </p>
-      <a
-        href={`/subscribe?${params.toString()}#pro`}
-        className="mt-4 inline-flex items-center rounded-md bg-brick px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-brick-ink"
-      >
-        See Hamilton plans
-      </a>
+      <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-3">
+        <a
+          href={`/subscribe?${params.toString()}#pro`}
+          className="inline-flex items-center rounded-md bg-brick px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-brick-ink"
+        >
+          See Hamilton plans
+        </a>
+        <a href="/contact?source=demo" className="inline-flex min-h-11 items-center text-sm font-medium text-brick underline underline-offset-2">
+          Or ask for a demo
+        </a>
+      </div>
     </section>
   );
 }

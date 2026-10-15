@@ -11,15 +11,25 @@ const REPORT_ANCHOR_HREF = "/for-institutions?report=institution#report";
 // Contact form, not mailto, so every ask lands in /admin/leads with a due time.
 const CONTACT_SALES_HREF = "/contact?source=enterprise";
 const ADVISORY_HREF = "/contact?source=advisory";
+const DEMO_HREF = "/contact?source=demo";
 
 const DISPLAY = { fontFamily: "var(--fi-font-sans)" };
 
 /**
- * The rest of the catalog for a direct visit (James, 9 Oct 2026): the one-time report, the
- * free index and Advisory, one line each, so Pro stays the page's subject.
+ * The rest of the catalog for a direct visit (James, 9 Oct 2026): a Pro demo, the one-time
+ * report, the free index and Advisory, one line each, so Pro stays the page's subject.
  */
 export function OtherOptions() {
   const rows = [
+    {
+      name: "A Pro demo",
+      note: "A walkthrough of Hamilton on your own market",
+      link: (
+        <TrackLink event="contact_sales" eventProps={{ placement: "pricing_demo" }} href={DEMO_HREF} className={LINK_CLASS}>
+          Request a demo
+        </TrackLink>
+      ),
+    },
     {
       name: REPORT_OFFER.name,
       note: `${REPORT_PRICE_LABEL}, one institution, paid once`,

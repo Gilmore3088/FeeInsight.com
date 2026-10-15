@@ -8,6 +8,7 @@ import { REPORT_OFFER, REPORT_PRICE_INLINE } from "@/lib/constants";
 
 const INQUIRY_TYPES = [
   { value: "report", label: `${REPORT_OFFER.name} (${REPORT_PRICE_INLINE})` },
+  { value: "demo", label: "A Pro demo (a walkthrough of Hamilton)" },
   { value: "enterprise", label: "Fee Insight Pro (seats, invoicing)" },
   { value: "billing", label: "Billing or my subscription" },
   { value: "advisory", label: "Fee Insight Advisory (custom work)" },

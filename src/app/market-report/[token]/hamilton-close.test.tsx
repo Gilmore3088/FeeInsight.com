@@ -11,6 +11,7 @@ describe("HamiltonClose", () => {
       "href",
       "/subscribe?from=%2Fpro%2Fmonitor#pro",
     );
+    expect(screen.getByRole("link", { name: "Or ask for a demo" })).toHaveAttribute("href", "/contact?source=demo");
   });
 
   it("carries the report's own bank so plans open on its tier", () => {
