@@ -693,10 +693,11 @@ After the extract itself, each extract step runs these passes in order (`run-sto
   A moved line keeps its name and amount and carries `knox_name_filed:<label|store>` and
   `canonical_hint:<key>`; Darwin still decides, and Hamilton's rules re-check keeps the fee live
   while its name and price trace in its own text. A line a decision covers that cannot move gets
-  the week's mark (`knox_name_file_checked:<ISO week>`); when a lane's pass reads every candidate,
+  the week's mark (`knox_name_file_checked:k<key version>:<ISO week>`); when a lane's pass reads every candidate,
   its other held lines get it too, so the rest of the week's steps read only new held lines and the
   live-fee join has nothing to probe. Settled names come from a hash join of live fees on the held
-  lines' own names, and labels from the feedback table's unique dedupe key. Step detail:
+  lines' own names, as printed and without footnote marks ("1Monthly fee" reaches the live "Monthly
+  fee"; `NAME_FILE_KEY_VERSION` v2, which the week mark carries, so lines marked under v1 are read again), and labels from the feedback table's unique dedupe key. Step detail:
   `held_name_file`. On 15 Oct 2026 (read-only, after the second review of #1385): 161 held lines
   matched a settled name, 71 would move at 40 banks in 26 states (38 of them set aside), and none
   had a label yet.
@@ -929,6 +930,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `KNOX_BATCH_REVIEW_VERSION` | — | v1 | `knox/batch-review.ts` |
 | `KNOX_CALIBRATION_VERSION` | — | v2 | `knox/calibration.ts` |
 | `HELD_RATE_RECHECK_VERSION` | — | v2 | `knox/held-recheck.ts` |
+| `NAME_FILE_KEY_VERSION` | — | v2 | `knox/held-recheck.ts` |
 | `KNOX_LAYOUT_SIGNATURE_VERSION` | — | v1 | `knox/layout-signature.ts` |
 | `KNOX_LESSONS_VERSION` | — | v3 | `knox/lessons.ts` |
 | `LINEUP_CORRECT_STRATEGY` | `knox.lineup_correct` | v2 | `knox/lineup-correct.ts` |

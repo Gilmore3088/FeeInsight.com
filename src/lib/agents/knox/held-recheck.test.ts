@@ -6,6 +6,9 @@ import { classifyFeeText, KNOX_HELD_NAME_RULES_LIVE } from "./rules";
 import {
   fileHeldByName,
   nameFileCheckedFlag,
+  footnoteFreeName,
+  FOOTNOTE_FREE_NAME_SQL,
+  NAME_FILE_KEY_VERSION,
   nameFileHold,
   HELD_SET_ASIDE_FLAG,
   heldNameRelease,
@@ -670,7 +673,7 @@ describe("held lines filed by their name: a person's label or the store's settle
       },
     );
     const now = new Date("2026-10-15T12:00:00Z");
-    expect(nameFileCheckedFlag(now)).toBe("knox_name_file_checked:2026-W42");
+    expect(nameFileCheckedFlag(now)).toBe("knox_name_file_checked:k2:2026-W42");
     const result = await fileHeldByName(db as never, { stateCode: "tx", runId: 7, now });
     expect(result).toMatchObject({
       checked: 3, filed: 2, kept: { not_a_plain_price: 1 }, bySource: { label: 1, store: 1 }, byCategory: { account_research: 2 }, institutions: 1, dryRun: false,
@@ -679,13 +682,15 @@ describe("held lines filed by their name: a person's label or the store's settle
     // Settled names come from a hash join of live fees on the held rows' own names, and labels from
     // the feedback table's unique dedupe key, never a scan of either (review of #1385).
     expect(select.text).toContain("JOIN raw_names r ON r.raw_name = lower(btrim(p.fee_name))");
+    // A footnoted held name also reaches the live fees printed without the mark (Oct 15).
+    expect(select.text).toContain(`UNION\n        SELECT ${FOOTNOTE_FREE_NAME_SQL("fee_name")} FROM held`);
     expect(select.text).toContain("f.dedupe_key IN (SELECT DISTINCT 'knox.name_label:' || name FROM held");
     // Settled: 90% of the name's live rows in one category, at 5 banks (10 for two words), with the category's p5-p95.
     expect(select.text).toContain("WHERE n >= $5::numeric * total");
     expect(select.values).toEqual(expect.arrayContaining([0.9, 10, 5]));
     expect(select.text).toContain("percentile_cont(0.95)");
     expect(select.text).not.toContain("published_fee_catalog");
-    expect(select.values).toEqual(expect.arrayContaining(["knox_name_file_checked:2026-W42", 5, "name_label", "TX"]));
+    expect(select.values).toEqual(expect.arrayContaining(["knox_name_file_checked:k2:2026-W42", 5, "name_label", "TX"]));
     const moves = calls.filter((call) => call.text.includes("RETURNING fr.fee_raw_id")).map((call) => JSON.stringify(call.values));
     expect(moves[0]).toContain("knox_name_filed:store");
     expect(moves[0]).toContain("canonical_hint:account_research");
@@ -693,10 +698,10 @@ describe("held lines filed by their name: a person's label or the store's settle
     // The line that stayed gets this week's mark, replacing an older week's; with every candidate
     // read, the lane's other held lines get it too, so the week's later steps read only new lines.
     const marked = calls.find((call) => call.text.includes("fr.fee_raw_id = ANY($2::bigint[])"))!;
-    expect(marked.values).toEqual(["knox_name_file_checked:2026-W42", [186564]]);
+    expect(marked.values).toEqual(["knox_name_file_checked:k2:2026-W42", [186564]]);
     expect(marked.text).toContain("NOT LIKE 'knox_name_file_checked:%'");
     const lane = calls.find((call) => call.text.includes("UPDATE raw_fee_observations fr") && call.text.includes("inst.state_code"))!;
-    expect(lane.values).toEqual(["knox_name_file_checked:2026-W42", "TX"]);
+    expect(lane.values).toEqual(["knox_name_file_checked:k2:2026-W42", "TX"]);
     expect(calls.find((call) => call.text.includes("INSERT INTO pipeline_feedback"))?.values.join("")).toContain("knox.held:raw:200601");
     expect(calls.some((call) => /\bDELETE\b/i.test(call.text))).toBe(false);
 
@@ -704,5 +709,33 @@ describe("held lines filed by their name: a person's label or the store's settle
     const dry = await fileHeldByName(db as never, { dryRun: true });
     expect(dry).toMatchObject({ filed: 2, dryRun: true });
     expect(calls.some((call) => /UPDATE|INSERT/.test(call.text))).toBe(false);
+  });
+});
+
+describe("held names with footnote marks (Oct 15, after #1385)", () => {
+  it("drops a number glued to the first word and the marks †, ‡ and *", () => {
+    expect(footnoteFreeName("1Monthly fee")).toBe("monthly fee");
+    expect(footnoteFreeName("2Monthly fee")).toBe("monthly fee");
+    expect(footnoteFreeName("3Dormant account fee")).toBe("dormant account fee");
+    expect(footnoteFreeName("6Paper statement fee")).toBe("paper statement fee");
+    expect(footnoteFreeName("Early Closure Fee‡")).toBe("early closure fee");
+    expect(footnoteFreeName("Stop Payment Fee*")).toBe("stop payment fee");
+    expect(footnoteFreeName("Wire Fee†")).toBe("wire fee");
+    // A number that is part of the name, not glued to a word, stays.
+    expect(footnoteFreeName("2 Statement Copies Fee")).toBe("2 statement copies fee");
+    expect(footnoteFreeName("Monthly fee")).toBe("monthly fee");
+  });
+
+  it("writes the same rule in SQL", () => {
+    const text = FOOTNOTE_FREE_NAME_SQL("fr.fee_name");
+    expect(text).toBe("lower(btrim(regexp_replace(regexp_replace(fr.fee_name, '^\\s*[0-9]+([A-Za-z])', '\\1'), '[†‡*]+', '', 'g')))");
+  });
+
+  it("marks a week under the key version, so lines marked under an older one are read again", () => {
+    const now = new Date("2026-10-15T12:00:00Z");
+    expect(NAME_FILE_KEY_VERSION).toBe(2);
+    expect(nameFileCheckedFlag(now)).toBe("knox_name_file_checked:k2:2026-W42");
+    // The v1 mark the IN lane wrote on Oct 15 is not this week's mark any more.
+    expect(nameFileCheckedFlag(now)).not.toBe("knox_name_file_checked:2026-W42");
   });
 });

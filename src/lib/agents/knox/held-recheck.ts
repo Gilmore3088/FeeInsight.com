@@ -435,7 +435,7 @@ export async function previewHeldNameRules(
  * `knox_name_filed:<label|store>` and `canonical_hint:<key>`, and keeps its name and amount. Darwin
  * still decides; Hamilton's rules re-check keeps such a fee live while its name and price trace in
  * its own text. A line that matched a decision but could not move is marked
- * `knox_name_file_checked:<ISO week>` and not read again by this pass that week. When a lane's pass
+ * `knox_name_file_checked:k<NAME_FILE_KEY_VERSION>:<ISO week>` and not read again by this pass that week. When a lane's pass
  * covers every candidate, the lane's other held lines get the same week mark, so the rest of the
  * week's steps read only new held lines, and the live-fee join behind the settled names has nothing
  * to probe (review of #1385: no scan of the live fees in every extract step). Set-aside lines are read too: the
@@ -443,15 +443,34 @@ export async function previewHeldNameRules(
  */
 export const NAME_FILED_FLAG_PREFIX = "knox_name_filed:";
 export const NAME_FILE_CHECKED_PREFIX = "knox_name_file_checked:";
+/**
+ * The version of how a held line's name meets the live store's names. v2 (Oct 15): a footnote mark
+ * on the printed name ("1Monthly fee", "Early Closure Fee‡") no longer hides the live fees printed
+ * without it. The week mark carries it, so a line marked under an older version is read again.
+ */
+export const NAME_FILE_KEY_VERSION = 2;
 
-/** The week mark ("knox_name_file_checked:2026-W42", ISO week, UTC): lines are read again weekly. */
+/**
+ * A printed fee name without its footnote marks: a number glued to the first word ("1Monthly fee",
+ * "3Dormant account fee") and the marks †, ‡ and *. Lowercased and trimmed, the form live fees are
+ * joined on. Same as FOOTNOTE_FREE_NAME_SQL. Pure.
+ */
+export function footnoteFreeName(feeName: string): string {
+  return feeName.replace(/^\s*[0-9]+([A-Za-z])/, "$1").replace(/[†‡*]+/g, "").trim().toLowerCase();
+}
+
+/** SQL for footnoteFreeName over `column`. */
+export const FOOTNOTE_FREE_NAME_SQL = (column: string) =>
+  `lower(btrim(regexp_replace(regexp_replace(${column}, '^\\s*[0-9]+([A-Za-z])', '\\1'), '[†‡*]+', '', 'g')))`;
+
+/** The week mark ("knox_name_file_checked:k2:2026-W42", key version and ISO week, UTC): lines are read again weekly. */
 export function nameFileCheckedFlag(now: Date = new Date()): string {
   const day = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
   const weekday = day.getUTCDay() || 7;
   day.setUTCDate(day.getUTCDate() + 4 - weekday);
   const yearStart = new Date(Date.UTC(day.getUTCFullYear(), 0, 1));
   const week = Math.ceil(((day.getTime() - yearStart.getTime()) / 86_400_000 + 1) / 7);
-  return `${NAME_FILE_CHECKED_PREFIX}${day.getUTCFullYear()}-W${String(week).padStart(2, "0")}`;
+  return `${NAME_FILE_CHECKED_PREFIX}k${NAME_FILE_KEY_VERSION}:${day.getUTCFullYear()}-W${String(week).padStart(2, "0")}`;
 }
 export const SETTLED_NAME_MIN_BANKS = 5;
 export const NAME_FILE_LIMIT = 300;
@@ -650,7 +669,11 @@ export async function fileHeldByName(
            AND f.kind = $4
          ORDER BY f.dedupe_key, f.created_at DESC
       ), raw_names AS MATERIALIZED (
-        SELECT DISTINCT raw_name FROM held WHERE fee_name ~* '\\m(fee|fees|charge|charges)\\M'
+        -- Each held name as printed, and without its footnote marks ("1Monthly fee" also reaches the
+        -- live "Monthly fee"); the name keys below already ignore the marks.
+        SELECT raw_name FROM held WHERE fee_name ~* '\\m(fee|fees|charge|charges)\\M'
+        UNION
+        SELECT ${FOOTNOTE_FREE_NAME_SQL("fee_name")} FROM held WHERE fee_name ~* '\\m(fee|fees|charge|charges)\\M'
       ), by_category AS (
         -- Live fees with one of the held names, as printed (lower-cased): a hash join on the live
         -- index, never a regex over every live fee. Their name keys are then counted by category.
