@@ -352,6 +352,12 @@ the detail.
     `eval_critical:<verdict>`; the name rules learned from them (a rebate as an ATM fee, a
     "no fee for" or waiver sentence as a $0 fee, and others) on their second look,
     `not_a_fee:<rule>`.
+10a. Hand fixes James approved, fixed lists checked against the live row before each write:
+    `hand-amount-corrections.ts` (#1334, cut cents corrected in place) and
+    `cut-name-duplicates.ts` (#1196): a cut-name row that repeats a clean live row at the same
+    institution, category and price comes down while the clean row is still live,
+    `cut_name_duplicate: live fee #<kept id>`, and its verified row is rejected
+    (`hand_rejected:cut_name_duplicate`). Each run that changes a row writes one event naming them.
 11. Article page (`article-page.ts`): a fee read from an article, on its second look,
     `article_page: #<document id>`.
 12. Product page (`product-page.ts`): a $0 benefit bullet Knox's free reader took from a
@@ -689,6 +695,12 @@ the flag is 12 hours old, while `TAXONOMY_FOLD_ARCHIVE_NO_HOME` is on. James tur
 after seeing the list of 248 (Oct 8, "drop them"); with it off they would stay live and be
 counted as `noHomeHeld`. `refileCategory` applies the same rules to new reads, so Knox can
 keep hinting the retired keys. Publish skips a fee still under a retired key.
+
+`HAND_REFILES` in the same file re-files or renames listed live fees in place (James approved
+each batch: #1299, #1304, #1196). A row moves only while it is still under its listed category
+at its listed price, and a rename is done once the live name reads as listed, so a re-run
+changes nothing. Each move writes a `pipeline_feedback` row with the old and new name, and the
+run gets one `hamilton.taxonomy_fold.hand_refile` event naming every row and its after-state.
 
 ## Source Link Repair
 
