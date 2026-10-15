@@ -2,6 +2,8 @@
  * What changed in the monthly briefing since last quarter (#1083): the `briefing-refresh` step
  * keeps one copy of each workspace's briefing a quarter, and this compares the two newest.
  * With one copy it says when the first comparison comes. Server component, no model call.
+ * The stored copies use the institution's default peer group (#1410). When the page above is read
+ * against another group (a Settings choice), the note says so, so two groups never pass unnamed.
  */
 
 import type { QuarterlyChanges as Changes } from "@/lib/hamilton/briefing-snapshots";
@@ -23,7 +25,7 @@ function ChangeList({ items }: { items: { text: string }[] }) {
   );
 }
 
-export function QuarterlyChanges({ changes }: { changes: Changes | null }) {
+export function QuarterlyChanges({ changes, pagePeerLabel }: { changes: Changes | null; pagePeerLabel?: string }) {
   if (!changes) return null;
   if (changes.kind === "first") {
     return (
@@ -42,16 +44,20 @@ export function QuarterlyChanges({ changes }: { changes: Changes | null }) {
     diff.fromPeerLabel === diff.toPeerLabel
       ? `both read against ${diff.toPeerLabel}`
       : `the ${from} copy read against ${diff.fromPeerLabel}, the ${to} copy against ${diff.toPeerLabel}`;
+  const groupNote =
+    pagePeerLabel && pagePeerLabel !== diff.toPeerLabel
+      ? ` Quarterly copies use the default peer group, not ${pagePeerLabel} as above.`
+      : "";
   if (diff.changes.length === 0) {
     return (
-      <MemoSection title={`Since ${from}`} note={`${from} briefing compared with ${to}, ${peers}.`}>
+      <MemoSection title={`Since ${from}`} note={`${from} briefing compared with ${to}, ${peers}.${groupNote}`}>
         <p className="text-sm text-warm-700">Nothing in this briefing changed between {from} and {to}.</p>
       </MemoSection>
     );
   }
   const rest = diff.changes.slice(SHOWN);
   return (
-    <MemoSection title={`Since ${from}`} note={`${from} briefing compared with ${to}, ${peers}.`}>
+    <MemoSection title={`Since ${from}`} note={`${from} briefing compared with ${to}, ${peers}.${groupNote}`}>
       <ChangeList items={diff.changes.slice(0, SHOWN)} />
       {rest.length > 0 ? (
         <More label={`${rest.length} more ${rest.length === 1 ? "change" : "changes"}`}>
