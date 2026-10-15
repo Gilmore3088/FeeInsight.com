@@ -20,6 +20,7 @@ import { withConversationContext, type ConversationTurn } from "@/lib/hamilton/c
 import { HAMILTON_PAUSED_MESSAGE, isHamiltonPausedText } from "@/lib/hamilton/provider-paused";
 import { STANDARD_METHOD, type AuditTrail } from "@/lib/hamilton/audit-trail";
 import { getDisplayName } from "@/lib/fee-taxonomy";
+import { marketBriefHref, parseMarketQuestion } from "@/lib/hamilton/market-question";
 import type { HamiltonSelectedInstitutionContext } from "@/lib/hamilton/institution-context";
 import { AddToReportButton } from "@/components/hamilton/basket/AddToReportButton";
 import { DownloadAnswerPdf } from "./StructuredAsk";
@@ -435,6 +436,11 @@ function AnalyzeConversationWorkspace({
     (question: string) => {
       const trimmed = question.trim();
       if (!active.current || readOnlyReason || !trimmed || isLoading || engineBusy) return;
+      // A question about a market, not this institution, opens the market brief (no provider call).
+      if (parseMarketQuestion(trimmed)) {
+        window.location.assign(marketBriefHref(trimmed, institutionId));
+        return;
+      }
       const pendingSince = askPendingSince.current;
       if (pendingSince !== null && Date.now() - pendingSince < ASK_PENDING_MS) return;
       askPendingSince.current = Date.now();
@@ -463,7 +469,7 @@ function AnalyzeConversationWorkspace({
       if (window.innerWidth < 640) textareaRef.current?.blur();
       window.scrollTo({ top: 0, behavior: "smooth" });
     },
-    [clearError, isLoading, engineBusy, readOnlyReason, setMessages],
+    [clearError, isLoading, engineBusy, readOnlyReason, setMessages, institutionId],
   );
 
   /** Starts over: no earlier answers, no carried context, the start screen. */

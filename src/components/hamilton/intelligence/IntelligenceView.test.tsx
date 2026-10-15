@@ -18,3 +18,16 @@ describe("IntelligenceView", () => {
     expect(html).not.toContain("$0.00");
   });
 });
+
+describe("MarketBriefView", () => {
+  it("answers only the topics asked and says when the data could not load", async () => {
+    const { MarketBriefView } = await import("./MarketBrief");
+    const { parseMarketQuestion } = await import("@/lib/hamilton/market-question");
+    const question = "talk to me about $5B and up in florida. fee pricing, revenue, complaints";
+    const html = renderToStaticMarkup(<MarketBriefView question={question} market={parseMarketQuestion(question)!} data={empty} />);
+    expect(html).toContain("Florida: fee landscape, financials and complaints");
+    expect(html).toContain("could not load just now");
+    expect(html).not.toContain("Economic conditions");
+    expect(html).toContain("It does not recommend a price.");
+  });
+});

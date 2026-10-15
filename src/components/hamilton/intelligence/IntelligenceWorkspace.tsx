@@ -13,19 +13,14 @@ import {
   joinSeries, loadComplaintTrend, loadFeeMap, loadPeerTable, loadStatePosts, percentChange, yearOverYear,
   type ComplaintTrend, type FeeMap, type PeerTable, type StatePost,
 } from "@/lib/hamilton/intelligence-data";
+import { INTELLIGENCE_LENSES, type Lens } from "@/lib/hamilton/market-question";
 import { ScopeControls } from "./ScopeControls";
 import { EvidenceDetails } from "./EvidenceDetails";
 import { FeeLandscapeChart, HorizontalBars, MultiTrend, StateFeeMap } from "./IntelligenceCharts";
 import { LandingResearchResults } from "@/components/hamilton/landing/LandingResearchResults";
 
-const LENSES = [
-  { id: "fees", label: "Fee landscape" },
-  { id: "financials", label: "Financials" },
-  { id: "economy", label: "Economy" },
-  { id: "complaints", label: "Complaints" },
-  { id: "regulation", label: "Regulation" },
-] as const;
-export type Lens = (typeof LENSES)[number]["id"];
+const LENSES = INTELLIGENCE_LENSES;
+export type { Lens };
 
 const DEFAULT: LandingResearchHandoff = { version: 1, task: "compare", scope: { kind: "national" }, charter: "all", categories: ["monthly_maintenance", "wire_domestic_outgoing", "atm_non_network"] };
 const dollars = (v: number | null | undefined) => v == null ? "Unavailable" : new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(v);
@@ -56,47 +51,41 @@ export async function IntelligenceWorkspace({ params, overview = false }: { para
   catch { return <p role="alert">This research selection is invalid. <Link href={overview ? "/pro/hamilton" : "/pro/intelligence"}>Reset selection</Link></p>; }
   if (selection.scope.kind === "local") return <LandingResearchResults selection={{ ...selection, task: "compare" }} />;
   selection = { ...selection, task: "compare" };
+  const lens: Lens = LENSES.find(l => l.id === params.lens)?.id ?? "fees";
+  const data = await loadIntelligence(selection, overview ? LENSES.map(l => l.id) : [lens], { compact: overview });
+  return <IntelligenceView selection={selection} data={data} lens={lens} overview={overview} instId={params.instId} />;
+}
+
+/** Loads only what the chosen lenses show, in parallel; a reader that fails leaves its slot null. */
+export async function loadIntelligence(selection: LandingResearchHandoff, lenses: readonly Lens[], { compact, segment = null }: { compact: boolean; segment?: { minAssets: number | null; maxAssets: number | null } | null }): Promise<Loaded> {
   const state = selection.scope.kind === "state" ? selection.scope.stateCode : null;
   const district = state ? STATE_TO_DISTRICT[state] ?? null : null;
-  const lens: Lens = LENSES.find(l => l.id === params.lens)?.id ?? "fees";
   const primary = selection.categories[0];
-  const want = (id: Lens) => overview || lens === id;
-
-  const data: Loaded = Object.fromEntries(await Promise.all(([
+  const want = (id: Lens) => lenses.includes(id);
+  return Object.fromEntries(await Promise.all(([
     ["fees", want("fees") ? loadLandingGeographicResearch(selection).catch(() => null) : null],
     ["feeMap", want("fees") && primary ? loadFeeMap(primary, selection.charter) : null],
-    ["peers", want("fees") && primary && (state || !overview) ? loadPeerTable(state, selection.charter, primary, overview ? 10 : 25) : null],
+    ["peers", want("fees") && primary && (state || !compact) ? loadPeerTable(state, selection.charter, primary, compact ? 10 : 25, segment) : null],
     ["revenue", want("financials") ? getRevenueTrend(12).catch(() => null) : null],
-    ["tiers", !overview && lens === "financials" ? getRevenueByTier().catch(() => null) : null],
+    ["tiers", !compact && want("financials") ? getRevenueByTier().catch(() => null) : null],
     ["economy", want("economy") ? getStateEconomicContext(state ?? "US", district).catch(() => null) : null],
     ["complaints", want("complaints") ? loadComplaintTrend(state) : null],
-    ["articles", want("regulation") ? getArticles({ limit: overview ? 5 : 12 }).catch(() => null) : null],
+    ["articles", want("regulation") ? getArticles({ limit: compact ? 5 : 12 }).catch(() => null) : null],
     ["statePosts", want("regulation") && state ? loadStatePosts(state) : null],
   ] as const).map(async ([key, value]) => [key, await value]))) as unknown as Loaded;
-
-  return <IntelligenceView selection={selection} data={data} lens={lens} overview={overview} instId={params.instId} />;
 }
 
 /** The rendered workspace for already-loaded data; kept apart from loading so it can be checked with sample data. */
 export function IntelligenceView({ selection, data, lens, overview, instId }: { selection: LandingResearchHandoff; data: Loaded; lens: Lens; overview: boolean; instId?: string }) {
   const state = selection.scope.kind === "state" ? selection.scope.stateCode : null;
   const place = state ? STATE_NAMES[state] ?? state : "United States";
-  const district = state ? STATE_TO_DISTRICT[state] ?? null : null;
   const pathname = overview ? "/pro/hamilton" : "/pro/intelligence";
   const primary = selection.categories[0];
-  const hrefFor = (next: LandingResearchHandoff, path = pathname, lensId: string = lens) =>
-    `${path}?${new URLSearchParams({ research: encodeLandingResearch(next), ...(path === "/pro/intelligence" ? { lens: lensId } : {}) })}`;
-  const lensHref = (id: Lens) => hrefFor(selection, "/pro/intelligence", id);
-  const stateHrefs = Object.fromEntries(RESEARCH_STATE_CODES.map(code => [code, hrefFor({ ...selection, scope: { kind: "state", stateCode: code } })]));
+  const lensHref = (id: Lens) => `/pro/intelligence?${new URLSearchParams({ research: encodeLandingResearch(selection), lens: id })}`;
+  const stateHrefs = stateLinks(selection, pathname, overview ? undefined : lens);
 
   const askHref = `/pro/analyze?${new URLSearchParams({ research: encodeLandingResearch(selection), ...(instId ? { instId: instId } : {}) })}`;
-  const panels = {
-    fees: <FeePanels data={data} selection={selection} place={place} state={state} stateHrefs={stateHrefs} compact={overview} exploreHref={overview ? lensHref("fees") : null} />,
-    financials: <FinancialPanel revenue={data.revenue} tiers={data.tiers} state={state} compact={overview} exploreHref={overview ? lensHref("financials") : null} />,
-    economy: <EconomyPanel economy={data.economy} place={place} state={state} district={district} compact={overview} exploreHref={overview ? lensHref("economy") : null} />,
-    complaints: <ComplaintPanel complaints={data.complaints} place={place} compact={overview} exploreHref={overview ? lensHref("complaints") : null} />,
-    regulation: <RegulationPanel articles={data.articles} statePosts={data.statePosts} place={place} compact={overview} exploreHref={overview ? lensHref("regulation") : null} />,
-  } satisfies Record<Lens, ReactNode>;
+  const panels = lensPanels({ data, selection, stateHrefs, compact: overview, explore: id => overview ? lensHref(id) : null });
 
   return <div className="mx-auto flex max-w-7xl flex-col gap-7">
     <header className="flex flex-wrap items-start justify-between gap-4">
@@ -124,13 +113,37 @@ export function IntelligenceView({ selection, data, lens, overview, instId }: { 
   </div>;
 }
 
-/** Three observed facts, each tied to its exhibit's source; no interpretation, no pricing advice. */
-function HamiltonRead({ data, place, state, primary }: { data: Loaded; place: string; state: string | null; primary: string | undefined }) {
-  const findings: Array<{ title: string; body: string; source: string }> = [];
+/** Each lens's exhibits for loaded data; Overview, Research and the Ask market brief share them. */
+export function lensPanels({ data, selection, stateHrefs, compact, explore, peerNote }: {
+  data: Loaded; selection: LandingResearchHandoff; stateHrefs: Record<string, string>; compact: boolean; explore: (id: Lens) => string | null; peerNote?: string;
+}): Record<Lens, ReactNode> {
+  const state = selection.scope.kind === "state" ? selection.scope.stateCode : null;
+  const place = state ? STATE_NAMES[state] ?? state : "United States";
+  const district = state ? STATE_TO_DISTRICT[state] ?? null : null;
+  return {
+    fees: <FeePanels data={data} selection={selection} place={place} state={state} stateHrefs={stateHrefs} compact={compact} exploreHref={explore("fees")} peerNote={peerNote} />,
+    financials: <FinancialPanel revenue={data.revenue} tiers={data.tiers} state={state} compact={compact} exploreHref={explore("financials")} />,
+    economy: <EconomyPanel economy={data.economy} place={place} state={state} district={district} compact={compact} exploreHref={explore("economy")} />,
+    complaints: <ComplaintPanel complaints={data.complaints} place={place} compact={compact} exploreHref={explore("complaints")} />,
+    regulation: <RegulationPanel articles={data.articles} statePosts={data.statePosts} place={place} compact={compact} exploreHref={explore("regulation")} />,
+  };
+}
+
+/** Links that open each state in the same view. */
+export function stateLinks(selection: LandingResearchHandoff, path: string, lens?: Lens): Record<string, string> {
+  return Object.fromEntries(RESEARCH_STATE_CODES.map(code => [code, `${path}?${new URLSearchParams({ research: encodeLandingResearch({ ...selection, scope: { kind: "state", stateCode: code } }), ...(lens ? { lens } : {}) })}`]));
+}
+
+export interface Finding { lens: Lens; title: string; body: string; source: string }
+
+/** Observed facts from loaded data, one per lens at most, each naming its source; no interpretation, no pricing advice. */
+export function readFindings(data: Loaded, place: string, state: string | null, primary: string | undefined): Finding[] {
+  const findings: Finding[] = [];
   const row = data.fees?.comparisons.find(c => c.category === primary) ?? data.fees?.comparisons.find(c => c.selected.status === "available");
   if (row && row.selected.status === "available") {
     const fee = getDisplayName(row.category).toLowerCase();
     findings.push({
+      lens: "fees",
       title: `${place}'s median ${fee} is ${dollars(row.selected.median)}.`,
       body: `Across ${row.selected.institutions.toLocaleString()} institutions with a published amount${state && row.national?.median != null ? `, against ${dollars(row.national.median)} nationally (${row.difference != null ? `${row.difference >= 0 ? "+" : "-"}${dollars(Math.abs(row.difference))}` : "difference unavailable"})` : ""}. The middle half runs ${dollars(row.selected.p25)} to ${dollars(row.selected.p75)}.`,
       source: "Bank Fee Index published catalog",
@@ -139,6 +152,7 @@ function HamiltonRead({ data, place, state, primary }: { data: Loaded; place: st
   const latest = data.revenue?.latest;
   if (latest) {
     findings.push({
+      lens: "financials",
       title: `Deposit service-charge income was $${(latest.total_service_charges / 1_000_000).toFixed(2)}B in ${latest.quarter}.`,
       body: `${latest.yoy_change_pct != null ? `${pct(latest.yoy_change_pct)} on the same quarter a year earlier` : "No same-quarter comparison a year earlier"}, across ${latest.total_institutions.toLocaleString()} filers nationally${state ? "; a state aggregate is not available" : ""}.`,
       source: "FDIC Call Reports and NCUA 5300",
@@ -150,17 +164,45 @@ function HamiltonRead({ data, place, state, primary }: { data: Loaded; place: st
   const allYoY = all ? percentChange(all.latest.value, all.year_ago?.value) : null;
   if (state && e?.state_unemployment) {
     findings.push({
+      lens: "economy",
       title: `${place} unemployment is ${e.state_unemployment.latest.value.toFixed(1)}%.`,
       body: `${e.national_unemployment ? `The U.S. rate is ${e.national_unemployment.latest.value.toFixed(1)}% (${e.national_unemployment.latest.date.slice(0, 7)})` : "The U.S. comparison is unavailable"}; state figure as of ${e.state_unemployment.latest.date.slice(0, 7)}.`,
       source: "BLS via FRED",
     });
   } else if (bankYoY !== null) {
     findings.push({
+      lens: "economy",
       title: `Prices for bank services rose ${pct(bankYoY)} over twelve months.`,
       body: `${allYoY !== null ? `All consumer prices rose ${pct(allYoY)} over the same period` : "The all-items comparison is unavailable"}, to ${bank!.latest.date.slice(0, 7)}.`,
       source: "BLS consumer price index via FRED",
     });
   }
+  const years = data.complaints?.years ?? [];
+  const year = years[years.length - 1];
+  if (year && year.total > 0) {
+    const prior = years[years.length - 2];
+    findings.push({
+      lens: "complaints",
+      title: `${year.total.toLocaleString()} CFPB complaints in ${year.year} named institutions headquartered in ${place}.`,
+      body: `${((year.feeRelated / year.total) * 100).toFixed(1)}% were about fees${prior ? `; the year before there were ${prior.total.toLocaleString()}` : ""}. Counts follow who complains and how complaints are matched, so they do not rank institutions.`,
+      source: "CFPB Consumer Complaint Database",
+    });
+  }
+  const release = data.articles?.[0];
+  if (release) {
+    findings.push({
+      lens: "regulation",
+      title: `The latest federal release on file: “${release.title}”.`,
+      body: `${SOURCE_LABELS[release.source] ?? release.source}, ${release.published_at?.slice(0, 10) ?? "date not recorded"}${data.statePosts?.length ? `. The ${place} regulator's latest post: “${data.statePosts[0].title}”` : ""}. Listed as published; applicability to an institution is not assessed.`,
+      source: "Regulatory Wire",
+    });
+  }
+  return findings;
+}
+
+/** Overview: the first three facts. */
+function HamiltonRead({ data, place, state, primary }: { data: Loaded; place: string; state: string | null; primary: string | undefined }) {
+  const findings = readFindings(data, place, state, primary).slice(0, 3);
   if (findings.length === 0) return null;
   return <section className="intelligence-read" aria-labelledby="hamilton-read">
     <h2 id="hamilton-read" className="font-semibold">Hamilton&apos;s read <span className="font-normal text-[var(--fi-muted)]">· Observed in the data below</span></h2>
@@ -183,8 +225,8 @@ function Unavailable({ children }: { children: ReactNode }) {
   return <p role="status" className="mt-4 rounded-md bg-[var(--fi-surface-200)] p-4 text-sm text-[var(--fi-muted)]">{children}</p>;
 }
 
-function FeePanels({ data, selection, place, state, stateHrefs, compact, exploreHref }: {
-  data: Loaded; selection: LandingResearchHandoff; place: string; state: string | null; stateHrefs: Record<string, string>; compact: boolean; exploreHref: string | null;
+function FeePanels({ data, selection, place, state, stateHrefs, compact, exploreHref, peerNote }: {
+  data: Loaded; selection: LandingResearchHandoff; place: string; state: string | null; stateHrefs: Record<string, string>; compact: boolean; exploreHref: string | null; peerNote?: string;
 }) {
   const result = data.fees;
   const primary = selection.categories[0];
@@ -218,13 +260,13 @@ function FeePanels({ data, selection, place, state, stateHrefs, compact, explore
         <EvidenceDetails source="Bank Fee Index · published fee catalog" period="Live catalog at page load" geography="States by institution headquarters" coverage={data.feeMap ? `${data.feeMap.nationalInstitutions.toLocaleString()} institutions publish this fee; states with too few are hatched` : "Unavailable"} method="One value per institution, median per state. A state shaded lighter has a lower published median; branches outside the headquarters state are not counted." />
       </Panel>
     </div>
-    {data.peers ? <PeerTablePanel peers={data.peers} place={place} primaryName={primaryName} charter={selection.charter} compact={compact} exploreHref={exploreHref} /> : null}
+    {data.peers ? <PeerTablePanel peers={data.peers} place={place} primaryName={primaryName} charter={selection.charter} compact={compact} exploreHref={exploreHref} note={peerNote} /> : null}
   </>;
 }
 
-function PeerTablePanel({ peers, place, primaryName, charter, compact, exploreHref }: { peers: PeerTable; place: string; primaryName: string; charter: LandingResearchHandoff["charter"]; compact: boolean; exploreHref: string | null }) {
+function PeerTablePanel({ peers, place, primaryName, charter, compact, exploreHref, note }: { peers: PeerTable; place: string; primaryName: string; charter: LandingResearchHandoff["charter"]; compact: boolean; exploreHref: string | null; note?: string }) {
   const amounts = peers.rows.map(r => r.amount).sort((a, b) => a - b);
-  return <Panel title={`Largest institutions in ${place}: ${primaryName.toLowerCase()}`} subtitle={`${peers.rows.length} shown of ${peers.institutionsInScope.toLocaleString()} ${CHARTER_LABEL[charter].toLowerCase()} in scope, largest by assets first`} explore={exploreHref}>
+  return <Panel title={`Largest institutions in ${place}: ${primaryName.toLowerCase()}`} subtitle={`${peers.rows.length} shown of ${peers.institutionsInScope.toLocaleString()} ${CHARTER_LABEL[charter].toLowerCase()}${note ? ` ${note}` : ""} in scope, largest by assets first`} explore={exploreHref}>
     {peers.rows.length ? <div className="mt-4 overflow-x-auto" tabIndex={0} role="region" aria-label="Institutions and their published fee">
       <table className="w-full text-left text-sm"><caption className="sr-only">Published {primaryName} by institution with source documents</caption>
         <thead><tr className="border-b border-[var(--fi-border)] text-xs uppercase tracking-wide text-[var(--fi-muted)]">{["Institution", "Type", "Assets", primaryName, "Published", "Evidence"].map(h => <th key={h} scope="col" className="p-2.5 font-semibold">{h}</th>)}</tr></thead>

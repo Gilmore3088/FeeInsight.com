@@ -82,11 +82,14 @@ export interface PeerTable {
   rows: PeerRow[];
 }
 
-/** The largest institutions in a state (or the nation) with a published value for one fee, each linked to its schedule. */
-export async function loadPeerTable(stateCode: string | null, charter: Charter, category: string, limit = 25): Promise<PeerTable | null> {
+/** The largest institutions in a state (or the nation), optionally within an asset range (thousands), with a published value for one fee, each linked to its schedule. */
+export async function loadPeerTable(
+  stateCode: string | null, charter: Charter, category: string, limit = 25,
+  size: { minAssets: number | null; maxAssets: number | null } | null = null,
+): Promise<PeerTable | null> {
   try {
     const segment = await getSegmentFeeValues(
-      { minAssets: null, maxAssets: null, charterType: charter === "all" ? null : charter, stateCode, largest: null },
+      { minAssets: size?.minAssets ?? null, maxAssets: size?.maxAssets ?? null, charterType: charter === "all" ? null : charter, stateCode, largest: null },
       category,
       null,
     );
