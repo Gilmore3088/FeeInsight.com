@@ -567,10 +567,7 @@ function StructuredAskConversation({
       {!response.answer && !response.positions?.length && response.facts && response.facts.length > 0 ? <FactList facts={response.facts} /> : null}
       {segment && !storyline ? <SegmentTable data={segment} own={exhibitOwn?.own ?? null} ownLabel={exhibitOwn?.ownLabel ?? "Research subject"} /> : null}
       {response.kind === "opinion" && response.opinion ? (
-        <Callout>
-          <span className="font-medium text-warm-900">If the objective is {response.opinion.assumedObjective.replace(/_/g, " ")}: </span>
-          {response.opinion.opinion}
-        </Callout>
+        <Callout>{response.opinion.opinion}</Callout>
       ) : null}
       {response.scenario ? (
         <ScenarioSummary s={response.scenario} modelHref={modelHrefFor(response.scenario.feeCategory, response.scenario.tested)} />
