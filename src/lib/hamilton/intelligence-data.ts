@@ -76,10 +76,44 @@ export interface PeerRow {
   publishedAt: string | null;
 }
 
+export interface FeeSpread {
+  count: number;
+  low: number;
+  p25: number;
+  median: number;
+  p75: number;
+  high: number;
+  bins: Array<{ from: number; to: number; count: number }>;
+}
+
 export interface PeerTable {
   category: string;
   institutionsInScope: number;
   rows: PeerRow[];
+  /** Every published value in scope, not only the rows shown; null under the cohort floor. */
+  spread: FeeSpread | null;
+}
+
+const STEPS = [0.5, 1, 2, 2.5, 5, 10, 20, 25, 50, 100, 250, 500];
+
+function quantile(sorted: number[], q: number): number {
+  const at = (sorted.length - 1) * q;
+  const lo = Math.floor(at);
+  const hi = Math.ceil(at);
+  return sorted[lo] + (sorted[hi] - sorted[lo]) * (at - lo);
+}
+
+/** How one fee's published amounts are spread: quartiles and at most ten even-width bins. */
+export function buildFeeSpread(amounts: number[]): FeeSpread | null {
+  const sorted = amounts.filter(Number.isFinite).sort((a, b) => a - b);
+  if (sorted.length < MIN_INSTITUTIONS_FOR_MEDIAN) return null;
+  const low = sorted[0];
+  const high = sorted[sorted.length - 1];
+  const step = STEPS.find(s => (Math.floor(high / s) - Math.floor(low / s) + 1) <= 10) ?? (Math.ceil((high - low) / 10) || 1);
+  const start = Math.floor(low / step) * step;
+  const bins = Array.from({ length: Math.floor((high - start) / step) + 1 }, (_, i) => ({ from: start + i * step, to: start + (i + 1) * step, count: 0 }));
+  for (const value of sorted) bins[Math.min(bins.length - 1, Math.floor((value - start) / step))].count += 1;
+  return { count: sorted.length, low, p25: quantile(sorted, 0.25), median: quantile(sorted, 0.5), p75: quantile(sorted, 0.75), high, bins };
 }
 
 /** The largest institutions in a state (or the nation), optionally within an asset range (thousands), with a published value for one fee, each linked to its schedule. */
@@ -105,7 +139,7 @@ export async function loadPeerTable(
         documentUrl: v.document_urls[0] ?? null,
         publishedAt: v.published_at,
       }));
-    return { category, institutionsInScope: segment.institutionsInSegment, rows };
+    return { category, institutionsInScope: segment.institutionsInSegment, rows, spread: buildFeeSpread(segment.values.map(v => v.amount)) };
   } catch {
     return null;
   }

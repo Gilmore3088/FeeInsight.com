@@ -4,7 +4,9 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("@/lib/data-store/connection", () => ({ getSql: () => { throw new Error("no database in unit tests"); } }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }), usePathname: () => "/pro/hamilton", useSearchParams: () => new URLSearchParams() }));
 
-import { IntelligenceView, type Loaded } from "./IntelligenceWorkspace";
+import { feeFocusHref, IntelligenceView, type Loaded } from "./IntelligenceWorkspace";
+import { decodeLandingResearch } from "@/lib/hamilton/landing-research-handoff";
+import { assetSizeFor } from "@/lib/hamilton/asset-size";
 
 const empty: Loaded = { fees: null, feeMap: null, peers: null, revenue: null, tiers: null, economy: null, complaints: null, articles: null, statePosts: null };
 
@@ -16,6 +18,15 @@ describe("IntelligenceView", () => {
     expect(html).toContain("Florida: fees, finances and market");
     expect(html).toContain("Complaint records could not load.");
     expect(html).not.toContain("$0.00");
+  });
+});
+
+describe("feeFocusHref", () => {
+  it("puts the chosen fee first, keeps the others and carries the asset size", () => {
+    const href = new URL(feeFocusHref({ version: 1, task: "compare", scope: { kind: "national" }, charter: "bank", categories: ["monthly_maintenance", "overdraft"] }, "overdraft", assetSizeFor("1b-10b")), "https://x");
+    expect(href.pathname).toBe("/pro/intelligence");
+    expect(href.searchParams.get("size")).toBe("1b-10b");
+    expect(decodeLandingResearch(href.searchParams.get("research"))?.categories).toEqual(["overdraft", "monthly_maintenance"]);
   });
 });
 
