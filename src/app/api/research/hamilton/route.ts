@@ -49,6 +49,7 @@ import { getRequestSubjectKey } from "@/lib/api-hardening/audit";
 import { trackFirstHamiltonUse } from "@/lib/analytics-server";
 import { cacheLatestMessage, cachedSystem, ledgerUsage } from "@/lib/research/tool-output";
 import { SAVED_ANALYSIS_ID_KEY, questionOnly, writtenAnswerCheck, writtenAnswerResponse } from "@/lib/hamilton/answer-save";
+import { messageBoundsError } from "@/lib/hamilton/conversation-context";
 import { HELD_ANSWER_MESSAGE } from "@/lib/hamilton/answer-gate";
 import { insertSavedAnalysis } from "@/lib/data-store/hamilton-analyses";
 import { normalizeCanonicalInstitutionId } from "@/lib/hamilton/context-link";
@@ -158,6 +159,11 @@ async function handlePOST(request: Request) {
       return Response.json({ error: parsed.error }, { status: parsed.status });
     }
     contract = parsed.contract;
+    // The screens bound what they send; the server bounds what any client sends (#1273).
+    const boundsError = messageBoundsError(contract.messages);
+    if (boundsError) {
+      return Response.json({ error: boundsError }, { status: 400 });
+    }
     // Analyze and Monitor are Pro screens: an admin there sees the answer a Pro
     // customer gets, not operator diagnostics.
     if (role === "admin" && PRO_SCREEN_MODES.has(contract.mode ?? "")) {
@@ -241,8 +247,13 @@ async function handlePOST(request: Request) {
     systemPrompt += buildMonitorModeSuffix();
   }
 
+  // The skill checks read only what the reader typed: earlier questions and answers carried in
+  // the conversation block must not opt in to a skill or hide the real question (#1273). The
+  // home-institution check above reads the block on purpose, so "us" carries forward.
+  const typedQuestion = questionOnly(lastUserText);
+
   // Check if user is opting in to a previously offered skill deliverable
-  if (lastUserText && isSkillOptIn(lastUserText)) {
+  if (typedQuestion && isSkillOptIn(typedQuestion)) {
     const assistantTexts = messages
       .filter((m) => m.role === "assistant")
       .flatMap((m) =>
@@ -256,7 +267,7 @@ async function handlePOST(request: Request) {
     }
   } else {
     // Detect skill match and offer it (without injecting the full template)
-    const matchedSkill = lastUserText ? detectSkill(lastUserText) : null;
+    const matchedSkill = typedQuestion ? detectSkill(typedQuestion) : null;
     if (matchedSkill) {
       systemPrompt += buildSkillInjection(matchedSkill);
     }
@@ -393,6 +404,11 @@ async function handlePOST(request: Request) {
                 analysisFocus: focus,
                 prompt,
                 response,
+                // A second request for the same question (double submit, Try again after a
+                // dropped stream) updates this row instead of adding a duplicate. The match is on
+                // the full text answered, earlier turns included, so the same follow-up words in
+                // another conversation are saved as their own row.
+                replaceRecentDuplicate: { request: `written\n${focus}\n${lastUserText}` },
               }));
             } catch (error) {
               console.error("[hamilton] saving the written answer failed", error);
