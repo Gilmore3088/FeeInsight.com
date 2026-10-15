@@ -1,6 +1,6 @@
 import { reproducibleFees } from "@/lib/agents/hamilton/rules-recheck";
 import { foldedCategory } from "@/lib/agents/knox/rules";
-import { foldContext, foldRetiredCategory, isRetiredCategory, splitLiveCategory } from "@/lib/fee-fold";
+import { foldContext, foldRetiredCategory, isRetiredCategory, researchSplitCategory, splitLiveCategory } from "@/lib/fee-fold";
 
 /**
  * Knox's rule-change gate: scores today's free extractor team (plus Darwin's rule checks,
@@ -44,8 +44,15 @@ const EQUIVALENT: Record<string, string> = { minimum_balance: "monthly_maintenan
 
 const cents = (amount: number) => Math.round(amount * 100);
 
-/** A hand-keyed fee under a category folded into the top 50 counts where the fold rules put it. */
+/**
+ * A hand-keyed fee under a category folded into the top 50 counts where the fold rules put it. Once
+ * `RESEARCH_SPLIT_LIVE` is on (James, Oct 15, #1398), one keyed account research that is an excess
+ * withdrawal or returned mail counts under that type, since the keys were made before; while it is
+ * off, `researchSplitCategory` returns null and the key stays account research.
+ */
 function keyCategory(fee: AnswerKeyDocument["fees"][number], text: string): string {
+  const research = researchSplitCategory(fee.key, fee.source_line);
+  if (research) return research;
   const split = splitLiveCategory(fee.key, fee.source_line);
   if (split?.to) return split.to;
   if (!isRetiredCategory(fee.key)) return fee.key;

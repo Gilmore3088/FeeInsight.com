@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { RESEARCH_SPLIT_LIVE } from "@/lib/fee-fold";
 import {
   buildAskResponse,
   feeCategoriesIn,
@@ -174,5 +175,21 @@ describe("a question that names no fee (#1077)", () => {
     expect(feeCategoriesIn("Which banks have both verified NSF and monthly maintenance rows?").sort()).toEqual(["monthly_maintenance", "nsf"]);
     expect(feeCategoriesIn("talk to me about all 10B and up instititions for od fees")).toEqual(["overdraft"]);
     expect(feeCategoriesIn("talk to me about all institutison above 10billion")).toEqual([]);
+  });
+});
+
+describe("excess withdrawal and returned mail questions (#1398)", () => {
+  // While the research split is off, Ask reads these exactly as main does (no category of their own;
+  // main's results written out). Once on, they read under the new types.
+  it.each([
+    ["How does our excess withdrawal fee compare?", "excess_withdrawal", null],
+    ["what do others charge for an excessive withdrawal", "excess_withdrawal", null],
+    ["our excess transaction charge", "excess_withdrawal", null],
+    ["Excess Withdrawals", "excess_withdrawal", null],
+    ["How does our returned mail fee compare?", "returned_mail", null],
+    ["returned statement fee", "returned_mail", null],
+    ["bad address charge", "returned_mail", null],
+  ])("%s", (question, on, main) => {
+    expect(matchFeeCategory(question)).toBe(RESEARCH_SPLIT_LIVE ? on : main);
   });
 });
