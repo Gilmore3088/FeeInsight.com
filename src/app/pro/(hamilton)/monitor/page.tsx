@@ -78,7 +78,7 @@ export default async function MonitorPage({
           title="Your decisions"
           note="What your team chose, and what Hamilton is watching."
         >
-          <DecisionLedger ledger={decisionBody.ledger} decisions={decisionBody.decisions} institutionId={selectedId} />
+          <DecisionLedger ledger={decisionBody.ledger} institutionId={selectedId} />
         </MemoSection>
       ) : null}
 

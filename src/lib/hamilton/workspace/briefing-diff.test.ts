@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { briefingQuarter, diffBriefings } from "./briefing-diff";
+import { briefingQuarter, diffBriefings, nextQuarter, quarterLabel } from "./briefing-diff";
 import type { Briefing, FeePositionRow, Observation } from "./types";
 
 function row(feeCategory: string, current: number, median: number | null = 30): FeePositionRow {
@@ -110,5 +110,13 @@ describe("diffBriefings", () => {
     expect(diff.changes).toEqual([
       expect.objectContaining({ kind: "income", text: expect.stringContaining("4.2% lower") }),
     ]);
+  });
+});
+
+describe("quarter labels (#1083)", () => {
+  it("writes a stored quarter as a reader does and finds the next one", () => {
+    expect(quarterLabel("2026-Q4")).toBe("Q4 2026");
+    expect(nextQuarter("2026-Q4")).toBe("2027-Q1");
+    expect(nextQuarter("2027-Q2")).toBe("2027-Q3");
   });
 });

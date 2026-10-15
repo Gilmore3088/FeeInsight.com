@@ -957,3 +957,10 @@ decision card "Allow a daily paid sample so Hamilton's answer check can grade wr
 memos and reports?": "5 a day"). The paid sample (`hamilton/paid-answer-eval.ts`) is capped at five
 in code, runs as a provider step under the global provider stop and the memo's budget line, and
 never raises its own cap.
+
+**Hamilton shows quarterly changes; choosing an option and watches are removed.** James,
+2026-10-15 (#1083, decision card "What should happen to the four Hamilton features built but never
+shown to readers?": "Show quarterly changes"). The monthly briefing shows what changed since last
+quarter's stored copy. Recording the option management chose (with its plan, dollar effect and
+watches) is removed from code, the ledger and the deliverables; the unused deliverables API went in
+#1393. The database columns stay, unread.

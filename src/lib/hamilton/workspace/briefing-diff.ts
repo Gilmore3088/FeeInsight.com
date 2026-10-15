@@ -40,6 +40,20 @@ export function briefingQuarter(date: Date): string {
   return `${date.getUTCFullYear()}-Q${Math.floor(date.getUTCMonth() / 3) + 1}`;
 }
 
+/** "Q4 2026" for "2026-Q4", as a reader writes it. */
+export function quarterLabel(quarter: string): string {
+  const m = /^(\d{4})-Q([1-4])$/.exec(quarter);
+  return m ? `Q${m[2]} ${m[1]}` : quarter;
+}
+
+/** "2027-Q1" after "2026-Q4". */
+export function nextQuarter(quarter: string): string {
+  const m = /^(\d{4})-Q([1-4])$/.exec(quarter);
+  if (!m) return quarter;
+  const q = Number(m[2]);
+  return q === 4 ? `${Number(m[1]) + 1}-Q1` : `${m[1]}-Q${q + 1}`;
+}
+
 function money(value: number): string {
   return `$${value.toFixed(2)}`;
 }

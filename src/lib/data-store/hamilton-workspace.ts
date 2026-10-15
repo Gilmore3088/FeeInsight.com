@@ -7,14 +7,12 @@
  */
 
 import { sql, withTransaction } from "./connection";
-import { parseWatches } from "@/lib/hamilton/workspace/decisions";
 import type {
   DecisionEvent,
   DecisionEventKind,
   DecisionRecord,
   DecisionStatus,
   MemoryFact,
-  WatchCondition,
 } from "@/lib/hamilton/workspace/types";
 
 type Db = typeof sql;
@@ -108,9 +106,6 @@ interface DecisionRow {
   fee_category: string | null;
   title: string;
   status: DecisionStatus;
-  chosen_amount: number | string | null;
-  chosen_by: string | null;
-  watch_conditions: unknown;
   created_at: Date | string;
   updated_at: Date | string;
 }
@@ -122,9 +117,6 @@ function toDecision(row: DecisionRow): DecisionRecord {
     feeCategory: row.fee_category,
     title: row.title,
     status: row.status,
-    chosenAmount: row.chosen_amount === null ? null : Number(row.chosen_amount),
-    chosenBy: row.chosen_by,
-    watchConditions: parseWatches(row.watch_conditions),
     createdAt: iso(row.created_at),
     updatedAt: iso(row.updated_at),
   };
@@ -133,7 +125,7 @@ function toDecision(row: DecisionRow): DecisionRecord {
 export async function getDecision(userId: number, decisionId: string, db: Db = sql): Promise<DecisionRecord | null> {
   if (!/^[0-9a-f-]{36}$/i.test(decisionId)) return null;
   const [row] = (await db`
-    SELECT id, institution_id, fee_category, title, status, chosen_amount, chosen_by, watch_conditions, created_at, updated_at FROM hamilton_decisions WHERE id = ${decisionId} AND user_id = ${userId}
+    SELECT id, institution_id, fee_category, title, status, created_at, updated_at FROM hamilton_decisions WHERE id = ${decisionId} AND user_id = ${userId}
   `) as unknown as DecisionRow[];
   return row ? toDecision(row) : null;
 }
@@ -148,7 +140,7 @@ export async function findOrOpenDecision(input: {
 }): Promise<{ decision: DecisionRecord; opened: boolean }> {
   return withTransaction(async (tx) => {
     const [existing] = (await tx`
-      SELECT id, institution_id, fee_category, title, status, chosen_amount, chosen_by, watch_conditions, created_at, updated_at FROM hamilton_decisions
+      SELECT id, institution_id, fee_category, title, status, created_at, updated_at FROM hamilton_decisions
        WHERE user_id = ${input.userId} AND institution_id = ${input.institutionId}
          AND fee_category = ${input.feeCategory} AND status <> 'closed'
        ORDER BY updated_at DESC
@@ -158,7 +150,7 @@ export async function findOrOpenDecision(input: {
     const [row] = (await tx`
       INSERT INTO hamilton_decisions (user_id, institution_id, fee_category, title)
       VALUES (${input.userId}, ${input.institutionId}, ${input.feeCategory}, ${input.title})
-      RETURNING id, institution_id, fee_category, title, status, chosen_amount, chosen_by, watch_conditions, created_at, updated_at
+      RETURNING id, institution_id, fee_category, title, status, created_at, updated_at
     `) as unknown as DecisionRow[];
     await tx`
       INSERT INTO hamilton_decision_events (decision_id, kind, detail, actor)
@@ -222,7 +214,7 @@ export function testedPrices(events: DecisionEvent[]): number[] {
 /** Every decision for one institution, newest first. */
 export async function listDecisions(userId: number, institutionId: number, db: Db = sql): Promise<DecisionRecord[]> {
   const rows = (await db`
-    SELECT id, institution_id, fee_category, title, status, chosen_amount, chosen_by, watch_conditions, created_at, updated_at
+    SELECT id, institution_id, fee_category, title, status, created_at, updated_at
       FROM hamilton_decisions
      WHERE user_id = ${userId} AND institution_id = ${institutionId}
      ORDER BY updated_at DESC
@@ -247,31 +239,6 @@ export async function getEventsFor(decisionIds: string[], db: Db = sql): Promise
     out.set(r.decision_id, list);
   }
   return out;
-}
-
-/** Records the chosen option, its plan and its watches, and moves the decision to decided. */
-export async function recordChoice(input: {
-  decisionId: string;
-  amount: number;
-  chosenBy: string;
-  watches: WatchCondition[];
-  events: { kind: DecisionEventKind; detail: Record<string, unknown> }[];
-  actor: string;
-}): Promise<void> {
-  await withTransaction(async (tx) => {
-    await tx`
-      UPDATE hamilton_decisions
-         SET status = 'decided', chosen_amount = ${input.amount}, chosen_by = ${input.chosenBy},
-             watch_conditions = ${JSON.stringify(input.watches)}::jsonb, updated_at = NOW()
-       WHERE id = ${input.decisionId}
-    `;
-    for (const e of input.events) {
-      await tx`
-        INSERT INTO hamilton_decision_events (decision_id, kind, detail, actor)
-        VALUES (${input.decisionId}, ${e.kind}, ${JSON.stringify(e.detail)}::jsonb, ${input.actor})
-      `;
-    }
-  });
 }
 
 // ─── Uploads ─────────────────────────────────────────────────────────────────
