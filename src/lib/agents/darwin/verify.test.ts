@@ -1,7 +1,7 @@
 import { CATEGORY_AMOUNT_ENVELOPES } from "./envelopes";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { canonicalHintFrom, conditionalZero, DARWIN_BATCH_KEY_VERSION, DARWIN_CATEGORY_HOLDS, DARWIN_SOURCE_CHECK_VERSION, DARWIN_VERIFY_STRATEGY, FREQUENCY_SETTLED_FLAG, pendingCategoryLesson, postSourceCheck, runDarwinVerify, statedInOwnSource, verificationReasonCode, type RawFeeRow } from "./verify";
+import { canonicalHintFrom, conditionalZero, DARWIN_BATCH_KEY_VERSION, DARWIN_CATEGORY_HOLDS, DARWIN_SOURCE_CHECK_VERSION, DARWIN_VERIFY_STRATEGY, FREQUENCY_SETTLED_FLAG, pendingCategoryLesson, postSourceCheck, runDarwinVerify, statedInOwnSource, verificationReasonCode, verificationReasonText, type RawFeeRow } from "./verify";
 import { CATEGORY_GUARD_VERSION, refileCategory } from "@/lib/fee-category-guard";
 import { DARWIN_PEER_STRATEGY, DARWIN_SECOND_SOURCE_STRATEGY, resetWiderPeerLevelCache, SECOND_SOURCE_FLAG } from "./peer-checks";
 import { learnedEnvelope, resetLearnedEnvelopeCache } from "./learned-envelopes";
@@ -346,6 +346,17 @@ describe("Darwin agentic verification", () => {
       expect(verificationReasonCode({ ...row, fee_name: " " }, "overdraft")).toBe("missing_name");
       expect(verificationReasonCode({ ...row, fee_name: "Overdraft Transfer Fee (Sweep)" }, "overdraft")).toBe("category_mismatch");
       expect(verificationReasonCode({ ...row, source_url: null, document_r2_key: null }, "overdraft")).toBe("missing_lineage");
+      // #1350: Hamilton's publish rule (#1345). A stored file key alone is no source link, so the
+      // row is held here with Hamilton's reason instead of verified and then refused forever.
+      expect(verificationReasonCode({ ...row, source_url: null, document_r2_key: "docs/55.pdf" }, "overdraft")).toBe("missing_lineage");
+      expect(verificationReasonCode({ ...row, source_url: "docs/55.pdf", document_r2_key: "docs/55.pdf" }, "overdraft")).toBe("missing_lineage");
+      expect(verificationReasonCode({ ...row, source_document_id: null }, "overdraft")).toBe("missing_lineage");
+      // The source document's own link counts, as it does at publish.
+      expect(verificationReasonCode({ ...row, source_url: null, document_r2_key: "docs/55.pdf", document_url: "https://testbank.example/fees.pdf" }, "overdraft")).toBeNull();
+      expect(verificationReasonText({ ...row, source_url: null, document_r2_key: "docs/55.pdf" }, "missing_lineage"))
+        .toBe("No source link: the fee can't be traced to the bank's document");
+      expect(verificationReasonText({ ...row, source_document_id: null }, "missing_lineage"))
+        .toBe("No source document: the fee can't be traced to the bank's document");
       expect(verificationReasonCode({ ...row, amount: null }, "overdraft")).toBe("invalid_amount");
       expect(verificationReasonCode({ ...row, amount: "-5" }, "overdraft")).toBe("invalid_amount");
       expect(verificationReasonCode({ ...row, amount: "350.00" }, "overdraft")).toBe("outside_envelope");

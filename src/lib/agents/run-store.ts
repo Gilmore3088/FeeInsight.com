@@ -7,7 +7,7 @@ import { runHamiltonCategoryGuard } from "@/lib/agents/hamilton/category-guard";
 import { collapseNearNameDuplicates, collapsePublishedDuplicates } from "@/lib/agents/hamilton/duplicate-collapse";
 import { collapsePageCopies } from "@/lib/agents/hamilton/page-copy-collapse";
 import { retireClosedInstitutionFees } from "@/lib/agents/hamilton/closed-institution";
-import { fillBlankFrequencies, FREQUENCY_FILL_VERSION } from "@/lib/agents/hamilton/frequency-fill";
+import { fillBlankFrequencies, fillFrequenciesInPublish, FREQUENCY_FILL_VERSION } from "@/lib/agents/hamilton/frequency-fill";
 import { repairSourceLinks, SOURCE_LINK_VERSION } from "@/lib/agents/hamilton/source-link";
 import { restoreFeesNowInTaxonomy, rollBackOffTaxonomyFees } from "@/lib/agents/hamilton/off-taxonomy-rollback";
 import { foldRetiredCategories } from "@/lib/agents/hamilton/taxonomy-fold";
@@ -78,6 +78,7 @@ import { releaseRecordedPasses } from "@/lib/agents/darwin/release-review";
 import { runDarwinConditionalZeroResolve } from "@/lib/agents/darwin/conditional-zero-resolve";
 import { runDarwinScheduleRefile } from "@/lib/agents/darwin/schedule-refile";
 import { runDarwinAdjudicate } from "@/lib/agents/darwin/adjudicate";
+import { countLiveFragmentNames, liveFragmentDetail, recheckLiveFragmentNames } from "@/lib/agents/darwin/live-fragment-check";
 import { AUDIENCE_RELABEL_VERSION, dryRunFullTotals, runAudienceRelabel, type AudienceRelabelMode } from "@/lib/agents/darwin/audience-relabel";
 import { runDailyBrief } from "@/lib/agents/daily-brief";
 import { runSundayMaintenance, summarizeSundayMaintenance } from "@/lib/agents/deming/sunday-maintenance";
@@ -840,9 +841,27 @@ async function executeAgenticStep(
         institutionId: numericRunParam(params, ["institution_id"]),
         db: tx,
       });
+      // #1443: Darwin re-reads a share of live fees' names each step against the narrow live twin
+      // of the cut-off name hold (live-fragment-check.ts); a report only while its switch is off.
+      const liveFragments = await recheckLiveFragmentNames(tx, {
+        runId: run.id,
+        stepId: step.id,
+        dryRun: run.runKind === "dry_run",
+        institutionId: numericRunParam(params, ["institution_id"]),
+      });
+      // The whole live table in one read, on request (`fragment_full_count: true`), for the dry-run count.
+      const liveFragmentsFull = params.fragment_full_count === true || params.fragment_full_count === "true"
+        ? await countLiveFragmentNames(tx)
+        : null;
+      const liveFragmentNote = liveFragments.matched > 0
+        ? ` Live name re-check: ${liveFragments.matched.toLocaleString()} of ${liveFragments.checked.toLocaleString()} live fee(s) read have a fragment name (${liveFragments.live && !liveFragments.dryRun ? `${liveFragments.takenDown.length.toLocaleString()} archived` : "switch off: would take down, nothing written"}).`
+        : "";
+      const liveFragmentFullNote = liveFragmentsFull
+        ? ` Whole live table: ${liveFragmentsFull.matched.toLocaleString()} of ${liveFragmentsFull.checked.toLocaleString()} live fees have a fragment name.`
+        : "";
       return {
         status: "completed",
-        summary: `Darwin verified ${verification.verifiedFees.toLocaleString()} raw fee observations from ${verification.processedRawFees.toLocaleString()} selected rows (${verification.skippedFees.toLocaleString()} skipped).${conditionalZero.selected > 0 ? ` Settled ${conditionalZero.selected.toLocaleString()} conditional-$0 hold(s) (${conditionalZero.verified.toLocaleString()} verified free on the bank's schedule).` : ""}${verification.categoryChange && verification.categoryChange.candidates > 0 ? ` ${verification.categoryChange.candidates.toLocaleString()} row(s) Knox re-filed since Darwin's decision ${verification.categoryChange.live ? `(${verification.categoryChange.selected.toLocaleString()} judged again under today's category)` : "(switch off: counted, not judged again)"}.` : ""}`,
+        summary: `Darwin verified ${verification.verifiedFees.toLocaleString()} raw fee observations from ${verification.processedRawFees.toLocaleString()} selected rows (${verification.skippedFees.toLocaleString()} skipped).${conditionalZero.selected > 0 ? ` Settled ${conditionalZero.selected.toLocaleString()} conditional-$0 hold(s) (${conditionalZero.verified.toLocaleString()} verified free on the bank's schedule).` : ""}${verification.categoryChange && verification.categoryChange.candidates > 0 ? ` ${verification.categoryChange.candidates.toLocaleString()} row(s) Knox re-filed since Darwin's decision ${verification.categoryChange.live ? `(${verification.categoryChange.selected.toLocaleString()} judged again under today's category)` : "(switch off: counted, not judged again)"}.` : ""}${liveFragmentNote}${liveFragmentFullNote}`,
         detail: {
           selected_raw_fees: verification.selectedRawFees,
           processed_raw_fees: verification.processedRawFees,
@@ -863,6 +882,23 @@ async function executeAgenticStep(
             feedback_written: release.feedbackWritten,
           },
           recorded_pass_release: recordedRelease,
+          live_fragment_check: liveFragmentDetail(liveFragments),
+          ...(liveFragmentsFull
+            ? {
+                live_fragment_full_count: {
+                  checked: liveFragmentsFull.checked,
+                  would_take_down: liveFragmentsFull.matched,
+                  by_pattern: liveFragmentsFull.byPattern,
+                  samples: liveFragmentsFull.samples.map((fee) => ({
+                    fee_published_id: fee.feePublishedId,
+                    institution_id: fee.institutionId,
+                    fee_name: fee.feeName,
+                    amount: fee.amount,
+                    pattern: fee.pattern,
+                  })),
+                },
+              }
+            : {}),
           schedule_refile: { selected: scheduleRefile.selected, refiled: scheduleRefile.refiled },
           conditional_zero: { selected: conditionalZero.selected, verdicts: conditionalZero.verdicts, verified: conditionalZero.verified },
           feedback_written: verification.feedbackWritten,
@@ -1122,8 +1158,10 @@ async function executeAgenticStep(
       });
       // A live fee's frequency follows its own schedule row: a blank gets the one the row states
       // ("$6.00 each"), and one read from another fee's row is corrected or cleared.
-      const frequencyFill = await fillBlankFrequencies(tx, {
+      // A failed fill write is a warning here, never a failed publish (#1349 review).
+      const frequencyFill = await fillFrequenciesInPublish(tx, {
         runId: run.id,
+        stepId: step.id,
         dryRun: run.runKind === "dry_run",
         institutionId,
       });
@@ -1736,6 +1774,7 @@ async function executeAgenticStep(
           frequency_fills: frequencyFill.filled.length,
           frequency_holds: frequencyFill.held.length,
           frequency_fill_scanned: frequencyFill.scanned,
+          frequency_fill_error: frequencyFill.writeError,
           frequency_fill_samples: frequencyFill.filled.slice(0, 10).map((row) => ({
             fee_published_id: row.feePublishedId,
             from: row.from,

@@ -210,7 +210,8 @@ export const UNLINKED_LIVE_FEES_SQL = `
 
 /**
  * Gives each live fee with no link its own document's URL, or takes it down when it has no
- * traceable document. A dry run reports and writes nothing. Never throws.
+ * traceable document. A dry run reports and writes nothing. A live write that fails throws, so
+ * the step fails with the error and its transaction rolls back (#1349).
  */
 export async function repairSourceLinks(
   db: SqlTag,
@@ -304,8 +305,9 @@ export async function repairSourceLinks(
     result.fills = written.fills;
     result.takedowns = written.takedowns;
   } catch (error) {
-    console.error("repairSourceLinks write failed:", error);
-    return result;
+    // #1349: a failed live write fails the step (the run's transaction rolls back), never a
+    // "completed" step that reads as "Linked 0 of ...".
+    throw new Error(`source link repair write failed: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
   }
 
   if (result.fills.length > 0 || result.takedowns.length > 0) invalidatePublicReadCache();
