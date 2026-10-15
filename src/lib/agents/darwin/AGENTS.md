@@ -254,10 +254,13 @@ Darwin owns verification and classification.
 - A verified $0 row carries the `zero_fee` flag, which is what lets Hamilton publish it.
 - Pass 2 (`peer-checks.ts`, free, rows the rules accept), each its own strategy in
   `pipeline_attempts` (stage `verify`, fingerprint `raw:<fee_raw_id>`):
-  - `verify.peer_range` v3: consumer fees only. The peer levels are consumer prices, so a fee
-    whose audience is not `consumer` or `both` (business or unknown) is not compared at all
-    (2026-10-09); its source check and second-source check still run. A positive consumer
-    amount below p25 / 3 or above p75 * 3 of its
+  - `verify.peer_range` v4: a fee enters on the benchmarks' terms (`entersPeerCheck`, #1112).
+    The peer levels are the benchmark population (`statsRowFilter`: consumer, both and unknown
+    fees, no business-only schedule), so consumer and both fees are compared, an unknown fee is
+    compared unless its schedule's address is business-only (`isBusinessOnlyLink`), and a
+    business fee never is; its source check and second-source check still run. (v3, 2026-10-09,
+    compared consumer and both only; on Oct 15, after Darwin's audience decision, that left 368
+    accepted unknown fees a day unchecked.) A positive amount below p25 / 3 or above p75 * 3 of its
     state peers (asset-size tier level when it has 8+ institutions, else the state-wide
     level) is held as `needs_review` with reason code `peer_outlier` and the range in
     the reason and in the review signal's `peer_outliers`. When the state has fewer than
@@ -578,7 +581,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `AUDIENCE_RELABEL_VERSION` | `darwin.audience_relabel` | v1 | `darwin/audience-relabel.ts` |
 | `DARWIN_ADJUDICATE_STRATEGY` | `verify.adjudicate` | v2 | `darwin/adjudicate.ts` |
 | `DARWIN_CATEGORY_MODEL_STRATEGY` | `verify.category_model` | v1 | `darwin/category-model.ts` |
-| `DARWIN_PEER_STRATEGY` | `verify.peer_range` | v3 | `darwin/peer-checks.ts` |
+| `DARWIN_PEER_STRATEGY` | `verify.peer_range` | v4 | `darwin/peer-checks.ts` |
 | `DARWIN_SECOND_SOURCE_STRATEGY` | `verify.second_source` | v2 | `darwin/peer-checks.ts` |
 | `DARWIN_RELEASE_STRATEGY` | `verify.release` | v4 | `darwin/release-held.ts` |
 | `DARWIN_RECORDED_RELEASE_STRATEGY` | `verify.release_recorded` | v1 | `darwin/release-review.ts` |
