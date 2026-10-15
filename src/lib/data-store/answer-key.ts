@@ -685,9 +685,16 @@ export async function scoreboardSchemaReady(db: SqlTag = sql): Promise<boolean> 
   return row?.ready === true;
 }
 
-/** Where each run of one series starts, for a trend that must not join two series (#1354). */
-export function seriesBreaks(keys: Array<number | null>): Array<{ start: number; key: number | null }> {
-  return keys.flatMap((key, index) => (index === 0 || key !== keys[index - 1] ? [{ start: index, key }] : []));
+/**
+ * Where each run of one series starts, for a trend that must not join two series (#1354).
+ * A day with no known series belongs to no run: the same series on both sides of it is one run.
+ */
+export function seriesBreaks(keys: Array<number | null>): Array<{ start: number; key: number }> {
+  const runs: Array<{ start: number; key: number }> = [];
+  keys.forEach((key, index) => {
+    if (key != null && key !== runs.at(-1)?.key) runs.push({ start: index, key });
+  });
+  return runs;
 }
 
 /** The newest snapshots, oldest first (for a trend line). */

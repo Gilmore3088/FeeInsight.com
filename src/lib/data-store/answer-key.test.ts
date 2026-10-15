@@ -74,9 +74,9 @@ describe("scoreboard snapshots and the answer-key scorer version (#1354)", () =>
     expect(seriesBreaks([1, 1, 3, 3, null, 3])).toEqual([
       { start: 0, key: 1 },
       { start: 2, key: 3 },
-      { start: 4, key: null },
-      { start: 5, key: 3 },
     ]);
+    // A day with no version does not split one version's run in two.
+    expect(seriesBreaks([null, 3, null, 3])).toEqual([{ start: 1, key: 3 }]);
   });
 
   it("reads the version from the snapshot, else from the score run it names", async () => {

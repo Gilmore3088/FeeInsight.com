@@ -100,7 +100,7 @@ function Sparkline({ values, series }: { values: Array<number | null>; series?: 
       return `${starts ? "M" : "L"}${x.toFixed(1)},${y.toFixed(1)}`;
     })
     .join(" ");
-  const breaks = series ? seriesBreaks(series).filter((run) => run.key != null) : [];
+  const breaks = series ? seriesBreaks(series) : [];
   return (
     <>
       <svg viewBox={`0 0 ${width} ${height}`} className="h-9 w-full text-[var(--brand-primary)]" role="img" aria-label="30-day trend">
