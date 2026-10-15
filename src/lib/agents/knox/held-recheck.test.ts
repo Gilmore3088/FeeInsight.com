@@ -5,7 +5,7 @@ import { classifyFeeText, KNOX_HELD_NAME_RULES_LIVE } from "./rules";
 
 import {
   fileHeldByName,
-  NAME_FILE_CHECKED_FLAG,
+  nameFileCheckedFlag,
   nameFileHold,
   HELD_SET_ASIDE_FLAG,
   heldNameRelease,
@@ -616,7 +616,17 @@ describe("held lines filed by their name: a person's label or the store's settle
     [held(655954, "45.00", "Rush Fee", "Rush Fee | $45.00/card", "rush_card"), null],
     // A rate, or a price for a bundle, is not a plain price.
     [cashAdvance, "not_a_plain_price"],
-    [held(300157, "2.00", "Counter Checks: 4", "Counter Checks | 4 for $2 | Instant Issue Replacement Fee | $5", "counter_check"), "not_a_plain_price"],
+    [held(300157, "2.00", "Temporary Checks Fee", "Temporary Checks Fee | 4 for $2 | Instant Issue Replacement Fee | $5", "counter_check"), "not_a_plain_price"],
+    // Review of #1385: a balance to keep is never a fee by name, and a box size's name key is "x".
+    [held(258596, "5.00", "Minimum balance", "Minimum balance: $5 to avoid fees", "minimum_balance"), "not_a_fee_name"],
+    [held(188396, "1.00", "Minimum Balance", "Minimum Balance | $1.00 | Mortgage Subordination Preparation Fee | $150.00", "minimum_balance"), "not_a_fee_name"],
+    [held(677867, "40.00", "3″ x 10″", "3″ x 10″ | $40.00 annual fee", "safe_deposit_box"), "name_too_short"],
+    [held(270231, "10.00", "Monthly Maintenance Fee", "Monthly Maintenance Fee | None | None | $10.00 fee can be avoided by maintaining a $1,500.00 average daily collected balance", "monthly_maintenance"), "requirement_line"],
+    // One column of a table of four accounts.
+    [held(361489, "7.00", "Monthly Maintenance Fee", "Monthly Maintenance Fee | None | $7.00 | $10.00 | $10.00 | $5.00", "monthly_maintenance"), "several_price_columns"],
+    // A person's label files a name that does not say fee; the store never does.
+    [{ ...held(687157, "5.00", "Collection Item", "Collection Item | fee charged for payment of a draft held until funds are available | $5.00", "collection_item"), filed_by: "label" as const }, null],
+    [held(687158, "5.00", "Collection Item", "Collection Item | fee charged for payment of a draft held until funds are available | $5.00", "collection_item"), "not_a_fee_name"],
     // Live as other lending at 70 banks, but a subordination files as legal process since Oct 15.
     [held(441210, "150.00", "Subordination Fee", "Subordination Fee | $150.00", "other_lending_fee"), "name_reads_other_category"],
     // The $10 is the row before's monthly fee; the paper statement fee is $2.50.
@@ -645,20 +655,31 @@ describe("held lines filed by their name: a person's label or the store's settle
         }),
       },
     );
-    const result = await fileHeldByName(db as never, { stateCode: "tx", runId: 7 });
+    const now = new Date("2026-10-15T12:00:00Z");
+    expect(nameFileCheckedFlag(now)).toBe("knox_name_file_checked:2026-W42");
+    const result = await fileHeldByName(db as never, { stateCode: "tx", runId: 7, now });
     expect(result).toMatchObject({
       checked: 3, filed: 2, kept: { not_a_plain_price: 1 }, bySource: { label: 1, store: 1 }, byCategory: { account_research: 2 }, institutions: 1, dryRun: false,
     });
     const select = calls[0];
-    expect(select.text).toContain("published_fee_catalog");
-    expect(select.text).toContain("HAVING count(DISTINCT c.canonical_fee_key) = 1");
-    expect(select.values).toEqual(expect.arrayContaining([NAME_FILE_CHECKED_FLAG, 3, "name_label", "TX"]));
+    // Settled names come from a hash join of live fees on the held rows' own names, and labels from
+    // the feedback table's unique dedupe key, never a scan of either (review of #1385).
+    expect(select.text).toContain("JOIN raw_names r ON r.raw_name = lower(btrim(p.fee_name))");
+    expect(select.text).toContain("f.dedupe_key IN (SELECT DISTINCT 'knox.name_label:' || name FROM held");
+    expect(select.text).toContain("HAVING count(DISTINCT p.canonical_fee_key) = 1");
+    expect(select.text).not.toContain("published_fee_catalog");
+    expect(select.values).toEqual(expect.arrayContaining(["knox_name_file_checked:2026-W42", 3, "name_label", "TX"]));
     const moves = calls.filter((call) => call.text.includes("RETURNING fr.fee_raw_id")).map((call) => JSON.stringify(call.values));
     expect(moves[0]).toContain("knox_name_filed:store");
     expect(moves[0]).toContain("canonical_hint:account_research");
     expect(moves[1]).toContain("knox_name_filed:label");
-    const marked = calls.find((call) => call.text.includes("WHERE fee_raw_id = ANY"))!;
-    expect(marked.values).toContainEqual([186564]);
+    // The line that stayed gets this week's mark, replacing an older week's; with every candidate
+    // read, the lane's other held lines get it too, so the week's later steps read only new lines.
+    const marked = calls.find((call) => call.text.includes("fr.fee_raw_id = ANY($2::bigint[])"))!;
+    expect(marked.values).toEqual(["knox_name_file_checked:2026-W42", [186564]]);
+    expect(marked.text).toContain("NOT LIKE 'knox_name_file_checked:%'");
+    const lane = calls.find((call) => call.text.includes("UPDATE raw_fee_observations fr") && call.text.includes("inst.state_code"))!;
+    expect(lane.values).toEqual(["knox_name_file_checked:2026-W42", "TX"]);
     expect(calls.find((call) => call.text.includes("INSERT INTO pipeline_feedback"))?.values.join("")).toContain("knox.held:raw:200601");
     expect(calls.some((call) => /\bDELETE\b/i.test(call.text))).toBe(false);
 

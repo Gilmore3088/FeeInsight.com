@@ -420,11 +420,14 @@ export async function previewHeldNameRules(
  *
  * - a person's label (`label-queue.ts`, a `name_label` row): the labelled category, or no move for
  *   "No category fits";
- * - the store: with no label, a name live under exactly one category at
- *   `SETTLED_NAME_MIN_BANKS` or more banks (`published_fee_catalog`), and no other category, is
- *   settled ("Returned Statement Fee" at 3 banks, account research; "Rush Fee" at 6, rush card).
+ * - the store: with no label, a name that says fee or charge and is live (`published_fee_records`,
+ *   flat, not rolled back or quarantined) under exactly one category at `SETTLED_NAME_MIN_BANKS` or
+ *   more banks, and no other category, is settled ("Returned Statement Fee" at 3 banks, account research; "Rush Fee" at 6, rush card).
  *
- * A line moves only when its own price is a plain price for that category: Darwin's category guard
+ * A store decision files only a name that says fee or charge ("Minimum Balance" is a requirement,
+ * and a box size's name key is only "x"). A line moves only when its own price is a plain price for
+ * that category: it states no requirement ("to avoid", "required", "minimum balance to open"), it
+ * is not one column of a table of accounts ("| None | $7.00 | $10.00"), Darwin's category guard
  * and price range accept it (`passesDarwinChecks`), today's name classifier does not read the name
  * as another category (a subordination live as other lending at 70 banks files as legal process
  * since Oct 15), the line is not a rate or a bundle price ("4 for $2"), and the row's price is the
@@ -432,11 +435,24 @@ export async function previewHeldNameRules(
  * `knox_name_filed:<label|store>` and `canonical_hint:<key>`, and keeps its name and amount. Darwin
  * still decides; Hamilton's rules re-check keeps such a fee live while its name and price trace in
  * its own text. A line that matched a decision but could not move is marked
- * `NAME_FILE_CHECKED_FLAG` and not read again by this pass. Set-aside lines are read too: the
+ * `knox_name_file_checked:<ISO week>` and not read again by this pass that week. When a lane's pass
+ * covers every candidate, the lane's other held lines get the same week mark, so the rest of the
+ * week's steps read only new held lines, and the live-fee join behind the settled names has nothing
+ * to probe (review of #1385: no scan of the live fees in every extract step). Set-aside lines are read too: the
  * decision is new, not the rules.
  */
 export const NAME_FILED_FLAG_PREFIX = "knox_name_filed:";
-export const NAME_FILE_CHECKED_FLAG = "knox_name_file_checked:v1";
+export const NAME_FILE_CHECKED_PREFIX = "knox_name_file_checked:";
+
+/** The week mark ("knox_name_file_checked:2026-W42", ISO week, UTC): lines are read again weekly. */
+export function nameFileCheckedFlag(now: Date = new Date()): string {
+  const day = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  const weekday = day.getUTCDay() || 7;
+  day.setUTCDate(day.getUTCDate() + 4 - weekday);
+  const yearStart = new Date(Date.UTC(day.getUTCFullYear(), 0, 1));
+  const week = Math.ceil(((day.getTime() - yearStart.getTime()) / 86_400_000 + 1) / 7);
+  return `${NAME_FILE_CHECKED_PREFIX}${day.getUTCFullYear()}-W${String(week).padStart(2, "0")}`;
+}
 export const SETTLED_NAME_MIN_BANKS = 3;
 export const NAME_FILE_LIMIT = 300;
 /** A rate, or a price for a bundle of items, is not the plain price the store's fees are. */
@@ -457,6 +473,41 @@ export function priceUnderName(name: string, excerpt: string, amount: number): b
 
 export type NameFiledBy = "label" | "store";
 
+/** A fee's name: it says fee or charge. "Minimum Balance" is a requirement, never a fee. */
+const FEE_WORD_NAME = /\b(?:fees?|charges?)\b/i;
+/** Requirement wording on the line: a balance to keep or an amount to open, not a price. */
+const REQUIREMENT_LINE = /\bto avoid\b|\bavoided\b|\brequired\b|\brequirement\b|\bmust (?:maintain|keep|have)\b|\bto open\b|\bopening deposit\b|\bminimum (?:daily |average |monthly )?(?:collected )?balance (?:of|to|required|needed)\b/i;
+/** A cell that is one column's price in a table of accounts or networks: "$7.00", "None", "N/A", "Free". */
+const PRICE_CELL = /^(?:\$\s*\d[\d,]*(?:\.\d{1,2})?\b.*|\d[\d,]*\.\d{2}|none|n\/a|free|no charge|not applicable|[-–—])$/i;
+
+/**
+ * True when the line holds a price per column for several accounts (or networks), so its first
+ * price belongs to one column only: "Monthly Maintenance Fee | None | $7.00 | $10.00 | $10.00 |
+ * $5.00" (raw 361489, four products), "Credit card cash advance | None | $0.50 | $1.00 plus ATM
+ * owner fees" (raw 275584, a network table). Pure.
+ */
+export function severalPriceColumns(name: string, excerpt: string): boolean {
+  const at = excerpt.toLowerCase().indexOf(name.trim().toLowerCase());
+  const after = at >= 0 ? excerpt.slice(at + name.trim().length) : excerpt;
+  const cells = after.split("|").map((cell) => cell.trim()).filter(Boolean);
+  if (cells.filter((cell) => PRICE_CELL.test(cell)).length >= 2) return true;
+  // The same with no cell marks: two prices with nothing but spacing or leaders between them.
+  return /\$\s*\d[\d,]*(?:\.\d{1,2})?[\s.…]*\$\s*\d/.test(after);
+}
+
+/**
+ * Names the store settles but a line cannot place on its own: a bare "Closing Fee" (an account's
+ * early closure, or a loan's closing) and a wire fee with no direction ("Wire Transfer Fee
+ * (Domestic)": incoming or outgoing). The held-name rules keep these held for the same reason.
+ */
+const AMBIGUOUS_NAME = /^\W*(?:closing (?:fee|charge)s?|wire(?: transfers?)? (?:fee|charge)s?(?:\W+(?:domestic|international|foreign))?)\W*$/i;
+
+/** The store's name key must still name something once digits go ("3 x 5" is "x"). */
+function nameKeyUsable(name: string): boolean {
+  const key = name.toLowerCase().replace(/[^a-z ]+/g, " ").replace(/\s+/g, " ").trim();
+  return key.split(" ").filter((word) => word.length >= 2).length >= 2;
+}
+
 export interface NameFileRow extends HeldRow {
   filed_key: string;
   filed_by: NameFiledBy;
@@ -476,14 +527,25 @@ export interface NameFileResult {
 }
 
 /** Why a held line a name decision covers stays held, or null when it moves. Pure. */
-export function nameFileHold(row: Pick<NameFileRow, "fee_name" | "amount" | "conditions" | "filed_key">): string | null {
+export function nameFileHold(
+  row: Pick<NameFileRow, "fee_name" | "amount" | "conditions" | "filed_key"> & { filed_by?: NameFiledBy },
+): string | null {
   const name = row.fee_name?.trim() ?? "";
   const amount = row.amount == null ? Number.NaN : Number(row.amount);
   if (!name || !Number.isFinite(amount)) return "no_price";
+  if (!nameKeyUsable(name)) return "name_too_short";
+  // Only a person's label files a name that does not say fee or charge (review of #1385).
+  const byStore = (row.filed_by ?? "store") === "store";
+  if (byStore && !FEE_WORD_NAME.test(name)) return "not_a_fee_name";
+  if (byStore && AMBIGUOUS_NAME.test(name)) return "ambiguous_name";
+  // A $0 line is the zero path's to judge (a free service or a missing price), not a settled fee.
+  if (byStore && amount === 0) return "zero_price";
   const today = classifyFeeText(name);
   if (today && today !== row.filed_key) return "name_reads_other_category";
   const excerpt = heldExcerpt(row.conditions) ?? "";
   if (NOT_A_PLAIN_PRICE.test(excerpt)) return "not_a_plain_price";
+  if (REQUIREMENT_LINE.test(excerpt)) return "requirement_line";
+  if (severalPriceColumns(name, excerpt)) return "several_price_columns";
   if (!priceUnderName(name, excerpt, amount)) return "price_not_under_name";
   if (!passesDarwinChecks(row.filed_key, name, amount)) return "darwin_checks";
   return null;
@@ -500,12 +562,13 @@ const NAME_KEY_SQL = (column: string) =>
 
 export async function fileHeldByName(
   db: SqlTag,
-  options: { limit?: number; dryRun?: boolean; institutionId?: number | null; stateCode?: string | null; runId?: number | null } = {},
+  options: { limit?: number; dryRun?: boolean; institutionId?: number | null; stateCode?: string | null; runId?: number | null; now?: Date } = {},
 ): Promise<NameFileResult> {
   const limit = Math.max(1, Math.min(Number(options.limit) || NAME_FILE_LIMIT, 1000));
   const dryRun = Boolean(options.dryRun);
   const result: NameFileResult = { checked: 0, filed: 0, kept: {}, byCategory: {}, bySource: { label: 0, store: 0 }, institutions: 0, examples: [], dryRun };
-  const params: Array<string | number> = [limit, NAME_FILE_CHECKED_FLAG, SETTLED_NAME_MIN_BANKS, NAME_LABEL_KIND];
+  const checkedFlag = nameFileCheckedFlag(options.now);
+  const params: Array<string | number> = [limit, checkedFlag, SETTLED_NAME_MIN_BANKS, NAME_LABEL_KIND];
   const filters: string[] = [];
   if (options.institutionId) filters.push(`AND fr.institution_id = $${params.push(Number(options.institutionId))}`);
   const state = options.stateCode?.trim().toUpperCase();
@@ -514,7 +577,8 @@ export async function fileHeldByName(
     `
       WITH held AS MATERIALIZED (
         SELECT fr.fee_raw_id, fr.amount, COALESCE(fr.extraction_note, fr.conditions) AS conditions, fr.institution_id,
-               fr.source_document_id, fr.fee_name, fr.outlier_flags, ${NAME_KEY_SQL("fr.fee_name")} AS name
+               fr.source_document_id, fr.fee_name, fr.outlier_flags, lower(btrim(fr.fee_name)) AS raw_name,
+               ${NAME_KEY_SQL("fr.fee_name")} AS name
           FROM raw_fee_observations fr
           JOIN institution_sources inst ON inst.id = fr.institution_id
          WHERE fr.source = 'knox'
@@ -523,30 +587,24 @@ export async function fileHeldByName(
            AND NOT fr.outlier_flags ? $2
            AND fr.amount IS NOT NULL
            ${filters.join("\n           ")}
-           AND EXISTS (
-             SELECT 1
-               FROM agent_source_texts adt
-              WHERE adt.source_document_id = fr.source_document_id
-                AND adt.status = 'completed'
-                AND adt.text_hash IS NOT NULL
-                AND position(('text_hash=' || adt.text_hash || ';') IN COALESCE(COALESCE(fr.extraction_note, fr.conditions), '')) > 0
-           )
-      ), names AS MATERIALIZED (
-        SELECT DISTINCT name FROM held WHERE name <> ''
       ), labels AS (
-        -- The newest label of each name; "No category fits" has no key and moves nothing.
-        SELECT DISTINCT ON (l.name) l.name, l.canonical_fee_key AS key
-          FROM (SELECT ${NAME_KEY_SQL("f.evidence->>'fee_name'")} AS name, f.canonical_fee_key, f.created_at
-                  FROM pipeline_feedback f
-                 WHERE f.kind = $4 AND f.evidence->>'fee_name' IS NOT NULL) l
-          JOIN names n ON n.name = l.name
-         ORDER BY l.name, l.created_at DESC
+        -- A label's dedupe key is its name key (label-queue.ts), so this reads the unique index.
+        SELECT DISTINCT ON (f.dedupe_key) substring(f.dedupe_key from 17) AS name, f.canonical_fee_key AS key
+          FROM pipeline_feedback f
+         WHERE f.dedupe_key IN (SELECT DISTINCT 'knox.name_label:' || name FROM held WHERE name <> '')
+           AND f.kind = $4
+         ORDER BY f.dedupe_key, f.created_at DESC
+      ), raw_names AS MATERIALIZED (
+        SELECT DISTINCT raw_name FROM held WHERE fee_name ~* '\\m(fee|fees|charge|charges)\\M'
       ), settled AS (
-        SELECT c.name, min(c.canonical_fee_key) AS key, count(DISTINCT c.institution_id) AS banks
-          FROM (SELECT ${NAME_KEY_SQL("p.fee_name")} AS name, p.canonical_fee_key, p.institution_id FROM published_fee_catalog p) c
-          JOIN names n ON n.name = c.name
-         GROUP BY c.name
-        HAVING count(DISTINCT c.canonical_fee_key) = 1 AND count(DISTINCT c.institution_id) >= $3
+        -- Live fees with one of the held names, as printed (lower-cased): a hash join on the live
+        -- index, never a regex over every live fee. Their name keys are then counted.
+        SELECT ${NAME_KEY_SQL("p.fee_name")} AS name, min(p.canonical_fee_key) AS key, count(DISTINCT p.institution_id) AS banks
+          FROM published_fee_records p
+          JOIN raw_names r ON r.raw_name = lower(btrim(p.fee_name))
+         WHERE p.rolled_back_at IS NULL AND p.quarantined_at IS NULL AND p.amount_kind = 'flat'
+         GROUP BY 1
+        HAVING count(DISTINCT p.canonical_fee_key) = 1 AND count(DISTINCT p.institution_id) >= $3
       )
       SELECT h.fee_raw_id, h.amount, h.conditions, h.institution_id, h.source_document_id, h.fee_name, h.outlier_flags,
              COALESCE(l.key, s.key) AS filed_key,
@@ -555,7 +613,16 @@ export async function fileHeldByName(
         FROM held h
         LEFT JOIN labels l ON l.name = h.name
         LEFT JOIN settled s ON s.name = h.name
-       WHERE (l.name IS NOT NULL AND l.key IS NOT NULL) OR (l.name IS NULL AND s.name IS NOT NULL)
+       WHERE ((l.name IS NOT NULL AND l.key IS NOT NULL) OR (l.name IS NULL AND s.name IS NOT NULL))
+         -- Only lines from the document's current text, as the held re-check reads them.
+         AND EXISTS (
+           SELECT 1
+             FROM agent_source_texts adt
+            WHERE adt.source_document_id = h.source_document_id
+              AND adt.status = 'completed'
+              AND adt.text_hash IS NOT NULL
+              AND position(('text_hash=' || adt.text_hash || ';') IN COALESCE(h.conditions, '')) > 0
+         )
        ORDER BY h.fee_raw_id
        LIMIT $1
     `,
@@ -568,7 +635,7 @@ export async function fileHeldByName(
   for (const row of rows) {
     const key = row.filed_key;
     const by = row.filed_by;
-    const hold = nameFileHold(row);
+    const hold = nameFileHold({ ...row, filed_by: by });
     if (hold) {
       result.kept[hold] = (result.kept[hold] ?? 0) + 1;
       checkedIds.push(Number(row.fee_raw_id));
@@ -620,13 +687,33 @@ export async function fileHeldByName(
     }
   }
   result.institutions = banks.size;
-  if (!dryRun && checkedIds.length > 0) {
-    await db`
-      UPDATE raw_fee_observations
-         SET outlier_flags = COALESCE(outlier_flags, '[]'::jsonb) || ${JSON.stringify([NAME_FILE_CHECKED_FLAG])}::jsonb
-       WHERE fee_raw_id = ANY(${checkedIds}::bigint[])
-         AND NOT outlier_flags ? ${NAME_FILE_CHECKED_FLAG}
-    `;
+  // The week mark replaces an older week's, so a line carries one.
+  const weekMark = (filter: string, filterParams: Array<string | number | number[]>) =>
+    db.unsafe(
+      `
+        UPDATE raw_fee_observations fr
+           SET outlier_flags = COALESCE((SELECT jsonb_agg(flag) FROM jsonb_array_elements(fr.outlier_flags) flag
+                                          WHERE flag #>> '{}' NOT LIKE '${NAME_FILE_CHECKED_PREFIX}%'), '[]'::jsonb)
+                               || jsonb_build_array($1::text)
+          FROM institution_sources inst
+         WHERE inst.id = fr.institution_id
+           AND NOT fr.outlier_flags ? $1
+           ${filter}
+      `,
+      [checkedFlag, ...filterParams],
+    );
+  if (!dryRun && checkedIds.length > 0) await weekMark("AND fr.fee_raw_id = ANY($2::bigint[])", [checkedIds]);
+  // Every candidate read: the lane's other held lines need no read again this week.
+  if (!dryRun && rows.length < limit && (options.institutionId || state)) {
+    const laneParams: Array<string | number> = [];
+    const laneFilters: string[] = [];
+    if (options.institutionId) laneFilters.push(`AND fr.institution_id = $${laneParams.push(Number(options.institutionId)) + 1}`);
+    if (state) laneFilters.push(`AND upper(btrim(inst.state_code)) = $${laneParams.push(state) + 1}`);
+    await weekMark(
+      `AND fr.source = 'knox' AND fr.outlier_flags ? 'knox_review:unclassified'
+           AND NOT fr.outlier_flags ? 'needs_darwin_verification' ${laneFilters.join(" ")}`,
+      laneParams,
+    );
   }
   if (!dryRun && decisions.length > 0 && (await feedbackSchemaReady(db))) await recordFeedback(db, decisions);
   return result;
