@@ -86,11 +86,14 @@ export function SampleLines({ sample }: { sample: SampleExhibit }) {
   );
 }
 
-const SHADE = ["fill-[#ece4d8]", "fill-[#f3c9bd]", "fill-[#e39a84]", "fill-[#c8553f]", "fill-[#8f2f22]"] as const;
+/** Shades by institutions with verified fees; a state with none at all stays plain. */
+const SHADE = ["fill-[#f6dcd3]", "fill-[#f3c9bd]", "fill-[#e39a84]", "fill-[#c8553f]", "fill-[#8f2f22]"] as const;
+const NO_DATA = "fill-[#ece4d8]";
 
 /**
- * Every state's free fee report on one map, shaded by institutions with verified fees. Tapping or
- * hovering a state shows its counts; the state's report is one tap away.
+ * Every state's free fee report on one map, shaded by institutions with verified fees. Tapping a
+ * state (or picking it below) shows its counts; the state's report is one tap away. Hover only
+ * names a state, so moving the pointer to the button never changes the pick.
  */
 export function StateReportMap({ states }: { states: MapState[] }) {
   const byCode = useMemo(() => new Map(states.map((s) => [s.code, s])), [states]);
@@ -104,16 +107,14 @@ export function StateReportMap({ states }: { states: MapState[] }) {
       <svg viewBox="0 0 960 600" className="h-auto w-full" role="group" aria-label="State fee reports">
         {US_STATES.map((s) => {
           const state = byCode.get(s.id);
-          const fill = state ? SHADE[state.shade] : SHADE[0];
           const active = s.id === shown.code;
           return (
             <path
               key={s.id}
               d={s.d}
-              className={`${fill} cursor-pointer stroke-[#fbf7f1] transition-opacity hover:opacity-80 ${active ? "stroke-ink" : ""}`}
+              className={`${state ? `${SHADE[state.shade]} cursor-pointer hover:opacity-80` : NO_DATA} stroke-[#fbf7f1] transition-opacity ${active ? "stroke-ink" : ""}`}
               strokeWidth={active ? 3 : 1.2}
-              onMouseEnter={() => state && setCode(s.id)}
-              onClick={() => state && setCode(s.id)}
+              onClick={state ? () => setCode(s.id) : undefined}
             >
               <title>{state ? `${state.name}: ${COUNT.format(state.institutions)} institutions` : s.name}</title>
             </path>

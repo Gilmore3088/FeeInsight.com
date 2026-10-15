@@ -19,6 +19,8 @@ const REPORT_USE_CASE = "competitive-fee-position-report";
 const REPORT_SOURCE = "report";
 const NATIONAL_REPORT_SOURCE = "report_national";
 const DISTRICT_REPORT_SOURCE = "report_district";
+/** Each bank's free page is the instant own-institution snapshot (James, 8 Oct 2026). */
+const OWN_INSTITUTION_HREF = "/institutions";
 const DEFAULT_SRC = "for-institutions";
 const INSTITUTION_REPORT_HREF = "/for-institutions?report=institution#report";
 const SRC_PATTERN = /^[a-z0-9][a-z0-9_-]{0,39}$/i;
@@ -270,7 +272,7 @@ function RequestReportFormInner({
         </div>
       )}
 
-      <fieldset>
+      <fieldset aria-describedby={fieldId("report-type-detail")}>
         <legend className={LABEL_CLASS}>Which report?</legend>
         {/* One row of equal choices; the price sits on each, so none reads as switched off. */}
         <div className="grid grid-cols-3 gap-1 rounded-xl bg-paper p-1 ring-1 ring-border">
@@ -300,7 +302,13 @@ function RequestReportFormInner({
             );
           })}
         </div>
-        <p className="mt-2 text-[13px] text-ink-muted">{REPORT_TYPES.find((o) => o.value === reportType)?.detail}</p>
+        <p id={fieldId("report-type-detail")} className="mt-2 text-[13px] text-ink-muted">
+          {REPORT_TYPES.find((o) => o.value === reportType)?.detail}{" "}
+          <Link href={OWN_INSTITUTION_HREF} className="font-medium text-ink underline underline-offset-2">
+            Look up your own fees free
+          </Link>
+          .
+        </p>
       </fieldset>
 
       {reportType === "district" && (
