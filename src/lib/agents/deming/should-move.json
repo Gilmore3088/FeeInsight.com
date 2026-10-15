@@ -14,6 +14,7 @@
     { "pr": 1298, "issue": 1287, "metric": "detail.goal.wrongAfterPublish.rate", "direction": "down", "min_change": 0.001, "note": "Magellan's bank-name check matches whole words, needs the city or cert for a shared name, and reads short same-name hosts" },
     { "pr": 1315, "issue": 1309, "metric": "detail.goal.wrongAfterPublish.rate", "direction": "down", "min_change": 0.001, "note": "Magellan's shared-name check: cert only after FDIC/Cert/Charter/NCUA, a name inside another name is shared, a failed name read fails closed, and the companion finder runs it" },
     { "pr": 1327, "issue": 1326, "metric": "detail.goal.liveInstitutions.live", "direction": "up", "min_change": 1, "note": "Magellan's upgrade and freshness re-searches no longer stop at the link they replace (1,451 banks searched again at upgrade v3, free)" },
-    { "pr": 1358, "issue": 1102, "metric": "accuracy_recall", "direction": "up", "min_change": 0.005, "note": "Knox v68: fee-schedule lines with no fee word are read or held, never dropped silently (estimate about +1 point end to end)" }
+    { "pr": 1358, "issue": 1102, "metric": "accuracy_recall", "direction": "up", "min_change": 0.005, "note": "Knox v68: fee-schedule lines with no fee word are read or held, never dropped silently (estimate about +1 point end to end)" },
+    { "pr": 1238, "issue": 1030, "metric": "detail.goal.liveInstitutions.live", "direction": "up", "min_change": 5, "note": "Magellan schedule search looks first for institutions with no live fees: fee schedule, Truth in Savings disclosure and account agreement" }
   ]
 }
