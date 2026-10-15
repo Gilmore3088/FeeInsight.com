@@ -934,8 +934,8 @@ export async function runDarwinReleaseReview(
  */
 export const DARWIN_RECORDED_RELEASE_STRATEGY = { strategy: "verify.release_recorded", version: 1 } as const;
 export const RECORDED_RELEASE_LIMIT = 500;
-/** Only this pass; DARWIN_RELEASE_ACTS stays off. Off until the switch is turned on (James approved "fix, then release", Oct 15). */
-export const DARWIN_RECORDED_RELEASE_ACTS = false;
+/** Only this pass; DARWIN_RELEASE_ACTS stays off. James switched it on (Oct 15, after "fix, then release"). */
+export const DARWIN_RECORDED_RELEASE_ACTS = true;
 export const RECORDED_RELEASE_DRY_RUN_FINGERPRINT = `darwin:recorded-release:dry-run:v${DARWIN_RECORDED_RELEASE_STRATEGY.version}`;
 /** A tick is 5 minutes; the live release waits for a later tick than the dry run's. */
 export const RECORDED_RELEASE_DRY_RUN_WAIT_MINUTES = 4;

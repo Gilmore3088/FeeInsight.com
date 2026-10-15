@@ -442,7 +442,7 @@ describe("releasing the recorded v17 passes", () => {
     expect(recordedPassHoldReason(candidate)).toBe(reason);
   });
 
-  it("is off: counts what it would release and hold, and writes nothing", async () => {
+  it("switched off: counts what it would release and hold, and writes nothing", async () => {
     expect(DARWIN_RELEASE_ACTS).toBe(false);
     const rows = [
       row({ fee_raw_id: 418400, fee_name: "Per Each ATM Withdrawal", held_canonical_fee_key: "atm_non_network", amount: "0.25", source_line: "Per Each ATM Withdrawal $ .25", source_context: "Per Each ACH Debit $ .25\nPer Each ATM Withdrawal $ .25" }),
@@ -454,7 +454,7 @@ describe("releasing the recorded v17 passes", () => {
       if (text.includes("verify.release_recorded") || text.includes("FROM pipeline_attempts pa")) return Promise.resolve(rows);
       return Promise.resolve([]);
     });
-    const result = await releaseRecordedPasses(db as never, { runId: 9 });
+    const result = await releaseRecordedPasses(db as never, { runId: 9, acts: false });
     expect(result).toMatchObject({ acts: false, recordedPasses: 2, wouldRelease: 1, released: 0, held: { business_activity_row: 1 } });
     expect(result.heldExamples[0]).toMatchObject({ feeRawId: 418400, reason: "business_activity_row" });
     expect(result.releaseByCategory).toEqual({ stop_payment: 1 });
@@ -466,7 +466,7 @@ describe("releasing the recorded v17 passes", () => {
     [false, { acts: false, dryRunRecorded: true, released: 0 }],
     [true, { acts: true, dryRunRecorded: false, released: 1 }],
   ])("switched on, releases only after a recorded dry run (dry run done: %s)", async (dryRunDone, expected) => {
-    expect(DARWIN_RECORDED_RELEASE_ACTS).toBe(false);
+    expect(DARWIN_RECORDED_RELEASE_ACTS).toBe(true);
     const rows = [row({ fee_raw_id: 2 })];
     const writes: Array<{ text: string; values: unknown[] }> = [];
     const db = vi.fn((strings: TemplateStringsArray, ...values: unknown[]) => {

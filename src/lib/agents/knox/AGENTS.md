@@ -596,7 +596,7 @@ After the extract itself, each extract step runs these passes in order (`run-sto
   Only one reader agrees here, so Darwin's free checks, the shared source check among them,
   decide what goes live; the 9 Oct dry read of 17 free rows was 11 of 17 right against source.
   The step's detail reports it as `superseded_free_recheck`.
-- `refileSupersededRows` (#1093, off until James approves, `SUPERSEDED_REFILE_LIVE`): a free-pass
+- `refileSupersededRows` (#1093, `SUPERSEDED_REFILE_LIVE`, switched on by James Oct 15): a free-pass
   row a re-read retired that today's free team reads with the same name and amount under another
   category. The superseded re-check needs the old category, so it leaves these retired, and the
   dedupe index kept the re-read from writing its own row (Oregonians CU's "Card Replacement" $10,
