@@ -126,10 +126,19 @@ function per10B(perBillion: number): string {
 /**
  * The bank's CFPB fee complaints beside similar-size peers', as a rate per $10B of deposits so a
  * large bank is not judged on its size. Only for a confirmed CFPB match: no match is not proof of
- * no complaints, and a match under review has no count yet.
+ * no complaints, and a match under review has no count yet. Peers count only with a verified match;
+ * when too few have one, a coverage note stands in for the comparison (#1523).
  */
 export function complaintBenchmarkFact(b: ComplaintBenchmark | null | undefined, institutionName?: string): Fact | null {
-  if (!b || b.match_status !== "matched" || b.fee_complaints === null || b.peer_count === 0) return null;
+  if (!b || b.match_status !== "matched" || b.fee_complaints === null) return null;
+  if (b.peer_coverage === "insufficient") {
+    return {
+      text: `Only ${b.peer_count} of ${b.eligible_peer_count.toLocaleString("en-US")} similar institutions have a verified CFPB match, too few to compare fee complaint rates.`,
+      source: { label: "CFPB Consumer Complaint Database, verified institution matches", table: "institution_identity_links", asOf: `${b.year}-12-31` },
+      sampleSize: b.peer_count,
+    };
+  }
+  if (b.peer_count === 0) return null;
   // Peers share the bank's charter and asset tier; the line stays within a storyline line's 20 words.
   const where = b.peer_level === "state" ? `${STATE_NAMES[b.peer_label] ?? b.peer_label} peers` : b.peer_level === "fed_district" ? `${b.peer_label.replace(/^Fed /, "")} peers` : "peers nationwide";
   const group = `${b.peer_count.toLocaleString("en-US")} ${where}`;

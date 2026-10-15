@@ -213,17 +213,23 @@ export interface ComplaintBenchmark {
   institution_id: number;
   institution_name: string;
   year: string;
-  /** "matched": CFPB complaints are linked to this institution; "none": no CFPB company matched it,
-   * so its count is zero; "unconfirmed": a CFPB company may be this institution but awaits review. */
+  /** "matched": a CFPB company is verified as this institution; "none": no CFPB company is verified
+   * as it, so its count is unknown (missing evidence is not zero complaints); "unconfirmed": a CFPB
+   * company may be this institution but awaits review. */
   match_status: "matched" | "none" | "unconfirmed";
-  /** null when the match awaits review: the count is unknown, not zero. */
+  /** null unless the match is verified: without one the count is unknown, not zero. */
   total_complaints: number | null;
   fee_complaints: number | null;
   deposits_thousands: number | null;
   fee_complaints_per_billion: number | null;
   peer_level: ComplaintPeerLevel;
   peer_label: string;
+  /** Peers with a verified CFPB match: the only ones whose complaint count is known. */
   peer_count: number;
+  /** Every similar institution with deposits at this level, matched or not, to show coverage. */
+  eligible_peer_count: number;
+  /** "insufficient": fewer than MIN_VERIFIED_PEERS verified peers even nationwide, so no peer rate is given. */
+  peer_coverage: "verified" | "insufficient";
   peers_with_fee_complaints: number;
   peer_median_per_billion: number | null;
   peer_median_fee_complaints: number;
@@ -247,7 +253,8 @@ interface CohortRow {
   in_review: boolean;
 }
 
-const MIN_PEERS = 10;
+/** Fewest peers with a verified CFPB match for a peer comparison to be shown. */
+export const MIN_VERIFIED_PEERS = 10;
 const MIN_PEERS_WITH_COMPLAINTS = 3;
 
 function median(values: number[]): number | null {
@@ -262,8 +269,10 @@ const round1 = (n: number) => Math.round(n * 10) / 10;
 /**
  * One institution's CFPB fee complaints for a calendar year next to its peers': same charter and
  * asset tier in the same state, widening to the Fed district and then the nation until there are
- * at least 10 peers and 3 of them have fee complaints. Rates are per $1B of deposits. Peers whose
- * CFPB match awaits review are left out (their count is unknown, not zero).
+ * at least 10 verified peers and 3 of them have fee complaints. Rates are per $1B of deposits.
+ * Only peers with an accepted CFPB identity match count: an unmatched peer has no known count,
+ * and reading it as zero would pull the peer median down (#1523). With fewer than 10 verified
+ * peers even nationwide, no peer rate is given and peer_coverage says why.
  */
 export async function getComplaintBenchmark(institutionId: number, year?: number): Promise<ComplaintBenchmark | null> {
   const sql = getSql();
@@ -343,31 +352,38 @@ export async function getComplaintBenchmark(institutionId: number, year?: number
   )) as unknown as Array<{ loaded: boolean }>;
 
   const rate = (row: CohortRow) => (row.deposits && row.deposits > 0 ? row.fee_complaints / (row.deposits / 1_000_000) : null);
-  // A peer whose only CFPB match awaits review has an unknown count, so it is left out.
-  const known = cohort.filter((r) => r.institution_id !== institutionId && r.deposits && !(r.in_review && !r.accepted));
-  const levels: Array<{ level: ComplaintPeerLevel; label: string; peers: CohortRow[] }> = [
-    { level: "state", label: target.state_code ?? "", peers: target.state_code ? known.filter((r) => r.state_code === target.state_code) : [] },
-    {
-      level: "fed_district",
-      label: target.fed_district ? `Fed District ${target.fed_district}` : "",
-      peers: target.fed_district ? known.filter((r) => r.fed_district === target.fed_district) : [],
-    },
-    { level: "national", label: "nationwide", peers: known },
+  const eligible = cohort.filter((r) => r.institution_id !== institutionId && r.deposits);
+  // Only a verified CFPB match gives a known count; an unmatched or under-review peer is left out.
+  const verified = (rows: CohortRow[]) => rows.filter((r) => r.accepted);
+  const inState = target.state_code ? eligible.filter((r) => r.state_code === target.state_code) : [];
+  const inDistrict = target.fed_district ? eligible.filter((r) => r.fed_district === target.fed_district) : [];
+  const levels: Array<{ level: ComplaintPeerLevel; label: string; eligible: CohortRow[]; peers: CohortRow[] }> = [
+    { level: "state", label: target.state_code ?? "", eligible: inState, peers: verified(inState) },
+    { level: "fed_district", label: target.fed_district ? `Fed District ${target.fed_district}` : "", eligible: inDistrict, peers: verified(inDistrict) },
+    { level: "national", label: "nationwide", eligible, peers: verified(eligible) },
   ];
+  const enough = (l: (typeof levels)[number]) => l.peers.length >= MIN_VERIFIED_PEERS;
   const chosen =
-    levels.find((l) => l.peers.length >= MIN_PEERS && l.peers.filter((p) => p.fee_complaints > 0).length >= MIN_PEERS_WITH_COMPLAINTS) ??
+    levels.find((l) => enough(l) && l.peers.filter((p) => p.fee_complaints > 0).length >= MIN_PEERS_WITH_COMPLAINTS) ??
+    levels.find(enough) ??
     levels[levels.length - 1];
+  const coverage: ComplaintBenchmark["peer_coverage"] = enough(chosen) ? "verified" : "insufficient";
 
   const peerRates = chosen.peers.map(rate).filter((v): v is number => v !== null);
-  const peerMedianRate = median(peerRates);
+  const peerMedianRate = coverage === "verified" ? median(peerRates) : null;
   const targetRate = rate(target);
   const matchStatus: ComplaintBenchmark["match_status"] = target.accepted ? "matched" : target.in_review ? "unconfirmed" : "none";
+  const known = matchStatus === "matched";
   const tierLabel = `${(target.asset_size_tier ?? "").replace(/_/g, " ")} ${target.charter_type === "credit_union" ? "credit unions" : "banks"}`.trim();
   const where = chosen.level === "national" ? "nationwide" : `in ${chosen.label}`;
 
   let summary: string;
   if (matchStatus === "unconfirmed") {
     summary = `A CFPB company may be ${target.institution_name}, but the match is still under review, so no ${period} count is shown.`;
+  } else if (matchStatus === "none") {
+    summary = `No CFPB company is verified as ${target.institution_name}, so its ${period} complaint count is unknown.`;
+  } else if (coverage === "insufficient") {
+    summary = `${target.institution_name} had ${target.fee_complaints} CFPB fee complaints in ${period}. Only ${chosen.peers.length} of ${chosen.eligible.length} ${tierLabel} nationwide have a verified CFPB match, too few to compare.`;
   } else if (target.fee_complaints === 0) {
     summary = `${target.institution_name} had 0 CFPB fee complaints in ${period}. ${chosen.peers.filter((p) => p.fee_complaints > 0).length} of ${chosen.peers.length} ${tierLabel} ${where} had any.`;
   } else {
@@ -375,7 +391,7 @@ export async function getComplaintBenchmark(institutionId: number, year?: number
       targetRate !== null && peerMedianRate !== null
         ? ` That is ${round1(targetRate)} per $1B of deposits; the peer median is ${round1(peerMedianRate)}.`
         : "";
-    summary = `${target.institution_name} had ${target.fee_complaints} CFPB fee complaints in ${period} against ${chosen.peers.length} ${tierLabel} ${where}.${comparison}`;
+    summary = `${target.institution_name} had ${target.fee_complaints} CFPB fee complaints in ${period} against ${chosen.peers.length} ${tierLabel} ${where} with a verified CFPB match.${comparison}`;
   }
 
   return {
@@ -383,13 +399,15 @@ export async function getComplaintBenchmark(institutionId: number, year?: number
     institution_name: target.institution_name,
     year: period,
     match_status: matchStatus,
-    total_complaints: matchStatus === "unconfirmed" ? null : target.total_complaints,
-    fee_complaints: matchStatus === "unconfirmed" ? null : target.fee_complaints,
+    total_complaints: known ? target.total_complaints : null,
+    fee_complaints: known ? target.fee_complaints : null,
     deposits_thousands: target.deposits,
-    fee_complaints_per_billion: matchStatus === "unconfirmed" || targetRate === null ? null : round1(targetRate),
+    fee_complaints_per_billion: !known || targetRate === null ? null : round1(targetRate),
     peer_level: chosen.level,
     peer_label: chosen.level === "national" ? "nationwide" : chosen.label,
     peer_count: chosen.peers.length,
+    eligible_peer_count: chosen.eligible.length,
+    peer_coverage: coverage,
     peers_with_fee_complaints: chosen.peers.filter((p) => p.fee_complaints > 0).length,
     peer_median_per_billion: peerMedianRate === null ? null : round1(peerMedianRate),
     peer_median_fee_complaints: median(chosen.peers.map((p) => p.fee_complaints)) ?? 0,

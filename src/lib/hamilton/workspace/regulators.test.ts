@@ -62,7 +62,7 @@ describe("regulator and complaint lines fit a storyline line (#1076)", () => {
     const bench: ComplaintBenchmark = {
       institution_id: 1, institution_name: long, year: "2025", match_status: "matched",
       total_complaints: 40, fee_complaints: 12, deposits_thousands: 3_500_000, fee_complaints_per_billion: 3.4,
-      peer_level: "state", peer_label: "NH", peer_count: 42, peers_with_fee_complaints: 9, peer_median_per_billion: 0.8,
+      peer_level: "state", peer_label: "NH", peer_count: 42, eligible_peer_count: 300, peer_coverage: "verified", peers_with_fee_complaints: 9, peer_median_per_billion: 0.8,
       peer_median_fee_complaints: 0, peer_fee_complaints_total: 30, sub_issues_loaded: true, summary: "",
     };
     const text = complaintBenchmarkFact(bench, "Example Community Bank of Middle Tennessee")!.text;
@@ -101,7 +101,7 @@ describe("regulatory facts for one fee", () => {
     const bench: ComplaintBenchmark = {
       institution_id: 1, institution_name: "Example Bank", year: "2025", match_status: "matched",
       total_complaints: 40, fee_complaints: 12, deposits_thousands: 3_500_000, fee_complaints_per_billion: 3.4,
-      peer_level: "state", peer_label: "NH", peer_count: 42, peers_with_fee_complaints: 9, peer_median_per_billion: 0.8,
+      peer_level: "state", peer_label: "NH", peer_count: 42, eligible_peer_count: 300, peer_coverage: "verified", peers_with_fee_complaints: 9, peer_median_per_billion: 0.8,
       peer_median_fee_complaints: 0, peer_fee_complaints_total: 30, sub_issues_loaded: true, summary: "",
     };
     const fact = complaintBenchmarkFact(bench)!;
@@ -117,6 +117,11 @@ describe("regulatory facts for one fee", () => {
     );
     expect(complaintBenchmarkFact({ ...bench, match_status: "none" })).toBeNull();
     expect(complaintBenchmarkFact({ ...bench, match_status: "unconfirmed", fee_complaints: null })).toBeNull();
+    const thin = complaintBenchmarkFact({ ...bench, peer_level: "national", peer_label: "nationwide", peer_count: 6, eligible_peer_count: 1210, peer_coverage: "insufficient", peer_median_per_billion: null })!;
+    expect(thin.text).toBe("Only 6 of 1,210 similar institutions have a verified CFPB match, too few to compare fee complaint rates.");
+    expect(thin.text).not.toMatch(/median|per \$10B/);
+    expect(thin.text.split(/\s+/).length).toBeLessThanOrEqual(20);
+    expect(thin).toMatchObject({ sampleSize: 6, source: { table: "institution_identity_links" } });
   });
 
   it("adds the reviewed state rules it is given, and none otherwise", () => {
