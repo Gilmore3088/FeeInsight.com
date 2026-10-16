@@ -191,6 +191,33 @@ export const HAND_TAKEDOWNS: readonly HandTakedown[] = [
     reason: "duplicate of #125197 (#1664)", issue: 1664, kind: "duplicate",
     requiresLive: { feePublishedId: 125197, amount: 7, feeName: "Monthly Service Fees" },
     evidence: "FNB Alaska personal fee schedule (doc 19925, text 15731): \"Direct Deposit Checking | per statement cycle\" / \"Monthly Service Fee | $7.00\" / \"Monthly Service Fee with 1 direct deposit per | Waived\"; the $0 is the waiver, not the price. The $7 is live as 125197 (checking page, doc 33839): \"Monthly Service Fees | $7, waived each statement cycle with a direct deposit.\"" },
+  // #1661 (read-only, Oct 16): Beacon Community FCU's garnishment fee, live from two documents. Doc
+  // 30627 is the 2022 rate and fee disclosure PDF ("Last Updated 04/01/2022", Last-Modified Jul 18
+  // 2022); doc 35662 is the bank's fee schedule page (its registered fee_schedule_url, fetched Oct
+  // 16, rates "as of 07/01/2025"), which supersedes every earlier copy of that page. The $34 is the
+  // old price; it comes down only while the current $36 row (112876) is live as listed.
+  { feePublishedId: 138829, institutionId: 7204, canonicalFeeKey: "garnishment_levy", amount: 34, feeName: "Judicial Attachment (Garnishment)",
+    reason: "duplicate of #112876 (#1661)", issue: 1661, kind: "duplicate",
+    requiresLive: { feePublishedId: 112876, amount: 36, feeName: "Judicial Attachment (Garnishment)" },
+    evidence: "Beacon Community FCU: the 2022 disclosure PDF (doc 30627, text 28238, \"Last Updated 04/01/2022\") prints \"Judicial Attachment (Garnishment) $34.00\"; the current fee schedule page (doc 35662, text 33767, fetched Oct 16, rates as of 07/01/2025) prints \"Judicial Attachment (Garnishment) | $36.00 per attachment\", live as 112876." },
+  // #1196 (read-only, Oct 16): the two category questions left after the #1459 renames. Neither fee
+  // has a home among the 50: an own-ATM charge is not what a customer pays at another network's
+  // ATM (fee-fold's `ownAtmSection` gives the bank's own ATM no home), and a gift card's inactivity
+  // fee is neither a dormant deposit account nor a gift card purchase (the category guard refuses
+  // its name under gift_card_purchase: name_contradicts on "Inactiv"). Each price is right for its line, so neither is re-priced.
+  { feePublishedId: 131129, institutionId: 5100, canonicalFeeKey: "atm_non_network", amount: 2, feeName: "ATM Transactions at DFCU ATM (Local ATM)",
+    reason: "source_mismatch: #1196", issue: 1196, kind: "wrong_category",
+    evidence: "Dynamic FCU (doc 28876, text 26315): \"ATM Transactions at DFCU ATM (Local ATM) | 15 free ATM transactions per month and 15 free balance inquiries per month; then $2.00/transaction or balance inquiry\": the credit union's own ATMs, not a non-network ATM fee (that line is \"ATM Transactions at Non-DFCU ATM (Out of Network/Foreign ATM)\")." },
+  { feePublishedId: 70319, institutionId: 986, canonicalFeeKey: "dormant_account", amount: 2.95, feeName: "VISA Gift Card Inactivity Fee",
+    reason: "source_mismatch: #1196", issue: 1196, kind: "wrong_category",
+    evidence: "Bank Forward (doc 20361, text 16150), under MISCELLANEOUS SERVICES: \"VISA Gift Card – Inactivity Fee after 12 Months of Inactivity $2.95/month\": a gift card's fee, not a dormant deposit account (the bank's dormant account fees are 70302 and 105451, $5.00)." },
+  // #1666 (read-only, Oct 16): North Central Area FCU's PDF reads its fee names as one run-together
+  // line and its prices as another column. The row's name is that line; its $10 is the money
+  // market's excessive withdrawal on the same line (live as 130870), not an overdraft transfer.
+  { feePublishedId: 140689, institutionId: 7363, canonicalFeeKey: "od_protection_transfer", amount: 10,
+    feeName: "See How to avoid them next to the listed fee.Checking AccountsAutomatic Overdraft TransferCopy of DraftCourtesy PayForei",
+    reason: "source_mismatch: #1666", issue: 1666, kind: "wrong_amount",
+    evidence: "North Central Area FCU (doc 31668, text 29547): names \"…Checking AccountsAutomatic Overdraft TransferCopy of DraftCourtesy PayForeign Check Processing…Money Market Excessive Withdrawal $10.00/withdrawal…\", prices \"Fee$5.00/transfer$5.00$30.00/item…\": the overdraft transfer is $5.00/transfer (live as 41322); the only $10 on the line is the money market's (live as 130870)." },
 ];
 
 export interface LiveTakedownRow {
