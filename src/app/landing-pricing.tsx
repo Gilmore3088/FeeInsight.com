@@ -19,7 +19,7 @@ export function LandingPricing() {
           center
           eyebrow="Hamilton Pro"
           title="Priced by your institution's size"
-          line={`Hamilton Pro is the plan that includes Hamilton and the full ${PRODUCT_NAME}, for up to ${WORKSPACE_SEAT_LIMIT} people.`}
+          line={`Hamilton Pro gives up to ${WORKSPACE_SEAT_LIMIT} people Hamilton and the full ${PRODUCT_NAME}.`}
         />
         <PlanIncludes />
         <ul className="mx-auto mt-10 grid max-w-4xl gap-3 sm:grid-cols-3 sm:gap-4">

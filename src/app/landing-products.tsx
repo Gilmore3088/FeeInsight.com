@@ -52,7 +52,7 @@ export function LandingProducts({
         <div className="mt-10 grid gap-14 lg:mt-12 lg:grid-cols-2 lg:gap-0 lg:divide-x lg:divide-border/70">
           <Product
             mark={<Logo mark="bank-fee-index-wordmark" height={24} />}
-            benefit="See what banks and credit unions charge, with the spread and the benchmark for each fee, from the nation down to your market."
+            benefit="See what banks and credit unions charge for each fee, from the national median down to your own market."
             className="lg:pr-10"
           >
             <InstitutionSearchForm id="index-search" secondary className="mt-5 w-full [&_.fi-field]:max-w-none [&_label]:sr-only" />
@@ -71,7 +71,7 @@ export function LandingProducts({
           </Product>
           <Product
             mark={<Logo mark="hamilton-wordmark" height={24} />}
-            benefit="Compare your fees, investigate the differences, and produce reports for your board, with the source behind every figure."
+            benefit="Compare your fees, investigate the differences, and produce reports for your board."
             className="lg:pl-10"
           >
             <p className="mt-3 text-center text-[14px]">
