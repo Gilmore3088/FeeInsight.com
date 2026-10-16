@@ -7,7 +7,7 @@ import { STATE_NAMES } from "@/lib/us-states";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
 import { PAGE_CRUMBS, PAGE_H1, PAGE_HEADER, PAGE_HEADER_BLOCK, PAGE_LEDE } from "@/components/public/page-header";
 import { TrackLink } from "@/components/track-link";
-import { PRO_PLANS_NAV } from "@/components/nav-items";
+import { DEMO_REQUEST_NAV, PRO_PLANS_NAV } from "@/components/nav-items";
 import { SITE_URL } from "@/lib/constants";
 import { getCityMarketCached, getStateFeeIndexesCached } from "@/lib/data-store/public-cached-reads";
 import type { CityArea, CityFeeKey, CityMarket } from "@/lib/data-store";
@@ -50,7 +50,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
     // One address per city: "little-rock" and "little%20rock" render the same page.
     alternates: { canonical: `/fees/city/${state.toLowerCase()}/${encodeURIComponent(cityName.toLowerCase())}` },
     title: `Banking and Fees in ${cityName}, ${stateCode}`,
-    description: `Who serves ${cityName}, ${stateName}: the banks and credit unions with branches there, their published fees, and how the market compares with ${stateName} and the U.S.`,
+    description: `The banks and credit unions with branches in ${cityName}, ${stateName}, their published fees with sources, and how the market compares with ${stateName} and the U.S.`,
   };
 }
 
@@ -172,11 +172,11 @@ export default async function CityFeePage({ params, searchParams }: PageProps) {
               </Link>
             </div>
           )}
-          <p className="mt-2 text-[12px] text-ink-muted">Counts every bank and credit union with a branch here, including those based elsewhere.</p>
           <p className={`mt-4 ${PAGE_LEDE}`}>
-            <strong className="font-semibold text-ink">{cov.institutions}</strong> institutions have branches in {isMetro ? `the ${placeName} metro area` : cityName}.
-            Published fee data is available for <strong className="font-semibold text-ink">{cov.with_fees}</strong>.
+            <strong className="font-semibold text-ink">{cov.institutions}</strong> banks and credit unions have branches in {isMetro ? `the ${placeName} metro area` : cityName}.
+            The Bank Fee Index holds published fees for <strong className="font-semibold text-ink">{cov.with_fees}</strong> of them.
           </p>
+          <p className="mt-2 text-[12px] text-ink-muted">The count includes institutions based elsewhere that have a branch here.</p>
           {findings.length > 0 && (
             <ul className={`mt-5 space-y-2.5 ${PAGE_HEADER_BLOCK}`}>
               {findings.map((f) => (
@@ -248,7 +248,7 @@ export default async function CityFeePage({ params, searchParams }: PageProps) {
           Compare their published fees
         </h2>
         <p className="mt-1 max-w-3xl text-[14px] text-ink-muted">
-          Most branches here first. Each amount links to the schedule it was read from. An empty cell says why.
+          Listed by branches here, most first. Each amount links to the fee schedule it was read from, and an empty cell says why.
         </p>
         <div className="mt-5">
           <MarketTable institutions={market.institutions} fees={fees} placeName={placeShort === "the metro" ? "Metro" : cityName} stateName={stateName} initialFee={initialFee} />
@@ -266,8 +266,8 @@ export default async function CityFeePage({ params, searchParams }: PageProps) {
               <span className="ml-2 text-[13px] text-ink-muted group-open:hidden">Show</span>
             </summary>
             <p className="mt-1 max-w-3xl text-[14px] text-ink-muted">
-              How the local economy and bank presence have moved, against {stateName} and the U.S. Context only: none of this sets or
-              explains a fee.
+              How the local economy and bank presence have moved, against {stateName} and the U.S. This is background. None of it sets
+              or explains a fee.
             </p>
             <div className="mt-4">
               <CompareRows rows={economy} />
@@ -280,22 +280,35 @@ export default async function CityFeePage({ params, searchParams }: PageProps) {
         </section>
       )}
 
-      {/* 5. Two next steps: one for anyone researching, one for banking teams. */}
+      {/* 5. Two next steps: banking teams first (the Pro subscription is the goal), then anyone choosing an account. */}
       <section className="mx-auto max-w-page px-4 pt-12 sm:px-6 sm:pt-16">
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="rounded-2xl border border-border bg-surface-0 p-5">
+            <p className="text-[16px] font-semibold text-ink">Work at a bank or credit union here?</p>
+            <p className="mt-1 text-[14px] text-ink-muted">
+              Hamilton, the Fee Insight Pro workspace, puts your own fees next to every institution in this market, with the source for
+              each figure.
+            </p>
+            <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-3">
+              <TrackLink
+                event="upgrade_click"
+                eventProps={{ placement: "city_staff_band" }}
+                href={PRO_PLANS_NAV.href}
+                className="inline-flex min-h-11 items-center rounded-full bg-ink px-5 text-[14px] font-semibold text-on-ink hover:opacity-90"
+              >
+                {PRO_PLANS_NAV.label}
+              </TrackLink>
+              <TrackLink event="contact_sales" eventProps={{ placement: "city_staff_band_demo" }} href={DEMO_REQUEST_NAV.href} className={`text-[14px] ${LINK}`}>
+                {DEMO_REQUEST_NAV.label}
+              </TrackLink>
+            </div>
+          </div>
+          <div className="rounded-2xl border border-border bg-surface-0 p-5">
             <p className="text-[16px] font-semibold text-ink">Choosing an account?</p>
-            <p className="mt-1 text-[14px] text-ink-muted">Open any institution above for all its fees and sources, and follow it to hear when one changes.</p>
+            <p className="mt-1 text-[14px] text-ink-muted">Open any institution above to see all of its published fees and where each one came from.</p>
             <Link href="/institutions" className={`mt-3 inline-block text-[14px] ${LINK}`}>
               Search institutions
             </Link>
-          </div>
-          <div className="rounded-2xl border border-border bg-surface-0 p-5">
-            <p className="text-[16px] font-semibold text-ink">Work at a bank or credit union here?</p>
-            <p className="mt-1 text-[14px] text-ink-muted">Hamilton keeps this market against your own fees current, with the source for every figure.</p>
-            <TrackLink event="upgrade_click" eventProps={{ placement: "city_staff_band" }} href={PRO_PLANS_NAV.href} className={`mt-3 inline-block text-[14px] ${LINK}`}>
-              {PRO_PLANS_NAV.label}
-            </TrackLink>
           </div>
         </div>
       </section>

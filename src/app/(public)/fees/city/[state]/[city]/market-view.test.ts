@@ -66,7 +66,7 @@ describe("city market view", () => {
       "Among the 5 institutions here that publish an overdraft fee, the median is $34, $9 above the Florida median of $25.",
     );
     expect(findings.join(" ")).not.toMatch(/cheapest|lowest|best/i);
-    expect(findings.some((f) => f.includes("monthly maintenance") && f.includes("no local benchmark"))).toBe(true);
+    expect(findings.some((f) => f.includes("monthly maintenance") && f.includes("no local median"))).toBe(true);
   });
 
   it("ranks banks by deposits here, as a share of all bank deposits here", () => {

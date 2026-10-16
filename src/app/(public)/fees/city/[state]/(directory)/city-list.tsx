@@ -61,7 +61,7 @@ export function CityList({
       </label>
       <p className="mt-2 text-[12px] text-ink-muted" aria-live="polite">
         {shown.length === cities.length
-          ? `Cities with fee coverage: ${cities.length}${collapsed ? `. Listed below: the ${FIRST_CITIES} with the most institutions.` : ""}`
+          ? `${cities.length} ${cities.length === 1 ? "city has" : "cities have"} fee coverage.${collapsed ? ` The ${FIRST_CITIES} with the most institutions are listed below.` : ""}`
           : `${shown.length} of ${cities.length} cities with fee coverage`}
       </p>
       {!q && shortcuts.length > 0 && (
@@ -109,7 +109,7 @@ export function CityList({
       )}
       {shown.length === 0 && (
         <div className="mt-3 rounded-2xl border border-border bg-surface-0 p-5">
-          <p className="text-[15px] font-semibold text-ink">We don&apos;t have a city comparison for {q} yet.</p>
+          <p className="text-[15px] font-semibold text-ink">No city comparison for {q} yet.</p>
           <ul className="mt-3 space-y-2 text-[14px]">
             <li>
               <Link href={`/institutions?q=${encodeURIComponent(q)}`} className={LINK}>

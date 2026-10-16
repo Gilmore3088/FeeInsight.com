@@ -49,7 +49,7 @@ export function MarketTable({
   const listed = all ? institutions : institutions.slice(0, FIRST_ROWS);
   const fee = fees.find((f) => f.key === key) ?? fees[0];
   const refs = [
-    fee.median != null ? `${placeName} median ${money(fee.median)} (${fee.n})` : `${fee.n} here publish it, too few for a local median`,
+    fee.median != null ? `${placeName} median ${money(fee.median)} (${fee.n} institutions)` : `${fee.n} here publish it, too few for a local median`,
     fee.state_median != null ? `${stateName} median ${money(fee.state_median)}` : null,
     fee.us_median != null ? `U.S. median ${money(fee.us_median)}` : null,
   ].filter(Boolean);
@@ -80,7 +80,7 @@ export function MarketTable({
           <span className="text-right">Branches here</span>
           <span className="text-right">{fee.label}</span>
           <span>Account or conditions</span>
-          <span>Read</span>
+          <span>Read on</span>
         </div>
         <ul className="divide-y divide-border">
           {listed.map((inst) => {

@@ -111,14 +111,14 @@ export function StateHero({ stateCode, stateName, district, figures, freshnessLa
  * The video, in its own section under the hero. Until the clip exists the poster draws the
  * state's real spread for its first fee, so the slot shows the product.
  */
-export function StateVideo({ stateName, bars, title }: { stateName: string; bars: number[]; title?: string }) {
+export function StateVideo({ stateName, bars }: { stateName: string; bars: number[] }) {
   const top = Math.max(...bars, 1);
   return (
     <section aria-labelledby="video-heading" className="mx-auto max-w-page px-4 pt-8 sm:px-6 sm:pt-12 print:hidden">
       <figure className="mx-auto max-w-3xl">
         <figcaption className="mb-3 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
           <h2 id="video-heading" className="text-[20px] font-semibold tracking-[-0.02em] text-ink sm:text-[24px]">
-            {title ?? `Watch Hamilton explore ${stateName}`}
+            Watch Hamilton explore {stateName}
           </h2>
           <span className="text-[13px] text-ink-muted">Video coming</span>
         </figcaption>

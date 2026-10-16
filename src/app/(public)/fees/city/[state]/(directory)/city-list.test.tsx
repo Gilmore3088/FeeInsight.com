@@ -11,7 +11,7 @@ const cities = [
 describe("CityList", () => {
   it("lists every city with labelled counts and filters as the reader types", () => {
     render(<CityList cities={cities} stateName="Florida" stateCode="FL" />);
-    expect(screen.getByText("Cities with fee coverage: 3")).toBeTruthy();
+    expect(screen.getByText("3 cities have fee coverage.")).toBeTruthy();
     expect(screen.getAllByRole("link").map((a) => a.textContent)).toEqual([
       "Miami40 of 70 with fees",
       "Tallahassee12 of 20 with fees",
@@ -34,7 +34,7 @@ describe("CityList", () => {
   it("answers a town it doesn't cover with ways on, not an empty list", () => {
     render(<CityList cities={cities} stateName="Florida" stateCode="FL" />);
     fireEvent.change(screen.getByLabelText("Find your city"), { target: { value: "Sarasota" } });
-    expect(screen.getByText("We don't have a city comparison for Sarasota yet.")).toBeTruthy();
+    expect(screen.getByText("No city comparison for Sarasota yet.")).toBeTruthy();
     expect(screen.getAllByRole("link").map((a) => a.getAttribute("href"))).toEqual([
       "/institutions?q=Sarasota",
       "/research/state/FL",

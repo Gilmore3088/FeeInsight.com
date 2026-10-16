@@ -100,8 +100,8 @@ export function marketFindings(fees: LocalFee[], placeName: string, stateName: s
   if (thin) {
     findings.push(
       thin.n === 0
-        ? `No institution here has a published ${lowerLabel(thin.label)} fee we hold yet, so ${placeName} has no local benchmark for it.`
-        : `Only ${thin.n} ${thin.n === 1 ? "institution here publishes" : "institutions here publish"} ${withArticle(thin.label)} fee we hold, too few for a local median (${MIN_INSTITUTIONS_FOR_MEDIAN} needed).`,
+        ? `No institution here has a published ${lowerLabel(thin.label)} fee in the Bank Fee Index yet, so ${placeName} has no local median for it.`
+        : `Only ${thin.n} ${thin.n === 1 ? "institution here has" : "institutions here have"} ${withArticle(thin.label)} fee in the Bank Fee Index, too few for a local median (${MIN_INSTITUTIONS_FOR_MEDIAN} needed).`,
     );
   }
   return findings;
