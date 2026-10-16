@@ -6,7 +6,7 @@ import { excerptOf } from "@/lib/agents/hamilton/frequency-fill";
 import { frequencyClass } from "@/lib/agents/hamilton/exact-duplicate";
 import { CATEGORY_GUARD_RULES, checkFeeCategory, refileCategory } from "@/lib/fee-category-guard";
 import { frequencyFamily, frequencyFromLine, PERIOD_FEE_KEYS } from "@/lib/fee-frequency";
-import { loadCategoryModel, scoreCategories, type CategoryModel } from "./category-model";
+import { categoryTokens, loadCategoryModel, scoreCategories, type CategoryModel } from "./category-model";
 
 type SqlTag = typeof sql;
 
@@ -34,7 +34,8 @@ type SqlTag = typeof sql;
  *   3. `model`: Darwin's category model (`category-model.ts`, trained on the live catalog and the
  *      answer key) gives one of the line's categories at least `LINE_MODEL_MIN` (0.95) and disputes
  *      every other (at most `LINE_MODEL_OTHER_MAX`, its 0.05 dispute threshold). Never between the
- *      unsettled lending categories alone (`UNSETTLED_LENDING_KEYS`).
+ *      unsettled lending categories alone (`UNSETTLED_LENDING_KEYS`), and never on a name that opens
+ *      as a clause ("No contents (e.g. check) included in the ATM", `CLAUSE_NAME`).
  *   Otherwise the line is `undecided` and stays as it is.
  * - `frequency` conflicts: the frequency the line states for the fee's own price
  *   (`frequencyFromLine` on the schedule line Knox read, `excerpt=` in its conditions). Rows of that
@@ -46,7 +47,10 @@ type SqlTag = typeof sql;
  *   print the line once in each schedule.
  * - `joint_line`: the name joins two fees outside its notes ("Money order/Cashier check fee",
  *   "Overdraft Fee or NSF Fee"; a `/`, `&`, "and" or "or" between them) and the guard has a rule for every category on
- *   the line and accepts the name under each. The bank charges that price for both.
+ *   the line and accepts the name under each. The bank charges that price for both. Also joint: a name with an NSF
+ *   word and an overdraft word on an NSF/overdraft line ("NSF (courtesy pay items: ...)"), and a
+ *   name whose parts are each the model's pick for a different category of the line ("Charge-Back
+ *   Fee Check Printing Fee", "Legal Processing / Account Research").
  *
  * Each Darwin verify step reads every conflicting line in one grouped read (a few hundred rows; an
  * institution-scoped run reads that institution's). While `LINE_CONFLICT_TAKEDOWN_LIVE` is false, or
@@ -183,6 +187,56 @@ const JOINER = /\s*\/\s*|\s+&\s+|\s+(?:and|or)\s+/i;
 function joinsTwoFees(name: string): boolean {
   return JOINER.test(name.replace(/\([^()]*(?:\)|$)/g, " "));
 }
+/**
+ * An NSF word and an overdraft word in one name, notes included ("NSF (courtesy pay items: check,
+ * ACH, or debit card)", "Non-Sufficient Overdraft Item"): the bank's NSF and overdraft fees share the
+ * line, so neither category is retired for the other.
+ */
+const NSF_WORDS = /\bnsf\b|non[\s-]?sufficient|insufficient/i;
+const OVERDRAFT_WORDS = /overdra|courtesy pay|privilege pay|bounce/i;
+function namesNsfAndOverdraft(name: string, categories: string[]): boolean {
+  return categories.every((key) => key === "nsf" || key === "overdraft") && NSF_WORDS.test(name) && OVERDRAFT_WORDS.test(name);
+}
+
+/**
+ * The fee names a name runs together: its parts around a joiner ("Legal Processing / Account
+ * Research") or after a fee word followed by more words ("Charge-Back Fee Check Printing Fee").
+ * Notes are dropped first.
+ */
+function nameParts(name: string): string[] {
+  return name
+    .replace(/\([^()]*(?:\)|$)/g, " ")
+    .split(new RegExp(`${JOINER.source}|(?<=\\b(?:fee|charge)s?)\\s+(?=\\S)`, "i"))
+    .map((part) => part.trim())
+    .filter((part) => categoryTokens(part).length > 0);
+}
+
+/**
+ * True when each category of the line is the model's pick for a different part of the name: the
+ * name holds two fees, one per reading, and the model cannot say which the price belongs to.
+ */
+function onePartPerCategory(model: CategoryModel, name: string, categories: string[]): boolean {
+  const parts = nameParts(name);
+  if (parts.length < 2) return false;
+  const picks = new Set(
+    parts.map((part) => {
+      const scores = scoreCategories(model, part);
+      return [...categories].sort((a, b) => (scores.get(b) ?? 0) - (scores.get(a) ?? 0))[0];
+    }),
+  );
+  return categories.every((key) => picks.has(key));
+}
+
+/**
+ * A name that opens as a clause, not a fee label: "No contents (e.g. check) included in the ATM" (7913)
+ * is the cut tail of the line "Empty ATM Envelope: no contents (e.g. check) included in the ATM
+ * envelope | $2/envelope". Both of its readings (ATM fee, account research) are wrong: the taxonomy
+ * has no type for an empty deposit envelope. The model gives the ATM fee 0.999 because the live
+ * catalog files other "Empty ATM envelope" lines there, so it would only echo the catalog's own
+ * filing. The model never decides such a line; it stays undecided.
+ */
+const CLAUSE_NAME = /^\W*(?:no|not|none|without|if|when|unless|only)\b/i;
+
 /** A rate on the line ("5% of the monthly payment or $35.00"): its period words belong to the rate. */
 const RATE_ON_LINE = /\d\s?%/;
 
@@ -238,6 +292,8 @@ export function lineConflictVerdict(rows: LineConflictRow[], model: CategoryMode
     const context = { amount };
     const ok = new Map(categories.map((key) => [key, checkFeeCategory(key, name, context).ok]));
     if (joinsTwoFees(name) && categories.every((key) => guarded(key) && ok.get(key))) return { ...verdict, exempt: "joint_line" };
+    if (namesNsfAndOverdraft(name, categories)) return { ...verdict, exempt: "joint_line" };
+    if (model && onePartPerCategory(model, name, categories)) return { ...verdict, exempt: "joint_line" };
     // 1. The guard re-files one category of the line into another, which stays put.
     const refiledTo = new Set(
       categories.map((key) => refileCategory(key, name)).filter((to, index) => to != null && to !== categories[index] && categories.includes(to)),
@@ -263,7 +319,7 @@ export function lineConflictVerdict(rows: LineConflictRow[], model: CategoryMode
       if (!basis && !categories.every((key) => UNSETTLED_LENDING_KEYS.has(key))) {
         const ranked = [...categories].sort((a, b) => (scores.get(b) ?? 0) - (scores.get(a) ?? 0));
         const [top, next] = ranked.map((key) => scores.get(key) ?? 0);
-        if (top >= LINE_MODEL_MIN && next <= LINE_MODEL_OTHER_MAX) {
+        if (top >= LINE_MODEL_MIN && next <= LINE_MODEL_OTHER_MAX && !CLAUSE_NAME.test(name)) {
           basis = "model";
           keptReading = ranked[0];
         }

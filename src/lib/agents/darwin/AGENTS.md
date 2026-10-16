@@ -741,11 +741,14 @@ Darwin owns verification and classification.
   categories, the guard's re-file into another category of the line (`refile`), else the only
   category the guard does not refuse (`guard`), else the category the model gives at least 0.95
   while disputing the others (`model`; never between loan origination, other lending fee and late
-  payment alone, whose borders the taxonomy has not settled); for two frequencies, the frequency
+  payment alone, whose borders the taxonomy has not settled, and never on a name that opens as a
+  clause, "No contents (e.g. check) included in the ATM"); for two frequencies, the frequency
   the schedule line states for the price (`line`; not from a line with a rate on it, and a per-item
   reading never beats a period category's period). Kept apart, never retired: rows stating
   different audiences (`audiences`), a name joining two fees outside its notes that the guard
-  accepts under each guarded category ("Money order/Cashier check fee", `joint_line`), and anything
+  accepts under each guarded category ("Money order/Cashier check fee"), a name with an NSF word and
+  an overdraft word on an NSF/overdraft line, or a name whose parts are each the model's pick for a
+  different category of the line ("Charge-Back Fee Check Printing Fee") (`joint_line`), and anything
   else (`undecided`). `LINE_CONFLICT_TAKEDOWN_LIVE` is false: the step only reports (detail
   `line_conflict_check`: `by_kind`, `by_basis`, `by_exempt`, `would_retire`, samples with the
   model's scores). Switched on by PR after James sees the count, a retired row goes through the
@@ -753,8 +756,8 @@ Darwin owns verification and classification.
   two reads: kept #<id> (<kind>, <basis>: <reading>)` while the kept row is still live, its
   verified row rejected with `one_line_two_reads`, never deleted, and a
   `darwin.line_conflict_takedown` event lists them. `lineConflictCountSql()` counts the lines for
-  someone with prod access. Dry run on Oct 16 (117 lines, 236 live rows): 40 rows retired (32 by
-  the model, 8 by the line), 65 undecided, 12 joint lines.
+  someone with prod access. Dry run on Oct 16 (117 lines, 236 live rows): 35 rows retired (27 by
+  the model, 8 by the line), 64 undecided, 18 joint lines.
 - Released-fee category re-check (`release-repair.ts`, the repair half of #1367; decision
   2026-10-15, "Darwin re-checks every live fee against today's rules"). Until PR #1468 the release
   check passed "." as the category pattern, so every fee the release published before then went live

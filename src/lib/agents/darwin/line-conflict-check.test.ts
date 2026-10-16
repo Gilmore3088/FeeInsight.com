@@ -38,6 +38,11 @@ const model = trainCategoryModel([
   ...Array.from({ length: 30 }, (_, i) => ({ name: `prepaid gift card ${i}`, categoryKey: "gift_card_purchase", count: 5 })),
   ...Array.from({ length: 30 }, (_, i) => ({ name: `loan modification processing ${i}`, categoryKey: "other_lending_fee", count: 5 })),
   ...Array.from({ length: 5 }, (_, i) => ({ name: `loan origination ${i}`, categoryKey: "loan_origination", count: 5 })),
+  ...Array.from({ length: 30 }, (_, i) => ({ name: `atm envelope no contents included ${i}`, categoryKey: "atm_non_network", count: 5 })),
+  ...Array.from({ length: 30 }, (_, i) => ({ name: `account research reconciliation ${i}`, categoryKey: "account_research", count: 5 })),
+  ...Array.from({ length: 30 }, (_, i) => ({ name: `legal processing levy ${i}`, categoryKey: "legal_process", count: 5 })),
+  ...Array.from({ length: 30 }, (_, i) => ({ name: `charge back returned deposit ${i}`, categoryKey: "deposited_item_return", count: 5 })),
+  ...Array.from({ length: 30 }, (_, i) => ({ name: `check printing order ${i}`, categoryKey: "check_printing", count: 5 })),
 ]);
 
 describe("lineConflictVerdict (#1440)", () => {
@@ -74,6 +79,32 @@ describe("lineConflictVerdict (#1440)", () => {
     const a = row({ fee_name: "Stop Payment on Money Order (lost or stolen only)", canonical_fee_key: "money_order", amount: 10 });
     const b = row({ fee_name: "Stop Payment on Money Order (lost or stolen only)", canonical_fee_key: "stop_payment", amount: 10 });
     expect(lineConflictVerdict([a, b], model)?.exempt).not.toBe("joint_line");
+  });
+
+  it("never retires NSF for overdraft when the name says both (8078)", () => {
+    const name = "NSF (courtesy pay items: check, ACH, or debit card)";
+    const a = row({ fee_name: name, canonical_fee_key: "nsf", amount: 32 });
+    const b = row({ fee_name: name, canonical_fee_key: "overdraft", amount: 32 });
+    expect(lineConflictVerdict([a, b], model)).toMatchObject({ exempt: "joint_line", retired: [] });
+  });
+
+  it("leaves a clause name undecided even when the model is sure (7913)", () => {
+    const name = "No contents (e.g. check) included in the ATM";
+    const a = row({ fee_name: name, canonical_fee_key: "account_research", amount: 2 });
+    const b = row({ fee_name: name, canonical_fee_key: "atm_non_network", amount: 2 });
+    const verdict = lineConflictVerdict([a, b], model)!;
+    expect(verdict.model!.atm_non_network).toBeGreaterThan(0.95);
+    expect(verdict).toMatchObject({ exempt: "undecided", retired: [] });
+  });
+
+  it("keeps a name that runs two fees together under both readings (3699, 8396)", () => {
+    for (const [name, keys] of [
+      ["Charge-Back Fee Check Printing Fee", ["deposited_item_return", "check_printing"]],
+      ["Legal Processing / Account Research (per hour, 1 hour minimum)", ["legal_process", "account_research"]],
+    ] as const) {
+      const rows = keys.map((key) => row({ fee_name: name, canonical_fee_key: key }));
+      expect(lineConflictVerdict(rows, model)).toMatchObject({ exempt: "joint_line", retired: [] });
+    }
   });
 
   it("keeps rows that state different audiences apart", () => {
