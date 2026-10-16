@@ -435,7 +435,7 @@ export default async function BankFeeIndexPage({ searchParams }: PageProps) {
               Every category, explored the same way
             </h2>
             <ul className="mt-4 grid gap-3 text-[15px] text-on-ink/85 sm:grid-cols-3">
-              <li>The spread, state and charter comparisons and the institutions behind every category, not only the headline fees.</li>
+              <li>The spread, state and charter comparisons and the institution list for all {TAXONOMY_COUNT} categories.</li>
               <li>Peer comparisons by asset size and Fed district.</li>
               <li>Peer comparisons downloaded as spreadsheets, with each fee&apos;s source.</li>
             </ul>

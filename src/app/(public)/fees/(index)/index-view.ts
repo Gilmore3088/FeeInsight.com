@@ -222,7 +222,7 @@ export function countedAs(fee: string): {
   return HIGHEST_TIER_CATEGORIES.has(fee)
     ? {
         label: "highest published price",
-        labels: "highest published prices",
+        labels: "institutions' highest published prices",
         measure: "highest published price",
         of: "the highest",
         headline: "Median of each institution's highest published price",
@@ -277,7 +277,7 @@ export function findings(rows: IndexRow[], sel: Selection, institutions: IndexIn
     if (share >= CONCENTRATED) {
       out.push(`${Math.round(share * 100)}% of the ${institutions.length.toLocaleString()} institutions have a ${measure} of exactly ${money(price)}.`);
     } else {
-      out.push(`No single ${label} dominates: the most common, ${money(price)}, is the ${measure} for ${Math.round(share * 100)}% of the ${institutions.length.toLocaleString()} institutions.`);
+      out.push(`The most common ${label} is ${money(price)}, shared by ${Math.round(share * 100)}% of the ${institutions.length.toLocaleString()} institutions.`);
     }
   }
 
