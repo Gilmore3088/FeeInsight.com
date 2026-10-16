@@ -1,7 +1,7 @@
 // @vitest-environment node
 import type Stripe from "stripe";
 import { describe, expect, it, vi } from "vitest";
-import { readSubscriptionState } from "./subscription-state";
+import { readSubscriptionSnapshot, readSubscriptionState } from "./subscription-state";
 
 const reader = (list: ReturnType<typeof vi.fn>) => ({ subscriptions: { list } }) as unknown as Pick<Stripe, "subscriptions">;
 describe("current subscription inventory", () => {
@@ -35,5 +35,19 @@ describe("current subscription inventory", () => {
     const list = vi.fn().mockResolvedValueOnce({ data: [{ id: "sub_active", status: "active" }], has_more: true })
       .mockRejectedValueOnce(new Error("temporary API error"));
     await expect(readSubscriptionState("cus_1", reader(list))).rejects.toThrow("temporary API error");
+  });
+});
+
+describe("plan includes the API", () => {
+  it.each([
+    [[{ status: "active", metadata: { pro_tier: "mid" } }], true],
+    [[{ status: "active", metadata: { pro_tier: "large" } }], true],
+    [[{ status: "past_due", metadata: { pro_tier: "large" } }], true],
+    [[{ status: "active", metadata: { pro_tier: "small" } }], false],
+    [[{ status: "active", metadata: {} }], false],
+    [[{ status: "canceled", metadata: { pro_tier: "mid" } }], false],
+  ])("%j -> %s", async (subscriptions, expected) => {
+    const list = vi.fn().mockResolvedValue({ data: subscriptions.map((sub, i) => ({ id: `sub_${i}`, ...sub })), has_more: false });
+    await expect(readSubscriptionSnapshot("cus_1", reader(list))).resolves.toEqual(expect.objectContaining({ apiIncluded: expected }));
   });
 });

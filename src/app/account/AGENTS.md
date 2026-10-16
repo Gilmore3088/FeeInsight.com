@@ -17,7 +17,7 @@ Before editing account actions that touch Hamilton context or institution author
 - `AccountView` is pure; `page.tsx` loads everything, so the view renders in tests without a database or Stripe.
 - Keep active institution authority separate from pending invitations, profile institution text, and public claim requests. Authority comes from active membership records scoped to numeric `users.id`.
 - Pending workspace invitations may help users activate or register, but they must not be treated as active authority until matched to an active Pro user.
-- Keep managed account API keys explicitly manual/disabled until key lifecycle, ownership, and rate limiting are implemented. Do not add self-serve key controls that imply an active key-management workflow.
+- API keys: the person who pays for a plan that includes the API ($300 and $500; `apiIncludedInTier` in `src/lib/api-subscriber-access.ts`) makes, replaces and turns off one key in the "API and Claude connector" card. Seats and staff get no card; partner keys stay manual in `/admin/api-keys`. `validateApiKey` stops a subscriber key when Pro is no longer active or in grace.
 - Label verified-only exports and benchmark access separately from provisional-first Hamilton analysis.
 - Do not publish fees, accept claims, or infer verification from account-profile changes.
 

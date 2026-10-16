@@ -28,6 +28,7 @@ describe("summarizeSubscription", () => {
       cadence: "Annual",
       priceLabel: "$3,000 per year",
       tierLabel: "$500M to $2B in assets",
+      tier: "mid",
       periodEnd: new Date(1_822_000_000 * 1000),
       cancelsAtPeriodEnd: false,
     });

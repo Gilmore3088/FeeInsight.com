@@ -1,13 +1,14 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ setEmail: vi.fn() }));
+const mocks = vi.hoisted(() => ({ setEmail: vi.fn(), createKey: vi.fn() }));
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn(), push: vi.fn() }) }));
 vi.mock("@/lib/analytics", () => ({ trackEvent: vi.fn() }));
 vi.mock("./actions", () => ({ updateProfile: vi.fn() }));
 vi.mock("./alert-actions", () => ({ removeInstitutionAlert: vi.fn() }));
 vi.mock("./email-actions", () => ({ setAccountEmail: mocks.setEmail }));
+vi.mock("./api-key-actions", () => ({ createAccountApiKey: mocks.createKey, revokeAccountApiKey: vi.fn() }));
 vi.mock("./email-confirm-actions", () => ({ resendEmailConfirmation: vi.fn() }));
 vi.mock("@/lib/stripe-actions", () => ({ createPortalSession: vi.fn() }));
 vi.mock("@/lib/access", () => ({ isInPaymentGrace: () => false }));
@@ -37,6 +38,7 @@ const proPlan = {
     cadence: "Annual",
     priceLabel: "$3,000 per year",
     tierLabel: "$500M to $2B in assets",
+    tier: "mid" as const,
     periodEnd: new Date("2027-10-08T00:00:00Z"),
     cancelsAtPeriodEnd: false,
   },
@@ -194,5 +196,44 @@ describe("AccountView", () => {
   it("a pending team invite shows first", () => {
     render(<AccountView data={{ ...base, invitations: [{ id: 1, institutionName: "Lone Star CU", role: "analyst" }] }} />);
     expect(screen.getByRole("status")).toHaveTextContent("You're invited to Lone Star CU's Pro team.");
+  });
+
+  it("api: no card unless the page passes access", () => {
+    render(<AccountView data={{ ...base, plan: proPlan }} />);
+    expect(screen.queryByRole("region", { name: "API and Claude connector" })).toBeNull();
+  });
+
+  it("api: the $150 plan sees that the API comes with the $300 and $500 plans", () => {
+    render(<AccountView data={{ ...base, plan: proPlan, apiAccess: { kind: "upgrade" } }} />);
+    const card = section("API and Claude connector");
+    expect(card).toHaveTextContent("come with the $300 and $500 plans");
+    expect(within(card).queryByRole("button")).toBeNull();
+  });
+
+  it("api: a new key and its Claude connector link show once", async () => {
+    mocks.createKey.mockResolvedValue({ key: "bfi_testkey123" });
+    render(<AccountView data={{ ...base, plan: proPlan, apiAccess: { kind: "included", key: null } }} />);
+    const card = section("API and Claude connector");
+    expect(card).toHaveTextContent("10,000 calls a month");
+    fireEvent.click(within(card).getByRole("button", { name: "Make a key" }));
+    await waitFor(() => expect(card).toHaveTextContent("bfi_testkey123"));
+    expect(card).toHaveTextContent("/api/v1/mcp?api_key=bfi_testkey123");
+    expect(await within(card).findByRole("button", { name: "Replace key" })).toBeInTheDocument();
+  });
+
+  it("api: an existing key shows only its prefix", () => {
+    render(
+      <AccountView
+        data={{
+          ...base,
+          plan: proPlan,
+          apiAccess: { kind: "included", key: { prefix: "bfi_abcd1234", createdAt: "2026-10-16T12:00:00Z", lastUsedAt: null } },
+        }}
+      />,
+    );
+    const card = section("API and Claude connector");
+    expect(card).toHaveTextContent("bfi_abcd1234");
+    expect(card).toHaveTextContent("not used yet");
+    expect(within(card).getByRole("button", { name: "Turn off key" })).toBeInTheDocument();
   });
 });

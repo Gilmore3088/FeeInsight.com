@@ -1,6 +1,8 @@
 import type Stripe from "stripe";
 import type { sql as sqlClient } from "@/lib/data-store/connection";
 import { getStripe } from "@/lib/stripe";
+import { isProTier } from "@/lib/pro-tiers";
+import { SUBSCRIBER_ORG_PREFIX, apiIncludedInTier } from "@/lib/api-subscriber-access";
 
 export type SubscriptionState = "none" | "active" | "past_due" | "canceled";
 type Tx = typeof sqlClient;
@@ -24,15 +26,30 @@ export async function lockBillingCustomer(tx: Tx, customerId: string): Promise<v
   await tx`SELECT pg_advisory_xact_lock(hashtextextended(${`feeinsight:billing:${customerId}`}, 0))`;
 }
 
+export interface SubscriptionSnapshot {
+  state: SubscriptionState;
+  /** A live (active or past-due) subscription is on a plan that includes the API. */
+  apiIncluded: boolean;
+}
+
 /** Read all current subscriptions. A truncated/failed page is an error, never a downgrade. */
 export async function readSubscriptionState(
   customerId: string,
   stripe: Pick<Stripe, "subscriptions"> = getStripe(),
 ): Promise<SubscriptionState> {
+  return (await readSubscriptionSnapshot(customerId, stripe)).state;
+}
+
+/** readSubscriptionState plus whether a live subscription's plan includes the API. */
+export async function readSubscriptionSnapshot(
+  customerId: string,
+  stripe: Pick<Stripe, "subscriptions"> = getStripe(),
+): Promise<SubscriptionSnapshot> {
   let cursor: string | undefined;
   let active = false;
   let pastDue = false;
   let incomplete = false;
+  let apiIncluded = false;
   const cursors = new Set<string>();
   const deadline = Date.now() + 20_000;
   for (let page = 0; page < 20; page += 1) {
@@ -47,8 +64,15 @@ export async function readSubscriptionState(
       active ||= status === "active";
       pastDue ||= status === "past_due";
       incomplete ||= status === "none";
+      const tier = subscription.metadata?.pro_tier;
+      if ((status === "active" || status === "past_due") && isProTier(tier) && apiIncludedInTier(tier)) {
+        apiIncluded = true;
+      }
     }
-    if (!result.has_more) return active ? "active" : pastDue ? "past_due" : incomplete ? "none" : "canceled";
+    if (!result.has_more) {
+      const state = active ? "active" : pastDue ? "past_due" : incomplete ? "none" : "canceled";
+      return { state, apiIncluded };
+    }
     const next = result.data.at(-1)?.id;
     if (!next || cursors.has(next)) throw new Error("Stripe returned an incomplete subscription page");
     cursors.add(next);
@@ -63,7 +87,7 @@ export async function readSubscriptionState(
  */
 export async function reconcileSubscription(tx: Tx, customerId: string): Promise<SubscriptionState> {
   await lockBillingCustomer(tx, customerId);
-  const status = await readSubscriptionState(customerId);
+  const { state: status, apiIncluded } = await readSubscriptionSnapshot(customerId);
   if (status === "active") {
     await tx`
       UPDATE users
@@ -88,6 +112,19 @@ export async function reconcileSubscription(tx: Tx, customerId: string): Promise
       UPDATE users
       SET subscription_status = 'none', past_due_since = NULL, role = 'viewer'
       WHERE stripe_customer_id = ${customerId} AND role IN ('viewer', 'premium')
+    `;
+  }
+  if (!apiIncluded) {
+    // A plan without the API (the $150 plan, or none) turns off any subscriber key. Canceled
+    // keys already stop at call time; this also covers a move down to the $150 plan.
+    await tx`
+      UPDATE api_keys SET revoked_at = NOW()
+      WHERE revoked_at IS NULL
+        AND organization_id IN (
+          SELECT o.id FROM organizations o
+          JOIN users u ON o.slug = ${SUBSCRIBER_ORG_PREFIX} || u.id::text
+          WHERE u.stripe_customer_id = ${customerId}
+        )
     `;
   }
   return status;
