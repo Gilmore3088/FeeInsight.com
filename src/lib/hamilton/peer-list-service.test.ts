@@ -112,6 +112,41 @@ describe("exact displayed peer-list continuation", () => {
     mocks.account.mockResolvedValue({ status: "ambiguous", institution: null });
     const result = (await answerPeerList(user, { institutionId: 202, question: "How does this compare with us?", previousPeerList: prior }))!;
     expect(result.peerList.status).toBe("needs_criteria");
+    expect(result.shortAnswer).toMatch(/^More than one institution is linked to your account, so Hamilton can't tell which one is "us"\./);
+    expect(mocks.fees).not.toHaveBeenCalled();
+  });
+  it("says plainly when 'compare with us' has no linked institution, without using the researched one (#1536)", async () => {
+    mocks.account.mockResolvedValue({ status: "unlinked", institution: null });
+    const result = (await answerPeerList(user, { institutionId: 8109, question: "How does this compare with us?", previousPeerList: null }))!;
+    expect(result.peerList.status).toBe("needs_criteria");
+    expect(result.shortAnswer).toMatch(/^No institution is linked to your account, so there is no "us" to compare\./);
+    expect(result.shortAnswer).toContain("did not treat the institution you are researching as yours");
+    expect(mocks.account).toHaveBeenCalledWith(user);
+    for (const read of [mocks.subject, mocks.rows, mocks.fees, mocks.resolve]) expect(read).not.toHaveBeenCalled();
+  });
+  it("asks for a peer list first when the account is linked but no list was shown", async () => {
+    const result = (await answerPeerList(user, { institutionId: 202, question: "How does this compare with us?", previousPeerList: null }))!;
+    expect(result.peerList.status).toBe("needs_criteria");
+    expect(result.shortAnswer).toContain("Ask for a peer list first");
+    expect(result.shortAnswer).toContain("Synthetic Account CU");
+    expect(mocks.fees).not.toHaveBeenCalled();
+  });
+  it("says which problem it is when several institutions are linked and no list was shown", async () => {
+    mocks.account.mockResolvedValue({ status: "ambiguous", institution: null });
+    const result = (await answerPeerList(user, { institutionId: 202, question: "How does this compare with us?", previousPeerList: null }))!;
+    expect(result.peerList.status).toBe("needs_criteria");
+    expect(result.shortAnswer).toMatch(/^More than one institution is linked to your account/);
+    expect(mocks.fees).not.toHaveBeenCalled();
+  });
+  it("keeps the old refusal for other follow-ups with no list", async () => {
+    const result = (await answerPeerList(user, { institutionId: 202, question: "Compare their NSF fees", previousPeerList: null }))!;
+    expect(result.shortAnswer).toBe("This follow-up has no valid prior peer list. Run the peer list again; no replacement list was selected.");
+    expect(mocks.account).not.toHaveBeenCalled();
+  });
+  it("keeps an account lookup failure on 'compare with us' unavailable", async () => {
+    mocks.account.mockResolvedValue({ status: "unavailable", institution: null });
+    const result = (await answerPeerList(user, { institutionId: 202, question: "How does this compare with us?", previousPeerList: null }))!;
+    expect(result.peerList.status).toBe("unavailable");
     expect(mocks.fees).not.toHaveBeenCalled();
   });
   it("refuses stale fee follow-ups without querying fee rows", async () => {

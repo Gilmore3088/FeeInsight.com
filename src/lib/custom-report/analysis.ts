@@ -77,7 +77,8 @@ function money(value: number): string {
   return Number.isInteger(value) ? `$${value}` : `$${value.toFixed(2)}`;
 }
 
-function positionFor(amount: number, peers: NonNullable<ReportLine["peers"]>): LinePosition {
+/** Where an amount sits against the local middle half; shared with the /for-institutions price tester. */
+export function positionFor(amount: number, peers: Pick<NonNullable<ReportLine["peers"]>, "p25" | "median" | "p75">): LinePosition {
   if (amount === 0 && peers.median > 0) return "free";
   if (amount > peers.p75) return "above_market";
   if (amount < peers.p25) return "below_market";

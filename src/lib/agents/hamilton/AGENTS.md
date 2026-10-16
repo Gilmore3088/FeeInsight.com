@@ -372,9 +372,11 @@ the detail.
     `hand-takedowns.ts` (James, Oct 16, DECISIONS.md): up to about 25 live fees, each confirmed
     wrong on amount or category against its bank's own stored text and checked by a reviewer, as
     one entry each (first: #1496's two fax fees). A row comes down only while it still reads as
-    listed (institution, category, name, price), with the entry's reason
-    (`source_mismatch: #<issue>`); its verified row is rejected (`hand_rejected:hand_takedown`), a
-    feedback row and one run event name it, and a ledger line goes on #1026.
+    listed (institution, category, name, price), checked in the read and again in the `UPDATE`,
+    with the entry's reason (`source_mismatch: #<issue>`); its verified row is rejected
+    (`hand_rejected:hand_takedown`), a feedback row and one run event name it, and a ledger line
+    goes on #1026. In both lists a failed read or write never fails the publish: the step detail
+    carries its `error` and the run gets a `step.warning` event.
 11. Article page (`article-page.ts`): a fee read from an article, on its second look,
     `article_page: #<document id>`.
 12. Product page (`product-page.ts`): a $0 benefit bullet Knox's free reader took from a
@@ -630,8 +632,10 @@ on page, not printed, no text, would close, samples) and closes the repeats. Rol
 **Page copies (#1439, shadow).** One schedule stored under several addresses ("?print=1", "www.",
 "%20", a mirror) is several documents, so a line of it went live once per copy.
 `page-copy-collapse.ts` groups live rows of one institution, category, variant and exact amount
-read from different documents of one page (`feePageKey`) under the same or a near name. It keeps a
-current copy (`superseded_by_id` unset) over a replaced one, then the latest edition: by the
+read from different documents of one page (`feePageKey`) under the same or a near name. It never
+keeps a replaced copy (`superseded_by_id` set) when the copy that replaced it, or a current copy of
+the same address, is in the group; a replaced copy of one address is not ranked below a current copy of another, which may be
+an older edition. Then it keeps the latest edition: by the
 editions the texts state when every copy in the group states one (the latest "effective" date not
 after the read, so an announced change does not count), else by when each was last read or
 re-confirmed (`GREATEST(last_checked_at, crawled_at)`); equal editions fall to the later read. The
@@ -643,9 +647,16 @@ documents for different audiences are never copies: the audience named in the UR
 (camel case split), else the one the text keeps naming (three or more mentions and three times the
 other, "business day" not counted, so a menu or footer link decides nothing). A pair the kept text
 prints as two lines, or under both a personal and a business heading, stays two fees. Frequencies
-and audiences must agree or be unstated. Up to 25 institutions per step, picked by the run id; each
+and audiences must agree or be unstated. A row read from a copy that a newer copy replaced (`superseded_by_id`
+names the kept row's document) pairs with the kept row under another name that shares a word
+(#1348): the newer copy reading "Temporary checks" as "Temporary checks (sheet of 3 checks)" is one
+line, and closes on the same tests unless the newer copy prints both names as lines of their own. A
+line the newer copy dropped ("Money Order" beside "Temporary checks") shares no word and never
+pairs; a box size counts as a word ("Safe Deposit Box - 3x5" / "3 x 5"), and two names that each
+give a size must share one ("Safe Deposit Box - 3x10" / "Safe Deposit Box 3 x 5" never pair). A partner of the same name is taken first, then a near name, then a renamed one. `renamed`
+in the step detail counts these pairs, closed or kept, and `renamed_samples` lists those that close. Up to 25 institutions per step, picked by the run id; each
 step reports `page_copy_collapse` (live, institutions, pairs, apart on page, unproven, other
-document, would close, samples, and `error` when the read failed). `PAGE_COPY_COLLAPSE_LIVE` stays
+document, renamed, would close, samples, and `error` when the read or the close failed). `PAGE_COPY_COLLAPSE_LIVE` stays
 off until James approves the dry-run counts. Rollback: clear `rolled_back_at` on rows whose reason
 ends in `(copy of the page)`. A closed copy is not restored if its kept copy later comes down; like
 the other collapses, that is a gap to close before this goes live.
@@ -758,9 +769,9 @@ charges.
 `HAND_REFILES` in the same file re-files or renames listed live fees in place (James approved
 each batch: #1299, #1304, #1196). A row moves only while it is still under its listed category
 at its listed price, and a rename is done once the live name reads as listed, so a re-run
-changes nothing. A rename in place that lists an `oldName` (the #1196 batch, 61848, 98747) runs only
-while the live name is exactly that old name, so it runs once and never replaces a better name a
-later read or retidy gave the fee. Each move writes a `pipeline_feedback` row with the old and new name, and the
+changes nothing. An in-place rename that carries an `oldName` runs only while the live name is
+exactly that old name, so it runs once and never replaces a better name a later read or retidy
+gave the fee. Each move writes a `pipeline_feedback` row with the old and new name, and the
 run gets one `hamilton.taxonomy_fold.hand_refile` event naming every row and its after-state.
 
 ## Source Link Repair

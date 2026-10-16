@@ -116,6 +116,24 @@ Darwin owns verification and classification.
   row that passes now has its pending second-look flag cleared (`takedown_cleared`). Each row
   records a `verify.recheck` attempt (fingerprint `verified:<fee_verified_id>`), so a row is read
   once per recheck version and the pass never starves the batch. Never a hand UPDATE.
+  Live fees verified under an older `verify.rules` version were never selected, so a rule added
+  here never reached them (#1568: 15 live tier-perk $0s stayed up after version 3).
+  `DARWIN_RECHECK_OLDER_LIVE` (default off) adds them: on, each step also reads up to half its
+  limit of those live rows, newest first, and they fail or pass like any other row. Off, every
+  fourth run reads a sample of 200 of them (in id order up from a random id, wrapping round to the
+  lowest ids), runs the same checks and writes nothing: step detail `recheck.olderLive` gives `read`,
+  `wouldFail` by reason code and 20 samples. That is a per-step sample; the whole backlog's count
+  is a separate read-only query. It turns on by PR once James approves that count by reason.
+  The 12-hour path never reached its second look: a row is read once per recheck version, so a
+  live row flagged `takedown_pending` was never read again (Frost's 14 premium-schedule $0s,
+  flagged `tier_perk_zero` on 2026-10-15 08:35, #1397). `DARWIN_RECHECK_SECOND_LOOK_LIVE` (default
+  off) gives each due first look its second read: on, each step re-reads up to 100 live rows whose
+  `darwin.verified_recheck` flag is at least 12 hours old, oldest first, and the shared second look
+  archives the ones still failing and clears the rest. Off, step detail `recheck.dueSecondLooks`
+  gives `due`, `wouldConfirm` by reason code, `wouldClear` and 20 samples, and nothing is written.
+  It turns on by PR once James approves the count of due flags. `DARWIN_RECHECK_OLDER_LIVE` only
+  flags; without this switch its first looks would never be confirmed, so it turns on with or after
+  this one.
 - `verify.document_owner` (`document-owner.ts`, version 1, 2026-10-15, #1455) ends every learning
   verify step after `verify.recheck`. It asks whose schedule a live fee's document is, by the
   document's own text, never by the stored website (the registry seed stored another bank's website
@@ -650,6 +668,39 @@ Darwin owns verification and classification.
   or `nonDepositCountSql()` / `nonDepositSamplesSql()` (the classifier in Postgres, checked equal to
   the JS one on the fixtures in `src/lib/non-deposit-document.fixtures.ts`) for someone with prod
   access.
+  v2 (#1518, found by the v1 prod dry run): each fee on a matched document gets a verdict
+  (`nonDepositVerdict`), each rule its own reason prefix and count (`by_rule`).
+  `lending_category` is v1's rule, except that on a rate page (a loan document named only "current
+  rates" or "rate sheet", with no loan product segment: `ratePageDocument`) a lending-category fee
+  also needs lending wording in its name (`hasRatePageLendingWording`: the allowlist below plus,
+  for this branch only, "application", "credit report" and "processing"), so Siouxland's
+  `/current-rates` "Late Fee" $5 (late_payment, fee 114953, among the safe deposit box lines) stays
+  live (`kept_generic_on_rate_page`) while Bank of Greene's "Application fee" and "Credit Report
+  fee" and Independent Bank's "Standard processing fee" come down. `lending_wording_on_loan_document` takes down a deposit-category
+  fee on a loan, HELOC, card or rate document whose name carries lending wording
+  (`hasLendingWording`: a closed allowlist of mortgage, HELOC, home equity, cash advance, late
+  payment, payoff, appraisal, closing cost, escrow, subordination, origination only after loan,
+  mortgage or HELOC, and "loan" only as "loan late", "loan application", "loan processing", "loan
+  modification", "loan extension" or "loan documentation"), unless the name also carries
+  deposit-side wording (safe deposit, box, SDB, checking, savings, share, certificate, CD, club,
+  coin, debit, ACH, wire, overdraft, transfer, phone, or a "mortgage/loan/HELOC/home equity
+  payment" phrase, a payment-channel fee): "Mortgage processing and research
+  fee" (account_research), "Late Payment — Return Check" (nsf), "Cash Advance ATM"
+  (atm_non_network), a $250 subordination (legal_process). A bare "loan" ("Loan payment by phone",
+  "transfer to pay a loan", "Loan coupon book") and a bare "late fee" are not lending wording, and
+  such fees stay; so do "ACH origination", "share certificate early payoff", "SDB late payment",
+  "debit card cash advance", "coin appraisal" and "Mortgage payment at teller". Same switch as v1. `brokerage_document` counts every deposit-category fee on a
+  brokerage, wealth or investing document (U.S. Bank's brokerage pages: wire, "Research", returned
+  check, stop payment, overnight check, IRA fees; the taxonomy has no brokerage category): those come
+  down only when `BROKERAGE_DOCUMENT_TAKEDOWN_LIVE` is on as well (false, and it stays off when the
+  main switch goes on: James's call on a count); until then they pass and clear any pending flag.
+  Step detail adds `by_rule`, `brokerage_document`, `kept_generic_on_rate_page`,
+  `brokerage_switch_live`, `samples_lending_wording` and `samples_brokerage_document`. Read-only
+  SQL: `nonDepositCountSql()` (counts by kind and verdict), `nonDepositSamplesSql()` (by document)
+  and `nonDepositFeeVerdictsSql()` (one row per fee with its verdict), checked equal to the JS on
+  the fee fixtures in `darwin/non-deposit-document-check.fixtures.ts` crossed with the URL fixtures
+  on a local Postgres 16 (UTF8). The `documents` and `judged` CTEs are `MATERIALIZED` (the
+  reviewer's prod-size run went from over 5 minutes to about 1 second with the same output).
 - Released-fee category re-check (`release-repair.ts`, the repair half of #1367; decision
   2026-10-15, "Darwin re-checks every live fee against today's rules"). Until PR #1468 the release
   check passed "." as the category pattern, so every fee the release published before then went live
@@ -1098,7 +1149,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `DARWIN_RECHECK_STRATEGY` | `verify.recheck` | v3 | `darwin/verified-recheck.ts` |
 | `LIVE_FRAGMENT_STRATEGY` | `darwin.live_fragment_check` | v6 | `darwin/live-fragment-check.ts` |
 | `HOURLY_CHECK_VERSION` | `darwin.hourly_frequency_check` | v1 | `darwin/hourly-frequency-check.ts` |
-| `NON_DEPOSIT_CHECK_VERSION` | `darwin.non_deposit_document` | v1 | `darwin/non-deposit-document-check.ts` |
+| `NON_DEPOSIT_CHECK_VERSION` | `darwin.non_deposit_document` | v2 | `darwin/non-deposit-document-check.ts` |
 | `DOCUMENT_OWNER_STRATEGY` | `verify.document_owner` | v1 | `darwin/document-owner.ts` |
 | `DARWIN_VERIFY_STRATEGY` | `verify.rules` | v3 | `darwin/verify.ts` |
 | `DARWIN_SOURCE_CHECK_VERSION` | — | v2 | `darwin/verify.ts` |

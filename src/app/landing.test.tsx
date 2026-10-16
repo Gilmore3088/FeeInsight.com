@@ -291,11 +291,12 @@ describe("homepage (site v3 brief 06 §4.3)", () => {
   });
 
   it("keeps a render out of the page cache when any read failed, but not when the sample is simply absent", () => {
-    const ok = { summary, categories, sampleFailed: false, overdraftFailed: false };
+    const ok = { summary, categories, sampleFailed: false, overdraftFailed: false, ladderFailed: false };
     expect(homeReadsCacheable(ok)).toBe(true);
     expect(homeReadsCacheable({ ...ok, summary: { ...summary, complete: false } })).toBe(false);
     expect(homeReadsCacheable({ ...ok, categories: [] })).toBe(false);
     expect(homeReadsCacheable({ ...ok, sampleFailed: true })).toBe(false);
     expect(homeReadsCacheable({ ...ok, overdraftFailed: true })).toBe(false);
+    expect(homeReadsCacheable({ ...ok, ladderFailed: true })).toBe(false);
   });
 });

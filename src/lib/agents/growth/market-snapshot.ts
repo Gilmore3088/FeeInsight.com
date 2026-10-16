@@ -79,6 +79,8 @@ export interface SnapshotFeeRow {
   normalized_text: string | null;
   /** The catalog's charge frequency ("monthly", "annual", "per_item"...), null when unknown. */
   frequency?: string | null;
+  /** `consumer`, `both` or `unknown` (statistics rows only); unknown earns the asterisk (#1132). */
+  fee_audience?: string | null;
 }
 
 export interface SnapshotValue {
@@ -281,7 +283,7 @@ export async function loadSnapshotRows(db: SqlTag, institutionIds: number[], cat
   const rows = await db.unsafe(
     `SELECT ef.fee_published_id, ef.institution_id, ef.fee_category, ef.fee_name, ef.amount, ef.canonical_fee_key,
             COALESCE(ef.extraction_note, ef.conditions) AS conditions, ef.account_product_type, ef.waiver_text, ef.frequency,
-            COALESCE(sd.document_url, ef.document_url, ef.source_url) AS document_url,
+            ef.fee_audience, COALESCE(sd.document_url, ef.document_url, ef.source_url) AS document_url,
             COALESCE(sd.last_checked_at, sd.crawled_at) AS read_at,
             t.normalized_text
        FROM published_fee_catalog ef

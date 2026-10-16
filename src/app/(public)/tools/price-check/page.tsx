@@ -21,6 +21,7 @@ import {
   PRICE_CHECK_FEES,
   type PriceCheckFee,
 } from "@/lib/price-check";
+import { PriceStats } from "./price-stats";
 
 const EYEBROW = "text-[11px] font-bold uppercase tracking-[0.12em] text-ink-muted";
 const SERIF = { fontFamily: "var(--fi-font-sans)" };
@@ -180,12 +181,15 @@ export default async function PriceCheckPage({ searchParams }: PageProps) {
           <PositionBar lower={check.lower} same={check.same} higher={check.higher} />
           <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.25fr)] lg:items-start">
             <div>
-          <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-2">
-            <Stat label="Institutions counted" value={String(check.count)} />
-            <Stat label={`${state} median`} value={money(check.median)} />
-            {nationalMedian !== null ? <Stat label="National median" value={money(nationalMedian)} /> : <Stat label="Charge less" value={`${check.lowerShare}%`} />}
-            <Stat label="Charge $0" value={String(check.zero)} />
-          </dl>
+          <PriceStats
+            state={state ?? ""}
+            count={check.count}
+            stateMedian={{ median_amount: check.median, unstated_audience_institution_count: prices.unstated_audience_institution_count }}
+            nationalMedian={nationalMedian !== null ? nationalEntry : null}
+            lowerShare={check.lowerShare}
+            zero={check.zero}
+            money={money}
+          />
           {prices.uncheckedCount > 0 && (
             <p className="mt-4 max-w-prose text-[13px] text-ink-muted">
               {plural(prices.uncheckedCount, "other institution has", "other institutions have")} a published {FEE_NOUN[fee]}{" "}
@@ -362,15 +366,6 @@ function GroupTable({ rows, price, firstColumn }: { rows: GroupCheck[]; price: n
           ))}
         </tbody>
       </table>
-    </div>
-  );
-}
-
-function Stat({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-xl border border-border/80 bg-white/70 px-4 py-3">
-      <dt className={EYEBROW}>{label}</dt>
-      <dd className="mt-1 text-[1.25rem] tabular-nums text-ink">{value}</dd>
     </div>
   );
 }

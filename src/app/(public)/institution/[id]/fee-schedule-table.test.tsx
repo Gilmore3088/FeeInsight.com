@@ -1,6 +1,6 @@
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import { FeeScheduleTable, describeMedianDelta, type DisplayFee } from "./fee-schedule-table";
+import { FeeScheduleTable, describeMedianDelta, splitFeesByAudience, type DisplayFee } from "./fee-schedule-table";
 
 function fee(overrides: Partial<DisplayFee>): DisplayFee {
   return {
@@ -117,4 +117,75 @@ it("labels an explicitly eliminated consumer fee instead of treating it as missi
     disclosureUrl={null} medians={new Map([["nsf", 30]])} />);
   expect(screen.getAllByText(/Fee eliminated/).length).toBeGreaterThan(0);
   expect(screen.getAllByRole("link", { name: "$30 below the national median" }).length).toBeGreaterThan(0);
+});
+
+describe("splitFeesByAudience", () => {
+  const consumer = fee({ id: "c", feeAudience: "consumer" });
+  const unknown = fee({ id: "u", feeAudience: "unknown" });
+  const business = fee({ id: "b", feeAudience: "business" });
+  const both = fee({ id: "x", feeAudience: "both" });
+  const ids = (list: DisplayFee[] | undefined) => list?.map((f) => f.id);
+
+  it.each([
+    ["personal only", [consumer, unknown], null],
+    ["labeled both, nothing business", [consumer, both], null],
+    ["mixed", [consumer, unknown, business], { personal: ["c", "u"], business: ["b"] }],
+    ["business only", [business], { personal: [], business: ["b"] }],
+    ["labeled both, with business", [consumer, both, business], { personal: ["c", "x"], business: ["x", "b"] }],
+  ] as const)("%s", (_, fees, expected) => {
+    const split = splitFeesByAudience([...fees]);
+    if (expected === null) expect(split).toBeNull();
+    else expect({ personal: ids(split?.personal), business: ids(split?.business) }).toEqual(expected);
+  });
+});
+
+describe("Personal / Business tabs", () => {
+  it("shows no tabs when no fee is labeled business", () => {
+    render(<FeeScheduleTable fees={[fee({ feeAudience: "unknown" })]} disclosureUrl={null} />);
+    expect(screen.queryByRole("tablist")).toBeNull();
+  });
+
+  it("opens on Personal, switches by arrow key, and keeps each row's source and one footnote", () => {
+    render(
+      <FeeScheduleTable
+        fees={[
+          fee({ id: "p", feeName: "Paid item overdraft", feeAudience: "unknown", sourceUrl: "https://bank.example/personal.pdf" }),
+          fee({ id: "b", feeName: "Business overdraft", feeAudience: "business", sourceUrl: "https://bank.example/business.pdf" }),
+        ]}
+        disclosureUrl={null}
+      />,
+    );
+    const personal = screen.getByRole("tab", { name: "Personal" });
+    const business = screen.getByRole("tab", { name: "Business" });
+    expect(personal).toHaveAttribute("aria-selected", "true");
+    expect(business).toHaveAttribute("tabindex", "-1");
+    const businessPanel = document.getElementById(business.getAttribute("aria-controls") ?? "") as HTMLElement;
+    expect(businessPanel).not.toBeVisible();
+    expect(within(businessPanel).getAllByRole("link", { hidden: true, name: /Source/ })[0]).toHaveAttribute("href", "https://bank.example/business.pdf");
+
+    fireEvent.keyDown(personal, { key: "ArrowRight" });
+    expect(business).toHaveAttribute("aria-selected", "true");
+    expect(business).toHaveFocus();
+    expect(businessPanel).toBeVisible();
+    // One footnote, ending the Personal list: the only list with unlabeled fees.
+    const notes = [...document.querySelectorAll("p")].filter((p) => /treated as personal\. Fees may differ/.test(p.textContent ?? ""));
+    expect(notes).toHaveLength(1);
+    expect(notes[0]).not.toBeVisible();
+  });
+
+  it("shows only a Business tab for a business-only bank", () => {
+    render(<FeeScheduleTable fees={[fee({ feeAudience: "business" })]} disclosureUrl={null} />);
+    expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["Business"]);
+  });
+
+  it("opens on Business when the focused fee is listed only for business", () => {
+    render(
+      <FeeScheduleTable
+        fees={[fee({ id: "p", feeCategory: "nsf" }), fee({ id: "b", feeAudience: "business" })]}
+        disclosureUrl={null}
+        focusCategory="overdraft"
+      />,
+    );
+    expect(screen.getByRole("tab", { name: "Business" })).toHaveAttribute("aria-selected", "true");
+  });
 });

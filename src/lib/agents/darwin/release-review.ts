@@ -28,6 +28,7 @@ import {
 } from "./release-held";
 import { loadCategoryModel, type CategoryModel } from "./category-model";
 import { isCutoffName } from "@/lib/agents/knox/name-retidy";
+import { nameHasCutShape } from "@/lib/fee-name-fragments";
 
 import { withinAmountEnvelope } from "./envelopes";
 import { loadReviewMisses } from "./verdict-score";
@@ -151,27 +152,10 @@ const BUSINESS_SERVICE_ROWS = /(night deposit|deposit bag|lockbox|remote deposit
 const PLAIN_RETURNED_ITEM = /^\s*return(ed)?\s+(check|item)s?(\s+(fee|charge)s?)?\s*$/i;
 /** NSF fees run $25-$35; a plain "Returned check fee" far below that is often a deposited check coming back. */
 const SMALL_NSF_AMOUNT = 10;
-/**
- * A name cut from the middle of a line ("/hr incl. reproduction", "account research fee may apply)"),
- * or text that is not a name: dot leaders or a footnote mark glued on ("Replacement ………", "00/item
- * Counter Checks"), a sentence or bullet fragment ("charge for each one-time debit", "Fees: o A
- * Minimum Balance Fee", "(for each overdraft item"), or a table header kept ("Garnishment / Levy: Fee").
- */
-// #1196: the cents of a price cut at its decimal point ("00 Monthly fee") or a row number cell ("13 | ...").
-const NAME_FRAGMENT = /^\s*\/|^[^(]*\)\s*$|[.…]{3,}|(\.\s){3,}|^\s*\d+\s*\/|^\s*\(|^\s*[Ff]ees?:\s|\bo\s[A-Z]|:\s*[Ff]ee\s*$|^\s*0\d\s+(?![xX]\s)[A-Za-z]|^\s*\d{1,2}\s*\|/;
-/** A name that starts lowercase is a sentence cut from its line, unless it is a product spelled that way. */
-const SENTENCE_START = /^\s*[a-z]/;
-const LOWERCASE_PRODUCT_NAME = /^\s*e-?(statement|banking|bill)/i;
-
 export function nameIsFragment(name: string): boolean {
   return nameHasCutShape(name) || isCutoffName(name);
 }
 
-/** The shapes of a name cut from its line, without the cut-off shapes the rename pass may repair. */
-export function nameHasCutShape(name: string): boolean {
-  if (NAME_FRAGMENT.test(name)) return true;
-  return SENTENCE_START.test(name) && !LOWERCASE_PRODUCT_NAME.test(name);
-}
 
 /** A fee the merchant or payee pays ("Merchant presenting NSF check from member"), not the member. */
 const CHARGED_TO_MERCHANT = /\bmerchants?\b/i;

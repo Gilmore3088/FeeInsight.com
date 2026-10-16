@@ -4,6 +4,7 @@ import { requireAuth } from "@/lib/auth";
 import { assertAtlasDispatchReady } from "@/lib/agents/dispatch-readiness";
 import { DARWIN_VERIFY_MAX_LIMIT } from "@/lib/agents/darwin/verify";
 import { startAgentRun } from "@/lib/agents/run-store";
+import type { AgentRunStepDefinition } from "@/lib/agents/types";
 import { getExecutionBackendStatus } from "@/lib/execution-backend";
 import { getAgentSpendToday } from "@/lib/data-store/console-spend";
 import { getDarwinLedgerStatus } from "@/lib/data-store/darwin-status";
@@ -47,7 +48,15 @@ export async function runDarwinRepair(
   }
   const limit = Math.min(size * batches, DARWIN_VERIFY_MAX_LIMIT);
   try {
-    await assertAtlasDispatchReady();
+    const steps: AgentRunStepDefinition[] = [
+      {
+        key: "verify",
+        agent: "darwin",
+        title: "Verify Knox rows due for a decision",
+        input: { verify_limit: limit },
+      },
+    ];
+    await assertAtlasDispatchReady(steps.map((step) => step.key));
     const result = await startAgentRun({
       agent: "darwin",
       kind: "workflow_lane",
@@ -56,14 +65,7 @@ export async function runDarwinRepair(
       triggeredBy: user.username,
       triggerSource: "admin",
       idempotencyKey: "darwin:classification-repair",
-      steps: [
-        {
-          key: "verify",
-          agent: "darwin",
-          title: "Verify Knox rows due for a decision",
-          input: { verify_limit: limit },
-        },
-      ],
+      steps,
       summary: "Darwin verify run accepted. Watch Atlas live status for step events.",
     });
     return { success: true, jobId: result.run.id, reused: result.reused, limit };

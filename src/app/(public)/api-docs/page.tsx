@@ -518,6 +518,11 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \\
             { name: "data[].maturity", type: "string", note: "strong | provisional | insufficient" },
             { name: "data[].bank_count", type: "integer", note: "Number of banks in sample" },
             { name: "data[].cu_count", type: "integer", note: "Number of credit unions in sample" },
+            {
+              name: "data[].unstated_audience_institution_count",
+              type: "integer",
+              note: "Institutions in the sample with at least one fee whose schedule doesn't say whether it's personal or business; those fees count as personal.",
+            },
           ]}
           responseExample={`{
   "scope": "filtered",
@@ -541,7 +546,8 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \\
       "institution_count": 189,
       "bank_count": 0,
       "cu_count": 189,
-      "maturity": "strong"
+      "maturity": "strong",
+      "unstated_audience_institution_count": 184
     },
     ...
   ]
@@ -608,6 +614,16 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \\
   "${BASE}/institutions?id=2466"`}
           responseFields={[
             { name: "fees[]", type: "array", note: "All non-rejected fees for this institution" },
+            {
+              name: "fees[].fee_name",
+              type: "string",
+              note: "The fee's name as the bank's schedule words it. When that name was cut off mid-line, the fee category's name stands in.",
+            },
+            {
+              name: "fees[].name_is_category_fallback",
+              type: "boolean",
+              note: "true when fee_name is the category's name standing in for a cut-off name; false when it is the schedule's own wording",
+            },
             { name: "fees[].amount", type: "number", note: "Fee amount in USD" },
             { name: "fees[].frequency", type: "string", note: 'e.g., "per item", "monthly"' },
             { name: "fees[].conditions", type: "string", note: "Waiver conditions, if any" },
@@ -625,6 +641,7 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \\
   "fees": [
     {
       "fee_name": "Overdraft Fee",
+      "name_is_category_fallback": false,
       "amount": 30.00,
       "frequency": "per_occurrence",
       "conditions": "Per item; created by check, in-person withdrawal, or other electronic means",
@@ -632,6 +649,7 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \\
     },
     {
       "fee_name": "Account Maintenance",
+      "name_is_category_fallback": false,
       "amount": 17.00,
       "frequency": "monthly",
       "conditions": null,

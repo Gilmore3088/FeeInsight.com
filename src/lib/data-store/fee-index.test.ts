@@ -33,6 +33,20 @@ describe("buildIndexEntries", () => {
     const [entry] = buildIndexEntries([row(1, 35), row(1, 36), row(1, 37), row(2, 0), row(3, 30), row(4, 32), row(5, 34)]);
     expect(entry).toMatchObject({ institution_count: 5, observation_count: 7, median_amount: 32, min_amount: 0, maturity_tier: "provisional" });
   });
+
+  it("counts the institutions behind each category with an unstated-audience fee (#1132)", () => {
+    const audience = (r: ReturnType<typeof row>, fee_audience: string) => ({ ...r, fee_audience });
+    const entries = buildIndexEntries([
+      audience(row(1, 30), "unknown"),
+      audience(row(1, 32), "unknown"),
+      audience(row(2, 25), "consumer"),
+      audience(row(3, null), "unknown"),
+      audience(row(4, 5, "monthly_maintenance"), "consumer"),
+    ]);
+    const byCategory = new Map(entries.map((e) => [e.fee_category, e]));
+    expect(byCategory.get("overdraft")?.unstated_audience_institution_count).toBe(1);
+    expect(byCategory.get("monthly_maintenance")?.unstated_audience_institution_count).toBe(0);
+  });
 });
 
 describe("refreshFeeIndexCache", () => {
@@ -101,6 +115,23 @@ describe("getNationalIndexCached", () => {
     const [entry] = await getNationalIndexCached();
     expect(entry).toMatchObject({ fee_category: "overdraft", median_amount: 30, institution_count: 5 });
     expect(db.unsafe).toHaveBeenCalledTimes(1);
+  });
+
+  it("reads the unstated-audience count live beside a current cache, which has no column for it", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(Date.now() + 120_000); // past the in-process memo from the test above
+    db.mockReset();
+    db.unsafe.mockReset();
+    const computed_at = new Date().toISOString();
+    db.mockResolvedValueOnce([
+      { fee_category: "overdraft", median_amount: 30, institution_count: 50, computed_at, stats_method_version: STATS_METHOD_VERSION },
+      { fee_category: "nsf", median_amount: 29, institution_count: 40, computed_at, stats_method_version: STATS_METHOD_VERSION },
+    ]);
+    db.unsafe.mockResolvedValueOnce([{ fee_category: "overdraft", n: "12" }]);
+    const entries = await getNationalIndexCached();
+    vi.useRealTimers();
+    expect(entries.map((e) => [e.fee_category, e.unstated_audience_institution_count])).toEqual([["overdraft", 12], ["nsf", 0]]);
+    expect(text(db.unsafe.mock.calls[0])).toContain("fee_audience = 'unknown'");
   });
 });
 

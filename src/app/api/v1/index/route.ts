@@ -103,17 +103,18 @@ async function handleGET(request: NextRequest) {
       bank_count: e.bank_count,
       cu_count: e.cu_count,
       maturity: e.maturity_tier,
+      unstated_audience_institution_count: e.unstated_audience_institution_count ?? 0,
     }));
 
   if (format === "csv") {
     const csv = toCsv(
       [
         "category", "display_name", "family", "tier", "median", "p25", "p75", "min", "max",
-        "institution_count", "bank_count", "cu_count", "maturity",
+        "institution_count", "bank_count", "cu_count", "maturity", "unstated_audience_institution_count",
       ],
       data.map((d) => [
         d.category, d.display_name, d.family, d.tier, d.median, d.p25, d.p75, d.min, d.max,
-        d.institution_count, d.bank_count, d.cu_count, d.maturity,
+        d.institution_count, d.bank_count, d.cu_count, d.maturity, d.unstated_audience_institution_count,
       ]),
     );
 
