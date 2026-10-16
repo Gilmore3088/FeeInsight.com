@@ -47,11 +47,19 @@ export function HubSection({ id, title, line, source, children }: { id: string; 
   );
 }
 
+/** Tile columns by count, so a row never ends in an empty cell. */
+const TILE_COLUMNS: Record<number, string> = {
+  1: "grid-cols-1",
+  2: "grid-cols-2",
+  3: "grid-cols-3",
+  4: "grid-cols-2 sm:grid-cols-4",
+};
+
 /** A row of figure tiles. */
 export function Tiles({ items, tone = "light" }: { items: { value: string; label: string }[]; tone?: "light" | "card" }) {
   if (items.length === 0) return null;
   return (
-    <dl className={`grid grid-cols-2 gap-px overflow-hidden rounded-xl bg-border ${items.length > 4 ? "sm:grid-cols-3" : "sm:grid-cols-4"}`}>
+    <dl className={`grid gap-px overflow-hidden rounded-xl bg-border ${TILE_COLUMNS[items.length] ?? "grid-cols-2 sm:grid-cols-3"}`}>
       {items.map((t) => (
         <div key={t.label} className={`${tone === "card" ? "bg-surface-0" : "bg-paper"} px-3 py-2.5`}>
           <dt className="text-[11px] leading-tight text-ink-muted">{t.label}</dt>
