@@ -39,7 +39,7 @@ export const getRateFeesForPage = cache(async (institutionId: number): Promise<R
 export function toRateDisplayFees(fees: RateFee[]): DisplayFee[] {
   return fees.map((fee) => ({
     id: `rate-${fee.id}`,
-    feeName: fee.fee_name,
+    feeName: feeDisplayName(fee.fee_name, fee.fee_category),
     feeAudience: fee.fee_audience ?? "unknown",
     feeTreatment: fee.fee_treatment ?? "unknown",
     feeCategory: fee.fee_category,

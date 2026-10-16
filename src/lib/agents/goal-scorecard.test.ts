@@ -181,9 +181,10 @@ describe("text-reading misses (#1054)", () => {
     expect(weeks[0].byKind.missed_fee_page).toBe(20);
     expect(weeks[1]).toEqual({
       weekStart: "2026-10-05", batches: 0, reads: 0, errors: 0, rate: null,
-      byKind: { no_fees_found: 0, short_text: 0, missed_fee_page: 0, unresolved_fee_page: 0, unread: 0 },
+      byKind: { no_fees_found: 0, short_text: 0, missed_fee_page: 0, unresolved_fee_page: 0, unread: 0 }, partial: false,
     });
-    expect(weeks[2]).toMatchObject({ batches: 2, reads: 100, errors: 15, rate: 0.15 });
+    // The current week is still running, so it is marked partial (#1581).
+    expect(weeks[2]).toMatchObject({ batches: 2, reads: 100, errors: 15, rate: 0.15, partial: true });
     expect(weeks[2].byKind).toMatchObject({ no_fees_found: 6, short_text: 5, unread: 4 });
   });
 
@@ -212,15 +213,17 @@ describe("text-reading misses (#1054)", () => {
 /** A tagged-template stand-in that answers each query by a word it contains. */
 function fakeDb(answers: Array<[RegExp, unknown[] | Error]>) {
   const queries: string[] = [];
-  const db = vi.fn(async (parts: TemplateStringsArray) => {
+  const values: unknown[][] = [];
+  const db = vi.fn(async (parts: TemplateStringsArray, ...params: unknown[]) => {
     const text = parts.join("?");
     queries.push(text);
+    values.push(params);
     const match = answers.find(([pattern]) => pattern.test(text));
     if (!match) return [];
     if (match[1] instanceof Error) throw match[1];
     return match[1];
   });
-  return { db: db as unknown as Parameters<typeof readGoalScorecard>[0], queries };
+  return { db: db as unknown as Parameters<typeof readGoalScorecard>[0], queries, values };
 }
 
 describe("readGoalScorecard", () => {
@@ -241,7 +244,7 @@ describe("readGoalScorecard", () => {
   ];
 
   it("reads every number, each naming its query, without counting refresh copies", async () => {
-    const { db, queries } = fakeDb(answers);
+    const { db, queries, values } = fakeDb(answers);
     const goal = await readGoalScorecard(db, new Date("2026-10-12T07:00:00Z"));
     expect(goal.coverageCells).toMatchObject({ query: "goal.coverage_cells", readyCells: 1, totalCells: 1 });
     // TN was 3 short a week ago; 4 newly live institutions closed those 3.
@@ -261,8 +264,13 @@ describe("readGoalScorecard", () => {
     expect(goal.readerMisses?.query).toBe("goal.rosetta_miss_rate_weekly");
     expect(goal.readerMisses?.weeks.at(-1)).toMatchObject({ weekStart: "2026-10-12", reads: 50, errors: 7, rate: 0.14 });
     expect(goal.readerRemedies).toMatchObject({ query: "goal.rosetta_remedy_outcomes", remedied: 7, knoxFound: 2 });
-    // A new link search counts fees from the institution; every other fix, from the same document.
-    expect(queries.find((q) => /AS knox_found/.test(q))).toContain("fr.institution_id = f.institution_id");
+    // A new link search, a JS re-read and a reopened fee page count fees from the institution
+    // (their fees can land on another document row); every other fix, from the same document (#1581).
+    const remedyAt = queries.findIndex((q) => /AS knox_found/.test(q));
+    expect(queries[remedyAt]).toContain("fr.institution_id = f.institution_id");
+    expect(values[remedyAt]).toContainEqual(["magellan_paid_find", "reread_js_fallback", "reopen_fee_page"]);
+    // The window opens at midnight UTC, whatever the session's timezone.
+    expect(values[remedyAt]).toContain(`${readerMissSince(new Date("2026-10-12T07:00:00Z"))}T00:00:00Z`);
     // "Added" means no live fee a week ago, and refresh copies leave the publish count.
     expect(queries.find((q) => /AS added/.test(q))).toContain("rolled_back_at IS NULL OR fp.rolled_back_at >=");
     expect(queries.find((q) => /refresh_copy/.test(q))).toContain("NOT EXISTS (SELECT 1 FROM refresh_copy");

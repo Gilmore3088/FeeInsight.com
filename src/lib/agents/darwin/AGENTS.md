@@ -95,7 +95,7 @@ Darwin owns verification and classification.
   prices it free on its own line with no other dollar figure, outside overdraft, NSF, monthly
   maintenance and minimum balance, and not on one account tier's own schedule (`tier-perk.ts`,
   #1397); (b) otherwise rejected, for Knox's next read of the line.
-- `verify.recheck` (`verified-recheck.ts`, version 4, 2026-10-16) ends every learning verify step
+- `verify.recheck` (`verified-recheck.ts`, version 5, 2026-10-16) ends every learning verify step
   by reading up to 200 rows `verify.rules` v3 verified (the rows the `not_in_source` re-select
   verified first, then newest first), once each under `postSourceCheck` and, from version 3, the
   tier-perk test (`tier_perk_zero`, #1397). Version 4 (#1571, #1574): on a run-on line with no
@@ -103,7 +103,25 @@ Darwin owns verification and classification.
   any terms after it ("FREE with e-Statements"), so "Notary Services No Charge" is free even when
   the line also holds "Record Searches $30"; a cell with its own label ("Certified Letter Fee:
   $10") is never this fee's price. The tier-perk name test skips an account's own monthly or
-  minimum-balance price ("Premier Checking" $0, "NONE"); a tier's own schedule still refuses it. A failing row that is
+  minimum-balance price ("Premier Checking" $0, "NONE"); a tier's own schedule still refuses it.
+  Version 5 (#1593): the conditional-$0 test reads a two-column page by its columns, failing safe:
+  the other column must be positively another fee. A cell after this fee's own "name $0" is the
+  other column only when its label is a Title Case name the page prints as its own priced row
+  elsewhere or under a right-column heading naming fees ("Bill Pay | Other Fees" over "Bill Pay
+  ---- No Charge | Account History ---- $3.00 each"); a fee noun alone is no proof. A delivery
+  tier, channel, activity or holder's choice ("Overnight Shipping", "Verbal Request", "Low
+  Activity", "Opted Out Of Overdraft"), or a label opening with No, Range of, Multiple, Each
+  additional or Per, never is. A price opening the fee's
+  table cell after another fee's label cell is that fee's ("5x10x20 Safe Deposit Box Annually |
+  $75.00 Bill Pay | No Charge"). On a run-on line, text after the $0 that states a condition
+  anywhere, parentheses included, stays the fee's terms; otherwise it is the other column only
+  with document evidence (a label under the right column's fee heading that opens that column on
+  a neighbouring line, or the same "name $0" row repeated next to a two-cell line with a tail the
+  page prints as its own row). A label priced $0 is the next row; and
+  a domestic wire's row reads its international price as another fee's. A $0 traced to a line
+  that lacks a word of its name is read on the line that prints its whole name with its $0
+  (`sourceLineFor`), unless that $0 is one audience's. A fee named for one audience ("Check
+  Printing (members over 62)") is never freed by the column reading. A failing row that is
   not live is rejected with an `outlier_flags` entry `darwin_recheck:<code>[:<rule>]`; a live one
   is archived in the same step (`published_fee_records` rolled back with that reason, batch
   `darwin-recheck-<run>`, never deleted), the verified row rejected with the same flag and the
@@ -1151,7 +1169,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `DARWIN_RELEASE_REVIEW_STRATEGY` | `verify.release_review` | v17 | `darwin/release-review.ts` |
 | `DARWIN_SCHEDULE_REFILE_STRATEGY` | `verify.schedule_refile` | v1 | `darwin/schedule-refile.ts` |
 | `DARWIN_VERDICT_SCORE_STRATEGY` | `verify.verdict_score` | v1 | `darwin/verdict-score.ts` |
-| `DARWIN_RECHECK_STRATEGY` | `verify.recheck` | v4 | `darwin/verified-recheck.ts` |
+| `DARWIN_RECHECK_STRATEGY` | `verify.recheck` | v5 | `darwin/verified-recheck.ts` |
 | `LIVE_FRAGMENT_STRATEGY` | `darwin.live_fragment_check` | v6 | `darwin/live-fragment-check.ts` |
 | `HOURLY_CHECK_VERSION` | `darwin.hourly_frequency_check` | v1 | `darwin/hourly-frequency-check.ts` |
 | `NON_DEPOSIT_CHECK_VERSION` | `darwin.non_deposit_document` | v2 | `darwin/non-deposit-document-check.ts` |

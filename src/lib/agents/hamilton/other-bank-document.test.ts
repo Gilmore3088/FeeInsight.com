@@ -66,6 +66,18 @@ describe("retireOtherBankDocumentFees", () => {
     expect(unconfirmedHostFeesSql("fees")).toContain("fp.fee_published_id = ANY($1::bigint[])");
   });
 
+  it("reads verified rows about to publish with the same host rule (#1069 step 2)", () => {
+    for (const build of [otherBankFeesSql, unconfirmedHostFeesSql]) {
+      const verified = build("verified");
+      expect(verified).toContain("NULL::bigint AS fee_published_id");
+      expect(verified).toContain("fv.fee_verified_id = ANY($1::bigint[])");
+      expect(verified).not.toContain("published_fee_records");
+      // Everything after the rows it judges is the sweep's own read, character for character.
+      const rule = (text: string) => text.slice(text.indexOf("docs AS ("));
+      expect(rule(verified)).toBe(rule(build(false)));
+    }
+  });
+
   it("archives another bank's fee on the first run that sees it, with its first look logged (James, Oct 8)", async () => {
     const db = createDb(null);
     const result = await retireOtherBankDocumentFees(db, options);

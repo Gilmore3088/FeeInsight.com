@@ -35,7 +35,7 @@ export function MultiTrend({ rows, series, label, unit, height = 256, format }: 
   height?: number;
   format?: "percent" | "billions" | "number";
 }) {
-  const fmt = (v: unknown) => v == null ? "Unavailable" : format === "percent" ? `${Number(v).toFixed(1)}%` : format === "billions" ? `$${Number(v).toFixed(2)}B` : Number(v).toLocaleString();
+  const fmt = (v: unknown) => v == null ? "Unavailable" : format === "percent" ? `${Number(v).toFixed(1)}%` : format === "billions" ? `$${Number(v).toFixed(2)}B` : Number(v).toLocaleString("en-US");
   return <div className="min-w-0" style={{ height }} role="img" aria-label={`${label}, ${unit}. Exact observations are listed under the chart.`}>
     <ResponsiveContainer width="100%" height="100%"><LineChart data={rows} margin={{ left: 4, right: 18, bottom: 4, top: 8 }}>
       <CartesianGrid stroke={GRID} vertical={false} /><XAxis dataKey="period" tick={{ fontSize: 11 }} minTickGap={28} />
@@ -58,7 +58,7 @@ export function HorizontalBars({ rows, label, valueLabel, format = "number", hig
   format?: "number" | "billions";
   highlight?: string;
 }) {
-  const fmt = (v: unknown) => format === "billions" ? `$${Number(v).toFixed(2)}B` : Number(v).toLocaleString();
+  const fmt = (v: unknown) => format === "billions" ? `$${Number(v).toFixed(2)}B` : Number(v).toLocaleString("en-US");
   return <div className="min-w-0" style={{ height: Math.max(140, rows.length * 38 + 30) }} role="img" aria-label={`${label}; exact values are listed below.`}>
     <ResponsiveContainer width="100%" height="100%">
       <BarChart data={rows} layout="vertical" margin={{ left: 0, right: 64, top: 4, bottom: 4 }}>

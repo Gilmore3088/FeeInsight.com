@@ -77,7 +77,9 @@ hand-found link or paid-fetched document starts a new run even inside the retry 
   leave the lane no room for its first work (`run-store.ts`, `laneFirstWorkMs`). The lane then
   gets the tick's first-step exemption. A state re-search run idle 15 minutes
   (`LANE_ROOM_MAX_IDLE_MS`) takes one step without leaving that room, since its `discover` never
-  fits beside a fresh lane's first work (#1421); Read-now runs always leave it.
+  fits beside a fresh lane's first work (#1421); Read-now runs always leave it. The bound is firm
+  only when the re-search run is the tick's first row: several waiting re-search runs can each take
+  a step ahead of the lane.
 
 ## State lanes: cadence and state experts
 

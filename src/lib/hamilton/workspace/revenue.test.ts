@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { feeRevenueLine, institutionFinancials, serviceChargeTrend } from "./revenue";
+import { feeRevenueLine, institutionFinancials, revenueLineName, serviceChargeTrend } from "./revenue";
 
 // NCUA 5300 figures are year to date, in thousands.
 const ncua = (report_date: string, service_charge_income: number, overdraft_revenue: number | null = null, nsf_revenue: number | null = null) =>
@@ -59,5 +59,13 @@ describe("feeRevenueLine", () => {
     expect(feeRevenueLine(cuRows, "wire_domestic_outgoing", "credit_union")).toBeNull();
     expect(feeRevenueLine(cuRows.slice(4), "overdraft", "credit_union")).toBeNull();
     expect(feeRevenueLine(cuRows.map((r) => ({ ...r, overdraft_revenue: null })), "overdraft", "credit_union")).toBeNull();
+  });
+});
+
+describe("revenueLineName (#1543)", () => {
+  it("names RIAD H032 as combined for either fee, and a single-fee line as that fee", () => {
+    expect(revenueLineName({ combinedWith: "NSF" }, "overdraft")).toBe("overdraft and NSF income combined (call report)");
+    expect(revenueLineName({ combinedWith: "overdraft" }, "NSF / returned item")).toBe("overdraft and NSF income combined (call report)");
+    expect(revenueLineName({}, "NSF / returned item")).toBe("NSF / returned item income");
   });
 });
