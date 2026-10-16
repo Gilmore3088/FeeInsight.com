@@ -56,7 +56,11 @@ describe("RevenueChart", () => {
       />,
     );
     expect(screen.getAllByText("$100.0M")).toHaveLength(2);
-    expect(screen.getByText("Q2 ’26")).toBeTruthy();
+    // The year sits on its own line on phones, so the label spans two elements.
+    expect(screen.getByText((_, el) => el?.tagName === "SPAN" && el.textContent === "Q2 ’26")).toBeTruthy();
+    // Phones show only the newest total; the chart's label carries every figure.
+    expect(screen.getAllByText("$100.0M")[0].className).toContain("hidden sm:block");
+    expect(screen.getByRole("img").getAttribute("aria-label")).toBe("Fee income by quarter, Q1 2026 to Q2 2026: $100.0M, $100.0M");
   });
 });
 
