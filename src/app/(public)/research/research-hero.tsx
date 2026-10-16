@@ -1,5 +1,6 @@
 import { PRODUCT_NAME } from "@/lib/constants";
 import type { PublicStatsSummary } from "@/lib/public-stats";
+import { SectionJump } from "./section-jump";
 
 const SERIF = { fontFamily: "var(--fi-font-sans)" };
 
@@ -46,7 +47,10 @@ export function ResearchSectionNav({
 } = {}) {
   return (
     <nav aria-label={label} className="print:hidden sticky top-14 z-30 border-b border-border bg-paper/95 backdrop-blur">
-      <ul className="mx-auto flex max-w-page gap-1 overflow-x-auto px-4 py-2 sm:px-6">
+      <div className="mx-auto max-w-page px-4 py-2 sm:hidden">
+        <SectionJump sections={sections} label={label} />
+      </div>
+      <ul className="mx-auto hidden max-w-page flex-wrap gap-1 px-4 py-2 sm:flex sm:px-6">
         {sections.map((s) => (
           <li key={s.id} className="shrink-0">
             <a
