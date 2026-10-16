@@ -6,7 +6,7 @@ vi.mock("./connection", () => ({
   },
 }));
 
-import { autocompleteInstitutions } from "./search";
+import { autocompleteInstitutions, institutionSearchPatterns } from "./search";
 import { sql } from "./connection";
 
 const unsafeMock = sql.unsafe as unknown as ReturnType<typeof vi.fn>;
@@ -95,5 +95,25 @@ describe("autocompleteInstitutions", () => {
       source_needed_reason: "not_applicable",
       quality_status: "needs_review",
     });
+  });
+});
+
+describe("institution search short names (#1545)", () => {
+  it("finds M&T (id 21, filed as Manufacturers and Traders Trust Company) from M&T and M&T Bank", async () => {
+    for (const q of ["M&T", "M&T Bank", "m&t bank"]) {
+      expect(institutionSearchPatterns(q).aliases).toEqual(["Manufacturers and Traders Trust%"]);
+    }
+    unsafeMock.mockReset();
+    unsafeMock.mockResolvedValueOnce([]);
+    await autocompleteInstitutions("M&T Bank");
+    const [text, params] = unsafeMock.mock.calls[0];
+    expect(text).toContain("ct.institution_name ILIKE ANY($5::text[])");
+    expect(params).toEqual(["%M&T Bank%", "M&T Bank", 8, "%m&t bank%", ["Manufacturers and Traders Trust%"]]);
+  });
+  it("reads U.S. Bank and US Bank alike, and keeps the ampersand", () => {
+    expect(institutionSearchPatterns("US Bank").aliases).toEqual(["U.S. Bank%"]);
+    expect(institutionSearchPatterns("U.S. Bank").squashed).toBe("%us bank%");
+    expect(institutionSearchPatterns("BofA").aliases).toEqual(["Bank of America%"]);
+    expect(institutionSearchPatterns("Navy Federal").aliases).toEqual([]);
   });
 });
