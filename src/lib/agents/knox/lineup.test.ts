@@ -509,6 +509,9 @@ describe("the account a read records (v73, #1100)", () => {
     expect(productOf(read("Monthly service charge", "Monthly service charge | $10", { amount: 10 }), apart)).not.toBe("Statement Savings");
     const unlabelled = ["Account | Statement Savings", "Ask about our | Premier Checking options", "Monthly service charge | $10"].join("\n");
     expect(productOf(read("Monthly service charge", "Monthly service charge | $10", { amount: 10 }), unlabelled)).not.toBe("Statement Savings");
+    // #1598 re-review D6: a header of another width directly above the fee's table is the end of it.
+    const stacked = ["Account | Statement Savings | Money Market", "Monthly fee | $2 | $10", "Free | Gold", "Monthly fee | $0 | $10"].join("\n");
+    expect(productOf(read("Monthly fee", "Monthly fee | $0 | $10", { amount: 10 }), stacked)).not.toBe("Money Market");
     // The institution's own name.
     const named = withLineupFromText(read("Monthly fee", "Monthly fee $5.00"), "Peoples Savings\nMonthly fee $5.00", { institutionName: "Peoples Savings" });
     expect(named.lineup?.productName ?? null).toBeNull();

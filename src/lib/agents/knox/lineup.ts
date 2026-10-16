@@ -341,7 +341,12 @@ export function tableColumnProduct(text: string, excerpt: string, amount: number
     // A line that is no table row ends the table: a header above it is another table's.
     if (!lines[index].includes("|")) break;
     const row = lines[index].split("|").map(squash);
-    if (row.length !== cells.length) continue;
+    // A row of another width: a price row of the same table can be wider or narrower, but one with
+    // no price is another table's header, stacked above with no line between ("Free | Gold").
+    if (row.length !== cells.length) {
+      if (!row.some((cell) => cell.includes("$"))) break;
+      continue;
+    }
     if (row.some((cell) => cell.includes("$"))) continue;
     // A header row opens on a label ("Account Type", "ACCOUNT FEATURES", "Product"). An unlabelled row
     // with no price ends the climb ("Maintaining One Or More Of The | LifeGreen Preferred Checking account").
