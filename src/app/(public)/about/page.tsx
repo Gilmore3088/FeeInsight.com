@@ -5,6 +5,7 @@ import { getPublicStatsSummary } from "@/lib/public-stats";
 import { aboutCoverageStats } from "./coverage-stats";
 import { CONTACT_EMAIL, LEGAL_ENTITY_LINE, REPORT_OFFER, REPORT_PRICE_INLINE } from "@/lib/constants";
 import { MIN_INSTITUTIONS_FOR_MEDIAN, STRONG_INSTITUTION_COUNT } from "@/lib/data-store/maturity";
+import { PAGE_HEADER } from "@/components/public/page-header";
 
 export const metadata: Metadata = {
   title: "About",
@@ -17,19 +18,21 @@ export default async function AboutPage() {
 
   return (
     <div className="mx-auto max-w-3xl px-6 py-14">
-      <div className="flex items-center gap-2 mb-4">
-        <span className="h-px w-8 bg-brick/40" />
-        <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-brick/60">
-          About
-        </span>
-      </div>
+      <header className={PAGE_HEADER}>
+        <div className="flex items-center justify-center gap-2 mb-4 sm:justify-start">
+          <span className="h-px w-8 bg-brick/40" />
+          <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-brick/60">
+            About
+          </span>
+        </div>
 
-      <h1
-        className="font-extrabold text-[1.75rem] sm:text-[2.25rem] leading-[1.12] tracking-[-0.02em] text-ink"
-        style={{ fontFamily: "var(--fi-font-sans)" }}
-      >
-        About Fee Insight
-      </h1>
+        <h1
+          className="font-extrabold text-[1.75rem] sm:text-[2.25rem] leading-[1.12] tracking-[-0.02em] text-ink"
+          style={{ fontFamily: "var(--fi-font-sans)" }}
+        >
+          About Fee Insight
+        </h1>
+      </header>
 
       <div className="mt-8 space-y-6 text-[15px] leading-relaxed text-ink-soft">
         <p>

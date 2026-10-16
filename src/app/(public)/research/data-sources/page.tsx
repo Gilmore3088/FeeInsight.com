@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
 import { SITE_NAME, SITE_URL } from "@/lib/constants";
 import { getDataCoverageSummaryCached } from "@/lib/data-store/public-cached-reads";
+import { PAGE_HEADER } from "@/components/public/page-header";
 
 export const metadata: Metadata = {
   title: "Data Sources & Coverage — Methodology",
@@ -140,26 +141,28 @@ export default async function DataSourcesPage() {
         ]}
       />
 
-      <div className="flex items-center gap-2 mb-4">
-        <span className="h-px w-8 bg-brick/40" />
-        <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-brick/60">
-          Methodology
-        </span>
-      </div>
-      <h1
-        className="text-[1.75rem] sm:text-[2.25rem] leading-[1.12] tracking-[-0.02em] font-extrabold text-ink"
-        style={{ fontFamily: "var(--fi-font-sans)" }}
-      >
-        Data Sources & Coverage
-      </h1>
-      <p className="mt-2 max-w-2xl text-[14px] text-ink-muted">
-        The Bank Fee Index integrates data from {DATA_SOURCES.length} federal and
-        derived sources. All data is publicly available, sourced from official
-        government APIs, and refreshed on automated schedules.
-      </p>
+      <header className={PAGE_HEADER}>
+        <div className="flex items-center justify-center gap-2 mb-4 sm:justify-start">
+          <span className="h-px w-8 bg-brick/40" />
+          <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-brick/60">
+            Methodology
+          </span>
+        </div>
+        <h1
+          className="text-[1.75rem] sm:text-[2.25rem] leading-[1.12] tracking-[-0.02em] font-extrabold text-ink"
+          style={{ fontFamily: "var(--fi-font-sans)" }}
+        >
+          Data Sources & Coverage
+        </h1>
+        <p className="mx-auto mt-2 max-w-[34rem] text-[14px] text-ink-muted sm:mx-0 sm:max-w-2xl">
+          The Bank Fee Index integrates data from {DATA_SOURCES.length} federal and
+          derived sources. All data is publicly available, sourced from official
+          government APIs, and refreshed on automated schedules.
+        </p>
+      </header>
 
       {/* Summary strip */}
-      <div className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-2 text-[12px] text-ink-muted">
+      <div className="mt-5 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-[12px] text-ink-muted sm:justify-start">
         <span>
           <span className="font-semibold tabular-nums text-ink-soft">
             {DATA_SOURCES.length}

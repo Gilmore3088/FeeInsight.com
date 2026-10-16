@@ -7,6 +7,7 @@ import { getPublicStatsSummary } from "@/lib/public-stats";
 import { MIN_INSTITUTIONS_FOR_MEDIAN, STRONG_INSTITUTION_COUNT } from "@/lib/data-store/maturity";
 import { PLAN_TEAM_LABEL } from "@/app/subscribe/pricing";
 import { PRO_ANNUAL_RANGE_LABEL } from "@/lib/pro-tiers";
+import { PAGE_HEADER } from "@/components/public/page-header";
 
 const PRO_LABEL = `${SITE_NAME} Pro`;
 const API_ACCESS_HREF = `mailto:${CONTACT_EMAIL}?subject=API%20access`;
@@ -231,20 +232,22 @@ export default async function ApiDocsPage() {
       />
 
       {/* Hero */}
-      <p className="text-[11px] font-semibold uppercase tracking-wider text-brick">
-        Developer
-      </p>
-      <h1
-        className="mt-1 text-[1.75rem] sm:text-[2.25rem] leading-[1.12] tracking-[-0.02em] font-extrabold text-ink"
-        style={{ fontFamily: "var(--fi-font-sans)" }}
-      >
-        Bank Fee Index API
-      </h1>
-      <p className="mt-3 max-w-2xl text-[15px] leading-relaxed text-ink-soft">
-        Programmatic access to fee benchmarking data for U.S. banks and credit
-        unions. {categoriesLabel} fee categories, national and peer medians, percentile ranges,
-        and institution-level detail — all via a simple REST API.
-      </p>
+      <header className={PAGE_HEADER}>
+        <p className="text-[11px] font-semibold uppercase tracking-wider text-brick">
+          Developer
+        </p>
+        <h1
+          className="mt-1 text-[1.75rem] sm:text-[2.25rem] leading-[1.12] tracking-[-0.02em] font-extrabold text-ink"
+          style={{ fontFamily: "var(--fi-font-sans)" }}
+        >
+          Bank Fee Index API
+        </h1>
+        <p className="mx-auto mt-3 max-w-[34rem] text-[15px] leading-relaxed text-ink-soft sm:mx-0 sm:max-w-2xl">
+          Programmatic access to fee benchmarking data for U.S. banks and credit
+          unions. {categoriesLabel} fee categories, national and peer medians, percentile ranges,
+          and institution-level detail — all via a simple REST API.
+        </p>
+      </header>
 
       {/* Access first: what works today without a key, and how a Pro key is issued. */}
       <section aria-labelledby="getting-access" className="mt-6 rounded-xl border border-border bg-white px-6 py-5">

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { getPublicStatsSummary } from "@/lib/public-stats";
 import { CONTACT_EMAIL, RESEARCH_IMPRINT, SITE_NAME, SITE_URL } from "@/lib/constants";
 import { MIN_INSTITUTIONS_FOR_MEDIAN, STRONG_INSTITUTION_COUNT } from "@/lib/data-store/maturity";
+import { PAGE_HEADER } from "@/components/public/page-header";
 
 const METHODOLOGY_URL = `${SITE_URL}/methodology`;
 
@@ -67,14 +68,14 @@ export default async function MethodologyPage() {
       <div style={{ maxWidth: "760px", margin: "0 auto", padding: "64px 24px 96px" }}>
 
         {/* Header */}
-        <div style={{ borderBottom: "2px solid #132338", paddingBottom: "24px", marginBottom: "48px" }}>
+        <div className={PAGE_HEADER} style={{ borderBottom: "2px solid #132338", paddingBottom: "24px", marginBottom: "48px" }}>
           <p style={{ fontSize: "11px", textTransform: "uppercase", letterSpacing: "0.12em", color: "#b23a32", fontWeight: 700, marginBottom: "12px" }}>
             Research Methodology
           </p>
           <h1 style={{ fontSize: "36px", fontWeight: 600, letterSpacing: "-0.02em", color: "#132338", marginBottom: "12px", fontFamily: "var(--fi-font-sans)", lineHeight: 1.2 }}>
             How the Bank Fee Index works
           </h1>
-          <p style={{ fontSize: "16px", color: "#354252", lineHeight: 1.6, maxWidth: "600px" }}>
+          <p className="mx-auto sm:mx-0" style={{ fontSize: "16px", color: "#354252", lineHeight: 1.6, maxWidth: "600px" }}>
             A transparent account of how we collect, classify, and verify fee data across {institutions} financial institutions — and what that means for the accuracy of our benchmarks.
           </p>
           <p style={{ fontSize: "12px", color: "#55606f", marginTop: "16px" }}>

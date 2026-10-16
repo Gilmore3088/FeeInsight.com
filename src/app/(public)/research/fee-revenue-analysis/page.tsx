@@ -5,6 +5,7 @@ import { FDIC_TIER_LABELS } from "@/lib/fed-districts";
 import { formatAmount, formatAssets } from "@/lib/format";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
 import { DataFreshness } from "@/components/data-freshness";
+import { PAGE_HEADER } from "@/components/public/page-header";
 import { SITE_URL } from "@/lib/constants";
 import { getCurrentUser } from "@/lib/auth";
 import { canAccessPremium } from "@/lib/access";
@@ -62,27 +63,29 @@ export default async function FeeRevenueAnalysisPage() {
         ]}
       />
 
-      <div className="flex items-center gap-2 mb-4">
-        <span className="h-px w-8 bg-brick/40" />
-        <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-brick/60">
-          Original Research
-        </span>
-      </div>
-      <h1
-        className="text-[1.75rem] sm:text-[2.25rem] leading-[1.12] tracking-[-0.02em] font-extrabold text-ink"
-        style={{ fontFamily: "var(--fi-font-sans)" }}
-      >
-        Fee-to-Revenue Analysis
-      </h1>
-      <p className="mt-2 max-w-2xl text-[14px] text-ink-muted">
-        How do published fee schedules correlate with actual service charge
-        income reported in call reports? This analysis cross-references
-        extracted fees with FDIC and NCUA financial data to reveal the
-        relationship between fee pricing and revenue.
-      </p>
-      <div className="mt-1">
-        <DataFreshness />
-      </div>
+      <header className={PAGE_HEADER}>
+        <div className="flex items-center justify-center gap-2 mb-4 sm:justify-start">
+          <span className="h-px w-8 bg-brick/40" />
+          <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-brick/60">
+            Original Research
+          </span>
+        </div>
+        <h1
+          className="text-[1.75rem] sm:text-[2.25rem] leading-[1.12] tracking-[-0.02em] font-extrabold text-ink"
+          style={{ fontFamily: "var(--fi-font-sans)" }}
+        >
+          Fee-to-Revenue Analysis
+        </h1>
+        <p className="mx-auto mt-2 max-w-[34rem] text-[14px] text-ink-muted sm:mx-0 sm:max-w-2xl">
+          How do published fee schedules correlate with actual service charge
+          income reported in call reports? This analysis cross-references
+          extracted fees with FDIC and NCUA financial data to reveal the
+          relationship between fee pricing and revenue.
+        </p>
+        <div className="mt-1">
+          <DataFreshness />
+        </div>
+      </header>
 
       {/* Summary cards */}
       <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3">

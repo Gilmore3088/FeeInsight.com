@@ -29,7 +29,7 @@ export default async function EmailPreferencesPage({ searchParams }: PageProps) 
   return (
     <div className="mx-auto max-w-lg px-6 py-20">
       <h1
-        className="font-extrabold text-[1.75rem] leading-[1.15] tracking-[-0.02em] text-ink"
+        className="text-center font-extrabold text-[1.75rem] leading-[1.15] tracking-[-0.02em] text-ink sm:text-left"
         style={{ fontFamily: "var(--fi-font-sans)" }}
       >
         Email preferences
