@@ -715,6 +715,8 @@ function InstitutionRow({
               const d = p.detail;
               const when = chargedWhen(d?.frequency ?? null);
               const account = accountOf(p);
+              // The schedule's own waiver wording when it was read; otherwise the condition recorded with the fee.
+              const condition = p.evidence?.condition ?? d?.conditions ?? null;
               return (
                 <li key={p.id} className="grid gap-x-4 gap-y-0.5 px-3 py-2 sm:grid-cols-[9rem_minmax(0,1fr)]">
                   <p className="text-ink">
@@ -723,7 +725,7 @@ function InstitutionRow({
                   </p>
                   <div className="min-w-0">
                     {(account || named > 0) && (
-                      <p className={account ? "font-medium text-ink" : "text-ink-muted"}>{account ?? "Account not named"}</p>
+                      <p className={account ? "font-medium text-ink" : "text-ink-muted"}>{account ?? "Account not stated"}</p>
                     )}
                     {p.evidence ? (
                       <p className="text-[12px] text-ink-muted">
@@ -735,7 +737,7 @@ function InstitutionRow({
                         {d?.fee_name ? <> (&ldquo;{d.fee_name}&rdquo;)</> : null} doesn&apos;t state {money(p.amount)}.
                       </p>
                     )}
-                    {d?.conditions && <p className="text-[12px] text-ink-muted">Conditions: {d.conditions}</p>}
+                    {condition && <p className="text-[12px] text-ink-muted">Condition: {condition}</p>}
                   </div>
                 </li>
               );
