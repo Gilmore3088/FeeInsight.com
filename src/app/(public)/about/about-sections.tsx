@@ -2,7 +2,7 @@ import Link from "next/link";
 import { TrackLink } from "@/components/track-link";
 import { DEMO_REQUEST_NAV } from "@/components/nav-items";
 import { PRODUCT_NAME, SITE_NAME } from "@/lib/constants";
-import type { AboutAction, AboutBlock, AboutProof } from "./about-view";
+import { FOUNDER, type AboutAction, type AboutBlock, type AboutProof } from "./about-view";
 
 const SANS = { fontFamily: "var(--fi-font-sans)" } as const;
 const MONO = { fontFamily: "var(--fi-font-mono)" } as const;
@@ -155,21 +155,26 @@ export function AboutNextAction({ action }: { action: AboutAction }) {
   );
 }
 
+/** Who runs Fee Insight, merged with the contact line so the page has one email link. */
 export function AboutContact({ email, legalLine }: { email: string; legalLine: string }) {
   return (
-    <div className="space-y-1 border-t border-border pt-5 text-[13px] text-ink-muted">
-      <p>
-        Questions or data requests?{" "}
+    <section aria-labelledby="founder-heading" className="border-t border-border pt-6">
+      <h2 id="founder-heading" className="text-[1.1rem] font-bold leading-tight text-ink" style={SANS}>
+        {FOUNDER.title}
+      </h2>
+      <p className="mt-1.5 max-w-xl text-[14px] leading-relaxed text-ink-soft">{FOUNDER.line}</p>
+      <p className="mt-1 text-[14px] text-ink-soft">
         <a
           href={`mailto:${email}`}
-          className="inline-flex min-h-11 items-center font-medium text-ink underline decoration-border underline-offset-4 hover:decoration-ink"
+          className="inline-flex min-h-11 items-center font-semibold text-ink underline decoration-border underline-offset-4 hover:decoration-ink"
         >
-          {email}
-        </a>
+          {FOUNDER.linkLabel}
+        </a>{" "}
+        at {email}
       </p>
-      <p>
+      <p className="mt-2 text-[12px] text-ink-muted">
         {SITE_NAME} is operated by {legalLine}.
       </p>
-    </div>
+    </section>
   );
 }

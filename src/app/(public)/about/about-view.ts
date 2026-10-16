@@ -80,8 +80,7 @@ export const ABOUT_BLOCKS: readonly AboutBlock[] = [
     eyebrow: "What we publish",
     title: `The ${PRODUCT_NAME}`,
     lines: [
-      "Every fee links to the schedule it came from and the date we collected it.",
-      "Medians and ranges are built from those fees, one value per institution.",
+      "Every fee is read from the institution's own schedule, and medians use only fees traced to a stored copy.",
     ],
   },
   {
@@ -104,6 +103,13 @@ export const ABOUT_BLOCKS: readonly AboutBlock[] = [
     link: { href: "/methodology", label: "Read the methodology" },
   },
 ];
+
+/** Who runs Fee Insight: the existing founder line, kept as the owner wrote it. */
+export const FOUNDER = {
+  title: "Who's behind this",
+  line: `${SITE_NAME} is built and run by James Gilmore, a banking data analyst.`,
+  linkLabel: "Write to James",
+} as const;
 
 export interface AboutAction {
   href: string;

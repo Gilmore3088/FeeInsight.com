@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { COVERAGE_LABELS, UNAVAILABLE_LABEL } from "@/lib/public-stats";
-import { ABOUT_BLOCKS, REPORT_REQUEST_HREF, SAMPLE_REPORT_HREF, aboutNextAction, aboutProof } from "./about-view";
+import { ABOUT_BLOCKS, FOUNDER, REPORT_REQUEST_HREF, SAMPLE_REPORT_HREF, aboutNextAction, aboutProof } from "./about-view";
 
 const LIVE = {
   monitored: 8000,
@@ -65,6 +65,19 @@ describe("ABOUT_BLOCKS", () => {
     expect(text).not.toMatch(/—/);
     expect(text).not.toMatch(/\d/);
     expect(text).not.toMatch(/James|Hamilton|Frost|Velocity|CSI/);
+  });
+
+  it("does not claim every fee links to its source", () => {
+    expect(ABOUT_BLOCKS[0].lines.join(" ")).toBe(
+      "Every fee is read from the institution's own schedule, and medians use only fees traced to a stored copy.",
+    );
+  });
+});
+
+describe("FOUNDER", () => {
+  it("names the founder without an employer or an em-dash", () => {
+    expect(FOUNDER.line).toBe("Fee Insight is built and run by James Gilmore, a banking data analyst.");
+    expect(Object.values(FOUNDER).join(" ")).not.toMatch(/\u2014|Velocity|CSI|Frost/);
   });
 });
 

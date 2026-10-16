@@ -74,10 +74,14 @@ describe("AboutNextAction", () => {
 });
 
 describe("AboutContact", () => {
-  it("links the contact address and names the operating company, not a person", () => {
+  it("names who runs Fee Insight and has one email link", () => {
     const { container } = render(<AboutContact email={CONTACT_EMAIL} legalLine={LEGAL_ENTITY_LINE} />);
-    expect(screen.getByRole("link", { name: CONTACT_EMAIL })).toHaveAttribute("href", `mailto:${CONTACT_EMAIL}`);
+    expect(screen.getByRole("heading", { name: "Who's behind this" })).toBeInTheDocument();
+    expect(screen.getByText("Fee Insight is built and run by James Gilmore, a banking data analyst.")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Write to James" })).toHaveAttribute("href", `mailto:${CONTACT_EMAIL}`);
+    expect(container.querySelectorAll('a[href^="mailto:"]')).toHaveLength(1);
+    expect(container.textContent).toContain(CONTACT_EMAIL);
     expect(container.textContent).toContain(LEGAL_ENTITY_LINE);
-    expect(container.textContent).not.toMatch(/James|—/);
+    expect(container.textContent).not.toMatch(/\u2014|Velocity|CSI|Frost/);
   });
 });
