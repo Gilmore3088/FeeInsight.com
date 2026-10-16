@@ -132,3 +132,20 @@ describe("James's live wordings (#1537, #1539)", () => {
     expect(isPeerListQuestion("What do banks over $5B charge for overdraft fees?")).toBe(false);
   });
 });
+
+describe("state refinement of a peer list (#1538)", () => {
+  it("narrows by a state in the common follow-up phrasings", async () => {
+    const { peerListRefinementState } = await import("./peer-list");
+    expect(peerListRefinementState("Only show the California ones.")).toBe("CA");
+    expect(peerListRefinementState("Only Florida")).toBe("FL");
+    expect(peerListRefinementState("Show only Texas")).toBe("TX");
+    expect(peerListRefinementState("Show me only the GA ones")).toBe("GA");
+    expect(peerListRefinementState("Filter to Florida.")).toBe("FL");
+  });
+  it("matches no state when the follow-up adds another condition, rather than dropping it", async () => {
+    const { peerListRefinementState } = await import("./peer-list");
+    expect(peerListRefinementState("Show only Texas banks")).toBeNull();
+    expect(peerListRefinementState("Filter to Florida credit unions over $1B")).toBeNull();
+    expect(peerListRefinementState("Florida only")).toBeNull();
+  });
+});
