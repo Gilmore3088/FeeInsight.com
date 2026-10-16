@@ -7,6 +7,14 @@ export const HAMILTON_EVIDENCE_CONTRACT_VERSION = 1 as const;
 export const CLAIM_BINDING_LIMITATION =
   "Structured evidence preserves record identity and derivations, but it does not by itself verify every sentence in a narrative.";
 
+/** Saved evidence matches the stored source at answer time; nothing here re-checks the live source. */
+export const STORED_SNAPSHOT_LIMITATION =
+  "Evidence snapshot reflects stored records at answer time; it is not a live-source recheck.";
+export const OWN_AGGREGATE_LIMITATION =
+  "Own category aggregate has incompatible, incomplete or untraceable product/frequency/source rows; it is not a claim-bound individual fee.";
+export const PEER_AGGREGATE_LIMITATION =
+  "Peer category aggregates lack contributing published fee-row IDs; figures are directional and omitted from claim-bound evidence.";
+
 export type HamiltonFactUnit = "usd" | "percent" | "count" | "ratio" | "text";
 export type HamiltonEvidenceStatus =
   | "published"
@@ -398,13 +406,9 @@ export function buildFeeResearchEvidence(research: FeeResearch): HamiltonEvidenc
     facts: ownFacts,
     derivations,
     limitations: [
-      "Evidence snapshot reflects stored records at answer time; it is not a live-source recheck.",
-      ...(research.current !== null && !currentEvidenceSupported
-        ? ["Own category aggregate has incompatible, incomplete or untraceable product/frequency/source rows; it is not a claim-bound individual fee."]
-        : []),
-      ...(research.peers.length > 0
-        ? ["Peer category aggregates lack contributing published fee-row IDs; figures are directional and omitted from claim-bound evidence."]
-        : []),
+      STORED_SNAPSHOT_LIMITATION,
+      ...(research.current !== null && !currentEvidenceSupported ? [OWN_AGGREGATE_LIMITATION] : []),
+      ...(research.peers.length > 0 ? [PEER_AGGREGATE_LIMITATION] : []),
       CLAIM_BINDING_LIMITATION,
     ],
   };
