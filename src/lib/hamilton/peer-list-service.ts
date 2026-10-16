@@ -7,6 +7,14 @@ import { normalizeCanonicalInstitutionId } from "./context-link";
 import { resolveHamiltonInstitutionContext } from "./workspace-context";
 import { isPeerListContinuationQuestion, peerListFeeFollowUp, parsePeerListQuestion, peerListRefinementState, validatePeerListContinuation, peerListReferencesUnchanged, planPeerList, type PeerListData, type PeerListResponse, type PeerListSubject } from "./peer-list";
 
+/** Why "us" has no institution: none linked, or more than one. Never the researched institution. */
+function noAccountInstitution(status: string): string {
+  const why = status === "ambiguous"
+    ? "More than one institution is linked to your account, so Hamilton can't tell which one is \"us\"."
+    : "No institution is linked to your account, so there is no \"us\" to compare.";
+  return `${why} Hamilton did not treat the institution you are researching as yours.`;
+}
+
 interface PeerAskBody { institutionId?: unknown; question?: unknown; answer?: unknown; previousPeerList?: unknown }
 interface PeerAsker { id: number; institution_name?: string | null }
 
@@ -34,6 +42,16 @@ export async function answerPeerList(user: PeerAsker, body: PeerAskBody, recordA
         const prior = validatePeerListContinuation(body.previousPeerList);
         const state = peerListRefinementState(question);
         const feeIntent = peerListFeeFollowUp(question);
+        // "Compare with us" with no list yet: say whether the account has an institution to be "us",
+        // from the account alone. The researched institution is never taken to be the asker's.
+        if (!prior && feeIntent === "with_account") {
+          const resolved = await loadHamiltonAccountContext(user);
+          if (resolved.status === "unavailable")
+            return message("unavailable", "Hamilton could not check which institution is linked to your account. Nothing was compared.");
+          if (resolved.status !== "identified" || !resolved.institution)
+            return message("needs_criteria", `${noAccountInstitution(resolved.status)} To see peers' NSF fees, ask for a peer list first, then "Compare their NSF fees".`);
+          return message("needs_criteria", `Ask for a peer list first, for example "List ten similarly sized peers". Then ask "How does this compare with us?" to add ${resolved.institution.name}.`);
+        }
         if (!prior || !isPeerListContinuationQuestion(question))
           return message("needs_criteria", "This follow-up has no valid prior peer list. Run the peer list again; no replacement list was selected.");
         const suppliedId = body.institutionId === undefined || body.institutionId === null || body.institutionId === ""
@@ -62,8 +80,9 @@ export async function answerPeerList(user: PeerAsker, body: PeerAskBody, recordA
           if (feeIntent === "with_account") {
             const resolved = await loadHamiltonAccountContext(user);
             if (resolved.status !== "identified" || !resolved.institution)
-              return message(resolved.status === "unavailable" ? "unavailable" : "needs_criteria",
-                "Your account institution is not verified. The researched institution was not assumed to be yours.");
+              return resolved.status === "unavailable"
+                ? message("unavailable", "Hamilton could not check which institution is linked to your account. Nothing was compared.")
+                : message("needs_criteria", `${noAccountInstitution(resolved.status)} To compare the listed peers, ask "Compare their NSF fees".`);
             account = { institutionId: Number(resolved.institution.id), name: resolved.institution.name };
             if (!Number.isSafeInteger(account.institutionId) || account.institutionId <= 0)
               return message("unavailable", "The account institution ID is invalid. No comparison was generated.");
