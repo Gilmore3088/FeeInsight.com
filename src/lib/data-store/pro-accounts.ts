@@ -1,5 +1,6 @@
 import { sql } from "./connection";
 import { institutionDisplayName } from "@/lib/institution-display-name";
+import { PRO_INSTITUTION_MIN_FEES } from "./data-room";
 
 /**
  * Hamilton Pro accounts: every user with the premium role or a subscription status
@@ -41,6 +42,58 @@ export async function getProAccounts(): Promise<ProAccount[]> {
     createdAt: new Date(row.created_at as string | Date).toISOString(),
     isActive: Boolean(row.is_active),
   }));
+}
+
+/** Atlas's direct-run source (`PRIORITY_INSTITUTION_SOURCE` in agents/atlas/priority-institutions.ts). */
+export const ATLAS_PRIORITY_RUN_SOURCE = "atlas.priority_institution";
+
+/**
+ * A Pro account's own institution and its live fees (#1078). One below PRO_INSTITUTION_MIN_FEES is
+ * the gap Atlas runs first; `lastAtlasRunAt` is its newest direct run, so the admin view says when
+ * the collection was last tried rather than only that fees are missing.
+ */
+export interface ProInstitutionCoverage {
+  institutionId: number;
+  name: string;
+  members: number;
+  liveFees: number;
+  belowMinimum: boolean;
+  lastAtlasRunAt: string | null;
+  lastAtlasRunStatus: string | null;
+}
+
+export async function getProInstitutionCoverage(db: typeof sql = sql): Promise<ProInstitutionCoverage[]> {
+  const rows = await db<
+    Array<{ institution_id: number | string; institution_name: string | null; members: number; live_fees: number; run_at: string | Date | null; run_status: string | null }>
+  >`
+    SELECT pro.institution_id, inst.institution_name, COUNT(DISTINCT pro.user_id)::int AS members,
+           (SELECT COUNT(*) FROM published_fee_catalog own WHERE own.institution_id = pro.institution_id)::int AS live_fees,
+           run.started_at AS run_at, run.status AS run_status
+      FROM institution_workspace_memberships pro
+      LEFT JOIN institution_sources inst ON inst.id = pro.institution_id
+      LEFT JOIN LATERAL (
+        SELECT r.started_at, r.status FROM agent_runs r
+         WHERE r.params_json->>'source' = ${ATLAS_PRIORITY_RUN_SOURCE}
+           AND r.params_json->>'institution_id' = pro.institution_id::text
+         ORDER BY r.started_at DESC NULLS LAST
+         LIMIT 1
+      ) run ON TRUE
+     WHERE pro.membership_status = 'active'
+     GROUP BY pro.institution_id, inst.institution_name, run.started_at, run.status
+     ORDER BY live_fees ASC, inst.institution_name ASC
+  `;
+  return rows.map((row) => {
+    const liveFees = Number(row.live_fees ?? 0);
+    return {
+      institutionId: Number(row.institution_id),
+      name: row.institution_name ? institutionDisplayName(row.institution_name) : `Institution ${row.institution_id}`,
+      members: Number(row.members ?? 0),
+      liveFees,
+      belowMinimum: liveFees < PRO_INSTITUTION_MIN_FEES,
+      lastAtlasRunAt: row.run_at ? new Date(row.run_at).toISOString() : null,
+      lastAtlasRunStatus: row.run_status ? String(row.run_status) : null,
+    };
+  });
 }
 
 /** The institution a Pro checkout is priced for: its name and total assets (thousands). */
