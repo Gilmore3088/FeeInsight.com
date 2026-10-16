@@ -438,13 +438,14 @@ the detail.
     (`hamilton.frequency_fill:v<N>:fix:<id>:<from>:<to>`), because `pipeline_feedback` upserts
     on its key and an old key was silently overwritten. The excerpt is read from
     `COALESCE(extraction_note, conditions)`.
-    Overdraft plan hold (#1360, no version change, `OVERDRAFT_PLAN_HOLD_LIVE` off): an overdraft
-    program the keep above leaves monthly was, in every case checked on the bank's own page, an
-    optional plan, not the overdraft fee. With the switch on it is held (`frequency_hold: an
-    optional overdraft plan ...`) when its bank has another live overdraft fee charged per item
-    (or blank) above $0; a bank's only overdraft row keeps it (92746, James's call). Off, each step
-    lists them in `frequency_plan_would_hold`. Oct 16 dry run: 1 (Selco's 143753, $10 a month,
-    beside its $25 per-item Courtesy Pay).
+    Overdraft plan hold (#1360, no version change, `OVERDRAFT_PLAN_HOLD_LIVE` on since Oct 16,
+    James 04:53 UTC: "Retire wrong copy"): an overdraft program the keep above leaves monthly was,
+    in every case checked on the bank's own page, an optional plan, not the overdraft fee. It is
+    held (`frequency_hold: an optional overdraft plan ...`) when its bank has another live overdraft
+    fee charged per item (or blank) above $0; a bank's only overdraft row keeps it (92746, James's
+    call). Off (`planHoldLive: false`), a step lists them in `frequency_plan_would_hold`. Oct 16
+    dry run, re-counted at switch-on: 1 (Selco's 143753, $10 a month, beside its $25 per-item
+    Courtesy Pay).
 19. Newer-copy check (`newer-copy-retire.ts`): a fee line gone from a newer copy of its page,
     `newer_copy_drops_fee:#<newer document id>` (`NEWER_COPY_RETIRE_LIVE` is true; false makes
     it a shadow run).
