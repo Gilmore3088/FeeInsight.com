@@ -481,6 +481,25 @@ describe("the account a read records (v73, #1100)", () => {
     expect(productOf(read("Truth in Savings Monthly Fee", "Truth in Savings Monthly Fee $4.00", { amount: 4 }), "Fees\nTruth in Savings Monthly Fee $4.00")).toBeNull();
     // A stored lineup product that names no account gives way to the next source.
     expect(productOf(read("Monthly fee", "Monthly fee $6.00", { productName: "Health Savings Card", amount: 6 }), "Premier Checking\nMonthly fee $6.00")).toBe("Premier Checking");
+    // Fee 64103 (BANK360, Club Plus Checking): a perk from the package's list is no account.
+    expect(productOf(read("Monthly fee", "Monthly fee $7.50", { amount: 7.5 }), "Hotel Savings Network\nMonthly fee $7.50")).toBeNull();
+    // A glued checking heading ends the lookback; a glued checking fee is checking's.
+    expect(productOf(read("Monthly fee", "Monthly fee $5.00"), "Savings Accounts\neChecking Account Fees\nMonthly fee $5.00")).toBeNull();
+    expect(productOf(read("MyChecking Monthly Fee", "MyChecking Monthly Fee $5.00"), "Savings Accounts\nMyChecking Monthly Fee $5.00")).toBeNull();
+    // 677436 / 677439 (prod): a wrapped Reg DD sentence whose opening repeats under another account.
+    const regdd = ["SENIOR CHECKING ACCOUNT", "Minimum balance to avoid imposition of fees - A service charge fee of $15.00 will", "be imposed every four-week statement cycle if the balance in the account falls below $500.",
+      "BUSINESS CHECKING ACCOUNT", "Minimum balance to avoid imposition of fees - A service charge fee of $50.00 will", "be imposed every month if the balance falls below $5,000."].join("\n");
+    const senior = "Minimum balance to avoid imposition of fees - A service charge fee of $15.00 will be imposed every four-week statement cycle if the balance in the account falls below";
+    expect(productOf(read("Minimum balance to avoid imposition of fees", senior, { amount: 15 }), regdd)).toBe("SENIOR CHECKING ACCOUNT");
+    // 483864 (prod): a business table's fee takes its column, not a checking heading above the table.
+    const business = ["ULTIMATE CHECKING", "Monthly service charge | $5", "ACCOUNT FEATURES | BUSINESS CHECKING", "Monthly service charge | $10"].join("\n");
+    expect(productOf(read("Monthly service charge", "Monthly service charge | $10", { amount: 10 }), business)).toBe("BUSINESS CHECKING");
+    // The same row under several accounts' tables: no account.
+    const repeated = ["ACCOUNT FEATURES | ULTIMATE CHECKING", "Monthly service charge | $10", "ACCOUNT FEATURES | MONEY MARKET PLUS", "Monthly service charge | $10"].join("\n");
+    expect(productOf(read("Monthly service charge", "Monthly service charge | $10", { amount: 10 }), repeated)).toBeNull();
+    // 441754 (Regions, prod): a waiver cell naming a checking account is no header.
+    const regions = ["PREMIUM MONEY MARKET", "You May Avoid Monthly Fee By | Minimum daily balance of $15,000 OR opening or maintaining a", "Maintaining One Or More Of The | LifeGreen Preferred Checking account", "Following:", "Minimum Opening Deposit | $25", "Monthly Fee | $15"].join("\n");
+    expect(productOf(read("Monthly Fee", "Monthly Fee | $15", { amount: 15 }), regions)).toBe("PREMIUM MONEY MARKET");
     // The institution's own name.
     const named = withLineupFromText(read("Monthly fee", "Monthly fee $5.00"), "Peoples Savings\nMonthly fee $5.00", { institutionName: "Peoples Savings" });
     expect(named.lineup?.productName ?? null).toBeNull();

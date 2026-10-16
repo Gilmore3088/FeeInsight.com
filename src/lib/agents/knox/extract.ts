@@ -90,7 +90,7 @@ export const ACCOUNT_PRODUCT_FLAG = "account_product:v73";
  * Savings", 8 "Health Savings Card" and 2 "Savings Bank/Loan" names, stored at v55.
  */
 export const NON_ACCOUNT_PRODUCT_SQL =
-  "(truth[[:space:]-]+in[[:space:]-]+savings|savings[[:space:]]+(cards?|programs?|discounts?|benefits?)|savings[[:space:]]+(and[[:space:]]+loan|&[[:space:]]*loan|banks?|institution|association))";
+  "\\y(truth[[:space:]-]+in[[:space:]-]+savings|savings[[:space:]]+(cards?|programs?|discounts?|benefits?)|(savings|savers)[[:space:]]+(networks?|plans?|rewards?|clubs?)\\y(?![[:space:]]+(accounts?|savings|shares?)\\y)|discount[[:space:]]+savings|savings[[:space:]]+(and[[:space:]]+loan|&[[:space:]]*loan|banks?|institution|association))\\y";
 /**
  * Banks whose pages are read first while the stale backlog lasts, besides each state's market
  * leaders: banks one or two headline fees short of the report rule, whose own schedule shows

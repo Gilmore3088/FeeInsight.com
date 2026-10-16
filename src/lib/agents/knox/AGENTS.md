@@ -517,7 +517,18 @@ to (`product_name`, the catalog's `account_product_type`; `accountProductFor` in
   one account ("Checking Account Fees", "CHECKING & MONEY MARKET") ends the heading lookback.
 - A fee for all accounts ("Monthly Service Fee - all accounts") or one price printed across several
   columns ("$0 $0 $0") records no account.
-- A disclosure title ("Truth in Savings"), a perk ("Health Savings Card") and a bank's own name
+- A table row's fee takes the account its header names over the price's column, any kind of account
+  (`tableColumnProduct`: "ACCOUNT FEATURES | BUSINESS CHECKING" over "Monthly service charge | $10"),
+  before any heading above the table. The header row must open on a label ("Account Type", "ACCOUNT
+  FEATURES", "Product"); a waiver row that names a checking account is no header.
+- A fee row printed the same in several places (one table per account: "Monthly service charge |
+  $10" eight times) records no account, from either table reader.
+- A fee line is found by its whole excerpt, then, when its opening words repeat (a wrapped Reg DD
+  sentence under each account), by the line that joined to the next holds the excerpt; still
+  ambiguous, no account. Glued "eChecking"/"MyChecking" count as checking, and a banking-package
+  heading ends the lookback.
+- A disclosure title ("Truth in Savings"), a perk ("Health Savings Card", any "… Savings
+  Network/Plan/Rewards/Club" not named as an account, "Discount Savings") and a bank's own name
   ("Bangor Savings Bank", the institution's name) are never the account. One excluder,
   `src/lib/account-name-exclusions.ts`, is shared with the account type hold (#1566).
 - A read that records the account flags the raw row `account_product:v73`. A later read replaces a

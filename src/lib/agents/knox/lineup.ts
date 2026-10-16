@@ -241,15 +241,36 @@ interface AccountBlock {
 const BLOCK_LINES_ABOVE = 4;
 const BLOCK_LINES_BELOW = 2;
 
-function accountBlock(text: string, excerpt: string): AccountBlock | null {
-  const lines = text.split(/\n+/).map(squash).filter(Boolean);
+/** The index of the fee's own line in the text's lines, or -1 when it cannot be told. */
+function feeLineIndex(lines: string[], excerpt: string): number {
   const probe = squash(excerpt).slice(0, 30);
-  if (probe.length < 8) return null;
+  if (probe.length < 8) return -1;
   // v73: the line that holds the whole excerpt first; its first 30 characters can open an earlier
   // line too ("Call or see a Platte Valley Bank representative..." under CDs and again under HSAs).
   const whole = squash(excerpt).slice(0, 160);
-  const exact = whole.length > probe.length ? lines.findIndex((line) => line.includes(whole)) : -1;
-  const at = exact >= 0 ? exact : lines.findIndex((line) => line.includes(probe));
+  const exacts = lines.flatMap((line, index) => (line.includes(whole) ? [index] : []));
+  // The same row printed under several accounts ("Monthly service charge | $10" in eight account
+  // tables, inst 483864's schedule): which account's it is cannot be told, so none.
+  if (exacts.length > 1) return -1;
+  let at = exacts.length === 1 ? exacts[0] : -1;
+  if (at < 0) {
+    const opening = lines.flatMap((line, index) => (line.includes(probe) ? [index] : []));
+    if (opening.length <= 1) at = opening[0] ?? -1;
+    else {
+      // A sentence wrapped over two lines whose opening words repeat on other accounts' lines (a Reg
+      // DD disclosure's "Minimum balance to avoid imposition of fees - A service charge fee of $…"):
+      // the line that, joined to the next, holds the excerpt. None, or more than one: no account.
+      const joined = whole.slice(0, 120);
+      const held = opening.filter((index) => `${lines[index]} ${lines[index + 1] ?? ""}`.includes(joined));
+      at = held.length === 1 ? held[0] : -1;
+    }
+  }
+  return at;
+}
+
+function accountBlock(text: string, excerpt: string): AccountBlock | null {
+  const lines = text.split(/\n+/).map(squash).filter(Boolean);
+  const at = feeLineIndex(lines, excerpt);
   if (at < 0) return null;
   let heading: string | null = null;
   let headingAt = -1;
@@ -298,6 +319,39 @@ function accountBlock(text: string, excerpt: string): AccountBlock | null {
   const around = lines.slice(Math.max(0, at - BLOCK_LINES_ABOVE), at).concat(lines.slice(at + 1, at + 1 + BLOCK_LINES_BELOW));
   return { heading, accountHeading, feeLine: lines[at], nearby, around };
 }
+
+/**
+ * v73: the account a table's header names over the column whose cell holds this price, any kind of
+ * account ("ACCOUNT FEATURES | BUSINESS CHECKING" over "Monthly service charge | $10"). The
+ * comparison-table reader (`accountTableProduct`) reads checking columns only; this one names the
+ * column of any account, so a business or savings table's fee never takes a heading above the table.
+ * Null when no price cell or no header row of the same width names an account there.
+ */
+export function tableColumnProduct(text: string, excerpt: string, amount: number): string | null {
+  const lines = text.split(/\n+/).map(squash).filter(Boolean);
+  const at = feeLineIndex(lines, excerpt);
+  if (at < 0 || !lines[at].includes("|")) return null;
+  const cells = lines[at].split("|").map(squash);
+  const cents = Math.round(amount * 100);
+  const columns = cells
+    .map((cell, index) => ({ index, prices: amountsIn(cell).map((found) => Math.round(found.value * 100)) }))
+    .filter((cell) => cell.index > 0 && cell.prices[0] === cents);
+  if (columns.length !== 1) return null;
+  for (let index = at - 1; index >= Math.max(0, at - 15); index -= 1) {
+    const row = lines[index].split("|").map(squash);
+    if (row.length !== cells.length) continue;
+    if (row.some((cell) => cell.includes("$"))) continue;
+    // A header row opens on a label ("Account Type", "ACCOUNT FEATURES", "Product"); any other row
+    // above the fee is another feature's ("Maintaining One Or More Of The | LifeGreen Preferred Checking account").
+    if (!TABLE_HEADER_LABEL.test(row[0])) continue;
+    const name = row[columns[0].index].replace(/[*†‡¹²³⁴⁵⁶⁷⁸⁹]+$/, "").trim();
+    if (namesNoAccount(name)) return null;
+    if (ACCOUNT_KIND_HEADING.test(name) || ACCOUNT_TYPE_HEADING.test(name) || distinctAccountName(name)) return name;
+  }
+  return null;
+}
+
+const TABLE_HEADER_LABEL = /^(?:accounts?|account\s+(?:types?|names?|features?|options?)|products?|features?|services?|compare|)\s*:?$/i;
 
 /** The nearest short account heading in the lines just above the fee's own line. */
 export function accountHeadingAbove(text: string, excerpt: string): string | null {
@@ -406,7 +460,10 @@ export function accountProductFor(
   // ("Bangor Savings Bank") is never the account (`account-name-exclusions.ts`, shared with #1566).
   const usable = (name: string | null | undefined) => (name && !namesNoAccount(name, institutionName) ? name : null);
   const fee = withoutNonAccountWords(candidate.feeName, institutionName);
-  const own = usable(candidate.lineup?.productName) ?? usable(candidate.amount == null ? null : accountTableProduct(text, candidate.excerpt, candidate.amount));
+  const own =
+    usable(candidate.lineup?.productName) ??
+    usable(candidate.amount == null ? null : accountTableProduct(text, candidate.excerpt, candidate.amount)) ??
+    usable(candidate.amount == null ? null : tableColumnProduct(text, candidate.excerpt, candidate.amount));
   const named = usable(productNameFromFeeName(fee));
   // A fee whose own name says checking is a checking account's, even when its name gives no product
   // ("Enjoy! Rewards Checking monthly service fee" under a "SAVINGS" heading, #1598 review).
@@ -427,7 +484,8 @@ export function accountProductFor(
 
 /** "CONSUMER BANKING PACKAGES": a relationship package is a checking account's (inst 1310, prod). */
 const PACKAGE_HEADING = /\b(?:banking|relationship|account)\s+packages?\b/i;
-const CHECKING_WORDS = /\b(?:checking|share\s*drafts?)\b/i;
+/** Checking, glued to a name too ("eChecking", "MyChecking"). */
+const CHECKING_WORDS = /checking\b|\bshare\s*drafts?\b/i;
 /** "Monthly Service Fee - all accounts", "per account, every account". */
 const ALL_ACCOUNTS = /\b(?:all|every|each|any)\s+(?:of\s+(?:our|your|the)\s+)?(?:deposit\s+|share\s+)?accounts?\b/i;
 
@@ -443,7 +501,7 @@ function accountKind(name: string): string | null {
   if (/\b(?:business|commercial|non-?profit|corporate)\b/i.test(name)) return "business";
   if (/\bmoney\s*market\b|\bmmda\b/i.test(name)) return "money_market";
   if (/\b(?:ira|hsa|health savings|certificates?|cds?)\b/i.test(name)) return "ira_hsa_cd";
-  if (/\b(?:checking|share\s*drafts?)\b/i.test(name)) return "checking";
+  if (CHECKING_WORDS.test(name)) return "checking";
   if (/\b(?:christmas|holiday|vacation)\b/i.test(name)) return "club";
   if (/\b(?:savings?|savers?|share|passbook)\b/i.test(name)) return "savings";
   return null;

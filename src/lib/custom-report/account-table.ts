@@ -309,6 +309,8 @@ export function accountTableRow(text: string, feeName: string, amount: number): 
 export function accountTableProduct(text: string, excerpt: string, amount: number): string | null {
   const probe = squash(excerpt).slice(0, 60);
   if (probe.length < 8) return null;
+  // The same row printed in several tables (one per account) names no one product.
+  if (text.split(/\n+/).map(squash).filter((line) => line.startsWith(probe)).length > 1) return null;
   const cents = Math.round(amount * 100);
   const products = new Set(
     accountTableCells(text)

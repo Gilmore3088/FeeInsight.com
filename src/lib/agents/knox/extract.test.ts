@@ -487,9 +487,11 @@ describe("stored products that name no account (v73, #1100)", () => {
   it("matches the shared excluder in Postgres form", async () => {
     const { NON_ACCOUNT_PRODUCT_SQL } = await import("./extract");
     const { namesNoAccount } = await import("@/lib/account-name-exclusions");
-    const asJs = new RegExp(NON_ACCOUNT_PRODUCT_SQL.replace(/\[\[:space:\]\]/g, "\\s").replace(/\[\[:space:\]-\]/g, "[\\s-]"), "i");
+    const asJs = new RegExp(NON_ACCOUNT_PRODUCT_SQL.replace(/\[\[:space:\]\]/g, "\\s").replace(/\[\[:space:\]-\]/g, "[\\s-]").replace(/\\y/g, "\\b"), "i");
     for (const name of ["Truth in Savings", "TRUTH IN SAVINGS ACT", "CONSUMER TRUTH-IN-SAVINGS FEE SCHEDULE", "Health Savings Card",
-      "Free Bangor Savings Bank Debit Mastercard®", "First Federal Savings and Loan", "Statement Savings", "Health Savings Account", "Premier Checking"]) {
+      "Free Bangor Savings Bank Debit Mastercard®", "First Federal Savings and Loan", "Statement Savings", "Health Savings Account", "Premier Checking",
+      "Hotel Savings Network", "Savers Club", "Health Discount Savings", "Dental Savings Plan", "Shopping Savings Rewards", "BaZing Savings Network",
+      "Kids' Super Savers Club Account", "Holiday Savings Club Account", "Savings Bankers Choice"]) {
       expect(asJs.test(name), name).toBe(namesNoAccount(name));
     }
   });
