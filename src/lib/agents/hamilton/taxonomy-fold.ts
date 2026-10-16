@@ -639,6 +639,11 @@ export const HAND_REFILES: readonly HandRefile[] = [
     why: "#1655, inst 4956, doc 26712: under \"Equity Loan\", \"Home Equity Line Check returned (due to non-sufficient funds) | $29.00\"; a home equity line fee, not a deposit NSF (checking's own NSF line is \"No charge\", live as 122347)" },
   { feePublishedId: 122343, from: "monthly_maintenance", amount: 25, to: "other_lending_fee", name: "Tax Service Charge",
     why: "#1655, inst 4956, doc 26712: under \"Equity Loan\", \"Tax Service Charge | $25.00\"; a home equity loan fee, not a monthly maintenance fee" },
+  // #1659 (read-only, Oct 16): U.S. Bank's $4.95 row named no account; the page prints it under
+  // "Safe Debit account". Renamed in place once (`oldName`); price and category are right.
+  { feePublishedId: 102970, from: "monthly_maintenance", amount: 4.95, to: "monthly_maintenance", name: "Safe Debit account Monthly Maintenance Fee",
+    oldName: "Monthly Maintenance Fee with no minimum balance requirement",
+    why: "#1659, inst 5, doc 23628: \"Safe Debit account2\" / \"$4.95 Monthly Maintenance Fee with no minimum balance requirement\"" },
 ];
 
 interface HandRow {

@@ -46,6 +46,14 @@ export interface HandAmountCorrection {
    * the wrong-read test is instead that the old name appears nowhere in the stored text.
    */
   oldNameNotPrinted?: boolean;
+  /**
+   * The other fee's line the wrong read was taken from, when the old name is printed (#1659: U.S.
+   * Bank's "$12 Monthly Maintenance Fee waived on every U.S. Bank Smartly® Checking account1" read
+   * at the next line's $10). The shared check still traces the wrong read there; the correction
+   * applies only while that exact line is the one it traces to, and is left alone if the wrong read
+   * traces anywhere else.
+   */
+  wrongReadTracesTo?: string;
 }
 
 export const HAND_AMOUNT_CORRECTIONS: readonly HandAmountCorrection[] = [
@@ -100,6 +108,17 @@ export const HAND_AMOUNT_CORRECTIONS: readonly HandAmountCorrection[] = [
     why: "\"Overdraft or Returned-Item Fee | $35 Per Item\"; the stored text has no \"Overdraft Item Fee\" line and no $0 overdraft price",
     pattern: "wrong_read", issue: 1655,
     oldNameNotPrinted: true,
+  },
+  // #1659 (read-only, Oct 16): U.S. Bank's Bank Smartly Checking row on checking-accounts.html (text
+  // 20686) took its price from the Elite Money Market waiver line after its own. Corrected in place
+  // to the account's printed $12 and named for the account; the student page's copy (102973) comes
+  // down as its duplicate (hand-takedowns.ts), which runs after this in the same publish step.
+  {
+    feePublishedId: 102971, institution: "U.S. Bank", institutionId: 5, sourceDocumentId: 23628,
+    canonicalFeeKey: "monthly_maintenance", from: 10, to: 12, feeName: "Bank Smartly Checking Monthly Maintenance Fee",
+    why: "\"Bank Smartly Checking\" / \"$12 Monthly Maintenance Fee can be waived in multiple ways1\"; the $10 is the next line's \"$10 Monthly Maintenance Fee waived on all Elite Money Market account with a U.S. Bank Smartly® Checking account\"",
+    pattern: "wrong_read", issue: 1659,
+    wrongReadTracesTo: "$10 Monthly Maintenance Fee waived on all Elite Money Market account with a U.S. Bank Smartly® Checking account",
   },
 ];
 
@@ -225,9 +244,10 @@ export function planHandAmountCorrections(rows: LiveRow[]): Pick<HandAmountResul
     const text = row.normalized_text;
     const traced = checkFeeAgainstSource(text, fix.feeName, fix.to, ".", fix.canonicalFeeKey);
     if (!traced.ok) { skipped.push({ feePublishedId: fix.feePublishedId, reason: `corrected price does not trace: ${traced.reason}` }); continue; }
-    const wrongReadStands = fix.oldNameNotPrinted
+    const wrongRead = fix.oldNameNotPrinted ? null : checkFeeAgainstSource(text, row.fee_name, fix.from, ".", fix.canonicalFeeKey);
+    const wrongReadStands = wrongRead == null
       ? squash(text ?? "").includes(squash(row.fee_name))
-      : checkFeeAgainstSource(text, row.fee_name, fix.from, ".", fix.canonicalFeeKey).ok;
+      : wrongRead.ok && (fix.wrongReadTracesTo == null || wrongRead.sourceLine !== fix.wrongReadTracesTo);
     if (wrongReadStands) {
       skipped.push({ feePublishedId: fix.feePublishedId, reason: fix.oldNameNotPrinted ? "old name still printed" : "cut amount still traces" });
       continue;

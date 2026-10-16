@@ -36,9 +36,14 @@ const LIVE: LiveTakedownRow[] = [
   // #1655's two overdraft guide rows as they read live on prod, read-only, Oct 16.
   { fee_published_id: 5827, lineage_ref: 1717, institution_id: 1968, canonical_fee_key: "od_daily_cap", fee_name: "Continuous Overdraft Charge Daily Cap", amount: "3.29" },
   { fee_published_id: 84637, lineage_ref: 93864, institution_id: 97, canonical_fee_key: "overdraft", fee_name: "Overdraft or Returned Item fee (business accounts)", amount: "10.00" },
+  // #1659's four rows as they read live on prod, read-only, Oct 16.
+  { fee_published_id: 104565, lineage_ref: 173293, institution_id: 5, canonical_fee_key: "nsf", fee_name: "Returned check", amount: "30.00" },
+  { fee_published_id: 104566, lineage_ref: 173294, institution_id: 5, canonical_fee_key: "stop_payment", fee_name: "Stop payment", amount: "25.00" },
+  { fee_published_id: 102973, lineage_ref: 117579, institution_id: 5, canonical_fee_key: "monthly_maintenance", fee_name: "Monthly maintenance fee", amount: "12.00" },
+  { fee_published_id: 15727, lineage_ref: 9064, institution_id: 4956, canonical_fee_key: "atm_non_network", fee_name: "plus ATM owner fees", amount: "1.00" },
 ];
 const CONDITIONAL_ZERO = [43512, 54014, 61335, 68893, 70121, 73737, 77121, 77122, 77618, 84553, 87079, 87461, 88213, 91505, 120559];
-const IDS = [80423, 102440, 83118, 45619, 116720, 134129, 48113, 87307, 134962, ...CONDITIONAL_ZERO, 142965, 13188, 144352, 114273, 114270, 5827, 84637];
+const IDS = [80423, 102440, 83118, 45619, 116720, 134129, 48113, 87307, 134962, ...CONDITIONAL_ZERO, 142965, 13188, 144352, 114273, 114270, 5827, 84637, 104565, 104566, 102973, 15727];
 
 function fakeDb(live: LiveTakedownRow[], failOn?: string) {
   const writes: Array<{ text: string; values: unknown[] }> = [];
@@ -73,6 +78,10 @@ describe("hand takedowns (James, Oct 16)", () => {
       [114270, "source_mismatch: #1302"],
       [5827, "duplicate of #43265 (#1655)"],
       [84637, "source_mismatch: #1655"],
+      [104565, "source_mismatch: #1659"],
+      [104566, "source_mismatch: #1659"],
+      [102973, "duplicate of #102971 (#1659)"],
+      [15727, "source_mismatch: #1659"],
     ]);
     // A wrong read names its issue; a second read of one printed fee names the live copy it repeats too.
     expect(HAND_TAKEDOWNS.every((entry) => entry.evidence.length > 0 && (entry.kind === "duplicate"
@@ -104,6 +113,10 @@ describe("hand takedowns (James, Oct 16)", () => {
         { feePublishedId: 114270, feeVerifiedId: 174295, reason: "source_mismatch: #1302" },
         { feePublishedId: 5827, feeVerifiedId: 1717, reason: "duplicate of #43265 (#1655)" },
         { feePublishedId: 84637, feeVerifiedId: 93864, reason: "source_mismatch: #1655" },
+        { feePublishedId: 104565, feeVerifiedId: 173293, reason: "source_mismatch: #1659" },
+        { feePublishedId: 104566, feeVerifiedId: 173294, reason: "source_mismatch: #1659" },
+        { feePublishedId: 102973, feeVerifiedId: 117579, reason: "duplicate of #102971 (#1659)" },
+        { feePublishedId: 15727, feeVerifiedId: 9064, reason: "source_mismatch: #1659" },
       ],
       skipped: [],
     });
@@ -208,6 +221,8 @@ describe("hand audience fixes (#1302)", () => {
     // #1655: two takedowns and two audience fixes (5600 is an amount correction).
     const batch1655 = HAND_AUDIENCE_FIXES.filter((fix) => fix.issue === 1655).length + HAND_TAKEDOWNS.filter((entry) => entry.issue === 1655).length;
     expect(batch1655).toBe(4);
+    // #1659: four takedowns (102971 is an amount correction, 102970 a rename).
+    expect(HAND_TAKEDOWNS.filter((entry) => entry.issue === 1659)).toHaveLength(4);
   });
 
   it("fixes a row only while it still reads as listed, and once", () => {
