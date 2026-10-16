@@ -176,6 +176,20 @@ describe("/api/v1/index", () => {
     expect(response.headers.get("access-control-allow-origin")).toBe("*");
   });
 
+  it("reports each category's unstated-audience institution count, 0 when none (#1132)", async () => {
+    const [spotlight, second] = getSpotlightCategories();
+    vi.mocked(getNationalIndex).mockResolvedValue([
+      { ...indexEntry(spotlight), unstated_audience_institution_count: 38 },
+      indexEntry(second),
+    ] as never);
+
+    const response = await GET(new NextRequest("https://feeinsight.com/api/v1/index"));
+    const body = await response.json();
+
+    expect(body.data.map((d: { category: string; unstated_audience_institution_count: number }) => [d.category, d.unstated_audience_institution_count]))
+      .toEqual([[spotlight, 38], [second, 0]]);
+  });
+
   it("answers 503, not 429, when usage tracking is down", async () => {
     vi.mocked(checkRateLimitWithTier).mockResolvedValue({
       allowed: false,
