@@ -3,11 +3,11 @@
 import { useId, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 
 /**
- * The live samples, one at a time (James's notes of Oct 16): a row of labelled buttons picks
- * the sample, and only that one shows, at full size. Every panel is in the server markup; the
+ * One panel at a time (James's notes of Oct 16): a row of labelled buttons picks the panel,
+ * and only that one shows, at full size. Every panel is in the server markup; the
  * others are hidden until picked. Arrow keys move between the buttons (WAI-ARIA tabs).
  */
-export function SampleTabs({ tabs }: { tabs: { key: string; label: string; panel: ReactNode }[] }) {
+export function SampleTabs({ tabs, label }: { tabs: { key: string; label: string; panel: ReactNode }[]; label: string }) {
   const [active, setActive] = useState(tabs[0]?.key);
   const id = useId();
   const buttons = useRef<(HTMLButtonElement | null)[]>([]);
@@ -23,7 +23,7 @@ export function SampleTabs({ tabs }: { tabs: { key: string; label: string; panel
   return (
     <div>
       {tabs.length > 1 ? (
-        <div role="tablist" aria-label="Live samples" className="mx-auto flex w-fit max-w-full gap-1 rounded-full border border-border bg-surface-0 p-1">
+        <div role="tablist" aria-label={label} className="flex w-fit max-w-full max-sm:mx-auto gap-1 rounded-full border border-border bg-surface-0 p-1">
           {tabs.map((tab, i) => {
             const on = tab.key === active;
             return (
@@ -41,7 +41,7 @@ export function SampleTabs({ tabs }: { tabs: { key: string; label: string; panel
                 data-sample-tab={tab.key}
                 onClick={() => setActive(tab.key)}
                 onKeyDown={(event) => onKey(event, i)}
-                className={`min-h-11 rounded-full px-4 text-[14px] font-semibold sm:px-5 ${on ? "bg-ink text-on-ink" : "text-ink-soft hover:text-ink"}`}
+                className={`min-h-11 whitespace-nowrap rounded-full px-3.5 text-[14px] font-semibold sm:px-5 ${on ? "bg-ink text-on-ink" : "text-ink-soft hover:text-ink"}`}
               >
                 {tab.label}
               </button>
@@ -62,31 +62,6 @@ export function SampleTabs({ tabs }: { tabs: { key: string; label: string; panel
           {tab.panel}
         </div>
       ))}
-    </div>
-  );
-}
-
-/**
- * Shows only the first entry of a list until the reader asks for the rest. Children mark the
- * entries after the first with `group-data-[collapsed]/more:hidden`.
- */
-export function ShowMore({ count, label, children }: { count: number; label: string; children: ReactNode }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <div className="group/more" data-collapsed={open ? undefined : ""}>
-      {children}
-      {count > 1 ? (
-        <div className="px-4 pb-4 sm:px-6 sm:pb-5">
-          <button
-            type="button"
-            aria-expanded={open}
-            onClick={() => setOpen((was) => !was)}
-            className="inline-flex min-h-11 items-center text-[14px] font-semibold text-ink underline decoration-border underline-offset-4 hover:decoration-ink"
-          >
-            {open ? "Show one fee" : label}
-          </button>
-        </div>
-      ) : null}
     </div>
   );
 }

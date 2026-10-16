@@ -24,14 +24,13 @@ import { CustomerFooter } from "@/components/customer-footer";
 import { SearchModal } from "@/components/public/search-modal";
 import { getFeeCategoryDetailCached } from "@/lib/data-store/public-cached-reads";
 import { LandingHero } from "./landing-hero";
-import { LandingDemo } from "./landing-demo";
-import { LandingPillars } from "./landing-pillars";
+import { LandingResearch } from "./landing-demo";
+import { LandingWorkflow } from "./landing-workflow";
 import { LandingProvenance } from "./landing-provenance";
 import { LandingPricing } from "./landing-pricing";
 import { LandingFaq } from "./landing-faq";
 import { LandingClose } from "./landing-close";
 import { buildHomeData, buildSampleView, homeReadsCacheable } from "./landing-shared";
-import { readSampleLadder } from "./for-institutions/market-ladder";
 import { buildScenario } from "./subscribe/scenario";
 
 // The buyer promise from site v3 brief 08 §B.3 (h1) and its subhead; no counts, so nothing goes stale.
@@ -83,7 +82,7 @@ export default async function LandingPage() {
   // index, research hub and directory to the number. The district medians are the cached
   // read /fees/overdraft already makes; a failed read only hides the district rows. The
   // live sample report (the same one /for-institutions and the sample page show) gives the
-  // named bank's fees, their source lines and its market ladder; a failed read hides them.
+  // named bank, its competitors and its report for the workflow section; a failed read hides it.
   // The sample is read once: it is null both when none passes the bar today and on error.
   const [{ summary, categories }, sampleRead, overdraftRead] = await Promise.all([
     getPublicSnapshot(),
@@ -104,21 +103,16 @@ export default async function LandingPage() {
     ),
   ]);
   const liveSample = sampleRead.report;
-  // A failed state or charter read only drops that ladder row, but it still counts as a failed read.
-  const ladderRead = liveSample ? await readSampleLadder(liveSample, categories) : { ladder: null, failed: false };
-  const ladder = ladderRead.ladder;
   const cacheable = homeReadsCacheable({
     summary,
     categories,
     sampleFailed: sampleRead.failed,
     overdraftFailed: overdraftRead.failed,
-    ladderFailed: ladderRead.failed,
   });
   // Opts this render out of the page cache (see the note at the top of the file).
   if (!cacheable) await connection();
   const data = buildHomeData(summary, categories, overdraftRead.detail?.by_fed_district, {
     sample: buildSampleView(liveSample),
-    ladder,
     scenario: buildScenario("Overdraft", categories.find((c) => c.fee_category === "overdraft")),
   });
 
@@ -135,8 +129,8 @@ export default async function LandingPage() {
       <ConsumerNav />
       <main id="main-content">
         <LandingHero summary={summary} />
-        <LandingDemo data={data} />
-        <LandingPillars data={data} />
+        <LandingWorkflow report={liveSample} />
+        <LandingResearch data={data} />
         <LandingProvenance summary={summary} />
         <LandingPricing />
         <LandingFaq summary={summary} />

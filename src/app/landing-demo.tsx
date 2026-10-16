@@ -1,8 +1,8 @@
-import { AppIcon } from "@/brand/components";
-import { ProductDemo, type DemoView } from "@/components/marketing/product-demo";
+import type { DemoView } from "@/components/marketing/product-demo";
 import { DistrictMap, MyFeesChart, PriceSlider } from "./landing-charts";
 import { NationalFeesExhibit, ReportExhibit } from "./landing-exhibits";
-import type { HomeData } from "./landing-shared";
+import { PRODUCT_NAME } from "@/lib/constants";
+import { SECTION_INNER, SectionHeading, type HomeData } from "./landing-shared";
 
 /** The sample's fee chart needs this many comparable lines to read as a chart. */
 const MIN_SAMPLE_ROWS = 3;
@@ -25,27 +25,23 @@ export function demoViews(data: HomeData): DemoView[] {
 }
 
 /**
- * The hero's visual (brief 06 §4.2; James's notes of Oct 15): one product window directly
- * under the hero copy, opening on the interactive Fed district map. Its tabs are the only
- * navigation; nothing advances on its own.
+ * Bank Fee Index research (James's notes of Oct 16): the overdraft median by Fed district, from
+ * the national index. It is the index's research, so it sits in a plain card under its own
+ * heading, not in a Hamilton window: it shows no institution and no customer task.
  */
-export function LandingDemo({ data }: { data: HomeData }) {
-  if (!data.overdraft || data.lines.length === 0) return null;
+export function LandingResearch({ data }: { data: HomeData }) {
+  if (!data.overdraft || data.districts.length === 0) return null;
   return (
-    // Its own section under the hero: the window never overlaps the hero copy. This section
-    // is the demo's one landmark; ProductDemo adds none inside it.
-    <section aria-label="Hamilton demo" className="bg-paper">
-      <div className="mx-auto max-w-6xl px-4 pb-10 pt-2 sm:px-6 sm:pb-12 sm:pt-2">
-        <ProductDemo
-          label="Hamilton views"
-          mark={
-            <>
-              <AppIcon brand="hamilton" size={22} title="" />
-              <span className="hidden sm:inline">Hamilton</span>
-            </>
-          }
-          views={demoViews(data)}
+    <section aria-label={`${PRODUCT_NAME} research`} className="bg-paper">
+      <div className={`${SECTION_INNER} pb-14 pt-4 sm:pb-20 sm:pt-6`}>
+        <SectionHeading
+          eyebrow={`${PRODUCT_NAME} research`}
+          title="Overdraft fees by Fed district"
+          line="The national index, district by district. Pick a district for its median and its report."
         />
+        <div className="mt-8 overflow-hidden rounded-2xl border border-border bg-surface-0">
+          <DistrictMap data={data} />
+        </div>
       </div>
     </section>
   );

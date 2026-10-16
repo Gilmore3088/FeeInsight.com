@@ -6,7 +6,6 @@ import Link from "next/link";
 import { trackEvent } from "@/lib/analytics";
 import { US_STATES } from "@/lib/us-map-paths";
 import { DISTRICT_NAMES, STATE_TO_DISTRICT } from "@/lib/fed-districts";
-import type { MarketLadderData } from "@/app/for-institutions/market-ladder";
 import type { DistrictPoint, HomeData, RangeEntry, SampleRow, SampleView } from "./landing-shared";
 
 /**
@@ -887,71 +886,6 @@ export function PriceSlider({ data }: { data: HomeData }) {
           </span>
         ) : null}
         <span>A scenario, not advice</span>
-      </p>
-    </div>
-  );
-}
-
-/* ───────────────────────── Market ladder ───────────────────────── */
-
-/**
- * One fee in every market: a column per market (its median), the middle half as a whisker,
- * and the bank's own fee as a line across them all. A column opens its market's figures.
- */
-export function LadderColumns({ ladder }: { ladder: MarketLadderData }) {
-  const [selected, setSelected] = useState(0);
-  const hi = top10(Math.max(ladder.value, ...ladder.rows.map((r) => r.q3)) * 1.1);
-  const row = ladder.rows[selected] ?? ladder.rows[0];
-  const H = 170;
-  const y = (v: number) => H - (v / hi) * H;
-  return (
-    <div className="p-4 sm:p-6">
-      <p className="text-[13px] text-ink-soft">
-        <span className="font-semibold text-ink">{ladder.institutionName}</span> · {ladder.feeLabel}
-      </p>
-      <div className="relative mt-6" style={{ height: `${H}px` }}>
-        <span className="absolute inset-x-0 bottom-0 h-px bg-border" aria-hidden="true" />
-        <span className="absolute inset-x-0 z-10 h-[2px] bg-brick" style={{ top: `${y(ladder.value)}px` }} aria-hidden="true" />
-        <span
-          className="absolute right-0 z-10 -translate-y-full whitespace-nowrap pb-1 text-[11px] font-semibold text-ink"
-          style={{ top: `${y(ladder.value)}px` }}
-        >
-          Its fee {money(ladder.value)}
-        </span>
-        <div className="absolute inset-0 grid gap-3" style={{ gridTemplateColumns: `repeat(${ladder.rows.length}, minmax(0, 1fr))` }}>
-          {ladder.rows.map((r, i) => {
-            const on = i === selected;
-            return (
-              <button
-                key={r.label}
-                type="button"
-                aria-pressed={on}
-                aria-label={`${r.label}: median ${money(r.median)}`}
-                onClick={() => setSelected(i)}
-                className="fi-map-cell group relative h-full"
-              >
-                <span
-                  className="fi-a-col absolute inset-x-[22%] bottom-0 rounded-t-[4px] transition-colors"
-                  style={{ height: `${H - y(r.median)}px`, background: on ? "var(--fi-ink)" : "var(--fi-viz-inside)", ...at(150 + i * 120) }}
-                />
-                <span className="absolute left-1/2 w-px -translate-x-1/2 bg-ink-muted" style={{ top: `${y(r.q3)}px`, height: `${y(r.q1) - y(r.q3)}px` }} />
-                <span className="absolute left-1/2 h-px w-3 -translate-x-1/2 bg-ink-muted" style={{ top: `${y(r.q3)}px` }} />
-                <span className="absolute left-1/2 h-px w-3 -translate-x-1/2 bg-ink-muted" style={{ top: `${y(r.q1)}px` }} />
-              </button>
-            );
-          })}
-        </div>
-      </div>
-      <div className="mt-2 grid gap-3 text-center text-[12px] leading-4" style={{ gridTemplateColumns: `repeat(${ladder.rows.length}, minmax(0, 1fr))` }}>
-        {ladder.rows.map((r, i) => (
-          <span key={r.label} className={i === selected ? "font-semibold text-ink" : "text-ink-muted"}>
-            {r.label}
-          </span>
-        ))}
-      </div>
-      <p className="mt-4 border-t border-border pt-3 text-[13px] text-ink-soft" aria-live="polite">
-        <span className="font-semibold text-ink">{row.label}</span>: median {money(row.median)}, middle half {money(row.q1)} to{" "}
-        {money(row.q3)}, {COUNT.format(row.institutions)} institutions
       </p>
     </div>
   );

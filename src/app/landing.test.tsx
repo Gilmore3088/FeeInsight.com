@@ -5,8 +5,9 @@ import { PRO_TIERS, tierPriceLabel } from "@/lib/pro-tiers";
 import { REPORT_PRICE_INLINE } from "@/lib/constants";
 import type { PublicStatsSummary } from "@/lib/public-stats";
 import { LandingHero } from "./landing-hero";
-import { LandingDemo } from "./landing-demo";
-import { LandingPillars } from "./landing-pillars";
+import { LandingResearch } from "./landing-demo";
+import { LandingWorkflow } from "./landing-workflow";
+import { sampleWorkflowReport } from "./landing-workflow.test-fixture";
 import { LandingProvenance } from "./landing-provenance";
 import { LandingPricing } from "./landing-pricing";
 import { LandingFaq, faqItems } from "./landing-faq";
@@ -103,19 +104,8 @@ const report = {
     ],
   },
 } as unknown as MarketReport;
-const ladder = {
-  institutionName: "Sample Bank",
-  feeKey: "overdraft",
-  feeLabel: "Overdraft (OD)",
-  value: 10,
-  rows: [
-    { label: "Local competitors", min: 15, q1: 22.5, median: 29.5, q3: 35, max: 36, institutions: 8 },
-    { label: "The nation", min: 0, q1: 25, median: 30, q3: 33, max: 50, institutions: 2493 },
-  ],
-};
 const data = buildHomeData(summary, categories, districts, {
   sample: buildSampleView(report),
-  ladder,
   scenario: buildScenario("Overdraft", categories[0]),
 });
 const text = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/&#x27;|&apos;/g, "'").replace(/&amp;/g, "&").replace(/\s+/g, " ");
@@ -125,8 +115,8 @@ const wholePage = () =>
   renderToStaticMarkup(
     <>
       <LandingHero summary={summary} />
-      <LandingDemo data={data} />
-      <LandingPillars data={data} />
+      <LandingWorkflow report={sampleWorkflowReport()} />
+      <LandingResearch data={data} />
       <LandingProvenance summary={summary} />
       <LandingPricing />
       <LandingFaq summary={summary} />
@@ -166,43 +156,16 @@ describe("homepage (site v3 brief 06 §4.3)", () => {
     expect(unavailable).not.toContain("institutions in the");
   });
 
-  it("server-renders one demo window: tabs for navigation, the district map open, no time bar", () => {
-    const html = renderToStaticMarkup(<LandingDemo data={data} />);
-    const tabs = [...html.matchAll(/role="tab"[^>]*aria-selected="(true|false)"(?: aria-label="([^"]+)")?[^>]*data-tab="(\w+)"/g)].map(
-      ([, selected, , key]) => `${key}:${selected}`,
-    );
-    expect(tabs).toEqual(["map:true", "fees:false", "price:false", "reports:false"]);
-    for (const label of ["District map", "My fees", "Try a price", "Reports"]) expect(text(html)).toContain(label);
-    // The map view is open; the other views are in the markup but hidden until their tab opens them.
-    expect(html).toMatch(/data-view="map" class="fi-demo-view"/);
-    expect(html).toMatch(/hidden=""[^>]*data-view="fees"/);
-    expect(html).toContain('aria-label="Map of the 12 Federal Reserve districts, shaded by overdraft median"');
-    // No timer of any kind: no segments, no progress group, no play, pause or replay control.
-    expect(html).not.toMatch(/data-segment|Demo progress|fi-progress-fill|Pause the product demo|Replay/);
-    expect(html).not.toContain("<video");
-    // Hamilton's mark sits inside the demo window.
-    expect(html).toContain("Hamilton");
-    expect(renderToStaticMarkup(<LandingDemo data={buildHomeData(summary, [], null)} />)).toBe("");
-  });
-
-  it("draws the demo's views from live figures, the sample bank against its market", () => {
-    const html = renderToStaticMarkup(<LandingDemo data={data} />);
+  it("labels the district map as Bank Fee Index research, outside any Hamilton window", () => {
+    const html = renderToStaticMarkup(<LandingResearch data={data} />);
     const t = text(html);
-    // District map: the highest district median opens in the panel, against the nation.
+    expect(html).toContain('aria-label="Bank Fee Index research"');
+    expect(t).toContain("Overdraft fees by Fed district");
+    expect(html).toContain('aria-label="Map of the 12 Federal Reserve districts, shaded by overdraft median"');
     expect(t).toContain("Boston · District 1 $27.25 median · $1.75 below national");
-    expect(t).toContain("Boston $27.25 Nation $29.00");
     expect(html).toContain('href="/research/district/1"');
-    // My fees: the sample bank's fees, each a bar against its local median.
-    expect(t).toContain("Sample Bank against 15 local competitors");
-    expect(html).toContain('data-fee="stop_payment"');
-    // Try a price: a slider on the live national range.
-    expect(html).toMatch(/type="range"[^>]*min="0"[^>]*max="40"/);
-    // Reports: a page of the report, with one name per fee (the report line's own, as the ladder shows it).
-    expect(html).toContain('aria-label="Report preview"');
-    expect(t).toContain("Sample Bank against its local market");
-    expect(t).toContain("Outgoing international wire");
-    expect(t).not.toMatch(/Wire Transfer \(Int'l Out\)|Overdraft \(OD\)/);
-    expect(html).toContain('href="/reports/sample-competitive-fee-position"');
+    expect(t).not.toContain("Hamilton");
+    expect(renderToStaticMarkup(<LandingResearch data={buildHomeData(summary, [], null)} />)).toBe("");
   });
 
   it("renders Pro prices from PRO_TIERS with the report as one line", () => {
@@ -224,49 +187,10 @@ describe("homepage (site v3 brief 06 §4.3)", () => {
     expect(t).not.toMatch(/rolling calendar|every month/i);
   });
 
-  it("quotes only source lines that pass the shared check, and never a neighbouring fee", () => {
-    expect(data.sample?.fees.map((f) => f.key)).toEqual(["overdraft", "wire_intl_outgoing", "stop_payment"]);
-    const t = text(renderToStaticMarkup(<LandingPillars data={data} />));
-    expect(t).toContain("Outgoing International Wires … $40.00 /ea");
-    expect(t).not.toMatch(/Zipper|Lost Key|Over \$300|Statement Printout/);
-  });
-
-  it("draws one visual in each pillar, none of them a demo view", () => {
-    const pillars = renderToStaticMarkup(<LandingPillars data={data} />);
-    const t = text(pillars);
-    // Every fee: the bank's schedule lines drawn to the index.
-    expect(t).toContain("Sample Bank · fee schedule");
-    // Every market: the bank's fee across its markets as columns.
-    expect(t).toContain("Its fee $10.00");
-    expect(pillars).toContain('aria-label="Local competitors: median $29.50"');
-    // One workspace: Hamilton answers with a chart.
-    expect(t).toContain("What do the core fees cost nationally?");
-    expect(pillars).toContain('aria-label="National median of each core fee"');
-    // None repeats the demo: no map, no slider, no report page, no fee bars against the local median.
-    expect(pillars).not.toMatch(/Federal Reserve districts|type="range"|Report preview|data-fee="/);
-  });
-
-  it("shows one live sample at a time behind Sources, Markets and Reports, one heading and one line each", () => {
-    const html = renderToStaticMarkup(<LandingPillars data={data} />);
-    expect(html).toContain('id="live-samples"');
-    const t = text(html);
-    expect(t).toMatch(/^ ?Sources Markets Reports Trace every fee to its source Inspect the published schedule and the date it was read\./);
-    const tabs = [...html.matchAll(/aria-selected="(true|false)"[^>]*data-sample-tab="(\w+)"/g)].map(([, on, key]) => `${key}:${on}`);
-    expect(tabs).toEqual(["sources:true", "markets:false", "reports:false"]);
-    // The first sample is open; the others are in the markup but hidden until picked.
-    expect(html).toMatch(/hidden=""[^>]*data-sample="markets"/);
-    expect(html).toMatch(/hidden=""[^>]*data-sample="reports"/);
-    expect(html).not.toMatch(/hidden=""[^>]*data-sample="sources"/);
-    // The source sample opens on one fee, with the rest one tap away.
-    expect(html).toContain("data-collapsed");
-    expect(t).toContain("View more fees");
-    expect(t).toContain("Compare across markets");
-    expect(t).toContain("Bring the findings to committee");
-    expect(t).not.toMatch(/See it in action|Every fee|Every market|One workspace/);
-    // The demo comes first on the page, then the live samples.
+  it("puts the one-institution workflow before the research map", () => {
     const page = wholePage();
-    expect(page.indexOf('aria-label="Hamilton demo"')).toBeGreaterThan(-1);
-    expect(page.indexOf('aria-label="Hamilton demo"')).toBeLessThan(page.indexOf('id="live-samples"'));
+    expect(page.indexOf('id="see-it-work"')).toBeGreaterThan(-1);
+    expect(page.indexOf('id="see-it-work"')).toBeLessThan(page.indexOf('aria-label="Bank Fee Index research"'));
   });
 
   it("keeps at most five short FAQ answers", () => {
@@ -279,10 +203,14 @@ describe("homepage (site v3 brief 06 §4.3)", () => {
   });
 
   it("keeps the copy rules and the word budget", () => {
-    const html = wholePage();
+    // The report excerpt is the sample report itself, in the report's own words; the rules are for the page's copy.
+    // The Compare screen's tables are names and figures, not copy.
+    const html = wholePage()
+      .replace(/<div inert=""[\s\S]*?(?=<div aria-hidden="true" class="pointer-events-none)/, "")
+      .replace(/<table[\s\S]*?<\/table>/g, "");
     expect(text(html)).not.toMatch(/—|!|real-time|recommend|\bAI\b|verified|99%/i);
-    // The markup holds all four demo views (three hidden), every figure and every label, and
-    // still stays under the old page's 889 visible words; the visible count is far lower.
+    // The markup holds all three steps (two hidden) and still stays under the old page's 889
+    // visible words; the visible count is far lower.
     expect(words(html)).toBeLessThan(800);
     // No section paragraph runs past one sentence of about twenty words.
     for (const [, para] of html.matchAll(/<p class="mt-4 text-\[17px\][^"]*"[^>]*>(.*?)<\/p>/g)) {
@@ -305,12 +233,11 @@ describe("homepage (site v3 brief 06 §4.3)", () => {
   });
 
   it("keeps a render out of the page cache when any read failed, but not when the sample is simply absent", () => {
-    const ok = { summary, categories, sampleFailed: false, overdraftFailed: false, ladderFailed: false };
+    const ok = { summary, categories, sampleFailed: false, overdraftFailed: false };
     expect(homeReadsCacheable(ok)).toBe(true);
     expect(homeReadsCacheable({ ...ok, summary: { ...summary, complete: false } })).toBe(false);
     expect(homeReadsCacheable({ ...ok, categories: [] })).toBe(false);
     expect(homeReadsCacheable({ ...ok, sampleFailed: true })).toBe(false);
     expect(homeReadsCacheable({ ...ok, overdraftFailed: true })).toBe(false);
-    expect(homeReadsCacheable({ ...ok, ladderFailed: true })).toBe(false);
   });
 });
