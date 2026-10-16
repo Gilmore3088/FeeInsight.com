@@ -1903,6 +1903,16 @@ async function executeAgenticStep(
             ).length,
             samples: published.duplicateCheck.samples,
           },
+          // #1069 step 2 (shadow while `live` is false): rows this step was about to publish that
+          // the other-bank, unconfirmed-host or business-schedule sweep would take down.
+          publish_sweep_check: {
+            live: published.sweepCheck.live,
+            would_refuse: published.sweepCheck.wouldRefuse,
+            refused: published.sweepCheck.refused,
+            by_rule: published.sweepCheck.byRule,
+            error: published.sweepCheck.error,
+            samples: published.sweepCheck.samples,
+          },
           near_name_collapse: {
             live: nearNameCollapse.live,
             documents: nearNameCollapse.documents,
