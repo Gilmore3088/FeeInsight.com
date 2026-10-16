@@ -14,7 +14,8 @@ vi.mock("@/components/track-link", () => ({
   ),
 }));
 
-import { CHECKOUT_ID, PLANS_ID, ProPlanBoard, RECOMMENDED_PLAN } from "./pro-plan-cards";
+import { apiIncludedInTier } from "@/lib/api-subscriber-access";
+import { API_LINE, CHECKOUT_ID, PLANS_ID, ProPlanBoard, RECOMMENDED_PLAN } from "./pro-plan-cards";
 
 const registerHref = { annual: "/register?plan=annual", monthly: "/register?plan=monthly" };
 
@@ -112,5 +113,15 @@ describe("/subscribe plan board", () => {
       registerHref.annual,
     );
     expect(track).toHaveBeenCalledWith("billing_frequency_selected", { plan: "annual", tier: mid.key, entry: "direct" });
+  });
+
+  it("says the API and Claude connector come only on the plans that include them", () => {
+    board();
+    expect(PRO_TIERS.filter((tier) => apiIncludedInTier(tier.key)).map((tier) => tier.key)).toEqual(["mid", "large"]);
+    PRO_TIERS.forEach((tier, i) => {
+      expect(cards()[i].textContent?.includes(API_LINE)).toBe(apiIncludedInTier(tier.key));
+    });
+    // The consultant price is the mid tier, so consultants get it too.
+    expect(apiIncludedInTier(NON_INSTITUTION_TIER)).toBe(true);
   });
 });

@@ -11,6 +11,7 @@ import {
   tierAmountLabel,
   type ProPlan,
 } from "@/lib/pro-tiers";
+import { apiIncludedInTier } from "@/lib/api-subscriber-access";
 import { PlanCheckout, type ProTierSelection } from "./plan-checkout";
 
 export type { ProTierSelection } from "./plan-checkout";
@@ -47,6 +48,12 @@ interface ProPlanBoardProps {
 }
 
 const DISPLAY = { fontFamily: "var(--fi-font-sans)" };
+
+/**
+ * On the plans that include the API (api-subscriber-access.ts, PR #1685): the person who pays
+ * makes one key on /account, with its Claude connector link. Seats get no key, so say whose.
+ */
+export const API_LINE = "Adds an API key and a Claude connector for the person who pays.";
 
 /**
  * The "N months free" on the toggle. Every tier gives the same months free today
@@ -190,6 +197,11 @@ export function ProPlanBoard({
                   ? `${annualPerMonthLabel(tier.key)} a month, billed yearly · save ${annualSavingsLabel(tier.key)}`
                   : `Billed monthly · or ${tierAmountLabel(tier.key, "annual")} a year`}
               </p>
+              {apiIncludedInTier(tier.key) && (
+                <p className="mt-1 text-[13px] font-medium leading-relaxed text-ink" data-api-included="">
+                  {API_LINE}
+                </p>
+              )}
               {mine && selectedName && (
                 <p className="mt-3 border-t border-border pt-2 text-[13px] font-medium leading-snug text-ink sm:mt-4 sm:pt-3">
                   {selectedName}
@@ -200,7 +212,7 @@ export function ProPlanBoard({
         })}
       </ul>
       <p className="mt-3 text-center text-xs leading-relaxed text-ink-muted">
-        The price follows total assets in the latest call report. Every size gets the same workspace.
+        The price follows total assets in the latest call report. Every plan gets the same Hamilton workspace.
       </p>
     </div>
   );
