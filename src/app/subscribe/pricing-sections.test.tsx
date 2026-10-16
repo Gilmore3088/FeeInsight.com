@@ -29,7 +29,10 @@ describe("/subscribe demo links (growth OS review N3)", () => {
 
   it("direct visit: the demo row says Ask for a demo, never Request a demo", () => {
     render(<OtherOptions />);
-    expect(screen.getByRole("link", { name: "Ask for a demo" })).toHaveAttribute("href", "/contact?source=demo");
+    const demo = screen.getByRole("link", { name: "Ask for a demo" });
+    expect(demo).toHaveAttribute("href", "/contact?source=demo");
+    // Its own placement, apart from the Hamilton window's link (pricing_exhibit_demo).
+    expect(demo).toHaveAttribute("data-placement", "pricing_demo");
     expect(document.body.textContent).not.toContain("Request a demo");
   });
 });

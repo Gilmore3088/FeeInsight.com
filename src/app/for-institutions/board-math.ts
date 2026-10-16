@@ -106,6 +106,21 @@ export function lineAxisMax(line: Pick<BoardLine, "peers" | "own">, extra = 0): 
   return Math.ceil(max / step) * step;
 }
 
+/**
+ * The axis labels for a line: $0, a round middle and the top. The middle is half the top,
+ * rounded down to whole $5 (whole $1 on a $10 axis), so it never reads "$62.50".
+ */
+export function axisTicks(top: number): number[] {
+  const unit = top > 10 ? 5 : 1;
+  const middle = Math.floor(top / 2 / unit) * unit;
+  return middle > 0 && middle < top ? [0, middle, top] : [0, top];
+}
+
+/** The sample report's own line name without its qualifier: "Overdraft (per item)" reads "Overdraft". */
+export function lineName(label: string): string {
+  return label.replace(/\s*\([^)]*\)$/, "");
+}
+
 /** Equal amounts stack: each figure's row in its column of dots, 0 at the axis. */
 export function stackDots(amounts: number[]): number[] {
   const seen = new Map<number, number>();

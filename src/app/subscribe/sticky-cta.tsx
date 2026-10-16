@@ -2,11 +2,12 @@
 
 import { useEffect, useState } from "react";
 import { PricingJump } from "./pricing-jump";
+import { CHOOSER_INPUT_ID } from "./pro-plan-cards";
 
 /**
- * The phone's sticky pricing button (the skill's "Hero (sticky) + Bottom" CTA pattern). It
- * shows only once the hero button has scrolled away and hides whenever the purchase card is
- * on screen, so it never covers the card it points to. Desktop has the sticky card instead.
+ * The phone's sticky pricing button. It shows once the element `heroId` names (the plan cards)
+ * has scrolled up out of view, and hides whenever the search and checkout panel (`cardId`) is
+ * on screen, so it never covers the panel it points to. Phones only: desktop has no sticky.
  */
 export function StickyCta({ heroId, cardId, label, className }: { heroId: string; cardId: string; label: string; className: string }) {
   const [heroGone, setHeroGone] = useState(false);
@@ -36,7 +37,7 @@ export function StickyCta({ heroId, cardId, label, className }: { heroId: string
         shown ? "translate-y-0" : "translate-y-full"
       }`}
     >
-      <PricingJump inputId="pro_tier_institution" targetId={cardId} className={className}>
+      <PricingJump inputId={CHOOSER_INPUT_ID} targetId={cardId} className={className}>
         {label}
       </PricingJump>
     </div>

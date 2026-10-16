@@ -1,7 +1,8 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import type { CompetitorBoard } from "./board-math";
-import { CompetitorBoardExhibit, PriceTesterExhibit, keyboardPrice } from "./workspace-exhibits";
+import { axisTicks } from "./board-math";
+import { CompetitorBoardExhibit, PriceTesterExhibit, SourceFooter, keyboardPrice } from "./workspace-exhibits";
 import { SAMPLE_REPORT_HREF } from "@/app/landing-shared";
 
 const peer = (id: number, name: string, amount: number) => ({ id, name, amount });
@@ -17,7 +18,7 @@ const board: CompetitorBoard = {
       key: "overdraft",
       label: "Overdraft",
       own: 35,
-      quote: "Overdraft Item Fee* | $35",
+      quote: "Overdraft Item Fee* … $35",
       readOn: "2026-10-03",
       peers: [peer(1, "Bank of America, N.A.", 10), peer(2, "Truist Bank", 36), peer(3, "Ameris Bank", 35), peer(4, "Regions Bank", 33), peer(5, "T M H Federal Credit Union", 31.5)],
       median: 35,
@@ -45,7 +46,7 @@ describe("CompetitorBoardExhibit", () => {
     render(<CompetitorBoardExhibit board={board} />);
     expect(screen.getByText("Hamilton · My fees")).toBeTruthy();
     expect(screen.getByText(/3 of 5 local competitors charge less/)).toBeTruthy();
-    expect(screen.getByText(/Capital City Bank’s schedule: “Overdraft Item Fee\* \| \$35”/)).toBeTruthy();
+    expect(screen.getByText(/Capital City Bank’s schedule: “Overdraft Item Fee\* … \$35”/)).toBeTruthy();
     expect(screen.getByText(/Bank Fee Index · each fee from the bank’s own published schedule · latest read Oct 12, 2026/)).toBeTruthy();
     expect(screen.getByRole("link", { name: "From the free sample report" }).getAttribute("href")).toBe(SAMPLE_REPORT_HREF);
   });
@@ -105,16 +106,30 @@ describe("PriceTesterExhibit", () => {
     expect(keyboardPrice(5, "ArrowLeft", true, 60)).toBe(0);
     expect(keyboardPrice(55, "ArrowRight", true, 60)).toBe(60);
     expect(keyboardPrice(35, "Home", false, 60)).toBeNull();
+    expect(keyboardPrice(35, "ArrowRight", false, 60, true)).toBeNull();
     render(<PriceTesterExhibit board={board} />);
     const slider = screen.getByLabelText("Price to try") as HTMLInputElement;
+    // Ctrl, Alt or Meta with an arrow is the browser's or the screen reader's, not the slider's.
+    fireEvent.keyDown(slider, { key: "ArrowLeft", ctrlKey: true });
+    expect(slider.getAttribute("aria-valuetext")).toMatch(/^\$35\.00: /);
     fireEvent.keyDown(slider, { key: "ArrowLeft", shiftKey: true });
     expect(slider.getAttribute("aria-valuetext")).toBe("$25.00: 1 of 5 local competitors charge less");
     fireEvent.keyDown(slider, { key: "ArrowRight" });
     expect(slider.getAttribute("aria-valuetext")).toMatch(/^\$26\.00: /);
   });
 
-  it("labels the axis in dollars and cents", () => {
+  it("labels the axis in dollars and cents, with a round middle tick", () => {
     render(<PriceTesterExhibit board={board} />);
     expect(screen.getByText("$25.00")).toBeTruthy();
+    expect(axisTicks(125)).toEqual([0, 60, 125]);
+    expect(axisTicks(50)).toEqual([0, 25, 50]);
+    expect(axisTicks(10)).toEqual([0, 5, 10]);
+  });
+});
+
+describe("SourceFooter", () => {
+  it("says what its date covers when it is not every figure", () => {
+    render(<SourceFooter readOn="2026-10-03" readLabel="local figures latest read" />);
+    expect(screen.getByText(/· local figures latest read Oct 3, 2026$/)).toBeTruthy();
   });
 });

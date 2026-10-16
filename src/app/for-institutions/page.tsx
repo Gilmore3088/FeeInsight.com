@@ -30,6 +30,7 @@ import { CompetitorBoardExhibit, PriceTesterExhibit } from "./workspace-exhibits
 import { DemoVideoSection } from "./demo-video";
 import { DemoRequestForm } from "./demo-request-form";
 import { proPlanFacts } from "./plan-facts";
+import { EYEBROW, SECTION_H2 as H2, SECTION_INNER } from "./section-styles";
 
 /** The hero's fallback figure when there is no live sample: the national overdraft benchmark. */
 const HERO_CATEGORY = "overdraft";
@@ -47,8 +48,6 @@ export const metadata: Metadata = {
   ...linkPreview({ title: PAGE_TITLE, description: PAGE_DESCRIPTION, path: "/for-institutions" }),
 };
 
-const EYEBROW = "text-[11px] font-bold uppercase tracking-[0.12em] text-ink-muted";
-const H2 = "text-[1.75rem] !font-semibold leading-[1.08] !tracking-[-0.03em] text-ink sm:text-[2.25rem]";
 
 /**
  * The Pro product page (site v3 brief 05 §4). Pro is the goal, the demo request the second
@@ -156,9 +155,14 @@ function Hero({ exhibit }: { exhibit: ReactNode }) {
           </div>
           <p className="mt-4 text-[13px] text-ink-muted">
             Pro from {fromMonthly}, monthly or annual.{" "}
-            <a href="#demo" className="font-semibold text-ink underline underline-offset-2">
+            <TrackLink
+              event="contact_sales"
+              eventProps={{ placement: "for_institutions_hero_demo" }}
+              href="#demo"
+              className="font-semibold text-ink underline underline-offset-2"
+            >
               {DEMO_REQUEST_NAV.label}
-            </a>
+            </TrackLink>
           </p>
         </div>
         <div className="min-w-0">{exhibit}</div>
@@ -243,12 +247,18 @@ function Feature({
   );
 }
 
-/** Hamilton Pro's three plans, from PRO_TIERS, with the subscription as the section's main action. */
+/**
+ * Hamilton Pro's three plans, from PRO_TIERS, with the subscription as the section's main action.
+ * Its button is navy (primary), the page's second after the hero's institution search, on
+ * purpose: a Pro subscription is the site's goal, and this band is where a buyer has just read
+ * the prices, so the step to them is the strongest button in view. In the hero the Pro button
+ * stays secondary, beside the search.
+ */
 function PlansSection() {
   const { freeMonths } = proPlanFacts();
   return (
     <section id="plans" aria-labelledby="plans-heading" className="scroll-mt-16 border-b border-border bg-surface-0">
-      <div className="mx-auto max-w-page px-4 py-14 sm:px-6 lg:py-20">
+      <div className={SECTION_INNER}>
         <div className="max-w-2xl">
           <p className={EYEBROW}>Hamilton Pro</p>
           <h2 id="plans-heading" className={`mt-3 ${H2}`} style={SANS}>
@@ -284,9 +294,14 @@ function PlansSection() {
           >
             {PRO_PLANS_NAV.label}
           </TrackLink>
-          <a href="#demo" className="inline-flex min-h-11 items-center text-[14px] font-semibold text-ink underline underline-offset-2">
+          <TrackLink
+            event="contact_sales"
+            eventProps={{ placement: "for_institutions_plans_demo" }}
+            href="#demo"
+            className="inline-flex min-h-11 items-center text-[14px] font-semibold text-ink underline underline-offset-2"
+          >
             {DEMO_REQUEST_NAV.label}
-          </a>
+          </TrackLink>
         </div>
       </div>
     </section>

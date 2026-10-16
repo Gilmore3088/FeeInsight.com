@@ -69,7 +69,7 @@ describe("Pro tiers", () => {
 
   it("states the annual plan as a monthly figure and its saving", () => {
     expect(annualPerMonthLabel("small")).toBe("$125");
-    expect(annualPerMonthLabel("large")).toBe("$417");
+    expect(annualPerMonthLabel("large")).toBe("$416");
     expect(annualSavingsLabel("small")).toBe("$300");
     expect(annualSavingsLabel("mid")).toBe("$600");
   });

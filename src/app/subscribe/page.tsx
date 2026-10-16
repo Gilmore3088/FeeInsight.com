@@ -13,7 +13,7 @@ import { gatedPageLabel, hamiltonFullName, subscribeEntry, subscribeReasonLine }
 import type { Metadata } from "next";
 import { getPublicStatsSummary } from "@/lib/public-stats";
 import { CONTACT_EMAIL, PRODUCT_NAME, REPORT_OFFER, SITE_NAME } from "@/lib/constants";
-import { CHECKOUT_ID, PLANS_ID, ProPlanBoard, type ProTierSelection } from "./pro-plan-cards";
+import { CHECKOUT_ID, CHOOSER_INPUT_ID, PLANS_ID, ProPlanBoard, type ProTierSelection } from "./pro-plan-cards";
 import { ProTierChooser } from "./pro-tier-chooser";
 import type { WirePreviewItem, WirePreviewLead } from "./pro-overview";
 import { getArticles, TOPIC_LABELS } from "@/lib/data-store/news";
@@ -383,14 +383,14 @@ export default async function SubscribePage({
             className="mt-16 rounded-2xl border border-border bg-surface-0 px-6 py-10 text-center fi-window-lift sm:px-10"
           >
             <h2 id="cta-heading" className="text-2xl font-semibold tracking-tight text-ink sm:text-3xl">
-              See where your fees stand
+              Find your Hamilton Pro price
             </h2>
             <p className="mx-auto mt-3 max-w-xl text-[15px] leading-relaxed text-ink">
               {chosenPrice ? chosenPriceLine(chosenPrice) : fromPriceLine()} for up
               to {WORKSPACE_SEAT_LIMIT} people.
             </p>
             <PricingJump
-              inputId="pro_tier_institution"
+              inputId={CHOOSER_INPUT_ID}
               targetId={CHECKOUT_ID}
               className={`mt-6 inline-flex min-h-12 items-center justify-center rounded-lg ${CTA_CLASS}`}
             >
