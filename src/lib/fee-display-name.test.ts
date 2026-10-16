@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { apiFeeName, feeDisplayName, isCutFeeName } from "@/lib/fee-display-name";
+import { DISPLAY_NAMES } from "@/lib/fee-taxonomy";
 
 describe("feeDisplayName", () => {
   it("names a safe deposit box row that states only its size (101392)", () => {
@@ -20,6 +21,17 @@ describe("feeDisplayName", () => {
   it("shows the category's name for a name cut from its line (#1180)", () => {
     expect(feeDisplayName("Chase Mobile to send a wire from your account to", "wire_domestic_outgoing")).toBe("Wire Transfer (Domestic Out)");
     expect(feeDisplayName("Fees: o A Minimum Balance Fee", "monthly_maintenance")).toBe("Monthly Maintenance");
+    // Stops on an audience word after a count, so the noun it described is gone (Chase, /institution/1).
+    expect(feeDisplayName("Counter Check: A blank page of 3 personal", "counter_check")).toBe(DISPLAY_NAMES.counter_check);
+    expect(feeDisplayName("Overdraft - Non-consumer - Continuous Overdraft Charge. Daily fee after 5 business", "continuous_od"))
+      .toBe(DISPLAY_NAMES.continuous_od);
+    expect(isCutFeeName("Wire fee for each business")).toBe(true);
+  });
+
+  it("keeps a name whose audience is its own label (#1180)", () => {
+    for (const name of ["Monthly Service Fee - Business", "Small Business", "Overdraft (Personal)", "Personal", "Consumer", "Wire Transfer Commercial"]) {
+      expect(isCutFeeName(name)).toBe(false);
+    }
   });
 
   it("flags the API name when the category's name stands in for a cut name (#1482)", () => {

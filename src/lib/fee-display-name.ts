@@ -15,11 +15,19 @@ import { DISPLAY_NAMES } from "@/lib/fee-taxonomy";
 const DIMENSION = String.raw`\d+(?:\.\d+)?\s*(?:"|”|''|in\.?|inch(?:es)?)?`;
 const BOX_SIZE_ONLY = new RegExp(String.raw`^\s*(${DIMENSION}\s*[x×]\s*${DIMENSION}(?:\s*[x×]\s*${DIMENSION})?)(?:\s+box)?\s*$`, "i");
 
+/**
+ * A name that stops on an audience adjective right after a count or a determiner has lost the noun
+ * it described: "Counter Check: A blank page of 3 personal" (checks). Display only: the agents'
+ * shared fragment shapes are untouched, so this moves no live fee. A name whose audience is its
+ * own label ("Monthly Service Fee - Business", "Small Business") does not match.
+ */
+const DANGLING_AUDIENCE = /\b(?:\d+|a|an|the|your|our|each|per|any|all)\s+(?:personal|business|consumer|commercial)\s*$/i;
+
 /** True when a stored fee name is a fragment of its schedule line rather than a name. */
 export function isCutFeeName(name: string | null | undefined): boolean {
   const current = (name ?? "").trim();
   if (!current) return false;
-  return nameHasCutShape(current) || liveFragmentName(current) !== null;
+  return nameHasCutShape(current) || liveFragmentName(current) !== null || DANGLING_AUDIENCE.test(current);
 }
 
 export function feeDisplayName(name: string, canonicalKey: string | null | undefined): string {
