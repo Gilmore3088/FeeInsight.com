@@ -310,3 +310,29 @@ describe("Hamilton answer quality (#1079)", () => {
     expect(line).toContain("Simulate (paid) (sample of 2026-10-14): form 0.0% (0 of 1)");
   });
 });
+
+describe("Deming's daily data checks on the scorecard (#1065)", () => {
+  it("shows each check with its query and names the failing ones in the brief", async () => {
+    const detail = {
+      version: 1,
+      failing: ["dollar.duplicates"],
+      warning: [],
+      dollar: {
+        checks: {
+          duplicates: { query: "deming.dq_duplicates", count: 400, rate: 0.04, status: "fail" },
+          stale: { query: "deming.dq_stale_fees", count: 100, rate: 0.01, status: "pass" },
+          noCategory: { query: "deming.dq_no_category", count: 0, rate: 0, status: "pass" },
+          noSource: { query: "deming.dq_no_source", count: 10, rate: 0.001, status: "pass" },
+        },
+        category_share: { query: "deming.dq_category_share", status: "pass", drifts: [] },
+      },
+      rate: { checks: {}, category_share: { query: "deming.dq_category_share", status: "no_baseline", drifts: [] } },
+    };
+    const { db } = fakeDb([[/deming-data-quality/, [{ created_at: new Date("2026-10-16T06:00:00Z"), detail }]]]);
+    const goal = await readGoalScorecard(db);
+    expect(goal.dataQuality).toMatchObject({ query: "goal.deming_data_quality_latest", failing: ["dollar.duplicates"] });
+    expect(goal.dataQuality?.lines).toHaveLength(6);
+    expect(goal.dataQuality?.lines[0]).toEqual({ catalog: "dollar", check: "duplicates", query: "deming.dq_duplicates", count: 400, rate: 0.04, status: "fail" });
+    expect(goalBriefLines(goal).at(-1)).toBe("Data checks (2026-10-16): ALARM, 1 failed their threshold (dollar.duplicates).");
+  });
+});

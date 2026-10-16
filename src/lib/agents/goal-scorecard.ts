@@ -45,6 +45,7 @@ export const GOAL_QUERIES = {
   knoxPasses: "goal.knox_passes_7d",
   unstatedAudience: "goal.unstated_audience",
   answerQuality: "goal.hamilton_answer_eval_latest",
+  dataQuality: "goal.deming_data_quality_latest",
 } as const;
 
 export interface CoverageCells {
@@ -272,6 +273,68 @@ export function answerQualityFrom(
   };
 }
 
+/** One line of the daily data-quality checks (#1065), each with its own query name. */
+export interface DataQualityLine {
+  catalog: "dollar" | "rate";
+  check: "duplicates" | "stale" | "noCategory" | "noSource" | "categoryShare";
+  query: string;
+  count: number;
+  rate: number | null;
+  status: string;
+}
+
+export interface DataQuality {
+  query: string;
+  /** When the check finished (ISO). */
+  at: string;
+  /** Checks at FAIL, as "catalog.check": the alarm. */
+  failing: string[];
+  warning: string[];
+  lines: DataQualityLine[];
+  /** Categories out of line with their normal share of live institutions. */
+  drifts: Array<{ catalog: "dollar" | "rate"; category: string; normalShare: number; share: number; direction: string }>;
+}
+
+const DATA_QUALITY_CHECKS = ["duplicates", "stale", "noCategory", "noSource"] as const;
+
+/** The latest `deming-data-quality` step detail as scorecard lines; null when it is not that step's shape. */
+export function dataQualityFrom(at: string, detail: Record<string, unknown>): Omit<DataQuality, "query"> | null {
+  const strings = (value: unknown) => (Array.isArray(value) ? value.map(String) : []);
+  const lines: DataQualityLine[] = [];
+  const drifts: DataQuality["drifts"] = [];
+  for (const catalog of ["dollar", "rate"] as const) {
+    const part = detail[catalog] as Record<string, unknown> | undefined;
+    if (!part || typeof part !== "object") continue;
+    const checks = (part.checks ?? {}) as Record<string, { query?: unknown; count?: unknown; rate?: unknown; status?: unknown }>;
+    for (const check of DATA_QUALITY_CHECKS) {
+      const row = checks[check];
+      if (!row) continue;
+      lines.push({
+        catalog,
+        check,
+        query: String(row.query ?? ""),
+        count: Number(row.count ?? 0),
+        rate: row.rate == null ? null : Number(row.rate),
+        status: String(row.status ?? "unknown"),
+      });
+    }
+    const share = (part.category_share ?? {}) as { query?: unknown; status?: unknown; drifts?: unknown };
+    const shareDrifts = Array.isArray(share.drifts) ? (share.drifts as Array<Record<string, unknown>>) : [];
+    lines.push({ catalog, check: "categoryShare", query: String(share.query ?? ""), count: shareDrifts.length, rate: null, status: String(share.status ?? "unknown") });
+    for (const drift of shareDrifts) {
+      drifts.push({
+        catalog,
+        category: String(drift.category ?? ""),
+        normalShare: Number(drift.normalShare ?? 0),
+        share: Number(drift.share ?? 0),
+        direction: String(drift.direction ?? ""),
+      });
+    }
+  }
+  if (lines.length === 0) return null;
+  return { at, failing: strings(detail.failing), warning: strings(detail.warning), lines, drifts };
+}
+
 export interface GoalScorecard {
   readAt: string;
   windowDays: number;
@@ -285,6 +348,8 @@ export interface GoalScorecard {
   unstatedAudience: UnstatedAudience | null;
   /** Hamilton's answers: form and correctness per path (#1079); absent on snapshots from before it. */
   answerQuality?: AnswerQuality | null;
+  /** Deming's daily data-quality checks (#1065); absent on snapshots from before it. */
+  dataQuality?: DataQuality | null;
 }
 
 const usd = (micro: unknown): number => Math.round(Number(micro ?? 0) / 10_000) / 100;
@@ -708,6 +773,25 @@ async function readAnswerQuality(db: SqlTag): Promise<AnswerQuality | null> {
   };
 }
 
+async function readDataQuality(db: SqlTag): Promise<DataQuality | null> {
+  const [row] = await db<Array<{ created_at: Date | string; detail: unknown }>>`
+    SELECT e.created_at, e.detail
+      FROM agent_run_events e
+      JOIN agent_run_steps s ON s.id = e.step_id
+     WHERE s.step_key = 'deming-data-quality'
+       AND e.event_type = 'step.finished'
+       AND e.status = 'completed'
+       AND e.created_at >= NOW() - make_interval(days => ${GOAL_WINDOW_DAYS}::int)
+     ORDER BY e.created_at DESC
+     LIMIT 1
+  `;
+  if (!row) return null;
+  const detail = (typeof row.detail === "string" ? JSON.parse(row.detail) : row.detail) as Record<string, unknown> | null;
+  const at = row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at);
+  const read = detail ? dataQualityFrom(at, detail) : null;
+  return read ? { query: GOAL_QUERIES.dataQuality, ...read } : null;
+}
+
 /** One read, in its own savepoint: a failure leaves that number null and the others standing. */
 async function guarded<T>(db: SqlTag, name: string, read: (scope: SqlTag) => Promise<T>): Promise<T | null> {
   return inSavepoint(db, read).catch((error) => {
@@ -727,6 +811,7 @@ export async function readGoalScorecard(db: SqlTag = sql, now = new Date()): Pro
     readKnoxPasses(scope, spend?.byAgent.find((row) => row.agent === "knox")));
   const unstatedAudience = await guarded(db, GOAL_QUERIES.unstatedAudience, readUnstatedAudience);
   const answerQuality = await guarded(db, GOAL_QUERIES.answerQuality, readAnswerQuality);
+  const dataQuality = await guarded(db, GOAL_QUERIES.dataQuality, readDataQuality);
   return {
     readAt: now.toISOString(),
     windowDays: GOAL_WINDOW_DAYS,
@@ -738,6 +823,7 @@ export async function readGoalScorecard(db: SqlTag = sql, now = new Date()): Pro
     knoxPasses: spend ? knoxPasses : null,
     unstatedAudience,
     answerQuality,
+    dataQuality,
   };
 }
 
@@ -799,6 +885,12 @@ export function goalBriefLines(goal: GoalScorecard): string[] {
       ? " Paid paths not measured yet."
       : unmeasured.length > 0 ? ` Not measured yet: ${unmeasured.join(", ")}.` : "";
     lines.push(`Hamilton answers (eval of ${q.at.slice(0, 16).replace("T", " ")} UTC${q.timedOut ? ", stopped at its time budget" : ""}${paidAt}): ${parts.join("; ")}.${rest}`);
+  }
+  const d = goal.dataQuality;
+  if (d) {
+    lines.push(d.failing.length === 0
+      ? `Data checks (${d.at.slice(0, 10)}): no check failed its threshold${d.warning.length > 0 ? `; ${d.warning.length} to watch` : ""}.`
+      : `Data checks (${d.at.slice(0, 10)}): ALARM, ${d.failing.length} failed their threshold (${d.failing.join(", ")}).`);
   }
   return lines;
 }
