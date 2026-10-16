@@ -48,6 +48,7 @@ import {
 } from "./envelopes";
 import { darwinEnvelopeFor, loadLearnedEnvelopes, type LearnedEnvelope } from "./learned-envelopes";
 import {
+  DARWIN_PEER_GRADED_VERSIONS,
   DARWIN_PEER_STRATEGY,
   entersPeerCheck,
   DARWIN_SECOND_SOURCE_STRATEGY,
@@ -1052,6 +1053,10 @@ export function darwinStandingDecisionSql(currentCopy = true): string {
   //   so a fix to the shared source check reaches the rows it was made for;
   // - a hold outside a hand-set amount envelope that today's envelope takes (the account_research
   //   floor went from $5 to $1 on 2026-10-09); learned envelopes move with the data and never re-select.
+  // - a peer hold under an older peer version (v5, #1112). Attempts record `peer_version` from v5
+  //   on; an older hold is re-decided only when its own run's peer attempt was a graded version
+  //   (DARWIN_PEER_GRADED_VERSIONS: v3 and v4, Oct 10 on) and held it, so the ungraded v1/v2 holds
+  //   of Oct 5–10 stay held.
   return `EXISTS (
            SELECT 1
              FROM pipeline_attempts pa
@@ -1068,7 +1073,20 @@ export function darwinStandingDecisionSql(currentCopy = true): string {
               )
               AND NOT (
                 pa.detail->>'reason_code' = 'peer_outlier'
-                AND COALESCE((pa.detail->>'peer_version')::int, 0) < ${DARWIN_PEER_STRATEGY.version}
+                AND (
+                  (pa.detail->>'peer_version' IS NOT NULL
+                   AND (pa.detail->>'peer_version')::int < ${DARWIN_PEER_STRATEGY.version})
+                  OR (pa.detail->>'peer_version' IS NULL
+                      AND EXISTS (
+                        SELECT 1
+                          FROM pipeline_attempts peer
+                         WHERE peer.input_fingerprint = pa.input_fingerprint
+                           AND peer.strategy = ${sqlLiteral(DARWIN_PEER_STRATEGY.strategy)}
+                           AND peer.strategy_version IN (${DARWIN_PEER_GRADED_VERSIONS.join(", ")})
+                           AND peer.agent_run_id = pa.agent_run_id
+                           AND (peer.detail->>'peer_held')::boolean
+                      ))
+                )
               )
               AND NOT (
                 pa.detail->>'reason_code' = 'outside_envelope'

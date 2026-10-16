@@ -43,6 +43,13 @@ type SqlTag = typeof sql;
 // unusual price (a $0.25 photocopy, a $250 box drilling, a $5 stop payment) is kept as evidence
 // on the attempt and no longer held. Every audience the check admits is treated alike.
 export const DARWIN_PEER_STRATEGY = { strategy: "verify.peer_range", version: 5 } as const;
+/**
+ * The peer versions whose holds were graded against stored text before v5 (#1112, Oct 16: 113 v3
+ * and 123 v4 holds). A hold made before attempts recorded `peer_version` is re-decided only when
+ * its own run's `verify.peer_range` attempt is one of these versions and held it. The 2,350 or so
+ * v1/v2 holds from Oct 5–10 were never graded and stay held until they are (#1694).
+ */
+export const DARWIN_PEER_GRADED_VERSIONS: readonly number[] = [3, 4];
 export const DARWIN_SECOND_SOURCE_STRATEGY = { strategy: "verify.second_source", version: 2 } as const;
 
 /**

@@ -361,7 +361,15 @@ the detail.
 10. Eval verdicts (`eval-verdicts.ts`): the complete-record eval's critical rows on first look,
     `eval_critical:<verdict>`; the name rules learned from them (a rebate as an ATM fee, a
     "no fee for" or waiver sentence as a $0 fee, and others) on their second look,
-    `not_a_fee:<rule>`.
+    `not_a_fee:<rule>`. The live read is a SQL prefilter (`evalVerdictFeesSql`); a new rule
+    reaches live fees only when the prefilter selects its shape, so v8's shapes have their own
+    clauses (`V8_PREFILTER`). v8 (#1112, Oct 16) reads no-fee lines that open the name ("No-Fee
+    on …", "There is/are no … fee", "Fee-free …") unless a later clause names a price, a
+    discount or allowance the bank gives (an allowance on the line only at the fee's own amount;
+    never a discounted price or a percentage discount off the fee), and a loan's term amount
+    read as its fee. A takedown batch stays under 20 (DECISIONS 2026-10-16, #1613): fees left
+    for the next batch sit in `EVAL_VERDICT_SECOND_BATCH`, and the pass counts them as
+    `deferred`.
 10b. Account type hold (`account-type-hold.ts`, #1100 gap 1, James Oct 16): monthly maintenance
     is the consumer checking account's fee. A live monthly maintenance fee of a savings, money
     market, club, business or IRA/HSA/CD account (`accountTypeOf` in `src/lib/account-type.ts`:

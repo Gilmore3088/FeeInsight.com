@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { canonicalHintFrom, conditionalZero, DARWIN_BATCH_KEY_VERSION, DARWIN_CATEGORY_HOLDS, DARWIN_SOURCE_CHECK_VERSION, DARWIN_VERIFY_STRATEGY, FREQUENCY_SETTLED_FLAG, pendingCategoryLesson, postSourceCheck, runDarwinVerify, sourceLineFor, statedInOwnSource, verificationReasonCode, verificationReasonText, type RawFeeRow } from "./verify";
 import { CATEGORY_GUARD_VERSION, refileCategory } from "@/lib/fee-category-guard";
-import { DARWIN_PEER_STRATEGY, DARWIN_SECOND_SOURCE_STRATEGY, resetWiderPeerLevelCache, SECOND_SOURCE_FLAG } from "./peer-checks";
+import { DARWIN_PEER_GRADED_VERSIONS, DARWIN_PEER_STRATEGY, DARWIN_SECOND_SOURCE_STRATEGY, resetWiderPeerLevelCache, SECOND_SOURCE_FLAG } from "./peer-checks";
 import { learnedEnvelope, resetLearnedEnvelopeCache } from "./learned-envelopes";
 import { DARWIN_CATEGORY_MODEL_STRATEGY, resetCategoryModelCache } from "./category-model";
 import { categoryChangeCandidates, type CategoryChangeRow, type PriorDecision } from "./category-change";
@@ -654,14 +654,20 @@ describe("Darwin agentic verification", () => {
       expect(query).toContain(`source_check_version')::int, 0) < ${DARWIN_SOURCE_CHECK_VERSION}`);
     });
 
-    it("re-decides peer holds once after the peer check changes (v5, #1112)", async () => {
+    it("re-decides peer holds once after the peer check changes, only the graded v3/v4 ones (v5, #1112, #1694)", async () => {
       const db = learningDb([]);
 
       await runDarwinVerify({ runId: 406, db: asVerifyDb(db) });
 
       const [query] = db.unsafe.mock.calls[0] as [string, unknown[]];
-      expect(query).toMatch(/reason_code' = 'peer_outlier'[\s\S]*COALESCE\(\(pa\.detail->>'peer_version'\)::int, 0\) </);
-      expect(query).toContain(`peer_version')::int, 0) < ${DARWIN_PEER_STRATEGY.version}`);
+      // A hold that records its peer version is re-decided when that version is older.
+      expect(query).toMatch(/reason_code' = 'peer_outlier'[\s\S]*pa\.detail->>'peer_version' IS NOT NULL[\s\S]*\(pa\.detail->>'peer_version'\)::int < /);
+      expect(query).toContain(`(pa.detail->>'peer_version')::int < ${DARWIN_PEER_STRATEGY.version}`);
+      // An older hold, from before attempts carried the version, only when its own run's peer
+      // attempt was a graded version and held it: never the ungraded v1/v2 holds of Oct 5–10.
+      expect(DARWIN_PEER_GRADED_VERSIONS).toEqual([3, 4]);
+      expect(query).toMatch(/pa\.detail->>'peer_version' IS NULL[\s\S]*peer\.strategy = 'verify\.peer_range'[\s\S]*peer\.strategy_version IN \(3, 4\)[\s\S]*peer\.agent_run_id = pa\.agent_run_id[\s\S]*\(peer\.detail->>'peer_held'\)::boolean/);
+      expect(query).not.toContain("COALESCE((pa.detail->>'peer_version')::int, 0)");
     });
 
     it("re-checks old batch duplicates on a current copy that has no verified twin", async () => {

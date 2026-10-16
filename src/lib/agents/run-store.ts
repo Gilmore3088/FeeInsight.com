@@ -1736,6 +1736,7 @@ async function executeAgenticStep(
             eval_matched: evalVerdicts.evalMatched,
             eval_changed: evalVerdicts.evalChanged,
             rule_failing: evalVerdicts.ruleFailing,
+            deferred: evalVerdicts.deferred,
             flagged: evalVerdicts.flagged,
             waiting: evalVerdicts.waiting,
             rolled_back: evalVerdicts.rolledBack.length,

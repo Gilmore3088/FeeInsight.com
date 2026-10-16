@@ -5,8 +5,8 @@ import { CATEGORY_GUARD_VERSION } from "@/lib/fee-category-guard";
 import { FREQUENCY_FILL_VERSION } from "@/lib/agents/hamilton/frequency-fill";
 import { countCurrentCopyPairs, CURRENT_COPY_STRATEGY } from "@/lib/agents/hamilton/current-copy";
 import { countRetidyReplay, NAME_RETIDY_STRATEGY } from "@/lib/agents/knox/name-retidy";
-import { DARWIN_VERIFY_STRATEGY } from "@/lib/agents/darwin/verify";
-import { DARWIN_PEER_STRATEGY } from "@/lib/agents/darwin/peer-checks";
+import { DARWIN_VERIFY_STRATEGY, darwinDueSql } from "@/lib/agents/darwin/verify";
+import { DARWIN_PEER_GRADED_VERSIONS, DARWIN_PEER_STRATEGY } from "@/lib/agents/darwin/peer-checks";
 import { PUBLISHER_AGENT_NAMES } from "@/lib/agents/gutenberg/names";
 
 type SqlTag = typeof sql;
@@ -156,6 +156,61 @@ export function currentCopyCount(c: { pairs: number; done: number; queued: numbe
 }
 
 /** Name retidy: institutions with a messy live name, due now or tidied at this version. */
+/**
+ * Darwin's peer check (v5, #1112): raw fees whose latest hold came from an older peer version.
+ * A hold counts when Darwin's own selection re-decides it: it recorded `peer_version`, or its
+ * run's peer attempt was a graded version (`DARWIN_PEER_GRADED_VERSIONS`). Queued is what
+ * Darwin's due query picks up now; the ungraded v1/v2 holds are left held on purpose (#1694).
+ */
+async function countPeerRange(db: SqlTag): Promise<ReplayCount> {
+  const version = DARWIN_PEER_STRATEGY.version;
+  const [row] = await db.unsafe<Array<{ affected: number | string; done: number | string; queued: number | string; ungraded: number | string }>>(`
+    WITH old_hold AS (
+      SELECT DISTINCT ON (pa.input_fingerprint)
+             pa.input_fingerprint,
+             substring(pa.input_fingerprint from 5)::bigint AS fee_raw_id,
+             (pa.detail->>'peer_version' IS NOT NULL
+              OR EXISTS (
+                SELECT 1
+                  FROM pipeline_attempts peer
+                 WHERE peer.input_fingerprint = pa.input_fingerprint
+                   AND peer.strategy = '${DARWIN_PEER_STRATEGY.strategy}'
+                   AND peer.strategy_version IN (${DARWIN_PEER_GRADED_VERSIONS.join(", ")})
+                   AND peer.agent_run_id = pa.agent_run_id
+                   AND (peer.detail->>'peer_held')::boolean
+              )) AS graded
+        FROM pipeline_attempts pa
+       WHERE pa.strategy = '${DARWIN_VERIFY_STRATEGY.strategy}'
+         AND pa.strategy_version = ${DARWIN_VERIFY_STRATEGY.version}
+         AND pa.detail->>'reason_code' = 'peer_outlier'
+         AND COALESCE((pa.detail->>'peer_version')::int, 0) < ${version}
+       ORDER BY pa.input_fingerprint, pa.id DESC
+    )
+    SELECT COUNT(*) FILTER (WHERE graded) AS affected,
+           COUNT(*) FILTER (WHERE graded AND EXISTS (
+             SELECT 1 FROM pipeline_attempts done
+              WHERE done.input_fingerprint = old_hold.input_fingerprint
+                AND done.strategy = '${DARWIN_VERIFY_STRATEGY.strategy}'
+                AND COALESCE((done.detail->>'peer_version')::int, 0) >= ${version}
+           )) AS done,
+           COUNT(*) FILTER (WHERE graded AND EXISTS (
+             SELECT 1 FROM raw_fee_observations fr
+              WHERE fr.fee_raw_id = old_hold.fee_raw_id AND ${darwinDueSql(true)}
+           )) AS queued,
+           COUNT(*) FILTER (WHERE NOT graded) AS ungraded
+      FROM old_hold`);
+  return peerRangeCount({ affected: n(row?.affected), done: n(row?.done), queued: n(row?.queued), ungraded: n(row?.ungraded) });
+}
+
+export function peerRangeCount(c: { affected: number; done: number; queued: number; ungraded: number }): ReplayCount {
+  return {
+    affected: c.affected,
+    done: c.done,
+    queued: c.queued,
+    exclusions: c.ungraded > 0 ? { ungraded_peer_version: c.ungraded } : {},
+  };
+}
+
 async function countNameRetidy(db: SqlTag): Promise<ReplayCount> {
   return retidyCount(await countRetidyReplay(db));
 }
@@ -220,10 +275,11 @@ export function rosettaReaderManifests(versions: RosettaVersions): ReplayManifes
  * in a manifest above.
  */
 export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
-  // v8 (#1112): new no-fee, discount, allowance and loan-amount name rules. Every live fee is read
-  // under them on each step (Hamilton's eval-verdict pass, then the second look), and Darwin reads
-  // each new row under them; there is no backlog for a replay to count.
-  EVAL_VERDICT_VERSION: "Every live fee is re-read under the name rules each step, and each new row at verify; nothing to replay.",
+  // v8 (#1112): new no-fee, discount, allowance and loan-amount name rules. Each step's eval-verdict
+  // pass reads every live fee whose name or line matches one of their prefilter clauses
+  // (`V8_PREFILTER`), then the second look; Darwin reads each new row under them. There is no
+  // backlog for a replay to count.
+  EVAL_VERDICT_VERSION: "Each step re-reads every live fee the eval-verdict prefilter selects (each rule shape has a clause, V8_PREFILTER for v8), and Darwin reads each new row at verify; nothing to replay.",
   // v1 (#1100 gap 3): a new pass 2 specialist inside the free team, logged under extract.rules.
   // Old texts are read again only when KNOX_RULES_STRATEGY moves, and the knox.rules manifest
   // counts that replay.
@@ -377,10 +433,9 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
       stage: "verify",
       strategy: DARWIN_PEER_STRATEGY.strategy,
       version: DARWIN_PEER_STRATEGY.version,
-      unit: "verified fee",
-      affects: "Fees whose peer-range check ran under an older version (state, tier and district peer levels).",
-      count: null,
-      notCounted: "Peer checks run with each verify; there is no shared selection of fees checked under an older peer version yet.",
+      unit: "held raw fee",
+      affects: "Fees Darwin held as peer outliers under an older peer version; v5 re-decides the graded v3/v4 holds once (#1112), and the ungraded v1/v2 holds stay held (#1694).",
+      count: countPeerRange,
     },
     {
       key: "darwin.envelopes",

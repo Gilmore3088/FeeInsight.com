@@ -899,7 +899,10 @@ Darwin owns verification and classification.
     drilling, $5 stop payments). No-fee, discount and allowance lines are the shared name rule's
     (`ruleFor`, Hamilton `EVAL_VERDICT_VERSION` v8). Each `verify.rules` attempt records
     `peer_version`, and a `peer_outlier` row decided under an older peer version is re-decided
-    once. Below, "is held" means held in those categories.
+    once. An older hold that has no `peer_version` is re-decided only when its own run's
+    `verify.peer_range` attempt was a graded version (`DARWIN_PEER_GRADED_VERSIONS`, v3 and v4)
+    and held it; the ungraded v1/v2 holds of Oct 5–10 stay held until they are graded (#1694).
+    Below, "is held" means held in those categories.
   - `verify.peer_range` v4: a fee enters on the benchmarks' terms (`entersPeerCheck`, #1112).
     The peer levels are the benchmark population (`statsRowFilter`: consumer, both and unknown
     fees, no business-only schedule), so consumer and both fees are compared, an unknown fee is
