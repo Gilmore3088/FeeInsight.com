@@ -32,7 +32,6 @@ export function FeeAudienceTabs({ tabs, initial }: { tabs: FeeAudienceTab[]; ini
   const [active, setActive] = useState(tabs.some((t) => t.key === initial) ? initial : tabs[0]?.key);
   const buttons = useRef<(HTMLButtonElement | null)[]>([]);
   const panels = useRef<Partial<Record<FeeAudienceTab["key"], HTMLDivElement | null>>>({});
-  const [scrollTo, setScrollTo] = useState<string | null>(null);
 
   useEffect(() => {
     const onHash = () => {
@@ -41,19 +40,16 @@ export function FeeAudienceTabs({ tabs, initial }: { tabs: FeeAudienceTab[]; ini
       const target = tabForHash(window.location.hash, active, lists, tabs.map((tab) => tab.key));
       if (!target) return;
       setActive(target);
-      setScrollTo(decodeURIComponent(window.location.hash.slice("#fee-".length)));
+      const category = decodeURIComponent(window.location.hash.slice("#fee-".length));
+      // After the tab shows, scroll to the row that is actually displayed (table or phone list).
+      window.requestAnimationFrame(() => {
+        const anchors = panels.current[target]?.querySelectorAll<HTMLElement>(`[data-fee-anchor="${CSS.escape(category)}"]`);
+        Array.from(anchors ?? []).find((el) => el.offsetParent !== null)?.scrollIntoView({ block: "start" });
+      });
     };
     window.addEventListener("hashchange", onHash);
     return () => window.removeEventListener("hashchange", onHash);
   }, [active, tabs]);
-
-  // After the tab shows, scroll to the row that is actually displayed (table or phone list).
-  useEffect(() => {
-    if (!scrollTo || !active) return;
-    const anchors = panels.current[active]?.querySelectorAll<HTMLElement>(`[data-fee-anchor="${CSS.escape(scrollTo)}"]`);
-    Array.from(anchors ?? []).find((el) => el.offsetParent !== null)?.scrollIntoView({ block: "start" });
-    setScrollTo(null);
-  }, [scrollTo, active]);
 
   const onKeyDown = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
     const last = tabs.length - 1;
