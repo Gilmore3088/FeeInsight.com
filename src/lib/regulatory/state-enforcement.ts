@@ -90,6 +90,51 @@ export interface StateOrder {
   start_date: string | null;
   termination_date: string | null;
   document_url: string | null;
+  /**
+   * What the regulator's page says the order is about: its own subject column or "Reason:"
+   * field, and any named subject in the order's title. Null when the page states none; never
+   * guessed from the order type or the bank (#1428).
+   */
+  subject: string | null;
+}
+
+/**
+ * Subjects an order's title can name, each recorded in the words the consumer-law test
+ * (isConsumerLaw in data-store/regulatory-watch) reads. A title matches only on the subject
+ * it states: "Consent Order" or "Order Terminating Consent Order" names none.
+ */
+const TITLE_SUBJECTS: ReadonlyArray<[RegExp, string]> = [
+  [/unfair,? (?:or|and)(?: | \/ )?(?:abusive )?(?:or |and )?deceptive|\bUDAA?P\b/i, "Unfair or deceptive practices (UDAP)"],
+  [/overdraft/i, "Overdraft"],
+  [/\bNSF\b|non-?sufficient funds|insufficient funds/i, "NSF fees"],
+  [/truth in savings|\breg(?:ulation|\.)? DD\b/i, "Truth in Savings (Regulation DD)"],
+  [/electronic fund|\breg(?:ulation|\.)? E\b/i, "Electronic fund transfers (Regulation E)"],
+  [/consumer (?:protection|compliance|law)/i, "Consumer law"],
+  [/bank secrecy|\bBSA\b|anti-?money laundering|\bAML\b/i, "BSA/AML"],
+  [/\bOFAC\b|sanctions/i, "OFAC sanctions"],
+  [/cyber ?security|information security/i, "Cybersecurity"],
+  [/flood insurance/i, "Flood insurance"],
+  [/fair lending|equal credit|redlining/i, "Fair lending"],
+  [/community reinvestment|\bCRA\b/i, "Community Reinvestment Act"],
+  [/receiver(?:ship)?\b/i, "Receivership"],
+];
+
+/** The subjects a title names, in TITLE_SUBJECTS order; empty when it names none. */
+export function titleSubjects(title: string): string[] {
+  return TITLE_SUBJECTS.filter(([pattern]) => pattern.test(title)).map(([, label]) => label);
+}
+
+/**
+ * An order's subject from what its page states: the subject cell or "Reason:" text as written,
+ * then the subjects its title names. Null when neither states one.
+ */
+export function statedSubject(stated: string | null | undefined, title: string | null | undefined): string | null {
+  const own = clean(stated ?? "").replace(/[\s.;,:]+$/, "");
+  const parts = own ? [own] : [];
+  for (const label of titleSubjects(title ?? "")) {
+    if (!parts.some((p) => p.toLowerCase().includes(label.toLowerCase()))) parts.push(label);
+  }
+  return parts.length > 0 ? parts.join("; ").slice(0, 300) : null;
 }
 
 const BANK_PARTY = /\b(bank|banc|bancorp|bancshares|banking|trust|savings|national association|n\.\s?a\.)\b/i;
@@ -174,7 +219,7 @@ function rowsOf(table: El): El[] {
 
 const cellsOf = (row: El) => row.children.filter(isEl).filter((c) => c.name === "td" || c.name === "th");
 
-type Column = "party" | "city" | "type" | "date" | "end";
+type Column = "party" | "city" | "type" | "date" | "end" | "subject";
 
 /** Which column each header names; the first match wins, and the start date never takes a termination column. */
 export function mapColumns(headers: readonly string[]): Partial<Record<Column, number>> {
@@ -184,6 +229,8 @@ export function mapColumns(headers: readonly string[]): Partial<Record<Column, n
     if (map.end === undefined && /terminat|rescind|lifted|vacat/.test(h)) map.end = i;
     else if (map.date === undefined && /date|effective|issued|signed/.test(h)) map.date = i;
     else if (map.party === undefined && /institution|bank|name|respondent|party|entity|company|licensee/.test(h)) map.party = i;
+    // The page's own subject column (Maryland's "Regulated Activity"); never the party column.
+    else if (map.subject === undefined && !/party/.test(h) && /reason|subject|regulated activity|violation|basis|nature of|category|topic/.test(h)) map.subject = i;
     else if (map.type === undefined && /action|type|order|document|description/.test(h)) map.type = i;
     else if (map.city === undefined && /city|location|town/.test(h)) map.city = i;
   });
@@ -228,6 +275,7 @@ export function parseOrderTables(html: string, baseUrl: string): StateOrder[] {
         start_date: parseActionDate(cell("date")) ?? dateIn(cell("date")),
         termination_date: parseActionDate(cell("end")) ?? dateIn(cell("end")),
         document_url: link,
+        subject: statedSubject(cell("subject"), typeText),
       });
     }
   }
@@ -263,7 +311,7 @@ export function splitPartyLocation(name: string): { name: string; city: string |
   return { name, city: null };
 }
 
-const LABELS = /(Institution|Bank|Name of (?:Institution|Bank)|Type of Action|Action|Effective Date|Date of (?:Action|Order)|Date|Termination Date|Terminated|Reason|City|Location):/gi;
+const LABELS = /(Institution|Bank|Name of (?:Institution|Bank)|Type of Action|Action|Effective Date|Date of (?:Action|Order)|Date|Termination Date|Terminated|Reason|Subject|Violations?|City|Location):/gi;
 
 /** "Institution: X Type of Action: Y Effective Date: Z Reason: ..." as fields, or null. */
 export function parseLabelled(text: string): StateOrder | null {
@@ -287,6 +335,8 @@ export function parseLabelled(text: string): StateOrder | null {
     start_date: parseActionDate(date) ?? dateIn(date),
     termination_date: parseActionDate(end) ?? dateIn(end),
     document_url: null,
+    // New Jersey's cell ends "Reason: Fund Management. Order": the link's label is not the reason.
+    subject: statedSubject((fields.reason ?? fields.subject ?? fields.violations ?? "").replace(/\.\s+(?:order|pdf|view|download|link)\b.*$/i, ""), type),
   };
 }
 
@@ -338,7 +388,9 @@ export function parseOrderLinks(html: string, baseUrl: string): StateOrder[] {
     // A menu link ("Banking and Sending Money") names no order and no date.
     if (!actionType && !date) continue;
     seen.add(url);
-    orders.push({ party_name: party, party_city: null, action_type: actionType, start_date: date, termination_date: null, document_url: url });
+    // The title's subject, read with the bank's own name taken out ("Capital ... Bancorp").
+    const title = text.replace(new RegExp(party.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i"), " ");
+    orders.push({ party_name: party, party_city: null, action_type: actionType, start_date: date, termination_date: null, document_url: url, subject: statedSubject(null, title) });
   }
   return orders;
 }
