@@ -18,7 +18,7 @@ async function isAuthorized(request: NextRequest): Promise<boolean> {
 /**
  * Atlas's daily measurement, as a visible run (cron, once a day): score the
  * pipeline against the hand-checked answer key, let Deming turn confirmed takedowns into
- * regression cases and replay them, audit a fresh seeded sample of live fees, then snapshot the six scoreboard numbers (which include
+ * regression cases and replay them, audit a fresh seeded sample of live fees, run the daily data-quality checks (#1065), then snapshot the six scoreboard numbers (which include
  * that score), then restore cut credit union cities (#1213). Deterministic; no model calls.
  */
 async function handleGET(request: NextRequest) {
@@ -40,6 +40,7 @@ async function handleGET(request: NextRequest) {
       { key: "deming-fresh-audit", agent: "atlas", title: "Deming: check a fresh sample of live fees against the banks' own schedules" },
       { key: "deming-benchmark-health", agent: "atlas", title: "Deming: check benchmark sample sizes, ranges and coverage, and alarm on a collapse" },
       { key: "deming-playbook-check", agent: "atlas", title: "Deming: check each institution's playbook for contradictions (read-only)" },
+      { key: "deming-data-quality", agent: "atlas", title: "Deming: check live fees for duplicates, stale evidence, missing categories and sources, and category shares (read-only)" },
       { key: "scoreboard-snapshot", agent: "atlas", title: "Record the daily scoreboard" },
       { key: "deming-change-outcomes", agent: "atlas", title: "Deming: check whether each change moved the number it named, a week on" },
       { key: "deming-sunday-maintenance", agent: "atlas", title: "Deming: on Sunday, write James's hour of maintenance tasks" },
@@ -49,7 +50,7 @@ async function handleGET(request: NextRequest) {
   });
   const result = started.reused
     ? { runId: started.run.id, status: started.run.status, message: "Today's scoreboard already ran." }
-    : await executeAgentRun(started.run.id, { maxSteps: 9 });
+    : await executeAgentRun(started.run.id, { maxSteps: 10 });
   return NextResponse.json({ ok: true, runId: started.run.id, reused: started.reused, result });
 }
 
