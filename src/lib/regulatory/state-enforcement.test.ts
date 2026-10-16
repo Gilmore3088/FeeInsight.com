@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { isConsumerLaw } from "@/lib/data-store/regulatory-watch";
 import {
   actionTypeOf,
   dateIn,
@@ -12,6 +13,7 @@ import {
   parseOrderLinks,
   parseOrderTables,
   stateOrderKey,
+  statedSubject,
 } from "./state-enforcement";
 
 describe("state enforcement readers", () => {
@@ -23,8 +25,8 @@ describe("state enforcement readers", () => {
       <tr><td>GSL Savings Bank</td><td>Guttenberg</td><td>Consent Order</td><td>August 18, 2025</td><td>March 1, 2026</td></tr>
     </table>`;
     expect(parseOrderTables(html, "https://www.nj.gov/dobi/division_banking/bankdivenforce.html")).toEqual([
-      { party_name: "Union County Savings Bank", party_city: "Elizabeth", action_type: "Consent order", start_date: "2026-02-17", termination_date: null, document_url: "https://www.nj.gov/dobi/orders/ucsb.pdf" },
-      { party_name: "GSL Savings Bank", party_city: "Guttenberg", action_type: "Consent order", start_date: "2025-08-18", termination_date: "2026-03-01", document_url: null },
+      { party_name: "Union County Savings Bank", party_city: "Elizabeth", action_type: "Consent order", start_date: "2026-02-17", termination_date: null, document_url: "https://www.nj.gov/dobi/orders/ucsb.pdf", subject: null },
+      { party_name: "GSL Savings Bank", party_city: "Guttenberg", action_type: "Consent order", start_date: "2025-08-18", termination_date: "2026-03-01", document_url: null, subject: null },
     ]);
   });
 
@@ -40,8 +42,8 @@ describe("state enforcement readers", () => {
       <li><a href="/x/lender.pdf">Best Payday Loans - Consent Order</a></li>
     </ul>`;
     expect(parseOrderLinks(html, "https://www.dfs.ny.gov/industry_guidance/enforcement_actions")).toEqual([
-      { party_name: "Piermont Bank", party_city: null, action_type: "Consent order", start_date: "2024-02-23", termination_date: null, document_url: "https://www.dfs.ny.gov/system/files/documents/2024/02/ea20240223_piermont_bank.pdf" },
-      { party_name: "Shinhan Bank America", party_city: null, action_type: "Consent order", start_date: "2023-09-29", termination_date: null, document_url: "https://www.dfs.ny.gov/x/shinhan.pdf" },
+      { party_name: "Piermont Bank", party_city: null, action_type: "Consent order", start_date: "2024-02-23", termination_date: null, document_url: "https://www.dfs.ny.gov/system/files/documents/2024/02/ea20240223_piermont_bank.pdf", subject: null },
+      { party_name: "Shinhan Bank America", party_city: null, action_type: "Consent order", start_date: "2023-09-29", termination_date: null, document_url: "https://www.dfs.ny.gov/x/shinhan.pdf", subject: null },
     ]);
   });
 
@@ -61,7 +63,7 @@ describe("state enforcement readers", () => {
   });
 
   it("keys an order by state, party, date and type, and names state agencies", () => {
-    const order = { party_name: "Lamont Bank of St. John", party_city: null, action_type: "Consent order", start_date: "2025-01-10", termination_date: null, document_url: null };
+    const order = { party_name: "Lamont Bank of St. John", party_city: null, action_type: "Consent order", start_date: "2025-01-10", termination_date: null, document_url: null, subject: null };
     expect(stateOrderKey("WA", order)).toBe("STATE_WA|lamont bank of st john|2025-01-10|consent order");
     expect(enforcementAgencyLabel("STATE_NJ")).toMatch(/New Jersey/);
     expect(enforcementAgencyLabel("FRB")).toBe("Federal Reserve");
@@ -75,7 +77,7 @@ describe("readers after the first prod run (Oct 7)", () => {
     const html = `<table><tr><th>Institution</th></tr>
       <tr><td>Institution: Union County Savings Bank Type of Action: Consent Order Effective Date: February 17, 2026 Reason: Fund Management. <a href="/o/ucsb.pdf">Order</a></td></tr></table>`;
     expect(parseStateOrders("table", html, "https://www.nj.gov/dobi/x.html")).toEqual([
-      { party_name: "Union County Savings Bank", party_city: null, action_type: "Consent order", start_date: "2026-02-17", termination_date: null, document_url: "https://www.nj.gov/o/ucsb.pdf" },
+      { party_name: "Union County Savings Bank", party_city: null, action_type: "Consent order", start_date: "2026-02-17", termination_date: null, document_url: "https://www.nj.gov/o/ucsb.pdf", subject: "Fund Management" },
     ]);
   });
 
@@ -101,7 +103,7 @@ describe("readers after the second prod run (Oct 7)", () => {
     const html = `<table><tr><th>Number</th><th>Date</th><th>Title of Order</th><th>Name</th></tr>
       <tr><td><a href="/o/2021-015a.pdf">2021-015a</a></td><td>05/01/2026</td><td>Order Terminating Consent Order</td><td>Herring Bank, Amarillo, Texas</td></tr></table>`;
     expect(parseStateOrders("table", html, "https://www.dob.texas.gov/x")).toEqual([
-      { party_name: "Herring Bank", party_city: "Amarillo", action_type: "Order terminating consent order", start_date: "2026-05-01", termination_date: null, document_url: "https://www.dob.texas.gov/o/2021-015a.pdf" },
+      { party_name: "Herring Bank", party_city: "Amarillo", action_type: "Order terminating consent order", start_date: "2026-05-01", termination_date: null, document_url: "https://www.dob.texas.gov/o/2021-015a.pdf", subject: null },
     ]);
     expect(splitPartyLocation("Industry Bancshares, Inc., Industry, Texas")).toEqual({ name: "Industry Bancshares, Inc.", city: "Industry" });
     expect(splitPartyLocation("Paxos Trust Company, LLC")).toEqual({ name: "Paxos Trust Company, LLC", city: null });
@@ -131,5 +133,44 @@ describe("readers after the v4 prod run (Oct 7)", () => {
       document_url: "https://idfpr.illinois.gov/x/highland.pdf",
     });
     expect(splitPartyLocation("Wells Fargo Bank, National Association")).toEqual({ name: "Wells Fargo Bank, National Association", city: null });
+  });
+});
+
+describe("stated subjects (#1428)", () => {
+  it("records a subject a title states, in words the consumer-law test reads, and none when the title states none", () => {
+    const html = `<table><tr><th>Number</th><th>Date</th><th>Title of Order</th><th>Name</th></tr>
+      <tr><td>2026-001</td><td>03/02/2026</td><td>Consent Order (Overdraft and NSF Fee Practices)</td><td>Capital City Bank, Tallahassee, Florida</td></tr>
+      <tr><td>2026-002</td><td>04/06/2026</td><td>Consent Order - Bank Secrecy Act</td><td>M&amp;T Bank, Buffalo, New York</td></tr>
+      <tr><td>2026-003</td><td>05/01/2026</td><td>Order Terminating Consent Order</td><td>Herring Bank, Amarillo, Texas</td></tr></table>`;
+    const orders = parseStateOrders("table", html, "https://www.dob.texas.gov/x");
+    expect(orders.map((o) => [o.party_name, o.subject])).toEqual([
+      ["Capital City Bank", "Overdraft; NSF fees"],
+      ["M&T Bank", "BSA/AML"],
+      ["Herring Bank", null],
+    ]);
+    expect(isConsumerLaw(orders[0].subject)).toBe(true);
+    expect(isConsumerLaw(orders[1].subject)).toBe(false);
+    expect(isConsumerLaw(orders[2].subject)).toBe(false);
+    expect(statedSubject(null, "Order Imposing Sanctions")).toBeNull();
+    expect(statedSubject(null, "Consent Order - OFAC Sanctions Compliance")).toBe("OFAC sanctions");
+  });
+
+  it("reads Maryland's Regulated Activity column as the subject and keeps the party column apart", () => {
+    expect(mapColumns(["Date", "Type of Order", "Regulated Activity", "Case Name"])).toEqual({ date: 0, type: 1, subject: 2, party: 3 });
+    expect(mapColumns(["Action Date", "Party Subject to Action", "Enforcement Action"])).toEqual({ date: 0, party: 1, type: 2 });
+    const html = `<table><tr><th>Date</th><th>Type of Order</th><th>Regulated Activity</th><th>Case Name</th></tr>
+      <tr><td>04/30/2024</td><td>Settlement Agreement</td><td>Consumer Lending</td><td>IN THE MATTER OF U.S. BANK (PDF)</td></tr></table>`;
+    expect(parseStateOrders("table", html, "https://www.labor.maryland.gov/x")[0]).toMatchObject({ party_name: "U.S. BANK", subject: "Consumer Lending" });
+  });
+
+  it("reads a subject from an order link's title, not from the bank's own name", () => {
+    const html = `<a href="/ea/20250301_nf.pdf">Consent Order to Navy Federal Savings Bank - Unfair or Deceptive Overdraft Practices</a>
+      <a href="/ea/20250302_cap.pdf">Consent Order to Capital Receivership Bank</a>`;
+    expect(parseStateOrders("links", html, "https://www.dfs.ny.gov/").map((o) => o.subject)).toEqual([
+      "Unfair or deceptive practices (UDAP); Overdraft",
+      null,
+    ]);
+    expect(statedSubject("  Liquidity. ", "Consent Order")).toBe("Liquidity");
+    expect(statedSubject(null, "")).toBeNull();
   });
 });

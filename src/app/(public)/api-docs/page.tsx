@@ -614,6 +614,16 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \\
   "${BASE}/institutions?id=2466"`}
           responseFields={[
             { name: "fees[]", type: "array", note: "All non-rejected fees for this institution" },
+            {
+              name: "fees[].fee_name",
+              type: "string",
+              note: "The fee's name as the bank's schedule words it. When that name was cut off mid-line, the fee category's name stands in.",
+            },
+            {
+              name: "fees[].name_is_category_fallback",
+              type: "boolean",
+              note: "true when fee_name is the category's name standing in for a cut-off name; false when it is the schedule's own wording",
+            },
             { name: "fees[].amount", type: "number", note: "Fee amount in USD" },
             { name: "fees[].frequency", type: "string", note: 'e.g., "per item", "monthly"' },
             { name: "fees[].conditions", type: "string", note: "Waiver conditions, if any" },
@@ -631,6 +641,7 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \\
   "fees": [
     {
       "fee_name": "Overdraft Fee",
+      "name_is_category_fallback": false,
       "amount": 30.00,
       "frequency": "per_occurrence",
       "conditions": "Per item; created by check, in-person withdrawal, or other electronic means",
@@ -638,6 +649,7 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \\
     },
     {
       "fee_name": "Account Maintenance",
+      "name_is_category_fallback": false,
       "amount": 17.00,
       "frequency": "monthly",
       "conditions": null,

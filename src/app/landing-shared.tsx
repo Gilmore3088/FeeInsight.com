@@ -179,13 +179,16 @@ export function homeReadsCacheable({
   categories,
   sampleFailed,
   overdraftFailed,
+  ladderFailed,
 }: {
   summary: Pick<PublicStatsSummary, "complete">;
   categories: FeeCategorySummary[];
   sampleFailed: boolean;
   overdraftFailed: boolean;
+  /** A state or charter benchmark read behind the sample's market ladder failed. */
+  ladderFailed: boolean;
 }): boolean {
-  return summary.complete && categories.length > 0 && !sampleFailed && !overdraftFailed;
+  return summary.complete && categories.length > 0 && !sampleFailed && !overdraftFailed && !ladderFailed;
 }
 
 /** The sample report's fees and comparable lines, with only verified source lines kept. */
