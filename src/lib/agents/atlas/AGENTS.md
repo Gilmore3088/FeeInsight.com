@@ -22,6 +22,24 @@ Atlas is the orchestration and operator-visibility agent. Atlas-specific code ma
 - Do not use free-text institution names as execution identity. Use canonical numeric institution IDs.
 - Do not collapse data trust states into generic success/failure labels; preserve source, extraction, verification, publication, and refresh states separately.
 
+## Answer-key relabels (`answer-key-relabels.ts`, #1099)
+
+The score step of Atlas's daily scoreboard run (`score-answer-key`) first applies James's category
+decisions to a fixed list of answer-key lines, then scores, so the day's score reads the corrected key.
+The relabel has no step of its own, so the score can never run before it (the scoreboard runs in
+passes since #1579).
+`score-answer-key` is pause-exempt, since it writes only the answer key and score rows, never a fee
+row, so a pipeline pause does not hold the score. A failed relabel runs in its own savepoint, is
+reported in the step detail (`answer_key_relabel`), and never stops the score.
+
+First list (Oct 16, night deposit option A): 28 confirmed bag and key purchase lines at 11 banks, 6
+prefilled ones at 6 more, and bank 61's deposit for the receptacle key (line 48) leave scoring
+(`canonical_key = 'unmapped'`, a note in `conditions`). A key deposit is a key charge, not the night
+depository service. The answer-key score and Deming's Knox replay skip `unmapped` lines. The repo
+copies of these lines (the Knox gate fixtures and `darwin/answer-key-fees.json`) carry the same
+`unmapped` labels. A line changes only while it reads as listed (id, institution, category, price,
+source line); every change goes in the step's ledger detail, and a second run changes nothing.
+
 ## City repair (`city-repair.ts`, #1213)
 
 NCUA's FOICU file cuts a credit union's city at 15 characters ("Colorado Spring", "North Little
@@ -77,7 +95,9 @@ hand-found link or paid-fetched document starts a new run even inside the retry 
   leave the lane no room for its first work (`run-store.ts`, `laneFirstWorkMs`). The lane then
   gets the tick's first-step exemption. A state re-search run idle 15 minutes
   (`LANE_ROOM_MAX_IDLE_MS`) takes one step without leaving that room, since its `discover` never
-  fits beside a fresh lane's first work (#1421); Read-now runs always leave it.
+  fits beside a fresh lane's first work (#1421); Read-now runs always leave it. The bound is firm
+  only when the re-search run is the tick's first row: several waiting re-search runs can each take
+  a step ahead of the lane.
 
 ## State lanes: cadence and state experts
 
@@ -144,6 +164,15 @@ hand-found link or paid-fetched document starts a new run even inside the retry 
   state's work list (`work_list_groups`, #1029): its size groups under $10B, furthest below
   the coverage target first, the order Magellan's paid passes take its institutions in
   (`state-expert/work-list.ts`; see Magellan's AGENTS.md).
+  The step also keeps dated state notes (#1573, `state-expert/notes.ts`, table
+  `state_expert_notes`, read and written through `data-store/state-expert-notes.ts`): a
+  `document_type` note naming the most common kinds of stored fee documents in the state
+  (Rosetta's `agent_source_texts.document_kind`, at least 10 classified texts) and their usual
+  format, written when its text differs from the state's latest one; and a `state_fee_rule`
+  note per signed state fee bill (`reg_tracker_items`, Open States), once per bill. Each note
+  carries the run id. Every non-dry pass records a `state_expert.notes` event; before the
+  migration (20270110000052) it is `skipped` and nothing is written. A dry run writes nothing.
+  `/admin/states/<ST>/expert` lists the notes, newest first.
 
 ## Goal scorecard (#1040)
 
@@ -193,3 +222,4 @@ fails a PR that changes one of these constants without updating its line here (#
 | Constant | Strategy | Version | File |
 |---|---|---|---|
 | `SCHEDULE_CHECK_VERSION` | — | v1 | `atlas/schedule-check.ts` |
+| `ANSWER_KEY_RELABEL_VERSION` | — | v1 | `atlas/answer-key-relabels.ts` |

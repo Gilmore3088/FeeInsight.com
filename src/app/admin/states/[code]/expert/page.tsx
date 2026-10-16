@@ -9,6 +9,7 @@ import { formatAdminDateTime } from "@/lib/admin-time";
 import { sql } from "@/lib/data-store/connection";
 import { PEER_MIN_INSTITUTIONS, type StrategyRank } from "@/lib/agents/state-expert/memory";
 import { loadStateExpertPage, sizeGroupLabel, STATE_EXPERT_QUERIES, WORK_LIST_SHOWN } from "@/lib/agents/state-expert/admin-view";
+import { StateNotes } from "./state-notes";
 
 const num = (value: number) => value.toLocaleString("en-US");
 const usd = (value: number) => `$${value.toFixed(2)}`;
@@ -146,6 +147,10 @@ export default async function StateExpertPage({ params }: { params: Promise<{ co
           {memory ? <StrategyTable ranks={memory.strategies.reader} /> : <Empty>No stored memory yet.</Empty>}
         </Section>
       </div>
+
+      <Section title="Dated notes" source={STATE_EXPERT_QUERIES.notes}>
+        <StateNotes notes={page.notes} />
+      </Section>
 
       <Section title="Coverage by size group, in work-list order" source={STATE_EXPERT_QUERIES.coverageGaps}>
         {page.coverage.length > 0 ? (

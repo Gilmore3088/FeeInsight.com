@@ -232,7 +232,8 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   // them that it has not acted on, so there is no backlog for a replay to count.
   DARWIN_RECORDED_RELEASE_STRATEGY: "Each verify step reads every recorded v17 pass it has not acted on; nothing to replay.",
   // v1 (#1059): a new step that reads every live fee verified as unknown on each run (a daily dry
-  // run while off), so there is no backlog for a replay to count.
+  // run while off), so there is no backlog for a replay to count. v2 (#1626) changes the fee-name
+  // reading; the full dry run's chain is keyed by the version, so it reads every document again.
   AUDIENCE_RELABEL_VERSION: "Its own step reads every live unknown-audience fee on each run; nothing to replay.",
   // v2 (#1068) changes how a refresh is written (in place), not which fee moves; the stale fees
   // it works through are picked by the same query every publish step, so there is nothing to replay.
@@ -254,7 +255,9 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   SOURCE_LINK_VERSION: "Its own step reads every live fee with no source link on each run; nothing to replay.",
   // v3 (#1397): the recheck reads every verified row once per version, so each verify step works
   // through the whole verified set under v3 itself (200 a step).
-  DARWIN_RECHECK_STRATEGY: "Its selector re-reads every verified row not yet read at v3 (200 a verify step); there is nothing to replay.",
+  // v4 (#1571, #1574): the same selector re-reads every verified row once under v4.
+  // v5 (#1593): and once more under v5.
+  DARWIN_RECHECK_STRATEGY: "Its selector re-reads every verified row not yet read at the current version (200 a verify step); there is nothing to replay.",
   // v1 (#1511): a new shadow pass over Darwin's re-read requests. Its resolution key carries its
   // version and the Knox rules version, so every request is read again by the extract steps themselves.
   KNOX_REREAD_FEEDBACK_STRATEGY: "Its resolution key carries its version and the Knox rules version, so the extract steps read every request again themselves; nothing to replay.",
@@ -286,9 +289,14 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   // v2 (#1518): lending wording on loan documents and brokerage_document (own sub-switch) as their
   // own reasons, generic lending fees on rate pages kept live; same cursor, shadow, nothing written.
   NON_DEPOSIT_CHECK_VERSION: "Its cursor re-reads every live fee's source document address each pass (2,000 a verify step); there is nothing to replay.",
+  // v1 (#1440): a new shadow pass over one printed line live under two readings.
+  LINE_CONFLICT_CHECK_VERSION: "Every verify step reads every live line read twice in one grouped read; there is nothing to replay.",
   // v1 (#1455): a new shadow pass. Its selector reads every shared or vendor-path document pair not
   // yet read at v1 (25 a verify step), and documentOwnerCountSql counts the whole backlog read-only.
   DOCUMENT_OWNER_STRATEGY: "A new shadow pass; its selector reads every shared or vendor-path pair not yet read at v1, and documentOwnerCountSql counts the backlog; nothing to replay.",
+  // v17 (#1646): name words match where a word begins. The version is in each institution's check
+  // fingerprint, so every publish step's batch re-checks institutions not yet checked at v17.
+  SOURCE_CHECK_STRATEGY: "Its fingerprint carries the version, so each publish step's batch re-checks every institution not yet checked at the new version; nothing to replay.",
 };
 
 export async function loadManifests(): Promise<ReplayManifest[]> {

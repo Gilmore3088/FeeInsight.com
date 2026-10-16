@@ -62,6 +62,7 @@ function narrateFinished(
       return `${detail.expert_name} refreshed the ${String(detail.state_code ?? stateCode ?? "state")} memory: ${count(n(detail, "institutions"), "institution")}, ${count(n(detail, "published_fees"), "published fee")}, peer levels for ${count(n(detail, "fee_categories_with_peers"), "fee category", "fee categories")}${joinParts([
         typeof detail.top_platform === "string" && `most common platform ${detail.top_platform}`,
         typeof detail.top_reader_strategy === "string" && `best reader ${detail.top_reader_strategy}`,
+        n(detail, "notes_written") > 0 && count(n(detail, "notes_written"), "new dated note"),
       ]).replace(/^: /, ", ")}.`;
     }
     case "discover-paid":
@@ -215,10 +216,11 @@ function narrateFinished(
     case "registry-wire-research":
       return narrateRegistryStep(stepKey, detail);
     case "score-answer-key": {
-      if (detail.schema_ready === false) return "Skipped the answer-key score (migration not applied yet).";
+      const relabel = narrateAnswerKeyRelabel((detail.answer_key_relabel ?? null) as Detail | null);
+      if (detail.schema_ready === false) return `${relabel}Skipped the answer-key score (migration not applied yet).`;
       const banks = n(detail, "banks_scored");
-      if (banks === 0) return "Had no confirmed answer-key banks to score yet.";
-      return `Scored the pipeline against ${count(banks, "hand-checked bank")}: ${percentOf(detail.precision)} precision, ${percentOf(detail.recall)} recall.`;
+      if (banks === 0) return `${relabel}Had no confirmed answer-key banks to score yet.`;
+      return `${relabel}Scored the pipeline against ${count(banks, "hand-checked bank")}: ${percentOf(detail.precision)} precision, ${percentOf(detail.recall)} recall.`;
     }
     case "study-fee-dependence":
     case "study-local-income":
@@ -604,12 +606,30 @@ export function narrateEvent(event: NarratableEvent): string | null {
   }
 }
 
+/**
+ * The answer-key relabel that opens the score step (#1099), as a lead-in sentence; empty when it
+ * changed nothing. A dry run lists the lines and changes none, so it never says "relabelled".
+ */
+function narrateAnswerKeyRelabel(relabel: Detail | null): string {
+  if (!relabel) return "";
+  if (typeof relabel.error === "string") return `Atlas's answer-key relabel failed (${shorten(relabel.error, 80)}). `;
+  const changed = Array.isArray(relabel.changed) ? relabel.changed.length : 0;
+  if (changed === 0) return "";
+  return relabel.dry_run === true
+    ? `Atlas would relabel ${count(changed, "answer-key line")} by James's decisions (dry run, nothing changed). `
+    : `Atlas relabelled ${count(changed, "answer-key line")} by James's decisions. `;
+}
+
 function shorten(message: string, max = 140): string {
   const clean = message.replace(/\s+/g, " ").trim();
   return clean.length > max ? `${clean.slice(0, max - 1)}…` : clean;
 }
 
-/** Which crew member a step key belongs to, for steps recorded without an agent. */
+/**
+ * Which crew member a step key belongs to, for steps recorded without an agent. Publisher steps
+ * are Gutenberg's from #1075 step 2 (`gutenberg/names.ts` `PUBLISHER_STEP_KEYS`, a test keeps the two
+ * equal); Hamilton keeps the product's steps.
+ */
 export const STEP_OWNER: Record<string, AdminAgent> = {
   enhance: "atlas",
   "state-expert": "atlas",
@@ -699,15 +719,15 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   "verify-paid": "darwin",
   verify: "darwin",
   "public-cluster": "darwin",
-  publish: "hamilton",
-  "publish-index": "hamilton",
-  "publish-context": "hamilton",
+  publish: "gutenberg",
+  "publish-index": "gutenberg",
+  "publish-context": "gutenberg",
   "report-render": "hamilton",
   "report-reconcile": "hamilton",
   "report-close": "hamilton",
-  "category-guard": "hamilton",
-  "frequency-fill": "hamilton",
-  "source-link-repair": "hamilton",
+  "category-guard": "gutenberg",
+  "frequency-fill": "gutenberg",
+  "source-link-repair": "gutenberg",
   "audience-relabel": "darwin",
-  "public-diagnose": "hamilton",
+  "public-diagnose": "gutenberg",
 };

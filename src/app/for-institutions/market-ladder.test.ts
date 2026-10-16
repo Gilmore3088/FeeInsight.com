@@ -3,7 +3,6 @@ import type { IndexEntry } from "@/lib/data-store/fee-index";
 import type { FeeCategorySummary } from "@/lib/data-store/fees";
 import type { MarketReport } from "@/lib/custom-report/report-data";
 import { getPeerIndexCached } from "@/lib/data-store/public-cached-reads";
-import { homeReadsCacheable } from "@/app/landing-shared";
 import { buildMarketLadder, readSampleLadder } from "./market-ladder";
 
 vi.mock("@/lib/data-store/public-cached-reads", () => ({ getPeerIndexCached: vi.fn() }));
@@ -70,14 +69,13 @@ describe("buildMarketLadder", () => {
 describe("readSampleLadder", () => {
   const national = [{ ...spread, fee_category: "overdraft" } as unknown as FeeCategorySummary];
   const peerIndex = vi.mocked(getPeerIndexCached);
-  const home = { summary: { complete: true }, categories: national, sampleFailed: false, overdraftFailed: false };
 
   beforeEach(() => {
     peerIndex.mockReset();
     vi.spyOn(console, "error").mockImplementation(() => {});
   });
 
-  it("reports a failed state or charter read, so the homepage render is not cached", async () => {
+  it("reports a failed state or charter read", async () => {
     peerIndex.mockImplementation(async (filter) => {
       if ("charter_type" in filter) throw new Error("connection reset");
       return [entry("overdraft")];
@@ -85,14 +83,23 @@ describe("readSampleLadder", () => {
     const read = await readSampleLadder(sample, national);
     expect(read.failed).toBe(true);
     expect(read.ladder?.rows.map((r) => r.label)).toEqual(["Local competitors", "Texas", "The nation"]);
-    expect(homeReadsCacheable({ ...home, ladderFailed: read.failed })).toBe(false);
   });
 
-  it("leaves a render cacheable when both reads answer", async () => {
+  it("reports a failed state read the same way, and keeps the charter row (#1586)", async () => {
+    peerIndex.mockImplementation(async (filter) => {
+      if ("state_code" in filter) throw new Error("connection reset");
+      return [entry("overdraft")];
+    });
+    const read = await readSampleLadder(sample, national);
+    expect(read.failed).toBe(true);
+    expect(read.ladder?.rows.map((r) => r.label)).not.toContain("Texas");
+    expect(read.ladder?.rows).toHaveLength(3);
+  });
+
+  it("reports no failure when both reads answer", async () => {
     peerIndex.mockResolvedValue([entry("overdraft")]);
     const read = await readSampleLadder(sample, national);
     expect(read.failed).toBe(false);
     expect(read.ladder?.rows).toHaveLength(4);
-    expect(homeReadsCacheable({ ...home, ladderFailed: read.failed })).toBe(true);
   });
 });

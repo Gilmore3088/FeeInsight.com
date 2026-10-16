@@ -83,6 +83,17 @@ describe.skipIf(!connection)("Knox re-read in isolated PostgreSQL", () => {
     expect(row.flags).toContain("needs_darwin_verification");
     expect(row.flags).toContain("knox_reread_took_over");
     expect(row.conditions).toContain("canonical_hint=overdraft;");
+    // #1295: the old category stays on the row as proof Darwin's earlier decision was under it.
+    expect(row.flags).toContain("knox_takeover_from:nsf");
+  });
+
+  it("marks no category change when the take-over keeps the category (#1295)", async () => {
+    await insertCandidate(db as unknown as Db, { runId: 1, row: firstRead, candidate: overdraft });
+    await retireRowsFromOlderText(db as unknown as Db, reread);
+    expect(await insertCandidate(db as unknown as Db, { runId: 2, row: reread, candidate: overdraft })).toBe(true);
+    const [row] = await flagsOf();
+    expect(row.flags).toContain("knox_reread_took_over");
+    expect(row.flags.some((flag) => flag.startsWith("knox_takeover_from:"))).toBe(false);
   });
 
   it("leaves a retired row alone once Darwin has a verified row for it", async () => {

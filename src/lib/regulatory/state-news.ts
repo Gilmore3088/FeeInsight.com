@@ -221,6 +221,8 @@ export function discoverNewsPage(html: string, baseUrl: string): string[] {
   return [...byText, ...byPath].slice(0, 3);
 }
 
+// MONTHS and MONTH_INDEX stay in step: every name MONTHS matches ("Sept.") must start with its
+// three-letter MONTH_INDEX key, which dateInText reads from the first three letters.
 const MONTHS = "jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?";
 const MONTH_INDEX = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
 /** Each pattern captures year, month and day; the month may be a name. */

@@ -99,7 +99,8 @@ describe("shared learning store", () => {
       aboutStrategy: "extract.table",
       signal: "wrong",
       kind: "unreproduced",
-      reportedBy: "hamilton",
+      // The publisher reports as Gutenberg since #1075 step 2; the check keeps its stored name.
+      reportedBy: "gutenberg",
       checkName: "hamilton.rules_recheck",
       feePublishedId: 77,
       amount: 20,
@@ -176,6 +177,13 @@ describe("shared learning store", () => {
     const insert = calls.find((call) => call.query.includes("INSERT INTO pipeline_feedback"));
     const rows = JSON.parse(String(insert?.values[0]));
     expect(rows.map((row: { dedupe_key: string }) => row.dedupe_key)).toContain("hamilton.restore:pub:12213:run:3380");
+  });
+
+  it("learns nothing from an account type hold, down or restored (#1100)", async () => {
+    const { db, calls } = mockDb([["to_regclass('public.pipeline_feedback')", [{ ready: true }]]]);
+    await syncPipelineFeedback(db, { runId: 7, dryRun: true });
+    expect(calls.find((call) => call.query.includes("FROM published_fee_records fp"))?.query).toContain("NOT LIKE 'account_type_hold:%'");
+    expect(calls.find((call) => call.query.includes("hamilton.restore:pub:"))?.query).toContain("f.kind <> 'account_type_hold'");
   });
 
   it("only reads in a dry run", async () => {

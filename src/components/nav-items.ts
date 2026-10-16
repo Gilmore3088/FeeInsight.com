@@ -56,8 +56,11 @@ export const DEMO_REQUEST_NAV = {
   href: "/contact?source=demo",
 } as const;
 
-/** The one navy header button for signed-out visitors: the institution search (brief 03, Q1 option B). */
+/** The institution search, the main action inside page bodies (brief 03, Q1 option B). */
 export const PRIMARY_CTA_NAV = { label: "See where your fees stand", href: "/institutions" } as const;
+
+/** The one navy header button for signed-out visitors: the plans (James, Oct 16), since the subscription is the goal. */
+export const HEADER_CTA_NAV = { label: "See plans", href: "/subscribe" } as const;
 
 /** Product menu: one column per public pillar label. */
 export const PRODUCT_NAV_GROUPS: readonly NavGroup[] = [

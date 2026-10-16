@@ -24,7 +24,7 @@ export function CategoryGuardRepairControl({ disabled }: { disabled: boolean }) 
     startTransition(async () => {
       const result = await runCategoryGuardRepair(dryRun);
       if (!result.success || typeof result.runId !== "number") {
-        setError(result.error ?? "Hamilton could not start the category guard run");
+        setError(result.error ?? "Gutenberg could not start the category guard run");
         return;
       }
       setMessage(`${result.reused ? "Already running" : "Started"}: run #${result.runId}.`);
@@ -33,7 +33,7 @@ export function CategoryGuardRepairControl({ disabled }: { disabled: boolean }) 
           runId: result.runId,
           title: result.title,
           label: result.title,
-          agent: "hamilton",
+          agent: "gutenberg",
           reused: result.reused,
           startedAt: new Date().toISOString(),
         },
@@ -56,7 +56,7 @@ export function CategoryGuardRepairControl({ disabled }: { disabled: boolean }) 
           </h2>
         </div>
         <p className="admin-meta">
-          Hamilton rolls back live fees whose name contradicts their category. Implausible amounts are rolled back automatically by the publish step.
+          Gutenberg rolls back live fees whose name contradicts their category. Implausible amounts are rolled back automatically by the publish step.
         </p>
       </div>
       <div className="flex flex-wrap items-center gap-2">

@@ -24,7 +24,7 @@ export function SourceLinkRepairControl({ disabled }: { disabled: boolean }) {
     startTransition(async () => {
       const result = await runSourceLinkRepair(dryRun);
       if (!result.success || typeof result.runId !== "number") {
-        setError(result.error ?? "Hamilton could not start the source link run");
+        setError(result.error ?? "Gutenberg could not start the source link run");
         return;
       }
       setMessage(`${result.reused ? "Already running" : "Started"}: run #${result.runId}.`);
@@ -33,7 +33,7 @@ export function SourceLinkRepairControl({ disabled }: { disabled: boolean }) {
           runId: result.runId,
           title: result.title,
           label: result.title,
-          agent: "hamilton",
+          agent: "gutenberg",
           reused: result.reused,
           startedAt: new Date().toISOString(),
         },
@@ -56,7 +56,7 @@ export function SourceLinkRepairControl({ disabled }: { disabled: boolean }) {
           </h2>
         </div>
         <p className="admin-meta">
-          Hamilton gives each live fee with no source link its own document’s URL, and takes down any fee that has no document to trace it to. Each change is logged and can be reversed.
+          Gutenberg gives each live fee with no source link its own document’s URL, and takes down any fee that has no document to trace it to. Each change is logged and can be reversed.
         </p>
       </div>
       <div className="flex flex-wrap items-center gap-2">

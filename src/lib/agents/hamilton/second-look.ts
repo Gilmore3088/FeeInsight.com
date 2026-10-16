@@ -169,7 +169,7 @@ export async function secondLook<T extends SecondLookCandidate>(
   const base = (fee: SecondLookCandidate): Omit<FeedbackRow, "signal" | "kind" | "weight" | "evidence"> => ({
     aboutStage: "publish",
     aboutStrategy: check,
-    reportedBy: "hamilton",
+    reportedBy: "gutenberg",
     checkName: check,
     institutionId: fee.institutionId,
     sourceDocumentId: fee.sourceDocumentId ?? null,
@@ -209,7 +209,7 @@ export async function secondLook<T extends SecondLookCandidate>(
       const row = {
         aboutStage: "publish" as const,
         aboutStrategy: check,
-        reportedBy: "hamilton" as const,
+        reportedBy: "gutenberg" as const,
         checkName: check,
         feePublishedId: id,
         runId,
@@ -292,7 +292,7 @@ export async function reconstructFirstLooks(
     return {
       aboutStage: "publish",
       aboutStrategy: check,
-      reportedBy: "hamilton",
+      reportedBy: "gutenberg",
       checkName: check,
       institutionId: row.institution_id == null ? null : Number(row.institution_id),
       sourceDocumentId: row.source_document_id == null ? null : Number(row.source_document_id),

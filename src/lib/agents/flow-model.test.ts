@@ -106,16 +106,17 @@ describe("nowFromSteps", () => {
     expect(now.find((item) => item.agent === "atlas")?.text).toBe("Running 1 pass: FL");
     expect(now.find((item) => item.agent === "knox")).toMatchObject({ state: "working", text: "Working in FL" });
     expect(now.find((item) => item.agent === "darwin")).toMatchObject({ state: "queued", text: "Next up in FL" });
-    expect(now.find((item) => item.agent === "hamilton")?.state).toBe("idle");
+    expect(now.find((item) => item.agent === "gutenberg")?.state).toBe("idle");
+    expect(now.find((item) => item.agent === "hamilton")).toBeUndefined();
     expect(now.find((item) => item.agent === "growth")).toMatchObject({ state: "idle", text: "No marketing run open" });
   });
 
-  it("shows growth's marketing steps under growth, not Hamilton", () => {
+  it("shows growth's marketing steps under growth, not the publisher", () => {
     const now = nowFromSteps([
       { run_id: 2, state_code: null, step_key: "content-market-spread", agent_name: "growth", status: "running" },
     ]);
     expect(now.find((item) => item.agent === "growth")).toMatchObject({ state: "working", text: "Drafting marketing" });
-    expect(now.find((item) => item.agent === "hamilton")?.state).toBe("idle");
+    expect(now.find((item) => item.agent === "gutenberg")?.state).toBe("idle");
   });
 });
 

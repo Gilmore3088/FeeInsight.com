@@ -705,8 +705,12 @@ bayes_manifest_kill() {
   elif git rev-parse --quiet --verify origin/main >/dev/null; then
     # Locally, diff against the merge base, not origin/main itself: a branch cut before main
     # bumped a version would otherwise look as if it changed that version back (#1434). CI runs
-    # on the merge ref and keeps the FETCH_HEAD path above.
-    base_ref=$(git merge-base origin/main HEAD 2>/dev/null || echo "origin/main")
+    # on the merge ref and keeps the FETCH_HEAD path above. scripts/ci-guards.test.ts runs both
+    # cases. With no merge base (a shallow clone), say so and fall back to origin/main.
+    if ! base_ref=$(git merge-base origin/main HEAD 2>/dev/null); then
+      echo "bayes-manifest-kill: note: no merge base with origin/main (shallow clone?); comparing with origin/main, so a version main changed since this branch was cut can show up here" >&2
+      base_ref="origin/main"
+    fi
   fi
   if [[ -z "$base_ref" ]]; then
     echo "bayes-manifest-kill: OK (no base branch to compare with; skipped)"

@@ -13,7 +13,7 @@ export const STAGE_AGENT: Record<string, { agent: string; name: string; job: str
   read: { agent: "rosetta", name: "Rosetta", job: "Reading the documents" },
   extract: { agent: "knox", name: "Knox", job: "Pulling fees out" },
   verify: { agent: "darwin", name: "Darwin", job: "Checking each fee" },
-  publish: { agent: "hamilton", name: "Hamilton", job: "Publishing and re-checking" },
+  publish: { agent: "gutenberg", name: "Gutenberg", job: "Publishing and re-checking" },
 };
 
 /** Outcomes that mean "nothing to do here", counted apart from failures. */

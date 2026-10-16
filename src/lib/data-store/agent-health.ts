@@ -1,3 +1,4 @@
+import { ledgerAgent } from "@/lib/agents/gutenberg/names";
 import { sql } from "./connection";
 
 /**
@@ -6,7 +7,8 @@ import { sql } from "./connection";
  * Read straight from `agent_run_steps`; cancelled and skipped steps count as neither.
  */
 
-export const HEALTH_AGENTS = ["atlas", "magellan", "rosetta", "knox", "darwin", "hamilton"] as const;
+/** Gutenberg is the publisher from #1075 step 2; its pre-switch steps carry Hamilton's name (`ledgerAgent`). */
+export const HEALTH_AGENTS = ["atlas", "magellan", "rosetta", "knox", "darwin", "hamilton", "gutenberg"] as const;
 export type HealthAgent = (typeof HEALTH_AGENTS)[number];
 
 /**
@@ -164,7 +166,7 @@ export async function getAgentHealth(now = new Date()): Promise<AgentHealth[]> {
   const errors = new Map(noticeErrors.map((row) => [String(row.step_key), row.error_summary ? String(row.error_summary) : null]));
   const health = summarizeAgentHealth(
     rows.map((row) => ({
-      agent: String(row.agent_name),
+      agent: ledgerAgent(String(row.agent_name), String(row.step_key)),
       stepKey: String(row.step_key),
       status: String(row.status),
       day: String(row.day),

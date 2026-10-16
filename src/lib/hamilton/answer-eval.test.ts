@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("@/lib/data-store/connection", () => ({ sql: {} }));
 vi.mock("./ask-service", () => ({ resolveAskIntent: vi.fn() }));
 
-import { EVAL_QUESTION_IDS, failureShape, liveDataFailures, offSubjectFailure, pickProQuestions, summarizeCorrectness, summarizeEval, summarizeProReplay, wireFailures, type EvalResult, type ProQuestionResult } from "./answer-eval";
+import { EVAL_QUESTION_IDS, failureShape, institutionsAskedToday, unaskedFirst, liveDataFailures, offSubjectFailure, pickProQuestions, summarizeCorrectness, summarizeEval, summarizeProReplay, wireFailures, type EvalResult, type ProQuestionResult } from "./answer-eval";
 import type { SqlTag } from "@/lib/agents/hamilton/studies/common";
 import { QUALITY_QUESTIONS } from "./workspace/quality-bar";
 import type { AskResponse, FeeResearch } from "./workspace/types";
@@ -112,6 +112,15 @@ describe("answer eval", () => {
       "talk to me about all 10B and up instititions for od fees",
     ]);
     expect(await pickProQuestions(db, 1)).toHaveLength(1);
+  });
+
+  it("asks the institutions no earlier run reached today first, so the day's runs cover the sample (#1076)", async () => {
+    const db = (async () => [{ ids: [339, 1123, "50"] }, { ids: null }, { ids: [5] }]) as unknown as SqlTag;
+    const asked = await institutionsAskedToday(db, "2026-10-16");
+    expect([...asked].sort((a, b) => a - b)).toEqual([5, 50, 339, 1123]);
+    const sample = [5, 50, 108, 339, 1123, 3182].map((id) => ({ id }));
+    expect(unaskedFirst(sample, asked).map((i) => i.id)).toEqual([108, 3182, 5, 50, 339, 1123]);
+    expect(unaskedFirst(sample, new Set()).map((i) => i.id)).toEqual([5, 50, 108, 339, 1123, 3182]);
   });
 
   it("counts the real questions Hamilton still asks back on, and lists every one that falls short", () => {

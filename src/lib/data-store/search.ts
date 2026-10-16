@@ -340,12 +340,44 @@ export async function searchInstitutions(params: {
   };
 }
 
+/**
+ * Common names that share no words with the registry name (#1545): "M&T" is filed as
+ * "Manufacturers and Traders Trust Company". Each maps to a name prefix, never to an id.
+ */
+const SHORT_NAMES: Record<string, string> = {
+  "m&t": "Manufacturers and Traders Trust",
+  "mt bank": "Manufacturers and Traders Trust",
+  "bofa": "Bank of America",
+  "boa": "Bank of America",
+  "us bank": "U.S. Bank",
+  "usbank": "U.S. Bank",
+};
+
+/** Letters, digits and single spaces only: "U.S. Bank" and "US Bank" read the same. */
+function squashName(text: string): string {
+  return text.toLowerCase().replace(/[^a-z0-9& ]+/g, "").replace(/\s+/g, " ").trim();
+}
+
+/** The name patterns a typed query searches: as typed, with punctuation dropped, and a short-name prefix. */
+export function institutionSearchPatterns(query: string): { pattern: string; squashed: string; aliases: string[] } {
+  const term = query.trim();
+  const squashedTerm = squashName(term);
+  const short = squashedTerm.replace(/\s+bank$/, "");
+  const alias = SHORT_NAMES[squashedTerm] ?? SHORT_NAMES[short] ?? SHORT_NAMES[short.replace(/&/g, "")];
+  return { pattern: `%${term}%`, squashed: `%${squashedTerm}%`, aliases: alias ? [`${alias}%`] : [] };
+}
+
+// Matches the typed name, the name with punctuation dropped, or a short name's registry prefix.
+const NAME_MATCH = `(ct.institution_name ILIKE $1
+  OR regexp_replace(lower(ct.institution_name), '[^a-z0-9& ]+', '', 'g') LIKE $4
+  OR ct.institution_name ILIKE ANY($5::text[]))`;
+
 export async function autocompleteInstitutions(query: string, limit = 8): Promise<InstitutionSearchResult[]> {
   if (!query || query.trim().length < 2) return [];
   const term = query.trim();
-  const pattern = `%${term}%`;
+  const { pattern, squashed, aliases } = institutionSearchPatterns(term);
   const rows = await sql.unsafe<InstitutionSearchRow[]>(
-    `${searchQualityCte("SELECT ct.id FROM institution_sources ct WHERE ct.institution_name ILIKE $1")}
+    `${searchQualityCte(`SELECT ct.id FROM institution_sources ct WHERE ${NAME_MATCH}`)}
     SELECT ct.id, ct.institution_name, ct.city, ct.state_code,
            ct.charter_type, ct.asset_size_tier, ct.asset_size,
            ct.source, ct.cert_number, ct.website_url, ct.fee_schedule_url,
@@ -369,10 +401,11 @@ export async function autocompleteInstitutions(query: string, limit = 8): Promis
     LEFT JOIN verified_unpublished_counts vuc ON vuc.institution_id = ct.id
     LEFT JOIN raw_unverified_counts ruc ON ruc.institution_id = ct.id
     LEFT JOIN latest_docs ld ON ld.institution_id = ct.id
-    WHERE ct.institution_name ILIKE $1
+    WHERE ${NAME_MATCH}
     ORDER BY
       CASE
         WHEN lower(ct.institution_name) = lower($2) THEN 0
+        WHEN ct.institution_name ILIKE ANY($5::text[]) THEN 0
         WHEN lower(ct.institution_name) LIKE lower($2) || '%' THEN 1
         ELSE 2
       END,
@@ -385,7 +418,7 @@ export async function autocompleteInstitutions(query: string, limit = 8): Promis
       ) DESC,
       ct.institution_name ASC
     LIMIT $3`,
-    [pattern, term, limit],
+    [pattern, term, limit, squashed, aliases],
   );
   return rows.map(mapInstitutionSearchRow);
 }

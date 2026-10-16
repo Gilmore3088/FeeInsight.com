@@ -67,6 +67,8 @@ export interface InstitutionFee {
   variant_type: string | null;
   coverage_tier: string | null;
   created_at: string;
+  /** The document the fee was read from (its lineage), for the admin Correct form. */
+  source_document_id?: number | null;
 }
 
 export interface InstitutionCrawl {
@@ -327,7 +329,7 @@ export async function getInstitutionFees(
         fee_category, fee_family,
         account_product_type, is_fee_cap,
         source_url, variant_type, coverage_tier,
-        created_at
+        created_at, source_document_id
       FROM published_fee_catalog
       WHERE institution_id = ${id}
         AND review_status != 'rejected'
@@ -353,6 +355,7 @@ export async function getInstitutionFees(
       variant_type: r.variant_type ? String(r.variant_type) : null,
       coverage_tier: r.coverage_tier ? String(r.coverage_tier) : null,
       created_at: toDateStr(r.created_at as string | Date | null),
+      source_document_id: r.source_document_id != null ? Number(r.source_document_id) : null,
     }));
   } catch (e) {
     console.error("getInstitutionFees failed:", e);

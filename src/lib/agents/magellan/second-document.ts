@@ -1008,7 +1008,10 @@ export async function runSecondDocumentFind(options: {
       stage: "discover",
       strategy: SECOND_DOCUMENT_FINDER.strategy,
       version: SECOND_DOCUMENT_FINDER.version,
+      // The address the search started from, not a document it judged: keep the outcome off
+      // the do-not-retry list (#1494). The monthly recheck in `selectThinBanks` stops a repeat.
       fingerprint: row.fee_schedule_url,
+      rememberInputFailure: false,
       outcome: result.outcome,
       yieldCount: result.pages.length,
       costMicrousd: 0,

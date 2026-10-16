@@ -1,5 +1,4 @@
-import { AppIcon } from "@/brand/components";
-import { ProductDemo, type DemoView } from "@/components/marketing/product-demo";
+import type { DemoView } from "@/components/marketing/product-demo";
 import { DistrictMap, MyFeesChart, PriceSlider } from "./landing-charts";
 import { NationalFeesExhibit, ReportExhibit } from "./landing-exhibits";
 import type { HomeData } from "./landing-shared";
@@ -22,31 +21,4 @@ export function demoViews(data: HomeData): DemoView[] {
   if (data.scenario && data.overdraft) views.push({ key: "price", label: "Try a price", short: "Price", view: <PriceSlider data={data} /> });
   views.push({ key: "reports", label: "Reports", view: <ReportExhibit data={data} /> });
   return views;
-}
-
-/**
- * The hero's visual (brief 06 §4.2; James's notes of Oct 15): one product window directly
- * under the hero copy, opening on the interactive Fed district map. Its tabs are the only
- * navigation; nothing advances on its own.
- */
-export function LandingDemo({ data }: { data: HomeData }) {
-  if (!data.overdraft || data.lines.length === 0) return null;
-  return (
-    // Its own section under the hero: the window never overlaps the hero copy. This section
-    // is the demo's one landmark; ProductDemo adds none inside it.
-    <section aria-label="Hamilton demo" className="bg-paper">
-      <div className="mx-auto max-w-6xl px-4 pb-12 pt-2 sm:px-6 sm:pb-16 sm:pt-2">
-        <ProductDemo
-          label="Hamilton views"
-          mark={
-            <>
-              <AppIcon brand="hamilton" size={22} title="" />
-              <span className="hidden sm:inline">Hamilton</span>
-            </>
-          }
-          views={demoViews(data)}
-        />
-      </div>
-    </section>
-  );
 }
