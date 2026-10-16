@@ -11,18 +11,18 @@ export function HubFindings({ findings, asOf }: { findings: Finding[]; asOf: str
   return (
     <section id="findings" className="scroll-mt-28">
       <SectionHeading eyebrow="Findings" title="What the published fees show" />
-      <ol className="mt-5 max-w-4xl divide-y divide-border overflow-hidden rounded-2xl border border-border bg-white">
+      <ol className="mt-5 grid gap-3 md:grid-cols-2">
         {findings.map((f) => (
-          <li key={f.key} className="px-5 py-5 sm:px-6">
-            <p className="text-[17px] font-semibold leading-snug text-ink sm:text-[19px]">{f.headline}</p>
-            <p className="mt-1.5 text-[14px] leading-relaxed text-ink-soft">{f.detail}</p>
+          <li key={f.key} className="flex flex-col rounded-2xl border border-border bg-white px-4 py-4 sm:px-5">
+            <p className="text-[15px] font-semibold leading-snug text-ink">{f.headline}</p>
+            <p className="mt-1 text-[13px] leading-relaxed text-ink-soft">{f.detail}</p>
             {f.about && (
-              <details className="group mt-2">
+              <details className="group mt-1.5">
                 <summary className="inline-flex min-h-8 cursor-pointer list-none items-center gap-1 text-[12px] font-semibold text-brick [&::-webkit-details-marker]:hidden">
                   About this finding
                   <span aria-hidden="true" className="transition-transform group-open:rotate-90">&rsaquo;</span>
                 </summary>
-                <p className="mt-1 text-[13px] leading-relaxed text-ink-muted">{f.about}</p>
+                <p className="text-[12px] leading-relaxed text-ink-muted">{f.about}</p>
               </details>
             )}
           </li>

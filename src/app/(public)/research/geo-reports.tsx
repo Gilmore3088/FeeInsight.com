@@ -166,7 +166,7 @@ export function GeoReports({ states, districts }: { states: StateCoverage[]; dis
         <div className={`relative rounded-2xl border border-border bg-white p-3 sm:block sm:p-5 ${showMap ? "" : "hidden"}`}>
           <svg
             viewBox="0 0 960 600"
-            className="h-auto w-full"
+            className="mx-auto h-auto max-h-[22rem] w-full"
             role="img"
             aria-label={view === "districts" ? "Map of the 12 Federal Reserve districts" : "Map of states with a report"}
           >
@@ -231,7 +231,7 @@ export function GeoReports({ states, districts }: { states: StateCoverage[]; dis
               className="w-full rounded-full border border-border bg-paper px-3.5 py-2 text-[13px] text-ink placeholder:text-[#A39A8C] focus:border-brick focus:outline-none"
             />
           </div>
-          <ul className="max-h-[26rem] divide-y divide-surface-200 overflow-y-auto">
+          <ul className="max-h-[22rem] divide-y divide-surface-200 overflow-y-auto">
             {shown.map((e) => (
               <li key={e.key}>
                 <Link
