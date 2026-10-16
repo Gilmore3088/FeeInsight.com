@@ -79,7 +79,8 @@ text Knox has read before is picked again when any one of these holds:
    (`KNOX_STALE_READ_BELOW_VERSION`).
 6. Lineup gap: the current copy has a `monthly_maintenance` row with no account name, or with
    neither the balance that avoids it nor its waiver, or (v73) a `minimum_balance` row with no
-   account name, and no attempt at v73 or later (`KNOX_LINEUP_READ_BELOW_VERSION`).
+   account name, or a monthly maintenance or minimum balance row whose stored account names no
+   account ("Truth in Savings"), and no attempt at v73 or later (`KNOX_LINEUP_READ_BELOW_VERSION`).
 7. Priority bank: the bank is in `KNOX_PRIORITY_REREAD_IDS` or is a state market leader, the
    document is its current copy, and the bank has no live overdraft fee. A run for one institution
    (Atlas's read-now runs) uses that institution alone as the list and drops the overdraft
@@ -511,6 +512,18 @@ to (`product_name`, the catalog's `account_product_type`; `accountProductFor` in
   the fee's own name names another kind of account than the heading ("Star Checking Monthly Fee"
   under "Savings / Money Market"), the fee's own name wins.
 - Null when no source names the account. An account is never assumed to be checking.
+- A fee whose own name says checking is a checking account's: it takes its own product, or a checking
+  heading, or nothing, never another kind's heading. A heading that speaks of checking without naming
+  one account ("Checking Account Fees", "CHECKING & MONEY MARKET") ends the heading lookback.
+- A fee for all accounts ("Monthly Service Fee - all accounts") or one price printed across several
+  columns ("$0 $0 $0") records no account.
+- A disclosure title ("Truth in Savings"), a perk ("Health Savings Card") and a bank's own name
+  ("Bangor Savings Bank", the institution's name) are never the account. One excluder,
+  `src/lib/account-name-exclusions.ts`, is shared with the account type hold (#1566).
+- A read that records the account flags the raw row `account_product:v73`. A later read replaces a
+  product stored without the flag (an older Knox's) or one the excluder refuses
+  (`NON_ACCOUNT_PRODUCT_SQL`); a flagged product is kept. A copy holding a refused product is due a
+  re-read (trigger 6).
 - A minimum balance fee records only its account; the balance, opening deposit and waiver stay
   monthly maintenance's.
 - The fee's line is found by its whole excerpt first, so a sentence that opens two paragraphs no

@@ -482,3 +482,16 @@ it("persists separate audience evidence and Darwin's zero flag for an eliminated
   expect(calls).toContain("knox_review:zero");
   expect(calls).toContain("needs_darwin_verification");
 });
+
+describe("stored products that name no account (v73, #1100)", () => {
+  it("matches the shared excluder in Postgres form", async () => {
+    const { NON_ACCOUNT_PRODUCT_SQL } = await import("./extract");
+    const { namesNoAccount } = await import("@/lib/account-name-exclusions");
+    const asJs = new RegExp(NON_ACCOUNT_PRODUCT_SQL.replace(/\[\[:space:\]\]/g, "\\s").replace(/\[\[:space:\]-\]/g, "[\\s-]"), "i");
+    for (const name of ["Truth in Savings", "TRUTH IN SAVINGS ACT", "CONSUMER TRUTH-IN-SAVINGS FEE SCHEDULE", "Health Savings Card",
+      "Free Bangor Savings Bank Debit Mastercard®", "First Federal Savings and Loan", "Statement Savings", "Health Savings Account", "Premier Checking"]) {
+      expect(asJs.test(name), name).toBe(namesNoAccount(name));
+    }
+  });
+});
+

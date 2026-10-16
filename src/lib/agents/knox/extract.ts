@@ -80,6 +80,18 @@ export const KNOX_STALE_READ_BELOW_VERSION = 26;
  */
 export const KNOX_LINEUP_READ_BELOW_VERSION = 73;
 /**
+ * v73 (#1100): the raw-row flag a read that recorded the account carries. A product stored without
+ * it was written by an older Knox version, and a v73+ read may replace it; one with it is kept.
+ */
+export const ACCOUNT_PRODUCT_FLAG = "account_product:v73";
+/**
+ * Stored product names that name no account (`account-name-exclusions.ts`, as a Postgres regex):
+ * a v73+ read replaces them, and a copy holding one is due a re-read. Prod on Oct 16: 14 "Truth in
+ * Savings", 8 "Health Savings Card" and 2 "Savings Bank/Loan" names, stored at v55.
+ */
+export const NON_ACCOUNT_PRODUCT_SQL =
+  "(truth[[:space:]-]+in[[:space:]-]+savings|savings[[:space:]]+(cards?|programs?|discounts?|benefits?)|savings[[:space:]]+(and[[:space:]]+loan|&[[:space:]]*loan|banks?|institution|association))";
+/**
  * Banks whose pages are read first while the stale backlog lasts, besides each state's market
  * leaders: banks one or two headline fees short of the report rule, whose own schedule shows
  * a priced line for the missing fee (report-ready thread, 2026-10-07), and Space Coast CU.
@@ -353,6 +365,10 @@ function textArtifactQuery(
                     -- v73 (#1100): a minimum balance fee with no account recorded.
                     OR (COALESCE(unnamed.extraction_note, unnamed.conditions) LIKE '%canonical_hint=minimum_balance;%'
                         AND unnamed.product_name IS NULL)
+                    -- v73 (#1100): a stored account that names no account ("Truth in Savings").
+                    OR ((COALESCE(unnamed.extraction_note, unnamed.conditions) LIKE '%canonical_hint=${LINEUP_CATEGORY};%'
+                         OR COALESCE(unnamed.extraction_note, unnamed.conditions) LIKE '%canonical_hint=minimum_balance;%')
+                        AND unnamed.product_name ~* '${NON_ACCOUNT_PRODUCT_SQL}')
                   )
              )
              AND NOT EXISTS (
@@ -613,6 +629,8 @@ export async function insertCandidate(
     flags.push(`knox_specialist:${options.candidate.strategy}`);
   }
   flags.push(...(options.extraFlags ?? []));
+  // v73: this read records the account, so a later read keeps it (`ACCOUNT_PRODUCT_FLAG`).
+  if (ACCOUNT_PRODUCT_CATEGORIES.has(options.candidate.canonicalHint) && options.candidate.lineup?.productName) flags.push(ACCOUNT_PRODUCT_FLAG);
   const conditions =
     `Knox ${options.method ?? "deterministic extraction"} from Rosetta artifact #${documentTextId}. ` +
     `canonical_hint=${options.candidate.canonicalHint}; text_hash=${options.row.text_hash ?? "unknown"}; ` +
@@ -686,7 +704,12 @@ export async function insertCandidate(
       conditions = NULL,
       audience_evidence = EXCLUDED.audience_evidence,
       fee_treatment = EXCLUDED.fee_treatment,
-      product_name = COALESCE(fr.product_name, EXCLUDED.product_name),
+      -- v73: a product an older Knox wrote, or one that names no account, gives way to this read's.
+      product_name = CASE WHEN EXCLUDED.product_name IS NOT NULL AND (
+                            fr.product_name IS NULL
+                            OR NOT (COALESCE(fr.outlier_flags, '[]'::jsonb) ? ${ACCOUNT_PRODUCT_FLAG})
+                            OR fr.product_name ~* ${NON_ACCOUNT_PRODUCT_SQL})
+                          THEN EXCLUDED.product_name ELSE fr.product_name END,
       min_balance_to_avoid = COALESCE(fr.min_balance_to_avoid, EXCLUDED.min_balance_to_avoid),
       min_opening_deposit = COALESCE(fr.min_opening_deposit, EXCLUDED.min_opening_deposit),
       waiver_text = COALESCE(fr.waiver_text, EXCLUDED.waiver_text),
@@ -716,7 +739,14 @@ export async function insertCandidate(
     // left empty, and change nothing else about the row.
     await db`
       UPDATE raw_fee_observations
-         SET product_name = COALESCE(product_name, ${lineup.productName}),
+         SET product_name = CASE WHEN ${lineup.productName}::text IS NOT NULL AND (
+                                  product_name IS NULL
+                                  OR NOT (COALESCE(outlier_flags, '[]'::jsonb) ? ${ACCOUNT_PRODUCT_FLAG})
+                                  OR product_name ~* ${NON_ACCOUNT_PRODUCT_SQL})
+                                 THEN ${lineup.productName}::text ELSE product_name END,
+             outlier_flags = CASE WHEN ${lineup.productName}::text IS NOT NULL AND NOT (COALESCE(outlier_flags, '[]'::jsonb) ? ${ACCOUNT_PRODUCT_FLAG})
+                                  THEN COALESCE(outlier_flags, '[]'::jsonb) || jsonb_build_array(${ACCOUNT_PRODUCT_FLAG}::text)
+                                  ELSE outlier_flags END,
              min_balance_to_avoid = COALESCE(min_balance_to_avoid, ${lineup.minBalanceToAvoid}),
              min_opening_deposit = COALESCE(min_opening_deposit, ${lineup.minOpeningDeposit}),
              waiver_text = COALESCE(waiver_text, ${lineup.waiverText})
@@ -1083,7 +1113,7 @@ export async function runKnoxExtract(
         if (calibrated < PUBLISH_FLOOR) calibratedBelowPublishFloor += 1;
         const takenDownBy = takedownLessonFor(candidate, takedownLessons, Number(row.institution_id));
         if (takenDownBy) takedownHolds[takenDownBy] = (takedownHolds[takenDownBy] ?? 0) + 1;
-        const named = withLineupFromText(candidate, row.normalized_text);
+        const named = withLineupFromText(candidate, row.normalized_text, { institutionName: row.institution_name });
         if (
           await insertCandidate(db, {
             runId: options.runId,
