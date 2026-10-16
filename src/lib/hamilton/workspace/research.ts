@@ -495,8 +495,8 @@ export async function loadWire(
       topics: textList(r.topics),
       url: r.url ? String(r.url) : null,
     })),
-    // Only actions whose agency subject names consumer law; state orders carry no subject, so
-    // they are left out rather than guessed at.
+    // Only actions whose agency subject names consumer law. A state order carries a subject only
+    // when its regulator's page states one (#1428); one with none is left out, never guessed at.
     actions: (actions as Record<string, unknown>[])
       .filter((r) => isConsumerLaw(r.subject ? String(r.subject) : null))
       .map((r) => ({
