@@ -87,7 +87,7 @@ describe("Bank Fee Index explorer", () => {
     const sel = { fee: "wire_domestic_outgoing", state: null, charter: "all" as const };
     const out = findings(rows, sel, institutionsFor(rows, sel.fee, null, "all"));
     expect(out[0]).toBe("The bank median is $27, $12 above the credit union median.");
-    expect(out[1]).toBe("50% of the 12 institutions have a midpoint of exactly $15.");
+    expect(out[1]).toBe("50% of the 12 institutions have a median published price of exactly $15.");
     expect(out[2]).toBe("In 48 of the 50 states, fewer than 5 institutions headquartered there publish this fee, so they get no state median yet.");
     expect(out.join(" ")).not.toMatch(/cheapest|rais|increas|cut|within|only/i);
   });
@@ -128,8 +128,9 @@ describe("Bank Fee Index explorer", () => {
 });
 
 describe("countedAs", () => {
-  it("names the counted value as a calculation, the highest price for overdraft", () => {
-    expect(countedAs("monthly_maintenance").headline).toBe("Median of institution midpoints");
-    expect(countedAs("overdraft").one).toBe("highest listed price");
+  it("names the counted value as each institution's median price, the highest for overdraft", () => {
+    expect(countedAs("monthly_maintenance").headline).toBe("Median of each institution's median published price");
+    expect(countedAs("monthly_maintenance").label).toBe("institution median");
+    expect(countedAs("overdraft").label).toBe("highest published price");
   });
 });

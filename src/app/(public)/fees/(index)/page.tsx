@@ -257,7 +257,7 @@ export default async function BankFeeIndexPage({ searchParams }: PageProps) {
                     </p>
                     <p className="text-[14px] text-ink-soft">
                       {stats.median_amount != null && stats.p25_amount != null && stats.p75_amount != null
-                        ? `The middle half of ${counted.many} run ${money(stats.p25_amount)} to ${money(stats.p75_amount)}. `
+                        ? `The middle half of ${counted.labels} run ${money(stats.p25_amount)} to ${money(stats.p75_amount)}. `
                         : `Fewer than ${MIN_INSTITUTIONS_FOR_MEDIAN} institutions publish it here. `}
                       <span className="font-semibold text-ink">{institutions.length.toLocaleString()}</span>{" "}
                       {institutions.length === 1 ? "institution" : "institutions"}.
@@ -270,13 +270,13 @@ export default async function BankFeeIndexPage({ searchParams }: PageProps) {
                     activeBin={activeBin}
                     median={stats.median_amount}
                     medianBin={medianBin}
-                    unit={counted.one}
+                    unit={counted.measure}
                     hrefFor={(i) => selectionHref(sel, { bin: String(i) }, "institutions")}
                     allHref={selectionHref(sel, { bin: "all" }, "institutions")}
                   />
                 )}
               </figure>
-              {compare && <Companion title={compare.title} groups={compare.groups} unit={counted.many} />}
+              {compare && <Companion title={compare.title} groups={compare.groups} unit={counted.labels} />}
             </div>
 
             {takeaways.length > 0 && (
@@ -295,14 +295,14 @@ export default async function BankFeeIndexPage({ searchParams }: PageProps) {
                   <div>
                     <h3 className="text-[18px] font-semibold text-ink">
                       {activeBin != null
-                        ? `${listed.length.toLocaleString()} ${listed.length === 1 ? "institution has a" : "institutions have a"} ${counted.one} of ${buckets[activeBin].label}`
+                        ? `${listed.length.toLocaleString()} ${listed.length === 1 ? "institution has a" : "institutions have a"} ${counted.measure} of ${buckets[activeBin].label}`
                         : `${listed.length.toLocaleString()} institutions`}
                     </h3>
                     <p className="mt-1 text-[13px] text-ink-muted">
                       {HIGHEST_TIER_CATEGORIES.has(sel.fee)
                         ? "An institution that lists several prices for this fee, one per account or condition, counts once, at the highest of them."
-                        : "An institution that lists several prices for this fee, one per account or condition, counts once, at their midpoint, which may not be any price it charges."}{" "}
-                      Open a row for every published price, with its account where the schedule names one.
+                        : "An institution that lists several prices for this fee, one per account or condition, counts once, at the median of them, which may not be any price it charges."}{" "}
+                      Open a row to see published prices and available account details.
                       {activeBin != null ? (
                         <>
                           {" "}
@@ -351,8 +351,7 @@ export default async function BankFeeIndexPage({ searchParams }: PageProps) {
                       <InstitutionRow
                         key={i.id}
                         inst={i}
-                        highest={HIGHEST_TIER_CATEGORIES.has(sel.fee)}
-                        counted={counted.one}
+                        counted={counted}
                         prices={(pricesOf.get(i.id) ?? []).map((r) => ({
                           id: r.id,
                           amount: r.amount,
@@ -415,7 +414,7 @@ export default async function BankFeeIndexPage({ searchParams }: PageProps) {
           <ul className="mt-3 list-disc space-y-2 pl-5 text-[14px] text-ink-soft">
             <li>Every figure is read from an institution&apos;s own published fee schedule, and we keep the document it came from.</li>
             <li>
-              Each institution counts once, at the middle of the prices it lists for the fee (the highest, for overdraft). Medians
+              Each institution counts once, at the median of the prices it publishes for the fee (the highest, for overdraft). Medians
               and the middle half are taken across institutions, and a median needs at least {MIN_INSTITUTIONS_FOR_MEDIAN}.
             </li>
             <li>
@@ -590,7 +589,7 @@ function Companion({ title, groups, unit }: { title: string; groups: CompareGrou
   return (
     <div className="self-start rounded-2xl border border-border bg-surface-0 p-4 sm:p-6">
       <p className="text-[15px] font-semibold text-ink">{title}</p>
-      <p className="text-[12px] text-ink-muted">The bar is the middle half of institution {unit}; the mark is their median.</p>
+      <p className="text-[12px] text-ink-muted">The bar is the middle half of {unit}; the mark is their median.</p>
       <ul className="mt-4 space-y-5">
         {groups.map((g) => {
           const { p25_amount: p25, p75_amount: p75, median_amount: med } = g.stats;
@@ -650,14 +649,12 @@ interface ListedPrice {
 function InstitutionRow({
   inst,
   prices,
-  highest,
   counted,
 }: {
   inst: IndexInstitution;
   prices: ListedPrice[];
-  highest: boolean;
-  /** What the Index counts for the institution: "midpoint" or "highest listed price". */
-  counted: string;
+  /** How the Index counts the institution: its median published price, or the highest for overdraft. */
+  counted: ReturnType<typeof countedAs>;
 }) {
   // One entry per distinct price and wording; the same line read twice is one price.
   const seen = new Set<string>();
@@ -675,7 +672,7 @@ function InstitutionRow({
   const verified = listed.filter((p) => p.evidence).length;
   const accountOf = (p: ListedPrice) => p.evidence?.heading ?? accountName(p.detail?.account ?? null);
   const named = listed.filter((p) => accountOf(p)).length;
-  // A midpoint of several prices is often none of them; say so rather than let it read as a price.
+  // A median of an even number of prices is often none of them; say so rather than let it read as a price.
   const notAPrice = amounts.length > 1 && !amounts.includes(inst.value);
   const first = listed[0]?.detail ?? null;
   const readOn = first?.read_on ?? null;
@@ -700,7 +697,7 @@ function InstitutionRow({
             </span>
             {amounts.length > 1 && (
               <span className="block text-[11px] text-ink-muted">
-                {counted} {money(inst.value)}
+                {counted.label} {money(inst.value)}
               </span>
             )}
           </span>
@@ -708,7 +705,7 @@ function InstitutionRow({
         <div className="mt-3 space-y-2 text-[13px] text-ink-soft">
           {amounts.length > 1 && (
             <p className="text-ink-muted">
-              Counted once, at {money(inst.value)}, the {highest ? "highest" : "midpoint"} of these prices
+              Counted once, at {money(inst.value)}, {counted.of} of these prices
               {notAPrice ? "; it isn't one of the published prices." : "."}
             </p>
           )}
