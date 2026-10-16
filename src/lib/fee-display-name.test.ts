@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { feeDisplayName, isCutFeeName } from "@/lib/fee-display-name";
+import { apiFeeName, feeDisplayName, isCutFeeName } from "@/lib/fee-display-name";
 
 describe("feeDisplayName", () => {
   it("names a safe deposit box row that states only its size (101392)", () => {
@@ -20,6 +20,15 @@ describe("feeDisplayName", () => {
   it("shows the category's name for a name cut from its line (#1180)", () => {
     expect(feeDisplayName("Chase Mobile to send a wire from your account to", "wire_domestic_outgoing")).toBe("Wire Transfer (Domestic Out)");
     expect(feeDisplayName("Fees: o A Minimum Balance Fee", "monthly_maintenance")).toBe("Monthly Maintenance");
+  });
+
+  it("flags the API name when the category's name stands in for a cut name (#1482)", () => {
+    expect(apiFeeName("Chase Mobile to send a wire from your account to", "wire_domestic_outgoing")).toEqual({
+      fee_name: "Wire Transfer (Domestic Out)",
+      name_is_category_fallback: true,
+    });
+    expect(apiFeeName("3 X 10", "safe_deposit_box")).toEqual({ fee_name: "Safe Deposit Box 3 X 10", name_is_category_fallback: false });
+    expect(apiFeeName("Overdraft Fee", "overdraft")).toEqual({ fee_name: "Overdraft Fee", name_is_category_fallback: false });
   });
 
   it("keeps a cut name when there is no known category to fall back to", () => {

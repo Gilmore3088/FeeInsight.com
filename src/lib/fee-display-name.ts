@@ -23,11 +23,22 @@ export function isCutFeeName(name: string | null | undefined): boolean {
 }
 
 export function feeDisplayName(name: string, canonicalKey: string | null | undefined): string {
+  return apiFeeName(name, canonicalKey).fee_name;
+}
+
+/**
+ * The API's fee name pair (#1482): `fee_name` as the site shows it, and whether that name is the
+ * category's own name standing in for a cut-off stored name. The stored fragment is not exposed.
+ */
+export function apiFeeName(
+  name: string,
+  canonicalKey: string | null | undefined,
+): { fee_name: string; name_is_category_fallback: boolean } {
   if (canonicalKey === "safe_deposit_box") {
     const size = BOX_SIZE_ONLY.exec(name);
-    if (size) return `Safe Deposit Box ${size[1].trim()}`;
+    if (size) return { fee_name: `Safe Deposit Box ${size[1].trim()}`, name_is_category_fallback: false };
   }
   const categoryName = canonicalKey ? DISPLAY_NAMES[canonicalKey] : undefined;
-  if (categoryName && isCutFeeName(name)) return categoryName;
-  return name;
+  if (categoryName && isCutFeeName(name)) return { fee_name: categoryName, name_is_category_fallback: true };
+  return { fee_name: name, name_is_category_fallback: false };
 }
