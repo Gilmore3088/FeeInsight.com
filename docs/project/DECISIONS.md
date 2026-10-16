@@ -9,8 +9,8 @@ Seeded 2026-10-05 from the project's working memory; earlier decisions were not 
 option A on #1099's night deposit misses: `night_deposit` stays the night depository service, and a
 bag or key bought for it stays out, as the v60 category guard has it. A lost or replaced bag or
 key, and an annual or service fee, stay night deposit. The answer key followed the old reading, so
-its 28 confirmed bag and key purchase lines at 11 banks (and 6 prefilled ones) leave scoring (`canonical_key = 'unmapped'`, which the
-answer-key score and Deming's Knox replay leave out), through Atlas's answer-key relabel step
+its 28 confirmed bag and key purchase lines at 11 banks, 6 prefilled ones and one receptacle-key deposit leave scoring (`canonical_key = 'unmapped'`, which the
+answer-key score and Deming's Knox replay leave out), through Atlas's answer-key relabels, run by the score step
 (`src/lib/agents/atlas/answer-key-relabels.ts`) in the scoreboard run, with every line in its ledger.
 
 **A few confirmed-wrong live fees come down without asking James.** James, 2026-10-16, approving

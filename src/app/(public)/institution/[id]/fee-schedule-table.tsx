@@ -6,6 +6,7 @@ import { ExternalLink } from "lucide-react";
 import { FEE_FAMILIES, getFeeFamily } from "@/lib/fee-taxonomy";
 import { formatFeeAmount } from "@/lib/format";
 import { getFrequencyLabel } from "./enum-labels";
+import { FeeAudienceTabs, type FeeAudienceTab } from "./fee-audience-tabs";
 
 export interface DisplayFee {
   feeAudience?: FeeAudience;
@@ -296,6 +297,25 @@ const FOCUSED_ROW = "border-l-2 border-l-brick bg-brick/[0.035]";
 /** Rows a phone shows before "Show more". */
 const STACK_ROWS_SHOWN = 8;
 
+/** The fee list split for the Personal / Business tabs (#1062). */
+export interface AudienceSplit {
+  personal: DisplayFee[];
+  business: DisplayFee[];
+}
+
+/**
+ * Tabs only when the bank labels at least one fee business: otherwise null and the list shows
+ * as one. A fee labeled both sits in both tabs; an unlabeled fee is treated as personal, the
+ * same rule as its asterisk. An empty side gets no tab.
+ */
+export function splitFeesByAudience(fees: DisplayFee[]): AudienceSplit | null {
+  if (!fees.some((fee) => fee.feeAudience === "business")) return null;
+  return {
+    personal: fees.filter((fee) => countsAsPersonal(fee.feeAudience)),
+    business: fees.filter((fee) => fee.feeAudience === "business" || fee.feeAudience === "both"),
+  };
+}
+
 /**
  * @param focusCategory The fee the reader came to compare (`?fee=`), highlighted and
  *   anchored so the guide → directory → profile handoff lands on the right row.
@@ -316,6 +336,57 @@ export function FeeScheduleTable({
   /** The institution's home-state medians, shown as a second line under the national one. */
   stateMedians?: StateMedians;
   /** National percentiles by fee category; verified fees with a match get a position bar. */
+  benchmarks?: FeeBenchmarks;
+}) {
+  const split = splitFeesByAudience(fees);
+  const listFor = (list: DisplayFee[], rowIds = true) => (
+    <FeeList
+      fees={list}
+      rowIds={rowIds}
+      disclosureUrl={disclosureUrl}
+      focusCategory={focusCategory}
+      medians={medians}
+      stateMedians={stateMedians}
+      benchmarks={benchmarks}
+    />
+  );
+  // A reader sent to a fee the bank lists only for business lands on the Business tab.
+  const focusIsBusinessOnly =
+    split !== null &&
+    focusCategory !== null &&
+    split.business.some((fee) => fee.feeCategory === focusCategory) &&
+    !split.personal.some((fee) => fee.feeCategory === focusCategory);
+  // Only the tab that opens first carries the focused row's #fee- id, so it stays unique.
+  const tabs: FeeAudienceTab[] = split
+    ? [
+        ...(split.personal.length > 0 ? [{ key: "personal" as const, label: "Personal", panel: listFor(split.personal, !focusIsBusinessOnly) }] : []),
+        ...(split.business.length > 0
+          ? [{ key: "business" as const, label: "Business", panel: listFor(split.business, focusIsBusinessOnly || split.personal.length === 0) }]
+          : []),
+      ]
+    : [];
+
+  // Unlabeled fees sit only under Personal, so with tabs the footnote ends that list alone.
+  return split ? <FeeAudienceTabs tabs={tabs} initial={focusIsBusinessOnly ? "business" : "personal"} /> : listFor(fees);
+}
+
+/** One fee list: the position legend, phone rows and the wide table. */
+function FeeList({
+  fees,
+  rowIds,
+  disclosureUrl,
+  focusCategory,
+  medians,
+  stateMedians,
+  benchmarks,
+}: {
+  fees: DisplayFee[];
+  /** Whether the focused table row carries its `#fee-` id. */
+  rowIds: boolean;
+  disclosureUrl: string | null;
+  focusCategory: string | null;
+  medians: Map<string, number | null>;
+  stateMedians?: StateMedians;
   benchmarks?: FeeBenchmarks;
 }) {
   const groups = groupFeesByFamily(fees);
@@ -364,6 +435,7 @@ export function FeeScheduleTable({
                     disclosureUrl={disclosureUrl}
                     mixedGroup={group.verifiedCount > 0}
                     focused={isFocused(fee)}
+                    rowId={rowIds}
                     medians={medians}
                     stateMedians={stateMedians}
                     benchmark={benchmarkFor(fee, benchmarks)}
@@ -411,6 +483,7 @@ function FeeRow({
   disclosureUrl,
   mixedGroup,
   focused = false,
+  rowId = true,
   medians,
   stateMedians,
   benchmark,
@@ -419,6 +492,7 @@ function FeeRow({
   disclosureUrl: string | null;
   mixedGroup: boolean;
   focused?: boolean;
+  rowId?: boolean;
   medians: Map<string, number | null>;
   stateMedians?: StateMedians;
   benchmark: FeeBenchmark | null;
@@ -430,7 +504,7 @@ function FeeRow({
 
   return (
     <tr
-      id={focused && fee.feeCategory ? `fee-${fee.feeCategory}` : undefined}
+      id={focused && rowId && fee.feeCategory ? `fee-${fee.feeCategory}` : undefined}
       data-fee-anchor={focused ? fee.feeCategory ?? undefined : undefined}
       className={`fi-row-interaction scroll-mt-24 border-b border-surface-200 last:border-0 ${focused ? FOCUSED_ROW : ""}`}
     >

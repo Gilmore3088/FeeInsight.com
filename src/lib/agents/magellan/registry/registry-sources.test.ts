@@ -647,19 +647,45 @@ describe("registry state bills worker", () => {
     expect(statements.some((s) => s.text.includes("INSERT INTO reg_tracker_items"))).toBe(false);
   });
 
-  it("asks once more with no date limit when a state has no search hits, and logs the count", async () => {
-    const { db, statements } = createDb([]);
-    const fetchImpl = vi.fn().mockImplementation(async (url: string) =>
-      json(String(url).includes("action_since") ? { results: [], pagination: { max_page: 1 } } : { results: [], pagination: { max_page: 1, total_items: 0 } }),
-    );
-    const result = await runRegistryStateBills({ partitionKey: "VA", db, now, apiKey: "k", live: true, requestIntervalMs: 0, fetchOptions: { fetchImpl, backoffMs: 0 } });
-    expect(result).toMatchObject({ searched: 0, fetched: 0, requests: 4 });
-    const probeUrl = String(fetchImpl.mock.calls[3][0]);
-    expect(probeUrl).not.toContain("action_since");
-    expect(probeUrl).toContain("q=overdraft");
-    const partition = statements.find((s) => s.text.includes("INSERT INTO registry_ingest_partitions"));
-    const detail = partition?.values.find((v) => typeof v === "string" && v.startsWith("{")) as string;
-    expect(JSON.parse(detail)).toMatchObject({ searched: 0, any_date_overdraft_hits: 0 });
+  it("probes a state with no search hits and records no source data when Open States holds no bill text (#1427)", async () => {
+    for (const [textHits, coverage] of [
+      [0, "no_source_data"],
+      [140, "no_fee_bills"],
+    ] as const) {
+      const { db, statements } = createDb([]);
+      const fetchImpl = vi.fn().mockImplementation(async (url: string) => {
+        const q = new URL(String(url)).searchParams.get("q");
+        if (q === "act or ley") return json({ results: [], pagination: { max_page: 1, total_items: textHits } });
+        return json(String(url).includes("action_since") ? { results: [], pagination: { max_page: 1 } } : { results: [], pagination: { max_page: 1, total_items: 11 } });
+      });
+      const result = await runRegistryStateBills({ partitionKey: "VA", db, now, apiKey: "k", live: true, requestIntervalMs: 0, fetchOptions: { fetchImpl, backoffMs: 0 } });
+      expect(result).toMatchObject({ searched: 0, fetched: 0, requests: 5, coverage });
+      const anyDateUrl = String(fetchImpl.mock.calls[3][0]);
+      expect(anyDateUrl).not.toContain("action_since");
+      expect(anyDateUrl).toContain("q=overdraft");
+      // The text probe covers the same window as the fee searches.
+      expect(new URL(String(fetchImpl.mock.calls[4][0])).searchParams.get("action_since")).toBe(result.since);
+      const partition = statements.find((s) => s.text.includes("INSERT INTO registry_ingest_partitions"));
+      const detail = JSON.parse(partition?.values.find((v) => typeof v === "string" && v.startsWith("{")) as string);
+      expect(detail).toMatchObject({ searched: 0, any_date_overdraft_hits: 11, searchable_text_hits: textHits, coverage });
+      expect(Boolean(detail.no_source_data)).toBe(coverage === "no_source_data");
+    }
+  });
+
+  it("searches Puerto Rico in Spanish and keeps a Spanish overdraft fee bill (#1427)", async () => {
+    const { db } = createDb([]);
+    const pr = {
+      ...bill,
+      id: "ocd-bill/pr1",
+      identifier: "PC 100",
+      title: "Para prohibir a los bancos y cooperativas cobrar cargos por sobregiro en cuentas de depósito",
+    };
+    const fetchImpl = vi.fn().mockImplementation(async () => json({ results: [pr], pagination: { max_page: 1 } }));
+    const result = await runRegistryStateBills({ partitionKey: "PR", db, now, apiKey: "k", live: false, requestIntervalMs: 0, fetchOptions: { fetchImpl, backoffMs: 0 } });
+    const queries = fetchImpl.mock.calls.map(([url]) => new URL(String(url)).searchParams.get("q"));
+    expect(queries).toEqual(["sobregiro", "fondos insuficientes", "cargos bancarios"]);
+    expect(String(fetchImpl.mock.calls[0][0])).toContain("territory%3Apr");
+    expect(result).toMatchObject({ fetched: 1, coverage: "fee_hits" });
   });
 
   it("skips the extra request when the searches found bills", async () => {

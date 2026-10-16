@@ -31,7 +31,7 @@ import { LandingPricing } from "./landing-pricing";
 import { LandingFaq } from "./landing-faq";
 import { LandingClose } from "./landing-close";
 import { buildHomeData, buildSampleView, homeReadsCacheable } from "./landing-shared";
-import { loadSampleLadder } from "./for-institutions/market-ladder";
+import { readSampleLadder } from "./for-institutions/market-ladder";
 import { buildScenario } from "./subscribe/scenario";
 
 // The buyer promise from site v3 brief 08 §B.3 (h1) and its subhead; no counts, so nothing goes stale.
@@ -103,16 +103,19 @@ export default async function LandingPage() {
       },
     ),
   ]);
+  const liveSample = sampleRead.report;
+  // A failed state or charter read only drops that ladder row, but it still counts as a failed read.
+  const ladderRead = liveSample ? await readSampleLadder(liveSample, categories) : { ladder: null, failed: false };
+  const ladder = ladderRead.ladder;
   const cacheable = homeReadsCacheable({
     summary,
     categories,
     sampleFailed: sampleRead.failed,
     overdraftFailed: overdraftRead.failed,
+    ladderFailed: ladderRead.failed,
   });
   // Opts this render out of the page cache (see the note at the top of the file).
   if (!cacheable) await connection();
-  const liveSample = sampleRead.report;
-  const ladder = liveSample ? await loadSampleLadder(liveSample, categories) : null;
   const data = buildHomeData(summary, categories, overdraftRead.detail?.by_fed_district, {
     sample: buildSampleView(liveSample),
     ladder,

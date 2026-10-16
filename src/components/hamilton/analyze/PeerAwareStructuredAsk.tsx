@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState, type ComponentProps } from "react";
 import {
-  isPeerListQuestion, isPeerListContinuationQuestion, makePeerListContinuation,
+  isPeerListQuestion, isPeerListContinuationQuestion, makePeerListContinuation, peerListFeeFollowUp,
   type PeerListContinuation, type PeerListResponse,
 } from "@/lib/hamilton/peer-list";
 import { StructuredAsk } from "./StructuredAsk";
@@ -33,6 +33,17 @@ export function PeerAwareStructuredAsk(props: Props) {
   // request visible; the frozen submittedPrior still owns that request body.
   const isCurrentAnswer = continuation?.answeredNonce === (props.nonce ?? 0) && continuation?.answeredQuestion === props.question;
   if (isFollowUp && (!continuation || (!isCurrentAnswer && continuation.answeredNonce + 1 !== (props.nonce ?? 0)) || continuation.snapshot.originInstitutionId !== props.institutionId)) {
+    // "Compare with us" without a usable list still asks the server, which says from the account
+    // alone whether there is an institution to be "us". No list or old peers are sent.
+    if (props.question && peerListFeeFollowUp(props.question) === "with_account") {
+      return <PeerListRequest
+        key={JSON.stringify([props.institutionId, props.question, props.nonce, "no-list"])}
+        {...props}
+        previousPeerList={null}
+        withoutList
+        onResolved={remember}
+      />;
+    }
     return <p role="alert" className="text-sm text-warm-800">Ask for a peer list first. This question cannot borrow an old or different institution’s peers.</p>;
   }
   return <PeerListRequest
@@ -43,9 +54,10 @@ export function PeerAwareStructuredAsk(props: Props) {
   />;
 }
 function PeerListRequest({
-  question, institutionId, onBusyChange, onLead, previousPeerList, onResolved,
+  question, institutionId, onBusyChange, onLead, previousPeerList, withoutList = false, onResolved,
 }: Props & {
   previousPeerList: PeerListContinuation | null;
+  withoutList?: boolean;
   onResolved: (data: PeerListResponse, previous: PeerListContinuation | null) => void;
 }) {
   // Freeze the submitted context for this question, even after the next list
@@ -64,7 +76,7 @@ function PeerListRequest({
       try {
         const response = await fetch("/api/hamilton/ask", {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ question, institutionId, ...(submittedPrior ? { previousPeerList: submittedPrior } : {}) }), signal: controller.signal,
+          body: JSON.stringify({ question, institutionId, ...(submittedPrior ? { previousPeerList: submittedPrior } : withoutList ? { previousPeerList: null } : {}) }), signal: controller.signal,
         });
         if (!response.ok) throw new Error("Peer list request failed");
         const data = await response.json() as PeerListResponse;
@@ -80,7 +92,7 @@ function PeerListRequest({
       } finally { if (current) onBusyChange?.(false); }
     })();
     return () => { current = false; controller.abort(); onBusyChange?.(false); };
-  }, [question, institutionId, onBusyChange, onLead, onResolved, retry, submittedPrior]);
+  }, [question, institutionId, onBusyChange, onLead, onResolved, retry, submittedPrior, withoutList]);
   if (error) return <div role="alert" className="text-sm text-terra-text"><p>{error}</p><button type="button" onClick={() => setRetry(n => n + 1)} className="mt-2 min-h-11 rounded-md border border-warm-300 px-3">Retry peer list</button></div>;
   // A peer request only mounts for a non-empty question; without one there is
   // nothing to save, so render the table read-only rather than save "".

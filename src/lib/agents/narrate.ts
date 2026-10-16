@@ -215,10 +215,11 @@ function narrateFinished(
     case "registry-wire-research":
       return narrateRegistryStep(stepKey, detail);
     case "score-answer-key": {
-      if (detail.schema_ready === false) return "Skipped the answer-key score (migration not applied yet).";
+      const relabel = narrateAnswerKeyRelabel((detail.answer_key_relabel ?? null) as Detail | null);
+      if (detail.schema_ready === false) return `${relabel}Skipped the answer-key score (migration not applied yet).`;
       const banks = n(detail, "banks_scored");
-      if (banks === 0) return "Had no confirmed answer-key banks to score yet.";
-      return `Scored the pipeline against ${count(banks, "hand-checked bank")}: ${percentOf(detail.precision)} precision, ${percentOf(detail.recall)} recall.`;
+      if (banks === 0) return `${relabel}Had no confirmed answer-key banks to score yet.`;
+      return `${relabel}Scored the pipeline against ${count(banks, "hand-checked bank")}: ${percentOf(detail.precision)} precision, ${percentOf(detail.recall)} recall.`;
     }
     case "study-fee-dependence":
     case "study-local-income":
@@ -245,14 +246,6 @@ function narrateFinished(
         .join("");
       return `Wrote ${memo ? n(memo, "passed") : 0} of ${count(memo ? n(memo, "answers") : 0, "paid memo")}${correctness ? `; ${n(correctness, "correct")} of ${n(correctness, "checked")} checked tie to the live catalog` : ""}.${simulateLine}`;
     }
-    case "answer-key-relabel": {
-      const changed = Array.isArray(detail.changed) ? detail.changed.length : 0;
-      if (changed === 0) return "Atlas found no answer-key line left to relabel.";
-      // A dry run lists the lines and changes none.
-      return detail.dry_run === true
-        ? `Atlas would relabel ${count(changed, "answer-key line")} by James's decisions (dry run, nothing changed).`
-        : `Atlas relabelled ${count(changed, "answer-key line")} by James's decisions.`;
-    }
     case "atlas-city-repair": {
       const found = n(detail, "candidates");
       if (found === 0) return "Atlas found no credit union city cut at 15 characters to restore.";
@@ -277,6 +270,11 @@ function narrateFinished(
     case "deming-benchmark-health": {
       const collapses = Array.isArray(detail.collapses) ? detail.collapses.length : 0;
       return `Deming checked the benchmarks: ${n(detail, "groups_meeting_target")} of ${n(detail, "groups_total")} state and size groups meet the coverage target, ${collapses === 0 ? "no benchmark collapsed" : `ALARM: ${count(collapses, "benchmark")} lost a sharp share of its institutions`}.`;
+    }
+    case "deming-data-quality": {
+      const failing = Array.isArray(detail.failing) ? detail.failing.length : 0;
+      const dollar = (detail.dollar ?? {}) as Record<string, unknown>;
+      return `Deming ran the daily data checks on ${count(n(dollar, "live_fees"), "live dollar fee")}: ${failing === 0 ? "no check failed its threshold" : `ALARM: ${count(failing, "check")} failed its threshold`}.`;
     }
     case "deming-knox-misses": {
       if (detail.ready === false) return "Deming could not replay Knox's answer-key misses: the case store or the answer key is not there.";
@@ -607,6 +605,20 @@ export function narrateEvent(event: NarratableEvent): string | null {
   }
 }
 
+/**
+ * The answer-key relabel that opens the score step (#1099), as a lead-in sentence; empty when it
+ * changed nothing. A dry run lists the lines and changes none, so it never says "relabelled".
+ */
+function narrateAnswerKeyRelabel(relabel: Detail | null): string {
+  if (!relabel) return "";
+  if (typeof relabel.error === "string") return `Atlas's answer-key relabel failed (${shorten(relabel.error, 80)}). `;
+  const changed = Array.isArray(relabel.changed) ? relabel.changed.length : 0;
+  if (changed === 0) return "";
+  return relabel.dry_run === true
+    ? `Atlas would relabel ${count(changed, "answer-key line")} by James's decisions (dry run, nothing changed). `
+    : `Atlas relabelled ${count(changed, "answer-key line")} by James's decisions. `;
+}
+
 function shorten(message: string, max = 140): string {
   const clean = message.replace(/\s+/g, " ").trim();
   return clean.length > max ? `${clean.slice(0, max - 1)}…` : clean;
@@ -648,9 +660,9 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   "bayes-replay-ledger": "atlas",
   "schedule-check": "atlas",
   "atlas-city-repair": "atlas",
-  "answer-key-relabel": "atlas",
   "deming-fresh-audit": "atlas",
   "deming-benchmark-health": "atlas",
+  "deming-data-quality": "atlas",
   "deming-knox-misses": "atlas",
   "deming-playbook-check": "atlas",
   "deming-change-outcomes": "atlas",

@@ -5,8 +5,9 @@ type SqlTag = typeof sql;
 
 /**
  * Atlas's answer-key relabels: a fixed list of hand-checked answer-key lines (`answer_key_fees`)
- * whose category a decision of James's changed after they were keyed. A step in Atlas's daily
- * scoreboard run, before the score, so the day's score already reads the corrected key.
+ * whose category a decision of James's changed after they were keyed. Applied in Atlas's daily
+ * scoreboard run, run by the score step just before it scores, so the day's score already reads the
+ * corrected key.
  *
  * First list, James, Oct 16 (#1099 night deposit, option A; DECISIONS.md): `night_deposit` is the
  * night depository service only. A bag or key bought for it is a supply sale, which the taxonomy
@@ -77,6 +78,11 @@ export const ANSWER_KEY_RELABELS: readonly AnswerKeyRelabel[] = [
   bag(834, 1467, 20, "Nightly Depository Bag Purchase - Per Bag $20.00"),
   bag(870, 1559, 25, "Night Deposit Bag (Locking) | $25.00"),
   bag(957, 1780, 25, "Night Depository Bags $25.00"),
+  // A deposit paid for the receptacle key is a key charge, not the night depository service, so under
+  // option A it leaves scoring like a key purchase (#1550 second review). A lost or replaced key stays.
+  { feeId: 48, institutionId: 61, fromKey: "night_deposit", toKey: OUT_OF_SCOPE_KEY, amount: 6,
+    sourceLine: "Night Depository, Deposit for Receptacle Key......... $6",
+    note: "Out of scope for scoring (James, Oct 16, #1099): a deposit for the night depository key is a key charge, not the night deposit service." },
 ];
 
 export interface KeyFeeRow {

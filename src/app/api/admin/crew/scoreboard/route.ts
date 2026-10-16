@@ -18,7 +18,7 @@ async function isAuthorized(request: NextRequest): Promise<boolean> {
 /**
  * Atlas's daily measurement, as a visible run (cron, once a day): score the
  * pipeline against the hand-checked answer key, let Deming turn confirmed takedowns into
- * regression cases and replay them, audit a fresh seeded sample of live fees, then snapshot the six scoreboard numbers (which include
+ * regression cases and replay them, audit a fresh seeded sample of live fees, run the daily data-quality checks (#1065), then snapshot the six scoreboard numbers (which include
  * that score), then restore cut credit union cities (#1213). Deterministic; no model calls.
  */
 async function handleGET(request: NextRequest) {
@@ -35,14 +35,14 @@ async function handleGET(request: NextRequest) {
     triggerSource: "schedule",
     idempotencyKey: `atlas:scoreboard:${day}`,
     steps: [
-      // First: James's answer-key decisions reach the key before the day's score reads it. It
-      // writes only the answer key, so it is pause-exempt and a pipeline pause still runs the score.
-      { key: "answer-key-relabel", agent: "atlas", title: "Atlas: apply James's answer-key category decisions to the listed key lines" },
-      { key: "score-answer-key", agent: "atlas", title: "Score the pipeline against the answer key" },
+      // First, James's answer-key decisions reach the key (`atlas/answer-key-relabels.ts`), then the
+      // score reads it, in one pause-exempt step: both write only the answer key and score rows.
+      { key: "score-answer-key", agent: "atlas", title: "Apply James's answer-key decisions, then score the pipeline against the answer key" },
       { key: "deming-regression", agent: "atlas", title: "Deming: turn confirmed mistakes into test cases and replay them" },
       { key: "deming-fresh-audit", agent: "atlas", title: "Deming: check a fresh sample of live fees against the banks' own schedules" },
       { key: "deming-benchmark-health", agent: "atlas", title: "Deming: check benchmark sample sizes, ranges and coverage, and alarm on a collapse" },
       { key: "deming-playbook-check", agent: "atlas", title: "Deming: check each institution's playbook for contradictions (read-only)" },
+      { key: "deming-data-quality", agent: "atlas", title: "Deming: check live fees for duplicates, stale evidence, missing categories and sources, and category shares (read-only)" },
       { key: "scoreboard-snapshot", agent: "atlas", title: "Record the daily scoreboard" },
       { key: "deming-change-outcomes", agent: "atlas", title: "Deming: check whether each change moved the number it named, a week on" },
       { key: "deming-sunday-maintenance", agent: "atlas", title: "Deming: on Sunday, write James's hour of maintenance tasks" },

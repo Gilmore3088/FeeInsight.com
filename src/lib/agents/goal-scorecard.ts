@@ -2,6 +2,7 @@ import { sql } from "@/lib/data-store/connection";
 import { ACCURACY_TARGET, ACCURACY_TARGET_LABEL } from "@/lib/accuracy-target";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import { FRESH_AUDIT_MIN_SCORABLE } from "@/lib/agents/deming/fresh-audit";
+import { BATCH_REVIEW_CHECK, type BatchMissKind } from "@/lib/agents/rosetta/batch-review";
 
 /**
  * The goal scorecard (#1040): the numbers that say whether Fee Insight is getting closer to a
@@ -45,7 +46,48 @@ export const GOAL_QUERIES = {
   knoxPasses: "goal.knox_passes_7d",
   unstatedAudience: "goal.unstated_audience",
   answerQuality: "goal.hamilton_answer_eval_latest",
+  readerMissWeeks: "goal.rosetta_miss_rate_weekly",
+  readerRemedies: "goal.rosetta_remedy_outcomes",
+  dataQuality: "goal.deming_data_quality_latest",
 } as const;
+
+/** Weeks of text-reading misses shown, oldest first, the current week last (#1054). */
+export const READER_MISS_WEEKS = 8;
+/** The miss kinds Rosetta's batch review writes (`rosetta/batch-review.ts`). */
+export const READER_MISS_KINDS: BatchMissKind[] = ["no_fees_found", "short_text", "missed_fee_page", "unresolved_fee_page", "unread"];
+
+export interface ReaderMissWeek {
+  /** Monday of the week, UTC, as YYYY-MM-DD. Batches count in the week they were reviewed. */
+  weekStart: string;
+  batches: number;
+  reads: number;
+  errors: number;
+  /** Misses ÷ reads; null in a week with no reviewed batch. */
+  rate: number | null;
+  byKind: Record<BatchMissKind, number>;
+}
+
+export interface ReaderMissWeeks {
+  query: string;
+  weeks: ReaderMissWeek[];
+}
+
+export interface ReaderRemedyOutcome {
+  remedy: string;
+  /** Misses the batch review sent to a fix. */
+  remedied: number;
+  /** Of those, misses whose document (or, for a new link search, institution) later gave Knox fees. */
+  knoxFound: number;
+  share: number | null;
+}
+
+export interface ReaderRemedies {
+  query: string;
+  remedied: number;
+  knoxFound: number;
+  share: number | null;
+  byRemedy: ReaderRemedyOutcome[];
+}
 
 export interface CoverageCells {
   query: string;
@@ -272,6 +314,68 @@ export function answerQualityFrom(
   };
 }
 
+/** One line of the daily data-quality checks (#1065), each with its own query name. */
+export interface DataQualityLine {
+  catalog: "dollar" | "rate";
+  check: "duplicates" | "stale" | "noCategory" | "noSource" | "categoryShare";
+  query: string;
+  count: number;
+  rate: number | null;
+  status: string;
+}
+
+export interface DataQuality {
+  query: string;
+  /** When the check finished (ISO). */
+  at: string;
+  /** Checks at FAIL, as "catalog.check": the alarm. */
+  failing: string[];
+  warning: string[];
+  lines: DataQualityLine[];
+  /** Categories out of line with their normal share of live institutions. */
+  drifts: Array<{ catalog: "dollar" | "rate"; category: string; normalShare: number; share: number; direction: string }>;
+}
+
+const DATA_QUALITY_CHECKS = ["duplicates", "stale", "noCategory", "noSource"] as const;
+
+/** The latest `deming-data-quality` step detail as scorecard lines; null when it is not that step's shape. */
+export function dataQualityFrom(at: string, detail: Record<string, unknown>): Omit<DataQuality, "query"> | null {
+  const strings = (value: unknown) => (Array.isArray(value) ? value.map(String) : []);
+  const lines: DataQualityLine[] = [];
+  const drifts: DataQuality["drifts"] = [];
+  for (const catalog of ["dollar", "rate"] as const) {
+    const part = detail[catalog] as Record<string, unknown> | undefined;
+    if (!part || typeof part !== "object") continue;
+    const checks = (part.checks ?? {}) as Record<string, { query?: unknown; count?: unknown; rate?: unknown; status?: unknown }>;
+    for (const check of DATA_QUALITY_CHECKS) {
+      const row = checks[check];
+      if (!row) continue;
+      lines.push({
+        catalog,
+        check,
+        query: String(row.query ?? ""),
+        count: Number(row.count ?? 0),
+        rate: row.rate == null ? null : Number(row.rate),
+        status: String(row.status ?? "unknown"),
+      });
+    }
+    const share = (part.category_share ?? {}) as { query?: unknown; status?: unknown; drifts?: unknown };
+    const shareDrifts = Array.isArray(share.drifts) ? (share.drifts as Array<Record<string, unknown>>) : [];
+    lines.push({ catalog, check: "categoryShare", query: String(share.query ?? ""), count: shareDrifts.length, rate: null, status: String(share.status ?? "unknown") });
+    for (const drift of shareDrifts) {
+      drifts.push({
+        catalog,
+        category: String(drift.category ?? ""),
+        normalShare: Number(drift.normalShare ?? 0),
+        share: Number(drift.share ?? 0),
+        direction: String(drift.direction ?? ""),
+      });
+    }
+  }
+  if (lines.length === 0) return null;
+  return { at, failing: strings(detail.failing), warning: strings(detail.warning), lines, drifts };
+}
+
 export interface GoalScorecard {
   readAt: string;
   windowDays: number;
@@ -285,6 +389,11 @@ export interface GoalScorecard {
   unstatedAudience: UnstatedAudience | null;
   /** Hamilton's answers: form and correctness per path (#1079); absent on snapshots from before it. */
   answerQuality?: AnswerQuality | null;
+  /** Rosetta's batch review: weekly miss rate by kind, and whether its fixes gave Knox fees (#1054). */
+  readerMisses?: ReaderMissWeeks | null;
+  readerRemedies?: ReaderRemedies | null;
+  /** Deming's daily data-quality checks (#1065); absent on snapshots from before it. */
+  dataQuality?: DataQuality | null;
 }
 
 const usd = (micro: unknown): number => Math.round(Number(micro ?? 0) / 10_000) / 100;
@@ -708,6 +817,133 @@ async function readAnswerQuality(db: SqlTag): Promise<AnswerQuality | null> {
   };
 }
 
+/** Monday 00:00 UTC of the week holding `date`, as YYYY-MM-DD (Postgres `date_trunc('week')`). */
+export function weekStartUtc(date: Date): string {
+  const day = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+  day.setUTCDate(day.getUTCDate() - ((day.getUTCDay() + 6) % 7));
+  return day.toISOString().slice(0, 10);
+}
+
+/** The first day `bucketReaderMissWeeks` shows: Monday of the oldest week. */
+export function readerMissSince(now: Date, weeks = READER_MISS_WEEKS): string {
+  const start = new Date(`${weekStartUtc(now)}T00:00:00Z`);
+  start.setUTCDate(start.getUTCDate() - (weeks - 1) * 7);
+  return start.toISOString().slice(0, 10);
+}
+
+const emptyKinds = (): Record<BatchMissKind, number> =>
+  Object.fromEntries(READER_MISS_KINDS.map((kind) => [kind, 0])) as Record<BatchMissKind, number>;
+
+/**
+ * Pure: the batch review's `batch_error_rate` rows, one per batch of 50 reads, summed into
+ * the last `weeks` UTC weeks. Every week is listed, so a week with no reviewed batch shows as
+ * empty (no rate) rather than dropping out of the trend.
+ */
+export function bucketReaderMissWeeks(
+  rows: Array<{ at: string; evidence: Record<string, unknown> | null }>,
+  now: Date,
+  weeks = READER_MISS_WEEKS,
+): ReaderMissWeek[] {
+  const buckets: ReaderMissWeek[] = [];
+  const first = new Date(`${readerMissSince(now, weeks)}T00:00:00Z`);
+  for (let index = 0; index < weeks; index += 1) {
+    const start = new Date(first);
+    start.setUTCDate(first.getUTCDate() + index * 7);
+    buckets.push({ weekStart: start.toISOString().slice(0, 10), batches: 0, reads: 0, errors: 0, rate: null, byKind: emptyKinds() });
+  }
+  const byWeek = new Map(buckets.map((bucket) => [bucket.weekStart, bucket]));
+  for (const row of rows) {
+    const at = new Date(row.at);
+    if (!row.evidence || Number.isNaN(at.getTime())) continue;
+    const bucket = byWeek.get(weekStartUtc(at));
+    if (!bucket) continue;
+    bucket.batches += 1;
+    bucket.reads += missCount(row.evidence.reads);
+    bucket.errors += missCount(row.evidence.errors);
+    const kinds = row.evidence.by_kind as Record<string, unknown> | null | undefined;
+    for (const kind of READER_MISS_KINDS) bucket.byKind[kind] += missCount(kinds?.[kind]);
+  }
+  for (const bucket of buckets) bucket.rate = ratio(bucket.errors, bucket.reads);
+  return buckets;
+}
+
+async function readReaderMissWeeks(db: SqlTag, now: Date): Promise<ReaderMissWeeks> {
+  const rows = await db<Array<{ created_at: Date | string; evidence: unknown }>>`
+    SELECT created_at, evidence
+      FROM pipeline_feedback
+     WHERE check_name = ${BATCH_REVIEW_CHECK}
+       AND kind = 'batch_error_rate'
+       AND created_at >= ${readerMissSince(now)}::timestamptz
+  `;
+  return {
+    query: GOAL_QUERIES.readerMissWeeks,
+    weeks: bucketReaderMissWeeks(rows.map((row) => ({
+      at: row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at),
+      evidence: (typeof row.evidence === "string" ? JSON.parse(row.evidence) : row.evidence) as Record<string, unknown> | null,
+    })), now),
+  };
+}
+
+/** Pure: per-remedy counts summed, largest first. */
+export function summarizeReaderRemedies(rows: Array<{ remedy: string; remedied: number; knox_found: number }>): Omit<ReaderRemedies, "query"> {
+  const byRemedy = rows
+    .map((row) => ({ remedy: row.remedy, remedied: Number(row.remedied) || 0, knoxFound: Number(row.knox_found) || 0 }))
+    .map((row) => ({ ...row, share: ratio(row.knoxFound, row.remedied) }))
+    .sort((a, b) => b.remedied - a.remedied || a.remedy.localeCompare(b.remedy));
+  const remedied = byRemedy.reduce((sum, row) => sum + row.remedied, 0);
+  const knoxFound = byRemedy.reduce((sum, row) => sum + row.knoxFound, 0);
+  return { remedied, knoxFound, share: ratio(knoxFound, remedied), byRemedy };
+}
+
+/**
+ * Misses the batch review sent to a fix (every remedy but `lesson_only`) in the shown weeks,
+ * and how many later gave Knox fees: a Knox fee from the same document after the review, or,
+ * for a new link search (`magellan_paid_find`), from the same institution.
+ */
+async function readReaderRemedies(db: SqlTag, now: Date): Promise<ReaderRemedies> {
+  const rows = await db<Array<{ remedy: string; remedied: number; knox_found: number }>>`
+    SELECT f.evidence->>'remedy' AS remedy,
+           COUNT(*)::int AS remedied,
+           (COUNT(*) FILTER (WHERE
+             (f.evidence->>'remedy' <> 'magellan_paid_find' AND EXISTS (
+               SELECT 1 FROM raw_fee_observations fr
+                WHERE fr.source = 'knox' AND fr.source_document_id = f.source_document_id AND fr.created_at > f.created_at
+             ))
+             OR (f.evidence->>'remedy' = 'magellan_paid_find' AND EXISTS (
+               SELECT 1 FROM raw_fee_observations fr
+                WHERE fr.source = 'knox' AND fr.institution_id = f.institution_id AND fr.created_at > f.created_at
+             ))
+           ))::int AS knox_found
+      FROM pipeline_feedback f
+     WHERE f.check_name = ${BATCH_REVIEW_CHECK}
+       AND f.kind = ANY(${READER_MISS_KINDS}::text[])
+       AND f.evidence->>'remedy' IS NOT NULL
+       AND f.evidence->>'remedy' <> 'lesson_only'
+       AND f.created_at >= ${readerMissSince(now)}::timestamptz
+     GROUP BY 1
+  `;
+  return { query: GOAL_QUERIES.readerRemedies, ...summarizeReaderRemedies(rows) };
+}
+
+async function readDataQuality(db: SqlTag): Promise<DataQuality | null> {
+  const [row] = await db<Array<{ created_at: Date | string; detail: unknown }>>`
+    SELECT e.created_at, e.detail
+      FROM agent_run_events e
+      JOIN agent_run_steps s ON s.id = e.step_id
+     WHERE s.step_key = 'deming-data-quality'
+       AND e.event_type = 'step.finished'
+       AND e.status = 'completed'
+       AND e.created_at >= NOW() - make_interval(days => ${GOAL_WINDOW_DAYS}::int)
+     ORDER BY e.created_at DESC
+     LIMIT 1
+  `;
+  if (!row) return null;
+  const detail = (typeof row.detail === "string" ? JSON.parse(row.detail) : row.detail) as Record<string, unknown> | null;
+  const at = row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at);
+  const read = detail ? dataQualityFrom(at, detail) : null;
+  return read ? { query: GOAL_QUERIES.dataQuality, ...read } : null;
+}
+
 /** One read, in its own savepoint: a failure leaves that number null and the others standing. */
 async function guarded<T>(db: SqlTag, name: string, read: (scope: SqlTag) => Promise<T>): Promise<T | null> {
   return inSavepoint(db, read).catch((error) => {
@@ -727,6 +963,9 @@ export async function readGoalScorecard(db: SqlTag = sql, now = new Date()): Pro
     readKnoxPasses(scope, spend?.byAgent.find((row) => row.agent === "knox")));
   const unstatedAudience = await guarded(db, GOAL_QUERIES.unstatedAudience, readUnstatedAudience);
   const answerQuality = await guarded(db, GOAL_QUERIES.answerQuality, readAnswerQuality);
+  const readerMisses = await guarded(db, GOAL_QUERIES.readerMissWeeks, (scope) => readReaderMissWeeks(scope, now));
+  const readerRemedies = await guarded(db, GOAL_QUERIES.readerRemedies, (scope) => readReaderRemedies(scope, now));
+  const dataQuality = await guarded(db, GOAL_QUERIES.dataQuality, readDataQuality);
   return {
     readAt: now.toISOString(),
     windowDays: GOAL_WINDOW_DAYS,
@@ -738,6 +977,9 @@ export async function readGoalScorecard(db: SqlTag = sql, now = new Date()): Pro
     knoxPasses: spend ? knoxPasses : null,
     unstatedAudience,
     answerQuality,
+    readerMisses,
+    readerRemedies,
+    dataQuality,
   };
 }
 
@@ -799,6 +1041,12 @@ export function goalBriefLines(goal: GoalScorecard): string[] {
       ? " Paid paths not measured yet."
       : unmeasured.length > 0 ? ` Not measured yet: ${unmeasured.join(", ")}.` : "";
     lines.push(`Hamilton answers (eval of ${q.at.slice(0, 16).replace("T", " ")} UTC${q.timedOut ? ", stopped at its time budget" : ""}${paidAt}): ${parts.join("; ")}.${rest}`);
+  }
+  const d = goal.dataQuality;
+  if (d) {
+    lines.push(d.failing.length === 0
+      ? `Data checks (${d.at.slice(0, 10)}): no check failed its threshold${d.warning.length > 0 ? `; ${d.warning.length} to watch` : ""}.`
+      : `Data checks (${d.at.slice(0, 10)}): ALARM, ${d.failing.length} failed their threshold (${d.failing.join(", ")}).`);
   }
   return lines;
 }

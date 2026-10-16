@@ -116,6 +116,24 @@ Darwin owns verification and classification.
   row that passes now has its pending second-look flag cleared (`takedown_cleared`). Each row
   records a `verify.recheck` attempt (fingerprint `verified:<fee_verified_id>`), so a row is read
   once per recheck version and the pass never starves the batch. Never a hand UPDATE.
+  Live fees verified under an older `verify.rules` version were never selected, so a rule added
+  here never reached them (#1568: 15 live tier-perk $0s stayed up after version 3).
+  `DARWIN_RECHECK_OLDER_LIVE` (default off) adds them: on, each step also reads up to half its
+  limit of those live rows, newest first, and they fail or pass like any other row. Off, every
+  fourth run reads a sample of 200 of them (in id order up from a random id, wrapping round to the
+  lowest ids), runs the same checks and writes nothing: step detail `recheck.olderLive` gives `read`,
+  `wouldFail` by reason code and 20 samples. That is a per-step sample; the whole backlog's count
+  is a separate read-only query. It turns on by PR once James approves that count by reason.
+  The 12-hour path never reached its second look: a row is read once per recheck version, so a
+  live row flagged `takedown_pending` was never read again (Frost's 14 premium-schedule $0s,
+  flagged `tier_perk_zero` on 2026-10-15 08:35, #1397). `DARWIN_RECHECK_SECOND_LOOK_LIVE` (default
+  off) gives each due first look its second read: on, each step re-reads up to 100 live rows whose
+  `darwin.verified_recheck` flag is at least 12 hours old, oldest first, and the shared second look
+  archives the ones still failing and clears the rest. Off, step detail `recheck.dueSecondLooks`
+  gives `due`, `wouldConfirm` by reason code, `wouldClear` and 20 samples, and nothing is written.
+  It turns on by PR once James approves the count of due flags. `DARWIN_RECHECK_OLDER_LIVE` only
+  flags; without this switch its first looks would never be confirmed, so it turns on with or after
+  this one.
 - `verify.document_owner` (`document-owner.ts`, version 1, 2026-10-15, #1455) ends every learning
   verify step after `verify.recheck`. It asks whose schedule a live fee's document is, by the
   document's own text, never by the stored website (the registry seed stored another bank's website

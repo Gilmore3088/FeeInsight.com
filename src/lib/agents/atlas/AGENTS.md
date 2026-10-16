@@ -24,13 +24,19 @@ Atlas is the orchestration and operator-visibility agent. Atlas-specific code ma
 
 ## Answer-key relabels (`answer-key-relabels.ts`, #1099)
 
-`answer-key-relabel`, the first step of Atlas's daily scoreboard run, applies James's category
-decisions to a fixed list of answer-key lines before the day's score reads them. First list (Oct 16,
-night deposit option A): 28 confirmed bag and key purchase lines at 11 banks, and 6 prefilled ones at
-6 more, leave scoring (`canonical_key = 'unmapped'`, a note in `conditions`); the answer-key score and
-Deming's Knox replay skip `unmapped` lines. The step is pause-exempt: it writes only the answer key, so a
-pipeline pause does not hold the score behind it. The repo copies of these lines (the Knox gate
-fixtures and `darwin/answer-key-fees.json`) carry the same `unmapped` labels. A line changes only while it reads as listed (id, institution, category, price,
+The score step of Atlas's daily scoreboard run (`score-answer-key`) first applies James's category
+decisions to a fixed list of answer-key lines, then scores, so the day's score reads the corrected key.
+The relabel has no step of its own: the scoreboard run is at `executeAgentRun`'s 10-step cap.
+`score-answer-key` is pause-exempt, since it writes only the answer key and score rows, never a fee
+row, so a pipeline pause does not hold the score. A failed relabel runs in its own savepoint, is
+reported in the step detail (`answer_key_relabel`), and never stops the score.
+
+First list (Oct 16, night deposit option A): 28 confirmed bag and key purchase lines at 11 banks, 6
+prefilled ones at 6 more, and bank 61's deposit for the receptacle key (line 48) leave scoring
+(`canonical_key = 'unmapped'`, a note in `conditions`). A key deposit is a key charge, not the night
+depository service. The answer-key score and Deming's Knox replay skip `unmapped` lines. The repo
+copies of these lines (the Knox gate fixtures and `darwin/answer-key-fees.json`) carry the same
+`unmapped` labels. A line changes only while it reads as listed (id, institution, category, price,
 source line); every change goes in the step's ledger detail, and a second run changes nothing.
 
 ## City repair (`city-repair.ts`, #1213)
@@ -86,7 +92,9 @@ hand-found link or paid-fetched document starts a new run even inside the retry 
   for its retry window, or for its state's lane to read the page first.
 - In the tick, a direct run ahead of a state lane stops starting steps while the next one would
   leave the lane no room for its first work (`run-store.ts`, `laneFirstWorkMs`). The lane then
-  gets the tick's first-step exemption.
+  gets the tick's first-step exemption. A state re-search run idle 15 minutes
+  (`LANE_ROOM_MAX_IDLE_MS`) takes one step without leaving that room, since its `discover` never
+  fits beside a fresh lane's first work (#1421); Read-now runs always leave it.
 
 ## State lanes: cadence and state experts
 

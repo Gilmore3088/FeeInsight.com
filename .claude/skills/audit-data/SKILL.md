@@ -8,6 +8,16 @@ user_invocable: true
 
 Run a data quality audit against the current Fee Insight Postgres model.
 
+## Runs daily in the pipeline
+
+Deming's `deming-data-quality` step runs these checks every day in Atlas's scoreboard run
+(`src/lib/agents/deming/data-quality.ts`, #1065): duplicates, stale fees, fees with no category,
+fees with no source link, and each category's share against its normal share, with the thresholds
+below, and an ALARM in the step summary for a check at FAIL. The sampled source trace is the
+`deming-fresh-audit` step. Read today's results on /admin/scoreboard ("Data checks failing") or in
+the step's `step.finished` detail before running anything by hand; use this skill for a deeper,
+one-off look the daily step does not cover.
+
 ## What This Skill Does
 
 Use current `src/lib/data-store/*` queries or direct read-only SQL to identify data quality issues. Product/report fee reads must use `published_fee_catalog`; pipeline diagnostics may inspect `raw_fee_observations`, `verified_fee_observations`, `published_fee_records`, and the agent run ledger.

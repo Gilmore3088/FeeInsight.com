@@ -35,16 +35,8 @@ export interface PublicStatsSummary {
   complete: boolean;
 }
 
-/**
- * One name per coverage count, used everywhere a count appears, so "institutions"
- * never means two different things on two pages.
- */
-export const COVERAGE_LABELS = {
-  monitored: "Institutions monitored",
-  institutions: "Institutions with published fees",
-  observations: "Published fee entries",
-  categories: "Fee categories with published fees",
-} as const;
+// The coverage labels live in a pure module so a client component can read them (#1483).
+export { COVERAGE_LABELS } from "@/lib/coverage-labels";
 
 /** Shown in place of a count whose read failed, so a failed read never renders as a real 0. */
 export const UNAVAILABLE_LABEL = "—";
