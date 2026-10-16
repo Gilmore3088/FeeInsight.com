@@ -11,10 +11,11 @@ import type { MarketLadderData } from "@/app/for-institutions/market-ladder";
 import { lineName } from "@/app/for-institutions/board-math";
 import { sourcedFees, type SourcedFee } from "@/app/for-institutions/sample-sources";
 import type { AnalyzeScenario } from "@/app/subscribe/scenario";
+import { REPORT_SHOWCASE } from "@/lib/report-showcase";
 
 /** The one report request form, on /reports (site v3 brief 05 §3-4, #1171). */
 export const REPORT_REQUEST_HREF = "/reports?report=institution#request";
-export const SAMPLE_REPORT_HREF = "/reports/sample-competitive-fee-position";
+export const SAMPLE_REPORT_HREF = REPORT_SHOWCASE.sampleHref;
 
 export const SANS = { fontFamily: "var(--fi-font-sans)" } as const;
 export const TEXT_LINK = "font-semibold text-ink underline underline-offset-4 decoration-border hover:decoration-ink";

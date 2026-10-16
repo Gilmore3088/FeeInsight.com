@@ -21,8 +21,9 @@ import {
   oneClickUnsubscribeUrl,
   subscriptionPageUrl,
 } from "./subscription-token";
+import { REPORT_SHOWCASE } from "@/lib/report-showcase";
 
-export const SAMPLE_REPORT_PDF_PATH = "/reports/sample-competitive-fee-position.pdf";
+export const SAMPLE_REPORT_PDF_PATH = REPORT_SHOWCASE.pdfHref;
 export const REPORT_REQUEST_PATH = "/for-institutions#report";
 
 export interface LeadCaptureNotificationInput {
