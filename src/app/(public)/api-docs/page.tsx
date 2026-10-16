@@ -521,7 +521,7 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \\
             {
               name: "data[].unstated_audience_institution_count",
               type: "integer",
-              note: "Institutions in the sample with at least one fee whose schedule doesn't say whether it's personal or business; those fees count as personal.",
+              note: "Institutions in the sample with at least one fee whose schedule doesn't say whether it's personal or business; those fees count as personal. It counts every institution, while institution_count counts institutions that share one fee schedule once, so the two are not a ratio.",
             },
           ]}
           responseExample={`{
