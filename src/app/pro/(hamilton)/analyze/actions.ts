@@ -106,7 +106,8 @@ export async function saveAnalysis(params: {
     if (!id) return { error: "Failed to save analysis" };
     return { id };
   } catch (err) {
-    // Do not return raw SQL/driver messages to an authenticated browser action.
+    // Do not return raw SQL/driver messages to an authenticated browser action; log them here.
+    console.error("[hamilton-analyze] saving the analysis failed", err);
     return { error: "Could not save this analysis. Please try again." };
   }
 }
