@@ -85,6 +85,8 @@ Hamilton supports the decision; it does not make it.
   names the institution's own regulator, lists the Regulatory Wire's recent items for it when
   the Wire holds any (`wireFailures`, #1090), and a state question names its state. Read-only, no
   provider calls; the step detail lists the weakest questions and the commonest failures.
+  A run stops at its time budget, so each run asks the day's sampled institutions that no earlier
+  run reached today first (`institutionsAskedToday`), and the day's runs together cover the sample (#1076).
   It first replays the questions Pro readers really asked in the last 90 days (the `pro.ask`
   ledger keeps each question and short answer; saved analyses keep the rest) through today's
   engine. `detail.pro` counts how many meet the bar and how many Hamilton still asks back on,
