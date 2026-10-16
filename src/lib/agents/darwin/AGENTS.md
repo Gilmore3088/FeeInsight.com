@@ -802,7 +802,9 @@ Darwin owns verification and classification.
   twin on that same document is selected once more.
 - Darwin decides each verified fee's audience (#1059; James, Oct 13). A label Knox read on the
   fee's own line stands. A fee Knox left `unknown` takes Knox's context suggestion
-  (`knox/audience-context.ts`, via `darwin/audience.ts`), in this order: the schedule's address,
+  (`knox/audience-context.ts`, via `darwin/audience.ts`), in this order: the fee's own name
+  (`nameAudience`: a name that lists both sides is both; a product, an exception clause or a
+  business day names no audience, #1626), the schedule's address,
   then the section heading above the fee's line, then its title, a schedule that prices nothing
   for businesses (consumer), or a schedule that also prices business items and does not limit
   the fee (both). In a schedule that also prices business items, a heading for all accounts
@@ -824,7 +826,7 @@ Darwin owns verification and classification.
   - `off`: the tick queues one dry run a day over a sample of documents (md5 order by day) that
     counts decisions by audience and evidence source, and writes nothing.
   - `dry_run_full` (shipped, the gate before live): the same cursor chain as live over every
-    document, one batch per tick, key chain `darwin:audience-relabel:dry:v1:after:<cursor>`,
+    document, one batch per tick, key chain `darwin:audience-relabel:dry:v2:after:<cursor>`,
     writing nothing but each batch's counts. The last batch adds the chain's totals to its detail
     (`dry_run_totals`) and writes an `audience_relabel.dry_run_totals` event. Live waits until the
     totals show unknown at most 10%, and consumer, both and business each within about 5 points
@@ -1176,7 +1178,7 @@ fails a PR that changes one of these constants without updating its line here (#
 
 | Constant | Strategy | Version | File |
 |---|---|---|---|
-| `AUDIENCE_RELABEL_VERSION` | `darwin.audience_relabel` | v1 | `darwin/audience-relabel.ts` |
+| `AUDIENCE_RELABEL_VERSION` | `darwin.audience_relabel` | v2 | `darwin/audience-relabel.ts` |
 | `DARWIN_ADJUDICATE_STRATEGY` | `verify.adjudicate` | v2 | `darwin/adjudicate.ts` |
 | `DARWIN_CATEGORY_MODEL_STRATEGY` | `verify.category_model` | v1 | `darwin/category-model.ts` |
 | `DARWIN_PEER_STRATEGY` | `verify.peer_range` | v4 | `darwin/peer-checks.ts` |

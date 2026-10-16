@@ -232,7 +232,8 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   // them that it has not acted on, so there is no backlog for a replay to count.
   DARWIN_RECORDED_RELEASE_STRATEGY: "Each verify step reads every recorded v17 pass it has not acted on; nothing to replay.",
   // v1 (#1059): a new step that reads every live fee verified as unknown on each run (a daily dry
-  // run while off), so there is no backlog for a replay to count.
+  // run while off), so there is no backlog for a replay to count. v2 (#1626) changes the fee-name
+  // reading; the full dry run's chain is keyed by the version, so it reads every document again.
   AUDIENCE_RELABEL_VERSION: "Its own step reads every live unknown-audience fee on each run; nothing to replay.",
   // v2 (#1068) changes how a refresh is written (in place), not which fee moves; the stale fees
   // it works through are picked by the same query every publish step, so there is nothing to replay.
