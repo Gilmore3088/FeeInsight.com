@@ -13,6 +13,7 @@ import {
   titleCase,
   type CrewCommand,
 } from "./crew-commands";
+import { PUBLISHER_AGENT_NAMES } from "./gutenberg/names";
 import { startAgentRun } from "./run-store";
 import { scheduleDueStateLaneRuns, startStateLaneRun, STATE_LANE_STEPS } from "./state-lane-scheduler";
 
@@ -217,8 +218,8 @@ export async function executeCrewWrite(command: CrewCommand, actor: string): Pro
       const institutionId = command.scope.kind === "institution" ? command.scope.institutionId : undefined;
       let institutionName: string | undefined;
       if (institutionId !== undefined) {
-        if (command.agent !== "hamilton") {
-          return { speaker, lines: ["Institution-only publication is available through Hamilton."] };
+        if (command.agent !== "gutenberg") {
+          return { speaker, lines: ["Institution-only publication is available through Gutenberg."] };
         }
         const [institution] = await sql`
           SELECT institution_name FROM institution_sources WHERE id = ${institutionId}
@@ -264,7 +265,7 @@ export async function executeCrewWrite(command: CrewCommand, actor: string): Pro
           JOIN agent_run_steps s ON s.agent_run_id = r.id
          WHERE r.status IN ('failed', 'blocked')
            AND s.status IN ('failed', 'blocked')
-           AND s.agent_name = ${command.agent}
+           AND s.agent_name = ANY(${command.agent === "gutenberg" ? [...PUBLISHER_AGENT_NAMES] : [command.agent]}::text[])
          ORDER BY r.updated_at DESC
          LIMIT 1
       `;

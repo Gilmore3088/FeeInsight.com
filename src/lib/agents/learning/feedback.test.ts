@@ -99,7 +99,8 @@ describe("shared learning store", () => {
       aboutStrategy: "extract.table",
       signal: "wrong",
       kind: "unreproduced",
-      reportedBy: "hamilton",
+      // The publisher reports as Gutenberg since #1075 step 2; the check keeps its stored name.
+      reportedBy: "gutenberg",
       checkName: "hamilton.rules_recheck",
       feePublishedId: 77,
       amount: 20,

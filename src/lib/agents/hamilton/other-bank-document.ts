@@ -435,7 +435,7 @@ export async function retireOtherBankDocumentFees(
     aboutStage: "discover",
     signal: "wrong",
     kind: "wrong_document",
-    reportedBy: "hamilton",
+    reportedBy: "gutenberg",
     checkName: fee.kind === "other_bank" ? OTHER_BANK_DOCUMENT_CHECK : UNCONFIRMED_HOST_CHECK,
     institutionId: fee.institutionId,
     sourceDocumentId: fee.sourceDocumentId,

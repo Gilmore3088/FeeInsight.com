@@ -74,11 +74,11 @@ describe("executeCrewWrite", () => {
     const reply = await executeCrewWrite(parseCrewCommand("Hamilton, publish institution 47"), "owner");
     expect(mocks.startAgentRun).toHaveBeenCalledTimes(1);
     expect(mocks.startAgentRun).toHaveBeenCalledWith(expect.objectContaining({
-      agent: "hamilton",
+      agent: "gutenberg",
       kind: "manual_repair",
       params: { source: "admin.crew_command", scope: "institution", institution_id: 47 },
-      idempotencyKey: "crew:hamilton:institution:47:publish",
-      steps: [{ key: "publish", agent: "hamilton", title: "Publish verified fees" }],
+      idempotencyKey: "crew:gutenberg:institution:47:publish",
+      steps: [{ key: "publish", agent: "gutenberg", title: "Publish verified fees" }],
     }));
     expect(reply.runId).toBe(847);
     expect(reply.links).toContainEqual({ label: "Track run #847", href: "/admin/atlas/runs/847" });

@@ -165,7 +165,7 @@ export async function applyHandTakedowns(
           aboutStage: "extract" as const,
           signal: "wrong" as const,
           kind: entry.kind,
-          reportedBy: "hamilton" as const,
+          reportedBy: "gutenberg" as const,
           checkName: HAND_TAKEDOWN_CHECK,
           institutionId: entry.institutionId,
           feeVerifiedId: item.feeVerifiedId,
