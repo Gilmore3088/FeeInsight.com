@@ -3,6 +3,18 @@
 Newest first. Each entry: date, what was decided, who, why, and what it means for the work.
 Seeded 2026-10-05 from the project's working memory; earlier decisions were not recorded here.
 
+## 2026-10-16
+
+**A few confirmed-wrong live fees come down without asking James.** James, 2026-10-16, approving
+#1496 (Barksdale FCU's two fax fees that took a price from the next column): fixes like this
+should not wait for him. A small number of live fees (up to about 25), each confirmed wrong on
+amount or category against its bank's own stored text and checked by a reviewer, come down through
+the normal tracked takedown path without a per-fee approval. A ledger line goes on #1026. Category
+or policy questions, large batches, migrations and switches still go to him. The path is Hamilton's
+hand-takedown list (`src/lib/agents/hamilton/hand-takedowns.ts`): one entry per fee, with the issue
+that holds the evidence and the reason (`source_mismatch: #<issue>`); a row comes down only while it
+still reads as listed, its verified row is rejected, and the publish step's run ledger names it.
+
 ## 2026-10-15
 
 **Darwin re-checks every live fee against today's rules.** James, 2026-10-15 ("This needs to be

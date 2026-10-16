@@ -358,6 +358,12 @@ the detail.
     institution, category and price comes down while the clean row is still live,
     `cut_name_duplicate: live fee #<kept id>`, and its verified row is rejected
     (`hand_rejected:cut_name_duplicate`). Each run that changes a row writes one event naming them.
+    `hand-takedowns.ts` (James, Oct 16, DECISIONS.md): up to about 25 live fees, each confirmed
+    wrong on amount or category against its bank's own stored text and checked by a reviewer, as
+    one entry each (first: #1496's two fax fees). A row comes down only while it still reads as
+    listed (institution, category, name, price), with the entry's reason
+    (`source_mismatch: #<issue>`); its verified row is rejected (`hand_rejected:hand_takedown`), a
+    feedback row and one run event name it, and a ledger line goes on #1026.
 11. Article page (`article-page.ts`): a fee read from an article, on its second look,
     `article_page: #<document id>`.
 12. Product page (`product-page.ts`): a $0 benefit bullet Knox's free reader took from a
