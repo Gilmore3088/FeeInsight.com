@@ -11,7 +11,8 @@ import { getPublicSnapshot } from "@/lib/public-stats";
 import { getCurrentUser } from "@/lib/auth";
 import { canAccessAllCategories } from "@/lib/access";
 import { getFeeRowDetails, type FeeRowDetail } from "@/lib/data-store";
-import { getIndexRowsCached } from "@/lib/data-store/public-cached-reads";
+import { getFeeEvidenceEntriesCached, getIndexRowsCached } from "@/lib/data-store/public-cached-reads";
+import { FEE_EVIDENCE_MAX_IDS, type FeeEvidence } from "@/lib/data-store/fee-evidence";
 import { MIN_INSTITUTIONS_FOR_MEDIAN } from "@/lib/data-store/maturity";
 import { HIGHEST_TIER_CATEGORIES } from "@/lib/data-store/fee-stats";
 import { STATE_NAMES } from "@/lib/us-states";
@@ -105,7 +106,16 @@ export default async function BankFeeIndexPage({ searchParams }: PageProps) {
     if (!shownIds.has(r.institution_id)) continue;
     pricesOf.set(r.institution_id, [...(pricesOf.get(r.institution_id) ?? []), r]);
   }
-  const details = await getFeeRowDetails([...pricesOf.values()].flat().map((r) => r.id)).catch(() => new Map<number, FeeRowDetail>());
+  const priceIds = [...pricesOf.values()].flat().map((r) => r.id);
+  // The evidence reader takes up to FEE_EVIDENCE_MAX_IDS ids a call; a page of 50 can list more prices.
+  const idChunks: number[][] = [];
+  for (let i = 0; i < priceIds.length; i += FEE_EVIDENCE_MAX_IDS) idChunks.push(priceIds.slice(i, i + FEE_EVIDENCE_MAX_IDS));
+  const [details, evidence] = await Promise.all([
+    getFeeRowDetails(priceIds).catch(() => new Map<number, FeeRowDetail>()),
+    Promise.all(idChunks.map((chunk) => getFeeEvidenceEntriesCached(chunk).catch(() => [] as [number, FeeEvidence | null][]))).then(
+      (parts) => new Map(parts.flat()),
+    ),
+  ]);
   const compare = locked ? null : companion(rows, sel);
   const takeaways = locked ? [] : findings(rows, sel, institutions);
   const where = placeName(sel.state);
@@ -323,7 +333,12 @@ export default async function BankFeeIndexPage({ searchParams }: PageProps) {
                         key={i.id}
                         inst={i}
                         highest={HIGHEST_TIER_CATEGORIES.has(sel.fee)}
-                        prices={(pricesOf.get(i.id) ?? []).map((r) => ({ id: r.id, amount: r.amount, detail: details.get(r.id) ?? null }))}
+                        prices={(pricesOf.get(i.id) ?? []).map((r) => ({
+                          id: r.id,
+                          amount: r.amount,
+                          detail: details.get(r.id) ?? null,
+                          evidence: evidence.get(r.id) ?? null,
+                        }))}
                       />
                     ))}
                   </ul>
@@ -599,6 +614,8 @@ interface ListedPrice {
   id: number;
   amount: number;
   detail: FeeRowDetail | null;
+  /** The schedule's line that prints this price and the account above it; null (or missing) is unverified. */
+  evidence: FeeEvidence | null;
 }
 
 function InstitutionRow({ inst, prices, highest }: { inst: IndexInstitution; prices: ListedPrice[]; highest: boolean }) {
@@ -613,7 +630,7 @@ function InstitutionRow({ inst, prices, highest }: { inst: IndexInstitution; pri
       return true;
     });
   const amounts = new Set(listed.map((p) => p.amount));
-  const verified = listed.filter((p) => p.detail?.source_line).length;
+  const verified = listed.filter((p) => p.evidence).length;
   const first = listed[0]?.detail ?? null;
   const readOn = first?.read_on ?? null;
   return (
@@ -647,7 +664,7 @@ function InstitutionRow({ inst, prices, highest }: { inst: IndexInstitution; pri
           {listed.map((p) => {
             const d = p.detail;
             const when = chargedWhen(d?.frequency ?? null);
-            const account = accountName(d?.account ?? null);
+            const account = p.evidence?.heading ?? accountName(d?.account ?? null);
             return (
               <div key={p.id} className="rounded-xl border border-border bg-paper p-3">
                 <p className="text-ink">
@@ -655,8 +672,10 @@ function InstitutionRow({ inst, prices, highest }: { inst: IndexInstitution; pri
                   {when ? ` ${when}` : ""}
                   <span className="text-ink-muted">{account ? ` · ${account}` : " · account not named"}</span>
                 </p>
-                {d?.source_line ? (
-                  <blockquote className="mt-2 border-l-2 border-brick pl-3 text-ink">&ldquo;{d.source_line.replace(/\s*\|\s*/g, " … ").replace(/\s+/g, " ").trim()}&rdquo;</blockquote>
+                {p.evidence ? (
+                  <blockquote className="mt-2 border-l-2 border-brick pl-3 text-ink">
+                    &ldquo;{p.evidence.line.replace(/\s*\|\s*/g, " … ").replace(/\s+/g, " ").trim()}&rdquo;
+                  </blockquote>
                 ) : (
                   <p className="mt-2 text-ink-muted">
                     <span className="font-semibold text-ink">Not verified for comparison.</span> The stored schedule&apos;s line for this fee

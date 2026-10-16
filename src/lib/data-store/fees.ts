@@ -4,7 +4,6 @@ import { consumerPriceMoveSql } from "./consumer-price-moves";
 import type { FeeReview } from "./types";
 import { institutionDisplayName } from "@/lib/institution-display-name";
 import { readerFeeConditions } from "../fee-conditions";
-import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
 
 export interface FeeCategorySummary {
   fee_category: string;
@@ -574,11 +573,9 @@ export async function getIndexRows(category: string): Promise<IndexRow[]> {
 }
 
 /**
- * A listed row's evidence: the fee as its schedule names it, its amount, how often it is charged,
- * the account it names, its conditions, the document and when it was read, and the words of the
- * stored schedule that state it. `source_line` comes from the one shared source check
- * (`checkFeeAgainstSource`, read as Darwin reads it), so a row whose amount the stored text does
- * not state carries null and is shown as not verified.
+ * A listed row's facts: the fee as its schedule names it, its amount, how often it is charged,
+ * the account it names, its conditions, the document and when it was read. The words of the
+ * schedule that print its price come from `getFeeEvidence` (fee-evidence.ts).
  */
 export interface FeeRowDetail {
   fee_name: string | null;
@@ -588,51 +585,29 @@ export interface FeeRowDetail {
   conditions: string | null;
   document_url: string | null;
   read_on: string | null;
-  source_line: string | null;
 }
 
 export async function getFeeRowDetails(ids: number[]): Promise<Map<number, FeeRowDetail>> {
   const clean = [...new Set(ids.filter((id) => Number.isSafeInteger(id) && id > 0))];
   if (clean.length === 0) return new Map();
   const rows = (await sql`
-    SELECT id, fee_name, amount, frequency, account_product_type, canonical_fee_key, conditions,
-           source_document_id, COALESCE(document_url, source_url) AS document_url, created_at::date::text AS read_on
+    SELECT id, fee_name, amount, frequency, account_product_type, conditions,
+           COALESCE(document_url, source_url) AS document_url, created_at::date::text AS read_on
       FROM published_fee_catalog
      WHERE id = ANY(${clean}::bigint[])
   `) as Record<string, unknown>[];
-  const docIds = [...new Set(rows.map((r) => Number(r.source_document_id)).filter((id) => Number.isSafeInteger(id) && id > 0))];
-  const texts = new Map<number, string>();
-  if (docIds.length > 0) {
-    const textRows = (await sql`
-      SELECT DISTINCT ON (source_document_id) source_document_id, normalized_text
-        FROM agent_source_texts
-       WHERE status = 'completed' AND source_document_id = ANY(${docIds}::int[])
-       ORDER BY source_document_id, updated_at DESC NULLS LAST, id DESC
-    `) as Record<string, unknown>[];
-    for (const t of textRows) if (t.normalized_text) texts.set(Number(t.source_document_id), String(t.normalized_text));
-  }
   return new Map(
-    rows.map((r) => {
-      const amount = r.amount == null ? null : Number(r.amount);
-      const feeName = r.fee_name == null ? null : String(r.fee_name);
-      const text = texts.get(Number(r.source_document_id));
-      const check =
-        text && feeName && amount != null
-          ? checkFeeAgainstSource(text, feeName, amount, ".", r.canonical_fee_key == null ? null : String(r.canonical_fee_key))
-          : null;
-      return [
-        Number(r.id),
-        {
-          fee_name: feeName,
-          amount,
-          frequency: r.frequency == null ? null : String(r.frequency),
-          account: r.account_product_type == null ? null : String(r.account_product_type),
-          conditions: readerFeeConditions(r.conditions == null ? null : String(r.conditions)),
-          document_url: r.document_url == null ? null : String(r.document_url),
-          read_on: r.read_on == null ? null : String(r.read_on),
-          source_line: check?.ok ? check.sourceLine : null,
-        },
-      ];
-    }),
+    rows.map((r) => [
+      Number(r.id),
+      {
+        fee_name: r.fee_name == null ? null : String(r.fee_name),
+        amount: r.amount == null ? null : Number(r.amount),
+        frequency: r.frequency == null ? null : String(r.frequency),
+        account: r.account_product_type == null ? null : String(r.account_product_type),
+        conditions: readerFeeConditions(r.conditions == null ? null : String(r.conditions)),
+        document_url: r.document_url == null ? null : String(r.document_url),
+        read_on: r.read_on == null ? null : String(r.read_on),
+      },
+    ]),
   );
 }
