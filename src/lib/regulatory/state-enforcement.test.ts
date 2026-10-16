@@ -151,6 +151,8 @@ describe("stated subjects (#1428)", () => {
     expect(isConsumerLaw(orders[0].subject)).toBe(true);
     expect(isConsumerLaw(orders[1].subject)).toBe(false);
     expect(isConsumerLaw(orders[2].subject)).toBe(false);
+    expect(statedSubject(null, "Order Imposing Sanctions")).toBeNull();
+    expect(statedSubject(null, "Consent Order - OFAC Sanctions Compliance")).toBe("OFAC sanctions");
   });
 
   it("reads Maryland's Regulated Activity column as the subject and keeps the party column apart", () => {

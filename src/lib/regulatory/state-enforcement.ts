@@ -111,7 +111,8 @@ const TITLE_SUBJECTS: ReadonlyArray<[RegExp, string]> = [
   [/electronic fund|\breg(?:ulation|\.)? E\b/i, "Electronic fund transfers (Regulation E)"],
   [/consumer (?:protection|compliance|law)/i, "Consumer law"],
   [/bank secrecy|\bBSA\b|anti-?money laundering|\bAML\b/i, "BSA/AML"],
-  [/\bOFAC\b|sanctions/i, "OFAC sanctions"],
+  // A bare "sanctions" is a disciplinary word ("Order Imposing Sanctions"), not OFAC.
+  [/\bOFAC\b|economic sanctions|sanctions (?:compliance|program|laws?|regulations?)/i, "OFAC sanctions"],
   [/cyber ?security|information security/i, "Cybersecurity"],
   [/flood insurance/i, "Flood insurance"],
   [/fair lending|equal credit|redlining/i, "Fair lending"],
