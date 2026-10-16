@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { FeeScheduleTable, describeMedianDelta, splitFeesByAudience, type DisplayFee } from "./fee-schedule-table";
-import { tabForHash } from "./fee-audience-tabs";
+import { feeHashCategory, tabForHash } from "./fee-audience-tabs";
 
 function fee(overrides: Partial<DisplayFee>): DisplayFee {
   return {
@@ -213,5 +213,7 @@ describe("Personal / Business tabs", () => {
     expect(tabForHash("#fee-overdraft", "personal", (key) => key === "business", ["personal", "business"])).toBe("business");
     expect(tabForHash("#fee-nsf", "personal", lists, ["personal", "business"])).toBeNull();
     expect(tabForHash("#plans", "personal", lists, ["personal", "business"])).toBeNull();
+    expect(tabForHash("#fee-%E0%A4%A", "personal", lists, ["personal", "business"])).toBeNull();
+    expect(feeHashCategory("#fee-overdraft")).toBe("overdraft");
   });
 });
