@@ -62,6 +62,7 @@ function narrateFinished(
       return `${detail.expert_name} refreshed the ${String(detail.state_code ?? stateCode ?? "state")} memory: ${count(n(detail, "institutions"), "institution")}, ${count(n(detail, "published_fees"), "published fee")}, peer levels for ${count(n(detail, "fee_categories_with_peers"), "fee category", "fee categories")}${joinParts([
         typeof detail.top_platform === "string" && `most common platform ${detail.top_platform}`,
         typeof detail.top_reader_strategy === "string" && `best reader ${detail.top_reader_strategy}`,
+        n(detail, "notes_written") > 0 && count(n(detail, "notes_written"), "new dated note"),
       ]).replace(/^: /, ", ")}.`;
     }
     case "discover-paid":

@@ -2,7 +2,8 @@ import { withApiRoutePolicy } from "@/lib/api-hardening/route-wrapper";
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser, hasPermission } from "@/lib/auth";
 import { matchesConfiguredCronSecret } from "@/lib/cron-secret";
-import { executeAgentRun, startAgentRun } from "@/lib/agents/run-store";
+import { startAgentRun } from "@/lib/agents/run-store";
+import { executeAgentRunToEnd } from "@/lib/agents/run-to-end";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -50,11 +51,16 @@ async function handleGET(request: NextRequest) {
       { key: "atlas-city-repair", agent: "atlas", title: "Atlas: restore credit union cities NCUA cut at 15 characters (#1213)" },
     ],
   });
-  const result = started.reused
-    ? { runId: started.run.id, status: started.run.status, message: "Today's scoreboard already ran." }
-    // 10 steps is executeAgentRun's hard cap: an 11th step here would be left for the tick.
-    : await executeAgentRun(started.run.id, { maxSteps: 10 });
-  return NextResponse.json({ ok: true, runId: started.run.id, reused: started.reused, result });
+  if (started.reused) {
+    const result = { runId: started.run.id, status: started.run.status, message: "Today's scoreboard already ran." };
+    return NextResponse.json({ ok: true, runId: started.run.id, reused: true, result });
+  }
+  // The run is longer than one call's ten-step ceiling, so it runs in passes; anything still
+  // queued (a pause holding the city repair) is said out loud rather than left silently (#1579).
+  // No deadline: these steps' expected times are defaults above the function's 60 seconds.
+  const { result, leftQueued } = await executeAgentRunToEnd(started.run.id);
+  if (leftQueued) console.error(`Atlas scoreboard run ${started.run.id} left steps queued: ${result.message}`);
+  return NextResponse.json({ ok: true, runId: started.run.id, reused: false, leftQueued, result });
 }
 
 export const GET = withApiRoutePolicy("api.admin.crew.scoreboard", "GET", handleGET);

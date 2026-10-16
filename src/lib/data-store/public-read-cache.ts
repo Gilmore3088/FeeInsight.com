@@ -65,3 +65,29 @@ export function cachedPublicRead<A extends unknown[], R>(
     }
   };
 }
+
+/** How long a page rendered with a failed read stays cached before it is rendered again. */
+export const DEGRADED_PAGE_SECONDS = 60;
+
+const degradedPageMarker = unstable_cache(async () => true, ["degraded-page-marker"], {
+  revalidate: DEGRADED_PAGE_SECONDS,
+});
+
+/**
+ * Shortens the cache life of the page being rendered to DEGRADED_PAGE_SECONDS (#1572).
+ *
+ * A cached page is kept for the shortest revalidate of the cached reads it made, so one
+ * read with a 60-second life makes this render expire after a minute instead of the
+ * page's usual 15. Call it when a render had a failed read: the visitor gets the page
+ * (with the failed parts hidden) rather than an error, and the next render a minute
+ * later tries the database again. The reads themselves still serve their last good
+ * value while one exists (see cachedPublicRead), so a render only has a failed read
+ * when no good value is cached at all.
+ */
+export async function shortenPageLife(): Promise<void> {
+  try {
+    await degradedPageMarker();
+  } catch {
+    // Outside a Next render there is no page cache to shorten.
+  }
+}

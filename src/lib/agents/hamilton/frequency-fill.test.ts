@@ -1,6 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { excerptOf, fillBlankFrequencies, fillFrequenciesInPublish, FREQUENCY_FILL_VERSION } from "./frequency-fill";
+import {
+  excerptOf,
+  fillBlankFrequencies,
+  fillFrequenciesInPublish,
+  FREQUENCY_FILL_VERSION,
+  OVERDRAFT_PLAN_HOLD_LIVE,
+  OVERDRAFT_PLAN_HOLD_REASON,
+} from "./frequency-fill";
 
 type DbMock = ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
 
@@ -235,5 +242,29 @@ describe("Hamilton frequency fill", () => {
     expect(result.filled.map((fee) => [fee.feePublishedId, fee.frequency, fee.basis])).toEqual([[4, "annual", "box_table_header"]]);
     const sqlText = db.mock.calls.map((call) => (call[0] as TemplateStringsArray).join("?")).join("\n");
     expect(sqlText).toContain("INSERT INTO pipeline_feedback");
+  });
+});
+
+describe("overdraft plan hold (#1360)", () => {
+  const plan = (id: number, name: string, amount: string, excerpt: string, hasPerItem: boolean) => ({
+    ...row(id, amount, excerpt, "monthly"),
+    canonical_fee_key: "overdraft",
+    fee_name: name,
+    has_per_item_overdraft: hasPerItem,
+  });
+
+  it("ships off and lists the plan fees it would hold, beside the bank's per-item fee only", async () => {
+    expect(OVERDRAFT_PLAN_HOLD_LIVE).toBe(false);
+    const db = createDbMock([
+      // Selco 143753, Oct 15: back beside its live $25 per-item Courtesy Pay.
+      plan(143753, "Elevate Courtesy Pay Service (if selected)", "10.00", "Money Order $1.50 Elevate Courtesy Pay Service (if selected) $10 per month", true),
+      // First Community FCU's only live overdraft row: James keeps it.
+      plan(92746, "Overdraft Boost", "30.00", "Overdraft Boost .........................................$30.00 per month", false),
+    ]);
+    const result = await fillBlankFrequencies(asDb(db), { runId: 5, dryRun: false });
+    expect(result.planWouldHold.map((fee) => fee.feePublishedId)).toEqual([143753]);
+    expect(result.planWouldHold[0].reason).toBe(`frequency_hold: ${OVERDRAFT_PLAN_HOLD_REASON}`);
+    expect(result.held).toEqual([]);
+    expect(result.filled).toEqual([]);
   });
 });

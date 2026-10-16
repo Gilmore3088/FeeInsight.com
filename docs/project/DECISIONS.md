@@ -5,6 +5,14 @@ Seeded 2026-10-05 from the project's working memory; earlier decisions were not 
 
 ## 2026-10-16
 
+**Fee Insight is not marketed as advisory.** James, 2026-10-16 (#1174): "Fee insight advisory was
+scrapped many times ago so we should not add it back. I'm happy to have demos and phone
+conversations but we should not market the product as advisory." No page, form or offer names a
+"Fee Insight Advisory" service; demos and calls stay. Custom data and API work is "Data licensing".
+
+**Free visitors keep each fee's national range.** James, 2026-10-16 (#1449): free visitors see the
+range on the national index ("consumer facing high-level data").
+
 **Night deposit is the service only; bag and key purchases are not scored.** James, 2026-10-16,
 option A on #1099's night deposit misses: `night_deposit` stays the night depository service, and a
 bag or key bought for it stays out, as the v60 category guard has it. A lost or replaced bag or
@@ -22,6 +30,16 @@ or policy questions, large batches, migrations and switches still go to him. The
 hand-takedown list (`src/lib/agents/hamilton/hand-takedowns.ts`): one entry per fee, with the issue
 that holds the evidence and the reason (`source_mismatch: #<issue>`); a row comes down only while it
 still reads as listed, its verified row is rejected, and the publish step's run ledger names it.
+
+**Confirmed-wrong live fees in batches under 20 come down, or go to a review log, without a
+per-batch approval.** James, 2026-10-16 03:37 UTC, saying yes to roadmap item 3.8 (#1512, #1513):
+"If they're incorrect they need to come down or getting placed into a review log. I don't want to
+be nickel and dimed every time we have a problem with less than 20 fees." He does not want to be
+asked about fewer than 20 incorrect fees. Each fee is still confirmed wrong against its bank's own
+stored text and goes through a tracked path with run-ledger visibility: the hand-takedown list, or
+a hand rename or re-file (`HAND_REFILES` in `src/lib/agents/hamilton/taxonomy-fold.ts`) when the
+price is right for another name or category. Larger batches, category or policy questions,
+migrations and switches still go to him.
 
 ## 2026-10-15
 
@@ -1066,3 +1084,11 @@ keeps working. `apply_migration`, edits under `supabase/migrations/`, Supabase p
 production deploys and direct GitHub file commits still ask. Supabase `execute_sql` stays allowed
 (Oct 13 decision), so the rule that production data changes never go through raw SQL from a
 session still rests on the session, not on a prompt.
+
+**Back-end PRs skip the Vercel preview, and lanes batch their PRs.** James, 2026-10-16 (Hamilton
+thread, 03:51 and 04:05 UTC). Open PRs went from under 10 to about 40 in two hours, and each preview
+was queueing 30 to 45 minutes. He uses previews only to check how pages look, so a PR that changes
+no page merges on green CI without waiting for one. `vercel.json` `ignoreCommand` skips a preview
+build when the newest commit changes only `docs`, `supabase`, `src/lib/agents`, `scripts`,
+`.github`, `.claude`, `handoff`, Markdown or test files; production builds always run. Each lane
+also puts its next several items on one branch and opens one PR, instead of one PR per item.

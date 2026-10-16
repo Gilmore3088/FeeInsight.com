@@ -352,6 +352,23 @@ the detail.
     `eval_critical:<verdict>`; the name rules learned from them (a rebate as an ATM fee, a
     "no fee for" or waiver sentence as a $0 fee, and others) on their second look,
     `not_a_fee:<rule>`.
+10b. Account type hold (`account-type-hold.ts`, #1100 gap 1, James Oct 16): monthly maintenance
+    is the consumer checking account's fee. A live monthly maintenance fee of a savings, money
+    market, club, business or IRA/HSA/CD account (`accountTypeOf` in `src/lib/account-type.ts`:
+    the fee's name when it says checking, then the lineup product, then the fee's name; a
+    disclosure title such as "Truth in Savings", a perk such as "Health Savings Card" and the
+    bank's own name name no account) comes down, `account_type_hold: <type> (#1100)`, and
+    its verified row stays verified with `account_type:<type>`; publish skips a flagged row
+    (`publishSkipReason`). A verified, unpublished row of such an account is flagged before
+    publish reads it. A row the guard refused only for its account words goes back to verified,
+    held, when it passes every check with those words set aside and traces in its own text;
+    otherwise it stays rejected with the flag. A checked row with no type and a lineup
+    product gets `account_type_checked:v1` and is not read again; a row with no product is read
+    again on every step, since a later Knox read can fill its product. One event per run names every row.
+    A fee a hand check found wrongly typed stays live through `ACCOUNT_TYPE_KEEP_LIVE` (one line per
+    fee with its reason; 28834 first).
+    A failed read or write writes nothing; the error is kept in `detail.account_type_hold.error`
+    and as a `step.warning` run event.
 10a. Hand fixes James approved, fixed lists checked against the live row before each write:
     `hand-amount-corrections.ts` (#1334, cut cents corrected in place) and
     `cut-name-duplicates.ts` (#1196): a cut-name row that repeats a clean live row at the same
@@ -421,6 +438,13 @@ the detail.
     (`hamilton.frequency_fill:v<N>:fix:<id>:<from>:<to>`), because `pipeline_feedback` upserts
     on its key and an old key was silently overwritten. The excerpt is read from
     `COALESCE(extraction_note, conditions)`.
+    Overdraft plan hold (#1360, no version change, `OVERDRAFT_PLAN_HOLD_LIVE` off): an overdraft
+    program the keep above leaves monthly was, in every case checked on the bank's own page, an
+    optional plan, not the overdraft fee. With the switch on it is held (`frequency_hold: an
+    optional overdraft plan ...`) when its bank has another live overdraft fee charged per item
+    (or blank) above $0; a bank's only overdraft row keeps it (92746, James's call). Off, each step
+    lists them in `frequency_plan_would_hold`. Oct 16 dry run: 1 (Selco's 143753, $10 a month,
+    beside its $25 per-item Courtesy Pay).
 19. Newer-copy check (`newer-copy-retire.ts`): a fee line gone from a newer copy of its page,
     `newer_copy_drops_fee:#<newer document id>` (`NEWER_COPY_RETIRE_LIVE` is true; false makes
     it a shadow run).
@@ -658,6 +682,18 @@ audience, then its frequency, then is newest). A row the collapse would close is
 reported in the step's `publish_duplicate_check`, with `closed_by_late_collapse` for agreement.
 While `PUBLISH_REFUSE_DUPLICATES_LIVE` is false nothing is refused; turning it on (skip reason
 `Exact duplicate of live fee #<id>`) needs James's OK.
+
+**At publish (#1069 step 2, shadow).** The rows a publish step is about to decide are read, once
+per batch, with three sweeps' own SQL in their `"verified"` scope (`publish-sweep-rules.ts`):
+another bank's document (`otherBankFeesSql`), an unconfirmed host that does not name the bank
+(`unconfirmedHostFeesSql`), and a business schedule's fee beside the bank's live consumer fee in
+its category (`businessScheduleFeesSql`; a footnote-only business fee stays the sweep's, since it
+needs the page read). The sweeps and publish share one builder per rule, so they cannot disagree;
+the sweeps stay the live re-check and this check takes nothing down. A row a sweep would take down
+is counted in the step's `publish_sweep_check` (`would_refuse`, `by_rule`, samples, and `error`
+when a read failed; a failed read refuses nothing). While `PUBLISH_REFUSE_SWEEP_RULES_LIVE` is
+false nothing is refused; turning it on (skip reason `Refused at publish, a sweep would take it
+down: <the sweep's reason>`) needs James's OK.
 
 ## Rules Re-check
 
