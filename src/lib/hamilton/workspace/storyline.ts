@@ -206,11 +206,14 @@ function localPiece(research: FeeResearch, name: string): Piece | null {
   const list = research.localCompetitors ?? [];
   if (list.length === 0) return null;
   const items = list.slice(0, MAX_MATRIX_ROWS).sort((a, b) => a.amount - b.amount);
-  const lo = items[0].amount;
-  const hi = items[items.length - 1].amount;
-  const below = research.current !== null ? items.filter((i) => i.amount < research.current!).length : null;
-  const above = research.current !== null ? items.filter((i) => i.amount > research.current!).length : null;
-  const n = items.length;
+  // The title counts every local competitor, as the market lens does, so the exhibit's line and
+  // the memo never give two different counts; the chart shows the largest and its note says so.
+  const amounts = list.map((p) => p.amount);
+  const lo = Math.min(...amounts);
+  const hi = Math.max(...amounts);
+  const below = research.current !== null ? list.filter((i) => i.amount < research.current!).length : null;
+  const above = research.current !== null ? list.filter((i) => i.amount > research.current!).length : null;
+  const n = list.length;
   // The institution is named once; "its" carries the second mention, so the title stays short.
   const market = `competitors in ${subjectPossessive(research, false)} market`;
   const own = research.current !== null ? `${research.subjectName ? "its" : "your"} ${money(research.current)}` : "";
@@ -233,6 +236,7 @@ function localPiece(research: FeeResearch, name: string): Piece | null {
       own: research.current,
       ownLabel: research.institutionName,
       items: items.map((p) => ({ name: p.institutionName, amount: p.amount, url: p.documentUrls[0] ?? null, deposits: p.marketDeposits ?? null })),
+      ...(list.length > MAX_MATRIX_ROWS ? { allAmounts: amounts } : {}),
       sources: [research.localMarket?.source ?? feeSource(research)],
       note: list.length > MAX_MATRIX_ROWS ? `The ${MAX_MATRIX_ROWS} largest by local deposits of ${list.length}.` : undefined,
     },

@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { StorylineView } from "./StorylineView";
-import { optionPrice, peerStanding } from "./option-compare";
+import { optionPrice, optionScale, peerStanding } from "./option-compare";
 import { sampleStoryline } from "./test-fixture";
 import { FeeScorecard } from "@/components/hamilton/benchmark/FeeScorecard";
 import type { Storyline } from "./types";
@@ -92,6 +92,16 @@ describe("options side by side", () => {
       }),
     ).toBe(0);
     expect(optionPrice({ label: "Hold at $32", consequences: [] })).toBeNull();
+  });
+
+  it("counts every local competitor when the chart shows only the largest, as the exhibit title does", () => {
+    const story = pricedStory();
+    const local = story.exhibits[1].exhibit;
+    if (local.kind !== "competitor_range") throw new Error("fixture changed");
+    const withAll = { ...story, exhibits: [story.exhibits[0], { ...story.exhibits[1], exhibit: { ...local, allAmounts: [35, 30, 0, 10, 20] } }] };
+    expect(optionScale(withAll).local).toEqual([35, 30, 0, 10, 20]);
+    expect(renderToStaticMarkup(<StorylineView story={withAll} />)).toContain("4 of 5 local competitors charge less");
+    expect(optionScale(story).local).toEqual([35, 30, 0]);
   });
 
   it("says lower, in line or higher against the peer middle half", () => {

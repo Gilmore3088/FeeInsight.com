@@ -9,7 +9,7 @@ import { getNationalIndexCached, getSourcedInstitutionCount } from "@/lib/data-s
 import { getSpotlightCategories } from "@/lib/fee-taxonomy";
 import { DISPLAY_NAMES } from "@/lib/fee-taxonomy";
 import { sql } from "@/lib/data-store/connection";
-import { INTERNAL_REVIEW_SIGNAL_TYPES, isCustomerSignal } from "@/lib/hamilton/customer-signals";
+import { INTERNAL_REVIEW_SIGNAL_TYPES, customerSignalCopy, isCustomerSignal } from "@/lib/hamilton/customer-signals";
 import { generateGlobalThesis } from "./generate";
 import { hasAnthropicApiKey } from "@/lib/ai-provider";
 import { recordProRequest } from "@/lib/agents/run-store";
@@ -310,8 +310,7 @@ async function fetchRecentSignals(
       institutionId: r.institution_id == null ? null : String(r.institution_id),
       signalType: String(r.signal_type),
       severity: String(r.severity),
-      title: String(r.title),
-      body: String(r.body),
+      ...customerSignalCopy({ signalType: String(r.signal_type), title: String(r.title), body: String(r.body) }),
       createdAt: String(r.created_at),
       evidencePolicy: r.evidence_policy == null ? null : (String(r.evidence_policy) as HamiltonEvidencePolicy),
       providerCallQueued: r.provider_call_queued === true,
@@ -396,8 +395,7 @@ async function fetchPriorityAlerts(
       institutionId: r.institution_id == null ? null : String(r.institution_id),
       signalType: String(r.signal_type),
       severity: String(r.severity),
-      title: String(r.title),
-      body: String(r.body),
+      ...customerSignalCopy({ signalType: String(r.signal_type), title: String(r.title), body: String(r.body) }),
       status: String(r.status),
       createdAt: String(r.created_at),
       evidencePolicy: r.evidence_policy == null ? null : (String(r.evidence_policy) as HamiltonEvidencePolicy),
