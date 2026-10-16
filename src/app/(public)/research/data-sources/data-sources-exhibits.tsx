@@ -162,7 +162,7 @@ export function SourceMap({ map, coverage }: { map: SourceMapData; coverage: Cov
         {/* The trunk joins the primary source to the groups beneath it. */}
         <span aria-hidden="true" className="mx-auto block h-5 w-px bg-brick/40" />
 
-        <ul className="grid grid-cols-2 gap-3 border-t border-brick/30 pt-4 lg:grid-cols-5" aria-label="Supporting sources">
+        <ul className="grid grid-cols-2 gap-3 border-t border-brick/30 pt-4 lg:grid-cols-5 lg:items-start" aria-label="Supporting sources">
           {map.groups.map((group) => (
             <li
               key={group.key}
