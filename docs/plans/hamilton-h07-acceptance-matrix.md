@@ -7,7 +7,7 @@
 
 **Sources read on 2026-10-16:** issues #975, #976, #977, #978, #979, #980, #981, #982, #7, #629, #1005, #1006 (body and comments); PR searches for 976-982 and "Hamilton"; PR #1524's body; `git log origin/main` at `1b6b6a3a`; `src/lib/hamilton/release-acceptance.ts` on main; `/mnt/project-files/hamilton-redesign/`.
 
-**Earlier versions:** v0.1 was posted as a comment on 2026-10-10 ([#982 comment](https://github.com/Gilmore3088/FeeInsight.com/issues/982#issuecomment-6096490765)). A code copy is in `src/lib/hamilton/release-acceptance.ts` (`HAMILTON_RELEASE_MATRIX_VERSION = 1`, snapshot 2026-10-10T09:30Z, from PR #996). That code copy is now out of date: it lists no PRs for complaints 1, 5 and 6, and marks them "queued", although #1272, #1274, #1022 and #1024 have since merged.
+**Earlier versions:** v0.1 was posted as a comment on 2026-10-10 ([#982 comment](https://github.com/Gilmore3088/FeeInsight.com/issues/982#issuecomment-6096490765)). A code copy is in `src/lib/hamilton/release-acceptance.ts` (`HAMILTON_RELEASE_MATRIX_VERSION = 1`, snapshot 2026-10-10T09:30Z, from PR #996). That code copy is now out of date: it lists no PRs for complaints 1, 5 and 6 and marks them "queued". For complaints 1 and 6, #1272, #1274, #1022 and #1024 have since merged; for complaint 5, whether #1368 counts is unknown.
 
 ## Original complaints
 
@@ -57,7 +57,7 @@ Owner: ChatGPT (named in #977 body); Claude session picked up the handoff on 202
 
 | Task id | What | Owner | Status | PRs | Evidence | Blocker |
 |---|---|---|---|---|---|---|
-| H02-T01 | Peer-request test matrix | ChatGPT | Merged, not accepted | #988, #985 (merged) | none linked as a matrix | Matrix document not found; unknown whether fixtures count |
+| H02-T01 | Peer-request test matrix | ChatGPT | In progress | #988, #985 (merged) | none linked as a matrix | Matrix document not found; unknown whether fixtures count |
 | H02-T02 | Peer-list intent before fee default | ChatGPT | Merged, not accepted | #988, #985 (merged) | #977 body; parser fix `f4ad309e` for the "talki ... florida over 5b" phrase | None for code |
 | H02-T03 | Selection and ranking rules | ChatGPT | Merged, not accepted | #988, #985 (merged) | #977 body | Proposed half-to-double asset default awaits James's review |
 | H02-T04 | Typed peer-result contract | ChatGPT | Merged, not accepted | #988, #985 (merged) | #977 body | None for code |
@@ -161,12 +161,12 @@ Status key: **Not run**; **Run, failing**; **Run, passing on preview**; **Accept
 | AC id | Required check (short) | Status | Evidence |
 |---|---|---|---|
 | H01-AC1 | Linked Space Coast home: browse 3 others, "compare with us"; home unchanged | Not run | Unlinked half walked on a local build with #1469 on Oct 15 ([checklist](https://github.com/Gilmore3088/FeeInsight.com/issues/976#issuecomment-6196762843)); linked half needs a second, linked login |
-| H01-AC2 | No home: subject never called "your" | Run, failing | James's live run, Oct 16: asking about "us" with no linked institution (A2, A3) fails ([#976 results](https://github.com/Gilmore3088/FeeInsight.com/issues/976#issuecomment-6205206816), #1536). [Live run on older head `0a3e2b0`, Oct 10](https://github.com/Gilmore3088/FeeInsight.com/issues/976#issuecomment-6102185823) found "YOUR OWN FIGURES"; Oct 15 checklist says it failed until #1469. Fixes merged; not re-run live |
+| H01-AC2 | No home: subject never called "your" | Run, failing | James's live run, Oct 16 (after #1469 merged): asking about "us" with no linked institution (A2, A3) does not say that no institution is linked ([#976 results](https://github.com/Gilmore3088/FeeInsight.com/issues/976#issuecomment-6205206816), #1536). Earlier: [live run on older head `0a3e2b0`, Oct 10](https://github.com/Gilmore3088/FeeInsight.com/issues/976#issuecomment-6102185823) found "YOUR OWN FIGURES". Mapping of run steps to this case is this file's reading |
 | H01-AC3 | Save A, switch to B, reopen/export: still A | Not run | Synthetic PDF render/text check only (#976 body) |
 | H01-AC4 | Cross-account denied; delayed answer not relabeled | Not run | Synthetic two-user and delayed-response tests (#976 body); cross-account half needs a second login |
 | H02-AC1 | "List ten similarly sized credit unions": 10 rows, assets, dates, no report | Run, failing | James's live run, Oct 16: "similarly sized" gives no clear asset range (B8, B10b; #1537) ([#977 results](https://github.com/Gilmore3088/FeeInsight.com/issues/977#issuecomment-6205207651)). Mapping of run steps to this case is this file's reading |
 | H02-AC2 | Only 3 match: shortage explained; unknown assets not counted | Not run | same |
-| H02-AC3 | "Only Florida", then "Compare their NSF fees": same list and subject | Run, failing | James's live run, Oct 16: follow-ups lose the list (B9, B9b, B10; #1538); peer group changes by fee (#1544) |
+| H02-AC3 | "Only Florida", then "Compare their NSF fees": same list and subject | Run, failing | James's live run, Oct 16: follow-ups lose the list (B9, B9b, B10; #1538) ([#977 results](https://github.com/Gilmore3088/FeeInsight.com/issues/977#issuecomment-6205207651)). Mapping of run steps to this case is this file's reading |
 | H02-AC4 | Units/periods right, missing never $0, links open, zero model calls | Not run | same |
 | H03-AC1 | Hold a wrong fee: gone from comparisons, auditable, never $0/"Free" | Not run | Hold exists (#1024); no walkthrough |
 | H03-AC2 | Correct, publish, institution page and Hamilton agree | Not run | Correct command not built |
@@ -190,7 +190,7 @@ Status key: **Not run**; **Run, failing**; **Run, passing on preview**; **Accept
 | H07-AC4 | Deployed SHA matches reviewed SHA; post-release checks; James's go/no-go | Not run | none |
 
 ### James's live run, Oct 16
-James ran the #976 (A1 to A7b) and #977 (B8 to B12b) steps on production. Failed: A2, A3a, A3b, B8, B9, B9b, B10, B10b, B11c; B11b partial. Each failure is its own issue: #1536 to #1546. The run also showed React error #418 about 20 times (#1541) and all network requests returning 200. Results: [#976](https://github.com/Gilmore3088/FeeInsight.com/issues/976#issuecomment-6205206816), [#977](https://github.com/Gilmore3088/FeeInsight.com/issues/977#issuecomment-6205207651).
+James ran the #976 (A1 to A7b) and #977 (B8 to B12b) steps on production. Failed: A2, A3a, A3b, B8, B9, B9b, B10, B10b, B11c; B11b partial. The failures are filed as four issues: A2/A3 as #1536, B8/B10b as #1537, B9/B9b/B10 as #1538, and B11b/B11c as #1539. Other findings from the run are #1540 to #1546, including the peer group changing within one answer (#1544). The run also showed React error #418 about 20 times (#1541) and all network requests returning 200. Results: [#976](https://github.com/Gilmore3088/FeeInsight.com/issues/976#issuecomment-6205206816), [#977](https://github.com/Gilmore3088/FeeInsight.com/issues/977#issuecomment-6205207651).
 
 ### Release protections, Oct 16
 Read-only, from the public GitHub API and `.github/workflows/test.yml` on `main`:
@@ -228,9 +228,9 @@ No formal scope change accepted by James under #975 protocol step 7 is recorded.
 | 2026-10-11 | Tester clarification: James is the human tester and not a Space Coast employee. A synthetic Space Coast affiliation is used only for the home-vs-research case. No case dropped. | [#976](https://github.com/Gilmore3088/FeeInsight.com/issues/976#issuecomment-6108676603), [#977](https://github.com/Gilmore3088/FeeInsight.com/issues/977#issuecomment-6108676999) | Yes (recorded as James's clarification) |
 | 2026-10-14 | #979 (H04) closed as "completed" by #1272 with most tasks open. Not a recorded scope change; treated here as open. | #979 state | No |
 | 2026-10-15 | H05 design work routed to #1284 and the Pro beta (#1368); H03 to be scheduled with #1115 and #1122. Ownership and order only. | [#980 triage](https://github.com/Gilmore3088/FeeInsight.com/issues/980#issuecomment-6190406423), [#978 triage](https://github.com/Gilmore3088/FeeInsight.com/issues/978#issuecomment-6190405822) | Not recorded |
-| 2026-10-15 | Blockers #1005 (browser credential state) and #1006 (intake WIP cap) closed; #1006 as "not planned". The underlying need for live acceptance stays (B1, B2). | #1005, #1006 state | Not recorded |
+| 2026-10-15 | Blockers #1005 (browser credential state) and #1006 (intake WIP cap) closed, both as "not planned". The underlying need for live acceptance stays (B1, B2). | #1005, #1006 state | Not recorded |
 
 ## Change log
 
 - 2026-10-16: first version.
-- 2026-10-16 (.2): added James's live run of the #976/#977 steps (H01-AC2, H02-AC1, H02-AC3 now "Run, failing"), and the Oct 16 release-protection read (H07-T06, B8).
+- 2026-10-16 (.2): added James's live run of the #976/#977 steps (H01-AC2, H02-AC1, H02-AC3 now "Run, failing"), and the Oct 16 release-protection read (H07-T06, B8). H02-T01 moved to "In progress" (no matrix document found).
