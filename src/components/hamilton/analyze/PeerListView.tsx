@@ -115,6 +115,7 @@ function SelectablePeerList({ response, saveContext }: { response: PeerListRespo
           className="rounded-md border border-warm-300 px-3 py-2 text-sm font-medium text-warm-900 disabled:opacity-50">
           {savingResearch ? "Saving research..." : "Save this peer research"}
         </button>
+        {!savedResearchId && !savingResearch ? <p className="text-sm text-warm-700">Fee answers save on their own. A peer list is saved only when you save it.</p> : null}
         {researchError ? <p role="alert" className="text-sm text-terra-text">{researchError}</p> : null}
         {savedResearchId ? <p role="status" className="text-sm text-warm-700">Research snapshot saved. <a className="font-medium text-terra-text underline" href={`/pro/peer-research/${encodeURIComponent(savedResearchId)}`}>Reopen saved research</a></p> : null}
       </div> : null}
