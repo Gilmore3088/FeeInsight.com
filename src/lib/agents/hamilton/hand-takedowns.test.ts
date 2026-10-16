@@ -18,6 +18,11 @@ const FNB_ALASKA_DD_LIVE: LiveTakedownRow = {
   fee_published_id: 125197, lineage_ref: 145367, institution_id: 281, canonical_fee_key: "monthly_maintenance", fee_name: "Monthly Service Fees", amount: "7.00",
 };
 
+// #1661: Beacon Community FCU's current garnishment fee (doc 35662), live on prod, read-only, Oct 16.
+const BEACON_GARNISHMENT_LIVE: LiveTakedownRow = {
+  fee_published_id: 112876, lineage_ref: 179813, institution_id: 7204, canonical_fee_key: "garnishment_levy", fee_name: "Judicial Attachment (Garnishment)", amount: "36.00",
+};
+
 // The two #1496 rows as they read live on prod, read-only, Oct 16.
 const LIVE: LiveTakedownRow[] = [
   { fee_published_id: 80423, lineage_ref: 90425, institution_id: 5433, canonical_fee_key: "document_reproduction", fee_name: "Fax (Local)", amount: "15.00" },
@@ -57,9 +62,18 @@ const LIVE: LiveTakedownRow[] = [
   // #1664's waiver-line $0 as it reads live on prod, read-only, Oct 16, and the $7 copy it waits on.
   { fee_published_id: 67859, lineage_ref: 79647, institution_id: 281, canonical_fee_key: "monthly_maintenance", fee_name: "Monthly Service Fee with 1 direct deposit per", amount: "0.00" },
   FNB_ALASKA_DD_LIVE,
+  // #1661's stale $34 garnishment row and the current $36 row it waits on, live on prod, read-only, Oct 16.
+  { fee_published_id: 138829, lineage_ref: 162443, institution_id: 7204, canonical_fee_key: "garnishment_levy", fee_name: "Judicial Attachment (Garnishment)", amount: "34.00" },
+  BEACON_GARNISHMENT_LIVE,
+  // #1196's two rows with no home among the 50, live on prod, read-only, Oct 16.
+  { fee_published_id: 131129, lineage_ref: 150786, institution_id: 5100, canonical_fee_key: "atm_non_network", fee_name: "ATM Transactions at DFCU ATM (Local ATM)", amount: "2.00" },
+  { fee_published_id: 70319, lineage_ref: 84116, institution_id: 986, canonical_fee_key: "dormant_account", fee_name: "VISA Gift Card Inactivity Fee", amount: "2.95" },
+  // #1666's run-together North Central row, live on prod, read-only, Oct 16.
+  { fee_published_id: 140689, lineage_ref: 166209, institution_id: 7363, canonical_fee_key: "od_protection_transfer",
+    fee_name: "See How to avoid them next to the listed fee.Checking AccountsAutomatic Overdraft TransferCopy of DraftCourtesy PayForei", amount: "10.00" },
 ];
 const CONDITIONAL_ZERO = [43512, 54014, 61335, 68893, 70121, 73737, 77121, 77122, 77618, 84553, 87079, 87461, 88213, 91505, 120559];
-const IDS = [80423, 102440, 83118, 45619, 116720, 134129, 48113, 87307, 134962, ...CONDITIONAL_ZERO, 142965, 13188, 144352, 114273, 114270, 5827, 84637, 104565, 104566, 102973, 15727, 67859];
+const IDS = [80423, 102440, 83118, 45619, 116720, 134129, 48113, 87307, 134962, ...CONDITIONAL_ZERO, 142965, 13188, 144352, 114273, 114270, 5827, 84637, 104565, 104566, 102973, 15727, 67859, 138829, 131129, 70319, 140689];
 
 function fakeDb(live: LiveTakedownRow[], failOn?: string) {
   const writes: Array<{ text: string; values: unknown[] }> = [];
@@ -99,6 +113,10 @@ describe("hand takedowns (James, Oct 16)", () => {
       [102973, "duplicate of #102971 (#1659)"],
       [15727, "source_mismatch: #1659"],
       [67859, "duplicate of #125197 (#1664)"],
+      [138829, "duplicate of #112876 (#1661)"],
+      [131129, "source_mismatch: #1196"],
+      [70319, "source_mismatch: #1196"],
+      [140689, "source_mismatch: #1666"],
     ]);
     // A wrong read names its issue; a second read of one printed fee names the live copy it repeats too.
     expect(HAND_TAKEDOWNS.every((entry) => entry.evidence.length > 0 && (entry.kind === "duplicate"
@@ -135,6 +153,10 @@ describe("hand takedowns (James, Oct 16)", () => {
         { feePublishedId: 102973, feeVerifiedId: 117579, reason: "duplicate of #102971 (#1659)" },
         { feePublishedId: 15727, feeVerifiedId: 9064, reason: "source_mismatch: #1659" },
         { feePublishedId: 67859, feeVerifiedId: 79647, reason: "duplicate of #125197 (#1664)" },
+        { feePublishedId: 138829, feeVerifiedId: 162443, reason: "duplicate of #112876 (#1661)" },
+        { feePublishedId: 131129, feeVerifiedId: 150786, reason: "source_mismatch: #1196" },
+        { feePublishedId: 70319, feeVerifiedId: 84116, reason: "source_mismatch: #1196" },
+        { feePublishedId: 140689, feeVerifiedId: 166209, reason: "source_mismatch: #1666" },
       ],
       skipped: [],
     });
@@ -165,6 +187,15 @@ describe("hand takedowns (James, Oct 16)", () => {
     expect(planHandTakedowns([fnbZero, { ...FNB_ALASKA_DD_LIVE, amount: "5.00" }], fnbCopy).skipped).toEqual([{ feePublishedId: 67859, reason: "waiting on #125197" }]);
     expect(planHandTakedowns([fnbZero, FNB_ALASKA_DD_LIVE], fnbCopy)).toEqual({
       takenDown: [{ feePublishedId: 67859, feeVerifiedId: 79647, reason: "duplicate of #125197 (#1664)" }], skipped: [],
+    });
+    // #1661: the 2022 PDF's $34 comes down only while the fee schedule page's $36 (112876) is live as listed.
+    const beaconCopy = HAND_TAKEDOWNS.filter((entry) => entry.feePublishedId === 138829);
+    const beaconStale = LIVE.find((row) => row.fee_published_id === 138829)!;
+    expect(beaconCopy[0].requiresLive).toEqual({ feePublishedId: 112876, amount: 36, feeName: "Judicial Attachment (Garnishment)" });
+    expect(planHandTakedowns([beaconStale], beaconCopy).skipped).toEqual([{ feePublishedId: 138829, reason: "waiting on #112876" }]);
+    expect(planHandTakedowns([beaconStale, { ...BEACON_GARNISHMENT_LIVE, amount: "34.00" }], beaconCopy).skipped).toEqual([{ feePublishedId: 138829, reason: "waiting on #112876" }]);
+    expect(planHandTakedowns([beaconStale, BEACON_GARNISHMENT_LIVE], beaconCopy)).toEqual({
+      takenDown: [{ feePublishedId: 138829, feeVerifiedId: 162443, reason: "duplicate of #112876 (#1661)" }], skipped: [],
     });
     // Another institution or category at the same id, name and price is not the listed row.
     const moved = [{ ...LIVE[4], institution_id: 1 }, { ...LIVE[5], canonical_fee_key: "legal_process" }];
