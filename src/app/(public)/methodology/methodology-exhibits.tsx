@@ -10,7 +10,7 @@ const MONO = { fontFamily: "var(--fi-font-mono)" } as const;
 
 export const METHODOLOGY_SECTIONS = [
   { id: "pipeline", label: "How it flows" },
-  { id: "compute", label: "How we compute" },
+  { id: "compute", label: "How it is computed" },
   { id: "limits", label: "Limits" },
 ] as const;
 
@@ -81,7 +81,7 @@ function DocumentGlyph() {
 }
 
 /**
- * The exhibit: six agents from the institution's own schedule to the published index, each
+ * The exhibit: six steps from the institution's own schedule to the published index, each
  * with the live count the public site can read for it. Stages without a public read show none.
  */
 export function PipelineFlow({ stages }: { stages: PipelineStage[] }) {
@@ -116,8 +116,7 @@ export function PipelineFlow({ stages }: { stages: PipelineStage[] }) {
             <div className="rounded-2xl border border-border bg-white px-4 py-4 shadow-fi-1 sm:px-5">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-6">
                 <div className="min-w-0">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-muted">{stage.agent}</p>
-                  <h3 className="mt-0.5 text-[17px] font-bold text-ink" style={SANS}>{stage.title}</h3>
+                  <h3 className="text-[17px] font-bold text-ink" style={SANS}>{stage.title}</h3>
                   <p className="mt-1 text-[14px] leading-relaxed text-ink-soft">{stage.body}</p>
                   <p className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-paper px-2.5 py-1 text-[12px] font-medium text-ink-soft">
                     <span aria-hidden="true" className="text-brick">&rarr;</span>
@@ -160,10 +159,10 @@ export function PipelineFlow({ stages }: { stages: PipelineStage[] }) {
           <svg aria-hidden="true" viewBox="0 0 16 16" className="h-4 w-4">
             <path d="M13 8a5 5 0 1 1-1.5-3.6M13 2.5v3h-3" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
-          Every day · Deming
+          Every day
         </p>
         <p className="mt-1 text-[14px] leading-relaxed text-ink-soft">
-          Every day, fees we took down for a confirmed error are run through today&apos;s checks again. If a check stops catching one, we&apos;re alerted.
+          Fees taken down for a confirmed error are run through the current checks again. If a check stops catching one, the team is alerted.
         </p>
       </div>
     </section>
@@ -257,11 +256,11 @@ export function ComputeRules({ rules }: { rules: ComputeRule[] }) {
 const LIMITS = [
   {
     title: "No pricing advice",
-    body: "We show where a fee sits against the market. Whether to change it is your call.",
+    body: "The index shows where a fee sits against the market. Whether to change it is the institution's call.",
   },
   {
     title: "Data can lag",
-    body: "An institution can change its schedule before we collect the new copy. Each fee carries the date its schedule was collected.",
+    body: "An institution can change its schedule before the new copy is collected. Each fee carries the date its schedule was collected.",
   },
   {
     title: "Published prices, not revenue",
@@ -276,7 +275,7 @@ const LIMITS = [
 export function Limits() {
   return (
     <section aria-labelledby="limits-heading" id="limits" className="scroll-mt-24">
-      <SectionTitle id="limits-heading" eyebrow="Limits" title="What we do not do" />
+      <SectionTitle id="limits-heading" eyebrow="Limits" title="What the index does not do" />
       <ul className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {LIMITS.map((l) => (
           <li key={l.title} className="rounded-2xl border border-border bg-white px-4 py-4">
@@ -326,7 +325,7 @@ export function NextAction({ action }: { action: ActionLink }) {
         href="/institutions"
         className="mt-3 inline-flex min-h-11 items-center text-[13px] text-paper/75 underline decoration-white/20 underline-offset-4 hover:text-white"
       >
-        Or look up your own bank
+        Or look up your own institution
       </Link>
     </section>
   );

@@ -73,7 +73,7 @@ export default async function MethodologyPage() {
 
         <section aria-labelledby="compute-heading" id="compute" className="scroll-mt-24">
           <div className="max-w-2xl">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-brick">How we compute</p>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-brick">How it is computed</p>
             <h2
               id="compute-heading"
               className="mt-1.5 text-[1.5rem] font-bold leading-tight tracking-[-0.01em] text-ink sm:text-[2rem]"

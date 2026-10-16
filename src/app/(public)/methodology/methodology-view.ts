@@ -30,8 +30,8 @@ export interface StageFigure {
 }
 
 export interface PipelineStage {
+  /** Plain step key, also the data-stage attribute. Visitor text never names pipeline agents. */
   key: string;
-  agent: string;
   title: string;
   body: string;
   /** What the stage hands to the next one. */
@@ -54,23 +54,22 @@ function institutionFigure(n: number | null, label: string, monitored: number | 
 }
 
 /**
- * The six pipeline agents in order. A stage with no public live read (Atlas, Rosetta, Knox, Darwin)
- * shows no number: the page never invents one.
+ * The six pipeline steps in order (internally Atlas, Magellan, Rosetta, Knox, Darwin, Hamilton;
+ * those names never reach visitor text). A step with no public live read (log, read, extract,
+ * verify) shows no number: the page never invents one.
  */
 export function pipelineStages(counts: PipelineCounts): PipelineStage[] {
   const { monitored } = counts;
   return [
     {
-      key: "atlas",
-      agent: "Atlas",
-      title: "Schedule and log every step",
-      body: "Atlas runs the pipeline and records each step, so every fee's path can be retraced.",
+      key: "log",
+      title: "Log every step",
+      body: "Each run is recorded step by step, so any fee's path back to its schedule can be retraced.",
       output: "A logged run for each institution",
       figures: [],
     },
     {
-      key: "magellan",
-      agent: "Magellan",
+      key: "find",
       title: "Find the fee schedule",
       body: "Loads every bank and credit union from FDIC and NCUA records, finds each one's schedule on its own site and keeps a dated copy.",
       output: "Stored copy of the schedule",
@@ -80,32 +79,28 @@ export function pipelineStages(counts: PipelineCounts): PipelineStage[] {
       ],
     },
     {
-      key: "rosetta",
-      agent: "Rosetta",
+      key: "read",
       title: "Read it",
       body: "Turns the web page, PDF or Word file into clean text, line by line.",
       output: "Clean text",
       figures: [],
     },
     {
-      key: "knox",
-      agent: "Knox",
+      key: "extract",
       title: "Pull out each fee",
-      body: "Records each fee's name, amount and conditions. No amount in the text, no fee.",
+      body: "Records each fee's name, amount and conditions. A fee is recorded only when the text states its amount.",
       output: "Fee lines, each tied to its source line",
       figures: [],
     },
     {
-      key: "darwin",
-      agent: "Darwin",
+      key: "verify",
       title: "Verify",
-      body: "Checks each fee against the stored text, its category and its usual range. Anything unsure is held. It goes live only after a second check against the schedule confirms it; the rest wait for a person.",
+      body: "Checks each fee against the stored text, its category and its usual range. A fee goes live only after a second check against the schedule confirms it. Anything unsure waits for a person.",
       output: "Verified fees",
       figures: [],
     },
     {
-      key: "hamilton",
-      agent: "Hamilton",
+      key: "publish",
       title: "Publish",
       body: "Publishes verified fees to the index.",
       output: `The ${PRODUCT_NAME}`,

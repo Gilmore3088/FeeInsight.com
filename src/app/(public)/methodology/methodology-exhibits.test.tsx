@@ -18,6 +18,13 @@ describe("PipelineFlow", () => {
     expect(screen.queryByText("institutions with published fees")).not.toBeInTheDocument();
     expect(screen.queryByText("0")).not.toBeInTheDocument();
   });
+
+  it("shows no internal pipeline agent names", () => {
+    const { container } = render(
+      <PipelineFlow stages={pipelineStages({ monitored: 1000, scheduleLinks: 600, institutions: 250, observations: 4321 })} />,
+    );
+    expect(container.textContent).not.toMatch(/Atlas|Magellan|Rosetta|Knox|Darwin|Deming|Hamilton/);
+  });
 });
 
 describe("MedianExhibit", () => {
@@ -68,7 +75,7 @@ describe("ComputeRules", () => {
 });
 
 describe("Limits", () => {
-  it("states that we give no pricing advice and that data can lag", () => {
+  it("states that the index gives no pricing advice and that data can lag", () => {
     render(<Limits />);
     expect(screen.getByText("No pricing advice")).toBeInTheDocument();
     expect(screen.getByText("Data can lag")).toBeInTheDocument();
@@ -84,6 +91,6 @@ describe("NextAction", () => {
       "/reports?report=institution&src=methodology#request",
     );
     expect(screen.getByRole("link", { name: "Or ask for a demo" })).toHaveAttribute("href", "/contact?source=demo");
-    expect(screen.getByRole("link", { name: "Or look up your own bank" })).toHaveAttribute("href", "/institutions");
+    expect(screen.getByRole("link", { name: "Or look up your own institution" })).toHaveAttribute("href", "/institutions");
   });
 });

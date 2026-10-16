@@ -33,18 +33,23 @@ function category(overrides: Partial<FeeCategorySummary>): FeeCategorySummary {
 describe("pipelineStages", () => {
   const all = { monitored: 1000, scheduleLinks: 600, institutions: 250, observations: 4321 };
 
-  it("runs the six agents in pipeline order", () => {
-    expect(pipelineStages(all).map((s) => s.agent)).toEqual(["Atlas", "Magellan", "Rosetta", "Knox", "Darwin", "Hamilton"]);
+  it("runs the six steps in pipeline order", () => {
+    expect(pipelineStages(all).map((s) => s.key)).toEqual(["log", "find", "read", "extract", "verify", "publish"]);
+  });
+
+  it("never names a pipeline agent in visitor text", () => {
+    const text = JSON.stringify(pipelineStages(all));
+    expect(text).not.toMatch(/Atlas|Magellan|Rosetta|Knox|Darwin|Deming|Hamilton/);
   });
 
   it("puts each live count on its stage, with institution shares of the monitored total", () => {
     const stages = Object.fromEntries(pipelineStages(all).map((s) => [s.key, s.figures]));
-    expect(stages.atlas).toEqual([]);
-    expect(stages.magellan).toEqual([
+    expect(stages.log).toEqual([]);
+    expect(stages.find).toEqual([
       { value: "1,000", label: "institutions monitored", share: null },
       { value: "600", label: "with a schedule link on file", share: 60 },
     ]);
-    expect(stages.hamilton).toEqual([
+    expect(stages.publish).toEqual([
       { value: "4,321", label: "published fee entries", share: null },
       { value: "250", label: "institutions with published fees", share: 25 },
     ]);
@@ -52,7 +57,7 @@ describe("pipelineStages", () => {
 
   it("never shows a number on a stage with no public read", () => {
     const stages = pipelineStages(all);
-    for (const key of ["atlas", "rosetta", "knox", "darwin"]) {
+    for (const key of ["log", "read", "extract", "verify"]) {
       expect(stages.find((s) => s.key === key)!.figures).toEqual([]);
     }
   });
@@ -63,8 +68,8 @@ describe("pipelineStages", () => {
   });
 
   it("shows a count without its bar when the monitored total is unknown", () => {
-    const magellan = pipelineStages({ ...all, monitored: null }).find((s) => s.key === "magellan")!;
-    expect(magellan.figures).toEqual([{ value: "600", label: "with a schedule link on file", share: null }]);
+    const find = pipelineStages({ ...all, monitored: null }).find((s) => s.key === "find")!;
+    expect(find.figures).toEqual([{ value: "600", label: "with a schedule link on file", share: null }]);
   });
 });
 
