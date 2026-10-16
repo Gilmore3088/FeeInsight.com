@@ -8,6 +8,11 @@ import { HAND_REFILES, handFixedPassing, planHandRefiles, previewResearchSplit }
 
 /** The schedule lines each hand re-file was read from (copied data: the banks' own text). */
 const PAGE_LINES: Record<number, string> = {
+  // #1659: U.S. Bank's checking-accounts page (doc 23628, text 20686).
+  102970: "BANKING MADE SIMPLE\n\nSafe Debit account2\n\n$4.95 Monthly Maintenance Fee with no minimum balance requirement\n\nMoney management with a debit card – no checks, no overdraft fees3",
+  // #1655: Navy Federal's home equity line fees (doc 26712).
+  122342: "Equity Loan\n\nFee | Amount\n\nHome Equity Line Check returned (due to non-sufficient funds) | $29.00\n\nReturned loan payment | $29.00",
+  122343: "Copy of Home Equity Line check | $1.00 per copy\n\nTax Service Charge | $25.00\n\nHome Equity Line modification to Fixed-Rate Equity Loan | $150.00",
   // #1299: cut-cents names renamed in place (docs 8040, 12872, 6817, 13851, 6231, 13904).
   49593: "Wire transfers – outgoing\nSafe Deposit Box drill fee | $200 00\nDomestic – U S dollar | $25 00",
   49594: "Wire transfers – incoming\nSPECIAL SERVICES | Domestic – U S dollar | $25 00\nInternational | $30 00",
@@ -95,6 +100,17 @@ const PAGE_LINES: Record<number, string> = {
   139131: "IRA Closure Fee IRA Minimum Balance Fee8 | $5.00 $4.00/month\n\nMoney Order | $2.50",
   43277: "Stop Payment ……………………………………………..……......... $32 | OTHER FEES AND SERVICES\nUndeliverable Mail ……...………………………….......……....… $15 | Account Reconciliation .………......………....…….….…........ $35\nOne-time fee upon return of 2nd undeliverable item",
   63055: "Stop Payments\nWire Trans. (Dom. Outgoing) …........…$18.00 per Wire\nDebit, ACH, Personal Check…..$35.00 per Item\nWire Trans. (Intern. Outgoing) ………...$35.00 per Wire\nStop Payment",
+  // #1646 re-review: cut-off names renamed to the page's own words.
+  138829: "credited and compounded to your account quarterly. | the dividend rate last declared on Regular Share Savings from | Judicial Attachment (Garnishment) $34.00\n• If you close your account before the accrued dividends are | the date of issuance or renewal until the date of withdrawal. | Notary Public Free",
+  137077: "Replace Lost Card | $7.00\nyour account. | Replace Damaged Card | $3.50\nInsufficient Funds (per item) | $35.00",
+  15595: "SCHEDULE OF FEES - BUSINESS\nAccount Balancing Assistance, per hour ......................................................................................... $27.50",
+  135314: "Stop Payments. Before placing a stop payment online, verify the check has not cleared your account. The stop payment will remain in effect for six months. A charge of $30.00 will be assessed to the account holder as payment for implementing the stop payment request.",
+  97924: "Fees and Charges:\n* We do not charge for any preauthorized EFTs.\n* We will charge $25.00 for each stop-payment order for\npreauthorized transfers.",
+  98545: "etc.) while it is in dormant status, subject to applicable law. For New York State residents,\nthe monthly dormant fee of $3 for Savings and $10 for Money Market accounts will be\nwaived.",
+  130805: "the account balance of your checking account(s) with an ATM card or Visa Check Card\n\nthere is a charge of $1.50 at ATMs we do not own or operate",
+  // #1646: names v17 cannot find where the price is printed, renamed to the page's own words (docs 22481, 20748).
+  96663: "Free notary services\n\n$50 minimum deposit to open\n\nAccounts with balances below $50 on the last day of the month are subject to a $2 fee.\n\n{{ savings-goal-calc }}",
+  88058: "MONEY MARKET ACCOUNTS\nMoney Market Account\nLow Balance Fee\n(charged if the average daily balance is less than $2,500 for the calendar month) ...... $15.00\nDEBIT CARDS",
 };
 
 function liveRow(id: number, key: string, amount: string, name = "(misread cell)") {

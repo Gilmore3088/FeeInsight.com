@@ -1,11 +1,18 @@
 import type { InstitutionFee } from "@/lib/data-store/institution";
 import { HoldFeeButton } from "./fee-hold-controls";
+import { CorrectFeeButton, type SourceDocumentOption } from "./fee-correction-controls";
 
 interface Props {
   fees: InstitutionFee[];
   institutionName: string;
   /** Show the Hold action: the viewer may hold fees. */
   canHold: boolean;
+  /** Show the Correct action: the viewer is an admin and corrections are switched on. */
+  canCorrect?: boolean;
+  /** The current correction version per live fee id; a fee not listed is version 0. */
+  correctionVersions?: Record<number, number>;
+  /** The institution's stored source documents, newest first, for the Correct form. */
+  documents?: SourceDocumentOption[];
 }
 
 function formatAmount(amount: number | null): string {
@@ -18,13 +25,14 @@ function confidenceLabel(confidence: number | null): string {
   return confidence === null ? "-" : `${Math.round(confidence * 100)}%`;
 }
 
-export function FeeTable({ fees, institutionName, canHold }: Props) {
+export function FeeTable({ fees, institutionName, canHold, canCorrect = false, correctionVersions = {}, documents = [] }: Props) {
   const grouped = new Map<string, InstitutionFee[]>();
   fees.forEach((fee) => {
     const category = fee.fee_category || "other";
     if (!grouped.has(category)) grouped.set(category, []);
     grouped.get(category)!.push(fee);
   });
+  const hasActions = canHold || canCorrect;
 
   return (
     <div className="overflow-x-auto">
@@ -38,7 +46,7 @@ export function FeeTable({ fees, institutionName, canHold }: Props) {
             <th className="text-center">Conf.</th>
             <th>Published</th>
             <th>Source</th>
-            {canHold && <th />}
+            {hasActions && <th />}
           </tr>
         </thead>
         <tbody>
@@ -49,6 +57,9 @@ export function FeeTable({ fees, institutionName, canHold }: Props) {
               fees={categoryFees}
               institutionName={institutionName}
               canHold={canHold}
+              canCorrect={canCorrect}
+              correctionVersions={correctionVersions}
+              documents={documents}
             />
           ))}
         </tbody>
@@ -62,17 +73,24 @@ function FragmentRows({
   fees,
   institutionName,
   canHold,
+  canCorrect,
+  correctionVersions,
+  documents,
 }: {
   category: string;
   fees: InstitutionFee[];
   institutionName: string;
   canHold: boolean;
+  canCorrect: boolean;
+  correctionVersions: Record<number, number>;
+  documents: SourceDocumentOption[];
 }) {
+  const hasActions = canHold || canCorrect;
   return (
     <>
       <tr>
         <td
-          colSpan={canHold ? 8 : 7}
+          colSpan={hasActions ? 8 : 7}
           className="bg-gray-50/80 py-1.5 text-[10px] font-bold uppercase tracking-[0.08em] text-gray-400 dark:bg-white/[0.03]"
         >
           {category.replace(/_/g, " ")}
@@ -88,6 +106,11 @@ function FragmentRows({
             {fee.is_fee_cap && (
               <span className="ml-1.5 inline-block rounded bg-amber-50 px-1 py-px text-[9px] font-bold text-amber-600 dark:bg-amber-900/30 dark:text-amber-400">
                 CAP
+              </span>
+            )}
+            {correctionVersions[fee.id] != null && (
+              <span className="ml-1.5 inline-block rounded bg-blue-50 px-1 py-px text-[9px] font-bold text-blue-600 dark:bg-blue-900/30 dark:text-blue-300">
+                CORRECTED v{correctionVersions[fee.id]}
               </span>
             )}
             {fee.conditions && (
@@ -123,9 +146,30 @@ function FragmentRows({
               <span className="text-gray-300">-</span>
             )}
           </td>
-          {canHold && (
+          {hasActions && (
             <td className="text-right">
-              <HoldFeeButton feeId={fee.id} feeName={fee.fee_name} amount={fee.amount} institutionName={institutionName} />
+              <div className="flex justify-end gap-1">
+                {canHold && (
+                  <HoldFeeButton feeId={fee.id} feeName={fee.fee_name} amount={fee.amount} institutionName={institutionName} />
+                )}
+                {canCorrect && (
+                  <CorrectFeeButton
+                    fee={{
+                      id: fee.id,
+                      feeName: fee.fee_name,
+                      amount: fee.amount,
+                      category: fee.fee_category,
+                      frequency: fee.frequency,
+                      conditions: fee.conditions,
+                      sourceUrl: fee.source_url,
+                      sourceDocumentId: fee.source_document_id ?? null,
+                    }}
+                    expectedVersion={correctionVersions[fee.id] ?? 0}
+                    institutionName={institutionName}
+                    documents={documents}
+                  />
+                )}
+              </div>
             </td>
           )}
         </tr>

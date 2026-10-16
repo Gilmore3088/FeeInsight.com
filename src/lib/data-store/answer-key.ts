@@ -579,7 +579,9 @@ export async function getConfirmedAnswerKey(db: SqlTag = sql): Promise<Confirmed
              '[]'::jsonb
            ) AS fees
       FROM answer_key_institutions ak
-      LEFT JOIN answer_key_fees f ON f.answer_key_institution_id = ak.id AND f.status = 'confirmed'
+      -- A line marked out of scope ('unmapped', e.g. a night deposit bag purchase, James Oct 16) is
+      -- not scored, as the Knox gate leaves an unplaced line out.
+      LEFT JOIN answer_key_fees f ON f.answer_key_institution_id = ak.id AND f.status = 'confirmed' AND f.canonical_key <> 'unmapped'
      WHERE ak.status = 'confirmed'
      GROUP BY ak.id
      ORDER BY ak.institution_id

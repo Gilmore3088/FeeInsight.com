@@ -44,6 +44,13 @@ export interface HandTakedown {
   kind: Extract<FeedbackKind, "wrong_amount" | "wrong_category" | "not_a_fee" | "duplicate">;
   /** What the bank's own text says, in one line. */
   evidence: string;
+  /**
+   * A live row this takedown waits on (#1659): the entry comes down only while that row is live at
+   * this amount and name, so a duplicate never leaves before the fee it repeats is right. Hand
+   * amount corrections run before takedowns in the same publish transaction, so normally both
+   * land in one step.
+   */
+  requiresLive?: { feePublishedId: number; amount: number; feeName: string };
 }
 
 export const HAND_TAKEDOWNS: readonly HandTakedown[] = [
@@ -149,6 +156,33 @@ export const HAND_TAKEDOWNS: readonly HandTakedown[] = [
   { feePublishedId: 114270, institutionId: 6152, canonicalFeeKey: "late_payment", amount: 35, feeName: "Late payment fee",
     reason: "source_mismatch: #1302", issue: 1302, kind: "wrong_amount",
     evidence: "Patriot FCU (doc 34341, text 32389), the line of credit on the same rates page: \"Late payment fee of $35.00 or 5% of the minimum payment may apply\": the fee is $35 or 5% of the payment, not a flat $35." },
+  // #1655 (read-only, Oct 16): rows the consumer overdraft guide showed, each read against its own
+  // stored text. 5827 repeats the continuous overdraft charge as a daily OD/NSF cap; 84637 puts the
+  // personal small-item price on the business line. Primis's 5600 is corrected in place instead
+  // (hand-amount-corrections.ts): it is the bank's only live overdraft row.
+  { feePublishedId: 5827, institutionId: 1968, canonicalFeeKey: "od_daily_cap", amount: 3.29, feeName: "Continuous Overdraft Charge Daily Cap",
+    reason: "duplicate of #43265 (#1655)", issue: 1655, kind: "duplicate",
+    evidence: "Welch State Bank (doc 809, text 6350): \"Continuous Overdraft Charge* daily limit not to exceed..$3.29\" is the continuous overdraft charge, live as continuous_od 43265; the OD/NSF cap is \"NSF/OD Fees* daily limit not to exceed…$179.82\" (live as 5825)." },
+  { feePublishedId: 84637, institutionId: 97, canonicalFeeKey: "overdraft", amount: 10, feeName: "Overdraft or Returned Item fee (business accounts)",
+    reason: "source_mismatch: #1655", issue: 1655, kind: "wrong_amount",
+    evidence: "Mechanics Bank (doc 9078, text 2235): \"Overdraft or Returned Item fee (business accounts)…$35.00/presentment\" (live as 125484); the $10 is the personal line \"…for any item $10 or less… (personal accounts)1…$10.00/presentment\"." },
+  // #1659 (read-only, Oct 16): rows James saw in the guide comparisons. U.S. Bank's brokerage fees
+  // page is not a deposit schedule (the 50 have no brokerage type); 102973 repeats the Bank Smartly
+  // fee that 102971 carries once corrected (hand-amount-corrections.ts); 15727 is Navy Federal's
+  // credit card cash advance price filed as an ATM fee.
+  { feePublishedId: 104565, institutionId: 5, canonicalFeeKey: "nsf", amount: 30, feeName: "Returned check",
+    reason: "source_mismatch: #1659", issue: 1659, kind: "wrong_category",
+    evidence: "U.S. Bank brokerage fees page (doc 34203, text 32252), under \"Additional brokerage account fees\": \"Returned check | $30 per occurrence\", a self-directed brokerage account fee, not a deposit NSF." },
+  { feePublishedId: 104566, institutionId: 5, canonicalFeeKey: "stop_payment", amount: 25, feeName: "Stop payment",
+    reason: "source_mismatch: #1659", issue: 1659, kind: "wrong_category",
+    evidence: "U.S. Bank brokerage fees page (doc 34203, text 32252), the same table: \"Stop payment | $25 per occurrence\", a brokerage account fee, not a deposit account's stop payment." },
+  { feePublishedId: 102973, institutionId: 5, canonicalFeeKey: "monthly_maintenance", amount: 12, feeName: "Monthly maintenance fee",
+    reason: "duplicate of #102971 (#1659)", issue: 1659, kind: "duplicate",
+    requiresLive: { feePublishedId: 102971, amount: 12, feeName: "Bank Smartly Checking Monthly Maintenance Fee" },
+    evidence: "U.S. Bank student checking page (doc 23630, text 20684) prints the $12 only as waived: \"For young adults and students (18 - 24 years old), we always waive the $12 Monthly Maintenance Fee.\" The Bank Smartly Checking price is 102971 (checking-accounts.html, \"$12 Monthly Maintenance Fee can be waived in multiple ways1\")." },
+  { feePublishedId: 15727, institutionId: 4956, canonicalFeeKey: "atm_non_network", amount: 1, feeName: "plus ATM owner fees",
+    reason: "source_mismatch: #1659", issue: 1659, kind: "wrong_category",
+    evidence: "Navy Federal (doc 13439, text 890, the Oct 3 copy of fees-and-charges): \"Credit card cash advance§ / None / $0.50 / $1.00 plus ATM owner fees\": a credit card cash advance at a non-network ATM, named by the price's trailing words; not an ATM use fee." },
 ];
 
 export interface LiveTakedownRow {
@@ -200,6 +234,13 @@ export function planHandTakedowns(live: LiveTakedownRow[], list: readonly HandTa
       skipped.push({ feePublishedId: entry.feePublishedId, reason: "changed since listed" });
       continue;
     }
+    if (entry.requiresLive) {
+      const needed = byId.get(entry.requiresLive.feePublishedId);
+      if (!needed || needed.fee_name !== entry.requiresLive.feeName || !sameAmount(needed.amount, entry.requiresLive.amount)) {
+        skipped.push({ feePublishedId: entry.feePublishedId, reason: `waiting on #${entry.requiresLive.feePublishedId}` });
+        continue;
+      }
+    }
     takenDown.push({ feePublishedId: entry.feePublishedId, feeVerifiedId: row.lineage_ref == null ? null : Number(row.lineage_ref), reason: entry.reason });
   }
   return { takenDown, skipped };
@@ -216,7 +257,8 @@ export async function applyHandTakedowns(
   const list = options.list ?? HAND_TAKEDOWNS;
   const result: HandTakedownResult = { dryRun: options.dryRun, takenDown: [], skipped: [], error: null };
   if (list.length === 0) return result;
-  const ids = [...new Set(list.map((entry) => entry.feePublishedId))];
+  // Each listed row, and each live row an entry waits on (`requiresLive`).
+  const ids = [...new Set(list.flatMap((entry) => entry.requiresLive ? [entry.feePublishedId, entry.requiresLive.feePublishedId] : [entry.feePublishedId]))];
   let live: LiveTakedownRow[];
   try {
     live = await inSavepoint(db, (scope) => scope<LiveTakedownRow[]>`
@@ -285,9 +327,9 @@ export async function applyHandTakedowns(
       if (feedback.length > 0) await recordFeedback(scope, feedback);
       if (result.takenDown.length > 0) {
         await scope`
-          INSERT INTO agent_run_events (agent_run_id, event_type, status, message, detail)
+          INSERT INTO agent_run_events (agent_run_id, step_id, event_type, status, message, detail)
           VALUES (
-            ${options.runId}, ${HAND_TAKEDOWN_CHECK}, 'completed',
+            ${options.runId}, ${options.stepId ?? null}, ${HAND_TAKEDOWN_CHECK}, 'completed',
             ${`Took down ${result.takenDown.length} listed live fee(s) confirmed wrong against their bank's own text`},
             ${JSON.stringify({
               taken_down: result.takenDown.map((item) => ({ fee_published_id: item.feePublishedId, fee_verified_id: item.feeVerifiedId, reason: item.reason })),
@@ -348,6 +390,14 @@ export const HAND_AUDIENCE_FIXES: readonly HandAudienceFix[] = [
   { feePublishedId: 55401, feeVerifiedId: 45477, institutionId: 8652, canonicalFeeKey: "gift_card_purchase", amount: 5, feeName: "Gift Cards",
     from: "unknown", to: "business", issue: 1302,
     evidence: "Rave (doc 2183, text 9544): \"Gift Cards | $ 5.00\" is under \"2019 Business Fee Schedule\"; the consumer schedule's line is \"Gift Card | $5.00\" (55397)." },
+  // #1655 (read-only, Oct 16): Mechanics Bank prints personal and business lines side by side; these
+  // two business rows showed in the consumer overdraft guide.
+  { feePublishedId: 67110, feeVerifiedId: 77129, institutionId: 97, canonicalFeeKey: "od_daily_cap", amount: 350,
+    feeName: "Maximum daily Overdraft or Returned Item fees (per day, business accounts)", from: "unknown", to: "business", issue: 1655,
+    evidence: "Mechanics Bank (doc 9078, text 2235): \"Maximum daily Overdraft or Returned Item fees (per day, business accounts)…$350.00\"; the personal cap is $140.00 (67109)." },
+  { feePublishedId: 125484, feeVerifiedId: 93865, institutionId: 97, canonicalFeeKey: "overdraft", amount: 35,
+    feeName: "Overdraft or Returned Item fee (business accounts)", from: "unknown", to: "business", issue: 1655,
+    evidence: "Mechanics Bank (doc 9078, text 2235): \"Overdraft or Returned Item fee (business accounts)…$35.00/presentment\"." },
 ];
 
 export interface LiveAudienceRow {

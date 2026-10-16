@@ -30,7 +30,8 @@ describe("cut-cents fees through the full free extract (#1334)", { timeout: 20_0
   });
 
   it("on all eight documents the full extract reads the corrected price and never the cut one", () => {
-    for (const fix of HAND_AMOUNT_CORRECTIONS) {
+    // The #1334 cut-cents entries (later entries carry their own issue and are tested beside the list).
+    for (const fix of HAND_AMOUNT_CORRECTIONS.filter((entry) => entry.issue == null)) {
       const text = (docs as unknown as Record<string, { text: string }>)[String(fix.sourceDocumentId)].text;
       const reads = runFreeSpecialists(text).candidates.filter((fee) => fee.canonicalHint === fix.canonicalFeeKey && fee.feeName.toLowerCase() === fix.feeName.toLowerCase());
       expect(reads.map((fee) => fee.amount), String(fix.feePublishedId)).toContain(fix.to);

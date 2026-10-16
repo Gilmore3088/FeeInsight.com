@@ -734,7 +734,9 @@ describe("Knox extract.rules", () => {
       ["overdraft", 29, "items cell"],
       ["overdraft", 29, "debit cell"],
     ]);
-    // NIH FCU (text 12917): a threshold row under a priceless fee line is that fee's.
+    // NIH FCU (text 12917): the paid fee's $30 is a threshold row under its priceless name line.
+    // Its self-check traced it only by finding "Paid" inside "Unpaid" on the returned-item row
+    // (#1646), so it is held for review, not published on another fee's line.
     expect(paidAndReturned([
       "Non-Sufficient Funds (NSF)",
       "Paid Consumer & Business NSF Items- active",
@@ -744,7 +746,6 @@ describe("Knox extract.rules", () => {
       "Returned Unpaid NSF Items (consumer) | $30 per item",
     ].join("\n"))).toEqual([
       ["Returned Unpaid NSF Items (consumer)", 30, "nsf"],
-      ["Paid Consumer & Business NSF Items", 30, "overdraft"],
     ]);
   });
 

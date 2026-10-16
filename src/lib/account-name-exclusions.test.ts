@@ -13,7 +13,7 @@ describe("words that name no account (#1100)", () => {
   });
 
   it("keeps real accounts", () => {
-    for (const text of ["Health Savings Account", "Statement Savings", "Premier Checking", "Christmas Club Savings", "Kids' Super Savers Club Account", "Holiday Savings Club Account", "Savings Bankers Choice", "Kids Savings Program"]) expect(namesNoAccount(text), text).toBe(false);
+    for (const text of ["Health Savings Account", "Statement Savings", "Premier Checking", "Christmas Club Savings", "Kids' Super Savers Club Account", "Holiday Savings Club Account", "Savings Bankers Choice", "Kids Savings Program", "Children's Savings Program", "Children’s Savings Program"]) expect(namesNoAccount(text), text).toBe(false);
   });
 
   it("strips a bank named \"X Savings\" (no \"Bank\") by its own name", () => {
