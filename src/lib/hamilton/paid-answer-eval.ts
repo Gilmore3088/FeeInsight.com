@@ -304,7 +304,17 @@ const NOT_MONEY_KEY = /(^|_)(id|ids|n|rank)$|count|number|^total$/i;
  * Money values the written answer's tools read from sources other than the fee catalog, which it
  * may state as read. Fee prices from catalog tools are left out: the live catalog decides those.
  */
-export function toolMoneyFigures(results: ReadonlyArray<{ toolName: string; output: unknown }>): number[] {
+/**
+ * `queryNationalData` with `source: "fee_index"` returns medians derived from the fee catalog, not
+ * another source (#1414 item 6). Those are left out, so a stated national median must tie to the
+ * live national layer the correctness check recomputes, and a stale index median is caught.
+ */
+function catalogDerived(result: { toolName: string; input?: unknown }): boolean {
+  const input = result.input as { source?: unknown } | null | undefined;
+  return result.toolName === "queryNationalData" && typeof input === "object" && input !== null && input.source === "fee_index";
+}
+
+export function toolMoneyFigures(results: ReadonlyArray<{ toolName: string; input?: unknown; output: unknown }>): number[] {
   const out: number[] = [];
   const walk = (value: unknown, key: string, depth: number, otherSource: boolean) => {
     if (depth > 8 || value === null || value === undefined) return;
@@ -327,7 +337,7 @@ export function toolMoneyFigures(results: ReadonlyArray<{ toolName: string; outp
       for (const [k, v] of Object.entries(value as Record<string, unknown>)) walk(v, k, depth + 1, otherSource);
     }
   };
-  for (const r of results) walk(r.output, "", 0, OTHER_SOURCE_TOOLS.has(r.toolName));
+  for (const r of results) if (!catalogDerived(r)) walk(r.output, "", 0, OTHER_SOURCE_TOOLS.has(r.toolName));
   return out;
 }
 
