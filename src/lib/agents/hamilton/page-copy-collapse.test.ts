@@ -197,6 +197,34 @@ describe("pageCopyRepeats (#1439)", () => {
   });
 });
 
+describe("pageCopyRepeats: a copy the newer copy replaced (#1348)", () => {
+  const TEMP = "Fees Temporary checks (sheet of 3 checks) $1.00 Stop Payment $30.00 Cashier's Check $10.00 Wire Transfer Incoming $15.00 Outgoing $25.00";
+  const texts = new Map([["297", TEMP], ["20497", TEMP]]);
+  const pair = (oldName: string, newName: string) => [
+    row({ fee_published_id: 7255, source_document_id: 297, document_url: "https://www.bankfive.com:443/fees", crawled_at: "2026-02-01", superseded: true, superseded_by_id: 20497, canonical_fee_key: "counter_check", amount: 1, fee_name: oldName }),
+    row({ fee_published_id: 32758, source_document_id: 20497, document_url: "https://www.bankfive.com/fees", crawled_at: "2026-10-01", canonical_fee_key: "counter_check", amount: 1, fee_name: newName }),
+  ];
+
+  it("closes the replaced copy's read of the line under another name (Fall River 7255 / 32758)", () => {
+    const found = pageCopyRepeats(pair("Temporary checks", "Temporary checks (sheet of 3 checks)"), texts);
+    expect(found).toMatchObject({ pairs: 1, renamed: 1, apartOnPage: 0 });
+    expect(found.collapses).toEqual([expect.objectContaining({ feePublishedId: 7255, keptFeePublishedId: 32758 })]);
+  });
+
+  it("keeps both when the newer copy prints the two names as lines of their own", () => {
+    const apart = "Fees Counter Checks $1.00 Temporary checks (sheet of 3 checks) $1.00 Stop Payment $30.00 Cashier's Check $10.00 Wire Transfer Incoming $15.00 Outgoing $25.00";
+    const found = pageCopyRepeats(pair("Counter Checks", "Temporary checks (sheet of 3 checks)"), new Map([["297", apart], ["20497", apart]]));
+    expect(found).toMatchObject({ pairs: 1, renamed: 1, apartOnPage: 1 });
+    expect(found.collapses).toEqual([]);
+  });
+
+  it("never pairs other names across documents that only share a page key", () => {
+    const [older, newer] = pair("Counter Checks", "Temporary checks (sheet of 3 checks)");
+    const found = pageCopyRepeats([{ ...older, superseded: false, superseded_by_id: null }, newer], texts);
+    expect(found.pairs).toBe(0);
+  });
+});
+
 describe("collapsePageCopies (#1439)", () => {
   it("reports a failed close as an error, not as nothing closed", async () => {
     const rows = [
