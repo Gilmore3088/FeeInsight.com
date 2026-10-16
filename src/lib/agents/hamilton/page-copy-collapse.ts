@@ -88,10 +88,17 @@ function nameWords(name: string | null): Set<string> {
   return new Set([...words, ...sizes]);
 }
 
-/** The two names share a word beyond "fee", "charge", "each" and the like. */
+const BOX_SIZE = /^\d+(?:\.\d+)?x\d+(?:\.\d+)?$/;
+
+/**
+ * The two names share a word beyond "fee", "charge", "each" and the like. Two names that each give
+ * a box size name the same box only when a size is shared ("Safe Deposit Box - 3x10" is not "3 x 5").
+ */
 function shareWord(a: string | null, b: string | null): boolean {
-  const words = nameWords(b);
-  return [...nameWords(a)].some((word) => words.has(word) || words.has(word.replace(/s$/, "")) || words.has(`${word}s`));
+  const [one, two] = [nameWords(a), nameWords(b)];
+  const [sizesA, sizesB] = [[...one].filter((word) => BOX_SIZE.test(word)), [...two].filter((word) => BOX_SIZE.test(word))];
+  if (sizesA.length > 0 && sizesB.length > 0 && !sizesA.some((size) => two.has(size))) return false;
+  return [...one].some((word) => two.has(word) || two.has(word.replace(/s$/, "")) || two.has(`${word}s`));
 }
 
 function sameLine(a: string | null, b: string | null): boolean {
