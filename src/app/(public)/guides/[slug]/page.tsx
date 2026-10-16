@@ -420,7 +420,7 @@ export default async function GuidePage({ params }: PageProps) {
                     Get an email when your bank updates this fee
                   </p>
                   <p className="mt-1.5 text-[12px] leading-relaxed text-ink-muted">
-                    Free account. Save your institution and we&rsquo;ll email you when its published{" "}
+                    Free account. Save your institution and Fee Insight emails you when its published{" "}
                     {primaryNamePlain} is updated.
                   </p>
                   <Link

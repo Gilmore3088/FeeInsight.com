@@ -81,7 +81,7 @@ export const CONSUMER_GUIDES: Guide[] = [
                 kind: "paid",
                 title: "Overdraft",
                 payment: "Your institution pays the $60 and your balance goes to minus $20.",
-                cost: "An overdraft fee may apply. The median we track is {{overdraft.median}}.",
+                cost: "An overdraft fee may apply. The national median is {{overdraft.median}}.",
                 after: "You owe the $20 plus any fee. Some institutions add a charge if you stay negative.",
               },
               {
@@ -141,7 +141,7 @@ export const CONSUMER_GUIDES: Guide[] = [
               "Set a low-balance alert above your largest regular payment. It helps only if you can move money before the payment posts.",
               "Link a savings account or credit line. The median transfer fee is {{od_protection_transfer.median}} against an overdraft median of {{overdraft.median}}, but a transfer covers you only when the linked account holds enough.",
               "Time payments after your deposit posts. This helps when income arrives on a predictable day. It does not help when a deposit is held or the amount varies.",
-              "Ask about a grace period or a small-shortfall exemption. Some institutions skip the fee if you restore the balance within a day or the shortfall is small. We do not track these yet.",
+              "Ask about a grace period or a small-shortfall exemption. Some institutions skip the fee if you restore the balance within a day or the shortfall is small. Fee Insight does not track these yet.",
             ],
           },
         ],
@@ -152,7 +152,7 @@ export const CONSUMER_GUIDES: Guide[] = [
         blocks: [
           {
             type: "paragraph",
-            text: "Across the {{overdraft.institutions}} banks and credit unions whose schedules we hold, the median overdraft fee is {{overdraft.median}}, and the middle half charge {{overdraft.p25}} to {{overdraft.p75}}. The fee is usually flat: overdrawing by $3 or by $300 costs the same.",
+            text: "Across the {{overdraft.institutions}} banks and credit unions with a published schedule on file, the median overdraft fee is {{overdraft.median}}. The middle half of institutions publish {{overdraft.p25}} to {{overdraft.p75}}. The fee is usually flat: overdrawing by $3 or by $300 costs the same.",
           },
           {
             type: "distribution",
@@ -161,7 +161,7 @@ export const CONSUMER_GUIDES: Guide[] = [
           },
           {
             type: "paragraph",
-            text: "{{overdraft.zero_count}} institutions list a $0 overdraft fee on the schedule we hold. That can mean a no-fee service, no overdraft service, or $0 on one account only. A $0 fee is not a promise to pay.",
+            text: "{{overdraft.zero_count}} institutions list a $0 overdraft fee on their published schedule. That can mean a no-fee service, no overdraft service, or $0 on one account only. A $0 fee is not a promise to pay.",
           },
           {
             type: "scenarios",
@@ -195,7 +195,7 @@ export const CONSUMER_GUIDES: Guide[] = [
         blocks: [
           {
             type: "paragraph",
-            text: "Check these features before you open or keep an account. Where we do not track a feature, we say so. A missing answer is not the same as no protection.",
+            text: "Check these features before you open or keep an account. Where Fee Insight does not track a feature, the guide says so. A missing answer is not the same as no protection.",
           },
           {
             type: "policy_table",
@@ -211,7 +211,7 @@ export const CONSUMER_GUIDES: Guide[] = [
               { feature: "Monthly maintenance", question: "What will the account cost even without overdrafts?", category: "monthly_maintenance" },
             ],
             compare: {
-              intro: "Compare up to three institutions, line by line: the account each line names, its conditions, the source and the date we read it. Not charging a fee is not a promise to pay.",
+              intro: "Compare up to three institutions, line by line: the account each line names, its conditions, the source and the date it was read. Not charging a fee is not a promise to pay.",
             },
           },
         ],
@@ -285,7 +285,7 @@ export const CONSUMER_GUIDES: Guide[] = [
           },
           {
             type: "complaints",
-            text: "Complaints consumers sent to the CFPB about institutions we track. Context, not a ranking.",
+            text: "Complaints consumers sent to the CFPB about institutions in the Bank Fee Index. Context, not a ranking.",
             source: { label: "CFPB Consumer Complaint Database", url: "https://www.consumerfinance.gov/data-research/consumer-complaints/" },
           },
           {
@@ -341,12 +341,12 @@ export const CONSUMER_GUIDES: Guide[] = [
         blocks: [
           {
             type: "paragraph",
-            text: "The national median NSF fee is {{nsf.median}}, across {{nsf.institutions}} institutions whose schedules we hold. The middle half charge {{nsf.p25}} to {{nsf.p75}}, and the highest we have recorded is {{nsf.max}}.",
+            text: "The national median NSF fee is {{nsf.median}}, across {{nsf.institutions}} institutions with a published schedule on file. The middle half of institutions publish {{nsf.p25}} to {{nsf.p75}}, and the highest recorded is {{nsf.max}}.",
           },
           { type: "distribution", category: "nsf", caption: "NSF fee, one value per institution" },
           {
             type: "paragraph",
-            text: "{{nsf.zero_count}} institutions list a $0 NSF fee on the schedule we hold. A $0 line can apply to one account only, so check the account you hold or plan to open.",
+            text: "{{nsf.zero_count}} institutions list a $0 NSF fee on their published schedule. A $0 line can apply to one account only, so check the account you hold or plan to open.",
           },
           {
             type: "paragraph",
@@ -647,7 +647,7 @@ export const CONSUMER_GUIDES: Guide[] = [
         blocks: [
           {
             type: "paragraph",
-            text: "The fee is only part of an ATM policy. Check each of these for the account you hold or plan to open. Where we do not track a feature, we say so.",
+            text: "The fee is only part of an ATM policy. Check each of these for the account you hold or plan to open. Where Fee Insight does not track a feature, the guide says so.",
           },
           {
             type: "policy_table",
@@ -661,7 +661,7 @@ export const CONSUMER_GUIDES: Guide[] = [
               { feature: "Monthly maintenance", question: "What does the account cost each month?", category: "monthly_maintenance" },
             ],
             compare: {
-              intro: "Compare up to three institutions' published ATM lines: the account each line names, its conditions, the source and the date we read it.",
+              intro: "Compare up to three institutions' published ATM lines: the account each line names, its conditions, the source and the date it was read.",
               set: "atm",
             },
           },
@@ -781,7 +781,7 @@ export const CONSUMER_GUIDES: Guide[] = [
         blocks: [
           {
             type: "paragraph",
-            text: "The chart below compares outgoing domestic wire fees at banks and credit unions, from the published fee schedules in our index.",
+            text: "The chart below compares outgoing domestic wire fees at banks and credit unions, from published fee schedules in the Bank Fee Index.",
           },
           {
             type: "paragraph",
@@ -915,7 +915,7 @@ export const CONSUMER_GUIDES: Guide[] = [
         blocks: [
           {
             type: "paragraph",
-            text: "The national median monthly maintenance fee is {{monthly_maintenance.median}}, across {{monthly_maintenance.institutions}} institutions. Most fall between {{monthly_maintenance.p25}} and {{monthly_maintenance.p75}}, and the highest recorded is {{monthly_maintenance.max}}. {{monthly_maintenance.zero_count}} institutions list a $0 monthly fee on the schedule we hold, which can be one account only, so check the account you would open.",
+            text: "The national median monthly maintenance fee is {{monthly_maintenance.median}}, across {{monthly_maintenance.institutions}} institutions. Most fall between {{monthly_maintenance.p25}} and {{monthly_maintenance.p75}}, and the highest recorded is {{monthly_maintenance.max}}. {{monthly_maintenance.zero_count}} institutions list a $0 monthly fee on their published schedule, which can be one account only, so check the account you would open.",
           },
           {
             type: "paragraph",
@@ -1024,7 +1024,7 @@ export const CONSUMER_GUIDES: Guide[] = [
           },
           {
             type: "paragraph",
-            text: "Then ask the more useful question: are you actually paying it? Check the last three statements. If the fee has been waived every month, the headline number does not matter. If it has been charged even once, find out which condition you missed and whether you can meet it every month.",
+            text: "Then check whether you actually pay it. Look at the last three statements. If the fee has been waived every month, the headline number does not matter. If it has been charged even once, find out which condition you missed and whether you can meet it every month.",
           },
           {
             type: "paragraph",
@@ -1074,7 +1074,7 @@ export const CONSUMER_GUIDES: Guide[] = [
         blocks: [
           {
             type: "paragraph",
-            text: "Across the institutions we track, the median flat charge for using a card or an ATM abroad is {{card_foreign_txn.median}}, with a range from {{card_foreign_txn.min}} to {{card_foreign_txn.max}}, and {{card_foreign_txn.zero_count}} institutions charging nothing. Most cards charge a percentage instead, which these flat figures leave out.",
+            text: "Across the institutions in the Bank Fee Index, the median flat charge for using a card or an ATM abroad is {{card_foreign_txn.median}}, with a range from {{card_foreign_txn.min}} to {{card_foreign_txn.max}}, and {{card_foreign_txn.zero_count}} institutions charging nothing. Most cards charge a percentage instead, which these flat figures leave out.",
           },
           {
             type: "paragraph",
@@ -1277,7 +1277,7 @@ export const CONSUMER_GUIDES: Guide[] = [
         blocks: [
           {
             type: "paragraph",
-            text: "The chart below compares cashier's check fees at banks and credit unions, from the published fee schedules in our index. Some institutions waive these fees for members or for certain accounts, so check the schedule for the account you hold.",
+            text: "The chart below compares cashier's check fees at banks and credit unions, from published fee schedules in the Bank Fee Index. Some institutions waive these fees for members or for certain accounts, so check the schedule for the account you hold.",
           },
           {
             type: "paragraph",
@@ -1341,7 +1341,7 @@ export const CONSUMER_GUIDES: Guide[] = [
           },
           {
             type: "paragraph",
-            text: "Regulation CC governs how long your bank may hold funds from a check you deposit. That is a hold rather than a fee, but it matters here: a hold you did not expect can lead to the NSF and overdraft fees covered in our other guides.",
+            text: "Regulation CC governs how long your bank may hold funds from a check you deposit. That is a hold rather than a fee, but it matters here: a hold you did not expect can lead to the NSF and overdraft fees covered in the other guides.",
           },
           {
             type: "paragraph",

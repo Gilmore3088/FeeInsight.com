@@ -242,7 +242,7 @@ function InstitutionColumn({
             </label>
           ) : (
             <p className="text-[12.5px] text-ink">
-              <span className="font-medium">Account:</span> {account ?? "the schedules we hold name no account"}
+              <span className="font-medium">Account:</span> {account ?? "the published schedules name no account"}
             </p>
           )}
           <p className="mt-1 text-[12px] text-ink-muted">
@@ -269,7 +269,7 @@ function InstitutionColumn({
         <details className="border-t border-border px-4 py-3">
           <summary className="min-h-9 cursor-pointer text-[13px] font-semibold text-ink">Needs verification ({verify.length})</summary>
           <p className="mt-1 text-[12px] text-ink-muted">
-            We could not tie these lines to an account, or they read like a waiver rather than a price. Check them with the institution before relying on them.
+            These lines could not be tied to an account, or they read like a waiver rather than a price. Check them with the institution before relying on them.
           </p>
           <div className="mt-2">
             <FeatureLines feature={{ feature: "", question: "", category: null }} lines={verify} showCategory />
@@ -284,7 +284,7 @@ function InstitutionColumn({
 function FeatureLines({ feature, lines, showCategory = false }: { feature: CompareFeature; lines: PolicyLine[] | null; showCategory?: boolean }) {
   if (lines === null) return <p className="text-[13px] text-ink-muted">Not verified. Ask the institution.</p>;
   if (lines.length === 0) {
-    return <p className="text-[13px] text-ink-muted">Not listed in the schedule we hold. Ask the institution.</p>;
+    return <p className="text-[13px] text-ink-muted">Not listed in the published schedule. Ask the institution.</p>;
   }
   return (
     <ul className="space-y-2">
@@ -323,7 +323,7 @@ function FeatureLines({ feature, lines, showCategory = false }: { feature: Compa
 
 function Complaints({ policy }: { policy: AccountPolicy }) {
   if (policy.complaints.length === 0) {
-    return <div className="border-t border-border px-4 py-3 text-[12px] text-ink-muted">We hold no CFPB complaint counts on overdraft or returned payments for this institution.</div>;
+    return <div className="border-t border-border px-4 py-3 text-[12px] text-ink-muted">No CFPB complaint counts on overdraft or returned payments are on file for this institution.</div>;
   }
   const years = `${policy.complaints[0].from_year} to ${policy.complaints[0].to_year}`;
   return (
