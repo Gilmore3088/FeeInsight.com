@@ -35,7 +35,7 @@ export function LandingDemo({ data }: { data: HomeData }) {
     // Its own section under the hero: the window never overlaps the hero copy. This section
     // is the demo's one landmark; ProductDemo adds none inside it.
     <section aria-label="Hamilton demo" className="bg-paper">
-      <div className="mx-auto max-w-6xl px-4 pb-12 pt-2 sm:px-6 sm:pb-16 sm:pt-2">
+      <div className="mx-auto max-w-6xl px-4 pb-10 pt-2 sm:px-6 sm:pb-12 sm:pt-2">
         <ProductDemo
           label="Hamilton views"
           mark={

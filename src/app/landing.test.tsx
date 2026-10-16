@@ -146,22 +146,24 @@ describe("homepage (site v3 brief 06 §4.3)", () => {
     expect(buildHomeData(summary, [category("overdraft", { p25_amount: null })], null).overdraft).toBeNull();
   });
 
-  it("keeps the hero to the promise, one sentence, the search, live microcopy and working chips", () => {
+  it("keeps the hero to the promise, one sentence, the search, live microcopy and an Explore menu", () => {
     const html = renderToStaticMarkup(<LandingHero summary={summary} />);
     expect(html).toMatch(/<form[^>]*action="\/institutions"[^>]*method="get"/);
     expect(html).toContain('name="q"');
     const t = text(html);
-    expect(t).toContain("Know where your fees stand, with a source for every figure");
-    expect(t).toContain("1,234 institutions with published fees · Data refreshed Oct 14, 2026");
-    expect(t).toContain("Hamilton, the Fee Insight Pro workspace");
-    // The Pro plans chip comes first, so a phone shows it whole in the first screen (re-walk R3).
-    const chips = [...html.matchAll(/<li><a href="([^"]+)"/g)].map(([, href]) => href);
-    expect(chips[0]).toBe("/subscribe");
+    expect(t).toContain("Know where your fees stand.");
+    expect(t).toContain("Compare your institution with competitors, with a source for every figure.");
+    expect(t).toContain("1,234 institutions in the Bank Fee Index · Data refreshed Oct 14, 2026");
+    // Brand order: no product name above the h1, where it read as the site's name.
+    expect(t.indexOf("Bank Fee Index")).toBeGreaterThan(t.indexOf("Know where your fees stand"));
+    // The starting points sit in one small menu, Pro plans first.
+    expect(html).toContain("data-explore-index");
+    const links = [...html.matchAll(/<li><a [^>]*?href="([^"]+)"/g)].map(([, href]) => href);
+    expect(links).toEqual(["/subscribe", "/fees/overdraft", "/research/national-fee-index"]);
     expect(html).not.toContain("text-brick");
-    for (const href of ["/fees/overdraft", "/research/national-fee-index", "/subscribe"]) expect(html).toContain(`href="${href}"`);
     expect(t).not.toContain(REPORT_PRICE_INLINE);
     const unavailable = text(renderToStaticMarkup(<LandingHero summary={{ ...summary, institutionsLabel: "—" }} />));
-    expect(unavailable).not.toContain("institutions with published fees");
+    expect(unavailable).not.toContain("institutions in the");
   });
 
   it("server-renders one demo window: tabs for navigation, the district map open, no time bar", () => {
@@ -187,8 +189,8 @@ describe("homepage (site v3 brief 06 §4.3)", () => {
     const html = renderToStaticMarkup(<LandingDemo data={data} />);
     const t = text(html);
     // District map: the highest district median opens in the panel, against the nation.
-    expect(t).toContain("District 1 Boston");
-    expect(t).toContain("Boston $27.25 Nation $29.00 $1.75 below the national median");
+    expect(t).toContain("Boston · District 1 $27.25 median · $1.75 below national");
+    expect(t).toContain("Boston $27.25 Nation $29.00");
     expect(html).toContain('href="/research/district/1"');
     // My fees: the sample bank's fees, each a bar against its local median.
     expect(t).toContain("Sample Bank against 15 local competitors");
@@ -244,11 +246,23 @@ describe("homepage (site v3 brief 06 §4.3)", () => {
     expect(pillars).not.toMatch(/Federal Reserve districts|type="range"|Report preview|data-fee="/);
   });
 
-  it("heads the pillars as live samples, the level under the demo", () => {
+  it("shows one live sample at a time behind Sources, Markets and Reports, one heading and one line each", () => {
     const html = renderToStaticMarkup(<LandingPillars data={data} />);
     expect(html).toContain('id="live-samples"');
     const t = text(html);
-    expect(t).toMatch(/^ ?Live samples See it in action Each sample is drawn live from published fee schedules\./);
+    expect(t).toMatch(/^ ?Sources Markets Reports Trace every fee to its source Inspect the published schedule and the date it was read\./);
+    const tabs = [...html.matchAll(/aria-selected="(true|false)"[^>]*data-sample-tab="(\w+)"/g)].map(([, on, key]) => `${key}:${on}`);
+    expect(tabs).toEqual(["sources:true", "markets:false", "reports:false"]);
+    // The first sample is open; the others are in the markup but hidden until picked.
+    expect(html).toMatch(/hidden=""[^>]*data-sample="markets"/);
+    expect(html).toMatch(/hidden=""[^>]*data-sample="reports"/);
+    expect(html).not.toMatch(/hidden=""[^>]*data-sample="sources"/);
+    // The source sample opens on one fee, with the rest one tap away.
+    expect(html).toContain("data-collapsed");
+    expect(t).toContain("View more fees");
+    expect(t).toContain("Compare across markets");
+    expect(t).toContain("Bring the findings to committee");
+    expect(t).not.toMatch(/See it in action|Every fee|Every market|One workspace/);
     // The demo comes first on the page, then the live samples.
     const page = wholePage();
     expect(page.indexOf('aria-label="Hamilton demo"')).toBeGreaterThan(-1);
