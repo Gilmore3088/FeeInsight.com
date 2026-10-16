@@ -136,7 +136,10 @@ describe("Knox audience suggestion from context (#1059)", () => {
     "Returned Deposited Item – Member or Business", // 138277
     "Bill Pay: Regular Member Accounts and Business Accounts", // 127883
     "ATM/VISA® Debit Card/VISA® Rewards Debit Card/ VISA® Business Debit Card replacement card fee", // 123246
-    "Excessive Withdrawal for Business Share/Savings, Share/Savings and Share Club only", // 129758
+    "Star Rewards Savings/Business Savings",
+    "Personal/Business",
+    "Personal & Small Business",
+    "Retail and Commercial Customers",
     "Stop Payment Fee (Personal/Business)", // 90296
     "Card Replacement (Personal or Business ATM/Debit Card)", // 86165
     "Stop Payment of Personal or Business Check", // 137663
@@ -153,6 +156,17 @@ describe("Knox audience suggestion from context (#1059)", () => {
     "Business Debit/ATM Card replacement",
     "Stop Payment (Business Checking)",
     "5 Business Mobile Deposit is available",
+    // Review of #1628: the business word carries over to the products listed after it.
+    "Business Checking or Premium Checking",
+    "Business Checking and Interest Checking",
+    "Commercial Checking and Analysis Checking",
+    "Business Money Market Account or Savings Account",
+    "Business Account Research or Account Balancing",
+    "Business Checking Account and Account Research",
+    "Business Debit Card Replacement / Card Replacement Rush",
+    "Business Card Replacement - Debit or Credit Card",
+    "Excessive Withdrawal for Business Share/Savings, Share/Savings and Share Club only", // 129758
+    "Commercial Customers Wire (retail customers free)",
   ])("keeps a business name business: %s", (name) => {
     expect(nameAudience(name)).toBe("business");
   });
@@ -162,6 +176,7 @@ describe("Knox audience suggestion from context (#1059)", () => {
     "Consumer Loan Origination Fee",
     "Personal Checking Monthly Service Charge",
     "Personal Draft Account Monthly Fee",
+    "Overdraft (Business accounts excluded)",
   ])("keeps a consumer name consumer: %s", (name) => {
     expect(nameAudience(name)).toBe("consumer");
   });

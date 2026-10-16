@@ -29,8 +29,8 @@ export interface AudienceSuggestion {
  */
 const BUSINESS_WORDS = /\b(?:business(?:es)?|agri-?business(?:es)?|commercial|corporate|treasury management|merchant services)\b/i;
 const CONSUMER_WORDS = /\b(?:personal|consumer|individuals?)\b/i;
-/** "Personal and business", "consumer or commercial": both audiences, so no single suggestion. */
-const BOTH_WORDS = /\b(?:personal|consumer)\b[^.\n]{0,20}\b(?:and|or|&|\/)\s*(?:small\s+)?(?:business|commercial)\b|\b(?:business|commercial)\b[^.\n]{0,20}\b(?:and|or|&|\/)\s*(?:personal|consumer)\b/i;
+/** "Personal and business", "consumer or commercial", "Personal & Small Business": both audiences, so no single suggestion. */
+const BOTH_WORDS = /\b(?:personal|consumer)\b[^.\n]{0,20}(?:\band\b|\bor\b|&|\/)\s*(?:small\s+)?(?:business|commercial)\b|\b(?:business|commercial)\b[^.\n]{0,20}(?:\band\b|\bor\b|&|\/)\s*(?:personal|consumer)\b/i;
 /** A heading is a short line with no price: a section title, not a fee row. */
 const MAX_HEADING_CHARS = 80;
 /** How far above the fee's line a heading is looked for. */
@@ -289,17 +289,20 @@ export function sectionHeadingAudience(
 
 /**
  * An exception clause in a fee name ("(Not applicable when accessing eStatements through Consumer
- * eBanking)", "(personal are free on Netbranch)") names the audience the fee leaves out or waives,
- * not the one it is for (#1626).
+ * eBanking)", "(personal are free on Netbranch)", "(retail customers free)") names the audience the
+ * fee leaves out or waives, not the one it is for (#1626).
  */
-const NAME_EXCEPTION = /\((?:[^()]*?\b)?(?:not\s+applicable|not\s+charged|does\s+not\s+apply|except(?:ing)?|excluding|exempt|waived|(?:are|is)\s+free|free\s+(?:on|with|for|through|via))\b[^()]*\)/gi;
+const NAME_EXCEPTION = /\((?:[^()]*?\b)?(?:not\s+applicable|not\s+charged|does\s+not\s+apply|except(?:ing)?|excluding|excluded|exempt|waived|(?:are|is)\s+free|free\s+(?:on|with|for|through|via)|free(?=\s*\)))\b[^()]*\)/gi;
+/** An exception that leaves business out ("(Business accounts excluded)"): the fee is consumer. */
+const BUSINESS_EXCLUDED = /\((?:[^()]*?\b)?(?:(?:business|commercial)\s+accounts?\s+(?:are\s+)?(?:excluded|exempt)|(?:not\s+(?:for|applicable\s+to)|excluding|except(?:ing)?)\s+(?:business|commercial)\s+accounts?)\b[^()]*\)/i;
 /** A credit union's member side beside business ("Member or Business", "Regular Member Accounts and Business Accounts"). */
-const MEMBER_AND_BUSINESS = /\bmembers?\b[^.\n]{0,20}\b(?:and|or|&|\/)\s*(?:small\s+)?(?:business|commercial)\b|\b(?:business|commercial)\b[^.\n]{0,20}\b(?:and|or|&|\/)\s*members?\b/i;
+const MEMBER_AND_BUSINESS = /\bmembers?\b[^.\n]{0,20}(?:\band\b|\bor\b|&|\/)\s*(?:small\s+)?(?:business|commercial)\b|\b(?:business|commercial)\b[^.\n]{0,20}(?:\band\b|\bor\b|&|\/)\s*members?\b/i;
 const PERSONAL_BUSINESS = /\b(?:personal|consumer)\s+(?=business\b)/gi;
 const PRODUCT_NOUN = /\b(card|account|checking|savings|share|check|draft)s?\b/gi;
-/** "Retail customers" is a bank's consumer side: a name that also names commercial customers decides nothing. */
-const RETAIL = /\bretail(?=\s+(?:customers?|accounts?|clients?|members?)\b)/gi;
-const headNoun = (part: string) => [...part.matchAll(PRODUCT_NOUN)].at(-1)?.[1].toLowerCase() ?? null;
+/** "Retail customers" is a bank's consumer side: "Retail and Commercial Customers" is both. */
+const RETAIL = /\bretail(?=\s+(?:(?:and|or|&|\/)\s+(?:small\s+)?(?:business|commercial)\s+)?(?:customers?|accounts?|clients?|members?)\b)/gi;
+const nounsOf = (part: string) => [...part.matchAll(PRODUCT_NOUN)].map((match) => match[1].toLowerCase());
+const headNoun = (part: string) => nounsOf(part).at(-1) ?? null;
 
 /**
  * A name that lists a business product beside the same product with no business word ("ATM/VISA
@@ -307,12 +310,21 @@ const headNoun = (part: string) => [...part.matchAll(PRODUCT_NOUN)].at(-1)?.[1].
  * counts, so "Business Checking, Savings and Money Market Accounts" stays business. A listed
  * product is a short name split at a slash, "&", "and" or "or", never at a comma, so a clause
  * ("On commercial accounts, if your account balance remains overdrawn") lists nothing.
+ * The business word carries over to every product after it ("Business Checking or Premium
+ * Checking", "Business Debit Card Replacement / Card Replacement Rush" stay business), so only a
+ * plain product before the first business one counts, and only a short one naming that one
+ * product ("Star Rewards Savings/Business Savings"; review of #1628).
  */
 const MAX_LISTED_PRODUCT_CHARS = 40;
 function listsBothSides(name: string): boolean {
   const parts = name.split(/\s*(?:[/&]|\band\b|\bor\b)\s*/i).map((part) => part.trim()).filter(Boolean);
-  const nouns = new Set(parts.filter((part) => BUSINESS_WORDS.test(part)).map(headNoun).filter(Boolean));
-  return nouns.size > 0 && parts.some((part) => part.length <= MAX_LISTED_PRODUCT_CHARS && !BUSINESS_WORDS.test(part) && nouns.has(headNoun(part)));
+  const first = parts.findIndex((part) => BUSINESS_WORDS.test(part));
+  if (first <= 0) return false;
+  const nouns = new Set(parts.slice(first).filter((part) => BUSINESS_WORDS.test(part)).map(headNoun).filter(Boolean));
+  return parts.slice(0, first).some((part) => {
+    const own = nounsOf(part);
+    return part.length <= MAX_LISTED_PRODUCT_CHARS && own.length === 1 && nouns.has(own[0]);
+  });
 }
 
 /**
@@ -325,7 +337,8 @@ export function nameAudience(feeName: string): ContextAudience | null {
   const name = feeName.replace(NAME_EXCEPTION, " ").replace(PERSONAL_BUSINESS, "").replace(RETAIL, "consumer");
   const text = neutral(name);
   if (BOTH_WORDS.test(text) || MEMBER_AND_BUSINESS.test(text) || listsBothSides(text)) return "both";
-  return audienceOf(name);
+  const audience = audienceOf(name);
+  return audience ?? (BUSINESS_EXCLUDED.test(feeName) ? "consumer" : null);
 }
 
 export function suggestAudience(input: {
