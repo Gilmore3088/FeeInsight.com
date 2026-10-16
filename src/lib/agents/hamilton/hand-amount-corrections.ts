@@ -120,18 +120,6 @@ export const HAND_AMOUNT_CORRECTIONS: readonly HandAmountCorrection[] = [
     pattern: "wrong_read", issue: 1659,
     wrongReadTracesTo: "$10 Monthly Maintenance Fee waived on all Elite Money Market account with a U.S. Bank Smartly® Checking account",
   },
-  // #1664 (read-only, Oct 16): First National Bank Alaska's Direct Deposit Checking row was read
-  // from its waiver line at $0. The schedule prices the account at $7.00 a month, waived with one
-  // direct deposit per statement cycle: "$0 if condition, else $7" is $7. The shared check reads
-  // "Waived" as free and traces the $0 to the first waiver line in the text, Representative Payee
-  // Account's; the correction applies only while that is the line it traces to.
-  {
-    feePublishedId: 67859, institution: "First National Bank Alaska", institutionId: 281, sourceDocumentId: 19925,
-    canonicalFeeKey: "monthly_maintenance", from: 0, to: 7, feeName: "Direct Deposit Checking Monthly Service Fee",
-    why: "\"Direct Deposit Checking | per statement cycle\" / \"Monthly Service Fee | $7.00\" / \"Monthly Service Fee with 1 direct deposit per | Waived\"; the $0 is the waiver, not the price",
-    pattern: "conditional_zero", issue: 1664,
-    wrongReadTracesTo: "Over 20 checks per monthly cycle | $0.20 each | Monthly Service Fee with 1 direct deposit | Waived",
-  },
 ];
 
 /**
