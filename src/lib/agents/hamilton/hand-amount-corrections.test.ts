@@ -39,10 +39,16 @@ const PRIMIS_DISCLOSURE =
  * text is the Elite Money Market line at the end.
  */
 const USBANK_CHECKING = "SMARTER BANKING + REWARDS\n\nBank Smartly Checking\n\n$12 Monthly Maintenance Fee can be waived in multiple ways1\n\nFlexible banking with perks and rewards, debit card access, interest earning and optional checks\n\nTrack spending, savings and subscriptions to help you manage your budget, all in one place\n\n$25 minimum opening deposit\n\nOpen an account\n\nLearn about Bank Smartly Checking\n\nNO MONTHLY MAINTENANCE FEES\n\nYoung adult & student checking (ages 18 to 24)\n\n$0 Monthly Maintenance Fee; $12 fee is waived for ages 18 to 241\n\nBank Smartly Checking with special benefits for young adults, including perks and rewards that grow with you\n\nSpending and savings goal tracking available anytime with the mobile app\n\nOverdraft Fee Forgiven and protection options\n\n$25 minimum opening deposit\n\nOpen an account\n\nLearn about young adult checking\n\nBUILD FINANCIAL SKILLS + DEBIT CARD\n\nTeen checking (ages 13 to 17)\n\n$0 Monthly Maintenance Fee; $12 fee is waived for ages 13 to 171\n\nBank Smartly Checking with special benefits for teens, including money management with a debit card and optional checks\n\nTools for saving, spending tracking and overdraft protection\n\n$25 minimum opening deposit\n\nOpen an account\n\nLearn about teen checking account\n\nBANKING MADE SIMPLE\n\nSafe Debit account2\n\n$4.95 Monthly Maintenance Fee with no minimum balance requirement\n\nMoney management with a debit card – no checks, no overdraft fees3\n\n$25 minimum opening deposit\n\nSeniors (age 65 or over)\n\n$12 Monthly Maintenance Fee waived on every U.S. Bank Smartly® Checking account1\n\n50% discount on personal check re-orders (U.S. Bank logo or personal)8 and the annual safe deposit box rental fees*\n\nNon-U.S. Bank ATM Surcharge reimbursed for the first fee charged by an ATM Owner (one per statement period, domestic only)45\n\n$10 Monthly Maintenance Fee waived on all Elite Money Market account with a U.S. Bank Smartly® Checking account\n";
-const TEXTS: Record<number, string> = { 23695: `${PRIMIS_DISCLOSURE}${PRIMIS_PRICING}`, 23628: USBANK_CHECKING };
+/**
+ * #1664: First National Bank Alaska's personal fee schedule as stored (text 15731, doc 19925,
+ * read-only, Oct 16), its first 11 lines verbatim. The whole text (9,549 characters, sha256
+ * 407d5b9f23c52871da0404d11a39d198087b76ef91a5ef989c4e0a71e0f92bfa) traces the corrected $7 and the old $0 to the same lines as this excerpt.
+ */
+const FNB_ALASKA_PERSONAL = "PERSONAL FEE SCHEDULE Effective April 1, 2026\nChecking Accounts\nFirst 20 Account | Employer Advantage Health Savings Account2\nMinimum Daily Balance Requirement1 | $1,000 | Monthly Service Fee | No charge\nMonthly Service Fee | $5.00 | Paid Check Fee | $0.20 each\nTransaction fees | Representative Payee Account2\nFirst 20 checks per monthly cycle | No charge | Monthly Service Fee | $4.00\nOver 20 checks per monthly cycle | $0.20 each | Monthly Service Fee with 1 direct deposit | Waived\nDirect Deposit Checking | per statement cycle\nMonthly Service Fee | $7.00\nMonthly Service Fee with 1 direct deposit per | Waived | Money Market Accounts\n";
+const TEXTS: Record<number, string> = { 23695: `${PRIMIS_DISCLOSURE}${PRIMIS_PRICING}`, 23628: USBANK_CHECKING, 19925: FNB_ALASKA_PERSONAL };
 
 /** Each live row as it reads on prod (Oct 15; 5600 Oct 16), with its document's stored text. */
-const OLD_NAMES: Record<number, string> = { 49175: "00 Loan Skip A Pay Fee", 29166: "00 ATM Transactions (per item)", 5600: "Overdraft Item Fee", 102971: "Maintenance Fee waived on every U.S. Bank Smartly® Checking account" };
+const OLD_NAMES: Record<number, string> = { 49175: "00 Loan Skip A Pay Fee", 29166: "00 ATM Transactions (per item)", 5600: "Overdraft Item Fee", 102971: "Maintenance Fee waived on every U.S. Bank Smartly® Checking account", 67859: "Monthly Service Fee with 1 direct deposit per" };
 const liveRows = HAND_AMOUNT_CORRECTIONS.map((fix) => ({
   fee_published_id: fix.feePublishedId,
   lineage_ref: fix.feePublishedId + 1_000_000,
@@ -62,12 +68,12 @@ describe("hand amount corrections (#1334)", () => {
     }
   });
 
-  it("corrects all ten on their own stored text: the corrected price traces and the wrong one no longer does", () => {
+  it("corrects all eleven on their own stored text: the corrected price traces and the wrong one no longer does", () => {
     const plan = planHandAmountCorrections(liveRows);
     expect(plan.skipped).toEqual([]);
     expect(plan.corrected.map((fix) => [fix.feePublishedId, fix.from, fix.to])).toEqual([
       [49175, 29, 29.95], [29166, 1, 1.5], [141772, 1, 1.5], [97435, 1, 1.5],
-      [61650, 1, 1.5], [61934, 4, 4.5], [79234, 7, 7.5], [79237, 3, 3.5], [5600, 0, 35], [102971, 10, 12],
+      [61650, 1, 1.5], [61934, 4, 4.5], [79234, 7, 7.5], [79237, 3, 3.5], [5600, 0, 35], [102971, 10, 12], [67859, 0, 7],
     ]);
     expect(plan.corrected.find((fix) => fix.feePublishedId === 49175)).toMatchObject({ oldName: "00 Loan Skip A Pay Fee", newName: "Loan Skip A Pay Fee" });
     expect(plan.corrected.find((fix) => fix.feePublishedId === 5600)).toMatchObject({
@@ -107,6 +113,23 @@ describe("hand amount corrections (#1334)", () => {
     expect(planHandAmountCorrections([elsewhere]).skipped).toContainEqual({ feePublishedId: 102971, reason: "wrong read traces to another line" });
   });
 
+  it("#1664: First National Bank Alaska's Direct Deposit Checking row takes its printed $7, and its $0 traces only to another account's waiver", () => {
+    expect(checkFeeAgainstSource(FNB_ALASKA_PERSONAL, "Direct Deposit Checking Monthly Service Fee", 7, ".", "monthly_maintenance"))
+      .toEqual({ ok: true, sourceLine: "Monthly Service Fee | $7.00" });
+    const fix = HAND_AMOUNT_CORRECTIONS.find((entry) => entry.feePublishedId === 67859)!;
+    // The shared check reads "Waived" as free: the $0 traces to Representative Payee Account's waiver line.
+    expect(checkFeeAgainstSource(FNB_ALASKA_PERSONAL, "Monthly Service Fee with 1 direct deposit per", 0, ".", "monthly_maintenance"))
+      .toEqual({ ok: true, sourceLine: fix.wrongReadTracesTo });
+    const fnb = liveRows.find((row) => row.fee_published_id === 67859)!;
+    expect(planHandAmountCorrections([fnb]).corrected).toEqual([expect.objectContaining({
+      feePublishedId: 67859, from: 0, to: 7, oldName: "Monthly Service Fee with 1 direct deposit per",
+      newName: "Direct Deposit Checking Monthly Service Fee", sourceLine: "Monthly Service Fee | $7.00",
+    })]);
+    // Were a real $0 printed for the row's own line, the row would be left alone.
+    const realZero = { ...fnb, normalized_text: `Monthly Service Fee with 1 direct deposit per | $0.00\n${FNB_ALASKA_PERSONAL}` };
+    expect(planHandAmountCorrections([realZero]).skipped).toContainEqual({ feePublishedId: 67859, reason: "wrong read traces to another line" });
+  });
+
   it("is a fixed list that leaves a changed, corrected or untraceable row alone", () => {
     const [first, ...rest] = liveRows;
     expect(planHandAmountCorrections([{ ...first, amount: "29.95" }, ...rest]).skipped).toEqual([{ feePublishedId: 49175, reason: "already corrected" }]);
@@ -143,10 +166,10 @@ describe("hand amount corrections (#1334)", () => {
       return Promise.resolve([]);
     });
     const result = await applyHandAmountCorrections(db as never, { runId: 7, dryRun: false });
-    expect(result.corrected).toHaveLength(10);
+    expect(result.corrected).toHaveLength(11);
     expect(result.rejectedTwins).toEqual([113133, 112658, 157467, 125738, 66392, 167844, 102462]);
     const verifiedUpdates = calls.filter((call) => call.text.includes("UPDATE verified_fee_observations") && call.text.includes("SET amount"));
-    expect(verifiedUpdates).toHaveLength(10);
+    expect(verifiedUpdates).toHaveLength(11);
     // Each update lands only while the row still holds the cut amount.
     expect(calls.filter((call) => call.text.includes("UPDATE published_fee_records")).every((call) => call.text.includes("AND amount ="))).toBe(true);
     const feedback = calls.find((call) => call.text.includes("INSERT INTO pipeline_feedback"));
@@ -170,7 +193,7 @@ describe("hand amount corrections (#1334)", () => {
       return Promise.resolve([]);
     });
     const result = await applyHandAmountCorrections(db as never, { runId: 7, dryRun: true });
-    expect(result.corrected).toHaveLength(10);
+    expect(result.corrected).toHaveLength(11);
     expect(db.mock.calls.some(([strings]) => /UPDATE|INSERT/.test((strings as TemplateStringsArray).join(" ")))).toBe(false);
   });
 });

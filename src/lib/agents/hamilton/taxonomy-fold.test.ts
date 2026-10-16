@@ -8,6 +8,9 @@ import { HAND_REFILES, handFixedPassing, planHandRefiles, previewResearchSplit }
 
 /** The schedule lines each hand re-file was read from (copied data: the banks' own text). */
 const PAGE_LINES: Record<number, string> = {
+  // #1664: 1NB Bank's services page (doc 18090, text 13604), each account's heading and fee line.
+  60939: "Carefree Checking\n\nCarefree Checking\n\nMinimum Average Daily Balance: $300.00\n\nLimitations: You must deposit $300.00 to open this account.\n\nAccount Fees: The monthly service charge if the average daily balance drops below $300.00 during the statement cycle is $5.95. The fee is $4.95 if receiving E-Statements.",
+  60940: "NOW Checking\n\nNOW Checking\n\nMinimum Balance: $500\n\nLimitations: You must deposit $500.00 to open this account.\n\nAccount Fees: The monthly service charge if the daily balance drops below $500.00 any day of the statement cycle is $10.00.",
   // #1659: U.S. Bank's checking-accounts page (doc 23628, text 20686).
   102970: "BANKING MADE SIMPLE\n\nSafe Debit account2\n\n$4.95 Monthly Maintenance Fee with no minimum balance requirement\n\nMoney management with a debit card – no checks, no overdraft fees3",
   // #1655: Navy Federal's home equity line fees (doc 26712).
@@ -113,6 +116,9 @@ const PAGE_LINES: Record<number, string> = {
   88058: "MONEY MARKET ACCOUNTS\nMoney Market Account\nLow Balance Fee\n(charged if the average daily balance is less than $2,500 for the calendar month) ...... $15.00\nDEBIT CARDS",
 };
 
+/** Renames whose price the page ties to a balance band (`tiered_fee`), before and after (#1664). */
+const TIERED_RENAMES = new Set([60939, 60940]);
+
 function liveRow(id: number, key: string, amount: string, name = "(misread cell)") {
   return { fee_published_id: id, fee_verified_id: id + 1000, institution_id: 1, source_document_id: 9, canonical_fee_key: key, fee_name: name, amount };
 }
@@ -128,8 +134,30 @@ describe("hand re-files of misread live fees (retidy v15 review, Oct 9)", () => 
   it("names every one as its page does, at its price", () => {
     for (const refile of HAND_REFILES) {
       const traced = checkFeeAgainstSource(PAGE_LINES[refile.feePublishedId], refile.name, refile.amount, ".", refile.to);
-      expect(traced.ok, `${refile.feePublishedId}: ${traced.ok ? "" : traced.reason}`).toBe(true);
+      // A price tied to a balance band reads as `tiered_fee`, which the live trace counts as traced (#1664).
+      const ok = traced.ok || (TIERED_RENAMES.has(refile.feePublishedId) && traced.reason === "tiered_fee");
+      expect(ok, `${refile.feePublishedId}: ${traced.ok ? "" : traced.reason}`).toBe(true);
     }
+  });
+
+  it("#1664: names 1NB Bank's two monthly service charges for their accounts, once, and the new names trace as the old one did", () => {
+    const oldName = "Account Fees: The monthly service charge";
+    const rows = [
+      { ...liveRow(60939, "monthly_maintenance", "5.95", oldName), fee_verified_id: 63859, institution_id: 2454, source_document_id: 18090 },
+      { ...liveRow(60940, "monthly_maintenance", "10.00", oldName), fee_verified_id: 63860, institution_id: 2454, source_document_id: 18090 },
+    ];
+    expect(planHandRefiles(rows).map((move) => [move.refile.feePublishedId, move.oldName, move.refile.name])).toEqual([
+      [60939, oldName, "Carefree Checking Monthly Service Charge"],
+      [60940, oldName, "NOW Checking Monthly Service Charge"],
+    ]);
+    for (const [id, amount] of [[60939, 5.95], [60940, 10]] as const) {
+      const refile = HAND_REFILES.find((entry) => entry.feePublishedId === id)!;
+      expect(checkFeeAgainstSource(PAGE_LINES[id], oldName, amount, ".", "monthly_maintenance")).toEqual({ ok: false, reason: "tiered_fee" });
+      expect(checkFeeAgainstSource(PAGE_LINES[id], refile.name, amount, ".", "monthly_maintenance")).toEqual({ ok: false, reason: "tiered_fee" });
+    }
+    // Renamed already, or renamed by another check since: left alone.
+    expect(planHandRefiles(rows.map((row) => ({ ...row, fee_name: HAND_REFILES.find((entry) => entry.feePublishedId === row.fee_published_id)!.name })))).toEqual([]);
+    expect(planHandRefiles([{ ...rows[0], fee_name: "Carefree Checking Service Charge" }])).toEqual([]);
   });
 
   it("moves a live fee only while it is still under its old category at its listed price", () => {

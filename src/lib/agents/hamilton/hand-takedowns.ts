@@ -398,6 +398,15 @@ export const HAND_AUDIENCE_FIXES: readonly HandAudienceFix[] = [
   { feePublishedId: 125484, feeVerifiedId: 93865, institutionId: 97, canonicalFeeKey: "overdraft", amount: 35,
     feeName: "Overdraft or Returned Item fee (business accounts)", from: "unknown", to: "business", issue: 1655,
     evidence: "Mechanics Bank (doc 9078, text 2235): \"Overdraft or Returned Item fee (business accounts)…$35.00/presentment\"." },
+  // #1664 (read-only, Oct 16): Bank Iowa's ag checking page (doc 31875) prints one table of four
+  // business accounts for farms ("Bank Iowa Business Checking Accounts - For Ag"); both live rows
+  // from it are business fees.
+  { feePublishedId: 141041, feeVerifiedId: 166941, institutionId: 511, canonicalFeeKey: "monthly_maintenance", amount: 20,
+    feeName: "Monthly service charge", from: "unknown", to: "business", issue: 1664,
+    evidence: "Bank Iowa (doc 31875, text 29776): \"Bank Iowa Business Checking Accounts - For Ag\"; \"Monthly Service Charge | … | $20\" is the Commercial Checking for Ag column." },
+  { feePublishedId: 141040, feeVerifiedId: 166940, institutionId: 511, canonicalFeeKey: "monthly_maintenance", amount: 10,
+    feeName: "Monthly Service Charge", from: "unknown", to: "business", issue: 1664,
+    evidence: "Bank Iowa (doc 31875, text 29776): \"Bank Iowa Business Checking Accounts - For Ag\"; \"$10 monthly service charge\" is the Business Checking for Ag and Interest Checking for Ag columns." },
 ];
 
 export interface LiveAudienceRow {

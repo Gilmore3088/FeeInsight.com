@@ -223,6 +223,11 @@ const AUDIENCE_LIVE_1655: LiveAudienceRow[] = [
   { fee_published_id: 67110, lineage_ref: 77129, institution_id: 97, canonical_fee_key: "od_daily_cap", fee_name: "Maximum daily Overdraft or Returned Item fees (per day, business accounts)", amount: "350.00", fee_audience: "unknown", audience_evidence: null },
   { fee_published_id: 125484, lineage_ref: 93865, institution_id: 97, canonical_fee_key: "overdraft", fee_name: "Overdraft or Returned Item fee (business accounts)", amount: "35.00", fee_audience: "unknown", audience_evidence: null },
 ];
+// #1664's two Bank Iowa ag-account rows (doc 31875) as they read live on prod with their verified rows joined, read-only, Oct 16.
+const AUDIENCE_LIVE_1664: LiveAudienceRow[] = [
+  { fee_published_id: 141041, lineage_ref: 166941, institution_id: 511, canonical_fee_key: "monthly_maintenance", fee_name: "Monthly service charge", amount: "20.00", fee_audience: "unknown", audience_evidence: null },
+  { fee_published_id: 141040, lineage_ref: 166940, institution_id: 511, canonical_fee_key: "monthly_maintenance", fee_name: "Monthly Service Charge", amount: "10.00", fee_audience: "unknown", audience_evidence: null },
+];
 const ONLY_55401 = HAND_AUDIENCE_FIXES.slice(0, 1);
 
 function fakeAudienceDb(live: LiveAudienceRow[], failOn?: string) {
@@ -242,6 +247,7 @@ describe("hand audience fixes (#1302)", () => {
   it("lists each business fee, with darwin: evidence the audience trigger keeps", () => {
     expect(HAND_AUDIENCE_FIXES.map((fix) => [fix.feePublishedId, fix.from, fix.to])).toEqual([
       [55401, "unknown", "business"], [67110, "unknown", "business"], [125484, "unknown", "business"],
+      [141041, "unknown", "business"], [141040, "unknown", "business"],
     ]);
     expect(HAND_AUDIENCE_FIXES.every((fix) => handAudienceEvidence(fix).startsWith(`darwin:hand_fix: #${fix.issue} `))).toBe(true);
     // A batch (one issue) of takedowns and audience fixes together stays under James's limit of 20.
@@ -253,18 +259,23 @@ describe("hand audience fixes (#1302)", () => {
     expect(batch1655).toBe(4);
     // #1659: four takedowns (102971 is an amount correction, 102970 a rename).
     expect(HAND_TAKEDOWNS.filter((entry) => entry.issue === 1659)).toHaveLength(4);
+    // #1664: two audience fixes (60939 and 60940 are renames, 67859 an amount correction).
+    const batch1664 = HAND_AUDIENCE_FIXES.filter((fix) => fix.issue === 1664).length + HAND_TAKEDOWNS.filter((entry) => entry.issue === 1664).length;
+    expect(batch1664).toBe(2);
   });
 
   it("fixes a row only while it still reads as listed, and once", () => {
-    expect(planHandAudienceFixes([...AUDIENCE_LIVE, ...AUDIENCE_LIVE_1655])).toEqual({
+    expect(planHandAudienceFixes([...AUDIENCE_LIVE, ...AUDIENCE_LIVE_1655, ...AUDIENCE_LIVE_1664])).toEqual({
       fixed: [
         { feePublishedId: 55401, feeVerifiedId: 45477, from: "unknown", fromEvidence: null, to: "business" },
         { feePublishedId: 67110, feeVerifiedId: 77129, from: "unknown", fromEvidence: null, to: "business" },
         { feePublishedId: 125484, feeVerifiedId: 93865, from: "unknown", fromEvidence: null, to: "business" },
+        { feePublishedId: 141041, feeVerifiedId: 166941, from: "unknown", fromEvidence: null, to: "business" },
+        { feePublishedId: 141040, feeVerifiedId: 166940, from: "unknown", fromEvidence: null, to: "business" },
       ],
       skipped: [],
     });
-    expect(planHandAudienceFixes([]).skipped).toEqual([55401, 67110, 125484].map((feePublishedId) => ({ feePublishedId, reason: "not live" })));
+    expect(planHandAudienceFixes([]).skipped).toEqual([55401, 67110, 125484, 141041, 141040].map((feePublishedId) => ({ feePublishedId, reason: "not live" })));
     expect(planHandAudienceFixes([{ ...AUDIENCE_LIVE[0], fee_audience: "business" }], ONLY_55401).skipped).toEqual([{ feePublishedId: 55401, reason: "already fixed" }]);
     // Another audience, a newer verified row, or another name or price is not the listed row.
     for (const changed of [{ fee_audience: "consumer" }, { lineage_ref: 99 }, { amount: "4.00" }, { fee_name: "Gift Card" }]) {
