@@ -4,11 +4,17 @@ vi.mock("@/lib/data-store/fee-cache", () => ({ invalidatePublicReadCache: vi.fn(
 
 import { publishSkipReason, type VerifiedFeeRow } from "./publish";
 import {
+  findResourceDocument,
   NO_SOURCE_DOCUMENT_REASON,
   NO_SOURCE_LINK_REASON,
   planSourceLinkRepair,
+  planSourceLinkResource,
   publishSourceLink,
   repairSourceLinks,
+  resourceSourceLinks,
+  SOURCE_LINK_RESOURCE_ON,
+  type InstitutionDocumentText,
+  type ResourceCandidateRow,
   type UnlinkedLiveFeeRow,
 } from "./source-link";
 
@@ -125,5 +131,148 @@ describe("source link repair", () => {
         : ok(strings, ...values));
     await expect(repairSourceLinks(live.db, { runId: 7, batchId: "agentic-run-7", dryRun: false }))
       .rejects.toThrow(/source link repair write failed: permission denied for table published_fee_records/);
+  });
+});
+
+// #1342 re-source: the text of Alliance Niagara's schedule as stored (doc 17763), and another
+// institution's page printing the same fee.
+const STORED = "Fee Schedule\nStop Payment | $20.00\nReturned Deposit | $20.00\nCopy of Statement | $5.00";
+const OTHER_BANK = "Fees\nStop Payment | $20.00";
+
+const candidate = (id: number, overrides: Partial<ResourceCandidateRow> = {}): ResourceCandidateRow => ({
+  fee_published_id: id,
+  fee_verified_id: id + 100,
+  fee_raw_id: id + 200,
+  institution_id: 6288,
+  canonical_fee_key: "stop_payment",
+  fee_name: "Stop Payment",
+  amount: "20.00",
+  amount_kind: "flat",
+  rate_percent: null,
+  source: "migration_v10",
+  source_document_id: null,
+  fee_r2_key: null,
+  document_institution_id: null,
+  document_url: null,
+  document_r2_key: null,
+  taken_down: true,
+  rolled_back_reason: "source_link_untraceable: no source document",
+  verified_blank: true,
+  raw_url_blank: true,
+  taken_document_ids: [],
+  same_fee_live: false,
+  ...overrides,
+});
+
+const stored = (id: number, overrides: Partial<InstitutionDocumentText> = {}): InstitutionDocumentText => ({
+  source_document_id: id,
+  institution_id: 6288,
+  document_url: "https://allianceniagara.com/fee-schedule/",
+  document_r2_key: "93/935d",
+  superseded: false,
+  status: "completed",
+  normalized_text: STORED,
+  ...overrides,
+});
+
+describe("source link re-source (#1342)", () => {
+  it("is on, so rollback is one line", () => {
+    expect(SOURCE_LINK_RESOURCE_ON).toBe(true);
+  });
+
+  it("finds a completed document of the fee's own institution that prints the fee at its amount", () => {
+    expect(findResourceDocument(candidate(5808), [stored(17763)])).toEqual({
+      sourceDocumentId: 17763,
+      url: "https://allianceniagara.com/fee-schedule/",
+      sourceLine: "Stop Payment | $20.00",
+    });
+    // Newest document first.
+    expect(findResourceDocument(candidate(5808), [stored(3635), stored(17763)])).toMatchObject({ sourceDocumentId: 17763 });
+  });
+
+  it("never matches another institution's document, another amount, or a document that is not completed", () => {
+    expect(findResourceDocument(candidate(5808), [stored(40001, { institution_id: 999, normalized_text: OTHER_BANK })])).toEqual({ why: "no_stored_document" });
+    expect(findResourceDocument(candidate(5808, { amount: "25.00" }), [stored(17763)])).toEqual({ why: "not_in_stored_documents:amount_not_the_fee" });
+    for (const status of ["wrong_document", "failed", "pending"]) {
+      expect(findResourceDocument(candidate(5808), [stored(17763, { status })])).toEqual({ why: "no_stored_document" });
+    }
+    expect(findResourceDocument(candidate(5808), [stored(17763, { superseded: true })])).toEqual({ why: "no_stored_document" });
+    expect(findResourceDocument(candidate(5808), [stored(17763, { document_url: null })])).toEqual({ why: "no_stored_document" });
+    expect(findResourceDocument(candidate(5808, { taken_document_ids: [17763] }), [stored(17763)])).toEqual({ why: "document_holds_same_name_import" });
+    expect(findResourceDocument(candidate(5808, { source: "knox" }), [stored(17763)])).toEqual({ why: "knox_fee" });
+    expect(findResourceDocument(candidate(5808, { fee_r2_key: "other/file" }), [stored(17763)])).toEqual({ why: "no_stored_document" });
+  });
+
+  it("restores a takedown, links a live fee with no traceable document, and leaves the repair's fills alone", () => {
+    const plan = planSourceLinkResource(
+      [
+        candidate(5808),
+        candidate(5810, { fee_name: "Returned Deposit", canonical_fee_key: "deposited_item_return" }),
+        candidate(11764, { taken_down: false, rolled_back_reason: null, fee_name: "Copy of Statement", canonical_fee_key: "document_reproduction", amount: "5.00" }),
+        // Its own document gives it a link: the repair's fill, not a re-source.
+        candidate(7315, { taken_down: false, rolled_back_reason: null, source_document_id: 17763, document_institution_id: 6288, document_url: "https://allianceniagara.com/fee-schedule/" }),
+        candidate(146, { fee_name: "Fax Services", canonical_fee_key: "document_reproduction", amount: "2.00" }),
+        candidate(9001, { same_fee_live: true }),
+        // Two fees of one name never take one document (the import's unique key).
+        candidate(9002),
+      ],
+      [stored(17763)],
+    );
+    expect(plan.resources.map((fee) => [fee.feePublishedId, fee.restore, fee.sourceDocumentId])).toEqual([
+      [5808, true, 17763],
+      [5810, true, 17763],
+      [11764, false, 17763],
+    ]);
+    expect(plan.misses.map((fee) => [fee.feePublishedId, fee.why])).toEqual([
+      [146, "not_in_stored_documents:name_not_in_text"],
+      [9001, "same_fee_live"],
+      [9002, "document_holds_same_name_import"],
+    ]);
+  });
+
+  it("writes nothing on a dry run; a live run moves the raw row, restores, queues the source check and records each change", async () => {
+    const candidates = [candidate(5808), candidate(11764, { taken_down: false, rolled_back_reason: null, fee_name: "Copy of Statement", canonical_fee_key: "document_reproduction", amount: "5.00" })];
+    const resourceDb = (failOn?: string) => {
+      const calls: string[] = [];
+      const tag = vi.fn((strings: TemplateStringsArray, ...values: unknown[]) => {
+        const text = strings.join("?");
+        calls.push(text);
+        if (failOn && text.includes(failOn)) return Promise.reject(new Error("permission denied"));
+        if (text.includes("UPDATE raw_fee_observations")) {
+          return Promise.resolve((values[0] as number[]).map((id) => ({ fee_raw_id: id })));
+        }
+        if (text.includes("UPDATE published_fee_records")) {
+          return Promise.resolve((values[0] as number[]).map((id) => ({ fee_published_id: id, institution_id: 6288 })));
+        }
+        return Promise.resolve([]);
+      });
+      const unsafe = vi.fn((text: string) => {
+        calls.push(text);
+        return Promise.resolve(text.includes("taken_document_ids") ? candidates : [stored(17763)]);
+      });
+      Object.assign(tag, { unsafe });
+      return { db: tag as unknown as Parameters<typeof resourceSourceLinks>[0], calls };
+    };
+
+    const dry = resourceDb();
+    const preview = await resourceSourceLinks(dry.db, { runId: 7, batchId: "agentic-run-7", dryRun: true });
+    expect(preview.resources.map((fee) => fee.feePublishedId)).toEqual([5808, 11764]);
+    expect(dry.calls.filter((text) => /UPDATE|INSERT/.test(text))).toEqual([]);
+
+    const live = resourceDb();
+    const result = await resourceSourceLinks(live.db, { runId: 7, batchId: "agentic-run-7", dryRun: false });
+    expect([result.linked, result.restored, result.error]).toEqual([1, 1, null]);
+    const written = live.calls.join("\n");
+    expect(written).toContain("UPDATE raw_fee_observations");
+    expect(written).toContain("SET rolled_back_at = NULL");
+    expect(written).toContain("INSERT INTO pipeline_attempts");
+    expect(written).toContain("INSERT INTO pipeline_feedback");
+    expect(written).toContain("'hamilton.source_link_resource'");
+
+    // A failed write is reported, not thrown: the publish step carries on without the pass.
+    const failing = resourceDb("UPDATE raw_fee_observations");
+    const failed = await resourceSourceLinks(failing.db, { runId: 7, batchId: "agentic-run-7", dryRun: false });
+    expect([failed.linked, failed.restored]).toEqual([0, 0]);
+    expect(failed.error).toMatch(/source link re-source write failed: permission denied/);
   });
 });

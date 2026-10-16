@@ -167,7 +167,7 @@ const spec = {
           unstated_audience_institution_count: {
             type: "integer",
             description:
-              "Institutions in the sample with at least one fee whose schedule doesn't say whether it's personal or business; those fees count as personal.",
+              "Institutions in the sample with at least one fee whose schedule doesn't say whether it's personal or business; those fees count as personal. It counts every institution, while institution_count counts institutions that share one fee schedule once, so the two are not a ratio.",
           },
         },
       },
