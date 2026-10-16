@@ -6,7 +6,7 @@ vi.mock("./connection", () => {
   return { sql, getSql: () => sql };
 });
 
-import { buildIndexEntries, getDistrictFeeMedians, getInstitutionFeeValues, getPeerIndexes, getNationalIndexCached, refreshFeeIndexCache } from "./fee-index";
+import { buildIndexEntries, getDistrictFeeMedians, getInstitutionFeeValues, getPeerIndexes, getNationalIndexCached, getNationalUnstatedAudienceCountsCached, refreshFeeIndexCache } from "./fee-index";
 import { STATS_METHOD_VERSION } from "./fee-stats";
 import { sql } from "./connection";
 
@@ -32,6 +32,21 @@ describe("buildIndexEntries", () => {
   it("counts each institution once at its median and includes $0", () => {
     const [entry] = buildIndexEntries([row(1, 35), row(1, 36), row(1, 37), row(2, 0), row(3, 30), row(4, 32), row(5, 34)]);
     expect(entry).toMatchObject({ institution_count: 5, observation_count: 7, median_amount: 32, min_amount: 0, maturity_tier: "provisional" });
+  });
+
+  it("counts the institutions behind each category with an unstated-audience fee (#1132)", () => {
+    const audience = (r: ReturnType<typeof row>, fee_audience: string) => ({ ...r, fee_audience });
+    const entries = buildIndexEntries([
+      audience(row(1, 30), "unknown"),
+      audience(row(1, 32), "unknown"),
+      audience(row(2, 25), "consumer"),
+      // Institution 3's only fee has no amount (the second argument), so it is not counted.
+      audience({ ...row(3, null), amount: null }, "unknown"),
+      audience(row(4, 5, "monthly_maintenance"), "consumer"),
+    ]);
+    const byCategory = new Map(entries.map((e) => [e.fee_category, e]));
+    expect(byCategory.get("overdraft")?.unstated_audience_institution_count).toBe(1);
+    expect(byCategory.get("monthly_maintenance")?.unstated_audience_institution_count).toBe(0);
   });
 });
 
@@ -101,6 +116,36 @@ describe("getNationalIndexCached", () => {
     const [entry] = await getNationalIndexCached();
     expect(entry).toMatchObject({ fee_category: "overdraft", median_amount: 30, institution_count: 5 });
     expect(db.unsafe).toHaveBeenCalledTimes(1);
+  });
+
+  it("serves a current cache without scanning the catalog for the unstated-audience count (#1595)", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(Date.now() + 120_000); // past the in-process memo from the test above
+    db.mockReset();
+    db.unsafe.mockReset();
+    const computed_at = new Date().toISOString();
+    db.mockResolvedValueOnce([
+      { fee_category: "overdraft", median_amount: 30, institution_count: 50, computed_at, stats_method_version: STATS_METHOD_VERSION },
+      { fee_category: "nsf", median_amount: 29, institution_count: 40, computed_at, stats_method_version: STATS_METHOD_VERSION },
+    ]);
+    const entries = await getNationalIndexCached();
+    vi.useRealTimers();
+    expect(entries.map((e) => [e.fee_category, e.unstated_audience_institution_count])).toEqual([["overdraft", undefined], ["nsf", undefined]]);
+    expect(db.unsafe).not.toHaveBeenCalled();
+  });
+
+  it("reads the unstated-audience count on its own, memoised, and empty on a failed read", async () => {
+    db.unsafe.mockReset();
+    db.unsafe.mockRejectedValueOnce(new Error("timeout"));
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    expect(await getNationalUnstatedAudienceCountsCached()).toEqual(new Map());
+    errors.mockRestore();
+    db.unsafe.mockResolvedValueOnce([{ fee_category: "overdraft", n: "12" }]);
+    expect(await getNationalUnstatedAudienceCountsCached()).toEqual(new Map([["overdraft", 12]]));
+    expect(text(db.unsafe.mock.calls[1])).toContain("fee_audience = 'unknown'");
+    // Memoised: a second read inside the minute makes no query.
+    await getNationalUnstatedAudienceCountsCached();
+    expect(db.unsafe).toHaveBeenCalledTimes(2);
   });
 });
 

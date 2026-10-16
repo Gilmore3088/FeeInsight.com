@@ -113,6 +113,8 @@ export async function buildWrittenAnswerSystemPrompt(input: {
 /** One tool result the answer was written from. */
 export interface WrittenAnswerToolResult {
   toolName: string;
+  /** What the tool was asked for; the eval reads `source` to tell catalog-derived views apart. */
+  input?: unknown;
   output: unknown;
 }
 
@@ -181,7 +183,7 @@ export const writeWrittenAnswer: WrittenAnswerWriter = async ({ institutionId, i
     );
     const text = (result.generated.text ?? "").trim();
     if (!text) return { status: "unavailable", reason: "Hamilton wrote no answer within its steps." };
-    const toolResults = (result.generated.steps ?? []).flatMap((step) => step.toolResults.map((r) => ({ toolName: r.toolName, output: r.output })));
+    const toolResults = (result.generated.steps ?? []).flatMap((step) => step.toolResults.map((r) => ({ toolName: r.toolName, input: r.input, output: r.output })));
     return { status: "written", text, toolResults, check: writtenAnswerCheck(text, toolResults.map((r) => r.output), question) };
   } catch (error) {
     if (isProviderLimitError(error)) return { status: "unavailable", reason: HAMILTON_PAUSED_MESSAGE };

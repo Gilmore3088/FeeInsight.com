@@ -81,6 +81,32 @@ export function combineScores(scores: GateScore[]): GateScore {
   return total;
 }
 
+/**
+ * A key fee as the gate scores it: `category:cents` after the folds and the equivalences, or null
+ * when the gate does not score it (no price, or an "unmapped" line no fold places). Deming's daily
+ * replay of Knox's answer-key misses (#1099) uses the same key, so a case passes when the gate
+ * would count the fee found. Pure.
+ */
+export function gateKeyFor(fee: AnswerKeyDocument["fees"][number], text: string): string | null {
+  const mapped = fee.key === "unmapped" ? { ...fee, key: foldedCategory(fee.source_line ?? "") ?? "unmapped" } : fee;
+  if (mapped.key === "unmapped" || mapped.amount == null) return null;
+  const key = keyCategory(mapped, text);
+  return `${EQUIVALENT[key] ?? key}:${cents(Number(mapped.amount))}`;
+}
+
+/** One read (`category:cents`, from `reproducibleFees`) keyed as the gate compares it. Pure. */
+export function gateReadKey(read: string): { key: string; amount: number; normalized: string } {
+  const split = read.lastIndexOf(":");
+  const key = read.slice(0, split);
+  const amount = Number(read.slice(split + 1));
+  return { key, amount, normalized: `${EQUIVALENT[key] ?? key}:${amount}` };
+}
+
+/** Today's free reads of a text, keyed as the gate compares them (`category:cents`). Pure. */
+export function gateReads(text: string): Set<string> {
+  return new Set([...reproducibleFees(text)].map((read) => gateReadKey(read).normalized));
+}
+
 export function scoreAnswerKeys(documents: AnswerKeyDocument[]): GateScore {
   const score: GateScore = {
     documents: documents.length,
@@ -95,18 +121,14 @@ export function scoreAnswerKeys(documents: AnswerKeyDocument[]): GateScore {
     errors: [],
   };
   for (const document of documents) {
-    const priced = document.fees
-      .map((fee) => (fee.key === "unmapped" ? { ...fee, key: foldedCategory(fee.source_line ?? "") ?? "unmapped" } : fee))
-      .filter((fee) => fee.key !== "unmapped" && fee.amount != null)
-      .map((fee) => ({ ...fee, key: keyCategory(fee, document.text) }));
-    const expected = new Set(priced.map((fee) => `${EQUIVALENT[fee.key] ?? fee.key}:${cents(Number(fee.amount))}`));
+    // The same keys Deming's daily replay of Knox's misses uses (#1099): one implementation.
+    const expected = new Set(
+      document.fees.map((fee) => gateKeyFor(fee, document.text)).filter((key): key is string => key != null),
+    );
     const keyAmounts = new Set(document.fees.filter((fee) => fee.amount != null).map((fee) => cents(Number(fee.amount))));
     const found = new Set<string>();
     for (const read of reproducibleFees(document.text)) {
-      const split = read.lastIndexOf(":");
-      const key = read.slice(0, split);
-      const amount = Number(read.slice(split + 1));
-      const normalized = `${EQUIVALENT[key] ?? key}:${amount}`;
+      const { amount, normalized } = gateReadKey(read);
       score.reads += 1;
       if (expected.has(normalized)) {
         score.right += 1;

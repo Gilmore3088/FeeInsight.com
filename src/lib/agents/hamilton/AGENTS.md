@@ -352,6 +352,37 @@ the detail.
     `eval_critical:<verdict>`; the name rules learned from them (a rebate as an ATM fee, a
     "no fee for" or waiver sentence as a $0 fee, and others) on their second look,
     `not_a_fee:<rule>`.
+10b. Account type hold (`account-type-hold.ts`, #1100 gap 1, James Oct 16): monthly maintenance
+    is the consumer checking account's fee. A live monthly maintenance fee of a savings, money
+    market, club, business or IRA/HSA/CD account (`accountTypeOf` in `src/lib/account-type.ts`:
+    the fee's name when it says checking, then the lineup product, then the fee's name; a
+    disclosure title such as "Truth in Savings", a perk such as "Health Savings Card" and the
+    bank's own name name no account) comes down, `account_type_hold: <type> (#1100)`, and
+    its verified row stays verified with `account_type:<type>`; publish skips a flagged row
+    (`publishSkipReason`). A verified, unpublished row of such an account is flagged before
+    publish reads it. A row the guard refused only for its account words goes back to verified,
+    held, when it passes every check with those words set aside and traces in its own text;
+    otherwise it stays rejected with the flag. A checked row with no type and a lineup
+    product gets `account_type_checked:v1` and is not read again; a row with no product is read
+    again on every step, since a later Knox read can fill its product. One event per run names every row.
+    A fee a hand check found wrongly typed stays live through `ACCOUNT_TYPE_KEEP_LIVE` (one line per
+    fee with its reason; 28834 first).
+    A failed read or write writes nothing; the error is kept in `detail.account_type_hold.error`
+    and as a `step.warning` run event.
+10a. Hand fixes James approved, fixed lists checked against the live row before each write:
+    `hand-amount-corrections.ts` (#1334, cut cents corrected in place) and
+    `cut-name-duplicates.ts` (#1196): a cut-name row that repeats a clean live row at the same
+    institution, category and price comes down while the clean row is still live,
+    `cut_name_duplicate: live fee #<kept id>`, and its verified row is rejected
+    (`hand_rejected:cut_name_duplicate`). Each run that changes a row writes one event naming them.
+    `hand-takedowns.ts` (James, Oct 16, DECISIONS.md): up to about 25 live fees, each confirmed
+    wrong on amount or category against its bank's own stored text and checked by a reviewer, as
+    one entry each (first: #1496's two fax fees). A row comes down only while it still reads as
+    listed (institution, category, name, price), checked in the read and again in the `UPDATE`,
+    with the entry's reason (`source_mismatch: #<issue>`); its verified row is rejected
+    (`hand_rejected:hand_takedown`), a feedback row and one run event name it, and a ledger line
+    goes on #1026. In both lists a failed read or write never fails the publish: the step detail
+    carries its `error` and the run gets a `step.warning` event.
 11. Article page (`article-page.ts`): a fee read from an article, on its second look,
     `article_page: #<document id>`.
 12. Product page (`product-page.ts`): a $0 benefit bullet Knox's free reader took from a
@@ -407,6 +438,14 @@ the detail.
     (`hamilton.frequency_fill:v<N>:fix:<id>:<from>:<to>`), because `pipeline_feedback` upserts
     on its key and an old key was silently overwritten. The excerpt is read from
     `COALESCE(extraction_note, conditions)`.
+    Overdraft plan hold (#1360, no version change, `OVERDRAFT_PLAN_HOLD_LIVE` on since Oct 16,
+    James 04:53 UTC: "Retire wrong copy"): an overdraft program the keep above leaves monthly was,
+    in every case checked on the bank's own page, an optional plan, not the overdraft fee. It is
+    held (`frequency_hold: an optional overdraft plan ...`) when its bank has another live overdraft
+    fee charged per item (or blank) above $0; a bank's only overdraft row keeps it (92746, James's
+    call). Off (`planHoldLive: false`), a step lists them in `frequency_plan_would_hold`. Oct 16
+    dry run, re-counted at switch-on: 1 (Selco's 143753, $10 a month, beside its $25 per-item
+    Courtesy Pay).
 19. Newer-copy check (`newer-copy-retire.ts`): a fee line gone from a newer copy of its page,
     `newer_copy_drops_fee:#<newer document id>` (`NEWER_COPY_RETIRE_LIVE` is true; false makes
     it a shadow run).
@@ -607,8 +646,10 @@ on page, not printed, no text, would close, samples) and closes the repeats. Rol
 **Page copies (#1439, shadow).** One schedule stored under several addresses ("?print=1", "www.",
 "%20", a mirror) is several documents, so a line of it went live once per copy.
 `page-copy-collapse.ts` groups live rows of one institution, category, variant and exact amount
-read from different documents of one page (`feePageKey`) under the same or a near name. It keeps a
-current copy (`superseded_by_id` unset) over a replaced one, then the latest edition: by the
+read from different documents of one page (`feePageKey`) under the same or a near name. It never
+keeps a replaced copy (`superseded_by_id` set) when the copy that replaced it, or a current copy of
+the same address, is in the group; a replaced copy of one address is not ranked below a current copy of another, which may be
+an older edition. Then it keeps the latest edition: by the
 editions the texts state when every copy in the group states one (the latest "effective" date not
 after the read, so an announced change does not count), else by when each was last read or
 re-confirmed (`GREATEST(last_checked_at, crawled_at)`); equal editions fall to the later read. The
@@ -620,9 +661,16 @@ documents for different audiences are never copies: the audience named in the UR
 (camel case split), else the one the text keeps naming (three or more mentions and three times the
 other, "business day" not counted, so a menu or footer link decides nothing). A pair the kept text
 prints as two lines, or under both a personal and a business heading, stays two fees. Frequencies
-and audiences must agree or be unstated. Up to 25 institutions per step, picked by the run id; each
+and audiences must agree or be unstated. A row read from a copy that a newer copy replaced (`superseded_by_id`
+names the kept row's document) pairs with the kept row under another name that shares a word
+(#1348): the newer copy reading "Temporary checks" as "Temporary checks (sheet of 3 checks)" is one
+line, and closes on the same tests unless the newer copy prints both names as lines of their own. A
+line the newer copy dropped ("Money Order" beside "Temporary checks") shares no word and never
+pairs; a box size counts as a word ("Safe Deposit Box - 3x5" / "3 x 5"), and two names that each
+give a size must share one ("Safe Deposit Box - 3x10" / "Safe Deposit Box 3 x 5" never pair). A partner of the same name is taken first, then a near name, then a renamed one. `renamed`
+in the step detail counts these pairs, closed or kept, and `renamed_samples` lists those that close. Up to 25 institutions per step, picked by the run id; each
 step reports `page_copy_collapse` (live, institutions, pairs, apart on page, unproven, other
-document, would close, samples, and `error` when the read failed). `PAGE_COPY_COLLAPSE_LIVE` stays
+document, renamed, would close, samples, and `error` when the read or the close failed). `PAGE_COPY_COLLAPSE_LIVE` stays
 off until James approves the dry-run counts. Rollback: clear `rolled_back_at` on rows whose reason
 ends in `(copy of the page)`. A closed copy is not restored if its kept copy later comes down; like
 the other collapses, that is a gap to close before this goes live.
@@ -635,6 +683,18 @@ audience, then its frequency, then is newest). A row the collapse would close is
 reported in the step's `publish_duplicate_check`, with `closed_by_late_collapse` for agreement.
 While `PUBLISH_REFUSE_DUPLICATES_LIVE` is false nothing is refused; turning it on (skip reason
 `Exact duplicate of live fee #<id>`) needs James's OK.
+
+**At publish (#1069 step 2, shadow).** The rows a publish step is about to decide are read, once
+per batch, with three sweeps' own SQL in their `"verified"` scope (`publish-sweep-rules.ts`):
+another bank's document (`otherBankFeesSql`), an unconfirmed host that does not name the bank
+(`unconfirmedHostFeesSql`), and a business schedule's fee beside the bank's live consumer fee in
+its category (`businessScheduleFeesSql`; a footnote-only business fee stays the sweep's, since it
+needs the page read). The sweeps and publish share one builder per rule, so they cannot disagree;
+the sweeps stay the live re-check and this check takes nothing down. A row a sweep would take down
+is counted in the step's `publish_sweep_check` (`would_refuse`, `by_rule`, samples, and `error`
+when a read failed; a failed read refuses nothing). While `PUBLISH_REFUSE_SWEEP_RULES_LIVE` is
+false nothing is refused; turning it on (skip reason `Refused at publish, a sweep would take it
+down: <the sweep's reason>`) needs James's OK.
 
 ## Rules Re-check
 
@@ -731,6 +791,14 @@ samples per route; the publish summary names the counts. Once on, account resear
 withdrawal and returned mail fees (`EXCESS_WITHDRAWAL`, `RETURNED_MAIL` in `fee-fold.ts`) move by
 name. Account research keeps research, reconciliation, balancing, charge-off and ATM adjustment
 charges.
+
+`HAND_REFILES` in the same file re-files or renames listed live fees in place (James approved
+each batch: #1299, #1304, #1196). A row moves only while it is still under its listed category
+at its listed price, and a rename is done once the live name reads as listed, so a re-run
+changes nothing. An in-place rename that carries an `oldName` runs only while the live name is
+exactly that old name, so it runs once and never replaces a better name a later read or retidy
+gave the fee. Each move writes a `pipeline_feedback` row with the old and new name, and the
+run gets one `hamilton.taxonomy_fold.hand_refile` event naming every row and its after-state.
 
 ## Source Link Repair
 

@@ -135,7 +135,7 @@ function ownerHref(row: DataTrustQueueRow): string {
   if (row.owner === "magellan") return "/admin/magellan";
   if (row.owner === "darwin") return "/admin/darwin";
   if (row.owner === "knox") return "/admin/knox";
-  if (row.owner === "hamilton") return "/admin/hamilton";
+  if (row.owner === "gutenberg") return "/admin/hamilton";
   return "/admin";
 }
 

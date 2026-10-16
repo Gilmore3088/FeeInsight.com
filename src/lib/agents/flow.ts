@@ -1,6 +1,7 @@
 import { unstable_cache } from "next/cache";
 import { sql } from "@/lib/data-store/connection";
 import { DARWIN_VERIFY_STRATEGY } from "./darwin/verify";
+import { PUBLISHER_AGENT_NAMES } from "./gutenberg/names";
 import { INSTITUTION_STEPS, isWentLive, movesFromEvents, nowFromSteps, toObject, type FlowSnapshot, type FlowWaiting, type Sample } from "./flow-model";
 
 export * from "./flow-model";
@@ -15,7 +16,9 @@ export * from "./flow-model";
  * so they are cached for five minutes and shared by every viewer.
  */
 
-const FLOW_WORKERS = ["magellan", "rosetta", "knox", "darwin", "hamilton"];
+// Publish steps from before #1075 step 2 carry Hamilton's name, so both publisher names are read;
+// `STEP_OWNER` files every publish move under Gutenberg either way.
+const FLOW_WORKERS = ["magellan", "rosetta", "knox", "darwin", ...PUBLISHER_AGENT_NAMES];
 
 export async function getFlowSnapshot(): Promise<FlowSnapshot> {
   const [events, active] = await Promise.all([
@@ -145,7 +148,7 @@ export const getFlowWaiting = unstable_cache(
             AND fv.outlier_flags ? 'agentic_darwin_verified'
             AND NOT EXISTS (
               SELECT 1 FROM published_fee_records fp
-               WHERE fp.lineage_ref = fv.fee_verified_id AND fp.rolled_back_at IS NULL)) AS hamilton,
+               WHERE fp.lineage_ref = fv.fee_verified_id AND fp.rolled_back_at IS NULL)) AS gutenberg,
         (SELECT COUNT(DISTINCT institution_id)::int FROM published_fee_catalog) AS published,
         (SELECT COUNT(*)::int FROM institution_sources) AS total
     `;
@@ -154,7 +157,7 @@ export const getFlowWaiting = unstable_cache(
       rosetta: Number(row?.rosetta ?? 0),
       knox: Number(row?.knox ?? 0),
       darwin: Number(row?.darwin ?? 0),
-      hamilton: Number(row?.hamilton ?? 0),
+      gutenberg: Number(row?.gutenberg ?? 0),
       published: Number(row?.published ?? 0),
       total: Number(row?.total ?? 0),
     };

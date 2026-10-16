@@ -75,7 +75,11 @@ hand-found link or paid-fetched document starts a new run even inside the retry 
   for its retry window, or for its state's lane to read the page first.
 - In the tick, a direct run ahead of a state lane stops starting steps while the next one would
   leave the lane no room for its first work (`run-store.ts`, `laneFirstWorkMs`). The lane then
-  gets the tick's first-step exemption.
+  gets the tick's first-step exemption. A state re-search run idle 15 minutes
+  (`LANE_ROOM_MAX_IDLE_MS`) takes one step without leaving that room, since its `discover` never
+  fits beside a fresh lane's first work (#1421); Read-now runs always leave it. The bound is firm
+  only when the re-search run is the tick's first row: several waiting re-search runs can each take
+  a step ahead of the lane.
 
 ## State lanes: cadence and state experts
 
@@ -142,6 +146,15 @@ hand-found link or paid-fetched document starts a new run even inside the retry 
   state's work list (`work_list_groups`, #1029): its size groups under $10B, furthest below
   the coverage target first, the order Magellan's paid passes take its institutions in
   (`state-expert/work-list.ts`; see Magellan's AGENTS.md).
+  The step also keeps dated state notes (#1573, `state-expert/notes.ts`, table
+  `state_expert_notes`, read and written through `data-store/state-expert-notes.ts`): a
+  `document_type` note naming the most common kinds of stored fee documents in the state
+  (Rosetta's `agent_source_texts.document_kind`, at least 10 classified texts) and their usual
+  format, written when its text differs from the state's latest one; and a `state_fee_rule`
+  note per signed state fee bill (`reg_tracker_items`, Open States), once per bill. Each note
+  carries the run id. Every non-dry pass records a `state_expert.notes` event; before the
+  migration (20270110000052) it is `skipped` and nothing is written. A dry run writes nothing.
+  `/admin/states/<ST>/expert` lists the notes, newest first.
 
 ## Goal scorecard (#1040)
 

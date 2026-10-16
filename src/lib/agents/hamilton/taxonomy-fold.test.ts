@@ -72,6 +72,29 @@ const PAGE_LINES: Record<number, string> = {
   97560: "Out of Network ATMs \ufffd\ufffd\ufffd $2\ufffd00/Transaction | Non-Sufficient Funds \ufffd\ufffd\ufffd\ufffd$30/item",
   98064: "Copies of a canceled draft (check) .................... $2.00 each | Inactive Account (after \u0101\u0102 monthsof inactivity) \u010b\u010b\u010b$5.00\u0125month",
   92156: "Safe Deposit Boxes\n\nLost Key Replacement - each key | $20.00\n\nDrilling Box | Actual Cost\n\nLate Payment Fee - if payment is not made within 60 days of due date, late fee will apply | $10.00\n\nBox prices vary based on size.",
+  // #1196 group 2: each row's stored Knox excerpt (prod, Oct 15).
+  99578: "13 Account will default to a mailed statement and a monthly $2 mailed statement service charge will be charged to your account per statement cycle",
+  97539: "(12 consecutive months of | Key Replacement | $30.00 each",
+  65410: "36 months, 48 months, 60 months | Official Bank Check $5.00 per item",
+  65411: "18 Month Variable Rate IRA CD | Money Order Stop Payment $25.00 per item",
+  53490: "11 Inactive Account Inactive Account: $5.00",
+  68521: "12 posted and settled debit card transactions | • Draft Photocopies.............................$ 3.00 / Check",
+  88066: "or less; | 16 Verification of Deposit .................................................................................................. $10.00",
+  88067: "; and | 17 Processing Levies, Garnishments, Attachments, and other Legal Liens – Each....... $75.00",
+  88068: "18 Starter/Temporary Checks – 2 Pages at No Charge",
+  57548: "12 Money Order Fee for First Step Accounts $1.70.",
+  108912: "or Less | 31 Days of Interest | Dormant Account (after first 12 months) | $12.00/year",
+  131129: "ATM Transactions at DFCU ATM (Local ATM) | 15 free ATM transactions per month and 15 free balance inquiries per month; then $2.00/transaction or",
+  70319: "VISA Gift Card – Inactivity Fee after 12 Months of Inactivity $2.95/month",
+  // #1512, #1513: each row's own stored text (agent_source_texts, prod, read-only, Oct 16).
+  139453: "Card Replacement\nCredit or debit card replacement fee Rush Order Fee\n$10 per card; $45 per card\nFirst card issued is free.",
+  61871: "Returned Wire Fee Varies Bill Pay Gift Check ……………………………… $2.99\nEscheatment Fee $100.00",
+  73876: "• Change of Lock Fee: Current locksmith charges • Drilling of Box Fee: Current locksmith charges • Key Deposit Fee: $10.00 Share Value • Par Value of One Share",
+  14294: "Schedule of Fees\nCONSUMER CHECKING ACCOUNTS | BUSINESS ACCOUNTS 2\nXplore Spend Account* | Xplore Business Savings\nMonthly Service Charge (if balance falls below $100) ……….. $5.00 | Minimum deposit/balance …………………………………... $5.00\nRenew Spend Account* | Online Banking/Online Bill Pay ……………………………… FREE\nMonthly Service Charge ………………………..…………… $5.00 | Paper Statement Fee (waived with e-Statements) ……...……... $5.00\nStudent Spend Account* | Xplore Business Checking\nMonthly Service Charge …………………………………….. $0.00 | See table below for fee disclosure.",
+  70046: "Fresh Start Checking* | Monthly maintenance fee with Direct Deposit. Monthly maintenance fee w/o Direct Deposit | $12.00/mo $15.00/mo\n\nNext Step Checking* | Monthly maintenance fee | $9.00/mo",
+  139131: "IRA Closure Fee IRA Minimum Balance Fee8 | $5.00 $4.00/month\n\nMoney Order | $2.50",
+  43277: "Stop Payment ……………………………………………..……......... $32 | OTHER FEES AND SERVICES\nUndeliverable Mail ……...………………………….......……....… $15 | Account Reconciliation .………......………....…….….…........ $35\nOne-time fee upon return of 2nd undeliverable item",
+  63055: "Stop Payments\nWire Trans. (Dom. Outgoing) …........…$18.00 per Wire\nDebit, ACH, Personal Check…..$35.00 per Item\nWire Trans. (Intern. Outgoing) ………...$35.00 per Wire\nStop Payment",
 };
 
 function liveRow(id: number, key: string, amount: string, name = "(misread cell)") {
@@ -167,6 +190,49 @@ describe("hand re-files of misread live fees (retidy v15 review, Oct 9)", () => 
     }
     // 28554 ("No contents ... included in the ATM", $2/envelope) is not moved to either new type.
     expect(HAND_REFILES.find((refile) => refile.feePublishedId === 28554)?.to).toBe("account_research");
+  });
+});
+
+describe("hand fixes of joined or misfiled live fees (#1512, #1513; James, Oct 16)", () => {
+  // As they read live on prod, read-only, Oct 16.
+  const ROWS = [
+    liveRow(139453, "rush_card", "10.00", "Credit or debit card replacement fee Rush Order Fee"),
+    liveRow(61871, "bill_pay", "2.99", "Returned Wire Fee Varies Bill Pay Gift Check ………………………………"),
+    liveRow(73876, "safe_deposit_box", "10.00", "Change of Lock Fee: Current locksmith charges Drilling of Box Fee: Current locksmith charges Key Deposit Fee"),
+    liveRow(14294, "monthly_maintenance", "5.00", "Renew Spend Account Monthly Service Charge ………………………..…………… Student Spend Account Monthly Service Charge ……………………………………."),
+    liveRow(70046, "monthly_maintenance", "12.00", "Fresh Start Checking: Monthly maintenance fee with Direct Deposit. Monthly maintenance fee w/o Direct Deposit"),
+    liveRow(139131, "ira_termination", "5.00", "IRA Closure Fee IRA Minimum Balance Fee"),
+    liveRow(43277, "account_research", "15.00", "Undeliverable Mail ……...………………………….......……....…"),
+    liveRow(63055, "wire_domestic_outgoing", "35.00", "Wire Trans. (Intern. Outgoing) ………"),
+  ];
+
+  it("renames or re-files all eight while they still read as listed", () => {
+    expect(planHandRefiles(ROWS).map((move) => [move.refile.feePublishedId, move.currentKey, move.refile.to, move.refile.name])).toEqual([
+      [139453, "rush_card", "card_replacement", "Credit or debit card replacement fee"],
+      [61871, "bill_pay", "bill_pay", "Bill Pay Gift Check"],
+      [73876, "safe_deposit_box", "safe_deposit_box", "Key Deposit Fee"],
+      [14294, "monthly_maintenance", "monthly_maintenance", "Renew Spend Account: Monthly Service Charge"],
+      [70046, "monthly_maintenance", "monthly_maintenance", "Fresh Start Checking: Monthly maintenance fee with Direct Deposit"],
+      [139131, "ira_termination", "ira_termination", "IRA Closure Fee"],
+      [43277, "account_research", researchSplitTarget("returned_mail"), "Undeliverable Mail"],
+      [63055, "wire_domestic_outgoing", "wire_intl_outgoing", "Wire Trans. (Intern. Outgoing)"],
+    ]);
+    // Each old name is the live name the entry was written against.
+    for (const row of ROWS) expect(HAND_REFILES.find((refile) => refile.feePublishedId === row.fee_published_id)?.oldName).toBe(row.fee_name);
+  });
+
+  it("runs once: a fixed, re-priced or since-renamed row is left alone", () => {
+    const fixed = ROWS.map((row) => {
+      const refile = HAND_REFILES.find((entry) => entry.feePublishedId === row.fee_published_id)!;
+      return { ...row, canonical_fee_key: refile.to, fee_name: refile.name };
+    });
+    expect(planHandRefiles(fixed)).toEqual([]);
+    expect(planHandRefiles(ROWS.map((row) => ({ ...row, amount: "99.00" })))).toEqual([]);
+    expect(planHandRefiles([{ ...ROWS[1], fee_name: "Bill Pay Gift Check (each)" }])).toEqual([]);
+  });
+
+  it("leaves the eighth joined row (142965) to the hand takedown: its $10 is not the courtesy pay fee", () => {
+    expect(HAND_REFILES.some((refile) => refile.feePublishedId === 142965)).toBe(false);
   });
 });
 

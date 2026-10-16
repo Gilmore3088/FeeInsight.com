@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useId, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
+import { flushSync } from "react-dom";
 import Link from "next/link";
 import { trackEvent } from "@/lib/analytics";
 import { US_STATES } from "@/lib/us-map-paths";
-import { STATE_TO_DISTRICT } from "@/lib/fed-districts";
+import { DISTRICT_NAMES, STATE_TO_DISTRICT } from "@/lib/fed-districts";
 import type { MarketLadderData } from "@/app/for-institutions/market-ladder";
 import type { DistrictPoint, HomeData, RangeEntry, SampleRow, SampleView } from "./landing-shared";
 
@@ -20,6 +21,13 @@ const top10 = (v: number) => Math.max(10, Math.ceil(v / 10) * 10);
 const pct = (v: number, hi: number) => `${Math.max(0, Math.min(100, (v / hi) * 100))}%`;
 const at = (ms: number) => ({ "--fi-d": `${ms}ms` }) as CSSProperties;
 const COUNT = new Intl.NumberFormat("en-US");
+
+/**
+ * The room the site's sticky header (h-14, 56px) takes at the top of the screen, plus a
+ * little air: a card counts as on screen only below it, and a card scrolled into view stops
+ * under it. One figure for both, so the test and the scroll cannot disagree.
+ */
+export const HEADER_OFFSET = 80;
 
 /* ───────────────────────── District map ───────────────────────── */
 
@@ -123,8 +131,13 @@ export function DistrictMap({ data }: { data: HomeData }) {
   const order = SWEEP.filter((n) => byNumber.has(n));
   /** The one district in the tab order: the chosen one, else the first west to east. */
   const tabStop = selected !== null && byNumber.has(selected) ? selected : order[0] ?? SWEEP[0];
-  /** A deliberate pick (click, Enter, a dot), counted so we learn whether the map earns its place. */
+  /**
+   * Choosing a district, by click, Enter, a dot or an arrow key. Counted only when the choice
+   * changes (a click on the chosen district is not a pick), so we learn whether the map earns
+   * its place. Hover only previews and is never counted.
+   */
   const pick = (n: number) => {
+    if (n === selected) return;
     setSelected(n);
     trackEvent("demo_district_picked", { district: n });
   };
@@ -140,7 +153,7 @@ export function DistrictMap({ data }: { data: HomeData }) {
     const next = order[(order.indexOf(n) + step + order.length) % order.length];
     const svg = event.currentTarget.ownerSVGElement;
     (svg?.querySelector(`[data-district="${next}"]`) as SVGGElement | null)?.focus();
-    setSelected(next);
+    pick(next);
   };
   const metricRadios = useRef<(HTMLButtonElement | null)[]>([]);
   const onMetricKey = (event: KeyboardEvent<HTMLButtonElement>, i: number) => {
@@ -265,7 +278,37 @@ export function DistrictMap({ data }: { data: HomeData }) {
         {selected !== null ? label(chosen, selected) : ""}
       </p>
       <DistrictPanel district={active} number={activeNumber} districts={districts} national={overdraft} onPick={pick} swatchOf={swatchOf} />
+      <DistrictReportLinks />
     </div>
+  );
+}
+
+/**
+ * All 12 district reports as plain links, in the server render whichever district is chosen,
+ * so crawlers and keyboard visitors reach each one. Closed by default under the map.
+ */
+export function DistrictReportLinks() {
+  return (
+    <details className="group text-[13px] lg:col-span-2" data-district-reports="">
+      <summary className="inline-flex min-h-10 cursor-pointer list-none items-center gap-1.5 font-semibold text-ink-soft hover:text-ink [&::-webkit-details-marker]:hidden">
+        <span aria-hidden="true" className="inline-block transition-transform group-open:rotate-90 motion-reduce:transition-none">
+          ›
+        </span>
+        All 12 district reports
+      </summary>
+      <ul className="mt-1 grid grid-cols-2 gap-x-4 gap-y-0.5 sm:grid-cols-3 lg:grid-cols-4">
+        {Object.entries(DISTRICT_NAMES).map(([n, name]) => (
+          <li key={n}>
+            <Link
+              href={`/research/district/${n}`}
+              className="inline-flex min-h-9 items-center text-ink-soft underline decoration-border underline-offset-4 hover:text-ink hover:decoration-ink"
+            >
+              {n} {name}
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </details>
   );
 }
 
@@ -421,6 +464,19 @@ const POSITION_WORDS: Record<SampleRow["position"], string> = {
   free: "Free, below the local market",
 };
 
+/** The shortest bar drawn for a gap that is not zero, in pixels. */
+export const MIN_BAR_PX = 4;
+
+/**
+ * Where to scroll after a tap on a phone, as an offset from the current scroll: the demo's top
+ * (its tabs and the line naming the bank) under the sticky header when the window's top down
+ * to the card's bottom fits on screen, else the card's own top under the header.
+ */
+export function scrollTargetTop(card: { top: number; bottom: number }, frame: { top: number } | null, viewport: number): number {
+  if (frame && card.bottom - frame.top <= viewport - HEADER_OFFSET) return frame.top - HEADER_OFFSET;
+  return card.top - HEADER_OFFSET;
+}
+
 /** The fee to open on: the furthest from its local median. */
 export function firstFee(rows: SampleRow[]): string | null {
   return [...rows].sort((a, b) => Math.abs(b.amount - b.median) - Math.abs(a.amount - a.median))[0]?.key ?? null;
@@ -445,9 +501,10 @@ export function MyFeesChart({ sample, freshness }: { sample: SampleView; freshne
     const el = card.current;
     if (!el || typeof window === "undefined" || !window.matchMedia?.("(max-width: 1023.98px)").matches) return;
     const box = el.getBoundingClientRect();
-    if (box.top >= 64 && box.bottom <= window.innerHeight) return;
+    if (box.top >= HEADER_OFFSET && box.bottom <= window.innerHeight) return;
     const still = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    el.scrollIntoView({ block: "nearest", behavior: still ? "auto" : "smooth" });
+    const top = scrollTargetTop(box, el.closest<HTMLElement>("[data-demo-window]")?.getBoundingClientRect() ?? null, window.innerHeight);
+    window.scrollTo({ top: window.scrollY + top, behavior: still ? "auto" : "smooth" });
   };
   return (
     <div className="grid gap-4 p-4 sm:p-6 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)] lg:grid-rows-[auto_1fr] lg:gap-x-8 lg:gap-y-3">
@@ -469,7 +526,8 @@ export function MyFeesChart({ sample, freshness }: { sample: SampleView; freshne
       {row ? (
         <div
           ref={card}
-          className="flex min-w-0 scroll-mt-20 flex-col rounded-xl border border-border bg-paper/50 p-4 sm:p-5 lg:col-start-2 lg:row-span-2 lg:row-start-1"
+          style={{ scrollMarginTop: HEADER_OFFSET }}
+          className="flex min-w-0 flex-col rounded-xl border border-border bg-paper/50 p-4 sm:p-5 lg:col-start-2 lg:row-span-2 lg:row-start-1"
           aria-live="polite"
           data-fee-detail=""
         >
@@ -497,7 +555,8 @@ export function MyFeesChart({ sample, freshness }: { sample: SampleView; freshne
         <div className="relative" role="group" aria-label={`${sample.institutionName}: each fee against its local median`}>
           {rows.map((r, i) => {
             const diff = r.amount - r.median;
-            const width = `${(Math.abs(diff) / maxAbs) * 50}%`;
+            // A gap too small to see still draws a short stub, so every non-zero bar can be seen.
+            const width = `max(${MIN_BAR_PX}px, ${(Math.abs(diff) / maxAbs) * 50}%)`;
             const on = r.key === row?.key;
             return (
               <button
@@ -591,6 +650,11 @@ export function openingPrice(national: RangeEntry, medians: number[]): number {
 
 const DOT = 12;
 const DOT_STEP = 14;
+/**
+ * The price track's width before it is measured: about a 360px phone's (the screen less the
+ * section, window and slider padding).
+ */
+export const TRACK_GUESS = 280;
 
 /**
  * Lays out the district dots: equal medians cluster three to a row, so a crowded value reads
@@ -639,20 +703,26 @@ export function PriceSlider({ data }: { data: HomeData }) {
   const inputId = useId();
   const drawn = districts.filter((d): d is DistrictPoint & { median: number } => d.median !== null);
   const [price, setPrice] = useState(() => (overdraft ? openingPrice(overdraft, drawn.map((d) => d.median)) : 0));
-  // The track's width, so dots that would touch on a phone stack instead; a desktop guess
-  // until the first measure.
+  // The track's width, so dots that would touch on a phone stack instead. It starts from a
+  // phone's width; the measure is applied before the browser paints (flushSync inside the
+  // observer), so neither a phone nor a desktop sees the dots move. A hidden tab measures 0
+  // and keeps the last width.
   const track = useRef<HTMLDivElement>(null);
-  const [width, setWidth] = useState(960);
+  const [width, setWidth] = useState(TRACK_GUESS);
   useEffect(() => {
     const el = track.current;
     if (!el || typeof ResizeObserver === "undefined") return;
-    const ro = new ResizeObserver(() => setWidth(el.clientWidth || 960));
+    const ro = new ResizeObserver(() => {
+      const measured = el.clientWidth;
+      if (measured > 0) flushSync(() => setWidth(measured));
+    });
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
   if (!overdraft || !scenario) return null;
   const hi = top10(Math.max(overdraft.max_amount, scenario.price, ...drawn.map((d) => d.median)));
   const passed = drawn.filter((d) => price > d.median).length;
+  const atPrice = drawn.filter((d) => Math.abs(d.median - price) < 0.005).length;
   const diff = price - overdraft.median_amount;
   const band =
     price < overdraft.p25_amount ? "Below the middle half" : price > overdraft.p75_amount ? "Above the middle half" : "Inside the middle half";
@@ -742,6 +812,12 @@ export function PriceSlider({ data }: { data: HomeData }) {
           <span aria-hidden="true" className="h-2.5 w-2.5 rounded-full" style={{ background: "var(--fi-viz-above)" }} />
           A district median under this price
         </span>
+        {atPrice > 0 ? (
+          <span className="flex items-center gap-1.5" data-at-price="">
+            <span aria-hidden="true" className="h-2.5 w-2.5 rounded-full" style={{ background: "var(--fi-viz-inside)" }} />
+            On the line: at this price, not under it
+          </span>
+        ) : null}
         <span>A scenario, not advice</span>
       </p>
     </div>

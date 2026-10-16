@@ -29,6 +29,7 @@ import {
   deriveRefreshJobTypes,
   enqueueHamiltonRefreshJobsForSignal,
   fetchQueuedHamiltonRefreshJobs,
+  refreshJobReason,
 } from "./refresh-jobs";
 
 describe("Hamilton refresh jobs", () => {
@@ -144,5 +145,14 @@ describe("Hamilton refresh jobs", () => {
     expect(mocks.state.sqlCalls[0].text).toContain("institution_id = ANY");
     expect(mocks.state.sqlCalls[0].text).toContain("hamilton_refresh_job_completions");
     expect(mocks.state.sqlCalls[0].values).toEqual([["2945"], -1, 5]);
+  });
+});
+
+describe("refreshJobReason", () => {
+  it("shows a signal-title reason in plain words and leaves other reasons alone", () => {
+    expect(refreshJobReason("hamilton_publication_completed", "Capital City Bank - 12 rows published")).toBe("Capital City Bank - published fees updated");
+    expect(refreshJobReason("hamilton_fee_movement_detected", "Capital City Bank - 2 published fee movements detected")).toBe("Capital City Bank - 2 published fees changed");
+    expect(refreshJobReason("hamilton_publication_completed", "Refresh report")).toBe("Refresh report");
+    expect(refreshJobReason(null, null)).toBe("Refresh queued");
   });
 });

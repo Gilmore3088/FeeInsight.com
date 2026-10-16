@@ -2,9 +2,11 @@
 
 import { useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import Link from "next/link";
+import { PRIMARY_CTA_NAV } from "@/components/nav-items";
 import type { IndexEntry } from "@/lib/data-store/fee-index";
 import { getDisplayName, FAMILY_COLORS } from "@/lib/fee-taxonomy";
 import { formatFeeAmount } from "@/lib/format";
+import { percentFeeAllowed } from "@/lib/percent-fees";
 import type { DistrictMedian, NationalFinding } from "./findings";
 import {
   CpiBars,
@@ -30,11 +32,16 @@ const PANEL_ID = "fee-panel";
 const DEFAULT_FEE = "overdraft";
 /** The query parameter that carries the selected fee, so a forwarded link opens on it. */
 export const FEE_PARAM = "fee";
-/** The homepage hero's institution search (InstitutionSearchForm posts a GET here). */
-export const INSTITUTION_SEARCH_HREF = "/institutions";
+/** The site's primary next step, the institution search; read from the nav so the two cannot drift. */
+export const INSTITUTION_SEARCH_HREF = PRIMARY_CTA_NAV.href;
+/** The selected row's marker, so a phone can scroll back to it from the panel. */
+const ROW_ATTR = "data-fee-row";
 
 const money = (value: number | null) => formatFeeAmount(value) ?? "-";
 const count = (n: number) => n.toLocaleString("en-US");
+/** "+3.7%", "-0.4%", "0%": one decimal at most. */
+const signedPct = (v: number) => `${v > 0 ? "+" : v < 0 ? "-" : ""}${Number(Math.abs(v).toFixed(1))}%`;
+const narrow = () => typeof window !== "undefined" && window.matchMedia?.("(max-width: 1023px)").matches === true;
 
 /**
  * One table row as the browser receives it. Bank and credit union counts are Pro columns, so
@@ -61,8 +68,10 @@ const readNoUrlFee = () => null;
  * The national page body: findings as cards, the fee table, and a panel that draws whichever
  * fee is selected. Selecting a row (click, or Enter on its fee name), the overdraft card or a
  * bar in the "most published" card changes the panel. Overdraft also gets a Fed district map,
- * from the same cached read /fees/overdraft makes. The selected fee rides in the URL (?fee=),
- * read once on load and kept current with history.replaceState.
+ * from the same cached read /fees/overdraft makes, compared with the panel's one national
+ * median. The selected fee rides in the URL (?fee=), read once on load and kept current with
+ * history.replaceState. Below lg, a row tap scrolls up to the panel, which then offers a way
+ * back to that row.
  */
 export function NationalExplorer({
   header,
@@ -71,7 +80,6 @@ export function NationalExplorer({
   groups,
   isPro,
   overdraftDistricts,
-  overdraftNational,
   cpiSourceUrl,
 }: {
   header: ReactNode;
@@ -80,8 +88,6 @@ export function NationalExplorer({
   groups: FeeFamilyGroup[];
   isPro: boolean;
   overdraftDistricts: DistrictMedian[];
-  /** Overdraft's national median from the same read as the district medians. */
-  overdraftNational: number | null;
   cpiSourceUrl: string;
 }) {
   const rows = groups.flatMap((g) => g.entries);
@@ -93,20 +99,31 @@ export function NationalExplorer({
   const [picked, setSelected] = useState<string | null>(null);
   const selected = picked ?? (urlFee && byCategory.has(urlFee) ? urlFee : initial);
   const [district, setDistrict] = useState<number | null>(null);
+  // The fee whose table row a phone visitor tapped to get here; the panel then links back to it.
+  const [cameFromRow, setCameFromRow] = useState<string | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
+  const tableRef = useRef<HTMLDivElement>(null);
 
-  const select = (category: string, reveal = false) => {
+  const select = (category: string, reveal = false, fromRow = false) => {
     setSelected(category);
     setDistrict(null);
+    setCameFromRow(fromRow && reveal && narrow() ? category : null);
     if (typeof window !== "undefined") {
       const url = new URL(window.location.href);
       url.searchParams.set(FEE_PARAM, category);
       window.history.replaceState(window.history.state, "", url);
     }
     // Below lg the panel sits above the table: bring it into view so the change is seen.
-    if (reveal && typeof window !== "undefined" && window.matchMedia?.("(max-width: 1023px)").matches) {
+    if (reveal && narrow()) {
       panelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
     }
+  };
+
+  const backToRow = () => {
+    const target = cameFromRow ? tableRef.current?.querySelector<HTMLElement>(`[${ROW_ATTR}="${cameFromRow}"]`) : null;
+    (target ?? tableRef.current)?.scrollIntoView({ behavior: "smooth", block: "center" });
+    target?.querySelector<HTMLButtonElement>("button")?.focus({ preventScroll: true });
+    setCameFromRow(null);
   };
 
   const entry = selected ? byCategory.get(selected) ?? null : null;
@@ -142,17 +159,25 @@ export function NationalExplorer({
             <FeePanel
               entry={entry}
               districts={entry.fee_category === DEFAULT_FEE ? overdraftDistricts : []}
-              districtNational={entry.fee_category === DEFAULT_FEE ? overdraftNational : null}
               district={district}
               onDistrict={setDistrict}
               family={groups.find((g) => g.family === entry.fee_family)?.entries ?? []}
               onSelect={(c) => select(c)}
             />
           ) : null}
+          {entry && cameFromRow === entry.fee_category ? (
+            <button
+              type="button"
+              onClick={backToRow}
+              className="mt-3 inline-flex min-h-10 items-center gap-1 text-[13px] font-semibold text-ink underline underline-offset-2 hover:text-brick lg:hidden"
+            >
+              <span aria-hidden="true">&darr;</span> Back to the table
+            </button>
+          ) : null}
         </div>
       </aside>
 
-      <div className="overflow-hidden rounded-xl border border-border/80 bg-white/70 lg:col-start-1 lg:row-start-3">
+      <div ref={tableRef} className="scroll-mt-20 overflow-hidden rounded-xl border border-border/80 bg-white/70 lg:col-start-1 lg:row-start-3">
         <div className="overflow-x-auto">
           {/* On a phone the table is two columns (fee with its institution count beneath, then
               the median), so it fits a 360px screen with no sideways scroll. */}
@@ -195,7 +220,8 @@ export function NationalExplorer({
                       <tr
                         key={e.fee_category}
                         data-selected={isSelected || undefined}
-                        onClick={() => select(e.fee_category, true)}
+                        data-fee-row={e.fee_category}
+                        onClick={() => select(e.fee_category, true, true)}
                         className={`cursor-pointer transition-colors ${
                           isSelected ? "bg-brick-tint/45 shadow-[inset_3px_0_0_var(--fi-brick)]" : "hover:bg-paper/60"
                         }`}
@@ -207,7 +233,7 @@ export function NationalExplorer({
                             aria-controls={PANEL_ID}
                             onClick={(ev) => {
                               ev.stopPropagation();
-                              select(e.fee_category, true);
+                              select(e.fee_category, true, true);
                             }}
                             className="rounded-sm text-left font-medium text-ink transition-colors hover:text-brick focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink"
                           >
@@ -291,6 +317,8 @@ function FindingCard({
         type="button"
         onClick={() => onSelect("overdraft")}
         aria-pressed={selected === "overdraft"}
+        // A short name: without it a screen reader reads the whole range strip as the button's name.
+        aria-label={`Show overdraft: ${money(f.median)} median, ${count(f.institutions)} institutions`}
         aria-controls={PANEL_ID}
         className="-m-1 flex h-full flex-col rounded-lg p-1 text-left focus-visible:outline-2 focus-visible:outline-ink"
       >
@@ -319,7 +347,8 @@ function FindingCard({
         {Number(Math.abs(f.bankPct).toFixed(1))}%
       </p>
       <p className={label}>
-        Bank services prices, year to {f.month}{" "}
+        Bank services prices, year to {f.month}, against{" "}
+        <span className={`font-semibold text-ink ${COUNT}`}>{signedPct(f.allPct)}</span> for all items.{" "}
         <a href={cpiSourceUrl} rel="noopener" className="whitespace-nowrap text-ink-muted underline underline-offset-2 hover:text-brick">
           BLS CPI
         </a>
@@ -335,7 +364,6 @@ function FindingCard({
 function FeePanel({
   entry,
   districts,
-  districtNational,
   district,
   onDistrict,
   family,
@@ -343,7 +371,6 @@ function FeePanel({
 }: {
   entry: FeeRow;
   districts: DistrictMedian[];
-  districtNational: number | null;
   district: number | null;
   onDistrict: (d: number | null) => void;
   family: FeeRow[];
@@ -351,8 +378,9 @@ function FeePanel({
 }) {
   const name = getDisplayName(entry.fee_category);
   const range = feeRange(entry);
-  // The map's comparison figure comes from the same read as the district medians.
-  const national = districtNational;
+  // The panel shows one national median, the snapshot's (the same figure as the table and
+  // the overdraft card); the map compares each district with that figure.
+  const national = entry.median_amount;
   const showMap = national !== null && districts.some((d) => d.median !== null);
   const familyMedians = family.flatMap((e) =>
     e.median_amount === null ? [] : [{ category: e.fee_category, label: getDisplayName(e.fee_category), median: e.median_amount }],
@@ -473,6 +501,13 @@ function FeePanel({
             <FamilyBars items={familyMedians} selected={entry.fee_category} onSelect={onSelect} />
           </div>
         </div>
+      )}
+
+      {percentFeeAllowed(entry.fee_category) && (
+        <p className="mt-4 text-[12px] leading-snug text-ink-muted lg:mt-3" data-rate-note="">
+          Dollar amounts only. A fee stated as a percentage is counted separately and is not in
+          this median.
+        </p>
       )}
 
       <Link

@@ -366,7 +366,7 @@ function moveFeedback(move: FoldMove, runId: number): FeedbackRow {
     // A fold is a taxonomy decision, not a judgement of Knox's read.
     signal: "right",
     kind: TAXONOMY_FOLD_KIND,
-    reportedBy: "hamilton",
+    reportedBy: "gutenberg",
     checkName: TAXONOMY_FOLD_CHECK,
     institutionId: move.institutionId,
     sourceDocumentId: move.sourceDocumentId,
@@ -399,7 +399,9 @@ export interface HandRefile {
   /**
    * The bad name the fee still carries. When set, the fee is also fixed if another check has
    * already moved it under `to` with that name (96164: the guard's own hand re-file moves it to
-   * atm_non_network without renaming it).
+   * atm_non_network without renaming it). A rename in place (`from` == `to`) with an `oldName`
+   * runs only while the live name is still exactly that, so it runs once and never replaces a
+   * better name a later read or retidy gave the fee (#1459 review).
    */
   oldName?: string;
   why: string;
@@ -558,6 +560,77 @@ export const HAND_REFILES: readonly HandRefile[] = [
   // #1304 (James approved, Oct 14): a courtesy pay (paid overdraft) row filed by its payment-channel cell.
   { feePublishedId: 88513, from: "bill_pay", amount: 32, to: "overdraft", name: "Courtesy Pay (Paid NSF) Check/ACH/Bill Pay Payment",
     why: "inst 5057, doc 6200: \"Courtesy Pay (Paid NSF) Check/ACH/Bill Pay Payment | $32.00/item\"; Knox named the fee by the cell after the row heading, so \"Bill Pay\" filed it as bill pay (the bank's $32 Account Guardian line, 105896, is a separate overdraft fee)" },
+  // #1196 (James approved, Oct 15, comment 6193649019 group 2): names that open on a row number, a
+  // footnote or the cell before; the price and category are right. Each is renamed in place to its
+  // line's own words. 131129 and 70319 keep their category; whether it is right is a separate question.
+  { feePublishedId: 99578, from: "paper_statement", amount: 2, to: "paper_statement", name: "Mailed statement service charge",
+    oldName: "13 Account will default to a mailed statement and a monthly",
+    why: "inst 162, doc 33566: \"13 Account will default to a mailed statement and a monthly $2 mailed statement service charge will be charged ... per statement cycle\"; 13 is the footnote" },
+  { feePublishedId: 97539, from: "safe_deposit_box", amount: 30, to: "safe_deposit_box", name: "Key Replacement",
+    oldName: "12 consecutive months of: Key Replacement",
+    why: "inst 223, doc 22645: \"(12 consecutive months of | Key Replacement | $30.00 each\"; the first cell is the row above" },
+  { feePublishedId: 65410, from: "cashiers_check", amount: 5, to: "cashiers_check", name: "Official Bank Check",
+    oldName: "36 months, 48 months, 60 months: Official Bank Check",
+    why: "inst 390, doc 19295: \"36 months, 48 months, 60 months | Official Bank Check $5.00 per item\"; the first cell is a CD term column" },
+  { feePublishedId: 65411, from: "stop_payment", amount: 25, to: "stop_payment", name: "Money Order Stop Payment",
+    oldName: "18 Month Variable Rate IRA CD: Money Order Stop Payment",
+    why: "inst 390, doc 19295: \"18 Month Variable Rate IRA CD | Money Order Stop Payment $25.00 per item\"" },
+  { feePublishedId: 53490, from: "dormant_account", amount: 5, to: "dormant_account", name: "Inactive Account",
+    oldName: "11 Inactive Account Inactive Account",
+    why: "inst 472, doc 14163: \"11 Inactive Account Inactive Account: $5.00\"; 11 is a row number and the name is printed twice" },
+  { feePublishedId: 68521, from: "check_image", amount: 3, to: "check_image", name: "Draft Photocopies",
+    oldName: "12 posted and settled debit card transactions: Draft Photocopies",
+    why: "inst 4610, doc 2442: \"12 posted and settled debit card transactions | • Draft Photocopies......$ 3.00 / Check\"" },
+  { feePublishedId: 88066, from: "account_verification", amount: 10, to: "account_verification", name: "Verification of Deposit",
+    oldName: "16 Verification of Deposit",
+    why: "inst 4613, doc 20748: \"16 Verification of Deposit ...... $10.00\"; 16 is the row number" },
+  { feePublishedId: 88067, from: "garnishment_levy", amount: 75, to: "garnishment_levy", name: "Processing Levies, Garnishments, Attachments, and other Legal Liens",
+    oldName: "17 Processing Levies, Garnishments, Attachments, and other Legal Liens",
+    why: "inst 4613, doc 20748: \"17 Processing Levies, Garnishments, Attachments, and other Legal Liens – Each....... $75.00\"" },
+  { feePublishedId: 88068, from: "counter_check", amount: 0, to: "counter_check", name: "Starter/Temporary Checks – 2 Pages",
+    oldName: "18 Starter/Temporary Checks – 2 Pages",
+    why: "inst 4613, doc 20748: \"18 Starter/Temporary Checks – 2 Pages at No Charge\"" },
+  { feePublishedId: 57548, from: "money_order", amount: 1.7, to: "money_order", name: "Money Order Fee for First Step Accounts",
+    oldName: "12 Money Order Fee for First Step Accounts",
+    why: "inst 5113, doc 2232: \"12 Money Order Fee for First Step Accounts $1.70.\"" },
+  { feePublishedId: 108912, from: "dormant_account", amount: 12, to: "dormant_account", name: "Dormant Account (after first 12 months)",
+    oldName: "31 Days of Interest: Dormant Account (after first 12 months)",
+    why: "inst 7697, doc 24596: \"or Less | 31 Days of Interest | Dormant Account (after first 12 months) | $12.00/year\"" },
+  { feePublishedId: 131129, from: "atm_non_network", amount: 2, to: "atm_non_network", name: "ATM Transactions at DFCU ATM (Local ATM)",
+    oldName: "15 free ATM transactions per month and 15 free balance inquiries per month; then",
+    why: "inst 5100, doc 28876: \"ATM Transactions at DFCU ATM (Local ATM) | 15 free ATM transactions per month ... then $2.00/transaction\"; category kept as filed, its question is on #1196" },
+  { feePublishedId: 70319, from: "dormant_account", amount: 2.95, to: "dormant_account", name: "VISA Gift Card Inactivity Fee",
+    oldName: "12 Months of Inactivity",
+    why: "inst 986, doc 20361: \"VISA Gift Card – Inactivity Fee after 12 Months of Inactivity $2.95/month\"; category kept as filed, its question is on #1196" },
+  // #1512, #1513 (James approved, Oct 16 03:37 UTC, roadmap item 3.8): two schedule lines joined
+  // into one name, or one line under the wrong category. Each price is right for the line named
+  // here, read from the row's own stored text; the eighth joined row (142965) comes down instead
+  // (hand-takedowns.ts). Undo: rename or re-file back to `oldName` under `from`; the run event and
+  // `pipeline_feedback` row keep both.
+  { feePublishedId: 139453, from: "rush_card", amount: 10, to: "card_replacement", name: "Credit or debit card replacement fee",
+    oldName: "Credit or debit card replacement fee Rush Order Fee",
+    why: "#1512, inst 6228, doc 30968: \"Card Replacement / Credit or debit card replacement fee Rush Order Fee / $10 per card; $45 per card\"; $10 is the replacement, the rush order is $45" },
+  { feePublishedId: 61871, from: "bill_pay", amount: 2.99, to: "bill_pay", name: "Bill Pay Gift Check",
+    oldName: "Returned Wire Fee Varies Bill Pay Gift Check ………………………………",
+    why: "#1512, inst 6940, doc 18323: \"Returned Wire Fee Varies Bill Pay Gift Check ……… $2.99\"; the returned wire fee \"Varies\", the $2.99 is the gift check" },
+  { feePublishedId: 73876, from: "safe_deposit_box", amount: 10, to: "safe_deposit_box", name: "Key Deposit Fee",
+    oldName: "Change of Lock Fee: Current locksmith charges Drilling of Box Fee: Current locksmith charges Key Deposit Fee",
+    why: "#1512, inst 8567, doc 13490: \"• Change of Lock Fee: Current locksmith charges • Drilling of Box Fee: Current locksmith charges • Key Deposit Fee: $10.00\"; only the key deposit is $10" },
+  { feePublishedId: 14294, from: "monthly_maintenance", amount: 5, to: "monthly_maintenance", name: "Renew Spend Account: Monthly Service Charge",
+    oldName: "Renew Spend Account Monthly Service Charge ………………………..…………… Student Spend Account Monthly Service Charge …………………………………….",
+    why: "#1512, inst 6636, doc 12872: \"Renew Spend Account* | …\" then \"Monthly Service Charge ……… $5.00\"; the Student Spend line below is $0.00 (live as 99385)" },
+  { feePublishedId: 70046, from: "monthly_maintenance", amount: 12, to: "monthly_maintenance", name: "Fresh Start Checking: Monthly maintenance fee with Direct Deposit",
+    oldName: "Fresh Start Checking: Monthly maintenance fee with Direct Deposit. Monthly maintenance fee w/o Direct Deposit",
+    why: "#1512, inst 7006, doc 27023: \"Fresh Start Checking* | Monthly maintenance fee with Direct Deposit. Monthly maintenance fee w/o Direct Deposit | $12.00/mo $15.00/mo\"; $12 is with direct deposit" },
+  { feePublishedId: 139131, from: "ira_termination", amount: 5, to: "ira_termination", name: "IRA Closure Fee",
+    oldName: "IRA Closure Fee IRA Minimum Balance Fee",
+    why: "#1512, inst 4554, doc 30829: \"IRA Closure Fee IRA Minimum Balance Fee8 | $5.00 $4.00/month\"; the closure is $5, the minimum balance fee $4/month" },
+  { feePublishedId: 43277, from: "account_research", amount: 15, to: researchSplitTarget("returned_mail"), name: "Undeliverable Mail",
+    oldName: "Undeliverable Mail ……...………………………….......……....…",
+    why: "#1513, inst 2657, doc 916: \"Undeliverable Mail ……… $15 | Account Reconciliation ……… $35 / One-time fee upon return of 2nd undeliverable item\"; returned mail, renamed under account research while the #1398 split is off" },
+  { feePublishedId: 63055, from: "wire_domestic_outgoing", amount: 35, to: "wire_intl_outgoing", name: "Wire Trans. (Intern. Outgoing)",
+    oldName: "Wire Trans. (Intern. Outgoing) ………",
+    why: "#1513, inst 5653, doc 18876: \"Wire Trans. (Intern. Outgoing) ………...$35.00 per Wire\", an international wire; the domestic one is \"Wire Trans. (Dom. Outgoing) …$18.00 per Wire\" (live as 63054)" },
 ];
 
 interface HandRow {
@@ -595,8 +668,10 @@ export function planHandRefiles(
     if (!refile || amount == null || Math.abs(amount - refile.amount) >= 0.005) continue;
     const movedUnfixed = refile.oldName != null && row.canonical_fee_key === refile.to && (row.fee_name ?? "") === refile.oldName;
     if (row.canonical_fee_key !== refile.from && !movedUnfixed) continue;
-    // A rename in place (from == to) is done once the live name reads as listed.
+    // A rename in place (from == to) is done once the live name reads as listed, and, when the
+    // entry names the old name, never touches a fee whose name has changed since.
     if (refile.from === refile.to && (row.fee_name ?? "").trim() === refile.name) continue;
+    if (refile.from === refile.to && refile.oldName != null && (row.fee_name ?? "") !== refile.oldName) continue;
     if (!passesDarwinChecks(refile.to, refile.name, amount)) continue;
     moves.push({
       refile,
@@ -669,6 +744,24 @@ async function applyHandMoves(db: SqlTag, moves: HandMove[], runId: number): Pro
        AND fv.canonical_fee_key = v.from_key
   `;
   if (await feedbackSchemaReady(db)) await recordFeedback(db, applied.map((move) => handFeedback(move, runId)));
+  // One event per run that names every row moved and its after-state (#1196).
+  await db`
+    INSERT INTO agent_run_events (agent_run_id, event_type, status, message, detail)
+    VALUES (
+      ${runId}, ${`${TAXONOMY_FOLD_CHECK}.hand_refile`}, 'completed',
+      ${`Re-filed or renamed ${applied.length} live fee(s) by hand (HAND_REFILES)`},
+      ${JSON.stringify({
+        refiled: applied.map((move) => ({
+          fee_published_id: move.refile.feePublishedId,
+          from_key: move.currentKey,
+          to_key: move.refile.to,
+          amount: move.refile.amount,
+          old_name: move.oldName,
+          new_name: move.refile.name,
+        })),
+      })}::jsonb
+    )
+  `;
   return applied.length;
 }
 
@@ -681,7 +774,7 @@ function handFeedback(move: HandMove, runId: number): FeedbackRow {
     // Knox read a neighbouring cell as the name: a wrong read, logged with the page's own line.
     signal: "wrong",
     kind: TAXONOMY_FOLD_KIND,
-    reportedBy: "hamilton",
+    reportedBy: "gutenberg",
     checkName: TAXONOMY_FOLD_CHECK,
     institutionId: move.institutionId,
     sourceDocumentId: move.sourceDocumentId,

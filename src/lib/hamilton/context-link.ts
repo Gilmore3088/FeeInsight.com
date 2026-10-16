@@ -32,3 +32,16 @@ export function hrefWithInstitutionContext(
   const nextQuery = params.toString();
   return `${nextQuery ? `${path}?${nextQuery}` : path}${fragment}`;
 }
+
+/**
+ * Where an institution link inside Pro goes (#1546): that institution's Hamilton overview, so a
+ * Pro reader stays in the workspace. The public consumer page is `publicInstitutionHref`.
+ */
+export function hamiltonInstitutionHref(institutionId: string | number | null | undefined): string {
+  return hrefWithInstitutionContext("/pro/hamilton", normalizeCanonicalInstitutionId(institutionId));
+}
+
+/** The public consumer page for an institution, linked from Pro only as a secondary link. */
+export function publicInstitutionHref(institutionId: string | number): string {
+  return `/institution/${encodeURIComponent(String(institutionId))}`;
+}

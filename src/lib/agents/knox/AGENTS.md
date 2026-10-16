@@ -501,6 +501,47 @@ hand check found wrong, from their real lines.
   Transfer for\nOverdrafts - $2.00 per transfer", raw 112570). A bare "Overdrafts" priced per
   item is still the overdraft fee.
 
+v72 (#1099, Oct 16): a loan's own servicing fees from Deming's answer-key misses (`rules.ts`, other lending).
+- A loan, lease or mortgage payment made by phone, by debit or credit card, or by ACH ("Loan Payment
+  by Phone Fee (ACH) | $15.00", "Loan payment by debit card fee") is other lending.
+- A returned loan, lease or mortgage payment ("Returned Loan Payment Fee", "Bad Check Fee (Returned
+  Mortgage Payment)") is other lending. A bare "returned payment", "returned item" or "returned check"
+  names no loan and stays NSF or returned item.
+- Not in v72: an amortization schedule (live as a document copy at two banks; the production key
+  files it as lending) and a loan coupon book (the seven-state key leaves it unfiled) wait for a call.
+
+v71 (#1100 gap 3, Oct 15): each checking product's monthly fee in an account comparison table, read by
+its column (`extract.account_table` v1, `account-table.ts`; see Extraction Passes).
+- "Monthly Service Fees | $0 | $5 | $10" under "Account | Great Checking | Better Checking | Best
+  Checking" is three monthly fees, named by product ("Better Checking Monthly Service Fees"). The
+  shared source check traces each with the same rule (`accountTableRow`); it can only turn a fail
+  into a pass.
+- Only checking columns, only the fee row, only under a header naming one product per price column.
+  The guard's exclusions are unchanged (James to decide, #1100).
+- Not read (#1438 review): a header one cell short whose first cell is a label ("Features | Simply
+  Checking | Rewards Checking" over a row with three prices), a header of buttons or repeated cells
+  ("Open Online | Open Account | Open Account"), a fee-change notice's dated columns ("fee through
+  12/31"), and a table that sets big banks' accounts beside others ("US Bank Smartly Checking").
+- In a cell, a balance or opening figure is skipped ("$25 minimum daily balance or $8" is $8), and so
+  are a discount and a $0 that holds only under a condition ("$0 with $500 balance / $12" is $12). A
+  cell with two fee figures left ("$7 + $0.40 per debit") is not read; the row's other cells still are.
+- The header is the topmost row in the run above the fee row that names a product in every price
+  column; a "Key Features" or "Best For" row is never the header ("No NSF Fees for overdrawing
+  Account" is not a product). A header one cell short is read only when its first cell is a product.
+  Cells that read as sentences, taglines or buttons are not products; MMDA and saver columns are left out.
+- The run of rows above the fee row ends at an earlier fee row, so a table stacked under another of
+  the same width keeps its own header; two product headers with different columns in one run are
+  not read.
+- Product names lose footnote marks, quotes, codes and arrows, and only an exact tagline or prose
+  after the account word ("CLASSIC CHECKING Most Popular", "Open a Basic Account" is "Basic
+  Account"). A tail that names an audience or variant stays ("Interest Checking for Ag", "Basic
+  Checking - Senior", any "for …" tail), and so do a product's own words and digits ("Open Road
+  Checking", "Tier3 Checking"). A table whose header names a business, commercial, ag or nonprofit
+  account is not read. The shared check's table fallback reads the newest fee-change column, as Knox does, and
+  passes only a consumer name the category guard files as monthly maintenance.
+- Answer keys: Texas 551 to 552 right (Texas Capital), 14 wrong unchanged; held out 54 / 4 unchanged;
+  seven states unchanged at 797 / 41.
+
 v70 (#1100, Oct 15): monthly maintenance and low-balance fees the account expert (`extract.family.account` v5) missed.
 - A low-balance charge with no fee word is the minimum balance fee when the price on its own line is
   charged by the period ("$5.00 per month", "/Month"): "Low balance $ 5.00 per month", "Savings
@@ -658,7 +699,10 @@ After the extract itself, each extract step runs these passes in order (`run-sto
 - A re-read that takes over a row (`knox_reread_took_over`, `knox_promoted_from_held`) drops the
   row's old `canonical_hint:` flags. Darwin reads the first such flag, so before this a fee today's
   rules filed under a new category was judged under the old one: 12 of the 54 take-overs by 14 Oct
-  ("Wire Transfer - International" $45 judged as an overdraft fee).
+  ("Wire Transfer - International" $45 judged as an overdraft fee). When a take-over of a retired
+  row changes its category, `knox_takeover_from:<old>` keeps the old first category (#1295): the
+  proof Darwin's category-change re-judge needs that its earlier decision was made under another
+  category. The flag changes no decision on its own (Darwin's `DARWIN_TAKEOVER_CATEGORY_PROOF_LIVE`).
 - `recheckHeldRates`: held percentage lines (below).
 - `fileHeldByName` (#1102, up to 300 per extract step, scoped to the run's lane): one decision per
   held name, across banks. A line held as unclassified whose exact name (`lessonName`) has a
@@ -693,10 +737,11 @@ After the extract itself, each extract step runs these passes in order (`run-sto
   A moved line keeps its name and amount and carries `knox_name_filed:<label|store>` and
   `canonical_hint:<key>`; Darwin still decides, and Hamilton's rules re-check keeps the fee live
   while its name and price trace in its own text. A line a decision covers that cannot move gets
-  the week's mark (`knox_name_file_checked:<ISO week>`); when a lane's pass reads every candidate,
+  the week's mark (`knox_name_file_checked:k<key version>:<ISO week>`); when a lane's pass reads every candidate,
   its other held lines get it too, so the rest of the week's steps read only new held lines and the
   live-fee join has nothing to probe. Settled names come from a hash join of live fees on the held
-  lines' own names, and labels from the feedback table's unique dedupe key. Step detail:
+  lines' own names, as printed and without footnote marks ("1Monthly fee" reaches the live "Monthly
+  fee"; `NAME_FILE_KEY_VERSION` v2, which the week mark carries, so lines marked under v1 are read again), and labels from the feedback table's unique dedupe key. Step detail:
   `held_name_file`. On 15 Oct 2026 (read-only, after the second review of #1385): 161 held lines
   matched a settled name, 71 would move at 40 banks in 26 states (38 of them set aside), and none
   had a label yet.
@@ -720,6 +765,32 @@ After the extract itself, each extract step runs these passes in order (`run-sto
   states 761 / 41 (744 / 41). To reverse it, switch off with another version bump:
   `recheckPromotedRows` puts unverified promotions back on hold, and the rules re-check
   takes down the live ones it no longer reproduces.
+- `setAsideRangeBands` (#1102, `RANGE_BAND_SET_ASIDE_LIVE`, off until James switches it on): a held
+  range line with no category that is a deposit or loan rate band ("Tier 3 | $25,000.00 –
+  $49,999.99 | 0.75%", "$3,500 to $20,000 | 11.25% | 48 months"). It asks for positive evidence,
+  since two reviews found fees a negative test missed. A line is a band only when:
+  - it carries a rate signal: APY, APR, annual percentage, dividend, interest rate, rate, tier, or a
+    percentage standing in its own cell ("| 0.75% |");
+  - it carries no fee signal: a fee noun (fee, charge, waive, "per", a box, a wire, modification,
+    commission, subordination, withdrawal, penalty, foreign, …), a rate charged on something
+    ("1.25% of amount withdrawn", "½ of 1%", "$125 + 0.55% of principal", "lesser of"), a range
+    whose upper end is under $100 ("$5.00 to $25.00"), or a price under $100 beside its ranges;
+  - the 200 characters before it in the document's current text are found and name no fee (a band
+    under a "Large Amount Withdrawal Fee" heading stays held; a line whose text is not found stays
+    held).
+
+  On, a band gets `knox_range_band` and a `knox.range_band` row in the store, up to 2,000 a step in
+  the run's lane; a line not already set aside also gets `knox_set_aside` and
+  `knox_set_aside_by:range_band`. Kept, never deleted. To undo, take off `knox_range_band`, and
+  `knox_set_aside` only where `knox_set_aside_by:range_band` is present, so another pass's set-aside
+  stays. Off, the step only counts (`range_band_set_aside`: `candidates` uncapped for the lane,
+  `checked` at most 2,000). It touches no line with a category and no live fee. On 16 Oct 2026 (the
+  pass's own SQL, read only): 3,601 of the 7,485 held range lines with no category, at 469 banks,
+  none ever verified. Earlier versions took 5,210 and 5,047, with real fees in them that two
+  reviews found; those fees are test fixtures that stay held. A hand-read random 60 of the 3,601
+  and four adversarial queries (see PR #1622) found no fee, which is a sample rather than proof.
+- `consumeRereadRequests` (#1511, `KNOX_REREAD_FEEDBACK_LIVE`, off): Darwin's re-read requests for
+  live fees named by a sentence fragment (below).
 - Batch review (`batch-review.ts`, below).
 
 Percentage fees (`percent.ts`). A held "1% of the transaction" line goes to Darwin as a rate fee
@@ -734,6 +805,21 @@ texts get this in the extract pass; rows held before it are re-read by `recheckH
 (`knox_rate_recheck:v2`, 100 per extract step). v2 (#1102): a rate stated as a share of what it
 charges ("1% of transaction amount") traces without the word "fee", and check cashing and
 international ATM fees publish as rates.
+
+Who owns each held line (#1102). `/admin/knox` lists the held lines by group (`held-queue.ts`)
+with the owner and the way out for each, and how many a versioned re-check has read under 3 or
+more rules versions without moving them:
+
+| Group | Owner | Way out |
+|---|---|---|
+| `unclassified` | Knox's held re-check and name filing; James labels the weekly name queue | today's rules, a settled name or a label |
+| `range` (with a category) | James: a range needs storage first (#1060) | none yet |
+| `range_no_category` | Knox's range-band pass (off) | bands set aside as not fees once on |
+| `range_band` | Knox's range-band pass | set aside, kept |
+| `percentage` | Knox's rate re-check | to Darwin as a rate fee |
+| `untraced` | Knox's untraced re-check; then Rosetta | traced by today's rules; a Rosetta re-read is the next slice |
+| `superseded` (any shape a newer copy or a re-read retired) | Knox's superseded re-check and re-file | back to Darwin when the current text prints the same fee |
+| `taken_down` | Hamilton's confirmed takedown | held on purpose |
 
 ## Learning reader (`lessons.ts`)
 Each extract step reads lessons from the shared learning store (`pipeline_feedback`): a fee name
@@ -788,7 +874,64 @@ the old name goes to `pipeline_feedback` (`name_retidied`, weight 0, so it never
 (#1443), built from the same regex pieces: a dangling joining word (lower-case "a/an/the" only;
 not "above" or "each"), a dangling "up to" or "per", "will" or "you", or a leading "+" with no fee
 noun after it. Darwin's live name re-check applies it to live fees (`darwin/live-fragment-check.ts`,
-see Darwin's AGENTS.md). A change to either shape list is checked against both.
+see Darwin's AGENTS.md). A change to either shape list is checked against both. Since #1443 a
+pronoun only inside a parenthetical is no live fragment (`liveFragmentShape` keeps the raw shape),
+and `gluedSentenceHead` gives the fee name a fragment opens with ("Overdraft Fee You will be
+charged ..." is "Overdraft Fee"), which Darwin renames the live fee to through `writeLiveRenames`,
+the same write path the tidy uses (feedback row first, update guarded on the old name).
+
+## Darwin's re-read requests (`reread-feedback.ts`, #1511)
+
+Darwin's live fragment check (`darwin/live-fragment-check.ts`) writes one `pipeline_feedback` row of
+kind `knox_reread_requested` per live fee whose name is a `sentence_end` fragment it cannot rename
+("Paper statement fee for the" $2): evidence `kept_live: true` when the fee stays live (`reread`),
+none when it came down because a gate refused its amount (`fragment_reread`). Each extract step,
+after the held-line passes, reads these requests (`consumeRereadRequests`, `knox.reread_feedback`):
+
+- The line is read again from the newest completed text of the fee's own document with today's
+  free team (`runFreeSpecialists`). Rules only, no provider call: the pass is part of the
+  deterministic extract step and never waits on provider budget. It finds the line by the fee's
+  price and Darwin's fragment (`evidence.fee_name`): an excerpt holding the fragment as whole
+  words, or the same name. Knox's raw name is not a key (a short raw name such as "Service charge"
+  is in every line at that price, so another fee could lend its name), and a fragment under three
+  words is settled `ambiguous`.
+- Outcomes: `renamed` (kept live: the live fee takes today's proper name through
+  `writeLiveRenames`, the old name kept in `pipeline_feedback`), `sent_to_darwin` (taken down:
+  today's read goes in as a raw row with `needs_darwin_verification` and `knox_reread_feedback`,
+  so the fee comes back only through Darwin's checks), `already_read` (Knox already holds that
+  read), `name_changed` (the guarded rename touched nothing: the live name changed since the read;
+  `writeLiveRenames` returns the fees it renamed), and the unresolved ones: `same_name`,
+  `not_found`, `no_text`, `other_category`, `ambiguous`, `refused` (category guard or
+  `checkFeeAgainstSource`), `live_twin` (another live fee of the bank has the proper name at that
+  price), `held_taken_down` (the read repeats a takedown Hamilton confirmed, `takedownLessonFor`:
+  written held as `knox_review:taken_down`, as the extract does), plus `stale` (the request no
+  longer applies). A failed write (`refused` by `write_failed` or `live_twin_check_failed`) is
+  settled unresolved too, so it never holds the head of the queue; a rules bump reads it again.
+- What a re-read yields: the free team is deterministic, so a line Knox already read from the same
+  text at the current rules version comes back under the same name ("Bank sending the wire may
+  charge a fee of" $15 is read as itself at v70). Such a request is settled `same_name`
+  ("unresolved: same name under today's rules"). A better name comes only from a line read at an
+  older rules version, a newer text of the document, or a later rules version.
+- Each request is settled once per pass version and Knox rules version: one `pipeline_feedback`
+  row of kind `knox_reread_resolved` (reported by Knox, weight 0, so never a lesson), dedupe key
+  `knox.reread_feedback:req:<request id>:v<pass>:rules<N>`, evidence with the outcome. The request
+  row is not marked: Darwin upserts it again on each pass of the live table, which would wipe a
+  mark. A rules bump makes every request pending again once; nothing loops within a version.
+- `KNOX_REREAD_FEEDBACK_LIVE` false (default): only a one-bank extract run reads the requests: it
+  counts that bank's pending ones (by kind and documents; `pipeline_feedback_institution_idx`) and
+  reads up to 3 read-only (`KNOX_REREAD_FEEDBACK_SAMPLE`), reporting what it would do in one
+  `knox.reread_feedback` event (only while requests are pending) and in the step detail
+  `reread_feedback`. A state or all-bank lane skips it (`skipSample`, detail `skipped: true`):
+  `pipeline_feedback` has no index on `kind`, so the count was a full scan every step, and the same
+  sample was read again each time. Nothing else is written. On: 25 a step
+  (`KNOX_REREAD_FEEDBACK_BATCH`), claimed first with `FOR UPDATE ... SKIP LOCKED` so two lanes
+  never take the same request; the pending count is read only when the claim found work. A dry
+  run writes nothing.
+- The switch-on PR should come with a partial index,
+  `pipeline_feedback (id) WHERE kind = 'knox_reread_requested'`, so every lane's claim and count
+  read only the requests (a migration, so it needs James's approval).
+- `rereadFeedbackCountSql()` is the read-only count of pending requests by kind, documents and
+  banks, and of settled requests by outcome.
 
 ## Batch review (`batch-review.ts`)
 
@@ -847,6 +990,18 @@ only on what the free team could not read.
     borrowed only by a bare direction or unit ("Wire Transfers" + "Incoming Domestic").
     `tableRowsFromText` is the only adapter over Rosetta's output (today the " | " cell
     lines in `normalized_text`); re-point it when Rosetta stores structured rows.
+  - `extract.account_table` (`account-table.ts`, #1100 gap 3): an account comparison table's
+    monthly fee row, one fee per product column ("Monthly Service Fees | $0 | $5 | $10" under
+    "Account | Great Checking | Better Checking | Best Checking"). Each read is named by its
+    column's product (`withAccountName`: "Better Checking Monthly Service Fees"), so it traces
+    to one cell. The rule lives in `custom-report/account-table.ts`, and the shared check traces
+    the same reads with it (`accountTableRow`, only for `monthly_maintenance` or no key, and only
+    after the normal check fails). It reads only checking columns (no savings, share, money
+    market, club, IRA, HSA or certificate column), only the fee row (never opening deposit or
+    balance rows), and only under a header row whose rows in between have the table's width. A
+    free cell is held as a $0 fee. A short header that opens on a label, a row of buttons or
+    repeated cells, dated fee-change columns and a comparison with big banks' accounts are not
+    read; a balance figure in a cell is skipped (v71 history).
   - `extract.family.<family>` (`families.ts`): one expert each for overdraft/NSF, wires,
     ATM/card, account maintenance/statements, checks, and the remaining services. They
     read price windows across a document, including PDFs flattened to one line: tiers
@@ -926,14 +1081,17 @@ fails a PR that changes one of these constants without updating its line here (#
 
 | Constant | Strategy | Version | File |
 |---|---|---|---|
+| `KNOX_ACCOUNT_TABLE_STRATEGY` | `extract.account_table` | v1 | `knox/account-table.ts` |
 | `KNOX_BATCH_REVIEW_VERSION` | — | v1 | `knox/batch-review.ts` |
 | `KNOX_CALIBRATION_VERSION` | — | v2 | `knox/calibration.ts` |
 | `HELD_RATE_RECHECK_VERSION` | — | v2 | `knox/held-recheck.ts` |
+| `NAME_FILE_KEY_VERSION` | — | v2 | `knox/held-recheck.ts` |
 | `KNOX_LAYOUT_SIGNATURE_VERSION` | — | v1 | `knox/layout-signature.ts` |
 | `KNOX_LESSONS_VERSION` | — | v3 | `knox/lessons.ts` |
 | `LINEUP_CORRECT_STRATEGY` | `knox.lineup_correct` | v2 | `knox/lineup-correct.ts` |
 | `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v19 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v2 | `knox/paid-extract.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v70 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v72 | `knox/specialists.ts` |
+| `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v6 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v1 | `knox/takedown-lessons.ts` |

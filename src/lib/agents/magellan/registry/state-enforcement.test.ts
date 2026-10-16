@@ -19,7 +19,8 @@ function createDb(candidates: unknown[]) {
 
 const TABLE = `<table><tr><th>Bank</th><th>Action</th><th>Date</th></tr>
   <tr><td>Lamont Bank of St. John</td><td>Consent Order</td><td>01/10/2025</td></tr>
-  <tr><td>Connect Community Bank</td><td>Consent Order</td><td>05/13/2026</td></tr></table>`;
+  <tr><td>Connect Community Bank</td><td>Consent Order</td><td>05/13/2026</td></tr>
+  <tr><td>SchoolsFirst Savings Bank</td><td>Consent Order - Unfair or Deceptive Fee Practices</td><td>06/02/2026</td></tr></table>`;
 
 describe("registry-state-enforcement", () => {
   it("reads each state on its own, skips missing year pages, matches in-state banks and records what each state found", async () => {
@@ -42,15 +43,19 @@ describe("registry-state-enforcement", () => {
       },
     });
     expect(result.byState.map((s) => [s.state, s.pages, s.missing, s.orders, s.matched, s.failed.length])).toEqual([
-      ["WA", 1, 0, 2, 1, 0],
+      ["WA", 1, 0, 3, 1, 0],
       ["IL", 0, 1, 0, 0, 0],
       ["NY", 0, 0, 0, 0, 1],
     ]);
-    expect(result.upserted).toBe(2);
+    expect(result.upserted).toBe(3);
     const insert = statements.find((s) => s.text.includes("INSERT INTO institution_enforcement_actions"))!;
     const rows = JSON.parse(String(insert.values[0])) as Array<Record<string, unknown>>;
     expect(rows[0]).toMatchObject({ agency: "STATE_WA", institution_id: 31, party_state: "WA", start_date: "2025-01-10", agent_run_id: 4 });
-    expect(rows[1]).toMatchObject({ institution_id: null, party_name: "Connect Community Bank" });
+    expect(rows[1]).toMatchObject({ institution_id: null, party_name: "Connect Community Bank", subject: null });
+    // A subject the page states is written, and an earlier row takes it on the next read (#1428).
+    expect(rows[2]).toMatchObject({ party_name: "SchoolsFirst Savings Bank", subject: "Unfair or deceptive practices (UDAP)" });
+    expect(insert.text).toContain("subject = EXCLUDED.subject");
+    expect(result.byState[0]).toMatchObject({ with_subject: 1, sample: [expect.objectContaining({ subject: "Unfair or deceptive practices (UDAP)" }), expect.anything(), expect.anything()] });
     const partition = statements.find((s) => s.text.includes("INSERT INTO registry_ingest_partitions"))!;
     expect(partition.values).toContain("succeeded");
     expect(partition.values).toContain("No page read for NY");

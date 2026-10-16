@@ -196,7 +196,7 @@ export async function nameLiveFeesByAccount(
             aboutVersion: ACCOUNT_NAME_STRATEGY.version,
             signal: "right",
             kind: ACCOUNT_NAME_KIND,
-            reportedBy: "hamilton",
+            reportedBy: "gutenberg",
             checkName: ACCOUNT_NAME_STRATEGY.strategy,
             institutionId: rename.institutionId,
             sourceDocumentId: rename.sourceDocumentId,

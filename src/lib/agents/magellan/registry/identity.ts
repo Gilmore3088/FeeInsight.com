@@ -120,7 +120,8 @@ export interface MatchOptions {
   /**
    * CFPB lists every company with complaints, mostly collectors, servicers and lenders. A name
    * that would wait for review but carries no bank word ("FMS Inc.", "D&A Services, LLC",
-   * "Fidelity National Financial") is recorded as not a match instead. SEC filers are already
+   * "Fidelity National Financial") is recorded as not a match instead, and so is one accepted only
+   * after its generic words were stripped (see trustedNonBankName). SEC filers are already
    * limited to bank SIC codes, so the SEC matcher leaves this off.
    */
   rejectNonBankNames?: boolean;
@@ -128,10 +129,35 @@ export interface MatchOptions {
 
 export function matchCompany(name: string, index: IdentityIndex, options: MatchOptions = {}): IdentityMatch | null {
   const match = matchCompanyName(name, index);
-  if (match?.status === "needs_review" && options.rejectNonBankNames && !hasBankWord(name)) {
-    return { ...match, confidence: 0, method: "non_bank_name", status: "rejected" };
+  if (!match || !options.rejectNonBankNames || hasBankWord(name)) return match;
+  if (match.status === "needs_review") return { ...match, confidence: 0, method: "non_bank_name", status: "rejected" };
+  if (match.status === "accepted" && !trustedNonBankName(name, match, index)) {
+    // Not recorded as rejected: a person can still accept a real parent ("Eagle Financial Services").
+    return { ...match, confidence: 0.3, method: "non_bank_name_review", status: "needs_review" };
   }
   return match;
+}
+
+/** Matches that compare the CFPB name with a holding company's full name, word for word. */
+const FULL_NAME_METHODS = new Set(["holding_company_full_name", "holding_company_dominant_parent"]);
+
+/**
+ * CFPB lists lenders, servicers and collectors beside banks, and a name with no bank word can
+ * belong to any of them: "Progressive Financial Services, Inc." (a debt collector) became
+ * "PROGRESSIVE", the key of Progressive National Bank, once "Financial" and "Services" were
+ * stripped, and "Berkshire Financial Services, LLC" is the full name of Lee Bank's parent. Such a
+ * name is accepted without a person only for a bank of $10B or more, and, unless it matched a
+ * holding company's full name, only when it leads with the bank's own words ("SANTANDER HOLDINGS
+ * USA, INC.", "FIFTH THIRD FINANCIAL CORPORATION"; not "Financial Services of America").
+ */
+function trustedNonBankName(name: string, match: IdentityMatch, index: IdentityIndex): boolean {
+  const key = normalizeCompanyName(name);
+  const assets = (list: IdentityCandidate[] | undefined) => list?.find((c) => c.id === match.institutionId)?.assetSize ?? 0;
+  const bankAssets = Math.max(assets(index.byName.get(key)), assets(index.byHoldingName?.get(fullCompanyKey(name))));
+  if (bankAssets < LARGE_BANK_ASSETS) return false;
+  if (FULL_NAME_METHODS.has(match.method)) return true;
+  const words = name.toUpperCase().replace(/&/g, " ").replace(/[^A-Z0-9 ]+/g, " ").split(/\s+/).filter((w) => w && w !== "THE");
+  return words.slice(0, key.split(" ").length).join(" ") === key;
 }
 
 function matchCompanyName(name: string, index: IdentityIndex): IdentityMatch | null {

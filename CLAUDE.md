@@ -15,11 +15,14 @@ live verified fee data (`published_fee_catalog`) + banking domain expertise. Kep
 from the CSI day job.
 
 ## How work runs
-Up to three builders at once, one per lane in `docs/plans/build-plan-2026-10-12.md` ("Lanes");
-a builder takes only its own lane's items. Work starts from that plan and the Now list at the top
-of GitHub issue #1026 (pipeline review master tracker): one outcome, one branch, one PR, with small
-related fixes batched into it (build plan, "Rules for the builder"). Before starting, search open issues, PRs
-and `main` for the same outcome, and reuse or explicitly supersede what exists.
+Four lanes run at once, one builder each: Website (homepage, national index, /for-institutions,
+/subscribe), Page templates (every other public page), Data quality (pipeline agents and fee
+accuracy) and Hamilton (the Pro workspace). A builder takes only its own lane's items. Work starts
+from the roadmap, `handoff/second-account-roadmap.md` on branch `claude/project-thread-awcc9c`
+(PR #1597, which is never merged), and the Now list at the top of GitHub issue #1026 (pipeline review
+master tracker). Its "Rules for every session" and Phase 0 review-and-merge steps apply to every PR:
+one outcome, one branch, one PR, with small related fixes batched into it. Before starting, search
+open issues, PRs and `main` for the same outcome, and reuse or explicitly supersede what exists.
 - CI runs cost GitHub Actions minutes. Push a branch only when its PR is ready for review and the
   local checks pass. Merge `main` into a branch only for a conflict, a change it depends on (a
   version number or a shared check its gates use), or a new migration: a PR that adds one always
@@ -29,6 +32,9 @@ and `main` for the same outcome, and reuse or explicitly supersede what exists.
   agent, plus the Foundation tracker for infrastructure, documentation and process work that
   belongs to no agent. A review also names the issues it closes or merges, so duplicates do not
   pile up. The Now list in #1026 (at most three items) sets the order; it is not a cap on issues.
+  The lane that owns an agent keeps that agent's tracker current (Data quality: Magellan, Rosetta,
+  Knox, Darwin and Foundation; Hamilton: #975): when a PR merges or an issue closes, its line is
+  ticked in the same pass.
 - No scheduled Claude routines run for Fee Insight without James's say-so. A session ends when
   its PR is open and green.
 - Words a visitor reads (pages, headlines, buttons, emails): use the `copywriting` and

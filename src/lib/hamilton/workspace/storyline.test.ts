@@ -72,6 +72,24 @@ describe("storyline", () => {
     expect(groups?.takeaway?.text).toBe("Example Valley Credit Union's $5 puts it in the low group ($0.01 to $15), where no peer sits.");
   });
 
+  it("counts every local competitor in the exhibit title, as the memo does, when the chart shows only the largest (demo run)", () => {
+    const base = research();
+    const template = base.localCompetitors![0];
+    // 16 competitors, largest first: the four smallest charge $1, so the 12 largest alone would say 5 of 12.
+    const localCompetitors = Array.from({ length: 16 }, (_, i) => ({
+      ...template, institutionId: 500 + i, institutionName: `Rival ${i + 1}`, amount: i < 5 ? 2 : i < 12 ? 4 : 1,
+    }));
+    const answer = buildFeeAnswer({ ...base, current: 3, localCompetitors });
+    const local = answer.storyline!.exhibits.find((e) => e.exhibit.kind === "competitor_range" && /market/.test(e.actionTitle))!;
+    expect(local.actionTitle).toBe("9 of 16 competitors in your market charge less than your $3; their range is $1 to $4.");
+    expect(local.exhibit.kind === "competitor_range" && local.exhibit.items.length).toBe(12);
+    expect(local.exhibit.kind === "competitor_range" && local.exhibit.note).toBe("The 12 largest by local deposits of 16.");
+    expect(local.exhibit.kind === "competitor_range" && local.exhibit.allAmounts?.length).toBe(16);
+    const lens = answer.storyline!.exhibits.flatMap((e) => [e.actionTitle, e.takeaway?.text ?? ""]).join(" ")
+      + " " + JSON.stringify(answer);
+    expect(lens).not.toMatch(/5 of 12/);
+  });
+
   it("builds three to five numbered exhibits, each titled with a point that carries a number", () => {
     const story = buildFeeAnswer(research()).storyline!;
     expect(story.kind).toBe("position");

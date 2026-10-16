@@ -32,4 +32,22 @@ describe("parseMarketQuestion", () => {
   it("links to the brief without carrying a parsed selection", () => {
     expect(marketBriefHref(" Tell me about Ohio ", "42")).toBe("/pro/analyze?brief=Tell+me+about+Ohio&instId=42");
   });
+
+  it("leaves a list of institutions, or a follow-up to one, to the peer list (#1538, #1539)", () => {
+    expect(parseMarketQuestion("Florida institutions with assets above 5 billion.")).toBeNull();
+    expect(parseMarketQuestion("Florida institutions with assets above $5,000M.")).toBeNull();
+    expect(parseMarketQuestion("Only show the California ones.")).toBeNull();
+    expect(parseMarketQuestion("Tell me about Ohio")).not.toBeNull();
+  });
+
+  it("keeps market questions that mention an asset size or a list word (#1604 review)", () => {
+    for (const q of [
+      "What does the market look like for Texas banks?",
+      "Give me a brief on Ohio credit unions over $500M",
+      "Tell me about Texas credit unions over $1B",
+      "How are Texas banks above $1B doing?",
+      "What's happening with California credit unions?",
+      "Only overdraft in Texas",
+    ]) expect(parseMarketQuestion(q), q).not.toBeNull();
+  });
 });

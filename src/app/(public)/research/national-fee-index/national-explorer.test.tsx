@@ -1,11 +1,13 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { PRIMARY_CTA_NAV } from "@/components/nav-items";
 import { FEE_PARAM, INSTITUTION_SEARCH_HREF, NationalExplorer, type FeeFamilyGroup } from "./national-explorer";
 import type { DistrictMedian, NationalFinding } from "./findings";
 
 afterEach(() => {
   cleanup();
+  vi.unstubAllGlobals();
   window.history.replaceState(null, "", "/research/national-fee-index");
 });
 
@@ -23,6 +25,7 @@ const row = (fee_category: string, fee_family: string, median: number, p25: numb
 const groups: FeeFamilyGroup[] = [
   { family: "Overdraft & NSF", entries: [row("nsf", "Overdraft & NSF", 30, 25, 32, 53, 2666), row("overdraft", "Overdraft & NSF", 30, 25, 33, 50, 2497)] },
   { family: "Check Services", entries: [row("stop_payment", "Check Services", 27.5, 21.75, 30, 50, 3175)] },
+  { family: "ATM & Card", entries: [row("atm_international", "ATM & Card", 2, 1, 3, 5, 900)] },
 ];
 
 const districts: DistrictMedian[] = [
@@ -44,7 +47,7 @@ const findings: NationalFinding[] = [
   },
 ];
 
-function renderExplorer({ national = 30, cards = findings }: { national?: number | null; cards?: NationalFinding[] } = {}) {
+function renderExplorer({ cards = findings, districtRows = districts }: { cards?: NationalFinding[]; districtRows?: DistrictMedian[] } = {}) {
   return render(
     <NationalExplorer
       header={<h1>Header</h1>}
@@ -52,8 +55,7 @@ function renderExplorer({ national = 30, cards = findings }: { national?: number
       findings={cards}
       groups={groups}
       isPro={false}
-      overdraftDistricts={districts}
-      overdraftNational={national}
+      overdraftDistricts={districtRows}
       cpiSourceUrl="https://data.bls.gov/"
     />,
   );
@@ -106,16 +108,17 @@ describe("NationalExplorer", () => {
     expect(headers).toEqual(["Fee", "Median", "Institutions"]);
   });
 
-  it("compares districts with the national median from the district read, not the table's", () => {
-    // The table says $30; the same read as the district medians says $32.
-    renderExplorer({ national: 32 });
-    expect(panel().textContent).toContain("against the national $32");
+  it("shows one national overdraft median in the panel and compares districts with it", () => {
+    // The panel's headline is the table's $30; the map line and each district's position use that same figure.
+    renderExplorer();
+    expect(panel().textContent).toContain("against the national $30");
+    expect(panel().textContent).not.toMatch(/national \$(?!30\b)\d/);
     fireEvent.click(screen.getByRole("button", { name: /^Philadelphia/ }));
-    expect(panel().textContent).toContain("Same as national");
+    expect(panel().textContent).toContain("Above national");
   });
 
-  it("hides the map when the district read has no national median", () => {
-    renderExplorer({ national: null });
+  it("hides the map when no district has a median", () => {
+    renderExplorer({ districtRows: districts.map((d) => ({ ...d, median: null })) });
     expect(within(panel()).queryByText("By Fed district")).toBeNull();
   });
 
@@ -139,7 +142,7 @@ describe("NationalExplorer", () => {
     renderExplorer();
     const link = within(panel()).getByRole("link", { name: "See where your fees stand" });
     expect(link.getAttribute("href")).toBe(INSTITUTION_SEARCH_HREF);
-    expect(INSTITUTION_SEARCH_HREF).toBe("/institutions");
+    expect(INSTITUTION_SEARCH_HREF).toBe(PRIMARY_CTA_NAV.href);
     expect(link.parentElement?.textContent).toBe("Where does your Overdraft (OD) fee sit? See where your fees stand");
     fireEvent.click(screen.getByRole("button", { name: "Stop Payment", pressed: false }));
     expect(panel().textContent).toContain("Where does your Stop Payment fee sit?");
@@ -180,5 +183,58 @@ describe("NationalExplorer", () => {
     const link = screen.getByRole("link", { name: /^Wire Transfer \(Domestic\)/ });
     expect(link.getAttribute("href")).toBe("/fees/wire_domestic_outgoing");
     expect(screen.getByRole("button", { name: /^Show Stop Payment/ })).toBeTruthy();
+  });
+
+  it("gives the overdraft card's button a short name, not the whole range sentence", () => {
+    renderExplorer({
+      cards: [
+        {
+          key: "overdraft",
+          text: "The median overdraft fee is $30.",
+          median: 30,
+          institutions: 2497,
+          range: { min: 0, p25: 25, median: 30, p75: 33, max: 50 },
+        },
+      ],
+    });
+    const button = screen.getByRole("button", { name: "Show overdraft: $30 median, 2,497 institutions" });
+    expect(button.getAttribute("aria-label")).not.toMatch(/middle half/i);
+  });
+
+  it("names what the CPI figure is compared against in its visible label", () => {
+    renderExplorer({
+      cards: [{ key: "cpi", text: "Prices for bank services rose 1.2%.", month: "September 2026", bankPct: 1.2, allPct: 3.7 } as NationalFinding],
+    });
+    expect(document.body.textContent).toContain("Bank services prices, year to September 2026, against +3.7% for all items.");
+  });
+
+  it("notes that percentage-stated fees are kept out of a dollar median, only where they can occur", () => {
+    renderExplorer();
+    expect(panel().querySelector("[data-rate-note]")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "International ATM", pressed: false }));
+    expect(panel().querySelector("[data-rate-note]")?.textContent).toContain("A fee stated as a percentage is counted separately");
+  });
+
+  it("on a phone, a row tap offers a way back to that row", () => {
+    vi.stubGlobal("matchMedia", (query: string) => ({ matches: query.includes("max-width"), media: query, addEventListener() {}, removeEventListener() {} }));
+    const scrolled: Element[] = [];
+    Element.prototype.scrollIntoView = function (this: Element) {
+      scrolled.push(this);
+    };
+    renderExplorer();
+    expect(within(panel()).queryByRole("button", { name: /Back to the table/ })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Stop Payment", pressed: false }));
+    expect(scrolled.at(-1)?.id).toBe("fee-panel");
+    fireEvent.click(within(panel()).getByRole("button", { name: /Back to the table/ }));
+    expect(scrolled.at(-1)?.getAttribute("data-fee-row")).toBe("stop_payment");
+    expect(within(panel()).queryByRole("button", { name: /Back to the table/ })).toBeNull();
+  });
+
+  it("offers no way back after a card or panel selection", () => {
+    vi.stubGlobal("matchMedia", (query: string) => ({ matches: query.includes("max-width"), media: query, addEventListener() {}, removeEventListener() {} }));
+    Element.prototype.scrollIntoView = () => {};
+    renderExplorer();
+    fireEvent.click(screen.getByRole("button", { name: /^Show Stop Payment/ }));
+    expect(within(panel()).queryByRole("button", { name: /Back to the table/ })).toBeNull();
   });
 });

@@ -14,7 +14,6 @@ const INQUIRY_TYPES = [
   { value: "report", label: `${REPORT_OFFER.name} (${REPORT_PRICE_INLINE})` },
   { value: "enterprise", label: "Hamilton Pro (seats, invoicing)" },
   { value: "billing", label: "Billing or my subscription" },
-  { value: "advisory", label: "Fee Insight Advisory (custom work)" },
   { value: "partnership", label: "Data licensing / API" },
   { value: "general", label: "Something else" },
 ];

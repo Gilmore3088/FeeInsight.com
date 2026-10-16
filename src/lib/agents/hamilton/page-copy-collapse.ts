@@ -34,6 +34,8 @@ export interface PageCopyRow {
   crawled_at: string | Date | null;
   /** True when a newer copy of the document replaced it (`superseded_by_id` set). */
   superseded?: boolean | null;
+  /** The document that replaced this one (`superseded_by_id`), when one did. */
+  superseded_by_id?: number | string | null;
   canonical_fee_key: string;
   variant_type: string | null;
   amount: number | string;
@@ -44,6 +46,8 @@ export interface PageCopyRow {
 
 export interface PageCopyCollapse extends DuplicateCollapse {
   keptFeeName: string;
+  /** Paired only through the replaced-copy link, under another name (#1348). */
+  renamed?: boolean;
   sourceDocumentId: number;
   keptSourceDocumentId: number;
 }
@@ -62,9 +66,39 @@ export interface PageCopyResult {
    * "/docs/2041.pdf" and "/docs/3315.pdf" key alike), name two audiences, or one has no stored text.
    */
   otherDocument: number;
+  /**
+   * Of `pairs` (closed or kept), those matched only because the row's document was replaced by the
+   * kept row's (#1348): the replacing copy reads the line under another name sharing a word
+   * ("Temporary checks" / "Temporary checks (sheet of 3 checks)"). They close on the same tests as
+   * any other pair.
+   */
+  renamed: number;
   collapses: PageCopyCollapse[];
-  /** Set when the read failed, so a failed step does not read as "nothing found". */
+  /** Set when the read or the close failed, so a failed step does not read as "nothing found". */
   error?: string;
+}
+
+const NAME_FILLER = new Set(["fee", "fees", "charge", "charges", "per", "each", "item", "items", "the", "a", "an", "of", "for", "and", "or", "to", "on", "in", "account", "accounts"]);
+
+function nameWords(name: string | null): Set<string> {
+  const lower = (name ?? "").toLowerCase();
+  const words = lower.split(/[^a-z]+/).filter((word) => word.length > 1 && !NAME_FILLER.has(word));
+  // A box size counts as a word: "Safe Deposit Box - 3x5" and "3 x 5" name one box.
+  const sizes = [...lower.matchAll(/(\d+(?:\.\d+)?)\s*["”']?\s*(?:x|by)\s*(\d+(?:\.\d+)?)/g)].map((m) => `${m[1]}x${m[2]}`);
+  return new Set([...words, ...sizes]);
+}
+
+const BOX_SIZE = /^\d+(?:\.\d+)?x\d+(?:\.\d+)?$/;
+
+/**
+ * The two names share a word beyond "fee", "charge", "each" and the like. Two names that each give
+ * a box size name the same box only when a size is shared ("Safe Deposit Box - 3x10" is not "3 x 5").
+ */
+function shareWord(a: string | null, b: string | null): boolean {
+  const [one, two] = [nameWords(a), nameWords(b)];
+  const [sizesA, sizesB] = [[...one].filter((word) => BOX_SIZE.test(word)), [...two].filter((word) => BOX_SIZE.test(word))];
+  if (sizesA.length > 0 && sizesB.length > 0 && !sizesA.some((size) => two.has(size))) return false;
+  return [...one].some((word) => two.has(word) || two.has(word.replace(/s$/, "")) || two.has(`${word}s`));
 }
 
 function sameLine(a: string | null, b: string | null): boolean {
@@ -148,10 +182,11 @@ function pricesOverlap(a: Set<string>, b: Set<string>): boolean {
  * document's stored text, and the two documents must print mostly the same prices
  * (`sameScheduleText`). A pair the kept text prints as two lines, or under both a personal and a
  * business heading, stays two fees, as do rows whose stated frequencies or audiences differ. Rows
- * of one document are left to the near-name collapse.
+ * of one document are left to the near-name collapse. A row whose document the kept row's document
+ * replaced (`superseded_by_id`) pairs under any name (#1348), on the same tests.
  */
 export function pageCopyRepeats(rows: PageCopyRow[], texts: Map<string, string>): Omit<PageCopyResult, "live" | "institutions"> {
-  const result = { pairs: 0, apartOnPage: 0, unproven: 0, otherDocument: 0, collapses: [] as PageCopyCollapse[] };
+  const result = { pairs: 0, apartOnPage: 0, unproven: 0, otherDocument: 0, renamed: 0, collapses: [] as PageCopyCollapse[] };
   const priceSets = new Map<string, Set<string>>();
   const priceSet = (id: string) => {
     if (!priceSets.has(id)) priceSets.set(id, prices(texts.get(id) ?? ""));
@@ -191,21 +226,44 @@ export function pageCopyRepeats(rows: PageCopyRow[], texts: Map<string, string>)
     if (new Set(group.map((row) => String(row.source_document_id))).size < 2) continue;
     const byStated = group.every((row) => statedDate(row) != null);
     const time = (row: PageCopyRow) => (byStated ? statedDate(row)! : read(row));
-    // A copy a newer one replaced (`superseded_by_id`) is never the one kept over a current copy.
-    const ordered = [...group].sort((a, b) => Number(a.superseded ?? false) - Number(b.superseded ?? false) || time(b) - time(a) || read(b) - read(a) || Number(b.source_document_id) - Number(a.source_document_id) || Number(b.fee_published_id) - Number(a.fee_published_id));
+    // A replaced copy (`superseded_by_id`) is never kept over the copy that replaced it, or over a
+    // current copy of the same address. A superseded copy is not ranked below a
+    // current copy of another address: that copy may be an older edition.
+    const replacedHere = (row: PageCopyRow) =>
+      Boolean(row.superseded) &&
+      group.some(
+        (other) =>
+          String(other.source_document_id) !== String(row.source_document_id) &&
+          (String(other.source_document_id) === String(row.superseded_by_id ?? "") || (!other.superseded && other.document_url === row.document_url)),
+      );
+    const ordered = [...group].sort((a, b) => Number(replacedHere(a)) - Number(replacedHere(b)) || time(b) - time(a) || read(b) - read(a) || Number(b.source_document_id) - Number(a.source_document_id) || Number(b.fee_published_id) - Number(a.fee_published_id));
     const kept: PageCopyRow[] = [];
+    // The kept row's document replaced this row's (`superseded_by_id`): the same line under another
+    // name is still one fee unless the replacing copy prints both names as lines of their own.
+    // The two names must share a word ("Online Stop Payment" / "Stop Payment"), so a line the newer
+    // copy dropped never closes as another line's copy. A partner of the same name wins, then a near
+    // name ("Stop Payment" pairs with "Stop Payment", not "ACH Stop Payment", when both are kept).
+    const replacedBy = (row: PageCopyRow, keep: PageCopyRow) =>
+      row.superseded_by_id != null && String(row.superseded_by_id) === String(keep.source_document_id) && shareWord(row.fee_name, keep.fee_name);
+    const agree = (row: PageCopyRow, keep: PageCopyRow) => {
+      if (String(keep.source_document_id) === String(row.source_document_id)) return false;
+      const [f1, f2] = [frequencyClass(keep.frequency), frequencyClass(row.frequency)];
+      const [a1, a2] = [keep.fee_audience ?? "unknown", row.fee_audience ?? "unknown"];
+      return (f1 == null || f2 == null || f1 === f2) && (a1 === "unknown" || a2 === "unknown" || a1 === a2);
+    };
     for (const row of ordered) {
-      const match = kept.find((keep) => {
-        if (String(keep.source_document_id) === String(row.source_document_id) || !sameLine(keep.fee_name, row.fee_name)) return false;
-        const [f1, f2] = [frequencyClass(keep.frequency), frequencyClass(row.frequency)];
-        const [a1, a2] = [keep.fee_audience ?? "unknown", row.fee_audience ?? "unknown"];
-        return (f1 == null || f2 == null || f1 === f2) && (a1 === "unknown" || a2 === "unknown" || a1 === a2);
-      });
+      const exact = (keep: PageCopyRow) => (keep.fee_name ?? "").trim().toLowerCase() === (row.fee_name ?? "").trim().toLowerCase();
+      const match =
+        kept.find((keep) => agree(row, keep) && exact(keep)) ??
+        kept.find((keep) => agree(row, keep) && sameLine(keep.fee_name, row.fee_name)) ??
+        kept.find((keep) => agree(row, keep) && replacedBy(row, keep));
       if (!match) {
         kept.push(row);
         continue;
       }
       result.pairs += 1;
+      const renamed = !sameLine(match.fee_name, row.fee_name);
+      if (renamed) result.renamed += 1;
       const text = texts.get(String(match.source_document_id)) ?? null;
       if (!text || !printedAtPrice(text, match.fee_name ?? "", match.amount)) {
         result.unproven += 1;
@@ -231,6 +289,7 @@ export function pageCopyRepeats(rows: PageCopyRow[], texts: Map<string, string>)
           amount: Number(row.amount),
           sourceDocumentId: Number(row.source_document_id),
           keptSourceDocumentId: Number(match.source_document_id),
+          ...(renamed ? { renamed: true } : {}),
         });
       }
     }
@@ -249,7 +308,7 @@ export async function collapsePageCopies(
   options: { runId: number; batchId: string; dryRun: boolean; institutionId?: number; live?: boolean },
 ): Promise<PageCopyResult> {
   const live = options.live ?? PAGE_COPY_COLLAPSE_LIVE;
-  const empty: PageCopyResult = { live, institutions: 0, pairs: 0, apartOnPage: 0, unproven: 0, otherDocument: 0, collapses: [] };
+  const empty: PageCopyResult = { live, institutions: 0, pairs: 0, apartOnPage: 0, unproven: 0, otherDocument: 0, renamed: 0, collapses: [] };
   const params: Array<number | string> = [PAGE_COPY_COLLAPSE_INSTITUTIONS, String(options.runId)];
   let institutionFilter = "";
   if (options.institutionId) {
@@ -264,7 +323,7 @@ export async function collapsePageCopies(
       const found = await scope.unsafe<PageCopyRow[]>(
         `WITH live AS (
            SELECT fp.fee_published_id, fp.institution_id, fr.source_document_id, sd.document_url,
-                  GREATEST(sd.last_checked_at, sd.crawled_at) AS crawled_at, sd.superseded_by_id IS NOT NULL AS superseded,
+                  GREATEST(sd.last_checked_at, sd.crawled_at) AS crawled_at, sd.superseded_by_id IS NOT NULL AS superseded, sd.superseded_by_id,
                   fp.canonical_fee_key, fp.variant_type, fp.amount, fp.fee_name, fp.frequency, fp.fee_audience
              FROM published_fee_records fp
              JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
@@ -327,7 +386,8 @@ export async function collapsePageCopies(
     result.collapses = found.collapses.filter((row) => ids.has(row.feePublishedId));
   } catch (error) {
     console.error("page-copy collapse failed:", error);
-    return { ...result, collapses: [] };
+    // Reported, so a failed close does not read as "nothing to close".
+    return { ...result, collapses: [], error: `close failed: ${error instanceof Error ? error.message : String(error)}` };
   }
   if (result.collapses.length > 0) {
     invalidatePublicReadCache();

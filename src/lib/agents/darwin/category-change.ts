@@ -44,6 +44,21 @@ export const DARWIN_CATEGORY_CHANGE_SCAN = 2000;
 /** Knox's markers for a row read again under a possibly new category. */
 export const KNOX_CATEGORY_CHANGE_FLAGS = ["knox_reread_took_over", "knox_stale_hint_repaired"] as const;
 export const KNOX_REFILED_FROM_PREFIX = "knox_refiled_from:";
+/**
+ * Knox's old category on a re-read take-over that changed it (`insertCandidate` in
+ * knox/extract.ts). A take-over drops the row's old `canonical_hint:` flags, so before this flag a
+ * row Darwin judged under the old category and Knox then took over under a new one had no proof
+ * of the change and stayed rejected (review of #1296).
+ */
+export const KNOX_TAKEOVER_FROM_PREFIX = "knox_takeover_from:";
+/**
+ * Whether `knox_takeover_from:<old>` counts as proof, as `knox_refiled_from:<old>` does. Off until
+ * James says yes: on, rows it proves join the re-judge above, and judging them again can publish
+ * fees. Off, each verify step counts the rows it would add and samples them in its ledger detail
+ * (`category_change_rejudge.takeover_proof`); Knox writes the flag either way, since the flag
+ * itself changes no decision.
+ */
+export const DARWIN_TAKEOVER_CATEGORY_PROOF_LIVE = false;
 
 /** One earlier `verify.rules` decision on the row. */
 export interface PriorDecision {
@@ -76,6 +91,8 @@ export interface CategoryChangeCandidate {
   judgedAs: string | null;
   /** Knox's old category from a `knox_refiled_from:` marker, when there is one. */
   refiledFrom: string | null;
+  /** Knox's old category from a `knox_takeover_from:` marker, when there is one. */
+  takeoverFrom: string | null;
   /** Reason codes of the earlier decisions, newest first. */
   reasons: string[];
 }
@@ -93,6 +110,15 @@ export interface CategoryChangeRejudgeSummary {
   reasonCounts: Record<string, number>;
   /** Rows handed to this step's batch (0 while the switch is off). */
   selected: number;
+  /**
+   * Rows only `knox_takeover_from:` proves (`DARWIN_TAKEOVER_CATEGORY_PROOF_LIVE`): counted in
+   * `candidates` only while that switch is on; off, the read-only count and sample for James.
+   */
+  takeoverProof: {
+    live: boolean;
+    rows: number;
+    sample: Array<{ fee_raw_id: number; institution_id: number; fee_name: string; amount: number | null; category_now: string; takeover_from: string | null; judged_as: string | null; reasons: string[] }>;
+  };
   sample: Array<{
     fee_raw_id: number;
     institution_id: number;
@@ -145,15 +171,24 @@ export function hasCategoryChangeMarker(outlierFlags: unknown): boolean {
  * earlier Knox category. On a plain take-over the old flags may be gone, so only a decision
  * whose judged category is another `canonical_hint:` flag still on the row is proof.
  */
-function earlierKnoxCategories(outlierFlags: unknown, categoryNow: string): { all: boolean; known: Set<string> } {
+function earlierKnoxCategories(
+  outlierFlags: unknown,
+  categoryNow: string,
+  takeoverProof: boolean,
+): { all: boolean; known: Set<string> } {
   const flags = flagsOf(outlierFlags);
   const known = new Set<string>();
+  // A take-over marker is proof only with the switch on; it is written only when the take-over
+  // changed the category, so, like a re-file, every decision before it was under another one.
+  const changeMarker = (flag: string) =>
+    flag.startsWith(KNOX_REFILED_FROM_PREFIX) || (takeoverProof && flag.startsWith(KNOX_TAKEOVER_FROM_PREFIX));
   for (const flag of flags) {
     if (flag.startsWith(KNOX_REFILED_FROM_PREFIX)) known.add(flag.slice(KNOX_REFILED_FROM_PREFIX.length).trim());
+    if (takeoverProof && flag.startsWith(KNOX_TAKEOVER_FROM_PREFIX)) known.add(flag.slice(KNOX_TAKEOVER_FROM_PREFIX.length).trim());
     if (flag.startsWith("canonical_hint:")) known.add(flag.slice("canonical_hint:".length).trim());
   }
   known.delete(categoryNow);
-  const all = flags.some((flag) => flag === "knox_stale_hint_repaired" || flag.startsWith(KNOX_REFILED_FROM_PREFIX));
+  const all = flags.some((flag) => flag === "knox_stale_hint_repaired" || changeMarker(flag));
   return { all, known };
 }
 
@@ -171,10 +206,11 @@ export function categoryChangedSinceDecision(
   feeName: string,
   decisions: readonly PriorDecision[],
   outlierFlags: unknown = [],
+  takeoverProof = DARWIN_TAKEOVER_CATEGORY_PROOF_LIVE,
 ): boolean {
   if (!categoryNow || decisions.length === 0) return false;
   const judgedNow = new Set([categoryNow, refileCategory(categoryNow, feeName)].filter(Boolean));
-  const earlier = earlierKnoxCategories(outlierFlags, categoryNow);
+  const earlier = earlierKnoxCategories(outlierFlags, categoryNow, takeoverProof);
   return decisions.every((decision) => {
     if (decision.canonical_fee_key != null && judgedNow.has(decision.canonical_fee_key)) return false;
     if (decision.knox_category) return decision.knox_category !== categoryNow;
@@ -182,20 +218,32 @@ export function categoryChangedSinceDecision(
   });
 }
 
-/** The candidates among selected rows, given the row's category today (Darwin's `canonicalHintFrom`). */
+/**
+ * The candidates among selected rows, given the row's category today (Darwin's `canonicalHintFrom`).
+ * `takeoverProof` defaults to the switch; the verify step also asks with it on to count what the
+ * switch would add.
+ */
 export function categoryChangeCandidates(
   rows: readonly CategoryChangeRow[],
   categoryOf: (row: CategoryChangeRow) => string | null,
+  options: { takeoverProof?: boolean } = {},
 ): CategoryChangeCandidate[] {
+  const takeoverProof = options.takeoverProof ?? DARWIN_TAKEOVER_CATEGORY_PROOF_LIVE;
   const candidates: CategoryChangeCandidate[] = [];
   for (const row of rows) {
     if (!hasCategoryChangeMarker(row.outlier_flags)) continue;
     const decisions = parseAttempts(row.attempts);
     const category = categoryOf(row);
-    if (!category || !categoryChangedSinceDecision(category, row.fee_name, decisions, row.outlier_flags)) continue;
-    const refiledFrom = flagsOf(row.outlier_flags)
+    if (!category || !categoryChangedSinceDecision(category, row.fee_name, decisions, row.outlier_flags, takeoverProof)) continue;
+    const flags = flagsOf(row.outlier_flags);
+    const refiledFrom = flags
       .find((flag) => flag.startsWith(KNOX_REFILED_FROM_PREFIX))
       ?.slice(KNOX_REFILED_FROM_PREFIX.length) ?? null;
+    // The latest take-over's old category: a row taken over twice carries one flag per change.
+    const takeoverFrom = flags
+      .filter((flag) => flag.startsWith(KNOX_TAKEOVER_FROM_PREFIX))
+      .at(-1)
+      ?.slice(KNOX_TAKEOVER_FROM_PREFIX.length) ?? null;
     const amount = row.amount == null || row.amount === "" ? null : Number(row.amount);
     candidates.push({
       feeRawId: Number(row.fee_raw_id),
@@ -205,6 +253,7 @@ export function categoryChangeCandidates(
       category,
       judgedAs: decisions[0]?.canonical_fee_key ?? null,
       refiledFrom,
+      takeoverFrom,
       reasons: decisions.map((decision) => decision.reason_code ?? "verified"),
     });
   }
@@ -216,6 +265,8 @@ export function summarizeCategoryChange(
   scanned: number,
   selected: number,
   live: boolean,
+  takeoverOnly: readonly CategoryChangeCandidate[] = [],
+  takeoverLive: boolean = DARWIN_TAKEOVER_CATEGORY_PROOF_LIVE,
 ): CategoryChangeRejudgeSummary {
   const reasonCounts: Record<string, number> = {};
   for (const candidate of candidates) {
@@ -229,6 +280,20 @@ export function summarizeCategoryChange(
     truncated: scanned >= DARWIN_CATEGORY_CHANGE_SCAN,
     reasonCounts,
     selected,
+    takeoverProof: {
+      live: takeoverLive,
+      rows: takeoverOnly.length,
+      sample: takeoverOnly.slice(0, DARWIN_CATEGORY_CHANGE_SAMPLE).map((candidate) => ({
+        fee_raw_id: candidate.feeRawId,
+        institution_id: candidate.institutionId,
+        fee_name: candidate.feeName,
+        amount: candidate.amount,
+        category_now: candidate.category,
+        takeover_from: candidate.takeoverFrom,
+        judged_as: candidate.judgedAs,
+        reasons: candidate.reasons,
+      })),
+    },
     sample: candidates.slice(0, DARWIN_CATEGORY_CHANGE_SAMPLE).map((candidate) => ({
       fee_raw_id: candidate.feeRawId,
       institution_id: candidate.institutionId,

@@ -3,6 +3,7 @@
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { InstitutionPicker } from "@/components/hamilton/InstitutionPicker";
 import { trackEvent } from "@/lib/analytics";
+import { CHOOSER_INPUT_ID } from "./pro-plan-cards";
 
 interface ProTierChooserProps {
   /** What the price below is for, once chosen: "First Bank, Huntsville, AL · Under $500M in assets". */
@@ -92,13 +93,13 @@ export function ProTierChooser({ chosenLabel, chosenDetail = null, problem = nul
   return (
     <div>
       <InstitutionPicker
-        inputId="pro_tier_institution"
+        inputId={CHOOSER_INPUT_ID}
         name="pro_tier_institution_id"
-        label="Find your institution"
-        help="Its size sets the price."
+        label="Your bank or credit union"
+        help="Its total assets set the price."
         labelClassName="text-sm font-semibold text-ink"
         labelStyle={{}}
-        inputClassName="w-full rounded-lg border border-[#CFC5B7] bg-white px-3.5 py-3 text-base text-ink outline-none focus:border-brick focus:ring-2 focus:ring-brick/20"
+        inputClassName="w-full rounded-lg border-2 border-ink bg-white px-3.5 py-3 text-base text-ink outline-none focus:border-brick focus:ring-2 focus:ring-brick/20"
         inputStyle={{}}
         onSelect={(result) => {
           if (!result) return;

@@ -14,6 +14,7 @@ import { FAMILY_EXPERTS, priceWindows, runFamilyExpert } from "@/lib/agents/knox
 import { newestColumnText } from "@/lib/fee-change-columns";
 import { namesALimit, namesAWorkedExample, passesDarwinChecks, readsAMeasuredAmount, tidyFeeName } from "@/lib/agents/knox/layout";
 import { extractTableCandidates, KNOX_TABLE_STRATEGY } from "@/lib/agents/knox/table-rows";
+import { extractAccountTableCandidates, KNOX_ACCOUNT_TABLE_STRATEGY } from "@/lib/agents/knox/account-table";
 import { checkFeeAgainstSource, joinLabeledFeeCardText } from "@/lib/custom-report/source-check";
 import { rateFeeFromHeld, type RateFeeCandidate } from "@/lib/agents/knox/percent";
 import { contextFees, NO_LONGER_CHARGED } from "@/lib/agents/knox/context-names";
@@ -79,7 +80,7 @@ import { frequencyFromLine, settledFrequency } from "@/lib/fee-frequency";
 // charge named without a fee word and charged by the period, one stated in a sentence ("a low
 // balance fee of $6.95 will be imposed every statement cycle"), and a price after a balance word
 // that belongs to the figure before it ("Below $500.00 minimum $5.00 per Month").
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 70 } as const;
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 72 } as const;
 
 export interface SpecialistRun {
   strategy: string;
@@ -179,6 +180,8 @@ export function runFreeSpecialists(sourceText: string): FreeExtractionResult {
     { ...KNOX_RULES_STRATEGY, pass: 1, run: () => withContextFees(text, extractCandidatesFromText(text)) },
     // v62: the table pass reads a fee-change table at its newest column too, as the self-check does.
     { ...KNOX_TABLE_STRATEGY, pass: 2, run: () => extractTableCandidates(newestColumnText(text)) },
+    // #1100 gap 3: each product's monthly fee in an account comparison table, read by its column.
+    { ...KNOX_ACCOUNT_TABLE_STRATEGY, pass: 2, run: () => extractAccountTableCandidates(newestColumnText(text)) },
     ...FAMILY_EXPERTS.map((expert) => ({
       strategy: expert.strategy,
       version: expert.version,

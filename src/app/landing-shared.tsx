@@ -8,6 +8,7 @@ import type { PublicStatsSummary } from "@/lib/public-stats";
 import type { LinePosition } from "@/lib/custom-report/analysis";
 import type { MarketReport } from "@/lib/custom-report/report-data";
 import type { MarketLadderData } from "@/app/for-institutions/market-ladder";
+import { lineName } from "@/app/for-institutions/board-math";
 import { sourcedFees, type SourcedFee } from "@/app/for-institutions/sample-sources";
 import type { AnalyzeScenario } from "@/app/subscribe/scenario";
 
@@ -166,6 +167,31 @@ export interface HomeData {
   scenario: AnalyzeScenario | null;
 }
 
+/**
+ * Whether a homepage render may be kept in the page cache. The page is regenerated in the
+ * background (ISR), and a render made while a read was failing would otherwise be served
+ * for the whole revalidate window, or baked into the build. A read that failed (as opposed
+ * to one that answered "nothing today", such as no sample bank passing the bar) makes the
+ * render uncacheable: the page then caches it for a minute instead of fifteen
+ * (`shortenPageLife`, #1572), so the next render reads the database again.
+ */
+export function homeReadsCacheable({
+  summary,
+  categories,
+  sampleFailed,
+  overdraftFailed,
+  ladderFailed,
+}: {
+  summary: Pick<PublicStatsSummary, "complete">;
+  categories: FeeCategorySummary[];
+  sampleFailed: boolean;
+  overdraftFailed: boolean;
+  /** A state or charter benchmark read behind the sample's market ladder failed. */
+  ladderFailed: boolean;
+}): boolean {
+  return summary.complete && categories.length > 0 && !sampleFailed && !overdraftFailed && !ladderFailed;
+}
+
 /** The sample report's fees and comparable lines, with only verified source lines kept. */
 export function buildSampleView(report: MarketReport | null): SampleView | null {
   if (!report) return null;
@@ -174,7 +200,7 @@ export function buildSampleView(report: MarketReport | null): SampleView | null 
     if (!line.comparable || !line.own || !line.peers || !line.position) continue;
     rows.push({
       key: line.key,
-      label: getDisplayName(line.key),
+      label: lineName(line.label),
       amount: line.own.amount,
       median: line.peers.median,
       p25: line.peers.p25,
@@ -186,8 +212,8 @@ export function buildSampleView(report: MarketReport | null): SampleView | null 
   return {
     institutionName: report.data.subject.institution_name,
     competitors: report.analysis.readiness.competitorsWithData,
-    // One name per fee on every exhibit: the fee taxonomy's display name, not the report line's.
-    fees: sourcedFees(report.analysis.lines).map((fee) => ({ ...fee, label: getDisplayName(fee.key) })),
+    // One name per fee on every sample exhibit: the report line's own, as the ladder shows it.
+    fees: sourcedFees(report.analysis.lines).map((fee) => ({ ...fee, label: lineName(fee.label) })),
     rows,
   };
 }

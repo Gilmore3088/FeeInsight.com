@@ -135,6 +135,7 @@ describe("enum labels", () => {
     expect(getFrequencyLabel("per_occurrence")).toBe("per item");
     expect(getFrequencyLabel("monthly")).toBe("per month");
     expect(getFrequencyLabel("annual")).toBe("per year");
+    expect(getFrequencyLabel("hourly")).toBe("per hour");
   });
 
   it("title-cases only ALL-CAPS strings", () => {

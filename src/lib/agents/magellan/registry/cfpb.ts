@@ -32,8 +32,11 @@ const BREAKDOWN_CONCURRENCY = 4;
  * v3: a bank's own full name goes to the far-largest bank of that name (issue #54), so every year
  * re-runs and the newly accepted banks get their complaint history.
  * v4: a name with no bank word that would wait for review is recorded as not a match.
+ * v5: a name with no bank word is accepted only for a $10B bank that it names (its parent's full
+ * name, or leading with the bank's own words); other such matches wait for a person. Every year
+ * re-runs, so a debt collector's complaints leave the bank they were filed under.
  */
-export const CFPB_PARSER_VERSION = 4;
+export const CFPB_PARSER_VERSION = 5;
 const CURRENT_YEAR_REFRESH_HOURS = 24 * 7;
 const RECENT_YEAR_REFRESH_HOURS = 24 * 30;
 const HISTORICAL_REFRESH_HOURS = 24 * 180;

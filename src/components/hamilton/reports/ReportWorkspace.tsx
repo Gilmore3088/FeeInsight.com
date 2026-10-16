@@ -414,7 +414,7 @@ export function ReportWorkspace({
           <span aria-hidden="true">·</span>
           <span className="[font-variant-numeric:tabular-nums]">
             {/* The report reads published fees only, so the header counts the same set. */}
-            {selectedInstitution.publishedFeeCount.toLocaleString()} published fees
+            {selectedInstitution.publishedFeeCount.toLocaleString("en-US")} published fees
           </span>
           {selectedInstitution.assetSizeLabel && (
             <>

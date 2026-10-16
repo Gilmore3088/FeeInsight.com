@@ -150,7 +150,7 @@ export const STATE_LANE_STEPS: AgentRunStepDefinition[] = [
   },
   {
     key: "publish",
-    agent: "hamilton",
+    agent: "gutenberg",
     title: "Publish verified state fee intelligence",
     // Hamilton's per-step maximum, matching Darwin's: at 100 a pass published a third of
     // what Darwin verified (PA 2026-10-05: 302 verified, 102 published).
@@ -169,7 +169,7 @@ export const STATE_LANE_STEPS: AgentRunStepDefinition[] = [
   },
   {
     key: "public-diagnose",
-    agent: "hamilton",
+    agent: "gutenberg",
     title: "Summarize state public discovery diagnosis",
   },
 ];
