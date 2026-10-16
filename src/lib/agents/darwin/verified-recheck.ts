@@ -3,7 +3,7 @@ import { invalidatePublicReadCache } from "@/lib/data-store/fee-cache";
 import { recordAttempt } from "@/lib/agents/learning/attempts";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import { excerptOf } from "@/lib/agents/hamilton/frequency-fill";
-import { secondLook } from "@/lib/agents/hamilton/second-look";
+import { PENDING_KIND, SECOND_LOOK_MIN_MINUTES, secondLook, secondLookDedupeKey } from "@/lib/agents/hamilton/second-look";
 import { refileCategory } from "@/lib/fee-category-guard";
 
 import { tierPerkZero } from "./tier-perk";
@@ -57,6 +57,17 @@ export const DARWIN_RECHECK_OLDER_LIVE = false;
 /** Older live rows read per step for the shadow report, on every `OLDER_LIVE_SHADOW_EVERY`th run. */
 export const OLDER_LIVE_SHADOW_LIMIT = 200;
 export const OLDER_LIVE_SHADOW_EVERY = 4;
+/**
+ * Default-off switch (#1397): give each first look its second look. A failing live row is flagged
+ * `takedown_pending` and comes down only when a run 12 hours on fails it again, but the recheck
+ * reads a row once per version, so that second read never came: Frost's 14 premium-schedule $0s
+ * were flagged `tier_perk_zero` on 2026-10-15 08:35 and stayed live. On, each step re-reads up to
+ * `SECOND_LOOK_DUE_LIMIT` live rows whose first look is due, and the shared second look confirms
+ * (archives) or clears each. Off, it reports what that would do (`dueSecondLooks`) and writes
+ * nothing. It turns on by PR once James approves the count of due flags.
+ */
+export const DARWIN_RECHECK_SECOND_LOOK_LIVE = false;
+export const SECOND_LOOK_DUE_LIMIT = 100;
 
 interface RecheckRow extends RawFeeRow {
   fee_verified_id: number | string;
@@ -82,6 +93,19 @@ export interface VerifiedRecheckResult {
   takenDown: number[];
   /** While `DARWIN_RECHECK_OLDER_LIVE` is off: what the recheck would do to older live rows (#1568). */
   olderLive?: OlderLiveShadow | null;
+  /** While `DARWIN_RECHECK_SECOND_LOOK_LIVE` is off: what the due second looks would do (#1397). */
+  dueSecondLooks?: DueSecondLookShadow | null;
+}
+
+export interface DueSecondLookShadow {
+  /** Live rows whose first look is at least 12 hours old (up to the limit). */
+  due: number;
+  /** Still failing: the second look would archive them, by reason code. */
+  wouldConfirm: Record<string, number>;
+  /** Passing now: the second look would clear their flags. */
+  wouldClear: number;
+  samples: Array<{ feePublishedId: number; institutionId: number; canonicalFeeKey: string; feeName: string; amount: number | null; code: string }>;
+  error?: string;
 }
 
 export interface OlderLiveShadow {
@@ -135,6 +159,53 @@ function selectOlderLiveRows(db: SqlTag, limit: number, from: "random" | "start"
                 v.fee_verified_id DESC
        LIMIT ${limit}::int
     `);
+}
+
+/** Live rows whose recheck first look (`takedown_pending`) is due its second look (#1397). */
+function selectDueSecondLookRows(db: SqlTag, limit: number): Promise<RecheckRow[]> {
+  const prefix = secondLookDedupeKey(DARWIN_RECHECK_CHECK, 0).replace(/0$/, "");
+  return inSavepoint(db, (scope) => scope<RecheckRow[]>`
+      SELECT v.fee_verified_id, v.review_status, v.canonical_fee_key, v.amount AS verified_amount,
+             r.fee_raw_id, r.institution_id, r.source_url, r.document_r2_key, r.extraction_confidence,
+             r.fee_name, r.amount, r.frequency, r.outlier_flags, COALESCE(r.extraction_note, r.conditions) AS conditions, r.source_document_id,
+             r.amount_kind, r.rate_percent, p.fee_published_id
+        FROM pipeline_feedback f
+        JOIN published_fee_records p ON f.dedupe_key = ${prefix} || p.fee_published_id::text
+        JOIN verified_fee_observations v ON v.fee_verified_id = p.lineage_ref
+        JOIN raw_fee_observations r ON r.fee_raw_id = v.fee_raw_id
+       WHERE f.dedupe_key LIKE ${`${prefix}%`}
+         AND f.kind = ${PENDING_KIND}
+         AND (f.evidence->>'flagged_at')::timestamptz <= NOW() - make_interval(mins => ${SECOND_LOOK_MIN_MINUTES})
+         AND p.rolled_back_at IS NULL
+         AND v.review_status IN ('verified', 'approved')
+       ORDER BY (f.evidence->>'flagged_at')::timestamptz ASC, p.fee_published_id
+       LIMIT ${limit}::int
+    `);
+}
+
+/** Read-only: what the due second looks would do (#1397). Writes nothing. */
+export async function dueSecondLookShadow(db: SqlTag, options: { limit?: number } = {}): Promise<DueSecondLookShadow> {
+  const shadow: DueSecondLookShadow = { due: 0, wouldConfirm: {}, wouldClear: 0, samples: [] };
+  try {
+    const rows = await selectDueSecondLookRows(db, options.limit ?? SECOND_LOOK_DUE_LIMIT);
+    if (rows.length === 0) return shadow;
+    const texts = await textsFor(db, rows);
+    for (const row of rows) {
+      shadow.due += 1;
+      const { canonicalFeeKey, amount, check } = recheckOf(row, texts);
+      if (!check) {
+        shadow.wouldClear += 1;
+        continue;
+      }
+      shadow.wouldConfirm[check.code] = (shadow.wouldConfirm[check.code] ?? 0) + 1;
+      if (shadow.samples.length < 20) {
+        shadow.samples.push({ feePublishedId: Number(row.fee_published_id), institutionId: Number(row.institution_id), canonicalFeeKey, feeName: row.fee_name ?? "", amount, code: check.code });
+      }
+    }
+  } catch (error) {
+    return { ...shadow, error: error instanceof Error ? error.message : String(error) };
+  }
+  return shadow;
 }
 
 function selectRows(db: SqlTag, limit: number, reselectCohort: boolean): Promise<RecheckRow[]> {
@@ -232,15 +303,18 @@ export async function olderLiveShadow(db: SqlTag, options: { runId: number; limi
 
 export async function recheckVerifiedFees(
   db: SqlTag,
-  options: { runId: number; stepId?: number | null; limit?: number; now?: Date; sameStepTakedown?: boolean; olderLive?: boolean },
+  options: { runId: number; stepId?: number | null; limit?: number; now?: Date; sameStepTakedown?: boolean; olderLive?: boolean; secondLooks?: boolean },
 ): Promise<VerifiedRecheckResult> {
   const limit = Math.max(1, Math.min(options.limit ?? RECHECK_LIMIT, 1_000));
   const olderLive = options.olderLive ?? DARWIN_RECHECK_OLDER_LIVE;
+  const secondLooks = options.secondLooks ?? DARWIN_RECHECK_SECOND_LOOK_LIVE;
   options = { ...options, sameStepTakedown: options.sameStepTakedown ?? DARWIN_RECHECK_SAME_STEP_TAKEDOWN };
   const result: VerifiedRecheckResult = { ...EMPTY, rejected: [], restored: [], takenDown: [] };
   // Off: every fourth run reports what reading older live rows would do, and changes nothing for
   // them (#1568). It is a per-step sample; the whole backlog's count is a separate read-only query.
   if (!olderLive && options.runId % OLDER_LIVE_SHADOW_EVERY === 0) result.olderLive = await olderLiveShadow(db, { runId: options.runId });
+  // Off: report what the due second looks would do, and change nothing (#1397).
+  if (!secondLooks) result.dueSecondLooks = await dueSecondLookShadow(db);
   let rows: RecheckRow[];
   try {
     // The rows the not_in_source re-select verified (#883, the cohort UAT checked) are read first;
@@ -249,6 +323,11 @@ export async function recheckVerifiedFees(
     if (rows.length === 0) rows = await selectRows(db, limit, false);
     // On: older live rows get their own share of each step, so new rows never starve them (#1568).
     if (olderLive) rows = [...rows, ...(await selectOlderLiveRows(db, Math.ceil(limit / 2), null))];
+    // On: first looks that are due get their second read; the shared second look confirms or clears them.
+    if (secondLooks) {
+      const seen = new Set(rows.map((row) => String(row.fee_verified_id)));
+      rows = [...rows, ...(await selectDueSecondLookRows(db, SECOND_LOOK_DUE_LIMIT)).filter((row) => !seen.has(String(row.fee_verified_id)))];
+    }
   } catch (error) {
     console.warn("[darwin] verified recheck read failed", error instanceof Error ? error.message : error);
     return result;
