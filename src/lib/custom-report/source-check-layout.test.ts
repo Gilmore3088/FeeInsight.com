@@ -660,6 +660,41 @@ describe("name words match whole words", () => {
     expect(checkFeeAgainstSource("Product/ServiceStop Payments | Fee $30.00\nProduct/ServiceTemporary Checks | Fee $5.00 per set", "Temporary Checks", 5, ".").ok).toBe(true);
   });
 
+  it("reads the name's own words closed up into one", () => {
+    expect(checkFeeAgainstSource("Nonsufficient Funds Fee | $32.00", "Non-Sufficient Funds Fee", 32, ".").ok).toBe(true);
+    expect(checkFeeAgainstSource("Overlimit Fee | $25.00", "Over Limit Fee", 25, ".").ok).toBe(true);
+    expect(checkFeeAgainstSource("Representment Fee | $30.00", "Re-presentment Fee", 30, ".").ok).toBe(true);
+    expect(checkFeeAgainstSource("Prepaid Card Reload | $3.00", "Pre-paid Card Reload", 3, ".").ok).toBe(true);
+    expect(checkFeeAgainstSource("Debitcard Replacement | $10.00", "Debit Card Replacement", 10, ".").ok).toBe(true);
+    expect(checkFeeAgainstSource("Billpay Monthly | $5.00", "Bill Pay Monthly", 5, ".").ok).toBe(true);
+    expect(checkFeeAgainstSource("Nonmember ATM Withdrawal | $2.00", "Non-Member ATM Withdrawal", 2, ".").ok).toBe(true);
+    expect(checkFeeAgainstSource("Cardholder Replacement | $10.00", "Card Replacement", 10, ".").ok).toBe(true);
+    expect(checkFeeAgainstSource("Returned Mailing | $5.00", "Returned Mail", 5, ".").ok).toBe(true);
+    // Closed-up words still have to be the name's own: "Unpaid" is not "Paid", "Reprint" is not "Print".
+    expect(checkFeeAgainstSource("Unpaid Items | $30.00", "Paid Items", 30, ".").ok).toBe(false);
+    expect(checkFeeAgainstSource("Statement Reprint | $5.00", "Statement Print", 5, ".").ok).toBe(false);
+  });
+
+  it("reads text printed without its spaces", () => {
+    // MassMutual FCU (document 16621) and Northpointe (document 128) as their text reads.
+    const glued = [
+      "Replacelostdebitcard(each)..............$15",
+      "Wiretransfers(domestic,outgoing)$20",
+      "Officialchecks$2",
+      "Stoppayment...........$15",
+      "Earlyclosurefee! $10",
+      "Canceledcheckcopy $5",
+    ].join("\n");
+    expect(checkFeeAgainstSource(glued, "Replace Lost Debit Card", 15, ".").ok).toBe(true);
+    expect(checkFeeAgainstSource(glued, "Wire Transfers Domestic Outgoing", 20, ".").ok).toBe(true);
+    expect(checkFeeAgainstSource(glued, "Official Checks", 2, ".").ok).toBe(true);
+    expect(checkFeeAgainstSource(glued, "Stop Payment", 15, ".").ok).toBe(true);
+    expect(checkFeeAgainstSource(glued, "Early closure fee", 10, ".").ok).toBe(true);
+    expect(checkFeeAgainstSource(glued, "Canceled check copy", 5, ".").ok).toBe(true);
+    // Spaced text keeps the rule: "NSF" is not in "transfers".
+    expect(checkFeeAgainstSource("Online transfers | $30.00", "NSF Fee", 30, ".").ok).toBe(false);
+  });
+
   it("does not find a word inside a longer compound", () => {
     // "Draft" is not the "Overdraft" fee.
     expect(checkFeeAgainstSource("Overdraft Fee | $35.00", "Draft Fee", 35, ".").ok).toBe(false);
