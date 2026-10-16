@@ -19,7 +19,7 @@ export function LandingHero() {
           Your next fee review doesn&apos;t need to take weeks.
         </h1>
         <p className="mt-5 max-w-2xl text-[17px] leading-relaxed text-ink-soft sm:text-[19px]">
-          {SITE_NAME} helps you compare competitors with the {PRODUCT_NAME}. Turn the evidence into analysis and board
+          {SITE_NAME} helps you compare your fees with competitors using the {PRODUCT_NAME}. Turn the evidence into analysis and board
           reports with Hamilton.
         </p>
         <div className="mt-7 flex w-full flex-col items-center gap-3 sm:w-auto sm:flex-row sm:gap-4">

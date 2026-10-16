@@ -11,15 +11,33 @@ import { DistrictMap } from "./landing-charts";
 import { DISPLAY_H2, InstitutionSearchForm, SANS, SECTION_INNER, TEXT_LINK, hasFigure, type HomeData } from "./landing-shared";
 import { HamiltonAnswer, ReportPreview, workflowLead } from "./landing-workflow";
 
-/** One product's column: its mark and line centered over the column (James, Oct 16). */
-function Product({ mark, benefit, children, className = "" }: { mark: ReactNode; benefit: string; children: ReactNode; className?: string }) {
+/**
+ * One product's column: its mark and line centered over the column (James, Oct 16). On desktop the
+ * two columns share three grid rows (heading, action, product frame), so the actions and the
+ * frames start on the same line and the frames end on the same line (James, 17:45: "stuff isnt
+ * aligned").
+ */
+function Product({
+  mark,
+  benefit,
+  action,
+  children,
+  className = "",
+}: {
+  mark: ReactNode;
+  benefit: string;
+  action: ReactNode;
+  children: ReactNode;
+  className?: string;
+}) {
   return (
-    <div className={`flex min-w-0 flex-col ${className}`}>
+    <div className={`flex min-w-0 flex-col lg:row-span-3 lg:grid lg:grid-rows-subgrid ${className}`} data-product-column="">
       <div className="text-center">
         <h3 className="flex h-8 items-center justify-center">{mark}</h3>
         <p className="mx-auto mt-3 max-w-md text-[17px] leading-relaxed text-ink-soft">{benefit}</p>
       </div>
-      {children}
+      <div className="mt-5 lg:mt-6">{action}</div>
+      <div className="mt-6 flex min-w-0 flex-col lg:mt-8">{children}</div>
     </div>
   );
 }
@@ -49,41 +67,48 @@ export function LandingProducts({
           The fee data, and the workspace built on it
         </h2>
         {/* A faint rule between the two products on desktop shows the split. */}
-        <div className="mt-10 grid gap-14 lg:mt-12 lg:grid-cols-2 lg:gap-0 lg:divide-x lg:divide-border/70">
+        <div className="mt-10 grid gap-14 lg:mt-12 lg:grid-cols-2 lg:grid-rows-[auto_auto_1fr] lg:gap-0 lg:divide-x lg:divide-border/70">
           <Product
             mark={<Logo mark="bank-fee-index-wordmark" height={24} />}
-            benefit="See what banks and credit unions charge, with the spread and the benchmark for each fee, from the nation down to your market."
+            benefit="See what banks and credit unions charge for each fee, from the national median down to your own market."
             className="lg:pr-10"
+            action={
+              <>
+                <InstitutionSearchForm id="index-search" secondary className="w-full [&_.fi-field]:max-w-none [&_label]:sr-only" />
+                <p className="mt-2.5 text-center text-[13px] leading-5 text-ink-muted">
+                  {hasFigure(summary.institutionsLabel) ? `${summary.institutionsLabel} institutions · ` : ""}
+                  {summary.freshnessLabel} ·{" "}
+                  <Link href="/fees" className={`whitespace-nowrap ${TEXT_LINK}`}>
+                    Explore the {PRODUCT_NAME}
+                  </Link>
+                </p>
+              </>
+            }
           >
-            <InstitutionSearchForm id="index-search" secondary className="mt-5 w-full [&_.fi-field]:max-w-none [&_label]:sr-only" />
-            <p className="mt-2.5 text-center text-[13px] leading-5 text-ink-muted">
-              {hasFigure(summary.institutionsLabel) ? `${summary.institutionsLabel} institutions · ` : ""}
-              {summary.freshnessLabel} ·{" "}
-              <Link href="/fees" className={`whitespace-nowrap ${TEXT_LINK}`}>
-                Explore the {PRODUCT_NAME}
-              </Link>
-            </p>
             {map ? (
-              <ProductFrame label={`${PRODUCT_NAME} · National`} className="mt-6">
+              <ProductFrame label={`${PRODUCT_NAME} · National`} className="flex flex-1 flex-col" bodyClassName="flex flex-1 flex-col justify-center">
                 <DistrictMap data={data} compact />
               </ProductFrame>
             ) : null}
           </Product>
           <Product
             mark={<Logo mark="hamilton-wordmark" height={24} />}
-            benefit="Compare your fees, investigate the differences, and produce reports for your board, with the source behind every figure."
+            benefit="Compare your fees, investigate the differences, and produce reports for your board."
             className="lg:pl-10"
+            action={
+              <p className="flex justify-center">
+                <TrackLink
+                  event="upgrade_click"
+                  eventProps={{ placement: "home_products" }}
+                  href={PRO_PLANS_NAV.href}
+                  className="fi-btn fi-btn-secondary min-h-11 justify-center whitespace-nowrap"
+                >
+                  {PRO_PLANS_NAV.label}
+                </TrackLink>
+              </p>
+            }
           >
-            <p className="mt-3 text-center text-[14px]">
-              <TrackLink event="upgrade_click" eventProps={{ placement: "home_products" }} href={PRO_PLANS_NAV.href} className={TEXT_LINK}>
-                {PRO_PLANS_NAV.label}
-              </TrackLink>
-            </p>
-            {lead ? (
-              <div className="mt-6">
-                <HamiltonAnswer lead={lead} />
-              </div>
-            ) : null}
+            {lead ? <HamiltonAnswer lead={lead} /> : null}
           </Product>
         </div>
         {report && lead ? (

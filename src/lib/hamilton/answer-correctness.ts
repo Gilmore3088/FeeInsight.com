@@ -190,9 +190,18 @@ function otherSourceFigures(response: AskResponse): number[] {
   return out;
 }
 
+/** Up to 40 characters either side of a figure, on its own line. */
+function around(text: string, index: number): string {
+  const start = Math.max(text.lastIndexOf("\n", index) + 1, index - 40);
+  const nl = text.indexOf("\n", index);
+  const end = Math.min(nl === -1 ? text.length : nl, index + 40);
+  return `${start > 0 && text[start - 1] !== "\n" ? "…" : ""}${text.slice(start, end).replace(/[()]/g, "")}${end < text.length && text[end] !== "\n" ? "…" : ""}`;
+}
+
 function tieText(text: string, anchors: number[], singles: number[], failures: string[]): CorrectnessResult {
   const usd = extractFigures(text).filter((f) => f.kind === "usd");
-  const untied = [...new Set(usd.filter((f) => !ties(f.value, f.tolerance, anchors, singles)).map((f) => f.raw))];
+  // Each untied figure with the words around it, so the failing sentence can be found (#981).
+  const untied = [...new Map(usd.filter((f) => !ties(f.value, f.tolerance, anchors, singles)).map((f) => [f.raw, `${f.raw} (${around(text, f.index)})`])).values()];
   if (untied.length > 0) {
     failures.push(`figures that tie to no live catalog value: ${untied.slice(0, MAX_LISTED).join(", ")}${untied.length > MAX_LISTED ? ` and ${untied.length - MAX_LISTED} more` : ""}`);
   }

@@ -1,10 +1,12 @@
 /** Fee rows only for exact selected peer IDs and optional verified account. No artificial averages. */
 import { sql } from "./connection";
 import { STATS_ROW_FILTER } from "./fee-stats";
+import { DISPLAY_NAMES } from "@/lib/fee-taxonomy";
 import type { PeerFeeEntry } from "@/lib/hamilton/peer-list";
 
-export async function getPublishedPeerFees(ids: number[], category: "nsf", db: typeof sql = sql): Promise<PeerFeeEntry[]> {
+export async function getPublishedPeerFees(ids: number[], category: string, db: typeof sql = sql): Promise<PeerFeeEntry[]> {
   if (!ids.length) return [];
+  if (!(category in DISPLAY_NAMES)) throw new Error("Unknown fee category");
   if (ids.length > 51 || new Set(ids).size !== ids.length ||
       ids.some(id => !Number.isSafeInteger(id) || id <= 0)) throw new Error("Invalid exact peer selection");
   const rows = await db.unsafe(
@@ -26,12 +28,12 @@ export async function getPublishedPeerFees(ids: number[], category: "nsf", db: t
     const institutionId = Number(row.institution_id), id = Number(row.id);
     const amount = row.amount === null ? null : Number(row.amount);
     if (!ids.includes(institutionId) || !Number.isSafeInteger(id) || id <= 0 ||
-        (amount !== null && (!Number.isFinite(amount) || amount < 0))) throw new Error("Invalid published NSF fee evidence");
+        (amount !== null && (!Number.isFinite(amount) || amount < 0))) throw new Error("Invalid published fee evidence");
     const rawDate = row.created_at;
     const publishedAt = rawDate instanceof Date ? rawDate.toISOString() : typeof rawDate === "string" ? rawDate : null;
     const sourceDocumentId = row.source_document_id === null ? null : Number(row.source_document_id);
     return {
-      institutionId, id, name: typeof row.fee_name === "string" ? row.fee_name : "NSF fee",
+      institutionId, id, name: typeof row.fee_name === "string" ? row.fee_name : DISPLAY_NAMES[category],
       amount, frequency: typeof row.frequency === "string" ? row.frequency : null, publishedAt,
       sourceDocumentId: sourceDocumentId !== null && Number.isSafeInteger(sourceDocumentId) ? sourceDocumentId : null,
       documentUrl: safeUrl(row.document_url), sourceUrl: safeUrl(row.source_url),

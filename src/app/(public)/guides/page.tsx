@@ -26,6 +26,7 @@ import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
 import { SITE_URL } from "@/lib/constants";
 import { COVERAGE_LABELS, getPublicSnapshot } from "@/lib/public-stats";
 import { UnstatedAudienceFootnote, UnstatedAudienceMark, medianHasUnstatedAudience } from "@/components/unstated-audience";
+import { PAGE_HEADER } from "@/components/public/page-header";
 
 const TITLE = "Consumer Guides — Understanding Bank Fees";
 const DESCRIPTION =
@@ -237,8 +238,8 @@ export default async function GuidesIndexPage() {
       />
 
       {/* ── Hero ── */}
-      <div className="max-w-2xl">
-        <div className="mb-4 flex items-center gap-2">
+      <header className={`mx-auto max-w-2xl sm:mx-0 ${PAGE_HEADER}`}>
+        <div className="mb-4 flex items-center justify-center gap-2 sm:justify-start">
           <span className="h-px w-8 bg-brick/40" aria-hidden="true" />
           <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-brick/60">
             Consumer Guides
@@ -252,7 +253,7 @@ export default async function GuidesIndexPage() {
           Understand what your bank <em style={{ fontWeight: 300 }}>charges</em>
         </h1>
 
-        <p className="mt-4 text-[15px] leading-relaxed text-ink-muted">
+        <p className="mx-auto mt-4 max-w-[34rem] text-[15px] leading-relaxed text-ink-muted sm:mx-0 sm:max-w-none">
           Plain-language guides backed by live benchmark data from{" "}
           <span className="font-medium tabular-nums text-ink-soft">
             {summary.institutionsLabel}
@@ -260,14 +261,14 @@ export default async function GuidesIndexPage() {
           institutions with published fees (of {summary.monitoredLabel} monitored).
         </p>
 
-        <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-ink-muted">
+        <div className="mt-4 flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-[12px] text-ink-muted sm:justify-start">
           <span className="tabular-nums">
             {summary.observationsLabel} {COVERAGE_LABELS.observations.toLowerCase()}
           </span>
           <span className="h-3 w-px bg-border" aria-hidden="true" />
           <span>{summary.freshnessLabel}</span>
         </div>
-      </div>
+      </header>
 
       {/* ── Featured consumer guides ── */}
       <section aria-labelledby="featured-heading" className="mt-12">

@@ -12,7 +12,7 @@ export interface FeeHoldActor {
 }
 
 export type FeeHoldResult =
-  | { ok: true; feePublishedId: number; institutionId: number; indexRefreshed?: boolean }
+  | { ok: true; feePublishedId: number; institutionId: number; indexRefreshed?: boolean; runId?: number }
   | { ok: false; error: string };
 
 export interface HeldFee {

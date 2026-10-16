@@ -12,7 +12,8 @@ import { refreshFeeIndexCache, type FeeIndexCacheRefresh } from "@/lib/data-stor
 
 type SqlTag = typeof Sql;
 
-export type AdminFeeAction = "hold" | "release" | "correct" | "reverse";
+/** "refresh" is an operator's retry of the refresh after one of the other four (H03-T08). */
+export type AdminFeeAction = "hold" | "release" | "correct" | "reverse" | "refresh";
 
 export interface AdminFeeRunInput {
   action: AdminFeeAction;
@@ -86,4 +87,67 @@ export async function rebuildIndexAfterAdminAction(tx: SqlTag, run: AdminFeeRun)
             ${JSON.stringify(refresh)}::jsonb)
   `;
   return refresh;
+}
+
+/**
+ * Records that the public pages' read caches were cleared after an operator's fee action, as an
+ * event on its run, so the refresh status can say so (H03-T08). Called after the action commits,
+ * because a cache cleared before the commit could be refilled with the old value.
+ */
+export async function recordPublicCacheRefresh(db: SqlTag, runId: number, cleared: boolean): Promise<void> {
+  const message = cleared
+    ? "Public page caches cleared; pages read the change on their next load."
+    : "Public page caches could not be cleared; they expire within the hour.";
+  await db`
+    INSERT INTO agent_run_events (agent_run_id, event_type, status, message, detail)
+    VALUES (${runId}, 'cache.invalidate', ${cleared ? "completed" : "failed"}, ${message},
+            ${JSON.stringify({ cleared })}::jsonb)
+  `;
+}
+
+export type RetryRefreshResult =
+  | { ok: true; runId: number; retryOf: number; institutionId: number; indexRefreshed: boolean }
+  | { ok: false; error: string };
+
+/**
+ * Retries the refresh after an operator's fee action (H03-T08): a new completed run that rebuilds
+ * the national index, linked to the original by `retry_of`, with an event on the original run
+ * pointing at it. The caller clears the public caches after this commits and records that with
+ * `recordPublicCacheRefresh` on the new run. Changes no fee.
+ */
+export async function retryAdminFeeRefresh(
+  db: SqlTag,
+  originalRunId: number,
+  actor: { id: number; name: string },
+): Promise<RetryRefreshResult> {
+  return (await db.begin(async (scope) => {
+    const tx = scope as unknown as SqlTag;
+    const rows = await tx<{ id: number | string; institution_id: string | null }[]>`
+      SELECT id, params_json->>'institution_id' AS institution_id
+        FROM agent_runs
+       WHERE id = ${originalRunId}
+         AND agent_name = 'hamilton' AND run_kind = 'manual_repair'
+         AND current_stage IN ('admin.fee_hold', 'admin.fee_release', 'admin.fee_correct', 'admin.fee_reverse')
+    `;
+    const original = rows[0];
+    const institutionId = Number(original?.institution_id);
+    if (!original || !Number.isSafeInteger(institutionId)) {
+      return { ok: false, error: "That run is not an operator's fee action." } as const;
+    }
+    const run = await recordAdminFeeRun(tx, {
+      action: "refresh",
+      title: "Admin fee refresh retry",
+      summary: `Retried the refresh after run #${originalRunId}.`,
+      actor,
+      institutionId,
+      detail: { retry_of: originalRunId },
+    });
+    await tx`
+      INSERT INTO agent_run_events (agent_run_id, event_type, status, message, detail)
+      VALUES (${originalRunId}, 'refresh.retry', 'completed', ${`Refresh retried in run #${run.runId} by ${actor.name}.`},
+              ${JSON.stringify({ retry_run_id: run.runId, actor_id: actor.id, actor: actor.name })}::jsonb)
+    `;
+    const refresh = await rebuildIndexAfterAdminAction(tx, run);
+    return { ok: true, runId: run.runId, retryOf: originalRunId, institutionId, indexRefreshed: refresh.refreshed } as const;
+  })) as RetryRefreshResult;
 }

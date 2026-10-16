@@ -17,7 +17,8 @@ import {
   dotLayout,
   firstDistrict,
   gapWords,
-  placeDots,
+  districtRanges,
+  rangesHeadline,
   openingPrice,
   scrollTargetTop,
   stepOf,
@@ -97,22 +98,27 @@ describe("district map", () => {
     expect(panel().parentElement?.className).not.toContain("max-sm:hidden");
   });
 
-  it("places each district dot at its true median and stacks dots that would overlap", () => {
-    const { dots, rows, nationLeft } = placeDots(
+  it("draws each district's middle half and median on a $0-based axis", () => {
+    const { top, nationLeft, rows } = districtRanges(
       [
-        { district: 1, median: 30 },
-        { district: 2, median: 30 },
-        { district: 3, median: 40 },
-        { district: 4, median: 20 },
+        { district: 3, median: 32, p25: 29, p75: 35 },
+        { district: 12, median: 25, p25: 20, p75: 30 },
+        { district: 9, median: 30, p25: null, p75: null },
       ],
       30,
     );
-    const at = (n: number) => dots.find((d) => d.district === n)!;
-    expect([at(4).left, at(1).left, at(3).left]).toEqual([4, 50, 96]);
-    expect(at(2).left).toBe(at(1).left);
-    expect([at(1).row, at(2).row]).toEqual([0, 1]);
-    expect(rows).toBe(2);
-    expect(nationLeft).toBe(50);
+    expect(top).toBe(40);
+    expect(nationLeft).toBe(75);
+    const at = (n: number) => rows.find((d) => d.district === n)!;
+    expect([at(12).from, at(12).to, at(12).tick]).toEqual([50, 75, 62.5]);
+    expect([at(3).from, at(3).to, at(3).tick]).toEqual([72.5, 87.5, 80]);
+    // A district without percentiles keeps its median tick and draws no bar.
+    expect([at(9).from, at(9).to, at(9).tick]).toEqual([null, null, 75]);
+  });
+
+  it("leads with how many district medians match the nation, else their spread", () => {
+    expect(rangesHeadline([30, 30, 30, 32, 25], 30)).toBe("3 of 5 district medians match the national $30.00.");
+    expect(rangesHeadline([30, 32, 25, 29], 30)).toBe("District medians run from $25.00 to $32.00.");
   });
 
   it("selects with Enter, moves with the arrow keys and previews on hover", () => {

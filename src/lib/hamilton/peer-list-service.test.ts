@@ -97,6 +97,28 @@ describe("exact displayed peer-list continuation", () => {
     expect(mocks.account).not.toHaveBeenCalled();
     expect(result.peerList.subject?.institutionId).toBe(202);
   });
+  it("compares any one named fee, not only NSF (#1538)", async () => {
+    const original = (await answerPeerList(user, { institutionId: 202, question: "List peers" }))!;
+    const prior = makePeerListContinuation(original, "List peers", "202")!;
+    const result = (await answerPeerList(user, { institutionId: 202, question: "Compare their overdraft fees", previousPeerList: prior }))!;
+    expect(mocks.fees).toHaveBeenCalledWith([303], "overdraft");
+    expect(result.peerList.feeComparison?.category).toBe("overdraft");
+    expect(result.shortAnswer).toBe("Published overdraft fees for 1 selected peer.");
+  });
+  it("compares a named fee with the account institution", async () => {
+    const original = (await answerPeerList(user, { institutionId: 202, question: "List peers" }))!;
+    const prior = makePeerListContinuation(original, "List peers", "202")!;
+    await answerPeerList(user, { institutionId: 202, question: "Compare their monthly maintenance fees with us", previousPeerList: prior });
+    expect(mocks.fees).toHaveBeenCalledWith([303, 101], "monthly_maintenance");
+  });
+  it("asks for one fee when the follow-up names none it knows", async () => {
+    const original = (await answerPeerList(user, { institutionId: 202, question: "List peers" }))!;
+    const prior = makePeerListContinuation(original, "List peers", "202")!;
+    const result = (await answerPeerList(user, { institutionId: 202, question: "Compare their gizmo fees", previousPeerList: prior }))!;
+    expect(result.peerList.status).toBe("needs_criteria");
+    expect(result.shortAnswer).toMatch(/^Name one fee to compare/);
+    expect(mocks.fees).not.toHaveBeenCalled();
+  });
   it("compares with a separately verified account institution, not the researched subject", async () => {
     const original = (await answerPeerList(user, { institutionId: 202, question: "List peers" }))!;
     const prior = makePeerListContinuation(original, "List peers", "202")!;
