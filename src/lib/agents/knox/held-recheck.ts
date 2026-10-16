@@ -414,6 +414,153 @@ export async function previewHeldNameRules(
 }
 
 /**
+ * #1102: held range lines with no fee category that are a rate or balance band, not a fee.
+ * Knox holds every "$X–$Y" line it cannot price as one amount (`knox_review:range`). Most of the
+ * pile has no category and is a deposit rate table, a balance tier or a loan amount
+ * ("Tier 3 | $25,000.00 – $49,999.99 | 0.75%", "$10,000 – $49,999.99 (Tier 5) | 0.70%",
+ * "Loan amounts range from $1,000 to $75,000"): nothing re-reads it, and no fee hides in it.
+ *
+ * A line is a band when it has no category, says a rate or a balance (`RANGE_BAND_SIGNAL`), and
+ * says nothing a fee line says (`RANGE_BAND_FEE_WORDS`: fee, charge, waive, "per", "/month", a
+ * box, a wire, a card, …), and prints no small price beside its range (`RANGE_BAND_SMALL_PRICE`: a
+ * dollar figure under $100 once the "$X–$Y" ranges are taken out), since a balance band priced in its
+ * own cell ("Tier 1 | $50.00 - $149.99 | $2.00", "Average monthly balance from $0.00 to $99.99: $5.00")
+ * is a fee. Switched on, the pass flags each band `knox_range_band` and
+ * `knox_set_aside` and logs it (`knox.range_band`, deduped with the held decision log): kept,
+ * never deleted, and taking the two flags off puts it back on the pile. A range line with a
+ * category (a safe deposit box "$20–$100", an incoming wire "$20–$70") is a real fee priced as a
+ * range and stays held until a range has somewhere to live (#1060).
+ *
+ * Production, 16 Oct 2026 (the pass's own SQL, read only): 5,210 of the 7,485 held range lines with
+ * no category, at 673 banks, none of them ever verified; a random 60 of them were all rate or
+ * balance bands.
+ * Switched off, the extract step writes nothing and its detail (`range_band_set_aside`) carries
+ * the dry-run count for the lane. It holds, rejects or re-files no live fee.
+ */
+export const RANGE_BAND_SET_ASIDE_LIVE = false;
+export const RANGE_BAND_FLAG = "knox_range_band";
+export const RANGE_BAND_LIMIT = 2000;
+const RANGE_BAND_EXAMPLES = 10;
+/** A rate or a balance: what a band says. */
+export const RANGE_BAND_SIGNAL = /(%|\bAPY|\bAPR|dividend|interest|balance|\btier|money market|savings|certificate|\bloans?\b)/i;
+/** What a fee line says; a line with any of these is never a band. */
+export const RANGE_BAND_FEE_WORDS =
+  /(fee|charge|cost|price|waive|\bper\b|\/\s*(year|yr|mo|month|item|check)|\bbox|rental|wire|stop|\batm\b|overdraft|\bnsf\b|courtesy|card|statement|notary|coin|returned|research|photocop|money order|cashier)/i;
+
+/** A "$X–$Y" or "$X to $Y" range, taken out before looking for a price beside it. */
+export const RANGE_BAND_RANGE = /\$\s?[\d,]*\.?\d+\s*(-|–|—|to)\s*\$?\s?[\d,]*\.?\d+/gi;
+/** A dollar figure under $100 ("$2.00", "$5", "$.50"), not the start of "$1,000" or "$250". */
+export const RANGE_BAND_SMALL_PRICE = /\$\s?(\d{1,2}(\.\d+)?|\.\d+)(?![\d,]|\.\d)/;
+export const RANGE_BAND_RANGE_SQL = String.raw`\$\s?[\d,]*\.?\d+\s*(-|–|—|to)\s*\$?\s?[\d,]*\.?\d+`;
+export const RANGE_BAND_SMALL_PRICE_SQL = String.raw`\$\s?(\d{1,2}(\.\d+)?|\.\d+)(?![\d,]|\.\d)`;
+
+/** The same tests in Postgres (`\m`/`\M` for word edges), so the pass reads only bands. */
+export const RANGE_BAND_SIGNAL_SQL = String.raw`(%|\mAPY|\mAPR|dividend|interest|balance|\mtier|money market|savings|certificate|\mloans?\M)`;
+export const RANGE_BAND_FEE_WORDS_SQL =
+  String.raw`(fee|charge|cost|price|waive|\mper\M|/\s*(year|yr|mo|month|item|check)|\mbox|rental|wire|stop|\matm\M|overdraft|\mnsf\M|courtesy|card|statement|notary|coin|returned|research|photocop|money order|cashier)`;
+
+/** A held range line with no category that is a rate or balance band, not a fee. Pure. */
+export function isRangeBand(row: HeldRow): boolean {
+  const flags = flagList(row.outlier_flags);
+  if (!flags.includes("knox_review:range") || flags.includes("needs_darwin_verification")) return false;
+  if (flags.some((flag) => flag.startsWith("canonical_hint:")) || heldHint(row.conditions)) return false;
+  const excerpt = heldExcerpt(row.conditions);
+  if (!excerpt) return false;
+  return RANGE_BAND_SIGNAL.test(excerpt) && !RANGE_BAND_FEE_WORDS.test(excerpt) &&
+    !RANGE_BAND_SMALL_PRICE.test(excerpt.replace(RANGE_BAND_RANGE, " "));
+}
+
+export interface RangeBandResult {
+  live: boolean;
+  dryRun: boolean;
+  /** Held range lines with no category the SQL mirror picked (at most `RANGE_BAND_LIMIT`). */
+  checked: number;
+  /** Of those, rate or balance bands. */
+  bands: number;
+  institutions: number;
+  /** Bands flagged and set aside in this pass (0 while the switch is off). */
+  setAside: number;
+  examples: Array<{ feeRawId: number; feeName: string | null; excerpt: string | null }>;
+}
+
+export async function setAsideRangeBands(
+  db: SqlTag,
+  options: { limit?: number; dryRun?: boolean; institutionId?: number | null; stateCode?: string | null; runId?: number | null; live?: boolean } = {},
+): Promise<RangeBandResult> {
+  const live = options.live ?? RANGE_BAND_SET_ASIDE_LIVE;
+  const dryRun = Boolean(options.dryRun) || !live;
+  const limit = Math.max(1, Math.min(Number(options.limit) || RANGE_BAND_LIMIT, RANGE_BAND_LIMIT));
+  const institutionId = options.institutionId ?? null;
+  const stateCode = options.stateCode?.trim().toUpperCase() || null;
+  const rows = await db<HeldRow[]>`
+    SELECT fr.fee_raw_id, fr.amount, COALESCE(fr.extraction_note, fr.conditions) AS conditions, fr.institution_id, fr.source_document_id,
+           fr.fee_name, fr.outlier_flags
+      FROM raw_fee_observations fr
+      JOIN institution_sources inst ON inst.id = fr.institution_id
+     WHERE fr.source = 'knox'
+       AND fr.outlier_flags ? 'knox_review:range'
+       AND NOT fr.outlier_flags ? 'needs_darwin_verification'
+       AND NOT fr.outlier_flags ? ${RANGE_BAND_FLAG}
+       AND NOT fr.outlier_flags ?| array['superseded_by_newer_copy', 'superseded_by_reread']
+       AND NOT EXISTS (SELECT 1 FROM jsonb_array_elements_text(fr.outlier_flags) g WHERE g LIKE 'canonical_hint:%')
+       AND substring(COALESCE(fr.extraction_note, fr.conditions) from 'excerpt="(.*)"') ~* ${RANGE_BAND_SIGNAL_SQL}
+       AND substring(COALESCE(fr.extraction_note, fr.conditions) from 'excerpt="(.*)"') !~* ${RANGE_BAND_FEE_WORDS_SQL}
+       AND regexp_replace(substring(COALESCE(fr.extraction_note, fr.conditions) from 'excerpt="(.*)"'), ${RANGE_BAND_RANGE_SQL}, ' ', 'gi') !~ ${RANGE_BAND_SMALL_PRICE_SQL}
+       AND (${institutionId}::int IS NULL OR fr.institution_id = ${institutionId}::int)
+       AND (${stateCode}::text IS NULL OR upper(btrim(inst.state_code)) = ${stateCode}::text)
+     ORDER BY fr.fee_raw_id
+     LIMIT ${limit}
+  `;
+  const bands = rows.filter(isRangeBand);
+  const result: RangeBandResult = {
+    live,
+    dryRun,
+    checked: rows.length,
+    bands: bands.length,
+    institutions: new Set(bands.map((row) => Number(row.institution_id)).filter(Number.isFinite)).size,
+    setAside: 0,
+    examples: bands.slice(0, RANGE_BAND_EXAMPLES).map((row) => ({
+      feeRawId: Number(row.fee_raw_id),
+      feeName: row.fee_name ?? null,
+      excerpt: heldExcerpt(row.conditions),
+    })),
+  };
+  if (dryRun || bands.length === 0) return result;
+  const ids = bands.map((row) => Number(row.fee_raw_id));
+  const updated = await db<Array<{ fee_raw_id: number | string }>>`
+    UPDATE raw_fee_observations fr
+       SET outlier_flags = (COALESCE(fr.outlier_flags, '[]'::jsonb) - ${HELD_SET_ASIDE_FLAG}::text)
+                           || ${JSON.stringify([RANGE_BAND_FLAG, HELD_SET_ASIDE_FLAG])}::jsonb
+     WHERE fr.fee_raw_id = ANY(${ids}::bigint[])
+       AND fr.outlier_flags ? 'knox_review:range'
+       AND NOT fr.outlier_flags ? 'needs_darwin_verification'
+       AND NOT fr.outlier_flags ? ${RANGE_BAND_FLAG}
+    RETURNING fr.fee_raw_id
+  `;
+  result.setAside = updated.length;
+  const written = new Set(updated.map((row) => Number(row.fee_raw_id)));
+  if (written.size > 0 && (await feedbackSchemaReady(db))) {
+    await recordFeedback(db, bands.filter((row) => written.has(Number(row.fee_raw_id))).map((row) => ({
+      aboutStage: "extract",
+      aboutStrategy: KNOX_RULES_STRATEGY.strategy,
+      aboutVersion: KNOX_RULES_STRATEGY.version,
+      signal: "right",
+      kind: "range_band_set_aside",
+      reportedBy: "knox",
+      checkName: "knox.range_band",
+      institutionId: row.institution_id == null ? null : Number(row.institution_id),
+      sourceDocumentId: row.source_document_id == null ? null : Number(row.source_document_id),
+      feeRawId: Number(row.fee_raw_id),
+      weight: 0.5,
+      evidence: { fee_name: row.fee_name ?? null, excerpt: heldExcerpt(row.conditions), reason: "rate_or_balance_band" },
+      runId: options.runId ?? null,
+      dedupeKey: `knox.held:raw:${Number(row.fee_raw_id)}`,
+    })));
+  }
+  return result;
+}
+
+/**
  * #1102: one decision per held name, across banks. A line Knox held as unclassified has a name
  * no rule files, so the held re-check above keeps it until the rules learn it. Two decisions file
  * the name instead, and send every held line with that exact name (`lessonName`) to Darwin:

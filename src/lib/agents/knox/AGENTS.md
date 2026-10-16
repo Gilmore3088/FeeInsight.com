@@ -762,6 +762,16 @@ After the extract itself, each extract step runs these passes in order (`run-sto
   states 761 / 41 (744 / 41). To reverse it, switch off with another version bump:
   `recheckPromotedRows` puts unverified promotions back on hold, and the rules re-check
   takes down the live ones it no longer reproduces.
+- `setAsideRangeBands` (#1102, `RANGE_BAND_SET_ASIDE_LIVE`, off until James switches it on): a held
+  range line with no category that is a rate or balance band ("Tier 3 | $25,000.00 – $49,999.99 |
+  0.75%", "Loan amounts range from $1,000 to $75,000"). A band says a rate or balance, says nothing a
+  fee line says (fee, charge, waive, "per", "/month", a box, a wire, a card, …), and prints no price
+  under $100 beside its ranges ("Tier 1 | $50.00 - $149.99 | $2.00" is a fee and stays held). On, a
+  band gets `knox_range_band` and `knox_set_aside` and a `knox.range_band` row in the store, up to
+  2,000 a step in the run's lane: kept, never deleted, and taking off the two flags puts it back.
+  Off, the step only counts (`range_band_set_aside`). It touches no line with a category and no
+  live fee. On 16 Oct 2026 (the pass's own SQL, read only): 5,210 of the 7,485 held range lines
+  with no category, at 673 banks, none ever verified; a random 60 were all bands.
 - `consumeRereadRequests` (#1511, `KNOX_REREAD_FEEDBACK_LIVE`, off): Darwin's re-read requests for
   live fees named by a sentence fragment (below).
 - Batch review (`batch-review.ts`, below).
@@ -778,6 +788,21 @@ texts get this in the extract pass; rows held before it are re-read by `recheckH
 (`knox_rate_recheck:v2`, 100 per extract step). v2 (#1102): a rate stated as a share of what it
 charges ("1% of transaction amount") traces without the word "fee", and check cashing and
 international ATM fees publish as rates.
+
+Who owns each held line (#1102). `/admin/knox` lists the held lines by group (`held-queue.ts`)
+with the owner and the way out for each, and how many a versioned re-check has read under 3 or
+more rules versions without moving them:
+
+| Group | Owner | Way out |
+|---|---|---|
+| `unclassified` | Knox's held re-check and name filing; James labels the weekly name queue | today's rules, a settled name or a label |
+| `range` (with a category) | James: a range needs storage first (#1060) | none yet |
+| `range_no_category` | Knox's range-band pass (off) | bands set aside as not fees once on |
+| `range_band` | Knox's range-band pass | set aside, kept |
+| `percentage` | Knox's rate re-check | to Darwin as a rate fee |
+| `untraced` | Knox's untraced re-check; then Rosetta | traced by today's rules; a Rosetta re-read is the next slice |
+| `superseded` (any shape a newer copy or a re-read retired) | Knox's superseded re-check and re-file | back to Darwin when the current text prints the same fee |
+| `taken_down` | Hamilton's confirmed takedown | held on purpose |
 
 ## Learning reader (`lessons.ts`)
 Each extract step reads lessons from the shared learning store (`pipeline_feedback`): a fee name
