@@ -554,7 +554,7 @@ export const COPY = {
   tierColumns: ["requests a month", "Fee categories", "Endpoints"],
   errorsHeading: "Errors",
   ctaHeading: "Get a key",
-  ctaLine: "We issue keys by hand. Pro plans include one.",
+  ctaLine: "We issue keys by hand. Ask and we will set one up.",
   copy: "Copy",
   copied: "Copied",
 } as const;
