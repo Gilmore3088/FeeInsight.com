@@ -3,6 +3,7 @@ import Link from "next/link";
 import { REPORT_OFFER, REPORT_PRICE_INLINE } from "@/lib/constants";
 import { SAMPLE_REPORT_HREF, SANS } from "@/app/landing-shared";
 import { EYEBROW, SECTION_H2, SECTION_INNER } from "./section-styles";
+import { REPORT_SHOWCASE } from "@/lib/report-showcase";
 
 /** The one report request form (site v3 brief 05 §3-4, #1171): /reports sells the one-off. */
 const REPORT_FORM_PATH = "/reports";
@@ -68,7 +69,7 @@ export function SamplePages() {
   return (
     <div className="relative mx-auto h-[300px] w-full max-w-[460px] sm:h-[340px]">
       <Image
-        src="/reports/sample-preview/page-1.webp"
+        src={REPORT_SHOWCASE.pages[0].src}
         alt="Cover of the sample Competitive Fee Position report"
         width={850}
         height={1100}
@@ -76,7 +77,7 @@ export function SamplePages() {
         className="absolute left-[4%] top-4 w-[46%] -rotate-2 rounded-sm shadow-[0_10px_30px_-12px_rgba(26,24,21,0.45)] ring-1 ring-border"
       />
       <Image
-        src="/reports/sample-preview/page-2.webp"
+        src={REPORT_SHOWCASE.pages[1].src}
         alt="Summary of findings page from the sample report"
         width={850}
         height={1100}

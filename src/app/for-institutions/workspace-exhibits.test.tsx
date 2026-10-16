@@ -64,7 +64,7 @@ describe("CompetitorBoardExhibit", () => {
     expect(screen.getByRole("group", { name: "Fee" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Outgoing international wire" }).getAttribute("aria-pressed")).toBe("true");
     expect(screen.getByText(/5 of 5 local competitors charge less/)).toBeTruthy();
-    expect(screen.getByText("Above local range")).toBeTruthy();
+    expect(screen.getByText("Above the local middle half")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Overdraft" }));
     expect(screen.getByRole("button", { name: "Overdraft" }).getAttribute("aria-pressed")).toBe("true");
     expect(screen.queryByRole("tab")).toBeNull();
@@ -92,7 +92,7 @@ describe("PriceTesterExhibit", () => {
     expect(slider.getAttribute("step")).toBe("0.01");
     fireEvent.change(slider, { target: { value: "20" } });
     expect(slider.getAttribute("aria-valuetext")).toBe("$20.00: 1 of 5 local competitors charge less");
-    expect(screen.getByText("Below local range")).toBeTruthy();
+    expect(screen.getByText("Below the local middle half")).toBeTruthy();
     fireEvent.change(slider, { target: { value: "35" } });
     expect(slider.getAttribute("aria-valuetext")).toBe("$35.00: 3 of 5 local competitors charge less");
     expect(document.querySelector("[aria-live]")).toBeNull();

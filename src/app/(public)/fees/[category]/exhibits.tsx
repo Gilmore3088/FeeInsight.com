@@ -220,4 +220,3 @@ export function RelatedRanges({ items }: { items: { category: string; label: str
     </ul>
   );
 }
-

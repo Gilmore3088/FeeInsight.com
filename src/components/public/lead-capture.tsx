@@ -9,6 +9,7 @@ import {
   deliversSampleReport,
   type LeadCapturePlacement,
 } from "@/lib/lead-capture";
+import { REPORT_SHOWCASE } from "@/lib/report-showcase";
 
 export interface LeadCaptureProps {
   placement: LeadCapturePlacement;
@@ -44,7 +45,7 @@ function captureEventProps(placement: LeadCapturePlacement, stateCode: string | 
 
 const DEFAULT_SUCCESS = "Check your inbox and confirm your email to start getting updates.";
 const SIGNED_UP_NO_EMAIL = "You're signed up.";
-const SAMPLE_REPORT_PDF_HREF = "/reports/sample-competitive-fee-position.pdf";
+const SAMPLE_REPORT_PDF_HREF = REPORT_SHOWCASE.pdfHref;
 
 interface LeadsResponse {
   notifications?: { confirmation?: string };

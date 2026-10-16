@@ -435,7 +435,7 @@ async function handleMessage(
 }
 
 export async function handleMcpPost(request: NextRequest, handlers: McpV1Handlers): Promise<Response> {
-  // Invitation only, like the API: no issued key, no connection.
+  // Like the API: no valid key (a Pro subscriber's or a hand-made partner key), no connection.
   const auth = await validateApiKey(request);
   if (!auth.valid) {
     return Response.json(

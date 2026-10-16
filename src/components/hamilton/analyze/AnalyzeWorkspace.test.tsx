@@ -56,6 +56,14 @@ describe("AnalyzeWorkspace send button", () => {
 });
 
 describe("Ask Hamilton helpers", () => {
+  it("keeps a peer-list follow-up that names a state on the list instead of the market brief (#1538)", async () => {
+    const { opensMarketBrief } = await import("./AnalyzeWorkspace");
+    // B9 of James's 2026-10-15 run sent this to the market brief; a follow-up never leaves the list.
+    expect(opensMarketBrief("Only show the California ones.", "SchoolsFirst Federal Credit Union")).toBe(false);
+    expect(opensMarketBrief("Only the Florida institutions", null)).toBe(false);
+    expect(opensMarketBrief("Florida banks: fee pricing, revenue, complaints", "Capital City Bank")).toBe(true);
+    expect(opensMarketBrief("How does Capital City Bank's ATM fee compare with Florida banks?", "Capital City Bank")).toBe(false);
+  });
   it("keeps a market question that names the researched institution on that institution", async () => {
     const { namesInstitution } = await import("./AnalyzeWorkspace");
     expect(namesInstitution("How does Capital City Bank's ATM fee compare with Florida banks?", "Capital City Bank")).toBe(true);

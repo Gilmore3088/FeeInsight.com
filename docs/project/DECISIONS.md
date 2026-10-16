@@ -1110,3 +1110,11 @@ no page merges on green CI without waiting for one. `vercel.json` `ignoreCommand
 build when the newest commit changes only `docs`, `supabase`, `src/lib/agents`, `scripts`,
 `.github`, `.claude`, `handoff`, Markdown or test files; production builds always run. Each lane
 also puts its next several items on one branch and opens one PR, instead of one PR per item.
+
+**The API and Claude connector come with the $300 and $500 Pro plans.** James, 2026-10-16 (API and
+MCP planning thread, 05:54 to 14:56 UTC). The $300 and $500 plans, consultants included, get the
+API and the Claude connector; the $150 plan gets neither. Each paying subscriber makes their own key
+on the account page; it works while Pro is active or inside the past-due grace window, stops when
+the subscription ends, and is revoked if the plan moves to $150. No free keys unless James makes one
+himself in `/admin/api-keys`; researchers pay like everyone else. No data license (bulk downloads,
+republishing) until someone asks. Planning notes: `/mnt/project-files/api-mcp/planning-notes.md`.

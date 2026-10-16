@@ -121,9 +121,9 @@ describe("Bank Fee Index explorer", () => {
   it("says when a state has too few for a median", () => {
     const sel = { fee: "wire_domestic_outgoing", state: "GA", charter: "all" as const };
     const out = findings(rows, sel, institutionsFor(rows, sel.fee, "GA", "all"));
-    expect(out).toContain("No institution headquartered in Georgia publishes this fee in a schedule we hold yet.");
+    expect(out).toContain("No institution headquartered in Georgia publishes this fee in a schedule the Index holds yet.");
     const fl = findings(rows, { ...sel, state: "FL", charter: "credit_union" }, []);
-    expect(fl).toContain("No institution headquartered in Florida publishes this fee in a schedule we hold yet.");
+    expect(fl).toContain("No institution headquartered in Florida publishes this fee in a schedule the Index holds yet.");
   });
 });
 

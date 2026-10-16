@@ -13,7 +13,7 @@ type PlottedLine = ReportLine & { own: NonNullable<ReportLine["own"]>; peers: No
 const TONE: Record<"above" | "inside" | "below", { dot: string; text: string }> = {
   above: { dot: "bg-brick", text: "text-brick" },
   inside: { dot: "bg-ink-soft", text: "text-ink" },
-  below: { dot: "bg-[#2F5585]", text: "text-[#2F5585]" },
+  below: { dot: "bg-below-market", text: "text-below-market" },
 };
 
 function toneFor(line: ReportLine): keyof typeof TONE {
@@ -73,7 +73,7 @@ export function AtAGlance({
     : plotted;
   const total = counts.above + counts.inside + counts.below;
   const summary = [
-    { n: counts.above, text: "above the local middle range", tone: TONE.above },
+    { n: counts.above, text: "above the local middle half", tone: TONE.above },
     { n: counts.inside, text: "inside it", tone: TONE.inside },
     { n: counts.below, text: "below it", tone: TONE.below },
   ];

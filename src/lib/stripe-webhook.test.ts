@@ -65,7 +65,8 @@ describe("subscription events reconcile authoritative customer state", () => {
     tx.mockImplementation(async (strings: TemplateStringsArray) => { order.push(strings.join("?").includes("pg_advisory_xact_lock") ? "lock" : "write"); return []; });
     listSubscriptions.mockImplementation(async () => { order.push("fetch"); return live("active"); });
     await applyStripeEvent(tx as never, event("customer.subscription.updated", { customer: "cus_1", status: "canceled" }));
-    expect(order).toEqual(["lock", "fetch", "write"]);
+    // The second write turns off API keys: this subscription's plan (no pro_tier) doesn't include the API.
+    expect(order).toEqual(["lock", "fetch", "write", "write"]);
     expect(tx.mock.calls[0]).toContain("feeinsight:billing:cus_1");
   });
 

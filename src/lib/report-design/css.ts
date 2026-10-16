@@ -13,20 +13,19 @@ import { RD, RD_FONTS, RD_PHONE_MAX, RD_TYPE } from "./tokens";
  *   always shows the wide one.
  */
 export const REPORT_DESIGN_CSS = `
-.rd{--rd-serif:var(--font-newsreader,"Newsreader"),${RD_FONTS.serif};--rd-sans:var(--font-geist-sans,"Geist"),${RD_FONTS.sans};--rd-mono:var(--font-geist-mono,"Geist Mono"),${RD_FONTS.mono}}
-.rd svg text[font-family^="'Newsreader'"]{font-family:var(--rd-serif)}
+.rd{--rd-display:var(--font-geist-sans,"Geist"),${RD_FONTS.display};--rd-sans:var(--font-geist-sans,"Geist"),${RD_FONTS.sans};--rd-mono:var(--font-geist-mono,"Geist Mono"),${RD_FONTS.mono}}
 .rd svg text[font-family^="'Geist'"]{font-family:var(--rd-sans)}
 .rd svg text[font-family^="'Geist Mono'"]{font-family:var(--rd-mono)}
-.rd{color:${RD.ink};font-family:var(--rd-sans);font-size:${RD_TYPE.body}px;line-height:1.6;max-width:960px;margin:0 auto}
+.rd{color:${RD.ink};-webkit-print-color-adjust:exact;print-color-adjust:exact;font-family:var(--rd-sans);font-size:${RD_TYPE.body}px;line-height:1.6;max-width:960px;margin:0 auto}
 .rd h1,.rd h2,.rd h3,.rd h4{text-wrap:balance}
 .rd p,.rd li{text-wrap:pretty}
 .rd .rd-eyebrow,.rd .rd-label{font-family:var(--rd-sans);font-size:${RD_TYPE.label}px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:${RD.terraText};margin:0}
-.rd h1.rd-title{font-family:var(--rd-serif);font-weight:600;font-size:${RD_TYPE.title}px;line-height:1.15;letter-spacing:-.01em;margin:6px 0 8px}
-.rd .rd-deck{font-family:var(--rd-serif);font-style:italic;font-size:${RD_TYPE.deck}px;line-height:1.5;color:${RD.inkSoft};margin:0 0 12px}
+.rd h1.rd-title{font-family:var(--rd-display);font-weight:800;font-size:${RD_TYPE.title}px;line-height:1.15;letter-spacing:-.025em;margin:6px 0 8px}
+.rd .rd-deck{font-family:var(--rd-sans);font-size:${RD_TYPE.deck}px;line-height:1.5;color:${RD.inkSoft};margin:0 0 12px}
 .rd .rd-heroes{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));border-top:2px solid ${RD.ink};border-bottom:1px solid ${RD.rule2};margin:16px 0 8px}
 .rd .rd-hero{padding:14px 14px 14px 0;min-width:0}
 .rd .rd-hero+.rd-hero{padding-left:14px;border-left:1px solid ${RD.rule}}
-.rd .rd-hero-fig{font-family:var(--rd-serif);font-size:${RD_TYPE.hero}px;line-height:1.05;font-variant-numeric:tabular-nums lining-nums;letter-spacing:-.02em}
+.rd .rd-hero-fig{font-family:var(--rd-mono);font-weight:600;font-size:${RD_TYPE.hero}px;line-height:1.05;font-variant-numeric:tabular-nums lining-nums;letter-spacing:-.02em}
 .rd .rd-hero-fig small{font-size:.5em;color:${RD.inkSoft};margin-left:1px;letter-spacing:0}
 .rd .rd-cover{padding:8px 0 6px}
 .rd .rd-panel-title{font-size:13px;font-weight:700;margin:0 0 8px}
@@ -34,8 +33,8 @@ export const REPORT_DESIGN_CSS = `
 .rd .rd-hero-note{font-size:12px;color:${RD.terraText};margin-top:4px;font-variant-numeric:tabular-nums}
 .rd .rd-exhibit{border-top:1px solid ${RD.rule2};padding:22px 0 8px;margin:18px 0 0;break-inside:avoid;page-break-inside:avoid}
 .rd .rd-exhibit.rd-flow{break-inside:auto;page-break-inside:auto}
-.rd .rd-exhibit h2{font-family:var(--rd-serif);font-weight:600;font-size:${RD_TYPE.headline}px;line-height:1.25;margin:4px 0 6px}
-.rd .rd-sub{font-family:var(--rd-serif);font-style:italic;font-size:16px;line-height:1.5;color:${RD.inkSoft};margin:0 0 12px}
+.rd .rd-exhibit h2{font-family:var(--rd-display);font-weight:700;letter-spacing:-.02em;font-size:${RD_TYPE.headline}px;line-height:1.25;margin:4px 0 6px}
+.rd .rd-sub{font-family:var(--rd-sans);font-size:16px;line-height:1.5;color:${RD.inkSoft};margin:0 0 12px}
 .rd .rd-legend{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:${RD_TYPE.legend}px;color:${RD.inkSoft};margin:6px 0 10px}
 .rd .rd-legend span{display:inline-flex;align-items:center;gap:6px}
 .rd .rd-swatch{display:inline-block;width:10px;height:10px;border-radius:2px}
@@ -44,7 +43,7 @@ export const REPORT_DESIGN_CSS = `
 .rd .rd-one{display:grid;grid-template-columns:minmax(0,1fr)}
 .rd .rd-panel{min-width:0}
 .rd .rd-stack{display:flex;flex-direction:column;gap:22px}
-.rd .rd-source{font-size:${RD_TYPE.source}px;font-style:italic;color:${RD.muted};margin-top:8px;line-height:1.5}
+.rd .rd-source{font-size:${RD_TYPE.source}px;color:${RD.muted};margin-top:8px;line-height:1.5}
 .rd .rd-notice{font-size:14px;color:${RD.inkSoft};background:${RD.terraSoft};padding:10px 12px;border-radius:4px;margin:8px 0}
 .rd .rd-prose{max-width:680px}
 .rd table.rd-table{width:100%;border-collapse:collapse;font-size:13.5px;font-variant-numeric:tabular-nums}

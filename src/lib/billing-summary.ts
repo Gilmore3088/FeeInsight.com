@@ -1,6 +1,6 @@
 import type Stripe from "stripe";
 import { getStripe } from "@/lib/stripe";
-import { isProTier, proTier } from "@/lib/pro-tiers";
+import { isProTier, proTier, type ProTier } from "@/lib/pro-tiers";
 
 export interface BillingSummary {
   /** "Annual" or "Monthly" (or Stripe's interval when it is something else). */
@@ -9,6 +9,8 @@ export interface BillingSummary {
   priceLabel: string | null;
   /** "Over $2B in assets" or "Consultant"; null when checkout left no tier. */
   tierLabel: string | null;
+  /** The plan key checkout recorded (small, mid, large); null when it left none. */
+  tier: ProTier | null;
   /** The date the plan renews, or ends when it is set to cancel. */
   periodEnd: Date | null;
   cancelsAtPeriodEnd: boolean;
@@ -42,6 +44,7 @@ export function summarizeSubscription(subscription: Stripe.Subscription): Billin
         : isProTier(tier)
           ? proTier(tier).assetsLabel
           : null,
+    tier: isProTier(tier) ? tier : null,
     periodEnd: endSeconds ? new Date(endSeconds * 1000) : null,
     cancelsAtPeriodEnd: subscription.cancel_at_period_end || subscription.cancel_at != null,
   };

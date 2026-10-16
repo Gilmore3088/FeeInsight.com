@@ -54,7 +54,7 @@ export function canExportData(user: User | null): boolean {
   return canAccessPremium(user);
 }
 
-/** Self-serve account API-key controls are disabled while keys require manual workspace setup. */
+/** Legacy flag, always false: subscriber keys are gated by plan in src/lib/api-subscriber-access.ts. */
 export function canAccessApiKey(user: User | null): boolean {
   void user;
   return false;

@@ -141,13 +141,16 @@ export interface MarketConcentration {
   year: number;
 }
 
+/** The FDIC Summary of Deposits year the market concentration study reads by default. */
+export const MARKET_CONCENTRATION_YEAR = 2024;
+
 export async function getMarketConcentration(opts?: {
   year?: number;
   minInstitutions?: number;
   limit?: number;
   sort?: "hhi_desc" | "hhi_asc" | "deposits_desc";
 }): Promise<MarketConcentration[]> {
-  const year = opts?.year ?? 2024;
+  const year = opts?.year ?? MARKET_CONCENTRATION_YEAR;
   const minInst = opts?.minInstitutions ?? 3;
   const limit = opts?.limit ?? 100;
   const orderBy =

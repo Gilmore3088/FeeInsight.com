@@ -6,6 +6,7 @@ import { FEE_FAMILIES, getDisplayName, getSpotlightCategories, TAXONOMY_COUNT } 
 import { getFeeDefinition } from "@/lib/fee-definitions";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
 import { PRODUCT_NAME, SITE_URL } from "@/lib/constants";
+import { PRO_PLANS_NAV } from "@/components/nav-items";
 import { Logo } from "@/brand/components";
 import { getPublicSnapshot } from "@/lib/public-stats";
 import { getCurrentUser } from "@/lib/auth";
@@ -209,13 +210,13 @@ export default async function BankFeeIndexPage({ searchParams }: PageProps) {
             <p className="text-[18px] font-semibold text-ink">{feeLabel} is part of full {PRODUCT_NAME} access</p>
             {getFeeDefinition(sel.fee) && <p className="mt-1 text-[14px] text-ink-soft">{getFeeDefinition(sel.fee)}</p>}
             <p className="mt-3 text-[14px] text-ink-soft">
-              {(coverage.get(sel.fee) ?? 0).toLocaleString()} institutions publish it. Full access shows its median, spread and the
-              institutions behind it for {who} {sel.state ? `headquartered in ${where}` : "in the U.S."}, the same way as the free
+              {(coverage.get(sel.fee) ?? 0).toLocaleString()} institutions publish it. Full access, part of Hamilton Pro, shows its
+              median, spread and the institutions behind it for {who} {sel.state ? `headquartered in ${where}` : "in the U.S."}, the same way as the free
               categories. Your choices above stay as they are.
             </p>
             <div className="mt-4 flex flex-wrap items-center gap-3">
               <Link href="/subscribe#pro" className="inline-flex min-h-11 items-center rounded-full bg-ink px-5 text-[14px] font-semibold text-on-ink">
-                Get full access
+                {PRO_PLANS_NAV.label}
               </Link>
               <Link href={selectionHref({ ...sel, fee: DEFAULT_FEE })} scroll={false} className={`text-[14px] ${LINK}`}>
                 Back to {getDisplayName(DEFAULT_FEE)} with the same choices
@@ -407,7 +408,7 @@ export default async function BankFeeIndexPage({ searchParams }: PageProps) {
         <details className="rounded-2xl border border-border bg-surface-0 p-5">
           <summary className="cursor-pointer text-[15px] font-semibold text-ink">How the Index counts</summary>
           <ul className="mt-3 list-disc space-y-2 pl-5 text-[14px] text-ink-soft">
-            <li>Every figure is read from an institution&apos;s own published fee schedule, and we keep the document it came from.</li>
+            <li>Every figure is read from an institution&apos;s own published fee schedule, and the Index keeps the document it came from.</li>
             <li>
               Each institution counts once, at the median of the prices it publishes for the fee (the highest, for overdraft). Medians
               and the middle half are taken across institutions, and a median needs at least {MIN_INSTITUTIONS_FOR_MEDIAN}.
@@ -432,18 +433,18 @@ export default async function BankFeeIndexPage({ searchParams }: PageProps) {
           <div className="rounded-2xl bg-ink p-6 text-on-ink sm:p-10">
             <Logo mark="bank-fee-index-wordmark" tone="reverse" height={22} className="h-5 w-auto sm:h-6" />
             <h2 id="access-heading" className="mt-5 text-[24px] font-semibold tracking-[-0.02em] sm:text-[32px]">
-              Every category, explored the same way
+              All {TAXONOMY_COUNT} fee categories, explored the same way
             </h2>
             <ul className="mt-4 grid gap-3 text-[15px] text-on-ink/85 sm:grid-cols-3">
-              <li>The spread, state and charter comparisons and the institutions behind every category, not only the headline fees.</li>
+              <li>The spread, state and charter comparisons and the institution list for all {TAXONOMY_COUNT} categories.</li>
               <li>Peer comparisons by asset size and Fed district.</li>
-              <li>Peer comparisons downloaded as spreadsheets, with each fee&apos;s source.</li>
+              <li>Spreadsheet downloads of each comparison, with every fee&apos;s source.</li>
             </ul>
             <Link href="/subscribe#pro" className="mt-6 inline-flex min-h-11 items-center rounded-full bg-paper px-6 text-[15px] font-semibold text-ink">
-              Get full {PRODUCT_NAME} access
+              {PRO_PLANS_NAV.label}
             </Link>
             <p className="mt-3 text-[13px] text-on-ink/70">
-              Full access comes with a Hamilton Pro subscription, the workspace for bank and credit union teams.
+              Full {PRODUCT_NAME} access comes with a Hamilton Pro subscription, the workspace for bank and credit union teams.
             </p>
           </div>
         </section>
@@ -706,8 +707,8 @@ function InstitutionRow({
           )}
           {named === 0 && (
             <p className="text-ink-muted">
-              <span className="font-semibold text-ink">Accounts not identified.</span> We haven&apos;t yet matched each price to its
-              account in the schedule, so these prices can&apos;t be compared account by account.
+              <span className="font-semibold text-ink">Accounts not identified.</span> The Index hasn&apos;t yet matched each price to
+              its account in the schedule, so these prices can&apos;t be compared account by account.
             </p>
           )}
           <ul className="divide-y divide-border rounded-xl border border-border bg-paper">
