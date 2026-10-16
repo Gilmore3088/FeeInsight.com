@@ -110,7 +110,7 @@ export function StateReportMap({ states }: { states: MapState[] }) {
   if (!shown) return null;
 
   return (
-    <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_18rem] lg:items-center">
+    <div className="mx-auto max-w-[60rem]">
       <svg viewBox="0 0 960 600" className="h-auto w-full" role="group" aria-label="State fee reports">
         {US_STATES.map((s) => {
           const state = byCode.get(s.id);
@@ -128,51 +128,56 @@ export function StateReportMap({ states }: { states: MapState[] }) {
           );
         })}
       </svg>
-      <div className="rounded-2xl border border-border bg-surface-0 p-4 shadow-fi-1">
-        <div aria-live="polite">
-          <p className="text-[13px] text-ink-muted">Free state report</p>
-          <p className="text-[20px] font-semibold tracking-[-0.02em] text-ink">{shown.name}</p>
-          <dl className="mt-3 grid grid-cols-2 gap-3">
+      {/* The picked state, as one bar under the map: never a narrow column beside it. */}
+      <div className="mt-4 flex flex-col gap-4 rounded-2xl border border-border bg-surface-0 p-4 shadow-fi-1 sm:flex-row sm:items-center sm:gap-6 sm:p-5">
+        <div aria-live="polite" className="flex flex-1 flex-wrap items-end gap-x-8 gap-y-3">
+          <div className="min-w-[10rem]">
+            <p className="text-[12px] text-ink-muted">Free state report</p>
+            <p className="text-[22px] font-semibold tracking-[-0.02em] text-ink">{shown.name}</p>
+          </div>
+          <dl className="flex gap-8">
             <div>
               <dt className="text-[12px] text-ink-muted">Institutions</dt>
-              <dd className="font-mono text-[20px] font-semibold tabular-nums text-ink">{COUNT.format(shown.institutions)}</dd>
+              <dd className="font-mono text-[22px] font-semibold tabular-nums text-ink">{COUNT.format(shown.institutions)}</dd>
             </div>
             <div>
               <dt className="text-[12px] text-ink-muted">Verified fees</dt>
-              <dd className="font-mono text-[20px] font-semibold tabular-nums text-ink">{COUNT.format(shown.fees)}</dd>
+              <dd className="font-mono text-[22px] font-semibold tabular-nums text-ink">{COUNT.format(shown.fees)}</dd>
             </div>
           </dl>
         </div>
-        {shown.reportReady && (
-          <a
-            href={`/reports?report=institution&src=reports-map-${shown.code}#request`}
-            className="mt-2 inline-block text-[13px] font-semibold text-ink underline decoration-border underline-offset-4 hover:decoration-ink"
+        <div className="flex flex-col gap-2 sm:w-[16rem]">
+          <label className="block text-[12px] text-ink-muted">
+            <span className="sr-only">Pick a state</span>
+            <select
+              value={shown.code}
+              onChange={(e) => setCode(e.target.value)}
+              className="min-h-11 w-full rounded-md border border-border bg-white px-3 text-[14px] text-ink"
+            >
+              {[...states]
+                .sort((a, b) => a.name.localeCompare(b.name))
+                .map((s) => (
+                  <option key={s.code} value={s.code}>
+                    {s.name}
+                  </option>
+                ))}
+            </select>
+          </label>
+          <Link
+            href={`/research/state/${shown.code}`}
+            className="inline-flex min-h-11 w-full items-center justify-center rounded-full bg-ink px-5 text-[14px] font-semibold text-on-ink hover:opacity-90"
           >
-            Get a competitor report for {shown.name}
-          </a>
-        )}
-        <Link
-          href={`/research/state/${shown.code}`}
-          className="mt-4 inline-flex min-h-11 w-full items-center justify-center rounded-full bg-ink px-5 text-[14px] font-semibold text-on-ink hover:opacity-90"
-        >
-          Open the {shown.name} report
-        </Link>
-        <label className="mt-3 block text-[12px] text-ink-muted">
-          <span className="sr-only">Pick a state</span>
-          <select
-            value={shown.code}
-            onChange={(e) => setCode(e.target.value)}
-            className="mt-1 w-full rounded-md border border-border bg-white px-3 py-2 text-[14px] text-ink"
-          >
-            {[...states]
-              .sort((a, b) => a.name.localeCompare(b.name))
-              .map((s) => (
-                <option key={s.code} value={s.code}>
-                  {s.name}
-                </option>
-              ))}
-          </select>
-        </label>
+            Open the {shown.name} report
+          </Link>
+          {shown.reportReady && (
+            <a
+              href={`/reports?report=institution&src=reports-map-${shown.code}#request`}
+              className="text-center text-[13px] font-semibold text-ink underline decoration-border underline-offset-4 hover:decoration-ink"
+            >
+              Get a competitor report for {shown.name}
+            </a>
+          )}
+        </div>
       </div>
     </div>
   );

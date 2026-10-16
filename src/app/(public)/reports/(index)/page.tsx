@@ -1,9 +1,9 @@
 /**
  * /reports — the report's one home (page template briefs, "Reports").
- * The hero is the report itself, drawn from the live sample, beside the request form; then the
- * video, the sample's own fee lines as one tappable exhibit, how a request runs, every state's
- * free report on one map, Hamilton once, the questions, and published research (hidden while
- * empty). Every figure is read from the live sample or the cached catalog reads; when either is
+ * One column throughout: the promise and two actions over the report as delivered (its pictures
+ * come from `REPORT_SHOWCASE`); then the video, the sample's own fee lines as one tappable
+ * exhibit, the request (steps over the form), every state's free report on one full-width map,
+ * Hamilton once, the questions, and published research (hidden while empty). Every figure is read from the live sample or the cached catalog reads; when either is
  * slow or down, its section drops its figures rather than show stale ones.
  */
 
@@ -14,6 +14,7 @@ import type { PublishedReport, ReportType } from "@/lib/report-engine/types";
 import { timeAgo } from "@/lib/format";
 import { TrackLink } from "@/components/track-link";
 import { CONTACT_EMAIL, REPORT_OFFER, SITE_NAME } from "@/lib/constants";
+import { REPORT_SHOWCASE } from "@/lib/report-showcase";
 import { loadSampleReport } from "@/lib/custom-report/sample-report";
 import { ReportFaq } from "./report-faq";
 import { HamiltonLine } from "../hamilton-line";
@@ -22,7 +23,7 @@ import { getMarketReadinessCached, getStatesWithFeeDataCached } from "@/lib/data
 import type { MarketReadiness } from "@/lib/data-store/market-readiness";
 import { STATE_CODES, STATE_NAMES } from "@/lib/us-states";
 import { REPORT_TYPE_LABELS, ReportFilters } from "./report-filters";
-import { ReportCover, ReportVideo } from "./report-cover";
+import { ReportShowcase, ReportVideo } from "./report-cover";
 import { SampleLines, StateReportMap } from "./report-exhibits";
 import { formatReadOn, mapStates, sampleExhibit, type StateCoverage } from "./report-view";
 
@@ -33,8 +34,7 @@ export const metadata: Metadata = {
   description: `See where your fees stand against your competitors: free national, Fed district and state fee reports, and the ${REPORT_OFFER.name}.`,
 };
 
-const SAMPLE_REPORT_HREF = "/reports/sample-competitive-fee-position";
-const REQUEST_HREF = "/reports?report=institution#request";
+const SAMPLE_REPORT_HREF = REPORT_SHOWCASE.sampleHref;
 
 const H2 = "text-[22px] font-semibold tracking-[-0.02em] text-ink sm:text-[28px]";
 
@@ -166,48 +166,45 @@ export default async function ReportsPage({ searchParams }: PageProps) {
 
   return (
     <div className="pb-20">
-      {/* 1. The report and the form, side by side. On a phone the form comes before the picture. */}
+      {/* 1. One column: the promise, the two actions, then the report as delivered. */}
       <section className="border-b border-border bg-paper">
-        <div className="mx-auto grid max-w-page gap-x-12 gap-y-8 px-4 pb-12 pt-10 sm:px-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,27rem)] lg:pb-16 lg:pt-14">
-          <div className="lg:col-start-1 lg:row-start-1">
-            <h1 className="text-[32px] font-semibold leading-[1.08] tracking-[-0.03em] text-ink sm:text-[46px]">
-              Know where your fees stand against your market
-            </h1>
-            <p className="mt-4 max-w-[34rem] text-[16px] text-ink-soft">
-              Your published fees next to the competitors you name.
-            </p>
-            <ul className="mt-5 flex flex-wrap gap-x-5 gap-y-2 text-[13px] font-medium text-ink">
-              {[REPORT_OFFER.priceLabel, "Board-ready PDF", "A source for every figure"].map((item) => (
-                <li key={item} className="inline-flex items-center gap-2">
-                  <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-brick" />
-                  {item}
-                </li>
-              ))}
-            </ul>
+        <div className="mx-auto max-w-page px-4 pb-12 pt-10 text-center sm:px-6 lg:pb-16 lg:pt-16">
+          <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-brick">{REPORT_OFFER.name}</p>
+          <h1 className="mx-auto mt-3 max-w-[46rem] text-[32px] font-semibold leading-[1.08] tracking-[-0.03em] text-ink sm:text-[52px]">
+            Know where your fees stand against your market
+          </h1>
+          <p className="mx-auto mt-4 max-w-[34rem] text-[16px] text-ink-soft sm:text-[18px]">
+            Your published fees next to the competitors you name.
+          </p>
+          <div className="mt-7 flex flex-col items-center justify-center gap-3 sm:flex-row">
+            <TrackLink
+              event="request_report_click"
+              eventProps={{ placement: "reports_hub_hero" }}
+              href="#request"
+              className="inline-flex min-h-12 w-full items-center justify-center rounded-full bg-ink px-6 text-[15px] font-semibold text-on-ink hover:opacity-90 sm:w-auto"
+            >
+              {REPORT_OFFER.institutionCtaLabel}
+            </TrackLink>
             {sample && (
-              <p className="mt-5">
-                <TrackLink
-                  event="sample_report_click"
-                  eventProps={{ placement: "reports_hero_sample" }}
-                  href={SAMPLE_REPORT_HREF}
-                  className="text-[14px] font-semibold text-ink underline decoration-border underline-offset-4 hover:decoration-ink"
-                >
-                  Or read a free sample report
-                </TrackLink>
-              </p>
+              <TrackLink
+                event="sample_report_click"
+                eventProps={{ placement: "reports_hero_sample" }}
+                href={SAMPLE_REPORT_HREF}
+                className="inline-flex min-h-12 w-full items-center justify-center rounded-full border border-border bg-surface-0 px-6 text-[15px] font-semibold text-ink hover:border-ink sm:w-auto"
+              >
+                Read a free sample
+              </TrackLink>
             )}
           </div>
-          <div id="request" className="scroll-mt-24 lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:self-center">
-            <RequestReportForm
-              contactEmail={CONTACT_EMAIL}
-              defaultSrc="reports-hub"
-              defaultReportType="institution"
-              title="Get your fee report"
-            />
-          </div>
-          <div className="lg:col-start-1 lg:row-start-2">
-            <ReportCover sample={sample} />
-          </div>
+          <ul className="mt-5 flex flex-wrap justify-center gap-x-5 gap-y-2 text-[13px] font-medium text-ink-muted">
+            {[REPORT_OFFER.priceLabel, "Board-ready PDF", "A source for every figure"].map((item) => (
+              <li key={item} className="inline-flex items-center gap-2">
+                <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-brick" />
+                {item}
+              </li>
+            ))}
+          </ul>
+          <ReportShowcase />
         </div>
       </section>
 
@@ -240,51 +237,55 @@ export default async function ReportsPage({ searchParams }: PageProps) {
         </section>
       )}
 
-      {/* 4. How a request runs. */}
-      <section aria-labelledby="steps-heading" className="mx-auto max-w-page px-4 pt-14 sm:px-6 sm:pt-20">
-        <h2 id="steps-heading" className={H2}>
-          How it works
-        </h2>
-        <ol className="mt-5 grid gap-3 sm:grid-cols-3">
-          {STEPS.map((step, i) => (
-            <li key={step.title} className="rounded-2xl border border-border bg-surface-0 p-5">
-              <span className="font-mono text-[28px] font-semibold leading-none text-brick">{i + 1}</span>
-              <p className="mt-3 text-[16px] font-semibold text-ink">{step.title}</p>
-              <p className="mt-1 text-[14px] text-ink-muted">{step.body}</p>
-            </li>
-          ))}
-        </ol>
-        <p className="mt-4">
-          <TrackLink
-            event="request_report_click"
-            eventProps={{ placement: "reports_hub_steps" }}
-            href={REQUEST_HREF}
-            className="inline-flex min-h-11 items-center rounded-full bg-ink px-5 text-[14px] font-semibold text-on-ink hover:opacity-90"
-          >
-            {REPORT_OFFER.institutionCtaLabel}
-          </TrackLink>
-        </p>
+      {/* 4. The request: how it runs, then the form, in one column. */}
+      <section id="request" aria-labelledby="request-heading" className="scroll-mt-24 mx-auto max-w-page px-4 pt-14 sm:px-6 sm:pt-20">
+        <div className="mx-auto max-w-[36rem]">
+          <h2 id="request-heading" className={`${H2} text-center`}>
+            Get your fee report
+          </h2>
+          <ol className="mt-5 grid gap-2 sm:grid-cols-3">
+            {STEPS.map((step, i) => (
+              <li key={step.title} className="flex items-start gap-3 rounded-xl bg-paper px-4 py-3 sm:flex-col sm:gap-1">
+                <span className="font-mono text-[20px] font-semibold leading-none text-brick">{i + 1}</span>
+                <span>
+                  <span className="block text-[14px] font-semibold text-ink">{step.title}</span>
+                  <span className="block text-[13px] text-ink-muted">{step.body}</span>
+                </span>
+              </li>
+            ))}
+          </ol>
+          <div className="mt-5">
+            <RequestReportForm
+              contactEmail={CONTACT_EMAIL}
+              defaultSrc="reports-hub"
+              defaultReportType="institution"
+              title="Tell us your institution"
+            />
+          </div>
+        </div>
       </section>
 
-      {/* 5. Every state's free report on one map. */}
+      {/* 5. Every state's free report on one map, full width. */}
       <section aria-labelledby="states-heading" className="mx-auto max-w-page px-4 pt-14 sm:px-6 sm:pt-20">
-        <h2 id="states-heading" className={H2}>
-          Free state fee reports
-        </h2>
-        {states.length > 0 ? (
-          <>
-            <p className="mt-1 text-[14px] text-ink-muted">
-              {coveredInstitutions.toLocaleString("en-US")} institutions with verified fees. Darker states have more.{" "}
+        <div className="mx-auto max-w-[44rem] text-center">
+          <h2 id="states-heading" className={H2}>
+            Free state fee reports
+          </h2>
+          {states.length > 0 && (
+            <p className="mt-2 text-[14px] text-ink-muted">
+              {coveredInstitutions.toLocaleString("en-US")} institutions with verified fees. Tap a state.{" "}
               <Link href="/methodology" className="font-medium text-ink underline decoration-border underline-offset-2 hover:decoration-ink">
                 How we verify
               </Link>
             </p>
-            <div className="mt-5">
-              <StateReportMap states={states} />
-            </div>
-          </>
+          )}
+        </div>
+        {states.length > 0 ? (
+          <div className="mt-6">
+            <StateReportMap states={states} />
+          </div>
         ) : (
-          <p className="mt-3 rounded-lg border border-dashed border-border bg-surface-0 px-5 py-4 text-[14px] text-ink-muted">
+          <p className="mx-auto mt-3 max-w-[44rem] rounded-lg border border-dashed border-border bg-surface-0 px-5 py-4 text-[14px] text-ink-muted">
             State coverage is temporarily unavailable. Try again shortly, or browse the{" "}
             <Link href="/research" className="font-medium text-ink underline underline-offset-2">
               research hub

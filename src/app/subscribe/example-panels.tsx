@@ -1,6 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { PreviewFrame } from "./preview-frame";
+import { REPORT_SHOWCASE } from "@/lib/report-showcase";
 
 const DISPLAY = { fontFamily: "var(--fi-font-sans)" };
 
@@ -44,7 +45,7 @@ export function MonitorPreview({ wire }: { wire: MonitorWireItem | null }) {
   );
 }
 
-const SAMPLE_HREF = "/reports/sample-competitive-fee-position";
+const SAMPLE_HREF = REPORT_SHOWCASE.sampleHref;
 
 /** The Report example: the real sample report's cover and findings pages. */
 export function ReportPreview() {
@@ -52,7 +53,7 @@ export function ReportPreview() {
     <PreviewFrame label="Hamilton · Reports" aside="Sample report">
       <div className="relative min-h-[19rem] flex-1 overflow-hidden bg-surface-200 sm:min-h-[21rem]">
         <Image
-          src="/reports/sample-preview/page-1.webp"
+          src={REPORT_SHOWCASE.pages[0].src}
           alt="Cover of the sample Competitive Fee Position report, prepared for Sample Community Bank"
           width={850}
           height={1100}
@@ -60,7 +61,7 @@ export function ReportPreview() {
           className="absolute left-[6%] top-6 w-[46%] -rotate-2 rounded-sm shadow-[0_10px_30px_-12px_rgba(26,24,21,0.45)] ring-1 ring-border"
         />
         <Image
-          src="/reports/sample-preview/page-2.webp"
+          src={REPORT_SHOWCASE.pages[1].src}
           alt="Summary of findings page from the sample report"
           width={850}
           height={1100}
