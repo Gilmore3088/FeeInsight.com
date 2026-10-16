@@ -122,6 +122,12 @@ export const HAND_TAKEDOWNS: readonly HandTakedown[] = [
   { feePublishedId: 120559, institutionId: 5313, canonicalFeeKey: "cashiers_check", amount: 0, feeName: "Cashier's checks - One",
     reason: "source_mismatch: #1571", issue: 1571, kind: "wrong_amount",
     evidence: "Lakeshore FCU (doc 3367): \"Cashier's checks - One FREE check per month (additonal checks each) | $1.00\"." },
+  // #1512 (James approved, Oct 16 03:37 UTC, roadmap item 3.8): a joined row whose own price is
+  // not the overdraft fee. The other seven #1512/#1513 rows are renamed or re-filed in place
+  // (taxonomy-fold HAND_REFILES).
+  { feePublishedId: 142965, institutionId: 4965, canonicalFeeKey: "overdraft", amount: 10, feeName: "Courtesy Pay Fee (per transaction) Research & Reconcilement (per hour)",
+    reason: "source_mismatch: #1512", issue: 1512, kind: "wrong_amount",
+    evidence: "Access FCU (doc 33871): \"Courtesy Pay Fee (per transaction) ……Research & Reconcilement (per hour)…. $10.00$25.00\" joins two lines; the bank's fee table (doc 26372) prints \"Courtesy Pay Fee | $25.00\" and \"Research & Reconcilement (per hour) | $10.00\", so $10 is not the courtesy pay fee." },
 ];
 
 export interface LiveTakedownRow {

@@ -15,6 +15,16 @@ hand-takedown list (`src/lib/agents/hamilton/hand-takedowns.ts`): one entry per 
 that holds the evidence and the reason (`source_mismatch: #<issue>`); a row comes down only while it
 still reads as listed, its verified row is rejected, and the publish step's run ledger names it.
 
+**Confirmed-wrong live fees in batches under 20 come down, or go to a review log, without a
+per-batch approval.** James, 2026-10-16 03:37 UTC, saying yes to roadmap item 3.8 (#1512, #1513):
+"If they're incorrect they need to come down or getting placed into a review log. I don't want to
+be nickel and dimed every time we have a problem with less than 20 fees." He does not want to be
+asked about fewer than 20 incorrect fees. Each fee is still confirmed wrong against its bank's own
+stored text and goes through a tracked path with run-ledger visibility: the hand-takedown list, or
+a hand rename or re-file (`HAND_REFILES` in `src/lib/agents/hamilton/taxonomy-fold.ts`) when the
+price is right for another name or category. Larger batches, category or policy questions,
+migrations and switches still go to him.
+
 ## 2026-10-15
 
 **Darwin re-checks every live fee against today's rules.** James, 2026-10-15 ("This needs to be
