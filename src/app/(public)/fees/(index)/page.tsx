@@ -169,22 +169,13 @@ export default async function BankFeeIndexPage({ searchParams }: PageProps) {
       {/* 1. What the Index is */}
       <section className="border-b border-border bg-paper">
         <div className={`mx-auto max-w-page px-4 pb-8 pt-8 sm:px-6 sm:pt-12 ${PAGE_HEADER}`}>
-          {/* The index's own lockup (design system: Bank Fee Index data pages). Height keeps the
-              wordmark above its 16px minimum cap height; the margins give it its clear space. */}
-          {/* Desktop: the title block and the lede share the page width in two set columns, both
-              aligned to the explorer's left edge below, instead of one line running edge to edge. */}
-          <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(0,28rem)] lg:items-end lg:gap-16">
-          <div>
-          <Logo mark="bank-fee-index-lockup" height={40} className="mx-auto h-9 w-auto sm:mx-0 sm:h-11" />
-          <h1 className="mx-auto mt-6 max-w-3xl text-[32px] font-semibold leading-[1.08] tracking-[-0.03em] text-ink sm:mx-0 sm:text-[48px]">
+          <h1 className="mx-auto max-w-3xl text-[32px] font-semibold leading-[1.08] tracking-[-0.03em] text-ink sm:mx-0 sm:text-[48px]">
             What U.S. banks and credit unions charge, fee by fee
           </h1>
-          </div>
-          <p className={`mt-3 lg:mt-0 lg:pb-2 ${PAGE_LEDE}`}>
+          <p className={`mt-3 ${PAGE_LEDE}`}>
             Read from {summary.institutionsLabel} institutions&apos; own published schedules across {TAXONOMY_COUNT} fee
             categories, with a source behind every figure. {summary.freshnessLabel}.
           </p>
-          </div>
         </div>
       </section>
 
@@ -193,6 +184,9 @@ export default async function BankFeeIndexPage({ searchParams }: PageProps) {
         <h2 id="explorer-heading" className="sr-only">
           Explore the {PRODUCT_NAME}
         </h2>
+        {/* The index's own lockup heads the explorer it names (James, Oct 16), centered on phones.
+            Height keeps the wordmark above its 16px minimum cap height. */}
+        <Logo mark="bank-fee-index-lockup" height={40} className="mx-auto mb-6 block h-9 w-auto sm:mx-0 sm:h-11" />
         <ExplorerControls
           key={`${sel.fee}-${sel.state}-${sel.charter}`}
           fees={feeOptions}
@@ -247,9 +241,10 @@ export default async function BankFeeIndexPage({ searchParams }: PageProps) {
             <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
               <figure className="rounded-2xl border border-border bg-surface-0 p-4 sm:p-6">
                 <figcaption>
-                  <p className="text-[13px] text-ink-muted">
-                    <span className="font-semibold text-ink">{counted.headline}</span> · {feeLabel}, {who}{" "}
-                    {sel.state ? `headquartered in ${where}` : "in the U.S."}
+                  {/* A short name for the figure, with its exact calculation right under it (James, Oct 16). */}
+                  <p className="text-[15px] font-semibold text-ink">{sel.state ? where : "U.S."} benchmark</p>
+                  <p className="text-[12px] text-ink-muted">
+                    {counted.headline} · {feeLabel}, {who} {sel.state ? `headquartered in ${where}` : "in the U.S."}
                   </p>
                   <div aria-live="polite" className="mt-1 flex flex-wrap items-baseline gap-x-6 gap-y-1">
                     <p className="font-mono text-[40px] font-semibold leading-none tabular-nums text-ink">
