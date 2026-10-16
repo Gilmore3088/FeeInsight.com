@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { PRODUCT_NAME, SITE_NAME } from "@/lib/constants";
+import { PRODUCT_NAME, REPORT_OFFER, REPORT_PRICE_INLINE, SITE_NAME } from "@/lib/constants";
+import { PRO_PLANS_HREF } from "@/components/public/pro-next-step";
 import type { PublicStatsSummary } from "@/lib/public-stats";
 import { PrintButton } from "./print-button";
 import { HAMILTON_CANONICAL } from "@/app/for-institutions/hamilton-copy";
@@ -134,13 +135,16 @@ export function MethodFlow({ summary, stateCount, coverageLabel }: { summary: Pu
         </p>
         <p className="mt-2 text-[13px] leading-relaxed text-paper/80">{HAMILTON_CANONICAL}</p>
         <div className="mt-4 flex flex-wrap gap-2">
-          <Link href="/for-institutions#report" className="rounded-full bg-brick px-4 py-2 text-[12px] font-semibold text-white hover:bg-brick-ink">
-            Get a competitive fee report
+          <Link href={PRO_PLANS_HREF} className="inline-flex min-h-10 items-center rounded-full bg-brick px-4 text-[13px] font-semibold text-white hover:bg-brick-ink">
+            See Hamilton plans
           </Link>
-          <Link href="/subscribe" className="rounded-full border border-white/25 px-4 py-2 text-[12px] font-semibold text-white hover:bg-white/10">
-            See pricing
+          <Link href="/for-institutions#report" className="inline-flex min-h-10 items-center rounded-full border border-white/25 px-4 text-[13px] font-semibold text-white hover:bg-white/10">
+            {REPORT_OFFER.institutionCtaLabel}
           </Link>
         </div>
+        <p className="mt-2 text-[12px] text-paper/60">
+          Not ready for Pro? A one-time {REPORT_OFFER.name} is quoted per institution, {REPORT_PRICE_INLINE}.
+        </p>
       </div>
     </section>
   );

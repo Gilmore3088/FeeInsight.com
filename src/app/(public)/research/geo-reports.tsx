@@ -212,7 +212,7 @@ export function GeoReports({ states, districts }: { states: StateCoverage[]; dis
           )}
           <p className="mt-2 text-center text-[11px] text-ink-muted">
             {view === "districts"
-              ? "States are shaded by their main district; a report counts each institution in its own district."
+              ? "Each state is shaded by the district that covers most of it. A district report counts every institution in that district."
               : "Shaded states have a report. Select one to open it."}
           </p>
         </div>

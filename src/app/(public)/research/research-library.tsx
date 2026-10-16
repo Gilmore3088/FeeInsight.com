@@ -40,7 +40,7 @@ export function ResearchLibrary({ articles, asOf }: { articles: ArticleSummary[]
   return (
     <section id="in-progress" className="scroll-mt-28">
       <SectionHeading eyebrow="Further research" title="Research in progress">
-        Studies that ask one question of the published fees and public financial data. Neither has a headline result yet.
+        Each study sets the published fees beside public financial data to answer one question. Each page shows what is published so far.
       </SectionHeading>
 
       <ul className="mt-5 divide-y divide-border overflow-hidden rounded-2xl border border-border bg-white">
@@ -87,7 +87,7 @@ export function ResearchLibrary({ articles, asOf }: { articles: ArticleSummary[]
         </Link>{" "}
         and{" "}
         <Link href="/research/data-sources" className="font-semibold text-ink underline decoration-border underline-offset-2 hover:decoration-ink">
-          our data sources
+          where the data comes from
         </Link>
         .
       </p>

@@ -25,7 +25,7 @@ export function ResearchHero({ summary }: { summary: PublicStatsSummary }) {
           Bank fee research
         </h1>
         <p className="mx-auto mt-3 max-w-xl text-[15px] leading-relaxed text-paper/80 sm:text-base">
-          National findings and regional benchmarks from the {PRODUCT_NAME}.
+          Findings and benchmarks from the {PRODUCT_NAME}, read from each bank&apos;s and credit union&apos;s own published fee schedule.
         </p>
         <p className="mt-4 text-[13px] font-semibold tabular-nums text-paper">
           {summary.institutionsLabel} institutions <span aria-hidden="true" className="px-1 text-paper/40">·</span>{" "}
