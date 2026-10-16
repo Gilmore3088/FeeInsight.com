@@ -1046,6 +1046,15 @@ describe("conditionalZero on run-on lines (#1571, live rows read on prod Oct 16)
     ["Incoming Domestic Wire", "Incoming Domestic Wire FREE Outgoing Domestic Wire $25"],
     ["Copies", "Copies FREE Copy Fee $5"],
     ["Account Inquiry", "Account Inquiry FREE Inquiries Fee $2"],
+    // Final review: a plural of the fee's own word whose singular ends in "e".
+    ["Courtesy Notice", "Courtesy Notice FREE Notices Fee $2"],
+    ["Late Charge", "Late Charge FREE Charges Fee $10"],
+    ["Wire Service", "Wire Service FREE Services Fee $15"],
+    // Final review, held rows read on prod Oct 16: prose that prices the fee before its name, a
+    // sentence stating its own condition, and an account's feature list.
+    ["Monthly Service Charges", "Earn up to $10 in loyalty credits each monthly statement cycle ($2 each) by using services you already love. One credit = $2 off your monthly service charge. Earn all five? Your monthly service charge drops to $0!"],
+    ["Monthly Fee", "Access 40,000+ Fee-Free ATMs. Earn Up to 2.00% APY* on Balances Up to $15,000. Get Paid Early.*** No Monthly Fee When Qualifications Are Met.** No Minimum Balance Fee. Round-Up Savings."],
+    ["Free official checks", "| Monthly Maintenance Fee None | Key Features Free check order—wallet custom style, plain or duplicate $5.00 discount on all other check styles 50% discount on safe deposit boxes Free official checks Free notary service"],
     // A tail with no fee noun of its own stays this fee's terms.
     ["Foreign ATM usage", "Foreign ATM usage No Charge Customer (incoming) $15.00"],
     ["Zelle Transfer", "Zelle Transfer: No Charge | Subordination: $175.00"],

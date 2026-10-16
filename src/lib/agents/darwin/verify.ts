@@ -228,10 +228,13 @@ const GENERIC_LABEL_WORDS = new Set(["fee", "fees", "charge", "charges", "servic
  */
 function namesOtherFee(label: string, feeName: string | null | undefined): boolean {
   if (!FEE_NOUN.test(label.replace(/\([^)]*\)/g, " ")) || CONDITION_WORDS.test(label)) return false;
-  const stem = (word: string) => word.replace(/ies$/, "y").replace(/(?:es|s)$/, "");
+  // One stem for singular and plural on both sides ("Notice"/"Notices", "Charge"/"Charges"), so a
+  // plural never hides the fee's own word (final review of #1571).
+  const stem = (word: string) => word.replace(/ies$/, "y").replace(/s$/, "").replace(/e$/, "");
   const own = new Set(words(feeName ?? "").map((entry) => stem(entry.word)).filter((word) => word.length >= 3 && !GENERIC_LABEL_WORDS.has(word)));
   return !words(label).some((entry) => own.has(stem(entry.word)));
 }
+const LEADING_ZERO_NAME = /^\s*(?:free|no charge|no fee|none|no)\b/i;
 const PRICE_AT = /\$\s*\d|\b\d[\d,]*\.\d{2}\b/;
 
 /**
@@ -278,7 +281,9 @@ function nameRun(text: string, feeName: string): { start: number; end: number; l
  * open with a price. Pure.
  */
 function ownRow(cell: string, feeName: string | null | undefined): string | null {
-  if (!feeName) return null;
+  // A name that opens with its own $0 ("Free official checks", "No Monthly Maintenance Fee") is an
+  // account's feature list, not a priced row: read the cell whole (final review of #1571).
+  if (!feeName || LEADING_ZERO_NAME.test(feeName)) return null;
   const sentences = cell.split(/(?<=[A-Za-z0-9)%][.!?])\s+(?=[A-Z0-9$])/);
   let group = cell;
   if (sentences.length > 1) {
@@ -289,7 +294,12 @@ function ownRow(cell: string, feeName: string | null | undefined): string | null
     };
     const scores = sentences.map(score);
     const best = scores.indexOf(Math.max(...scores));
-    // The sentences after it stay: they may state its terms ("Free. Paper statements: $5.").
+    const nameWords = new Set(words(feeName).map((entry) => entry.word));
+    const ownTerms = words(sentences[best]).filter((entry) => !nameWords.has(entry.word)).map((entry) => entry.word).join(" ");
+    // The sentences after it stay: they may state its terms ("Free. Paper statements: $5."). A
+    // sentence that states its own condition ("No Monthly Fee When Qualifications Are Met") keeps
+    // the sentences before it too, since they may price it (final review of #1571).
+    if (CONDITION_WORDS.test(ownTerms)) return cell;
     group = sentences.slice(best).join(" ");
     // A sentence that names the fee but prints no price ("Courtesy pay covers ... overdraw. No fee
     // for transactions $15 and under") leaves its price to the next one: read the cell whole.
@@ -303,7 +313,10 @@ function ownRow(cell: string, feeName: string | null | undefined): string | null
   // e-Statements)"): nothing before the name is dropped.
   if (!zero || /^\s*\$?\s*\d/.test(group)) return group;
   const zeroEnd = run.end + zero.index + zero[0].length;
-  return nextRow(group.slice(zeroEnd), feeName) ? group.slice(run.start, zeroEnd) : group.slice(run.start);
+  // In prose, words before the name in its own sentence are its terms ("One credit = $2 off your
+  // monthly service charge"): only a run-on row of cells drops them (final review of #1571).
+  const from = sentences.length > 1 ? 0 : run.start;
+  return nextRow(group.slice(zeroEnd), feeName) ? group.slice(from, zeroEnd) : group.slice(from);
 }
 
 /**
