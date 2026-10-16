@@ -1,4 +1,5 @@
 import type { FeeAudience } from "@/lib/fee-audience";
+import { CHECKING_ONLY_CATEGORIES, heldAccountType } from "@/lib/account-type";
 import { ADMIN_HOLD_PREFIX } from "@/lib/fee-hold-rules";
 import { publishSourceLink, sourceLinkSkipReason } from "@/lib/agents/hamilton/source-link";
 import { feePageKey } from "@/lib/agents/hamilton/page-key";
@@ -244,6 +245,11 @@ export function publishSkipReason(row: VerifiedFeeRow, minConfidence: number, pr
   const blockingFlag = flags.find((flag) => BLOCKING_FLAGS.has(flag));
   if (blockingFlag) return `Blocking flag: ${blockingFlag}`;
   if (!VALID_CANONICAL_KEYS.has(row.canonical_fee_key)) return "Invalid canonical fee key";
+  // #1100 gap 1 (James, Oct 16): monthly maintenance is the consumer checking account's fee. A
+  // savings, money market, club, business or IRA/HSA/CD account's monthly fee stays verified with
+  // its type and is not published there (`account-type-hold.ts`).
+  const heldType = CHECKING_ONLY_CATEGORIES.has(row.canonical_fee_key) ? heldAccountType(flags) : null;
+  if (heldType) return `Held: a ${heldType.replace(/_/g, " ")} account's monthly fee, not consumer checking`;
   // A fee whose wording found no home among the top 50 (fee-fold.ts) is not published.
   if (isRetiredCategory(row.canonical_fee_key)) return "Category folded into the top 50 with no home for this fee";
   if (!row.fee_name?.trim()) return "Missing fee name";

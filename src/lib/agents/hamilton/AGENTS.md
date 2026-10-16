@@ -352,6 +352,16 @@ the detail.
     `eval_critical:<verdict>`; the name rules learned from them (a rebate as an ATM fee, a
     "no fee for" or waiver sentence as a $0 fee, and others) on their second look,
     `not_a_fee:<rule>`.
+10b. Account type hold (`account-type-hold.ts`, #1100 gap 1, James Oct 16): monthly maintenance
+    is the consumer checking account's fee. A live monthly maintenance fee of a savings, money
+    market, club, business or IRA/HSA/CD account (`accountTypeOf` in `src/lib/account-type.ts`:
+    the lineup product first, then the fee's name) comes down, `account_type_hold: <type>`, and
+    its verified row stays verified with `account_type:<type>`; publish skips a flagged row
+    (`publishSkipReason`). A verified, unpublished row of such an account is flagged before
+    publish reads it. A row the guard refused only for its account words goes back to verified,
+    held, when it passes every check with those words set aside and traces in its own text;
+    otherwise it stays rejected with the flag. A checked row with no type gets
+    `account_type_checked:v1` and is not read again. One event per run names every row.
 10a. Hand fixes James approved, fixed lists checked against the live row before each write:
     `hand-amount-corrections.ts` (#1334, cut cents corrected in place) and
     `cut-name-duplicates.ts` (#1196): a cut-name row that repeats a clean live row at the same
@@ -747,7 +757,9 @@ charges.
 `HAND_REFILES` in the same file re-files or renames listed live fees in place (James approved
 each batch: #1299, #1304, #1196). A row moves only while it is still under its listed category
 at its listed price, and a rename is done once the live name reads as listed, so a re-run
-changes nothing. Each move writes a `pipeline_feedback` row with the old and new name, and the
+changes nothing. A rename in place that lists an `oldName` (the #1196 batch, 61848, 98747) runs only
+while the live name is exactly that old name, so it runs once and never replaces a better name a
+later read or retidy gave the fee. Each move writes a `pipeline_feedback` row with the old and new name, and the
 run gets one `hamilton.taxonomy_fold.hand_refile` event naming every row and its after-state.
 
 ## Source Link Repair

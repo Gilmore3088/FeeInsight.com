@@ -18,6 +18,7 @@ import { retireOtherBankDocumentFees } from "@/lib/agents/hamilton/other-bank-do
 import { retireEvalVerdictFees } from "@/lib/agents/hamilton/eval-verdicts";
 import { applyHandAmountCorrections } from "@/lib/agents/hamilton/hand-amount-corrections";
 import { applyCutNameDuplicates } from "@/lib/agents/hamilton/cut-name-duplicates";
+import { applyAccountTypeHold } from "@/lib/agents/hamilton/account-type-hold";
 import { applyHandTakedowns } from "@/lib/agents/hamilton/hand-takedowns";
 import { requeueGuardRejectedFees } from "@/lib/agents/hamilton/guard-requeue";
 import { retireArticlePageFees } from "@/lib/agents/hamilton/article-page";
@@ -1149,6 +1150,13 @@ async function executeAgenticStep(
         batchId: `agentic-run-${run.id}`,
         dryRun: run.runKind === "dry_run",
       });
+      // #1100 gap 1 (James, Oct 16): a non-checking account's monthly fee is held as verified with
+      // its account type and never published as consumer checking monthly maintenance.
+      const accountTypeHold = await applyAccountTypeHold(tx, {
+        runId: run.id,
+        batchId: `agentic-run-${run.id}`,
+        dryRun: run.runKind === "dry_run",
+      });
       // Listed live fees confirmed wrong against their bank's own text (James, Oct 16; #1496 first).
       const handTakedowns = await applyHandTakedowns(tx, {
         runId: run.id,
@@ -1643,6 +1651,13 @@ async function executeAgenticStep(
             corrected: handAmounts.corrected.map((fix) => ({ fee_published_id: fix.feePublishedId, from: fix.from, to: fix.to })),
             rejected_twins: handAmounts.rejectedTwins,
             skipped: handAmounts.skipped.length,
+          },
+          account_type_hold: {
+            held_live: accountTypeHold.heldLive.length,
+            held_waiting: accountTypeHold.heldWaiting.length,
+            restored_held: accountTypeHold.restoredHeld.length,
+            typed_rejected: accountTypeHold.typedRejected.length,
+            checked_untyped: accountTypeHold.checkedUntyped,
           },
           cut_name_duplicate: {
             taken_down: cutNameDuplicates.takenDown.map((item) => ({ fee_published_id: item.feePublishedId, kept_fee_published_id: item.keepFeePublishedId })),
