@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { PRODUCT_NAME } from "@/lib/constants";
+import { PAGE_HEADER } from "@/components/public/page-header";
 import { PrintButton } from "./print-button";
 import type { PublicStatsSummary } from "@/lib/public-stats";
 import { SectionJump } from "./section-jump";
@@ -49,20 +50,20 @@ export function ResearchHero({ summary, stateCount, hasDc, territoryCount }: Res
         })}
       </svg>
 
-      <div className="relative mx-auto max-w-page px-4 pb-10 pt-12 sm:px-6 sm:pb-12 sm:pt-16">
-        <p className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-[#e0716a]">
+      <div className={`relative mx-auto max-w-page px-4 pb-10 pt-12 sm:px-6 sm:pb-12 sm:pt-16 ${PAGE_HEADER}`}>
+        <p className="flex items-center justify-center gap-2 sm:justify-start text-[11px] font-semibold uppercase tracking-[0.16em] text-[#e0716a]">
           <span aria-hidden="true" className="h-px w-8 bg-[#e0716a]/60" />
           Research
         </p>
-        <h1 className="mt-3 max-w-3xl text-[2.25rem] font-extrabold leading-[1.05] tracking-[-0.015em] text-white sm:text-[3.25rem]" style={SERIF}>
+        <h1 className="mx-auto mt-3 max-w-3xl sm:mx-0 text-[2.25rem] font-extrabold leading-[1.05] tracking-[-0.015em] text-white sm:text-[3.25rem]" style={SERIF}>
           What banks and credit unions actually charge
         </h1>
-        <p className="mt-4 max-w-2xl text-[15px] leading-relaxed text-paper/80 sm:text-base">
+        <p className="mx-auto mt-4 max-w-2xl text-[15px] leading-relaxed text-paper/80 sm:mx-0 sm:text-base">
           National benchmarks, state and Federal Reserve district coverage, and original studies from the{" "}
           {PRODUCT_NAME}. Every number on this page comes from verified, published fee schedules.
         </p>
 
-        <dl className="mt-9 grid grid-cols-2 gap-px overflow-hidden rounded-xl bg-white/10 lg:grid-cols-4">
+        <dl className="mt-9 grid grid-cols-2 gap-px overflow-hidden rounded-xl bg-white/10 text-left lg:grid-cols-4">
           {stats.map((s) => (
             <div key={s.label} className="bg-ink px-5 py-5">
               <dt className="sr-only">{s.label}</dt>
@@ -77,7 +78,7 @@ export function ResearchHero({ summary, stateCount, hasDc, territoryCount }: Res
           ))}
         </dl>
 
-        <div className="mt-6 flex flex-wrap items-center gap-x-6 gap-y-3 text-[12px]">
+        <div className="mt-6 flex flex-wrap items-center justify-center gap-x-6 gap-y-3 text-[12px] sm:justify-start">
           <span className="inline-flex items-center gap-2 text-paper/75">
             <span aria-hidden="true" className="relative flex h-2 w-2">
               <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#7fb59b] opacity-60 motion-reduce:hidden" />

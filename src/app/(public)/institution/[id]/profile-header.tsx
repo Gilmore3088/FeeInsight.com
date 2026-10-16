@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { FileText } from "lucide-react";
 import { InfoTip } from "@/components/public/info-tip";
+import { PAGE_HEADER } from "@/components/public/page-header";
 import type { FeePublicationStatus } from "@/lib/institution-quality";
 import { getPublicStatusLabel } from "./enum-labels";
 import { STATUS_COPY } from "./profile-copy";
@@ -100,15 +101,15 @@ export function ProfileHeader({
   for (const fact of regulatorFacts) facts.push(fact);
 
   return (
-    <header className="fi-reveal pb-6 pt-2 sm:pb-8">
-      <div className="flex items-center gap-1.5">
+    <header className={`fi-reveal pb-6 pt-2 sm:pb-8 ${PAGE_HEADER}`}>
+      <div className="flex items-center justify-center gap-1.5 sm:justify-start">
         <StatusBadge status={status} />
         <InfoTip label="What this status means">{STATUS_COPY[status]}</InfoTip>
       </div>
-      <h1 className="mt-3 max-w-4xl break-words text-[34px] font-semibold leading-[1.02] tracking-[-0.035em] text-ink sm:text-[52px]">
+      <h1 className="mx-auto mt-3 max-w-4xl break-words text-[34px] font-semibold leading-[1.02] tracking-[-0.035em] text-ink sm:mx-0 sm:text-[52px]">
         {name}
       </h1>
-      <dl className="mt-5 grid grid-cols-2 gap-x-5 gap-y-4 rounded-xl border border-border bg-surface-0 p-4 sm:grid-cols-4 sm:p-5">
+      <dl className="mt-5 grid text-left grid-cols-2 gap-x-5 gap-y-4 rounded-xl border border-border bg-surface-0 p-4 sm:grid-cols-4 sm:p-5">
         {facts.map((fact) => (
           <div key={fact.label} className="min-w-0">
             <dt className="text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-muted">{fact.label}</dt>
@@ -117,7 +118,7 @@ export function ProfileHeader({
         ))}
       </dl>
       {(feeScheduleUrl || websiteUrl || collectedOn) && (
-        <div className="mt-5 flex flex-wrap items-center gap-x-4 gap-y-2">
+        <div className="mt-5 flex flex-wrap items-center justify-center gap-x-4 gap-y-2 sm:justify-start">
           {feeScheduleUrl && (
             <a href={feeScheduleUrl} target="_blank" rel="noopener noreferrer" className={LINK_CLASS}>
               <FileText className="h-4 w-4" aria-hidden="true" />

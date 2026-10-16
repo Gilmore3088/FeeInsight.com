@@ -16,6 +16,7 @@ import type { ReportType } from "@/lib/report-engine/types";
 import { EmailGate } from "./email-gate";
 import { RESEARCH_IMPRINT, SITE_NAME, SITE_URL } from "@/lib/constants";
 import { TrackLink } from "@/components/track-link";
+import { PAGE_CRUMBS, PAGE_H1, PAGE_HEADER } from "@/components/public/page-header";
 import { DEMO_REQUEST_NAV, PRO_PLANS_NAV } from "@/components/nav-items";
 
 export const revalidate = 3600;
@@ -140,13 +141,13 @@ export default async function ReportPage({
     <div className="pb-20">
       <section className="border-b border-border bg-paper">
         <div className="mx-auto grid max-w-page gap-x-12 gap-y-8 px-4 pb-12 pt-6 sm:px-6 sm:pt-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,24rem)] lg:items-center">
-          <div>
-            <nav aria-label="Breadcrumb" className="flex items-center gap-2 text-[12px] text-ink-muted">
+          <div className={PAGE_HEADER}>
+            <nav aria-label="Breadcrumb" className={PAGE_CRUMBS}>
               <Link href="/reports" className="hover:text-ink">Reports</Link>
               <span aria-hidden="true">/</span>
               <span className="text-ink-soft">{typeLabel}</span>
             </nav>
-            <h1 className="mt-4 text-[32px] font-semibold leading-[1.08] tracking-[-0.03em] text-ink sm:text-[44px]">{report.title}</h1>
+            <h1 className={`mt-4 ${PAGE_H1}`}>{report.title}</h1>
             <p className="mt-3 text-[14px] text-ink-muted">
               {RESEARCH_IMPRINT} · Published {formatDate(report.published_at)}
             </p>
@@ -196,7 +197,7 @@ export default async function ReportPage({
 /** The report's cover, drawn: its type, title and date on stacked pages, so the page shows what arrives. */
 function ReportCoverArt({ title, typeLabel, published }: { title: string; typeLabel: string; published: string }) {
   return (
-    <div className="relative mx-auto mt-8 w-full max-w-[26rem] py-4 lg:mx-0" aria-hidden="true">
+    <div className="relative mx-auto mt-8 w-full max-w-[26rem] py-4 text-left lg:mx-0" aria-hidden="true">
       <div className="absolute inset-x-6 inset-y-2 -rotate-3 rounded-xl bg-brick-tint" />
       <div className="absolute inset-x-4 inset-y-3 rotate-2 rounded-xl bg-surface-200" />
       <div className="relative rounded-xl border border-border bg-surface-0 p-6 shadow-fi-2">

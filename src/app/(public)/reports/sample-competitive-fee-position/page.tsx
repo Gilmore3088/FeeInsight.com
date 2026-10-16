@@ -10,6 +10,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { TrackLink } from "@/components/track-link";
 import { TrackView } from "@/components/track-view";
+import { PAGE_CRUMBS, PAGE_HEADER } from "@/components/public/page-header";
 import { HamiltonLine } from "../hamilton-line";
 import { CONTACT_EMAIL, SITE_NAME, SITE_URL, REPORT_OFFER } from "@/lib/constants";
 import { loadSampleReport } from "@/lib/custom-report/sample-report";
@@ -51,7 +52,7 @@ const SECONDARY_BUTTON =
 /** The report's cover, drawn without figures: what arrives, while the live sample is rebuilt. */
 function SampleCoverArt() {
   return (
-    <div className="relative mt-10 w-full max-w-[26rem] py-4" aria-hidden="true">
+    <div className="relative mx-auto mt-10 w-full max-w-[26rem] py-4 text-left sm:mx-0" aria-hidden="true">
       <div className="absolute inset-x-6 inset-y-2 -rotate-3 rounded-xl bg-brick-tint" />
       <div className="absolute inset-x-4 inset-y-3 rotate-2 rounded-xl bg-surface-200" />
       <div className="relative rounded-xl border border-border bg-surface-0 p-6 shadow-fi-2">
@@ -73,8 +74,8 @@ function SampleCoverArt() {
 /** Shown while the sample is offline for a re-render, so no stale figures stay public. */
 function SampleComingSoon() {
   return (
-    <div className="mx-auto max-w-3xl px-6 pb-24 pt-14">
-      <nav aria-label="Breadcrumb" className="mb-6 flex items-center gap-2 text-[12px] text-ink-muted">
+    <div className={`mx-auto max-w-3xl px-6 pb-24 pt-14 ${PAGE_HEADER}`}>
+      <nav aria-label="Breadcrumb" className={`mb-6 ${PAGE_CRUMBS}`}>
         <Link href="/reports" className="transition-colors hover:text-ink">
           Reports
         </Link>
@@ -92,7 +93,7 @@ function SampleComingSoon() {
       <p className="mt-4 text-[16px] leading-relaxed text-ink-soft">
         We are rebuilding it from current, source-checked data. You can still request one for your institution.
       </p>
-      <div className="mt-6 flex flex-wrap items-center gap-3">
+      <div className="mt-6 flex flex-wrap items-center justify-center gap-3 sm:justify-start">
         <TrackLink
           event="request_report_click"
           eventProps={{ placement: "sample_report_offline" }}
@@ -132,7 +133,7 @@ export default async function SampleReportPage() {
   return (
     <div className="mx-auto max-w-page px-6 pb-24 pt-14">
       <TrackView event="sample_report_view" eventProps={{ institution_id: report.data.subject.institution_id }} />
-      <nav aria-label="Breadcrumb" className="mb-6 flex items-center gap-2 text-[12px] text-ink-muted">
+      <nav aria-label="Breadcrumb" className={`mb-6 ${PAGE_CRUMBS}`}>
         <Link href="/reports" className="transition-colors hover:text-ink">
           Reports
         </Link>
@@ -140,7 +141,7 @@ export default async function SampleReportPage() {
         <span className="text-ink-soft">Sample</span>
       </nav>
 
-      <header className="border-b border-border pb-8">
+      <header className={`border-b border-border pb-8 ${PAGE_HEADER}`}>
         <p className="mb-3 text-[11px] font-bold uppercase tracking-[0.12em] text-brick">
           Sample: {REPORT_OFFER.name}
         </p>
@@ -149,11 +150,11 @@ export default async function SampleReportPage() {
         >
           This is what your institution report looks like.
         </h1>
-        <p className="mt-4 max-w-[680px] text-[16px] leading-relaxed text-ink-soft">
+        <p className="mx-auto mt-4 max-w-[680px] sm:mx-0 text-[16px] leading-relaxed text-ink-soft">
           Today&apos;s report for {name}, built live by the same code that builds yours, every amount linked to its
           fee schedule.
         </p>
-        <div className="mt-6 flex flex-wrap items-center gap-3">
+        <div className="mt-6 flex flex-wrap items-center justify-center gap-3 sm:justify-start">
           <TrackLink
             event="request_report_click"
             eventProps={{ placement: "sample_report_header" }}
