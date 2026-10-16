@@ -1,8 +1,12 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { IndexEntry } from "@/lib/data-store/fee-index";
 import type { FeeCategorySummary } from "@/lib/data-store/fees";
 import type { MarketReport } from "@/lib/custom-report/report-data";
-import { buildMarketLadder } from "./market-ladder";
+import { getPeerIndexCached } from "@/lib/data-store/public-cached-reads";
+import { homeReadsCacheable } from "@/app/landing-shared";
+import { buildMarketLadder, readSampleLadder } from "./market-ladder";
+
+vi.mock("@/lib/data-store/public-cached-reads", () => ({ getPeerIndexCached: vi.fn() }));
 
 const spread = { min_amount: 0, p25_amount: 25, median_amount: 30, p75_amount: 33, max_amount: 40, institution_count: 50 };
 const entry = (fee_category: string, maturity_tier: IndexEntry["maturity_tier"] = "strong") =>
@@ -58,5 +62,35 @@ describe("buildMarketLadder", () => {
     expect(wire?.readOn).toBe("2026-10-09");
     expect(buildMarketLadder({ ...base, preferKey: "monthly_maintenance" })?.value).toBe(35);
     expect(buildMarketLadder(base)?.value).toBe(35);
+  });
+});
+
+describe("readSampleLadder", () => {
+  const national = [{ ...spread, fee_category: "overdraft" } as unknown as FeeCategorySummary];
+  const peerIndex = vi.mocked(getPeerIndexCached);
+  const home = { summary: { complete: true }, categories: national, sampleFailed: false, overdraftFailed: false };
+
+  beforeEach(() => {
+    peerIndex.mockReset();
+    vi.spyOn(console, "error").mockImplementation(() => {});
+  });
+
+  it("reports a failed state or charter read, so the homepage render is not cached", async () => {
+    peerIndex.mockImplementation(async (filter) => {
+      if ("charter_type" in filter) throw new Error("connection reset");
+      return [entry("overdraft")];
+    });
+    const read = await readSampleLadder(sample, national);
+    expect(read.failed).toBe(true);
+    expect(read.ladder?.rows.map((r) => r.label)).toEqual(["Local competitors", "Texas", "The nation"]);
+    expect(homeReadsCacheable({ ...home, ladderFailed: read.failed })).toBe(false);
+  });
+
+  it("leaves a render cacheable when both reads answer", async () => {
+    peerIndex.mockResolvedValue([entry("overdraft")]);
+    const read = await readSampleLadder(sample, national);
+    expect(read.failed).toBe(false);
+    expect(read.ladder?.rows).toHaveLength(4);
+    expect(homeReadsCacheable({ ...home, ladderFailed: read.failed })).toBe(true);
   });
 });
