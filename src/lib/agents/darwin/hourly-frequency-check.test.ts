@@ -122,8 +122,8 @@ const asDb = (db: DbMock) => db as unknown as Parameters<typeof recheckHourlyFre
 const texts = (db: DbMock) => db.mock.calls.map(([strings]) => (strings as TemplateStringsArray).join("?"));
 
 describe("Darwin live hourly re-check", () => {
-  it("ships with the switch off", () => {
-    expect(HOURLY_FREQUENCY_LIVE).toBe(false);
+  it("ships switched on (James, 2026-10-16)", () => {
+    expect(HOURLY_FREQUENCY_LIVE).toBe(true);
     expect(HOURLY_CHECK_BATCH).toBe(2_000);
   });
 
@@ -142,7 +142,7 @@ describe("Darwin live hourly re-check", () => {
 
   it("in shadow, reports and moves the cursor but writes no fee", async () => {
     const db = dbFor(ROWS, "100");
-    const result = await recheckHourlyFrequencies(asDb(db), { runId: 7, stepId: 70, dryRun: false });
+    const result = await recheckHourlyFrequencies(asDb(db), { runId: 7, stepId: 70, dryRun: false, live: false });
     expect(result).toMatchObject({ live: false, wouldSet: 2, exempt: 1, afterId: 100, nextAfterId: 0, set: [] });
     const sent = texts(db);
     expect(sent.some((text) => text.includes("UPDATE"))).toBe(false);
@@ -165,9 +165,10 @@ describe("Darwin live hourly re-check", () => {
     expect(texts(db).some((text) => text.includes("UPDATE") || text.includes("INSERT"))).toBe(false);
   });
 
-  it("switched on, sets the live and verified rows guarded on the old value and logs each change", async () => {
+  it("switched on (the default), sets the live and verified rows guarded on the old value and logs each change", async () => {
     const db = dbFor(ROWS);
-    const result = await recheckHourlyFrequencies(asDb(db), { runId: 7, stepId: 70, dryRun: false, live: true });
+    const result = await recheckHourlyFrequencies(asDb(db), { runId: 7, stepId: 70, dryRun: false });
+    expect(result.live).toBe(true);
     expect(result.set).toEqual([101, 102]);
     const update = db.mock.calls.find(([strings]) => (strings as TemplateStringsArray).join("?").includes("UPDATE published_fee_records"));
     expect((update?.[0] as TemplateStringsArray).join("?")).toContain("fp.frequency IS NOT DISTINCT FROM v.from_frequency");

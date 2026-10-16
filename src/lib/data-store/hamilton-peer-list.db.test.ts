@@ -81,9 +81,9 @@ describe.skipIf(!connection)("peer list SQL in isolated PostgreSQL", () => {
     expect(found.totalMatches).toBe(2); expect(found.rows.find(r => r.institutionId === 204)?.totalAssetsUsd).toBeNull();
     expect((await query(criteria("List ten peers"))).rows.some(r => r.institutionId === 204)).toBe(false);
   });
-  it("honors strict lower and upper boundaries", async () => {
+  it("honors strict lower and upper boundaries, largest first", async () => {
     const found = await query(criteria("List credit unions above $5B and under $20B"));
-    expect(found.rows.map(r => r.institutionId)).toEqual([202,203]);
+    expect(found.rows.map(r => r.institutionId)).toEqual([203,202]);
   });
   it("applies state/type filters and returns the full eligible count with a limited page", async () => {
     const found = await query(criteria("List 2 largest credit unions"));

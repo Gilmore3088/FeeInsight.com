@@ -40,6 +40,8 @@ const CONTROL_LABEL: Record<DispatchControl, string> = {
  * model calls are stopped (#1402).
  */
 export async function assertAtlasDispatchReady(stepKeys: readonly string[]): Promise<void> {
+  // No steps means no control is checked, so an empty list would pass every stop (#1580).
+  if (stepKeys.length === 0) throw new Error("This run queues no steps, so there is nothing to start.");
   const controls = dispatchControlsForSteps(stepKeys);
   const readers: Record<DispatchControl, () => Promise<AutomationControlState>> = {
     global: getAutomationControl,

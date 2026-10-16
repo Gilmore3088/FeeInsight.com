@@ -8,10 +8,13 @@ type SqlTag = typeof sql;
 
 /**
  * Hand takedowns: a short, reviewed list of live fees confirmed wrong against their bank's own
- * stored text. James, Oct 16 (DECISIONS.md): up to about 25 such fees, each confirmed wrong on
- * amount or category against the bank's stored text and checked by a reviewer, come down this way
- * without a per-fee approval; a ledger line goes on #1026. Category or policy questions, large
- * batches, migrations and switches still go to him.
+ * stored text. James, Oct 16 03:37 UTC (DECISIONS.md): a batch of fewer than 20 such fees, each
+ * confirmed wrong on amount or category against the bank's stored text and checked by a reviewer,
+ * comes down this way without asking him ("I don't want to be nickel and dimed every time we have
+ * a problem with less than 20 fees"); a ledger line goes on #1026. A batch is the entries filed
+ * under one issue (`issue`); the limit is per batch (`HAND_TAKEDOWN_BATCH_LIMIT`), not a total for
+ * the list. A batch of 20 or more, category or policy questions, migrations and switches still go
+ * to him.
  *
  * A fixed list, not a takedown tool. A row comes down only while it still reads as listed (live,
  * same institution, category, name and price). Its verified row is rejected too, so no later
@@ -24,6 +27,8 @@ type SqlTag = typeof sql;
  */
 export const HAND_TAKEDOWN_CHECK = "hamilton.hand_takedown";
 export const HAND_TAKEDOWN_FLAG = "hand_rejected:hand_takedown";
+/** Most entries one batch (one issue) may hold: James's rule covers fewer than 20 fees at a time. */
+export const HAND_TAKEDOWN_BATCH_LIMIT = 19;
 
 export interface HandTakedown {
   feePublishedId: number;
@@ -34,7 +39,7 @@ export interface HandTakedown {
   feeName: string;
   /** `rolled_back_reason`, e.g. `source_mismatch: #1496`, or `duplicate of #<kept id> (#<issue>)` for a repeat. */
   reason: string;
-  /** The issue that holds the evidence. */
+  /** The issue that holds the evidence; the entries under one issue are one batch. */
   issue: number;
   kind: Extract<FeedbackKind, "wrong_amount" | "wrong_category" | "not_a_fee" | "duplicate">;
   /** What the bank's own text says, in one line. */
@@ -75,9 +80,63 @@ export const HAND_TAKEDOWNS: readonly HandTakedown[] = [
   { feePublishedId: 134962, institutionId: 8566, canonicalFeeKey: "account_research", amount: 29.5, feeName: "Loan Payment with Debit Card - Chargeback",
     reason: "source_mismatch: #1534", issue: 1534, kind: "wrong_category",
     evidence: "Texell CU (doc 29092): \"Loan Payment with Debit Card - Chargeback $29.50 per item\", next to \"Loan Payment with Debit Card - Return Item\": a loan payment fee, not account research." },
+  // #1571 (read-only, Oct 16): live $0s whose own schedule row prices them under a condition; each
+  // re-read against the stored text by the advisor session and checked by a separate reviewer.
+  { feePublishedId: 43512, institutionId: 4669, canonicalFeeKey: "dormant_account", amount: 0, feeName: "Dormant Account Fee Accounts with no activity for 12 months. Dormant accounts with",
+    reason: "source_mismatch: #1571", issue: 1571, kind: "wrong_amount",
+    evidence: "Jersey Central FCU (doc 3614): \"Dormant Account Fee ... Dormant accounts with $0.00 balance will be closed. | $10.00 per quarter\"; the fee is $10.00 a quarter, $0.00 is the closing balance." },
+  { feePublishedId: 54014, institutionId: 8259, canonicalFeeKey: "cashiers_check", amount: 0, feeName: "CASHIER’S CHECKS: first three (3)",
+    reason: "source_mismatch: #1571", issue: 1571, kind: "wrong_amount",
+    evidence: "Southeast Missouri Community FCU (doc 16700): \"CASHIER’S CHECKS: first three (3) FREE per month, $1.50 thereafter; members only\"." },
+  { feePublishedId: 61335, institutionId: 6219, canonicalFeeKey: "monthly_maintenance", amount: 0, feeName: "Standard Checking Monthly Fee - Balance over",
+    reason: "source_mismatch: #1571", issue: 1571, kind: "wrong_amount",
+    evidence: "Irco Community FCU (doc 18184): \"Balance over $250 | FREE\" and the next row \"Balance under $250 | $10.00\"; a balance band, not the price." },
+  { feePublishedId: 68893, institutionId: 8536, canonicalFeeKey: "overdraft", amount: 0, feeName: "Courtesy Pay fees are",
+    reason: "source_mismatch: #1571", issue: 1571, kind: "wrong_amount",
+    evidence: "Downeast FCU (doc 20241): \"Courtesy Pay fees are $0 for transactions $15 and under and then just $15 per item over $15\"." },
+  { feePublishedId: 70121, institutionId: 4197, canonicalFeeKey: "card_replacement", amount: 0, feeName: "Lost Card",
+    reason: "source_mismatch: #1571", issue: 1571, kind: "wrong_amount",
+    evidence: "Carrollton Federal Bank (doc 25216): \"ATM or Debit Card No Charge For First Card --- $10.00 For Lost Card\"; a lost card is $10.00." },
+  { feePublishedId: 73737, institutionId: 6300, canonicalFeeKey: "coin_counting", amount: 0, feeName: "Coin Counting (Mbr up to /Mbr over /Non-Mbr)",
+    reason: "source_mismatch: #1571", issue: 1571, kind: "wrong_amount",
+    evidence: "Aurora FCU (doc 20537): \"Coin Counting (Mbr up to $100/Mbr over $100/Non-Mbr) | FREE/5%/10%\"; free only for members up to $100." },
+  { feePublishedId: 77121, institutionId: 5313, canonicalFeeKey: "check_image", amount: 0, feeName: "Check copy that has cleared (per item) - Online copies are",
+    reason: "source_mismatch: #1571", issue: 1571, kind: "wrong_amount",
+    evidence: "Lakeshore FCU (doc 18957): \"Check copy that has cleared (per item) - Online copies are FREE up to 12 months old | $5.00\"." },
+  { feePublishedId: 77122, institutionId: 5313, canonicalFeeKey: "document_reproduction", amount: 0, feeName: "Statement copies (per statement) - Online copies are",
+    reason: "source_mismatch: #1571", issue: 1571, kind: "wrong_amount",
+    evidence: "Lakeshore FCU (doc 18957): \"Statement copies (per statement) - Online copies are FREE up to 18 months | $5.00\"." },
+  { feePublishedId: 77618, institutionId: 7383, canonicalFeeKey: "coin_counting", amount: 0, feeName: "Coin Counting, Free for Kids Club Member or for amounts less than",
+    reason: "source_mismatch: #1571", issue: 1571, kind: "wrong_amount",
+    evidence: "Members First FCU (doc 16105): \"2.00% of amount | Coin Counting, Free for Kids Club Member or for amounts less than $50.00\"." },
+  { feePublishedId: 84553, institutionId: 8221, canonicalFeeKey: "collection_item", amount: 0, feeName: "Foreign Check Deposit (below $10,000)",
+    reason: "source_mismatch: #1571", issue: 1571, kind: "wrong_amount",
+    evidence: "First Community FCU (doc 6206): \"Foreign Check Deposit (below $10,000) ....FREE\" and \"Foreign Check Deposit ($10,000 or more) .... $125.00\"; an amount band." },
+  { feePublishedId: 87079, institutionId: 7736, canonicalFeeKey: "notary_fee", amount: 0, feeName: "Notary Public – (per notarized document)",
+    reason: "source_mismatch: #1571", issue: 1571, kind: "wrong_amount",
+    evidence: "Del Norte FCU (doc 21594): \"Notary Public – (per notarized document)- FREE for members $5.00\"." },
+  { feePublishedId: 87461, institutionId: 8259, canonicalFeeKey: "document_reproduction", amount: 0, feeName: "FAX TRANSMISSION: first five (5) pages",
+    reason: "source_mismatch: #1571", issue: 1571, kind: "wrong_amount",
+    evidence: "Southeast Missouri Community FCU (doc 16700): \"FAX TRANSMISSION: first five (5) pages FREE per month, $1.00 per page thereafter\"." },
+  { feePublishedId: 88213, institutionId: 4236, canonicalFeeKey: "monthly_maintenance", amount: 0, feeName: "Service charge",
+    reason: "source_mismatch: #1571", issue: 1571, kind: "wrong_amount",
+    evidence: "Citizens State Bank (doc 19551): \"No Charge\" only \"if a minimum balance of $100.00 is maintained\"; \"$5.00\" if it is NOT maintained." },
+  { feePublishedId: 91505, institutionId: 4808, canonicalFeeKey: "cashiers_check", amount: 0, feeName: "Third-Party Official Check – Over",
+    reason: "source_mismatch: #1571", issue: 1571, kind: "wrong_amount",
+    evidence: "NCPD FCU (doc 21964): \"Third-Party Official Check – Over $3,000 | No Charge\" and \"Under $3,000 | $3.00\"; an amount band." },
+  { feePublishedId: 120559, institutionId: 5313, canonicalFeeKey: "cashiers_check", amount: 0, feeName: "Cashier's checks - One",
+    reason: "source_mismatch: #1571", issue: 1571, kind: "wrong_amount",
+    evidence: "Lakeshore FCU (doc 3367): \"Cashier's checks - One FREE check per month (additonal checks each) | $1.00\"." },
+  // #1512 (James approved, Oct 16 03:37 UTC, roadmap item 3.8): a joined row whose own price is
+  // not the overdraft fee. The other seven #1512/#1513 rows are renamed or re-filed in place
+  // (taxonomy-fold HAND_REFILES).
+  { feePublishedId: 142965, institutionId: 4965, canonicalFeeKey: "overdraft", amount: 10, feeName: "Courtesy Pay Fee (per transaction) Research & Reconcilement (per hour)",
+    reason: "source_mismatch: #1512", issue: 1512, kind: "wrong_amount",
+    evidence: "Access FCU (doc 33871): \"Courtesy Pay Fee (per transaction) ……Research & Reconcilement (per hour)…. $10.00$25.00\" joins two lines; the bank's fee table (doc 26372) prints \"Courtesy Pay Fee | $25.00\" and \"Research & Reconcilement (per hour) | $10.00\", so $10 is not the courtesy pay fee." },
   // #1302 leftovers (read-only, Oct 16): near-name pairs the near-name collapse keeps apart. 13188
   // repeats a live read of one printed fee; 144352 (and 114273, the same line on an older copy of
-  // the page) publish a rate fee's $35 floor as a flat fee.
+  // the page) publish a rate fee's $35 floor as a flat fee; 114270 reads the page's line-of-credit
+  // "$35.00 or 5%" line as a flat $35.
   { feePublishedId: 13188, institutionId: 44, canonicalFeeKey: "gift_card_purchase", amount: 4.25, feeName: "Visa Gift Card",
     reason: "duplicate of #103400 (#1302)", issue: 1302, kind: "duplicate",
     evidence: "Valley (doc 23731, text 20802) prints \"Visa® Gift Cards, each: $4.25.\" once per schedule; 103400 is the Oct 9 read of it. 13188 is the Apr 17 load (raw 5056: no excerpt, no source URL) of the same fee, and the page has no \"Visa Gift Card\" line." },
@@ -87,6 +146,9 @@ export const HAND_TAKEDOWNS: readonly HandTakedown[] = [
   { feePublishedId: 114273, institutionId: 6152, canonicalFeeKey: "late_payment", amount: 35, feeName: "Late payment fees",
     reason: "source_mismatch: #1302", issue: 1302, kind: "wrong_amount",
     evidence: "Patriot FCU (doc 21882, text 18514, the Oct 8 copy of the same rates page): the same \"Late payment fees of 5% of the monthly payment or $35.00 whichever is greater\" line read as a flat $35; the 5% fee is live as 114271." },
+  { feePublishedId: 114270, institutionId: 6152, canonicalFeeKey: "late_payment", amount: 35, feeName: "Late payment fee",
+    reason: "source_mismatch: #1302", issue: 1302, kind: "wrong_amount",
+    evidence: "Patriot FCU (doc 34341, text 32389), the line of credit on the same rates page: \"Late payment fee of $35.00 or 5% of the minimum payment may apply\": the fee is $35 or 5% of the payment, not a flat $35." },
 ];
 
 export interface LiveTakedownRow {
@@ -111,6 +173,13 @@ export interface HandTakedownResult {
   skipped: Array<{ feePublishedId: number; reason: string }>;
   /** A failed read or write (nothing written); also a `step.warning` run event. */
   error: string | null;
+}
+
+/** Pure: how many listed entries each batch (issue) holds, largest first. */
+export function handTakedownBatchSizes(list: readonly HandTakedown[] = HAND_TAKEDOWNS): Array<{ issue: number; entries: number }> {
+  const sizes = new Map<number, number>();
+  for (const entry of list) sizes.set(entry.issue, (sizes.get(entry.issue) ?? 0) + 1);
+  return [...sizes].map(([issue, entries]) => ({ issue, entries })).sort((a, b) => b.entries - a.entries || a.issue - b.issue);
 }
 
 const sameAmount = (a: number | string | null, b: number) => a != null && Math.abs(Number(a) - b) < 0.005;

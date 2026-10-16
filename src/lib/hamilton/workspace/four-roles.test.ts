@@ -137,6 +137,21 @@ describe("answer edge cases", () => {
     expect(evaluateFourRoles(answer).pass).toBe(true);
   });
 
+  it("names a bank's combined overdraft and NSF line as combined in both fees' answers (#1543)", () => {
+    const combined = (combinedWith: string) => ({
+      annualIncome: 241_000_000,
+      label: "Consumer overdraft and NSF fee income (call report Schedule RI-E, RIAD H032)",
+      quarterEnd: "2026-06-30",
+      source: { label: "Consumer overdraft and NSF fee income (call report Schedule RI-E, RIAD H032)", table: "institution_financial_records" },
+      combinedWith,
+    });
+    for (const [feeCategory, other] of [["overdraft", "NSF"], ["nsf", "overdraft"]]) {
+      const texts = buildFeeAnswer(overdraftResearch({ feeCategory, revenueLine: combined(other) })).claims.map((c) => c.text);
+      expect(texts).toContain("Your filing reports $241 million in overdraft and NSF income combined (call report) over the four quarters to June 30, 2026.");
+      expect(texts.join(" ")).not.toMatch(/returned item income|NSF income over/i);
+    }
+  });
+
   it("draws local competitors when asked for that view", () => {
     const answer = buildFeeAnswer(overdraftResearch(), { focus: "competitors" });
     expect(answer.exhibit).toMatchObject({ kind: "competitor_range", items: [{ amount: 25 }, { amount: 30 }, { amount: 35 }] });

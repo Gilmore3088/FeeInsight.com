@@ -657,7 +657,8 @@ function unstatedAudienceInstitutions(rows: IndexRow[]): Map<string, Set<number>
 
 /**
  * The same count for the national index read from fee_index_cache, which has no column for it
- * (adding one needs a migration), so it is read live alongside the cache.
+ * (adding one needs a migration). It is a grouped scan of the catalog, so only the pages that
+ * show it read it (`getNationalUnstatedAudienceCountsCached`), not every cached index read (#1595).
  */
 async function loadNationalUnstatedAudienceCounts(): Promise<Map<string, number>> {
   const rows = await sql.unsafe(
@@ -685,6 +686,22 @@ let nationalIndexCache: {
   value: IndexEntry[];
 } | null = null;
 let nationalIndexCachePromise: Promise<IndexEntry[]> | null = null;
+let unstatedCountsCache: { expiresAt: number; value: Map<string, number> } | null = null;
+
+/**
+ * The national unstated-audience count per category, memoised like the index. A failed read
+ * gives an empty map: the count only marks medians, so it never fails the page that shows it.
+ */
+export async function getNationalUnstatedAudienceCountsCached(): Promise<Map<string, number>> {
+  if (unstatedCountsCache && unstatedCountsCache.expiresAt > Date.now()) return unstatedCountsCache.value;
+  const value = await loadNationalUnstatedAudienceCounts().catch((error: unknown) => {
+    console.error("[fee-index] unstated-audience count failed; medians shown unmarked", error);
+    return null;
+  });
+  if (!value) return new Map();
+  unstatedCountsCache = { value, expiresAt: Date.now() + NATIONAL_INDEX_CACHE_TTL_MS };
+  return value;
+}
 
 export async function getNationalIndexCached(): Promise<IndexEntry[]> {
   const now = Date.now();
@@ -741,11 +758,8 @@ async function readNationalIndexCached(): Promise<IndexEntry[]> {
       return getNationalIndex();
     }
 
-    // The count only marks medians; a failed read must not push every caller onto the live index.
-    const unstated = await loadNationalUnstatedAudienceCounts().catch((error: unknown) => {
-      console.error("[fee-index] unstated-audience count failed; cached index served without it", error);
-      return new Map<string, number>();
-    });
+    // No unstated-audience count here: callers that show it read
+    // `getNationalUnstatedAudienceCountsCached` (#1595).
     return rows.map((row) => ({
       fee_category: row.fee_category,
       fee_family: row.fee_family,
@@ -761,7 +775,6 @@ async function readNationalIndexCached(): Promise<IndexEntry[]> {
       cu_count: row.cu_count,
       maturity_tier: row.maturity_tier as IndexEntry["maturity_tier"],
       last_updated: row.computed_at,
-      unstated_audience_institution_count: unstated.get(row.fee_category) ?? 0,
     }));
   } catch {
     return getNationalIndex();

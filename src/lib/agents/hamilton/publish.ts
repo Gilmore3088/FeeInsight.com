@@ -1,4 +1,5 @@
 import type { FeeAudience } from "@/lib/fee-audience";
+import { CHECKING_ONLY_CATEGORIES, heldAccountType } from "@/lib/account-type";
 import { ADMIN_HOLD_PREFIX } from "@/lib/fee-hold-rules";
 import { publishSourceLink, sourceLinkSkipReason } from "@/lib/agents/hamilton/source-link";
 import { feePageKey } from "@/lib/agents/hamilton/page-key";
@@ -39,6 +40,14 @@ import {
   type ExactDuplicateDecision,
   type PublishDuplicateCheck,
 } from "@/lib/agents/hamilton/exact-duplicate";
+import {
+  PUBLISH_REFUSE_SWEEP_RULES_LIVE,
+  PUBLISH_SWEEP_REFUSE_REASON_PREFIX,
+  selectPublishSweepRefusals,
+  type PublishSweepCheck,
+  type PublishSweepRefusal,
+  type PublishSweepRule,
+} from "@/lib/agents/hamilton/publish-sweep-rules";
 
 type SqlTag = typeof sql;
 
@@ -140,6 +149,8 @@ export interface HamiltonPublishResult {
   changeRecorded: boolean;
   /** #1069: what the exact duplicate collapse would do once this row is live (rows about to publish only). */
   exactDuplicate?: Exclude<ExactDuplicateDecision, { kind: "none" }> | null;
+  /** #1069 step 2: the sweep that would take this row down once live (rows about to publish only). */
+  sweepRule?: PublishSweepRefusal | null;
 }
 
 export interface RunHamiltonPublishOptions {
@@ -155,6 +166,8 @@ export interface RunHamiltonPublishOptions {
   db?: SqlTag;
   /** Refuse rows the exact duplicate collapse would close; defaults to `PUBLISH_REFUSE_DUPLICATES_LIVE`. */
   refuseDuplicatesLive?: boolean;
+  /** Refuse rows a sweep would take down (`publish-sweep-rules.ts`); defaults to `PUBLISH_REFUSE_SWEEP_RULES_LIVE`. */
+  refuseSweepRulesLive?: boolean;
 }
 
 export interface HeldThinInstitution {
@@ -187,6 +200,8 @@ export interface RunHamiltonPublishResult {
   results: HamiltonPublishResult[];
   /** #1069 step 1: rows the exact duplicate collapse would close after this step publishes them. */
   duplicateCheck: PublishDuplicateCheck;
+  /** #1069 step 2: rows a sweep (another bank's or an unconfirmed host's document, a business schedule) would take down. */
+  sweepCheck: PublishSweepCheck;
 }
 
 function boundedLimit(value: unknown): number {
@@ -244,6 +259,11 @@ export function publishSkipReason(row: VerifiedFeeRow, minConfidence: number, pr
   const blockingFlag = flags.find((flag) => BLOCKING_FLAGS.has(flag));
   if (blockingFlag) return `Blocking flag: ${blockingFlag}`;
   if (!VALID_CANONICAL_KEYS.has(row.canonical_fee_key)) return "Invalid canonical fee key";
+  // #1100 gap 1 (James, Oct 16): monthly maintenance is the consumer checking account's fee. A
+  // savings, money market, club, business or IRA/HSA/CD account's monthly fee stays verified with
+  // its type and is not published there (`account-type-hold.ts`).
+  const heldType = CHECKING_ONLY_CATEGORIES.has(row.canonical_fee_key) ? heldAccountType(flags) : null;
+  if (heldType) return `Held: a ${heldType.replace(/_/g, " ")} account's monthly fee, not consumer checking`;
   // A fee whose wording found no home among the top 50 (fee-fold.ts) is not published.
   if (isRetiredCategory(row.canonical_fee_key)) return "Category folded into the top 50 with no home for this fee";
   if (!row.fee_name?.trim()) return "Missing fee name";
@@ -1871,6 +1891,7 @@ export async function runHamiltonPublish(
   const minInstitutionFees = boundedMinInstitutionFees(options.minInstitutionFees);
   const dryRun = Boolean(options.dryRun);
   const refuseDuplicatesLive = options.refuseDuplicatesLive ?? PUBLISH_REFUSE_DUPLICATES_LIVE;
+  const refuseSweepRulesLive = options.refuseSweepRulesLive ?? PUBLISH_REFUSE_SWEEP_RULES_LIVE;
   const learning = !dryRun && (await learningSchemaReady(db));
   const batchId = `agentic-run-${options.runId}`;
   const selected = await selectVerifiedFees(
@@ -1920,6 +1941,9 @@ export async function runHamiltonPublish(
   const rowByVerifiedFeeId = new Map(rows.map((row) => [Number(row.fee_verified_id), row]));
   const results: HamiltonPublishResult[] = [];
   const twinUnreproduced = await unreproducedTwins(db, rows);
+  // #1069 step 2: the sweeps' own rules, read once for the batch. Counted always; refused only
+  // while `refuseSweepRulesLive` is on. A failed read refuses nothing.
+  const sweepReads = await selectPublishSweepRefusals(db, rows.map((row) => Number(row.fee_verified_id)));
 
   for (const row of rows) {
     const base = {
@@ -2010,6 +2034,10 @@ export async function runHamiltonPublish(
         }),
       );
     }
+    const sweepRule =
+      !skipReason && decision?.kind !== "identical" && decision?.kind !== "older_document"
+        ? (sweepReads.refusals.get(Number(row.fee_verified_id)) ?? null)
+        : null;
     if (skipReason) {
       result = { ...base, status: "skipped", reason: skipReason, feePublishedId: null, ...NO_MOVEMENT };
     } else if (decision?.kind === "identical") {
@@ -2037,6 +2065,14 @@ export async function runHamiltonPublish(
         ...base,
         status: "skipped",
         reason: `${PUBLISH_DUPLICATE_REFUSE_REASON_PREFIX}${exactDuplicate.keptFeePublishedId}`,
+        feePublishedId: null,
+        ...NO_MOVEMENT,
+      };
+    } else if (refuseSweepRulesLive && sweepRule) {
+      result = {
+        ...base,
+        status: "skipped",
+        reason: `${PUBLISH_SWEEP_REFUSE_REASON_PREFIX}${sweepRule.sweepReason}`,
         feePublishedId: null,
         ...NO_MOVEMENT,
       };
@@ -2085,6 +2121,7 @@ export async function runHamiltonPublish(
       };
     }
     if (exactDuplicate.kind !== "none") result.exactDuplicate = exactDuplicate;
+    if (sweepRule) result.sweepRule = sweepRule;
     results.push(result);
 
     if (learning) {
@@ -2110,6 +2147,7 @@ export async function runHamiltonPublish(
           change_recorded: result.changeRecorded,
           same_line_check: SAME_LINE_CHECK_VERSION,
           ...(result.exactDuplicate ? { exact_duplicate: result.exactDuplicate } : {}),
+          ...(result.sweepRule ? { sweep_rule: result.sweepRule } : {}),
         },
       });
     }
@@ -2143,6 +2181,27 @@ export async function runHamiltonPublish(
       amount: result.amount,
     })),
   };
+  const sweepHits = results.filter((result) => result.sweepRule != null);
+  const byRule: Partial<Record<PublishSweepRule, number>> = {};
+  for (const result of sweepHits) {
+    const rule = result.sweepRule!.rule;
+    byRule[rule] = (byRule[rule] ?? 0) + 1;
+  }
+  const sweepCheck: PublishSweepCheck = {
+    live: refuseSweepRulesLive,
+    wouldRefuse: sweepHits.length,
+    refused: refuseSweepRulesLive ? sweepHits.filter((result) => result.status === "skipped").length : 0,
+    byRule,
+    samples: sweepHits.slice(0, 10).map((result) => ({
+      fee_verified_id: result.feeVerifiedId,
+      fee_published_id: result.feePublishedId,
+      rule: result.sweepRule!.rule,
+      sweep_reason: result.sweepRule!.sweepReason,
+      fee_name: result.feeName,
+      amount: result.amount,
+    })),
+    error: sweepReads.error,
+  };
   return {
     selectedVerifiedFees: selected.length,
     processedVerifiedFees: results.length,
@@ -2161,5 +2220,6 @@ export async function runHamiltonPublish(
     batchId,
     results,
     duplicateCheck,
+    sweepCheck,
   };
 }

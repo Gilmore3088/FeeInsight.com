@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { apiFeeName, feeDisplayName, isCutFeeName } from "@/lib/fee-display-name";
+import { DISPLAY_NAMES } from "@/lib/fee-taxonomy";
 
 describe("feeDisplayName", () => {
   it("names a safe deposit box row that states only its size (101392)", () => {
@@ -20,6 +21,17 @@ describe("feeDisplayName", () => {
   it("shows the category's name for a name cut from its line (#1180)", () => {
     expect(feeDisplayName("Chase Mobile to send a wire from your account to", "wire_domestic_outgoing")).toBe("Wire Transfer (Domestic Out)");
     expect(feeDisplayName("Fees: o A Minimum Balance Fee", "monthly_maintenance")).toBe("Monthly Maintenance");
+    // Stops on an audience word after a count, so the noun it described is gone (Chase, /institution/1).
+    expect(feeDisplayName("Counter Check: A blank page of 3 personal", "counter_check")).toBe(DISPLAY_NAMES.counter_check);
+    expect(feeDisplayName("Overdraft - Non-consumer - Continuous Overdraft Charge. Daily fee after 5 business", "continuous_od"))
+      .toBe(DISPLAY_NAMES.continuous_od);
+    expect(isCutFeeName("Wire fee for each business")).toBe(true);
+  });
+
+  it("keeps a name whose audience is its own label (#1180)", () => {
+    for (const name of ["Monthly Service Fee - Business", "Small Business", "Overdraft (Personal)", "Personal", "Consumer", "Wire Transfer Commercial", "Online Banking for Your Business", "Checks for the Business", "Tier 2 Business", "Plan A Commercial"]) {
+      expect(isCutFeeName(name)).toBe(false);
+    }
   });
 
   it("flags the API name when the category's name stands in for a cut name (#1482)", () => {
@@ -64,10 +76,35 @@ describe("feeDisplayName", () => {
 
 describe("fee-name helpers stay pure (#1483)", () => {
   it("import no agent, database or crypto code, so public pages can use them", async () => {
-    const { readFileSync } = await import("node:fs");
-    for (const file of ["src/lib/fee-display-name.ts", "src/lib/fee-name-fragments.ts", "src/lib/coverage-labels.ts"]) {
-      const source = readFileSync(file, "utf8");
-      expect(source, file).not.toMatch(/from\s+["'](?:@\/lib\/agents|@\/lib\/data-store|node:)/);
+    const { existsSync, readFileSync } = await import("node:fs");
+    const { dirname, join, normalize } = await import("node:path");
+    // Follow every import, relative or "@/", through the files it reaches (#1586): a check of
+    // direct "@/lib/agents" imports alone misses "../agents/x" or a helper that reads the database.
+    const resolve = (from: string, spec: string): string | null => {
+      const base = spec.startsWith("@/") ? join("src", spec.slice(2)) : spec.startsWith(".") ? join(dirname(from), spec) : null;
+      if (!base) return null;
+      for (const candidate of [base, `${base}.ts`, `${base}.tsx`, join(base, "index.ts")]) {
+        if (/\.tsx?$/.test(candidate) && existsSync(candidate)) return normalize(candidate);
+      }
+      return null;
+    };
+    const IMPORT = /(?:^|\n)\s*(?:import|export)\b[^;]*?from\s+["']([^"']+)["']|import\(\s*["']([^"']+)["']\s*\)|(?:^|\n)\s*import\s+["']([^"']+)["']/g;
+    const BANNED_PACKAGE = /^(?:node:|crypto$|fs$|path$|postgres$|@supabase\/)/;
+    const seen = new Set<string>();
+    const queue = ["src/lib/fee-display-name.ts", "src/lib/fee-name-fragments.ts", "src/lib/coverage-labels.ts"];
+    while (queue.length > 0) {
+      const file = queue.shift() as string;
+      if (seen.has(file)) continue;
+      seen.add(file);
+      expect(file, "reached an agent or database module").not.toMatch(/^src\/lib\/(?:agents|data-store)\//);
+      for (const m of readFileSync(file, "utf8").matchAll(IMPORT)) {
+        const spec = m[1] ?? m[2] ?? m[3];
+        expect(spec, `${file} imports ${spec}`).not.toMatch(BANNED_PACKAGE);
+        const next = resolve(file, spec);
+        if (next) queue.push(next);
+      }
     }
+    // The walk reached past the three entry files (fee-taxonomy, fee-fold).
+    expect(seen.size).toBeGreaterThan(3);
   });
 });

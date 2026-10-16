@@ -11,7 +11,7 @@ type Metric = "institutions" | "fees" | "coverage";
 
 const METRICS: { key: Metric; label: string; blurb: string }[] = [
   { key: "institutions", label: "Institutions", blurb: "Banks and credit unions with published fees" },
-  { key: "fees", label: COVERAGE_LABELS.observations, blurb: COVERAGE_LABELS.observations },
+  { key: "fees", label: COVERAGE_LABELS.observations, blurb: "Fees read from each institution's own published schedule" },
   { key: "coverage", label: "Coverage", blurb: "Share of monitored institutions with published fees" },
 ];
 
@@ -119,7 +119,7 @@ export function StateExplorer({ states }: { states: StateCoverage[] }) {
                 <Link
                   key={st.id}
                   href={`/research/state/${st.id}`}
-                  aria-label={`${st.name}: ${s ? `${NUMBER.format(s.verified_institutions)} institutions, ${NUMBER.format(s.verified_fees)} verified fees` : "no verified fees yet"}`}
+                  aria-label={`${st.name}: ${s ? `${NUMBER.format(s.verified_institutions)} institutions, ${NUMBER.format(s.verified_fees)} ${COVERAGE_LABELS.observations.toLowerCase()}` : "no published fees yet"}`}
                   onMouseEnter={() => setHoveredCode(st.id)}
                   onMouseLeave={() => setHoveredCode(null)}
                   onFocus={() => setHoveredCode(st.id)}
@@ -150,12 +150,12 @@ export function StateExplorer({ states }: { states: StateCoverage[] }) {
                 {hovered && hovered.verified_institutions > 0 ? (
                   <dl className="mt-2 space-y-1 text-[12px] text-ink-soft">
                     <div className="flex justify-between"><dt>Institutions</dt><dd className="font-semibold tabular-nums text-ink">{NUMBER.format(hovered.verified_institutions)}</dd></div>
-                    <div className="flex justify-between"><dt>Verified fees</dt><dd className="font-semibold tabular-nums text-ink">{NUMBER.format(hovered.verified_fees)}</dd></div>
+                    <div className="flex justify-between"><dt>{COVERAGE_LABELS.observations}</dt><dd className="font-semibold tabular-nums text-ink">{NUMBER.format(hovered.verified_fees)}</dd></div>
                     <div className="flex justify-between"><dt>Monitored</dt><dd className="tabular-nums">{NUMBER.format(hovered.monitored)}</dd></div>
                     <div className="flex justify-between"><dt>Coverage</dt><dd className="font-semibold tabular-nums text-brick">{formatMetric(metricValue(hovered, "coverage"), "coverage")}</dd></div>
                   </dl>
                 ) : (
-                  <p className="mt-1 text-[12px] text-ink-muted">No verified fees yet.</p>
+                  <p className="mt-1 text-[12px] text-ink-muted">No published fees yet.</p>
                 )}
               </>
             )}
@@ -172,7 +172,7 @@ export function StateExplorer({ states }: { states: StateCoverage[] }) {
             </div>
             <div className="flex items-center gap-1.5">
               <span className="h-2.5 w-2.5 rounded-sm" style={{ background: NO_DATA }} />
-              <span>No verified fees yet</span>
+              <span>No published fees yet</span>
             </div>
           </div>
           {territories.length > 0 && (
@@ -251,7 +251,7 @@ export function StateExplorer({ states }: { states: StateCoverage[] }) {
               className="rounded-full border border-border bg-paper px-3 py-1.5 text-[12px] text-ink focus:border-brick focus:outline-none"
             >
               <option value="institutions">Most institutions</option>
-              <option value="fees">Most verified fees</option>
+              <option value="fees">{`Most ${COVERAGE_LABELS.observations.toLowerCase()}`}</option>
               <option value="coverage">Highest coverage</option>
               <option value="name">A to Z</option>
             </select>

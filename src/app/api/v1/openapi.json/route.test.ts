@@ -13,4 +13,15 @@ describe("/api/v1/openapi.json", () => {
     const feeParams = spec.paths["/fees"].get.parameters.map((p: { name?: string }) => p.name);
     expect(feeParams).toContain("category");
   });
+
+  it("documents fee_name and its flag the same way on fees[] and rate_fees[] (#1583)", async () => {
+    const spec = await (await GET()).json();
+    const detail = spec.components.schemas.InstitutionDetail.properties;
+    for (const list of [detail.fees, detail.rate_fees]) {
+      const { fee_name, name_is_category_fallback } = list.items.properties;
+      expect(fee_name.description).toContain("made complete");
+      expect(name_is_category_fallback.description).toContain("or that name made complete");
+      expect(name_is_category_fallback.description).not.toContain("own wording");
+    }
+  });
 });

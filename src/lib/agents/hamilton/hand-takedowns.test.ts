@@ -3,8 +3,8 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("@/lib/data-store/fee-cache", () => ({ invalidatePublicReadCache: vi.fn() }));
 
 import {
-  applyHandAudienceFixes, applyHandTakedowns, HAND_AUDIENCE_FIXES, HAND_TAKEDOWNS, handAudienceEvidence, planHandAudienceFixes,
-  planHandTakedowns, type LiveAudienceRow, type LiveTakedownRow,
+  applyHandAudienceFixes, applyHandTakedowns, HAND_AUDIENCE_FIXES, HAND_TAKEDOWN_BATCH_LIMIT, HAND_TAKEDOWNS, handAudienceEvidence,
+  handTakedownBatchSizes, planHandAudienceFixes, planHandTakedowns, type LiveAudienceRow, type LiveTakedownRow,
 } from "./hand-takedowns";
 
 // The two #1496 rows as they read live on prod, read-only, Oct 16.
@@ -21,12 +21,21 @@ const LIVE: LiveTakedownRow[] = [
   { fee_published_id: 48113, lineage_ref: 53370, institution_id: 7483, canonical_fee_key: "safe_deposit_box", fee_name: "Returned loan payment", amount: "25.00" },
   { fee_published_id: 87307, lineage_ref: 96812, institution_id: 5054, canonical_fee_key: "ach_return", fee_name: "Returned Loan Payment (check or ACH returned unpaid; per item)", amount: "25.00" },
   { fee_published_id: 134962, lineage_ref: 156021, institution_id: 8566, canonical_fee_key: "account_research", fee_name: "Loan Payment with Debit Card - Chargeback", amount: "29.50" },
-  // #1302's two leftovers as they read live on prod, read-only, Oct 16.
+  // The #1571 /bin/bash rows as listed (read-only, Oct 16; lineage refs are test values).
+  ...HAND_TAKEDOWNS.filter((entry) => entry.issue === 1571).map((entry, index) => ({
+    fee_published_id: entry.feePublishedId, lineage_ref: 100 + index, institution_id: entry.institutionId,
+    canonical_fee_key: entry.canonicalFeeKey, fee_name: entry.feeName, amount: "0.00",
+  })),
+  // #1512's joined courtesy pay row as it reads live on prod, read-only, Oct 16.
+  { fee_published_id: 142965, lineage_ref: 172523, institution_id: 4965, canonical_fee_key: "overdraft", fee_name: "Courtesy Pay Fee (per transaction) Research & Reconcilement (per hour)", amount: "10.00" },
+  // #1302's leftovers as they read live on prod, read-only, Oct 16.
   { fee_published_id: 13188, lineage_ref: 5161, institution_id: 44, canonical_fee_key: "gift_card_purchase", fee_name: "Visa Gift Card", amount: "4.25" },
   { fee_published_id: 144352, lineage_ref: 174382, institution_id: 6152, canonical_fee_key: "late_payment", fee_name: "Late payment fees", amount: "35.00" },
   { fee_published_id: 114273, lineage_ref: 101242, institution_id: 6152, canonical_fee_key: "late_payment", fee_name: "Late payment fees", amount: "35.00" },
+  { fee_published_id: 114270, lineage_ref: 174295, institution_id: 6152, canonical_fee_key: "late_payment", fee_name: "Late payment fee", amount: "35.00" },
 ];
-const IDS = [80423, 102440, 83118, 45619, 116720, 134129, 48113, 87307, 134962, 13188, 144352, 114273];
+const CONDITIONAL_ZERO = [43512, 54014, 61335, 68893, 70121, 73737, 77121, 77122, 77618, 84553, 87079, 87461, 88213, 91505, 120559];
+const IDS = [80423, 102440, 83118, 45619, 116720, 134129, 48113, 87307, 134962, ...CONDITIONAL_ZERO, 142965, 13188, 144352, 114273, 114270];
 
 function fakeDb(live: LiveTakedownRow[], failOn?: string) {
   const writes: Array<{ text: string; values: unknown[] }> = [];
@@ -53,16 +62,21 @@ describe("hand takedowns (James, Oct 16)", () => {
       [48113, "source_mismatch: #1534"],
       [87307, "source_mismatch: #1534"],
       [134962, "source_mismatch: #1534"],
+      ...CONDITIONAL_ZERO.map((id) => [id, "source_mismatch: #1571"]),
+      [142965, "source_mismatch: #1512"],
       [13188, "duplicate of #103400 (#1302)"],
       [144352, "source_mismatch: #1302"],
       [114273, "source_mismatch: #1302"],
+      [114270, "source_mismatch: #1302"],
     ]);
     // A wrong read names its issue; a second read of one printed fee names the live copy it repeats too.
     expect(HAND_TAKEDOWNS.every((entry) => entry.evidence.length > 0 && (entry.kind === "duplicate"
       ? /^duplicate of #\d+ \(#\d+\)$/.test(entry.reason) && entry.reason.endsWith(`(#${entry.issue})`)
       : entry.reason === `source_mismatch: #${entry.issue}`))).toBe(true);
-    // Up to about 25 rows go this way; more go to James.
-    expect(HAND_TAKEDOWNS.length).toBeLessThanOrEqual(25);
+    // James, Oct 16 03:37 UTC: fewer than 20 fees per batch (one issue) go this way; a bigger batch goes to him.
+    expect(HAND_TAKEDOWN_BATCH_LIMIT).toBeLessThan(20);
+    expect(handTakedownBatchSizes()[0]).toEqual({ issue: 1571, entries: 15 });
+    expect(handTakedownBatchSizes().every((batch) => batch.entries <= HAND_TAKEDOWN_BATCH_LIMIT)).toBe(true);
   });
 
   it("takes a row down only while it still reads as listed", () => {
@@ -77,9 +91,12 @@ describe("hand takedowns (James, Oct 16)", () => {
         { feePublishedId: 48113, feeVerifiedId: 53370, reason: "source_mismatch: #1534" },
         { feePublishedId: 87307, feeVerifiedId: 96812, reason: "source_mismatch: #1534" },
         { feePublishedId: 134962, feeVerifiedId: 156021, reason: "source_mismatch: #1534" },
+        ...CONDITIONAL_ZERO.map((id, index) => ({ feePublishedId: id, feeVerifiedId: 100 + index, reason: "source_mismatch: #1571" })),
+        { feePublishedId: 142965, feeVerifiedId: 172523, reason: "source_mismatch: #1512" },
         { feePublishedId: 13188, feeVerifiedId: 5161, reason: "duplicate of #103400 (#1302)" },
         { feePublishedId: 144352, feeVerifiedId: 174382, reason: "source_mismatch: #1302" },
         { feePublishedId: 114273, feeVerifiedId: 101242, reason: "source_mismatch: #1302" },
+        { feePublishedId: 114270, feeVerifiedId: 174295, reason: "source_mismatch: #1302" },
       ],
       skipped: [],
     });
@@ -169,7 +186,10 @@ describe("hand audience fixes (#1302)", () => {
   it("lists 55401 as a business fee, with darwin: evidence the audience trigger keeps", () => {
     expect(HAND_AUDIENCE_FIXES.map((fix) => [fix.feePublishedId, fix.from, fix.to])).toEqual([[55401, "unknown", "business"]]);
     expect(HAND_AUDIENCE_FIXES.every((fix) => handAudienceEvidence(fix).startsWith("darwin:hand_fix: #1302 "))).toBe(true);
-    expect(HAND_AUDIENCE_FIXES.length + HAND_TAKEDOWNS.length).toBeLessThanOrEqual(25);
+    // A batch (one issue) of takedowns and audience fixes together stays under James's limit of 20.
+    const batch1302 = HAND_AUDIENCE_FIXES.filter((fix) => fix.issue === 1302).length + HAND_TAKEDOWNS.filter((entry) => entry.issue === 1302).length;
+    expect(batch1302).toBe(5);
+    expect(batch1302).toBeLessThanOrEqual(HAND_TAKEDOWN_BATCH_LIMIT);
   });
 
   it("fixes a row only while it still reads as listed, and once", () => {

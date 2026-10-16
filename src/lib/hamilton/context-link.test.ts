@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  hamiltonInstitutionHref,
   hrefWithInstitutionContext,
+  publicInstitutionHref,
   isCanonicalInstitutionId,
   normalizeCanonicalInstitutionId,
 } from "./context-link";
@@ -73,5 +75,14 @@ describe("Hamilton context links", () => {
     );
     expect(hrefWithInstitutionContext("/admin", "2945")).toBe("/admin");
     expect(hrefWithInstitutionContext("/institution/2945", "2945")).toBe("/institution/2945");
+  });
+});
+
+describe("institution links inside Pro (#1546)", () => {
+  it("open the institution in Hamilton, with the public page as a separate link", () => {
+    expect(hamiltonInstitutionHref(21)).toBe("/pro/hamilton?instId=21");
+    expect(hamiltonInstitutionHref("323")).toBe("/pro/hamilton?instId=323");
+    expect(hamiltonInstitutionHref("not-an-id")).toBe("/pro/hamilton");
+    expect(publicInstitutionHref(21)).toBe("/institution/21");
   });
 });
