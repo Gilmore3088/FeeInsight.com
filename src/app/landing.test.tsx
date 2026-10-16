@@ -5,12 +5,10 @@ import { PRO_TIERS, tierPriceLabel } from "@/lib/pro-tiers";
 import { REPORT_PRICE_INLINE } from "@/lib/constants";
 import type { PublicStatsSummary } from "@/lib/public-stats";
 import { LandingHero } from "./landing-hero";
-import { LandingDemo } from "./landing-demo";
-import { LandingPillars } from "./landing-pillars";
-import { LandingProvenance } from "./landing-provenance";
+import { LandingProducts } from "./landing-products";
+import { sampleWorkflowReport } from "./landing-workflow.test-fixture";
 import { LandingPricing } from "./landing-pricing";
 import { LandingFaq, faqItems } from "./landing-faq";
-import { LandingClose } from "./landing-close";
 import { buildHomeData, buildSampleView, homeReadsCacheable } from "./landing-shared";
 import type { MarketReport } from "@/lib/custom-report/report-data";
 import type { ReportLine } from "@/lib/custom-report/analysis";
@@ -103,19 +101,8 @@ const report = {
     ],
   },
 } as unknown as MarketReport;
-const ladder = {
-  institutionName: "Sample Bank",
-  feeKey: "overdraft",
-  feeLabel: "Overdraft (OD)",
-  value: 10,
-  rows: [
-    { label: "Local competitors", min: 15, q1: 22.5, median: 29.5, q3: 35, max: 36, institutions: 8 },
-    { label: "The nation", min: 0, q1: 25, median: 30, q3: 33, max: 50, institutions: 2493 },
-  ],
-};
 const data = buildHomeData(summary, categories, districts, {
   sample: buildSampleView(report),
-  ladder,
   scenario: buildScenario("Overdraft", categories[0]),
 });
 const text = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/&#x27;|&apos;/g, "'").replace(/&amp;/g, "&").replace(/\s+/g, " ");
@@ -124,13 +111,10 @@ const words = (html: string) => text(html).split(" ").filter((w) => /[A-Za-z0-9$
 const wholePage = () =>
   renderToStaticMarkup(
     <>
-      <LandingHero summary={summary} />
-      <LandingDemo data={data} />
-      <LandingPillars data={data} />
-      <LandingProvenance summary={summary} />
+      <LandingHero />
+      <LandingProducts data={data} summary={summary} report={sampleWorkflowReport()} />
       <LandingPricing />
       <LandingFaq summary={summary} />
-      <LandingClose />
     </>,
   );
 
@@ -146,61 +130,45 @@ describe("homepage (site v3 brief 06 §4.3)", () => {
     expect(buildHomeData(summary, [category("overdraft", { p25_amount: null })], null).overdraft).toBeNull();
   });
 
-  it("keeps the hero to the promise, one sentence, the search, live microcopy and working chips", () => {
-    const html = renderToStaticMarkup(<LandingHero summary={summary} />);
-    expect(html).toMatch(/<form[^>]*action="\/institutions"[^>]*method="get"/);
-    expect(html).toContain('name="q"');
+  it("leads with James's promise and two actions, nothing else", () => {
+    const html = renderToStaticMarkup(<LandingHero />);
     const t = text(html);
-    expect(t).toContain("Know where your fees stand, with a source for every figure");
-    expect(t).toContain("1,234 institutions with published fees · Data refreshed Oct 14, 2026");
-    expect(t).toContain("Hamilton, the Fee Insight Pro workspace");
-    // The Pro plans chip comes first, so a phone shows it whole in the first screen (re-walk R3).
-    const chips = [...html.matchAll(/<li><a href="([^"]+)"/g)].map(([, href]) => href);
-    expect(chips[0]).toBe("/subscribe");
-    expect(html).not.toContain("text-brick");
-    for (const href of ["/fees/overdraft", "/research/national-fee-index", "/subscribe"]) expect(html).toContain(`href="${href}"`);
-    expect(t).not.toContain(REPORT_PRICE_INLINE);
-    const unavailable = text(renderToStaticMarkup(<LandingHero summary={{ ...summary, institutionsLabel: "—" }} />));
-    expect(unavailable).not.toContain("institutions with published fees");
-  });
-
-  it("server-renders one demo window: tabs for navigation, the district map open, no time bar", () => {
-    const html = renderToStaticMarkup(<LandingDemo data={data} />);
-    const tabs = [...html.matchAll(/role="tab"[^>]*aria-selected="(true|false)"(?: aria-label="([^"]+)")?[^>]*data-tab="(\w+)"/g)].map(
-      ([, selected, , key]) => `${key}:${selected}`,
+    expect(t).toContain("Your next fee review doesn't need to take weeks.");
+    expect(t).not.toMatch(/cost thousands/);
+    expect(t).toContain(
+      "Fee Insight helps you compare competitors with the Bank Fee Index. Turn the evidence into analysis and board reports with Hamilton.",
     );
-    expect(tabs).toEqual(["map:true", "fees:false", "price:false", "reports:false"]);
-    for (const label of ["District map", "My fees", "Try a price", "Reports"]) expect(text(html)).toContain(label);
-    // The map view is open; the other views are in the markup but hidden until their tab opens them.
-    expect(html).toMatch(/data-view="map" class="fi-demo-view"/);
-    expect(html).toMatch(/hidden=""[^>]*data-view="fees"/);
-    expect(html).toContain('aria-label="Map of the 12 Federal Reserve districts, shaded by overdraft median"');
-    // No timer of any kind: no segments, no progress group, no play, pause or replay control.
-    expect(html).not.toMatch(/data-segment|Demo progress|fi-progress-fill|Pause the product demo|Replay/);
-    expect(html).not.toContain("<video");
-    // Hamilton's mark sits inside the demo window.
-    expect(html).toContain("Hamilton");
-    expect(renderToStaticMarkup(<LandingDemo data={buildHomeData(summary, [], null)} />)).toBe("");
+    expect(html).toMatch(/<a href="\/subscribe"[^>]*fi-btn-primary[^>]*data-event="upgrade_click" data-placement="home_hero">See plans</);
+    expect(html).toMatch(/<a href="\/reports\/sample-competitive-fee-position"[^>]*>Explore a sample report</);
+    // The search moved to the Bank Fee Index, out of the hero.
+    expect(html).not.toContain("<form");
+    expect(t).not.toContain(REPORT_PRICE_INLINE);
   });
 
-  it("draws the demo's views from live figures, the sample bank against its market", () => {
-    const html = renderToStaticMarkup(<LandingDemo data={data} />);
+  it("introduces the Index with the search and the map, and Hamilton with one answer, then the report", () => {
+    const html = renderToStaticMarkup(<LandingProducts data={data} summary={summary} report={sampleWorkflowReport()} />);
     const t = text(html);
-    // District map: the highest district median opens in the panel, against the nation.
-    expect(t).toContain("District 1 Boston");
-    expect(t).toContain("Boston $27.25 Nation $29.00 $1.75 below the national median");
-    expect(html).toContain('href="/research/district/1"');
-    // My fees: the sample bank's fees, each a bar against its local median.
-    expect(t).toContain("Sample Bank against 15 local competitors");
-    expect(html).toContain('data-fee="stop_payment"');
-    // Try a price: a slider on the live national range.
-    expect(html).toMatch(/type="range"[^>]*min="0"[^>]*max="40"/);
-    // Reports: a page of the report, with one name per fee (the report line's own, as the ladder shows it).
-    expect(html).toContain('aria-label="Report preview"');
-    expect(t).toContain("Sample Bank against its local market");
-    expect(t).toContain("Outgoing international wire");
-    expect(t).not.toMatch(/Wire Transfer \(Int'l Out\)|Overdraft \(OD\)/);
-    expect(html).toContain('href="/reports/sample-competitive-fee-position"');
+    const at = (marker: string) => html.indexOf(marker);
+    expect(html).toContain('role="img" aria-label="Bank Fee Index"');
+    expect(html).toContain('role="img" aria-label="Hamilton"');
+    // Index: search, live count, map with its ranking folded away.
+    expect(html).toMatch(/<form[^>]*action="\/institutions"[^>]*method="get"/);
+    expect(t).toContain("1,234 institutions · Data refreshed Oct 14, 2026");
+    expect(at("<form")).toBeLessThan(at("data-district-map"));
+    expect(at('aria-label="Hamilton"')).toBeGreaterThan(at("data-district-map"));
+    expect(html).toMatch(/data-district-takeaway=""/);
+    // Hamilton: the question and answer, no separate fee list.
+    expect(html).not.toContain("data-hamilton-snapshot");
+    expect(at("data-example-question")).toBeGreaterThan(at('aria-label="Hamilton"'));
+    // One compact report preview after both, linked to the full report.
+    expect(at("data-workflow-report")).toBeGreaterThan(at("data-workflow-compare"));
+    expect(html.match(/data-workflow-report/g)).toHaveLength(1);
+    expect(html).toContain('href="/methodology"');
+    // Without a sample: the Index stays; the answer and the report preview are left out.
+    const bare = renderToStaticMarkup(<LandingProducts data={buildHomeData(summary, [], null)} summary={summary} report={null} />);
+    expect(bare).not.toContain("fi-window");
+    expect(bare).toContain("<form");
+    expect(bare).not.toContain("data-workflow-report");
   });
 
   it("renders Pro prices from PRO_TIERS with the report as one line", () => {
@@ -213,46 +181,14 @@ describe("homepage (site v3 brief 06 §4.3)", () => {
     expect(renderToStaticMarkup(<LandingPricing />)).toContain("/reports?report=institution#request");
   });
 
-  it("shows the provenance steps as one strip, with its count only where a live field exists", () => {
-    const t = text(renderToStaticMarkup(<LandingProvenance summary={summary} />));
-    for (const step of ["Schedule read", "Fee recorded", "Checked against source", "Published"]) expect(t).toContain(step);
-    expect(t).toContain("5,678 fee entries from 1,234 institutions");
-    const failed = text(renderToStaticMarkup(<LandingProvenance summary={{ ...summary, observationsLabel: "—" }} />));
-    expect(failed).not.toMatch(/fee entries/);
-    expect(t).not.toMatch(/rolling calendar|every month/i);
-  });
-
-  it("quotes only source lines that pass the shared check, and never a neighbouring fee", () => {
-    expect(data.sample?.fees.map((f) => f.key)).toEqual(["overdraft", "wire_intl_outgoing", "stop_payment"]);
-    const t = text(renderToStaticMarkup(<LandingPillars data={data} />));
-    expect(t).toContain("Outgoing International Wires … $40.00 /ea");
-    expect(t).not.toMatch(/Zipper|Lost Key|Over \$300|Statement Printout/);
-  });
-
-  it("draws one visual in each pillar, none of them a demo view", () => {
-    const pillars = renderToStaticMarkup(<LandingPillars data={data} />);
-    const t = text(pillars);
-    // Every fee: the bank's schedule lines drawn to the index.
-    expect(t).toContain("Sample Bank · fee schedule");
-    // Every market: the bank's fee across its markets as columns.
-    expect(t).toContain("Its fee $10.00");
-    expect(pillars).toContain('aria-label="Local competitors: median $29.50"');
-    // One workspace: Hamilton answers with a chart.
-    expect(t).toContain("What do the core fees cost nationally?");
-    expect(pillars).toContain('aria-label="National median of each core fee"');
-    // None repeats the demo: no map, no slider, no report page, no fee bars against the local median.
-    expect(pillars).not.toMatch(/Federal Reserve districts|type="range"|Report preview|data-fee="/);
-  });
-
-  it("heads the pillars as live samples, the level under the demo", () => {
-    const html = renderToStaticMarkup(<LandingPillars data={data} />);
-    expect(html).toContain('id="live-samples"');
-    const t = text(html);
-    expect(t).toMatch(/^ ?Live samples See it in action Each sample is drawn live from published fee schedules\./);
-    // The demo comes first on the page, then the live samples.
+  it("runs promise, products with the answer and report, then plans and the FAQ", () => {
     const page = wholePage();
-    expect(page.indexOf('aria-label="Hamilton demo"')).toBeGreaterThan(-1);
-    expect(page.indexOf('aria-label="Hamilton demo"')).toBeLessThan(page.indexOf('id="live-samples"'));
+    const at = (marker: string) => page.indexOf(marker);
+    expect(at("<h1")).toBeLessThan(at('id="products-heading"'));
+    expect(at('id="products-heading"')).toBeLessThan(at("data-workflow-report"));
+    expect(at("data-workflow-report")).toBeLessThan(at('id="plans"'));
+    expect(page).not.toContain("weeks of gathering");
+    expect(page).toContain("Full Bank Fee Index access");
   });
 
   it("keeps at most five short FAQ answers", () => {
@@ -265,10 +201,12 @@ describe("homepage (site v3 brief 06 §4.3)", () => {
   });
 
   it("keeps the copy rules and the word budget", () => {
-    const html = wholePage();
+    // The report page is the report's own section, in its words; tables are names and figures, not copy.
+    const html = wholePage()
+      .replace(/<div class="\[&amp;&gt;section\][\s\S]*?<\/section><\/div>/, "")
+      .replace(/<table[\s\S]*?<\/table>/g, "");
     expect(text(html)).not.toMatch(/—|!|real-time|recommend|\bAI\b|verified|99%/i);
-    // The markup holds all four demo views (three hidden), every figure and every label, and
-    // still stays under the old page's 889 visible words; the visible count is far lower.
+    // Under the old page's 889 words, with every reveal's contents counted.
     expect(words(html)).toBeLessThan(800);
     // No section paragraph runs past one sentence of about twenty words.
     for (const [, para] of html.matchAll(/<p class="mt-4 text-\[17px\][^"]*"[^>]*>(.*?)<\/p>/g)) {
@@ -281,22 +219,20 @@ describe("homepage (site v3 brief 06 §4.3)", () => {
       ([, href, event, placement, label]) => `${event} ${placement} ${href} ${label}`,
     );
     expect(tracked).toEqual([
-      "upgrade_click home_hero /subscribe See Hamilton plans",
-      "upgrade_click home_workspace /subscribe See Hamilton plans",
-      "contact_sales home_workspace_demo /contact?source=demo Or ask for a demo",
-      "upgrade_click home_pricing /subscribe See Hamilton plans",
+      "upgrade_click home_hero /subscribe See plans",
+      "upgrade_click home_products /subscribe See Hamilton plans",
+      "contact_sales home_workspace_demo /contact?source=demo Ask for a demo",
+      "upgrade_click home_pricing /subscribe See plans",
       "contact_sales home_pricing_demo /contact?source=demo Or ask for a demo",
-      "upgrade_click home_closing /subscribe See Hamilton plans",
     ]);
   });
 
   it("keeps a render out of the page cache when any read failed, but not when the sample is simply absent", () => {
-    const ok = { summary, categories, sampleFailed: false, overdraftFailed: false, ladderFailed: false };
+    const ok = { summary, categories, sampleFailed: false, overdraftFailed: false };
     expect(homeReadsCacheable(ok)).toBe(true);
     expect(homeReadsCacheable({ ...ok, summary: { ...summary, complete: false } })).toBe(false);
     expect(homeReadsCacheable({ ...ok, categories: [] })).toBe(false);
     expect(homeReadsCacheable({ ...ok, sampleFailed: true })).toBe(false);
     expect(homeReadsCacheable({ ...ok, overdraftFailed: true })).toBe(false);
-    expect(homeReadsCacheable({ ...ok, ladderFailed: true })).toBe(false);
   });
 });

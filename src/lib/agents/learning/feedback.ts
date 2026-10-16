@@ -38,6 +38,8 @@ export type FeedbackStage = (typeof FEEDBACK_STAGES)[number];
  *   Fee level: wrong_category, wrong_amount, not_a_fee, threshold, not_on_schedule,
  *     unreproduced, outside_range, off_taxonomy, duplicate, answer_key,
  *     restored_after_takedown, darwin_verified, missing_lineage
+ *   Restore records (weight 0, Hamilton): business_schedule_restored (a business-schedule
+ *     takedown brought back for want of a consumer fee, `hamilton/business-schedule.ts`, #1671)
  *   Audience records (weight 0, the old value kept for a rollback): audience_relabeled
  *     (`darwin/audience-relabel.ts`), audience_hand_fixed (`hamilton/hand-takedowns.ts`, #1302)
  *   Link level (Magellan): produced_live_fees, thin_link, wrong_document, dead_link,
@@ -57,6 +59,13 @@ export type FeedbackStage = (typeof FEEDBACK_STAGES)[number];
  *   Operator actions (human, `fee-hold.ts`, `fee-corrections.ts`, #978): admin_hold, admin_release,
  *     admin_correction, admin_correction_reversed
  */
+/**
+ * A business-schedule takedown brought back for want of a consumer fee (weight 0, a record,
+ * `hamilton/business-schedule.ts`, #1671). Not a verdict that the takedown was wrong: readers
+ * of `signal = 'restored'` as a lesson leave it out (`darwin/release-review.ts`).
+ */
+export const BUSINESS_SCHEDULE_RESTORED_KIND = "business_schedule_restored";
+
 export type FeedbackKind =
   | "wrong_category"
   | "wrong_amount"

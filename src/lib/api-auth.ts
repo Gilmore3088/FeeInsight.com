@@ -1,5 +1,6 @@
 import { sql } from "@/lib/data-store/connection";
 import { hashApiKey } from "@/lib/api-keys";
+import { subscriberKeyAllowed, subscriberUserIdFromSlug } from "@/lib/api-subscriber-access";
 
 export interface ApiKeyValidation {
   valid: boolean;
@@ -35,9 +36,10 @@ export async function validateApiKey(
   const keyHash = hashApiKey(key);
 
   const rows = await sql`
-    SELECT id, organization_id, tier, revoked_at
-    FROM api_keys
-    WHERE key_hash = ${keyHash}
+    SELECT k.id, k.organization_id, k.tier, k.revoked_at, o.slug
+    FROM api_keys k
+    LEFT JOIN organizations o ON o.id = k.organization_id
+    WHERE k.key_hash = ${keyHash}
     LIMIT 1
   `;
 
@@ -59,6 +61,22 @@ export async function validateApiKey(
       tier: "free",
       error: "API key has been revoked",
     };
+  }
+
+  // A Pro subscriber's key works only while their subscription does (cancel stops it).
+  const subscriberId = subscriberUserIdFromSlug(row.slug);
+  if (subscriberId !== null) {
+    const users = await sql<{ subscription_status: string | null; past_due_since: string | null }[]>`
+      SELECT subscription_status, past_due_since FROM users WHERE id = ${subscriberId} LIMIT 1
+    `;
+    if (!subscriberKeyAllowed(users[0] ?? null)) {
+      return {
+        valid: false,
+        organizationId: null,
+        tier: "free",
+        error: "This key's Fee Insight Pro subscription is not active. Restart Pro from your account to use it again.",
+      };
+    }
   }
 
   // Fire-and-forget: update last_used_at

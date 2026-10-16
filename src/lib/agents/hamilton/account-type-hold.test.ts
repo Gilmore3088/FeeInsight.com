@@ -137,4 +137,18 @@ describe("account type hold (#1100 gap 1)", () => {
     // The same name and price on another document (another account's list) is held.
     expect(planHolds([{ ...row, source_document_id: 9999 }]).typed.map((hold) => hold.accountType)).toEqual(["savings"]);
   });
+
+  it("every hold read selects the stored document, so the keep-live list can match (#1653 review)", async () => {
+    const reads: string[] = [];
+    const db = vi.fn((strings: TemplateStringsArray) => {
+      const text = strings.join("?");
+      if (/^\s*SELECT/.test(text)) reads.push(text);
+      return Promise.resolve([]);
+    }) as unknown as Parameters<typeof applyAccountTypeHold>[0];
+    await applyAccountTypeHold(db, { runId: 1, batchId: "agentic-run-1", dryRun: true });
+    expect(reads.length).toBeGreaterThanOrEqual(3);
+    // In each read's own select list (before its first FROM), not only somewhere in the query:
+    // the third read also names it in its LATERAL text lookup.
+    for (const text of reads) expect(text.split(/\bFROM\b/)[0]).toMatch(/\bfr\.source_document_id\b/);
+  });
 });

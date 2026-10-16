@@ -175,9 +175,11 @@ export function peerListFeeFollowUp(question: string): "peer_fees" | "with_accou
 /** Deliberately finite grammar: other follow-ups receive explicit guidance. */
 export function peerListRefinementState(question: string): string | null {
   const cleaned = question.trim().replace(/[?.!]+$/, "").replace(/\s+/g, " ");
-  if (!/^only\s+/i.test(cleaned)) return null;
+  // "Only show the California ones", "Show only Texas", "Filter to Florida" (#1538). A word that is
+  // a condition ("Texas banks") stays in the term, so it matches no state rather than being dropped.
+  if (!/^(?:only|show\s+(?:me\s+)?only|filter\s+to)\s+/i.test(cleaned)) return null;
   const term = cleaned
-    .replace(/^only\s+(?:show\s+)?(?:me\s+)?(?:the\s+)?/i, "")
+    .replace(/^(?:only\s+(?:show\s+)?(?:me\s+)?|show\s+(?:me\s+)?only\s+|filter\s+to\s+)(?:the\s+)?/i, "")
     .replace(/\s+(?:ones|peers|institutions)$/i, "").trim();
   const match = Object.entries(STATE_NAMES).find(([code, name]) =>
     code.toLowerCase() === term.toLowerCase() || name.toLowerCase() === term.toLowerCase());

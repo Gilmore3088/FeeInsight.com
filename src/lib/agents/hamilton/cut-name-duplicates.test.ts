@@ -87,7 +87,7 @@ describe("#1196 cut-name duplicates", () => {
 
   it("repeats institution, category, name and price in the UPDATE", async () => {
     const { db, writes } = liveDb({ updateMatches: true });
-    const result = await applyCutNameDuplicates(db, { runId: 5, batchId: "agentic-run-5", dryRun: false });
+    const result = await applyCutNameDuplicates(db, { runId: 5, stepId: 50, batchId: "agentic-run-5", dryRun: false });
     expect(result.takenDown).toHaveLength(5);
     expect(result.error).toBeNull();
     const update = writes.find((write) => write.text.includes("UPDATE published_fee_records"))!;
@@ -95,7 +95,9 @@ describe("#1196 cut-name duplicates", () => {
       expect(update.text).toContain(clause);
     }
     expect(update.values).toEqual(expect.arrayContaining([143045, 303, "early_closure", "00 Account closing fee", 25]));
-    expect(writes.filter((write) => write.text.includes("INSERT INTO agent_run_events"))).toHaveLength(1);
+    const events = writes.filter((write) => write.text.includes("INSERT INTO agent_run_events"));
+    expect(events).toHaveLength(1);
+    expect(events[0].values.slice(0, 2)).toEqual([5, 50]);
   });
 
   it("writes no run event when every guarded UPDATE matched nothing", async () => {

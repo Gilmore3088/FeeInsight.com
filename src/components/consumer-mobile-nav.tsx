@@ -5,7 +5,7 @@ import { Logo } from "@/brand/components";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Dialog as DialogPrimitive } from "radix-ui";
-import { isActivePath, MOBILE_NAV_SECTIONS, navItemsFor, PRIMARY_CTA_NAV, type NavGroup } from "./nav-items";
+import { isActivePath, MOBILE_NAV_SECTIONS, navItemsFor, HEADER_CTA_NAV, type NavGroup } from "./nav-items";
 
 export { isActivePath };
 import { openSearch } from "./public/search-events";
@@ -106,11 +106,11 @@ export function ConsumerMobileNav() {
                       Sign in
                     </Link>
                     <Link
-                      href={PRIMARY_CTA_NAV.href}
+                      href={HEADER_CTA_NAV.href}
                       onClick={close}
                       className="mt-2 block rounded-md bg-ink px-3 py-2.5 text-center text-[14px] font-semibold text-on-ink transition-opacity hover:opacity-90"
                     >
-                      {PRIMARY_CTA_NAV.label}
+                      {HEADER_CTA_NAV.label}
                     </Link>
                   </>
                 )}

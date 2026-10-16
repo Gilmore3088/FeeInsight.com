@@ -360,7 +360,8 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
             feeScheduleUrl={inst.fee_schedule_url}
             collectedOn={collectedOn}
             publishedCount={verifiedCount}
-            assetsLabel={assetsDollars ? `${formatCompactDollars(assetsDollars)} assets` : null}
+            assetsLabel={assetsDollars ? formatCompactDollars(assetsDollars) : null}
+            regulatorFacts={regulatorFacts}
           />
 
           <StatusNotice
@@ -467,7 +468,6 @@ export default async function InstitutionProfilePage({ params, searchParams }: P
             />
 
             <ProfileFootnote
-              regulatorFacts={regulatorFacts}
               correctSourceHref={links.correctSourceHref}
               financialsAsOf={financialsAsOf}
               financialsSource={latestFinancial?.source === "ncua" ? "NCUA" : "FDIC"}

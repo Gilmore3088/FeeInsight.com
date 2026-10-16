@@ -13,7 +13,7 @@ import { loadGuidesForCategory } from "@/lib/guides/source";
 import { formatFeeAmount } from "@/lib/format";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
 import { DistributionChart } from "@/components/public/distribution-chart";
-import { SITE_NAME, SITE_URL } from "@/lib/constants";
+import { PRODUCT_NAME, SITE_NAME, SITE_URL } from "@/lib/constants";
 import { getCurrentUser } from "@/lib/auth";
 import { canAccessPremium } from "@/lib/access";
 import { Button, SearchInput } from "@/brand/components";
@@ -43,7 +43,8 @@ import {
   tierLabel,
 } from "./category-view";
 import { ExplorerChart, ExplorerMarkets, FeeExplorer } from "./fee-explorer";
-import { DotLegend, HeroRange, LockedRows, MarketDots, RelatedRanges, VideoSlot } from "./exhibits";
+import { DotLegend, HeroRange, LockedRows, MarketDots, RelatedRanges } from "./exhibits";
+import { countedAs } from "../(index)/index-view";
 import { PAGE_CRUMBS, PAGE_HEADER } from "@/components/public/page-header";
 
 interface PageProps {
@@ -102,7 +103,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   return {
     title: `${name} Fee - National Benchmarks & Analysis`,
     ...(thin ? { robots: { index: false, follow: true } } : {}),
-    description: `What U.S. banks and credit unions charge for ${name.toLowerCase()} fees${national?.median_amount != null ? `: a median of ${money(national.median_amount)}` : ""}. The full spread, every Fed district, and banks against credit unions, each read from the institution's own schedule.`,
+    description: `${name} fees as U.S. banks and credit unions publish them${national?.median_amount != null ? `, with a median of ${money(national.median_amount)}` : ""}. The full spread, every Fed district, and banks against credit unions, each read from the institution's own schedule.`,
     openGraph: {
       title: `${name} Fee Benchmarks`,
       description: `How much do banks charge for ${name.toLowerCase()}? National median, distribution, and peer comparisons.`,
@@ -170,6 +171,9 @@ export default async function FeeCategoryPage({ params }: PageProps) {
   const points = explorerPoints(detail.institution_points, isPro);
   // Fewer than three institutions draw no chart at all (the static chart says so instead).
   const interactive = points.length >= 3;
+  // What each institution is counted at: its median published price, or its highest for overdraft.
+  // A calculated value is never called what an institution charges.
+  const { measure } = countedAs(category);
   const related = relatedBands(snapshot.categories, family ? (FEE_FAMILIES[family] ?? []).filter((c) => c !== category) : []);
 
   return (
@@ -177,14 +181,14 @@ export default async function FeeCategoryPage({ params }: PageProps) {
       <BreadcrumbJsonLd
         items={[
           { name: "Home", href: "/" },
-          { name: "Fee Index", href: "/fees" },
+          { name: PRODUCT_NAME, href: "/fees" },
           { name: name, href: `/fees/${category}` },
         ]}
       />
 
       <nav aria-label="Breadcrumb" className={PAGE_CRUMBS}>
         <Link href="/fees" className="hover:text-ink">
-          Fee Index
+          {PRODUCT_NAME}
         </Link>
         {family && familyColor && (
           <>
@@ -224,7 +228,6 @@ export default async function FeeCategoryPage({ params }: PageProps) {
           </div>
           {band && <HeroRange band={band} label="U.S." />}
           <UnstatedAudienceFootnote show={unstatedAudience} />
-          <VideoSlot title="One fee across five markets" />
         </section>
 
         {showRates && rateStats && (
@@ -237,7 +240,7 @@ export default async function FeeCategoryPage({ params }: PageProps) {
               <span className="font-mono text-ink">
                 {formatRatePercent(rateStats.p25_rate)}–{formatRatePercent(rateStats.p75_rate)}
               </span>
-              . Rates are never mixed into the dollar figures.
+              . Rates are kept apart from the dollar figures.
             </p>
           </section>
         )}
@@ -248,10 +251,10 @@ export default async function FeeCategoryPage({ params }: PageProps) {
         {institutionValues.length > 0 && (
           <section aria-labelledby="distribution-heading" className="space-y-3">
             <h2 id="distribution-heading" className="text-[20px] font-semibold tracking-[-0.02em] text-ink sm:text-[24px]">
-              What institutions charge
+              Institutions by {measure}
             </h2>
             {interactive ? (
-              <ExplorerChart median={median} />
+              <ExplorerChart median={median} measure={measure} />
             ) : (
               <div className="rounded-2xl border border-border bg-surface-0 p-4 shadow-fi-1 sm:p-6">
                 {/* The chart's type scales with its width, so it stops growing past a readable size. */}

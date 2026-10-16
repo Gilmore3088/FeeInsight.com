@@ -16,6 +16,9 @@ import {
   getUserInstitutionMemberships,
 } from "@/lib/hamilton/institution-membership";
 import { PRO_TIERS } from "@/lib/pro-tiers";
+import { apiIncludedInTier } from "@/lib/api-subscriber-access";
+import { getSubscriberKey } from "@/lib/api-subscriber-keys";
+import type { ApiAccess } from "./api-access-card";
 import { getAccountEmails } from "./account-emails";
 import { getAccountReports, getOwnInstitution, getPaidReports } from "./account-data";
 import { isEmailConfirmed } from "@/lib/email/email-confirm";
@@ -78,6 +81,17 @@ export default async function AccountPage({
     emailConfirmed && user.email ? getPaidReports(user.email) : Promise.resolve([]),
   ]);
 
+  // The API comes with the $300 and $500 plans, for the person who pays (not seats or staff).
+  let apiAccess: ApiAccess | null = null;
+  if (isPro && !isStaff && paysForPro && billing?.tier) {
+    if (apiIncludedInTier(billing.tier)) {
+      const key = await getSubscriberKey(user.id).catch(() => null);
+      apiAccess = { kind: "included", key };
+    } else {
+      apiAccess = { kind: "upgrade" };
+    }
+  }
+
   const plan: AccountPlan = isPro
     ? {
         kind: "pro",
@@ -119,6 +133,7 @@ export default async function AccountPage({
             paidReports,
             ownInstitution,
             emails,
+            apiAccess,
             profile: {
               institution_name: user.institution_name,
               institution_type: user.institution_type,

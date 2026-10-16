@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { FeeScheduleTable, describeMedianDelta, splitFeesByAudience, type DisplayFee } from "./fee-schedule-table";
+import { feeHashCategory, tabForHash } from "./fee-audience-tabs";
 
 function fee(overrides: Partial<DisplayFee>): DisplayFee {
   return {
@@ -187,5 +188,32 @@ describe("Personal / Business tabs", () => {
       />,
     );
     expect(screen.getByRole("tab", { name: "Business" })).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("a #fee- link followed on the page opens the tab that lists the fee (#1592)", () => {
+    render(
+      <FeeScheduleTable
+        fees={[fee({ id: "p" }), fee({ id: "b", feeAudience: "business", feeCategory: "nsf" })]}
+        disclosureUrl={null}
+        focusCategory="overdraft"
+      />,
+    );
+    const personal = screen.getByRole("tab", { name: "Personal" });
+    fireEvent.click(screen.getByRole("tab", { name: "Business" }));
+    expect(personal).toHaveAttribute("aria-selected", "false");
+    window.location.hash = "#fee-overdraft";
+    fireEvent(window, new HashChangeEvent("hashchange"));
+    expect(personal).toHaveAttribute("aria-selected", "true");
+    window.location.hash = "";
+  });
+
+  it("keeps the active tab when it lists the fee, and ignores other hashes", () => {
+    const lists = (key: "personal" | "business", category: string) => category === "overdraft";
+    expect(tabForHash("#fee-overdraft", "business", lists, ["personal", "business"])).toBe("business");
+    expect(tabForHash("#fee-overdraft", "personal", (key) => key === "business", ["personal", "business"])).toBe("business");
+    expect(tabForHash("#fee-nsf", "personal", lists, ["personal", "business"])).toBeNull();
+    expect(tabForHash("#plans", "personal", lists, ["personal", "business"])).toBeNull();
+    expect(tabForHash("#fee-%E0%A4%A", "personal", lists, ["personal", "business"])).toBeNull();
+    expect(feeHashCategory("#fee-overdraft")).toBe("overdraft");
   });
 });

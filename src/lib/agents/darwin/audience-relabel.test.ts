@@ -56,10 +56,10 @@ describe("Darwin audience relabel (#1059)", () => {
     expect(writes(db)).toEqual([]);
   });
 
-  it("ships as the full dry run: the cursor chain as live, counts only, no migration needed", async () => {
-    expect(AUDIENCE_RELABEL_MODE).toBe("dry_run_full");
+  it("ships live (James, Oct 16); the full dry run still counts only, no migration needed", async () => {
+    expect(AUDIENCE_RELABEL_MODE).toBe("live");
     const db = createDb({ rows: [row()], remaining: 40, migrated: false });
-    const result = await runAudienceRelabel(db as never, { afterId: 20 });
+    const result = await runAudienceRelabel(db as never, { afterId: 20, mode: "dry_run_full" });
     expect(result).toMatchObject({ mode: "dry_run_full", dryRun: true, fees: 1, byAudience: { consumer: 1 }, relabeled: 0, nextAfterId: 21, remaining: 40, done: false });
     expect(writes(db)).toEqual([]);
   });
