@@ -66,7 +66,7 @@ describe("report findings", () => {
 
   it("leads a district report with its overdraft median against national", () => {
     const [first] = computeDistrictFindings("St. Louis district", rows, []);
-    expect(first.headline).toBe("The typical St. Louis district overdraft fee");
+    expect(first.headline).toBe("The St. Louis district median overdraft fee");
     expect(first.detail).toContain("20% above the national median of $25.00");
   });
 
@@ -81,6 +81,6 @@ describe("report findings", () => {
     const pairs = [{ fee_category: "overdraft", bank_median_amount: 32, cu_median_amount: 25 }];
     const findings = computeNationalFindings(national, pairs);
     expect(findings.map((f) => f.key)).toEqual(["overdraft", "nsf", "charter-gap"]);
-    expect(findings[2].headline).toBe("Credit unions charge less for overdraft");
+    expect(findings[2].headline).toBe("Credit unions are lower on overdraft");
   });
 });

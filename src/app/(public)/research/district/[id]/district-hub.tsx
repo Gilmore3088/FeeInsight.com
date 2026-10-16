@@ -4,6 +4,7 @@ import type { HubBranches } from "@/lib/data-store/district-hub";
 import { formatCompactDollars, formatFeeAmount } from "@/lib/format";
 import { getDisplayName } from "@/lib/fee-taxonomy";
 import { TrendChart } from "../../state/[code]/trend-chart";
+import { PhoneCollapse } from "./phone-collapse";
 import {
   hubFeeName,
   monthYear,
@@ -30,19 +31,48 @@ export const signedPct = (n: number) => `${n > 0 ? "+" : n < 0 ? "−" : ""}${Ma
 const H2 = "text-[20px] font-semibold tracking-[-0.02em] text-ink sm:text-[24px]";
 const CARD = "rounded-2xl border border-border bg-surface-0 p-4 shadow-fi-1 sm:p-6";
 
-export function HubSection({ id, title, line, source, children }: { id: string; title: string; line?: ReactNode; source: ReactNode; children: ReactNode }) {
-  return (
-    <section id={id} aria-labelledby={`${id}-heading`} className="scroll-mt-20 space-y-3">
-      <div>
-        <h2 id={`${id}-heading`} className={H2}>
-          {title}
-        </h2>
-        {line && <p className="mt-1 text-[14px] text-ink-muted">{line}</p>}
-      </div>
+export function HubSection({
+  id,
+  title,
+  line,
+  source,
+  children,
+  collapsible = false,
+}: {
+  id: string;
+  title: string;
+  line?: ReactNode;
+  source: ReactNode;
+  children: ReactNode;
+  /** Context below the fee findings: closed on phones behind its heading, open on wider screens. */
+  collapsible?: boolean;
+}) {
+  const head = (
+    <div>
+      <h2 id={`${id}-heading`} className={H2}>
+        {title}
+      </h2>
+      {line && <p className="mt-1 text-[14px] text-ink-muted">{line}</p>}
+    </div>
+  );
+  const body = (
+    <>
       {children}
       <p className="text-[11px] leading-snug text-ink-muted">
         <span className="font-semibold">Source:</span> {source}
       </p>
+    </>
+  );
+  return (
+    <section id={id} aria-labelledby={`${id}-heading`} className="scroll-mt-20 space-y-3">
+      {collapsible ? (
+        <PhoneCollapse summary={head}>{body}</PhoneCollapse>
+      ) : (
+        <>
+          {head}
+          {body}
+        </>
+      )}
     </section>
   );
 }
@@ -99,7 +129,8 @@ export function StatePanel({
   const tiles = [
     { value: count(row.institutions), label: `Banks\u00a0${count(row.banks)} · Credit\u00a0unions\u00a0${count(row.creditUnions)}` },
     ...(row.coveragePct != null ? [{ value: pct(row.coveragePct, 0), label: "With verified fees" }] : []),
-    ...(row.serviceCharges != null ? [{ value: compact(row.serviceCharges), label: "Fee income, latest quarter" }] : []),
+    ...(row.bankServiceCharges != null ? [{ value: compact(row.bankServiceCharges), label: "Bank deposit service charges, latest quarter" }] : []),
+    ...(row.cuFeeIncome != null ? [{ value: compact(row.cuFeeIncome), label: "Credit union fee income, latest quarter" }] : []),
     ...(row.bankBranches != null ? [{ value: count(row.bankBranches + (row.cuBranches ?? 0)), label: "Branches" }] : []),
     ...(row.unemployment ? [{ value: pct(row.unemployment.rate), label: `Unemployment, ${monthYear(row.unemployment.date)}` }] : []),
     ...(row.medianIncome != null ? [{ value: compact(row.medianIncome), label: "Median household income" }] : []),
@@ -152,31 +183,27 @@ export function StatePanel({
 }
 
 /** Stacked columns: each quarter's fee income, banks under credit unions. */
-export function RevenueChart({ quarters }: { quarters: RevenueQuarter[] }) {
-  const max = Math.max(...quarters.map((q) => q.total), 1);
+/**
+ * One charter's income by quarter. Banks report service charges on deposit accounts and credit
+ * unions report all fee income, a wider measure, so the two are drawn apart and never summed.
+ */
+export function RevenueChart({ quarters, series, title }: { quarters: RevenueQuarter[]; series: "banks" | "creditUnions"; title: string }) {
+  const value = (q: RevenueQuarter) => q[series];
+  const max = Math.max(...quarters.map(value), 1);
+  const bar = series === "banks" ? "bg-ink" : "bg-brick";
   return (
     <figure className={CARD}>
-      <p className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-ink-muted" aria-hidden="true">
-        <span className="inline-flex items-center gap-1.5">
-          <span className="h-2.5 w-2.5 rounded-sm bg-ink" /> Banks
-        </span>
-        <span className="inline-flex items-center gap-1.5">
-          <span className="h-2.5 w-2.5 rounded-sm bg-brick" /> Credit unions
-        </span>
-      </p>
-      <div className="flex h-44 items-end gap-1.5 sm:gap-3" role="img" aria-label={`Fee income by quarter, ${quarterLabel(quarters[0].quarter)} to ${quarterLabel(quarters[quarters.length - 1].quarter)}: ${quarters.map((q) => compact(q.total)).join(", ")}`}>
+      <figcaption className="mb-3 text-[13px] font-semibold text-ink">{title}</figcaption>
+      <div className="flex h-36 items-end gap-1.5 sm:gap-3" role="img" aria-label={`${title} by quarter, ${quarterLabel(quarters[0].quarter)} to ${quarterLabel(quarters[quarters.length - 1].quarter)}: ${quarters.map((q) => compact(value(q))).join(", ")}`}>
         {quarters.map((q, i) => (
           <div key={q.quarter} className="flex h-full min-w-0 flex-1 flex-col justify-end">
             {/* Phones label only the newest bar; eight values don't fit side by side. */}
             <span
               className={`mb-1 whitespace-nowrap text-center text-[10px] font-semibold tabular-nums text-ink ${i === quarters.length - 1 ? "" : "hidden sm:block"}`}
             >
-              {compact(q.total)}
+              {compact(value(q))}
             </span>
-            <div className="flex flex-col overflow-hidden rounded-t-md" style={{ height: `${(q.total / max) * 82}%` }}>
-              <div className="bg-brick" style={{ flexGrow: q.creditUnions }} />
-              <div className="bg-ink" style={{ flexGrow: q.banks }} />
-            </div>
+            <div className={`rounded-t-md ${bar}`} style={{ height: `${(value(q) / max) * 82}%` }} />
           </div>
         ))}
       </div>

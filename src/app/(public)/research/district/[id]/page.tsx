@@ -19,10 +19,14 @@ import { SITE_NAME, SITE_URL } from "@/lib/constants";
 import { getDistrictFeeIndexesCached, getDistrictHubCached } from "@/lib/data-store/public-cached-reads";
 import { MIN_COMPLAINT_PEERS, MIN_LEADER_BRANCHES } from "@/lib/data-store/district-hub";
 import { MIN_INSTITUTIONS_FOR_MEDIAN } from "@/lib/data-store/maturity";
-import { buildCharterPairs, buildComparisons, computeStateFindings } from "@/lib/research-report/state-findings";
-import { buildHistogram } from "@/components/public/distribution-chart";
+import {
+  STATE_FINDING_MIN_INSTITUTIONS,
+  buildCharterPairs,
+  buildComparisons,
+  computeStateFindings,
+  nationalBandTakeaway,
+} from "@/lib/research-report/state-findings";
 import { LockedRows } from "../../../fees/[category]/exhibits";
-import { StateVideo } from "../../state/[code]/state-exhibits";
 import {
   BoardChart,
   BoardHeading,
@@ -154,6 +158,7 @@ export default async function DistrictReportPage({ params }: PageProps) {
     charted,
   );
 
+  const takeaway = nationalBandTakeaway(place, `the ${place}`, visibleComparisons);
   const againstUs = shown.filter((f) => f.us);
   const aboveUs = againstUs.filter((f) => f.us && f.median > f.us.median * 1.01).length;
   const cuLowerOn = paired.filter((f) => f.cu.median! < f.bank.median!).length;
@@ -191,10 +196,14 @@ export default async function DistrictReportPage({ params }: PageProps) {
   const figures = [
     ...(institutionsTracked > 0 ? [{ value: formatCount(institutionsTracked), label: "Banks and credit unions" }] : []),
     { value: formatCount(indexes.verified_institutions), label: "Institutions with verified fees" },
-    { value: formatCount(indexes.verified_fees), label: "Verified fees" },
     ...(againstUs.length > 0 ? [{ value: `${aboveUs} of ${againstUs.length}`, label: "Fees above the U.S. median" }] : []),
     ...(paired.length > 0 ? [{ value: `${cuLowerOn} of ${paired.length}`, label: "Fees lower at credit unions" }] : []),
-    ...(latestRevenue ? [{ value: compact(latestRevenue.total), label: `Fee income, ${quarterLabel(latestRevenue.quarter)}` }] : []),
+    ...(latestRevenue && latestRevenue.banks > 0
+      ? [{ value: compact(latestRevenue.banks), label: `Bank deposit service charges, ${quarterLabel(latestRevenue.quarter)}` }]
+      : []),
+    ...(latestRevenue && latestRevenue.creditUnions > 0
+      ? [{ value: compact(latestRevenue.creditUnions), label: `Credit union fee income, ${quarterLabel(latestRevenue.quarter)}` }]
+      : []),
   ];
 
   // The state picker: one panel per state, drawn here; the table carries the same figures.
@@ -202,7 +211,7 @@ export default async function DistrictReportPage({ params }: PageProps) {
     { key: "institutions", label: "Institutions", phone: true },
     { key: "coverage", label: "Verified" },
     ...feeKeys.slice(0, 3).map((k, i) => ({ key: k, label: hubFeeName(k), phone: i === 0 })),
-    { key: "charges", label: "Fee income" },
+    { key: "charges", label: "Bank service charges" },
     { key: "unemployment", label: "Jobless" },
   ];
   const tableRows: HubTableRow[] = rows.map((r) => ({
@@ -217,7 +226,7 @@ export default async function DistrictReportPage({ params }: PageProps) {
           return [k, { v: m, t: money(m) }];
         }),
       ),
-      charges: { v: r.serviceCharges, t: compact(r.serviceCharges) },
+      charges: { v: r.bankServiceCharges, t: compact(r.bankServiceCharges) },
       unemployment: { v: r.unemployment?.rate ?? null, t: pct(r.unemployment?.rate) },
     },
   }));
@@ -226,7 +235,6 @@ export default async function DistrictReportPage({ params }: PageProps) {
   );
   const firstState = [...rows].sort((a, b) => b.institutions - a.institutions)[0]?.code ?? null;
   const beigeSummary = beigeSections.find((s) => s.section_name === "Summary of Economic Activity")?.content_text ?? null;
-  const posterBars = charted[0] ? buildHistogram(charted[0].values.map(([v]) => v), 12).map((b) => b.count) : [];
   const freeReportHref = `/reports?report=district&district=${districtId}&src=district-${districtId}#request`;
 
   return (
@@ -242,9 +250,6 @@ export default async function DistrictReportPage({ params }: PageProps) {
       {/* 1. The district's states on the map, with up to six live figures. */}
       <DistrictHero district={districtId} name={districtName} figures={figures} freshnessLabel={summary.freshnessLabel} reportHref={freeReportHref} />
 
-      {/* 2. The video, in its own section under the hero. */}
-      <StateVideo stateName={`the ${place}`} bars={posterBars} />
-
       <div className="mx-auto max-w-page space-y-10 px-4 py-8 sm:space-y-12 sm:px-6 sm:py-12">
         {charted.length > 0 ? (
           // 3-5 share one selection: a fee picked in a finding or a list redraws the chart.
@@ -254,7 +259,13 @@ export default async function DistrictReportPage({ params }: PageProps) {
                 <h2 id="findings-heading" className={H2}>
                   What stands out
                 </h2>
+                {takeaway && <p className="max-w-3xl text-[15px] leading-relaxed text-ink">{takeaway}</p>}
                 <FindingButtons findings={findings} />
+                <p className="text-[12px] text-ink-muted">
+                  Findings rank only fees with at least {STATE_FINDING_MIN_INSTITUTIONS} {place} institutions. Fees with fewer appear in
+                  the list below, unranked. The national middle half runs from the 25th to the 75th percentile of U.S.
+                  institutions.
+                </p>
               </section>
             )}
 
@@ -326,6 +337,8 @@ export default async function DistrictReportPage({ params }: PageProps) {
                 Fee medians from verified published fee schedules, one value per institution; a median needs{" "}
                 {MIN_INSTITUTIONS_FOR_MEDIAN} institutions. Fee income from FDIC and NCUA call reports, branches from the FDIC
                 Summary of Deposits and NCUA, unemployment from BLS, income from the Census ACS.
+                {" "}Fee medians, institution counts and fee income in each state row count only institutions inside the{" "}
+                {districtName} district; unemployment, income and branches cover the whole state.
                 {outsideStates > 0 &&
                   ` ${count(outsideStates)} ${districtName} district institutions are in parts of other states and count only in the district totals.`}
               </>
@@ -364,19 +377,26 @@ export default async function DistrictReportPage({ params }: PageProps) {
         {latestRevenue && (
           <HubSection
             id="income"
+            collapsible
             title="Fee income"
-            line={`${compact(latestRevenue.total)} in ${quarterLabel(latestRevenue.quarter)}, from ${count(latestRevenue.institutions)} reporting banks and credit unions.`}
+            line={`${quarterLabel(latestRevenue.quarter)}: banks reported ${compact(latestRevenue.banks)} in deposit service charges and credit unions ${compact(latestRevenue.creditUnions)} in fee income. Credit union fee income is a wider measure, so the two are shown apart.`}
             source="Banks: service charges on deposit accounts, FDIC call reports. Credit unions: all fee income, NCUA call reports, a wider measure. Credit union year-to-date income is split into quarters; a quarter shows once most institutions have filed."
           >
-            <RevenueChart quarters={revenue} />
-            {rows.filter((r) => r.serviceCharges != null).length > 1 && (
-              <RankBars
-                rows={rows
-                  .filter((r) => r.serviceCharges != null)
-                  .sort((x, y) => y.serviceCharges! - x.serviceCharges!)
-                  .map((r) => ({ key: r.code, label: r.name, value: r.serviceCharges! }))}
-                format={(n) => compact(n)}
-              />
+            <div className="grid gap-3 lg:grid-cols-2">
+              <RevenueChart quarters={revenue} series="banks" title="Banks: service charges on deposit accounts" />
+              <RevenueChart quarters={revenue} series="creditUnions" title="Credit unions: all fee income" />
+            </div>
+            {rows.filter((r) => r.bankServiceCharges != null).length > 1 && (
+              <>
+                <h3 className="pt-2 text-[15px] font-semibold text-ink">Bank deposit service charges by state</h3>
+                <RankBars
+                  rows={rows
+                    .filter((r) => r.bankServiceCharges != null)
+                    .sort((x, y) => y.bankServiceCharges! - x.bankServiceCharges!)
+                    .map((r) => ({ key: r.code, label: r.name, value: r.bankServiceCharges! }))}
+                  format={(n) => compact(n)}
+                />
+              </>
             )}
           </HubSection>
         )}
@@ -385,6 +405,7 @@ export default async function DistrictReportPage({ params }: PageProps) {
         {(tiers.length > 0 || branches) && (
           <HubSection
             id="market"
+            collapsible
             title="Who serves the district"
             line={institutionsTracked > 0 ? `${count(institutionsTracked)} banks and credit unions, by asset size.` : undefined}
             source={
@@ -418,6 +439,7 @@ export default async function DistrictReportPage({ params }: PageProps) {
         {complaints && (
           <HubSection
             id="complaints"
+            collapsible
             title={`Fee complaints to the CFPB, ${complaints.year}`}
             line="Per $1 billion of deposits."
             source={`CFPB Consumer Complaint Database, fee-related issues. Only institutions matched to their CFPB company record count, and a rate needs ${MIN_COMPLAINT_PEERS} of them.`}
@@ -430,6 +452,7 @@ export default async function DistrictReportPage({ params }: PageProps) {
         {(unemploymentRows.length > 0 || incomeRows.length > 0 || cpi) && (
           <HubSection
             id="economy"
+            collapsible
             title="Jobs, income and prices"
             source={
               <>
@@ -514,6 +537,7 @@ export default async function DistrictReportPage({ params }: PageProps) {
         {moves && hub && (
           <HubSection
             id="changes"
+            collapsible
             title="Fee changes in the last 12 months"
             source={`Changes between two copies of the same institution's fee schedule, seen since ${monthYear(hub.fee_changes_since)}.`}
           >

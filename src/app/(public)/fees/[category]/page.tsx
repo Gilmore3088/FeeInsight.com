@@ -43,7 +43,7 @@ import {
   tierLabel,
 } from "./category-view";
 import { ExplorerChart, ExplorerMarkets, FeeExplorer } from "./fee-explorer";
-import { DotLegend, HeroRange, LockedRows, MarketDots, RelatedRanges, VideoSlot } from "./exhibits";
+import { DotLegend, HeroRange, LockedRows, MarketDots, RelatedRanges } from "./exhibits";
 
 interface PageProps {
   params: Promise<{ category: string }>;
@@ -223,7 +223,6 @@ export default async function FeeCategoryPage({ params }: PageProps) {
           </div>
           {band && <HeroRange band={band} label="U.S." />}
           <UnstatedAudienceFootnote show={unstatedAudience} />
-          <VideoSlot title="One fee across five markets" />
         </section>
 
         {showRates && rateStats && (

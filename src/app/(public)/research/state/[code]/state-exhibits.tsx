@@ -107,42 +107,6 @@ export function StateHero({ stateCode, stateName, district, figures, freshnessLa
   );
 }
 
-/**
- * The video, in its own section under the hero. Until the clip exists the poster draws the
- * state's real spread for its first fee, so the slot shows the product.
- */
-export function StateVideo({ stateName, bars }: { stateName: string; bars: number[] }) {
-  const top = Math.max(...bars, 1);
-  return (
-    <section aria-labelledby="video-heading" className="mx-auto max-w-page px-4 pt-8 sm:px-6 sm:pt-12 print:hidden">
-      <figure className="mx-auto max-w-3xl">
-        <figcaption className="mb-3 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-          <h2 id="video-heading" className="text-[20px] font-semibold tracking-[-0.02em] text-ink sm:text-[24px]">
-            Watch Hamilton explore {stateName}
-          </h2>
-          <span className="text-[13px] text-ink-muted">Video coming</span>
-        </figcaption>
-        <div className="relative aspect-video overflow-hidden rounded-2xl bg-warm-ink-900 shadow-fi-2 ring-1 ring-ink/10" aria-hidden="true">
-          {bars.length > 0 && (
-            <div className="absolute inset-x-[8%] bottom-[14%] top-[22%] flex items-end gap-[4%] opacity-40">
-              {bars.map((n, i) => (
-                <span key={i} className="block flex-1 rounded-t-sm bg-[#e0716a]" style={{ height: `${n > 0 ? Math.max((n / top) * 100, 3) : 0}%` }} />
-              ))}
-            </div>
-          )}
-          <span className="absolute inset-0 flex items-center justify-center">
-            <span className="flex h-16 w-16 items-center justify-center rounded-full bg-white shadow-fi-2 sm:h-20 sm:w-20">
-              <svg viewBox="0 0 12 12" className="ml-1 h-6 w-6 text-ink sm:h-7 sm:w-7">
-                <path d="M3 1.5v9l7.5-4.5z" fill="currentColor" />
-              </svg>
-            </span>
-          </span>
-        </div>
-      </figure>
-    </section>
-  );
-}
-
 /** Diverging bars: how far each state median sits above or below the national median. */
 export function PositionExhibit({ rows, stateName, asOf, gate }: { rows: StateComparison[]; stateName: string; asOf: string | null; gate?: React.ReactNode }) {
   const withDelta = rows.filter((r) => r.delta_pct != null).sort((a, b) => b.delta_pct! - a.delta_pct!);
