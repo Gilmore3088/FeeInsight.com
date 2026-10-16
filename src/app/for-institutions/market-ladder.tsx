@@ -208,7 +208,7 @@ export function MarketLadder({ data, bare = false }: { data: MarketLadderData; b
         Dot: its own published fee. Box: the middle half of each market. Right: each market&apos;s median.
       </p>
       {/* The date covers the local row only: the state, charter and nation rows come from the index. */}
-      {bare ? null : <SourceFooter readOn={data.readOn ?? null} readLabel="local figures latest read" />}
+      {bare ? null : <SourceFooter readOn={data.readOn ?? null} readLabel="local figures read" />}
     </figure>
   );
 }

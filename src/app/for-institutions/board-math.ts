@@ -116,9 +116,13 @@ export function axisTicks(top: number): number[] {
   return middle > 0 && middle < top ? [0, middle, top] : [0, top];
 }
 
-/** The sample report's own line name without its qualifier: "Overdraft (per item)" reads "Overdraft". */
+/**
+ * A fee line's name as the exhibits show it. Only a trailing abbreviation in capitals goes
+ * ("Overdraft (OD)" reads "Overdraft"); a qualifier in words says what the figure covers and
+ * stays ("Monthly maintenance (entry checking)", "Overdraft (per item)").
+ */
 export function lineName(label: string): string {
-  return label.replace(/\s*\([^)]*\)$/, "");
+  return label.replace(/\s*\([A-Z][A-Z0-9/&.]*\)$/, "");
 }
 
 /** Equal amounts stack: each figure's row in its column of dots, 0 at the axis. */

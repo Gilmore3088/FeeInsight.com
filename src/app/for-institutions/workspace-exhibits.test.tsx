@@ -129,7 +129,7 @@ describe("PriceTesterExhibit", () => {
 
 describe("SourceFooter", () => {
   it("says what its date covers when it is not every figure", () => {
-    render(<SourceFooter readOn="2026-10-03" readLabel="local figures latest read" />);
-    expect(screen.getByText(/· local figures latest read Oct 3, 2026$/)).toBeTruthy();
+    render(<SourceFooter readOn="2026-10-03" readLabel="local figures read" />);
+    expect(screen.getByText(/· local figures read Oct 3, 2026$/)).toBeTruthy();
   });
 });

@@ -5,9 +5,10 @@ import { PricingJump } from "./pricing-jump";
 import { CHOOSER_INPUT_ID } from "./pro-plan-cards";
 
 /**
- * The phone's sticky pricing button. It shows once the element `heroId` names (the plan cards)
+ * The sticky pricing button for phones and tablets. It shows once the element `heroId` names (the plan cards)
  * has scrolled up out of view, and hides whenever the search and checkout panel (`cardId`) is
- * on screen, so it never covers the panel it points to. Phones only: desktop has no sticky.
+ * on screen, so it never covers the panel it points to. It shows below `lg` (phones and
+ * tablets); from `lg` up there is no sticky.
  */
 export function StickyCta({ heroId, cardId, label, className }: { heroId: string; cardId: string; label: string; className: string }) {
   const [heroGone, setHeroGone] = useState(false);

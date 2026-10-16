@@ -29,7 +29,7 @@ import { TrackView } from "@/components/track-view";
 import { getProPricingInstitution } from "@/lib/data-store/pro-accounts";
 import { NON_INSTITUTION_TIER, PRO_TIERS, isProTier, proTier, tierAmountLabel, tierForAssets } from "@/lib/pro-tiers";
 import { GatedOptions, OtherOptions, PricingFaq } from "./pricing-sections";
-import { chosenPriceLine, fromPriceLine, pricingCtaLabel, type ChosenInstitutionPrice } from "./plan-cta";
+import { chosenPriceLine, closingHeading, fromPriceLine, pricingCtaLabel, type ChosenInstitutionPrice } from "./plan-cta";
 import { loadPlansExhibitData } from "./exhibit-data";
 import { PlanIncludes, PlansExhibit } from "./plans-exhibit";
 
@@ -383,11 +383,12 @@ export default async function SubscribePage({
             className="mt-16 rounded-2xl border border-border bg-surface-0 px-6 py-10 text-center fi-window-lift sm:px-10"
           >
             <h2 id="cta-heading" className="text-2xl font-semibold tracking-tight text-ink sm:text-3xl">
-              Find your Hamilton Pro price
+              {closingHeading(chosenPrice)}
             </h2>
             <p className="mx-auto mt-3 max-w-xl text-[15px] leading-relaxed text-ink">
-              {chosenPrice ? chosenPriceLine(chosenPrice) : fromPriceLine()} for up
-              to {WORKSPACE_SEAT_LIMIT} people.
+              {/* A no-break space keeps the count with "people" on a phone. */}
+              {chosenPrice ? chosenPriceLine(chosenPrice) : fromPriceLine()} for up to {WORKSPACE_SEAT_LIMIT}
+              {"\u00a0"}people.
             </p>
             <PricingJump
               inputId={CHOOSER_INPUT_ID}
