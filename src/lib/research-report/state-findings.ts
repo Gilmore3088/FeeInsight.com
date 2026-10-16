@@ -102,7 +102,7 @@ export function computeStateFindings(
     findings.push({
       key: "overdraft",
       figure: formatAmount(overdraft.median_amount),
-      headline: `The typical ${stateName} overdraft fee`,
+      headline: `The ${stateName} median overdraft fee`,
       detail: `Median across ${overdraft.institution_count} ${stateName} institutions, ${vs} the national median of ${formatAmount(overdraft.national_median)}.`,
       exhibit: "benchmarks",
       fee_category: "overdraft",
@@ -160,4 +160,23 @@ export function computeStateFindings(
   }
 
   return findings;
+}
+
+/**
+ * The opening takeaway: how many of the place's medians (with enough institutions for a finding)
+ * sit inside the national middle half, the 25th to 75th percentile of U.S. institutions.
+ */
+export function nationalBandTakeaway(placeName: string, subject: string, comparisons: StateComparison[]): string | null {
+  const solid = comparisons.filter(
+    (c) => c.institution_count >= STATE_FINDING_MIN_INSTITUTIONS && c.national_p25 != null && c.national_p75 != null,
+  );
+  if (solid.length < 3) return null;
+  const above = solid.filter((c) => c.median_amount > c.national_p75!).length;
+  const below = solid.filter((c) => c.median_amount < c.national_p25!).length;
+  const within = solid.length - above - below;
+  if (within === solid.length) {
+    return `Every ${placeName} median falls within the national middle half. Single fees differ, but ${subject} largely follows national pricing.`;
+  }
+  const outside = [above > 0 ? `${above} above it` : null, below > 0 ? `${below} below it` : null].filter(Boolean).join(" and ");
+  return `${within} of ${solid.length} ${placeName} medians fall within the national middle half; ${outside}.`;
 }

@@ -72,7 +72,7 @@ export function DistrictHero({ district, name, figures, freshnessLabel, reportHr
             </Link>
           </p>
         </div>
-        <div className="-mx-1 lg:mx-0">
+        <div className="-mx-1 hidden sm:block lg:mx-0">
           <DistrictMap district={district} tone="dark" />
         </div>
       </div>

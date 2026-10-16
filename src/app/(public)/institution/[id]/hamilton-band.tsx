@@ -56,7 +56,7 @@ const plausibleShare = (n: number | null): n is number => n !== null && Number.i
  * slot never names the page's institution. It is a picture, not a control, so nothing on the page
  * pretends to play; once the clip exists FrameMedia's play button sits on it.
  */
-function TourVideoSlot({ ready }: { ready: boolean }) {
+function TourVideoSlot() {
   return (
     <figure className="flex items-center gap-3 rounded-lg border border-border bg-paper p-2 pr-4">
       <span aria-hidden="true" className="flex h-14 w-24 shrink-0 items-center justify-center rounded-md bg-warm-ink-900">
@@ -66,7 +66,6 @@ function TourVideoSlot({ ready }: { ready: boolean }) {
       </span>
       <figcaption className="min-w-0 text-[13px]">
         <span className="block font-medium text-ink">The Hamilton tour</span>
-        {!ready && <span className="text-ink-muted">Video coming</span>}
       </figcaption>
     </figure>
   );
@@ -187,9 +186,12 @@ export function HamiltonBand({
               {DEMO_REQUEST_NAV.label}
             </TrackLink>
           </div>
-          <FrameMedia video={INSTITUTION_TOUR_VIDEO}>
-            <TourVideoSlot ready={Boolean(INSTITUTION_TOUR_VIDEO)} />
-          </FrameMedia>
+          {/* The tour shows only once the clip exists; no "coming soon" slot in the meantime. */}
+          {INSTITUTION_TOUR_VIDEO && (
+            <FrameMedia video={INSTITUTION_TOUR_VIDEO}>
+              <TourVideoSlot />
+            </FrameMedia>
+          )}
           <p className="text-[12px] text-ink-muted">
             Prefer one document?{" "}
             <Link href={reportOfferHref} className="underline underline-offset-2 hover:text-ink">

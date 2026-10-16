@@ -78,7 +78,8 @@ describe("stateHubRows", () => {
     const [mo, ...rest] = stateHubRows(h, ["AR", "MO"]);
     expect(rest).toEqual([]); // Arkansas has nothing to show
     expect(mo).toMatchObject({ code: "MO", name: "Missouri", institutions: 40, banks: 30, creditUnions: 10, withFees: 20, coveragePct: 50 });
-    expect(mo.serviceCharges).toBe(500_000);
+    expect(mo.bankServiceCharges).toBe(500_000);
+    expect(mo.cuFeeIncome).toBeNull();
     expect(mo.unemployment).toEqual({ rate: 3.9, date: "2026-08-01" });
     expect(mo.payrollYoyPct).toBeCloseTo(2);
     expect(mo.medianIncome).toBeNull();

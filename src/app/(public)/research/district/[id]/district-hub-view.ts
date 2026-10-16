@@ -30,8 +30,10 @@ export interface StateHubRow {
   /** Share of the state's institutions with verified fees, 0-100; null with no institutions. */
   coveragePct: number | null;
   fees: Record<string, { median: number | null; institutions: number }>;
-  /** Fee income in the hub's latest complete quarter, whole dollars (banks: deposit service charges). */
-  serviceCharges: number | null;
+  /** Banks' service charges on deposit accounts in the hub's latest complete quarter, whole dollars. */
+  bankServiceCharges: number | null;
+  /** Credit unions' fee income (a wider measure) in the same quarter, whole dollars. */
+  cuFeeIncome: number | null;
   bankBranches: number | null;
   cuBranches: number | null;
   /** Bank deposits in the state's branches, whole dollars. */
@@ -91,6 +93,12 @@ function latestPayrollYoy(series: IndicatorSeries | undefined): number | null {
   return ((series.latest.value - series.year_ago.value) / series.year_ago.value) * 100;
 }
 
+/** One charter's income from a set of revenue rows, whole dollars; null when that charter has none. */
+function sumRevenue(rows: DistrictHubData["revenue"], charter: "bank" | "credit_union"): number | null {
+  const mine = rows.filter((r) => r.charter_type === charter);
+  return mine.length > 0 ? mine.reduce((s, r) => s + r.total, 0) * 1_000 : null;
+}
+
 /** One row per state of the district that has anything to show. */
 export function stateHubRows(hub: DistrictHubData, states: string[]): StateHubRow[] {
   const quarters = completeQuarters(hub);
@@ -113,7 +121,8 @@ export function stateHubRows(hub: DistrictHubData, states: string[]): StateHubRo
         withFees,
         coveragePct: institutions > 0 ? (withFees / institutions) * 100 : null,
         fees: hub.state_fees.find((s) => s.state_code === code)?.fees ?? {},
-        serviceCharges: revenue.length > 0 ? revenue.reduce((s, r) => s + r.total, 0) * 1_000 : null,
+        bankServiceCharges: sumRevenue(revenue, "bank"),
+        cuFeeIncome: sumRevenue(revenue, "credit_union"),
         bankBranches: bank ? bank.branches : null,
         cuBranches: cu ? cu.branches : null,
         deposits: bank ? bank.deposits : null,
