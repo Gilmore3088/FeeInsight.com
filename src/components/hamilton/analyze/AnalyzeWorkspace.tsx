@@ -771,7 +771,7 @@ function AnalyzeConversationWorkspace({
         </div>
       ) : (
         <div className="flex max-w-[72rem] flex-col gap-10">
-          <header className="flex flex-col gap-3">
+          <header className="flex flex-col gap-3 text-center sm:text-left">
             <p className="fi-text-label text-[var(--fi-muted)]">Ask Hamilton</p>
             <h1 className="text-4xl font-semibold leading-tight tracking-tight text-[var(--fi-ink)] sm:text-[2.75rem]">
               What are you working on?
