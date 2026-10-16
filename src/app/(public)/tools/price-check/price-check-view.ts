@@ -47,6 +47,8 @@ export const COPY = {
   versusLabel: "Against the median",
   lowestHeading: "Lowest first",
   marketsHeading: "Local markets",
+  change: "Change",
+  opensNewTab: "(opens in new tab)",
   noFeeYet: "No fee yet",
 } as const;
 
@@ -104,10 +106,14 @@ export function charterPlacements(points: InstitutionPoint[], price: number): Pl
     .filter((p): p is Placement => p !== null);
 }
 
-/** "41 of 1,203 U.S. institutions charge less than $35." */
+/** "41 of 1,203 U.S. institutions charge less than $35."; at $0 nobody charges less, so it counts who also charge $0. */
 export function lessHeadline(p: Placement, who: string, price: number): string {
+  if (price === 0) return `${count(p.same)} of ${count(p.count)} ${who} also charge $0.`;
   return `${count(p.lower)} of ${count(p.count)} ${who} charge less than ${money(price)}.`;
 }
+
+/** The state's row: its figures are the price check's own, each traced to the institution's schedule. */
+export const stateRowLabel = (stateName: string) => `${stateName}, checked against schedules`;
 
 /** "12 charge the same. 900 charge more." with the verb agreeing with each count. */
 export function sameAndMore(p: Placement): string {
@@ -131,6 +137,11 @@ export function versusMedian(price: number, median: number): string {
 export function sharedDomain(rows: Placement[], price: number): [number, number] {
   const tops = rows.map((r) => Math.min(r.band.max, Math.max(r.band.p75 * 2.5, r.band.median * 2)));
   return [0, axisTop(price, ...tops)];
+}
+
+/** The answered form, folded to one line: "Overdraft fee, $35, Florida". */
+export function askedSummary(fee: PriceCheckFee, price: number, stateName: string | null): string {
+  return [FEE_LABEL[fee], money(price), stateName].filter(Boolean).join(", ");
 }
 
 export const axisTicks = (domain: [number, number]): number[] => [0, domain[1] / 2, domain[1]];
@@ -165,5 +176,5 @@ export function previewHeading(institutions: number, fee: PriceCheckFee): string
 /** Under the county map: what each county's colour is, and where the deposit weights come from. */
 export function countyCaption(fee: PriceCheckFee, sodYear: number | string | null): string {
   const source = sodYear ? `FDIC Summary of Deposits, ${sodYear}` : "FDIC Summary of Deposits";
-  return `Each county shows its institutions' ${FEE_NOUN[fee]}s, weighted by deposits (${source}). $0 fees are left out.`;
+  return `Each county shows its institutions' ${FEE_NOUN[fee]}s, weighted by deposits (${source}), counting $0 fees.`;
 }

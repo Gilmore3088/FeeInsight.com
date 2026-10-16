@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { InstitutionPoint } from "@/lib/data-store/fees";
+import { summarizeFees, valuePerInstitution } from "@/lib/data-store/fee-stats";
 import {
+  askedSummary,
   charterPlacements,
   clipped,
   COPY,
@@ -14,6 +16,7 @@ import {
   sameAndMore,
   sharedDomain,
   shownNote,
+  stateRowLabel,
   stateTooFew,
   uncheckedNote,
   VERDICT,
@@ -56,6 +59,27 @@ describe("placeAmong", () => {
   });
 });
 
+describe("the median matches /fees/[fee]", () => {
+  it("reads the same median and middle half as summarizeFees over the same rows", () => {
+    // /fees/[fee] summarizes the category read's sourced rows with summarizeFees; this page
+    // places the price among institution_points, which are valuePerInstitution of those rows.
+    for (const category of ["overdraft", "nsf"]) {
+      const rows = Array.from({ length: 40 }, (_, i) => ({
+        institution_id: (i % 17) + 1,
+        amount: [0, 15, 25, 27.5, 30, 32, 34, 35, 36, 38][i % 10],
+        fee_category: category,
+        charter_type: i % 2 ? "bank" : "credit_union",
+      }));
+      const page = summarizeFees(rows);
+      const placed = placeAmong("U.S.", [...valuePerInstitution(rows).values()], 30)!;
+      expect(placed.count).toBe(page.institution_count);
+      expect(placed.band.median).toBe(page.median_amount);
+      expect(placed.band.p25).toBe(page.p25_amount);
+      expect(placed.band.p75).toBe(page.p75_amount);
+    }
+  });
+});
+
 describe("charterPlacements", () => {
   it("splits banks and credit unions and drops a side under the floor", () => {
     const points = [...[30, 32, 35, 35, 36].map((v) => point(v, "bank")), ...[20, 25].map((v) => point(v, "credit_union")), point(15, null)];
@@ -72,6 +96,17 @@ describe("sentences", () => {
     const big = placeAmong("U.S.", Array.from({ length: 1500 }, (_, i) => (i < 1203 ? 10 : 50)), 35)!;
     expect(lessHeadline(big, "U.S. institutions", 35)).toBe("1,203 of 1,500 U.S. institutions charge less than $35.");
     expect(rowLabel(p)).toBe("Banks: 2 of 6 charge less");
+  });
+
+  it("count who also charge $0 when the price is $0", () => {
+    const zero = placeAmong("U.S.", VALUES, 0)!;
+    expect(lessHeadline(zero, "U.S. institutions", 0)).toBe("1 of 10 U.S. institutions also charge $0.");
+  });
+
+  it("fold the answered form to one line and label the state row", () => {
+    expect(askedSummary("overdraft", 35, "Florida")).toBe("Overdraft fee, $35, Florida");
+    expect(askedSummary("nsf", 12.5, null)).toBe("NSF (returned item) fee, $12.50");
+    expect(stateRowLabel("Florida")).toBe("Florida, checked against schedules");
   });
 
   it("make the verb agree with the count", () => {
@@ -94,7 +129,7 @@ describe("sentences", () => {
     expect(shownNote(25, 25)).toBeNull();
     expect(shownNote(25, 80)).toBe("Showing the 25 lowest of 80.");
     expect(previewHeading(2100, "overdraft")).toBe("What 2,100 U.S. institutions charge for an overdraft fee");
-    expect(countyCaption("nsf", 2025)).toContain("FDIC Summary of Deposits, 2025");
+    expect(countyCaption("nsf", 2025)).toBe("Each county shows its institutions' NSF fees, weighted by deposits (FDIC Summary of Deposits, 2025), counting $0 fees.");
   });
 });
 
@@ -129,6 +164,9 @@ describe("visitor words", () => {
     shownNote(25, 80) ?? "",
     previewHeading(100, "nsf"),
     countyCaption("overdraft", 2025),
+    lessHeadline(placeAmong("U.S.", VALUES, 0)!, "U.S. institutions", 0),
+    askedSummary("overdraft", 35, "Florida"),
+    stateRowLabel("Florida"),
   ];
 
   it("use no em dashes", () => {

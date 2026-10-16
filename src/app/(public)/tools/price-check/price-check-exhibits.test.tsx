@@ -43,6 +43,7 @@ describe("RangeStack", () => {
     expect(screen.getByText("U.S.: 9 of 10 charge less")).toBeInTheDocument();
     expect(screen.getByText("Banks: 5 of 5 charge less")).toBeInTheDocument();
     expect(container.querySelectorAll("circle.you")).toHaveLength(2);
+    expect(container.querySelector('svg[aria-label^="U.S."]')?.getAttribute("aria-label")).toContain("your fee $38");
     expect(container.querySelector(".fi-range-axis")).not.toBeNull();
     expect(screen.getByText(/Dot: your fee/)).toBeInTheDocument();
   });
@@ -67,7 +68,7 @@ describe("InstitutionList", () => {
     const list = [institution(1, 0, "https://example.com/fees.pdf"), institution(2, 25), institution(3, 30)];
     render(<InstitutionList institutions={list} shown={2} />);
     expect(screen.getByRole("link", { name: "Institution 1" })).toHaveAttribute("href", "/institution/1");
-    expect(screen.getByRole("link", { name: "Schedule" })).toHaveAttribute("href", "https://example.com/fees.pdf");
+    expect(screen.getByRole("link", { name: "Schedule (opens in new tab)" })).toHaveAttribute("href", "https://example.com/fees.pdf");
     expect(screen.queryByText("Institution 3")).toBeNull();
   });
 });

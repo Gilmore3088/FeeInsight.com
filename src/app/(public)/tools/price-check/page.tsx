@@ -16,6 +16,7 @@ import { countyPriceMap, PRICE_MAP_FILLS, PRICE_MAP_LEGEND, priceStep } from "@/
 import { isPriceCheckFee, loadStatePricesCached, marketChecks, parsePrice, PRICE_CHECK_FEES, type PriceCheckFee } from "@/lib/price-check";
 import { InstitutionList, MarketList, RangeStack, ShareBar, VerdictTag } from "./price-check-exhibits";
 import {
+  askedSummary,
   charterPlacements,
   countyCaption,
   COPY,
@@ -27,6 +28,7 @@ import {
   REPORT_HREF,
   sameAndMore,
   shownNote,
+  stateRowLabel,
   stateTooFew,
   uncheckedNote,
   versusMedian,
@@ -76,9 +78,10 @@ export default async function PriceCheckPage({ searchParams }: PageProps) {
   const preview = placeAmong("U.S.", values, 0);
   const national = price !== null ? placeAmong("U.S.", values, price) : null;
   const charters = price !== null && national ? charterPlacements(points, price) : [];
-  const statePlace = price !== null && prices ? placeAmong(stateName, prices.institutions.map((i) => i.value), price) : null;
+  const statePlace = price !== null && prices ? placeAmong(stateRowLabel(stateName), prices.institutions.map((i) => i.value), price) : null;
   const markets = price !== null && prices && statePlace ? marketChecks(price, prices) : [];
   const rows = [national, ...charters, statePlace].filter((r) => r !== null);
+  const answered = price !== null && national !== null;
 
   // The county map, as before: each county's deposit-weighted fee against the price.
   const countyValues = (countyMap?.counties ?? []).map((c) => ({ fips: c.fips, value: c.overdraft, deposits: c.deposits, covered_deposits: c.covered_deposits }));
@@ -118,53 +121,85 @@ export default async function PriceCheckPage({ searchParams }: PageProps) {
   const unchecked = prices ? uncheckedNote(prices.uncheckedCount, fee) : null;
   const shown = prices ? shownNote(SHOWN, prices.institutions.length) : null;
 
+  const badPrice = priceRaw !== "" && price === null;
+  const form = (
+    <form method="get" className="grid gap-3 sm:grid-cols-2">
+      <label className="block">
+        <span className={EYEBROW}>{COPY.feeLabel}</span>
+        <select name="fee" defaultValue={fee} className={FIELD}>
+          {PRICE_CHECK_FEES.map((key) => (
+            <option key={key} value={key}>
+              {FEE_LABEL[key]}
+            </option>
+          ))}
+        </select>
+      </label>
+      <div>
+        <label htmlFor="pc-price" className={EYEBROW}>
+          {COPY.amountLabel}
+        </label>
+        <input
+          id="pc-price"
+          name="price"
+          inputMode="decimal"
+          defaultValue={priceRaw}
+          placeholder={COPY.amountPlaceholder}
+          required
+          aria-invalid={badPrice || undefined}
+          aria-describedby={badPrice ? "pc-price-error" : undefined}
+          className={FIELD}
+        />
+        {badPrice && (
+          <p id="pc-price-error" role="alert" className="mt-1.5 text-[13px] text-brick">
+            {COPY.badPrice}
+          </p>
+        )}
+      </div>
+      <label className="block">
+        <span className={EYEBROW}>{COPY.stateLabel}</span>
+        <select name="state" defaultValue={state ?? ""} className={FIELD}>
+          <option value="">{COPY.allStates}</option>
+          {[...STATE_CODES].sort((a, b) => STATE_NAMES[a].localeCompare(STATE_NAMES[b])).map((code) => (
+            <option key={code} value={code}>
+              {STATE_NAMES[code]}
+            </option>
+          ))}
+        </select>
+      </label>
+      <button type="submit" className="min-h-11 self-end rounded-lg bg-ink px-5 text-[15px] font-semibold text-white hover:bg-ink/90">
+        {COPY.submit}
+      </button>
+    </form>
+  );
+
   return (
     <div className="mx-auto max-w-page px-4 py-8 sm:px-6 sm:py-12">
       <div className="space-y-10 sm:space-y-12">
-        {/* 1. The question and the form (a GET form, so every answer has its own link). */}
+        {/* 1. The question and the form (a GET form, so every answer has its own link). Once a
+            fee is answered, the form folds to one line so the answer leads on a phone. */}
         <section aria-labelledby="pc-heading" className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)] lg:items-end">
           <div className="max-w-xl">
             <p className={EYEBROW}>{COPY.eyebrow}</p>
-            <h1 id="pc-heading" className="mt-2 text-[30px] font-semibold leading-tight tracking-[-0.03em] text-ink sm:text-[40px]">
+            <h1
+              id="pc-heading"
+              className={`mt-2 font-semibold leading-tight tracking-[-0.03em] text-ink ${answered ? "text-[22px] sm:text-[28px]" : "text-[30px] sm:text-[40px]"}`}
+            >
               {COPY.title}
             </h1>
-            <p className="mt-2 text-[15px] text-ink-muted">{COPY.intro}</p>
+            {!answered && <p className="mt-2 text-[15px] text-ink-muted">{COPY.intro}</p>}
           </div>
-          <form method="get" className="grid gap-3 rounded-2xl border border-border bg-surface-0 p-4 shadow-fi-1 sm:grid-cols-2 sm:p-5">
-            <label className="block">
-              <span className={EYEBROW}>{COPY.feeLabel}</span>
-              <select name="fee" defaultValue={fee} className={FIELD}>
-                {PRICE_CHECK_FEES.map((key) => (
-                  <option key={key} value={key}>
-                    {FEE_LABEL[key]}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="block">
-              <span className={EYEBROW}>{COPY.amountLabel}</span>
-              <input name="price" inputMode="decimal" defaultValue={priceRaw} placeholder={COPY.amountPlaceholder} required className={FIELD} />
-            </label>
-            <label className="block">
-              <span className={EYEBROW}>{COPY.stateLabel}</span>
-              <select name="state" defaultValue={state ?? ""} className={FIELD}>
-                <option value="">{COPY.allStates}</option>
-                {[...STATE_CODES].sort((a, b) => STATE_NAMES[a].localeCompare(STATE_NAMES[b])).map((code) => (
-                  <option key={code} value={code}>
-                    {STATE_NAMES[code]}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <button type="submit" className="min-h-11 self-end rounded-lg bg-ink px-5 text-[15px] font-semibold text-white hover:bg-ink/90">
-              {COPY.submit}
-            </button>
-          </form>
+          {answered && price !== null ? (
+            <details className="group rounded-2xl border border-border bg-surface-0 shadow-fi-1">
+              <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 px-4 text-[15px] text-ink [&::-webkit-details-marker]:hidden">
+                <span className="min-w-0 font-medium">{askedSummary(fee, price, state ? stateName : null)}</span>
+                <span className="shrink-0 text-[14px] font-semibold text-brick group-open:hidden">{COPY.change}</span>
+              </summary>
+              <div className="border-t border-border p-4 sm:p-5">{form}</div>
+            </details>
+          ) : (
+            <div className="rounded-2xl border border-border bg-surface-0 p-4 shadow-fi-1 sm:p-5">{form}</div>
+          )}
         </section>
-
-        {priceRaw && price === null && <p className="text-[14px] text-brick">{COPY.badPrice}</p>}
-        {detail === null && <p className="text-[14px] text-ink-muted">{COPY.readError}</p>}
-        {detail !== null && !preview && <p className="text-[14px] text-ink-muted">{COPY.tooFewNational}</p>}
 
         {/* 2. Before a price: the fee's national spread, so the page shows something at once. */}
         {price === null && preview && (

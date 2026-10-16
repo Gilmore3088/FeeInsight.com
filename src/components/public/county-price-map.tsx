@@ -123,9 +123,9 @@ export function CountyPriceMap({ wide, narrow, details, price, feeNoun }: County
 
       {open ? (
         <div className="mt-3 rounded-xl border border-border bg-paper p-4 lg:mt-0">
-          <div className="flex items-baseline justify-between gap-3">
+          <div className="flex items-center justify-between gap-3">
             <p className="text-[15px] font-semibold text-ink">{open.name}</p>
-            <button type="button" onClick={() => setSelected(null)} className="text-[12px] text-brick hover:underline">
+            <button type="button" onClick={() => setSelected(null)} className="inline-flex min-h-11 items-center px-2 text-[12px] text-brick hover:underline">
               Close
             </button>
           </div>

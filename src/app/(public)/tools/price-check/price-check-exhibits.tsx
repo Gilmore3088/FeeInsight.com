@@ -27,9 +27,9 @@ export function ShareBar({ placement }: { placement: Placement }) {
         role="img"
         aria-label={`${lower} charge less, ${same} the same, ${higher} more`}
       >
-        <span style={{ width: pct(lower) }} className="bg-in-range" />
+        <span style={{ width: pct(lower) }} className="bg-ink/55" />
         <span style={{ width: pct(same) }} className="bg-ink" />
-        <span style={{ width: pct(higher) }} className="bg-brick-tint" />
+        <span style={{ width: pct(higher) }} className="bg-ink/15" />
       </div>
       <div className="mt-1.5 flex justify-between text-[12px] text-ink-muted" aria-hidden="true">
         <span>Less {lower.toLocaleString("en-US")}</span>
@@ -62,6 +62,8 @@ export function RangeStack({ rows, price }: { rows: Placement[]; price: number }
               domain={domain}
               format={money}
               figure="median"
+              subjectLabel="your fee"
+              spread={{ min: row.band.min, max: row.band.max }}
             />
           );
         })}
@@ -113,6 +115,7 @@ export function InstitutionList({ institutions, shown }: { institutions: PricedI
                 className="inline-flex min-h-11 items-center text-[12px] text-brick hover:underline"
               >
                 Schedule
+                <span className="sr-only"> {COPY.opensNewTab}</span>
               </a>
             )}
           </span>
