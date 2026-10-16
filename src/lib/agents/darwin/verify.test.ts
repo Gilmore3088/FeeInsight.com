@@ -988,6 +988,34 @@ describe("conditionalZero on run-on lines (#1571, live rows read on prod Oct 16)
     [22672, "Monthly Service Fee", "Monthly Service Charge 0.00 for 1st account 2nd account $5.00"],
   ];
 
+  // Review of #1571: a condition after the $0, or a price before the name, keeps it conditional.
+  const reviewConditional: Array<[string, string]> = [
+    ["Paper Statement Fee", "$5.00 Paper Statement Fee (FREE with e-Statements)"],
+    ["Monthly Maintenance Fee", "$10.00 Monthly Maintenance Fee - $0 with direct deposit"],
+    ["Monthly Maintenance Fee", "Monthly Maintenance Fee: $0. Waived with direct deposit. Otherwise $12."],
+    ["Monthly Maintenance Fee", "Monthly Maintenance Fee: $0. A $12 fee applies if balance drops below $1,500."],
+    ["Monthly Service Fee", "Monthly Service Fee: Free. Customers without e-Statements pay $5."],
+    ["Monthly Service Fee", "Monthly Service Fee: Free. You will be charged $5 if your balance drops below $100."],
+    ["Monthly Service Fee", "Monthly Service Fee: Free. Paper statements: $5."],
+    ["Monthly Service Fee", "Monthly Service Fee FREE Balance under $500 $5"],
+    ["Monthly Service Fee", "Monthly Service Fee $0.00 Balance $1,000+ $5.00 Balance under $1,000"],
+    ["Stop Payment Fee", "Stop Payment Fee No Charge Online $30 In Branch"],
+    ["Stop Payment Fee", "Stop Payment Fee No Charge Via online banking $30.00 by phone"],
+    ["Cashier's Check", "Cashier's Check FREE Premium Checking $5.00 All Others"],
+    ["Monthly Fee", "Monthly Fee $0 Senior (62+) Monthly Fee $5 All Others"],
+    ["Paper Statement Fee", "Paper Statement Fee FREE e-Statements; $5 paper"],
+    ["Paper Statement Fee", "Paper Statement Fee FREE E-Statements Paper Statements $2"],
+    ["Monthly Service Fee", "Monthly Service Fee FREE Requires e-Statements otherwise $5"],
+    ["Overdraft Fee", "Overdraft Fee $0 Transactions $5 or less $30 per item"],
+    ["Dormant Account Fee", "Dormant Account Fee none the first 12 months $5 thereafter"],
+  ];
+  it.each(reviewConditional)("%s stays conditional: %s", (name, line) => {
+    expect(conditionalZero(0, line, name)).toBe(true);
+  });
+  it("still reads a plainly separate next row as another fee's", () => {
+    expect(conditionalZero(0, "Incoming Domestic Wire FREE Outgoing Domestic Wire $25", "Incoming Domestic Wire")).toBe(false);
+  });
+
   it.each(free)("%i is a free line, not conditional", (_id, name, line) => {
     expect(conditionalZero(0, line, name)).toBe(false);
   });

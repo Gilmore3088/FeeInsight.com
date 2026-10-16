@@ -202,13 +202,30 @@ function isPriceCell(cell: string | undefined): boolean {
 
 // A $0 price as a schedule prints it.
 const ZERO_PRICE = /\bfree\b|\bno charge\b|\bn\/c\b|\bnone\b|\bno fee\b|\$\s*0(?:\.0{1,2})?(?![\d,]*\.?\d*[1-9])|(?<![\d.$])0\.00\b/i;
-// What follows a $0 when it is still that fee's terms ("FREE with e-Statements", "No Charge; In
-// Branch", "FREE per month"): punctuation, or a word that states a condition. Anything else
-// ("FREE Replacement key $50.00", "No Charge Customer (incoming) $15.00") is the next row.
-const CONTINUES = /^\s*(?:$|[(;,/\u2013\u2014\-*:.!&]|(?:with|without|if|when|unless|for|per|after|thereafter|then|otherwise|else|or|and|up|over|under|below|above|first|each|until|except|only|to|plus|on|in|at|by|while|once|daily|monthly|a|an)\b)/i;
-// A sentence after the fee's own that still states its terms ("$0 with e-Statements. Without
-// e-Statements - $5.").
-const CONDITION_SENTENCE = /^(?:with|without|if|when|unless|otherwise|else|or|except|after|thereafter)\b/i;
+// Words that make the text after a $0 that fee's own terms, not the next row: a balance band, a
+// channel, a statement or account type, a member or age tier, a requirement ("FREE Balance under
+// $500 $5", "No Charge Online $30 In Branch", "FREE Premium Checking $5.00 All Others"; review of
+// #1571).
+const CONDITION_WORDS = /\b(?:balances?|e-?statements?|statements?|paper|members?|online|branch(?:es)?|phone|mobile|telephone|teller|person|others?|requires?|required|senior|students?|age|premium|months?|years?|days?|thereafter|otherwise|waived?|minimum|maximum|deposits?|with|without|if|when|unless|after|first|over|under|below|above|less|more|fewer|via|tier|level|consumers?|business|personal|qualif\w*|enroll\w*|limit|charged|pays?|applies|apply|will|fee applies)\b/i;
+const PRICE_AT = /\$\s*\d|\b\d[\d,]*\.\d{2}\b/;
+
+/**
+ * True when the text after a fee's $0 is the next row of a run-on line: it opens with a label (a
+ * capitalised run with a word of three or more letters, parentheses aside) that reaches a
+ * non-zero price, and neither the label nor the words after that price state a condition
+ * ("FREE Replacement key $50.00", "FREE ATM Transaction fee (per transaction ...) $2.00").
+ * Anything else stays the fee's own terms, so an unclear tail keeps the $0 conditional. Pure.
+ */
+function nextRow(tail: string): boolean {
+  const text = tail.replace(/^[\s.;,:*\u2013\u2014-]+/, "");
+  if (!/^[A-Z]/.test(text)) return false;
+  const price = PRICE_AT.exec(text);
+  if (!price) return false;
+  const label = text.slice(0, price.index).replace(/\([^)]*\)/g, " ");
+  if (!/[A-Za-z]{3,}/.test(label) || CONDITION_WORDS.test(label)) return false;
+  const after = text.slice(price.index + price[0].length).replace(/^[\d,.]*/, "").slice(0, 40);
+  return !CONDITION_WORDS.test(after.split(PRICE_AT)[0]);
+}
 
 function words(text: string): Array<{ word: string; start: number; end: number }> {
   return [...text.matchAll(/[a-z0-9]+/gi)].map((match) => ({ word: match[0].toLowerCase(), start: match.index, end: match.index + match[0].length }));
@@ -231,13 +248,14 @@ function nameRun(text: string, feeName: string): { start: number; end: number; l
  * The fee's own row inside a run-on cell, where a stored line runs several schedule rows together
  * with no cell break (#1571): "Record Searches $30/$25 Notary Services No Charge", "Check Free
  * (bill pay) FREE Replacement key $50.00". Prose is first cut to the sentence that carries the
- * fee name, with the sentences after it that state its conditions. Then the row runs from the
- * fee name to its $0 price, plus what follows when it still states the fee's terms. Null when the
- * cell does not print the fee name. Text before the name is dropped only when a $0 follows it. Pure.
+ * fee name and the sentences after it. Then the row runs from the fee name to its $0 price, plus
+ * what follows unless that is plainly the next row (`nextRow`). Null when the cell does not print
+ * the fee name. Text before the name is dropped only when a $0 follows it and the row does not
+ * open with a price. Pure.
  */
 function ownRow(cell: string, feeName: string | null | undefined): string | null {
   if (!feeName) return null;
-  const sentences = cell.split(/(?<=[.!?])\s+(?=[A-Z0-9$])/);
+  const sentences = cell.split(/(?<=[A-Za-z0-9)%][.!?])\s+(?=[A-Z0-9$])/);
   let group = cell;
   if (sentences.length > 1) {
     const tokens = words(feeName).map((entry) => entry.word).filter((word) => word.length >= 3 || /\d/.test(word));
@@ -245,13 +263,10 @@ function ownRow(cell: string, feeName: string | null | undefined): string | null
       const present = new Set(words(sentence).map((entry) => entry.word));
       return tokens.filter((token) => present.has(token)).length * 100 + (nameRun(sentence, feeName)?.length ?? 0);
     };
-    let best = 0;
-    sentences.forEach((sentence, index) => {
-      if (score(sentence) > score(sentences[best])) best = index;
-    });
-    let last = best;
-    while (last + 1 < sentences.length && CONDITION_SENTENCE.test(sentences[last + 1])) last += 1;
-    group = sentences.slice(best, last + 1).join(" ");
+    const scores = sentences.map(score);
+    const best = scores.indexOf(Math.max(...scores));
+    // The sentences after it stay: they may state its terms ("Free. Paper statements: $5.").
+    group = sentences.slice(best).join(" ");
     // A sentence that names the fee but prints no price ("Courtesy pay covers ... overdraw. No fee
     // for transactions $15 and under") leaves its price to the next one: read the cell whole.
     if (!/\$\s*\d/.test(group) && !ZERO_PRICE.test(group)) group = cell;
@@ -260,11 +275,11 @@ function ownRow(cell: string, feeName: string | null | undefined): string | null
   if (!run) return null;
   const rest = group.slice(run.end);
   const zero = ZERO_PRICE.exec(rest);
-  // No $0 after the name: the price may come first ("$2.00 Monthly Service Charge. Waived for ..."), so
-  // nothing before the name is dropped.
-  if (!zero) return group;
+  // No $0 after the name, or a price leads the row ("$5.00 Paper Statement Fee (FREE with
+  // e-Statements)"): nothing before the name is dropped.
+  if (!zero || /^\s*\$?\s*\d/.test(group)) return group;
   const zeroEnd = run.end + zero.index + zero[0].length;
-  return CONTINUES.test(group.slice(zeroEnd)) ? group.slice(run.start) : group.slice(run.start, zeroEnd);
+  return nextRow(group.slice(zeroEnd)) ? group.slice(run.start, zeroEnd) : group.slice(run.start);
 }
 
 /**
@@ -282,14 +297,24 @@ export function ownSegment(line: string, feeName: string | null | undefined): st
   // $10"), and dot-leader entries ("Garnish & Levy Fee ……… $25.00 per Item Research ……… $20.00").
   const cells = line.split(/\s\|\s|,\s+|[.…]{3,}\s*/).filter((cell) => cell.trim().length > 0);
   const tokens = nameTokens(feeName);
-  if (cells.length < 2) return bestPart(cells, tokens) < 0 ? "" : ownRow(line, feeName) ?? ownClause(line, tokens);
+  if (cells.length < 2) return bestPart(cells, tokens) < 0 ? "" : ownPart(line, feeName, tokens);
   const best = bestPart(cells, tokens);
   // No cell carries a word of the name: the line's prices cannot be this fee's.
   if (best < 0) return "";
   const next = cells[best + 1];
   const comparisonRow = isPriceCell(next) && isPriceCell(cells[best + 2]);
-  const own = ownRow(cells[best], feeName) ?? ownClause(cells[best], tokens);
+  const own = ownPart(cells[best], feeName, tokens);
   return isPriceCell(next) && !comparisonRow ? `${own} | ${next}` : own;
+}
+
+/**
+ * The fee's own part of one cell: its "Label: value" clause when the cell holds several labelled
+ * clauses ("Monthly Service Charge: FREE Minimum Balance: $1.00"), else its own row of a run-on
+ * cell (`ownRow`, #1571), else the cell.
+ */
+function ownPart(cell: string, feeName: string | null | undefined, tokens: string[]): string {
+  const clause = ownClause(cell, tokens);
+  return clause !== cell ? clause : ownRow(cell, feeName) ?? cell;
 }
 
 /** The "Label: value" clause of a cell that names this fee, when the cell holds several. */

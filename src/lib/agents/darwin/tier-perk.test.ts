@@ -46,6 +46,9 @@ describe("a $0 that is one account tier's perk (#1397)", () => {
     expect(tierPerkZero(0, "BankOn Checking Account Overdraft Fee", general, GENERAL_TEXT, "overdraft")).toBe(true);
     // A tier's own schedule still refuses its $0 monthly fee.
     expect(tierPerkZero(0, "Monthly Service Charge", EXAMPLE_PREMIUM, EXAMPLE_PREMIUM_TEXT, "monthly_maintenance")).toBe(true);
+    // A tier-named account's own $0 monthly fee on a general schedule is left to the conditional-$0
+    // check, which holds it when the line prices a waiver.
+    expect(tierPerkZero(0, "Private Banking Checking", general, GENERAL_TEXT, "monthly_maintenance")).toBe(false);
     // Without the category, the name test applies as before.
     expect(tierPerkZero(0, "Premier Checking", general, GENERAL_TEXT)).toBe(true);
   });
