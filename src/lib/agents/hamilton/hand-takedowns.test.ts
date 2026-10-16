@@ -155,7 +155,7 @@ describe("hand takedowns (James, Oct 16)", () => {
 
   it("archives the row, rejects its verified row, records feedback and one run event", async () => {
     const { db, writes } = fakeDb(LIVE);
-    const result = await applyHandTakedowns(db as never, { runId: 9, batchId: "agentic-run-9", dryRun: false });
+    const result = await applyHandTakedowns(db as never, { runId: 9, stepId: 90, batchId: "agentic-run-9", dryRun: false });
     expect(result.takenDown.map((item) => item.feePublishedId)).toEqual(IDS);
     expect(result.error).toBeNull();
     const takedowns = writes.filter((write) => write.text.includes("UPDATE published_fee_records"));
@@ -169,7 +169,11 @@ describe("hand takedowns (James, Oct 16)", () => {
     expect(takedowns[5].values).toEqual(expect.arrayContaining(["source_mismatch: #1370", 134129, 4815, "other_lending_fee", "Subordination Fee: Business", 10]));
     expect(writes.filter((write) => write.text.includes("UPDATE verified_fee_observations"))).toHaveLength(IDS.length);
     expect(writes.some((write) => write.text.includes("INSERT INTO pipeline_feedback"))).toBe(true);
-    expect(writes.filter((write) => write.text.includes("INSERT INTO agent_run_events"))).toHaveLength(1);
+    const events = writes.filter((write) => write.text.includes("INSERT INTO agent_run_events"));
+    expect(events).toHaveLength(1);
+    // The event names the publish step it ran in (run 7117's had none, #1605).
+    expect(events[0].text).toContain("(agent_run_id, step_id, event_type");
+    expect(events[0].values.slice(0, 2)).toEqual([9, 90]);
     expect(writes.some((write) => /\bDELETE\b/i.test(write.text))).toBe(false);
   });
 
