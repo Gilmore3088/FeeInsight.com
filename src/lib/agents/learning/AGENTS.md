@@ -36,6 +36,12 @@ version changes. Transient outcomes (`timeout`, `network_error`, `http_429`,
 `empty`, `parse_error`, `unsupported_format`, `too_large`, `wrong_document`,
 `no_candidates`) go into `do_not_retry`.
 
+A search whose fingerprint is the address it started *from*, not a document it judged
+(Magellan's second-document finder), passes `rememberInputFailure: false`: its outcome stays in
+the attempt log and its strategy stats, never on `do_not_retry`, and that strategy's older entries
+are dropped from the list on its next attempt (#1494). Its own recheck window in the attempt log
+stops a repeat.
+
 ## Where it is wired today (PR 1a)
 
 **Magellan fetch (`fetch.http@1`):**

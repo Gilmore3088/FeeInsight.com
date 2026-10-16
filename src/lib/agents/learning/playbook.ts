@@ -54,6 +54,14 @@ export interface AttemptFacts {
   costMicrousd: number;
   /** Set when the attempt learned the document's format (Rosetta). */
   format?: PlaybookFormat | null;
+  /**
+   * False keeps a permanent outcome off the do-not-retry list, and drops any entry this
+   * strategy left there before. For a search whose fingerprint is the address it started
+   * *from* (Magellan's second-document finder): its `wrong_document` / `no_candidates` means
+   * it found nothing better, not that the address is wrong. Its own recheck window in the
+   * attempt log already stops a repeat (#1494).
+   */
+  rememberInputFailure?: boolean;
 }
 
 export const DO_NOT_RETRY_LIMIT = 50;
@@ -145,8 +153,10 @@ export function applyAttempt(playbook: Playbook, attempt: AttemptFacts, now: Dat
     entry.strategy === attempt.strategy &&
     entry.version === attempt.version &&
     entry.fingerprint === attempt.fingerprint;
-  let doNotRetry = playbook.doNotRetry.filter((entry) => !sameInput(entry));
-  if (attempt.fingerprint && isPermanentForInput(attempt.outcome) && !ROW_LEVEL_STAGES.has(attempt.stage)) {
+  const searchedFrom = attempt.rememberInputFailure === false;
+  const sameStrategy = (entry: DoNotRetryEntry) => entry.stage === attempt.stage && entry.strategy === attempt.strategy;
+  let doNotRetry = playbook.doNotRetry.filter((entry) => !sameInput(entry) && !(searchedFrom && sameStrategy(entry)));
+  if (!searchedFrom && attempt.fingerprint && isPermanentForInput(attempt.outcome) && !ROW_LEVEL_STAGES.has(attempt.stage)) {
     doNotRetry = [
       ...doNotRetry,
       {
