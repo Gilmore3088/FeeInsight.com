@@ -157,10 +157,9 @@ describe("homepage (site v3 brief 06 §4.3)", () => {
     expect(at("<form")).toBeLessThan(at("data-district-map"));
     expect(at('aria-label="Hamilton"')).toBeGreaterThan(at("data-district-map"));
     expect(html).toMatch(/data-district-takeaway=""/);
-    // Hamilton: its own fee scorecard, not a chat mock.
+    // Hamilton: the question and answer, no separate fee list.
     expect(html).not.toContain("data-hamilton-snapshot");
-    expect(html).not.toContain("data-example-question");
-    expect(at("data-hamilton-scorecard")).toBeGreaterThan(at('aria-label="Hamilton"'));
+    expect(at("data-example-question")).toBeGreaterThan(at('aria-label="Hamilton"'));
     // One compact report preview after both, linked to the full report.
     expect(at("data-workflow-report")).toBeGreaterThan(at("data-workflow-compare"));
     expect(html.match(/data-workflow-report/g)).toHaveLength(1);
