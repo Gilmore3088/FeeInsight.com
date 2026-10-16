@@ -377,7 +377,8 @@ the detail.
     again on every step, since a later Knox read can fill its product. One event per run names every row.
     A fee a hand check found wrongly typed stays live through `ACCOUNT_TYPE_KEEP_LIVE`: one line per
     fee with its reason, keyed by institution, name, price and the stored document the hand check read,
-    so a re-read's new row stays live too (28834: inst 5800, doc 3633). The feedback sync skips these takedowns and the goal scorecard counts them as
+    so a re-read's new row stays live too (28834: inst 5800, doc 3633). The key is bound to that
+    document: a re-collected schedule (a new `source_documents` row) needs its own keep-live line. The feedback sync skips these takedowns and the goal scorecard counts them as
     housekeeping: the hold is publish policy, not a wrong read.
     A failed read or write writes nothing; the error is kept in `detail.account_type_hold.error`
     and as a `step.warning` run event.
