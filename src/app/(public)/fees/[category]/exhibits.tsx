@@ -220,23 +220,3 @@ export function RelatedRanges({ items }: { items: { category: string; label: str
     </ul>
   );
 }
-
-/**
- * Where a recorded clip will play: a small marked slot under the exhibit it will replace. It is a
- * picture, not a control, so nothing on the page pretends to play.
- */
-export function VideoSlot({ title }: { title: string }) {
-  return (
-    <figure className="flex items-center gap-3 rounded-lg border border-border bg-paper p-2 pr-4">
-      <span aria-hidden="true" className="flex h-12 w-20 shrink-0 items-center justify-center rounded-md bg-warm-ink-900">
-        <svg viewBox="0 0 12 12" className="ml-0.5 h-4 w-4 text-warm-ink-50">
-          <path d="M3 1.5v9l7.5-4.5z" fill="currentColor" />
-        </svg>
-      </span>
-      <figcaption className="min-w-0 text-[13px]">
-        <span className="block font-medium text-ink">{title}</span>
-        <span className="text-ink-muted">Video coming</span>
-      </figcaption>
-    </figure>
-  );
-}

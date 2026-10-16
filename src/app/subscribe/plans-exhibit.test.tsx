@@ -86,6 +86,7 @@ describe("/subscribe Hamilton window", () => {
 
   it("lists what every plan includes, seats from the workspace limit", () => {
     const html = renderToStaticMarkup(<PlanIncludes />);
+    expect(html).toContain("Full Bank Fee Index access");
     for (const label of ["Your institution", "Ask Hamilton", "Try a price", "Reports", "Regulatory Wire"]) {
       expect(html).toContain(label);
     }

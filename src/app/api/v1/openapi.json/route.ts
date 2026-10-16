@@ -15,7 +15,7 @@ const spec = {
     title: "Bank Fee Index API",
     version: "1.7.0",
     description:
-      "Programmatic access to bank and credit union fee benchmarking data across thousands of U.S. financial institutions. Covers a curated catalog of consumer and commercial fee categories, sourced from published fee schedules, FDIC, and NCUA registries. Access is by invitation: every request needs an API key, issued by hand.",
+      "Programmatic access to bank and credit union fee benchmarking data across thousands of U.S. financial institutions. Covers a curated catalog of consumer and commercial fee categories, sourced from published fee schedules, FDIC, and NCUA registries. Every request needs an API key. Fee Insight Pro subscribers on the $300 and $500 plans make theirs on their account page; partner keys are issued by hand.",
     contact: {
       name: SITE_NAME,
       email: "hello@bankfeeindex.com",

@@ -1,14 +1,12 @@
-import type { CSSProperties, ReactNode } from "react";
+import type { CSSProperties } from "react";
 import Link from "next/link";
-import { Check } from "lucide-react";
-import { ChatMessage } from "@/brand/components";
 import { PRODUCT_NAME, REPORT_PRICE_INLINE } from "@/lib/constants";
 import { formatCount } from "@/lib/public-stats";
 import { REPORT_REQUEST_HREF, SAMPLE_REPORT_HREF, TEXT_LINK, axisMax, money, type DistrictPoint, type HomeData, type SampleRow } from "./landing-shared";
 
 /**
- * The homepage's still exhibits (server rendered): the report page preview, the national
- * fee bars, the schedule-to-index diagram and Hamilton's charted answer. Each one's default
+ * The demo's still exhibits (server rendered, used by the plans page): the report page preview
+ * and the national fee bars. Each one's default
  * style is its finished state; classes starting fi-a- only play in an opening demo view.
  */
 
@@ -21,18 +19,6 @@ const POSITION_FILL: Record<SampleRow["position"], string> = {
   below_market: "var(--fi-viz-below)",
   free: "var(--fi-viz-below)",
 };
-
-/** "2026-10-08" as "Oct 8, 2026"; anything else is left out. */
-function readOnLabel(iso: string | null): string | null {
-  const match = iso?.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (!match) return null;
-  return new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]))).toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    timeZone: "UTC",
-  });
-}
 
 /** Without a live sample, My fees shows the nation: each fee's median as a bar, its middle half as a whisker. */
 export function NationalFeesExhibit({ data }: { data: HomeData }) {
@@ -186,113 +172,6 @@ export function ReportExhibit({ data }: { data: HomeData }) {
           </Link>
         </p>
       </div>
-    </div>
-  );
-}
-
-/** Wraps the dollar amounts in a quote in a highlight, as a marker would on the printed page. */
-function marked(quote: string): ReactNode[] {
-  return quote.split(/(\$\d[\d,]*(?:\.\d{2})?)/).map((part, i) =>
-    i % 2 === 1 ? (
-      <mark key={i} className="rounded-[3px] bg-brick-tint px-0.5 text-ink">
-        {part}
-      </mark>
-    ) : (
-      part
-    ),
-  );
-}
-
-/**
- * Every fee: the sample bank's own schedule beside the index. Each line of the schedule that
- * states a fee (passing the shared source check, `sourcedFees`) is drawn to the figure it
- * became, with the day it was read.
- */
-export function SourceDiagram({ data, limit = 4 }: { data: HomeData; limit?: number }) {
-  const sample = data.sample;
-  if (!sample || sample.fees.length === 0) return null;
-  const fees = sample.fees.slice(0, limit);
-  return (
-    <div className="p-4 sm:p-6">
-      <div className="grid gap-x-0 sm:grid-cols-[minmax(0,1.15fr)_3rem_minmax(0,1fr)]">
-        <p className="rounded-t-md border-x border-t border-border bg-paper px-4 pb-2 pt-3 text-[11px] font-semibold uppercase tracking-[0.12em] text-ink-muted">
-          {sample.institutionName} · fee schedule
-        </p>
-        <span className="hidden sm:block" />
-        <p className="hidden px-1 pb-2 pt-3 text-[11px] font-semibold uppercase tracking-[0.12em] text-ink-muted sm:block">{PRODUCT_NAME}</p>
-        {fees.map((fee, i) => {
-          const read = readOnLabel(fee.readOn);
-          const last = i === fees.length - 1;
-          return (
-            // Under ShowMore, only the first fee shows until the reader asks for the rest.
-            <div key={fee.key} className={i > 0 ? "contents group-data-[collapsed]/more:hidden" : "contents"}>
-              <p
-                className={`border-x border-border bg-paper px-4 py-2.5 font-mono text-[12px] leading-5 text-ink-soft ${
-                  last ? "max-sm:mb-0 sm:rounded-b-md sm:border-b sm:pb-4" : ""
-                } ${i === 0 ? "group-data-[collapsed]/more:sm:rounded-b-md group-data-[collapsed]/more:sm:border-b group-data-[collapsed]/more:sm:pb-4" : ""}`}
-              >
-                {marked(fee.quote)}
-              </p>
-              <span className="hidden items-center sm:flex" aria-hidden="true">
-                <svg viewBox="0 0 48 12" className="h-3 w-full">
-                  <path d="M2 6h40" stroke="var(--fi-brick)" strokeWidth="1.5" />
-                  <path d="M38 2l5 4-5 4" fill="none" stroke="var(--fi-brick)" strokeWidth="1.5" />
-                </svg>
-              </span>
-              <div
-                className={`mb-2 flex items-center justify-between gap-3 rounded-lg border border-border bg-surface-0 px-3 py-2 shadow-fi-1 max-sm:mx-2 max-sm:mt-1 sm:my-1 ${
-                  last ? "max-sm:mb-0" : ""
-                }`}
-              >
-                <span className="min-w-0">
-                  <span className="block truncate text-[13px] font-semibold text-ink">{fee.label}</span>
-                  <span className="flex items-center gap-1 text-[11px] text-ink-muted">
-                    <Check className="h-3 w-3 text-ink" aria-hidden="true" />
-                    Matches its schedule{read ? ` · read ${read}` : ""}
-                  </span>
-                </span>
-                <span className="shrink-0 font-mono text-[18px] font-semibold tabular-nums text-ink">{money(fee.amount)}</span>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-/**
- * One workspace: a question to Hamilton, answered with a chart and its source. The answer is
- * the national median of each core fee as a bar, with its middle half as a whisker.
- */
-export function AskChart({ data }: { data: HomeData }) {
-  const { lines, summary } = data;
-  if (lines.length < 2) return null;
-  const sorted = [...lines].sort((a, b) => b.row.median_amount - a.row.median_amount);
-  const hi = axisMax(Math.max(...sorted.map((line) => line.row.p75_amount)) * 1.1);
-  return (
-    <div className="space-y-4 p-4 sm:p-6">
-      <ChatMessage from="user" className="ml-auto max-w-[85%]">
-        What do the core fees cost nationally?
-      </ChatMessage>
-      <ChatMessage from="hamilton" source={`${PRODUCT_NAME} · ${summary.freshnessLabel}`} className="max-w-full">
-        <span className="block w-full sm:w-[24rem] sm:max-w-full" aria-label="National median of each core fee">
-          {sorted.map((line) => (
-            <span key={line.key} className="grid grid-cols-[minmax(0,8rem)_minmax(0,1fr)_3.75rem] items-center gap-2 py-1 text-[13px] sm:grid-cols-[minmax(0,9rem)_minmax(0,1fr)_4rem]">
-              <span className="truncate text-ink-soft">{line.label}</span>
-              <span className="relative block h-3.5" aria-hidden="true">
-                <span className="absolute inset-y-0 left-0 rounded-r-[4px]" style={{ width: pct(line.row.median_amount, hi), background: "var(--fi-viz-4)" }} />
-                <span
-                  className="absolute top-1/2 h-px bg-ink"
-                  style={{ left: pct(line.row.p25_amount, hi), width: `calc(${pct(line.row.p75_amount, hi)} - ${pct(line.row.p25_amount, hi)})` }}
-                />
-              </span>
-              <span className="text-right font-mono tabular-nums text-ink">{money(line.row.median_amount)}</span>
-            </span>
-          ))}
-          <span className="mt-1 block text-[11px] text-ink-muted">Bar: national median · Line: middle half of the market</span>
-        </span>
-      </ChatMessage>
     </div>
   );
 }

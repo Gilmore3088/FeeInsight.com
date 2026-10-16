@@ -12,6 +12,7 @@ import { ConfirmEmailButton } from "./confirm-email-button";
 import { LogoutButton } from "./logout-button";
 import { ManageBillingButton } from "./manage-billing-button";
 import { ProfileForm } from "./profile-form";
+import { ApiAccessCard, type ApiAccess } from "./api-access-card";
 import { SubscriptionStatusNotice } from "./subscription-status-notice";
 
 export type AccountPlan =
@@ -51,6 +52,8 @@ export interface AccountViewData {
   ownInstitution: OwnInstitution | null;
   /** Pro email switches; null hides them. */
   emails: Record<AccountEmailKind, boolean> | null;
+  /** API key controls for the person who pays for Pro; null hides the card. */
+  apiAccess?: ApiAccess | null;
   profile: {
     institution_name: string | null;
     institution_type: string | null;
@@ -477,6 +480,7 @@ export function AccountView({ data }: { data: AccountViewData }) {
         </div>
         <aside aria-label="Plan and settings" className="space-y-4">
           <PlanCard plan={data.plan} ended={ended} />
+          {data.apiAccess && <ApiAccessCard access={data.apiAccess} />}
           {data.emails && <EmailsCard emails={data.emails} />}
           <ProfileForm user={data.profile} />
           <SignInCard email={data.email} emailConfirmed={data.emailConfirmed} />

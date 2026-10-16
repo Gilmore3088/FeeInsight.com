@@ -1,7 +1,8 @@
 import { cachedPublicRead } from "./public-read-cache";
 import { getDataFreshness, getPublicStats, getStats } from "./core";
 import { getDistrictMetrics } from "./dashboard";
-import { getCheapestAndMostExpensive, getFeeCategoryDetail } from "./fees";
+import { getCheapestAndMostExpensive, getFeeCategoryDetail, getIndexRows } from "./fees";
+import { getFeeEvidence } from "./fee-evidence";
 import { getDistrictFeeIndexes, getPeerIndex, getStateFeeIndexes } from "./fee-index";
 import {
   getCitiesInState,
@@ -52,6 +53,12 @@ export const getFeeCategoryDetailCached = cachedPublicRead(
   getFeeCategoryDetail,
   (detail) => detail.fees.length === 0,
 );
+// The Bank Fee Index explorer's rows: numbers only, so the largest category stays well under 2 MB.
+export const getIndexRowsCached = cachedPublicRead("index-rows-v1", getIndexRows);
+/** Fee evidence for one page of listed rows, as entries (a Map does not survive the cache). */
+export const getFeeEvidenceEntriesCached = cachedPublicRead("fee-evidence-v1", async (ids: number[]) => [
+  ...(await getFeeEvidence(ids)).entries(),
+]);
 export const getCheapestAndMostExpensiveCached = cachedPublicRead(
   "cheapest-and-most-expensive",
   getCheapestAndMostExpensive,
