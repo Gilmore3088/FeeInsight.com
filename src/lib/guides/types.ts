@@ -46,7 +46,16 @@ export type GuideSource = {
 export type GuideBlock =
   | { type: "paragraph"; text: string; source?: GuideSource }
   | { type: "list"; ordered?: boolean; items: string[] }
-  | { type: "callout"; tone: "tip" | "warning" | "regulatory"; text: string; source?: GuideSource }
+  | {
+      type: "callout";
+      tone: "tip" | "warning" | "regulatory";
+      text: string;
+      source?: GuideSource;
+      /** A rule explained by its purpose first ("Your choice about debit card overdraft fees"). */
+      title?: string;
+      /** The rule's name, shown after the purpose ("Regulation E"). */
+      rule?: string;
+    }
   | {
       /** A benchmarking table row set — thresholds are tokens, never literals. */
       type: "benchmark";
@@ -61,7 +70,94 @@ export type GuideBlock =
       /** Below this many observations the block renders nothing rather than a broken frame. */
       minObservations?: number;
       caption?: string;
+    }
+  | {
+      /** The reader's starting questions, each linking to the section that answers it. */
+      type: "paths";
+      paths: { question: string; answer: string; href: string }[];
+    }
+  | {
+      /** One hypothetical payment, and what each way of handling it means for the reader. */
+      type: "outcomes";
+      setup: string;
+      outcomes: GuideOutcome[];
+    }
+  | {
+      /** Costs computed from live medians, so no single feature is declared most important. */
+      type: "scenarios";
+      intro?: string;
+      scenarios: CostScenario[];
+    }
+  | {
+      /** The live distribution of one category, placed where the guide discusses prices. */
+      type: "distribution";
+      category: string;
+      caption?: string;
+    }
+  | {
+      /** What a daily limit in the Index covers, counted live from the schedules' own wording. */
+      type: "cap_scope";
+      category: string;
+    }
+  | {
+      /** Policy features in plain language; a feature the Index does not track says so. */
+      type: "policy_table";
+      rows: PolicyFeature[];
+      /** When set, the reader can compare institutions' published lines on these features. */
+      compare?: { intro: string };
+    }
+  | {
+      /** Complaint themes as context, never a ranking. */
+      type: "complaints";
+      text: string;
+      source: GuideSource;
+    }
+  | {
+      /** Regulatory changes in practical terms, each with its current status. */
+      type: "updates";
+      items: RegulatoryUpdate[];
     };
+
+export type GuideOutcome = {
+  /** Drives the outcome's mark, not its wording. */
+  kind: "paid" | "returned" | "transfer" | "deposit_returned";
+  title: string;
+  /** What happens to the payment. */
+  payment: string;
+  /** What it may cost, with a token where a fee applies. */
+  cost: string;
+  /** What is left to deal with afterwards. */
+  after: string;
+}
+
+export type CostScenario = {
+  title: string;
+  /** Each charge is a category's live median, times how many times it applies. */
+  charges: { category: string; count: number }[];
+  /** A category whose median is applied as a daily limit on the total, when one is published. */
+  capCategory?: string;
+  note?: string;
+}
+
+export type PolicyFeature = {
+  feature: string;
+  question: string;
+  /** The Index category that answers it, or none when the Index does not track it yet. */
+  category?: string;
+}
+
+export type RegulatoryStatus = "proposed" | "effective" | "blocked" | "withdrawn" | "repealed";
+
+export type RegulatoryUpdate = {
+  title: string;
+  status: RegulatoryStatus;
+  /** When the status took hold, as a reader would say it ("May 9, 2025"). */
+  date: string;
+  changed: string;
+  who: string;
+  action: string;
+  source: GuideSource;
+}
 
 export interface GuideSection {
   /** Stable slug anchor. Never positional — section order may change. */

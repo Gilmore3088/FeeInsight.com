@@ -411,3 +411,73 @@ describe("related guides and category lookup", () => {
     expect(guidesForCategory("not_a_fee")).toEqual([]);
   });
 });
+
+// James's guides review (Oct 16 2026): the overdraft and NSF guides promise no outcome they
+// have not shown, define their figures, and treat missing data as unknown, never as "none".
+describe("overdraft and NSF guides state only what they can support", () => {
+  const rebuilt = CONSUMER_GUIDES.filter((g) => g.slug === "overdraft-fees" || g.slug === "nsf-fees");
+
+  it("covers both guides", () => {
+    expect(rebuilt.map((g) => g.slug).sort()).toEqual(["nsf-fees", "overdraft-fees"]);
+  });
+
+  it("makes no promised or absolute claims", () => {
+    const banned = [/at no cost/i, /prevents most/i, /biggest single/i, /most of the risk/i, /single highest/i, /matters more than/i, /usually enough/i, /charge nothing/i, /growing share/i, /—/];
+    for (const guide of rebuilt) {
+      for (const text of guideText(guide)) {
+        for (const pattern of banned) expect(text, `${guide.slug}: ${pattern}`).not.toMatch(pattern);
+      }
+    }
+  });
+
+  it("declares every category its scenarios and distribution use", () => {
+    for (const guide of rebuilt) {
+      const declared = new Set(guideCategories(guide));
+      for (const block of guide.sections.flatMap((s) => s.blocks)) {
+        if (block.type === "scenarios") {
+          for (const s of block.scenarios) {
+            for (const c of s.charges) expect(declared.has(c.category), `${guide.slug} -> ${c.category}`).toBe(true);
+            if (s.capCategory) expect(declared.has(s.capCategory)).toBe(true);
+          }
+        }
+        if (block.type === "distribution") expect(block.category).toBe(guide.primaryCategory);
+      }
+    }
+  });
+
+  it("orders the overdraft guide as help first, rules and sources last", () => {
+    const overdraft = getGuide("overdraft-fees")!;
+    expect(overdraft.sections.map((s) => s.id)).toEqual([
+      "start-here",
+      "what-happened",
+      "consent",
+      "avoid",
+      "what-it-costs",
+      "compare-your-bank",
+      "questions-to-ask",
+      "what-regulators-say",
+    ]);
+  });
+
+  it("marks untracked policy features as unknown rather than absent", () => {
+    const overdraft = getGuide("overdraft-fees")!;
+    const table = overdraft.sections.flatMap((s) => s.blocks).find((b) => b.type === "policy_table");
+    expect(table && table.type === "policy_table" && table.rows.filter((r) => !r.category).map((r) => r.feature)).toEqual([
+      "Grace period",
+      "Small-shortfall exemption",
+      "Small-payment exemption",
+    ]);
+  });
+
+  it("states every regulatory update's status and source", () => {
+    for (const guide of rebuilt) {
+      for (const block of guide.sections.flatMap((s) => s.blocks)) {
+        if (block.type !== "updates") continue;
+        for (const u of block.items) {
+          expect(["proposed", "effective", "blocked", "withdrawn", "repealed"]).toContain(u.status);
+          expect(u.source.url).toMatch(/^https:\/\//);
+        }
+      }
+    }
+  });
+});

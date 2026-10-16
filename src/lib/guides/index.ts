@@ -20,6 +20,11 @@ export type {
   GuideAccessTier,
   GuideStat,
   GuideStatus,
+  GuideOutcome,
+  CostScenario,
+  PolicyFeature,
+  RegulatoryStatus,
+  RegulatoryUpdate,
 } from "./types";
 export { guideCategories, REQUIRED_CONSUMER_SECTIONS } from "./types";
 export {
@@ -91,12 +96,27 @@ export function blockText(block: GuideBlock): string[] {
       return [block.text];
     case "list":
       return block.items;
-    case "callout":
-      return [block.text];
     case "benchmark":
       return block.rows.flatMap((r) => [r.condition, r.meaning]);
     case "comparison":
+    case "distribution":
       return block.caption ? [block.caption] : [];
+    case "callout":
+      return [block.title, block.text].filter((t): t is string => Boolean(t));
+    case "paths":
+      return block.paths.flatMap((p) => [p.question, p.answer]);
+    case "outcomes":
+      return [block.setup, ...block.outcomes.flatMap((o) => [o.title, o.payment, o.cost, o.after])];
+    case "scenarios":
+      return [block.intro, ...block.scenarios.flatMap((s) => [s.title, s.note])].filter((t): t is string => Boolean(t));
+    case "cap_scope":
+      return [];
+    case "policy_table":
+      return [...block.rows.flatMap((r) => [r.feature, r.question]), ...(block.compare ? [block.compare.intro] : [])];
+    case "complaints":
+      return [block.text];
+    case "updates":
+      return block.items.flatMap((u) => [u.title, u.changed, u.who, u.action]);
   }
 }
 

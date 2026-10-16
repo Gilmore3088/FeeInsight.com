@@ -26,83 +26,167 @@ const base = {
 
 export const CONSUMER_GUIDES: Guide[] = [
   // ── 1 ────────────────────────────────────────────────────────────────────
+  // Rebuilt Oct 16 2026 (James's guides review): a practical guide to overdraft decisions,
+  // in his order: immediate help, OD/NSF, consent, prevention, account policies, questions,
+  // rules and sources. No outcome is promised; every price is a live token or a computed scenario.
   {
     ...base,
     slug: "overdraft-fees",
     title: "Overdraft Fees",
-    seoTitle: "Overdraft Fees Explained: What Banks Charge and How to Avoid Them",
+    seoTitle: "Overdraft Fees Explained: What Happened, How to Avoid the Next One, and How to Compare Accounts",
     description:
-      "What an overdraft fee costs at US banks and credit unions, why the daily cap matters more than the fee itself, and the specific steps that stop you paying it.",
+      "What to do about an overdraft charge, how to avoid the next one, and how to compare account policies, with fees from published schedules.",
+    reviewedAt: "2026-10-16",
     primaryCategory: "overdraft",
-    relatedCategories: ["od_daily_cap", "od_protection_transfer"],
+    relatedCategories: ["nsf", "od_daily_cap", "od_protection_transfer", "continuous_od"],
     family: "Overdraft & NSF",
     featured: true,
     relatedSlugs: ["nsf-fees", "monthly-maintenance-fees", "digital-banking-fees"],
     sections: [
       {
-        id: "what-it-is",
-        heading: "What is an overdraft fee?",
+        id: "start-here",
+        heading: "Start with your question",
         blocks: [
           {
-            type: "paragraph",
-            text: "An overdraft fee is what your bank charges when it lets a payment go through even though your account doesn't have enough money to cover it.",
+            type: "paths",
+            paths: [
+              {
+                question: "I was charged. What happened?",
+                answer: "Tell overdraft from NSF, check the payment type and your consent, then ask for a refund.",
+                href: "#what-happened",
+              },
+              {
+                question: "How do I avoid another charge?",
+                answer: "Your debit card choice, alerts, linked accounts and timing, and their limits.",
+                href: "#avoid",
+              },
+              {
+                question: "Is there a better account for me?",
+                answer: "Compare published policies line by line, including who can join and monthly cost.",
+                href: "#compare-your-bank",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        id: "what-happened",
+        heading: "I was charged. What happened?",
+        blocks: [
+          {
+            type: "outcomes",
+            setup: "One payment, three outcomes. You have $40 in checking and a $60 bill arrives.",
+            outcomes: [
+              {
+                kind: "paid",
+                title: "Overdraft",
+                payment: "Your institution pays the $60 and your balance goes to minus $20.",
+                cost: "An overdraft fee may apply. The median we track is {{overdraft.median}}.",
+                after: "You owe the $20 plus any fee. Some institutions add a charge if you stay negative.",
+              },
+              {
+                kind: "returned",
+                title: "Returned unpaid (NSF)",
+                payment: "Your institution declines to pay and sends the payment back.",
+                cost: "An NSF fee may apply, depending on its policy. The median is {{nsf.median}}.",
+                after: "The bill is still unpaid, and the biller may charge its own late or returned-payment fee.",
+              },
+              {
+                kind: "transfer",
+                title: "Linked account transfer",
+                payment: "Money moves from a linked savings account, credit line or card to cover the $60.",
+                cost: "A transfer fee may apply. The median is {{od_protection_transfer.median}}.",
+                after: "It works only when the linked account holds enough, and it is a separate service with its own terms.",
+              },
+            ],
+          },
+          {
+            type: "list",
+            ordered: true,
+            items: [
+              "Find the fee on your statement. It will say overdraft, paid item, NSF or returned item. The statement also totals these fees for the period and the year to date.",
+              "Note what kind of payment caused it. Debit card purchases and ATM withdrawals follow a consent rule; checks, ACH payments and recurring card payments do not.",
+              "Find the policy. The fee schedule or account agreement names the fee, any daily limit and any exemption for small amounts.",
+              "Ask which payment caused the fee, how that day's payments were ordered, and whether the fee can be refunded. Refunds are case by case.",
+            ],
+          },
+        ],
+      },
+      {
+        id: "consent",
+        heading: "Your consent choices",
+        blocks: [
+          {
+            type: "callout",
+            tone: "regulatory",
+            title: "Your choice about debit card overdraft fees",
+            rule: "Regulation E",
+            text: "Your institution cannot charge an overdraft fee for paying an ATM withdrawal or a one-time debit card purchase unless you opted in. Without your opt-in it may decline the transaction or pay it without a fee. Opting in allows the fee; it does not guarantee a payment will be made.",
+            source: { label: "12 CFR 1005.17", url: "https://www.ecfr.gov/current/title-12/chapter-X/part-1005/section-1005.17" },
           },
           {
             type: "paragraph",
-            text: "Say you have $40 in checking and a $60 insurance payment hits. Your bank has a choice: pay it and charge you a fee, or decline it and charge you a different fee. If it pays, that's an overdraft. You now owe the $20 shortfall plus the fee.",
+            text: "Checks, ACH payments such as online bill pay, and recurring debit card payments are outside that rule. Whatever you chose for your card, your institution may pay these and charge an overdraft fee, or return them and charge an NSF fee, as its policy allows.",
           },
+        ],
+      },
+      {
+        id: "avoid",
+        heading: "How to avoid another charge",
+        blocks: [
           {
-            type: "paragraph",
-            text: "The fee is flat. It does not scale with how far below zero you went. Overdrawing by $3 and overdrawing by $300 usually cost you exactly the same amount.",
+            type: "list",
+            items: [
+              "Opt out of debit card overdraft coverage. Your institution then cannot charge an overdraft fee on card purchases and ATM withdrawals; it may decline them instead. The tradeoff is a declined card at the register.",
+              "Set a low-balance alert above your largest regular payment. It helps only if you can move money before the payment posts.",
+              "Link a savings account or credit line. The median transfer fee is {{od_protection_transfer.median}} against an overdraft median of {{overdraft.median}}, but a transfer covers you only when the linked account holds enough.",
+              "Time payments after your deposit posts. This helps when income arrives on a predictable day. It does not help when a deposit is held or the amount varies.",
+              "Ask about a grace period or a small-shortfall exemption. Some institutions skip the fee if you restore the balance within a day or the shortfall is small. We do not track these yet.",
+            ],
           },
         ],
       },
       {
         id: "what-it-costs",
-        heading: "How much does it cost?",
+        heading: "What institutions charge",
         blocks: [
           {
             type: "paragraph",
-            text: "Across the {{overdraft.institutions}} banks and credit unions we track, the national median overdraft fee is {{overdraft.median}}. Most institutions fall between {{overdraft.p25}} and {{overdraft.p75}}. The highest we have recorded is {{overdraft.max}}, and {{overdraft.zero_count}} institutions charge nothing at all.",
+            text: "Across the {{overdraft.institutions}} banks and credit unions whose schedules we hold, the median overdraft fee is {{overdraft.median}}, and the middle half charge {{overdraft.p25}} to {{overdraft.p75}}. The fee is usually flat: overdrawing by $3 or by $300 costs the same.",
+          },
+          {
+            type: "distribution",
+            category: "overdraft",
+            caption: "Overdraft fee, one value per institution",
           },
           {
             type: "paragraph",
-            text: "Two other numbers matter more than the headline fee, and almost nobody checks them.",
+            text: "{{overdraft.zero_count}} institutions list a $0 overdraft fee on the schedule we hold. That can mean a no-fee service, no overdraft service, or $0 on one account only. A $0 fee is not a promise to pay.",
           },
           {
-            type: "list",
-            items: [
-              "The daily cap is the most your bank will charge in a single day. The median cap is {{od_daily_cap.median}}. Without a cap, three overdrafts in one afternoon cost you three full fees. With one, you stop at the ceiling.",
-              "The overdraft protection transfer fee is what your bank charges to pull money from your own savings instead of charging you an overdraft. The median is {{od_protection_transfer.median}}, against an overdraft median of {{overdraft.median}}.",
+            type: "scenarios",
+            intro: "Your cost depends on the fee, how often it applies, any daily limit and any charge for staying negative. At the national medians:",
+            scenarios: [
+              { title: "One overdraft, repaid the next day", charges: [{ category: "overdraft", count: 1 }] },
+              { title: "Four payments overdraw on the same day", charges: [{ category: "overdraft", count: 4 }], capCategory: "od_daily_cap" },
+              { title: "Six payments overdraw on the same day", charges: [{ category: "overdraft", count: 6 }], capCategory: "od_daily_cap" },
+              {
+                title: "One overdraft, still negative a week later",
+                charges: [{ category: "overdraft", count: 1 }, { category: "continuous_od", count: 1 }],
+                note: "Some institutions repeat the extended charge daily.",
+              },
+              {
+                title: "A linked savings transfer covers it",
+                charges: [{ category: "od_protection_transfer", count: 1 }],
+                note: "Only when the savings account holds enough.",
+              },
             ],
           },
           {
-            type: "callout",
-            tone: "tip",
-            text: "Linking a savings account is usually the single highest-return thing you can do about overdraft fees, and it takes about five minutes at most banks.",
-          },
-          {
             type: "paragraph",
-            text: "It is worth doing the annual arithmetic once. Three overdrafts a year at the national median is a meaningful sum for something that is, in most cases, a timing problem rather than a spending one. People who overdraft at all tend to do it several times a year, so the realistic cost is rarely a single fee.",
+            text: "The median daily limit, {{od_daily_cap.median}}, comes from the {{od_daily_cap.institutions}} institutions that publish one in dollars.",
           },
-          {
-            type: "paragraph",
-            text: "There is one more charge to look for. Some institutions add a continuous or extended overdraft fee if your balance stays negative for several days — a second charge layered on top of the first, sometimes repeating daily until the account is positive again. If your fee schedule lists one, bringing the balance back up quickly matters more than the original fee suggests.",
-          },
-        ],
-      },
-      {
-        id: "who-charges-what",
-        heading: "Who charges the most, and who charges the least?",
-        blocks: [
-          {
-            type: "paragraph",
-            text: "The chart below compares overdraft fees at banks and credit unions, from the published fee schedules in our index. Whether a bank caps the number of overdraft fees it charges in a day is stated in its fee schedule.",
-          },
-          {
-            type: "paragraph",
-            text: "Online-only banks are the outliers. Several have removed the overdraft fee entirely, usually paired with a small no-fee cushion: they cover a small shortfall and simply ask you to bring the balance back up.",
-          },
+          { type: "cap_scope", category: "od_daily_cap" },
           {
             type: "comparison",
             category: "overdraft",
@@ -112,73 +196,107 @@ export const CONSUMER_GUIDES: Guide[] = [
         ],
       },
       {
-        id: "how-to-avoid",
-        heading: "How to avoid or reduce this fee",
+        id: "compare-your-bank",
+        heading: "Is there a better account for me?",
+        blocks: [
+          {
+            type: "paragraph",
+            text: "Check these features before you open or keep an account. Where we do not track a feature, we say so. A missing answer is not the same as no protection.",
+          },
+          {
+            type: "policy_table",
+            rows: [
+              { feature: "Overdraft fee", question: "What do I pay when the institution covers a shortfall?", category: "overdraft" },
+              { feature: "NSF fee", question: "What happens if it returns my payment unpaid?", category: "nsf" },
+              { feature: "Daily limit", question: "How many fees, or how much, can I be charged in one day?", category: "od_daily_cap" },
+              { feature: "Grace period", question: "Can I restore my balance before a fee applies?" },
+              { feature: "Small-shortfall exemption", question: "How far below zero can I go before a fee applies?" },
+              { feature: "Small-payment exemption", question: "Are small payments exempt from the fee?" },
+              { feature: "Extended overdraft charge", question: "Is there another charge if I stay negative?", category: "continuous_od" },
+              { feature: "Linked account transfer", question: "What does a transfer from my savings cost?", category: "od_protection_transfer" },
+              { feature: "Monthly maintenance", question: "What will the account cost even without overdrafts?", category: "monthly_maintenance" },
+            ],
+            compare: {
+              intro: "Compare up to three institutions, line by line: the account each line names, its conditions, the source and the date we read it. Not charging a fee is not a promise to pay.",
+            },
+          },
+        ],
+      },
+      {
+        id: "questions-to-ask",
+        heading: "Questions to ask your institution",
         blocks: [
           {
             type: "list",
-            ordered: true,
             items: [
-              "Link a savings account for overdraft protection. The transfer costs about {{od_protection_transfer.median}} instead of {{overdraft.median}}. This is the biggest single saving available to most people.",
-              "Opt out of debit card overdraft coverage. Federal rules mean your bank cannot charge you an overdraft fee on everyday debit card purchases or ATM withdrawals unless you opted in. If you opted in years ago and forgot, you can opt back out today. Your card is simply declined instead, at no cost.",
-              "Turn on low-balance alerts. Most overdrafts are timing accidents, not spending problems. A text at $50 prevents most of them.",
-              "Move your bills to just after payday. Two or three days of daylight between deposit and debit removes most of the risk.",
-              "Ask for a refund. If the fee was your first, or came from a timing mix-up, call your bank and ask whether it will refund it.",
-              "Compare your bank with others. {{overdraft.zero_count}} institutions in our index charge nothing for an overdraft.",
+              "Do you charge for paying an overdraft, for returning a payment, or both?",
+              "Is there a daily limit on these fees, in dollars or in number of fees?",
+              "Is there a grace period to restore my balance before a fee applies?",
+              "Do you skip the fee for a small shortfall or a small payment? How small?",
+              "Is there a charge if my balance stays negative, and does it repeat?",
+              "In what order do you process the day's payments?",
+              "What does this account cost each month, and how can I avoid that fee?",
             ],
           },
         ],
       },
       {
         id: "what-regulators-say",
-        heading: "What regulators say",
+        heading: "Rules and recent changes",
         blocks: [
-          {
-            type: "paragraph",
-            text: "Two federal rules give you leverage here, and both are worth knowing by name.",
-          },
           {
             type: "callout",
             tone: "regulatory",
-            text: "Regulation E requires your bank to get your explicit permission — opting in — before it can charge overdraft fees on one-time debit card purchases and ATM withdrawals. If you never opted in, those transactions should be declined at no cost.",
-            source: { label: "12 CFR 1005.17", url: "https://www.ecfr.gov/current/title-12/chapter-X/part-1005/section-1005.17" },
-          },
-          {
-            type: "paragraph",
-            text: "Checks and automatic bill payments are not covered by that rule. Banks may pay those and charge you regardless of whether you opted in.",
-          },
-          {
-            type: "paragraph",
-            text: "Regulation DD, the Truth in Savings rule, requires your bank to disclose its fees in writing and to show total overdraft fees on your periodic statements, both for the statement period and year to date. That year-to-date figure is worth finding.",
+            title: "Your right to see what overdrafts cost you",
+            rule: "Regulation DD",
+            text: "Banks must show total overdraft fees and total returned item fees on each periodic statement, for the period and the year to date.",
             source: { label: "12 CFR 1030.11", url: "https://www.ecfr.gov/current/title-12/chapter-X/part-1030/section-1030.11" },
           },
           {
             type: "paragraph",
-            text: "The Consumer Financial Protection Bureau accepts complaints about overdraft practices at consumerfinance.gov/complaint.",
-          },
-        ],
-      },
-      {
-        id: "compare-your-bank",
-        heading: "Compare your own bank",
-        blocks: [
-          {
-            type: "paragraph",
-            text: "Pull up your bank's fee schedule — usually called a Schedule of Fees or a Truth in Savings Disclosure — and find the overdraft line.",
+            text: "Credit unions follow the same statement requirement under the NCUA's Truth in Savings rule, Part 707.",
+            source: { label: "12 CFR 707.11", url: "https://www.ecfr.gov/current/title-12/chapter-VII/subchapter-A/part-707/section-707.11" },
           },
           {
-            type: "benchmark",
-            category: "overdraft",
-            rows: [
-              { condition: "{{overdraft.p25}} or less", meaning: "In the lowest-priced quarter" },
-              { condition: "Around {{overdraft.median}}", meaning: "Right at the national median" },
-              { condition: "More than {{overdraft.p75}}", meaning: "In the highest-priced quarter" },
-              { condition: "More than {{overdraft.p75}}, no daily cap", meaning: "In the highest-priced quarter, with no daily limit" },
+            type: "updates",
+            items: [
+              {
+                title: "Large-institution overdraft rule",
+                status: "repealed",
+                date: "May 9, 2025",
+                changed: "A 2024 CFPB rule would have limited overdraft fees at institutions over $10 billion in assets. Congress disapproved it; it has no force or effect.",
+                who: "Customers of banks and credit unions with more than $10 billion in assets.",
+                action: "Go by your institution's current fee schedule, not news of the rule.",
+                source: { label: "S.J.Res. 18, Public Law 119-10", url: "https://www.congress.gov/bill/119th-congress/senate-joint-resolution/18" },
+              },
+              {
+                title: "NSF fees on instantly declined payments",
+                status: "withdrawn",
+                date: "January 2025",
+                changed: "A 2024 CFPB proposal would have barred NSF fees on card, ATM and some person-to-person payments declined at the moment of payment. The CFPB withdrew it.",
+                who: "Anyone whose card or transfer is declined as they pay.",
+                action: "Ask whether your institution charges for a declined transaction.",
+                source: { label: "Federal Register, Jan 14, 2025", url: "https://www.govinfo.gov/content/pkg/FR-2025-01-14/html/2024-31385.htm" },
+              },
+              {
+                title: "Consent for debit card overdraft fees",
+                status: "effective",
+                date: "In effect since 2010",
+                changed: "Your opt-in is needed before an overdraft fee on ATM and one-time debit card transactions.",
+                who: "Checking customers.",
+                action: "You can change your choice at any time.",
+                source: { label: "12 CFR 1005.17", url: "https://www.ecfr.gov/current/title-12/chapter-X/part-1005/section-1005.17" },
+              },
             ],
           },
           {
+            type: "complaints",
+            text: "Complaints consumers sent to the CFPB about institutions we track. Context, not a ranking.",
+            source: { label: "CFPB Consumer Complaint Database", url: "https://www.consumerfinance.gov/data-research/consumer-complaints/" },
+          },
+          {
             type: "paragraph",
-            text: "Then check two more lines: the daily cap and the overdraft protection transfer fee. A bank with a middling overdraft fee, a tight daily cap and cheap savings transfers will cost you far less in practice than one with a low headline fee and neither.",
+            text: "To dispute a fee, ask your institution first, then the CFPB at consumerfinance.gov/complaint.",
           },
         ],
       },
@@ -186,16 +304,19 @@ export const CONSUMER_GUIDES: Guide[] = [
   },
 
   // ── 2 ────────────────────────────────────────────────────────────────────
+  // Accuracy pass Oct 16 2026 (James's guides review): no promised outcomes, the daily limit
+  // defined with its count, $0 fees qualified to the account, rules by purpose first.
   {
     ...base,
     slug: "nsf-fees",
     title: "NSF Fees",
     seoTitle: "NSF Fees Explained: Non-Sufficient Funds Charges at US Banks",
     description:
-      "What a non-sufficient funds fee is, how it differs from an overdraft fee, why many banks have dropped it, and how to stop a bounced payment costing you twice.",
+      "What a non-sufficient funds fee is, how it differs from an overdraft fee, and what to check and ask so a returned payment does not cost you twice.",
+    reviewedAt: "2026-10-16",
     primaryCategory: "nsf",
     // `overdraft` is declared because the guide's central comparison cites its median.
-    // A guide may only cite fees it declares — see guides.test.ts.
+    // A guide may only cite fees it declares; see guides.test.ts.
     relatedCategories: ["od_daily_cap", "deposited_item_return", "overdraft"],
     family: "Overdraft & NSF",
     featured: true,
@@ -207,16 +328,16 @@ export const CONSUMER_GUIDES: Guide[] = [
         blocks: [
           {
             type: "paragraph",
-            text: "A non-sufficient funds fee — an NSF fee — is charged when a payment is declined because your account did not have the money to cover it. The check bounces. The automatic payment fails. And your bank charges you anyway.",
+            text: "A non-sufficient funds fee, or NSF fee, may be charged when your institution returns a payment unpaid because your account did not have the money to cover it. The check bounces or the automatic payment fails, and depending on its policy, your institution may still charge you.",
           },
           {
             type: "paragraph",
-            text: "That last part surprises people. With an overdraft, the bank pays the transaction and charges you a fee, so you at least got something for the money. With an NSF, the bank declines the transaction and still charges you. You pay for a payment that did not happen.",
+            text: "That surprises people. With an overdraft, the institution pays the transaction and charges a fee, so the payment at least went through. With an NSF fee, the payment fails and you can still be charged.",
           },
           {
             type: "callout",
             tone: "warning",
-            text: "The company you were paying may charge you a returned payment fee of their own. One bounced payment can cost you twice.",
+            text: "The company you were paying may charge a returned payment or late fee of its own, so one returned payment can cost you twice.",
           },
         ],
       },
@@ -226,41 +347,62 @@ export const CONSUMER_GUIDES: Guide[] = [
         blocks: [
           {
             type: "paragraph",
-            text: "The national median NSF fee is {{nsf.median}}, across {{nsf.institutions}} institutions. Most fall between {{nsf.p25}} and {{nsf.p75}}, with a recorded high of {{nsf.max}}.",
+            text: "The national median NSF fee is {{nsf.median}}, across {{nsf.institutions}} institutions whose schedules we hold. The middle half charge {{nsf.p25}} to {{nsf.p75}}, and the highest we have recorded is {{nsf.max}}.",
+          },
+          { type: "distribution", category: "nsf", caption: "NSF fee, one value per institution" },
+          {
+            type: "paragraph",
+            text: "{{nsf.zero_count}} institutions list a $0 NSF fee on the schedule we hold. A $0 line can apply to one account only, so check the account you hold or plan to open.",
           },
           {
             type: "paragraph",
-            text: "The most important figure on this page is {{nsf.zero_count}} — the number of institutions charging nothing. NSF fees have been disappearing faster than almost any other consumer bank fee. A large share of the industry dropped them outright rather than defend them, which means paying one is increasingly a choice you can undo by moving.",
+            text: "The median daily limit, {{od_daily_cap.median}}, comes from the {{od_daily_cap.institutions}} institutions that publish one in dollars.",
           },
+          { type: "cap_scope", category: "od_daily_cap" },
           {
             type: "paragraph",
-            text: "Where a bank caps its overdraft and NSF charges per day, the median cap is {{od_daily_cap.median}}. Caps matter more for NSF than for overdraft, because a single failed payment is often retried by the merchant two or three times, and an uncapped bank can charge you on every attempt.",
+            text: "A returned payment can be presented again, and each presentment may draw another fee where the policy allows it. Ask whether yours charges for a re-presented item.",
           },
         ],
       },
       {
         id: "nsf-vs-overdraft",
-        heading: "NSF versus overdraft: the difference that costs you",
+        heading: "NSF versus overdraft",
         blocks: [
           {
-            type: "list",
-            items: [
-              "Overdraft: the bank pays it, you get charged, the payment goes through. Median {{overdraft.median}}.",
-              "NSF: the bank refuses it, you still get charged, the payment fails. Median {{nsf.median}}.",
-              "Returned deposited item: someone paid you with a check that bounced. Your bank claws the money back and charges you a median {{deposited_item_return.median}} — for a payment failure that was not yours.",
+            type: "outcomes",
+            setup: "One payment, three outcomes. You have $40 in checking and a $60 bill arrives.",
+            outcomes: [
+              {
+                kind: "paid",
+                title: "Overdraft",
+                payment: "Your institution pays the $60 and your balance goes to minus $20.",
+                cost: "An overdraft fee may apply. The median is {{overdraft.median}}.",
+                after: "You owe the $20 plus any fee.",
+              },
+              {
+                kind: "returned",
+                title: "Returned unpaid (NSF)",
+                payment: "Your institution declines to pay and sends the payment back.",
+                cost: "An NSF fee may apply, depending on its policy. The median is {{nsf.median}}.",
+                after: "The bill is still unpaid, and the biller may add its own fee.",
+              },
+              {
+                kind: "deposit_returned",
+                title: "Someone else's check to you bounces",
+                payment: "A check you deposited is returned, and your institution takes the money back.",
+                cost: "A returned deposited item fee may apply. The median is {{deposited_item_return.median}}.",
+                after: "You need to collect the money from the person who paid you.",
+              },
             ],
           },
           {
             type: "paragraph",
-            text: "The two fees are often the same amount, which is why the distinction gets lost. It matters because the fixes are different. Overdraft is solved by linking savings. NSF is solved by timing and alerts, because there is no balance to pull from at the moment it triggers.",
+            text: "The two fees are often the same amount, which is why the difference gets lost. It matters because an NSF fee leaves the bill unpaid: the payment still has to be made, often with a late fee from the other side. That is how a returned payment can end up costing more than an overdraft of the same amount.",
           },
           {
             type: "paragraph",
-            text: "There is a second reason the difference matters. An NSF fee leaves the original problem unsolved. The rent is still unpaid, the insurance has still lapsed, and the payment still has to be made — usually with a late fee attached from the other side. An overdraft at least completes the transaction. This is why an NSF fee frequently ends up costing more in total than an overdraft fee of the identical amount.",
-          },
-          {
-            type: "paragraph",
-            text: "Which one you get is often not your choice. Whether a bank pays or declines a given transaction depends on its own discretionary rules, your account history and the transaction type. Two people with the same balance and the same payment can get different outcomes, and neither is told why in advance.",
+            text: "Which one you get is often not your choice. Whether an institution pays or returns a payment depends on its policy, your account history and the payment type, and you are usually not told in advance.",
           },
         ],
       },
@@ -270,14 +412,14 @@ export const CONSUMER_GUIDES: Guide[] = [
         blocks: [
           {
             type: "list",
-            ordered: true,
             items: [
-              "Check whether your bank still charges it. Many no longer do. This one question answers the whole problem for a growing share of customers.",
-              "Turn on low-balance alerts and act on them. NSF is a timing failure, and a warning 48 hours out is usually enough.",
-              "Know your bank's cutoff time. A deposit made after the cutoff does not count toward today's balance, which is how a well-funded account still bounces a payment.",
-              "Ask the merchant to re-present rather than re-trying automatically. Each automatic retry can trigger another fee if your bank has no daily cap.",
-              "Ask for a refund on the first one. As with overdraft, banks frequently waive a first occurrence.",
-              "Move if it recurs. {{nsf.zero_count}} institutions in our index charge no NSF fee at all.",
+              "Check whether your institution charges an NSF fee, and on which accounts.",
+              "Ask whether returned payments count toward a daily limit, and how many fees it allows in one day.",
+              "Set a low-balance alert above your largest regular payment. It helps only if you can move money before the payment posts.",
+              "Know the deposit cutoff time. A deposit made after it does not count toward today's balance, which is how a funded account can still return a payment.",
+              "Link a savings account or credit line, if your institution offers it. A transfer covers you only when the linked account holds enough, and it may carry its own fee.",
+              "Ask for a refund. Refunds are the institution's decision, case by case.",
+              "Compare accounts if it recurs. The overdraft guide compares institutions' policies line by line.",
             ],
           },
         ],
@@ -287,22 +429,43 @@ export const CONSUMER_GUIDES: Guide[] = [
         heading: "What regulators say",
         blocks: [
           {
-            type: "paragraph",
-            text: "NSF fees sit in a different regulatory position from overdraft fees, and the difference works in your favour less than you would hope.",
+            type: "callout",
+            tone: "regulatory",
+            title: "Your choice about debit card overdraft fees",
+            rule: "Regulation E",
+            text: "The opt-in rule covers overdraft fees on ATM and one-time debit card transactions. It does not cover NSF fees on checks and automatic payments, which an institution's policy may allow without any opt-in.",
+            source: { label: "12 CFR 1005.17", url: "https://www.ecfr.gov/current/title-12/chapter-X/part-1005/section-1005.17" },
           },
           {
             type: "callout",
             tone: "regulatory",
-            text: "Regulation E's opt-in requirement covers overdraft fees on one-time debit card and ATM transactions. It does not extend to NSF fees on checks and automatic payments, which is why those can be charged without you ever having agreed to anything.",
-          },
-          {
-            type: "paragraph",
-            text: "Regulation DD requires your bank to disclose the fee in writing before you open the account, and to total both overdraft and returned-item fees on your periodic statement for the period and year to date.",
+            title: "Your right to see what returned items cost you",
+            rule: "Regulation DD",
+            text: "Banks must disclose the fee in writing before you open the account, and total overdraft and returned item fees on each periodic statement, for the period and the year to date.",
             source: { label: "12 CFR 1030.11", url: "https://www.ecfr.gov/current/title-12/chapter-X/part-1030/section-1030.11" },
           },
           {
             type: "paragraph",
-            text: "Federal regulators have applied sustained supervisory pressure to fees charged on repeatedly re-presented payments — the same transaction bouncing several times and generating several fees. If that has happened to you, it is worth disputing directly and, if that fails, complaining to the Consumer Financial Protection Bureau.",
+            text: "Credit unions follow the same requirements under the NCUA's Truth in Savings rule, Part 707.",
+            source: { label: "12 CFR 707.11", url: "https://www.ecfr.gov/current/title-12/chapter-VII/subchapter-A/part-707/section-707.11" },
+          },
+          {
+            type: "updates",
+            items: [
+              {
+                title: "NSF fees on instantly declined payments",
+                status: "withdrawn",
+                date: "January 2025",
+                changed: "A 2024 CFPB proposal would have barred NSF fees on card, ATM and some person-to-person payments declined at the moment of payment. The CFPB withdrew it.",
+                who: "Anyone whose card or transfer is declined as they pay.",
+                action: "Ask whether your institution charges for a declined transaction.",
+                source: { label: "Federal Register, Jan 14, 2025", url: "https://www.govinfo.gov/content/pkg/FR-2025-01-14/html/2024-31385.htm" },
+              },
+            ],
+          },
+          {
+            type: "paragraph",
+            text: "If the same payment was returned several times and drew several fees, dispute it with your institution. If that fails, you can submit a complaint to the CFPB at consumerfinance.gov/complaint.",
           },
         ],
       },
@@ -314,7 +477,7 @@ export const CONSUMER_GUIDES: Guide[] = [
             type: "benchmark",
             category: "nsf",
             rows: [
-              { condition: "No NSF fee at all", meaning: "Where a growing share of the industry now sits" },
+              { condition: "No NSF fee listed", meaning: "Check that it covers your account" },
               { condition: "{{nsf.p25}} or less", meaning: "In the lowest-priced quarter" },
               { condition: "Around {{nsf.median}}", meaning: "Right at the national median" },
               { condition: "More than {{nsf.p75}}", meaning: "In the highest-priced quarter" },
@@ -322,7 +485,7 @@ export const CONSUMER_GUIDES: Guide[] = [
           },
           {
             type: "paragraph",
-            text: "Then find the daily cap and the returned deposited item fee. A bank that charges a median NSF fee with no cap, and bills you when someone else's check to you bounces, is more expensive than its headline number suggests.",
+            text: "Then find the daily limit and the returned deposited item fee. A median NSF fee with no daily limit, plus a charge when someone else's check to you bounces, costs more than the headline number suggests.",
           },
         ],
       },
