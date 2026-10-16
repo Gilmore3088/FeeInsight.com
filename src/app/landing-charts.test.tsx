@@ -184,7 +184,7 @@ describe("district map", () => {
 const sample: SampleView = {
   institutionName: "Sample Bank",
   competitors: 29,
-  fees: [{ key: "wire_intl_outgoing", label: "Wire Transfer (Int'l Out)", amount: 75, quote: "Outgoing International Fee | $75", readOn: "2026-10-03" }],
+  fees: [{ key: "wire_intl_outgoing", label: "Wire Transfer (Int'l Out)", amount: 75, quote: "Outgoing International Fee … $75", readOn: "2026-10-03" }],
   rows: [
     { key: "overdraft", label: "Overdraft (OD)", amount: 35, median: 35, p25: 33, p75: 36, competitors: 19, position: "in_market" },
     { key: "wire_intl_outgoing", label: "Wire Transfer (Int'l Out)", amount: 75, median: 50, p25: 45, p75: 50, competitors: 16, position: "above_market" },
@@ -197,7 +197,7 @@ describe("my fees", () => {
     render(<MyFeesChart sample={sample} freshness={summary.freshnessLabel} />);
     const detail = () => document.querySelector("[data-fee-detail]")?.textContent ?? "";
     expect(detail()).toContain("$75.00");
-    expect(detail()).toContain("Outgoing International Fee | $75");
+    expect(detail()).toContain("Outgoing International Fee … $75");
     fireEvent.click(document.querySelector('[data-fee="paper_statement"]') as HTMLElement);
     expect(detail()).toContain("$2.00");
     expect(detail()).toContain("Below the local middle half");

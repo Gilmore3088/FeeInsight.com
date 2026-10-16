@@ -87,7 +87,7 @@ export function conditionalZeroVerdict(
     && !conditionalZero(0, line, row.fee_name)
     && !ACCOUNT_FEATURE_KEYS.has(row.canonical_fee_key)
     // #1397: free on a premium or private-banking schedule is that tier's perk, not the bank's price.
-    && !tierPerkZero(0, row.fee_name, row.document_url, documentText)
+    && !tierPerkZero(0, row.fee_name, row.document_url, documentText, row.canonical_fee_key)
     && checkFeeCategory(row.canonical_fee_key, row.fee_name).ok;
   return free
     ? { decision: "verified", reason: "conditional_zero_free_on_schedule" }

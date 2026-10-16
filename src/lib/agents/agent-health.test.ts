@@ -2,14 +2,18 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/data-store/connection", () => ({ sql: vi.fn() }));
 
+import { PUBLISHER_STEP_KEYS } from "@/lib/agents/gutenberg/names";
+
 import {
   atlasRules,
   darwinRules,
   growthRules,
+  gutenbergRules,
   healthChanges,
   knoxRules,
   magellanRules,
   readDarwinNumbers,
+  readGutenbergNumbers,
   readHamiltonNumbers,
   summarizeAgentHealth,
   type HealthNumbers,
@@ -94,20 +98,40 @@ describe("agent health", () => {
     expect(rules.find((rule) => rule.key === "no_week_old_waits")?.label).toContain("no first decision");
   });
 
-  it("counts the publisher's steps under Hamilton's name and Gutenberg's, and only Hamilton's spend (#1075 step 1)", async () => {
-    const texts: string[] = [];
-    const values: unknown[][] = [];
-    const db = Object.assign(
-      vi.fn(async (strings: TemplateStringsArray, ...args: unknown[]) => {
-        texts.push(strings.join("$"));
-        values.push(args);
-        return [{ steps_completed: 0, steps_failed: 0, spend_microusd: 0 }];
-      }),
-      { unsafe: vi.fn((text: string) => text) },
-    );
-    await readHamiltonNumbers(db as never).catch(() => undefined);
-    expect(texts[0]).toContain("agent_name = ANY($::text[]) AND status = 'completed'");
-    expect(values[0]).toEqual([["hamilton", "gutenberg"], ["hamilton", "gutenberg"], "hamilton"]);
+  it("splits the publisher's health from Hamilton's: steps by ledger owner, spend by own name (#1075 step 2)", async () => {
+    const run = async (read: typeof readHamiltonNumbers) => {
+      const texts: string[] = [];
+      const values: unknown[][] = [];
+      const db = Object.assign(
+        vi.fn(async (strings: TemplateStringsArray, ...args: unknown[]) => {
+          texts.push(strings.join("$"));
+          values.push(args);
+          return [{ steps_completed: 0, steps_failed: 0, spend_microusd: 0 }];
+        }),
+        { unsafe: vi.fn((text: string) => text) },
+      );
+      await read(db as never).catch(() => undefined);
+      return { texts, values };
+    };
+    const keys = [...PUBLISHER_STEP_KEYS];
+    const gutenberg = await run(readGutenbergNumbers);
+    expect(gutenberg.texts[0]).toContain("THEN 'gutenberg' ELSE agent_name END) = $");
+    // Both names are scanned, so pre-switch publish steps under Hamilton's name still count.
+    expect(gutenberg.values[0]).toEqual([["hamilton", "gutenberg"], keys, "gutenberg", ["hamilton", "gutenberg"], keys, "gutenberg", "gutenberg"]);
+    expect(gutenberg.texts[1]).toContain("published_fee_records");
+    expect(gutenberg.texts[1]).not.toContain("agent:hamilton");
+
+    const hamilton = await run(readHamiltonNumbers);
+    // Hamilton reads only its own name, and its publish steps from before the switch are Gutenberg's.
+    expect(hamilton.values[0]).toEqual([["hamilton"], keys, "hamilton", ["hamilton"], keys, "hamilton", "hamilton"]);
+    expect(hamilton.texts[1]).toContain("policy_key = 'agent:hamilton'");
+    expect(hamilton.texts[1]).not.toContain("published_fee_records");
+  });
+
+  it("breaks Gutenberg's rule when it spends on a model", () => {
+    expect(gutenbergRules({ stepsCompleted: 40, stepsFailed: 0, spendUsd: 0 }).every((rule) => rule.ok)).toBe(true);
+    expect(gutenbergRules({ stepsCompleted: 40, stepsFailed: 0, spendUsd: 0.12 }).find((rule) => rule.key === "no_paid_calls"))
+      .toMatchObject({ ok: false, detail: "$0.12 spent" });
   });
 
   it("breaks Knox's rule when a text is extracted twice at the same rules version", () => {

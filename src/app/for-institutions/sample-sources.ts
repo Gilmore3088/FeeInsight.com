@@ -6,6 +6,25 @@ import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
 const CELL_BREAK = /\s*\|\s*|\n/;
 /** Dot leaders between a fee's name and its price, shortened for display only. */
 const LEADERS = /\s*(?:[.…·]\s?){2,}\s*/g;
+/** One leader where cells meet or leaders run together after the cell breaks are joined. */
+const JOINED_LEADERS = /(?:\s*…\s*){2,}/g;
+
+/**
+ * A verified run of schedule cells as a reader sees it: the cells joined by a leader, as the
+ * printed schedule sets a name apart from its price ("Outgoing International Fee … $75"),
+ * never by the stored row's pipe.
+ */
+export function displayQuote(run: string): string {
+  return run
+    .split(CELL_BREAK)
+    .map((cell) => cell.trim())
+    .filter(Boolean)
+    .join(" … ")
+    .replace(LEADERS, " … ")
+    .replace(JOINED_LEADERS, " … ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
 
 export interface SourcedFee {
   key: string;
@@ -33,7 +52,7 @@ export function verifiedSourceQuote(line: Pick<ReportLine, "key" | "own">): stri
     for (let start = 0; start + width <= cells.length; start += 1) {
       const run = cells.slice(start, start + width).join(" | ");
       if (checkFeeAgainstSource(run, own.fee_name, own.amount, rule.include).ok) {
-        return run.replace(LEADERS, " … ").replace(/\s+/g, " ").trim();
+        return displayQuote(run);
       }
     }
   }

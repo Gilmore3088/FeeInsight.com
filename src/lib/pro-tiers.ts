@@ -89,11 +89,12 @@ export function annualMonthsFree(tier: ProTier): number {
 }
 
 /**
- * The annual plan as a monthly figure, rounded to whole dollars for display: "$125", "$417"
- * ($5,000 / 12). A label only: checkout charges the annual price itself.
+ * The annual plan as a monthly figure, rounded down to whole dollars for display: "$125",
+ * "$416" ($5,000 / 12 is $416.67), so the price is never overstated. A label only: checkout
+ * charges the annual price itself.
  */
 export function annualPerMonthLabel(tier: ProTier): string {
-  return WHOLE_DOLLARS.format(Math.round(proTier(tier).annualUsd / 12));
+  return WHOLE_DOLLARS.format(Math.floor(proTier(tier).annualUsd / 12));
 }
 
 /** What the annual plan saves against twelve monthly payments: "$300". */

@@ -68,7 +68,7 @@ const FULL_CYCLE_STEPS: AgentRunStepDefinition[] = [
   },
   {
     key: "publish",
-    agent: "hamilton",
+    agent: "gutenberg",
     title: "Publish clean fee intelligence for product reads",
   },
   {
@@ -84,7 +84,7 @@ const FULL_CYCLE_STEPS: AgentRunStepDefinition[] = [
   },
   {
     key: "public-diagnose",
-    agent: "hamilton",
+    agent: "gutenberg",
     title: "Summarize public discovery diagnosis",
   },
 ];
@@ -298,12 +298,12 @@ const WORKFLOW_JOBS: Record<AtlasWorkflowId, {
   },
   publish: {
     title: "Publish verified fee intelligence",
-    agent: "hamilton",
+    agent: "gutenberg",
     idempotencyKey: "hamilton:quick-publish",
     steps: [
       {
         key: "publish",
-        agent: "hamilton",
+        agent: "gutenberg",
         title: "Publish clean fee intelligence",
         input: { limit: 500 },
       },
@@ -339,7 +339,7 @@ const WORKFLOW_JOBS: Record<AtlasWorkflowId, {
       },
       {
         key: "public-diagnose",
-        agent: "hamilton",
+        agent: "gutenberg",
         title: "Summarize public discovery diagnosis",
       },
     ],
@@ -506,7 +506,7 @@ export async function resumeAtlasCycle(runId: number): Promise<{
 }
 
 /**
- * Hamilton category-guard repair (issue #51): roll back live catalog rows whose own
+ * Gutenberg category-guard repair (issue #51): roll back live catalog rows whose own
  * name contradicts the category they were filed under. Run the dry run first;
  * its step detail lists counts by category and sample rows.
  */
@@ -526,7 +526,7 @@ export async function runCategoryGuardRepair(dryRun: boolean): Promise<{
     const steps: AgentRunStepDefinition[] = [
       {
         key: "category-guard",
-        agent: "hamilton",
+        agent: "gutenberg",
         title: dryRun
           ? "Find live fees filed under the wrong category"
           : "Roll back live fees filed under the wrong category",
@@ -534,7 +534,7 @@ export async function runCategoryGuardRepair(dryRun: boolean): Promise<{
     ];
     await assertAtlasDispatchReady(steps.map((step) => step.key));
     const result = await startAgentRun({
-      agent: "hamilton",
+      agent: "gutenberg",
       kind: dryRun ? "dry_run" : "manual_repair",
       title,
       params: { source: "admin.category_guard_repair" },
@@ -553,7 +553,7 @@ export async function runCategoryGuardRepair(dryRun: boolean): Promise<{
 }
 
 /**
- * Hamilton source-link repair (hamilton/source-link.ts): a live fee with no source link takes
+ * Gutenberg source-link repair (hamilton/source-link.ts): a live fee with no source link takes
  * its own document's URL, or comes down when it has no traceable document. Run the dry run
  * first; its step detail lists the counts and every takedown.
  */
@@ -573,7 +573,7 @@ export async function runSourceLinkRepair(dryRun: boolean): Promise<{
     const steps: AgentRunStepDefinition[] = [
       {
         key: "source-link-repair",
-        agent: "hamilton",
+        agent: "gutenberg",
         title: dryRun
           ? "Find live fees with no link to their own document"
           : "Link live fees to their own document, or take down those with none",
@@ -581,7 +581,7 @@ export async function runSourceLinkRepair(dryRun: boolean): Promise<{
     ];
     await assertAtlasDispatchReady(steps.map((step) => step.key));
     const result = await startAgentRun({
-      agent: "hamilton",
+      agent: "gutenberg",
       kind: dryRun ? "dry_run" : "manual_repair",
       title,
       params: { source: "admin.source_link_repair" },

@@ -366,7 +366,7 @@ function moveFeedback(move: FoldMove, runId: number): FeedbackRow {
     // A fold is a taxonomy decision, not a judgement of Knox's read.
     signal: "right",
     kind: TAXONOMY_FOLD_KIND,
-    reportedBy: "hamilton",
+    reportedBy: "gutenberg",
     checkName: TAXONOMY_FOLD_CHECK,
     institutionId: move.institutionId,
     sourceDocumentId: move.sourceDocumentId,
@@ -745,7 +745,7 @@ function handFeedback(move: HandMove, runId: number): FeedbackRow {
     // Knox read a neighbouring cell as the name: a wrong read, logged with the page's own line.
     signal: "wrong",
     kind: TAXONOMY_FOLD_KIND,
-    reportedBy: "hamilton",
+    reportedBy: "gutenberg",
     checkName: TAXONOMY_FOLD_CHECK,
     institutionId: move.institutionId,
     sourceDocumentId: move.sourceDocumentId,

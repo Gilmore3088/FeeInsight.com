@@ -164,7 +164,9 @@ export async function answerPeerList(user: PeerAsker, body: PeerAskBody, recordA
         const notes = ["Assets are from each institution's latest stored FDIC or NCUA filing, not a live check. Reporting dates may differ.", "Stored financial amounts are in USD thousands and are converted once to dollars here; dollar formatting does not imply more source precision."];
         if (found.totalMatches > found.rows.length) notes.push(cappedListNote(criteria, found.rows.length, found.totalMatches));
         else if ((criteria.requestedCount ?? 0) > criteria.limit) notes.push(`This view shows at most ${criteria.limit} institutions.`);
-        if (criteria.requestedCount !== null && found.totalMatches < criteria.requestedCount) notes.push(`Only ${found.totalMatches} institutions meet these criteria; the filters were not widened to reach ${criteria.requestedCount}.`);
+        if (criteria.requestedCount !== null && found.totalMatches < criteria.requestedCount) notes.push(found.totalMatches === 0
+          ? `No institution meets these criteria. The filters above were not widened to find ${criteria.requestedCount}.`
+          : `Only ${found.totalMatches} institution${found.totalMatches === 1 ? " meets" : "s meet"} these criteria. The filters above were not widened to reach ${criteria.requestedCount}.`);
         const older = found.rows.filter(row => row.reportDate && now.getTime() - new Date(`${row.reportDate}T00:00:00Z`).getTime() > 365 * 86400000).length;
         if (older) notes.push(`${older} displayed asset filing${older === 1 ? " is" : "s are"} more than 365 days old. Review the reporting dates before comparing.`);
         result = {

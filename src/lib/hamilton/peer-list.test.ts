@@ -74,3 +74,66 @@ describe("explicit, similar-size and saved selection", () => {
   it("uses actual assets rather than deposits or a registry tier", () => { expect(plan("List similar credit unions").criteria?.referenceAssetsUsd).toBe(10_000_000_000); });
   it("distinguishes missing assets from a genuine zero", () => { expect(formatPeerAssets(null)).toBe("Not available"); expect(formatPeerAssets(0)).toBe("$0"); });
 });
+
+describe("James's live wordings (#1537, #1539)", () => {
+  const schoolsFirst: PeerListSubject = { ...subject, institutionId: 6741, name: "Schoolsfirst Federal Credit Union", stateCode: "CA", totalAssetsUsd: 37_200_000_000 };
+  it("turns 'similarly sized … to SchoolsFirst' into a stated band around SchoolsFirst's assets", () => {
+    for (const q of ["List ten similarly sized credit unions to SchoolsFirst.", "List ten similarly sized credit unions in Delaware to SchoolsFirst."]) {
+      const result = planPeerList(intent(q), schoolsFirst, null);
+      expect(result.problem).toBeNull();
+      expect(result.criteria?.minAssets?.value).toBe(18_600_000_000);
+      expect(result.criteria?.maxAssets?.value).toBe(74_400_000_000);
+      expect(result.criteria?.descriptions[0]).toBe("Asset-size peers: between half and twice Schoolsfirst Federal Credit Union's $37,200,000,000 in assets (2026-06-30).");
+    }
+    expect(planPeerList(intent("List ten similarly sized credit unions in Delaware to SchoolsFirst."), schoolsFirst, null).criteria?.states).toEqual(["DE"]);
+  });
+  it("accepts other ways of saying similar size", () => {
+    for (const q of ["List ten similar-sized credit unions", "List credit unions the same size as SchoolsFirst", "List credit unions about the same size as SchoolsFirst FCU"]) {
+      expect(intent(q).similarSize).toBe(true);
+    }
+    expect(planPeerList(intent("List credit unions the same size as SchoolsFirst"), schoolsFirst, null).problem).toBeNull();
+  });
+  it("accepts short names of the research institution (U.S. Bank, M&T)", () => {
+    const usBank: PeerListSubject = { ...subject, institutionId: 5, name: "U.S. Bank National Association", totalAssetsUsd: 660_000_000_000 };
+    const mt: PeerListSubject = { ...subject, institutionId: 21, name: "Manufacturers and Traders Trust Company", totalAssetsUsd: 210_000_000_000 };
+    expect(planPeerList(intent("List ten similarly sized banks to U.S. Bank"), usBank, null).problem).toBeNull();
+    expect(planPeerList(intent("List ten similarly sized banks to M&T Bank"), { ...mt, name: "M&T Bank" }, null).problem).toBeNull();
+    expect(planPeerList(intent("List ten similarly sized banks to M&T Bank"), mt, null).problem).toContain("open M&T Bank in the workspace first");
+  });
+  it("keeps a state inside a named size reference as part of the name (#1604 review)", () => {
+    const idaho: PeerListSubject = { ...subject, institutionId: 900, name: "Idaho Central Credit Union", stateCode: "ID", totalAssetsUsd: 10_000_000_000 };
+    const i = intent("List ten similarly sized credit unions to Idaho Central");
+    expect(i.similarTo).toBe("Idaho Central");
+    expect(i.states).toEqual([]);
+    expect(planPeerList(i, idaho, null).problem).toBeNull();
+    const tx = intent("List ten similarly sized banks to Texas Capital");
+    expect(tx.states).toEqual([]);
+    expect(planPeerList(tx, { ...subject, name: "Capital One, N.A." }, null).problem).toContain("open Texas Capital in the workspace first");
+    const va = intent("List ten similarly sized credit unions like Navy Federal in VA");
+    expect(va.similarTo).toBe("Navy Federal");
+    expect(va.states).toEqual(["VA"]);
+  });
+  it("never treats a different institution with a similar name as the research institution", () => {
+    for (const [typed, name] of [["TDECU", "TD Bank, N.A."], ["First Citizens", "FirstBank"], ["Citizens Business Bank", "Citizens Bank, N.A."], ["Citi", "Citizens Bank, N.A."], ["Capital", "Capital One, N.A."], ["Citizens Bank", "Citizens National Bank"], ["First Federal", "First National Bank"], ["American Bank", "American National Bank"]]) {
+      expect(planPeerList(intent(`List ten similarly sized banks to ${typed}`), { ...subject, name }, null).problem).toContain("open");
+    }
+  });
+  it("refuses a size reference that is not the research institution, rather than measuring against it", () => {
+    const result = planPeerList(intent("List ten similarly sized credit unions to Navy Federal."), schoolsFirst, null);
+    expect(result.criteria).toBeNull();
+    expect(result.problem).toBe("This list measures size against the institution you are researching, Schoolsfirst Federal Credit Union. To list peers sized like Navy Federal, open Navy Federal in the workspace first.");
+  });
+  it("reads every common way of writing $5 billion as the same list request", () => {
+    const wordings = ["Florida institutions with assets above $5B.", "Florida institutions with assets above 5 billion.", "Florida institutions with assets above $5 billion.", "Florida institutions with assets above $5,000M.", "Florida institutions with assets above 5000 million."];
+    const plans = wordings.map(q => { expect(isPeerListQuestion(q)).toBe(true); return planPeerList(intent(q), schoolsFirst, null); });
+    for (const p of plans) {
+      expect(p.problem).toBeNull();
+      expect(p.criteria?.minAssets).toEqual({ value: 5_000_000_000, inclusive: false });
+      expect(p.criteria?.states).toEqual(["FL"]);
+      expect(p.criteria?.descriptions).toEqual(plans[0].criteria?.descriptions);
+    }
+  });
+  it("still leaves an asset-sized fee question to fee analysis", () => {
+    expect(isPeerListQuestion("What do banks over $5B charge for overdraft fees?")).toBe(false);
+  });
+});
