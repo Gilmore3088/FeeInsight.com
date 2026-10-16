@@ -36,7 +36,8 @@ export function MemoHeader({
   actions?: ReactNode;
 }) {
   return (
-    <header className="flex flex-wrap items-end justify-between gap-4 border-b border-warm-300 pb-5">
+    // Centered on phones like every site header (James, 2026-10-16); left-aligned from sm up.
+    <header className="flex flex-col items-center gap-4 border-b border-warm-300 pb-5 text-center sm:flex-row sm:flex-wrap sm:items-end sm:justify-between sm:text-left">
       <div className="min-w-0 max-w-3xl">
         <p className="text-xs font-semibold uppercase tracking-[0.14em] text-terra-text">{kicker}</p>
         <h1 className={`mt-1.5 leading-tight text-warm-900 ${compact ? "text-xl sm:text-2xl" : "text-3xl sm:text-4xl"}`} style={SERIF}>
@@ -44,7 +45,7 @@ export function MemoHeader({
         </h1>
         {dek ? <p className="mt-2 text-pretty text-base leading-relaxed text-warm-700">{dek}</p> : null}
       </div>
-      {actions ? <div className="flex flex-wrap gap-2">{actions}</div> : null}
+      {actions ? <div className="flex flex-wrap justify-center gap-2 sm:justify-start">{actions}</div> : null}
     </header>
   );
 }

@@ -40,7 +40,7 @@ async function logHoldEvent(
   action: "hold" | "release",
   actor: FeeHoldActor,
   reason: string | null,
-): Promise<{ indexRefreshed: boolean }> {
+): Promise<{ indexRefreshed: boolean; runId: number }> {
   const at = new Date().toISOString();
   const run = await recordAdminFeeRun(tx, {
     action,
@@ -65,7 +65,7 @@ async function logHoldEvent(
     dedupeKey: `${FEE_HOLD_CHECK}:${row.fee_published_id}:${action}:${at}`,
   }]);
   const refresh = await rebuildIndexAfterAdminAction(tx, run);
-  return { indexRefreshed: refresh.refreshed };
+  return { indexRefreshed: refresh.refreshed, runId: run.runId };
 }
 
 /**

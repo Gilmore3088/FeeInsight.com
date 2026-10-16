@@ -94,7 +94,7 @@ export function IntelligenceView({ selection, data, lens, overview, instId, size
   const panels = lensPanels({ data, selection, stateHrefs, compact: overview, explore: id => overview ? lensHref(id) : null, size });
 
   return <div className="mx-auto flex max-w-7xl flex-col gap-7">
-    <header className="flex flex-wrap items-start justify-between gap-4">
+    <header className="flex flex-col items-center gap-4 text-center sm:flex-row sm:flex-wrap sm:items-start sm:justify-between sm:text-left">
       <div>
         <p className="fi-text-label text-[var(--fi-muted)]">{overview ? "Intelligence overview" : "Research"}</p>
         <h1 className="mt-1 text-3xl font-semibold sm:text-4xl">{overview ? (state ? `${place}: fees, finances and market` : "The U.S. fee landscape") : `Research · ${place}`}</h1>

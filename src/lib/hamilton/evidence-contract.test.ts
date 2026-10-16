@@ -54,6 +54,15 @@ describe("claim binding", () => {
     expect(claimBindingMatches(a, { reportingDate: "2024-06-30" })).toBe(false);
   });
 
+  it("requires the stated figure and audience to be the record's own (H06-AC1)", () => {
+    const a = fact({ value: 10 });
+    expect(claimBindingMatches(a, { institutionId: 1, value: 10, accountApplicability: "consumer" })).toBe(true);
+    expect(claimBindingMatches(a, { institutionId: 1, value: 35 })).toBe(false);
+    expect(claimBindingMatches(a, { institutionId: 1, value: 25 })).toBe(false);
+    expect(claimBindingMatches(a, { institutionId: 1, accountApplicability: "business" })).toBe(false);
+    expect(claimBindingMatches(fact({ value: null }), { institutionId: 1, value: 0 })).toBe(false);
+  });
+
   it("keeps a genuine zero as a known value rather than unknown", () => {
     const zero = fact({ value: 0 });
     expect(zero.value).toBe(0);

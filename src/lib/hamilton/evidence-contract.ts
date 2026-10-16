@@ -7,6 +7,14 @@ export const HAMILTON_EVIDENCE_CONTRACT_VERSION = 1 as const;
 export const CLAIM_BINDING_LIMITATION =
   "Structured evidence preserves record identity and derivations, but it does not by itself verify every sentence in a narrative.";
 
+/** Saved evidence matches the stored source at answer time; nothing here re-checks the live source. */
+export const STORED_SNAPSHOT_LIMITATION =
+  "Evidence snapshot reflects stored records at answer time; it is not a live-source recheck.";
+export const OWN_AGGREGATE_LIMITATION =
+  "Own category aggregate has incompatible, incomplete or untraceable product/frequency/source rows; it is not a claim-bound individual fee.";
+export const PEER_AGGREGATE_LIMITATION =
+  "Peer category aggregates lack contributing published fee-row IDs; figures are directional and omitted from claim-bound evidence.";
+
 export type HamiltonFactUnit = "usd" | "percent" | "count" | "ratio" | "text";
 export type HamiltonEvidenceStatus =
   | "published"
@@ -92,6 +100,10 @@ export interface HamiltonClaimBinding {
   feeCategory?: string | null;
   unit?: HamiltonFactUnit;
   reportingDate?: string | null;
+  /** The figure the claim states; the record must hold that value, not merely share its scope. */
+  value?: number;
+  /** A consumer claim binds a consumer or both-audience record; unknown audience binds nothing. */
+  accountApplicability?: Exclude<HamiltonAccountApplicability, "unknown" | "both">;
 }
 
 function unique<T>(values: readonly T[]): T[] {
@@ -206,14 +218,24 @@ function derivedFact(input: {
   };
 }
 
+/**
+ * Does this record support the claim (#981, H06-T04)? Subject, category, unit, period, audience and
+ * the stated value must all be the record's own, so Bank B's $35 or a $25 gap never supports
+ * "Bank A charges $35" or "Bank A charges $25", and an undated record never supports a dated claim.
+ */
 export function claimBindingMatches(
-  fact: Pick<HamiltonEvidenceFact | HamiltonDerivedFact, "scope" | "unit">,
+  fact: Pick<HamiltonEvidenceFact | HamiltonDerivedFact, "scope" | "unit" | "value">,
   claim: HamiltonClaimBinding,
 ): boolean {
   if (claim.institutionId !== undefined && fact.scope.institutionId !== claim.institutionId) return false;
   if (claim.feeCategory !== undefined && fact.scope.feeCategory !== claim.feeCategory) return false;
   if (claim.unit !== undefined && fact.unit !== claim.unit) return false;
   if (claim.reportingDate !== undefined && fact.scope.reportingDate !== claim.reportingDate) return false;
+  if (claim.accountApplicability !== undefined && fact.scope.accountApplicability !== claim.accountApplicability
+    && fact.scope.accountApplicability !== "both") return false;
+  // Unknown is never a match for a stated figure; a genuine $0 is.
+  if (claim.value !== undefined && (typeof fact.value !== "number" || !Number.isFinite(fact.value)
+    || Math.abs(fact.value - claim.value) > 0.005)) return false;
   return true;
 }
 
@@ -398,13 +420,9 @@ export function buildFeeResearchEvidence(research: FeeResearch): HamiltonEvidenc
     facts: ownFacts,
     derivations,
     limitations: [
-      "Evidence snapshot reflects stored records at answer time; it is not a live-source recheck.",
-      ...(research.current !== null && !currentEvidenceSupported
-        ? ["Own category aggregate has incompatible, incomplete or untraceable product/frequency/source rows; it is not a claim-bound individual fee."]
-        : []),
-      ...(research.peers.length > 0
-        ? ["Peer category aggregates lack contributing published fee-row IDs; figures are directional and omitted from claim-bound evidence."]
-        : []),
+      STORED_SNAPSHOT_LIMITATION,
+      ...(research.current !== null && !currentEvidenceSupported ? [OWN_AGGREGATE_LIMITATION] : []),
+      ...(research.peers.length > 0 ? [PEER_AGGREGATE_LIMITATION] : []),
       CLAIM_BINDING_LIMITATION,
     ],
   };

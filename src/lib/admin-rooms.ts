@@ -104,6 +104,7 @@ export const ROOMS: Room[] = [
       { href: "/admin/institutions", label: "Institutions", role: "Every bank and CU", activePrefixes: ["/admin/institution/"] },
       { href: "/admin/fees/catalog", label: "Fee catalog", role: "Fees by category and segment", activePrefixes: ["/admin/fees"] },
       { href: "/admin/market", label: "Local market", role: "One bank's competitors and fees" },
+      { href: "/admin/corrections", label: "Corrections", role: "Holds and corrections, with history", more: true, aliases: ["audit", "holds", "reversal"] },
       { href: "/admin/peers", label: "Peers", role: "Peer groups", more: true },
       { href: "/admin/districts", label: "Districts", role: "Fed districts", more: true },
       { href: "/admin/index", label: "Index", role: "National index", activePrefixes: ["/admin/national"], more: true },
