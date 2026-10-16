@@ -2,6 +2,7 @@ import type { sql } from "@/lib/data-store/connection";
 import { invalidatePublicReadCache } from "@/lib/data-store/fee-cache";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import { recordFeedback, type FeedbackKind, type FeedbackRow } from "@/lib/agents/learning/feedback";
+import { recordStepWarning } from "@/lib/agents/hamilton/step-warning";
 
 type SqlTag = typeof sql;
 
@@ -18,7 +19,8 @@ type SqlTag = typeof sql;
  * (`source_mismatch: #1496`); clearing `rolled_back_at` (and the verified row's status) restores
  * it. Each takedown records the row in `pipeline_feedback`, and the run gets one event naming every
  * row. Running it again changes nothing: a row already down is skipped. Add later rows below as
- * one entry each, never edit a past one.
+ * one entry each, never edit a past one. A failed read or write never fails the publish: it is
+ * kept in the result (`error`) and as a `step.warning` run event, so the run ledger shows it.
  */
 export const HAND_TAKEDOWN_CHECK = "hamilton.hand_takedown";
 export const HAND_TAKEDOWN_FLAG = "hand_rejected:hand_takedown";
@@ -55,6 +57,14 @@ export const HAND_TAKEDOWNS: readonly HandTakedown[] = [
   { feePublishedId: 45619, institutionId: 7229, canonicalFeeKey: "check_printing", amount: 20, feeName: "Check printing…………………………………………………......…...…(varies by style) | Domestic",
     reason: "source_mismatch: #1512", issue: 1512, kind: "wrong_amount",
     evidence: "Check printing has no price (\"varies by style\"); the $20.00 is the next column's \"Domestic\" line under outgoing wire transfers." },
+  // #1370: two subordination fees the switched re-file holds (SUBORDINATION_REFILE_HELD_VERIFIED_IDS),
+  // each read from a two-column fee schedule (read-only, Oct 16). Both prices belong to another row.
+  { feePublishedId: 116720, institutionId: 8459, canonicalFeeKey: "other_lending_fee", amount: 20, feeName: "SUBORDINATION REQUEST & PARTIAL: WIRE TRANSFER",
+    reason: "source_mismatch: #1370", issue: 1370, kind: "wrong_amount",
+    evidence: "Crow Wing Power CU (doc 26125): \"SUBORDINATION REQUEST & PARTIAL RELEASE – $250\"; the $20 is the next row's \"WIRE TRANSFER – $20, Charged per outgoing domestic wire transfer\"." },
+  { feePublishedId: 134129, institutionId: 4815, canonicalFeeKey: "other_lending_fee", amount: 10, feeName: "Subordination Fee: Business",
+    reason: "source_mismatch: #1370", issue: 1370, kind: "wrong_amount",
+    evidence: "Ume FCU (doc 7849): the $10 is the next column's \"Checking Accounts | Business | $10 per month\"; the \"Subordination Fee\" line carries no $10." },
 ];
 
 export interface LiveTakedownRow {
@@ -77,6 +87,8 @@ export interface HandTakedownResult {
   takenDown: PlannedHandTakedown[];
   /** Listed rows left alone, with why (not live, or changed since it was listed). */
   skipped: Array<{ feePublishedId: number; reason: string }>;
+  /** A failed read or write (nothing written); also a `step.warning` run event. */
+  error: string | null;
 }
 
 const sameAmount = (a: number | string | null, b: number) => a != null && Math.abs(Number(a) - b) < 0.005;
@@ -108,10 +120,10 @@ export function planHandTakedowns(live: LiveTakedownRow[], list: readonly HandTa
  */
 export async function applyHandTakedowns(
   db: SqlTag,
-  options: { runId: number; batchId: string; dryRun: boolean; list?: readonly HandTakedown[] },
+  options: { runId: number; stepId?: number | null; batchId: string; dryRun: boolean; list?: readonly HandTakedown[] },
 ): Promise<HandTakedownResult> {
   const list = options.list ?? HAND_TAKEDOWNS;
-  const result: HandTakedownResult = { dryRun: options.dryRun, takenDown: [], skipped: [] };
+  const result: HandTakedownResult = { dryRun: options.dryRun, takenDown: [], skipped: [], error: null };
   if (list.length === 0) return result;
   const ids = [...new Set(list.map((entry) => entry.feePublishedId))];
   let live: LiveTakedownRow[];
@@ -124,7 +136,7 @@ export async function applyHandTakedowns(
     `);
   } catch (error) {
     console.error("hand takedowns read failed:", error);
-    return result;
+    return { ...result, error: await recordStepWarning(db, { runId: options.runId, stepId: options.stepId, check: HAND_TAKEDOWN_CHECK, what: "Hand takedowns read", error }) };
   }
   const plan = planHandTakedowns(live, list);
   result.skipped = plan.skipped;
@@ -142,6 +154,8 @@ export async function applyHandTakedowns(
                  rolled_back_reason = ${entry.reason}
            WHERE fee_published_id = ${item.feePublishedId}
              AND rolled_back_at IS NULL
+             AND institution_id = ${entry.institutionId}
+             AND canonical_fee_key = ${entry.canonicalFeeKey}
              AND fee_name = ${entry.feeName}
              AND abs(amount - ${entry.amount}::numeric) < 0.005
           RETURNING fee_published_id
@@ -194,7 +208,7 @@ export async function applyHandTakedowns(
     });
   } catch (error) {
     console.error("hand takedowns write failed:", error);
-    return { ...result, takenDown: [] };
+    return { ...result, takenDown: [], error: await recordStepWarning(db, { runId: options.runId, stepId: options.stepId, check: HAND_TAKEDOWN_CHECK, what: "Hand takedowns write", error }) };
   }
   if (result.takenDown.length > 0) invalidatePublicReadCache();
   return result;

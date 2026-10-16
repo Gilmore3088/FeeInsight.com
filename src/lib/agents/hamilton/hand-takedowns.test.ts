@@ -11,12 +11,17 @@ const LIVE: LiveTakedownRow[] = [
   // #1549 and #1512 rows as they read live, read-only, Oct 16 (lineage refs are test values).
   { fee_published_id: 83118, lineage_ref: 1, institution_id: 33, canonical_fee_key: "overdraft", fee_name: "we may use Overdraft Protection Coverage to pay the remaining", amount: "20.00" },
   { fee_published_id: 45619, lineage_ref: 2, institution_id: 7229, canonical_fee_key: "check_printing", fee_name: "Check printing…………………………………………………......…...…(varies by style) | Domestic", amount: "20.00" },
+  // #1370's two held subordination rows as they read live on prod, read-only, Oct 16.
+  { fee_published_id: 116720, lineage_ref: 138129, institution_id: 8459, canonical_fee_key: "other_lending_fee", fee_name: "SUBORDINATION REQUEST & PARTIAL: WIRE TRANSFER", amount: "20.00" },
+  { fee_published_id: 134129, lineage_ref: 154983, institution_id: 4815, canonical_fee_key: "other_lending_fee", fee_name: "Subordination Fee: Business", amount: "10.00" },
 ];
+const IDS = [80423, 102440, 83118, 45619, 116720, 134129];
 
-function fakeDb(live: LiveTakedownRow[]) {
+function fakeDb(live: LiveTakedownRow[], failOn?: string) {
   const writes: Array<{ text: string; values: unknown[] }> = [];
   const db = vi.fn(async (strings: TemplateStringsArray, ...values: unknown[]) => {
     const text = strings.join("?");
+    if (failOn && text.includes(failOn)) throw new Error(`boom: ${failOn}`);
     if (text.includes("SELECT fp.fee_published_id")) return live;
     writes.push({ text, values });
     if (text.includes("UPDATE published_fee_records")) return [{ fee_published_id: values.find((value) => typeof value === "number") }];
@@ -32,6 +37,8 @@ describe("hand takedowns (James, Oct 16)", () => {
       [102440, "source_mismatch: #1496"],
       [83118, "source_mismatch: #1549"],
       [45619, "source_mismatch: #1512"],
+      [116720, "source_mismatch: #1370"],
+      [134129, "source_mismatch: #1370"],
     ]);
     expect(HAND_TAKEDOWNS.every((entry) => entry.evidence.length > 0 && entry.reason === `source_mismatch: #${entry.issue}`)).toBe(true);
     // Up to about 25 rows go this way; more go to James.
@@ -45,6 +52,8 @@ describe("hand takedowns (James, Oct 16)", () => {
         { feePublishedId: 102440, feeVerifiedId: 116687, reason: "source_mismatch: #1496" },
         { feePublishedId: 83118, feeVerifiedId: 1, reason: "source_mismatch: #1549" },
         { feePublishedId: 45619, feeVerifiedId: 2, reason: "source_mismatch: #1512" },
+        { feePublishedId: 116720, feeVerifiedId: 138129, reason: "source_mismatch: #1370" },
+        { feePublishedId: 134129, feeVerifiedId: 154983, reason: "source_mismatch: #1370" },
       ],
       skipped: [],
     });
@@ -56,19 +65,27 @@ describe("hand takedowns (James, Oct 16)", () => {
         { feePublishedId: 102440, reason: "changed since listed" },
       ],
     });
-    expect(planHandTakedowns([]).skipped.map((row) => row.reason)).toEqual(["not live", "not live", "not live", "not live"]);
+    expect(planHandTakedowns([]).skipped.map((row) => row.reason)).toEqual(IDS.map(() => "not live"));
+    // Another institution or category at the same id, name and price is not the listed row.
+    const moved = [{ ...LIVE[4], institution_id: 1 }, { ...LIVE[5], canonical_fee_key: "legal_process" }];
+    expect(planHandTakedowns(moved, HAND_TAKEDOWNS.slice(4)).skipped.map((row) => row.reason)).toEqual(["changed since listed", "changed since listed"]);
   });
 
   it("archives the row, rejects its verified row, records feedback and one run event", async () => {
     const { db, writes } = fakeDb(LIVE);
     const result = await applyHandTakedowns(db as never, { runId: 9, batchId: "agentic-run-9", dryRun: false });
-    expect(result.takenDown.map((item) => item.feePublishedId)).toEqual([80423, 102440, 83118, 45619]);
+    expect(result.takenDown.map((item) => item.feePublishedId)).toEqual(IDS);
+    expect(result.error).toBeNull();
     const takedowns = writes.filter((write) => write.text.includes("UPDATE published_fee_records"));
-    expect(takedowns).toHaveLength(4);
+    expect(takedowns).toHaveLength(6);
+    // The UPDATE repeats every listed field, so a row changed after the read is left alone.
     expect(takedowns[0].text).toContain("AND rolled_back_at IS NULL");
+    expect(takedowns[0].text).toContain("AND institution_id = ?");
+    expect(takedowns[0].text).toContain("AND canonical_fee_key = ?");
     expect(takedowns[0].text).toContain("AND fee_name = ?");
-    expect(takedowns[0].values).toEqual(expect.arrayContaining(["agentic-run-9", "source_mismatch: #1496", 80423, "Fax (Local)", 15]));
-    expect(writes.filter((write) => write.text.includes("UPDATE verified_fee_observations"))).toHaveLength(4);
+    expect(takedowns[0].values).toEqual(expect.arrayContaining(["agentic-run-9", "source_mismatch: #1496", 80423, 5433, "document_reproduction", "Fax (Local)", 15]));
+    expect(takedowns[5].values).toEqual(expect.arrayContaining(["source_mismatch: #1370", 134129, 4815, "other_lending_fee", "Subordination Fee: Business", 10]));
+    expect(writes.filter((write) => write.text.includes("UPDATE verified_fee_observations"))).toHaveLength(6);
     expect(writes.some((write) => write.text.includes("INSERT INTO pipeline_feedback"))).toBe(true);
     expect(writes.filter((write) => write.text.includes("INSERT INTO agent_run_events"))).toHaveLength(1);
     expect(writes.some((write) => /\bDELETE\b/i.test(write.text))).toBe(false);
@@ -77,12 +94,29 @@ describe("hand takedowns (James, Oct 16)", () => {
   it("writes nothing on a dry run, and nothing again once the rows are down", async () => {
     const dry = fakeDb(LIVE);
     const planned = await applyHandTakedowns(dry.db as never, { runId: 1, batchId: "b", dryRun: true });
-    expect(planned.takenDown).toHaveLength(4);
+    expect(planned.takenDown).toHaveLength(6);
     expect(dry.writes).toHaveLength(0);
 
     const again = fakeDb([]);
     const result = await applyHandTakedowns(again.db as never, { runId: 2, batchId: "b", dryRun: false });
     expect(result.takenDown).toEqual([]);
     expect(again.writes).toHaveLength(0);
+  });
+
+  it("puts a failed read or write in the run ledger instead of failing the publish", async () => {
+    const read = fakeDb(LIVE, "SELECT fp.fee_published_id");
+    const readResult = await applyHandTakedowns(read.db as never, { runId: 3, stepId: 30, batchId: "b", dryRun: false });
+    expect(readResult).toMatchObject({ takenDown: [], error: "boom: SELECT fp.fee_published_id" });
+    expect(read.writes).toHaveLength(1);
+    expect(read.writes[0].text).toContain("INSERT INTO agent_run_events");
+    expect(read.writes[0].values).toEqual(expect.arrayContaining([3, 30, "Hand takedowns read failed, nothing written: boom: SELECT fp.fee_published_id"]));
+
+    const write = fakeDb(LIVE, "UPDATE verified_fee_observations");
+    const writeResult = await applyHandTakedowns(write.db as never, { runId: 4, stepId: 40, batchId: "b", dryRun: false });
+    expect(writeResult.takenDown).toEqual([]);
+    expect(writeResult.error).toBe("boom: UPDATE verified_fee_observations");
+    const warning = write.writes.find((entry) => entry.text.includes("'step.warning'"));
+    expect(warning?.values).toEqual(expect.arrayContaining([4, 40]));
+    expect(String(warning?.values.at(-1))).toContain("hamilton.hand_takedown");
   });
 });

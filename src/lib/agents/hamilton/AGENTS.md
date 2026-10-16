@@ -361,9 +361,11 @@ the detail.
     `hand-takedowns.ts` (James, Oct 16, DECISIONS.md): up to about 25 live fees, each confirmed
     wrong on amount or category against its bank's own stored text and checked by a reviewer, as
     one entry each (first: #1496's two fax fees). A row comes down only while it still reads as
-    listed (institution, category, name, price), with the entry's reason
-    (`source_mismatch: #<issue>`); its verified row is rejected (`hand_rejected:hand_takedown`), a
-    feedback row and one run event name it, and a ledger line goes on #1026.
+    listed (institution, category, name, price), checked in the read and again in the `UPDATE`,
+    with the entry's reason (`source_mismatch: #<issue>`); its verified row is rejected
+    (`hand_rejected:hand_takedown`), a feedback row and one run event name it, and a ledger line
+    goes on #1026. In both lists a failed read or write never fails the publish: the step detail
+    carries its `error` and the run gets a `step.warning` event.
 11. Article page (`article-page.ts`): a fee read from an article, on its second look,
     `article_page: #<document id>`.
 12. Product page (`product-page.ts`): a $0 benefit bullet Knox's free reader took from a
@@ -747,7 +749,9 @@ charges.
 `HAND_REFILES` in the same file re-files or renames listed live fees in place (James approved
 each batch: #1299, #1304, #1196). A row moves only while it is still under its listed category
 at its listed price, and a rename is done once the live name reads as listed, so a re-run
-changes nothing. Each move writes a `pipeline_feedback` row with the old and new name, and the
+changes nothing. An in-place rename that carries an `oldName` runs only while the live name is
+exactly that old name, so it runs once and never replaces a better name a later read or retidy
+gave the fee. Each move writes a `pipeline_feedback` row with the old and new name, and the
 run gets one `hamilton.taxonomy_fold.hand_refile` event naming every row and its after-state.
 
 ## Source Link Repair
