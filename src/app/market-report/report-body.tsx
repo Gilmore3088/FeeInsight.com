@@ -70,7 +70,7 @@ function PositionChip({ line }: { line: ReportLine }) {
  * local competitors publish the line to compare it.
  */
 export function notComparableNote(line: Pick<ReportLine, "own" | "peers">): string {
-  if (!line.own && (line.peers?.n ?? 0) >= MIN_LOCAL_PEERS_PER_LINE) return "Your fee not found";
+  if (!line.own && (line.peers?.n ?? 0) >= MIN_LOCAL_PEERS_PER_LINE) return "Not found in your schedule";
   return "Too few local competitors";
 }
 

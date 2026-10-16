@@ -166,7 +166,7 @@ export default async function ReportPage({
           <div>
             <h2 className="text-[18px] font-semibold tracking-[-0.02em] text-ink">Want your own institution in it?</h2>
             <p className="mt-1 max-w-[36rem] text-[14px] text-ink-muted">
-              Hamilton sets your fees against the competitors you choose and keeps them current.
+              Hamilton sets your fees against the competitors you choose and updates when their published schedules change.
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-x-5 gap-y-2">

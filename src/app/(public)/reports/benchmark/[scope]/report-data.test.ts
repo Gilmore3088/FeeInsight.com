@@ -85,7 +85,7 @@ describe("report findings", () => {
     const findings = computeNationalFindings(national, pairs);
     // Across fees first; overdraft last, with NSF folded into it.
     expect(findings.map((f) => f.key)).toEqual(["charter-gap", "spread", "overdraft"]);
-    expect(findings[0].headline).toBe("The widest charter gap: credit unions charge less for overdraft");
+    expect(findings[0].headline).toBe("The widest charter gap is on overdraft, where the credit union median is lower");
     expect(findings[1].fee_category).toBe("monthly_maintenance");
     expect(findings[1].figure).toBe("$3.00 to $13.00");
     expect(findings[2].detail).toContain("NSF median is $32.00 across 1,100");

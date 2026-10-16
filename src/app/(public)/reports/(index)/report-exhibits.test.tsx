@@ -36,11 +36,11 @@ describe("reports page exhibits", () => {
       />,
     );
     expect(screen.getByRole("link", { name: "Open the Florida report" }).getAttribute("href")).toBe("/research/state/FL");
-    expect(screen.getByRole("link", { name: "Get a competitor report for Florida" }).getAttribute("href")).toBe(
+    expect(screen.getByRole("link", { name: "Request a report for your Florida institution" }).getAttribute("href")).toBe(
       "/reports?report=institution&src=reports-map-FL#request",
     );
     fireEvent.change(screen.getByLabelText("Pick a state"), { target: { value: "VT" } });
     expect(screen.getByRole("link", { name: "Open the Vermont report" })).toBeTruthy();
-    expect(screen.queryByRole("link", { name: /Get a competitor report/ })).toBeNull();
+    expect(screen.queryByRole("link", { name: /Request a report for your/ })).toBeNull();
   });
 });

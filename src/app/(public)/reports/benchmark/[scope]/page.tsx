@@ -134,7 +134,7 @@ export default async function BenchmarkReportPage({ params }: PageProps) {
         <ReportHero
           eyebrow="Free report · United States"
           title="National fee benchmark"
-          lede="What U.S. banks and credit unions charge for 15 common banking fees, among the institutions whose published schedule we hold. Each fee's median counts only the institutions that publish that fee, so the count sits on every card."
+          lede="What U.S. banks and credit unions charge for 15 common banking fees, read from each institution's own published fee schedule. Each median counts only the institutions that publish that fee, and every card shows how many."
           stats={[
             { value: summary.institutionsLabel, label: "institutions with published fees", note: `of ${summary.monitoredLabel} we monitor` },
             { value: `${rows.length} of 15`, label: "headline fees with a median", note: "each with 20 or more institutions" },

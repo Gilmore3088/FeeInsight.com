@@ -87,7 +87,7 @@ export function SampleLines({ sample }: { sample: SampleExhibit }) {
             <span className={`h-2.5 w-2.5 rounded-full ${POSITION[p].dot}`} /> {LEGEND[p]}
           </span>
         ))}
-        <span>Tap a fee to count.</span>
+        <span>Tap a fee to see how many charge less.</span>
       </p>
     </div>
   );
@@ -174,7 +174,7 @@ export function StateReportMap({ states }: { states: MapState[] }) {
               href={`/reports?report=institution&src=reports-map-${shown.code}#request`}
               className="inline-flex min-h-11 items-center justify-center text-[13px] font-semibold text-ink underline decoration-border underline-offset-4 hover:decoration-ink"
             >
-              Get a competitor report for {shown.name}
+              Request a report for your {shown.name} institution
             </Link>
           )}
         </div>

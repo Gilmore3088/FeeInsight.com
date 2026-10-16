@@ -179,8 +179,8 @@ export default async function ReportsPage({ searchParams }: PageProps) {
             Know where your fees stand against your market
           </h1>
           <p className="mx-auto mt-4 max-w-[34rem] text-[16px] text-ink-soft sm:text-[18px]">
-            Every fee you publish against the competitors you name, each figure sourced to their schedule, with the
-            differences marked for your next fee review.
+            Every fee you publish, set against the competitors you name. Each of their figures links to the page of
+            their own fee schedule it came from.
           </p>
           <div className="mt-7 flex flex-col items-center justify-center gap-3 sm:flex-row">
             <TrackLink
@@ -223,8 +223,8 @@ export default async function ReportsPage({ searchParams }: PageProps) {
                 Inside: {sample.name} against {sample.competitorsWithData} local competitors
               </h2>
               <p className="mt-1 text-[14px] text-ink-muted">
-                Live, from each bank&apos;s own published fee schedule
-                {sample.readOn ? `, schedules read through ${formatReadOn(sample.readOn)}` : ""}.
+                The shaded band is the middle half of local competitors&apos; fees. Live, from each bank&apos;s own
+                published fee schedule{sample.readOn ? `, read through ${formatReadOn(sample.readOn)}` : ""}.
               </p>
             </div>
             <TrackLink
@@ -285,7 +285,7 @@ export default async function ReportsPage({ searchParams }: PageProps) {
           <h2 id="free-heading" className={`${H2} text-center`}>
             Free national and Fed district reports
           </h2>
-          <p className="mt-2 text-center text-[14px] text-ink-muted">The headline fees for the U.S. or one Fed district, sent at once.</p>
+          <p className="mt-2 text-center text-[14px] text-ink-muted">The headline fees for the U.S. or for one Fed district.</p>
           <div className="mt-5">
             <RequestReportForm contactEmail={CONTACT_EMAIL} defaultSrc="reports-hub-free" defaultReportType="national" offer="free" idScope="-free" />
           </div>

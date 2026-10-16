@@ -143,7 +143,7 @@ export function computeStateFindings(
     findings.push({
       key: "charter-gap",
       figure: formatAmount(Math.abs(gap)),
-      headline: `The widest charter gap: ${gap > 0 ? "credit unions" : "banks"} charge less for ${lowerName(widest.fee_category)}`,
+      headline: `The widest charter gap is on ${lowerName(widest.fee_category)}, where the ${gap > 0 ? "credit union" : "bank"} median is lower`,
       detail: `In ${stateName}, median ${formatAmount(widest.cu_median_amount)} at credit unions vs ${formatAmount(widest.bank_median_amount)} at banks. Credit union medians are lower on ${cuCheaper} of ${paired.length} fees compared.`,
       exhibit: "charters",
       fee_category: widest.fee_category,

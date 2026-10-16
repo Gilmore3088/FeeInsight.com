@@ -244,7 +244,7 @@ export function InstitutionView({ teaser, asOf }: { teaser: InstitutionTeaser | 
     <>
       {teaser && (
         <section id="institution" aria-labelledby="institution-heading" className="scroll-mt-28 print:hidden">
-          <SectionHeading eyebrow="Your institution" title="One bank against its local market">
+          <SectionHeading eyebrow="Your institution" title="One institution against its local market">
             {`${teaser.who}, against the ${teaser.competitors} local competitors that publish fees. Each row counts the ones that publish that fee.`}
           </SectionHeading>
           <div className="mt-7 max-w-3xl rounded-2xl border border-border bg-surface-0 p-4 shadow-fi-1 sm:p-6">
@@ -307,11 +307,11 @@ export function InstitutionView({ teaser, asOf }: { teaser: InstitutionTeaser | 
               href={SAMPLE_REPORT_HREF}
               className="mt-4 inline-flex text-[14px] font-semibold text-ink underline decoration-border underline-offset-4 hover:decoration-ink"
             >
-              Read this bank&apos;s full sample report
+              Read the full sample report
             </Link>
           </div>
           <ExhibitSource asOf={asOf}>
-            One bank&apos;s own published fee schedule against the published schedules of the competitors in its local market.
+            One institution&apos;s own published fee schedule against the published schedules of the competitors in its local market.
           </ExhibitSource>
         </section>
       )}
@@ -328,7 +328,7 @@ export function ClosingBand() {
         See your own institution in this report
       </h2>
       <p className="mt-2 max-w-[38rem] text-[14px] text-ink-muted">
-        Hamilton puts your fees on every line of it and keeps them current as competitors change theirs.
+        Hamilton places your fees on every line of this report and updates them when a competitor&apos;s published schedule changes.
       </p>
       <div className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-3">
         <TrackLink
