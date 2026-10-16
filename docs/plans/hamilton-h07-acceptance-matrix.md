@@ -206,14 +206,14 @@ No setting was changed. Making `app-tests` required is a permissions change and 
 |---|---|---|
 | B1 | No acceptance case of the 28 has passed on a preview or live build. | Run each case on one candidate SHA and record results with the #975 evidence template. |
 | B2 | Live H01 cases need a second, linked login (AC1 linked half, AC4 cross-account half). The Oct 15 checklist says none is available to the thread. A synthetic Space Coast Viewer membership was granted to test user 25 on 2026-10-10 (#976 comments), but no credentials reach the thread. | James runs those halves with the second login, or names a tester who has it. |
-| B3 | H03 correction workflow is not built; T02 waits on four questions for James. | James answers the four T01 questions; build T02-T12; run H03-AC1 to AC4. |
-| B4 | H04 one-composer work (T03, T04, T06) is not done, yet #979 is closed as completed. | Reopen #979, or record a dated scope change that James accepts. Then build and run H04-AC1 to AC4. |
+| B3 | H03 correction workflow is not built. James answered the four T01 questions on Oct 16 (see scope changes). | Build T02-T12 (in progress, branch `acct2/978-fee-corrections`); its migration waits for James's yes; run H03-AC1 to AC4. |
+| B4 | H04 one-composer work (T03, T04, T06) is not done. #979 was reopened on Oct 16. | Build T03, T04 and T06, then run H04-AC1 to AC4. |
 | B5 | H05 has no presentation contract; it needs James's design review via #1284/#1368. | James approves a contract; build T03-T07; run H05-AC1 to AC4. |
 | B6 | H06-T04, T06, T08, T10 are open, and the regression set's expected outcomes have no human review (#629: 0 of 117 answer keys checked by a person). | Finish those tasks; a person reviews the 25 regression cases and the record is linked. |
 | B7 | H02-T08 export parity and paging past 50 are not built; the proposed half-to-double asset default awaits James's review. | Build or formally defer them (dated, James-accepted); James decides the default. |
-| B8 | Main is unprotected: on Oct 16 the public API reported `"protected": false` and no rulesets, so nothing makes `app-tests` required. | James approves a protection plan (H07-T06); settings change only with his approval. |
-| B9 | Most H01, H02, H04 and H06 code is already merged to main, and merged PRs deploy. H07 assumed a reviewed release candidate before deployment. So "released" in the #975 sense has not happened, but much of the code is live without accepted evidence. | James decides how H07-T08/T09 apply: either a dated scope change that treats the current production SHA as the candidate, or a separate candidate. Then run post-release read checks per initiative. |
-| B10 | The #978 P0 fix is merged, but whether the wrong flag on publication #121441 cleared in production is unknown. | A read-only production check of `pipeline_feedback` for #121441. |
+| B8 | Main is unprotected: on Oct 16 the public API reported `"protected": false` and no rulesets, so nothing makes `app-tests` required. James approved the plan on Oct 16: require `app-tests`, block force-push and deletion, no required reviewer. | `test.yml` now runs on every PR so `app-tests` always reports (docs-only PRs pass in seconds); James applies the ruleset in GitHub settings (steps in the JAMES TO DO issue); then re-read the protection API. |
+| B9 | Most H01, H02, H04 and H06 code is already merged to main, and merged PRs deploy. James decided on Oct 16 that the production version is the release candidate (see scope changes). | Run the read checks per initiative against production, recording the deployed main SHA with each result; James's live computer-use check covers the signed-in cases. |
+| B10 | Cleared. Read-only production check, Oct 16: the `hamilton.rules_recheck` flag on #121441 was cleared (`takedown_cleared` and `flag_cleared`, 2026-10-11 04:26 UTC), and #121441 is live in `published_fee_catalog`. The repeat #121442 was retired as a `same_line_duplicate` on 2026-10-11 01:08 UTC. NSF #121439 and #121440 are both live. | None. |
 | B11 | The code matrix in `src/lib/hamilton/release-acceptance.ts` (v1, 2026-10-10) is out of date. | Update it from this matrix in a PR, or retire it and name this file as the one matrix. |
 | B12 | No James research-only go/no-go decision exists. | H07-T10 after B1-B11. |
 
@@ -229,8 +229,11 @@ No formal scope change accepted by James under #975 protocol step 7 is recorded.
 | 2026-10-14 | #979 (H04) closed as "completed" by #1272 with most tasks open. Not a recorded scope change; treated here as open. | #979 state | No |
 | 2026-10-15 | H05 design work routed to #1284 and the Pro beta (#1368); H03 to be scheduled with #1115 and #1122. Ownership and order only. | [#980 triage](https://github.com/Gilmore3088/FeeInsight.com/issues/980#issuecomment-6190406423), [#978 triage](https://github.com/Gilmore3088/FeeInsight.com/issues/978#issuecomment-6190405822) | Not recorded |
 | 2026-10-15 | Blockers #1005 (browser credential state) and #1006 (intake WIP cap) closed, both as "not planned". The underlying need for live acceptance stays (B1, B2). | #1005, #1006 state | Not recorded |
+| 2026-10-16 | James accepted the defaults for H03-T02: a correction is a new version and the old one is kept as superseded (a new table, so a migration that waits for his yes); only admins correct, analysts can still hold; a correction needs a source excerpt and its location, not a reason alone; a hold rebuilds Hamilton's national index straight away. | Decision card in the Hamilton lane thread, Oct 16 05:00 UTC | Yes |
+| 2026-10-16 | Release checks: #979 reopened (B4); main protection plan approved (B8); H07-T08/T09 treat the production version as the release candidate and run read checks per initiative (B9). No case dropped. | Same card | Yes |
 
 ## Change log
 
 - 2026-10-16: first version.
 - 2026-10-16 (.2): added James's live run of the #976/#977 steps (H01-AC2, H02-AC1, H02-AC3 now "Run, failing"), and the Oct 16 release-protection read (H07-T06, B8). H02-T01 moved to "In progress" (no matrix document found).
+- 2026-10-16 (.3): James's Oct 16 decisions on H03-T02, B4, B8 and B9 recorded as scope changes; B3, B4, B8 and B9 updated; B10 cleared by a production read.

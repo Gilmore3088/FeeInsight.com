@@ -1,4 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const { secondLookMock } = vi.hoisted(() => ({ secondLookMock: vi.fn() }));
+vi.mock("@/lib/agents/hamilton/second-look", () => ({ secondLook: secondLookMock }));
+vi.mock("@/lib/agents/savepoint", () => ({ inSavepoint: (db: unknown, fn: (scope: unknown) => unknown) => fn(db) }));
+vi.mock("@/lib/data-store/fee-cache", () => ({ invalidatePublicReadCache: vi.fn() }));
 
 import { trainCategoryModel } from "./category-model";
 import {
@@ -6,6 +11,7 @@ import {
   findLineConflicts,
   lineConflictCountSql,
   lineConflictVerdict,
+  recheckLineConflicts,
   type LineConflictRow,
 } from "./line-conflict-check";
 
@@ -181,8 +187,45 @@ describe("findLineConflicts", () => {
     expect(found.verdicts[0].keptReading).toBe("gift_card_purchase");
   });
 
-  it("ships switched off, with a read-only count", () => {
-    expect(LINE_CONFLICT_TAKEDOWN_LIVE).toBe(false);
+  it("ships switched on (James, Oct 16), with a read-only count", () => {
+    expect(LINE_CONFLICT_TAKEDOWN_LIVE).toBe(true);
     expect(lineConflictCountSql()).not.toMatch(/\b(UPDATE|INSERT|DELETE)\b/i);
+  });
+});
+
+describe("recheckLineConflicts switch", () => {
+  const excerpt = 'excerpt="Safe deposit box 5x5 | $ 15.00 Charged once each year for renting a safe deposit box of this size."';
+  function lineDb() {
+    const a = row({ fee_name: "Safe deposit box 5x5", canonical_fee_key: "safe_deposit_box", amount: 15, frequency: "per_item", conditions: excerpt });
+    const b = row({ fee_name: "Safe deposit box 5x5", canonical_fee_key: "safe_deposit_box", amount: 15, frequency: "annual", conditions: excerpt });
+    const db = vi.fn(() => Promise.resolve([])) as unknown as ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
+    db.unsafe = vi.fn(() => Promise.resolve([a, b]));
+    return { db, retiredId: Number(a.fee_published_id) };
+  }
+  type Db = Parameters<typeof recheckLineConflicts>[0];
+
+  beforeEach(() => {
+    secondLookMock.mockReset();
+    secondLookMock.mockResolvedValue({ flagged: 1, waiting: 0, cleared: 1, confirmed: [] });
+  });
+
+  it("on by default: a retired row goes to the shared second look", async () => {
+    const { db, retiredId } = lineDb();
+    const result = await recheckLineConflicts(db as unknown as Db, { runId: 5, dryRun: false, model: null });
+    expect(result).toMatchObject({ live: true, wouldRetire: 1, flagged: 1, takenDown: [] });
+    expect(secondLookMock).toHaveBeenCalledTimes(1);
+    expect(secondLookMock.mock.calls[0][1]).toMatchObject({ check: "darwin.line_conflict", dryRun: false });
+    expect(secondLookMock.mock.calls[0][1].failing.map((fee: { feePublishedId: number }) => fee.feePublishedId)).toEqual([retiredId]);
+  });
+
+  it("switched off (live: false) or in a dry run, only reports", async () => {
+    for (const options of [{ live: false, dryRun: false }, { dryRun: true }]) {
+      const { db } = lineDb();
+      const result = await recheckLineConflicts(db as unknown as Db, { runId: 5, model: null, ...options });
+      expect(result).toMatchObject({ wouldRetire: 1, flagged: 0, takenDown: [] });
+      const writes = db.mock.calls.map((call) => (call[0] as TemplateStringsArray).join("?")).join("\n");
+      expect(writes).not.toMatch(/UPDATE|DELETE/);
+    }
+    expect(secondLookMock).not.toHaveBeenCalled();
   });
 });
