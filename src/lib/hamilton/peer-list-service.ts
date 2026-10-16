@@ -5,7 +5,9 @@ import { getActivePeerSet } from "./active-peer-set";
 import { loadHamiltonAccountContext } from "./account-context-store";
 import { normalizeCanonicalInstitutionId } from "./context-link";
 import { resolveHamiltonInstitutionContext } from "./workspace-context";
-import { isPeerListContinuationQuestion, peerListFeeFollowUp, parsePeerListQuestion, peerListRefinementState, validatePeerListContinuation, peerListReferencesUnchanged, planPeerList, MAX_PEER_LIST_ROWS, type PeerListCriteria, type PeerListData, type PeerListResponse, type PeerListSubject } from "./peer-list";
+import { feeCategoriesIn } from "./workspace/ask";
+import { proseFeeName } from "./workspace/names";
+import { isPeerListContinuationQuestion, peerListFeeFollowUp, peerListFollowUpFeePhrase, parsePeerListQuestion, peerListRefinementState, validatePeerListContinuation, peerListReferencesUnchanged, planPeerList, MAX_PEER_LIST_ROWS, type PeerListCriteria, type PeerListData, type PeerListResponse, type PeerListSubject } from "./peer-list";
 
 /** Why "us" has no institution: none linked, or more than one. Never the researched institution. */
 function noAccountInstitution(status: string): string {
@@ -49,6 +51,13 @@ export async function answerPeerList(user: PeerAsker, body: PeerAskBody, recordA
         const prior = validatePeerListContinuation(body.previousPeerList);
         const state = peerListRefinementState(question);
         const feeIntent = peerListFeeFollowUp(question);
+        // "Compare their overdraft fees" names one fee; "How does this compare with us?" means NSF.
+        const phrase = feeIntent ? peerListFollowUpFeePhrase(question) : null;
+        const named = phrase ? feeCategoriesIn(phrase) : ["nsf"];
+        if (feeIntent && named.length !== 1)
+          return message("needs_criteria", `Name one fee to compare, for example "Compare their overdraft fees" or "Compare their NSF fees". ${named.length ? "That names more than one fee." : "Hamilton did not recognize that fee."} Nothing was compared.`);
+        const category = named[0];
+        const label = proseFeeName(category);
         // "Compare with us" with no list yet: say whether the account has an institution to be "us",
         // from the account alone. The researched institution is never taken to be the asker's.
         if (!prior && feeIntent === "with_account") {
@@ -56,7 +65,7 @@ export async function answerPeerList(user: PeerAsker, body: PeerAskBody, recordA
           if (resolved.status === "unavailable")
             return message("unavailable", "Hamilton could not check which institution is linked to your account. Nothing was compared.");
           if (resolved.status !== "identified" || !resolved.institution)
-            return message("needs_criteria", `${noAccountInstitution(resolved.status)} To see peers' NSF fees, ask for a peer list first, then "Compare their NSF fees".`);
+            return message("needs_criteria", `${noAccountInstitution(resolved.status)} To see peers' ${label} fees, ask for a peer list first, then "Compare their ${label} fees".`);
           return message("needs_criteria", `Ask for a peer list first, for example "List ten similarly sized peers". Then ask "How does this compare with us?" to add ${resolved.institution.name}.`);
         }
         if (!prior || !isPeerListContinuationQuestion(question))
@@ -89,23 +98,23 @@ export async function answerPeerList(user: PeerAsker, body: PeerAskBody, recordA
             if (resolved.status !== "identified" || !resolved.institution)
               return resolved.status === "unavailable"
                 ? message("unavailable", "Hamilton could not check which institution is linked to your account. Nothing was compared.")
-                : message("needs_criteria", `${noAccountInstitution(resolved.status)} To compare the listed peers, ask "Compare their NSF fees".`);
+                : message("needs_criteria", `${noAccountInstitution(resolved.status)} To compare the listed peers, ask "Compare their ${label} fees".`);
             account = { institutionId: Number(resolved.institution.id), name: resolved.institution.name };
             if (!Number.isSafeInteger(account.institutionId) || account.institutionId <= 0)
               return message("unavailable", "The account institution ID is invalid. No comparison was generated.");
           }
           const ids = rows.map(row => row.institutionId);
           const fees = ids.length || account ? await getPublishedPeerFees(
-            [...new Set([...ids, ...(account ? [account.institutionId] : [])])], "nsf") : [];
+            [...new Set([...ids, ...(account ? [account.institutionId] : [])])], category) : [];
           feeComparison = {
-            category: "nsf", comparedPeerIds: ids, fees, account, includesAccount: account !== null,
-            note: "Each published consumer NSF fee row is shown separately, including zero fees and distinct charges. Missing records mean no published matching fee on file; no amount is inferred.",
+            category, label, comparedPeerIds: ids, fees, account, includesAccount: account !== null,
+            note: `Each published consumer ${label} fee row is shown separately, including zero fees and distinct charges. Missing records mean no published matching fee on file; no amount is inferred.`,
           };
         }
         return {
           kind: "peer_list",
           shortAnswer: feeIntent
-            ? feeIntent === "with_account" ? "NSF fees for " + rows.length + " selected peers versus your verified account institution." : "Published NSF fees for " + rows.length + " selected peers."
+            ? feeIntent === "with_account" ? `${label[0].toUpperCase()}${label.slice(1)} fees for ${rows.length} selected peer${rows.length === 1 ? "" : "s"} versus your verified account institution.` : `Published ${label} fees for ${rows.length} selected peer${rows.length === 1 ? "" : "s"}.`
             : rows.length + " of " + count + " previously displayed peers are in " + state + ".",
           peerList: {
             ...original.peerList,

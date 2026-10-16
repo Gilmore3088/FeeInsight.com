@@ -96,6 +96,8 @@ function SelectablePeerList({ response, saveContext }: { response: PeerListRespo
   }, [data.rows, sort]);
   if (data.status !== "ready") return <p role="status" className="text-sm leading-relaxed text-warm-800">{response.shortAnswer}</p>;
   const criteria = data.criteria;
+  // Snapshots saved before #1538 carry no label; every one of them compared NSF fees.
+  const feeLabel = data.feeComparison?.label ?? "NSF";
   return (
     <section aria-label="Peer list" className="flex min-w-0 flex-col gap-4 font-sans">
       <div>
@@ -122,10 +124,10 @@ function SelectablePeerList({ response, saveContext }: { response: PeerListRespo
       </div> : null}
       {data.feeComparison ? (
         <div className="rounded-lg border border-warm-300 p-4">
-          <h3 className="text-lg font-semibold text-warm-900">Published NSF fees — exact selected peers</h3>
+          <h3 className="text-lg font-semibold text-warm-900">Published {feeLabel} fees for the selected peers</h3>
           <p className="mt-1 text-sm text-warm-700">{data.feeComparison.note}</p>
-          <div role="region" aria-label="NSF fee comparison; scroll horizontally" tabIndex={0} className="mt-3 overflow-x-auto">
-            <table aria-label="Published NSF charges" className="w-full min-w-[700px] text-left text-sm">
+          <div role="region" aria-label={`${feeLabel} fee comparison; scroll horizontally`} tabIndex={0} className="mt-3 overflow-x-auto">
+            <table aria-label={`Published ${feeLabel} charges`} className="w-full min-w-[700px] text-left text-sm">
               <thead><tr><th scope="col" className="p-2">Institution</th><th scope="col" className="p-2">Fee</th><th scope="col" className="p-2">Amount</th><th scope="col" className="p-2">Frequency</th><th scope="col" className="p-2">Published / source</th></tr></thead>
               <tbody>
                 {[...data.rows.map(row => ({ id: row.institutionId, name: row.name, isAccount: false })),
@@ -142,7 +144,7 @@ function SelectablePeerList({ response, saveContext }: { response: PeerListRespo
                         {charge.documentUrl || charge.sourceUrl ? <a href={charge.documentUrl ?? charge.sourceUrl ?? "#"} target="_blank" rel="noopener noreferrer" className="ml-2 underline">Fee schedule</a> : <span className="ml-2">Source link unavailable</span>}
                       </td>
                     </tr>
-                  )) : <tr key={item.id} className="border-t border-warm-200"><th scope="row" className="p-2 font-medium">{item.name}{item.isAccount ? " (verified account)" : ""}</th><td colSpan={4} className="p-2">No published consumer NSF fee on file</td></tr>;
+                  )) : <tr key={item.id} className="border-t border-warm-200"><th scope="row" className="p-2 font-medium">{item.name}{item.isAccount ? " (verified account)" : ""}</th><td colSpan={4} className="p-2">No published consumer {feeLabel} fee on file</td></tr>;
                 })}
               </tbody>
             </table>
@@ -208,7 +210,7 @@ function SelectablePeerList({ response, saveContext }: { response: PeerListRespo
           </div>
         </>
       ) : <p className="text-sm text-warm-800">No institutions matched. Change the criteria in the question field; no replacement peer group was selected.</p>}
-      <p className="text-xs text-warm-600">You can refine this exact displayed list by state (for example, “Only Florida”) or save selected institutions as a peer group. NSF comparisons use only this displayed selection. Save this peer research keeps the exact snapshot to reopen later. PDF and export are not available yet.</p>
+      <p className="text-xs text-warm-600">You can refine this exact displayed list by state (for example, “Only Florida”) or save selected institutions as a peer group. Fee comparisons use only this displayed selection. Save this peer research keeps the exact snapshot to reopen later. PDF and export are not available yet.</p>
     </section>
   );
 }
