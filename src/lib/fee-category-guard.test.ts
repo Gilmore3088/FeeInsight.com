@@ -315,6 +315,10 @@ describe("checkFeeCategory", () => {
       "Night Deposit Additional Key Fee",
       "Night Deposit Service - per key",
       "Charge for night deposit key for after hours business access",
+      // A service, annual or rental line that names a key deposit is still the service (#1640 review).
+      "Night Deposit Service (key deposit required)",
+      "Night Depository Annual Fee includes key deposit",
+      "Night Depository Rental, key deposit $10",
     ]) {
       expect(checkFeeCategory("night_deposit", name), name).toEqual({ ok: true });
     }

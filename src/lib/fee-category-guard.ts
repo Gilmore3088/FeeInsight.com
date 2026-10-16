@@ -394,8 +394,9 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
     include: /(night|depository|after[- ]hours|drop box|\bbags?\b.{0,20}\b(lost|replac\w*)|\b(lost|replac\w*)\b.{0,20}\bbags?\b)/i,
     // v66 (James, Oct 16, #1099 option A; #1605): a deposit paid for the depository key ("Night
     // Depository Key Deposit", "Night Deposit Box Key (Refundable Deposit)", "Deposit for Receptacle
-    // Key") is a key charge, not the service. A lost or replaced key stays the night deposit fee.
-    exclude: /(^(?!.*(lost|replac|per month|monthly|annual|rental)).*(\bbags?\b|zipper|pouch|wrapper|strap)|^(?!.*(lost|replac)).*(\bkeys?\b[^|]{0,30}?\b(deposit|refundable)\b|\bdeposit for\b[^|]{0,30}\bkeys?\b|\bsecurity deposit\b[^|]{0,30}\bkeys?\b))/i,
+    // Key") is a key charge, not the service. A lost or replaced key stays the night deposit fee, and so
+    // does a service, monthly, annual or rental line that names a key deposit (as for bags).
+    exclude: /(^(?!.*(lost|replac|per month|monthly|annual|rental)).*(\bbags?\b|zipper|pouch|wrapper|strap)|^(?!.*(lost|replac|service|per month|monthly|annual|rental)).*(\bkeys?\b[^|]{0,30}?\b(deposit|refundable)\b|\bdeposit for\b[^|]{0,30}\bkeys?\b|\bsecurity deposit\b[^|]{0,30}\bkeys?\b))/i,
   },
   // v60: a night deposit bag, its key or a bag bundle is not a safe deposit box fee (UAT 104666,
   // "Deposit Bags & Night Deposit Drop Box: Disposable 9" x 12" bundle" $15; 6/6 on source, Oct 9).
