@@ -63,7 +63,7 @@ const API_FROM_LABEL = PRO_TIERS.find((tier) => API_INCLUDED_TIERS.includes(tier
  * what happens at the limit, before purchase). The account holder makes the one key on /account.
  */
 export const API_INCLUDES_LINE = `API and Claude connector included for institutions with ${API_FROM_LABEL ?? proTier(API_INCLUDED_TIERS[0]).assetsLabel}+ in assets, and for consultants · ${API_MONTHLY_CALLS_LABEL} API calls a month.`;
-export const API_HOW_LINE = `The account holder makes one API key on their account page. Every call made with it, including through the Claude connector, counts toward the ${API_MONTHLY_CALLS_LABEL}. At the limit, API calls stop until the 1st of the next month; Hamilton keeps working.`;
+export const API_HOW_LINE = `The account holder makes one API key on their account page and can share it with the team. Every call made with it, including through the Claude connector, counts toward the same ${API_MONTHLY_CALLS_LABEL}. At the limit, API calls stop until the 1st of the next month; Hamilton keeps working.`;
 /** After the consultant price: their plan includes the API too. */
 export const CONSULTANT_API_NOTE = "Both include the API key and Claude connector.";
 /** Renewal and refund terms, shown before a choice as well as at checkout (James, Oct 16). */
