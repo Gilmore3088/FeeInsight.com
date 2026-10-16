@@ -390,3 +390,127 @@ describe("account names read from page text (whole-record sample, 9 Oct)", () =>
     ]);
   });
 });
+
+describe("the account a read records (v73, #1100)", () => {
+  const read = (feeName: string, excerpt: string, extra: Partial<{ canonicalHint: string; amount: number; productName: string }> = {}) => ({
+    canonicalHint: extra.canonicalHint ?? "monthly_maintenance",
+    feeName,
+    excerpt,
+    amount: extra.amount ?? 5,
+    lineup: extra.productName ? { productName: extra.productName, minBalanceToAvoid: null, minOpeningDeposit: null, waiverText: null } : null,
+  });
+  const productOf = (candidate: ReturnType<typeof read>, text: string) => withLineupFromText(candidate, text).lineup?.productName ?? null;
+
+  it("takes the lineup's product first", () => {
+    const text = "Savings Accounts\nPremier Checking | Monthly fee $5.00";
+    expect(productOf(read("Monthly fee", "Premier Checking | Monthly fee $5.00", { productName: "Premier Checking" }), text)).toBe("Premier Checking");
+  });
+
+  it("takes the account table's column header for a read of the table's fee row", () => {
+    const text = ["Account | Great Checking | Better Checking", "Minimum to open | $25 | $100", "Monthly Service Fees | $0 | $5"].join("\n");
+    expect(productOf(read("Monthly Service Fees", "Monthly Service Fees | $0 | $5", { amount: 5 }), text)).toBe("Better Checking");
+  });
+
+  it("takes the nearest account heading before the fee's own name", () => {
+    const text = "Statement Savings\nMinimum balance to avoid the fee: $100\nMonthly Service Charge $3.00";
+    expect(productOf(read("Monthly Service Charge", "Monthly Service Charge $3.00"), text)).toBe("Statement Savings");
+    // A heading that names only the kind of account is that kind's account.
+    expect(productOf(read("Monthly fee", "Monthly fee $2.00"), "Savings Accounts\nMonthly fee $2.00")).toBe("Savings Accounts");
+    // The nearer heading wins: a product under the kind heading is that product.
+    expect(productOf(read("Monthly fee", "Monthly fee $2.00"), "Savings Accounts\nRegular Share\nMonthly fee $2.00")).toBe("Regular Share");
+  });
+
+  it("takes the fee's own account over a heading of another kind of account", () => {
+    // Inst 8434 doc 17805, prod: "Star Checking Monthly Fee" printed under "Savings / Money Market".
+    const text = "Savings / Money Market\nBelow minimum balance: $5 monthly.\nStar Checking Monthly Fee: $5 with either e-Statements or Direct Deposit.";
+    expect(productOf(read("Star Checking Monthly Fee", "Star Checking Monthly Fee: $5 with either e-Statements or Direct Deposit."), text)).toBe("Star Checking");
+  });
+
+  it("reads the heading above the excerpt's own line when its opening words repeat earlier", () => {
+    // Platte Valley Bank (doc 29120), prod: the same sentence opens the CD and the HSA paragraphs.
+    const text = [
+      "Certificates of Deposit",
+      "Call or see a Platte Valley Bank representative for more information.",
+      "Health Savings Account",
+      "Call or see a Platte Valley Bank representative for eligibility and more information. $3.00 Monthly service charge",
+    ].join("\n");
+    const excerpt = "Call or see a Platte Valley Bank representative for eligibility and more information. $3.00 Monthly service charge";
+    expect(productOf(read("Monthly service charge", excerpt, { amount: 3 }), text)).toBe("Health Savings Account");
+  });
+
+  it("falls back to the fee's own name, and records nothing when no source names the account", () => {
+    expect(productOf(read("Freedom Checking Monthly Fee", "Freedom Checking Monthly Fee $10.00"), "Fees\nFreedom Checking Monthly Fee $10.00")).toBe("Freedom Checking");
+    // Never assumed to be checking: no lineup, table, heading or named account is no account.
+    expect(productOf(read("Monthly Service Charge", "Monthly Service Charge $6.00"), "Personal Accounts\nMonthly Service Charge $6.00")).toBeNull();
+  });
+
+  it("records a minimum balance fee's account only", () => {
+    const text = "Money Market Accounts\nMinimum balance fee if below $2,500 $10.00";
+    const named = withLineupFromText(read("Minimum balance fee", "Minimum balance fee if below $2,500 $10.00", { canonicalHint: "minimum_balance", amount: 10 }), text);
+    expect(named.lineup).toEqual({ productName: "Money Market Accounts", minBalanceToAvoid: null, minOpeningDeposit: null, waiverText: null });
+    // Other categories record none.
+    expect(withLineupFromText(read("Stop payment", "Stop payment $30.00", { canonicalHint: "stop_payment" }), text).lineup).toBeNull();
+  });
+
+  it("never reads a checking fee as another account's (#1598 review, prod rows)", () => {
+    // 134101 (doc 6472): "Enjoy! Rewards Checking monthly service fee" under "CHECKING & MONEY MARKET", "SAVINGS" above.
+    const enjoy = ["SAVINGS", "Paper statement fee (per month) ....$5.00", "CHECKING & MONEY MARKET", "Returned loan or credit card payment (per item) ....$25.00",
+      "(If a loan payment is returned unpaid, you may also be subject to a | Enjoy! Rewards Checking monthly service fee (per month) ....$5.00"].join("\n");
+    expect(productOf(read("Enjoy! Rewards Checking monthly service fee", "(If a loan payment is returned unpaid, you may also be subject to a | Enjoy! Rewards Checking monthly service fee (per month) ....$5.00"), enjoy)).toBeNull();
+    // 127646 (doc 26327): a fee for all accounts, under a heading listing several kinds, CDs above.
+    const all = ["Certificates of Deposit", "$1,000 Minimum to open all Certificates of Deposit. Rates subject to change.", "FEES", "Regular Share, Checking, Money Market and Club Accounts",
+      "Deposited Item Return - per check returned | $25.00", "Monthly Service Fee - all accounts | $0.00"].join("\n");
+    expect(productOf(read("Monthly Service Fee - all accounts", "Monthly Service Fee - all accounts | $0.00", { amount: 0 }), all)).toBeNull();
+    // 68170 (doc 19546): one $0 printed across the checking, savings and CD columns.
+    const ameriprise = ["Certificate of Deposit", "Minimum balance after | $0 $0 CD balance amount until", "Maintenance fee Monthly maintenance fee $0 $0 $0"].join("\n");
+    expect(productOf(read("Maintenance fee Monthly maintenance fee", "Maintenance fee Monthly maintenance fee $0 $0 $0", { amount: 0 }), ameriprise)).toBeNull();
+    // 64872 (inst 1310): a package's fee under "CONSUMER BANKING PACKAGES", a Roth IRA above.
+    const premier = ["ROTH INDIVIDUAL RETIREMENT ACCOUNT (IRA)", "Minimum amount to open $500.00", "CONSUMER BANKING PACKAGES", "PREMIER ADVANTAGE",
+      "Monthly maintenance fee if minimum balance requirement is not met $15.00"].join("\n");
+    expect(productOf(read("Monthly maintenance fee if minimum balance requirement is not met", "Monthly maintenance fee if minimum balance requirement is not met $15.00", { amount: 15 }), premier)).toBeNull();
+    // A checking heading off the kind list ends the lookback.
+    for (const heading of ["Checking Account Fees", "Our Checking Accounts", "CHECKING & MONEY MARKET"]) {
+      expect(productOf(read("Monthly fee", "Monthly fee $5.00"), `Savings Accounts\n${heading}\nMonthly fee $5.00`), heading).toBeNull();
+    }
+  });
+
+  it("never records a disclosure title, a perk or a bank's name as the account (#1598 review)", () => {
+    for (const heading of ["Truth in Savings", "Truth-in-Savings Disclosure", "Health Savings Card", "Bangor Savings Bank", "Home Savings Bank", "First Federal Savings and Loan"]) {
+      expect(productOf(read("Monthly fee", "Monthly fee $5.00"), `${heading}\nMonthly fee $5.00`), heading).toBeNull();
+    }
+    expect(productOf(read("Truth in Savings Monthly Fee", "Truth in Savings Monthly Fee $4.00", { amount: 4 }), "Fees\nTruth in Savings Monthly Fee $4.00")).toBeNull();
+    // A stored lineup product that names no account gives way to the next source.
+    expect(productOf(read("Monthly fee", "Monthly fee $6.00", { productName: "Health Savings Card", amount: 6 }), "Premier Checking\nMonthly fee $6.00")).toBe("Premier Checking");
+    // Fee 64103 (BANK360, Club Plus Checking): a perk from the package's list is no account.
+    expect(productOf(read("Monthly fee", "Monthly fee $7.50", { amount: 7.5 }), "Hotel Savings Network\nMonthly fee $7.50")).toBeNull();
+    // A glued checking heading ends the lookback; a glued checking fee is checking's.
+    expect(productOf(read("Monthly fee", "Monthly fee $5.00"), "Savings Accounts\neChecking Account Fees\nMonthly fee $5.00")).toBeNull();
+    expect(productOf(read("MyChecking Monthly Fee", "MyChecking Monthly Fee $5.00"), "Savings Accounts\nMyChecking Monthly Fee $5.00")).toBeNull();
+    // 677436 / 677439 (prod): a wrapped Reg DD sentence whose opening repeats under another account.
+    const regdd = ["SENIOR CHECKING ACCOUNT", "Minimum balance to avoid imposition of fees - A service charge fee of $15.00 will", "be imposed every four-week statement cycle if the balance in the account falls below $500.",
+      "BUSINESS CHECKING ACCOUNT", "Minimum balance to avoid imposition of fees - A service charge fee of $50.00 will", "be imposed every month if the balance falls below $5,000."].join("\n");
+    const senior = "Minimum balance to avoid imposition of fees - A service charge fee of $15.00 will be imposed every four-week statement cycle if the balance in the account falls below";
+    expect(productOf(read("Minimum balance to avoid imposition of fees", senior, { amount: 15 }), regdd)).toBe("SENIOR CHECKING ACCOUNT");
+    // 483864 (prod): a business table's fee takes its column, not a checking heading above the table.
+    const business = ["ULTIMATE CHECKING", "Monthly service charge | $5", "ACCOUNT FEATURES | BUSINESS CHECKING", "Monthly service charge | $10"].join("\n");
+    expect(productOf(read("Monthly service charge", "Monthly service charge | $10", { amount: 10 }), business)).toBe("BUSINESS CHECKING");
+    // The same row under several accounts' tables: no account.
+    const repeated = ["ACCOUNT FEATURES | ULTIMATE CHECKING", "Monthly service charge | $10", "ACCOUNT FEATURES | MONEY MARKET PLUS", "Monthly service charge | $10"].join("\n");
+    expect(productOf(read("Monthly service charge", "Monthly service charge | $10", { amount: 10 }), repeated)).toBeNull();
+    // 441754 (Regions, prod): a waiver cell naming a checking account is no header.
+    const regions = ["PREMIUM MONEY MARKET", "You May Avoid Monthly Fee By | Minimum daily balance of $15,000 OR opening or maintaining a", "Maintaining One Or More Of The | LifeGreen Preferred Checking account", "Following:", "Minimum Opening Deposit | $25", "Monthly Fee | $15"].join("\n");
+    expect(productOf(read("Monthly Fee", "Monthly Fee | $15", { amount: 15 }), regions)).toBe("PREMIUM MONEY MARKET");
+    // 643669 (prod): the kids' club heading records the account; a checking fee under it keeps its own.
+    const kids = "Money Tree Kids Club\nFor children 0-12 years old.\nMinimum balance service charge of $2.00 will be applied if account falls below $10.00";
+    expect(productOf(read("Minimum balance service charge", "Minimum balance service charge of $2.00 will be applied if account falls below $10.00", { amount: 2 }), kids)).toBe("Money Tree Kids Club");
+    expect(productOf(read("Star Checking Monthly Fee", "Star Checking Monthly Fee: $5"), "Money Tree Kids Club\nStar Checking Monthly Fee: $5")).toBe("Star Checking");
+    // #1598 review probes: a savings table's header never names a checking-page fee's account.
+    const apart = ["Account | Statement Savings", "Minimum to open | $25", "Checking Accounts", "Monthly service charge | $10"].join("\n");
+    expect(productOf(read("Monthly service charge", "Monthly service charge | $10", { amount: 10 }), apart)).not.toBe("Statement Savings");
+    const unlabelled = ["Account | Statement Savings", "Ask about our | Premier Checking options", "Monthly service charge | $10"].join("\n");
+    expect(productOf(read("Monthly service charge", "Monthly service charge | $10", { amount: 10 }), unlabelled)).not.toBe("Statement Savings");
+    // The institution's own name.
+    const named = withLineupFromText(read("Monthly fee", "Monthly fee $5.00"), "Peoples Savings\nMonthly fee $5.00", { institutionName: "Peoples Savings" });
+    expect(named.lineup?.productName ?? null).toBeNull();
+  });
+});
