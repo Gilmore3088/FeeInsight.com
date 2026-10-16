@@ -80,7 +80,7 @@ import { frequencyFromLine, settledFrequency } from "@/lib/fee-frequency";
 // charge named without a fee word and charged by the period, one stated in a sentence ("a low
 // balance fee of $6.95 will be imposed every statement cycle"), and a price after a balance word
 // that belongs to the figure before it ("Below $500.00 minimum $5.00 per Month").
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 71 } as const;
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 72 } as const;
 
 export interface SpecialistRun {
   strategy: string;

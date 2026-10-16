@@ -501,6 +501,15 @@ hand check found wrong, from their real lines.
   Transfer for\nOverdrafts - $2.00 per transfer", raw 112570). A bare "Overdrafts" priced per
   item is still the overdraft fee.
 
+v72 (#1099, Oct 16): a loan's own servicing fees from Deming's answer-key misses (`rules.ts`, other lending).
+- A loan, lease or mortgage payment made by phone, by debit or credit card, or by ACH ("Loan Payment
+  by Phone Fee (ACH) | $15.00", "Loan payment by debit card fee") is other lending.
+- A returned loan, lease or mortgage payment ("Returned Loan Payment Fee", "Bad Check Fee (Returned
+  Mortgage Payment)") is other lending. A bare "returned payment", "returned item" or "returned check"
+  names no loan and stays NSF or returned item.
+- Not in v72: an amortization schedule (live as a document copy at two banks; the production key
+  files it as lending) and a loan coupon book (the seven-state key leaves it unfiled) wait for a call.
+
 v71 (#1100 gap 3, Oct 15): each checking product's monthly fee in an account comparison table, read by
 its column (`extract.account_table` v1, `account-table.ts`; see Extraction Passes).
 - "Monthly Service Fees | $0 | $5 | $10" under "Account | Great Checking | Better Checking | Best
@@ -1040,7 +1049,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `LINEUP_CORRECT_STRATEGY` | `knox.lineup_correct` | v2 | `knox/lineup-correct.ts` |
 | `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v19 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v2 | `knox/paid-extract.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v71 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v72 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v6 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v1 | `knox/takedown-lessons.ts` |

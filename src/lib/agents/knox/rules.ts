@@ -333,7 +333,7 @@ export const FEE_PATTERNS: FeePattern[] = [
   {
     key: "other_lending_fee",
     pattern:
-      /\b(?:loan|lease|mortgage)s?\b[^|$]{0,25}\bpayments?\b[^|$]{0,30}\b(?:by|via|using|over the)\s+(?:tele)?phone\b|\b(?:loan|lease|mortgage)s?\b[^|$]{0,25}\bpayments?\b[^|$]{0,30}\b(?:by|via|using|with)\s+(?:a\s+)?(?:debit|credit)(?: or (?:debit|credit))?\s*card|\b(?:loan|lease|mortgage)s?\b[^|$]{0,25}\bpayments?\b[^|$]{0,30}\b(?:by|via|using)\s+ACH\b|\b(?:re)?amorti[sz]ation schedules?\b|\breturned (?:check (?:for|on) )?(?:loan|lease|mortgage) payments?\b|\breturned (?:loan|lease|mortgage) (?:check|payment)s?\b/i,
+      /\b(?:loan|lease|mortgage)s?\b[^|$]{0,25}\bpayments?\b[^|$]{0,30}\b(?:by|via|using|over the)\s+(?:tele)?phone\b|\b(?:loan|lease|mortgage)s?\b[^|$]{0,25}\bpayments?\b[^|$]{0,30}\b(?:by|via|using|with)\s+(?:a\s+)?(?:debit|credit)(?: or (?:debit|credit))?\s*card|\b(?:loan|lease|mortgage)s?\b[^|$]{0,25}\bpayments?\b[^|$]{0,30}\b(?:by|via|using)\s+ACH\b|\breturned (?:check (?:for|on) )?(?:loan|lease|mortgage) payments?\b|\breturned (?:loan|lease|mortgage) (?:check|payment)s?\b/i,
   },
   { key: "late_payment", pattern: /\blate (payment|charge|fee)\b/i },
   { key: "loan_origination", pattern: /\bloan origination\b/i },
