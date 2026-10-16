@@ -83,6 +83,20 @@ describe("district map", () => {
     expect(gapWords(-5)).toBe("$5.00 below national");
   });
 
+  it("gives phones one takeaway and one link, with the comparison one tap away", () => {
+    render(<DistrictMap data={data} />);
+    const takeaway = document.querySelector("[data-district-takeaway]") as HTMLElement;
+    expect(takeaway.textContent).toContain(`Philadelphia: $32.00 median, ${gapWords(32 - 30)}`);
+    expect(within(takeaway).getByRole("link", { name: /Explore the Philadelphia district/ }).getAttribute("href")).toBe("/research/district/3");
+    const toggle = within(takeaway).getByRole("button", { name: "View comparison details" });
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(panel().parentElement?.className).toContain("max-sm:hidden");
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    expect(toggle.textContent).toBe("Hide comparison details");
+    expect(panel().parentElement?.className).not.toContain("max-sm:hidden");
+  });
+
   it("places each district dot at its true median and stacks dots that would overlap", () => {
     const { dots, rows, nationLeft } = placeDots(
       [

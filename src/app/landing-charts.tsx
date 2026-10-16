@@ -105,6 +105,9 @@ export function DistrictMap({ data }: { data: HomeData }) {
   const [selected, setSelected] = useState<number | null>(() => firstDistrict(districts));
   const [hovered, setHovered] = useState<number | null>(null);
   const [metric, setMetric] = useState<Metric>("median");
+  /** Phones show the map and one takeaway; the comparison views open on request. */
+  const [more, setMore] = useState(false);
+  const onPhoneUnlessMore = more ? "" : "max-sm:hidden";
   const byNumber = new Map(districts.map((d) => [d.district, d]));
   const activeNumber = hovered ?? selected;
   const active = activeNumber !== null ? byNumber.get(activeNumber) ?? null : null;
@@ -279,17 +282,49 @@ export function DistrictMap({ data }: { data: HomeData }) {
       <p className="sr-only" aria-live="polite" data-district-announce="">
         {selected !== null ? label(chosen, selected) : ""}
       </p>
-      <DistrictPanel district={active} number={activeNumber} national={overdraft} swatchOf={swatchOf} />
+      {/* Phones: one takeaway and one link under the map; the panel, the dot plot and the 12
+          report links wait behind "View comparison details" (James's notes of Oct 16). */}
+      {active && activeNumber !== null ? (
+        <div className="sm:hidden" data-district-takeaway="">
+          <p className="text-[16px] leading-snug text-ink-soft">
+            <span className="font-semibold text-ink">{active.name}</span>
+            {active.median !== null && overdraft
+              ? `: ${money(active.median)} median, ${gapWords(active.median - overdraft.median_amount)}`
+              : ": too few institutions for a median"}
+          </p>
+          <div className="mt-1 flex flex-wrap items-center justify-between gap-x-4">
+            <Link
+              href={`/research/district/${activeNumber}`}
+              className="inline-flex min-h-11 items-center gap-1 text-[14px] font-semibold text-ink underline decoration-border underline-offset-4"
+            >
+              Explore the {active.name} district <span aria-hidden="true">→</span>
+            </Link>
+            <button
+              type="button"
+              aria-expanded={more}
+              onClick={() => setMore((open) => !open)}
+              className="inline-flex min-h-11 items-center text-[14px] font-semibold text-ink-soft hover:text-ink"
+            >
+              {more ? "Hide comparison details" : "View comparison details"}
+            </button>
+          </div>
+        </div>
+      ) : null}
+      <div className={`min-w-0 ${onPhoneUnlessMore}`}>
+        <DistrictPanel district={active} number={activeNumber} national={overdraft} swatchOf={swatchOf} />
+      </div>
      </div>
       {drawn.length > 1 && overdraft ? (
-        <DistrictGroups districts={drawn} national={overdraft.median_amount} active={activeNumber} onPick={pick} swatchOf={swatchOf} />
+        <div className={onPhoneUnlessMore}>
+          <DistrictGroups districts={drawn} national={overdraft.median_amount} active={activeNumber} onPick={pick} swatchOf={swatchOf} />
+        </div>
       ) : null}
       {/* One compact footer row across the demo: the shown district's report, then all 12. */}
-      <div className="mt-5 flex flex-wrap items-center justify-between gap-x-6 gap-y-1 border-t border-border pt-2" data-district-footer="">
+      <div className={`mt-5 flex flex-wrap items-center justify-between gap-x-6 gap-y-1 border-t border-border pt-2 ${onPhoneUnlessMore}`} data-district-footer="">
         {activeNumber !== null ? (
           <Link
             href={`/research/district/${activeNumber}`}
-            className="inline-flex min-h-10 items-center gap-1 text-[13px] font-semibold text-ink underline decoration-border underline-offset-4 hover:decoration-ink"
+            className="inline-flex min-h-10 items-center gap-1 text-[13px] font-semibold text-ink underline decoration-border underline-offset-4 hover:decoration-ink max-sm:hidden"
           >
             {active ? `The ${active.name} district report` : "The district report"}
             <span aria-hidden="true">→</span>

@@ -224,11 +224,12 @@ export function SourceDiagram({ data, limit = 4 }: { data: HomeData; limit?: num
           const read = readOnLabel(fee.readOn);
           const last = i === fees.length - 1;
           return (
-            <div key={fee.key} className="contents">
+            // Under ShowMore, only the first fee shows until the reader asks for the rest.
+            <div key={fee.key} className={i > 0 ? "contents group-data-[collapsed]/more:hidden" : "contents"}>
               <p
                 className={`border-x border-border bg-paper px-4 py-2.5 font-mono text-[12px] leading-5 text-ink-soft ${
                   last ? "max-sm:mb-0 sm:rounded-b-md sm:border-b sm:pb-4" : ""
-                }`}
+                } ${i === 0 ? "group-data-[collapsed]/more:sm:rounded-b-md group-data-[collapsed]/more:sm:border-b group-data-[collapsed]/more:sm:pb-4" : ""}`}
               >
                 {marked(fee.quote)}
               </p>
@@ -275,9 +276,9 @@ export function AskChart({ data }: { data: HomeData }) {
         What do the core fees cost nationally?
       </ChatMessage>
       <ChatMessage from="hamilton" source={`${PRODUCT_NAME} · ${summary.freshnessLabel}`} className="max-w-full">
-        <span className="block w-[24rem] max-w-full" aria-label="National median of each core fee">
+        <span className="block w-full sm:w-[24rem] sm:max-w-full" aria-label="National median of each core fee">
           {sorted.map((line) => (
-            <span key={line.key} className="grid grid-cols-[minmax(0,9rem)_minmax(0,1fr)_4rem] items-center gap-2 py-1 text-[13px]">
+            <span key={line.key} className="grid grid-cols-[minmax(0,8rem)_minmax(0,1fr)_3.75rem] items-center gap-2 py-1 text-[13px] sm:grid-cols-[minmax(0,9rem)_minmax(0,1fr)_4rem]">
               <span className="truncate text-ink-soft">{line.label}</span>
               <span className="relative block h-3.5" aria-hidden="true">
                 <span className="absolute inset-y-0 left-0 rounded-r-[4px]" style={{ width: pct(line.row.median_amount, hi), background: "var(--fi-viz-4)" }} />

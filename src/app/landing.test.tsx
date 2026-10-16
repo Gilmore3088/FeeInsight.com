@@ -146,21 +146,21 @@ describe("homepage (site v3 brief 06 §4.3)", () => {
     expect(buildHomeData(summary, [category("overdraft", { p25_amount: null })], null).overdraft).toBeNull();
   });
 
-  it("keeps the hero to the promise, one sentence, the search, live microcopy and working chips", () => {
+  it("keeps the hero to the promise, one sentence, the search, live microcopy and an Explore menu", () => {
     const html = renderToStaticMarkup(<LandingHero summary={summary} />);
     expect(html).toMatch(/<form[^>]*action="\/institutions"[^>]*method="get"/);
     expect(html).toContain('name="q"');
     const t = text(html);
-    expect(t).toContain("Know where your fees stand, with a source for every figure");
+    expect(t).toContain("Know where your fees stand.");
+    expect(t).toContain("Compare your institution with competitors, with a source for every figure.");
     expect(t).toContain("1,234 institutions in the Bank Fee Index · Data refreshed Oct 14, 2026");
     // Brand order: no product name above the h1, where it read as the site's name.
     expect(t.indexOf("Bank Fee Index")).toBeGreaterThan(t.indexOf("Know where your fees stand"));
-    expect(t).toContain("Hamilton, the Fee Insight Pro workspace");
-    // The Pro plans chip comes first, so a phone shows it whole in the first screen (re-walk R3).
-    const chips = [...html.matchAll(/<li><a href="([^"]+)"/g)].map(([, href]) => href);
-    expect(chips[0]).toBe("/subscribe");
+    // The starting points sit in one small menu, Pro plans first.
+    expect(html).toContain("data-explore-index");
+    const links = [...html.matchAll(/<li><a [^>]*?href="([^"]+)"/g)].map(([, href]) => href);
+    expect(links).toEqual(["/subscribe", "/fees/overdraft", "/research/national-fee-index"]);
     expect(html).not.toContain("text-brick");
-    for (const href of ["/fees/overdraft", "/research/national-fee-index", "/subscribe"]) expect(html).toContain(`href="${href}"`);
     expect(t).not.toContain(REPORT_PRICE_INLINE);
     const unavailable = text(renderToStaticMarkup(<LandingHero summary={{ ...summary, institutionsLabel: "—" }} />));
     expect(unavailable).not.toContain("institutions in the");
@@ -246,11 +246,20 @@ describe("homepage (site v3 brief 06 §4.3)", () => {
     expect(pillars).not.toMatch(/Federal Reserve districts|type="range"|Report preview|data-fee="/);
   });
 
-  it("opens the live samples straight on the first sample, one heading and one line each", () => {
+  it("shows one live sample at a time behind Sources, Markets and Reports, one heading and one line each", () => {
     const html = renderToStaticMarkup(<LandingPillars data={data} />);
     expect(html).toContain('id="live-samples"');
     const t = text(html);
-    expect(t).toMatch(/^ ?Trace every fee to its source Inspect the published schedule and the date it was read\./);
+    expect(t).toMatch(/^ ?Sources Markets Reports Trace every fee to its source Inspect the published schedule and the date it was read\./);
+    const tabs = [...html.matchAll(/aria-selected="(true|false)"[^>]*data-sample-tab="(\w+)"/g)].map(([, on, key]) => `${key}:${on}`);
+    expect(tabs).toEqual(["sources:true", "markets:false", "reports:false"]);
+    // The first sample is open; the others are in the markup but hidden until picked.
+    expect(html).toMatch(/hidden=""[^>]*data-sample="markets"/);
+    expect(html).toMatch(/hidden=""[^>]*data-sample="reports"/);
+    expect(html).not.toMatch(/hidden=""[^>]*data-sample="sources"/);
+    // The source sample opens on one fee, with the rest one tap away.
+    expect(html).toContain("data-collapsed");
+    expect(t).toContain("View more fees");
     expect(t).toContain("Compare across markets");
     expect(t).toContain("Bring the findings to committee");
     expect(t).not.toMatch(/See it in action|Every fee|Every market|One workspace/);
