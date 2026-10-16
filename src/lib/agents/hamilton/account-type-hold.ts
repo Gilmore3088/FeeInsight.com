@@ -107,23 +107,41 @@ function planned(row: HoldRow, accountType: AccountType): PlannedHold {
 }
 
 /**
- * Live fees the hold leaves live although their stored product reads as another kind of account,
- * because a hand check against the bank's own text found the product wrong. One line per fee
- * (fee_published_id), with the reason; read as untyped (checking or unknown).
+ * Fees the hold leaves live although their stored product reads as another kind of account,
+ * because a hand check against the bank's own text found the product wrong. One line per fee, keyed
+ * by the institution, the fee's name and its price, so a new copy of the same fee (a new published
+ * or verified row from a re-read) is left live too; read as untyped (checking or unknown).
  */
-export const ACCOUNT_TYPE_KEEP_LIVE: ReadonlyMap<number, string> = new Map([
-  // Ontario Public Employees FCU: the $5 "Monthly Service Fee" row sits under "SHARE DRAFT FEES";
-  // the v55 product "REGULAR SHARE FEES" is the heading of the share section above it (#1566 hand check).
-  [28834, "a share draft (checking) fee; the stored product \"REGULAR SHARE FEES\" is wrong"],
-]);
+export interface KeepLiveFee {
+  institutionId: number;
+  feeName: string;
+  amount: number;
+  reason: string;
+}
+
+export const ACCOUNT_TYPE_KEEP_LIVE: readonly KeepLiveFee[] = [
+  // Ontario Public Employees FCU (fee 28834): the $5 "Monthly Service Fee" row sits under "SHARE
+  // DRAFT FEES"; the v55 product "REGULAR SHARE FEES" is the heading of the share section above it.
+  { institutionId: 5800, feeName: "Monthly Service Fee", amount: 5, reason: "a share draft (checking) fee; the stored product \"REGULAR SHARE FEES\" is wrong" },
+];
+
+const keepLiveKey = (institutionId: number, feeName: string, amount: number) =>
+  `${institutionId}|${feeName.toLowerCase().replace(/\s+/g, " ").trim()}|${Math.round(amount * 100)}`;
+const KEEP_LIVE_KEYS = new Set(ACCOUNT_TYPE_KEEP_LIVE.map((fee) => keepLiveKey(fee.institutionId, fee.feeName, fee.amount)));
+
+/** Pure: whether a row is a listed fee the hold leaves live. */
+export function isKeptLive(row: Pick<HoldRow, "institution_id" | "fee_name" | "amount">): boolean {
+  const amount = amountOf(row.amount);
+  if (amount == null || !row.fee_name) return false;
+  return KEEP_LIVE_KEYS.has(keepLiveKey(Number(row.institution_id), row.fee_name, amount));
+}
 
 /** Pure: the typed rows of a list, each with its type. */
 export function planHolds(rows: HoldRow[]): { typed: PlannedHold[]; untyped: HoldRow[] } {
   const typed: PlannedHold[] = [];
   const untyped: HoldRow[] = [];
   for (const row of rows) {
-    const keepLive = row.fee_published_id != null && ACCOUNT_TYPE_KEEP_LIVE.has(Number(row.fee_published_id));
-    const type = keepLive ? null : accountTypeOf(row.product_name, row.fee_name, row.institution_name);
+    const type = isKeptLive(row) ? null : accountTypeOf(row.product_name, row.fee_name, row.institution_name);
     if (type) typed.push(planned(row, type));
     else untyped.push(row);
   }

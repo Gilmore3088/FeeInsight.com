@@ -179,6 +179,13 @@ describe("shared learning store", () => {
     expect(rows.map((row: { dedupe_key: string }) => row.dedupe_key)).toContain("hamilton.restore:pub:12213:run:3380");
   });
 
+  it("learns nothing from an account type hold, down or restored (#1100)", async () => {
+    const { db, calls } = mockDb([["to_regclass('public.pipeline_feedback')", [{ ready: true }]]]);
+    await syncPipelineFeedback(db, { runId: 7, dryRun: true });
+    expect(calls.find((call) => call.query.includes("FROM published_fee_records fp"))?.query).toContain("NOT LIKE 'account_type_hold:%'");
+    expect(calls.find((call) => call.query.includes("hamilton.restore:pub:"))?.query).toContain("f.kind <> 'account_type_hold'");
+  });
+
   it("only reads in a dry run", async () => {
     const { db, calls } = mockDb([
       ["to_regclass('public.pipeline_feedback')", [{ ready: true }]],

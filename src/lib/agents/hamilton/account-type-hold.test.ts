@@ -126,9 +126,13 @@ describe("account type hold (#1100 gap 1)", () => {
     expect(update.values[2]).toEqual(["account_type_hold: money_market (#1100)", "account_type_hold: savings (#1100)", "account_type_hold: business (#1100)"]);
   });
 
-  it("leaves a listed fee live whatever its stored product says (keep-live list)", () => {
+  it("leaves a listed fee live whatever its stored product says, in any copy (keep-live list)", () => {
     const row: HoldRow = { fee_published_id: 28834, fee_verified_id: 9, institution_id: 5800, fee_name: "Monthly Service Fee", product_name: "REGULAR SHARE FEES", amount: "5.00" };
     expect(planHolds([row]).typed).toEqual([]);
-    expect(planHolds([{ ...row, fee_published_id: 28835 }]).typed.map((hold) => hold.accountType)).toEqual(["savings"]);
+    // A new copy of the same fee (new published and verified ids, the name's case changed) stays live.
+    expect(planHolds([{ ...row, fee_published_id: 150000, fee_verified_id: 99, fee_name: "monthly service fee" }]).typed).toEqual([]);
+    // Another bank's fee, or another price, is still held.
+    expect(planHolds([{ ...row, institution_id: 5801 }]).typed.map((hold) => hold.accountType)).toEqual(["savings"]);
+    expect(planHolds([{ ...row, amount: "6.00" }]).typed.map((hold) => hold.accountType)).toEqual(["savings"]);
   });
 });
