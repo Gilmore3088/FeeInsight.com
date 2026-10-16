@@ -172,7 +172,7 @@ export async function retireArticlePageFees(
     aboutStage: "discover",
     signal: "wrong",
     kind: "wrong_document",
-    reportedBy: "hamilton",
+    reportedBy: "gutenberg",
     checkName: ARTICLE_PAGE_CHECK,
     institutionId: fee.institutionId,
     sourceDocumentId: fee.sourceDocumentId,

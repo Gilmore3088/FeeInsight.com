@@ -178,7 +178,7 @@ export async function retireProductPageFees(
     aboutStage: "extract",
     signal: "wrong",
     kind: "not_on_schedule",
-    reportedBy: "hamilton",
+    reportedBy: "gutenberg",
     checkName: PRODUCT_PAGE_CHECK,
     institutionId: fee.institutionId,
     sourceDocumentId: fee.sourceDocumentId,

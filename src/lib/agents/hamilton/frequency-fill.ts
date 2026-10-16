@@ -58,6 +58,23 @@ export const FREQUENCY_FILL_CHECK = "hamilton.frequency_fill";
 // is not written back on the next pass; feedback dedupe keys name the version, so a later version's
 // write is always logged; the excerpt is read from `extraction_note` when it is set (#1336).
 export const FREQUENCY_FILL_VERSION = 14;
+/**
+ * #1360: an overdraft "program" the v11 keep leaves monthly is, in every case James and the review
+ * checked on the bank's own page, an optional plan or add-on (Independent Bank's $10 Advanced
+ * Overdraft, St. Louis Community's $5 Enhanced Privilege, Selco's $10 Elevate Courtesy Pay), not the
+ * overdraft fee, and it sits in the overdraft benchmark beside per-item fees. James took four down on
+ * Oct 15 (#1366); a new copy of a bank's page brings one back through the keep (Selco's 143753,
+ * Oct 15, beside its live $25 per-item Courtesy Pay). With this switch on, a kept program fee is held
+ * (taken down with `frequency_hold:`) when its bank has another live overdraft fee charged per item
+ * (or with no frequency) above $0. A bank whose only live overdraft row is the program keeps it
+ * (First Community FCU's "Overdraft Boost", 92746, which James keeps until its tiered fees are
+ * captured). Off (the default), each step only lists the fees it would hold (`planWouldHold`).
+ * Hamilton's fill re-reads every live overdraft fee stored by the period on each publish step, so
+ * this is the rule's live re-check.
+ */
+export const OVERDRAFT_PLAN_HOLD_LIVE = false;
+export const OVERDRAFT_PLAN_HOLD_REASON = "an optional overdraft plan priced by the period beside the bank's per-item overdraft fee";
+
 /** The rolled_back_reason prefix of a fee the frequency fill holds (v11). */
 export const FREQUENCY_HOLD_REASON = "frequency_hold";
 /** Documents read per step for box-table headers; later steps take the rest. */
@@ -80,6 +97,8 @@ interface BlankFrequencyRow {
   frequency: string | null;
   conditions: string | null;
   fee_name?: string | null;
+  /** #1360: an overdraft row whose bank has another live overdraft fee charged per item above $0. */
+  has_per_item_overdraft?: boolean | null;
 }
 
 export interface FrequencyFill {
@@ -115,6 +134,8 @@ export interface FrequencyFillResult {
   scanned: number;
   filled: FrequencyFill[];
   held: FrequencyHold[];
+  /** #1360: kept overdraft program fees the plan hold would take down while its switch is off. */
+  planWouldHold: FrequencyHold[];
   dryRun: boolean;
 }
 
@@ -129,12 +150,22 @@ export async function fillBlankFrequencies(
   options: { runId: number; dryRun: boolean; institutionId?: number; limit?: number },
 ): Promise<FrequencyFillResult> {
   const limit = Math.max(1, Math.min(options.limit ?? FREQUENCY_FILL_LIMIT, 10_000));
-  const result: FrequencyFillResult = { scanned: 0, filled: [], held: [], dryRun: options.dryRun };
+  const result: FrequencyFillResult = { scanned: 0, filled: [], held: [], planWouldHold: [], dryRun: options.dryRun };
   let rows: BlankFrequencyRow[];
   try {
     rows = await inSavepoint(db, (scope) => scope.unsafe<BlankFrequencyRow[]>(
       `SELECT fp.fee_published_id, fv.fee_verified_id, fr.fee_raw_id, fp.institution_id, fr.source_document_id,
-              fp.canonical_fee_key, fp.amount, fp.frequency, COALESCE(fr.extraction_note, fr.conditions) AS conditions, fp.fee_name
+              fp.canonical_fee_key, fp.amount, fp.frequency, COALESCE(fr.extraction_note, fr.conditions) AS conditions, fp.fee_name,
+              (fp.canonical_fee_key = 'overdraft' AND EXISTS (
+                SELECT 1 FROM published_fee_records other
+                 WHERE other.institution_id = fp.institution_id
+                   AND other.fee_published_id <> fp.fee_published_id
+                   AND other.canonical_fee_key = 'overdraft'
+                   AND other.rolled_back_at IS NULL
+                   AND other.quarantined_at IS NULL
+                   AND other.amount > 0
+                   AND (other.frequency IS NULL OR other.frequency IN ('per_item', 'per_occurrence', 'per_transaction', 'one_time'))
+              )) AS has_per_item_overdraft
          FROM published_fee_records fp
          LEFT JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
          LEFT JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
@@ -236,8 +267,26 @@ export async function fillBlankFrequencies(
     const stated = row.frequency ?? null;
     const check = perEventPeriodCheck(row.canonical_fee_key, stated, sourceLine, amount, row.fee_name)
       ?? continuousOverdraftPeriodCheck(row.canonical_fee_key, stated, sourceLine, amount, row.fee_name);
-    if (check?.action === "keep") continue;
-    if (check?.action === "hold") {
+    // #1360: a kept overdraft program priced by the period, beside the bank's per-item overdraft fee.
+    const plan = check?.action === "keep" && row.canonical_fee_key === "overdraft" && row.has_per_item_overdraft === true;
+    if (plan && !OVERDRAFT_PLAN_HOLD_LIVE) {
+      result.planWouldHold.push({
+        feePublishedId: Number(row.fee_published_id),
+        feeVerifiedId: num(row.fee_verified_id),
+        feeRawId: num(row.fee_raw_id),
+        institutionId: Number(row.institution_id),
+        sourceDocumentId: num(row.source_document_id),
+        canonicalFeeKey: row.canonical_fee_key,
+        amount,
+        frequency: stated!,
+        sourceLine: sourceLine.slice(0, 300),
+        reason: `${FREQUENCY_HOLD_REASON}: ${OVERDRAFT_PLAN_HOLD_REASON}`,
+      });
+      continue;
+    }
+    if (check?.action === "keep" && !plan) continue;
+    if (check?.action === "hold" || plan) {
+      const reason = check?.action === "hold" ? check.reason : OVERDRAFT_PLAN_HOLD_REASON;
       if (result.held.length >= limit) continue;
       result.held.push({
         feePublishedId: Number(row.fee_published_id),
@@ -249,7 +298,7 @@ export async function fillBlankFrequencies(
         amount,
         frequency: stated!,
         sourceLine: sourceLine.slice(0, 300),
-        reason: `${FREQUENCY_HOLD_REASON}: ${check.reason}`,
+        reason: `${FREQUENCY_HOLD_REASON}: ${reason}`,
       });
       continue;
     }
@@ -360,7 +409,7 @@ export async function fillBlankFrequencies(
     aboutStage: "extract",
     signal: "wrong",
     kind: fee.from == null ? "frequency_filled" : fee.frequency == null ? "frequency_cleared" : "frequency_corrected",
-    reportedBy: "hamilton",
+    reportedBy: "gutenberg",
     checkName: FREQUENCY_FILL_CHECK,
     aboutVersion: FREQUENCY_FILL_VERSION,
     institutionId: fee.institutionId,
@@ -381,7 +430,7 @@ export async function fillBlankFrequencies(
       aboutStage: "extract",
       signal: "wrong",
       kind: "frequency_held",
-      reportedBy: "hamilton",
+      reportedBy: "gutenberg",
       checkName: FREQUENCY_FILL_CHECK,
       aboutVersion: FREQUENCY_FILL_VERSION,
       institutionId: fee.institutionId,
@@ -434,7 +483,7 @@ export async function fillFrequenciesInPublish(
     } catch (eventError) {
       console.error("frequency fill warning event failed:", eventError);
     }
-    return { scanned: 0, filled: [], held: [], dryRun: options.dryRun, writeError };
+    return { scanned: 0, filled: [], held: [], planWouldHold: [], dryRun: options.dryRun, writeError };
   }
 }
 

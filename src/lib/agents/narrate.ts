@@ -62,6 +62,7 @@ function narrateFinished(
       return `${detail.expert_name} refreshed the ${String(detail.state_code ?? stateCode ?? "state")} memory: ${count(n(detail, "institutions"), "institution")}, ${count(n(detail, "published_fees"), "published fee")}, peer levels for ${count(n(detail, "fee_categories_with_peers"), "fee category", "fee categories")}${joinParts([
         typeof detail.top_platform === "string" && `most common platform ${detail.top_platform}`,
         typeof detail.top_reader_strategy === "string" && `best reader ${detail.top_reader_strategy}`,
+        n(detail, "notes_written") > 0 && count(n(detail, "notes_written"), "new dated note"),
       ]).replace(/^: /, ", ")}.`;
     }
     case "discover-paid":
@@ -609,7 +610,11 @@ function shorten(message: string, max = 140): string {
   return clean.length > max ? `${clean.slice(0, max - 1)}…` : clean;
 }
 
-/** Which crew member a step key belongs to, for steps recorded without an agent. */
+/**
+ * Which crew member a step key belongs to, for steps recorded without an agent. Publisher steps
+ * are Gutenberg's from #1075 step 2 (`gutenberg/names.ts` `PUBLISHER_STEP_KEYS`, a test keeps the two
+ * equal); Hamilton keeps the product's steps.
+ */
 export const STEP_OWNER: Record<string, AdminAgent> = {
   enhance: "atlas",
   "state-expert": "atlas",
@@ -699,15 +704,15 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   "verify-paid": "darwin",
   verify: "darwin",
   "public-cluster": "darwin",
-  publish: "hamilton",
-  "publish-index": "hamilton",
-  "publish-context": "hamilton",
+  publish: "gutenberg",
+  "publish-index": "gutenberg",
+  "publish-context": "gutenberg",
   "report-render": "hamilton",
   "report-reconcile": "hamilton",
   "report-close": "hamilton",
-  "category-guard": "hamilton",
-  "frequency-fill": "hamilton",
-  "source-link-repair": "hamilton",
+  "category-guard": "gutenberg",
+  "frequency-fill": "gutenberg",
+  "source-link-repair": "gutenberg",
   "audience-relabel": "darwin",
-  "public-diagnose": "hamilton",
+  "public-diagnose": "gutenberg",
 };

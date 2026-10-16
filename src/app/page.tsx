@@ -7,15 +7,17 @@
  * on Oct 8-15 its function TTFB was 146 ms at p50 but 3,834 ms at p75 (#1168), the slow
  * renders being the ones whose cached reads had to go to the database.
  *
- * A render with a failed read is never cached (`homeReadsCacheable`): at build time it
- * falls back to rendering per request for that deployment, and in a background
- * regeneration it fails, so the last good page keeps being served. A database blip
- * therefore never bakes a homepage with blank numbers.
+ * Each read keeps serving its last good value while the database is down
+ * (`cachedPublicRead`), so a render only has a failed read when no good value is cached
+ * at all. Such a render (`homeReadsCacheable` false) is cached for one minute instead of
+ * fifteen (`shortenPageLife`): the visitor gets the page with the failed parts hidden,
+ * never an error page, and the next render a minute later reads the database again
+ * (#1572). It used to opt out of the cache with `connection()`, which on a cold cache
+ * miss turned the failed read into a 500.
  */
 export const revalidate = 900;
 
 import type { Metadata } from "next";
-import { connection } from "next/server";
 import { getPublicSnapshot } from "@/lib/public-stats";
 import { CONTACT_EMAIL, LEGAL_ENTITY_NAME, PRODUCT_NAME, SITE_NAME, SITE_URL } from "@/lib/constants";
 import { loadSampleReport } from "@/lib/custom-report/sample-report";
@@ -23,6 +25,7 @@ import { ConsumerNav } from "@/components/consumer-nav";
 import { CustomerFooter } from "@/components/customer-footer";
 import { SearchModal } from "@/components/public/search-modal";
 import { getFeeCategoryDetailCached } from "@/lib/data-store/public-cached-reads";
+import { shortenPageLife } from "@/lib/data-store/public-read-cache";
 import { LandingHero } from "./landing-hero";
 import { LandingDemo } from "./landing-demo";
 import { LandingPillars } from "./landing-pillars";
@@ -114,8 +117,8 @@ export default async function LandingPage() {
     overdraftFailed: overdraftRead.failed,
     ladderFailed: ladderRead.failed,
   });
-  // Opts this render out of the page cache (see the note at the top of the file).
-  if (!cacheable) await connection();
+  // A render with a failed read is cached for a minute, not fifteen (see the note at the top).
+  if (!cacheable) await shortenPageLife();
   const data = buildHomeData(summary, categories, overdraftRead.detail?.by_fed_district, {
     sample: buildSampleView(liveSample),
     ladder,

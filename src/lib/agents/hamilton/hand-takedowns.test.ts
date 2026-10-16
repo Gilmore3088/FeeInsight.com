@@ -18,8 +18,16 @@ const LIVE: LiveTakedownRow[] = [
   { fee_published_id: 48113, lineage_ref: 53370, institution_id: 7483, canonical_fee_key: "safe_deposit_box", fee_name: "Returned loan payment", amount: "25.00" },
   { fee_published_id: 87307, lineage_ref: 96812, institution_id: 5054, canonical_fee_key: "ach_return", fee_name: "Returned Loan Payment (check or ACH returned unpaid; per item)", amount: "25.00" },
   { fee_published_id: 134962, lineage_ref: 156021, institution_id: 8566, canonical_fee_key: "account_research", fee_name: "Loan Payment with Debit Card - Chargeback", amount: "29.50" },
+  // The #1571 /bin/bash rows as listed (read-only, Oct 16; lineage refs are test values).
+  ...HAND_TAKEDOWNS.filter((entry) => entry.issue === 1571).map((entry, index) => ({
+    fee_published_id: entry.feePublishedId, lineage_ref: 100 + index, institution_id: entry.institutionId,
+    canonical_fee_key: entry.canonicalFeeKey, fee_name: entry.feeName, amount: "0.00",
+  })),
+  // #1512's joined courtesy pay row as it reads live on prod, read-only, Oct 16.
+  { fee_published_id: 142965, lineage_ref: 172523, institution_id: 4965, canonical_fee_key: "overdraft", fee_name: "Courtesy Pay Fee (per transaction) Research & Reconcilement (per hour)", amount: "10.00" },
 ];
-const IDS = [80423, 102440, 83118, 45619, 116720, 134129, 48113, 87307, 134962];
+const CONDITIONAL_ZERO = [43512, 54014, 61335, 68893, 70121, 73737, 77121, 77122, 77618, 84553, 87079, 87461, 88213, 91505, 120559];
+const IDS = [80423, 102440, 83118, 45619, 116720, 134129, 48113, 87307, 134962, ...CONDITIONAL_ZERO, 142965];
 
 function fakeDb(live: LiveTakedownRow[], failOn?: string) {
   const writes: Array<{ text: string; values: unknown[] }> = [];
@@ -46,6 +54,8 @@ describe("hand takedowns (James, Oct 16)", () => {
       [48113, "source_mismatch: #1534"],
       [87307, "source_mismatch: #1534"],
       [134962, "source_mismatch: #1534"],
+      ...CONDITIONAL_ZERO.map((id) => [id, "source_mismatch: #1571"]),
+      [142965, "source_mismatch: #1512"],
     ]);
     expect(HAND_TAKEDOWNS.every((entry) => entry.evidence.length > 0 && entry.reason === `source_mismatch: #${entry.issue}`)).toBe(true);
     // Up to about 25 rows go this way; more go to James.
@@ -64,6 +74,8 @@ describe("hand takedowns (James, Oct 16)", () => {
         { feePublishedId: 48113, feeVerifiedId: 53370, reason: "source_mismatch: #1534" },
         { feePublishedId: 87307, feeVerifiedId: 96812, reason: "source_mismatch: #1534" },
         { feePublishedId: 134962, feeVerifiedId: 156021, reason: "source_mismatch: #1534" },
+        ...CONDITIONAL_ZERO.map((id, index) => ({ feePublishedId: id, feeVerifiedId: 100 + index, reason: "source_mismatch: #1571" })),
+        { feePublishedId: 142965, feeVerifiedId: 172523, reason: "source_mismatch: #1512" },
       ],
       skipped: [],
     });

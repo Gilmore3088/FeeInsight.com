@@ -118,10 +118,11 @@ export async function listSavedAnalyses(limit = 10): Promise<RecentQuestion[]> {
   try {
     // Read a few extra so repeats of the same answer don't leave the list short.
     const rows = await sql<SavedAnalysisRow[]>`
-      SELECT id::text, title, prompt, institution_id, updated_at::text
-      FROM hamilton_saved_analyses
-      WHERE user_id = ${user.id} AND status = 'active'
-      ORDER BY updated_at DESC
+      SELECT a.id::text, a.title, a.prompt, a.institution_id, inst.institution_name, a.updated_at::text
+      FROM hamilton_saved_analyses a
+      LEFT JOIN institution_sources inst ON inst.id::text = a.institution_id
+      WHERE a.user_id = ${user.id} AND a.status = 'active'
+      ORDER BY a.updated_at DESC
       LIMIT ${boundedLimit * 3}
     `;
     return recentQuestions(rows, boundedLimit);

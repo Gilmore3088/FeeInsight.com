@@ -1,5 +1,6 @@
 "use client";
 
+import { formatLocalDate, LocalDate } from "@/components/hamilton/common/LocalDate";
 import { useState } from "react";
 import Link from "next/link";
 import type { ReportArtifactMetadata, ReportSummaryResponse } from "@/lib/hamilton/types";
@@ -23,14 +24,7 @@ interface ReportLibraryProps {
   ) => void;
 }
 
-function formatDate(isoString: string): string {
-  const date = new Date(isoString);
-  return date.toLocaleDateString("en-US", {
-    month: "long",
-    day: "numeric",
-    year: "numeric",
-  });
-}
+const LONG_DATE: Intl.DateTimeFormatOptions = { month: "long", day: "numeric", year: "numeric" };
 
 function formatRelative(isoString: string): string {
   const ms = Date.now() - new Date(isoString).getTime();
@@ -138,7 +132,7 @@ export function ReportLibrary({
             <li key={report.id} className="flex flex-col rounded-lg border border-warm-300 bg-warm-50 p-5">
               <div className="mb-2 flex items-baseline justify-between gap-3 text-sm">
                 <span className="font-medium text-terra-text">{typeLabel}</span>
-                <span className="shrink-0 text-xs text-warm-600" title={formatDate(report.created_at)}>
+                <span className="shrink-0 text-xs text-warm-600" title={formatLocalDate(report.created_at, LONG_DATE, "UTC")}>
                   {formatRelative(report.created_at)}
                 </span>
               </div>
@@ -158,7 +152,7 @@ export function ReportLibrary({
                     <span aria-hidden="true">·</span>
                   </>
                 )}
-                <span>{formatDate(report.created_at)}</span>
+                <LocalDate iso={report.created_at} options={LONG_DATE} />
                 {report.artifact_metadata && (
                   <>
                     <span aria-hidden="true">·</span>

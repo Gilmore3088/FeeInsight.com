@@ -169,7 +169,7 @@ export async function applyCutNameDuplicates(
           aboutStage: "extract" as const,
           signal: "wrong" as const,
           kind: "duplicate",
-          reportedBy: "hamilton" as const,
+          reportedBy: "gutenberg" as const,
           checkName: CUT_NAME_DUPLICATE_CHECK,
           institutionId: entry.institutionId,
           feeVerifiedId: item.feeVerifiedId,

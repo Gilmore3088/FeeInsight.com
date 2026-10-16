@@ -312,6 +312,13 @@ describe("Hamilton's paid answer eval (#1079)", () => {
     ])).toEqual([1200000, 27]);
   });
 
+  it("leaves out the fee index's catalog-derived medians, so they must tie to the live national layer (#1414)", () => {
+    expect(toolMoneyFigures([
+      { toolName: "queryNationalData", input: { source: "fee_index", limit: 15 }, output: { median: 26, n: 1900 } },
+      { toolName: "queryNationalData", input: { source: "call_reports" }, output: { service_charge_income: 5000000 } },
+    ])).toEqual([5000000]);
+  });
+
   describe("the report answer page", () => {
     const prepared: PreparedReportAnswer = {
       institutionId: 1001,

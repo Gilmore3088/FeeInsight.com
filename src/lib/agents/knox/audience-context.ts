@@ -29,8 +29,8 @@ export interface AudienceSuggestion {
  */
 const BUSINESS_WORDS = /\b(?:business(?:es)?|agri-?business(?:es)?|commercial|corporate|treasury management|merchant services)\b/i;
 const CONSUMER_WORDS = /\b(?:personal|consumer|individuals?)\b/i;
-/** "Personal and business", "consumer or commercial": both audiences, so no single suggestion. */
-const BOTH_WORDS = /\b(?:personal|consumer)\b[^.\n]{0,20}\b(?:and|or|&|\/)\s*(?:small\s+)?(?:business|commercial)\b|\b(?:business|commercial)\b[^.\n]{0,20}\b(?:and|or|&|\/)\s*(?:personal|consumer)\b/i;
+/** "Personal and business", "consumer or commercial", "Personal & Small Business": both audiences, so no single suggestion. */
+const BOTH_WORDS = /\b(?:personal|consumer)\b[^.\n]{0,20}(?:\band\b|\bor\b|&|\/)\s*(?:small\s+)?(?:business|commercial)\b|\b(?:business|commercial)\b[^.\n]{0,20}(?:\band\b|\bor\b|&|\/)\s*(?:personal|consumer)\b/i;
 /** A heading is a short line with no price: a section title, not a fee row. */
 const MAX_HEADING_CHARS = 80;
 /** How far above the fee's line a heading is looked for. */
@@ -50,8 +50,13 @@ const TITLE_CHARS = 300;
  * (review of #1382); a personal check, a business day, "close of business", a vendor's "Business Systems",
  * "non-business" or "non commercial" (a URL path's hyphens become spaces) with any slash before it,
  * and "non-personal checks" or "non-consumer information" (products, as main read them).
+ * Also products, not audiences (#1626): a personal money order, draft or share draft (not a
+ * "Personal Draft Account"), a "personal appearance" in a subpoena, the personal checks a counter
+ * check page holds ("Counter Check: A blank page of 3 personal"), and corporate ACH next to checks
+ * ("Stop Payment for checks and Corporate ACH"), a list of check kinds ("Personal, Cashier's or Bill
+ * Pay checks"), and a business day cut off at the end of a clause ("as of the last business:").
  */
-const NOT_AN_AUDIENCE = /(?:\/\s*)?\bnon[- ]?(?:personal|consumer)\s+(?:checks?|identification|information|data)\b|\bcorporate(?:(?:\s*[/&\-–—]\s*|\s+(?:or|and)\s+)(?:cashier[’']?s?|official|teller[’']?s?|treasurer[’']?s?|bank|member|personal|money\s+orders?))*\s+(?:(?:bank|official|teller|cashier[’']?s?|treasurer[’']?s?|share)\s+)?(?:checks?|drafts?)\b(?!\s+accounts?\b)|\bcorporate\s+money\s+orders?\b(?!\s+accounts?\b)|\bcorporate\s+(?:bonds?|securities|and municipal|one\b(?![-‐–’'])(?!\s+cards?\b)|stop\s+payments?\b)|\b(?:on[- ]us|teller[’']?s?|cashier[’']?s?|treasurer[’']?s?|official)\s*(?:[/&]|\bor\b|\band\b)\s*corporate\b(?:\s+(?:checks?|drafts?)\b)?|\b(?:personal|member)\s*(?:[/&]|\bor\b|\band\b)\s*corporate\s+(?:(?:share\s+)?(?:checks?|drafts?))\b(?!\s+accounts?\b)|(?<=\b(?:checks?|drafts?)\b[^|\n$]{0,15})\b(?:personal|member)\s*(?:[/&]|\bor\b|\band\b)\s*corporate\b|\bpersonal\s+(?:checks?|identification|information)\b|\bbusiness\s+(?:days?|hours?|systems)\b|\b(?:close of|regular|normal|legitimate|conduct(?:ing)?|doing)\s+business\b|\bcredit union business(?: only)?\b(?!\s+(?:accounts?|checking|savings|banking|membership|visa|services|loans?|cards?|mobile|online)\b)|\bsmall business saturday\b|(?:\/\s*)?\bnon[- ]?(?:commercial|business)\b|\b(?:commercial|business|consumer|personal)(?:\s+(?:state|national|federal|savings|community|county|city|first))*\s+(?:bank|savings bank|credit union|trust company|savings and loan)\b/gi;
+const NOT_AN_AUDIENCE = /(?:\/\s*)?\bnon[- ]?(?:personal|consumer)\s+(?:checks?|identification|information|data)\b|\bcorporate(?:(?:\s*[/&\-–—]\s*|\s+(?:or|and)\s+)(?:cashier[’']?s?|official|teller[’']?s?|treasurer[’']?s?|bank|member|personal|money\s+orders?))*\s+(?:(?:bank|official|teller|cashier[’']?s?|treasurer[’']?s?|share)\s+)?(?:checks?|drafts?)\b(?!\s+accounts?\b)|\bcorporate\s+money\s+orders?\b(?!\s+accounts?\b)|\bcorporate\s+(?:bonds?|securities|and municipal|one\b(?![-‐–’'])(?!\s+cards?\b)|stop\s+payments?\b)|\b(?:on[- ]us|teller[’']?s?|cashier[’']?s?|treasurer[’']?s?|official)\s*(?:[/&]|\bor\b|\band\b)\s*corporate\b(?:\s+(?:checks?|drafts?)\b)?|\b(?:personal|member)\s*(?:[/&]|\bor\b|\band\b)\s*corporate\s+(?:(?:share\s+)?(?:checks?|drafts?))\b(?!\s+accounts?\b)|(?<=\b(?:checks?|drafts?)\b[^|\n$]{0,15})\b(?:personal|member)\s*(?:[/&]|\bor\b|\band\b)\s*corporate\b|\bpersonal\s+(?:(?:checks?|identification|information|appearances?)\b|(?:share\s+)?drafts?\b(?!\s+accounts?\b)|money\s+orders?\b(?!\s+accounts?\b))|(?<=\bcounter\s+checks?\b[^|\n]{0,40})\bpersonal\b|\bpersonal(?=(?:\s*(?:,|\/|\bor\b|\band\b)\s*(?!(?:small\s+)?(?:business|commercial|corporate)\b)[\w’']+(?:\s+(?!(?:business|commercial|corporate)\b)[\w’']+)?){1,3}\s+checks?\b)|\b(?:last|next|same|following|previous|prior|each|every|one|two|three|four|five|ten)\s+business\b(?=\s*(?:[:;,.)]|$))|(?<=\bchecks?\b[^|\n]{0,20})\bcorporate\s+ach\b|\bbusiness\s+(?:days?|hours?|systems)\b|\b(?:close of|regular|normal|legitimate|conduct(?:ing)?|doing)\s+business\b|\bcredit union business(?: only)?\b(?!\s+(?:accounts?|checking|savings|banking|membership|visa|services|loans?|cards?|mobile|online)\b)|\bsmall business saturday\b|(?:\/\s*)?\bnon[- ]?(?:commercial|business)\b|\b(?:commercial|business|consumer|personal)(?:\s+(?:state|national|federal|savings|community|county|city|first))*\s+(?:bank|savings bank|credit union|trust company|savings and loan)\b/gi;
 /**
  * "Non-Personal Accounts" and "Non-Consumer" are a bank's words for business accounts: read as
  * "business", with any slash before them ("Business/Non-Personal Accounts" stays a heading).
@@ -282,6 +287,60 @@ export function sectionHeadingAudience(
   return sentenceMayHead && sentenceAudience ? { ambiguous: sentenceAudience, sentence: sentenceAudience, sentenceIndex } : null;
 }
 
+/**
+ * An exception clause in a fee name ("(Not applicable when accessing eStatements through Consumer
+ * eBanking)", "(personal are free on Netbranch)", "(retail customers free)") names the audience the
+ * fee leaves out or waives, not the one it is for (#1626).
+ */
+const NAME_EXCEPTION = /\((?:[^()]*?\b)?(?:not\s+applicable|not\s+charged|does\s+not\s+apply|except(?:ing)?|excluding|excluded|exempt|waived|(?:are|is)\s+free|free\s+(?:on|with|for|through|via)|free(?=\s*\)))\b[^()]*\)/gi;
+/** An exception that leaves business out ("(Business accounts excluded)"): the fee is consumer. */
+const BUSINESS_EXCLUDED = /\((?:[^()]*?\b)?(?:(?:business|commercial)\s+accounts?\s+(?:are\s+)?(?:excluded|exempt)|(?:not\s+(?:for|applicable\s+to)|excluding|except(?:ing)?)\s+(?:business|commercial)\s+accounts?)\b[^()]*\)/i;
+/** A credit union's member side beside business ("Member or Business", "Regular Member Accounts and Business Accounts"). */
+const MEMBER_AND_BUSINESS = /\bmembers?\b[^.\n]{0,20}(?:\band\b|\bor\b|&|\/)\s*(?:small\s+)?(?:business|commercial)\b|\b(?:business|commercial)\b[^.\n]{0,20}(?:\band\b|\bor\b|&|\/)\s*members?\b/i;
+const PERSONAL_BUSINESS = /\b(?:personal|consumer)\s+(?=business\b)/gi;
+const PRODUCT_NOUN = /\b(card|account|checking|savings|share|check|draft)s?\b/gi;
+/** "Retail customers" is a bank's consumer side: "Retail and Commercial Customers" is both. */
+const RETAIL = /\bretail(?=\s+(?:(?:and|or|&|\/)\s+(?:small\s+)?(?:business|commercial)\s+)?(?:customers?|accounts?|clients?|members?)\b)/gi;
+const nounsOf = (part: string) => [...part.matchAll(PRODUCT_NOUN)].map((match) => match[1].toLowerCase());
+const headNoun = (part: string) => nounsOf(part).at(-1) ?? null;
+
+/**
+ * A name that lists a business product beside the same product with no business word ("ATM/VISA
+ * Debit Card/VISA Business Debit Card replacement"): the fee is for both. Only the same product
+ * counts, so "Business Checking, Savings and Money Market Accounts" stays business. A listed
+ * product is a short name split at a slash, "&", "and" or "or", never at a comma, so a clause
+ * ("On commercial accounts, if your account balance remains overdrawn") lists nothing.
+ * The business word carries over to every product after it ("Business Checking or Premium
+ * Checking", "Business Debit Card Replacement / Card Replacement Rush" stay business), so only a
+ * plain product before the first business one counts, and only a short one naming that one
+ * product ("Star Rewards Savings/Business Savings"; review of #1628).
+ */
+const MAX_LISTED_PRODUCT_CHARS = 40;
+function listsBothSides(name: string): boolean {
+  const parts = name.split(/\s*(?:[/&]|\band\b|\bor\b)\s*/i).map((part) => part.trim()).filter(Boolean);
+  const first = parts.findIndex((part) => BUSINESS_WORDS.test(part));
+  if (first <= 0) return false;
+  const nouns = new Set(parts.slice(first).filter((part) => BUSINESS_WORDS.test(part)).map(headNoun).filter(Boolean));
+  return parts.slice(0, first).some((part) => {
+    const own = nounsOf(part);
+    return part.length <= MAX_LISTED_PRODUCT_CHARS && own.length === 1 && nouns.has(own[0]);
+  });
+}
+
+/**
+ * The audience the fee's own name states. A name that lists both sides ("Personal and Business",
+ * "Member or Business", a consumer and a business card) is for both (#1626); before, it decided
+ * nothing and the fee took its schedule's audience.
+ */
+export function nameAudience(feeName: string): ContextAudience | null {
+  // "Personal Business Share Draft" is a business product, not a personal one beside it.
+  const name = feeName.replace(NAME_EXCEPTION, " ").replace(PERSONAL_BUSINESS, "").replace(RETAIL, "consumer");
+  const text = neutral(name);
+  if (BOTH_WORDS.test(text) || MEMBER_AND_BUSINESS.test(text) || listsBothSides(text)) return "both";
+  const audience = audienceOf(name);
+  return audience ?? (BUSINESS_EXCLUDED.test(feeName) ? "consumer" : null);
+}
+
 export function suggestAudience(input: {
   documentUrl: string | null;
   text: string | null;
@@ -289,7 +348,7 @@ export function suggestAudience(input: {
   amount: number | null;
 }): AudienceSuggestion | null {
   // The fee's own name wins ("Returned Deposit Items (Commercial Accounts Only)").
-  const fromName = audienceOf(input.feeName);
+  const fromName = nameAudience(input.feeName);
   if (fromName) return { audience: fromName, source: "fee_name", evidence: input.feeName };
   const path = (() => {
     try {

@@ -10,6 +10,8 @@ export interface SavedAnalysisRow {
   title: string;
   prompt: string | null;
   institution_id: string | null;
+  /** The research institution's name, when the saved row names one that still exists. */
+  institution_name?: string | null;
   updated_at: string;
 }
 
@@ -39,6 +41,18 @@ export function recentLabel(row: Pick<SavedAnalysisRow, "title" | "prompt">): st
   return questionLabel(row.prompt ?? "") || title;
 }
 
+/**
+ * A saved line names the institution it is about (#1542): "What about their overdraft fee?" alone
+ * can't tell two banks apart. A label that already names it is left as it is.
+ */
+export function withInstitution(label: string, institutionName: string | null | undefined): string {
+  const name = institutionName?.replace(/\s+/g, " ").trim();
+  if (!name) return label;
+  const shown = name.replace(/,?\s+(?:National Association|N\.A\.?)$/i, "").trim();
+  const core = shown.replace(/\s+(?:Federal Credit Union|Credit Union|FCU|Bank)$/i, "").trim() || shown;
+  return label.toLowerCase().includes(core.toLowerCase()) ? label : `${label} · ${shown}`;
+}
+
 /** Newest first in, newest first out: one row per institution and label, at most `limit`. */
 export function recentQuestions(rows: readonly SavedAnalysisRow[], limit: number): RecentQuestion[] {
   const seen = new Set<string>();
@@ -48,7 +62,7 @@ export function recentQuestions(rows: readonly SavedAnalysisRow[], limit: number
     const key = `${row.institution_id ?? ""}|${title.toLowerCase()}`;
     if (seen.has(key)) continue;
     seen.add(key);
-    out.push({ id: row.id, title, updated_at: row.updated_at });
+    out.push({ id: row.id, title: withInstitution(title, row.institution_name), updated_at: row.updated_at });
     if (out.length >= limit) break;
   }
   return out;

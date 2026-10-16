@@ -1,5 +1,6 @@
 "use client";
 
+import { LocalDate } from "@/components/hamilton/common/LocalDate";
 import { useActionState, useEffect, useRef, useState } from "react";
 import {
   grantWorkspaceAccess,
@@ -31,6 +32,7 @@ const inputClass =
 const secondaryButton =
   "inline-block rounded-md border border-warm-300 bg-warm-50 px-3 py-1.5 text-sm font-medium text-warm-800 hover:border-warm-500 disabled:cursor-not-allowed disabled:opacity-60";
 
+const NUMERIC_DATE: Intl.DateTimeFormatOptions = { year: "numeric", month: "numeric", day: "numeric" };
 const initialState: WorkspaceAccessActionState = { success: false };
 const INVITE_LINK_UNAVAILABLE =
   "Invite links can't be signed because the server secret (BFI_COOKIE_SECRET) is not set.";
@@ -164,7 +166,7 @@ export function WorkspaceAccessManager({
                     {member.userEmail && <span>{member.userEmail}</span>}
                     <span>{roleLabel(member.role)}</span>
                     <span>Added by {sourceLabel(member.source)}</span>
-                    <span>Since {new Date(member.grantedAt).toLocaleDateString()}</span>
+                    <span>Since <LocalDate iso={member.grantedAt} options={NUMERIC_DATE} /></span>
                   </p>
                 </div>
                 {canManage && member.role !== "owner" && (
@@ -195,7 +197,7 @@ export function WorkspaceAccessManager({
                   <p className="mt-0.5 flex flex-wrap gap-x-3 gap-y-1 text-sm text-warm-600">
                     <span>{roleLabel(invitation.role)}</span>
                     <span>Waiting for them to open the invite link</span>
-                    <span>Expires {new Date(invitation.expiresAt).toLocaleDateString()}</span>
+                    <span>Expires <LocalDate iso={invitation.expiresAt} options={NUMERIC_DATE} /></span>
                   </p>
                 </div>
                 {canManage && (

@@ -49,6 +49,10 @@ describe("Deming daily data-quality checks (#1065)", () => {
       { category: "nsf", normalShare: 0.3, share: 0.6, institutions: 600, direction: "up" },
     ]);
     expect(categoryShares({ institutions: 1_000, categories: [] }, []).status).toBe("no_baseline");
+    // A rise alone is coverage growth or a fold rule landing: watched, not an alarm (#1579).
+    const risen = categoryShares({ institutions: 1_000, categories: [{ category: "overdraft", institutions: 800 }, { category: "nsf", institutions: 600 }, { category: "wire", institutions: 210 }] }, history);
+    expect(risen.status).toBe("warn");
+    expect(risen.drifts.map((drift) => drift.direction)).toEqual(["up"]);
   });
 
   it("names a failing check as an ALARM in the summary and keeps dollar and rate fees apart", async () => {

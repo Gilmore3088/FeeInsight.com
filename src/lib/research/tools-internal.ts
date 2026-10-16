@@ -466,8 +466,9 @@ const SAFE_PIPELINE_AGENTS: Record<string, AdminAgent> = {
   classify: "darwin",
   verify: "darwin",
   review: "knox",
-  publish: "hamilton",
-  "publish-index": "hamilton",
+  // Publishing is Gutenberg's (#1075 step 2).
+  publish: "gutenberg",
+  "publish-index": "gutenberg",
 };
 
 export const triggerPipelineJob = tool({

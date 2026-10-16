@@ -37,7 +37,7 @@ type SqlTag = typeof sql;
  * Each Darwin verify step reads the next `HOURLY_CHECK_BATCH` live flat fees after a cursor kept on
  * the run ledger (the `darwin.hourly_frequency_check` event's `next_after_id`, 0 once a pass reaches
  * the end). An institution-scoped run reads that institution's live fees and leaves the cursor
- * alone. While `HOURLY_FREQUENCY_LIVE` is false, or in a dry run, nothing is written but the step's
+ * alone. With `HOURLY_FREQUENCY_LIVE` false (it is on since 2026-10-16), or in a dry run, nothing is written but the step's
  * report. Switched on, the live row and its verified row (when it holds the same frequency) take
  * `hourly`, each change is logged to `pipeline_feedback` (check `darwin.hourly_frequency_check`,
  * evidence `from` and `to`, so it is reversed by setting the frequency back to `from`), and a
@@ -47,10 +47,12 @@ type SqlTag = typeof sql;
 export const HOURLY_CHECK = "darwin.hourly_frequency_check";
 export const HOURLY_CHECK_VERSION = 1;
 /**
- * Default-off switch. It turns on by PR after the dry-run count over the whole live table
- * (`hourlyCountSql`, or the verify step's `hourly_full_count` param) has been shown to James.
+ * The switch. It turned on by PR after the dry-run count over the whole live table
+ * (`hourlyCountSql`, or the verify step's `hourly_full_count` param) was shown to James: on
+ * 2026-10-16 (James, "2-4' yes", 03:37 UTC) the count was 830 live fees to set hourly (825 with no
+ * frequency, 4 `per_item`, 1 `per_occurrence`) and 17 exempt. Roll back by setting it to false.
  */
-export const HOURLY_FREQUENCY_LIVE = false;
+export const HOURLY_FREQUENCY_LIVE = true;
 /** Live fees read per step; a name-only regex read. */
 export const HOURLY_CHECK_BATCH = 2_000;
 export const HOURLY_CHECK_SAMPLES = 20;

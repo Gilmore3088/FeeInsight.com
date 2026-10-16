@@ -111,7 +111,7 @@ export function takedownFeedback(row: TakedownRow, runId: number | null): Feedba
   const shared = {
     signal: takedownSignal(row.rolled_back_reason),
     kind,
-    reportedBy: "hamilton" as const,
+    reportedBy: "gutenberg" as const,
     checkName: takedownCheck(row.rolled_back_reason),
     institutionId: num(row.institution_id),
     sourceDocumentId: num(row.source_document_id),
@@ -250,7 +250,7 @@ export async function syncPipelineFeedback(
         aboutStrategy: row.about_strategy,
         signal: "restored",
         kind: "restored_after_takedown",
-        reportedBy: "hamilton",
+        reportedBy: "gutenberg",
         checkName: "hamilton.restore",
         institutionId: num(row.institution_id),
         sourceDocumentId: num(row.source_document_id),
