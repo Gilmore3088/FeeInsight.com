@@ -4,13 +4,16 @@ import { useState, type ReactNode } from "react";
 import { trackEvent } from "@/lib/analytics";
 import {
   CONSULTANT_PRICE_NOTE,
+  NON_INSTITUTION_TIER,
   PRO_TIERS,
   annualMonthsFree,
   annualPerMonthLabel,
   annualSavingsLabel,
+  proTier,
   tierAmountLabel,
   type ProPlan,
 } from "@/lib/pro-tiers";
+import { API_INCLUDED_TIERS, API_MONTHLY_CALLS_LABEL, apiIncludedInTier } from "@/lib/api-subscriber-access";
 import { PlanCheckout, type ProTierSelection } from "./plan-checkout";
 
 export type { ProTierSelection } from "./plan-checkout";
@@ -47,6 +50,25 @@ interface ProPlanBoardProps {
 }
 
 const DISPLAY = { fontFamily: "var(--fi-font-sans)" };
+
+/** On the cards whose plan includes the API (api-subscriber-access.ts, PR #1685). */
+export const API_CARD_LINE = "API and Claude connector included";
+
+/** "$500M": where the first plan with the API starts. */
+const API_FROM_LABEL = PRO_TIERS.find((tier) => API_INCLUDED_TIERS.includes(tier.key))?.fromLabel ?? null;
+
+/**
+ * Who gets the API, in one line under the cards, then how it works (James, Oct 16: the payer may
+ * be finance and the user an analyst, so say who makes the key, that its calls are shared and
+ * what happens at the limit, before purchase). The account holder makes the one key on /account.
+ */
+export const API_INCLUDES_LINE = `API and Claude connector included for institutions with ${API_FROM_LABEL ?? proTier(API_INCLUDED_TIERS[0]).assetsLabel}+ in assets, and for consultants · ${API_MONTHLY_CALLS_LABEL} API calls a month.`;
+export const API_HOW_LINE = `The account holder makes one API key on their account page and can share it with the team. Every call made with it, including through the Claude connector, counts toward the same ${API_MONTHLY_CALLS_LABEL}. At the limit, API calls stop until the 1st of the next month; Hamilton keeps working.`;
+/** After the consultant price: their plan includes the API too. */
+export const CONSULTANT_API_NOTE = "Both include the API key and Claude connector.";
+/** Renewal and refund terms, shown before a choice as well as at checkout (James, Oct 16). */
+export const PLAN_TERMS_LINE =
+  "Annual plans renew yearly and are refunded in full if cancelled within 14 days of the first payment. Monthly plans renew monthly. Cancel renewal anytime from your billing page.";
 
 /**
  * The "N months free" on the toggle. Every tier gives the same months free today
@@ -146,7 +168,10 @@ export function ProPlanBoard({
               destination={destination}
             />
             {selection.otherOrganization && (
-              <p className="mt-3 text-xs leading-relaxed text-ink-muted">{CONSULTANT_PRICE_NOTE}</p>
+              <p className="mt-3 text-xs leading-relaxed text-ink-muted">
+                {CONSULTANT_PRICE_NOTE}
+                {apiIncludedInTier(NON_INSTITUTION_TIER) && ` ${CONSULTANT_API_NOTE}`}
+              </p>
             )}
           </div>
         )}
@@ -190,6 +215,11 @@ export function ProPlanBoard({
                   ? `${annualPerMonthLabel(tier.key)} a month, billed yearly · save ${annualSavingsLabel(tier.key)}`
                   : `Billed monthly · or ${tierAmountLabel(tier.key, "annual")} a year`}
               </p>
+              {apiIncludedInTier(tier.key) && (
+                <p className="mt-1 text-[13px] font-medium leading-relaxed text-ink" data-api-included="">
+                  {API_CARD_LINE}
+                </p>
+              )}
               {mine && selectedName && (
                 <p className="mt-3 border-t border-border pt-2 text-[13px] font-medium leading-snug text-ink sm:mt-4 sm:pt-3">
                   {selectedName}
@@ -199,9 +229,14 @@ export function ProPlanBoard({
           );
         })}
       </ul>
-      <p className="mt-3 text-center text-xs leading-relaxed text-ink-muted">
-        The price follows total assets in the latest call report. Every size gets the same workspace.
-      </p>
+      <div className="mx-auto mt-4 max-w-3xl space-y-2 text-center text-xs leading-relaxed text-ink-muted">
+        <p>The price follows the institution&apos;s total assets in its latest FDIC or NCUA call report. Every plan gets the same Hamilton workspace.</p>
+        <p data-plan-terms="">{PLAN_TERMS_LINE}</p>
+        <p className="pt-2 text-[13px] font-medium text-ink" data-api-includes="">
+          {API_INCLUDES_LINE}
+        </p>
+        <p data-api-how="">{API_HOW_LINE}</p>
+      </div>
     </div>
   );
 }

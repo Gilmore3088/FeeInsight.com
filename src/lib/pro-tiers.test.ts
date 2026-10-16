@@ -6,9 +6,12 @@ import {
   annualMonthsFree,
   annualPerMonthLabel,
   annualSavingsLabel,
+  assetsDetail,
+  callReportLabel,
   isProPlan,
   proPriceEnvVar,
   proPriceId,
+  reportedAssetsLabel,
   tierForAssets,
   tierPriceLabel,
 } from "./pro-tiers";
@@ -69,8 +72,33 @@ describe("Pro tiers", () => {
 
   it("states the annual plan as a monthly figure and its saving", () => {
     expect(annualPerMonthLabel("small")).toBe("$125");
-    expect(annualPerMonthLabel("large")).toBe("$416");
+    expect(annualPerMonthLabel("mid")).toBe("$250");
+    expect(annualPerMonthLabel("large")).toBe("$416.67");
     expect(annualSavingsLabel("small")).toBe("$300");
     expect(annualSavingsLabel("mid")).toBe("$600");
+  });
+});
+
+describe("the figures behind an institution's price", () => {
+  it("states total assets without rounding across a tier's start", () => {
+    expect(reportedAssetsLabel(4_447_362)).toBe("$4.44B");
+    expect(reportedAssetsLabel(705_554_946)).toBe("$705.55B");
+    expect(reportedAssetsLabel(1_999_999)).toBe("$1.99B");
+    expect(reportedAssetsLabel(499_999)).toBe("$499M");
+    expect(tierForAssets(1_999_999)).toBe("mid");
+  });
+
+  it("names the quarter and regulator of the call report", () => {
+    expect(callReportLabel("2026-06-30", "fdic")).toBe("Q2 2026 FDIC call report");
+    expect(callReportLabel("2025-12-31", "ncua")).toBe("Q4 2025 NCUA call report");
+    expect(callReportLabel("2026-03-31", "other")).toBe("Q1 2026 call report");
+    expect(callReportLabel("unknown", "fdic")).toBeNull();
+  });
+
+  it("puts the figure and its filing beside the tier", () => {
+    expect(assetsDetail("Over $2B in assets", 4_447_362, { reportDate: "2026-06-30", source: "fdic" })).toBe(
+      "Over $2B in assets: $4.44B reported in its Q2 2026 FDIC call report",
+    );
+    expect(assetsDetail("Under $500M in assets", 120_500, null)).toBe("Under $500M in assets: $120M in total assets on file");
   });
 });

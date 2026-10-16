@@ -67,8 +67,14 @@ const wire = {
 
 describe("/subscribe Hamilton window", () => {
   it("shows the homepage's live views, then the Wire when an item was read", () => {
-    expect(plansExhibitViews(live, null).map((v) => v.key)).toEqual(["fees", "price", "reports"]);
-    expect(plansExhibitViews(live, wire).map((v) => v.key)).toEqual(["fees", "price", "reports", "wire"]);
+    expect(plansExhibitViews(live, null).map((v) => v.key)).toEqual(["fees", "reports", "price"]);
+    expect(plansExhibitViews(live, wire).map((v) => v.key)).toEqual(["fees", "reports", "price", "wire"]);
+  });
+
+  it("opens on what paying unlocks, with the public district map as a later tab", () => {
+    const districts = [1, 2].map((n) => ({ dimension_value: `District ${n}`, count: 40, median_amount: 30, min_amount: 5, max_amount: 40, avg_amount: 28 }));
+    const withMap = buildHomeData(summary, categories, districts, { scenario: buildScenario("Overdraft", categories[0]) });
+    expect(plansExhibitViews(withMap, null).map((v) => v.key)).toEqual(["fees", "reports", "price", "map"]);
   });
 
   it("is left out when the live index could not be read", () => {
