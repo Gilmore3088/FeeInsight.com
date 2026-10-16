@@ -13,17 +13,17 @@ describe("SourceMap", () => {
       />,
     );
     expect(screen.getByRole("heading", { level: 2, name: "One primary source, and the data around it" })).toBeInTheDocument();
-    expect(screen.queryByRole("img", { name: /On our list/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("img", { name: /Tracked/ })).not.toBeInTheDocument();
     const primary = screen.getByRole("link", { name: /Institution fee schedules/ });
     expect(primary).toHaveAttribute("href", "#fee-schedules");
     expect(screen.getByText("1,000")).toBeInTheDocument();
     expect(screen.queryByText("institutions with published fees")).not.toBeInTheDocument();
     expect(screen.getByText("4,321")).toBeInTheDocument();
-    expect(screen.queryByText("banks on our list")).not.toBeInTheDocument();
+    expect(screen.queryByText("banks tracked")).not.toBeInTheDocument();
     expect(screen.queryByText("0")).not.toBeInTheDocument();
     const groups = within(screen.getByRole("list", { name: "Supporting sources" }));
     expect(groups.getAllByRole("heading", { level: 3 }).map((h) => h.textContent)).toEqual([
-      "Who we track",
+      "Institutions",
       "Regulation",
       "Financials",
       "Context",
@@ -39,10 +39,10 @@ describe("CoverageBar", () => {
   it("draws the list and the published share on one scale with the real counts", () => {
     const counts = { observations: null, institutions: 3000, banks: 4000, creditUnions: 6000, fdicReports: null, ncuaReports: null };
     render(<SourceMap map={sourceMap(counts)} coverage={coverageBar(counts)} />);
-    expect(screen.getByRole("img", { name: "On our list: 4,000 banks and 6,000 credit unions" })).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "Tracked: 4,000 banks and 6,000 credit unions" })).toBeInTheDocument();
     const share = screen.getByRole("img", { name: "3,000 institutions with published fees, 30% of the list" });
     expect((share.firstChild as HTMLElement).style.width).toBe("30%");
-    expect(screen.getByText("30% of the institutions on our list have published fees")).toBeInTheDocument();
+    expect(screen.getByText("30% of tracked institutions have published fees")).toBeInTheDocument();
   });
 });
 

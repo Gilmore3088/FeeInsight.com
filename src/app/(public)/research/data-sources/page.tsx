@@ -10,7 +10,7 @@ import { DataSourcesHero, MethodologyLine, NextAction, SourceMap, SourceTable } 
 
 const PAGE_URL = `${SITE_URL}/research/data-sources`;
 const TITLE = "Data sources: where every number comes from";
-const DESCRIPTION = `The sources behind the ${PRODUCT_NAME}: each institution's own fee schedule, FDIC and NCUA data, Federal Reserve districts, and the public data we use for context.`;
+const DESCRIPTION = `The sources behind the ${PRODUCT_NAME}: each institution's own fee schedule, FDIC and NCUA data, Federal Reserve districts, and the public data used for context.`;
 
 export const metadata: Metadata = {
   title: TITLE,

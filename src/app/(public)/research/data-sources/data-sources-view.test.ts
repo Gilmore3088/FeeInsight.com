@@ -44,7 +44,7 @@ describe("sourceMap", () => {
     const map = sourceMap({ ...NONE, observations: 0, banks: 4321, fdicReports: Number.NaN });
     expect(map.primary.figures).toEqual([]);
     const figures = Object.fromEntries(map.groups.flatMap((g) => g.nodes).map((n) => [n.id, n.figure]));
-    expect(figures["fdic-bankfind"]).toEqual({ value: "4,321", label: "banks on our list" });
+    expect(figures["fdic-bankfind"]).toEqual({ value: "4,321", label: "banks tracked" });
     expect(figures["ncua-credit-unions"]).toBeNull();
     expect(figures["fdic-call-reports"]).toBeNull();
     expect(figures["fed-districts"]).toEqual({ value: String(FED_DISTRICT_COUNT), label: "districts" });

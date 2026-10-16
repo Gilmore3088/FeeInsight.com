@@ -36,7 +36,7 @@ export const DATA_SOURCES: readonly DataSource[] = [
     publisher: "Each bank and credit union",
     group: "fees",
     takes: "Every fee's name and amount, tied to the document it came from.",
-    refresh: "Re-checked after 30 days",
+    refresh: "When 30 days old",
     href: null,
   },
   {
@@ -263,8 +263,8 @@ export const FED_DISTRICT_COUNT = Object.keys(DISTRICT_NAMES).length;
 
 /** Order and width keep the phone grid (two columns) free of empty cells: wide groups span both. */
 const GROUPS: { key: Exclude<SourceGroupKey, "fees">; title: string; role: string; wide: boolean }[] = [
-  { key: "institutions", title: "Who we track", role: "The institution list", wide: false },
-  { key: "regulation", title: "Regulation", role: "Rules and enforcement", wide: false },
+  { key: "institutions", title: "Institutions", role: "Who is tracked", wide: false },
+  { key: "regulation", title: "Regulation", role: "Actions against institutions", wide: false },
   { key: "financials", title: "Financials", role: "Revenue and filings", wide: true },
   { key: "context", title: "Context", role: "Economy and market", wide: true },
   { key: "regions", title: "Regions", role: "District comparisons", wide: true },
@@ -280,9 +280,9 @@ function source(id: string): DataSource {
 function nodeFigure(id: string, counts: SourceCounts): MapFigure | null {
   switch (id) {
     case "fdic-bankfind":
-      return figure(counts.banks, "banks on our list");
+      return figure(counts.banks, "banks tracked");
     case "ncua-credit-unions":
-      return figure(counts.creditUnions, "credit unions on our list");
+      return figure(counts.creditUnions, "credit unions tracked");
     case "fdic-call-reports":
       return figure(counts.fdicReports, "quarterly reports");
     case "ncua-5300":
@@ -319,7 +319,7 @@ export interface CoverageBar {
   creditUnions: { value: string; pct: number };
   /** Institutions with at least one published fee, drawn on the same scale as the list. */
   withFees: { value: string; pct: number };
-  /** "34% of the institutions on our list have published fees". */
+  /** "34% of tracked institutions have published fees". */
   summary: string;
 }
 
@@ -340,7 +340,7 @@ export function coverageBar(counts: SourceCounts): CoverageBar | null {
     banks: { value: formatCount(banks), pct: pct(banks, total) },
     creditUnions: { value: formatCount(creditUnions), pct: pct(creditUnions, total) },
     withFees: { value: formatCount(institutions), pct: withFees },
-    summary: `${Math.round(withFees)}% of the institutions on our list have published fees`,
+    summary: `${Math.round(withFees)}% of tracked institutions have published fees`,
   };
 }
 

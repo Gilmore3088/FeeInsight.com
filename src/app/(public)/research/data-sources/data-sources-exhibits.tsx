@@ -11,17 +11,17 @@ const MONO = { fontFamily: "var(--fi-font-mono)" } as const;
 export function DataSourcesHero({ freshnessLabel }: { freshnessLabel: string | null }) {
   return (
     <section className="fi-on-navy bg-ink text-paper">
-      <div className="mx-auto max-w-page px-4 pb-8 pt-10 sm:px-6 sm:pb-10 sm:pt-14">
-        <p className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-[#e0716a]">
+      <div className="mx-auto max-w-page px-4 pb-8 pt-10 text-center sm:px-6 sm:pb-10 sm:pt-14 sm:text-left">
+        <p className="flex items-center justify-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-[#e0716a] sm:justify-start">
           <span aria-hidden="true" className="h-px w-8 bg-[#e0716a]/60" />
           Data sources
         </p>
-        <h1 className="mt-3 max-w-3xl text-[2rem] font-extrabold leading-[1.08] tracking-[-0.015em] text-white sm:text-[3rem]" style={SANS}>
+        <h1 className="mx-auto mt-3 max-w-3xl text-[2rem] font-extrabold leading-[1.08] tracking-[-0.015em] text-white sm:mx-0 sm:text-[3rem]" style={SANS}>
           Where every number comes from
         </h1>
-        <p className="mt-3 max-w-2xl text-[15px] leading-relaxed text-paper/80 sm:text-base">
-          Fees in the {PRODUCT_NAME} come from each institution&apos;s own schedule. Public agency data sets the list
-          we track and adds context.
+        <p className="mx-auto mt-3 max-w-2xl text-[15px] leading-relaxed text-paper/80 sm:mx-0 sm:text-base">
+          Fees in the {PRODUCT_NAME} come from each institution&apos;s own published fee schedule. Public agency data
+          sets the list of institutions tracked and adds context.
         </p>
         {freshnessLabel && (
           <p className="mt-5 inline-flex items-center gap-2 text-[12px] text-paper/75">
@@ -88,7 +88,7 @@ export function CoverageBar({ bar }: { bar: CoverageBarData }) {
         <div>
           <div
             role="img"
-            aria-label={`On our list: ${bar.banks.value} banks and ${bar.creditUnions.value} credit unions`}
+            aria-label={`Tracked: ${bar.banks.value} banks and ${bar.creditUnions.value} credit unions`}
             className="flex h-4 w-full overflow-hidden rounded-full bg-paper"
           >
             <span className="block h-full bg-ink" style={{ width: `${bar.banks.pct}%` }} />
@@ -97,11 +97,11 @@ export function CoverageBar({ bar }: { bar: CoverageBarData }) {
           <p className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 text-[12px] text-ink-muted" aria-hidden="true">
             <span className="inline-flex items-center gap-1.5">
               <span className="h-2.5 w-2.5 rounded-sm bg-ink" />
-              <span className="font-semibold tabular-nums text-ink" style={MONO}>{bar.banks.value}</span> banks on our list
+              <span className="font-semibold tabular-nums text-ink" style={MONO}>{bar.banks.value}</span> banks tracked
             </span>
             <span className="inline-flex items-center gap-1.5">
               <span className="h-2.5 w-2.5 rounded-sm bg-ink/45" />
-              <span className="font-semibold tabular-nums text-ink" style={MONO}>{bar.creditUnions.value}</span> credit unions on our list
+              <span className="font-semibold tabular-nums text-ink" style={MONO}>{bar.creditUnions.value}</span> credit unions tracked
             </span>
           </p>
         </div>
@@ -189,7 +189,7 @@ export function SourceMap({ map, coverage }: { map: SourceMapData; coverage: Cov
           ))}
         </ul>
         <figcaption className="mt-3 text-[12px] text-ink-muted">
-          Counts update with each publish.
+          Counts update each time new fees are published.
         </figcaption>
       </figure>
     </section>
@@ -200,13 +200,13 @@ export function SourceMap({ map, coverage }: { map: SourceMapData; coverage: Cov
 export function SourceTable({ sources }: { sources: readonly DataSource[] }) {
   return (
     <section aria-labelledby="table-heading" id="sources" className="scroll-mt-24">
-      <SectionTitle id="table-heading" eyebrow="Source by source" title="What we take from each" />
+      <SectionTitle id="table-heading" eyebrow="Source by source" title="What each source provides" />
       <table className="mt-5 block w-full text-left sm:table">
-        <caption className="sr-only">Data sources, what we take from each, how often it refreshes, and its site</caption>
+        <caption className="sr-only">Data sources, what each provides, how often it refreshes, and its site</caption>
         <thead className="hidden sm:table-header-group">
           <tr className="border-b border-border text-[11px] font-semibold uppercase tracking-[0.12em] text-ink-muted">
             <th scope="col" className="py-2 pr-4">Source</th>
-            <th scope="col" className="py-2 pr-4">What we take</th>
+            <th scope="col" className="py-2 pr-4">What it provides</th>
             <th scope="col" className="py-2 pr-4">Refreshed</th>
             <th scope="col" className="py-2">Site</th>
           </tr>
@@ -273,7 +273,7 @@ export function NextAction({ action }: { action: ActionLink }) {
         See these sources at work on one institution
       </h2>
       <p className="mt-2 max-w-xl text-[14px] leading-relaxed text-paper/80">
-        Its fees set against its market, each line traced to the schedule.
+        The report sets one institution&apos;s fees against named local competitors and traces every figure to its fee schedule.
       </p>
       <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-5">
         <TrackLink
