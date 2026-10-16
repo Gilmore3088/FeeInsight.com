@@ -2,7 +2,7 @@
  * Consumer fee guides.
  *
  * Every guide here is `accessTier: "public"` and stays that way. Consumer education is
- * never gated — the paying tier is served by `catalog-professional.ts`.
+ * never gated; the paying tier is served by `catalog-professional.ts`.
  *
  * Dollar figures are `{{category.stat}}` tokens, never literals. If you find yourself
  * typing a dollar sign into prose, the number belongs in a token instead.
@@ -550,7 +550,7 @@ export const CONSUMER_GUIDES: Guide[] = [
           },
           {
             type: "paragraph",
-            text: "That percentage framing is the useful one. Nobody would accept a 25% charge on a purchase, but the same charge on a cash withdrawal passes unnoticed because it is presented as a flat few dollars. A person taking out $40 twice a week at an out-of-network machine can spend more on ATM access over a year than on every other bank fee combined.",
+            text: "That percentage framing is the useful one, because a flat few dollars is easy to overlook. At $5 a withdrawal, twice a week, the cost reaches $520 over a year.",
           },
           {
             type: "paragraph",
@@ -564,11 +564,11 @@ export const CONSUMER_GUIDES: Guide[] = [
         blocks: [
           {
             type: "paragraph",
-            text: "Credit unions do notably well here, and the reason is structural rather than generous: many belong to shared branching and surcharge-free networks that give members access to tens of thousands of machines at no charge. A small credit union can offer a larger fee-free ATM footprint than a national bank.",
+            text: "Many credit unions belong to shared branching and surcharge-free networks, so members can use machines far beyond their own branches without a surcharge. A small credit union can offer a larger fee-free ATM footprint than its branch count suggests.",
           },
           {
             type: "paragraph",
-            text: "Online-only banks compete on this directly. Having no branches, several reimburse ATM fees outright, sometimes without a monthly limit — which turns their biggest structural weakness into a selling point.",
+            text: "Some online-only banks, having no branches of their own, rebate other banks' ATM fees up to a monthly limit. The limit and the rules are in the account agreement, so read them before counting on it.",
           },
           {
             type: "comparison",
@@ -586,12 +586,12 @@ export const CONSUMER_GUIDES: Guide[] = [
             type: "list",
             ordered: true,
             items: [
-              "Get cash back at a supermarket or pharmacy checkout. It is free at most retailers and it is the single easiest fix.",
-              "Ask your institution which shared network it belongs to. Members often have far more free machines available than they realise.",
-              "Take out more, less often. If you cannot avoid a fee, one larger withdrawal beats three small ones — the fee is flat, so the percentage falls as the amount rises.",
+              "Get cash back at a supermarket or pharmacy checkout. Many retailers offer it free, though some charge, so check the screen before you confirm.",
+              "Ask your institution which shared network it belongs to, and open its ATM locator. You may have more free machines nearby than you thought.",
+              "Take out more, less often. If you cannot avoid a fee, one larger withdrawal beats three small ones. The fee is flat, so the percentage falls as the amount rises.",
               "Never accept the ATM's currency conversion offer abroad. Choosing to be charged in dollars hands the machine owner the exchange rate. Always pick the local currency.",
               "Check your balance in the app, never at the machine, if your bank charges for inquiries.",
-              "If you use cash regularly, pick an institution that rebates ATM fees. For a frequent cash user this single feature can outweigh every other fee difference between two accounts.",
+              "If you use cash regularly, compare accounts on ATM access and rebates. For a frequent cash user this can outweigh other fee differences between two accounts.",
             ],
           },
         ],
@@ -604,15 +604,21 @@ export const CONSUMER_GUIDES: Guide[] = [
             type: "callout",
             tone: "regulatory",
             text: "Under Regulation E, an ATM operator must tell you a surcharge is coming and let you cancel the transaction before it is charged. If cash came out without you seeing a fee notice, that is worth disputing.",
+            source: { label: "12 CFR 1005.16", url: "https://www.ecfr.gov/current/title-12/chapter-X/part-1005/section-1005.16" },
           },
           {
             type: "paragraph",
-            text: "That protection covers the machine owner's surcharge. It does not cover your own bank's out-of-network fee, which is disclosed in your account agreement under Regulation DD rather than at the point of withdrawal. This is precisely why the second fee catches people out — only one of the two has to be shown to you at the moment you decide.",
+            text: "That protection covers the machine owner's surcharge. It does not cover your own bank's out-of-network fee, which is disclosed in your account agreement under Regulation DD rather than at the point of withdrawal. This is why the second fee catches people out: only one of the two has to be shown to you at the moment you decide.",
             source: { label: "12 CFR part 1030", url: "https://www.ecfr.gov/current/title-12/chapter-X/part-1030" },
           },
           {
             type: "paragraph",
             text: "There is no federal cap on either fee. Both are set by the institution, which is why the range between the cheapest and most expensive is so wide.",
+          },
+          {
+            type: "paragraph",
+            text: "If a machine took the money from your account but did not give you the cash, that is an error under Regulation E. Report it to your bank within 60 days of the statement that shows it, and the bank must investigate and correct it.",
+            source: { label: "12 CFR 1005.11", url: "https://www.ecfr.gov/current/title-12/chapter-X/part-1005/section-1005.11" },
           },
         ],
       },
@@ -628,7 +634,7 @@ export const CONSUMER_GUIDES: Guide[] = [
             type: "benchmark",
             category: "atm_non_network",
             rows: [
-              { condition: "$0, or fees rebated", meaning: "Best available — common at online banks and some credit unions" },
+              { condition: "$0, or fees rebated", meaning: "Best available" },
               { condition: "{{atm_non_network.p25}} or less", meaning: "In the lowest-priced quarter" },
               { condition: "Around {{atm_non_network.median}}", meaning: "Right at the national median" },
               { condition: "More than {{atm_non_network.p75}}", meaning: "In the highest-priced quarter" },
@@ -636,7 +642,7 @@ export const CONSUMER_GUIDES: Guide[] = [
           },
           {
             type: "paragraph",
-            text: "Then ask the question the fee schedule will not answer: how many free machines can you actually reach from home and from work? A slightly higher fee you never trigger beats a lower fee you pay weekly. Open your bank's ATM locator and check both locations before deciding — for a regular cash user, the map matters more than the price list.",
+            text: "Then ask the question the fee schedule will not answer: how many free machines can you actually reach from home and from work? A slightly higher fee you never trigger beats a lower fee you pay weekly. Open your bank's ATM locator and check both places before deciding. For a regular cash user, the map can tell you more than the price list.",
           },
         ],
       },
@@ -667,7 +673,7 @@ export const CONSUMER_GUIDES: Guide[] = [
           },
           {
             type: "paragraph",
-            text: "It is also why wires are the payment method of choice for house closings and large purchases — and why they are the payment method of choice for fraud. A wire is not reversible in the way a card payment or an ACH transfer is.",
+            text: "That is why wires are used for house closings and large purchases, and also why fraudsters ask for them. A wire is not reversible in the way a card payment or an ACH transfer can be.",
           },
           {
             type: "paragraph",
@@ -683,7 +689,7 @@ export const CONSUMER_GUIDES: Guide[] = [
             type: "list",
             items: [
               "Sending a domestic wire: median {{wire_domestic_outgoing.median}}, typically {{wire_domestic_outgoing.p25}} to {{wire_domestic_outgoing.p75}}",
-              "Receiving a domestic wire: median {{wire_domestic_incoming.median}} — many institutions charge nothing",
+              "Receiving a domestic wire: median {{wire_domestic_incoming.median}}",
               "Sending an international wire: median {{wire_intl_outgoing.median}}",
               "Receiving an international wire: median {{wire_intl_incoming.median}}",
             ],
@@ -691,7 +697,7 @@ export const CONSUMER_GUIDES: Guide[] = [
           {
             type: "callout",
             tone: "warning",
-            text: "On an international wire, the fee is not the main cost. The exchange rate is. A bank taking 3% on conversion costs you $150 on a $5,000 transfer, which dwarfs the {{wire_intl_outgoing.median}} fee you were quoted.",
+            text: "On an international wire, the fee is not the main cost. The exchange rate is. If a provider's rate is 3% worse than the market rate, a $5,000 transfer costs you $150 on conversion, on top of the {{wire_intl_outgoing.median}} fee you were quoted.",
           },
           {
             type: "paragraph",
@@ -699,11 +705,11 @@ export const CONSUMER_GUIDES: Guide[] = [
           },
           {
             type: "paragraph",
-            text: "This is why a wire quoted at one price can cost meaningfully more by the time it lands. When someone abroad tells you the money arrived short, an intermediary charge is usually the reason, and there is rarely anything either end can do about it after the fact. If the exact amount matters — a tuition payment, an invoice that must be paid in full — ask your bank in advance whether the transfer will route through a correspondent, and send a small margin above the required amount.",
+            text: "This is why a wire quoted at one price can cost meaningfully more by the time it lands. When money arrives short, an intermediary charge is a common reason, and it is hard to recover after the fact. If the exact amount matters, such as a tuition payment or an invoice that must be paid in full, ask your bank in advance whether the transfer will route through a correspondent, and send a small margin above the required amount.",
           },
           {
             type: "paragraph",
-            text: "Wires also have a daily cutoff, usually early afternoon. A wire submitted after it does not move until the next business day, which is worth knowing when you are paying for same-day settlement.",
+            text: "Wires also have a daily cutoff time, set by each bank. A wire submitted after it does not move until the next business day, which is worth knowing when you are paying for same-day settlement.",
           },
         ],
       },
@@ -717,7 +723,7 @@ export const CONSUMER_GUIDES: Guide[] = [
           },
           {
             type: "paragraph",
-            text: "Within any institution, initiating a wire online is frequently cheaper than doing it at a branch for the identical transfer. If your bank offers both, the counter is the expensive option.",
+            text: "Some institutions charge less for a wire you send online than for the same wire sent at a branch. If your schedule lists both prices, compare them.",
           },
           {
             type: "comparison",
@@ -735,18 +741,33 @@ export const CONSUMER_GUIDES: Guide[] = [
             type: "list",
             ordered: true,
             items: [
-              "Use ACH for anything that is not urgent. A standard bank-to-bank transfer is usually free and takes one to three business days. Most wires are paid for by people who did not need the speed.",
-              "Use a real-time payment app for smaller amounts between people. Free between participating banks, and instant.",
+              "Use ACH for anything that is not urgent. A standard bank-to-bank transfer is often free and takes one to three business days.",
+              "Use your bank's person-to-person payment service for smaller amounts. It is often free and fast, but it is just as hard to reverse, so send only to people you know.",
               "For international transfers, compare a specialist service against your bank on the exchange rate, not the fee. That is where the real difference sits.",
               "Initiate online rather than in branch if your bank prices them differently.",
-              "Ask about a waiver. Premium and relationship accounts often include free wires, and this is one of the most commonly waived fees if you ask.",
+              "Ask about a waiver. Some premium and relationship accounts include free wires, and it costs nothing to ask.",
               "Check the incoming fee before giving out your wire details. If your bank charges you to receive, ask the sender to use ACH instead.",
             ],
           },
           {
             type: "callout",
             tone: "tip",
-            text: "Before sending a large wire, confirm the account details by phone using a number you looked up yourself — never one from the email requesting payment. Wire fraud around property closings is common, and a wire is final.",
+            text: "Before sending a large wire, confirm the account details by phone using a number you looked up yourself, never one from the email requesting payment. Fraudsters target property closings, and a wire is hard to recall.",
+          },
+        ],
+      },
+      {
+        id: "questions-to-ask",
+        heading: "Ask these before you send",
+        blocks: [
+          {
+            type: "list",
+            items: [
+              "What is the cutoff time for a same-day wire, and what happens to one sent after it?",
+              "Do you charge to receive a wire, and is the price different for an international one?",
+              "For an international wire, what exchange rate will you use, and will it route through another bank?",
+              "Is a wire sent online priced differently from one sent at a branch?",
+            ],
           },
         ],
       },
@@ -757,16 +778,16 @@ export const CONSUMER_GUIDES: Guide[] = [
           {
             type: "callout",
             tone: "regulatory",
-            text: "For international transfers, the Remittance Transfer Rule under Regulation E requires your bank to disclose the exchange rate, all fees, and the exact amount the recipient will receive — before you pay. You also get a window, generally 30 minutes, to cancel.",
+            text: "For international transfers, the Remittance Transfer Rule under Regulation E requires your bank to disclose the exchange rate, the fees, and the amount the recipient will receive before you pay. You can generally cancel within 30 minutes of paying.",
             source: { label: "12 CFR 1005.31", url: "https://www.ecfr.gov/current/title-12/chapter-X/part-1005/section-1005.31" },
           },
           {
             type: "paragraph",
-            text: "That disclosure is the most useful consumer protection in this guide. It forces the total cost into the open, including the exchange rate, which is where banks make most of their money on international transfers. Read it before confirming, and compare the recipient-receives figure between providers rather than the advertised fee.",
+            text: "That disclosure is the most useful consumer protection in this guide. It puts the total cost in the open, including the exchange rate. Read it before confirming, and compare the recipient-receives figure between providers rather than the advertised fee.",
           },
           {
             type: "paragraph",
-            text: "Domestic wires have no equivalent protection. They are governed by commercial payment law rather than consumer protection rules, and once a domestic wire is executed correctly there is no right of reversal. If you are defrauded, recovery depends on the receiving bank's cooperation and speed.",
+            text: "Domestic wires have no equivalent disclosure. They are governed by commercial payment law (Article 4A of the Uniform Commercial Code) rather than Regulation E, and once a domestic wire is executed correctly there is no right of reversal. If you are defrauded, recovery depends on the receiving bank's cooperation and speed.",
           },
         ],
       },
@@ -781,12 +802,12 @@ export const CONSUMER_GUIDES: Guide[] = [
               { condition: "{{wire_domestic_outgoing.p25}} or less", meaning: "In the lowest-priced quarter" },
               { condition: "Around {{wire_domestic_outgoing.median}}", meaning: "Right at the national median" },
               { condition: "More than {{wire_domestic_outgoing.p75}}", meaning: "In the highest-priced quarter" },
-              { condition: "Charged to receive a domestic wire", meaning: "Many institutions do not charge at all" },
+              { condition: "Charged to receive a domestic wire", meaning: "Ask whether the sender can use ACH" },
             ],
           },
           {
             type: "paragraph",
-            text: "If you send money abroad regularly, ignore the fee comparison and run one real test instead: ask two providers what the recipient will actually receive for the same amount sent. The gap between those two numbers is the real price difference, and it is usually far larger than the fees. Run the test with the amount you actually send, not a round number, because some providers price in tiers.",
+            text: "If you send money abroad regularly, ignore the fee comparison and run one real test instead: ask two providers what the recipient will actually receive for the same amount sent. The gap between those two numbers is the real price difference, and it can be larger than the fees. Run the test with the amount you actually send, not a round number, because some providers price in tiers.",
           },
         ],
       },
@@ -817,12 +838,12 @@ export const CONSUMER_GUIDES: Guide[] = [
           },
           {
             type: "paragraph",
-            text: "It is also the most avoidable fee in banking. Nearly every account that charges one also lists conditions that waive it, and nearly every bank has at least one account that does not charge it at all.",
+            text: "It is also one of the more avoidable fees. Many accounts that charge one also list conditions that waive it, so the conditions matter as much as the price.",
           },
           {
             type: "callout",
             tone: "tip",
-            text: "This fee is charged monthly, so the annual cost is twelve times what it looks like. At the national median of {{monthly_maintenance.median}} a month, that is a meaningful annual sum for an account you may be able to switch for free.",
+            text: "This fee is charged monthly, so the annual cost is twelve times what it looks like. Multiply the national median of {{monthly_maintenance.median}} by twelve to see the yearly cost of an account whose waiver you do not meet.",
           },
         ],
       },
@@ -832,23 +853,23 @@ export const CONSUMER_GUIDES: Guide[] = [
         blocks: [
           {
             type: "paragraph",
-            text: "The national median monthly maintenance fee is {{monthly_maintenance.median}}, across {{monthly_maintenance.institutions}} institutions. Most fall between {{monthly_maintenance.p25}} and {{monthly_maintenance.p75}}, and the highest recorded is {{monthly_maintenance.max}}. Critically, {{monthly_maintenance.zero_count}} institutions charge nothing.",
+            text: "The national median monthly maintenance fee is {{monthly_maintenance.median}}, across {{monthly_maintenance.institutions}} institutions. Most fall between {{monthly_maintenance.p25}} and {{monthly_maintenance.p75}}, and the highest recorded is {{monthly_maintenance.max}}. {{monthly_maintenance.zero_count}} institutions list a $0 monthly fee on the schedule we hold, which can be one account only, so check the account you would open.",
           },
           {
             type: "paragraph",
-            text: "Two related fees usually travel with it. The minimum balance fee, median {{minimum_balance.median}}, is charged when your balance drops below a threshold. The paper statement fee, median {{paper_statement.median}}, is charged for receiving your statement in the post.",
+            text: "Two related fees usually travel with it. The minimum balance fee, median {{minimum_balance.median}}, is charged when your balance drops below a threshold. The paper statement fee, median {{paper_statement.median}}, is charged for receiving your statement by mail.",
           },
           {
             type: "paragraph",
-            text: "Those two are worth knowing about because they are the most common waiver levers. Switching to electronic statements can remove one of them outright, and it takes about a minute.",
+            text: "Those two are worth knowing about because they are common waiver levers. Switching to electronic statements can remove one of them outright.",
           },
           {
             type: "paragraph",
-            text: "Read the waiver conditions rather than the fee. Two accounts advertising the same monthly fee can be completely different products depending on what it takes to avoid it. A fee waived by any direct deposit is effectively zero for anyone with a job. The same fee waived only by a five-figure minimum balance is a fee you will pay every month.",
+            text: "Read the waiver conditions rather than the fee. Two accounts advertising the same monthly fee can be completely different products depending on what it takes to avoid it. A fee waived by any direct deposit is easy to avoid if you have one. The same fee waived only by a large minimum balance may be a fee you pay every month.",
           },
           {
             type: "paragraph",
-            text: "Watch for a waiver you have quietly stopped meeting. Changing jobs, splitting a direct deposit across two accounts, or moving savings elsewhere can each restart a fee that had been waived for years, and the first sign is usually a statement line nobody reads.",
+            text: "Watch for a waiver you have quietly stopped meeting. Changing jobs, splitting a direct deposit across two accounts, or moving savings elsewhere can each restart a fee that had been waived for years, and the first sign is often a statement line.",
           },
         ],
       },
@@ -858,11 +879,11 @@ export const CONSUMER_GUIDES: Guide[] = [
         blocks: [
           {
             type: "paragraph",
-            text: "Large national banks are the most likely to charge a monthly fee on a standard checking account, and to set the waiver thresholds highest. Community banks tend to sit in the middle. Credit unions are the least likely to charge one at all, and where they do the amount is usually small.",
+            text: "The chart below compares the monthly fees banks and credit unions publish. A median hides the account: one institution can offer a free account and a fee-charging one side by side.",
           },
           {
             type: "paragraph",
-            text: "Online-only banks almost never charge one. Having no branch network to fund is the whole reason, and it is the clearest example in retail banking of a cost structure showing up directly in a consumer's fee schedule.",
+            text: "Read the waiver conditions next to the price. Those conditions decide whether you will pay it.",
           },
           {
             type: "comparison",
@@ -880,12 +901,27 @@ export const CONSUMER_GUIDES: Guide[] = [
             type: "list",
             ordered: true,
             items: [
-              "Set up direct deposit. This is the most common waiver and usually the easiest to satisfy. Many banks waive the fee for any qualifying deposit, not a large one.",
+              "Set up direct deposit if your account waives the fee for it. Check what counts as a qualifying deposit and whether a minimum amount applies.",
               "Switch to electronic statements. It removes the paper statement fee, median {{paper_statement.median}}, and at some banks it counts toward the maintenance waiver too.",
-              "Check the minimum balance rule carefully. Some banks use your average daily balance and some use the lowest balance in the cycle. The second is far harder to satisfy and is worth knowing which you have.",
-              "Link accounts. Combined balances across checking, savings and a certificate often clear a threshold that checking alone would not.",
-              "Ask about student, senior and military accounts. These carry automatic waivers at most institutions and are frequently not offered unless you ask.",
-              "If none of that works, move the account. {{monthly_maintenance.zero_count}} institutions in our index charge no monthly fee at all, and switching a checking account is a single afternoon's work.",
+              "Check the minimum balance rule carefully. Some banks use your average daily balance and some use the lowest balance in the cycle. The second is harder to satisfy, so it is worth knowing which you have.",
+              "Ask whether linked balances count. Some accounts let combined balances across checking, savings and a certificate meet the threshold.",
+              "Ask about student, senior and military accounts. Many institutions offer them with fewer fees, and they may not be offered unless you ask.",
+              "If none of that works, compare accounts elsewhere. Moving a checking account takes some planning, because direct deposits and automatic payments must follow it.",
+            ],
+          },
+        ],
+      },
+      {
+        id: "questions-to-ask",
+        heading: "Questions to ask your bank",
+        blocks: [
+          {
+            type: "list",
+            items: [
+              "What exactly waives the monthly fee on my account, and how often is it checked?",
+              "Is the balance rule based on my average daily balance or my lowest balance in the cycle?",
+              "Is there an account on your schedule with no monthly fee, and what does it leave out?",
+              "Will you tell me if my account is converted to a different account type?",
             ],
           },
         ],
@@ -902,11 +938,11 @@ export const CONSUMER_GUIDES: Guide[] = [
           },
           {
             type: "paragraph",
-            text: "That advance notice is the part people ignore. Fee increases arrive as a statement insert or an email that reads like boilerplate, and the increase takes effect whether you read it or not. If your monthly fee has changed recently, the notice was sent — it is worth searching your email for it, because it will also restate the current waiver conditions.",
+            text: "That advance notice is the part people ignore. Fee increases arrive as a statement insert or an email that reads like boilerplate, and the increase takes effect whether you read it or not. If your monthly fee has changed recently, look for the notice in your email or mail, because it will also restate the current waiver conditions.",
           },
           {
             type: "paragraph",
-            text: "There is no federal cap on account maintenance fees and no requirement to offer a free account. Some states and some federal programmes encourage low-cost basic accounts, but for most consumers the protection is disclosure rather than price control, which puts the responsibility to compare squarely on you.",
+            text: "There is no federal cap on account maintenance fees and no federal requirement to offer a free account. The protection is disclosure rather than price control, so comparing is up to you.",
           },
         ],
       },
@@ -918,7 +954,7 @@ export const CONSUMER_GUIDES: Guide[] = [
             type: "benchmark",
             category: "monthly_maintenance",
             rows: [
-              { condition: "$0 with no conditions", meaning: "Best available, and widely offered" },
+              { condition: "$0 with no conditions", meaning: "Best available" },
               { condition: "{{monthly_maintenance.p25}} or less", meaning: "In the lowest-priced quarter" },
               { condition: "Around {{monthly_maintenance.median}}", meaning: "Right at the national median" },
               { condition: "More than {{monthly_maintenance.p75}}", meaning: "In the highest-priced quarter" },
@@ -926,11 +962,11 @@ export const CONSUMER_GUIDES: Guide[] = [
           },
           {
             type: "paragraph",
-            text: "Then ask the more useful question: are you actually paying it? Check the last three statements. If the fee has been waived every month, the headline number does not matter. If it has been charged even once, find out which condition you missed — it is usually one you can fix permanently in a few minutes.",
+            text: "Then ask the more useful question: are you actually paying it? Check the last three statements. If the fee has been waived every month, the headline number does not matter. If it has been charged even once, find out which condition you missed and whether you can meet it every month.",
           },
           {
             type: "paragraph",
-            text: "If you have held the same account for years without reviewing it, that is the single best reason to look now. Accounts are rarely upgraded automatically, and banks routinely launch better products without moving existing customers onto them. The account you opened a decade ago may still be charging a fee that the same bank no longer charges anyone opening today.",
+            text: "If you have held the same account for years, ask your bank what it offers today. Banks do not always move existing customers onto newer accounts, so an older account can carry a fee a newer one does not.",
           },
         ],
       },
@@ -961,12 +997,12 @@ export const CONSUMER_GUIDES: Guide[] = [
           },
           {
             type: "paragraph",
-            text: "Unlike most bank fees, this one is a percentage rather than a flat amount, so it scales with your spending. A two-week trip where you spend $3,000 on a card charging 3% costs you $90 in fees alone.",
+            text: "Unlike most bank fees, this one is a percentage rather than a flat amount, so it scales with your spending. A trip where you spend $3,000 on a card charging 3% costs you $90 in fees.",
           },
           {
             type: "callout",
             tone: "warning",
-            text: "You do not have to leave the country to be charged. Buying from an overseas online retailer can trigger the same fee from your armchair, and it is rarely shown at checkout.",
+            text: "You do not have to leave the country to be charged. Buying from an overseas online retailer can trigger the same fee at home, and it may not be shown at checkout.",
           },
         ],
       },
@@ -980,19 +1016,19 @@ export const CONSUMER_GUIDES: Guide[] = [
           },
           {
             type: "paragraph",
-            text: "Withdrawing cash abroad stacks charges: your bank's international ATM fee, the foreign transaction percentage that frequently applies on top of it, and the machine owner's own surcharge. Three charges, one withdrawal.",
+            text: "Withdrawing cash abroad stacks charges: your bank's international ATM fee, the foreign transaction percentage that can apply on top of it, and the machine owner's own surcharge. Three charges, one withdrawal.",
           },
           {
             type: "paragraph",
-            text: "There is also a cost that never appears as a fee: the exchange rate. The card networks convert at close to the wholesale rate, which is genuinely good. The problem is what happens when someone else offers to do the conversion for you.",
+            text: "There is also a cost that never appears as a fee: the exchange rate. The card networks convert at their own published rate, which is usually close to the market rate. The problem is what happens when someone else offers to do the conversion for you.",
           },
           {
             type: "paragraph",
-            text: "Because the fee is a percentage, it is invisible in a way flat fees are not. It is folded into each transaction rather than appearing as a separate line, so a statement full of foreign purchases shows no fees at all — just amounts slightly higher than you expected. Most people never work out how much a trip cost them in foreign transaction charges, because the number is never presented as a total.",
+            text: "Because the fee is a percentage, it is invisible in a way flat fees are not. It is folded into each transaction rather than appearing as a separate line, so a statement full of foreign purchases may show no fee line at all, only amounts slightly higher than you expected.",
           },
           {
             type: "paragraph",
-            text: "If you want the real figure, add up your foreign purchases for a trip and take the percentage. It is usually larger than people guess, and it makes the case for carrying the right card far better than any general advice can.",
+            text: "If you want the real figure, add up your foreign purchases for a trip and apply the percentage.",
           },
         ],
       },
@@ -1006,12 +1042,12 @@ export const CONSUMER_GUIDES: Guide[] = [
           },
           {
             type: "paragraph",
-            text: "Choosing dollars is called dynamic currency conversion, and it hands the exchange rate to the merchant or the machine operator rather than the card network. Their rate is usually worse than the network rate. You will still often pay your card's foreign transaction fee on top.",
+            text: "Choosing dollars is called dynamic currency conversion, and it hands the exchange rate to the merchant or the machine operator rather than the card network. Their rate is often worse than the network rate, and your card's foreign transaction fee can still apply on top.",
           },
           {
             type: "callout",
             tone: "tip",
-            text: "Always choose the local currency. Every time, without exception. This one habit saves more than picking the right card does.",
+            text: "Choose the local currency at terminals and ATMs abroad.",
           },
         ],
       },
@@ -1023,12 +1059,29 @@ export const CONSUMER_GUIDES: Guide[] = [
             type: "list",
             ordered: true,
             items: [
-              "Carry a card with no foreign transaction fee. Many travel cards and a growing number of online banks charge nothing at all, and this eliminates the fee rather than reducing it.",
+              "Carry a card with no foreign transaction fee. Check the card's terms, because debit and credit cards from the same institution can differ.",
               "Always pay in the local currency. Refuse the conversion offer at every terminal and every ATM.",
-              "Withdraw larger amounts less often. The flat ATM fee is the same regardless of size, so fewer withdrawals means less total cost.",
-              "Check your debit card separately from your credit card. They frequently have different foreign transaction terms at the same institution, and people assume they match.",
-              "Tell your bank you are travelling, or set travel notice in the app. A declined card abroad costs you more in taxis and time than any fee.",
-              "For a long trip, consider opening a no-fee account before you go. The saving on a multi-week trip can exceed the effort by a wide margin.",
+              "Withdraw larger amounts less often. A flat ATM fee is the same regardless of size, so fewer withdrawals cost less.",
+              "Check your debit card separately from your credit card. Their foreign transaction terms can differ at the same institution.",
+              "Tell your bank you are traveling, or set a travel notice in the app, so a fraud check does not block your card abroad.",
+              "For a long trip, consider opening an account or card with no foreign transaction fee before you go.",
+            ],
+          },
+        ],
+      },
+      {
+        id: "questions-to-ask",
+        heading: "Questions to ask before you travel",
+        blocks: [
+          {
+            type: "list",
+            items: [
+              "Is the foreign transaction fee a percentage, a flat amount, or both?",
+              "Does it apply to online purchases from overseas sellers that are charged in dollars?",
+              "What do you charge for using an ATM abroad, on top of the percentage?",
+              "Does my debit card carry the same terms as my credit card?",
+              "Do you have partner banks abroad whose ATMs I can use without a surcharge?",
+              "If a purchase abroad is refunded, do you refund the foreign transaction fee too?",
             ],
           },
         ],
@@ -1044,16 +1097,22 @@ export const CONSUMER_GUIDES: Guide[] = [
           {
             type: "callout",
             tone: "regulatory",
-            text: "Truth in Lending disclosure rules require credit card issuers to state the foreign transaction fee in the account terms — the standardised table you received when the card was opened. It is listed there as a percentage of each transaction.",
+            text: "Truth in Lending rules require credit card issuers to state the foreign transaction fee in the summary table of the card's terms, which you received when the card was opened.",
+            source: { label: "12 CFR 1026.6", url: "https://www.ecfr.gov/current/title-12/chapter-X/part-1026/section-1026.6" },
           },
           {
             type: "paragraph",
-            text: "Dynamic currency conversion is governed by card network rules rather than federal regulation. Those rules require that you be offered a genuine choice and shown the rate and any margin before you accept. In practice the presentation is often designed to make dollars look like the safe default, so treat the screen as marketing rather than guidance.",
+            text: "Dynamic currency conversion is governed by card network rules rather than federal regulation. Those rules require that you be offered a choice and shown the converted amount before you accept. Read the screen carefully, because dollars can be presented as the default.",
           },
           {
             type: "paragraph",
-            text: "For debit cards, Regulation E error resolution still applies abroad. If a foreign transaction is wrong or unauthorised, you have the same dispute rights you have at home, and the same deadlines for reporting it.",
+            text: "For debit cards, Regulation E error resolution still applies abroad. If a foreign transaction is wrong or unauthorized, you have the same dispute rights you have at home, and the same deadlines for reporting it.",
             source: { label: "12 CFR 1005.11", url: "https://www.ecfr.gov/current/title-12/chapter-X/part-1005/section-1005.11" },
+          },
+          {
+            type: "paragraph",
+            text: "For credit cards, the Fair Credit Billing Act lets you dispute a billing error in writing within 60 days of the statement that shows it, including a charge for something you never received. That right applies to purchases made abroad too.",
+            source: { label: "12 CFR 1026.13", url: "https://www.ecfr.gov/current/title-12/chapter-X/part-1026/section-1026.13" },
           },
         ],
       },
@@ -1069,7 +1128,7 @@ export const CONSUMER_GUIDES: Guide[] = [
             type: "benchmark",
             category: "card_foreign_txn",
             rows: [
-              { condition: "No foreign transaction fee", meaning: "Best available — and widely offered" },
+              { condition: "No foreign transaction fee", meaning: "Best available" },
               { condition: "{{card_foreign_txn.p25}} or less", meaning: "In the lowest-priced quarter" },
               { condition: "Around {{card_foreign_txn.median}}", meaning: "Right at the national median" },
               { condition: "More than {{card_foreign_txn.p75}}", meaning: "In the highest-priced quarter" },
@@ -1077,7 +1136,7 @@ export const CONSUMER_GUIDES: Guide[] = [
           },
           {
             type: "paragraph",
-            text: "If you travel even once a year, this is a fee worth eliminating rather than optimising. The no-fee options are numerous enough that paying a percentage on every purchase abroad is now a choice.",
+            text: "If you travel or buy from overseas sellers, check this fee before your next trip or order.",
           },
         ],
       },
@@ -1091,7 +1150,7 @@ export const CONSUMER_GUIDES: Guide[] = [
     title: "Check Fees",
     seoTitle: "Check Fees: Cashier's Checks, Stop Payments and Check Printing Costs",
     description:
-      "What banks charge for cashier's checks, money orders, stop payments and printed checks — and which of them you can avoid entirely.",
+      "What banks charge for cashier's checks, money orders, stop payments and printed checks, and which of them you can avoid.",
     primaryCategory: "cashiers_check",
     relatedCategories: ["stop_payment", "money_order", "check_printing", "counter_check"],
     family: "Check Services",
@@ -1104,14 +1163,14 @@ export const CONSUMER_GUIDES: Guide[] = [
         blocks: [
           {
             type: "paragraph",
-            text: "Checks are used less every year, but the fees around them have not fallen at the same rate — and they tend to arrive at moments when you have no time to shop around. A cashier's check for a car purchase or a stop payment on a payment gone wrong is not a decision you make at leisure.",
+            text: "Check fees tend to arrive at moments when you have no time to shop around. A cashier's check for a car purchase or a stop payment on a payment gone wrong is not a decision you make at leisure.",
           },
           {
             type: "list",
             items: [
               "A cashier's check is drawn on the bank's own funds, so the recipient knows it will not bounce. Used for large purchases where a personal check would not be accepted.",
               "A money order does a similar job for smaller amounts, and you do not need an account to buy one.",
-              "A stop payment tells your bank not to honour a check or payment you already issued.",
+              "A stop payment tells your bank not to honor a check or payment you already issued.",
               "Counter checks are the blank checks a teller prints when you have run out.",
             ],
           },
@@ -1125,7 +1184,7 @@ export const CONSUMER_GUIDES: Guide[] = [
             type: "list",
             items: [
               "Cashier's check: median {{cashiers_check.median}}, typically {{cashiers_check.p25}} to {{cashiers_check.p75}}",
-              "Stop payment: median {{stop_payment.median}} — usually the most expensive item in this guide",
+              "Stop payment: median {{stop_payment.median}}",
               "Money order: median {{money_order.median}}",
               "Check printing: median {{check_printing.median}}, varying widely by style and quantity",
               "Counter check: median {{counter_check.median}}",
@@ -1134,7 +1193,7 @@ export const CONSUMER_GUIDES: Guide[] = [
           {
             type: "callout",
             tone: "warning",
-            text: "The stop payment fee is charged whether or not the stop succeeds. If the check has already cleared, you pay the fee and get nothing — so check whether it has cleared before you request one.",
+            text: "The stop payment fee is charged whether or not the stop succeeds. If the check has already cleared, the stop does nothing, so check whether it has cleared before you request one.",
           },
           {
             type: "paragraph",
@@ -1142,7 +1201,7 @@ export const CONSUMER_GUIDES: Guide[] = [
           },
           {
             type: "paragraph",
-            text: "Check printing is the fee most people overpay without noticing, because it is presented as part of opening an account rather than as a purchase. Ordering the same checks from an independent printer typically costs a fraction of the bank's price, and the checks are functionally identical — they carry your account and routing numbers and clear exactly the same way.",
+            text: "Check printing is easy to overlook, because it is presented as part of opening an account rather than as a purchase. You can order checks from an independent printer instead. They carry the same account and routing numbers and clear the same way, so compare the price.",
           },
           {
             type: "paragraph",
@@ -1178,12 +1237,28 @@ export const CONSUMER_GUIDES: Guide[] = [
             type: "list",
             ordered: true,
             items: [
-              "Order checks from a third-party printer rather than your bank. The same checks typically cost a fraction of the bank's price, and they work identically.",
-              "Ask whether your account includes free cashier's checks. Many do, and the benefit is rarely advertised.",
-              "Use an electronic transfer instead where the recipient will accept one. A free ACH transfer replaces a cashier's check in many situations, though not usually at a closing table.",
-              "Check whether a payment has already cleared before requesting a stop payment. You pay the fee either way.",
+              "Compare your bank's check printing price with a third-party printer's. The checks work the same way.",
+              "Ask whether your account includes free cashier's checks. Some do, and the benefit may not be advertised.",
+              "Use an electronic transfer instead where the recipient will accept one. An ACH transfer can replace a cashier's check in some situations, though not usually at a closing table.",
+              "Check whether a payment has already cleared before requesting a stop payment.",
               "Put a stop payment in writing and note the expiry date, so a stopped check cannot be paid months later.",
-              "For a large one-off need, ask for the fee to be waived. Banks frequently waive a single cashier's check fee for an established customer who asks.",
+              "For a one-off need, ask whether the fee can be waived. It costs nothing to ask.",
+            ],
+          },
+        ],
+      },
+      {
+        id: "questions-to-ask",
+        heading: "Questions to ask your bank",
+        blocks: [
+          {
+            type: "list",
+            items: [
+              "Does my account include free cashier's checks or money orders?",
+              "What does a stop payment cost, and how long does it last?",
+              "How long is the wait before you pay a claim on a lost cashier's check?",
+              "Can I order checks from another printer, and will you still accept them?",
+              "Do you charge people without an account a different price for the same service?",
             ],
           },
         ],
@@ -1195,19 +1270,20 @@ export const CONSUMER_GUIDES: Guide[] = [
           {
             type: "callout",
             tone: "regulatory",
-            text: "Under the Uniform Commercial Code as adopted by the states, a stop payment order on a personal check is generally effective for six months in writing. An oral order typically lapses after fourteen days unless you confirm it in writing.",
+            text: "Under the Uniform Commercial Code as adopted by the states, a written stop payment order on a personal check is generally effective for six months. An oral order lapses after fourteen days unless you confirm it in writing.",
+            source: { label: "UCC 4-403", url: "https://www.law.cornell.edu/ucc/4/4-403" },
           },
           {
             type: "paragraph",
-            text: "A cashier's check is different, and this is the part worth knowing. Because it is drawn on the bank's own funds, you generally cannot stop payment on one. If it is lost or stolen, the process is a declaration of loss and a waiting period — often ninety days — before the bank will reissue. Treat a cashier's check like cash.",
+            text: "A cashier's check is different, and this is the part worth knowing. Because it is drawn on the bank's own funds, you generally cannot stop payment on one. If it is lost or stolen, the process is a declaration of loss and a waiting period, often ninety days, before the bank will pay the claim. Treat a cashier's check like cash.",
           },
           {
             type: "paragraph",
-            text: "Regulation CC governs how long your bank may hold funds from a check you deposit. That is a hold rather than a fee, but it interacts with this guide directly: a hold you did not expect is a common cause of the NSF and overdraft fees covered elsewhere on this site.",
+            text: "Regulation CC governs how long your bank may hold funds from a check you deposit. That is a hold rather than a fee, but it matters here: a hold you did not expect can lead to the NSF and overdraft fees covered in our other guides.",
           },
           {
             type: "paragraph",
-            text: "Regulation DD requires all of these fees to be disclosed in your account fee schedule before you open the account.",
+            text: "Regulation DD requires fees tied to your account, such as stop payment fees, to be disclosed before you open the account. Services sold to anyone, such as money orders, may not appear in the account's fee schedule, so ask the price first.",
             source: { label: "12 CFR 1030.4", url: "https://www.ecfr.gov/current/title-12/chapter-X/part-1030/section-1030.4" },
           },
         ],
@@ -1220,7 +1296,7 @@ export const CONSUMER_GUIDES: Guide[] = [
             type: "benchmark",
             category: "cashiers_check",
             rows: [
-              { condition: "Free to account holders", meaning: "Common at credit unions" },
+              { condition: "Free to account holders", meaning: "Best available" },
               { condition: "{{cashiers_check.p25}} or less", meaning: "In the lowest-priced quarter" },
               { condition: "Around {{cashiers_check.median}}", meaning: "Right at the national median" },
               { condition: "More than {{cashiers_check.p75}}", meaning: "In the highest-priced quarter" },
@@ -1228,7 +1304,7 @@ export const CONSUMER_GUIDES: Guide[] = [
           },
           {
             type: "paragraph",
-            text: "These fees are easy to ignore because you meet them rarely. That is exactly why they are worth checking now rather than at the counter, when you have no alternative and no time to find one.",
+            text: "These fees are easy to ignore because you meet them rarely. That is why they are worth checking now rather than at the counter.",
           },
         ],
       },
@@ -1255,7 +1331,7 @@ export const CONSUMER_GUIDES: Guide[] = [
         blocks: [
           {
             type: "paragraph",
-            text: "Most electronic banking is free, and that is worth saying plainly before the rest of this guide. Transfers, mobile deposits and bill payments cost nothing at the great majority of institutions.",
+            text: "Many electronic banking services carry no fee. Check your own schedule, because a few institutions still charge for some of them.",
           },
           {
             type: "paragraph",
@@ -1264,7 +1340,7 @@ export const CONSUMER_GUIDES: Guide[] = [
           {
             type: "callout",
             tone: "tip",
-            text: "If your bank charges for standard electronic transfers or mobile deposits, that is now unusual enough to be a reason to compare alternatives.",
+            text: "If your bank charges for standard electronic transfers or mobile deposits, compare that charge with the medians below.",
           },
         ],
       },
@@ -1275,27 +1351,31 @@ export const CONSUMER_GUIDES: Guide[] = [
           {
             type: "list",
             items: [
-              "Sending an ACH transfer: median {{ach_origination.median}}, and free at most institutions",
-              "Returned ACH payment: median {{ach_return.median}} — by far the most expensive item here",
-              "Bill pay and person-to-person payments such as Zelle: median {{bill_pay.median}}, generally included at no charge",
+              "Sending an ACH transfer: median {{ach_origination.median}}",
+              "Returned ACH payment: median {{ach_return.median}}",
+              "Bill pay: median {{bill_pay.median}}",
               "Mobile deposit: median {{mobile_deposit.median}}, though some banks charge for expedited availability",
             ],
           },
           {
             type: "paragraph",
-            text: "The returned ACH fee is the one to watch. It is charged when an automatic payment fails for insufficient funds, and it is priced like an NSF fee rather than like a digital service. The company you were paying may add a returned payment fee of their own on the same failure.",
+            text: "The returned ACH fee is the one to watch. It can be charged when an automatic payment fails for insufficient funds. The company you were paying may add a returned payment fee of their own on the same failure.",
           },
           {
             type: "paragraph",
-            text: "Automatic payments make this worse rather than better. The whole point of automating a payment is that you stop thinking about it, which means a shortfall is discovered by the payment rather than by you. A subscription that retries three times against an empty account can generate three separate charges at a bank with no daily cap.",
+            text: "Automatic payments make this worse rather than better. The whole point of automating a payment is that you stop thinking about it, which means a shortfall is discovered by the payment rather than by you. A payment that is retried against an empty account can generate a separate charge each time, unless your bank limits them.",
           },
           {
             type: "paragraph",
-            text: "Mobile deposit carries a quieter cost: the hold. Depositing by phone is free almost everywhere, but the funds may not all be available immediately, and a deposit you counted on can fail to cover a payment that clears the same day. The fee schedule will not tell you this — the funds availability policy will.",
+            text: "Mobile deposit carries a quieter cost: the hold. Depositing by phone often carries no fee, but the funds may not all be available immediately, and a deposit you counted on can fail to cover a payment that clears the same day. The fee schedule will not tell you this; the funds availability policy will.",
           },
           {
             type: "paragraph",
-            text: "Person-to-person payments are free between participating institutions at nearly every bank, and the fee to watch is not the transfer but the instant-cashout option some apps offer at a percentage of the amount.",
+            text: "With person-to-person payments, the fee to watch is often not the transfer but the instant-cashout option some apps offer at a percentage of the amount.",
+          },
+          {
+            type: "paragraph",
+            text: "Payments sent through a real-time payment service are generally final once sent, much like a wire. Confirm who you are paying before you send, because getting the money back depends on the recipient or their bank.",
           },
         ],
       },
@@ -1305,16 +1385,16 @@ export const CONSUMER_GUIDES: Guide[] = [
         blocks: [
           {
             type: "paragraph",
-            text: "Most digital banking charges you will actually meet are expedite fees. Faster mobile deposit availability, same-day bill payment, instant transfer to a debit card — each of these has a free version that simply takes longer.",
+            text: "Most digital banking charges you will actually meet are expedite fees. Faster mobile deposit availability, same-day bill payment and instant transfer to a debit card often have a slower version with no fee.",
           },
           {
             type: "paragraph",
-            text: "Before paying one, check when the money genuinely needs to arrive. A payment due Friday does not need instant delivery on Wednesday. Expedite fees are almost always avoidable with two days of planning.",
+            text: "Before paying one, check when the money genuinely needs to arrive. A payment due Friday does not need instant delivery on Wednesday. Planning a few days ahead can avoid an expedite fee.",
           },
           {
             type: "callout",
             tone: "warning",
-            text: "Instant transfer options inside payment apps commonly charge a percentage of the amount. On larger transfers that is far more than a flat bank fee, and the standard option is free.",
+            text: "Instant transfer options inside payment apps commonly charge a percentage of the amount. On larger transfers that can cost more than a flat fee, and the standard option is often free.",
           },
         ],
       },
@@ -1326,12 +1406,30 @@ export const CONSUMER_GUIDES: Guide[] = [
             type: "list",
             ordered: true,
             items: [
-              "Use the standard speed. The free option covers almost every real deadline if you start two days earlier.",
-              "Set up automatic payments a few days before the due date, not on it. This removes both the expedite fee and the returned payment risk.",
-              "Keep a small buffer in checking. The returned ACH fee, median {{ach_return.median}}, is triggered by a shortfall that a modest cushion would absorb.",
-              "Use your bank's own bill pay rather than a merchant's expedited option. Bank bill pay is generally free; the merchant's fast option often is not.",
+              "Use the standard speed when you can, and start a few days before the deadline.",
+              "Set up automatic payments a few days before the due date, not on it. This leaves time to fix a shortfall before the payment goes out.",
+              "Keep a small buffer in checking. The returned ACH fee, median {{ach_return.median}}, is triggered by a shortfall that a cushion can absorb.",
+              "Use your bank's own bill pay rather than a merchant's expedited option. Check both prices first.",
               "Check the transfer limits on mobile deposit. Exceeding a limit can push a deposit into a slower or chargeable path.",
-              "If your bank charges for ordinary electronic transfers, compare alternatives. This is now the exception rather than the rule.",
+              "If your bank charges for ordinary electronic transfers, compare alternatives.",
+            ],
+          },
+        ],
+      },
+      {
+        id: "questions-to-ask",
+        heading: "Questions to ask your bank",
+        blocks: [
+          {
+            type: "list",
+            items: [
+              "Do you charge for a standard ACH transfer to an account at another bank?",
+              "What do you charge when an automatic payment is returned, and is there a daily limit on those charges?",
+              "When are mobile deposits available, and is there a fee for faster availability?",
+              "Is there a daily or monthly limit on mobile deposits?",
+              "Is bill pay included with my account?",
+              "Do you charge to receive a transfer from an account at another bank?",
+              "If I send money to the wrong person or to a scammer, what will you do?",
             ],
           },
         ],
@@ -1343,16 +1441,16 @@ export const CONSUMER_GUIDES: Guide[] = [
           {
             type: "callout",
             tone: "regulatory",
-            text: "Regulation E gives you error resolution rights on electronic transfers. Report an unauthorised or incorrect electronic transfer promptly and your bank must investigate, generally within ten business days, and correct genuine errors.",
+            text: "Regulation E gives you error resolution rights on electronic transfers. Report an unauthorized or incorrect electronic transfer within 60 days of the statement and your bank must investigate, generally within ten business days, and correct errors it finds.",
             source: { label: "12 CFR 1005.11", url: "https://www.ecfr.gov/current/title-12/chapter-X/part-1005/section-1005.11" },
           },
           {
             type: "paragraph",
-            text: "Reporting quickly matters more than most people realise. Your liability for unauthorised electronic transfers rises the longer you wait after the statement showing them, so the practical protection is checking statements rather than the rule itself.",
+            text: "Reporting quickly matters. Your liability for unauthorized electronic transfers can rise the longer you wait, so check your statements.",
           },
           {
             type: "paragraph",
-            text: "There is an important gap. Regulation E protects you when money leaves your account without your authorisation. It offers much less when you were tricked into authorising the payment yourself — the common pattern in person-to-person payment scams. A payment you approved, even under false pretences, is treated differently from one you did not.",
+            text: "There is an important gap. Regulation E protects you when money leaves your account without your authorization. It offers much less when you were tricked into sending the payment yourself, the common pattern in person-to-person payment scams.",
             source: { label: "12 CFR part 1005", url: "https://www.ecfr.gov/current/title-12/chapter-X/part-1005" },
           },
           {
@@ -1374,7 +1472,7 @@ export const CONSUMER_GUIDES: Guide[] = [
             type: "benchmark",
             category: "ach_return",
             rows: [
-              { condition: "No charge for standard transfers", meaning: "The current market standard" },
+              { condition: "No charge for standard transfers", meaning: "Best available" },
               { condition: "Returned ACH at {{ach_return.p25}} or less", meaning: "In the lowest-priced quarter" },
               { condition: "Returned ACH around {{ach_return.median}}", meaning: "Right at the national median" },
               { condition: "Returned ACH above {{ach_return.p75}}", meaning: "In the highest-priced quarter" },
@@ -1382,7 +1480,7 @@ export const CONSUMER_GUIDES: Guide[] = [
           },
           {
             type: "paragraph",
-            text: "The right question here is not what the fees are, but whether you are being charged for something that is free almost everywhere else. Digital banking is where competition has pushed hardest, so a charge that would have been unremarkable a few years ago now marks an institution out. If you are paying to move your own money electronically, that is worth treating as a signal about the account rather than as a cost to optimise.",
+            text: "Then check whether you pay for anything you could do at no charge, such as a standard transfer or a slower deposit. If you pay to move your own money electronically, ask whether another account on the same schedule avoids it.",
           },
         ],
       },
@@ -1413,16 +1511,16 @@ export const CONSUMER_GUIDES: Guide[] = [
           },
           {
             type: "paragraph",
-            text: "An early closure fee is charged for closing an account shortly after opening it, within a window the account agreement sets. It exists to discourage people from opening accounts purely to collect a sign-up bonus.",
+            text: "An early closure fee is charged for closing an account shortly after opening it, within a window the account agreement sets. It is often meant to discourage opening an account only to collect a sign-up bonus.",
           },
           {
             type: "paragraph",
-            text: "A dormancy fee is charged for the opposite behaviour: leaving an account alone. After a period with no activity, typically 12 to 24 months, the bank classifies the account as dormant and starts charging monthly.",
+            text: "A dormancy fee is charged for the opposite behavior: leaving an account alone. After a period with no activity, set in the account agreement, the bank can classify the account as inactive or dormant and start charging a fee.",
           },
           {
             type: "callout",
             tone: "warning",
-            text: "Dormancy fees are the more damaging of the two, because nobody is watching. A forgotten account with a small balance can be emptied entirely by a fee charged every month against money you are not tracking.",
+            text: "A forgotten account with a small balance can be emptied by a recurring fee charged against money you are not tracking.",
           },
         ],
       },
@@ -1436,7 +1534,7 @@ export const CONSUMER_GUIDES: Guide[] = [
           },
           {
             type: "paragraph",
-            text: "The median dormant account fee is {{dormant_account.median}}. That figure looks smaller, and it is the more expensive of the two, because it recurs. Charged monthly against a forgotten balance, it compounds until there is nothing left to charge.",
+            text: "The median dormant account fee is {{dormant_account.median}}. It can recur, so over time it can cost more than a one-time closure fee.",
           },
           {
             type: "paragraph",
@@ -1444,11 +1542,11 @@ export const CONSUMER_GUIDES: Guide[] = [
           },
           {
             type: "paragraph",
-            text: "The early closure fee has a narrower reach than people fear. It applies to the window after opening, and closing an account you have held for years costs nothing at nearly every institution. If you have been putting off leaving a bank because you think closing is expensive, check the date you opened it — the fee has almost certainly long since stopped applying.",
+            text: "The early closure fee applies only within a window after opening, set in the account agreement. If you have been putting off leaving a bank because you think closing is expensive, check that window against the date you opened the account.",
           },
           {
             type: "paragraph",
-            text: "Dormancy is the opposite: the risk grows the longer you leave it. Old accounts from a previous job, a college town, or a closed joint relationship are the usual candidates, and they are exactly the accounts nobody checks.",
+            text: "Dormancy is the opposite: the risk grows the longer you leave it. Old accounts from a previous job, a college town, or a closed joint relationship are the usual candidates.",
           },
         ],
       },
@@ -1458,16 +1556,20 @@ export const CONSUMER_GUIDES: Guide[] = [
         blocks: [
           {
             type: "paragraph",
-            text: "If an account stays inactive long enough, the bank does not keep the balance. State unclaimed property law requires it to be handed to the state, a process called escheatment. The dormancy period before that happens is set by state law and is commonly three to five years.",
+            text: "If an account stays inactive long enough, the bank does not keep the balance. State unclaimed property law requires it to be handed to the state, a process called escheatment. The dormancy period before that happens is set by each state, often three to five years.",
           },
           {
             type: "paragraph",
-            text: "The money is not lost at that point. Every state runs a free unclaimed property search, and you can reclaim your funds from the state at no cost, though it takes paperwork and time.",
+            text: "The money is not lost at that point. Every state runs a free unclaimed property search, and you can claim the funds from the state, though it takes paperwork and time.",
+          },
+          {
+            type: "paragraph",
+            text: "Search every state where you have lived or worked. A balance usually goes to the state of the owner's last known address on the account, which may not be where you live now.",
           },
           {
             type: "callout",
             tone: "tip",
-            text: "The fees are the real loss, not the escheatment. Dormancy fees are charged before the balance ever reaches the state, so a small account can be reduced to nothing while it is still with the bank.",
+            text: "Dormancy fees are charged while the balance is still with the bank, so the fees, not the transfer to the state, are where money is lost.",
           },
         ],
       },
@@ -1479,12 +1581,29 @@ export const CONSUMER_GUIDES: Guide[] = [
             type: "list",
             ordered: true,
             items: [
-              "Keep a new account open for at least six months. That clears the early closure window at nearly every institution.",
-              "Set up a small recurring transaction on any account you intend to keep but not use. An automatic transfer of a few dollars a month is enough to keep it active.",
-              "Log in periodically. At some institutions this counts as activity, though a transaction is more reliable — check which your bank uses.",
+              "Before closing a new account, check the early closure window in the account agreement.",
+              "Set up a small recurring transaction on any account you intend to keep but not use. Ask your bank what counts as activity; an automatic transfer usually does.",
+              "Log in periodically. At some institutions this counts as activity, though a transaction is more reliable.",
               "Close accounts you have stopped using, properly. An account left at zero is still an account that can be charged.",
-              "Empty it before you close it, and get written confirmation of the closure. Verbal closure requests go astray, and an account you believe is closed can keep charging fees.",
+              "Empty it before you close it, and get written confirmation of the closure. An account you believe is closed can keep charging fees if the request was not completed.",
               "Confirm any pending transactions have cleared first. A payment landing after closure can reopen the account or push it negative.",
+            ],
+          },
+        ],
+      },
+      {
+        id: "questions-to-ask",
+        heading: "Questions to ask your bank",
+        blocks: [
+          {
+            type: "list",
+            items: [
+              "How long after opening does the early closure fee apply?",
+              "How long without activity before you charge an inactivity or dormancy fee, and how much is it?",
+              "What counts as activity: a deposit, a withdrawal, a login, or a transfer?",
+              "Will you notify me before you start charging it?",
+              "How do I close an account so that you confirm it in writing?",
+              "Can I close the account online or by mail, and does that cost anything?",
             ],
           },
         ],
@@ -1501,15 +1620,15 @@ export const CONSUMER_GUIDES: Guide[] = [
           },
           {
             type: "paragraph",
-            text: "Unclaimed property is state law rather than federal. Each state sets its own dormancy period, its own notice requirements, and its own rules about whether a bank may charge fees against a dormant balance at all — some states restrict this. Because it varies, the rules that apply to you are your state's, not a national standard.",
+            text: "Unclaimed property is state law rather than federal. Each state sets its own dormancy period, its own notice requirements, and and its own rules about whether a bank may charge fees against a dormant balance at all. Some states restrict this. Because it varies, the rules that apply to you are your state's, not a national standard.",
           },
           {
             type: "paragraph",
-            text: "Every state provides a free unclaimed property search. Use the official state programme. Any service offering to find your money for a percentage is charging you for a search you can run yourself in a few minutes.",
+            text: "Use your state's official unclaimed property search, which is free. A service offering to find your money for a percentage is charging for a search you can run yourself.",
           },
           {
             type: "paragraph",
-            text: "Banks are generally required to attempt to contact you before declaring an account dormant, which is one more reason to keep your address current on accounts you rarely use.",
+            text: "State law generally requires the bank to try to contact you before it turns the balance over to the state, which is one more reason to keep your address current.",
           },
         ],
       },
@@ -1521,7 +1640,7 @@ export const CONSUMER_GUIDES: Guide[] = [
             type: "benchmark",
             category: "early_closure",
             rows: [
-              { condition: "No early closure fee", meaning: "Common at credit unions" },
+              { condition: "No early closure fee", meaning: "Best available" },
               { condition: "{{early_closure.p25}} or less", meaning: "In the lowest-priced quarter" },
               { condition: "Around {{early_closure.median}}", meaning: "Right at the national median" },
               { condition: "More than {{early_closure.p75}}", meaning: "In the highest-priced quarter" },
@@ -1529,7 +1648,7 @@ export const CONSUMER_GUIDES: Guide[] = [
           },
           {
             type: "paragraph",
-            text: "Then do the more valuable thing: list every account you hold and identify the ones you have not touched in a year. That list, not the fee schedule, is where the money is going.",
+            text: "Then do the more valuable thing: list every account you hold and identify the ones you have not touched in a year. Those are the accounts a dormancy fee can drain.",
           },
         ],
       },
@@ -1560,7 +1679,7 @@ export const CONSUMER_GUIDES: Guide[] = [
           },
           {
             type: "paragraph",
-            text: "The fee is annual and set by box size. Larger boxes cost more, and prices vary considerably by location — an urban branch usually charges more than a rural one for an identical box.",
+            text: "The fee is annual and set by box size. Larger boxes cost more, and prices can vary by branch.",
           },
           {
             type: "callout",
@@ -1583,15 +1702,23 @@ export const CONSUMER_GUIDES: Guide[] = [
           },
           {
             type: "paragraph",
-            text: "Two costs sit alongside the rental. Late payment on a box carries its own fee at many institutions, and losing a key typically triggers a drilling charge that can exceed the annual rental several times over. Notary service, median {{notary_fee.median}}, is frequently needed for the same documents people store in a box, and is often free to account holders — worth asking before paying for it elsewhere.",
+            text: "Two costs sit alongside the rental. Late payment on a box can carry its own fee, and losing both keys means a drilling and lock replacement charge. Notary service, median {{notary_fee.median}}, is often needed for the same documents, and some institutions offer it free to account holders, so ask first.",
           },
           {
             type: "paragraph",
-            text: "Boxes are usually issued with two keys and no spare held by the bank. That is a security feature rather than an oversight, and it means losing both keys is a genuine problem: the bank must drill the lock, you pay for the drilling and the replacement lock, and it happens on the branch's schedule rather than yours.",
+            text: "Boxes are usually issued with two keys and no spare held by the bank. That is a security feature, and it means losing both keys is a real problem: the bank must drill the lock, you pay for the drilling and the replacement lock, and it happens on the branch's schedule rather than yours.",
           },
           {
             type: "paragraph",
-            text: "Rental is generally billed annually and often set to auto-debit from a linked account. That is convenient until the linked account closes, at which point the rental quietly goes unpaid — which is the most common route to a box being drilled and its contents surrendered to the state.",
+            text: "Rental is generally billed annually and often set to auto-debit from a linked account. That is convenient until the linked account closes and the rental goes unpaid, which can lead to the box being drilled and its contents turned over to the state.",
+          },
+          {
+            type: "paragraph",
+            text: "Keep a list of what is in the box, with photos, somewhere other than the box. If you ever make a claim against an insurer or the bank, you will need to show what was there.",
+          },
+          {
+            type: "paragraph",
+            text: "If you rent a box jointly, check whether the agreement lets either renter open it alone. That matters if one of you dies or cannot get to the branch.",
           },
         ],
       },
@@ -1601,11 +1728,11 @@ export const CONSUMER_GUIDES: Guide[] = [
         blocks: [
           {
             type: "paragraph",
-            text: "Credit unions generally offer lower box rates than banks. Location matters as much as institution type: the same size box can differ substantially between a downtown branch and a suburban one at the same institution.",
+            text: "The chart below compares box fees banks and credit unions publish. Box size drives the price, so compare the same size.",
           },
           {
             type: "paragraph",
-            text: "Availability is now a bigger constraint than price. Many institutions have stopped offering boxes entirely, and some are closing existing vaults, so the practical question is often which nearby branch still has one rather than which is cheapest.",
+            text: "Availability can matter as much as price. Some branches no longer offer boxes, so ask which nearby branches still have one.",
           },
           {
             type: "comparison",
@@ -1621,18 +1748,34 @@ export const CONSUMER_GUIDES: Guide[] = [
         blocks: [
           {
             type: "paragraph",
-            text: "For some documents a box is genuinely the right answer. For others it is an annual cost with a real drawback: you can only reach the contents during branch hours.",
+            text: "For some documents a box is the right answer. For others it is an annual cost with a real drawback: you can only reach the contents during branch hours.",
           },
           {
             type: "list",
             ordered: true,
             items: [
               "Do not store your only copy of a will in a box. Access after a death can require probate paperwork, which is exactly when the document is needed. Leave the original with your attorney or executor.",
-              "Do not store anything you might need urgently or out of hours — a passport before an early flight, or documents needed in an emergency.",
+              "Do not store anything you might need urgently or out of hours, such as a passport before an early flight.",
               "Do store deeds, titles, birth certificates and irreplaceable records that you rarely need but could not easily replace.",
-              "Ask whether your account waives the fee. Premium and relationship accounts frequently include a box, and this is rarely advertised.",
+              "Ask whether your account waives the fee. Some premium and relationship accounts include a box.",
               "Consider a quality home safe for documents you need occasionally. It is a one-off cost with no access restriction, though it does not protect against everything a vault does.",
-              "If you store valuables, arrange insurance explicitly. A rider on a homeowner's or renter's policy is often the cheaper route, and without it the contents are uninsured.",
+              "If you store valuables, arrange insurance explicitly. Ask your homeowner's or renter's insurer whether a rider covers box contents.",
+            ],
+          },
+        ],
+      },
+      {
+        id: "questions-to-ask",
+        heading: "Questions to ask your bank",
+        blocks: [
+          {
+            type: "list",
+            items: [
+              "What box sizes do you have at this branch, and what does each cost a year?",
+              "What do you charge to drill a box if both keys are lost?",
+              "Who can open the box besides me: a co-renter, a named agent, or no one?",
+              "What happens to the box if this branch closes?",
+              "Does my account include a box or a discount on one?",
             ],
           },
         ],
@@ -1644,20 +1787,15 @@ export const CONSUMER_GUIDES: Guide[] = [
           {
             type: "callout",
             tone: "regulatory",
-            text: "FDIC and NCUA insurance cover deposits. They do not cover the contents of a safe deposit box. This is the single most misunderstood point about safe deposit boxes, and it is worth confirming in writing with your own institution.",
+            text: "FDIC and NCUA insurance cover deposits. They do not cover the contents of a safe deposit box.",
           },
           {
             type: "paragraph",
-            text: "Your rights over a box come from the rental agreement rather than banking regulation, so the contract is the document that matters. Read what it says about the bank's liability, which is usually tightly limited, and about what happens if the branch closes or the vault is relocated.",
+            text: "Your rights over a box come from the rental agreement rather than banking regulation, so the contract is the document that matters. Read what it says about the bank's liability, which is often limited, and about what happens if the branch closes or the vault is relocated.",
           },
           {
             type: "paragraph",
             text: "Unpaid rental leads to the box being drilled and the contents handed to the state as unclaimed property, under the same state laws that govern dormant accounts. Keeping your address current with the institution matters here for the same reason it does there.",
-          },
-          {
-            type: "paragraph",
-            text: "Regulation DD requires the fee to be disclosed in your fee schedule, and advance notice before it increases.",
-            source: { label: "12 CFR 1030.5", url: "https://www.ecfr.gov/current/title-12/chapter-X/part-1030/section-1030.5" },
           },
         ],
       },
@@ -1669,7 +1807,7 @@ export const CONSUMER_GUIDES: Guide[] = [
             type: "benchmark",
             category: "safe_deposit_box",
             rows: [
-              { condition: "Included with your account", meaning: "Common on premium and relationship accounts" },
+              { condition: "Included with your account", meaning: "Best available" },
               { condition: "{{safe_deposit_box.p25}} or less", meaning: "In the lowest-priced quarter" },
               { condition: "Around {{safe_deposit_box.median}}", meaning: "Right at the national median" },
               { condition: "More than {{safe_deposit_box.p75}}", meaning: "In the highest-priced quarter" },
@@ -1677,7 +1815,7 @@ export const CONSUMER_GUIDES: Guide[] = [
           },
           {
             type: "paragraph",
-            text: "Compare by box size rather than by headline price, and ask two questions the fee schedule will not answer: is the contents insured, and who else can open it if you cannot?",
+            text: "Compare by box size rather than by headline price, and ask two questions the fee schedule will not answer: are the contents insured, and who else can open it if you cannot?",
           },
         ],
       },

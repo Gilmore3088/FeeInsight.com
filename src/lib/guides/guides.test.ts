@@ -421,9 +421,9 @@ describe("overdraft and NSF guides state only what they can support", () => {
     expect(rebuilt.map((g) => g.slug).sort()).toEqual(["nsf-fees", "overdraft-fees"]);
   });
 
-  it("makes no promised or absolute claims", () => {
-    const banned = [/at no cost/i, /prevents most/i, /biggest single/i, /most of the risk/i, /single highest/i, /matters more than/i, /usually enough/i, /charge nothing/i, /growing share/i, /—/];
-    for (const guide of rebuilt) {
+  it("makes no promised or absolute claims, in any consumer guide", () => {
+    const banned = [/at no cost/i, /prevents most/i, /biggest single/i, /most of the risk/i, /single highest/i, /matters more than/i, /usually enough/i, /charge nothing/i, /growing share/i, /widely offered/i, /almost (always|never|everywhere)/i, /nearly every/i, /—/];
+    for (const guide of CONSUMER_GUIDES) {
       for (const text of guideText(guide)) {
         for (const pattern of banned) expect(text, `${guide.slug}: ${pattern}`).not.toMatch(pattern);
       }
