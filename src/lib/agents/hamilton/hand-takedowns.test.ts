@@ -14,8 +14,12 @@ const LIVE: LiveTakedownRow[] = [
   // #1370's two held subordination rows as they read live on prod, read-only, Oct 16.
   { fee_published_id: 116720, lineage_ref: 138129, institution_id: 8459, canonical_fee_key: "other_lending_fee", fee_name: "SUBORDINATION REQUEST & PARTIAL: WIRE TRANSFER", amount: "20.00" },
   { fee_published_id: 134129, lineage_ref: 154983, institution_id: 4815, canonical_fee_key: "other_lending_fee", fee_name: "Subordination Fee: Business", amount: "10.00" },
+  // The #1534 review's three loan-payment rows, as they read live, read-only, Oct 16.
+  { fee_published_id: 48113, lineage_ref: 53370, institution_id: 7483, canonical_fee_key: "safe_deposit_box", fee_name: "Returned loan payment", amount: "25.00" },
+  { fee_published_id: 87307, lineage_ref: 96812, institution_id: 5054, canonical_fee_key: "ach_return", fee_name: "Returned Loan Payment (check or ACH returned unpaid; per item)", amount: "25.00" },
+  { fee_published_id: 134962, lineage_ref: 156021, institution_id: 8566, canonical_fee_key: "account_research", fee_name: "Loan Payment with Debit Card - Chargeback", amount: "29.50" },
 ];
-const IDS = [80423, 102440, 83118, 45619, 116720, 134129];
+const IDS = [80423, 102440, 83118, 45619, 116720, 134129, 48113, 87307, 134962];
 
 function fakeDb(live: LiveTakedownRow[], failOn?: string) {
   const writes: Array<{ text: string; values: unknown[] }> = [];
@@ -39,6 +43,9 @@ describe("hand takedowns (James, Oct 16)", () => {
       [45619, "source_mismatch: #1512"],
       [116720, "source_mismatch: #1370"],
       [134129, "source_mismatch: #1370"],
+      [48113, "source_mismatch: #1534"],
+      [87307, "source_mismatch: #1534"],
+      [134962, "source_mismatch: #1534"],
     ]);
     expect(HAND_TAKEDOWNS.every((entry) => entry.evidence.length > 0 && entry.reason === `source_mismatch: #${entry.issue}`)).toBe(true);
     // Up to about 25 rows go this way; more go to James.
@@ -54,6 +61,9 @@ describe("hand takedowns (James, Oct 16)", () => {
         { feePublishedId: 45619, feeVerifiedId: 2, reason: "source_mismatch: #1512" },
         { feePublishedId: 116720, feeVerifiedId: 138129, reason: "source_mismatch: #1370" },
         { feePublishedId: 134129, feeVerifiedId: 154983, reason: "source_mismatch: #1370" },
+        { feePublishedId: 48113, feeVerifiedId: 53370, reason: "source_mismatch: #1534" },
+        { feePublishedId: 87307, feeVerifiedId: 96812, reason: "source_mismatch: #1534" },
+        { feePublishedId: 134962, feeVerifiedId: 156021, reason: "source_mismatch: #1534" },
       ],
       skipped: [],
     });
@@ -68,7 +78,7 @@ describe("hand takedowns (James, Oct 16)", () => {
     expect(planHandTakedowns([]).skipped.map((row) => row.reason)).toEqual(IDS.map(() => "not live"));
     // Another institution or category at the same id, name and price is not the listed row.
     const moved = [{ ...LIVE[4], institution_id: 1 }, { ...LIVE[5], canonical_fee_key: "legal_process" }];
-    expect(planHandTakedowns(moved, HAND_TAKEDOWNS.slice(4)).skipped.map((row) => row.reason)).toEqual(["changed since listed", "changed since listed"]);
+    expect(planHandTakedowns(moved, HAND_TAKEDOWNS.slice(4, 6)).skipped.map((row) => row.reason)).toEqual(["changed since listed", "changed since listed"]);
   });
 
   it("archives the row, rejects its verified row, records feedback and one run event", async () => {
@@ -77,7 +87,7 @@ describe("hand takedowns (James, Oct 16)", () => {
     expect(result.takenDown.map((item) => item.feePublishedId)).toEqual(IDS);
     expect(result.error).toBeNull();
     const takedowns = writes.filter((write) => write.text.includes("UPDATE published_fee_records"));
-    expect(takedowns).toHaveLength(6);
+    expect(takedowns).toHaveLength(IDS.length);
     // The UPDATE repeats every listed field, so a row changed after the read is left alone.
     expect(takedowns[0].text).toContain("AND rolled_back_at IS NULL");
     expect(takedowns[0].text).toContain("AND institution_id = ?");
@@ -85,7 +95,7 @@ describe("hand takedowns (James, Oct 16)", () => {
     expect(takedowns[0].text).toContain("AND fee_name = ?");
     expect(takedowns[0].values).toEqual(expect.arrayContaining(["agentic-run-9", "source_mismatch: #1496", 80423, 5433, "document_reproduction", "Fax (Local)", 15]));
     expect(takedowns[5].values).toEqual(expect.arrayContaining(["source_mismatch: #1370", 134129, 4815, "other_lending_fee", "Subordination Fee: Business", 10]));
-    expect(writes.filter((write) => write.text.includes("UPDATE verified_fee_observations"))).toHaveLength(6);
+    expect(writes.filter((write) => write.text.includes("UPDATE verified_fee_observations"))).toHaveLength(IDS.length);
     expect(writes.some((write) => write.text.includes("INSERT INTO pipeline_feedback"))).toBe(true);
     expect(writes.filter((write) => write.text.includes("INSERT INTO agent_run_events"))).toHaveLength(1);
     expect(writes.some((write) => /\bDELETE\b/i.test(write.text))).toBe(false);
@@ -94,7 +104,7 @@ describe("hand takedowns (James, Oct 16)", () => {
   it("writes nothing on a dry run, and nothing again once the rows are down", async () => {
     const dry = fakeDb(LIVE);
     const planned = await applyHandTakedowns(dry.db as never, { runId: 1, batchId: "b", dryRun: true });
-    expect(planned.takenDown).toHaveLength(6);
+    expect(planned.takenDown).toHaveLength(IDS.length);
     expect(dry.writes).toHaveLength(0);
 
     const again = fakeDb([]);

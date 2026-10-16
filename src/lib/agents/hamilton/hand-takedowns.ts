@@ -65,6 +65,16 @@ export const HAND_TAKEDOWNS: readonly HandTakedown[] = [
   { feePublishedId: 134129, institutionId: 4815, canonicalFeeKey: "other_lending_fee", amount: 10, feeName: "Subordination Fee: Business",
     reason: "source_mismatch: #1370", issue: 1370, kind: "wrong_amount",
     evidence: "Ume FCU (doc 7849): the $10 is the next column's \"Checking Accounts | Business | $10 per month\"; the \"Subordination Fee\" line carries no $10." },
+  // #1534 review (read-only, Oct 16): three loan-payment fees filed under other categories.
+  { feePublishedId: 48113, institutionId: 7483, canonicalFeeKey: "safe_deposit_box", amount: 25, feeName: "Returned loan payment",
+    reason: "source_mismatch: #1534", issue: 1534, kind: "wrong_amount",
+    evidence: "Together CU (doc 2048): \"Returned loan payment (excludes credit cards) … $15/payment\"; the $25/year is the next column's \"Size 3x5 $25/year\" safe deposit box." },
+  { feePublishedId: 87307, institutionId: 5054, canonicalFeeKey: "ach_return", amount: 25, feeName: "Returned Loan Payment (check or ACH returned unpaid; per item)",
+    reason: "source_mismatch: #1534", issue: 1534, kind: "wrong_category",
+    evidence: "WF FCU (doc 30721), under \"Loan Account Fees\": \"Returned Loan Payment (check or ACH returned unpaid; per item) | $25.00\", a loan fee; the ACH return fee is its own tiered row (\"ACH Returns: $5 … $15 … $25\")." },
+  { feePublishedId: 134962, institutionId: 8566, canonicalFeeKey: "account_research", amount: 29.5, feeName: "Loan Payment with Debit Card - Chargeback",
+    reason: "source_mismatch: #1534", issue: 1534, kind: "wrong_category",
+    evidence: "Texell CU (doc 29092): \"Loan Payment with Debit Card - Chargeback $29.50 per item\", next to \"Loan Payment with Debit Card - Return Item\": a loan payment fee, not account research." },
 ];
 
 export interface LiveTakedownRow {
