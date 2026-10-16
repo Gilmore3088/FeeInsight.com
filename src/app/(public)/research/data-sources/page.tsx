@@ -5,7 +5,7 @@ import { PRODUCT_NAME, SITE_NAME, SITE_URL } from "@/lib/constants";
 import { getPublicStatsSummary, UNAVAILABLE_LABEL } from "@/lib/public-stats";
 import { getDataCoverageSummaryCached, getStatsCached } from "@/lib/data-store/public-cached-reads";
 import { sampleReportAvailable } from "@/lib/custom-report/sample-report";
-import { DATA_SOURCES, nextAction, sourceMap } from "./data-sources-view";
+import { DATA_SOURCES, coverageBar, nextAction, sourceMap, type SourceCounts } from "./data-sources-view";
 import { DataSourcesHero, MethodologyLine, NextAction, SourceMap, SourceTable } from "./data-sources-exhibits";
 
 const PAGE_URL = `${SITE_URL}/research/data-sources`;
@@ -37,14 +37,14 @@ export default async function DataSourcesPage() {
     sampleReportAvailable().catch(() => false),
   ]);
 
-  const map = sourceMap({
+  const counts: SourceCounts = {
     observations: summary && summary.observationsLabel !== UNAVAILABLE_LABEL ? summary.observations : null,
     institutions: summary && summary.institutionsLabel !== UNAVAILABLE_LABEL ? summary.institutions : null,
     banks: collection?.banks ?? null,
     creditUnions: collection?.credit_unions ?? null,
     fdicReports: coverage?.fdic_financials ?? null,
     ncuaReports: coverage?.ncua_financials ?? null,
-  });
+  };
 
   return (
     <div className="bg-paper">
@@ -59,7 +59,7 @@ export default async function DataSourcesPage() {
       <DataSourcesHero freshnessLabel={summary?.freshnessLabel ?? null} />
 
       <div className="mx-auto max-w-page space-y-12 px-4 py-10 sm:px-6 sm:py-14">
-        <SourceMap map={map} />
+        <SourceMap map={sourceMap(counts)} coverage={coverageBar(counts)} />
         <SourceTable sources={DATA_SOURCES} />
         <MethodologyLine />
         <NextAction action={nextAction(sampleLive)} />

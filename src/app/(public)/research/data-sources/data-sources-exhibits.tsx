@@ -2,7 +2,7 @@ import Link from "next/link";
 import { TrackLink } from "@/components/track-link";
 import { DEMO_REQUEST_NAV } from "@/components/nav-items";
 import { PRODUCT_NAME } from "@/lib/constants";
-import type { ActionLink, DataSource, MapFigure, SourceMap as SourceMapData } from "./data-sources-view";
+import type { ActionLink, CoverageBar as CoverageBarData, DataSource, MapFigure, SourceMap as SourceMapData } from "./data-sources-view";
 
 const SANS = { fontFamily: "var(--fi-font-sans)" } as const;
 const MONO = { fontFamily: "var(--fi-font-mono)" } as const;
@@ -76,13 +76,61 @@ function Figure({ figure, large = false }: { figure: MapFigure; large?: boolean 
 }
 
 /**
+ * Banks and credit unions on our list against institutions with published fees, drawn on one
+ * scale with the real counts. Rendered only when all three reads worked.
+ */
+export function CoverageBar({ bar }: { bar: CoverageBarData }) {
+  return (
+    <div className="rounded-2xl border border-border bg-white px-4 py-4 sm:px-5" data-exhibit="coverage">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-muted">Coverage</p>
+      <p className="mt-1 text-[14px] font-semibold text-ink">{bar.summary}</p>
+      <div className="mt-3 space-y-3">
+        <div>
+          <div
+            role="img"
+            aria-label={`On our list: ${bar.banks.value} banks and ${bar.creditUnions.value} credit unions`}
+            className="flex h-4 w-full overflow-hidden rounded-full bg-paper"
+          >
+            <span className="block h-full bg-ink" style={{ width: `${bar.banks.pct}%` }} />
+            <span className="block h-full bg-ink/45" style={{ width: `${bar.creditUnions.pct}%` }} />
+          </div>
+          <p className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 text-[12px] text-ink-muted" aria-hidden="true">
+            <span className="inline-flex items-center gap-1.5">
+              <span className="h-2.5 w-2.5 rounded-sm bg-ink" />
+              <span className="font-semibold tabular-nums text-ink" style={MONO}>{bar.banks.value}</span> banks on our list
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <span className="h-2.5 w-2.5 rounded-sm bg-ink/45" />
+              <span className="font-semibold tabular-nums text-ink" style={MONO}>{bar.creditUnions.value}</span> credit unions on our list
+            </span>
+          </p>
+        </div>
+        <div>
+          <div
+            role="img"
+            aria-label={`${bar.withFees.value} institutions with published fees, ${bar.withFees.pct}% of the list`}
+            className="h-4 w-full overflow-hidden rounded-full bg-paper"
+          >
+            <span className="block h-full rounded-full bg-brick" style={{ width: `${bar.withFees.pct}%` }} />
+          </div>
+          <p className="mt-1.5 inline-flex items-center gap-1.5 text-[12px] text-ink-muted" aria-hidden="true">
+            <span className="h-2.5 w-2.5 rounded-sm bg-brick" />
+            <span className="font-semibold tabular-nums text-ink" style={MONO}>{bar.withFees.value}</span> institutions with published fees
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
  * The exhibit: the fee schedules as the primary source, with the four groups of public data
  * that support them. Each node jumps to its row in the table. Only live counts are drawn.
  */
-export function SourceMap({ map }: { map: SourceMapData }) {
+export function SourceMap({ map, coverage }: { map: SourceMapData; coverage: CoverageBarData | null }) {
   return (
     <section aria-labelledby="map-heading" id="map" className="scroll-mt-24">
-      <SectionTitle id="map-heading" eyebrow="Source map" title="One primary source, four kinds of support" />
+      <SectionTitle id="map-heading" eyebrow="Source map" title="One primary source, and the data around it" />
 
       <figure className="mt-5">
         <a
@@ -105,19 +153,25 @@ export function SourceMap({ map }: { map: SourceMapData }) {
           </span>
         </a>
 
+        {coverage && (
+          <div className="mt-3">
+            <CoverageBar bar={coverage} />
+          </div>
+        )}
+
         {/* The trunk joins the primary source to the groups beneath it. */}
         <span aria-hidden="true" className="mx-auto block h-5 w-px bg-brick/40" />
 
-        <ul className="grid grid-cols-2 gap-3 border-t border-brick/30 pt-4 lg:grid-cols-4" aria-label="Supporting sources">
+        <ul className="grid grid-cols-2 gap-3 border-t border-brick/30 pt-4 lg:grid-cols-5" aria-label="Supporting sources">
           {map.groups.map((group) => (
             <li
               key={group.key}
-              className={`rounded-2xl border border-border bg-white px-3 py-3 sm:px-4 ${group.nodes.length > 2 ? "col-span-2 lg:col-span-1" : ""}`}
+              className={`rounded-2xl border border-border bg-white px-3 py-3 sm:px-4 ${group.wide ? "col-span-2 lg:col-span-1" : ""}`}
               data-group={group.key}
             >
               <h3 className="text-[15px] font-bold text-ink" style={SANS}>{group.title}</h3>
               <p className="text-[12px] text-ink-muted">{group.role}</p>
-              <ul className={`mt-2 grid gap-1 ${group.nodes.length > 2 ? "grid-cols-2 lg:grid-cols-1" : ""}`}>
+              <ul className={`mt-2 grid gap-1 ${group.wide && group.nodes.length > 1 ? "grid-cols-2 lg:grid-cols-1" : ""}`}>
                 {group.nodes.map((node) => (
                   <li key={node.id}>
                     <a
@@ -135,7 +189,7 @@ export function SourceMap({ map }: { map: SourceMapData }) {
           ))}
         </ul>
         <figcaption className="mt-3 text-[12px] text-ink-muted">
-          Counts are live. A count we cannot read right now is left out.
+          Counts update with each publish.
         </figcaption>
       </figure>
     </section>
@@ -168,7 +222,12 @@ export function SourceTable({ sources }: { sources: readonly DataSource[] }) {
                 {s.takes}
               </td>
               <td className="mr-4 inline-block text-[13px] font-medium text-ink sm:table-cell sm:py-3 sm:pr-4 sm:align-top" data-cell="refresh">
-                {s.refresh ?? ""}
+                {s.refresh && (
+                  <>
+                    <span className="sm:hidden">Refreshed: </span>
+                    {s.refresh}
+                  </>
+                )}
               </td>
               <td className="inline-block text-[13px] sm:table-cell sm:py-1 sm:align-top">
                 {s.href ? (

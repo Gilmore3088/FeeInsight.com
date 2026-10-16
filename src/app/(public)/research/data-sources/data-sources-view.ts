@@ -10,7 +10,7 @@
 import { COVERAGE_LABELS, formatCount } from "@/lib/public-stats";
 import { DISTRICT_NAMES } from "@/lib/fed-districts";
 
-export type SourceGroupKey = "fees" | "institutions" | "revenue" | "regions" | "context";
+export type SourceGroupKey = "fees" | "institutions" | "financials" | "regulation" | "context" | "regions";
 
 export interface DataSource {
   /** Anchor id on the table row, so the map and other pages can link to it. */
@@ -36,7 +36,7 @@ export const DATA_SOURCES: readonly DataSource[] = [
     publisher: "Each bank and credit union",
     group: "fees",
     takes: "Every fee's name and amount, tied to the document it came from.",
-    refresh: "Monthly",
+    refresh: "Re-checked after 30 days",
     href: null,
   },
   {
@@ -51,37 +51,78 @@ export const DATA_SOURCES: readonly DataSource[] = [
     href: "https://banks.data.fdic.gov/bankfind-suite/",
   },
   {
-    // registry-ncua-financials: the newest quarter also syncs the credit union list
-    // (src/lib/agents/magellan/registry/ncua-financials.ts; partitions are quarters).
+    // registry-ncua-financials: the newest quarter also syncs the credit union list, and recent
+    // quarters are re-read every 14 days (RECENT_REFRESH_HOURS = 24 * 14,
+    // src/lib/agents/magellan/registry/ncua-financials.ts).
     id: "ncua-credit-unions",
     name: "NCUA credit union list",
     publisher: "National Credit Union Administration",
     group: "institutions",
     takes: "The list of federally insured credit unions.",
-    refresh: "Quarterly",
+    refresh: "Every 14 days",
     href: "https://ncua.gov/analysis/credit-union-corporate-call-report-data",
   },
   {
     // registry-fdic-financials: institution_financial_records source 'fdic', one row per bank
-    // per quarter, including service_charge_income (src/lib/agents/magellan/registry/fdic-financials.ts).
+    // per quarter, including service_charge_income; recent quarters are re-fetched weekly
+    // (RECENT_REFRESH_HOURS = 24 * 7, src/lib/agents/magellan/registry/fdic-financials.ts).
+    // Read through the FDIC API; the filings themselves are public at the FFIEC CDR.
     id: "fdic-call-reports",
     name: "FDIC Call Reports",
-    publisher: "Federal Deposit Insurance Corporation",
-    group: "revenue",
+    publisher: "FDIC and FFIEC",
+    group: "financials",
     takes: "Each bank's service charge income, assets and deposits.",
-    refresh: "Quarterly",
-    href: "https://banks.data.fdic.gov/bankfind-suite/",
+    refresh: "Weekly",
+    href: "https://cdr.ffiec.gov/public/",
   },
   {
     // registry-ncua-financials: institution_financial_records source 'ncua', one row per credit
-    // union per quarter, including service_charge_income and member_count.
+    // union per quarter, including service_charge_income and member_count; recent quarters are
+    // re-read every 14 days (RECENT_REFRESH_HOURS = 24 * 14, ncua-financials.ts).
     id: "ncua-5300",
     name: "NCUA 5300 Call Reports",
     publisher: "National Credit Union Administration",
-    group: "revenue",
+    group: "financials",
     takes: "Each credit union's fee income, assets, deposits and members.",
-    refresh: "Quarterly",
+    refresh: "Every 14 days",
     href: "https://ncua.gov/analysis/credit-union-corporate-call-report-data",
+  },
+  {
+    // registry-sec-filings: institution_filings and holding_company_financials from data.sec.gov,
+    // FILINGS_REFRESH_HOURS = 24 (src/lib/agents/magellan/registry/sec.ts); shown in the financial
+    // profile on /institution/[id] (src/lib/data-store/registry-profile.ts).
+    id: "sec-filings",
+    name: "SEC filings",
+    publisher: "Securities and Exchange Commission",
+    group: "financials",
+    takes: "Filings and financials of listed holding companies.",
+    refresh: "Daily",
+    href: "https://www.sec.gov/edgar/search/",
+  },
+  {
+    // registry-enforcement: institution_enforcement_actions from the OCC EASearch export and the
+    // Fed enforcement CSV, REFRESH_HOURS = 24 * 7 (src/lib/agents/magellan/registry/enforcement.ts,
+    // src/lib/regulatory/enforcement.ts); shown on /institution/[id].
+    id: "enforcement",
+    name: "Enforcement actions",
+    publisher: "OCC and Federal Reserve",
+    group: "regulation",
+    takes: "Enforcement actions against institutions, matched by name and state.",
+    refresh: "Weekly",
+    href: "https://apps.occ.gov/EASearch/",
+  },
+  {
+    // registry-federal-register: reg_tracker_items, CFPB, FDIC, OCC, Fed and NCUA rules,
+    // FEDERAL_REGISTER_REFRESH_HOURS = 24 (src/lib/agents/magellan/registry/federal-register.ts);
+    // stored only when FEDERAL_REGISTER_TRACKER_LIVE=true; shown in the regulatory watch on
+    // /institution/[id] (src/lib/data-store/regulatory-watch.ts).
+    id: "federal-register",
+    name: "Federal Register",
+    publisher: "Office of the Federal Register",
+    group: "regulation",
+    takes: "Proposed and final rules from the CFPB, FDIC, OCC, Fed and NCUA.",
+    refresh: "Daily",
+    href: "https://www.federalregister.gov/",
   },
   {
     // fed_district comes from FDIC for banks; credit unions take the nearest bank head office's
@@ -141,15 +182,27 @@ export const DATA_SOURCES: readonly DataSource[] = [
     href: "https://www.consumerfinance.gov/data-research/consumer-complaints/",
   },
   {
-    // registry-fdic-sod: institution_branch_deposits, one partition per year
-    // (src/lib/agents/magellan/registry/fdic-sod.ts).
+    // registry-fdic-sod: institution_branch_deposits, one partition per year; the latest year is
+    // re-read every 30 days (LATEST_REFRESH_HOURS = 24 * 30, src/lib/agents/magellan/registry/fdic-sod.ts).
     id: "fdic-sod",
     name: "Summary of Deposits",
     publisher: "Federal Deposit Insurance Corporation",
     group: "context",
     takes: "Bank branch locations and the deposits each one holds.",
-    refresh: "Yearly",
+    refresh: "Monthly",
     href: "https://www.fdic.gov/resources/data-tools/summary-of-deposits",
+  },
+  {
+    // registry-ncua-branches: credit_union_branches from the NCUA quarterly file (addresses),
+    // REFRESH_HOURS = 24 * 30 (src/lib/agents/magellan/registry/ncua-branches.ts); shown as the
+    // office footprint on /institution/[id].
+    id: "ncua-branches",
+    name: "NCUA branch file",
+    publisher: "National Credit Union Administration",
+    group: "context",
+    takes: "Credit union office addresses.",
+    refresh: "Monthly",
+    href: "https://ncua.gov/analysis/credit-union-corporate-call-report-data",
   },
   {
     // registry-census-acs: demographics, ACS_VARIABLES median household income, poverty count,
@@ -196,6 +249,8 @@ export interface MapGroup {
   title: string;
   /** What this group is for, in a few words. */
   role: string;
+  /** Spans both columns on a phone. */
+  wide: boolean;
   nodes: MapNode[];
 }
 
@@ -216,11 +271,13 @@ function figure(n: number | null, label: string): MapFigure | null {
 /** The twelve Reserve Bank districts; a fixed fact, not a live read. */
 export const FED_DISTRICT_COUNT = Object.keys(DISTRICT_NAMES).length;
 
-const GROUPS: { key: Exclude<SourceGroupKey, "fees">; title: string; role: string }[] = [
-  { key: "institutions", title: "Who we track", role: "The institution list" },
-  { key: "revenue", title: "Fee revenue", role: "What fees earn" },
-  { key: "regions", title: "Regions", role: "District comparisons" },
-  { key: "context", title: "Context", role: "Economy and market" },
+/** Order and width keep the phone grid (two columns) free of empty cells: wide groups span both. */
+const GROUPS: { key: Exclude<SourceGroupKey, "fees">; title: string; role: string; wide: boolean }[] = [
+  { key: "institutions", title: "Who we track", role: "The institution list", wide: false },
+  { key: "regulation", title: "Regulation", role: "Rules and enforcement", wide: false },
+  { key: "financials", title: "Financials", role: "Revenue and filings", wide: true },
+  { key: "context", title: "Context", role: "Economy and market", wide: true },
+  { key: "regions", title: "Regions", role: "District comparisons", wide: true },
 ];
 
 function source(id: string): DataSource {
@@ -233,9 +290,9 @@ function source(id: string): DataSource {
 function nodeFigure(id: string, counts: SourceCounts): MapFigure | null {
   switch (id) {
     case "fdic-bankfind":
-      return figure(counts.banks, "banks monitored");
+      return figure(counts.banks, "banks on our list");
     case "ncua-credit-unions":
-      return figure(counts.creditUnions, "credit unions monitored");
+      return figure(counts.creditUnions, "credit unions on our list");
     case "fdic-call-reports":
       return figure(counts.fdicReports, "quarterly reports");
     case "ncua-5300":
@@ -264,6 +321,36 @@ export function sourceMap(counts: SourceCounts): SourceMap {
         figure: nodeFigure(s.id, counts),
       })),
     })),
+  };
+}
+
+export interface CoverageBar {
+  banks: { value: string; pct: number };
+  creditUnions: { value: string; pct: number };
+  /** Institutions with at least one published fee, drawn on the same scale as the list. */
+  withFees: { value: string; pct: number };
+  /** "34% of the institutions on our list have published fees". */
+  summary: string;
+}
+
+function pct(part: number, whole: number): number {
+  return Math.max(0, Math.min(100, Math.round((part / whole) * 1000) / 10));
+}
+
+/**
+ * Banks and credit unions on our list against institutions with published fees, on one scale.
+ * Null when any of the three reads failed, so the bar is never drawn from a partial picture.
+ */
+export function coverageBar(counts: SourceCounts): CoverageBar | null {
+  const { banks, creditUnions, institutions } = counts;
+  if (!usable(banks) || !usable(creditUnions) || !usable(institutions)) return null;
+  const total = banks + creditUnions;
+  const withFees = pct(institutions, total);
+  return {
+    banks: { value: formatCount(banks), pct: pct(banks, total) },
+    creditUnions: { value: formatCount(creditUnions), pct: pct(creditUnions, total) },
+    withFees: { value: formatCount(institutions), pct: withFees },
+    summary: `${Math.round(withFees)}% of the institutions on our list have published fees`,
   };
 }
 

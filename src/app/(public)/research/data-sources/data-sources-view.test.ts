@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   DATA_SOURCES,
+  coverageBar,
   FED_DISTRICT_COUNT,
   REPORT_REQUEST_HREF,
   SAMPLE_REPORT_HREF,
@@ -43,7 +44,7 @@ describe("sourceMap", () => {
     const map = sourceMap({ ...NONE, observations: 0, banks: 4321, fdicReports: Number.NaN });
     expect(map.primary.figures).toEqual([]);
     const figures = Object.fromEntries(map.groups.flatMap((g) => g.nodes).map((n) => [n.id, n.figure]));
-    expect(figures["fdic-bankfind"]).toEqual({ value: "4,321", label: "banks monitored" });
+    expect(figures["fdic-bankfind"]).toEqual({ value: "4,321", label: "banks on our list" });
     expect(figures["ncua-credit-unions"]).toBeNull();
     expect(figures["fdic-call-reports"]).toBeNull();
     expect(figures["fed-districts"]).toEqual({ value: String(FED_DISTRICT_COUNT), label: "districts" });
@@ -57,6 +58,25 @@ describe("sourceMap", () => {
       { value: "3,890", label: "institutions with published fees" },
     ]);
   });
+});
+
+describe("coverageBar", () => {
+  it("is null unless all three reads worked", () => {
+    expect(coverageBar({ ...NONE, banks: 4000, creditUnions: 6000 })).toBeNull();
+    expect(coverageBar({ ...NONE, banks: 0, creditUnions: 6000, institutions: 3000 })).toBeNull();
+  });
+
+  it("puts both bars on the list's scale", () => {
+    const bar = coverageBar({ ...NONE, banks: 4000, creditUnions: 6000, institutions: 3000 })!;
+    expect(bar.banks).toEqual({ value: "4,000", pct: 40 });
+    expect(bar.creditUnions).toEqual({ value: "6,000", pct: 60 });
+    expect(bar.withFees).toEqual({ value: "3,000", pct: 30 });
+  });
+});
+
+it("keeps the phone grid free of empty cells", () => {
+  const narrow = sourceMap(NONE).groups.filter((g) => !g.wide).length;
+  expect(narrow % 2).toBe(0);
 });
 
 describe("usable", () => {

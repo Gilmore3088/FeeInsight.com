@@ -2,33 +2,47 @@ import { render, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { DEMO_REQUEST_NAV } from "@/components/nav-items";
 import { DataSourcesHero, MethodologyLine, NextAction, SourceMap, SourceTable } from "./data-sources-exhibits";
-import { DATA_SOURCES, nextAction, sourceMap } from "./data-sources-view";
+import { DATA_SOURCES, coverageBar, nextAction, sourceMap } from "./data-sources-view";
 
 describe("SourceMap", () => {
   it("links every node to its table row and draws only the counts it was given", () => {
     render(
       <SourceMap
         map={sourceMap({ observations: 1000, institutions: null, banks: 0, creditUnions: 4321, fdicReports: null, ncuaReports: null })}
+        coverage={null}
       />,
     );
-    expect(screen.getByRole("heading", { level: 2, name: "One primary source, four kinds of support" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 2, name: "One primary source, and the data around it" })).toBeInTheDocument();
+    expect(screen.queryByRole("img", { name: /On our list/ })).not.toBeInTheDocument();
     const primary = screen.getByRole("link", { name: /Institution fee schedules/ });
     expect(primary).toHaveAttribute("href", "#fee-schedules");
     expect(screen.getByText("1,000")).toBeInTheDocument();
     expect(screen.queryByText("institutions with published fees")).not.toBeInTheDocument();
     expect(screen.getByText("4,321")).toBeInTheDocument();
-    expect(screen.queryByText("banks monitored")).not.toBeInTheDocument();
+    expect(screen.queryByText("banks on our list")).not.toBeInTheDocument();
     expect(screen.queryByText("0")).not.toBeInTheDocument();
     const groups = within(screen.getByRole("list", { name: "Supporting sources" }));
     expect(groups.getAllByRole("heading", { level: 3 }).map((h) => h.textContent)).toEqual([
       "Who we track",
-      "Fee revenue",
-      "Regions",
+      "Regulation",
+      "Financials",
       "Context",
+      "Regions",
     ]);
     for (const s of DATA_SOURCES.slice(1)) {
       expect(screen.getByRole("link", { name: new RegExp(`^${s.name}`) })).toHaveAttribute("href", `#${s.id}`);
     }
+  });
+});
+
+describe("CoverageBar", () => {
+  it("draws the list and the published share on one scale with the real counts", () => {
+    const counts = { observations: null, institutions: 3000, banks: 4000, creditUnions: 6000, fdicReports: null, ncuaReports: null };
+    render(<SourceMap map={sourceMap(counts)} coverage={coverageBar(counts)} />);
+    expect(screen.getByRole("img", { name: "On our list: 4,000 banks and 6,000 credit unions" })).toBeInTheDocument();
+    const share = screen.getByRole("img", { name: "3,000 institutions with published fees, 30% of the list" });
+    expect((share.firstChild as HTMLElement).style.width).toBe("30%");
+    expect(screen.getByText("30% of the institutions on our list have published fees")).toBeInTheDocument();
   });
 });
 
@@ -51,6 +65,11 @@ describe("SourceTable", () => {
   it("leaves the refresh cell empty when the code states none", () => {
     const { container } = render(<SourceTable sources={[{ ...DATA_SOURCES[1], refresh: null }]} />);
     expect(container.querySelector('[data-cell="refresh"]')?.textContent).toBe("");
+  });
+
+  it("prefixes the refresh on phones, where the column heading is hidden", () => {
+    const { container } = render(<SourceTable sources={[DATA_SOURCES[1]]} />);
+    expect(container.querySelector('[data-cell="refresh"]')?.textContent).toBe(`Refreshed: ${DATA_SOURCES[1].refresh}`);
   });
 });
 
