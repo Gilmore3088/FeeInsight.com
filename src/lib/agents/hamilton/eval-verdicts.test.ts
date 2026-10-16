@@ -142,6 +142,22 @@ describe("v8 review fixes: narrower rules, the live prefilter and the batch limi
     }
   });
 
+  it("keeps v7's no-fee rule when a later price is not the fee's amount (re-review at 01138e62)", () => {
+    expect(ruleFor("overdraft", "No fee for overdrafts under $5; $35 otherwise", 0)).toBe("no_fee_sentence");
+    expect(ruleFor("atm_non_network", "No fee for the first 4 ATM withdrawals per month, $2.00 thereafter", 0)).toBe("no_fee_sentence");
+    expect(ruleFor("atm_non_network", "No fee for the first 4 ATM withdrawals… $2.00 thereafter", 0)).toBe("no_fee_sentence");
+    // The later clause prices the fee at its own amount: that fee is real.
+    expect(ruleFor("overdraft", "No fee for overdrafts under $5; $35 otherwise", 35)).toBeNull();
+    expect(ruleFor("overdraft", "No fee; overdraft $35 applies", 35)).toBeNull();
+  });
+
+  it("reads a dollar \"discount of\" as the fee when the dollar figure is not its amount", () => {
+    expect(ruleFor("stop_payment", "Stop payment discount of $5 for seniors", 15)).toBeNull();
+    expect(ruleFor("stop_payment", "Stop payment discount of $5 for seniors", 5)).toBe("discount_or_allowance");
+    expect(ruleFor("safe_deposit_box", "Safe deposit box rental fee discount by $10.00 per year", 10)).toBe("discount_or_allowance");
+    expect(ruleFor("safe_deposit_box", "3 – Safe deposit box rental fee discount by", 10)).toBe("discount_or_allowance");
+  });
+
   it("still reads the allowance on the line when it is the fee's own amount", () => {
     expect(ruleFor("overdraft", "Overdraft Fee", 5, "Overdraft Fee $30 / $5 allowance on first item")).toBe("discount_or_allowance");
     expect(ruleFor("overdraft", "Courtesy Pay", 5, "Courtesy Pay / $5 Allowance")).toBe("discount_or_allowance");
@@ -173,7 +189,7 @@ describe("v8 review fixes: narrower rules, the live prefilter and the batch limi
     const db = createDb(null);
     (db as unknown as { unsafe: unknown }).unsafe = vi.fn(() => Promise.resolve(v8Rows));
     const result = await retireEvalVerdictFees(db, options);
-    expect(result).toMatchObject({ ruleFailing: 1, deferred: 1 });
+    expect(result).toMatchObject({ ruleFailing: 1, deferred: 1, deferredIds: [120626] });
     const calls = JSON.stringify(db.mock.calls);
     expect(calls).toContain("not_a_fee:discount_or_allowance");
     expect(calls).not.toContain("wrong_amount:loan_amount");

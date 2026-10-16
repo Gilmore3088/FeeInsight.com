@@ -345,19 +345,41 @@ const NO_FEE_CLAUSE = /^\s*there\s+(?:is|are)\s+no\s+(?:[\w-]+\s+){0,5}(?:fees?|
 /** v8: a line that opens on what is free ("Fee-free debit card use at any Allpoint® Network ATM"). */
 const FEE_FREE_LEAD = /^\s*\*?\s*fee-free\b/i;
 /**
- * v8: a no-fee sentence whose next clause names a price is the fee that price is for ("Fee-free
- * ATMs; out-of-network $3", "No charge for the first 2; $2 each after"), so the no-fee rule leaves
- * it. A price inside the free clause itself ("… no monthly service fee after a $50 opening
- * deposit") does not count.
+ * v8: a no-fee sentence whose next clause prices the fee at its own amount is that fee ("Fee-free
+ * ATMs; out-of-network $3" at $3, "No charge for the first 2; $2 each after" at $2), so the no-fee
+ * rule leaves it. A later price that is not the amount keeps the rule ("No fee for overdrafts under
+ * $5; $35 otherwise" at $0), and so does a price inside the free clause itself ("… no monthly
+ * service fee after a $50 opening deposit").
  */
-const PRICE_AFTER = /(?:[;,:|]|\.\s).*?\$\s?\d/;
+const CLAUSE_BREAK = /[;,:|]|\.\s/;
+const DOLLAR_PRICE = /\$\s?(\d[\d,]*(?:\.\d{1,2})?)/g;
+function laterClausePricesAmount(name: string, amount: number | null | undefined): boolean {
+  const cut = CLAUSE_BREAK.exec(name);
+  if (!cut || amount == null) return false;
+  for (const match of name.slice(cut.index).matchAll(DOLLAR_PRICE)) {
+    if (sameAmount(match[1], amount)) return true;
+  }
+  return false;
+}
 /**
  * v8: a discount the bank gives, published as a fee ("Safe Deposit Box Discount", "$5.00 discount for
  * direct debit of safe deposit fees", "Maintenance Charge discount"). A discounted price ("Discounted
  * overdraft item fee", "3x5 …… w/ discount") is the fee itself and stays, and so does a fee that names
  * a percentage discount off itself ("Stop payment discount of 50% for seniors" at $15).
  */
-const DISCOUNT_NAME = /\bdiscounts?\s*$|\bdiscount\s+(?:by|of)\b(?!\s*\d+(?:\.\d+)?\s*%)|^\s*(?:annual\s+)?discount\s+(?:on|for)\b/i;
+const DISCOUNT_NAME = /\bdiscounts?\s*$|^\s*(?:annual\s+)?discount\s+(?:on|for)\b/i;
+/**
+ * "discount by/of": a credit, unless what follows is a percentage, or a dollar figure that is not
+ * the fee's amount ("Stop payment discount of $5 for seniors" at $15 is the $15 fee). A cut name
+ * ("… receive a discount of") or the credit's own amount ("discount by $10.00" at $10) is the credit.
+ */
+const DISCOUNT_BY_OF = /\bdiscount\s+(?:by|of)\b(?!\s*\d+(?:\.\d+)?\s*%)(?:\s*\$\s?(\d[\d,]*(?:\.\d{1,2})?))?/i;
+function namesDiscount(name: string, amount: number | null | undefined): boolean {
+  if (DISCOUNTED_PRICE.test(name)) return false;
+  if (DISCOUNT_NAME.test(name)) return true;
+  const byOf = DISCOUNT_BY_OF.exec(name);
+  return Boolean(byOf && (byOf[1] == null || sameAmount(byOf[1], amount)));
+}
 const DISCOUNTED_PRICE = /\bdiscounted\b|w\/\s*discount/i;
 /**
  * v8: an allowance the bank grants, in the name or right after the price on the line ("Courtesy Pay /
@@ -516,8 +538,8 @@ export const RULE_WHY: Readonly<Record<NameRule, string>> = {
 export function ruleFor(canonicalFeeKey: string, feeName: string | null | undefined, amount?: number | null, excerpt?: string | null): NameRule | null {
   const name = feeName ?? "";
   if (ATM_KEYS.has(canonicalFeeKey) && REBATE_WORDING.test(name) && !NON_REFUNDABLE.test(name)) return "rebate";
-  if ((NO_FEE_SENTENCE.test(name) || NO_FEE_CLAUSE.test(name) || FEE_FREE_LEAD.test(name)) && !PRICE_AFTER.test(name)) return "no_fee_sentence";
-  if ((DISCOUNT_NAME.test(name) && !DISCOUNTED_PRICE.test(name)) || ALLOWANCE_NAME.test(name) || allowanceAtAmount(excerpt, amount)) {
+  if ((NO_FEE_SENTENCE.test(name) || NO_FEE_CLAUSE.test(name) || FEE_FREE_LEAD.test(name)) && !laterClausePricesAmount(name, amount)) return "no_fee_sentence";
+  if (namesDiscount(name, amount) || ALLOWANCE_NAME.test(name) || allowanceAtAmount(excerpt, amount)) {
     return "discount_or_allowance";
   }
   const term = LOAN_TERM_AMOUNT.exec(name) ?? LOAN_TERM_AMOUNT.exec(excerpt ?? "");
@@ -553,7 +575,7 @@ export function flagFor(canonicalFeeKey: string, feeName: string | null | undefi
 /**
  * Live fees a name rule fails that the re-check leaves for a second batch, so each takedown batch
  * stays under 20 (DECISIONS 2026-10-16, #1613). v8's live re-check fails 20 fees; 120626 (a loan's
- * term amount, `loan_amount`) waits here. A follow-up PR empties the list once the first 19 are down.
+ * term amount, `loan_amount`) waits here. #1696 empties the list once the first 19 are down.
  */
 export const EVAL_VERDICT_SECOND_BATCH: ReadonlySet<number> = new Set([120626]);
 const LABELLED_IDS = new Set([...EVAL_CRITICAL_VERDICTS, ...HAND_CHECKED_VERDICTS].map((entry) => entry.feePublishedId));
@@ -614,6 +636,7 @@ export interface EvalVerdictResult {
   ruleFailing: number;
   /** Live fees a name rule fails that wait for a later batch (`EVAL_VERDICT_SECOND_BATCH`). */
   deferred: number;
+  deferredIds: number[];
   flagged: number;
   waiting: number;
   /** Pending flags cleared because the current rule no longer fails the fee. */
@@ -683,7 +706,7 @@ export async function retireEvalVerdictFees(
 ): Promise<EvalVerdictResult> {
   const limit = Math.max(1, Math.min(options.limit ?? ROLLBACK_LIMIT, 2_000));
   const result: EvalVerdictResult = {
-    evalMatched: 0, evalChanged: 0, handMatched: 0, ruleFailing: 0, deferred: 0, flagged: 0, waiting: 0, cleared: 0, reconstructed: 0, rolledBack: [],
+    evalMatched: 0, evalChanged: 0, handMatched: 0, ruleFailing: 0, deferred: 0, deferredIds: [], flagged: 0, waiting: 0, cleared: 0, reconstructed: 0, rolledBack: [],
     flags: { non_customer_price: 0, wire_shared_line: 0 }, flagSamples: [], dryRun: options.dryRun,
   };
   let rows: LiveRow[];
@@ -738,6 +761,7 @@ export async function retireEvalVerdictFees(
       ?? (originalFeeName ? ruleFor(base.canonicalFeeKey, originalFeeName, base.amount, excerpt) : null);
     if (rule && EVAL_VERDICT_SECOND_BATCH.has(base.feePublishedId)) {
       result.deferred += 1;
+      result.deferredIds.push(base.feePublishedId);
       continue;
     }
     if (rule) {
