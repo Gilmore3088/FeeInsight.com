@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  API_PLANS_LABEL,
   apiIncludedInTier,
   subscriberKeyAllowed,
   subscriberOrgSlug,
@@ -31,5 +32,11 @@ describe("subscriber key rules", () => {
     expect(subscriberKeyAllowed({ subscription_status: "canceled" }, now)).toBe(false);
     expect(subscriberKeyAllowed({ subscription_status: "none" }, now)).toBe(false);
     expect(subscriberKeyAllowed(null, now)).toBe(false);
+  });
+});
+
+describe("API_PLANS_LABEL", () => {
+  it("names the monthly prices of the plans that include the API", () => {
+    expect(API_PLANS_LABEL).toBe("$300 and $500 plans");
   });
 });

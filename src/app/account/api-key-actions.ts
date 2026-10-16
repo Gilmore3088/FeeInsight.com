@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { getCurrentUser } from "@/lib/auth";
 import { getBillingSummary } from "@/lib/billing-summary";
-import { apiIncludedInTier } from "@/lib/api-subscriber-access";
+import { API_PLANS_LABEL, apiIncludedInTier } from "@/lib/api-subscriber-access";
 import { issueSubscriberKey, revokeSubscriberKeys } from "@/lib/api-subscriber-keys";
 
 export type ApiKeyActionResult = { key: string } | { error: string };
@@ -22,7 +22,7 @@ export async function createAccountApiKey(): Promise<ApiKeyActionResult> {
   const billing = await getBillingSummary(user.stripe_customer_id);
   if (!billing) return { error: "We couldn't check your plan just now. Try again in a minute." };
   if (!apiIncludedInTier(billing.tier)) {
-    return { error: "Your plan doesn't include the API. It comes with the $300 and $500 plans." };
+    return { error: `Your plan doesn't include the API. It comes with the ${API_PLANS_LABEL}.` };
   }
   try {
     const { key } = await issueSubscriberKey({

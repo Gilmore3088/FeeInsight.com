@@ -1,6 +1,6 @@
 import { isInPaymentGrace } from "@/lib/access";
 import type { User } from "@/lib/auth";
-import type { ProTier } from "@/lib/pro-tiers";
+import { tierAmountLabel, type ProTier } from "@/lib/pro-tiers";
 
 /**
  * Self-serve API keys for Pro subscribers (James, 16 Oct 2026): the $300 and $500 plans
@@ -15,6 +15,9 @@ export const SUBSCRIBER_ORG_PREFIX = "pro-user-";
 
 /** Plans whose subscription includes the API. Consultants pay the "mid" price. */
 export const API_INCLUDED_TIERS: readonly ProTier[] = ["mid", "large"];
+
+/** "$300 and $500 plans": the monthly prices of the plans that include the API. */
+export const API_PLANS_LABEL = `${API_INCLUDED_TIERS.map((tier) => tierAmountLabel(tier, "monthly")).join(" and ")} plans`;
 
 export function apiIncludedInTier(tier: ProTier | null | undefined): boolean {
   return tier != null && API_INCLUDED_TIERS.includes(tier);
