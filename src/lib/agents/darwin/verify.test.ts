@@ -1135,10 +1135,9 @@ describe("conditional $0 on two-column pages and its own line (#1593, live rows 
     "Fee per transfer for pre-established automatic transfer of funds from a checking, savings, or money market account or line of credit to cover an overdraft.",
   ].join("\n");
 
-  // [published id, fee name, category, document]: 7 of the 8 real free fees the advisor found held.
-  // 56797 stays held (below): its tail's note states a term ("closed within 90 days").
+  // [published id, fee name, category, document]: 6 of the 8 real free fees the advisor found held.
+  // 56797 and 38491 stay held (below): the page gives no positive proof of the other column.
   const free: Array<[number, string, string, string]> = [
-    [38491, "Foreign Transaction Fees", "card_foreign_txn", terrabank],
     [44979, "Bill Pay", "bill_pay", tcfcu],
     [45011, "Bill Pay", "bill_pay", atlantic],
     [89048, "Foreign ATM usage", "atm_non_network", poca],
@@ -1160,7 +1159,10 @@ describe("conditional $0 on two-column pages and its own line (#1593, live rows 
     expect(verdict("Check Printing (members over 62)", tcfcu, "check_printing")).toBe("conditional_zero");
     // A real free fee left held on purpose (re-review of #1621): the right column's note "(closed
     // within 90 days of opening)" reads like a condition, and a freed conditional $0 is the worse miss.
-    expect(verdict("Maintenance Fee (per statement cycle)", prairie, "monthly_maintenance")).toBe("conditional_zero");    // A traced line that carries every word of the name keeps its own terms.
+    expect(verdict("Maintenance Fee (per statement cycle)", prairie, "monthly_maintenance")).toBe("conditional_zero");
+    // Likewise 38491: "Night Depository Bags & Key" carries a fee noun, but a fee noun alone is no
+    // proof (third review of #1621) and the stored lines show no other-fees heading or own row for it.
+    expect(verdict("Foreign Transaction Fees", terrabank, "card_foreign_txn")).toBe("conditional_zero");    // A traced line that carries every word of the name keeps its own terms.
     const twoAccounts = ["Monthly Service Charge 0.00 for 1st account 2nd account $5.00", "Applies to all Internet Banking/Bill Pay", "Monthly Service Fee $0.00"].join("\n");
     expect(verdict("Monthly Service Fee", twoAccounts, "monthly_maintenance")).toBe("conditional_zero");
     // A $0 that is one audience's price is never read in place of the traced line.
@@ -1233,6 +1235,19 @@ describe("conditional $0 on two-column pages and its own line (#1593, live rows 
       expect(conditionalZero(0, line, name)).toBe(true);
       expect(conditionalZero(0, line, name, { documentText: ["Services | Other Fees", line, "Inactive Status $5.00", "Verbal Request $30.00"].join("\n") })).toBe(true);
     }
+    // Third review: a fee noun alone is no proof, and an account's activity or a holder's choice is a condition.
+    expect(conditionalZero(0, "Monthly Service Fee FREE | No Debit Card Activity $5.00", "Monthly Service Fee")).toBe(true); // N2
+    expect(conditionalZero(0, "Stop Payment FREE | Range of Checks $30.00", "Stop Payment")).toBe(true); // N4
+    const otherFees = (line: string) => ["Checking Accounts | Other Fees", line, "Low Activity $5.00", "Opted Out Of Overdraft $4.00"].join("\n");
+    const n7 = "Monthly Service Fee FREE | Low Activity $5.00";
+    expect(conditionalZero(0, n7, "Monthly Service Fee", { documentText: otherFees(n7) })).toBe(true); // N7
+    const n8 = "Monthly Maintenance Fee FREE | Opted Out Of Overdraft $4.00";
+    expect(conditionalZero(0, n8, "Monthly Maintenance Fee", { documentText: otherFees(n8) })).toBe(true); // N8
+    const n9 = "Monthly Fee $0 Low Activity $5.00";
+    const n9Page = ["Personal Checking | Business Checking", n9, "Low Activity $5.00", "Savings Accounts | Other Services", "Monthly Fee $0 Wire Transfer Fee $25.00"].join("\n");
+    expect(conditionalZero(0, n9, "Monthly Fee", { documentText: n9Page })).toBe(true); // N9
+    // A fee-noun cell with no evidence on the page stays conditional.
+    expect(conditionalZero(0, "Foreign Transaction Fees No Charge | Night Depository Bags & Key $ 30.00", "Foreign Transaction Fees")).toBe(true);
     // A Title Case cell with no fee noun and no evidence on the page stays conditional too.
     expect(conditionalZero(0, "Bill Pay ---- No Charge | Account History ---- $3.00 each", "Bill Pay")).toBe(true);
   });

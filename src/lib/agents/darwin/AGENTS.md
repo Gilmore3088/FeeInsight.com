@@ -106,16 +106,18 @@ Darwin owns verification and classification.
   minimum-balance price ("Premier Checking" $0, "NONE"); a tier's own schedule still refuses it.
   Version 5 (#1593): the conditional-$0 test reads a two-column page by its columns, failing safe:
   the other column must be positively another fee. A cell after this fee's own "name $0" is the
-  other column when its label carries a fee noun, or is a Title Case name the page prints as its
-  own priced row elsewhere or under a right-column heading naming fees ("Bill Pay | Other Fees"
-  over "Bill Pay ---- No Charge | Account History ---- $3.00 each"); a delivery tier or channel
-  ("Overnight Shipping", "Verbal Request", "Inactive Status") never is. A price opening the fee's
+  other column only when its label is a Title Case name the page prints as its own priced row
+  elsewhere or under a right-column heading naming fees ("Bill Pay | Other Fees" over "Bill Pay
+  ---- No Charge | Account History ---- $3.00 each"); a fee noun alone is no proof. A delivery
+  tier, channel, activity or holder's choice ("Overnight Shipping", "Verbal Request", "Low
+  Activity", "Opted Out Of Overdraft"), or a label opening with No, Range of, Multiple, Each
+  additional or Per, never is. A price opening the fee's
   table cell after another fee's label cell is that fee's ("5x10x20 Safe Deposit Box Annually |
   $75.00 Bill Pay | No Charge"). On a run-on line, text after the $0 that states a condition
   anywhere, parentheses included, stays the fee's terms; otherwise it is the other column only
   with document evidence (a label under the right column's fee heading that opens that column on
   a neighbouring line, or the same "name $0" row repeated next to a two-cell line with a tail the
-  page prints as its own row or that carries a fee noun). A label priced $0 is the next row; and
+  page prints as its own row). A label priced $0 is the next row; and
   a domestic wire's row reads its international price as another fee's. A $0 traced to a line
   that lacks a word of its name is read on the line that prints its whole name with its $0
   (`sourceLineFor`), unless that $0 is one audience's. A fee named for one audience ("Check

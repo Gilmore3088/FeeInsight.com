@@ -330,7 +330,7 @@ function ownRow(cell: string, feeName: string | null | undefined, documentText: 
  * included (`tailStatesCondition`), and the document must show positively that it is another fee's
  * row:
  * - a line of two text cells sits next to it ("Blue Lion Checking | Account Early Closure"), the
- *   tail is a priced row the page also prints on a line of its own or opens with a fee noun, and the
+ *   tail is a priced row the page also prints on a line of its own, and the
  *   same row, the fee's whole name and its $0, prints on another line followed by a priced text that
  *   shares no word with this tail ("Maintenance Fee (per statement cycle) $0.00 (per account, per
  *   hour) $25.00" beside the line "(per account, per hour) $25.00"); or
@@ -360,7 +360,8 @@ function otherColumnTail(tail: string, feeName: string | null | undefined, docum
     const cells = line.split(/\s\|\s/);
     return cells.length === 2 && cells.every((cell) => (cell.match(/[a-z]{3,}/gi) ?? []).length >= 2);
   }));
-  const rowOfItsOwn = FEE_NOUN.test(label) || lines.some((line) => line === flat);
+  // A fee noun alone is no proof (third review of #1621): the page must print the tail as a row.
+  const rowOfItsOwn = lines.some((line) => line === flat);
   if (twoColumns && rowOfItsOwn && !LABEL_AUDIENCE.test(flat)) {
     const own = new Set(labelWords(flat));
     const repeated = lines.some((line) => {
@@ -387,11 +388,16 @@ function otherColumnTail(tail: string, feeName: string | null | undefined, docum
 const TAIL_TERMS = /\bor\s+\$|\b(?:otherwise|avoid\w*|maintain\w*|keep\w*|direct|needed|needs?|recurring)\b/i;
 // A delivery tier or channel prices the same fee another way ("Overnight Delivery $35.00", "Verbal
 // Request $30.00", "Inactive Status $5.00"): on a two-column page it is never another fee's row.
-const DELIVERY_WORDS = /\b(?:overnight|expedited|rush|express|priority|same[\s-]?day|next[\s-]?day|shipping|shipped|delivery|delivered|mail(?:ed)?|courier|verbal|written|inactive|inactivity|dormant|paper|electronic|e-?mail)\b/i;
+// So does an account's activity or a choice its holder made ("Low Activity $5.00", "No Debit Card
+// Activity $5.00", "Opted Out Of Overdraft $4.00"): third review of #1621.
+const DELIVERY_WORDS = /\b(?:overnight|expedited|rush|express|priority|same[\s-]?day|next[\s-]?day|shipping|shipped|delivery|delivered|mail(?:ed)?|courier|verbal|written|inactive|inactivity|dormant|paper|electronic|e-?mail|activity|usage|use|opted|enrolled|below|under)\b/i;
+// A label that opens like a quantity or a negation prices the same fee another way ("Range of
+// Checks $30.00", "Each additional $5", "No Debit Card Activity $5.00").
+const QUALIFIER_OPENING = /^\s*(?:no|range\s+of|multiple|each\s+additional|per)\b/i;
 
 /** The tail states a condition: a condition word anywhere, notes in parentheses included. Pure. */
 function tailStatesCondition(tail: string): boolean {
-  return CONDITION_WORDS.test(tail) || TAIL_TERMS.test(tail) || DELIVERY_WORDS.test(tail);
+  return CONDITION_WORDS.test(tail) || TAIL_TERMS.test(tail) || DELIVERY_WORDS.test(tail) || QUALIFIER_OPENING.test(tail);
 }
 
 /** Every word of three letters or more outside parentheses opens with a capital ("Account History"). Pure. */
@@ -422,15 +428,16 @@ function headedByFees(line: string | undefined, feeName: string): boolean {
 }
 
 /**
- * The label is positively another fee's: a fee noun, or a Title Case name of two words or more that
- * the page also prints as its own priced row on another line, or that sits under a right-column
- * heading naming fees (`headedByFees`). A delivery tier or channel ("Overnight Shipping", "Verbal
- * Request") never is. Pure (re-review of #1621).
+ * The label is positively another fee's: a Title Case name (two words or more, or one with a fee
+ * noun) that the page also prints as its own priced row on another line, or that sits under a
+ * right-column heading naming fees (`headedByFees`). A fee noun alone is no proof ("No Debit Card
+ * Activity $5.00", "Range of Checks $30.00"). A delivery tier, channel, activity or holder's choice
+ * ("Overnight Shipping", "Verbal Request", "Low Activity", "Opted Out Of Overdraft"), or a label
+ * that opens like a quantity or a negation, never is. Pure (reviews of #1621).
  */
 function positivelyOtherFee(label: string, feeName: string, line: string | null, documentText: string | null): boolean {
-  if (DELIVERY_WORDS.test(label)) return false;
-  if (FEE_NOUN.test(label)) return true;
-  if (!titleCase(label) || labelWords(label).length < 2 || !documentText || !line) return false;
+  if (DELIVERY_WORDS.test(label) || QUALIFIER_OPENING.test(label)) return false;
+  if (!titleCase(label) || (labelWords(label).length < 2 && !FEE_NOUN.test(label)) || !documentText || !line) return false;
   const name = label.replace(/[\s.…:|*_–—-]+$/, "").trim().toLowerCase();
   const lines = documentLines(documentText);
   const flat = line.replace(/\s+/g, " ").trim();
