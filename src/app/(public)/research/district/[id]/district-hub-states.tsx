@@ -11,6 +11,8 @@ import { useState, type MouseEvent, type ReactNode } from "react";
 export interface HubTableColumn {
   key: string;
   label: string;
+  /** Shown on phones too; the rest appear from the sm breakpoint, and every figure is in the state's panel. */
+  phone?: boolean;
 }
 
 export interface HubTableRow {
@@ -55,7 +57,22 @@ export function HubStates({ states, map, panels, columns, rows, initial }: Props
 
   return (
     <div className="space-y-4">
-      <div role="group" aria-label="Pick a state" className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 sm:mx-0 sm:flex-wrap sm:px-0">
+      {/* Phones pick from one menu instead of a row of chips that runs off the screen. */}
+      <label className="block sm:hidden">
+        <span className="sr-only">Pick a state</span>
+        <select
+          value={picked}
+          onChange={(e) => setPicked(e.target.value)}
+          className="min-h-11 w-full rounded-full border border-ink bg-surface-0 px-4 text-[14px] font-semibold text-ink"
+        >
+          {states.map((s) => (
+            <option key={s.code} value={s.code}>
+              {s.name}
+            </option>
+          ))}
+        </select>
+      </label>
+      <div role="group" aria-label="Pick a state" className="hidden flex-wrap gap-2 sm:flex">
         {states.map((s) => (
           <button
             key={s.code}
@@ -83,7 +100,7 @@ export function HubStates({ states, map, panels, columns, rows, initial }: Props
       {rows.length > 1 && (
         <div className="overflow-hidden rounded-2xl border border-border bg-surface-0 shadow-fi-1">
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[560px] text-left text-[13px]">
+            <table className="w-full text-left text-[13px] sm:min-w-[560px]">
               <thead>
                 <tr className="border-b border-border bg-paper">
                   <th scope="col" className={th}>
@@ -93,7 +110,7 @@ export function HubStates({ states, map, panels, columns, rows, initial }: Props
                     <th
                       key={c.key}
                       scope="col"
-                      className={`${th} text-right`}
+                      className={`${th} text-right ${c.phone ? "" : "hidden sm:table-cell"}`}
                       aria-sort={sort?.key === c.key ? (sort.desc ? "descending" : "ascending") : "none"}
                     >
                       <button
@@ -121,7 +138,7 @@ export function HubStates({ states, map, panels, columns, rows, initial }: Props
                       </button>
                     </th>
                     {columns.map((c) => (
-                      <td key={c.key} className="px-3 py-2 text-right tabular-nums text-ink-soft">
+                      <td key={c.key} className={`px-3 py-2 text-right tabular-nums text-ink-soft ${c.phone ? "" : "hidden sm:table-cell"}`}>
                         {r.cells[c.key]?.t ?? "-"}
                       </td>
                     ))}

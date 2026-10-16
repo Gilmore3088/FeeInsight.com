@@ -97,7 +97,7 @@ export function StatePanel({
   districtName: string;
 }) {
   const tiles = [
-    { value: count(row.institutions), label: `Banks ${count(row.banks)} · Credit unions ${count(row.creditUnions)}` },
+    { value: count(row.institutions), label: `Banks\u00a0${count(row.banks)} · Credit\u00a0unions\u00a0${count(row.creditUnions)}` },
     ...(row.coveragePct != null ? [{ value: pct(row.coveragePct, 0), label: "With verified fees" }] : []),
     ...(row.serviceCharges != null ? [{ value: compact(row.serviceCharges), label: "Fee income, latest quarter" }] : []),
     ...(row.bankBranches != null ? [{ value: count(row.bankBranches + (row.cuBranches ?? 0)), label: "Branches" }] : []),

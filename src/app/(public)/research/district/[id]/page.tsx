@@ -199,9 +199,9 @@ export default async function DistrictReportPage({ params }: PageProps) {
 
   // The state picker: one panel per state, drawn here; the table carries the same figures.
   const tableColumns = [
-    { key: "institutions", label: "Institutions" },
+    { key: "institutions", label: "Institutions", phone: true },
     { key: "coverage", label: "Verified" },
-    ...feeKeys.slice(0, 3).map((k) => ({ key: k, label: hubFeeName(k) })),
+    ...feeKeys.slice(0, 3).map((k, i) => ({ key: k, label: hubFeeName(k), phone: i === 0 })),
     { key: "charges", label: "Fee income" },
     { key: "unemployment", label: "Jobless" },
   ];

@@ -23,7 +23,7 @@ function setup() {
       }
       panels={{ AR: <p>Arkansas panel</p>, MO: <p>Missouri panel</p> }}
       columns={[
-        { key: "institutions", label: "Institutions" },
+        { key: "institutions", label: "Institutions", phone: true },
         { key: "overdraft", label: "Overdraft" },
       ]}
       rows={rows}
@@ -64,5 +64,18 @@ describe("HubStates", () => {
     const table = screen.getByRole("table");
     fireEvent.click(within(table).getByRole("button", { name: "Arkansas" }));
     expect(screen.getByText("Arkansas panel")).toBeTruthy();
+  });
+
+  it("switches from the phone menu", () => {
+    setup();
+    fireEvent.change(screen.getByRole("combobox", { name: "Pick a state" }), { target: { value: "AR" } });
+    expect(screen.getByText("Arkansas panel")).toBeTruthy();
+  });
+
+  it("hides the columns a phone has no room for", () => {
+    setup();
+    const header = screen.getByRole("button", { name: /Overdraft/ }).closest("th");
+    expect(header?.className).toContain("hidden sm:table-cell");
+    expect(screen.getByRole("button", { name: /Institutions/ }).closest("th")?.className).not.toContain("hidden");
   });
 });
