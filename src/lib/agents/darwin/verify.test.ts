@@ -959,7 +959,6 @@ describe("conditionalZero on run-on lines (#1571, live rows read on prod Oct 16)
     [12134, "Business Online Bill Pay - Business Essentials", "Wire Transfer Services Incoming - Domestic/Foreign $15.00/Transfer Outgoing - Domestic $25.00/Transfer Outgoing - Foreign $40.00/Transfer Business Online Banking Free Business Online Bill Pay Free BUSINESS ADVANTAGE CHECKING Monthly Account"],
     [13040, "Check Free (bill pay)", "Check Free (bill pay) FREE Replacement key $50.00"],
     [13124, "Notary Services", "Record Searches (per hour/minimum) $30/$25 Notary Services No Charge"],
-    [89048, "Foreign ATM usage", "Foreign ATM usage No Charge Customer (incoming) $15.00"],
     [51445, "Checking Account monthly fee", "Checking Account monthly fee: FREE | Certified Letter Fee: $10"],
     [38491, "Foreign Transaction Fees", "Foreign Transaction Fees No Charge | Night Depository Bags &amp; Key $ 30.00"],
     [47440, "Zelle Transfer", "Zelle Transfer: No Charge | Subordination agreement: $175.00"],
@@ -1008,12 +1007,40 @@ describe("conditionalZero on run-on lines (#1571, live rows read on prod Oct 16)
     ["Monthly Service Fee", "Monthly Service Fee FREE Requires e-Statements otherwise $5"],
     ["Overdraft Fee", "Overdraft Fee $0 Transactions $5 or less $30 per item"],
     ["Dormant Account Fee", "Dormant Account Fee none the first 12 months $5 thereafter"],
+    // Second review: labelled condition cells, first-N-free, age, balance, channel, tier, frequency.
+    ["Monthly Service Fee", "Monthly Service Fee: FREE | Paper statements: $5"],
+    ["Monthly Service Fee", "Monthly Service Fee: FREE | Without Direct Deposit: $10"],
+    ["Monthly Fee", "Monthly Fee: $0, Without e-Statements: $5"],
+    ["Monthly Fee", "Monthly Fee: $0 | Balance Below Minimum: $8"],
+    ["Monthly Fee", "Monthly Fee: $0 | If Minimum Not Met: $8"],
+    ["Overdraft Fee", "Overdraft Fee: $0 | Each Additional Item: $30"],
+    ["Overdraft Fee", "Overdraft Fee FREE Each Additional Item $30.00"],
+    ["Overdraft Fee", "Overdraft Fee FREE Second And Subsequent Items $30"],
+    ["Counter Checks", "Counter Checks FREE Additional Sheets $1.00 each"],
+    ["Monthly Service Fee", "Monthly Service Fee FREE Ages 18-24 $5.00 ages 25 and up"],
+    ["Monthly Fee", "Monthly Fee FREE Seniors $5.00 Everyone Else"],
+    ["Monthly Fee", "Monthly Fee FREE Youth $5.00 Adult"],
+    ["Monthly Maintenance Fee", "Monthly Maintenance Fee FREE Avg Daily Bal $1,500+ $10.00 Avg Daily Bal under $1,500"],
+    ["ATM Withdrawal Fee", "ATM Withdrawal Fee FREE Non-network ATM $2.00"],
+    ["ATM Fee", "ATM Fee FREE Out-of-Network $2.50 per transaction"],
+    ["Stop Payment Fee", "Stop Payment Fee FREE Written Request $30.00"],
+    ["Stop Payment Fee", "Stop Payment Fee NO CHARGE Self-Service $30.00 Assisted"],
+    ["Monthly Service Charge", "Monthly Service Charge FREE Relationship Pricing $15.00 Standard Pricing"],
+    ["Monthly Service Fee", "Monthly Service Fee FREE Gold Checking $8.00 Basic Checking"],
+    ["Money Orders", "Money Orders FREE Club Accounts $2.00 Regular Accounts"],
+    ["Cashier's Check", "Cashier's Check FREE Platinum Clients $10.00"],
+    ["Paper Statement Fee", "Paper Statement Fee FREE Quarterly $3.00 Monthly"],
+    ["Monthly Fee", "Monthly Fee: Free. Not meeting requirements results in a $5 fee."],
+    // A tail with no fee noun of its own stays this fee's terms.
+    ["Foreign ATM usage", "Foreign ATM usage No Charge Customer (incoming) $15.00"],
+    ["Zelle Transfer", "Zelle Transfer: No Charge | Subordination: $175.00"],
   ];
   it.each(reviewConditional)("%s stays conditional: %s", (name, line) => {
     expect(conditionalZero(0, line, name)).toBe(true);
   });
   it("still reads a plainly separate next row as another fee's", () => {
     expect(conditionalZero(0, "Incoming Domestic Wire FREE Outgoing Domestic Wire $25", "Incoming Domestic Wire")).toBe(false);
+    expect(conditionalZero(0, "Debit Card Replacement FREE Replacement key $50.00", "Debit Card Replacement")).toBe(false);
   });
 
   it.each(free)("%i is a free line, not conditional", (_id, name, line) => {
