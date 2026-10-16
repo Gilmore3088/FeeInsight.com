@@ -170,6 +170,9 @@ export default async function DistrictReportPage({ params }: PageProps) {
   const latestRevenue = revenue[revenue.length - 1] ?? null;
   const institutionsTracked = hub ? hub.institutions.reduce((sum, g) => sum + g.institutions, 0) : 0;
   const tiers = hub ? tierMix(hub) : [];
+  // Fed districts split some states (Dallas takes north Louisiana and south New Mexico); those
+  // institutions count in the district totals but have no state row of their own.
+  const outsideStates = Math.max(institutionsTracked - rows.reduce((sum, r) => sum + r.institutions, 0), 0);
   const complaints = hub ? complaintView(hub, districtId, states) : null;
   const moves = hub ? feeChangeSummary(hub, showAllCategories) : null;
   const cpi = hub ? cpiBankServices(hub) : null;
@@ -323,6 +326,8 @@ export default async function DistrictReportPage({ params }: PageProps) {
                 Fee medians from verified published fee schedules, one value per institution; a median needs{" "}
                 {MIN_INSTITUTIONS_FOR_MEDIAN} institutions. Fee income from FDIC and NCUA call reports, branches from the FDIC
                 Summary of Deposits and NCUA, unemployment from BLS, income from the Census ACS.
+                {outsideStates > 0 &&
+                  ` ${count(outsideStates)} ${districtName} district institutions are in parts of other states and count only in the district totals.`}
               </>
             }
           >

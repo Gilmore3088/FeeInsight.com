@@ -164,10 +164,15 @@ export function RevenueChart({ quarters }: { quarters: RevenueQuarter[] }) {
           <span className="h-2.5 w-2.5 rounded-sm bg-brick" /> Credit unions
         </span>
       </p>
-      <div className="flex h-44 items-end gap-1.5 sm:gap-3" role="img" aria-label="Fee income by quarter">
-        {quarters.map((q) => (
+      <div className="flex h-44 items-end gap-1.5 sm:gap-3" role="img" aria-label={`Fee income by quarter, ${quarterLabel(quarters[0].quarter)} to ${quarterLabel(quarters[quarters.length - 1].quarter)}: ${quarters.map((q) => compact(q.total)).join(", ")}`}>
+        {quarters.map((q, i) => (
           <div key={q.quarter} className="flex h-full min-w-0 flex-1 flex-col justify-end">
-            <span className="mb-1 truncate text-center text-[10px] font-semibold tabular-nums text-ink">{compact(q.total)}</span>
+            {/* Phones label only the newest bar; eight values don't fit side by side. */}
+            <span
+              className={`mb-1 whitespace-nowrap text-center text-[10px] font-semibold tabular-nums text-ink ${i === quarters.length - 1 ? "" : "hidden sm:block"}`}
+            >
+              {compact(q.total)}
+            </span>
             <div className="flex flex-col overflow-hidden rounded-t-md" style={{ height: `${(q.total / max) * 82}%` }}>
               <div className="bg-brick" style={{ flexGrow: q.creditUnions }} />
               <div className="bg-ink" style={{ flexGrow: q.banks }} />
@@ -177,8 +182,9 @@ export function RevenueChart({ quarters }: { quarters: RevenueQuarter[] }) {
       </div>
       <div className="mt-1.5 flex gap-1.5 sm:gap-3" aria-hidden="true">
         {quarters.map((q) => (
-          <span key={q.quarter} className="min-w-0 flex-1 truncate text-center text-[10px] tabular-nums text-ink-muted">
-            {quarterLabel(q.quarter).replace(" 20", " ’")}
+          <span key={q.quarter} className="min-w-0 flex-1 text-center text-[10px] leading-tight tabular-nums text-ink-muted">
+            {quarterLabel(q.quarter).split(" ")[0]}
+            <span className="block sm:inline">{quarterLabel(q.quarter).replace(/^Q\d 20/, " ’")}</span>
           </span>
         ))}
       </div>
