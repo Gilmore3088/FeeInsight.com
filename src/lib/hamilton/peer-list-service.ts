@@ -5,7 +5,7 @@ import { getActivePeerSet } from "./active-peer-set";
 import { loadHamiltonAccountContext } from "./account-context-store";
 import { normalizeCanonicalInstitutionId } from "./context-link";
 import { resolveHamiltonInstitutionContext } from "./workspace-context";
-import { isPeerListContinuationQuestion, peerListFeeFollowUp, parsePeerListQuestion, peerListRefinementState, validatePeerListContinuation, peerListReferencesUnchanged, planPeerList, type PeerListData, type PeerListResponse, type PeerListSubject } from "./peer-list";
+import { isPeerListContinuationQuestion, peerListFeeFollowUp, parsePeerListQuestion, peerListRefinementState, validatePeerListContinuation, peerListReferencesUnchanged, planPeerList, MAX_PEER_LIST_ROWS, type PeerListCriteria, type PeerListData, type PeerListResponse, type PeerListSubject } from "./peer-list";
 
 /** Why "us" has no institution: none linked, or more than one. Never the researched institution. */
 function noAccountInstitution(status: string): string {
@@ -17,6 +17,13 @@ function noAccountInstitution(status: string): string {
 
 interface PeerAskBody { institutionId?: unknown; question?: unknown; answer?: unknown; previousPeerList?: unknown }
 interface PeerAsker { id: number; institution_name?: string | null }
+
+/** Says which institutions a capped list kept and how to see the others (#1540). */
+export function cappedListNote(criteria: Pick<PeerListCriteria, "sort" | "limit">, shown: number, total: number): string {
+  const kept = criteria.sort === "closest_assets" ? `the ${shown} closest in size` : criteria.sort === "largest_assets" ? `the ${shown} largest by assets` : `the first ${shown} by name`;
+  const rest = criteria.limit < MAX_PEER_LIST_ROWS ? `Ask for "all" to see up to ${MAX_PEER_LIST_ROWS}.` : "Narrow the criteria to see the rest.";
+  return `Showing ${kept} of ${total} matching institutions; ${total - shown} more are not shown. ${rest}`;
+}
 
 /** A recognized list is never sent to fee analysis or a paid narrative fallback. */
 export async function answerPeerList(user: PeerAsker, body: PeerAskBody, recordActivity = true): Promise<PeerListResponse | null> {
@@ -155,7 +162,8 @@ export async function answerPeerList(user: PeerAsker, body: PeerAskBody, recordA
         const criteria = planned.criteria;
         const found = await getPeerListRows(subject.institutionId, criteria, asOf);
         const notes = ["Assets are from each institution's latest stored FDIC or NCUA filing, not a live check. Reporting dates may differ.", "Stored financial amounts are in USD thousands and are converted once to dollars here; dollar formatting does not imply more source precision."];
-        if (criteria.requestedCount === null || (criteria.requestedCount ?? 0) > criteria.limit) notes.push(`This view is limited to ${criteria.limit} rows. Narrow the criteria to inspect a smaller group.`);
+        if (found.totalMatches > found.rows.length) notes.push(cappedListNote(criteria, found.rows.length, found.totalMatches));
+        else if ((criteria.requestedCount ?? 0) > criteria.limit) notes.push(`This view shows at most ${criteria.limit} institutions.`);
         if (criteria.requestedCount !== null && found.totalMatches < criteria.requestedCount) notes.push(found.totalMatches === 0
           ? `No institution meets these criteria. The filters above were not widened to find ${criteria.requestedCount}.`
           : `Only ${found.totalMatches} institution${found.totalMatches === 1 ? " meets" : "s meet"} these criteria. The filters above were not widened to reach ${criteria.requestedCount}.`);
