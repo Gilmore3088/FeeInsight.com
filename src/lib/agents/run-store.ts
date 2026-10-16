@@ -1608,6 +1608,9 @@ async function executeAgenticStep(
           : "") +
         (frequencyFill.held.length > 0
           ? ` ${published.dryRun ? "Would hold" : "Held"} ${frequencyFill.held.length.toLocaleString()} live NSF or overdraft fee(s) whose own line prices them by the period.`
+          : "") +
+        (frequencyFill.planWouldHold.length > 0
+          ? ` Overdraft plan hold (switch off): ${frequencyFill.planWouldHold.length.toLocaleString()} live optional overdraft plan fee(s) priced by the period beside the bank's per-item fee would be held.`
           : "");
       return {
         status: "completed",
@@ -1901,6 +1904,14 @@ async function executeAgenticStep(
           })),
           frequency_fills: frequencyFill.filled.length,
           frequency_holds: frequencyFill.held.length,
+          // #1360: the overdraft plan hold's dry run while OVERDRAFT_PLAN_HOLD_LIVE is off.
+          frequency_plan_would_hold: frequencyFill.planWouldHold.map((row) => ({
+            fee_published_id: row.feePublishedId,
+            institution_id: row.institutionId,
+            amount: row.amount,
+            frequency: row.frequency,
+            source_line: row.sourceLine,
+          })),
           frequency_fill_scanned: frequencyFill.scanned,
           frequency_fill_error: frequencyFill.writeError,
           frequency_fill_samples: frequencyFill.filled.slice(0, 10).map((row) => ({
