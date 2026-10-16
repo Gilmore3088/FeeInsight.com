@@ -2,6 +2,7 @@ import type { sql } from "@/lib/data-store/connection";
 import { coverageShort, SIZE_GROUPS } from "@/lib/agents/goal-scorecard";
 import { notPublishedOnlineCounts, type NotOnlineTierCount } from "@/lib/agents/magellan/escalation";
 import { inSavepoint } from "@/lib/agents/savepoint";
+import { listStateExpertNotes, type StateExpertNote } from "@/lib/data-store/state-expert-notes";
 import { STATE_NAMES } from "@/lib/us-states";
 
 import { ALL_TIERS, loadStateMemory, stateMemorySchemaReady, type PeerLevel, type StateMemory } from "./memory";
@@ -24,6 +25,8 @@ export const STATE_EXPERT_QUERIES = {
   notOnline: "state_expert.not_published_online (magellan/escalation notPublishedOnlineCounts)",
   /** Uncovered institutions under $10B, ordered by `stateWorkLists` as the paid passes order them. */
   workList: "state_expert.work_list (institution_sources without published_fee_catalog, stateWorkLists order)",
+  /** Dated notes the state-expert step wrote (#1573). */
+  notes: "state_expert.notes (state_expert_notes, written by the state-expert step)",
 } as const;
 
 export interface StateExpertIndexRow {
@@ -156,6 +159,8 @@ export interface StateExpertPage {
   workListTotal: number | null;
   /** State-wide peer levels, most institutions first. */
   stateWidePeerLevels: PeerLevel[];
+  /** Dated notes, newest first; empty before the first note or the migration. */
+  notes: StateExpertNote[];
 }
 
 export const WORK_LIST_SHOWN = 25;
@@ -235,6 +240,10 @@ export async function loadStateExpertPage(db: SqlTag, stateCode: string): Promis
     console.error("[admin] state expert work list unavailable", { code, error });
     return null;
   });
+  const notes = await listStateExpertNotes(code, { db }).catch((error): StateExpertNote[] => {
+    console.error("[admin] state expert notes unavailable", { code, error });
+    return [];
+  });
   return {
     expert,
     stateName: STATE_NAMES[code] ?? null,
@@ -244,5 +253,6 @@ export async function loadStateExpertPage(db: SqlTag, stateCode: string): Promis
     workList: workList?.entries ?? [],
     workListTotal: workList?.total ?? null,
     stateWidePeerLevels: memory ? stateWideLevels(memory.peerLevels) : [],
+    notes,
   };
 }

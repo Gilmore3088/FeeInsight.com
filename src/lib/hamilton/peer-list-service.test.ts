@@ -6,7 +6,7 @@ vi.mock("./workspace-context", () => ({ resolveHamiltonInstitutionContext: mocks
 vi.mock("./account-context-store", () => ({ loadHamiltonAccountContext: mocks.account }));
 vi.mock("./active-peer-set", () => ({ getActivePeerSet: mocks.active }));
 vi.mock("@/lib/agents/run-store", () => ({ recordProRequest: mocks.record }));
-import { answerPeerList } from "./peer-list-service";
+import { answerPeerList, cappedListNote } from "./peer-list-service";
 import { makePeerListContinuation } from "./peer-list";
 const subject = { institutionId: 202, name: "Synthetic Research CU", charterType: "credit_union", city: "Tampa", stateCode: "FL", totalAssetsUsd: 10_000_000_000, reportDate: "2026-06-30", source: "ncua", sourceUrl: null, recordId: 1 };
 const peer = { ...subject, institutionId: 303, name: "Synthetic Peer CU", feeCoverage: "not_found", inclusionReason: "Matches criteria." };
@@ -166,4 +166,11 @@ describe("exact displayed peer-list continuation", () => {
     expect(mocks.rows).not.toHaveBeenCalled();
   });
 
+});
+
+describe("capped peer lists (#1540)", () => {
+  it("says which institutions were kept and how to see the rest", () => {
+    expect(cappedListNote({ sort: "largest_assets", limit: 10 }, 10, 16)).toBe('Showing the 10 largest by assets of 16 matching institutions; 6 more are not shown. Ask for "all" to see up to 50.');
+    expect(cappedListNote({ sort: "closest_assets", limit: 50 }, 50, 80)).toBe("Showing the 50 closest in size of 80 matching institutions; 30 more are not shown. Narrow the criteria to see the rest.");
+  });
 });

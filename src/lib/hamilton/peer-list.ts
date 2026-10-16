@@ -400,7 +400,9 @@ export function planPeerList(intent: PeerListIntent, subject: PeerListSubject, a
   if (maxAssets) descriptions.push(`Assets ${maxAssets.inclusive ? "at most" : "less than"} ${formatPeerAssets(maxAssets.value)}.`);
   if (filters?.asset_tiers?.length) descriptions.push(`Saved registry asset tiers: ${filters.asset_tiers.join(", ")}; displayed dollar assets come from dated filings.`);
   if (filters?.fed_districts?.length) descriptions.push(`Saved Federal Reserve districts: ${filters.fed_districts.join(", ")}.`);
-  const sort = intent.largest ? "largest_assets" : needsSimilarity ? "closest_assets" : "name";
+  // A capped list keeps the institutions the question is about: closest in size for "similar",
+  // otherwise the largest (#1540). Name order would drop the largest without saying so.
+  const sort = needsSimilarity && !intent.largest ? "closest_assets" : "largest_assets";
   descriptions.push(sort === "closest_assets" ? "Ordered by closest proportional asset size, then institution name and ID." : sort === "largest_assets" ? "Ordered by total assets, largest first, then institution name and ID." : "Ordered by institution name and ID.");
   descriptions.push("The research subject is excluded. Published fee coverage does not determine eligibility.");
   return { problem: null, criteria: {

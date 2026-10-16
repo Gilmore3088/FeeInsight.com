@@ -13,6 +13,14 @@ The Data quality lane keeps #1027 (Magellan), #1050 (Rosetta), #1092 (Knox), #11
 four lanes (Website, Page templates, Data quality, Hamilton) that run from the second-account
 roadmap on branch `claude/project-thread-awcc9c`. CLAUDE.md "How work runs" now says so.
 
+**Fee Insight is not marketed as advisory.** James, 2026-10-16 (#1174): "Fee insight advisory was
+scrapped many times ago so we should not add it back. I'm happy to have demos and phone
+conversations but we should not market the product as advisory." No page, form or offer names a
+"Fee Insight Advisory" service; demos and calls stay. Custom data and API work is "Data licensing".
+
+**Free visitors keep each fee's national range.** James, 2026-10-16 (#1449): free visitors see the
+range on the national index ("consumer facing high-level data").
+
 **A few confirmed-wrong live fees come down without asking James.** James, 2026-10-16, approving
 #1496 (Barksdale FCU's two fax fees that took a price from the next column): fixes like this
 should not wait for him. A small number of live fees (up to about 25), each confirmed wrong on
@@ -1076,3 +1084,11 @@ keeps working. `apply_migration`, edits under `supabase/migrations/`, Supabase p
 production deploys and direct GitHub file commits still ask. Supabase `execute_sql` stays allowed
 (Oct 13 decision), so the rule that production data changes never go through raw SQL from a
 session still rests on the session, not on a prompt.
+
+**Back-end PRs skip the Vercel preview, and lanes batch their PRs.** James, 2026-10-16 (Hamilton
+thread, 03:51 and 04:05 UTC). Open PRs went from under 10 to about 40 in two hours, and each preview
+was queueing 30 to 45 minutes. He uses previews only to check how pages look, so a PR that changes
+no page merges on green CI without waiting for one. `vercel.json` `ignoreCommand` skips a preview
+build when the newest commit changes only `docs`, `supabase`, `src/lib/agents`, `scripts`,
+`.github`, `.claude`, `handoff`, Markdown or test files; production builds always run. Each lane
+also puts its next several items on one branch and opens one PR, instead of one PR per item.
