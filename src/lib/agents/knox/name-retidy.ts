@@ -692,6 +692,19 @@ const LOWER_NOT_A_START =
 const LOWER_CONDITION =
   /\b(?:waived?|reduced|regardless|requirements?|without|such as|plus|charged|created|received|section|and no)\b|\s[-–—]\s*get$|,\s*or\b|\b([a-z]{3,})\s+(?:[a-z]+\s+)?\1\b/i;
 const LOWER_NAME_MAX_WORDS = 8;
+/**
+ * v20: the name with its first word in the case the stored name writes it, when that word is a
+ * lower-case brand ("myChance", "eCorp") the stored name holds; null when there is nothing to keep.
+ */
+export function brandCased(name: string, storedName: string): string | null {
+  const first = name.match(/^\S+/)?.[0];
+  if (!first || !/^[A-Z]/.test(first)) return null;
+  const lower = first.charAt(0).toLowerCase() + first.slice(1);
+  if (!LOWER_BRAND.test(lower)) return null;
+  const words = storedName.split(/\s+/);
+  return words.includes(lower) ? lower + name.slice(first.length) : null;
+}
+
 export function capitalisedName(name: string): string | null {
   const stored = name.replace(/\s+/g, " ").trim();
   // UAT's 12:40 Darwin sample: a capital list marker or article opens the name too ("H. The
@@ -1335,7 +1348,7 @@ function uniqueHeadName(fee: LiveFeeRow, liveFees: LiveFeeRow[]): string | null 
 }
 
 /** A live fee with the name Knox read for it, before publish shaped it. */
-export type RetidyFeeRow = LiveFeeRow & { raw_fee_name?: string | null; retidied?: boolean | null };
+export type RetidyFeeRow = LiveFeeRow & { raw_fee_name?: string | null; retidied?: boolean | null; institution_name?: string | null };
 
 /**
  * v16: a condition Hamilton's publish cut off the name Knox read (56431 went live as 107240
@@ -1406,7 +1419,7 @@ export function planRetidy(
     const junkFree = junkStrippedName(fontRead ?? stored.fee_name) ?? fontRead;
     // v20: a footnote number glued to the front of the name, where the fee's own page prints the
     // footnote as its own line or cell ("1Monthly fee" from "1Monthly fee of $5.95 applies ...").
-    const unmarked = withoutLeadingFootnoteMark(junkFree ?? stored.fee_name, storedOwnTexts);
+    const unmarked = withoutLeadingFootnoteMark(junkFree ?? stored.fee_name, storedOwnTexts, stored.institution_name);
     // A name whose only flaw was the mark's shape, and whose page shows it is no mark ("3Hill CU"),
     // stays as it is: the earlier versions never tidied it.
     if (!unmarked && !junkFree && hasLeadingFootnoteShape(stored.fee_name) && !messyBeforeV16(stored.fee_name) && !openerOnlyName(stored.fee_name)) {
@@ -1479,7 +1492,13 @@ export function planRetidy(
       continue;
     }
     // v16: a tidied name that still opens in lower case takes a capital when it reads as a name.
-    const newName = chosen && /^[a-z]/.test(chosen) ? capitalisedName(chosen) ?? chosen : chosen;
+    const capitalised = chosen && /^[a-z]/.test(chosen) ? capitalisedName(chosen) ?? chosen : chosen;
+    // v20: a brand the bank writes in lower case keeps its case when a cut leaves it first
+    // ("2A myChance Checking ..." is "myChance Checking ...", never "MyChance").
+    const branded = capitalised ? brandCased(capitalised, fee.fee_name) : null;
+    // v20: and a mark the tidy left at the front once a cell before it went ("each | 8Legal ...", 119352).
+    const tidiedName = branded ?? capitalised;
+    const newName = (tidiedName && withoutLeadingFootnoteMark(tidiedName, storedOwnTexts, stored.institution_name)) || tidiedName;
     if (
       !newName ||
       (LEADING_DISCOURSE.test(fee.fee_name) && sentenceShaped(newName)) ||
@@ -1487,7 +1506,7 @@ export function planRetidy(
       (BUSINESS_NAMED.test(fee.fee_name) && !/[|:]/.test(fee.fee_name) && !BUSINESS_NAMED.test(newName)) ||
       // v16: a name that would still open in lower case is no better ("atM transfers"), unless a
       // brand is written that way ("eCorp Outgoing Wires").
-      (/^[a-z]/.test(newName) && (!/^[a-z]/.test(fee.fee_name) || !LOWER_BRAND.test(newName)))
+      (/^[a-z]/.test(newName) && !branded && (!/^[a-z]/.test(fee.fee_name) || !LOWER_BRAND.test(newName)))
     ) {
       skipped.no_better_name += 1;
       continue;
@@ -1753,6 +1772,7 @@ export async function retidyLiveFeeNames(
     liveFees = await inSavepoint(db, (scope) => scope<RetidyFeeRow[]>`
       SELECT fp.fee_published_id, fp.lineage_ref, fv.fee_raw_id, fp.institution_id, fr.source, fr.source_document_id,
              fp.canonical_fee_key, fp.fee_name, fp.amount, fp.amount_kind, fp.rate_percent, fr.fee_name AS raw_fee_name,
+             (SELECT inst.institution_name FROM institution_sources inst WHERE inst.id = fp.institution_id) AS institution_name,
              EXISTS (
                SELECT 1 FROM pipeline_feedback pf
                 WHERE pf.fee_published_id = fp.fee_published_id AND pf.kind = ${NAME_RETIDY_KIND}

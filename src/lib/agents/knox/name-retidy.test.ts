@@ -915,6 +915,25 @@ describe("planRetidy v20: a footnote number glued to the front of a live name", 
     expect(planRetidy([row], page).renames).toEqual([]);
   });
 
+  it("cuts a mark the tidy leaves at the front once a unit cell goes (119352, doc 3516)", () => {
+    const page = own("$25.00 each | 7Legal Review Fee\n\n$25.00 each | 8Legal Process Service (Garnishment/Levy)\n\n$25.00 | Membership Share");
+    const row = fee({ fee_name: "each | 8Legal Process Service (Garnishment/Levy)", canonical_fee_key: "garnishment_levy", amount: 25 });
+    expect(planRetidy([row], page).renames.map((rename) => rename.newName)).toEqual(["Legal Process Service (Garnishment/Levy)"]);
+  });
+
+  it("keeps a token that opens the bank's own name", () => {
+    const page = own("5Star Bank Overdraft Fee | $30.00");
+    const row = { ...fee({ fee_name: "5Star Bank Overdraft Fee", canonical_fee_key: "overdraft", amount: 30 }), institution_name: "5Star Bank" };
+    expect(planRetidy([row], page).renames).toEqual([]);
+  });
+
+  it("keeps a lower-case brand's case once the mark and article go (bank 4500, doc 22443)", () => {
+    const page = own("myChance Checking Account2\n\n2A myChance Checking (Draft) Account will have a $10.00 per month service charge applied.");
+    const row = fee({ fee_name: "2A myChance Checking (Draft) Account will have a Monthly service charge", canonical_fee_key: "monthly_maintenance", amount: 10 });
+    const names = planRetidy([row], page).renames.map((rename) => rename.newName);
+    expect(names.every((name) => !name.startsWith("MyChance"))).toBe(true);
+  });
+
   it("keeps box sizes, ordinals and 2FA", () => {
     const rows = [
       fee({ fee_published_id: 1, fee_name: "3x10", canonical_fee_key: "safe_deposit_box", amount: 30 }),

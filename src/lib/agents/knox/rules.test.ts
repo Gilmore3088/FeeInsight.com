@@ -1456,6 +1456,32 @@ describe("withoutLeadingFootnoteMark (v74)", () => {
     }
   });
 
+  it("never cuts a token that opens the bank's own name", () => {
+    expect(withoutLeadingFootnoteMark("5Star Bank Overdraft Fee", ["5Star Bank Overdraft Fee | $30.00"], "5Star Bank")).toBeNull();
+    expect(withoutLeadingFootnoteMark("4Front Cashier's Check", ["4Front Cashier's Check | $5.00"], "4Front Federal Credit Union")).toBeNull();
+    expect(withoutLeadingFootnoteMark("3Hill CU Cashier’s Checks", ["3Hill CU Cashier’s Checks | $ 5.00"], "3 Hill Credit Union")).toBeNull();
+    // Another bank's page with the same shape is still a mark.
+    expect(withoutLeadingFootnoteMark("5Overdraft Fee", ["5Overdraft Fee | $30.00"], "5Star Bank")).toBe("Overdraft Fee");
+  });
+
+  it("keeps an ordinal glued to its word and a count per period; a capital S is no ordinal", () => {
+    expect(withoutLeadingFootnoteMark("3rdParty Check Fee", ["3rdParty Check Fee | $5.00"])).toBeNull();
+    expect(withoutLeadingFootnoteMark("2Checks per month", ["2Checks per month | $1.00"])).toBeNull();
+    expect(withoutLeadingFootnoteMark("1Statement copy fee", ["1Statement copy fee of $2.00"])).toBe("Statement copy fee");
+  });
+
+  it("cuts a mark the tidy leaves at the front once a unit cell goes (doc 20097, bank 7239)", () => {
+    const page = [
+      "$25.00 each | 8Legal Process Service (Garnishment/Levy)",
+      "$10.00 each | 10NON-MEMBER Loan Application Fee",
+      "$35.00 each | 11OverDraft Fee (PAID ITEM) Standard/Extended OD Privilege Program",
+    ].join("\n\n");
+    const result = runFreeSpecialists(page);
+    const names = [...result.candidates.map((fee) => fee.feeName), ...result.held.map((row) => row.feeName)];
+    expect(names.length).toBeGreaterThan(0);
+    expect(names.filter((name) => /^\d{1,2}[A-Za-z]/.test(name))).toEqual([]);
+  });
+
   it("cuts nothing without the page, or when the page never prints the token", () => {
     expect(withoutLeadingFootnoteMark("1Monthly fee", [])).toBeNull();
     expect(withoutLeadingFootnoteMark("1Monthly fee", ["Monthly fee $5.95"])).toBeNull();

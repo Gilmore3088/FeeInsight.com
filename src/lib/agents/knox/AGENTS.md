@@ -515,8 +515,12 @@ in `rules.ts`, applied to every specialist's read and held line in `runFreeSpeci
 - The page decides: the glued token must open a line or a "|" cell wherever the text prints it, and
   never sit inside a line. "3Hill CU Cashier's Checks" keeps its name: the same page says "Call 3Hill
   CU for Details". With no text nothing is cut.
-- Never cut: box sizes ("3x10", "5X 6"), ordinals ("1st", "2nd", "3rd party", "1ST"), times and periods
-  ("24hr"), one capital standing alone ("3D Secure"), or a single digit on exactly two capitals ("2FA").
+- Never cut: box sizes ("3x10", "5X 6"), ordinals ("1st", "2nd", "3rd party", "3rdParty", "1ST"; a
+  capital S is no ordinal, so "1Statement copy fee" is cut), times and periods ("24hr"), one capital
+  standing alone ("3D Secure"), a single digit on exactly two capitals ("2FA"), a count per period
+  ("2Checks per month"), or a token that opens the bank's own name ("5Star Bank", "3Hill FCU").
+- The cut runs before the name tidy and again after it: the tidy can leave a mark at the front once a
+  cell before it goes ("each | 8Legal Process Service" is "8Legal ..." before the second cut; doc 20097).
 - Oct 16: 35 live fees at 25 banks and 51 raw reads from the two days before carried one; the live
   names are fixed by the name tidy's v20 (below), which uses the same function.
 - Older held lines keep their printed name until read again; the name-filed store path files them
@@ -934,7 +938,9 @@ publish step. A rename must keep the fee tracing in its own schedule and passing
 the old name goes to `pipeline_feedback` (`name_retidied`, weight 0, so it never counts as a lesson).
 v20 (Oct 16): a footnote number glued to the front of a live name ("1Monthly fee") comes off by the
 rules v74 test, read against the fee's own document; a name whose page also prints the token inside a
-line ("3Hill CU") stays. The due query finds names opening on a number glued to a letter (box sizes left out).
+line ("3Hill CU") stays, and so does a token that opens the bank's own name. The cut runs again on the
+tidied name, and a lower-case brand the stored name holds keeps its case ("myChance", 96352). The due
+query finds names opening on a number glued to a letter (box sizes left out).
 
 `isCutoffName` (publish's `cutoff_name` hold) has a narrow live twin beside it, `liveFragmentName`
 (#1443), built from the same regex pieces: a dangling joining word (lower-case "a/an/the" only;

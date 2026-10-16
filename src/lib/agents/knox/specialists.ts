@@ -176,11 +176,21 @@ function withContextFees(text: string, read: ExtractionRulesResult): ExtractionR
 }
 
 /** v74: a read name without the footnote number the page glued to its front; the name as read otherwise. */
-function unmarkedName(name: string, text: string): string {
-  return withoutLeadingFootnoteMark(name, [text]) ?? name;
+function unmarkedName(name: string, text: string, institutionName: string | null): string {
+  return withoutLeadingFootnoteMark(name, [text], institutionName) ?? name;
 }
 
-export function runFreeSpecialists(sourceText: string): FreeExtractionResult {
+/**
+ * v74: the name tidied, with a leading footnote number cut before the tidy and again after it,
+ * since the tidy can leave one at the front ("each | 8Legal Process Service" is "8Legal ..." once
+ * its unit cell goes; doc 20097).
+ */
+function tidyUnmarkedName(name: string, text: string, institutionName: string | null): string {
+  return unmarkedName(tidyFeeName(unmarkedName(name, text, institutionName)), text, institutionName);
+}
+
+export function runFreeSpecialists(sourceText: string, options: { institutionName?: string | null } = {}): FreeExtractionResult {
+  const institutionName = options.institutionName ?? null;
   // Labeled fee cards ("Fee TypeX" / ... / "Fee$5.00") are read as one row, as the shared
   // check reads them; the self-check still runs against the stored text.
   // v62: a fee footnoted as business-only is no specialist's to read (`withoutBusinessOnlyFees`).
@@ -232,7 +242,7 @@ export function runFreeSpecialists(sourceText: string): FreeExtractionResult {
       // v57: a fee whose own row traces reads its frequency from that row, not from a window
       // that stops at the price ("... four (4) OD fees per day ... | $17.00 | per item" is per item).
       // v74: a footnote number glued to the front of the name comes off (`withoutLeadingFootnoteMark`).
-      const feeName = tidyFeeName(unmarkedName(read.feeName, text));
+      const feeName = tidyUnmarkedName(read.feeName, text, institutionName);
       const checked = selfCheck(text, feeName, read.amount, read.canonicalHint);
       const rowFrequency = checked.row ? frequencyFromLine(checked.row, read.amount) : null;
       const frequency = rowFrequency
@@ -282,7 +292,7 @@ export function runFreeSpecialists(sourceText: string): FreeExtractionResult {
         if (heldRow.shape === "unclassified") countDropped("unclassified_cap");
         continue;
       }
-      const foundRow = { ...heldRow, feeName: tidyFeeName(unmarkedName(heldRow.feeName, text)) };
+      const foundRow = { ...heldRow, feeName: tidyUnmarkedName(heldRow.feeName, text, institutionName) };
       if (foundRow.shape === "zero" && readsAMeasuredAmount(text, foundRow.feeName, 0)) continue;
       // A $0 row can go live through the rules re-check, so it passes the same self-check.
       const untracedZero = foundRow.shape === "zero" && !tracesToSource(text, foundRow.feeName, 0);
