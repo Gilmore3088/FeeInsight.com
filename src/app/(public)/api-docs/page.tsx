@@ -372,7 +372,7 @@ export default async function ApiDocsPage() {
                 <td className="px-4 py-2">Manual setup</td>
               </tr>
               <tr className="border-t border-border/60">
-                <td className="px-4 py-2">{SITE_NAME} Advisory</td>
+                <td className="px-4 py-2">Data licensing</td>
                 <td className="px-4 py-2">Custom</td>
                 <td className="px-4 py-2">Custom</td>
               </tr>
@@ -681,7 +681,7 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \\
           ctaHref={API_ACCESS_HREF}
         />
         <TierCard
-          name={`${SITE_NAME} Advisory`}
+          name="Data licensing"
           price="Custom"
           features={[
             "Unlimited requests",
@@ -692,7 +692,7 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \\
             "Custom SLA",
           ]}
           cta="Talk to us"
-          ctaHref={`mailto:${CONTACT_EMAIL}?subject=Fee%20Insight%20Advisory`}
+          ctaHref={`mailto:${CONTACT_EMAIL}?subject=Data%20licensing`}
         />
       </div>
 
